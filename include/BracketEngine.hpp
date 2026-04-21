@@ -124,7 +124,15 @@ public:
     // TP wins never trigger either mechanism and always reset the counter.
     double WHIPSAW_OVERLAP_K        = 0.5;      // 0.0 disables lockout
     double WHIPSAW_COOLDOWN_MULT    = 2.0;      // 1.0 disables cooldown extension
-    int    WHIPSAW_LOCKOUT_MAX_MS   = 900000;   // 15 min safety ceiling
+    int    WHIPSAW_LOCKOUT_MAX_MS   = 3600000;  // 60 min safety ceiling (raised from 15min 2026-04-21 after 4777.50/4789.34 death spiral: 07:08 and 07:48 SLs armed against SAME zone once 15min ceiling expired)
+    // ?? Consecutive-SL kill (pattern-lift from EMACrossEngine) ???????????????
+    // Independent of WHIPSAW_OVERLAP_K -- counts raw consecutive SL exits regardless
+    // of range overlap. When CONSEC_SL_KILL_THRESHOLD SL closes fire in a row, all
+    // IDLE->ARMED attempts are blocked for CONSEC_SL_KILL_DURATION_MS. Any non-SL
+    // close (TP, BE, TRAIL, BREAKOUT_FAIL, T/O, manual) resets the counter to 0.
+    // Set CONSEC_SL_KILL_THRESHOLD=0 to disable.
+    int    CONSEC_SL_KILL_THRESHOLD   = 3;        // 0 disables
+    int    CONSEC_SL_KILL_DURATION_MS = 1800000;  // 30 min block
     const char* symbol         = "???";
     bool   shadow_mode         = false;  // set by main.cpp -- enables price-triggered fill sim in PENDING
 
@@ -536,6 +544,36 @@ public:
         bracket_high = shi + buf;
         bracket_low  = slo - buf;
 
+        // ?? Consecutive-SL kill (pattern-lift from EMACrossEngine) ???????????
+        // Only consulted on IDLE->ARMED attempts. Blocks all arming until
+        // m_sl_kill_until_s expires. Cleared by any non-SL close via closePos().
+        // Independent of WHIPSAW_OVERLAP_K -- fires on raw consecutive SLs regardless
+        // of whether the stopped brackets overlap each other.
+        if (phase == BracketPhase::IDLE
+            && CONSEC_SL_KILL_THRESHOLD > 0
+            && m_sl_kill_until_s > 0
+            && nowSec() < m_sl_kill_until_s)
+        {
+            static int64_t s_sl_kill_log = 0;
+            const int64_t now_sk = nowSec();
+            if (now_sk - s_sl_kill_log >= 30) {
+                s_sl_kill_log = now_sk;
+                std::cout << "[BRACKET-" << symbol << "] SL-KILL BLOCK"
+                          << " consec_sl=" << m_consec_sl
+                          << " thresh=" << CONSEC_SL_KILL_THRESHOLD
+                          << " remaining_s=" << (m_sl_kill_until_s - now_sk) << "\n";
+                std::cout.flush();
+            }
+            return;
+        }
+        // Clear kill window once elapsed (lazy clear on next IDLE check)
+        if (m_sl_kill_until_s > 0 && nowSec() >= m_sl_kill_until_s) {
+            std::cout << "[BRACKET-" << symbol << "] SL-KILL EXPIRED -- arming re-enabled\n";
+            std::cout.flush();
+            m_sl_kill_until_s = 0;
+            m_consec_sl = 0;
+        }
+
         // ?? Same-bracket lockout (whipsaw guard) ??????????????????????????????
         // Only consulted on IDLE->ARMED attempts. ARMED/PENDING/LIVE phases pass
         // through untouched -- we only block NEW arming into the zone we just
@@ -742,6 +780,13 @@ protected:
     int     m_whipsaw_count      = 0;
     bool    m_next_cooldown_ext  = false;  // set true when counter>=2 at close time
     int     m_cooldown_ms_override = 0;    // non-zero overrides COOLDOWN_MS for this cycle
+    // ?? Consecutive-SL kill state (pattern-lift from EMACrossEngine) ????????????
+    // m_consec_sl counts SL closes in a row. Reset to 0 on any non-SL close.
+    // When m_consec_sl hits CONSEC_SL_KILL_THRESHOLD, m_sl_kill_until_s is set to
+    // (now + CONSEC_SL_KILL_DURATION_MS/1000) and all IDLE->ARMED attempts are
+    // blocked until that time. Value 0 means no active kill.
+    int     m_consec_sl          = 0;
+    int64_t m_sl_kill_until_s    = 0;
 
     // Locked at the moment both orders are sent -- never change after PENDING
     double m_locked_hi        = 0.0;
@@ -1003,6 +1048,36 @@ protected:
             m_cooldown_ms_override = 0;
         }
         // NEUTRAL: no change
+
+        // ?? Consecutive-SL counter (independent of whipsaw state) ??????????????
+        // Counts raw SL closes. Any non-SL close (TP, BE, TRAIL, BREAKOUT_FAIL,
+        // T/O, manual) resets the counter. Reason string is checked exactly --
+        // SL_HIT is the canonical SL close label in this engine.
+        if (CONSEC_SL_KILL_THRESHOLD > 0 && reason != nullptr) {
+            const bool is_sl = (std::string(reason) == "SL_HIT");
+            if (is_sl) {
+                ++m_consec_sl;
+                if (m_consec_sl >= CONSEC_SL_KILL_THRESHOLD) {
+                    m_sl_kill_until_s = nowSec()
+                        + static_cast<int64_t>(CONSEC_SL_KILL_DURATION_MS / 1000);
+                    std::cout << "[BRACKET-" << symbol << "] SL-KILL TRIGGERED"
+                              << " consec_sl=" << m_consec_sl
+                              << " thresh=" << CONSEC_SL_KILL_THRESHOLD
+                              << " block_duration_s=" << (CONSEC_SL_KILL_DURATION_MS / 1000)
+                              << "\n";
+                    std::cout.flush();
+                }
+            } else {
+                if (m_consec_sl > 0) {
+                    std::cout << "[BRACKET-" << symbol << "] SL-KILL-COUNTER reset"
+                              << " prev_consec_sl=" << m_consec_sl
+                              << " reason=" << reason << "\n";
+                    std::cout.flush();
+                }
+                m_consec_sl = 0;
+                m_sl_kill_until_s = 0;
+            }
+        }
 
         pos              = OpenPos{};
         pending_both     = BracketBothSignals{};
