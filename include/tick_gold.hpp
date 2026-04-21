@@ -3495,12 +3495,37 @@ static void on_tick_gold(
 
             // L2 tick logger removed from here -- moved to unconditional section above
 
+            // FIX 2026-04-22: HTF hard-block for GoldFlow entry.
+            // Previously g_htf_filter only adjusted sizing (size_scale now no-op).
+            // GFE bypasses enter_directional(), so on_tick.hpp early return doesn't
+            // cover it. This hard-block mirrors the GoldStack Site 1 pattern.
+            // Direction intent derived from ewm_drift sign -- matches GFE's own
+            // internal direction probe at entry time.
+            // 2/2 HTF rule: bias only reads BULLISH/BEARISH when daily+intraday
+            // both agree; NEUTRAL days bypass this block entirely.
+            const bool gf_htf_long_intent = (g_gold_stack.ewm_drift() > 0.0);
+            const bool gf_htf_block       = g_htf_filter.bias_opposes("XAUUSD", gf_htf_long_intent);
+            if (gf_htf_block) {
+                static thread_local int64_t s_gf_htf_log = 0;
+                const int64_t now_s_htf = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                if (now_s_htf - s_gf_htf_log > 30) {
+                    s_gf_htf_log = now_s_htf;
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg),
+                        "[HTF-BLOCK] XAUUSD GFE %s skipped -- HTF bias=%s opposes\n",
+                        gf_htf_long_intent ? "LONG" : "SHORT",
+                        g_htf_filter.bias_name("XAUUSD"));
+                    std::cout << _msg; std::cout.flush();
+                }
+            } else {
             g_gold_flow.on_tick(bid, ask,
                 g_l2_gold.micro_edge.load(std::memory_order_relaxed),
                 g_gold_stack.ewm_drift(),
                 now_ms_g, flow_on_close,
                 g_macro_ctx.session_slot,
                 g_macro_ctx.gold_l2_real);
+            }  // end !gf_htf_block
             }  // gf_vpin_ok
         }
         gfe_entry_skip:;  // L2 watchdog gate jumps here when L2 is dead
@@ -4095,7 +4120,26 @@ static void on_tick_gold(
         const bool dpe_would_short = (g_macro_ctx.gold_l2_imbalance < 0.5 - DPE_IMB_THRESHOLD);
         const bool dpe_drift_blocked = (dpe_would_long && dpe_long_blocked)
                                      || (dpe_would_short && dpe_short_blocked);
-        if (!dpe_drift_blocked) {
+        // FIX 2026-04-22: HTF hard-block for DomPersist entry.
+        // DPE fires on L2 persistence alone -- no internal HTF awareness.
+        // Evidence: 18:16:36 DXYDivergence LONG + 6 other DPE LONGs into
+        // 101pt BEARISH day. Uses dpe_would_long/short (already derived above)
+        // to determine direction intent before dispatch.
+        const bool dpe_htf_blocked = (dpe_would_long  && g_htf_filter.bias_opposes("XAUUSD", true))
+                                   || (dpe_would_short && g_htf_filter.bias_opposes("XAUUSD", false));
+        if (dpe_htf_blocked) {
+            static thread_local int64_t s_dpe_htf_log = 0;
+            if (now_ms_g - s_dpe_htf_log > 30000) {
+                s_dpe_htf_log = now_ms_g;
+                char _msg[512];
+                snprintf(_msg, sizeof(_msg),
+                    "[HTF-BLOCK] XAUUSD DPE %s skipped -- HTF bias=%s opposes\n",
+                    dpe_would_long ? "LONG" : "SHORT",
+                    g_htf_filter.bias_name("XAUUSD"));
+                std::cout << _msg; std::cout.flush();
+            }
+        }
+        if (!dpe_drift_blocked && !dpe_htf_blocked) {
         g_dom_persist.on_tick(bid, ask,
             g_macro_ctx.gold_l2_imbalance,
             g_macro_ctx.gold_l2_real,
@@ -4519,6 +4563,24 @@ static void on_tick_gold(
                     }
                 }
             }
+            // FIX 2026-04-22: HTF hard-block for CandleFlow entry.
+            // CFE has counter-trend, VWAP, RSI, CVD, VPIN blocks but no HTF check.
+            // Evidence: CFE LONGs fired during 101pt BEARISH day when bias=BEARISH.
+            // cfe_is_long_intent already derived from ewm_drift in outer scope.
+            const bool cfe_htf_ok = !g_htf_filter.bias_opposes("XAUUSD", cfe_is_long_intent);
+            if (!cfe_htf_ok) {
+                static int64_t s_cfe_htf_log = 0;
+                if (now_ms_g - s_cfe_htf_log > 30000) {
+                    s_cfe_htf_log = now_ms_g;
+                    char _msg[512];
+                    snprintf(_msg, sizeof(_msg),
+                        "[HTF-BLOCK] XAUUSD CFE %s skipped -- HTF bias=%s opposes\n",
+                        cfe_is_long_intent ? "LONG" : "SHORT",
+                        g_htf_filter.bias_name("XAUUSD"));
+                    std::cout << _msg; std::cout.flush();
+                }
+            }
+
             // PDH/PDL structural gate: only enter inside yesterday's daily range.
             // 2yr backtest: INSIDE PDH/PDL EV=+1.732pts. Outside = negative EV.
             if (!gold_inside_daily_range) {
@@ -4532,7 +4594,7 @@ static void on_tick_gold(
                         std::cout.flush();
                     }
                 }
-            } else if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok && !cfe_chop_block)
+            } else if (cfe_bar_gate_ok && cfe_spread_ok && cfe_vwap_ok && !cfe_chop_block && cfe_htf_ok)
             g_candle_flow.on_tick(bid, ask, cfe_bar, cfe_dom_e,
                 now_ms_g, cfe_atr_e,
                 [&](const omega::TradeRecord& tr) {
