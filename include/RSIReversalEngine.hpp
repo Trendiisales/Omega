@@ -399,7 +399,7 @@ public:
         pos.entry     = entry;
         pos.sl        = is_long ? (entry - sl_dist) : (entry + sl_dist);
         pos.atr       = m_tick_atr;
-        pos.size      = 0.05;
+        pos.size      = 0.01;  // FIX 2026-04-22 uniformity: 0.05 -> 0.01 SHADOW-mode
         m_l2_at_entry = l2_imbalance;  // record L2 at entry for flip detection  // fixed 0.05 lots: 3pt move = $15 gross, ~$3.50 cost = ~$11.50 net
         pos.mfe       = 0.0;
         pos.be_locked = false;
