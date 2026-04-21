@@ -50,6 +50,7 @@
 #include <string>
 #include <algorithm>
 #include <mutex>   // RACE-FIX 2026-04-21: m_close_mtx serialises close paths (cTrader/FIX threads)
+#include <cstring> // FIX MCE-SL-KILL 2026-04-22: std::strcmp
 #include "OmegaTradeLedger.hpp"
 #include <array>
 
@@ -252,6 +253,27 @@ public:
                 }
                 return;
             }
+        }
+
+        // FIX MCE-SL-KILL 2026-04-22: block new entries during 30-min kill window
+        // after 3 consecutive SL_HITs. Auto-resets once window expires.
+        if (!pos.active && now_ms < m_sl_kill_until) {
+            static int64_t s_mce_kl = 0;
+            if (now_ms - s_mce_kl > 120000) {  // log once per 2min while blocked
+                s_mce_kl = now_ms;
+                char km[128];
+                snprintf(km, sizeof(km), "[MCE-SL-KILL] blocked %d SLs %llds remain\n",
+                    m_consec_sl, (long long)((m_sl_kill_until - now_ms) / 1000LL));
+                std::cout << km; std::cout.flush();
+            }
+            return;
+        }
+        if (m_consec_sl >= 3 && now_ms >= m_sl_kill_until && m_sl_kill_until != 0) {
+            std::cout << "[MCE-SL-KILL] Reset after 30min, "
+                      << m_consec_sl << " SLs cleared\n";
+            std::cout.flush();
+            m_consec_sl     = 0;
+            m_sl_kill_until = 0;
         }
 
         if (pos.active) {
@@ -585,6 +607,17 @@ private:
     int64_t m_sl_long_first_ms  = 0;
     int64_t m_sl_short_first_ms = 0;
 
+    // FIX MCE-SL-KILL 2026-04-22: total consecutive-SL circuit breaker (mirror of
+    // DPE 5652602 / CFE 01bac21). Distinct from directional block above:
+    // tracks ANY consecutive SL_HIT regardless of side. After 3 consec SL_HITs
+    // across either direction, block ALL entries for 30 minutes. Observed need:
+    // 2026-04-21 tape showed 4 consecutive MacroCrash SL_HITs (14:40, 14:46,
+    // 19:42, 20:16) none caught by directional block because they alternated
+    // / didn't hit the 2-in-2hr same-side window. TRAIL_STOP does NOT count
+    // (intended exit). TP_HIT resets. WEEKEND_CLOSE / MAX_HOLD do not count.
+    int     m_consec_sl         = 0;
+    int64_t m_sl_kill_until     = 0;
+
     static double _rl(double x) { return std::round(x / 0.001) * 0.001; }
 
     void _manage(double bid, double ask, double mid,
@@ -828,6 +861,9 @@ private:
             // Reset directional SL counter on TP -- thesis was correct, streak is broken
             if (pos.is_long) { m_sl_long_count  = 0; m_sl_long_first_ms  = 0; }
             else             { m_sl_short_count = 0; m_sl_short_first_ms = 0; }
+            // FIX MCE-SL-KILL 2026-04-22: TP_HIT also resets the total-consec tracker.
+            // TRAIL_STOP is an intended trailing exit (like TRAIL_HIT in DPE); also reset.
+            m_consec_sl = 0;
         }
         if (std::string(reason) == "SL_HIT") {
             // Track consecutive directional SL hits.
@@ -869,6 +905,15 @@ private:
                         std::cout.flush();
                     }
                 }
+            }
+            // FIX MCE-SL-KILL 2026-04-22: total consec-SL tracker. Increments on
+            // every raw SL_HIT regardless of direction. On 3rd consecutive, arm
+            // 30-minute entry kill. Resets on TP_HIT / TRAIL_STOP above.
+            if (++m_consec_sl >= 3) {
+                m_sl_kill_until = now_ms + 1800000LL;  // 30 min
+                char km[128];
+                snprintf(km, sizeof(km), "[MCE-SL-KILL] %d consec SLs -- 30min block\n", m_consec_sl);
+                std::cout << km; std::cout.flush();
             }
         }
         // Dollar-stop direction lock: block same direction for 4hrs after DOLLAR_STOP.
