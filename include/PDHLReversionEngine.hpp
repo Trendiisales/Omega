@@ -67,6 +67,7 @@ public:
         double  mfe       = 0.0;
         double  mae       = 0.0;
         int64_t entry_ms  = 0;
+        double  spread_at_entry = 0.0;  // bid-ask spread captured at entry (ledger forensics)
     } pos;
 
     bool has_open_position() const noexcept { return pos.active; }
@@ -162,7 +163,7 @@ public:
 
         pos = Position{
             true, is_long, ep, sl_px, tp_px, sz, atr,
-            0.0, 0.0, now_ms
+            0.0, 0.0, now_ms, spread
         };
 
         printf("[PDHL%s] %s @ %.2f  sl=%.2f tp=%.2f  pdh=%.2f pdl=%.2f  "
@@ -237,6 +238,7 @@ private:
         tr.exitReason = reason;
         tr.l2_live    = true;
         tr.shadow     = shadow_mode;
+        tr.spreadAtEntry = pos.spread_at_entry;
 
         printf("[PDHL%s] EXIT %s @ %.2f  pnl=$%.2f  mfe=%.3f  reason=%s  held=%llds\n",
                shadow_mode ? "-SHADOW" : "",
