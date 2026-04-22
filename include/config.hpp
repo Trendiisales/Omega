@@ -317,6 +317,19 @@ static void maybe_reset_daily_ledger() {
     g_corr_matrix.save_state(state_root_dir() + "/corr_matrix.dat");  // persist EWM running stats
     g_gold_flow.save_atr_state(state_root_dir() + "/gold_flow_atr.dat");
     g_gold_stack.save_atr_state(state_root_dir() + "/gold_stack_state.dat");
+    // ── Reset GoldStack RegimeGovernor drift EWMs on UTC day rollover ────────
+    // FIX 2026-04-22 (Apr 17 drift diagnostic, second bug):
+    // Without this call ewm_fast_/ewm_slow_ accumulate continuously from
+    // process start, carrying yesterday's bias into today's first ticks.
+    // Replay analysis of Apr 17 showed drift=+1.32 at 00:00:00 before any
+    // Apr 17 ticks influenced a fresh EWM -- priming GoldFlow's direction
+    // generator LONG from session start and contributing to the 169:9
+    // LONG:SHORT Asian-session attempt skew. Save happens on the line above
+    // BEFORE this reset so the prior-day baseline is preserved to disk for
+    // warm-restart scenarios. This reset only fires on continuous-process
+    // day rollover; process restart uses load_atr_state()'s 4-hour staleness
+    // check path instead.
+    g_gold_stack.reset_drift_on_day_rollover();
     g_trend_pb_gold.save_state(state_root_dir()  + "/trend_pb_gold.dat");
     g_trend_pb_ger40.save_state(state_root_dir() + "/trend_pb_ger40.dat");
     g_trend_pb_nq.save_state(state_root_dir()    + "/trend_pb_nq.dat");

@@ -4813,6 +4813,33 @@ public:
             }
     }
 
+    // UTC day rollover drift reset
+    // Called from config.hpp::maybe_reset_daily_ledger() at the start of each
+    // UTC day. Without this, ewm_fast_/ewm_slow_ accumulate continuously from
+    // process start, carrying yesterday's bias into today's first ticks.
+    // Confirmed bug: Apr 17 started with drift=+1.32 before any Apr 17 ticks
+    // influenced a fresh EWM, priming the direction generator LONG from 00:00
+    // UTC and contributing to the 169:9 LONG:SHORT Asian-session attempt
+    // skew that Fix A alone did not explain. Resets only the RegimeGovernor
+    // drift EWMs (ewm_fast_, ewm_slow_, ewm_init_). The 512-tick drift_buf_
+    // and 80-tick history_ buffers are circular and self-expire within ~2.5h
+    // at typical Apr 17 tick density, so they do not need explicit reset.
+    // The ewm_vol_baseline_/baseline_vol_pct_ vol-regime state is intention-
+    // ally NOT reset here: those are process-lifetime baselines that tune
+    // vol_ratio detection; wiping them would cause false vol-regime flags on
+    // every new UTC day. Same rationale for the existing load_atr_state()
+    // 4-hour staleness check at line ~4864: it clears regime state only when
+    // the process has actually been offline long enough that baselines have
+    // decoupled from live conditions, not on every rollover.
+    void reset_drift_on_day_rollover() noexcept {
+        governor_.ewm_fast_ = 0.0;
+        governor_.ewm_slow_ = 0.0;
+        governor_.ewm_init_ = false;
+        std::cout << "[GOLDSTACK] Daily drift reset on UTC rollover"
+                  << " -- EWMs will re-seed from next tick\n";
+        std::cout.flush();
+    }
+
     // ?? Warm-restart persistence ??????????????????????????????????????????????
     // Saves vol baseline + governor EWM state so next restart skips the
     // 400-600 tick cold warmup for GoldStack regime detection.
