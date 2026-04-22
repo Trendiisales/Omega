@@ -436,6 +436,49 @@ int main(int argc, char* argv[])
         // BlackBull blocks all trendbar API requests (bar_failed_reqs above).
         // save_indicators() is called on clean shutdown (signal handler below).
         // Rejection criteria: age > 24h, e9<=0, e50<=0 -- any bad file is deleted.
+
+        // ── HYDRATE FROM TICK CSV -- PREFERRED HOT-LOAD PATH (2026-04-22) ────
+        // Replays daily-rotating L2 tick CSVs from C:\Omega\logs\ for every
+        // SymBarState timeframe. Each hydrate call rebuilds bars_ from real
+        // ticks and runs the full update pipeline per bar, so EMA/RSI/ATR/
+        // ADX/EWMA come out mathematically correct and fully warmed.
+        //
+        // Rationale: BlackBull blocks cTrader trendbar API requests for XAUUSD,
+        // so bars_ is only populated via tick-built bars during live operation.
+        // On cold start that means H4 takes 56h to accumulate enough bars for
+        // ADX14 -- the 2026-04-17 101pt Asian move was missed for exactly this
+        // reason. Replaying the tick CSV at startup is O(seconds) and eliminates
+        // the cold-start window for all engines that read bar indicators.
+        //
+        // Auto-sized lookback per timeframe = max(2h, 20 * bucket_minutes):
+        //   M1  ->   2h (enough for RSI14 + EMA50 convergence on M1)
+        //   M5  ->  10h (20 M5 bars = 1h40m; padded for weekend gap coverage)
+        //   M15 ->  30h
+        //   H1  ->  60h (enough for ADX14 + EMA50 warm on H1)
+        //   H4  -> 240h = 10 days (enough for H4 ADX14 fully warmed)
+        //
+        // MUST run BEFORE load_indicators() below -- load's m1_ready=true flip
+        // would otherwise fight with hydrate's bars_.clear() reset.
+        // If the CSV is missing or empty, hydrate returns 0 and load_indicators
+        // below handles the fallback (flat save-file restore).
+        {
+            const std::string bs = log_root_dir();
+            const int64_t now_ms_h = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            const int h_m1 = g_bars_gold.m1 .hydrate_from_csv(bs, "XAUUSD",    60000LL, now_ms_h, 2);
+            const int h_m5 = g_bars_gold.m5 .hydrate_from_csv(bs, "XAUUSD",   300000LL, now_ms_h, 10);
+            const int h_m15= g_bars_gold.m15.hydrate_from_csv(bs, "XAUUSD",   900000LL, now_ms_h, 30);
+            const int h_h1 = g_bars_gold.h1 .hydrate_from_csv(bs, "XAUUSD",  3600000LL, now_ms_h, 60);
+            const int h_h4 = g_bars_gold.h4 .hydrate_from_csv(bs, "XAUUSD", 14400000LL, now_ms_h, 240);
+            const int h_sp = g_bars_sp.m1   .hydrate_from_csv(bs, "US500",     60000LL, now_ms_h, 2);
+            const int h_nq = g_bars_nq.m1   .hydrate_from_csv(bs, "USTEC",     60000LL, now_ms_h, 2);
+            std::cout << "[BAR-HYDRATE] gold bars: m1=" << h_m1 << " m5=" << h_m5
+                      << " m15=" << h_m15 << " h1=" << h_h1 << " h4=" << h_h4
+                      << " -- sp=" << h_sp << " nq=" << h_nq << "\n";
+            std::cout.flush();
+        }
+
         {
             const std::string bs = log_root_dir();
             const bool m1_ok  = g_bars_gold.m1 .load_indicators(bs + "/bars_gold_m1.dat");
