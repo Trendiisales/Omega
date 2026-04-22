@@ -375,9 +375,21 @@ static constexpr double  PYRAMID_SIZE_MULT         = 0.75;   // EA-matched: 75% 
 static constexpr double  L2_PYRAMID_THRESHOLD      = 0.68;   // pyramid fires on solid (not extreme) L2 confirmation
 static constexpr int64_t PYRAMID_SL_COOLDOWN_MS    = 120000; // 2min cooldown after any pyramid SL hit
 
+// Bracket-trend exit outcome classification (three-state, not two).
+// BE_HIT is NEUTRAL -- neither a real win nor a loss. Previous two-state
+// encoding lumped BE into was_profitable=true, which caused the loss
+// scanner in BracketTrendState::on_exit to reset on every BE exit and
+// prevented rejection bias from ever activating on BE-peppered days
+// (e.g. Apr 21 2026: 13:08/13:39/17:05/19:42 all BE_HIT, [BRACKET-TREND]
+// never logged, trend_bias stayed 0 all session, four downstream
+// features in tick_gold.hpp dormant).
+static constexpr int BRACKET_EXIT_WIN     =  1;  // TRAIL_HIT, TP_HIT
+static constexpr int BRACKET_EXIT_NEUTRAL =  0;  // BE_HIT
+static constexpr int BRACKET_EXIT_LOSS    = -1;  // SL_HIT, BREAKOUT_FAIL, FORCE_CLOSE
+
 struct BracketExitRecord {
     bool    is_long;
-    bool    was_profitable; // TRAIL_HIT, TP_HIT, BE_HIT = true; SL_HIT, BREAKOUT_FAIL = false
+    int     outcome; // BRACKET_EXIT_WIN / NEUTRAL / LOSS -- see constants above
     int64_t ts_ms;
 };
 
@@ -390,17 +402,25 @@ struct BracketTrendState {
     int64_t last_pyramid_sl_ms = 0; // timestamp of most recent SL hit on a pyramid trade
 
     // Called on each bracket close for this symbol
-    void on_exit(bool is_long, bool profitable, int64_t now_ms) {
-        exits.push_back({is_long, profitable, now_ms});
+    //
+    // outcome encoding (see BRACKET_EXIT_WIN/NEUTRAL/LOSS above):
+    //   +1 real win (TP/TRAIL)  -- breaks loss streak, extends win streak
+    //    0 neutral (BE)         -- breaks win streak, SKIPPED by loss scanners
+    //                              (does NOT reset loss count; does NOT count as loss)
+    //   -1 loss (SL/BF/FORCE)   -- breaks win streak, extends loss streak
+    void on_exit(bool is_long, int outcome, int64_t now_ms) {
+        exits.push_back({is_long, outcome, now_ms});
         // Prune old exits outside the trend window
         while (!exits.empty() && (now_ms - exits.front().ts_ms) > BRACKET_TREND_WINDOW_MS)
             exits.pop_front();
 
-        // ?? Win bias: consecutive profitable same-direction exits ?????????????
-        // 2 consecutive wins in same dir ? set trend bias (block counter-direction)
+        // ?? Win bias: consecutive real-win same-direction exits ?????????????????
+        // 2 consecutive WINS in same dir ? set trend bias (block counter-direction).
+        // BE is NEUTRAL and breaks the win streak (symmetric with loss scanner
+        // treating BE as non-loss). A TP ? BE ? TP sequence is NOT a 3-win streak.
         int consec_long = 0, consec_short = 0;
         for (auto it = exits.rbegin(); it != exits.rend(); ++it) {
-            if (!it->was_profitable) break;
+            if (it->outcome != BRACKET_EXIT_WIN) break;
             if (it->is_long)  { if (consec_short > 0) break; ++consec_long;  }
             else              { if (consec_long  > 0) break; ++consec_short; }
         }
@@ -408,11 +428,18 @@ struct BracketTrendState {
         // ?? Rejection bias: consecutive losses in same direction ??????????????
         // If the bracket keeps entering LONG and keeps losing, the market is
         // rejecting that direction. Block LONGs, favour SHORTs.
-        // Triggered by SL_HIT or BREAKOUT_FAIL (not BE -- breakeven = neutral).
-        // This fixes: gold 13:03-13:41 (4 LONG SLs/BFs) and EUR 15:07-15:25 (3 LONG SLs)
+        // Triggered by SL_HIT / BREAKOUT_FAIL / FORCE_CLOSE. BE is NEUTRAL --
+        // the scanner SKIPS BE exits (does not count them, does not break on them).
+        // A win terminates the streak. Fixes Apr 21 2026 BE-peppered sequence:
+        // 13:08 SHORT BE, 13:39 LONG BE, 17:05 SHORT BE, 19:42 SHORT BE --
+        // previously each BE reset the scanner; now they are ignored so real
+        // losses before and after can still accumulate into rejection bias.
+        // Also fixes: gold 13:03-13:41 (4 LONG SLs/BFs) and EUR 15:07-15:25 (3 LONG SLs)
         int loss_long = 0, loss_short = 0;
         for (auto it = exits.rbegin(); it != exits.rend(); ++it) {
-            if (it->was_profitable) break;  // stop at first win/BE
+            if (it->outcome == BRACKET_EXIT_WIN) break;       // real win ends streak
+            if (it->outcome == BRACKET_EXIT_NEUTRAL) continue; // BE is neutral -- skip
+            // outcome == LOSS
             if (it->is_long)  { if (loss_short > 0) break; ++loss_long;  }
             else              { if (loss_long  > 0) break; ++loss_short; }
         }
@@ -420,11 +447,12 @@ struct BracketTrendState {
         // Counts losses per direction within 30 minutes regardless of opposite-dir
         // trades in between. Fixes: 11:27 LONG -$10, 11:37 SHORT (resets consec),
         // 11:49 LONG -$18 -- the two LONG losses 22min apart still trip the block.
+        // BE exits are ignored (neutral -- do not inflate loss count).
         const int64_t WINDOW_30MIN_MS = 1800000LL;
         int window_loss_long = 0, window_loss_short = 0;
         for (auto it = exits.rbegin(); it != exits.rend(); ++it) {
             if ((now_ms - it->ts_ms) > WINDOW_30MIN_MS) break;
-            if (!it->was_profitable) {
+            if (it->outcome == BRACKET_EXIT_LOSS) {
                 if (it->is_long)  ++window_loss_long;
                 else              ++window_loss_short;
             }
@@ -454,8 +482,11 @@ struct BracketTrendState {
             block_until_ms = now_ms + REJECTION_BLOCK_MS;
         }
         if (bias != prev_bias) {
+            const char* reason_str = (outcome == BRACKET_EXIT_WIN)     ? "win"
+                                   : (outcome == BRACKET_EXIT_NEUTRAL) ? "be"
+                                   :                                      "loss";
             printf("[BRACKET-TREND] symbol bias=%d consec_l=%d consec_s=%d loss_l=%d loss_s=%d reason=%s\n",
-                   bias, consec_long, consec_short, loss_long, loss_short, profitable ? "win" : "loss");
+                   bias, consec_long, consec_short, loss_long, loss_short, reason_str);
         }
     }
 

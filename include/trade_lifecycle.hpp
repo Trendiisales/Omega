@@ -1083,19 +1083,26 @@ static void bracket_on_close(const omega::TradeRecord& tr) {
     // Applies to ALL bracket symbols. Tracks consecutive profitable exits
     // to detect a dominant trend, then suppresses counter-trend re-arms.
     // L2 imbalance extends/shortens the block dynamically (see BracketTrendState).
+    //
+    // Three-state outcome (see BRACKET_EXIT_* constants in globals.hpp):
+    //   +1 real win  -- TRAIL_HIT, TP_HIT
+    //    0 neutral   -- BE_HIT (skipped by loss scanners, breaks win streak)
+    //   -1 loss      -- SL_HIT, BREAKOUT_FAIL, FORCE_CLOSE, anything else
     {
         const int64_t now_ms_bc = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        const bool profitable = (tr.exitReason == std::string("TRAIL_HIT") ||
-                                 tr.exitReason == std::string("TP_HIT")    ||
-                                 tr.exitReason == std::string("BE_HIT"));
-        g_bracket_trend[tr.symbol].on_exit(tr.side == "LONG", profitable, now_ms_bc);
+        int outcome;
+        if (tr.exitReason == std::string("TRAIL_HIT") ||
+            tr.exitReason == std::string("TP_HIT"))         outcome = BRACKET_EXIT_WIN;
+        else if (tr.exitReason == std::string("BE_HIT"))    outcome = BRACKET_EXIT_NEUTRAL;
+        else                                                outcome = BRACKET_EXIT_LOSS;
+        g_bracket_trend[tr.symbol].on_exit(tr.side == "LONG", outcome, now_ms_bc);
 
         // ?? Pyramid SL cooldown ???????????????????????????????????????????
         // If this closing trade was a pyramid entry that hit SL, record the
         // timestamp. pyramid_allowed() will block new pyramids for 2 minutes.
-        if (!profitable && tr.exitReason == std::string("SL_HIT")) {
+        if (tr.exitReason == std::string("SL_HIT")) {
             if (g_pyramid_clordids.count(tr.symbol)) {
                 g_bracket_trend[tr.symbol].last_pyramid_sl_ms = now_ms_bc;
                 printf("[PYRAMID-SL-COOLDOWN] %s pyramid SL hit -- blocking new pyramids for 120s\n",
