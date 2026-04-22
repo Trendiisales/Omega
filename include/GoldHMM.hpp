@@ -240,12 +240,12 @@ private:
 
         // CONTINUATION: high drift, medium-high ATR, trending RSI,
         //               fast tape, expanding candles, sustained drift
-        mu_[HMM_CONTINUATION][0] = 0.60;  // drift_norm high
+        mu_[HMM_CONTINUATION][0] = 1.20;  // drift_norm high (clamp [0,2]; recalibrated 2026-04-22 Bug 3)
         mu_[HMM_CONTINUATION][1] = 0.70;  // atr_norm medium-high
         mu_[HMM_CONTINUATION][2] = 0.50;  // rsi_trend_norm medium
         mu_[HMM_CONTINUATION][3] = 0.60;  // tick_rate_norm medium-high
-        mu_[HMM_CONTINUATION][4] = 0.70;  // bar_range_ratio expanding
-        mu_[HMM_CONTINUATION][5] = 0.60;  // drift_dur_norm sustained
+        mu_[HMM_CONTINUATION][4] = 1.50;  // bar_range_ratio expanding (clamp [0,3]; recalibrated 2026-04-22 Bug 3)
+        mu_[HMM_CONTINUATION][5] = 1.20;  // drift_dur_norm sustained (clamp [0,2]; recalibrated 2026-04-22 Bug 3)
 
         // MEAN_REVERSION: moderate drift (spike then fade), choppy RSI,
         //                 medium ATR, medium tape, inconsistent range
@@ -265,8 +265,10 @@ private:
         mu_[HMM_NOISE][5] = 0.10;  // drift_dur_norm brief
 
         // Emission variances (diagonal Gaussian)
-        // CONTINUATION: tighter -- it's a well-defined regime
-        for (int f = 0; f < HMM_FEATURES; ++f) sig2_[HMM_CONTINUATION][f]   = 0.08;
+        // CONTINUATION: widened 0.08 -> 0.15 on 2026-04-22 (Bug 3).
+        // Pre-fix: tighter than MEAN_REVERSION (0.15), caused p_cont=0.000
+        // pathology on live observations far from (under-calibrated) mu_C means.
+        for (int f = 0; f < HMM_FEATURES; ++f) sig2_[HMM_CONTINUATION][f]   = 0.15;
         // MEAN_REVERSION: wider -- choppy, less consistent
         for (int f = 0; f < HMM_FEATURES; ++f) sig2_[HMM_MEAN_REVERSION][f] = 0.15;
         // NOISE: tight on drift/atr (consistently low), wider on others
