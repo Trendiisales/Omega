@@ -52,18 +52,13 @@
 #include <iostream>
 #include "OmegaTradeLedger.hpp"
 
-// ?? Forward declaration -- defined in globals.hpp ????????????????????????????
-// Read-only access to the active bracket-trend bias for a symbol. Returns +1
-// (long bias / block SHORT), -1 (short bias / block LONG), or 0 (no active
-// bias). Used by non-bracket entry engines (VWAPStretchReversion, TurtleTick,
-// DomPersist, EMACross, GoldFlow) to block entries aligned with the rejected
-// direction. Body lives in globals.hpp because it reads g_bracket_trend (a
-// std::unordered_map<std::string,BracketTrendState>) which is not visible to
-// engine headers at this point in the single-TU compile chain. This forward
-// declaration is sufficient for the inline process() bodies below to parse;
-// the function body becomes visible later in the same TU when main.cpp
-// includes globals.hpp.
-int bracket_trend_bias(const char* sym) noexcept;
+// ?? Bracket-trend bias state + accessor ??????????????????????????????????????
+// Provides int bracket_trend_bias(const char* sym) plus the per-symbol state
+// map (g_bracket_trend) used by the bracket engines. Included here so both
+// main Omega (via globals.hpp) and OmegaBacktest.cpp (which only pulls engine
+// headers, never globals.hpp) resolve the same symbol set. See
+// BracketTrendState.hpp for the full rationale.
+#include "BracketTrendState.hpp"
 
 namespace omega {
 namespace gold {
