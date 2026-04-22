@@ -1962,6 +1962,130 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // commit). Resolves ISSUE-044 — pre-fix DJ30.F was runtime-reachable
     // under indices_enabled=false; UK100/ESTX50 were whitelist-gated
     // zombies whose live entry code is now defensively covered.
+    //
+    // SP/NQ L2 tick CSV loggers (2026-04-22) run BEFORE this gate because
+    // capturing tick data is a data concern, not a trading concern -- we
+    // still want to hydrate bars on restart even when indices_enabled=false.
+    // Each is a self-contained static-state block writing to daily-rotating
+    // CSV files at C:\Omega\logs\l2_ticks_{US500,USTEC}_YYYY-MM-DD.csv.
+    // Schema matches XAUUSD for uniform hydrate_from_csv() parsing.
+    if (sym == "US500.F") {
+        static FILE* s_sp_f = nullptr;
+        static int   s_sp_day = -1;
+        const double sp_mid = (bid + ask) * 0.5;
+        const int64_t now_ms_s = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const time_t t_sp = (time_t)(now_ms_s / 1000);
+        struct tm    tm_sp{};
+        gmtime_s(&tm_sp, &t_sp);
+        if (tm_sp.tm_yday != s_sp_day) {
+            if (s_sp_f) { fclose(s_sp_f); s_sp_f = nullptr; }
+            char sp_path[256];
+            snprintf(sp_path, sizeof(sp_path),
+                "C:\\Omega\\logs\\l2_ticks_US500_%04d-%02d-%02d.csv",
+                tm_sp.tm_year+1900, tm_sp.tm_mon+1, tm_sp.tm_mday);
+            const bool is_new_sp = (GetFileAttributesA(sp_path) == INVALID_FILE_ATTRIBUTES);
+            s_sp_f = fopen(sp_path, "a");
+            if (s_sp_f) {
+                if (is_new_sp)
+                    fprintf(s_sp_f,
+                        "ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                        "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                        "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+                std::cout << "[L2-CSV-OPEN] " << sp_path
+                          << (is_new_sp ? " (new file, header written)" : " (appending)") << "\n";
+                std::cout.flush();
+            } else {
+                std::cout << "[L2-CSV-OPEN-FAIL] Cannot open " << sp_path
+                          << " -- US500 tick data will NOT be saved this session!\n";
+                std::cout.flush();
+            }
+            s_sp_day = tm_sp.tm_yday;
+        }
+        if (s_sp_f) {
+            const int has_pos_sp =
+                (g_eng_sp.pos.active          ||
+                 g_bracket_sp.pos.active      ||
+                 g_orb_us.has_open_position() ||
+                 g_vwap_rev_sp.has_open_position() ||
+                 g_trend_pb_sp.has_open_position() ||
+                 g_nbm_sp.has_open_position()) ? 1 : 0;
+            fprintf(s_sp_f,
+                "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                "%d,%d,%llu,"
+                "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
+                (long long)now_ms_s, sp_mid, bid, ask,
+                0.0, 0.0, 0.0,
+                0, 0, (unsigned long long)0,
+                0,
+                0.0,
+                0,
+                0.0,
+                has_pos_sp,
+                0.0,
+                0.0);
+            fflush(s_sp_f);
+        }
+    } else if (sym == "USTEC.F") {
+        static FILE* s_nq_f = nullptr;
+        static int   s_nq_day = -1;
+        const double nq_mid = (bid + ask) * 0.5;
+        const int64_t now_ms_n = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const time_t t_nq = (time_t)(now_ms_n / 1000);
+        struct tm    tm_nq{};
+        gmtime_s(&tm_nq, &t_nq);
+        if (tm_nq.tm_yday != s_nq_day) {
+            if (s_nq_f) { fclose(s_nq_f); s_nq_f = nullptr; }
+            char nq_path[256];
+            snprintf(nq_path, sizeof(nq_path),
+                "C:\\Omega\\logs\\l2_ticks_USTEC_%04d-%02d-%02d.csv",
+                tm_nq.tm_year+1900, tm_nq.tm_mon+1, tm_nq.tm_mday);
+            const bool is_new_nq = (GetFileAttributesA(nq_path) == INVALID_FILE_ATTRIBUTES);
+            s_nq_f = fopen(nq_path, "a");
+            if (s_nq_f) {
+                if (is_new_nq)
+                    fprintf(s_nq_f,
+                        "ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                        "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                        "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+                std::cout << "[L2-CSV-OPEN] " << nq_path
+                          << (is_new_nq ? " (new file, header written)" : " (appending)") << "\n";
+                std::cout.flush();
+            } else {
+                std::cout << "[L2-CSV-OPEN-FAIL] Cannot open " << nq_path
+                          << " -- USTEC tick data will NOT be saved this session!\n";
+                std::cout.flush();
+            }
+            s_nq_day = tm_nq.tm_yday;
+        }
+        if (s_nq_f) {
+            const int has_pos_nq =
+                (g_eng_nq.pos.active               ||
+                 g_bracket_nq.pos.active           ||
+                 g_vwap_rev_nq.has_open_position() ||
+                 g_trend_pb_nq.has_open_position() ||
+                 g_nbm_nq.has_open_position()) ? 1 : 0;
+            fprintf(s_nq_f,
+                "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                "%d,%d,%llu,"
+                "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
+                (long long)now_ms_n, nq_mid, bid, ask,
+                0.0, 0.0, 0.0,
+                0, 0, (unsigned long long)0,
+                0,
+                0.0,
+                0,
+                0.0,
+                has_pos_nq,
+                0.0,
+                0.0);
+            fflush(s_nq_f);
+        }
+    }
+
     if (!g_cfg.indices_enabled &&
         (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" ||
          sym == "GER40"   || sym == "UK100"   || sym == "ESTX50" ||
