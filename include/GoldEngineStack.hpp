@@ -3512,7 +3512,21 @@ class RegimeGovernor {
     bool ewm_init_=false;
 public:
     MarketRegime detect(double mid, bool has_open_pos) {
-        if(has_open_pos) return current_;
+        // FIX 2026-04-22 (direction-staleness bug, Apr 17 diagnostic):
+        // Price history buffers and EWM drift means must update on EVERY tick,
+        // regardless of open-position state. The original early-return at the
+        // top of this function froze ewm_fast_/ewm_slow_ while any position was
+        // open, producing stale `ewm_drift()` readings that were consumed
+        // downstream by GoldFlowEngine's direction generator. On 2026-04-17
+        // this froze positive drift across a -101pt distribution day, causing
+        // 169 LONG entry attempts vs 9 SHORT. The CVD-GF gate blocked all 169
+        // bad LONGs correctly, but the sign signal itself was wrong.
+        //
+        // Fix: always advance the data feed (pushes + EWM updates), then
+        // freeze only the regime *classification decision* when a position is
+        // open. This preserves the original design intent ("don't switch
+        // regimes mid-trade") while ensuring drift, vol, and range readings
+        // reflect live market state at all times.
         history_.push_back(mid);
         med_history_.push_back(mid);
         drift_buf_.push_back(mid);
@@ -3520,6 +3534,8 @@ public:
         if(!ewm_init_){ ewm_fast_=mid; ewm_slow_=mid; ewm_init_=true; }
         ewm_fast_ = 0.05*mid + 0.95*ewm_fast_;
         ewm_slow_ = 0.005*mid + 0.995*ewm_slow_;
+        // Freeze classification decision (not data feed) while position is open.
+        if(has_open_pos) return current_;
         if(history_.size()<WINDOW) return current_;
         hi_=history_.max(); lo_=history_.min(); range_=hi_-lo_;
         // Directional drift: EWM spread > $8 signals sustained trend
