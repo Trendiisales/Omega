@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <mutex>          // RACE-FIX 2026-04-20
 #include "OmegaTradeLedger.hpp"
+#include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
 
 // -- Config -------------------------------------------------------------------
 
@@ -222,6 +223,20 @@ struct DomPersistEngine {
         }
 
         // Enter
+        // ?? Bracket-trend bias gate (Session 6 P1 engine 5/8: DomPersist) ??
+        // DomPersist is a trend-continuation engine -- L2 persistence detects
+        // one-sided order-flow pressure, which is continuation by definition.
+        // Block entries in the direction the bracket system has flagged rejected.
+        // bias=-1 ? LONG blocked; bias=+1 ? SHORT blocked; bias=0 ? no-op.
+        // Read-only, see BracketTrendState.hpp.
+        {
+            const int dpe_bt_bias = bracket_trend_bias("XAUUSD");
+            if ((is_long  && dpe_bt_bias == -1) ||
+                (!is_long && dpe_bt_bias ==  1)) {
+                phase = Phase::IDLE;
+                return;
+            }
+        }
         enter(is_long, bid, ask, spread, l2_live, now_ms, on_close);
     }
 

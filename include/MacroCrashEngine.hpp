@@ -1,6 +1,7 @@
 #pragma once
 #include <iomanip>
 #include <iostream>
+#include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
 // =============================================================================
 // MacroCrashEngine  v2.0  --  Hybrid Bracket Floor + Safe Cost-Covered Pyramid
 // =============================================================================
@@ -382,6 +383,27 @@ public:
 
         // Direction: ewm_drift direction
         const bool is_long = (ewm_drift > 0.0);
+
+        // ?? Bracket-trend bias gate (Session 6 P1 engine 8/8: MacroCrash) ??
+        // MacroCrash is a continuation engine -- fires in the drift direction
+        // during macro expansion. Block entries aligned with the direction the
+        // bracket system has flagged rejected. Read-only, see BracketTrendState.hpp.
+        {
+            const int mce_bt_bias = bracket_trend_bias("XAUUSD");
+            if ((is_long  && mce_bt_bias == -1) ||
+                (!is_long && mce_bt_bias ==  1)) {
+                static int64_t s_mce_bias_log = 0;
+                if (now_ms - s_mce_bias_log > 30000) {
+                    s_mce_bias_log = now_ms;
+                    char _buf[256];
+                    snprintf(_buf, sizeof(_buf),
+                             "[MCE-BRACKET-BIAS-BLOCK] %s blocked by bracket bias=%d\n",
+                             is_long ? "LONG" : "SHORT", mce_bt_bias);
+                    std::cout << _buf; std::cout.flush();
+                }
+                return;
+            }
+        }
 
         // -- Gate A: Dollar-stop direction block --------------------------
         // After a DOLLAR_STOP in a direction, block that direction for 4hrs.

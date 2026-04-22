@@ -406,7 +406,14 @@ public:
             return noSignal();
         }
         Signal sig; sig.entry=s.mid; sig.size=0.01;  // entry updated after direction known below
+        // ?? Bracket-trend bias gate (Session 6 P1 engine 3/8: CompressionBreakout) ??
+        // Same rule as other continuation engines: block entries in the direction
+        // the bracket system has flagged as rejected. Read-only, see
+        // BracketTrendState.hpp. bias=-1 blocks LONG; bias=+1 blocks SHORT.
+        const int cb_bt_bias = bracket_trend_bias("XAUUSD");
         if(s.mid>hi+eff_breakout_mult){
+            // Bias-block: LONG breakout on a session where LONGs have been getting rejected.
+            if(cb_bt_bias == -1) { history_.push_back(s.mid); return noSignal(); }
             // EWM drift check: don't go LONG when drift is strongly negative (momentum against)
             if(ewm_drift_ < -3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::LONG;
@@ -418,6 +425,8 @@ public:
             history_.clear(); last_signal_=now; signal_count_++; return sig;
         }
         if(s.mid<lo-eff_breakout_mult){
+            // Bias-block: SHORT breakout on a session where SHORTs have been getting rejected.
+            if(cb_bt_bias == 1) { history_.push_back(s.mid); return noSignal(); }
             // EWM drift check: don't go SHORT when drift is strongly positive (momentum against)
             if(ewm_drift_ > +3.0) { history_.push_back(s.mid); return noSignal(); }
             sig.valid=true; sig.side=TradeSide::SHORT;
@@ -664,13 +673,20 @@ public:
             recent_move = s.mid - history_[history_.size() - 5];
         }
         static constexpr double RECENT_MOVE_MIN = 0.30; // must still be moving $0.30 in signal direction
+        // ?? Bracket-trend bias gate (Session 6 P1 engine 4/8: SessionMomentum) ??
+        // Session-open momentum is a directional-continuation signal. Block entries
+        // in the direction the bracket system has flagged rejected for this symbol.
+        // Read-only, no state change. See BracketTrendState.hpp for semantics.
+        const int sm_bt_bias = bracket_trend_bias("XAUUSD");
         Signal sig; sig.size=0.01; sig.entry=s.mid; sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // entry fixed after side set
         if(dhi<dlo&&s.mid>s.vwap&&recent_move<-RECENT_MOVE_MIN){
+            if(sm_bt_bias == -1) return noSignal();  // LONG momentum blocked by short-bias rejection
             sig.valid=true; sig.side=TradeSide::LONG; sig.confidence=conf;
             strncpy(sig.reason,"SESSION_MOM_LONG",31); strncpy(sig.engine,"SessionMomentum",31);
             last_signal_=now; signal_count_++; history_.clear(); return sig;
         }
         if(dlo<dhi&&s.mid<s.vwap&&recent_move>RECENT_MOVE_MIN){
+            if(sm_bt_bias == 1) return noSignal();   // SHORT momentum blocked by long-bias rejection
             sig.valid=true; sig.side=TradeSide::SHORT; sig.confidence=conf;
             strncpy(sig.reason,"SESSION_MOM_SHORT",31); strncpy(sig.engine,"SessionMomentum",31);
             last_signal_=now; signal_count_++; history_.clear(); return sig;
@@ -2115,14 +2131,23 @@ public:
         const double dhi=tb_.roll_high(TURTLE_N);
         const double dlo=tb_.roll_low(TURTLE_N);
         if(dhi<=0||dlo>=1e8) return noSignal();
+        // ?? Bracket-trend bias gate (Session 6 P1 engine 2/8: TurtleTick) ??
+        // TurtleTick is a breakout-continuation engine. Firing a LONG when the
+        // bracket system has recorded a rejection-bias against LONGs compounds
+        // the rejection. Block entries aligned with the rejected direction.
+        // bias=-1 ? LONG blocked; bias=+1 ? SHORT blocked; bias=0 ? no-op.
+        // Read-only, no state change. See BracketTrendState.hpp for semantics.
+        const int bt_bias = bracket_trend_bias("XAUUSD");
         Signal sig;
         sig.size=0.01;sig.sl=SL_TICKS;sig.tp=TP_TICKS;
         if(s.mid>dhi&&htf_dir==1){
+            if(bt_bias == -1) return noSignal();  // LONG breakout blocked by short-bias rejection
             sig.valid=true;sig.side=TradeSide::LONG;sig.entry=s.ask;
             sig.confidence=std::min(1.5,(s.mid-dhi)/2.0+0.9);
             strncpy(sig.reason,"TURTLE_TICK_LONG", 31);
             strncpy(sig.engine,"TurtleTick",31);
         } else if(s.mid<dlo&&htf_dir==-1){
+            if(bt_bias == 1) return noSignal();   // SHORT breakout blocked by long-bias rejection
             sig.valid=true;sig.side=TradeSide::SHORT;sig.entry=s.bid;
             sig.confidence=std::min(1.5,(dlo-s.mid)/2.0+0.9);
             strncpy(sig.reason,"TURTLE_TICK_SHORT",31);

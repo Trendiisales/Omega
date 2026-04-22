@@ -72,6 +72,7 @@
 #include <iomanip>
 #include <mutex>      // FIX ECE-MUTEX 2026-04-21: serialize close paths (force_close vs on_tick SL/TP/TIMEOUT)
 #include "OmegaTradeLedger.hpp"
+#include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
 
 namespace omega {
 
@@ -314,6 +315,20 @@ struct EMACrossEngine {
         double tp_dist = sl_dist * ECE_TP_RR;
         double cost    = spread + 0.20;
         if (tp_dist <= cost) return;
+
+        // ?? Bracket-trend bias gate (Session 6 P1 engine 6/8: EMACross) ??
+        // EMACross is a trend-follow scalper -- enters in the direction of the
+        // EMA9/EMA15 crossover. Block entries aligned with the direction the
+        // bracket system has flagged as rejected.
+        // bias=-1 ? LONG blocked; bias=+1 ? SHORT blocked; bias=0 ? no-op.
+        // Read-only, see BracketTrendState.hpp.
+        {
+            const int ece_bt_bias = bracket_trend_bias("XAUUSD");
+            if ((isl  && ece_bt_bias == -1) ||
+                (!isl && ece_bt_bias ==  1)) {
+                return;
+            }
+        }
 
         _enter(isl, bid, ask, spread, sl_dist, tp_dist, now_ms, on_close);
     }
