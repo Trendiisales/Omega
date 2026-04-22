@@ -506,39 +506,91 @@ if ($l2StatusLine -and $l2StatusLine -match "ctrader_live=1") {
     Add-Result "L2 / cTrader Feed" "INFO" "No cTrader depth events in first ${WaitSec}s" "cTrader connecting -- check log for CTRADER-EVTS within 60s. If still missing after 2min, check ctid=43014358."
 }
 
-# --- CHECK 8b: L2 tick CSV and imbalance_level verification ------------------
-# CRITICAL: Verify l2_ticks CSV is fresh, has rows, and imbalance is not stuck.
-# Also check [CTRADER-L2-CHECK] in log which logs bid_lvls/ask_lvls/imb_level
-# on first 20 depth events -- proves the level-count calculation is running.
-$l2CsvFile = "C:\Omega\logs\l2_ticks_$((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')).csv"  # UTC
-if (-not (Test-Path $l2CsvFile)) {
-    Add-Result "L2 Tick CSV" "INFO" "File not yet created" "Logger creates file on first tick -- check again in 60s."
+# --- CHECK 8b: L2 tick CSV freshness + imbalance verification ----------------
+# CRITICAL: Verify l2_ticks CSVs are fresh (<=120s) and have real rows.
+# Three files now exist per UTC day:
+#     l2_ticks_XAUUSD_YYYY-MM-DD.csv   (full schema incl. l2_imb)
+#     l2_ticks_US500_YYYY-MM-DD.csv    (ts/mid/bid/ask/has_pos populated; imb/vol/depth zeroed)
+#     l2_ticks_USTEC_YYYY-MM-DD.csv    (same as US500)
+#
+# CSV columns (17, 0-indexed):
+#   0=ts_ms 1=mid 2=bid 3=ask 4=l2_imb 5=l2_bid_vol 6=l2_ask_vol
+#   7=depth_bid_levels 8=depth_ask_levels 9=depth_events_total
+#   10=watchdog_dead 11=vol_ratio 12=regime 13=vpin 14=has_pos 15=micro_edge 16=ewm_drift
+#
+# Imbalance check runs for XAUUSD only -- indices loggers zero l2_imb by design.
+$l2UtcDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+
+# -- XAUUSD (primary -- full check including l2_imb neutrality) --------------
+$l2CsvFile_XAU = "C:\Omega\logs\l2_ticks_XAUUSD_$l2UtcDate.csv"
+if (-not (Test-Path $l2CsvFile_XAU)) {
+    Add-Result "L2 Tick CSV XAUUSD" "INFO" "File not yet created" "Logger creates file on first XAUUSD tick -- check again in 60s."
 } else {
-    $l2Age = [int]((Get-Date) - (Get-Item $l2CsvFile).LastWriteTime).TotalSeconds
-    if ($l2Age -gt 120) {
-        Add-Result "L2 Tick CSV" "FAIL" "STALE ${l2Age}s" "l2_ticks not updated in ${l2Age}s -- logger stopped or Omega crashed."
+    $l2Age_XAU = [int]((Get-Date) - (Get-Item $l2CsvFile_XAU).LastWriteTime).TotalSeconds
+    if ($l2Age_XAU -gt 120) {
+        Add-Result "L2 Tick CSV XAUUSD" "FAIL" "STALE ${l2Age_XAU}s" "l2_ticks_XAUUSD not updated in ${l2Age_XAU}s -- logger stopped or Omega crashed."
     } else {
-        $l2Sample = Get-Content $l2CsvFile | Where-Object { $_ -match '^[0-9]' } | Select-Object -Last 20
-        $l2NeutralCount = 0; $l2TotalCount = 0; $l2LastImb = 0.5
-        foreach ($l2Row in $l2Sample) {
+        $l2Sample_XAU       = Get-Content $l2CsvFile_XAU | Where-Object { $_ -match '^[0-9]' } | Select-Object -Last 20
+        $l2NeutralCount_XAU = 0
+        $l2TotalCount_XAU   = 0
+        $l2LastImb_XAU      = 0.5
+        foreach ($l2Row in $l2Sample_XAU) {
             $l2Cols = $l2Row -split ','
-            if ($l2Cols.Count -ge 4) {
-                $l2TotalCount++
-                try { $l2LastImb = [double]$l2Cols[3] } catch { $l2LastImb = 0.5 }
-                if ([Math]::Abs($l2LastImb - 0.5) -lt 0.001) { $l2NeutralCount++ }
+            if ($l2Cols.Count -ge 5) {
+                $l2TotalCount_XAU++
+                try { $l2LastImb_XAU = [double]$l2Cols[4] } catch { $l2LastImb_XAU = 0.5 }
+                if ([Math]::Abs($l2LastImb_XAU - 0.5) -lt 0.001) { $l2NeutralCount_XAU++ }
             }
         }
-        if ($l2TotalCount -eq 0) {
-            Add-Result "L2 Tick CSV" "INFO" "age=${l2Age}s writing" "CSV writing -- no rows yet. Check again in 30s."
-        } elseif ($l2NeutralCount -eq $l2TotalCount) {
-            # All neutral -- could be genuinely flat DOM or broken imbalance_level().
-            # Check [CTRADER-L2-CHECK] log lines for bid_lvls vs ask_lvls to distinguish.
-            Add-Result "L2 Tick CSV" "WARN" "ALL NEUTRAL last $l2TotalCount rows imb=$([math]::Round($l2LastImb,3))" `
+        if ($l2TotalCount_XAU -eq 0) {
+            Add-Result "L2 Tick CSV XAUUSD" "INFO" "age=${l2Age_XAU}s writing" "CSV writing -- no rows yet. Check again in 30s."
+        } elseif ($l2NeutralCount_XAU -eq $l2TotalCount_XAU) {
+            Add-Result "L2 Tick CSV XAUUSD" "WARN" "ALL NEUTRAL last $l2TotalCount_XAU rows imb=$([math]::Round($l2LastImb_XAU,3))" `
                 "imbalance=0.500 all rows. Check [CTRADER-L2-CHECK] lines in log for bid_lvls/ask_lvls. If bid_lvls==ask_lvls all day, DOM is genuinely flat. If bid_lvls+ask_lvls=0, cTrader not delivering quotes."
         } else {
-            $l2NonNeutral = $l2TotalCount - $l2NeutralCount
-            Add-Result "L2 Tick CSV" "PASS" "age=${l2Age}s imb=$([math]::Round($l2LastImb,3)) real=$l2NonNeutral/$l2TotalCount" `
+            $l2NonNeutral_XAU = $l2TotalCount_XAU - $l2NeutralCount_XAU
+            Add-Result "L2 Tick CSV XAUUSD" "PASS" "age=${l2Age_XAU}s imb=$([math]::Round($l2LastImb_XAU,3)) real=$l2NonNeutral_XAU/$l2TotalCount_XAU" `
                 "L2 imbalance_level() producing directional values from cTrader DOM."
+        }
+    }
+}
+
+# -- US500 (freshness + rows only; imb/vol/depth are zeroed by logger) -------
+$l2CsvFile_SP = "C:\Omega\logs\l2_ticks_US500_$l2UtcDate.csv"
+if (-not (Test-Path $l2CsvFile_SP)) {
+    Add-Result "L2 Tick CSV US500" "INFO" "File not yet created" "Logger creates file on first US500 tick -- check again in 60s."
+} else {
+    $l2Age_SP = [int]((Get-Date) - (Get-Item $l2CsvFile_SP).LastWriteTime).TotalSeconds
+    if ($l2Age_SP -gt 120) {
+        Add-Result "L2 Tick CSV US500" "FAIL" "STALE ${l2Age_SP}s" "l2_ticks_US500 not updated in ${l2Age_SP}s -- SP logger stopped or US500 tick stream dead."
+    } else {
+        $l2RowCount_SP = (Get-Content $l2CsvFile_SP | Where-Object { $_ -match '^[0-9]' } | Measure-Object).Count
+        if ($l2RowCount_SP -eq 0) {
+            Add-Result "L2 Tick CSV US500" "INFO" "age=${l2Age_SP}s writing" "CSV writing -- no rows yet. Check again in 30s."
+        } else {
+            $l2FileSize_SP = (Get-Item $l2CsvFile_SP).Length
+            Add-Result "L2 Tick CSV US500" "PASS" "age=${l2Age_SP}s rows=$l2RowCount_SP size=${l2FileSize_SP}b" `
+                "US500 tick logger writing to disk. l2_imb is zeroed by design (no cTrader DOM for indices)."
+        }
+    }
+}
+
+# -- USTEC (freshness + rows only; imb/vol/depth are zeroed by logger) -------
+$l2CsvFile_NQ = "C:\Omega\logs\l2_ticks_USTEC_$l2UtcDate.csv"
+if (-not (Test-Path $l2CsvFile_NQ)) {
+    Add-Result "L2 Tick CSV USTEC" "INFO" "File not yet created" "Logger creates file on first USTEC tick -- check again in 60s."
+} else {
+    $l2Age_NQ = [int]((Get-Date) - (Get-Item $l2CsvFile_NQ).LastWriteTime).TotalSeconds
+    if ($l2Age_NQ -gt 120) {
+        Add-Result "L2 Tick CSV USTEC" "FAIL" "STALE ${l2Age_NQ}s" "l2_ticks_USTEC not updated in ${l2Age_NQ}s -- NQ logger stopped or USTEC tick stream dead."
+    } else {
+        $l2RowCount_NQ = (Get-Content $l2CsvFile_NQ | Where-Object { $_ -match '^[0-9]' } | Measure-Object).Count
+        if ($l2RowCount_NQ -eq 0) {
+            Add-Result "L2 Tick CSV USTEC" "INFO" "age=${l2Age_NQ}s writing" "CSV writing -- no rows yet. Check again in 30s."
+        } else {
+            $l2FileSize_NQ = (Get-Item $l2CsvFile_NQ).Length
+            Add-Result "L2 Tick CSV USTEC" "PASS" "age=${l2Age_NQ}s rows=$l2RowCount_NQ size=${l2FileSize_NQ}b" `
+                "USTEC tick logger writing to disk. l2_imb is zeroed by design (no cTrader DOM for indices)."
         }
     }
 }
