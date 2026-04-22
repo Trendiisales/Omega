@@ -55,6 +55,69 @@ static void on_tick_us500(
         if (s_sph1_start == 0) { s_sph1 = {bh1_s/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sph1_start = bh1_s; }
         else if (bh1_s != s_sph1_start) { g_bars_sp.h1.add_bar(s_sph1); s_sph1 = {bh1_s/60000LL,sp_mid,sp_mid,sp_mid,sp_mid}; s_sph1_start = bh1_s; }
         else { if(sp_mid>s_sph1.high)s_sph1.high=sp_mid; if(sp_mid<s_sph1.low)s_sph1.low=sp_mid; s_sph1.close=sp_mid; }
+
+        // ── L2 tick logger -- UNCONDITIONAL, every US500 tick (2026-04-22) ──
+        // Persists per-tick bid/ask/mid to daily CSV so hydrate_from_csv() can
+        // rebuild M1/M5/H1 bars instantly on restart instead of waiting 14h+ for
+        // cold M1 indicator warmup and forever for H1 context.
+        // Schema matches XAUUSD CSV (uniform parser); L2-specific fields are 0
+        // because indices have no DOM data through FIX -- only bid/ask quotes.
+        // File: C:\Omega\logs\l2_ticks_US500_YYYY-MM-DD.csv
+        {
+            static FILE* s_sp_f = nullptr;
+            static int   s_sp_day = -1;
+            const time_t t_sp  = (time_t)(now_ms_s / 1000);
+            struct tm    tm_sp{};
+            gmtime_s(&tm_sp, &t_sp);
+            if (tm_sp.tm_yday != s_sp_day) {
+                if (s_sp_f) { fclose(s_sp_f); s_sp_f = nullptr; }
+                char sp_path[256];
+                snprintf(sp_path, sizeof(sp_path),
+                    "C:\\Omega\\logs\\l2_ticks_US500_%04d-%02d-%02d.csv",
+                    tm_sp.tm_year+1900, tm_sp.tm_mon+1, tm_sp.tm_mday);
+                const bool is_new_sp = (GetFileAttributesA(sp_path) == INVALID_FILE_ATTRIBUTES);
+                s_sp_f = fopen(sp_path, "a");
+                if (s_sp_f) {
+                    if (is_new_sp)
+                        fprintf(s_sp_f,
+                            "ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                            "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                            "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+                    std::cout << "[L2-CSV-OPEN] " << sp_path
+                              << (is_new_sp ? " (new file, header written)" : " (appending)") << "\n";
+                    std::cout.flush();
+                } else {
+                    std::cout << "[L2-CSV-OPEN-FAIL] Cannot open " << sp_path
+                              << " -- US500 tick data will NOT be saved this session!\n";
+                    std::cout.flush();
+                }
+                s_sp_day = tm_sp.tm_yday;
+            }
+            if (s_sp_f) {
+                const int has_pos_sp =
+                    (g_eng_sp.pos.active          ||
+                     g_bracket_sp.pos.active      ||
+                     g_orb_us.has_open_position() ||
+                     g_vwap_rev_sp.has_open_position() ||
+                     g_trend_pb_sp.has_open_position() ||
+                     g_nbm_sp.has_open_position()) ? 1 : 0;
+                fprintf(s_sp_f,
+                    "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                    "%d,%d,%llu,"
+                    "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
+                    (long long)now_ms_s, sp_mid, bid, ask,
+                    0.0, 0.0, 0.0,             // l2_imb, l2_bid_vol, l2_ask_vol: N/A on indices
+                    0, 0, (unsigned long long)0, // depth_*, depth_events_total: N/A
+                    0,                         // watchdog_dead: N/A
+                    0.0,                       // vol_ratio: N/A (gold-specific)
+                    0,                         // regime: global regime not readily available here
+                    0.0,                       // vpin: N/A
+                    has_pos_sp,
+                    0.0,                       // micro_edge: N/A
+                    0.0);                      // ewm_drift: N/A
+                fflush(s_sp_f);
+            }
+        }
     }
     const bool base_can_sp = symbol_gate("US500.F",
         g_eng_sp.pos.active          ||
@@ -371,6 +434,65 @@ static void on_tick_ustec(
         if (s_nqh1_start == 0) { s_nqh1 = {bh1_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nqh1_start = bh1_n; }
         else if (bh1_n != s_nqh1_start) { g_bars_nq.h1.add_bar(s_nqh1); s_nqh1 = {bh1_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nqh1_start = bh1_n; }
         else { if(nq_mid>s_nqh1.high)s_nqh1.high=nq_mid; if(nq_mid<s_nqh1.low)s_nqh1.low=nq_mid; s_nqh1.close=nq_mid; }
+
+        // ── L2 tick logger -- UNCONDITIONAL, every USTEC tick (2026-04-22) ──
+        // See US500 logger above for rationale. Separate file per symbol so that
+        // hydrate_from_csv() on restart reads the right source per SymBarState.
+        // File: C:\Omega\logs\l2_ticks_USTEC_YYYY-MM-DD.csv
+        {
+            static FILE* s_nq_f = nullptr;
+            static int   s_nq_day = -1;
+            const time_t t_nq  = (time_t)(now_ms_n / 1000);
+            struct tm    tm_nq{};
+            gmtime_s(&tm_nq, &t_nq);
+            if (tm_nq.tm_yday != s_nq_day) {
+                if (s_nq_f) { fclose(s_nq_f); s_nq_f = nullptr; }
+                char nq_path[256];
+                snprintf(nq_path, sizeof(nq_path),
+                    "C:\\Omega\\logs\\l2_ticks_USTEC_%04d-%02d-%02d.csv",
+                    tm_nq.tm_year+1900, tm_nq.tm_mon+1, tm_nq.tm_mday);
+                const bool is_new_nq = (GetFileAttributesA(nq_path) == INVALID_FILE_ATTRIBUTES);
+                s_nq_f = fopen(nq_path, "a");
+                if (s_nq_f) {
+                    if (is_new_nq)
+                        fprintf(s_nq_f,
+                            "ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                            "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                            "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+                    std::cout << "[L2-CSV-OPEN] " << nq_path
+                              << (is_new_nq ? " (new file, header written)" : " (appending)") << "\n";
+                    std::cout.flush();
+                } else {
+                    std::cout << "[L2-CSV-OPEN-FAIL] Cannot open " << nq_path
+                              << " -- USTEC tick data will NOT be saved this session!\n";
+                    std::cout.flush();
+                }
+                s_nq_day = tm_nq.tm_yday;
+            }
+            if (s_nq_f) {
+                const int has_pos_nq =
+                    (g_eng_nq.pos.active               ||
+                     g_bracket_nq.pos.active           ||
+                     g_vwap_rev_nq.has_open_position() ||
+                     g_trend_pb_nq.has_open_position() ||
+                     g_nbm_nq.has_open_position()) ? 1 : 0;
+                fprintf(s_nq_f,
+                    "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                    "%d,%d,%llu,"
+                    "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
+                    (long long)now_ms_n, nq_mid, bid, ask,
+                    0.0, 0.0, 0.0,             // l2_imb, l2_bid_vol, l2_ask_vol: N/A on indices
+                    0, 0, (unsigned long long)0, // depth_*, depth_events_total: N/A
+                    0,                         // watchdog_dead: N/A
+                    0.0,                       // vol_ratio: N/A (gold-specific)
+                    0,                         // regime: global regime not readily available here
+                    0.0,                       // vpin: N/A
+                    has_pos_nq,
+                    0.0,                       // micro_edge: N/A
+                    0.0);                      // ewm_drift: N/A
+                fflush(s_nq_f);
+            }
+        }
     }
     const bool base_can_nq = symbol_gate("USTEC.F",
         g_eng_nq.pos.active                  ||
