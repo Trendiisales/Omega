@@ -590,14 +590,37 @@ struct GoldFlowEngine {
                 if (v > drift_max) drift_max = v;
             }
             const double drift_range   = drift_max - drift_min;
-            const bool   drift_mixed   = (drift_min < 0.0) && (drift_max > 0.0); // window has both signs
-            const bool   drift_choppy  = (drift_range > 4.0) && drift_mixed;     // chop = wide AND mixed
 
+            // Compute directional counts FIRST (previously below) -- needed for
+            // sign-significance gate on drift_mixed below.
             int drift_long_count = 0, drift_short_count = 0;
             for (int d : m_drift_persist_window) {
                 if (d ==  1) ++drift_long_count;
                 if (d == -1) ++drift_short_count;
             }
+
+            // FIX 2026-04-22 (Bug 4A): Sign-significance gate on chop detection.
+            // OLD: drift_mixed = (drift_min < 0.0) && (drift_max > 0.0).
+            //      Any single noise tick on the opposite sign triggered chop, blocking
+            //      entries during clearly-trending moves with small bounces.
+            // Evidence: 2026-04-21 15:00:07 [GFE-CHOP] range=5.41 min=-3.05 max=+2.36 mixed=1
+            //           fired during a -124pt bearish trend because the 12-tick window
+            //           briefly touched +2.36 before dropping. Net result: 4000+ SHORT-
+            //           direction blocks across 13:47-19:44 UTC while price dropped 124
+            //           points unchallenged.
+            // NEW: require BOTH sides have >= 25% of window as directional ticks for
+            //      "mixed". Noise spikes on the opposite direction won't trigger chop;
+            //      real oscillation where each side holds ~3+ of 12 ticks still will.
+            // Preserves the 2026-04-02 fix (directional grinds w/ single sign still allowed)
+            // because the DIRECTIONAL GRIND branch below only requires drift_range > 4.0
+            // AND !drift_mixed -- unchanged semantics there.
+            static constexpr int GFE_CHOP_MIN_SIG_TICKS = GFE_DRIFT_PERSIST_TICKS / 4;   // 25% -> 3 of 12
+            const bool   drift_both_signs = (drift_min < 0.0) && (drift_max > 0.0);
+            const bool   drift_mixed      = drift_both_signs
+                                          && (drift_long_count  >= GFE_CHOP_MIN_SIG_TICKS)
+                                          && (drift_short_count >= GFE_CHOP_MIN_SIG_TICKS);
+            const bool   drift_choppy     = (drift_range > 4.0) && drift_mixed;
+
             // Require 70% of drift ticks directional (stricter than L2 path's 75% of 30)
             const int drift_thresh = (GFE_DRIFT_PERSIST_TICKS * 7) / 10;
             fast_long  = !drift_choppy && (drift_long_count  >= drift_thresh);
