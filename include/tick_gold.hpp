@@ -946,7 +946,11 @@ static void on_tick_gold(
     //
     // Logs ALL L2 data regardless of engine state: depth levels, bid/ask vol,
     // event count from CTraderDepthClient, and watchdog dead flag.
-    // Daily rotating CSV: C:\Omega\logs\l2_ticks_YYYY-MM-DD.csv
+    // Daily rotating CSV: C:\Omega\logs\l2_ticks_XAUUSD_YYYY-MM-DD.csv
+    // 2026-04-22: renamed from l2_ticks_YYYY-MM-DD.csv (no symbol) to match
+    // the new SP/NQ logger naming. Also added 'mid' as the 2nd column so
+    // hydrate_from_csv() doesn't have to re-compute (bid+ask)/2 on every row
+    // during CSV replay at startup.
     {
         static FILE*   s_l2f_unc = nullptr;
         static int     s_l2_day_unc = -1;
@@ -957,14 +961,14 @@ static void on_tick_gold(
             if (s_l2f_unc) { fclose(s_l2f_unc); s_l2f_unc = nullptr; }
             char l2path_unc[256];
             snprintf(l2path_unc, sizeof(l2path_unc),
-                "C:\\Omega\\logs\\l2_ticks_%04d-%02d-%02d.csv",
+                "C:\\Omega\\logs\\l2_ticks_XAUUSD_%04d-%02d-%02d.csv",
                 tm_l2_unc.tm_year+1900, tm_l2_unc.tm_mon+1, tm_l2_unc.tm_mday);
             bool is_new_unc = (GetFileAttributesA(l2path_unc) == INVALID_FILE_ATTRIBUTES);
             s_l2f_unc = fopen(l2path_unc, "a");
             if (s_l2f_unc) {
                 if (is_new_unc)
                     fprintf(s_l2f_unc,
-                        "ts_ms,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                        "ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
                         "depth_bid_levels,depth_ask_levels,depth_events_total,"
                         "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
                 // Confirm file opened successfully in latest.log
@@ -994,10 +998,10 @@ static void on_tick_gold(
             const double vol_ratio_log = (g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
             fprintf(s_l2f_unc,
-                "%lld,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
                 "%d,%d,%llu,"
                 "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
-                (long long)now_ms_g, bid, ask,
+                (long long)now_ms_g, xau_mid, bid, ask,
                 g_macro_ctx.gold_l2_imbalance,
                 l2_bvol_unc, l2_avol_unc,
                 l2_bid_lvls, l2_ask_lvls,
