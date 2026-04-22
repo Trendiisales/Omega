@@ -542,6 +542,44 @@ struct BracketTrendState {
 
 static std::unordered_map<std::string, BracketTrendState> g_bracket_trend;
 
+// ?? Read-only bias accessor for non-bracket entry engines ????????????????????
+// Returns the currently-active bracket-trend bias for `sym`:
+//   +1  long_bias active (market rejecting SHORT entries)  ? engines should block SHORT
+//   -1  short_bias active (market rejecting LONG entries)  ? engines should block LONG
+//    0  no active bias (no symbol, or block_until_ms elapsed)
+//
+// Non-mutating: does NOT call update_l2(), does NOT alter state. Exclusively
+// readable state is bias + block_until_ms, already set by the bracket exit path
+// in trade_lifecycle.hpp via BracketTrendState::on_exit().
+//
+// Why a free accessor (not direct map access): g_bracket_trend is map-indexed
+// by std::string and BracketTrendState is defined in globals.hpp (single-TU
+// include from main.cpp). Engine headers compiled earlier in the TU cannot see
+// BracketTrendState. This accessor is forward-declared in engine headers that
+// need bias gating (see GoldEngineStack.hpp) and defined here, which is legal
+// because the inline body is only instantiated during main.cpp's single TU
+// compile -- by that point globals.hpp has been included and all types exist.
+//
+// Consumers (per Session 5 handoff NEXT SESSION priority):
+//   VWAPStretchReversion -- mean-reversion: block LONG on bias=-1, SHORT on bias=+1
+//   TurtleTick           -- breakout-cont : block LONG on bias=-1, SHORT on bias=+1
+//   DomPersist           -- trend-cont    : block LONG on bias=-1, SHORT on bias=+1
+//   EMACross             -- trend-follow  : block LONG on bias=-1, SHORT on bias=+1
+//   GoldFlow             -- trend-cont    : block LONG on bias=-1, SHORT on bias=+1
+//   SessionMomentum / MacroCrash / CompBreakout: TBD (read source first)
+//
+// All consumers use the SAME rule: block entries IN the rejected direction.
+// Mean-reversion engines naturally fade INTO the rejected direction, so they
+// require identical gating. Different semantic framing, same gate.
+inline int bracket_trend_bias(const char* sym) noexcept {
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    auto it = g_bracket_trend.find(sym);
+    if (it == g_bracket_trend.end()) return 0;
+    if (now_ms >= it->second.block_until_ms) return 0;  // stale/expired
+    return it->second.bias;
+}
+
 // Tracks which symbols currently have an active pyramid (add-on) bracket arm.
 // Set when a pyramid bracket fires; cleared on any close for that symbol.
 // On SL_HIT while symbol is in this set ? records last_pyramid_sl_ms.

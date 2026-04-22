@@ -52,6 +52,19 @@
 #include <iostream>
 #include "OmegaTradeLedger.hpp"
 
+// ?? Forward declaration -- defined in globals.hpp ????????????????????????????
+// Read-only access to the active bracket-trend bias for a symbol. Returns +1
+// (long bias / block SHORT), -1 (short bias / block LONG), or 0 (no active
+// bias). Used by non-bracket entry engines (VWAPStretchReversion, TurtleTick,
+// DomPersist, EMACross, GoldFlow) to block entries aligned with the rejected
+// direction. Body lives in globals.hpp because it reads g_bracket_trend (a
+// std::unordered_map<std::string,BracketTrendState>) which is not visible to
+// engine headers at this point in the single-TU compile chain. This forward
+// declaration is sufficient for the inline process() bodies below to parse;
+// the function body becomes visible later in the same TU when main.cpp
+// includes globals.hpp.
+int bracket_trend_bias(const char* sym) noexcept;
+
 namespace omega {
 namespace gold {
 
@@ -3018,6 +3031,31 @@ public:
         const auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::seconds>(
                 now - last_signal_).count() < COOLDOWN_SEC) return noSignal();
+
+        // ?? Bracket-trend bias gate (Session 5 handoff: Priority 1, engine 1/8) ??
+        // Read-only consumption of the per-symbol bias set by BracketTrendState::on_exit
+        // in trade_lifecycle.hpp. Semantics:
+        //   bias = -1  market rejected recent LONG bracket entries   ? block LONG fade
+        //   bias = +1  market rejected recent SHORT bracket entries  ? block SHORT fade
+        //   bias =  0  no active bias                                ? no-op
+        //
+        // VWAPStretch is a mean-reversion fade engine. Fading INTO the direction the
+        // market is actively rejecting compounds the rejection -- this is the exact
+        // pattern that produced -$22.52 / 3 trades on 2026-04-22 (see Session 5
+        // handoff: VWAPStretch damage, one trade -$15.84). The z-score / deceleration
+        // / EMA-trend / EWM-drift gates are uncorrelated with the bracket-rejection
+        // signal, so they cannot substitute for this check.
+        //
+        // This gate does NOT replace the existing EMA trend filter at line 2993 --
+        // that filter blocks fades in clear M1 trend. The bias gate blocks fades in
+        // the direction the bracket engine empirically just got rejected, which may
+        // exist even in M1 chop.
+        //
+        // No state mutation here. The entry-path buffers (recent_ / price_buf_) were
+        // already updated above so sigma stays calibrated across blocked ticks.
+        const int bt_bias = bracket_trend_bias("XAUUSD");
+        if (z >  SIGMA_ENTRY && bt_bias == 1)  return noSignal();  // SHORT fade blocked by long-bias
+        if (z < -SIGMA_ENTRY && bt_bias == -1) return noSignal();  // LONG fade blocked by short-bias
 
         Signal sig;
         sig.size = 0.01; sig.sl = SL_TICKS; sig.tp = TP_TICKS;
