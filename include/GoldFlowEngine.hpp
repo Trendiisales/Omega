@@ -151,6 +151,17 @@ static constexpr double GFE_MAX_LOT           = 0.01;  // FIX 2026-04-22 uniform
 static constexpr int    GFE_MOMENTUM_TICKS    = 12;    // ticks back for momentum check (int -- used as array index)
                                                         // 12 ticks = ~120-240ms at London, ~2-4s at Asia -- real directional move.
 static constexpr int    GFE_MOMENTUM_BUF_SIZE = 64;    // independent momentum history buffer (separate from ATR buffer)
+// GFE_MOMENTUM_TOLERANCE (2026-04-22): how much counter-direction micro-momentum
+// is tolerated before the signal is blocked. Momentum is mid_now - mid_12_ticks_ago
+// which at London tick rates is ~120-240ms of price change. At that timescale,
+// micro-bounces easily produce momentary sign flips against an established drift.
+// Previously momentum_floor=0.0 blocked entries whenever momentum briefly crossed
+// zero against direction. Setting floor = -GFE_MOMENTUM_TOLERANCE allows small
+// counter-micro-momentum when drift/persistence ALREADY confirm direction.
+// Evidence Apr 21 14:23:41: drift=-2.01 fast_s=1 slow_s=1 momentum=+0.19 -> blocked
+// by strict momentum<0 test. With tolerance=0.5 the entry would have been allowed
+// (all other guards: chop, persistence, block_short, EMA counter-trend remain).
+static constexpr double GFE_MOMENTUM_TOLERANCE = 0.5;  // pts of counter-micro-momentum allowed (non-Asia only)
 
 // Asia/dead-zone session hardening -- prevents entries on choppy mean-reverting tape
 // Asia gold (22:00-07:00 UTC) has: thin liquidity, micro-oscillations that fake
@@ -712,9 +723,14 @@ struct GoldFlowEngine {
             }
         }
 
-        // Momentum floor: Asia requires $0.30+ price movement (vs any non-zero normally).
-        // Prevents entries on sub-$0.10 momentum ticks that dominate choppy overnight tape.
-        const double momentum_floor = is_low_quality_session ? GFE_ASIA_MOMENTUM_MIN : 0.0;
+        // Momentum floor: Asia requires $0.30+ price movement (vs tolerance normally).
+        // 2026-04-22: non-Asia floor changed from 0.0 to -GFE_MOMENTUM_TOLERANCE (=-0.5).
+        // The existing checks `momentum > momentum_floor` (LONG) and
+        // `momentum < -momentum_floor` (SHORT) now accept up to 0.5pt of
+        // counter-micro-momentum, preventing 200ms noise bounces from blocking
+        // signals when drift/persistence already confirm direction. Asia path
+        // (GFE_ASIA_MOMENTUM_MIN) is unchanged -- Asia stays stricter.
+        const double momentum_floor = is_low_quality_session ? GFE_ASIA_MOMENTUM_MIN : -GFE_MOMENTUM_TOLERANCE;
 
         // ?? Chop filter: require price to be actually moving, not oscillating ??
         // Even with clean tick direction, if price range < 0.8x ATR it's noise.
@@ -793,10 +809,22 @@ struct GoldFlowEngine {
         }
 
         // Combined block: any guard is sufficient
-        // block_long:  A1(price below VWAP) OR A2(overextended above VWAP) OR B(lower-high)
-        //              OR C(expansion crash -- ewm_drift strongly negative = gold crashing)
-        // block_short: A1(price above VWAP) OR A2(overextended below VWAP) OR B(higher-low)
-        //              OR C(expansion surge -- ewm_drift strongly positive = gold surging)
+        // block_long:  A1(price 3pt below VWAP)  OR B(lower-high structure) OR C(expansion crash)
+        // block_short: A1(price 3pt above VWAP)  OR B(higher-low structure) OR C(expansion surge)
+        //
+        // 2026-04-22 REMOVAL: vwap_overext_up / vwap_overext_dn (price >7pt past VWAP)
+        // were previously in the AND-chain as "block if already overextended." That
+        // is a mean-reversion assumption: "price has moved too far, expect reversion."
+        // On a real trend, overextension from VWAP is the CONTINUATION signal, not
+        // the reason to skip. Apr 21 evidence: 14:34:14 a confirmed 124pt crash had
+        // vwap_pts=-14.28 (overext_dn=1, all other short-blockers=0); drift=-6.17
+        // and momentum=-8.5 both screamed SHORT; the engine blocked the entry
+        // because "price is already overextended below VWAP." Mean-reversion and
+        // trend-continuation cannot share a gate. Range-regime filtering remains
+        // handled by chop_guard (drift range > 4.0 AND mixed signs) and the
+        // drift-persistence 70% directional requirement. The overext flags are
+        // still computed above and still printed in the TREND-BLOCK log line below
+        // for forensics and possible future re-use under different semantics.
         //
         // Guard C -- EXPANSION DIRECTION LOCK:
         //   When expansion_mode is active AND ewm_drift confirms a directional crash/surge,
@@ -824,9 +852,11 @@ struct GoldFlowEngine {
             }
         }
 
-        const bool block_long  = vwap_trend_down || vwap_overext_up || struct_lower_high
+        // 2026-04-22: vwap_overext_up removed from block_long, vwap_overext_dn removed from block_short.
+        // See explanatory block above for rationale and evidence.
+        const bool block_long  = vwap_trend_down || struct_lower_high
                                  || expansion_crash_block_long;
-        const bool block_short = vwap_trend_up   || vwap_overext_dn || struct_higher_low
+        const bool block_short = vwap_trend_up   || struct_higher_low
                                  || expansion_surge_block_short;
 
         if (block_long || block_short) {
