@@ -95,10 +95,13 @@ struct H1Params {
     int    cooldown_h1_bars     = 2;
     double crash_atr_threshold  = 60.0;   // H4 ATR > this = crash day, halve risk
                                            // gold: 60pt, NAS100: 800pt, US500: 80pt
-    // Session slots allowed for entry (1-5 = London+NY, exclude 0=dead, 6=Asia)
-    // Gold: 1-5. US indices: 3-5 (NYSE only = 13:30-22:00 UTC = slots 3,4,5)
+    // Session slots allowed for entry. Slot 0 = dead window (excluded by min=1).
+    // Gold defaults span 1-6 (London+NY+Asia) -- 2026-04-22 RED-1 widened from 1-5
+    // after 2026-04-17 diagnostic showed large Asian-session moves being silenced.
+    // US indices override to 3-5 (NYSE only = 13:30-22:00 UTC = slots 3,4,5) via
+    // make_h1_us500_params() / make_h1_nas100_params().
     int    session_min          = 1;
-    int    session_max          = 5;
+    int    session_max          = 6;
 };
 
 struct H4Params {
@@ -661,12 +664,13 @@ struct H4RegimeEngine {
 
         // Weekend entry gate: no new H4 entries Friday 20:00 UTC onwards
         if (p.weekend_close_gate) {
+            // 2026-04-22 RED-2 fix: previous code used (day+4)%7 with check ==1 which
+            // evaluates to Monday, not Friday. Corrected to (day+3)%7 with check ==4.
+            // Mapping: Mon=0 Tue=1 Wed=2 Thu=3 Fri=4 Sat=5 Sun=6. Epoch day 0 = Thu 1970-01-01.
             const int64_t utc_sec  = now_ms / 1000LL;
-            const int     utc_dow  = static_cast<int>((utc_sec / 86400LL + 4) % 7); // 0=Thu, 4=Mon, 5=Tue, 6=Wed
+            const int     utc_dow  = static_cast<int>((utc_sec / 86400LL + 3) % 7);
             const int     utc_hour = static_cast<int>((utc_sec % 86400LL) / 3600LL);
-            // Friday = day 1 (epoch day 0 = Thursday 1970-01-01)
-            // Actually: epoch day % 7: 0=Thu, 1=Fri, 2=Sat, 3=Sun, 4=Mon, 5=Tue, 6=Wed
-            const bool is_friday = (utc_dow == 1);
+            const bool is_friday = (utc_dow == 4);
             if (is_friday && utc_hour >= 20) {
                 static int64_t s_wk = 0;
                 if (now_ms - s_wk > 3600000LL) {
@@ -800,10 +804,13 @@ struct H4RegimeEngine {
     void check_weekend_close(double bid, double ask,
                               int64_t now_ms, CloseCallback on_close) noexcept {
         if (!pos_.active || !p.weekend_close_gate) return;
+        // 2026-04-22 RED-2b fix: same DOW bug as entry gate -- (day+4)%7 with check ==1
+        // was evaluating to Monday, not Friday. Corrected to (day+3)%7 with check ==4.
+        // Mapping: Mon=0 Tue=1 Wed=2 Thu=3 Fri=4 Sat=5 Sun=6.
         const int64_t utc_sec  = now_ms / 1000LL;
-        const int     utc_dow  = static_cast<int>((utc_sec / 86400LL + 4) % 7);
+        const int     utc_dow  = static_cast<int>((utc_sec / 86400LL + 3) % 7);
         const int     utc_hour = static_cast<int>((utc_sec % 86400LL) / 3600LL);
-        const bool is_friday   = (utc_dow == 1);
+        const bool is_friday   = (utc_dow == 4);
         if (!is_friday || utc_hour < 20) return;
         // Check if profitable
         const double mid  = (bid + ask) * 0.5;
