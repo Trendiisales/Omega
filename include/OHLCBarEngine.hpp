@@ -281,41 +281,65 @@ public:
     // ?????????????????????????????????????????????????????????????????????????
     // seed() -- bulk load historical bars on startup
     // ?????????????????????????????????????????????????????????????????????????
+    // 2026-04-22 P5e fix: previous implementation called each _update_*() exactly
+    // once AFTER loading all historical bars. That is wrong for:
+    //   ADX:  Wilder recursion needs ADX_P+ sequential updates to warm;
+    //         single call = bootstrap from only the last 2 bars = adx_init_ flips
+    //         true prematurely with wrong accumulators.
+    //   EMA:  mean-of-last-N-bars is not the EWM of full history; true EWM requires
+    //         iterate forward so every bar contributes with its exponential weight.
+    //   EWMA: variance recursion reads only the last bar pair on a single call;
+    //         value seen is not the 0.94/0.97-weighted estimate over history.
+    //
+    // The correct approach is identical to the live path: push each historical bar
+    // through the complete update pipeline, in order. This makes seed() equivalent
+    // to replaying live ticks that happened to close exactly at bar boundaries.
+    //
+    // RSI and ATR are unaffected because they have internal seed-then-iterate
+    // loops in their _update_*() methods; but running them per-bar is still fine
+    // because rsi_init_/atr_init_ route subsequent calls to the recursive path.
     void seed(const std::vector<OHLCBar>& historical) {
         bars_.clear();
-        // Reset ADX Wilder accumulators before bulk-seeding (fix 2026-04-22).
-        // Without this, a seed() call after live ticks have already populated
-        // adx_*_smooth_ would produce garbage ADX on the first post-seed bar.
-        // NOTE: seed() itself calls _update_adx() only once at the end, which
-        // is NOT mathematically correct for Wilder-smoothed ADX. That is a
-        // separate latent bug -- this reset at least ensures a clean slate for
-        // future iterative-seed callers and prevents state contamination.
+        // Reset all private recursion state -- a seed() call may follow live ticks
+        // that populated accumulators, and we want a clean replay.
+        ema_init_ = false;   ema9_ = ema21_ = ema50_ = 0.0;
+        rsi_init_ = false;   rsi_avg_gain_ = rsi_avg_loss_ = 0.0;
+        atr_init_ = false;   atr_avg_ = 0.0;
+        ewma_init_ = false;  ewma_short_ = ewma_long_ = 0.0;
+        adx_init_ = false;
         adx_plus_dm_smooth_  = 0.0;
         adx_minus_dm_smooth_ = 0.0;
         adx_tr_smooth_       = 0.0;
         adx_dx_smooth_       = 0.0;
         adx_prev_            = 0.0;
-        adx_init_            = false;
-        for (const auto& b : historical) bars_.push_back(b);
-        if (bars_.size() > 300) {
-            while (bars_.size() > 300) bars_.pop_front();
+        atr_history_.clear();
+        pivot_highs_rsi_.clear();
+        pivot_lows_rsi_.clear();
+
+        if (historical.empty()) return;
+
+        // Push bars through the full pipeline one at a time. This is the only
+        // way to correctly warm Wilder-smoothed indicators (ADX especially) and
+        // iterative EMA/EWMA. Matches live tick path exactly.
+        for (const auto& b : historical) {
+            bars_.push_back(b);
+            if (bars_.size() > 300) bars_.pop_front();
+            const int n = static_cast<int>(bars_.size());
+
+            _update_ema();
+            _update_atr();
+            if (n >= RSI_P + 1)  _update_rsi();
+            if (n >= BB_P)       _update_bollinger();
+            if (n >= VOL_MA_P)   _update_volume_ratio();
+            if (n >= SWING_P*2+1) _update_swing_and_trend();
+            if (n >= BB_SQUEEZE_LOOKBACK) _update_bbw_squeeze();
+            if (n >= ATR_SLOPE_BARS+1)    _update_atr_slope();
+            if (n >= RSI_DIV_LOOKBACK+RSI_P) _update_rsi_divergence();
+            if (n >= 3)          _update_vwap_slope();
+            if (n >= ADX_P + 1)  _update_adx();
+            if (n >= 2)          _update_ewma_vol();
         }
-        const int n = static_cast<int>(bars_.size());
-        if (n < 1) return;
-        _update_ema();
-        _update_atr();
-        if (n >= RSI_P + 1)  _update_rsi();
-        if (n >= BB_P)       _update_bollinger();
-        if (n >= VOL_MA_P)   _update_volume_ratio();
-        if (n >= SWING_P*2+1) _update_swing_and_trend();
-        if (n >= BB_SQUEEZE_LOOKBACK) _update_bbw_squeeze();
-        if (n >= ATR_SLOPE_BARS+1)    _update_atr_slope();
-        if (n >= RSI_DIV_LOOKBACK+RSI_P) _update_rsi_divergence();
-        if (n >= 3)          _update_vwap_slope();
-        if (n >= ADX_P + 1)  _update_adx();
-        if (n >= 2)          _update_ewma_vol();
-        _seed_atr_history();
-        if (n >= 1) ind.m1_ready.store(true);
+        if (!bars_.empty()) ind.m1_ready.store(true);
     }
 
     int bar_count() const { return static_cast<int>(bars_.size()); }
@@ -1072,38 +1096,61 @@ public:
     // Eliminates the need for any tick data request at startup.
     // All bar-computed indicators (EMA, ATR, RSI, trend, swing) are restored
     // from disk and m1_ready is set true immediately on load.
+    //
+    // 2026-04-22 refactor:
+    //  (1) Flat/holiday thresholds converted from absolute points to ratio-of-price,
+    //      so the same predicate works on M1..H4 and XAUUSD/SP/NQ uniformly. The
+    //      previous 2.0pt ATR floor was rejecting real Asian-session XAUUSD data
+    //      (empirical min observed: 0.81pt live), blocking persistence entirely.
+    //  (2) Bars-size sanity: save only when bars_ has at least MIN_BARS entries,
+    //      so mid-seed partial state can't be written to disk.
+    //  (3) All private Wilder/EMA/EWMA recursion accumulators are now persisted
+    //      so post-restart indicator values continue their recursion correctly
+    //      instead of re-seeding from a single post-load bar.
+    //  (4) Preferred hot-load path is now hydrate_from_csv() (below) which replays
+    //      the L2 tick CSV and rebuilds bars via add_bar(). save_indicators() /
+    //      load_indicators() remain as a fast fallback when the CSV is missing.
     // =========================================================================
     void save_indicators(const std::string& path) const noexcept {
         if (!ind.m1_ready.load()) return;  // don't save cold state
+        if (static_cast<int>(bars_.size()) < MIN_BARS) return;  // don't save mid-seed
 
-        // Sanity check: reject flat/holiday state before writing to disk.
-        // Flat state happens when bars are built from a holiday session with no
-        // price movement — all EMAs identical, RSI=100, BB bands collapsed.
-        // Loading this on next restart gives garbage indicators worse than cold start.
         const double e9  = ind.ema9 .load();
         const double e50 = ind.ema50.load();
         const double atr = ind.atr14.load();
         const double rsi = ind.rsi14.load();
         const double bbu = ind.bb_upper.load();
         const double bbl = ind.bb_lower.load();
-        // Reject if: EMAs identical (flat), RSI pegged at 0/100, ATR too small,
-        // or Bollinger bands collapsed to a single line
-        const bool flat_emas   = (std::fabs(e9 - e50) < 0.01 && e9 > 0.0);
-        const bool pegged_rsi  = (rsi < 5.0 || rsi > 95.0);
-        // ATR floor: 2.0pt minimum for gold instruments (XAUUSD price ~$4700).
-        // Previous floor of 1.0pt allowed Sunday/holiday M1 ATR of 1.03pt to be
-        // saved, producing stale bar state that seeded engines with wrong volatility.
-        // Gold M1 ATR in a real session is never below 2pt. M15 ATR is never below 5pt.
-        // H1 ATR is never below 6pt. H4 ATR is never below 15pt.
-        // This floor applies to all timeframes via the same save path -- the 2pt floor
-        // is conservative enough for M1 (real floor ~3pt) and is not restrictive for HTF.
-        const bool tiny_atr    = (atr < 2.0 && atr > 0.0);
-        const bool flat_bb     = (std::fabs(bbu - bbl) < 0.01 && bbu > 0.0);
+
+        // Ratio-based flat/holiday detector. Uses e50 as price reference (falls
+        // back to e9, then 1.0, to avoid div-by-zero when indicators are cold).
+        //
+        // Empirical calibration on live XAUUSD ticks 2026-04-21:
+        //   real Asian-session M1 ATR range: 0.81pt to 4.46pt at price ~$4731
+        //   => 0.81pt / 4731 = 17bp of price (valid live data)
+        //   => 2.0pt / 4731 = 42bp (old absolute floor -- rejected ~60% of saves)
+        // True holiday/dead-market ATR on XAUUSD is <0.1pt = <2bp. Anything above
+        // 2bp is real market activity across all timeframes and instruments.
+        const double price_ref = (e50 > 0.0) ? e50 : ((e9 > 0.0) ? e9 : 1.0);
+        // flat_emas: EMA9 == EMA50 to within 0.2bp of price.
+        //   At gold $4731 this is 0.095pt (near-identical 9 and 50 period averages).
+        //   At NQ $26670 this is 0.53pt. At SP $4700 this is 0.094pt.
+        //   Was previously 0.01pt absolute -- too tight at any price level.
+        const bool flat_emas  = (std::fabs(e9 - e50) / price_ref < 0.00002 && e9 > 0.0);
+        // pegged_rsi unchanged -- RSI is already a ratio (0-100 range).
+        const bool pegged_rsi = (rsi < 5.0 || rsi > 95.0);
+        // tiny_atr: ATR below 2bp of price = genuinely no movement.
+        //   At gold $4731 this is 0.094pt. Real session ATR never below this.
+        //   At NQ $26670 this is 5.3pt. At SP $4700 this is 0.94pt.
+        //   Was previously 2.0pt absolute -- rejected real Asian-session data.
+        const bool tiny_atr   = (atr / price_ref < 0.0002 && atr > 0.0);
+        // flat_bb: upper==lower to within 0.2bp = Bollinger bands collapsed.
+        const bool flat_bb    = (std::fabs(bbu - bbl) / price_ref < 0.00002 && bbu > 0.0);
         if (flat_emas || pegged_rsi || tiny_atr || flat_bb) {
             printf("[OHLC] save_indicators SKIPPED -- flat/holiday state detected "
-                   "(e9=%.2f e50=%.2f atr=%.3f rsi=%.1f bb_range=%.3f). "
+                   "(e9=%.2f e50=%.2f atr=%.3f rsi=%.1f bb_range=%.3f price_ref=%.2f). "
                    "Will retry when real market data arrives.\n",
-                   e9, e50, atr, rsi, bbu - bbl);
+                   e9, e50, atr, rsi, bbu - bbl, price_ref);
             fflush(stdout);
             return;
         }
@@ -1111,6 +1158,7 @@ public:
         FILE* f = fopen(path.c_str(), "w");
         if (!f) return;
         fprintf(f, "saved_ts=%lld\n",  (long long)std::time(nullptr));
+        // Public atomic indicator values
         fprintf(f, "ema9=%.6f\n",      e9);
         fprintf(f, "ema21=%.6f\n",     ind.ema21.load());
         fprintf(f, "ema50=%.6f\n",     e50);
@@ -1123,22 +1171,37 @@ public:
         fprintf(f, "trend_state=%d\n", ind.trend_state.load());
         fprintf(f, "swing_high=%.4f\n",ind.swing_high.load());
         fprintf(f, "swing_low=%.4f\n", ind.swing_low.load());
-        // ADX Wilder state persistence (fix 2026-04-22):
-        // Without these, H1/H4 ADX = 0.0 for 14-56 hours after every restart,
-        // causing H1SwingEngine and H4RegimeEngine to sit idle through entire
-        // trending sessions (e.g. 2026-04-17 101pt move missed by all HTF engines).
-        // Public indicator values -- what engines read via ind.adx14.load():
+        // ADX public + Wilder private state (persistence fix 2026-04-22)
         fprintf(f, "adx14=%.6f\n",                ind.adx14.load());
         fprintf(f, "adx_rising=%d\n",             ind.adx_rising.load() ? 1 : 0);
-        // Private Wilder smoothing state -- required for correct incremental
-        // updates on the first live bar after restart. Without these, the first
-        // _update_adx() call uses uninitialised accumulators and jumps wildly.
         fprintf(f, "adx_plus_dm_smooth=%.6f\n",   adx_plus_dm_smooth_);
         fprintf(f, "adx_minus_dm_smooth=%.6f\n",  adx_minus_dm_smooth_);
         fprintf(f, "adx_tr_smooth=%.6f\n",        adx_tr_smooth_);
         fprintf(f, "adx_dx_smooth=%.6f\n",        adx_dx_smooth_);
         fprintf(f, "adx_prev=%.6f\n",             adx_prev_);
         fprintf(f, "adx_init=%d\n",               adx_init_ ? 1 : 0);
+        // EMA private recursion state (hot-load 2026-04-22). Without these, the
+        // first live bar post-load re-seeds EMA9/21/50 from mean-of-available-bars,
+        // which can collapse them to near-identical values in quiet markets and
+        // invalidates trend_state until ~50 bars accumulate.
+        fprintf(f, "ema9_priv=%.6f\n",            ema9_);
+        fprintf(f, "ema21_priv=%.6f\n",           ema21_);
+        fprintf(f, "ema50_priv=%.6f\n",           ema50_);
+        fprintf(f, "ema_init=%d\n",               ema_init_ ? 1 : 0);
+        // RSI Wilder private recursion state
+        fprintf(f, "rsi_avg_gain=%.8f\n",         rsi_avg_gain_);
+        fprintf(f, "rsi_avg_loss=%.8f\n",         rsi_avg_loss_);
+        fprintf(f, "rsi_init=%d\n",               rsi_init_ ? 1 : 0);
+        // ATR Wilder private recursion state
+        fprintf(f, "atr_avg=%.8f\n",              atr_avg_);
+        fprintf(f, "atr_init=%d\n",               atr_init_ ? 1 : 0);
+        // EWMA volatility private state (RiskMetrics lambdas)
+        fprintf(f, "ewma_short=%.10f\n",          ewma_short_);
+        fprintf(f, "ewma_long=%.10f\n",           ewma_long_);
+        fprintf(f, "ewma_init=%d\n",              ewma_init_ ? 1 : 0);
+        // Bars count at save time -- load path uses this as a sanity signal
+        // (if 0 the file is not a valid hot-load source).
+        fprintf(f, "bars_count=%d\n",             static_cast<int>(bars_.size()));
         fclose(f);
     }
 
@@ -1157,6 +1220,18 @@ public:
         double adx14_v=0.0, adx_plus_dm=0.0, adx_minus_dm=0.0;
         double adx_tr=0.0, adx_dx=0.0, adx_prev_v=0.0;
         int adx_rising_v=0, adx_init_v=0;
+        // Private recursion state restore (hot-load 2026-04-22). If the save file
+        // predates this change, these fields stay at defaults and the engine
+        // falls back to re-seed behaviour on the first live bar (same as before).
+        double ema9_priv_v=0.0, ema21_priv_v=0.0, ema50_priv_v=0.0;
+        int    ema_init_v = 0;
+        double rsi_avg_gain_v=0.0, rsi_avg_loss_v=0.0;
+        int    rsi_init_v = 0;
+        double atr_avg_v=0.0;
+        int    atr_init_v = 0;
+        double ewma_short_v=0.0, ewma_long_v=0.0;
+        int    ewma_init_v = 0;
+        int    saved_bars_count = 0;
         while (fgets(line, sizeof(line), f)) {
             char key[32]; double val=0;
             if (sscanf(line, "%31[^=]=%lf", key, &val) == 2) {
@@ -1182,22 +1257,31 @@ public:
                 else if (k=="adx_dx_smooth")       adx_dx       = val;
                 else if (k=="adx_prev")            adx_prev_v   = val;
                 else if (k=="adx_init")            adx_init_v   = (int)val;
+                else if (k=="ema9_priv")           ema9_priv_v  = val;
+                else if (k=="ema21_priv")          ema21_priv_v = val;
+                else if (k=="ema50_priv")          ema50_priv_v = val;
+                else if (k=="ema_init")            ema_init_v   = (int)val;
+                else if (k=="rsi_avg_gain")        rsi_avg_gain_v = val;
+                else if (k=="rsi_avg_loss")        rsi_avg_loss_v = val;
+                else if (k=="rsi_init")            rsi_init_v   = (int)val;
+                else if (k=="atr_avg")             atr_avg_v    = val;
+                else if (k=="atr_init")            atr_init_v   = (int)val;
+                else if (k=="ewma_short")          ewma_short_v = val;
+                else if (k=="ewma_long")           ewma_long_v  = val;
+                else if (k=="ewma_init")           ewma_init_v  = (int)val;
+                else if (k=="bars_count")          saved_bars_count = (int)val;
             }
         }
         fclose(f);
         const long long now_ts = (long long)std::time(nullptr);
         const long long age    = now_ts - saved_ts;
-        // Reject if: invalid timestamp, future timestamp, or older than 12 hours
-        // WHY 12h not 4h: bars saved at end of NY session (22:00 UTC) must still
-        // be valid at London open (07:00 UTC next day = 9 hours later). With 4h
-        // limit the file was rejected every morning, forcing a cold tick-data
-        // request that times out -> m1_ready=false all session -> bars never seed.
+        // Reject if: invalid timestamp, future timestamp, or older than 36 hours.
+        // WHY 36h: bars saved at NY close (22:00 UTC) must survive through London
+        // open (07:00 UTC next day + a missed session) = 33h max gap.
         // Corruption check: zero/negative timestamp or future timestamp = file is corrupt.
         // Delete corrupt files only -- never delete on age or missing EMAs.
         // Root cause: deleting on e9<=0 meant any session where bars never fully seeded
         // (EMAs cold) would destroy the file, forcing cold start every subsequent restart.
-        // Widened age limit 24h->36h: bars saved at NY close (22:00 UTC) must survive
-        // through London open (07:00 UTC) + a missed session = 33h max gap.
         const bool corrupt = (saved_ts <= 0 || saved_ts > now_ts);
         const bool too_old = (age > 36 * 3600);
         const bool no_emas = (e9 <= 0 || e50 <= 0);
@@ -1213,7 +1297,7 @@ public:
                    age, e9, e50);
             return false;
         }
-        // Restore all indicators
+        // Restore all public indicators
         ind.ema9       .store(e9,    std::memory_order_relaxed);
         ind.ema21      .store(e21,   std::memory_order_relaxed);
         ind.ema50      .store(e50,   std::memory_order_relaxed);
@@ -1244,12 +1328,252 @@ public:
             ind.adx_trending.store(adx14_v >= ADX_TREND_THRESHOLD,  std::memory_order_relaxed);
             ind.adx_strong  .store(adx14_v >= ADX_STRONG_THRESHOLD, std::memory_order_relaxed);
         }
+        // Restore EMA private recursion state (hot-load 2026-04-22). With this,
+        // the first live bar applies the Wilder/EMA recursion using the saved
+        // accumulators instead of re-seeding EMAs from bars_ mean (which can
+        // collapse EMA9==EMA50 in quiet post-load conditions).
+        if (ema_init_v == 1) {
+            ema9_     = ema9_priv_v;
+            ema21_    = ema21_priv_v;
+            ema50_    = ema50_priv_v;
+            ema_init_ = true;
+        }
+        // Restore RSI Wilder recursion state
+        if (rsi_init_v == 1) {
+            rsi_avg_gain_ = rsi_avg_gain_v;
+            rsi_avg_loss_ = rsi_avg_loss_v;
+            rsi_init_     = true;
+        }
+        // Restore ATR Wilder recursion state
+        if (atr_init_v == 1) {
+            atr_avg_  = atr_avg_v;
+            atr_init_ = true;
+        }
+        // Restore EWMA volatility recursion state
+        if (ewma_init_v == 1) {
+            ewma_short_ = ewma_short_v;
+            ewma_long_  = ewma_long_v;
+            ewma_init_  = true;
+        }
         // Mark ready -- this is the key: unblocks all bar-gated entries immediately
         ind.m1_ready   .store(true,  std::memory_order_relaxed);
-        printf("[OHLC] Bar state loaded: EMA50=%.2f ATR=%.2f RSI=%.1f trend=%d ADX=%.2f(init=%d) age=%llds\n",
-               e50, atr, rsi, trend, adx14_v, adx_init_v, age);
+        printf("[OHLC] Bar state loaded: EMA50=%.2f ATR=%.2f RSI=%.1f trend=%d "
+               "ADX=%.2f(init=%d) EMA_init=%d RSI_init=%d ATR_init=%d EWMA_init=%d "
+               "saved_bars=%d age=%llds\n",
+               e50, atr, rsi, trend, adx14_v, adx_init_v,
+               ema_init_v, rsi_init_v, atr_init_v, ewma_init_v,
+               saved_bars_count, age);
         fflush(stdout);
         return true;
+    }
+
+    // =========================================================================
+    // hydrate_from_csv() -- replay tick CSV to rebuild bars_ and all indicators
+    // =========================================================================
+    // Reads the daily-rotating L2 tick CSV(s) at `csv_dir`, replays ticks with
+    // the exact same bar-bucketing logic as the live tick path (floor(ts_ms /
+    // bucket_ms) * bucket_ms), and calls add_bar() for each completed bar.
+    //
+    // Because add_bar() runs the full update pipeline per bar (including the
+    // iterative _update_adx() which is bugged in seed() -- see P5e), indicators
+    // come out mathematically correct and fully warmed.
+    //
+    // Args:
+    //   csv_dir         e.g. "C:\\Omega\\logs"
+    //   symbol          "XAUUSD" | "US500" | "USTEC" -- selects filename prefix
+    //                   l2_ticks_<symbol>_YYYY-MM-DD.csv (new format)
+    //                   OR the legacy symbol-less l2_ticks_YYYY-MM-DD.csv for XAUUSD
+    //   bucket_ms       60000=M1, 300000=M5, 900000=M15, 3600000=H1, 14400000=H4
+    //   now_ms          current unix time in ms -- determines date rollback
+    //   lookback_hours  how far back to replay (capped by existing CSV files)
+    //
+    // Returns number of bars produced. 0 = nothing to hydrate (missing CSVs).
+    // Side effect: populates bars_, runs full update pipeline, marks m1_ready.
+    //
+    // Performance: parses ~32MB CSV/day at ~200MB/s = ~160ms per day of ticks.
+    // Typical H4 hydrate (80 hours = 4 days) takes well under 1 second.
+    // =========================================================================
+    int hydrate_from_csv(const std::string& csv_dir,
+                         const std::string& symbol,
+                         int64_t bucket_ms,
+                         int64_t now_ms,
+                         int lookback_hours) noexcept {
+        if (bucket_ms <= 0) return 0;
+        const int64_t earliest_ms = now_ms - (int64_t)lookback_hours * 3600LL * 1000LL;
+
+        // Build list of candidate CSV dates (in ascending chronological order)
+        // covering [earliest_ms, now_ms]. Up to +1 day for safety on day rollover.
+        std::vector<std::string> paths;
+        {
+            // Round earliest_ms down to UTC midnight, iterate day-by-day forward.
+            const int64_t day_ms = 86400000LL;
+            int64_t cur_day = (earliest_ms / day_ms) * day_ms;
+            const int64_t last_day = (now_ms / day_ms) * day_ms;
+            const bool is_xauusd = (symbol == "XAUUSD");
+            while (cur_day <= last_day) {
+                const time_t t = (time_t)(cur_day / 1000);
+                struct tm tm_u{};
+                gmtime_s(&tm_u, &t);
+                char path_new[512];
+                snprintf(path_new, sizeof(path_new),
+                    "%s\\l2_ticks_%s_%04d-%02d-%02d.csv",
+                    csv_dir.c_str(), symbol.c_str(),
+                    tm_u.tm_year + 1900, tm_u.tm_mon + 1, tm_u.tm_mday);
+                if (GetFileAttributesA(path_new) != INVALID_FILE_ATTRIBUTES) {
+                    paths.push_back(path_new);
+                } else if (is_xauusd) {
+                    // Fallback: legacy XAUUSD CSV without symbol in filename
+                    char path_legacy[512];
+                    snprintf(path_legacy, sizeof(path_legacy),
+                        "%s\\l2_ticks_%04d-%02d-%02d.csv",
+                        csv_dir.c_str(),
+                        tm_u.tm_year + 1900, tm_u.tm_mon + 1, tm_u.tm_mday);
+                    if (GetFileAttributesA(path_legacy) != INVALID_FILE_ATTRIBUTES) {
+                        paths.push_back(path_legacy);
+                    }
+                }
+                cur_day += day_ms;
+            }
+        }
+
+        if (paths.empty()) {
+            printf("[OHLC-HYDRATE] %s bucket_ms=%lld NO CSVs found in %s (last %dh)\n",
+                   symbol.c_str(), (long long)bucket_ms, csv_dir.c_str(), lookback_hours);
+            fflush(stdout);
+            return 0;
+        }
+
+        // Reset any pre-existing state before replay.
+        bars_.clear();
+        ema_init_ = false;   ema9_ = ema21_ = ema50_ = 0.0;
+        rsi_init_ = false;   rsi_avg_gain_ = rsi_avg_loss_ = 0.0;
+        atr_init_ = false;   atr_avg_ = 0.0;
+        ewma_init_ = false;  ewma_short_ = ewma_long_ = 0.0;
+        adx_init_ = false;
+        adx_plus_dm_smooth_ = adx_minus_dm_smooth_ = 0.0;
+        adx_tr_smooth_ = adx_dx_smooth_ = adx_prev_ = 0.0;
+        atr_history_.clear();
+        pivot_highs_rsi_.clear();
+        pivot_lows_rsi_.clear();
+
+        // Current bar accumulator
+        int64_t cur_bucket_ms = 0;
+        double  cur_open = 0.0, cur_high = 0.0, cur_low = 0.0, cur_close = 0.0;
+        uint64_t cur_vol = 0;
+        int bars_emitted = 0;
+
+        // Header-driven column lookup -- tolerates both old (no 'mid' column)
+        // and new (with 'mid') CSV formats.
+        for (const auto& p : paths) {
+            FILE* cf = fopen(p.c_str(), "r");
+            if (!cf) continue;
+            // Read header line to locate columns by name
+            char header_line[1024];
+            if (!fgets(header_line, sizeof(header_line), cf)) { fclose(cf); continue; }
+            // Trim trailing CR/LF
+            {
+                size_t L = strlen(header_line);
+                while (L > 0 && (header_line[L-1] == '\n' || header_line[L-1] == '\r')) {
+                    header_line[--L] = 0;
+                }
+            }
+            int col_ts = -1, col_mid = -1, col_bid = -1, col_ask = -1;
+            {
+                int idx = 0;
+                char* tok = strtok(header_line, ",");
+                while (tok) {
+                    if      (strcmp(tok, "ts_ms") == 0) col_ts  = idx;
+                    else if (strcmp(tok, "mid")   == 0) col_mid = idx;
+                    else if (strcmp(tok, "bid")   == 0) col_bid = idx;
+                    else if (strcmp(tok, "ask")   == 0) col_ask = idx;
+                    tok = strtok(nullptr, ",");
+                    ++idx;
+                }
+            }
+            if (col_ts < 0 || (col_mid < 0 && (col_bid < 0 || col_ask < 0))) {
+                // Unusable CSV -- skip
+                fclose(cf);
+                continue;
+            }
+            // Read data rows. Use a large buffer since L2 CSV rows can be ~120 chars.
+            char row[1024];
+            while (fgets(row, sizeof(row), cf)) {
+                // Tokenize in place
+                size_t L = strlen(row);
+                while (L > 0 && (row[L-1] == '\n' || row[L-1] == '\r')) row[--L] = 0;
+                if (L == 0) continue;
+
+                int64_t ts_ms = 0;
+                double mid_v = 0.0;
+                double bid_v = 0.0, ask_v = 0.0;
+                bool have_mid = false, have_bidask = false;
+                int idx = 0;
+                char* tok = strtok(row, ",");
+                while (tok) {
+                    if (idx == col_ts) {
+                        ts_ms = (int64_t)strtoll(tok, nullptr, 10);
+                    } else if (idx == col_mid && col_mid >= 0) {
+                        mid_v = strtod(tok, nullptr);
+                        have_mid = (mid_v > 0.0);
+                    } else if (idx == col_bid && col_bid >= 0) {
+                        bid_v = strtod(tok, nullptr);
+                    } else if (idx == col_ask && col_ask >= 0) {
+                        ask_v = strtod(tok, nullptr);
+                        if (bid_v > 0.0 && ask_v > 0.0) have_bidask = true;
+                    }
+                    tok = strtok(nullptr, ",");
+                    ++idx;
+                }
+                if (ts_ms < earliest_ms) continue;
+                if (ts_ms > now_ms) break;  // CSV rows should be ascending; safety stop
+
+                const double px = have_mid ? mid_v : (have_bidask ? (bid_v + ask_v) * 0.5 : 0.0);
+                if (px <= 0.0) continue;
+
+                const int64_t b = (ts_ms / bucket_ms) * bucket_ms;
+                if (cur_bucket_ms == 0) {
+                    // First tick -- start first bar
+                    cur_bucket_ms = b;
+                    cur_open = cur_high = cur_low = cur_close = px;
+                    cur_vol = 1;
+                } else if (b != cur_bucket_ms) {
+                    // Bucket rolled -- emit closed bar
+                    OHLCBar bar;
+                    bar.ts_min = cur_bucket_ms / 60000LL;
+                    bar.open   = cur_open;
+                    bar.high   = cur_high;
+                    bar.low    = cur_low;
+                    bar.close  = cur_close;
+                    bar.volume = cur_vol;
+                    add_bar(bar);
+                    ++bars_emitted;
+                    // Start new bar
+                    cur_bucket_ms = b;
+                    cur_open = cur_high = cur_low = cur_close = px;
+                    cur_vol = 1;
+                } else {
+                    if (px > cur_high) cur_high = px;
+                    if (px < cur_low ) cur_low  = px;
+                    cur_close = px;
+                    ++cur_vol;
+                }
+            }
+            fclose(cf);
+        }
+        // We intentionally do NOT emit the in-progress partial bar -- the live
+        // tick path will complete it when the next tick arrives for this bucket.
+
+        if (bars_emitted >= 1) {
+            ind.m1_ready.store(true, std::memory_order_relaxed);
+        }
+        printf("[OHLC-HYDRATE] %s bucket_ms=%lld bars=%d EMA50=%.2f ATR=%.4f "
+               "RSI=%.1f ADX=%.2f(init=%d) trend=%d lookback=%dh files=%d\n",
+               symbol.c_str(), (long long)bucket_ms, bars_emitted,
+               ind.ema50.load(), ind.atr14.load(),
+               ind.rsi14.load(), ind.adx14.load(), adx_init_ ? 1 : 0,
+               ind.trend_state.load(), lookback_hours, (int)paths.size());
+        fflush(stdout);
+        return bars_emitted;
     }
 };
 // Per-symbol bar engine registry -- maps symbol name to engine + indicators
