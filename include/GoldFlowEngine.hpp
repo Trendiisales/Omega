@@ -60,6 +60,7 @@
 #include <iomanip>
 #include <mutex>   // RACE-FIX 2026-04-21: m_close_mtx serialises close paths (cTrader/FIX threads)
 #include "OmegaTradeLedger.hpp"
+#include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
 
 // -----------------------------------------------------------------------------
 //  Config constants
@@ -1170,6 +1171,30 @@ struct GoldFlowEngine {
                     }
                     return;
                 }
+            }
+        }
+
+        // ?? Bracket-trend bias gate (Session 6 P1 engine 7/8: GoldFlow) ??
+        // GoldFlow is a trend-continuation engine (L2 persistence + drift + momentum).
+        // Block entries aligned with the direction the bracket system has flagged
+        // rejected. bias=-1 ? LONG blocked; bias=+1 ? SHORT blocked; bias=0 ? no-op.
+        // Read-only, see BracketTrendState.hpp. force_entry() bypass path is
+        // intentionally NOT gated -- it is the reload/velocity bypass already
+        // validated by its caller (main.cpp try_reload confirmation path).
+        {
+            const int gfe_bt_bias = bracket_trend_bias("XAUUSD");
+            if ((long_signal  && gfe_bt_bias == -1) ||
+                (!long_signal && gfe_bt_bias ==  1)) {
+                static int64_t s_gfe_bias_log = 0;
+                if (now_ms - s_gfe_bias_log > 8000) {
+                    s_gfe_bias_log = now_ms;
+                    char _msg[256];
+                    snprintf(_msg, sizeof(_msg), "[GFE-BRACKET-BIAS-BLOCK] %s blocked by bracket bias=%d\n",
+                             long_signal ? "LONG" : "SHORT", gfe_bt_bias);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
+                return;
             }
         }
 
