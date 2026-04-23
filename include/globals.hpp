@@ -128,7 +128,6 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 // Bracket engines
 #include "BracketEngine.hpp"
 #include "GoldFlowEngine.hpp"
-#include "DomPersistEngine.hpp"
 #include "MacroCrashEngine.hpp"
 #include "PullbackContEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
@@ -204,9 +203,15 @@ static GoldFlowEngine             g_gold_flow_reload;
 // Never arms its own addon or reload (prevents cascade).
 static GoldFlowEngine             g_gold_flow_addon;
 
-// DOM persistence engine -- pure L2 imbalance persistence, no drift/momentum gates
-// Shadow mode ON by default. Set g_dom_persist.shadow_mode=false to go live.
-static DomPersistEngine           g_dom_persist;
+// DomPersistEngine REMOVED at Session 15 (2026-04-23).
+// Walk-forward sweep (96 cells, 14 days of L2 data, T=116 on production params)
+// showed no edge at any threshold x persist_ticks x session_filter combination.
+// Production params (i=0.05 p=5 London+NY): WR=22%, -$47 over 14 days, MaxDD=$65.
+// Higher thresholds starved the signal to T<=2 per 14 days -- untradeable.
+// Sweep output: backtest/dpe_sweep/summary.csv, leaderboard_oos.csv.
+// Audit: DomPersist_entry_audit_2026-04-23.md (Finding A - threshold sub-noise).
+// Full removal: engine header, globals.hpp/engine_init.hpp/tick_gold.hpp/
+//               omega_main.hpp/gold_coordinator.hpp call sites deleted.
 
 // ?? Trend-day multi-engine state ?????????????????????????????????????????????
 // Tracks GoldFlow exit details so CompBreakout/Bracket can re-enter on trend days
