@@ -24,7 +24,8 @@ static void init_engines(const std::string& cfg_path)
     g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
     g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
     g_bb_mr.shadow_mode        = kShadowDefault;  // BBMeanReversionEngine
-    g_dom_persist.shadow_mode  = kShadowDefault;  // DomPersistEngine
+    // DomPersistEngine init REMOVED at Session 15 (2026-04-23) -- no edge in
+    // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
     g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine
     // IndexHybridBracket (4 instances, uniform per Q2 decision):
     g_hybrid_sp.shadow_mode     = kShadowDefault;
