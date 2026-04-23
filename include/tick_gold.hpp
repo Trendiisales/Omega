@@ -1932,8 +1932,8 @@ static void on_tick_gold(
         //
         // OPEN-LOG FIX 2026-04-21: capture "was open before on_tick" so we can
         // detect a fresh MCE entry transition after on_tick returns and emit
-        // write_trade_open_log -- parity with the other 10 engines already
-        // logged here (GoldFlow, DomPersist, CandleFlow, BBMeanRev,
+        // write_trade_open_log -- parity with the other engines already
+        // logged here (GoldFlow, CandleFlow, BBMeanRev,
         // CompBreakout, EMACross, RSIReversal, RSIExtremeTurn, BracketGold,
         // TrendBracket). MCE was silently opening positions with no row in
         // the open-trades CSV.
@@ -4189,126 +4189,17 @@ static void on_tick_gold(
         }
     }
 
-    // -- DomPersistEngine -- pure L2 imbalance persistence, shadow mode ----------
-    // Seed bar ATR every tick
-    if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-        const double dpe_bar_atr = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-        if (dpe_bar_atr > 0.5 && dpe_bar_atr < 100.0)
-            g_dom_persist.seed_bar_atr(dpe_bar_atr);
-    }
-    // Position management: always runs when open
-    if (g_dom_persist.has_open_position()) {
-        g_dom_persist.on_tick(bid, ask,
-            g_macro_ctx.gold_l2_imbalance,
-            g_macro_ctx.gold_l2_real,
-            now_ms_g,
-            g_macro_ctx.session_slot,
-            [&](const omega::TradeRecord& tr) {
-                handle_closed_trade(tr);
-                if (!g_dom_persist.shadow_mode)
-                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-            });
-    }
-    // Entry: only when no other gold position open, L2 live, London+NY session
-    // DPE CHOP gate: same as CFE -- block when vol expanding without drift.
-    const bool dpe_chop_block = (gold_vol_ratio_now > 1.2)
-                               && (std::fabs(gold_ewm_drift_now) < 1.0);
-    if (dpe_chop_block) {
-        static int64_t s_dpe_chop_log = 0;
-        if (now_ms_g - s_dpe_chop_log > 20000) {
-            s_dpe_chop_log = now_ms_g;
-            {
-                char _msg[512];
-                snprintf(_msg, sizeof(_msg), "[DPE-CHOP-BLOCK] blocked: vol_ratio=%.2f drift=%.2f\n",                    gold_vol_ratio_now, gold_ewm_drift_now);
-                std::cout << _msg;
-                std::cout.flush();
-            }
-        }
-    }
-
-    // DPE EWM drift gate -- block entries against the trend direction.
-    // DomPersist fires on DOM persistence alone (no drift/momentum by design).
-    // In trending markets this causes losses: bids build at resistance (longs into downtrend).
-    // Gate: if drift is strongly negative (< -1.0) block LONG persistence signals.
-    //        if drift is strongly positive (> +1.0) block SHORT persistence signals.
-    // Threshold 1.0pt: modest trend confirmation, doesn't block ranging markets.
-    // Evidence: 08:41 LONG -$34, 09:21 LONG -$49 both fired into negative drift.
-    const double dpe_drift_now = gold_ewm_drift_now;
-    const bool dpe_long_blocked  = (dpe_drift_now < -1.0);  // downtrend -- no longs
-    const bool dpe_short_blocked = (dpe_drift_now >  1.0);  // uptrend   -- no shorts
-    if (!g_dom_persist.has_open_position()
-        && gold_can_enter
-        && g_macro_ctx.gold_l2_real
-        && !g_bracket_gold.has_open_position()
-        && !g_gold_flow.has_open_position()
-        && !g_gold_stack.has_open_position()
-        && !g_trend_pb_gold.has_open_position()
-        && !g_nbm_gold_london.has_open_position()
-        && !in_ny_close_noise
-        && !dpe_chop_block) {
-        g_dom_persist.risk_dollars = (g_cfg.risk_per_trade_usd > 0.0)
-            ? g_cfg.risk_per_trade_usd : DPE_RISK_DOLLARS;
-        // Direction-specific drift gate: skip DPE entry if imbalance direction
-        // conflicts with the drift gate computed above.
-        // l2_imb > 0.5 = bid heavy = DPE would enter LONG.
-        // l2_imb < 0.5 = ask heavy = DPE would enter SHORT.
-        const bool dpe_would_long  = (g_macro_ctx.gold_l2_imbalance > 0.5 + DPE_IMB_THRESHOLD);
-        const bool dpe_would_short = (g_macro_ctx.gold_l2_imbalance < 0.5 - DPE_IMB_THRESHOLD);
-        const bool dpe_drift_blocked = (dpe_would_long && dpe_long_blocked)
-                                     || (dpe_would_short && dpe_short_blocked);
-        // FIX 2026-04-22: HTF hard-block for DomPersist entry.
-        // DPE fires on L2 persistence alone -- no internal HTF awareness.
-        // Evidence: 18:16:36 DXYDivergence LONG + 6 other DPE LONGs into
-        // 101pt BEARISH day. Uses dpe_would_long/short (already derived above)
-        // to determine direction intent before dispatch.
-        const bool dpe_htf_blocked = (dpe_would_long  && g_htf_filter.bias_opposes("XAUUSD", true))
-                                   || (dpe_would_short && g_htf_filter.bias_opposes("XAUUSD", false));
-        if (dpe_htf_blocked) {
-            static thread_local int64_t s_dpe_htf_log = 0;
-            if (now_ms_g - s_dpe_htf_log > 30000) {
-                s_dpe_htf_log = now_ms_g;
-                char _msg[512];
-                snprintf(_msg, sizeof(_msg),
-                    "[HTF-BLOCK] XAUUSD DPE %s skipped -- HTF bias=%s opposes\n",
-                    dpe_would_long ? "LONG" : "SHORT",
-                    g_htf_filter.bias_name("XAUUSD"));
-                std::cout << _msg; std::cout.flush();
-            }
-        }
-        if (!dpe_drift_blocked && !dpe_htf_blocked) {
-        g_dom_persist.on_tick(bid, ask,
-            g_macro_ctx.gold_l2_imbalance,
-            g_macro_ctx.gold_l2_real,
-            now_ms_g,
-            g_macro_ctx.session_slot,
-            [&](const omega::TradeRecord& tr) {
-                handle_closed_trade(tr);
-                if (!g_dom_persist.shadow_mode)
-                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-            });
-        } // end dpe_drift_blocked gate
-        if (g_dom_persist.has_open_position()) {
-            g_telemetry.UpdateLastSignal("XAUUSD",
-                g_dom_persist.pos.is_long ? "LONG" : "SHORT",
-                g_dom_persist.pos.entry, "DOM_PERSIST",
-                "DOM", regime.c_str(), "DOM_PERSIST",
-                0.0, g_dom_persist.pos.sl);
-            // OPEN-LOG FIX 2026-04-22: DomPersist (arg9 regime slot + lift WTOL out of shadow gate)
-            // Shadow-mode entries must also be logged to trade_opens CSV for diagnostics.
-            // send_live_order remains inside the shadow gate -- only logging is lifted.
-            write_trade_open_log("XAUUSD", "DomPersist",
-                g_dom_persist.pos.is_long ? "LONG" : "SHORT",
-                g_dom_persist.pos.entry, 0.0, g_dom_persist.pos.sl,
-                g_dom_persist.pos.size, ask - bid, regime, "DOM_PERSIST");
-            if (!g_dom_persist.shadow_mode) {
-                send_live_order("XAUUSD",
-                    g_dom_persist.pos.is_long,
-                    g_dom_persist.pos.size,
-                    g_dom_persist.pos.entry);
-                g_telemetry.UpdateLastEntryTs();
-            }
-        }
-    }
+    // -- DomPersistEngine REMOVED at Session 15 (2026-04-23) --------------------
+    // Walk-forward sweep (96 cells, 14 days of L2 data, T=116 on production
+    // params i=0.05 p=5 London+NY) showed no edge at any threshold x
+    // persist_ticks x session_filter combination. Production cell WR=22%,
+    // net -$47 over 14 days, MaxDD=$65. Higher thresholds (>=0.08) starved
+    // the signal to T<=2 per 14 days -- untradeable. Original block was
+    // ~120 lines covering seed_bar_atr, position management, chop gate, EWM
+    // drift gate, HTF hard-block, entry dispatch, and open-log emission.
+    // Evidence: backtest/dpe_sweep/summary.csv, leaderboard_oos.csv.
+    // Audit: DomPersist_entry_audit_2026-04-23.md (Finding A -- threshold
+    // was sub-noise for current cTrader L2 depth regime).
 
     // -- CandleFlowEngine -- candle structure + cost coverage + DOM entry/exit --
     // Manage always (position already open)
