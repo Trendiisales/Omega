@@ -238,10 +238,11 @@ static void on_tick_gold(
     const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
         && gold_session_ok && symbol_gate("XAUUSD", false, "", tradeable, lat_ok, regime, bid, ask);
 
-    // Run supervisor -- uses g_eng_xag as vol/phase proxy since gold has
-    // its own GoldStack (not a BreakoutEngine). We use a dedicated gold
-    // BreakoutEngine-based vol state if available, otherwise use silver as proxy.
+    // Run supervisor -- gold has its own GoldStack (not a BreakoutEngine),
+    // so we use a dedicated gold BreakoutEngine-based vol state if available.
     // For gold we track phase/vol from the bracket engine's internal data.
+    // (Historical note: earlier versions used the silver engine as a vol/phase
+    //  proxy; silver trading removed in Scope B migration, Sessions 10/11.)
     int fb_gold = 0;
     { std::lock_guard<std::mutex> lk(g_false_break_mtx);
       auto it = g_false_break_counts.find("XAUUSD"); if (it != g_false_break_counts.end()) fb_gold = it->second; }
