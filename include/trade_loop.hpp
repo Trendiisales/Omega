@@ -60,7 +60,19 @@ static void trade_loop() {
                 last_ping = now;
                 const std::string hb = build_heartbeat(g_trade_seq++, "TRADE");
                 std::lock_guard<std::mutex> lk(g_trade_mtx);
-                if (SSL_write(ssl, hb.c_str(), static_cast<int>(hb.size())) <= 0) break;
+                if (SSL_write(ssl, hb.c_str(), static_cast<int>(hb.size())) <= 0) {
+                    // DIAGNOSTIC (Session 14): previously a silent break -- root cause of
+                    // apparent "phantom" disconnects where neither SSL_read error nor
+                    // Logout received preceded the reconnect. SSL_write failure here means
+                    // broker has silently closed/half-closed the TCP connection; our write
+                    // cannot complete. Log before break so post-mortem can distinguish
+                    // this path from the SSL_read error path at L88 and Logout at L142.
+                    const int wsa = WSAGetLastError();
+                    std::cerr << "[OMEGA-TRADE] Heartbeat write failed (WSA=" << wsa
+                              << ") -- reconnecting\n";
+                    std::cerr.flush();
+                    break;
+                }
             }
 
             char buf[4096];
@@ -126,13 +138,39 @@ static void trade_loop() {
                 } else if (ttype == "5") {
                     std::cout << "[OMEGA-TRADE] Logout received\n";
                     break;
+                } else if (ttype == "1") {
+                    // TestRequest (35=1) -- FIX spec requires response with a Heartbeat
+                    // containing the received TestReqID (tag 112). Without this response,
+                    // the broker marks the session dead and terminates it silently.
+                    //
+                    // Root cause of Session 13's "4 unplanned disconnects" (05:53, 06:38,
+                    // 08:20, 08:35 UTC on 2026-04-23). Quote session handles this correctly
+                    // in fix_dispatch.hpp:43-48; trade session previously "silently absorbed"
+                    // TestRequests per L135 comment, causing the trade-only drops observed.
+                    const std::string trid = extract_tag(tmsg, "112");
+                    const std::string hb   = build_heartbeat(g_trade_seq++, "TRADE", trid.c_str());
+                    {
+                        std::lock_guard<std::mutex> lk(g_trade_mtx);
+                        if (SSL_write(ssl, hb.c_str(), static_cast<int>(hb.size())) <= 0) {
+                            const int wsa = WSAGetLastError();
+                            std::cerr << "[OMEGA-TRADE] TestReq-Heartbeat write failed (WSA="
+                                      << wsa << ") -- reconnecting\n";
+                            std::cerr.flush();
+                            // Cannot break from inner while here without losing state; set a
+                            // condition the outer loop will detect on its next iteration.
+                            // Simplest: break inner, let outer SSL_read hit error and break.
+                            break;
+                        }
+                    }
+                    std::cout << "[OMEGA-TRADE] TestRequest -> Heartbeat reid=" << trid << "\n";
                 } else if (ttype == "3" || ttype == "j") {
                     std::string r = tmsg.substr(0, 300);
                     for (char& c : r) if (c == '\x01') c = '|';
                     std::cerr << "[OMEGA-TRADE] REJECT type=" << ttype
                               << " text=" << extract_tag(tmsg, "58") << "\n";
                 }
-                // Heartbeats (type=0) and TestRequests (type=1) silently absorbed
+                // Heartbeats (type=0) silently absorbed -- they are server-side ACKs of
+                // our own heartbeats or of TestRequests we sent; no response required.
             }
         }
 
