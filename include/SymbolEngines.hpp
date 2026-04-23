@@ -46,7 +46,6 @@ struct MacroContext {
     double      nas_l2_imbalance  = 0.5;
     double      us30_l2_imbalance = 0.5;
     double      gold_l2_imbalance = 0.5;
-    double      xag_l2_imbalance  = 0.5;
     double      eur_l2_imbalance  = 0.5;
     double      gbp_l2_imbalance  = 0.5;
     double      cl_l2_imbalance   = 0.5;
@@ -68,7 +67,6 @@ struct MacroContext {
     // Units: absolute price distance from mid (e.g. 0.25 = 25 ticks on gold)
     double      gold_microprice_bias = 0.0;
     double      sp_microprice_bias   = 0.0;
-    double      xag_microprice_bias  = 0.0;
     double      cl_microprice_bias   = 0.0;
     // FX microprice bias -- now populated from real L2 book
     double      eur_microprice_bias  = 0.0;
@@ -154,7 +152,6 @@ struct MacroContext {
     int         nq_cvd_dir     = 0;
     int         eurusd_cvd_dir = 0;
     int         usdjpy_cvd_dir = 0;
-    int         xagusd_cvd_dir = 0;
     // CVD divergence flags: price and CVD moving opposite directions
     bool        gold_cvd_bull_div  = false;  // bullish: price down, CVD up = absorption
     bool        gold_cvd_bear_div  = false;  // bearish: price up, CVD down = distribution
