@@ -106,6 +106,17 @@ static constexpr bool    CBE_BLOCK_LONDON_NY_LONG = true; // confirmed: SHORT-on
 struct CompressionBreakoutEngine {
 
     bool shadow_mode = true;
+    // FIX CBE-11 (S16 2026-04-23): engine-level enable/disable flag.
+    // Set to false via engine_init.hpp after the S16 41-cell REENTER_COMP
+    // sweep showed CBE is net-negative across all tested parameters and
+    // both train (5 days) and test (4 days) splits. Baseline (gate disabled)
+    // was train -$36.60 / test -$2.23; every active-gate cell performed
+    // worse. Engine is disabled pending either a parameter revalidation
+    // (CBE_COMP_BARS, CBE_BREAK_FRAC, CBE_TP_RR, session gates) or a full
+    // engine review. Position management still runs when this flag is
+    // false so any open position can close cleanly; only new entries are
+    // blocked. Flip this back to true in engine_init.hpp after revalidation.
+    bool enabled = true;
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
@@ -213,6 +224,12 @@ struct CompressionBreakoutEngine {
             _manage(bid, ask, mid, now_ms, ewm_drift, on_close);
             return;
         }
+
+        // FIX CBE-11 (S16 2026-04-23): engine-level disable gate.
+        // Placed AFTER position management so any open position can still
+        // close cleanly via SL/TP/TRAIL/TIMEOUT. Only new entries blocked.
+        // See comment at `enabled` field for rationale.
+        if (!enabled) return;
 
         // ── Entry guards ─────────────────────────────────────────────────────
         if (!_armed) return;
@@ -527,20 +544,38 @@ private:
         const bool reenter_comp = pos.is_long
             ? (bid < pos.comp_range_hi - 0.10)
             : (ask > pos.comp_range_lo + 0.10);
-        // FIX CBE-4 (2026-04-21): original gate was `pos.mfe < 0.0` which is never
-        // true -- mfe starts at 0.0 and only moves upward (see line ~420 where
-        // `if (move > pos.mfe) pos.mfe = move;` never writes negative values).
-        // Result: REENTER_COMP exit has NEVER fired since this engine was written.
-        // Failed breakouts where price falls back into the compression range without
-        // first showing profit would run until SL / timeout. Correct gate is
-        // "not yet at breakeven" -- if the thesis had worked, BE would have fired
-        // at 40% of TP (~0.6xSL), so !be_done means position never showed material
-        // profit. Combined with the existing 5s hold guard, this cuts failed
-        // breakouts early rather than waiting for the full SL.
-        if (reenter_comp && !pos.be_done && (now_ms - pos.entry_ts_ms) > 5000) {
+        // FIX CBE-12 (S16 2026-04-23): REVERT of CBE-4 (2026-04-21).
+        //
+        // CBE-4 had replaced the original dead gate (`pos.mfe < 0.0`, which
+        // can never fire because pos.mfe is monotonic non-decreasing) with
+        // `!pos.be_done`, intended to exit failed breakouts before they
+        // reached the full SL. The intent was sound but the geometric
+        // condition (`ask > comp_range_lo + 0.10` for SHORT) triggered on
+        // routine post-breakout retracements, killing winners before BE
+        // could arm.
+        //
+        // S16 41-cell walk-forward sweep (tol x needs_be x min_hold_ms)
+        // on 9 days of XAUUSD tick data (train 04-13..17, test 04-20..23):
+        //   - 0 of 41 cells passed the interpretation gate
+        //   - Every cell with CBE-4 behavior (needs_be=1) was STRICTLY WORSE
+        //     than the disabled baseline on both splits
+        //   - Baseline (gate disabled):   train -$36.60, test -$2.23
+        //   - CBE-4 production params:    train -$37.51, test -$15.22
+        //   - Best active cell:           train -$35.84, test -$6.36
+        //     (still worse than disabled on test split)
+        //
+        // Reverting to the original dead-gate form. The literal condition
+        // `pos.mfe < 0.0` is preserved (rather than deleting the block)
+        // to keep the gate's structural location for any future rework.
+        // When CBE is revalidated with a proper exit-logic sweep, replace
+        // this condition with the evidence-based result.
+        //
+        // See /mnt/user-data/outputs/s16/backtest/ sweep artifacts.
+        if (reenter_comp && (pos.mfe < 0.0) && (now_ms - pos.entry_ts_ms) > 5000) {
             _close(eff_price, "REENTER_COMP", now_ms, on_close);
             return;
         }
+
 
         // TP
         if (pos.is_long ? (bid >= pos.tp) : (ask <= pos.tp)) {

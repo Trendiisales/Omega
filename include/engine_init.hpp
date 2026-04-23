@@ -21,6 +21,21 @@ static void init_engines(const std::string& cfg_path)
     // All flip to LIVE atomically when g_cfg.mode = "LIVE" in omega_config.ini.
     // Class A (stamped 2026-04-21):
     g_cbe.shadow_mode          = kShadowDefault;  // CompressionBreakoutEngine
+    // FIX CBE-11 (S16 2026-04-23): DISABLE CompressionBreakoutEngine pending
+    // revalidation. S16 41-cell walk-forward sweep over 9 days of XAUUSD
+    // tick data (train 04-13..17 / test 04-20..23) showed zero cells passed
+    // the interpretation gate (T>=30 both splits, both nets>0, dd<=$100).
+    // Current production parameters (needs_be=1, tol=0.10, hold=5000)
+    // produced train -$37.51 / test -$15.22, the WORST-performing
+    // configuration across the entire grid. Even the best active cell
+    // (tol=1.00, needs_be=1, hold=5000) was worse than the disabled
+    // baseline on the test split. Engine remains compiled and linked so
+    // an in-progress position (if any) can close normally; new entries
+    // are blocked at on_tick top. Re-enable only after a full parameter
+    // revalidation sweep (CBE_COMP_BARS, CBE_BREAK_FRAC, CBE_TP_RR,
+    // session gates). See backtest/cbe_walk_forward.cpp and
+    // /mnt/user-data/outputs/s16/backtest/ for sweep artifacts.
+    g_cbe.enabled              = false;
     g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
     g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
     g_bb_mr.shadow_mode        = kShadowDefault;  // BBMeanReversionEngine
