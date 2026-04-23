@@ -510,7 +510,6 @@ int main(int argc, char* argv[])
             // so seeding both to the same value means no spurious signals.
             if (m1_ok) {
                 const double seed_rsi = g_bars_gold.m1.ind.rsi14.load();
-                const double seed_atr = g_bars_gold.m1.ind.atr14.load();
                 const double seed_mid = g_bars_gold.m1.ind.ema9.load();  // price proxy
 
                 // RSIReversalEngine: seed bar_rsi + bar_rsi_prev from disk
