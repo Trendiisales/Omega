@@ -177,21 +177,6 @@ static void apply_generic_gbpusd_config(omega::BreakoutEngine& eng) noexcept {
     eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
 }
 
-static void apply_generic_silver_config(omega::BreakoutEngine& eng) noexcept {
-    eng.VOL_THRESH_PCT        = g_cfg.silver_vol_thresh_pct;
-    eng.TP_PCT                = g_cfg.silver_tp_pct;
-    eng.SL_PCT                = g_cfg.silver_sl_pct;
-    eng.MIN_GAP_SEC           = g_cfg.silver_min_gap_sec;
-    eng.MAX_SPREAD_PCT        = g_cfg.silver_max_spread_pct;
-    eng.COMPRESSION_THRESHOLD = g_cfg.silver_compression_threshold;
-    eng.MOMENTUM_THRESH_PCT   = g_cfg.silver_momentum_thresh_pct;
-    eng.MIN_BREAKOUT_PCT      = g_cfg.silver_min_breakout_pct;
-    eng.BASELINE_LOOKBACK     = g_cfg.baseline_lookback;
-    eng.COMPRESSION_LOOKBACK  = g_cfg.compression_lookback;
-    eng.MAX_TRADES_PER_MIN    = g_cfg.max_trades_per_min;
-    eng.MAX_HOLD_SEC          = g_cfg.max_hold_sec;
-}
-
 static void apply_generic_brent_config(omega::BrentEngine& eng) noexcept {
     eng.VOL_THRESH_PCT        = g_cfg.brent_vol_thresh_pct;
     eng.TP_PCT                = g_cfg.brent_tp_pct;
@@ -350,7 +335,6 @@ static void load_config(const std::string& path) {
             if (k=="max_lot_gold")         g_cfg.max_lot_gold       = safe_stod(v, k);
             if (k=="max_lot_indices")      g_cfg.max_lot_indices    = safe_stod(v, k);
             if (k=="max_lot_oil")          g_cfg.max_lot_oil        = safe_stod(v, k);
-            if (k=="max_lot_silver")       g_cfg.max_lot_silver     = safe_stod(v, k);
             if (k=="max_lot_fx")           g_cfg.max_lot_fx         = safe_stod(v, k);
             if (k=="max_lot_gbpusd")       g_cfg.max_lot_gbpusd     = safe_stod(v, k);
             if (k=="max_lot_audusd")       g_cfg.max_lot_audusd     = safe_stod(v, k);
@@ -359,7 +343,6 @@ static void load_config(const std::string& path) {
             if (k=="min_lot_gold")         g_cfg.min_lot_gold       = safe_stod(v, k);
             if (k=="min_lot_indices")      g_cfg.min_lot_indices    = safe_stod(v, k);
             if (k=="min_lot_oil")          g_cfg.min_lot_oil        = safe_stod(v, k);
-            if (k=="min_lot_silver")       g_cfg.min_lot_silver     = safe_stod(v, k);
             if (k=="min_lot_fx")           g_cfg.min_lot_fx         = safe_stod(v, k);
             if (k=="gf_compression_vol_floor")      g_cfg.gf_compression_vol_floor      = safe_stod(v, k);
             if (k=="gf_compression_vol_floor_asia") g_cfg.gf_compression_vol_floor_asia = safe_stod(v, k);
@@ -395,7 +378,6 @@ static void load_config(const std::string& path) {
             if (k=="ger30_id")   g_cfg.ext_ger30_id   = safe_stoi(v, k);
             if (k=="uk100_id")   g_cfg.ext_uk100_id   = safe_stoi(v, k);
             if (k=="estx50_id")  g_cfg.ext_estx50_id  = safe_stoi(v, k);
-            if (k=="xagusd_id")  g_cfg.ext_xagusd_id  = safe_stoi(v, k);
             if (k=="eurusd_id")  g_cfg.ext_eurusd_id  = safe_stoi(v, k);
             if (k=="ukbrent_id") g_cfg.ext_ukbrent_id = safe_stoi(v, k);
             if (k=="gbpusd_id")  g_cfg.ext_gbpusd_id  = safe_stoi(v, k);
@@ -454,16 +436,6 @@ static void load_config(const std::string& path) {
             if (k=="max_spread_pct")        g_cfg.oil_max_spread_pct        = safe_stod(v, k);
             if (k=="compression_threshold") g_cfg.oil_compression_threshold = safe_stod(v, k);
             if (k=="vix_panic")             g_cfg.oil_vix_panic             = safe_stod(v, k);
-        }
-        if (section == "silver") {
-            if (k=="tp_pct")                g_cfg.silver_tp_pct                = safe_stod(v, k);
-            if (k=="sl_pct")                g_cfg.silver_sl_pct                = safe_stod(v, k);
-            if (k=="vol_thresh_pct")        g_cfg.silver_vol_thresh_pct        = safe_stod(v, k);
-            if (k=="min_gap_sec")           g_cfg.silver_min_gap_sec           = safe_stoi(v, k);
-            if (k=="momentum_thresh_pct")   g_cfg.silver_momentum_thresh_pct   = safe_stod(v, k);
-            if (k=="min_breakout_pct")      g_cfg.silver_min_breakout_pct      = safe_stod(v, k);
-            if (k=="max_spread_pct")        g_cfg.silver_max_spread_pct        = safe_stod(v, k);
-            if (k=="compression_threshold") g_cfg.silver_compression_threshold = safe_stod(v, k);
         }
         if (section == "brent") {
             if (k=="tp_pct")                g_cfg.brent_tp_pct                = safe_stod(v, k);
