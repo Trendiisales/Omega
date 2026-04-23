@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# QUICK_RESTART.ps1  -- v3.0 2026-04-21
+# QUICK_RESTART.ps1  -- v3.1 2026-04-23
 # Service-based restart. Stops the Omega NSSM service, pulls source from GitHub,
 # builds, starts the service, verifies via service status + log hash.
 #
@@ -15,6 +15,16 @@
 #   * Removed duplicate $confirm variable (reused for position check AND process kill)
 #   * Unified on omega_service_stdout.log as the single source of truth
 #   * CFE pre-check uses same log
+#
+# v3.1 (2026-04-23) -- Session 11 footgun fix:
+#   * Added $LASTEXITCODE guards after git rev-parse, cmake configure, cmake --build
+#   * Build failures now auto-restart service with PREVIOUS binary so live trading
+#     is never left down silently. The service-path Omega.exe (C:\Omega\Omega.exe)
+#     is only overwritten AFTER a successful build (L302 Copy-Item), so restart
+#     on failure uses the last known-good binary automatically.
+#   * Root cause: Session 11 commits 10-19 had three silent compile failures
+#     that the old script did not detect. Service was (re)started against a
+#     stale pre-commit-10 binary for ~30min while configs had moved forward.
 
 param(
     [switch]$SkipVerify,
@@ -45,7 +55,7 @@ $startTime    = Get-Date
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "   OMEGA  |  QUICK RESTART  v3.0" -ForegroundColor Cyan
+Write-Host "   OMEGA  |  QUICK RESTART  v3.1" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 $modeMatch = Select-String -Path $ConfigSrc -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
@@ -174,7 +184,6 @@ if ($svcFinal.Status -ne 'Stopped') {
     Write-Host "  [FATAL] Service status is $($svcFinal.Status), expected Stopped. Aborting." -ForegroundColor Red
     exit 1
 }
-
 Write-Host "  [OK] Confirmed no Omega.exe process AND service=Stopped" -ForegroundColor Green
 Write-Host ""
 
@@ -187,19 +196,38 @@ Push-Location $OmegaDir
 try {
     git fetch origin main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [FATAL] git fetch failed" -ForegroundColor Red
-        Start-Service -Name $ServiceName
+        Write-Host "  [FATAL] git fetch failed (exit=$LASTEXITCODE)" -ForegroundColor Red
+        Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
         Pop-Location
         exit 1
     }
-    $ghSha  = (git rev-parse origin/main).Trim()
+
+    $revParseOut = (git rev-parse origin/main 2>&1)
+    $revParseExit = $LASTEXITCODE
+    if ($revParseExit -ne 0 -or [string]::IsNullOrWhiteSpace($revParseOut)) {
+        Write-Host "  [FATAL] git rev-parse origin/main failed (exit=$revParseExit output='$revParseOut')" -ForegroundColor Red
+        Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        Pop-Location
+        exit 1
+    }
+    $ghSha  = $revParseOut.Trim()
+    if ($ghSha.Length -lt 7) {
+        Write-Host "  [FATAL] git rev-parse returned malformed SHA: '$ghSha'" -ForegroundColor Red
+        Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        Pop-Location
+        exit 1
+    }
     $ghSha7 = $ghSha.Substring(0,7)
     Write-Host "  HEAD: $ghSha7" -ForegroundColor Cyan
 
     git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [FATAL] git reset --hard failed" -ForegroundColor Red
-        Start-Service -Name $ServiceName
+        Write-Host "  [FATAL] git reset --hard failed (exit=$LASTEXITCODE)" -ForegroundColor Red
+        Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
         Pop-Location
         exit 1
     }
@@ -232,7 +260,8 @@ if (Test-Path $mainCpp) {
     $mainAge = ((Get-Date) - (Get-Item $mainCpp).LastWriteTime).TotalSeconds
     if ($mainAge -gt 10) {
         Write-Host "  [FATAL] Source touch failed -- main.cpp age=${mainAge}s" -ForegroundColor Red
-        Start-Service -Name $ServiceName
+        Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
         exit 1
     }
     Write-Host "  [OK] Source timestamps updated (main.cpp age=${mainAge}s)" -ForegroundColor Green
@@ -261,7 +290,27 @@ $cfgStart = Get-Date
         Write-Host "    $line" -ForegroundColor Gray
     }
 }
+$configureExitCode = $LASTEXITCODE
 $cfgSec = [math]::Round(((Get-Date) - $cfgStart).TotalSeconds, 1)
+
+if ($configureExitCode -ne 0) {
+    Write-Host ""
+    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "  ║  CMAKE CONFIGURE FAILED (exit=$configureExitCode)" -ForegroundColor Red
+    Write-Host "  ║  Duration: ${cfgSec}s" -ForegroundColor Red
+    Write-Host "  ║  Service will restart with the PREVIOUS binary" -ForegroundColor Red
+    Write-Host "  ║  so live trading is not left down." -ForegroundColor Red
+    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+    try {
+        Start-Service -Name $ServiceName -ErrorAction Stop
+        Write-Host "  [OK] Previous binary running again. Fix cmake configure before retry." -ForegroundColor Yellow
+    } catch {
+        Write-Host "  [FATAL] Could not restart service: $_" -ForegroundColor Red
+    }
+    exit 1
+}
 Write-Host "  [configure] done in ${cfgSec}s" -ForegroundColor DarkCyan
 
 # --- BUILD (compile + link) ---
@@ -286,13 +335,33 @@ $compileCount = 0
         Write-Host "    $line" -ForegroundColor DarkGray
     }
 }
+$buildExitCode = $LASTEXITCODE
 $bldSec = [math]::Round(((Get-Date) - $bldStart).TotalSeconds, 1)
+
+if ($buildExitCode -ne 0) {
+    Write-Host ""
+    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "  ║  BUILD FAILED (cmake --build exit=$buildExitCode)" -ForegroundColor Red
+    Write-Host "  ║  Duration: ${bldSec}s  |  $compileCount .cpp files compiled" -ForegroundColor Red
+    Write-Host "  ║  Service will restart with the PREVIOUS binary" -ForegroundColor Red
+    Write-Host "  ║  so live trading is not left down." -ForegroundColor Red
+    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+    try {
+        Start-Service -Name $ServiceName -ErrorAction Stop
+        Write-Host "  [OK] Previous binary running again. Fix compile errors before retry." -ForegroundColor Yellow
+    } catch {
+        Write-Host "  [FATAL] Could not restart service: $_" -ForegroundColor Red
+    }
+    exit 1
+}
 Write-Host "  [compile+link] done in ${bldSec}s ($compileCount .cpp files compiled)" -ForegroundColor DarkCyan
 
 if (-not (Test-Path $BuildExe)) {
-    Write-Host "  [FATAL] Build failed -- Omega.exe not produced" -ForegroundColor Red
-    Write-Host "  Restarting service with EXISTING binary..." -ForegroundColor Yellow
-    Start-Service -Name $ServiceName
+    Write-Host "  [FATAL] Build reported success (exit=0) but Omega.exe not produced at $BuildExe" -ForegroundColor Red
+    Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+    Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
     exit 1
 }
 
