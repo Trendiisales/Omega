@@ -617,7 +617,7 @@ private:
 //      US_EQUITY  : US500, USTEC, DJ30, NAS100  -- near-perfect correlation
 //      EU_EQUITY  : GER40, UK100, ESTX50         -- high correlation
 //      OIL        : USOIL.F, BRENT               -- tight spread
-//      METALS     : XAUUSD, XAGUSD               -- correlated but different vol
+//      METALS     : XAUUSD                        -- gold-only cluster
 //      JPY_RISK   : USDJPY, AUDUSD, NZDUSD       -- carry/risk-off cluster
 //      EUR_GBP    : EURUSD, GBPUSD               -- G10 major correlation
 //
@@ -628,7 +628,7 @@ enum class CorrCluster {
     US_EQUITY,   // US500 USTEC DJ30 NAS100
     EU_EQUITY,   // GER40 UK100 ESTX50
     OIL,         // USOIL.F BRENT
-    METALS,      // XAUUSD XAGUSD
+    METALS,      // XAUUSD
     JPY_RISK,    // USDJPY AUDUSD NZDUSD
     EUR_GBP,     // EURUSD GBPUSD
     STANDALONE,  // no correlation cluster (treat independently)
@@ -641,7 +641,7 @@ static inline CorrCluster symbol_to_cluster(const std::string& sym) {
         return CorrCluster::EU_EQUITY;
     if (sym == "USOIL.F" || sym == "BRENT")
         return CorrCluster::OIL;
-    if (sym == "XAUUSD"  || sym == "XAGUSD")
+    if (sym == "XAUUSD")
         return CorrCluster::METALS;
     if (sym == "USDJPY"  || sym == "AUDUSD"  || sym == "NZDUSD")
         return CorrCluster::JPY_RISK;
@@ -1102,7 +1102,7 @@ public:
     }
     void load_perf(const std::string& dir) noexcept {
         static const char* SYMS[] = {
-            "XAUUSD","XAGUSD","US500.F","USTEC.F","DJ30.F","NAS100",
+            "XAUUSD","US500.F","USTEC.F","DJ30.F","NAS100",
             "GER40","UK100","ESTX50","USOIL.F","BRENT",
             "EURUSD","GBPUSD","AUDUSD","NZDUSD","USDJPY", nullptr
         };
