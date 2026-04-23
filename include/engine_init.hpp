@@ -48,8 +48,7 @@ static void init_engines(const std::string& cfg_path)
     g_trend_pb_ger40.shadow_mode = kShadowDefault;
     g_trend_pb_nq.shadow_mode    = kShadowDefault;
     g_trend_pb_sp.shadow_mode    = kShadowDefault;
-    // BreakoutEngine non-index instances (FX + XAG, uniform per Q2 decision):
-    g_eng_xag.shadow_mode     = kShadowDefault;
+    // BreakoutEngine non-index instances (FX, uniform per Q2 decision):
     g_eng_eurusd.shadow_mode  = kShadowDefault;
     g_eng_gbpusd.shadow_mode  = kShadowDefault;
     g_eng_audusd.shadow_mode  = kShadowDefault;
@@ -64,7 +63,6 @@ static void init_engines(const std::string& cfg_path)
     apply_generic_index_config(g_eng_ger30);
     apply_generic_index_config(g_eng_uk100);
     apply_generic_index_config(g_eng_estx50);
-    apply_generic_silver_config(g_eng_xag);
     // Bracket engines -- configure() with tuned production params.
     // buffer, lookback, RR, cooldown_ms, MIN_RANGE, CONFIRM_MOVE, confirm_timeout_ms, min_hold_ms
     g_bracket_gold.configure(
@@ -91,35 +89,8 @@ static void init_engines(const std::string& cfg_path)
         0.8,    // SLIPPAGE_BUFFER
         1.5     // EDGE_MULTIPLIER
     );
-    // XAGUSD (~$65): daily range $3.5, typical compression $0.30, spread $0.08
-    // Silver amplifies gold -- same cascade logic, same cooldown, trail rides $3-5 weekly moves.
-    // Trail at 3R: comp=$0.30, trail_dist=$0.075 -- very tight, holds through volatile moves.
-    g_bracket_xag.configure(
-        0.04,   // buffer: spread*0.5 = $0.04 outside range
-        150,    // FEED-CALIBRATED: 150 ticks = 60s at XAGUSD=150/min. Old 30=12s.
-        3.0,    // RR: 3.0 matches gold. On $0.30 compression: trail arms at $0.90 in.
-                //   On a $3.50 weekly move: 10R+ captured via trail.
-        30000,  // cooldown_ms: 30s -- silver cascades same as gold, re-arm fast.
-        0.40,   // MIN_RANGE: $0.40 minimum raw structural range.
-                //   At $64, $0.40 = 0.63% -- real compression, not tick noise.
-                //   Old value was $0.15 which fired on $0.18 structures that
-                //   were swept in seconds. Raw range check in arm_both_sides
-                //   now enforces this against the spread-padded dist.
-        0.06,   // CONFIRM_MOVE
-        4000,   // confirm_timeout_ms
-        8000,   // min_hold_ms
-        0.0,    // VWAP_MIN_DIST: removed -- silver near VWAP pre-breakout by definition.
-        20000,  // MIN_STRUCTURE_MS: 20s
-        12000,  // FAILURE_WINDOW_MS: 12s -- silver sweeps slightly faster than gold.
-        20,     // ATR_PERIOD
-        0.17,   // ATR_CONFIRM_K
-        1.4,    // ATR_RANGE_K
-        0.08,   // SLIPPAGE_BUFFER: $0.08 matches typical silver spread
-        1.5     // EDGE_MULTIPLIER
-    );
     // Wire shadow fill simulation -- price-triggered in PENDING, not immediate at arm
     g_bracket_gold.shadow_mode = (g_cfg.mode != "LIVE");
-    g_bracket_xag.shadow_mode  = (g_cfg.mode != "LIVE");
 
     // ?? MacroCrashEngine config ??????????????????????????????????????????????????
     // Always-on macro event engine. Shadow mode = log only, no live orders.
@@ -264,17 +235,14 @@ static void init_engines(const std::string& cfg_path)
     }
     fflush(stdout);
     fflush(stdout);
-    // PENDING_TIMEOUT_SEC: gold/silver compress for minutes before breaking -- 60s was expiring before the move
+    // PENDING_TIMEOUT_SEC: gold compresses for minutes before breaking -- 60s was expiring before the move
     g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
-    g_bracket_xag.PENDING_TIMEOUT_SEC  = 300;  // 5 min: silver moves faster than gold
     // MIN_BREAK_TICKS: sweep guard -- price must stay inside the bracket for N consecutive
     // ticks before orders are sent. Catches London open liquidity sweeps (07:00:34 SHORT
     // -$7.97): bracket range $7.80 was exactly one sweep wide, SHORT filled in 1 tick
     // then price snapped back $7.80 to SL in 16s. 3 ticks ~= 0.3-0.6s -- long enough to
     // distinguish a single-tick spike from genuine compression holding at the boundary.
-    // Silver also benefits: London open sweep pattern identical, slightly faster ticks.
     g_bracket_gold.MIN_BREAK_TICKS = 5;  // raised 3->5: extra sweep protection
-    g_bracket_xag.MIN_BREAK_TICKS  = 3;
     // ATR-based dynamic minimum range: eff_min_range = max(recent_noise * ATR_RANGE_K, MIN_RANGE)
     // Prevents brackets arming when the market noise floor exceeds the bracket width --
     // the SL then sits inside normal noise and gets swept without a real move.
@@ -285,14 +253,12 @@ static void init_engines(const std::string& cfg_path)
     // Gold: London noise $8-20. MIN_RANGE=6. ATR_RANGE_K=1.5 ? when noise=$12, eff_min=18.
     //   A $10 bracket in $12 noise is invalid -- SL would be swept immediately.
     //   A $20 bracket in $12 noise is valid -- genuine compression above noise.
-    // Silver: proportionally similar (~$0.10-0.40 noise). ATR_RANGE_K=1.5.
     // FX (EURUSD etc.): noise ~0.0003-0.0008. ATR_RANGE_K=1.8 (tighter price, more sensitive).
     // Gold bracket: ATR_RANGE_K=0 disables ATR floor -- use MIN_RANGE=1.0pt directly.
     // With VIX at 24 gold compresses to 1-3pt ranges which ATR_RANGE_K=1.5 rejects (needs 15pt).
     // The bracket window itself defines the range -- 1pt minimum just filters single-tick noise.
     g_bracket_gold.ATR_PERIOD  = 20;  g_bracket_gold.ATR_RANGE_K  = 0.0;
     g_bracket_gold.MIN_RANGE   = 2.5;  // raised 1.0->2.5: filter small noisy compressions
-    g_bracket_xag.ATR_PERIOD   = 20;  g_bracket_xag.ATR_RANGE_K   = 1.5;
     g_bracket_eurusd.ATR_PERIOD = 20; g_bracket_eurusd.ATR_RANGE_K = 1.8;
     g_bracket_gbpusd.ATR_PERIOD = 20; g_bracket_gbpusd.ATR_RANGE_K = 1.8;
     g_bracket_audusd.ATR_PERIOD = 20; g_bracket_audusd.ATR_RANGE_K = 1.8;
@@ -302,12 +268,9 @@ static void init_engines(const std::string& cfg_path)
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
     g_bracket_gold.MAX_RANGE   = 12.0;   // DATA-CALIBRATED: $12 max. Ranges >$12 are trending, not bracketing.
-    // Silver at $68: 0.4% = $0.27 max range. Compression = $0.15-0.25. Day range = $1-3.
-    g_bracket_xag.MAX_RANGE    = 0.30;   // ~0.44% of silver ~$68
     // Configure opening range engines
     g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
     g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
-    g_orb_silver.OPEN_HOUR= 13; g_orb_silver.OPEN_MIN= 30;  // COMEX open 13:30 UTC
     // New ORB instruments: LSE and Euronext with tighter 15-min range windows
     g_orb_uk100.OPEN_HOUR  = 8;  g_orb_uk100.OPEN_MIN  = 0;   // LSE open 08:00 UTC
     g_orb_uk100.RANGE_WINDOW_MIN = 15;  // 15-min range (LSE moves fast at open)
@@ -572,7 +535,6 @@ static void init_engines(const std::string& cfg_path)
 
     // TrendPullback gold: M15 bar EMAs seeded live from g_bars_gold.m15 each tick.
     g_bracket_gold.cancel_order_fn = [](const std::string& id) { send_cancel_order(id); };
-    g_bracket_xag.cancel_order_fn  = [](const std::string& id) { send_cancel_order(id); };
 
     // ?? Configure new bracket engines ????????????????????????????????????????
     // US equity indices: arms both sides, captures whichever direction breaks out
@@ -612,7 +574,7 @@ static void init_engines(const std::string& cfg_path)
     g_bracket_gbpusd.MAX_RANGE  = 0.0010; // ~0.08% of GBPUSD ~1.33
     g_bracket_audusd.MAX_RANGE  = 0.0006; // ~0.09% of AUDUSD ~0.70
     g_bracket_nzdusd.MAX_RANGE  = 0.0006; // ~0.10% of NZDUSD ~0.60
-    // USDJPY/GOLD/XAGUSD: MAX_RANGE set after their configure() calls below
+    // USDJPY/GOLD: MAX_RANGE set after their configure() calls below
     g_bracket_usdjpy.symbol = "USDJPY";  g_bracket_usdjpy.ENTRY_SIZE = 0.01;
 
     // ?? Bracket calibration -- March 2026 actual prices ?????????????????????????
@@ -772,7 +734,6 @@ static void init_engines(const std::string& cfg_path)
             apply_be(g_eng_ger30,  g_sym_cfg.get("GER40"),   22000.0);
             apply_be(g_eng_uk100,  g_sym_cfg.get("UK100"),   8500.0);
             apply_be(g_eng_estx50, g_sym_cfg.get("ESTX50"),  5300.0);
-            apply_be(g_eng_xag,    g_sym_cfg.get("XAGUSD"),  30.0);
             apply_be(g_eng_eurusd, g_sym_cfg.get("EURUSD"),  1.10);
             apply_be(g_eng_gbpusd, g_sym_cfg.get("GBPUSD"),  1.27);
             apply_be(g_eng_audusd, g_sym_cfg.get("AUDUSD"),  0.65);
@@ -784,7 +745,6 @@ static void init_engines(const std::string& cfg_path)
             g_eng_ger30.WATCH_TIMEOUT_SEC  = 240;
             g_eng_uk100.WATCH_TIMEOUT_SEC  = 240;
             g_eng_estx50.WATCH_TIMEOUT_SEC = 240;
-            g_eng_xag.WATCH_TIMEOUT_SEC    = 240;
             g_eng_eurusd.WATCH_TIMEOUT_SEC = 240;
             g_eng_gbpusd.WATCH_TIMEOUT_SEC = 240;
             g_eng_audusd.WATCH_TIMEOUT_SEC = 240;
@@ -811,7 +771,6 @@ static void init_engines(const std::string& cfg_path)
                 // SLIPPAGE_BUFFER intentionally NOT set here -- configure() has correct values
             };
             apply_bracket(g_bracket_gold,   g_sym_cfg.get("XAUUSD"));
-            apply_bracket(g_bracket_xag,    g_sym_cfg.get("XAGUSD"));
             apply_bracket(g_bracket_sp,     g_sym_cfg.get("US500.F"));
             apply_bracket(g_bracket_nq,     g_sym_cfg.get("USTEC.F"));
             apply_bracket(g_bracket_us30,   g_sym_cfg.get("DJ30.F"));
@@ -859,7 +818,6 @@ static void init_engines(const std::string& cfg_path)
             apply_supervisor(g_sup_ger30,  "GER40",   g_sym_cfg.get("GER40"),   g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_uk100,  "UK100",   g_sym_cfg.get("UK100"),   g_cfg.eu_index_max_spread_pct);
             apply_supervisor(g_sup_estx50, "ESTX50",  g_sym_cfg.get("ESTX50"),  g_cfg.eu_index_max_spread_pct);
-            apply_supervisor(g_sup_xag,    "XAGUSD",  g_sym_cfg.get("XAGUSD"),  g_cfg.silver_max_spread_pct);
             apply_supervisor(g_sup_eurusd, "EURUSD",  g_sym_cfg.get("EURUSD"),  g_cfg.fx_max_spread_pct);
             apply_supervisor(g_sup_gbpusd, "GBPUSD",  g_sym_cfg.get("GBPUSD"),  g_cfg.gbpusd_max_spread_pct);
             // AUDUSD/NZDUSD: use their dedicated max_spread_pct (0.030/0.035), NOT
@@ -895,7 +853,7 @@ static void init_engines(const std::string& cfg_path)
             g_sup_cl.symbol     = "USOIL.F"; g_sup_us30.symbol   = "DJ30.F";
             g_sup_nas100.symbol = "NAS100";  g_sup_ger30.symbol  = "GER40";
             g_sup_uk100.symbol  = "UK100";   g_sup_estx50.symbol = "ESTX50";
-            g_sup_xag.symbol    = "XAGUSD";  g_sup_gold.symbol   = "XAUUSD";
+            g_sup_gold.symbol   = "XAUUSD";
             g_sup_eurusd.symbol = "EURUSD";  g_sup_gbpusd.symbol = "GBPUSD";
             g_sup_audusd.symbol = "AUDUSD";  g_sup_nzdusd.symbol = "NZDUSD";
             g_sup_usdjpy.symbol = "USDJPY";  g_sup_brent.symbol  = "BRENT";
@@ -907,7 +865,7 @@ static void init_engines(const std::string& cfg_path)
                 sup->cfg.allow_bracket = false;
             // Raise cooldown threshold from default 3 to 20
             for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
-                              &g_sup_ger30, &g_sup_uk100, &g_sup_estx50, &g_sup_xag,
+                              &g_sup_ger30, &g_sup_uk100, &g_sup_estx50,
                               &g_sup_gold, &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
                               &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
                 sup->cfg.cooldown_fail_threshold = 20;
@@ -917,7 +875,7 @@ static void init_engines(const std::string& cfg_path)
     // Prevents stale HIGH_RISK/CHOP counts from a prior session blocking
     // trading before baseline vol warms (typically first 60-120 ticks).
     for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
-                      &g_sup_ger30, &g_sup_uk100, &g_sup_estx50, &g_sup_xag,
+                      &g_sup_ger30, &g_sup_uk100, &g_sup_estx50,
                       &g_sup_gold, &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
                       &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
         sup->reset();
@@ -940,7 +898,6 @@ static void init_engines(const std::string& cfg_path)
         apply_generic_index_config(g_eng_ger30);
         apply_generic_index_config(g_eng_uk100);
         apply_generic_index_config(g_eng_estx50);
-        apply_generic_silver_config(g_eng_xag);
         apply_generic_fx_config(g_eng_eurusd);
         apply_generic_gbpusd_config(g_eng_gbpusd);
         apply_generic_audusd_config(g_eng_audusd);
@@ -966,7 +923,6 @@ static void init_engines(const std::string& cfg_path)
         g_eng_ger30.ENTRY_SIZE    = 0.01;
         g_eng_uk100.ENTRY_SIZE    = 0.01;
         g_eng_estx50.ENTRY_SIZE   = 0.01;
-        g_eng_xag.ENTRY_SIZE      = 0.01;
         g_eng_eurusd.ENTRY_SIZE   = 0.01;
         g_eng_gbpusd.ENTRY_SIZE   = 0.01;
         g_eng_brent.ENTRY_SIZE    = 0.01;
@@ -998,7 +954,6 @@ static void init_engines(const std::string& cfg_path)
         g_eng_ger30.ENTRY_SIZE    = 0.01;
         g_eng_uk100.ENTRY_SIZE    = 0.10;  // indices: $10 / ~8pt SL * $1/pt = 1.25 ? capped at max
         g_eng_estx50.ENTRY_SIZE   = 0.10;
-        g_eng_xag.ENTRY_SIZE      = 0.01;
         g_eng_eurusd.ENTRY_SIZE   = 0.01;
         g_eng_gbpusd.ENTRY_SIZE   = 0.01;
         g_eng_brent.ENTRY_SIZE    = 0.01;
@@ -1034,7 +989,6 @@ static void init_engines(const std::string& cfg_path)
         g_eng_ger30.ACCOUNT_EQUITY  = acct_eq;
         g_eng_uk100.ACCOUNT_EQUITY  = acct_eq;
         g_eng_estx50.ACCOUNT_EQUITY = acct_eq;
-        g_eng_xag.ACCOUNT_EQUITY    = acct_eq;
         g_eng_eurusd.ACCOUNT_EQUITY = acct_eq;
         g_eng_gbpusd.ACCOUNT_EQUITY = acct_eq;
         g_eng_brent.ACCOUNT_EQUITY  = acct_eq;
@@ -1071,7 +1025,6 @@ static void init_engines(const std::string& cfg_path)
     g_orb_ger30.enabled  = false;
     g_orb_uk100.enabled  = false;
     g_orb_estx50.enabled = false;
-    g_orb_silver.enabled = false;
     //
     // Cross-asset: EIA fade, BrentWTI spread, FX cascade, carry unwind.
     // All have insufficient live data. Shelved pending shadow validation.
@@ -1496,10 +1449,6 @@ static void init_engines(const std::string& cfg_path)
               << "% vol=" << g_eng_nas100.VOL_THRESH_PCT << "% mom=" << g_eng_nas100.MOMENTUM_THRESH_PCT
               << "% brk=" << g_eng_nas100.MIN_BREAKOUT_PCT << "% gap=" << g_eng_nas100.MIN_GAP_SEC
               << "s hold=" << g_eng_nas100.MAX_HOLD_SEC << "s spread=" << g_eng_nas100.MAX_SPREAD_PCT << "%\n"
-              << "[OMEGA-PARAMS] XAGUSD   TP=" << g_eng_xag.TP_PCT  << "% SL=" << g_eng_xag.SL_PCT
-              << "% vol=" << g_eng_xag.VOL_THRESH_PCT << "% mom=" << g_eng_xag.MOMENTUM_THRESH_PCT
-              << "% brk=" << g_eng_xag.MIN_BREAKOUT_PCT << "% gap=" << g_eng_xag.MIN_GAP_SEC
-              << "s hold=" << g_eng_xag.MAX_HOLD_SEC << "s spread=" << g_eng_xag.MAX_SPREAD_PCT << "%\n"
               << "[OMEGA-PARAMS] AUDUSD   TP=" << g_eng_audusd.TP_PCT << "% SL=" << g_eng_audusd.SL_PCT
               << "% vol=" << g_eng_audusd.VOL_THRESH_PCT << "% mom=" << g_eng_audusd.MOMENTUM_THRESH_PCT
               << "% gap=" << g_eng_audusd.MIN_GAP_SEC << "s spread=" << g_eng_audusd.MAX_SPREAD_PCT << "% [ASIA]\n"
