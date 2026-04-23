@@ -268,6 +268,18 @@ static void init_engines(const std::string& cfg_path)
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
     g_bracket_gold.MAX_RANGE   = 12.0;   // DATA-CALIBRATED: $12 max. Ranges >$12 are trending, not bracketing.
+    // ?? Regime-flip exit (Session 13, 2026-04-23) -- gold only ?????????????????
+    // Thresholds wired for XAUUSD_BRACKET only. See BracketEngine.hpp config block.
+    // Trigger: |ewm_drift| >= 2.5 against position for 5 consecutive ticks.
+    //   - 2.5 is well above noise floor (typical quiet drift is +/- 0.5-1.0)
+    //   - 5 ticks at ~5-10 ticks/s = 0.5-1.0s of persistent counter-drift
+    // Rationale: 2026-04-23 Session 12 losses showed drift flipping 30+ seconds
+    // before bracket's SL hit. 5 ticks confirm catches confirmed reversals while
+    // ignoring momentary bid-ask flicker. drift arg passed from tick_gold.hpp
+    // via g_gold_stack.ewm_drift().
+    // All other bracket engines keep defaults (0.0 / 0) -- exit branch inert.
+    g_bracket_gold.REGIME_FLIP_MIN_DRIFT     = 2.5;
+    g_bracket_gold.REGIME_FLIP_CONFIRM_TICKS = 5;
     // Configure opening range engines
     g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
     g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
