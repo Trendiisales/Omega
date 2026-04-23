@@ -36,7 +36,6 @@ static void sanitize_config() noexcept {
     g_cfg.max_lot_gold       = clampd(g_cfg.max_lot_gold,    0.01, 10.0, 0.01);  // FIX 2026-04-22 uniformity: master cap 0.50 -> 0.01 SHADOW-mode
     g_cfg.max_lot_indices    = clampd(g_cfg.max_lot_indices, 0.01, 10.0, 0.20);
     g_cfg.max_lot_oil        = clampd(g_cfg.max_lot_oil,     0.01, 10.0, 0.50);
-    g_cfg.max_lot_silver     = clampd(g_cfg.max_lot_silver,  0.01, 10.0, 0.20);
     g_cfg.max_lot_fx         = clampd(g_cfg.max_lot_fx,      0.01, 50.0, 5.00);
     g_cfg.max_lot_gbpusd     = clampd(g_cfg.max_lot_gbpusd,  0.01, 50.0, 5.00);
     g_cfg.max_lot_audusd     = clampd(g_cfg.max_lot_audusd,  0.01, 50.0, 5.00);
@@ -46,7 +45,6 @@ static void sanitize_config() noexcept {
     g_cfg.min_lot_gold       = clampd(g_cfg.min_lot_gold,    0.0, g_cfg.max_lot_gold,    0.01);
     g_cfg.min_lot_indices    = clampd(g_cfg.min_lot_indices, 0.0, g_cfg.max_lot_indices, 0.01);
     g_cfg.min_lot_oil        = clampd(g_cfg.min_lot_oil,     0.0, g_cfg.max_lot_oil,     0.01);
-    g_cfg.min_lot_silver     = clampd(g_cfg.min_lot_silver,  0.0, g_cfg.max_lot_silver,  0.01);
     g_cfg.min_lot_fx         = clampd(g_cfg.min_lot_fx,      0.0, g_cfg.max_lot_fx,      0.01);
     g_cfg.min_lot_gbpusd     = clampd(g_cfg.min_lot_gbpusd,  0.0, g_cfg.max_lot_gbpusd,  0.01);
     g_cfg.min_lot_audusd     = clampd(g_cfg.min_lot_audusd,  0.0, g_cfg.max_lot_audusd,  0.01);
@@ -63,7 +61,6 @@ static void sanitize_config() noexcept {
     g_cfg.ext_ger30_id   = std::max(0, g_cfg.ext_ger30_id);
     g_cfg.ext_uk100_id   = std::max(0, g_cfg.ext_uk100_id);
     g_cfg.ext_estx50_id  = std::max(0, g_cfg.ext_estx50_id);
-    g_cfg.ext_xagusd_id  = std::max(0, g_cfg.ext_xagusd_id);
     g_cfg.ext_eurusd_id  = std::max(0, g_cfg.ext_eurusd_id);
     g_cfg.ext_ukbrent_id = std::max(0, g_cfg.ext_ukbrent_id);
     g_cfg.ext_gbpusd_id  = std::max(0, g_cfg.ext_gbpusd_id);
@@ -74,7 +71,7 @@ static void sanitize_config() noexcept {
     g_ext_syms[0].id = g_cfg.ext_ger30_id;
     g_ext_syms[1].id = g_cfg.ext_uk100_id;
     g_ext_syms[2].id = g_cfg.ext_estx50_id;
-    g_ext_syms[3].id = g_cfg.ext_xagusd_id;
+    g_ext_syms[3].id = 0;  // XAGUSD removed Session 10 — slot retained for array index contract
     g_ext_syms[4].id = g_cfg.ext_eurusd_id;
     g_ext_syms[5].id = g_cfg.ext_ukbrent_id;
     g_ext_syms[6].id = g_cfg.ext_gbpusd_id;
@@ -89,7 +86,6 @@ static void sanitize_config() noexcept {
         // Print example sizes at current risk level so it's easy to verify on boot
         const double r = g_cfg.risk_per_trade_usd;
         const double oil_size  = std::floor(std::min(r / (0.478 * 1000.0),  g_cfg.max_lot_oil)     * 100 + 0.5) / 100;
-        const double xag_size  = std::floor(std::min(r / (0.324 * 5000.0),  g_cfg.max_lot_silver)  * 100 + 0.5) / 100;
         const double gold_size = std::floor(std::min(r / (10.4  * 100.0),   g_cfg.max_lot_gold)    * 100 + 0.5) / 100;
         const double sp_size   = std::floor(std::min(r / (22.3  * 50.0),    g_cfg.max_lot_indices) * 100 + 0.5) / 100;
         const double nq_size   = std::floor(std::min(r / (78.0  * 20.0),    g_cfg.max_lot_indices) * 100 + 0.5) / 100;
@@ -97,7 +93,6 @@ static void sanitize_config() noexcept {
         std::cout << "[CONFIG] RISK-SIZING ENABLED  risk_per_trade=$" << r << "\n"
                   << "[CONFIG]   example sizes at current risk ($" << r << " max loss per trade):\n"
                   << "[CONFIG]     USOIL.F  ~" << oil_size  << " lots  (SL?$0.48, max_loss?$"  << std::round(oil_size  * 0.478 * 1000) << ")\n"
-                  << "[CONFIG]     XAGUSD   ~" << xag_size  << " lots  (SL?$0.32, max_loss?$"  << std::round(xag_size  * 0.324 * 5000) << ")\n"
                   << "[CONFIG]     XAUUSD   ~" << gold_size << " lots  (SL?$10.4, max_loss?$"  << std::round(gold_size * 10.4  * 100)  << ")\n"
                   << "[CONFIG]     US500.F  ~" << sp_size   << " lots  (SL?22.3pts@$50/pt, max_loss?$"  << std::round(sp_size   * 22.3  * 50)   << ")\n"
                   << "[CONFIG]     USTEC.F  ~" << nq_size   << " lots  (SL?78.0pts@$20/pt, max_loss?$"  << std::round(nq_size   * 78.0  * 20)   << ")\n"
@@ -105,12 +100,10 @@ static void sanitize_config() noexcept {
                   << "[CONFIG]   caps(max): gold=" << g_cfg.max_lot_gold
                   << " idx=" << g_cfg.max_lot_indices
                   << " oil=" << g_cfg.max_lot_oil
-                  << " silver=" << g_cfg.max_lot_silver
                   << " fx=" << g_cfg.max_lot_fx << "\n"
                   << "[CONFIG]   floors(min): gold=" << g_cfg.min_lot_gold
                   << " idx=" << g_cfg.min_lot_indices
                   << " oil=" << g_cfg.min_lot_oil
-                  << " silver=" << g_cfg.min_lot_silver
                   << " fx=" << g_cfg.min_lot_fx << "\n";
     } else {
         std::cout << "[CONFIG] RISK-SIZING DISABLED (risk_per_trade_usd=0) -- using fixed fallback size 0.01 lots\n";
@@ -170,7 +163,7 @@ static void maybe_reset_daily_ledger() {
             t.pnl *= mult; t.mfe *= mult; t.mae *= mult;
             double cps = 0.0;
             { const std::string& s = t.symbol;
-              if (s=="XAUUSD"||s=="XAGUSD"||s=="EURUSD"||s=="GBPUSD"||
+              if (s=="XAUUSD"||s=="EURUSD"||s=="GBPUSD"||
                   s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
             omega::apply_realistic_costs(t, cps, mult);
             g_omegaLedger.record(t);
@@ -225,7 +218,7 @@ static void maybe_reset_daily_ledger() {
         mid_beng(g_eng_us30,   "DJ30.F");  mid_beng(g_eng_nas100, "NAS100");
         mid_beng(g_eng_ger30,  "GER40");   mid_beng(g_eng_uk100,  "UK100");
         mid_beng(g_eng_estx50, "ESTX50");  mid_beng(g_eng_cl,     "USOIL.F");
-        mid_beng(g_eng_brent,  "BRENT");   mid_beng(g_eng_xag,    "XAGUSD");
+        mid_beng(g_eng_brent,  "BRENT");
         mid_beng(g_eng_eurusd, "EURUSD");  mid_beng(g_eng_gbpusd, "GBPUSD");
         mid_beng(g_eng_audusd, "AUDUSD");  mid_beng(g_eng_nzdusd, "NZDUSD");
         mid_beng(g_eng_usdjpy, "USDJPY");
@@ -238,7 +231,7 @@ static void maybe_reset_daily_ledger() {
             eng.forceClose(b, a, "MIDNIGHT_ROLLOVER", g_rtt_last, "", midnight_cb);
             printf("[MIDNIGHT-ROLLOVER] Force-closed Bracket %s\n", sym); fflush(stdout);
         };
-        mid_bracket(g_bracket_gold,   "XAUUSD"); mid_bracket(g_bracket_xag,    "XAGUSD");
+        mid_bracket(g_bracket_gold,   "XAUUSD");
         mid_bracket(g_bracket_sp,     "US500.F"); mid_bracket(g_bracket_nq,     "USTEC.F");
         mid_bracket(g_bracket_us30,   "DJ30.F");  mid_bracket(g_bracket_nas100, "NAS100");
         mid_bracket(g_bracket_ger30,  "GER40");   mid_bracket(g_bracket_uk100,  "UK100");
@@ -272,7 +265,6 @@ static void maybe_reset_daily_ledger() {
         mid_ca(g_nbm_gold_london, "XAUUSD");  mid_ca(g_nbm_oil_london,  "USOIL.F");
         mid_ca(g_orb_us,          "US500.F"); mid_ca(g_orb_ger30,       "GER40");
         mid_ca(g_orb_uk100,       "UK100");   mid_ca(g_orb_estx50,      "ESTX50");
-        mid_ca(g_orb_silver,      "XAGUSD");
         mid_ca(g_vwap_rev_sp,     "US500.F"); mid_ca(g_vwap_rev_nq,     "USTEC.F");
         mid_ca(g_vwap_rev_ger40,  "GER40");   mid_ca(g_vwap_rev_eurusd, "EURUSD");
         mid_ca(g_ca_esnq,         "US500.F"); mid_ca(g_ca_eia_fade,     "USOIL.F");
