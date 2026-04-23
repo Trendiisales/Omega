@@ -90,7 +90,6 @@ struct OmegaConfig {
     double max_lot_gold    = 0.50;   // XAUUSD max lots per trade
     double max_lot_indices = 0.20;   // SP/NQ/DJ30/NAS100/EU indices max lots
     double max_lot_oil     = 0.50;   // USOIL.F / UKBRENT max lots
-    double max_lot_silver  = 0.20;   // XAGUSD max lots
     double max_lot_fx      = 5.00;   // EURUSD max lots
 
     // Per-symbol minimum lot size floor.
@@ -102,7 +101,6 @@ struct OmegaConfig {
     double min_lot_gold    = 0.01;
     double min_lot_indices = 0.01;
     double min_lot_oil     = 0.01;
-    double min_lot_silver  = 0.01;
     double min_lot_fx      = 0.01;
 
     // GoldFlow compression vol floor -- hot-reloadable via omega_config.ini
@@ -118,7 +116,6 @@ struct OmegaConfig {
     int    ext_ger30_id               = 0;
     int    ext_uk100_id               = 0;
     int    ext_estx50_id              = 0;
-    int    ext_xagusd_id              = 0;
     int    ext_eurusd_id              = 0;
     int    ext_ukbrent_id             = 0;
     int    ext_gbpusd_id              = 0;
@@ -181,16 +178,6 @@ struct OmegaConfig {
     double oil_max_spread_pct         = 0.120;  // 1.5pts @ ~97 ? 1.55% -- keep current
     double oil_compression_threshold  = 0.80;
     double oil_vix_panic              = 50.0;
-
-    // Silver (XAGUSD)
-    double silver_tp_pct               = 0.800;
-    double silver_sl_pct               = 0.400;
-    double silver_vol_thresh_pct       = 0.060;
-    int    silver_min_gap_sec          = 180;
-    double silver_momentum_thresh_pct  = 0.020;
-    double silver_min_breakout_pct     = 0.050;
-    double silver_max_spread_pct       = 0.120;  // 0.120% of ~$68 = ~$0.082 max. OLD: 0.080% = $0.054 -- too tight for volatile silver ($0.05-$0.13)
-    double silver_compression_threshold = 0.85;
 
     // Brent (UKBRENT)
     double brent_tp_pct                = 1.500;
@@ -272,7 +259,7 @@ struct OmegaConfig {
     int    ext_nzdusd_id = 0;
     int    ext_usdjpy_id = 0;
 
-    // Bracket engines (Gold + Silver)
+    // Bracket engines (Gold)
     int    bracket_gold_lookback      = 40;
     double bracket_gold_tp_pct        = 0.25;
     double bracket_gold_sl_pct        = 0.12;
@@ -281,14 +268,6 @@ struct OmegaConfig {
     int    bracket_gold_min_gap_sec   = 90;
     int    bracket_gold_cooldown_sl_sec = 120;
     int    bracket_gold_max_hold_sec  = 1800;
-    int    bracket_xag_lookback       = 40;
-    double bracket_xag_tp_pct         = 0.20;
-    double bracket_xag_sl_pct         = 0.10;
-    double bracket_xag_min_range_pct  = 0.035;
-    double bracket_xag_max_spread_pct = 0.08;
-    int    bracket_xag_min_gap_sec    = 90;
-    int    bracket_xag_cooldown_sl_sec = 120;
-    int    bracket_xag_max_hold_sec   = 1800;
 
     // GUI
     int         gui_port   = 7779;
