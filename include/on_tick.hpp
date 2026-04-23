@@ -40,7 +40,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // A real bad-tick on gold (e.g. 46420 instead of 4642) moves 800pts.
                 // FX floor = 0.002 (20 pips). Index floor = 5pts. Oil floor = 0.5pts.
                 const double min_threshold =
-                    (sym == "XAUUSD" || sym == "XAGUSD") ? 5.0   :  // gold/silver: 5pt floor
+                    (sym == "XAUUSD")                     ? 5.0   :  // gold: 5pt floor
                     (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" ||
                      sym == "NAS100"  || sym == "GER40"   || sym == "UK100"  ||
                      sym == "ESTX50")                     ? 5.0   :  // indices: 5pt floor
@@ -78,7 +78,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if      (sym == "XAUUSD")  l2_imb = g_macro_ctx.gold_l2_imbalance;
             else if (sym == "US500.F") l2_imb = g_macro_ctx.sp_l2_imbalance;
             else if (sym == "USTEC.F") l2_imb = g_macro_ctx.nq_l2_imbalance;
-            else if (sym == "XAGUSD")  l2_imb = g_macro_ctx.xag_l2_imbalance;
             else if (sym == "USOIL.F") l2_imb = g_macro_ctx.cl_l2_imbalance;
             else if (sym == "BRENT")   l2_imb = g_macro_ctx.brent_l2_imbalance;
             else if (sym == "EURUSD")  l2_imb = g_macro_ctx.eur_l2_imbalance;
@@ -114,7 +113,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "GER40")   g_eng_ger30.seed(mid);
         else if (sym == "UK100")   g_eng_uk100.seed(mid);
         else if (sym == "ESTX50")  g_eng_estx50.seed(mid);
-        else if (sym == "XAGUSD")  g_eng_xag.seed(mid);
         else if (sym == "EURUSD")  g_eng_eurusd.seed(mid);
         else if (sym == "GBPUSD")  g_eng_gbpusd.seed(mid);
         else if (sym == "AUDUSD")  g_eng_audusd.seed(mid);
@@ -227,9 +225,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                          + static_cast<int>(g_bracket_gold.pos.active)
                          + static_cast<int>(g_gold_flow.has_open_position())
                          + static_cast<int>(g_gold_flow_reload.has_open_position())
-                         + static_cast<int>(g_eng_xag.pos.active)
-                         + static_cast<int>(g_bracket_xag.pos.active)
-                         + static_cast<int>(g_orb_silver.has_open_position())
                          + static_cast<int>(g_nbm_gold_london.has_open_position()); // was incorrectly in us_eq
         const int jpy   = static_cast<int>(g_eng_usdjpy.pos.active)
                         + static_cast<int>(g_eng_audusd.pos.active)
@@ -389,7 +384,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.sp_l2_imbalance     = rd(g_l2_sp);
         g_macro_ctx.nq_l2_imbalance     = rd(g_l2_nq);
         g_macro_ctx.cl_l2_imbalance     = rd(g_l2_cl);
-        g_macro_ctx.xag_l2_imbalance    = rd(g_l2_xag);
         g_macro_ctx.eur_l2_imbalance    = rd(g_l2_eur);
         g_macro_ctx.gbp_l2_imbalance    = rd(g_l2_gbp);
         g_macro_ctx.aud_l2_imbalance    = rd(g_l2_aud);
@@ -405,7 +399,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
     g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.sp_microprice_bias   = g_l2_sp.microprice_bias.load(std::memory_order_relaxed);
-    g_macro_ctx.xag_microprice_bias  = g_l2_xag.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.cl_microprice_bias   = g_l2_cl.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.eur_microprice_bias  = g_l2_eur.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.gbp_microprice_bias  = g_l2_gbp.microprice_bias.load(std::memory_order_relaxed);
@@ -485,7 +478,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     std::unordered_map<std::string, ColdSnap> cold_snap;
     {
         static constexpr const char* COLD_SYMS[] = {
-            "XAUUSD","US500.F","XAGUSD","USOIL.F","EURUSD","GBPUSD",
+            "XAUUSD","US500.F","USOIL.F","EURUSD","GBPUSD",
             "AUDUSD","NZDUSD","USDJPY","GER40","UK100","ESTX50","BRENT"
         };
         std::lock_guard<std::mutex> lk(g_l2_mtx);
@@ -534,7 +527,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.sp_wall_below        = b->wall_below(b->ask_count > 0 ? b->asks[0].price : 0.0);
             pushL2("US500.F", b);
         }
-        if (const L2Book* b = getBook("XAGUSD"))  { pushL2("XAGUSD", b); }
         if (const L2Book* b = getBook("USOIL.F")) {
             g_macro_ctx.cl_vacuum_ask        = b->liquidity_vacuum_ask();
             g_macro_ctx.cl_vacuum_bid        = b->liquidity_vacuum_bid();
@@ -601,7 +593,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         upd_cvd(g_macro_ctx.nq_cvd_dir,     dummy_b,  dummy_b2,  "USTEC.F");
         upd_cvd(g_macro_ctx.eurusd_cvd_dir, dummy_b,  dummy_b2,  "EURUSD");
         upd_cvd(g_macro_ctx.usdjpy_cvd_dir, dummy_b,  dummy_b2,  "USDJPY");
-        upd_cvd(g_macro_ctx.xagusd_cvd_dir, dummy_b,  dummy_b2,  "XAGUSD");
     }
 
     // Push L2 imbalance snapshot to telemetry
@@ -609,7 +600,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.sp_l2_imbalance,  g_macro_ctx.nq_l2_imbalance,
         g_macro_ctx.us30_l2_imbalance,g_macro_ctx.nas_l2_imbalance,
         g_macro_ctx.cl_l2_imbalance,  g_macro_ctx.brent_l2_imbalance,
-        g_macro_ctx.gold_l2_imbalance,g_macro_ctx.xag_l2_imbalance,
+        g_macro_ctx.gold_l2_imbalance,
         g_macro_ctx.ger40_l2_imbalance,g_macro_ctx.uk100_l2_imbalance,
         g_macro_ctx.estx50_l2_imbalance,
         g_macro_ctx.eur_l2_imbalance, g_macro_ctx.gbp_l2_imbalance,
@@ -821,10 +812,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("BRENT","Bracket", g_bracket_brent.pos.is_long,
                     g_bracket_brent.pos.entry, g_bracket_brent.pos.tp, g_bracket_brent.pos.sl,
                     g_bracket_brent.pos.size, g_bracket_brent.pos.entry_ts);
-            if (g_eng_xag.pos.active)
-                push_live_trade("XAGUSD","BE", g_eng_xag.pos.is_long,
-                    g_eng_xag.pos.entry, g_eng_xag.pos.tp, g_eng_xag.pos.sl,
-                    g_eng_xag.pos.size, g_eng_xag.pos.entry_ts);
             if (g_nbm_oil_london.has_open_position())
                 push_live_trade("USOIL.F","NBM-London", g_nbm_oil_london.open_is_long(),
                     g_nbm_oil_london.open_entry(), 0.0, 0.0, g_nbm_oil_london.open_size(), (int64_t)std::time(nullptr));
@@ -1192,7 +1179,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // ca_on_close -- for cross-asset and ORB engines. These manage TP/SL in software
     // with no broker-side orders, so closing requires an explicit market order.
     // ca_on_close -- converted to static function above on_tick
-    // bracket_on_close -- used exclusively by g_bracket_gold and g_bracket_xag.
+    // bracket_on_close -- used exclusively by g_bracket_gold.
     // When the engine closes a position (TP/SL/timeout/force), it calls this with
     // the filled TradeRecord. We:
     //   1. Record/ledger the trade (same as on_close)
@@ -1766,10 +1753,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     bkt_microprice  = g_macro_ctx.cl_microprice_bias;
                     bkt_vac_ask     = g_macro_ctx.cl_vacuum_ask;
                     bkt_vac_bid     = g_macro_ctx.cl_vacuum_bid;
-                } else if (sv_bkt == "XAGUSD") {
-                    bkt_microprice  = g_macro_ctx.xag_microprice_bias;
-                    bkt_vac_ask     = bkt_l2_imb < 0.30;
-                    bkt_vac_bid     = bkt_l2_imb > 0.70;
                 } else if (sv_bkt == "EURUSD") {
                     bkt_microprice = g_macro_ctx.eur_microprice_bias;
                     bkt_vac_ask    = g_macro_ctx.eur_vacuum_ask;
@@ -2101,7 +2084,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "GER40")                            on_tick_ger40(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "UK100")                            on_tick_uk100(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "ESTX50")                           on_tick_estx50(sym, bid, ask, tradeable, lat_ok, regime);
-    else if (sym == "XAGUSD")                           on_tick_silver(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "EURUSD")                           on_tick_eurusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "GBPUSD")                           on_tick_gbpusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY")
@@ -2133,7 +2115,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         chk(g_eng_ger30,  "GER40");
         chk(g_eng_uk100,  "UK100");
         chk(g_eng_estx50, "ESTX50");
-        chk(g_eng_xag,    "XAGUSD");
         chk(g_eng_eurusd, "EURUSD");
         chk(g_eng_gbpusd, "GBPUSD");
         chk(g_eng_audusd, "AUDUSD");
@@ -2170,7 +2151,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         const double orb_ger_mid   = (g_orb_ger30.range_high() + g_orb_ger30.range_low())  > 0.0 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low())  * 0.5 : 0.0;
         const double orb_uk_mid    = (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  > 0.0 ? (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  * 0.5 : 0.0;
         const double orb_estx_mid  = (g_orb_estx50.range_high() + g_orb_estx50.range_low()) > 0.0 ? (g_orb_estx50.range_high() + g_orb_estx50.range_low()) * 0.5 : 0.0;
-        const double orb_xag_mid   = (g_orb_silver.range_high() + g_orb_silver.range_low()) > 0.0 ? (g_orb_silver.range_high() + g_orb_silver.range_low()) * 0.5 : 0.0;
 
         auto ca = [&](const char* nm, const char* sym, bool act, bool lng,
                       double ent, double tp, double sl, double ref, int sigs) {
@@ -2182,7 +2162,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         ca("ORB_GER40", "GER40",   g_orb_ger30.has_open_position(),  false, 0,0,0, orb_ger_mid,  0);
         ca("ORB_UK100", "UK100",   g_orb_uk100.has_open_position(),  false, 0,0,0, orb_uk_mid,   0);
         ca("ORB_ESTX50","ESTX50",  g_orb_estx50.has_open_position(), false, 0,0,0, orb_estx_mid, 0);
-        ca("ORB_XAG",   "XAGUSD",  g_orb_silver.has_open_position(), false, 0,0,0, orb_xag_mid,  0);
 
         // VWAP Reversion -- capture VWAP proxy per instrument
         // SP/NQ share the US ORB range mid; GER40 uses Xetra ORB; EUR uses daily open static
@@ -2265,7 +2244,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             add_bkt(sn->cl_phase,     "USOIL.F");
             add_bkt(sn->xau_phase,    "XAUUSD");
             add_bkt(sn->brent_phase,  "BRENT");
-            add_bkt(sn->xag_phase,    "XAGUSD");
             add_bkt(sn->eurusd_phase, "EURUSD");
             add_bkt(sn->gbpusd_phase, "GBPUSD");
             add_bkt(sn->audusd_phase, "AUDUSD");
@@ -2278,7 +2256,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             add_bkt(sn->bkt_ger.phase,   "GER40");
             add_bkt(sn->bkt_uk.phase,    "UK100");
             add_bkt(sn->bkt_estx.phase,  "ESTX50");
-            add_bkt(sn->bkt_xag.phase,   "XAGUSD");
             add_bkt(sn->bkt_gold.phase,  "XAUUSD");
             add_bkt(sn->bkt_eur.phase,   "EURUSD");
             add_bkt(sn->bkt_gbp.phase,   "GBPUSD");
