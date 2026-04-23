@@ -20,13 +20,19 @@
 #      - Shim headers at C:\Omega\backtest\shim\ (harness-local stubs for
 #        OmegaTradeLedger.hpp and BracketTrendState.hpp).
 #
-#  Usage:
+#  Usage (Windows PowerShell 5.1, built-in):
 #      cd C:\Omega\backtest
-#      pwsh -File run_dpe_sweep.ps1
-#      pwsh -File run_dpe_sweep.ps1 -OutDir D:\dpe_results -DryRun
-#      pwsh -File run_dpe_sweep.ps1 -ImbList 0.10,0.15 -PersistList 20
+#      powershell -File run_dpe_sweep.ps1
+#      powershell -File run_dpe_sweep.ps1 -OutDir D:\dpe_results -DryRun
+#      powershell -File run_dpe_sweep.ps1 -ImbList 0.10,0.15 -PersistList 20
+#
+#  Usage (PowerShell 7+, if installed):
+#      pwsh -File run_dpe_sweep.ps1 ...
 #
 #  Session 15 - no engine behaviour changes; override macros only.
+#  Session 15 rev2 - PS 5.1 compatibility: -Encoding ascii on all CSV writes,
+#                    renamed $matches (auto-var) to $hits in the log loop,
+#                    invocation docs updated to powershell.exe.
 # =============================================================================
 
 [CmdletBinding()]
@@ -57,9 +63,9 @@ catch {
 }
 
 # -------- Paths ---------------------------------------------------------------
-$HarnessSrc   = Join-Path $RepoRoot "backtest\dom_persist_walk_forward.cpp"
-$IncludeDir   = Join-Path $RepoRoot "include"
-$ShimDir      = Join-Path $RepoRoot "backtest\shim"
+$HarnessSrc    = Join-Path $RepoRoot "backtest\dom_persist_walk_forward.cpp"
+$IncludeDir    = Join-Path $RepoRoot "include"
+$ShimDir       = Join-Path $RepoRoot "backtest\shim"
 $EnginePatched = Join-Path $IncludeDir "DomPersistEngine.hpp"
 
 foreach ($p in @($HarnessSrc, $IncludeDir, $ShimDir, $EnginePatched)) {
@@ -84,11 +90,12 @@ if ($engineText -notmatch "DPE_PERSIST_TICKS_OVERRIDE") {
 Write-Host "[OK] Engine header has S15 override guards"
 
 # -------- Collect input CSVs --------------------------------------------------
+# Note: renamed from $matches (PowerShell automatic variable) to $hits.
 $InputCsvs = @()
 foreach ($pat in $LogPattern) {
-    $matches = Get-ChildItem -Path $LogDir -Filter $pat -ErrorAction SilentlyContinue |
-               Sort-Object Name
-    $InputCsvs += $matches
+    $hits = Get-ChildItem -Path $LogDir -Filter $pat -ErrorAction SilentlyContinue |
+            Sort-Object Name
+    $InputCsvs += $hits
 }
 $InputCsvs = $InputCsvs | Sort-Object Name -Unique
 
@@ -114,12 +121,17 @@ $BuildLog   = Join-Path $OutDir "build.log"
 $RunLog     = Join-Path $OutDir "run.log"
 $SummaryCsv = Join-Path $OutDir "summary.csv"
 
-"build log started $(Get-Date -Format o)" | Set-Content $BuildLog
-"run log started $(Get-Date -Format o)"   | Set-Content $RunLog
+# PS 5.1 default encoding for Set-Content/Add-Content is system code page
+# (CP1252 on Western Windows) and Out-File defaults to UTF-16 LE. Force ASCII
+# for all text outputs so the Python analyzer and any downstream csv reader
+# gets byte-clean content with no BOM. All content here is pure ASCII.
+"build log started $(Get-Date -Format o)" | Set-Content $BuildLog -Encoding ascii
+"run log started $(Get-Date -Format o)"   | Set-Content $RunLog   -Encoding ascii
 
 # CSV header
 "imb_thresh,persist_ticks,session_filter,trades,wins,wr_pct,pnl_usd," +
-"maxdd_usd,expectancy_usd,build_s,run_s,status" | Set-Content $SummaryCsv
+"maxdd_usd,expectancy_usd,build_s,run_s,status" |
+    Set-Content $SummaryCsv -Encoding ascii
 
 # -------- Sweep ---------------------------------------------------------------
 $totalCells = $ImbList.Count * $PersistList.Count * $SessionList.Count
@@ -146,7 +158,7 @@ foreach ($imb in $ImbList) {
             if ($DryRun) {
                 Write-Host "  [DRY] would build and run"
                 "$imb,$persist,$session,0,0,0.00,0.00,0.00,0.00,0,0,DRY" |
-                    Add-Content $SummaryCsv
+                    Add-Content $SummaryCsv -Encoding ascii
                 continue
             }
 
@@ -161,16 +173,16 @@ foreach ($imb in $ImbList) {
                 $HarnessSrc,
                 "-o", $binPath
             )
-            "`n=== BUILD $cellTag ===" | Add-Content $BuildLog
+            "`n=== BUILD $cellTag ===" | Add-Content $BuildLog -Encoding ascii
             $buildOut = & $Gxx @gxxArgs 2>&1
             $buildExit = $LASTEXITCODE
-            $buildOut  | Out-String | Add-Content $BuildLog
+            $buildOut  | Out-String | Add-Content $BuildLog -Encoding ascii
             $buildS = [int]((Get-Date) - $buildT0).TotalSeconds
 
             if ($buildExit -ne 0 -or -not (Test-Path $binPath)) {
                 Write-Host "  BUILD FAILED (exit $buildExit)" -ForegroundColor Red
                 "$imb,$persist,$session,0,0,0.00,0.00,0.00,0.00,$buildS,0,BUILD_FAIL" |
-                    Add-Content $SummaryCsv
+                    Add-Content $SummaryCsv -Encoding ascii
                 continue
             }
 
@@ -183,12 +195,12 @@ foreach ($imb in $ImbList) {
             # a Where-Object so trades.csv stays parseable.
             $rawStdout = & $binPath @runArgs 2> "$tradesPath.stderr"
             $cleanStdout = $rawStdout | Where-Object { $_ -notmatch '^\[DPE' }
-            $cleanStdout | Set-Content $tradesPath
+            $cleanStdout | Set-Content $tradesPath -Encoding ascii
             $runS = [int]((Get-Date) - $runT0).TotalSeconds
 
             # Append stderr to run.log
-            "`n=== RUN $cellTag ===" | Add-Content $RunLog
-            Get-Content "$tradesPath.stderr" | Add-Content $RunLog
+            "`n=== RUN $cellTag ===" | Add-Content $RunLog -Encoding ascii
+            Get-Content "$tradesPath.stderr" | Add-Content $RunLog -Encoding ascii
 
             # Parse SUMMARY line from stderr
             $summaryLine = Get-Content "$tradesPath.stderr" |
@@ -198,7 +210,7 @@ foreach ($imb in $ImbList) {
             if (-not $summaryLine) {
                 Write-Host "  NO SUMMARY (check $tradesPath.stderr)" -ForegroundColor Yellow
                 "$imb,$persist,$session,0,0,0.00,0.00,0.00,0.00,$buildS,$runS,NO_SUMMARY" |
-                    Add-Content $SummaryCsv
+                    Add-Content $SummaryCsv -Encoding ascii
                 continue
             }
 
@@ -217,7 +229,7 @@ foreach ($imb in $ImbList) {
             $exp    = $fields.expectancy_usd;if (-not $exp) { $exp = "0.00" }
 
             "$imb,$persist,$session,$trades,$wins,$wr,$pnl,$dd,$exp,$buildS,$runS,OK" |
-                Add-Content $SummaryCsv
+                Add-Content $SummaryCsv -Encoding ascii
 
             Write-Host "  trades=$trades wr=$wr pnl=$pnl maxdd=$dd  (build ${buildS}s, run ${runS}s)"
 
