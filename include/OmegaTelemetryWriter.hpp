@@ -650,18 +650,21 @@ public:
     }
 
     void UpdateL2(double sp, double nq, double dj, double nas,
-                  double cl, double brent, double gold, double xag,
+                  double cl, double brent, double gold,
                   double ger, double uk, double estx,
                   double eur, double gbp, double aud, double nzd, double jpy,
                   int active)
     {
         if (!m_snap) return;
         m_snap->l2_sp=sp; m_snap->l2_nq=nq; m_snap->l2_dj=dj; m_snap->l2_nas=nas;
-        m_snap->l2_cl=cl; m_snap->l2_brent=brent; m_snap->l2_gold=gold; m_snap->l2_xag=xag;
+        m_snap->l2_cl=cl; m_snap->l2_brent=brent; m_snap->l2_gold=gold;
         m_snap->l2_ger=ger; m_snap->l2_uk=uk; m_snap->l2_estx=estx;
         m_snap->l2_eur=eur; m_snap->l2_gbp=gbp; m_snap->l2_aud=aud;
         m_snap->l2_nzd=nzd; m_snap->l2_jpy=jpy;
         m_snap->l2_active=active;
+        // NOTE: m_snap->l2_xag retained in snapshot struct (Tier-3 cleanup);
+        // no longer updated since xag_l2_imbalance removed from MacroContext
+        // in Scope B commit 15.
     }
 
     // Update L2 book depth levels for a symbol (called from main.cpp with real L2Book data)
