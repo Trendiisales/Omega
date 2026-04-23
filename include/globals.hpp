@@ -13,7 +13,6 @@ static omega::Nas100Engine g_eng_nas100("NAS100");
 static omega::EuIndexEngine  g_eng_ger30("GER40");
 static omega::EuIndexEngine  g_eng_uk100("UK100");
 static omega::EuIndexEngine  g_eng_estx50("ESTX50");
-static omega::BreakoutEngine g_eng_xag("XAGUSD");
 static omega::BreakoutEngine g_eng_eurusd("EURUSD");
 static omega::BreakoutEngine g_eng_gbpusd("GBPUSD");
 static omega::BrentEngine    g_eng_brent("BRENT");
@@ -36,7 +35,6 @@ static omega::cross::FxCascadeEngine       g_ca_fx_cascade;
 static omega::cross::CarryUnwindEngine     g_ca_carry_unwind;
 static omega::cross::OpeningRangeEngine    g_orb_us;     // US equity 13:30 UTC
 static omega::cross::OpeningRangeEngine    g_orb_ger30;  // Xetra 08:00 UTC
-static omega::cross::OpeningRangeEngine    g_orb_silver; // COMEX 13:30 UTC
 static omega::cross::OpeningRangeEngine    g_orb_uk100;  // LSE 08:00 UTC, 15-min window
 static omega::cross::OpeningRangeEngine    g_orb_estx50; // Euronext 09:00 UTC, 15-min window
 
@@ -306,7 +304,6 @@ std::atomic<bool>            g_feed_stale_xauusd{false};  // true = cTrader dept
 // and enough time for the regime causing the reconnect loop to resolve.
 static constexpr int64_t INDICES_DISCONNECT_COOLDOWN_SEC = 1800; // 30 min
 static std::atomic<int64_t> g_indices_disconnect_until{0}; // epoch sec: block US index new entries until
-static omega::SilverBracketEngine g_bracket_xag;
 // US equity index bracket engines -- arms both sides on compression,
 // captures the move regardless of direction. Eliminates wrong-direction losses.
 static omega::BracketEngine g_bracket_sp;
@@ -330,9 +327,7 @@ static omega::BracketEngine g_bracket_usdjpy;
 
 // Bracket trade frequency tracking
 static int      g_bracket_gold_trades_this_minute = 0;
-static int      g_bracket_xag_trades_this_minute  = 0;
 static int64_t  g_bracket_gold_minute_start       = 0;
-static int64_t  g_bracket_xag_minute_start        = 0;
 // Rate-limit vars for new bracket engines (shared int/int64 pairs)
 static int      g_bracket_idx_trades_this_minute  = 0;
 static int64_t  g_bracket_idx_minute_start        = 0;
@@ -381,7 +376,7 @@ static std::unordered_set<std::string> g_pyramid_clordids;
 static omega::SymbolSupervisor g_sup_sp,      g_sup_nq,     g_sup_cl;
 static omega::SymbolSupervisor g_sup_us30,    g_sup_nas100;
 static omega::SymbolSupervisor g_sup_ger30,   g_sup_uk100,  g_sup_estx50;
-static omega::SymbolSupervisor g_sup_xag,     g_sup_eurusd, g_sup_gbpusd;
+static omega::SymbolSupervisor g_sup_eurusd, g_sup_gbpusd;
 static omega::SymbolSupervisor g_sup_audusd,  g_sup_nzdusd, g_sup_usdjpy;
 static omega::SymbolSupervisor g_sup_brent,   g_sup_gold;
 // false-break counters per symbol (reset on cooldown / regime change)
@@ -476,7 +471,6 @@ static AtomicL2 g_l2_gold;    // XAUUSD
 static AtomicL2 g_l2_sp;      // US500.F
 static AtomicL2 g_l2_nq;      // USTEC.F
 static AtomicL2 g_l2_cl;      // USOIL.F
-static AtomicL2 g_l2_xag;     // XAGUSD
 static AtomicL2 g_l2_eur;     // EURUSD
 static AtomicL2 g_l2_gbp;     // GBPUSD
 static AtomicL2 g_l2_aud;     // AUDUSD
@@ -495,7 +489,6 @@ static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
     if (sym=="US500.F")  return &g_l2_sp;
     if (sym=="USTEC.F")  return &g_l2_nq;
     if (sym=="USOIL.F")  return &g_l2_cl;
-    if (sym=="XAGUSD")   return &g_l2_xag;
     if (sym=="EURUSD")   return &g_l2_eur;
     if (sym=="GBPUSD")   return &g_l2_gbp;
     if (sym=="AUDUSD")   return &g_l2_aud;
@@ -516,7 +509,7 @@ static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
 // FIX W/X suppresses on_tick when cTrader depth is fresh (<500ms) --
 // prevents the 1pt lag from FIX gateway batching in fast markets.
 static std::atomic<int64_t> g_ct_ms_xauusd{0}, g_ct_ms_sp{0},  g_ct_ms_nq{0},
-                             g_ct_ms_cl{0},    g_ct_ms_xag{0},  g_ct_ms_eur{0},
+                             g_ct_ms_cl{0},    g_ct_ms_eur{0},
                              g_ct_ms_gbp{0},   g_ct_ms_aud{0},  g_ct_ms_nzd{0},
                              g_ct_ms_jpy{0},   g_ct_ms_ger40{0},g_ct_ms_uk100{0},
                              g_ct_ms_brent{0}, g_ct_ms_nas{0},  g_ct_ms_us30{0};
@@ -526,7 +519,6 @@ static std::atomic<int64_t>* get_ctrader_tick_ms_ptr(const std::string& sym) noe
     if (sym=="US500.F") return &g_ct_ms_sp;
     if (sym=="USTEC.F") return &g_ct_ms_nq;
     if (sym=="USOIL.F") return &g_ct_ms_cl;
-    if (sym=="XAGUSD")  return &g_ct_ms_xag;
     if (sym=="EURUSD")  return &g_ct_ms_eur;
     if (sym=="GBPUSD")  return &g_ct_ms_gbp;
     if (sym=="AUDUSD")  return &g_ct_ms_aud;
