@@ -46,10 +46,22 @@
 // Imbalance deviation threshold from neutral 0.5
 // Long signal:  l2_imb > 0.5 + DPE_IMB_THRESHOLD
 // Short signal: l2_imb < 0.5 - DPE_IMB_THRESHOLD
+// Backtest-override guard (Session 15): allow -DDPE_IMB_THRESHOLD_OVERRIDE=X
+// for parameter sweeps without editing the engine. Production builds define
+// nothing and compile identically to prior behaviour (value=0.05).
+#ifdef DPE_IMB_THRESHOLD_OVERRIDE
+static constexpr double DPE_IMB_THRESHOLD    = DPE_IMB_THRESHOLD_OVERRIDE;
+#else
 static constexpr double DPE_IMB_THRESHOLD    = 0.05;   // backtest winner: i=0.05
+#endif
 
 // Number of consecutive ticks the threshold must be sustained
+// Backtest-override guard (Session 15): allow -DDPE_PERSIST_TICKS_OVERRIDE=N.
+#ifdef DPE_PERSIST_TICKS_OVERRIDE
+static constexpr int    DPE_PERSIST_TICKS    = DPE_PERSIST_TICKS_OVERRIDE;
+#else
 static constexpr int    DPE_PERSIST_TICKS    = 5;      // backtest winner: p=5
+#endif
 
 // SL sizing: ATR * this multiplier (mirrors GFE_ATR_SL_MULT)
 static constexpr double DPE_SL_MULT          = 1.0;
