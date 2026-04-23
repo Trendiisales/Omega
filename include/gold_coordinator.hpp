@@ -13,9 +13,10 @@
 //
 //   FLOW_LANE     -- flow/directional engines (remaining engines, later sessions):
 //                    GoldFlow, GoldFlowReload, GoldFlowAddon, GoldStack,
-//                    CandleFlow, DomPersist, MacroCrash, RSIReversal,
+//                    CandleFlow, MacroCrash, RSIReversal,
 //                    RSIExtremeTurn, PullbackCont, PullbackPrem, TrendPullback,
 //                    LatencyEdge, NBMLondon, H1Swing, H4Regime, PDHLRev
+//                    (DomPersist removed at Session 15 2026-04-23 -- no edge.)
 //
 // Budget per lane: BUDGET_LOTS = 0.01 (skeleton default -- tunable later).
 //
