@@ -13,11 +13,11 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // ?? L2 liveness stamp -- set on every close so CSV audit is accurate ??????
     // tr.l2_live defaults false. Stamp from live MacroContext flags here so
     // every CSV row reflects actual L2 state at time of close.
-    // XAUUSD/XAGUSD: use gold_l2_real (XAUUSD DOM specifically via ctid=43014358).
+    // XAUUSD: use gold_l2_real (XAUUSD DOM specifically via ctid=43014358).
     // All other symbols: use ctrader_l2_live (any cTrader depth event received).
     {
         const std::string& sym = tr.symbol;
-        if (sym == "XAUUSD" || sym == "XAGUSD") {
+        if (sym == "XAUUSD") {
             tr.l2_live       = g_macro_ctx.gold_l2_real;
             tr.l2_imbalance  = g_macro_ctx.gold_l2_imbalance;
         } else {
@@ -46,7 +46,6 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // The cap is based on max realistic single-trade PnL for each instrument:
     //   XAUUSD: max lot=0.30, max move=150pts (3x ATR on a crash day) -> $4500 raw
     //           but 0.10 lot * 150pts * 100 = $1500. Cap at $1500 for safety.
-    //   XAGUSD: max lot=0.10, max move=500pts -> $500. Cap at $600.
     //   US500.F/USTEC.F: max lot=0.10, max move=200pts -> $200. Cap at $300.
     //   Others: cap at $500 gross.
     //
@@ -62,7 +61,6 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         const std::string& sym = tr.symbol;
         double max_gross_usd = 500.0;  // default
         if      (sym == "XAUUSD")  max_gross_usd = std::max(1500.0, sz * 150.0 * 100.0);
-        else if (sym == "XAGUSD")  max_gross_usd = std::max( 600.0, sz * 500.0 *   5.0);
         else if (sym == "US500.F") max_gross_usd = std::max( 300.0, sz * 200.0 *  50.0);
         else if (sym == "USTEC.F") max_gross_usd = std::max( 300.0, sz * 300.0 *  20.0);
         else if (sym == "DJ30.F")  max_gross_usd = std::max( 300.0, sz * 500.0 *   5.0);
@@ -120,7 +118,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                 const std::string& s = tr.symbol;
                 if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
                     s == "NZDUSD" || s == "USDJPY" ||
-                    s == "XAUUSD" || s == "XAGUSD")
+                    s == "XAUUSD")
                     cps_sh = 3.0;
             }
             omega::apply_realistic_costs(tr, cps_sh, mult);
@@ -184,7 +182,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         double cps = 0.0;
         { const std::string& s = tr.symbol;
           if (s=="EURUSD"||s=="GBPUSD"||s=="AUDUSD"||s=="NZDUSD"||
-              s=="USDJPY"||s=="XAUUSD"||s=="XAGUSD") cps = 3.0; }
+              s=="USDJPY"||s=="XAUUSD") cps = 3.0; }
         omega::apply_realistic_costs(tr, cps, mult);
         std::cout << "[PARTIAL-CLOSE] " << tr.symbol
                   << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
@@ -202,7 +200,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // Step 1: Scale raw price-point P&L to USD using per-instrument contract size.
     // This MUST happen before apply_realistic_costs so slippage is computed in USD.
     // Previously apply_realistic_costs ran first with raw price values, causing
-    // slippage to be ~1000? too small (e.g. $0.002 instead of $8.10 for XAGUSD).
+    // slippage to be ~1000? too small (e.g. $0.02 instead of $15.00 for XAUUSD).
     {
         const double mult = tick_value_multiplier(tr.symbol);
         tr.pnl  *= mult;   // gross USD
@@ -219,7 +217,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             const std::string& s = tr.symbol;
             if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
                 s == "NZDUSD" || s == "USDJPY" ||
-                s == "XAUUSD" || s == "XAGUSD")
+                s == "XAUUSD")
                 comm_per_side = 3.0;  // $3/side = $6 round-trip per lot
         }
         omega::apply_realistic_costs(tr, comm_per_side, mult);
@@ -415,7 +413,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         notify(g_sup_cl,     "USOIL.F"); notify(g_sup_us30,   "DJ30.F");
         notify(g_sup_nas100, "NAS100");  notify(g_sup_ger30,   "GER40");
         notify(g_sup_uk100,  "UK100");   notify(g_sup_estx50,  "ESTX50");
-        notify(g_sup_xag,    "XAGUSD");  notify(g_sup_gold,    "XAUUSD");
+        notify(g_sup_gold,   "XAUUSD");
         notify(g_sup_eurusd, "EURUSD");  notify(g_sup_gbpusd,  "GBPUSD");
         notify(g_sup_audusd, "AUDUSD");  notify(g_sup_nzdusd,  "NZDUSD");
         notify(g_sup_usdjpy, "USDJPY");  notify(g_sup_brent,   "BRENT");
@@ -443,7 +441,6 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         g_eng_ger30.ACCOUNT_EQUITY  = eq;
         g_eng_uk100.ACCOUNT_EQUITY  = eq;
         g_eng_estx50.ACCOUNT_EQUITY = eq;
-        g_eng_xag.ACCOUNT_EQUITY    = eq;
         g_eng_eurusd.ACCOUNT_EQUITY = eq;
         g_eng_gbpusd.ACCOUNT_EQUITY = eq;
         g_eng_audusd.ACCOUNT_EQUITY = eq;
@@ -565,7 +562,6 @@ static double open_unrealised_pnl() {
     total += be_pnl(g_eng_ger30.pos,  "GER40");
     total += be_pnl(g_eng_uk100.pos,  "UK100");
     total += be_pnl(g_eng_estx50.pos, "ESTX50");
-    total += be_pnl(g_eng_xag.pos,    "XAGUSD");
     total += be_pnl(g_eng_eurusd.pos, "EURUSD");
     total += be_pnl(g_eng_gbpusd.pos, "GBPUSD");
     total += be_pnl(g_eng_audusd.pos, "AUDUSD");
@@ -581,7 +577,6 @@ static double open_unrealised_pnl() {
     total += be_pnl(g_bracket_ger30.pos,  "GER40");
     total += be_pnl(g_bracket_uk100.pos,  "UK100");
     total += be_pnl(g_bracket_estx50.pos, "ESTX50");
-    total += be_pnl(g_bracket_xag.pos,    "XAGUSD");
     total += be_pnl(g_bracket_gold.pos,   "XAUUSD");
     total += be_pnl(g_bracket_brent.pos,  "BRENT");
     total += be_pnl(g_bracket_eurusd.pos, "EURUSD");
@@ -748,8 +743,6 @@ static bool symbol_gate(
             static_cast<int>(g_eng_ger30.pos.active) +
             static_cast<int>(g_eng_uk100.pos.active) +
             static_cast<int>(g_eng_estx50.pos.active) +
-            static_cast<int>(g_eng_xag.pos.active) +
-            static_cast<int>(g_bracket_xag.pos.active) +
             static_cast<int>(g_bracket_gold.pos.active) +
             static_cast<int>(g_bracket_sp.pos.active) +
             static_cast<int>(g_bracket_nq.pos.active) +
@@ -771,7 +764,6 @@ static bool symbol_gate(
             static_cast<int>(g_ca_carry_unwind.has_open_position()) +
             static_cast<int>(g_orb_us.has_open_position()) +
             static_cast<int>(g_orb_ger30.has_open_position()) +
-            static_cast<int>(g_orb_silver.has_open_position()) +
             static_cast<int>(g_orb_uk100.has_open_position()) +
             static_cast<int>(g_orb_estx50.has_open_position()) +
             static_cast<int>(g_vwap_rev_sp.has_open_position()) +
@@ -854,7 +846,7 @@ static bool symbol_gate(
         }
         // ?? Portfolio open SL risk cap ????????????????????????????????????????
         // Block new entries when total simultaneous SL exposure exceeds threshold.
-        // Prevents correlated crashes: gold+silver+oil all SHORT at once means
+        // Prevents correlated crashes: gold+oil all SHORT at once means
         // a single RISK_ON reversal hits all of them simultaneously.
         // Cap = max_portfolio_sl_risk_usd (default 0 = disabled).
         // Each engine adds its SL risk on entry via portfolio_sl_risk_add().
@@ -984,8 +976,6 @@ static bool symbol_gate(
         static_cast<int>(g_eng_ger30.pos.active) +
         static_cast<int>(g_eng_uk100.pos.active) +
         static_cast<int>(g_eng_estx50.pos.active) +
-        static_cast<int>(g_eng_xag.pos.active) +
-        static_cast<int>(g_bracket_xag.pos.active) +
         static_cast<int>(g_bracket_gold.pos.active) +
         static_cast<int>(g_bracket_sp.pos.active) +
         static_cast<int>(g_bracket_nq.pos.active) +
@@ -1007,7 +997,6 @@ static bool symbol_gate(
         static_cast<int>(g_ca_carry_unwind.has_open_position()) +
         static_cast<int>(g_orb_us.has_open_position()) +
         static_cast<int>(g_orb_ger30.has_open_position()) +
-        static_cast<int>(g_orb_silver.has_open_position()) +
         static_cast<int>(g_orb_uk100.has_open_position()) +
         static_cast<int>(g_orb_estx50.has_open_position()) +
         static_cast<int>(g_vwap_rev_sp.has_open_position()) +
@@ -1085,7 +1074,7 @@ static void bracket_on_close(const omega::TradeRecord& tr) {
 
     // Session 9: GoldCoordinator BRACKET_LANE exit tracking.
     // Symbol-gated to XAUUSD only -- this callback is shared across all bracket
-    // symbols (XAGUSD, EURUSD, GBPUSD, SP, NQ, US30, NAS100, GER30, UK100, ESTX50,
+    // symbols (EURUSD, GBPUSD, SP, NQ, US30, NAS100, GER30, UK100, ESTX50,
     // BRENT, AUDUSD, NZDUSD, USDJPY) but only XAUUSD is wired to the coordinator
     // in Session 9. Other symbols are untouched. Counter is diagnostic in skeleton
     // mode (always-allow); Session 10+ will extend to other engines.
@@ -1287,8 +1276,6 @@ static double enter_directional(
         ec = EC::US_EQUITY_BREAKOUT;
     else if (sv == "GER40" || sv == "UK100" || sv == "ESTX50")
         ec = EC::EU_EQUITY_BREAKOUT;
-    else if (sv == "XAGUSD")
-        ec = EC::SILVER_BREAKOUT;
     else if (sv == "USOIL.F" || sv == "BRENT")
         ec = EC::OIL_BREAKOUT;
     else if (sv == "EURUSD")
@@ -1359,7 +1346,6 @@ static double enter_directional(
         add_if("NAS100",   g_eng_nas100.pos.active);
         add_if("USOIL.F",  g_eng_cl.pos.active);
         add_if("BRENT",    g_eng_brent.pos.active);
-        add_if("XAGUSD",   g_eng_xag.pos.active);
         add_if("EURUSD",   g_eng_eurusd.pos.active);
         add_if("GBPUSD",   g_eng_gbpusd.pos.active);
         add_if("USDJPY",   g_eng_usdjpy.pos.active);
@@ -1403,7 +1389,6 @@ static double enter_directional(
         else if (sv == "GER40")    vwap = g_eng_ger30.vwap();
         else if (sv == "UK100")    vwap = g_eng_uk100.vwap();
         else if (sv == "ESTX50")   vwap = g_eng_estx50.vwap();
-        else if (sv == "XAGUSD")   vwap = g_eng_xag.vwap();
         else if (sv == "EURUSD")   vwap = g_eng_eurusd.vwap();
         else if (sv == "GBPUSD")   vwap = g_eng_gbpusd.vwap();
         else if (sv == "AUDUSD")   vwap = g_eng_audusd.vwap();
@@ -1448,11 +1433,6 @@ static double enter_directional(
             l2_imbalance    = (sv == "US500.F") ? g_macro_ctx.sp_l2_imbalance : g_macro_ctx.nq_l2_imbalance;
             vacuum_in_dir   = is_long ? g_macro_ctx.sp_vacuum_ask : g_macro_ctx.sp_vacuum_bid;
             wall_to_tp      = is_long ? g_macro_ctx.sp_wall_above : g_macro_ctx.sp_wall_below;
-        } else if (sv == "XAGUSD") {
-            microprice_bias = g_macro_ctx.xag_microprice_bias;
-            l2_imbalance    = g_macro_ctx.xag_l2_imbalance;
-            // Silver: no vacuum/wall in MacroContext yet -- use L2 imbalance as proxy
-            vacuum_in_dir   = is_long ? (l2_imbalance < 0.30) : (l2_imbalance > 0.70);
         } else if (sv == "USOIL.F" || sv == "BRENT") {
             microprice_bias = g_macro_ctx.cl_microprice_bias;
             l2_imbalance    = g_macro_ctx.cl_l2_imbalance;
@@ -1565,8 +1545,8 @@ static double enter_directional(
 
     // ?? Covariance-based position sizing ??????????????????????????????????????????
     // When entering a symbol that is highly covariant with an already-open position,
-    // reduce lot size proportionally. Prevents doubling metals exposure when both
-    // XAUUSD and XAGUSD are open, or stacking correlated index positions.
+    // reduce lot size proportionally. Prevents stacking correlated positions
+    // (e.g. DJ30.F and NAS100, or EURUSD and GBPUSD).
     // Uses g_corr_matrix.covariance_sizing_mult() which:
     //   - Returns 1.0 when no open positions or covariance below threshold
     //   - Scales down to [0.50, 1.0) as net covariance exposure increases
@@ -1584,7 +1564,6 @@ static double enter_directional(
         cov_add("NAS100",   g_eng_nas100.pos.active,  g_eng_nas100.pos.is_long);
         cov_add("USOIL.F",  g_eng_cl.pos.active,     g_eng_cl.pos.is_long);
         cov_add("BRENT",    g_eng_brent.pos.active,  g_eng_brent.pos.is_long);
-        cov_add("XAGUSD",   g_eng_xag.pos.active,    g_eng_xag.pos.is_long);
         cov_add("EURUSD",   g_eng_eurusd.pos.active, g_eng_eurusd.pos.is_long);
         cov_add("GBPUSD",   g_eng_gbpusd.pos.active, g_eng_gbpusd.pos.is_long);
         cov_add("USDJPY",   g_eng_usdjpy.pos.active, g_eng_usdjpy.pos.is_long);
