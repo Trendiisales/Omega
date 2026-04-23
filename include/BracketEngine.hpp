@@ -133,6 +133,30 @@ public:
     // Set CONSEC_SL_KILL_THRESHOLD=0 to disable.
     int    CONSEC_SL_KILL_THRESHOLD   = 3;        // 0 disables
     int    CONSEC_SL_KILL_DURATION_MS = 1800000;  // 30 min block
+    // ?? Regime-flip exit (Session 13, 2026-04-23) ??????????????????????????????
+    // Early-exit a LIVE position when ewm_drift flips against the position direction
+    // with confirmed magnitude. Independent of SL / trail / BREAKOUT_FAIL branches.
+    //
+    // Trigger (per on_tick call, drift arg passed by caller, default 0.0):
+    //   LONG:  drift <= -REGIME_FLIP_MIN_DRIFT
+    //   SHORT: drift >= +REGIME_FLIP_MIN_DRIFT
+    // On match, increment m_regime_flip_ticks. If it reaches REGIME_FLIP_CONFIRM_TICKS,
+    // close at bid (long) / ask (short) with reason "REGIME_FLIP_EXIT". If the match
+    // condition breaks on any tick, counter resets to 0 (debounce).
+    //
+    // Design rationale: gold bracket stopped out repeatedly on 2026-04-23 after the
+    // regime had already flipped 30+ seconds earlier -- engine held to initial SL
+    // despite unambiguous drift reversal. DXYDivergence engine caught the same signal
+    // and profited on the flip. This branch gives bracket the same awareness.
+    //
+    // Default 0.0 / 0 disables. Set REGIME_FLIP_MIN_DRIFT > 0 AND
+    // REGIME_FLIP_CONFIRM_TICKS > 0 to activate. Only fires after MIN_HOLD_MS so
+    // it never pre-empts a legitimate SL / BREAKOUT_FAIL exit.
+    // Exit reason "REGIME_FLIP_EXIT" does NOT increment consec-SL counter (only
+    // SL_HIT does, see closePos m_consec_sl logic). A flip exit is a managed close
+    // not a protective stop, so whipsaw/CONSEC_SL machinery stays pristine.
+    double REGIME_FLIP_MIN_DRIFT      = 0.0;   // 0.0 disables
+    int    REGIME_FLIP_CONFIRM_TICKS  = 0;     // 0 disables
     const char* symbol         = "???";
     bool   shadow_mode         = false;  // set by main.cpp -- enables price-triggered fill sim in PENDING
 
@@ -224,12 +248,17 @@ public:
     }
 
     // ?? on_tick() ?????????????????????????????????????????????????????????????
+    // drift: signed EWM momentum proxy from upstream (e.g. g_gold_stack.ewm_drift()).
+    //   > 0 bullish pressure, < 0 bearish pressure. Default 0.0 preserves behaviour
+    //   for every caller that pre-dates the regime-flip exit (Session 13).
+    //   Only read when REGIME_FLIP_MIN_DRIFT > 0 AND REGIME_FLIP_CONFIRM_TICKS > 0.
     void on_tick(double bid, double ask, long long /*ts_ms*/,
                  bool can_enter,
                  const char* macro_regime,
                  CloseCallback on_close,
                  double vwap = 0.0,
-                 double l2_imbalance = 0.5) noexcept
+                 double l2_imbalance = 0.5,
+                 double drift = 0.0) noexcept
     {
         // Store latest L2 imbalance -- used in arm_both_sides() for direction bias logging
         m_l2_imbalance = l2_imbalance;
@@ -276,6 +305,35 @@ public:
             }
 
             if ((now - pos.entry_ts) < static_cast<int64_t>(MIN_HOLD_MS / 1000)) return;
+
+            // ?? Regime-flip exit (Session 13, 2026-04-23) ?????????????????????
+            // Early-close when ewm_drift has flipped convincingly against the
+            // position for REGIME_FLIP_CONFIRM_TICKS consecutive ticks. Debounced
+            // by resetting the counter on any tick where the flip condition is
+            // NOT met. Disabled entirely when either threshold is non-positive.
+            // See config block at top of file for rationale.
+            if (REGIME_FLIP_MIN_DRIFT > 0.0 && REGIME_FLIP_CONFIRM_TICKS > 0) {
+                const bool flipped_against =
+                    ( pos.is_long && drift <= -REGIME_FLIP_MIN_DRIFT) ||
+                    (!pos.is_long && drift >= +REGIME_FLIP_MIN_DRIFT);
+                if (flipped_against) {
+                    ++m_regime_flip_ticks;
+                    if (m_regime_flip_ticks >= REGIME_FLIP_CONFIRM_TICKS) {
+                        const double exit_px = pos.is_long ? bid : ask;
+                        std::cout << "[BRACKET-" << symbol << "] REGIME_FLIP_EXIT"
+                                  << " side=" << (pos.is_long ? "LONG" : "SHORT")
+                                  << " drift=" << drift
+                                  << " min_drift=" << REGIME_FLIP_MIN_DRIFT
+                                  << " confirm_ticks=" << m_regime_flip_ticks
+                                  << " exit_px=" << exit_px << "\n";
+                        std::cout.flush();
+                        closePos(exit_px, "REGIME_FLIP_EXIT", macro_regime, on_close);
+                        return;
+                    }
+                } else {
+                    m_regime_flip_ticks = 0;  // debounce: any non-flipped tick resets
+                }
+            }
 
             // ?? Stepped trailing stop -- rides multi-hour trends ??????????????
             // Instead of a fixed TP that exits at 1R, we use a stepped trail:
@@ -701,6 +759,7 @@ public:
         pos.sl       = is_long_filled ? m_locked_long_sl  : m_locked_short_sl;
         pos.tp       = is_long_filled ? m_locked_long_tp  : m_locked_short_tp;
         phase        = BracketPhase::LIVE;
+        m_regime_flip_ticks = 0;  // fresh position -- start counter clean
         // Engine-enforced: cancel the other leg immediately on fill
         if (cancel_order_fn) {
             const std::string& other_id = is_long_filled
@@ -787,6 +846,11 @@ protected:
     // blocked until that time. Value 0 means no active kill.
     int     m_consec_sl          = 0;
     int64_t m_sl_kill_until_s    = 0;
+    // ?? Regime-flip exit state (Session 13, 2026-04-23) ?????????????????????????
+    // Counter of consecutive ticks where drift has been flipped against the position
+    // direction by at least REGIME_FLIP_MIN_DRIFT. Reset to 0 on any non-flipped tick
+    // (debounce), in reset() (IDLE transition), and in confirm_fill() (new position).
+    int     m_regime_flip_ticks  = 0;
 
     // Locked at the moment both orders are sent -- never change after PENDING
     double m_locked_hi        = 0.0;
@@ -1098,6 +1162,7 @@ protected:
         m_armed_ts     = 0;
         m_l2_imbalance = 0.5;
         m_inside_ticks = 0;
+        m_regime_flip_ticks = 0;
         phase = BracketPhase::IDLE;
     }
 };
