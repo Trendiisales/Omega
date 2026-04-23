@@ -1,0 +1,15 @@
+ts_ms,kind,bias,block_until_ms,detail
+1776834989000,exit,0,0,is_long=1 outcome=1
+1776841226000,entry,0,0,AsianRange/LONG/3.60/PASS
+1776861744000,entry,0,0,TurtleTick/SHORT/1.44/PASS
+1776863383000,exit,0,0,is_long=1 outcome=-1
+1776865213000,entry,0,0,VWAPStretchReversion/LONG/0.72/PASS
+1776865604000,entry,0,0,TurtleTick/LONG/-10.56/PASS
+1776866595000,entry,0,0,VWAPStretchReversion/LONG/-15.84/PASS
+1776866736000,entry,0,0,SessionMomentum/SHORT/-5.28/PASS
+1776868350000,entry,0,0,TurtleTick/SHORT/2.16/PASS
+1776870000000,entry,0,0,LondonFixMomentum/SHORT/-1.38/PASS
+1776876061000,entry,0,0,VWAPStretchReversion/LONG/-7.40/PASS
+1776890087000,entry,0,0,DXYDivergence/LONG/-12.50/PASS
+1776895232000,exit,0,0,is_long=0 outcome=-1
+1776895367000,exit,0,0,is_long=1 outcome=-1
