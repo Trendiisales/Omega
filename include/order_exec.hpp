@@ -418,7 +418,6 @@ static void handle_execution_report(const std::string& msg) {
                 // CRITICAL FIX: notify bracket engines of rejection so they
                 // don't stay stuck in PENDING with no open broker position.
                 if (it->second.symbol == "XAUUSD")   g_bracket_gold.on_reject();
-                if (it->second.symbol == "XAGUSD")   g_bracket_xag.on_reject();
                 if (it->second.symbol == "US500.F")  g_bracket_sp.on_reject();
                 if (it->second.symbol == "USTEC.F")  g_bracket_nq.on_reject();
                 if (it->second.symbol == "DJ30.F")   g_bracket_us30.on_reject();
@@ -448,13 +447,6 @@ static void handle_execution_report(const std::string& msg) {
                                 const std::string& cancel_id = is_long_fill
                                     ? g_bracket_gold.pending_short_clOrdId
                                     : g_bracket_gold.pending_long_clOrdId;
-                                if (!cancel_id.empty()) send_cancel_order(cancel_id);
-                            }
-                            if (it->second.symbol == "XAGUSD") {
-                                g_bracket_xag.confirm_fill(is_long_fill, fill_px, fill_qty);
-                                const std::string& cancel_id = is_long_fill
-                                    ? g_bracket_xag.pending_short_clOrdId
-                                    : g_bracket_xag.pending_long_clOrdId;
                                 if (!cancel_id.empty()) send_cancel_order(cancel_id);
                             }
                             auto fill_bracket = [&](auto& beng) {
@@ -574,7 +566,7 @@ static bool apply_security_list_symbol_map(const std::vector<std::pair<int, std:
                 case 0: g_cfg.ext_ger30_id = id; break;
                 case 1: g_cfg.ext_uk100_id = id; break;
                 case 2: g_cfg.ext_estx50_id = id; break;
-                case 3: g_cfg.ext_xagusd_id = id; break;
+                case 3: break;  // index 3 slot reserved; id stored in g_ext_syms[3].id above; no g_cfg mirror
                 case 4: g_cfg.ext_eurusd_id = id; break;
                 case 5: g_cfg.ext_ukbrent_id = id; break;
                 case 6: g_cfg.ext_gbpusd_id = id; break;
