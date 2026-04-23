@@ -154,12 +154,16 @@ static omega::PullbackContEngine  g_pullback_prem;  // premium: 30pt h07 only, 2
 #include "CandleFlowEngine.hpp"
 static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
 
-// CompressionBreakoutEngine -- compression coil -> directional break
-// Sweep-confirmed: cb=3 mult=1.5 bf=0.30 rr=1.5 SHORT-only
-// 43 trades / 6 days, 53.5% WR, $116.71, $19.45/day
-// shadow_mode=true until 2-week live shadow validates
-#include "CompressionBreakoutEngine.hpp"
-static omega::CompressionBreakoutEngine g_cbe;  // compression breakout engine
+// CompressionBreakoutEngine REMOVED at S16 (2026-04-23).
+// 41-cell REENTER_COMP walk-forward sweep + subsequent baseline analysis
+// showed CBE is net-negative across every tested configuration on 9 days
+// of XAUUSD tick data (train 04-13..17 / test 04-20..23). Best cell
+// tol1000_be1_h5000: train -$35.84 / test -$6.36. Disabled baseline:
+// train -$36.60 / test -$2.23. No parameter combination produced
+// positive net PnL on either split. Engine entirely removed rather than
+// maintained in disabled state. See S15 DomPersist removal for the same
+// pattern. Backtest artifacts: backtest/cbe_walk_forward.cpp,
+// backtest/results/cbe_sweep/summary.csv.
 
 // EMACrossEngine -- EMA9/15 crossover scalper, both directions
 // Sweep-confirmed 2026-04-16: 99 trades/6days, 46.5% WR, $402/6days = $67/day
