@@ -1,6 +1,11 @@
 // tick_gold.hpp -- per-symbol tick handlers
 // Extracted from on_tick(). Same translation unit -- all static functions visible.
 
+// Session 9: GoldCoordinator wiring -- allow-by-default skeleton. The coordinator
+// tracks per-lane position counts so later sessions can enforce budget limits
+// without another refactor. Engine behaviour is UNCHANGED in Session 9.
+#include "gold_coordinator.hpp"
+
 // -- XAUUSD -------------------------------------------------
 static void on_tick_gold(
     const std::string& sym, double bid, double ask,
@@ -1519,8 +1524,25 @@ static void on_tick_gold(
         // Signature: on_tick(bid, ask, now_ms, can_enter, regime, on_close, vwap, l2_imb)
         // NOTE: g_hybrid_gold (GoldHybridBracketEngine) is separate and already wired
         // correctly at lines ~2929/2945 with the bool flow_live signature.
+        //
+        // Session 9: GoldCoordinator BRACKET_LANE gate. Skeleton is allow-by-default
+        // (can_enter() always returns true). Present behaviour: unchanged. When the
+        // coordinator starts denying in Session 10+, an IDLE-phase engine will be
+        // kept IDLE by forcing can_enter=false below.
+        const bool gold_coord_allow = omega::g_gold_coordinator.can_enter(
+            omega::GoldLane::BRACKET_LANE, "XAUUSD", g_bracket_gold.ENTRY_SIZE);
+        const bool bracket_can_enter_base =
+            (bracket_open || gold_bracket_armed) ? can_manage : can_arm_bracket;
+        const bool bracket_can_enter_eff =
+            bracket_can_enter_base && gold_coord_allow;
+        if (!gold_coord_allow && bracket_can_enter_base) {
+            // Diagnostic: coordinator denied something the base gate would have allowed.
+            // In Session 9 skeleton this branch is never taken (can_enter() always true).
+            printf("[COORD] XAUUSD BRACKET_LANE can_enter=false (base=true) lots=%.4f\n",
+                   g_bracket_gold.ENTRY_SIZE);
+        }
         g_bracket_gold.on_tick(bid, ask, now_ms_g,
-            (bracket_open || gold_bracket_armed) ? can_manage : can_arm_bracket,
+            bracket_can_enter_eff,
             regime.c_str(), bracket_on_close, gold_vwap_now,
             g_macro_ctx.gold_l2_imbalance);
         g_telemetry.UpdateBracketState("XAUUSD",
@@ -1606,6 +1628,15 @@ static void on_tick_gold(
                     g_pyramid_clordids.insert(std::string("XAUUSD"));
                 }
                 ++g_bracket_gold_trades_this_minute;
+                // Session 9: GoldCoordinator BRACKET_LANE entry tracking.
+                // Fires at arm-time (orders submitted to broker), not at actual fill.
+                // OCO cancels the losing side, so max single-fill exposure is bg_lot.
+                // Counter is diagnostic in Session 9 skeleton (no gating enforcement).
+                omega::g_gold_coordinator.mark_entered(
+                    omega::GoldLane::BRACKET_LANE, "XAUUSD", "BracketGold", bg_lot);
+                printf("[COORD] XAUUSD BRACKET_LANE mark_entered lots=%.4f pos_count=%d\n",
+                       bg_lot,
+                       omega::g_gold_coordinator.position_count(omega::GoldLane::BRACKET_LANE));
             }
         }
     }
