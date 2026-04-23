@@ -168,15 +168,20 @@ else {
     Write-Host "[BUILD] Using -Cl override: $Cl"
 }
 
-# Sanity-print cl.exe version. Note: cl.exe with no args prints its banner;
-# other compilers (g++ via -Cl shim during smoke tests) error here. Catch so
-# the driver continues either way -- we already verified the exe is runnable.
+# Sanity-print cl.exe version. cl.exe with no args prints its banner line
+# (containing the version) followed by a usage message -- both go to stderr.
+# We want the first line only, and PS 5.1 will see stderr output as NativeCommandError
+# under $ErrorActionPreference=Stop. Temporarily relax that for the probe.
+$priorEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 try {
-    $banner = & $Cl 2>&1 | Select-Object -First 1
+    # cl.exe writes version to stderr line 1; redirect via 2>&1 and take first.
+    $banner = (& $Cl 2>&1 | Select-Object -First 1) -as [string]
     if ($banner) { Write-Host "[BUILD] $banner" }
 } catch {
-    Write-Host "[BUILD] (banner probe failed, continuing)"
+    Write-Host "[BUILD] (banner probe threw, continuing)"
 }
+$ErrorActionPreference = $priorEAP
 
 # -------- Paths ---------------------------------------------------------------
 $HarnessSrc    = Join-Path $RepoRoot "backtest\dom_persist_walk_forward.cpp"
@@ -300,20 +305,50 @@ foreach ($imb in $ImbArr) {
             }
 
             # --- Run ----
-            $runT0 = Get-Date
+            # PS 5.1 quirk: under $ErrorActionPreference='Stop', ANY stderr
+            # output from a native exe invoked via `& $exe 2> file` becomes a
+            # terminating error even when exit code is 0. The harness writes
+            # legitimate progress ("Reading foo.csv...") and the SUMMARY line
+            # to stderr. Using Start-Process sidesteps this: it redirects
+            # streams natively without interpreting stderr as PS errors.
+            $runT0   = Get-Date
             $runArgs = @($InputCsvs | ForEach-Object { $_.FullName })
+            $stderrPath = "$tradesPath.stderr"
+            $stdoutPath = "$tradesPath.stdout"
 
-            # Engine's own [DPE] log lines go to stdout; strip them so the
-            # trades.csv stays parseable. stderr gets SUMMARY + progress.
-            $rawStdout = & $binPath @runArgs 2> "$tradesPath.stderr"
+            $proc = Start-Process -FilePath $binPath -ArgumentList $runArgs `
+                        -NoNewWindow -Wait -PassThru `
+                        -RedirectStandardOutput $stdoutPath `
+                        -RedirectStandardError  $stderrPath
+            $runExit = $proc.ExitCode
+            $runS    = [int]((Get-Date) - $runT0).TotalSeconds
+
+            if ($runExit -ne 0) {
+                Write-Host "  RUN FAILED (exit $runExit) -- see run.log" -ForegroundColor Red
+                "`n=== RUN $cellTag (exit=$runExit) ===" | Add-Content $RunLog -Encoding ascii
+                if (Test-Path $stderrPath) {
+                    Get-Content $stderrPath | Add-Content $RunLog -Encoding ascii
+                }
+                "$imb,$persist,$session,0,0,0.00,0.00,0.00,0.00,$buildS,$runS,RUN_FAIL" |
+                    Add-Content $SummaryCsv -Encoding ascii
+                Remove-Item $stdoutPath -ErrorAction SilentlyContinue
+                Remove-Item $stderrPath -ErrorAction SilentlyContinue
+                if (-not $KeepBinaries) {
+                    Remove-Item $binPath -ErrorAction SilentlyContinue
+                    Remove-Item $objPath -ErrorAction SilentlyContinue
+                }
+                continue
+            }
+
+            # Clean [DPE] lines from captured stdout, write final trades CSV
+            $rawStdout   = Get-Content $stdoutPath
             $cleanStdout = $rawStdout | Where-Object { $_ -notmatch '^\[DPE' }
             $cleanStdout | Set-Content $tradesPath -Encoding ascii
-            $runS = [int]((Get-Date) - $runT0).TotalSeconds
 
             "`n=== RUN $cellTag ===" | Add-Content $RunLog -Encoding ascii
-            Get-Content "$tradesPath.stderr" | Add-Content $RunLog -Encoding ascii
+            Get-Content $stderrPath | Add-Content $RunLog -Encoding ascii
 
-            $summaryLine = Get-Content "$tradesPath.stderr" |
+            $summaryLine = Get-Content $stderrPath |
                            Where-Object { $_ -match '^SUMMARY,' } |
                            Select-Object -First 1
 
@@ -347,6 +382,7 @@ foreach ($imb in $ImbArr) {
                 Remove-Item $objPath -ErrorAction SilentlyContinue
             }
             Remove-Item "$tradesPath.stderr" -ErrorAction SilentlyContinue
+            Remove-Item "$tradesPath.stdout" -ErrorAction SilentlyContinue
         }
     }
 }
