@@ -185,7 +185,6 @@ static double compute_size(const std::string& symbol,
     else if (symbol == "AUDUSD")                               { cap = g_cfg.max_lot_audusd;  flr = g_cfg.min_lot_audusd; }
     else if (symbol == "NZDUSD")                               { cap = g_cfg.max_lot_nzdusd;  flr = g_cfg.min_lot_nzdusd; }
     else if (symbol == "USDJPY")                               { cap = g_cfg.max_lot_usdjpy;  flr = g_cfg.min_lot_usdjpy; }
-    else if (symbol == "XAGUSD")                               { cap = g_cfg.max_lot_silver;  flr = g_cfg.min_lot_silver; }
     else if (symbol == "USOIL.F" || symbol == "BRENT")        { cap = g_cfg.max_lot_oil;     flr = g_cfg.min_lot_oil; }
     if (symbol == "NAS100") flr = std::max(flr, 0.10);
 
