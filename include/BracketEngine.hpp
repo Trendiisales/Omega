@@ -16,7 +16,7 @@
 //   LIVE     ? one side filled, other cancelled, managing position
 //   COOLDOWN ? post-close cooldown
 //
-// Used by: GoldBracketEngine (XAUUSD), SilverBracketEngine (XAGUSD)
+// Used by: GoldBracketEngine (XAUUSD)
 // ==============================================================================
 
 #include <deque>
@@ -1107,13 +1107,6 @@ class GoldBracketEngine final : public BracketEngineBase<GoldBracketEngine>
 {
 public:
     explicit GoldBracketEngine() noexcept { symbol = "XAUUSD"; ENTRY_SIZE = 0.01; }
-    bool shouldTrade(double, double, double, double) const noexcept { return true; }
-};
-
-class SilverBracketEngine final : public BracketEngineBase<SilverBracketEngine>
-{
-public:
-    explicit SilverBracketEngine() noexcept { symbol = "XAGUSD"; ENTRY_SIZE = 0.01; }
     bool shouldTrade(double, double, double, double) const noexcept { return true; }
 };
 
