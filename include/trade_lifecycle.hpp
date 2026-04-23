@@ -3,6 +3,10 @@
 // Section: trade_lifecycle (original lines 3982-5499)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+// Session 9: GoldCoordinator wiring -- needed for mark_closed call inside
+// bracket_on_close() below. Allow-by-default skeleton; engine behaviour unchanged.
+#include "gold_coordinator.hpp"
+
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
 
@@ -1078,6 +1082,21 @@ static void ca_on_close(const omega::TradeRecord& tr) {
 // ── bracket_on_close ─────────────────────────────────────────────────────────
 static void bracket_on_close(const omega::TradeRecord& tr) {
     handle_closed_trade(tr);
+
+    // Session 9: GoldCoordinator BRACKET_LANE exit tracking.
+    // Symbol-gated to XAUUSD only -- this callback is shared across all bracket
+    // symbols (XAGUSD, EURUSD, GBPUSD, SP, NQ, US30, NAS100, GER30, UK100, ESTX50,
+    // BRENT, AUDUSD, NZDUSD, USDJPY) but only XAUUSD is wired to the coordinator
+    // in Session 9. Other symbols are untouched. Counter is diagnostic in skeleton
+    // mode (always-allow); Session 10+ will extend to other engines.
+    if (tr.symbol == "XAUUSD") {
+        omega::g_gold_coordinator.mark_closed(
+            omega::GoldLane::BRACKET_LANE, "XAUUSD", "BracketGold", tr.size);
+        printf("[COORD] XAUUSD BRACKET_LANE mark_closed lots=%.4f reason=%s pos_count=%d\n",
+               tr.size,
+               tr.exitReason.c_str(),
+               omega::g_gold_coordinator.position_count(omega::GoldLane::BRACKET_LANE));
+    }
 
     // ?? Per-symbol bracket trend bias update ?????????????????????????????
     // Applies to ALL bracket symbols. Tracks consecutive profitable exits
