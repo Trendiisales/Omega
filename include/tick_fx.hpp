@@ -14,15 +14,6 @@
 // Will be rebuilt as a separate system targeting news-event momentum
 // (MacroCrash pattern applied to FX: compression -> bracket -> breakout on NFP/CPI/FOMC)
 
-// ── XAGUSD ──────────────────────────────────────────────────
-static void on_tick_silver(
-    const std::string& sym, double bid, double ask,
-    bool tradeable, bool lat_ok, const std::string& regime)
-{
-    // XAGUSD DISABLED -- real-tick backtest FAILED (Sharpe=-16.23).
-    (void)sym; (void)bid; (void)ask; (void)tradeable; (void)lat_ok; (void)regime;
-}
-
 // ── EURUSD ──────────────────────────────────────────────────
 template<typename Dispatch>
 static void on_tick_eurusd(
