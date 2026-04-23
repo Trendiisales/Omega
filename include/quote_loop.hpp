@@ -529,7 +529,7 @@ static void quote_loop() {
                     SSL_write(ssl, resub.c_str(), static_cast<int>(resub.size()));
                     g_md_subscribed.store(true);
                     std::cout << "[OMEGA] Re-subscribed ALL symbols with learned ext IDs"
-                                 " (GER40/UK100/ESTX50/XAGUSD/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)\n";
+                                 " (GER40/UK100/ESTX50/EURUSD/BRENT/GBPUSD/AUDUSD/NZDUSD/USDJPY now included)\n";
                 }
             }
 
@@ -609,7 +609,7 @@ static void quote_loop() {
                 t.pnl *= mult; t.mfe *= mult; t.mae *= mult;
                 double cps = 0.0;
                 { const std::string& s = t.symbol;
-                  if (s=="XAUUSD"||s=="XAGUSD"||s=="EURUSD"||s=="GBPUSD"||
+                  if (s=="XAUUSD"||s=="EURUSD"||s=="GBPUSD"||
                       s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
                 omega::apply_realistic_costs(t, cps, mult);
                 // Prior-day positions must NOT enter today's ledger or P&L total.
@@ -704,7 +704,6 @@ static void quote_loop() {
             stale_beng(g_eng_estx50, "ESTX50");
             stale_beng(g_eng_cl,     "USOIL.F");
             stale_beng(g_eng_brent,  "BRENT");
-            stale_beng(g_eng_xag,    "XAGUSD");
             stale_beng(g_eng_eurusd, "EURUSD");
             stale_beng(g_eng_gbpusd, "GBPUSD");
             stale_beng(g_eng_audusd, "AUDUSD");
@@ -712,7 +711,6 @@ static void quote_loop() {
             stale_beng(g_eng_usdjpy, "USDJPY");
             // -- Bracket engines --
             stale_bracket(g_bracket_gold,   "XAUUSD");
-            stale_bracket(g_bracket_xag,    "XAGUSD");
             stale_bracket(g_bracket_sp,     "US500.F");
             stale_bracket(g_bracket_nq,     "USTEC.F");
             stale_bracket(g_bracket_us30,   "DJ30.F");
@@ -737,7 +735,6 @@ static void quote_loop() {
             stale_ca(g_orb_ger30,       "GER40");
             stale_ca(g_orb_uk100,       "UK100");
             stale_ca(g_orb_estx50,      "ESTX50");
-            stale_ca(g_orb_silver,      "XAGUSD");
             stale_ca(g_vwap_rev_sp,     "US500.F");
             stale_ca(g_vwap_rev_nq,     "USTEC.F");
             stale_ca(g_vwap_rev_ger40,  "GER40");
@@ -833,19 +830,15 @@ static void quote_loop() {
         fc_snap(g_eng_cl,     "USOIL.F"); fc_snap(g_eng_us30,  "DJ30.F");
         fc_snap(g_eng_nas100, "NAS100");  fc_snap(g_eng_ger30, "GER40");
         fc_snap(g_eng_uk100,  "UK100");   fc_snap(g_eng_estx50,"ESTX50");
-        fc_snap(g_eng_xag,    "XAGUSD"); fc_snap(g_eng_eurusd, "EURUSD");
+        fc_snap(g_eng_eurusd, "EURUSD");
         fc_snap(g_eng_gbpusd, "GBPUSD"); fc_snap(g_eng_audusd, "AUDUSD");
         fc_snap(g_eng_nzdusd, "NZDUSD"); fc_snap(g_eng_usdjpy, "USDJPY");
         fc_snap(g_eng_brent,  "BRENT");
 
-        // Gold/Silver bracket engines
+        // Gold bracket engines
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
-        { double b=0,a=0; snap_px("XAGUSD",b,a);
-          if(b<=0){b=1;a=1;}
-          g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",shutdown_cb); }
-
         // Index/FX/Oil bracket engines
         fc_bracket_snap(g_bracket_sp,     "US500.F");
         fc_bracket_snap(g_bracket_nq,     "USTEC.F");
@@ -872,8 +865,8 @@ static void quote_loop() {
           g_gold_flow_addon.force_close(b,a,now_ms_sd,shutdown_cb); }
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
-          double s_bid=0,s_ask=0; snap_px("XAGUSD",s_bid,s_ask);
-          if(s_bid<=0){s_bid=b*0.0185;s_ask=a*0.0185;}
+          // Silver slot in le_stack signature: use gold-ratio proxy pending Tier-3 cleanup
+          const double s_bid = b*0.0185, s_ask = a*0.0185;
           g_le_stack.force_close_all(b,a,s_bid,s_ask,g_rtt_last,
               [&](const omega::TradeRecord& tr){shutdown_cb(tr);}); }
 
@@ -887,7 +880,6 @@ static void quote_loop() {
           snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb);g_vwap_rev_ger40.force_close(b,a,shutdown_cb);g_trend_pb_ger40.force_close(b,a,shutdown_cb);}
           snap_px("XAUUSD",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);g_nbm_gold_london.force_close(b,a,shutdown_cb);}
           snap_px("USOIL.F",b,a); if(b>0&&a>0){g_nbm_oil_london.force_close(b,a,shutdown_cb);}  // London NBM oil
-          snap_px("XAGUSD",b,a);  if(b>0&&a>0){g_orb_silver.force_close(b,a,shutdown_cb);}
           snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb);}
           snap_px("ESTX50",b,a);  if(b>0&&a>0){g_orb_estx50.force_close(b,a,shutdown_cb);}
           snap_px("USOIL.F",b,a); if(b>0&&a>0){g_ca_eia_fade.force_close(b,a,shutdown_cb);g_ca_brent_wti.force_close(b,a,shutdown_cb);}
@@ -950,7 +942,7 @@ static void quote_loop() {
             sfc(g_eng_sp,"US500.F"); sfc(g_eng_nq,"USTEC.F"); sfc(g_eng_cl,"USOIL.F");
             sfc(g_eng_us30,"DJ30.F"); sfc(g_eng_nas100,"NAS100");
             sfc(g_eng_ger30,"GER40"); sfc(g_eng_uk100,"UK100"); sfc(g_eng_estx50,"ESTX50");
-            sfc(g_eng_xag,"XAGUSD"); sfc(g_eng_eurusd,"EURUSD"); sfc(g_eng_gbpusd,"GBPUSD");
+            sfc(g_eng_eurusd,"EURUSD"); sfc(g_eng_gbpusd,"GBPUSD");
             sfc(g_eng_audusd,"AUDUSD"); sfc(g_eng_nzdusd,"NZDUSD"); sfc(g_eng_usdjpy,"USDJPY");
             sfc(g_eng_brent,"BRENT");
 
@@ -962,7 +954,6 @@ static void quote_loop() {
                 printf("[OMEGA-SHUTDOWN] Closed bracket %s\n",s);
             };
             { double b,a; get_px("XAUUSD",b,a); g_bracket_gold.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
-            { double b,a; get_px("XAGUSD",b,a); g_bracket_xag.forceClose(b,a,"SHUTDOWN",g_rtt_last,"",scb); }
             sbk(g_bracket_sp,"US500.F"); sbk(g_bracket_nq,"USTEC.F");
             sbk(g_bracket_us30,"DJ30.F"); sbk(g_bracket_nas100,"NAS100");
             sbk(g_bracket_ger30,"GER40"); sbk(g_bracket_uk100,"UK100");
@@ -979,7 +970,9 @@ static void quote_loop() {
               g_gold_flow.force_close(b,a,now_ms_scb,scb);
               g_gold_flow_reload.force_close(b,a,now_ms_scb,scb);
               g_gold_flow_addon.force_close(b,a,now_ms_scb,scb); }
-            { double b,a,sb,sa; get_px("XAUUSD",b,a); get_px("XAGUSD",sb,sa);
+            { double b,a; get_px("XAUUSD",b,a);
+              // Silver slot in le_stack signature: gold-ratio proxy pending Tier-3 cleanup
+              const double sb = b*0.0185, sa = a*0.0185;
               g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
 
             // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
@@ -992,7 +985,6 @@ static void quote_loop() {
               get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb); g_vwap_rev_ger40.force_close(b,a,scb); g_trend_pb_ger40.force_close(b,a,scb);
               get_px("XAUUSD",b,a);   g_trend_pb_gold.force_close(b,a,scb); g_nbm_gold_london.force_close(b,a,scb);
               get_px("USOIL.F",b,a);  g_nbm_oil_london.force_close(b,a,scb);  // London NBM oil
-              get_px("XAGUSD",b,a);   g_orb_silver.force_close(b,a,scb);
               get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb);
               get_px("ESTX50",b,a);   g_orb_estx50.force_close(b,a,scb);
               get_px("USOIL.F",b,a);  g_ca_eia_fade.force_close(b,a,scb); g_ca_brent_wti.force_close(b,a,scb);
@@ -1053,25 +1045,6 @@ static void quote_loop() {
         if (do_reconnect_close) {
         // Force-close bracket engines -- look up current prices from book
         {
-            double bxag_bid = 0.0, bxag_ask = 0.0;
-            { std::lock_guard<std::mutex> lk(g_book_mtx);
-              const auto bi = g_bids.find("XAGUSD"); if (bi != g_bids.end()) bxag_bid = bi->second;
-              const auto ai = g_asks.find("XAGUSD"); if (ai != g_asks.end()) bxag_ask = ai->second; }
-            if (bxag_bid > 0.0 && bxag_ask > 0.0)
-                g_bracket_xag.forceClose(bxag_bid, bxag_ask, "FORCE_CLOSE", g_rtt_last, "",
-                    [](const omega::TradeRecord& tr) {
-                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
-                        if (tr.shadow) {
-                            printf("[BRACKET-XAG-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
-                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
-                            fflush(stdout);
-                            return;
-                        }
-                        handle_closed_trade(tr);
-                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
-                    });
-        }
-        {
             double bgld_bid = 0.0, bgld_ask = 0.0;
             { std::lock_guard<std::mutex> lk(g_book_mtx);
               const auto bi = g_bids.find("XAUUSD"); if (bi != g_bids.end()) bgld_bid = bi->second;
@@ -1111,7 +1084,7 @@ static void quote_loop() {
                         }
                         handle_closed_trade(tr);
                         // Send market close -- broker doesn't know we disconnected.
-                        // Matches gold/xag bracket behaviour on disconnect.
+                        // Matches gold bracket behaviour on disconnect.
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
         };
@@ -1168,8 +1141,6 @@ static void quote_loop() {
                 g_vwap_rev_ger40.force_close(ca_b, ca_a, ca_cb);
                 g_trend_pb_ger40.force_close(ca_b, ca_a, ca_cb);
             }
-            ca_get_px("XAGUSD", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_silver.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("UK100", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) { g_orb_uk100.force_close(ca_b, ca_a, ca_cb); }
             ca_get_px("ESTX50", ca_b, ca_a);
@@ -1191,11 +1162,11 @@ static void quote_loop() {
         // Force-close GoldEngineStack
         {
             double g_bid = 0.0, g_ask = 0.0, s_bid = 0.0, s_ask = 0.0;
+            // s_bid/s_ask retained at 0.0 -- gold-ratio fallback at le_stack call handles it.
+            // Locals kept for signature compatibility; removed fully in Tier-3 cleanup.
             { std::lock_guard<std::mutex> lk(g_book_mtx);
               const auto bi = g_bids.find("XAUUSD"); if (bi != g_bids.end()) g_bid = bi->second;
-              const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) g_ask = ai->second;
-              const auto sbi = g_bids.find("XAGUSD"); if (sbi != g_bids.end()) s_bid = sbi->second;
-              const auto sai = g_asks.find("XAGUSD"); if (sai != g_asks.end()) s_ask = sai->second; }
+              const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) g_ask = ai->second; }
             if (g_bid > 0.0 && g_ask > 0.0) {
                 omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
                     [](const omega::TradeRecord& tr) {
