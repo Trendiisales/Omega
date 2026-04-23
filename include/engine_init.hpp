@@ -1576,15 +1576,20 @@ static void init_engines(const std::string& cfg_path)
             g_pdhl_rev.COOLDOWN_MS      = 120'000;
             g_pdhl_rev.MAX_HOLD_MS      = 900'000;
 
-            // CFE shadow_mode=true already set above -- does not trade
-            // Note: CFE has no .enabled field, shadow_mode prevents real orders
+            // CFE shadow_mode follows kShadowDefault (line 28) -- matches every
+            // other engine. In SHADOW mode CFE generates signals and records
+            // shadow trades; in LIVE mode it would place real orders.
+            // Historical 2yr backtest (14.8% WR, -$27k) predates current HMM
+            // gate, VWAP filter, and chop gate; recent shadow WR is materially
+            // different. Re-evaluate before promoting to LIVE.
 
             std::cout << "[PDHL-REV] PDHLReversionEngine configured"
                       << " shadow=" << (g_pdhl_rev.shadow_mode ? "true" : "false")
                       << " entry_pct=" << g_pdhl_rev.RANGE_ENTRY_PCT
                       << " sl_mult=" << g_pdhl_rev.SL_ATR_MULT
                       << " tp_frac=" << g_pdhl_rev.TP_RANGE_FRAC << "\n";
-            std::cout << "[CFE] CandleFlowEngine DISABLED (14.8% WR, -$27k/2yr)\n";
+            std::cout << "[CFE] CandleFlowEngine configured shadow="
+                      << (g_candle_flow.shadow_mode ? "true" : "false") << "\n";
             std::cout.flush();
         }
     }
