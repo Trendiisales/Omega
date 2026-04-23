@@ -532,14 +532,8 @@ int main(int argc, char* argv[])
 
                 // (MicroMomentumEngine warmup-seed REMOVED at Batch 5V §1.2.)
 
-                // DomPersistEngine: seed ATR + warmup counters from disk
-                if (seed_atr > 0.5 && seed_atr < 100.0) {
-                    g_dom_persist.seed_bar_atr(seed_atr);
-                    g_dom_persist.seed_warmup();  // skip 50+100 tick warmup requirement
-                    std::cout << "[WARMUP-SEED] DomPersist bar_atr=" << seed_atr
-                              << " warmup counters seeded\n";
-                    std::cout.flush();
-                }
+                // (DomPersistEngine warmup-seed REMOVED at Session 15 2026-04-23
+                //  -- no edge in 96-cell walk-forward sweep. See globals.hpp tombstone.)
 
                 std::cout << "[WARMUP-SEED] All engines seeded from disk state -- "
                           << "no 2-minute blindness on restart\n";
