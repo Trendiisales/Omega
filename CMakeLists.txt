@@ -36,6 +36,7 @@ set(SOURCES
     src/main.cpp
     src/SymbolConfig.cpp
     src/gui/OmegaTelemetryServer.cpp
+    src/gold_coordinator.cpp
 )
 
 add_executable(Omega ${SOURCES})
