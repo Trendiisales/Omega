@@ -1545,7 +1545,8 @@ static void on_tick_gold(
         g_bracket_gold.on_tick(bid, ask, now_ms_g,
             bracket_can_enter_eff,
             regime.c_str(), bracket_on_close, gold_vwap_now,
-            g_macro_ctx.gold_l2_imbalance);
+            g_macro_ctx.gold_l2_imbalance,
+            g_gold_stack.ewm_drift());   // Session 13: drift arg drives regime-flip exit
         g_telemetry.UpdateBracketState("XAUUSD",
             static_cast<int>(g_bracket_gold.phase),
             g_bracket_gold.bracket_high,
