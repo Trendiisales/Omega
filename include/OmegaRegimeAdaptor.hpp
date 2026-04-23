@@ -53,8 +53,6 @@ enum class EngineClass {
     GOLD_STACK,           // 5-engine gold stack
     GOLD_BRACKET,         // gold bracket engine
     GOLD_FLOW,            // gold flow engine
-    SILVER_BREAKOUT,      // XAGUSD breakout
-    SILVER_BRACKET,       // XAGUSD bracket
     OIL_BREAKOUT,         // USOIL.F / BRENT breakout
     OIL_BRACKET,          // BRENT bracket
     FX_BREAKOUT,          // EURUSD / GBPUSD breakout
@@ -90,8 +88,6 @@ struct RegimeWeightTable {
         table[static_cast<int>(EC::GOLD_STACK)]          = {0.80f,  1.00f,  1.50f}; // boost in risk-off
         table[static_cast<int>(EC::GOLD_BRACKET)]        = {0.85f,  1.00f,  1.40f};
         table[static_cast<int>(EC::GOLD_FLOW)]           = {0.80f,  1.00f,  1.50f};
-        table[static_cast<int>(EC::SILVER_BREAKOUT)]     = {0.90f,  1.00f,  1.20f};
-        table[static_cast<int>(EC::SILVER_BRACKET)]      = {0.90f,  1.00f,  1.10f};
         table[static_cast<int>(EC::OIL_BREAKOUT)]        = {1.10f,  1.00f,  0.70f};
         table[static_cast<int>(EC::OIL_BRACKET)]         = {1.00f,  1.00f,  0.70f};
         table[static_cast<int>(EC::FX_BREAKOUT)]         = {1.00f,  1.00f,  0.50f};
