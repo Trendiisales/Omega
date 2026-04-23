@@ -34,16 +34,20 @@
 //      Summary line to stderr: SUMMARY,<trades>,<wr>,<pnl>,<maxdd>,<exp>
 //
 //  Build examples:
-//      Default params (matches production):
-//        g++ -std=c++17 -O2 -I../include -Ishim
-//            dom_persist_walk_forward.cpp -o dpe_wf.exe
+//      Default params (matches production) -- MSVC:
+//        cl /nologo /std:c++17 /EHsc /O2 /I C:\Omega\include
+//            dom_persist_walk_forward.cpp /Fe:dpe_wf.exe
 //
-//      Swept cell:
-//        g++ -std=c++17 -O2 -I../include -Ishim
-//            -DDPE_IMB_THRESHOLD_OVERRIDE=0.15
-//            -DDPE_PERSIST_TICKS_OVERRIDE=20
-//            -DDPE_SESSION_FILTER=3
-//            dom_persist_walk_forward.cpp -o dpe_wf.exe
+//      Swept cell -- MSVC:
+//        cl /nologo /std:c++17 /EHsc /O2 /I C:\Omega\include
+//            /DDPE_IMB_THRESHOLD_OVERRIDE=0.15
+//            /DDPE_PERSIST_TICKS_OVERRIDE=20
+//            /DDPE_SESSION_FILTER=3
+//            dom_persist_walk_forward.cpp /Fe:dpe_wf.exe
+//
+//      Or via the PowerShell driver (preferred):
+//        cd C:\Omega\backtest
+//        powershell -File run_dpe_sweep.ps1
 //
 //  Session filter values (harness-local):
 //      1 = London-only              (UTC 07..12)
@@ -64,16 +68,13 @@
 #include <string>
 #include <vector>
 
-// --- Harness stubs: minimal shims so the engine compiles in isolation -------
-// These REPLACE the production headers in the backtest include path. The
-// driver script sets -Ibacktest/shim ahead of -I../include so these win.
-//
-// Shim content is defined inline here when compiled as a TU with -DDPE_SHIM.
-// For cleanliness the driver script creates real shim files next to the
-// harness; see run_dpe_sweep.ps1.
-
-// Forward declare TradeRecord -- matches production shape used by the engine.
-// Full shim file is produced by run_dpe_sweep.ps1 at backtest/shim/ .
+// --- Production headers (same ones main Omega uses) -------------------------
+// Rev3 drops the shim layer. BracketTrendState.hpp is already extracted for
+// OmegaBacktest compatibility (per its own header comment); in a backtest TU
+// g_bracket_trend stays empty so bracket_trend_bias() returns 0 without
+// intervention. OmegaTradeLedger.hpp is standard-lib-only. Both headers were
+// pulled from include/ at HEAD and verified harness-compatible. Using real
+// headers prevents shim drift from production TradeRecord shape.
 #include "OmegaTradeLedger.hpp"
 #include "BracketTrendState.hpp"
 
