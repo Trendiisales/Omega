@@ -4,10 +4,9 @@
 // =============================================================================
 // L2 order-flow + EWM drift + Regime-gated engine stack for US equity indices.
 //
-// Architecture mirrors GoldFlowEngine exactly -- same L2 persistence windows,
-// same EWM fast/slow drift detection, same ATR-proportional staircase trail --
-// but calibrated for index price scales and the much higher per-point dollar
-// values of US index contracts.
+// Architecture: L2 persistence windows + EWM fast/slow drift detection +
+// ATR-proportional staircase trail, calibrated for index price scales and the
+// much higher per-point dollar values of US index contracts.
 //
 // SYMBOL CONFIGS (confirmed from OmegaCostGuard.hpp):
 //   US500.F  : $50/pt per lot  -- SP500 mini equivalent
@@ -21,7 +20,7 @@
 //   NAS100   : same price as USTEC but $1/pt contract, ATR_MIN=8pt, spread=0.8pt
 //   DJ30.F   : daily range 200-500pt,hourly 40-120pt,ATR_MIN=15pt, spread=2pt
 //
-// ENTRY ARCHITECTURE (identical to GoldFlowEngine logic):
+// ENTRY ARCHITECTURE:
 //   1. L2 imbalance persistence (fast=30t, slow=60t) OR EWM drift fallback
 //   2. EWM drift confirmation -- price actually moving in signal direction
 //   3. Momentum confirmation -- mid moving in signal direction over last 12 ticks
@@ -32,7 +31,7 @@
 //   EWM fast (α=0.05) vs slow (α=0.005) drift signal
 //   TREND if |EWM_fast - EWM_slow| > TREND_EWM_THRESHOLD (per-symbol scaled)
 //
-// EXIT ARCHITECTURE (staircase trail, mirrors GoldFlowEngine):
+// EXIT ARCHITECTURE (ATR-proportional staircase trail):
 //   Step 1 (+1x ATR): lock BE, bank 33%
 //   Step 2 (+2x ATR): bank 33% of remainder, trail 0.5x ATR
 //   Step 3 (+4x ATR): tight 0.25x ATR trail
@@ -290,7 +289,7 @@ public:
 
 // =============================================================================
 // IdxATRTracker -- rolling ATR from 100-tick range
-// Direct port of GoldFlowEngine ATR logic.
+// Rolling ATR from 100-tick range with EWM smoothing.
 // =============================================================================
 class IdxATRTracker {
     static constexpr int BUF = 256;
@@ -299,7 +298,7 @@ class IdxATRTracker {
     int    count_ = 0;
     double ewm_   = 0.0;
     bool   init_  = false;
-    static constexpr double ALPHA = 0.05; // EWM smoothing (same as GFE_ATR_EWM_ALPHA)
+    static constexpr double ALPHA = 0.05; // EWM smoothing alpha
 
 public:
     void push(double mid) noexcept {
@@ -323,7 +322,7 @@ public:
     double atr() const noexcept { return ewm_; }
     bool   ready() const noexcept { return count_ >= 50; }
 
-    // Seed from saved state (warm restart) -- mirrors GoldFlow ATR seed
+    // Seed from saved state (warm restart) -- initialize ATR from persisted value
     void seed(double val) noexcept {
         if (val <= 0.0 || init_) return;
         ewm_ = val; init_ = true;
@@ -383,7 +382,7 @@ public:
         if (move > mfe) mfe = move;
         if (-move > mae) mae = -move;
 
-        // Staircase trail -- mirrors GoldFlowEngine tiered trail
+        // Staircase trail -- ATR-proportional tiered SL advancement
         // Uses atr_at_entry (stable) not current ATR (changes every 25 ticks)
         const double a = (atr_at_entry > 0.0) ? atr_at_entry : atr;
         if (a > 0.0) {
@@ -427,7 +426,7 @@ public:
         if (held >= max_hold_sec && !tp_hit && !sl_hit) {
             const bool trail_profit = is_long ? (sl >= entry) : (sl <= entry);
             if (trail_profit) {
-                // Trail locked above entry -- let it run (same logic as GoldFlow)
+                // Trail locked above entry -- let it run (profitable trail, no timeout)
                 timed_out = false;
             } else {
                 timed_out = true;
@@ -490,7 +489,7 @@ int IdxOpenPosition::s_trade_id_ = 9000;
 // IndexFlowEngine
 // =============================================================================
 // Core L2 + EWM drift flow engine for equity indices.
-// One instance per symbol. Mirrors GoldFlowEngine phase machine.
+// One instance per symbol. Phase machine: IDLE → FLOW_BUILDING → LIVE → COOLDOWN.
 // =============================================================================
 class IndexFlowEngine {
 public:
@@ -627,9 +626,8 @@ public:
         // LONG signal: bid-heavy book (imb > threshold) OR positive drift
         // SHORT signal: ask-heavy book (imb < threshold) OR negative drift
         //
-        // This is the exact same architecture as GoldFlowEngine -- adapted for
-        // the fact that BlackBull often doesn't send L2 size (tag-271 omitted),
-        // so drift-only mode is the primary operating mode.
+        // Adapted for the fact that BlackBull often doesn't send L2 size
+        // (tag-271 omitted), so drift-only mode is the primary operating mode.
 
         bool l2_long  = false;
         bool l2_short = false;
@@ -643,7 +641,7 @@ public:
             l2_short = check_l2_persistence(false);
         }
 
-        // Drift fallback (mirrors GFE_DRIFT_FALLBACK_THRESHOLD logic)
+        // Drift fallback (threshold configured via cfg_.drift_threshold)
         drift_long  = (d >  cfg_.drift_threshold) && (drift_persist_long_  >= (int)cfg_.drift_persist_ticks);
         drift_short = (d < -cfg_.drift_threshold) && (drift_persist_short_ >= (int)cfg_.drift_persist_ticks);
 
@@ -670,8 +668,7 @@ public:
             return {};
         }
 
-        // Min confidence gate: equivalent to GoldFlow GENERAL_MIN_SCORE=1.20.
-        // For index flow: require ATR >= 1.5x min (real vol, not minimum).
+        // Min confidence gate: require ATR >= 1.5x min for adequate SL headroom.
         if (atr < cfg_.atr_min * 1.5) return {};
 
         // ── Build the signal ──────────────────────────────────────────────────
@@ -682,13 +679,12 @@ public:
         const double sl      = is_long ? (bid - sl_dist) : (ask + sl_dist);
 
         // TP: 3x ATR initial target (staircase trail takes over after stage 1)
-        // This mirrors GoldFlow: we use the staircase, not a fixed TP target.
-        // A 3x ATR initial TP ensures cost_guard passes and gives room for stage 1.
+        // Staircase drives the exit, not a fixed TP. 3x ATR ensures cost_guard passes.
         const double tp_dist = sl_dist * 3.0;
         const double tp      = is_long ? (ask + tp_dist) : (bid - tp_dist);
 
         // Lot sizing: risk_dollars / (sl_dist * usd_per_pt)
-        // Same formula as GoldFlow: risk = size * sl_pts * usd_per_pt
+        // Standard risk-based formula: risk = size * sl_pts * usd_per_pt
         const double lot_raw = cfg_.risk_dollars / (sl_dist * cfg_.usd_per_pt);
         const double lot     = std::max(0.01, std::min(1.0, lot_raw));
 
@@ -730,7 +726,7 @@ private:
     IdxATRTracker     atr_tracker_;
     IdxOpenPosition   pos_;
 
-    // Persistence window buffers (mirrors GoldFlowEngine fast/slow L2 tracking)
+    // Persistence window buffers (fast/slow L2 tracking windows)
     static constexpr int FAST_TICKS = 30;
     static constexpr int SLOW_TICKS = 60;
 

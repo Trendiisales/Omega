@@ -536,7 +536,7 @@ public:
         const double eff_net20_min   = is_asia ? 7.00 : 5.00;
         const double eff_max_spread  = is_asia ? 1.50 : MAX_SPREAD;
         if(s.spread > eff_max_spread) return noSignal();
-        // Asia ATR quality gate: mirrors GFE_ASIA_ATR_SPREAD_RATIO=4.0.
+        // Asia ATR quality gate: ATR / spread ratio >= 4.0 for adequate SL headroom.
         // ImpulseCont TP=100ticks/SL=50ticks -- at ATR=$2, SL=$1.25pt.
         // If spread=$1.50, SL is barely 1x spread -- noise-stopped instantly.
         // Require ATR >= 3x spread in Asia. Dead zone already blocked (UNKNOWN).
@@ -3575,7 +3575,8 @@ public:
         // regardless of open-position state. The original early-return at the
         // top of this function froze ewm_fast_/ewm_slow_ while any position was
         // open, producing stale `ewm_drift()` readings that were consumed
-        // downstream by GoldFlowEngine's direction generator. On 2026-04-17
+        // downstream by the XAUUSD direction generator (GoldFlow engine, culled S19).
+        // On 2026-04-17
         // this froze positive drift across a -101pt distribution day, causing
         // 169 LONG entry attempts vs 9 SHORT. The CVD-GF gate blocked all 169
         // bad LONGs correctly, but the sign signal itself was wrong.
@@ -3736,13 +3737,13 @@ public:
     // ewm_drift > 0 = bullish drift, < 0 = bearish drift, |drift| > 8 = significant
     double ewm_drift() const { return ewm_init_ ? (ewm_fast_ - ewm_slow_) : 0.0; }
 
-    // reset_drift_on_reversal() -- called after a GoldFlow close when price
+    // reset_drift_on_reversal() -- called after an XAUUSD engine close when price
     // immediately reverses direction (e.g. short closes then price surges up).
     //
     // Problem: ewm_slow (?=0.005) is a 200-tick half-life average.
     // After a 60pt DROP, ewm_drift reaches ~-40. When price then SURGES 80pts
     // the slow EWM takes 150+ ticks (~25 min) to recover to positive drift.
-    // During that recovery window GFE cannot enter LONG -- it sees negative drift
+    // During that recovery window the XAUUSD direction generator cannot enter LONG -- it sees negative drift
     // and the direction filter blocks it. The entire surge is missed.
     //
     // Fix: when a reversal is confirmed (price moved >= reversal_pts in the
@@ -3761,17 +3762,17 @@ public:
         //
         // Rationale: partial snap (e.g. 1-exp(-x/20)) was tested and rejected:
         //   - After a 60pt drop, drift ? -40. Even a 40pt reversal only reduces
-        //     drift to -5.4 (86% snap). GFE still can't fire LONG (needs drift > 0.30).
+        //     drift to -5.4 (86% snap). Entry direction filter still blocks LONG (needs drift > 0.30).
         //     Recovery from -5.4 takes ~114 more ticks = another 19 minutes missed.
         //   - Full snap sets drift = 0. Then 3 ticks of 1.33pt/tick surge ? drift = +0.35.
-        //     GFE LONG fires in ~30 seconds instead of 25 minutes.
+        //     A fresh LONG signal fires in ~30 seconds instead of 25 minutes.
         //
         // Safety: caller already verified reversal >= 2?ATR (5pt minimum) before
         // calling here. A 5pt move in the new direction is genuine -- not noise.
         // Combined with one-shot-per-close + 120s window in main.cpp, false snaps
         // are impossible in normal market conditions.
         const double old_drift = ewm_fast_ - ewm_slow_;
-        ewm_slow_ = ewm_fast_;  // drift = 0; next tick in new direction fires GFE
+        ewm_slow_ = ewm_fast_;  // drift = 0; next tick in new direction fires a fresh signal
         {
             char _msg[512];
             snprintf(_msg, sizeof(_msg), "[DRIFT-RESET] reversal=%.1fpt old_drift=%.2f -> 0.00 (full snap)\n",                reversal_pts, old_drift);
@@ -4017,7 +4018,7 @@ class GoldPositionManager {
         const double trail_arm1 = TRAIL_ARM_1    * tier_mult;
         const double trail_arm2 = TRAIL_ARM_2    * tier_mult;
         // Trail distances: when cur_atr>0 treat cfg values as ATR multipliers.
-        // TRAIL_DIST_1=0.80 ? 0.80?ATR (wide -- ride the move, same philosophy as GoldFlow)
+        // TRAIL_DIST_1=0.80 ? 0.80?ATR (wide -- ride the move)
         // TRAIL_DIST_2=0.50 ? 0.50?ATR (tighter on big runners)
         // When cur_atr==0 (warmup): fall back to raw dollar values (legacy behaviour).
         const double trail_d1   = (cur_atr > 0.0) ? (TRAIL_DIST_1 * cur_atr * tier_mult)
@@ -4796,9 +4797,9 @@ public:
         return sl_move > 0.0;
     }
 
-    // Clear SL cooldown immediately -- used by reversal logic when GoldFlow
-    // SL_HIT and drift has reversed direction. Allows GoldStack counter-entry
-    // without waiting the full 120s cooldown.
+    // Clear SL cooldown immediately -- used by reversal logic when an XAUUSD
+    // engine takes SL_HIT and drift has reversed direction. Allows GoldStack
+    // counter-entry without waiting the full 120s cooldown.
     void clear_sl_cooldown() { sl_cooldown_until_ = 0; }
 
     int64_t sl_cooldown_until() const { return sl_cooldown_until_; }
@@ -4846,7 +4847,7 @@ public:
         }
     }
     // Reset stale EWM drift after a confirmed price reversal.
-    // Called from main.cpp when GoldFlow closes and price immediately moves
+    // Called from main.cpp when an XAUUSD engine closes and price immediately moves
     // >= reversal_pts in the opposite direction. Snaps ewm_slow toward
     // ewm_fast so the new move direction registers within a few ticks
     // instead of waiting 150+ ticks for the slow EWM to recover naturally.
@@ -5166,7 +5167,7 @@ private:
         //  10. MIN_ENTRY_GAP_SEC=90: cannot re-enter within 90s of last entry.
         //  11. HARD_SL_GLOBAL_COOLDOWN=120s: any SL hit triggers 120s full stop.
         //  12. MAX_ENTRY_SPREAD=$2.50: applies to all stack entries regardless.
-        //  13. GoldFlow Asia hardening: ATR>=$5, ATR/spread>=4x, 90% persistence.
+        //  13. Asia hardening (inherited pattern): ATR>=$5, ATR/spread>=4x, 90% persistence.
         //      Spread gate raised to $2.50 to handle gap-open spreads (see below).
         //
         // NOT enabled in Asia even during TREND:

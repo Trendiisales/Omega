@@ -38,7 +38,7 @@
 // CONSTRUCTION
 // ------------
 // A single global instance g_gold_coordinator is defined in gold_coordinator.cpp
-// and declared extern here. Same pattern as g_gold_flow, g_gold_stack, etc.
+// and declared extern here. Same pattern as g_gold_stack, g_trend_pb_gold, etc.
 //
 // THREAD SAFETY
 // -------------

@@ -676,12 +676,6 @@ R"OMEGA5(
         <div class="eng-row"><span class="eng-lbl">BRACKET</span><span class="eng-pnl" id="engPnlBracket">$0</span><span class="eng-cnt" id="engCntBracket">0</span></div>
         <div class="eng-row"><span class="eng-lbl">MEAN REV</span><span class="eng-pnl" id="engPnlMeanRev">$0</span><span class="eng-cnt" id="engCntMeanRev">0</span></div>
         <div class="eng-row"><span class="eng-lbl">GOLD STACK</span><span class="eng-pnl" id="engPnlGoldStack">$0</span><span class="eng-cnt" id="engCntGoldStack">0</span></div>
-        <div class="eng-row"><span class="eng-lbl">GOLD FLOW</span><span class="eng-pnl" id="engPnlGoldFlow">$0</span><span class="eng-cnt" id="engCntGoldFlow">0</span></div>
-        <div id="gfPyramidRow" style="display:none;margin:2px 0 4px;padding:4px 8px;border-radius:6px;background:rgba(0,255,150,0.08);border:1px solid rgba(0,255,150,0.3);">
-          <span style="font-size:9px;font-weight:700;color:var(--green);letter-spacing:0.8px;">&#9650; STACK UNLOCKED</span>
-          <span id="gfPyramidStage" style="font-size:9px;color:var(--t2);margin-left:6px;">stage 0</span>
-          <span id="gfPyramidProfit" style="font-size:9px;color:var(--green);margin-left:6px;font-weight:700;">$0</span>
-        </div>
         <div class="eng-row"><span class="eng-lbl">CROSS-ASSET</span><span class="eng-pnl" id="engPnlCross">$0</span><span class="eng-cnt" id="engCntCross">0</span></div>
         <div class="eng-row"><span class="eng-lbl">LATENCY</span><span class="eng-pnl" id="engPnlLatency">$0</span><span class="eng-cnt" id="engCntLatency">0</span></div>
         <div class="eng-row" style="border-top:1px solid rgba(255,255,255,0.12);margin-top:3px;padding-top:4px;">
@@ -1206,7 +1200,7 @@ function renderTrades(trades){
     const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
     const tReg=t.regime||'';const tEng=t.engine||'';
     const regCol=tReg.includes('EXPANSION')||tReg.includes('TREND')?'var(--green)':tReg.includes('QUIET')?'var(--amber)':'var(--t2)';
-    const engName=(t.engine||'').replace('Engine','').replace('GoldFlow','GFlow').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG');
+    const engName=(t.engine||'').replace('Engine','').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG');
     const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_SL','TRAIL').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('MAX_HOLD_TIMEOUT','T/O').replace('BE_HIT','BE').replace('IMM_REVERSAL','IMM-REV').replace('PARTIAL_TP','P-TP').replace('PARTIAL_SL','P-SL').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('STAGNATION','STAG');
     const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
@@ -1494,11 +1488,12 @@ R"OMEGA23C(
         +'<span style="font-size:10px;color:var(--t3);">NZ$'+totalSign+(totalNzd).toFixed(0)+'</span>'
         +'</div>';
 
-      // GoldFlow trail stage from snapshot -- applies to the GoldFlow live trade
-      const gfStage    = safe(d.gf_trail_stage);  // 0=initial 1=BE 2=trail1 3=trail2 4=trail3
-      const gfAtrEntry = safe(d.gf_atr_at_entry); // ATR at entry -- used to show next stage target
-      // Next-stage ATR multipliers matching GoldFlowEngine.hpp constants
-      const GF_NEXT_MULT = [1.0, 2.0, 8.0, 15.0]; // stage 0?1, 1?2, 2?3, 3?4
+      // GoldFlow trail stage from snapshot -- engine culled S19 Stage 1B, kept for
+      // fingerprint stability; gfStage/gfAtrEntry will always be 0 in live JSON.
+      const gfStage    = safe(d.gf_trail_stage);  // always 0 post-cull
+      const gfAtrEntry = safe(d.gf_atr_at_entry); // always 0 post-cull
+      // Next-stage ATR multipliers (legacy — kept to preserve JS array refs; isGF will always be false)
+      const GF_NEXT_MULT = [1.0, 2.0, 8.0, 15.0];
       const GF_NEXT_LABEL = ['1? ATR ? BE', '2? ATR ? Trail', '8? ATR ? Tighten', '15? ATR ? Final', 'MAX'];
 
       // Fingerprint: rebuild HTML only when pnl shifts >$0.05, SL moves, stage changes, or current price tick changes 2dp
@@ -1517,16 +1512,16 @@ R"OMEGA23C(
         const entry   = lt.entry;
         const cur     = lt.current;
         const sl      = lt.sl;
-        const tp      = lt.tp;   // may be 0 for GoldFlow
+        const tp      = lt.tp;   // may be 0 for some engine modes
         const pnl     = lt.live_pnl;
         const held    = lt.held_sec < 60 ? lt.held_sec+'s' : Math.floor(lt.held_sec/60)+'m'+(lt.held_sec%60)+'s';
         const dp      = lt.symbol.includes('USD')&&!lt.symbol.includes('GOLD') ? 4 : 2;
-        const isGF    = lt.engine === 'GoldFlow';
+        const isGF    = false;  // GoldFlow culled S19 Stage 1B; dead branches preserved for Stage 1C cleanup
         const stage   = isGF ? gfStage : 0;
         const pnlCol  = pnl >= 0 ? 'var(--green)' : 'var(--red)';
         const pnlStr  = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
         const rowBg   = pnl >= 0 ? 'rgba(0,217,126,0.04)' : 'rgba(255,51,85,0.04)';
-        // Label for the TP tick: GoldFlow shows next stage target, others show TP
+        // Label for the TP tick: next stage target shown when isGF (dead post-cull), else TP
         const tpLabel = isGF && stage < 4 ? GF_NEXT_LABEL[stage] : 'TP';
 
         // ?? Price ladder geometry ??????????????????????????????????????????
@@ -1571,7 +1566,7 @@ R"OMEGA23C(
               color:${STAGE_COL[stage]};margin-left:5px;letter-spacing:0.5px;">${STAGE_LABEL[stage]}</span>`
           : '';
 
-        // Pyramid indicator for GoldFlow stage >= 2
+        // Pyramid indicator (legacy — dead post-cull since isGF always false)
         const pyramidBadge = isGF && stage >= 2
           ? `<span style="font-size:9px;color:var(--gold);margin-left:4px;">?${stage-1}</span>`
           : '';
@@ -1896,7 +1891,6 @@ R"OMEGA23B(
       ['Bracket',    ep.bracket,    et.bracket],
       ['MeanRev',    ep.mean_rev,   et.mean_rev],
       ['GoldStack',  ep.gold_stack, et.gold_stack],
-      ['GoldFlow',   ep.gold_flow,  et.gold_flow],
       ['Cross',      ep.cross,      et.cross],
       ['Latency',    ep.latency,    et.latency],
       ['H1Swing',    ep.h1_swing,   et.h1_swing],
@@ -1949,16 +1943,7 @@ R"OMEGA23B(
         }
       }
     }
-    // GoldFlow pyramid indicator
-    const gfRow=document.getElementById('gfPyramidRow');
-    const gfStage=document.getElementById('gfPyramidStage');
-    const gfProfit=document.getElementById('gfPyramidProfit');
-    const unlocked=safe(d.gf_stack_unlocked)>0;
-    if(gfRow){gfRow.style.display=unlocked?'block':'none';}
-    if(unlocked){
-      if(gfStage){gfStage.textContent='stage '+safe(d.gf_trail_stage);}
-      if(gfProfit){const p=safe(d.gf_profit_usd);gfProfit.textContent=(p>=0?'+$':'$')+p.toFixed(2);}
-    }
+    // (GoldFlow pyramid indicator removed -- engine culled S19 Stage 1B)
   }
 
   // ?? Multi-day throttle badge ??????????????????????????????????????????????

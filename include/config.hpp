@@ -172,23 +172,12 @@ static void maybe_reset_daily_ledger() {
                    t.symbol.c_str(), t.engine.c_str(), t.net_pnl, t.exitReason.c_str());
             fflush(stdout);
         };
-        const int64_t fc_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
 
         // -- Gold engines --
         if (xau_b > 0.0 && xau_a > 0.0) {
             if (g_trend_pb_gold.has_open_position()) {
                 g_trend_pb_gold.force_close(xau_b, xau_a, midnight_cb);
                 std::cout << "[MIDNIGHT-ROLLOVER] Force-closed TrendPullback gold\n";
-            }
-            if (g_gold_flow.has_open_position()) {
-                g_gold_flow.force_close(xau_b, xau_a, fc_now_ms, midnight_cb);
-                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldFlow\n";
-            }
-            if (g_gold_flow_reload.has_open_position()) {
-                g_gold_flow_reload.force_close(xau_b, xau_a, fc_now_ms, midnight_cb);
-                g_gold_flow_addon.force_close(xau_b, xau_a, fc_now_ms, midnight_cb);
-                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldFlow reload\n";
             }
             if (g_gold_stack.has_open_position()) {
                 g_gold_stack.force_close(xau_b, xau_a, g_rtt_last, midnight_cb);
@@ -307,7 +296,6 @@ static void maybe_reset_daily_ledger() {
     g_param_gate.log_all();     // RenTec #7 -- adaptive param gate final state
     g_adaptive_risk.save_perf(state_root_dir() + "/kelly");
     g_corr_matrix.save_state(state_root_dir() + "/corr_matrix.dat");  // persist EWM running stats
-    g_gold_flow.save_atr_state(state_root_dir() + "/gold_flow_atr.dat");
     g_gold_stack.save_atr_state(state_root_dir() + "/gold_stack_state.dat");
     // ── Reset GoldStack RegimeGovernor drift EWMs on UTC day rollover ────────
     // FIX 2026-04-22 (Apr 17 drift diagnostic, second bug):

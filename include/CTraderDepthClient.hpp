@@ -489,7 +489,7 @@ struct GoldMicrostructureAnalyzer {
         ewm_edge = EWM_ALPHA * clamped + (1.0 - EWM_ALPHA) * ewm_edge;
         ewm_edge = ewm_edge < -1.0 ? -1.0 : (ewm_edge > 1.0 ? 1.0 : ewm_edge);
 
-        // Remap -1..+1 → 0..1 for GFE compatibility (GFE_LONG_THRESHOLD=0.75, SHORT=0.25)
+        // Remap -1..+1 → 0..1 for downstream engines expecting 0..1 imbalance.
         return 0.5 + ewm_edge * 0.5;
     }
 };
@@ -589,7 +589,7 @@ struct CTDepthBook {
             // size_raw=0 means broker sent no tag-271 size -- substitute 1 lot (100 raw)
             // so imbalance() returns 0.5 (neutral) rather than NaN/0 which breaks L2 path.
             // This keeps the price levels visible and prevents has_data()=false falsely
-            // killing GoldFlow's L2 path on brokers that omit size data.
+            // killing the L2 imbalance path on brokers that omit size data.
             const uint64_t eff_sz = kv.second.size_raw > 0 ? kv.second.size_raw : 100;
             Lv lv{ kv.second.price_raw/100000.0, eff_sz/100.0 };
             if (kv.second.is_bid) bids.push_back(lv); else asks.push_back(lv);
@@ -1280,7 +1280,7 @@ private:
                         if (g_feed_stale_xauusd.load(std::memory_order_relaxed)) {
                             // Was blocked -- now recovered
                             const int64_t starve_secs = (xauusd_starve_since_s > 0) ? (now_epoch_s - xauusd_starve_since_s) : 0;
-                            printf("[FEED-STALE] XAUUSD depth RESTORED -- events=%llu this minute, starvation=%llds. GoldFlow entries UNBLOCKED.\n",
+                            printf("[FEED-STALE] XAUUSD depth RESTORED -- events=%llu this minute, starvation=%llds. XAUUSD entries UNBLOCKED.\n",
                                    (unsigned long long)xauusd_ev_this_min, (long long)starve_secs);
                             fflush(stdout);
                         } else if (xauusd_starve_since_s > 0) {
@@ -1446,7 +1446,7 @@ private:
                                   << "live subs disabled but history repoll (pt=2137) continues\n";
                     }
                     if (failed.name == "XAUUSD" && failed.period == 1 && ec == "INVALID_REQUEST")
-                        std::cerr << "[CTRADER-BARS] *** XAUUSD M1 rejected -- Gate 0d will block GoldFlow ***\n";
+                        std::cerr << "[CTRADER-BARS] *** XAUUSD M1 rejected -- Gate 0d will block XAUUSD engines ***\n";
                 }
                 // Do NOT return -- one bad bar request must not kill the depth feed.
             }

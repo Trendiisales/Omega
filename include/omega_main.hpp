@@ -270,7 +270,7 @@ int main(int argc, char* argv[])
         // Loading from disk adds stale entries (XAUUSD:0, XAUUSD:5, XAUUSD:7) that
         // permanently block the GetTickDataReq fallback -- causing vol_range=0.00 all day.
         // Evidence: April 2 2026 -- every restart loaded stale failures, bars never seeded,
-        // GoldFlow ran blind all session.
+        // GoldFlow (culled S19) ran blind all session.
         g_ctrader_depth.bar_failed_path_    = log_root_dir() + "/ctrader_bar_failed.txt";
         // load_bar_failed intentionally NOT called -- always start clean.
         // ?? PRIMARY PRICE SOURCE: cTrader depth ? on_tick ????????????????????
@@ -377,7 +377,7 @@ int main(int argc, char* argv[])
         // XAUUSD spot id=41 (hardcoded, same as depth subscription).
         // On startup: requests 200 M1 + 100 M5 historical bars, then subscribes
         // live bar closes. Indicators (RSI, ATR, EMA, BB, swing, trend) are
-        // written to g_bars_gold atomically and read by GoldFlow/GoldStack.
+        // written to g_bars_gold atomically and read by GoldStack and XAUUSD engines.
         //
         // REMOVED: US500.F and USTEC.F bar subscriptions.
         // ROOT CAUSE OF SESSION DESTRUCTION: BlackBull broker returns INVALID_REQUEST
@@ -386,7 +386,7 @@ int main(int argc, char* argv[])
         // immediately after the depth feed becomes stable. Effect:
         //   1. Reconnect cycle fires every 5s indefinitely
         //   2. XAUUSD M1 bars never seed (interrupted before 52 bars load)
-        //   3. m1_ready=false -> Gates 3+4 inactive -> naked GoldFlow entries
+        //   3. m1_ready=false -> Gates 3+4 inactive -> naked XAUUSD engine entries
         //   4. At 02:39 this caused a full process shutdown, missing the 8-min uptrend
         //
         // Evidence from logs: every single reconnect shows exactly:
@@ -429,7 +429,7 @@ int main(int argc, char* argv[])
 
         // ── BAR STATE LOAD -- MUST run before ctrader start() ────────────────
         // Loads saved indicator state (EMA, ATR, RSI, BB) from prior session.
-        // Sets m1_ready=true immediately so GoldFlow/GoldStack/RSIReversal/
+        // Sets m1_ready=true immediately so GoldStack/RSIReversal/
         // CandleFlow/RSIExtremeTurn are all unblocked from tick 1.
         // (MicroMomentum removed at Batch 5V §1.2.)
         // Without this every restart is a cold start -- bars never seed because
@@ -495,7 +495,7 @@ int main(int argc, char* argv[])
             std::cout.flush();
             if (!m1_ok) {
                 std::cout << "[BAR-LOAD] WARN: bars_gold_m1.dat missing or stale -- "
-                          << "GoldFlow blocked until M1 bars seed from tick data (~2min)\n";
+                          << "XAUUSD engines blocked until M1 bars seed from tick data (~2min)\n";
                 std::cout.flush();
             }
 
@@ -728,13 +728,7 @@ int main(int argc, char* argv[])
             }
         }
 
-        // ── Check 8: ATR seeded (GoldFlow can size positions) ─────────────
-        {
-            const bool atr_ok = (g_gold_flow.current_atr() > 0.5);
-            print_check(atr_ok, "GoldFlow ATR seeded",
-                atr_ok ? ("atr=" + [&]{ std::ostringstream o; o << std::fixed << std::setprecision(2) << g_gold_flow.current_atr(); return o.str(); }() + "pt")
-                       : "atr=0 -- bars not yet loaded, GoldFlow entries will be delayed");
-        }
+        // ── Check 8: (removed — GoldFlow engine culled in S19) ────────────
 
         // ── Check 9: Daily loss limit not already hit ─────────────────────
         {
@@ -760,9 +754,9 @@ int main(int argc, char* argv[])
     // =========================================================================
     // L2 WATCHDOG THREAD
     // =========================================================================
-    // cTrader L2 feed (ctid=43014358) is the BASIS of all GoldFlow engine
-    // functionality. Without L2 imbalance the engine degrades to drift-only
-    // mode which has no proven edge (backtest: 63% WR, negative P&L).
+    // cTrader L2 feed (ctid=43014358) is the BASIS of all L2-dependent engine
+    // functionality. Without L2 imbalance, L2-gated engines degrade to
+    // drift-only mode.
     //
     // This watchdog:
     //   1. Monitors L2 liveness every 30s (depth_events_total increasing)
@@ -771,8 +765,8 @@ int main(int argc, char* argv[])
     //   4. Logs [L2-WATCHDOG] DEAD/ALIVE to main log every 30s
     //   5. On recovery: logs restoration and clears alert file
     //
-    // GoldFlowEngine checks g_l2_watchdog_dead via goldflow_enabled gate
-    // in tick_gold.hpp -- entries blocked when L2 is confirmed dead.
+    // L2-dependent engines check g_l2_watchdog_dead via per-engine enabled
+    // gates -- entries blocked when L2 is confirmed dead.
     // Position management (trail/SL) continues regardless.
     //
     // IMMUTABLE: ctid=43014358 is the ONLY account that delivers L2 depth.
@@ -871,7 +865,7 @@ int main(int argc, char* argv[])
                            "[L2-WATCHDOG] events_total=%llu imb=%.4f\n"
                            "[L2-WATCHDOG] DIAGNOSIS: events_total not increasing => cTrader TCP disconnected\n"
                            "[L2-WATCHDOG] DIAGNOSIS: imb value irrelevant when events=0 (no data flowing)\n"
-                           "[L2-WATCHDOG] GoldFlow GATED. ACTION REQUIRED: restart Omega or check ctid=43014358\n",
+                           "[L2-WATCHDOG] L2 engines GATED. ACTION REQUIRED: restart Omega or check ctid=43014358\n",
                            (long long)(dead_ms / 1000),
                            (unsigned long long)cur_event_count,
                            cur_imb);
@@ -1004,7 +998,6 @@ int main(int argc, char* argv[])
     // Save Kelly performance on shutdown (not just rollover) so intra-session
     // trades survive process restart without re-warming for 15+ trades.
     g_adaptive_risk.save_perf(state_root_dir() + "/kelly");
-    g_gold_flow.save_atr_state(state_root_dir() + "/gold_flow_atr.dat");
     g_gold_stack.save_atr_state(state_root_dir() + "/gold_stack_state.dat");
     g_trend_pb_gold.save_state(state_root_dir()  + "/trend_pb_gold.dat");
 
