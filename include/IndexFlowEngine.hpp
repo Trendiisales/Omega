@@ -140,7 +140,7 @@ struct IndexSymbolCfg {
     double atr_sl_mult            = 1.0;    // SL = ATR * this
     double max_spread             = 1.0;    // max spread at entry (pts)
     double drift_threshold        = 0.5;    // EWM fast-slow drift for fallback signal (pts)
-    double drift_persist_ticks    = 20;     // ticks drift must hold before entry
+    double drift_persist_ticks    = 12;     // ticks drift must hold before entry (S14 2026-04-24: reduced from 20 — reactive tightening combined with other gates produced 0 signals across 20-day archive)
     double trend_ewm_threshold    = 8.0;    // |EWM_fast - EWM_slow| = trending (pts)
     double risk_dollars           = 50.0;   // target $ risk per trade
     double macro_atr_threshold    = 15.0;   // MacroCrash entry: ATR must exceed this
@@ -610,7 +610,11 @@ public:
             // Extended 2026-04-09: trades at 13:45,13:46,13:47,13:49 all SL_HIT
             // immediately after gate lifted -- NY volatility persists past 13:45.
             // Block 13:15-14:00 UTC (45 min total covers full NY open noise window).
-            const bool ny_open_noise = (mins >= 13 * 60 + 15) && (mins < 14 * 60 + 0);
+            // S14 2026-04-24: reverted to original 13:30-14:00 (30 min) window.
+            // The 13:15-14:00 extension was reactive tightening after Apr 9
+            // SL_HIT cluster. Combined with other gates (ATR×1.5, drift_persist=20,
+            // SL cooldown) this over-filtered the engine to 0 signals in 20 days.
+            const bool ny_open_noise = (mins >= 13 * 60 + 30) && (mins < 14 * 60 + 0);
             if (ny_open_noise) return {};
         }
 
@@ -668,8 +672,12 @@ public:
             return {};
         }
 
-        // Min confidence gate: require ATR >= 1.5x min for adequate SL headroom.
-        if (atr < cfg_.atr_min * 1.5) return {};
+        // Min confidence gate: ATR floor already enforced at line 590 (`atr < cfg_.atr_min`).
+        // S14 2026-04-24: removed 1.5x multiplier — it stacked 50% extra tightening
+        // on top of the already-calibrated atr_min floor. Combined with drift_persist=20
+        // and 45-min NY block, the engine fired 0 trades across 20 days of tick data.
+        // The hard floor at line 590 is the correct dead-tape filter; this multiplier
+        // was reactive tightening that over-filtered real signals.
 
         // ── Build the signal ──────────────────────────────────────────────────
         const bool is_long = signal_long;
