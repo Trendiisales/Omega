@@ -144,6 +144,18 @@ static constexpr double  CFE_IMB_EXIT_THRESH   = 0.08;  // calibrated to cTrader
 static constexpr int     CFE_IMB_EXIT_TICKS    = 2;     // restored to 2: single tick is noise, need 2 consecutive
 static constexpr int64_t CFE_IMB_MIN_HOLD_MS   = 20000; // IMB_EXIT blocked for first 20s after entry
                                                           // prevents immediate noise exits (8s/37s trades confirmed as noise)
+// S17 MFE guard: block IMB_EXIT once the trade is already meaningfully in
+// profit. Empirical analysis of 101 IMB_EXIT trades over 04-14..04-23 (8
+// trading days) showed a sharp asymmetry by MFE-at-exit:
+//   MFE < 0.5pt  : -$4.27/trade (43L/3W) -- IMB flip correctly predicts loss
+//   MFE [0.5,1.0): -$2.32/trade (14L/9W) -- still net-negative, keep cutting
+//   MFE [1.0,1.5): +$1.26/trade (4L/14W) -- cutting winners
+//   MFE >= 4.0pt : +$31.18/trade (0L/2W) -- definitively cutting TRAIL_SL winners
+// Once MFE crosses 1.0pt the IMB signal inverts from protective to destructive.
+// Blocking at mfe>=1.0pt recovers ~$352 across the 8-day window in
+// counterfactual (replaces 32 killed winners with 50/50 trail/SL outcomes).
+// See backtest/audit_results/S17_AUDIT.md for full data and derivation.
+static constexpr double  CFE_IMB_EXIT_MFE_GUARD_PTS = 1.0;   // block IMB_EXIT when pos.mfe >= this many points
 
 // Drift fast-entry (DFE) -- pre-empts bar-close requirement
 static constexpr double  CFE_DFE_DRIFT_THRESH   = 1.5;   // |ewm_drift| >= 1.5pts to arm
@@ -1328,12 +1340,35 @@ private:
     // Exit long when imb < -thresh for >= N ticks AND hold >= CFE_IMB_MIN_HOLD_MS
     // Exit short when imb > +thresh for >= N ticks AND hold >= CFE_IMB_MIN_HOLD_MS
     // Also exits on imb against for >= 1 tick AND depth drop AND hold >= min
+    // S17: Additional guard -- once pos.mfe >= CFE_IMB_EXIT_MFE_GUARD_PTS, the
+    // trade is meaningfully in profit and IMB flips become protective of
+    // TRAIL_SL winners rather than predictive of losses (empirical: above
+    // mfe=1.0pt the IMB signal net-PnL inverts from -$4/trade to +$1/trade).
+    // The guard preserves the against-tick counter continuity so that if MFE
+    // later drops below the guard (rare; would mean a giveback), the normal
+    // IMB logic can re-engage without lag.
     bool check_imb_exit(bool is_long, const DOMSnap& dom, int64_t hold_ms) noexcept {
         // Minimum hold guard: IMB_EXIT is blocked for the first CFE_IMB_MIN_HOLD_MS
         // milliseconds after entry. This eliminates the sub-10s noise exits caused by
         // a single imbalance blip immediately after entry (8s/37s losses on 2026-04-11).
         if (hold_ms < CFE_IMB_MIN_HOLD_MS) {
             // Still track counter ticks for continuity -- just don't act on them yet
+            const double imb_track = (dom.l2_imb - 0.5) * 2.0;
+            const bool against_track = is_long
+                ? (imb_track < -CFE_IMB_EXIT_THRESH)
+                : (imb_track >  CFE_IMB_EXIT_THRESH);
+            if (against_track) m_imb_against_ticks++;
+            else               m_imb_against_ticks = 0;
+            m_prev_depth_bid = dom.bid_count;
+            m_prev_depth_ask = dom.ask_count;
+            return false;
+        }
+
+        // S17 MFE guard: block IMB_EXIT when trade is already in meaningful
+        // profit. See constant definition for empirical derivation. Keep the
+        // against-tick counter and depth state updated for continuity so that
+        // a later MFE giveback resumes normal IMB behaviour without lag.
+        if (pos.mfe >= CFE_IMB_EXIT_MFE_GUARD_PTS) {
             const double imb_track = (dom.l2_imb - 0.5) * 2.0;
             const bool against_track = is_long
                 ? (imb_track < -CFE_IMB_EXIT_THRESH)
