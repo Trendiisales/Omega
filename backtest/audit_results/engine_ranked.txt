@@ -1,0 +1,31 @@
+ENGINE AUDIT -- 10 days
+Total trades: 613   Grand net: $-2724.54
+
+RANKED BY PRODUCTIVITY SCORE (closest to profitable first)
+score = (net/n) * sqrt(n) * wr_weight
+
+engine                        n      wr         net      /trd     mfe    held    score  flags
+---------------------------------------------------------------------------------------------
+PYRAMID                       4  100.0%$    +19.84$  +4.960      -      -   +9.92
+AsianRange                    1  100.0%$     +3.60$  +3.600      -      -   +3.60
+LondonFixMomentum             2   50.0%$     -0.66$  -0.330      -      -   -0.47
+BBMeanRev                    12    8.3%$     -7.28$  -0.607      -      -   -0.63
+CompBreakout                 37   18.9%$    -21.12$  -0.571   1.78  61.7s   -1.04
+HybridBracketGold            12   41.7%$     -6.89$  -0.574      -      -   -1.77 BRK
+EMACross                     31   16.1%$    -37.21$  -1.200   1.17 125.4s   -2.00
+TurtleTick                    5   80.0%$     -4.53$  -0.906      -      -   -3.04
+MacroCrash                    8   12.5%$    -35.81$  -4.476      -      -   -3.80
+XAUUSD_BRACKET               33   12.1%$   -125.26$  -3.796      -      -   -6.54 BRK
+SessionMomentum               7   42.9%$    -20.41$  -2.916      -      -   -7.16
+PullbackCont                  1    0.0%$     -8.08$  -8.080      -      -   -8.08
+GoldFlowEngine               11    0.0%$    -90.94$  -8.267   2.95 264.9s   -8.23
+DomPersistEngine             52   17.3%$   -266.83$  -5.131   2.19 217.0s  -11.10
+DXYDivergence                 5   60.0%$    -17.72$  -3.544      -      -  -11.89
+VWAPStretchReversion          9   44.4%$    -39.58$  -4.398      -      -  -12.95
+CandleFlowEngine            383   32.4%$  -2065.66$  -5.393   1.19  80.3s  -61.13
+
+Interpretation:
+  score > 0   -- net-profitable across the window
+  score ~= 0  -- break-even; small entry-filter tweak may tip positive
+  score < 0   -- net loser; magnitude = severity
+  BRK         -- bracket engine (separate codepath, not a 'stack engine')
