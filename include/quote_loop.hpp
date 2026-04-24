@@ -806,7 +806,8 @@ static void quote_loop() {
         }
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
-          // (LEStack shutdown force_close REMOVED at S13 Finding B 2026-04-24 — engine culled) }
+          // (LEStack shutdown force_close REMOVED at S13 Finding B 2026-04-24 — engine culled)
+        }
 
         // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
         { double b=0,a=0;
