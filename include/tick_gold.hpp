@@ -50,7 +50,7 @@ static void on_tick_gold(
         // (GoldFlow gf_open/gf_winning term removed S19 Stage 1B — engine culled)
         g_trend_pb_gold.has_open_position()     ||
         g_nbm_gold_london.has_open_position()   ||  // London NBM also blocks other gold engines
-        g_candle_flow.has_open_position()   ||      // FIX: CFE open position blocks ALL other gold engines
+        // g_candle_flow.has_open_position() REMOVED at S19 (2026-04-24) — CFE engine culled.
         g_h1_swing_gold.has_open_position() ||      // H1 swing open blocks all other gold entries
         g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
         g_pullback_cont.has_open_position()     ||  // PCE open blocks other entries
@@ -1379,7 +1379,7 @@ static void on_tick_gold(
         // OPEN-LOG FIX 2026-04-21: capture "was open before on_tick" so we can
         // detect a fresh MCE entry transition after on_tick returns and emit
         // write_trade_open_log -- parity with the other engines already
-        // logged here (GoldFlow, CandleFlow,
+        // logged here (GoldFlow,
         // CompBreakout, EMACross, RSIReversal, RSIExtremeTurn, BracketGold,
         // TrendBracket). MCE was silently opening positions with no row in
         // the open-trades CSV.
@@ -2071,105 +2071,13 @@ static void on_tick_gold(
     // Audit: DomPersist_entry_audit_2026-04-23.md (Finding A -- threshold
     // was sub-noise for current cTrader L2 depth regime).
 
-    // -- CandleFlowEngine -- candle structure + cost coverage + DOM entry/exit --
-    // Manage always (position already open)
-    if (g_candle_flow.has_open_position()) {
-        // Build current DOM snapshot from L2Book
-        // cfe_prev_book_mgmt is static so it persists between ticks --
-        // required for imbalance_level() delta to work correctly in build_dom().
-        static L2Book cfe_prev_book_mgmt;
-        L2Book cfe_book;
-        {
-            std::lock_guard<std::mutex> lk(g_l2_mtx);
-            auto it = g_l2_books.find("XAUUSD");
-            if (it != g_l2_books.end()) cfe_book = it->second;
-        }
-        L2Book& cfe_prev_book = cfe_prev_book_mgmt;
-        const auto cfe_dom = omega::CandleFlowEngine::build_dom(
-            cfe_book, cfe_prev_book, (bid + ask) * 0.5);
-        cfe_prev_book_mgmt = cfe_book;  // advance prev for next tick
-        // Management call: bar snap not needed (CFE only uses bar for new entries,
-        // manage() path ignores bar entirely). Dummy bar with valid=false is correct.
-        // ewm_drift MUST be live -- sustained-drift tracker and DFE persist state
-        // run unconditionally every tick including management ticks. Passing 0.0
-        // corrupted m_drift_sustained_dir and m_dfe_persist_ticks on every managed tick.
-        // Fixed: pass g_gold_stack.ewm_drift() to both management and entry calls.
-        const omega::CandleFlowEngine::BarSnap cfe_bar_dummy{};  // valid=false: correct for manage path
-        // ATR floor: never let CFE use an ATR below 2.0pt from GoldFlow.
-        // If current_atr() returns a transient near-zero value (e.g. after
-        // GoldFlow force-close and re-warm), the fallback of 5.0 only catches
-        // zero. A value like 0.86pt passes the > 0.0 check and produces
-        // sl=0.60pt, size=0.50 lots (MAX_LOT cap) -- catastrophic on wide spread.
-        // Floor of 2.0pt: sl=1.40pt, max size=0.214 lots at $30 risk.
-        // 3-way ATR: max(GoldFlow EWM ATR, M1 bar ATR, 2.0pt floor).
-        // GoldFlow EWM lags session transitions (Asia->London = 30-60min lag).
-        // M1 bar ATR14 responds to actual candle ranges within 1-2 bars.
-        // At London open: GoldFlow may read 1pt (overnight), M1 reads 4-6pt.
-        // 2.0pt absolute floor: sl=1.4pt, max size=0.214 lots at $30 risk.
-        const double cfe_m1_atr  = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-        // cfe_gf_atr removed with GoldFlow. CFE now uses max(2.0pt floor, M1 bar ATR14).
-        const double cfe_atr     = std::max(2.0, cfe_m1_atr);
-        g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
-            now_ms_g, cfe_atr,
-            [&](const omega::TradeRecord& tr) {
-                handle_closed_trade(tr);
-                if (!g_candle_flow.shadow_mode)
-                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-            },
-            g_gold_stack.ewm_drift(),   // FIX: was 0.0 -- corrupted sustained-drift tracker
-            g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed)); // HMM tick_rate
-    }
-
-    // Entry: only when no other gold position open and gold_can_enter passes
-    // STARTUP LOCKOUT: block CFE entries for 90s after process start.
-    // Root cause of three consecutive FC losses (03:50, 02:58, 01:40):
-    // DFE fires within seconds of restart because:
-    //   1. ewm_drift cold-starts at 0, first ticks spike it to 1.5+ instantly
-    //   2. RSI warms in ~30 ticks but reflects only the startup price movement
-    // Both signals are artificial artifacts of cold-start, not real market state.
-    // 90s gives ewm_drift (alpha=0.05 fast EWM) ~18 ticks to settle and
-    // RSI 30+ ticks on real price action before any DFE entry is allowed.
-    // The 90s block also prevents entries during the VERIFY_STARTUP window.
-    static int64_t s_cfe_startup_ms = 0;
-    if (s_cfe_startup_ms == 0) s_cfe_startup_ms = now_ms_g;
-    const bool cfe_startup_locked = (now_ms_g - s_cfe_startup_ms) < 90000LL;
-    if (cfe_startup_locked) {
-        static int64_t s_cfe_lock_log = 0;
-        if (now_ms_g - s_cfe_lock_log > 15000) {
-            s_cfe_lock_log = now_ms_g;
-            const int secs_remaining = static_cast<int>(
-                (90000LL - (now_ms_g - s_cfe_startup_ms)) / 1000LL);
-            {
-                char _msg[512];
-                snprintf(_msg, sizeof(_msg), "[CFE-STARTUP-LOCK] entries blocked %ds remaining (cold-start warmup)\n",                    secs_remaining);
-                std::cout << _msg;
-                std::cout.flush();
-            }
-        }
-    }
-    // CFE TOD dead zone: block entries 00:00-01:30 UTC.
-    // All 5 consecutive losses on 2026-04-14 were in the 00:15-00:31 UTC window.
-    // Lowest-liquidity window on gold: Sydney thin tape, no NY/London flow.
-    const bool cfe_tod_dead_zone = [&]() -> bool {
-        const int64_t cfe_tod_utc_sec  = now_ms_g / 1000LL;
-        const int     cfe_tod_utc_hour = static_cast<int>((cfe_tod_utc_sec % 86400LL) / 3600LL);
-        const int     cfe_tod_utc_min  = static_cast<int>((cfe_tod_utc_sec % 3600LL) / 60LL);
-        const int     cfe_tod_mins     = cfe_tod_utc_hour * 60 + cfe_tod_utc_min;
-        return (cfe_tod_mins >= 0 && cfe_tod_mins < 90);  // 00:00-01:30 UTC
-    }();
-    if (cfe_tod_dead_zone) {
-        static int64_t s_cfe_tod_log = 0;
-        if (now_ms_g - s_cfe_tod_log > 60000) {
-            s_cfe_tod_log = now_ms_g;
-            {
-                char _msg[512];
-                snprintf(_msg, sizeof(_msg), "[CFE-TOD-DEAD] entries blocked: 00:00-01:30 UTC dead zone\n");
-                std::cout << _msg;
-                std::cout.flush();
-            }
-        }
-    }
+    // -- CandleFlowEngine REMOVED at S19 (2026-04-24) -----------------------
+    // 11-day / 3.4M tick full-L2 sweep: T=4469 WR=20.8% PnL=-$12,770.36
+    // 576-config grid sweep found ZERO profitable configurations.
+    // Best tested: T=222 WR=36.0% PnL=-$336.39 (still a loser).
+    // The signal shape has no edge. Same fate as TickScalp / DomPersist /
+    // CompressionBreakout / GoldFlow / BBMR. See backtest/cfe_sweep_v2.cpp
+    // and globals.hpp tombstone for full evidence.
 
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 

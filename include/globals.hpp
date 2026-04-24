@@ -148,11 +148,23 @@ static omega::MacroCrashEngine    g_macro_crash;
 static omega::PullbackContEngine  g_pullback_cont;
 static omega::PullbackContEngine  g_pullback_prem;  // premium: 30pt h07 only, 2x size, tight trail
 
-// RSI Reversal Engine -- direct RSI extreme entries, bypasses regime system
-// LONG when RSI < 35, SHORT when RSI > 65, ATR-based SL + trail
-// shadow_mode=true until 30 live shadow trades validate Asia WR
-#include "CandleFlowEngine.hpp"
-static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
+// CandleFlowEngine REMOVED at S19 (2026-04-24) -----------------------------
+// 11-day / 3.4M tick full-L2 validation sweep on all available XAUUSD L2
+// data (l2_ticks 2026-04-09..23) shows CFE has no defensible edge:
+//   Baseline    : T=4469 WR=20.8% PnL=-$12,770.36  (every day lost money)
+//   576 configs : ZERO profitable, best=-$336.39 WR=36.0% N=222
+// The engine overtrades (~450 trades/day), bleeds spread + commission on
+// every marginal signal. Even the "best" tuned config across 576 parameter
+// combinations can't turn net-positive. Unlike BBMR where best-tuned was
+// $+228 (rejected for MaxDD), CFE has literally no profitable config.
+// Dollar-stop / startup-lock / TOD-deadzone / HMM gating / DOM entry all
+// combined cannot rescue the underlying signal. The signal has no edge.
+// Same removal pattern as TickScalp (S14), DomPersist (S15),
+// CompressionBreakout (S16), GoldFlow (S19 Stage 1B), BBMR (S19).
+// See backtest/cfe_sweep_v2.cpp for the validation sweep that killed it.
+// #include "CandleFlowEngine.hpp"  -- header removed
+// static omega::CandleFlowEngine g_candle_flow;  -- instance removed
+// GoldHMM.hpp is now dead code (only CFE used it).
 
 // CompressionBreakoutEngine REMOVED at S16 (2026-04-23).
 // 41-cell REENTER_COMP walk-forward sweep + subsequent baseline analysis
@@ -186,8 +198,7 @@ static omega::EMACrossEngine g_ema_cross;
 // See backtest/bb_tuned_sweep_v2.cpp for the validation sweep that killed it.
 // #include "BBMeanReversionEngine.hpp"  -- header removed
 // static omega::BBMeanReversionEngine g_bb_mr;  -- instance removed
-// DISABLED (separate): CandleFlow momentum continuation = negative EV.
-// g_candle_flow.enabled = false; -- set in engine_init
+// (CandleFlow tombstone is directly above)
 
 #include "PDHLReversionEngine.hpp"
 static omega::PDHLReversionEngine g_pdhl_rev;     // mean reversion inside daily range

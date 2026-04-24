@@ -680,11 +680,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("XAUUSD","NBM-London",
                     g_nbm_gold_london.open_is_long(), g_nbm_gold_london.open_entry(),
                     0.0, 0.0, g_nbm_gold_london.open_size(), (int64_t)std::time(nullptr));
-            if (g_candle_flow.has_open_position())
-                push_live_trade("XAUUSD", "CandleFlow",
-                    g_candle_flow.pos.is_long, g_candle_flow.pos.entry,
-                    0.0, g_candle_flow.pos.sl,
-                    g_candle_flow.pos.size, g_candle_flow.pos.entry_ts_ms / 1000);
+            // CandleFlow push_live_trade REMOVED at S19 (2026-04-24) — engine culled.
             if (g_h1_swing_gold.has_open_position())
                 push_live_trade("XAUUSD", "H1Swing",
                     g_h1_swing_gold.pos_.is_long, g_h1_swing_gold.pos_.entry,
@@ -868,77 +864,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
                 // (GoldFlow dollar-stop enforcement block removed S19 Stage 1B — engine culled)
 
-                // CandleFlow
-                // DOLLAR-STOP for CFE: only fire if price has already passed the
-                // engine's own SL level. This prevents the dollar stop firing BEFORE
-                // the SL when lot size is large relative to the $50 limit.
-                // Example of old bug: sl=4719.13 (1.90pts away), dollar stop fires
-                // at 4719.68 ($52 loss) -- $0.55 before the SL. The SL never fires.
-                // Fix: check sl_breached first. Dollar stop is now a gap-fill safety
-                // net (fires when price skips past SL) not a premature position killer.
-                if (g_candle_flow.has_open_position()) {
-                    const double unr = xau_unr(g_candle_flow.pos.is_long,
-                                               g_candle_flow.pos.entry,
-                                               g_candle_flow.pos.size);
-                    // Effective SL: use trail SL if active, otherwise hard SL
-                    const double cfe_eff_sl = g_candle_flow.pos.trail_active
-                        ? g_candle_flow.pos.trail_sl
-                        : g_candle_flow.pos.sl;
-                    const bool cfe_sl_breached = g_candle_flow.pos.is_long
-                        ? (s_xau_bid <= cfe_eff_sl)
-                        : (s_xau_ask >= cfe_eff_sl);
-                    // Only fire dollar stop if:
-                    //   a) SL has already been breached (gap scenario), OR
-                    //   b) Loss exceeds 2x dollar_stop_usd (catastrophic runaway)
-                    const bool cfe_dollar_stop_ok = cfe_sl_breached
-                        || (unr < -(ds_lim * 2.0));
+                // CFE dollar-stop block REMOVED at S19 (2026-04-24) — engine culled.
 
-                    // DOLLAR-STOP-SHADOW-FIX 2026-04-21: shadow short-circuit.
-                    // In shadow mode the engine's simulated SL must be allowed to fire
-                    // cleanly. Portfolio-level dollar stop exists to defend live broker
-                    // positions; shadow has none. Log-only for audit.
-                    if (g_candle_flow.shadow_mode) {
-                        if (unr < -ds_lim) {
-                            static int64_t s_cfe_shadow_log = 0;
-                            if (ds_now - s_cfe_shadow_log >= 10) {
-                                s_cfe_shadow_log = ds_now;
-                                char _msg[512];
-                                snprintf(_msg, sizeof(_msg),
-                                    "[DOLLAR-STOP-SHADOW] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- SKIPPING (shadow mode)\n",
-                                    g_candle_flow.pos.is_long?"LONG":"SHORT",
-                                    g_candle_flow.pos.entry, unr, ds_lim,
-                                    cfe_eff_sl, (int)cfe_sl_breached);
-                                std::cout << _msg;
-                                std::cout.flush();
-                            }
-                        }
-                    } else if (unr < -ds_lim && cfe_dollar_stop_ok) {
-                        {
-                            char _msg[512];
-                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] CandleFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_candle_flow.pos.is_long?"LONG":"SHORT",                                g_candle_flow.pos.entry, unr, ds_lim,                                cfe_eff_sl, (int)cfe_sl_breached);
-                            std::cout << _msg;
-                            std::cout.flush();
-                        }
-                        g_candle_flow.force_close(s_xau_bid, s_xau_ask, ds_now_ms,
-                            [&](const omega::TradeRecord& tr) {
-                                handle_closed_trade(tr);
-                                if (!g_candle_flow.shadow_mode)
-                                    send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
-                            });
-                    } else if (unr < -ds_lim) {
-                        // Dollar stop wanted to fire but SL not yet breached -- log only
-                        static int64_t s_ds_skip_log = 0;
-                        if (ds_now - s_ds_skip_log >= 10) {
-                            s_ds_skip_log = ds_now;
-                            {
-                                char _msg[512];
-                                snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP-SKIP] CandleFlow %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached (bid=%.2f ask=%.2f) -- letting SL handle\n",                                    g_candle_flow.pos.is_long?"LONG":"SHORT",                                    unr, ds_lim, cfe_eff_sl, s_xau_bid, s_xau_ask);
-                                std::cout << _msg;
-                                std::cout.flush();
-                            }
-                        }
-                    }
-                }
                 // MacroCrash
                 // DOLLAR-STOP-SHADOW-FIX 2026-04-21:
                 //   (1) Skip entirely in SHADOW mode -- portfolio-level dollar stop

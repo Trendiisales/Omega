@@ -29,7 +29,8 @@ static void init_engines(const std::string& cfg_path)
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // DomPersistEngine init REMOVED at Session 15 (2026-04-23) -- no edge in
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
-    g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine
+    // CandleFlowEngine init REMOVED at S19 (2026-04-24) -- engine culled.
+    // 11-day/3.4M tick sweep showed zero profitable configs. See globals.hpp tombstone.
     // IndexHybridBracket (4 instances, uniform per Q2 decision):
     g_hybrid_sp.shadow_mode     = kShadowDefault;
     g_hybrid_nq.shadow_mode     = kShadowDefault;
@@ -1387,8 +1388,7 @@ static void init_engines(const std::string& cfg_path)
                       << " entry_pct=" << g_pdhl_rev.RANGE_ENTRY_PCT
                       << " sl_mult=" << g_pdhl_rev.SL_ATR_MULT
                       << " tp_frac=" << g_pdhl_rev.TP_RANGE_FRAC << "\n";
-            std::cout << "[CFE] CandleFlowEngine configured shadow="
-                      << (g_candle_flow.shadow_mode ? "true" : "false") << "\n";
+            // CFE startup log REMOVED at S19 (2026-04-24) -- engine culled.
             std::cout.flush();
         }
     }
