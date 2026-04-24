@@ -274,7 +274,7 @@ static void maybe_reset_daily_ledger() {
         g_sym_risk.clear();
         g_shadow_quality.clear();
     }
-    g_gf_engine_culled.store(false, std::memory_order_relaxed);  // reset cull at midnight -- new session
+    // (g_gf_engine_culled midnight reset removed S19 Stage 1B — atomic removed)
     {
         std::lock_guard<std::mutex> lk(g_perf_mtx);
         g_perf.clear();

@@ -88,7 +88,7 @@ static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
 
 // =============================================================================
 // IndexFlowEngine -- L2 flow + EWM drift engines for US equity indices.
-// Architecture mirrors GoldFlowEngine: L2 persistence + EWM drift + ATR-prop SL
+// Architecture: L2 persistence + EWM drift + ATR-prop SL
 // + staircase trail. Per-symbol calibrated (see IndexFlowEngine.hpp).
 //
 // SHADOW mode: IndexMacroCrashEngine instances are shadow-only by default.
@@ -127,7 +127,7 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 
 // Bracket engines
 #include "BracketEngine.hpp"
-#include "GoldFlowEngine.hpp"
+// (GoldFlowEngine.hpp include removed S19 Stage 1B — file deleted, engine culled)
 #include "MacroCrashEngine.hpp"
 #include "PullbackContEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
@@ -143,7 +143,7 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_co
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
-static GoldFlowEngine             g_gold_flow;
+// (GoldFlowEngine g_gold_flow instance removed S19 Stage 1B — engine culled)
 static omega::MacroCrashEngine    g_macro_crash;
 static omega::PullbackContEngine  g_pullback_cont;
 static omega::PullbackContEngine  g_pullback_prem;  // premium: 30pt h07 only, 2x size, tight trail
@@ -195,17 +195,8 @@ static omega::RSIExtremeTurnEngine g_rsi_extreme;  // RSI extreme + sustained tu
 // MicroMomentumEngine REMOVED at Batch 5V §1.2 (2026-04-20).
 // Real-tick backtest result: 4320 trades / 2 years, -$3.8k -- momentum = negative EV.
 // See wiki tombstone wiki/entities/MicroMomentumEngine.md for historical record.
-// Reload instance: independent GoldFlowEngine for continuation entries.
-// Fires after g_gold_flow banks PARTIAL_1R and confirms price still moving.
-// Managed exactly like g_gold_flow but never arms its own reload (avoids cascade).
-// Shares all session/risk gates. Counted toward gold open position cap.
-static GoldFlowEngine             g_gold_flow_reload;
-// Add-on instance: independent GoldFlowEngine for velocity add-on entries.
-// Fires once per base position when base hits trail_stage>=2 + expansion + vol_ratio>2.5.
-// Entry at current price, SL = base trail SL (already in profit territory).
-// Sized at 50% of base full_size. Has its own staircase, trail, ratchet.
-// Never arms its own addon or reload (prevents cascade).
-static GoldFlowEngine             g_gold_flow_addon;
+
+// (GoldFlowEngine reload + addon instances removed S19 Stage 1B — engine culled)
 
 // DomPersistEngine REMOVED at Session 15 (2026-04-23).
 // Walk-forward sweep (96 cells, 14 days of L2 data, T=116 on production params)
@@ -217,63 +208,16 @@ static GoldFlowEngine             g_gold_flow_addon;
 // Full removal: engine header, globals.hpp/engine_init.hpp/tick_gold.hpp/
 //               omega_main.hpp/gold_coordinator.hpp call sites deleted.
 
-// ?? Trend-day multi-engine state ?????????????????????????????????????????????
-// Tracks GoldFlow exit details so CompBreakout/Bracket can re-enter on trend days
-// and GoldStack can fast-reverse after a reversal signal.
-static std::atomic<int64_t>  g_gold_flow_exit_ts{0};      // epoch sec of last GoldFlow exit
-static std::atomic<int>      g_gold_flow_exit_dir{0};     // +1=was long, -1=was short
-static std::atomic<int>      g_gold_flow_exit_reason{0};  // 0=other 1=SL_HIT 2=trail/BE
-// Price at last GoldFlow exit * 100 stored as integer (atomic double workaround)
-// Used to detect post-close reversal magnitude for drift reset.
-static std::atomic<int64_t>  g_gold_flow_exit_price_x100{0};
-
-// Last GoldFlow gate block reason -- updated every time gf_tick_ok=false
-// Used by health watchdog to show specific reason on GUI instead of "NO TRADES Xmin"
-static std::atomic<const char*> g_last_gf_block_reason{nullptr};
+// (GoldFlow-specific exit atomics + g_gf_* directional/crash tracking atomics
+//  + GF_* constants removed S19 Stage 1B — engine culled)
 
 // Engine pause tracking -- maps engine key to pause_until epoch sec
 // Used by health watchdog to detect consecutive loss pauses
 static std::unordered_map<std::string, int64_t> g_engine_pause;
-// When GoldFlow SL_HIT and drift reverses: allow GoldStack fast counter-entry
-// by bypassing the 120s SL cooldown. Window = 60s from flow exit.
-static std::atomic<int64_t>  g_gold_reversal_window_until{0};
-// P4 velocity re-entry bypass: set to 1 when velocity_active + no open > 5min + conf>1.0.
-// Allows GoldFlow to bypass the exclusivity gate on confirmed velocity expansion days.
-// Only read inside the GoldFlow on_tick block -- not used by other engines.
-static std::atomic<int>       g_gf_vel_reentry_bypass{0};
-static std::atomic<int64_t>  g_gold_post_impulse_until{0};  // block new entries 3min after IMPULSE ends
-static std::atomic<int>      g_gold_impulse_ticks{0};          // consecutive IMPULSE ticks -- must be >=3 before GoldFlow enters on IMPULSE
-static std::atomic<int64_t>  g_gold_trail_block_until{0};    // same-dir re-entry blocked 30s after trail/BE (GoldStack)
-static std::atomic<int>       g_gold_trail_block_dir{0};      // direction that was blocked (+1=long, -1=short)
-// crash_impulse_bypass consecutive-SL cooldown
-// After GF_CRASH_BYPASS_CONSEC_SL_MAX consecutive SL_HITs while crash bypass is active,
-// bypass is blocked for GF_CRASH_BYPASS_COOLDOWN_SEC (15 min) to prevent runaway losses
-// during fake/exhausted crash impulses.
-static constexpr int     GF_CRASH_BYPASS_CONSEC_SL_MAX  = 3;
-static constexpr int64_t GF_CRASH_BYPASS_COOLDOWN_SEC   = 900;  // 15 min
-static std::atomic<int>      g_gf_crash_consec_sl{0};           // consecutive SL_HIT counter while bypass active
-static std::atomic<int64_t>  g_gf_crash_bypass_block_until{0};  // epoch sec: bypass blocked until this time
-// Directional SL cooldown: after 2 SL_HITs in same direction within 5 min, block that direction 3 min.
-// Prevents 5 consecutive longs into a crash (April 2 2026 pattern).
-static constexpr int     GF_DIR_SL_MAX          = 2;    // SL_HITs before direction blocked
-static constexpr int64_t GF_DIR_SL_WINDOW_SEC   = 300;  // 5 min window
-static constexpr int64_t GF_DIR_SL_COOLDOWN_SEC = 180;  // 3 min block
-static std::atomic<int>      g_gf_dir_sl_long_count{0};   // consecutive long SL_HITs
-static std::atomic<int>      g_gf_dir_sl_short_count{0};  // consecutive short SL_HITs
-static std::atomic<int64_t>  g_gf_dir_sl_long_first{0};   // timestamp of first long SL in window
-static std::atomic<int64_t>  g_gf_dir_sl_short_first{0};  // timestamp of first short SL in window
-static std::atomic<int64_t>  g_gf_long_blocked_until{0};  // block long entries until this time
-static std::atomic<int64_t>  g_gf_short_blocked_until{0}; // block short entries until this time
-// ENGINE-CULLED atomic: set when GoldFlow hits 4 consecutive SL_HITs.
-// Mirrors engine_culled in g_shadow_quality but readable cross-thread (quote thread checks it).
-// g_shadow_quality is only safe to read in the trade thread -- this atomic is the bridge.
-// Reset: g_shadow_quality.clear() at midnight resets the shadow map; this atomic mirrors it.
-static std::atomic<bool>     g_gf_engine_culled{false};   // true = GoldFlow disabled until midnight
 // L2 watchdog: set true when cTrader depth (ctid=43014358) not flowing > 120s.
-// GoldFlow entry gated on this -- drift-only mode has no proven edge.
 // Cleared automatically when L2 recovers. Written by L2 watchdog thread in omega_main.hpp.
 // IMMUTABLE: ctid=43014358 is the only account delivering L2 depth.
-static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, GoldFlow entries blocked
+static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, XAUUSD entries blocked
 
 // ?? FEED-STALE gate ??????????????????????????????????????????????????????????
 // Set true when cTrader depth has subscribed for XAUUSD but delivered ZERO depth
@@ -464,8 +408,8 @@ struct AtomicL2 {
     // Microstructure edge score: delta-based signal computed from consecutive L2Book
     // snapshots by GoldMicrostructureAnalyzer in CTraderDepthClient on every DOM event.
     // Range 0..1. >0.65 = bullish DOM pressure, <0.35 = bearish DOM pressure, ~0.5 = neutral.
-    // Replaces raw_imbalance() as input to GoldFlowEngine::update_persistence() so the
-    // L2 persistence path fires on real order-flow signals instead of perpetual 0.5.
+    // Replaces raw_imbalance() as input to L2 persistence tracking so the path
+    // fires on real order-flow signals instead of perpetual 0.5.
     std::atomic<double>   micro_edge{0.5};      // GoldMicrostructureAnalyzer output (DOM delta score)
 
     // fresh(): true only when a real book update arrived within max_age_ms.
