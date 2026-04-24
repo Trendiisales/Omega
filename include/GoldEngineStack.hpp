@@ -4357,13 +4357,23 @@ public:
             const bool sl_hit = leg.is_long ? (bid <= leg.sl) : (ask >= leg.sl);
             if (sl_hit) {
                 const double fill = leg.sl;
+                // S20 2026-04-25 label clarity:
+                //   If the tiered trail has moved leg.sl past the entry price
+                //   (into profit), the exit is a trail-lock, not an initial
+                //   stop. Prior behaviour emitted "SL_HIT" in both cases,
+                //   which made VSR/DXY/Turtle shadow analytics distort WR and
+                //   avg-loss (winners labelled as losses). Distinguish here.
+                const bool trail_in_profit = leg.is_long
+                    ? (leg.sl > leg.entry + 0.01)
+                    : (leg.sl < leg.entry - 0.01);
+                const char* close_reason = trail_in_profit ? "TRAIL_HIT" : "SL_HIT";
                 {
                     char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[GOLD-STACK-SL] %s fill=%.2f pnl=%.2f\n",                        leg.engine, fill,                        leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
+                    snprintf(_msg, sizeof(_msg), "[GOLD-STACK-%s] %s fill=%.2f pnl=%.2f\n",                        close_reason, leg.engine, fill,                        leg.is_long ? (fill - leg.entry) : (leg.entry - fill));
                     std::cout << _msg;
                     std::cout.flush();
                 }
-                close_leg(static_cast<size_t>(i), fill, "SL_HIT", latency_ms, regime, on_close);
+                close_leg(static_cast<size_t>(i), fill, close_reason, latency_ms, regime, on_close);
                 closed_any = true;
                 continue;
             }
@@ -5107,12 +5117,16 @@ private:
         // and bypassed the MIN_ENTRY_GAP_SEC check entirely.
         last_entry_ts_ = std::max(last_entry_ts_, now_s);
 
-        if (tr.exitReason != "SL_HIT") return;
+        if (tr.exitReason != "SL_HIT" && tr.exitReason != "TRAIL_HIT") return;
 
-        // Fire cooldown on ALL SL_HIT exits, not just negative pnl ones.
+        // Fire cooldown on ALL SL_HIT and TRAIL_HIT exits, not just negative pnl ones.
         // Trailing stops that lock above entry produce pnl>0 but are still failed
         // breakouts -- skipping cooldown allowed immediate re-entry into the same chop.
         // Old guard: if (tr.pnl > 0.0) return;  <-- REMOVED
+        // S20 2026-04-25: TRAIL_HIT added here because it is the new label for
+        // trail-locked exits (formerly emitted as SL_HIT with positive pnl).
+        // Keeping the cooldown on these exits preserves the original "do not
+        // re-enter into chop after a lock" behaviour.
         sl_cooldown_until_ = std::max(sl_cooldown_until_, now_s + HARD_SL_GLOBAL_COOLDOWN_SEC);
 
         auto& q = side_hard_sl_times_[u];

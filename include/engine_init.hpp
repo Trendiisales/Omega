@@ -257,6 +257,11 @@ static void init_engines(const std::string& cfg_path)
     fflush(stdout);
     // PENDING_TIMEOUT_SEC: gold compresses for minutes before breaking -- 60s was expiring before the move
     g_bracket_gold.PENDING_TIMEOUT_SEC = 600;  // 10 min: gold compression can last well beyond 5 min
+    // MAX_HOLD_SEC (S20 2026-04-25): absolute cap on filled-position hold.
+    // Driver: 2026-04-24 session 15:45:17 LONG held 234 minutes for -$18.74.
+    // 3600s (60min) chosen as conservative first cap -- analytics review after
+    // 5 trading days will tune. 0 = disabled.
+    g_bracket_gold.MAX_HOLD_SEC = 3600;
     // MIN_BREAK_TICKS: sweep guard -- price must stay inside the bracket for N consecutive
     // ticks before orders are sent. Catches London open liquidity sweeps (07:00:34 SHORT
     // -$7.97): bracket range $7.80 was exactly one sweep wide, SHORT filled in 1 tick

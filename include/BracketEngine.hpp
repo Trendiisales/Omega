@@ -111,6 +111,16 @@ public:
     // Gold often consolidates 2-5 min after compressing -- 60s was expiring before break.
     // Default 300s (5 min). Set per-engine in main.cpp after configure().
     int    PENDING_TIMEOUT_SEC = 300;
+    // MAX_HOLD_SEC (S20 2026-04-25): absolute cap on how long a filled position
+    // can remain open. Motivation: 2026-04-24 session held XAUUSD_BRACKET LONG
+    // 234 minutes (-$18.74) while gold dropped 18pt. No existing exit path
+    // caps hold time -- trail only tightens SL, regime_flip needs a confirmed
+    // drift reversal, and BREAKOUT_FAIL only fires inside FAILURE_WINDOW_MS.
+    // This gate exits at market when the position has been open for
+    // MAX_HOLD_SEC seconds. 0 = disabled (prior behaviour). Set per-engine.
+    // XAUUSD suggested default: 3600 (60 min) — tighten to 1800 after
+    // review if trail isn't capturing enough profit.
+    int    MAX_HOLD_SEC        = 0;
     // MIN_BREAK_TICKS: consecutive ticks price must stay INSIDE the bracket before
     // arm_both_sides() fires. Guards against liquidity sweeps at London open and
     // other spike-and-snap patterns where price blows through a bracket level in
@@ -321,6 +331,28 @@ public:
             }
 
             if ((now - pos.entry_ts) < static_cast<int64_t>(MIN_HOLD_MS / 1000)) return;
+
+            // ?? Max-hold timeout exit (S20 2026-04-25) ????????????????????????
+            // Exit at market when position has been open >= MAX_HOLD_SEC. Guards
+            // against positions ground to SL over hours while the trail never
+            // activates. MAX_HOLD_SEC = 0 disables this gate (prior behaviour).
+            // Uses "TIMEOUT" reason so post-close analytics can isolate these
+            // exits from trail/SL/TP/REGIME_FLIP paths.
+            if (MAX_HOLD_SEC > 0 &&
+                (now - pos.entry_ts) >= static_cast<int64_t>(MAX_HOLD_SEC)) {
+                const double exit_px = pos.is_long ? bid : ask;
+                std::cout << "[BRACKET-" << symbol << "] MAX_HOLD_TIMEOUT"
+                          << " side=" << (pos.is_long ? "LONG" : "SHORT")
+                          << " hold_s=" << (now - pos.entry_ts)
+                          << " cap_s=" << MAX_HOLD_SEC
+                          << " exit_px=" << exit_px
+                          << " entry=" << pos.entry
+                          << " sl=" << pos.sl
+                          << " mfe=" << pos.mfe << "\n";
+                std::cout.flush();
+                closePos(exit_px, "MAX_HOLD_TIMEOUT", macro_regime, on_close);
+                return;
+            }
 
             // ?? Regime-flip exit (Session 13, 2026-04-23) ?????????????????????
             // Early-close when ewm_drift has flipped convincingly against the

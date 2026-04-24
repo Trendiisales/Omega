@@ -632,6 +632,31 @@ static void on_tick_gold(
                     if (!ExecutionCostGuard::is_viable("XAUUSD", ask - bid, gold_tp_dist, gold_lot)) {
                         g_telemetry.IncrCostBlocked();
                     } else {
+                        // ── Cross-engine dedup (S20 2026-04-25) ────────────────────────
+                        // Mirror of the generic on_tick.hpp gate at line ~1653. Blocks
+                        // another XAUUSD engine from entering within CROSS_ENG_DEDUP_SEC
+                        // of a prior XAUUSD entry. Prevents pairs like
+                        // DXYDivergence@15:45:11 + XAUUSD_BRACKET@15:45:17 running
+                        // concurrent same-side trades. Also registers the new entry so
+                        // BracketGold's dedup check will see it.
+                        {
+                            std::lock_guard<std::mutex> _lk(g_dedup_mtx);
+                            auto _it = g_last_cross_entry.find("XAUUSD");
+                            if (_it != g_last_cross_entry.end() &&
+                                (nowSec() - _it->second) < CROSS_ENG_DEDUP_SEC) {
+                                char _msg[256];
+                                snprintf(_msg, sizeof(_msg),
+                                    "[CROSS-DEDUP] XAUUSD %s blocked -- another engine entered %lds ago (dedup=%lds)\n",
+                                    gsig.engine,
+                                    static_cast<long>(nowSec() - _it->second),
+                                    static_cast<long>(CROSS_ENG_DEDUP_SEC));
+                                std::cout << _msg;
+                                std::cout.flush();
+                                g_telemetry.IncrCostBlocked();
+                                return;
+                            }
+                            g_last_cross_entry["XAUUSD"] = nowSec();
+                        }
                         // Log entry
                         write_trade_open_log("XAUUSD", gsig.engine,
                             gsig.is_long ? "LONG" : "SHORT",
@@ -1250,6 +1275,32 @@ static void on_tick_gold(
             if (!bg_cost_ok) {
                 g_telemetry.IncrCostBlocked();
             } else {
+                // ── Cross-engine dedup (S20 2026-04-25) ────────────────────────
+                // Same mechanism as GoldEngineStack gate above. Blocks BracketGold
+                // arm when another XAUUSD engine entered within dedup window.
+                // Registers its own entry timestamp so subsequent engines see it.
+                // Flag used to skip arm-and-send while letting the rest of the
+                // tick function (HybridBracketGold, other engines) continue.
+                bool bg_dedup_blocked = false;
+                {
+                    std::lock_guard<std::mutex> _lk(g_dedup_mtx);
+                    auto _it = g_last_cross_entry.find("XAUUSD");
+                    if (_it != g_last_cross_entry.end() &&
+                        (nowSec() - _it->second) < CROSS_ENG_DEDUP_SEC) {
+                        char _msg[256];
+                        snprintf(_msg, sizeof(_msg),
+                            "[CROSS-DEDUP] XAUUSD BracketGold blocked -- another engine entered %lds ago (dedup=%lds)\n",
+                            static_cast<long>(nowSec() - _it->second),
+                            static_cast<long>(CROSS_ENG_DEDUP_SEC));
+                        std::cout << _msg;
+                        std::cout.flush();
+                        g_telemetry.IncrCostBlocked();
+                        bg_dedup_blocked = true;
+                    } else {
+                        g_last_cross_entry["XAUUSD"] = nowSec();
+                    }
+                }
+                if (!bg_dedup_blocked) {
                 char bg_reason[80];
                 snprintf(bg_reason, sizeof(bg_reason), "HI:%.2f LO:%.2f bias:%d l2:%.2f",
                          bgsigs.long_entry, bgsigs.short_entry,
@@ -1318,6 +1369,7 @@ static void on_tick_gold(
                 printf("[COORD] XAUUSD BRACKET_LANE mark_entered lots=%.4f pos_count=%d\n",
                        bg_lot,
                        omega::g_gold_coordinator.position_count(omega::GoldLane::BRACKET_LANE));
+                }  // end if (!bg_dedup_blocked)
             }
         }
     }

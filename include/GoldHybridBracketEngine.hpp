@@ -53,6 +53,15 @@ public:
     static constexpr double SL_BUFFER            = 0.5;
     static constexpr double TP_RR                = 2.0;
     static constexpr double TRAIL_FRAC           = 0.25;
+    // S20 2026-04-25: trail-arm guards
+    //   2026-04-24 15:44:43 saw a TRAIL exit after 3 seconds of hold (+$0.04
+    //   gross, -$0.02 net). The MFE-proportional trail activated on a sub-pt
+    //   MFE and was immediately hit by bid-ask noise on the next tick.
+    //   MIN_TRAIL_ARM_PTS: position must have MFE >= this before trail recomputes
+    //   MIN_TRAIL_ARM_SECS: position must have been open >= this before trail recomputes
+    //   Both must be satisfied. Set either to 0 to disable that guard.
+    static constexpr double MIN_TRAIL_ARM_PTS    = 1.5;
+    static constexpr int    MIN_TRAIL_ARM_SECS   = 15;
     static constexpr double MAX_SPREAD           = 2.5;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;
@@ -333,7 +342,16 @@ public:
         //   Medium move (6pt): min(1.5, 1.2) = 1.2pt trail -- locks 80% of move
         //   Large move (15pt): min(1.5, 3.0) = 1.5pt trail -- range caps it
         // This ensures we capture ~80% of MFE rather than giving back the entire move
-        if (move > 0) {
+        //
+        // S20 2026-04-25 arm guards:
+        //   Require MFE >= MIN_TRAIL_ARM_PTS AND hold >= MIN_TRAIL_ARM_SECS before
+        //   moving SL. Prevents the 3-second TRAIL seen on 2026-04-24 15:44:43
+        //   where a sub-pt MFE on tick 1 armed the trail and bid-ask noise hit it
+        //   on tick 2. Either guard set to 0 disables that check.
+        const int64_t held_s     = now_s - pos.entry_ts;
+        const bool    arm_mfe_ok = (MIN_TRAIL_ARM_PTS  <= 0.0) || (pos.mfe >= MIN_TRAIL_ARM_PTS);
+        const bool    arm_hold_ok = (MIN_TRAIL_ARM_SECS <= 0 ) || (held_s  >= MIN_TRAIL_ARM_SECS);
+        if (move > 0 && arm_mfe_ok && arm_hold_ok) {
             const double mfe_trail = pos.mfe * 0.20;
             const double range_trail = range * TRAIL_FRAC;
             const double trail_dist = (mfe_trail > 0.0) ? std::min(range_trail, mfe_trail) : range_trail;
