@@ -2,6 +2,7 @@
 // goldflow_drift_direction_bt.cpp
 //
 // PURE DRIFT-SIGNAL CORRELATION TEST -- 2026-04-24 (S18)
+// S19 PATCH: dual-format parser (cTrader ms-epoch + Dukascopy YYYYMMDD,HH:MM:SS)
 //
 // HYPOTHESIS UNDER TEST:
 //   Claim: GoldFlow's drift-continuation entry direction is anti-correlated
@@ -44,9 +45,24 @@
 //     - If mean forward move aligned with signal > 0: GFE direction CORRECT
 //     - If mean forward move aligned with signal < 0: GFE direction INVERTED
 //
-// CSV FORMAT EXPECTED:
-//   timestamp_ms,askPrice,bidPrice
-//   1735776000181,2624.15,2623.66
+// CSV FORMATS SUPPORTED (autodetected from first data row):
+//
+//   FORMAT A -- cTrader export (original):
+//     timestamp_ms,askPrice,bidPrice
+//     1735776000181,2624.15,2623.66
+//     Header row (first line): present ("timestamp,askPrice,bidPrice" or similar).
+//     Detection: first token parses as integer >= 1000000000000 (13-digit ms epoch).
+//
+//   FORMAT B -- Dukascopy export (S19 addition):
+//     YYYYMMDD,HH:MM:SS,bid,ask,last,vol
+//     20230927,00:00:00,1901.455,1901.745,1901.455,0
+//     Header row: optional ("Gmt time,Ask,Bid,..." or absent).
+//     Detection: first token is exactly 8 digits (YYYYMMDD).
+//     All timestamps are assumed UTC (Dukascopy default).
+//     Bid/ask column order is bid-first (cols 3,4) -- OPPOSITE of cTrader.
+//     Sub-second precision: Dukascopy has none. A monotonic tie-break counter
+//     (0..999) is appended to ts_ms so same-second ticks retain stable EWM
+//     ordering. Counter resets on each new second.
 //
 // BUILD (Mac):
 //   clang++ -O3 -std=c++20 -o goldflow_drift_direction_bt goldflow_drift_direction_bt.cpp
@@ -54,7 +70,7 @@
 //   g++ -O3 -std=c++17 -o goldflow_drift_direction_bt goldflow_drift_direction_bt.cpp
 //
 // RUN:
-//   ./goldflow_drift_direction_bt ~/tick/xauusd_merged_24months.csv
+//   ./goldflow_drift_direction_bt ~/tick/2yr_XAUUSD_tick.csv
 // =============================================================================
 
 #include <iostream>
@@ -69,6 +85,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cctype>
+#include <cstdlib>
+#include <ctime>
 
 // -----------------------------------------------------------------------------
 // GFE constants mirrored from live GoldFlowEngine.hpp (commit 9ceae160)
@@ -89,6 +108,15 @@ static const std::vector<int> FORWARD_WINDOWS_MIN = {1, 5, 15, 30, 60};
 // Cooldown between signals (prevents counting the same drift episode repeatedly)
 // Matches live engine's trade cooldown of 30-60 seconds. Use 60s as conservative.
 static constexpr int64_t SIGNAL_COOLDOWN_MS = 60000;
+
+// -----------------------------------------------------------------------------
+// Format mode (S19)
+// -----------------------------------------------------------------------------
+enum class CsvFormat {
+    UNKNOWN,
+    CTRADER,     // ms_epoch,ask,bid
+    DUKASCOPY    // YYYYMMDD,HH:MM:SS,bid,ask,last,vol
+};
 
 // -----------------------------------------------------------------------------
 // Core data structures
@@ -151,31 +179,181 @@ struct RollingATR {
 };
 
 // -----------------------------------------------------------------------------
-// Parse one CSV line.  Expected format:  timestamp_ms,askPrice,bidPrice
-// First line is header (timestamp,askPrice,bidPrice) -- skipped in main loop.
+// S19: UTC calendar -> epoch seconds (timegm equivalent, portable).
+// timegm is non-standard. This avoids the TZ-env dance.
 // -----------------------------------------------------------------------------
-bool parse_tick(const std::string& line, Tick& t) {
+static bool is_leap(int y) {
+    return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+}
+static int days_in_month(int y, int m) {
+    static const int dm[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    if (m == 2 && is_leap(y)) return 29;
+    return dm[m - 1];
+}
+static int64_t utc_to_epoch_sec(int year, int mon, int day,
+                                int hour, int minute, int sec) {
+    // Reject out-of-range before iterating
+    if (year < 1970 || year > 2099) return -1;
+    if (mon < 1 || mon > 12) return -1;
+    if (day < 1 || day > days_in_month(year, mon)) return -1;
+    if (hour < 0 || hour > 23) return -1;
+    if (minute < 0 || minute > 59) return -1;
+    if (sec < 0 || sec > 60) return -1;  // allow leap sec
+
+    int64_t days = 0;
+    for (int y = 1970; y < year; ++y) days += is_leap(y) ? 366 : 365;
+    for (int m = 1; m < mon; ++m)      days += days_in_month(year, m);
+    days += (day - 1);
+    return days * 86400LL
+         + (int64_t)hour * 3600
+         + (int64_t)minute * 60
+         + sec;
+}
+
+// -----------------------------------------------------------------------------
+// S19: Sub-second tie-break state for Dukascopy (preserves EWM ordering).
+// Same-second ticks get ms = second*1000 + 0,1,2,... counter (capped at 999).
+// Resets each new second.
+// -----------------------------------------------------------------------------
+struct DukaTieBreak {
+    int64_t last_sec = -1;
+    int     counter  = 0;
+
+    int64_t next_ms(int64_t sec_epoch) {
+        if (sec_epoch != last_sec) {
+            last_sec = sec_epoch;
+            counter = 0;
+        } else if (counter < 999) {
+            ++counter;
+        }
+        // If >999 ticks in one second (vanishingly rare in Dukascopy gold),
+        // they collide at 999. Acceptable: caller's EWM still advances on value,
+        // only tie-break ordering is clipped.
+        return sec_epoch * 1000LL + counter;
+    }
+};
+
+// -----------------------------------------------------------------------------
+// S19: Detect format from first data line (not header).
+// Rule:
+//   - If first comma-separated token is exactly 8 digits AND parses in
+//     reasonable calendar range -> DUKASCOPY.
+//   - Else if first token parses as int64 >= 1e12 (13-digit ms epoch) -> CTRADER.
+//   - Else UNKNOWN.
+// -----------------------------------------------------------------------------
+static CsvFormat detect_format(const std::string& sample_line) {
+    if (sample_line.empty()) return CsvFormat::UNKNOWN;
+    size_t comma = sample_line.find(',');
+    if (comma == std::string::npos) return CsvFormat::UNKNOWN;
+
+    std::string tok0 = sample_line.substr(0, comma);
+
+    // Strip trailing whitespace
+    while (!tok0.empty() && std::isspace((unsigned char)tok0.back())) tok0.pop_back();
+
+    // Check all-digit
+    if (tok0.empty()) return CsvFormat::UNKNOWN;
+    for (char c : tok0) if (!std::isdigit((unsigned char)c)) return CsvFormat::UNKNOWN;
+
+    if (tok0.size() == 8) {
+        // YYYYMMDD candidate
+        int y = std::atoi(tok0.substr(0, 4).c_str());
+        int m = std::atoi(tok0.substr(4, 2).c_str());
+        int d = std::atoi(tok0.substr(6, 2).c_str());
+        if (y >= 1970 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+            return CsvFormat::DUKASCOPY;
+        }
+        return CsvFormat::UNKNOWN;
+    }
+
+    if (tok0.size() >= 12) {
+        // ms_epoch candidate (13 digits for 2001+, 12 for 1970s)
+        int64_t v = std::strtoll(tok0.c_str(), nullptr, 10);
+        if (v >= 1000000000000LL) return CsvFormat::CTRADER;
+    }
+
+    return CsvFormat::UNKNOWN;
+}
+
+// -----------------------------------------------------------------------------
+// Parse one CSV line (cTrader). Format: timestamp_ms,askPrice,bidPrice
+// -----------------------------------------------------------------------------
+static bool parse_tick_ctrader(const std::string& line, Tick& t) {
     if (line.empty()) return false;
-    if (!isdigit((unsigned char)line[0])) return false;  // skip header / bad row
+    if (!std::isdigit((unsigned char)line[0])) return false;  // skip header / bad row
     const char* p = line.c_str();
     char* end = nullptr;
 
     // ts_ms
-    t.ts_ms = strtoll(p, &end, 10);
+    t.ts_ms = std::strtoll(p, &end, 10);
     if (end == p || *end != ',') return false;
     p = end + 1;
 
     // ask
-    t.ask = strtod(p, &end);
+    t.ask = std::strtod(p, &end);
     if (end == p || *end != ',') return false;
     p = end + 1;
 
     // bid
-    t.bid = strtod(p, &end);
+    t.bid = std::strtod(p, &end);
     if (end == p) return false;
 
     if (t.bid <= 0 || t.ask <= 0 || t.ask < t.bid) return false;
     if (t.ask - t.bid > GFE_MAX_SPREAD) return false;
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// S19: Parse one CSV line (Dukascopy). Format:
+//   YYYYMMDD,HH:MM:SS,bid,ask,last,vol
+//   20230927,00:00:00,1901.455,1901.745,1901.455,0
+// Column order: DATE, TIME, BID, ASK, LAST, VOL (bid before ask -- cTrader is reversed).
+// Timezone: UTC (Dukascopy default).
+// Sub-second precision: none -- tie-break counter appended.
+// -----------------------------------------------------------------------------
+static bool parse_tick_dukascopy(const std::string& line, Tick& t, DukaTieBreak& tb) {
+    if (line.empty()) return false;
+    if (!std::isdigit((unsigned char)line[0])) return false;  // skip header / bad row
+    if (line.size() < 20) return false;
+
+    // Field 1: YYYYMMDD (positions 0..7), comma at 8
+    if (line[8] != ',') return false;
+    for (int i = 0; i < 8; ++i) if (!std::isdigit((unsigned char)line[i])) return false;
+
+    int year  = (line[0]-'0')*1000 + (line[1]-'0')*100 + (line[2]-'0')*10 + (line[3]-'0');
+    int month = (line[4]-'0')*10 + (line[5]-'0');
+    int day   = (line[6]-'0')*10 + (line[7]-'0');
+
+    // Field 2: HH:MM:SS (positions 9,10,':',12,13,':',15,16), comma at 17
+    if (line[11] != ':' || line[14] != ':' || line[17] != ',') return false;
+    for (int i : {9,10,12,13,15,16}) if (!std::isdigit((unsigned char)line[i])) return false;
+
+    int hour   = (line[9]-'0')*10  + (line[10]-'0');
+    int minute = (line[12]-'0')*10 + (line[13]-'0');
+    int sec    = (line[15]-'0')*10 + (line[16]-'0');
+
+    int64_t ep_sec = utc_to_epoch_sec(year, month, day, hour, minute, sec);
+    if (ep_sec < 0) return false;
+
+    // Field 3 (bid), Field 4 (ask) -- start scanning at char 18
+    const char* p = line.c_str() + 18;
+    char* end = nullptr;
+
+    double bid = std::strtod(p, &end);
+    if (end == p || *end != ',') return false;
+    p = end + 1;
+
+    double ask = std::strtod(p, &end);
+    // trailing char may be ',' (more cols follow) OR end-of-string/CR/LF
+    if (end == p) return false;
+    if (*end != ',' && *end != '\0' && *end != '\r' && *end != '\n') return false;
+
+    if (bid <= 0 || ask <= 0 || ask < bid) return false;
+    if (ask - bid > GFE_MAX_SPREAD) return false;
+
+    t.ts_ms = tb.next_ms(ep_sec);
+    t.bid   = bid;
+    t.ask   = ask;
     return true;
 }
 
@@ -195,7 +373,7 @@ struct Signal {
 // -----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: goldflow_drift_direction_bt <tick_csv>\n";
+        std::cerr << "Usage: goldflow_drift_direction_bt <tick_csv> [--max N]\n";
         return 1;
     }
     const std::string path = argv[1];
@@ -203,7 +381,7 @@ int main(int argc, char* argv[]) {
     // Optional cap for testing
     int64_t max_ticks = 0;
     if (argc >= 4 && std::string(argv[2]) == "--max") {
-        max_ticks = atoll(argv[3]);
+        max_ticks = std::atoll(argv[3]);
     }
 
     std::ifstream f(path);
@@ -216,6 +394,54 @@ int main(int argc, char* argv[]) {
     if (max_ticks > 0) std::cerr << "Max ticks: " << max_ticks << "\n";
 
     // ---------------------------------------------------------------------
+    // S19: Format detection
+    //   Peek first non-empty line. If it's a header (non-digit start),
+    //   consume it and peek the next line. Detect format from that sample.
+    //   File position left at the start of the first data line.
+    // ---------------------------------------------------------------------
+    CsvFormat fmt = CsvFormat::UNKNOWN;
+    std::string first_line;
+    std::streampos data_start_pos = f.tellg();
+
+    if (!std::getline(f, first_line)) {
+        std::cerr << "Empty file\n";
+        return 1;
+    }
+    if (!first_line.empty() && first_line.back() == '\r') first_line.pop_back();
+
+    bool first_is_header = first_line.empty() ||
+                           !std::isdigit((unsigned char)first_line[0]);
+
+    if (first_is_header) {
+        std::cerr << "Header detected: " << first_line << "\n";
+        data_start_pos = f.tellg();   // data starts after the header
+        std::string second_line;
+        if (!std::getline(f, second_line)) {
+            std::cerr << "No data rows after header\n";
+            return 1;
+        }
+        if (!second_line.empty() && second_line.back() == '\r') second_line.pop_back();
+        fmt = detect_format(second_line);
+    } else {
+        // No header -- first_line IS the first data row
+        fmt = detect_format(first_line);
+    }
+
+    if (fmt == CsvFormat::UNKNOWN) {
+        std::cerr << "Could not detect CSV format from sample line.\n";
+        std::cerr << "Expected cTrader (ms_epoch,ask,bid) or Dukascopy (YYYYMMDD,HH:MM:SS,bid,ask,last,vol).\n";
+        return 1;
+    }
+
+    std::cerr << "Format: " << (fmt == CsvFormat::CTRADER ? "cTrader (ts_ms,ask,bid)"
+                                                          : "Dukascopy (YYYYMMDD,HH:MM:SS,bid,ask,last,vol) [UTC]")
+              << "\n";
+
+    // Rewind to start of data section
+    f.clear();
+    f.seekg(data_start_pos);
+
+    // ---------------------------------------------------------------------
     // Pass 1: stream ticks, compute drift, record every signal firing time
     // ---------------------------------------------------------------------
     std::vector<Tick> all_ticks;  // we need these for forward-move lookup
@@ -223,22 +449,29 @@ int main(int argc, char* argv[]) {
 
     EWM ewm;
     RollingATR atr;
+    DukaTieBreak duka_tb;
     std::deque<int> drift_persist_window;
     std::deque<double> drift_val_window;
     std::vector<Signal> signals;
     int64_t last_signal_ts = 0;
 
     std::string line;
-    // Skip header
-    std::getline(f, line);
-
     int64_t tick_count = 0;
     int64_t skip_count = 0;
     auto t0 = std::chrono::steady_clock::now();
 
     while (std::getline(f, line)) {
+        // Trim \r (Windows line endings in VPS-sourced CSVs)
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+
         Tick t;
-        if (!parse_tick(line, t)) { skip_count++; continue; }
+        bool ok = false;
+        if (fmt == CsvFormat::CTRADER) {
+            ok = parse_tick_ctrader(line, t);
+        } else {
+            ok = parse_tick_dukascopy(line, t, duka_tb);
+        }
+        if (!ok) { skip_count++; continue; }
         all_ticks.push_back(t);
         tick_count++;
 
@@ -377,6 +610,7 @@ int main(int argc, char* argv[]) {
     std::cout << "\n======================================================================\n";
     std::cout << "  GOLDFLOW DRIFT-DIRECTION CORRELATION TEST\n";
     std::cout << "  Dataset: " << path << "\n";
+    std::cout << "  Format:  " << (fmt == CsvFormat::CTRADER ? "cTrader" : "Dukascopy") << "\n";
     std::cout << "  Total signals: " << signals.size() << "\n";
     std::cout << "======================================================================\n";
 
