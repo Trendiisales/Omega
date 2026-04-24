@@ -319,6 +319,7 @@ struct OmegaTelemetrySnapshot
     double eng_pnl_mean_rev      = 0.0;
     double eng_pnl_h1_swing      = 0.0;   // H1SwingEngine
     double eng_pnl_h4_regime     = 0.0;   // H4RegimeEngine
+    double eng_pnl_minimal_h4    = 0.0;   // MinimalH4Breakout
     int    eng_trades_breakout   = 0;
     int    eng_trades_bracket    = 0;
     int    eng_trades_gold_stack = 0;
@@ -328,13 +329,17 @@ struct OmegaTelemetrySnapshot
     int    eng_trades_mean_rev   = 0;
     int    eng_trades_h1_swing   = 0;
     int    eng_trades_h4_regime  = 0;
+    int    eng_trades_minimal_h4 = 0;
     // H1/H4 live status (updated every tick from tick_gold.hpp)
     int    h1_swing_open         = 0;    // 1 = position live
     int    h4_regime_open        = 0;
+    int    minimal_h4_open       = 0;
     float  h1_swing_daily_pnl    = 0.0f;
     float  h4_regime_daily_pnl   = 0.0f;
+    float  minimal_h4_daily_pnl  = 0.0f;
     int    h1_swing_shadow       = 1;
     int    h4_regime_shadow      = 1;
+    int    minimal_h4_shadow     = 1;
     float  h1_adx                = 0.0f;  // latest H1 ADX (for GUI indicator)
     float  h4_adx                = 0.0f;  // latest H4 ADX
     int    h4_trend_state        = 0;     // -1/0/+1

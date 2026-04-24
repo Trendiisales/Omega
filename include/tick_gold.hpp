@@ -794,6 +794,26 @@ static void on_tick_gold(
                     }
                 }
             }
+
+            // MinimalH4Breakout dispatch -- runs PARALLEL to H4RegimeEngine.
+            // Independent of gold_any_open / H1 swing blocks (shadow only).
+            // Entry is local-only in shadow mode: no enter_directional call, no
+            // broker orders. The engine manages TP/SL internally via on_tick()
+            // below and reports closed trades through ca_on_close -> handle_closed_trade
+            // which feeds telemetry. When the engine is promoted to LIVE, add
+            // an enter_directional call here mirroring the H4RegimeEngine pattern.
+            {
+                const auto m4sig = g_minimal_h4_gold.on_h4_bar(
+                    s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                    bid, ask,
+                    g_bars_gold.h4.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+                if (m4sig.valid) {
+                    g_telemetry.UpdateLastSignal("XAUUSD",
+                        m4sig.is_long ? "LONG" : "SHORT", m4sig.entry, m4sig.reason,
+                        "MINIMAL_H4", regime.c_str(), "MINIMAL_H4", m4sig.tp, m4sig.sl);
+                }
+            }
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
         } else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
     }
@@ -1771,6 +1791,10 @@ static void on_tick_gold(
                 g_bars_gold.h4.ind.adx14.load(std::memory_order_relaxed));
             snap->h4_trend_state = g_bars_gold.h4.ind.trend_state.load(
                 std::memory_order_relaxed);
+            // MinimalH4Breakout mirror fields
+            snap->minimal_h4_open       = g_minimal_h4_gold.has_open_position() ? 1 : 0;
+            snap->minimal_h4_daily_pnl  = static_cast<float>(g_minimal_h4_gold.daily_pnl_);
+            snap->minimal_h4_shadow     = g_minimal_h4_gold.shadow_mode ? 1 : 0;
         }
     }
     // H1/H4 engine tick-level management -- on_tick() handles SL/TP/partial/trail.
@@ -1780,6 +1804,11 @@ static void on_tick_gold(
     if (g_h4_regime_gold.has_open_position()) {
         g_h4_regime_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
         g_h4_regime_gold.check_weekend_close(bid, ask, now_ms_g, ca_on_close);
+    }
+    // MinimalH4Breakout tick management -- runs parallel to H4Regime, independent.
+    if (g_minimal_h4_gold.has_open_position()) {
+        g_minimal_h4_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
+        g_minimal_h4_gold.check_weekend_close(bid, ask, now_ms_g, ca_on_close);
     }
     // -- Improvement 5: CVD confirmation gate ------------------------------
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);

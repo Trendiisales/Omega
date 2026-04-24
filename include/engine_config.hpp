@@ -540,6 +540,20 @@ static void load_config(const std::string& path) {
             if (k=="esnq_tp_pct")        g_ca_esnq.TP_PCT        = safe_stod(v, k);
             if (k=="esnq_sl_pct")        g_ca_esnq.SL_PCT        = safe_stod(v, k);
         }
+        if (section == "minimal_h4") {
+            auto& mp = g_minimal_h4_gold.p;
+            if (k=="enabled")            g_minimal_h4_gold.enabled     = (v == "true" || v == "1");
+            if (k=="shadow_mode")        g_minimal_h4_gold.shadow_mode = (v == "true" || v == "1");
+            if (k=="donchian_bars")      mp.donchian_bars       = safe_stoi(v, k);
+            if (k=="sl_mult")            mp.sl_mult             = safe_stod(v, k);
+            if (k=="tp_mult")            mp.tp_mult             = safe_stod(v, k);
+            if (k=="risk_dollars")       mp.risk_dollars        = safe_stod(v, k);
+            if (k=="max_lot")            mp.max_lot             = safe_stod(v, k);
+            if (k=="max_spread")         mp.max_spread          = safe_stod(v, k);
+            if (k=="timeout_h4_bars")    mp.timeout_h4_bars     = safe_stoi(v, k);
+            if (k=="cooldown_h4_bars")   mp.cooldown_h4_bars    = safe_stoi(v, k);
+            if (k=="weekend_close_gate") mp.weekend_close_gate  = (v == "true" || v == "1");
+        }
         if (section == "latency_edge") {
             auto& le = g_cfg.le_cfg;
             // GoldSilverLeadLag DELETED -- keys silently ignored for backward compat with old ini files

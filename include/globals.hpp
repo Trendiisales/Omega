@@ -81,6 +81,15 @@ static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 static omega::H1SwingEngine  g_h1_swing_gold;   // XAUUSD H1 EMA+ADX trend
 static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
 
+// MinimalH4Breakout -- pure H4 Donchian breakout, no filters. Validated via
+// 2yr tick sweep (27/27 configs profitable), walk-forward PF 1.35 OOS,
+// cost stress PF 1.31 pessimistic, 13-day live L2 replay confirmed signals.
+// Runs PARALLEL to H4RegimeEngine in shadow mode (independent, not mutex).
+// See backtest/htf_bt_minimal.cpp + htf_bt_walkforward.cpp + htf_bt_costs.cpp.
+// Created 2026-04-24 Session 11 Stage 1.
+#include "MinimalH4Breakout.hpp"
+static omega::MinimalH4Breakout g_minimal_h4_gold;  // XAUUSD pure H4 Donchian breakout
+
 // TickScalpEngine REMOVED at Batch 5V §1.3 (2026-04-20).
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 // See wiki tombstone wiki/entities/TickScalpEngine.md for historical record.

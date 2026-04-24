@@ -410,6 +410,19 @@ static void init_engines(const std::string& cfg_path)
                g_h4_regime_gold.p.sl_struct_mult, g_h4_regime_gold.p.tp_mult,
                g_h4_regime_gold.p.trail_arm_mult, g_h4_regime_gold.p.trail_dist_mult,
                g_h4_regime_gold.p.daily_cap);
+
+        // MinimalH4Breakout -- pure Donchian, no filters. Runs PARALLEL to H4Regime.
+        // OOS-validated config: D=10 SL=1.5x TP=4.0x. See header for evidence.
+        g_minimal_h4_gold.p           = omega::make_minimal_h4_gold_params();
+        g_minimal_h4_gold.symbol      = "XAUUSD";
+        g_minimal_h4_gold.shadow_mode = true;
+        g_minimal_h4_gold.enabled     = true;
+        printf("[INIT] MinimalH4Breakout XAUUSD: shadow=true donchian=%d sl=%.1fx"
+               " tp=%.1fx risk=$%.0f max_lot=%.3f timeout=%d bars weekend_gate=%s\n",
+               g_minimal_h4_gold.p.donchian_bars, g_minimal_h4_gold.p.sl_mult,
+               g_minimal_h4_gold.p.tp_mult,       g_minimal_h4_gold.p.risk_dollars,
+               g_minimal_h4_gold.p.max_lot,       g_minimal_h4_gold.p.timeout_h4_bars,
+               g_minimal_h4_gold.p.weekend_close_gate ? "true" : "false");
         fflush(stdout);
     }
 
@@ -520,6 +533,9 @@ static void init_engines(const std::string& cfg_path)
                 // Without this the channel needs 20 new H4 bars (80 hours) to warm.
                 // With this: channel is ready from tick 1 -- engine is hot immediately.
                 g_h4_regime_gold.seed_channel_from_bars(g_bars_gold.h4.get_bars());
+                // Seed MinimalH4Breakout Donchian channel from same saved H4 bar history.
+                // 10-bar channel: needs 40 hours warm-up cold vs. tick-1 ready warm.
+                g_minimal_h4_gold.seed_channel_from_bars(g_bars_gold.h4.get_bars());
             } else {
                 printf("[STARTUP] H4 bar state cold -- H4RegimeEngine needs 20 H4 bars (~80hr)\n");
                 fflush(stdout);
