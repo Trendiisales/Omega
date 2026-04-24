@@ -98,6 +98,20 @@ public:
     double MAX_SPREAD          = 0.0;  // if >0, blocks arm_both_sides when spread exceeds this value
     double ENTRY_SIZE          = 0.01;
     double SL_PCT              = 0.0;
+    // ?? S22c 2026-04-25: SL-distance range gate (empirical) ???????????????????
+    // Motivation: Analysis of 62 XAUUSD_BRACKET live trades 2026-04-13..24:
+    //   dist (bracket range = SL distance)   trades   wins   losses   net
+    //     <= 3pt                                23       6      17    +$73
+    //      3 - 6pt                               0       0       0        0
+    //      6 - 10pt                              9       0       9    -$57
+    //     > 10pt                                30       0      30   -$331
+    // Every trade with dist > 6pt was a LOSER. 0/39 wins. 100% separation.
+    // Wide brackets = bracket formed during a trending/expanding move; by the
+    // time one level fires, the leg caught is a late breakout that reverses.
+    // Gate: if dist exceeds MAX_SL_DIST_PTS, refuse to arm (structure
+    // invalidates, engine returns IDLE). 0 = disabled (prior behaviour).
+    // Recommended XAUUSD: 6.0. Other symbols: leave at 0 until data supports.
+    double MAX_SL_DIST_PTS     = 0.0;
     // ?? Continuous trail parameters (S19 2026-04-24) ??????????????????????????
     // Replaces the stepped trail cascade (0.40/1.0/1.5/2.0 × tp_dist milestones)
     // that left a dead zone between BE lock and 1R where SL sat pinned at entry.
@@ -1112,6 +1126,24 @@ protected:
             std::cout << "[BRACKET-" << symbol << "] BLOCKED: no_edge"
                       << " tp_dist=" << tp_dist << " cost=" << cost
                       << " need>=" << cost * EDGE_MULTIPLIER << "\n";
+            std::cout.flush();
+            phase = BracketPhase::IDLE;
+            bracket_high = 0.0; bracket_low = 0.0;
+            return;
+        }
+
+        // ?? S22c 2026-04-25: SL distance gate ?????????????????????????????????
+        // Empirical rule from 62 XAUUSD_BRACKET live trades: dist > 6pt is a
+        // guaranteed loser (0 wins / 39 losses). See config comment on
+        // MAX_SL_DIST_PTS for full stats. If the structural range exceeds the
+        // cap, the bracket is too wide -- whichever side fills is a late
+        // breakout reversal candidate. Refuse to arm; reset to IDLE and let
+        // the structure reform at tighter range.
+        if (MAX_SL_DIST_PTS > 0.0 && dist > MAX_SL_DIST_PTS) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: sl_dist_too_wide"
+                      << " dist=" << dist
+                      << " max=" << MAX_SL_DIST_PTS
+                      << " (empirical 100%-loser band)\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;
             bracket_high = 0.0; bracket_low = 0.0;

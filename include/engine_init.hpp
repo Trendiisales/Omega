@@ -313,6 +313,12 @@ static void init_engines(const std::string& cfg_path)
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
     g_bracket_gold.MAX_RANGE   = 12.0;   // DATA-CALIBRATED: $12 max. Ranges >$12 are trending, not bracketing.
+    // ?? S22c 2026-04-25: empirical SL-dist gate (gold only) ?????????????????????
+    // 62 live XAUUSD_BRACKET trades 2026-04-13..24: every trade with bracket
+    // dist > 6pt was a loser (0 wins / 39 losses / -$388 combined). Trades at
+    // dist <= 6pt won 6/26 = 23% WR at +$73 net. The 6pt band is where the
+    // bracket represents genuine compression vs late-breakout chasing.
+    g_bracket_gold.MAX_SL_DIST_PTS = 6.0;
     // ?? Regime-flip exit (Session 13, 2026-04-23) -- gold only ?????????????????
     // Thresholds wired for XAUUSD_BRACKET only. See BracketEngine.hpp config block.
     // Trigger: |ewm_drift| >= 2.5 against position for 5 consecutive ticks.
