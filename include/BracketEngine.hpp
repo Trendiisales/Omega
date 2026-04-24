@@ -89,6 +89,22 @@ public:
     double MAX_SPREAD          = 0.0;  // if >0, blocks arm_both_sides when spread exceeds this value
     double ENTRY_SIZE          = 0.01;
     double SL_PCT              = 0.0;
+    // ?? Continuous trail parameters (S19 2026-04-24) ??????????????????????????
+    // Replaces the stepped trail cascade (0.40/1.0/1.5/2.0 × tp_dist milestones)
+    // that left a dead zone between BE lock and 1R where SL sat pinned at entry.
+    //
+    // Mechanics:
+    //   1. Once MFE reaches TRAIL_ACTIVATION_PTS in our favour, trail arms.
+    //   2. SL ratchets to (entry + MFE - TRAIL_DISTANCE_PTS) for LONG,
+    //      or (entry - MFE + TRAIL_DISTANCE_PTS) for SHORT.
+    //   3. SL only moves in our favour (one-way ratchet). Any SL check at
+    //      line 419 (unchanged) fires the exit on reversal.
+    //
+    // XAUUSD defaults: 3.0 / 2.0 -- activation just above typical spread+noise,
+    // trail tight enough to capture 10-20pt intraday moves, loose enough to
+    // not get clipped by normal tick wiggle. Override per-symbol via configure.
+    double TRAIL_ACTIVATION_PTS = 3.0;
+    double TRAIL_DISTANCE_PTS   = 2.0;
     // PENDING_TIMEOUT_SEC: how long to wait for price to hit a bracket level.
     // LIVE mode: 60s is fine -- broker holds the stop orders, we just wait for fill ACK.
     // SHADOW mode: price must cross the level within this window for fill simulation.
@@ -335,96 +351,71 @@ public:
                 }
             }
 
-            // ?? Stepped trailing stop -- rides multi-hour trends ??????????????
-            // Instead of a fixed TP that exits at 1R, we use a stepped trail:
-            //   Step 1 (60% of TP dist):  SL ? breakeven. Position is free.
-            //   Step 2 (100% = 1R):       SL ? entry + 50% of TP dist. Lock half.
-            //   Step 3 (200% = 2R):       SL ? entry + 100% of TP dist. Lock full 1R.
-            //   Step 4 (300%+ = 3R+):     Trail SL at MFE - trail_dist (25% of initial range).
-            //                              This is the "ride the cascade" zone.
-            // There is NO fixed TP -- position runs until trail stop is hit.
-            // On a $6 range / RR=3.0 initial setup:
-            //   trail_dist = 6 * 0.25 = $1.50 trail
-            //   At 1R ($18 in): SL ? $9 locked
-            //   At 2R ($36 in): SL ? $18 locked
-            //   At 3R ($54 in): SL trails $1.50 behind MFE
-            //   At $100 move:   SL at ~$98.50 behind entry -- position stays open all day
+            // ?? Continuous MFE trailing stop (S19 2026-04-24) ?????????????????
+            // Replaces the stepped cascade (0.40/1.0/1.5/2.0 × tp_dist milestones)
+            // that left a dead zone between BE and 1R where SL sat pinned at
+            // entry. On a 10pt bracket with RR=1.5 (tp_dist=15pt) the old logic
+            // needed MFE>=30pt before any profit-locking trail engaged; typical
+            // XAUUSD trades never reached it and scratched at BE.
             //
-            // S19 AUDIT CHANGE 2026-04-24: BE trigger raised 40% -> 60% of TP dist.
-            //   28-day shadow audit: 35/85 XAUUSD_BRACKET trades exited as BE_HIT
-            //   (41% BE rate) with avg MFE=7.44pt -- trades moved 40% of TP then
-            //   reversed, converting potential winners into ~scratch losses.
-            //   Raising the threshold to 60% gives trades more room to develop
-            //   before locking, at the cost of giving back more when trades fail
-            //   between 40%-60% of TP distance. Validation: shadow 5-10 trading
-            //   days and re-audit BE_HIT / TRAIL_HIT / SL_HIT distribution.
+            // Mechanics:
+            //   1. Once MFE >= TRAIL_ACTIVATION_PTS, trail arms.
+            //   2. SL ratchets to (entry + MFE - TRAIL_DISTANCE_PTS) for LONG,
+            //      (entry - MFE + TRAIL_DISTANCE_PTS) for SHORT.
+            //   3. SL is one-way ratchet -- only moves in our favour.
+            //   4. SL exit check at line ~419 (unchanged) fires exit on reversal.
+            //
+            // Params (TRAIL_ACTIVATION_PTS=3.0, TRAIL_DISTANCE_PTS=2.0 on XAUUSD)
+            // defined at top of struct, tunable per-symbol via configure.
+            //
+            // Exit labelling (unchanged at line ~419):
+            //   sl_locked_to_be && pos.sl > pos.entry + 0.01 -> TRAIL_HIT
+            //   sl_locked_to_be && pos.sl ≈ pos.entry        -> BE_HIT
+            //   !sl_locked_to_be                             -> SL_HIT
+            // REGIME_FLIP_EXIT branch above this block is unchanged (safety rail).
             {
-                const double initial_range = std::fabs(m_locked_hi - m_locked_lo);
-                // EA-matched trail: hold 2x longer before tightening stop
-                const double trail_dist    = std::max(initial_range * 0.25, spread * 2.0);  // tightened 0.50?0.25: trail tighter, lock more profit
-                const double tp_dist       = std::fabs(pos.tp - pos.entry); // initial target dist
-                const double trail_move    = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
-
+                const double trail_move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
                 if (trail_move > 0.0) {
-                    if (trail_move > pos.mfe) pos.mfe = trail_move;  // track max favourable
+                    if (trail_move > pos.mfe) pos.mfe = trail_move;  // one-way MFE ratchet
 
-                    // Step 1: BE lock at 60% of initial target (S19 raised 0.40->0.60 per shadow audit)
-                    if (trail_move >= tp_dist * 0.60 && !pos.sl_locked_to_be) {
-                        if ( pos.is_long && pos.entry > pos.sl) {
-                            pos.sl = pos.entry; pos.sl_locked_to_be = true;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP1 SL->BE move=" << trail_move << "\n";
-                        }
-                        if (!pos.is_long && pos.entry < pos.sl) {
-                            pos.sl = pos.entry; pos.sl_locked_to_be = true;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP1 SL->BE move=" << move << "\n";
-                        }
-                    }
-                    // Step 2: Lock 50% of initial TP at 1R
-                    if (trail_move >= tp_dist && pos.sl_locked_to_be) {
-                        const double lock2 = pos.is_long
-                            ? pos.entry + tp_dist * 0.50
-                            : pos.entry - tp_dist * 0.50;
-                        if ((pos.is_long && lock2 > pos.sl) || (!pos.is_long && lock2 < pos.sl)) {
-                            pos.sl = lock2;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2 lock_half move=" << trail_move << "\n";
-                        }
-                    }
-                    // Step 2.5: Lock 75% of TP at 1.5R -- new step for tighter locking
-                    if (trail_move >= tp_dist * 1.5 && pos.sl_locked_to_be) {
-                        const double lock25 = pos.is_long
-                            ? pos.entry + tp_dist * 0.75
-                            : pos.entry - tp_dist * 0.75;
-                        if ((pos.is_long && lock25 > pos.sl) || (!pos.is_long && lock25 < pos.sl)) {
-                            pos.sl = lock25;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP2.5 lock_75pct move=" << trail_move << "\n";
-                        }
-                    }
-                    // Step 3: Lock full 1R at 2R
-                    if (trail_move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
-                        const double lock3 = pos.is_long
-                            ? pos.entry + tp_dist
-                            : pos.entry - tp_dist;
-                        if ((pos.is_long && lock3 > pos.sl) || (!pos.is_long && lock3 < pos.sl)) {
-                            pos.sl = lock3;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP3 lock_1R move=" << trail_move << "\n";
-                        }
-                    }
-                    // Step 4: Free-running trail at MFE - trail_dist (2R+ -- was 3R)
-                    if (trail_move >= tp_dist * 2.0 && pos.sl_locked_to_be) {
-                        const double trail_sl = pos.is_long
-                            ? (pos.entry + pos.mfe - trail_dist)
-                            : (pos.entry - pos.mfe + trail_dist);
-                        if ((pos.is_long && trail_sl > pos.sl) || (!pos.is_long && trail_sl < pos.sl)) {
-                            pos.sl = trail_sl;
-                            std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP4 mfe_trail=" << pos.mfe
-                                      << " sl=" << pos.sl << "\n";
+                    if (pos.mfe >= TRAIL_ACTIVATION_PTS) {
+                        const double new_sl = pos.is_long
+                            ? (pos.entry + pos.mfe - TRAIL_DISTANCE_PTS)
+                            : (pos.entry - pos.mfe + TRAIL_DISTANCE_PTS);
+
+                        // Only ever move SL in our favour (ratchet).
+                        const bool ratchets = pos.is_long
+                            ? (new_sl > pos.sl)
+                            : (new_sl < pos.sl);
+
+                        if (ratchets) {
+                            const bool crossed_be = pos.is_long
+                                ? (new_sl >= pos.entry)
+                                : (new_sl <= pos.entry);
+                            const bool was_locked = pos.sl_locked_to_be;
+                            pos.sl = new_sl;
+                            if (crossed_be) pos.sl_locked_to_be = true;
+
+                            // Log transitions of note: first BE crossing + every new profit-lock high.
+                            if (!was_locked && pos.sl_locked_to_be) {
+                                std::cout << "[BRACKET-" << symbol
+                                          << "] TRAIL-ARMED SL->BE+ move=" << trail_move
+                                          << " mfe=" << pos.mfe
+                                          << " sl=" << pos.sl << "\n";
+                            } else if (pos.sl_locked_to_be) {
+                                std::cout << "[BRACKET-" << symbol
+                                          << "] TRAIL mfe=" << pos.mfe
+                                          << " sl=" << pos.sl
+                                          << " locked=" << (pos.is_long ? pos.sl - pos.entry
+                                                                        : pos.entry - pos.sl) << "\n";
+                            }
                         }
                     }
                 }
             }
 
-            // No fixed TP -- trail stop exits the position
-            // SL check handles all exits: initial SL, BE, stepped locks, and trail
+            // No fixed TP -- continuous trail exits the position on reversal.
+            // SL check below handles all exits: initial SL, BE crossing, and trail.
             if ( pos.is_long && bid <= pos.sl) {
                 const char* r = pos.sl_locked_to_be
                     ? (pos.sl > pos.entry + 0.01 ? "TRAIL_HIT" : "BE_HIT") : "SL_HIT";
