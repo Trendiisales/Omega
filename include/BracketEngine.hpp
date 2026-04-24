@@ -337,7 +337,7 @@ public:
 
             // ?? Stepped trailing stop -- rides multi-hour trends ??????????????
             // Instead of a fixed TP that exits at 1R, we use a stepped trail:
-            //   Step 1 (40% of TP dist):  SL ? breakeven. Position is free.
+            //   Step 1 (60% of TP dist):  SL ? breakeven. Position is free.
             //   Step 2 (100% = 1R):       SL ? entry + 50% of TP dist. Lock half.
             //   Step 3 (200% = 2R):       SL ? entry + 100% of TP dist. Lock full 1R.
             //   Step 4 (300%+ = 3R+):     Trail SL at MFE - trail_dist (25% of initial range).
@@ -349,6 +349,15 @@ public:
             //   At 2R ($36 in): SL ? $18 locked
             //   At 3R ($54 in): SL trails $1.50 behind MFE
             //   At $100 move:   SL at ~$98.50 behind entry -- position stays open all day
+            //
+            // S19 AUDIT CHANGE 2026-04-24: BE trigger raised 40% -> 60% of TP dist.
+            //   28-day shadow audit: 35/85 XAUUSD_BRACKET trades exited as BE_HIT
+            //   (41% BE rate) with avg MFE=7.44pt -- trades moved 40% of TP then
+            //   reversed, converting potential winners into ~scratch losses.
+            //   Raising the threshold to 60% gives trades more room to develop
+            //   before locking, at the cost of giving back more when trades fail
+            //   between 40%-60% of TP distance. Validation: shadow 5-10 trading
+            //   days and re-audit BE_HIT / TRAIL_HIT / SL_HIT distribution.
             {
                 const double initial_range = std::fabs(m_locked_hi - m_locked_lo);
                 // EA-matched trail: hold 2x longer before tightening stop
@@ -359,8 +368,8 @@ public:
                 if (trail_move > 0.0) {
                     if (trail_move > pos.mfe) pos.mfe = trail_move;  // track max favourable
 
-                    // Step 1: BE lock at 40% of initial target
-                    if (trail_move >= tp_dist * 0.40 && !pos.sl_locked_to_be) {
+                    // Step 1: BE lock at 60% of initial target (S19 raised 0.40->0.60 per shadow audit)
+                    if (trail_move >= tp_dist * 0.60 && !pos.sl_locked_to_be) {
                         if ( pos.is_long && pos.entry > pos.sl) {
                             pos.sl = pos.entry; pos.sl_locked_to_be = true;
                             std::cout << "[BRACKET-" << symbol << "] TRAIL-STEP1 SL->BE move=" << trail_move << "\n";
