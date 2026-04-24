@@ -102,8 +102,20 @@ static void init_engines(const std::string& cfg_path)
     // ?? MacroCrashEngine config ??????????????????????????????????????????????????
     // Always-on macro event engine. Shadow mode = log only, no live orders.
     // Enable live once shadow logs confirm it fires correctly on real expansion events.
+    //
+    // S17 DEMOTION (2026-04-24): enabled = false.
+    //   Regression disaster 2026-04-15 01:16 UTC: 61 LONG trades in 41s into
+    //   a $20 gold drop, -$9,600 on XAUUSD. Post-disaster guards (4hr
+    //   DOLLAR_STOP block, 3-SL kill switch) proved insufficient. Engine
+    //   structure has no position-open check, no signal cooldown at entry
+    //   gate, and no consecutive-SL block -- so a single misaligned drift
+    //   sign re-fires the same direction until bankroll hits stop.
+    //   Shadow-mode 8-day audit: 108 trades, -$11,742 net. Demoted pending
+    //   re-fire guard rework; code preserved (not culled) for autopsy and
+    //   future revival. Do not flip back to true without new guards in
+    //   place and a fresh 2-year backtest.
     g_macro_crash.shadow_mode     = true;  // SHADOW: enable live after validation
-    g_macro_crash.enabled         = true;
+    g_macro_crash.enabled         = false; // S17 DEMOTED 2026-04-24 -- see comment above
     // S13 REVERT (2026-04-24): restore London/NY base thresholds.
     //
     // PRIOR STATE: base thresholds were lowered to ATR=4.0 / VOL_RATIO=2.0 /

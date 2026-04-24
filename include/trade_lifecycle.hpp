@@ -6,7 +6,7 @@
 // Session 9: GoldCoordinator wiring -- needed for mark_closed call inside
 // bracket_on_close() below. Allow-by-default skeleton; engine behaviour unchanged.
 #include "gold_coordinator.hpp"
-#include <sstream>  // S17: ostringstream for atomic SHADOW-CLOSE emission (prevents stdout interleaving)
+#include <sstream>  // S17: ostringstream for atomic SHADOW-CLOSE + TRADE-COST emission (prevents stdout interleaving)
 
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
@@ -277,14 +277,30 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         omega::apply_realistic_costs(tr, comm_per_side, mult);
     }
 
-    // Step 3: Log -- all values are now in USD
-    std::cout << "[TRADE-COST] " << tr.symbol
-              << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
-              << " slip_in=$" << tr.slippage_entry
-              << " slip_out=$" << tr.slippage_exit
-              << " net=$" << tr.net_pnl
-              << " exit=" << tr.exitReason << "\n";
-    std::cout.flush();
+    // Step 3: Log -- all values are now in USD.
+    //
+    // S17 (2026-04-24): atomic emission via ostringstream. The streamed
+    // `std::cout << a << b << c` pattern is NOT thread-safe across chained
+    // operator<< calls -- each << can interleave with writes from another
+    // thread, producing the ghost-trade garbage lines observed on 2026-04-14
+    // and 2026-04-16 where two concurrent close events produced a merged
+    // [TRADE-COST] line with pnl_usd equal to the exit price and a billion-
+    // second hold time. The SHADOW-CLOSE branch above (line ~170) was
+    // converted to ostringstream at that time; this LIVE branch was missed.
+    // Fix: build the full line in a local ostringstream, then issue a single
+    // std::cout << str write (which is atomic with respect to other writers
+    // that also use single writes).
+    {
+        std::ostringstream os;
+        os << "[TRADE-COST] " << tr.symbol
+           << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
+           << " slip_in=$" << tr.slippage_entry
+           << " slip_out=$" << tr.slippage_exit
+           << " net=$" << tr.net_pnl
+           << " exit=" << tr.exitReason << "\n";
+        std::cout << os.str();
+        std::cout.flush();
+    }
     // ?? Decrement portfolio open SL risk on close ????????????????????????????????????
     // sl_abs is not directly in TradeRecord -- approximate from entryPrice and SL price.
     // tr.sl is the SL price stored at entry; not always populated in all engines.

@@ -28,6 +28,32 @@ Usage:
   python shadow_analysis.py --csv
   python shadow_analysis.py --plot
   python shadow_analysis.py --wfo
+  python shadow_analysis.py --no-ghost-filter   # disable S17 ghost guards (audit only)
+
+S17 GHOST-RECORD GUARDS (2026-04-24)
+------------------------------------
+Defensive filters applied at CSV load time to reject corrupted trade records
+caused by pre-mutex-fix stdout interleaving on 2026-04-14/16 (see
+trade_lifecycle.hpp line 167 tombstone). The ghost pattern:
+
+  - pnl_raw ~= -entryPrice * 0.01  (so USD pnl equals -entryPrice)
+  - hold_sec in the billions (~56 years, Unix epoch arithmetic bug)
+  - mfe == 0.000 always
+  - side sometimes flipped from the real concurrent trade
+
+Without these guards a single ghost can claim a fake -$4,767 or -$4,810 loss
+and pollute every downstream statistic. Guards:
+
+  G1 HOLD_SEC_MAX    : reject hold_sec > 604800 (7 days)
+  G2 PNL_VS_PRICE    : reject abs(pnl) > entryPrice * PNL_PRICE_MAX_RATIO
+  G3 DEDUP           : collapse (entryTs, symbol, side, exitReason) duplicates,
+                       keep the record with the smallest |pnl| (the real one;
+                       ghost amplifies pnl by 100-1000x, which is the bug's
+                       fingerprint).
+  G4 MFE_ZERO_WARN   : flag (do not reject) mfe == 0.0 with abs(pnl) > 10.0
+
+A summary of rejected and flagged rows is printed before the report so no
+ghost is ever silently discarded.
 """
 
 import sys
@@ -36,8 +62,20 @@ import csv
 import math
 import argparse
 import datetime
+import warnings
 from collections import defaultdict
 from typing import List, Dict, Tuple, Optional
+
+# S17: suppress the Python 3.12+ DeprecationWarnings from datetime.utcnow()
+# and datetime.utcfromtimestamp().  Migrating every call site to timezone-aware
+# objects changes printed strings ("+00:00" suffix) and has subtle behaviour
+# differences; that's a separate refactor.  The functions still work correctly
+# on all currently-supported Python versions.
+warnings.filterwarnings(
+    "ignore",
+    message="datetime.datetime.utc.*",
+    category=DeprecationWarning,
+)
 
 
 COLUMNS = [
@@ -45,6 +83,18 @@ COLUMNS = [
     "pnl", "mfe", "mae", "hold_sec", "exitReason", "spreadAtEntry",
     "latencyMs", "regime"
 ]
+
+
+# ── S17 ghost-record guard thresholds ─────────────────────────────────────────
+#
+# These constants are the only tunable surface for the ghost filter. If the
+# legitimate engine universe ever produces a hold_sec > 7 days or a pnl
+# magnitude near the entry price, revisit here BEFORE widening the guard --
+# loosening these filters silently re-exposes the $4,767 ghost-loss bug.
+GHOST_HOLD_SEC_MAX       = 604800      # 7 days. Live XAUUSD/index trades never.
+GHOST_PNL_PRICE_RATIO    = 0.99        # abs(pnl) > entryPrice * 0.99 == ghost.
+GHOST_MFE_ZERO_PNL_WARN  = 10.0        # mfe==0 with |pnl|>10 is suspicious.
+
 
 class Trade:
     __slots__ = COLUMNS
@@ -168,6 +218,168 @@ def cpval(p):
 def cac(a):
     if not _UC: return ""
     return RD if a > 0.20 else AM if a > 0.10 else GR
+
+
+# ── S17 Ghost-record guards ───────────────────────────────────────────────────
+
+class GhostStats:
+    """Running tally of guard trips for the load-time report."""
+    __slots__ = ("raw_rows", "kept", "g1_hold", "g2_pnl_price",
+                 "g3_dedup", "g4_mfe_warn", "samples")
+    def __init__(self):
+        self.raw_rows     = 0
+        self.kept         = 0
+        self.g1_hold      = []   # list of (entryTs, symbol, hold_sec, pnl)
+        self.g2_pnl_price = []   # list of (entryTs, symbol, entryPrice, pnl)
+        self.g3_dedup     = []   # list of (entryTs, symbol, side, exitReason, pnl_kept, pnl_rejected)
+        self.g4_mfe_warn  = []   # list of (entryTs, symbol, engine, pnl)
+
+    @property
+    def rejected(self):
+        return len(self.g1_hold) + len(self.g2_pnl_price) + len(self.g3_dedup)
+
+
+def _ghost_dedup_key(t: Trade) -> Tuple[int, str, str, str]:
+    """Same-second duplicate close on same symbol+side+reason is always
+    corruption. Uses floor-to-second because the pre-mutex-fix bug produced
+    two EXIT lines in the same log millisecond."""
+    return (int(t.entryTs), t.symbol, t.side, t.exitReason)
+
+
+def apply_ghost_filters(raw: List[Trade], gs: GhostStats,
+                        enable: bool = True) -> List[Trade]:
+    """Apply S17 ghost-record guards. See module docstring for full rationale.
+
+    Returns the filtered trade list. Populates `gs` so the caller can print
+    a summary of what was rejected.
+    """
+    gs.raw_rows = len(raw)
+
+    if not enable:
+        # Audit path: keep every row but still run the MFE warning pass so the
+        # user can see what WOULD have been flagged.
+        for t in raw:
+            if t.mfe == 0.0 and abs(t.pnl) > GHOST_MFE_ZERO_PNL_WARN:
+                gs.g4_mfe_warn.append((t.entryTs, t.symbol, t.engine, t.pnl))
+        gs.kept = len(raw)
+        return list(raw)
+
+    # G1 + G2 — per-row rejection pass.
+    after_g1g2: List[Trade] = []
+    for t in raw:
+        # G1 HOLD_SEC_MAX
+        if t.hold_sec > GHOST_HOLD_SEC_MAX:
+            gs.g1_hold.append((t.entryTs, t.symbol, t.hold_sec, t.pnl))
+            continue
+        # G2 PNL_VS_PRICE — the smoking gun: pnl magnitude within 1% of the
+        # entry price means the CSV has captured the price as pnl (the
+        # streamed-cout interleaving bug).  Only applies when entryPrice > 0
+        # to avoid false positives on rows missing the field.
+        if t.entryPrice > 0.0 and abs(t.pnl) > t.entryPrice * GHOST_PNL_PRICE_RATIO:
+            gs.g2_pnl_price.append((t.entryTs, t.symbol, t.entryPrice, t.pnl))
+            continue
+        after_g1g2.append(t)
+
+    # G3 — dedup same-second (symbol, side, exitReason) collisions.  Keep the
+    # record with the smallest |pnl|; the ghost inflates pnl by 100-1000x so
+    # the real trade always has the lower magnitude.
+    groups: Dict[Tuple[int, str, str, str], List[Trade]] = defaultdict(list)
+    for t in after_g1g2:
+        groups[_ghost_dedup_key(t)].append(t)
+
+    kept: List[Trade] = []
+    for key, bucket in groups.items():
+        if len(bucket) == 1:
+            kept.append(bucket[0])
+            continue
+        # Sort ascending by |pnl|; first element is the real trade.
+        bucket_sorted = sorted(bucket, key=lambda x: abs(x.pnl))
+        real = bucket_sorted[0]
+        kept.append(real)
+        for ghost in bucket_sorted[1:]:
+            gs.g3_dedup.append(
+                (key[0], key[1], key[2], key[3], real.pnl, ghost.pnl)
+            )
+
+    # G4 — non-rejecting warn pass for MFE=0 with material loss.
+    for t in kept:
+        if t.mfe == 0.0 and abs(t.pnl) > GHOST_MFE_ZERO_PNL_WARN:
+            gs.g4_mfe_warn.append((t.entryTs, t.symbol, t.engine, t.pnl))
+
+    gs.kept = len(kept)
+    return kept
+
+
+def _fmt_ts(ts: int) -> str:
+    try:
+        return datetime.datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, OSError, OverflowError):
+        return f"ts={ts}"
+
+
+def print_ghost_report(gs: GhostStats, enable: bool) -> None:
+    """Always print a summary. Silence is dangerous — a user needs to see
+    when the guards tripped so they can cross-check against live logs."""
+    print()
+    hdr = f"  {BD}S17 GHOST-RECORD GUARDS{RS}"
+    if not enable:
+        hdr += f"  {AM}(DISABLED via --no-ghost-filter){RS}"
+    print(hdr)
+    print(f"  {'-'*80}")
+    print(f"  Rows read       : {gs.raw_rows}")
+    print(f"  Rows kept       : {gs.kept}")
+    if enable:
+        col = GR if gs.rejected == 0 else RD
+        print(f"  Rows rejected   : {col}{gs.rejected}{RS}"
+              f"   (G1_hold={len(gs.g1_hold)} "
+              f"G2_pnl_price={len(gs.g2_pnl_price)} "
+              f"G3_dedup={len(gs.g3_dedup)})")
+    print(f"  MFE=0 warnings  : {len(gs.g4_mfe_warn)}")
+
+    # Detail blocks -- only print if there were hits, cap at 10 examples each.
+    if gs.g1_hold:
+        print()
+        print(f"  {RD}G1  hold_sec > {GHOST_HOLD_SEC_MAX}s ({GHOST_HOLD_SEC_MAX//86400} days){RS}")
+        print(f"  {'TIMESTAMP (UTC)':<22} {'SYMBOL':<10} {'HOLD_SEC':>16} {'PNL':>10}")
+        for ts, sym, hold, pnl in gs.g1_hold[:10]:
+            print(f"  {_fmt_ts(ts):<22} {sym:<10} {hold:>16.0f} {pnl:>10.2f}")
+        if len(gs.g1_hold) > 10:
+            print(f"  ... and {len(gs.g1_hold)-10} more")
+
+    if gs.g2_pnl_price:
+        print()
+        print(f"  {RD}G2  |pnl| > entryPrice * {GHOST_PNL_PRICE_RATIO:.2f}  "
+              f"(ghost signature: pnl==-entryPrice){RS}")
+        print(f"  {'TIMESTAMP (UTC)':<22} {'SYMBOL':<10} {'ENTRY_PX':>10} {'PNL':>12}")
+        for ts, sym, px, pnl in gs.g2_pnl_price[:10]:
+            print(f"  {_fmt_ts(ts):<22} {sym:<10} {px:>10.2f} {pnl:>12.2f}")
+        if len(gs.g2_pnl_price) > 10:
+            print(f"  ... and {len(gs.g2_pnl_price)-10} more")
+
+    if gs.g3_dedup:
+        print()
+        print(f"  {RD}G3  same-second duplicate (entryTs, symbol, side, exitReason){RS}")
+        print(f"  {'TIMESTAMP (UTC)':<22} {'SYMBOL':<8} {'SIDE':<6} {'EXIT':<16} "
+              f"{'KEPT_PNL':>10} {'DROPPED_PNL':>13}")
+        for ts, sym, side, reason, kept_pnl, drop_pnl in gs.g3_dedup[:10]:
+            print(f"  {_fmt_ts(ts):<22} {sym:<8} {side:<6} {reason:<16} "
+                  f"{kept_pnl:>10.2f} {drop_pnl:>13.2f}")
+        if len(gs.g3_dedup) > 10:
+            print(f"  ... and {len(gs.g3_dedup)-10} more")
+
+    if gs.g4_mfe_warn:
+        print()
+        print(f"  {AM}G4  mfe==0 with |pnl| > ${GHOST_MFE_ZERO_PNL_WARN:.0f}  "
+              f"(suspicious — not rejected){RS}")
+        print(f"  {'TIMESTAMP (UTC)':<22} {'SYMBOL':<10} {'ENGINE':<20} {'PNL':>10}")
+        for ts, sym, eng, pnl in gs.g4_mfe_warn[:10]:
+            print(f"  {_fmt_ts(ts):<22} {sym:<10} {eng:<20} {pnl:>10.2f}")
+        if len(gs.g4_mfe_warn) > 10:
+            print(f"  ... and {len(gs.g4_mfe_warn)-10} more")
+
+    if gs.rejected == 0 and not gs.g4_mfe_warn:
+        print(f"  {GR}No ghost-record symptoms detected.{RS}")
+    print()
 
 
 # ── Report ────────────────────────────────────────────────────────────────────
@@ -437,7 +649,11 @@ def plot_equity(trades):
 # ── CSV loader ────────────────────────────────────────────────────────────────
 
 def load_csv(path, days_filter):
-    trades = []; cutoff = 0
+    """Load raw CSV rows into Trade objects. Ghost filtering is applied
+    separately by apply_ghost_filters() so the pre-filter row count is
+    available for the load-time report."""
+    trades: List[Trade] = []
+    cutoff = 0
     if days_filter:
         cutoff = int((datetime.datetime.utcnow()-datetime.timedelta(days=days_filter)).timestamp())
     with open(path, newline="", encoding="utf-8") as f:
@@ -472,6 +688,9 @@ def main():
     ap.add_argument("--plot",       action="store_true")
     ap.add_argument("--wfo",        action="store_true")
     ap.add_argument("--wfo-splits", type=int, default=5)
+    ap.add_argument("--no-ghost-filter", action="store_true",
+                    help="Disable S17 ghost-record guards (audit mode; "
+                         "rows still scanned but not rejected).")
     args = ap.parse_args()
 
     path = args.csv_path or find_default_csv()
@@ -479,9 +698,18 @@ def main():
         print("ERROR: shadow CSV not found."); sys.exit(1)
 
     print(f"\n  Loading: {path}")
-    trades = load_csv(path, args.days)
-    if not trades:
+    raw_trades = load_csv(path, args.days)
+    if not raw_trades:
         print("  No trades found."); sys.exit(0)
+
+    gs = GhostStats()
+    trades = apply_ghost_filters(raw_trades, gs,
+                                 enable=not args.no_ghost_filter)
+    print_ghost_report(gs, enable=not args.no_ghost_filter)
+
+    if not trades:
+        print("  No trades remaining after ghost filter."); sys.exit(0)
+
     if args.days:
         print(f"  Filter: last {args.days} days  ({len(trades)} trades)")
 
