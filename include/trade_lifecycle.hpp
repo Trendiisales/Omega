@@ -6,6 +6,7 @@
 // Session 9: GoldCoordinator wiring -- needed for mark_closed call inside
 // bracket_on_close() below. Allow-by-default skeleton; engine behaviour unchanged.
 #include "gold_coordinator.hpp"
+#include <sstream>  // S17: ostringstream for atomic SHADOW-CLOSE emission (prevents stdout interleaving)
 
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
@@ -123,17 +124,65 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             }
             omega::apply_realistic_costs(tr, cps_sh, mult);
 
-            // Preserve visibility in stdout -- same format as live close so log parsers
-            // don't break, but prefixed [SHADOW-CLOSE] for unambiguous filtering.
-            std::cout << "[SHADOW-CLOSE] " << tr.symbol
-                      << " engine=" << tr.engine
-                      << " side=" << tr.side
-                      << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
-                      << " net=$" << tr.net_pnl
-                      << " exit=" << tr.exitReason
-                      << " reason=" << (tr_in.shadow ? "engine_shadow" : "global_shadow")
-                      << " -- SKIPPING ledger/risk/perf/TOD/crowding/WFO/cooldown mutation\n";
-            std::cout.flush();
+            // S17: outcome_class classification. Single-field outcome tag so
+            // post-hoc audits can distinguish WINNER_CUT (good trade killed
+            // early) from LOSER_CUT (correct early cut) without re-deriving
+            // from reason+mfe+net. Relies on tr.mfe / tr.mae already being
+            // scaled to USD above (tr.pnl *= mult etc).
+            //
+            // Classes (priority-ordered):
+            //   STOP_HIT     : exit == SL_HIT (always; regardless of mfe)
+            //   WINNER_FULL  : net>0 AND exit in {TRAIL_SL, TP_HIT, TRAIL_HIT}
+            //   WINNER_CUT   : net>0 AND exit in {IMB_EXIT, TIMEOUT, STAGNATION,
+            //                                     ADVERSE_EARLY} AND mfe was
+            //                  meaningful (>= 0.5 USD on 0.01 lot XAUUSD)
+            //   LOSER_CUT    : net<0 AND exit in {IMB_EXIT, TIMEOUT, STAGNATION,
+            //                                     ADVERSE_EARLY}
+            //   LOSER_FULL   : net<0 AND exit in {FORCE_CLOSE, BREAKOUT_FAIL,
+            //                                     FORCE_STOP}
+            //   BE           : |net| <= small threshold
+            //   OTHER        : fallback
+            const char* outcome_class = "OTHER";
+            {
+                const std::string& rsn = tr.exitReason;
+                const bool is_sl = (rsn == "SL_HIT");
+                const bool is_full_win = (rsn == "TRAIL_SL" || rsn == "TP_HIT" ||
+                                          rsn == "TRAIL_HIT");
+                const bool is_cut = (rsn == "IMB_EXIT" || rsn == "TIMEOUT" ||
+                                     rsn == "STAGNATION" || rsn == "ADVERSE_EARLY" ||
+                                     rsn == "PARTIAL_TP");
+                const bool is_full_loss = (rsn == "FORCE_CLOSE" ||
+                                           rsn == "BREAKOUT_FAIL" ||
+                                           rsn == "FORCE_STOP");
+                const double net = tr.net_pnl;
+                const double abs_net = net < 0 ? -net : net;
+                if (is_sl)                 outcome_class = "STOP_HIT";
+                else if (abs_net < 0.20)   outcome_class = "BE";
+                else if (is_full_win && net > 0) outcome_class = "WINNER_FULL";
+                else if (is_cut      && net > 0) outcome_class = "WINNER_CUT";
+                else if (is_cut      && net < 0) outcome_class = "LOSER_CUT";
+                else if (is_full_loss)           outcome_class = "LOSER_FULL";
+            }
+
+            // S17: atomic emission via ostringstream -- prevents stdout
+            // interleaving of the same format that caused ghost-trade garbage
+            // lines on 2026-04-14/16 (pre-mutex-fix).
+            {
+                std::ostringstream os;
+                os << "[SHADOW-CLOSE] " << tr.symbol
+                   << " engine=" << tr.engine
+                   << " side=" << tr.side
+                   << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
+                   << " net=$" << tr.net_pnl
+                   << " exit=" << tr.exitReason
+                   << " outcome_class=" << outcome_class
+                   << " mfe=" << std::setprecision(3) << tr.mfe
+                   << " mae=" << std::setprecision(3) << tr.mae
+                   << " reason=" << (tr_in.shadow ? "engine_shadow" : "global_shadow")
+                   << " -- SKIPPING ledger/risk/perf/TOD/crowding/WFO/cooldown mutation\n";
+                std::cout << os.str();
+                std::cout.flush();
+            }
 
             // CSV audit trails only. write_shadow_csv writes to shadow-specific CSV;
             // write_trade_close_logs writes the universal per-trade close log which

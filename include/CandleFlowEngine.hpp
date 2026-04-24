@@ -53,6 +53,7 @@
 #include <cstring>
 #include <iostream>
 #include <iomanip>
+#include <sstream>    // S17: ostringstream for atomic multi-field log emission
 #include <mutex>      // RACE-FIX 2026-04-20: serialize close paths across on_tick invocations
 #include "OmegaTradeLedger.hpp"
 #include "OmegaFIX.hpp"          // L2Book, L2Level
@@ -174,6 +175,12 @@ static constexpr int64_t CFE_IMB_MIN_HOLD_MS   = 20000; // IMB_EXIT blocked for 
 // Validator: backtest/cfe_imb_patch_validate.py
 // Detail CSV: backtest/audit_results/cfe_imb_patch_validation.csv
 static constexpr double  CFE_IMB_EXIT_MFE_GUARD_PTS = 1.75;  // empirical optimum -- see sweep above
+
+// S17 mid-trade diagnostic: how often [CFE-HOLD] fires while a position is
+// open. Every 30s keeps log volume sane (~6-10 lines per typical CFE trade)
+// while providing enough resolution for post-hoc tick-replay simulation to
+// no longer need to approximate from the 30s-throttled [TICK] XAUUSD stream.
+static constexpr int64_t CFE_HOLD_LOG_INTERVAL_MS = 30000;
 
 // Drift fast-entry (DFE) -- pre-empts bar-close requirement
 static constexpr double  CFE_DFE_DRIFT_THRESH   = 1.5;   // |ewm_drift| >= 1.5pts to arm
@@ -705,6 +712,9 @@ struct CandleFlowEngine {
                     m_imb_against_ticks=0;
                     m_prev_depth_bid=m_dom_cur.bid_count;
                     m_prev_depth_ask=m_dom_cur.ask_count;
+                    // S17: reset mid-trade tracking state on entry
+                    m_pos_mae = 0.0;
+                    m_last_hold_log_ms = now_ms;
                     std::cout << "[CFE] DRIFT-ENTRY " << (dfe_long?"LONG":"SHORT")
                               << " @ " << std::fixed << std::setprecision(2) << entry_px
                               << " sl=" << sl_px << " drift=" << ewm_drift
@@ -713,6 +723,7 @@ struct CandleFlowEngine {
                               << " thresh=" << m_dfe_eff_thresh
                               << " persist=" << m_dfe_persist_ticks
                               << " size=" << std::setprecision(3) << size
+                              << " atr=" << std::setprecision(2) << dfe_atr
                               << (shadow_mode?" [SHADOW]":"") << "\n";
                     std::cout.flush(); return;
                 }
@@ -851,6 +862,9 @@ struct CandleFlowEngine {
                 m_prev_depth_ask=m_dom_cur.ask_count;
                 // Reset sustained tracker to avoid re-firing immediately
                 m_drift_sustained_start_ms = now_ms;
+                // S17: reset mid-trade tracking state on entry
+                m_pos_mae = 0.0;
+                m_last_hold_log_ms = now_ms;
                 std::cout << "[CFE] SUSTAINED-DRIFT-ENTRY " << (sus_long?"LONG":"SHORT")
                           << " @ " << std::fixed << std::setprecision(2) << entry_px
                           << " sl=" << sl_px << " drift=" << ewm_drift
@@ -858,6 +872,7 @@ struct CandleFlowEngine {
                           << " rsi=" << m_rsi_trend
                           << " rsi_cur=" << m_rsi_cur
                           << " size=" << std::setprecision(3) << size
+                          << " atr=" << std::setprecision(2) << sus_atr
                           << (shadow_mode?" [SHADOW]":"") << "\n";
                 std::cout.flush(); return;
             }
@@ -1237,6 +1252,14 @@ private:
     DOMSnap m_dom_cur;
     DOMSnap m_dom_prev;
 
+    // S17 mid-trade diagnostic throttle. [CFE-HOLD] emits once every
+    // CFE_HOLD_LOG_INTERVAL_MS while a position is open, giving a tick-by-tick
+    // record of the trade's internal state (unrealized pnl, mfe, mae, trail
+    // status, imb counter) so post-hoc tick-replay simulators no longer need
+    // to approximate from the 30s-throttled XAUUSD [TICK] stream.
+    int64_t m_last_hold_log_ms  = 0;
+    double  m_pos_mae           = 0.0;  // max adverse excursion this trade
+
     // RACE-FIX 2026-04-20: serialize close_pos / force_close / PARTIAL_TP emit.
     // Root cause: g_candle_flow.on_tick is called from multiple paths per XAUUSD tick
     //   (tick_gold.hpp mgmt L4075, tick_gold.hpp entry L4441, on_tick.hpp DOLLAR_STOP L960)
@@ -1452,6 +1475,9 @@ private:
         m_imb_against_ticks = 0;
         m_prev_depth_bid    = m_dom_cur.bid_count;
         m_prev_depth_ask    = m_dom_cur.ask_count;
+        // S17: reset mid-trade tracking state on entry
+        m_pos_mae           = 0.0;
+        m_last_hold_log_ms  = now_ms;
 
         std::cout << "[CFE] ENTRY " << (is_long?"LONG":"SHORT")
                   << " @ " << std::fixed << std::setprecision(2) << entry_px
@@ -1475,8 +1501,44 @@ private:
 
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
+        // S17: track MAE (max adverse excursion) for outcome classification.
+        // `move` is already signed with position direction (positive = favourable)
+        // so minimum `move` = maximum adverse. Track the minimum across the trade.
+        if (move < m_pos_mae) m_pos_mae = move;
 
         const int64_t hold_ms = now_ms - pos.entry_ts_ms;
+
+        // S17 mid-trade diagnostic: emit [CFE-HOLD] every CFE_HOLD_LOG_INTERVAL_MS
+        // while the position is open. Gives post-hoc simulators a per-30s
+        // record of unrealized pnl / mfe / mae / trail state / imb counter
+        // without needing to reconstruct from the 30s-throttled tick log.
+        // Built via std::ostringstream + single atomic cout write to prevent
+        // interleaving with other engine log lines (the interleaving bug that
+        // caused the phantom ghost-trade outputs on 2026-04-14 and 2026-04-16
+        // before the RACE-FIX mutex landed on 04-20).
+        if (now_ms - m_last_hold_log_ms >= CFE_HOLD_LOG_INTERVAL_MS) {
+            const double unrealized_pts = move;
+            const double unrealized_usd = unrealized_pts * pos.size * 100.0;
+            std::ostringstream os;
+            os << "[CFE-HOLD] " << (pos.is_long ? "LONG" : "SHORT")
+               << " entry=" << std::fixed << std::setprecision(2) << pos.entry
+               << " mid=" << mid
+               << " urz_pts=" << std::setprecision(3) << unrealized_pts
+               << " urz_usd=" << std::setprecision(2) << unrealized_usd
+               << " mfe=" << std::setprecision(3) << pos.mfe
+               << " mae=" << std::setprecision(3) << m_pos_mae
+               << " hold_s=" << (hold_ms / 1000)
+               << " trail=" << (pos.trail_active ? 1 : 0)
+               << " trail_sl=" << std::setprecision(2) << pos.trail_sl
+               << " atr=" << std::setprecision(2) << pos.atr_pts
+               << " imb_ticks=" << m_imb_against_ticks
+               << " l2_imb=" << std::setprecision(4) << dom.l2_imb
+               << (shadow_mode ? " [SHADOW]" : "")
+               << "\n";
+            std::cout << os.str();
+            std::cout.flush();
+            m_last_hold_log_ms = now_ms;
+        }
 
         // -- PARTIAL EXIT: 50% of position at MFE >= 2x cost ------------------
         // Locks in guaranteed profit on half the position. Remaining half is
@@ -1732,16 +1794,26 @@ private:
         tr.spreadAtEntry = pos.spread_at_entry;
         omega::apply_realistic_costs(tr, pos.entry, pos.size);
 
-        std::cout << "[CFE] EXIT " << (pos.is_long?"LONG":"SHORT")
-                  << " @ " << std::fixed << std::setprecision(2) << exit_px
-                  << " reason=" << reason
-                  << " pnl_raw=" << std::setprecision(4) << tr.pnl
-                  << " pnl_usd=" << std::setprecision(2) << (tr.pnl * 100.0)
-                  << " mfe=" << std::setprecision(3) << pos.mfe
-                  << " held=" << std::setprecision(0)
-                  << static_cast<double>((now_ms - pos.entry_ts_ms) / 1000) << "s"
-                  << (shadow_mode?" [SHADOW]":"") << "\n";
-        std::cout.flush();
+        // S17: atomic emission via ostringstream to prevent stdout interleaving
+        // that caused phantom "pnl_usd=-$4767 held=1776169416s" lines on
+        // 2026-04-14 and 2026-04-16 (pre-mutex-fix). Now logs entry_ts_ms
+        // explicitly so extractors no longer need to derive from held field.
+        {
+            std::ostringstream os;
+            os << "[CFE] EXIT " << (pos.is_long ? "LONG" : "SHORT")
+               << " @ " << std::fixed << std::setprecision(2) << exit_px
+               << " reason=" << reason
+               << " pnl_raw=" << std::setprecision(4) << tr.pnl
+               << " pnl_usd=" << std::setprecision(2) << (tr.pnl * 100.0)
+               << " mfe=" << std::setprecision(3) << pos.mfe
+               << " mae=" << std::setprecision(3) << m_pos_mae
+               << " held=" << ((now_ms - pos.entry_ts_ms) / 1000) << "s"
+               << " entry_ts_ms=" << pos.entry_ts_ms
+               << (shadow_mode ? " [SHADOW]" : "")
+               << "\n";
+            std::cout << os.str();
+            std::cout.flush();
+        }
 
         // Track direction for opposite-direction cooldown
         m_last_closed_dir = (tr.side == std::string("LONG")) ? +1 : -1;
