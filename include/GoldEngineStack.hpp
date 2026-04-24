@@ -4095,13 +4095,21 @@ class GoldPositionManager {
         // had already reversed up to 4697. ewm_drift was positive (bullish) but
         // we added SHORT anyway. 0.16 lot * 5.60pt adverse = -$89.60 gross.
         // Fix: block pyramid if drift opposes trade direction.
-        //   SHORT pyramid: require drift <= -0.5 (price still falling)
-        //   LONG  pyramid: require drift >=  0.5 (price still rising)
-        // Threshold 0.5pt: above normal noise (0.0-0.3) but fires on real moves.
+        //   SHORT pyramid: require drift <= -drift_thr (price still falling)
+        //   LONG  pyramid: require drift >=  drift_thr (price still rising)
+        // Threshold scales with regime noise:
+        //   TREND / IMPULSE / MEAN_REVERSION: 0.5pt (above normal noise)
+        //   COMPRESSION: 1.0pt (2026-04-24 -$18 PYRAMID loss -- COMPRESSION is
+        //     noisy ranging, needs stronger drift confirmation before pyramiding.
+        //     Both 15:14 and 15:36 SHORT pyramids stacked in COMPRESSION then
+        //     reversed 5.7pt for full-size SL.)
         // Does not apply when ewm_drift=0.0 (not yet available -- allow pyramid).
+        const double drift_thr = (regime && std::strcmp(regime, "COMPRESSION") == 0)
+            ? 1.0   // COMPRESSION: require stronger directional confirmation
+            : 0.5;  // TREND / IMPULSE / MEAN_REVERSION: original threshold
         if (ewm_drift != 0.0) {
-            if (leader.is_long  && ewm_drift < -0.5) return false;  // drift bearish, don't add LONG
-            if (!leader.is_long && ewm_drift >  0.5) return false;  // drift bullish, don't add SHORT
+            if (leader.is_long  && ewm_drift < -drift_thr) return false;  // drift bearish, don't add LONG
+            if (!leader.is_long && ewm_drift >  drift_thr) return false;  // drift bullish, don't add SHORT
         }
 
         // Dynamic cover move: pyramid fires at 35% of the base TP distance.
@@ -4168,9 +4176,45 @@ class GoldPositionManager {
         // SL = best of: $10 from fill OR base_entry - $2 floor
         leg.sl = is_long ? std::max(pyr_sl_raw, pyr_sl_lock)
                          : std::min(pyr_sl_raw, pyr_sl_lock);
+        // 2026-04-24 PYRAMID SL CAP:
+        // When pyramid fills far in profit from base entry, the base_entry +/- $2
+        // floor produces a pyramid SL that is wider than intended. Example from
+        // 15:36:29 SHORT pyramid:
+        //   base_entry = 4721.18, pyramid fill = 4717.47
+        //   pyr_sl_lock = 4721.18 + 2.00 = 4723.18 (5.71pt from pyramid entry)
+        //   pyr_sl_raw  = 4717.47 + 10.00 = 4727.47 (10pt from pyramid entry)
+        //   min(4727.47, 4723.18) = 4723.18 -- pyramid SL at 5.71pt from fill
+        // Price reversed 5.71pt, pyramid took full-size SL for -$11.98.
+        // Cap pyramid SL distance from fill at half the base TP distance (or
+        // PYR_SL_TICKS, whichever is smaller) so pyramid risk is bounded.
+        // For the 15:36 case: base_tp_dist=10.00, cap=5.00 -> pyramid SL at
+        // fill_px +/- 5.00 = 4722.47, limiting loss to $5.00/leg instead of $5.71.
+        {
+            const double base_tp_dist = std::fabs(legs_.front().tp - legs_.front().entry);
+            const double pyr_sl_cap_dist = std::min(
+                static_cast<double>(PYR_SL_TICKS) * TICK_SIZE,  // $10 hard ceiling
+                std::max(2.0, base_tp_dist * 0.5)               // 50% of base TP, floor $2
+            );
+            const double pyr_sl_capped = is_long
+                ? fill_px - pyr_sl_cap_dist
+                : fill_px + pyr_sl_cap_dist;
+            // Tighten SL: for LONG, take MAX of (current sl, capped sl) -- the tighter stop;
+            // for SHORT, take MIN -- the tighter stop. Never loosen an already-locked SL.
+            leg.sl = is_long ? std::max(leg.sl, pyr_sl_capped)
+                             : std::min(leg.sl, pyr_sl_capped);
+        }
         leg.mfe      = 0;
         leg.mae      = 0;
-        leg.size     = base_size;  // match base leg size -- not CONTRACT_SIZE=1.0
+        // 2026-04-24 PYRAMID SIZE DECAY:
+        // Was: leg.size = base_size (pyramid matches base lot).
+        // On COMPRESSION reversal (15:14, 15:36), pyramid hit SL at full base
+        // size for -$6.04 and -$11.98 respectively. Halving pyramid size caps
+        // per-leg pyramid risk and aligns with the CrossAssetEngines
+        // PYRAMID_SIZE_MULT = 0.5 convention already used elsewhere.
+        // Winning pyramid runs give up half their add-on upside but survive
+        // reversals at half the cost -- expected value improves on COMPRESSION
+        // regime where reversal probability is elevated.
+        leg.size     = std::max(0.01, base_size * 0.5);  // 50% of base, MIN_LOT floor
         leg.spread_at_entry = spread;
         leg.entry_ts = nowSec();
         strncpy(leg.engine, "PYRAMID", 31);
