@@ -192,6 +192,7 @@ static void on_tick_gold(
     // Dollar-native VWAP deviation -- passed to GoldFlow trend bias filter.
     // Positive = price above VWAP, negative = price below VWAP, in raw gold points.
     const double gold_vwap_pts = (gold_vwap_now > 0.0) ? (gold_mid_now - gold_vwap_now) : 0.0;
+    (void)gold_vwap_pts;  // GFE-culled consumer (GoldFlow trend bias filter)
     const bool gold_is_compressing  = (strcmp(gold_stack_regime,"COMPRESSION")==0);
 
     // -- PDH/PDL daily range tracker -------------------------------------------
@@ -223,6 +224,7 @@ static void on_tick_gold(
         (g_macro_ctx.pdh > 0.0 && g_macro_ctx.pdl > 0.0)
         ? (gold_mid_now <= g_macro_ctx.pdh + 2.0 && gold_mid_now >= g_macro_ctx.pdl - 2.0)
         : true;
+    (void)gold_inside_daily_range;  // GFE-culled consumer
 
     // REAL vol measurements from GoldEngineStack (tick-by-tick, no hardcoding)
     const double gold_recent_vol    = g_gold_stack.recent_vol_pct();  // 80-tick range/mid
@@ -281,6 +283,7 @@ static void on_tick_gold(
 
         // ?? Confidence threshold ??????????????????????????????????????????
         const bool conf_ok = (gold_sdec.confidence >= 0.45);
+        (void)conf_ok;  // GFE-culled consumer (was used in stack_can_enter gate)
 
         // ?? Bar indicator context for GoldStack ???????????????????????????
         // FIX 2026-04-02: replaced M5 swing trend_state with M1 EMA9/EMA50 crossover.
@@ -325,6 +328,7 @@ static void on_tick_gold(
         const bool in_ranging_regime =
             (gold_sdec.regime == omega::Regime::QUIET_COMPRESSION) ||
             (gold_sdec.regime == omega::Regime::CHOP_REVERSAL);
+        (void)in_ranging_regime;  // GFE-culled consumer (was used in stack_can_enter_mr)
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
         // Trend-day re-entry: allow CompBreakout specifically when GoldFlow
@@ -859,6 +863,7 @@ static void on_tick_gold(
             const double l2_avol_unc  = static_cast<double>(l2_ask_lvls);
             const double vol_ratio_log = (g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
+            (void)l2_bvol_unc; (void)l2_avol_unc; (void)vol_ratio_log;  // GFE-culled CSV consumers
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
             fflush(s_l2f_unc);
 
