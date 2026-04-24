@@ -397,9 +397,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             if (!eq.engine_culled) {
                 if (++eq.engine_consec_sl >= 4) {
                     eq.engine_culled = true;
-                    // Mirror to cross-thread atomic so quote thread gate can read it safely
-                    if (eng_key == "XAUUSD:GoldFlowEngine")
-                        g_gf_engine_culled.store(true, std::memory_order_relaxed);
+                    // (GoldFlow cross-thread atomic mirror removed S19 Stage 1B)
                     std::cout << "\033[1;31m[ENGINE-CULLED] " << eng_key
                               << " -- 4 consecutive SL hits. Disabled until midnight.\033[0m\n";
                     std::cout.flush();
@@ -476,8 +474,7 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
         const double eq = std::max(updated_equity, 100.0);
         g_live_equity.store(eq, std::memory_order_relaxed);
-        g_gold_flow.risk_dollars        = eq * (g_cfg.risk_per_trade_usd / std::max(g_cfg.account_equity, 100.0));
-        g_gold_flow_reload.risk_dollars = g_gold_flow.risk_dollars;  // keep reload instance in sync -- was missing, causing undersized reload trades
+        // (GoldFlow risk_dollars sync removed S19 Stage 1B — engine culled)
     }
     if (g_cfg.mode == "LIVE") {
         const double updated_equity = g_cfg.account_equity + g_omegaLedger.cumulativePnl();
@@ -653,18 +650,7 @@ static double open_unrealised_pnl() {
     total += ca_pnl(g_ca_carry_unwind.has_open_position(),
                     g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
 
-    // Gold flow
-    if (g_gold_flow.pos.active) {
-        std::lock_guard<std::mutex> lk(g_book_mtx);
-        auto bi = g_bids.find("XAUUSD"); auto ai = g_asks.find("XAUUSD");
-        if (bi != g_bids.end() && ai != g_asks.end()) {
-            const double mid = (bi->second + ai->second) * 0.5;
-            const double move = g_gold_flow.pos.is_long
-                ? (mid - g_gold_flow.pos.entry)
-                : (g_gold_flow.pos.entry - mid);
-            total += move * g_gold_flow.pos.size * 100.0;  // XAUUSD tick mult
-        }
-    }
+    // (GoldFlow unrealised PnL contribution removed S19 Stage 1B — engine culled)
     return total;
 }
 
@@ -831,8 +817,7 @@ static bool symbol_gate(
             static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position()) +
             static_cast<int>(g_le_stack.has_open_position()) +
-            static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
-            static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
+            // (GoldFlow + reload count removed S19 Stage 1B)
             static_cast<int>(g_nbm_sp.has_open_position()) +
             static_cast<int>(g_nbm_nq.has_open_position()) +
             static_cast<int>(g_nbm_nas.has_open_position()) +
@@ -1064,8 +1049,7 @@ static bool symbol_gate(
         static_cast<int>(g_eng_brent.pos.active) +
         static_cast<int>(g_gold_stack.has_open_position()) +
         static_cast<int>(g_le_stack.has_open_position()) +
-        static_cast<int>(g_gold_flow.has_open_position()) +        // gold flow
-        static_cast<int>(g_gold_flow_reload.has_open_position()) + // reload instance
+        // (GoldFlow + reload count removed S19 Stage 1B)
         static_cast<int>(g_nbm_sp.has_open_position()) +
         static_cast<int>(g_nbm_nq.has_open_position()) +
         static_cast<int>(g_nbm_nas.has_open_position()) +
@@ -1402,8 +1386,7 @@ static double enter_directional(
         add_if("NZDUSD",   g_eng_nzdusd.pos.active);
         add_if("GER40",    g_eng_ger30.pos.active);
         add_if("UK100",    g_eng_uk100.pos.active);
-        add_if("XAUUSD",   g_gold_flow.has_open_position()
-                         || g_gold_stack.has_open_position()
+        add_if("XAUUSD",   g_gold_stack.has_open_position()
                          || g_trend_pb_gold.has_open_position());
         if (!g_corr_matrix.entry_allowed(std::string(esym), open_syms))
             return 0.0;
@@ -1620,8 +1603,7 @@ static double enter_directional(
         cov_add("NZDUSD",   g_eng_nzdusd.pos.active, g_eng_nzdusd.pos.is_long);
         cov_add("GER40",    g_eng_ger30.pos.active,  g_eng_ger30.pos.is_long);
         cov_add("UK100",    g_eng_uk100.pos.active,  g_eng_uk100.pos.is_long);
-        cov_add("XAUUSD",   g_gold_flow.has_open_position()
-                          || g_gold_stack.has_open_position()
+        cov_add("XAUUSD",   g_gold_stack.has_open_position()
                           || g_trend_pb_gold.has_open_position(),
                             is_long);  // direction of this entry
         const double cov_mult = g_corr_matrix.covariance_sizing_mult(std::string(esym), cov_open);

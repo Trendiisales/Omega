@@ -139,12 +139,8 @@ static void quote_loop() {
                 if (g_tee_buf) g_tee_buf->force_rotate_check();  // ensure daily log rolls at UTC midnight even if stdout is quiet
 
                 // Save ATR state every 60s so restarts always have a fresh, valid value
-                g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr.dat");
+                // (GoldFlow save_atr_state calls removed S19 Stage 1B — engine culled)
                 g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
-                // Belt-and-suspenders: write backup ATR every 60s
-                // If primary gold_flow_atr.dat gets corrupted on a hard crash (process killed
-                // mid-write), gold_flow_atr_backup.dat has the value from ~60s earlier.
-                g_gold_flow.save_atr_state(log_root_dir() + "/gold_flow_atr_backup.dat");
                 g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
                 g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
                 g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
@@ -199,28 +195,7 @@ static void quote_loop() {
                 // Critical for monitoring trail movement and diagnosing missed exits.
                 {
                     bool any_open = false;
-                    // GoldFlow base
-                    if (g_gold_flow.has_open_position()) {
-                        const auto& p = g_gold_flow.pos;
-                        printf("[OPEN-POS] GoldFlow %s entry=%.2f sl=%.2f mfe=%.2f atr=%.2f be=%d stage=%d\n",
-                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe,
-                               p.atr_at_entry, (int)p.be_locked, (int)p.trail_stage);
-                        any_open = true;
-                    }
-                    // GoldFlow reload
-                    if (g_gold_flow_reload.has_open_position()) {
-                        const auto& p = g_gold_flow_reload.pos;
-                        printf("[OPEN-POS] GoldFlow-Reload %s entry=%.2f sl=%.2f mfe=%.2f stage=%d\n",
-                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe, (int)p.trail_stage);
-                        any_open = true;
-                    }
-                    // GoldFlow addon
-                    if (g_gold_flow_addon.has_open_position()) {
-                        const auto& p = g_gold_flow_addon.pos;
-                        printf("[OPEN-POS] GoldFlow-Addon %s entry=%.2f sl=%.2f mfe=%.2f stage=%d\n",
-                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe, (int)p.trail_stage);
-                        any_open = true;
-                    }
+                    // (GoldFlow base/reload/addon open-pos logging removed S19 Stage 1B)
                     // HybridBracketGold
                     if (g_hybrid_gold.has_open_position()) {
                         const auto& p = g_hybrid_gold.pos;
@@ -363,23 +338,14 @@ static void quote_loop() {
                     //            instead of 5.00 floor — "degraded" not "blind"
                     // Alert:     GUI "GOLD BARS Xs"
                     if (!gold_seeded && uptime > 150) {
-                        printf("[SYSTEM-ALERT] GOLD_BARS_UNSEEDED %llds -- GoldFlow degraded (no RSI/EMA gates)\n",
+                        printf("[SYSTEM-ALERT] GOLD_BARS_UNSEEDED %llds -- XAUUSD engines degraded (no RSI/EMA gates)\n",
                                (long long)uptime);
                         fflush(stdout);
                         if (alert_msg.empty())
                             alert_msg = "GOLD BARS " + std::to_string(uptime) + "s";
                         any_critical = true;
 
-                        // ATR snap fallback: derive ATR from live vol_range instead of 5.00 floor
-                        const double snap_vol = g_gold_stack.vol_range();
-                        if (snap_vol > 1.5 && g_gold_flow.current_atr() <= 5.0) {
-                            // vol_range = high-low of last 50 ticks ~ 1.5x ATR empirically
-                            const double snapped_atr = snap_vol / 1.5;
-                            g_gold_flow.set_atr_override(snapped_atr);
-                            printf("[SYSTEM-ALERT] BARS_ATR_SNAP vol_range=%.2f -> atr_override=%.2f\n",
-                                   snap_vol, snapped_atr);
-                            fflush(stdout);
-                        }
+                        // (ATR snap fallback for GoldFlow removed S19 Stage 1B — engine culled)
                     }
 
                     // ---- [3] Bar state corrupt on disk --------------------------
@@ -427,10 +393,7 @@ static void quote_loop() {
                         }
                     }
 
-                    // ---- [6] GoldFlow block reason on GUI -----------------------
-                    // Detection: no [GOLD-FLOW] ENTRY for 45+ min during session
-                    // Fallback:  none — gates are working as designed
-                    // Alert:     GUI shows last gf_block_reason not just "NO TRADES"
+                    // ---- [6] (GoldFlow block-reason GUI removed S19 Stage 1B — engine culled) ----
                     if (sess_active) {
                         if (trade_count == s_last_trade_count) {
                             if (s_no_trade_since == 0) s_no_trade_since = now_s;
@@ -439,12 +402,8 @@ static void quote_loop() {
                                 printf("[SYSTEM-ALERT] NO_TRADES session active %lldmin -- check gates\n",
                                        (long long)idle_mins);
                                 fflush(stdout);
-                                // Show last GF block reason on GUI rather than generic message
-                                const std::string last_block = g_last_gf_block_reason.load()
-                                    ? std::string(g_last_gf_block_reason.load()) : "UNKNOWN";
                                 if (alert_msg.empty())
-                                    alert_msg = "NO TRADES " + std::to_string(idle_mins)
-                                                + "min [" + last_block + "]";
+                                    alert_msg = "NO TRADES " + std::to_string(idle_mins) + "min";
                             }
                         } else {
                             s_no_trade_since   = 0;
@@ -630,8 +589,6 @@ static void quote_loop() {
                 auto bi=g_bids.find("XAUUSD"); if(bi!=g_bids.end()) xb_rc=bi->second;
                 auto ai=g_asks.find("XAUUSD"); if(ai!=g_asks.end()) xa_rc=ai->second;
             }
-            const int64_t fc_ms_rc = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
             // Helper: get price from snapshot map, fallback to entry price
             auto stale_px = [&](const char* sym, double& b, double& a) {
                 const auto bi = px_snap_bid.find(sym); b = (bi != px_snap_bid.end()) ? bi->second : 0.0;
@@ -674,13 +631,7 @@ static void quote_loop() {
                 if (g_trend_pb_gold.has_open_position() && is_stale(g_trend_pb_gold.open_entry_ts()))
                     { g_trend_pb_gold.force_close(xb_rc, xa_rc, stale_cb);
                       std::cout << "[STALE-CLOSE] Purged prior-day TrendPullback-Gold\n"; }
-                if (g_gold_flow.has_open_position() && is_stale(g_gold_flow.pos.entry_ts))
-                    { g_gold_flow.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
-                      std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow\n"; }
-                if (g_gold_flow_reload.has_open_position() && is_stale(g_gold_flow_reload.pos.entry_ts))
-                    { g_gold_flow_reload.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
-                    g_gold_flow_addon.force_close(xb_rc, xa_rc, fc_ms_rc, stale_cb);
-                      std::cout << "[STALE-CLOSE] Purged prior-day GoldFlow-Reload\n"; }
+                // (GoldFlow stale-close blocks removed S19 Stage 1B — engine culled)
                 if (g_gold_stack.has_open_position() && is_stale(g_gold_stack.live_entry_ts()))
                     { g_gold_stack.force_close(xb_rc, xa_rc, g_rtt_last, stale_cb);
                       std::cout << "[STALE-CLOSE] Purged prior-day GoldStack\n"; }
@@ -857,12 +808,9 @@ static void quote_loop() {
         // Gold stack, flow, latency
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
-          const int64_t now_ms_sd = std::chrono::duration_cast<std::chrono::milliseconds>(
-              std::chrono::system_clock::now().time_since_epoch()).count();
           g_gold_stack.force_close(b,a,g_rtt_last,shutdown_cb);
-          g_gold_flow.force_close(b,a,now_ms_sd,shutdown_cb);
-          g_gold_flow_reload.force_close(b,a,now_ms_sd,shutdown_cb);
-          g_gold_flow_addon.force_close(b,a,now_ms_sd,shutdown_cb); }
+          // (GoldFlow shutdown force_close removed S19 Stage 1B — engine culled)
+        }
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
           // Silver slot in le_stack signature: use gold-ratio proxy pending Tier-3 cleanup
@@ -962,14 +910,11 @@ static void quote_loop() {
             sbk(g_bracket_audusd,"AUDUSD"); sbk(g_bracket_nzdusd,"NZDUSD");
             sbk(g_bracket_usdjpy,"USDJPY");
 
-            // Gold stack + flow + latency
+            // Gold stack + latency
             { double b,a; get_px("XAUUSD",b,a);
-              const int64_t now_ms_scb = std::chrono::duration_cast<std::chrono::milliseconds>(
-                  std::chrono::system_clock::now().time_since_epoch()).count();
               g_gold_stack.force_close(b,a,g_rtt_last,scb);
-              g_gold_flow.force_close(b,a,now_ms_scb,scb);
-              g_gold_flow_reload.force_close(b,a,now_ms_scb,scb);
-              g_gold_flow_addon.force_close(b,a,now_ms_scb,scb); }
+              // (GoldFlow shutdown force_close removed S19 Stage 1B — engine culled)
+            }
             { double b,a; get_px("XAUUSD",b,a);
               // Silver slot in le_stack signature: gold-ratio proxy pending Tier-3 cleanup
               const double sb = b*0.0185, sa = a*0.0185;
@@ -1181,12 +1126,7 @@ static void quote_loop() {
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     };
                 g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);
-                // Force-close GoldFlowEngine
-                {
-                    const int64_t fc_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch()).count();
-                    g_gold_flow.force_close(g_bid, g_ask, fc_now_ms, gold_fc_cb);
-                }
+                // (GoldFlowEngine force_close removed S19 Stage 1B — engine culled)
                 // Force-close latency edge engines
                 omega::latency::LatencyEdgeStack::CloseCb le_cb =
                     [](const omega::TradeRecord& tr) {

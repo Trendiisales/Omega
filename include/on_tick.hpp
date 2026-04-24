@@ -120,10 +120,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "USDJPY")  g_eng_usdjpy.seed(mid);
         else if (sym == "BRENT")   g_eng_brent.seed(mid);
         else if (sym == "XAUUSD") {
-            // Pass VIX level so seed ATR scales to actual volatility regime.
-            // VIX 27 day ? seed_atr=18pts ? SL=18pts -- survives real moves.
-            // VIX 15 day ? seed_atr=5pts  ? SL=5pts  -- appropriate for quiet tape.
-            g_gold_flow.seed(mid, g_macro_ctx.vix);
+            // (GoldFlow seed removed S19 Stage 1B — engine culled)
         }
     }
 
@@ -223,8 +220,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         + static_cast<int>(g_nbm_oil_london.has_open_position()); // was incorrectly in us_eq
         const int metals = static_cast<int>(g_gold_stack.has_open_position())
                          + static_cast<int>(g_bracket_gold.pos.active)
-                         + static_cast<int>(g_gold_flow.has_open_position())
-                         + static_cast<int>(g_gold_flow_reload.has_open_position())
                          + static_cast<int>(g_nbm_gold_london.has_open_position()); // was incorrectly in us_eq
         const int jpy   = static_cast<int>(g_eng_usdjpy.pos.active)
                         + static_cast<int>(g_eng_audusd.pos.active)
@@ -427,7 +422,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // Prevents cold-start on crash/kill: indicators saved to .dat every 10min
     // so a restart within 12h loads them instantly (m1_ready=true immediately).
     // Previously only saved at midnight + shutdown -- a crash between saves
-    // meant cold start, m1_ready=false, GoldFlow blocked for 15min+ every restart.
+    // meant cold start, m1_ready=false, XAUUSD engines blocked for 15min+ every restart.
     {
         static int64_t s_last_bar_save = 0;
         const int64_t now_bs = nowSec();
@@ -665,30 +660,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_telemetry.ClearLiveTrades();
             // Per-trade live P&L -- push_live_trade(sym, eng, is_long, entry, tp, sl, size, ts)
             // ?? Gold engines ????????????????????????????????????????????????
-            if (g_gold_flow.pos.active) {
-                // TP for GoldFlow = next stage trigger price (there is no fixed TP --
-                // the engine trails. The next stage price is the meaningful target).
-                // Stage triggers: 1x/2x/8x/15x ATR profit from entry.
-                static constexpr double GF_STAGE_MULTS[] = {
-                    GFE_BE_ATR_MULT,     // stage 0 ? 1: 1x ATR
-                    GFE_STAGE2_ATR_MULT, // stage 1 ? 2: 2x ATR
-                    GFE_STAGE3_ATR_MULT, // stage 2 ? 3: 8x ATR
-                    GFE_STAGE4_ATR_MULT, // stage 3 ? 4: 15x ATR
-                };
-                const int   cur_stage = g_gold_flow.pos.trail_stage;
-                const double atr_e    = g_gold_flow.pos.atr_at_entry;
-                double gf_tp = 0.0;
-                if (atr_e > 0.0 && cur_stage < 4) {
-                    const double next_mult = GF_STAGE_MULTS[cur_stage];
-                    gf_tp = g_gold_flow.pos.is_long
-                        ? g_gold_flow.pos.entry + atr_e * next_mult
-                        : g_gold_flow.pos.entry - atr_e * next_mult;
-                }
-                push_live_trade("XAUUSD", "GoldFlow",
-                    g_gold_flow.pos.is_long, g_gold_flow.pos.entry,
-                    gf_tp, g_gold_flow.pos.sl,
-                    g_gold_flow.pos.size, g_gold_flow.pos.entry_ts);
-            }
+            // (GoldFlow push_live_trade block removed S19 Stage 1B — engine culled)
             if (g_gold_stack.has_open_position())
                 push_live_trade("XAUUSD", g_gold_stack.live_engine(),
                     g_gold_stack.live_is_long(), g_gold_stack.live_entry(),
@@ -894,72 +866,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     return pts * size * 100.0;
                 };
 
-                // GoldFlow
-                // DOLLAR-STOP-SHADOW-FIX 2026-04-21:
-                //   (1) Skip entirely when in SHADOW mode -- portfolio-level dollar
-                //       stop is a live-broker protection; simulated shadow positions
-                //       have no real order to defend, so the engine's own SL must be
-                //       allowed to fire. Previously shadow trades were being killed
-                //       at synthetic unr values, polluting the ledger as fake losses.
-                //   (2) Add SL-breach guard (matches CFE pattern): only fire if the
-                //       engine's own SL has been breached OR loss exceeds 2x limit
-                //       (true catastrophic runaway / gap scenario).
-                if (g_gold_flow.pos.active) {
-                    const double unr = xau_unr(g_gold_flow.pos.is_long,
-                                               g_gold_flow.pos.entry,
-                                               g_gold_flow.pos.size);
-                    const bool gf_is_shadow = (g_cfg.mode != "LIVE");
-                    const double gf_sl      = g_gold_flow.pos.sl;
-                    const bool gf_sl_breached = (gf_sl > 0.0) && (g_gold_flow.pos.is_long
-                        ? (s_xau_bid <= gf_sl)
-                        : (s_xau_ask >= gf_sl));
-                    const bool gf_dollar_stop_ok = gf_sl_breached
-                        || (unr < -(ds_lim * 2.0));
+                // (GoldFlow dollar-stop enforcement block removed S19 Stage 1B — engine culled)
 
-                    if (gf_is_shadow) {
-                        // SHADOW: never force_close from dollar stop -- let engine SL handle.
-                        // Log-only so we can see which shadow trades WOULD have been killed live.
-                        if (unr < -ds_lim) {
-                            static int64_t s_gf_shadow_log = 0;
-                            if (ds_now - s_gf_shadow_log >= 10) {
-                                s_gf_shadow_log = ds_now;
-                                char _msg[512];
-                                snprintf(_msg, sizeof(_msg),
-                                    "[DOLLAR-STOP-SHADOW] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- SKIPPING (shadow mode)\n",
-                                    g_gold_flow.pos.is_long?"LONG":"SHORT",
-                                    g_gold_flow.pos.entry, unr, ds_lim,
-                                    gf_sl, (int)gf_sl_breached);
-                                std::cout << _msg;
-                                std::cout.flush();
-                            }
-                        }
-                    } else if (unr < -ds_lim && gf_dollar_stop_ok) {
-                        {
-                            char _msg[512];
-                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] GoldFlow %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_gold_flow.pos.is_long?"LONG":"SHORT",                                g_gold_flow.pos.entry, unr, ds_lim,                                gf_sl, (int)gf_sl_breached);
-                            std::cout << _msg;
-                            std::cout.flush();
-                        }
-                        g_gold_flow.force_close(s_xau_bid, s_xau_ask, ds_now,
-                            [&](const omega::TradeRecord& tr) {
-                                handle_closed_trade(tr);
-                                send_live_order("XAUUSD", tr.side=="SHORT", tr.size, tr.exitPrice);
-                            });
-                    } else if (unr < -ds_lim) {
-                        // LIVE, dollar stop wanted to fire but SL not yet breached -- log only
-                        static int64_t s_gf_skip_log = 0;
-                        if (ds_now - s_gf_skip_log >= 10) {
-                            s_gf_skip_log = ds_now;
-                            char _msg[512];
-                            snprintf(_msg, sizeof(_msg),
-                                "[DOLLAR-STOP-SKIP] GoldFlow %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached -- letting SL handle\n",
-                                g_gold_flow.pos.is_long?"LONG":"SHORT",
-                                unr, ds_lim, gf_sl);
-                            std::cout << _msg;
-                            std::cout.flush();
-                        }
-                    }
-                }
                 // CandleFlow
                 // DOLLAR-STOP for CFE: only fire if price has already passed the
                 // engine's own SL level. This prevents the dollar stop firing BEFORE
@@ -1896,10 +1804,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // When TP1 is hit: sends a market close for the first half and moves SL to BE.
     // When TP2/trailing SL is hit: sends final close for the remainder.
     // Applies in all modes -- shadow simulates the close without sending a real order.
-    // XAUUSD + GFE open: GoldFlowEngine manages its own partial internally via
-    // manage_position() ? PARTIAL_1R callback. Skip here to prevent duplicate orders.
-    const bool gfe_owns_partial = (sym == "XAUUSD" && g_gold_flow.has_open_position());
-    if (g_partial_exit.active(sym) && !gfe_owns_partial) {
+    // (GoldFlow partial-ownership check removed S19 Stage 1B — engine culled)
+    if (g_partial_exit.active(sym)) {
         double pe_price = 0.0, pe_lot = 0.0;
         using PE = omega::partial::CloseAction;
         const PE act = g_partial_exit.tick(sym, mid, bid, ask, pe_price, pe_lot);
