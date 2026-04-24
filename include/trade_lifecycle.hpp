@@ -184,10 +184,15 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                 std::cout.flush();
             }
 
-            // CSV audit trails only. write_shadow_csv writes to shadow-specific CSV;
-            // write_trade_close_logs writes the universal per-trade close log which
-            // forensic tools read for post-mortems.
-            if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);
+            // Universal CSV audit trail only. omega_trade_closes.csv records every
+            // trade — shadow or live — since the whole system is run as a
+            // simulate-as-if-live harness. When the system is flipped to LIVE mode
+            // (g_cfg.mode == "LIVE"), the same pipeline writes the same CSV; the
+            // only difference is that send_live_order fires real broker orders
+            // instead of being skipped. S14 2026-04-24: removed the separate
+            // write_shadow_csv call — dual-writing was confusing and produced no
+            // analytical value. Legacy omega_shadow.csv and omega_shadow_trades_*.csv
+            // files on disk are left in place for historical reference.
             write_trade_close_logs(tr);
 
             return;
@@ -295,8 +300,10 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     g_omegaLedger.record(tr);
     // Accumulate per-engine session P&L for GUI live attribution panel
     g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
-    // Shadow CSV only written in SHADOW mode -- prevents LIVE trades contaminating shadow analysis
-    if (g_cfg.mode == "SHADOW") write_shadow_csv(tr);
+    // S14 2026-04-24: removed write_shadow_csv — system uses single universal
+    // trade journal (omega_trade_closes.csv) regardless of shadow/live mode.
+    // In SHADOW mode the early-return at line ~113 handles the trade before
+    // reaching this point, so this branch only runs when g_cfg.mode == "LIVE".
     write_trade_close_logs(tr);
 
     // ?? Crowding guard -- update directional window on every close (RenTec #4) ????????
