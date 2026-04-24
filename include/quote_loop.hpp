@@ -1094,9 +1094,9 @@ static void quote_loop() {
         }
         // Force-close GoldEngineStack
         {
-            double g_bid = 0.0, g_ask = 0.0, s_bid = 0.0, s_ask = 0.0;
-            // s_bid/s_ask retained at 0.0 -- gold-ratio fallback at le_stack call handles it.
-            // Locals kept for signature compatibility; removed fully in Tier-3 cleanup.
+            double g_bid = 0.0, g_ask = 0.0;
+            // (s_bid/s_ask removed S14 — were retained for le_stack signature,
+            //  no longer needed after LEStack cull in S13 Finding B 228c80fb.)
             { std::lock_guard<std::mutex> lk(g_book_mtx);
               const auto bi = g_bids.find("XAUUSD"); if (bi != g_bids.end()) g_bid = bi->second;
               const auto ai = g_asks.find("XAUUSD"); if (ai != g_asks.end()) g_ask = ai->second; }
