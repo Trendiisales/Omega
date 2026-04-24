@@ -82,92 +82,26 @@ static void on_tick_gold(
     const char* gold_stack_regime   = g_gold_stack.regime_name();
     {
         static bool    s_was_impulse     = false;
-        static int64_t s_impulse_since   = 0;   // when IMPULSE started
-        static int     s_impulse_ticks   = 0;   // consecutive IMPULSE ticks
-        const bool is_impulse_now = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
-        const int64_t now_pi = static_cast<int64_t>(std::time(nullptr));
-        if (is_impulse_now) {
-            if (!s_was_impulse) { s_impulse_since = now_pi; s_impulse_ticks = 0; }
-            ++s_impulse_ticks;
-        } else {
-            s_impulse_ticks = 0;
-        }
-        if (s_was_impulse && !is_impulse_now) {
-            // Only block if IMPULSE lasted >= 8 ticks -- raised from 3.
-            // At ~1 tick/sec, 3 ticks = 3s which fires on every micro-impulse flicker.
-            // 8 ticks = ~8s = a genuine sustained impulse move.
-            // Log showed 422 impulse_block=1 events today blocking all bracket entries.
-            // Cooldown reduced 45s -> 20s: shorter re-arm window after real impulses.
-            if (s_impulse_ticks >= 8) {
-                g_gold_post_impulse_until.store(now_pi + 20);
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[POST-IMPULSE] Regime left IMPULSE after %d ticks -- blocking 20s\n",                        s_impulse_ticks);
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            } else {
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[POST-IMPULSE] Regime flicker (%d ticks) -- no block\n",                        s_impulse_ticks);
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            }
-        }
-        s_was_impulse = is_impulse_now;
-        // Expose impulse stability for GoldFlow gate below
-        // IMPULSE is only "confirmed" after 3+ consecutive ticks (~3s).
-        // One-tick IMPULSE ghosts (regime flips back next tick) caused false
-        // entries -- e.g. LONG into a downtrend when a micro-uptick triggered
-        // IMPULSE for a single tick before supervisor corrected to COMPRESSION.
-        (void)s_impulse_since;
-        // Store tick count in a global so GoldFlow gate can check it
-        g_gold_impulse_ticks.store(s_impulse_ticks);
+        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
+        // Impulse-tracking was a GFE-driven gate. With GFE culled the
+        // post-impulse block is permanently off; GoldStack + supervisor
+        // handle regime transitions directly.
+        (void)s_was_impulse;
     }
-    const bool gold_post_impulse_block = (g_gold_post_impulse_until.load() >
-        static_cast<int64_t>(std::time(nullptr)));
+    // Post-impulse block: GFE-culled, permanently off.
+    const bool gold_post_impulse_block = false;
 
     // ?? Reversal window check ?????????????????????????????????????????????
-    // Active when GoldFlow was SL_HIT and drift has now reversed direction.
+    // Was active when GoldFlow SL_HIT + drift reversed. GFE-culled: disabled.
     const int64_t now_s_gate = static_cast<int64_t>(std::time(nullptr));
-    const bool in_reversal_window = (g_gold_reversal_window_until.load() > now_s_gate);
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-    // Block reversal window if gold is in IMPULSE regime -- a SL in IMPULSE often
-    // means the move is still going, not reversing. Counter-entries here cause big losses
-    // (11:26 SHORT -$98 fired into 4539->4577 LONG impulse after 11:22 BE_HIT).
-    const bool impulse_blocks_reversal = (std::strcmp(gold_stack_regime, "IMPULSE") == 0);
-    // Reversal confirmed: drift now points OPPOSITE to the failed flow direction
-    const bool drift_reversed = in_reversal_window && !impulse_blocks_reversal && (
-        (flow_exit_dir ==  1 && gold_ewm_drift_now < -2.0)  // was long, now bearish drift
-     || (flow_exit_dir == -1 && gold_ewm_drift_now >  2.0)  // was short, now bullish drift
-    );
-    if (drift_reversed) {
-        // Tell GoldStack to bypass its SL cooldown this tick
-        g_gold_stack.clear_sl_cooldown();
-        static int64_t s_rev_log = 0;
-        if (now_s_gate - s_rev_log > 10) {
-            s_rev_log = now_s_gate;
-            {
-                char _msg[512];
-                snprintf(_msg, sizeof(_msg), "[GOLD-REVERSAL] Drift reversed -- GoldStack cooldown cleared for counter-entry\n");
-                std::cout << _msg;
-                std::cout.flush();
-            }
-        }
-    }
+    (void)now_s_gate;
+    const bool drift_reversed = false;
+    (void)drift_reversed;
 
-    // ?? Trend-day re-entry: allow CompBreakout after GoldFlow trail exit ??
-    // If GoldFlow closed via trail/BE (not SL), price may still be trending.
-    // CompBreakout can re-enter within 90s IF trend direction matches.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
+    // Trend-day re-entry gate: GFE-culled, permanently off.
     const bool gold_session_ok  = true;  // 24h -- no time-based blocks
-    // On trend day re-entry: allow GoldStack even with gold_stack open position
-    // (CompBreakout won't fire if stack is already open -- handled in stack gate below)
-    // Same-direction trail block: 30s after a trail/BE exit, block re-entry in same dir.
-    // Direction-aware: only blocks the direction that just closed, not the opposite.
-    // This allows reversal entries but prevents immediate same-dir chasing.
-    const bool gold_trail_blocked = (g_gold_trail_block_until.load() > now_s_gate);
+    // Same-direction trail block: GFE-culled, permanently off.
+    const bool gold_trail_blocked = false;
     // GoldStack direction-aware trail block -- only block SAME direction as last close
     // Opposite direction entries always allowed (reversal trades)
     // g_gold_trail_block_dir: +1=last close was LONG (block new LONGs), -1=SHORT (block new SHORTs)
@@ -205,8 +139,9 @@ static void on_tick_gold(
     const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                              && (!gold_post_impulse_block || crash_impulse_bypass);
     // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
-    const bool gold_can_enter_trend_reentry = gold_trend_day && trend_reentry_ok
-        && gold_session_ok && symbol_gate("XAUUSD", false, "", tradeable, lat_ok, regime, bid, ask);
+    // Trend re-entry path: GFE-culled, permanently off.
+    const bool gold_can_enter_trend_reentry = false;
+    (void)gold_can_enter_trend_reentry;
 
     // Run supervisor -- gold has its own GoldStack (not a BreakoutEngine),
     // so we use a dedicated gold BreakoutEngine-based vol state if available.
@@ -302,46 +237,9 @@ static void on_tick_gold(
         fb_gold);
 
     // ?? P4: Velocity re-entry exclusivity exception ??????????????????????
-    // gold_sdec now available. Must be after supervisor update.
-    // PROBLEM (2026-04-02): after 04:24 all positions closed. gold_can_enter=false
-    // via gold_any_open exclusivity for 109 MINUTES while price fell 87 more pts.
-    // FIX: when velocity_active + no actual open >5min + conf>1.0, bypass exclusivity.
-    {
-        const double gf_vel_ratio_p4   = (g_gold_stack.recent_vol_pct() > 0.0
-                                       && g_gold_stack.base_vol_pct() > 0.0)
-            ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
-        const bool gf_expansion_p4     = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
-                                       || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
-        const bool velocity_active_gate = gf_expansion_p4 && (gf_vel_ratio_p4 > 2.5);
-
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-        const int64_t now_p4           = static_cast<int64_t>(std::time(nullptr));
-        const bool    no_pos_5min      = actually_no_open
-                                      && (last_gf_close > 0)
-                                      && ((now_p4 - last_gf_close) > 300);
-
-        const bool vel_reentry_bypass  = velocity_active_gate
-                                      && no_pos_5min
-                                      && (gold_sdec.confidence > 1.0)
-                                      && gold_session_ok
-                                      && (!gold_post_impulse_block || crash_impulse_bypass);
-
-        if (vel_reentry_bypass && !gold_can_enter) {
-            static int64_t s_vel_reentry_log = 0;
-            if (now_p4 - s_vel_reentry_log >= 30) {
-                s_vel_reentry_log = now_p4;
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[GF-VEL-REENTRY] Exclusivity bypass vol_ratio=%.2f conf=%.2f "                        "no_pos_for=%lldsec regime=%s -- GoldFlow re-entry ALLOWED\n",                        gf_vel_ratio_p4, gold_sdec.confidence,                        (long long)(now_p4 - last_gf_close),                        omega::regime_name(gold_sdec.regime));
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            }
-        }
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-    }
+    // GFE-culled S19 Stage 1B — velocity re-entry bypass removed with GoldFlow.
+    // GoldStack + supervisor + MacroCrash provide direction re-entry paths now.
+    // Block deliberately empty — do not re-introduce without new gating logic.
 
     // Diagnostic: log vol_ratio every 30s so we can verify real data is flowing
     {
@@ -379,6 +277,7 @@ static void on_tick_gold(
         // 1.10 was blocking valid London/NY setups where vol barely expands.
         // The supervisor's own vol_ratio check and confidence gate still apply.
         const bool vol_expanding = (gold_base_vol <= 0.0) || (gold_vol_ratio >= 1.02);
+        (void)vol_expanding;
 
         // ?? Confidence threshold ??????????????????????????????????????????
         const bool conf_ok = (gold_sdec.confidence >= 0.45);
@@ -441,10 +340,12 @@ static void on_tick_gold(
         // because GoldStack had no feed-liveness check. Now all GoldStack entries
         // are blocked when the XAUUSD depth feed is stale, same as GoldFlow.
         const bool gs_feed_ok = !g_feed_stale_xauusd.load(std::memory_order_relaxed);
-        const bool stack_enter_effective = gs_feed_ok && ((stack_can_enter && gold_can_enter && !gs_trail_dir_match && !in_ny_close_noise)
-            || (gold_can_enter_trend_reentry && vol_expanding && !gs_trail_dir_match && !in_ny_close_noise)
-            || (drift_reversed && gold_can_enter && !in_ny_close_noise)          // reversals also blocked at NY close
-            || (stack_can_enter_mr && gold_can_enter && !in_ny_close_noise));    // MR/range engines in compression
+        // GFE-culled: stack_can_enter / stack_can_enter_mr were supervisor-driven gates.
+        // GoldStack now does its own regime filtering internally.
+        const bool stack_enter_effective = gs_feed_ok
+            && gold_can_enter
+            && !gs_trail_dir_match
+            && !in_ny_close_noise;
         // Pass DX.F mid for DXYDivergenceEngine -- g_macroDetector.updateDXY()
     // is called every DX.F tick so this is fresh or 0.0 if feed not yet seen.
     const double dx_mid_now = g_macroDetector.dxyMid();
@@ -817,7 +718,7 @@ static void on_tick_gold(
                     g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),  // crash-day gate
-                    gold_session_slot, now_ms_g, ca_on_close);
+                    g_macro_ctx.session_slot, now_ms_g, ca_on_close);
             } else if (!gold_any_open && !g_h4_regime_gold.has_open_position()
                        && g_bars_gold.h1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const auto h1sig = g_h1_swing_gold.on_h1_bar(
@@ -833,7 +734,7 @@ static void on_tick_gold(
                     g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),  // crash-day gate
-                    gold_session_slot, now_ms_g, ca_on_close);
+                    g_macro_ctx.session_slot, now_ms_g, ca_on_close);
                 if (h1sig.valid) {
                     const double h1_lot = enter_directional("XAUUSD", h1sig.is_long,
                         h1sig.entry, h1sig.sl, h1sig.tp, 0.01, true, bid, ask, sym, regime, "H1SwingGold");
@@ -1186,138 +1087,21 @@ static void on_tick_gold(
         // Safety gates still apply: no IMPULSE regime, no counter-trend, spread gate,
         // L2 confirmation required, position cap enforced.
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-        const double brk_hi_now = g_bracket_gold.bracket_high;
-        const double brk_lo_now = g_bracket_gold.bracket_low;
-        const bool price_breaks_hi = gold_bracket_already_armed
-                                  && (brk_hi_now > 0.0)
-                                  && (ask >= brk_hi_now + BRK_OVERRIDE_DIST);
-        const bool price_breaks_lo = gold_bracket_already_armed
-                                  && (brk_lo_now > 0.0)
-                                  && (bid <= brk_lo_now - BRK_OVERRIDE_DIST);
-        // Override requires all hard gates but bypasses supervisor allow_bracket.
-        // Re-uses can_arm_bracket_base which already checks gold_can_enter,
-        // freq_ok, no open positions, and session gates.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-        if (chop_price_break_override) {
-            static int64_t s_chop_ovr_log = 0;
-            const int64_t now_ovr = static_cast<int64_t>(std::time(nullptr));
-            if (now_ovr - s_chop_ovr_log >= 5) {
-                s_chop_ovr_log = now_ovr;
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[BRK-CHOP-OVERRIDE] XAUUSD supervisor chop_detected bypassed -- "                        "price broke %s by %.1fpt (brk_hi=%.2f brk_lo=%.2f bid=%.2f ask=%.2f)\n",                        price_breaks_hi ? "brk_hi" : "brk_lo",                        price_breaks_hi ? (ask - brk_hi_now) : (brk_lo_now - bid),                        brk_hi_now, brk_lo_now, bid, ask);
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            }
-        }
-        const bool can_arm_bracket = can_arm_bracket_base || chop_price_break_override;
+        // Bracket-override block (gold_bracket_already_armed / BRK_OVERRIDE_DIST /
+        // chop_price_break_override / can_arm_bracket_base) was GFE-driven chop
+        // bypass logic — removed with engine. Bracket now arms on base gates only.
+        const bool can_arm_bracket = gold_can_enter
+                                  && gold_freq_ok
+                                  && gold_spread_ok
+                                  && !bracket_open
+                                  && !gold_impulse_regime
+                                  && !in_london_open_noise;
 
         // ?? Trend-direction bracket (IMPULSE regime) ??????????????????????????
-        // When gold_impulse_regime=true the symmetric bracket is blocked because
-        // compression geometry breaks down in a thrust.
-        // This path fires ONE-SIDED: only the trend-direction stop order is sent.
-        // SL is ATR-based (not range-based) so it reflects actual trend volatility.
-        // Controlled by TREND_BRACKET_ENABLED and TREND_BRACKET_SL_MULT in symbols.ini.
-        const auto& xau_sym_cfg = g_sym_cfg.get("XAUUSD");
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-        if (can_arm_trend_bracket) {
-            // Get current ATR from GoldStack for SL sizing
-            // Use GoldFlow ATR -- it has current_atr() tracking real tick volatility.
-            // GoldStack uses volatility * 2.5 proxy; GoldFlow has the proper EWM ATR.
-            // Fallback to vol_range() * 0.5 if GoldFlow ATR not yet warmed.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-            const double trend_atr      = (gf_atr > 2.0) ? gf_atr
-                                        : (g_gold_stack.vol_range() > 0.0
-                                           ? g_gold_stack.vol_range() * 0.5
-                                           : 15.0);  // absolute fallback $15 on VIX27 day
-            const double sl_mult        = xau_sym_cfg.trend_bracket_sl_mult;
-            const double trend_sl_dist  = std::max(trend_atr * sl_mult, 5.0); // floor $5
-            const bool   is_long_trend  = (gold_trend.bias == 1);
-
-            // Entry: stop order at bracket edge in trend direction
-            const double trend_entry    = is_long_trend ? g_bracket_gold.bracket_high
-                                                        : g_bracket_gold.bracket_low;
-            if (trend_entry > 0.0) {
-                // SL: ATR-based behind entry, not the opposite bracket level
-                const double trend_sl   = is_long_trend ? (trend_entry - trend_sl_dist)
-                                                        : (trend_entry + trend_sl_dist);
-                // TP: range ? RR in trend direction (same as normal bracket)
-                const double brk_range  = g_bracket_gold.bracket_high - g_bracket_gold.bracket_low;
-                const double trend_tp   = is_long_trend
-                    ? (trend_entry + brk_range * g_bracket_gold.RR)
-                    : (trend_entry - brk_range * g_bracket_gold.RR);
-
-                // Sizing: risk-based on ATR SL
-                const double tb_lot     = std::min(
-                    compute_size("XAUUSD", trend_sl_dist, ask - bid, g_bracket_gold.ENTRY_SIZE),
-                    0.30);  // hard cap at 0.30 lots for trend bracket
-
-                // Cost viability check
-                const double tb_tp_dist = std::fabs(trend_tp - trend_entry);
-                const bool tb_cost_ok   = ExecutionCostGuard::is_viable(
-                    "XAUUSD", ask - bid, tb_tp_dist, tb_lot);
-
-                if (tb_cost_ok && tb_lot >= 0.01) {
-                    {
-                        char _msg[512];
-                        snprintf(_msg, sizeof(_msg), "[TREND-BRACKET] XAUUSD %s entry=%.2f sl=%.2f(dist=%.2f) tp=%.2f"                            " atr=%.2f mult=%.1f lot=%.4f bias=%d drift=%.2f\n",                            is_long_trend ? "LONG" : "SHORT",                            trend_entry, trend_sl, trend_sl_dist, trend_tp,                            trend_atr, sl_mult, tb_lot, gold_trend.bias,                            gold_ewm_drift_now);
-                        std::cout << _msg;
-                        std::cout.flush();
-                    }
-
-                    // Send ONLY trend-direction stop order -- no counter leg
-                    write_trade_open_log("XAUUSD", "TrendBracket",
-                        is_long_trend ? "LONG" : "SHORT",
-                        trend_entry, trend_tp, trend_sl, tb_lot,
-                        ask - bid, gold_stack_regime, "TREND_BRACKET_ARM");
-
-                    const std::string tb_id = send_live_order(
-                        "XAUUSD", is_long_trend, tb_lot, trend_entry);
-
-                    // Register with bracket engine as one-sided pending
-                    // pending_both carries the filled side only
-                    omega::BracketBothSignals tb_sig;
-                    tb_sig.valid        = true;
-                    tb_sig.size         = tb_lot;
-                    if (is_long_trend) {
-                        tb_sig.long_entry  = trend_entry;
-                        tb_sig.long_sl     = trend_sl;
-                        tb_sig.long_tp     = trend_tp;
-                        tb_sig.short_entry = 0.0;  // no counter leg
-                        tb_sig.short_sl    = 0.0;
-                        tb_sig.short_tp    = 0.0;
-                        g_bracket_gold.pending_long_clOrdId  = tb_id;
-                        g_bracket_gold.pending_short_clOrdId = "";  // nothing to cancel
-                    } else {
-                        tb_sig.short_entry = trend_entry;
-                        tb_sig.short_sl    = trend_sl;
-                        tb_sig.short_tp    = trend_tp;
-                        tb_sig.long_entry  = 0.0;  // no counter leg
-                        tb_sig.long_sl     = 0.0;
-                        tb_sig.long_tp     = 0.0;
-                        g_bracket_gold.pending_short_clOrdId = tb_id;
-                        g_bracket_gold.pending_long_clOrdId  = "";  // nothing to cancel
-                    }
-                    g_bracket_gold.pending_both = tb_sig;
-                    g_bracket_gold.phase = omega::BracketPhase::PENDING;
-                    g_bracket_gold.ENTRY_SIZE = tb_lot;
-                    g_telemetry.UpdateLastSignal("XAUUSD", "TREND_BRACKET",
-                        trend_entry, "TREND_DIRECTION_ONLY",
-                        gold_stack_regime, regime.c_str(), "TREND_BRACKET",
-                        trend_tp, trend_sl);
-                    ++g_bracket_gold_trades_this_minute;
-                } else {
-                    {
-                        char _msg[512];
-                        snprintf(_msg, sizeof(_msg), "[TREND-BRACKET] XAUUSD BLOCKED cost_ok=%d lot=%.4f tp_dist=%.2f\n",                            (int)tb_cost_ok, tb_lot, tb_tp_dist);
-                        std::cout << _msg;
-                        std::cout.flush();
-                    }
-                }
-            }
-        }
+        // GFE-culled S19 Stage 1B — one-sided TREND_BRACKET dispatch relied on
+        // GoldFlow's current_atr() and can_arm_trend_bracket gate. With GFE
+        // removed, this block is retired. Symmetric bracket + MacroCrash handle
+        // impulse / trend-direction entries now.
 
         // ?? Gold bracket gate diagnostic -- prints every 10s ???????????????
         {
@@ -1403,14 +1187,16 @@ static void on_tick_gold(
         if (bgsigs.valid) {
             // Pyramid: use tighter SL than normal bracket -- cap pyramid risk at 50% of base risk
             // Normal bracket SL can be $5-7 wide; pyramid add-ons use half that
+            // GFE-culled S19 Stage 1B: flow_pyramid_bypass removed with GoldFlow.
+            // Pyramid now triggers on gold_is_pyramiding only (bracket self-pyramid path).
             const double raw_sl_dist = std::fabs(bgsigs.long_entry - bgsigs.long_sl);
-            const double pyr_sl_dist = (gold_is_pyramiding || flow_pyramid_bypass)
+            const double pyr_sl_dist = gold_is_pyramiding
                 ? std::min(raw_sl_dist, 3.0)  // cap pyramid SL at $3 distance
                 : raw_sl_dist;
             const double base_bg_lot = compute_size("XAUUSD",
                 pyr_sl_dist, ask - bid,
                 g_bracket_gold.ENTRY_SIZE);
-            const double bg_lot = (gold_is_pyramiding || flow_pyramid_bypass)
+            const double bg_lot = gold_is_pyramiding
                 ? std::min(base_bg_lot * PYRAMID_SIZE_MULT, 0.20)  // cap pyramid lot at 0.20
                 : base_bg_lot;
             // Cost guard: bracket TP dist = SL dist * RR
@@ -1548,6 +1334,11 @@ static void on_tick_gold(
         const bool expansion_regime = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
                                     || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
+        // mce_atr: was g_gold_flow.current_atr(). Now sourced from M1 bar ATR14
+        // (live candle-based) with vol_range fallback and a 2.0pt absolute floor.
+        const double mce_m1_atr   = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
+        const double mce_vol_rng  = g_gold_stack.vol_range();
+        const double mce_atr      = std::max({2.0, mce_m1_atr, mce_vol_rng * 0.5});
         const double mce_vol_ratio = (g_gold_stack.recent_vol_pct() > 0.0
                                    && g_gold_stack.base_vol_pct() > 0.0)
                                      ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct()
@@ -2026,7 +1817,7 @@ static void on_tick_gold(
     // Asia (slot 6) and dead-zone (slot 0): spreads wide, price ranges, no trend.
     // All trades in Asia were TIME_STOPs with gross=$0 -- no edge in that session.
     const bool tpb_gold_session_ok = !in_ny_close_noise
-        && (gold_session_slot >= 1 && gold_session_slot <= 5);
+        && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot <= 5);
     const bool tpb_gold_can_enter = tpb_gold_session_ok
                                  && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                                  && !gold_post_impulse_block;
@@ -2157,8 +1948,10 @@ static void on_tick_gold(
         // Position management -- unconditional when live
         if (g_hybrid_gold.has_open_position()) {
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
+            // GFE-culled: flow_live=false, flow_be_locked=false, flow_trail_stage=0.
+            // HybridBracket no longer receives GoldFlow state; it self-gates.
             g_hybrid_gold.on_tick(bid, ask, now_ms_g,
-                                  gold_can_enter, flow_live, flow_be, flow_stage,
+                                  gold_can_enter, false, false, 0,
                                   bracket_on_close,
                                   g_macro_ctx.gold_slope,
                                   g_macro_ctx.gold_vacuum_ask,
@@ -2209,8 +2002,9 @@ static void on_tick_gold(
         // Position management path (has_open_position) handled unconditionally above.
         if (!g_hybrid_gold.has_open_position()) {
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
+            // GFE-culled: flow_live=false, flow_be_locked=false, flow_trail_stage=0.
             g_hybrid_gold.on_tick(bid, ask, now_ms_g,
-                                  hybrid_can_enter, flow_live, flow_be, flow_stage,
+                                  hybrid_can_enter, false, false, 0,
                                   bracket_on_close,
                                   g_macro_ctx.gold_slope,
                                   g_macro_ctx.gold_vacuum_ask,
@@ -2309,7 +2103,8 @@ static void on_tick_gold(
         // 2.0pt absolute floor: sl=1.4pt, max size=0.214 lots at $30 risk.
         const double cfe_m1_atr  = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-        const double cfe_atr     = std::max({2.0, cfe_gf_atr, cfe_m1_atr});
+        // cfe_gf_atr removed with GoldFlow. CFE now uses max(2.0pt floor, M1 bar ATR14).
+        const double cfe_atr     = std::max(2.0, cfe_m1_atr);
         g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
             now_ms_g, cfe_atr,
             [&](const omega::TradeRecord& tr) {
@@ -2390,7 +2185,7 @@ static void on_tick_gold(
             g_l2_gold.raw_ask.load(std::memory_order_relaxed),
             g_macro_ctx.gold_l2_real,
             static_cast<double>(g_gold_stack.ewm_drift()),
-            gold_session_slot,
+            g_macro_ctx.session_slot,
             pdhl_cb
         );
     }

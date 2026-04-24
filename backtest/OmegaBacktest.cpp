@@ -11,7 +11,7 @@
 //   --report  <file>   per-engine stats CSV              (default: bt_report.csv)
 //   --trades  <file>   all trade records CSV             (default: bt_trades.csv)
 //   --warmup  <n>      ticks before recording trades     (default: 5000)
-//   --engine  <list>   comma list: gold,flow,latency,cross,breakout (default: all)
+//   --engine  <list>   comma list: gold,latency,cross,breakout (default: all)
 //
 // TICK CSV -- auto-detected formats:
 //   A:  timestamp_ms,bid,ask
@@ -57,7 +57,7 @@
 #include "../include/StopRunReversalEngine.hpp"
 #include "../include/OverlapFadeEngine.hpp"
 #include "../include/StructuralEdgeEngines.hpp"
-#include "../include/GoldFlowEngine.hpp"
+// (GoldFlowEngine.hpp removed at S19 Stage 1B — engine culled.)
 #include "../include/LatencyEdgeEngines.hpp"
 #include "../include/CrossAssetEngines.hpp"
 #include "../include/BreakoutEngine.hpp"
@@ -303,177 +303,6 @@ struct GoldRunner {
     }
 };
 
-struct FlowRunner {
-    GoldFlowEngine eng;
-
-    // ── EWM drift (same as live) ───────────────────────────────────────────
-    double ewm_fast_ = 0.0, ewm_slow_ = 0.0;
-    bool   ewm_init_ = false;
-    static constexpr double ALPHA_FAST = 0.05;
-    static constexpr double ALPHA_SLOW = 0.005;
-
-    // ── Tick-based ATR (true range EWM over 100 ticks) ────────────────────
-    double atr_ewm_   = 0.0;
-    double prev_mid_  = 0.0;
-    bool   atr_init_  = false;
-    int    atr_ticks_ = 0;
-    static constexpr double ATR_ALPHA = 0.02;   // ~50-tick half-life
-    static constexpr int    ATR_WARM  = 100;
-
-    // ── Intraday VWAP (resets at UTC midnight) ────────────────────────────
-    double vwap_pv_  = 0.0, vwap_vol_ = 0.0;
-    int    vwap_day_ = -1;
-    double vwap_     = 0.0;
-
-    // ── Volatility ratio (short/long vol -- proxy for expansion) ─────────
-    double vol_short_ = 0.0, vol_long_ = 0.0;  // EWM of |tick_move|
-    static constexpr double VOL_ALPHA_SHORT = 0.05;
-    static constexpr double VOL_ALPHA_LONG  = 0.005;
-
-    // ── RSI(14) on 1-second pseudo-bars ──────────────────────────────────
-    // We accumulate tick moves into 1s bars, then compute RSI
-    static constexpr int RSI_PERIOD = 14;
-    double rsi_gains_[RSI_PERIOD] = {};
-    double rsi_losses_[RSI_PERIOD] = {};
-    int    rsi_idx_   = 0;
-    int    rsi_count_ = 0;
-    double rsi_       = 50.0;
-    int64_t rsi_bar_ts_ = 0;
-    double rsi_bar_open_ = 0.0;
-
-    // ── Trend state from EMA crossover ───────────────────────────────────
-    // +1 = uptrend (fast > slow by > 1xATR), -1 = downtrend, 0 = neutral
-    int trend_state_ = 0;
-    static constexpr double TREND_EMA_ALPHA_F = 0.02;   // ~50-tick fast EMA
-    static constexpr double TREND_EMA_ALPHA_S = 0.002;  // ~500-tick slow EMA
-    double trend_ema_f_ = 0.0, trend_ema_s_ = 0.0;
-    bool   trend_init_  = false;
-
-    // ── Bollinger %B (20-tick SMA + std) ─────────────────────────────────
-    static constexpr int BB_PERIOD = 20;
-    double bb_buf_[BB_PERIOD] = {};
-    int    bb_idx_  = 0;
-    int    bb_cnt_  = 0;
-    double bb_pct_  = 0.5;
-
-    // ── Warmup counter ────────────────────────────────────────────────────
-    int tick_count_ = 0;
-    static constexpr int WARMUP_TICKS = 500;  // ~50s at 10/s before entries allowed
-
-    FlowRunner() {
-        eng.risk_dollars = 80.0;  // match live config
-    }
-
-    void tick(const TickRow& r) {
-        const double mid = (r.bid + r.ask) * 0.5;
-        ++tick_count_;
-
-        // ── UTC time ──────────────────────────────────────────────────────
-        const time_t ts_sec = (time_t)(r.ts_ms / 1000);
-        struct tm utc{};
-#ifdef _WIN32
-        gmtime_s(&utc, &ts_sec);
-#else
-        gmtime_r(&ts_sec, &utc);
-#endif
-        const int hhmm = utc.tm_hour * 100 + utc.tm_min;
-
-        // ── Session slot ──────────────────────────────────────────────────
-        int session_slot = 0;  // dead zone default
-        if      (hhmm >= 600  && hhmm < 800)  session_slot = 1;  // London open
-        else if (hhmm >= 800  && hhmm < 1000) session_slot = 2;  // London core
-        else if (hhmm >= 1200 && hhmm < 1630) session_slot = 3;  // overlap
-        else if (hhmm >= 1630 && hhmm < 1900) session_slot = 4;  // NY
-        else if (hhmm >= 1900 && hhmm < 2100) session_slot = 5;  // NY late
-        else if (hhmm >= 100  && hhmm < 600)  session_slot = 6;  // Asia
-
-        // ── EWM drift ─────────────────────────────────────────────────────
-        if (!ewm_init_) { ewm_fast_ = mid; ewm_slow_ = mid; ewm_init_ = true; }
-        ewm_fast_ = ALPHA_FAST * mid + (1.0 - ALPHA_FAST) * ewm_fast_;
-        ewm_slow_ = ALPHA_SLOW * mid + (1.0 - ALPHA_SLOW) * ewm_slow_;
-        const double ewm_drift = ewm_fast_ - ewm_slow_;
-
-        // ── ATR (tick true range EWM) ─────────────────────────────────────
-        if (!atr_init_) { prev_mid_ = mid; atr_ewm_ = r.ask - r.bid; atr_init_ = true; }
-        else {
-            const double tr = std::max({r.ask - r.bid,
-                                        std::fabs(mid - prev_mid_),
-                                        r.ask - r.bid});
-            atr_ewm_ = ATR_ALPHA * tr + (1.0 - ATR_ALPHA) * atr_ewm_;
-            ++atr_ticks_;
-            if (atr_ticks_ % 20 == 0)  // seed bar ATR every 20 ticks
-                eng.seed_bar_atr(atr_ewm_);
-        }
-        prev_mid_ = mid;
-
-        // ── Intraday VWAP ─────────────────────────────────────────────────
-        if (utc.tm_yday != vwap_day_) { vwap_pv_ = 0; vwap_vol_ = 0; vwap_day_ = utc.tm_yday; }
-        vwap_pv_  += mid; vwap_vol_ += 1.0;
-        vwap_ = vwap_vol_ > 0 ? vwap_pv_ / vwap_vol_ : mid;
-        const double vwap_pts = mid - vwap_;
-
-        // ── Vol ratio ─────────────────────────────────────────────────────
-        const double abs_move = std::fabs(ewm_fast_ - prev_mid_);
-        vol_short_ = VOL_ALPHA_SHORT * abs_move + (1.0 - VOL_ALPHA_SHORT) * vol_short_;
-        vol_long_  = VOL_ALPHA_LONG  * abs_move + (1.0 - VOL_ALPHA_LONG)  * vol_long_;
-        const double vol_ratio = (vol_long_ > 0.001) ? vol_short_ / vol_long_ : 1.0;
-        const bool expansion_mode = (vol_ratio > 2.0 && std::fabs(ewm_drift) > 2.0);
-
-        // ── Trend EMA ─────────────────────────────────────────────────────
-        if (!trend_init_) { trend_ema_f_ = mid; trend_ema_s_ = mid; trend_init_ = true; }
-        trend_ema_f_ = TREND_EMA_ALPHA_F * mid + (1.0 - TREND_EMA_ALPHA_F) * trend_ema_f_;
-        trend_ema_s_ = TREND_EMA_ALPHA_S * mid + (1.0 - TREND_EMA_ALPHA_S) * trend_ema_s_;
-        const double ema_gap = trend_ema_f_ - trend_ema_s_;
-        const double trend_threshold = (atr_ewm_ > 0.5) ? atr_ewm_ * 0.5 : 0.5;
-        trend_state_ = (ema_gap > trend_threshold) ? 1 : (ema_gap < -trend_threshold) ? -1 : 0;
-
-        // ── 1s pseudo-bar RSI ─────────────────────────────────────────────
-        if (rsi_bar_ts_ == 0) { rsi_bar_ts_ = r.ts_ms; rsi_bar_open_ = mid; }
-        if (r.ts_ms - rsi_bar_ts_ >= 1000) {
-            const double bar_move = mid - rsi_bar_open_;
-            const double gain = bar_move > 0 ? bar_move : 0.0;
-            const double loss = bar_move < 0 ? -bar_move : 0.0;
-            rsi_gains_[rsi_idx_]  = gain;
-            rsi_losses_[rsi_idx_] = loss;
-            rsi_idx_ = (rsi_idx_ + 1) % RSI_PERIOD;
-            if (rsi_count_ < RSI_PERIOD) ++rsi_count_;
-            if (rsi_count_ >= RSI_PERIOD) {
-                double avg_g = 0, avg_l = 0;
-                for (int i = 0; i < RSI_PERIOD; ++i) { avg_g += rsi_gains_[i]; avg_l += rsi_losses_[i]; }
-                avg_g /= RSI_PERIOD; avg_l /= RSI_PERIOD;
-                rsi_ = avg_l < 1e-9 ? 100.0 : 100.0 - 100.0 / (1.0 + avg_g / avg_l);
-            }
-            rsi_bar_ts_ = r.ts_ms;
-            rsi_bar_open_ = mid;
-        }
-
-        // ── Bollinger %B ──────────────────────────────────────────────────
-        bb_buf_[bb_idx_ % BB_PERIOD] = mid;
-        ++bb_idx_; if (bb_cnt_ < BB_PERIOD) ++bb_cnt_;
-        if (bb_cnt_ >= BB_PERIOD) {
-            double sum = 0, sq = 0;
-            for (int i = 0; i < BB_PERIOD; ++i) { sum += bb_buf_[i]; sq += bb_buf_[i]*bb_buf_[i]; }
-            const double mn = sum / BB_PERIOD;
-            const double sd = std::sqrt(std::max(0.0, sq/BB_PERIOD - mn*mn));
-            if (sd > 0.01) bb_pct_ = (mid - (mn - 2*sd)) / (4*sd);
-            bb_pct_ = std::max(0.0, std::min(1.0, bb_pct_));
-        }
-
-        // ── Feed context into engine ──────────────────────────────────────
-        eng.set_trend_bias(0.0, 0.0, false, false, vwap_pts, expansion_mode, vol_ratio);
-        eng.set_bar_context(rsi_, trend_state_, bb_pct_);
-
-        // ── Gate: skip dead zone entirely ─────────────────────────────────
-        // Live system blocks session_slot=0 (21:00-01:00 UTC) for new entries.
-        // Engine's on_tick already handles this for LIVE phases but we mirror
-        // the outer gate here to match live behaviour.
-        if (tick_count_ < WARMUP_TICKS) return;
-
-        auto c = cb();
-        eng.on_tick(r.bid, r.ask, 0.5, ewm_drift, r.ts_ms, c, session_slot);
-    }
-};
-
 struct LatencyRunner {
     omega::latency::LatencyEdgeStack eng;
     double lat;
@@ -678,7 +507,7 @@ struct Cfg {
     const char* rep   = "bt_report.csv";
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
-    bool gold=true, flow=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
+    bool gold=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
     bool omom=false, amom=false, lfade=false, allnew=false;
     bool rsirev=false; // (micromom removed at 5V §1.2)
     bool quiet=false;
@@ -692,7 +521,7 @@ static Cfg parse(int argc, char** argv){
             "  --report  <f>   engine summary CSV    (default bt_report.csv)\n"
             "  --trades  <f>   trade records CSV     (default bt_trades.csv)\n"
             "  --warmup  <n>   warmup ticks          (default 5000)\n"
-            "  --engine  <l>   gold,flow,latency,cross,breakout\n"
+            "  --engine  <l>   gold,latency,cross,breakout\n"
             "  --quiet         suppress engine log output (recommended)\n");
         exit(1);
     }
@@ -705,7 +534,7 @@ static Cfg parse(int argc, char** argv){
         else if(!strcmp(argv[i],"--quiet")) c.quiet=true;
         else if(!strcmp(argv[i],"--engine")&&i+1<argc){
             const char* e=argv[++i];
-            c.gold=!!strstr(e,"gold"); c.flow=!!strstr(e,"flow");
+            c.gold=!!strstr(e,"gold");
             c.latency=!!strstr(e,"latency"); c.cross=!!strstr(e,"cross");
             c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun"); c.ofade=!!strstr(e,"ofade");
             c.omom=!!strstr(e,"omom"); c.amom=!!strstr(e,"amom"); c.lfade=!!strstr(e,"lfade");
@@ -796,7 +625,7 @@ int main(int argc, char** argv){
 
     // ?? Construct engines ?????????????????????????????????????????????????????
     std::unique_ptr<GoldRunner>    rg;
-    std::unique_ptr<FlowRunner>    rf;
+    // (FlowRunner unique_ptr REMOVED at S19 Stage 1B — GoldFlowEngine culled.)
     std::unique_ptr<LatencyRunner> rl;
     std::unique_ptr<CrossRunner>   rc;
     std::unique_ptr<BreakRunner>    rb;
@@ -809,7 +638,7 @@ int main(int argc, char** argv){
     // (MicroMomRunner unique_ptr REMOVED at 5V §1.2.)
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
-    if(cfg.flow)    rf = std::make_unique<FlowRunner>();
+    // (FlowRunner instantiation REMOVED at S19 Stage 1B — GoldFlowEngine culled.)
     if(cfg.latency) rl = std::make_unique<LatencyRunner>(cfg.lat);
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
@@ -831,7 +660,7 @@ int main(int argc, char** argv){
         omega::bt::set_sim_time(r.ts_ms);
 
         if(rg) rg->tick(r);
-        if(rf) rf->tick(r);
+        // (rf->tick REMOVED at S19 Stage 1B — GoldFlowEngine culled.)
         if(rl) rl->tick(r);
         if(rc) rc->tick(r);
         if(rb) rb->tick(r);
@@ -881,8 +710,8 @@ int main(int argc, char** argv){
     printf("  File    : %s\n", cfg.csv);
     printf("  Ticks   : %lld  in %.1fs (%.0f K t/s)\n", (long long)N, ps, N/ps/1000.0);
     printf("  Range   : %s -> %s\n", sa, sb);
-    printf("  Engines : %s%s%s%s%s\n",
-           cfg.gold?"GoldStack ":"", cfg.flow?"GoldFlow ":"",
+    printf("  Engines : %s%s%s%s\n",
+           cfg.gold?"GoldStack ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
            cfg.breakout?"Breakout/Bracket":"");
     printf("  Run     : %.1fs = %.0f K t/s\n", run_sec, N/run_sec/1000.0);
