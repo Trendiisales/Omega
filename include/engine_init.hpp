@@ -441,10 +441,10 @@ static void init_engines(const std::string& cfg_path)
     // Daily loss cap stops the engine entirely after a bad sequence.
     g_trend_pb_nq.MIN_EMA_SEP         = 25.0;
     g_trend_pb_nq.DAILY_LOSS_CAP      = 80.0;   // $80 daily cap: ~6 SL hits at $12 each
-    g_trend_pb_nq.enabled             = false;   // DISABLED: not live-validated
+    g_trend_pb_nq.enabled             = true;    // RE-ENABLED S14 2026-04-24: Apr 2 post-mortem +$200 strategy-only ($540 FC loss was connectivity, since patched by Hard Stop arch). Mar 27 +$1,183 on 8 paired trades. DAILY_LOSS_CAP=$80 active.
     g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
     g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
-    g_trend_pb_sp.enabled             = false;   // DISABLED: not live-validated
+    g_trend_pb_sp.enabled             = true;    // RE-ENABLED S14 2026-04-24: same rationale as _nq above (paired engine, same Apr 2 / Mar 27 data)
     g_trend_pb_ger40.DAILY_LOSS_CAP   = 80.0;   // GER40 too -- no cap was previously set
     g_trend_pb_ger40.enabled          = false;   // DISABLED: not live-validated
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
