@@ -4203,6 +4203,36 @@ class GoldPositionManager {
             leg.sl = is_long ? std::max(leg.sl, pyr_sl_capped)
                              : std::min(leg.sl, pyr_sl_capped);
         }
+        // 2026-04-24 PYRAMID PROFIT-LOCK GATE (empirical, 100% separation):
+        // Analysis of 19 live PYRAMID trades 2026-04-13 through 2026-04-24:
+        //   11 winners: ALL had leg.sl locked in profit vs fill_px (avg -1.19pt)
+        //    8 losers : ALL had leg.sl adverse from fill_px (avg +6.49pt)
+        // Single rule separates 11/11 wins from 0/8 losses: require pyramid's
+        // own SL, post-placement, to be at worst flat vs fill (profit-locked).
+        //   LONG:  require leg.sl >= fill_px  (SL at or above entry)
+        //   SHORT: require leg.sl <= fill_px  (SL at or below entry)
+        // If this gate rejects, abort the pyramid add; on a later tick when base
+        // leg has trailed further, the computed leg.sl may qualify.
+        // Effect on historical sample: blocks all 8 losing adds entirely (saves
+        // $78.80), keeps all 11 winning adds (winning pyramids had base leg
+        // trailed deep enough that pyramid SL sat in profit already).
+        const bool pyr_sl_profit_locked = is_long
+            ? (leg.sl >= fill_px)
+            : (leg.sl <= fill_px);
+        if (!pyr_sl_profit_locked) {
+            char _msg[512];
+            const double sl_dist_from_fill = is_long
+                ? (fill_px - leg.sl)
+                : (leg.sl - fill_px);
+            snprintf(_msg, sizeof(_msg),
+                "[GOLD-PYRAMID-REJECT-UNLOCKED] %s fill=%.2f sl=%.2f sl_dist=%.2f regime=%s -- pyramid SL not in profit, add suppressed\n",
+                is_long ? "LONG" : "SHORT", fill_px, leg.sl, sl_dist_from_fill,
+                regime ? regime : "?");
+            std::cout << _msg;
+            std::cout.flush();
+            (void)latency_ms;
+            return;  // do NOT push the leg -- base-only remains active
+        }
         leg.mfe      = 0;
         leg.mae      = 0;
         // 2026-04-24 PYRAMID SIZE DECAY:
