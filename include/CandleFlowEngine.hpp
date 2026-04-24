@@ -145,17 +145,35 @@ static constexpr int     CFE_IMB_EXIT_TICKS    = 2;     // restored to 2: single
 static constexpr int64_t CFE_IMB_MIN_HOLD_MS   = 20000; // IMB_EXIT blocked for first 20s after entry
                                                           // prevents immediate noise exits (8s/37s trades confirmed as noise)
 // S17 MFE guard: block IMB_EXIT once the trade is already meaningfully in
-// profit. Empirical analysis of 101 IMB_EXIT trades over 04-14..04-23 (8
-// trading days) showed a sharp asymmetry by MFE-at-exit:
-//   MFE < 0.5pt  : -$4.27/trade (43L/3W) -- IMB flip correctly predicts loss
-//   MFE [0.5,1.0): -$2.32/trade (14L/9W) -- still net-negative, keep cutting
-//   MFE [1.0,1.5): +$1.26/trade (4L/14W) -- cutting winners
-//   MFE >= 4.0pt : +$31.18/trade (0L/2W) -- definitively cutting TRAIL_SL winners
-// Once MFE crosses 1.0pt the IMB signal inverts from protective to destructive.
-// Blocking at mfe>=1.0pt recovers ~$352 across the 8-day window in
-// counterfactual (replaces 32 killed winners with 50/50 trail/SL outcomes).
-// See backtest/audit_results/S17_AUDIT.md for full data and derivation.
-static constexpr double  CFE_IMB_EXIT_MFE_GUARD_PTS = 1.0;   // block IMB_EXIT when pos.mfe >= this many points
+// profit. Initial analysis of 101 IMB_EXIT trades over 04-14..04-23 (8
+// trading days) suggested the IMB signal inverted above MFE 1.0pt, but a
+// tick-replay simulator (backtest/cfe_imb_patch_validate.py) showed the
+// pnl-at-exit distribution was MISLEADING -- many "near-breakeven" IMB_EXIT
+// trades in the 1.0-1.5pt bucket were actually about to revert to hard SL,
+// and the IMB flip was genuinely protective. The simulator walks each
+// blocked trade forward through the log's own XAUUSD tick stream and applies
+// the real CFE trail/SL logic to compute the counterfactual outcome.
+//
+// Threshold sweep results (8 trading days, n=100 IMB_EXITs joined to PnL):
+//   thresh=1.00   blocked=32   delta= -$136.47   <- NET NEGATIVE (rejected)
+//   thresh=1.25   blocked=23   delta=  -$43.43
+//   thresh=1.50   blocked=14   delta=  +$67.01
+//   thresh=1.75   blocked=11   delta= +$131.12   <- empirical optimum
+//   thresh=2.00   blocked= 6   delta=  +$76.35
+//   thresh=2.50   blocked= 3   delta=  +$90.62
+//   thresh=3.00   blocked= 3   delta=  +$90.62
+//   thresh=4.00   blocked= 2   delta=  +$87.29
+//
+// Chose 1.75 for maximum projected recovery. Below 1.5 the IMB signal is
+// still net-protective; above 2.0 we leave recoverable winners on the table.
+// Of the 11 trades blocked at 1.75: 5 reach TRAIL_SL (+$154 delta total,
+// avg +$31/trade), 6 hit hard SL (-$23 delta total, avg -$4/trade). 45%
+// trail rate and strong asymmetric payout: trail winners are 7x larger than
+// the incremental SL losses, net +$131 over 8 days.
+//
+// Validator: backtest/cfe_imb_patch_validate.py
+// Detail CSV: backtest/audit_results/cfe_imb_patch_validation.csv
+static constexpr double  CFE_IMB_EXIT_MFE_GUARD_PTS = 1.75;  // empirical optimum -- see sweep above
 
 // Drift fast-entry (DFE) -- pre-empts bar-close requirement
 static constexpr double  CFE_DFE_DRIFT_THRESH   = 1.5;   // |ewm_drift| >= 1.5pts to arm
@@ -1340,13 +1358,14 @@ private:
     // Exit long when imb < -thresh for >= N ticks AND hold >= CFE_IMB_MIN_HOLD_MS
     // Exit short when imb > +thresh for >= N ticks AND hold >= CFE_IMB_MIN_HOLD_MS
     // Also exits on imb against for >= 1 tick AND depth drop AND hold >= min
-    // S17: Additional guard -- once pos.mfe >= CFE_IMB_EXIT_MFE_GUARD_PTS, the
-    // trade is meaningfully in profit and IMB flips become protective of
-    // TRAIL_SL winners rather than predictive of losses (empirical: above
-    // mfe=1.0pt the IMB signal net-PnL inverts from -$4/trade to +$1/trade).
-    // The guard preserves the against-tick counter continuity so that if MFE
-    // later drops below the guard (rare; would mean a giveback), the normal
-    // IMB logic can re-engage without lag.
+    // S17: Additional guard -- once pos.mfe >= CFE_IMB_EXIT_MFE_GUARD_PTS
+    // (1.75pt), block IMB_EXIT. At this MFE level the IMB-flip signal has
+    // empirically inverted from protective (catches impending SL) to
+    // destructive (kills TRAIL_SL winners). Tick-replay simulator confirmed
+    // +$131 projected recovery across 8 trading days. See constant block at
+    // top of file for full sweep. Guard preserves against-tick/depth counter
+    // state so if MFE later drops below the threshold (rare giveback case)
+    // the normal IMB decision path resumes with full state.
     bool check_imb_exit(bool is_long, const DOMSnap& dom, int64_t hold_ms) noexcept {
         // Minimum hold guard: IMB_EXIT is blocked for the first CFE_IMB_MIN_HOLD_MS
         // milliseconds after entry. This eliminates the sub-10s noise exits caused by
