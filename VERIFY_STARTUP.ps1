@@ -325,81 +325,10 @@ if ($logHealthLines.Count -gt 0) {
     }
 }
 
-# --- CHECK 1: ATR Seed -------------------------------------------------------
-$seedLine = Find-Last "GFE-SEED"
-if ($seedLine) {
-    if ($seedLine -match "seed_atr=([0-9.]+)") {
-        $seedAtr = [double]$Matches[1]
-        if ($seedAtr -le 5.0 -and $seedLine -notmatch "VIX-UNKNOWN") {
-            Add-Result "ATR Seed" "WARN" "seed_atr=$seedAtr" "Low seed -- VIX may not have arrived yet. Check VIX line below."
-        } elseif ($seedLine -match "VIX-UNKNOWN") {
-            Add-Result "ATR Seed" "WARN" "seed_atr=$seedAtr [VIX-UNKNOWN]" "VIX.F tick not yet received when seed ran. ATR will update once VIX arrives."
-        } else {
-            Add-Result "ATR Seed" "PASS" "seed_atr=$seedAtr" $seedLine.Trim()
-        }
-    }
-} else {
-    Add-Result "ATR Seed" "INFO" "No GFE-SEED line seen" "Engine may have loaded ATR from disk (normal) -- see ATR State check."
-}
-
-# --- CHECK 2: ATR State (loaded from disk vs cold) ---------------------------
-$atrLoaded  = Find-Last "GFE\] ATR state loaded"
-$atrRejected= @(Find-All  "GFE\] ATR state rejected")
-$atrStartup = Find-Last "GFE\] Startup ATR"
-
-if ($atrLoaded) {
-    if ($atrLoaded -match "atr=([0-9.]+)") {
-        $loadedAtr = [double]$Matches[1]
-        if ($loadedAtr -le 2.0) {
-            Add-Result "ATR State" "WARN" "Loaded atr=$loadedAtr (very low)" $atrLoaded.Trim()
-        } else {
-            Add-Result "ATR State" "PASS" "Loaded from disk atr=$loadedAtr" $atrLoaded.Trim()
-        }
-    }
-} elseif ($atrRejected.Count -gt 0) {
-    # ATR rejected from disk (too low/stale) and VIX-based seed used instead -- this is correct behaviour
-    Add-Result "ATR State" "INFO" "ATR disk state rejected -- VIX seed used (correct)" ($atrRejected[-1]).Trim()
-} elseif ($atrStartup) {
-    Add-Result "ATR State" "INFO" "Startup ATR line" $atrStartup.Trim()
-} else {
-    # No explicit GFE log line -- seed()/load() output goes to NSSM stdout not latest.log.
-    # Confirm ATR via bar state (atr14 from OHLCBarEngine) and VIX level instead.
-    $barFileDat = "$OmegaDir\logs\bars_gold_m1.dat"
-    $atrFromBar = 0.0
-    if (Test-Path $barFileDat) {
-        $bl = Get-Content $barFileDat
-        $aLine = $bl | Where-Object { $_ -match "^atr14=" } | Select-Object -First 1
-        if ($aLine -match "atr14=([0-9.]+)") { $atrFromBar = [double]$Matches[1] }
-    }
-    if ($atrFromBar -gt 0.5) {
-        Add-Result "ATR State" "INFO" "ATR from bar state atr14=$atrFromBar -- engine will VIX-seed on first tick" ""
-    } elseif ($seedLine) {
-        Add-Result "ATR State" "INFO" "No disk state -- VIX seed confirmed (see ATR Seed above)" ""
-    } else {
-        Add-Result "ATR State" "WARN" "No ATR state line seen" "Could not confirm ATR initialisation."
-    }
-}
-
-# --- CHECK 3: ATR running value (not 5.00 flat) ------------------------------
-$gfGateLines = @(Find-All "GF-GATE-BLOCK")
-$atrValues   = @()
-foreach ($l in $gfGateLines) {
-    if ($l -match "atr=([0-9.]+)") { $atrValues += [double]$Matches[1] }
-}
-if ($atrValues.Count -gt 0) {
-    $distinctAtrs = @($atrValues | Sort-Object -Unique)
-    $allFive = (@($distinctAtrs | Where-Object { $_ -ne 5.0 }).Count -eq 0)
-    if ($allFive -and $distinctAtrs.Count -gt 1) {
-        Add-Result "ATR Running Value" "FAIL" "atr=5.00 flat ($($atrValues.Count) gate checks)" "ATR still pinned at floor -- GFE_ATR_MIN fix may not be running."
-    } elseif ($distinctAtrs[0] -le 5.0 -and $distinctAtrs.Count -eq 1) {
-        Add-Result "ATR Running Value" "WARN" "atr=$($distinctAtrs[0]) (single value seen)" "Only one gate block sampled -- check again after more ticks."
-    } else {
-        $atrRange = "$($distinctAtrs[0])-$($distinctAtrs[-1])"
-        Add-Result "ATR Running Value" "PASS" "atr varying $atrRange across gate checks" "NOT stuck at 5.00."
-    }
-} else {
-    Add-Result "ATR Running Value" "INFO" "No GF-GATE-BLOCK lines (no gate blocks fired)" "Good -- or no entry attempts yet."
-}
+# --- CHECK 1/2/3 REMOVED S14 ------------------------------------------------
+# GFE-SEED, GFE ATR state loaded/rejected/startup, and GF-GATE-BLOCK atr tracking
+# were all GoldFlow-specific. GoldFlow culled S19 Stage 1B (engine deleted).
+# Bar-level ATR for remaining engines is verified in Bar State Load check below.
 
 # --- CHECK 4: vol_range NOT 0.00 (962ad27 seed fix) -------------------------
 $volLine = Find-Last "GOLD-DIAG.*vol_range"
@@ -623,34 +552,10 @@ if ($l2CheckLine) {
         "Logged on first 20 depth events -- check again after 30s. If still missing, cTrader depth not subscribed."
 }
 
-# --- CHECK 8d: GoldFlow blocking gates ----------------------------------------
-# Check every gate that can silently block GoldFlow entries mid-session.
-# Each must be visible at startup and in MONITOR.
-
-# ENGINE_CULLED: fires after 4 consecutive SL_HITs, blocks all day until midnight
-$engineCulledLine = Find-Last "GF-GATE-BLOCK.*ENGINE_CULLED"
-if ($engineCulledLine) {
-    Add-Result "GF Engine Culled" "FAIL" "GoldFlow CULLED after 4 SL_HITs" "GoldFlow disabled for session. Resets at midnight UTC. Check recent trades."
-} else {
-    Add-Result "GF Engine Culled" "PASS" "Not culled" "GoldFlow not culled this session."
-}
-
-# ==============================================================================
-# CHECK: GoldFlow enabled -- GFE-CONFIG must show goldflow_enabled=true
-# GFE-CONFIG is a startup-once line written before VERIFY_STARTUP starts tailing.
-# Must search the FULL log from byte 0, not just capturedLines (new lines only).
-# ==============================================================================
-$gfeConfigLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
-    Where-Object { $_ -match "GFE-CONFIG" } | Select-Object -Last 1
-if (!$gfeConfigLine) {
-    Add-Result "GoldFlow Active" "FAIL" "No GFE-CONFIG line in log" `
-        "GoldFlow never logged its config -- binary may be stale or goldflow_enabled not parsed. Run QUICK_RESTART.ps1"
-} elseif ($gfeConfigLine -match "DISABLED") {
-    Add-Result "GoldFlow Active" "FAIL" "GoldFlow is DISABLED in config" `
-        "goldflow_enabled=false in omega_config.ini [risk] section -- set goldflow_enabled=true"
-} else {
-    Add-Result "GoldFlow Active" "PASS" "$($gfeConfigLine.Trim())" "GoldFlow entries active."
-}
+# --- CHECK 8d REMOVED S14: GoldFlow blocking gates --------------------------
+# Engine culled S19 Stage 1B. GF-GATE-BLOCK ENGINE_CULLED, GFE-CONFIG,
+# GFE-FADE-BLOCK are all dead log tags. GF Bar State merged into
+# Bar State Load check below (bars still used by RSI/HybridBracket/TrendPB).
 
 # ==============================================================================
 # CHECK: RSI Reversal Engine enabled
@@ -669,28 +574,22 @@ if (!$rsiConfigLine) {
     Add-Result "RSI Reversal Active" "PASS" "$($rsiConfigLine.Trim())" "RSI Reversal live."
 }
 
-# BARS_PERMANENTLY_UNAVAILABLE: bars failed to seed, GoldFlow blind
+# --- BAR STATE CHECKS (shared by RSIReversal, HybridBracket, TrendPB, BB) ----
+# Bars are M1/M5/M15/H1/H4 OHLC series used by every live gold engine for ATR,
+# RSI, trend filters. GoldFlow-specific gates removed S14 (engine culled S19).
 $barsPermanentLine = Find-Last "BARS_PERMANENTLY_UNAVAILABLE"
 $barsNotReadyLine  = Find-Last "BARS_NOT_READY"
 if ($barsPermanentLine) {
-    Add-Result "GF Bar State" "FAIL" "BARS_PERMANENTLY_UNAVAILABLE" "M1 bars never seeded -- restart Omega to retry. GoldFlow running without RSI/ATR/trend context."
+    Add-Result "Bar State" "FAIL" "BARS_PERMANENTLY_UNAVAILABLE" "M1 bars never seeded -- restart Omega to retry. Gold engines running without ATR/RSI/trend context."
 } elseif ($barsNotReadyLine) {
-    Add-Result "GF Bar State" "INFO" "Bars warming up" "M1 bars seeding -- GoldFlow blocked until ready. Normal in first 2min."
+    Add-Result "Bar State" "INFO" "Bars warming up" "M1 bars seeding -- gold engines blocked until ready. Normal in first 2min."
 } else {
-    Add-Result "GF Bar State" "PASS" "Bars ready" "M1 bars seeded, GoldFlow has full context."
-}
-
-# DIR_SL_COOLDOWN: directional block after consecutive SL hits same direction
-$dirSLLine = Find-Last "GFE-FADE-BLOCK"
-if ($dirSLLine) {
-    Add-Result "GF Dir SL Cooldown" "WARN" "Direction blocked after consecutive SL_HITs" $dirSLLine.Trim()
-} else {
-    Add-Result "GF Dir SL Cooldown" "PASS" "No directional cooldown active" "No consecutive same-direction SL_HITs."
+    Add-Result "Bar State" "PASS" "Bars ready" "M1 bars seeded, all gold engines have full context."
 }
 
 # --- CHECK BAR-LOAD: bar state loaded from disk on startup (not cold) -----------
 # [BAR-LOAD] must appear in log with m1_ready=1.
-# If missing: bars not loading from disk -- cold start, GoldFlow blocked for ~2min.
+# If missing: bars not loading from disk -- cold start, gold engines blocked ~2min.
 # If m1_ready=0: .dat file was stale/corrupt and rejected -- first restart of the day.
 # FAIL either way: next restart will be warm because periodic save runs every 10min.
 $barLoadLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
@@ -703,7 +602,7 @@ if (!$barLoadLine) {
     Add-Result "Bar State Load" "PASS" "Loaded from disk m1_ready=1 ATR=$atrVal -- warm start" $barLoadLine.Trim()
 } else {
     Add-Result "Bar State Load" "WARN" "BAR-LOAD seen but m1_ready=0 -- .dat file rejected (stale/cold)" `
-        "$barLoadLine -- GoldFlow will warm in ~2min from tick data. Next restart will be instant."
+        "$barLoadLine -- gold engines will warm in ~2min from tick data. Next restart will be instant."
 }
 
 # --- CHECK BAR-SAVE: periodic save fires every 10min -------------------------
@@ -718,24 +617,8 @@ if ($barSaveLine) {
         "Normal if uptime < 10min. If still missing after 15min, L2 watchdog thread may have crashed."
 }
 
-# --- CHECK 8e: GoldFlow phase state -------------------------------------------
-# GoldFlow must be in IDLE or FLOW_BUILDING to enter trades.
-# COOLDOWN = waiting after exit (10-45s). Silent COOLDOWN was blocking all entries.
-$gfePhaseLine  = Find-Last "GFE-PHASE"
-$gfeCooldown   = Find-Last "GFE-COOLDOWN.*remaining"
-if ($gfeCooldown) {
-    $remain = if ($gfeCooldown -match "remaining=([0-9]+)ms") { [int]($Matches[1]/1000) } else { "?" }
-    Add-Result "GF Phase" "WARN" "COOLDOWN ${remain}s remaining" "GoldFlow in cooldown -- will resume automatically. Normal after a trade exit."
-} elseif ($gfePhaseLine) {
-    $ph = if ($gfePhaseLine -match "phase=(\w+)") { $Matches[1] } else { "?" }
-    if ($ph -eq "IDLE" -or $ph -eq "FLOW_BUILDING") {
-        Add-Result "GF Phase" "PASS" "phase=$ph" $gfePhaseLine.Trim()
-    } else {
-        Add-Result "GF Phase" "WARN" "phase=$ph" $gfePhaseLine.Trim()
-    }
-} else {
-    Add-Result "GF Phase" "INFO" "No GFE-PHASE line yet" "GoldFlow phase not yet emitted -- fires every 30s. Check again."
-}
+# --- CHECK 8e REMOVED S14: GoldFlow phase state ------------------------------
+# GFE-PHASE and GFE-COOLDOWN were GoldFlow-specific (engine culled S19 Stage 1B).
 
 # --- CHECK 9: Latency ---------------------------------------------------------
 $latLine = Find-Last "OMEGA-DIAG.*RTTp95"
@@ -754,33 +637,14 @@ if ($latLine) {
 }
 
 # --- CHECK 10: Gate blocks summary -------------------------------------------
-# PS 5.1: @() forces array even when Find-All returns a single string -- .Count is safe on arrays
-$noRoom      = @(Find-All "GF-GATE-BLOCK.*NO_ROOM_TO_TARGET").Count
-$compNoVol   = @(Find-All "GF-GATE-BLOCK.*COMPRESSION_NO_VOL").Count
-$costGate    = @(Find-All "GF-GATE-BLOCK.*COST_GATE").Count
-$barBlocks   = @(Find-All "GF-BAR-BLOCK").Count
+# GF-GATE-BLOCK variants and GF-BAR-BLOCK removed S14 (GoldFlow culled S19).
+# SPREAD-Z is still emitted by trade_lifecycle.hpp on anomalous spreads.
 $spreadBlock = @(Find-All "SPREAD-Z.*anomalous").Count
 
-$gateTotal = $noRoom + $compNoVol + $costGate + $barBlocks + $spreadBlock
-if ($gateTotal -eq 0) {
-    Add-Result "Gate Blocks" "INFO" "No gate blocks in first ${WaitSec}s" "No entry attempts or no blocks (good)."
+if ($spreadBlock -eq 0) {
+    Add-Result "Gate Blocks" "INFO" "No gate blocks in first ${WaitSec}s" "No spread anomalies detected."
 } else {
-    $parts = @()
-    if ($noRoom    -gt 0) { $parts += "NO_ROOM_TO_TARGET=$noRoom" }
-    if ($compNoVol -gt 0) { $parts += "COMPRESSION_NO_VOL=$compNoVol" }
-    if ($costGate  -gt 0) { $parts += "COST_GATE=$costGate" }
-    if ($barBlocks -gt 0) { $parts += "BAR_BLOCK=$barBlocks" }
-    if ($spreadBlock -gt 0) { $parts += "SPREAD_Z=$spreadBlock" }
-    $gateStr = $parts -join "  "
-
-    # FAIL only if the same block type fires every single time (stuck pattern)
-    if ($noRoom -gt 5 -and ($compNoVol + $costGate + $barBlocks) -eq 0) {
-        Add-Result "Gate Blocks" "WARN" $gateStr "NO_ROOM_TO_TARGET dominant -- ATR may still be wrong. Check ATR Running Value above."
-    } elseif ($compNoVol -gt 5 -and ($noRoom + $costGate + $barBlocks) -eq 0) {
-        Add-Result "Gate Blocks" "WARN" $gateStr "COMPRESSION_NO_VOL dominant -- vol_range near floor. May need lower gf_compression_vol_floor."
-    } else {
-        Add-Result "Gate Blocks" "INFO" $gateStr "Mixed blocks -- normal filtering behaviour."
-    }
+    Add-Result "Gate Blocks" "INFO" "SPREAD_Z=$spreadBlock" "Spread anomaly blocks -- normal filtering."
 }
 
 # --- CHECK 11: First signal ---------------------------------------------------
@@ -794,22 +658,8 @@ if ($firstSignal) {
     Add-Result "First Signal" "INFO" "No signal in first ${WaitSec}s" "Normal if market quiet or in compression."
 }
 
-# --- CHECK 12: Impulse ghost block -------------------------------------------
-$ghostLines = @(Find-All "GF-IMPULSE-GHOST.*Blocked")
-if ($ghostLines.Count -gt 0) {
-    $lastGhost = $ghostLines[-1]
-    if ($lastGhost -match "only ([0-9]+) ticks, need ([0-9]+)") {
-        $got = [int]$Matches[1]
-        $need = [int]$Matches[2]
-        if ($got -ge 1 -and $need -eq 3) {
-            Add-Result "Impulse Ghost" "PASS" "Blocked at $got tick(s), need $need -- fix active" "Post-impulse flicker fix confirmed (need=3, not blocking on 0-tick)."
-        } else {
-            Add-Result "Impulse Ghost" "WARN" "got=$got need=$need" $lastGhost.Trim()
-        }
-    }
-} else {
-    Add-Result "Impulse Ghost" "INFO" "No impulse ghost blocks seen" ""
-}
+# --- CHECK 12 REMOVED S14: Impulse ghost -------------------------------------
+# GF-IMPULSE-GHOST was GoldFlow-specific (engine culled S19 Stage 1B).
 
 # --- CHECK 13: Running hash vs GitHub HEAD (API, not git CLI) ----------------
 # Uses GitHub API -- git CLI is not available on VPS after zip-based restart.
@@ -883,23 +733,12 @@ if (Test-Path $barFile) {
     }
 } else {
     Add-Result "Bar State" "INFO" "No bars_gold_m1.dat -- cold start" `
-        "Will request M15 tick data from broker on startup. GoldFlow delayed ~2min."
+        "Will request M15 tick data from broker on startup. Gold engines delayed ~2min."
 }
 
-# --- CHECK 15: Ratchet fix active (no immediate TRAIL exits) -----------------
-$ratchetExits = @(Find-All "GOLD-FLOW.*TRAIL_HIT.*held=[0-9]+\.[0-9]+s" | Where-Object {
-    if ($_ -match "held=([0-9.]+)s") { [double]$Matches[1] -lt 30 } else { $false }
-})
-$ratchetCapped = @(Find-All "DOLLAR-RATCHET.*price_capped")
-if ($ratchetCapped.Count -gt 0) {
-    Add-Result "Ratchet Fix" "PASS" "price_capped fired $($ratchetCapped.Count) time(s)" `
-        "SL cap working -- ratchet not setting SL above current price."
-} elseif ($ratchetExits.Count -gt 0) {
-    Add-Result "Ratchet Fix" "WARN" "$($ratchetExits.Count) TRAIL_HIT exit(s) under 30s" `
-        "Possible ratchet overshoot -- check DOLLAR-RATCHET lines for price_capped."
-} else {
-    Add-Result "Ratchet Fix" "INFO" "No ratchet activity yet" ""
-}
+# --- CHECK 15 REMOVED S14: Ratchet fix ---------------------------------------
+# GOLD-FLOW.*TRAIL_HIT and DOLLAR-RATCHET were GoldFlow-specific
+# (engine culled S19 Stage 1B). Hybrid/Bracket ratchets tracked elsewhere.
 
 # --- CHECK 16: Bracket window warmup (expected ~3min at 195 ticks/min) -------
 # STRUCTURE_LOOKBACK=600 ticks at 195/min = ~185s (~3 min) to fill.
