@@ -328,7 +328,9 @@ static Result run_with_costs(const std::vector<H4BarWithTicks>& bars,
 
         if (pos.active) continue;
         if (!atr.primed) continue;
-        if (i + 1 < (size_t)cfg.donchian_bars) continue;
+        // Guard: need i >= cfg.donchian_bars so that k=i-N is >= 0 in the loop below.
+        // (Fix applied 2026-04-24 Session 11 -- off-by-one surfaced via h1_bt_minimal.)
+        if ((int)i < cfg.donchian_bars) continue;
         if (is_weekend_gated(bt.bar.ts_ms_open)) continue;
 
         double ch_high = -1e18, ch_low = 1e18;

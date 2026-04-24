@@ -425,7 +425,11 @@ static Result run_one(const std::vector<H4BarWithTicks>& bars, const Config& cfg
         // The deque right now contains bars [i-N+1 .. i]. We want [i-N .. i-1].
         // Easiest: pop current bar off when computing.
         // But we already pushed. So recompute channel from [i-N .. i-1]:
-        if (i + 1 < (size_t)cfg.donchian_bars) continue;
+        // Guard: need i >= cfg.donchian_bars so that k=i-N is >= 0 in the loop below.
+        // Previous guard `i + 1 < donchian_bars` was off by one: at i==donchian_bars-1
+        // the loop started at k=-1 which is undefined behavior on std::vector.
+        // (Fix applied 2026-04-24 Session 11 -- h1_bt_minimal.cpp surfaced the bug.)
+        if ((int)i < cfg.donchian_bars) continue;
         double ch_high = -1e18, ch_low = 1e18;
         for (int k = (int)i - cfg.donchian_bars; k < (int)i; ++k) {
             if (bars[k].bar.high > ch_high) ch_high = bars[k].bar.high;

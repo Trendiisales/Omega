@@ -380,7 +380,9 @@ int main(int argc, char** argv) {
                        fmt_ts(b.ts_ms_close).c_str(), "NO", atr.seed_tr.size(), atr.period);
             continue;
         }
-        if (i + 1 < (size_t)donchian_bars) continue;
+        // Guard: need i >= donchian_bars so that k=i-N is >= 0 in the loop below.
+        // (Fix applied 2026-04-24 Session 11 -- off-by-one surfaced via h1_bt_minimal.)
+        if ((int)i < donchian_bars) continue;
 
         bool gated = is_weekend_gated(bt.bar.ts_ms_open);
 
