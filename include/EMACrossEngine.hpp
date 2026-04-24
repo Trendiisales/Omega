@@ -1,6 +1,25 @@
 // =============================================================================
 // EMACrossEngine.hpp -- EMA crossover scalper for XAUUSD
 //
+// ==============================================================
+// S18 SOFT CULL -- 2026-04-24 (HEAD = parent of this commit)
+// ==============================================================
+// Reason: 10-day ledger audit (83 trades, 04-16..04-24) showed the engine
+// net -$74.37 / 10d at 30.1% WR in live sizing. Tier-1 (BE-at-cost) + Tier-2b
+// (Asia-session-losers filter) simulation projected +$10.18 / 10d best-case --
+// marginal, below the cull threshold. Decision: soft-cull.
+//
+// What "soft cull" means here:
+//   - shadow_mode is forced to true at every tick regardless of engine_init.hpp
+//   - no new entries will be taken (early-return after pos-management block)
+//   - any position open at cull time manages out normally (TP/SL/BE/TIMEOUT)
+//   - on_bar still runs; EMA state + cross detection still update
+//   - [ECE-CULLED-SIGNAL] log emits on every cross so we keep the signal
+//     stream for ongoing validation of the cull decision
+//   - no core strategy/risk/management logic removed (rule #1 respected)
+// To lift the cull: set ECE_CULLED = false and rebuild. Reversible.
+// ==============================================================
+//
 // STRATEGY (sweep-confirmed, 6-day / 1.5M tick backtest 2026-04-09..16):
 //   Fast EMA(9) crosses Slow EMA(15) on M1 bar close
 //   RSI(tick) confirms direction: cross must be in RSI 40-50 zone (not OB/OS)
@@ -75,6 +94,12 @@
 #include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
 
 namespace omega {
+
+// =============================================================================
+// S18 SOFT CULL FLAG -- 2026-04-24
+// =============================================================================
+// Set to false to re-enable EMACross. See top-of-file comment for audit detail.
+static constexpr bool ECE_CULLED = true;
 
 // =============================================================================
 // Config -- sweep-confirmed 2026-04-16
@@ -191,6 +216,20 @@ struct EMACrossEngine {
         if (long_cross)  { _cross_dir = 1;  _cross_ms = now_ms; }
         if (short_cross) { _cross_dir = -1; _cross_ms = now_ms; }
 
+        // S18 SOFT CULL -- keep signal-stream log for ongoing validation.
+        // Fires once per detected cross. Not gated by shadow_mode so it is
+        // visible even while the engine is culled.
+        if (ECE_CULLED && (long_cross || short_cross)) {
+            std::cout << "[ECE-CULLED-SIGNAL] "
+                      << (long_cross ? "LONG_CROSS" : "SHORT_CROSS")
+                      << " fast=" << std::fixed << std::setprecision(2) << _ema_fast
+                      << " slow=" << _ema_slow
+                      << " rsi="  << std::setprecision(1) << _rsi
+                      << " atr="  << std::setprecision(2) << _atr
+                      << " ts="   << now_ms << "\n";
+            std::cout.flush();
+        }
+
         // Heartbeat every 10 bars
         ++_bars_total;
         if (_bars_total % 30 == 0) {
@@ -200,7 +239,8 @@ struct EMACrossEngine {
                       << " rsi=" << std::setprecision(1) << _rsi
                       << " atr=" << std::setprecision(2) << _atr
                       << " cross=" << _cross_dir
-                      << " shadow=" << shadow_mode << "\n";
+                      << " shadow=" << shadow_mode
+                      << (ECE_CULLED ? " CULLED" : "") << "\n";
             std::cout.flush();
         }
     }
@@ -214,6 +254,23 @@ struct EMACrossEngine {
 
         _daily_reset(now_ms);
         if (_daily_pnl <= -200.0) return;
+
+        // ── S18 SOFT CULL -- 2026-04-24 ──────────────────────────────────────
+        // Force shadow_mode regardless of what engine_init.hpp set. Emits a
+        // one-time banner on first post-startup tick so the cull status is
+        // visible in startup logs. Does NOT early-return here -- any open
+        // position still manages out cleanly below.
+        if (ECE_CULLED) {
+            shadow_mode = true;
+            if (!_culled_banner_emitted) {
+                std::cout << "[ECE-CULLED] EMACrossEngine soft-culled. "
+                          << "shadow_mode=forced-true, new entries blocked, "
+                          << "open pos (if any) will manage out normally. "
+                          << "See EMACrossEngine.hpp top comment for audit.\n";
+                std::cout.flush();
+                _culled_banner_emitted = true;
+            }
+        }
 
         double mid   = (bid + ask) * 0.5;
         double spread = ask - bid;
@@ -276,6 +333,11 @@ struct EMACrossEngine {
             // Removed to avoid MSVC C4127 constant expression warning
             return;
         }
+
+        // ── S18 SOFT CULL -- 2026-04-24 ──────────────────────────────────────
+        // Block all new entries. Managed positions above already exited on
+        // their normal TP/SL/BE/TIMEOUT paths before reaching here.
+        if (ECE_CULLED) return;
 
         // Entry guards
         if (!_fast_warmed || !_slow_warmed) return;
@@ -375,6 +437,9 @@ private:
     int     _trade_id      = 0;
     int     _consec_sl     = 0;    // consecutive SL counter
     int64_t _sl_kill_until = 0;    // block entries until this ms
+
+    // S18 soft-cull banner flag (once per process)
+    bool    _culled_banner_emitted = false;
 
     // FIX ECE-MUTEX 2026-04-21: race guard for _close / force_close.
     // mutable so const-qualified methods could also acquire if needed.
