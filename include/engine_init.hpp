@@ -262,6 +262,26 @@ static void init_engines(const std::string& cfg_path)
     // 3600s (60min) chosen as conservative first cap -- analytics review after
     // 5 trading days will tune. 0 = disabled.
     g_bracket_gold.MAX_HOLD_SEC = 3600;
+    // ?? Post-fill confirmation gate (S21 2026-04-25) ??????????????????????????
+    // Driver: 2026-04-24 session fakeouts. Price pierced a bracket level by
+    // 0.5-1pt, filled the stop order, then reversed before ever moving 3pt
+    // in our favour. Existing BREAKOUT_FAIL needs mid-crossing (half range back)
+    // — CONFIRM triggers earlier at a fixed pt threshold.
+    //
+    // Backtest (logs/shadow/omega_shadow.csv, 86 XAUUSD_BRACKET trades over ~2wks):
+    //   CONFIRM_PTS=3.0, CONFIRM_SECS=30 aborts 31 trades at ~$0.28 cost each
+    //   instead of letting them run to full SL. Saved $267.11. Zero winning
+    //   trades harmed (winners=0 in the abort bucket).
+    //
+    // Mechanics per BracketEngine.hpp: on fill, enter CONFIRM phase. If MFE
+    // reaches 3.0pt inside 30s -> promote to LIVE, normal management. If 30s
+    // elapses without reaching 3.0pt -> abort at market (BREAKOUT_FAIL_CONFIRM).
+    // Hard-SL still fires inside the window (safety).
+    //
+    // 0.0 / 0 disables the gate. Set per-symbol -- other bracket engines keep
+    // defaults (gate inert) unless explicitly enabled.
+    g_bracket_gold.CONFIRM_PTS  = 3.0;
+    g_bracket_gold.CONFIRM_SECS = 30;
     // MIN_BREAK_TICKS: sweep guard -- price must stay inside the bracket for N consecutive
     // ticks before orders are sent. Catches London open liquidity sweeps (07:00:34 SHORT
     // -$7.97): bracket range $7.80 was exactly one sweep wide, SHORT filled in 1 tick

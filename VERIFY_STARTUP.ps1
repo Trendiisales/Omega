@@ -297,6 +297,58 @@ function Add-Result {
     })
 }
 
+# ------------------------------------------------------------------------------
+# Market-hours awareness helper (added 2026-04-25, S21a)
+#
+# Purpose: during weekends and Fri-close -> Sun-open gap, tick streams stop,
+# l2_ticks CSVs stop updating, and bar state on disk ages normally. The
+# diagnostic previously reported these as FAIL ("STALE 243s", "CORRUPT
+# flat/holiday state") which created noise on every weekend restart.
+#
+# XAUUSD (BlackBull / cTrader) schedule:
+#   - Closes approximately Fri 21:00 UTC (22:00-23:00 NZ DST)
+#   - Reopens approximately Sun 22:00 UTC (10:00-11:00 NZ Mon morning)
+# Indices (US500, USTEC) follow similar CME weekend maintenance windows.
+#
+# Conservative closed-window definition (UTC):
+#   - Saturday: closed all day
+#   - Sunday:   closed until 22:00 UTC
+#   - Friday:   closed after 21:00 UTC
+# Outside that window, market is assumed open.
+#
+# Holidays are NOT handled here -- we deliberately err on the side of
+# reporting FAILs during likely-open hours. If you are verifying during
+# a US holiday when the tape is thin, ignore specific FAILs manually.
+#
+# Returns $true if the market is OPEN, $false if CLOSED.
+# Also emits a [MARKET-HOURS] banner line for visibility in the report.
+# ------------------------------------------------------------------------------
+function Test-MarketOpen {
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $dow    = [int]$nowUtc.DayOfWeek   # Sunday=0, Monday=1, ..., Saturday=6
+    $hour   = $nowUtc.Hour
+
+    # Saturday: always closed
+    if ($dow -eq 6) { return $false }
+    # Sunday before 22:00 UTC: closed
+    if ($dow -eq 0 -and $hour -lt 22) { return $false }
+    # Friday after/including 21:00 UTC: closed
+    if ($dow -eq 5 -and $hour -ge 21) { return $false }
+    # All other times: open
+    return $true
+}
+
+$MARKET_OPEN = Test-MarketOpen
+$nowUtcLabel = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+if ($MARKET_OPEN) {
+    Write-Host "  [MARKET-HOURS] XAUUSD OPEN (UTC $nowUtcLabel) -- full checks enforced" -ForegroundColor Green
+} else {
+    Write-Host "  [MARKET-HOURS] XAUUSD CLOSED (UTC $nowUtcLabel) -- weekend/gap rules active" -ForegroundColor Yellow
+    Write-Host "                 L2 CSV staleness and bar-state age checks softened" -ForegroundColor DarkGray
+}
+Write-Host ""
+
+
 # --- CHECK 0: Log health -- confirm [LOG-HEALTH] heartbeat present and recent -
 # The engine emits [LOG-HEALTH] dated=ok latest=<ok|FAIL> ts=HH:MM:SS every 60s.
 # If we see latest=FAIL in any heartbeat, latest.log failed to open -- dated log only.
@@ -457,7 +509,11 @@ if (-not (Test-Path $l2CsvFile_XAU)) {
 } else {
     $l2Age_XAU = [int]((Get-Date) - (Get-Item $l2CsvFile_XAU).LastWriteTime).TotalSeconds
     if ($l2Age_XAU -gt 120) {
-        Add-Result "L2 Tick CSV XAUUSD" "FAIL" "STALE ${l2Age_XAU}s" "l2_ticks_XAUUSD not updated in ${l2Age_XAU}s -- logger stopped or Omega crashed."
+        if (-not $MARKET_OPEN) {
+            Add-Result "L2 Tick CSV XAUUSD" "INFO" "STALE ${l2Age_XAU}s (MARKET CLOSED)" "Weekend/gap window -- no ticks expected. Will resume on next session open. Age will be verified again when market reopens."
+        } else {
+            Add-Result "L2 Tick CSV XAUUSD" "FAIL" "STALE ${l2Age_XAU}s" "l2_ticks_XAUUSD not updated in ${l2Age_XAU}s -- logger stopped or Omega crashed."
+        }
     } else {
         $l2Sample_XAU       = Get-Content $l2CsvFile_XAU | Where-Object { $_ -match '^[0-9]' } | Select-Object -Last 20
         $l2NeutralCount_XAU = 0
@@ -491,7 +547,11 @@ if (-not (Test-Path $l2CsvFile_SP)) {
 } else {
     $l2Age_SP = [int]((Get-Date) - (Get-Item $l2CsvFile_SP).LastWriteTime).TotalSeconds
     if ($l2Age_SP -gt 120) {
-        Add-Result "L2 Tick CSV US500" "FAIL" "STALE ${l2Age_SP}s" "l2_ticks_US500 not updated in ${l2Age_SP}s -- SP logger stopped or US500 tick stream dead."
+        if (-not $MARKET_OPEN) {
+            Add-Result "L2 Tick CSV US500" "INFO" "STALE ${l2Age_SP}s (MARKET CLOSED)" "Weekend/gap window -- no ticks expected. Will resume on next session open."
+        } else {
+            Add-Result "L2 Tick CSV US500" "FAIL" "STALE ${l2Age_SP}s" "l2_ticks_US500 not updated in ${l2Age_SP}s -- SP logger stopped or US500 tick stream dead."
+        }
     } else {
         $l2RowCount_SP = (Get-Content $l2CsvFile_SP | Where-Object { $_ -match '^[0-9]' } | Measure-Object).Count
         if ($l2RowCount_SP -eq 0) {
@@ -511,7 +571,11 @@ if (-not (Test-Path $l2CsvFile_NQ)) {
 } else {
     $l2Age_NQ = [int]((Get-Date) - (Get-Item $l2CsvFile_NQ).LastWriteTime).TotalSeconds
     if ($l2Age_NQ -gt 120) {
-        Add-Result "L2 Tick CSV USTEC" "FAIL" "STALE ${l2Age_NQ}s" "l2_ticks_USTEC not updated in ${l2Age_NQ}s -- NQ logger stopped or USTEC tick stream dead."
+        if (-not $MARKET_OPEN) {
+            Add-Result "L2 Tick CSV USTEC" "INFO" "STALE ${l2Age_NQ}s (MARKET CLOSED)" "Weekend/gap window -- no ticks expected. Will resume on next session open."
+        } else {
+            Add-Result "L2 Tick CSV USTEC" "FAIL" "STALE ${l2Age_NQ}s" "l2_ticks_USTEC not updated in ${l2Age_NQ}s -- NQ logger stopped or USTEC tick stream dead."
+        }
     } else {
         $l2RowCount_NQ = (Get-Content $l2CsvFile_NQ | Where-Object { $_ -match '^[0-9]' } | Measure-Object).Count
         if ($l2RowCount_NQ -eq 0) {
@@ -719,8 +783,18 @@ if (Test-Path $barFile) {
         $badAtr   = ($atrd -lt 1.0 -and $atrd -gt 0)
 
         if ($flatEma -or $badRsi -or $badAtr) {
-            Add-Result "Bar State" "FAIL" "CORRUPT: e9=$e9d e50=$e50d rsi=$rsid atr=$atrd age=${ageMin}min" `
-                "Flat/holiday state on disk -- DELETE bars_gold_m1/m5/m15/h4.dat and redeploy."
+            if (-not $MARKET_OPEN) {
+                # Weekend/gap window: flat EMAs and sub-1.0 ATR are the expected
+                # state of a bar file saved at Friday close and untouched since.
+                # The file will rebuild from live ticks when market reopens.
+                # Do NOT recommend deleting -- that forces a cold start Monday
+                # and loses the seeded context.
+                Add-Result "Bar State" "INFO" "WEEKEND-SAVED: e9=$e9d e50=$e50d rsi=$rsid atr=$atrd age=${ageMin}min" `
+                    "Bar state aged from Fri close (market currently CLOSED). Flat EMAs / low ATR expected. Recheck after market reopens -- do NOT delete bars_gold_*.dat."
+            } else {
+                Add-Result "Bar State" "FAIL" "CORRUPT: e9=$e9d e50=$e50d rsi=$rsid atr=$atrd age=${ageMin}min" `
+                    "Flat/holiday state on disk -- DELETE bars_gold_m1/m5/m15/h4.dat and redeploy."
+            }
         } elseif ($ageMin -gt 1440) {
             Add-Result "Bar State" "WARN" "e9=$e9d atr=$atrd rsi=$rsid age=${ageMin}min (>24h)" `
                 "Bar state older than 24h -- will be rejected on load. Will rebuild from tick data."

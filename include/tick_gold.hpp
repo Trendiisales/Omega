@@ -1182,6 +1182,7 @@ static void on_tick_gold(
                     g_bracket_gold.phase == omega::BracketPhase::IDLE     ? "IDLE"
                   : g_bracket_gold.phase == omega::BracketPhase::ARMED    ? "ARMED"
                   : g_bracket_gold.phase == omega::BracketPhase::PENDING  ? "PENDING"
+                  : g_bracket_gold.phase == omega::BracketPhase::CONFIRM  ? "CONFIRM"
                   : g_bracket_gold.phase == omega::BracketPhase::LIVE     ? "LIVE"
                   :                                                          "COOLDOWN";
                 std::cout << "[GOLD-BRK-DIAG]"

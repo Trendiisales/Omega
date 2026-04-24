@@ -38,6 +38,15 @@ enum class BracketPhase : uint8_t {
     PENDING  = 2,
     LIVE     = 3,
     COOLDOWN = 4,
+    // S21 2026-04-25: post-fill confirmation phase.
+    // Inserted BETWEEN fill and LIVE behaviourally, but placed at end of the
+    // enum numerically so existing values (IDLE..COOLDOWN) keep their integer
+    // identities. No serialised consumers read these values by number, but
+    // this is the safer ordering in case any appear in the future.
+    // Entered on fill when CONFIRM_PTS>0 AND CONFIRM_SECS>0. Promoted to LIVE
+    // on favourable move >= CONFIRM_PTS. Aborts with BREAKOUT_FAIL_CONFIRM if
+    // CONFIRM_SECS elapses before the threshold is hit.
+    CONFIRM  = 5,
 };
 
 struct BracketSignal {
@@ -121,6 +130,37 @@ public:
     // XAUUSD suggested default: 3600 (60 min) — tighten to 1800 after
     // review if trail isn't capturing enough profit.
     int    MAX_HOLD_SEC        = 0;
+    // ?? Post-fill confirmation gate (S21 2026-04-25) ??????????????????????????
+    // Motivation: 2026-04-24 session showed repeated fakeout-fills where price
+    // pierced a bracket level by 0.5–1pt, filled the stop order, then reversed.
+    // Existing BREAKOUT_FAIL guard requires price to cross the bracket MIDPOINT
+    // (half the range back) — too generous for thin-penetration sweeps that
+    // only drift 1pt past the level and reverse.
+    //
+    // Backtest (logs/shadow/omega_shadow.csv, 86 XAUUSD_BRACKET trades):
+    //   CONFIRM_PTS=3.0 CONFIRM_SECS=30 -> aborts 31 trades, saves $267.11,
+    //   zero winning trades harmed. Dominant win is SL_HIT trades that
+    //   reached MFE < 3pt across their entire lifetime — the fill was
+    //   into a dead move that went straight to the stop.
+    //
+    // Mechanics:
+    //   1. On fill (confirm_fill), if both params > 0 enter CONFIRM phase
+    //      instead of LIVE.
+    //   2. Each tick in CONFIRM: track MFE relative to entry.
+    //      - If MFE >= CONFIRM_PTS: promote to LIVE, normal management.
+    //      - If (now - entry_ts) >= CONFIRM_SECS and MFE < CONFIRM_PTS:
+    //        close at market with reason BREAKOUT_FAIL_CONFIRM.
+    //   3. Both params must be > 0 to activate. Either at 0 disables the gate
+    //      (engine preserves prior behaviour — fill goes straight to LIVE).
+    //
+    // Exit reason BREAKOUT_FAIL_CONFIRM is classified identically to
+    // BREAKOUT_FAIL in whipsaw/consec-SL bookkeeping (non-SL loss). It does
+    // not increment the consec-SL counter and does reset it.
+    //
+    // XAUUSD defaults (post-backtest): 3.0 / 30. All other engines default
+    // to 0 / 0 — feature inert unless explicitly enabled per-symbol.
+    double CONFIRM_PTS         = 0.0;  // 0.0 disables
+    int    CONFIRM_SECS        = 0;    // 0   disables
     // MIN_BREAK_TICKS: consecutive ticks price must stay INSIDE the bracket before
     // arm_both_sides() fires. Guards against liquidity sweeps at London open and
     // other spike-and-snap patterns where price blows through a bracket level in
@@ -257,7 +297,9 @@ public:
     }
 
     bool has_open_position() const noexcept {
-        return phase == BracketPhase::PENDING || phase == BracketPhase::LIVE;
+        return phase == BracketPhase::PENDING
+            || phase == BracketPhase::CONFIRM
+            || phase == BracketPhase::LIVE;
     }
 
     // current_range(): locked structure range for health watchdog
@@ -307,6 +349,75 @@ public:
                 m_cooldown_ms_override = 0;  // single-use: clear after cooldown expires
             }
             else return;
+        }
+
+        // ?? CONFIRM: post-fill confirmation window (S21 2026-04-25) ???????????
+        // Gate fires only when BOTH CONFIRM_PTS > 0 AND CONFIRM_SECS > 0.
+        // confirm_fill() places us here instead of LIVE when the gate is active.
+        //
+        // Exit paths:
+        //   (a) MFE >= CONFIRM_PTS         -> promote to LIVE, fall through
+        //       to normal management (trail/SL/TP/regime_flip). Counter is
+        //       reset at confirm_fill() so regime_flip starts clean.
+        //   (b) (now - entry_ts) >= CONFIRM_SECS AND MFE < CONFIRM_PTS
+        //       -> close at market with reason BREAKOUT_FAIL_CONFIRM.
+        //   (c) Catastrophic SL already hit inside the confirm window: honour
+        //       the stop immediately (do not wait for window expiry). Without
+        //       this branch a LONG filled at H that immediately drops through
+        //       SL would sit in CONFIRM doing nothing while the loss widened.
+        // Order: (c) first (safety), then (a), then (b).
+        if (phase == BracketPhase::CONFIRM) {
+            if (!pos.active) return;
+
+            // Track MFE/MAE exactly as in LIVE -- needed for the promotion test
+            // and for any close() that fires from inside this phase.
+            const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
+            if ( move > pos.mfe) pos.mfe =  move;
+            if (-move > pos.mae) pos.mae = -move;
+
+            // (c) Hard SL safety inside confirm window -- don't bleed the stop
+            // waiting for the timer. This can fire when the fakeout reverses
+            // faster than CONFIRM_SECS allows.
+            if ( pos.is_long && bid <= pos.sl) {
+                closePos(pos.sl, "SL_HIT", macro_regime, on_close); return;
+            }
+            if (!pos.is_long && ask >= pos.sl) {
+                closePos(pos.sl, "SL_HIT", macro_regime, on_close); return;
+            }
+
+            // (a) Threshold met -> promote to LIVE and fall through to LIVE
+            // management on the NEXT tick. We deliberately do not run LIVE
+            // logic this tick because the LIVE branch above has already
+            // executed its phase check and skipped us. A single-tick delay
+            // is harmless and keeps the state machine obvious.
+            if (pos.mfe >= CONFIRM_PTS) {
+                std::cout << "[BRACKET-" << symbol << "] CONFIRM_PROMOTED"
+                          << " side=" << (pos.is_long ? "LONG" : "SHORT")
+                          << " mfe=" << pos.mfe
+                          << " threshold=" << CONFIRM_PTS
+                          << " elapsed_s=" << (now - pos.entry_ts) << "\n";
+                std::cout.flush();
+                phase = BracketPhase::LIVE;
+                return;
+            }
+
+            // (b) Window expired without hitting threshold -> abort at market
+            if ((now - pos.entry_ts) >= static_cast<int64_t>(CONFIRM_SECS)) {
+                const double exit_px = pos.is_long ? bid : ask;
+                std::cout << "[BRACKET-" << symbol << "] CONFIRM_ABORT"
+                          << " side=" << (pos.is_long ? "LONG" : "SHORT")
+                          << " mfe=" << pos.mfe
+                          << " threshold=" << CONFIRM_PTS
+                          << " elapsed_s=" << (now - pos.entry_ts)
+                          << " window_s=" << CONFIRM_SECS
+                          << " exit_px=" << exit_px
+                          << " entry=" << pos.entry << "\n";
+                std::cout.flush();
+                closePos(exit_px, "BREAKOUT_FAIL_CONFIRM", macro_regime, on_close);
+                return;
+            }
+            // Still inside the window, MFE still below threshold -- wait.
+            return;
         }
 
         // ?? LIVE: manage open position ????????????????????????????????????????
@@ -781,6 +892,11 @@ public:
     // ?? confirm_fill() ????????????????????????????????????????????????????????
     // Called by main.cpp when one side fills.
     // is_long_filled: true = long (buy stop) filled, false = short (sell stop) filled.
+    //
+    // S21 2026-04-25: routes to CONFIRM phase instead of LIVE when the
+    // post-fill confirmation gate is active. Both CONFIRM_PTS > 0 AND
+    // CONFIRM_SECS > 0 required to activate. Prior behaviour preserved when
+    // either is zero.
     void confirm_fill(bool is_long_filled, double actual_price, double actual_size) noexcept {
         if (phase != BracketPhase::PENDING) return;
         pos.active   = true;
@@ -790,7 +906,8 @@ public:
         pos.entry_ts = nowSec();
         pos.sl       = is_long_filled ? m_locked_long_sl  : m_locked_short_sl;
         pos.tp       = is_long_filled ? m_locked_long_tp  : m_locked_short_tp;
-        phase        = BracketPhase::LIVE;
+        const bool confirm_gate_active = (CONFIRM_PTS > 0.0 && CONFIRM_SECS > 0);
+        phase        = confirm_gate_active ? BracketPhase::CONFIRM : BracketPhase::LIVE;
         m_regime_flip_ticks = 0;  // fresh position -- start counter clean
         // Engine-enforced: cancel the other leg immediately on fill
         if (cancel_order_fn) {
@@ -807,7 +924,13 @@ public:
         std::cout << "[BRACKET-" << symbol << "] FILL CONFIRMED"
                   << " side=" << (is_long_filled ? "LONG" : "SHORT")
                   << " px=" << actual_price << " size=" << actual_size
-                  << " sl=" << pos.sl << " tp=" << pos.tp << "\n";
+                  << " sl=" << pos.sl << " tp=" << pos.tp
+                  << " phase=" << (confirm_gate_active ? "CONFIRM" : "LIVE");
+        if (confirm_gate_active) {
+            std::cout << " confirm_pts=" << CONFIRM_PTS
+                      << " confirm_secs=" << CONFIRM_SECS;
+        }
+        std::cout << "\n";
         std::cout.flush();
     }
 
@@ -823,7 +946,10 @@ public:
                     double /*latency_ms*/, const char* macro_regime,
                     CloseCallback on_close) noexcept
     {
-        if (phase == BracketPhase::LIVE && pos.active)
+        // S21 2026-04-25: CONFIRM behaves like LIVE for force-close purposes --
+        // position is filled, broker is holding it, must be closed at market.
+        if ((phase == BracketPhase::LIVE || phase == BracketPhase::CONFIRM)
+            && pos.active)
             closePos((bid + ask) * 0.5, reason, macro_regime, on_close);
         else if (phase == BracketPhase::PENDING) {
             cancel_both_broker_orders();
