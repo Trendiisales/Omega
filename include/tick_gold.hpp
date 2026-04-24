@@ -883,8 +883,28 @@ static void on_tick_gold(
             const double l2_avol_unc  = static_cast<double>(l2_ask_lvls);
             const double vol_ratio_log = (g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
-            (void)l2_bvol_unc; (void)l2_avol_unc; (void)vol_ratio_log;  // GFE-culled CSV consumers
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
+            // S14 fix 2026-04-24: restore fprintf row-write. S19 Stage 1B (a199bec)
+            // wrongly removed this fprintf along with the GoldFlow cull, but the
+            // L2 CSV logger was unconditional by design. Result: header written
+            // once per day then zero data rows, CSV stale for every tick since
+            // 2026-04-17 (VERIFY_STARTUP flagged 16767s stale 2026-04-24 07:43 UTC).
+            // has_pos hardcoded 0 since GoldFlow was the only consumer of that column.
+            fprintf(s_l2f_unc,
+                "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                "%d,%d,%llu,"
+                "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
+                (long long)now_ms_g, xau_mid, bid, ask,
+                g_macro_ctx.gold_l2_imbalance,
+                l2_bvol_unc, l2_avol_unc,
+                l2_bid_lvls, l2_ask_lvls,
+                (unsigned long long)g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed),
+                (int)g_l2_watchdog_dead.load(std::memory_order_relaxed),
+                vol_ratio_log,
+                (int)gold_sdec.regime,
+                g_vpin.warmed() ? g_vpin.vpin() : 0.0,
+                0,  // has_pos: GoldFlow culled S19 Stage 1B, hardcoded 0
+                g_l2_gold.micro_edge.load(std::memory_order_relaxed),
+                static_cast<double>(g_gold_stack.ewm_drift()));
             fflush(s_l2f_unc);
 
             // L2 CSV health heartbeat every 60s -- confirms file is open and writing.
