@@ -44,9 +44,9 @@
 //  INTEGRATION (main.cpp):
 //    1. Include after OmegaAdaptiveRisk.hpp.
 //    2. Declare: static omega::vpin::VPINTracker g_vpin;
-//    3. In GoldFlow tick loop, after computing mid price:
+//    3. In the tick loop, after computing mid price:
 //         g_vpin.on_tick(mid, now_ms);
-//         // Pre-entry gate (in GoldFlow on_tick entry path):
+//         // Pre-entry gate:
 //         if (g_vpin.toxic()) { /* skip entry */ return; }
 //    4. Optional in enter_directional for XAUUSD:
 //         if (esym == "XAUUSD" && g_vpin.toxic()) return 0.0;

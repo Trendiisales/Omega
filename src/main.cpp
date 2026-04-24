@@ -80,7 +80,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "OmegaRegimeAdaptor.hpp"  // Regime-adaptive engine weights + vol regime
 #include "OmegaHotReload.hpp"      // Live config reload -- no reboot needed for param changes
 #include "OmegaCorrelationMatrix.hpp" // EWM rolling corr matrix + vol-parity sizing
-#include "OmegaVPIN.hpp"              // Tick-classified VPIN toxicity gate (GoldFlow pre-entry)
+#include "OmegaVPIN.hpp"              // Tick-classified VPIN toxicity gate
 #include "OmegaMonteCarlo.hpp"        // Bootstrap P&L resample + BH/FDR correction (offline tool)
 #include "OmegaVolTargeter.hpp"       // EWMA vol targeting + ADX momentum regime classifier
 #include "OmegaSignalScorer.hpp"      // Composite signal scoring (replaces soft gate chain)

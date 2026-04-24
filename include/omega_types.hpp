@@ -301,7 +301,7 @@ static std::atomic<bool>   g_emergency_close(false);  // set by GUI button ? clo
 // ?? cTrader Open API depth client -- parallel to FIX, read-only L2 feed ???????
 static CTraderDepthClient  g_ctrader_depth;
 // OHLC bar state -- populated by cTrader trendbar API (M1+M5 history + live bars)
-// Read lock-free by GoldFlow and GoldStack via atomic accessors.
+// Read lock-free by flow engines and GoldStack via atomic accessors.
 static SymBarState         g_bars_gold;   // XAUUSD M1/M5/H1/H4 bars + indicators
 static SymBarState         g_bars_sp;     // US500.F M1/M5/H1 bars + indicators
 static SymBarState         g_bars_nq;     // USTEC.F M1/M5/H1 bars + indicators

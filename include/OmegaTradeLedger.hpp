@@ -135,7 +135,7 @@ public:
 
         // ?? DEDUP GUARD ???????????????????????????????????????????????????????????
         // Prevents replayed close events from being double-booked into the ledger.
-        // Root cause: GoldStack/GoldFlow positions opened in a prior session persist
+        // Root cause: GoldStack positions opened in a prior session persist
         // in engine memory across reconnects. On SL/trail hit after reconnect,
         // on_close fires -> handle_closed_trade -> ledger.record() for a trade that
         // may already have been recorded (or belongs to yesterday's session).

@@ -240,7 +240,6 @@ static std::unordered_map<std::string, BracketTrendState> g_bracket_trend;
 //   TurtleTick           -- breakout-cont : block LONG on bias=-1, SHORT on bias=+1
 //   DomPersist           -- trend-cont    : block LONG on bias=-1, SHORT on bias=+1
 //   EMACross             -- trend-follow  : block LONG on bias=-1, SHORT on bias=+1
-//   GoldFlow             -- trend-cont    : block LONG on bias=-1, SHORT on bias=+1
 //   SessionMomentum / MacroCrash / CompBreakout: TBD (read source first)
 //
 // All consumers use the SAME rule: block entries IN the rejected direction.

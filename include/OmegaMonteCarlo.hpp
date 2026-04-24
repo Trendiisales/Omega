@@ -33,9 +33,9 @@
 //
 //    // Multiple strategy comparison with FDR:
 //    std::vector<omega::mc::TestResult> tests = {
-//        {"GoldFlow_v1", 0.031},
-//        {"GoldFlow_v2", 0.048},
-//        {"GoldStack",   0.012},
+//        {"EngineA",    0.031},
+//        {"EngineB",    0.048},
+//        {"GoldStack",  0.012},
 //        {"BreakoutSP",  0.180},
 //    };
 //    auto bh = omega::mc::benjamini_hochberg(tests, 0.10);

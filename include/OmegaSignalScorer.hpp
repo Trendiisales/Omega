@@ -1,6 +1,6 @@
 #pragma once
 // =============================================================================
-// OmegaSignalScorer.hpp -- Composite signal scoring for GoldFlow entry quality
+// OmegaSignalScorer.hpp -- Composite signal scoring for entry quality
 //
 // Replaces the sequential hard-gate model with a weighted point system.
 // Each condition contributes points toward an entry score.

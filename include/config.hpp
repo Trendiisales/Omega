@@ -314,7 +314,7 @@ static void maybe_reset_daily_ledger() {
     // Without this call ewm_fast_/ewm_slow_ accumulate continuously from
     // process start, carrying yesterday's bias into today's first ticks.
     // Replay analysis of Apr 17 showed drift=+1.32 at 00:00:00 before any
-    // Apr 17 ticks influenced a fresh EWM -- priming GoldFlow's direction
+    // Apr 17 ticks influenced a fresh EWM -- priming directional bias
     // generator LONG from session start and contributing to the 169:9
     // LONG:SHORT Asian-session attempt skew. Save happens on the line above
     // BEFORE this reset so the prior-day baseline is preserved to disk for

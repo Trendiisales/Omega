@@ -36,7 +36,7 @@
 //
 // INTEGRATION:
 //   Replace the hard-coded OmegaSignalScorer::SCORE_MIN_ENTRY comparison in the
-//   GoldFlow scorer block with g_param_gate.effective_min_score("XAUUSD").
+//   scorer block with g_param_gate.effective_min_score("XAUUSD").
 //
 // =============================================================================
 

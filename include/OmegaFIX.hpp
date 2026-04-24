@@ -176,10 +176,9 @@ struct L2Book {
     //   bid=2, ask=3 → 2/5 = 0.40  (mild ask pressure)
     //   bid=3, ask=3 → 3/6 = 0.50  (neutral)
     //
-    // GFE_LONG_THRESHOLD=0.75, GFE_SHORT_THRESHOLD=0.25 (in GoldFlowEngine.hpp).
     // For a LONG signal: need bid_count > ask_count by at least 4:1 (e.g. 4 bid, 1 ask).
     // For a SHORT signal: need ask_count > bid_count by at least 4:1 (e.g. 1 bid, 4 ask).
-    // Neutral (0.40–0.60) = no trade from GFE alone; drift must override.
+    // Neutral (0.40–0.60) = no directional L2 edge.
     double imbalance_level(int levels = 5) const noexcept {
         const int bn = std::min(bid_count, levels);
         const int an = std::min(ask_count, levels);
