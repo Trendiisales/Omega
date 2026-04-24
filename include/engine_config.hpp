@@ -554,26 +554,8 @@ static void load_config(const std::string& path) {
             if (k=="cooldown_h4_bars")   mp.cooldown_h4_bars    = safe_stoi(v, k);
             if (k=="weekend_close_gate") mp.weekend_close_gate  = (v == "true" || v == "1");
         }
-        if (section == "latency_edge") {
-            auto& le = g_cfg.le_cfg;
-            // GoldSilverLeadLag DELETED -- keys silently ignored for backward compat with old ini files
-            // GoldSpreadDislocation
-            if (k=="spread_disloc_spike_ratio")    le.spread_disloc_spike_ratio    = safe_stod(v, k);
-            if (k=="spread_disloc_min_median")     le.spread_disloc_min_median     = safe_stod(v, k);
-            if (k=="spread_disloc_max_median")     le.spread_disloc_max_median     = safe_stod(v, k);
-            if (k=="spread_disloc_tp")             le.spread_disloc_tp             = safe_stod(v, k);
-            if (k=="spread_disloc_sl")             le.spread_disloc_sl             = safe_stod(v, k);
-            if (k=="spread_disloc_cooldown_sec")   le.spread_disloc_cooldown_sec   = safe_stoi(v, k);
-            if (k=="spread_disloc_max_hold_sec")   le.spread_disloc_max_hold_sec   = safe_stoi(v, k);
-            // GoldEventCompression
-            if (k=="event_comp_range")             le.event_comp_range             = safe_stod(v, k);
-            if (k=="event_comp_trigger")           le.event_comp_trigger           = safe_stod(v, k);
-            if (k=="event_comp_tp")                le.event_comp_tp                = safe_stod(v, k);
-            if (k=="event_comp_sl")                le.event_comp_sl                = safe_stod(v, k);
-            if (k=="event_comp_max_hold_sec")      le.event_comp_max_hold_sec      = safe_stoi(v, k);
-            if (k=="event_comp_cooldown_sec")      le.event_comp_cooldown_sec      = safe_stoi(v, k);
-            if (k=="event_comp_max_spread")        le.event_comp_max_spread        = safe_stod(v, k);
-        }
+        // [latency_edge] section parser REMOVED at S13 Finding B 2026-04-24 — engine culled.
+        // Any [latency_edge] keys in omega_config.ini are now silently ignored.
     }
     std::cout << "[CONFIG] mode=" << g_cfg.mode
               << " vol=" << g_cfg.vol_thresh_pct

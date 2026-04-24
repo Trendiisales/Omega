@@ -183,14 +183,7 @@ static void maybe_reset_daily_ledger() {
                 g_gold_stack.force_close(xau_b, xau_a, g_rtt_last, midnight_cb);
                 std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldStack\n";
             }
-            if (g_le_stack.has_open_position()) {
-                double xag_b=0, xag_a=0; mpx("XAGUSD", xag_b, xag_a);
-                g_le_stack.force_close_all(xau_b, xau_a,
-                    xag_b > 0.0 ? xag_b : xau_b * 0.0185,
-                    xag_a > 0.0 ? xag_a : xau_a * 0.0185,
-                    g_rtt_last, midnight_cb);
-                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed LatencyEdge\n";
-            }
+            // (LatencyEdge midnight force_close block REMOVED at S13 Finding B 2026-04-24 — engine culled)
         } else {
             std::cout << "[MIDNIGHT-ROLLOVER] WARNING: no XAUUSD price -- gold positions may carry\n";
         }

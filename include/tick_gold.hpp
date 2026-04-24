@@ -45,7 +45,7 @@ static void on_tick_gold(
     const bool gs_winning = gs_open && g_gold_stack.has_profitable_trail();
     const bool gold_any_open =
         (gs_open && !gs_winning)                ||  // GoldStack blocks unless profitable trail
-        g_le_stack.has_open_position()          ||
+        // g_le_stack.has_open_position() REMOVED at S13 Finding B 2026-04-24 — engine culled.
         g_bracket_gold.has_open_position()      ||
         // (GoldFlow gf_open/gf_winning term removed S19 Stage 1B — engine culled)
         g_trend_pb_gold.has_open_position()     ||
@@ -1742,7 +1742,7 @@ static void on_tick_gold(
 
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
-    // LatencyEdge: not supervisor-gated (intermarket/latency signal)
+    // (LatencyEdge comment removed S13 Finding B 2026-04-24 — engine culled)
     // Full exclusion: checks ALL other gold engines to prevent stacking.
     // Previously only checked bracket + stack -- GoldFlow and TrendPB were missing.
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
@@ -1838,7 +1838,7 @@ static void on_tick_gold(
     // TrendPullback: M15 swing trades (1-3hr hold, 20-50pt targets).
     // Can run CONCURRENTLY with GoldFlow (10s scalp) -- different timeframes,
     // different position sizes, independent SL/TP levels, no conflict.
-    // Still blocked by bracket and LatencyEdge (those are structural/speed trades
+    // Still blocked by bracket (was also LatencyEdge — culled S13 Finding B 2026-04-24)
     // that would directly conflict with a swing position at the same level).
     // GoldStack (tick-pattern engine) also blocked -- shares exact same entry zone.
     // TrendPullback gold -- re-enabled with tick-EMA-correct TP (ATR-based, not EMA9)
@@ -1895,7 +1895,7 @@ static void on_tick_gold(
     if (tpb_gold_can_enter
         && !g_bracket_gold.has_open_position()
         && !g_gold_stack.has_open_position()
-        && !g_le_stack.has_open_position()
+        // && !g_le_stack.has_open_position()  -- REMOVED S13 Finding B 2026-04-24
         && !g_trend_pb_gold.has_open_position()) {
         const auto tpb = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
         if (tpb.valid) {
@@ -2021,7 +2021,7 @@ static void on_tick_gold(
             gold_can_enter
             && hybrid_vol_ok
             && !g_bracket_gold.has_open_position()
-            && !g_le_stack.has_open_position()
+            // && !g_le_stack.has_open_position()  -- REMOVED S13 Finding B 2026-04-24
             && !g_trend_pb_gold.has_open_position()
             && !g_nbm_gold_london.has_open_position();
 

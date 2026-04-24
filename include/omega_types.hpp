@@ -290,8 +290,7 @@ struct OmegaConfig {
     int64_t     ctrader_ctid_account_id     = 0;
     bool        ctrader_depth_enabled       = false;  // set true when token is configured
 
-    // LatencyEdgeStack config -- passed to g_latency_edge.configure()
-    omega::latency::LatencyEdgeCfg le_cfg;
+    // LatencyEdgeStack le_cfg REMOVED at S13 Finding B 2026-04-24 — engine culled.
 };
 
 static OmegaConfig         g_cfg;

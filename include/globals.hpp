@@ -125,7 +125,9 @@ static omega::idx::VWAPAtrTrail g_vwap_atr_trail_us30; // DJ30.F (no VWAPRev, un
 // Co-location latency edge stack -- GoldSpreadDislocation + GoldEventCompression.
 // GoldSilverLeadLag DELETED 2026-03-31. Both remaining engines run MANAGE-ONLY
 // (new entries disabled -- RTT ~68ms, edge requires <1ms).
-static omega::latency::LatencyEdgeStack g_le_stack;
+// (LatencyEdgeStack culled S13 Finding B 2026-04-24 — VPS RTT ~68ms,
+//  latency edge requires <1ms; stack was hardcoded to no-op returns.
+//  See backtest/CULL_S13_LATENCY_EDGE.md.)
 
 // ?? Cross-engine deduplication -- file-scope so dispatch lambda can see it ??
 // Per-symbol timestamp of the last entry across ALL engine types.

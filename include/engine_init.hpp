@@ -44,9 +44,11 @@ static void init_engines(const std::string& cfg_path)
     g_iflow_us30.set_shadow_mode(kShadowDefault);
     // Class C (stamped 2026-04-21):
     g_hybrid_gold.shadow_mode  = kShadowDefault;  // GoldHybridBracketEngine
-    // LatencyEdgeStack: currently DISABLED (VPS RTT ~68ms, needs <1ms). No positions
+    // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
+    // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
+    //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
     // possible, so shadow_mode wiring is moot. When the stack is re-enabled, add:
-    //   g_le_stack.set_shadow_mode(kShadowDefault);  // requires setter on the stack
+    //   g_le_stack.set_shadow_mode(kShadowDefault);  // obsolete — stack culled S13
     g_gold_stack.set_shadow_mode(kShadowDefault);  // GoldEngineStack / GoldPositionManager via proxy
     // TrendPullbackEngine (4 instances, uniform per Q1 decision):
     g_trend_pb_gold.shadow_mode  = kShadowDefault;
@@ -102,24 +104,25 @@ static void init_engines(const std::string& cfg_path)
     // Enable live once shadow logs confirm it fires correctly on real expansion events.
     g_macro_crash.shadow_mode     = true;  // SHADOW: enable live after validation
     g_macro_crash.enabled         = true;
-    // ASIA-TUNED THRESHOLDS (2026-04-07):
-    // London/NY macro events: $50-150pt moves, ATR=10-25pt, drift=8-20pt -> original gates correct.
-    // Asia macro events (last 2 weeks): $10-30pt spikes, ATR=4-8pt, drift=3-6pt.
-    // ATR_THRESHOLD=8 and DRIFT_MIN=6 BOTH miss Asia spikes:
-    //   - Asia ATR is typically 3-6pt; threshold=8 means MCE never arms in Asia.
-    //   - Asia drift peaks at 3-5pt on a $15 move; DRIFT_MIN=6 blocks entry on all of them.
-    // Fix: lower Asia thresholds. These are tuned to the last 2 weeks of Asia activity:
-    //   ATR_THRESHOLD=4.0: a $10 Asia spike at tick-rate 1/s generates ATR~4-5pt in 60s.
-    //   DRIFT_MIN=3.0:     a $12 sustained Asia move builds drift to ~3-4pt.
-    //   VOL_RATIO_MIN=2.0: Asia baseline vol is lower, 2x expansion is still real.
-    // The session-aware gating happens at on_tick call time (MCE checks session_slot via
-    // the tick_gold.hpp wrapper). We store the LOWER threshold so Asia is covered.
-    // London/NY sessions produce higher ATR/drift naturally so they still clear the bar.
-    // Evidence: 2026-04-07 image shows $13 drop in 6min during Asia (13:18-13:54 UTC slot=3)
-    //           with RSI touching 30 -- ATR was ~5pt, drift ~-4pt. Old gates: blocked.
-    g_macro_crash.ATR_THRESHOLD   = 4.0;   // lowered 8.0->4.0: covers Asia spikes ($10-15pt ATR=4-6pt)
-    g_macro_crash.VOL_RATIO_MIN   = 2.0;   // lowered 2.5->2.0: Asia baseline lower, 2x still real
-    g_macro_crash.DRIFT_MIN       = 3.0;   // lowered 6.0->3.0: Asia $12 moves build drift=3-4pt
+    // S13 REVERT (2026-04-24): restore London/NY base thresholds.
+    //
+    // PRIOR STATE: base thresholds were lowered to ATR=4.0 / VOL_RATIO=2.0 /
+    // DRIFT=3.0 under the reasoning that "London/NY produces higher values
+    // naturally so they still clear". Evidence shows this broke the engine:
+    //   S17 audit (8 days, Apr 14-23): 8 trades, 12.5% WR, -$35.81 total
+    //   Engine was designed around Apr 2 tariff crash ($5,304 proof): that
+    //   day ATR~15pt, drift~20pt -- would have cleared original gates easily.
+    //   Current config lets small London wobbles (ATR=4.5, drift=3.2) fire
+    //   trades that are not real macro events, hence 12.5% WR.
+    //
+    // FIX: Restore class-default base thresholds. The engine already has
+    // session-aware Asia overrides built in:
+    //   ATR_THRESHOLD_ASIA=4.0 / VOL_RATIO_MIN_ASIA=2.0 / DRIFT_MIN_ASIA=3.0
+    // and switches at entry via `const bool is_asia = (session_slot == 6);`
+    // so Asia coverage is preserved; only London/NY chop-fires are filtered.
+    g_macro_crash.ATR_THRESHOLD   = 6.0;   // reverted 4.0->6.0: London/NY macro-event threshold
+    g_macro_crash.VOL_RATIO_MIN   = 2.5;   // reverted 2.0->2.5: London/NY 2.5x vol expansion
+    g_macro_crash.DRIFT_MIN       = 5.0;   // reverted 3.0->5.0: London/NY 5pt drift confirms direction
     g_macro_crash.BASE_RISK_USD   = 80.0;  // scales with ATR (6x max = 0.48 lots at ATR=10)
     g_macro_crash.STEP1_TRIGGER_USD = 80.0;  // lowered 200->80: Asia moves are $10-30pt not $200+
                                               // At $10 move with 0.10 lots: open_pnl=$100 -- still clears
@@ -1034,9 +1037,9 @@ static void init_engines(const std::string& cfg_path)
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
     g_gold_stack.configure(g_cfg.gs_cfg);
 
-    // LatencyEdgeStack config -- applies all [latency_edge] ini values.
+    // (LatencyEdgeStack config block removed S13 Finding B 2026-04-24 — engine culled)
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
-    g_le_stack.configure(g_cfg.le_cfg);
+    // g_le_stack.configure(...) REMOVED at S13 Finding B 2026-04-24 — engine culled.
 
     // ?? SHELVED ENGINE DISABLE -- 2026-03-31 ??????????????????????????????????
     // Engines disabled based on live performance audit. Each engine's own

@@ -59,7 +59,7 @@ enum class EngineClass {
     FX_CASCADE,           // FxCascadeEngine
     FX_CARRY,             // CarryUnwindEngine + Asia FX
     CROSS_ASSET,          // EsNqDiv, EIAFade, BrentWTI, ORB, VWAP, TrendPB
-    LATENCY_EDGE,         // LatencyEdgeStack
+    // LATENCY_EDGE REMOVED at S13 Finding B 2026-04-24 — LatencyEdgeStack culled.
 };
 
 // ?????????????????????????????????????????????????????????????????????????????
@@ -94,7 +94,7 @@ struct RegimeWeightTable {
         table[static_cast<int>(EC::FX_CASCADE)]          = {1.00f,  1.00f,  0.00f}; // block carry cascade in risk-off
         table[static_cast<int>(EC::FX_CARRY)]            = {1.20f,  1.00f,  0.00f}; // block carry unwind entry in risk-off
         table[static_cast<int>(EC::CROSS_ASSET)]         = {1.00f,  1.00f,  0.70f};
-        table[static_cast<int>(EC::LATENCY_EDGE)]        = {1.00f,  1.00f,  0.80f};
+        // EC::LATENCY_EDGE regime-weight row REMOVED at S13 Finding B 2026-04-24 — engine culled.
     }
 
     float get(EngineClass ec, const std::string& regime) const {

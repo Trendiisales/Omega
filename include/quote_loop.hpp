@@ -231,8 +231,7 @@ static void quote_loop() {
                 }
                 std::cout.unsetf(std::ios::fixed);
                 std::cout << std::setprecision(6);
-                // Latency edge engines stats
-                g_le_stack.print_stats();
+                // (Latency edge stats REMOVED at S13 Finding B 2026-04-24 — engine culled)
                 print_perf_stats();
 
                 // ================================================================
@@ -637,13 +636,7 @@ static void quote_loop() {
                       std::cout << "[STALE-CLOSE] Purged prior-day GoldStack\n"; }
                 // LEStack: has_open_position() is true if either sub-engine is live.
                 // live_entry_ts() not exposed -- LEStack max hold is ~2min so prior-day
-                // carry is only possible after a very long disconnect. Close only if stale
-                // by checking the internal SpreadDisloc engine's pos timestamp via force_close
-                // guard: we always close LEStack on reconnect (same as before) -- its
-                // positions are so short-lived that any surviving position IS stale.
-                if (g_le_stack.has_open_position())
-                    { g_le_stack.force_close_all(xb_rc, xa_rc, xb_rc, xa_rc, g_rtt_last, stale_cb);
-                      std::cout << "[STALE-CLOSE] Purged LEStack on reconnect (max hold ~2min, always stale)\n"; }
+                // (LEStack stale-close block REMOVED at S13 Finding B 2026-04-24 — engine culled)
             }
             // -- Breakout engines (all symbols) --
             stale_beng(g_eng_sp,     "US500.F");
@@ -813,10 +806,7 @@ static void quote_loop() {
         }
         { double b=0,a=0; snap_px("XAUUSD",b,a);
           if(b<=0){b=1;a=1;}
-          // Silver slot in le_stack signature: use gold-ratio proxy pending Tier-3 cleanup
-          const double s_bid = b*0.0185, s_ask = a*0.0185;
-          g_le_stack.force_close_all(b,a,s_bid,s_ask,g_rtt_last,
-              [&](const omega::TradeRecord& tr){shutdown_cb(tr);}); }
+          // (LEStack shutdown force_close REMOVED at S13 Finding B 2026-04-24 — engine culled) }
 
         // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
         { double b=0,a=0;
@@ -915,10 +905,7 @@ static void quote_loop() {
               g_gold_stack.force_close(b,a,g_rtt_last,scb);
               // (GoldFlow shutdown force_close removed S19 Stage 1B — engine culled)
             }
-            { double b,a; get_px("XAUUSD",b,a);
-              // Silver slot in le_stack signature: gold-ratio proxy pending Tier-3 cleanup
-              const double sb = b*0.0185, sa = a*0.0185;
-              g_le_stack.force_close_all(b,a,sb,sa,g_rtt_last,[&](const omega::TradeRecord& tr){scb(tr);}); }
+            // (LEStack daily-close force_close REMOVED at S13 Finding B 2026-04-24 — engine culled)
 
             // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
             { double b,a;
@@ -1127,23 +1114,7 @@ static void quote_loop() {
                     };
                 g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);
                 // (GoldFlowEngine force_close removed S19 Stage 1B — engine culled)
-                // Force-close latency edge engines
-                omega::latency::LatencyEdgeStack::CloseCb le_cb =
-                    [](const omega::TradeRecord& tr) {
-                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
-                        if (tr.shadow) {
-                            printf("[LE-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
-                                   tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
-                            fflush(stdout);
-                            return;
-                        }
-                        handle_closed_trade(tr);
-                        send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
-                    };
-                g_le_stack.force_close_all(g_bid, g_ask,
-                    s_bid > 0.0 ? s_bid : g_bid * 0.0185,
-                    s_ask > 0.0 ? s_ask : g_ask * 0.0185,
-                    g_rtt_last, le_cb);
+                // (LatencyEdgeStack reconnect-close block REMOVED at S13 Finding B 2026-04-24 — engine culled)
             }
         }
 
