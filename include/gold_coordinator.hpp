@@ -9,7 +9,7 @@
 //
 //   BRACKET_LANE  -- structural/bracket engines (6 engines, Session 9 migration):
 //                    BracketGold, TrendBracket, HybridBracket, CompBreakout,
-//                    EMACross, BBMeanRev
+//                    EMACross  (BBMeanRev REMOVED S19 2026-04-24)
 //
 //   FLOW_LANE     -- flow/directional engines (remaining engines, later sessions):
 //                    GoldStack, CandleFlow, MacroCrash, RSIReversal,

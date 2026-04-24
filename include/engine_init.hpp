@@ -25,7 +25,8 @@ static void init_engines(const std::string& cfg_path)
     // See globals.hpp tombstone comment for full details.
     g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
     g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
-    g_bb_mr.shadow_mode        = kShadowDefault;  // BBMeanReversionEngine
+    // BBMeanReversionEngine init REMOVED at S19 (2026-04-24) -- engine culled.
+    // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // DomPersistEngine init REMOVED at Session 15 (2026-04-23) -- no edge in
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
     g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine

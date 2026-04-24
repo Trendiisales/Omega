@@ -55,8 +55,8 @@ static void on_tick_gold(
         g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
         g_pullback_cont.has_open_position()     ||  // PCE open blocks other entries
         g_pullback_prem.has_open_position()     ||  // PCE premium open blocks other entries
-        g_ema_cross.has_open_position()              ||  // ECE open blocks other gold engines
-        g_bb_mr.has_open_position();                    // BBMR open blocks other gold engines
+        g_ema_cross.has_open_position()              ;  // ECE open blocks other gold engines
+        // g_bb_mr.has_open_position() REMOVED at S19 (2026-04-24) — BBMR engine culled.
 
     // (GoldFlow telemetry snap block removed S19 Stage 1B — GUI pyramid removed in commit 1)
 
@@ -692,7 +692,7 @@ static void on_tick_gold(
         const int64_t bh4 = (now_ms_g / 14400000LL) * 14400000LL;  // 4h = 14400s
         // M1
         if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
-        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); g_bb_mr.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), b1); g_bb_mr.reset_intrabar(); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
+        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); /* g_bb_mr.on_bar / reset_intrabar REMOVED at S19 (2026-04-24) — BBMR engine culled. */ s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
         else { if(xau_mid>s_cur1.high)s_cur1.high=xau_mid; if(xau_mid<s_cur1.low)s_cur1.low=xau_mid; s_cur1.close=xau_mid; }
         // M5
         if (s_bar5_ms == 0) { s_cur5 = {b5/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar5_ms = b5; }
@@ -1379,7 +1379,7 @@ static void on_tick_gold(
         // OPEN-LOG FIX 2026-04-21: capture "was open before on_tick" so we can
         // detect a fresh MCE entry transition after on_tick returns and emit
         // write_trade_open_log -- parity with the other engines already
-        // logged here (GoldFlow, CandleFlow, BBMeanRev,
+        // logged here (GoldFlow, CandleFlow,
         // CompBreakout, EMACross, RSIReversal, RSIExtremeTurn, BracketGold,
         // TrendBracket). MCE was silently opening positions with no row in
         // the open-trades CSV.
@@ -2195,13 +2195,12 @@ static void on_tick_gold(
         );
     }
 
-    // -- BBMeanReversionEngine -- diagnostic-confirmed 2026-04-17 ----------------
-    // 3-day / 1.86M tick sweep: sess=L+NY wed=Y llong=Y ov=0.20 srsi=75 lrsi=27 hk=Agg
-    // T=22 WR=68.2% PnL=$594 Avg=$27.03 MaxDD=$46.80. Shadow mode.
-    if (g_bb_mr.has_open_position()) {
-        g_bb_mr.on_tick(bid, ask, now_ms_g,
-            [&](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
-    }
+    // -- BBMeanReversionEngine REMOVED at S19 (2026-04-24) -------------------
+    // 11-day / 3.4M tick full-L2 sweep: T=285 WR=24.6% PnL=-$1171.82 MaxDD=$1679.
+    // 288-config grid sweep found NO config with WR >= 40%. Best-tuned config
+    // had MaxDD > PnL (not an edge). Same pattern as TickScalp / DomPersist /
+    // CompressionBreakout / GoldFlow. See backtest/bb_tuned_sweep_v2.cpp and
+    // globals.hpp tombstone for full evidence.
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
     // (TickScalpEngine [TSE-DISABLED] block REMOVED at Batch 5V §1.3 2026-04-20.

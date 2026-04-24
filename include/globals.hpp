@@ -172,11 +172,21 @@ static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine
 #include "EMACrossEngine.hpp"
 static omega::EMACrossEngine g_ema_cross;
 
-// BBMeanReversionEngine -- BB25/2SD mean reversion, 68.2% WR diagnostic-confirmed 2026-04-17
-// sess=L+NY wed=Y llong=Y ov=0.20 srsi=75 lrsi=27 hk=Agg T=22 WR=68.2% MaxDD=$46.80
-#include "BBMeanReversionEngine.hpp"
-static omega::BBMeanReversionEngine g_bb_mr;
-// DISABLED: 14.8% WR, -$27k/2yr backtest. Momentum continuation = negative EV.
+// BBMeanReversionEngine REMOVED at S19 (2026-04-24) -------------------------
+// Original 3-day/1.86M tick sweep claimed T=22 WR=68.2% PnL=$594. That sample
+// was too small to trust. Full 11-day/3.4M tick validation sweep on all
+// available XAUUSD L2 data (l2_ticks 2026-04-09..23) shows NO edge:
+//   Baseline    : T=285 WR=24.6% PnL=-$1171.82 MaxDD=$1679.46
+//   Best-tuned  : T=51  WR=33.3% PnL=+$228.49  MaxDD=$240.58  (MaxDD > PnL)
+// Even after 288-config grid sweep, no configuration achieves WR >= 40% or
+// Sharpe-worthy risk-adjusted returns. Best-tuned config is SHORT-only,
+// London-only, with MaxDD > PnL — not a validated edge.
+// Same removal pattern as TickScalpEngine (S14), DomPersistEngine (S15),
+// CompressionBreakoutEngine (S16), GoldFlowEngine (S19 Stage 1B).
+// See backtest/bb_tuned_sweep_v2.cpp for the validation sweep that killed it.
+// #include "BBMeanReversionEngine.hpp"  -- header removed
+// static omega::BBMeanReversionEngine g_bb_mr;  -- instance removed
+// DISABLED (separate): CandleFlow momentum continuation = negative EV.
 // g_candle_flow.enabled = false; -- set in engine_init
 
 #include "PDHLReversionEngine.hpp"
