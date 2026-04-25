@@ -30,23 +30,58 @@ Write-Host ""
 # [1/7] Stop -- must fully release C:\Omega\Omega.exe before copy step
 Write-Host "[1/7] Stopping Omega..." -ForegroundColor Yellow
 
-# 1a. If running as NSSM service, stop it cleanly
+# Helper: try to open the target exe exclusive-write. Returns $true if writable.
+function Test-FileWritable {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return $true }
+    try {
+        $fs = [System.IO.File]::Open($Path, 'Open', 'ReadWrite', 'None')
+        $fs.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# Helper: Forced rename-aside of a locked exe so Copy-Item can write fresh.
+# Always succeeds (or exits) -- never returns with the canonical path occupied.
+function Rename-LockedExe {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return }
+    $backup = "$Path.old_$(Get-Date -Format yyyyMMdd_HHmmss)"
+    try {
+        Rename-Item $Path $backup -Force
+        Write-Host "      [OK] Renamed locked exe -> $(Split-Path -Leaf $backup)" -ForegroundColor Green
+    } catch {
+        Write-Host "      [ERROR] Cannot rename locked exe at $Path : $_" -ForegroundColor Red
+        Write-Host "      Manual: tasklist | findstr Omega ; taskkill /F /IM Omega.exe" -ForegroundColor Red
+        exit 1
+    }
+}
+
+# 1a. NSSM: stop AND pause so service manager won't auto-restart during build
 $nssm = Get-Command nssm -ErrorAction SilentlyContinue
 if ($nssm) {
     $savedPrefNssm = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & nssm stop Omega 2>&1 | Out-Null
+    & nssm stop  Omega 2>&1 | Out-Null
+    & nssm pause Omega 2>&1 | Out-Null   # block auto-restart for the rest of this script
     $ErrorActionPreference = $savedPrefNssm
 }
 
-# 1b. Watchdog may respawn Omega -- stop it too if present
+# 1b. Watchdog may respawn Omega -- stop every form it can run as
 Stop-Process -Name "OMEGA_WATCHDOG" -Force -ErrorAction SilentlyContinue
 try {
-    Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and ($_.CommandLine -match 'OMEGA_WATCHDOG') } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe' OR Name='cmd.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and ($_.CommandLine -match 'OMEGA_WATCHDOG|Omega\.exe') } |
+        ForEach-Object {
+            # Don't kill our own process
+            if ($_.ProcessId -ne $PID) {
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
 } catch {
-    # CIM query failed -- not fatal, watchdog might not be running anyway
+    # CIM query failed -- not fatal
 }
 
 # 1c. Kill any remaining Omega.exe processes (crashed, detached, etc.)
@@ -64,30 +99,21 @@ while (Get-Process -Name "Omega" -ErrorAction SilentlyContinue) {
     $waited++
 }
 
-# 1e. Verify the target file is actually writable (no stray handle)
+# 1e. Verify writability up to 30s (matches process wait). Some handles outlive
+# the process briefly (AV scan, file indexer). Was 5s -- empirically too short.
 $canWrite = $false
-for ($i = 0; $i -lt 10; $i++) {
-    try {
-        $fs = [System.IO.File]::Open($OmegaExe, 'Open', 'ReadWrite', 'None')
-        $fs.Close()
-        $canWrite = $true
-        break
-    } catch {
-        Start-Sleep -Milliseconds 500
-    }
-}
-if (-not $canWrite -and (Test-Path $OmegaExe)) {
-    Write-Host "      [WARN] $OmegaExe still locked -- attempting rename fallback" -ForegroundColor Yellow
-    try {
-        Rename-Item $OmegaExe "Omega.exe.old_$(Get-Date -Format yyyyMMdd_HHmmss)" -Force
-        Write-Host "      [OK] Renamed locked exe -- copy step will write fresh" -ForegroundColor Green
-    } catch {
-        Write-Host "      [ERROR] Cannot rename locked exe: $_" -ForegroundColor Red
-        exit 1
-    }
+for ($i = 0; $i -lt 30; $i++) {
+    if (Test-FileWritable -Path $OmegaExe) { $canWrite = $true; break }
+    Start-Sleep -Seconds 1
 }
 
-Write-Host "      [OK] Omega fully stopped (waited ${waited}s)" -ForegroundColor Green
+# 1f. If still locked, rename it. Don't try to copy-overwrite a locked file.
+if (-not $canWrite) {
+    Write-Host "      [WARN] $OmegaExe still locked after 30s -- forcing rename" -ForegroundColor Yellow
+    Rename-LockedExe -Path $OmegaExe
+}
+
+Write-Host "      [OK] Omega fully stopped (waited ${waited}s, write-probe $i s)" -ForegroundColor Green
 Write-Host ""
 
 # [2/7] Sync to origin/main
@@ -139,6 +165,22 @@ if (-not (Test-Path $configSource)) { $configSource = "$OmegaDir\omega_config.in
 if (-not (Test-Path $configSource)) {
     Write-Host "      [ERROR] omega_config.ini not found" -ForegroundColor Red
     exit 1
+}
+
+# Pre-copy guard: even though step 1 cleared the lock, the build phase ran
+# afterwards. AV scanner / file indexer / a respawned watchdog could have
+# re-acquired a handle on $OmegaExe in the meantime. Re-probe and rename if
+# still locked. Never try to Copy-Item over a locked file.
+if (Test-Path $OmegaExe) {
+    $copyOk = $false
+    for ($j = 0; $j -lt 10; $j++) {
+        if (Test-FileWritable -Path $OmegaExe) { $copyOk = $true; break }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $copyOk) {
+        Write-Host "      [WARN] $OmegaExe re-locked after build -- forcing rename" -ForegroundColor Yellow
+        Rename-LockedExe -Path $OmegaExe
+    }
 }
 
 Copy-Item $BuildExe     $OmegaExe                       -Force
@@ -222,6 +264,17 @@ Write-Host "  git=$localHead  |  mode=$mode" -ForegroundColor Cyan
 Write-Host "  GUI -> http://185.167.119.59:7779" -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
+
+# Resume nssm service auto-restart now that the new exe is in place. If we
+# don't do this, a future crash won't be auto-recovered until next restart.
+# Direct .\Omega.exe launch below still works because nssm "continue" only
+# affects nssm's own restart logic, not whether Omega is running.
+if ($nssm) {
+    $savedPrefNssmEnd = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & nssm continue Omega 2>&1 | Out-Null
+    $ErrorActionPreference = $savedPrefNssmEnd
+}
 
 Set-Location $OmegaDir
 .\Omega.exe omega_config.ini
