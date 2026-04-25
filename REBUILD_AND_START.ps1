@@ -12,6 +12,16 @@
 #    - Writes omega_build.stamp with git hash + exe SHA256
 #    - Verifies stamp hash matches the exe that is about to be launched
 #    - Watermark/mode check blocks LIVE launch with testing config
+#
+#  RACE PREVENTION (post-5c31e334 hardening):
+#    - NSSM service Start is set to SERVICE_DISABLED for entire script lifetime
+#      (previous "nssm pause" is NOT a real NSSM command; it silently no-op'd
+#      and NSSM's auto-restart respawned Omega.exe under services.exe before
+#      step 7's direct launch, causing the singleton-mutex collision).
+#    - Original Start value is captured and restored at the end.
+#    - Pre-launch mutex/process re-poll: if anything (zombie watchdog, GUI
+#      reload, NSSM recovery) has re-spawned Omega.exe between step 1 and
+#      step 7, kill it and wait BEFORE attempting the direct launch.
 # ==============================================================================
 
 Set-StrictMode -Version Latest
@@ -59,13 +69,59 @@ function Rename-LockedExe {
     }
 }
 
-# 1a. NSSM: stop AND pause so service manager won't auto-restart during build
+# Helper: kill every Omega.exe process and wait for them to be gone.
+# Returns $true if all gone within $TimeoutSec, $false otherwise.
+function Wait-OmegaGone {
+    param([int]$TimeoutSec = 30)
+    Stop-Process -Name "Omega" -Force -ErrorAction SilentlyContinue
+    $waited = 0
+    while (Get-Process -Name "Omega" -ErrorAction SilentlyContinue) {
+        if ($waited -ge $TimeoutSec) { return $false }
+        Start-Sleep -Seconds 1
+        $waited++
+        # Re-issue kill in case a new instance spawned in the gap
+        Stop-Process -Name "Omega" -Force -ErrorAction SilentlyContinue
+    }
+    return $true
+}
+
+# 1a. NSSM: stop service AND disable auto-restart for script lifetime.
+#     "nssm pause" / "nssm continue" do NOT exist as NSSM verbs -- the only
+#     reliable way to block service-manager respawn is to set Start to
+#     SERVICE_DISABLED. We capture the original value and restore it at exit.
 $nssm = Get-Command nssm -ErrorAction SilentlyContinue
+$nssmServiceExists = $false
+$origStartType = $null
 if ($nssm) {
     $savedPrefNssm = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & nssm stop  Omega 2>&1 | Out-Null
-    & nssm pause Omega 2>&1 | Out-Null   # block auto-restart for the rest of this script
+
+    # Probe whether the Omega service is registered
+    & nssm status Omega 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        $nssmServiceExists = $true
+
+        # Capture original Start type so we can restore it later. Output is
+        # one of: SERVICE_AUTO_START | SERVICE_DEMAND_START | SERVICE_DISABLED
+        # | SERVICE_DELAYED_AUTO_START
+        $origStartType = (& nssm get Omega Start 2>&1 | Out-String).Trim()
+        if ([string]::IsNullOrWhiteSpace($origStartType)) {
+            $origStartType = "SERVICE_AUTO_START"   # safe default
+        }
+
+        # Stop the service (synchronous in nssm)
+        & nssm stop Omega 2>&1 | Out-Null
+
+        # Block service-manager auto-restart for the rest of the script.
+        # SERVICE_DISABLED prevents BOTH manual SCM starts AND NSSM's own
+        # AppExit/Throttle recovery from re-spawning Omega.exe.
+        & nssm set Omega Start SERVICE_DISABLED 2>&1 | Out-Null
+
+        Write-Host "      [OK] NSSM Omega stopped, Start=SERVICE_DISABLED (was $origStartType)" -ForegroundColor Green
+    } else {
+        Write-Host "      [INFO] NSSM Omega service not registered -- skipping service stop" -ForegroundColor Gray
+    }
+
     $ErrorActionPreference = $savedPrefNssm
 }
 
@@ -84,22 +140,14 @@ try {
     # CIM query failed -- not fatal
 }
 
-# 1c. Kill any remaining Omega.exe processes (crashed, detached, etc.)
-Stop-Process -Name "Omega" -Force -ErrorAction SilentlyContinue
-
-# 1d. Block until every Omega.exe is actually gone (max 30s)
-$waited = 0
-while (Get-Process -Name "Omega" -ErrorAction SilentlyContinue) {
-    if ($waited -ge 30) {
-        Write-Host "      [ERROR] Omega.exe still running after 30s -- manual intervention needed" -ForegroundColor Red
-        Write-Host "      Try: taskkill /F /IM Omega.exe" -ForegroundColor Red
-        exit 1
-    }
-    Start-Sleep -Seconds 1
-    $waited++
+# 1c. Kill any remaining Omega.exe processes (crashed, detached, NSSM children, etc.)
+if (-not (Wait-OmegaGone -TimeoutSec 30)) {
+    Write-Host "      [ERROR] Omega.exe still running after 30s -- manual intervention needed" -ForegroundColor Red
+    Write-Host "      Try: taskkill /F /IM Omega.exe" -ForegroundColor Red
+    exit 1
 }
 
-# 1e. Verify writability up to 30s (matches process wait). Some handles outlive
+# 1d. Verify writability up to 30s. Some handles outlive
 # the process briefly (AV scan, file indexer). Was 5s -- empirically too short.
 $canWrite = $false
 for ($i = 0; $i -lt 30; $i++) {
@@ -107,13 +155,13 @@ for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
 }
 
-# 1f. If still locked, rename it. Don't try to copy-overwrite a locked file.
+# 1e. If still locked, rename it. Don't try to copy-overwrite a locked file.
 if (-not $canWrite) {
     Write-Host "      [WARN] $OmegaExe still locked after 30s -- forcing rename" -ForegroundColor Yellow
     Rename-LockedExe -Path $OmegaExe
 }
 
-Write-Host "      [OK] Omega fully stopped (waited ${waited}s, write-probe $i s)" -ForegroundColor Green
+Write-Host "      [OK] Omega fully stopped (write-probe ${i}s)" -ForegroundColor Green
 Write-Host ""
 
 # [2/7] Sync to origin/main
@@ -265,15 +313,35 @@ Write-Host "  GUI -> http://185.167.119.59:7779" -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Resume nssm service auto-restart now that the new exe is in place. If we
-# don't do this, a future crash won't be auto-recovered until next restart.
-# Direct .\Omega.exe launch below still works because nssm "continue" only
-# affects nssm's own restart logic, not whether Omega is running.
-if ($nssm) {
+# 7a. PRE-LAUNCH MUTEX DEFENSE
+#     Between step 1 and now, the build phase ran for ~30-90s. In that window
+#     a stray Omega.exe COULD have spawned -- e.g. a watchdog we missed,
+#     a leftover SCM-triggered start before we set SERVICE_DISABLED, a manual
+#     double-click. If anything is holding the singleton mutex when we launch,
+#     our direct .\Omega.exe call exits immediately with "ALREADY RUNNING".
+#     Detect and kill any pre-existing Omega.exe RIGHT BEFORE the launch.
+$stray = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
+if ($stray) {
+    Write-Host "      [WARN] Stray Omega.exe detected pre-launch (PID=$($stray.Id -join ',')) -- killing" -ForegroundColor Yellow
+    if (-not (Wait-OmegaGone -TimeoutSec 15)) {
+        Write-Host "      [ERROR] Could not clear stray Omega.exe -- manual: taskkill /F /IM Omega.exe" -ForegroundColor Red
+        exit 1
+    }
+    # Mutex is named-kernel object; Windows releases it within ~1s of last handle close.
+    Start-Sleep -Seconds 2
+    Write-Host "      [OK] Stray cleared, mutex released" -ForegroundColor Green
+}
+
+# 7b. Restore NSSM service Start type so future crashes get auto-recovered.
+#     NOTE: this does NOT start the service -- our direct .\Omega.exe launch
+#     below is what runs Omega in this session. NSSM's auto-restart kicks in
+#     only if Omega.exe exits unexpectedly later.
+if ($nssmServiceExists -and $origStartType) {
     $savedPrefNssmEnd = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & nssm continue Omega 2>&1 | Out-Null
+    & nssm set Omega Start $origStartType 2>&1 | Out-Null
     $ErrorActionPreference = $savedPrefNssmEnd
+    Write-Host "      [OK] NSSM Start restored to $origStartType" -ForegroundColor Green
 }
 
 Set-Location $OmegaDir
