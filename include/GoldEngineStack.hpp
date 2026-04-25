@@ -3929,17 +3929,6 @@ class GoldPositionManager {
         char    engine[32] = {};
         char    reason[32] = {};
         char    regime[32] = {};
-        // S24 2026-04-25 -- per-engine trail-arm scaling.
-        // GoldStack's global LOCK_ARM_MOVE=$1.50 / TRAIL_ARM_1=$2.50 / TRAIL_ARM_2=$5.00
-        // are calibrated for wide-target trend engines (TP $15-20). For narrow-TP
-        // mean-reversion engines (VWAPStretchReversion TP=$8.80) this fires BE lock
-        // at 17% of target and cuts winners at +$0.60 (audit: 0.23:1 realized RR
-        // vs 2.2:1 configured). trail_scale multiplies the ARM thresholds per-leg
-        // so narrow-TP engines get proportional room before the trail kicks in.
-        // Distances (trail_d1 / trail_d2) are NOT scaled -- those are ATR-based
-        // and already proportional. Populated in open() by engine name; defaults
-        // to 1.0 (unchanged behaviour) for engines not explicitly scaled.
-        double  trail_scale = 1.0;
     };
 
     std::vector<GoldPos> legs_;
@@ -4024,10 +4013,10 @@ class GoldPositionManager {
                                  (leg_idx == 1) ? 0.80 :
                                  (leg_idx == 2) ? 0.65 : 0.65;
 
-        const double lock_arm   = LOCK_ARM_MOVE  * tier_mult * leg.trail_scale;
+        const double lock_arm   = LOCK_ARM_MOVE  * tier_mult;
         const double lock_gain  = LOCK_GAIN      * tier_mult;
-        const double trail_arm1 = TRAIL_ARM_1    * tier_mult * leg.trail_scale;
-        const double trail_arm2 = TRAIL_ARM_2    * tier_mult * leg.trail_scale;
+        const double trail_arm1 = TRAIL_ARM_1    * tier_mult;
+        const double trail_arm2 = TRAIL_ARM_2    * tier_mult;
         // Trail distances: when cur_atr>0 treat cfg values as ATR multipliers.
         // TRAIL_DIST_1=0.80 ? 0.80?ATR (wide -- ride the move)
         // TRAIL_DIST_2=0.50 ? 0.50?ATR (tighter on big runners)
@@ -4261,11 +4250,6 @@ class GoldPositionManager {
         strncpy(leg.engine, "PYRAMID", 31);
         strncpy(leg.reason, "PYR_ADD", 31);
         strncpy(leg.regime, regime ? regime : "", 31);
-        // S24 2026-04-25 -- pyramid legs inherit base-leg trail_scale so the
-        // per-engine scaling applies consistently across the full position.
-        // Without this, pyramid on a VWAPStretch base would revert to scale=1.0
-        // and hit BE lock / trail arm at the narrow thresholds the base avoided.
-        leg.trail_scale = legs_.front().trail_scale;
         legs_.push_back(leg);
         last_add_price_ = mid;
         last_add_ts_ = leg.entry_ts;
@@ -4363,21 +4347,6 @@ public:
         strncpy(leg.engine, sig.engine, 31);
         strncpy(leg.reason, sig.reason, 31);
         strncpy(leg.regime, regime ? regime : "", 31);
-        // S24 2026-04-25 -- per-engine trail scale.
-        // Rationale: GoldStack trail config (lock_arm=$1.50, trail_arm1=$2.50,
-        // trail_arm2=$5.00) was calibrated for trend/breakout engines with
-        // TP $15-20. Narrow-TP mean-reversion engines need larger scale so BE
-        // lock / trail arming don't fire prematurely and cut winners short.
-        // Scales derived from (target_lock_arm_pct_of_TP / 17%) where 17% is
-        // the current lock_arm-to-VWAPStretch-TP ratio. Target 43% of TP.
-        //   VWAPStretchReversion  TP=$8.80   scale=2.5 -> lock_arm=$3.75 (43% of TP)
-        // All other engines default to 1.0 (unchanged behaviour). Extend this
-        // block only when a specific engine is empirically flagged as cut short.
-        if (std::strcmp(sig.engine, "VWAPStretchReversion") == 0) {
-            leg.trail_scale = 2.5;
-        } else {
-            leg.trail_scale = 1.0;
-        }
         legs_.clear();
         legs_.push_back(leg);
         last_add_price_ = leg.entry;
