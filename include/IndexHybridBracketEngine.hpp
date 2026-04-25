@@ -19,15 +19,27 @@
 //   DJ30.F:   $5/pt,   MIN_RANGE=60pt, MAX_RANGE=300pt, SL=0.5*range+3.0pt
 //   NAS100:   $1/pt,   MIN_RANGE=28pt, MAX_RANGE=140pt, SL=0.5*range+1.0pt
 //
-// SL FORMULA: entry ± (range * 0.5 + sl_buffer)
+// SL FORMULA: entry +/- (range * 0.5 + sl_buffer)
 //   This gives RR~4 with TP = sl_dist * 2.0 beyond entry.
 //   Much better than SL=full_range which gives RR~1.
 //
 // On April 2 SP500 context:
 //   SP dropped ~250pt in one session. Pre-crash range was ~25-35pt.
 //   Hybrid bracket SHORT filling below 25pt range in a 30pt compression
-//   → rides 250pt crash at $50/pt × 0.01 lots = $125 per pt = potential $31,250
+//   -> rides 250pt crash at $50/pt x 0.01 lots = $125 per pt = potential $31,250
 //   At risk-controlled 0.02 lots with $30 risk: ~$250 realistic capture
+//
+// S23 2026-04-25 PORT of gold fix-set to IndexHybrid:
+//   Ported from S19 a076e314 (BracketEngine.hpp:372): BE trigger 40% -> 60%
+//     of tp_dist. 28-day gold audit showed 41% of trades exited BE_HIT at
+//     avg MFE 7.44pt (40% of tp_dist) then reverted. Widening to 60% lets
+//     more trades progress to TRAIL_HIT. Now configurable via
+//     IndexHybridConfig::be_trigger_frac (default 0.60).
+//   Ported from S20 70bc25b6 (GoldHybridBracketEngine.hpp): trail-arm guards.
+//     Position must have MFE >= min_trail_arm_pts AND held >= min_trail_arm_secs
+//     before BE lock or any subsequent trail move. Prevents sub-pt MFE from
+//     arming the trail on tick 2 and getting hit by bid-ask noise. Per-symbol
+//     tunable -- indices need different thresholds than gold's $1.5/15s.
 // =============================================================================
 
 #include <algorithm>
@@ -70,6 +82,24 @@ struct IndexHybridConfig {
                                        // 30-tick 'compression' captured 63pt adverse NY open move.
     int    min_break_ticks    = 3;
     int    min_entry_ticks    = 150;
+    // S23 2026-04-25: BE trigger fraction of tp_dist.
+    //   Ported from gold S19 a076e314 (widened 0.40 -> 0.60).
+    //   Before a winner can trigger TRAIL_HIT vs BE_HIT it must move at least
+    //   be_trigger_frac * tp_dist. 0.40 was too tight -- 41% of gold trades
+    //   scratched at BE after reaching 40% of TP then reversing. 0.60 gives
+    //   more room for the move to mature before BE lock engages.
+    //   Default 0.60 applies to all index symbols unless overridden.
+    double be_trigger_frac    = 0.60;
+    // S23 2026-04-25: trail-arm guards.
+    //   Ported from gold S20 70bc25b6 (GoldHybridBracketEngine). The BE lock
+    //   and any subsequent trail moves are gated by BOTH:
+    //     - MFE >= min_trail_arm_pts
+    //     - (now - entry) >= min_trail_arm_secs
+    //   Prevents sub-pt MFE on tick 2 from arming the trail and being hit
+    //   by bid-ask noise immediately. Set 0 to disable either guard.
+    //   Per-symbol tuning in make_*_config() factories below.
+    double min_trail_arm_pts  = 0.0;  // default disabled -- each factory overrides
+    int    min_trail_arm_secs = 0;    // default disabled -- each factory overrides
 };
 
 inline IndexHybridConfig make_sp_config() {
@@ -87,6 +117,10 @@ inline IndexHybridConfig make_sp_config() {
     c.lot_step     = 0.01;
     c.lot_min      = 0.01;
     c.lot_max      = 0.50;
+    // S23 trail-arm guards -- SP tick size $0.25, typical 1sec tick count 4-8.
+    //   3pt MFE = real move above spread noise. 15s hold = past micro-noise window.
+    c.min_trail_arm_pts  = 3.0;
+    c.min_trail_arm_secs = 15;
     return c;
 }
 
@@ -105,6 +139,10 @@ inline IndexHybridConfig make_nq_config() {
     c.lot_step     = 0.01;
     c.lot_min      = 0.01;
     c.lot_max      = 0.50;
+    // S23 trail-arm guards -- NQ tick size $0.25 but ticks move $1-5 rapidly.
+    //   8pt MFE = ~3x SP equivalent in real move terms. Same 15s hold.
+    c.min_trail_arm_pts  = 8.0;
+    c.min_trail_arm_secs = 15;
     return c;
 }
 
@@ -123,6 +161,10 @@ inline IndexHybridConfig make_us30_config() {
     c.lot_step     = 0.01;
     c.lot_min      = 0.01;
     c.lot_max      = 1.0;
+    // S23 trail-arm guards -- DJ30 tick size $1.0, biggest point moves of the indices.
+    //   15pt MFE = spread_cost_noise + small genuine move. Same 15s hold.
+    c.min_trail_arm_pts  = 15.0;
+    c.min_trail_arm_secs = 15;
     return c;
 }
 
@@ -141,6 +183,20 @@ inline IndexHybridConfig make_nas100_config() {
     c.lot_step     = 0.10;
     c.lot_min      = 0.10;
     c.lot_max      = 5.0;
+    // S23 NAS100-specific tuning per Jo 2026-04-25: "NAS needs different settings".
+    //   NAS100 cash at $1/pt has 20x less dollar-value-per-pt than SP but same
+    //   pt-scale volatility. Lot minimum is 10x larger (0.10 vs 0.01) which
+    //   amplifies small adverse moves in dollar terms.
+    //   - be_trigger_frac 0.60 -> 0.70: require stronger proof of winner before
+    //     BE lock given NAS100's historical false-breakout rate (0% WR pre-S23
+    //     structure_lookback widening; 19:50 false breakout -$25 reference).
+    //   - min_trail_arm_pts 12 (vs NQ's 8): NAS cash bid-ask noise is wider
+    //     than NQ futures. Requires ~50% more MFE to prove a move is genuine.
+    //   - min_trail_arm_secs 20 (vs 15 elsewhere): NAS cash sees spike-revert
+    //     patterns over 10-15s. 20s hold bypasses that window.
+    c.be_trigger_frac    = 0.70;
+    c.min_trail_arm_pts  = 12.0;
+    c.min_trail_arm_secs = 20;
     return c;
 }
 
@@ -433,23 +489,46 @@ private:
         const double tp_dist    = std::fabs(pos.tp - pos.entry);
         const double trail_dist = std::max(range * cfg_.trail_frac, (ask - bid) * 2.0);
 
-        if (move >= tp_dist * 0.40 && !pos.be_locked) {
+        // S23 2026-04-25: Trail-arm guards -- ported from gold S20 70bc25b6.
+        //   BE lock + every subsequent trail step require BOTH:
+        //     - pos.mfe >= cfg_.min_trail_arm_pts
+        //     - (now_s - pos.entry_ts) >= cfg_.min_trail_arm_secs
+        //   Either threshold set to 0 disables that half of the gate.
+        //   Prevents sub-pt MFE on tick 2 from arming trail and being hit by
+        //   bid-ask noise immediately (see gold 2026-04-24 15:44:43 3sec TRAIL).
+        //   Hard-SL path (below) is NOT gated -- original SL still fires.
+        const int64_t held_s     = now_s - pos.entry_ts;
+        const bool    arm_mfe_ok  = (cfg_.min_trail_arm_pts  <= 0.0) || (pos.mfe >= cfg_.min_trail_arm_pts);
+        const bool    arm_hold_ok = (cfg_.min_trail_arm_secs <= 0)   || (held_s  >= cfg_.min_trail_arm_secs);
+        const bool    trail_arm_ok = arm_mfe_ok && arm_hold_ok;
+
+        // S23 2026-04-25: BE trigger fraction widened from 0.40 to cfg_.be_trigger_frac
+        //   (default 0.60, NAS100 override 0.70). Ported from gold S19 a076e314.
+        //   Raw gate formula: move >= tp_dist * be_trigger_frac AND !be_locked
+        //   AND trail-arm guards satisfied.
+        if (trail_arm_ok && move >= tp_dist * cfg_.be_trigger_frac && !pos.be_locked) {
             pos.sl = pos.entry; pos.be_locked = true;
             std::cout << "[HYBRID-" << cfg_.symbol << "] TRAIL-BE "
                       << (pos.is_long ? "LONG" : "SHORT")
-                      << " move=" << std::fixed << std::setprecision(2) << move << "\n";
+                      << " move=" << std::fixed << std::setprecision(2) << move
+                      << " frac=" << std::setprecision(2) << cfg_.be_trigger_frac
+                      << " mfe=" << std::setprecision(2) << pos.mfe
+                      << " held=" << held_s << "s\n";
             std::cout.flush();
         }
-        if (pos.be_locked && move >= tp_dist) {
+        // Subsequent trail steps are gated on be_locked AND trail_arm_ok.
+        // Once BE is locked, the arm guards stay enforced to prevent a BE-locked
+        // trail from being whipsawed by noise before a decisive move.
+        if (trail_arm_ok && pos.be_locked && move >= tp_dist) {
             const double lock = pos.is_long
                 ? pos.entry + tp_dist * 0.50 : pos.entry - tp_dist * 0.50;
             if ((pos.is_long && lock > pos.sl) || (!pos.is_long && lock < pos.sl)) pos.sl = lock;
         }
-        if (pos.be_locked && move >= tp_dist * 2.0) {
+        if (trail_arm_ok && pos.be_locked && move >= tp_dist * 2.0) {
             const double lock = pos.is_long ? pos.entry + tp_dist : pos.entry - tp_dist;
             if ((pos.is_long && lock > pos.sl) || (!pos.is_long && lock < pos.sl)) pos.sl = lock;
         }
-        if (pos.be_locked && move >= tp_dist * 2.0) {
+        if (trail_arm_ok && pos.be_locked && move >= tp_dist * 2.0) {
             const double trail_sl = pos.is_long
                 ? (pos.entry + pos.mfe - trail_dist)
                 : (pos.entry - pos.mfe + trail_dist);
@@ -509,4 +588,3 @@ private:
 
 } // namespace idx
 } // namespace omega
-

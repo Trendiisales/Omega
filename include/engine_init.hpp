@@ -691,6 +691,99 @@ static void init_engines(const std::string& cfg_path)
     g_bracket_uk100.configure( 0.50, 120, 2.5, 180000, 20.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
     // ESTX50 (~5387): 0.20% = $10.8 min range
     g_bracket_estx50.configure(0.50, 120, 2.5, 180000, 11.0, 0.05, 4000, 10000, 0.0, 30000, 10000, 20, 0.15, 2.0, 0.50, 1.5);
+
+    // == S23 2026-04-25 : Port gold fix-set to index BracketEngines =============
+    //   Ports the S19 / S20 / S21 / S22c fix stack from g_bracket_gold onto the
+    //   7 index bracket instances. Each fix was originally calibrated against
+    //   XAUUSD (~$4700 price, $12 MAX_RANGE, 195 ticks/min). Index scaling rule:
+    //     * MAX_SL_DIST_PTS    ~ 50% of MAX_RANGE   (gold was 6.0 / 12.0)
+    //     * CONFIRM_PTS        ~ 25% of MAX_RANGE   (gold was 3.0 / 12.0)
+    //     * CONFIRM_SECS       = 30  (same window as gold -- same regime mechanic)
+    //     * MAX_HOLD_SEC       = 1800 (30 min -- indices decay faster than gold's 60 min)
+    //     * TRAIL_ACTIVATION_PTS / TRAIL_DISTANCE_PTS: per-instrument calibrated
+    //
+    //   S22c MAX_SL_DIST_PTS: every gold XAUUSD_BRACKET trade with dist > 6pt
+    //     (>50% of MAX_RANGE) was a loser over 10 trading days. Applies
+    //     identically to indices -- wide brackets are trends, not compressions.
+    //
+    //   S21 CONFIRM_PTS/SECS: saved $267 over 86 gold bracket trades by aborting
+    //     brackets that fill then fail to move 3pt in 30s. Same mechanic ports.
+    //
+    //   S20 MAX_HOLD_SEC: absolute cap on filled-position hold. Indices set
+    //     to 1800s (30 min) -- shorter than gold's 3600s because index tick
+    //     rate is 2-5x higher so stale positions age faster.
+    //
+    //   S19 continuous trail (TRAIL_ACTIVATION_PTS / TRAIL_DISTANCE_PTS): gold
+    //     defaults 3.0 / 2.0 in BracketEngine.hpp. Per the S19 commit comment,
+    //     indices want roughly 5.0 / 3.5 at SP scale, scaled by price level.
+    //     Engine code: header defaults 3.0 / 2.0 are gold-tuned. Override here.
+    //
+    //   NAS100 special per Jo 2026-04-25: "NAS needs different settings".
+    //     NAS100 cash ($1/pt vs USTEC.F futures $20/pt) is noisier and has a
+    //     historical 0% WR in NY-open bracket arms pre-S23 lookback widening.
+    //     Uses tighter MAX_SL_DIST_PTS (45% of MAX_RANGE vs 50%), longer
+    //     CONFIRM window (45s), and wider TRAIL_ACTIVATION_PTS (signal must
+    //     exceed NY-open noise band before trail arms).
+    //   Every other index gets 50% MAX_RANGE and 25% MAX_RANGE for MAX_SL_DIST
+    //   and CONFIRM_PTS respectively, plus unified MAX_HOLD_SEC=1800.
+    // US500.F: MAX_RANGE=25 -> MAX_SL_DIST=12.0, CONFIRM=6.0/30s.
+    g_bracket_sp.MAX_SL_DIST_PTS      = 12.0;
+    g_bracket_sp.CONFIRM_PTS          = 6.0;
+    g_bracket_sp.CONFIRM_SECS         = 30;
+    g_bracket_sp.MAX_HOLD_SEC         = 1800;
+    g_bracket_sp.TRAIL_ACTIVATION_PTS = 5.0;
+    g_bracket_sp.TRAIL_DISTANCE_PTS   = 3.0;
+    // USTEC.F (NQ futures): MAX_RANGE=90 -> MAX_SL_DIST=45, CONFIRM=22/30s.
+    g_bracket_nq.MAX_SL_DIST_PTS      = 45.0;
+    g_bracket_nq.CONFIRM_PTS          = 22.0;
+    g_bracket_nq.CONFIRM_SECS         = 30;
+    g_bracket_nq.MAX_HOLD_SEC         = 1800;
+    g_bracket_nq.TRAIL_ACTIVATION_PTS = 18.0;
+    g_bracket_nq.TRAIL_DISTANCE_PTS   = 12.0;
+    // DJ30.F: MAX_RANGE=180 -> MAX_SL_DIST=90, CONFIRM=45/30s.
+    g_bracket_us30.MAX_SL_DIST_PTS      = 90.0;
+    g_bracket_us30.CONFIRM_PTS          = 45.0;
+    g_bracket_us30.CONFIRM_SECS         = 30;
+    g_bracket_us30.MAX_HOLD_SEC         = 1800;
+    g_bracket_us30.TRAIL_ACTIVATION_PTS = 35.0;
+    g_bracket_us30.TRAIL_DISTANCE_PTS   = 22.0;
+    // NAS100 (cash): NAS-SPECIFIC PER JO 2026-04-25. Historical 0% WR under
+    //   original params -- runs tighter and slower than USTEC futures.
+    //   MAX_RANGE=90 -> MAX_SL_DIST=40 (45% not 50% -- tighter kill on wide breakouts)
+    //   CONFIRM_PTS=24 (27% of MAX_RANGE -- higher bar to clear NAS noise floor)
+    //   CONFIRM_SECS=45 (NAS moves can take 40+s to prove out vs index futures)
+    //   MAX_HOLD_SEC=1500 (25 min -- NAS cash chops faster than futures)
+    //   TRAIL_ACTIVATION_PTS=25 (vs NQ 18 -- wider noise band on cash)
+    //   TRAIL_DISTANCE_PTS=16   (vs NQ 12 -- give runners more room)
+    g_bracket_nas100.MAX_SL_DIST_PTS      = 40.0;
+    g_bracket_nas100.CONFIRM_PTS          = 24.0;
+    g_bracket_nas100.CONFIRM_SECS         = 45;
+    g_bracket_nas100.MAX_HOLD_SEC         = 1500;
+    g_bracket_nas100.TRAIL_ACTIVATION_PTS = 25.0;
+    g_bracket_nas100.TRAIL_DISTANCE_PTS   = 16.0;
+    // GER40 (~22500): MAX_RANGE=90 -> MAX_SL_DIST=45, CONFIRM=22/30s.
+    g_bracket_ger30.MAX_SL_DIST_PTS      = 45.0;
+    g_bracket_ger30.CONFIRM_PTS          = 22.0;
+    g_bracket_ger30.CONFIRM_SECS         = 30;
+    g_bracket_ger30.MAX_HOLD_SEC         = 1800;
+    g_bracket_ger30.TRAIL_ACTIVATION_PTS = 18.0;
+    g_bracket_ger30.TRAIL_DISTANCE_PTS   = 12.0;
+    // UK100 (~10000): MAX_RANGE=40 -> MAX_SL_DIST=20, CONFIRM=10/30s.
+    g_bracket_uk100.MAX_SL_DIST_PTS      = 20.0;
+    g_bracket_uk100.CONFIRM_PTS          = 10.0;
+    g_bracket_uk100.CONFIRM_SECS         = 30;
+    g_bracket_uk100.MAX_HOLD_SEC         = 1800;
+    g_bracket_uk100.TRAIL_ACTIVATION_PTS = 8.0;
+    g_bracket_uk100.TRAIL_DISTANCE_PTS   = 5.0;
+    // ESTX50 (~5500): MAX_RANGE=22 -> MAX_SL_DIST=11, CONFIRM=5.5/30s.
+    g_bracket_estx50.MAX_SL_DIST_PTS      = 11.0;
+    g_bracket_estx50.CONFIRM_PTS          = 5.5;
+    g_bracket_estx50.CONFIRM_SECS         = 30;
+    g_bracket_estx50.MAX_HOLD_SEC         = 1800;
+    g_bracket_estx50.TRAIL_ACTIVATION_PTS = 4.5;
+    g_bracket_estx50.TRAIL_DISTANCE_PTS   = 3.0;
+    // == end S23 index port ====================================================
+
     g_bracket_brent.configure(
         0.10,   // buffer
         30,     // lookback
