@@ -78,7 +78,7 @@ def percentile_buckets(values, n_buckets=3):
     n = len(s)
     if n < n_buckets * 2:
         return None
-    edges = [s[int(n * i / n_buckets)] for i in range(n_buckets + 1)]
+    edges = [s[min(int(n * i / n_buckets), n - 1)] for i in range(n_buckets + 1)]
     edges[0] = s[0]
     edges[-1] = s[-1] + 1e-12
     return edges
@@ -244,6 +244,128 @@ def main():
                 day_name = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][dow]
                 out.append(f"  {day_name}: {fmt(stats(day_trades))}")
             out.append("")
+
+    # ========== Q7: DEFINITIVE TEST — significance via permutation ==========
+    # For every candidate cohort tested above, run a permutation test:
+    # null hypothesis = cohort PnL is no different from random sampling of
+    # the same number of trades from the parent population.
+    # Report p-value (one-sided, that the cohort is BETTER than random).
+    # An edge is definitive when:
+    #   (1) cohort PnL > 0
+    #   (2) PF > 1.2
+    #   (3) p-value < 0.05 (cohort beats random sampling 95%+ of permutations)
+    #   (4) n_trades >= 20 (else underpowered)
+    out.append("")
+    out.append("=" * 70)
+    out.append("Q7. DEFINITIVE EDGE TEST — permutation significance")
+    out.append("=" * 70)
+    out.append("Each candidate cohort tested vs 5000 random samples of same n from")
+    out.append("parent population. p = fraction of random samples with PnL >= cohort.")
+    out.append("Edge criteria: PnL>0, PF>1.20, p<0.05, n>=20. ALL must pass.")
+    out.append("")
+
+    import random
+    random.seed(42)
+    N_PERM = 5000
+
+    def permutation_p(cohort_pnl, parent_pnls, cohort_n, n_perm=N_PERM):
+        """One-sided p-value: fraction of random n-sized draws from parent
+        whose summed PnL >= cohort_pnl."""
+        if cohort_n > len(parent_pnls):
+            return 1.0
+        ge = 0
+        for _ in range(n_perm):
+            sample = random.sample(parent_pnls, cohort_n)
+            if sum(sample) >= cohort_pnl:
+                ge += 1
+        return ge / n_perm
+
+    candidates = []  # (label, cohort_trades, parent_trades)
+
+    # Direction within each (sym, mode), aggregated across windows
+    for (sym, mode), trades in by_symmode.items():
+        if len(trades) < 30:
+            continue
+        for direction in ["long", "short"]:
+            cohort = [t for t in trades if t["direction"] == direction]
+            if len(cohort) >= 20:
+                candidates.append((f"{sym} {mode} dir={direction}", cohort, trades))
+
+    # ATR tertiles (high vs low)
+    for (sym, mode), trades in by_symmode.items():
+        valid = [t for t in trades if t["atr"] > 0]
+        if len(valid) < 30:
+            continue
+        atrs = sorted(t["atr"] for t in valid)
+        n = len(atrs)
+        lo_thresh = atrs[n // 3]
+        hi_thresh = atrs[2 * n // 3]
+        low = [t for t in valid if t["atr"] < lo_thresh]
+        high = [t for t in valid if t["atr"] >= hi_thresh]
+        if len(low) >= 20:
+            candidates.append((f"{sym} {mode} atr=LOW", low, valid))
+        if len(high) >= 20:
+            candidates.append((f"{sym} {mode} atr=HIGH", high, valid))
+
+    # bars_held cohorts
+    for (sym, mode), trades in by_symmode.items():
+        if len(trades) < 30:
+            continue
+        fast = [t for t in trades if t["bars_held"] <= 3]
+        slow = [t for t in trades if t["bars_held"] > 10]
+        if len(fast) >= 20:
+            candidates.append((f"{sym} {mode} bars=FAST(<=3)", fast, trades))
+        if len(slow) >= 20:
+            candidates.append((f"{sym} {mode} bars=SLOW(>10)", slow, trades))
+
+    # Day-of-week (one cohort per day per sym/mode, but only test those with n>=20)
+    for (sym, mode), trades in by_symmode.items():
+        if len(trades) < 30:
+            continue
+        for dow in range(7):
+            day_trades = [t for t in trades if t["entry_ts"].weekday() == dow]
+            if len(day_trades) >= 20:
+                day_name = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][dow]
+                candidates.append((f"{sym} {mode} {day_name}", day_trades, trades))
+
+    # Run permutation test on every candidate
+    results = []
+    for label, cohort, parent in candidates:
+        cs = stats(cohort)
+        if cs is None:
+            continue
+        # Skip degenerate tests: cohort can't be tested vs parent if it IS
+        # the parent (e.g. dir=long inside long-only mode).
+        if len(cohort) == len(parent):
+            continue
+        cohort_pnl = cs["pnl"]
+        parent_pnls = [t["pnl"] for t in parent]
+        p = permutation_p(cohort_pnl, parent_pnls, len(cohort))
+        passed = (cohort_pnl > 0
+                  and cs["pf"] > 1.20
+                  and p < 0.05
+                  and cs["n"] >= 20)
+        results.append((label, cs, p, passed))
+
+    # Sort by p-value ascending (most significant first)
+    results.sort(key=lambda r: r[2])
+
+    out.append(f"{'cohort':<35} {'n':>4} {'pnl':>10} {'pf':>5} {'wr':>5} {'p':>7}  edge")
+    out.append("-" * 80)
+    for label, cs, p, passed in results:
+        marker = "***EDGE***" if passed else ""
+        out.append(f"{label:<35} {cs['n']:>4} {cs['pnl']:>+10.1f} "
+                   f"{cs['pf']:>5.2f} {cs['wr']:>5.2f} {p:>7.4f}  {marker}")
+    out.append("")
+
+    n_edges = sum(1 for r in results if r[3])
+    out.append(f"TOTAL CANDIDATES TESTED: {len(results)}")
+    out.append(f"COHORTS PASSING ALL CRITERIA (definitive edges): {n_edges}")
+    if n_edges == 0:
+        out.append("")
+        out.append("No cohort passed PnL>0 AND PF>1.20 AND p<0.05 AND n>=20.")
+        out.append("Interpretation: no statistically defensible edge in this dataset")
+        out.append("at the cohort level. Any apparent edge is within noise.")
 
     text = "\n".join(out)
     with open("edges_summary.txt", "w") as f:
