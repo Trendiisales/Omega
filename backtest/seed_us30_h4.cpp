@@ -39,6 +39,11 @@
 //      Lines starting with '#' or non-numeric first char are treated as
 //      headers and skipped.
 //
+//      ZERO-RANGE BARS (high==low==open==close): silently dropped. Dukascopy
+//      emits these for weekend/holiday hours when the market is closed; they
+//      would inject TR=0 into the Wilder ATR seed and pull ATR below reality.
+//      Filtering them keeps the seed deque honest.
+//
 //  PRICE-MATCH NOTE:
 //      Dukascopy USA30 and BlackBull DJ30.F both reference the Dow Jones
 //      cash index. The exact price print can drift +/-2-5pts between
@@ -159,6 +164,13 @@ static bool parse_csv_line(const char* line, H4Bar& out) {
     if (out.open <= 0.0 || out.high <= 0.0 || out.low <= 0.0 || out.close <= 0.0)
         return false;
     if (out.high < out.low) return false;
+    // Reject zero-range bars: Dukascopy emits these for weekend/holiday hours
+    // when the market is closed. Including them in the seed deque injects TR=0
+    // into the Wilder ATR seed and drags the estimate well below reality.
+    // A real DJ30 H4 bar always has at least a few points of range during
+    // active hours; a bar with high==low==open==close is closed-market data.
+    if (out.high == out.low && out.high == out.open && out.high == out.close)
+        return false;
     return true;
 }
 
