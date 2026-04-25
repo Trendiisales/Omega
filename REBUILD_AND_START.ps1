@@ -41,9 +41,13 @@ if ($nssm) {
 
 # 1b. Watchdog may respawn Omega -- stop it too if present
 Stop-Process -Name "OMEGA_WATCHDOG" -Force -ErrorAction SilentlyContinue
-Get-Process powershell -ErrorAction SilentlyContinue | Where-Object {
-    $_.CommandLine -match "OMEGA_WATCHDOG"
-} | Stop-Process -Force -ErrorAction SilentlyContinue
+try {
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and ($_.CommandLine -match 'OMEGA_WATCHDOG') } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+} catch {
+    # CIM query failed -- not fatal, watchdog might not be running anyway
+}
 
 # 1c. Kill any remaining Omega.exe processes (crashed, detached, etc.)
 Stop-Process -Name "Omega" -Force -ErrorAction SilentlyContinue
