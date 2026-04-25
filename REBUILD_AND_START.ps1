@@ -27,11 +27,63 @@ Write-Host "   OMEGA - CLEAN REBUILD                               " -Foreground
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# [1/7] Stop
+# [1/7] Stop -- must fully release C:\Omega\Omega.exe before copy step
 Write-Host "[1/7] Stopping Omega..." -ForegroundColor Yellow
+
+# 1a. If running as NSSM service, stop it cleanly
+$nssm = Get-Command nssm -ErrorAction SilentlyContinue
+if ($nssm) {
+    $savedPrefNssm = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & nssm stop Omega 2>&1 | Out-Null
+    $ErrorActionPreference = $savedPrefNssm
+}
+
+# 1b. Watchdog may respawn Omega -- stop it too if present
+Stop-Process -Name "OMEGA_WATCHDOG" -Force -ErrorAction SilentlyContinue
+Get-Process powershell -ErrorAction SilentlyContinue | Where-Object {
+    $_.CommandLine -match "OMEGA_WATCHDOG"
+} | Stop-Process -Force -ErrorAction SilentlyContinue
+
+# 1c. Kill any remaining Omega.exe processes (crashed, detached, etc.)
 Stop-Process -Name "Omega" -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 3
-Write-Host "      [OK]" -ForegroundColor Green
+
+# 1d. Block until every Omega.exe is actually gone (max 30s)
+$waited = 0
+while (Get-Process -Name "Omega" -ErrorAction SilentlyContinue) {
+    if ($waited -ge 30) {
+        Write-Host "      [ERROR] Omega.exe still running after 30s -- manual intervention needed" -ForegroundColor Red
+        Write-Host "      Try: taskkill /F /IM Omega.exe" -ForegroundColor Red
+        exit 1
+    }
+    Start-Sleep -Seconds 1
+    $waited++
+}
+
+# 1e. Verify the target file is actually writable (no stray handle)
+$canWrite = $false
+for ($i = 0; $i -lt 10; $i++) {
+    try {
+        $fs = [System.IO.File]::Open($OmegaExe, 'Open', 'ReadWrite', 'None')
+        $fs.Close()
+        $canWrite = $true
+        break
+    } catch {
+        Start-Sleep -Milliseconds 500
+    }
+}
+if (-not $canWrite -and (Test-Path $OmegaExe)) {
+    Write-Host "      [WARN] $OmegaExe still locked -- attempting rename fallback" -ForegroundColor Yellow
+    try {
+        Rename-Item $OmegaExe "Omega.exe.old_$(Get-Date -Format yyyyMMdd_HHmmss)" -Force
+        Write-Host "      [OK] Renamed locked exe -- copy step will write fresh" -ForegroundColor Green
+    } catch {
+        Write-Host "      [ERROR] Cannot rename locked exe: $_" -ForegroundColor Red
+        exit 1
+    }
+}
+
+Write-Host "      [OK] Omega fully stopped (waited ${waited}s)" -ForegroundColor Green
 Write-Host ""
 
 # [2/7] Sync to origin/main
