@@ -390,6 +390,15 @@ struct TradeRecord {
     std::string exit_reason;      // "SL" "TP" "WEEKEND" "EOF"
     int bars_held;
     double atr_at_entry;          // ATR(14) value at the entry bar
+    // S36 MAE logging: max adverse excursion observed during bars 1, 2, 3
+    // after entry, expressed in ATR-at-entry units.
+    //   long-only file: adverse extreme = bar.low_bid (bid trough).
+    //   mae = (entry_price - bar.low_bid) / atr_at_entry, clamped >= 0.
+    // Sentinel -1.0 means the trade had already closed before that bar;
+    // i.e. the bar was not active for this position.
+    double mae_bar1;
+    double mae_bar2;
+    double mae_bar3;
 };
 
 struct Result {
@@ -433,6 +442,9 @@ static Result run_one(const std::vector<Bar>& bars,
     int64_t entry_ms = 0;
     size_t entry_bar_idx = 0;
     double entry_atr = 0.0;
+    // S36: MAE per-bar tracker. Index 0 = bar 1 after entry, etc.
+    // Reset to -1.0 on every entry; -1.0 means "bar not observed".
+    double bar_mae[3] = { -1.0, -1.0, -1.0 };
 
     double equity = 0.0, peak = 0.0, max_dd = 0.0;
     auto record_eq = [&]() {
@@ -466,6 +478,9 @@ static Result run_one(const std::vector<Bar>& bars,
             tr.bars_held = (exit_bar_idx >= entry_bar_idx)
                 ? (int)(exit_bar_idx - entry_bar_idx) : 0;
             tr.atr_at_entry = entry_atr;
+            tr.mae_bar1 = bar_mae[0];
+            tr.mae_bar2 = bar_mae[1];
+            tr.mae_bar3 = bar_mae[2];
             trades_out->push_back(tr);
         }
         pos_sign = 0;
@@ -483,6 +498,20 @@ static Result run_one(const std::vector<Bar>& bars,
             double effective_mult = (bars_since_entry < early_bar_count)
                 ? early_sl_mult : sl_mult;
             sl = entry_price - effective_mult * entry_atr;
+        }
+        // S36: record MAE for bars 1, 2, 3 after entry, in ATR-at-entry
+        // units. Done BEFORE the SL/TP hit check so the bar's adverse
+        // extreme is captured even if the trade closes this same bar.
+        // Long-only: adverse extreme = b.low_bid (bid trough).
+        if (pos_sign != 0 && entry_atr > 0.0) {
+            int bars_since_entry = (i >= entry_bar_idx)
+                ? (int)(i - entry_bar_idx) : 0;
+            if (bars_since_entry >= 1 && bars_since_entry <= 3) {
+                double adverse_pts = entry_price - b.low_bid;
+                if (adverse_pts < 0.0) adverse_pts = 0.0;
+                double mae_atr = adverse_pts / entry_atr;
+                bar_mae[bars_since_entry - 1] = mae_atr;
+            }
         }
         if (pos_sign != 0) {
             bool hit_sl = false, hit_tp = false;
@@ -530,6 +559,7 @@ static Result run_one(const std::vector<Bar>& bars,
                 entry_ms = b.bar_open_ms;
                 entry_bar_idx = i;
                 entry_atr = a;
+                bar_mae[0] = -1.0; bar_mae[1] = -1.0; bar_mae[2] = -1.0;
             }
         }
     }
@@ -930,7 +960,7 @@ int main(int argc, char** argv) {
         }
         tf << "window,donchian,sl_mult,tp_mult,direction,"
            << "entry_ts,exit_ts,entry_px,exit_px,pnl,exit_reason,bars_held,"
-           << "atr_at_entry\n";
+           << "atr_at_entry,mae_bar1,mae_bar2,mae_bar3\n";
         for (const TradeRecord& tr : all_oos_trades) {
             tf << tr.window_label << ","
                << tr.donchian_bars << ","
@@ -944,7 +974,10 @@ int main(int argc, char** argv) {
                << tr.pnl_usd << ","
                << tr.exit_reason << ","
                << tr.bars_held << ","
-               << tr.atr_at_entry << "\n";
+               << tr.atr_at_entry << ","
+               << tr.mae_bar1 << ","
+               << tr.mae_bar2 << ","
+               << tr.mae_bar3 << "\n";
         }
         tf.close();
         std::cerr << "Wrote " << trades_path
