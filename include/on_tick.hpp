@@ -699,6 +699,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_minimal_h4_gold.pos_.tp,      g_minimal_h4_gold.pos_.sl,
                     g_minimal_h4_gold.pos_.size,
                     g_minimal_h4_gold.pos_.entry_ts_ms / 1000);
+            if (g_minimal_h4_us30.has_open_position())
+                push_live_trade("DJ30.F", "MinimalH4_US30",
+                    g_minimal_h4_us30.pos_.is_long, g_minimal_h4_us30.pos_.entry,
+                    g_minimal_h4_us30.pos_.tp,      g_minimal_h4_us30.pos_.sl,
+                    g_minimal_h4_us30.pos_.size,
+                    g_minimal_h4_us30.pos_.entry_ts_ms / 1000);
             // ?? US indices ??????????????????????????????????????????????????
             if (g_eng_sp.pos.active)
                 push_live_trade("US500.F","BE", g_eng_sp.pos.is_long,

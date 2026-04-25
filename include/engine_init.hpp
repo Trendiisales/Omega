@@ -472,6 +472,26 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // MinimalH4US30Breakout -- DJ30.F sister engine. Self-contained: builds
+    // own H4 OHLC + ATR14 from tick stream (no g_bars_us30 exists). Validated
+    // 27/27 profitable on 2yr Tickstory tick sweep. Default config (D=10
+    // SL=1.0x TP=4.0x): n=184, PF=1.54, +$637, WR=28.3%. Initialised outside
+    // the gold-conditional block above because it has no dependency on
+    // g_bars_gold or any gold infrastructure.
+    g_minimal_h4_us30.p           = omega::make_minimal_h4_us30_params();
+    g_minimal_h4_us30.symbol      = "DJ30.F";
+    g_minimal_h4_us30.shadow_mode = true;
+    g_minimal_h4_us30.enabled     = true;
+    printf("[INIT] MinimalH4US30Breakout DJ30.F: shadow=true donchian=%d sl=%.1fx"
+           " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
+           " atr_period=%d weekend_gate=%s\n",
+           g_minimal_h4_us30.p.donchian_bars,    g_minimal_h4_us30.p.sl_mult,
+           g_minimal_h4_us30.p.tp_mult,          g_minimal_h4_us30.p.risk_dollars,
+           g_minimal_h4_us30.p.max_lot,          g_minimal_h4_us30.p.dollars_per_point,
+           g_minimal_h4_us30.p.timeout_h4_bars,  g_minimal_h4_us30.p.atr_period,
+           g_minimal_h4_us30.p.weekend_close_gate ? "true" : "false");
+    fflush(stdout);
+
     // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500

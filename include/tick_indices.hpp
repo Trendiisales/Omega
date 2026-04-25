@@ -715,6 +715,30 @@ static void on_tick_dj30(
             }
         }
     }
+
+    // ?? MinimalH4US30Breakout -- pure H4 Donchian breakout (shadow mode) ???????
+    // Self-contained: engine builds its own H4 OHLC bars + ATR14 from ticks.
+    // Independent of all other DJ30.F engines (shadow only, no broker orders).
+    // Validated 27/27 profitable on 2yr Tickstory sweep. No mutex with other
+    // engines because shadow_mode trades don't touch broker positions.
+    // When promoted to live, add an enter_directional() call mirroring the
+    // IFLOW pattern above, gated by base_can_us30 + position-mutex check.
+    {
+        const int64_t now_ms_m4 = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const auto m4sig = g_minimal_h4_us30.on_tick(bid, ask, now_ms_m4, ca_on_close);
+        if (m4sig.valid) {
+            g_telemetry.UpdateLastSignal("DJ30.F",
+                m4sig.is_long ? "LONG" : "SHORT", m4sig.entry, m4sig.reason,
+                "MINIMAL_H4_US30", regime.c_str(), "MINIMAL_H4_US30",
+                m4sig.tp, m4sig.sl);
+        }
+        // Weekend close runs every tick (cheap idempotent check)
+        if (g_minimal_h4_us30.has_open_position()) {
+            g_minimal_h4_us30.check_weekend_close(bid, ask, now_ms_m4, ca_on_close);
+        }
+    }
 }
 
 // ── GER40 ──────────────────────────────────────────────────

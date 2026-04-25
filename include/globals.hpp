@@ -90,6 +90,17 @@ static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
 #include "MinimalH4Breakout.hpp"
 static omega::MinimalH4Breakout g_minimal_h4_gold;  // XAUUSD pure H4 Donchian breakout
 
+// MinimalH4US30Breakout -- DJ30.F sister of MinimalH4Breakout. Self-contained:
+// builds its own H4 OHLC bars and ATR14 internally from tick stream (no
+// g_bars_us30 exists -- BlackBull rejects trendbar API for index symbols).
+// Validated via 2yr Tickstory tick sweep on DJ30.F: 27/27 configs profitable,
+// best PnL config (D=10 SL=1.0x TP=4.0x): n=184, PF=1.54, +$637, WR=28.3%.
+// See backtest/htf_bt_US30_results.txt + htf_bt_multi.cpp.
+// Runs in shadow mode with cold-start warmup of ~40hrs (10 H4 bars).
+// Created 2026-04-25.
+#include "MinimalH4US30Breakout.hpp"
+static omega::MinimalH4US30Breakout g_minimal_h4_us30;  // DJ30.F pure H4 Donchian breakout
+
 // TickScalpEngine REMOVED at Batch 5V §1.3 (2026-04-20).
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 // See wiki tombstone wiki/entities/TickScalpEngine.md for historical record.
