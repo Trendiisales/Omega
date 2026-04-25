@@ -492,6 +492,25 @@ static void init_engines(const std::string& cfg_path)
            g_minimal_h4_us30.p.weekend_close_gate ? "true" : "false");
     fflush(stdout);
 
+    // Warm restart for MinimalH4US30Breakout (S26 2026-04-25):
+    // load bars_us30_h4.dat if present and <=8h old. On success the engine
+    // skips the ~40-56hr cold start (Donchian10 + Wilder ATR14 seed).
+    // First-deploy bootstrap: tools/seed_us30_h4.cpp can write this file
+    // directly from a Dukascopy USA30 H4 CSV before the first start.
+    {
+        const std::string us30_dat = log_root_dir() + "/bars_us30_h4.dat";
+        const bool us30_h4_ok = g_minimal_h4_us30.load_state(us30_dat);
+        if (us30_h4_ok) {
+            printf("[STARTUP] MinimalH4US30Breakout warm-loaded from %s -- "
+                   "engine hot, can fire on first H4 close.\n", us30_dat.c_str());
+        } else {
+            printf("[STARTUP] MinimalH4US30Breakout cold start -- needs ~40hrs of "
+                   "live DJ30.F H4 bars before first signal. Seed via "
+                   "tools/seed_us30_h4.cpp + Dukascopy CSV to skip the wait.\n");
+        }
+        fflush(stdout);
+    }
+
     // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500

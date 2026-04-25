@@ -824,6 +824,8 @@ int main(int argc, char* argv[])
                     g_bars_gold.h4 .save_indicators(bs + "/bars_gold_h4.dat");
                     g_bars_sp.m1   .save_indicators(bs + "/bars_sp_m1.dat");
                     g_bars_nq.m1   .save_indicators(bs + "/bars_nq_m1.dat");
+                    // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
+                    g_minimal_h4_us30.save_state(bs + "/bars_us30_h4.dat");
                     printf("[BAR-SAVE] Periodic save complete (every 10min)\n");
                     fflush(stdout);
                 }
@@ -1012,6 +1014,8 @@ int main(int argc, char* argv[])
     g_bars_gold.h4 .save_indicators(base_save + "/bars_gold_h4.dat");
     g_bars_sp.m1   .save_indicators(base_save + "/bars_sp_m1.dat");
     g_bars_nq.m1   .save_indicators(base_save + "/bars_nq_m1.dat");
+    // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
+    g_minimal_h4_us30.save_state(base_save + "/bars_us30_h4.dat");
     printf("[SHUTDOWN] Bar indicator state saved -- next restart will be instant warm\n");
     fflush(stdout);
     g_trend_pb_ger40.save_state(state_root_dir() + "/trend_pb_ger40.dat");

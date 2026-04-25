@@ -34,18 +34,25 @@
 //    - Timeout after timeout_h4_bars H4 bars (safety valve)
 //    - Weekend force-close on Friday 20:00 UTC+ if profitable
 //
+//  WARM RESTART (added 2026-04-25, S26):
+//      save_state() / load_state() persist the closed-bar history (Donchian
+//      deques + Wilder ATR state) to logs/bars_us30_h4.dat. On startup we
+//      load if the file is <= 8 hours old; otherwise we cold-start.
+//      The OPEN POSITION is NEVER persisted -- it would be orphaned from the
+//      broker. The currently-FORMING H4 accumulator is also discarded; the
+//      next live tick rebuilds it cleanly.
+//      One-shot bootstrap from Dukascopy CSV: see tools/seed_us30_h4.cpp.
+//      That tool replays Dukascopy USA30 H4 bars through the same Wilder/
+//      Donchian math used here and writes a valid bars_us30_h4.dat directly,
+//      eliminating the 40-56hr cold-start cost on first deploy.
+//
 //  NOTES:
 //    - shadow_mode=true default. NEVER set false without N>=10 shadow trade
 //      validation matching backtest expectation (~0.25 trades/day = 5/month).
 //    - $5/pt for DJ30.F means PnL math: pnl_dollars = pnl_pts * size * 500.0
 //      (0.10 lot at $5/pt, scaled). Sizing: $10 / (sl_pts * 500) per lot.
 //    - max_spread=3.0pt (DJ30.F has wider spreads than XAUUSD; gold uses 2.0).
-//    - H4 bar boundary: floor(now_ms / 14400000) — same as backtest harness.
-//    - On cold start the engine needs donchian_bars closed H4 bars before the
-//      first signal (10 bars * 4hr = 40hrs). No seeding from disk because no
-//      g_bars_us30 exists. This is acceptable: in shadow mode the cost of
-//      40hr cold start is zero $$, and warm restart from saved state will be
-//      added in a future commit if the engine proves edge in shadow.
+//    - H4 bar boundary: floor(now_ms / 14400000) -- same as backtest harness.
 // =============================================================================
 
 #pragma once
@@ -53,10 +60,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <deque>
 #include <algorithm>
 #include <functional>
 #include <string>
+#include <vector>
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -366,6 +375,232 @@ struct MinimalH4US30Breakout {
     {
         if (!pos_.active) return;
         _close(pos_.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
+    }
+
+    // =========================================================================
+    //  PERSISTENCE  (warm restart -- added S26 2026-04-25)
+    //
+    //  save_state() writes the closed-bar history + Wilder ATR state + Donchian
+    //  channel + cooldown counters to a text key=value file.
+    //
+    //  load_state() reads it back. STALENESS CHECK: file is rejected if
+    //  saved_ts is more than max_age_sec old (default 8 hours = 2 H4 bars).
+    //  This is conservative: a fresh broker H4 bar arrives every 4 hours, so an
+    //  8-hour-old file is at most 2 bars stale -- the engine will resync within
+    //  2 H4 closes. Wider windows risk resuming with badly outdated channels.
+    //
+    //  WHAT IS NOT PERSISTED:
+    //    - Open position (pos_): never carry across restart -- would orphan it
+    //      from the broker. The engine restarts position-flat.
+    //    - Currently-forming H4 accumulator (h4_acc_): tied to the live tick
+    //      stream timestamp; first live tick after load will rebuild it.
+    //    - daily_pnl_, m_trade_id_: trivial to reset; daily_reset will fix on
+    //      next tick anyway.
+    // =========================================================================
+    bool save_state(const std::string& path) const noexcept {
+        // Don't write half-seeded state -- we need either a complete Donchian
+        // window OR complete ATR seed before save makes sense. Either case
+        // means the file actually accelerates the next restart.
+        const bool donchian_complete = ((int)h4_highs_.size() >= p.donchian_bars);
+        const bool atr_complete      = (atr_seed_count_ >= p.atr_period);
+        if (!donchian_complete && !atr_complete) {
+            // Nothing useful to save yet -- engine still cold-bootstrapping.
+            return false;
+        }
+
+        FILE* f = std::fopen(path.c_str(), "w");
+        if (!f) return false;
+
+        std::fprintf(f, "version=1\n");
+        std::fprintf(f, "saved_ts=%lld\n",       (long long)std::time(nullptr));
+        std::fprintf(f, "symbol=%s\n",           symbol.c_str());
+        std::fprintf(f, "donchian_bars=%d\n",    p.donchian_bars);
+        std::fprintf(f, "atr_period=%d\n",       p.atr_period);
+
+        // Donchian channel + history
+        std::fprintf(f, "channel_high=%.6f\n",   channel_high_);
+        std::fprintf(f, "channel_low=%.6f\n",    channel_low_);
+        std::fprintf(f, "h4_highs_count=%d\n",   (int)h4_highs_.size());
+        for (size_t i = 0; i < h4_highs_.size(); ++i) {
+            std::fprintf(f, "h4_high_%zu=%.6f\n", i, h4_highs_[i]);
+        }
+        std::fprintf(f, "h4_lows_count=%d\n",    (int)h4_lows_.size());
+        for (size_t i = 0; i < h4_lows_.size(); ++i) {
+            std::fprintf(f, "h4_low_%zu=%.6f\n", i, h4_lows_[i]);
+        }
+        std::fprintf(f, "h4_closes_count=%d\n",  (int)h4_closes_.size());
+        for (size_t i = 0; i < h4_closes_.size(); ++i) {
+            std::fprintf(f, "h4_close_%zu=%.6f\n", i, h4_closes_[i]);
+        }
+
+        // Wilder ATR state
+        std::fprintf(f, "atr=%.6f\n",            atr_);
+        std::fprintf(f, "atr_seed_count=%d\n",   atr_seed_count_);
+        std::fprintf(f, "atr_seed_sum=%.6f\n",   atr_seed_sum_);
+        std::fprintf(f, "prev_h4_close=%.6f\n",  prev_h4_close_);
+
+        // Bar counters (for cooldown)
+        std::fprintf(f, "h4_bar_count=%d\n",     h4_bar_count_);
+        std::fprintf(f, "cooldown_until_bar=%d\n", cooldown_until_bar_);
+
+        std::fclose(f);
+        return true;
+    }
+
+    // Returns true on successful load. max_age_sec defaults to 8h.
+    // On staleness rejection or any parse error returns false and leaves the
+    // engine in its constructor-default cold state (caller may have already
+    // invoked load_state on a previous deque -- reset before calling if you
+    // want guaranteed clean state).
+    bool load_state(const std::string& path, int64_t max_age_sec = 28800) noexcept {
+        FILE* f = std::fopen(path.c_str(), "r");
+        if (!f) return false;
+
+        int     version            = 0;
+        int64_t saved_ts           = 0;
+        char    file_symbol[64]    = {0};
+        int     file_donchian_bars = 0;
+        int     file_atr_period    = 0;
+
+        double  ch_high            = 0.0;
+        double  ch_low             = 1e9;
+
+        std::vector<double> highs;
+        std::vector<double> lows;
+        std::vector<double> closes;
+        int     highs_count        = -1;
+        int     lows_count         = -1;
+        int     closes_count       = -1;
+
+        double  atr_loaded         = 0.0;
+        int     atr_seed_loaded    = 0;
+        double  atr_seed_sum_load  = 0.0;
+        double  prev_close_loaded  = 0.0;
+        int     bar_count_loaded   = 0;
+        int     cooldown_loaded    = 0;
+
+        char line[256];
+        while (std::fgets(line, sizeof(line), f)) {
+            // Strip trailing newline
+            size_t L = std::strlen(line);
+            while (L > 0 && (line[L-1] == '\n' || line[L-1] == '\r')) {
+                line[--L] = '\0';
+            }
+            if (L == 0) continue;
+
+            char* eq = std::strchr(line, '=');
+            if (!eq) continue;
+            *eq = '\0';
+            const char* key = line;
+            const char* val = eq + 1;
+
+            if      (std::strcmp(key, "version") == 0)        version = std::atoi(val);
+            else if (std::strcmp(key, "saved_ts") == 0)       saved_ts = std::atoll(val);
+            else if (std::strcmp(key, "symbol") == 0)         std::strncpy(file_symbol, val, sizeof(file_symbol)-1);
+            else if (std::strcmp(key, "donchian_bars") == 0)  file_donchian_bars = std::atoi(val);
+            else if (std::strcmp(key, "atr_period") == 0)     file_atr_period = std::atoi(val);
+            else if (std::strcmp(key, "channel_high") == 0)   ch_high = std::atof(val);
+            else if (std::strcmp(key, "channel_low") == 0)    ch_low  = std::atof(val);
+            else if (std::strcmp(key, "h4_highs_count") == 0) {
+                highs_count = std::atoi(val);
+                highs.assign(highs_count, 0.0);
+            }
+            else if (std::strncmp(key, "h4_high_", 8) == 0) {
+                const int idx = std::atoi(key + 8);
+                if (idx >= 0 && idx < (int)highs.size()) highs[idx] = std::atof(val);
+            }
+            else if (std::strcmp(key, "h4_lows_count") == 0) {
+                lows_count = std::atoi(val);
+                lows.assign(lows_count, 0.0);
+            }
+            else if (std::strncmp(key, "h4_low_", 7) == 0) {
+                const int idx = std::atoi(key + 7);
+                if (idx >= 0 && idx < (int)lows.size()) lows[idx] = std::atof(val);
+            }
+            else if (std::strcmp(key, "h4_closes_count") == 0) {
+                closes_count = std::atoi(val);
+                closes.assign(closes_count, 0.0);
+            }
+            else if (std::strncmp(key, "h4_close_", 9) == 0) {
+                const int idx = std::atoi(key + 9);
+                if (idx >= 0 && idx < (int)closes.size()) closes[idx] = std::atof(val);
+            }
+            else if (std::strcmp(key, "atr") == 0)              atr_loaded        = std::atof(val);
+            else if (std::strcmp(key, "atr_seed_count") == 0)   atr_seed_loaded   = std::atoi(val);
+            else if (std::strcmp(key, "atr_seed_sum") == 0)     atr_seed_sum_load = std::atof(val);
+            else if (std::strcmp(key, "prev_h4_close") == 0)    prev_close_loaded = std::atof(val);
+            else if (std::strcmp(key, "h4_bar_count") == 0)     bar_count_loaded  = std::atoi(val);
+            else if (std::strcmp(key, "cooldown_until_bar")==0) cooldown_loaded   = std::atoi(val);
+        }
+        std::fclose(f);
+
+        // ── Validation ──────────────────────────────────────────────────────
+        if (version != 1) {
+            std::printf("[MINIMAL_H4-%s] load_state: unknown version=%d -- skipping\n",
+                        symbol.c_str(), version);
+            std::fflush(stdout);
+            return false;
+        }
+
+        const int64_t now_ts = (int64_t)std::time(nullptr);
+        const int64_t age    = now_ts - saved_ts;
+        if (age < 0 || age > max_age_sec) {
+            std::printf("[MINIMAL_H4-%s] load_state: file age=%lld sec exceeds"
+                        " max_age=%lld -- cold start\n",
+                        symbol.c_str(), (long long)age, (long long)max_age_sec);
+            std::fflush(stdout);
+            return false;
+        }
+
+        if (file_donchian_bars != p.donchian_bars || file_atr_period != p.atr_period) {
+            std::printf("[MINIMAL_H4-%s] load_state: param mismatch (file D=%d ATR=%d"
+                        " vs runtime D=%d ATR=%d) -- cold start\n",
+                        symbol.c_str(), file_donchian_bars, file_atr_period,
+                        p.donchian_bars, p.atr_period);
+            std::fflush(stdout);
+            return false;
+        }
+
+        if (highs_count < 0 || lows_count < 0 || closes_count < 0
+            || (int)highs.size() != highs_count
+            || (int)lows.size()  != lows_count
+            || (int)closes.size()!= closes_count)
+        {
+            std::printf("[MINIMAL_H4-%s] load_state: deque count mismatch -- cold start\n",
+                        symbol.c_str());
+            std::fflush(stdout);
+            return false;
+        }
+
+        // ── Apply ───────────────────────────────────────────────────────────
+        h4_highs_.clear();
+        h4_lows_.clear();
+        h4_closes_.clear();
+        for (double v : highs)  h4_highs_ .push_back(v);
+        for (double v : lows)   h4_lows_  .push_back(v);
+        for (double v : closes) h4_closes_.push_back(v);
+
+        channel_high_       = ch_high;
+        channel_low_        = ch_low;
+        atr_                = atr_loaded;
+        atr_seed_count_     = atr_seed_loaded;
+        atr_seed_sum_       = atr_seed_sum_load;
+        prev_h4_close_      = prev_close_loaded;
+        h4_bar_count_       = bar_count_loaded;
+        cooldown_until_bar_ = cooldown_loaded;
+
+        // h4_acc_ stays cold -- next live tick restarts the currently-forming
+        // bar accumulator with a fresh open=high=low=close=mid.
+        // pos_ stays cold -- never carry an open position across restart.
+
+        std::printf("[MINIMAL_H4-%s] load_state OK: age=%llds donchian_bars=%d/%d"
+                    " atr=%.2f atr_seed=%d/%d ch_high=%.2f ch_low=%.2f bar_count=%d\n",
+                    symbol.c_str(), (long long)age,
+                    (int)h4_highs_.size(), p.donchian_bars,
+                    atr_, atr_seed_count_, p.atr_period,
+                    channel_high_, channel_low_, h4_bar_count_);
+        std::fflush(stdout);
+        return true;
     }
 
 private:

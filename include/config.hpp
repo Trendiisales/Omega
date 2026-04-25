@@ -312,6 +312,8 @@ static void maybe_reset_daily_ledger() {
     g_bars_gold.m5 .save_indicators(state_root_dir() + "/bars_gold_m5.dat");
     g_bars_gold.m15.save_indicators(state_root_dir() + "/bars_gold_m15.dat");
     g_bars_gold.h4 .save_indicators(state_root_dir() + "/bars_gold_h4.dat");
+    // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
+    g_minimal_h4_us30.save_state(state_root_dir() + "/bars_us30_h4.dat");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
 
     // Multi-day throttle: record this session's final PnL before resetting the ledger.
