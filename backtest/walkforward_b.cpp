@@ -369,6 +369,7 @@ struct TradeRecord {
     double pnl_usd;
     std::string exit_reason;      // "SL" "TP" "WEEKEND" "EOF"
     int bars_held;
+    double atr_at_entry;          // ATR(14) value at the entry bar
 };
 
 // ============================================================
@@ -413,6 +414,7 @@ static Result run_one(const std::vector<Bar>& bars,
     // Per-trade tracking for trades_out (only used when non-null).
     int64_t entry_ms = 0;
     size_t entry_bar_idx = 0;
+    double entry_atr = 0.0;
 
     double equity = 0.0, peak = 0.0, max_dd = 0.0;
     auto record_eq = [&]() {
@@ -445,6 +447,7 @@ static Result run_one(const std::vector<Bar>& bars,
             tr.exit_reason = exit_reason;
             tr.bars_held = (exit_bar_idx >= entry_bar_idx)
                 ? (int)(exit_bar_idx - entry_bar_idx) : 0;
+            tr.atr_at_entry = entry_atr;
             trades_out->push_back(tr);
         }
         pos_sign = 0;
@@ -492,6 +495,7 @@ static Result run_one(const std::vector<Bar>& bars,
                 tp = entry_price + tp_mult * a;
                 entry_ms = b.bar_open_ms;
                 entry_bar_idx = i;
+                entry_atr = a;
             } else if (b.close_bid < dc_low) {
                 pos_sign = -1;
                 entry_price = b.close_bid;
@@ -499,6 +503,7 @@ static Result run_one(const std::vector<Bar>& bars,
                 tp = entry_price - tp_mult * a;
                 entry_ms = b.bar_open_ms;
                 entry_bar_idx = i;
+                entry_atr = a;
             }
         }
     }
@@ -856,7 +861,8 @@ int main(int argc, char** argv) {
             return 3;
         }
         tf << "window,donchian,sl_mult,tp_mult,direction,"
-           << "entry_ts,exit_ts,entry_px,exit_px,pnl,exit_reason,bars_held\n";
+           << "entry_ts,exit_ts,entry_px,exit_px,pnl,exit_reason,bars_held,"
+           << "atr_at_entry\n";
         for (const TradeRecord& tr : all_oos_trades) {
             tf << tr.window_label << ","
                << tr.donchian_bars << ","
@@ -869,7 +875,8 @@ int main(int argc, char** argv) {
                << tr.exit_px << ","
                << tr.pnl_usd << ","
                << tr.exit_reason << ","
-               << tr.bars_held << "\n";
+               << tr.bars_held << ","
+               << tr.atr_at_entry << "\n";
         }
         tf.close();
         std::cerr << "Wrote " << trades_path
