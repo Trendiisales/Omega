@@ -248,6 +248,8 @@ int main(int argc, char** argv) {
     int    nw = 0, nl = 0;
     int    n_long = 0, n_short = 0;
     int    n_tp = 0, n_sl = 0, n_other = 0;
+    int    n_timeout = 0, n_weekend = 0, n_force = 0, n_unknown = 0;
+    double pnl_tp = 0.0, pnl_sl = 0.0, pnl_timeout = 0.0, pnl_weekend = 0.0;
     for (const auto& t : trades) {
         cum += t.pnl_usd;
         if (cum > peak) peak = cum;
@@ -256,9 +258,12 @@ int main(int argc, char** argv) {
         if (t.pnl_usd > 0.0) { ++nw; gw += t.pnl_usd; }
         else                 { ++nl; gl += -t.pnl_usd; }
         if (t.is_long) ++n_long; else ++n_short;
-        if      (t.exit_reason == "TP_HIT") ++n_tp;
-        else if (t.exit_reason == "SL_HIT") ++n_sl;
-        else                                 ++n_other;
+        if      (t.exit_reason == "TP_HIT")        { ++n_tp;       pnl_tp      += t.pnl_usd; }
+        else if (t.exit_reason == "SL_HIT")        { ++n_sl;       pnl_sl      += t.pnl_usd; }
+        else if (t.exit_reason == "TIMEOUT")       { ++n_timeout;  pnl_timeout += t.pnl_usd; ++n_other; }
+        else if (t.exit_reason == "WEEKEND_CLOSE") { ++n_weekend;  pnl_weekend += t.pnl_usd; ++n_other; }
+        else if (t.exit_reason == "FORCE_CLOSE")   { ++n_force;                                ++n_other; }
+        else                                        { ++n_unknown;                              ++n_other; }
     }
     const int    n_trades   = (int)trades.size();
     const double win_rate   = n_trades > 0 ? (100.0 * nw / n_trades) : 0.0;
@@ -278,6 +283,18 @@ int main(int argc, char** argv) {
     printf("Max drawdown:    $%.2f\n", -max_dd);
     printf("Profit factor:   %.2f\n", pf);
     printf("Exit breakdown:  TP=%d  SL=%d  OTHER=%d\n", n_tp, n_sl, n_other);
+    printf("                 (OTHER = TIMEOUT=%d WEEKEND=%d FORCE=%d UNK=%d)\n",
+           n_timeout, n_weekend, n_force, n_unknown);
+    printf("PnL by exit:     TP=$%+.2f  SL=$%+.2f  TIMEOUT=$%+.2f  WEEKEND=$%+.2f\n",
+           pnl_tp, pnl_sl, pnl_timeout, pnl_weekend);
+    if (n_tp + n_sl > 0) {
+        const double avg_tp = n_tp > 0 ? pnl_tp / n_tp : 0.0;
+        const double avg_sl = n_sl > 0 ? pnl_sl / n_sl : 0.0;
+        const double avg_to = n_timeout > 0 ? pnl_timeout / n_timeout : 0.0;
+        const double avg_wk = n_weekend > 0 ? pnl_weekend / n_weekend : 0.0;
+        printf("Avg PnL/exit:    TP=$%+.2f  SL=$%+.2f  TIMEOUT=$%+.2f  WEEKEND=$%+.2f\n",
+               avg_tp, avg_sl, avg_to, avg_wk);
+    }
     printf("\n");
 
     // ── Compare to sweep expectation (D=10 SL=1.0 TP=4.0) ─────────────────
@@ -358,6 +375,10 @@ int main(int argc, char** argv) {
             fprintf(sf, "Max drawdown:   $%.2f\n", -max_dd);
             fprintf(sf, "Profit factor:  %.2f\n", pf);
             fprintf(sf, "Exit reasons:   TP=%d SL=%d OTHER=%d\n", n_tp, n_sl, n_other);
+            fprintf(sf, "  OTHER detail: TIMEOUT=%d WEEKEND=%d FORCE=%d UNK=%d\n",
+                    n_timeout, n_weekend, n_force, n_unknown);
+            fprintf(sf, "PnL by exit:    TP=$%+.2f SL=$%+.2f TIMEOUT=$%+.2f WEEKEND=$%+.2f\n",
+                    pnl_tp, pnl_sl, pnl_timeout, pnl_weekend);
             fprintf(sf, "\n");
             fprintf(sf, "Sweep expectation (D=10 SL=1.0 TP=4.0):\n");
             fprintf(sf, "  Trades=%d PnL=$%.2f PF=%.2f DD=$%.2f WR=%.1f%%\n",
