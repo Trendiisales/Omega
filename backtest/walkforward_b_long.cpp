@@ -414,7 +414,9 @@ static Result run_one(const std::vector<Bar>& bars,
                       double tp_mult,
                       const SymbolSpec& spec,
                       std::vector<TradeRecord>* trades_out = nullptr,
-                      const std::string& window_label = std::string()) {
+                      const std::string& window_label = std::string(),
+                      double early_sl_mult = -1.0,
+                      int    early_bar_count = 0) {
     Result R{};
     R.donchian_bars = donchian_n;
     R.sl_mult = sl_mult;
@@ -471,6 +473,17 @@ static Result run_one(const std::vector<Bar>& bars,
 
     for (size_t i = warmup; i < bars.size(); ++i) {
         const Bar& b = bars[i];
+        // Time-conditional SL: if early-SL mode is active, recompute sl
+        // from entry_atr based on bars-since-entry. No-op when
+        // early_bar_count <= 0 or early_sl_mult < 0 (defaults).
+        // Long-only variant: pos_sign is always +1 when in position.
+        if (pos_sign != 0 && early_bar_count > 0 && early_sl_mult >= 0.0) {
+            int bars_since_entry = (i >= entry_bar_idx)
+                ? (int)(i - entry_bar_idx) : 0;
+            double effective_mult = (bars_since_entry < early_bar_count)
+                ? early_sl_mult : sl_mult;
+            sl = entry_price - effective_mult * entry_atr;
+        }
         if (pos_sign != 0) {
             bool hit_sl = false, hit_tp = false;
             int64_t hit_sl_ms = 0, hit_tp_ms = 0;
@@ -672,6 +685,44 @@ int main(int argc, char** argv) {
     std::cerr << "Min trades for pick: " << kMinTradesForPick << "\n";
     std::cerr << "Tick file:     " << tick_path << "\n\n";
 
+    // ------------------------------------------------------------
+    // S36: Time-conditional SL via env vars (default = no-op).
+    // OMEGA_EARLY_SL_MULT  : float, multiplier applied to entry_atr
+    //                        for the first OMEGA_EARLY_BAR_COUNT bars
+    //                        after entry. Must be >= 0.0 to activate.
+    // OMEGA_EARLY_BAR_COUNT: int, number of bars after entry during
+    //                        which the early SL applies. Must be > 0
+    //                        to activate.
+    // Both must be set to activate; otherwise behavior is byte-
+    // identical to the pre-S36 harness.
+    // ------------------------------------------------------------
+    double early_sl_mult = -1.0;
+    int    early_bar_count = 0;
+    {
+        const char* env_sl = std::getenv("OMEGA_EARLY_SL_MULT");
+        const char* env_bc = std::getenv("OMEGA_EARLY_BAR_COUNT");
+        if (env_sl != nullptr && env_sl[0] != '\0') {
+            char* end = nullptr;
+            double v = std::strtod(env_sl, &end);
+            if (end != env_sl && v >= 0.0) early_sl_mult = v;
+        }
+        if (env_bc != nullptr && env_bc[0] != '\0') {
+            char* end = nullptr;
+            long v = std::strtol(env_bc, &end, 10);
+            if (end != env_bc && v > 0) early_bar_count = (int)v;
+        }
+        bool active = (early_sl_mult >= 0.0) && (early_bar_count > 0);
+        std::cerr << "Early-SL mode: "
+                  << (active ? "ACTIVE" : "OFF (default)") << "\n";
+        if (active) {
+            std::cerr << "  early_sl_mult   = " << early_sl_mult << "\n";
+            std::cerr << "  early_bar_count = " << early_bar_count << "\n";
+        } else {
+            std::cerr << "  (set OMEGA_EARLY_SL_MULT and OMEGA_EARLY_BAR_COUNT to activate)\n";
+        }
+        std::cerr << "\n";
+    }
+
     std::vector<Bar> all_bars = load_and_aggregate(tick_path);
     if (all_bars.size() < 1000) {
         std::cerr << "ERROR: too few bars (" << all_bars.size() << ")\n";
@@ -747,7 +798,9 @@ int main(int argc, char** argv) {
             for (double sm : sl_set) {
                 for (double tm : tp_set) {
                     cell += 1;
-                    Result r = run_one(is_slice, is_atr, dn, sm, tm, *spec);
+                    Result r = run_one(is_slice, is_atr, dn, sm, tm, *spec,
+                                      nullptr, std::string(),
+                                      early_sl_mult, early_bar_count);
                     std::cerr << "[IS " << sd.is_label << " " << cell << "/" << n_cells
                               << "] d=" << dn << " sl=" << sm << " tp=" << tm
                               << " trades=" << r.n_trades
@@ -785,7 +838,8 @@ int main(int argc, char** argv) {
         // Run picked cell on OOS — capture per-trade rows for trades.csv.
         Result oos_r = run_one(oos_slice, oos_atr,
                                pick.donchian_bars, pick.sl_mult, pick.tp_mult,
-                               *spec, &all_oos_trades, sd.oos_label);
+                               *spec, &all_oos_trades, sd.oos_label,
+                               early_sl_mult, early_bar_count);
         std::cerr << "OOS:    pf=" << oos_r.profit_factor
                   << " pnl=$" << oos_r.pnl_usd
                   << " trades=" << oos_r.n_trades
