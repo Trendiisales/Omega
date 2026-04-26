@@ -458,33 +458,25 @@ struct BtM1BarSeeder {
 struct CrossRunner {
     omega::cross::OpeningRangeEngine    orb;
     omega::cross::VWAPReversionEngine   vrev;
-    omega::cross::TrendPullbackEngine   tpb;
+    // S49: TrendPullbackEngine retired from backtest harness on gold.
+    // Live verdict (engine_init.hpp:432-443): g_trend_pb_gold.enabled=false.
+    // S44 v6 found no edge across every cohort/gate/session/year (148M ticks,
+    // 3933 trades). Tombstone: do not re-introduce without fundamentally new
+    // logic. Class still in CrossAssetEngines.hpp; live SP/NQ instances active
+    // (g_trend_pb_sp / g_trend_pb_nq, re-enabled S14 with $80 daily cap).
     omega::cross::NoiseBandMomentumEngine nbe;
     BtVwap      vwap;
-    BtM1BarSeeder m1seed;
-    // S44 backtest harness: TPB defaults are indices-tuned (MIN_EMA_SEP=10).
-    // Production main.cpp sets gold-specific values; mirror them here so the
-    // 2-year XAUUSD backtest tests the live config, not the indices fallback.
-    CrossRunner(){
-        tpb.MIN_EMA_SEP = 5.0;  // gold: 5pt EMA stack separation (vs 10pt indices)
-    }
+    // BtM1BarSeeder member removed with TPB retirement (S49) -- it existed
+    // solely to feed tpb.seed_bar_emas(). Struct definition retained as
+    // dormant microstructure infrastructure for future engines.
     void tick(const TickRow& r){
         const std::string sym = "XAUUSD";
         const double mid  = (r.bid+r.ask)*0.5;
         const double vw   = vwap.update(mid, r.ts_ms);
 
-        // S44: build M1 bars + indicators locally and seed TPB on every tick
-        // once we have RSI_P+1 closed bars (mirrors live m1_ready gate at
-        // tick_indices.hpp:116-121).
-        m1seed.on_tick(mid, r.ts_ms);
-        if (m1seed.ready()) {
-            tpb.seed_bar_emas(m1seed.ema9, m1seed.ema21, m1seed.ema50, m1seed.atr_avg);
-        }
-
         auto c=cb();
         (void)orb.on_tick(sym,r.bid,r.ask,c);
         (void)vrev.on_tick(sym,r.bid,r.ask,vw,c);
-        (void)tpb.on_tick(sym,r.bid,r.ask,c);
         (void)nbe.on_tick(sym,r.bid,r.ask,c);
     }
 };
