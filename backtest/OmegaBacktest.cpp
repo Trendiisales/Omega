@@ -923,13 +923,22 @@ struct TSMomRunner {
 struct PullbackContRunner {
     omega::PullbackContEngine eng;
     PullbackContRunner(){
-        // Mirror engine_init.hpp PullbackCont config (S44, validated)
+        // S49 X4 DIAGNOSTIC A/B: HOLD_S 600 -> 300 to test drift hypothesis.
+        // Engine docstring (PullbackContEngine.hpp:9-12) shows HOLD=300 produced
+        // WR=80-86% across h07/h17/h23 sessions in the original 2yr / 111M-tick
+        // validation. S48 baseline at HOLD=600 produced WR=28.3% (-$3.11) on the
+        // current 2024-03 -> 2026-04 dataset. The same docstring shows ONE run at
+        // HOLD=600: WR=61.8% +$18.76 -- still 28x higher WR than S48 saw.
+        // If HOLD=300 here restores WR ~80%, drift is config-tunable; mirror to
+        // engine_init.hpp:163 in a later commit. If HOLD=300 also gives WR~28%,
+        // regime has shifted vs. the original validation period -- escalate.
+        // *** Backtest harness only; engine_init.hpp:163 (live) unchanged at 600. ***
         eng.enabled       = true;
         eng.shadow_mode   = false;  // log to store via on_trade_record
         eng.MOVE_MIN      = 20.0;
         eng.PB_FRAC       = 0.20;
         eng.LOOKBACK_S    = 300;
-        eng.HOLD_S        = 600;
+        eng.HOLD_S        = 300;    // S49 X4: was 600 -- diagnostic A/B vs. docstring baseline
         eng.SL_PTS        = 6.0;
         eng.TRAIL_PTS     = 4.0;
         eng.BASE_RISK_USD = 80.0;
