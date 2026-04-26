@@ -429,9 +429,17 @@ static void init_engines(const std::string& cfg_path)
     // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
     // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
 
-    // DISABLED: TrendPullback gold fires counter-trend repeatedly in Asia with no valid
-    // H4 gate (h4_trend_state_=0 until 14 H4 bars seen = 56hrs on fresh start).
-    // All session trades: TIME_STOP losses shorting an uptrend. No edge confirmed.
+    // DISABLED: TrendPullback gold has no edge on XAUUSD.
+    // S44 v6 backtest verdict (2024-03 -> 2026-03, 148M ticks, 3933 TPB trades):
+    //   - Net/T = -$0.84 baseline, -$0.70 best-gate (G3: atr>=3.0 AND spread<=0.85)
+    //   - 0 of 24 net-positive hours under G3. No whitelist exists.
+    //   - 2025 net/T = -$0.69, 2026 net/T = -$0.71. No 2026-edge.
+    //   - Tightest cohort (mae<1pt, 99.6% WR, gross +$0.037/T) still net -$0.78/T.
+    //     => spread cost > strategy alpha across every cohort, gate, session, year.
+    // Original disable rationale (counter-trend Asia firing, H4 gate cold-start) was
+    // a real bug but not the root cause; v6 ran with H4 gate cold-start fixed and
+    // still finds no edge. Tombstone: do not re-enable without fundamentally new logic.
+    // See: bt_trades.csv (S44 v6, HEAD aa6624b0 on s44-bt-validation).
     g_trend_pb_gold.enabled = false;
 
     // HTF swing engines v2 -- per-instrument params, partial TP, weekend close gate.
