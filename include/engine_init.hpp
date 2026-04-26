@@ -132,13 +132,13 @@ static void init_engines(const std::string& cfg_path)
     //   ATR_THRESHOLD_ASIA=4.0 / VOL_RATIO_MIN_ASIA=2.0 / DRIFT_MIN_ASIA=3.0
     // and switches at entry via `const bool is_asia = (session_slot == 6);`
     // so Asia coverage is preserved; only London/NY chop-fires are filtered.
-    g_macro_crash.ATR_THRESHOLD   = 6.0;   // reverted 4.0->6.0: London/NY macro-event threshold
+    g_macro_crash.ATR_THRESHOLD   = 8.0;   // S42 revert to validated Apr 2 2026 baseline (was 6.0; original validated value)
     g_macro_crash.VOL_RATIO_MIN   = 2.5;   // reverted 2.0->2.5: London/NY 2.5x vol expansion
-    g_macro_crash.DRIFT_MIN       = 5.0;   // reverted 3.0->5.0: London/NY 5pt drift confirms direction
+    g_macro_crash.DRIFT_MIN       = 6.0;   // S42 revert to validated Apr 2 2026 baseline (was 5.0; original validated value)
     g_macro_crash.BASE_RISK_USD   = 80.0;  // scales with ATR (6x max = 0.48 lots at ATR=10)
-    g_macro_crash.STEP1_TRIGGER_USD = 80.0;  // lowered 200->80: Asia moves are $10-30pt not $200+
-                                              // At $10 move with 0.10 lots: open_pnl=$100 -- still clears
-    g_macro_crash.STEP2_TRIGGER_USD = 160.0; // lowered 400->160: proportional to Asia move size
+    g_macro_crash.STEP1_TRIGGER_USD = 200.0; // S42 revert to validated Apr 2 2026 baseline (was 80.0; matches crash-size moves)
+                                              // S42 revert: original $200 step matches Apr 2 crash-size moves (continued from L139)
+    g_macro_crash.STEP2_TRIGGER_USD = 400.0; // S42 revert to validated Apr 2 2026 baseline (was 160.0; matches crash-size moves)
     g_macro_crash.on_close = [](double exit_px, bool is_long, double size, const std::string& reason) {
         if (g_macro_crash.shadow_mode) return;  // shadow: no live order
         send_live_order("XAUUSD", is_long, size, exit_px);
