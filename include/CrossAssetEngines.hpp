@@ -1535,18 +1535,10 @@ public:
     int     MAX_HOLD_SEC      = 86400;  // no timeout -- ATR trail manages exit
     int     COOLDOWN_SEC      = 300;  // raised 120?300: 2-min re-entries on thin tape caused direction-flip losses
     bool    enabled           = true;
-    // ATR trail params -- S45 retuned 2026-04-26 from 26m backtest analysis:
-    //   2,629 SL_HIT losers had median MFE = 5.97pt, avg = 7.81pt before reversing.
-    //   Old thresholds (BE=1.0xATR, trail_arm=2.0xATR) failed in high-vol periods
-    //   because at ATR=8-12pt the BE threshold was 8-12pt and trail-arm was 16-24pt.
-    //   Most losers peaked at 4-8pt MFE then reversed -- never arming protection.
-    //   New thresholds: BE arms at 0.5xATR (capped 5pt), trail arms at 1.0xATR
-    //   (capped 8pt). With absolute caps the trade-off no longer scales unbounded
-    //   when ATR spikes. Predicted: ~60% of SL_HIT losers convert to BE+spread
-    //   (small win) instead of full SL.
-    double  TRAIL_ARM_ATR_MULT  = 1.0;  // S45 was 2.0 -- arm trail after 1x ATR move
+    // ATR trail params (data-validated on gold: 2x ATR arm, 1x ATR trail)
+    double  TRAIL_ARM_ATR_MULT  = 2.0;  // arm trail after price moves 2x ATR from entry
     double  TRAIL_DIST_ATR_MULT = 1.0;  // trail SL 1x ATR behind peak MFE
-    double  BE_ATR_MULT         = 0.5;  // S45 was 1.0 -- lock BE after 0.5x ATR profit
+    double  BE_ATR_MULT         = 1.0;  // lock BE after 1x ATR profit
 
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
@@ -1590,13 +1582,8 @@ public:
             if (adverse_now > pos_.mae) pos_.mae = adverse_now;
             const double atr = atr_ > 0.01 ? atr_ : 0.5; // safety floor
 
-            // 1) BE lock at 0.5x ATR (floor 2pt, ceiling 5pt)
-            // S45 retune 2026-04-26: was max(atr*BE_ATR_MULT, 3.0) -- which let
-            // BE threshold scale unbounded with ATR. At ATR=12pt threshold was
-            // 12pt MFE, but median MFE on losers was 6pt -> BE never armed.
-            // Now: floor 2pt (no instant arm at zero ATR), ceiling 5pt (locks
-            // BE before typical loser-reversal MFE peak).
-            const double be_arm_thresh = std::min(std::max(atr * BE_ATR_MULT, 2.0), 5.0);
+            // 1) BE lock at 1x ATR (floor 3pt -- ATR=0 must not lock BE instantly)
+            const double be_arm_thresh = std::max(atr * BE_ATR_MULT, 3.0);
             if (!be_locked_ && move >= be_arm_thresh) {
                 be_locked_ = true;
                 const double be_sl = pos_.is_long ? pos_.entry + spread
@@ -1624,17 +1611,15 @@ public:
                     pos_.sl = be_plus;
             }
 
-            // 2) ATR trail arm at 1x ATR -- trail SL at 1x ATR behind peak
-            // S45 retune 2026-04-26: caps added so high ATR doesn't push trail
-            // arm unreachable. Was max(atr*2.0, 5.0) which at ATR=12pt required
-            // 24pt MFE before any trail. Now: floor 3pt (no instant arm),
-            // ceiling 8pt (trail arms within reach of typical winner MFE 6-7pt).
-            // Trail distance similarly capped 2-5pt.
+            // 2) ATR trail arm at 2x ATR -- trail SL at 1x ATR behind peak
+            // FLOOR: minimum arm threshold and trail distance so ATR=0 (unseeded)
+            // doesn't cause immediate arm + zero-buffer exit at MFE peak.
             // On cold start (ATR not seeded from bars): atr_≈0 -> trail arms
             // on first tick of profit and SL placed exactly at MFE price.
             // Any reversal tick exits immediately = misses the full move.
-            const double trail_arm_thresh = std::min(std::max(atr * TRAIL_ARM_ATR_MULT, 3.0), 8.0);
-            const double trail_dist_pts   = std::min(std::max(atr * TRAIL_DIST_ATR_MULT, 2.0), 5.0);
+            // Fix: floor arm at 5pt, trail dist at 3pt (gold spread noise floor).
+            const double trail_arm_thresh = std::max(atr * TRAIL_ARM_ATR_MULT, 5.0);
+            const double trail_dist_pts   = std::max(atr * TRAIL_DIST_ATR_MULT, 3.0);
             if (move >= trail_arm_thresh) {
                 const double trail_sl = pos_.is_long
                     ? (pos_.entry + pos_.mfe - trail_dist_pts)
