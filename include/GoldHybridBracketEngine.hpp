@@ -80,6 +80,11 @@ public:
     bool  shadow_mode = true;  // default true = log only, no live orders (Class C added 2026-04-21)
 
     // ── State ─────────────────────────────────────────────────────────────────
+    // S43 2026-04-26: added mae field + tracker. Pre-S43 every HBG trade in
+    //   gold_combined_20260426_051234.csv had mae=0.00 because the writer
+    //   was hardcoded to tr.mae=0.0 at close time. Now tracks pos.mae as the
+    //   maximum adverse excursion in price-points (matches GoldEngineStack
+    //   convention) and writes tr.mae = pos.mae * pos.size at close.
     struct LivePos {
         bool    active   = false;
         bool    is_long  = false;
@@ -88,6 +93,7 @@ public:
         double  sl       = 0.0;
         double  size     = 0.01;
         double  mfe      = 0.0;
+        double  mae      = 0.0;   // S43: max adverse excursion (price points, <= 0)
         int64_t entry_ts = 0;
     } pos;
 
@@ -317,6 +323,7 @@ public:
         pos.tp       = is_long ? (fill_px + tp_dist)  : (fill_px - tp_dist);
         pos.size     = fill_lot;
         pos.mfe      = 0.0;
+        pos.mae      = 0.0;   // S43: reset adverse-excursion tracker
         pos.entry_ts = static_cast<int64_t>(std::time(nullptr));
         phase        = Phase::LIVE;
 
@@ -335,6 +342,10 @@ public:
         if (!pos.active) return;
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
+        // S43 2026-04-26: track max adverse excursion (negative or zero).
+        //   pos.mae stays <= 0; tracks worst against-position move in price points.
+        //   Mirrors GoldEngineStack.hpp:4377 convention.
+        if (move < pos.mae) pos.mae = move;
 
         // Trail: MFE-proportional -- tightens as move grows, locks in more profit
         // trail_dist = min(range * TRAIL_FRAC, mfe * 0.20)
@@ -369,10 +380,28 @@ public:
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (sl_hit) {
             const double exit_px = pos.is_long ? bid : ask;
-            const char* reason   = (std::fabs(pos.sl - pos.entry) < 0.01) ? "BE_HIT" : "TRAIL_HIT";
-            if (pos.sl <= pos.entry + 0.01 && pos.sl >= pos.entry - 0.01) reason = "BE_HIT";
-            else if (move > 0) reason = "TRAIL_HIT";
-            else reason = "SL_HIT";
+            // S43 2026-04-26: TRAIL_HIT/SL_HIT classifier was buggy.
+            //   PRIOR: TRAIL_HIT was emitted whenever instantaneous `move > 0` at
+            //   SL-fire time, regardless of whether the trail had actually moved
+            //   the SL past entry. This contaminated diagnostics: 28/28 HBG
+            //   "TRAIL_HIT" trades in gold_combined_20260426_051234.csv had
+            //   median hold 1s, max 4s -- they were flicker-stops on the
+            //   original 3.5pt SL being mislabelled as trail-hits because price
+            //   had ticked one count favourable before reversing.
+            //   FIX: gate the TRAIL_HIT label on whether pos.sl has actually
+            //   moved strictly past pos.entry in the position-favourable
+            //   direction (i.e. trail engaged and SL is in profit). Mirrors
+            //   the S20 GoldEngineStack relabel pattern at
+            //   GoldEngineStack.hpp:4440-4443.
+            const bool sl_at_be        = (pos.sl <= pos.entry + 0.01)
+                                      && (pos.sl >= pos.entry - 0.01);
+            const bool trail_in_profit = pos.is_long
+                ? (pos.sl > pos.entry + 0.01)
+                : (pos.sl < pos.entry - 0.01);
+            const char* reason;
+            if      (sl_at_be)        reason = "BE_HIT";
+            else if (trail_in_profit) reason = "TRAIL_HIT";
+            else                      reason = "SL_HIT";
             _close(exit_px, reason, now_s, on_close);
         }
     }
@@ -401,7 +430,7 @@ private:
         {
             // converted from printf
             char _buf[512];
-            snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f\n",                pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe);
+            snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f mae=%.2f\n",                pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe, pos.mae);
             std::cout << _buf;
             std::cout.flush();
         }
@@ -421,7 +450,8 @@ private:
         tr.pnl = (pos.is_long ? (exit_px - pos.entry)
                               : (pos.entry - exit_px)) * pos.size;  // raw -- tick_mult in lifecycle
         tr.net_pnl = tr.pnl;
-        tr.mfe = pos.mfe * pos.size; tr.mae = 0.0;
+        tr.mfe = pos.mfe * pos.size;
+        tr.mae = pos.mae * pos.size;   // S43: was hardcoded 0.0; now real MAE
         tr.entryTs = pos.entry_ts; tr.exitTs = now_s;
         tr.exitReason = reason; tr.spreadAtEntry = 0.0;
         tr.bracket_hi = bracket_high; tr.bracket_lo = bracket_low;
