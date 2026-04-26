@@ -1276,6 +1276,23 @@ static void write_report(const char* path){
 int main(int argc, char** argv){
     Cfg cfg = parse(argc,argv);
 
+    // S46 DIAGNOSTIC -- dump cfg flags to stderr immediately after parse so
+    // we can diagnose --engine clean producing 0 engines. Remove once root-caused.
+    fprintf(stderr,
+        "[CFG] gold=%d latency=%d cross=%d breakout=%d stoprun=%d\n"
+        "[CFG] ofade=%d omom=%d amom=%d lfade=%d rsirev=%d allnew=%d\n"
+        "[CFG] hybridgold=%d macrocrash=%d h1swing=%d h4regime=%d\n"
+        "[CFG] minh4=%d pullbackcont=%d pullbackprem=%d\n"
+        "[CFG] pdhl=%d rsiextreme=%d emacross=%d\n"
+        "[CFG] tsmom=%d  quiet=%d\n",
+        cfg.gold, cfg.latency, cfg.cross, cfg.breakout, cfg.stoprun,
+        cfg.ofade, cfg.omom, cfg.amom, cfg.lfade, cfg.rsirev, cfg.allnew,
+        cfg.hybridgold, cfg.macrocrash, cfg.h1swing, cfg.h4regime,
+        cfg.minh4, cfg.pullbackcont, cfg.pullbackprem,
+        cfg.pdhl, cfg.rsiextreme, cfg.emacross,
+        cfg.tsmom, cfg.quiet);
+    fflush(stderr);
+
     // Save original stdout fd BEFORE redirecting, so we can restore it for summary.
     int stdout_saved = -1;
 #ifndef _WIN32
