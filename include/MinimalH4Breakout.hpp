@@ -33,6 +33,12 @@
 //      backtest expectation (0.23 trades/day = ~5-7 trades/month).
 //    - Does NOT replace H4RegimeEngine -- both run in parallel for now.
 //      MinimalH4Breakout gets priority via gold_any_open gate if already open.
+//
+//  S47 T4b 2026-04-27: long_only flag
+//    New parameter `long_only` (default false). When true, bear-break entries
+//    are silently skipped (return without firing). Bull-break entries
+//    unaffected. Gate is configurable via [minimal_h4] long_only=true in
+//    omega_config.ini. Default-false preserves backtest behaviour byte-exact.
 // =============================================================================
 
 #pragma once
@@ -63,6 +69,9 @@ struct MinimalH4Params {
     int    timeout_h4_bars     = 24;    // safety cap: 24 H4 bars = 4 days
     int    cooldown_h4_bars    = 2;     // bars between trades
     bool   weekend_close_gate  = true;  // close profitable positions Fri 20:00+ UTC
+    // S47 T4b 2026-04-27: when true, only bull-break entries are taken; bear
+    // breaks are silently skipped. Default false preserves prior behaviour.
+    bool   long_only           = false;
 };
 
 inline MinimalH4Params make_minimal_h4_gold_params() {
@@ -211,6 +220,19 @@ struct MinimalH4Breakout {
         if (!bull_break && !bear_break) return sig;
 
         const bool intend_long = bull_break;
+
+        // S47 T4b 2026-04-27: long_only gate. When p.long_only is true, drop
+        //   bear-break entries silently. Bull entries are unaffected.
+        if (p.long_only && !intend_long) {
+            static int64_t s_lo = 0;
+            if (now_ms - s_lo > 3600000LL) {
+                s_lo = now_ms;
+                printf("[MINIMAL_H4-%s] long_only=true: dropping SHORT bear-break entry\n",
+                       symbol.c_str());
+                fflush(stdout);
+            }
+            return sig;
+        }
 
         // Entry at bar-close mid ± half spread (use bid/ask to approximate)
         const double entry_px = intend_long ? ask : bid;
