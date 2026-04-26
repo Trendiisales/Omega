@@ -457,26 +457,32 @@ struct BtM1BarSeeder {
 
 struct CrossRunner {
     omega::cross::OpeningRangeEngine    orb;
-    omega::cross::VWAPReversionEngine   vrev;
-    // S49: TrendPullbackEngine retired from backtest harness on gold.
+    // S49 X3: VWAPReversionEngine retired from backtest harness on gold.
+    // Engine class header (CrossAssetEngines.hpp:1132) explicitly states:
+    // "Suited for: GER40, US500.F, USTEC.F, EURUSD (liquid, mean-reverting).
+    //  Not suited for: strongly trending sessions" -- gold during 2024-03 to
+    // 2026-04 was strongly trending plus the Apr 2 tariff crash. All four live
+    // instances disabled in engine_init.hpp:349-359 (sp/nq/ger40/eurusd, all
+    // .enabled=false). No g_vwap_rev_gold ever existed -- never wired live for
+    // gold. S48 backtest result: 9475 trades / -$2.45 / Sh=-0.54.
+    // S49 X2: TrendPullbackEngine retired from backtest harness on gold.
     // Live verdict (engine_init.hpp:432-443): g_trend_pb_gold.enabled=false.
     // S44 v6 found no edge across every cohort/gate/session/year (148M ticks,
     // 3933 trades). Tombstone: do not re-introduce without fundamentally new
     // logic. Class still in CrossAssetEngines.hpp; live SP/NQ instances active
     // (g_trend_pb_sp / g_trend_pb_nq, re-enabled S14 with $80 daily cap).
     omega::cross::NoiseBandMomentumEngine nbe;
-    BtVwap      vwap;
-    // BtM1BarSeeder member removed with TPB retirement (S49) -- it existed
+    // BtVwap member removed with VWAPReversion retirement (S49 X3) -- it
+    // existed solely to feed vrev.on_tick via vw=vwap.update(). Struct
+    // definition retained as dormant microstructure infrastructure.
+    // BtM1BarSeeder member removed with TPB retirement (S49 X2) -- it existed
     // solely to feed tpb.seed_bar_emas(). Struct definition retained as
     // dormant microstructure infrastructure for future engines.
     void tick(const TickRow& r){
         const std::string sym = "XAUUSD";
-        const double mid  = (r.bid+r.ask)*0.5;
-        const double vw   = vwap.update(mid, r.ts_ms);
 
         auto c=cb();
         (void)orb.on_tick(sym,r.bid,r.ask,c);
-        (void)vrev.on_tick(sym,r.bid,r.ask,vw,c);
         (void)nbe.on_tick(sym,r.bid,r.ask,c);
     }
 };
