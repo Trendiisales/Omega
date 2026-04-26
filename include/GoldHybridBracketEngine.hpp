@@ -110,7 +110,7 @@ public:
     //   (warmup pass-through).
     static constexpr int    EXPANSION_HISTORY_LEN = 20;
     static constexpr int    EXPANSION_MIN_HISTORY = 5;
-    static constexpr double EXPANSION_MULT        = 1.10;
+    static constexpr double EXPANSION_MULT        = 1.20;
 
     // ── Phase ─────────────────────────────────────────────────────────────────
     enum class Phase { IDLE, ARMED, PENDING, LIVE, COOLDOWN };
