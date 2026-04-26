@@ -11,8 +11,8 @@
 //   --report  <file>   per-engine stats CSV              (default: bt_report.csv)
 //   --trades  <file>   all trade records CSV             (default: bt_trades.csv)
 //   --warmup  <n>      ticks before recording trades     (default: 5000)
-//   --engine  <list>   comma list (default: gold,latency,cross,breakout)
-//                      legacy:  gold, latency, cross, breakout, stoprun,
+//   --engine  <list>   comma list (default: gold,latency,cross)
+//                      legacy:  gold, latency, cross, stoprun,
 //                               ofade, omom, amom, lfade, rsirev, allnew
 //                      S44 new: hybridgold, macrocrash, h1swing, h4regime,
 //                               minh4, pullbackcont, pullbackprem, pdhl,
@@ -73,7 +73,6 @@
 // (GoldFlowEngine.hpp removed at S19 Stage 1B — engine culled.)
 #include "../include/LatencyEdgeEngines.hpp"
 #include "../include/CrossAssetEngines.hpp"
-#include "../include/BreakoutEngine.hpp"
 #include "../include/BracketEngine.hpp"
 #include "../include/RSIReversalEngine.hpp"
 // (MicroMomentumEngine.hpp removed at Batch 5V §1.2 2026-04-20.)
@@ -487,18 +486,6 @@ struct CrossRunner {
         (void)vrev.on_tick(sym,r.bid,r.ask,vw,c);
         (void)tpb.on_tick(sym,r.bid,r.ask,c);
         (void)nbe.on_tick(sym,r.bid,r.ask,c);
-    }
-};
-
-struct BreakRunner {
-    omega::BreakoutEngine    bke{"XAUUSD"};
-    omega::GoldBracketEngine gbe;
-    double lat;
-    BreakRunner(double l):lat(l){}
-    void tick(const TickRow& r){
-        auto c=cb();
-        (void)bke.update(r.bid,r.ask,lat,"UNKNOWN",c);
-        (void)gbe.on_tick(r.bid,r.ask,(long long)r.ts_ms,true,"UNKNOWN",c);
     }
 };
 
@@ -1111,8 +1098,10 @@ struct Cfg {
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
     // Legacy default cohort -- behaviour for `OmegaBacktest <csv>` (no flags)
-    // is identical to S43: gold,latency,cross,breakout enabled.
-    bool gold=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
+    // enables gold,latency,cross. The breakout cohort was retired at S48
+    // (XAUUSD_BE was an index-engine misuse losing -$8/trade; GoldBracketEngine
+    // never fired on 26m gold tick data).
+    bool gold=true, latency=true, cross=true, stoprun=false, ofade=false;
     bool omom=false, amom=false, lfade=false, allnew=false;
     bool rsirev=false; // (micromom removed at 5V §1.2)
     bool quiet=false;
@@ -1134,8 +1123,8 @@ static Cfg parse(int argc, char** argv){
             "  --report  <f>   engine summary CSV    (default bt_report.csv)\n"
             "  --trades  <f>   trade records CSV     (default bt_trades.csv)\n"
             "  --warmup  <n>   warmup ticks          (default 5000)\n"
-            "  --engine  <l>   comma list, default = gold,latency,cross,breakout\n"
-            "                  legacy:  gold latency cross breakout stoprun\n"
+            "  --engine  <l>   comma list, default = gold,latency,cross\n"
+            "                  legacy:  gold latency cross stoprun\n"
             "                           ofade omom amom lfade rsirev allnew\n"
             "                  S44 new: hybridgold macrocrash h1swing h4regime\n"
             "                           minh4 pullbackcont pullbackprem\n"
@@ -1175,7 +1164,6 @@ static Cfg parse(int argc, char** argv){
             c.gold     = !!strstr(e,"gold");
             c.latency  = !!strstr(e,"latency");
             c.cross    = !!strstr(e,"cross");
-            c.breakout = !!strstr(e,"breakout");
             c.stoprun  = !!strstr(e,"stoprun");
             c.ofade    = !!strstr(e,"ofade");
             c.omom     = !!strstr(e,"omom");
@@ -1207,7 +1195,7 @@ static Cfg parse(int argc, char** argv){
                 // matched above ('all' contains 'gold' etc.) but be explicit
                 // about the optional cohort so the master flag is bullet-proof
                 // even if someone renames substrings later.
-                c.gold = c.latency = c.cross = c.breakout = true;
+                c.gold = c.latency = c.cross = true;
                 c.stoprun = c.ofade = c.omom = c.amom = c.lfade = true;
                 c.rsirev = true;
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
@@ -1221,7 +1209,7 @@ static Cfg parse(int argc, char** argv){
                 // Excluded: ofade (OverlapFade), lfade (LondonCoreFade),
                 // amom (AsiaMomentum), pdhl (PDHLReversion).
                 // Rationale captured in commit message.
-                c.gold = c.latency = c.cross = c.breakout = true;
+                c.gold = c.latency = c.cross = true;
                 c.stoprun = true;
                 c.omom = true;       // OverlapMomentum kept (different class)
                 c.rsirev = true;
@@ -1324,7 +1312,6 @@ int main(int argc, char** argv){
     std::unique_ptr<GoldRunner>          rg;
     std::unique_ptr<LatencyRunner>       rl;
     std::unique_ptr<CrossRunner>         rc;
-    std::unique_ptr<BreakRunner>         rb;
     std::unique_ptr<StopRunRunner>       rs;
     std::unique_ptr<OverlapFadeRunner>   ro;
     std::unique_ptr<OverlapMomRunner>    rom;
@@ -1348,7 +1335,6 @@ int main(int argc, char** argv){
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.latency) rl = std::make_unique<LatencyRunner>(cfg.lat);
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
-    if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
     if(cfg.stoprun) rs = std::make_unique<StopRunRunner>();
     if(cfg.ofade||cfg.allnew)   ro  = std::make_unique<OverlapFadeRunner>();
     if(cfg.omom||cfg.allnew)    rom = std::make_unique<OverlapMomRunner>();
@@ -1383,7 +1369,6 @@ int main(int argc, char** argv){
         if(rg) rg->tick(r);
         if(rl) rl->tick(r);
         if(rc) rc->tick(r);
-        if(rb) rb->tick(r);
         if(rs) rs->tick(r);
         if(ro)  ro->tick(r);
         if(rom) rom->tick(r);
@@ -1444,10 +1429,9 @@ int main(int argc, char** argv){
     printf("  File    : %s\n", cfg.csv);
     printf("  Ticks   : %lld  in %.1fs (%.0f K t/s)\n", (long long)N, ps, N/ps/1000.0);
     printf("  Range   : %s -> %s\n", sa, sb);
-    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
            cfg.gold?"GoldStack ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
-           cfg.breakout?"Breakout/Bracket ":"",
            cfg.hybridgold?"HybridGold ":"",
            cfg.macrocrash?"MacroCrash ":"",
            cfg.h1swing?"H1Swing ":"",
@@ -1480,4 +1464,5 @@ int main(int argc, char** argv){
     printf("\n[DONE]  python scripts/shadow_analysis.py %s\n", cfg.trd);
     return 0;
 }
+
 
