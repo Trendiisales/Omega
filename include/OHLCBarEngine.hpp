@@ -1398,6 +1398,16 @@ public:
                          int64_t bucket_ms,
                          int64_t now_ms,
                          int lookback_hours) noexcept {
+#ifndef _WIN32
+        // S44 backtest portability: this function uses Win32 file APIs
+        // (GetFileAttributesA, gmtime_s) and was historically only built on
+        // the live VPS. The Mac backtest harness needs the header to compile;
+        // the function itself is unused on backtest. Return 0 = "no bars
+        // hydrated" which the only call sites already handle as a normal
+        // "no CSVs found" outcome.
+        (void)csv_dir; (void)symbol; (void)bucket_ms; (void)now_ms; (void)lookback_hours;
+        return 0;
+#else
         if (bucket_ms <= 0) return 0;
         const int64_t earliest_ms = now_ms - (int64_t)lookback_hours * 3600LL * 1000LL;
 
@@ -1574,6 +1584,7 @@ public:
                ind.trend_state.load(), lookback_hours, (int)paths.size());
         fflush(stdout);
         return bars_emitted;
+#endif // _WIN32
     }
 };
 // Per-symbol bar engine registry -- maps symbol name to engine + indicators
