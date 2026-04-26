@@ -26,6 +26,35 @@
 //   Standalone (no flow active): risk_dollars = $30, SL = range * 0.5 + 0.5pt
 //   Alongside flow (pyramid):    risk_dollars = $10 (30% addon), same SL formula
 //   DOM lot bonus applied AFTER risk sizing, before max_lot cap (0.50)
+//
+// S47 T4a 2026-04-27: TWO BUG/FEATURE CHANGES
+//   (1) entry_ts capture bug
+//       PRIOR: confirm_fill() set pos.entry_ts = std::time(nullptr), which
+//       returns wall-clock time of the host. In backtest replay against
+//       historical ticks (March 2024 onwards), entry_ts captured the host's
+//       2026 wall-clock while exit_ts was the simulated tick time. Result:
+//       Hold = exit - entry produced large negative values (e.g. -7719671s
+//       observed in S46 backtest). The S46 26-month run reported
+//       Hold=-7719671s and Sh=-7.96 partly because of bogus per-trade hold
+//       contaminating Sharpe via the variance term in the per-engine
+//       accumulator.
+//       FIX: cache the simulated tick second at the top of on_tick into
+//       m_last_tick_s, and have confirm_fill() read that value. Live mode
+//       passes UTC ms in now_ms identically, so behaviour in production is
+//       unchanged (still UTC seconds, just sourced from the tick instead of
+//       std::time). All other engines use the passed-in now_ms; this brings
+//       HBG into line with the codebase convention.
+//
+//   (2) ATR-expansion gate at FIRE time
+//       PRIOR: any compression that satisfied MIN_RANGE..MAX_RANGE armed and
+//       fired regardless of whether current volatility was elevated relative
+//       to recent volatility. This produced fires during low-vol grinds that
+//       noise-stopped immediately.
+//       FIX: track last EXPANSION_HISTORY_LEN range observations. At FIRE
+//       time, require current range >= EXPANSION_MULT * median(history). If
+//       history shorter than EXPANSION_MIN_HISTORY entries, gate is
+//       pass-through (warmup). On gate fail: return to IDLE, log
+//       [HYBRID-GOLD] ATR_GATE_FAIL diagnostic, no fire.
 // =============================================================================
 
 #include <cstdint>
@@ -37,6 +66,7 @@
 #include <functional>
 #include <string>
 #include <deque>
+#include <vector>
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -72,6 +102,15 @@ public:
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15; // |book_slope| for lot bonus
     static constexpr double DOM_LOT_BONUS        = 1.3;  // lot multiplier when DOM confirms
     static constexpr double DOM_WALL_PENALTY     = 0.5;  // lot reduction when wall blocks TP
+
+    // S47 T4a: ATR-expansion gate (range-of-range proxy).
+    //   At FIRE time, require current compression range >= EXPANSION_MULT *
+    //   median of last EXPANSION_HISTORY_LEN observed ranges. While history
+    //   has fewer than EXPANSION_MIN_HISTORY entries the gate is bypassed
+    //   (warmup pass-through).
+    static constexpr int    EXPANSION_HISTORY_LEN = 20;
+    static constexpr int    EXPANSION_MIN_HISTORY = 5;
+    static constexpr double EXPANSION_MULT        = 1.20;
 
     // ── Phase ─────────────────────────────────────────────────────────────────
     enum class Phase { IDLE, ARMED, PENDING, LIVE, COOLDOWN };
@@ -131,6 +170,10 @@ public:
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
         const int64_t now_s = now_ms / 1000;
+
+        // S47 T4a: cache simulated tick second so confirm_fill() can stamp
+        //   pos.entry_ts using the tick clock rather than std::time(nullptr).
+        m_last_tick_s = now_s;
 
         ++m_ticks_received;
         m_window.push_back(mid);
@@ -258,6 +301,42 @@ public:
                 return;
             }
 
+            // ── S47 T4a: ATR-expansion gate ──────────────────────────────────
+            //   Require current range to exceed EXPANSION_MULT * median of
+            //   last EXPANSION_HISTORY_LEN observed compressions before
+            //   firing. Bypass while history shorter than EXPANSION_MIN_HISTORY.
+            //   On fail: return to IDLE without recording this range so we
+            //   don't pollute the history with non-fired compressions.
+            if ((int)m_range_history.size() >= EXPANSION_MIN_HISTORY) {
+                std::vector<double> sorted(m_range_history.begin(),
+                                           m_range_history.end());
+                std::sort(sorted.begin(), sorted.end());
+                const size_t n = sorted.size();
+                const double median = (n % 2 == 1)
+                    ? sorted[n / 2]
+                    : 0.5 * (sorted[n / 2 - 1] + sorted[n / 2]);
+                const double threshold = median * EXPANSION_MULT;
+                if (range < threshold) {
+                    {
+                        char _buf[512];
+                        snprintf(_buf, sizeof(_buf),
+                            "[HYBRID-GOLD] ATR_GATE_FAIL range=%.2f median=%.2f mult=%.2f threshold=%.2f hist=%d\n",
+                            range, median, EXPANSION_MULT, threshold,
+                            (int)m_range_history.size());
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
+                    phase = Phase::IDLE;
+                    bracket_high = bracket_low = 0.0;
+                    return;
+                }
+            }
+            // Gate passed (or warmup). Record this firing range for future
+            // median calculations.
+            m_range_history.push_back(range);
+            if ((int)m_range_history.size() > EXPANSION_HISTORY_LEN)
+                m_range_history.pop_front();
+
             const bool is_pyramid = flow_pyramid_ok;
             const double risk     = is_pyramid ? RISK_DOLLARS_PYRAMID : RISK_DOLLARS;
             const double base_lot = std::max(0.01, std::min(0.01, risk / (sl_dist * USD_PER_PT)));  // FIX 2026-04-22 uniformity: capped to 0.01
@@ -324,7 +403,13 @@ public:
         pos.size     = fill_lot;
         pos.mfe      = 0.0;
         pos.mae      = 0.0;   // S43: reset adverse-excursion tracker
-        pos.entry_ts = static_cast<int64_t>(std::time(nullptr));
+        // S47 T4a 2026-04-27: was std::time(nullptr) -- broke backtest hold
+        //   computation by capturing host wall-clock instead of simulated tick
+        //   clock. m_last_tick_s is set at the top of on_tick() from now_s
+        //   (= now_ms / 1000), which in live mode is UTC seconds and in
+        //   backtest is the simulated tick second. Live behaviour unchanged
+        //   (still UTC seconds); backtest now produces correct positive Hold.
+        pos.entry_ts = m_last_tick_s;
         phase        = Phase::LIVE;
 
         {
@@ -420,7 +505,15 @@ private:
     int64_t m_sl_cooldown_ts  = 0;
     int64_t m_pending_blocked_since = 0;
     int     m_trade_id        = 0;
+    // S47 T4a: simulated/live tick second cached at top of on_tick() so
+    //   confirm_fill() can stamp pos.entry_ts using the tick clock instead
+    //   of std::time(nullptr) (which broke backtest hold computation).
+    int64_t m_last_tick_s     = 0;
     std::deque<double> m_window;
+    // S47 T4a: rolling history of ranges that passed the FIRE gate, used by
+    //   the ATR-expansion gate to require current range >= EXPANSION_MULT *
+    //   median(history) before firing.
+    std::deque<double> m_range_history;
 
     void _close(double exit_px, const char* reason,
                 int64_t now_s, CloseCallback on_close) noexcept
@@ -467,4 +560,3 @@ private:
 };
 
 } // namespace omega
-
