@@ -144,6 +144,11 @@ public:
         double  bracket_size     = 0.0;
         double  atr_at_entry     = 0.0;
         double  mfe              = 0.0;
+        // S43 2026-04-26: max adverse excursion (price points, <= 0).
+        //   Pre-S43 every MacroCrash trade in the shadow CSV had mae=0 because
+        //   the writer was hardcoded to tr.mae=0.0. Mirrors GoldEngineStack
+        //   convention (price-points; tr.mae = pos.mae * pos.full_size).
+        double  mae              = 0.0;
         int64_t entry_ms         = 0;
         bool    partial1_done    = false;
         bool    partial2_done    = false;
@@ -648,6 +653,10 @@ private:
 
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
+        // S43 2026-04-26: track max adverse excursion (negative or zero).
+        //   pos.mae stays <= 0; tracks worst against-position move in price points.
+        //   Mirrors GoldEngineStack.hpp:4377 convention.
+        if (move < pos.mae) pos.mae = move;
 
         // -- Bracket floor check -------------------------------------------
         if (!pos.bracket_filled && pos.bracket_size >= MIN_LOT) {
@@ -874,7 +883,7 @@ private:
         {
             // converted from printf
             char _buf[512];
-            snprintf(_buf, sizeof(_buf), "[MCE%s] CLOSE %s @ %.2f reason=%s "                "trail=$%.0f banked=$%.0f TOTAL=$%.0f mfe=%.1fpt adds=%d\n",                shadow_mode ? "-SHADOW" : "",                pos.is_long ? "LONG" : "SHORT",                exit_px, reason, tpnl, pos.banked_usd, total,                pos.mfe, pyramid_add_count);
+            snprintf(_buf, sizeof(_buf), "[MCE%s] CLOSE %s @ %.2f reason=%s "                "trail=$%.0f banked=$%.0f TOTAL=$%.0f mfe=%.1fpt mae=%.1fpt adds=%d\n",                shadow_mode ? "-SHADOW" : "",                pos.is_long ? "LONG" : "SHORT",                exit_px, reason, tpnl, pos.banked_usd, total,                pos.mfe, pos.mae, pyramid_add_count);
             std::cout << _buf;
             std::cout.flush();
         }
@@ -975,7 +984,7 @@ private:
             tr.pnl         = ppts * pos.full_size;  // raw pts*lots -- handle_closed_trade applies tick_mult
             tr.net_pnl     = tr.pnl;
             tr.mfe         = pos.mfe * pos.full_size;
-            tr.mae         = 0.0;
+            tr.mae         = pos.mae * pos.full_size;   // S43 2026-04-26: was hardcoded 0.0; now real MAE
             tr.entryTs     = static_cast<int64_t>(pos.entry_ms / 1000);
             tr.exitTs      = static_cast<int64_t>(now_ms / 1000);
             tr.exitReason  = reason;
