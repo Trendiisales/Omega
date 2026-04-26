@@ -1653,6 +1653,7 @@ public:
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="IMM_REVERSAL"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
+                    tr.atr_at_entry=pos_.atr_at_entry;
                     tr.shadow=shadow_mode;
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
@@ -1686,6 +1687,7 @@ public:
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
+                    tr.atr_at_entry=pos_.atr_at_entry;
                     tr.shadow=shadow_mode;
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
@@ -1717,6 +1719,7 @@ public:
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
+                    tr.atr_at_entry=pos_.atr_at_entry;
                     tr.shadow=shadow_mode;
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
@@ -1750,6 +1753,7 @@ public:
                 tr.exitReason = reason;
                 tr.engine     = "TrendPullback";
                 tr.spreadAtEntry = pos_.spread_at_entry;
+                tr.atr_at_entry  = pos_.atr_at_entry;
                 tr.shadow     = shadow_mode;
                 record_daily_pnl(tr.pnl);  // track for daily cap
                 // Full symbol?tick_value table -- must match tick_value_multiplier() in main.cpp
