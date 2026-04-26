@@ -316,7 +316,12 @@ struct CrossRunner {
     omega::cross::TrendPullbackEngine   tpb;
     omega::cross::NoiseBandMomentumEngine nbe;
     BtVwap vwap;
-    CrossRunner(){}
+    // S44 backtest harness: TPB defaults are indices-tuned (MIN_EMA_SEP=10).
+    // Production main.cpp sets gold-specific values; mirror them here so the
+    // 2-year XAUUSD backtest tests the live config, not the indices fallback.
+    CrossRunner(){
+        tpb.MIN_EMA_SEP = 5.0;  // gold: 5pt EMA stack separation (vs 10pt indices)
+    }
     void tick(const TickRow& r){
         const std::string sym = "XAUUSD";
         const double mid  = (r.bid+r.ask)*0.5;
@@ -551,13 +556,13 @@ static Cfg parse(int argc, char** argv){
 static void write_trades(const char* path){
     FILE* f=fopen(path,"w"); if(!f){fprintf(stderr,"[WARN] cannot write %s\n",path);return;}
     fprintf(f,"entryTs,symbol,side,engine,entryPrice,exitPrice,"
-              "pnl,mfe,mae,hold_sec,exitReason,spreadAtEntry,latencyMs,regime\n");
+              "pnl,mfe,mae,hold_sec,exitReason,spreadAtEntry,atrAtEntry,latencyMs,regime\n");
     for(const auto& t:store::recs)
-        fprintf(f,"%lld,%s,%s,%s,%.5f,%.5f,%.4f,%.4f,%.4f,%lld,%s,%.4f,%.2f,%s\n",
+        fprintf(f,"%lld,%s,%s,%s,%.5f,%.5f,%.4f,%.4f,%.4f,%lld,%s,%.4f,%.4f,%.2f,%s\n",
                 (long long)t.entryTs, t.symbol.c_str(), t.side.c_str(), t.engine.c_str(),
                 t.entryPrice, t.exitPrice, t.pnl, t.mfe, t.mae,
                 (long long)(t.exitTs-t.entryTs), t.exitReason.c_str(),
-                t.spreadAtEntry, t.latencyMs, t.regime.c_str());
+                t.spreadAtEntry, t.atr_at_entry, t.latencyMs, t.regime.c_str());
     fclose(f);
     printf("[OUTPUT] %zu trade records -> %s\n", store::recs.size(), path);
 }

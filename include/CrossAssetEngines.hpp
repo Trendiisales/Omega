@@ -125,6 +125,7 @@ struct CrossPosition {
     double  mfe             = 0.0;
     double  mae             = 0.0;
     double  spread_at_entry = 0.0;
+    double  atr_at_entry    = 0.0;
     int64_t entry_ts        = 0;
     bool    be_locked_      = false; // true once SL moved to breakeven
     bool    tp_extended_    = false; // true once TP has been extended past initial target
@@ -216,7 +217,7 @@ struct CrossPosition {
         return false;
     }
 
-    void open(const CrossSignal& sig, double spread) noexcept {
+    void open(const CrossSignal& sig, double spread, double atr = 0.0) noexcept {
         active          = true;
         is_long         = sig.is_long;
         entry           = sig.entry;
@@ -224,6 +225,7 @@ struct CrossPosition {
         sl              = sig.sl;
         size            = sig.size;
         spread_at_entry = spread;
+        atr_at_entry    = atr;
         entry_ts        = ca_now_sec();
         mfe = mae = 0.0; be_locked_ = false; tp_extended_ = false; init_tp_dist_ = 0.0;  // allow_tp_extend preserved across trades
 #ifdef _WIN32
@@ -271,6 +273,7 @@ private:
         tr.exitTs      = ca_now_sec();
         tr.exitReason  = exit_reason;
         tr.spreadAtEntry = spread_at_entry;
+        tr.atr_at_entry  = atr_at_entry;
         tr.engine      = engine;
         tr.shadow      = shadow_mode;
         active = false;
@@ -1970,7 +1973,7 @@ public:
         sig.engine  = "TrendPullback";
         sig.reason  = is_long ? "TREND_PB_LONG" : "TREND_PB_SHORT";
 
-        pos_.open(sig, spread);
+        pos_.open(sig, spread, atr_);
         be_locked_      = false;
         partial_done_   = false;
         pyramid_adds_   = 0;

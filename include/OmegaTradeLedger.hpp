@@ -62,6 +62,12 @@ struct TradeRecord
     double      l2_imbalance    = 0.5; // bid/(bid+ask) volume ratio at entry (0=ask-heavy, 1=bid-heavy)
     bool        l2_live         = false; // true = real L2 data, false = synthetic
 
+    // ?? Engine-internal volatility at entry (for post-hoc filter calibration) ???
+    //    Currently populated by CrossPosition (TPB sets atr_) when engine passes
+    //    its atr_ value into pos_.open(). Other engines default to 0.0 (harmless).
+    //    Used by S44 Asia-filter analysis: filter trades by atr_at_entry >= 3.0.
+    double      atr_at_entry    = 0.0; // engine ATR at entry (price units, EWM)
+
     // ?? Shadow-mode guard -- set true when the originating engine is running in shadow mode.
     //    handle_closed_trade() short-circuits shadow records to audit-only logging so they
     //    never pollute g_omegaLedger, daily_pnl, consec_losses, fast_loss_streak, engine_culled,
