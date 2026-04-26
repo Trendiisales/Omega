@@ -310,12 +310,134 @@ struct LatencyRunner {
     void tick(const TickRow& r){ auto c=cb(); (void)eng.on_tick_gold(r.bid,r.ask,lat,c); }
 };
 
+// -----------------------------------------------------------------------------
+// S44: Local M1 bar builder + Wilder ATR-14 + EMA-9/21/50.
+// Mirrors include/OHLCBarEngine.hpp formulas exactly (_update_ema/_update_atr).
+// Used to seed TPB with bar-scale ATR, matching live behaviour where
+// seed_bar_emas() is called once g_bars_gold.m1.ind.m1_ready.
+//
+// Without this, atr_ in TPB is per-tick EWM (~0.05-0.10) instead of bar TR
+// (~3-10), making any ATR-based gate analysis incomparable to live.
+// -----------------------------------------------------------------------------
+struct BtM1BarSeeder {
+    // Live OHLCBarEngine constants
+    static constexpr int EMA9_P  = 9;
+    static constexpr int EMA21_P = 21;
+    static constexpr int EMA50_P = 50;
+    static constexpr int ATR_P   = 14;
+    static constexpr int RSI_P   = 14;            // ready-bar count threshold (matches live)
+    static constexpr int MAX_BARS = 300;          // matches live's bars_.pop_front() at >300
+
+    // Closed-bar history (oldest -> newest)
+    struct Bar { double open, high, low, close; };
+    std::vector<Bar> bars;
+
+    // Current (in-progress) bar
+    int64_t cur_min = -1;
+    Bar     cur{0,0,0,0};
+    bool    cur_open = false;
+
+    // Recursive accumulators (match live OHLCBarEngine private members)
+    bool   ema_init = false;
+    double ema9 = 0.0, ema21 = 0.0, ema50 = 0.0;
+    bool   atr_init = false;
+    double atr_avg = 0.0;
+
+    bool ready() const { return static_cast<int>(bars.size()) >= RSI_P + 1; }
+
+    // Recompute EMA9/21/50 from current bars_ — mirrors _update_ema()
+    void update_ema() {
+        const int n = static_cast<int>(bars.size());
+        if (n < 1) return;
+        if (!ema_init) {
+            const int s9  = std::min(n, EMA9_P);
+            const int s21 = std::min(n, EMA21_P);
+            const int s50 = std::min(n, EMA50_P);
+            double sum9=0, sum21=0, sum50=0;
+            for (int i = n-s9;  i < n; ++i) sum9  += bars[i].close;
+            for (int i = n-s21; i < n; ++i) sum21 += bars[i].close;
+            for (int i = n-s50; i < n; ++i) sum50 += bars[i].close;
+            ema9  = sum9  / s9;
+            ema21 = sum21 / s21;
+            ema50 = sum50 / s50;
+            ema_init = true;
+        } else {
+            const double c = bars.back().close;
+            ema9  += (2.0/(EMA9_P +1.0)) * (c - ema9);
+            ema21 += (2.0/(EMA21_P+1.0)) * (c - ema21);
+            ema50 += (2.0/(EMA50_P+1.0)) * (c - ema50);
+        }
+    }
+
+    // Wilder ATR-14 — mirrors _update_atr()
+    void update_atr() {
+        const int n = static_cast<int>(bars.size());
+        if (n < 1) return;
+        if (!atr_init) {
+            double sum = 0; int count = 0;
+            for (int i = std::max(1, n - ATR_P); i < n; ++i) {
+                const double tr = std::max({
+                    bars[i].high - bars[i].low,
+                    std::fabs(bars[i].high - bars[i-1].close),
+                    std::fabs(bars[i].low  - bars[i-1].close)
+                });
+                sum += tr; ++count;
+            }
+            if (count == 0) {
+                atr_avg = bars[0].high - bars[0].low;
+                if (atr_avg <= 0.0) atr_avg = bars[0].close * 0.001;
+            } else {
+                atr_avg = sum / count;
+            }
+            atr_init = true;
+        } else {
+            const int i = n - 1;
+            const double tr = (n >= 2) ? std::max({
+                bars[i].high - bars[i].low,
+                std::fabs(bars[i].high - bars[i-1].close),
+                std::fabs(bars[i].low  - bars[i-1].close)
+            }) : bars[i].high - bars[i].low;
+            atr_avg = (atr_avg * (ATR_P-1) + tr) / ATR_P;
+        }
+    }
+
+    // Update with a new tick. Returns true on minute roll (caller may want to seed).
+    bool on_tick(double mid, int64_t ts_ms) {
+        const int64_t bar_min = ts_ms / 60000LL;
+        if (!cur_open) {
+            cur = { mid, mid, mid, mid };
+            cur_min = bar_min;
+            cur_open = true;
+            return false;
+        }
+        if (bar_min != cur_min) {
+            // Close current bar -> push to history, recompute EMA/ATR
+            bars.push_back(cur);
+            if (static_cast<int>(bars.size()) > MAX_BARS) {
+                bars.erase(bars.begin());
+            }
+            update_ema();
+            update_atr();
+            // Open new bar
+            cur = { mid, mid, mid, mid };
+            cur_min = bar_min;
+            return true;
+        }
+        // Same minute: update H/L/C
+        if (mid > cur.high) cur.high = mid;
+        if (mid < cur.low ) cur.low  = mid;
+        cur.close = mid;
+        return false;
+    }
+};
+
 struct CrossRunner {
     omega::cross::OpeningRangeEngine    orb;
     omega::cross::VWAPReversionEngine   vrev;
     omega::cross::TrendPullbackEngine   tpb;
     omega::cross::NoiseBandMomentumEngine nbe;
-    BtVwap vwap;
+    BtVwap      vwap;
+    BtM1BarSeeder m1seed;
     // S44 backtest harness: TPB defaults are indices-tuned (MIN_EMA_SEP=10).
     // Production main.cpp sets gold-specific values; mirror them here so the
     // 2-year XAUUSD backtest tests the live config, not the indices fallback.
@@ -326,6 +448,15 @@ struct CrossRunner {
         const std::string sym = "XAUUSD";
         const double mid  = (r.bid+r.ask)*0.5;
         const double vw   = vwap.update(mid, r.ts_ms);
+
+        // S44: build M1 bars + indicators locally and seed TPB on every tick
+        // once we have RSI_P+1 closed bars (mirrors live m1_ready gate at
+        // tick_indices.hpp:116-121).
+        m1seed.on_tick(mid, r.ts_ms);
+        if (m1seed.ready()) {
+            tpb.seed_bar_emas(m1seed.ema9, m1seed.ema21, m1seed.ema50, m1seed.atr_avg);
+        }
+
         auto c=cb();
         (void)orb.on_tick(sym,r.bid,r.ask,c);
         (void)vrev.on_tick(sym,r.bid,r.ask,vw,c);
