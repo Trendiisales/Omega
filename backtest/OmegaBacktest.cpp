@@ -11,7 +11,13 @@
 //   --report  <file>   per-engine stats CSV              (default: bt_report.csv)
 //   --trades  <file>   all trade records CSV             (default: bt_trades.csv)
 //   --warmup  <n>      ticks before recording trades     (default: 5000)
-//   --engine  <list>   comma list: gold,latency,cross,breakout (default: all)
+//   --engine  <list>   comma list (default: gold,latency,cross,breakout)
+//                      legacy:  gold, latency, cross, breakout, stoprun,
+//                               ofade, omom, amom, lfade, rsirev, allnew
+//                      S44 new: hybridgold, macrocrash, h1swing, h4regime,
+//                               minh4, pullbackcont, pullbackprem, pdhl,
+//                               rsiextreme, emacross
+//                      master:  all  (= every legacy + every S44 runner)
 //
 // TICK CSV -- auto-detected formats:
 //   A:  timestamp_ms,bid,ask
@@ -23,9 +29,16 @@
 //   Console       live progress + per-engine summary table
 //   bt_trades.csv all trades (compatible with scripts/shadow_analysis.py)
 //   bt_report.csv per-engine aggregate stats
+//
+// S44 -- 2026-04-26 -- Coverage expansion
+//   Added 10 runners to lift gold-engine coverage from 5/16 to 15/16
+//   (TrendPullback remains shelved; structurally absent here too).
+//   New runners reuse BtBarEngine.hpp for HTF bar context, PDHL tracker,
+//   EWM drift, vol-ratio and M15 expansion. Defaults unchanged.
 // =============================================================================
 
 #include "OmegaTimeShim.hpp"
+#include "BtBarEngine.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -65,6 +78,15 @@
 #include "../include/RSIReversalEngine.hpp"
 // (MicroMomentumEngine.hpp removed at Batch 5V §1.2 2026-04-20.)
 #include "../include/GoldHybridBracketEngine.hpp"
+
+// S44: new engine headers required by added runners
+#include "../include/MacroCrashEngine.hpp"
+#include "../include/HTFSwingEngines.hpp"
+#include "../include/MinimalH4Breakout.hpp"
+#include "../include/PullbackContEngine.hpp"
+#include "../include/PDHLReversionEngine.hpp"
+#include "../include/RSIExtremeTurnEngine.hpp"
+#include "../include/EMACrossEngine.hpp"
 
 // =============================================================================
 // Memory-mapped file
@@ -282,7 +304,7 @@ struct BtVwap {
 };
 
 // =============================================================================
-// Engine runners
+// Engine runners -- LEGACY (S43 and earlier)
 // =============================================================================
 
 struct GoldRunner {
@@ -635,6 +657,405 @@ struct RSIRevRunner {
 //  See wiki tombstone wiki/entities/MicroMomentumEngine.md.)
 
 // =============================================================================
+// S44 Engine runners -- 10 new runners using BtBarEngine bar library
+//
+// Each runner constructs a private engine instance (no globals; each --engine
+// flag is independent). Bar context for HTF engines comes from local
+// BtBarEngine<60> / BtBarEngine<240>. PDHL inputs come from BtPdhlTracker +
+// BtEwmDrift + BtBarIndicators (M1 ATR). MacroCrash inputs come from
+// BtVolRatio + BtEwmDrift + the M1 BtBarEngine.
+//
+// All engines run with shadow_mode=true by default (matches live engine_init);
+// the runners flip shadow_mode=false explicitly so on_close/TradeRecord paths
+// fire and we capture every closed trade in the store.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// HybridGoldRunner -- GoldHybridBracketEngine
+//
+// The engine takes (bid, ask, now_ms, can_enter, flow_live, flow_be_locked,
+// flow_trail_stage, on_close, +DOM defaults). For backtest we have no flow
+// engine (GoldFlow culled S19) so we feed flow_live=false and flow_be_locked
+// =false. can_enter=true permits arming on every eligible tick. DOM args are
+// defaulted (no L2 stream). The on_close callback receives a TradeRecord
+// directly.
+// -----------------------------------------------------------------------------
+struct HybridGoldRunner {
+    omega::GoldHybridBracketEngine eng;
+    HybridGoldRunner(){
+        eng.shadow_mode = false;  // log to store via on_close
+    }
+    void tick(const TickRow& r){
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    /*can_enter=*/   true,
+                    /*flow_live=*/   false,
+                    /*flow_be_locked=*/ false,
+                    /*flow_trail_stage=*/ 0,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+    }
+};
+
+// -----------------------------------------------------------------------------
+// MacroCrashRunner -- MacroCrashEngine
+//
+// Inputs needed: atr (M1), vol_ratio, ewm_drift, expansion_regime, plus DOM
+// defaults. We build:
+//   - M1 BtBarEngine<1> -> ATR14 from M1 bars
+//   - BtVolRatio        -> short(40)/long(400) tick-range ratio
+//   - BtEwmDrift        -> 30s halflife mid-drift
+// expansion_regime: synthesised from vol_ratio > 1.5 (mirrors GoldEngineStack's
+// supervisor heuristic; without real macro regime detector this is the closest
+// available signal). session_slot via bt_session_slot. RSI from M1 indicators.
+//
+// MacroCrash uses a TWO-callback shape:
+//   on_close          (double exit_px, bool is_long, double size, std::string reason)
+//   on_trade_record   (omega::TradeRecord)
+// We wire on_trade_record to store::add. on_close left null (live-only side).
+//
+// NB: live config disables this engine at S17 (commit 9566bd6e). For backtest
+// we explicitly set enabled=true so the strategy can be measured against
+// April 2026 ticks; no production behaviour is changed.
+// -----------------------------------------------------------------------------
+struct MacroCrashRunner {
+    omega::MacroCrashEngine eng;
+    omega::bt::BtBarEngine<1>   m1;
+    omega::bt::BtVolRatio       vol_ratio{40, 400};
+    omega::bt::BtEwmDrift       drift{30.0};
+
+    MacroCrashRunner(){
+        eng.enabled     = true;   // backtest harness override (live-disabled at S17)
+        eng.shadow_mode = false;  // log to store via on_trade_record
+        eng.on_trade_record = [](const omega::TradeRecord& tr){ store::add(tr); };
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        m1.on_tick(mid, r.ts_ms);
+        vol_ratio.update(mid);
+        drift.update(mid, r.ts_ms);
+
+        // Wait until M1 indicators ready (RSI_P+1 closed bars => 15 bars => 15 min)
+        if (!m1.indicators_ready()) return;
+        if (!vol_ratio.is_ready())  return;
+        if (!drift.is_ready())      return;
+
+        const double atr   = m1.atr14();
+        const double vr    = vol_ratio.ratio();
+        const double dr    = drift.drift(mid);
+        const bool   exp_r = (vr > 1.5);
+        const double rsi   = m1.rsi14();
+        const int    slot  = omega::bt::bt_session_slot(r.ts_ms);
+
+        eng.on_tick(r.bid, r.ask,
+                    atr, vr, dr,
+                    exp_r, (int64_t)r.ts_ms,
+                    /*book_slope=*/      0.0,
+                    /*vacuum_ask=*/      false,
+                    /*vacuum_bid=*/      false,
+                    /*microprice_bias=*/ 0.0,
+                    /*rsi14=*/           rsi,
+                    /*session_slot=*/    slot);
+    }
+};
+
+// -----------------------------------------------------------------------------
+// H1SwingRunner -- H1SwingEngine
+//
+// Engine fires on H1 bar closes only; tick path handles SL/TP/trail.
+// We drive both via BtBarEngine<60> (H1) plus BtBarEngine<240> (H4 ctx).
+// h1_trend_state and h4_trend_state are -1/0/+1 derived from EMA9-vs-EMA50
+// (>0 => +1, <0 => -1).
+// -----------------------------------------------------------------------------
+struct H1SwingRunner {
+    omega::H1SwingEngine eng;
+    omega::bt::BtBarEngine<60>  h1;
+    omega::bt::BtBarEngine<240> h4;
+
+    H1SwingRunner(){
+        eng.p           = omega::make_h1_gold_params();
+        eng.shadow_mode = false;  // log to store via on_close
+        eng.symbol      = "XAUUSD";
+    }
+    static int trend_from_ema(double ema9, double ema50) noexcept {
+        if (ema9 > ema50 * 1.0000001) return +1;
+        if (ema9 < ema50 * 0.9999999) return -1;
+        return 0;
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        const bool h1_closed = h1.on_tick(mid, r.ts_ms);
+        const bool h4_closed = h4.on_tick(mid, r.ts_ms);
+        (void)h4_closed;
+
+        // Tick-level management every tick once we have a position
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+
+        // Bar-level entry/manage call on H1 close
+        if (h1_closed && h1.indicators_ready() && h4.indicators_ready()) {
+            const int slot = omega::bt::bt_session_slot(r.ts_ms);
+            const int h1_state = trend_from_ema(h1.ema9(), h1.ema50());
+            const int h4_state = trend_from_ema(h4.ema9(), h4.ema50());
+            eng.on_h1_bar(
+                mid, r.bid, r.ask,
+                h1.ema9(), h1.ema21(), h1.ema50(),
+                h1.atr14(), h1.rsi14(),
+                h1.adx14(), h1.adx_rising(),
+                h1_state, h4_state,
+                h4.adx14(), h4.atr14(),
+                slot, (int64_t)r.ts_ms,
+                [](const omega::TradeRecord& t){ store::add(t); });
+        }
+    }
+};
+
+// -----------------------------------------------------------------------------
+// H4RegimeRunner -- H4RegimeEngine
+//
+// Engine fires on H4 bar closes; tick path handles SL/trail. Needs M15 ATR
+// expansion flag, fed via BtBarEngine<15> + BtM15ExpansionTracker.
+// -----------------------------------------------------------------------------
+struct H4RegimeRunner {
+    omega::H4RegimeEngine eng;
+    omega::bt::BtBarEngine<240> h4;
+    omega::bt::BtBarEngine<15>  m15;
+    omega::bt::BtM15ExpansionTracker m15_exp;
+
+    H4RegimeRunner(){
+        eng.p           = omega::make_h4_gold_params();
+        eng.shadow_mode = false;
+        eng.symbol      = "XAUUSD";
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        const bool h4_closed  = h4.on_tick(mid, r.ts_ms);
+        const bool m15_closed = m15.on_tick(mid, r.ts_ms);
+        if (m15_closed && m15.indicators_ready()) {
+            m15_exp.update(m15.atr14());
+        }
+
+        // Tick-level management
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+
+        if (h4_closed && h4.indicators_ready()) {
+            const auto& bar = h4.last_closed_bar();
+            eng.on_h4_bar(
+                bar.high, bar.low, bar.close,
+                mid, r.bid, r.ask,
+                h4.ema9(), h4.ema50(),
+                h4.atr14(), h4.rsi14(), h4.adx14(),
+                m15_exp.expanding(),
+                (int64_t)r.ts_ms,
+                [](const omega::TradeRecord& t){ store::add(t); });
+        }
+    }
+};
+
+// -----------------------------------------------------------------------------
+// MinimalH4Runner -- MinimalH4Breakout
+//
+// Pure H4 Donchian breakout. Drives off BtBarEngine<240> and only needs H4
+// ATR.  on_h4_bar handles entry; on_tick handles SL/TP.
+// -----------------------------------------------------------------------------
+struct MinimalH4Runner {
+    omega::MinimalH4Breakout eng;
+    omega::bt::BtBarEngine<240> h4;
+
+    MinimalH4Runner(){
+        eng.p           = omega::make_minimal_h4_gold_params();
+        eng.shadow_mode = false;
+        eng.symbol      = "XAUUSD";
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        const bool h4_closed = h4.on_tick(mid, r.ts_ms);
+
+        // Tick-level SL/TP management
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+
+        if (h4_closed && h4.indicators_ready()) {
+            const auto& bar = h4.last_closed_bar();
+            eng.on_h4_bar(
+                bar.high, bar.low, bar.close,
+                r.bid, r.ask,
+                h4.atr14(),
+                (int64_t)r.ts_ms,
+                [](const omega::TradeRecord& t){ store::add(t); });
+        }
+    }
+};
+
+// -----------------------------------------------------------------------------
+// PullbackContRunner -- PullbackContEngine (live default config)
+// -----------------------------------------------------------------------------
+struct PullbackContRunner {
+    omega::PullbackContEngine eng;
+    PullbackContRunner(){
+        // Mirror engine_init.hpp PullbackCont config (S44, validated)
+        eng.enabled       = true;
+        eng.shadow_mode   = false;  // log to store via on_trade_record
+        eng.MOVE_MIN      = 20.0;
+        eng.PB_FRAC       = 0.20;
+        eng.LOOKBACK_S    = 300;
+        eng.HOLD_S        = 600;
+        eng.SL_PTS        = 6.0;
+        eng.TRAIL_PTS     = 4.0;
+        eng.BASE_RISK_USD = 80.0;
+        eng.COOLDOWN_MS   = 120000;
+        eng.on_trade_record = [](const omega::TradeRecord& base){
+            // Engine emits engine="PullbackCont"; preserve as-is.
+            store::add(base);
+        };
+    }
+    void tick(const TickRow& r){
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    /*gold_can_enter=*/ true);
+    }
+};
+
+// -----------------------------------------------------------------------------
+// PullbackPremRunner -- PullbackContEngine (PREMIUM config: 30pt h07 only)
+//
+// Same engine class as PullbackContRunner with the premium parameters from
+// engine_init.hpp lines 187-209.  We override the engine's emitted name to
+// "PullbackPrem" so the per-engine stats table separates them.
+// -----------------------------------------------------------------------------
+struct PullbackPremRunner {
+    omega::PullbackContEngine eng;
+    PullbackPremRunner(){
+        eng.enabled       = true;
+        eng.shadow_mode   = false;
+        eng.MOVE_MIN      = 30.0;   // higher bar
+        eng.PB_FRAC       = 0.20;
+        eng.LOOKBACK_S    = 600;
+        eng.HOLD_S        = 900;
+        eng.SL_PTS        = 8.0;
+        eng.TRAIL_PTS     = 2.0;
+        eng.BASE_RISK_USD = 160.0;
+        eng.COOLDOWN_MS   = 300000;
+        eng.on_trade_record = [](const omega::TradeRecord& base){
+            // Rewrite engine label so summary distinguishes prem from cont.
+            omega::TradeRecord tr = base;
+            tr.engine = "PullbackPrem";
+            store::add(tr);
+        };
+    }
+    void tick(const TickRow& r){
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    /*gold_can_enter=*/ true);
+    }
+};
+
+// -----------------------------------------------------------------------------
+// PDHLRevRunner -- PDHLReversionEngine
+//
+// Inputs: pdh, pdl, atr, l2_imbalance, depth_bid, depth_ask, l2_real,
+// ewm_drift, session_slot. Without L2 stream we use neutral imbalance=0.5,
+// l2_real=false, depths=0; the engine then falls back to drift-fade entry
+// path (DRIFT_FADE_MIN gate).
+// -----------------------------------------------------------------------------
+struct PDHLRevRunner {
+    omega::PDHLReversionEngine eng;
+    omega::bt::BtBarEngine<1>  m1;       // M1 ATR
+    omega::bt::BtPdhlTracker   pdhl;
+    omega::bt::BtEwmDrift      drift{30.0};
+
+    PDHLRevRunner(){
+        eng.enabled     = true;
+        eng.shadow_mode = false;
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        m1.on_tick(mid, r.ts_ms);
+        pdhl.update(mid, r.ts_ms);
+        drift.update(mid, r.ts_ms);
+
+        if (!m1.indicators_ready()) return;
+        if (!pdhl.is_ready())       return;
+        if (!drift.is_ready())      return;
+
+        const int    slot  = omega::bt::bt_session_slot(r.ts_ms);
+        const double atr   = m1.atr14();
+        const double dr    = drift.drift(mid);
+
+        eng.on_tick(r.bid, r.ask,
+                    (int64_t)r.ts_ms,
+                    pdhl.pdh(), pdhl.pdl(),
+                    atr,
+                    /*l2_imbalance=*/ 0.5,
+                    /*depth_bid=*/    0,
+                    /*depth_ask=*/    0,
+                    /*l2_real=*/      false,
+                    /*ewm_drift=*/    dr,
+                    /*session_slot=*/ slot,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+    }
+};
+
+// -----------------------------------------------------------------------------
+// RSIExtremeRunner -- RSIExtremeTurnEngine
+//
+// Engine wants: per-tick update_indicators(bid, ask), per-bar set_bar_rsi
+// (M1 RSI from BtBarEngine<1>), and on_tick(bid, ask, slot, now_ms, on_close).
+// Bar RSI is fed every tick (engine itself debounces same-value updates).
+// -----------------------------------------------------------------------------
+struct RSIExtremeRunner {
+    omega::RSIExtremeTurnEngine eng;
+    omega::bt::BtBarEngine<1>   m1;
+
+    RSIExtremeRunner(){
+        eng.enabled     = true;
+        eng.shadow_mode = false;
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        m1.on_tick(mid, r.ts_ms);
+
+        // Keep tick-level indicators warm regardless of position state.
+        eng.update_indicators(r.bid, r.ask);
+        if (m1.indicators_ready()) {
+            eng.set_bar_rsi(m1.rsi14());
+        }
+
+        const int slot = omega::bt::bt_session_slot(r.ts_ms);
+        eng.on_tick(r.bid, r.ask, slot, (int64_t)r.ts_ms,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+    }
+};
+
+// -----------------------------------------------------------------------------
+// EMACrossRunner -- EMACrossEngine
+//
+// NOTE: live EMACrossEngine.hpp defines `static constexpr bool ECE_CULLED =
+// true;` so all new entries are blocked at runtime. This runner still wires
+// the engine end-to-end so coverage is complete and a future un-cull can be
+// validated without touching this file. on_bar fed every M1 close, on_tick
+// every tick.
+// -----------------------------------------------------------------------------
+struct EMACrossRunner {
+    omega::EMACrossEngine eng;
+    omega::bt::BtBarEngine<1> m1;
+
+    EMACrossRunner(){
+        eng.shadow_mode = false;
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        const bool m1_closed = m1.on_tick(mid, r.ts_ms);
+
+        if (m1_closed && m1.indicators_ready()) {
+            eng.on_bar(m1.last_closed_bar().close,
+                       m1.atr14(), m1.rsi14(),
+                       (int64_t)r.ts_ms);
+        }
+
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+    }
+};
+
+// =============================================================================
 // Config
 // =============================================================================
 struct Cfg {
@@ -643,10 +1064,17 @@ struct Cfg {
     const char* rep   = "bt_report.csv";
     const char* trd   = "bt_trades.csv";
     int64_t     warm  = 5000;
+    // Legacy default cohort -- behaviour for `OmegaBacktest <csv>` (no flags)
+    // is identical to S43: gold,latency,cross,breakout enabled.
     bool gold=true, latency=true, cross=true, breakout=true, stoprun=false, ofade=false;
     bool omom=false, amom=false, lfade=false, allnew=false;
     bool rsirev=false; // (micromom removed at 5V §1.2)
     bool quiet=false;
+
+    // S44 new runners (default OFF -- enabled by --engine list)
+    bool hybridgold=false, macrocrash=false, h1swing=false, h4regime=false;
+    bool minh4=false, pullbackcont=false, pullbackprem=false;
+    bool pdhl=false, rsiextreme=false, emacross=false;
 };
 static Cfg parse(int argc, char** argv){
     Cfg c;
@@ -657,7 +1085,13 @@ static Cfg parse(int argc, char** argv){
             "  --report  <f>   engine summary CSV    (default bt_report.csv)\n"
             "  --trades  <f>   trade records CSV     (default bt_trades.csv)\n"
             "  --warmup  <n>   warmup ticks          (default 5000)\n"
-            "  --engine  <l>   gold,latency,cross,breakout\n"
+            "  --engine  <l>   comma list, default = gold,latency,cross,breakout\n"
+            "                  legacy:  gold latency cross breakout stoprun\n"
+            "                           ofade omom amom lfade rsirev allnew\n"
+            "                  S44 new: hybridgold macrocrash h1swing h4regime\n"
+            "                           minh4 pullbackcont pullbackprem\n"
+            "                           pdhl rsiextreme emacross\n"
+            "                  master:  all  (everything above)\n"
             "  --quiet         suppress engine log output (recommended)\n");
         exit(1);
     }
@@ -670,12 +1104,51 @@ static Cfg parse(int argc, char** argv){
         else if(!strcmp(argv[i],"--quiet")) c.quiet=true;
         else if(!strcmp(argv[i],"--engine")&&i+1<argc){
             const char* e=argv[++i];
-            c.gold=!!strstr(e,"gold");
-            c.latency=!!strstr(e,"latency"); c.cross=!!strstr(e,"cross");
-            c.breakout=!!strstr(e,"breakout"); c.stoprun=!!strstr(e,"stoprun"); c.ofade=!!strstr(e,"ofade");
-            c.omom=!!strstr(e,"omom"); c.amom=!!strstr(e,"amom"); c.lfade=!!strstr(e,"lfade");
-            c.rsirev=!!strstr(e,"rsirev"); // (micromom removed at 5V §1.2)
-            c.allnew=(!!strstr(e,"allnew")||!!strstr(e,"all"));
+            // Master 'all' flag: union legacy default 4 + every legacy optional
+            // + every S44 new runner. Use single keyword so users don't have to
+            // enumerate the full list.
+            const bool all_master = (!!strstr(e,"all") && !strstr(e,"allnew"));
+
+            // Legacy parse -- match S43 semantics exactly.
+            c.gold     = !!strstr(e,"gold");
+            c.latency  = !!strstr(e,"latency");
+            c.cross    = !!strstr(e,"cross");
+            c.breakout = !!strstr(e,"breakout");
+            c.stoprun  = !!strstr(e,"stoprun");
+            c.ofade    = !!strstr(e,"ofade");
+            c.omom     = !!strstr(e,"omom");
+            c.amom     = !!strstr(e,"amom");
+            c.lfade    = !!strstr(e,"lfade");
+            c.rsirev   = !!strstr(e,"rsirev");
+            c.allnew   = (!!strstr(e,"allnew") || all_master);
+
+            // S44 new flags
+            c.hybridgold   = !!strstr(e,"hybridgold");
+            c.macrocrash   = !!strstr(e,"macrocrash");
+            c.h1swing      = !!strstr(e,"h1swing");
+            c.h4regime     = !!strstr(e,"h4regime");
+            c.minh4        = !!strstr(e,"minh4");
+            // pullbackcont must NOT match pullbackprem: substring rules give
+            // "pullbackcont" matches inside "pullbackprem"=false (no overlap),
+            // and vice versa is also disjoint -- substrings are unique.
+            c.pullbackcont = !!strstr(e,"pullbackcont");
+            c.pullbackprem = !!strstr(e,"pullbackprem");
+            c.pdhl         = !!strstr(e,"pdhl");
+            c.rsiextreme   = !!strstr(e,"rsiextreme");
+            c.emacross     = !!strstr(e,"emacross");
+
+            if (all_master) {
+                // Master flag enables EVERY runner. Legacy defaults already
+                // matched above ('all' contains 'gold' etc.) but be explicit
+                // about the optional cohort so the master flag is bullet-proof
+                // even if someone renames substrings later.
+                c.gold = c.latency = c.cross = c.breakout = true;
+                c.stoprun = c.ofade = c.omom = c.amom = c.lfade = true;
+                c.rsirev = true;
+                c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
+                c.minh4 = c.pullbackcont = c.pullbackprem = true;
+                c.pdhl = c.rsiextreme = c.emacross = true;
+            }
         }
     }
     return c;
@@ -760,21 +1233,30 @@ int main(int argc, char** argv){
         store::warmup_sec = ticks[(size_t)cfg.warm].ts_ms/1000;
 
     // ?? Construct engines ?????????????????????????????????????????????????????
-    std::unique_ptr<GoldRunner>    rg;
-    // (FlowRunner unique_ptr REMOVED at S19 Stage 1B — GoldFlowEngine culled.)
-    std::unique_ptr<LatencyRunner> rl;
-    std::unique_ptr<CrossRunner>   rc;
-    std::unique_ptr<BreakRunner>    rb;
-    std::unique_ptr<StopRunRunner>     rs;
+    // Legacy runners
+    std::unique_ptr<GoldRunner>          rg;
+    std::unique_ptr<LatencyRunner>       rl;
+    std::unique_ptr<CrossRunner>         rc;
+    std::unique_ptr<BreakRunner>         rb;
+    std::unique_ptr<StopRunRunner>       rs;
     std::unique_ptr<OverlapFadeRunner>   ro;
     std::unique_ptr<OverlapMomRunner>    rom;
     std::unique_ptr<AsiaMomRunner>       ram;
     std::unique_ptr<LonFadeRunner>       rlf;
     std::unique_ptr<RSIRevRunner>        rrsi;
-    // (MicroMomRunner unique_ptr REMOVED at 5V §1.2.)
+    // S44 new runners
+    std::unique_ptr<HybridGoldRunner>    rhg;
+    std::unique_ptr<MacroCrashRunner>    rmc;
+    std::unique_ptr<H1SwingRunner>       rh1;
+    std::unique_ptr<H4RegimeRunner>      rh4;
+    std::unique_ptr<MinimalH4Runner>     rmh4;
+    std::unique_ptr<PullbackContRunner>  rpc;
+    std::unique_ptr<PullbackPremRunner>  rpp;
+    std::unique_ptr<PDHLRevRunner>       rpd;
+    std::unique_ptr<RSIExtremeRunner>    rrx;
+    std::unique_ptr<EMACrossRunner>      rec;
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
-    // (FlowRunner instantiation REMOVED at S19 Stage 1B — GoldFlowEngine culled.)
     if(cfg.latency) rl = std::make_unique<LatencyRunner>(cfg.lat);
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
     if(cfg.breakout)rb = std::make_unique<BreakRunner>(cfg.lat);
@@ -784,7 +1266,18 @@ int main(int argc, char** argv){
     if(cfg.amom||cfg.allnew)    ram = std::make_unique<AsiaMomRunner>();
     if(cfg.lfade||cfg.allnew)   rlf = std::make_unique<LonFadeRunner>();
     if(cfg.rsirev||cfg.allnew)  rrsi = std::make_unique<RSIRevRunner>();
-    // (MicroMomRunner construction REMOVED at 5V §1.2.)
+
+    // S44 new runner construction (independent of allnew -- they have their own flags)
+    if(cfg.hybridgold)   rhg  = std::make_unique<HybridGoldRunner>();
+    if(cfg.macrocrash)   rmc  = std::make_unique<MacroCrashRunner>();
+    if(cfg.h1swing)      rh1  = std::make_unique<H1SwingRunner>();
+    if(cfg.h4regime)     rh4  = std::make_unique<H4RegimeRunner>();
+    if(cfg.minh4)        rmh4 = std::make_unique<MinimalH4Runner>();
+    if(cfg.pullbackcont) rpc  = std::make_unique<PullbackContRunner>();
+    if(cfg.pullbackprem) rpp  = std::make_unique<PullbackPremRunner>();
+    if(cfg.pdhl)         rpd  = std::make_unique<PDHLRevRunner>();
+    if(cfg.rsiextreme)   rrx  = std::make_unique<RSIExtremeRunner>();
+    if(cfg.emacross)     rec  = std::make_unique<EMACrossRunner>();
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -796,7 +1289,6 @@ int main(int argc, char** argv){
         omega::bt::set_sim_time(r.ts_ms);
 
         if(rg) rg->tick(r);
-        // (rf->tick REMOVED at S19 Stage 1B — GoldFlowEngine culled.)
         if(rl) rl->tick(r);
         if(rc) rc->tick(r);
         if(rb) rb->tick(r);
@@ -806,7 +1298,18 @@ int main(int argc, char** argv){
         if(ram) ram->tick(r);
         if(rlf)  rlf->tick(r);
         if(rrsi) rrsi->tick(r);
-        // (rmm->tick REMOVED at 5V §1.2)
+
+        // S44 new runners
+        if(rhg)  rhg->tick(r);
+        if(rmc)  rmc->tick(r);
+        if(rh1)  rh1->tick(r);
+        if(rh4)  rh4->tick(r);
+        if(rmh4) rmh4->tick(r);
+        if(rpc)  rpc->tick(r);
+        if(rpp)  rpp->tick(r);
+        if(rpd)  rpd->tick(r);
+        if(rrx)  rrx->tick(r);
+        if(rec)  rec->tick(r);
 
         if(i-last_p >= 500'000){
             last_p=i;
@@ -846,10 +1349,20 @@ int main(int argc, char** argv){
     printf("  File    : %s\n", cfg.csv);
     printf("  Ticks   : %lld  in %.1fs (%.0f K t/s)\n", (long long)N, ps, N/ps/1000.0);
     printf("  Range   : %s -> %s\n", sa, sb);
-    printf("  Engines : %s%s%s%s\n",
+    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
            cfg.gold?"GoldStack ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
-           cfg.breakout?"Breakout/Bracket":"");
+           cfg.breakout?"Breakout/Bracket ":"",
+           cfg.hybridgold?"HybridGold ":"",
+           cfg.macrocrash?"MacroCrash ":"",
+           cfg.h1swing?"H1Swing ":"",
+           cfg.h4regime?"H4Regime ":"",
+           cfg.minh4?"MinH4 ":"",
+           cfg.pullbackcont?"PullbackCont ":"",
+           cfg.pullbackprem?"PullbackPrem ":"",
+           cfg.pdhl?"PDHL ":"",
+           cfg.rsiextreme?"RSIExtreme ":"",
+           cfg.emacross?"EMACross ":"");
     printf("  Run     : %.1fs = %.0f K t/s\n", run_sec, N/run_sec/1000.0);
     printf("================================================================\n");
     printf("  PER-ENGINE RESULTS (warmup %lld ticks excluded)\n",(long long)cfg.warm);
