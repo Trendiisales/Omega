@@ -88,6 +88,9 @@
 #include "../include/RSIExtremeTurnEngine.hpp"
 #include "../include/EMACrossEngine.hpp"
 
+// S46: T3 -- daily-bar TSMOM engine for XAUUSD (Singha 2025-style)
+#include "../include/TSMomGoldEngine.hpp"
+
 // =============================================================================
 // Memory-mapped file
 // =============================================================================
@@ -887,6 +890,49 @@ struct MinimalH4Runner {
 };
 
 // -----------------------------------------------------------------------------
+// TSMomRunner -- TSMomGoldEngine (S46 T3)
+//
+// Daily-bar Time-Series Momentum, long-only XAUUSD. Drives off
+// BtBarEngine<1440>. on_daily_bar handles entry on bar close; on_tick
+// handles SL / ATR-trail / weekend exits.
+//
+// Runner is shadow_mode=false in backtest (so TradeRecord is emitted with
+// shadow=false and counts in the per-engine stats).  When lifted to live
+// the production wiring should set shadow_mode=true for the validation
+// window per the S45 carryover protocol for new engines.
+// -----------------------------------------------------------------------------
+struct TSMomRunner {
+    omega::TSMomGoldEngine eng;
+    omega::bt::BtBarEngine<1440> d1;
+
+    TSMomRunner(){
+        eng.p           = omega::make_tsmom_gold_params();
+        eng.shadow_mode = false;
+        eng.symbol      = "XAUUSD";
+    }
+    void tick(const TickRow& r){
+        const double mid = (r.bid + r.ask) * 0.5;
+        const bool d1_closed = d1.on_tick(mid, r.ts_ms);
+
+        // Tick-level SL / trail / weekend
+        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
+                    [](const omega::TradeRecord& t){ store::add(t); });
+
+        // Daily-bar entry path. We need ATR14 from the bar engine, which
+        // populates after RSI_P+1 bars => 15 daily bars (~3 weeks).
+        if (d1_closed && d1.indicators_ready()) {
+            const auto& bar = d1.last_closed_bar();
+            eng.on_daily_bar(
+                bar.close,
+                d1.atr14(),
+                r.bid, r.ask,
+                (int64_t)r.ts_ms,
+                [](const omega::TradeRecord& t){ store::add(t); });
+        }
+    }
+};
+
+// -----------------------------------------------------------------------------
 // PullbackContRunner -- PullbackContEngine (live default config)
 // -----------------------------------------------------------------------------
 struct PullbackContRunner {
@@ -1075,6 +1121,9 @@ struct Cfg {
     bool hybridgold=false, macrocrash=false, h1swing=false, h4regime=false;
     bool minh4=false, pullbackcont=false, pullbackprem=false;
     bool pdhl=false, rsiextreme=false, emacross=false;
+
+    // S46 new runners
+    bool tsmom=false;
 };
 static Cfg parse(int argc, char** argv){
     Cfg c;
@@ -1091,6 +1140,7 @@ static Cfg parse(int argc, char** argv){
             "                  S44 new: hybridgold macrocrash h1swing h4regime\n"
             "                           minh4 pullbackcont pullbackprem\n"
             "                           pdhl rsiextreme emacross\n"
+            "                  S46 new: tsmom\n"
             "                  master:  all    (everything)\n"
             "                           clean  (everything except the 4 validated\n"
             "                                   bleeders: ofade,lfade,amom,pdhl)\n"
@@ -1149,6 +1199,9 @@ static Cfg parse(int argc, char** argv){
             c.rsiextreme   = !!strstr(e,"rsiextreme");
             c.emacross     = !!strstr(e,"emacross");
 
+            // S46 new flag
+            c.tsmom        = !!strstr(e,"tsmom");
+
             if (all_master) {
                 // Master flag enables EVERY runner. Legacy defaults already
                 // matched above ('all' contains 'gold' etc.) but be explicit
@@ -1160,6 +1213,7 @@ static Cfg parse(int argc, char** argv){
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
                 c.minh4 = c.pullbackcont = c.pullbackprem = true;
                 c.pdhl = c.rsiextreme = c.emacross = true;
+                c.tsmom = true;
             }
 
             if (clean_master) {
@@ -1174,6 +1228,7 @@ static Cfg parse(int argc, char** argv){
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
                 c.minh4 = c.pullbackcont = c.pullbackprem = true;
                 c.rsiextreme = c.emacross = true;
+                c.tsmom = true;      // S46: TSMomGold included in clean cohort
                 // Explicitly DISABLE the four bleeders (in case substring
                 // matched anything above).
                 c.ofade = false;
@@ -1287,6 +1342,8 @@ int main(int argc, char** argv){
     std::unique_ptr<PDHLRevRunner>       rpd;
     std::unique_ptr<RSIExtremeRunner>    rrx;
     std::unique_ptr<EMACrossRunner>      rec;
+    // S46 new runners
+    std::unique_ptr<TSMomRunner>         rtsm;
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.latency) rl = std::make_unique<LatencyRunner>(cfg.lat);
@@ -1310,6 +1367,9 @@ int main(int argc, char** argv){
     if(cfg.pdhl)         rpd  = std::make_unique<PDHLRevRunner>();
     if(cfg.rsiextreme)   rrx  = std::make_unique<RSIExtremeRunner>();
     if(cfg.emacross)     rec  = std::make_unique<EMACrossRunner>();
+
+    // S46 new runner construction
+    if(cfg.tsmom)        rtsm = std::make_unique<TSMomRunner>();
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -1342,6 +1402,9 @@ int main(int argc, char** argv){
         if(rpd)  rpd->tick(r);
         if(rrx)  rrx->tick(r);
         if(rec)  rec->tick(r);
+
+        // S46 new runners
+        if(rtsm) rtsm->tick(r);
 
         if(i-last_p >= 500'000){
             last_p=i;
@@ -1381,7 +1444,7 @@ int main(int argc, char** argv){
     printf("  File    : %s\n", cfg.csv);
     printf("  Ticks   : %lld  in %.1fs (%.0f K t/s)\n", (long long)N, ps, N/ps/1000.0);
     printf("  Range   : %s -> %s\n", sa, sb);
-    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
            cfg.gold?"GoldStack ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
            cfg.breakout?"Breakout/Bracket ":"",
@@ -1394,7 +1457,8 @@ int main(int argc, char** argv){
            cfg.pullbackprem?"PullbackPrem ":"",
            cfg.pdhl?"PDHL ":"",
            cfg.rsiextreme?"RSIExtreme ":"",
-           cfg.emacross?"EMACross ":"");
+           cfg.emacross?"EMACross ":"",
+           cfg.tsmom?"TSMomGold ":"");
     printf("  Run     : %.1fs = %.0f K t/s\n", run_sec, N/run_sec/1000.0);
     printf("================================================================\n");
     printf("  PER-ENGINE RESULTS (warmup %lld ticks excluded)\n",(long long)cfg.warm);
