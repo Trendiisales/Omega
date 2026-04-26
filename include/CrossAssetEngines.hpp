@@ -1574,6 +1574,12 @@ public:
             // EMA50 floor: SL never falls below EMA50 (trend invalidation level)
             const double move = pos_.is_long ? (mid - pos_.entry) : (pos_.entry - mid);
             if (pos_.mfe < move) pos_.mfe = move;  // track MFE manually
+            // S44: track MAE per tick so trail-stopped trades record the true
+            // worst intra-trade excursion (not just exit-time adverse, which is
+            // ~0 when SL has trailed to BE+).
+            const double adverse_now = pos_.is_long ? (pos_.entry - mid)
+                                                    : (mid - pos_.entry);
+            if (adverse_now > pos_.mae) pos_.mae = adverse_now;
             const double atr = atr_ > 0.01 ? atr_ : 0.5; // safety floor
 
             // 1) BE lock at 1x ATR (floor 3pt -- ATR=0 must not lock BE instantly)
@@ -1649,7 +1655,7 @@ public:
                     tr.symbol = sym; tr.side = pos_.is_long?"LONG":"SHORT";
                     tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
                     tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
-                    tr.mfe=pos_.mfe; tr.mae=adverse;
+                    tr.mfe=pos_.mfe; tr.mae=std::max(pos_.mae, adverse);
                     tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px)) * pos_.size;
                     tr.net_pnl = tr.pnl;
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
@@ -1685,7 +1691,7 @@ public:
                     tr.symbol = sym; tr.side = pos_.is_long?"LONG":"SHORT";
                     tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
                     tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
-                    tr.mfe=pos_.mfe; tr.mae=adverse;
+                    tr.mfe=pos_.mfe; tr.mae=std::max(pos_.mae, adverse);
                     tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px)) * pos_.size;
                     tr.net_pnl = tr.pnl;
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
@@ -1719,7 +1725,7 @@ public:
                     tr.symbol = sym; tr.side = pos_.is_long?"LONG":"SHORT";
                     tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
                     tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
-                    tr.mfe=pos_.mfe; tr.mae=adverse2;
+                    tr.mfe=pos_.mfe; tr.mae=std::max(pos_.mae, adverse2);
                     tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px)) * pos_.size;
                     tr.net_pnl = tr.pnl;
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
@@ -1768,7 +1774,6 @@ public:
                 tr.spreadAtEntry = pos_.spread_at_entry;
                 tr.atr_at_entry  = pos_.atr_at_entry;
                 tr.shadow     = shadow_mode;
-                record_daily_pnl(tr.pnl);  // track for daily cap
                 // Full symbol?tick_value table -- must match tick_value_multiplier() in main.cpp
                 // XAUUSD=100, US500.F=50, USTEC.F=20, DJ30.F=5, GER40=1.10, UK100=1.33,
                 // ESTX50=1.10, NAS100=1, EURUSD/GBPUSD/etc=100000, others=1
@@ -1779,6 +1784,10 @@ public:
                 tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px))
                          * pos_.size;
                 tr.net_pnl = tr.pnl;
+                // S44 Bug 3: record_daily_pnl MUST fire AFTER tr.pnl is computed.
+                // Previously called above with tr.pnl=0 default -> daily-cap accounting
+                // saw 0 for every SL_HIT/TIMEOUT exit and never tripped.
+                record_daily_pnl(tr.pnl);  // track for daily cap
                 printf("[TREND-PB] %s %s CLOSE @%.3f reason=%s pnl=%.2f atr=%.3f trail_sl=%.3f\n",
                        sym.c_str(), tr.side.c_str(), exit_px, reason, tr.pnl, atr, pos_.sl);
                 fflush(stdout);
