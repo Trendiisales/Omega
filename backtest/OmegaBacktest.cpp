@@ -1091,7 +1091,9 @@ static Cfg parse(int argc, char** argv){
             "                  S44 new: hybridgold macrocrash h1swing h4regime\n"
             "                           minh4 pullbackcont pullbackprem\n"
             "                           pdhl rsiextreme emacross\n"
-            "                  master:  all  (everything above)\n"
+            "                  master:  all    (everything)\n"
+            "                           clean  (everything except the 4 validated\n"
+            "                                   bleeders: ofade,lfade,amom,pdhl)\n"
             "  --quiet         suppress engine log output (recommended)\n");
         exit(1);
     }
@@ -1108,6 +1110,16 @@ static Cfg parse(int argc, char** argv){
             // + every S44 new runner. Use single keyword so users don't have to
             // enumerate the full list.
             const bool all_master = (!!strstr(e,"all") && !strstr(e,"allnew"));
+
+            // S45 master 'clean' flag: enables every runner EXCEPT the four
+            // validated bleeders identified in the 26m audit (LondonCoreFade,
+            // OverlapFade, AsiaMomentum, PDHLReversion). These four engines
+            // collectively bled $880 over 26m and have been diagnosed as
+            // either anti-trend-in-trend (fade family), session-mismatch
+            // (AsiaMom), or structurally-inverted-signal (PDHL). They remain
+            // available via explicit --engine flags for further analysis but
+            // are excluded from any 'clean' production-leaning run.
+            const bool clean_master = !!strstr(e,"clean");
 
             // Legacy parse -- match S43 semantics exactly.
             c.gold     = !!strstr(e,"gold");
@@ -1148,6 +1160,26 @@ static Cfg parse(int argc, char** argv){
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
                 c.minh4 = c.pullbackcont = c.pullbackprem = true;
                 c.pdhl = c.rsiextreme = c.emacross = true;
+            }
+
+            if (clean_master) {
+                // S45: enable every runner EXCEPT the four validated bleeders.
+                // Excluded: ofade (OverlapFade), lfade (LondonCoreFade),
+                // amom (AsiaMomentum), pdhl (PDHLReversion).
+                // Rationale captured in commit message.
+                c.gold = c.latency = c.cross = c.breakout = true;
+                c.stoprun = true;
+                c.omom = true;       // OverlapMomentum kept (different class)
+                c.rsirev = true;
+                c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
+                c.minh4 = c.pullbackcont = c.pullbackprem = true;
+                c.rsiextreme = c.emacross = true;
+                // Explicitly DISABLE the four bleeders (in case substring
+                // matched anything above).
+                c.ofade = false;
+                c.lfade = false;
+                c.amom  = false;
+                c.pdhl  = false;
             }
         }
     }
