@@ -60,10 +60,10 @@ namespace omega {
 class MacroCrashEngine {
 public:
     // -- Entry triggers ----------------------------------------------------
-    double ATR_THRESHOLD    = 6.0;   // original: only fires on genuine macro moves
+    double ATR_THRESHOLD    = 8.0;   // S42 revert to validated Apr 2 2026: ATR>=8 = genuine macro expansion (was 6.0)
     double ATR_NORMAL       = 5.0;
     double VOL_RATIO_MIN    = 2.5;   // original: high bar = 69% WR on 13 trades
-    double DRIFT_MIN        = 5.0;   // original: 5pt = confirmed macro move, not noise
+    double DRIFT_MIN        = 6.0;   // S42 revert to validated Apr 2 2026: |ewm_drift|>=6pt = confirmed macro move (was 5.0)
     // NOTE: MCE fires on genuine macro impulse (ATR>6, drift>5) in ALL sessions.
     // No session gate -- tariff crash Apr 2025 was 13:00 UTC, session gate missed it.
     double ATR_SCALE_MAX    = 1.0;   // capped 6->1: 6x scaling produced $480 risk per trade; system max is $80
@@ -76,8 +76,8 @@ public:
     double BRACKET_ATR_MULT = 2.0;    // bracket TP at 2xATR from entry
 
     // -- Velocity trail ----------------------------------------------------
-    double STEP1_TRIGGER_USD  = 50.0;   // lowered 200->50: $200 never hit at small lots; $50 arms trail faster
-    double STEP2_TRIGGER_USD  = 150.0;  // lowered 400->150
+    double STEP1_TRIGGER_USD  = 200.0;  // S42 revert to validated Apr 2 2026: $200 trail-arm step matches crash-size moves (was 50.0)
+    double STEP2_TRIGGER_USD  = 400.0;  // S42 revert to validated Apr 2 2026: $400 trail-arm step matches crash-size moves (was 150.0)
     double VEL_TRAIL_ARM_ATR  = 3.0;
     double VEL_TRAIL_DIST_ATR = 2.0;
     double RATCHET_KEEP       = 0.80;
