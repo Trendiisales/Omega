@@ -553,6 +553,15 @@ static void load_config(const std::string& path) {
             if (k=="timeout_h4_bars")    mp.timeout_h4_bars     = safe_stoi(v, k);
             if (k=="cooldown_h4_bars")   mp.cooldown_h4_bars    = safe_stoi(v, k);
             if (k=="weekend_close_gate") mp.weekend_close_gate  = (v == "true" || v == "1");
+            // S47 T4b 2026-04-27: when true, drop bear-break (SHORT) entries.
+            if (k=="long_only")          mp.long_only           = (v == "true" || v == "1");
+        }
+        // S47 T4b 2026-04-27: minimal [minimal_h4_us30] parser -- only the
+        //   long_only flag is wired here. Other US30 keys remain documentary
+        //   (engine reads defaults from make_minimal_h4_us30_params()).
+        if (section == "minimal_h4_us30") {
+            auto& mp = g_minimal_h4_us30.p;
+            if (k=="long_only")          mp.long_only           = (v == "true" || v == "1");
         }
         // [latency_edge] section parser REMOVED at S13 Finding B 2026-04-24 — engine culled.
         // Any [latency_edge] keys in omega_config.ini are now silently ignored.
