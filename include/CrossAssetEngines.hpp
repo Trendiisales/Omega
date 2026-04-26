@@ -1650,6 +1650,8 @@ public:
                     tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
                     tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
                     tr.mfe=pos_.mfe; tr.mae=adverse;
+                    tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px)) * pos_.size;
+                    tr.net_pnl = tr.pnl;
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="IMM_REVERSAL"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
@@ -1684,6 +1686,8 @@ public:
                     tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
                     tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
                     tr.mfe=pos_.mfe; tr.mae=adverse;
+                    tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px)) * pos_.size;
+                    tr.net_pnl = tr.pnl;
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
@@ -1716,6 +1720,8 @@ public:
                     tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
                     tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.size;
                     tr.mfe=pos_.mfe; tr.mae=adverse2;
+                    tr.pnl = (pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px)) * pos_.size;
+                    tr.net_pnl = tr.pnl;
                     tr.entryTs=pos_.entry_ts; tr.exitTs=ca_now_sec();
                     tr.exitReason="TIME_STOP"; tr.engine="TrendPullback";
                     tr.spreadAtEntry=pos_.spread_at_entry;
@@ -1747,7 +1753,14 @@ public:
                 tr.sl         = pos_.sl;
                 tr.size       = pos_.size;
                 tr.mfe        = pos_.mfe;
-                tr.mae        = pos_.mae;
+                {
+                    // S44: pos_.mae is not updated on SL_HIT/TIMEOUT path; derive
+                    // adverse from exit price so the recorded MAE matches the
+                    // actual worst-case excursion (which is at minimum the SL hit).
+                    const double exit_adverse = pos_.is_long ? (pos_.entry - exit_px)
+                                                              : (exit_px - pos_.entry);
+                    tr.mae    = std::max(pos_.mae, exit_adverse > 0.0 ? exit_adverse : 0.0);
+                }
                 tr.entryTs    = pos_.entry_ts;
                 tr.exitTs     = ca_now_sec();
                 tr.exitReason = reason;
