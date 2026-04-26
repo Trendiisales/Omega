@@ -53,6 +53,12 @@
 //      (0.10 lot at $5/pt, scaled). Sizing: $10 / (sl_pts * 500) per lot.
 //    - max_spread=3.0pt (DJ30.F has wider spreads than XAUUSD; gold uses 2.0).
 //    - H4 bar boundary: floor(now_ms / 14400000) -- same as backtest harness.
+//
+//  S47 T4b 2026-04-27: long_only flag
+//    New parameter `long_only` (default false). When true, bear-break entries
+//    are silently skipped (return without firing). Bull-break entries
+//    unaffected. Gate is configurable via [minimal_h4_us30] long_only=true in
+//    omega_config.ini. Default-false preserves backtest behaviour byte-exact.
 // =============================================================================
 
 #pragma once
@@ -85,6 +91,9 @@ struct MinimalH4US30Params {
     int    cooldown_h4_bars    = 2;      // bars between trades
     int    atr_period          = 14;     // Wilder ATR period (matches backtest)
     bool   weekend_close_gate  = true;   // close profitable positions Fri 20:00+ UTC
+    // S47 T4b 2026-04-27: when true, only bull-break entries are taken; bear
+    // breaks are silently skipped. Default false preserves prior behaviour.
+    bool   long_only           = false;
 };
 
 inline MinimalH4US30Params make_minimal_h4_us30_params() {
@@ -275,6 +284,19 @@ struct MinimalH4US30Breakout {
 
                     if (bull_break || bear_break) {
                         const bool intend_long = bull_break;
+
+                        // S47 T4b 2026-04-27: long_only gate. When p.long_only
+                        //   is true, drop bear-break entries silently. Bull
+                        //   entries are unaffected.
+                        if (p.long_only && !intend_long) {
+                            static int64_t s_lo = 0;
+                            if (now_ms - s_lo > 3600000LL) {
+                                s_lo = now_ms;
+                                printf("[MINIMAL_H4-%s] long_only=true: dropping SHORT bear-break entry\n",
+                                       symbol.c_str());
+                                fflush(stdout);
+                            }
+                        } else {
                         const double entry_px  = intend_long ? ask : bid;
                         const double sl_pts    = atr_pre * p.sl_mult;
                         const double tp_pts    = atr_pre * p.tp_mult;
@@ -318,6 +340,7 @@ struct MinimalH4US30Breakout {
                         sig.tp      = tp_px;
                         sig.size    = size;
                         sig.reason  = "MINIMAL_H4_DONCHIAN_BREAK";
+                        }
                     }
                 }
             }
