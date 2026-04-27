@@ -2,25 +2,37 @@
 edgefinder/analytics/mtc.py
 ===========================
 
-Multiple-testing correction over a set of prospect rows. We expose two
-methods, side-by-side, per the design decision:
+Multiple-testing correction over a set of prospect rows. Two methods,
+side-by-side:
 
   * Benjamini-Hochberg (BH) — controls the False Discovery Rate (FDR).
-    Less conservative; produces more candidates.
   * Bonferroni — controls the Family-Wise Error Rate (FWER).
-    Most conservative; produces fewer false positives.
 
-Correction is applied SEPARATELY PER BRACKET. The reason: the six brackets
-have different risk/reward profiles and different effective sample sizes,
-so the family of tested hypotheses is naturally per-bracket. Pooling all
-brackets into one family would be defensible too but it would double-count
-the "is there any edge here?" question across correlated outcomes.
+Correction is applied SEPARATELY PER BRACKET.
+
+Economic pre-filter
+-------------------
+Before MTC, we drop rows whose effect size is statistically detectable but
+economically meaningless. With n=1000+ and per-shot stdev of 5-15 points,
+a sub-spread excess_expectancy of 0.1 points produces large t-stats.
+That's not an edge -- it's a high-precision measurement of nothing.
+
+The pre-filter requires BOTH:
+    |excess_expectancy| >= min_excess_pts   (default 1.0)
+    sharpe              >= min_sharpe       (default 0.05)
+
+Rows that fail get q_bh = q_bonf = 1.0, survives_bh = survives_bonf = False.
+They are NOT dropped from the output (the report needs them for diagnosis)
+but they don't consume MTC family budget -- this is critical, because
+including them in the family makes the BH cutoff harsher and rejects
+genuine borderline edges.
 
 Outputs added to the input DataFrame:
-    q_bh    — Benjamini-Hochberg adjusted p-value
-    q_bonf  — Bonferroni adjusted p-value
-    survives_bh   — q_bh   <= alpha (default 0.05)
-    survives_bonf — q_bonf <= alpha (default 0.05)
+    q_bh           — BH adjusted p-value (1.0 if economic-filtered)
+    q_bonf         — Bonferroni adjusted p-value (1.0 if economic-filtered)
+    economic_pass  — True if the row meets the economic threshold
+    survives_bh    — economic_pass AND q_bh   <= alpha (default 0.05)
+    survives_bonf  — economic_pass AND q_bonf <= alpha (default 0.05)
 """
 from __future__ import annotations
 
@@ -29,14 +41,7 @@ import pandas as pd
 
 
 def _bh_qvalues(p: np.ndarray) -> np.ndarray:
-    """
-    Benjamini-Hochberg adjusted p-values.
-
-    For sorted p-values p_(1) <= p_(2) <= ... <= p_(m):
-        q_(i) = min over k>=i of (m / k) * p_(k)
-
-    Returned in the original (unsorted) order of `p`.
-    """
+    """Benjamini-Hochberg adjusted p-values."""
     n = p.size
     if n == 0:
         return p.copy()
@@ -44,10 +49,8 @@ def _bh_qvalues(p: np.ndarray) -> np.ndarray:
     p_sorted = p[order]
     ranks = np.arange(1, n + 1, dtype=np.float64)
     raw = p_sorted * (n / ranks)
-    # Enforce monotonicity from the right.
     q_sorted = np.minimum.accumulate(raw[::-1])[::-1]
     q_sorted = np.clip(q_sorted, 0.0, 1.0)
-    # Restore original order.
     q = np.empty_like(q_sorted)
     q[order] = q_sorted
     return q
@@ -65,45 +68,72 @@ def apply_mtc(
     prospects: pd.DataFrame,
     alpha: float = 0.05,
     per: str = 'bracket',
+    min_excess_pts: float = 1.0,
+    min_sharpe: float = 0.05,
 ) -> pd.DataFrame:
     """
-    Apply BH and Bonferroni corrections to `prospects` and return a copy
-    with q_bh, q_bonf, survives_bh, survives_bonf columns added.
+    Apply economic pre-filter, then BH and Bonferroni corrections to
+    `prospects`. Returns a copy with q_bh, q_bonf, economic_pass,
+    survives_bh, survives_bonf columns added.
 
     Parameters
     ----------
     prospects : DataFrame
-        Output of prospect.score_predicates(). Must contain p_raw.
+        Output of prospect.score_predicates(). Must contain
+        p_raw, excess_expectancy, sharpe.
     alpha : float
         Significance threshold for the survives_* flags.
     per : {'bracket', 'bracket_side', 'all'}
-        Family grouping. Default 'bracket' = correct within each bracket
-        (LONG and SHORT pooled). 'bracket_side' = correct within
-        (bracket, side). 'all' = single family.
+        Family grouping. Default 'bracket'.
+    min_excess_pts : float
+        Minimum |excess_expectancy| (in points) for economic pass.
+    min_sharpe : float
+        Minimum per-shot sharpe for economic pass.
     """
-    if 'p_raw' not in prospects.columns:
-        raise ValueError("prospects must contain 'p_raw' column")
+    needed = {'p_raw', 'excess_expectancy', 'sharpe'}
+    missing = needed - set(prospects.columns)
+    if missing:
+        raise ValueError(f"prospects missing required columns: {missing}")
     df = prospects.copy()
-    df['q_bh'] = np.nan
-    df['q_bonf'] = np.nan
 
+    # Economic pre-filter
+    df['economic_pass'] = (
+        (df['excess_expectancy'].abs() >= min_excess_pts) &
+        (df['sharpe'].abs()             >= min_sharpe)
+    )
+
+    # Pre-fill q-values for everyone, then overwrite for economic-pass rows.
+    df['q_bh']   = 1.0
+    df['q_bonf'] = 1.0
+
+    eligible = df[df['economic_pass']].copy()
+    if eligible.empty:
+        df['survives_bh']   = False
+        df['survives_bonf'] = False
+        return df
+
+    # Group eligible rows by family and apply MTC within each family.
     if per == 'bracket':
-        groups = df.groupby('bracket_id', sort=False)
+        groupby_cols = ['bracket_id']
     elif per == 'bracket_side':
-        groups = df.groupby(['bracket_id', 'side'], sort=False)
+        groupby_cols = ['bracket_id', 'side']
     elif per == 'all':
-        groups = [(None, df)]
+        groupby_cols = None
     else:
         raise ValueError(f"unknown per: {per}")
+
+    if groupby_cols is None:
+        groups = [(None, eligible)]
+    else:
+        groups = list(eligible.groupby(groupby_cols, sort=False))
 
     for _, sub in groups:
         idx = sub.index.to_numpy()
         p = sub['p_raw'].to_numpy(dtype=np.float64)
-        # Replace NaNs with 1.0 (never significant).
         p = np.where(np.isfinite(p), p, 1.0)
         df.loc[idx, 'q_bh']   = _bh_qvalues(p)
         df.loc[idx, 'q_bonf'] = _bonf_qvalues(p)
 
-    df['survives_bh']   = df['q_bh']   <= alpha
-    df['survives_bonf'] = df['q_bonf'] <= alpha
+    df['survives_bh']   = df['economic_pass'] & (df['q_bh']   <= alpha)
+    df['survives_bonf'] = df['economic_pass'] & (df['q_bonf'] <= alpha)
     return df
