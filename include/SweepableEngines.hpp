@@ -1,31 +1,43 @@
 #pragma once
 // =============================================================================
-// SweepableEngines.hpp -- Templated copies of 5 live engines for parameter sweep
+// SweepableEngines.hpp -- Runtime-parameterised copies of 5 live engines
 // =============================================================================
 // PURPOSE
-//   Provide template-parameterised copies of the live engines so a single
+//   Provide runtime-parameterised copies of the live engines so a single
 //   binary can host an array of engine instances each with a different
 //   parameter combination, driven by one tick stream. This is the core
 //   primitive for the OmegaSweepHarness fast parameter sweep.
 //
 // AUTHORITY
-//   Created under explicit user authorisation 2026-04-27 (S51) for the
+//   Created under explicit user authorisation 2026-04-27 (S51 X1) for the
 //   parameter-sweep harness (Approach 1: copy-then-template). Live engines
 //   in include/GoldHybridBracketEngine.hpp, include/EMACrossEngine.hpp, and
 //   include/GoldEngineStack.hpp are NOT modified by this file.
 //
+// HISTORY
+//   * S51 X1 (2026-04-27, file SHA 693c9262): initial templated version with
+//     5 sweep params per engine as compile-time template arguments.
+//   * S51 X2 (2026-04-27, this version): refactored to RUNTIME parameters
+//     after compile-time tuple of 16,807 instantiations was identified as
+//     infeasible. Templates retained as thin shim (single type per engine);
+//     swept params are now public members of a SweepParams struct held by
+//     each instance. Defaults preserved exactly -- default-constructed
+//     instances behave identically to the previous default-template-arg
+//     versions, which themselves match the live engines byte-for-byte where
+//     the templated code paths overlap.
+//
 // DESIGN
-//   * Each templated class is a faithful copy of the live engine's logic.
-//     The five chosen sweep parameters per engine are template parameters
-//     with defaults equal to the live constexpr values. All other constants
-//     remain hardcoded constexpr inside the templated class -- identical to
-//     live values.
-//   * When instantiated with default template arguments, the templated
-//     class produces compiled code that is functionally identical to the
-//     live engine. Sweeping == specifying non-default template args.
+//   * Each class is a faithful copy of the live engine's logic.
+//     The five chosen sweep parameters per engine are runtime members of
+//     a per-engine `SweepParams` struct (defaults equal to the live
+//     constexpr values). All other constants remain hardcoded constexpr
+//     inside the class -- identical to live values.
+//   * When default-constructed, the class produces compiled code paths
+//     functionally identical to the live engine for the swept parameters.
+//     Sweeping == constructing with non-default SweepParams.
 //
 // SCOPE
-//   Engines templated:
+//   Engines provided:
 //     1. AsianRangeT          (live: AsianRangeEngine, GoldEngineStack.hpp:1149)
 //     2. VWAPStretchT         (live: VWAPStretchReversionEngine, GoldEngineStack.hpp:2231)
 //     3. DXYDivergenceT       (live: DXYDivergenceEngine, GoldEngineStack.hpp:2577)
@@ -34,11 +46,11 @@
 //     5. EMACrossT            (live: EMACrossEngine, EMACrossEngine.hpp)
 //
 // SWEEP PARAMETERS (5 per engine, geometric grid 0.5x .. 2.0x of default):
-//   AsianRangeT  : BUFFER, MIN_RANGE, MAX_RANGE, SL_TICKS, TP_TICKS
-//   VWAPStretchT : SL_TICKS, TP_TICKS, COOLDOWN_SEC, SIGMA_ENTRY, VOL_WINDOW
-//   DXYDivergenceT: SL_TICKS, TP_TICKS, COOLDOWN_SEC, WINDOW, DIV_THRESHOLD
-//   HBG_T        : MIN_RANGE, MAX_RANGE, SL_FRAC, TP_RR, TRAIL_FRAC
-//   EMACrossT    : FAST_PERIOD, SLOW_PERIOD, RSI_LO, RSI_HI, SL_MULT
+//   AsianRangeT  : buffer, min_range, max_range, sl_ticks, tp_ticks
+//   VWAPStretchT : sl_ticks, tp_ticks, cooldown_sec, sigma_entry, vol_window
+//   DXYDivergenceT: sl_ticks, tp_ticks, cooldown_sec, window, div_threshold
+//   HBG_T        : min_range, max_range, sl_frac, tp_rr, trail_frac
+//   EMACrossT    : fast_period, slow_period, rsi_lo, rsi_hi, sl_mult
 //
 // TIME SHIM
 //   These engines must be driven from OmegaSweepHarness.cpp which includes
@@ -51,6 +63,15 @@
 // EXTERNAL DEPENDENCIES (provided by includer)
 //   * omega::TradeRecord  (include/OmegaTradeLedger.hpp)
 //   * int bracket_trend_bias(const char*)  (include/BracketTrendState.hpp)
+//
+// CULL-LIFT FOR EMACROSST (preserved from S51 X1)
+//   Live EMACrossEngine.hpp defines `static constexpr bool ECE_CULLED = true;`
+//   so all new entries are blocked at runtime (S18 soft-cull). EMACrossT
+//   here deliberately omits that early-return because the harness's job is
+//   to evaluate the engine on its merits across parameter combinations --
+//   the live cull state is itself an output of the analysis we are running.
+//   The harness lifts the cull purely for measurement; the live binary is
+//   unaffected.
 //
 // =============================================================================
 
@@ -75,10 +96,10 @@
 namespace omega {
 namespace sweep {
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Local types -- duplicated from omega::gold so this header is independent of
 // GoldEngineStack.hpp's definitions. Identical layout / semantics.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 enum class SessionType { ASIAN, LONDON, NEWYORK, OVERLAP, UNKNOWN };
 enum class TradeSide   { LONG, SHORT, NONE };
 
@@ -145,11 +166,11 @@ public:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Small helpers used by AsianRange and DXY for clock/UTC -- they intentionally
 // call std::time(nullptr) and std::chrono::steady_clock::now() so the
 // OmegaTimeShim mechanism can substitute simulated tick time at compile time.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 inline void utc_hms(int& h, int& m, int& yday) noexcept {
     const auto t = std::time(nullptr);
     struct tm ti{};
@@ -162,21 +183,25 @@ inline void utc_hms(int& h, int& m, int& yday) noexcept {
 }
 
 // =============================================================================
-// 1. AsianRangeT -- Templated copy of AsianRangeEngine
+// 1. AsianRangeT -- Runtime-parameterised copy of AsianRangeEngine
 // =============================================================================
 // Live constants preserved as defaults:
-//   BUFFER=0.50, MIN_RANGE=3.0, MAX_RANGE=50.0, SL_TICKS=80, TP_TICKS=200
+//   buffer=0.50, min_range=3.0, max_range=50.0, sl_ticks=80, tp_ticks=200
 // Non-swept constants kept hardcoded (MAX_SPREAD=2.0, FIRE_START_H=7,
 // FIRE_END_H=11, COOLDOWN=600s).
 // =============================================================================
-template <
-    double BUFFER_T    = 0.50,
-    double MIN_RANGE_T = 3.0,
-    double MAX_RANGE_T = 50.0,
-    int    SL_TICKS_T  = 80,
-    int    TP_TICKS_T  = 200
->
 class AsianRangeT {
+public:
+    struct Params {
+        double buffer    = 0.50;
+        double min_range = 3.0;
+        double max_range = 50.0;
+        int    sl_ticks  = 80;
+        int    tp_ticks  = 200;
+    };
+    Params p_;
+
+private:
     static constexpr double MAX_SPREAD   = 2.0;
     static constexpr int    FIRE_START_H = 7;
     static constexpr int    FIRE_END_H   = 11;
@@ -193,6 +218,8 @@ class AsianRangeT {
 
 public:
     AsianRangeT() = default;
+    explicit AsianRangeT(const Params& p) : p_(p) {}
+
     void setEnabled(bool e){ if(e && !enabled_) reset(); enabled_ = e; }
     bool isEnabled() const { return enabled_; }
     uint64_t signal_count() const { return signal_count_; }
@@ -230,7 +257,7 @@ public:
 
         if (asian_hi_ <= 0.0 || asian_lo_ >= 1e8) return noSignal();
         const double rng = asian_hi_ - asian_lo_;
-        if (rng < MIN_RANGE_T || rng > MAX_RANGE_T) return noSignal();
+        if (rng < p_.min_range || rng > p_.max_range) return noSignal();
 
         const auto now = std::chrono::steady_clock::now();
         const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
@@ -238,9 +265,11 @@ public:
         if (elapsed < 600) return noSignal();
 
         Signal sig;
-        sig.size = 0.01; sig.sl = SL_TICKS_T; sig.tp = TP_TICKS_T;
+        sig.size = 0.01;
+        sig.sl   = static_cast<double>(p_.sl_ticks);
+        sig.tp   = static_cast<double>(p_.tp_ticks);
 
-        if (!long_fired_ && s.mid > asian_hi_ + BUFFER_T) {
+        if (!long_fired_ && s.mid > asian_hi_ + p_.buffer) {
             sig.valid      = true;
             sig.side       = TradeSide::LONG;
             sig.entry      = s.ask;
@@ -248,7 +277,7 @@ public:
             std::strncpy(sig.reason, "ASIAN_RANGE_LONG",  31);
             std::strncpy(sig.engine, "AsianRange",        31);
             long_fired_  = true;
-        } else if (!short_fired_ && s.mid < asian_lo_ - BUFFER_T) {
+        } else if (!short_fired_ && s.mid < asian_lo_ - p_.buffer) {
             sig.valid      = true;
             sig.side       = TradeSide::SHORT;
             sig.entry      = s.bid;
@@ -267,38 +296,40 @@ public:
 };
 
 // =============================================================================
-// 2. VWAPStretchT -- Templated copy of VWAPStretchReversionEngine
+// 2. VWAPStretchT -- Runtime-parameterised copy of VWAPStretchReversionEngine
 // =============================================================================
 // Live constants preserved as defaults:
-//   SL_TICKS=40, TP_TICKS=88, COOLDOWN_SEC=300, SIGMA_ENTRY=2.0, VOL_WINDOW=40
+//   sl_ticks=40, tp_ticks=88, cooldown_sec=300, sigma_entry=2.0, vol_window=40
 // Non-swept constants kept hardcoded.
 // =============================================================================
-template <
-    int    SL_TICKS_T     = 40,
-    int    TP_TICKS_T     = 88,
-    int    COOLDOWN_SEC_T = 300,
-    double SIGMA_ENTRY_T  = 2.0,
-    int    VOL_WINDOW_T   = 40
->
 class VWAPStretchT {
+public:
+    struct Params {
+        int    sl_ticks     = 40;
+        int    tp_ticks     = 88;
+        int    cooldown_sec = 300;
+        double sigma_entry  = 2.0;
+        int    vol_window   = 40;
+    };
+    Params p_;
+
+private:
     static constexpr double MAX_SPREAD = 2.0;
+    static constexpr int    VOL_BUF    = 128;  // upper bound for vol_window (sweep max 80, headroom)
 
     CircularBuffer<double, 64> recent_;
-    // VOL_WINDOW_T is a template arg -> instance-level array sized at compile time.
-    // 64 is the max we'd ever sweep to (2.0x of default 40 = 80, so buffer 128).
-    static constexpr int VOL_BUF = 128;
     double price_buf_[VOL_BUF] = {};
     int    pb_head_ = 0, pb_count_ = 0;
     uint64_t signal_count_ = 0;
     bool enabled_ = true;
 
     std::chrono::steady_clock::time_point last_signal_{
-        std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC_T + 1)};
+        std::chrono::steady_clock::now() - std::chrono::seconds(3700)};
 
     double rolling_std() const noexcept {
         if (pb_count_ < 8) return 0.0;
         double sum = 0.0;
-        const int n = (pb_count_ < VOL_WINDOW_T) ? pb_count_ : VOL_WINDOW_T;
+        const int n = (pb_count_ < p_.vol_window) ? pb_count_ : p_.vol_window;
         for (int i = 0; i < n; ++i) sum += price_buf_[i];
         const double mean = sum / n;
         double sq = 0.0;
@@ -327,9 +358,11 @@ class VWAPStretchT {
     }
 
 public:
-    VWAPStretchT() {
-        static_assert(VOL_WINDOW_T <= VOL_BUF,
-                      "VOL_WINDOW_T exceeds internal buffer; raise VOL_BUF.");
+    VWAPStretchT() = default;
+    explicit VWAPStretchT(const Params& p) : p_(p) {
+        // VOL_BUF is the hard cap; ctor checks runtime range.
+        if (p_.vol_window < 1)        p_.vol_window = 1;
+        if (p_.vol_window > VOL_BUF)  p_.vol_window = VOL_BUF;
     }
 
     double ewm_drift_ = 0.0;
@@ -376,31 +409,33 @@ public:
         if (s.vwap < 1.0) return noSignal();
 
         recent_.push_back(s.mid);
-        price_buf_[pb_head_ % VOL_WINDOW_T] = s.mid;
-        pb_head_++; if (pb_count_ < VOL_WINDOW_T) pb_count_++;
+        price_buf_[pb_head_ % p_.vol_window] = s.mid;
+        pb_head_++; if (pb_count_ < p_.vol_window) pb_count_++;
 
         const double sigma = rolling_std();
         if (sigma < 0.5) return noSignal();
 
         const double z = (s.mid - s.vwap) / sigma;
         z_ = z;
-        if (std::fabs(z) < SIGMA_ENTRY_T) return noSignal();
+        if (std::fabs(z) < p_.sigma_entry) return noSignal();
 
         if (!is_decelerating()) return noSignal();
 
         const auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::seconds>(
-                now - last_signal_).count() < COOLDOWN_SEC_T) return noSignal();
+                now - last_signal_).count() < p_.cooldown_sec) return noSignal();
 
         const int bt_bias = bracket_trend_bias("XAUUSD");
-        if (z >  SIGMA_ENTRY_T && bt_bias == 1)  return noSignal();
-        if (z < -SIGMA_ENTRY_T && bt_bias == -1) return noSignal();
+        if (z >  p_.sigma_entry && bt_bias == 1)  return noSignal();
+        if (z < -p_.sigma_entry && bt_bias == -1) return noSignal();
 
         Signal sig;
-        sig.size = 0.01; sig.sl = SL_TICKS_T; sig.tp = TP_TICKS_T;
+        sig.size = 0.01;
+        sig.sl   = static_cast<double>(p_.sl_ticks);
+        sig.tp   = static_cast<double>(p_.tp_ticks);
         sig.confidence = std::min(1.4, 0.80 + std::fabs(z) * 0.10);
 
-        if (z > SIGMA_ENTRY_T) {
+        if (z > p_.sigma_entry) {
             sig.valid = true; sig.side = TradeSide::SHORT; sig.entry = s.bid;
             std::strncpy(sig.reason, "VWAP_STRETCH_SHORT", 31);
         } else {
@@ -416,21 +451,29 @@ public:
 };
 
 // =============================================================================
-// 3. DXYDivergenceT -- Templated copy of DXYDivergenceEngine
+// 3. DXYDivergenceT -- Runtime-parameterised copy of DXYDivergenceEngine
 // =============================================================================
 // Live constants preserved as defaults:
-//   SL_TICKS=60, TP_TICKS=120, COOLDOWN_SEC=3600, WINDOW=20, DIV_THRESHOLD=2.50
+//   sl_ticks=60, tp_ticks=120, cooldown_sec=3600, window=20, div_threshold=2.50
 // Non-swept constants kept hardcoded (MAX_SPREAD=2.5, GOLD_DX_BETA=12.0,
 // MIN_DX_MOVE=0.05).
+//
+// NOTE: requires snap.dx_mid > 0. Without a DXY tick stream the engine
+// will never fire -- by design. The harness skips DXY at the run-list
+// level when no DXY data is wired.
 // =============================================================================
-template <
-    int    SL_TICKS_T      = 60,
-    int    TP_TICKS_T      = 120,
-    int    COOLDOWN_SEC_T  = 3600,
-    int    WINDOW_T        = 20,
-    double DIV_THRESHOLD_T = 2.50
->
 class DXYDivergenceT {
+public:
+    struct Params {
+        int    sl_ticks      = 60;
+        int    tp_ticks      = 120;
+        int    cooldown_sec  = 3600;
+        int    window        = 20;
+        double div_threshold = 2.50;
+    };
+    Params p_;
+
+private:
     static constexpr double MAX_SPREAD    = 2.5;
     static constexpr double GOLD_DX_BETA  = 12.0;
     static constexpr double MIN_DX_MOVE   = 0.05;
@@ -442,8 +485,10 @@ class DXYDivergenceT {
     bool enabled_ = true;
 
 public:
-    DXYDivergenceT() {
-        static_assert(WINDOW_T < 64, "WINDOW_T must fit MinMaxCircularBuffer<,64>");
+    DXYDivergenceT() = default;
+    explicit DXYDivergenceT(const Params& p) : p_(p) {
+        if (p_.window < 1)  p_.window = 1;
+        if (p_.window > 63) p_.window = 63;  // MinMaxCircularBuffer<,64>
     }
 
     void setEnabled(bool e){ enabled_ = e; }
@@ -472,20 +517,20 @@ public:
 
         gold_hist_.push_back(s.mid);
         dx_hist_.push_back(s.dx_mid);
-        if ((int)gold_hist_.size() < WINDOW_T + 1) return noSignal();
+        if ((int)gold_hist_.size() < p_.window + 1) return noSignal();
 
         const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
-        if (now_s - last_signal_ts_ < COOLDOWN_SEC_T) return noSignal();
+        if (now_s - last_signal_ts_ < p_.cooldown_sec) return noSignal();
 
-        const double gold_move = s.mid    - gold_hist_[gold_hist_.size() - WINDOW_T];
-        const double dx_move   = s.dx_mid - dx_hist_[dx_hist_.size()   - WINDOW_T];
+        const double gold_move = s.mid    - gold_hist_[gold_hist_.size() - p_.window];
+        const double dx_move   = s.dx_mid - dx_hist_[dx_hist_.size()   - p_.window];
 
         if (std::fabs(dx_move) < MIN_DX_MOVE) return noSignal();
 
         const double expected_gold = -dx_move * GOLD_DX_BETA;
         const double divergence    = gold_move - expected_gold;
 
-        if (std::fabs(divergence) < DIV_THRESHOLD_T) return noSignal();
+        if (std::fabs(divergence) < p_.div_threshold) return noSignal();
 
         if (s.vwap > 0.0) {
             if (divergence > 0 && s.mid < s.vwap * 0.998) return noSignal();
@@ -498,11 +543,11 @@ public:
         Signal sig;
         sig.valid      = true;
         sig.side       = (divergence > 0) ? TradeSide::LONG : TradeSide::SHORT;
-        sig.confidence = std::min(1.5, std::fabs(divergence) / (DIV_THRESHOLD_T * 2.0));
+        sig.confidence = std::min(1.5, std::fabs(divergence) / (p_.div_threshold * 2.0));
         sig.size       = 0.01;
         sig.entry      = (divergence > 0) ? s.ask : s.bid;
-        sig.tp         = TP_TICKS_T;
-        sig.sl         = SL_TICKS_T;
+        sig.tp         = static_cast<double>(p_.tp_ticks);
+        sig.sl         = static_cast<double>(p_.sl_ticks);
         std::strncpy(sig.reason, divergence > 0 ? "DXY_DIV_LONG" : "DXY_DIV_SHORT", 31);
         std::strncpy(sig.engine, "DXYDivergence", 31);
         return sig;
@@ -510,25 +555,27 @@ public:
 };
 
 // =============================================================================
-// 4. HBG_T -- Templated copy of GoldHybridBracketEngine
+// 4. HBG_T -- Runtime-parameterised copy of GoldHybridBracketEngine
 // =============================================================================
 // Live constants preserved as defaults:
-//   MIN_RANGE=6.0, MAX_RANGE=25.0, SL_FRAC=0.5, TP_RR=2.0, TRAIL_FRAC=0.25
+//   min_range=6.0, max_range=25.0, sl_frac=0.5, tp_rr=2.0, trail_frac=0.25
 // Non-swept constants kept hardcoded -- identical to live values.
 //
 // Self-managed engine (entry, SL, TP, trail, BE, COOLDOWN). Emits TradeRecord
 // via on_close callback. Requires now_ms (driven by the harness from each
 // CSV tick timestamp).
 // =============================================================================
-template <
-    double MIN_RANGE_T  = 6.0,
-    double MAX_RANGE_T  = 25.0,
-    double SL_FRAC_T    = 0.5,
-    double TP_RR_T      = 2.0,
-    double TRAIL_FRAC_T = 0.25
->
 class HBG_T {
 public:
+    struct Params {
+        double min_range  = 6.0;
+        double max_range  = 25.0;
+        double sl_frac    = 0.5;
+        double tp_rr      = 2.0;
+        double trail_frac = 0.25;
+    };
+    Params p_;
+
     // Non-swept constants -- identical to live values.
     static constexpr int    STRUCTURE_LOOKBACK   = 20;
     static constexpr int    MIN_ENTRY_TICKS      = 15;
@@ -573,6 +620,9 @@ public:
     double pending_lot   = 0.01;
     double pending_lot_long  = 0.01;
     double pending_lot_short = 0.01;
+
+    HBG_T() = default;
+    explicit HBG_T(const Params& p) : p_(p) {}
 
     bool has_open_position() const noexcept { return pos.active; }
 
@@ -638,7 +688,7 @@ public:
         range = w_hi - w_lo;
 
         if (phase == Phase::IDLE) {
-            if (range >= MIN_RANGE_T && range <= MAX_RANGE_T) {
+            if (range >= p_.min_range && range <= p_.max_range) {
                 phase        = Phase::ARMED;
                 bracket_high = w_hi;
                 bracket_low  = w_lo;
@@ -652,8 +702,8 @@ public:
             bracket_high = std::max(bracket_high, w_hi);
             bracket_low  = std::min(bracket_low,  w_lo);
             range        = bracket_high - bracket_low;
-            if (range > MAX_RANGE_T) { phase = Phase::IDLE; bracket_high = bracket_low = range = 0.0; return; }
-            if (range < MIN_RANGE_T || range > MAX_RANGE_T) { phase = Phase::IDLE; return; }
+            if (range > p_.max_range) { phase = Phase::IDLE; bracket_high = bracket_low = range = 0.0; return; }
+            if (range < p_.min_range || range > p_.max_range) { phase = Phase::IDLE; return; }
 
             if (mid >= bracket_low && mid <= bracket_high) {
                 ++m_inside_ticks;
@@ -665,8 +715,8 @@ public:
             }
             if (m_inside_ticks < MIN_BREAK_TICKS) return;
 
-            const double sl_dist = range * SL_FRAC_T + SL_BUFFER;
-            const double tp_dist = sl_dist * TP_RR_T;
+            const double sl_dist = range * p_.sl_frac + SL_BUFFER;
+            const double tp_dist = sl_dist * p_.tp_rr;
             const double min_tp  = spread * 2.0 + 0.12;
             if (tp_dist < min_tp) { phase = Phase::IDLE; return; }
 
@@ -716,8 +766,8 @@ public:
     }
 
     void confirm_fill(bool is_long, double fill_px, double fill_lot) noexcept {
-        const double sl_dist = range * SL_FRAC_T + SL_BUFFER;
-        const double tp_dist = sl_dist * TP_RR_T;
+        const double sl_dist = range * p_.sl_frac + SL_BUFFER;
+        const double tp_dist = sl_dist * p_.tp_rr;
         pos.active   = true;
         pos.is_long  = is_long;
         pos.entry    = fill_px;
@@ -743,7 +793,7 @@ public:
         const bool    arm_hold_ok = (MIN_TRAIL_ARM_SECS <= 0 ) || (held_s  >= MIN_TRAIL_ARM_SECS);
         if (move > 0 && arm_mfe_ok && arm_hold_ok) {
             const double mfe_trail = pos.mfe * 0.20;
-            const double range_trail = range * TRAIL_FRAC_T;
+            const double range_trail = range * p_.trail_frac;
             const double trail_dist = (mfe_trail > 0.0) ? std::min(range_trail, mfe_trail) : range_trail;
             const double trail_sl = pos.is_long ? (pos.entry + pos.mfe - trail_dist)
                                                 : (pos.entry - pos.mfe + trail_dist);
@@ -823,27 +873,29 @@ private:
 };
 
 // =============================================================================
-// 5. EMACrossT -- Templated copy of EMACrossEngine
+// 5. EMACrossT -- Runtime-parameterised copy of EMACrossEngine
 // =============================================================================
 // Live constants preserved as defaults:
-//   FAST_PERIOD=9, SLOW_PERIOD=15, RSI_LO=40.0, RSI_HI=50.0, SL_MULT=1.5
+//   fast_period=9, slow_period=15, rsi_lo=40.0, rsi_hi=50.0, sl_mult=1.5
 // Non-swept constants kept hardcoded -- identical to live values.
 //
-// IMPORTANT DIVERGENCE FROM LIVE: ECE_CULLED is FALSE in this templated
-// copy because the harness's job is to evaluate the engine on its merits
-// across parameter combinations -- the live cull state is itself an output
-// of the analysis we are running. The harness lifts the cull purely for
-// measurement; the live binary is unaffected.
+// IMPORTANT DIVERGENCE FROM LIVE: ECE_CULLED is FALSE in this copy because
+// the harness's job is to evaluate the engine on its merits across parameter
+// combinations -- the live cull state is itself an output of the analysis we
+// are running. The harness lifts the cull purely for measurement; the live
+// binary is unaffected.
 // =============================================================================
-template <
-    int    FAST_PERIOD_T = 9,
-    int    SLOW_PERIOD_T = 15,
-    double RSI_LO_T      = 40.0,
-    double RSI_HI_T      = 50.0,
-    double SL_MULT_T     = 1.5
->
 class EMACrossT {
 public:
+    struct Params {
+        int    fast_period = 9;
+        int    slow_period = 15;
+        double rsi_lo      = 40.0;
+        double rsi_hi      = 50.0;
+        double sl_mult     = 1.5;
+    };
+    Params p_;
+
     static constexpr double  TP_RR              = 1.0;
     static constexpr int64_t MAX_LAG_MS         = 60000;
     static constexpr int64_t TIMEOUT_MS         = 180000;
@@ -877,15 +929,26 @@ public:
         int    trade_id  = 0;
     } pos;
 
+    EMACrossT() {
+        _ema_fast_alpha = 2.0 / (p_.fast_period + 1.0);
+        _ema_slow_alpha = 2.0 / (p_.slow_period + 1.0);
+    }
+    explicit EMACrossT(const Params& p) : p_(p) {
+        if (p_.fast_period < 1) p_.fast_period = 1;
+        if (p_.slow_period < 1) p_.slow_period = 1;
+        _ema_fast_alpha = 2.0 / (p_.fast_period + 1.0);
+        _ema_slow_alpha = 2.0 / (p_.slow_period + 1.0);
+    }
+
     bool has_open_position() const noexcept { return pos.active; }
 
-    static bool rsi_allowed(double rsi, bool is_long) noexcept {
+    bool rsi_allowed(double rsi, bool is_long) const noexcept {
         if (rsi >= 30.0 && rsi < 35.0) return false;
         if (rsi >= 35.0 && rsi < 40.0) return false;
         if (rsi >= 50.0 && rsi < 55.0) return false;
         if (rsi >= 65.0 && rsi < 70.0) return false;
-        if (is_long  && (rsi < RSI_LO_T || rsi > 75.0)) return false;
-        if (!is_long && (rsi > RSI_HI_T || rsi < 25.0)) return false;
+        if (is_long  && (rsi < p_.rsi_lo || rsi > 75.0)) return false;
+        if (!is_long && (rsi > p_.rsi_hi || rsi < 25.0)) return false;
         return true;
     }
 
@@ -900,8 +963,8 @@ public:
 
         const double prev_fast = _ema_fast;
         const double prev_slow = _ema_slow;
-        _update_ema(_ema_fast, _ema_fast_alpha, bar_close, _fast_warmed, _fast_count, FAST_PERIOD_T);
-        _update_ema(_ema_slow, _ema_slow_alpha, bar_close, _slow_warmed, _slow_count, SLOW_PERIOD_T);
+        _update_ema(_ema_fast, _ema_fast_alpha, bar_close, _fast_warmed, _fast_count, p_.fast_period);
+        _update_ema(_ema_slow, _ema_slow_alpha, bar_close, _slow_warmed, _slow_count, p_.slow_period);
 
         if (!_fast_warmed || !_slow_warmed) { (void)now_ms; return; }
 
@@ -974,7 +1037,7 @@ public:
 
         if (!rsi_allowed(_rsi, isl)) return;
 
-        double sl_dist = _atr * SL_MULT_T;
+        double sl_dist = _atr * p_.sl_mult;
         double tp_dist = sl_dist * TP_RR;
         double cost    = spread + 0.20;
         if (tp_dist <= cost) return;
@@ -994,8 +1057,8 @@ public:
 private:
     double _ema_fast       = 0.0;
     double _ema_slow       = 0.0;
-    double _ema_fast_alpha = 2.0 / (FAST_PERIOD_T + 1.0);
-    double _ema_slow_alpha = 2.0 / (SLOW_PERIOD_T + 1.0);
+    double _ema_fast_alpha = 0.0;  // set in ctor based on p_.fast_period
+    double _ema_slow_alpha = 0.0;  // set in ctor based on p_.slow_period
     bool   _fast_warmed    = false;
     bool   _slow_warmed    = false;
     int    _fast_count     = 0;
@@ -1128,14 +1191,14 @@ private:
 };
 
 // =============================================================================
-// Default-instantiation aliases (byte-equivalent to live engines when used
-// via the harness with default template args).
+// Default-construction aliases (byte-equivalent to live engines when used
+// via the harness with default Params).
 // =============================================================================
-using AsianRangeDefault     = AsianRangeT<>;
-using VWAPStretchDefault    = VWAPStretchT<>;
-using DXYDivergenceDefault  = DXYDivergenceT<>;
-using HBGDefault            = HBG_T<>;
-using EMACrossDefault       = EMACrossT<>;
+using AsianRangeDefault     = AsianRangeT;
+using VWAPStretchDefault    = VWAPStretchT;
+using DXYDivergenceDefault  = DXYDivergenceT;
+using HBGDefault            = HBG_T;
+using EMACrossDefault       = EMACrossT;
 
 } // namespace sweep
 } // namespace omega
