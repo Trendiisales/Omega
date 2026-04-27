@@ -81,6 +81,7 @@
 #include <tuple>
 #include <utility>
 #include <array>
+#include <memory>
 #include <fstream>
 #include <sstream>
 
@@ -736,8 +737,14 @@ static void run_hbg_sweep(const std::vector<TickRow>& ticks,
                           int64_t warmup_ticks,
                           std::vector<ComboResult>& results,
                           bool verbose) {
-    auto engines = make_hbg_tuple();
-    std::array<ComboSink, N_COMBOS> sinks{};
+    // Heap-allocate the engine tuple and per-combo arrays. The 490-element
+    // tuple of HBG_T is ~1.3 MB; macOS thread default stack is 512 KB, so
+    // stack allocation triggers SIGBUS on launch. The unique_ptr keeps RAII.
+    using TupleT = decltype(make_hbg_tuple());
+    auto engines_p = std::make_unique<TupleT>();
+    auto& engines  = *engines_p;
+    auto sinks_p   = std::make_unique<std::array<ComboSink, N_COMBOS>>();
+    auto& sinks    = *sinks_p;
     results.assign(N_COMBOS, ComboResult{});
 
     const int64_t N = static_cast<int64_t>(ticks.size());
@@ -783,8 +790,11 @@ static void run_ema_sweep(const std::vector<TickRow>& ticks,
                           int64_t warmup_ticks,
                           std::vector<ComboResult>& results,
                           bool verbose) {
-    auto engines = make_ema_tuple();
-    std::array<ComboSink, N_COMBOS> sinks{};
+    using TupleT = decltype(make_ema_tuple());
+    auto engines_p = std::make_unique<TupleT>();
+    auto& engines  = *engines_p;
+    auto sinks_p   = std::make_unique<std::array<ComboSink, N_COMBOS>>();
+    auto& sinks    = *sinks_p;
     results.assign(N_COMBOS, ComboResult{});
 
     const int64_t N = static_cast<int64_t>(ticks.size());
@@ -887,10 +897,14 @@ static void run_asian_sweep(const std::vector<TickRow>& ticks,
                             int64_t warmup_ticks,
                             std::vector<ComboResult>& results,
                             bool verbose) {
-    auto engines = make_asian_tuple();
+    using TupleT = decltype(make_asian_tuple());
+    auto engines_p   = std::make_unique<TupleT>();
+    auto& engines    = *engines_p;
+    auto positions_p = std::make_unique<std::array<ManagedPos, N_COMBOS>>();
+    auto& positions  = *positions_p;
+    auto sigs_p      = std::make_unique<std::array<omega::sweep::Signal, N_COMBOS>>();
+    auto& sigs       = *sigs_p;
     results.assign(N_COMBOS, ComboResult{});
-    std::array<ManagedPos, N_COMBOS> positions{};
-    std::array<omega::sweep::Signal, N_COMBOS> sigs{};
 
     const int64_t N = static_cast<int64_t>(ticks.size());
 
@@ -971,10 +985,14 @@ static void run_vwap_sweep(const std::vector<TickRow>& ticks,
                            int64_t warmup_ticks,
                            std::vector<ComboResult>& results,
                            bool verbose) {
-    auto engines = make_vwap_tuple();
+    using TupleT = decltype(make_vwap_tuple());
+    auto engines_p   = std::make_unique<TupleT>();
+    auto& engines    = *engines_p;
+    auto positions_p = std::make_unique<std::array<ManagedPos, N_COMBOS>>();
+    auto& positions  = *positions_p;
+    auto sigs_p      = std::make_unique<std::array<omega::sweep::Signal, N_COMBOS>>();
+    auto& sigs       = *sigs_p;
     results.assign(N_COMBOS, ComboResult{});
-    std::array<ManagedPos, N_COMBOS> positions{};
-    std::array<omega::sweep::Signal, N_COMBOS> sigs{};
 
     const int64_t N = static_cast<int64_t>(ticks.size());
 
