@@ -14,9 +14,6 @@
 //   --engine  <list>   comma list (default: gold,latency,cross)
 //                      legacy:  gold, latency, cross,
 //                               rsirev, allnew
-//                      [S50 X2 RETIRED 2026-04-27] backtest-only flags removed:
-//                                stoprun, ofade, omom, amom, lfade
-//                                tsmom (S46 backtest-only, never went live)
 //                      S44 new: hybridgold, macrocrash, h1swing, h4regime,
 //                               minh4, pdhl,
 //                               rsiextreme, emacross
@@ -70,11 +67,6 @@
 
 #include "../include/OmegaTradeLedger.hpp"
 #include "../include/GoldEngineStack.hpp"
-// (StopRunReversalEngine.hpp include removed S50 X2 — backtest-only engine retired)
-// #include "../include/StopRunReversalEngine.hpp"
-// (OverlapFadeEngine.hpp include removed S50 X2 — backtest-only engine retired)
-// #include "../include/OverlapFadeEngine.hpp"
-#include "../include/StructuralEdgeEngines.hpp"
 // (GoldFlowEngine.hpp removed at S19 Stage 1B — engine culled.)
 #include "../include/LatencyEdgeEngines.hpp"
 #include "../include/CrossAssetEngines.hpp"
@@ -92,9 +84,6 @@
 #include "../include/RSIExtremeTurnEngine.hpp"
 #include "../include/EMACrossEngine.hpp"
 
-// (TSMomGoldEngine.hpp include removed S50 X2 — backtest-only S46 engine retired
-//  before live deployment; class retained in include/ for future revival)
-// #include "../include/TSMomGoldEngine.hpp"
 
 // =============================================================================
 // Memory-mapped file
@@ -493,19 +482,9 @@ struct CrossRunner {
     }
 };
 
-// (StopRunRunner REMOVED at S50 X2 2026-04-27 — backtest-only engine retired.
-//  Engine class still defined in include/StopRunReversalEngine.hpp for recovery.
-//  No live registration; never traded a real dollar.)
-
-// (OverlapFadeRunner REMOVED at S50 X2 2026-04-27 — backtest-only engine retired.
-//  Engine class still defined in include/OverlapFadeEngine.hpp for recovery.
-//  Listed in S45 docstring as one of the four "validated bleeders".)
 
 
-// (OverlapMomRunner / AsiaMomRunner / LonFadeRunner REMOVED at S50 X2 2026-04-27.
-//  All three were backtest-only structural-edge engines; classes still defined in
-//  include/StructuralEdgeEngines.hpp for recovery. No live registration ever.
-//  S45 docstring listed AsiaMomentum + LondonCoreFade as "validated bleeders".)
+
 
 // =============================================================================
 // RSIReversal runner
@@ -786,14 +765,6 @@ struct MinimalH4Runner {
     }
 };
 
-// -----------------------------------------------------------------------------
-// (TSMomRunner REMOVED at S50 X2 2026-04-27 — backtest-only S46 engine retired
-//  before live deployment. Engine class still defined in include/TSMomGoldEngine.hpp
-//  for recovery. Docstring at L41-42 of TSMomGoldEngine.hpp described a "T5b"
-//  follow-up to lift the size cap once cross-engine inverse-vol was in place;
-//  that prerequisite never materialised, so engine remained backtest-only with
-//  max_lot=min_lot=0.01 collapsing the vol-target math to a constant.)
-// -----------------------------------------------------------------------------
 
 
 // (PullbackContRunner removed S49 X5 — engine culled, see s49-x5-pullback-cull branch)
@@ -923,17 +894,14 @@ struct Cfg {
     // never fired on 26m gold tick data).
     bool gold=true, latency=true, cross=true;
     bool allnew=false;
-    bool rsirev=false; // (micromom removed at 5V §1.2)
+    bool rsirev=false;
     bool quiet=false;
-    // [S50 X2 RETIRED 2026-04-27] flags stoprun/ofade/omom/amom/lfade/tsmom removed.
-    // Their runners were backtest-only and never had live registration.
 
     // S44 new runners (default OFF -- enabled by --engine list)
     bool hybridgold=false, macrocrash=false, h1swing=false, h4regime=false;
     bool minh4=false;
     bool pdhl=false, rsiextreme=false, emacross=false;
 
-    // (S46 tsmom flag removed at S50 X2; engine retired backtest-only)
 };
 static Cfg parse(int argc, char** argv){
     Cfg c;
@@ -952,8 +920,6 @@ static Cfg parse(int argc, char** argv){
             "                           pdhl rsiextreme emacross\n"
             "                  master:  all    (everything)\n"
             "                           clean  (everything except validated bleeders)\n"
-            "                  [S50 X2 RETIRED] flags removed: stoprun ofade omom\n"
-            "                                   amom lfade tsmom\n"
             "  --quiet         suppress engine log output (recommended)\n");
         exit(1);
     }
@@ -985,7 +951,6 @@ static Cfg parse(int argc, char** argv){
             c.gold     = !!strstr(e,"gold");
             c.latency  = !!strstr(e,"latency");
             c.cross    = !!strstr(e,"cross");
-            // [S50 X2 RETIRED] stoprun/ofade/omom/amom/lfade matchers removed.
             c.rsirev   = !!strstr(e,"rsirev");
             c.allnew   = (!!strstr(e,"allnew") || all_master);
 
@@ -999,34 +964,26 @@ static Cfg parse(int argc, char** argv){
             c.rsiextreme   = !!strstr(e,"rsiextreme");
             c.emacross     = !!strstr(e,"emacross");
 
-            // ([S50 X2 RETIRED] tsmom matcher removed)
-
             if (all_master) {
                 // Master flag enables EVERY runner. Legacy defaults already
                 // matched above ('all' contains 'gold' etc.) but be explicit
                 // about the optional cohort so the master flag is bullet-proof
                 // even if someone renames substrings later.
                 c.gold = c.latency = c.cross = true;
-                // [S50 X2 RETIRED] stoprun/ofade/omom/amom/lfade removed
                 c.rsirev = true;
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
                 c.minh4 = true;
                 c.pdhl = c.rsiextreme = c.emacross = true;
-                // [S50 X2 RETIRED] tsmom removed
             }
 
             if (clean_master) {
-                // S45: enable every runner EXCEPT the four validated bleeders.
-                // After S50 X2 retire pass, those bleeders no longer exist as
-                // runners — ofade/lfade/amom were removed; pdhl remains
-                // backtest-only and continues to be excluded here.
+                // Enable every runner except known bleeders.
                 c.gold = c.latency = c.cross = true;
                 c.rsirev = true;
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
                 c.minh4 = true;
                 c.rsiextreme = c.emacross = true;
-                // Excluded bleeder still in harness:
-                c.pdhl  = false;
+                c.pdhl  = false;  // bleeder excluded
             }
         }
     }
@@ -1116,8 +1073,6 @@ int main(int argc, char** argv){
     std::unique_ptr<GoldRunner>          rg;
     std::unique_ptr<LatencyRunner>       rl;
     std::unique_ptr<CrossRunner>         rc;
-    // [S50 X2 RETIRED] StopRunRunner / OverlapFadeRunner / OverlapMomRunner /
-    //                  AsiaMomRunner / LonFadeRunner unique_ptrs removed.
     std::unique_ptr<RSIRevRunner>        rrsi;
     // S44 new runners
     std::unique_ptr<HybridGoldRunner>    rhg;
@@ -1129,12 +1084,10 @@ int main(int argc, char** argv){
     std::unique_ptr<PDHLRevRunner>       rpd;
     std::unique_ptr<RSIExtremeRunner>    rrx;
     std::unique_ptr<EMACrossRunner>      rec;
-    // ([S50 X2 RETIRED] TSMomRunner unique_ptr removed)
 
     if(cfg.gold)    rg = std::make_unique<GoldRunner>(cfg.lat);
     if(cfg.latency) rl = std::make_unique<LatencyRunner>(cfg.lat);
     if(cfg.cross)   rc = std::make_unique<CrossRunner>();
-    // [S50 X2 RETIRED] stoprun / ofade / omom / amom / lfade constructions removed
     if(cfg.rsirev||cfg.allnew)  rrsi = std::make_unique<RSIRevRunner>();
 
     // S44 new runner construction (independent of allnew -- they have their own flags)
@@ -1147,7 +1100,6 @@ int main(int argc, char** argv){
     if(cfg.rsiextreme)   rrx  = std::make_unique<RSIExtremeRunner>();
     if(cfg.emacross)     rec  = std::make_unique<EMACrossRunner>();
 
-    // ([S50 X2 RETIRED] tsmom construction removed)
 
     // ?? Tick loop ?????????????????????????????????????????????????????????????
     const auto t0r  = std::chrono::steady_clock_real::now();
@@ -1161,7 +1113,6 @@ int main(int argc, char** argv){
         if(rg) rg->tick(r);
         if(rl) rl->tick(r);
         if(rc) rc->tick(r);
-        // [S50 X2 RETIRED] rs / ro / rom / ram / rlf dispatches removed
         if(rrsi) rrsi->tick(r);
 
         // S44 new runners
@@ -1174,7 +1125,6 @@ int main(int argc, char** argv){
         if(rrx)  rrx->tick(r);
         if(rec)  rec->tick(r);
 
-        // ([S50 X2 RETIRED] rtsm dispatch removed)
 
         if(i-last_p >= 500'000){
             last_p=i;

@@ -6,22 +6,17 @@
 // All 5 engines + RegimeGovernor + Supervisor in one header.
 //
 // Engines:
-//   1. CompressionBreakout   -- COMPRESSION regime: tight range ? expansion
-//   2. ImpulseContinuation   -- TREND/IMPULSE regime: directional continuation
 //   3. SessionMomentum       -- IMPULSE regime: session open volatility expansion
 //   4. VWAPSnapback          -- MEAN_REVERSION regime: fade exhausted moves to VWAP
 //   5. LiquiditySweepPro     -- MEAN_REVERSION/IMPULSE: stop-hunt reversal
 //   6. LiquiditySweepPressure-- MEAN_REVERSION/IMPULSE: pre-sweep pressure detection
 //   7. MeanReversion         -- MEAN_REVERSION regime: Z-score fade, LB=60 Z=2.0 SL=$4 TP=$12
 //   4. IntradaySeasonality   -- COMPRESSION/MEAN_REV: half-hourly t-stat bias, Sharpe=1.63 (upgraded)
-//   9. WickRejection         -- ALL regimes: 5-min wick stop-hunt fade, Sharpe=1.68
 //  10. DonchianBreakout      -- ALL regimes: 40-bar 5-min Turtle, HTF-filtered, Sharpe=2.34
 //  11. NR3Breakout           -- COMPRESSION/MEAN_REV: narrowest 3-bar + confirm, Sharpe=2.00
 //  12. SpikeFade             -- ALL regimes: fade $10+ 5-min moves (macro exhaustion)
 //  13. AsianRange            -- COMPRESSION/MEAN_REV: Asian 00-07 UTC range London break
 //  14. DynamicRange          -- MEAN_REV/COMPRESSION: 20-bar range extremes, Sharpe=2.36
-//  15. WickRejTick           -- ALL regimes: WickRejection on 300-tick bars, Sharpe=3.79
-//  16. TurtleTick            -- [S50 X1 RETIRED 2026-04-27] backtest 1T/154M ticks; H2 falsified (gate innocent); regime/dataset mismatch. Class retained for recovery.
 //  17. NR3Tick               -- COMPRESSION/MEAN_REV: NR3 on 300-tick bars, Sharpe=4.10
 //  18. TwoBarReversal        -- ALL regimes: 2x ATR strong bar + reversal close, Sharpe=1.55
 //  19. LondonFixMomentum    -- ALL regimes: 15:00 UTC LBMA fix direction, Sharpe~2.60
@@ -282,325 +277,6 @@ public:
     virtual void reset() {}  // override in engines with stateful detection
     bool isEnabled() const { return enabled_; }
     const std::string& getName() const { return name_; }
-};
-
-// ?????????????????????????????????????????????????????????????????????????????
-// 1. CompressionBreakoutEngine
-// ?????????????????????????????????????????????????????????????????????????????
-// ?????????????????????????????????????????????????????????????????????????????
-// CompressionBreakoutEngine -- parameter rationale at $5000 gold (Mar 2026)
-//
-// CALIBRATION BASIS: Last 2 London sessions (Mar 13 + Mar 16 2026)
-//   Avg hourly H-L range:  $28-$30
-//   Tightest London hour:  $14.00  (Mar 13 09:00 UTC)
-//   Normal quiet range:    $14-$22 (pre-NY open)
-//   Event candles:         $52-$75 (14:00 UTC macro releases)
-//
-// OLD values (wrong -- calibrated for ~$300 gold, not $5000):
-//   COMPRESSION_RANGE = $2.00  ? NEVER achieved in London (hourly avg $28)
-//   BREAKOUT_TRIGGER  = $0.35  ? 0.007% of price, pure tick noise
-//   Result: engine fired on sub-minute $0.35 oscillations constantly
-//
-// NEW values (calibrated for $5000 gold):
-//   COMPRESSION_RANGE = $8.00  ? achievable in tight 30-tick windows
-//                                 sub-hourly consolidation does compress to $6-10
-//   BREAKOUT_TRIGGER  = $2.50  ? 0.05% of $5000, confirms real directional intent
-//                                 filters out the $1-2 oscillations that were causing SL hits
-//   MAX_SPREAD        = $2.00  ? unchanged, still valid spread gate
-//   TP_TICKS          = 50     ? $5.00 target (2:1 on $2.50 SL effectively)
-//   SL_TICKS          = 20     ? $2.00 stop, tight enough to cut losers fast
-//
-// DEAD ZONE: 21:00-23:00 UTC blocked (NY/Tokyo handoff)
-//   Thin liquidity + stale VWAP (resets midnight) + no directional flow
-//   4 SL hits in 16 min observed 22:35 UTC Mar 17 before this gate added
-// ?????????????????????????????????????????????????????????????????????????????
-class CompressionBreakoutEngine : public EngineBase {
-    MinMaxCircularBuffer<double,64> history_;  // raised 32?64: larger buffer required for 50-tick WINDOW
-    static constexpr size_t WINDOW        = 50;            // raised 30?50: 30 ticks at London open = ~3-6s, too short for real compression; 50 ticks = ~10-15s
-    static constexpr double COMPRESSION_RANGE = 6.00;      // lowered 8.00?6.00: $8 was too permissive; $6 requires genuinely tight pre-break range
-    static constexpr double BREAKOUT_TRIGGER  = 2.50;      // raised 1.50?2.50: $1.50 fires on single-tick London open spikes (SL in 19s observed); $2.50 = 42% of $6 range, requires committed directional move not noise
-    static constexpr double MAX_SPREAD        = 2.00;      // unchanged
-        static constexpr int    TP_TICKS          = 100;       // DATA-CALIBRATED: $10 TP. SL=$5/TP=$10 2:1 RR = $7,057 on 2yr tick data (721 trades).
-        static constexpr int    SL_TICKS          = 50;        // DATA-CALIBRATED: $5 SL. 2yr tick brute-force validated.
-    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(5)};
-
-    // NY/Tokyo handoff dead zone: 21:00-23:00 UTC
-    // Thin liquidity, erratic spreads, stale VWAP (resets at midnight).
-    // Tokyo gold directional flow does not establish until ~23:00 UTC.
-    // Without this gate: 4 SL hits in 16 min observed 22:35 UTC Mar 17 2026.
-    //
-    // Two dead zones blocked:
-    //   21:00-23:00 UTC -- NY/Tokyo handoff: thin, no directional flow yet
-    //   05:00-07:00 UTC -- late Asia/Sydney runoff: Tokyo volume exhausted,
-    //                     London not yet open, spreads widen, moves fade
-    //                     Evidence: GOLD SHORT timeout Mar 18 06:03 UTC
-    // Dead zone policy (updated):
-    //   21:00-23:00 UTC dead zone REMOVED. Sydney open is now a valid session.
-    //   Evidence: 30 Mar 2026 saw 43pt CB-SHORT setup at 22:36 UTC (Sydney).
-    //   Regime gate + ATR floor + spread filter are sufficient quality controls.
-    //   05:00-07:00 UTC dead zone REPLACED by ATR/spread quality gate below.
-    //   Evidence of bad fills kept: GOLD SHORT timeout 06:03 UTC Mar 18.
-    //   Hard time blocks are gone - quality gates make the call now.
-    static bool in_handoff_dead_zone() noexcept {
-        return false;  // no hard time blocks - quality gates handle this
-    }
-
-    static bool in_london_preopen_thinzone() noexcept {
-        const auto t = std::time(nullptr);
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
-        const int h = ti.tm_hour;
-        return (h >= 5 && h < 7);  // 05:00-07:00 UTC only
-    }
-
-public:
-    CompressionBreakoutEngine(): EngineBase("CompressionBreakout",1.0){}
-
-    // EWM drift injected each tick by GoldEngineStack so CB can check momentum direction.
-    // Positive = bullish drift, negative = bearish drift. Set via set_ewm_drift().
-    double ewm_drift_ = 0.0;
-    void set_ewm_drift(double d) { ewm_drift_ = d; }
-
-    Signal process(const GoldSnapshot& s) override {
-        if(!enabled_||!s.is_valid()) return noSignal();
-        if(s.spread>MAX_SPREAD) return noSignal();
-        // Session-aware threshold adjustment: Asian tape is thinner so require a
-        // larger compression range and stronger breakout before signalling.
-        // Dead zone (05:00-07:00 UTC, slot 0) remains fully blocked -- genuinely no liquidity.
-        // Asia (22:00-05:00 UTC) is allowed with tighter quality gates applied below.
-        if(s.session==SessionType::UNKNOWN) return noSignal(); // slot 0 dead zone maps here
-        const bool is_asia_session = (s.session==SessionType::ASIAN);
-        const double eff_max_spread    = is_asia_session ? MAX_SPREAD * 0.60 : MAX_SPREAD;   // tighter spread in Asia = real moves only
-        const double eff_breakout_mult = is_asia_session ? BREAKOUT_TRIGGER * 1.40 : BREAKOUT_TRIGGER; // 40% larger range required
-        if(s.spread > eff_max_spread) return noSignal();
-        // Quality gate for 05:00-07:00 UTC thin zone: allow entry only if ATR is >= 3x spread
-        // (real directional move, not noise). No hard time blocks.
-        if (in_london_preopen_thinzone() && s.spread > MAX_SPREAD * 0.70) return noSignal();  // thin zone: only allow tight spreads
-        // Asia volatility gate: require implied ATR >= $5 before firing in Asia.
-        // This replaces a 01:00-05:00 hard time block -- today (31 Mar) showed 80pt moves
-        // at 01:30-02:30 UTC that a time block would have missed entirely.
-        // The 03:34 loss happened because volatility was LOW (dead tape) not because of the hour.
-        // At $5 implied ATR: a $5 SL has room to breathe. Below $5: SL is pure noise.
-        // Evidence: 03:34 loss had vol_range=2.45 ? implied_atr ~6pts BUT spread was wide
-        // and the actual move was a single spike -- the spread gate (0.60x) should catch this.
-        // Raise Asia volatility floor to $6 (from $4) to match today's observed move sizes.
-        if (is_asia_session && s.volatility > 0.0) {
-            const double implied_atr = s.volatility * 2.5;
-            if (implied_atr < 6.0) return noSignal();  // $6 floor: real moves only, not noise spikes
-        }
-        auto now=std::chrono::steady_clock::now();
-        if(now-last_signal_<std::chrono::milliseconds(1000)) return noSignal();
-        if(history_.size() < WINDOW){
-            history_.push_back(s.mid);
-            return noSignal();
-        }
-        // Use the prior window as the compression range.
-        // If current mid is included in hi/lo, breakout checks become unreachable.
-        double hi=history_.max(), lo=history_.min(), range=hi-lo;
-        if(range>COMPRESSION_RANGE) {
-            history_.push_back(s.mid);
-            return noSignal();
-        }
-        Signal sig; sig.entry=s.mid; sig.size=0.01;  // entry updated after direction known below
-        // ?? Bracket-trend bias gate (Session 6 P1 engine 3/8: CompressionBreakout) ??
-        // Same rule as other continuation engines: block entries in the direction
-        // the bracket system has flagged as rejected. Read-only, see
-        // BracketTrendState.hpp. bias=-1 blocks LONG; bias=+1 blocks SHORT.
-        const int cb_bt_bias = bracket_trend_bias("XAUUSD");
-        if(s.mid>hi+eff_breakout_mult){
-            // Bias-block: LONG breakout on a session where LONGs have been getting rejected.
-            if(cb_bt_bias == -1) { history_.push_back(s.mid); return noSignal(); }
-            // EWM drift check: don't go LONG when drift is strongly negative (momentum against)
-            if(ewm_drift_ < -3.0) { history_.push_back(s.mid); return noSignal(); }
-            sig.valid=true; sig.side=TradeSide::LONG;
-            sig.entry=s.ask;  // realistic fill: LONG fills at ask
-            sig.confidence=std::min(1.5,(s.mid-hi)/eff_breakout_mult);
-            sig.tp=TP_TICKS; sig.sl=SL_TICKS;
-            strncpy(sig.reason,"COMPRESSION_BREAK_LONG",31);
-            strncpy(sig.engine,"CompressionBreakout",31);
-            history_.clear(); last_signal_=now; signal_count_++; return sig;
-        }
-        if(s.mid<lo-eff_breakout_mult){
-            // Bias-block: SHORT breakout on a session where SHORTs have been getting rejected.
-            if(cb_bt_bias == 1) { history_.push_back(s.mid); return noSignal(); }
-            // EWM drift check: don't go SHORT when drift is strongly positive (momentum against)
-            if(ewm_drift_ > +3.0) { history_.push_back(s.mid); return noSignal(); }
-            sig.valid=true; sig.side=TradeSide::SHORT;
-            sig.entry=s.bid;  // realistic fill: SHORT fills at bid
-            sig.confidence=std::min(1.5,(lo-s.mid)/eff_breakout_mult);
-            sig.tp=TP_TICKS; sig.sl=SL_TICKS;
-            strncpy(sig.reason,"COMPRESSION_BREAK_SHORT",31);
-            strncpy(sig.engine,"CompressionBreakout",31);
-            history_.clear(); last_signal_=now; signal_count_++; return sig;
-        }
-        history_.push_back(s.mid);
-        return noSignal();
-    }
-};
-
-// ?????????????????????????????????????????????????????????????????????????????
-// 2. ImpulseContinuationEngine
-// ?????????????????????????????????????????????????????????????????????????????
-class ImpulseContinuationEngine : public EngineBase {
-    MinMaxCircularBuffer<double,64> price_history_;
-    static constexpr double IMPULSE_MIN = 1.0;  // min hi-lo range in price_history_ to detect impulse
-    static constexpr double PULLBACK_MIN_RATIO = 0.08;  // min pullback = 8% of impulse range
-    static constexpr double PULLBACK_MAX_RATIO = 0.55;  // max pullback = 55% of impulse range
-    // OLD fixed values: PULLBACK_MIN=0.2, PULLBACK_MAX=0.6 (dollar amounts)
-    // On a $4 impulse: max=$0.60 = 15% retrace -- normal 38% retrace ($1.52) reset engine
-    // New: scaled to impulse range so all impulse sizes get realistic retrace tolerance
-    // MIN_MOMENTUM lowered 0.55?0.10: $0.55/tick filters out slow grinds entirely.
-    // A $100 drop over 4h = $0.003/tick -- no tick would pass $0.55 gate.
-    // $0.10 is still above typical noise ($0.01-0.05) but allows slow trend entries.
-    // Directional drift check (20-tick) replaces raw tick momentum as primary filter.
-    static constexpr double MIN_MOMENTUM=0.10,MIN_MOVE_5T=0.20,MAX_MOMENTUM=5.0,PARABOLIC_VWAP=15.0;
-    // MAX_VWAP_DIST raised 6.0?40.0: $6 cap blocked ALL entries during sustained trends.
-    // In a $100 drop, price moves $50+ from daily VWAP by midday -- every tick blocked.
-    // $40 allows entries throughout a strong trend while still blocking parabolic exhaustion.
-    // MIN_VWAP_DIST kept at 1.50 -- still need some VWAP dislocation to confirm trend.
-    static constexpr double MIN_VWAP_DIST=1.50,MAX_VWAP_DIST=40.0,MAX_SPREAD=2.20;
-        static constexpr int TP_TICKS=100,SL_TICKS=50; // DATA-CALIBRATED: $5 SL / $10 TP 2:1 RR
-    // MAX_ENTRIES_PER_TREND reduced 4?2: 4 stacked entries in the same trend leg
-    // creates catastrophic exposure on reversal -- the 00:20 cluster proved this.
-    // 2 entries capture the dominant move without compounding reversal risk.
-    // COOLDOWN_SECONDS lowered 120?60: 120s gap was too wide for fast impulse legs.
-    // MIN_PRICE_MOVE raised 8.0?12.0: prevent tight re-entries, force meaningful separation.
-    static constexpr int MAX_ENTRIES_PER_TREND=2,COOLDOWN_SECONDS=60;
-    static constexpr double MIN_PRICE_MOVE=12.0;
-    std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SECONDS)};
-    int trend_entry_count_=0,last_trend_dir_=0;
-    double last_entry_price_=0;
-    enum class State{IDLE,WAITING_PULLBACK} state_=State::IDLE;
-    int direction_=0; double impulse_high_=0,impulse_low_=0;
-public:
-    ImpulseContinuationEngine(): EngineBase("ImpulseContinuation",1.1){}
-    // Reset stale detection state when engine is re-enabled after a regime cycle.
-    // Prevents WAITING_PULLBACK state from a previous trend persisting into a new one.
-    void reset() override {
-        state_ = State::IDLE; direction_ = 0;
-        impulse_high_ = 0; impulse_low_ = 0;
-        trend_entry_count_ = 0; last_trend_dir_ = 0; last_entry_price_ = 0;
-        price_history_.clear();
-        last_signal_ = std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SECONDS);
-    }
-    Signal process(const GoldSnapshot& s) override {
-        if(!enabled_||!s.is_valid()) return noSignal();
-        if(s.spread>MAX_SPREAD) return noSignal();
-        // NOTE: per-tick momentum gate (fabs(mid-prev_mid) < MIN_MOMENTUM) removed.
-        // At $4400 gold most ticks move $0.01-$0.08 -- MIN_MOMENTUM=0.10 killed ~90% of
-        // ticks before any other check ran, starving the 20-tick drift and pullback logic.
-        // The 20-tick net drift check below (>$1.50) is the correct directional filter.
-        // Parabolic protection retained via MAX_MOMENTUM check on the same path.
-        if(s.prev_mid>0 && s.vwap>0){
-            double mom=std::fabs(s.mid-s.prev_mid);
-            // Only apply parabolic gate (extreme single-tick spike far from VWAP)
-            if(mom>MAX_MOMENTUM&&std::fabs(s.mid-s.vwap)>PARABOLIC_VWAP) return noSignal();
-        }
-        if(s.vwap>0){
-            double vd=std::fabs(s.mid-s.vwap);
-            // MIN_VWAP_DIST: need minimum dislocation from VWAP to confirm trend direction
-            if(vd<MIN_VWAP_DIST) return noSignal();
-            // MAX_VWAP_DIST: only apply when price is AGAINST VWAP direction.
-            // In a strong trend (price $50-$100 from VWAP), removing the max cap
-            // allows continuation entries. The directional check ensures we are
-            // trading WITH the trend, not against it.
-            // Example: mid=$4,360, vwap=$4,450 ? SHORT side, mid < vwap ? WITH trend
-            //          Don't cap VWAP distance here -- the trend IS the signal.
-            // Only block if price is far from VWAP AND going AGAINST VWAP direction
-            // (that would be a countertrend exhaustion trade, not what we want here)
-            // Parabolic gate still applies: extreme single-tick momentum + very far from VWAP
-            if(vd>MAX_VWAP_DIST) {
-                // Check if we'd be trading WITH trend (toward VWAP) or AGAINST trend
-                // ImpulseContinuation uses pullback logic, so after impulse, dir points
-                // in direction of the impulse. If dir==-1 (SHORT) and mid < vwap ? WITH trend.
-                // We keep only the parabolic exhaustion check, drop the distance cap.
-                if(std::fabs(s.mid-s.prev_mid)>MAX_MOMENTUM) return noSignal();
-                // Otherwise: allow. A price $90 below VWAP in a downtrend is a signal, not a block.
-            }
-        }
-        // 20-tick directional drift: require net move > $1.50 in one direction
-        // over last 20 ticks. Catches slow grinds that fail per-tick momentum gate.
-        // Session-aware quality gate: Asian tape (00:00-07:00 UTC) is thinner and
-        // mean-reverting. Allow entries but require stronger impulse evidence:
-        // tighter spread, larger net20 drift, and no counter-trend entries.
-        // Dead zone (slot 0 ? UNKNOWN) remains fully blocked.
-        if(s.session==SessionType::UNKNOWN) return noSignal();
-        const bool is_asia = (s.session==SessionType::ASIAN);
-        // SIM: ImpulseCont WR 43.8% negative at net20_min=1.50. Raised to 5.0/7.0.
-        // Require a genuine $5 net move over 20 ticks (London/NY) before considering entry.
-        // Asia: $7 -- thinner tape, mean-reverting, need stronger conviction.
-        const double eff_net20_min   = is_asia ? 7.00 : 5.00;
-        const double eff_max_spread  = is_asia ? 1.50 : MAX_SPREAD;
-        if(s.spread > eff_max_spread) return noSignal();
-        // Asia ATR quality gate: ATR / spread ratio >= 4.0 for adequate SL headroom.
-        // ImpulseCont TP=100ticks/SL=50ticks -- at ATR=$2, SL=$1.25pt.
-        // If spread=$1.50, SL is barely 1x spread -- noise-stopped instantly.
-        // Require ATR >= 3x spread in Asia. Dead zone already blocked (UNKNOWN).
-        // Uses ewm_drift as ATR proxy since GoldSnapshot has no direct ATR field.
-        if (is_asia) {
-            // Use price_history_ range as ATR proxy (ewm_drift not in GoldSnapshot).
-            // MinMaxCircularBuffer tracks the full-window max/min natively -- O(1).
-            // Floor at 1.5 so the gate doesn't block on a cold/empty buffer.
-            const double implied_atr = (price_history_.size() >= 5)
-                ? std::max(price_history_.range(), 1.5)
-                : (s.volatility > 0.0 ? std::max(s.volatility * 2.5, 1.5) : 1.5);
-            if (s.spread > 0.0 && implied_atr / s.spread < 3.0) return noSignal();
-        }
-        if(price_history_.size()>=20){
-            double net20=price_history_.back()-price_history_[price_history_.size()-20];
-            if(std::fabs(net20)<eff_net20_min) return noSignal();
-        }
-        // London open noise block REMOVED -- spread/regime/SL gates are sufficient protection.
-        auto now=std::chrono::steady_clock::now();
-        if(now-last_signal_<std::chrono::seconds(COOLDOWN_SECONDS)) return noSignal();
-        price_history_.push_back(s.mid);
-        if(price_history_.size()<10) return noSignal();
-        if(price_history_.size()>5){
-            double move5=std::fabs(price_history_.back()-price_history_[price_history_.size()-6]);
-            if(move5<MIN_MOVE_5T) return noSignal();
-        }
-        if(state_==State::IDLE){
-            double hi=price_history_.max(),lo=price_history_.min();
-            if(hi-lo>=IMPULSE_MIN){
-                direction_=(hi-s.mid<s.mid-lo)?1:-1;
-                impulse_high_=hi; impulse_low_=lo;
-                state_=State::WAITING_PULLBACK;
-            }
-            return noSignal();
-        }
-        // Pullback bounds scaled to impulse range -- fixed dollar caps were too tight.
-        // On a $4 impulse: old PULLBACK_MAX=$0.60 = 15% retrace max.
-        // Normal 38% retrace ($1.52) exceeded cap and reset engine every time.
-        // New: 8-55% of impulse range allows realistic retraces across all impulse sizes.
-        const double impulse_range = impulse_high_ - impulse_low_;
-        const double pb_min = impulse_range * PULLBACK_MIN_RATIO;
-        const double pb_max = impulse_range * PULLBACK_MAX_RATIO;
-        double pb=(direction_==1)?(impulse_high_-s.mid):(s.mid-impulse_low_);
-        if(pb>pb_max){state_=State::IDLE;direction_=0;return noSignal();}
-        if(pb>=pb_min&&pb<=pb_max){
-            int dir=direction_; state_=State::IDLE; direction_=0;
-            if(s.vwap>0){
-                if(dir==1&&s.mid<s.vwap) return noSignal();
-                if(dir==-1&&s.mid>s.vwap) return noSignal();
-            }
-            if(dir!=last_trend_dir_){trend_entry_count_=0;last_trend_dir_=dir;}
-            if(trend_entry_count_>=MAX_ENTRIES_PER_TREND) return noSignal();
-            if(last_entry_price_>0&&std::fabs(s.mid-last_entry_price_)<MIN_PRICE_MOVE) return noSignal();
-            last_signal_=now; last_entry_price_=s.mid; trend_entry_count_++; signal_count_++;
-            Signal sig; sig.valid=true;
-            sig.side=(dir==1)?TradeSide::LONG:TradeSide::SHORT;
-            sig.confidence=std::min(1.5,(impulse_high_-impulse_low_)/(IMPULSE_MIN*2.0));
-            sig.size=0.01; sig.entry=(dir==1?s.ask:s.bid); sig.tp=TP_TICKS; sig.sl=SL_TICKS;  // realistic fill
-            strncpy(sig.reason,dir==1?"IMPULSE_CONT_LONG":"IMPULSE_CONT_SHORT",31);
-            strncpy(sig.engine,"ImpulseContinuation",31);
-            return sig;
-        }
-        return noSignal();
-    }
 };
 
 // ?????????????????????????????????????????????????????????????????????????????
@@ -937,216 +613,6 @@ public:
         last_signal_    = now;
         signal_count_++;
         return sig;
-    }
-};
-
-// ?????????????????????????????????????????????????????????????????????????????
-// 9. WickRejectionEngine
-// ?????????????????????????????????????????????????????????????????????????????
-// DATA-CALIBRATED: 718,194 bars XAUUSD Jan 2024-Jan 2026 (5-min OHLC resampled)
-//
-// Edge: 5-minute candles where the wick >= 55% of total bar range signal a
-// stop-hunt (liquidity sweep): market makers pushed price to grab resting orders
-// above/below a level, then snapped back. Fade the wick direction.
-//
-//   Optimal params from grid search (718k bars):
-//     WICK_PCT   = 0.55   -- wick must be >= 55% of bar range
-//     MIN_WICK   = $1.50  -- minimum absolute wick size (noise filter)
-//     MIN_RANGE  = $2.25  -- bar must have meaningful total range
-//     SL_TICKS   = 60     -- $6.00 stop (below/above wick extreme)
-//     TP_TICKS   = 150    -- $15.00 target (2.5:1 RR)
-//     HOLD_BARS  = 12     -- max 12 ? 5-min bars = 60 minutes hold
-//
-//   Sim results (3,810 trades over 2yr):
-//     WR = 46.0%  |  Total = $3,014  |  Avg = $0.791  |  Sharpe = 1.68
-//     MaxDD = $185  |  2024: $1,164  |  2025: $1,850  (consistent both years)
-//
-// Regime: ALL regimes -- stop-hunt structure is microstructure, not regime-dependent.
-// Session: blocked in dead zone (05:00-07:00 UTC) -- thin spreads cause false wicks.
-// Cooldown: 300s between signals -- prevents firing on successive wick candles in
-//   the same consolidation (which would be the same stop-hunt, not a new one).
-//
-// Candle builder: self-contained 5-minute OHLC aggregator. No external dependency.
-// On each tick: (1) accumulate into current 5-min bar, (2) on bar close evaluate
-// wick, (3) if valid signal, arm and return on next tick's open.
-// ?????????????????????????????????????????????????????????????????????????????
-class WickRejectionEngine : public EngineBase {
-
-    // ?? 5-minute OHLC candle ?????????????????????????????????????????????????
-    struct Bar {
-        double open = 0, high = 0, low = 0, close = 0;
-        int    bar_minute = -1;  // minute-of-day at bar open (0-1439)
-        bool   valid = false;
-
-        void reset(double price, int minute) noexcept {
-            open = high = low = close = price;
-            bar_minute = minute;
-            valid = true;
-        }
-        void update(double price) noexcept {
-            if (price > high) high = price;
-            if (price < low)  low  = price;
-            close = price;
-        }
-        double range()       const noexcept { return high - low; }
-        double upper_wick()  const noexcept { return high - std::max(open, close); }
-        double lower_wick()  const noexcept { return std::min(open, close) - low; }
-    };
-
-    // ?? Parameters ????????????????????????????????????????????????????????????
-    static constexpr int    BAR_MINUTES  = 5;    // 5-minute candles
-    static constexpr double WICK_PCT     = 0.55; // wick / range >= 55%
-    static constexpr double MIN_WICK     = 1.50; // min wick size $1.50
-    static constexpr double MIN_RANGE    = 2.25; // min bar range $2.25
-    static constexpr double MAX_SPREAD   = 2.00; // block during wide spread
-    static constexpr int    SL_TICKS     = 60;   // $6.00 SL
-    static constexpr int    TP_TICKS     = 150;  // $15.00 TP
-    static constexpr int    HOLD_BARS    = 12;   // max 12 bars (~60 min)
-    static constexpr int    COOLDOWN_SEC = 300;  // 5 min between signals
-
-    // ?? State ?????????????????????????????????????????????????????????????????
-    Bar    current_bar_;
-    Bar    prev_bar_;        // last completed bar -- evaluated on close
-    int    pending_side_ = 0;  // +1 LONG, -1 SHORT, 0 = none armed
-    int    bars_held_    = 0;
-
-    std::chrono::steady_clock::time_point last_signal_{
-        std::chrono::steady_clock::now() - std::chrono::seconds(COOLDOWN_SEC + 1)};
-
-    // ?? UTC helpers ???????????????????????????????????????????????????????????
-    static int utc_minute_of_day() noexcept {
-        const auto t = std::time(nullptr);
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
-        return ti.tm_hour * 60 + ti.tm_min;
-    }
-
-    static int bar_slot(int minute_of_day) noexcept {
-        // Which BAR_MINUTES slot does this minute belong to?
-        return (minute_of_day / BAR_MINUTES) * BAR_MINUTES;
-    }
-
-    static bool in_dead_zone() noexcept {
-        return false;  // hard time block removed -- ATR/spread quality gate handles thin tape
-    }
-
-    // Quality check for 05:00-07:00 UTC thin zone
-    static bool in_london_preopen(int h) noexcept { return h >= 5 && h < 7; }
-
-    // ?? Evaluate a completed bar for wick rejection signal ???????????????????
-    int evaluate_bar(const Bar& b) const noexcept {
-        if (!b.valid) return 0;
-        const double rng = b.range();
-        if (rng < MIN_RANGE) return 0;
-
-        const double uw = b.upper_wick();
-        const double lw = b.lower_wick();
-
-        // Bearish wick: upper wick dominates -- price swept above and closed back down
-        if (uw >= rng * WICK_PCT && uw >= MIN_WICK) return -1;  // SHORT signal
-
-        // Bullish wick: lower wick dominates -- price swept below and closed back up
-        if (lw >= rng * WICK_PCT && lw >= MIN_WICK) return +1;  // LONG signal
-
-        return 0;
-    }
-
-public:
-    WickRejectionEngine() : EngineBase("WickRejection", 1.2) {}
-
-    void reset() override {
-        current_bar_ = Bar{};
-        prev_bar_    = Bar{};
-        pending_side_ = 0;
-        bars_held_    = 0;
-    }
-
-    Signal process(const GoldSnapshot& s) override {
-        if (!enabled_ || !s.is_valid()) return noSignal();
-        if (s.spread > MAX_SPREAD)       return noSignal();
-        if (s.session == SessionType::UNKNOWN) return noSignal();
-        if (in_dead_zone())              return noSignal();
-        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
-        // Tighten spread cap to 0.80pt in Asia -- real directional moves have tight spreads.
-        // Also block when ATR proxy (volatility*2.5) < 3x spread -- SL within spread noise.
-        if (s.session == SessionType::ASIAN) {
-            if (s.spread > 0.80) return noSignal();
-            if (s.volatility > 0.0 && s.spread > 0.0) {
-                const double atr_proxy = s.volatility * 2.5;
-                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
-            }
-        }
-
-        const int mod = utc_minute_of_day();
-        const int slot = bar_slot(mod);
-
-        // ?? Bar management ????????????????????????????????????????????????????
-        if (!current_bar_.valid) {
-            // First tick ever -- start a bar
-            current_bar_.reset(s.mid, slot);
-        } else if (slot != current_bar_.bar_minute) {
-            // Bar closed -- evaluate and rotate
-            prev_bar_ = current_bar_;
-            current_bar_.reset(s.mid, slot);
-            bars_held_++;
-
-            // Evaluate the bar that just closed
-            const int sig_side = evaluate_bar(prev_bar_);
-            if (sig_side != 0) {
-                const auto now = std::chrono::steady_clock::now();
-                const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                                         now - last_signal_).count();
-                if (elapsed >= COOLDOWN_SEC && s.spread <= MAX_SPREAD) {
-                    pending_side_ = sig_side;
-                    bars_held_    = 0;
-                }
-            }
-        } else {
-            current_bar_.update(s.mid);
-        }
-
-        // ?? Fire pending signal on first tick of new bar ??????????????????????
-        if (pending_side_ != 0) {
-            const auto now = std::chrono::steady_clock::now();
-
-            // Stale guard: cancel if we've held too long without firing
-            if (bars_held_ > 2) {
-                pending_side_ = 0;
-                return noSignal();
-            }
-
-            Signal sig;
-            sig.valid      = true;
-            sig.size       = 0.01;
-            sig.tp         = TP_TICKS;
-            sig.sl         = SL_TICKS;
-            sig.confidence = std::min(1.5,
-                pending_side_ == +1
-                    ? prev_bar_.lower_wick() / MIN_WICK
-                    : prev_bar_.upper_wick() / MIN_WICK);
-
-            if (pending_side_ == +1) {
-                sig.side  = TradeSide::LONG;
-                sig.entry = s.ask;
-                strncpy(sig.reason, "WICK_REJ_LONG",  31);
-            } else {
-                sig.side  = TradeSide::SHORT;
-                sig.entry = s.bid;
-                strncpy(sig.reason, "WICK_REJ_SHORT", 31);
-            }
-            strncpy(sig.engine, "WickRejection", 31);
-
-            pending_side_ = 0;
-            last_signal_  = now;
-            signal_count_++;
-            return sig;
-        }
-
-        return noSignal();
     }
 };
 
@@ -1997,168 +1463,6 @@ struct TickBarBuffer {
 };
 
 // -------------------------------------------------------------------------
-// 15. WickRejectionTickEngine
-// -------------------------------------------------------------------------
-// Wick rejection on 300-tick bars. Sharpe=3.79 vs 1.68 on 5-min time bars.
-// 5% signal overlap with WickRejectionEngine -- independent edge.
-// Sim: 562T WR=40.7% $1,376/2yr Sharpe=3.79 MaxDD=$72
-//      2024: 274T WR=40.9% $647 Sharpe=3.69
-//      2025: 286T WR=40.6% $720 Sharpe=3.86 (year-stable)
-// SL=$6 TP=$15. Cooldown=300s. ALL regimes.
-// -------------------------------------------------------------------------
-class WickRejectionTickEngine : public EngineBase {
-    static constexpr double WICK_PCT    = 0.55;
-    static constexpr double MIN_WICK    = 1.50;
-    static constexpr double MIN_RANGE   = 2.25;
-    static constexpr double MAX_SPREAD  = 2.0;
-    static constexpr int    SL_TICKS    = 60;
-    static constexpr int    TP_TICKS    = 150;
-    static constexpr int    COOLDOWN_SEC= 300;
-
-    TickBarBuffer<300> tb_;
-    int  pending_side_=0, bars_since_arm_=0;
-
-    std::chrono::steady_clock::time_point last_sig_{
-        std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SEC+1)};
-
-    static bool in_dead_zone() noexcept {
-        return false;  // hard time block removed
-    }
-
-public:
-    WickRejectionTickEngine() : EngineBase("WickRejTick",1.2) {}
-    void reset() override {tb_=TickBarBuffer<300>{};pending_side_=0;bars_since_arm_=0;}
-
-    Signal process(const GoldSnapshot& s) override {
-        if(!enabled_||!s.is_valid()) return noSignal();
-        if(s.spread>MAX_SPREAD)      return noSignal();
-        if(in_dead_zone())           return noSignal();
-        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
-        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
-        // Tighten spread cap to 0.80pt in Asia -- real directional moves have tight spreads.
-        // Also block when ATR proxy (volatility*2.5) < 3x spread -- SL within spread noise.
-        if (s.session == SessionType::ASIAN) {
-            if (s.spread > 0.80) return noSignal();
-            if (s.volatility > 0.0 && s.spread > 0.0) {
-                const double atr_proxy = s.volatility * 2.5;
-                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
-            }
-        }
-
-        const bool bar_closed=tb_.on_tick(s.mid);
-        if(bar_closed&&tb_.ready(3)){
-            ++bars_since_arm_;
-            const auto& b=tb_.bar(1);
-            const double rng=b.range();
-            if(rng>=MIN_RANGE){
-                const double uw=b.upper_wick(),lw=b.lower_wick();
-                auto now=std::chrono::steady_clock::now();
-                auto el=std::chrono::duration_cast<std::chrono::seconds>(now-last_sig_).count();
-                if(el>=COOLDOWN_SEC){
-                    if(uw>=rng*WICK_PCT&&uw>=MIN_WICK){pending_side_=-1;bars_since_arm_=0;}
-                    else if(lw>=rng*WICK_PCT&&lw>=MIN_WICK){pending_side_=+1;bars_since_arm_=0;}
-                }
-            }
-        }
-        if(pending_side_==0||bars_since_arm_>2){pending_side_=0;return noSignal();}
-        auto now=std::chrono::steady_clock::now();
-        Signal sig;
-        sig.valid=true;sig.size=0.01;sig.sl=SL_TICKS;sig.tp=TP_TICKS;sig.confidence=1.0;
-        if(pending_side_==+1){
-            sig.side=TradeSide::LONG;sig.entry=s.ask;
-            strncpy(sig.reason,"WICK_TICK_LONG", 31);
-        } else {
-            sig.side=TradeSide::SHORT;sig.entry=s.bid;
-            strncpy(sig.reason,"WICK_TICK_SHORT",31);
-        }
-        strncpy(sig.engine,"WickRejTick",31);
-        pending_side_=0;last_sig_=now;signal_count_++;
-        return sig;
-    }
-};
-
-// -------------------------------------------------------------------------
-// 16. TurtleTickEngine
-// -------------------------------------------------------------------------
-// Turtle N=40 on 300-tick bars. HTF EMA50/250 filter. Sharpe=7.60.
-// Sim: 104T WR=49.0% $800/2yr Sharpe=7.60 MaxDD=$48
-//      2024: 37T WR=51.4% $312 Sharpe=8.34
-//      2025: 67T WR=47.8% $488 Sharpe=7.20
-// SL=$8 TP=$24 (3:1 RR). Cooldown=900s. ALL regimes.
-// -------------------------------------------------------------------------
-class TurtleTickEngine : public EngineBase {
-    static constexpr int    TURTLE_N    = 40;
-    static constexpr double MAX_SPREAD  = 2.0;
-    static constexpr int    SL_TICKS    = 80;
-    static constexpr int    TP_TICKS    = 240;
-    static constexpr int    COOLDOWN_SEC= 900;
-
-    TickBarBuffer<300> tb_;
-    double ema50_=0,ema250_=0; bool ema_init_=false;
-    static constexpr double A50=2.0/51.0, A250=2.0/251.0;
-
-    std::chrono::steady_clock::time_point last_sig_{
-        std::chrono::steady_clock::now()-std::chrono::seconds(COOLDOWN_SEC+1)};
-
-public:
-    TurtleTickEngine() : EngineBase("TurtleTick",1.1) {}
-    void reset() override {tb_=TickBarBuffer<300>{};ema_init_=false;ema50_=0;ema250_=0;}
-
-    static bool in_dead_zone() noexcept { return false; }
-    Signal process(const GoldSnapshot& s) override {
-        if(!enabled_||!s.is_valid()) return noSignal();
-        if(s.spread>MAX_SPREAD)      return noSignal();
-        if (s.session == SessionType::UNKNOWN) return noSignal();  // dead zone 05-07 UTC
-        if(in_dead_zone())           return noSignal();
-        // Asia quality gate: thin liquidity, wide spreads, mean-reverting tape.
-        // Tighten spread cap to 0.80pt in Asia -- real directional moves have tight spreads.
-        // Also block when ATR proxy (volatility*2.5) < 3x spread -- SL within spread noise.
-        if (s.session == SessionType::ASIAN) {
-            if (s.spread > 0.80) return noSignal();
-            if (s.volatility > 0.0 && s.spread > 0.0) {
-                const double atr_proxy = s.volatility * 2.5;
-                if (atr_proxy > 0.0 && atr_proxy / s.spread < 3.0) return noSignal();
-            }
-        }
-        if(!ema_init_){ema50_=ema250_=s.mid;ema_init_=true;}
-        else{ema50_+=A50*(s.mid-ema50_);ema250_+=A250*(s.mid-ema250_);}
-        const int htf_dir=(ema50_>ema250_)?1:-1;
-        tb_.on_tick(s.mid);
-        if(!tb_.ready(TURTLE_N+2)) return noSignal();
-        auto now=std::chrono::steady_clock::now();
-        if(std::chrono::duration_cast<std::chrono::seconds>(now-last_sig_).count()<COOLDOWN_SEC)
-            return noSignal();
-        const double dhi=tb_.roll_high(TURTLE_N);
-        const double dlo=tb_.roll_low(TURTLE_N);
-        if(dhi<=0||dlo>=1e8) return noSignal();
-        // ?? Bracket-trend bias gate (Session 6 P1 engine 2/8: TurtleTick) ??
-        // TurtleTick is a breakout-continuation engine. Firing a LONG when the
-        // bracket system has recorded a rejection-bias against LONGs compounds
-        // the rejection. Block entries aligned with the rejected direction.
-        // bias=-1 ? LONG blocked; bias=+1 ? SHORT blocked; bias=0 ? no-op.
-        // Read-only, no state change. See BracketTrendState.hpp for semantics.
-        const int bt_bias = bracket_trend_bias("XAUUSD");
-        Signal sig;
-        sig.size=0.01;sig.sl=SL_TICKS;sig.tp=TP_TICKS;
-        if(s.mid>dhi&&htf_dir==1){
-            if(bt_bias == -1) return noSignal();  // LONG breakout blocked by short-bias rejection
-            sig.valid=true;sig.side=TradeSide::LONG;sig.entry=s.ask;
-            sig.confidence=std::min(1.5,(s.mid-dhi)/2.0+0.9);
-            strncpy(sig.reason,"TURTLE_TICK_LONG", 31);
-            strncpy(sig.engine,"TurtleTick",31);
-        } else if(s.mid<dlo&&htf_dir==-1){
-            if(bt_bias == 1) return noSignal();   // SHORT breakout blocked by long-bias rejection
-            sig.valid=true;sig.side=TradeSide::SHORT;sig.entry=s.bid;
-            sig.confidence=std::min(1.5,(dlo-s.mid)/2.0+0.9);
-            strncpy(sig.reason,"TURTLE_TICK_SHORT",31);
-            strncpy(sig.engine,"TurtleTick",31);
-        }
-        if(sig.valid){last_sig_=now;signal_count_++;}
-        return sig;
-    }
-};
-
-// -------------------------------------------------------------------------
 // 17. NR3TickEngine
 // -------------------------------------------------------------------------
 // NR3 narrowest-3-bar breakout on 300-tick bars. Sharpe=4.10 vs 2.00 on time bars.
@@ -2261,11 +1565,6 @@ public:
 // 60% of range) followed by a bar that closes AGAINST that direction signals
 // momentum exhaustion. The strong bar represents trapped traders; the reversal
 // bar confirms they are exiting.
-//
-// Different from WickRejectionEngine (23% overlap):
-//   WickRej: wick within a SINGLE bar = intrabar stop-hunt
-//   TwoBar:  full bar close AGAINST prior strong bar = confirmed reversal
-//
 //   Params (grid-searched on 718k bars):
 //     ATR_MULT  = 1.5   -- bar range must be >= 1.5x 20-bar ATR
 //     BODY_PCT  = 0.60  -- body must close in top/bottom 60% of bar
@@ -3613,7 +2912,7 @@ public:
         // At London open (~6 ticks/s): 300 ticks = ~50s. Fills within 1 minute.
         // A 6pt drop over 7 minutes shows med_range > 5pt within 2 minutes of starting.
         // This overrides COMPRESSION -> IMPULSE, unlocking DonchianBreakout,
-        // TurtleTick, MomentumContinuation, SessionOpenMomentum immediately.
+        // MomentumContinuation, SessionOpenMomentum immediately.
         bool med_impulse = false;
         bool med_trend   = false;
         if(med_history_.size() >= MED_WINDOW) {
@@ -3665,7 +2964,7 @@ public:
             switch(r){
                 case MarketRegime::COMPRESSION:
                     // IntradaySeasonality fires in quiet/ranging conditions -- natural fit for COMPRESSION.
-                    // WickRejection + Donchian + SpikeFade = microstructure -- active in ALL regimes.
+                    // Donchian + SpikeFade = microstructure -- active in ALL regimes.
                     // NR3 is coiling energy -- best in COMPRESSION.
                     // AsianRange fires in London window only -- compression-to-expansion event.
                     // VWAPStretchReversion: active (COMP = range-bound, perfect for fade).
@@ -3676,7 +2975,7 @@ public:
                     en=(n=="IntradaySeasonality"
                        ||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
+                       ||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="VWAPStretchReversion"||n=="DXYDivergence"||n=="LondonFixMomentum"); break;
                 case MarketRegime::TREND:
@@ -3691,7 +2990,7 @@ public:
                     // when the move is already $15+ confirmed. The internal $6 compression
                     // range requirement and EWM drift gate prevent it firing into trend noise.
                     en=(n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
+                       ||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
@@ -3706,7 +3005,7 @@ public:
                        ||n=="MeanReversion"||n=="IntradaySeasonality"
                        ||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
+                       ||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="VWAPStretchReversion"||n=="ORBNewYork"||n=="DXYDivergence"
                        ||n=="LondonFixMomentum"); break;
@@ -3720,7 +3019,7 @@ public:
                     // by micro-compressions (the coil before the break). CB catches these.
                     en=(n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
+                       ||n=="NR3Tick"
                        ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
@@ -4069,7 +3368,7 @@ class GoldPositionManager {
         // Also allow MEAN_REVERSION and COMPRESSION: if leg_profit_locked passes
         // (SL above entry) AND leader_move >= dyn_cover, the move is real regardless
         // of regime label. Blocking pyramid in COMPRESSION caused missed pyramids on
-        // big moves (e.g. 4518->4523 WickRejection LONG that made +$127 with no add-ons).
+        // big moves with no add-ons.
         return std::strcmp(regime, "TREND") == 0
             || std::strcmp(regime, "IMPULSE") == 0
             || std::strcmp(regime, "MEAN_REVERSION") == 0
@@ -4585,12 +3884,7 @@ public:
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
     GoldEngineStack() {
-        // SHELVED: CompressionBreakout -- 0% WR live, 7s avg hold, instant SL hits.
-        // False breakout / stop-hunt pattern. Re-enable after fix + 50 shadow validates.
-        // engines_.push_back(std::make_unique<CompressionBreakoutEngine>());
-        // SIM: ImpulseContinuation WR 41.7% -$641 across 3 iterations. Disabled.
         // SessionMomentum captures same directional signal at 53.3% WR +$723.
-        // engines_.push_back(std::make_unique<ImpulseContinuationEngine>());
         engines_.push_back(std::make_unique<SessionMomentumEngine>());
         // MomentumContinuation: catches mid-session trend legs WITHOUT pullback.
         // Fills the gap between SessionMomentum (session opens only) and
@@ -4600,9 +3894,6 @@ public:
         // SIM: IntradaySeasonality -- 6,788T | WR=49.2% | $2,065/2yr | Sharpe=1.08
         // Fires once/hour at first tick. COMPRESSION + MEAN_REVERSION regimes.
         engines_.push_back(std::make_unique<IntradaySeasonalityEngine>());
-        // SHELVED: WickRejection -- live performance 0% WR, MFE/MAE ratio 0.87x.
-        // Re-enable after 50+ shadow trades show positive expectancy.
-        // engines_.push_back(std::make_unique<WickRejectionEngine>());
         // SIM: DonchianBreakout -- 3,383T | WR=29.6% | $3,125/2yr | Sharpe=1.60
         engines_.push_back(std::make_unique<DonchianBreakoutEngine>());
         // SIM: NR3Breakout -- 1,421T | WR=39.1% | $1,108/2yr | Sharpe=2.00
@@ -4613,17 +3904,6 @@ public:
         engines_.push_back(std::make_unique<AsianRangeEngine>());
         // SIM: DynamicRange -- 10,299T | WR=43.4% | $6,772/2yr | Sharpe=2.36
         engines_.push_back(std::make_unique<DynamicRangeEngine>());
-        // SHELVED: WickRejTick -- shelved with WickRejection pending live revalidation.
-        // engines_.push_back(std::make_unique<WickRejectionTickEngine>());
-        // [S50 X1 RETIRED 2026-04-27] TurtleTick -- backtest 1T/154M ticks on
-        // ~/Tick/duka_ticks/XAUUSD_2024-03_2026-04_combined.csv. Diag branch
-        // s49-diag-turtletick-no-btbias (ff73e2ae) disabled the bracket_trend_bias
-        // gate from 03c048ae and re-ran: still 1T/154M. H2 falsified -- gate is
-        // innocent. Suspected cause: HTF EMA50/250 + 40-bar Donchian conditions
-        // rare in current regime, or dataset shift since the original 104T sim.
-        // Class TurtleTickEngine retained at L2089 for recovery if regime shifts.
-        // Original sim: 104T | WR=49.0% | $800/2yr | Sharpe=7.60
-        // engines_.push_back(std::make_unique<TurtleTickEngine>());
         // SIM: NR3Tick -- 565T | WR=41.4% | $1,009/2yr | Sharpe=4.10
         engines_.push_back(std::make_unique<NR3TickEngine>());
         // SIM: TwoBarReversal -- 1,216T | WR=47.1% | $795/2yr | Sharpe=1.55
@@ -5251,11 +4531,7 @@ private:
         //      Single-tick noise cannot unlock this path.
         //   2. DonchianBreakout: HTF EMA50/250 filter -- fires SHORT only when
         //      EMA50 < EMA250. Self-protecting against counter-trend.
-        //   3. TurtleTick: [S50 X1 RETIRED] removed from registration -- engine
-        //      class still defined for recovery, but no instance is constructed.
         //   4. NR3Tick: requires confirmed squeeze breakout (CONFIRM_PCT=0.40).
-        //   5. WickRejectionTickEngine: wick >= 55% bar range, MIN_WICK=$1.50,
-        //      bar range >= $2.25 -- not noise.
         //   6. TwoBarReversal: ATR_MULT=1.5x strong bar -- not thin-tape noise.
         //   7. SpikeFade: requires $10+ candle move -- genuine macro event only.
         //   8. entry_quality_ok(): GENERAL_MIN_SCORE=1.20 gate on all signals.
@@ -5284,9 +4560,7 @@ private:
             // Each has its own internal HTF direction filter (EMA50/250 or equiv)
             // so they cannot fire counter-trend even if enabled here.
             if (asia_trend) {
-                if (// [S50 X1 RETIRED] n == "TurtleTick" -- 1T/154M backtest, removed from registration
-                    n == "NR3Tick"         ||  // confirmed squeeze breakout required
-                    n == "WickRejTick"     ||  // wick>=55% of bar, $1.50 min wick
+                if (n == "NR3Tick"         ||  // confirmed squeeze breakout required
                     n == "TwoBarReversal"  ||  // ATR_MULT=1.5x strong bar required
                     n == "SpikeFade"       ||  // $10+ candle -- genuine event only
                     n == "DonchianBreakout") { // EMA50/250 HTF filter (bar buffer

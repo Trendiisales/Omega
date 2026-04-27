@@ -20,16 +20,12 @@ static void init_engines(const std::string& cfg_path)
     // Engines with no prior explicit shadow_mode wiring in engine_init.hpp.
     // All flip to LIVE atomically when g_cfg.mode = "LIVE" in omega_config.ini.
     // Class A (stamped 2026-04-21):
-    // CompressionBreakoutEngine init REMOVED at Session 16 (2026-04-23) --
     // 41-cell walk-forward sweep showed no edge on 9 days of XAUUSD tick data.
     // See globals.hpp tombstone comment for full details.
     g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
     g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
-    // BBMeanReversionEngine init REMOVED at S19 (2026-04-24) -- engine culled.
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
-    // DomPersistEngine init REMOVED at Session 15 (2026-04-23) -- no edge in
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
-    // CandleFlowEngine init REMOVED at S19 (2026-04-24) -- engine culled.
     // 11-day/3.4M tick sweep showed zero profitable configs. See globals.hpp tombstone.
     // IndexHybridBracket (4 instances, uniform per Q2 decision):
     g_hybrid_sp.shadow_mode     = kShadowDefault;
@@ -151,7 +147,6 @@ static void init_engines(const std::string& cfg_path)
     g_macro_crash.on_trade_record = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
     };
-    // (PullbackContEngine + PullbackPrem config blocks removed S49 X5 — engine culled, see s49-x5-pullback-cull branch)
 
     printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
            g_macro_crash.shadow_mode ? "true" : "false",
@@ -187,9 +182,7 @@ static void init_engines(const std::string& cfg_path)
            g_rsi_reversal.SL_ATR_MULT);
     fflush(stdout);
 
-    // (MicroMomentumEngine configure block REMOVED at Batch 5V §1.2 2026-04-20.
     //  Real-tick backtest: 4320 trades / 2yr, -$3.8k. Momentum = negative EV.
-    //  See wiki tombstone wiki/entities/MicroMomentumEngine.md.)
 
     // [BUG-5 NOTE] MCE is shadow_mode=true by design -- it logs [MCE-SHADOW] but sends
     // no FIX orders. Entry/exit logic is fully functional via on_close callback wired above.
@@ -491,7 +484,6 @@ static void init_engines(const std::string& cfg_path)
     // ?? Nuke stale ctrader_bar_failed.txt on every startup ??????????????????
     // Old binaries wrote M5/M15 periods (5/7) and BOM-prefixed keys into this
     // file, permanently blacklisting the tick-data fallback requests that seed
-    // M15 bars on cold start. Effect: bars NEVER seed, GoldFlow blocked all day.
     // Fix: delete the file and rewrite it clean from the pre-seeded in-memory set.
     // The in-memory set is pre-seeded in ctrader setup (XAUUSD:1 and live subs).
     // Any valid entries that were on disk will be re-discovered naturally --
@@ -508,7 +500,6 @@ static void init_engines(const std::string& cfg_path)
     // Load OHLCBarEngine indicator state -- instant warm restart, no tick data request needed.
     // If .dat files exist and are <24hr old: m1_ready=true immediately on first tick.
     // Bars update live from on_spot_event (M15 bar closes pushed by broker every 15min).
-    // This eliminates the 2-minute GoldFlow bar gate delay on every restart.
     {
         const std::string base = log_root_dir();
         const bool m1_ok  = g_bars_gold.m1 .load_indicators(base + "/bars_gold_m1.dat");
@@ -551,7 +542,7 @@ static void init_engines(const std::string& cfg_path)
                     ? (st_e9 < st_e50 ? -1 : +1) : 0;
                 g_trend_pb_gold.seed_m5_trend(st_trend);
                 printf("[STARTUP] M1 bar state loaded: EMA9=%.2f EMA50=%.2f RSI=%.1f trend=%+d"
-                       " -- GoldFlow/GoldStack bar gates active immediately\n",
+                       " -- GoldStack bar gates active immediately\n",
                        st_e9, st_e50,
                        g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
                        st_trend);
@@ -1295,7 +1286,6 @@ static void init_engines(const std::string& cfg_path)
             g_adaptive_risk.load_perf(kelly_dir);
         }
 
-        // (GoldFlowEngine init block removed S19 Stage 1B — engine culled:
         //  - ATR state load + backup fallback
         //  - Velocity trail shadow mode wiring
         //  - Hard-stop broker-side order callback
@@ -1498,7 +1488,6 @@ static void init_engines(const std::string& cfg_path)
             // NSSM stdout only, never to latest.log. Now it goes to both.
             std::cout << "[OMEGA] RUNNING COMMIT: " << OMEGA_VERSION << " built=" << OMEGA_BUILT << "\n";
             // ENGINE CONFIG SUMMARY -- must be emitted AFTER tee opens so it goes into the log file.
-            // (GFE-CONFIG log removed S19 Stage 1B — engine culled)
             std::cout << "[RSI-REV] RSIReversalEngine configured (shadow_mode="
                       << (g_rsi_reversal.shadow_mode ? "true" : "false")
                       << " oversold=" << (int)g_rsi_reversal.RSI_OVERSOLD
@@ -1509,7 +1498,6 @@ static void init_engines(const std::string& cfg_path)
             // -- PDH/PDL Reversion Engine ------------------------------------
             // Research: 2yr/111M tick backtest proves mean reversion inside
             // daily range is the only statistically significant intraday edge.
-            // CFE (14% WR -$27k) and MME (momentum continuation) disabled.
             g_pdhl_rev.shadow_mode      = true;   // shadow until confirmed live
             g_pdhl_rev.enabled          = true;
             g_pdhl_rev.RANGE_ENTRY_PCT  = 0.25;   // top/bottom 25% of daily range
@@ -1523,8 +1511,6 @@ static void init_engines(const std::string& cfg_path)
             g_pdhl_rev.COOLDOWN_MS      = 120'000;
             g_pdhl_rev.MAX_HOLD_MS      = 900'000;
 
-            // CFE shadow_mode follows kShadowDefault (line 28) -- matches every
-            // other engine. In SHADOW mode CFE generates signals and records
             // shadow trades; in LIVE mode it would place real orders.
             // Historical 2yr backtest (14.8% WR, -$27k) predates current HMM
             // gate, VWAP filter, and chop gate; recent shadow WR is materially
@@ -1535,11 +1521,8 @@ static void init_engines(const std::string& cfg_path)
                       << " entry_pct=" << g_pdhl_rev.RANGE_ENTRY_PCT
                       << " sl_mult=" << g_pdhl_rev.SL_ATR_MULT
                       << " tp_frac=" << g_pdhl_rev.TP_RANGE_FRAC << "\n";
-            // CFE startup log REMOVED at S19 (2026-04-24) -- engine culled.
             std::cout.flush();
         }
     }
 }
-
-
 

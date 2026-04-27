@@ -15,20 +15,13 @@ static void on_tick_gold(
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
     // TREND DAY exception: when |ewm_drift| > 5.0 AND vol_ratio > 1.5,
-    //   allow CompBreakout to re-enter within 90s of GoldFlow exiting (trail/BE).
-    //   CompBreakout is the safest re-entry -- tight $3 SL, EWM drift gated.
-    //   Bracket can also arm (not fire) in parallel with GoldFlow.
-    // REVERSAL exception: GoldFlow SL_HIT + drift now in opposite direction
     //   ? GoldStack counter-entry allowed within 60s (bypasses SL cooldown).
-    // GoldFlow open: only block other engines if GoldFlow is NOT in profit or
-    // is in early stage (stage=0, no trail yet). If GoldFlow is trailing (stage>=1)
     // on a winner, allow GoldStack to add a position in the same direction.
     // ATR-proportional gate variables -- computed once at function entry,
     // used by dead-zone lambda, crash_impulse_bypass, asia_crash_bypass,
     // counter-trend gate, GoldStack MR block, and lot scaling below.
     // Must be defined before any lambda that captures them by reference.
     // gf_atr_gate: ATR-based gate used by rsi_atr_scale, drift_bypass_thresh, gs_atr_scale,
-    // bracket sizing. Originally sourced from g_gold_flow.current_atr(); now sourced from
     // g_gold_stack which tracks vol_range as an ATR proxy.
     const double gf_atr_gate       = std::max(2.0, g_gold_stack.vol_range());
     const double rsi_atr_scale     = std::min(3.0, std::max(0.5, gf_atr_gate / 5.0));
@@ -36,28 +29,20 @@ static void on_tick_gold(
     const double rsi_crash_hi      = 50.0 + 6.0 * rsi_atr_scale;
     const double drift_bypass_thresh = std::max(1.0, 0.3 * gf_atr_gate);
 
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
     const double gf_mid = (bid + ask) * 0.5;
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
     // GoldStack winning: allow bracket pyramid when GoldStack has a live profitable position
-    // ($10+ move = trail armed, same direction). Mirrors gf_winning logic for GoldFlow.
     const bool gs_open = g_gold_stack.has_open_position();
     const bool gs_winning = gs_open && g_gold_stack.has_profitable_trail();
     const bool gold_any_open =
         (gs_open && !gs_winning)                ||  // GoldStack blocks unless profitable trail
         // g_le_stack.has_open_position() REMOVED at S13 Finding B 2026-04-24 — engine culled.
         g_bracket_gold.has_open_position()      ||
-        // (GoldFlow gf_open/gf_winning term removed S19 Stage 1B — engine culled)
         g_trend_pb_gold.has_open_position()     ||
         g_nbm_gold_london.has_open_position()   ||  // London NBM also blocks other gold engines
-        // g_candle_flow.has_open_position() REMOVED at S19 (2026-04-24) — CFE engine culled.
         g_h1_swing_gold.has_open_position() ||      // H1 swing open blocks all other gold entries
         g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
         // (g_pullback_cont/prem has_open_position gates removed S49 X5 — engine culled)
         g_ema_cross.has_open_position()              ;  // ECE open blocks other gold engines
-        // g_bb_mr.has_open_position() REMOVED at S19 (2026-04-24) — BBMR engine culled.
-
-    // (GoldFlow telemetry snap block removed S19 Stage 1B — GUI pyramid removed in commit 1)
 
     // ?? Trend day detection ???????????????????????????????????????????????
     const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -81,25 +66,19 @@ static void on_tick_gold(
     const char* gold_stack_regime   = g_gold_stack.regime_name();
     {
         static bool    s_was_impulse     = false;
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-        // Impulse-tracking was a GFE-driven gate. With GFE culled the
         // post-impulse block is permanently off; GoldStack + supervisor
         // handle regime transitions directly.
         (void)s_was_impulse;
     }
-    // Post-impulse block: GFE-culled, permanently off.
     const bool gold_post_impulse_block = false;
 
     // ?? Reversal window check ?????????????????????????????????????????????
-    // Was active when GoldFlow SL_HIT + drift reversed. GFE-culled: disabled.
     const int64_t now_s_gate = static_cast<int64_t>(std::time(nullptr));
     (void)now_s_gate;
     const bool drift_reversed = false;
     (void)drift_reversed;
 
-    // Trend-day re-entry gate: GFE-culled, permanently off.
     const bool gold_session_ok  = true;  // 24h -- no time-based blocks
-    // Same-direction trail block: GFE-culled, permanently off.
     const bool gold_trail_blocked = false;
     // GoldStack direction-aware trail block -- only block SAME direction as last close
     // Opposite direction entries always allowed (reversal trades)
@@ -131,14 +110,9 @@ static void on_tick_gold(
     // gold_l2_gate REMOVED from gold_can_enter:
     // gold_l2_real (depth event freshness) was blocking ALL gold engines -- bracket,
     // stack, MacroCrash, RSIReversal, HybridBracket, TrendPullback --
-    // (MicroMomentum removed at Batch 5V §1.2.)
     // whenever a depth event was >N ms old. Those engines do not need live DOM.
-    // GoldFlow has its own DOM gates: g_l2_watchdog_dead and g_feed_stale_xauusd.
-    // gold_l2_real is still used inside GoldFlow for imbalance direction (correct).
     const bool gold_can_enter = gold_session_ok && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
                              && (!gold_post_impulse_block || crash_impulse_bypass);
-    // Trend re-entry path bypasses gold_any_open for CompBreakout specifically
-    // Trend re-entry path: GFE-culled, permanently off.
     const bool gold_can_enter_trend_reentry = false;
     (void)gold_can_enter_trend_reentry;
 
@@ -188,10 +162,9 @@ static void on_tick_gold(
     const double gold_momentum      = (gold_vwap_now > 0.0 && gold_mid_now > 0.0)
         ? ((gold_mid_now - gold_vwap_now) / gold_mid_now * 100.0)
         : 0.0;
-    // Dollar-native VWAP deviation -- passed to GoldFlow trend bias filter.
     // Positive = price above VWAP, negative = price below VWAP, in raw gold points.
     const double gold_vwap_pts = (gold_vwap_now > 0.0) ? (gold_mid_now - gold_vwap_now) : 0.0;
-    (void)gold_vwap_pts;  // GFE-culled consumer (GoldFlow trend bias filter)
+    (void)gold_vwap_pts;
     const bool gold_is_compressing  = (strcmp(gold_stack_regime,"COMPRESSION")==0);
 
     // -- PDH/PDL daily range tracker -------------------------------------------
@@ -223,7 +196,7 @@ static void on_tick_gold(
         (g_macro_ctx.pdh > 0.0 && g_macro_ctx.pdl > 0.0)
         ? (gold_mid_now <= g_macro_ctx.pdh + 2.0 && gold_mid_now >= g_macro_ctx.pdl - 2.0)
         : true;
-    (void)gold_inside_daily_range;  // GFE-culled consumer
+    (void)gold_inside_daily_range;
 
     // REAL vol measurements from GoldEngineStack (tick-by-tick, no hardcoding)
     const double gold_recent_vol    = g_gold_stack.recent_vol_pct();  // 80-tick range/mid
@@ -238,7 +211,6 @@ static void on_tick_gold(
         fb_gold);
 
     // ?? P4: Velocity re-entry exclusivity exception ??????????????????????
-    // GFE-culled S19 Stage 1B — velocity re-entry bypass removed with GoldFlow.
     // GoldStack + supervisor + MacroCrash provide direction re-entry paths now.
     // Block deliberately empty — do not re-introduce without new gating logic.
 
@@ -282,7 +254,7 @@ static void on_tick_gold(
 
         // ?? Confidence threshold ??????????????????????????????????????????
         const bool conf_ok = (gold_sdec.confidence >= 0.45);
-        (void)conf_ok;  // GFE-culled consumer (was used in stack_can_enter gate)
+        (void)conf_ok;
 
         // ?? Bar indicator context for GoldStack ???????????????????????????
         // FIX 2026-04-02: replaced M5 swing trend_state with M1 EMA9/EMA50 crossover.
@@ -302,8 +274,6 @@ static void on_tick_gold(
         const int    bar_trend_gs = (bar_ema9_gs > 0.0 && bar_ema50_gs > 0.0)
             ? (bar_ema9_gs < bar_ema50_gs ? -1 : +1)
             : 0;
-
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
         // ?? MR/Range engine path -- bypasses allow_breakout requirement ????????
         // Problem: supervisor requires EXPANSION_BREAKOUT or TREND_CONTINUATION for
@@ -327,23 +297,17 @@ static void on_tick_gold(
         const bool in_ranging_regime =
             (gold_sdec.regime == omega::Regime::QUIET_COMPRESSION) ||
             (gold_sdec.regime == omega::Regime::CHOP_REVERSAL);
-        (void)in_ranging_regime;  // GFE-culled consumer (was used in stack_can_enter_mr)
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-        // Trend-day re-entry: allow CompBreakout specifically when GoldFlow
+        (void)in_ranging_regime;
         // closed via trail/BE on a strong trend. Stack handles the EWM drift
         // direction gate internally so only trend-aligned signals fire.
         // Also allow reversal counter-entry when drift_reversed is confirmed.
         // Trail block: 30s after same-direction close, check if this signal
         // would re-enter the same direction. Allow if direction differs (reversal).
-        const bool gs_trail_dir_match = gs_trail_blocked; // directional check done in GFE
-        // ?? FEED-STALE gate for GoldStack (mirrors GoldFlow gate at line ~3001) ????????
+        const bool gs_trail_dir_match = gs_trail_blocked;
         // g_feed_stale_xauusd is set by CTraderDepthClient starvation watchdog.
         // IntradaySeasonality fired twice into a dead feed (21:00-21:40 UTC 2026-04-13)
         // because GoldStack had no feed-liveness check. Now all GoldStack entries
-        // are blocked when the XAUUSD depth feed is stale, same as GoldFlow.
         const bool gs_feed_ok = !g_feed_stale_xauusd.load(std::memory_order_relaxed);
-        // GFE-culled: stack_can_enter / stack_can_enter_mr were supervisor-driven gates.
         // GoldStack now does its own regime filtering internally.
         const bool stack_enter_effective = gs_feed_ok
             && gold_can_enter
@@ -396,7 +360,6 @@ static void on_tick_gold(
             if (!gs_bar_blocked) {
             // ?? VWAP counter-trend guard ??????????????????????????????????
             // Only block MEAN-REVERSION engines trading against VWAP trend.
-            // Trend-following engines (CompressionBreakout, ImpulseContinuation,
             // NR3Breakout, TrendPullback etc.) SHOULD enter above VWAP on longs
             // and below VWAP on shorts -- that IS the trend.
             // Only block if this is a mean-reversion signal fading into the trend.
@@ -700,7 +663,6 @@ static void on_tick_gold(
     // ?? Bar metric updates -- every XAUUSD tick ????????????????????????????
     g_bars_gold.m1.update_tick_metrics(ask - bid, now_ms_g);
 
-
     g_bars_gold.m1.update_volume_delta(g_macro_ctx.gold_l2_imbalance);
 
     // ?? FIX-tick bar builder -- accumulates ticks into M1/M5/M15/H4 OHLC bars ??
@@ -716,7 +678,7 @@ static void on_tick_gold(
         const int64_t bh4 = (now_ms_g / 14400000LL) * 14400000LL;  // 4h = 14400s
         // M1
         if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
-        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); /* g_bb_mr.on_bar / reset_intrabar REMOVED at S19 (2026-04-24) — BBMR engine culled. */ s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
+        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
         else { if(xau_mid>s_cur1.high)s_cur1.high=xau_mid; if(xau_mid<s_cur1.low)s_cur1.low=xau_mid; s_cur1.close=xau_mid; }
         // M5
         if (s_bar5_ms == 0) { s_cur5 = {b5/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar5_ms = b5; }
@@ -843,14 +805,11 @@ static void on_tick_gold(
     }
 
     // ?? VPIN toxicity tracker -- updated every XAUUSD tick ????????????????
-    // Feeds g_vpin for GoldFlow pre-entry gate. Unit-volume Lee-Ready classification.
     g_vpin.on_tick(xau_mid, now_ms_g);
     // ?? Correlation matrix feed -- XAUUSD ??????????????????????????????????
     g_corr_matrix.on_price("XAUUSD", xau_mid);
 
     // -- L2 tick logger -- UNCONDITIONAL, every XAUUSD tick ---------------
-    // CRITICAL: This MUST run outside the GoldFlow gate. Previously it was
-    // inside the GoldFlow entry block -- when L2 watchdog blocked GoldFlow,
     // the logger also stopped, meaning we had ZERO L2 data saved on days
     // when L2 was supposedly "dead". This is the fix.
     //
@@ -908,11 +867,9 @@ static void on_tick_gold(
             const double vol_ratio_log = (g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
             // S14 fix 2026-04-24: restore fprintf row-write. S19 Stage 1B (a199bec)
-            // wrongly removed this fprintf along with the GoldFlow cull, but the
             // L2 CSV logger was unconditional by design. Result: header written
             // once per day then zero data rows, CSV stale for every tick since
             // 2026-04-17 (VERIFY_STARTUP flagged 16767s stale 2026-04-24 07:43 UTC).
-            // has_pos hardcoded 0 since GoldFlow was the only consumer of that column.
             fprintf(s_l2f_unc,
                 "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
                 "%d,%d,%llu,"
@@ -926,7 +883,7 @@ static void on_tick_gold(
                 vol_ratio_log,
                 (int)gold_sdec.regime,
                 g_vpin.warmed() ? g_vpin.vpin() : 0.0,
-                0,  // has_pos: GoldFlow culled S19 Stage 1B, hardcoded 0
+                0,
                 g_l2_gold.micro_edge.load(std::memory_order_relaxed),
                 static_cast<double>(g_gold_stack.ewm_drift()));
             fflush(s_l2f_unc);
@@ -971,7 +928,6 @@ static void on_tick_gold(
         //   a function that checks book skew. With neutral book (imb=0.502) it
         //   returned false even during a $7 EWM drift. Big Asia moves were missed.
         // NEW: use EWM drift directly. If |drift| >= 1.5 in Asia, a real trend
-        //   is underway regardless of book balance. L2 still gates inside GoldFlow
         //   (SIGNAL_STALE check) but the outer bracket/flow gate uses drift.
         const double gold_ewm_drift_abs = std::fabs(g_gold_stack.ewm_drift());
         // Asia trend gate: require sustained directional drift to enter in Asia session.
@@ -1071,25 +1027,19 @@ static void on_tick_gold(
         gold_trend.update_l2(g_macro_ctx.gold_l2_imbalance, now_ms_g);  // real cTrader DOM imbalance
         const bool gold_trend_blocked = gold_trend.counter_trend_blocked(now_ms_g);
 
-        // ?? GoldFlow bias injection ???????????????????????????????????????
         // BracketTrendState normally requires 2 consecutive bracket wins to set bias.
-        // On a fresh session with only GoldFlow trades, bias stays 0 permanently
         // so pyramid_allowed() returns false even when gold is trending hard.
         //
-        // FIX: when GoldFlow has a profitable position (trail_stage >= 2 = real trail
         // active, not just BE), inject the flow direction as trend bias directly.
         // This lets pyramid_allowed() gate on L2 confirmation alone.
         // Only inject if bias is currently 0 -- never override an earned bracket bias.
         // Withdraw injection when flow closes (handled naturally -- bias resets on timeout).
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
         // Withdraw bias injection when flow closes or reverses
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
         const bool gold_pyramid_ok    = gold_trend.pyramid_allowed(g_macro_ctx.gold_l2_imbalance, now_ms_g);  // real cTrader DOM imbalance
         // Block pyramid in IMPULSE regime: price is thrusting hard -- adding on
         // during a thrust means chasing the move at peak momentum with tight SLs.
         // ?? Impulse regime gate ???????????????????????????????????????????????
-        // CompressionBreakout is blocked in IMPULSE because compression geometry
         // breaks down in a thrust -- the bracket range is meaningless mid-thrust.
         // EXCEPTION: during a confirmed crash (RSI<35, drift<-4) or rally (RSI>65,
         // drift>4), the IMPULSE regime IS the trade. Block the bracket only if
@@ -1143,21 +1093,15 @@ static void on_tick_gold(
             }
         }
 
-        // ?? GoldFlow trend-pyramid bypass ????????????????????????????????
-        // When GoldFlow has an active profitable position (trail_stage >= 1 = BE locked),
         // the bracket is normally blocked from arming. This kills pyramiding on the
         // strongest trending moves -- exactly when we want to be adding size.
         //
-        // FIX: allow bracket to arm in the SAME direction as the active GoldFlow
         // position when flow is profitable (trail_stage >= 1 = past breakeven).
         // The bracket add-on uses a reduced size (50% of PYRAMID_SIZE_MULT = 37.5%)
-        // since GoldFlow is already carrying the primary position.
         //
         // Safety gates still apply: no IMPULSE regime, no counter-trend, spread gate,
         // L2 confirmation required, position cap enforced.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
         // Bracket-override block (gold_bracket_already_armed / BRK_OVERRIDE_DIST /
-        // chop_price_break_override / can_arm_bracket_base) was GFE-driven chop
         // bypass logic — removed with engine. Bracket now arms on base gates only.
         const bool can_arm_bracket = gold_can_enter
                                   && gold_freq_ok
@@ -1167,8 +1111,6 @@ static void on_tick_gold(
                                   && !in_london_open_noise;
 
         // ?? Trend-direction bracket (IMPULSE regime) ??????????????????????????
-        // GFE-culled S19 Stage 1B — one-sided TREND_BRACKET dispatch relied on
-        // GoldFlow's current_atr() and can_arm_trend_bracket gate. With GFE
         // removed, this block is retired. Symmetric bracket + MacroCrash handle
         // impulse / trend-direction entries now.
 
@@ -1257,7 +1199,6 @@ static void on_tick_gold(
         if (bgsigs.valid) {
             // Pyramid: use tighter SL than normal bracket -- cap pyramid risk at 50% of base risk
             // Normal bracket SL can be $5-7 wide; pyramid add-ons use half that
-            // GFE-culled S19 Stage 1B: flow_pyramid_bypass removed with GoldFlow.
             // Pyramid now triggers on gold_is_pyramiding only (bracket self-pyramid path).
             const double raw_sl_dist = std::fabs(bgsigs.long_entry - bgsigs.long_sl);
             const double pyr_sl_dist = gold_is_pyramiding
@@ -1374,25 +1315,14 @@ static void on_tick_gold(
         }
     }
 
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
     // CRITICAL: manage_position() must run on every XAUUSD tick to check SL/trail.
-    // GoldFlow DISABLED 2026-04-05: backtest proved no structural edge.
     // Avg winner $15 vs avg loser $74, payoff 0.20:1. 2yr MFE scan showed
     // microstructure signal only -- not the 1-3pt structural moves needed to
-    // beat 0.35pt cost. Replace: OverlapMomentumEngine + OverlapFadeEngine.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-    // ?? GoldFlow reload manage -- ALWAYS runs when reload position open ?????
     // Mirrors the main flow manage block exactly. The reload instance is an
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-    // ?? GoldFlow add-on manage -- ALWAYS runs when addon position open ??????
     // Mirrors the reload manage block. The addon instance is independent --
     // its own SL, trail, ratchet. When base closes, addon keeps running
     // until its own trail/SL fires (already deep in profit by definition).
     // Does NOT arm its own addon or reload.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
     // ?? RSIReversal indicator warmup -- UNCONDITIONAL, every tick ????????????
     // Must run before MacroCrashEngine so tick_rsi() is current when MCE reads it.
@@ -1426,12 +1356,9 @@ static void on_tick_gold(
     // RSI confirmation: RSI extreme aligning with drift substitutes for expansion_regime
     //   in Asia (supervisor lags by CONFIRM_TICKS; RSI is live price-based).
     // Both directions: is_long = (ewm_drift > 0) -- LONG on spikes up, SHORT on crashes.
-    // Independent of GoldFlow -- runs 24/7, no session restriction.
     {
         const bool expansion_regime = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
                                     || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-        // mce_atr: was g_gold_flow.current_atr(). Now sourced from M1 bar ATR14
         // (live candle-based) with vol_range fallback and a 2.0pt absolute floor.
         const double mce_m1_atr   = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
         const double mce_vol_rng  = g_gold_stack.vol_range();
@@ -1471,8 +1398,6 @@ static void on_tick_gold(
         // OPEN-LOG FIX 2026-04-21: capture "was open before on_tick" so we can
         // detect a fresh MCE entry transition after on_tick returns and emit
         // write_trade_open_log -- parity with the other engines already
-        // logged here (GoldFlow,
-        // CompBreakout, EMACross, RSIReversal, RSIExtremeTurn, BracketGold,
         // TrendBracket). MCE was silently opening positions with no row in
         // the open-trades CSV.
         const bool mce_was_open_before_tick = g_macro_crash.has_open_position();
@@ -1562,9 +1487,6 @@ static void on_tick_gold(
                 ask - bid, regime, "MACRO_EXPANSION");
         }
     }
-    // (PullbackContEngine dispatch block removed S49 X5 — engine culled, see s49-x5-pullback-cull branch)
-
-    // (PullbackContEngine PREMIUM dispatch block removed S49 X5 — engine culled)
 
     // ?? RSIReversalEngine -- tick-level RSI entries, no bar dependency ????????
     // Computes its own RSI(14) from mid price on every tick.
@@ -1586,8 +1508,6 @@ static void on_tick_gold(
         }
 
         // Entry gate: no other XAUUSD position open + tradeable + not dead zone
-        // RSIReversal: NOT blocked when GoldFlow/GoldStack are in a winning trail.
-        // A profitable GoldFlow trend trade + a small RSI scalp are uncorrelated.
         // Blocked only when those engines are losing/flat (risk management).
         const bool rsi_rev_can_enter =
             !g_rsi_reversal.has_open_position()
@@ -1595,7 +1515,6 @@ static void on_tick_gold(
             && !in_ny_close_noise
             && !g_bracket_gold.has_open_position()
             && !(g_gold_stack.has_open_position() && !gs_winning)
-            // (GoldFlow gf_open/gf_winning guard removed S19 Stage 1B — engine culled)
             && !g_trend_pb_gold.has_open_position()
             && !g_hybrid_gold.has_open_position()
             && !g_nbm_gold_london.has_open_position();
@@ -1636,7 +1555,6 @@ static void on_tick_gold(
                     }
                     g_rsi_reversal.force_close(bid, ask, now_ms_g, handle_closed_trade);
                 } else {
-                    // Size using standard risk engine -- same as GoldFlow sizing
                     const double rsi_sl_dist = std::fabs(g_rsi_reversal.pos.entry - g_rsi_reversal.pos.sl);
                     const double rsi_lot     = (rsi_sl_dist > 0.0)
                         ? std::max(0.01, std::min(g_cfg.max_lot_gold,
@@ -1697,7 +1615,6 @@ static void on_tick_gold(
             && !in_ny_close_noise
             && !g_bracket_gold.has_open_position()
             && !g_gold_stack.has_open_position()
-            // (GoldFlow gf_open guard removed S19 Stage 1B — engine culled)
             && !g_trend_pb_gold.has_open_position()
             && !g_rsi_reversal.has_open_position()
             && !g_hybrid_gold.has_open_position()
@@ -1768,22 +1685,15 @@ static void on_tick_gold(
         }
     }
 
-    // (MicroMomentumEngine dispatch block REMOVED at Batch 5V §1.2 2026-04-20.
     //  Real-tick backtest: 4320 trades / 2yr, -$3.8k. Momentum = negative EV.
-    //  See wiki tombstone wiki/entities/MicroMomentumEngine.md.)
 
     // When stair step 1 banks the first 33% and arms a reload, try_reload()
     // is called every tick until it fires, cancels, or times out (5s).
     //
     // The reload enters a NEW fresh full-size position in the same direction
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
     // (LatencyEdge comment removed S13 Finding B 2026-04-24 — engine culled)
     // Full exclusion: checks ALL other gold engines to prevent stacking.
-    // Previously only checked bracket + stack -- GoldFlow and TrendPB were missing.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
     // ?? TrendPullbackEngine position management -- ALWAYS runs when position open ??
     // CRITICAL: on_tick() handles SL/trail internally when pos_.active, but it was
     // only called inside the entry guard (!has_open_position()), so once a position
@@ -1874,7 +1784,6 @@ static void on_tick_gold(
 
     // Trend Pullback: EMA9/21/50 -- only when no other XAUUSD position is open.
     // TrendPullback: M15 swing trades (1-3hr hold, 20-50pt targets).
-    // Can run CONCURRENTLY with GoldFlow (10s scalp) -- different timeframes,
     // different position sizes, independent SL/TP levels, no conflict.
     // Still blocked by bracket (was also LatencyEdge — culled S13 Finding B 2026-04-24)
     // that would directly conflict with a swing position at the same level).
@@ -2012,16 +1921,11 @@ static void on_tick_gold(
     // ?? GoldHybridBracketEngine -- compression range -> both sides -> cancel loser ??
     // SHADOW mode by default. Fires when:
     //   1. Compression range detected (MIN_RANGE=1.5pt, MAX_RANGE=12pt over 30 ticks)
-    //   2. GoldFlow NOT in unprotected live position
-    //   3. Flow pyramid bypass: fires alongside GoldFlow when be_locked + trail_stage >= 1
     // Both a long stop above hi AND a short stop below lo are sent simultaneously.
     // First fill becomes the position; the other order is cancelled via cancel_fn.
     {
         // Position management -- unconditional when live
         if (g_hybrid_gold.has_open_position()) {
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-            // GFE-culled: flow_live=false, flow_be_locked=false, flow_trail_stage=0.
-            // HybridBracket no longer receives GoldFlow state; it self-gates.
             g_hybrid_gold.on_tick(bid, ask, now_ms_g,
                                   gold_can_enter, false, false, 0,
                                   bracket_on_close,
@@ -2073,8 +1977,6 @@ static void on_tick_gold(
         // is already full and range computes immediately on the next tick.
         // Position management path (has_open_position) handled unconditionally above.
         if (!g_hybrid_gold.has_open_position()) {
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-            // GFE-culled: flow_live=false, flow_be_locked=false, flow_trail_stage=0.
             g_hybrid_gold.on_tick(bid, ask, now_ms_g,
                                   hybrid_can_enter, false, false, 0,
                                   bracket_on_close,
@@ -2113,7 +2015,6 @@ static void on_tick_gold(
     }
 
     // ?? NBM London position management -- ALWAYS runs when position open ??
-    // CRITICAL: same bug as TrendPB and GFE -- on_tick() was only called inside the
     // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a
     // position was open. Fix: call on_tick unconditionally when position is open.
     // on_tick returns {} immediately after _manage_position() when pos_.active.
@@ -2124,9 +2025,6 @@ static void on_tick_gold(
     // ?? NBM London session (07:00-13:30 UTC) on XAUUSD ???????????????????
     // Runs independently of the gold stack/flow/bracket -- pure momentum
     // engine using London open as session anchor. Gated: no other gold pos.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-    // -- DomPersistEngine REMOVED at Session 15 (2026-04-23) --------------------
     // Walk-forward sweep (96 cells, 14 days of L2 data, T=116 on production
     // params i=0.05 p=5 London+NY) showed no edge at any threshold x
     // persist_ticks x session_filter combination. Production cell WR=22%,
@@ -2135,18 +2033,12 @@ static void on_tick_gold(
     // ~120 lines covering seed_bar_atr, position management, chop gate, EWM
     // drift gate, HTF hard-block, entry dispatch, and open-log emission.
     // Evidence: backtest/dpe_sweep/summary.csv, leaderboard_oos.csv.
-    // Audit: DomPersist_entry_audit_2026-04-23.md (Finding A -- threshold
     // was sub-noise for current cTrader L2 depth regime).
 
-    // -- CandleFlowEngine REMOVED at S19 (2026-04-24) -----------------------
     // 11-day / 3.4M tick full-L2 sweep: T=4469 WR=20.8% PnL=-$12,770.36
     // 576-config grid sweep found ZERO profitable configurations.
     // Best tested: T=222 WR=36.0% PnL=-$336.39 (still a loser).
-    // The signal shape has no edge. Same fate as TickScalp / DomPersist /
-    // CompressionBreakout / GoldFlow / BBMR. See backtest/cfe_sweep_v2.cpp
     // and globals.hpp tombstone for full evidence.
-
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
     // -- PDH/PDL Reversion Engine --------------------------------------------
     // Mean reversion inside yesterday's daily range.
@@ -2170,23 +2062,13 @@ static void on_tick_gold(
         );
     }
 
-    // -- BBMeanReversionEngine REMOVED at S19 (2026-04-24) -------------------
     // 11-day / 3.4M tick full-L2 sweep: T=285 WR=24.6% PnL=-$1171.82 MaxDD=$1679.
     // 288-config grid sweep found NO config with WR >= 40%. Best-tuned config
-    // had MaxDD > PnL (not an edge). Same pattern as TickScalp / DomPersist /
-    // CompressionBreakout / GoldFlow. See backtest/bb_tuned_sweep_v2.cpp and
     // globals.hpp tombstone for full evidence.
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
-
-    // (TickScalpEngine [TSE-DISABLED] block REMOVED at Batch 5V §1.3 2026-04-20.
     //  Engine itself REMOVED -- 6-day sweep / 1.5M ticks showed no edge.
-    //  See wiki tombstone wiki/entities/TickScalpEngine.md.)
-
-    // -- CompressionBreakoutEngine REMOVED at S16 (2026-04-23) ---------------
     // 41-cell walk-forward REENTER_COMP sweep showed no profitable
     // configuration on 9 days of XAUUSD tick data (train 04-13..17 /
     // test 04-20..23). See globals.hpp tombstone for full evidence.
-    // Same pattern as TickScalpEngine (above) and DomPersistEngine (S15).
 
     // -- EMACrossEngine -- sweep-confirmed 2026-04-16 -----------------------
     // 6-day / 1.5M tick sweep: fast=9 slow=15 rsi_lo=40 rsi_hi=50 sl=1.5 rr=1.0
@@ -2212,20 +2094,6 @@ static void on_tick_gold(
             std::cout << _msg; std::cout.flush();
         }
     }
-        // (GoldFlow-related code removed S19 Stage 1B — engine culled)
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 

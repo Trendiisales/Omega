@@ -23,7 +23,6 @@ static omega::BreakoutEngine g_eng_usdjpy("USDJPY");
 // Shared macro context -- updated each tick, read by SP/NQ shouldTrade()
 static omega::MacroContext g_macro_ctx;
 
-// Multi-engine gold stack -- CompressionBreakout + ImpulseContinuation +
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
 // Primary gold executor -- sole handler for all XAUUSD ticks.
 static omega::gold::GoldEngineStack g_gold_stack;
@@ -61,9 +60,7 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_us30;  // DJ30.F  -- NY 13:30
 static omega::cross::NoiseBandMomentumEngine g_nbm_gold_london;  // XAUUSD  -- London 07:00-13:30 UTC
 static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F -- London 07:00-13:30 UTC
 
-// (Engine 10 SilverTurtleTick REMOVED at Batch 5V 2026-04-19. Class + instance
 //  both stripped. XAGUSD hard-blocked at on_tick.hpp routing layer. See
-//  wiki/entities/SilverTurtleTickEngine.md tombstone for full record.)
 
 // Engine 8: Trend Pullback -- EMA9/21/50 trend + pullback to EMA50 + bounce confirmation
 // Wired to: XAUUSD (gated -- no other gold position), GER40, USTEC.F, US500.F
@@ -101,10 +98,7 @@ static omega::MinimalH4Breakout g_minimal_h4_gold;  // XAUUSD pure H4 Donchian b
 #include "MinimalH4US30Breakout.hpp"
 static omega::MinimalH4US30Breakout g_minimal_h4_us30;  // DJ30.F pure H4 Donchian breakout
 
-// TickScalpEngine REMOVED at Batch 5V §1.3 (2026-04-20).
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
-// See wiki tombstone wiki/entities/TickScalpEngine.md for historical record.
-// (cTrader cBot ctrader_cbot/TickScalper.cs preserved -- different artifact, separate scope.)
 
 // =============================================================================
 // IndexFlowEngine -- L2 flow + EWM drift engines for US equity indices.
@@ -149,9 +143,7 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 
 // Bracket engines
 #include "BracketEngine.hpp"
-// (GoldFlowEngine.hpp include removed S19 Stage 1B — file deleted, engine culled)
 #include "MacroCrashEngine.hpp"
-// (PullbackContEngine.hpp include removed S49 X5 — file deleted, engine culled)
 static omega::GoldBracketEngine   g_bracket_gold;
 
 // ?? Hybrid bracket engines -- fire both sides simultaneously, cancel loser ??
@@ -165,38 +157,21 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_co
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
-// (GoldFlowEngine g_gold_flow instance removed S19 Stage 1B — engine culled)
 static omega::MacroCrashEngine    g_macro_crash;
 // (g_pullback_cont and g_pullback_prem removed S49 X5 — engine culled, see commit message of branch s49-x5-pullback-cull)
 
-// CandleFlowEngine REMOVED at S19 (2026-04-24) -----------------------------
 // 11-day / 3.4M tick full-L2 validation sweep on all available XAUUSD L2
-// data (l2_ticks 2026-04-09..23) shows CFE has no defensible edge:
 //   Baseline    : T=4469 WR=20.8% PnL=-$12,770.36  (every day lost money)
 //   576 configs : ZERO profitable, best=-$336.39 WR=36.0% N=222
 // The engine overtrades (~450 trades/day), bleeds spread + commission on
 // every marginal signal. Even the "best" tuned config across 576 parameter
-// combinations can't turn net-positive. Unlike BBMR where best-tuned was
-// $+228 (rejected for MaxDD), CFE has literally no profitable config.
 // Dollar-stop / startup-lock / TOD-deadzone / HMM gating / DOM entry all
 // combined cannot rescue the underlying signal. The signal has no edge.
-// Same removal pattern as TickScalp (S14), DomPersist (S15),
-// CompressionBreakout (S16), GoldFlow (S19 Stage 1B), BBMR (S19).
-// See backtest/cfe_sweep_v2.cpp for the validation sweep that killed it.
-// #include "CandleFlowEngine.hpp"  -- header removed
-// static omega::CandleFlowEngine g_candle_flow;  -- instance removed
-// GoldHMM.hpp is now dead code (only CFE used it).
-
-// CompressionBreakoutEngine REMOVED at S16 (2026-04-23).
 // 41-cell REENTER_COMP walk-forward sweep + subsequent baseline analysis
-// showed CBE is net-negative across every tested configuration on 9 days
 // of XAUUSD tick data (train 04-13..17 / test 04-20..23). Best cell
 // tol1000_be1_h5000: train -$35.84 / test -$6.36. Disabled baseline:
 // train -$36.60 / test -$2.23. No parameter combination produced
 // positive net PnL on either split. Engine entirely removed rather than
-// maintained in disabled state. See S15 DomPersist removal for the same
-// pattern. Backtest artifacts: backtest/cbe_walk_forward.cpp,
-// backtest/results/cbe_sweep/summary.csv.
 
 // EMACrossEngine -- EMA9/15 crossover scalper, both directions
 // Sweep-confirmed 2026-04-16: 99 trades/6days, 46.5% WR, $402/6days = $67/day
@@ -205,7 +180,6 @@ static omega::MacroCrashEngine    g_macro_crash;
 #include "EMACrossEngine.hpp"
 static omega::EMACrossEngine g_ema_cross;
 
-// BBMeanReversionEngine REMOVED at S19 (2026-04-24) -------------------------
 // Original 3-day/1.86M tick sweep claimed T=22 WR=68.2% PnL=$594. That sample
 // was too small to trust. Full 11-day/3.4M tick validation sweep on all
 // available XAUUSD L2 data (l2_ticks 2026-04-09..23) shows NO edge:
@@ -214,12 +188,7 @@ static omega::EMACrossEngine g_ema_cross;
 // Even after 288-config grid sweep, no configuration achieves WR >= 40% or
 // Sharpe-worthy risk-adjusted returns. Best-tuned config is SHORT-only,
 // London-only, with MaxDD > PnL — not a validated edge.
-// Same removal pattern as TickScalpEngine (S14), DomPersistEngine (S15),
-// CompressionBreakoutEngine (S16), GoldFlowEngine (S19 Stage 1B).
 // See backtest/bb_tuned_sweep_v2.cpp for the validation sweep that killed it.
-// #include "BBMeanReversionEngine.hpp"  -- header removed
-// static omega::BBMeanReversionEngine g_bb_mr;  -- instance removed
-// (CandleFlow tombstone is directly above)
 
 #include "PDHLReversionEngine.hpp"
 static omega::PDHLReversionEngine g_pdhl_rev;     // mean reversion inside daily range
@@ -234,23 +203,15 @@ static omega::RSIReversalEngine   g_rsi_reversal;
 #include "RSIExtremeTurnEngine.hpp"
 static omega::RSIExtremeTurnEngine g_rsi_extreme;  // RSI extreme + sustained turn engine
 
-// MicroMomentumEngine REMOVED at Batch 5V §1.2 (2026-04-20).
 // Real-tick backtest result: 4320 trades / 2 years, -$3.8k -- momentum = negative EV.
-// See wiki tombstone wiki/entities/MicroMomentumEngine.md for historical record.
-
-// (GoldFlowEngine reload + addon instances removed S19 Stage 1B — engine culled)
-
-// DomPersistEngine REMOVED at Session 15 (2026-04-23).
 // Walk-forward sweep (96 cells, 14 days of L2 data, T=116 on production params)
 // showed no edge at any threshold x persist_ticks x session_filter combination.
 // Production params (i=0.05 p=5 London+NY): WR=22%, -$47 over 14 days, MaxDD=$65.
 // Higher thresholds starved the signal to T<=2 per 14 days -- untradeable.
 // Sweep output: backtest/dpe_sweep/summary.csv, leaderboard_oos.csv.
-// Audit: DomPersist_entry_audit_2026-04-23.md (Finding A - threshold sub-noise).
 // Full removal: engine header, globals.hpp/engine_init.hpp/tick_gold.hpp/
 //               omega_main.hpp/gold_coordinator.hpp call sites deleted.
 
-// (GoldFlow-specific exit atomics + g_gf_* directional/crash tracking atomics
 //  + GF_* constants removed S19 Stage 1B — engine culled)
 
 // Engine pause tracking -- maps engine key to pause_until epoch sec
@@ -270,7 +231,6 @@ static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, XAU
 // for the entire session while the real market moves $40.
 //
 // BEHAVIOUR WHEN SET:
-//   - All XAUUSD new entries blocked (GoldFlow + GoldStack + BracketEngine)
 //   - Position management (SL/trail) continues unaffected
 //   - [FEED-STALE] logged once per 60s so the frozen state is unmissable
 //   - CTraderDepthClient escalates: re-subscribe -> full reconnect
@@ -497,7 +457,6 @@ static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
     if (sym=="DJ30.F")   return &g_l2_us30;
     return nullptr;
 }
-
 
 // ?? cTrader depth tick staleness tracker ?????????????????????????????????????
 // Stores the last time (ms) a cTrader depth event arrived per symbol.
