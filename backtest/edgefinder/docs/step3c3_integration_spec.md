@@ -151,18 +151,24 @@ void _update_vol_bar60() {
         ind.vol_bar60_ready.store(false, std::memory_order_relaxed);
         return;
     }
-    const double mean = sum / cnt;
-    const double var  = (sum2 / cnt) - (mean * mean);
-    const double sd   = (var > 0.0) ? std::sqrt(var) : 0.0;
+    // Sample std (ddof=1): matches numpy.std(seg, ddof=1) used in
+    // backtest/edgefinder/analytics/regime_diagnostic.py L261. The C++
+    // value MUST equal what the backtest produced; the gate threshold
+    // 0.000375 is calibrated to that convention.
+    const double var = (cnt > 1)
+        ? (sum2 - (sum * sum) / cnt) / (cnt - 1)
+        : 0.0;
+    const double sd  = (var > 0.0) ? std::sqrt(var) : 0.0;
     ind.vol_bar60.store(sd, std::memory_order_relaxed);
     ind.vol_bar60_ready.store(true, std::memory_order_relaxed);
 }
 ```
 
-Population convention: **population std (divide by n)**, not sample std
-(n-1). This matches pandas `Series.std(ddof=0)` if 3a/3c.1 used ddof=0,
-or `Series.std(ddof=1)` if not. **THIS NEEDS VERIFICATION** before
-implementation — see Section 5.
+Convention pinned: **sample std (ddof=1)**, divisor `n-1`. Verified by
+reading `regime_diagnostic.py` at branch `c6-1c-step3-regime-diagnostic`
+(`3b383074`). Input source verified: M1 bar close on mid-price (matches
+live `g_bars_gold.m1.bars_[i].close` which is built from `xau_mid` in
+`tick_gold.hpp` L689).
 
 Wire-up: call `_update_vol_bar60()` from the existing close-bar path
 right next to the existing `_update_ewma_vol()` call.
@@ -342,40 +348,56 @@ plus the bracket-engine mapping confirmation from §3.6.
 
 ## 5. Open items / risks before implementation
 
-1. **Std convention (ddof=0 vs ddof=1).** The 3a regrade module computes
-   `vol_bar60` from raw ticks via the regime-diagnostic pipeline. Need to
-   read `regime_diagnostic.py` (commit `3b383074`, branch
-   `c6-1c-step3-regime-diagnostic`) to confirm whether it uses pandas'
-   default (ddof=1, sample) or ddof=0 (population). The C++ implementation
-   must match exactly. Mismatch produces a small bias that shifts the
-   effective threshold and invalidates the backtest reconciliation.
+1. **Std convention (ddof) — RESOLVED.** `regime_diagnostic.py` L261
+   uses `np.std(seg, ddof=1)` (sample std). C++ implementation in §3.1
+   above is now spec'd with divisor `cnt - 1` to match.
 
-2. **vol_bar60 input source.** Spec uses `bars_[i].close`. The 3a
-   computation may use mid (`(bid+ask)/2`) sampled at bar close, or
-   midprice trade-by-trade then aggregated. Need to verify
-   `regime_diagnostic.py` uses the same bar-close basis.
+2. **vol_bar60 input source — RESOLVED.** `regime_diagnostic.py` L206
+   docstring states "The bar 'close' here is mid-price close (per
+   build_minute_bars)". `bars_close` at L210 reads the `close` column
+   directly. Live `g_bars_gold.m1.bars_[i].close` is built from
+   `xau_mid` (mid-price) in `tick_gold.hpp` L689. **Match.**
 
-3. **Time alignment.** The diagnostic journal uses `ts_close` as the
-   trade exit time, but the `vol_bar60` joined onto each trade is
-   evaluated at *entry time*, not exit. Need to confirm that
-   `regime_diagnostic.py` computes `vol_bar60` at the entry moment using
-   only past data. If it accidentally uses future bars relative to entry,
-   the backtest is contaminated and the live gate will not replicate.
+3. **Time alignment / lookahead — RESOLVED.** `regime_diagnostic.py`
+   L248-256 computes `vol_bar60` from `log_rets[k - 60 : k]` (exclusive
+   on the upper end), where `k` is the entry bar's index. Comment at
+   L252-254 explicitly notes "the last 60 returns up to and INCLUDING
+   the return that produced the entry bar's close. This is the strictest
+   'observed before entry' interpretation; using k itself would include
+   the entry bar's own close-to-close move." **No lookahead.** Live
+   equivalent: `_update_vol_bar60()` called from the close-bar path
+   produces the value at bar close, which HBG reads on subsequent ticks
+   within the next bar — same "60 closed-bar returns before now"
+   semantics.
 
-4. **Bracket-engine mapping.** §3.6 above.
+4. **Bracket-engine mapping.** §3.6 above. Still open. Requires Jo or
+   panel-schema audit to confirm `bracket_id=5` maps to
+   `GoldHybridBracketEngine` and not another bracket engine.
 
-5. **Warmup contamination.** During warmup (first 60 bars after restart),
-   the gate is pass-through. On a cold start with no persistence load,
-   that's the first 60 minutes of trading — during which HBG can fire
-   without the gate. Persistence (§3.1) makes warmup near-instant on
-   warm restart, so this only matters on cold start. Document explicitly
-   for ops.
+5. **Warmup contamination.** During warmup (first 60 bars after
+   restart), the gate is pass-through. On a cold start with no
+   persistence load, that's the first 60 minutes of trading — during
+   which HBG can fire without the gate. Persistence (§3.1) makes warmup
+   near-instant on warm restart, so this only matters on cold start.
+   Document explicitly for ops.
 
 6. **Threshold from a 3-month backtest sample.** The 3a recommendation
-   `0.000375` came from decile-7 of an OOS population spanning 2024-03 to
-   2026-04. If gold's vol regime structurally shifts (say, post-tariff
-   normalisation), the live decile-7 cutoff drifts. The 30-day sidecar
-   re-evaluation in §3.5 is the planned mitigation.
+   `0.000375` came from decile-7 of an OOS population spanning 2024-03
+   to 2026-04. If gold's vol regime structurally shifts (say, post-
+   tariff normalisation), the live decile-7 cutoff drifts. The 30-day
+   sidecar re-evaluation in §3.5 is the planned mitigation.
+
+7. **Bar-count vs wall-clock vol windowing.**
+   `regime_diagnostic.py` computes both `vol_bar60` (bar-count, last 60
+   bars by index) and `vol_wall60` (wall-clock, last 60 minutes by
+   timestamp). These diverge across bar gaps (weekends, market closes).
+   The 3a regrade and 3c.1/3c.2 use **`vol_bar60` (bar-count)**.
+   Implementation §3.1 above uses bar-index-window (`bars_[n-60..n-1]`)
+   which matches. If the live M1 bar engine produces no bars during
+   weekend/market-closed periods, the bar-count window will span
+   pre-weekend bars; that matches the backtest convention by
+   construction. Worth a sanity check during implementation: confirm
+   `OHLCBarEngine` does not insert synthetic flat bars during gaps.
 
 ---
 
