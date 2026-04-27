@@ -230,6 +230,13 @@ else()
         -Wno-unused-parameter -Wno-unused-function -Wno-reorder
         -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
     )
+    # S51 X3: Clang's default fbracket-depth=256 is exceeded by the
+    # 490-element fold expression in the sweep harness's tuple dispatch.
+    # Raise to 1024 so 490 (with headroom) parses. GCC does not have or need
+    # this flag, so it is gated on Clang. Mac builds use Clang by default.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+        target_compile_options(OmegaSweepHarness PRIVATE -fbracket-depth=1024)
+    endif()
     target_compile_definitions(OmegaSweepHarness PRIVATE OMEGA_BACKTEST)
     target_link_libraries(OmegaSweepHarness PRIVATE pthread)
 endif()
