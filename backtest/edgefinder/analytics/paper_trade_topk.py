@@ -687,7 +687,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         spec = catalogue_by_pid[int(r['pid'])]
         if (spec.feature        != str(r['feature'])        or
             spec.op             != str(r['op'])             or
-            float(spec.threshold) != float(r['threshold'])  or
+            abs(float(spec.threshold) - float(r['threshold'])) > 1e-9 or
             spec.regime_session != str(r['regime_session']) or
             spec.regime_vol     != str(r['regime_vol'])     or
             spec.regime_trend   != str(r['regime_trend'])):
