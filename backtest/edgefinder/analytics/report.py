@@ -4,34 +4,17 @@ edgefinder/analytics/report.py
 
 Final reporting layer.
 
-Inputs:
-    train_prospects : DataFrame with full TRAIN scoring (post-MTC).
-    val_prospects   : DataFrame with VAL re-scoring of TRAIN survivors.
-    oos_prospects   : DataFrame with OOS re-scoring of VAL survivors.
-                      MAY be None if OOS hasn't been consumed yet.
-    catalogue_by_pid: dict pid -> PredicateSpec, used to print readable
-                      predicate descriptions.
+Produces:
+    edges_ranked.csv   — one row per (pid, side, bracket); sorted by
+                         sharpe_train descending within each bracket.
+                         Columns include drift_baseline, excess_expectancy,
+                         economic_pass alongside the usual stats.
 
-Outputs:
-    edges_ranked.csv   — one row per (pid, side, bracket) that survived the
-                         gates we have available so far. Columns:
-                             pid, predicate, regime_session, regime_vol,
-                             regime_trend, side, bracket_id,
-                             n_train, hit_rate_train, expectancy_train,
-                             pf_train, sharpe_train, t_stat, p_raw,
-                             q_bh, q_bonf, survives_bh, survives_bonf,
-                             n_val, hit_rate_val, expectancy_val,
-                             pf_val, sharpe_val,
-                             n_oos, hit_rate_oos, expectancy_oos,
-                             pf_oos, sharpe_oos
-                         Sort: descending by sharpe_train within bracket.
-
-    edges_summary.md   — top 20 edges per bracket, both BH and Bonferroni
-                         survivors, with VAL and OOS replication shown.
+    edges_summary.md   — top 20 edges per bracket, BH and Bonferroni
+                         survivors, with VAL/OOS replication shown.
 
 This module makes NO statistical decisions. All gating is done upstream;
-the report just renders. If oos_prospects is None, the OOS columns are
-NaN-filled and the markdown notes "OOS not yet consumed".
+the report just renders.
 """
 from __future__ import annotations
 
@@ -53,7 +36,9 @@ def _merge_partitions(
     keys = ['pid', 'side', 'bracket_id']
 
     def _suffix(d: pd.DataFrame, suf: str) -> pd.DataFrame:
-        keep = ['n', 'hit_rate', 'expectancy', 'pf', 'sharpe']
+        keep_cols = ['n', 'hit_rate', 'expectancy', 'pf', 'sharpe',
+                     'drift_baseline', 'excess_expectancy']
+        keep = [c for c in keep_cols if c in d.columns]
         sub = d[keys + keep].copy()
         for k in keep:
             sub.rename(columns={k: f"{k}_{suf}"}, inplace=True)
@@ -64,19 +49,24 @@ def _merge_partitions(
         'n': 'n_train', 'hit_rate': 'hit_rate_train',
         'expectancy': 'expectancy_train', 'pf': 'pf_train',
         'sharpe': 'sharpe_train',
+        'drift_baseline': 'drift_baseline_train',
+        'excess_expectancy': 'excess_expectancy_train',
     }
+    rename_train = {k: v for k, v in rename_train.items() if k in tr.columns}
     tr.rename(columns=rename_train, inplace=True)
 
     if val_prospects is not None and not val_prospects.empty:
         tr = tr.merge(_suffix(val_prospects, 'val'), on=keys, how='left')
     else:
-        for k in ['n_val', 'hit_rate_val', 'expectancy_val', 'pf_val', 'sharpe_val']:
+        for k in ['n_val', 'hit_rate_val', 'expectancy_val', 'pf_val',
+                  'sharpe_val', 'drift_baseline_val', 'excess_expectancy_val']:
             tr[k] = np.nan
 
     if oos_prospects is not None and not oos_prospects.empty:
         tr = tr.merge(_suffix(oos_prospects, 'oos'), on=keys, how='left')
     else:
-        for k in ['n_oos', 'hit_rate_oos', 'expectancy_oos', 'pf_oos', 'sharpe_oos']:
+        for k in ['n_oos', 'hit_rate_oos', 'expectancy_oos', 'pf_oos',
+                  'sharpe_oos', 'drift_baseline_oos', 'excess_expectancy_oos']:
             tr[k] = np.nan
 
     return tr
@@ -92,7 +82,6 @@ def write_edges_ranked(
     """Write edges_ranked.csv and return the final DataFrame."""
     merged = _merge_partitions(train_prospects, val_prospects, oos_prospects)
 
-    # Predicate descriptions.
     descs = []
     for pid in merged['pid']:
         spec = catalogue_by_pid.get(int(pid))
@@ -103,10 +92,17 @@ def write_edges_ranked(
         'pid', 'predicate', 'feature', 'op', 'threshold',
         'regime_session', 'regime_vol', 'regime_trend',
         'side', 'bracket_id',
-        'n_train', 'hit_rate_train', 'expectancy_train', 'pf_train', 'sharpe_train',
-        't_stat', 'p_raw', 'q_bh', 'q_bonf', 'survives_bh', 'survives_bonf',
-        'n_val',   'hit_rate_val',   'expectancy_val',   'pf_val',   'sharpe_val',
-        'n_oos',   'hit_rate_oos',   'expectancy_oos',   'pf_oos',   'sharpe_oos',
+        'n_train', 'hit_rate_train',
+        'expectancy_train', 'drift_baseline_train', 'excess_expectancy_train',
+        'pf_train', 'sharpe_train',
+        't_stat', 'p_raw', 'q_bh', 'q_bonf',
+        'economic_pass', 'survives_bh', 'survives_bonf',
+        'n_val', 'hit_rate_val',
+        'expectancy_val', 'drift_baseline_val', 'excess_expectancy_val',
+        'pf_val', 'sharpe_val',
+        'n_oos', 'hit_rate_oos',
+        'expectancy_oos', 'drift_baseline_oos', 'excess_expectancy_oos',
+        'pf_oos', 'sharpe_oos',
     ]
     cols = [c for c in cols if c in merged.columns]
     merged = merged[cols]
@@ -132,6 +128,11 @@ def write_edges_summary(
     lines.append("# OmegaEdgeFinder — Edges Summary")
     lines.append("")
     lines.append(f"Total ranked rows: **{len(ranked)}**")
+    if 'survives_bh' in ranked.columns:
+        lines.append(f"BH survivors: **{int(ranked['survives_bh'].sum())}** | "
+                     f"Bonferroni survivors: **{int(ranked['survives_bonf'].sum())}**")
+    if 'economic_pass' in ranked.columns:
+        lines.append(f"Economic-filter pass: **{int(ranked['economic_pass'].sum())}**")
     if note_no_oos:
         lines.append("")
         lines.append("> **OOS partition has not yet been consumed.** "
@@ -146,15 +147,15 @@ def write_edges_summary(
         lines.append(f"## Bracket {b}")
         lines.append("")
 
-        bh = sub[sub['survives_bh'] == True].head(top_k)
-        bonf = sub[sub['survives_bonf'] == True].head(top_k)
+        bh   = sub[sub.get('survives_bh',   False) == True].head(top_k)
+        bonf = sub[sub.get('survives_bonf', False) == True].head(top_k)
 
-        lines.append(f"### BH-survivors top {top_k} (FDR-corrected)")
+        lines.append(f"### BH-survivors top {top_k} (FDR-corrected, drift-relative)")
         lines.append("")
         lines.append(_md_table(bh))
         lines.append("")
 
-        lines.append(f"### Bonferroni-survivors top {top_k} (FWER-corrected)")
+        lines.append(f"### Bonferroni-survivors top {top_k} (FWER-corrected, drift-relative)")
         lines.append("")
         lines.append(_md_table(bonf))
         lines.append("")
@@ -168,25 +169,26 @@ def _md_table(df: pd.DataFrame) -> str:
     if df.empty:
         return "_(none)_"
     cols = [
-        'predicate', 'side', 'n_train', 'expectancy_train', 'sharpe_train',
-        'pf_train', 'q_bh', 'q_bonf',
-        'n_val', 'expectancy_val', 'pf_val',
-        'n_oos', 'expectancy_oos', 'pf_oos',
+        'predicate', 'side', 'n_train',
+        'expectancy_train', 'drift_baseline_train', 'excess_expectancy_train',
+        'sharpe_train', 'pf_train', 'q_bh', 'q_bonf',
+        'n_val', 'expectancy_val', 'excess_expectancy_val', 'pf_val',
+        'n_oos', 'expectancy_oos', 'excess_expectancy_oos', 'pf_oos',
     ]
     cols = [c for c in cols if c in df.columns]
     sub = df[cols].copy()
 
-    # Format numerics for readability.
     for c in sub.columns:
-        if c in ('predicate', 'side'): continue
+        if c in ('predicate', 'side'):
+            continue
         if pd.api.types.is_float_dtype(sub[c]):
             sub[c] = sub[c].map(lambda x: '' if pd.isna(x) else f"{x:.4g}")
         elif pd.api.types.is_integer_dtype(sub[c]):
             sub[c] = sub[c].map(lambda x: '' if pd.isna(x) else f"{int(x)}")
 
     header = "| " + " | ".join(cols) + " |"
-    sep = "| " + " | ".join(['---'] * len(cols)) + " |"
-    rows = []
+    sep    = "| " + " | ".join(['---'] * len(cols)) + " |"
+    rows   = []
     for _, r in sub.iterrows():
         rows.append("| " + " | ".join(str(r[c]) for c in cols) + " |")
     return "\n".join([header, sep] + rows)
