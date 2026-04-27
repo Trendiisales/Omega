@@ -35,35 +35,57 @@ a verdict ladder that explicitly tests:
     c) tariff-dependence (does the edge work pre-tariff as well as
        post-tariff, or is it concentrated in the post-tariff window?)
 
-Verdict ladder (v2)
--------------------
+Verdict ladder (v2) — C6 #1C priority fix
+-----------------------------------------
 First requires the v1 STABLE conditions (sign-match, OOS t-stat, OOS/train
 ratio); then layers the v2 gates on top.
 
-    STRONG            : v1-STABLE
-                        AND sharpe_oos >= sharpe_floor
-                        AND mean_oos > cost_floor
-                        AND pre-tariff AND post-tariff OOS sub-periods
-                            BOTH same-sign as the full OOS mean.
+The verdict ladder is evaluated TOP-DOWN with strict short-circuit:
+TARIFF_DEPENDENT is checked BEFORE STRONG. If post_dominates is True the
+edge is TARIFF_DEPENDENT regardless of sub_periods_consistent — the
+post-tariff sub-period inflating an otherwise-tiny pre-tariff signal is a
+tariff-conditional pattern, not a persistent edge, even when the pre-tariff
+mean has nominally the correct sign.
+
+    CULL              : v1 verdict was WEAK / FLIPPED / DEAD
+                        (failed sign-match / t-stat / frac-floor in v1).
 
     TARIFF_DEPENDENT  : v1-STABLE
-                        AND post-tariff sub-period sign matches OOS sign
-                        AND (pre-tariff sub-period sign-flipped
+                        AND post_dominates is True
+                        i.e. post-tariff sub-period sign matches OOS sign
+                        AND (pre-tariff sub-period has insufficient n,
+                             OR pre-tariff sign-flipped relative to oos,
                              OR pre-tariff |mean| < 10% of post-tariff |mean|).
                         These edges look STABLE only because the tariff
                         event dominates the OOS window. Excluding the
                         tariff window the edge does not fire (or fires
-                        the wrong way). Not a real persistent edge.
+                        the wrong way, or at < 10% magnitude). Not a real
+                        persistent edge.
+
+                        EXCLUSIVE TERMINAL: this verdict fires whenever
+                        post_dominates is True, even if sub_periods_consistent
+                        is also True. The pre-tariff magnitude collapsing to
+                        < 10% of post-tariff magnitude makes the edge tariff-
+                        conditional regardless of nominal sign-alignment.
+
+    STRONG            : v1-STABLE
+                        AND post_dominates is False
+                        AND sub_periods_consistent is True
+                        AND sharpe_oos >= sharpe_floor
+                        AND mean_oos > cost_floor.
 
     MARGINAL          : v1-STABLE
-                        AND pre/post sub-periods are consistent
+                        AND post_dominates is False
+                        AND sub_periods_consistent is True
                         BUT sharpe_oos < sharpe_floor
                             OR mean_oos < cost_floor.
                         Sign is real, magnitude is not economic.
 
-    CULL              : v1 verdict was WEAK / FLIPPED / DEAD,
-                        OR pre/post sub-periods disagree in a way the
-                            TARIFF_DEPENDENT clause does not capture.
+    CULL (terminal)   : v1-STABLE
+                        AND post_dominates is False
+                        AND sub_periods_consistent is False.
+                        Sub-periods disagree in a way the TARIFF_DEPENDENT
+                        clause does not capture.
 
 Implementation notes
 --------------------
@@ -251,9 +273,19 @@ def assign_v2_verdicts(
         sign_pre, sign_post,
         sub_periods_consistent (pre AND post same-sign as oos overall)
         post_dominates         (post sign matches oos AND
-                                (pre sign-flipped OR pre |mean| < 10% post |mean|))
+                                (pre sign-flipped OR pre |mean| < 10% post |mean|
+                                 OR pre n insufficient))
         verdict_v2             in {STRONG, TARIFF_DEPENDENT, MARGINAL, CULL}
         verdict_v1             (passthrough)
+
+    C6 #1C verdict-priority fix
+    ---------------------------
+    TARIFF_DEPENDENT is now an exclusive terminal verdict that fires whenever
+    `post_dominates` is True, regardless of whether `sub_periods_consistent`
+    is also True. The previous v2 logic gated TARIFF_DEPENDENT behind
+    `not sub_periods_consistent`, which incorrectly classified edges with
+    sign-aligned-but-tiny pre-tariff means (e.g. pid 27045) as STRONG when
+    the post-tariff window dominated the magnitude.
     """
     # 1. Pull sharpe_oos from per_part
     oos_part = per_part[per_part['partition'] == 'oos'].copy()
@@ -342,16 +374,25 @@ def assign_v2_verdicts(
 
     out['post_dominates'] = post_aligned & (pre_flipped | pre_collapsed | pre_unknown)
 
-    # 5. v2 verdict ladder
+    # 5. v2 verdict ladder — C6 #1C priority order
+    #
+    # IMPORTANT: TARIFF_DEPENDENT is checked BEFORE STRONG. If post_dominates
+    # is True the edge is TARIFF_DEPENDENT regardless of sub_periods_consistent.
+    # This is the C6 #1C fix: the previous version had STRONG fire first when
+    # both sub_periods_consistent and post_dominates were True (e.g. pre-tariff
+    # mean had nominally correct sign but |mean_pre| < 10% |mean_post|, which
+    # makes pre_collapsed True without flipping sign_pre). pid 27045 was the
+    # canonical example.
     def _verdict(row) -> str:
         if row['verdict'] != 'STABLE':
             return 'CULL'
-        # v1 STABLE — apply v2 gates
+        # v1 STABLE — apply v2 gates in strict priority order
+        if row['post_dominates']:
+            # Tariff-conditional pattern: post-tariff window dominates the
+            # OOS signal, pre-tariff is missing / flipped / collapsed.
+            return 'TARIFF_DEPENDENT'
         if row['sub_periods_consistent'] and row['cost_ok'] and row['sharpe_ok']:
             return 'STRONG'
-        if row['post_dominates'] and not row['sub_periods_consistent']:
-            # Edge looks STABLE in OOS only because of the post-tariff window
-            return 'TARIFF_DEPENDENT'
         if row['sub_periods_consistent']:
             # Sign-stable across sub-periods but fails cost or sharpe gate
             return 'MARGINAL'
@@ -428,6 +469,10 @@ def write_md_report(
     lines = []
     lines.append("# C6 #1B v2 — Economic & Tariff-Dependence Diagnostic")
     lines.append("")
+    lines.append("_C6 #1C verdict-priority fix applied: TARIFF_DEPENDENT now "
+                 "fires whenever `post_dominates=Y`, exclusive of "
+                 "`sub_periods_consistent`._")
+    lines.append("")
     lines.append(f"- Trades CSV:        `{trades_csv_path}`")
     lines.append(f"- Edges:             {len(per_edge_v2)}")
     lines.append(f"- Cost floor:        mean_oos > {cost_floor} pts/trade")
@@ -446,10 +491,10 @@ def write_md_report(
     lines.append("| verdict_v2        | n  | description |")
     lines.append("|:------------------|---:|:------------|")
     descriptions = {
-        'STRONG':           'v1-STABLE + sub-periods consistent + cost+sharpe pass — real persistent edge',
-        'TARIFF_DEPENDENT': 'v1-STABLE only because of post-tariff window — pre-tariff sign-flipped or absent',
-        'MARGINAL':         'sub-periods consistent but fails cost floor or sharpe floor — uneconomic',
-        'CULL':             'fails v1 STABLE OR sub-periods inconsistent in non-tariff-attributable way',
+        'STRONG':           'v1-STABLE + post_dominates=N + sub-periods consistent + cost+sharpe pass — real persistent edge',
+        'TARIFF_DEPENDENT': 'v1-STABLE but post_dominates=Y — post-tariff window dominates the OOS signal (exclusive terminal)',
+        'MARGINAL':         'v1-STABLE + post_dominates=N + sub-periods consistent but fails cost or sharpe floor — uneconomic',
+        'CULL':             'fails v1 STABLE, OR v1-STABLE but post_dominates=N and sub-periods inconsistent',
     }
     for v in ['STRONG', 'TARIFF_DEPENDENT', 'MARGINAL', 'CULL']:
         n = int(counts_v2.get(v, 0))
@@ -505,8 +550,8 @@ def write_md_report(
                      "Not a persistent edge.")
         lines.append("")
         lines.append("| rank | pid | side | b | n_pre | mean_pre | sign_pre | "
-                     "n_post | mean_post | sign_post |")
-        lines.append("|---:|---:|:---|:-:|---:|---:|:-:|---:|---:|:-:|")
+                     "n_post | mean_post | sign_post | sub_consist |")
+        lines.append("|---:|---:|:---|:-:|---:|---:|:-:|---:|---:|:-:|:-:|")
         for _, r in tariff.iterrows():
             lines.append(
                 f"| {int(r['rank'])} | {int(r['pid'])} | {r['side']} | {int(r['bracket_id'])} "
@@ -515,7 +560,8 @@ def write_md_report(
                 f"| {_sign_str(r['sign_pre'])} "
                 f"| {_fmt_int(r['n_post'], 5)} "
                 f"| {_fmt_signed(r['mean_post'])} "
-                f"| {_sign_str(r['sign_post'])} |"
+                f"| {_sign_str(r['sign_post'])} "
+                f"| {'Y' if r['sub_periods_consistent'] else 'N'} |"
             )
     lines.append("")
 
@@ -580,7 +626,10 @@ def parse_args(argv=None) -> argparse.Namespace:
         description=(
             "C6 #1B v2: economic-survivability + tariff-dependence diagnostic "
             "for strict OOS survivors. Layers cost-floor, sharpe-floor, and "
-            "pre/post-tariff sub-period consistency on top of v1 STABLE."
+            "pre/post-tariff sub-period consistency on top of v1 STABLE. "
+            "C6 #1C fix: TARIFF_DEPENDENT is now an exclusive terminal verdict "
+            "that fires whenever post_dominates=Y, regardless of "
+            "sub_periods_consistent."
         )
     )
     p.add_argument('--trades-csv', default=DEFAULT_TRADES_CSV)
