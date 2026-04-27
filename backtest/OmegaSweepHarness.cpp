@@ -240,16 +240,41 @@ static std::vector<TickRow> parse_csv(const MemMappedFile& f,
     const char* end = f.data + f.size;
     if (p >= end) return v;
 
-    // Skip a possible header line if the first line doesn't start with a digit
+    // Skip a possible header line if the first line doesn't start with a digit.
+    // Also capture the header so we can detect column order for TS_BA-style
+    // files that ship as "timestamp,askPrice,bidPrice" instead of the assumed
+    // "ts,bid,ask" ordering.
+    bool ts_ba_ask_first = false;  // true if header indicates ask precedes bid
     if (*p < '0' || *p > '9') {
+        const char* hdr_start = p;
         while (p < end && *p != '\n') ++p;
+        const char* hdr_end = p;
         if (p < end) ++p;
+
+        // Search the header for "ask" and "bid" (case-insensitive). If "ask"
+        // appears before "bid", flag column-order swap for the TS_BA branch.
+        auto find_token = [hdr_start, hdr_end](const char* tok, size_t tl) -> const char* {
+            for (const char* q = hdr_start; q + tl <= hdr_end; ++q) {
+                bool eq = true;
+                for (size_t i = 0; i < tl; ++i) {
+                    char c = q[i];
+                    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+                    if (c != tok[i]) { eq = false; break; }
+                }
+                if (eq) return q;
+            }
+            return nullptr;
+        };
+        const char* ask_pos = find_token("ask", 3);
+        const char* bid_pos = find_token("bid", 3);
+        if (ask_pos && bid_pos && ask_pos < bid_pos) ts_ba_ask_first = true;
     }
 
     Fmt fmt = sniff_format(p, end);
     if (verbose) {
         const char* fname = (fmt==Fmt::DUKA?"DUKA":fmt==Fmt::TS_OHLCV?"TS_OHLCV":"TS_BA");
-        std::printf("  format detected: %s\n", fname);
+        std::printf("  format detected: %s%s\n", fname,
+                    (fmt == Fmt::TS_BA && ts_ba_ask_first) ? " (ask-first column order)" : "");
         std::fflush(stdout);
     }
 
@@ -288,12 +313,19 @@ static std::vector<TickRow> parse_csv(const MemMappedFile& f,
             r.bid = mid - 0.05;
             r.ask = mid + 0.05;
         } else {
-            // ts,bid,ask
+            // TS_BA family: timestamp + bid + ask in some order
             r.ts_ms = fast_i64(p, &nx); p = nx;
             if (p >= end || *p != ',') { break; } ++p;
-            r.bid = fast_f(p, &nx); p = nx;
+            const double v1 = fast_f(p, &nx); p = nx;
             if (p >= end || *p != ',') { break; } ++p;
-            r.ask = fast_f(p, &nx); p = nx;
+            const double v2 = fast_f(p, &nx); p = nx;
+            if (ts_ba_ask_first) {
+                // ts,ask,bid
+                r.ask = v1; r.bid = v2;
+            } else {
+                // ts,bid,ask  (default / OmegaBacktest convention)
+                r.bid = v1; r.ask = v2;
+            }
         }
 
         // Skip to end of line
