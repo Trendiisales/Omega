@@ -241,11 +241,78 @@ else()
     target_link_libraries(OmegaSweepHarness PRIVATE pthread)
 endif()
 
+# =============================================================================
+# OmegaEdgeFinder -- edge-discovery framework (S51 X3.4)
+#
+# Two standalone targets:
+#   OmegaEdgeFinderExtract  -- C++ tick -> bar-close panel extractor (one-pass,
+#                              ~10 min on the 5GB XAUUSD CSV). Writes a flat
+#                              binary panel (~150 MB) consumed by Python
+#                              analytics. Header-only-library based; no .cpp
+#                              files except the entrypoint.
+#   OmegaEdgeFinderTest     -- leakage / forward-fill unit test. Feeds a
+#                              synthetic tick stream with a known +50 future
+#                              spike and asserts that bar t's features do NOT
+#                              reflect bar t+1, while forward-return cells DO.
+#
+# Both are self-contained: no OpenSSL, no shim, no Omega.exe / sweep state.
+# Build: cmake --build build --target OmegaEdgeFinderExtract --config Release
+#        cmake --build build --target OmegaEdgeFinderTest    --config Release
+# Run:   ./OmegaEdgeFinderTest
+#        ./OmegaEdgeFinderExtract --in <ticks.csv> --out <panel.bin> --verbose
+# =============================================================================
+add_executable(OmegaEdgeFinderExtract
+    backtest/edgefinder/extractor/EventExtractor.cpp
+)
+target_include_directories(OmegaEdgeFinderExtract PRIVATE
+    ${CMAKE_SOURCE_DIR}/backtest/edgefinder/extractor
+)
+if(MSVC)
+    target_compile_options(OmegaEdgeFinderExtract PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+    )
+    target_compile_definitions(OmegaEdgeFinderExtract PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS
+    )
+else()
+    target_compile_options(OmegaEdgeFinderExtract PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation
+    )
+    target_link_libraries(OmegaEdgeFinderExtract PRIVATE pthread)
+endif()
+
+add_executable(OmegaEdgeFinderTest
+    backtest/edgefinder/tests/test_extractor_no_lookahead.cpp
+)
+target_include_directories(OmegaEdgeFinderTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/backtest/edgefinder/extractor
+)
+if(MSVC)
+    target_compile_options(OmegaEdgeFinderTest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+    )
+    target_compile_definitions(OmegaEdgeFinderTest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS
+    )
+else()
+    target_compile_options(OmegaEdgeFinderTest PRIVATE
+        -O2 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-comment
+    )
+endif()
+
 message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
 message(STATUS "Git hash:   regenerated on every build")
-message(STATUS "OmegaBacktest:     standalone (no OpenSSL)")
-message(STATUS "OmegaSweepHarness: standalone (no OpenSSL)")
+message(STATUS "OmegaBacktest:          standalone (no OpenSSL)")
+message(STATUS "OmegaSweepHarness:      standalone (no OpenSSL)")
+message(STATUS "OmegaEdgeFinderExtract: standalone (no OpenSSL) [S51 X3.4]")
+message(STATUS "OmegaEdgeFinderTest:    standalone (no OpenSSL) [S51 X3.4]")
 message(STATUS "========================================")
