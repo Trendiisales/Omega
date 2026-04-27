@@ -151,7 +151,7 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 #include "BracketEngine.hpp"
 // (GoldFlowEngine.hpp include removed S19 Stage 1B — file deleted, engine culled)
 #include "MacroCrashEngine.hpp"
-#include "PullbackContEngine.hpp"
+// (PullbackContEngine.hpp include removed S49 X5 — file deleted, engine culled)
 static omega::GoldBracketEngine   g_bracket_gold;
 
 // ?? Hybrid bracket engines -- fire both sides simultaneously, cancel loser ??
@@ -167,8 +167,7 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us3
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
 // (GoldFlowEngine g_gold_flow instance removed S19 Stage 1B — engine culled)
 static omega::MacroCrashEngine    g_macro_crash;
-static omega::PullbackContEngine  g_pullback_cont;
-static omega::PullbackContEngine  g_pullback_prem;  // premium: 30pt h07 only, 2x size, tight trail
+// (g_pullback_cont and g_pullback_prem removed S49 X5 — engine culled, see commit message of branch s49-x5-pullback-cull)
 
 // CandleFlowEngine REMOVED at S19 (2026-04-24) -----------------------------
 // 11-day / 3.4M tick full-L2 validation sweep on all available XAUUSD L2
