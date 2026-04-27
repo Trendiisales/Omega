@@ -12,11 +12,6 @@
 //                           EMA-separation gate, no extreme gate, no spread gate.
 //                           Just trend (ema20 vs ema50) + pullback + weekend gate.
 //
-//   --engine=pullback_cont  Tick-based: after a MOVE_MIN move in LOOKBACK_S,
-//                           wait for PB_FRAC retracement, enter on continuation.
-//                           Minimal: session gate REMOVED (production is h07/h17/h23
-//                           only). Sweep over all hours + weekend gate only.
-//
 //   --engine=rsi_turn       M1 bar RSI-extreme turn. Relax RSI bands and drop
 //                           session/slot gating. Keep sustained-bars + turn-pts
 //                           as the core filter, sweep them.
@@ -36,7 +31,6 @@
 //   clang++ -O3 -std=c++17 -o minimal_sweep minimal_sweep.cpp
 // Run:
 //   ./minimal_sweep --engine=h1_pullback /Users/jo/tick/2yr_XAUUSD_tick.csv
-//   ./minimal_sweep --engine=pullback_cont /Users/jo/tick/2yr_XAUUSD_tick.csv
 //   ./minimal_sweep --engine=rsi_turn /Users/jo/tick/2yr_XAUUSD_tick.csv
 // Outputs (written to CWD, filename prefix = engine kind):
 //   <eng>_minimal_results.txt
@@ -62,14 +56,12 @@
 // =============================================================================
 enum class EngineKind {
     H1_PULLBACK,
-    PULLBACK_CONT,
     RSI_TURN
 };
 
 static const char* engine_name(EngineKind k) {
     switch (k) {
         case EngineKind::H1_PULLBACK:   return "h1_pullback";
-        case EngineKind::PULLBACK_CONT: return "pullback_cont";
         case EngineKind::RSI_TURN:      return "rsi_turn";
     }
     return "unknown";
@@ -282,13 +274,6 @@ struct Config {
     double pb_tol_atr    = 0.30;   // pullback zone tolerance as ATR multiple
     double sl_mult       = 1.0;    // SL in ATR
     double tp_mult       = 2.0;    // TP in ATR
-    // PULLBACK_CONT params
-    double move_min      = 20.0;   // pts
-    double pb_frac       = 0.20;
-    int    lookback_s    = 300;
-    int    hold_s        = 300;
-    double sl_pts        = 6.0;    // fixed pts
-    int    hour_mask     = -1;     // -1 = all hours; 0..23 = one hour only (we sweep -1 first)
     // RSI_TURN params
     double rsi_low       = 20.0;
     double rsi_high      = 70.0;
@@ -305,10 +290,6 @@ struct Config {
             case EngineKind::H1_PULLBACK:
                 snprintf(b, sizeof(b), "EF=%d ES=%d pbTol=%.2f SL=%.1f TP=%.1f",
                          ema_fast, ema_slow, pb_tol_atr, sl_mult, tp_mult);
-                break;
-            case EngineKind::PULLBACK_CONT:
-                snprintf(b, sizeof(b), "MV=%.0f PB=%.2f HOLD=%d SL=%.1f H=%d",
-                         move_min, pb_frac, hold_s, sl_pts, hour_mask);
                 break;
             case EngineKind::RSI_TURN:
                 snprintf(b, sizeof(b), "LO=%.0f HI=%.0f SUS=%d TURN=%.1f SL=%.2f",
@@ -424,35 +405,7 @@ static std::vector<BarWithTicks> build_bars(const char* csv_path,
     return bars;
 }
 
-// =============================================================================
-// Raw-tick loader (used by PULLBACK_CONT path). Streams from disk to vector.
-// =============================================================================
-static std::vector<Tick> load_ticks(const char* csv_path,
-                                     uint64_t& ticks_ok_out,
-                                     uint64_t& ticks_fail_out,
-                                     int64_t& first_ts_out,
-                                     int64_t& last_ts_out)
-{
-    std::vector<Tick> ticks;
-    FILE* f = fopen(csv_path, "r");
-    if (!f) { fprintf(stderr, "cannot open %s\n", csv_path); return ticks; }
-    ticks.reserve(120000000); // ~111M expected
-    char line[256];
-    uint64_t ok = 0, fail = 0;
-    int64_t first_ts = 0, last_ts = 0;
-    while (fgets(line, sizeof(line), f)) {
-        Tick tk;
-        if (!parse_line(line, tk)) { ++fail; continue; }
-        ++ok;
-        if (first_ts == 0) first_ts = tk.ts_ms;
-        last_ts = tk.ts_ms;
-        ticks.push_back(tk);
-    }
-    fclose(f);
-    ticks_ok_out = ok; ticks_fail_out = fail;
-    first_ts_out = first_ts; last_ts_out = last_ts;
-    return ticks;
-}
+// (load_ticks loader removed S49 X5 — only used by PULLBACK_CONT path which was culled)
 
 // =============================================================================
 // Sizing helper (uniform $10 risk, 0.01 lot cap, 100 USD / pt / lot for gold)
@@ -645,167 +598,8 @@ static Result run_h1_pullback(const std::vector<BarWithTicks>& bars,
     return r;
 }
 
-// =============================================================================
-// ENGINE 2: PULLBACK_CONT
-//
-// Logic (ported from include/PullbackContEngine.hpp but WITHOUT session gate).
-//   - State machine: IDLE -> WATCHING -> IDLE
-//   - IDLE: if |mid - mid[t-LOOKBACK_S]| >= MOVE_MIN, enter WATCHING
-//   - WATCHING: wait for pullback of PB_FRAC * move; enter on touch
-//   - Timeout after HOLD_S
-//   - Counter-reversal abort: if price goes >50% against original move
-//   - Fixed SL_PTS stop, no TP (managed by trail/timeout/counter-reversal)
-//   - For the minimal sweep we use a simple fixed SL_PTS + MAX_HOLD_S exit
-//     (the production engine's trail logic is filter-like; keep it minimal).
-//     Exit: SL hit OR max-hold exceeded OR counter-reversal (reuse).
-//   - Weekend gate
-//   - hour_mask: -1 = all hours, 0..23 = that hour only. We sweep all-hours
-//     first; if edge exists per-hour, user can add a follow-up sweep.
-// =============================================================================
-static Result run_pullback_cont(const std::vector<Tick>& ticks,
-                                const Config& cfg)
-{
-    Result r;
-    r.cfg = cfg;
-    r.trades.reserve(2048);
+// (ENGINE 2: PULLBACK_CONT removed S49 X5 — engine culled, see s49-x5-pullback-cull branch)
 
-    enum State { IDLE, WATCHING };
-    State   st = IDLE;
-    bool    long_dir = false;
-    double  signal_mid = 0.0;
-    double  move_pts   = 0.0;
-    double  wanted_mid = 0.0;
-    int64_t signal_ms  = 0;
-
-    struct Pos {
-        bool    active   = false;
-        bool    is_long  = false;
-        double  entry    = 0.0;
-        double  sl       = 0.0;
-        double  size     = 0.0;
-        int64_t entry_ms = 0;
-        int64_t expire_ms= 0;
-    } pos;
-    int trade_id = 0;
-
-    // Rolling mid buffer for lookback
-    std::deque<std::pair<int64_t,double>> m_buf;
-    const int64_t lb_ms = (int64_t)cfg.lookback_s * 1000LL;
-
-    for (size_t i = 0; i < ticks.size(); ++i) {
-        const Tick& tk = ticks[i];
-        const double mid = (tk.bid + tk.ask) * 0.5;
-        const int64_t now = tk.ts_ms;
-
-        // ---- Manage open position first ----
-        if (pos.active) {
-            bool exit = false;
-            const char* reason = "";
-            double exit_px = 0.0;
-            double pnl_pts = 0.0;
-
-            if (pos.is_long) {
-                if (tk.bid <= pos.sl) {
-                    exit = true; reason = "SL_HIT";
-                    exit_px = pos.sl;
-                    pnl_pts = exit_px - pos.entry;
-                }
-            } else {
-                if (tk.ask >= pos.sl) {
-                    exit = true; reason = "SL_HIT";
-                    exit_px = pos.sl;
-                    pnl_pts = pos.entry - exit_px;
-                }
-            }
-            if (!exit && now >= pos.expire_ms) {
-                exit = true; reason = "TIMEOUT";
-                exit_px = pos.is_long ? tk.bid : tk.ask;
-                pnl_pts = pos.is_long ? (exit_px - pos.entry) : (pos.entry - exit_px);
-            }
-            if (exit) {
-                double pnl_usd = pnl_pts * pos.size * 100.0;
-                Trade t;
-                t.id = ++trade_id;
-                t.entry_ts_ms = pos.entry_ms;
-                t.exit_ts_ms  = now;
-                t.is_long = pos.is_long;
-                t.entry = pos.entry; t.exit = exit_px;
-                t.sl = pos.sl; t.tp = 0.0;
-                t.size = pos.size;
-                t.bars_held = 0;
-                t.pnl_pts = pnl_pts;
-                t.pnl_usd = pnl_usd;
-                t.exit_reason = reason;
-                r.trades.push_back(t);
-                pos = Pos{};
-            }
-            // While in a trade, skip new signal eval
-            continue;
-        }
-
-        // Maintain mid buffer
-        m_buf.push_back({now, mid});
-        while (!m_buf.empty() && now - m_buf.front().first > lb_ms + 5000LL)
-            m_buf.pop_front();
-        if (m_buf.size() < 10) continue;
-
-        if (is_weekend_gated(now)) { st = IDLE; continue; }
-
-        // Hour mask
-        if (cfg.hour_mask >= 0) {
-            int hour = (int)((now / 1000LL) % 86400LL / 3600LL);
-            if (hour != cfg.hour_mask) { st = IDLE; continue; }
-        }
-
-        const double mid_back = m_buf.front().second;
-        const double move     = mid - mid_back;
-
-        if (st == IDLE) {
-            if (std::fabs(move) >= cfg.move_min) {
-                st          = WATCHING;
-                long_dir    = (move > 0.0);
-                signal_mid  = mid;
-                move_pts    = std::fabs(move);
-                signal_ms   = now;
-                double pb_pts = move_pts * cfg.pb_frac;
-                wanted_mid  = long_dir ? (signal_mid - pb_pts)
-                                       : (signal_mid + pb_pts);
-            }
-            continue;
-        }
-
-        // WATCHING
-        if (now - signal_ms > (int64_t)cfg.hold_s * 1000LL) {
-            st = IDLE;
-            continue;
-        }
-        const double vs_signal = long_dir ? (mid - signal_mid) : (signal_mid - mid);
-        if (vs_signal < -(move_pts * 0.50)) {
-            st = IDLE;
-            continue;
-        }
-        const bool pb_hit = long_dir ? (mid <= wanted_mid) : (mid >= wanted_mid);
-        if (pb_hit) {
-            // Enter
-            const double entry_px = long_dir ? tk.ask : tk.bid;
-            const double sl_px    = long_dir ? (entry_px - cfg.sl_pts)
-                                             : (entry_px + cfg.sl_pts);
-            const double size     = compute_size(cfg.sl_pts);
-
-            pos.active    = true;
-            pos.is_long   = long_dir;
-            pos.entry     = entry_px;
-            pos.sl        = sl_px;
-            pos.size      = size;
-            pos.entry_ms  = now;
-            pos.expire_ms = now + (int64_t)cfg.hold_s * 1000LL;
-            st = IDLE;
-        }
-    }
-
-    compute_stats(r);
-    return r;
-}
 
 // =============================================================================
 // ENGINE 3: RSI_TURN
@@ -993,27 +787,7 @@ static std::vector<Config> build_grid_h1_pullback() {
     return cfgs; // 2 * 2 * 2 * 3 * 3 - (duplicates where ef>=es) = 4*2*3*3 = 72 minus pruning
 }
 
-static std::vector<Config> build_grid_pullback_cont() {
-    std::vector<Config> cfgs;
-    double mv_grid[]   = {15.0, 20.0, 30.0};
-    double pb_grid[]   = {0.20, 0.33, 0.50};
-    int    hold_grid[] = {300, 600};
-    double sl_grid[]   = {4.0, 6.0, 8.0};
-    // Hour mask: -1 (all hours) first. Per-hour sweep is optional follow-up.
-    for (double mv : mv_grid)
-        for (double pb : pb_grid)
-            for (int h : hold_grid)
-                for (double sl : sl_grid) {
-                    Config c;
-                    c.kind = EngineKind::PULLBACK_CONT;
-                    c.move_min = mv; c.pb_frac = pb;
-                    c.hold_s = h; c.sl_pts = sl;
-                    c.hour_mask = -1;  // ALL HOURS
-                    c.lookback_s = 300;
-                    cfgs.push_back(c);
-                }
-    return cfgs; // 3*3*2*3 = 54 configs
-}
+// (build_grid_pullback_cont removed S49 X5 — engine culled)
 
 static std::vector<Config> build_grid_rsi_turn() {
     std::vector<Config> cfgs;
@@ -1060,10 +834,7 @@ static void write_results(const std::string& path,
     fprintf(f, "Ticks OK:        %llu\n", (unsigned long long)ticks_ok);
     fprintf(f, "Ticks failed:    %llu\n", (unsigned long long)ticks_fail);
     fprintf(f, "Date range:      %s -> %s\n", fmt_ts(first_ts).c_str(), fmt_ts(last_ts).c_str());
-    if (kind == EngineKind::PULLBACK_CONT)
-        fprintf(f, "Ticks loaded:    %zu\n", n_bars_or_ticks);
-    else
-        fprintf(f, "Bars built:      %zu\n", n_bars_or_ticks);
+    fprintf(f, "Bars built:      %zu\n", n_bars_or_ticks);
     fprintf(f, "Runtime:         %.1fs\n", runtime_s);
     fprintf(f, "Configs swept:   %zu\n\n", all.size());
 
@@ -1171,7 +942,7 @@ static void write_best_equity(const std::string& path, const std::vector<Trade>&
 static void usage(const char* prog) {
     fprintf(stderr,
         "usage: %s --engine=<kind> <tick_csv>\n"
-        "  <kind> = h1_pullback | pullback_cont | rsi_turn\n",
+        "  <kind> = h1_pullback | rsi_turn\n",
         prog);
 }
 
@@ -1191,7 +962,6 @@ int main(int argc, char** argv) {
 
     EngineKind kind;
     if      (strcmp(engine_arg, "h1_pullback")   == 0) kind = EngineKind::H1_PULLBACK;
-    else if (strcmp(engine_arg, "pullback_cont") == 0) kind = EngineKind::PULLBACK_CONT;
     else if (strcmp(engine_arg, "rsi_turn")      == 0) kind = EngineKind::RSI_TURN;
     else { fprintf(stderr, "unknown engine: %s\n", engine_arg); usage(argv[0]); return 1; }
 
@@ -1202,17 +972,12 @@ int main(int argc, char** argv) {
     size_t  n_items  = 0;
 
     std::vector<BarWithTicks> bars;
-    std::vector<Tick>         ticks;
 
     if (kind == EngineKind::H1_PULLBACK) {
         printf("=== PHASE 1: LOAD + BUILD H1 BARS ===\n"); fflush(stdout);
         const int64_t H1_MS = 60LL * 60LL * 1000LL;
         bars = build_bars(csv_path, H1_MS, ticks_ok, ticks_fail, first_ts, last_ts);
         n_items = bars.size();
-    } else if (kind == EngineKind::PULLBACK_CONT) {
-        printf("=== PHASE 1: LOAD TICKS ===\n"); fflush(stdout);
-        ticks = load_ticks(csv_path, ticks_ok, ticks_fail, first_ts, last_ts);
-        n_items = ticks.size();
     } else {
         printf("=== PHASE 1: LOAD + BUILD M1 BARS ===\n"); fflush(stdout);
         const int64_t M1_MS = 60LL * 1000LL;
@@ -1225,17 +990,13 @@ int main(int argc, char** argv) {
     printf("Ticks OK: %llu  failed: %llu\n",
            (unsigned long long)ticks_ok, (unsigned long long)ticks_fail);
     printf("Date range: %s -> %s\n", fmt_ts(first_ts).c_str(), fmt_ts(last_ts).c_str());
-    if (kind == EngineKind::PULLBACK_CONT)
-        printf("Ticks loaded: %zu\n", n_items);
-    else
-        printf("Bars built: %zu\n", n_items);
+    printf("Bars built: %zu\n", n_items);
     printf("Load time: %.1fs\n\n", load_s);
     fflush(stdout);
 
     std::vector<Config> cfgs;
     switch (kind) {
         case EngineKind::H1_PULLBACK:   cfgs = build_grid_h1_pullback();   break;
-        case EngineKind::PULLBACK_CONT: cfgs = build_grid_pullback_cont(); break;
         case EngineKind::RSI_TURN:      cfgs = build_grid_rsi_turn();      break;
     }
 
@@ -1250,7 +1011,6 @@ int main(int argc, char** argv) {
         Result rr;
         switch (kind) {
             case EngineKind::H1_PULLBACK:   rr = run_h1_pullback(bars, c);   break;
-            case EngineKind::PULLBACK_CONT: rr = run_pullback_cont(ticks, c); break;
             case EngineKind::RSI_TURN:      rr = run_rsi_turn(bars, c);      break;
         }
         all.push_back(std::move(rr));
@@ -1269,7 +1029,6 @@ int main(int argc, char** argv) {
 
     // Best config: by total PnL, requiring n >= MIN_TRADES for statistical relevance.
     //   H1_PULLBACK: H1 is lower frequency, MIN=30
-    //   PULLBACK_CONT: tick engine, MIN=100
     //   RSI_TURN: M1 engine, MIN=100
     const int min_trades = (kind == EngineKind::H1_PULLBACK) ? 30 : 100;
 
