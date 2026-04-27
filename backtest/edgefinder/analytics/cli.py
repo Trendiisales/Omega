@@ -8,29 +8,24 @@ Pipeline orchestrator. Five subcommands, run in order:
                       predicate catalogue. Cache to disk. Cheap; safe to
                       re-run.
 
-    scan-train        Score every catalogue predicate on the TRAIN
-                      partition. Apply MTC. Cache to disk. The slow step
-                      (~tens of minutes for ~90k predicates).
+    scan-train        Compute TRAIN drift baseline. Score every catalogue
+                      predicate on TRAIN against drift. Apply economic
+                      filter + MTC. Cache to disk.
 
-    gate-val          Re-score TRAIN survivors on VAL. Apply gate
-                      (sign match + min_n + pf > 1). Cache to disk.
+    gate-val          Re-score TRAIN survivors on VAL (against VAL drift).
+                      Apply gate (sign match + min_n + pf > 1).
 
-    probe-oos         Re-score VAL survivors on OOS. THIS IS THE SINGLE-
-                      TOUCH STEP. Sentinel file enforced.
+    probe-oos         Re-score VAL survivors on OOS (against OOS drift).
+                      Single-touch, sentinel-protected.
 
     report            Merge TRAIN + VAL + OOS prospect tables, write
                       edges_ranked.csv and edges_summary.md.
 
-Run as:
-
-    python -m backtest.edgefinder.analytics.cli build-predicates --panel ...
-    python -m backtest.edgefinder.analytics.cli scan-train
-    python -m backtest.edgefinder.analytics.cli gate-val
-    python -m backtest.edgefinder.analytics.cli probe-oos
-    python -m backtest.edgefinder.analytics.cli report
-
-All intermediate artefacts live under --workdir (default
-backtest/edgefinder/output/work/).
+Persistence
+-----------
+Prospect tables are persisted as Parquet if pyarrow is available, else
+pickle. The CLI tries Parquet first and falls back automatically. Both
+formats are read transparently.
 """
 from __future__ import annotations
 
@@ -51,7 +46,7 @@ from .regime import (
     PredicateSpec,
 )
 from .prospect import (
-    score_predicates, reapply_to_partition,
+    compute_drift_baseline, score_predicates, reapply_to_partition,
 )
 from .mtc import apply_mtc
 from .walkforward import (
@@ -68,14 +63,69 @@ DEFAULT_OUTPUT_DIR = 'backtest/edgefinder/output'
 DEFAULT_WORKDIR = 'backtest/edgefinder/output/work'
 
 CATALOGUE_JSON = 'catalogue.json'
-CATALOGUE_PICKLE = 'catalogue.pkl'    # PredicateSpec list
-TRAIN_PROSPECTS = 'train_prospects.parquet'
-VAL_SURVIVORS   = 'val_survivors.parquet'
-OOS_SURVIVORS   = 'oos_survivors.parquet'
+CATALOGUE_PICKLE = 'catalogue.pkl'
+TRAIN_PROSPECTS_BASE = 'train_prospects'
+VAL_SURVIVORS_BASE   = 'val_survivors'
+OOS_SURVIVORS_BASE   = 'oos_survivors'
+DRIFT_TRAIN_JSON = 'drift_train.json'
 
 
 def _ts() -> str:
     return time.strftime('%H:%M:%S')
+
+
+# -----------------------------------------------------------------------------
+# Persistence helpers (parquet → pickle fallback)
+# -----------------------------------------------------------------------------
+def _save_df(df: pd.DataFrame, base_path: Path) -> Path:
+    """Try parquet, fall back to pickle. Returns the actual path written."""
+    parquet_path = base_path.with_suffix('.parquet')
+    pickle_path  = base_path.with_suffix('.pkl')
+    try:
+        df.to_parquet(parquet_path, index=False)
+        # If both formats exist from a prior run, remove the stale pickle so
+        # _load_df doesn't get confused.
+        if pickle_path.exists():
+            pickle_path.unlink()
+        return parquet_path
+    except (ImportError, ValueError) as e:
+        # Parquet engine missing or column type unsupported: fall back to pickle.
+        print(f"  [persist] parquet unavailable ({e}); using pickle", flush=True)
+        df.to_pickle(pickle_path)
+        if parquet_path.exists():
+            parquet_path.unlink()
+        return pickle_path
+
+
+def _load_df(base_path: Path) -> pd.DataFrame:
+    """Load whichever of parquet/pickle exists, preferring parquet."""
+    parquet_path = base_path.with_suffix('.parquet')
+    pickle_path  = base_path.with_suffix('.pkl')
+    if parquet_path.exists():
+        try:
+            return pd.read_parquet(parquet_path)
+        except (ImportError, ValueError) as e:
+            print(f"  [persist] parquet read failed ({e}); trying pickle", flush=True)
+    if pickle_path.exists():
+        return pd.read_pickle(pickle_path)
+    raise FileNotFoundError(f"neither {parquet_path} nor {pickle_path} exists")
+
+
+def _exists_df(base_path: Path) -> bool:
+    return (base_path.with_suffix('.parquet').exists() or
+            base_path.with_suffix('.pkl').exists())
+
+
+def _drift_to_jsonable(d: dict[tuple[str, int], float]) -> dict:
+    return {f"{side}|{b}": v for (side, b), v in d.items()}
+
+
+def _drift_from_jsonable(d: dict) -> dict[tuple[str, int], float]:
+    out = {}
+    for k, v in d.items():
+        side, b = k.split("|")
+        out[(side, int(b))] = float(v)
+    return out
 
 
 # -----------------------------------------------------------------------------
@@ -94,26 +144,21 @@ def cmd_build_predicates(args: argparse.Namespace) -> int:
     print(f"[{_ts()}] TRAIN rows: {len(df_train)} "
           f"({df_train.index.min()} .. {df_train.index.max()})")
 
-    # 1. Regime cuts (vol terciles, trend terciles).
     rcuts = fit_regime_cuts(df_train)
     print(f"[{_ts()}] regime cuts: vol_lo={rcuts.vol_lo:.4g} "
           f"vol_hi={rcuts.vol_hi:.4g} trend_down={rcuts.trend_down:.4g} "
           f"trend_up={rcuts.trend_up:.4g}")
 
-    # 2. Classify features.
     df_train_r = apply_regimes(df_train, rcuts)
     numeric, boolean = classify_features(df_train_r)
     print(f"[{_ts()}] features: {len(numeric)} numeric, {len(boolean)} boolean")
 
-    # 3. Quantile cuts on TRAIN.
     qcuts = fit_quantile_cuts(df_train_r, numeric)
     print(f"[{_ts()}] fit quantile cuts for {len(qcuts)} numeric features")
 
-    # 4. Build catalogue.
     catalogue = build_predicate_catalogue(numeric, boolean, qcuts)
     print(f"[{_ts()}] catalogue: {len(catalogue)} predicates")
 
-    # 5. Persist.
     art = CatalogueArtifact(
         regime_cuts=rcuts,
         quantile_cuts=qcuts,
@@ -148,25 +193,83 @@ def cmd_scan_train(args: argparse.Namespace) -> int:
     df_train = apply_regimes(df_train, art.regime_cuts)
     print(f"[{_ts()}] TRAIN rows: {len(df_train)}")
 
-    print(f"[{_ts()}] scoring {len(catalogue)} predicates (min_n={args.min_n})...")
+    # Drift baseline on TRAIN
+    drift = compute_drift_baseline(df_train)
+    print(f"[{_ts()}] TRAIN drift baseline (LONG side):")
+    for b in range(6):
+        print(f"           bracket {b}: long={drift[('LONG',b)]:+.4f} "
+              f"short={drift[('SHORT',b)]:+.4f}")
+    (workdir / DRIFT_TRAIN_JSON).write_text(json.dumps(_drift_to_jsonable(drift), indent=2))
+
+    print(f"[{_ts()}] scoring {len(catalogue)} predicates "
+          f"(min_n={args.min_n}, drift-relative null)...")
     t0 = time.time()
-    prospects = score_predicates(df_train, catalogue, min_n=args.min_n)
+    prospects = score_predicates(df_train, catalogue,
+                                 min_n=args.min_n,
+                                 drift_baseline=drift)
     elapsed = time.time() - t0
     print(f"[{_ts()}] scored in {elapsed:.1f}s, {len(prospects)} kept rows")
 
+    # Save the raw scoring output BEFORE MTC, so a downstream MTC tweak does
+    # not require rerunning the 18-min scan.
+    raw_path = _save_df(prospects, workdir / (TRAIN_PROSPECTS_BASE + '_raw'))
+    print(f"[{_ts()}] wrote {raw_path} (pre-MTC)")
+
     if prospects.empty:
         print(f"[{_ts()}] WARNING: no predicates passed min_n={args.min_n}")
-        prospects.to_parquet(workdir / TRAIN_PROSPECTS, index=False)
+        out = _save_df(prospects, workdir / TRAIN_PROSPECTS_BASE)
+        print(f"[{_ts()}] wrote empty {out}")
         return 0
 
-    print(f"[{_ts()}] applying MTC (per-bracket)...")
-    prospects = apply_mtc(prospects, alpha=args.alpha, per='bracket')
+    print(f"[{_ts()}] applying economic filter "
+          f"(min_excess_pts={args.min_excess_pts}, min_sharpe={args.min_sharpe}) "
+          f"+ MTC (per-bracket)...")
+    prospects = apply_mtc(
+        prospects, alpha=args.alpha, per='bracket',
+        min_excess_pts=args.min_excess_pts,
+        min_sharpe=args.min_sharpe,
+    )
+    economic_pass  = int(prospects['economic_pass'].sum())
     survivors_bh   = int(prospects['survives_bh'].sum())
     survivors_bonf = int(prospects['survives_bonf'].sum())
-    print(f"[{_ts()}] BH survivors: {survivors_bh} | Bonferroni survivors: {survivors_bonf}")
+    print(f"[{_ts()}] economic-pass: {economic_pass} of {len(prospects)} "
+          f"({100*economic_pass/max(len(prospects),1):.1f}%)")
+    print(f"[{_ts()}] BH survivors: {survivors_bh} | "
+          f"Bonferroni survivors: {survivors_bonf}")
 
-    prospects.to_parquet(workdir / TRAIN_PROSPECTS, index=False)
-    print(f"[{_ts()}] wrote {workdir / TRAIN_PROSPECTS}")
+    out = _save_df(prospects, workdir / TRAIN_PROSPECTS_BASE)
+    print(f"[{_ts()}] wrote {out}")
+    return 0
+
+
+# -----------------------------------------------------------------------------
+# rescore-only — re-apply MTC to existing _raw prospects without rerunning
+#                the 18-min scan. Useful for tweaking economic thresholds.
+# -----------------------------------------------------------------------------
+def cmd_rescore(args: argparse.Namespace) -> int:
+    workdir = Path(args.workdir)
+    raw_path_base = workdir / (TRAIN_PROSPECTS_BASE + '_raw')
+    if not _exists_df(raw_path_base):
+        print(f"ERROR: {raw_path_base}.{{parquet,pkl}} not found. "
+              f"Run scan-train first.", file=sys.stderr)
+        return 2
+    prospects = _load_df(raw_path_base)
+    print(f"[{_ts()}] loaded {len(prospects)} pre-MTC rows")
+    print(f"[{_ts()}] applying economic filter "
+          f"(min_excess_pts={args.min_excess_pts}, min_sharpe={args.min_sharpe}) "
+          f"+ MTC...")
+    prospects = apply_mtc(
+        prospects, alpha=args.alpha, per='bracket',
+        min_excess_pts=args.min_excess_pts,
+        min_sharpe=args.min_sharpe,
+    )
+    economic_pass  = int(prospects['economic_pass'].sum())
+    survivors_bh   = int(prospects['survives_bh'].sum())
+    survivors_bonf = int(prospects['survives_bonf'].sum())
+    print(f"[{_ts()}] economic-pass: {economic_pass}")
+    print(f"[{_ts()}] BH survivors: {survivors_bh} | Bonferroni: {survivors_bonf}")
+    out = _save_df(prospects, workdir / TRAIN_PROSPECTS_BASE)
+    print(f"[{_ts()}] wrote {out}")
     return 0
 
 
@@ -180,24 +283,23 @@ def cmd_gate_val(args: argparse.Namespace) -> int:
         catalogue: list[PredicateSpec] = pickle.load(f)
     catalogue_by_pid = {s.pid: s for s in catalogue}
 
-    train_prospects = pd.read_parquet(workdir / TRAIN_PROSPECTS)
+    train_prospects = _load_df(workdir / TRAIN_PROSPECTS_BASE)
     if 'survives_bh' not in train_prospects.columns:
         print("ERROR: train_prospects missing MTC columns. Run scan-train first.",
               file=sys.stderr)
         return 2
 
-    # Take everything that survived EITHER BH OR Bonferroni — we'll let
-    # the report distinguish later.
     train_survivors = train_prospects[
         (train_prospects['survives_bh']) | (train_prospects['survives_bonf'])
     ].copy()
     print(f"[{_ts()}] TRAIN survivors going to VAL: {len(train_survivors)}")
 
     if train_survivors.empty:
-        empty_cols = list(train_prospects.columns) + ['expectancy_train', 'gate_passed']
-        empty = pd.DataFrame(columns=empty_cols)
-        empty.to_parquet(workdir / VAL_SURVIVORS, index=False)
-        print(f"[{_ts()}] no survivors; wrote empty {workdir / VAL_SURVIVORS}")
+        empty = train_survivors.copy()
+        empty['expectancy_train'] = []
+        empty['gate_passed'] = []
+        out = _save_df(empty, workdir / VAL_SURVIVORS_BASE)
+        print(f"[{_ts()}] no survivors; wrote empty {out}")
         return 0
 
     print(f"[{_ts()}] loading panel: {args.panel}")
@@ -207,7 +309,14 @@ def cmd_gate_val(args: argparse.Namespace) -> int:
     df_val = apply_regimes(df_val, art.regime_cuts)
     print(f"[{_ts()}] VAL rows: {len(df_val)}")
 
-    val_prospects = reapply_to_partition(df_val, train_survivors, catalogue_by_pid)
+    val_drift = compute_drift_baseline(df_val)
+    print(f"[{_ts()}] VAL drift baseline (LONG side):")
+    for b in range(6):
+        print(f"           bracket {b}: long={val_drift[('LONG',b)]:+.4f}")
+
+    val_prospects = reapply_to_partition(df_val, train_survivors,
+                                         catalogue_by_pid,
+                                         drift_baseline=val_drift)
     print(f"[{_ts()}] reapplied to VAL: {len(val_prospects)} rows")
 
     val_survivors = gate_val_survivors(
@@ -218,8 +327,8 @@ def cmd_gate_val(args: argparse.Namespace) -> int:
     )
     print(f"[{_ts()}] VAL gate survivors: {len(val_survivors)}")
 
-    val_survivors.to_parquet(workdir / VAL_SURVIVORS, index=False)
-    print(f"[{_ts()}] wrote {workdir / VAL_SURVIVORS}")
+    out = _save_df(val_survivors, workdir / VAL_SURVIVORS_BASE)
+    print(f"[{_ts()}] wrote {out}")
     return 0
 
 
@@ -233,11 +342,10 @@ def cmd_probe_oos(args: argparse.Namespace) -> int:
         catalogue: list[PredicateSpec] = pickle.load(f)
     catalogue_by_pid = {s.pid: s for s in catalogue}
 
-    val_survivors = pd.read_parquet(workdir / VAL_SURVIVORS)
+    val_survivors = _load_df(workdir / VAL_SURVIVORS_BASE)
     if val_survivors.empty:
         print(f"[{_ts()}] no VAL survivors; OOS step skipped.")
-        empty = pd.DataFrame(columns=val_survivors.columns)
-        empty.to_parquet(workdir / OOS_SURVIVORS, index=False)
+        out = _save_df(val_survivors, workdir / OOS_SURVIVORS_BASE)
         return 0
 
     print(f"[{_ts()}] VAL survivors going to OOS: {len(val_survivors)}")
@@ -257,11 +365,18 @@ def cmd_probe_oos(args: argparse.Namespace) -> int:
           f"({df_oos.index.min() if len(df_oos) else 'n/a'} .. "
           f"{df_oos.index.max() if len(df_oos) else 'n/a'})")
 
-    oos_prospects = reapply_to_partition(df_oos, val_survivors, catalogue_by_pid)
+    oos_drift = compute_drift_baseline(df_oos)
+    print(f"[{_ts()}] OOS drift baseline (LONG side):")
+    for b in range(6):
+        print(f"           bracket {b}: long={oos_drift[('LONG',b)]:+.4f}")
+
+    oos_prospects = reapply_to_partition(df_oos, val_survivors,
+                                         catalogue_by_pid,
+                                         drift_baseline=oos_drift)
     print(f"[{_ts()}] OOS prospects: {len(oos_prospects)}")
 
-    oos_prospects.to_parquet(workdir / OOS_SURVIVORS, index=False)
-    print(f"[{_ts()}] wrote {workdir / OOS_SURVIVORS}")
+    out = _save_df(oos_prospects, workdir / OOS_SURVIVORS_BASE)
+    print(f"[{_ts()}] wrote {out}")
     return 0
 
 
@@ -276,13 +391,13 @@ def cmd_report(args: argparse.Namespace) -> int:
         catalogue: list[PredicateSpec] = pickle.load(f)
     catalogue_by_pid = {s.pid: s for s in catalogue}
 
-    train_prospects = pd.read_parquet(workdir / TRAIN_PROSPECTS)
+    train_prospects = _load_df(workdir / TRAIN_PROSPECTS_BASE)
 
-    val_path = workdir / VAL_SURVIVORS
-    val_prospects = pd.read_parquet(val_path) if val_path.exists() else None
+    val_path = workdir / VAL_SURVIVORS_BASE
+    val_prospects = _load_df(val_path) if _exists_df(val_path) else None
 
-    oos_path = workdir / OOS_SURVIVORS
-    oos_prospects = pd.read_parquet(oos_path) if oos_path.exists() else None
+    oos_path = workdir / OOS_SURVIVORS_BASE
+    oos_prospects = _load_df(oos_path) if _exists_df(oos_path) else None
     oos_consumed = (output_dir / '.oos_consumed').exists()
 
     ranked = write_edges_ranked(
@@ -316,6 +431,14 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                    help='final output directory (also stores OOS sentinel)')
 
 
+def _add_mtc_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument('--alpha', type=float, default=0.05)
+    p.add_argument('--min-excess-pts', type=float, default=1.0,
+                   help='minimum |excess_expectancy| (in points) to pass economic filter')
+    p.add_argument('--min-sharpe', type=float, default=0.05,
+                   help='minimum |sharpe| to pass economic filter')
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog='edgefinder')
     sp = p.add_subparsers(dest='cmd', required=True)
@@ -330,8 +453,14 @@ def main(argv: list[str] | None = None) -> int:
     p_scan = sp.add_parser('scan-train')
     _add_common(p_scan)
     p_scan.add_argument('--min-n', type=int, default=1000)
-    p_scan.add_argument('--alpha', type=float, default=0.05)
+    _add_mtc_args(p_scan)
     p_scan.set_defaults(func=cmd_scan_train)
+
+    p_rescore = sp.add_parser('rescore-train',
+                              help='re-apply MTC to cached _raw scoring (no rescan)')
+    _add_common(p_rescore)
+    _add_mtc_args(p_rescore)
+    p_rescore.set_defaults(func=cmd_rescore)
 
     p_val = sp.add_parser('gate-val')
     _add_common(p_val)
