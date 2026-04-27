@@ -241,7 +241,7 @@ def build_minute_bars(
           .rename({'ts': 'ts_open'})
     )
 
-    df = lf.collect(streaming=True)
+    df = lf.collect(engine='streaming')
 
     # ts_close = ts_open + bar_min minutes (the convention used by
     # paper_trade_topk for "bar's ts_close").
@@ -455,14 +455,22 @@ def simulate_trades(
         ts_close (UTC datetime), atr
     """
     # Build numpy arrays for fast indexing.
-    bars_ts_close = bars_1m['ts_close'].to_numpy()  # datetime64[ns, UTC]
+    # Strip the timezone before .to_numpy() — polars→pandas yields tz-aware
+    # datetime64 which numpy.searchsorted cannot compare to a tz-naive scalar.
+    # We work in tz-naive UTC throughout; tz is re-applied when constructing
+    # output Timestamps for the journal.
+    bars_ts_close = (
+        bars_1m['ts_close'].dt.tz_convert('UTC').dt.tz_localize(None).to_numpy()
+    )
     bars_open = bars_1m['open'].to_numpy(dtype=np.float64)
     bars_high = bars_1m['high'].to_numpy(dtype=np.float64)
     bars_low = bars_1m['low'].to_numpy(dtype=np.float64)
     bars_close = bars_1m['close'].to_numpy(dtype=np.float64)
     n_bars = len(bars_ts_close)
 
-    atr_ts_close = atr['ts_close'].to_numpy()
+    atr_ts_close = (
+        atr['ts_close'].dt.tz_convert('UTC').dt.tz_localize(None).to_numpy()
+    )
     atr_values = atr['atr'].to_numpy(dtype=np.float64)
     n_atr = len(atr_ts_close)
 
