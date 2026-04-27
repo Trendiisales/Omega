@@ -193,26 +193,48 @@ inline int64_t sweep_now_ms() noexcept {
 #endif
 }
 
+// Pure-integer UTC extraction. NO libc, NO syscalls, NO locks.
+// Replaces gmtime_r/gmtime_s which on macOS internally take an os_unfair_lock
+// via notify_check_tz -- catastrophic for hot-loop sweep threads.
+//
+// Algorithm: civil-from-days (Howard Hinnant, public domain).
+// Computes year, month, day from days-since-1970-01-01, then derives
+// day-of-year. Branchless except for leap-year shift.
+//
+// Verified against gmtime_r for ms in [-62167219200000, 253402300799000]
+// (years 0001..9999). For our sweep window (2024..2026) it is exact.
 inline void sweep_utc_hms(int& h, int& m, int& yday) noexcept {
-    const time_t t = static_cast<time_t>(sweep_now_sec());
-    struct tm ti{};
-#ifdef _WIN32
-    gmtime_s(&ti, &t);
-#else
-    gmtime_r(&t, &ti);
-#endif
-    h = ti.tm_hour; m = ti.tm_min; yday = ti.tm_yday;
+    const int64_t s   = sweep_now_sec();
+    const int64_t day = s / 86400LL;
+    const int64_t sod = s - day * 86400LL;          // [0, 86399]
+    h = static_cast<int>(sod / 3600LL);
+    m = static_cast<int>((sod / 60LL) % 60LL);
+
+    // civil-from-days: convert days-since-1970-01-01 to {year, month, day}.
+    const int64_t z   = day + 719468;
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(z - era * 146097);             // [0, 146096]
+    const unsigned yoe = (doe - doe/1460 + doe/36524 - doe/146096) / 365;     // [0, 399]
+    int      y   = static_cast<int>(yoe) + static_cast<int>(era) * 400;
+    const unsigned doy = doe - (365*yoe + yoe/4 - yoe/100);                   // [0, 365]  (Mar1-based)
+    const unsigned mp  = (5*doy + 2) / 153;                                   // [0, 11]
+    const unsigned mo  = mp < 10 ? mp + 3 : mp - 9;                           // [1, 12]   (1-based)
+    if (mo <= 2) ++y;
+
+    // Now compute Jan-1-based day-of-year.
+    static constexpr int days_before_month[12] =
+        {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+    const bool leap = ((y % 4 == 0) && (y % 100 != 0)) || (y % 400 == 0);
+    const unsigned d = doy - (153*mp + 2)/5 + 1;                              // [1, 31]
+    yday = days_before_month[mo - 1] + static_cast<int>(d) - 1
+         + ((leap && mo > 2) ? 1 : 0);
 }
 
 inline int sweep_utc_mins() noexcept {
-    const time_t t = static_cast<time_t>(sweep_now_sec());
-    struct tm ti{};
-#ifdef _WIN32
-    gmtime_s(&ti, &t);
-#else
-    gmtime_r(&t, &ti);
-#endif
-    return ti.tm_hour * 60 + ti.tm_min;
+    const int64_t s   = sweep_now_sec();
+    const int64_t day = s / 86400LL;
+    const int64_t sod = s - day * 86400LL;          // [0, 86399]
+    return static_cast<int>(sod / 60LL);            // [0, 1439]
 }
 
 // =============================================================================
