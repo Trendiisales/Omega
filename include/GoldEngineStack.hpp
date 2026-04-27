@@ -21,7 +21,7 @@
 //  13. AsianRange            -- COMPRESSION/MEAN_REV: Asian 00-07 UTC range London break
 //  14. DynamicRange          -- MEAN_REV/COMPRESSION: 20-bar range extremes, Sharpe=2.36
 //  15. WickRejTick           -- ALL regimes: WickRejection on 300-tick bars, Sharpe=3.79
-//  16. TurtleTick            -- ALL regimes: Turtle N=40 on 300-tick bars, Sharpe=7.60
+//  16. TurtleTick            -- [S50 X1 RETIRED 2026-04-27] backtest 1T/154M ticks; H2 falsified (gate innocent); regime/dataset mismatch. Class retained for recovery.
 //  17. NR3Tick               -- COMPRESSION/MEAN_REV: NR3 on 300-tick bars, Sharpe=4.10
 //  18. TwoBarReversal        -- ALL regimes: 2x ATR strong bar + reversal close, Sharpe=1.55
 //  19. LondonFixMomentum    -- ALL regimes: 15:00 UTC LBMA fix direction, Sharpe~2.60
@@ -3676,7 +3676,7 @@ public:
                     en=(n=="IntradaySeasonality"
                        ||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
                        ||n=="TwoBarReversal"
                        ||n=="VWAPStretchReversion"||n=="DXYDivergence"||n=="LondonFixMomentum"); break;
                 case MarketRegime::TREND:
@@ -3691,7 +3691,7 @@ public:
                     // when the move is already $15+ confirmed. The internal $6 compression
                     // range requirement and EWM drift gate prevent it firing into trend noise.
                     en=(n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
                        ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
@@ -3706,7 +3706,7 @@ public:
                        ||n=="MeanReversion"||n=="IntradaySeasonality"
                        ||n=="DonchianBreakout"||n=="NR3Breakout"||n=="SpikeFade"
                        ||n=="AsianRange"||n=="DynamicRange"
-                       ||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
                        ||n=="TwoBarReversal"
                        ||n=="VWAPStretchReversion"||n=="ORBNewYork"||n=="DXYDivergence"
                        ||n=="LondonFixMomentum"); break;
@@ -3720,7 +3720,7 @@ public:
                     // by micro-compressions (the coil before the break). CB catches these.
                     en=(n=="SessionMomentum"||n=="LiquiditySweepPro"||n=="LiquiditySweepPressure"
                        ||n=="DonchianBreakout"||n=="SpikeFade"
-                       ||n=="TurtleTick"||n=="NR3Tick"
+                       ||n=="NR3Tick"  // [S50 X1 RETIRED] TurtleTick removed -- 1T/154M backtest
                        ||n=="TwoBarReversal"
                        ||n=="ORBNewYork"||n=="DXYDivergence"||n=="LondonFixMomentum"
                        ||n=="SessionOpenMomentum"); break;
@@ -4615,8 +4615,15 @@ public:
         engines_.push_back(std::make_unique<DynamicRangeEngine>());
         // SHELVED: WickRejTick -- shelved with WickRejection pending live revalidation.
         // engines_.push_back(std::make_unique<WickRejectionTickEngine>());
-        // SIM: TurtleTick -- 104T | WR=49.0% | $800/2yr | Sharpe=7.60
-        engines_.push_back(std::make_unique<TurtleTickEngine>());
+        // [S50 X1 RETIRED 2026-04-27] TurtleTick -- backtest 1T/154M ticks on
+        // ~/Tick/duka_ticks/XAUUSD_2024-03_2026-04_combined.csv. Diag branch
+        // s49-diag-turtletick-no-btbias (ff73e2ae) disabled the bracket_trend_bias
+        // gate from 03c048ae and re-ran: still 1T/154M. H2 falsified -- gate is
+        // innocent. Suspected cause: HTF EMA50/250 + 40-bar Donchian conditions
+        // rare in current regime, or dataset shift since the original 104T sim.
+        // Class TurtleTickEngine retained at L2089 for recovery if regime shifts.
+        // Original sim: 104T | WR=49.0% | $800/2yr | Sharpe=7.60
+        // engines_.push_back(std::make_unique<TurtleTickEngine>());
         // SIM: NR3Tick -- 565T | WR=41.4% | $1,009/2yr | Sharpe=4.10
         engines_.push_back(std::make_unique<NR3TickEngine>());
         // SIM: TwoBarReversal -- 1,216T | WR=47.1% | $795/2yr | Sharpe=1.55
@@ -5244,7 +5251,8 @@ private:
         //      Single-tick noise cannot unlock this path.
         //   2. DonchianBreakout: HTF EMA50/250 filter -- fires SHORT only when
         //      EMA50 < EMA250. Self-protecting against counter-trend.
-        //   3. TurtleTick: identical EMA50/250 filter. Same protection.
+        //   3. TurtleTick: [S50 X1 RETIRED] removed from registration -- engine
+        //      class still defined for recovery, but no instance is constructed.
         //   4. NR3Tick: requires confirmed squeeze breakout (CONFIRM_PCT=0.40).
         //   5. WickRejectionTickEngine: wick >= 55% bar range, MIN_WICK=$1.50,
         //      bar range >= $2.25 -- not noise.
@@ -5276,7 +5284,7 @@ private:
             // Each has its own internal HTF direction filter (EMA50/250 or equiv)
             // so they cannot fire counter-trend even if enabled here.
             if (asia_trend) {
-                if (n == "TurtleTick"      ||  // EMA50/250 HTF + 40-bar tick channel
+                if (// [S50 X1 RETIRED] n == "TurtleTick" -- 1T/154M backtest, removed from registration
                     n == "NR3Tick"         ||  // confirmed squeeze breakout required
                     n == "WickRejTick"     ||  // wick>=55% of bar, $1.50 min wick
                     n == "TwoBarReversal"  ||  // ATR_MULT=1.5x strong bar required
