@@ -147,6 +147,22 @@ static std::string build_trade_close_csv_row(const omega::TradeRecord& tr) {
 }
 
 static void write_trade_close_logs(const omega::TradeRecord& tr) {
+    // Phantom-record guard: a valid trade always has a positive entry timestamp
+    // and positive entry price. Records with entryTs<=0 or entryPrice<=0 are
+    // corrupted (most often: closer fired for a position whose entry record
+    // was lost across a restart, leaving entry_ts_unix=0 and entry_px=0.0).
+    // Their exit_px - 0 = exit_px math produces six-figure phantom losses
+    // that pollute every aggregation. Reject them at the writer.
+    if (tr.entryTs <= 0 || tr.entryPrice <= 0.0) {
+        printf("[CSV-PHANTOM-BLOCK] symbol=%s engine=%s entryTs=%lld entryPx=%.4f "
+               "exitTs=%lld exitPx=%.4f reason=%s -- record dropped (corrupted)\n",
+               tr.symbol.c_str(), tr.engine.c_str(),
+               (long long)tr.entryTs, tr.entryPrice,
+               (long long)tr.exitTs,  tr.exitPrice,
+               tr.exitReason.c_str());
+        fflush(stdout);
+        return;
+    }
     const std::string row = build_trade_close_csv_row(tr);
     {
         std::lock_guard<std::mutex> lk(g_trade_close_csv_mtx);
