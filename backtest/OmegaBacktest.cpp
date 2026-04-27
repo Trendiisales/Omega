@@ -15,7 +15,7 @@
 //                      legacy:  gold, latency, cross, stoprun,
 //                               ofade, omom, amom, lfade, rsirev, allnew
 //                      S44 new: hybridgold, macrocrash, h1swing, h4regime,
-//                               minh4, pullbackcont, pullbackprem, pdhl,
+//                               minh4, pdhl,
 //                               rsiextreme, emacross
 //                      master:  all  (= every legacy + every S44 runner)
 //
@@ -82,7 +82,7 @@
 #include "../include/MacroCrashEngine.hpp"
 #include "../include/HTFSwingEngines.hpp"
 #include "../include/MinimalH4Breakout.hpp"
-#include "../include/PullbackContEngine.hpp"
+// (PullbackContEngine.hpp include removed S49 X5 — engine culled)
 #include "../include/PDHLReversionEngine.hpp"
 #include "../include/RSIExtremeTurnEngine.hpp"
 #include "../include/EMACrossEngine.hpp"
@@ -917,75 +917,9 @@ struct TSMomRunner {
     }
 };
 
-// -----------------------------------------------------------------------------
-// PullbackContRunner -- PullbackContEngine (live default config)
-// -----------------------------------------------------------------------------
-struct PullbackContRunner {
-    omega::PullbackContEngine eng;
-    PullbackContRunner(){
-        // S49 X4 DIAGNOSTIC A/B: HOLD_S 600 -> 300 to test drift hypothesis.
-        // Engine docstring (PullbackContEngine.hpp:9-12) shows HOLD=300 produced
-        // WR=80-86% across h07/h17/h23 sessions in the original 2yr / 111M-tick
-        // validation. S48 baseline at HOLD=600 produced WR=28.3% (-$3.11) on the
-        // current 2024-03 -> 2026-04 dataset. The same docstring shows ONE run at
-        // HOLD=600: WR=61.8% +$18.76 -- still 28x higher WR than S48 saw.
-        // If HOLD=300 here restores WR ~80%, drift is config-tunable; mirror to
-        // engine_init.hpp:163 in a later commit. If HOLD=300 also gives WR~28%,
-        // regime has shifted vs. the original validation period -- escalate.
-        // *** Backtest harness only; engine_init.hpp:163 (live) unchanged at 600. ***
-        eng.enabled       = true;
-        eng.shadow_mode   = false;  // log to store via on_trade_record
-        eng.MOVE_MIN      = 20.0;
-        eng.PB_FRAC       = 0.20;
-        eng.LOOKBACK_S    = 300;
-        eng.HOLD_S        = 300;    // S49 X4: was 600 -- diagnostic A/B vs. docstring baseline
-        eng.SL_PTS        = 6.0;
-        eng.TRAIL_PTS     = 4.0;
-        eng.BASE_RISK_USD = 80.0;
-        eng.COOLDOWN_MS   = 120000;
-        eng.on_trade_record = [](const omega::TradeRecord& base){
-            // Engine emits engine="PullbackCont"; preserve as-is.
-            store::add(base);
-        };
-    }
-    void tick(const TickRow& r){
-        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
-                    /*gold_can_enter=*/ true);
-    }
-};
+// (PullbackContRunner removed S49 X5 — engine culled, see s49-x5-pullback-cull branch)
 
-// -----------------------------------------------------------------------------
-// PullbackPremRunner -- PullbackContEngine (PREMIUM config: 30pt h07 only)
-//
-// Same engine class as PullbackContRunner with the premium parameters from
-// engine_init.hpp lines 187-209.  We override the engine's emitted name to
-// "PullbackPrem" so the per-engine stats table separates them.
-// -----------------------------------------------------------------------------
-struct PullbackPremRunner {
-    omega::PullbackContEngine eng;
-    PullbackPremRunner(){
-        eng.enabled       = true;
-        eng.shadow_mode   = false;
-        eng.MOVE_MIN      = 30.0;   // higher bar
-        eng.PB_FRAC       = 0.20;
-        eng.LOOKBACK_S    = 600;
-        eng.HOLD_S        = 900;
-        eng.SL_PTS        = 8.0;
-        eng.TRAIL_PTS     = 2.0;
-        eng.BASE_RISK_USD = 160.0;
-        eng.COOLDOWN_MS   = 300000;
-        eng.on_trade_record = [](const omega::TradeRecord& base){
-            // Rewrite engine label so summary distinguishes prem from cont.
-            omega::TradeRecord tr = base;
-            tr.engine = "PullbackPrem";
-            store::add(tr);
-        };
-    }
-    void tick(const TickRow& r){
-        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
-                    /*gold_can_enter=*/ true);
-    }
-};
+// (PullbackPremRunner removed S49 X5 — engine culled)
 
 // -----------------------------------------------------------------------------
 // PDHLRevRunner -- PDHLReversionEngine
@@ -1115,7 +1049,7 @@ struct Cfg {
 
     // S44 new runners (default OFF -- enabled by --engine list)
     bool hybridgold=false, macrocrash=false, h1swing=false, h4regime=false;
-    bool minh4=false, pullbackcont=false, pullbackprem=false;
+    bool minh4=false;
     bool pdhl=false, rsiextreme=false, emacross=false;
 
     // S46 new runners
@@ -1134,7 +1068,7 @@ static Cfg parse(int argc, char** argv){
             "                  legacy:  gold latency cross stoprun\n"
             "                           ofade omom amom lfade rsirev allnew\n"
             "                  S44 new: hybridgold macrocrash h1swing h4regime\n"
-            "                           minh4 pullbackcont pullbackprem\n"
+            "                           minh4\n"
             "                           pdhl rsiextreme emacross\n"
             "                  S46 new: tsmom\n"
             "                  master:  all    (everything)\n"
@@ -1185,11 +1119,6 @@ static Cfg parse(int argc, char** argv){
             c.h1swing      = !!strstr(e,"h1swing");
             c.h4regime     = !!strstr(e,"h4regime");
             c.minh4        = !!strstr(e,"minh4");
-            // pullbackcont must NOT match pullbackprem: substring rules give
-            // "pullbackcont" matches inside "pullbackprem"=false (no overlap),
-            // and vice versa is also disjoint -- substrings are unique.
-            c.pullbackcont = !!strstr(e,"pullbackcont");
-            c.pullbackprem = !!strstr(e,"pullbackprem");
             c.pdhl         = !!strstr(e,"pdhl");
             c.rsiextreme   = !!strstr(e,"rsiextreme");
             c.emacross     = !!strstr(e,"emacross");
@@ -1206,7 +1135,7 @@ static Cfg parse(int argc, char** argv){
                 c.stoprun = c.ofade = c.omom = c.amom = c.lfade = true;
                 c.rsirev = true;
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
-                c.minh4 = c.pullbackcont = c.pullbackprem = true;
+                c.minh4 = true;
                 c.pdhl = c.rsiextreme = c.emacross = true;
                 c.tsmom = true;
             }
@@ -1221,7 +1150,7 @@ static Cfg parse(int argc, char** argv){
                 c.omom = true;       // OverlapMomentum kept (different class)
                 c.rsirev = true;
                 c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
-                c.minh4 = c.pullbackcont = c.pullbackprem = true;
+                c.minh4 = true;
                 c.rsiextreme = c.emacross = true;
                 c.tsmom = true;      // S46: TSMomGold included in clean cohort
                 // Explicitly DISABLE the four bleeders (in case substring
@@ -1331,8 +1260,7 @@ int main(int argc, char** argv){
     std::unique_ptr<H1SwingRunner>       rh1;
     std::unique_ptr<H4RegimeRunner>      rh4;
     std::unique_ptr<MinimalH4Runner>     rmh4;
-    std::unique_ptr<PullbackContRunner>  rpc;
-    std::unique_ptr<PullbackPremRunner>  rpp;
+    // (PullbackContRunner / PullbackPremRunner unique_ptrs removed S49 X5)
     std::unique_ptr<PDHLRevRunner>       rpd;
     std::unique_ptr<RSIExtremeRunner>    rrx;
     std::unique_ptr<EMACrossRunner>      rec;
@@ -1355,8 +1283,6 @@ int main(int argc, char** argv){
     if(cfg.h1swing)      rh1  = std::make_unique<H1SwingRunner>();
     if(cfg.h4regime)     rh4  = std::make_unique<H4RegimeRunner>();
     if(cfg.minh4)        rmh4 = std::make_unique<MinimalH4Runner>();
-    if(cfg.pullbackcont) rpc  = std::make_unique<PullbackContRunner>();
-    if(cfg.pullbackprem) rpp  = std::make_unique<PullbackPremRunner>();
     if(cfg.pdhl)         rpd  = std::make_unique<PDHLRevRunner>();
     if(cfg.rsiextreme)   rrx  = std::make_unique<RSIExtremeRunner>();
     if(cfg.emacross)     rec  = std::make_unique<EMACrossRunner>();
@@ -1389,8 +1315,6 @@ int main(int argc, char** argv){
         if(rh1)  rh1->tick(r);
         if(rh4)  rh4->tick(r);
         if(rmh4) rmh4->tick(r);
-        if(rpc)  rpc->tick(r);
-        if(rpp)  rpp->tick(r);
         if(rpd)  rpd->tick(r);
         if(rrx)  rrx->tick(r);
         if(rec)  rec->tick(r);
@@ -1436,7 +1360,7 @@ int main(int argc, char** argv){
     printf("  File    : %s\n", cfg.csv);
     printf("  Ticks   : %lld  in %.1fs (%.0f K t/s)\n", (long long)N, ps, N/ps/1000.0);
     printf("  Range   : %s -> %s\n", sa, sb);
-    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s\n",
            cfg.gold?"GoldStack ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
            cfg.hybridgold?"HybridGold ":"",
@@ -1444,8 +1368,6 @@ int main(int argc, char** argv){
            cfg.h1swing?"H1Swing ":"",
            cfg.h4regime?"H4Regime ":"",
            cfg.minh4?"MinH4 ":"",
-           cfg.pullbackcont?"PullbackCont ":"",
-           cfg.pullbackprem?"PullbackPrem ":"",
            cfg.pdhl?"PDHL ":"",
            cfg.rsiextreme?"RSIExtreme ":"",
            cfg.emacross?"EMACross ":"",
