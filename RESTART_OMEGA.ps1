@@ -308,7 +308,7 @@ $ErrorActionPreference = "Continue"
 if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe" }
 
 # Run cmake --build in foreground (-Wait, no redirection) so progress is visible
-# --target Omega builds only Omega.vcxproj, skipping OmegaBacktest and CandleFlowL2Bt
+# --target Omega builds only Omega.vcxproj, skipping OmegaBacktest
 $bldProc = Start-Process -FilePath $CmakeExe `
     -ArgumentList "--build `"$OmegaDir\build`" --config Release --target Omega" `
     -Wait -PassThru -NoNewWindow
