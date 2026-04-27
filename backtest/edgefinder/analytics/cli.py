@@ -18,6 +18,11 @@ Pipeline orchestrator. Five subcommands, run in order:
     probe-oos         Re-score VAL survivors on OOS (against OOS drift).
                       Single-touch, sentinel-protected.
 
+                      Optional --candidates-file PATH overrides the default
+                      val_survivors source. Used when an upstream selection
+                      step (e.g. C4 inspect_c4) has produced a curated
+                      candidate set distinct from the raw VAL survivors.
+
     report            Merge TRAIN + VAL + OOS prospect tables, write
                       edges_ranked.csv and edges_summary.md.
 
@@ -69,6 +74,9 @@ VAL_SURVIVORS_BASE   = 'val_survivors'
 OOS_SURVIVORS_BASE   = 'oos_survivors'
 DRIFT_TRAIN_JSON = 'drift_train.json'
 
+# Columns required on any candidate set fed into probe-oos.
+REQUIRED_CANDIDATE_COLUMNS = ('pid', 'bracket_id', 'side')
+
 
 def _ts() -> str:
     return time.strftime('%H:%M:%S')
@@ -114,6 +122,25 @@ def _load_df(base_path: Path) -> pd.DataFrame:
 def _exists_df(base_path: Path) -> bool:
     return (base_path.with_suffix('.parquet').exists() or
             base_path.with_suffix('.pkl').exists())
+
+
+def _load_candidates_file(path: Path) -> pd.DataFrame:
+    """
+    Load an explicit candidates file by absolute or relative path.
+
+    Accepts .parquet or .pkl. Unlike _load_df, this honors the exact suffix
+    the caller specified so the audit trail is unambiguous.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"candidates file not found: {path}")
+    suffix = path.suffix.lower()
+    if suffix == '.parquet':
+        return pd.read_parquet(path)
+    if suffix == '.pkl':
+        return pd.read_pickle(path)
+    raise ValueError(
+        f"candidates file must end in .parquet or .pkl, got: {path.suffix}"
+    )
 
 
 def _drift_to_jsonable(d: dict[tuple[str, int], float]) -> dict:
@@ -342,13 +369,55 @@ def cmd_probe_oos(args: argparse.Namespace) -> int:
         catalogue: list[PredicateSpec] = pickle.load(f)
     catalogue_by_pid = {s.pid: s for s in catalogue}
 
-    val_survivors = _load_df(workdir / VAL_SURVIVORS_BASE)
+    # ------------------------------------------------------------------
+    # Candidate-set selection: explicit --candidates-file overrides the
+    # default workdir/val_survivors source. Schema must still satisfy the
+    # reapply_to_partition contract (pid + bracket_id + side).
+    # ------------------------------------------------------------------
+    if args.candidates_file:
+        cand_path = Path(args.candidates_file)
+        print(f"[{_ts()}] loading candidates from explicit path: {cand_path}")
+        val_survivors = _load_candidates_file(cand_path)
+        candidates_source = str(cand_path.resolve())
+    else:
+        print(f"[{_ts()}] loading candidates from default: "
+              f"{workdir / VAL_SURVIVORS_BASE}.{{parquet,pkl}}")
+        val_survivors = _load_df(workdir / VAL_SURVIVORS_BASE)
+        candidates_source = str((workdir / VAL_SURVIVORS_BASE).resolve())
+
     if val_survivors.empty:
-        print(f"[{_ts()}] no VAL survivors; OOS step skipped.")
+        print(f"[{_ts()}] no candidates ({candidates_source}); OOS step skipped.")
         out = _save_df(val_survivors, workdir / OOS_SURVIVORS_BASE)
         return 0
 
-    print(f"[{_ts()}] VAL survivors going to OOS: {len(val_survivors)}")
+    # Validate required columns up-front, before we burn the OOS sentinel.
+    missing_cols = [c for c in REQUIRED_CANDIDATE_COLUMNS
+                    if c not in val_survivors.columns]
+    if missing_cols:
+        print(f"[{_ts()}] ERROR: candidates file missing required columns: "
+              f"{missing_cols}. Source: {candidates_source}",
+              file=sys.stderr)
+        return 2
+
+    # Validate every pid exists in the catalogue. A pid missing here means
+    # the candidates file came from a different catalogue build than the
+    # one in workdir — running OOS would silently produce empty rows.
+    cand_pids = set(int(p) for p in val_survivors['pid'].unique())
+    cat_pids = set(catalogue_by_pid.keys())
+    orphan_pids = cand_pids - cat_pids
+    if orphan_pids:
+        print(f"[{_ts()}] ERROR: {len(orphan_pids)} candidate pids absent from "
+              f"catalogue. Catalogue/candidates mismatch — refusing to burn OOS.",
+              file=sys.stderr)
+        print(f"           sample orphan pids: {sorted(orphan_pids)[:10]}",
+              file=sys.stderr)
+        print(f"           candidates source: {candidates_source}", file=sys.stderr)
+        print(f"           catalogue source:  {workdir / CATALOGUE_PICKLE}",
+              file=sys.stderr)
+        return 2
+
+    print(f"[{_ts()}] candidates going to OOS: {len(val_survivors)} rows, "
+          f"{len(cand_pids)} unique pids")
 
     print(f"[{_ts()}] loading panel: {args.panel}")
     df = load_panel(args.panel)
@@ -377,6 +446,7 @@ def cmd_probe_oos(args: argparse.Namespace) -> int:
 
     out = _save_df(oos_prospects, workdir / OOS_SURVIVORS_BASE)
     print(f"[{_ts()}] wrote {out}")
+    print(f"[{_ts()}] candidates source recorded: {candidates_source}")
     return 0
 
 
@@ -471,6 +541,11 @@ def main(argv: list[str] | None = None) -> int:
     _add_common(p_oos)
     p_oos.add_argument('--force', action='store_true',
                        help='override OOS sentinel (audit-stamped)')
+    p_oos.add_argument('--candidates-file', default=None,
+                       help='explicit path to candidate set (.parquet or .pkl) '
+                            'overriding the default workdir/val_survivors source. '
+                            'Used when an upstream selection step has produced a '
+                            'curated candidate set distinct from raw VAL survivors.')
     p_oos.set_defaults(func=cmd_probe_oos)
 
     p_rep = sp.add_parser('report')
