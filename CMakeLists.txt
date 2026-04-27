@@ -193,10 +193,52 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
     COMMENT "Copying config ? OmegaBacktest"
 )
 
+# =============================================================================
+# OmegaSweepHarness -- parameter sweep harness (S51 X2)
+#
+# Runs a 5-parameter geometric grid (0.5x..2.0x, 7 values) per engine across
+# 4 sweepable engines (HBG, AsianRange, VWAPStretch, EMACross). DXY is wired
+# in the harness but skipped at runtime because no DXY tick stream is fed.
+#
+# Standalone target: does not link OpenSSL, does not affect Omega.exe or
+# OmegaBacktest. Multithreaded via std::thread (no OpenMP).
+#
+# Build: cmake --build build --target OmegaSweepHarness --config Release
+# =============================================================================
+add_executable(OmegaSweepHarness
+    backtest/OmegaSweepHarness.cpp
+)
+target_include_directories(OmegaSweepHarness PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(OmegaSweepHarness PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(OmegaSweepHarness PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+    target_link_libraries(OmegaSweepHarness PRIVATE ws2_32)
+else()
+    target_compile_options(OmegaSweepHarness PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(OmegaSweepHarness PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(OmegaSweepHarness PRIVATE pthread)
+endif()
+
 message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
 message(STATUS "Git hash:   regenerated on every build")
-message(STATUS "OmegaBacktest: standalone (no OpenSSL)")
+message(STATUS "OmegaBacktest:     standalone (no OpenSSL)")
+message(STATUS "OmegaSweepHarness: standalone (no OpenSSL)")
 message(STATUS "========================================")
