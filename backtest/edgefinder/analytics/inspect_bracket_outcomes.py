@@ -179,7 +179,16 @@ def summarise(
         columns={'TP': 'tp_n', 'SL': 'sl_n', 'MtM': 'mtm_n'}
     )
 
-    # mean PnL overall and per outcome
+    # mean PnL overall and per outcome.
+    #
+    # IMPORTANT: every per-outcome mean Series MUST be reindexed onto the same
+    # MultiIndex as n_total (with NaN for groups where the outcome did not
+    # fire). Otherwise pd.concat(axis=1) below silently drops the MultiIndex
+    # names when one of the inputs has a default RangeIndex (which happens
+    # when zero rows have that outcome anywhere — e.g. zero TP hits in the
+    # entire CSV when every edge is MtM-dominated). When the names are
+    # dropped, reset_index() does not hoist pid/side/bracket_id/rank/partition
+    # back into columns and the col_order selection raises KeyError.
     mean_pnl = (
         trades.groupby(group_cols, sort=False)['pnl_pts']
         .mean()
@@ -187,14 +196,20 @@ def summarise(
     )
 
     def _mean_for(outcome_label: str) -> pd.Series:
+        col_name = f'mean_pnl_pts_{outcome_label.lower()}'
         sub = trades[trades['outcome'] == outcome_label]
         if sub.empty:
-            return pd.Series(dtype=np.float64, name=f'mean_pnl_pts_{outcome_label.lower()}')
-        return (
+            # Build an all-NaN Series indexed by the canonical MultiIndex of
+            # n_total so the downstream concat aligns correctly.
+            return pd.Series(np.nan, index=n_total.index, name=col_name, dtype=np.float64)
+        grouped = (
             sub.groupby(group_cols, sort=False)['pnl_pts']
             .mean()
-            .rename(f'mean_pnl_pts_{outcome_label.lower()}')
+            .rename(col_name)
         )
+        # Reindex onto the canonical MultiIndex so groups with zero of this
+        # outcome get NaN rather than being dropped.
+        return grouped.reindex(n_total.index)
 
     mean_tp = _mean_for('TP')
     mean_sl = _mean_for('SL')
@@ -202,6 +217,17 @@ def summarise(
 
     summary = pd.concat([n_total, counts, mean_pnl, mean_tp, mean_sl, mean_mtm], axis=1)
     summary = summary.reset_index()
+
+    # Defensive: confirm group-by columns made it back as columns. If concat
+    # somehow still dropped the MultiIndex (e.g. all groups truly empty), fail
+    # loudly rather than crashing on the col_order selection below.
+    missing_idx_cols = [c for c in group_cols if c not in summary.columns]
+    if missing_idx_cols:
+        raise RuntimeError(
+            f"summarise(): pd.concat dropped MultiIndex names "
+            f"{missing_idx_cols}. This indicates an unexpected mismatch "
+            f"between n_total.index and the per-outcome mean indexes."
+        )
 
     # Fill NaN means (groups with zero of that outcome) with 0.0 for cleanliness.
     for c in ('mean_pnl_pts_tp', 'mean_pnl_pts_sl', 'mean_pnl_pts_mtm'):
