@@ -84,6 +84,7 @@
 #include <memory>
 #include <fstream>
 #include <sstream>
+#include <limits>
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -426,6 +427,11 @@ struct ComboResult {
     double stddev_q   = 0.0;
     double stability  = 0.0;
     double score      = 0.0;
+    bool   degenerate = false;    // E1: structurally invalid combo (e.g.
+                                  // EMACross FAST >= SLOW). Engine has been
+                                  // runtime-skipped for this combo; this flag
+                                  // sorts it to the bottom of the score-ranked
+                                  // CSV and excludes it from the top-50 summary.
 };
 
 static int quarter_of(int64_t cur_idx, int64_t total_ticks) noexcept {
@@ -437,6 +443,15 @@ static int quarter_of(int64_t cur_idx, int64_t total_ticks) noexcept {
 }
 
 static void finalise_score(ComboResult& r) noexcept {
+    if (r.degenerate) {
+        // E1: degenerate combos sort to the bottom and never appear in
+        // top-50 summaries. -INFINITY ensures they rank below any negative
+        // PnL combo regardless of stability scaling.
+        r.stddev_q  = 0.0;
+        r.stability = 0.0;
+        r.score     = -std::numeric_limits<double>::infinity();
+        return;
+    }
     double mean = 0.25 * (r.q_pnl[0] + r.q_pnl[1] + r.q_pnl[2] + r.q_pnl[3]);
     double var  = 0.0;
     for (int i = 0; i < 4; ++i) {
@@ -817,6 +832,12 @@ static void run_ema_sweep(const std::vector<TickRow>& ticks,
     for (int i = 0; i < N_COMBOS; ++i) {
         results[i].combo_id = i;
         ema_params_for(i, results[i].p);
+        // E1: mark structurally-degenerate combos (FAST_PERIOD >= SLOW_PERIOD).
+        // results[i].p[0] = FAST_PERIOD, results[i].p[1] = SLOW_PERIOD.
+        // Engine has if-constexpr guards in on_bar/on_tick/force_close to
+        // skip these at runtime; this flag marks them in the output CSV
+        // and excludes them from the top-50 ranked summary.
+        results[i].degenerate = (results[i].p[0] >= results[i].p[1]);
         sinks[i].out          = &results[i];
         sinks[i].cur_idx      = 0;
         sinks[i].warmup_ticks = warmup_ticks;
@@ -1075,24 +1096,43 @@ static void write_csv(const std::string& path,
         std::fprintf(stderr, "ERROR: could not open %s for write\n", path.c_str());
         return;
     }
+    // E1: 'degenerate' column added at end. 1 = combo skipped due to
+    // structural invalidity (e.g. EMACross FAST >= SLOW); 0 = real result.
+    // Always 0 for HBG/AsianRange/VWAPStretch (no degeneracy patterns).
     std::fprintf(f, "combo_id,%s,%s,%s,%s,%s,n_trades,wins,win_rate,total_pnl,"
                     "q1_pnl,q2_pnl,q3_pnl,q4_pnl,q1_n,q2_n,q3_n,q4_n,"
-                    "stddev_q,stability,score\n",
+                    "stddev_q,stability,score,degenerate\n",
                  param_names[0], param_names[1], param_names[2],
                  param_names[3], param_names[4]);
     for (const auto& r : results) {
         const double wr = r.n_trades > 0
             ? 100.0 * static_cast<double>(r.wins) / static_cast<double>(r.n_trades)
             : 0.0;
-        std::fprintf(f, "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%d,%d,%.4f,%.4f,"
-                        "%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,"
-                        "%.6f,%.6f,%.6f\n",
-                     r.combo_id,
-                     r.p[0], r.p[1], r.p[2], r.p[3], r.p[4],
-                     r.n_trades, r.wins, wr, r.total_pnl,
-                     r.q_pnl[0], r.q_pnl[1], r.q_pnl[2], r.q_pnl[3],
-                     r.q_trades[0], r.q_trades[1], r.q_trades[2], r.q_trades[3],
-                     r.stddev_q, r.stability, r.score);
+        // Score may be -INFINITY for degenerate combos. Guard the print so
+        // we emit a sortable sentinel string rather than 'inf' or 'nan'
+        // which some CSV readers choke on.
+        const bool deg = r.degenerate;
+        if (deg) {
+            std::fprintf(f, "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%d,%d,%.4f,%.4f,"
+                            "%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,"
+                            "%.6f,%.6f,%s,%d\n",
+                         r.combo_id,
+                         r.p[0], r.p[1], r.p[2], r.p[3], r.p[4],
+                         r.n_trades, r.wins, wr, r.total_pnl,
+                         r.q_pnl[0], r.q_pnl[1], r.q_pnl[2], r.q_pnl[3],
+                         r.q_trades[0], r.q_trades[1], r.q_trades[2], r.q_trades[3],
+                         r.stddev_q, r.stability, "-1e308", 1);
+        } else {
+            std::fprintf(f, "%d,%.6f,%.6f,%.6f,%.6f,%.6f,%d,%d,%.4f,%.4f,"
+                            "%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,"
+                            "%.6f,%.6f,%.6f,%d\n",
+                         r.combo_id,
+                         r.p[0], r.p[1], r.p[2], r.p[3], r.p[4],
+                         r.n_trades, r.wins, wr, r.total_pnl,
+                         r.q_pnl[0], r.q_pnl[1], r.q_pnl[2], r.q_pnl[3],
+                         r.q_trades[0], r.q_trades[1], r.q_trades[2], r.q_trades[3],
+                         r.stddev_q, r.stability, r.score, 0);
+        }
     }
     std::fclose(f);
 }
@@ -1100,12 +1140,24 @@ static void write_csv(const std::string& path,
 static void append_summary(FILE* sf, const char* engine_name,
                            const std::vector<ComboResult>& results,
                            const std::array<const char*, 5>& param_names) {
-    std::vector<ComboResult> ranked = results;
+    // E1: filter degenerate combos out of the ranked summary entirely.
+    // The top-50 should contain only combos that were actually evaluated.
+    std::vector<ComboResult> ranked;
+    ranked.reserve(results.size());
+    int n_degen = 0;
+    for (const auto& r : results) {
+        if (r.degenerate) { ++n_degen; continue; }
+        ranked.push_back(r);
+    }
     std::sort(ranked.begin(), ranked.end(),
               [](const ComboResult& a, const ComboResult& b){
                   return a.score > b.score;
               });
     std::fprintf(sf, "\n========== %s top-50 by score ==========\n", engine_name);
+    if (n_degen > 0) {
+        std::fprintf(sf, "(filtered %d degenerate combos; %zu evaluated)\n",
+                     n_degen, ranked.size());
+    }
     std::fprintf(sf, "%-6s %-9s %-9s %-9s %-9s %-9s %7s %5s %10s %10s %10s\n",
                  "combo",
                  param_names[0], param_names[1], param_names[2],
