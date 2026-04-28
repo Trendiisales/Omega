@@ -556,19 +556,33 @@ public:
 // parameters require constexpr values, we compute them at compile time
 // via the constexpr mult_for_param() above.
 //
-// HBG params: MIN_RANGE=6.0, MAX_RANGE=25.0, SL_FRAC=0.5, TP_RR=2.0, TRAIL=0.25
+// HBG params: MIN_RANGE=6.0, MAX_RANGE=32.0, SL_FRAC=0.42, TP_RR=2.0, TRAIL=0.25
 // AsianRange params: BUFFER=0.50, MIN_RANGE=3.0, MAX_RANGE=50.0, SL=80, TP=200
 // VWAPStretch params: SL=40, TP=88, COOLDOWN=300, SIGMA=2.0, VOL_WINDOW=40
 // EMACross params: FAST=9, SLOW=15, RSI_LO=40.0, RSI_HI=50.0, SL_MULT=1.5
+//
+// D6 rebase (2026-04-28): HBG MAX_RANGE 25.0->32.0 and SL_FRAC 0.5->0.42.
+// Justification (verified against actual sweep_hbg.csv from D5 run at d6ed7ba8):
+//   * max_range top-50 distribution: 19/50 at 25.0 (ceiling), 0/50 above 25.0.
+//     Real ceiling-clipping. Rebase 25->32 -> grid covers 16..64, exposing
+//     unexplored max_range >25 territory while keeping the 25 cluster within
+//     range (32 * 0.7937 = 25.40, near-exact preservation).
+//   * sl_frac top-50 distribution: 33/50 at 0.5 (base), 17/50 below 0.5,
+//     0/50 above 0.5. Upper half of grid (0.63, 0.794, 1.0) is dead. Rebase
+//     0.5->0.42 -> grid covers 0.21..0.84, drops dead upper half, opens
+//     mild floor exploration below 0.25.
+//   * Other 3 HBG params unchanged (no edge-clipping signal in D5 data).
+//   * Other 3 engines (EMACross, AsianRange, VWAPStretch) unchanged.
 // =============================================================================
 
 // ---- HBG -------------------------------------------------------------------
 // Param positions: 0=MIN_RANGE, 1=MAX_RANGE, 2=SL_FRAC, 3=TP_RR, 4=TRAIL_FRAC
+// D6 rebase: MAX_RANGE 25.0->32.0, SL_FRAC 0.5->0.42 (see header for rationale)
 template <std::size_t I>
 using HBG_AT = omega::sweep::HBG_T<
     6.0  * mult_for_param(static_cast<int>(I), 0),
-    25.0 * mult_for_param(static_cast<int>(I), 1),
-    0.5  * mult_for_param(static_cast<int>(I), 2),
+    32.0 * mult_for_param(static_cast<int>(I), 1),
+    0.42 * mult_for_param(static_cast<int>(I), 2),
     2.0  * mult_for_param(static_cast<int>(I), 3),
     0.25 * mult_for_param(static_cast<int>(I), 4)
 >;
@@ -596,10 +610,11 @@ inline void hbg_run_tick(Tup& tup, SinkArr& sinks,
 }
 
 // Resolve the runtime param values for combo I (for output CSV).
+// D6 rebase: MAX_RANGE 25.0->32.0, SL_FRAC 0.5->0.42 (must mirror HBG_AT above)
 static void hbg_params_for(int I, double out[5]) noexcept {
     out[0] = 6.0  * mult_for_param(I, 0);
-    out[1] = 25.0 * mult_for_param(I, 1);
-    out[2] = 0.5  * mult_for_param(I, 2);
+    out[1] = 32.0 * mult_for_param(I, 1);
+    out[2] = 0.42 * mult_for_param(I, 2);
     out[3] = 2.0  * mult_for_param(I, 3);
     out[4] = 0.25 * mult_for_param(I, 4);
 }
