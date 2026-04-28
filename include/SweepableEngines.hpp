@@ -1004,6 +1004,16 @@ public:
     }
 
     void on_bar(double bar_close, double bar_atr, double bar_rsi, int64_t now_ms) noexcept {
+        // E1 (2026-04-28): Degenerate-grid filter. The X3 pairwise sweep grid
+        // produces 74/490 (15.1%) combos where FAST_PERIOD_T >= SLOW_PERIOD_T,
+        // which is structurally invalid for an EMA-cross strategy (the "fast"
+        // MA is not faster than the "slow" MA). Without this guard those
+        // combos appear at the top of the score-ranked CSV with n_trades=0,
+        // score=0.0 -- mixing them with legitimately-non-firing combos and
+        // polluting analysis. The if constexpr guard emits zero code for
+        // non-degenerate instances, so the runtime cost is exactly zero.
+        if constexpr (FAST_PERIOD_T >= SLOW_PERIOD_T) return;
+
         if (bar_atr > 0.5 && bar_atr < 50.0) _atr = bar_atr;
         _rsi = bar_rsi;
 
@@ -1027,6 +1037,9 @@ public:
     void on_tick(double bid, double ask, int64_t now_ms,
                  Sink& on_close) noexcept
     {
+        // E1: Degenerate-grid filter (see on_bar comment for full rationale).
+        if constexpr (FAST_PERIOD_T >= SLOW_PERIOD_T) return;
+
         if (_startup_ms == 0) _startup_ms = now_ms;
         if (now_ms - _startup_ms < STARTUP_MS) return;
 
@@ -1097,6 +1110,11 @@ public:
 
     template <typename Sink>
     void force_close(double bid, double ask, int64_t now_ms, Sink& cb) noexcept {
+        // E1: Degenerate-grid filter. Belt-and-braces -- on_tick guard already
+        // prevents pos.active from ever becoming true, so this path is never
+        // reached on a degen instance. Explicit guard preserves intent.
+        if constexpr (FAST_PERIOD_T >= SLOW_PERIOD_T) return;
+
         std::lock_guard<std::mutex> lk(_close_mtx);
         if (!pos.active) return;
         _close_locked(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms, cb);
