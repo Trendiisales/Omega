@@ -214,15 +214,26 @@ public:
     double pending_lot  = 0.0;
 
     struct OpenPos {
-        bool    active    = false;
-        bool    is_long   = false;
-        bool    be_locked = false;
-        double  entry     = 0.0;
-        double  tp        = 0.0;
-        double  sl        = 0.0;
-        double  size      = 0.0;
-        double  mfe       = 0.0;
-        int64_t entry_ts  = 0;
+        bool    active          = false;
+        bool    is_long         = false;
+        bool    be_locked       = false;
+        double  entry           = 0.0;
+        double  tp              = 0.0;
+        double  sl              = 0.0;
+        double  size            = 0.0;
+        double  mfe             = 0.0;
+        // S51 1A.1.a 2026-04-28: max adverse excursion (price points, <= 0).
+        //   Pre-S51 every HBI trade had tr.mae=0 because the writer was
+        //   hardcoded to tr.mae = 0.0. Mirrors HBG S43 a076e314 pattern.
+        //   Tracked by manage() and written at close as tr.mae = pos.mae * pos.size.
+        double  mae             = 0.0;
+        // S51 1A.1.a 2026-04-28: full bid-ask spread at fill time (price units).
+        //   Pre-S51 tr.spreadAtEntry was hardcoded to 0.0 -> apply_realistic_costs()
+        //   computed slippage_entry = slippage_exit = 0 for every HBI trade,
+        //   silently treating live and shadow trades as zero-spread fills.
+        //   Captured in confirm_fill() at the moment of fill.
+        double  spread_at_entry = 0.0;
+        int64_t entry_ts        = 0;
     } pos;
 
     std::string pending_long_clOrdId;
@@ -278,8 +289,9 @@ public:
                 cancel_both(); reset_to_idle(); return;
             }
             if (shadow_mode) {
-                if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot); return; }
-                if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot); return; }
+                // S51 1A.1.a: pass real spread to populate pos.spread_at_entry.
+                if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot, spread); return; }
+                if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot, spread); return; }
             }
             return;
         }
@@ -410,23 +422,30 @@ public:
         }
     }
 
-    void confirm_fill(bool is_long, double fill_px, double fill_lot) noexcept {
+    // S51 1A.1.a 2026-04-28: spread_at_fill default-arg added so existing external
+    //   callers (e.g. FIX execution-report handler) compile unchanged. Internal
+    //   shadow-mode call sites in on_tick() now pass (ask - bid) so the value
+    //   reaches the closing TradeRecord via pos.spread_at_entry.
+    void confirm_fill(bool is_long, double fill_px, double fill_lot,
+                      double spread_at_fill = 0.0) noexcept {
         if (phase != Phase::PENDING) return;
         cancel_losing_side(is_long);
 
         const double sl_dist = range * cfg_.sl_frac + cfg_.sl_buffer;
         const double tp_dist = sl_dist * cfg_.tp_rr;
 
-        pos.active    = true;
-        pos.is_long   = is_long;
-        pos.entry     = fill_px;
-        pos.sl        = is_long ? (fill_px - sl_dist) : (fill_px + sl_dist);
-        pos.tp        = is_long ? (fill_px + tp_dist)  : (fill_px - tp_dist);
-        pos.size      = fill_lot;
-        pos.mfe       = 0.0;
-        pos.be_locked = false;
-        pos.entry_ts  = static_cast<int64_t>(std::time(nullptr));
-        phase         = Phase::LIVE;
+        pos.active          = true;
+        pos.is_long         = is_long;
+        pos.entry           = fill_px;
+        pos.sl              = is_long ? (fill_px - sl_dist) : (fill_px + sl_dist);
+        pos.tp              = is_long ? (fill_px + tp_dist)  : (fill_px - tp_dist);
+        pos.size            = fill_lot;
+        pos.mfe             = 0.0;
+        pos.mae             = 0.0;   // S51: reset adverse-excursion tracker
+        pos.spread_at_entry = spread_at_fill;  // S51: stash for tr.spreadAtEntry at close
+        pos.be_locked       = false;
+        pos.entry_ts        = static_cast<int64_t>(std::time(nullptr));
+        phase               = Phase::LIVE;
 
         std::cout << "[HYBRID-" << cfg_.symbol << "] FILL "
                   << (is_long ? "LONG" : "SHORT")
@@ -484,6 +503,11 @@ private:
         if (!pos.active) return;
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
+        // S51 1A.1.a 2026-04-28: track maximum adverse excursion in price-points.
+        //   Convention matches HBG (GoldHybridBracketEngine.hpp L433): pos.mae
+        //   stays <= 0 and represents the worst against-position move.
+        //   `move` is favourable-positive, so adverse moves register as `move < 0`.
+        if (move < pos.mae) pos.mae = move;
         if ((now_s - pos.entry_ts) < cfg_.min_hold_s) return;
 
         const double tp_dist    = std::fabs(pos.tp - pos.entry);
@@ -562,13 +586,16 @@ private:
         tr.pnl        = (pos.is_long ? (exit_px - pos.entry)
                                      : (pos.entry - exit_px)) * pos.size;
         tr.mfe        = pos.mfe * pos.size;
-        tr.mae        = 0.0;
+        // S51 1A.1.a 2026-04-28: was hardcoded 0.0; now real MAE.
+        tr.mae        = pos.mae * pos.size;
         tr.entryTs    = pos.entry_ts;
         tr.exitTs     = now_s;
         tr.exitReason = reason;
         tr.engine     = "HybridBracketIndex";
         tr.regime     = "HYBRID";
-        tr.spreadAtEntry = 0.0;
+        // S51 1A.1.a 2026-04-28: was hardcoded 0.0; now real spread captured at fill.
+        //   Consumed by apply_realistic_costs() for slippage_entry/slippage_exit.
+        tr.spreadAtEntry = pos.spread_at_entry;
         tr.shadow     = shadow_mode;
 
         std::cout << "[HYBRID-" << cfg_.symbol << "] EXIT "
