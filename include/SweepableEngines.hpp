@@ -637,6 +637,12 @@ public:
         double  size     = 0.01;
         double  mfe      = 0.0;
         double  mae      = 0.0;
+        // S51 1A.1.b 2026-04-28: spread at fill time (mirrors live HBG L142).
+        //   Pre-1A.1.b tr.spreadAtEntry was hardcoded to 0.0 in _close() ->
+        //   apply_realistic_costs() saw zero-spread fills for every HBG_T
+        //   sweep trade, silently understating cost vs live behaviour. Now
+        //   captured in confirm_fill() at moment of fill via 4th default-arg.
+        double  spread_at_entry = 0.0;
         int64_t entry_ts = 0;
     } pos;
 
@@ -693,8 +699,11 @@ public:
         }
 
         if (phase == Phase::PENDING) {
-            if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot_long);  return; }
-            if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot_short); return; }
+            // S51 1A.1.b: pass real spread so pos.spread_at_entry is populated
+            //   for apply_realistic_costs() at close. `spread` is computed at
+            //   on_tick() top from ask - bid (HBG_T L671). Mirrors live HBG L223-224.
+            if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot_long,  spread); return; }
+            if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot_short, spread); return; }
             if (now_s - m_armed_ts > PENDING_TIMEOUT_S) {
                 phase = Phase::IDLE;
             }
@@ -804,19 +813,25 @@ public:
         }
     }
 
-    void confirm_fill(bool is_long, double fill_px, double fill_lot) noexcept {
+    // S51 1A.1.b 2026-04-28: spread_at_fill default-arg added (mirrors live
+    //   HBG L401-402). Default 0.0 keeps any future external 3-arg callers
+    //   compiling unchanged; internal on_tick PENDING-block call sites now
+    //   pass real (ask - bid) spread.
+    void confirm_fill(bool is_long, double fill_px, double fill_lot,
+                      double spread_at_fill = 0.0) noexcept {
         const double sl_dist = range * SL_FRAC_T + SL_BUFFER;
         const double tp_dist = sl_dist * TP_RR_T;
-        pos.active   = true;
-        pos.is_long  = is_long;
-        pos.entry    = fill_px;
-        pos.sl       = is_long ? (fill_px - sl_dist) : (fill_px + sl_dist);
-        pos.tp       = is_long ? (fill_px + tp_dist) : (fill_px - tp_dist);
-        pos.size     = fill_lot;
-        pos.mfe      = 0.0;
-        pos.mae      = 0.0;
-        pos.entry_ts = m_last_tick_s;
-        phase        = Phase::LIVE;
+        pos.active          = true;
+        pos.is_long         = is_long;
+        pos.entry           = fill_px;
+        pos.sl              = is_long ? (fill_px - sl_dist) : (fill_px + sl_dist);
+        pos.tp              = is_long ? (fill_px + tp_dist) : (fill_px - tp_dist);
+        pos.size            = fill_lot;
+        pos.mfe             = 0.0;
+        pos.mae             = 0.0;
+        pos.spread_at_entry = spread_at_fill;  // S51 1A.1.b: stash for tr.spreadAtEntry at close
+        pos.entry_ts        = m_last_tick_s;
+        phase               = Phase::LIVE;
     }
 
     template <typename Sink>
@@ -902,7 +917,7 @@ private:
         tr.mfe = pos.mfe * pos.size;
         tr.mae = pos.mae * pos.size;
         tr.entryTs = pos.entry_ts; tr.exitTs = now_s;
-        tr.exitReason = reason; tr.spreadAtEntry = 0.0;
+        tr.exitReason = reason; tr.spreadAtEntry = pos.spread_at_entry;  // S51 1A.1.b
         tr.bracket_hi = bracket_high; tr.bracket_lo = bracket_low;
         tr.shadow = shadow_mode;
 
