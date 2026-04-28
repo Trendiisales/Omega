@@ -52,6 +52,13 @@
 //     --warmup <n>      ticks to skip before recording trades (default: 5000)
 //     --from-date <d>   skip ticks before YYYY-MM-DD (e.g. 2024-09-01)
 //     --to-date <d>     skip ticks at/after YYYY-MM-DD
+//     --min-trades <n>  combos with n_trades < n get score = -inf so they sink
+//                       to the bottom of the ranking (default 0 = no gate).
+//                       All other CSV fields (n_trades, total_pnl, q_pnl, ...)
+//                       are written verbatim regardless of the gate; only the
+//                       'score' column is affected. Use to suppress the
+//                       zero-trade artefact where n_trades=0 combos beat
+//                       loss-making trading combos at score=0.
 //     --verbose         print per-engine progress
 //
 // OUTPUT
@@ -84,6 +91,7 @@
 #include <memory>
 #include <fstream>
 #include <sstream>
+#include <limits>
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -436,6 +444,13 @@ static int quarter_of(int64_t cur_idx, int64_t total_ticks) noexcept {
     return q;
 }
 
+// -----------------------------------------------------------------------------
+// S6 minimum-trades gate. Set once in main() from --min-trades, then read
+// (never written) by finalise_score on the per-engine threads. The set-once-
+// before-launch / read-only-after pattern is data-race-free.
+// -----------------------------------------------------------------------------
+static int g_min_trades = 0;
+
 static void finalise_score(ComboResult& r) noexcept {
     double mean = 0.25 * (r.q_pnl[0] + r.q_pnl[1] + r.q_pnl[2] + r.q_pnl[3]);
     double var  = 0.0;
@@ -447,6 +462,13 @@ static void finalise_score(ComboResult& r) noexcept {
     r.stddev_q  = std::sqrt(var);
     r.stability = 1.0 / (1.0 + r.stddev_q);
     r.score     = r.stability * r.total_pnl;
+
+    // S6 gate: when --min-trades is set, combos below the threshold are sunk
+    // to score = -inf so std::sort places them last. All other fields are
+    // preserved verbatim. Default g_min_trades = 0 -> no behavior change.
+    if (g_min_trades > 0 && r.n_trades < g_min_trades) {
+        r.score = -std::numeric_limits<double>::infinity();
+    }
 }
 
 // =============================================================================
@@ -1131,6 +1153,7 @@ struct Args {
     int64_t     warmup  = 5000;
     int64_t     from_ms = 0;
     int64_t     to_ms   = 0;
+    int         min_trades = 0;
     bool        verbose = false;
 };
 
@@ -1143,6 +1166,9 @@ static void usage() {
         "  --warmup <n>      ticks to skip before recording trades (default: 5000)\n"
         "  --from-date <d>   skip ticks before YYYY-MM-DD\n"
         "  --to-date <d>     skip ticks at/after YYYY-MM-DD\n"
+        "  --min-trades <n>  combos with n_trades < n get score = -inf so they\n"
+        "                    sink to the bottom of the ranking (default 0 = no gate).\n"
+        "                    Other CSV fields are written verbatim regardless.\n"
         "  --verbose         print per-engine progress\n"
     );
 }
@@ -1157,6 +1183,7 @@ static bool parse_args(int argc, char** argv, Args& a) {
         else if (s == "--warmup" && i+1 < argc) { a.warmup = std::atoll(argv[++i]); }
         else if (s == "--from-date" && i+1 < argc) { a.from_ms = parse_date_arg(argv[++i]); }
         else if (s == "--to-date" && i+1 < argc) { a.to_ms = parse_date_arg(argv[++i]); }
+        else if (s == "--min-trades" && i+1 < argc) { a.min_trades = std::atoi(argv[++i]); }
         else if (s == "--verbose") { a.verbose = true; }
         else if (s == "--help" || s == "-h") { usage(); return false; }
         else {
@@ -1188,7 +1215,14 @@ int main(int argc, char** argv) {
     std::printf("  warmup:  %" PRId64 "\n", args.warmup);
     if (args.from_ms > 0) std::printf("  from_ms: %" PRId64 "\n", args.from_ms);
     if (args.to_ms   > 0) std::printf("  to_ms:   %" PRId64 "\n", args.to_ms);
+    std::printf("  min_trades: %d%s\n", args.min_trades,
+                args.min_trades > 0 ? " (gate active)" : " (gate disabled)");
     std::fflush(stdout);
+
+    // Publish min-trades gate to file scope BEFORE any sweep thread is launched.
+    // finalise_score() reads g_min_trades on per-engine threads; the set-once-
+    // before-launch / read-only-after pattern is data-race-free.
+    g_min_trades = args.min_trades;
 
     if (!ensure_dir(args.outdir)) {
         std::fprintf(stderr, "ERROR: cannot create outdir %s\n", args.outdir.c_str());
