@@ -571,7 +571,9 @@ public:
 // parameters require constexpr values, we compute them at compile time
 // via the constexpr mult_for_param() above.
 //
-// HBG params: MIN_RANGE=6.0, MAX_RANGE=32.0, SL_FRAC=0.42, TP_RR=2.0, TRAIL=0.25
+// HBG params: MIN_RANGE=6.0, MAX_RANGE=32.0, SL_FRAC=0.42, TP_RR=2.0, MFE_LOCK_FRAC=0.20
+//   (HBG-FIX-1: TRAIL_FRAC is fixed at live default 0.25 and no longer swept;
+//    MFE_LOCK_FRAC takes slot 4 and centres on the live hardcoded 0.20.)
 // AsianRange params: BUFFER=0.50, MIN_RANGE=3.0, MAX_RANGE=50.0, SL=80, TP=200
 // VWAPStretch params: SL=40, TP=88, COOLDOWN=300, SIGMA=2.0, VOL_WINDOW=40
 // EMACross params: FAST=9, SLOW=15, RSI_LO=40.0, RSI_HI=50.0, SL_MULT=1.5
@@ -588,18 +590,26 @@ public:
 //     mild floor exploration below 0.25.
 //   * Other 3 HBG params unchanged (no edge-clipping signal in D5 data).
 //   * Other 3 engines (EMACross, AsianRange, VWAPStretch) unchanged.
+//
+// HBG-FIX-1 (2026-04-29): swap TRAIL_FRAC slot for MFE_LOCK_FRAC slot.
+// Evidence (D6E1_G1CLEAN combos 308-314): trail_frac >= 0.158 produces
+// byte-identical PnL because range*TRAIL_FRAC clamps against the
+// hardcoded mfe*0.20 in HBG_T::manage(). Surfacing 0.20 as the swept
+// param (and holding TRAIL_FRAC at 0.25) targets the binding constraint.
 // =============================================================================
 
 // ---- HBG -------------------------------------------------------------------
-// Param positions: 0=MIN_RANGE, 1=MAX_RANGE, 2=SL_FRAC, 3=TP_RR, 4=TRAIL_FRAC
-// D6 rebase: MAX_RANGE 25.0->32.0, SL_FRAC 0.5->0.42 (see header for rationale)
+// Param positions: 0=MIN_RANGE, 1=MAX_RANGE, 2=SL_FRAC, 3=TP_RR, 4=MFE_LOCK_FRAC
+// D6 rebase:    MAX_RANGE 25.0->32.0, SL_FRAC 0.5->0.42 (see header for rationale)
+// HBG-FIX-1:    slot 4 is MFE_LOCK_FRAC (centred 0.20); TRAIL_FRAC fixed at 0.25
 template <std::size_t I>
 using HBG_AT = omega::sweep::HBG_T<
-    6.0  * mult_for_param(static_cast<int>(I), 0),
-    32.0 * mult_for_param(static_cast<int>(I), 1),
-    0.42 * mult_for_param(static_cast<int>(I), 2),
-    2.0  * mult_for_param(static_cast<int>(I), 3),
-    0.25 * mult_for_param(static_cast<int>(I), 4)
+    6.0  * mult_for_param(static_cast<int>(I), 0),  // MIN_RANGE
+    32.0 * mult_for_param(static_cast<int>(I), 1),  // MAX_RANGE  (D6 rebase)
+    0.42 * mult_for_param(static_cast<int>(I), 2),  // SL_FRAC    (D6 rebase)
+    2.0  * mult_for_param(static_cast<int>(I), 3),  // TP_RR
+    0.25,                                            // TRAIL_FRAC (HBG-FIX-1: fixed at live default)
+    0.20 * mult_for_param(static_cast<int>(I), 4)   // MFE_LOCK_FRAC (HBG-FIX-1: swept)
 >;
 
 template <std::size_t... I>
@@ -625,13 +635,14 @@ inline void hbg_run_tick(Tup& tup, SinkArr& sinks,
 }
 
 // Resolve the runtime param values for combo I (for output CSV).
-// D6 rebase: MAX_RANGE 25.0->32.0, SL_FRAC 0.5->0.42 (must mirror HBG_AT above)
+// D6 rebase:  MAX_RANGE 25.0->32.0, SL_FRAC 0.5->0.42 (must mirror HBG_AT above)
+// HBG-FIX-1:  slot 4 is MFE_LOCK_FRAC (centred 0.20); TRAIL_FRAC is fixed (0.25)
 static void hbg_params_for(int I, double out[5]) noexcept {
     out[0] = 6.0  * mult_for_param(I, 0);
     out[1] = 32.0 * mult_for_param(I, 1);
     out[2] = 0.42 * mult_for_param(I, 2);
     out[3] = 2.0  * mult_for_param(I, 3);
-    out[4] = 0.25 * mult_for_param(I, 4);
+    out[4] = 0.20 * mult_for_param(I, 4);
 }
 
 // ---- EMACross --------------------------------------------------------------
@@ -773,6 +784,10 @@ inline void hbg_dump_combo_impl(EngineTup& tup, int target, FILE* df,
                                 std::index_sequence<I...>) {
     // For each tuple slot I, if I matches target, call dump_diag with the
     // resolved per-combo params.
+    // HBG-FIX-1: slot 4 now passes MFE_LOCK_FRAC (centred 0.20). The
+    // dump_diag() formal parameter is still named `base_trail_frac` for
+    // backwards-compat with the engine-class signature; semantically the
+    // 5th value is now mfe_lock_frac and the diag TSV header reflects this.
     auto try_dump = [&](auto idx_const) {
         constexpr int idx = decltype(idx_const)::value;
         if (idx == target) {
@@ -781,7 +796,7 @@ inline void hbg_dump_combo_impl(EngineTup& tup, int target, FILE* df,
                 32.0 * mult_for_param(idx, 1),
                 0.42 * mult_for_param(idx, 2),
                 2.0  * mult_for_param(idx, 3),
-                0.25 * mult_for_param(idx, 4));
+                0.20 * mult_for_param(idx, 4));
         }
     };
     (try_dump(std::integral_constant<int, static_cast<int>(I)>{}), ...);
@@ -877,6 +892,13 @@ static void run_hbg_sweep(const std::vector<TickRow>& ticks,
     //   308..314          -- 7 combos that produced byte-identical results
     //                        in D6 despite differing trail_frac (0.125 ..
     //                        0.500). Confirms whether trail engaged at all.
+    //                        HBG-FIX-1: post-fix, slot 4 in these combos is
+    //                        mfe_lock_frac instead of trail_frac, so the
+    //                        308..314 sweep now exercises the previously-
+    //                        hidden 0.10..0.40 mfe-lock axis. Re-running
+    //                        these on the post-fix binary should produce
+    //                        DIFFERENT PnL across the seven values; if it
+    //                        still produces identical PnL, the lever is dead.
     {
         const std::string diag_path = outdir + "/hbg_diag.tsv";
         FILE* df = std::fopen(diag_path.c_str(), "w");
@@ -885,7 +907,7 @@ static void run_hbg_sweep(const std::vector<TickRow>& ticks,
                          diag_path.c_str());
         } else {
             std::fprintf(df,
-                "combo_id\tmin_range\tmax_range\tsl_frac\ttp_rr\ttrail_frac\t"
+                "combo_id\tmin_range\tmax_range\tsl_frac\ttp_rr\tmfe_lock_frac\t"
                 "n_position_opens\tn_trail_eval\tn_trail_sl_updated\t"
                 "n_close_tp_hit\tn_close_be_hit\tn_close_trail_hit\t"
                 "n_close_sl_hit\tn_close_force\n");
@@ -1713,9 +1735,9 @@ int main(int argc, char** argv) {
 
     if (!hbg_res.empty()) {
         write_csv(args.outdir + "/sweep_hbg.csv", hbg_res,
-                  {"min_range","max_range","sl_frac","tp_rr","trail_frac"});
+                  {"min_range","max_range","sl_frac","tp_rr","mfe_lock_frac"});
         if (sf) append_summary(sf, "HBG", hbg_res,
-                               {"min_range","max_range","sl_frac","tp_rr","trail_frac"});
+                               {"min_range","max_range","sl_frac","tp_rr","mfe_lock_frac"});
         std::printf("wrote sweep_hbg.csv (%zu combos)\n", hbg_res.size());
     }
     if (!ema_res.empty()) {

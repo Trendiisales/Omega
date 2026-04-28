@@ -689,11 +689,12 @@ public:
 //     full inlining of on_tick body in each instantiated combo.
 // =============================================================================
 template <
-    double MIN_RANGE_T  = 6.0,
-    double MAX_RANGE_T  = 25.0,
-    double SL_FRAC_T    = 0.5,
-    double TP_RR_T      = 2.0,
-    double TRAIL_FRAC_T = 0.25
+    double MIN_RANGE_T     = 6.0,
+    double MAX_RANGE_T     = 25.0,
+    double SL_FRAC_T       = 0.5,
+    double TP_RR_T         = 2.0,
+    double TRAIL_FRAC_T    = 0.25,
+    double MFE_LOCK_FRAC_T = 0.20  // S51 1A.1.b HBG-FIX-1: surfaces hardcoded 0.20 from manage()
 >
 class HBG_T {
 public:
@@ -951,7 +952,7 @@ public:
 #ifdef OMEGA_SWEEP_DIAG
             ++n_trail_eval_;
 #endif
-            const double mfe_trail = pos.mfe * 0.20;
+            const double mfe_trail = pos.mfe * MFE_LOCK_FRAC_T;
             const double range_trail = range * TRAIL_FRAC_T;
             const double trail_dist = (mfe_trail > 0.0) ? std::min(range_trail, mfe_trail) : range_trail;
             const double trail_sl = pos.is_long ? (pos.entry + pos.mfe - trail_dist)
