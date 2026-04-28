@@ -267,11 +267,62 @@ class AsianRangeT {
     bool    enabled_ = true;
     int64_t last_signal_s_ = -3700;  // initialised so first tick is allowed
 
+#ifdef OMEGA_SWEEP_DIAG
+    // D7 diagnostic counters. Track every gate-rejection reason and
+    // every fire so we can pinpoint the >100x trade-frequency mismatch
+    // vs the live AsianRangeEngine, and the cross-instance non-determinism
+    // observed in D6+E1 results (10 byte-identical-param combos producing
+    // 2 losses + 8 wins). All counters are per-instance.
+    uint64_t n_called_                 = 0;  // total process() invocations
+    uint64_t n_rej_invalid_            = 0;  // !enabled_ || !s.is_valid()
+    uint64_t n_rej_spread_             = 0;  // s.spread > MAX_SPREAD
+    uint64_t n_rej_session_            = 0;  // s.session == UNKNOWN
+    uint64_t n_in_build_window_        = 0;  // h ∈ [0, FIRE_START_H)
+    uint64_t n_rej_outside_fire_window_= 0;  // h outside [FIRE_START_H, FIRE_END_H)
+    uint64_t n_rej_no_range_           = 0;  // asian_hi_<=0 || asian_lo_>=1e8
+    uint64_t n_rej_range_size_         = 0;  // rng outside [MIN_RANGE, MAX_RANGE]
+    uint64_t n_rej_cooldown_           = 0;  // elapsed < COOLDOWN_S
+    uint64_t n_signal_long_            = 0;  // long fire
+    uint64_t n_signal_short_           = 0;  // short fire
+#endif
+
 public:
     AsianRangeT() = default;
     void setEnabled(bool e){ if(e && !enabled_) reset(); enabled_ = e; }
     bool isEnabled() const { return enabled_; }
     uint64_t signal_count() const { return signal_count_; }
+
+#ifdef OMEGA_SWEEP_DIAG
+    // Dump diagnostic state. Tab-separated for easy awk/cut. Header is
+    // emitted by the harness; this method writes one row.
+    void dump_diag(FILE* f, int combo_id, double base_buffer,
+                   double base_min_range, double base_max_range,
+                   int base_sl_ticks, int base_tp_ticks) const noexcept {
+        std::fprintf(f,
+            "%d\t%.6f\t%.6f\t%.6f\t%d\t%d\t"   // combo_id, params (BUFFER, MIN_RANGE, MAX_RANGE, SL_TICKS, TP_TICKS)
+            "%llu\t%llu\t%llu\t%llu\t%llu\t"   // n_called, n_rej_invalid, n_rej_spread, n_rej_session, n_in_build_window
+            "%llu\t%llu\t%llu\t%llu\t"          // n_rej_outside_fire, n_rej_no_range, n_rej_range_size, n_rej_cooldown
+            "%llu\t%llu\t"                      // n_signal_long, n_signal_short
+            "%.6f\t%.6f\t%d\t%d\t%d\t%llu\t%lld\n",  // asian_hi_, asian_lo_, last_day_, long_fired_, short_fired_, signal_count_, last_signal_s_
+            combo_id,
+            base_buffer, base_min_range, base_max_range, base_sl_ticks, base_tp_ticks,
+            (unsigned long long)n_called_,
+            (unsigned long long)n_rej_invalid_,
+            (unsigned long long)n_rej_spread_,
+            (unsigned long long)n_rej_session_,
+            (unsigned long long)n_in_build_window_,
+            (unsigned long long)n_rej_outside_fire_window_,
+            (unsigned long long)n_rej_no_range_,
+            (unsigned long long)n_rej_range_size_,
+            (unsigned long long)n_rej_cooldown_,
+            (unsigned long long)n_signal_long_,
+            (unsigned long long)n_signal_short_,
+            asian_hi_, asian_lo_, last_day_,
+            (int)long_fired_, (int)short_fired_,
+            (unsigned long long)signal_count_,
+            (long long)last_signal_s_);
+    }
+#endif
 
     void reset() {
         asian_hi_ = 0.0; asian_lo_ = 1e9;
@@ -281,9 +332,27 @@ public:
     Signal noSignal() const { return Signal{}; }
 
     Signal process(const GoldSnapshot& s) {
-        if (!enabled_ || !s.is_valid()) return noSignal();
-        if (s.spread > MAX_SPREAD)       return noSignal();
-        if (s.session == SessionType::UNKNOWN) return noSignal();
+#ifdef OMEGA_SWEEP_DIAG
+        ++n_called_;
+#endif
+        if (!enabled_ || !s.is_valid()) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_rej_invalid_;
+#endif
+            return noSignal();
+        }
+        if (s.spread > MAX_SPREAD) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_rej_spread_;
+#endif
+            return noSignal();
+        }
+        if (s.session == SessionType::UNKNOWN) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_rej_session_;
+#endif
+            return noSignal();
+        }
 
         int h, m, yday;
         sweep_utc_hms(h, m, yday);
@@ -299,18 +368,41 @@ public:
         if (h >= 0 && h < FIRE_START_H) {
             if (s.mid > asian_hi_) asian_hi_ = s.mid;
             if (s.mid < asian_lo_) asian_lo_ = s.mid;
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_in_build_window_;
+#endif
             return noSignal();
         }
 
-        if (h < FIRE_START_H || h >= FIRE_END_H) return noSignal();
+        if (h < FIRE_START_H || h >= FIRE_END_H) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_rej_outside_fire_window_;
+#endif
+            return noSignal();
+        }
 
-        if (asian_hi_ <= 0.0 || asian_lo_ >= 1e8) return noSignal();
+        if (asian_hi_ <= 0.0 || asian_lo_ >= 1e8) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_rej_no_range_;
+#endif
+            return noSignal();
+        }
         const double rng = asian_hi_ - asian_lo_;
-        if (rng < MIN_RANGE_T || rng > MAX_RANGE_T) return noSignal();
+        if (rng < MIN_RANGE_T || rng > MAX_RANGE_T) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_rej_range_size_;
+#endif
+            return noSignal();
+        }
 
         const int64_t now_s   = sweep_now_sec();
         const int64_t elapsed = now_s - last_signal_s_;
-        if (elapsed < COOLDOWN_S) return noSignal();
+        if (elapsed < COOLDOWN_S) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_rej_cooldown_;
+#endif
+            return noSignal();
+        }
 
         Signal sig;
         sig.size = 0.01; sig.sl = SL_TICKS_T; sig.tp = TP_TICKS_T;
@@ -323,6 +415,9 @@ public:
             std::strncpy(sig.reason, "ASIAN_RANGE_LONG",  31);
             std::strncpy(sig.engine, "AsianRange",        31);
             long_fired_  = true;
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_signal_long_;
+#endif
         } else if (!short_fired_ && s.mid < asian_lo_ - BUFFER_T) {
             sig.valid      = true;
             sig.side       = TradeSide::SHORT;
@@ -331,6 +426,9 @@ public:
             std::strncpy(sig.reason, "ASIAN_RANGE_SHORT", 31);
             std::strncpy(sig.engine, "AsianRange",        31);
             short_fired_ = true;
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_signal_short_;
+#endif
         }
 
         if (sig.valid) {
@@ -832,6 +930,9 @@ public:
         pos.spread_at_entry = spread_at_fill;  // S51 1A.1.b: stash for tr.spreadAtEntry at close
         pos.entry_ts        = m_last_tick_s;
         phase               = Phase::LIVE;
+#ifdef OMEGA_SWEEP_DIAG
+        ++n_position_opens_;
+#endif
     }
 
     template <typename Sink>
@@ -847,17 +948,36 @@ public:
         const bool    arm_mfe_ok = (MIN_TRAIL_ARM_PTS  <= 0.0) || (pos.mfe >= MIN_TRAIL_ARM_PTS);
         const bool    arm_hold_ok = (MIN_TRAIL_ARM_SECS <= 0 ) || (held_s  >= MIN_TRAIL_ARM_SECS);
         if (move > 0 && arm_mfe_ok && arm_hold_ok) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_trail_eval_;
+#endif
             const double mfe_trail = pos.mfe * 0.20;
             const double range_trail = range * TRAIL_FRAC_T;
             const double trail_dist = (mfe_trail > 0.0) ? std::min(range_trail, mfe_trail) : range_trail;
             const double trail_sl = pos.is_long ? (pos.entry + pos.mfe - trail_dist)
                                                 : (pos.entry - pos.mfe + trail_dist);
-            if (pos.is_long  && trail_sl > pos.sl) pos.sl = trail_sl;
-            if (!pos.is_long && trail_sl < pos.sl) pos.sl = trail_sl;
+            if (pos.is_long  && trail_sl > pos.sl) {
+                pos.sl = trail_sl;
+#ifdef OMEGA_SWEEP_DIAG
+                ++n_trail_sl_updated_;
+#endif
+            }
+            if (!pos.is_long && trail_sl < pos.sl) {
+                pos.sl = trail_sl;
+#ifdef OMEGA_SWEEP_DIAG
+                ++n_trail_sl_updated_;
+#endif
+            }
         }
 
         const bool tp_hit = pos.is_long ? (ask >= pos.tp) : (bid <= pos.tp);
-        if (tp_hit) { _close(pos.tp, "TP_HIT", now_s, on_close); return; }
+        if (tp_hit) {
+#ifdef OMEGA_SWEEP_DIAG
+            ++n_close_tp_hit_;
+#endif
+            _close(pos.tp, "TP_HIT", now_s, on_close);
+            return;
+        }
 
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (sl_hit) {
@@ -871,6 +991,11 @@ public:
             if      (sl_at_be)        reason = "BE_HIT";
             else if (trail_in_profit) reason = "TRAIL_HIT";
             else                      reason = "SL_HIT";
+#ifdef OMEGA_SWEEP_DIAG
+            if      (sl_at_be)        ++n_close_be_hit_;
+            else if (trail_in_profit) ++n_close_trail_hit_;
+            else                      ++n_close_sl_hit_;
+#endif
             _close(exit_px, reason, now_s, on_close);
         }
     }
@@ -878,6 +1003,9 @@ public:
     template <typename Sink>
     void force_close(double bid, double ask, int64_t now_ms, Sink& on_close) noexcept {
         if (!pos.active) return;
+#ifdef OMEGA_SWEEP_DIAG
+        ++n_close_force_;
+#endif
         _close(pos.is_long ? bid : ask, "FORCE_CLOSE", now_ms / 1000, on_close);
     }
 
@@ -894,6 +1022,42 @@ private:
     MinMaxCircularBuffer<double, WINDOW_CAP> m_window;
     std::array<double, EXPANSION_HISTORY_LEN> m_range_history{};
     int     m_range_history_count = 0;
+
+#ifdef OMEGA_SWEEP_DIAG
+    // HBG-DIAG counters. Track trail-arm and trail-fire to verify whether
+    // trail_frac has any effect at all (D6 finding: 7 combos with different
+    // trail_frac values produce byte-identical results, suggesting trail
+    // never engages). Also track close reasons so we can see at a glance
+    // whether trail saves any positions in real-money terms.
+    uint64_t n_position_opens_  = 0;  // confirm_fill called (position activated)
+    uint64_t n_trail_eval_      = 0;  // manage() reached the trail-arm gate
+    uint64_t n_trail_sl_updated_= 0;  // SL actually moved due to trail
+    uint64_t n_close_tp_hit_    = 0;  // exit reason TP_HIT
+    uint64_t n_close_be_hit_    = 0;  // exit reason BE_HIT
+    uint64_t n_close_trail_hit_ = 0;  // exit reason TRAIL_HIT
+    uint64_t n_close_sl_hit_    = 0;  // exit reason SL_HIT
+    uint64_t n_close_force_     = 0;  // exit reason FORCE_CLOSE
+public:
+    void dump_diag(FILE* f, int combo_id, double base_min_range,
+                   double base_max_range, double base_sl_frac,
+                   double base_tp_rr, double base_trail_frac) const noexcept {
+        std::fprintf(f,
+            "%d\t%.6f\t%.6f\t%.6f\t%.6f\t%.6f\t"   // combo_id, params
+            "%llu\t%llu\t%llu\t"                    // n_position_opens, n_trail_eval, n_trail_sl_updated
+            "%llu\t%llu\t%llu\t%llu\t%llu\n",       // close reasons: tp, be, trail, sl, force
+            combo_id,
+            base_min_range, base_max_range, base_sl_frac, base_tp_rr, base_trail_frac,
+            (unsigned long long)n_position_opens_,
+            (unsigned long long)n_trail_eval_,
+            (unsigned long long)n_trail_sl_updated_,
+            (unsigned long long)n_close_tp_hit_,
+            (unsigned long long)n_close_be_hit_,
+            (unsigned long long)n_close_trail_hit_,
+            (unsigned long long)n_close_sl_hit_,
+            (unsigned long long)n_close_force_);
+    }
+private:
+#endif
 
     template <typename Sink>
     void _close(double exit_px, const char* reason,

@@ -760,13 +760,71 @@ static void vwap_params_for(int I, double out[5]) noexcept {
 // We loop over the tuple indices manually for those two because they need
 // pre-tuple setup (ATR/RSI for EMACross via on_bar comes from BtBarEngine).
 
+#ifdef OMEGA_SWEEP_DIAG
+// =============================================================================
+// Diagnostic dump helpers (D7 + HBG-DIAG)
+// =============================================================================
+// Dump counters for one combo from a tuple. Combo id is a runtime value, so
+// we expand the tuple via std::index_sequence and pick the matching slot.
+// Each templated engine instance has its own per-instance counter set.
+
+template <typename EngineTup, std::size_t... I>
+inline void hbg_dump_combo_impl(EngineTup& tup, int target, FILE* df,
+                                std::index_sequence<I...>) {
+    // For each tuple slot I, if I matches target, call dump_diag with the
+    // resolved per-combo params.
+    auto try_dump = [&](auto idx_const) {
+        constexpr int idx = decltype(idx_const)::value;
+        if (idx == target) {
+            std::get<idx>(tup).dump_diag(df, idx,
+                6.0  * mult_for_param(idx, 0),
+                32.0 * mult_for_param(idx, 1),
+                0.42 * mult_for_param(idx, 2),
+                2.0  * mult_for_param(idx, 3),
+                0.25 * mult_for_param(idx, 4));
+        }
+    };
+    (try_dump(std::integral_constant<int, static_cast<int>(I)>{}), ...);
+}
+
+template <typename EngineTup>
+inline void hbg_dump_combo(EngineTup& tup, int target, FILE* df) {
+    hbg_dump_combo_impl(tup, target, df,
+                        std::make_index_sequence<N_COMBOS>{});
+}
+
+template <typename EngineTup, std::size_t... I>
+inline void asian_dump_combo_impl(EngineTup& tup, int target, FILE* df,
+                                  std::index_sequence<I...>) {
+    auto try_dump = [&](auto idx_const) {
+        constexpr int idx = decltype(idx_const)::value;
+        if (idx == target) {
+            std::get<idx>(tup).dump_diag(df, idx,
+                0.50 * mult_for_param(idx, 0),
+                3.0  * mult_for_param(idx, 1),
+                50.0 * mult_for_param(idx, 2),
+                asian_int_param(idx, 3, 80),
+                asian_int_param(idx, 4, 200));
+        }
+    };
+    (try_dump(std::integral_constant<int, static_cast<int>(I)>{}), ...);
+}
+
+template <typename EngineTup>
+inline void asian_dump_combo(EngineTup& tup, int target, FILE* df) {
+    asian_dump_combo_impl(tup, target, df,
+                          std::make_index_sequence<N_COMBOS>{});
+}
+#endif
+
 // =============================================================================
 // HBG runner -- single-thread, walks all ticks, fans into 490-tuple
 // =============================================================================
 static void run_hbg_sweep(const std::vector<TickRow>& ticks,
                           int64_t warmup_ticks,
                           std::vector<ComboResult>& results,
-                          bool verbose) {
+                          bool verbose,
+                          const std::string& outdir) {
     // Heap-allocate the engine tuple and per-combo arrays. The 490-element
     // tuple of HBG_T is ~1.3 MB; macOS thread default stack is 512 KB, so
     // stack allocation triggers SIGBUS on launch. The unique_ptr keeps RAII.
@@ -809,10 +867,41 @@ static void run_hbg_sweep(const std::vector<TickRow>& ticks,
     }
 
     for (auto& res : results) finalise_score(res);
-}
 
-// =============================================================================
-// EMACross runner -- needs bar-driven ATR/RSI updates alongside ticks.
+#ifdef OMEGA_SWEEP_DIAG
+    // HBG-DIAG dump. Write counter snapshot for combos of interest:
+    //   24, 73, 122, 171  -- four of the 10 byte-identical-param "centre"
+    //                        combos (all-multipliers-1.0). Allows cross-
+    //                        instance determinism check.
+    //   261               -- the D6 top combo, score=0.4377.
+    //   308..314          -- 7 combos that produced byte-identical results
+    //                        in D6 despite differing trail_frac (0.125 ..
+    //                        0.500). Confirms whether trail engaged at all.
+    {
+        const std::string diag_path = outdir + "/hbg_diag.tsv";
+        FILE* df = std::fopen(diag_path.c_str(), "w");
+        if (!df) {
+            std::fprintf(stderr, "ERROR: could not open %s for write\n",
+                         diag_path.c_str());
+        } else {
+            std::fprintf(df,
+                "combo_id\tmin_range\tmax_range\tsl_frac\ttp_rr\ttrail_frac\t"
+                "n_position_opens\tn_trail_eval\tn_trail_sl_updated\t"
+                "n_close_tp_hit\tn_close_be_hit\tn_close_trail_hit\t"
+                "n_close_sl_hit\tn_close_force\n");
+            const int dump_combos[] = {24, 73, 122, 171, 261,
+                                       308, 309, 310, 311, 312, 313, 314};
+            for (int target : dump_combos) {
+                if (target < 0 || target >= N_COMBOS) continue;
+                hbg_dump_combo(engines, target, df);
+            }
+            std::fclose(df);
+            std::printf("wrote hbg_diag.tsv (%zu combos)\n",
+                        sizeof(dump_combos)/sizeof(dump_combos[0]));
+        }
+    }
+#endif
+}
 // We use BtBarEngine to build 1-minute bars and feed on_bar() once per bar
 // close; on_tick() runs every tick.
 // =============================================================================
@@ -932,7 +1021,8 @@ static void asian_run_tick(EngineTup& tup,
 static void run_asian_sweep(const std::vector<TickRow>& ticks,
                             int64_t warmup_ticks,
                             std::vector<ComboResult>& results,
-                            bool verbose) {
+                            bool verbose,
+                            const std::string& outdir) {
     using TupleT = decltype(make_asian_tuple());
     auto engines_p   = std::make_unique<TupleT>();
     auto& engines    = *engines_p;
@@ -997,6 +1087,41 @@ static void run_asian_sweep(const std::vector<TickRow>& ticks,
     }
 
     for (auto& res : results) finalise_score(res);
+
+#ifdef OMEGA_SWEEP_DIAG
+    // D7 AsianRange diag dump. Targets:
+    //   0   -- a non-centre baseline (pair 0, ix_a=0, ix_b=0; mults 0.5/0.5)
+    //   24, 73, 122, 171, 220 -- five of the 10 byte-identical-param "centre"
+    //                            combos. The D6+E1 finding showed combos 24
+    //                            and 122 lose while 73, 171, 220 win, despite
+    //                            mathematically identical template params.
+    //                            Counter divergence here pinpoints the bug.
+    //   269 -- a sixth centre combo (pair 5) for further determinism check.
+    {
+        const std::string diag_path = outdir + "/asian_diag.tsv";
+        FILE* df = std::fopen(diag_path.c_str(), "w");
+        if (!df) {
+            std::fprintf(stderr, "ERROR: could not open %s for write\n",
+                         diag_path.c_str());
+        } else {
+            std::fprintf(df,
+                "combo_id\tbuffer\tmin_range\tmax_range\tsl_ticks\ttp_ticks\t"
+                "n_called\tn_rej_invalid\tn_rej_spread\tn_rej_session\t"
+                "n_in_build_window\tn_rej_outside_fire\tn_rej_no_range\t"
+                "n_rej_range_size\tn_rej_cooldown\tn_signal_long\tn_signal_short\t"
+                "asian_hi\tasian_lo\tlast_day\tlong_fired\tshort_fired\t"
+                "signal_count\tlast_signal_s\n");
+            const int dump_combos[] = {0, 24, 73, 122, 171, 220, 269};
+            for (int target : dump_combos) {
+                if (target < 0 || target >= N_COMBOS) continue;
+                asian_dump_combo(engines, target, df);
+            }
+            std::fclose(df);
+            std::printf("wrote asian_diag.tsv (%zu combos)\n",
+                        sizeof(dump_combos)/sizeof(dump_combos[0]));
+        }
+    }
+#endif
 }
 
 // =============================================================================
@@ -1301,13 +1426,13 @@ int main(int argc, char** argv) {
     auto t_start = std::chrono::steady_clock::now();
 
     launch("hbg", [&]() {
-        run_hbg_sweep(ticks, args.warmup, hbg_res, args.verbose);
+        run_hbg_sweep(ticks, args.warmup, hbg_res, args.verbose, args.outdir);
     });
     launch("emacross", [&]() {
         run_ema_sweep(ticks, args.warmup, ema_res, args.verbose);
     });
     launch("asianrange", [&]() {
-        run_asian_sweep(ticks, args.warmup, asian_res, args.verbose);
+        run_asian_sweep(ticks, args.warmup, asian_res, args.verbose, args.outdir);
     });
     launch("vwapstretch", [&]() {
         run_vwap_sweep(ticks, args.warmup, vwap_res, args.verbose);

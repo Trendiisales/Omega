@@ -217,6 +217,7 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
 #   cmake --build . --target OmegaSweepHarness --config Release
 # =============================================================================
 option(OMEGA_BUILD_SWEEP "Build OmegaSweepHarness (Mac/Clang dev only; OOMs MSVC)" OFF)
+option(OMEGA_SWEEP_DIAG "Enable diagnostic counters in OmegaSweepHarness (D7/HBG-DIAG; off for normal sweep runs)" OFF)
 if(OMEGA_BUILD_SWEEP)
     add_executable(OmegaSweepHarness
         backtest/OmegaSweepHarness.cpp
@@ -252,6 +253,10 @@ if(OMEGA_BUILD_SWEEP)
         endif()
         target_compile_definitions(OmegaSweepHarness PRIVATE OMEGA_BACKTEST)
         target_link_libraries(OmegaSweepHarness PRIVATE pthread)
+    endif()
+    if(OMEGA_SWEEP_DIAG)
+        target_compile_definitions(OmegaSweepHarness PRIVATE OMEGA_SWEEP_DIAG)
+        message(STATUS "OmegaSweepHarness:      diag enabled (OMEGA_SWEEP_DIAG=ON)")
     endif()
 endif()
 
