@@ -21,8 +21,9 @@
 //   engine across 2 years instead of ~10,000+. Results are completely wrong.
 //
 // HOW IT WORKS:
-//   1. Provides g_bt_now_ms -- global simulated epoch milliseconds.
-//      The backtest loop sets this from the CSV timestamp before each on_tick().
+//   1. Provides g_sim_now_ms -- per-thread simulated epoch milliseconds.
+//      Each backtest/sweep thread sets this from its CSV timestamp before
+//      each on_tick(). See "THREAD-LOCAL DESIGN" note below.
 //
 //   2. Overrides time() in this translation unit by providing omega_bt_time()
 //      and #defining time to omega_bt_time. Since all engine headers are
@@ -30,7 +31,7 @@
 //      in the engine headers resolves to our shim.
 //
 //   3. Provides OmegaBtClock -- a drop-in for steady_clock/system_clock with
-//      now() returning time_points derived from g_bt_now_ms. Engine headers
+//      now() returning time_points derived from g_sim_now_ms. Engine headers
 //      are patched in this TU via:
 //        #define steady_clock  OmegaBtClock
 //        #define system_clock  OmegaBtClock
@@ -49,11 +50,53 @@
 //     auto sig = g_gold.on_tick(bid, ask, 0.5);
 //
 // =============================================================================
+// THREAD-LOCAL DESIGN (S51 1A.1.b D7+ G1 fix)
+// =============================================================================
+//   g_sim_now_ms is `thread_local`. Each thread maintains its own simulated
+//   clock. This is required by OmegaSweepHarness, which runs four engines
+//   (HBG, EMACross, AsianRange, VWAPStretch) concurrently across the same
+//   tick stream. Each engine's run loop calls set_sim_time(r.ts_ms) before
+//   processing tick k for its 490-combo tuple. Without thread_local, the
+//   four threads race on a single global write/read, and engines reading
+//   g_sim_now_ms inside their hot path pick up values from other threads
+//   that may be at materially different tick-stream positions (i.e., hours
+//   of simulated time off). Hour-of-day gates (AsianRange) blow up under
+//   such reads; hold-time gates (HBG) are robust to small jitter and
+//   survive but are not actually deterministic.
+//
+//   Per-thread storage is correct because:
+//     1. Every writer call site (OmegaSweepHarness.cpp:854,942,1049,1172
+//        and OmegaBacktest.cpp:1111 and omega_bt.cpp:201) sits inside a
+//        per-thread tick loop. Each thread writes only its own current
+//        tick's timestamp.
+//     2. Every reader call site (sweep_now_sec/ms in SweepableEngines.hpp,
+//        sim_now_sec / bt_time / OmegaBtClock::now in this file, ca_now_sec
+//        / ca_now_ms / ca_utc_time in CrossAssetEngines.hpp) is invoked
+//        from inside an engine's process()/on_tick() that is already
+//        running on the same thread that wrote the value.
+//     3. There is no producer/consumer pattern where one thread writes and
+//        a different thread is expected to read. All reads are downstream
+//        of writes on the same thread.
+//
+//   Live (production main.cpp) does NOT include this header. Live code uses
+//   std::time(nullptr) and the real wall clock. thread_local has zero impact
+//   on live behaviour.
+//
+//   Single-threaded backtest (OmegaBacktest.cpp, omega_bt.cpp) sees only one
+//   thread, so thread_local is equivalent to a global. Zero behavioural
+//   change for those paths.
+//
+//   See: incidents/2026-04-28-s51-1a1b-prep/D7_RESULTS.md and
+//        incidents/2026-04-28-s51-1a1b-prep/DETERMINISM_GUARDS.md
+//   for the full root-cause analysis and the design of guards G2..G4 that
+//   prevent recurrence of this class of bug.
+// =============================================================================
 
 #include <ctime>
 #include <cstdint>
 #include <chrono>
 #include <atomic>
+#include <type_traits>
 
 // Macro signal that the time shim is active in this TU.
 // Engine headers included after OmegaTimeShim.hpp can detect this and
@@ -65,19 +108,34 @@
 #define OMEGA_BT_SHIM_ACTIVE 1
 
 // ?????????????????????????????????????????????????????????????????????????????
-// Global simulated time state
+// Per-thread simulated time state
+//
+// g_sim_now_ms is `inline thread_local` so each sweep thread has its own
+// independent simulated clock. See THREAD-LOCAL DESIGN note above for
+// rationale. The `inline` keyword combines correctly with `thread_local` in
+// C++17 and avoids ODR violations across translation units that include
+// this header (here: there is only one such TU per binary, but the rule
+// holds in general).
+//
+// DO NOT REMOVE thread_local FROM THIS DECLARATION without explicit review
+// per CONCURRENCY.md (see G4 in DETERMINISM_GUARDS.md).
 // ?????????????????????????????????????????????????????????????????????????????
 namespace omega { namespace bt {
 
-// Current simulated epoch time in milliseconds. Set by the tick loop.
-inline int64_t g_sim_now_ms = 0;
+// Current simulated epoch time in milliseconds. Set by the tick loop on the
+// thread that owns the loop. Per-thread storage prevents cross-thread
+// contamination when multiple sweep threads run concurrently.
+inline thread_local int64_t g_sim_now_ms = 0;
 
 // Set simulated time from a CSV timestamp (milliseconds since Unix epoch).
+// Writes the calling thread's local g_sim_now_ms only. Other threads are
+// not affected.
 inline void set_sim_time(int64_t epoch_ms) noexcept {
     g_sim_now_ms = epoch_ms;
 }
 
 // Simulated seconds (used to replace time(nullptr) and system_clock seconds).
+// Reads the calling thread's local g_sim_now_ms.
 inline int64_t sim_now_sec() noexcept {
     return g_sim_now_ms / 1000LL;
 }
@@ -93,7 +151,8 @@ inline int64_t sim_now_sec() noexcept {
 // ?????????????????????????????????????????????????????????????????????????????
 namespace omega { namespace bt {
 
-// Our replacement for C time().
+// Our replacement for C time(). Reads the calling thread's local
+// g_sim_now_ms.
 inline time_t bt_time(time_t* t) noexcept {
     const time_t v = static_cast<time_t>(g_sim_now_ms / 1000LL);
     if (t) *t = v;
@@ -120,11 +179,21 @@ inline time_t bt_time(time_t* t) noexcept {
 // We anchor our simulated steady_clock to the sim start by computing
 // (sim_ms - first_sim_ms) as the offset, which keeps duration differences
 // correct regardless of the absolute epoch value.
+//
+// OmegaBtClock::now() reads the calling thread's local g_sim_now_ms and
+// is therefore inherently per-thread. No additional change required.
 // ?????????????????????????????????????????????????????????????????????????????
 namespace omega { namespace bt {
 
-inline int64_t g_sim_start_ms = 0;   // set on first tick
-inline bool    g_sim_started  = false;
+// Per-thread sim-start anchor. Mirrors g_sim_now_ms thread-locality so that
+// any future user that relies on g_sim_start_ms being relative to the
+// calling thread's stream gets correct results. Currently g_sim_started /
+// g_sim_start_ms are not read by the existing OmegaBtClock implementation
+// below (it uses absolute g_sim_now_ms), but we mark them thread_local
+// defensively to prevent the same class of bug if a future change makes
+// the start anchor live again. See CONCURRENCY.md.
+inline thread_local int64_t g_sim_start_ms = 0;   // set on first tick
+inline thread_local bool    g_sim_started  = false;
 
 struct OmegaBtClock {
     using rep        = std::chrono::steady_clock::rep;
@@ -241,5 +310,22 @@ namespace chrono {
 // cooldowns -- in the backtest these expire based on g_sim_now_ms via OmegaBtClock::now()
 // which is called directly, not via the steady_clock name.
 
-// Verify the shim is active
+// Verify the shim is active.
 static_assert(true, "OmegaTimeShim.hpp loaded -- simulated clock active");
+
+// Compile-time guard: g_sim_now_ms must remain thread_local. Removing the
+// thread_local qualifier reintroduces the cross-thread time-shim race that
+// destroyed deterministic AsianRange results in S51 1A.1.b D6+E1.
+// See incidents/2026-04-28-s51-1a1b-prep/D7_RESULTS.md and
+// DETERMINISM_GUARDS.md (G1).
+//
+// Note: std::is_same on a non-type expression requires decltype. We test
+// that the *value category* is correct (lvalue) and the *type* is int64_t,
+// then rely on review + the lint rule (G4) to enforce thread_local. This
+// static_assert primarily ensures the type and namespace haven't drifted.
+namespace omega { namespace bt {
+    static_assert(std::is_same<decltype(g_sim_now_ms), int64_t>::value,
+        "OmegaTimeShim.hpp: g_sim_now_ms must be int64_t. "
+        "Do not change this type without reviewing every reader in "
+        "SweepableEngines.hpp, CrossAssetEngines.hpp, and the OmegaBtClock.");
+}} // namespace omega::bt
