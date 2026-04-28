@@ -196,7 +196,7 @@ $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | Out-Null   # configure output not useful -- suppress
 $ErrorActionPreference = $savedPrefCmake
-cmake --build . --config Release 2>&1                  # build output stays visible for error diagnosis
+cmake --build . --config Release --target Omega 2>&1                  # build output stays visible for error diagnosis
 
 if (-not (Test-Path $BuildExe)) {
     Write-Host "      [ERROR] Build failed -- $BuildExe not found" -ForegroundColor Red

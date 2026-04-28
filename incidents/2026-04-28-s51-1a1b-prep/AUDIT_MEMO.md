@@ -198,3 +198,104 @@ The following memory rules are stale-on-disk as of this commit:
    > in the repo before session end. `/home/claude/...` does not survive
    > session resets and uploaded chat documents do not feed the next session
    > automatically.
+
+
+---
+
+## Post-incident notes — VPS rebuild OOM (2026-04-28)
+
+### What happened
+
+After D4 commit `ea3e7943` landed on `main`, the VPS rebuild via
+`QUICK_RESTART.ps1` failed at compile step 9 of 9
+(`OmegaSweepHarness.cpp`) with:
+
+```
+C:\Omega\backtest\OmegaSweepHarness.cpp(587,58): error C1060:
+compiler is out of heap space
+[C:\Omega\build\OmegaSweepHarness.vcxproj]
+```
+
+Build duration before failure: 511s. Service recovered correctly via the
+`[RECOVERY]` branch — `Start-Service Omega` was invoked, previous binary
+(`ed95e27`) resumed live trading. Service stdout log confirmed:
+`[OK] Git hash: ed95e27 -- verify against GitHub HEAD`. Mutex guard
+`[OMEGA] ALREADY RUNNING` blocked manual `omega.exe --version` invocation,
+which itself was indirect proof that the service-controlled instance held
+the lock and was alive.
+
+### Root cause
+
+X3 sweep-harness design (locked in commit `dc43ddf9`, predates D4) instantiates
+roughly 1,960 templates: `std::tuple<HBG_T<0..489>>` and equivalent for
+AsianRange, VWAPStretch, EMACross. Clang on Mac handles this with
+`-fbracket-depth=1024`. **MSVC's per-process compiler heap OOMs** on the same
+input — failure mode is slow because MSVC backtracks template instantiation
+O(depth × width) before erroring out.
+
+The harness was previously X2 and lighter. Tonight's rebuild was the first
+attempted MSVC build of the X3 harness on the VPS; the `dc43ddf9` chain was
+only ever validated on Mac.
+
+D4 commit `ea3e7943` was **not** the cause. D4 added one field and one
+default-arg to HBG_T — template instantiation count is unchanged. D4 only
+triggered the rebuild that exposed the latent regression.
+
+### Fix (Option C — belt-and-braces, this commit)
+
+Two independent guards:
+
+1. **CMakeLists.txt:** `add_executable(OmegaSweepHarness ...)` is now wrapped
+   in `option(OMEGA_BUILD_SWEEP ... OFF)` / `if(OMEGA_BUILD_SWEEP) ... endif()`.
+   The harness is **off by default** and is only built when explicitly
+   requested via `cmake .. -DOMEGA_BUILD_SWEEP=ON`. The Mac D5 baseline
+   sweep run plan in this memo is updated accordingly.
+
+2. **All three VPS restart scripts** (`QUICK_RESTART.ps1`,
+   `REBUILD_AND_START.ps1`, `DEPLOY_OMEGA.ps1`) now invoke
+   `cmake --build ... --target Omega ...`. This matches the pattern already
+   used in `RESTART_OMEGA.ps1` L313 (which was correct before this commit).
+   Even if `OMEGA_BUILD_SWEEP=ON` is ever passed by accident on the VPS,
+   the explicit `--target Omega` skips the harness target.
+
+Two guards. Both have to fail for the OOM to recur.
+
+### D5 run plan — UPDATED for OMEGA_BUILD_SWEEP gate
+
+```bash
+cd ~/omega_repo
+git fetch origin
+git checkout main
+git pull --ff-only
+
+cd build && rm -rf *
+cmake .. -DOMEGA_BUILD_SWEEP=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build . --target OmegaSweepHarness --config Release
+
+TICKS=~/Tick/duka_ticks/XAUUSD_2024-03_2026-04_combined.csv
+
+./OmegaSweepHarness "$TICKS" \
+    --engine hbg,asianrange,vwapstretch,emacross \
+    --outdir ~/omega_sweep_baseline_$(date +%Y%m%d) \
+    --warmup 5000 \
+    --verbose
+```
+
+Note the new `-DOMEGA_BUILD_SWEEP=ON` flag at configure time. Without it,
+even on Mac the harness target won't exist and the `--target` invocation
+will fail.
+
+### Lessons (update memory rules)
+
+- New CMake targets that have a known-broken environment (compiler heap,
+  toolchain version, OS) must default OFF and require explicit opt-in.
+  Never add a heavy template-heavy target as an unconditional
+  `add_executable`.
+- VPS rebuild scripts must always invoke `cmake --build --target Omega` —
+  never bare `cmake --build` — to ensure the production binary is the only
+  thing built. `RESTART_OMEGA.ps1` had this pattern; the other three did
+  not. Pattern is now consistent across all four.
+- First MSVC build of any new template-heavy target should be tested on a
+  scratch VPS / non-production Windows host before the unconditional
+  `add_executable` lands on `main`, OR the target should ship gated OFF
+  from day one.

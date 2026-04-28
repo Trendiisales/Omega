@@ -164,7 +164,7 @@ $ErrorActionPreference = $savedPrefCmake
 $cpuCount = $env:NUMBER_OF_PROCESSORS
 if (-not $cpuCount) { $cpuCount = 4 }
 Write-Host "      [INFO] Building with $cpuCount parallel jobs" -ForegroundColor Cyan
-& $cmakeExe --build . --config Release -- /maxcpucount:$cpuCount 2>&1
+& $cmakeExe --build . --config Release --target Omega -- /maxcpucount:$cpuCount 2>&1
 $buildExitCode = $LASTEXITCODE
 
 if ($buildExitCode -ne 0) {

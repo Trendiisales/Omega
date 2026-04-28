@@ -316,7 +316,7 @@ Write-Host "  [configure] done in ${cfgSec}s" -ForegroundColor DarkCyan
 # --- BUILD (compile + link) ---
 $bldStart = Get-Date
 $compileCount = 0
-& $cmakeExe --build $buildDir --config Release 2>&1 | ForEach-Object {
+& $cmakeExe --build $buildDir --config Release --target Omega 2>&1 | ForEach-Object {
     $line = $_.ToString()
     if ($line -match "error C\d+|fatal error|LINK : fatal|LNK\d{4}") {
         Write-Host "    $line" -ForegroundColor Red

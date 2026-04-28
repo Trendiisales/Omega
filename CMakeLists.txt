@@ -194,51 +194,65 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
 )
 
 # =============================================================================
-# OmegaSweepHarness -- parameter sweep harness (S51 X2)
+# OmegaSweepHarness -- parameter sweep harness (S51 X3)
 #
-# Runs a 5-parameter geometric grid (0.5x..2.0x, 7 values) per engine across
-# 4 sweepable engines (HBG, AsianRange, VWAPStretch, EMACross). DXY is wired
-# in the harness but skipped at runtime because no DXY tick stream is fed.
+# Runs a pairwise 2-factor parameter grid: for each engine, vary 2 of 5 params
+# on a 7x7 geometric grid (0.5x..2.0x). C(5,2)=10 pairs * 49 = 490 combos per
+# engine; 4 engines (HBG, AsianRange, VWAPStretch, EMACross). DXY is wired
+# but skipped at runtime (no DXY tick stream).
 #
 # Standalone target: does not link OpenSSL, does not affect Omega.exe or
 # OmegaBacktest. Multithreaded via std::thread (no OpenMP).
 #
-# Build: cmake --build build --target OmegaSweepHarness --config Release
+# OFF BY DEFAULT.
+#   The X3 design instantiates std::tuple<HBG_T<0..489>> and equivalents for
+#   the other 3 engines (~1,960 template instantiations). MSVC's compiler heap
+#   OOMs on this load (observed C1060 on VPS 2026-04-28 after 511s). Clang on
+#   Mac handles it fine with -fbracket-depth=1024. The harness is therefore
+#   gated behind OMEGA_BUILD_SWEEP=ON so the VPS production build (Omega.exe
+#   only via --target Omega) does not pull the harness in by default.
+#
+# Build (Mac / Clang only):
+#   cmake .. -DOMEGA_BUILD_SWEEP=ON -DCMAKE_BUILD_TYPE=Release
+#   cmake --build . --target OmegaSweepHarness --config Release
 # =============================================================================
-add_executable(OmegaSweepHarness
-    backtest/OmegaSweepHarness.cpp
-)
-target_include_directories(OmegaSweepHarness PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/backtest
-)
-if(MSVC)
-    target_compile_options(OmegaSweepHarness PRIVATE
-        /O2 /std:c++20 /W3
-        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
-        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+option(OMEGA_BUILD_SWEEP "Build OmegaSweepHarness (Mac/Clang dev only; OOMs MSVC)" OFF)
+if(OMEGA_BUILD_SWEEP)
+    add_executable(OmegaSweepHarness
+        backtest/OmegaSweepHarness.cpp
     )
-    target_compile_definitions(OmegaSweepHarness PRIVATE
-        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
-        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    target_include_directories(OmegaSweepHarness PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/backtest
     )
-    target_link_libraries(OmegaSweepHarness PRIVATE ws2_32)
-else()
-    target_compile_options(OmegaSweepHarness PRIVATE
-        -O3 -std=c++20 -Wall -Wextra
-        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
-        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
-    )
-    # S51 X3: Clang's default fbracket-depth=256 is exceeded by the
-    # 490-element fold expression in the sweep harness's tuple dispatch.
-    # Raise to 1024 so 490 (with headroom) parses. GCC does not have or need
-    # this flag, so it is gated on Clang. Mac builds use Clang by default.
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-        target_compile_options(OmegaSweepHarness PRIVATE -fbracket-depth=1024)
+    if(MSVC)
+        target_compile_options(OmegaSweepHarness PRIVATE
+            /O2 /std:c++20 /W3
+            /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+            /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+        )
+        target_compile_definitions(OmegaSweepHarness PRIVATE
+            _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+            _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+        )
+        target_link_libraries(OmegaSweepHarness PRIVATE ws2_32)
+    else()
+        target_compile_options(OmegaSweepHarness PRIVATE
+            -O3 -std=c++20 -Wall -Wextra
+            -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+            -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+        )
+        # S51 X3: Clang's default fbracket-depth=256 is exceeded by the
+        # 490-element fold expression in the sweep harness's tuple dispatch.
+        # Raise to 1024 so 490 (with headroom) parses. GCC does not have or need
+        # this flag, so it is gated on Clang. Mac builds use Clang by default.
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+            target_compile_options(OmegaSweepHarness PRIVATE -fbracket-depth=1024)
+        endif()
+        target_compile_definitions(OmegaSweepHarness PRIVATE OMEGA_BACKTEST)
+        target_link_libraries(OmegaSweepHarness PRIVATE pthread)
     endif()
-    target_compile_definitions(OmegaSweepHarness PRIVATE OMEGA_BACKTEST)
-    target_link_libraries(OmegaSweepHarness PRIVATE pthread)
 endif()
 
 # =============================================================================
@@ -312,7 +326,11 @@ message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
 message(STATUS "Git hash:   regenerated on every build")
 message(STATUS "OmegaBacktest:          standalone (no OpenSSL)")
-message(STATUS "OmegaSweepHarness:      standalone (no OpenSSL)")
+if(OMEGA_BUILD_SWEEP)
+    message(STATUS "OmegaSweepHarness:      standalone (no OpenSSL) [OMEGA_BUILD_SWEEP=ON]")
+else()
+    message(STATUS "OmegaSweepHarness:      SKIPPED (OMEGA_BUILD_SWEEP=OFF; default)")
+endif()
 message(STATUS "OmegaEdgeFinderExtract: standalone (no OpenSSL) [S51 X3.4]")
 message(STATUS "OmegaEdgeFinderTest:    standalone (no OpenSSL) [S51 X3.4]")
 message(STATUS "========================================")
