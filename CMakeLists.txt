@@ -261,6 +261,62 @@ if(OMEGA_BUILD_SWEEP)
 endif()
 
 # =============================================================================
+# OmegaSweepHarnessCRTP -- CRTP-architecture parameter sweep harness
+#                         (S51 1A.1.b post-G4, 2026-04-29)
+#
+# Same pairwise 2-factor 490-combo sweep as OmegaSweepHarness, but driving
+# CRTP-based engines (omega::sweep_crtp::*) defined in
+# include/SweepableEnginesCRTP.hpp. The engine logic lives in shared
+# *Base<Derived> classes; per-combo specialisation is supplied by Traits<I>
+# derived classes via the canonical CRTP downcast.
+#
+# Independent target: shares no TU with OmegaSweepHarness. Either may be
+# built without affecting the other. Output schema is identical so existing
+# downstream analysis scripts work without modification.
+#
+# Build (Mac / Clang only -- same OOM caveat as OmegaSweepHarness on MSVC):
+#   cmake .. -DOMEGA_BUILD_SWEEP_CRTP=ON -DCMAKE_BUILD_TYPE=Release
+#   cmake --build . --target OmegaSweepHarnessCRTP --config Release
+# =============================================================================
+option(OMEGA_BUILD_SWEEP_CRTP "Build OmegaSweepHarnessCRTP (Mac/Clang dev only; OOMs MSVC)" OFF)
+if(OMEGA_BUILD_SWEEP_CRTP)
+    add_executable(OmegaSweepHarnessCRTP
+        backtest/OmegaSweepHarnessCRTP.cpp
+    )
+    target_include_directories(OmegaSweepHarnessCRTP PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/backtest
+    )
+    if(MSVC)
+        target_compile_options(OmegaSweepHarnessCRTP PRIVATE
+            /O2 /std:c++20 /W3
+            /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+            /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+        )
+        target_compile_definitions(OmegaSweepHarnessCRTP PRIVATE
+            _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+            _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+        )
+        target_link_libraries(OmegaSweepHarnessCRTP PRIVATE ws2_32)
+    else()
+        target_compile_options(OmegaSweepHarnessCRTP PRIVATE
+            -O3 -std=c++20 -Wall -Wextra
+            -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+            -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+        )
+        # Same Clang fold-expression bracket-depth lift as OmegaSweepHarness:
+        # 490-element fold over std::index_sequence<490> exceeds the default
+        # fbracket-depth=256.
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+            target_compile_options(OmegaSweepHarnessCRTP PRIVATE -fbracket-depth=1024)
+        endif()
+        target_compile_definitions(OmegaSweepHarnessCRTP PRIVATE OMEGA_BACKTEST)
+        target_link_libraries(OmegaSweepHarnessCRTP PRIVATE pthread)
+    endif()
+endif()
+
+# =============================================================================
 # OmegaEdgeFinder -- edge-discovery framework (S51 X3.4)
 #
 # Two standalone targets:
@@ -335,6 +391,11 @@ if(OMEGA_BUILD_SWEEP)
     message(STATUS "OmegaSweepHarness:      standalone (no OpenSSL) [OMEGA_BUILD_SWEEP=ON]")
 else()
     message(STATUS "OmegaSweepHarness:      SKIPPED (OMEGA_BUILD_SWEEP=OFF; default)")
+endif()
+if(OMEGA_BUILD_SWEEP_CRTP)
+    message(STATUS "OmegaSweepHarnessCRTP:  standalone (no OpenSSL) [OMEGA_BUILD_SWEEP_CRTP=ON]")
+else()
+    message(STATUS "OmegaSweepHarnessCRTP:  SKIPPED (OMEGA_BUILD_SWEEP_CRTP=OFF; default)")
 endif()
 message(STATUS "OmegaEdgeFinderExtract: standalone (no OpenSSL) [S51 X3.4]")
 message(STATUS "OmegaEdgeFinderTest:    standalone (no OpenSSL) [S51 X3.4]")
