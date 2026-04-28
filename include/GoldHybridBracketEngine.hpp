@@ -133,6 +133,13 @@ public:
         double  size     = 0.01;
         double  mfe      = 0.0;
         double  mae      = 0.0;   // S43: max adverse excursion (price points, <= 0)
+        // S51 1A.1.a 2026-04-28: full bid-ask spread at fill time (price units).
+        //   Pre-S51 tr.spreadAtEntry was hardcoded to 0.0 -> apply_realistic_costs()
+        //   computed slippage_entry = slippage_exit = 0 for every HBG trade,
+        //   silently treating live and shadow trades as zero-spread fills.
+        //   Symmetric with HBI fix in same patch. Captured in confirm_fill()
+        //   at the moment of fill.
+        double  spread_at_entry = 0.0;
         int64_t entry_ts = 0;
     } pos;
 
@@ -212,8 +219,9 @@ public:
 
         // ── PENDING: wait for fill ACK from tick_gold ─────────────────────────
         if (phase == Phase::PENDING) {
-            if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot_long);  return; }
-            if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot_short); return; }
+            // S51 1A.1.a: pass real spread to populate pos.spread_at_entry.
+            if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot_long,  spread); return; }
+            if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot_short, spread); return; }
             if (now_s - m_armed_ts > PENDING_TIMEOUT_S) {
                 {
                     // converted from printf
@@ -385,7 +393,13 @@ public:
         }
     }
 
-    void confirm_fill(bool is_long, double fill_px, double fill_lot) noexcept {
+    // S51 1A.1.a 2026-04-28: spread_at_fill default-arg added (symmetric with HBI).
+    //   External callers (order_exec.hpp:445) use the 3-arg form and continue to
+    //   compile unchanged -- live FIX fills will retain spread_at_entry=0.0 until
+    //   the FIX execution-report path is updated to pass real spread. Internal
+    //   shadow-mode call sites in on_tick() now pass (ask - bid).
+    void confirm_fill(bool is_long, double fill_px, double fill_lot,
+                      double spread_at_fill = 0.0) noexcept {
         if (cancel_fn) {
             if (is_long  && !pending_short_clOrdId.empty()) cancel_fn(pending_short_clOrdId);
             if (!is_long && !pending_long_clOrdId.empty())  cancel_fn(pending_long_clOrdId);
@@ -395,14 +409,15 @@ public:
 
         const double sl_dist = range * SL_FRAC + SL_BUFFER;
         const double tp_dist = sl_dist * TP_RR;
-        pos.active   = true;
-        pos.is_long  = is_long;
-        pos.entry    = fill_px;
-        pos.sl       = is_long ? (fill_px - sl_dist) : (fill_px + sl_dist);
-        pos.tp       = is_long ? (fill_px + tp_dist)  : (fill_px - tp_dist);
-        pos.size     = fill_lot;
-        pos.mfe      = 0.0;
-        pos.mae      = 0.0;   // S43: reset adverse-excursion tracker
+        pos.active          = true;
+        pos.is_long         = is_long;
+        pos.entry           = fill_px;
+        pos.sl              = is_long ? (fill_px - sl_dist) : (fill_px + sl_dist);
+        pos.tp              = is_long ? (fill_px + tp_dist)  : (fill_px - tp_dist);
+        pos.size            = fill_lot;
+        pos.mfe             = 0.0;
+        pos.mae             = 0.0;   // S43: reset adverse-excursion tracker
+        pos.spread_at_entry = spread_at_fill;  // S51: stash for tr.spreadAtEntry at close
         // S47 T4a 2026-04-27: was std::time(nullptr) -- broke backtest hold
         //   computation by capturing host wall-clock instead of simulated tick
         //   clock. m_last_tick_s is set at the top of on_tick() from now_s
@@ -546,7 +561,10 @@ private:
         tr.mfe = pos.mfe * pos.size;
         tr.mae = pos.mae * pos.size;   // S43: was hardcoded 0.0; now real MAE
         tr.entryTs = pos.entry_ts; tr.exitTs = now_s;
-        tr.exitReason = reason; tr.spreadAtEntry = 0.0;
+        tr.exitReason = reason;
+        // S51 1A.1.a 2026-04-28: was hardcoded 0.0; now real spread captured at fill.
+        //   Symmetric with HBI; consumed by apply_realistic_costs() for slippage_entry/exit.
+        tr.spreadAtEntry = pos.spread_at_entry;
         tr.bracket_hi = bracket_high; tr.bracket_lo = bracket_low;
         tr.shadow = shadow_mode;
 
