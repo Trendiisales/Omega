@@ -1302,6 +1302,64 @@ static void append_summary(FILE* sf, const char* engine_name,
 }
 
 // =============================================================================
+// Args
+// =============================================================================
+struct Args {
+    std::string ticks_path;
+    std::string engines = "hbg,asianrange,vwapstretch,emacross";
+    std::string outdir  = "sweep_results";
+    int64_t     warmup  = 5000;
+    int64_t     from_ms = 0;
+    int64_t     to_ms   = 0;
+    bool        verbose = false;
+    bool        no_selftest = false;  // G2: default-on; --no-selftest disables
+};
+
+static void usage() {
+    std::printf(
+        "OmegaSweepHarness <ticks.csv> [options]\n"
+        "  --engine <list>   comma list (default: hbg,asianrange,vwapstretch,emacross)\n"
+        "                    Available: hbg, asianrange, vwapstretch, emacross\n"
+        "  --outdir <dir>    output directory (default: sweep_results)\n"
+        "  --warmup <n>      ticks to skip before recording trades (default: 5000)\n"
+        "  --from-date <d>   skip ticks before YYYY-MM-DD\n"
+        "  --to-date <d>     skip ticks at/after YYYY-MM-DD\n"
+        "  --verbose         print per-engine progress\n"
+        "  --no-selftest     skip the G2 determinism self-test at startup\n"
+        "                    (default: run G2 over the first SELFTEST_TICKS=20000\n"
+        "                    ticks; on mismatch, exit code 2 before the real sweep)\n"
+    );
+}
+
+static bool parse_args(int argc, char** argv, Args& a) {
+    if (argc < 2) { usage(); return false; }
+    a.ticks_path = argv[1];
+    for (int i = 2; i < argc; ++i) {
+        std::string s = argv[i];
+        if (s == "--engine" && i+1 < argc) { a.engines = argv[++i]; }
+        else if (s == "--outdir" && i+1 < argc) { a.outdir = argv[++i]; }
+        else if (s == "--warmup" && i+1 < argc) { a.warmup = std::atoll(argv[++i]); }
+        else if (s == "--from-date" && i+1 < argc) { a.from_ms = parse_date_arg(argv[++i]); }
+        else if (s == "--to-date" && i+1 < argc) { a.to_ms = parse_date_arg(argv[++i]); }
+        else if (s == "--verbose") { a.verbose = true; }
+        else if (s == "--no-selftest") { a.no_selftest = true; }
+        else if (s == "--help" || s == "-h") { usage(); return false; }
+        else {
+            std::fprintf(stderr, "unknown arg: %s\n", s.c_str());
+            usage();
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool engine_in_list(const std::string& list, const char* name) {
+    std::string s = "," + list + ",";
+    std::string n = std::string(",") + name + ",";
+    return s.find(n) != std::string::npos;
+}
+
+// =============================================================================
 // G2 -- Determinism self-test (runs at startup before the real sweep)
 // =============================================================================
 // PURPOSE
@@ -1546,64 +1604,6 @@ static bool ensure_dir(const std::string& path) noexcept {
     if (mkdir(path.c_str(), 0755) == 0) return true;
     return errno == EEXIST;
 #endif
-}
-
-// =============================================================================
-// Args
-// =============================================================================
-struct Args {
-    std::string ticks_path;
-    std::string engines = "hbg,asianrange,vwapstretch,emacross";
-    std::string outdir  = "sweep_results";
-    int64_t     warmup  = 5000;
-    int64_t     from_ms = 0;
-    int64_t     to_ms   = 0;
-    bool        verbose = false;
-    bool        no_selftest = false;  // G2: default-on; --no-selftest disables
-};
-
-static void usage() {
-    std::printf(
-        "OmegaSweepHarness <ticks.csv> [options]\n"
-        "  --engine <list>   comma list (default: hbg,asianrange,vwapstretch,emacross)\n"
-        "                    Available: hbg, asianrange, vwapstretch, emacross\n"
-        "  --outdir <dir>    output directory (default: sweep_results)\n"
-        "  --warmup <n>      ticks to skip before recording trades (default: 5000)\n"
-        "  --from-date <d>   skip ticks before YYYY-MM-DD\n"
-        "  --to-date <d>     skip ticks at/after YYYY-MM-DD\n"
-        "  --verbose         print per-engine progress\n"
-        "  --no-selftest     skip the G2 determinism self-test at startup\n"
-        "                    (default: run G2 over the first SELFTEST_TICKS=20000\n"
-        "                    ticks; on mismatch, exit code 2 before the real sweep)\n"
-    );
-}
-
-static bool parse_args(int argc, char** argv, Args& a) {
-    if (argc < 2) { usage(); return false; }
-    a.ticks_path = argv[1];
-    for (int i = 2; i < argc; ++i) {
-        std::string s = argv[i];
-        if (s == "--engine" && i+1 < argc) { a.engines = argv[++i]; }
-        else if (s == "--outdir" && i+1 < argc) { a.outdir = argv[++i]; }
-        else if (s == "--warmup" && i+1 < argc) { a.warmup = std::atoll(argv[++i]); }
-        else if (s == "--from-date" && i+1 < argc) { a.from_ms = parse_date_arg(argv[++i]); }
-        else if (s == "--to-date" && i+1 < argc) { a.to_ms = parse_date_arg(argv[++i]); }
-        else if (s == "--verbose") { a.verbose = true; }
-        else if (s == "--no-selftest") { a.no_selftest = true; }
-        else if (s == "--help" || s == "-h") { usage(); return false; }
-        else {
-            std::fprintf(stderr, "unknown arg: %s\n", s.c_str());
-            usage();
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool engine_in_list(const std::string& list, const char* name) {
-    std::string s = "," + list + ",";
-    std::string n = std::string(",") + name + ",";
-    return s.find(n) != std::string::npos;
 }
 
 // =============================================================================
