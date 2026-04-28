@@ -1302,6 +1302,241 @@ static void append_summary(FILE* sf, const char* engine_name,
 }
 
 // =============================================================================
+// G2 -- Determinism self-test (runs at startup before the real sweep)
+// =============================================================================
+// PURPOSE
+//   Run each requested engine's sweep TWICE on a small fixed prefix of the
+//   tick stream (SELFTEST_TICKS = 20,000 ticks ~= 1.85 hours of simulated
+//   time on XAUUSD, enough to cross several hour-of-day gate boundaries
+//   that would expose the pre-G1 cross-thread time-shim race). After each
+//   run, fingerprint every combo's ComboResult by byte-comparing the
+//   determinism-relevant fields. If any combo's fingerprint differs across
+//   the two runs, the harness has a determinism fault and we abort with
+//   exit code 2 BEFORE wasting 21 minutes on a real sweep whose results
+//   would be untrustworthy anyway.
+//
+// SCOPE
+//   The self-test honours --engine: only engines in the run-list are tested.
+//   This keeps the cost proportional to what the user actually asked for
+//   and avoids spurious failures on engines not in scope.
+//
+// COMPARISON SURFACE
+//   We compare ComboResult fields that are deterministic functions of the
+//   engine's reactions to the tick stream. We exclude `combo_id` (set from
+//   the loop index, always equal) and the resolved `p[5]` array (set from
+//   compile-time constexpr templates, always equal). We compare:
+//     n_trades, wins, total_pnl, q_pnl[0..3], q_trades[0..3],
+//     stddev_q, stability, score, degenerate
+//   All numeric fields are byte-compared as IEEE-754 (memcmp on the raw
+//   bytes) so any non-determinism manifests as a byte-level difference.
+//   We do NOT use floating-point tolerance: G2 catches non-determinism,
+//   not numerical noise. There is no legitimate source of FP noise in this
+//   harness -- all engine internals are deterministic functions of inputs.
+//
+// COST
+//   ~1-2 seconds on M-series Mac for the full 4-engine run-list. Negligible
+//   compared to a 21-minute real sweep.
+//
+// FAULT BEHAVIOUR
+//   Print a clear diagnostic naming the engine, combo_id, and the first
+//   field that diverged with run1 vs run2 values. Return false from this
+//   function; main() then returns 2 without launching the real sweep.
+//
+// SEE
+//   incidents/2026-04-28-s51-1a1b-prep/DETERMINISM_GUARDS.md (G2 spec)
+//   incidents/2026-04-28-s51-1a1b-prep/SESSION_HANDOFF_3.md  (G1 status)
+// =============================================================================
+
+static constexpr int64_t SELFTEST_TICKS = 20000;
+
+// Byte-compare two ComboResult fingerprints for determinism. Returns 0 on
+// equal, otherwise an integer field-id 1..7 indicating which field diverged
+// first (1=n_trades, 2=wins, 3=total_pnl, 4=q_pnl, 5=q_trades, 6=stddev_q,
+// 7=score; degenerate flag and stability are derived and would diverge in
+// the same row as one of the above).
+static int combo_fingerprint_diff(const ComboResult& a,
+                                  const ComboResult& b) noexcept {
+    if (a.n_trades != b.n_trades) return 1;
+    if (a.wins     != b.wins)     return 2;
+    if (std::memcmp(&a.total_pnl, &b.total_pnl, sizeof(double)) != 0) return 3;
+    if (std::memcmp(a.q_pnl,    b.q_pnl,    sizeof(a.q_pnl))    != 0) return 4;
+    if (std::memcmp(a.q_trades, b.q_trades, sizeof(a.q_trades)) != 0) return 5;
+    if (std::memcmp(&a.stddev_q, &b.stddev_q, sizeof(double)) != 0) return 6;
+    if (std::memcmp(&a.score,    &b.score,    sizeof(double)) != 0) return 7;
+    return 0;
+}
+
+static const char* fingerprint_field_name(int diff) noexcept {
+    switch (diff) {
+        case 1: return "n_trades";
+        case 2: return "wins";
+        case 3: return "total_pnl";
+        case 4: return "q_pnl[]";
+        case 5: return "q_trades[]";
+        case 6: return "stddev_q";
+        case 7: return "score";
+        default: return "(none)";
+    }
+}
+
+static void print_fingerprint_mismatch(const char* engine,
+                                       int combo_id,
+                                       int diff,
+                                       const ComboResult& a,
+                                       const ComboResult& b) {
+    std::fprintf(stderr,
+        "DETERMINISM FAULT: %s combo %d produced different fingerprints across\n"
+        "                   the two G2 self-test runs. Diverging field: %s\n",
+        engine, combo_id, fingerprint_field_name(diff));
+    std::fprintf(stderr,
+        "  run1: n_trades=%d wins=%d total_pnl=%.10f stddev_q=%.10f score=%.10f\n",
+        a.n_trades, a.wins, a.total_pnl, a.stddev_q, a.score);
+    std::fprintf(stderr,
+        "  run2: n_trades=%d wins=%d total_pnl=%.10f stddev_q=%.10f score=%.10f\n",
+        b.n_trades, b.wins, b.total_pnl, b.stddev_q, b.score);
+    std::fprintf(stderr,
+        "  run1 q_pnl=[%.6f,%.6f,%.6f,%.6f] q_trades=[%d,%d,%d,%d]\n",
+        a.q_pnl[0], a.q_pnl[1], a.q_pnl[2], a.q_pnl[3],
+        a.q_trades[0], a.q_trades[1], a.q_trades[2], a.q_trades[3]);
+    std::fprintf(stderr,
+        "  run2 q_pnl=[%.6f,%.6f,%.6f,%.6f] q_trades=[%d,%d,%d,%d]\n",
+        b.q_pnl[0], b.q_pnl[1], b.q_pnl[2], b.q_pnl[3],
+        b.q_trades[0], b.q_trades[1], b.q_trades[2], b.q_trades[3]);
+    std::fprintf(stderr,
+        "  This indicates a harness bug (e.g. shared mutable state on the\n"
+        "  engine hot path). Real sweep results cannot be trusted. Aborting.\n");
+    std::fflush(stderr);
+}
+
+// Compare two ComboResult vectors and report the first diverging combo.
+// Returns true on full match, false on any mismatch.
+static bool compare_results(const char* engine,
+                            const std::vector<ComboResult>& r1,
+                            const std::vector<ComboResult>& r2) {
+    if (r1.size() != r2.size()) {
+        std::fprintf(stderr,
+            "DETERMINISM FAULT: %s produced different combo counts across\n"
+            "                   G2 runs (%zu vs %zu). Aborting.\n",
+            engine, r1.size(), r2.size());
+        std::fflush(stderr);
+        return false;
+    }
+    for (size_t i = 0; i < r1.size(); ++i) {
+        int diff = combo_fingerprint_diff(r1[i], r2[i]);
+        if (diff != 0) {
+            print_fingerprint_mismatch(engine,
+                                       static_cast<int>(i), diff,
+                                       r1[i], r2[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
+// Run all requested engines twice on `ticks` and verify byte-identical
+// ComboResult fingerprints. Each run launches its own per-engine threads
+// fresh; threads from run1 are fully joined before run2 begins, so the OS
+// scheduler interleaves the two runs differently. Returns true on full
+// match across runs.
+static bool run_selftest_determinism(const std::vector<TickRow>& ticks,
+                                     const Args& args) {
+    if (ticks.empty()) {
+        std::fprintf(stderr, "G2 self-test: no ticks; skipping.\n");
+        return true;
+    }
+
+    // Use a short prefix of the tick stream. SELFTEST_TICKS chosen to cross
+    // several hour-of-day boundaries on XAUUSD (~180 ticks/min) so any
+    // hour-gate-driven non-determinism is exercised.
+    const int64_t n = std::min<int64_t>(SELFTEST_TICKS,
+                                        static_cast<int64_t>(ticks.size()));
+    std::vector<TickRow> sub(ticks.begin(), ticks.begin() + n);
+
+    // Warmup must not exceed the smoke-test size, or every combo records 0
+    // trades and the test is moot. Use min(args.warmup, n/4).
+    const int64_t st_warmup = std::min<int64_t>(args.warmup, n / 4);
+
+    auto t0 = std::chrono::steady_clock::now();
+    std::printf("G2 self-test: running each requested engine TWICE on %"
+                PRId64 " ticks (warmup=%" PRId64 ") to verify determinism\n",
+                n, st_warmup);
+    std::fflush(stdout);
+
+    // Per-engine result containers for run1 and run2.
+    std::vector<ComboResult> hbg_r1, hbg_r2;
+    std::vector<ComboResult> ema_r1, ema_r2;
+    std::vector<ComboResult> asn_r1, asn_r2;
+    std::vector<ComboResult> vwp_r1, vwp_r2;
+
+    const bool want_hbg = engine_in_list(args.engines, "hbg");
+    const bool want_ema = engine_in_list(args.engines, "emacross");
+    const bool want_asn = engine_in_list(args.engines, "asianrange");
+    const bool want_vwp = engine_in_list(args.engines, "vwapstretch");
+
+    // Self-test outdir: ignored by run1/run2 because OMEGA_SWEEP_DIAG dumps
+    // are gated and any write goes to args.outdir which already exists.
+    // We reuse args.outdir for parity with the real sweep path. The diag
+    // dump (if any) is overwritten by the real sweep that follows.
+    const std::string& sd = args.outdir;
+
+    // ---- Run 1 ------------------------------------------------------------
+    {
+        std::vector<std::thread> threads;
+        if (want_hbg) threads.emplace_back([&]() {
+            run_hbg_sweep(sub, st_warmup, hbg_r1, false, sd);
+        });
+        if (want_ema) threads.emplace_back([&]() {
+            run_ema_sweep(sub, st_warmup, ema_r1, false);
+        });
+        if (want_asn) threads.emplace_back([&]() {
+            run_asian_sweep(sub, st_warmup, asn_r1, false, sd);
+        });
+        if (want_vwp) threads.emplace_back([&]() {
+            run_vwap_sweep(sub, st_warmup, vwp_r1, false);
+        });
+        for (auto& th : threads) th.join();
+    }
+
+    // ---- Run 2 (fresh threads) -------------------------------------------
+    {
+        std::vector<std::thread> threads;
+        if (want_hbg) threads.emplace_back([&]() {
+            run_hbg_sweep(sub, st_warmup, hbg_r2, false, sd);
+        });
+        if (want_ema) threads.emplace_back([&]() {
+            run_ema_sweep(sub, st_warmup, ema_r2, false);
+        });
+        if (want_asn) threads.emplace_back([&]() {
+            run_asian_sweep(sub, st_warmup, asn_r2, false, sd);
+        });
+        if (want_vwp) threads.emplace_back([&]() {
+            run_vwap_sweep(sub, st_warmup, vwp_r2, false);
+        });
+        for (auto& th : threads) th.join();
+    }
+
+    // ---- Compare ----------------------------------------------------------
+    bool ok = true;
+    if (want_hbg) ok = compare_results("HBG",         hbg_r1, hbg_r2) && ok;
+    if (want_ema) ok = compare_results("EMACross",    ema_r1, ema_r2) && ok;
+    if (want_asn) ok = compare_results("AsianRange",  asn_r1, asn_r2) && ok;
+    if (want_vwp) ok = compare_results("VWAPStretch", vwp_r1, vwp_r2) && ok;
+
+    auto t1 = std::chrono::steady_clock::now();
+    const double sec = std::chrono::duration<double>(t1 - t0).count();
+    if (ok) {
+        std::printf("G2 self-test: PASS in %.2fs (engines=%s%s%s%s)\n",
+                    sec,
+                    want_hbg ? "HBG " : "",
+                    want_ema ? "EMA " : "",
+                    want_asn ? "ASN " : "",
+                    want_vwp ? "VWP" : "");
+        std::fflush(stdout);
+    }
+    return ok;
+}
+
+// =============================================================================
 // Directory creation -- portable mkdir
 // =============================================================================
 static bool ensure_dir(const std::string& path) noexcept {
@@ -1324,6 +1559,7 @@ struct Args {
     int64_t     from_ms = 0;
     int64_t     to_ms   = 0;
     bool        verbose = false;
+    bool        no_selftest = false;  // G2: default-on; --no-selftest disables
 };
 
 static void usage() {
@@ -1336,6 +1572,9 @@ static void usage() {
         "  --from-date <d>   skip ticks before YYYY-MM-DD\n"
         "  --to-date <d>     skip ticks at/after YYYY-MM-DD\n"
         "  --verbose         print per-engine progress\n"
+        "  --no-selftest     skip the G2 determinism self-test at startup\n"
+        "                    (default: run G2 over the first SELFTEST_TICKS=20000\n"
+        "                    ticks; on mismatch, exit code 2 before the real sweep)\n"
     );
 }
 
@@ -1350,6 +1589,7 @@ static bool parse_args(int argc, char** argv, Args& a) {
         else if (s == "--from-date" && i+1 < argc) { a.from_ms = parse_date_arg(argv[++i]); }
         else if (s == "--to-date" && i+1 < argc) { a.to_ms = parse_date_arg(argv[++i]); }
         else if (s == "--verbose") { a.verbose = true; }
+        else if (s == "--no-selftest") { a.no_selftest = true; }
         else if (s == "--help" || s == "-h") { usage(); return false; }
         else {
             std::fprintf(stderr, "unknown arg: %s\n", s.c_str());
@@ -1406,6 +1646,20 @@ int main(int argc, char** argv) {
     if (ticks.empty()) {
         std::fprintf(stderr, "ERROR: no ticks parsed\n");
         return 1;
+    }
+
+    // -------- G2 determinism self-test -------------------------------------
+    // Default-on. --no-selftest disables. On fault, exit 2 BEFORE the real
+    // sweep so we don't waste 21 minutes producing untrustworthy results.
+    if (!args.no_selftest) {
+        if (!run_selftest_determinism(ticks, args)) {
+            std::fprintf(stderr, "G2 self-test: FAIL -- aborting before real sweep.\n");
+            std::fflush(stderr);
+            return 2;
+        }
+    } else {
+        std::printf("G2 self-test: SKIPPED (--no-selftest)\n");
+        std::fflush(stdout);
     }
 
     // -------- Per-engine threads --------------------------------------------
