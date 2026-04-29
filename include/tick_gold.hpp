@@ -1273,11 +1273,16 @@ static void on_tick_gold(
             printf("[COORD] XAUUSD BRACKET_LANE can_enter=false (base=true) lots=%.4f\n",
                    g_bracket_gold.ENTRY_SIZE);
         }
-        g_bracket_gold.on_tick(bid, ask, now_ms_g,
-            bracket_can_enter_eff,
-            regime.c_str(), bracket_on_close, gold_vwap_now,
-            g_macro_ctx.gold_l2_imbalance,
-            g_gold_stack.ewm_drift());   // Session 13: drift arg drives regime-flip exit
+        // Audit-disable gate (2026-04-30): -324pts in 4wk, 12.8% WR. Skip
+        // the call when no position is open; existing positions still
+        // manage to exit via the engine's own state machine.
+        if (g_bracket_gold.has_open_position() || !g_disable_bracket_gold) {
+            g_bracket_gold.on_tick(bid, ask, now_ms_g,
+                bracket_can_enter_eff,
+                regime.c_str(), bracket_on_close, gold_vwap_now,
+                g_macro_ctx.gold_l2_imbalance,
+                g_gold_stack.ewm_drift());   // Session 13: drift arg drives regime-flip exit
+        }
         g_telemetry.UpdateBracketState("XAUUSD",
             static_cast<int>(g_bracket_gold.phase),
             g_bracket_gold.bracket_high,
@@ -2216,15 +2221,20 @@ static void on_tick_gold(
         // (GoldFlow-related code removed S19 Stage 1B — engine culled)
         // cfe_gf_atr removed with GoldFlow. CFE now uses max(2.0pt floor, M1 bar ATR14).
         const double cfe_atr     = std::max(2.0, cfe_m1_atr);
-        g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
-            now_ms_g, cfe_atr,
-            [&](const omega::TradeRecord& tr) {
-                handle_closed_trade(tr);
-                if (!g_candle_flow.shadow_mode)
-                    send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-            },
-            g_gold_stack.ewm_drift(),   // FIX: was 0.0 -- corrupted sustained-drift tracker
-            g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed)); // HMM tick_rate
+        // Audit-disable gate (2026-04-30): if g_disable_candle_flow is true,
+        // skip the call when no position is open. Existing open positions still
+        // get on_tick (manage path) so they exit cleanly via SL/timeout.
+        if (g_candle_flow.has_open_position() || !g_disable_candle_flow) {
+            g_candle_flow.on_tick(bid, ask, cfe_bar_dummy, cfe_dom,
+                now_ms_g, cfe_atr,
+                [&](const omega::TradeRecord& tr) {
+                    handle_closed_trade(tr);
+                    if (!g_candle_flow.shadow_mode)
+                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
+                },
+                g_gold_stack.ewm_drift(),   // FIX: was 0.0 -- corrupted sustained-drift tracker
+                g_bars_gold.m1.ind.tick_rate.load(std::memory_order_relaxed)); // HMM tick_rate
+        }
     }
 
     // Entry: only when no other gold position open and gold_can_enter passes

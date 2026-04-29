@@ -305,7 +305,8 @@ static void on_tick_us500(
         const double sp_l2_imb = g_macro_ctx.sp_l2_imbalance;
         if (g_iflow_sp.has_open_position()) {
             g_iflow_sp.on_tick(sym, bid, ask, sp_l2_imb, ca_on_close, false);
-        } else if (base_can_sp
+        } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
+                   && base_can_sp
                    && !g_eng_sp.pos.active
                    && !g_orb_us.has_open_position()
                    && !g_vwap_rev_sp.has_open_position()
@@ -579,7 +580,8 @@ static void on_tick_ustec(
         const double nq_l2_imb = g_macro_ctx.nq_l2_imbalance;
         if (g_iflow_nq.has_open_position()) {
             g_iflow_nq.on_tick(sym, bid, ask, nq_l2_imb, ca_on_close, false);
-        } else if (base_can_nq
+        } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
+                   && base_can_nq
                    && !g_eng_nq.pos.active
                    && !g_vwap_rev_nq.has_open_position()
                    && !g_trend_pb_nq.has_open_position()
@@ -699,7 +701,8 @@ static void on_tick_dj30(
         const double us30_l2_imb = g_macro_ctx.us30_l2_imbalance;
         if (g_iflow_us30.has_open_position()) {
             g_iflow_us30.on_tick(sym, bid, ask, us30_l2_imb, ca_on_close, false);
-        } else if (base_can_us30
+        } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
+                   && base_can_us30
                    && !g_eng_us30.pos.active
                    && !g_nbm_us30.has_open_position()
                    && !g_hybrid_us30.has_open_position()) {
@@ -927,7 +930,8 @@ static void on_tick_nas100(
         const double nas_l2_imb = g_macro_ctx.nas_l2_imbalance;
         if (g_iflow_nas.has_open_position()) {
             g_iflow_nas.on_tick(sym, bid, ask, nas_l2_imb, ca_on_close, false);
-        } else if (base_can_nas
+        } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
+                   && base_can_nas
                    && !g_eng_nas100.pos.active
                    && !g_nbm_nas.has_open_position()
                    && !g_hybrid_nas100.has_open_position()) {

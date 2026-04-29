@@ -152,7 +152,8 @@ static void init_engines(const std::string& cfg_path)
     // live only if (a) trade count drops by >=60%, (b) WR rises above 30%,
     // (c) no UTC-hour outside 22:00-04:00 produces a winner.  Else revert.
     // --------------------------------------------------------------------------
-    g_macro_crash.enabled         = true;  // S44 RE-ENABLED in shadow with spike-only thresholds
+    g_macro_crash.enabled         = false; // 2026-04-30 AUDIT DISABLE: 84 trades / 4wk / 4.8% WR / -10,849pts (65% of total bleed). The S44 retune did not fix the bleed -- WR stayed below random. Disable until revisited; existing open positions exit via the engine's internal SL/MAX_HOLD logic before the early-return takes effect on subsequent ticks. (Prior S44 RE-ENABLED comment kept below for context.)
+                                            // S44 RE-ENABLED in shadow with spike-only thresholds (PRIOR STATE)
     g_macro_crash.ATR_THRESHOLD   = 12.0;  // S44 8.0 -> 12.0: London/NY base raised, only fire on macro-scale ATR
     g_macro_crash.VOL_RATIO_MIN   = 3.5;   // S44 2.5 -> 3.5: require >=3.5x baseline vol surge
     g_macro_crash.DRIFT_MIN       = 10.0;  // S44 6.0 -> 10.0: drift must be unambiguously directional

@@ -133,6 +133,40 @@ static omega::DonchianPortfolio g_donchian;  // 7 cells: H2L, H4L+S, H6L+S, D1L+
 #include "EmaPullbackEngine.hpp"
 static omega::EpbPortfolio g_ema_pullback;  // 4 cells: H1/H2/H4/H6 long
 
+// =============================================================================
+//  Audit-disable flags (loser audit 2026-04-30)
+//  ---------------------------------------------------------------------------
+//  Per the 4-week shadow ledger audit, the following engines bled money and
+//  are disabled at the dispatch sites in tick_gold.hpp / tick_indices.hpp.
+//  Existing open positions still manage out via the dispatch site checking
+//  has_open_position() before skipping; new entries are blocked.
+//
+//  To re-enable an engine, flip the flag to false in engine_init.hpp and
+//  rebuild. Disabled engines remain compiled and warm-state intact.
+//
+//  ALWAYS update the bleed comment when audit-disabling, so future devs
+//  know what triggered the disable. Pre-existing audit-disables:
+//
+//      g_disable_macro_crash   -- handled via g_macro_crash.enabled=false
+//                                 in engine_init.hpp (engine has its own
+//                                 enabled flag at line 97 of MacroCrashEngine.hpp).
+//                                 -10,849pts in 4wk, 4.8% WR (2026-04-30 audit).
+//
+//      g_disable_candle_flow   -- -3,967pts in 4wk, 43.4% WR but -8.91 avg/trade
+//                                 (2026-04-30 audit).
+//
+//      g_disable_bracket_gold  -- -324pts in 4wk, 12.8% WR
+//                                 (2026-04-30 audit; small absolute but
+//                                 sustained losing pattern).
+//
+//      g_disable_index_flow    -- -112pts across 4 instances
+//                                 (2026-04-30 audit; minor bleed but no
+//                                 evidence of edge over 4wk).
+// =============================================================================
+static bool g_disable_candle_flow   = true;
+static bool g_disable_bracket_gold  = true;
+static bool g_disable_index_flow    = true;
+
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 
 // =============================================================================
