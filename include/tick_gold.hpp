@@ -738,6 +738,20 @@ static void on_tick_gold(
                     }
                 }
             }
+            // C1RetunedPortfolio H1 dispatch -- drives Donchian H1 + synthesised H2/H6 cells.
+            // Self-contained shadow engine; runs independently of H1Swing / H4Regime / Minimal.
+            {
+                omega::C1Bar c1_h1{};
+                c1_h1.bar_start_ms = s_bar_h1_ms;
+                c1_h1.open  = s_cur_h1.open;
+                c1_h1.high  = s_cur_h1.high;
+                c1_h1.low   = s_cur_h1.low;
+                c1_h1.close = s_cur_h1.close;
+                g_c1_retuned.on_h1_bar(
+                    c1_h1, bid, ask,
+                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+            }
             s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1;
         } else { if(xau_mid>s_cur_h1.high)s_cur_h1.high=xau_mid; if(xau_mid<s_cur_h1.low)s_cur_h1.low=xau_mid; s_cur_h1.close=xau_mid; }
         // H4 -- HTF gate for TrendPullback + H4RegimeEngine.
@@ -800,6 +814,23 @@ static void on_tick_gold(
                         m4sig.is_long ? "LONG" : "SHORT", m4sig.entry, m4sig.reason,
                         "MINIMAL_H4", regime.c_str(), "MINIMAL_H4", m4sig.tp, m4sig.sl);
                 }
+            }
+            // C1RetunedPortfolio H4 dispatch -- drives Bollinger H4 cell only.
+            // BB + ATR14 come from g_bars_gold.h4.ind.* (already updated by add_bar above).
+            {
+                omega::C1Bar c1_h4{};
+                c1_h4.bar_start_ms = s_bar_h4_ms;
+                c1_h4.open  = s_cur_h4.open;
+                c1_h4.high  = s_cur_h4.high;
+                c1_h4.low   = s_cur_h4.low;
+                c1_h4.close = s_cur_h4.close;
+                g_c1_retuned.on_h4_bar(
+                    c1_h4, bid, ask,
+                    g_bars_gold.h4.ind.bb_upper.load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.bb_mid  .load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.bb_lower.load(std::memory_order_relaxed),
+                    g_bars_gold.h4.ind.atr14   .load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
             }
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
         } else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
@@ -1759,6 +1790,8 @@ static void on_tick_gold(
         g_minimal_h4_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
         g_minimal_h4_gold.check_weekend_close(bid, ask, now_ms_g, ca_on_close);
     }
+    // C1RetunedPortfolio tick management -- 4 cells, all independent of the rest.
+    g_c1_retuned.on_tick(bid, ask, now_ms_g, ca_on_close);
     // -- Improvement 5: CVD confirmation gate ------------------------------
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 

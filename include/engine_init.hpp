@@ -415,6 +415,20 @@ static void init_engines(const std::string& cfg_path)
                g_minimal_h4_gold.p.tp_mult,       g_minimal_h4_gold.p.risk_dollars,
                g_minimal_h4_gold.p.max_lot,       g_minimal_h4_gold.p.timeout_h4_bars,
                g_minimal_h4_gold.p.weekend_close_gate ? "true" : "false");
+
+        // C1RetunedPortfolio -- Phase 2 winner from CHOSEN.md, ported from
+        // Python sim. Donchian H1 long retuned (period=20, sl=3.0 ATR,
+        // tp=5.0 ATR) + Bollinger H2/H4/H6 long, max_concurrent=4, 0.5% risk.
+        // Long-only, XAUUSD only, shadow_mode=true. Self-contained engine
+        // (does not interfere with other engines or borrow their state).
+        g_c1_retuned.shadow_mode    = true;
+        g_c1_retuned.enabled        = true;
+        g_c1_retuned.max_concurrent = 4;
+        g_c1_retuned.risk_pct       = 0.005;
+        g_c1_retuned.start_equity   = 10000.0;
+        g_c1_retuned.margin_call    = 1000.0;
+        g_c1_retuned.max_lot_cap    = 0.05;   // tighter than backtest while shadow-validating
+        g_c1_retuned.init();
         fflush(stdout);
     }
 

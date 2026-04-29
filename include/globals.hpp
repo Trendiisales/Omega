@@ -98,6 +98,15 @@ static omega::MinimalH4Breakout g_minimal_h4_gold;  // XAUUSD pure H4 Donchian b
 #include "MinimalH4US30Breakout.hpp"
 static omega::MinimalH4US30Breakout g_minimal_h4_us30;  // DJ30.F pure H4 Donchian breakout
 
+// C1RetunedPortfolio -- Python-side Phase 2 winner ported to C++ for live shadow.
+// Verdict source: phase2/donchian_postregime/CHOSEN.md.
+// Backtest baseline: +74.12% / -5.85% / PF 1.486 / Sharpe 2.651 / WR 55.2%.
+// Walk-forward TRAIN/VALIDATE/TEST all PASS. Post-regime PF 1.334 -> 1.630.
+// Long-only, XAUUSD only, max_concurrent=4, 0.5% risk, shadow_mode=true default.
+// Added 2026-04-29 Session "switch on viable system".
+#include "C1RetunedPortfolio.hpp"
+static omega::C1RetunedPortfolio g_c1_retuned;  // Donchian H1 + Bollinger H2/H4/H6 long
+
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 
 // =============================================================================
