@@ -102,8 +102,15 @@ def parse_chunk(chunk, ts_unit):
         # ISO string path
         dt = pd.to_datetime(raw, utc=True, errors="coerce")
 
-    bid = pd.to_numeric(chunk.iloc[:, 1], errors="coerce")
-    ask = pd.to_numeric(chunk.iloc[:, 2], errors="coerce")
+    # Column order varies by source. Dukascopy gold CSVs typically have header
+    #   'timestamp,askPrice,bidPrice'  (ask BEFORE bid)
+    # but other sources put bid first. Mirror the C++ harness convention:
+    # take min(c1,c2) as bid, max(c1,c2) as ask. This guarantees spread >= 0
+    # regardless of column order in the source.
+    c1 = pd.to_numeric(chunk.iloc[:, 1], errors="coerce")
+    c2 = pd.to_numeric(chunk.iloc[:, 2], errors="coerce")
+    bid = np.minimum(c1, c2)
+    ask = np.maximum(c1, c2)
 
     df = pd.DataFrame({"dt": dt, "bid": bid, "ask": ask})
     df = df.dropna(subset=["dt", "bid", "ask"])
