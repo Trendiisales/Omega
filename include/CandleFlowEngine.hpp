@@ -120,6 +120,45 @@ static constexpr int64_t CFE_DFE_DRIFT_SUSTAINED_MS     = 60000; // 6-day sweep:
 // dsms 60-90s: 57% WR. dsms 90s+: collapses to 0-17%. Cap at 90s max.
 static constexpr bool    CFE_BLOCK_LONDON_NY_LONG   = true;    // block LONG entries 07:00-20:00 UTC
 static constexpr int64_t CFE_DFE_DRIFT_MAX_MS       = 90000;   // block entry when drift sustained > 90s (exhausted)
+
+// AUDIT 2026-04-29 -- Per-hour edge analysis on the 445 CFE trades in
+// omega_trade_closes.csv (Apr-06..28) showed the entire bleed is
+// concentrated in London/NY mid-session hours, while hour 7 (London open),
+// hour 10 (post-EU-data window), hour 16 (NY pre-fix) and Asia hours
+// (22-07 UTC) were net-flat-to-positive. PARTIAL_TP and TRAIL_SL exits
+// taken together returned +$2,076 across 142 trades at 96% WR -- the
+// engine's winning logic is intact; it is the entry-volume during
+// negative-edge hours that produces the bleed. This array drops those
+// hours entirely (both sides). Equivalent to a TOD edge-deadzone filter.
+//
+//                    UTC hour: 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+//   audit-edge sign            -  -  +  -  -  -  -  +  -  -  +  -  -  -  -  -  +  -  -  -  -  -  -  -
+//   blocked below             [0][1]   [3][4][5][6]   [8][9]   [11][12][13][14][15]   [17][18][19][20][21]   [23]
+//
+// The hours kept open (2, 7, 10, 16, 22) are the only ones where the
+// historical sample shows non-negative net PnL. Re-validate on the 26-month
+// data sweep before considering LIVE.
+static constexpr bool CFE_TOD_FILTER_ENABLED = true;
+static constexpr bool CFE_TOD_BLOCKED[24] = {
+    /*00*/ true,  /*01*/ true,  /*02*/ false, /*03*/ true,
+    /*04*/ true,  /*05*/ true,  /*06*/ true,  /*07*/ false,
+    /*08*/ true,  /*09*/ true,  /*10*/ false, /*11*/ true,
+    /*12*/ true,  /*13*/ true,  /*14*/ true,  /*15*/ true,
+    /*16*/ false, /*17*/ true,  /*18*/ true,  /*19*/ true,
+    /*20*/ true,  /*21*/ true,  /*22*/ false, /*23*/ true,
+};
+
+// AUDIT 2026-04-29 -- "no-MFE phantom trades" filter. 89 of 445 CFE trades
+// (avg loss -$37.79) showed MFE = MAE = 0 -- entries fired and were stopped
+// without any favourable movement. Almost all were sub-10s holds. Cause:
+// the engine entered on signals computed from stale ticks (post-spread
+// expansion) and the very next tick was already in adverse territory.
+// Filter: require the LAST CFE_NO_MFE_GUARD_TICKS mid-prices to be moving
+// in the intended-direction by at least CFE_NO_MFE_GUARD_PTS. Mirrors the
+// DFE price-action confirmation gate but applies to bar-based entries too.
+static constexpr int    CFE_NO_MFE_GUARD_TICKS = 3;
+static constexpr double CFE_NO_MFE_GUARD_PTS   = 0.30;
+
 // ATR-normalised SUS entry threshold: max(0.8, atr * 0.30)
 // At ATR=2: max(0.8, 0.60) = 0.80pt   At ATR=3: max(0.8, 0.90) = 0.90pt
 // At ATR=4: max(0.8, 1.20) = 1.20pt   Evidence: 0.8pt fixed threshold fires
@@ -305,6 +344,28 @@ struct CandleFlowEngine {
         }
 
         // -- IDLE: check for entry --------------------------------------------
+
+        // AUDIT 2026-04-29: TOD edge-deadzone gate. See CFE_TOD_BLOCKED above.
+        // Compute UTC hour from now_ms. If this hour is flagged, return without
+        // attempting any entry. Position management is unaffected (LIVE branch
+        // earlier in this function). Logs once per hour at most.
+        if (CFE_TOD_FILTER_ENABLED) {
+            const int64_t hour_utc = (now_ms / 1000 / 3600) % 24;
+            if (hour_utc >= 0 && hour_utc < 24 && CFE_TOD_BLOCKED[hour_utc]) {
+                static int64_t s_tod_log_hr = -1;
+                if (s_tod_log_hr != hour_utc) {
+                    s_tod_log_hr = hour_utc;
+                    char _msg[160];
+                    snprintf(_msg, sizeof(_msg),
+                        "[CFE-TOD-DEADZONE] hour=%lld blocked (audit-edge analysis says no edge this hour)\n",
+                        (long long)hour_utc);
+                    std::cout << _msg;
+                    std::cout.flush();
+                }
+                return;
+            }
+        }
+
 
         // -- DRIFT FAST-ENTRY (DFE) ----------------------------------------------------
         // Pre-empts bar-close when drift >= threshold and RSI confirms.

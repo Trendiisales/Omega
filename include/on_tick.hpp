@@ -680,7 +680,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("XAUUSD","NBM-London",
                     g_nbm_gold_london.open_is_long(), g_nbm_gold_london.open_entry(),
                     0.0, 0.0, g_nbm_gold_london.open_size(), (int64_t)std::time(nullptr));
-            // CandleFlow push_live_trade REMOVED at S19 (2026-04-24) — engine culled.
+            if (g_candle_flow.has_open_position())
+                push_live_trade("XAUUSD", "CandleFlow",
+                    g_candle_flow.pos.is_long, g_candle_flow.pos.entry,
+                    0.0, g_candle_flow.pos.sl,
+                    g_candle_flow.pos.size, g_candle_flow.pos.entry_ts_ms / 1000);
             if (g_h1_swing_gold.has_open_position())
                 push_live_trade("XAUUSD", "H1Swing",
                     g_h1_swing_gold.pos_.is_long, g_h1_swing_gold.pos_.entry,

@@ -26,7 +26,7 @@ static void init_engines(const std::string& cfg_path)
     g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
-    // 11-day/3.4M tick sweep showed zero profitable configs. See globals.hpp tombstone.
+    g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine -- restored 2026-04-29 with audit-tightened gates, shadow only
     // IndexHybridBracket (4 instances, uniform per Q2 decision):
     g_hybrid_sp.shadow_mode     = kShadowDefault;
     g_hybrid_nq.shadow_mode     = kShadowDefault;

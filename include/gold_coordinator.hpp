@@ -12,7 +12,7 @@
 //                    EMACross  (BBMeanRev REMOVED S19 2026-04-24)
 //
 //   FLOW_LANE     -- flow/directional engines (remaining engines, later sessions):
-//                    GoldStack, MacroCrash, RSIReversal,  (CandleFlow REMOVED S19 2026-04-24)
+//                    GoldStack, CandleFlow, MacroCrash, RSIReversal, (CandleFlow re-enabled 2026-04-29)
 //                    RSIExtremeTurn, PullbackCont, PullbackPrem, TrendPullback,
 //                    NBMLondon, H1Swing, H4Regime, PDHLRev (LatencyEdge culled S13)
 //                    (DomPersist removed at Session 15 2026-04-23 -- no edge.)

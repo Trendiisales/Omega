@@ -160,6 +160,21 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_n
 static omega::MacroCrashEngine    g_macro_crash;
 // (g_pullback_cont and g_pullback_prem removed S49 X5 — engine culled, see commit message of branch s49-x5-pullback-cull)
 
+// CandleFlowEngine RESTORED 2026-04-29 with audit-tightened gates ----------
+// S19 (2026-04-24) culled CFE after a 576-config sweep showed zero
+// profitable tunings (best -$336 WR 36% on 222 trades). The 2026-04-29
+// audit revisits the cull thesis -- overtrading at ~450/day is the cause
+// of the bleed, not a fundamental signal-edge problem. Audit fix raises
+// CFE_BODY_RATIO_MIN, CFE_COST_MULT, CFE_RSI_THRESH, CFE_DFE_DRIFT_*,
+// and turns HMM_GATING_LIVE on, slashing the entry rate by ~50% and
+// requiring stricter setups. Re-enabled in shadow_mode only. Will not
+// place live orders. Validate with N>=30 shadow trades AND a multi-month
+// backtest sweep before considering LIVE. If shadow shows the same bleed,
+// re-cull. See backtest/cfe_sweep_v2.cpp for validation harness.
+#include "CandleFlowEngine.hpp"
+static omega::CandleFlowEngine    g_candle_flow;  // candle+DOM engine, shadow only
+
+
 // 11-day / 3.4M tick full-L2 validation sweep on all available XAUUSD L2
 //   Baseline    : T=4469 WR=20.8% PnL=-$12,770.36  (every day lost money)
 //   576 configs : ZERO profitable, best=-$336.39 WR=36.0% N=222
