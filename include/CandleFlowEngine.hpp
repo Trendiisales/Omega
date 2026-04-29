@@ -193,11 +193,17 @@ static constexpr double  CFE_DFE_RSI_TREND_MAX   = 12.0;  // RSI trend EMA maxim
                                                             // entering late into a spent move.
                                                             // Data: rsi_trend=20.62 on -$59 loss,
                                                             // rsi_trend=6-9 on all winners.
-static constexpr double  CFE_DFE_SL_MULT         = 0.6;   // AUDIT 2026-04-29 BT iter-2: 0.4 -> 0.6 (faithful BT showed 1.04pt avg SL = 18 SL_HITs / -$28; widening cuts noise stops while preserving 0.6*ATR risk envelope)
+static constexpr double  CFE_DFE_SL_MULT         = 0.5;   // AUDIT 2026-04-29 26mo BT iter-3: 0.6 -> 0.5 (0.4=too tight noise stops; 0.6=losers run too far. 26mo Duka BT: SL_HIT=367 tr -$844; tightening to 0.5 cuts loss tail without re-introducing noise stops -- sweet spot)
 static constexpr double  CFE_MAX_ATR_ENTRY       = 6.0;   // block ALL entries when ATR > 6pt
                                                             // At ATR=6pt: SL=4.2pt, 4 max loss at 0.20 lots
                                                             // At ATR=12pt: SL=8.4pt, 68 loss -- not a scalp
                                                             // High-ATR regimes belong to GoldFlow/MacroCrash
+// AUDIT 2026-04-29 C-9: minimum ATR floor for entries. 26-month Duka BT showed
+//   110 STAGNATION exits = -$162.70 (avg -$1.48). All correlate with low-ATR
+//   tape where price never moves enough to cover cost. Block entries when ATR
+//   is below 1.5pt -- bar range cannot meaningfully cover spread+commission
+//   under that threshold. Pairs with the existing CFE_MAX_ATR_ENTRY=6.0 cap.
+static constexpr double  CFE_MIN_ATR_ENTRY       = 1.5;   // pts -- block when ATR below this (kills STAGNATION exits)
 static constexpr int64_t CFE_DFE_COOLDOWN_MS     = 120000; // 120s block after DFE loss
 static constexpr double  CFE_DFE_MIN_SPREAD_MULT = 1.5;   // max spread vs cost
 
@@ -681,6 +687,18 @@ struct CandleFlowEngine {
                 // ATR cap: block CFE entry when ATR > CFE_MAX_ATR_ENTRY.
                 // At ATR=12pt: SL=8.4pt = $168 loss at 0.20 lots -- not a scalp.
                 const double dfe_atr_check = atr_pts;
+                // AUDIT 2026-04-29 C-9: ATR floor for DFE entry path
+                if (dfe_atr_check > 0.0 && dfe_atr_check < CFE_MIN_ATR_ENTRY) {
+                    static int64_t s_dfe_floor_log = 0;
+                    if (now_ms - s_dfe_floor_log > 30000) {
+                        s_dfe_floor_log = now_ms;
+                        char _msg[160];
+                        snprintf(_msg, sizeof(_msg), "[CFE-ATR-FLOOR] DFE blocked: atr=%.2f < min=%.1f (dead tape)\n",
+                                 dfe_atr_check, CFE_MIN_ATR_ENTRY);
+                        std::cout << _msg; std::cout.flush();
+                    }
+                    return;
+                }
                 if (dfe_atr_check > CFE_MAX_ATR_ENTRY) {
                     static int64_t s_atr_cap_log = 0;
                     if (now_ms - s_atr_cap_log > 30000) {
@@ -1167,6 +1185,18 @@ struct CandleFlowEngine {
 
         // All gates passed
         // ATR cap: block bar entries in high-vol regime (same as DFE)
+        // AUDIT 2026-04-29 C-9: ATR floor -- block entries on dead tape.
+        if (atr_pts > 0.0 && atr_pts < CFE_MIN_ATR_ENTRY) {
+            static int64_t s_atr_floor_log = 0;
+            if (now_ms - s_atr_floor_log > 30000) {
+                s_atr_floor_log = now_ms;
+                char _msg[160];
+                snprintf(_msg, sizeof(_msg), "[CFE-ATR-FLOOR] Bar entry blocked: atr=%.2f < min=%.1f (dead tape)\n",
+                         atr_pts, CFE_MIN_ATR_ENTRY);
+                std::cout << _msg; std::cout.flush();
+            }
+            return;
+        }
         if (atr_pts > 0.0 && atr_pts > CFE_MAX_ATR_ENTRY) {
             static int64_t s_bar_atr_log = 0;
             if (now_ms - s_bar_atr_log > 30000) {

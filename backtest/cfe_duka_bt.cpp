@@ -301,6 +301,14 @@ int main(int argc, char* argv[]) {
     std::ifstream f(argv[1]);
     if (!f) { std::cerr << "cannot open " << argv[1] << "\n"; return 2; }
 
+    // AUDIT 2026-04-29 v2: silence the engine's per-tick gate-block spam.
+    //   The CFE engine writes [CFE-HMM-GATE], [CFE-DRIFT-MIN], [CFE-TOD-DEADZONE]
+    //   etc. to std::cout on most ticks (millions of lines on the 26-month run).
+    //   Redirect cout to /dev/null during the tick loop; restore for the
+    //   summary block at the end.
+    std::ofstream null_sink("/dev/null");
+    std::streambuf* saved_cout = std::cout.rdbuf(null_sink.rdbuf());
+
     std::string line;
     long ticks = 0;
     long last_progress = 0;
@@ -351,6 +359,10 @@ int main(int argc, char* argv[]) {
 
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::steady_clock::now() - t_start).count();
+
+    // Restore cout for the summary block
+    std::cout.rdbuf(saved_cout);
+
     std::cout << "\n=== CFE DUKASCOPY BACKTEST ===\n";
     std::cout << "File         : " << argv[1] << "\n";
     std::cout << "Ticks        : " << ticks << "\n";
@@ -374,10 +386,17 @@ int main(int argc, char* argv[]) {
     std::cout << "\nBy month (n / WR / pnl):\n";
     for (auto& kv : by_month) {
         const auto& m = kv.second;
-        std::cout << "  " << kv.first << "  n=" << std::setw(5) << m.n
+        // Flag abnormal-bounce months per user note 2026-04-29.
+        const std::string ym = kv.first;
+        const char* tag = "";
+        if (ym == "2026-01") tag = "  <- ABNORMAL SPIKES (user-flagged)";
+        else if (ym == "2026-03") tag = "  <- elevated volatility (user-flagged)";
+        else if (ym == "2026-04") tag = "  <- elevated volatility (user-flagged)";
+        std::cout << "  " << ym << "  n=" << std::setw(5) << m.n
                   << "  WR=" << std::setw(5) << std::setprecision(1)
                   << (m.n > 0 ? 100.0 * m.wins / m.n : 0.0) << "%"
-                  << "  pnl=$" << std::setprecision(2) << m.pnl << "\n";
+                  << "  pnl=$" << std::setprecision(2) << m.pnl
+                  << tag << "\n";
     }
     std::cout << "\nWrote per-trade records to cfe_duka_bt_trades.csv\n";
     return 0;
