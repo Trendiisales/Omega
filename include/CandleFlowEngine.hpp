@@ -239,8 +239,7 @@ struct CandleFlowEngine {
         double  mfe           = 0.0;
         bool    trail_active  = false;    // true once MFE >= 1x cost -> trail engaged
         double  trail_sl      = 0.0;     // current trailing SL price
-        bool    partial_done  = false;   // true after first partial exit at 2x cost
-        bool    partial2_done = false;   // AUDIT 2026-04-29 C-11 (gap #2): true after second partial at 4x cost
+        bool    partial_done  = false;   // true after 50% partial exit at 2x cost
         double  atr_pts       = 0.0;     // ATR at entry, used for trail distance
         double  spread_at_entry = 0.0;   // bid-ask spread captured at entry (ledger forensics)
     } pos;
@@ -749,7 +748,7 @@ struct CandleFlowEngine {
                     pos.sl=sl_px; pos.size=size; pos.full_size=size;
                     pos.cost_pts=dfe_cost; pos.entry_ts_ms=now_ms;
                     pos.mfe=0.0; pos.trail_active=false; pos.trail_sl=sl_px;
-                    pos.partial_done=false; pos.partial2_done=false; pos.atr_pts=dfe_atr;
+                    pos.partial_done=false; pos.atr_pts=dfe_atr;
                     ++m_trade_id; phase=Phase::LIVE;
                     m_imb_against_ticks=0;
                     m_prev_depth_bid=m_dom_cur.bid_count;
@@ -893,7 +892,7 @@ struct CandleFlowEngine {
                 pos.sl=sl_px; pos.size=size; pos.full_size=size;
                 pos.cost_pts=sus_cost; pos.entry_ts_ms=now_ms;
                 pos.mfe=0.0; pos.trail_active=false; pos.trail_sl=sl_px;
-                pos.partial_done=false; pos.partial2_done=false; pos.atr_pts=sus_atr;
+                pos.partial_done=false; pos.atr_pts=sus_atr;
                 ++m_trade_id; phase=Phase::LIVE;
                 m_imb_against_ticks=0;
                 m_prev_depth_bid=m_dom_cur.bid_count;
@@ -1480,7 +1479,6 @@ private:
         pos.trail_active  = false;
         pos.trail_sl      = sl_px;   // initialise trail SL to hard SL
         pos.partial_done  = false;
-        pos.partial2_done = false;
         pos.atr_pts       = atr_pts;
         pos.spread_at_entry = spread;
         ++m_trade_id;
@@ -1532,7 +1530,7 @@ private:
                 lk.unlock();
             } else {
             const double partial_px   = pos.is_long ? bid : ask;
-            const double partial_size = pos.full_size * 0.35;  // AUDIT 2026-04-29 C-10: 0.50 -> 0.35 -- bank a smaller portion at +2*cost, let 65% ride the trail. Boosts gross R:R via larger trail captures.
+            const double partial_size = pos.full_size * 0.50;  // AUDIT 2026-04-29 C-12: REVERT 0.35 -> 0.50. The 35% fraction collapsed avg_win 36% in 26mo BT because it cannibalised partial1 and trail captures.
             // Emit partial close record
             omega::TradeRecord ptr;
             ptr.id         = m_trade_id;
@@ -1587,58 +1585,7 @@ private:
             }
         }
 
-        // -- AUDIT 2026-04-29 C-11 (gap #2): SECOND PARTIAL at MFE >= 4*cost ----
-        // The dead zone between partial1 (MFE >= 2*cost ~ 1.24pt) and trail
-        // arm (MFE >= 1.5*ATR ~ 3pt) was where most "partial-then-revert"
-        // trades lost their remainders. Add a second 25%-of-original partial
-        // close at MFE >= 4*cost to harvest the middle-of-the-move profit
-        // before any reversal can push remainder back to BE. After this fires
-        // 35% + 25% = 60% of the original size has been banked; only 40%
-        // continues to ride the trail. Materially boosts gross R:R because
-        // the harvested profit at +2.5pt is locked in regardless of trail
-        // outcome.
-        if (pos.partial_done && !pos.partial2_done && pos.mfe >= pos.cost_pts * 4.0) {
-            std::lock_guard<std::mutex> _lk(m_close_mtx);
-            if (pos.partial2_done || !pos.active) goto post_partial2;
-            const double partial2_size = pos.full_size * 0.25;
-            if (partial2_size < CFE_MIN_LOT) goto post_partial2;
-            const double px2  = pos.is_long ? bid : ask;
-            const double pnl2 = (pos.is_long ? (px2 - pos.entry) : (pos.entry - px2)) * partial2_size;
-
-            omega::TradeRecord ptr;
-            ptr.id           = ++m_trade_id;
-            ptr.symbol       = "XAUUSD";
-            ptr.side         = pos.is_long ? "LONG" : "SHORT";
-            ptr.engine       = "CandleFlowEngine";
-            ptr.regime       = "EXPANSION";
-            ptr.entryPrice   = pos.entry;
-            ptr.exitPrice    = px2;
-            ptr.tp           = 0.0;
-            ptr.sl           = pos.sl;
-            ptr.size         = partial2_size;
-            ptr.pnl          = pnl2;
-            ptr.mfe          = pos.mfe * partial2_size;
-            ptr.mae          = 0.0;
-            ptr.entryTs      = pos.entry_ts_ms / 1000;
-            ptr.exitTs       = now_ms / 1000;
-            ptr.exitReason   = "PARTIAL_TP";  // emit as PARTIAL_TP for consistent classification
-            ptr.spreadAtEntry = pos.spread_at_entry;
-            ptr.shadow       = shadow_mode;
-            omega::apply_realistic_costs(ptr, pos.entry, partial2_size);
-
-            std::cout << "[CFE] PARTIAL2-TP " << (pos.is_long?"LONG":"SHORT")
-                      << " @ " << std::fixed << std::setprecision(2) << px2
-                      << " size=" << std::setprecision(3) << partial2_size
-                      << " mfe=" << pos.mfe << " (4xcost gate)\n";
-            std::cout.flush();
-
-            pos.partial2_done = true;
-            pos.size          = pos.full_size * 0.40;  // 40% of original remains for trail
-            if (on_close) on_close(ptr);
-            // Tighten the BE floor: now SL = entry + (mfe-1pt)*0.5 = locks in some profit.
-            // But keep simple: leave SL at BE; trail logic will move it as MFE grows.
-        }
-        post_partial2:;
+        // AUDIT 2026-04-29 C-12: PARTIAL2 block REMOVED. It cannibalised trail captures (TRAIL_SL avg dropped \$2.93 -> \$1.42) for negligible mid-range gain.
 
                 // -- TRAILING SL: engage once MFE >= 1x cost --------------------------
         // Trail distance = 0.7 * ATR (tight enough to lock profit, wide enough
@@ -1651,8 +1598,8 @@ private:
         // New: arm at MFE >= 2x ATR so trail only engages on real moves.
         // At ATR=2pt: arms when MFE >= 4pts. dist=0.5xATR=1pt.
         // Trail_SL = mid - 1pt = entry+4-1 = entry+3 -- locked $3 profit minimum.
-        if (pos.mfe >= pos.atr_pts * 1.5) {  // AUDIT 2026-04-29 C-11 (gap #3): 2.0 -> 1.5 -- arm trail sooner so more trades engage it. Catches the dead-zone trades that reach +3pt then revert to BE.
-            const double trail_dist = pos.atr_pts * 0.7;  // AUDIT 2026-04-29 C-10: 0.5 -> 0.7 -- looser trail captures more of the peak. Trade-off: small reduction in trail-captured PnL but bigger winners on average.
+        if (pos.mfe >= pos.atr_pts * 2.0) {  // AUDIT 2026-04-29 C-12: REVERT 1.5 -> 2.0. Earlier arm let trails fire on smaller MFEs that reverted, reducing avg trail capture.
+            const double trail_dist = pos.atr_pts * 0.5;  // AUDIT 2026-04-29 C-12: REVERT 0.7 -> 0.5. The looser trail underperformed in 26mo BT.
             const double new_trail = pos.is_long
                 ? (mid - trail_dist)
                 : (mid + trail_dist);
