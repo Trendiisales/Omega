@@ -118,6 +118,14 @@ static omega::C1RetunedPortfolio g_c1_retuned;  // Donchian H1 + Bollinger H2/H4
 #include "TsmomEngine.hpp"
 static omega::TsmomPortfolio g_tsmom;  // 5 long cells: H1, H2, H4, H6, D1
 
+// DonchianPortfolio -- Tier-2 ship of 7 donchian cells (H2 long; H4/H6/D1
+// long+short). Bidirectional, would have profited during the 2026-03-18
+// BEAR cluster that long-only C1Retuned lost on. Note: H1 long is NOT in
+// this engine -- it's the retuned cell already live in C1RetunedPortfolio.
+// Added 2026-04-30 Session "Tier-1+2 ship".
+#include "DonchianEngine.hpp"
+static omega::DonchianPortfolio g_donchian;  // 7 cells: H2L, H4L+S, H6L+S, D1L+S
+
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 
 // =============================================================================

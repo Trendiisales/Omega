@@ -500,6 +500,26 @@ static void init_engines(const std::string& cfg_path)
         g_tsmom.init();
         g_tsmom.warmup_from_csv(g_tsmom.warmup_csv_path);
         fflush(stdout);
+
+        // ?? DonchianPortfolio -- Tier-2 ship 2026-04-30 ???????????????????????
+        // 7 donchian cells: H2 long, H4 long+short, H6 long+short, D1 long+short.
+        // (H1 long is NOT here -- it's the retuned cell in C1RetunedPortfolio.)
+        // Verdict: phase1/signal_discovery/POST_CUT_FULL_REPORT.md
+        // Combined: 328 trades/yr, +$5,620 = 47% of unshipped post-cut edge.
+        // Bidirectional: would have profited during 2026-03-18 BEAR cluster.
+        // Reuses tsmom warmup CSV (same H1 stream input).
+        g_donchian.shadow_mode       = kShadowDefault;
+        g_donchian.enabled           = true;
+        g_donchian.max_concurrent    = 7;
+        g_donchian.risk_pct          = 0.005;
+        g_donchian.start_equity      = 10000.0;
+        g_donchian.margin_call       = 1000.0;
+        g_donchian.max_lot_cap       = 0.05;
+        g_donchian.block_on_risk_off = true;
+        g_donchian.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
+        g_donchian.init();
+        g_donchian.warmup_from_csv(g_donchian.warmup_csv_path);
+        fflush(stdout);
     }
 
     // MinimalH4US30Breakout -- DJ30.F sister engine. Self-contained: builds

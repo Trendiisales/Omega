@@ -773,6 +773,24 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // DonchianPortfolio H1 dispatch -- Tier-2 ship 2026-04-30. Drives
+            // 7 cells (H2 long, H4/H6/D1 long+short). H1 atr14 is unused (cells
+            // self-compute ATR per synthesised TF) but passed for signature
+            // parity with other portfolios. H1 long itself is NOT in this
+            // engine -- it lives in C1RetunedPortfolio.
+            {
+                omega::DonchianBar dn_h1{};
+                dn_h1.bar_start_ms = s_bar_h1_ms;
+                dn_h1.open  = s_cur_h1.open;
+                dn_h1.high  = s_cur_h1.high;
+                dn_h1.low   = s_cur_h1.low;
+                dn_h1.close = s_cur_h1.close;
+                g_donchian.set_macro_regime(g_macroDetector.regime());
+                g_donchian.on_h1_bar(
+                    dn_h1, bid, ask,
+                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+            }
             s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1;
         } else { if(xau_mid>s_cur_h1.high)s_cur_h1.high=xau_mid; if(xau_mid<s_cur_h1.low)s_cur_h1.low=xau_mid; s_cur_h1.close=xau_mid; }
         // H4 -- HTF gate for TrendPullback + H4RegimeEngine.
@@ -1816,6 +1834,9 @@ static void on_tick_gold(
     // TsmomPortfolio tick management -- 5 long cells (H1/H2/H4/H6/D1).
     // Tier-1 shipped 2026-04-30; runs alongside C1Retuned, no shared state.
     g_tsmom.on_tick(bid, ask, now_ms_g, ca_on_close);
+    // DonchianPortfolio tick management -- 7 cells (H2 long, H4/H6/D1 long+short).
+    // Tier-2 shipped 2026-04-30. Bidirectional. No shared state with other engines.
+    g_donchian.on_tick(bid, ask, now_ms_g, ca_on_close);
     // -- Improvement 5: CVD confirmation gate ------------------------------
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 
