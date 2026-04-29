@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <iostream>
 #include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
+#include "SpreadRegimeGate.hpp"   // 2026-04-29 PM Option 1 (audit-fixes-18)
 // =============================================================================
 // MacroCrashEngine  v2.0  --  Hybrid Bracket Floor + Safe Cost-Covered Pyramid
 // =============================================================================
@@ -214,6 +215,13 @@ public:
         if (!enabled) return;
         const double mid = (bid + ask) * 0.5;
 
+        // 2026-04-29 PM Option 1 (audit-fixes-18): feed spread-regime gate
+        //   on EVERY tick so the 1h rolling window stays fresh.  The
+        //   can_fire() check below the manage block only gates the
+        //   new-entry path; existing position management (_manage) is
+        //   unaffected.
+        m_spread_gate.on_tick(now_ms, ask - bid);
+
         // -- Weekend gap protection ----------------------------------------
         // Gold gaps 1-2% on Sunday open due to weekend macro news.
         // Force-close any open position Friday >= 20:30 UTC.
@@ -297,6 +305,12 @@ public:
                     expansion_regime, now_ms);
             return;
         }
+
+        // 2026-04-29 PM Option 1 (audit-fixes-18): regime-aware sit-out.
+        //   When 1h median spread > 0.5pt, block new entries.  pos.active
+        //   manage path above already returned, so this only short-circuits
+        //   the entry-evaluation path below.
+        if (!m_spread_gate.can_fire()) return;
 
         // -- Update rolling 90s price range (always, not gated) ----------
         // Decay old extremes: if the recorded extreme is >90s old, reset it.
@@ -654,6 +668,11 @@ private:
     // (intended exit). TP_HIT resets. WEEKEND_CLOSE / MAX_HOLD do not count.
     int     m_consec_sl         = 0;
     int64_t m_sl_kill_until     = 0;
+
+    // 2026-04-29 PM Option 1 (audit-fixes-18): per-engine 1h rolling spread
+    //   gate.  Updated every tick from on_tick(); consulted only on the
+    //   new-entry path (after pos.active manage()).  See SpreadRegimeGate.hpp.
+    omega::SpreadRegimeGate m_spread_gate;
 
     static double _rl(double x) { return std::round(x / 0.001) * 0.001; }
 

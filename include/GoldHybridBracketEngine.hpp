@@ -1,6 +1,7 @@
 #pragma once
 #include <iomanip>
 #include <iostream>
+#include "SpreadRegimeGate.hpp"  // 2026-04-29 PM Option 1 (audit-fixes-18)
 // =============================================================================
 // GoldHybridBracketEngine.hpp  --  Compression breakout bracket for XAUUSD
 // =============================================================================
@@ -180,6 +181,13 @@ public:
         const double spread = ask - bid;
         const int64_t now_s = now_ms / 1000;
 
+        // 2026-04-29 PM Option 1 (audit-fixes-18): feed spread-regime gate
+        //   on EVERY tick (always -- including LIVE/PENDING/COOLDOWN ticks)
+        //   so the 1h rolling window stays fresh.  The can_fire() check
+        //   below only gates the new-entry path; existing position
+        //   management (manage()/confirm_fill()) is unaffected.
+        m_spread_gate.on_tick(now_ms, spread);
+
         // S47 T4a: cache simulated tick second so confirm_fill() can stamp
         //   pos.entry_ts using the tick clock rather than std::time(nullptr).
         m_last_tick_s = now_s;
@@ -251,6 +259,12 @@ public:
             return;
         }
         if (spread > MAX_SPREAD) return;
+
+        // 2026-04-29 PM Option 1 (audit-fixes-18): regime-aware sit-out.
+        //   When 1h median spread > 0.5pt (e.g. 2026-Q1 across XAUUSD),
+        //   block new entries.  LIVE/PENDING management above already
+        //   returned, so this only short-circuits the IDLE/ARMED path.
+        if (!m_spread_gate.can_fire()) return;
 
         const bool flow_pyramid_ok = flow_live && flow_be_locked && flow_trail_stage >= 1;
         if (flow_live && !flow_pyramid_ok && phase == Phase::IDLE) return;
@@ -543,6 +557,11 @@ private:
     //   of std::time(nullptr) (which broke backtest hold computation).
     int64_t m_last_tick_s     = 0;
     std::deque<double> m_window;
+
+    // 2026-04-29 PM Option 1 (audit-fixes-18): per-engine 1h rolling spread
+    //   gate.  Updated every tick from on_tick(); consulted only on the
+    //   new-entry path (after MAX_SPREAD check).  See SpreadRegimeGate.hpp.
+    omega::SpreadRegimeGate m_spread_gate;
     // S47 T4a: rolling history of ranges that passed the FIRE gate, used by
     //   the ATR-expansion gate to require current range >= EXPANSION_MULT *
     //   median(history) before firing.

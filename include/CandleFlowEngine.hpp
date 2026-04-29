@@ -57,6 +57,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OmegaFIX.hpp"          // L2Book, L2Level
 #include "GoldHMM.hpp"            // 3-state regime HMM for CFE entry gating
+#include "SpreadRegimeGate.hpp"  // 2026-04-29 PM Option 1 (audit-fixes-18)
 
 namespace omega {
 
@@ -313,6 +314,12 @@ struct CandleFlowEngine {
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
 
+        // 2026-04-29 PM Option 1 (audit-fixes-18): feed spread-regime gate
+        //   on EVERY tick so the 1h rolling window stays fresh.  The
+        //   can_fire() check below only gates the new-entry path; existing
+        //   position management (manage()) is unaffected.
+        m_spread_gate.on_tick(now_ms, spread);
+
         // -- RSI update (unconditional, every tick) ---------------------------
         rsi_update(mid);
 
@@ -361,6 +368,12 @@ struct CandleFlowEngine {
             m_consec_sl     = 0;
             m_sl_kill_until = 0;
         }
+
+        // 2026-04-29 PM Option 1 (audit-fixes-18): regime-aware sit-out.
+        //   When 1h median spread > 0.5pt, block new entries.  LIVE
+        //   manage() above already returned, so this only short-circuits
+        //   the IDLE entry-evaluation path below.
+        if (!m_spread_gate.can_fire()) return;
 
         // -- IDLE: check for entry --------------------------------------------
 
@@ -1310,6 +1323,11 @@ private:
     int64_t m_sl_kill_until     = 0;
     DOMSnap m_dom_cur;
     DOMSnap m_dom_prev;
+
+    // 2026-04-29 PM Option 1 (audit-fixes-18): per-engine 1h rolling spread
+    //   gate.  Updated every tick from on_tick(); consulted only on the
+    //   new-entry path (after SL-KILL block).  See SpreadRegimeGate.hpp.
+    omega::SpreadRegimeGate m_spread_gate;
 
     // RACE-FIX 2026-04-20: serialize close_pos / force_close / PARTIAL_TP emit.
     // Root cause: g_candle_flow.on_tick is called from multiple paths per XAUUSD tick
