@@ -752,6 +752,27 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // TsmomPortfolio H1 dispatch -- Tier-1 ship 2026-04-30. Drives
+            // 5 long cells: H1 directly, H2/H4/H6/D1 synthesised internally
+            // from H1 bars. Self-contained shadow engine; runs independently
+            // of every other gold engine. Macro regime feed is best-effort
+            // (RISK_OFF blocks new entries; existing positions still managed).
+            // Cells are pre-warmed at init() from
+            // phase1/signal_discovery/tsmom_warmup_H1.csv so the very first
+            // live H1 bar can fire signals on every cell -- no cold start.
+            {
+                omega::TsmomBar ts_h1{};
+                ts_h1.bar_start_ms = s_bar_h1_ms;
+                ts_h1.open  = s_cur_h1.open;
+                ts_h1.high  = s_cur_h1.high;
+                ts_h1.low   = s_cur_h1.low;
+                ts_h1.close = s_cur_h1.close;
+                g_tsmom.set_macro_regime(g_macroDetector.regime());
+                g_tsmom.on_h1_bar(
+                    ts_h1, bid, ask,
+                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+            }
             s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1;
         } else { if(xau_mid>s_cur_h1.high)s_cur_h1.high=xau_mid; if(xau_mid<s_cur_h1.low)s_cur_h1.low=xau_mid; s_cur_h1.close=xau_mid; }
         // H4 -- HTF gate for TrendPullback + H4RegimeEngine.
@@ -1792,6 +1813,9 @@ static void on_tick_gold(
     }
     // C1RetunedPortfolio tick management -- 4 cells, all independent of the rest.
     g_c1_retuned.on_tick(bid, ask, now_ms_g, ca_on_close);
+    // TsmomPortfolio tick management -- 5 long cells (H1/H2/H4/H6/D1).
+    // Tier-1 shipped 2026-04-30; runs alongside C1Retuned, no shared state.
+    g_tsmom.on_tick(bid, ask, now_ms_g, ca_on_close);
     // -- Improvement 5: CVD confirmation gate ------------------------------
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 

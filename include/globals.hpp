@@ -107,6 +107,17 @@ static omega::MinimalH4US30Breakout g_minimal_h4_us30;  // DJ30.F pure H4 Donchi
 #include "C1RetunedPortfolio.hpp"
 static omega::C1RetunedPortfolio g_c1_retuned;  // Donchian H1 + Bollinger H2/H4/H6 long
 
+// TsmomPortfolio -- Tier-1 ship of 5 long tsmom cells (H1/H2/H4/H6/D1)
+// from phase1/signal_discovery/POST_CUT_FULL_REPORT.md.
+// Post-cut backtest: 27 of 32 master_summary cells survive; tsmom long
+// family = 82% of total simulated edge. Long-only XAUUSD, max_concurrent=5,
+// 0.5% risk, shadow_mode=true default. Pre-warms from
+// phase1/signal_discovery/tsmom_warmup_H1.csv (6,156 H1 bars) so every cell
+// is READY when the first live H1 bar arrives -- no cold-start window.
+// Added 2026-04-30 Session "Tier-1 tsmom shipdown to Omega shadow".
+#include "TsmomEngine.hpp"
+static omega::TsmomPortfolio g_tsmom;  // 5 long cells: H1, H2, H4, H6, D1
+
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 
 // =============================================================================
