@@ -311,12 +311,31 @@ public:
                 return;
             }
 
-            // ── S47 T4a: ATR-expansion gate ──────────────────────────────────
+            // ── S47 T4a: ATR-expansion gate (FIX 2026-04-29 ratchet) ─────────
             //   Require current range to exceed EXPANSION_MULT * median of
-            //   last EXPANSION_HISTORY_LEN observed compressions before
+            //   last EXPANSION_HISTORY_LEN qualifying compressions before
             //   firing. Bypass while history shorter than EXPANSION_MIN_HISTORY.
-            //   On fail: return to IDLE without recording this range so we
-            //   don't pollute the history with non-fired compressions.
+            //
+            //   2026-04-29 ratchet fix: pre-fix this push only ran on the
+            //   gate-passing path. With EXPANSION_MULT > 1.0 the recorded
+            //   ranges therefore drifted monotonically upward (only above-
+            //   median fires got into history), and the median ratcheted up
+            //   until no compression could pass -- observed in the 26-month
+            //   BT as 43 fires total, then full lockout from 2026-02 onward.
+            //
+            //   Now we push EVERY qualifying compression range (one that
+            //   reached this point -- passed MIN_RANGE/MAX_RANGE,
+            //   MIN_BREAK_TICKS and COST_FAIL gates) into the history before
+            //   evaluating the expansion threshold. The gate now means
+            //   "current range >= 1.10 * median of recent qualifying
+            //   compressions" instead of "current range >= 1.10 * median of
+            //   recent fires." Non-fired qualifying ranges enter the history
+            //   and pull the median back toward the population mean, breaking
+            //   the ratchet.
+            m_range_history.push_back(range);
+            if ((int)m_range_history.size() > EXPANSION_HISTORY_LEN)
+                m_range_history.pop_front();
+
             if ((int)m_range_history.size() >= EXPANSION_MIN_HISTORY) {
                 std::vector<double> sorted(m_range_history.begin(),
                                            m_range_history.end());
@@ -341,11 +360,8 @@ public:
                     return;
                 }
             }
-            // Gate passed (or warmup). Record this firing range for future
-            // median calculations.
-            m_range_history.push_back(range);
-            if ((int)m_range_history.size() > EXPANSION_HISTORY_LEN)
-                m_range_history.pop_front();
+            // Gate passed (or warmup). The qualifying-range push above already
+            // recorded this attempt for future median calculations.
 
             const bool is_pyramid = flow_pyramid_ok;
             const double risk     = is_pyramid ? RISK_DOLLARS_PYRAMID : RISK_DOLLARS;

@@ -49,3 +49,53 @@ symbols.ini
 
 # L2 data CSVs -- too large for repo download
 data/
+
+# === ADDED 2026-04-29 (untracked-files triage; transient/regenerable only) ===
+
+# macOS finder metadata
+.DS_Store
+**/.DS_Store
+
+# Python bytecode caches
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Compiled BT/sweep binaries -- regenerable from .cpp via build scripts
+backtest/cfe_duka_bt
+backtest/mce_duka_bt
+backtest/hbg_duka_bt
+backtest/candle_flow_bt
+backtest/candle_flow_l2_bt
+backtest/candle_flow_param_sweep
+backtest/candle_flow_stag_sweep
+backtest/goldflow_diag
+backtest/goldflow_gate_diag
+backtest/goldflow_real_bt
+backtest/goldflow_sweep
+backtest/rsi_dom_bt2
+backtest/rsi_dom_correlate
+backtest/rsi_extreme_bt
+backtest/rsi_sustained_bt
+candle_rsi_dom_bt
+candle_rsi_sweep
+cfe_duka_bt
+hbg_duka_bt
+mce_duka_bt
+momentum_bt
+momentum_sweep
+
+# Captured tool stdout
+inspect_*.out
+
+# Sweep / phase output directories -- ephemeral, regenerable
+sweep_*/
+sweep_results/
+sweep_results_*/
+
+# edgefinder large binary outputs (566M) -- regenerable from source
+backtest/edgefinder/output/
+
+# Local downloads / installers -- not source
+Claude.dmg
+Omega-main.zip
