@@ -319,6 +319,10 @@ struct CandleFlowEngine {
         //   can_fire() check below only gates the new-entry path; existing
         //   position management (manage()) is unaffected.
         m_spread_gate.on_tick(now_ms, spread);
+        // S44 (2026-04-29 LATE): macro regime hook -- RISK_OFF widens
+        // threshold by 10%, RISK_ON tightens by 5%.  g_macroDetector source
+        // of truth (VIX/DXY/ES/NQ updates).  See SpreadRegimeGate.hpp v2.
+        m_spread_gate.set_macro_regime(g_macroDetector.regime());
 
         // -- RSI update (unconditional, every tick) ---------------------------
         rsi_update(mid);

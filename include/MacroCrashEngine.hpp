@@ -221,6 +221,11 @@ public:
         //   new-entry path; existing position management (_manage) is
         //   unaffected.
         m_spread_gate.on_tick(now_ms, ask - bid);
+        // S44 (2026-04-29 LATE): macro regime hook -- RISK_OFF widens
+        // threshold by 10% (news/crisis days), RISK_ON tightens by 5%
+        // (calm regimes need a stricter spread bar).  Source of truth is
+        // g_macroDetector (VIX/DXY/ES/NQ ticks update it).
+        m_spread_gate.set_macro_regime(g_macroDetector.regime());
 
         // -- Weekend gap protection ----------------------------------------
         // Gold gaps 1-2% on Sunday open due to weekend macro news.

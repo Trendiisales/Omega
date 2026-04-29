@@ -187,6 +187,13 @@ public:
         //   below only gates the new-entry path; existing position
         //   management (manage()/confirm_fill()) is unaffected.
         m_spread_gate.on_tick(now_ms, spread);
+        // S44 (2026-04-29 LATE): feed macro regime into the gate so RISK_OFF
+        // widens the spread threshold by 10% (more permissive on news days)
+        // and RISK_ON tightens by 5% (stricter when calm).  g_macroDetector
+        // is the single source of truth, updated by VIX/DXY/ES/NQ ticks in
+        // on_tick.hpp.  set_macro_regime is cheap (string compare + double
+        // assign) so calling per-tick is fine.
+        m_spread_gate.set_macro_regime(g_macroDetector.regime());
 
         // S47 T4a: cache simulated tick second so confirm_fill() can stamp
         //   pos.entry_ts using the tick clock rather than std::time(nullptr).
