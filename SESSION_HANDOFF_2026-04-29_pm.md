@@ -1,6 +1,15 @@
 # Omega Trading System — Session Handoff (PM)
 ## 2026-04-29 — audit-fixes-16 + 17 + structural diagnosis
 
+> **SUPERSEDED 2026-04-29 evening — read
+> [`SESSION_HANDOFF_2026-04-29_evening.md`](SESSION_HANDOFF_2026-04-29_evening.md)
+> first.**  Option 3 (cost_recalc) and Option 1 (SpreadRegimeGate) have
+> landed in `audit-fixes-18` (`6e10eba`).  This PM doc is preserved for
+> historical context only — open it after the evening doc if you need
+> the original Option 1/2/3 derivation.
+
+
+
 This continues `SESSION_HANDOFF_2026-04-29.md` (the AM doc). Read both, in order.
 **Read this file first** before doing any work in the next session.
 
