@@ -71,6 +71,20 @@ static constexpr double  CFE_COST_MULT         = 2.5;   // AUDIT 2026-04-29: rev
                                                           // when move went $8+). 2.0x still requires
                                                           // bar covers cost with margin.
 static constexpr int64_t CFE_STAGNATION_MS     = 90000;  // Asia default -- London/NY uses 180s (session-aware in on_tick)
+
+// AUDIT 2026-04-29 C-13 (DATA-DRIVEN): early-fail exit. Per-trade analysis of
+//   the 26-month BT (cfe_duka_bt_trades.csv, 905 rows / 647 parent trades)
+//   showed 156 trades reach MFE=0 (never moved favorable) for avg -$2.53.
+//   These account for -$394.89 of the -$630 total loss. Current logic waits
+//   90-120s for STAGNATION timeout before exiting; cutting at 30s saves
+//   ~$2/trade since the loss is mostly accumulated chop+spread cost beyond
+//   that point. Zero false positives at MFE=0 strict (0% of these recover).
+//
+//   Soft gate at 60s catches the further 113 trades in MFE 0-0.5pt bucket
+//   that also fail to develop (-$2.10 avg). Together: 269 trades at -$632.
+static constexpr int64_t CFE_EARLY_FAIL_HARD_MS = 30000;  // hard cut at 30s if MFE = 0
+static constexpr int64_t CFE_EARLY_FAIL_SOFT_MS = 60000;  // soft cut at 60s if MFE < 0.3pt
+static constexpr double  CFE_EARLY_FAIL_SOFT_PT = 0.3;    // pts of MFE below which soft cut fires
                                                            // 60s was exiting before moves developed.
                                                            // 0.37pt MFE in 60s -> exited, move went $8.
 static constexpr double  CFE_STAGNATION_MULT   = 1.0;   // exit if mfe < cost*1.0
@@ -1647,6 +1661,32 @@ private:
             std::cout.flush();
             close_pos(px, "IMB_EXIT", now_ms, on_close);
             return;
+        }
+
+        // AUDIT 2026-04-29 C-13: data-driven early-fail exit. Per-parent-trade
+        //   MFE analysis on 26-month BT (cfe_duka_bt_trades.csv) showed 156
+        //   never-moved trades + 113 barely-moved trades = 269 total at -$632
+        //   i.e. essentially the entire 26mo bleed. Hard cut at 30s/MFE=0 and
+        //   soft cut at 60s/MFE<0.3pt. Both fire BEFORE the existing STAGNATION
+        //   timeout (90-180s) so we exit while loss is still spread+commission
+        //   only. 0% recovery rate observed in the data for either bucket.
+        if (!pos.partial_done && !pos.trail_active) {
+            const bool hard_cut = (hold_ms >= CFE_EARLY_FAIL_HARD_MS) && (pos.mfe <= 0.0);
+            const bool soft_cut = (hold_ms >= CFE_EARLY_FAIL_SOFT_MS) && (pos.mfe < CFE_EARLY_FAIL_SOFT_PT);
+            if (hard_cut || soft_cut) {
+                const double px = pos.is_long ? bid : ask;
+                {
+                    char _msg[200];
+                    snprintf(_msg, sizeof(_msg),
+                        "[CFE-EARLY-FAIL] %s @ %.2f hold=%lldms mfe=%.3f gate=%s\n",
+                        pos.is_long?"LONG":"SHORT", px,
+                        (long long)hold_ms, pos.mfe,
+                        hard_cut ? "HARD" : "SOFT");
+                    std::cout << _msg; std::cout.flush();
+                }
+                close_pos(px, "EARLY_FAIL", now_ms, on_close);
+                return;
+            }
         }
 
         // Early-adverse exit in Asia (22:00-07:00 UTC):
