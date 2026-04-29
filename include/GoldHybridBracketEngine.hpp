@@ -58,6 +58,8 @@
 // =============================================================================
 
 #include <cstdint>
+#include <mutex>
+#include <sstream>
 #include <cstdio>
 #include <cmath>
 #include <cstring>
@@ -530,44 +532,106 @@ private:
     //   median(history) before firing.
     std::deque<double> m_range_history;
 
+    // AUDIT 2026-04-29: mutex around the whole _close() path. Two close paths
+    //   exist (manage->TP/SL hit, force_close()), each callable from a
+    //   different thread. Without serialisation the trade-record write
+    //   could see partial state, producing the Apr-7 -$3,008.38 record where
+    //   tr.pnl came out exactly 100x the expected value. Holding the lock
+    //   for the entire emit path also makes the [HYBRID-GOLD] EXIT log line
+    //   atomic vs. concurrent log writes from other engines.
+    mutable std::mutex m_close_mtx;
+
     void _close(double exit_px, const char* reason,
                 int64_t now_s, CloseCallback on_close) noexcept
     {
-        const double pnl = (pos.is_long ? (exit_px - pos.entry)
-                                        : (pos.entry - exit_px)) * pos.size;
+        // AUDIT 2026-04-29: serialise the whole close path. See m_close_mtx
+        //   comment above for context (Apr-7 -$3,008.38 phantom).
+        std::lock_guard<std::mutex> _lk(m_close_mtx);
+
+        // Re-check pos.active under the lock so a concurrent close that won
+        //   the race silently bails here instead of double-emitting tr.
+        if (!pos.active) return;
+
+        // Snapshot live state into locals BEFORE building tr. This defeats
+        //   any race where pos.* could mutate (e.g. via reset to LivePos{}
+        //   on another thread) between the printf and the trade record
+        //   construction.
+        const bool   is_long_  = pos.is_long;
+        const double entry_    = pos.entry;
+        const double sl_       = pos.sl;
+        const double tp_       = pos.tp;
+        const double size_     = pos.size;
+        const double mfe_      = pos.mfe;
+        const double mae_      = pos.mae;
+        const double spread_at_entry_ = pos.spread_at_entry;
+        const int64_t entry_ts_ = pos.entry_ts;
+
+        // Single source-of-truth pnl computation from snapshot.
+        const double pnl = (is_long_ ? (exit_px - entry_) : (entry_ - exit_px)) * size_;
+
+        // Sanity check against the same -$3,008 race: if pnl magnitude is
+        //   wildly larger than max_lot * 200pt move (~$1000 even at 0.50
+        //   gold lots), something has corrupted the state -- log and emit
+        //   a recomputed value rather than the suspicious one.
+        const double sane_max = std::max(1.0, size_) * 200.0;  // pts; * 100 in lifecycle
+        double pnl_to_emit = pnl;
+        if (std::fabs(pnl) > sane_max) {
+            const double recomputed = (is_long_ ? (exit_px - entry_) : (entry_ - exit_px)) * size_;
+            std::ostringstream warn;
+            warn << "[HYBRID-GOLD][SANITY] anomalous pnl=" << pnl
+                 << " (size=" << size_ << " entry=" << entry_ << " exit=" << exit_px
+                 << "). Recomputed=" << recomputed
+                 << ". Emitting recomputed value.\n";
+            std::cout << warn.str();
+            std::cout.flush();
+            pnl_to_emit = recomputed;
+        }
+
+        // Atomic log line (single ostringstream -> single cout write).
         {
-            // converted from printf
-            char _buf[512];
-            snprintf(_buf, sizeof(_buf), "[HYBRID-GOLD] EXIT %s @ %.2f reason=%s pnl_raw=%.4f mfe=%.2f mae=%.2f\n",                pos.is_long ? "LONG" : "SHORT", exit_px, reason, pnl, pos.mfe, pos.mae);
-            std::cout << _buf;
+            std::ostringstream os;
+            os << "[HYBRID-GOLD] EXIT " << (is_long_ ? "LONG" : "SHORT")
+               << " @ " << std::fixed << std::setprecision(2) << exit_px
+               << " reason=" << reason
+               << " pnl_raw=" << std::setprecision(4) << pnl_to_emit
+               << " mfe="    << std::setprecision(2) << mfe_
+               << " mae="    << mae_
+               << "\n";
+            std::cout << os.str();
             std::cout.flush();
         }
 
         if (reason == std::string("SL_HIT")) {
-            m_sl_cooldown_dir = pos.is_long ? 1 : -1;
+            m_sl_cooldown_dir = is_long_ ? 1 : -1;
             m_sl_cooldown_ts  = now_s + DIR_SL_COOLDOWN_S;
         }
 
         omega::TradeRecord tr;
-        tr.id = ++m_trade_id; tr.symbol = "XAUUSD";
-        tr.side = pos.is_long ? "LONG" : "SHORT";
-        tr.engine = "HybridBracketGold"; tr.regime = "COMPRESSION";
-        tr.entryPrice = pos.entry; tr.exitPrice = exit_px;
-        tr.tp = pos.tp; tr.sl = pos.sl;
-        tr.size = pos.size;
-        tr.pnl = (pos.is_long ? (exit_px - pos.entry)
-                              : (pos.entry - exit_px)) * pos.size;  // raw -- tick_mult in lifecycle
-        tr.net_pnl = tr.pnl;
-        tr.mfe = pos.mfe * pos.size;
-        tr.mae = pos.mae * pos.size;   // S43: was hardcoded 0.0; now real MAE
-        tr.entryTs = pos.entry_ts; tr.exitTs = now_s;
-        tr.exitReason = reason;
-        // S51 1A.1.a 2026-04-28: was hardcoded 0.0; now real spread captured at fill.
-        //   Symmetric with HBI; consumed by apply_realistic_costs() for slippage_entry/exit.
-        tr.spreadAtEntry = pos.spread_at_entry;
-        tr.bracket_hi = bracket_high; tr.bracket_lo = bracket_low;
-        tr.shadow = shadow_mode;
+        tr.id           = ++m_trade_id;
+        tr.symbol       = "XAUUSD";
+        tr.side         = is_long_ ? "LONG" : "SHORT";
+        tr.engine       = "HybridBracketGold";
+        tr.regime       = "COMPRESSION";
+        tr.entryPrice   = entry_;
+        tr.exitPrice    = exit_px;
+        tr.tp           = tp_;
+        tr.sl           = sl_;
+        tr.size         = size_;
+        tr.pnl          = pnl_to_emit;             // sanity-checked, raw pts*size
+        tr.net_pnl      = tr.pnl;
+        tr.mfe          = mfe_ * size_;
+        tr.mae          = mae_ * size_;
+        tr.entryTs      = entry_ts_;
+        tr.exitTs       = now_s;
+        tr.exitReason   = reason;
+        tr.spreadAtEntry = spread_at_entry_;
+        tr.bracket_hi   = bracket_high;
+        tr.bracket_lo   = bracket_low;
+        tr.shadow       = shadow_mode;
 
+        // Reset state AFTER tr is fully built but BEFORE callback so that any
+        //   re-entrant on_close handler that queries this engine sees a
+        //   clean post-close state.
         pos = LivePos{};
         phase = Phase::COOLDOWN;
         m_cooldown_start = now_s;

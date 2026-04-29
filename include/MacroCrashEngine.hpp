@@ -179,6 +179,16 @@ public:
     // Uses _close_all which fires on_trade_record (handle_closed_trade) and on_close.
     void force_close(double bid, double ask, int64_t now_ms) {
         if (!pos.active) return;
+        // AUDIT 2026-04-29 C-3: update mfe/mae from current quote before close.
+        //   Without this, force_close-triggered trades (which bypass _manage)
+        //   ship pos.mae=0 in the trade record even when price moved 20+pt
+        //   adverse. Pre-fix MCE telemetry: 53 of 108 trades MAE=0 yet -$108
+        //   avg loss. After this fix, the trade record reflects the real
+        //   adverse excursion at the moment the dollar-stop fired.
+        const double mid_  = (bid + ask) * 0.5;
+        const double move_ = pos.is_long ? (mid_ - pos.entry) : (pos.entry - mid_);
+        if (move_ > pos.mfe) pos.mfe = move_;
+        if (move_ < pos.mae) pos.mae = move_;
         const double exit_px = pos.is_long ? bid : ask;
         _close_all(exit_px, "DOLLAR_STOP", now_ms);
     }
@@ -896,7 +906,16 @@ private:
             // TRAIL_STOP is an intended trailing exit (like TRAIL_HIT in DPE); also reset.
             m_consec_sl = 0;
         }
-        if (std::string(reason) == "SL_HIT") {
+        // AUDIT 2026-04-29 C-1: count BOTH SL_HIT and DOLLAR_STOP toward the
+        //   consecutive-loss kill-switch. The Apr-15 phantom-fire burst
+        //   (61 entries / 41 sec / -$9,907) never tripped the original
+        //   SL_HIT-only kill because every exit was DOLLAR_STOP. Counting
+        //   DOLLAR_STOP into m_consec_sl arms the 30-min kill at trade #3
+        //   instead of trade #62.
+        const std::string reason_str(reason);
+        const bool count_loss_for_kill = (reason_str == "SL_HIT" || reason_str == "DOLLAR_STOP");
+
+        if (reason_str == "SL_HIT") {
             // Track consecutive directional SL hits.
             // After 2 SL_HITs in the same direction within 2 hours,
             // block that direction for the rest of the session (8hr).
@@ -937,13 +956,17 @@ private:
                     }
                 }
             }
-            // FIX MCE-SL-KILL 2026-04-22: total consec-SL tracker. Increments on
-            // every raw SL_HIT regardless of direction. On 3rd consecutive, arm
-            // 30-minute entry kill. Resets on TP_HIT / TRAIL_STOP above.
+            // FIX MCE-SL-KILL 2026-04-22: total consec-SL tracker.
+            // AUDIT 2026-04-29 C-1: increment moved OUTSIDE this SL_HIT branch
+            //   so DOLLAR_STOP also feeds the counter (see count_loss_for_kill
+            //   above and the post-branch block below).
+        }
+        // AUDIT 2026-04-29 C-1: count any DOLLAR_STOP/SL_HIT toward kill switch.
+        if (count_loss_for_kill) {
             if (++m_consec_sl >= 3) {
                 m_sl_kill_until = now_ms + 1800000LL;  // 30 min
-                char km[128];
-                snprintf(km, sizeof(km), "[MCE-SL-KILL] %d consec SLs -- 30min block\n", m_consec_sl);
+                char km[160];
+                snprintf(km, sizeof(km), "[MCE-SL-KILL] %d consec losses (incl DOLLAR_STOP) -- 30min block\n", m_consec_sl);
                 std::cout << km; std::cout.flush();
             }
         }
