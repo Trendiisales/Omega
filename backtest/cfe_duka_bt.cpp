@@ -116,8 +116,14 @@ static bool parse_duka(const std::string& line, DukaTick& t) {
         } else {
             t.ts_ms = iso_to_epoch_ms(ts);
         }
-        t.bid = std::stod(f[1]);
-        t.ask = std::stod(f[2]);
+        // AUDIT 2026-04-29 v2: Dukascopy combined CSVs in Jo's tree use
+        //   the column order   timestamp, askPrice, bidPrice   (ask first).
+        //   Other Dukascopy exports use timestamp, bid, ask.
+        //   Read both fields, then assign by which is larger (ask > bid).
+        const double a = std::stod(f[1]);
+        const double b = std::stod(f[2]);
+        t.bid = std::min(a, b);
+        t.ask = std::max(a, b);
     } catch (...) {
         return false;
     }
