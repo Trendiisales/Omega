@@ -152,7 +152,7 @@ static constexpr int64_t CFE_DFE_DRIFT_MAX_MS       = 90000;   // block entry wh
 // The hours kept open (2, 7, 10, 16, 22) are the only ones where the
 // historical sample shows non-negative net PnL. Re-validate on the 26-month
 // data sweep before considering LIVE.
-static constexpr bool CFE_TOD_FILTER_ENABLED = true;
+static constexpr bool CFE_TOD_FILTER_ENABLED = false;  // AUDIT 2026-04-29 C-14: DISABLED. The hour-list (2,7,10,16,22) was derived from the 23-day live audit (Apr 6-28). 26-month BT showed all four firing hours net-negative -- the 3-week sample was regime-specific overfit. Disabling the gate so the EARLY_FAIL gate (data-driven, per-trade) can handle filtering. If the broader 26-mo BT shows specific hours that bleed even with EARLY_FAIL active, re-derive a TOD list from that data.
 static constexpr bool CFE_TOD_BLOCKED[24] = {
     /*00*/ true,  /*01*/ true,  /*02*/ false, /*03*/ true,
     /*04*/ true,  /*05*/ true,  /*06*/ true,  /*07*/ false,
