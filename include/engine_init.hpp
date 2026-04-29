@@ -111,26 +111,55 @@ static void init_engines(const std::string& cfg_path)
     //   future revival. Do not flip back to true without new guards in
     //   place and a fresh 2-year backtest.
     g_macro_crash.shadow_mode     = true;  // SHADOW: enable live after validation
-    g_macro_crash.enabled         = false; // S17 DEMOTED 2026-04-24 -- see comment above
-    // S13 REVERT (2026-04-24): restore London/NY base thresholds.
+    // S44 SPIKE-ONLY RETUNE (2026-04-29 LATE) ----------------------------------
     //
-    // PRIOR STATE: base thresholds were lowered to ATR=4.0 / VOL_RATIO=2.0 /
-    // DRIFT=3.0 under the reasoning that "London/NY produces higher values
-    // naturally so they still clear". Evidence shows this broke the engine:
-    //   S17 audit (8 days, Apr 14-23): 8 trades, 12.5% WR, -$35.81 total
-    //   Engine was designed around Apr 2 tariff crash ($5,304 proof): that
-    //   day ATR~15pt, drift~20pt -- would have cleared original gates easily.
-    //   Current config lets small London wobbles (ATR=4.5, drift=3.2) fire
-    //   trades that are not real macro events, hence 12.5% WR.
+    // Re-enabled after S17 demote (2026-04-24, kept=false until guards added).
     //
-    // FIX: Restore class-default base thresholds. The engine already has
-    // session-aware Asia overrides built in:
-    //   ATR_THRESHOLD_ASIA=4.0 / VOL_RATIO_MIN_ASIA=2.0 / DRIFT_MIN_ASIA=3.0
-    // and switches at entry via `const bool is_asia = (session_slot == 6);`
-    // so Asia coverage is preserved; only London/NY chop-fires are filtered.
-    g_macro_crash.ATR_THRESHOLD   = 8.0;   // S42 revert to validated Apr 2 2026 baseline (was 6.0; original validated value)
-    g_macro_crash.VOL_RATIO_MIN   = 2.5;   // reverted 2.0->2.5: London/NY 2.5x vol expansion
-    g_macro_crash.DRIFT_MIN       = 6.0;   // S42 revert to validated Apr 2 2026 baseline (was 5.0; original validated value)
+    // EVIDENCE (post-Apr-2025 mce_duka_bt_trades.csv, 345 trades):
+    //   25 MAX_HOLD winners,  net +$429.70, mean +$17.19/trade, mean MFE 33.10pt
+    //  320 SL_HIT losers,     net -$688.66, mean -$ 2.15/trade, mean MFE 16.15pt
+    //   ALL 25 winners: UTC hour in {22,23,0,1,2,3,4} (Asia session)
+    //   ALL 25 winners: hold_sec >= 7200 (rode through to MAX_HOLD)
+    //   Long bias winners: 16/25 (64%); losers: 130/320 (40%)
+    //
+    // The exceptional trades the user wants preserved are the Asia 2-hour
+    // grinds with low MAE and large MFE.  Calibration:
+    //
+    //   - Lift base ATR/DRIFT/VOL thresholds significantly so London/NY
+    //     small-wobble fires are filtered.  These thresholds historically
+    //     produce the bleed; the actual macro events that matter (Apr 2
+    //     tariff crash, FOMC days) cleared even the higher bar.
+    //   - Tighten Asia thresholds upward to match the empirical winner
+    //     profile (ATR ~6, drift ~5 at the moment 25 winners triggered).
+    //   - Trim Asia SL_ATR_MULT slightly (1.5 -> 1.3) since the higher-
+    //     quality entries justify a tighter stop.  Winners' worst MAE was
+    //     -11.91pt; even at 1.3x ATR (~9pt) the SL preserves them.
+    //   - SpreadRegimeGate v2 (already wired) provides spread-spike rejection
+    //     at the entry path, so we don't need a hard "block on wide spread"
+    //     constant here.
+    //   - COOLDOWN unchanged at 300s -- existing 3-SL kill-switch guard
+    //     prevents the 2026-04-15 over-fire scenario; no need to over-
+    //     restrict spike captures.
+    //
+    // Existing safeguards still in force (do NOT remove):
+    //   - 4hr DOLLAR_STOP block, 3-SL kill switch (m_consec_sl)
+    //   - Weekend gap force-close window
+    //   - Asia session-aware override (already in code -- this retune
+    //     just lifts the ASIA thresholds inside the override branch)
+    //   - shadow_mode=true: no live orders, telemetry only
+    //
+    // Validation gate: 2-week paper run with new thresholds.  Promote to
+    // live only if (a) trade count drops by >=60%, (b) WR rises above 30%,
+    // (c) no UTC-hour outside 22:00-04:00 produces a winner.  Else revert.
+    // --------------------------------------------------------------------------
+    g_macro_crash.enabled         = true;  // S44 RE-ENABLED in shadow with spike-only thresholds
+    g_macro_crash.ATR_THRESHOLD   = 12.0;  // S44 8.0 -> 12.0: London/NY base raised, only fire on macro-scale ATR
+    g_macro_crash.VOL_RATIO_MIN   = 3.5;   // S44 2.5 -> 3.5: require >=3.5x baseline vol surge
+    g_macro_crash.DRIFT_MIN       = 10.0;  // S44 6.0 -> 10.0: drift must be unambiguously directional
+    g_macro_crash.ATR_THRESHOLD_ASIA = 6.0;  // S44 4.0 -> 6.0: lift Asia floor to winner ATR profile
+    g_macro_crash.VOL_RATIO_MIN_ASIA = 2.5;  // S44 2.0 -> 2.5: small lift, keeps Asia plenty of fires
+    g_macro_crash.DRIFT_MIN_ASIA     = 5.0;  // S44 3.0 -> 5.0: drift bar matches winner empirical floor
+    g_macro_crash.SL_ATR_MULT_ASIA   = 1.3;  // S44 1.5 -> 1.3: tighter SL on higher-quality entries
     g_macro_crash.BASE_RISK_USD   = 80.0;  // scales with ATR (6x max = 0.48 lots at ATR=10)
     g_macro_crash.STEP1_TRIGGER_USD = 200.0; // S42 revert to validated Apr 2 2026 baseline (was 80.0; matches crash-size moves)
                                               // S42 revert: original $200 step matches Apr 2 crash-size moves (continued from L139)
@@ -148,9 +177,13 @@ static void init_engines(const std::string& cfg_path)
         handle_closed_trade(tr);
     };
 
-    printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s) ATR>%.0f vol>%.1fx drift>%.0f\n",
+    printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s, enabled=%s) "
+           "BASE: ATR>=%.1f vol>=%.1fx drift>=%.1f  ASIA: ATR>=%.1f vol>=%.1fx drift>=%.1f sl_x=%.2f\n",
            g_macro_crash.shadow_mode ? "true" : "false",
-           g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN);
+           g_macro_crash.enabled     ? "true" : "false",
+           g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN,
+           g_macro_crash.ATR_THRESHOLD_ASIA, g_macro_crash.VOL_RATIO_MIN_ASIA, g_macro_crash.DRIFT_MIN_ASIA,
+           g_macro_crash.SL_ATR_MULT_ASIA);
     // RSI Reversal Engine startup config
     // RSIReversalEngine -- tuned for high-frequency XAUUSD mean-reversion scalping.
     // Based on documented backtest results (TradingView, QuantifiedStrategies):

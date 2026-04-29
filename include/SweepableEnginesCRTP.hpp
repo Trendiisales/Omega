@@ -284,11 +284,29 @@ constexpr double mult_for_param_crtp(int I, int p) {
 //   * AsianRangeTraits<I>: maps combo index I to the 5 constexpr params.
 // -----------------------------------------------------------------------------
 struct AsianRangeBaseParams {
-    static constexpr double BUFFER       = 0.50;
-    static constexpr double MIN_RANGE    = 3.0;
-    static constexpr double MAX_RANGE    = 50.0;
-    static constexpr int    SL_TICKS     = 80;
-    static constexpr int    TP_TICKS     = 200;
+    // S44 POST-REGIME RETUNE (2026-04-29 LATE) ----------------------------
+    // Source: sweep_D6E1_G1CLEAN_20260429_005927/sweep_asianrange.csv (490
+    //   combos on full 2024-03..2026-04 tick corpus).  Best q4 combo
+    //   non-degenerate, q4_n>=5, q4_pnl>=0:
+    //     cid=195  BUFFER=1.00  MIN_RANGE=3.0  MAX_RANGE=50.0
+    //              SL=80  TP=400   stability=0.90  q4=+0.08 (26 trades)
+    //   Old defaults (BUFFER=0.50, TP=200) are retained as comments.
+    //
+    //   Rationale: doubled BUFFER raises the noise floor before counting
+    //   a breakout as valid (post-regime spreads 0.55-0.92pt vs old
+    //   0.30-0.40pt make the old buffer too sensitive); doubled TP_TICKS
+    //   harvests the rare winners further as winners are rarer in the
+    //   wider-spread regime.  Other params unchanged.
+    //
+    //   PROBATION: q4 sample size is small (n=26).  Re-evaluate after
+    //   4 weeks of live shadow data; if expectancy stays <= $0.01/trade,
+    //   suspend AsianRange and let the cluster shrink.
+    // ---------------------------------------------------------------------
+    static constexpr double BUFFER       = 1.00;   // S44: 0.50 -> 1.00 (post-regime sweep cid=195)
+    static constexpr double MIN_RANGE    = 3.0;    // unchanged
+    static constexpr double MAX_RANGE    = 50.0;   // unchanged
+    static constexpr int    SL_TICKS     = 80;     // unchanged
+    static constexpr int    TP_TICKS     = 400;    // S44: 200 -> 400 (post-regime sweep cid=195)
 };
 
 template <std::size_t I>
