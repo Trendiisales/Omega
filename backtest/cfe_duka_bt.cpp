@@ -194,22 +194,30 @@ public:
     }
 };
 
-// EWM drift: alpha=0.05 fast EWM of (mid - mid_prev) per second-aggregated tick
+// AUDIT 2026-04-29 v2: drift estimator now uses a 60-second sliding window
+//   matching the live engine's ewm_drift magnitudes (~0.5..3.0 pts on gold).
+//   Previous formula (per-second rate * EWM alpha=0.05) produced values
+//   ~0.00-0.01 on Dukascopy data, blocking 100% of entries on
+//   CFE_DRIFT_MIN=0.3 gate.
+//
+// Formula: drift = mid_now - mid_60s_ago, with light EWM smoothing.
 class DriftEst {
 public:
     double drift = 0.0;
-    double last_mid = 0.0;
-    int64_t last_ms = 0;
-    static constexpr double ALPHA = 0.05;
+    std::deque<std::pair<int64_t,double>> window;  // (ts_ms, mid)
+    static constexpr int64_t WINDOW_MS = 60 * 1000;  // 60 seconds
+    static constexpr double  ALPHA     = 0.30;       // light smoothing
+
     void on_tick(int64_t ts_ms, double mid) {
-        if (last_mid > 0.0) {
-            // points per second
-            const double dt = std::max(1.0, double(ts_ms - last_ms) / 1000.0);
-            const double rate = (mid - last_mid) / dt;
-            drift = ALPHA * rate + (1.0 - ALPHA) * drift;
+        // Drop ticks older than 60s
+        while (!window.empty() && (ts_ms - window.front().first) > WINDOW_MS) {
+            window.pop_front();
         }
-        last_mid = mid;
-        last_ms  = ts_ms;
+        if (!window.empty()) {
+            const double raw_drift = mid - window.front().second;
+            drift = ALPHA * raw_drift + (1.0 - ALPHA) * drift;
+        }
+        window.emplace_back(ts_ms, mid);
     }
 };
 
