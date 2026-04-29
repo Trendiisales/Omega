@@ -63,7 +63,7 @@ namespace omega {
 // -----------------------------------------------------------------------------
 //  Config -- sweep-optimised values
 // -----------------------------------------------------------------------------
-static constexpr double  CFE_BODY_RATIO_MIN    = 0.65;   // AUDIT 2026-04-29: 0.60 -> 0.65 (require stronger expansion candle)
+static constexpr double  CFE_BODY_RATIO_MIN    = 0.75;   // AUDIT 2026-04-29 C-10: 0.65 -> 0.75 -- require DOMINANT expansion candles, not just majority. Targets the ~60% of entries that fail at signal level.
 static constexpr double  CFE_COST_SLIPPAGE     = 0.10;
 static constexpr double  CFE_COMMISSION_PTS    = 0.10;
 static constexpr double  CFE_COST_MULT         = 2.5;   // AUDIT 2026-04-29: reverted 2.0 -> 2.5 (firing on noise; 2.5x = bar covers cost with margin)
@@ -198,12 +198,11 @@ static constexpr double  CFE_MAX_ATR_ENTRY       = 6.0;   // block ALL entries w
                                                             // At ATR=6pt: SL=4.2pt, 4 max loss at 0.20 lots
                                                             // At ATR=12pt: SL=8.4pt, 68 loss -- not a scalp
                                                             // High-ATR regimes belong to GoldFlow/MacroCrash
-// AUDIT 2026-04-29 C-9: minimum ATR floor for entries. 26-month Duka BT showed
-//   110 STAGNATION exits = -$162.70 (avg -$1.48). All correlate with low-ATR
-//   tape where price never moves enough to cover cost. Block entries when ATR
-//   is below 1.5pt -- bar range cannot meaningfully cover spread+commission
-//   under that threshold. Pairs with the existing CFE_MAX_ATR_ENTRY=6.0 cap.
-static constexpr double  CFE_MIN_ATR_ENTRY       = 1.5;   // pts -- block when ATR below this (kills STAGNATION exits)
+// AUDIT 2026-04-29 C-10: REVERTED -- ATR floor cut winners more than losers.
+//   26mo BT iter-3 showed WR dropped 40.3% -> 34.4% with the floor active
+//   (avg/trade unchanged at -$0.70). Disabled by setting threshold to 0.0;
+//   the gate code remains for future re-enable if needed.
+static constexpr double  CFE_MIN_ATR_ENTRY       = 0.0;   // disabled -- gate code retained but inert
 static constexpr int64_t CFE_DFE_COOLDOWN_MS     = 120000; // 120s block after DFE loss
 static constexpr double  CFE_DFE_MIN_SPREAD_MULT = 1.5;   // max spread vs cost
 
@@ -1531,7 +1530,7 @@ private:
                 lk.unlock();
             } else {
             const double partial_px   = pos.is_long ? bid : ask;
-            const double partial_size = pos.full_size * 0.5;
+            const double partial_size = pos.full_size * 0.35;  // AUDIT 2026-04-29 C-10: 0.50 -> 0.35 -- bank a smaller portion at +2*cost, let 65% ride the trail. Boosts gross R:R via larger trail captures.
             // Emit partial close record
             omega::TradeRecord ptr;
             ptr.id         = m_trade_id;
@@ -1598,7 +1597,7 @@ private:
         // At ATR=2pt: arms when MFE >= 4pts. dist=0.5xATR=1pt.
         // Trail_SL = mid - 1pt = entry+4-1 = entry+3 -- locked $3 profit minimum.
         if (pos.mfe >= pos.atr_pts * 2.0) {
-            const double trail_dist = pos.atr_pts * 0.5;
+            const double trail_dist = pos.atr_pts * 0.7;  // AUDIT 2026-04-29 C-10: 0.5 -> 0.7 -- looser trail captures more of the peak. Trade-off: small reduction in trail-captured PnL but bigger winners on average.
             const double new_trail = pos.is_long
                 ? (mid - trail_dist)
                 : (mid + trail_dist);

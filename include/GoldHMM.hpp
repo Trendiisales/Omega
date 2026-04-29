@@ -63,7 +63,7 @@ static constexpr int    HMM_FEATURES       = 6;
 static constexpr int    HMM_WARMUP_BARS    = 60;    // bars before gating active
 static constexpr int    HMM_WINDOW         = 120;   // rolling observation window
 static constexpr int    HMM_UPDATE_INTERVAL= 5;     // re-run EM every N bars
-static constexpr double HMM_MIN_PROB       = 0.55;  // min P(CONTINUATION) to allow entry
+static constexpr double HMM_MIN_PROB       = 0.65;  // AUDIT 2026-04-29 C-10: 0.55 -> 0.65 -- stricter regime gate. The 26mo BT showed 60% of entries fail to reach +0.6pt favorable; tightening the regime classifier filters out the ~marginal CONT signals near the prior 0.55 threshold.
 static constexpr double HMM_MIN_SIGMA2     = 1e-4;  // floor on variance (numerical stability)
 static constexpr double HMM_ALPHA          = 0.05;  // EM learning rate for online update
 
