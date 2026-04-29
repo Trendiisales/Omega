@@ -1,0 +1,80 @@
+==============================================================================
+PHASE 2 STEP 2.3 - WALK-FORWARD VALIDATION (Variant C)
+==============================================================================
+Cells          : ['donchian_H1_long', 'bollinger_H2_long', 'bollinger_H4_long', 'bollinger_H6_long']
+Risk %         : 0.005
+Max concurrent : 5
+Each window starts fresh at $10,000.00
+
+Loaded 741 signals across 4 cells
+Full span: 2024-03-04 14:00:00.012000+00:00 -> 2026-04-24 12:00:00.023000+00:00
+
+------------------------------------------------------------------------------
+Window TRAIN: 2024-03-01 -> 2025-09-30
+------------------------------------------------------------------------------
+  trades       : 545  (blocked: 0)
+  final equity : $13,069.62  return: +30.70%
+  profit factor: 1.190
+  sharpe (252) : 1.428
+  max DD       : -6.57%
+  win rate     : 40.9%
+  avg win/loss : $86.18 / $-50.15
+  expectancy   : $5.63
+  per-cell:
+    bollinger_H2_long          n=  97  total=$250.01  avg=$2.58
+    bollinger_H4_long          n=  42  total=$347.75  avg=$8.28
+    bollinger_H6_long          n=  28  total=$354.17  avg=$12.65
+    donchian_H1_long           n= 378  total=$2,117.69  avg=$5.60
+
+------------------------------------------------------------------------------
+Window VALIDATE: 2025-10-01 -> 2026-01-27
+------------------------------------------------------------------------------
+  trades       : 118  (blocked: 0)
+  final equity : $11,252.30  return: +12.52%
+  profit factor: 1.389
+  sharpe (252) : 2.835
+  max DD       : -6.03%
+  win rate     : 45.8%
+  avg win/loss : $82.85 / $-50.34
+  expectancy   : $10.61
+  per-cell:
+    bollinger_H2_long          n=  18  total=$211.00  avg=$11.72
+    bollinger_H4_long          n=   7  total=$-49.59  avg=$-7.08
+    bollinger_H6_long          n=   6  total=$52.77  avg=$8.79
+    donchian_H1_long           n=  87  total=$1,038.13  avg=$11.93
+
+------------------------------------------------------------------------------
+Window TEST: 2026-01-28 -> 2026-04-24
+------------------------------------------------------------------------------
+  trades       : 78  (blocked: 0)
+  final equity : $10,983.96  return: +9.84%
+  profit factor: 1.410
+  sharpe (252) : 2.361
+  max DD       : -6.71%
+  win rate     : 46.2%
+  avg win/loss : $94.00 / $-57.14
+  expectancy   : $12.61
+  per-cell:
+    bollinger_H2_long          n=  18  total=$438.62  avg=$24.37
+    bollinger_H4_long          n=  10  total=$250.75  avg=$25.08
+    bollinger_H6_long          n=   6  total=$287.10  avg=$47.85
+    donchian_H1_long           n=  44  total=$7.49  avg=$0.17
+
+==============================================================================
+SIDE-BY-SIDE WALK-FORWARD
+==============================================================================
+window         n       final$       ret     PF   Sharpe    maxDD  WinRate
+-------------------------------------------------------------------------
+TRAIN        545   $13,069.62   +30.70%   1.19    1.428   -6.57%    40.9%
+VALIDATE     118   $11,252.30   +12.52%   1.39    2.835   -6.03%    45.8%
+TEST          78   $10,983.96    +9.84%   1.41    2.361   -6.71%    46.2%
+
+==============================================================================
+DEGRADATION FLAGS
+==============================================================================
+  None. Walk-forward is clean.
+
+==============================================================================
+VERDICT
+==============================================================================
+  PASS: portfolio behaviour holds out-of-sample.

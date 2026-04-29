@@ -1,0 +1,151 @@
+==============================================================================
+PHASE 2 STEP 2.2 FOLLOW-UP - VARIANTS C1, C1_retuned, C2
+==============================================================================
+Start equity   : $10,000.00
+Margin call    : $1,000.00
+Regime split   : 2026-01-28 00:00:00+00:00
+
+Donchian H1 long ledgers in play:
+  canonical : donchian_H1_long_net.parquet         (sl_atr=1.0, tp_r=2.5 -> TP=2.5 ATR)
+  retuned   : donchian_H1_long_3.0_5.0_net.parquet (sl_atr=3.0, tp_r=1.6667 -> TP=5.0 ATR)
+
+[sizing check] equity=$10k risk=0.5% SL=$5 (500pts)
+               -> lot=0.1000 (expect 0.10)
+               -> SL-hit P/L=$-50.00 (expect -$50.00)
+
+------------------------------------------------------------------------------
+Variant C1_max4
+  cells          : ['donchian_H1_long', 'bollinger_H2_long', 'bollinger_H4_long', 'bollinger_H6_long']
+  risk_pct       : 0.005
+  max_concurrent : 4
+  loaded         : 741 signal rows from 4 cells
+  trades taken   : 741  (blocked: 0)
+  final equity   : $15,724.93  return: +57.25%
+  profit factor  : 1.245
+  sharpe (252)   : 1.776
+  max DD         : -6.57%
+  win rate       : 42.2%
+  max concurrent : 4  (cap 4)
+  pre-split  : n= 663  PF=1.232  PnL=$4,708.61
+  post-split : n=  78  PF=1.334  PnL=$1,016.32
+  per-cell:
+    donchian_H1_long                n= 509  net=$3,488.37
+    bollinger_H2_long               n= 133  net=$993.62
+    bollinger_H6_long               n=  40  net=$694.04
+    bollinger_H4_long               n=  59  net=$548.90
+  loss clusters (3+ cells losing same day): 5
+    2025-10-22  cells=3  pnl=$-268.13  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+    2026-03-18  cells=3  pnl=$-220.18  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+    2024-11-11  cells=3  pnl=$-127.42  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+    2024-05-23  cells=3  pnl=$-115.85  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+    2024-11-12  cells=3  pnl=$-115.84  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+  cluster-day total: $-847.42
+  worst 5 days:
+    2025-10-22  n=3  pnl=$-268.13
+    2025-08-28  n=4  pnl=$-233.09
+    2026-03-18  n=3  pnl=$-220.18
+    2026-03-20  n=2  pnl=$-198.72
+    2026-01-06  n=3  pnl=$-188.28
+
+------------------------------------------------------------------------------
+Variant C1_retuned
+  cells          : ['donchian_H1_long_retuned', 'bollinger_H2_long', 'bollinger_H4_long', 'bollinger_H6_long']
+  risk_pct       : 0.005
+  max_concurrent : 4
+  loaded         : 741 signal rows from 4 cells
+  trades taken   : 739  (blocked: 2)
+  final equity   : $17,412.18  return: +74.12%
+  profit factor  : 1.486
+  sharpe (252)   : 2.651
+  max DD         : -5.85%
+  win rate       : 55.2%
+  max concurrent : 4  (cap 4)
+  pre-split  : n= 662  PF=1.458  PnL=$5,821.32
+  post-split : n=  77  PF=1.630  PnL=$1,590.86
+  per-cell:
+    donchian_H1_long_retuned        n= 507  net=$5,140.26
+    bollinger_H2_long               n= 133  net=$1,057.16
+    bollinger_H6_long               n=  40  net=$656.82
+    bollinger_H4_long               n=  59  net=$557.94
+  loss clusters (3+ cells losing same day): 6
+    2026-03-18  cells=4  pnl=$-286.56  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long,donchian_H1_long_retuned)
+    2025-10-22  cells=3  pnl=$-268.13  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+    2024-11-11  cells=3  pnl=$-155.01  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+    2025-05-14  cells=3  pnl=$-144.90  (bollinger_H4_long,bollinger_H6_long,donchian_H1_long_retuned)
+    2024-05-23  cells=3  pnl=$-142.22  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+    2024-11-12  cells=3  pnl=$-134.43  (bollinger_H2_long,bollinger_H4_long,bollinger_H6_long)
+  cluster-day total: $-1,131.25
+  worst 5 days:
+    2026-03-18  n=4  pnl=$-286.56
+    2026-04-02  n=3  pnl=$-276.00
+    2025-10-22  n=3  pnl=$-268.13
+    2026-03-20  n=2  pnl=$-198.72
+    2026-02-05  n=1  pnl=$-189.54
+
+------------------------------------------------------------------------------
+Variant C2_donchian_boll2
+  cells          : ['donchian_H1_long', 'bollinger_H2_long']
+  risk_pct       : 0.005
+  max_concurrent : 3
+  loaded         : 642 signal rows from 2 cells
+  trades taken   : 642  (blocked: 0)
+  final equity   : $14,562.86  return: +45.63%
+  profit factor  : 1.226
+  sharpe (252)   : 1.672
+  max DD         : -7.74%
+  win rate       : 39.3%
+  max concurrent : 3  (cap 3)
+  pre-split  : n= 580  PF=1.212  PnL=$3,814.08
+  post-split : n=  62  PF=1.342  PnL=$748.78
+  per-cell:
+    donchian_H1_long                n= 509  net=$3,598.14
+    bollinger_H2_long               n= 133  net=$964.72
+  loss clusters (2+ cells losing same day): 4
+    2025-06-09  cells=2  pnl=$-94.45  (bollinger_H2_long,donchian_H1_long)
+    2025-05-08  cells=2  pnl=$-83.33  (bollinger_H2_long,donchian_H1_long)
+    2024-08-07  cells=2  pnl=$-59.52  (bollinger_H2_long,donchian_H1_long)
+    2025-08-18  cells=2  pnl=$-30.42  (bollinger_H2_long,donchian_H1_long)
+  cluster-day total: $-267.72
+  worst 5 days:
+    2025-08-28  n=4  pnl=$-226.19
+    2025-08-07  n=3  pnl=$-176.18
+    2026-01-30  n=1  pnl=$-174.71
+    2026-01-06  n=3  pnl=$-171.68
+    2025-02-19  n=3  pnl=$-165.66
+
+==============================================================================
+SIDE-BY-SIDE (variants vs original C from earlier)
+==============================================================================
+variant                      n       final$       ret     PF   Sharpe    maxDD  maxConc
+------------------------------------------------------------------------------------------
+C_orig (cap5)              741   $15,724.93   +57.25%   1.25    1.776   -6.57%        4
+C1_max4                    741   $15,724.93   +57.25%   1.25    1.776   -6.57%        4
+C1_retuned                 739   $17,412.18   +74.12%   1.49    2.651   -5.85%        4
+C2_donchian_boll2          642   $14,562.86   +45.63%   1.23    1.672   -7.74%        3
+
+==============================================================================
+VERDICT
+==============================================================================
+C1_max4 vs C_orig:
+  delta trades: 741 vs 741 (+0)
+  delta final : $0.00
+  delta maxDD : +0.00pp
+  -> cap=5 was non-binding; cap=4 is safe.
+
+C1_retuned vs C1_max4 (DONCHIAN H1 PARAM RETUNE A/B):
+  delta trades   : 739 vs 741 (-2)
+  delta final    : $1,687.25
+  delta return   : +16.87pp
+  delta PF       : +0.241  (1.245 -> 1.486)
+  delta maxDD    : +0.73pp (negative = deeper drawdown)
+  delta sharpe   : +0.875
+  delta winrate  : +13.0pp
+  base post-split: n=78  PF=1.334  PnL=$1,016.32
+  retn post-split: n=77  PF=1.630  PnL=$1,590.86
+  -> RETUNE WINS on return, DD, and PF. Ship C1_retuned.
+
+C2 vs C_orig:
+  delta trades: 642 vs 741 (-99)
+  delta final : $-1,162.07
+  cost of dropping H4+H6: $1,162.07 of P/L
+  delta maxDD : -1.17pp (negative = improvement)

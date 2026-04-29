@@ -1,0 +1,42 @@
+PHASE 2 STEP 2.2 OPTION D SUMMARY
+==============================================================================
+
+Variant A_long_only_5
+  n=855  blocked=1
+  final=$17,452.95  return=+74.53%
+  PF=1.261  Sharpe=1.841  maxDD=-10.10%
+  pre  : n=757 PF=1.244 PnL=$5,991.47
+  post : n=98 PF=1.366 PnL=$1,461.48
+  per-cell:
+    donchian_H1_long               n= 509 net=$3,909.86
+    ema_pullback_H4_long           n= 114 net=$1,356.42
+    bollinger_H2_long              n= 133 net=$917.83
+    bollinger_H6_long              n=  40 net=$676.06
+    bollinger_H4_long              n=  59 net=$592.78
+
+Variant B_all7_conservative
+  n=1706  blocked=360
+  final=$10,500.59  return=+5.01%
+  PF=1.021  Sharpe=0.153  maxDD=-33.70%
+  pre  : n=1548 PF=0.932 PnL=$-1,375.32
+  post : n=158 PF=1.510 PnL=$1,875.92
+  per-cell:
+    donchian_H1_long               n= 498 net=$1,136.28
+    bollinger_H2_long              n= 104 net=$735.54
+    ema_pullback_H4_long           n=  95 net=$493.50
+    bollinger_H6_long              n=  39 net=$486.93
+    bollinger_H4_long              n=  52 net=$312.61
+    asian_break_H1_short           n= 242 net=$-421.24
+    asian_break_M15_short          n= 676 net=$-2,243.02
+
+Variant C_strictest_4
+  n=741  blocked=0
+  final=$15,724.93  return=+57.25%
+  PF=1.245  Sharpe=1.776  maxDD=-6.57%
+  pre  : n=663 PF=1.232 PnL=$4,708.61
+  post : n=78 PF=1.334 PnL=$1,016.32
+  per-cell:
+    donchian_H1_long               n= 509 net=$3,488.37
+    bollinger_H2_long              n= 133 net=$993.62
+    bollinger_H6_long              n=  40 net=$694.04
+    bollinger_H4_long              n=  59 net=$548.90
