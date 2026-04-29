@@ -1,0 +1,2 @@
+-rwxr-xr-x  1 jo  staff  3355952 29 Apr 10:47 build/OmegaSweepHarness
+-rwxr-xr-x  1 jo  staff  3279464 29 Apr 11:47 build/OmegaSweepHarnessCRTP
