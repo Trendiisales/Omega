@@ -194,30 +194,40 @@ public:
     }
 };
 
-// AUDIT 2026-04-29 v2: drift estimator now uses a 60-second sliding window
-//   matching the live engine's ewm_drift magnitudes (~0.5..3.0 pts on gold).
-//   Previous formula (per-second rate * EWM alpha=0.05) produced values
-//   ~0.00-0.01 on Dukascopy data, blocking 100% of entries on
-//   CFE_DRIFT_MIN=0.3 gate.
+// AUDIT 2026-04-29 v3: drift estimator now uses the EXACT live-engine formula
+//   from GoldEngineStack.hpp:2892-2901 -- two EWMs of mid-price (fast alpha
+//   0.05, slow alpha 0.005), drift = fast - slow. MACD-style indicator.
 //
-// Formula: drift = mid_now - mid_60s_ago, with light EWM smoothing.
+// On trending gold this naturally produces drift in the 1-5 pt range. On
+// quiet ranges, near 0. Matches what the live L2 tick CSVs show in their
+// ewm_drift column (0.4 to 2.0 typical).
+//
+// Earlier iterations:
+//   v1: per-second-rate * EWM alpha=0.05  -> drift 0.00-0.01 (100x too small)
+//   v2: 60-sec sliding window + EWM alpha=0.30 -> drift +/-0.36 (still 5x too small,
+//       HMM permanently classified everything as MEAN_REV)
 class DriftEst {
 public:
-    double drift = 0.0;
-    std::deque<std::pair<int64_t,double>> window;  // (ts_ms, mid)
-    static constexpr int64_t WINDOW_MS = 60 * 1000;  // 60 seconds
-    static constexpr double  ALPHA     = 0.30;       // light smoothing
+    double ewm_fast = 0.0;
+    double ewm_slow = 0.0;
+    bool   init     = false;
 
-    void on_tick(int64_t ts_ms, double mid) {
-        // Drop ticks older than 60s
-        while (!window.empty() && (ts_ms - window.front().first) > WINDOW_MS) {
-            window.pop_front();
+    static constexpr double ALPHA_FAST = 0.05;
+    static constexpr double ALPHA_SLOW = 0.005;
+
+    double drift() const {
+        return init ? (ewm_fast - ewm_slow) : 0.0;
+    }
+
+    void on_tick(int64_t /*ts_ms*/, double mid) {
+        if (!init) {
+            ewm_fast = mid;
+            ewm_slow = mid;
+            init     = true;
+            return;
         }
-        if (!window.empty()) {
-            const double raw_drift = mid - window.front().second;
-            drift = ALPHA * raw_drift + (1.0 - ALPHA) * drift;
-        }
-        window.emplace_back(ts_ms, mid);
+        ewm_fast = ALPHA_FAST * mid + (1.0 - ALPHA_FAST) * ewm_fast;
+        ewm_slow = ALPHA_SLOW * mid + (1.0 - ALPHA_SLOW) * ewm_slow;
     }
 };
 
@@ -326,7 +336,7 @@ int main(int argc, char* argv[]) {
         const double atr = std::max(2.0, bars.atr14);
         const double tick_rate = 0.0;
         cfe.on_tick(t.bid, t.ask, bar, dom, t.ts_ms, atr, on_close,
-                    drift.drift, tick_rate);
+                    drift.drift(), tick_rate);
 
         // Progress every 5M ticks
         if (ticks - last_progress >= 5000000) {
