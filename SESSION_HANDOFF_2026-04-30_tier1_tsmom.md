@@ -229,32 +229,41 @@ block_on_risk_off=true."
 git push origin main
 ```
 
-### Step 2 -- build (Mac)
+### Step 2 -- there is no Mac build
 
-```bash
-cd /Users/jo/omega_repo
-cmake --build build -j --target Omega
-./build/Omega --config omega_config.ini --self-test
+Omega.exe is Windows-only (Winsock, windows.h, MSVC). cmake on Mac will
+fail with `'winsock2.h' file not found`. Don't try to build on Mac. The
+Mac side of the workflow is just: write code, push to GitHub. Done.
+
+### Step 3 -- VPS pull + build + restart (single script on the VPS)
+
+The VPS does everything: git pull, cmake build, service restart, log tail.
+Triggered by `C:\Omega\QUICK_RESTART.ps1` (or `RESTART_OMEGA.ps1` for the
+full reset variant). Both pull from origin/main, so the GitHub push is
+all you need on the Mac side.
+
+The runtime reads the warmup CSV at `phase1/signal_discovery/
+tsmom_warmup_H1.csv` relative to `Omega.exe`'s cwd (`C:\Omega\`). The
+CSV is committed to git (force-added past *.csv ignore), so the VPS's
+`git pull` lands it at the right path automatically -- no scp needed.
+
+**RDP path** (if you have an RDP client):
+```powershell
+# Open PowerShell as Administrator
+cd C:\Omega
+.\QUICK_RESTART.ps1
+# wait ~2-3 min for build; the script reports service start
+Get-Content -Tail 200 C:\Omega\logs\omega_service_stdout.log | Select-String "Tsmom|TSMOM"
 ```
 
-### Step 3 -- deploy (Mac -> VPS)
-
-VPS isn't a git checkout -- it's a Windows binary deployment. **Two**
-artifacts must land on the VPS: the binary AND the warmup CSV (the binary
-reads the CSV at startup; relative path is resolved against `Omega.exe`'s
-cwd, which on the VPS is `C:\Omega\`).
-
+**SSH path** (if you have an alias):
 ```bash
-scp build/Omega vps:/Omega/
-
-# CSV deploy: ensure target dir exists, then copy
-ssh vps "if not exist C:\Omega\phase1\signal_discovery mkdir C:\Omega\phase1\signal_discovery"
-scp phase1/signal_discovery/tsmom_warmup_H1.csv vps:/Omega/phase1/signal_discovery/
-
-# Restart and confirm
-ssh vps ".\QUICK_RESTART.ps1"
-ssh vps "Get-Content -Tail 200 C:\Omega\logs\latest.log | Select-String 'Tsmom|TSMOM'"
+ssh <vps-alias> "cd C:\Omega; .\QUICK_RESTART.ps1"
+ssh <vps-alias> "Get-Content -Tail 200 C:\Omega\logs\omega_service_stdout.log | Select-String 'Tsmom|TSMOM'"
 ```
+
+The previous handoff's `scp build/Omega vps:/Omega/` was wrong -- ignore
+it. There is never a Mac-built binary to scp.
 
 Expected log output:
 
