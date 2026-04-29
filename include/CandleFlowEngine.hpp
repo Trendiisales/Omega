@@ -193,7 +193,7 @@ static constexpr double  CFE_DFE_RSI_TREND_MAX   = 12.0;  // RSI trend EMA maxim
                                                             // entering late into a spent move.
                                                             // Data: rsi_trend=20.62 on -$59 loss,
                                                             // rsi_trend=6-9 on all winners.
-static constexpr double  CFE_DFE_SL_MULT         = 0.4;   // SL = 0.4 * ATR (sweep-optimised: sl=0.40 best $122.90)
+static constexpr double  CFE_DFE_SL_MULT         = 0.6;   // AUDIT 2026-04-29 BT iter-2: 0.4 -> 0.6 (faithful BT showed 1.04pt avg SL = 18 SL_HITs / -$28; widening cuts noise stops while preserving 0.6*ATR risk envelope)
 static constexpr double  CFE_MAX_ATR_ENTRY       = 6.0;   // block ALL entries when ATR > 6pt
                                                             // At ATR=6pt: SL=4.2pt, 4 max loss at 0.20 lots
                                                             // At ATR=12pt: SL=8.4pt, 68 loss -- not a scalp
