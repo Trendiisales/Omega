@@ -126,6 +126,13 @@ static omega::TsmomPortfolio g_tsmom;  // 5 long cells: H1, H2, H4, H6, D1
 #include "DonchianEngine.hpp"
 static omega::DonchianPortfolio g_donchian;  // 7 cells: H2L, H4L+S, H6L+S, D1L+S
 
+// EmaPullbackPortfolio -- Tier-3 ship of 4 ema_pullback long cells
+// (H1/H2/H4/H6 long). 9/21 EMA pullback-and-recover pattern.
+// Long-only Tier-3 -- per master_summary post-cut, only longs are profitable.
+// Added 2026-04-30 Session "Tier-1+2+3 ship".
+#include "EmaPullbackEngine.hpp"
+static omega::EpbPortfolio g_ema_pullback;  // 4 cells: H1/H2/H4/H6 long
+
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 
 // =============================================================================

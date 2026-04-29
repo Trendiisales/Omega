@@ -791,6 +791,22 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // EmaPullbackPortfolio H1 dispatch -- Tier-3 ship 2026-04-30.
+            // Drives 4 long cells (H1/H2/H4/H6). H1 cell uses raw H1; H2/H4/H6
+            // synthesised internally. EWMs warm up via warmup_from_csv at init.
+            {
+                omega::EpbBar epb_h1{};
+                epb_h1.bar_start_ms = s_bar_h1_ms;
+                epb_h1.open  = s_cur_h1.open;
+                epb_h1.high  = s_cur_h1.high;
+                epb_h1.low   = s_cur_h1.low;
+                epb_h1.close = s_cur_h1.close;
+                g_ema_pullback.set_macro_regime(g_macroDetector.regime());
+                g_ema_pullback.on_h1_bar(
+                    epb_h1, bid, ask,
+                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+            }
             s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1;
         } else { if(xau_mid>s_cur_h1.high)s_cur_h1.high=xau_mid; if(xau_mid<s_cur_h1.low)s_cur_h1.low=xau_mid; s_cur_h1.close=xau_mid; }
         // H4 -- HTF gate for TrendPullback + H4RegimeEngine.
@@ -1837,6 +1853,9 @@ static void on_tick_gold(
     // DonchianPortfolio tick management -- 7 cells (H2 long, H4/H6/D1 long+short).
     // Tier-2 shipped 2026-04-30. Bidirectional. No shared state with other engines.
     g_donchian.on_tick(bid, ask, now_ms_g, ca_on_close);
+    // EmaPullbackPortfolio tick management -- 4 long cells (H1/H2/H4/H6).
+    // Tier-3 shipped 2026-04-30. Long-only. No shared state.
+    g_ema_pullback.on_tick(bid, ask, now_ms_g, ca_on_close);
     // -- Improvement 5: CVD confirmation gate ------------------------------
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 

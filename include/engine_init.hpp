@@ -520,6 +520,26 @@ static void init_engines(const std::string& cfg_path)
         g_donchian.init();
         g_donchian.warmup_from_csv(g_donchian.warmup_csv_path);
         fflush(stdout);
+
+        // ?? EmaPullbackPortfolio -- Tier-3 ship 2026-04-30 ?????????????????????
+        // 4 ema_pullback long cells: H1, H2, H4, H6. Long-only -- shorts not
+        // profitable in master_summary post-cut.
+        // Verdict: phase1/signal_discovery/POST_CUT_FULL_REPORT.md
+        // Combined: 796 trades/yr, +$4,006/yr/unit. Family A (sim_a) semantics.
+        // 9/21 EMA pullback-and-recover pattern from sig_ema_pullback.
+        // Reuses tsmom warmup CSV (same H1 stream input).
+        g_ema_pullback.shadow_mode       = kShadowDefault;
+        g_ema_pullback.enabled           = true;
+        g_ema_pullback.max_concurrent    = 4;
+        g_ema_pullback.risk_pct          = 0.005;
+        g_ema_pullback.start_equity      = 10000.0;
+        g_ema_pullback.margin_call       = 1000.0;
+        g_ema_pullback.max_lot_cap       = 0.05;
+        g_ema_pullback.block_on_risk_off = true;
+        g_ema_pullback.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
+        g_ema_pullback.init();
+        g_ema_pullback.warmup_from_csv(g_ema_pullback.warmup_csv_path);
+        fflush(stdout);
     }
 
     // MinimalH4US30Breakout -- DJ30.F sister engine. Self-contained: builds
