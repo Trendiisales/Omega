@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# QUICK_RESTART.ps1  -- v3.1 2026-04-23
+# QUICK_RESTART.ps1  -- v3.2 2026-04-30
 # Service-based restart. Stops the Omega NSSM service, pulls source from GitHub,
 # builds, starts the service, verifies via service status + log hash.
 #
@@ -15,6 +15,35 @@
 #   * Removed duplicate $confirm variable (reused for position check AND process kill)
 #   * Unified on omega_service_stdout.log as the single source of truth
 #   * CFE pre-check uses same log
+#
+# v3.2 (2026-04-30) -- audit-fixes-32 wipe-race fix:
+#   * Hoisted $zombieNames to script scope. Single source of truth shared
+#     by Step 0 pre-flight kill, the new defensive pre-wipe re-kill, and
+#     the per-attempt re-kill inside the wipe retry loops.
+#   * Added defensive pre-wipe zombie re-kill at the top of the
+#     "INCREMENTAL BUILD PREP" `if (Test-Path $buildDir)` block. Step 0's
+#     kill runs before git pull; by the time we reach the wipe, 5-30s of
+#     Stop-Service / git fetch / git reset have elapsed and a build process
+#     could (in rare cases) have respawned. This second pass closes the
+#     race window observed during the 2026-04-30 deploy where the wipe
+#     hit a "Permission denied on main.obj" lock from a stuck cl.exe.
+#   * Wrapped BOTH wipe paths in retry-with-backoff:
+#       - Full-wipe (`unsuccessfulbuild` stamp present): single
+#         Remove-Item with up to 5 attempts, 200ms->3.2s exponential.
+#       - Per-file wipe (.obj/.pch/.pdb/.iobj/.ipdb): per-item retry,
+#         tracking which files remain locked across attempts so partial
+#         progress isn't lost.
+#     Between every retry the loop re-kills any zombies in $zombieNames
+#     so a stuck cl.exe / link.exe / mspdbsrv can't permanently hold
+#     handles on main.obj / link-cache / PDB files. If all 5 attempts
+#     still fail the script logs the failure but keeps going -- cmake
+#     configure becomes the next gate, and the v3.1 build-failure
+#     recovery path (restart service with previous Omega.exe) still
+#     applies.
+#   * No change to Step 0, Step 1 (Stop-Service), Step 2 (git pull),
+#     Step 3 (cmake configure / build), or Step 4 (Start-Service +
+#     stale-binary checks). Wipe race fix is fully scoped to the
+#     "INCREMENTAL BUILD PREP" section between Steps 2 and 3.
 #
 # v3.1 (2026-04-23) -- Session 11 footgun fix:
 #   * Added $LASTEXITCODE guards after git rev-parse, cmake configure, cmake --build
@@ -38,6 +67,18 @@ param(
 Set-StrictMode -Off
 $ErrorActionPreference = "Continue"
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Build-process zombie names (hoisted to script scope in v3.2).
+# Single source of truth used by:
+#   * Step 0 pre-flight zombie cleanup
+#   * Defensive pre-wipe zombie re-kill (top of "INCREMENTAL BUILD PREP")
+#   * Per-attempt zombie re-kill inside the wipe retry loops
+# Adding a name here automatically picks it up in all three places.
+# ──────────────────────────────────────────────────────────────────────────────
+$zombieNames = @('cl', 'link', 'MSBuild', 'mspdbsrv', 'tracker',
+                 'VBCSCompiler', 'cvtres', 'rc', 'cmake', 'cmake-gui',
+                 'lib', 'mt', 'ml', 'cvtcil', 'CL')
+
 if ($GitHubToken -eq "") {
     $tf = "$OmegaDir\.github_token"
     if (Test-Path $tf) { $GitHubToken = (Get-Content $tf -Raw).Trim() }
@@ -55,7 +96,7 @@ $startTime    = Get-Date
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "   OMEGA  |  QUICK RESTART  v3.1" -ForegroundColor Cyan
+Write-Host "   OMEGA  |  QUICK RESTART  v3.2" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 $modeMatch = Select-String -Path $ConfigSrc -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
@@ -126,9 +167,8 @@ Write-Host ""
 # AND main.obj; build couldn't proceed; eventually OOM'd the system.
 # ==============================================================================
 Write-Host "[0/4] Pre-flight zombie cleanup..." -ForegroundColor DarkCyan
-$zombieNames = @('cl', 'link', 'MSBuild', 'mspdbsrv', 'tracker',
-                 'VBCSCompiler', 'cvtres', 'rc', 'cmake', 'cmake-gui',
-                 'lib', 'mt', 'ml', 'cvtcil', 'CL')
+# $zombieNames hoisted to script-top in v3.2 -- shared with the defensive
+# pre-wipe re-kill and the per-attempt re-kill inside the wipe retry loops.
 $zombies = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -in $zombieNames }
 if ($zombies) {
     Write-Host "  Found $($zombies.Count) build-process zombies -- killing:" -ForegroundColor Yellow
@@ -297,7 +337,33 @@ Write-Host ""
 # ==============================================================================
 # INCREMENTAL BUILD PREP
 # ==============================================================================
+# v3.2 (2026-04-30) wipe-race fix:
+#   * Defensive zombie re-kill immediately before touching build/. Step 0's
+#     kill happens BEFORE git pull; by the time we reach the wipe, 5-30s of
+#     Stop-Service / git fetch / git reset have run, and a build process
+#     could (rarely) have respawned. This second pass closes the race.
+#   * Both wipe paths retry with exponential backoff (5 attempts, 200ms ->
+#     400 -> 800 -> 1600 -> 3200), re-killing zombies between attempts.
+#     Original behaviour silently swallowed Remove-Item failures, leaving
+#     partial build state for the next configure to stumble over. The
+#     retry-with-kill loop dislodges file-handle locks reliably.
+#   * If all 5 attempts still fail the script logs the failure but keeps
+#     going -- cmake configure becomes the next gate, and the v3.1
+#     build-failure recovery (restart service with previous Omega.exe)
+#     still applies.
 if (Test-Path $buildDir) {
+    # ── Defensive zombie re-kill (v3.2) ──
+    $preWipeZombies = Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -in $zombieNames }
+    if ($preWipeZombies) {
+        Write-Host "  [pre-wipe] $($preWipeZombies.Count) build process(es) re-appeared since Step 0 -- killing:" -ForegroundColor Yellow
+        foreach ($z in $preWipeZombies) {
+            Write-Host "    PID $($z.Id) $($z.Name) (mem $([int]($z.WorkingSet64/1MB))MB)" -ForegroundColor DarkYellow
+        }
+        $preWipeZombies | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 500
+    }
+
     # ── Detect previous-build crash and force a full wipe in that case ──
     # When a previous compile crashed mid-flight (Ctrl-C, OOM, killed orphan
     # MSBuild), MSBuild leaves an `unsuccessfulbuild` stamp file in
@@ -314,18 +380,80 @@ if (Test-Path $buildDir) {
         $unsuccessfulStamps = Get-ChildItem -Path $buildDir -Recurse -Force -Filter "unsuccessfulbuild" -ErrorAction SilentlyContinue
     } catch {}
 
+    # Backoff schedule for wipe retries (ms): 200, 400, 800, 1600, 3200
+    $wipeBackoffMs = @(200, 400, 800, 1600, 3200)
+
     if ($unsuccessfulStamps -and $unsuccessfulStamps.Count -gt 0) {
         Write-Host "  Detected previous-build crash stamp -- force-wiping build/ directory:" -ForegroundColor Yellow
         foreach ($s in $unsuccessfulStamps) {
             Write-Host "    found: $($s.FullName)" -ForegroundColor DarkYellow
         }
-        Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Full-wipe with retry-on-lock (v3.2)
+        $wipeOk = $false
+        for ($attempt = 0; $attempt -lt 5; $attempt++) {
+            if (-not (Test-Path -LiteralPath $buildDir)) { $wipeOk = $true; break }
+            try {
+                Remove-Item -LiteralPath $buildDir -Recurse -Force -ErrorAction Stop
+                $wipeOk = $true
+                break
+            } catch {
+                if ($attempt -lt 4) {
+                    $delay = $wipeBackoffMs[$attempt]
+                    Write-Host "    [WARN] Full-wipe attempt $($attempt + 1)/5 failed: $_ -- killing zombies and retrying in ${delay}ms" -ForegroundColor Yellow
+                    Get-Process -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -in $zombieNames } |
+                        Stop-Process -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds $delay
+                } else {
+                    Write-Host "    [FAIL] Full-wipe failed after 5 attempts: $_" -ForegroundColor Red
+                    Write-Host "    Continuing -- cmake configure will regenerate as much as possible." -ForegroundColor Red
+                }
+            }
+        }
+
+        # Always (re)create the build dir even if wipe partially failed.
+        # New-Item -Force is a no-op if it already exists.
         New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
-        Write-Host "  [OK] build/ fully wiped -- next configure rebuilds from scratch" -ForegroundColor Green
+        if ($wipeOk) {
+            Write-Host "  [OK] build/ fully wiped -- next configure rebuilds from scratch" -ForegroundColor Green
+        } else {
+            Write-Host "  [PARTIAL] build/ not fully wiped; configure will surface any breakage." -ForegroundColor Yellow
+        }
     } else {
-        Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb","*.iobj","*.ipdb" -Recurse -ErrorAction SilentlyContinue |
-            Remove-Item -Force -ErrorAction SilentlyContinue
-        Write-Host "  [OK] Build artifacts wiped (.obj/.pch deleted, CMakeCache preserved)" -ForegroundColor Green
+        # Per-file wipe with retry-on-lock (v3.2)
+        $artifacts = @(Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb","*.iobj","*.ipdb" -Recurse -ErrorAction SilentlyContinue)
+        $totalArtifacts = $artifacts.Count
+        $remaining = $artifacts
+        for ($attempt = 0; $attempt -lt 5; $attempt++) {
+            if ($remaining.Count -eq 0) { break }
+            $stillLocked = New-Object System.Collections.Generic.List[System.IO.FileSystemInfo]
+            foreach ($it in $remaining) {
+                try {
+                    Remove-Item -LiteralPath $it.FullName -Force -ErrorAction Stop
+                } catch {
+                    [void]$stillLocked.Add($it)
+                }
+            }
+            if ($stillLocked.Count -eq 0) { break }
+            if ($attempt -lt 4) {
+                $delay = $wipeBackoffMs[$attempt]
+                Write-Host "    [WARN] $($stillLocked.Count) artifact(s) locked after attempt $($attempt + 1)/5 -- killing zombies and retrying in ${delay}ms" -ForegroundColor Yellow
+                Get-Process -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -in $zombieNames } |
+                    Stop-Process -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Milliseconds $delay
+            } else {
+                Write-Host "    [FAIL] $($stillLocked.Count) of $totalArtifacts artifact(s) still locked after 5 attempts:" -ForegroundColor Red
+                foreach ($lk in $stillLocked) {
+                    Write-Host "      $($lk.FullName)" -ForegroundColor Red
+                }
+                Write-Host "    Continuing -- MSBuild may fail on these; QUICK_RESTART will recover via the existing build-failure path." -ForegroundColor Red
+            }
+            $remaining = @($stillLocked)
+        }
+        $deleted = $totalArtifacts - $remaining.Count
+        Write-Host "  [OK] Build artifacts wiped ($deleted/$totalArtifacts removed; CMakeCache preserved)" -ForegroundColor Green
     }
 } else {
     New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
