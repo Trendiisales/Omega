@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 # QUICK_RESTART.ps1  -- v3.3 2026-04-30 PM
 # Service-based restart. Stops the Omega NSSM service, pulls source from GitHub,
 # builds, starts the service, verifies via service status + log hash.
@@ -92,19 +92,19 @@ param(
 Set-StrictMode -Off
 $ErrorActionPreference = "Continue"
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ??????????????????????????????????????????????????????????????????????????????
 # Build-process zombie names (hoisted to script scope in v3.2).
 # Single source of truth used by:
 #   * Step 0 pre-flight zombie cleanup
 #   * Defensive pre-wipe zombie re-kill (top of "INCREMENTAL BUILD PREP")
 #   * Per-attempt zombie re-kill inside the wipe retry loops
 # Adding a name here automatically picks it up in all three places.
-# ──────────────────────────────────────────────────────────────────────────────
+# ??????????????????????????????????????????????????????????????????????????????
 $zombieNames = @('cl', 'link', 'MSBuild', 'mspdbsrv', 'tracker',
                  'VBCSCompiler', 'cvtres', 'rc', 'cmake', 'cmake-gui',
                  'lib', 'mt', 'ml', 'cvtcil', 'CL')
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ??????????????????????????????????????????????????????????????????????????????
 # Format-NativeOutputLine (added v3.3 audit-fixes-33).
 #
 # When PowerShell 5.1 captures native command stderr via `nativeCmd 2>&1`,
@@ -133,7 +133,7 @@ $zombieNames = @('cl', 'link', 'MSBuild', 'mspdbsrv', 'tracker',
 #
 # Returning empty string for $null avoids a NullReferenceException in the
 # downstream regex matches.
-# ──────────────────────────────────────────────────────────────────────────────
+# ??????????????????????????????????????????????????????????????????????????????
 function Format-NativeOutputLine {
     param($Obj)
     if ($null -eq $Obj) { return "" }
@@ -157,7 +157,7 @@ $ServiceName  = "Omega"
 $OmegaExe     = "$OmegaDir\Omega.exe"
 $BuildExe     = "$OmegaDir\build\Release\Omega.exe"
 $buildDir     = "$OmegaDir\build"
-$cmakeExe     = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
+. (Join-Path $PSScriptRoot "cmake-discover.ps1")
 $ConfigSrc    = "$OmegaDir\omega_config.ini"
 $LogStdout    = "$OmegaDir\logs\omega_service_stdout.log"
 $LogStderr    = "$OmegaDir\logs\omega_service_stderr.log"
@@ -188,10 +188,10 @@ if (Test-Path $LogStdout) {
     }
     if ($cfeOpen) {
         Write-Host ""
-        Write-Host "╔══════════════════════════════════════════════════════════╗" -ForegroundColor Red
-        Write-Host "║  WARNING: CandleFlow position is OPEN                    ║" -ForegroundColor Red
-        Write-Host "║  Restarting now will FORCE CLOSE at current market price ║" -ForegroundColor Red
-        Write-Host "╚══════════════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host "????????????????????????????????????????????????????????????" -ForegroundColor Red
+        Write-Host "?  WARNING: CandleFlow position is OPEN                    ?" -ForegroundColor Red
+        Write-Host "?  Restarting now will FORCE CLOSE at current market price ?" -ForegroundColor Red
+        Write-Host "????????????????????????????????????????????????????????????" -ForegroundColor Red
         Write-Host ""
         Write-Host "  Last entry:" -ForegroundColor Yellow
         Write-Host "  $($lastEntry.Line)" -ForegroundColor Yellow
@@ -421,7 +421,7 @@ Write-Host ""
 #     build-failure recovery (restart service with previous Omega.exe)
 #     still applies.
 if (Test-Path $buildDir) {
-    # ── Defensive zombie re-kill (v3.2) ──
+    # ?? Defensive zombie re-kill (v3.2) ??
     $preWipeZombies = Get-Process -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -in $zombieNames }
     if ($preWipeZombies) {
@@ -433,7 +433,7 @@ if (Test-Path $buildDir) {
         Start-Sleep -Milliseconds 500
     }
 
-    # ── Detect previous-build crash and force a full wipe in that case ──
+    # ?? Detect previous-build crash and force a full wipe in that case ??
     # When a previous compile crashed mid-flight (Ctrl-C, OOM, killed orphan
     # MSBuild), MSBuild leaves an `unsuccessfulbuild` stamp file in
     # `Omega.dir\Release\Omega.tlog\`. The stamp causes the next compile
@@ -574,12 +574,12 @@ $cfgSec = [math]::Round(((Get-Date) - $cfgStart).TotalSeconds, 1)
 
 if ($configureExitCode -ne 0) {
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "  ║  CMAKE CONFIGURE FAILED (exit=$configureExitCode)" -ForegroundColor Red
-    Write-Host "  ║  Duration: ${cfgSec}s" -ForegroundColor Red
-    Write-Host "  ║  Service will restart with the PREVIOUS binary" -ForegroundColor Red
-    Write-Host "  ║  so live trading is not left down." -ForegroundColor Red
-    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
+    Write-Host "  ?  CMAKE CONFIGURE FAILED (exit=$configureExitCode)" -ForegroundColor Red
+    Write-Host "  ?  Duration: ${cfgSec}s" -ForegroundColor Red
+    Write-Host "  ?  Service will restart with the PREVIOUS binary" -ForegroundColor Red
+    Write-Host "  ?  so live trading is not left down." -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
     Write-Host ""
     Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
     try {
@@ -619,12 +619,12 @@ $bldSec = [math]::Round(((Get-Date) - $bldStart).TotalSeconds, 1)
 
 if ($buildExitCode -ne 0) {
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "  ║  BUILD FAILED (cmake --build exit=$buildExitCode)" -ForegroundColor Red
-    Write-Host "  ║  Duration: ${bldSec}s  |  $compileCount .cpp files compiled" -ForegroundColor Red
-    Write-Host "  ║  Service will restart with the PREVIOUS binary" -ForegroundColor Red
-    Write-Host "  ║  so live trading is not left down." -ForegroundColor Red
-    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
+    Write-Host "  ?  BUILD FAILED (cmake --build exit=$buildExitCode)" -ForegroundColor Red
+    Write-Host "  ?  Duration: ${bldSec}s  |  $compileCount .cpp files compiled" -ForegroundColor Red
+    Write-Host "  ?  Service will restart with the PREVIOUS binary" -ForegroundColor Red
+    Write-Host "  ?  so live trading is not left down." -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
     Write-Host ""
     Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
     try {
@@ -731,7 +731,7 @@ Write-Host "  [OK] Service=Running" -ForegroundColor Green
 # Wait for process to stabilise
 Start-Sleep -Seconds $StartupWaitSec
 
-# ── STALE BINARY CHECK 1: process EXE timestamp ──────────────────────────────
+# ?? STALE BINARY CHECK 1: process EXE timestamp ??????????????????????????????
 $runningProc = Get-Process -Name "Omega" -ErrorAction SilentlyContinue
 if (-not $runningProc) {
     Write-Host "  [FATAL] Omega.exe not running ${StartupWaitSec}s after service start" -ForegroundColor Red
@@ -750,19 +750,19 @@ $builtExeTime   = (Get-Item $OmegaExe -ErrorAction Stop).LastWriteTimeUtc
 $diffSec = [math]::Abs(($runningExeTime - $builtExeTime).TotalSeconds)
 if ($diffSec -gt 10) {
     Write-Host "" -ForegroundColor Red
-    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "  ║  WRONG BINARY RUNNING -- ABORTING                ║" -ForegroundColor Red
-    Write-Host "  ║  Running EXE : $runningExePath" -ForegroundColor Red
-    Write-Host "  ║  Running time: $($runningExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
-    Write-Host "  ║  Expected    : $($builtExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
-    Write-Host "  ║  Diff: ${diffSec}s -- old binary running!" -ForegroundColor Red
-    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
+    Write-Host "  ?  WRONG BINARY RUNNING -- ABORTING                ?" -ForegroundColor Red
+    Write-Host "  ?  Running EXE : $runningExePath" -ForegroundColor Red
+    Write-Host "  ?  Running time: $($runningExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
+    Write-Host "  ?  Expected    : $($builtExeTime.ToString('HH:mm:ss')) UTC" -ForegroundColor Red
+    Write-Host "  ?  Diff: ${diffSec}s -- old binary running!" -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
     Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
     exit 1
 }
 Write-Host "  [OK] EXE timestamp matches built binary (+${diffSec}s)" -ForegroundColor Green
 
-# ── STALE BINARY CHECK 2: Git hash in startup log ────────────────────────────
+# ?? STALE BINARY CHECK 2: Git hash in startup log ????????????????????????????
 $hashFound = $false
 $hashInLog = ""
 for ($hi = 0; $hi -lt 15; $hi++) {
@@ -786,12 +786,12 @@ if (-not $hashFound) {
 
 if ($hashInLog -ne $ghSha7) {
     Write-Host "" -ForegroundColor Red
-    Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "  ║  STALE BINARY DETECTED -- WRONG HASH IN LOG      ║" -ForegroundColor Red
-    Write-Host "  ║  Expected hash : $ghSha7" -ForegroundColor Red
-    Write-Host "  ║  Log reports   : $hashInLog" -ForegroundColor Red
-    Write-Host "  ║  Stopping service. Investigate before next restart." -ForegroundColor Red
-    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
+    Write-Host "  ?  STALE BINARY DETECTED -- WRONG HASH IN LOG      ?" -ForegroundColor Red
+    Write-Host "  ?  Expected hash : $ghSha7" -ForegroundColor Red
+    Write-Host "  ?  Log reports   : $hashInLog" -ForegroundColor Red
+    Write-Host "  ?  Stopping service. Investigate before next restart." -ForegroundColor Red
+    Write-Host "  ????????????????????????????????????????????????????" -ForegroundColor Red
     Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
     exit 1
 }
@@ -809,3 +809,4 @@ Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
 Write-Host ("  DONE: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
+
