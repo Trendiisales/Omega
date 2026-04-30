@@ -298,9 +298,35 @@ Write-Host ""
 # INCREMENTAL BUILD PREP
 # ==============================================================================
 if (Test-Path $buildDir) {
-    Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb","*.iobj","*.ipdb" -Recurse -ErrorAction SilentlyContinue |
-        Remove-Item -Force -ErrorAction SilentlyContinue
-    Write-Host "  [OK] Build artifacts wiped (.obj/.pch deleted, CMakeCache preserved)" -ForegroundColor Green
+    # ── Detect previous-build crash and force a full wipe in that case ──
+    # When a previous compile crashed mid-flight (Ctrl-C, OOM, killed orphan
+    # MSBuild), MSBuild leaves an `unsuccessfulbuild` stamp file in
+    # `Omega.dir\Release\Omega.tlog\`. The stamp causes the next compile
+    # to die immediately with `cmake --build exit=-1` and 0 files compiled,
+    # because MSBuild's internal tracking logs are inconsistent with the
+    # CMakeCache state.
+    #
+    # Fix: scan for the stamp; if present, do a full-wipe of $buildDir.
+    # The next configure regenerates everything from scratch (~5s overhead)
+    # instead of inheriting broken state. (audit-fixes-30 2026-04-30)
+    $unsuccessfulStamps = @()
+    try {
+        $unsuccessfulStamps = Get-ChildItem -Path $buildDir -Recurse -Force -Filter "unsuccessfulbuild" -ErrorAction SilentlyContinue
+    } catch {}
+
+    if ($unsuccessfulStamps -and $unsuccessfulStamps.Count -gt 0) {
+        Write-Host "  Detected previous-build crash stamp -- force-wiping build/ directory:" -ForegroundColor Yellow
+        foreach ($s in $unsuccessfulStamps) {
+            Write-Host "    found: $($s.FullName)" -ForegroundColor DarkYellow
+        }
+        Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+        Write-Host "  [OK] build/ fully wiped -- next configure rebuilds from scratch" -ForegroundColor Green
+    } else {
+        Get-ChildItem -Path $buildDir -Include "*.obj","*.pch","*.pdb","*.iobj","*.ipdb" -Recurse -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        Write-Host "  [OK] Build artifacts wiped (.obj/.pch deleted, CMakeCache preserved)" -ForegroundColor Green
+    }
 } else {
     New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
     Write-Host "  [OK] Build directory created (first run)" -ForegroundColor Green
