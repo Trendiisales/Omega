@@ -107,6 +107,62 @@ Write-Host "  Mode: $mode" -ForegroundColor $modeColor
 Write-Host ""
 
 # ==============================================================================
+# STEP 0: PRE-FLIGHT ZOMBIE CLEANUP (added 2026-04-30, audit-fixes-29)
+# ------------------------------------------------------------------------------
+# Why: previous QUICK_RESTART runs that crashed mid-build (OOM, Ctrl-C, transient
+# error) leave orphan compile processes running -- cl.exe, link.exe, MSBuild,
+# mspdbsrv, tracker, VBCSCompiler. Each one holds file handles on the .cpp/.obj
+# files it was compiling. The next QUICK_RESTART can't write main.obj or even
+# delete .git/index.lock because of these zombies. Compounds across runs and
+# eventually exhausts memory -> VPS crash.
+#
+# Fix: at the very top of QUICK_RESTART, kill ALL build-related processes
+# unconditionally. They should all be dead before a new build anyway, and if
+# any are legitimate they'll be respawned by cmake/MSBuild within seconds.
+# Also clear all .git/*.lock files defensively.
+#
+# 2026-04-30 incident: VPS crash after running 8 rebuild cycles in one day
+# without zombie cleanup. Multiple cl.exe holdovers found holding main.cpp
+# AND main.obj; build couldn't proceed; eventually OOM'd the system.
+# ==============================================================================
+Write-Host "[0/4] Pre-flight zombie cleanup..." -ForegroundColor DarkCyan
+$zombieNames = @('cl', 'link', 'MSBuild', 'mspdbsrv', 'tracker',
+                 'VBCSCompiler', 'cvtres', 'rc', 'cmake', 'cmake-gui',
+                 'lib', 'mt', 'ml', 'cvtcil', 'CL')
+$zombies = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -in $zombieNames }
+if ($zombies) {
+    Write-Host "  Found $($zombies.Count) build-process zombies -- killing:" -ForegroundColor Yellow
+    foreach ($z in $zombies) {
+        Write-Host "    PID $($z.Id) $($z.Name) (mem $([int]($z.WorkingSet64/1MB))MB)" -ForegroundColor DarkYellow
+    }
+    $zombies | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+} else {
+    Write-Host "  [OK] No build-process zombies" -ForegroundColor Green
+}
+
+# Also kill any orphan git processes (rare, but they hold .git/index.lock)
+$gitZombies = Get-Process -Name git -ErrorAction SilentlyContinue
+if ($gitZombies) {
+    Write-Host "  Killing $($gitZombies.Count) orphan git processes" -ForegroundColor Yellow
+    $gitZombies | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+}
+
+# Clear all stale git lock files (a crashed git process leaves these behind)
+$gitLocks = Get-ChildItem "$OmegaDir\.git" -Filter "*.lock" -Recurse -ErrorAction SilentlyContinue
+if ($gitLocks) {
+    Write-Host "  Removing $($gitLocks.Count) stale git lock files:" -ForegroundColor Yellow
+    foreach ($lk in $gitLocks) {
+        Write-Host "    $($lk.FullName)" -ForegroundColor DarkYellow
+        Remove-Item $lk.FullName -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "  [OK] No stale git lock files" -ForegroundColor Green
+}
+Write-Host ""
+
+# ==============================================================================
 # STEP 1: STOP OMEGA SERVICE (graceful via NSSM)
 # ==============================================================================
 # NSSM sends CTRL_BREAK_EVENT to the wrapped process on Stop-Service, which
