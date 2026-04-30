@@ -541,6 +541,33 @@ static void init_engines(const std::string& cfg_path)
         g_ema_pullback.init();
         g_ema_pullback.warmup_from_csv(g_ema_pullback.warmup_csv_path);
         fflush(stdout);
+
+        // ?? TrendRiderPortfolio -- Tier-4 ship 2026-04-30 ?????????????????????
+        // 6 trend-rider cells: H2 L+S, H4 L+S, H6 L, D1 L.
+        // 40-bar Donchian breakout entry + stage trail (1.5N init SL,
+        // trail at 2N->1.5N, 5N->2.5N, 10N->3.5N), NO TP, NO time exit.
+        // Validation source: 1-year H1/H2/H4/H6/D1 corpus.
+        //   H2 long  +$3,705/yr  H2 short +$  943/yr
+        //   H4 long  +$5,051/yr  H4 short +$2,637/yr
+        //   H6 long  +$4,817/yr  D1 long  +$2,479/yr
+        //   Total: ~$19,633/yr at 0.05 lot baseline; ~$39K at 0.10 cap.
+        //
+        // CONVICTION-TIERED SIZING: risk_pct=0.010, max_lot_cap=0.10 (2x other
+        // engines). Earned by backtest pf 1.81-6.46 vs tsmom's 1.35-1.66.
+        // Worst-case dd if all 6 cells SL same day = 6% portfolio. Still
+        // clear of margin_call (10% of equity).
+        g_trend_rider.shadow_mode       = kShadowDefault;
+        g_trend_rider.enabled           = true;
+        g_trend_rider.max_concurrent    = 6;
+        g_trend_rider.risk_pct          = 0.010;          // 2x tsmom baseline
+        g_trend_rider.start_equity      = 10000.0;
+        g_trend_rider.margin_call       = 1000.0;
+        g_trend_rider.max_lot_cap       = 0.10;           // 2x tsmom baseline
+        g_trend_rider.block_on_risk_off = true;
+        g_trend_rider.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
+        g_trend_rider.init();
+        g_trend_rider.warmup_from_csv(g_trend_rider.warmup_csv_path);
+        fflush(stdout);
     }
 
     // MinimalH4US30Breakout -- DJ30.F sister engine. Self-contained: builds

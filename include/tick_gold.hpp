@@ -807,6 +807,24 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // TrendRiderPortfolio H1 dispatch -- Tier-4 ship 2026-04-30.
+            // 6 trend-rider cells (H2 L+S, H4 L+S, H6 L, D1 L) with 40-bar
+            // Donchian breakout entry + stage trail. Single H1 dispatch
+            // synthesises H2/H4/H6/D1 internally. Higher conviction = higher
+            // sizing (2x baseline risk_pct + max_lot_cap).
+            {
+                omega::TrBar tr_h1{};
+                tr_h1.bar_start_ms = s_bar_h1_ms;
+                tr_h1.open  = s_cur_h1.open;
+                tr_h1.high  = s_cur_h1.high;
+                tr_h1.low   = s_cur_h1.low;
+                tr_h1.close = s_cur_h1.close;
+                g_trend_rider.set_macro_regime(g_macroDetector.regime());
+                g_trend_rider.on_h1_bar(
+                    tr_h1, bid, ask,
+                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, ca_on_close);
+            }
             s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1;
         } else { if(xau_mid>s_cur_h1.high)s_cur_h1.high=xau_mid; if(xau_mid<s_cur_h1.low)s_cur_h1.low=xau_mid; s_cur_h1.close=xau_mid; }
         // H4 -- HTF gate for TrendPullback + H4RegimeEngine.
@@ -1861,6 +1879,9 @@ static void on_tick_gold(
     // EmaPullbackPortfolio tick management -- 4 long cells (H1/H2/H4/H6).
     // Tier-3 shipped 2026-04-30. Long-only. No shared state.
     g_ema_pullback.on_tick(bid, ask, now_ms_g, ca_on_close);
+    // TrendRiderPortfolio tick management -- 6 cells (H2 L+S, H4 L+S, H6 L, D1 L).
+    // Tier-4 shipped 2026-04-30. Stage trail (no TP, no time exit).
+    g_trend_rider.on_tick(bid, ask, now_ms_g, ca_on_close);
     // -- Improvement 5: CVD confirmation gate ------------------------------
     g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 

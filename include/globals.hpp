@@ -133,6 +133,17 @@ static omega::DonchianPortfolio g_donchian;  // 7 cells: H2L, H4L+S, H6L+S, D1L+
 #include "EmaPullbackEngine.hpp"
 static omega::EpbPortfolio g_ema_pullback;  // 4 cells: H1/H2/H4/H6 long
 
+// TrendRiderPortfolio -- Tier-4 ship of 6 trend-rider cells (H2/H4 long+short,
+// H6/D1 long). 40-bar Donchian breakout entry + stage trail (no TP, no time
+// exit). Validated 184 trades/yr / pf 2.0 / +$19,633/yr at 0.05 lot baseline.
+// Uses CONVICTION-TIERED sizing: risk_pct=0.010 + max_lot_cap=0.10 (2x other
+// engines) -- earned by backtest pf 1.81-6.46. Projects ~$39K/yr at 0.10 cap.
+// Source: distilled from the 2026-03-27 +$3,157 TrendPullback win logic,
+// adapted for bar-based execution. Self-contained header.
+// Added 2026-04-30 Session "Tier-4 trend-rider ship".
+#include "TrendRiderEngine.hpp"
+static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L, D1L
+
 // =============================================================================
 //  Audit-disable flags (loser audit 2026-04-30)
 //  ---------------------------------------------------------------------------
