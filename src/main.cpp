@@ -92,6 +92,14 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "globals.hpp"
 #include "omega_runtime.hpp"
 #include "on_tick.hpp"
+// 2026-05-01 race fix: single-writer engine dispatch worker. MUST be included
+// after on_tick.hpp and after order_exec.hpp (transitively pulled in by
+// on_tick.hpp) so that handle_execution_report() and on_tick() are visible to
+// engine_dispatch.hpp's worker_loop_ at parse time. trade_loop.hpp below this
+// includes quote_loop.hpp which references engine_dispatch_post_tick;
+// fix_dispatch.hpp (included by on_tick.hpp at L2149, BEFORE this point)
+// forward-declares engine_dispatch_post_tick at its top to compile cleanly.
+#include "engine_dispatch.hpp"
 #include "trade_loop.hpp"
 #include "engine_init.hpp"
 #include "omega_main.hpp"

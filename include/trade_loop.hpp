@@ -120,8 +120,19 @@ static void trade_loop() {
                     SSL_write(ssl, sec_req.c_str(), static_cast<int>(sec_req.size()));
                     std::cout << "[OMEGA-TRADE] SecurityListRequest sent req_id=" << req_id << "\n";
                 } else if (ttype == "8") {
-                    // ExecutionReport -- order ACK / fill / reject
-                    handle_execution_report(tmsg);
+                    // ExecutionReport -- order ACK / fill / reject.
+                    // 2026-05-01 race fix: do NOT call handle_execution_report
+                    // directly from the trade thread. handle_execution_report
+                    // mutates per-engine state (g_bracket_*.confirm_fill /
+                    // .on_reject) and edge state (g_edges.fill_quality) which
+                    // are also read/written by on_tick on the dispatch thread.
+                    // Post to the engine dispatch queue so the single dispatch
+                    // worker invokes handle_execution_report serially with
+                    // on_tick. Eliminates the trade-thread vs dispatch race
+                    // that was contributing to segment-heap corruption.
+                    // EXEC_REPORT events are never dropped (bounded 100ms wait
+                    // on backpressure; see engine_dispatch.hpp).
+                    engine_dispatch_post_exec_report(tmsg);
                 } else if (ttype == "y") {
                     const auto entries = parse_security_list_entries(tmsg);
                     if (!entries.empty()) {
