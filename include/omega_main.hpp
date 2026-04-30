@@ -576,8 +576,19 @@ int main(int argc, char* argv[])
             }
             std::cout.flush();
         }).detach();
+    } else if (g_cfg.ctrader_depth_enabled) {
+        // S52 2026-05-01: section enabled but credentials incomplete -- this IS
+        //   a real problem worth flagging. Pre-S52 this branch fired with the
+        //   misleading "add [ctrader_api] to omega_config.ini" text even when
+        //   the section was present, just disabled.
+        std::cout << "[CTRADER] Depth feed disabled -- ctrader_api enabled but credentials incomplete "
+                  << "(token_len=" << g_cfg.ctrader_access_token.size()
+                  << " ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
     } else {
-        std::cout << "[CTRADER] Depth feed disabled -- add [ctrader_api] to omega_config.ini\n";
+        // S52 2026-05-01: intentionally disabled in config. FIX 264=0 has been
+        //   delivering full L2 since 2026-04-20, making cTrader Open API
+        //   redundant. No action required from operator.
+        std::cout << "[CTRADER] Depth feed disabled by config (FIX 264=0 provides L2)\n";
     }
 
 
@@ -642,19 +653,29 @@ int main(int argc, char* argv[])
         }
 
         // ── Check 2: Config loaded with cTrader credentials ───────────────
-        {
-            const bool cfg_ok = g_cfg.ctrader_depth_enabled
-                             && !g_cfg.ctrader_access_token.empty()
+        // S52 2026-05-01: skipped when cTrader is intentionally disabled.
+        //   FIX 264=0 has been delivering full L2 since 2026-04-20, so cTrader
+        //   Open API is redundant and was disabled in config on 2026-04-30.
+        //   Pre-S52 the cfg_ok test required ctrader_depth_enabled=true, so on
+        //   the disabled-by-config path this check FAILed and `return;`ed from
+        //   the verification thread, preventing Checks 3-N (mode, FIX feed,
+        //   regime, risk) from ever running. The post-fix behaviour: when
+        //   cTrader is enabled, enforce credential correctness as before; when
+        //   disabled, emit a [OK]-style note and continue to subsequent checks.
+        if (g_cfg.ctrader_depth_enabled) {
+            const bool cfg_ok = !g_cfg.ctrader_access_token.empty()
                              && g_cfg.ctrader_ctid_account_id == 43014358;
             print_check(cfg_ok, "Config: ctrader_api section",
                 cfg_ok ? ("ctid=" + std::to_string(g_cfg.ctrader_ctid_account_id))
-                       : "enabled=" + std::to_string(g_cfg.ctrader_depth_enabled)
-                         + " token_len=" + std::to_string(g_cfg.ctrader_access_token.size())
+                       : "token_len=" + std::to_string(g_cfg.ctrader_access_token.size())
                          + " ctid=" + std::to_string(g_cfg.ctrader_ctid_account_id));
             if (!cfg_ok) {
                 write_status("FAIL: ctrader_api config missing or wrong ctid");
                 return;
             }
+        } else {
+            print_check(true, "Config: ctrader_api disabled by config",
+                "FIX 264=0 provides L2 (cTrader redundant since 2026-04-20)");
         }
 
         // ── Check 3: Mode is SHADOW ───────────────────────────────────────
@@ -913,13 +934,17 @@ int main(int argc, char* argv[])
     }).detach();
     // =========================================================================
     // Gate FIX thread launch on cTrader being live.
-    // cTrader L2 data is essential for supervisor regime classification and
-    // vol baseline warmup. Starting FIX before L2 flows means the supervisor
-    // operates with l2_imb=0.500 (stale default) and tips to HIGH_RISK_NO_TRADE,
-    // permanently blocking entries until the cooldown chain clears.
-    // Wait up to 45s for cTrader to connect and L2 to start flowing.
-    // If cTrader fails to connect in 45s, start FIX anyway (degraded mode).
-    {
+    // cTrader L2 data WAS essential for supervisor regime classification and
+    // vol baseline warmup -- starting FIX before L2 flowed left the supervisor
+    // with stale l2_imb=0.500 which tipped to HIGH_RISK_NO_TRADE and blocked
+    // entries until the cooldown chain cleared. Since 2026-04-20, FIX 264=0
+    // delivers full L2 directly, so cTrader is redundant.
+    //
+    // S52 2026-05-01: when ctrader_depth_enabled=false (the post-2026-04-30
+    //   default) we skip the 45s wait entirely and start FIX immediately.
+    //   Pre-S52 every restart paid 45s of pointless wait on the disabled path
+    //   ("cTrader L2 not live after 45s -- starting FIX anyway").
+    if (g_cfg.ctrader_depth_enabled) {
         const auto ct_wait_start = std::chrono::steady_clock::now();
         bool ct_ready = false;
         printf("[STARTUP] Waiting for cTrader L2 before starting FIX...\n");
@@ -945,6 +970,9 @@ int main(int argc, char* argv[])
             printf("[STARTUP] cTrader L2 not live after 45s -- starting FIX anyway\n");
             fflush(stdout);
         }
+    } else {
+        printf("[STARTUP] cTrader disabled by config -- starting FIX immediately (FIX 264=0 provides L2)\n");
+        fflush(stdout);
     }
     std::thread trade_thread(trade_loop);
     Sleep(500);  // Give trade connection 500ms head start before quote loop
