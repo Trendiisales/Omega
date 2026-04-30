@@ -283,7 +283,13 @@ int main(int argc, char* argv[])
             // Track last cTrader tick time per symbol for FIX fallback staleness check
             set_ctrader_tick_ms(sym, std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-            on_tick(sym, bid, ask);
+            // 2026-05-01 race fix: do NOT call on_tick directly from the cTrader
+            // depth thread. Post to the engine dispatch queue so the single
+            // dispatch worker is the only thread that ever enters on_tick().
+            // Eliminates the cTrader-vs-FIX concurrent-on_tick race that was
+            // corrupting the segment heap (0xc0000374 at ntdll +0x103e89).
+            // See engine_dispatch.hpp for full design notes.
+            engine_dispatch_post_tick(sym, bid, ask);
         };
         // Stamp per-symbol tick time on EVERY depth event, not just when both sides present.
         // This prevents gold_size_dead from firing during incremental book fill and
@@ -574,6 +580,14 @@ int main(int argc, char* argv[])
         std::cout << "[CTRADER] Depth feed disabled -- add [ctrader_api] to omega_config.ini\n";
     }
 
+
+    // ?? Engine dispatch worker -- 2026-05-01 race fix ?????????????????????????
+    // Single-writer dispatch thread for ALL engine state mutations. Producers
+    // (cTrader depth thread, FIX quote thread, FIX trade thread) post events
+    // to a thread-safe queue; this worker is the only thread that calls
+    // on_tick() and handle_execution_report(). MUST start before any producer.
+    // See engine_dispatch.hpp for design and shutdown semantics.
+    engine_dispatch_start();
 
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
@@ -982,6 +996,14 @@ int main(int argc, char* argv[])
         return 0;
     }
     if (trade_thread.joinable()) trade_thread.join();
+
+    // ?? Engine dispatch worker shutdown -- 2026-05-01 race fix ????????????????
+    // All producer threads (cTrader depth, FIX quote, FIX trade) have now
+    // exited or stopped posting. Drain the dispatch queue and join the worker.
+    // This ensures any in-flight ExecReport (broker fill confirmations) is
+    // processed before the engines write their persistent state below.
+    engine_dispatch_stop();
+
     gui_server.stop();
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
     if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();

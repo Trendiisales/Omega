@@ -3,6 +3,12 @@
 // Section: fix_dispatch (original lines 7285-7565)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+// 2026-05-01 race fix: forward-declare the engine dispatch post function so
+// fix_dispatch.hpp can compile even though it is included (via on_tick.hpp)
+// before engine_dispatch.hpp. The actual definition is in engine_dispatch.hpp,
+// also single-TU, so the linker has no work to do across translation units.
+inline void engine_dispatch_post_tick(const std::string& sym, double bid, double ask);
+
 static void dispatch_fix(const std::string& msg, SSL* ssl) {
     const std::string type = extract_tag(msg, "35");
 
@@ -236,7 +242,15 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                            sym.c_str());
                     fflush(stdout);
                 }
-                on_tick(sym, bid, ask);
+                // 2026-05-01 race fix: do NOT call on_tick directly from the FIX
+                // quote thread. Post to the engine dispatch queue so the single
+                // dispatch worker is the only thread that ever enters on_tick().
+                // The 500ms cTrader-fresh check above stays as a price-source
+                // preference -- it is no longer relied on as a synchronization
+                // primitive (it never was correct in that role: the stale->fresh
+                // transition opened a race window with the cTrader depth thread).
+                // See engine_dispatch.hpp for full design.
+                engine_dispatch_post_tick(sym, bid, ask);
             }
         }
         return;
