@@ -40,6 +40,21 @@
 //     before BE lock or any subsequent trail move. Prevents sub-pt MFE from
 //     arming the trail on tick 2 and getting hit by bid-ask noise. Per-symbol
 //     tunable -- indices need different thresholds than gold's $1.5/15s.
+//
+// S52 2026-05-01 PER-SYMBOL NY-NOISE WINDOW:
+//   The NY-open noise gate (originally a hard-coded 13:15-13:45 UTC window
+//   inside on_tick()) is now per-symbol via cfg_.ny_noise_{start,end}_min.
+//   SP/NQ/DJ keep the 13:15-13:45 default. NAS100 widens to 13:30-14:30 to
+//   suppress a chronic 14:00-14:30 chop band documented by:
+//     - Stage 1A audit (2026-04-28): 11 of 13 NAS100 IFLow/HBI direction
+//       flips fell in the 14:00-15:00 UTC window.
+//     - Trade-quality audit (2026-05-01): 6 NAS100 HBI SL hits between
+//       13:45-14:46 UTC totalling ~-$160 net in a single afternoon, with
+//       price walking 27075-27218 (a 143pt range that defeated the existing
+//       30pt SAME_LEVEL_BLOCK_PTS guard).
+//   Allowing 13:15-13:30 on NAS100 (which was previously blocked) preserves
+//   legitimate NY-open momentum entries; blocking 13:45-14:30 (which was
+//   previously allowed) is the actual remediation.
 // =============================================================================
 
 #include <algorithm>
@@ -100,6 +115,14 @@ struct IndexHybridConfig {
     //   Per-symbol tuning in make_*_config() factories below.
     double min_trail_arm_pts  = 0.0;  // default disabled -- each factory overrides
     int    min_trail_arm_secs = 0;    // default disabled -- each factory overrides
+    // S52 2026-05-01: per-symbol NY-open noise window (UTC minutes-of-day).
+    //   Originally hard-coded 13:15-13:45 in on_tick(). Made per-symbol so
+    //   NAS100 can use a wider 13:30-14:30 window without affecting SP/NQ/DJ.
+    //   Per Stage 1A.1 Spec (i.C) + trade-quality audit 2026-05-01.
+    //   Window is half-open [start, end): `mins >= start && mins < end`.
+    //   To disable the gate entirely on a symbol, set start == end.
+    int    ny_noise_start_min = 13 * 60 + 15;  // 13:15 UTC default
+    int    ny_noise_end_min   = 13 * 60 + 45;  // 13:45 UTC default
 };
 
 inline IndexHybridConfig make_sp_config() {
@@ -197,6 +220,17 @@ inline IndexHybridConfig make_nas100_config() {
     c.be_trigger_frac    = 0.70;
     c.min_trail_arm_pts  = 12.0;
     c.min_trail_arm_secs = 20;
+    // S52 2026-05-01: extend NY-noise window for NAS100 only.
+    //   Default 13:15-13:45 -> 13:30-14:30. Suppresses the chronic 14:00-14:30
+    //   chop band documented in Stage 1A audit (11/13 historical IFLow/HBI
+    //   flips) and reproduced live on 2026-05-01 (6 SL hits between 13:45 and
+    //   14:46 totalling ~-$160 net -- price walked 27075-27218, a 143pt range
+    //   that defeated the existing 30pt SAME_LEVEL_BLOCK_PTS guard).
+    //   Allowing 13:15-13:30 (previously blocked) preserves legitimate
+    //   NY-open momentum entries on NAS100; blocking 13:45-14:30 (previously
+    //   allowed) is the actual remediation. Other index symbols unaffected.
+    c.ny_noise_start_min = 13 * 60 + 30;  // 13:30 UTC
+    c.ny_noise_end_min   = 14 * 60 + 30;  // 14:30 UTC
     return c;
 }
 
@@ -317,13 +351,16 @@ public:
         }
         if (spread > cfg_.max_spread) return;
 
-        // NY open noise gate: 13:15-13:45 UTC
-        // Root cause of 0% WR on NAS100: 30-tick bracket at NY open captured
-        // the full volatile opening range as 'compression'.
-        // 14:35 NAS100 LONG: 63pt adverse move = -$19.04 net.
-        // 13:37 NAS100 SHORT: 43pt adverse move = -$21.68 net.
-        // Fix: hard block arming during NY open noise window.
+        // NY open noise gate -- per-symbol via cfg_.ny_noise_{start,end}_min.
+        //   SP/NQ/DJ default to 13:15-13:45 UTC. NAS100 widens to 13:30-14:30
+        //   per S52 2026-05-01 trade-quality fix; see make_nas100_config().
+        // Root cause history: 30-tick bracket at NY open captured the full
+        //   volatile opening range as 'compression'. Examples:
+        //     2026-04-25 14:35 NAS100 LONG: 63pt adverse move = -$19.04 net
+        //     2026-04-25 13:37 NAS100 SHORT: 43pt adverse move = -$21.68 net
+        //     2026-05-01 13:45-14:46 NAS100: 6 SL hits in chop = -~$160 net
         // ARMED/PENDING/LIVE phases pass through -- only new arming blocked.
+        // Symbols can disable the gate by setting start == end in their factory.
         {
             const int64_t t_s = now_ms / 1000;
             struct tm ti{}; const time_t ts = static_cast<time_t>(t_s);
@@ -333,7 +370,9 @@ public:
             gmtime_r(&ts, &ti);
 #endif
             const int mins = ti.tm_hour * 60 + ti.tm_min;
-            const bool ny_open_noise = (mins >= 13 * 60 + 15) && (mins < 13 * 60 + 45);
+            const bool ny_open_noise = (cfg_.ny_noise_start_min < cfg_.ny_noise_end_min) &&
+                                       (mins >= cfg_.ny_noise_start_min) &&
+                                       (mins <  cfg_.ny_noise_end_min);
             if (ny_open_noise && phase == Phase::IDLE) return;
         }
 
