@@ -45,6 +45,7 @@
 #include <functional>
 #include <deque>
 #include <iostream>
+#include <unordered_set>
 #include "OmegaTradeLedger.hpp"
 
 // ?? Bracket-trend bias state + accessor ??????????????????????????????????????
@@ -4112,6 +4113,12 @@ public:
         int long_count=0, short_count=0;
         for(auto& e:engines_){
             if(!e->isEnabled()) continue;
+            // Audit-disable gate (2026-04-30 loser audit Wave 2): sub-engines
+            // listed in audit_disabled_subengines_ are skipped here regardless
+            // of regime apply() state. Wired from engine_init.hpp via
+            // set_subengine_audit_disabled() to globals.hpp g_disable_* flags.
+            if(!audit_disabled_subengines_.empty() &&
+               audit_disabled_subengines_.count(e->getName()) > 0) continue;
             Signal s=e->process(snap);
             if(!s.valid) continue;
             double score=s.confidence*e->weight_;
@@ -4195,6 +4202,39 @@ public:
     // GoldPositionManager::set_shadow_mode() since the field is in the
     // manager's private section.
     void set_shadow_mode(bool b) { pos_mgr_.set_shadow_mode(b); }
+
+    // ?? Audit-disable a sub-engine by name ?????????????????????????????????????
+    // Engines listed here are skipped at the dispatch loop AND will not be
+    // re-enabled by RegimeGovernor::apply() on regime transitions (the dispatch
+    // loop short-circuits before process() is called).
+    //
+    // Used by engine_init.hpp to honour the g_disable_* flags in globals.hpp
+    // for GoldStack sub-engines that failed the 4-week audit. Idempotent.
+    // Engine name must match EngineBase::getName() exactly (e.g.
+    // "SessionMomentum", "VWAP_SNAPBACK", "VWAPStretchReversion",
+    // "IntradaySeasonality", "DXYDivergence").
+    //
+    // Force-disables via setEnabled(false) immediately so the engine doesn't
+    // burn a tick of state-update before the dispatch-loop skip kicks in on
+    // the following tick. The next regime apply() may flip enabled_ back to
+    // true; the dispatch-loop skip still wins.
+    void set_subengine_audit_disabled(const std::string& name, bool disabled) {
+        if (disabled) {
+            audit_disabled_subengines_.insert(name);
+            for (auto& e : engines_) {
+                if (e->getName() == name) {
+                    e->setEnabled(false);
+                    break;
+                }
+            }
+        } else {
+            audit_disabled_subengines_.erase(name);
+        }
+    }
+    bool is_subengine_audit_disabled(const std::string& name) const {
+        return audit_disabled_subengines_.count(name) > 0;
+    }
+
     const char* regime_name()    const { return RegimeGovernor::name(current_regime_); }
     double vwap()                const { return features_.get_vwap(); }
     double vol_range()           const { return vol_filter_.current_range(); }
@@ -4378,6 +4418,12 @@ private:
     int64_t MIN_ENTRY_GAP_SEC           = 90;  // raised 30?90: CB was re-firing 2-3x per compression box
 
     std::vector<std::unique_ptr<EngineBase>> engines_;
+    // Sub-engines listed here are skipped at the dispatch loop AND force-disabled
+    // each tick after RegimeGovernor::apply() runs. Populated via
+    // set_subengine_audit_disabled() called from engine_init.hpp at startup,
+    // wired to the g_disable_* flags in globals.hpp. Names must match
+    // EngineBase::getName(). Added 2026-04-30 (post-1db4408) loser audit Wave 2.
+    std::unordered_set<std::string> audit_disabled_subengines_;
     GoldFeatures     features_;
     RegimeGovernor   governor_;
     VolatilityFilter vol_filter_;

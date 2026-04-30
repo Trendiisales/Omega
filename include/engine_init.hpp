@@ -1316,6 +1316,41 @@ static void init_engines(const std::string& cfg_path)
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
     g_gold_stack.configure(g_cfg.gs_cfg);
 
+    // ?? GoldStack sub-engine audit-disables (2026-04-30, loser audit Wave 2) ??
+    // Wired to globals.hpp g_disable_* flags. Each flag defaults to true
+    // (DISABLED). Flip to false in globals.hpp to re-enable a sub-engine after
+    // a fresh shadow-validation window. See GoldEngineStack::set_subengine_audit_disabled
+    // for dispatch-loop gating semantics.
+    if (g_disable_session_momentum) {
+        g_gold_stack.set_subengine_audit_disabled("SessionMomentum", true);
+    }
+    if (g_disable_intraday_seasonality) {
+        g_gold_stack.set_subengine_audit_disabled("IntradaySeasonality", true);
+    }
+    if (g_disable_vwap_snapback) {
+        g_gold_stack.set_subengine_audit_disabled("VWAP_SNAPBACK", true);
+    }
+    if (g_disable_vwap_stretch_reversion) {
+        g_gold_stack.set_subengine_audit_disabled("VWAPStretchReversion", true);
+    }
+    if (g_disable_dxy_divergence) {
+        g_gold_stack.set_subengine_audit_disabled("DXYDivergence", true);
+    }
+    {
+        char _msg[512];
+        snprintf(_msg, sizeof(_msg),
+                 "[GOLDSTACK-AUDIT] sub-engine gates: "
+                 "session_mom=%s intraday_seas=%s vwap_snap=%s "
+                 "vwap_stretch=%s dxy_div=%s\n",
+                 g_disable_session_momentum       ? "DISABLED" : "active",
+                 g_disable_intraday_seasonality   ? "DISABLED" : "active",
+                 g_disable_vwap_snapback          ? "DISABLED" : "active",
+                 g_disable_vwap_stretch_reversion ? "DISABLED" : "active",
+                 g_disable_dxy_divergence         ? "DISABLED" : "active");
+        std::cout << _msg;
+        std::cout.flush();
+    }
+
     // (LatencyEdgeStack config block removed S13 Finding B 2026-04-24 — engine culled)
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
     // g_le_stack.configure(...) REMOVED at S13 Finding B 2026-04-24 — engine culled.

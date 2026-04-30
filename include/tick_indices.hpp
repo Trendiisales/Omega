@@ -888,8 +888,30 @@ static void on_tick_nas100(
                                     false, false, 0, ca_on_close);
         }
 
-        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
-                                     g_macro_ctx.session_slot <= 5);
+        // ?? NAS100 hybrid bracket session tightening (2026-04-30 audit) ??????????
+        // 8-day shadow ledger audit (2026-04-09 to 2026-04-17, n=53):
+        //   slot 1 (London open  07-09 UTC):  1 trade, WR=0%,    -$24.80
+        //   slot 2 (London core  09-12 UTC):  4 trades, WR=25%,  -$49.58
+        //   slot 3 (Overlap      12-14 UTC): 16 trades, WR=31.2%,+$90.97  <- profitable
+        //   slot 4 (NY open      14-17 UTC): 16 trades, WR=18.8%,+$63.99  <- profitable
+        //   slot 5 (NY late      17-22 UTC): 16 trades, WR=18.8%,-$49.24
+        //   pre-London 05-07 UTC (slot=1 via on_tick.hpp:278 retag): no historical
+        //     trades in dataset, but recent live data confirms losing pattern
+        //     (2026-04-30: 2 of 3 user-reported NAS100 losses occurred 05:01-05:21 UTC).
+        //
+        // Aggregate restricted to slot 3-4: 32 trades, WR=25%, +$154.96, +$4.84/trade.
+        // vs unrestricted 8-day: 53 trades, WR=22.6%, +$31.35, +$0.59/trade.
+        // ~5x improvement in dollar return by removing structural off-hours bleed.
+        //
+        // NAS100 is a US tech index; meaningful liquidity is overlap + NY open only.
+        // The slot=1 retag (05-07 UTC -> "London open" per on_tick.hpp:278) was
+        // intended for instruments with London-pre-open momentum; NAS100 has none.
+        //
+        // To re-widen the gate later, restore "slot >= 1 && slot <= 5" with a fresh
+        // audit. Keep this comment up to date when audit numbers change.
+        // ----------------------------------------------------------------------------
+        const bool idx_session_ok = (g_macro_ctx.session_slot >= 3 &&
+                                     g_macro_ctx.session_slot <= 4);
         const bool hybrid_nas_can_enter =
             base_can_nas
             && idx_session_ok

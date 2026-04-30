@@ -173,10 +173,42 @@ static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L,
 //      g_disable_index_flow    -- -112pts across 4 instances
 //                                 (2026-04-30 audit; minor bleed but no
 //                                 evidence of edge over 4wk).
+//
+//  GoldEngineStack sub-engine audit-disables (added 2026-04-30, post-1db4408):
+//  -------------------------------------------------------------------------
+//  Sub-engines below are pushed into GoldEngineStack::engines_ at construction
+//  and toggled enabled_ each tick by RegimeGovernor::apply() based on regime.
+//  A simple `enabled_=false` at startup is overwritten on the next regime
+//  change, so we gate at the dispatch loop instead via
+//  GoldEngineStack::set_subengine_audit_disabled() called from engine_init.hpp.
+//  Total ~$3K bleed across these 5 over the 4-week ledger window.
+//
+//      g_disable_session_momentum         -- IMPULSE-regime session-open
+//                                            volatility-expansion engine.
+//                                            53.3% WR but bleed dominated
+//                                            by negative tail trades.
+//      g_disable_intraday_seasonality     -- COMPRESSION/MEAN_REV half-hourly
+//                                            t-stat bias. Sharpe=1.08 in sim
+//                                            but live edge collapsed.
+//      g_disable_vwap_snapback            -- MEAN_REVERSION VWAP fade. Sample
+//                                            never grew beyond a few trades
+//                                            despite repeat re-enables.
+//      g_disable_vwap_stretch_reversion   -- 2-sigma VWAP fade + deceleration.
+//                                            Even with the 2026-04-09 ewm_drift
+//                                            injection fix, live PnL net negative.
+//      g_disable_dxy_divergence           -- Intermarket DXY-vs-XAU divergence.
+//                                            Re-enabled 2026-04-?? after DX.F
+//                                            feed fix; live trades insufficient
+//                                            to justify continued exposure.
 // =============================================================================
-static bool g_disable_candle_flow   = true;
-static bool g_disable_bracket_gold  = true;
-static bool g_disable_index_flow    = true;
+static bool g_disable_candle_flow              = true;
+static bool g_disable_bracket_gold             = true;
+static bool g_disable_index_flow               = true;
+static bool g_disable_session_momentum         = true;  // GoldStack sub-engine
+static bool g_disable_intraday_seasonality     = true;  // GoldStack sub-engine
+static bool g_disable_vwap_snapback            = true;  // GoldStack sub-engine
+static bool g_disable_vwap_stretch_reversion   = true;  // GoldStack sub-engine
+static bool g_disable_dxy_divergence           = true;  // GoldStack sub-engine
 
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 
