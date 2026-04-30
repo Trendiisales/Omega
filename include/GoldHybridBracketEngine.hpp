@@ -193,7 +193,15 @@ public:
         // is the single source of truth, updated by VIX/DXY/ES/NQ ticks in
         // on_tick.hpp.  set_macro_regime is cheap (string compare + double
         // assign) so calling per-tick is fine.
+        // OMEGA_BACKTEST: g_macroDetector lives in omega_types.hpp which is
+        // a main.cpp-only include (line 2 of that file: "SINGLE-TRANSLATION-
+        // UNIT include"). OmegaBacktest pulls this header into its own TU
+        // and has no live macro feed (no VIX/DXY/ES/NQ ticks), so the gate
+        // would receive a stale default anyway. Skip the call in backtest;
+        // gate falls back to NEUTRAL/1.0x scale = v1-equivalent behaviour.
+#ifndef OMEGA_BACKTEST
         m_spread_gate.set_macro_regime(g_macroDetector.regime());
+#endif
 
         // S47 T4a: cache simulated tick second so confirm_fill() can stamp
         //   pos.entry_ts using the tick clock rather than std::time(nullptr).

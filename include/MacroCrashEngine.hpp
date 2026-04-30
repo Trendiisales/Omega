@@ -225,7 +225,15 @@ public:
         // threshold by 10% (news/crisis days), RISK_ON tightens by 5%
         // (calm regimes need a stricter spread bar).  Source of truth is
         // g_macroDetector (VIX/DXY/ES/NQ ticks update it).
+        // OMEGA_BACKTEST: g_macroDetector lives in omega_types.hpp which is
+        // a main.cpp-only include (line 2 of that file: "SINGLE-TRANSLATION-
+        // UNIT include"). OmegaBacktest pulls this header into its own TU
+        // and has no live macro feed (no VIX/DXY/ES/NQ ticks), so the gate
+        // would receive a stale default anyway. Skip the call in backtest;
+        // gate falls back to NEUTRAL/1.0x scale = v1-equivalent behaviour.
+#ifndef OMEGA_BACKTEST
         m_spread_gate.set_macro_regime(g_macroDetector.regime());
+#endif
 
         // -- Weekend gap protection ----------------------------------------
         // Gold gaps 1-2% on Sunday open due to weekend macro news.
