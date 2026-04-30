@@ -221,6 +221,46 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
 )
 
 # =============================================================================
+# TsmomCellBacktest -- Phase 2a dual-engine harness for the CellEngine refactor.
+# Drives V1 (TsmomPortfolio in TsmomEngine.hpp) and V2 (CellPortfolio<TsmomStrategy>
+# in CellEngine.hpp + TsmomStrategy.hpp) over the same H1 OHLC corpus and emits
+# two CSV ledgers we can byte-diff. With --max-pos 1 the ledgers MUST match.
+#
+# Self-contained: no OpenSSL, no FIX, no time-shim (the cell engines use the
+# now_ms passed in by the harness, never std::time / std::chrono::*).
+#
+# Build:
+#   cmake --build build --target TsmomCellBacktest --config Release
+# Run (Mac/Linux):
+#   ./build/TsmomCellBacktest
+# Run (Windows):
+#   .\build\Release\TsmomCellBacktest.exe
+# =============================================================================
+add_executable(TsmomCellBacktest
+    backtest/TsmomCellBacktest.cpp
+)
+target_include_directories(TsmomCellBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+if(MSVC)
+    target_compile_options(TsmomCellBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+    )
+    target_compile_definitions(TsmomCellBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS
+    )
+else()
+    target_compile_options(TsmomCellBacktest PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function
+    )
+    target_link_libraries(TsmomCellBacktest PRIVATE pthread)
+endif()
+
+# =============================================================================
 # OmegaSweepHarness -- parameter sweep harness (S51 X3)
 #
 # Runs a pairwise 2-factor parameter grid: for each engine, vary 2 of 5 params
@@ -414,6 +454,7 @@ message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
 message(STATUS "Git hash:   regenerated on every build")
 message(STATUS "OmegaBacktest:          standalone (no OpenSSL)")
+message(STATUS "TsmomCellBacktest:      standalone (no OpenSSL) [Phase 2a CellEngine refactor]")
 if(OMEGA_BUILD_SWEEP)
     message(STATUS "OmegaSweepHarness:      standalone (no OpenSSL) [OMEGA_BUILD_SWEEP=ON]")
 else()

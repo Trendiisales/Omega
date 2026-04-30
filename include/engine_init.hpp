@@ -502,6 +502,49 @@ static void init_engines(const std::string& cfg_path)
         g_tsmom.warmup_from_csv(g_tsmom.warmup_csv_path);
         fflush(stdout);
 
+        // ?? TsmomPortfolioV2 -- Phase 2a CellEngine-refactor live shadow ??????
+        //
+        // Runs alongside g_tsmom over the same H1 bar stream and same XAUUSD
+        // ticks. Trades go into logs/shadow/tsmom_v2.csv via
+        // omega::cell::shadow::tsmom_writer -- they DO NOT touch g_omegaLedger.
+        // This is non-negotiable: routing V2 trades into the master ledger
+        // would double-count every position in daily PnL / drawdown / engine-
+        // cull / param-gate / fast-loss-streak state.
+        //
+        // shadow_mode = true ALWAYS (refactor-validation engine, not a
+        // trader). Independent of g_cfg.mode -- this engine never goes LIVE
+        // until Phase 2b validation completes and the cutover replaces
+        // g_tsmom outright (see docs/CELL_ENGINE_REFACTOR_PLAN.md §4 Phase 4).
+        //
+        // max_positions_per_cell = 1 (Phase 2a refactor-correctness). Backtest
+        // parity over the 1-year tsmom_warmup_H1 corpus already passed; live
+        // shadow exists to confirm the same parity under real bar gaps,
+        // weekend spreads, and FORCE_CLOSE-under-reconnect timing. Flip to
+        // max=10 (Phase 2b) only after the agreed shadow-window holds.
+        //
+        // All other config matches g_tsmom 1:1 so the V1 vs V2 comparison
+        // isolates the refactor only.
+        g_tsmom_v2.shadow_mode             = true;          // ALWAYS shadow (refactor validation)
+        g_tsmom_v2.enabled                 = true;
+        g_tsmom_v2.max_concurrent          = 50;            // headroom; per-cell cap binds
+        g_tsmom_v2.max_positions_per_cell  = 1;             // Phase 2a -- flip to 10 in Phase 2b
+        g_tsmom_v2.risk_pct                = g_tsmom.risk_pct;
+        g_tsmom_v2.start_equity            = g_tsmom.start_equity;
+        g_tsmom_v2.margin_call             = g_tsmom.margin_call;
+        g_tsmom_v2.max_lot_cap             = g_tsmom.max_lot_cap;
+        g_tsmom_v2.usd_per_pt_per_lot      = 100.0;         // XAUUSD baseline
+        g_tsmom_v2.block_on_risk_off       = g_tsmom.block_on_risk_off;
+        g_tsmom_v2.symbol                  = "XAUUSD";
+        g_tsmom_v2.regime_label            = "TSMOM_V2";    // distinguishable in shadow CSV
+        omega::cell::build_default_tsmom_topology(g_tsmom_v2);
+        g_tsmom_v2.warmup_csv_path         = "phase1/signal_discovery/tsmom_warmup_H1.csv";
+        g_tsmom_v2.init();
+        g_tsmom_v2.warmup_from_csv(g_tsmom_v2.warmup_csv_path);
+        omega::cell::shadow::tsmom_writer().open("logs/shadow/tsmom_v2.csv");
+        printf("[TSMOM-V2] live shadow ARMED (max_pos_per_cell=%d, ledger=logs/shadow/tsmom_v2.csv)\n",
+               g_tsmom_v2.max_positions_per_cell);
+        fflush(stdout);
+
         // ?? DonchianPortfolio -- Tier-2 ship 2026-04-30 ???????????????????????
         // 7 donchian cells: H2 long, H4 long+short, H6 long+short, D1 long+short.
         // (H1 long is NOT here -- it's the retuned cell in C1RetunedPortfolio.)

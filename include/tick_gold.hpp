@@ -773,6 +773,26 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // TsmomPortfolioV2 H1 dispatch -- Phase 2a CellEngine-refactor shadow.
+            // Same H1 bar / bid / ask / atr / now_ms as g_tsmom above so the
+            // V2 ledger is directly comparable to the V1 slice of g_omegaLedger.
+            // Callback writes to logs/shadow/tsmom_v2.csv only -- never touches
+            // g_omegaLedger (no double-counting in master accounting state).
+            // See engine_init.hpp g_tsmom_v2 block for the rationale.
+            {
+                omega::cell::Bar v2_h1{};
+                v2_h1.bar_start_ms = s_bar_h1_ms;
+                v2_h1.open  = s_cur_h1.open;
+                v2_h1.high  = s_cur_h1.high;
+                v2_h1.low   = s_cur_h1.low;
+                v2_h1.close = s_cur_h1.close;
+                g_tsmom_v2.set_macro_regime(g_macroDetector.regime());
+                g_tsmom_v2.on_h1_bar(
+                    v2_h1, bid, ask,
+                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g,
+                    omega::cell::shadow::tsmom_writer().bind());
+            }
             // DonchianPortfolio H1 dispatch -- Tier-2 ship 2026-04-30. Drives
             // 7 cells (H2 long, H4/H6/D1 long+short). H1 atr14 is unused (cells
             // self-compute ATR per synthesised TF) but passed for signature
@@ -1873,6 +1893,10 @@ static void on_tick_gold(
     // TsmomPortfolio tick management -- 5 long cells (H1/H2/H4/H6/D1).
     // Tier-1 shipped 2026-04-30; runs alongside C1Retuned, no shared state.
     g_tsmom.on_tick(bid, ask, now_ms_g, ca_on_close);
+    // TsmomPortfolioV2 tick management -- Phase 2a refactor shadow.
+    // Trades go to logs/shadow/tsmom_v2.csv only (NOT g_omegaLedger).
+    g_tsmom_v2.on_tick(bid, ask, now_ms_g,
+                       omega::cell::shadow::tsmom_writer().bind());
     // DonchianPortfolio tick management -- 7 cells (H2 long, H4/H6/D1 long+short).
     // Tier-2 shipped 2026-04-30. Bidirectional. No shared state with other engines.
     g_donchian.on_tick(bid, ask, now_ms_g, ca_on_close);

@@ -118,6 +118,29 @@ static omega::C1RetunedPortfolio g_c1_retuned;  // Donchian H1 + Bollinger H2/H4
 #include "TsmomEngine.hpp"
 static omega::TsmomPortfolio g_tsmom;  // 5 long cells: H1, H2, H4, H6, D1
 
+// TsmomPortfolioV2 -- CellEngine refactor Phase 2a shadow alongside g_tsmom.
+//
+// Status: REFACTOR-VALIDATION ENGINE, not a production trader. Always
+// shadow_mode=true regardless of g_cfg.mode. Trades flow into a SEPARATE
+// CSV ledger (logs/shadow/tsmom_v2.csv via omega::cell::shadow::tsmom_writer)
+// and DO NOT touch g_omegaLedger -- otherwise daily PnL / drawdown / engine-
+// cull / param-gate state would double-count every trade.
+//
+// Phase 2a: max_positions_per_cell=1 -- the Phase 2a contract per
+// docs/CELL_ENGINE_REFACTOR_PLAN.md §4 is that the V2 ledger MUST match V1's
+// byte-for-byte at max=1 for >= 5 trading days before cutover. Backtest
+// parity over the 1-year tsmom_warmup_H1 corpus already passed
+// (see backtest/results/bt_tsmom_v{1,2}.csv -- byte-identical, sha256 match).
+// Live shadow exists to surface any edge cases the backtest didn't cover
+// (bar gaps, weekend spreads, FORCE_CLOSE timing under reconnect).
+//
+// Phase 2b: flip max=10 once Phase 2a parity holds for the agreed window.
+// Added 2026-05-01 Session "Phase 2a live shadow".
+#include "CellEngine.hpp"
+#include "TsmomStrategy.hpp"
+#include "CellShadowLedger.hpp"
+static omega::cell::TsmomPortfolioV2 g_tsmom_v2;  // 5 long cells (H1/H2/H4/H6/D1)
+
 // DonchianPortfolio -- Tier-2 ship of 7 donchian cells (H2 long; H4/H6/D1
 // long+short). Bidirectional, would have profited during the 2026-03-18
 // BEAR cluster that long-only C1Retuned lost on. Note: H1 long is NOT in
