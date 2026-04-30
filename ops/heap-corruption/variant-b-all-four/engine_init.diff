@@ -1,0 +1,16 @@
+493c493
+<         g_tsmom.enabled           = true;
+---
+>         g_tsmom.enabled           = false;
+513c513
+<         g_donchian.enabled           = true;
+---
+>         g_donchian.enabled           = false;
+533c533
+<         g_ema_pullback.enabled           = true;
+---
+>         g_ema_pullback.enabled           = false;
+568c568
+<         g_trend_rider.enabled           = true;
+---
+>         g_trend_rider.enabled           = false;

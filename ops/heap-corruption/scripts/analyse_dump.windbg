@@ -1,0 +1,119 @@
+$$ =============================================================================
+$$ analyse_dump.windbg
+$$ -----------------------------------------------------------------------------
+$$ WinDbg / cdb command script. Designed to be run with:
+$$
+$$   cdb -z C:\CrashDumps\Omega.exe.<pid>.dmp -y "C:\Omega;<sdk-symbols>" \
+$$       -lines -c "$$<analyse_dump.windbg"
+$$
+$$ Or interactively from WinDbg:
+$$   File -> Open Crash Dump
+$$   Then in the command window: $$<analyse_dump.windbg
+$$
+$$ Pre-requisites:
+$$   - Omega.pdb must be next to Omega.exe at the path used during build,
+$$     or in any directory on the symbol path.
+$$   - Microsoft public symbols are downloaded automatically if internet is
+$$     reachable from the analysis host.
+$$ =============================================================================
+
+$$ -----------------------------------------------------------------------------
+$$ Step 1: configure symbol path. Adjust paths if your layout differs.
+$$ -----------------------------------------------------------------------------
+.symfix+ C:\SymCache
+.sympath+ C:\Omega
+.sympath+ C:\Omega\build\Release
+.reload /f
+
+$$ -----------------------------------------------------------------------------
+$$ Step 2: top-level analysis (this fires the WinDbg auto-classifier)
+$$ -----------------------------------------------------------------------------
+.echo
+.echo ==== !analyze -v ====
+.echo
+!analyze -v
+
+$$ -----------------------------------------------------------------------------
+$$ Step 3: faulting thread call stack with parameters and source lines
+$$ -----------------------------------------------------------------------------
+.echo
+.echo ==== Faulting thread stack (kP) ====
+.echo
+kP
+
+$$ -----------------------------------------------------------------------------
+$$ Step 4: heap analysis. This is THE step that pays off our +ust setup.
+$$ Reads the heap entry that was being processed when the trap fired,
+$$ and prints the allocation backtrace recorded by user-mode stack tracing.
+$$ -----------------------------------------------------------------------------
+.echo
+.echo ==== Heap summary ====
+.echo
+!heap -s
+
+.echo
+.echo ==== Heap analysis on faulting address ====
+.echo Note: the address is the one in the AV/heap-trap context. If !analyze -v
+.echo identified a specific corrupted block, run:
+.echo   !heap -p -a <address>
+.echo manually after this script. We try the most common candidates here:
+.echo
+$$ Try: address from current exception context (rcx is often the heap entry pointer
+$$ for ntdll!RtlpHpHeapHandleError).
+.echo Trying !heap -p -a @rcx
+!heap -p -a @rcx
+.echo
+.echo Trying !heap -p -a @rdx
+!heap -p -a @rdx
+
+$$ -----------------------------------------------------------------------------
+$$ Step 5: list all loaded modules with version stamps so we can confirm we are
+$$ analysing the right Omega.exe build.
+$$ -----------------------------------------------------------------------------
+.echo
+.echo ==== Loaded modules (Omega only) ====
+.echo
+lm vm omega
+
+.echo
+.echo ==== Loaded modules (count + key DLLs) ====
+.echo
+lmf m omega
+lmf m ntdll
+lmf m kernel32
+lmf m vcruntime140
+lmf m msvcp140
+
+$$ -----------------------------------------------------------------------------
+$$ Step 6: thread inventory. Heap corruption may have been caused on a different
+$$ thread than the one that finally tripped the trap.
+$$ -----------------------------------------------------------------------------
+.echo
+.echo ==== Thread list ====
+.echo
+~* k 8
+
+$$ -----------------------------------------------------------------------------
+$$ Step 7: AppVerifier output -- if AppVerif caught a Locks/Memory/Handles
+$$ violation, it will be in here.
+$$ -----------------------------------------------------------------------------
+.echo
+.echo ==== AppVerifier stops (if any) ====
+.echo
+!avrf -stops
+
+$$ -----------------------------------------------------------------------------
+$$ Step 8: a few useful follow-ups -- print but don't auto-run
+$$ -----------------------------------------------------------------------------
+.echo
+.echo ==== USEFUL FOLLOW-UPS (run manually) ====
+.echo   !heap -p -a <addr>     -- show allocation backtrace for any heap address
+.echo   !heap -stat -h <heap>  -- per-heap statistics
+.echo   ub <addr> L20          -- disassemble back from addr to find call site
+.echo   dq <addr> L20          -- dump 20 quadwords from addr
+.echo   .frame /r <n>          -- switch to stack frame n with registers
+.echo   ~<n>s                  -- switch to thread n
+.echo   !locks                 -- list held critical sections (with AppVerif Locks)
+.echo
+
+$$ End of script
