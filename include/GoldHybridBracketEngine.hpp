@@ -93,8 +93,17 @@ public:
     //   MIN_TRAIL_ARM_PTS: position must have MFE >= this before trail recomputes
     //   MIN_TRAIL_ARM_SECS: position must have been open >= this before trail recomputes
     //   Both must be satisfied. Set either to 0 to disable that guard.
-    static constexpr double MIN_TRAIL_ARM_PTS    = 1.5;
+    static constexpr double MIN_TRAIL_ARM_PTS    = 3.0;
     static constexpr int    MIN_TRAIL_ARM_SECS   = 15;
+    // S52 2026-05-01 (trade-quality audit follow-up): trail give-back fraction.
+    // PRIOR: hardcoded `pos.mfe * 0.20` at line 513. STAGE1A_FINAL 2026-04-28
+    // identified two locks at $0.04 and $2.55 -- with MFE just at the 1.5pt arm
+    // threshold the trail_dist = mfe*0.20 = 0.30pt was tight enough that a
+    // single pip of bid-ask noise immediately hit it. New value 0.40 means we
+    // give back 40% of the MFE peak rather than 20%, capturing 60% of the run
+    // and surviving normal noise. Combined with MIN_TRAIL_ARM_PTS bump 1.5->3.0
+    // above, the trail no longer arms on micro-MFEs at all.
+    static constexpr double MFE_TRAIL_FRAC       = 0.40;
     static constexpr double MAX_SPREAD           = 2.5;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;
@@ -494,12 +503,12 @@ public:
         //   Mirrors GoldEngineStack.hpp:4377 convention.
         if (move < pos.mae) pos.mae = move;
 
-        // Trail: MFE-proportional -- tightens as move grows, locks in more profit
-        // trail_dist = min(range * TRAIL_FRAC, mfe * 0.20)
-        //   Small move (2pt): min(1.5, 0.4) = 0.4pt trail -- locks 80% of move
-        //   Medium move (6pt): min(1.5, 1.2) = 1.2pt trail -- locks 80% of move
-        //   Large move (15pt): min(1.5, 3.0) = 1.5pt trail -- range caps it
-        // This ensures we capture ~80% of MFE rather than giving back the entire move
+        // Trail: MFE-proportional -- tightens as move grows, locks in profit.
+        // trail_dist = min(range * TRAIL_FRAC, mfe * MFE_TRAIL_FRAC)  (S52 0.20->0.40)
+        //   Small move (3pt): min(1.5, 1.2) = 1.2pt trail -- locks 60% of move
+        //   Medium move (6pt): min(1.5, 2.4) = 1.5pt trail -- locks 75% of move
+        //   Large move (15pt): min(1.5, 6.0) = 1.5pt trail -- range caps it
+        // S52 widened the give-back from 20% to 40% so noise pulls do not hit the trail.
         //
         // S20 2026-04-25 arm guards:
         //   Require MFE >= MIN_TRAIL_ARM_PTS AND hold >= MIN_TRAIL_ARM_SECS before
@@ -510,7 +519,7 @@ public:
         const bool    arm_mfe_ok = (MIN_TRAIL_ARM_PTS  <= 0.0) || (pos.mfe >= MIN_TRAIL_ARM_PTS);
         const bool    arm_hold_ok = (MIN_TRAIL_ARM_SECS <= 0 ) || (held_s  >= MIN_TRAIL_ARM_SECS);
         if (move > 0 && arm_mfe_ok && arm_hold_ok) {
-            const double mfe_trail = pos.mfe * 0.20;
+            const double mfe_trail = pos.mfe * MFE_TRAIL_FRAC;
             const double range_trail = range * TRAIL_FRAC;
             const double trail_dist = (mfe_trail > 0.0) ? std::min(range_trail, mfe_trail) : range_trail;
             const double trail_sl = pos.is_long ? (pos.entry + pos.mfe - trail_dist)
