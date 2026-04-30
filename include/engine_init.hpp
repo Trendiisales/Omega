@@ -552,17 +552,25 @@ static void init_engines(const std::string& cfg_path)
         //   H6 long  +$4,817/yr  D1 long  +$2,479/yr
         //   Total: ~$19,633/yr at 0.05 lot baseline; ~$39K at 0.10 cap.
         //
-        // CONVICTION-TIERED SIZING: risk_pct=0.010, max_lot_cap=0.10 (2x other
-        // engines). Earned by backtest pf 1.81-6.46 vs tsmom's 1.35-1.66.
-        // Worst-case dd if all 6 cells SL same day = 6% portfolio. Still
-        // clear of margin_call (10% of equity).
+        // CONVICTION-TIERED SIZING -- Option B (~1/8 Kelly) (2026-04-30 PM):
+        //   risk_pct=0.040 (4.0%) and max_lot_cap=0.50 are 8x the baseline used
+        //   by tsmom/donchian/ema_pullback (each at 0.005 / 0.05).
+        //   Justification: per-cell full-Kelly fractions on the validation
+        //   data run 18-76% (avg ~44%). Practitioner standard is 1/4 to 1/8
+        //   Kelly to handle backtest noise + concurrent-position correlation.
+        //   1/8 Kelly = ~5.5% per trade -- we use 4.0% which sits inside the
+        //   conservative end of that band.
+        //   Worst case if all 6 cells hit initial-SL on same correlated bear
+        //   day = ~24% portfolio drawdown. Still recoverable; well clear of
+        //   margin_call (10% of equity = $1K floor).
+        //   Projection: ~$90K/yr at this sizing vs $19,633 at baseline.
         g_trend_rider.shadow_mode       = kShadowDefault;
         g_trend_rider.enabled           = true;
         g_trend_rider.max_concurrent    = 6;
-        g_trend_rider.risk_pct          = 0.010;          // 2x tsmom baseline
+        g_trend_rider.risk_pct          = 0.040;          // 8x tsmom baseline (~1/8 Kelly)
         g_trend_rider.start_equity      = 10000.0;
         g_trend_rider.margin_call       = 1000.0;
-        g_trend_rider.max_lot_cap       = 0.10;           // 2x tsmom baseline
+        g_trend_rider.max_lot_cap       = 0.50;           // 10x tsmom baseline
         g_trend_rider.block_on_risk_off = true;
         g_trend_rider.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_trend_rider.init();
