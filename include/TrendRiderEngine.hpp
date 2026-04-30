@@ -90,6 +90,7 @@
 #include <sstream>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "CellPrimitives.hpp"   // Phase 1 of CellEngine refactor; layout sanity asserts below
 
 namespace omega {
 
@@ -152,6 +153,21 @@ struct TrATR14 {
     }
     double value() const noexcept { return atr_; }
 };
+
+// -----------------------------------------------------------------------------
+//  Phase 1 structural-sanity gate (refactor plan §4 Phase 1).
+//  These asserts confirm TrBar/TrBarSynth/TrATR14 are layout-compatible
+//  with the canonical omega::cell types declared in CellPrimitives.hpp.
+//  Any drift breaks the V1/V2 shadow comparison that Phase 2 depends on,
+//  so we want a hard compile-time stop here -- not a runtime divergence
+//  later. Pure additive: no behaviour change.
+// -----------------------------------------------------------------------------
+static_assert(sizeof(TrBar)      == sizeof(::omega::cell::Bar),
+              "TrBar size drift vs omega::cell::Bar");
+static_assert(sizeof(TrBarSynth) == sizeof(::omega::cell::BarSynth),
+              "TrBarSynth size drift vs omega::cell::BarSynth");
+static_assert(sizeof(TrATR14)    == sizeof(::omega::cell::ATR14),
+              "TrATR14 size drift vs omega::cell::ATR14");
 
 // =============================================================================
 //  TrendRiderCell -- single trend-rider cell.

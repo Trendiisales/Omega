@@ -89,6 +89,7 @@
 #include <string>
 #include <vector>
 #include "OmegaTradeLedger.hpp"
+#include "CellPrimitives.hpp"   // Phase 1 of CellEngine refactor; layout sanity asserts below
 
 namespace omega {
 
@@ -151,6 +152,21 @@ struct TsmomATR14 {
 
     double value() const noexcept { return atr_; }
 };
+
+// -----------------------------------------------------------------------------
+//  Phase 1 structural-sanity gate (refactor plan §4 Phase 1).
+//  These asserts confirm TsmomBar/TsmomBarSynth/TsmomATR14 are layout-
+//  compatible with the canonical omega::cell types declared in
+//  CellPrimitives.hpp. Any drift breaks the V1/V2 shadow comparison that
+//  Phase 2 depends on, so we want a hard compile-time stop here -- not a
+//  runtime divergence later. Pure additive: no behaviour change.
+// -----------------------------------------------------------------------------
+static_assert(sizeof(TsmomBar)      == sizeof(::omega::cell::Bar),
+              "TsmomBar size drift vs omega::cell::Bar");
+static_assert(sizeof(TsmomBarSynth) == sizeof(::omega::cell::BarSynth),
+              "TsmomBarSynth size drift vs omega::cell::BarSynth");
+static_assert(sizeof(TsmomATR14)    == sizeof(::omega::cell::ATR14),
+              "TsmomATR14 size drift vs omega::cell::ATR14");
 
 // =============================================================================
 //  TsmomCell -- multi-position per cell. positions_ is a vector of open
