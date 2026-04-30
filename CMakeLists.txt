@@ -16,8 +16,35 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 if(MSVC)
-    add_compile_options(/W4 /WX /wd4100 /wd4505 /wd4324 /O2 /std:c++20)
+    # NOTE: /O2 intentionally NOT included in this global add_compile_options.
+    # CMake's default CMAKE_CXX_FLAGS_RELEASE already contains "/O2 /Ob2 /DNDEBUG"
+    # so Release builds receive /O2 via the per-config flag set. Forcing /O2
+    # globally injects it into Debug / RelWithDebInfo builds too, which then
+    # conflicts with /RTC1 (Debug runtime checks) and produces MSVC error
+    # D8016: "'/O2' and '/RTC1' command-line options are incompatible".
+    # If you ever need /O2 on a non-Release config, add it via the per-config
+    # flag set, not here.
+    add_compile_options(/W4 /WX /wd4100 /wd4505 /wd4324 /std:c++20)
     add_definitions(-D_WIN32_WINNT=0x0601 -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS)
+
+    # Defensive guard: strip /RTC1 from every configuration EXCEPT Debug.
+    # Some toolchains, CMakePresets, IDE generators, or vcpkg ports
+    # occasionally inject /RTC1 into non-Debug configs. This regex
+    # normalises the state so /RTC1 cannot coexist with any /O level
+    # outside Debug, where it belongs. Re-runs harmlessly if absent.
+    foreach(_omega_flag_var
+            CMAKE_C_FLAGS_RELEASE
+            CMAKE_CXX_FLAGS_RELEASE
+            CMAKE_C_FLAGS_RELWITHDEBINFO
+            CMAKE_CXX_FLAGS_RELWITHDEBINFO
+            CMAKE_C_FLAGS_MINSIZEREL
+            CMAKE_CXX_FLAGS_MINSIZEREL)
+        if(DEFINED ${_omega_flag_var})
+            string(REGEX REPLACE "[ ]*/RTC[1csu]+" ""
+                   ${_omega_flag_var} "${${_omega_flag_var}}")
+        endif()
+    endforeach()
+    unset(_omega_flag_var)
 else()
     add_compile_options(-Wall -Wextra -O3 -std=c++20)
 endif()
