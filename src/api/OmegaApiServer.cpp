@@ -76,7 +76,7 @@
 #ifndef OMEGA_BACKTEST
 
 #include "OmegaApiServer.hpp"
-#include "OpenBbProxy.hpp"
+#include "MarketDataProxy.hpp"
 #include "WatchScheduler.hpp"
 
 #ifdef _WIN32
@@ -343,7 +343,7 @@ static std::string ob_pick_extra(std::initializer_list<std::string> bodies)
     return std::string("{}");
 }
 
-// Worst (highest) HTTP status across a set of OpenBbResults. 200 if all OK.
+// Worst (highest) HTTP status across a set of MarketDataResults. 200 if all OK.
 static int ob_worst_status(std::initializer_list<int> statuses)
 {
     int worst = 200;
@@ -603,7 +603,7 @@ static std::string build_equity_json(const std::unordered_map<std::string, std::
 // Step 5: OpenBB-backed routes
 //
 // Each builder converts the panel-facing query parameters into an OpenBB Hub
-// path + query, calls OpenBbProxy::get(), and returns the OBBject envelope
+// path + query, calls MarketDataProxy::get(), and returns the OBBject envelope
 // verbatim. The proxy handles cache + token + mock-mode fallbacks; we just
 // pick the right route + cadence. status is set in-place so the dispatcher
 // can propagate the HTTP code (e.g. 503 when the token is not configured).
@@ -632,7 +632,7 @@ static std::string build_intel_json(
     char qbuf[64];
     std::snprintf(qbuf, sizeof(qbuf), "limit=%d", limit);
 
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "news/world", qbuf, /*ttl_ms=*/25000);
     status = r.status;
     return r.body;
@@ -659,7 +659,7 @@ static std::string build_curv_json(
     }
 
     if (region == "US") {
-        const OpenBbResult r = OpenBbProxy::instance().get(
+        const MarketDataResult r = MarketDataProxy::instance().get(
             "fixedincome/government/treasury_rates",
             "provider=federal_reserve",
             /*ttl_ms=*/50000);
@@ -723,7 +723,7 @@ static std::string build_wei_json(
     qs += "&provider=";
     qs += provider;
 
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "equity/price/quote", qs, /*ttl_ms=*/4000);
     status = r.status;
     return r.body;
@@ -758,7 +758,7 @@ static std::string build_mov_json(
     std::string qs = "provider=";
     qs += provider;
 
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         route, qs, /*ttl_ms=*/750);
     status = r.status;
     return r.body;
@@ -766,7 +766,7 @@ static std::string build_mov_json(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Step 6: BB function suite. Same shape as Step 5 builders -- read query,
-// compose OpenBB query string, call OpenBbProxy::get(), pass body verbatim.
+// compose OpenBB query string, call MarketDataProxy::get(), pass body verbatim.
 // Merged-envelope routes (FA / KEY / EE) make 2-3 OpenBB calls and stitch
 // the bodies into one composite via the ob_* helpers above. WATCH reads from
 // the engine-side WatchScheduler instead of OpenBB.
@@ -791,7 +791,7 @@ static std::string build_omon_json(
         qs += "&expiry=";
         qs += eit->second;
     }
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "derivatives/options/chains", qs, /*ttl_ms=*/4000);
     status = r.status;
     return r.body;
@@ -813,10 +813,10 @@ static std::string build_fa_json(
     std::string qs = "symbol=";
     qs += it->second;
 
-    auto& proxy = OpenBbProxy::instance();
-    const OpenBbResult ri = proxy.get("equity/fundamental/income",  qs, 250000);
-    const OpenBbResult rb = proxy.get("equity/fundamental/balance", qs, 250000);
-    const OpenBbResult rc = proxy.get("equity/fundamental/cash",    qs, 250000);
+    auto& proxy = MarketDataProxy::instance();
+    const MarketDataResult ri = proxy.get("equity/fundamental/income",  qs, 250000);
+    const MarketDataResult rb = proxy.get("equity/fundamental/balance", qs, 250000);
+    const MarketDataResult rc = proxy.get("equity/fundamental/cash",    qs, 250000);
     status = ob_worst_status({ri.status, rb.status, rc.status});
 
     const std::string income  = ob_results_array(ri.body);
@@ -853,9 +853,9 @@ static std::string build_key_json(
     }
     std::string qs = "symbol=";
     qs += it->second;
-    auto& proxy = OpenBbProxy::instance();
-    const OpenBbResult rk = proxy.get("equity/fundamental/key_metrics", qs, 250000);
-    const OpenBbResult rm = proxy.get("equity/fundamental/multiples",   qs, 250000);
+    auto& proxy = MarketDataProxy::instance();
+    const MarketDataResult rk = proxy.get("equity/fundamental/key_metrics", qs, 250000);
+    const MarketDataResult rm = proxy.get("equity/fundamental/multiples",   qs, 250000);
     status = ob_worst_status({rk.status, rm.status});
 
     const std::string km = ob_results_array(rk.body);
@@ -889,7 +889,7 @@ static std::string build_dvd_json(
     }
     std::string qs = "symbol=";
     qs += it->second;
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "equity/fundamental/dividends", qs, /*ttl_ms=*/250000);
     status = r.status;
     return r.body;
@@ -910,9 +910,9 @@ static std::string build_ee_json(
     }
     std::string qs = "symbol=";
     qs += it->second;
-    auto& proxy = OpenBbProxy::instance();
-    const OpenBbResult rc = proxy.get("equity/estimates/consensus", qs, 250000);
-    const OpenBbResult rs = proxy.get("equity/estimates/surprise",  qs, 250000);
+    auto& proxy = MarketDataProxy::instance();
+    const MarketDataResult rc = proxy.get("equity/estimates/consensus", qs, 250000);
+    const MarketDataResult rs = proxy.get("equity/estimates/surprise",  qs, 250000);
     status = ob_worst_status({rc.status, rs.status});
 
     const std::string cs = ob_results_array(rc.body);
@@ -954,7 +954,7 @@ static std::string build_ni_json(
     char qbuf[160];
     std::snprintf(qbuf, sizeof(qbuf), "symbol=%s&limit=%d",
                   it->second.c_str(), limit);
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "news/company", qbuf, /*ttl_ms=*/25000);
     status = r.status;
     return r.body;
@@ -988,7 +988,7 @@ static std::string build_gp_or_hp_json(
     auto ed = q.find("end_date");
     if (ed != q.end() && !ed->second.empty()) { qs += "&end_date=";   qs += ed->second; }
 
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "equity/price/historical", qs, /*ttl_ms=*/25000);
     status = r.status;
     return r.body;
@@ -1014,7 +1014,7 @@ static std::string build_qr_json(
     qs += it->second;
     qs += "&provider=";
     qs += provider;
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "equity/price/quote", qs, /*ttl_ms=*/4000);
     status = r.status;
     return r.body;
@@ -1034,7 +1034,7 @@ static std::string build_des_json(
     }
     std::string qs = "symbol=";
     qs += it->second;
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "equity/profile", qs, /*ttl_ms=*/250000);
     status = r.status;
     return r.body;
@@ -1070,7 +1070,7 @@ static std::string build_fxc_json(
     qs += symbols;
     qs += "&provider=";
     qs += provider;
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "currency/price/quote", qs, /*ttl_ms=*/4000);
     status = r.status;
     return r.body;
@@ -1105,7 +1105,7 @@ static std::string build_crypto_json(
     qs += symbols;
     qs += "&provider=";
     qs += provider;
-    const OpenBbResult r = OpenBbProxy::instance().get(
+    const MarketDataResult r = MarketDataProxy::instance().get(
         "crypto/price/quote", qs, /*ttl_ms=*/4000);
     status = r.status;
     return r.body;
