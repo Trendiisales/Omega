@@ -507,9 +507,17 @@ void OmegaApiServer::run(int port)
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
-    // 127.0.0.1 ONLY -- this is the security boundary that lets us run a
-    // hand-rolled HTTP/1.1 stack without an auth layer.
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    // INADDR_ANY (all interfaces) -- matches src/gui/OmegaTelemetryServer.cpp
+    // (which binds the existing :7779 / :7780 publicly the same way) so the
+    // omega-terminal UI is reachable from a browser at http://VPS_IP:7781/.
+    //
+    // Security: this exposes the JSON read-API publicly with no auth, same
+    // as the legacy telemetry server. To restrict source IPs, add a Windows
+    // Firewall rule on port 7781 (out of scope for this binary). The original
+    // 127.0.0.1-only design (Step 2) assumed Vite proxy from a developer Mac
+    // would be the only consumer; serving the UI from this same server made
+    // that assumption obsolete (2026-05-01).
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port        = htons(static_cast<u_short>(port));
 
     if (bind(server_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR ||
@@ -520,7 +528,7 @@ void OmegaApiServer::run(int port)
         return;
     }
 
-    std::cout << "[OmegaApi] port " << port << " (loopback)\n" << std::flush;
+    std::cout << "[OmegaApi] port " << port << " (all interfaces)\n" << std::flush;
 
     while (running_.load()) {
         sockaddr_in ca{};

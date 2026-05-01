@@ -1,6 +1,6 @@
 #pragma once
 // ==============================================================================
-// OmegaApiServer -- HTTP/1.1 :7781 (loopback only)
+// OmegaApiServer -- HTTP/1.1 :7781 (all interfaces, since 2026-05-01)
 //
 // Step 2 of the Omega Terminal build plan (docs/SESSION_2026-05-01_HANDOFF.md).
 // Serves a JSON read-API for the new omega-terminal/ React UI. Runs alongside
@@ -19,9 +19,13 @@
 //              via their own internal mutexes; no shared snap_ pointer needed).
 //   running_ is std::atomic<bool> -- correct for cross-thread stop signal.
 //
-// Bind: 127.0.0.1 only. The Vite dev server proxies /api/v1/omega/* to this
-// port; nothing outside the host should ever reach it. The server is gated
-// off in backtest builds (#ifndef OMEGA_BACKTEST in OmegaApiServer.cpp).
+// Bind: 0.0.0.0 (all interfaces) since 2026-05-01 -- the server now also
+// serves the omega-terminal React build at /, so the UI is reachable in any
+// browser at http://VPS_IP:7781/. Security parity with the legacy
+// OmegaTelemetryServer which has been publicly bound forever; restrict
+// source IPs via a Windows Firewall rule on :7781 if needed. The server is
+// gated off in backtest builds (#ifndef OMEGA_BACKTEST in
+// OmegaApiServer.cpp).
 //
 // Implementation idioms mirror OmegaTelemetryServer.cpp: hand-rolled BSD
 // sockets + Winsock, no third-party HTTP/JSON libs. Same SO_REUSEADDR +
