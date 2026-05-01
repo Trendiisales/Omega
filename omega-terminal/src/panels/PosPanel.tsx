@@ -11,6 +11,12 @@
 // Step 3 ships only the HybridGold position source on the engine side.
 // Other engines (Tsmom/Donchian/EmaPullback/TrendRider/HBI) will populate
 // this table once their snapshotters are added in a follow-up session.
+//
+// Step 4 update:
+//   - Row click navigates the active workspace to `LDG <engine>` so the
+//     user can see the position's full trade history. Symbol-level drill
+//     would require LDG to accept a symbol filter, which it does (the LDG
+//     panel's args resolver treats unknown engines as symbols).
 
 import { useCallback, useMemo, useState } from 'react';
 import { getPositions } from '@/api/omega';
@@ -19,6 +25,7 @@ import { usePanelData } from '@/hooks/usePanelData';
 
 interface Props {
   args: string[];
+  onNavigate?: (target: string) => void;
 }
 
 const POSITION_POLL_MS = 2000;
@@ -26,7 +33,7 @@ const POSITION_POLL_MS = 2000;
 type SortKey = 'engine' | 'symbol' | 'side' | 'size' | 'entry' | 'current' | 'unrealized_pnl' | 'mfe' | 'mae';
 type SortDir = 'asc' | 'desc';
 
-export function PosPanel({ args }: Props) {
+export function PosPanel({ args, onNavigate }: Props) {
   const filter = (args[0] ?? '').toUpperCase();
   const [sortKey, setSortKey] = useState<SortKey>('unrealized_pnl');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -141,7 +148,16 @@ export function PosPanel({ args }: Props) {
               </td></tr>
             )}
             {visible.map((p, idx) => (
-              <tr key={`${p.engine}-${p.symbol}-${idx}`} className="border-b border-amber-900/40">
+              <tr
+                key={`${p.engine}-${p.symbol}-${idx}`}
+                onClick={() => {
+                  // Step 4: row click drills into the engine's trade
+                  // ledger. Engine names contain no whitespace so a single
+                  // positional arg is unambiguous.
+                  if (onNavigate) onNavigate(`LDG ${p.engine}`);
+                }}
+                className="cursor-pointer border-b border-amber-900/40 transition-colors hover:bg-amber-950/40"
+              >
                 <td className="px-3 py-2 font-bold text-amber-300">{p.engine}</td>
                 <td className="px-3 py-2 text-amber-400">{p.symbol}</td>
                 <td className={`px-3 py-2 ${p.side === 'LONG' ? 'up' : 'down'}`}>

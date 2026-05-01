@@ -9,9 +9,12 @@
 //     insensitive substring match on Name. Useful for "ENG HBG" or "ENG Tsmom".
 //   - 2 s polling.
 //
-// Future Step 4 hook: row click should navigate the workspace to
-// `LDG <engine>` once LDG panel is live. Today the click highlights the row
-// and prints the action to console as a no-op stub.
+// Step 4 update:
+//   - Row click navigates the active workspace to `LDG <engine_name>`,
+//     replacing the Step-3 console.log stub. Highlight state is retained
+//     for the brief moment before PanelHost swaps the active panel.
+//   - `onNavigate` is now an optional prop (PanelHost wires it; tests /
+//     storybook can mount EngPanel without it for static rendering).
 
 import { useCallback, useMemo, useState } from 'react';
 import { getEngines } from '@/api/omega';
@@ -20,6 +23,7 @@ import { usePanelData } from '@/hooks/usePanelData';
 
 interface Props {
   args: string[];
+  onNavigate?: (target: string) => void;
 }
 
 const ENGINE_POLL_MS = 2000;
@@ -27,7 +31,7 @@ const ENGINE_POLL_MS = 2000;
 type SortKey = 'name' | 'mode' | 'state' | 'enabled' | 'last_signal_ts' | 'last_pnl';
 type SortDir = 'asc' | 'desc';
 
-export function EngPanel({ args }: Props) {
+export function EngPanel({ args, onNavigate }: Props) {
   const filter = (args[0] ?? '').toUpperCase();
   const [sortKey, setSortKey] = useState<SortKey>('last_signal_ts');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -75,7 +79,7 @@ export function EngPanel({ args }: Props) {
         </h2>
         <p className="mt-2 font-mono text-xs text-amber-500/80">
           Per-engine status, last signal, and P&amp;L attribution. Click a column
-          header to sort. Click a row to highlight (drill-down lands in step 4).
+          header to sort. Click a row to drill into the engine's trade ledger.
           {filter && (
             <>
               {' '}&middot; filter: <span className="text-amber-300">{filter}</span>
@@ -121,9 +125,10 @@ export function EngPanel({ args }: Props) {
                 key={e.name}
                 onClick={() => {
                   setHighlight(e.name);
-                  // Step 4 will navigate to LDG <engine>; for now, no-op.
-                  // eslint-disable-next-line no-console
-                  console.log(`[ENG] row clicked: ${e.name} (drill-down lands in step 4)`);
+                  // Step 4: navigate to LDG <engine> via the workspace
+                  // router. Engine names contain no whitespace so passing
+                  // them as a single positional arg is unambiguous.
+                  if (onNavigate) onNavigate(`LDG ${e.name}`);
                 }}
                 className={`cursor-pointer border-b border-amber-900/40 transition-colors hover:bg-amber-950/40 ${
                   highlight === e.name ? 'bg-amber-900/40' : ''

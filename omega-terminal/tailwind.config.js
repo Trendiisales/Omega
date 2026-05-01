@@ -1,31 +1,74 @@
 /** @type {import('tailwindcss').Config} */
 //
-// 2026-05-01 colour overhaul:
-//   The original Step-1 palette was straight Tailwind amber-on-black, which
-//   read as "ugly hazard sign" rather than "trading terminal". This config
-//   overrides Tailwind's default `amber` scale with a Bloomberg-style palette
-//   derived from src/gui (the existing Omega GUI on :7779), so every existing
-//   `text-amber-XXX` / `bg-amber-XXX` / `border-amber-XXX` class in the
-//   components automatically picks up the new look without component edits.
+// Tailwind config — Omega palette remap.
 //
-//   Mapping of the amber scale:
-//     amber-50 / 100   bright off-white  (rare, for max-contrast overlays)
-//     amber-200 / 300  gold accent        (highlights, active states)
-//     amber-400        primary text       (off-white, was bright amber)
-//     amber-500        secondary text     (muted blue-gray)
-//     amber-600        dim labels         (further muted)
-//     amber-700        borders            (subtle white tint, low alpha)
-//     amber-800        raised borders     (slightly stronger)
-//     amber-900        panel bg           (darker than body)
-//     amber-950        deepest bg         (page chrome)
+// The Step-1 commit kept Tailwind's stock amber palette, which renders as
+// bright orange-yellow ("terminal amber"). The 2026-05-01 redesign of
+// `src/index.css` documented an intent to replace that with the Bloomberg-
+// style palette from the existing Omega GUI on :7779
+// (source: include/OmegaIndexHtml.hpp), but the remap itself never landed
+// in the Tailwind config. As a result every panel that wrote
+// `text-amber-300`, `border-amber-700/40`, `bg-amber-950/40`, etc., still
+// rendered in stock amber.
 //
-//   Plus two semantic colours for market-data display in Step 3 panels:
-//     up    green  (#00d97e)  bid / profit / LIVE / position long
-//     down  red    (#ff3355)  ask / loss / DOWN / position short
-//   Use as: text-up, bg-up/10, border-up/40, etc. (Tailwind opacity syntax).
+// This config performs that remap centrally so panel components don't need
+// to change. Each `amber-X` step is replaced with the closest semantic
+// position in the Omega palette:
 //
-//   Source palette: include/OmegaIndexHtml.hpp ::root, lines 21-28.
+//   amber-200 -> #ffe680  gold2  (brightest accent)
+//   amber-300 -> #f5c842  gold   (primary accent: panel titles, big P&L
+//                                  numbers, engine names, active values)
+//   amber-400 -> #e8edf5  t1     (off-white primary text — most cells)
+//   amber-500 -> #8a9ab8  t2     (muted blue-gray — column headers, labels)
+//   amber-600 -> #6a7898  ----   (intermediate dim — uppercase mini labels)
+//   amber-700 -> #4a5878  t3     (very dim — status pills, "step N" chips)
+//   amber-800 -> #2a3548  ----   (dim borders)
+//   amber-900 -> #1a2332  ----   (raised surface / hover background)
+//   amber-950 -> #0d1219  bg2    (panel surface)
 //
+// Tailwind v3's opacity modifier (`bg-amber-950/40`, `border-amber-700/60`,
+// `hover:bg-amber-900/40`) keeps working with hex inputs — the engine
+// applies the opacity to whichever hex sits at that palette step.
+//
+// The semantic CSS classes in `src/index.css` (.up / .down / .gold / .dim)
+// reference the same hex values via CSS variables, so a developer can use
+// either approach interchangeably and they will look identical.
+//
+// If a future panel needs the original stock-Tailwind amber for some
+// specific visual effect (it shouldn't), it can write the hex directly via
+// arbitrary-value syntax: `text-[#fcd34d]`.
+
+const omegaPalette = {
+  // Step-aligned amber palette — REMAPPED to Omega palette.
+  amber: {
+    200: '#ffe680', // gold2
+    300: '#f5c842', // gold (primary accent)
+    400: '#e8edf5', // t1 (primary text)
+    500: '#8a9ab8', // t2 (muted secondary)
+    600: '#6a7898', // intermediate dim
+    700: '#4a5878', // t3 (very dim)
+    800: '#2a3548', // dim border
+    900: '#1a2332', // raised / hover surface
+    950: '#0d1219', // bg2 (panel surface)
+  },
+  // Semantic aliases used directly by some components.
+  terminal: {
+    bg:      '#05080d', // bg0
+    surface: '#0d1219', // bg2
+    border:  '#2a3548',
+    text:    '#e8edf5', // t1
+    dim:     '#8a9ab8', // t2
+    accent:  '#f5c842', // gold
+  },
+  // Up / down convenience for arbitrary uses (the .up / .down CSS classes
+  // in index.css are the canonical surface; these are extras for places
+  // where a Tailwind class is more ergonomic).
+  up:   '#00d97e', // green
+  down: '#ff3355', // red
+  gold: '#f5c842',
+  dim:  '#8a9ab8',
+};
+
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
@@ -44,67 +87,11 @@ export default {
           'monospace',
         ],
       },
-      colors: {
-        // Override Tailwind's amber palette with the Omega trading-terminal
-        // colours. Existing components keep their amber-X classes; the visual
-        // result is now blue-gray text on near-black with a gold accent.
-        amber: {
-          50:  '#f5f7fa',
-          100: '#e8edf5',
-          200: '#ffe680', // gold-2 — bright accent
-          300: '#f5c842', // gold   — primary accent (highlights)
-          400: '#e8edf5', // t1     — primary text (off-white)
-          500: '#8a9ab8', // t2     — secondary text (muted)
-          600: '#4a5878', // t3     — dim labels
-          700: '#1f2a3d', // border-strong (used for borders + raised chrome)
-          800: '#161e2c', // bg3
-          900: '#111720', // bg3 (panel bg)
-          950: '#0d1219', // bg2 (deepest)
-        },
-
-        // Semantic market-data colours (Step 3 panels: CC, ENG, POS).
-        // Match Omega's --green / --red exactly.
-        up:   '#00d97e',
-        down: '#ff3355',
-
-        // Convenience aliases (kept from the original config but pointed at
-        // the new palette so direct references like text-terminal-text work).
-        terminal: {
-          bg:      '#05080d', // --bg0
-          surface: '#0d1219', // --bg2
-          border:  '#1f2a3d',
-          text:    '#e8edf5', // --t1
-          dim:     '#4a5878', // --t3
-          accent:  '#f5c842', // --gold
-        },
-
-        // Direct Omega palette under semantic names. New code (Step 3+)
-        // should prefer these over the amber-X overrides.
-        omega: {
-          bg0:    '#05080d',
-          bg1:    '#090d14',
-          bg2:    '#0d1219',
-          bg3:    '#111720',
-          t1:     '#e8edf5',
-          t2:     '#8a9ab8',
-          t3:     '#4a5878',
-          gold:   '#f5c842',
-          gold2:  '#ffe680',
-          green:  '#00d97e',
-          red:    '#ff3355',
-          amber:  '#ff8800',
-          blue:   '#2ea8ff',
-          purple: '#a47fff',
-          cyan:   '#00c8f0',
-          teal:   '#00e0b0',
-        },
-      },
+      colors: omegaPalette,
       boxShadow: {
-        // Was: amber glow. Now: subtle gold halo for active/focus states,
-        // matching Omega's accent treatment.
+        // Gold-accent glow for focused rows / hover halos. Replaces the
+        // amber glow used in the Step-1 config.
         glow: '0 0 0 1px rgba(245,200,66,0.25), 0 0 12px rgba(245,200,66,0.15)',
-        'glow-up':   '0 0 0 1px rgba(0,217,126,0.3), 0 0 10px rgba(0,217,126,0.15)',
-        'glow-down': '0 0 0 1px rgba(255,51,85,0.3), 0 0 10px rgba(255,51,85,0.15)',
       },
     },
   },

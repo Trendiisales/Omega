@@ -12,14 +12,22 @@
 //     bar (e.g. "POS HBG" -> args: ["HBG"]). The active workspace's args are
 //     forwarded to PanelHost so the live panel can use them for filters.
 //   - HomePanel tile clicks dispatch with empty args (no command-bar typing).
-//   - Navigation by code-only (HomePanel, programmatic) preserves args = [].
+//
+// Step 4 update:
+//   - `navigate` now accepts a raw target string (e.g. "LDG HybridGold" or
+//     "TRADE 12345") so panel-internal navigation (ENG row click -> LDG,
+//     POS row click -> LDG, LDG row click -> TRADE) can carry arguments.
+//     The router's resolveCode already parses positional args; we just
+//     widen the input type from FunctionCode to string and let the router
+//     do the work.
+//   - Header bumped to "step 4".
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommandBar } from '@/components/CommandBar';
 import { WorkspaceTabs } from '@/components/WorkspaceTabs';
 import { PanelHost } from '@/panels/PanelHost';
 import { resolveCode } from '@/router/functionCodes';
-import type { FunctionCode, RouteResult, Workspace } from '@/types';
+import type { RouteResult, Workspace } from '@/types';
 
 function makeId(): string {
   return `ws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -53,11 +61,14 @@ export default function App() {
     [activeId]
   );
 
-  // Navigate by bare code (HomePanel tile clicks, ENG/POS row clicks in
-  // future panels). Args reset to empty.
+  // Navigate by raw target string. Accepts either a bare code ("HOME",
+  // "LDG") or a code-with-args string ("LDG HybridGold", "TRADE 12345"),
+  // matching the same surface CommandBar dispatches through. The router
+  // parses head + args identically in both paths, keeping the contract
+  // single-sourced.
   const navigate = useCallback(
-    (code: FunctionCode) => {
-      const result = resolveCode(code);
+    (target: string) => {
+      const result = resolveCode(target);
       dispatchResult(result);
     },
     [dispatchResult]
@@ -112,7 +123,7 @@ export default function App() {
             OMEGA
           </span>
           <span className="font-mono text-[10px] uppercase tracking-widest text-amber-600">
-            terminal &middot; v0.1 &middot; step 3
+            terminal &middot; v0.1 &middot; step 4
           </span>
         </div>
         <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-widest">
