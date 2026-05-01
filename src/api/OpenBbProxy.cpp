@@ -271,11 +271,23 @@ OpenBbResult OpenBbProxy::fetch_remote(const std::string& url)
 // developed and verified without an OpenBB account. Provider field is set to
 // "mock" so a panel can surface "MOCK" in the corner if it wants.
 //
-// Routes covered (matches the four Step-5 routes in OmegaApiServer.cpp):
-//   news/world                                     -> INTEL
-//   fixedincome/government/treasury_rates          -> CURV
-//   equity/price/quote                             -> WEI
-//   equity/discovery/{active|gainers|losers}       -> MOV
+// Routes covered:
+//   Step 5:
+//     news/world                                     -> INTEL
+//     fixedincome/government/treasury_rates          -> CURV
+//     equity/price/quote                             -> WEI (also QR in Step 6)
+//     equity/discovery/{active|gainers|losers}       -> MOV
+//   Step 6:
+//     derivatives/options/chains                     -> OMON
+//     equity/fundamental/{income,balance,cash}       -> FA components
+//     equity/fundamental/{key_metrics,multiples}     -> KEY components
+//     equity/fundamental/dividends                   -> DVD
+//     equity/estimates/{consensus,surprise}          -> EE components
+//     news/company                                   -> NI
+//     equity/price/historical                        -> GP / HP
+//     equity/profile                                 -> DES
+//     currency/price/quote                           -> FXC
+//     crypto/price/quote                             -> CRYPTO
 // Anything else returns an empty results array with provider "mock".
 //
 // Raw-string delimiter note:
@@ -402,6 +414,277 @@ OpenBbResult OpenBbProxy::fetch_mock(const std::string& route,
             sgn *  2.40, sgn * 1.3358,
             sgn *  1.95, sgn * 1.1502);
         return OpenBbResult{200, envelope(std::string(buf)), false};
+    }
+
+    // ---------------------------------------------------------------------
+    // Step 6: BB function suite mocks
+    // ---------------------------------------------------------------------
+
+    if (route == "derivatives/options/chains") {
+        // OMON: small synthetic chain. Two expiries x five strikes x call+put.
+        std::string sym = "MOCK";
+        const std::string needle = "symbol=";
+        const auto pos = query.find(needle);
+        if (pos != std::string::npos) {
+            const auto end = query.find('&', pos);
+            sym = query.substr(pos + needle.size(),
+                               (end == std::string::npos)
+                                 ? std::string::npos
+                                 : end - pos - needle.size());
+        }
+        std::string results = "[";
+        const char* expiries[2] = { "2026-06-20", "2026-09-19" };
+        const double strikes[5] = { 90, 95, 100, 105, 110 };
+        bool first = true;
+        for (size_t e = 0; e < 2; ++e) {
+            for (size_t s = 0; s < 5; ++s) {
+                for (int t = 0; t < 2; ++t) {
+                    if (!first) results += ",";
+                    first = false;
+                    const bool is_call = (t == 0);
+                    const double k = strikes[s];
+                    const double iv = 0.22 + 0.01 * s + 0.05 * e;
+                    const double bid = is_call ? std::max(0.05, 100.0 - k + 1.5) : std::max(0.05, k - 100.0 + 1.5);
+                    const double ask = bid + 0.10;
+                    const double mid = (bid + ask) / 2.0;
+                    const double oi  = 1500 + 350 * (5 - (int)s);
+                    const double vol = 250 + 80 * (int)s;
+                    const double delta = is_call ? std::max(0.05, 1.0 - 0.1 * (k - 95)) : std::min(-0.05, -1.0 + 0.1 * (k - 95));
+                    char buf[512];
+                    std::snprintf(buf, sizeof(buf),
+                        R"X({"underlying_symbol":"%s","contract_symbol":"%s%s%s%05d","expiration":"%s",)X"
+                        R"X("strike":%.2f,"option_type":"%s","bid":%.2f,"ask":%.2f,"last_trade_price":%.2f,)X"
+                        R"X("implied_volatility":%.4f,"open_interest":%.0f,"volume":%.0f,"delta":%.4f})X",
+                        sym.c_str(), sym.c_str(), expiries[e], is_call ? "C" : "P", (int)(k * 1000),
+                        expiries[e], k, is_call ? "call" : "put", bid, ask, mid, iv, oi, vol, delta);
+                    results += buf;
+                }
+            }
+        }
+        results += "]";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/fundamental/income") {
+        const std::string results = R"X([
+  {"period_ending":"2025-12-31","fiscal_period":"FY2025","revenue":390000000000,"cost_of_revenue":215000000000,"gross_profit":175000000000,"operating_income":118000000000,"ebitda":133000000000,"net_income":98000000000,"eps_basic":6.40,"eps_diluted":6.36},
+  {"period_ending":"2024-12-31","fiscal_period":"FY2024","revenue":383000000000,"cost_of_revenue":214000000000,"gross_profit":169000000000,"operating_income":114000000000,"ebitda":129000000000,"net_income":97000000000,"eps_basic":6.10,"eps_diluted":6.05},
+  {"period_ending":"2023-12-31","fiscal_period":"FY2023","revenue":366000000000,"cost_of_revenue":213000000000,"gross_profit":153000000000,"operating_income":108000000000,"ebitda":123000000000,"net_income":94000000000,"eps_basic":5.90,"eps_diluted":5.85}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/fundamental/balance") {
+        const std::string results = R"X([
+  {"period_ending":"2025-12-31","fiscal_period":"FY2025","total_assets":350000000000,"total_current_assets":140000000000,"cash_and_short_term_investments":62000000000,"total_liabilities":260000000000,"total_current_liabilities":150000000000,"long_term_debt":95000000000,"short_term_debt":12000000000,"total_equity":90000000000},
+  {"period_ending":"2024-12-31","fiscal_period":"FY2024","total_assets":340000000000,"total_current_assets":135000000000,"cash_and_short_term_investments":61000000000,"total_liabilities":255000000000,"total_current_liabilities":148000000000,"long_term_debt":97000000000,"short_term_debt":11000000000,"total_equity":85000000000},
+  {"period_ending":"2023-12-31","fiscal_period":"FY2023","total_assets":332000000000,"total_current_assets":131000000000,"cash_and_short_term_investments":60000000000,"total_liabilities":250000000000,"total_current_liabilities":146000000000,"long_term_debt":99000000000,"short_term_debt":10000000000,"total_equity":82000000000}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/fundamental/cash") {
+        const std::string results = R"X([
+  {"period_ending":"2025-12-31","fiscal_period":"FY2025","cash_from_operating_activities":120000000000,"cash_from_investing_activities":-25000000000,"cash_from_financing_activities":-95000000000,"capital_expenditure":-12000000000,"free_cash_flow":108000000000},
+  {"period_ending":"2024-12-31","fiscal_period":"FY2024","cash_from_operating_activities":115000000000,"cash_from_investing_activities":-22000000000,"cash_from_financing_activities":-92000000000,"capital_expenditure":-11000000000,"free_cash_flow":104000000000},
+  {"period_ending":"2023-12-31","fiscal_period":"FY2023","cash_from_operating_activities":110000000000,"cash_from_investing_activities":-21000000000,"cash_from_financing_activities":-89000000000,"capital_expenditure":-11000000000,"free_cash_flow":99000000000}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/fundamental/key_metrics") {
+        const std::string results = R"X([
+  {"market_cap":2900000000000,"enterprise_value":2950000000000,"pe_ratio":29.5,"forward_pe":27.1,"peg_ratio":2.0,"price_to_book":42.0,"price_to_sales":7.4,"ev_to_sales":7.6,"ev_to_ebitda":22.2,"dividend_yield":0.0050,"payout_ratio":0.16,"beta":1.20,"return_on_equity":1.55,"return_on_assets":0.28,"debt_to_equity":1.18,"current_ratio":0.92,"quick_ratio":0.88,"profit_margin":0.25,"operating_margin":0.30}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/fundamental/multiples") {
+        const std::string results = R"X([
+  {"pe_ratio_ttm":29.5,"ev_to_ebitda_ttm":22.2,"price_to_sales_ttm":7.4,"price_to_book_quarterly":42.0,"earnings_yield_ttm":0.034,"free_cash_flow_yield_ttm":0.037}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/fundamental/dividends") {
+        const std::string results = R"X([
+  {"ex_dividend_date":"2026-04-25","amount":0.25,"record_date":"2026-04-26","payment_date":"2026-05-15","declaration_date":"2026-04-10"},
+  {"ex_dividend_date":"2026-01-25","amount":0.24,"record_date":"2026-01-26","payment_date":"2026-02-15","declaration_date":"2026-01-10"},
+  {"ex_dividend_date":"2025-10-25","amount":0.24,"record_date":"2025-10-26","payment_date":"2025-11-15","declaration_date":"2025-10-10"},
+  {"ex_dividend_date":"2025-07-25","amount":0.23,"record_date":"2025-07-26","payment_date":"2025-08-15","declaration_date":"2025-07-10"},
+  {"ex_dividend_date":"2025-04-25","amount":0.23,"record_date":"2025-04-26","payment_date":"2025-05-15","declaration_date":"2025-04-10"}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/estimates/consensus") {
+        const std::string results = R"X([
+  {"symbol":"MOCK","fiscal_period":"Q2","fiscal_year":2026,"eps_avg":1.65,"eps_high":1.78,"eps_low":1.52,"revenue_avg":98000000000,"revenue_high":102000000000,"revenue_low":94000000000,"number_of_analysts":36}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/estimates/surprise") {
+        const std::string results = R"X([
+  {"symbol":"MOCK","date":"2026-04-30","fiscal_period":"Q1","fiscal_year":2026,"eps_actual":1.71,"eps_estimate":1.62,"eps_surprise":0.09,"surprise_percent":5.55},
+  {"symbol":"MOCK","date":"2026-01-31","fiscal_period":"Q4","fiscal_year":2025,"eps_actual":2.18,"eps_estimate":2.10,"eps_surprise":0.08,"surprise_percent":3.81},
+  {"symbol":"MOCK","date":"2025-10-30","fiscal_period":"Q3","fiscal_year":2025,"eps_actual":1.49,"eps_estimate":1.55,"eps_surprise":-0.06,"surprise_percent":-3.87},
+  {"symbol":"MOCK","date":"2025-07-31","fiscal_period":"Q2","fiscal_year":2025,"eps_actual":1.40,"eps_estimate":1.36,"eps_surprise":0.04,"surprise_percent":2.94},
+  {"symbol":"MOCK","date":"2025-04-30","fiscal_period":"Q1","fiscal_year":2025,"eps_actual":1.53,"eps_estimate":1.50,"eps_surprise":0.03,"surprise_percent":2.00}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "news/company") {
+        const std::string results = R"X([
+  {"title":"MOCK Corp announces Q2 product launch","text":"Synthetic Step-6 mock body for the NI panel.","date":"2026-05-01T13:30:00Z","url":"https://example.com/ni-1","source":"MOCK","symbols":["MOCK"]},
+  {"title":"Analyst upgrade lifts MOCK to $200 PT","text":"Synthetic Step-6 mock body.","date":"2026-05-01T12:00:00Z","url":"https://example.com/ni-2","source":"MOCK","symbols":["MOCK"]},
+  {"title":"MOCK CFO sells 10k shares in pre-arranged plan","text":"Synthetic Step-6 mock body.","date":"2026-05-01T11:00:00Z","url":"https://example.com/ni-3","source":"MOCK","symbols":["MOCK"]},
+  {"title":"Insider buying continues across MOCK suppliers","text":"Synthetic Step-6 mock body.","date":"2026-04-30T19:00:00Z","url":"https://example.com/ni-4","source":"MOCK","symbols":["MOCK"]},
+  {"title":"MOCK and partner ink multi-year cloud deal","text":"Synthetic Step-6 mock body.","date":"2026-04-30T16:00:00Z","url":"https://example.com/ni-5","source":"MOCK","symbols":["MOCK"]}
+])X";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/price/historical") {
+        // Synthetic 60-bar daily series with a gentle uptrend + noise.
+        std::string results = "[";
+        const int N = 60;
+        double price = 150.0;
+        bool first = true;
+        for (int i = N - 1; i >= 0; --i) {
+            // Walk-back: bar i = N-1 is the most recent; bar 0 is the oldest.
+            // To produce ascending-time output we generate from oldest forward.
+        }
+        for (int i = 0; i < N; ++i) {
+            if (!first) results += ",";
+            first = false;
+            // Days back from today: (N-1-i).
+            const int days_back = N - 1 - i;
+            char date[16];
+            // Use a simple synthetic date stamp; UI parses Date.parse() so the
+            // exact day-of-week is irrelevant for chart rendering.
+            std::snprintf(date, sizeof(date), "2026-%02d-%02d",
+                          ((days_back / 30) ? 3 : 4),
+                          1 + (days_back % 28));
+            const double bar_drift = (i - N / 2) * 0.15;
+            const double noise     = ((i * 31) % 17) / 10.0 - 0.85;
+            const double close = price + bar_drift + noise;
+            const double open  = close - 0.30;
+            const double high  = std::max(open, close) + 0.85;
+            const double low   = std::min(open, close) - 0.85;
+            const double vol   = 1500000 + ((i * 137) % 700000);
+            char buf[256];
+            std::snprintf(buf, sizeof(buf),
+                R"X({"date":"%s","open":%.2f,"high":%.2f,"low":%.2f,"close":%.2f,"volume":%.0f,"adj_close":%.2f})X",
+                date, open, high, low, close, vol, close);
+            results += buf;
+        }
+        results += "]";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "equity/profile") {
+        std::string sym = "MOCK";
+        const std::string needle = "symbol=";
+        const auto pos = query.find(needle);
+        if (pos != std::string::npos) {
+            const auto end = query.find('&', pos);
+            sym = query.substr(pos + needle.size(),
+                               (end == std::string::npos)
+                                 ? std::string::npos
+                                 : end - pos - needle.size());
+        }
+        char buf[1024];
+        std::snprintf(buf, sizeof(buf),
+            R"X([{"symbol":"%s","name":"%s Corp (mock)","description":"Synthetic Step-6 mock company used by the DES panel for local development without an OpenBB account. Replace with live data by setting OMEGA_OPENBB_TOKEN on the host.","industry":"Software - Infrastructure","sector":"Technology","ipo_date":"2010-01-15","ceo":"Jane Doe","hq_country":"United States","hq_state":"California","hq_city":"Cupertino","employees":154000,"website":"https://example.com","exchange":"NASDAQ","currency":"USD","market_cap":2900000000000}])X",
+            sym.c_str(), sym.c_str());
+        return OpenBbResult{200, envelope(std::string(buf)), false};
+    }
+
+    if (route == "currency/price/quote") {
+        std::string symbols = "EURUSD,GBPUSD,USDJPY";
+        const std::string needle = "symbol=";
+        const auto pos = query.find(needle);
+        if (pos != std::string::npos) {
+            const auto end = query.find('&', pos);
+            symbols = query.substr(pos + needle.size(),
+                                   (end == std::string::npos)
+                                     ? std::string::npos
+                                     : end - pos - needle.size());
+        }
+        std::string results = "[";
+        size_t start = 0;
+        bool first = true;
+        while (start <= symbols.size()) {
+            const auto comma = symbols.find(',', start);
+            const std::string sym = symbols.substr(
+                start,
+                (comma == std::string::npos) ? std::string::npos : comma - start);
+            if (!sym.empty()) {
+                if (!first) results += ",";
+                first = false;
+                int seed = 0;
+                for (char c : sym) seed = (seed * 31 + (unsigned char)c) & 0xFFF;
+                const double price  = 0.5 + (seed % 200) / 100.0;
+                const double change = ((seed % 21) - 10) / 10000.0;
+                const double pct    = change / price * 100.0;
+                char buf[320];
+                std::snprintf(buf, sizeof(buf),
+                    R"X({"symbol":"%s","name":"%s (mock)","last_price":%.5f,"bid":%.5f,"ask":%.5f,)X"
+                    R"X("change":%.5f,"change_percent":%.4f,"volume":%d})X",
+                    sym.c_str(), sym.c_str(), price, price - 0.00005, price + 0.00005,
+                    change, pct, 250000 + (seed * 11));
+                results += buf;
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        results += "]";
+        return OpenBbResult{200, envelope(results), false};
+    }
+
+    if (route == "crypto/price/quote") {
+        std::string symbols = "BTC-USD,ETH-USD,SOL-USD";
+        const std::string needle = "symbol=";
+        const auto pos = query.find(needle);
+        if (pos != std::string::npos) {
+            const auto end = query.find('&', pos);
+            symbols = query.substr(pos + needle.size(),
+                                   (end == std::string::npos)
+                                     ? std::string::npos
+                                     : end - pos - needle.size());
+        }
+        std::string results = "[";
+        size_t start = 0;
+        bool first = true;
+        while (start <= symbols.size()) {
+            const auto comma = symbols.find(',', start);
+            const std::string sym = symbols.substr(
+                start,
+                (comma == std::string::npos) ? std::string::npos : comma - start);
+            if (!sym.empty()) {
+                if (!first) results += ",";
+                first = false;
+                int seed = 0;
+                for (char c : sym) seed = (seed * 31 + (unsigned char)c) & 0xFFF;
+                const double price  = 100.0 + (seed * 23) % 70000;
+                const double change = ((seed % 41) - 20) * 1.5;
+                const double pct    = change / price * 100.0;
+                const double mcap   = price * (10000000 + (seed * 71));
+                char buf[320];
+                std::snprintf(buf, sizeof(buf),
+                    R"X({"symbol":"%s","name":"%s (mock)","last_price":%.2f,)X"
+                    R"X("change":%.2f,"change_percent":%.4f,"volume":%d,"market_cap":%.0f})X",
+                    sym.c_str(), sym.c_str(), price, change, pct,
+                    1000000 + (seed * 211), mcap);
+                results += buf;
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        results += "]";
+        return OpenBbResult{200, envelope(results), false};
     }
 
     return OpenBbResult{200, envelope("[]"), false};

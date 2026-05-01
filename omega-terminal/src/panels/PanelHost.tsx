@@ -19,35 +19,44 @@
 //   - ENG   -> EngPanel   (row click navigates to LDG <engine>)
 //   - POS   -> PosPanel   (row click navigates to LDG <engine>)
 //
-// Step 5 routing (this commit):
+// Step 5 routing:
 //   - INTEL -> IntelPanel (OpenBB news feed; args = screen-id, default "TOP")
 //   - CURV  -> CurvPanel  (OpenBB Treasury yield curve; args = region, default US)
 //   - WEI   -> WeiPanel   (OpenBB index-ETF quotes; args = region, default US)
 //   - MOV   -> MovPanel   (OpenBB movers; args = universe, default active)
 //
-//   All four route to /api/v1/omega/{intel|curv|wei|mov} on the C++
-//   OmegaApiServer, which forwards to OpenBB Hub via OpenBbProxy. Token
-//   strategy is server-side -- the OMEGA_OPENBB_TOKEN env var lives on the
-//   host running Omega.exe and never ships in the JS bundle. Set
-//   OMEGA_OPENBB_MOCK=1 to bypass the network and render synthetic data
-//   for local dev / Step-5 verification.
+//   CURV is loaded via React.lazy + <Suspense> so the Recharts dependency is
+//   split into a separate chunk and only fetched when the user navigates to
+//   CURV.
 //
-//   Code-splitting note: CurvPanel pulls in Recharts (~330 kB raw / ~100 kB
-//   gzipped), which by itself blows past the Step-5 +60 kB raw / +15 kB
-//   gzipped bundle budget. We lazy-load it via React.lazy + Suspense so
-//   Recharts only enters the bundle when the user actually navigates to
-//   CURV; INTEL/WEI/MOV stay eagerly imported because they have no chart
-//   dependency. The Suspense fallback renders an amber-on-black "loading"
-//   strip that matches the panels' own loading aesthetic.
+// Step 6 routing (this commit):
+//   - OMON   -> OmonPanel   (options chain; args = symbol [expiry])
+//   - FA     -> FaPanel     (3-tab income/balance/cash; args = symbol)
+//   - KEY    -> KeyPanel    (key stats multi-card; args = symbol)
+//   - DVD    -> DvdPanel    (dividend history; args = symbol)
+//   - EE     -> EePanel     (consensus + surprise; args = symbol)
+//   - NI     -> NiPanel     (per-symbol news; args = symbol)
+//   - GP     -> GpPanel     (price chart; args = symbol [interval]) — LAZY
+//   - QR     -> QrPanel     (multi-symbol quote tape; args = symbol-list)
+//   - HP     -> HpPanel     (OHLCV table; args = symbol [interval])
+//   - DES    -> DesPanel    (company profile; args = symbol)
+//   - FXC    -> FxcPanel    (FX cross rates; args = pair-or-region)
+//   - CRYPTO -> CryptoPanel (crypto quotes; args = symbols-or-region)
+//   - WATCH  -> WatchPanel  (engine-cron-driven nightly screener; args = universe)
+//
+//   GP is lazy-loaded (React.lazy + <Suspense>) — same rule as CURV. Recharts
+//   stays in its existing on-demand chunk; no eager-bundle delta from
+//   re-importing it.
+//
+//   The other 12 Step-6 panels are eagerly imported. Combined with the
+//   shared chrome module (panels/_shared/PanelChrome.tsx) and the deduped
+//   helpers therein, this stays inside the +60 kB raw / +15 kB gzipped
+//   eager-bundle budget set by STEP6_OPENER.md.
 //
 // `onNavigate` widened from `(code: FunctionCode)` to `(target: string)` so
 // row clicks can carry args (e.g. "LDG HybridGold", "TRADE 12345"). The
 // router's resolveCode parses the head + args identically whether the input
 // came from the command bar or a panel-internal navigation call.
-//
-// Step 6 codes still resolve to ComingSoonPanel until their respective
-// panels land. The exhaustiveness guard at the bottom keeps future
-// FunctionCode union additions honest.
 
 import { lazy, Suspense } from 'react';
 import { PANEL_REGISTRY } from '@/router/functionCodes';
@@ -55,22 +64,38 @@ import type { FunctionCode } from '@/types';
 import { CCPanel } from './CCPanel';
 import { CellPanel } from './CellPanel';
 import { ComingSoonPanel } from './ComingSoonPanel';
+import { CryptoPanel } from './CryptoPanel';
+import { DesPanel } from './DesPanel';
+import { DvdPanel } from './DvdPanel';
+import { EePanel } from './EePanel';
 import { EngPanel } from './EngPanel';
+import { FaPanel } from './FaPanel';
+import { FxcPanel } from './FxcPanel';
 import { HelpPanel } from './HelpPanel';
 import { HomePanel } from './HomePanel';
+import { HpPanel } from './HpPanel';
 import { IntelPanel } from './IntelPanel';
+import { KeyPanel } from './KeyPanel';
 import { LdgPanel } from './LdgPanel';
 import { MovPanel } from './MovPanel';
+import { NiPanel } from './NiPanel';
+import { OmonPanel } from './OmonPanel';
 import { PosPanel } from './PosPanel';
+import { QrPanel } from './QrPanel';
 import { TradePanel } from './TradePanel';
+import { WatchPanel } from './WatchPanel';
 import { WeiPanel } from './WeiPanel';
 
-// CURV is the only Step-5 panel that pulls Recharts; lazy-load it so the
-// chart library is split into its own chunk and only fetched when the user
-// navigates to CURV. Vite emits this as a separate dist/assets/CurvPanel-
-// <hash>.js + its recharts vendor chunk -- no impact on the eager bundle.
+// CURV (Step 5) and GP (Step 6) both pull Recharts; lazy-load both so the
+// chart library lives in its own chunk and is only fetched when the user
+// navigates to one of those codes. Vite emits each as a separate
+// dist/assets/<Name>Panel-<hash>.js chunk that shares the same recharts
+// vendor chunk. No impact on the eager bundle.
 const CurvPanel = lazy(() =>
-  import('./CurvPanel').then((m) => ({ default: m.CurvPanel }))
+  import('./CurvPanel').then((m) => ({ default: m.CurvPanel })),
+);
+const GpPanel = lazy(() =>
+  import('./GpPanel').then((m) => ({ default: m.GpPanel })),
 );
 
 interface Props {
@@ -107,6 +132,27 @@ export function PanelHost({ code, args, onNavigate }: Props) {
   if (code === 'WEI')   return <WeiPanel   args={args} onNavigate={onNavigate} />;
   if (code === 'MOV')   return <MovPanel   args={args} onNavigate={onNavigate} />;
 
+  // Step 6 live panels (BB function suite).
+  if (code === 'OMON')   return <OmonPanel   args={args} onNavigate={onNavigate} />;
+  if (code === 'FA')     return <FaPanel     args={args} onNavigate={onNavigate} />;
+  if (code === 'KEY')    return <KeyPanel    args={args} onNavigate={onNavigate} />;
+  if (code === 'DVD')    return <DvdPanel    args={args} onNavigate={onNavigate} />;
+  if (code === 'EE')     return <EePanel     args={args} onNavigate={onNavigate} />;
+  if (code === 'NI')     return <NiPanel     args={args} onNavigate={onNavigate} />;
+  if (code === 'GP') {
+    return (
+      <Suspense fallback={<LazyChartFallback code="GP" />}>
+        <GpPanel args={args} onNavigate={onNavigate} />
+      </Suspense>
+    );
+  }
+  if (code === 'QR')     return <QrPanel     args={args} onNavigate={onNavigate} />;
+  if (code === 'HP')     return <HpPanel     args={args} onNavigate={onNavigate} />;
+  if (code === 'DES')    return <DesPanel    args={args} onNavigate={onNavigate} />;
+  if (code === 'FXC')    return <FxcPanel    args={args} onNavigate={onNavigate} />;
+  if (code === 'CRYPTO') return <CryptoPanel args={args} onNavigate={onNavigate} />;
+  if (code === 'WATCH')  return <WatchPanel  args={args} onNavigate={onNavigate} />;
+
   // Defensive: if the code somehow lacks a registered descriptor,
   // surface HELP. The exhaustiveness check below guards against
   // mis-typed FunctionCode literals at compile time.
@@ -116,9 +162,9 @@ export function PanelHost({ code, args, onNavigate }: Props) {
 }
 
 /**
- * Suspense fallback for lazy-loaded chart panels (currently CURV; future
- * Step-6 GP / HP will reuse). Visually matches the panels' own
- * "loading…" placeholder so the chunk download is not jarring.
+ * Suspense fallback for lazy-loaded chart panels (CURV + GP). Visually
+ * matches the panels' own "loading…" placeholder so the chunk download
+ * is not jarring.
  */
 function LazyChartFallback({ code }: { code: string }) {
   return (

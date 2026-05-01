@@ -14,6 +14,19 @@
 //   GET /api/v1/omega/curv       -> OpenBB treasury_rates envelope (Step 5)
 //   GET /api/v1/omega/wei        -> OpenBB equity quote envelope   (Step 5)
 //   GET /api/v1/omega/mov        -> OpenBB discovery envelope      (Step 5)
+//   GET /api/v1/omega/omon       -> OpenBB options chain envelope  (Step 6)
+//   GET /api/v1/omega/fa         -> merged FA envelope             (Step 6)
+//   GET /api/v1/omega/key        -> merged KEY envelope            (Step 6)
+//   GET /api/v1/omega/dvd        -> OpenBB dividends envelope      (Step 6)
+//   GET /api/v1/omega/ee         -> merged EE envelope             (Step 6)
+//   GET /api/v1/omega/ni         -> OpenBB per-symbol news envelope(Step 6)
+//   GET /api/v1/omega/gp         -> OpenBB historical bars envelope(Step 6, shared cache w/ /hp)
+//   GET /api/v1/omega/qr         -> OpenBB quote envelope (list)   (Step 6)
+//   GET /api/v1/omega/hp         -> OpenBB historical bars envelope(Step 6, shared cache w/ /gp)
+//   GET /api/v1/omega/des        -> OpenBB profile envelope        (Step 6)
+//   GET /api/v1/omega/fxc        -> OpenBB currency-quote envelope (Step 6)
+//   GET /api/v1/omega/crypto     -> OpenBB crypto-quote envelope   (Step 6)
+//   GET /api/v1/omega/watch      -> WatchScheduler snapshot        (Step 6)
 //   GET /                        -> static file from omega-terminal/dist/
 //   GET /<asset>                 -> static file (or index.html SPA fallback)
 //
@@ -64,6 +77,7 @@
 
 #include "OmegaApiServer.hpp"
 #include "OpenBbProxy.hpp"
+#include "WatchScheduler.hpp"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -188,6 +202,155 @@ static std::string json_int(int64_t v)
 static std::string json_bool(bool b)
 {
     return b ? "true" : "false";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OpenBB envelope helpers (Step 6) -- string-level extraction so we can merge
+// multiple OBBject bodies into one composite envelope without a JSON lib.
+// Same idiom as WatchScheduler: brace/bracket depth-tracking with string-aware
+// quote/escape handling. Each helper returns either a raw JSON value as a
+// string ("null", "[...]", "{...}", "\"...\"") or an empty fallback.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static std::string ob_extract_value(const std::string& body, const std::string& key)
+{
+    const std::string needle = "\"" + key + "\"";
+    auto pos = body.find(needle);
+    if (pos == std::string::npos) return std::string();
+    auto colon = body.find(':', pos + needle.size());
+    if (colon == std::string::npos) return std::string();
+    size_t i = colon + 1;
+    while (i < body.size() && (body[i] == ' ' || body[i] == '\t' || body[i] == '\n' || body[i] == '\r')) i++;
+    if (i >= body.size()) return std::string();
+    const char start = body[i];
+    if (start == '[' || start == '{') {
+        const char open  = start;
+        const char close = (open == '[') ? ']' : '}';
+        int depth = 0;
+        bool in_str = false;
+        bool esc = false;
+        const size_t s_pos = i;
+        for (; i < body.size(); ++i) {
+            const char c = body[i];
+            if (in_str) {
+                if (esc) { esc = false; continue; }
+                if (c == '\\') { esc = true; continue; }
+                if (c == '"') in_str = false;
+                continue;
+            }
+            if (c == '"') { in_str = true; continue; }
+            if (c == open)  depth++;
+            else if (c == close) {
+                depth--;
+                if (depth == 0) return body.substr(s_pos, i - s_pos + 1);
+            }
+        }
+        return std::string();
+    }
+    if (start == '"') {
+        const size_t s_pos = i;
+        i++;
+        bool esc = false;
+        for (; i < body.size(); ++i) {
+            const char c = body[i];
+            if (esc) { esc = false; continue; }
+            if (c == '\\') { esc = true; continue; }
+            if (c == '"') return body.substr(s_pos, i - s_pos + 1);
+        }
+        return std::string();
+    }
+    // Bare literal (number / true / false / null) -- read until comma or }/]
+    const size_t s_pos = i;
+    for (; i < body.size(); ++i) {
+        const char c = body[i];
+        if (c == ',' || c == '}' || c == ']' || c == ' ' || c == '\n' || c == '\r' || c == '\t') break;
+    }
+    return body.substr(s_pos, i - s_pos);
+}
+
+// Get the value of "results" from an OpenBB OBBject body, returning the raw
+// JSON array text (including [ ]). Returns "[]" on miss so callers can splice
+// it into a merged envelope without a special-case.
+static std::string ob_results_array(const std::string& body)
+{
+    std::string v = ob_extract_value(body, "results");
+    if (v.empty() || v.front() != '[') return std::string("[]");
+    return v;
+}
+
+static std::string ob_provider_str(const std::string& body)
+{
+    const std::string v = ob_extract_value(body, "provider");
+    if (v.empty()) return std::string();
+    return v;  // already quoted
+}
+
+static std::string ob_warnings_value(const std::string& body)
+{
+    const std::string v = ob_extract_value(body, "warnings");
+    if (v.empty()) return std::string("null");
+    return v;
+}
+
+static std::string ob_extra_value(const std::string& body)
+{
+    const std::string v = ob_extract_value(body, "extra");
+    if (v.empty() || v.front() != '{') return std::string("{}");
+    return v;
+}
+
+// Merge several OpenBB warnings arrays into a single JSON array literal. nulls
+// and empties are skipped. If everything is empty, returns "null".
+static std::string ob_merge_warnings(std::initializer_list<std::string> bodies)
+{
+    std::string out = "[";
+    bool first = true;
+    bool any   = false;
+    for (const std::string& b : bodies) {
+        const std::string w = ob_warnings_value(b);
+        if (w == "null" || w.empty() || w == "[]") continue;
+        if (w.front() != '[' || w.back() != ']') continue;
+        // Splice the inner contents.
+        if (w.size() <= 2) continue;
+        if (!first) out += ",";
+        out += w.substr(1, w.size() - 2);
+        first = false;
+        any = true;
+    }
+    out += "]";
+    if (!any) return "null";
+    return out;
+}
+
+// Pick the first non-empty quoted provider. Returns the raw quoted form
+// "fmp" (with quotes) so it can be spliced directly into JSON.
+static std::string ob_pick_provider(std::initializer_list<std::string> bodies)
+{
+    for (const std::string& b : bodies) {
+        const std::string p = ob_provider_str(b);
+        if (!p.empty() && p != "null") return p;
+    }
+    return std::string("null");
+}
+
+// Pick the first non-empty extra object. Returns "{}" if none.
+static std::string ob_pick_extra(std::initializer_list<std::string> bodies)
+{
+    for (const std::string& b : bodies) {
+        const std::string e = ob_extra_value(b);
+        if (!e.empty() && e != "{}") return e;
+    }
+    return std::string("{}");
+}
+
+// Worst (highest) HTTP status across a set of OpenBbResults. 200 if all OK.
+static int ob_worst_status(std::initializer_list<int> statuses)
+{
+    int worst = 200;
+    for (int s : statuses) {
+        if (s >= 400 && s > worst) worst = s;
+    }
+    return worst;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -602,6 +765,413 @@ static std::string build_mov_json(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Step 6: BB function suite. Same shape as Step 5 builders -- read query,
+// compose OpenBB query string, call OpenBbProxy::get(), pass body verbatim.
+// Merged-envelope routes (FA / KEY / EE) make 2-3 OpenBB calls and stitch
+// the bodies into one composite via the ob_* helpers above. WATCH reads from
+// the engine-side WatchScheduler instead of OpenBB.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// OMON <symbol> [<expiry>]  -> OpenBB /derivatives/options/chains
+static std::string build_omon_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"results\":[],\"provider\":\"omega-stub\",")
+             + "\"warnings\":[{\"message\":\"OMON requires a symbol\"}],"
+             + "\"chart\":null,\"extra\":{}}";
+    }
+    std::string qs = "symbol=";
+    qs += it->second;
+    auto eit = q.find("expiry");
+    if (eit != q.end() && !eit->second.empty()) {
+        qs += "&expiry=";
+        qs += eit->second;
+    }
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "derivatives/options/chains", qs, /*ttl_ms=*/4000);
+    status = r.status;
+    return r.body;
+}
+
+// FA <symbol>  -> merged envelope of three OpenBB fundamentals calls.
+static std::string build_fa_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"income\":[],\"balance\":[],\"cash\":[],")
+             + "\"provider\":\"omega-stub\","
+             + "\"warnings\":[{\"message\":\"FA requires a symbol\"}],"
+             + "\"extra\":{}}";
+    }
+    std::string qs = "symbol=";
+    qs += it->second;
+
+    auto& proxy = OpenBbProxy::instance();
+    const OpenBbResult ri = proxy.get("equity/fundamental/income",  qs, 250000);
+    const OpenBbResult rb = proxy.get("equity/fundamental/balance", qs, 250000);
+    const OpenBbResult rc = proxy.get("equity/fundamental/cash",    qs, 250000);
+    status = ob_worst_status({ri.status, rb.status, rc.status});
+
+    const std::string income  = ob_results_array(ri.body);
+    const std::string balance = ob_results_array(rb.body);
+    const std::string cash    = ob_results_array(rc.body);
+    const std::string provider = ob_pick_provider({ri.body, rb.body, rc.body});
+    const std::string warnings = ob_merge_warnings({ri.body, rb.body, rc.body});
+    const std::string extra    = ob_pick_extra({ri.body, rb.body, rc.body});
+
+    std::string out;
+    out.reserve(income.size() + balance.size() + cash.size() + 256);
+    out += "{\"income\":";   out += income;
+    out += ",\"balance\":";  out += balance;
+    out += ",\"cash\":";     out += cash;
+    out += ",\"provider\":"; out += provider;   // already quoted or "null"
+    out += ",\"warnings\":"; out += warnings;
+    out += ",\"extra\":";    out += extra;
+    out += "}";
+    return out;
+}
+
+// KEY <symbol>  -> merged key_metrics + multiples envelope.
+static std::string build_key_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"key_metrics\":[],\"multiples\":[],")
+             + "\"provider\":\"omega-stub\","
+             + "\"warnings\":[{\"message\":\"KEY requires a symbol\"}],"
+             + "\"extra\":{}}";
+    }
+    std::string qs = "symbol=";
+    qs += it->second;
+    auto& proxy = OpenBbProxy::instance();
+    const OpenBbResult rk = proxy.get("equity/fundamental/key_metrics", qs, 250000);
+    const OpenBbResult rm = proxy.get("equity/fundamental/multiples",   qs, 250000);
+    status = ob_worst_status({rk.status, rm.status});
+
+    const std::string km = ob_results_array(rk.body);
+    const std::string mp = ob_results_array(rm.body);
+    const std::string provider = ob_pick_provider({rk.body, rm.body});
+    const std::string warnings = ob_merge_warnings({rk.body, rm.body});
+    const std::string extra    = ob_pick_extra({rk.body, rm.body});
+
+    std::string out;
+    out.reserve(km.size() + mp.size() + 256);
+    out += "{\"key_metrics\":"; out += km;
+    out += ",\"multiples\":";   out += mp;
+    out += ",\"provider\":";    out += provider;
+    out += ",\"warnings\":";    out += warnings;
+    out += ",\"extra\":";       out += extra;
+    out += "}";
+    return out;
+}
+
+// DVD <symbol>  -> OpenBB /equity/fundamental/dividends
+static std::string build_dvd_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"results\":[],\"provider\":\"omega-stub\",")
+             + "\"warnings\":[{\"message\":\"DVD requires a symbol\"}],"
+             + "\"chart\":null,\"extra\":{}}";
+    }
+    std::string qs = "symbol=";
+    qs += it->second;
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "equity/fundamental/dividends", qs, /*ttl_ms=*/250000);
+    status = r.status;
+    return r.body;
+}
+
+// EE <symbol>  -> merged consensus + surprise envelope.
+static std::string build_ee_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"consensus\":[],\"surprise\":[],")
+             + "\"provider\":\"omega-stub\","
+             + "\"warnings\":[{\"message\":\"EE requires a symbol\"}],"
+             + "\"extra\":{}}";
+    }
+    std::string qs = "symbol=";
+    qs += it->second;
+    auto& proxy = OpenBbProxy::instance();
+    const OpenBbResult rc = proxy.get("equity/estimates/consensus", qs, 250000);
+    const OpenBbResult rs = proxy.get("equity/estimates/surprise",  qs, 250000);
+    status = ob_worst_status({rc.status, rs.status});
+
+    const std::string cs = ob_results_array(rc.body);
+    const std::string sp = ob_results_array(rs.body);
+    const std::string provider = ob_pick_provider({rc.body, rs.body});
+    const std::string warnings = ob_merge_warnings({rc.body, rs.body});
+    const std::string extra    = ob_pick_extra({rc.body, rs.body});
+
+    std::string out;
+    out.reserve(cs.size() + sp.size() + 256);
+    out += "{\"consensus\":"; out += cs;
+    out += ",\"surprise\":";  out += sp;
+    out += ",\"provider\":";  out += provider;
+    out += ",\"warnings\":";  out += warnings;
+    out += ",\"extra\":";     out += extra;
+    out += "}";
+    return out;
+}
+
+// NI <symbol>  -> OpenBB /news/company
+static std::string build_ni_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"results\":[],\"provider\":\"omega-stub\",")
+             + "\"warnings\":[{\"message\":\"NI requires a symbol\"}],"
+             + "\"chart\":null,\"extra\":{}}";
+    }
+    int limit = 25;
+    auto lit = q.find("limit");
+    if (lit != q.end()) {
+        try { limit = std::stoi(lit->second); } catch (...) { limit = 25; }
+    }
+    if (limit < 1)  limit = 1;
+    if (limit > 50) limit = 50;
+    char qbuf[160];
+    std::snprintf(qbuf, sizeof(qbuf), "symbol=%s&limit=%d",
+                  it->second.c_str(), limit);
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "news/company", qbuf, /*ttl_ms=*/25000);
+    status = r.status;
+    return r.body;
+}
+
+// GP <symbol> [<interval>]  -> OpenBB /equity/price/historical (chart side)
+// HP <symbol> [<interval>]  -> same OpenBB call, same cache slot. We expose
+// both as named routes so the UI can fan out cleanly; the upstream cache key
+// is the URL+query, so the proxy collapses them when the params match.
+static std::string build_gp_or_hp_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"results\":[],\"provider\":\"omega-stub\",")
+             + "\"warnings\":[{\"message\":\"symbol is required\"}],"
+             + "\"chart\":null,\"extra\":{}}";
+    }
+    std::string interval = "1d";
+    auto vit = q.find("interval");
+    if (vit != q.end() && !vit->second.empty()) interval = vit->second;
+
+    std::string qs = "symbol=";
+    qs += it->second;
+    qs += "&interval=";
+    qs += interval;
+    auto sd = q.find("start_date");
+    if (sd != q.end() && !sd->second.empty()) { qs += "&start_date="; qs += sd->second; }
+    auto ed = q.find("end_date");
+    if (ed != q.end() && !ed->second.empty()) { qs += "&end_date=";   qs += ed->second; }
+
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "equity/price/historical", qs, /*ttl_ms=*/25000);
+    status = r.status;
+    return r.body;
+}
+
+// QR <symbol-list>  -> OpenBB /equity/price/quote
+static std::string build_qr_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbols");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"results\":[],\"provider\":\"omega-stub\",")
+             + "\"warnings\":[{\"message\":\"QR requires a symbols list\"}],"
+             + "\"chart\":null,\"extra\":{}}";
+    }
+    std::string provider = "yfinance";
+    auto pit = q.find("provider");
+    if (pit != q.end() && !pit->second.empty()) provider = pit->second;
+
+    std::string qs = "symbol=";
+    qs += it->second;
+    qs += "&provider=";
+    qs += provider;
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "equity/price/quote", qs, /*ttl_ms=*/4000);
+    status = r.status;
+    return r.body;
+}
+
+// DES <symbol>  -> OpenBB /equity/profile
+static std::string build_des_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    auto it = q.find("symbol");
+    if (it == q.end() || it->second.empty()) {
+        status = 400;
+        return std::string("{\"results\":[],\"provider\":\"omega-stub\",")
+             + "\"warnings\":[{\"message\":\"DES requires a symbol\"}],"
+             + "\"chart\":null,\"extra\":{}}";
+    }
+    std::string qs = "symbol=";
+    qs += it->second;
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "equity/profile", qs, /*ttl_ms=*/250000);
+    status = r.status;
+    return r.body;
+}
+
+// FXC <pair-or-region>  -> OpenBB /currency/price/quote
+static std::string build_fxc_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    std::string pair = "MAJORS";
+    auto it = q.find("pair");
+    if (it != q.end() && !it->second.empty()) pair = it->second;
+
+    std::string symbols;
+    {
+        std::string up = pair;
+        for (char& c : up) {
+            if (c >= 'a' && c <= 'z') c -= 32;
+        }
+        if      (up == "MAJORS") symbols = "EURUSD,GBPUSD,USDJPY,USDCHF,AUDUSD,USDCAD,NZDUSD";
+        else if (up == "EUR")    symbols = "EURUSD,EURGBP,EURJPY,EURCHF,EURAUD";
+        else if (up == "ASIA")   symbols = "USDJPY,USDCNH,USDHKD,USDSGD,USDKRW";
+        else if (up == "EM")     symbols = "USDMXN,USDBRL,USDZAR,USDTRY,USDINR";
+        else                     symbols = pair;  // literal pair, e.g. EUR/USD or EURUSD
+    }
+
+    std::string provider = "yfinance";
+    auto pit = q.find("provider");
+    if (pit != q.end() && !pit->second.empty()) provider = pit->second;
+
+    std::string qs = "symbol=";
+    qs += symbols;
+    qs += "&provider=";
+    qs += provider;
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "currency/price/quote", qs, /*ttl_ms=*/4000);
+    status = r.status;
+    return r.body;
+}
+
+// CRYPTO <symbols-or-region>  -> OpenBB /crypto/price/quote
+static std::string build_crypto_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    std::string symbols_arg = "MAJORS";
+    auto it = q.find("symbols");
+    if (it != q.end() && !it->second.empty()) symbols_arg = it->second;
+
+    std::string symbols;
+    {
+        std::string up = symbols_arg;
+        for (char& c : up) {
+            if (c >= 'a' && c <= 'z') c -= 32;
+        }
+        if      (up == "MAJORS") symbols = "BTC-USD,ETH-USD,BNB-USD,XRP-USD,SOL-USD";
+        else if (up == "DEFI")   symbols = "UNI-USD,AAVE-USD,MKR-USD,SNX-USD,COMP-USD";
+        else if (up == "STABLE") symbols = "USDT-USD,USDC-USD,DAI-USD,BUSD-USD";
+        else                     symbols = symbols_arg;  // literal list
+    }
+
+    std::string provider = "yfinance";
+    auto pit = q.find("provider");
+    if (pit != q.end() && !pit->second.empty()) provider = pit->second;
+
+    std::string qs = "symbol=";
+    qs += symbols;
+    qs += "&provider=";
+    qs += provider;
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "crypto/price/quote", qs, /*ttl_ms=*/4000);
+    status = r.status;
+    return r.body;
+}
+
+// WATCH <universe>  -> WatchScheduler snapshot (engine-cron-driven).
+static std::string build_watch_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    std::string universe = "SP500";
+    auto it = q.find("universe");
+    if (it != q.end() && !it->second.empty()) universe = it->second;
+    for (char& c : universe) {
+        if (c >= 'a' && c <= 'z') c -= 32;
+    }
+    if (universe != "SP500" && universe != "NDX" && universe != "ALL") universe = "SP500";
+
+    const WatchSnapshot snap = WatchScheduler::instance().snapshot(universe);
+    status = 200;
+
+    std::string out;
+    out += "{\"hits\":[";
+    for (size_t i = 0; i < snap.hits.size(); ++i) {
+        const WatchHit& h = snap.hits[i];
+        if (i > 0) out += ",";
+        out += "{";
+        out += "\"symbol\":"          + json_str(h.symbol)               + ",";
+        out += "\"signal\":"          + json_str(h.signal)               + ",";
+        out += "\"score\":"           + json_num(h.score)                + ",";
+        out += "\"last_price\":"      + json_num(h.last_price)           + ",";
+        out += "\"change_percent\":"  + json_num(h.change_percent)       + ",";
+        out += "\"volume\":"          + json_num(h.volume)               + ",";
+        out += "\"flagged_at\":"      + json_str(
+            h.flagged_at_ms > 0
+                ? ([&]{
+                    char buf[32];
+                    const std::time_t t = static_cast<std::time_t>(h.flagged_at_ms / 1000);
+                    std::tm tm_utc{};
+#ifdef _WIN32
+                    gmtime_s(&tm_utc, &t);
+#else
+                    gmtime_r(&t, &tm_utc);
+#endif
+                    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                                  tm_utc.tm_year + 1900, tm_utc.tm_mon + 1, tm_utc.tm_mday,
+                                  tm_utc.tm_hour, tm_utc.tm_min, tm_utc.tm_sec);
+                    return std::string(buf);
+                  }())
+                : std::string()
+        ) + ",";
+        out += "\"rationale\":"       + json_str(h.rationale);
+        out += "}";
+    }
+    out += "],";
+    out += "\"last_run_ts\":" + json_int(snap.last_run_ms) + ",";
+    out += "\"next_run_ts\":" + json_int(snap.next_run_ms) + ",";
+    out += "\"scanning\":"    + json_bool(snap.scanning)   + ",";
+    out += "\"universe\":"    + json_str(snap.universe)    + ",";
+    out += "\"provider\":"    + json_str(snap.provider)    + ",";
+    out += "\"warnings\":null,\"extra\":{}";
+    out += "}";
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HTTP request parsing
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -777,6 +1347,9 @@ void OmegaApiServer::start(int http_port)
 {
     if (running_.load()) return;
     running_.store(true);
+    // Step 6: boot the WatchScheduler alongside the HTTP server. The scheduler
+    // owns its own thread; start() is idempotent so duplicate starts are safe.
+    WatchScheduler::instance().start();
     thread_ = std::thread(&OmegaApiServer::run, this, http_port);
 }
 
@@ -784,6 +1357,9 @@ void OmegaApiServer::stop()
 {
     if (!running_.load()) return;
     running_.store(false);
+    // Step 6: gracefully stop the WatchScheduler before tearing down the
+    // HTTP socket. The scheduler joins its worker thread inside stop().
+    WatchScheduler::instance().stop();
     if (server_fd_ != INVALID_SOCKET) closesocket(server_fd_);
     if (thread_.joinable()) thread_.join();
     server_fd_ = INVALID_SOCKET;
@@ -913,6 +1489,46 @@ void OmegaApiServer::run(int port)
         }
         else if (path == "/api/v1/omega/mov") {
             body = build_mov_json(q, status);
+        }
+        // Step 6: BB function suite.
+        else if (path == "/api/v1/omega/omon") {
+            body = build_omon_json(q, status);
+        }
+        else if (path == "/api/v1/omega/fa") {
+            body = build_fa_json(q, status);
+        }
+        else if (path == "/api/v1/omega/key") {
+            body = build_key_json(q, status);
+        }
+        else if (path == "/api/v1/omega/dvd") {
+            body = build_dvd_json(q, status);
+        }
+        else if (path == "/api/v1/omega/ee") {
+            body = build_ee_json(q, status);
+        }
+        else if (path == "/api/v1/omega/ni") {
+            body = build_ni_json(q, status);
+        }
+        else if (path == "/api/v1/omega/gp") {
+            body = build_gp_or_hp_json(q, status);
+        }
+        else if (path == "/api/v1/omega/qr") {
+            body = build_qr_json(q, status);
+        }
+        else if (path == "/api/v1/omega/hp") {
+            body = build_gp_or_hp_json(q, status);
+        }
+        else if (path == "/api/v1/omega/des") {
+            body = build_des_json(q, status);
+        }
+        else if (path == "/api/v1/omega/fxc") {
+            body = build_fxc_json(q, status);
+        }
+        else if (path == "/api/v1/omega/crypto") {
+            body = build_crypto_json(q, status);
+        }
+        else if (path == "/api/v1/omega/watch") {
+            body = build_watch_json(q, status);
         }
         else if (try_serve_static(path, body, ctype, cache, status)) {
             // Handled by static file serving (status/body/ctype/cache filled).

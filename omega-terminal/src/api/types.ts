@@ -29,17 +29,45 @@
 //   - MOV movers                -> OpenBbEnvelope<MovRow>
 //     GET /api/v1/omega/mov?universe=active|gainers|losers
 //
+// Step 6 additions (BB function suite, all OpenBB-backed via OpenBbProxy
+// except WATCH which is engine-side scheduled):
+//   - OMON   options chain      -> OpenBbEnvelope<OptionsRow>
+//     GET /api/v1/omega/omon?symbol=<sym>&expiry=<iso>
+//   - FA     financial analysis -> FaEnvelope (income/balance/cash merged)
+//     GET /api/v1/omega/fa?symbol=<sym>
+//   - KEY    key stats          -> KeyEnvelope (key_metrics + multiples)
+//     GET /api/v1/omega/key?symbol=<sym>
+//   - DVD    dividends          -> OpenBbEnvelope<Dividend>
+//     GET /api/v1/omega/dvd?symbol=<sym>
+//   - EE     earnings estimates -> EeEnvelope (consensus + surprise)
+//     GET /api/v1/omega/ee?symbol=<sym>
+//   - NI     news (per-symbol)  -> OpenBbEnvelope<IntelArticle>
+//     GET /api/v1/omega/ni?symbol=<sym>&limit=<n>
+//   - GP     graph price        -> OpenBbEnvelope<HistoricalBar>
+//     GET /api/v1/omega/gp?symbol=<sym>&interval=<1m|1h|1d>
+//   - QR     quote recap        -> OpenBbEnvelope<QuoteRow>
+//     GET /api/v1/omega/qr?symbols=<list>
+//   - HP     historical price   -> OpenBbEnvelope<HistoricalBar>
+//     GET /api/v1/omega/hp?symbol=<sym>&interval=<1m|1h|1d>
+//     (shares cache slot with /gp on identical (symbol, interval))
+//   - DES    description        -> OpenBbEnvelope<CompanyProfile>
+//     GET /api/v1/omega/des?symbol=<sym>
+//   - FXC    fx cross           -> OpenBbEnvelope<FxQuote>
+//     GET /api/v1/omega/fxc?pair=<base>/<quote>|<region>
+//   - CRYPTO crypto             -> OpenBbEnvelope<CryptoQuote>
+//     GET /api/v1/omega/crypto?symbols=<list>
+//   - WATCH  nightly screener   -> WatchEnvelope (engine-cron-driven)
+//     GET /api/v1/omega/watch?universe=SP500|NDX|ALL
+//
 // All timestamps are unix-epoch milliseconds (int64) on the wire,
 // represented as `number` in TS. The engine guarantees JS-safe range
 // (< 2^53) for all timestamps it produces.
 //
-// OpenBB note: the Step-5 routes pass the OpenBB OBBject envelope
-// through verbatim (no JSON parsing in C++). The UI dereferences
-// `.results` to get the row array; the rest of the wrapper (provider,
-// warnings, chart, extra) is informational. When OMEGA_OPENBB_TOKEN is
-// not set on the server, the proxy returns HTTP 503 with a structured
-// error body — surfacing through OmegaApiError exactly like any other
-// transport error.
+// OpenBB note: the Step-5 + Step-6 single-call routes pass the OpenBB
+// OBBject envelope through verbatim (no JSON parsing in C++). The UI
+// dereferences `.results` to get the row array. The Step-6 multi-call
+// merged routes (FA / KEY / EE / WATCH) wrap multiple OpenBB calls into
+// one merged envelope with explicitly-named sub-arrays.
 
 /* ============================================================ */
 /* Shared primitives                                            */
@@ -69,6 +97,13 @@ export type Side = 'LONG' | 'SHORT';
  * side at the same time.
  */
 export type EquityInterval = '1m' | '1h' | '1d';
+
+/**
+ * Historical-bar interval shared by GP and HP. The engine forwards the
+ * literal value to OpenBB's `/equity/price/historical?interval=` param.
+ * Common values: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1W, 1M.
+ */
+export type BarInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d' | '1W' | '1M';
 
 /* ============================================================ */
 /* GET /api/v1/omega/engines                                    */
@@ -361,6 +396,497 @@ export interface MovQuery {
   universe?: 'active' | 'gainers' | 'losers' | string;
   /** Override the OpenBB provider (default "yfinance"). */
   provider?: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/omon  (Step 6 - options chain)             */
+/* ============================================================ */
+
+/**
+ * One option-chain row. Shape mirrors OpenBB
+ * `/derivatives/options/chains?symbol=<sym>`. Fields vary across
+ * providers (cboe, intrinio, tradier); we model the common subset.
+ *
+ * The OMON panel computes its summary header (ATM IV, term structure,
+ * put/call ratio) client-side from the array because the engine-side
+ * "no third-party JSON libs" stance precludes parsing this in C++.
+ */
+export interface OptionsRow {
+  /** Underlying symbol, e.g. "AAPL". */
+  underlying_symbol?: string;
+  /** Per-contract symbol, e.g. "AAPL250620C00200000". */
+  contract_symbol?: string;
+  /** Expiry date (ISO). Some providers use `expiration`. */
+  expiration?: string;
+  /** Strike price. */
+  strike?: number;
+  /** "call" | "put". Some providers use uppercase. */
+  option_type?: string;
+  bid?: number;
+  ask?: number;
+  /** Mid / last traded price; provider-dependent. */
+  last_trade_price?: number;
+  /** Implied volatility, decimal (e.g. 0.32 for 32 %). */
+  implied_volatility?: number;
+  open_interest?: number;
+  volume?: number;
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
+  [k: string]: unknown;
+}
+
+/** Query parameters for the omon endpoint. */
+export interface OmonQuery {
+  /** Underlying symbol. Required. */
+  symbol: string;
+  /**
+   * Optional expiry filter (ISO date). When omitted, the engine returns
+   * the full chain across expiries; the panel filters client-side.
+   */
+  expiry?: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/fa  (Step 6 - financial analysis)          */
+/* ============================================================ */
+
+/**
+ * One row of an income statement. Field set is provider-dependent
+ * (fmp / polygon / intrinio); the FaPanel renders whichever fields are
+ * non-null per row.
+ */
+export interface IncomeStatement {
+  period_ending?: string;
+  fiscal_period?: string;
+  revenue?: number;
+  cost_of_revenue?: number;
+  gross_profit?: number;
+  operating_income?: number;
+  net_income?: number;
+  ebitda?: number;
+  eps_basic?: number;
+  eps_diluted?: number;
+  [k: string]: unknown;
+}
+
+/** One row of a balance sheet. */
+export interface BalanceSheet {
+  period_ending?: string;
+  fiscal_period?: string;
+  total_assets?: number;
+  total_current_assets?: number;
+  total_liabilities?: number;
+  total_current_liabilities?: number;
+  total_equity?: number;
+  cash_and_short_term_investments?: number;
+  long_term_debt?: number;
+  short_term_debt?: number;
+  [k: string]: unknown;
+}
+
+/** One row of a cash-flow statement. */
+export interface CashFlow {
+  period_ending?: string;
+  fiscal_period?: string;
+  cash_from_operating_activities?: number;
+  cash_from_investing_activities?: number;
+  cash_from_financing_activities?: number;
+  capital_expenditure?: number;
+  free_cash_flow?: number;
+  [k: string]: unknown;
+}
+
+/**
+ * Merged envelope produced by the engine FA route. Three OpenBB calls
+ * (`/equity/fundamental/{income,balance,cash}`) are stitched into one
+ * top-level object so the UI gets one round-trip per panel mount.
+ */
+export interface FaEnvelope {
+  income: IncomeStatement[];
+  balance: BalanceSheet[];
+  cash: CashFlow[];
+  /** Provider id of the underlying OpenBB calls (typically the same for all three). */
+  provider?: string;
+  warnings?: Array<{ message: string; [k: string]: unknown }> | null;
+  /** Mirrors OpenBbEnvelope.extra; engine sets `{mock:true}` in mock mode. */
+  extra?: Record<string, unknown>;
+}
+
+/** Query parameters for the fa endpoint. */
+export interface FaQuery {
+  /** Symbol. Required. */
+  symbol: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/key  (Step 6 - key stats)                  */
+/* ============================================================ */
+
+/**
+ * Key-metrics row from OpenBB `/equity/fundamental/key_metrics`.
+ * Provider-dependent field set; the KeyPanel renders what's present.
+ */
+export interface KeyMetricsRow {
+  market_cap?: number;
+  enterprise_value?: number;
+  pe_ratio?: number;
+  forward_pe?: number;
+  peg_ratio?: number;
+  price_to_book?: number;
+  price_to_sales?: number;
+  ev_to_sales?: number;
+  ev_to_ebitda?: number;
+  dividend_yield?: number;
+  payout_ratio?: number;
+  beta?: number;
+  return_on_equity?: number;
+  return_on_assets?: number;
+  debt_to_equity?: number;
+  current_ratio?: number;
+  quick_ratio?: number;
+  profit_margin?: number;
+  operating_margin?: number;
+  [k: string]: unknown;
+}
+
+/**
+ * Multiples row from OpenBB `/equity/fundamental/multiples`. Some
+ * providers fold these into key_metrics; the merged envelope handles
+ * either layout.
+ */
+export interface MultiplesRow {
+  pe_ratio_ttm?: number;
+  ev_to_ebitda_ttm?: number;
+  price_to_sales_ttm?: number;
+  price_to_book_quarterly?: number;
+  earnings_yield_ttm?: number;
+  free_cash_flow_yield_ttm?: number;
+  [k: string]: unknown;
+}
+
+/** Merged envelope for KEY: key_metrics + multiples. */
+export interface KeyEnvelope {
+  key_metrics: KeyMetricsRow[];
+  multiples: MultiplesRow[];
+  provider?: string;
+  warnings?: Array<{ message: string; [k: string]: unknown }> | null;
+  extra?: Record<string, unknown>;
+}
+
+export interface KeyQuery {
+  symbol: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/dvd  (Step 6 - dividends)                  */
+/* ============================================================ */
+
+/**
+ * One dividend payment. Shape matches OpenBB
+ * `/equity/fundamental/dividends`.
+ */
+export interface Dividend {
+  ex_dividend_date?: string;
+  amount?: number;
+  /** Some providers expose record / payment / declaration dates. */
+  record_date?: string;
+  payment_date?: string;
+  declaration_date?: string;
+  /** ISO date label most providers expose; alias for ex_dividend_date. */
+  date?: string;
+  [k: string]: unknown;
+}
+
+export interface DvdQuery {
+  symbol: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/ee  (Step 6 - earnings estimates)          */
+/* ============================================================ */
+
+/** One consensus row from OpenBB `/equity/estimates/consensus`. */
+export interface EpsConsensus {
+  symbol?: string;
+  fiscal_period?: string;
+  fiscal_year?: number;
+  eps_avg?: number;
+  eps_high?: number;
+  eps_low?: number;
+  revenue_avg?: number;
+  revenue_high?: number;
+  revenue_low?: number;
+  number_of_analysts?: number;
+  [k: string]: unknown;
+}
+
+/** One surprise row from OpenBB `/equity/estimates/surprise`. */
+export interface EpsSurprise {
+  symbol?: string;
+  date?: string;
+  fiscal_period?: string;
+  fiscal_year?: number;
+  eps_actual?: number;
+  eps_estimate?: number;
+  eps_surprise?: number;
+  surprise_percent?: number;
+  [k: string]: unknown;
+}
+
+/** Merged envelope for EE: consensus + surprise. */
+export interface EeEnvelope {
+  consensus: EpsConsensus[];
+  surprise: EpsSurprise[];
+  provider?: string;
+  warnings?: Array<{ message: string; [k: string]: unknown }> | null;
+  extra?: Record<string, unknown>;
+}
+
+export interface EeQuery {
+  symbol: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/ni  (Step 6 - per-symbol news)             */
+/* ============================================================ */
+
+/**
+ * NI uses the same row shape as INTEL (IntelArticle) — both come from
+ * OpenBB news endpoints. The only difference is the route:
+ *   INTEL -> /news/world
+ *   NI    -> /news/company?symbol=<sym>
+ */
+export interface NiQuery {
+  /** Symbol. Required. */
+  symbol: string;
+  /** Number of articles. Server clamps to [1, 50]. */
+  limit?: number;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/gp + /hp  (Step 6 - historical bars)       */
+/* ============================================================ */
+
+/**
+ * One historical OHLCV bar. Shape matches OpenBB
+ * `/equity/price/historical`. Adjusted vs unadjusted prices are provider-
+ * dependent — the panels render whichever set is present.
+ */
+export interface HistoricalBar {
+  /** ISO date or datetime string. */
+  date: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+  /** Some providers include adjusted close separately. */
+  adj_close?: number;
+  [k: string]: unknown;
+}
+
+/** Query parameters for the gp endpoint (chart). */
+export interface GpQuery {
+  symbol: string;
+  /** Bar interval. Default "1d". */
+  interval?: BarInterval;
+  /** ISO date lower bound. Optional. */
+  start_date?: string;
+  /** ISO date upper bound. Optional. */
+  end_date?: string;
+}
+
+/** Query parameters for the hp endpoint (table). */
+export interface HpQuery {
+  symbol: string;
+  /** Bar interval. Default "1d". */
+  interval?: BarInterval;
+  start_date?: string;
+  end_date?: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/qr  (Step 6 - multi-symbol quote tape)     */
+/* ============================================================ */
+
+/**
+ * One quote row. Same shape as WeiQuote — OpenBB
+ * `/equity/price/quote` returns the same fields whether called against
+ * a single symbol or a comma-separated list.
+ */
+export interface QuoteRow {
+  symbol: string;
+  name?: string;
+  last_price?: number;
+  bid?: number;
+  ask?: number;
+  change?: number;
+  change_percent?: number;
+  volume?: number;
+  prev_close?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  [k: string]: unknown;
+}
+
+/** Query parameters for the qr endpoint. */
+export interface QrQuery {
+  /** Comma-separated symbol list. Required. */
+  symbols: string;
+  provider?: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/des  (Step 6 - company description)        */
+/* ============================================================ */
+
+/**
+ * Single-symbol company profile from OpenBB `/equity/profile`. All
+ * fields are optional — providers vary in completeness.
+ */
+export interface CompanyProfile {
+  symbol?: string;
+  name?: string;
+  description?: string;
+  industry?: string;
+  sector?: string;
+  /** ISO date. */
+  ipo_date?: string;
+  ceo?: string;
+  hq_country?: string;
+  hq_state?: string;
+  hq_city?: string;
+  /** Number of employees. */
+  employees?: number;
+  website?: string;
+  exchange?: string;
+  currency?: string;
+  market_cap?: number;
+  [k: string]: unknown;
+}
+
+export interface DesQuery {
+  symbol: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/fxc  (Step 6 - FX cross rates)             */
+/* ============================================================ */
+
+/**
+ * One FX quote row. Shape matches OpenBB `/currency/price/quote`. Some
+ * providers return the symbol as a slash-separated pair, others as the
+ * concatenated 6-letter form (EURUSD); FxcPanel renders either.
+ */
+export interface FxQuote {
+  symbol: string;
+  name?: string;
+  last_price?: number;
+  bid?: number;
+  ask?: number;
+  change?: number;
+  change_percent?: number;
+  volume?: number;
+  [k: string]: unknown;
+}
+
+/** Query parameters for the fxc endpoint. */
+export interface FxcQuery {
+  /**
+   * Either a single pair like "EUR/USD" / "EURUSD", or a region preset
+   * recognised by the engine:
+   *   "MAJORS"  EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, USD/CAD, NZD/USD
+   *   "EUR"     EUR/USD, EUR/GBP, EUR/JPY, EUR/CHF, EUR/AUD
+   *   "ASIA"    USD/JPY, USD/CNH, USD/HKD, USD/SGD, USD/KRW
+   *   "EM"      USD/MXN, USD/BRL, USD/ZAR, USD/TRY, USD/INR
+   */
+  pair?: string;
+  provider?: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/crypto  (Step 6 - crypto quotes)           */
+/* ============================================================ */
+
+/**
+ * One crypto quote row. Shape matches OpenBB `/crypto/price/quote`.
+ */
+export interface CryptoQuote {
+  symbol: string;
+  name?: string;
+  last_price?: number;
+  change?: number;
+  change_percent?: number;
+  volume?: number;
+  market_cap?: number;
+  [k: string]: unknown;
+}
+
+export interface CryptoQuery {
+  /**
+   * Comma-separated symbol list, or a region preset:
+   *   "MAJORS"  BTC-USD, ETH-USD, BNB-USD, XRP-USD, SOL-USD
+   *   "DEFI"    UNI-USD, AAVE-USD, MKR-USD, SNX-USD, COMP-USD
+   *   "STABLE"  USDT-USD, USDC-USD, DAI-USD, BUSD-USD
+   */
+  symbols?: string;
+  provider?: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/watch  (Step 6 - nightly screener)         */
+/* ============================================================ */
+
+/**
+ * One WATCH hit row, persisted by the engine-side WatchScheduler. The
+ * scheduler runs the INTEL screener over the configured universe each
+ * night and stores hits in g_watch_hits; the /watch route returns the
+ * current registry snapshot.
+ */
+export interface WatchHit {
+  symbol: string;
+  /** Engine-assigned screener tag (e.g. "S&P-MOMO", "NDX-MEAN-REV"). */
+  signal?: string;
+  /** Score / strength of the hit. Provider-dependent meaning. */
+  score?: number;
+  /** Last-price snapshot when the hit was recorded. */
+  last_price?: number;
+  change_percent?: number;
+  volume?: number;
+  /** ISO-8601 timestamp of when this hit was added to the registry. */
+  flagged_at?: string;
+  /** Optional human-readable rationale. */
+  rationale?: string;
+  [k: string]: unknown;
+}
+
+/**
+ * WATCH envelope. Engine-cron-driven; `last_run_ts` and `next_run_ts`
+ * surface the scheduler's heartbeat so the UI can show "scanning…" /
+ * "next scan in 4h" without a separate status route.
+ */
+export interface WatchEnvelope {
+  hits: WatchHit[];
+  /** unix ms of the last completed scheduler run. 0 = never. */
+  last_run_ts: number;
+  /** unix ms of the next scheduled scan. */
+  next_run_ts: number;
+  /** True iff a scan is currently in flight. */
+  scanning: boolean;
+  /** Universe label (SP500 / NDX / ALL). */
+  universe: string;
+  /** Optional provider id when hits are derived from a specific OpenBB call. */
+  provider?: string;
+  warnings?: Array<{ message: string; [k: string]: unknown }> | null;
+  extra?: Record<string, unknown>;
+}
+
+export interface WatchQuery {
+  /** Universe to filter / scan. Default "SP500". */
+  universe?: 'SP500' | 'NDX' | 'ALL' | string;
 }
 
 /* ============================================================ */

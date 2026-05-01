@@ -19,6 +19,16 @@
 // through verbatim by OpenBbProxy). The Step-5 panels read `.results`
 // off the envelope and surface `provider` / `warnings` in a corner badge.
 //
+// Step 6 additions (BB function suite — `getOmon`, `getFa`, `getKey`,
+// `getDvd`, `getEe`, `getNi`, `getGp`, `getQr`, `getHp`, `getDes`,
+// `getFxc`, `getCrypto`, `getWatch`). Most return `OpenBbEnvelope<T>`
+// passed through verbatim; the merged-call panels (FA / KEY / EE) and
+// the cron-driven WATCH route return their own `*Envelope` shapes
+// declared in `types.ts`. All Step-6 routes share the 30 s OpenBB
+// timeout — except WATCH which uses the 5 s engine-internal default
+// since the engine answers from a local registry without an OpenBB
+// round-trip on the request path.
+//
 // Per-call timeouts are bumped to 30 s for the OpenBB routes because
 // OpenBB Hub free-tier endpoints can take 5-10 s on cold starts. The
 // engine-side proxy enforces its own 30 s libcurl timeout, so a UI
@@ -45,6 +55,30 @@ import {
   WeiQuery,
   MovRow,
   MovQuery,
+  OptionsRow,
+  OmonQuery,
+  FaEnvelope,
+  FaQuery,
+  KeyEnvelope,
+  KeyQuery,
+  Dividend,
+  DvdQuery,
+  EeEnvelope,
+  EeQuery,
+  NiQuery,
+  HistoricalBar,
+  GpQuery,
+  HpQuery,
+  QuoteRow,
+  QrQuery,
+  CompanyProfile,
+  DesQuery,
+  FxQuote,
+  FxcQuery,
+  CryptoQuote,
+  CryptoQuery,
+  WatchEnvelope,
+  WatchQuery,
   OpenBbEnvelope,
   OmegaApiError,
 } from '@/api/types';
@@ -67,9 +101,10 @@ let API_BASE = '/api/v1/omega';
 const DEFAULT_TIMEOUT_MS = 5000;
 
 /**
- * Step-5 OpenBB routes can take longer than the engine-internal routes
- * because the proxy is round-tripping over the public internet. Bumped
- * to 30 s to match the libcurl timeout enforced server-side.
+ * Step-5 / Step-6 OpenBB routes can take longer than the engine-
+ * internal routes because the proxy is round-tripping over the public
+ * internet. Bumped to 30 s to match the libcurl timeout enforced
+ * server-side.
  */
 const OPENBB_TIMEOUT_MS = 30000;
 
@@ -377,4 +412,265 @@ export function getMov(
     timeoutMs: OPENBB_TIMEOUT_MS,
     ...opts,
   });
+}
+
+/* ============================================================ */
+/* Step 6: BB function suite                                    */
+/* ============================================================ */
+
+/**
+ * GET /api/v1/omega/omon
+ *
+ * Returns an OpenBB options-chain envelope (results: OptionsRow[]).
+ * The engine forwards to /derivatives/options/chains?symbol=<sym>.
+ * Optional `expiry` filters the chain to a single expiration.
+ *
+ * Per STEP6_OPENER: the panel computes the chain summary header
+ * (ATM IV, term structure, P/C ratio) client-side from `.results` so
+ * the engine stays free of third-party JSON libs.
+ */
+export function getOmon(
+  query: OmonQuery,
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<OptionsRow>> {
+  const qs = buildQuery({
+    symbol: query.symbol,
+    expiry: query.expiry,
+  });
+  return getJson<OpenBbEnvelope<OptionsRow>>(`/omon${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/fa
+ *
+ * Returns the merged Financial Analysis envelope: the engine fans
+ * three OpenBB calls (`/equity/fundamental/{income,balance,cash}`)
+ * and stitches the results into one top-level object. Cadence is
+ * 5 minutes — financials change quarterly, not by the second.
+ */
+export function getFa(
+  query: FaQuery,
+  opts: OmegaCallOptions = {},
+): Promise<FaEnvelope> {
+  const qs = buildQuery({ symbol: query.symbol });
+  return getJson<FaEnvelope>(`/fa${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/key
+ *
+ * Returns the merged Key Stats envelope:
+ * `/equity/fundamental/{key_metrics,multiples}`.
+ */
+export function getKey(
+  query: KeyQuery,
+  opts: OmegaCallOptions = {},
+): Promise<KeyEnvelope> {
+  const qs = buildQuery({ symbol: query.symbol });
+  return getJson<KeyEnvelope>(`/key${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/dvd
+ *
+ * Returns an OpenBB dividends envelope (results: Dividend[]).
+ */
+export function getDvd(
+  query: DvdQuery,
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<Dividend>> {
+  const qs = buildQuery({ symbol: query.symbol });
+  return getJson<OpenBbEnvelope<Dividend>>(`/dvd${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/ee
+ *
+ * Returns the merged Earnings Estimates envelope:
+ * `/equity/estimates/{consensus,surprise}`.
+ */
+export function getEe(
+  query: EeQuery,
+  opts: OmegaCallOptions = {},
+): Promise<EeEnvelope> {
+  const qs = buildQuery({ symbol: query.symbol });
+  return getJson<EeEnvelope>(`/ee${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/ni
+ *
+ * Per-symbol news. Same row shape as INTEL (IntelArticle); the engine
+ * forwards to /news/company?symbol=<sym>.
+ */
+export function getNi(
+  query: NiQuery,
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<IntelArticle>> {
+  const qs = buildQuery({
+    symbol: query.symbol,
+    limit: query.limit,
+  });
+  return getJson<OpenBbEnvelope<IntelArticle>>(`/ni${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/gp
+ *
+ * Historical bars used by the chart panel. Shares the engine-side
+ * cache slot with /hp on identical (symbol, interval, start_date,
+ * end_date) — no `chart=true` distinguisher; chart rendering is
+ * client-side.
+ */
+export function getGp(
+  query: GpQuery,
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<HistoricalBar>> {
+  const qs = buildQuery({
+    symbol: query.symbol,
+    interval: query.interval,
+    start_date: query.start_date,
+    end_date: query.end_date,
+  });
+  return getJson<OpenBbEnvelope<HistoricalBar>>(`/gp${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/hp
+ *
+ * Same data as /gp but rendered as a sortable OHLCV table by HpPanel.
+ * On the engine side both routes hit the same OpenBB endpoint
+ * (`/equity/price/historical`); the cache key is identical when the
+ * query params match, so simultaneous GP + HP tabs share one upstream
+ * call.
+ */
+export function getHp(
+  query: HpQuery,
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<HistoricalBar>> {
+  const qs = buildQuery({
+    symbol: query.symbol,
+    interval: query.interval,
+    start_date: query.start_date,
+    end_date: query.end_date,
+  });
+  return getJson<OpenBbEnvelope<HistoricalBar>>(`/hp${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/qr
+ *
+ * Multi-symbol quote tape. Engine forwards to
+ * /equity/price/quote?symbol=<comma-separated-list>.
+ */
+export function getQr(
+  query: QrQuery,
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<QuoteRow>> {
+  const qs = buildQuery({
+    symbols: query.symbols,
+    provider: query.provider,
+  });
+  return getJson<OpenBbEnvelope<QuoteRow>>(`/qr${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/des
+ *
+ * Single-symbol company profile. Engine forwards to
+ * /equity/profile?symbol=<sym>.
+ */
+export function getDes(
+  query: DesQuery,
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<CompanyProfile>> {
+  const qs = buildQuery({ symbol: query.symbol });
+  return getJson<OpenBbEnvelope<CompanyProfile>>(`/des${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/fxc
+ *
+ * FX cross rates. Engine forwards to /currency/price/quote with a
+ * region preset expansion (MAJORS / EUR / ASIA / EM) or a literal pair.
+ */
+export function getFxc(
+  query: FxcQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<FxQuote>> {
+  const qs = buildQuery({
+    pair: query.pair,
+    provider: query.provider,
+  });
+  return getJson<OpenBbEnvelope<FxQuote>>(`/fxc${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/crypto
+ *
+ * Crypto quotes. Engine forwards to /crypto/price/quote with a region
+ * preset expansion (MAJORS / DEFI / STABLE) or a literal symbol list.
+ */
+export function getCrypto(
+  query: CryptoQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<CryptoQuote>> {
+  const qs = buildQuery({
+    symbols: query.symbols,
+    provider: query.provider,
+  });
+  return getJson<OpenBbEnvelope<CryptoQuote>>(`/crypto${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/watch
+ *
+ * Returns the engine's WATCH registry snapshot. The actual scan runs
+ * on the engine-side WatchScheduler (cron-style nightly job) and
+ * persists hits to g_watch_hits; this route just snapshots that
+ * registry. No OpenBB round-trip on the request path, so we use the
+ * shorter default 5 s timeout.
+ */
+export function getWatch(
+  query: WatchQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<WatchEnvelope> {
+  const qs = buildQuery({ universe: query.universe });
+  return getJson<WatchEnvelope>(`/watch${qs}`, opts);
 }

@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# vcpkg toolchain resolution.
+# vcpkg toolchain resolution (hardened, Step-6 hot-fix 2026-05-01e).
 #
 # The build needs the vcpkg toolchain to find libcurl (Step 5) and any
 # other vcpkg-installed deps. We try in order:
@@ -14,16 +14,30 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #   2. VCPKG_ROOT env var, if set.
 #   3. Hardcoded common Windows install paths as a fallback.
 # This makes the build robust against shells that forgot to export
-# VCPKG_ROOT (which has bitten the QUICK_RESTART deploy at least once
-# -- the recovery path correctly kept the previous binary running, but
-# the configure aborted with "Could NOT find CURL").
+# VCPKG_ROOT (which has bitten the QUICK_RESTART deploy at least twice
+# now -- once at the Step-5 deploy, then again at the Step-6 deploy
+# when a stale empty CMAKE_TOOLCHAIN_FILE in CMakeCache.txt short-
+# circuited the original `if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)` check).
 #
 # On macOS / Linux, none of these branches fire and find_package falls
 # back to the system libcurl, which is what we want.
-if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+#
+# Hardening notes:
+#   - Use `if(NOT CMAKE_TOOLCHAIN_FILE)` (truthy check) instead of
+#     `if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)`. A previously-failed
+#     configure can leave CMAKE_TOOLCHAIN_FILE defined-but-empty in
+#     CMakeCache.txt; the original DEFINED check then refuses to retry
+#     the autodetect and the build dies with "Could NOT find CURL"
+#     even though the autodetect would have succeeded.
+#   - Always emit an explicit status line so the next failure is
+#     diagnosable from the log even if our autodetect path didn't fire.
+#   - Verify the vcpkg-installed curl is actually present after the
+#     toolchain is loaded; if not, fail loud with a message that names
+#     the exact `vcpkg install` command to run.
+if(NOT CMAKE_TOOLCHAIN_FILE)
     if(DEFINED ENV{VCPKG_ROOT})
         set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-            CACHE STRING "vcpkg toolchain file (from VCPKG_ROOT)")
+            CACHE STRING "vcpkg toolchain file (from VCPKG_ROOT)" FORCE)
         message(STATUS "vcpkg:      toolchain via VCPKG_ROOT=$ENV{VCPKG_ROOT}")
     else()
         # Fallback: probe common Windows vcpkg install paths. Order matters
@@ -33,11 +47,13 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
             "C:/vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake"
             "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
             "C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake"
+            "C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+            "C:/Users/Administrator/vcpkg/scripts/buildsystems/vcpkg.cmake"
         )
         foreach(_omega_vcpkg_try ${_omega_vcpkg_candidates})
             if(EXISTS "${_omega_vcpkg_try}")
                 set(CMAKE_TOOLCHAIN_FILE "${_omega_vcpkg_try}"
-                    CACHE STRING "vcpkg toolchain file (autodetected fallback)")
+                    CACHE STRING "vcpkg toolchain file (autodetected fallback)" FORCE)
                 message(STATUS "vcpkg:      toolchain autodetected at ${_omega_vcpkg_try}")
                 break()
             endif()
@@ -45,6 +61,19 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
         unset(_omega_vcpkg_try)
         unset(_omega_vcpkg_candidates)
     endif()
+endif()
+if(NOT CMAKE_TOOLCHAIN_FILE)
+    if(WIN32)
+        message(STATUS "vcpkg:      NOT FOUND (no VCPKG_ROOT, no candidate path on disk).")
+        message(STATUS "vcpkg:      Install vcpkg + curl with:")
+        message(STATUS "vcpkg:        git clone https://github.com/microsoft/vcpkg.git C:/vcpkg/vcpkg")
+        message(STATUS "vcpkg:        C:/vcpkg/vcpkg/bootstrap-vcpkg.bat")
+        message(STATUS "vcpkg:        C:/vcpkg/vcpkg/vcpkg.exe install curl:x64-windows")
+    else()
+        message(STATUS "vcpkg:      not used on this host -- relying on system libcurl")
+    endif()
+else()
+    message(STATUS "vcpkg:      using ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -99,7 +128,60 @@ find_package(OpenSSL REQUIRED)
 #   macOS:   brew install curl   (system libcurl already works too)
 #   Linux:   apt-get install libcurl4-openssl-dev
 #   Windows: vcpkg install curl[ssl]:x64-windows
-find_package(CURL REQUIRED)
+#
+# Step-6 hot-fix: try find_package(CURL) softly first, then on Windows
+# fall back to a manual probe of the vcpkg-installed tree before
+# erroring out. This rescues the common case of the toolchain being
+# loaded but `vcpkg install curl:x64-windows` having never been run on
+# the host (or having been wiped by a vcpkg upgrade). When everything
+# fails we emit a precise install command in the error message so the
+# operator can copy/paste it into PowerShell.
+find_package(CURL QUIET)
+if(NOT CURL_FOUND AND WIN32)
+    # Probe vcpkg's installed/x64-windows tree directly. The toolchain file
+    # adds the vcpkg installed/<triplet>/include and lib paths to the
+    # search list, but only if the package is actually installed. If
+    # CURL_FOUND is still false here it almost always means the package
+    # is missing; try to recover by pointing FindCURL at the vcpkg tree
+    # explicitly under the candidate paths from the toolchain probe.
+    set(_omega_curl_roots
+        "C:/vcpkg/vcpkg/installed/x64-windows"
+        "C:/vcpkg/installed/x64-windows"
+        "C:/dev/vcpkg/installed/x64-windows"
+        "C:/tools/vcpkg/installed/x64-windows"
+        "C:/Users/Administrator/vcpkg/installed/x64-windows"
+    )
+    foreach(_omega_curl_root ${_omega_curl_roots})
+        if(EXISTS "${_omega_curl_root}/include/curl/curl.h"
+           AND EXISTS "${_omega_curl_root}/lib/libcurl.lib")
+            set(CURL_INCLUDE_DIR "${_omega_curl_root}/include"
+                CACHE PATH "libcurl include dir (manual probe)" FORCE)
+            set(CURL_LIBRARY     "${_omega_curl_root}/lib/libcurl.lib"
+                CACHE FILEPATH "libcurl import lib (manual probe)" FORCE)
+            message(STATUS "libcurl:    manual probe found at ${_omega_curl_root}")
+            break()
+        endif()
+    endforeach()
+    unset(_omega_curl_root)
+    unset(_omega_curl_roots)
+    find_package(CURL QUIET)
+endif()
+if(NOT CURL_FOUND)
+    if(WIN32)
+        message(FATAL_ERROR
+            "libcurl is required but was not found. On the Omega VPS, run:\n"
+            "    C:/vcpkg/vcpkg/vcpkg.exe install curl:x64-windows\n"
+            "Then re-run cmake. (If your vcpkg lives elsewhere, adjust the path.) "
+            "If `vcpkg install` reports 'curl is already installed', delete the "
+            "build/ directory and re-run; a stale CMakeCache.txt can hold a bad "
+            "CURL_INCLUDE_DIR=NOTFOUND from a previous failed configure.")
+    else()
+        message(FATAL_ERROR
+            "libcurl is required but was not found. Install with:\n"
+            "    macOS:  brew install curl\n"
+            "    Linux:  apt-get install libcurl4-openssl-dev")
+    endif()
+endif()
 
 include_directories(
     ${CMAKE_SOURCE_DIR}
@@ -115,6 +197,7 @@ set(SOURCES
     src/gui/OmegaTelemetryServer.cpp
     src/api/OmegaApiServer.cpp        # Step 2 Omega Terminal: HTTP :7781 read-API
     src/api/OpenBbProxy.cpp           # Step 5 Omega Terminal: OpenBB Hub HTTPS proxy
+    src/api/WatchScheduler.cpp        # Step 6 Omega Terminal: nightly INTEL screener (S&P 500 + NDX)
     src/gold_coordinator.cpp
 )
 
