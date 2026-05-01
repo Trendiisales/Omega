@@ -59,7 +59,14 @@
 //   g++ -O2 -std=c++17 -I include -o hbg_duka_bt backtest/hbg_duka_bt.cpp
 //
 // RUN
-//   ./hbg_duka_bt /Users/jo/Tick/duka_ticks/XAUUSD_2024-03_2026-04_combined.csv
+//   Full 26-month dataset (default behaviour, ~2h 15m on Mac):
+//     ./hbg_duka_bt /Users/jo/Tick/duka_ticks/XAUUSD_2024-03_2026-04_combined.csv
+//
+//   Windowed run (added 2026-05-01, ~30min for last-6-months window):
+//     ./hbg_duka_bt <csv> --from 2025-11-01 --to 2026-04-30
+//
+//   Either flag can be omitted; missing --from = no lower bound, missing
+//   --to = no upper bound. Dates are UTC midnight.
 //
 // OUTPUT
 //   stdout: summary stats (trades, WR, net P&L, exit-reason breakdown, by month)
@@ -160,13 +167,58 @@ struct MonthBucket {
     double pnl  = 0.0;
 };
 
+// ----------------------------------------------------------------------------
+// Date-window helpers (added 2026-05-01)
+// Converts "YYYY-MM-DD" to epoch_ms at UTC midnight. Returns -1 on parse fail.
+// Used by the optional --from / --to flags to bound the tick stream so we
+// can run fast iteration windows (e.g. last 6 months ~30min) instead of
+// the full 26-month dataset (~2h 15m). Out-of-window ticks are skipped at
+// the top of the main loop, BEFORE on_tick, so the engine sees a clean
+// contiguous window with no fake gaps.
+// ----------------------------------------------------------------------------
+static int64_t ymd_to_epoch_ms(const std::string& s) {
+    if (s.size() != 10 || s[4] != '-' || s[7] != '-') return -1;
+    try {
+        std::tm t{};
+        t.tm_year = std::stoi(s.substr(0,4)) - 1900;
+        t.tm_mon  = std::stoi(s.substr(5,2)) - 1;
+        t.tm_mday = std::stoi(s.substr(8,2));
+        t.tm_hour = 0; t.tm_min = 0; t.tm_sec = 0;
+        return (int64_t)timegm(&t) * 1000;
+    } catch (...) { return -1; }
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: hbg_duka_bt <duka_xauusd.csv>\n";
+        std::cerr << "Usage: hbg_duka_bt <duka_xauusd.csv> [--from YYYY-MM-DD] [--to YYYY-MM-DD]\n";
         std::cerr << "Outputs:\n";
         std::cerr << "  stdout : summary\n";
         std::cerr << "  hbg_duka_bt_trades.csv : per-trade records\n";
         return 1;
+    }
+
+    // Parse optional --from / --to date window flags.
+    int64_t window_from_ms = -1;   // -1 = no lower bound
+    int64_t window_to_ms   = -1;   // -1 = no upper bound
+    std::string window_from_str, window_to_str;
+    for (int i = 2; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "--from" || arg == "--to") && i + 1 < argc) {
+            std::string val = argv[++i];
+            int64_t ms = ymd_to_epoch_ms(val);
+            if (ms < 0) {
+                std::cerr << "Bad date for " << arg << ": " << val
+                          << " (expected YYYY-MM-DD)\n";
+                return 1;
+            }
+            if (arg == "--from") { window_from_ms = ms;       window_from_str = val; }
+            else                 { window_to_ms   = ms + 86400000LL; window_to_str = val; }
+            // --to is end-of-day inclusive: bump by 24h so e.g. "--to 2026-04-30"
+            // includes ticks all the way to 2026-05-01 00:00:00 UTC.
+        } else {
+            std::cerr << "Unknown arg: " << arg << "\n";
+            return 1;
+        }
     }
 
     omega::GoldHybridBracketEngine hbg;
@@ -246,6 +298,16 @@ int main(int argc, char* argv[]) {
                         || line.find("Time")      != std::string::npos)) continue;
         DukaTick t;
         if (!parse_duka(line, t)) continue;
+
+        // Window filter (added 2026-05-01). Skip out-of-window ticks BEFORE
+        // counting them so the "ticks" total reflects only what HBG actually
+        // saw. This means progress reports and the final tick count match
+        // the windowed run, not the full file.
+        if (window_from_ms >= 0 && t.ts_ms < window_from_ms) continue;
+        if (window_to_ms   >= 0 && t.ts_ms >= window_to_ms) {
+            // Stream is roughly time-ordered. Once we pass --to we can stop.
+            break;
+        }
         ++ticks;
 
         // HBG operates standalone in BT: no parent flow, no DOM. The engine
@@ -276,6 +338,15 @@ int main(int argc, char* argv[]) {
 
     std::cout << "\n=== HBG DUKASCOPY BACKTEST ===\n";
     std::cout << "File         : " << argv[1] << "\n";
+    if (!window_from_str.empty() || !window_to_str.empty()) {
+        std::cout << "Window       : "
+                  << (window_from_str.empty() ? "(file start)" : window_from_str)
+                  << " -> "
+                  << (window_to_str.empty()   ? "(file end)"   : window_to_str)
+                  << "\n";
+    } else {
+        std::cout << "Window       : (full file)\n";
+    }
     std::cout << "Ticks        : " << ticks << "\n";
     std::cout << "Elapsed      : " << elapsed << " s\n";
     std::cout << "Trades       : " << trades << "\n";
