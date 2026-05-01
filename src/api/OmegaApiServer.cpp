@@ -10,6 +10,20 @@
 //   GET /api/v1/omega/positions  -> [Position]      (skeleton until Step 3)
 //   GET /api/v1/omega/ledger     -> [LedgerEntry]   from g_omegaLedger
 //   GET /api/v1/omega/equity     -> [EquityPoint]   (skeleton until Step 3)
+//   GET /                        -> static file from omega-terminal/dist/
+//   GET /<asset>                 -> static file (or index.html SPA fallback)
+//
+// Static file serving (added 2026-05-01): any GET that does not match an
+// /api/v1/omega/ route falls through to try_serve_static(), which reads from
+// omega-terminal/dist/ relative to the service's working directory (C:\Omega
+// in production). Paths without an extension fall back to index.html so the
+// React-Router client-side routes resolve. Hashed Vite assets (e.g.
+// /assets/index-abc123.js) get an immutable cache header; index.html is
+// served no-cache so deploys take effect immediately. Path traversal is
+// blocked by rejecting any path containing "..".
+//
+// This is what makes "http://VPS_IP:7781/" load the omega-terminal UI
+// directly from the engine binary -- no separate node/nginx process needed.
 //
 // Engine and ledger reads use their own internal mutexes (EngineRegistry::mu_,
 // OmegaTradeLedger::m_mtx). Positions/equity are stub responses for now --
@@ -50,6 +64,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -310,6 +325,122 @@ static void split_target(const std::string& target,
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────────
+// Static file serving (added 2026-05-01)
+//
+// Serves the omega-terminal React build from omega-terminal/dist/ relative
+// to the service working directory (C:\Omega in production -- NSSM sets
+// AppDirectory to C:\Omega so this resolves correctly). Allows
+// http://VPS_IP:7781/ to load the UI directly from the engine binary, with
+// no separate node/nginx process to manage.
+//
+// Path resolution rules:
+//   "/" or ""              -> serve index.html (no-cache)
+//   "/something.ext"       -> serve omega-terminal/dist/something.ext if it
+//                             exists, else 404 (we DO NOT fall back to
+//                             index.html for asset-shaped paths because
+//                             /robots.txt etc. should genuinely 404)
+//   "/something" (no ext)  -> SPA fallback: serve index.html so client-side
+//                             React Router can resolve the route
+//
+// Path traversal is blocked by rejecting any request path containing "..".
+// We don't bother decoding percent-escapes -- the React build emits ASCII
+// asset paths (no spaces, no unicode) and any UI-side fetch using percent
+// escapes is hitting /api/v1/omega/* which routes before this helper runs.
+//
+// MIME types cover the Vite default output: index.html, assets/*.js,
+// assets/*.css, assets/*.svg, plus common image/font/source-map extensions.
+// Anything unrecognised gets application/octet-stream -- the browser will
+// refuse to execute it (X-Content-Type-Options: nosniff is set globally),
+// which is the right outcome for unexpected files in dist/.
+//
+// Cache policy is split: index.html no-cache (deploys must take effect on
+// next page load), hashed Vite assets immutable for one year.
+// ──────────────────────────────────────────────────────────────────────────────────
+
+static bool ends_with(const std::string& s, const char* suffix)
+{
+    const size_t n = std::strlen(suffix);
+    return s.size() >= n && std::memcmp(s.data() + s.size() - n, suffix, n) == 0;
+}
+
+static bool try_serve_static(const std::string& path,
+                             std::string& body,
+                             std::string& ctype,
+                             std::string& cache,
+                             int& status)
+{
+    // Path-traversal guard. Anything trying to escape dist/ via .. is rejected
+    // outright; we do not bother trying to canonicalise.
+    if (path.find("..") != std::string::npos) return false;
+
+    // Resolve "/" -> "/index.html". rel always begins with "/".
+    std::string rel = path;
+    if (rel.empty() || rel == "/") rel = "/index.html";
+
+    const std::string dist_root = "omega-terminal/dist";
+    std::string fs_path = dist_root + rel;
+
+    bool is_index = (rel == "/index.html");
+    std::ifstream f(fs_path, std::ios::binary);
+    if (!f.good()) {
+        // SPA fallback: paths with no extension are treated as client-side
+        // routes (e.g. /cc, /eng/HBG) and resolve to index.html.
+        // Paths with an extension that we couldn't find are real 404s --
+        // we deliberately do not serve index.html for /favicon.ico misses,
+        // because that would confuse browsers expecting an image.
+        const size_t slash = rel.find_last_of('/');
+        const std::string leaf = (slash == std::string::npos) ? rel : rel.substr(slash + 1);
+        if (leaf.find('.') != std::string::npos) {
+            return false;   // asset-shaped miss -> 404
+        }
+        f.open(dist_root + "/index.html", std::ios::binary);
+        if (!f.good()) return false;
+        is_index = true;
+        rel = "/index.html";
+    }
+
+    // Read the file as binary into body. std::string handles arbitrary bytes
+    // (length-tracked, not NUL-terminated) so this is safe for js/css/png/etc.
+    f.seekg(0, std::ios::end);
+    const std::streamsize sz = f.tellg();
+    f.seekg(0, std::ios::beg);
+    body.resize(static_cast<size_t>(sz));
+    if (sz > 0) f.read(&body[0], sz);
+
+    // MIME type by extension.
+    if      (ends_with(rel, ".html"))   ctype = "text/html; charset=utf-8";
+    else if (ends_with(rel, ".js"))     ctype = "application/javascript; charset=utf-8";
+    else if (ends_with(rel, ".mjs"))    ctype = "application/javascript; charset=utf-8";
+    else if (ends_with(rel, ".css"))    ctype = "text/css; charset=utf-8";
+    else if (ends_with(rel, ".json"))   ctype = "application/json; charset=utf-8";
+    else if (ends_with(rel, ".svg"))    ctype = "image/svg+xml";
+    else if (ends_with(rel, ".png"))    ctype = "image/png";
+    else if (ends_with(rel, ".jpg") ||
+             ends_with(rel, ".jpeg"))   ctype = "image/jpeg";
+    else if (ends_with(rel, ".webp"))   ctype = "image/webp";
+    else if (ends_with(rel, ".ico"))    ctype = "image/x-icon";
+    else if (ends_with(rel, ".woff2"))  ctype = "font/woff2";
+    else if (ends_with(rel, ".woff"))   ctype = "font/woff";
+    else if (ends_with(rel, ".ttf"))    ctype = "font/ttf";
+    else if (ends_with(rel, ".map"))    ctype = "application/json; charset=utf-8";
+    else if (ends_with(rel, ".txt"))    ctype = "text/plain; charset=utf-8";
+    else                                 ctype = "application/octet-stream";
+
+    // index.html is no-cache so deploys take effect immediately. Hashed Vite
+    // assets (vite emits /assets/<name>-<hash>.{js,css}) are content-addressed
+    // and safe to mark immutable; this avoids the network round-trip on every
+    // page load for the bundled JS/CSS.
+    if (is_index) {
+        cache = "no-store, no-cache, must-revalidate";
+    } else {
+        cache = "public, max-age=31536000, immutable";
+    }
+
+    status = 200;
+    return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OmegaApiServer ctor / dtor / start / stop
 // ─────────────────────────────────────────────────────────────────────────────
@@ -418,6 +549,9 @@ void OmegaApiServer::run(int port)
 
         std::string body;
         std::string ctype = "application/json";
+        // Cache-Control default for API responses; try_serve_static() may
+        // overwrite this with an asset-appropriate policy below.
+        std::string cache = "no-store, no-cache, must-revalidate";
         int status = 200;
 
         // Only GET is supported. Anything else gets 405. We don't bother
@@ -439,10 +573,18 @@ void OmegaApiServer::run(int port)
         else if (path == "/api/v1/omega/equity") {
             body = build_equity_json(q);
         }
+        else if (try_serve_static(path, body, ctype, cache, status)) {
+            // Handled by static file serving (status/body/ctype/cache filled).
+        }
         else {
             status = 404;
             body   = "{\"error\":\"not found\",\"path\":" + json_str(path) + "}";
         }
+
+        const char* status_text = "OK";
+        if      (status == 404) status_text = "Not Found";
+        else if (status == 405) status_text = "Method Not Allowed";
+        else if (status != 200) status_text = "Error";
 
         char hdr[512];
         std::snprintf(hdr, sizeof(hdr),
@@ -451,12 +593,13 @@ void OmegaApiServer::run(int port)
             "Content-Length: %zu\r\n"
             "Access-Control-Allow-Origin: *\r\n"
             "X-Content-Type-Options: nosniff\r\n"
-            "Cache-Control: no-store, no-cache, must-revalidate\r\n"
+            "Cache-Control: %s\r\n"
             "Connection: close\r\n\r\n",
             status,
-            (status == 200 ? "OK" : (status == 404 ? "Not Found" : "Method Not Allowed")),
+            status_text,
             ctype.c_str(),
-            body.size());
+            body.size(),
+            cache.c_str());
         send(c, hdr,           static_cast<int>(std::strlen(hdr)), 0);
         send(c, body.c_str(),  static_cast<int>(body.size()),      0);
         closesocket(c);
