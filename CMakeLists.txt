@@ -300,6 +300,72 @@ add_custom_command(TARGET Omega POST_BUILD
     COMMENT "Copying config files to build output directory"
 )
 
+# ?? Copy vcpkg runtime DLLs next to Omega.exe (Step-6 hot-fix 2026-05-01e) ???
+# When find_package(CURL) succeeds via the vcpkg toolchain we link against
+# libcurl.lib (the import library), but at *runtime* Windows needs the
+# matching DLL set: libcurl-x64.dll plus its transitive deps (zlib1.dll,
+# libssl-3-x64.dll, libcrypto-3-x64.dll, nghttp2.dll, libssh2.dll, ...).
+#
+# vcpkg's classic-mode toolchain does NOT auto-deploy these by default for
+# x64-windows binaries (autoapplocal is off-by-default outside of x86). So
+# we copy the entire vcpkg `installed/<triplet>/bin/` directory (debug or
+# release per CONFIG) next to $<TARGET_FILE_DIR:Omega> on every build. This
+# is the same shape the symbols.ini POST_BUILD step uses.
+#
+# Probe order:
+#   1. ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin   (toolchain set)
+#   2. C:/vcpkg/vcpkg/installed/x64-windows/bin             (Omega VPS layout)
+#   3. C:/vcpkg/installed/x64-windows/bin                   (single-level)
+#   4. C:/dev/vcpkg/installed/x64-windows/bin
+#   5. C:/tools/vcpkg/installed/x64-windows/bin
+#   6. C:/Users/Administrator/vcpkg/installed/x64-windows/bin
+#
+# The first one that exists wins. If none are found and we're on Windows,
+# emit a STATUS warning -- the .exe will still link but will fail to load
+# at runtime with "code execution cannot proceed because LIBCURL.dll was
+# not found", which matches the symptom that took Step 6 down post-build.
+if(WIN32)
+    set(_omega_vcpkg_bin "")
+    if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+        set(_omega_try "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+        if(EXISTS "${_omega_try}")
+            set(_omega_vcpkg_bin "${_omega_try}")
+        endif()
+    endif()
+    if(NOT _omega_vcpkg_bin)
+        set(_omega_vcpkg_bin_candidates
+            "C:/vcpkg/vcpkg/installed/x64-windows/bin"
+            "C:/vcpkg/installed/x64-windows/bin"
+            "C:/dev/vcpkg/installed/x64-windows/bin"
+            "C:/tools/vcpkg/installed/x64-windows/bin"
+            "C:/Users/Administrator/vcpkg/installed/x64-windows/bin"
+        )
+        foreach(_omega_try ${_omega_vcpkg_bin_candidates})
+            if(EXISTS "${_omega_try}")
+                set(_omega_vcpkg_bin "${_omega_try}")
+                break()
+            endif()
+        endforeach()
+        unset(_omega_vcpkg_bin_candidates)
+    endif()
+    unset(_omega_try)
+
+    if(_omega_vcpkg_bin)
+        message(STATUS "vcpkg DLLs: copy from ${_omega_vcpkg_bin}")
+        add_custom_command(TARGET Omega POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${_omega_vcpkg_bin}"
+                "$<TARGET_FILE_DIR:Omega>"
+            COMMENT "Copying vcpkg runtime DLLs (libcurl + transitive deps) next to Omega.exe"
+        )
+    else()
+        message(STATUS "vcpkg DLLs: NOT FOUND -- Omega.exe will link but will fail to launch.")
+        message(STATUS "vcpkg DLLs: install curl with `C:/vcpkg/vcpkg/vcpkg.exe install curl:x64-windows`")
+        message(STATUS "vcpkg DLLs: then re-run cmake -B build (delete build/ first if needed).")
+    endif()
+    unset(_omega_vcpkg_bin)
+endif()
+
 # ?? Push current log to git after every successful build ?????????????????????
 # LOG PUSH REMOVED FROM POST_BUILD -- permanent fix for stale-hash problem.
 # Previously push_log.ps1 ran here after every build, pushing logs/latest.log

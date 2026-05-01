@@ -383,3 +383,275 @@ rm -rf omega-terminal/dist-step6
    directly in the browser. Initial response will show
    `last_run_ts: 0` until the first 00:30 UTC tick (or until the next
    `trigger_now` is wired). Confirm `next_run_ts` is the next 00:30 UTC.
+
+## Step-6 hot-fix: vcpkg/CURL detection (post-deploy)
+
+The first Step-6 deploy hit `Could NOT find CURL (missing: CURL_LIBRARY
+CURL_INCLUDE_DIR)` even though the Step-5 hot-fix's vcpkg toolchain
+fallback was supposed to handle this. Two real bugs surfaced; both
+fixed in `CMakeLists.txt` in this same handoff.
+
+### Bug A: `if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)` short-circuited on a stale empty cache value
+
+Symptom: configure log showed `Could NOT find CURL (missing:
+CURL_LIBRARY CURL_INCLUDE_DIR)`. Call stack went
+`CMakeLists.txt → FindCURL.cmake → FindPackageHandleStandardArgs.cmake`
+with NO `vcpkg.cmake` layer in between -- proof that the toolchain was
+never loaded for this configure.
+
+Root cause: a previously-failed configure (the very Step-6 deploy that
+just failed) had left `CMAKE_TOOLCHAIN_FILE=""` defined-but-empty in
+`build/CMakeCache.txt`. Our original Step-5 hot-fix used
+`if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)` which is FALSE for "defined to
+empty string" -- so the autodetect fallback refused to retry, and the
+build went straight into `find_package(CURL)` with no toolchain.
+
+Fix: change the guard to `if(NOT CMAKE_TOOLCHAIN_FILE)` (truthy check)
+and add `FORCE` to the cache writes so a stale empty value can be
+overwritten by the autodetect.
+
+### Bug B: vcpkg-installed curl missing on the host
+
+Symptom: even with the toolchain loaded, `find_package(CURL)` failed
+because `vcpkg install curl:x64-windows` had never been re-run after
+some vcpkg-side change (upgrade, manual cleanup, or the user pointed
+vcpkg at a different root since the Step-5 deploy).
+
+Fix: after `find_package(CURL QUIET)` returns NOT FOUND on Windows,
+manually probe the vcpkg `installed/x64-windows/` tree at the same
+candidate paths used for the toolchain detection. If the headers and
+import lib are present, set `CURL_INCLUDE_DIR` and `CURL_LIBRARY`
+explicitly (with `FORCE`) and re-run `find_package(CURL QUIET)`. If
+that still fails, emit a `FATAL_ERROR` that names the exact
+`vcpkg install` command to run.
+
+### Configure log lines that should now appear
+
+After this hot-fix, every configure will print one of:
+
+```
+-- vcpkg:      using C:/vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
+
+or, if vcpkg can't be located:
+
+```
+-- vcpkg:      NOT FOUND (no VCPKG_ROOT, no candidate path on disk).
+-- vcpkg:      Install vcpkg + curl with:
+-- vcpkg:        git clone https://github.com/microsoft/vcpkg.git C:/vcpkg/vcpkg
+-- vcpkg:        C:/vcpkg/vcpkg/bootstrap-vcpkg.bat
+-- vcpkg:        C:/vcpkg/vcpkg/vcpkg.exe install curl:x64-windows
+```
+
+If `find_package(CURL)` failed but the manual probe rescued it, the
+log also prints:
+
+```
+-- libcurl:    manual probe found at C:/vcpkg/vcpkg/installed/x64-windows
+```
+
+### Recovery steps if the deploy is currently broken
+
+The Step-5 → Step-6 deploy left a stale `build/CMakeCache.txt` plus
+possibly a missing vcpkg curl install. Recovery on the VPS:
+
+```powershell
+# 1. Ensure curl is installed (re-running is harmless if already installed):
+C:\vcpkg\vcpkg\vcpkg.exe install curl:x64-windows
+
+# 2. Force-clear the stale CMakeCache.txt that's holding empty
+#    CMAKE_TOOLCHAIN_FILE / CURL_LIBRARY=NOTFOUND values:
+Remove-Item -Recurse -Force C:\Omega\build -ErrorAction SilentlyContinue
+
+# 3. Pull the new CMakeLists.txt + push to deploy:
+.\QUICK_RESTART.ps1 -Branch omega-terminal
+```
+
+The CMakeLists.txt change alone may be enough -- the new
+`if(NOT CMAKE_TOOLCHAIN_FILE)` + `FORCE` should overwrite the stale
+empty value -- but blowing away `build/` is the cleanest recovery and
+costs ~30 s of re-configure time.
+
+### Push the hot-fix
+
+```bash
+cd /Users/jo/omega_repo
+# If the previous git commit is still pending due to a stale lock file,
+# delete it first (a Mac-side mishap from a tool sandbox -- it left
+# .git/index.lock behind):
+rm -f .git/index.lock
+
+git add CMakeLists.txt docs/SESSION_2026-05-01e_HANDOFF.md
+git commit -m "Step 6 hot-fix: harden vcpkg toolchain + CURL detection in CMakeLists.txt"
+git push origin omega-terminal
+```
+
+(If the original Step-6 commit also hadn't landed yet, fold this
+hot-fix into the same commit by `git add`-ing all the Step-6 files
+together before committing once.)
+
+### Bug C: Service starts but immediately exits (libcurl runtime DLLs missing)
+
+Symptom on the post-CMake-fix Step-6 deploy:
+
+```
+  Omega.vcxproj -> C:\Omega\build\Release\Omega.exe
+  [OK] Built 839a2d8 at 06:40:14 UTC
+[4/4] Starting Omega service...
+  [FATAL] Start-Service failed: Failed to start service 'Omega (Omega)'.
+```
+
+The `cmake --build` line went through clean -- 7 .cpp files compiled,
+Omega.exe linked. But `Start-Service` failed seconds later with no
+engine-side stdout output. That's the textbook signature of a Windows
+DLL load failure: the linker resolved against `libcurl.lib` (the
+import library) at link time, but at runtime Windows can't find the
+matching `libcurl-x64.dll` and its transitive deps (`zlib1.dll`,
+`libssl-3-x64.dll`, `libcrypto-3-x64.dll`, `nghttp2.dll`,
+`libssh2.dll`, ...) in the Omega.exe directory or PATH. The .exe
+process exits before main() runs and the service controller reports
+"failed to start" without a useful stderr trace.
+
+This was latent through Step 5 because Step 5 was never actually
+verified end-to-end on the VPS -- the Step-5 handoff lists the smoke
+gates as ⏳ pending. The previous service kept running on its existing
+binary + DLL set.
+
+Root cause: vcpkg's classic-mode toolchain does NOT auto-deploy runtime
+DLLs for x64-windows targets by default. (autoapplocal is off-by-default
+outside of x86.) The IMPORTED CURL target in `find_package(CURL)`
+points at the .lib for linking but doesn't trigger a DLL copy.
+
+Fix: a new POST_BUILD `copy_directory` step in `CMakeLists.txt` copies
+the entire `<vcpkg-installed>/<triplet>/bin/` directory next to
+`$<TARGET_FILE_DIR:Omega>` on every build. The probe order matches the
+toolchain detection (`VCPKG_INSTALLED_DIR`/`VCPKG_TARGET_TRIPLET` if
+the toolchain set them, else the same five C:/vcpkg/... candidate
+paths). The configure log will print one of:
+
+```
+-- vcpkg DLLs: copy from C:/vcpkg/vcpkg/installed/x64-windows/bin
+```
+
+or, if no candidate path exists:
+
+```
+-- vcpkg DLLs: NOT FOUND -- Omega.exe will link but will fail to launch.
+-- vcpkg DLLs: install curl with `C:/vcpkg/vcpkg/vcpkg.exe install curl:x64-windows`
+-- vcpkg DLLs: then re-run cmake -B build (delete build/ first if needed).
+```
+
+### Diagnosis steps if the service still won't start
+
+Before assuming any specific cause, look at the actual error first:
+
+```powershell
+# 1. The rotated stdout log captured anything Omega.exe wrote before exiting.
+type C:\Omega\archive\omega_service_stdout_20260501_064014.log
+
+# 2. The Windows event log captures DLL-load failures + service-control errors
+#    that don't make it into stdout.
+Get-EventLog -LogName Application `
+             -Source 'Service Control Manager','Application Error' `
+             -Newest 20 | Format-List Source,EntryType,Message
+
+# 3. Run the binary directly outside the service so any "DLL not found"
+#    dialog or unhandled exception text becomes visible.
+& 'C:\Omega\build\Release\Omega.exe'
+```
+
+Common outcomes:
+
+- "The code execution cannot proceed because LIBCURL.dll was not found"
+  -> the new POST_BUILD copy fixes this on the next build.
+- "WSAGetLastError 10048: bind 7781 already in use" -> the previous
+  Omega process is still bound to the port; `Stop-Service` it manually
+  before deploying.
+- An unhandled exception trace -> paste the trace; this is a real
+  engine-side bug and will be addressed individually.
+- Nothing useful in any of the three sources -> escalate to running
+  Omega.exe under a debugger (`windbg` / `cdb`) to capture the load
+  failure.
+
+### Recovery sequence after the DLL fix
+
+```powershell
+# 1. Make sure curl is actually installed in vcpkg (re-running is harmless):
+C:\vcpkg\vcpkg\vcpkg.exe install curl:x64-windows
+
+# 2. Wipe the stale CMakeCache + previous build/Release artifacts:
+Remove-Item -Recurse -Force C:\Omega\build -ErrorAction SilentlyContinue
+
+# 3. Pull the new CMakeLists.txt + redeploy:
+.\QUICK_RESTART.ps1 -Branch omega-terminal
+```
+
+Confirmation lines you should see in the new configure log:
+
+```
+-- vcpkg:      using C:/vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake
+-- vcpkg DLLs: copy from C:/vcpkg/vcpkg/installed/x64-windows/bin
+```
+
+After build, the `C:\Omega\build\Release\` directory should now also
+contain `libcurl-x64.dll`, `zlib1.dll`, `libssl-3-x64.dll`,
+`libcrypto-3-x64.dll`, and friends. List with:
+
+```powershell
+Get-ChildItem C:\Omega\build\Release\*.dll | Format-Table Name,Length
+```
+
+## Step 7 carry-over: OpenBB removal
+
+End-of-Step-6 architectural finding: **`https://api.openbb.co/` and
+`https://api.openbb.co/api/v1/<route>` return HTTP 404.** OpenBB does
+NOT host a public REST endpoint. The Step-5 architecture decision that
+chose "libcurl direct to OpenBB Hub, no Python sidecar" was based on a
+faulty assumption — OpenBB Hub (`my.openbb.co`) is an account-management
+web app, and the OpenBB Platform is a Python library you `pip install`
+and run locally as a FastAPI sidecar.
+
+OpenBB themselves state: *"OpenBB does not host/serve market data — ODP
+uses provider connectors and your API keys."*
+
+This means the current `OpenBbProxy` is calling a URL that 404s. Mock
+mode (`OMEGA_OPENBB_MOCK=1`) works because it never actually fetches.
+**Real OpenBB calls have never flowed through this engine and never
+will at the configured base URL.** The trading engine (FIX, all 14
+trading strategies, shadow simulation) is completely unaffected — the
+OpenBB-backed routes only power the new BB-style market-data UI panels.
+
+User decision at end of this session: **rip OpenBB out, replace with
+direct free-provider calls in Step 7.** Plan: rewrite
+`src/api/OpenBbProxy.{hpp,cpp}` → `MarketDataProxy.{hpp,cpp}`, calling
+Yahoo Finance for 16 of 17 routes (no API key) and FRED for CURV (free
+API key). The omega-terminal UI side is untouched — envelope JSON
+shapes are preserved so the panels keep rendering unchanged.
+
+Engine still uses libcurl. No Python sidecar. No new vcpkg ports. The
+Step-6 hot-fixes (vcpkg toolchain robustness + runtime DLL POST_BUILD
+copy) all carry forward and are exactly what a Yahoo-Finance / FRED
+HTTPS stack needs.
+
+Full Step-7 plan is in `docs/omega_terminal/STEP7_OPENER.md`.
+
+### Closing posture for the VPS until Step 7 lands
+
+Set mock mode at Machine scope and restart the service so the BB-style
+panels render synthetic data instead of red retry banners while the
+OpenBB removal is being designed and built:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("OMEGA_OPENBB_MOCK","1","Machine")
+Restart-Service Omega
+Start-Sleep -Seconds 6
+Get-Service Omega | Format-List Name,Status
+Invoke-WebRequest 'http://127.0.0.1:7781/api/v1/omega/qr?symbols=AAPL,MSFT' -UseBasicParsing | Select-Object -ExpandProperty Content
+```
+
+The trading engine continues unaffected. CC / ENG / POS / LDG / TRADE /
+CELL panels show real engine data. INTEL / CURV / WEI / MOV / OMON /
+FA / KEY / DVD / EE / NI / GP / QR / HP / DES / FXC / CRYPTO / WATCH
+panels show synthetic mock data with an amber `MOCK` badge. When Step 7
+deploys, the same panels start showing real data from Yahoo Finance /
+FRED instead of mock — no UI redeploy needed.
