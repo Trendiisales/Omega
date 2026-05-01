@@ -23,6 +23,12 @@ static void init_engines(const std::string& cfg_path)
     // 41-cell walk-forward sweep showed no edge on 9 days of XAUUSD tick data.
     // See globals.hpp tombstone comment for full details.
     g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
+    // TOMBSTONE 2026-05-01 (S52 trade-quality follow-up):
+    //   153-combo parameter sweep on data/l2_ticks_2026-04-16.csv: 0/153
+    //   produced positive PnL. Best combo -$4.30, worst -$225, mean -$81.
+    //   Original 12-trade / 2-day backtest was a tiny lucky window.
+    //   Disabling rather than deleting -- file remains for reference.
+    g_rsi_extreme.enabled      = false;            // DISABLED 2026-05-01 -- 0/153 combos profitable
     g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
@@ -195,7 +201,11 @@ static void init_engines(const std::string& cfg_path)
     //   Cooldown 15s = high frequency, gold RSI cycles every 30-60s at extremes.
     //   MAX_HOLD 90s = scalp timeframe, don't overstay.
     // Win rate target: 55-70%, profit factor >1.4 (per backtested research).
-    g_rsi_reversal.enabled        = true;   // ENABLED -- RSI turn strategy
+    // TOMBSTONE 2026-05-01 (S52 trade-quality follow-up):
+    //   Real-tick backtest 4320 trades / 2yr -> -$3,800 (negative EV).
+    //   See `// Real-tick backtest:` comment ~20 lines below for source.
+    //   Disabling rather than deleting -- file remains for reference.
+    g_rsi_reversal.enabled        = false;  // DISABLED 2026-05-01 -- backtest negative EV
     g_rsi_reversal.shadow_mode    = true;   // SHADOW first -- verify signals before live
     g_rsi_reversal.RSI_OVERSOLD   = 42.0;  // turn from any low -- not just extreme OS
     g_rsi_reversal.RSI_OVERBOUGHT = 58.0;  // turn from any high -- not just extreme OB
