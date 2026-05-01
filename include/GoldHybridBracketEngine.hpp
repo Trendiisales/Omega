@@ -77,7 +77,28 @@ namespace omega {
 class GoldHybridBracketEngine {
 public:
     // ── Parameters ────────────────────────────────────────────────────────────
-    static constexpr int    STRUCTURE_LOOKBACK   = 20;
+    // 2026-05-01 SESSION_h REGRESSION FIX (Claude diagnostic):
+    //   STRUCTURE_LOOKBACK was silently regressed from 120 -> 20 in commit
+    //   6c85c1b (2026-04-07 "Wire DOM into GoldHybridBracketEngine"). The
+    //   prior commit 04ae0f9 (2026-04-06) had deliberately raised it from
+    //   30 -> 120 with the rationale: "30 ticks=3s at London speed=pure
+    //   noise. 120 ticks=12s: requires sustained compression, not a 3s spread
+    //   oscillation. Root cause of -$162 SL losses."
+    //
+    //   The DOM-wire commit performed a 619-line rewrite (234 ins / 385 del)
+    //   and accidentally reset STRUCTURE_LOOKBACK to 20 (tighter than the
+    //   original 30) while keeping MIN_RANGE=6.0 (which had been raised in
+    //   the same Apr 6 fix BECAUSE the lookback was 120). The mismatch made
+    //   the engine require $6 of range over only ~6 seconds -- only news
+    //   spikes qualify, so HBG fired zero trades in normal sessions.
+    //
+    //   Confirmed in production logs 2026-05-01: 19 HYBRID-GOLD-DIAG samples
+    //   over 22 minutes showed range=$0.75-2.64 (mean $1.27) -- never above
+    //   $6, engine never armed, despite $76 daily XAUUSD range.
+    //
+    //   RESTORED to validated Apr 6 design: STRUCTURE_LOOKBACK=120 paired
+    //   with MIN_RANGE=6.0 = "$6 sustained over ~36 sec".
+    static constexpr int    STRUCTURE_LOOKBACK   = 120;
     static constexpr int    MIN_ENTRY_TICKS      = 15;
     static constexpr int    MIN_BREAK_TICKS      = 3;
     static constexpr double MIN_RANGE            = 6.0;

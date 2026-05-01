@@ -317,7 +317,13 @@ static omega::GoldBracketEngine   g_bracket_gold;
 // These are in SHADOW mode by default -- validated against live data before enabling.
 #include "GoldHybridBracketEngine.hpp"
 #include "IndexHybridBracketEngine.hpp"
+// 2026-05-01 SESSION_h: GoldMidScalperEngine -- mid-band sister to HybridGold
+//   targeting the $20-40 P&L zone (range $8-20 with TP_RR=4).  Shadow-only by
+//   default; promote to live only after a 2-week paper validation.  Wired in
+//   tick_gold.hpp dispatch block parallel to g_hybrid_gold.
+#include "GoldMidScalperEngine.hpp"
 static omega::GoldHybridBracketEngine         g_hybrid_gold;
+static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());

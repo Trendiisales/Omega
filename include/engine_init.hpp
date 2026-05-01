@@ -40,6 +40,13 @@ static void init_engines(const std::string& cfg_path)
     g_iflow_us30.set_shadow_mode(kShadowDefault);
     // Class C (stamped 2026-04-21):
     g_hybrid_gold.shadow_mode  = kShadowDefault;  // GoldHybridBracketEngine
+    // 2026-05-01 SESSION_h: GoldMidScalperEngine -- pinned shadow-only on
+    //   first deployment regardless of g_cfg.mode. New engine, untested in
+    //   live conditions, $20-40 capture zone. Promote to kShadowDefault
+    //   (i.e. follow g_cfg.mode) after a 2-week paper validation showing
+    //   positive expectancy. Until then this line stays as `true` not
+    //   `kShadowDefault`.
+    g_gold_midscalper.shadow_mode = true;
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -1817,6 +1824,14 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_hybrid_gold.shadow_mode,
                           {"HybridBracketGold"}); });
+    // 2026-05-01 SESSION_h: register GoldMidScalper for /api/v1/omega/engines.
+    //   Shadow-stamped (last_signal_ts/last_pnl come from
+    //   g_engine_last lookup against tr.engine="MidScalperGold").
+    g_engines.register_engine("MidScalperGold",
+        [reg]{ return reg("MidScalperGold",
+                          true,
+                          g_gold_midscalper.shadow_mode,
+                          {"MidScalperGold"}); });
     g_engines.register_engine("HybridSP",
         [reg]{ return reg("HybridSP",
                           true,
@@ -1926,7 +1941,38 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
-    std::cout << "[OmegaApi] g_open_positions sources registered (1 source: HybridGold)\n";
+    // 2026-05-01 SESSION_h: GoldMidScalper open-position source (parallel to HybridGold).
+    g_open_positions.register_source("MidScalperGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_midscalper.has_open_position()) return out;
+
+            const auto& p = g_gold_midscalper.pos;
+            const double mult  = tick_value_multiplier(std::string("XAUUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "MidScalperGold";
+            out.push_back(ps);
+            return out;
+        });
+    std::cout << "[OmegaApi] g_open_positions sources registered (2 sources: HybridGold, MidScalperGold)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
