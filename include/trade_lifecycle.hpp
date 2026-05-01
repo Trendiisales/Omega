@@ -80,132 +80,49 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         }
     }
 
-    // ???????????????????????????????????????????????????????????????????????????????
-    // ?? SHADOW-MODE CENTRAL GUARD (2026-04-21)
-    // ???????????????????????????????????????????????????????????????????????????????
-    // Short-circuits shadow trades to audit-only logging so they never pollute:
-    //   g_omegaLedger, g_telemetry, daily_pnl, consec_losses, fast_loss_streak,
-    //   engine_culled, g_crowding_guard, g_walk_forward, g_param_gate, g_edges.tod,
-    //   g_perf auto-disable state, g_indices_disconnect_until cooldown, or trigger
-    //   send_live_order on phantom positions.
+    // -- SHADOW-MODE CENTRAL GUARD REMOVED 2026-05-01 (SESSION_h, per Jo) ----
+    // History:
+    //   The shadow-guard v2 introduced 2026-04-21 (commit e941d7b) early-
+    //   returned shadow trades from this function before reaching
+    //   g_omegaLedger / g_telemetry / risk-state mutators. That choice hid
+    //   every shadow trade from the LDG GUI panel and broke "as-if-live"
+    //   simulation fidelity: engine-cull, perf auto-disable, TOD gates,
+    //   crowding guard, indices-disconnect cooldown etc. never fired on
+    //   shadow trades, so paper validation no longer matched future live
+    //   behaviour. Confirmed root cause of "we can't see trades in LDG"
+    //   triage 2026-05-01 alongside the HBG STRUCTURE_LOOKBACK regression.
     //
-    // A trade is treated as shadow when EITHER:
-    //   (a) tr_in.shadow == true              (engine stamped itself as shadow)
-    //   (b) g_cfg.mode != "LIVE"              (global mode fallback for engines that
-    //                                          don't own a shadow_mode field)
+    // Decision (Jo 2026-05-01):
+    //   Restore pre-Apr-21 behaviour. Shadow trades flow through the full
+    //   live path below: g_omegaLedger.record + g_telemetry +
+    //   risk/perf/cooldown state mutation all fire as if real. The engine's
+    //   own shadow_mode field still suppresses real broker orders -- that is
+    //   enforced ONE layer down inside send_live_order itself
+    //   (include/order_exec.hpp line 72:
+    //       if (g_cfg.mode != "LIVE") return {};
+    //   ). That single check is the actual broker-side safety boundary; this
+    //   guard was a redundant second layer that cost LDG visibility.
     //
-    // Condition (b) is the catch-all: every engine is implicitly shadow while
-    // global mode is SHADOW, regardless of whether the engine stamped tr.shadow.
+    // Effects of restoration:
+    //   - Shadow trades populate g_omegaLedger -> visible in LDG GUI panel
+    //   - g_telemetry per-engine attribution accumulates shadow PnL
+    //   - daily_pnl, peak_pnl, max_dd track simulated equity curve
+    //   - consec_losses / engine_culled / perf auto-disable can fire on
+    //     shadow drawdown (paper engines may self-disable from paper losses
+    //     -- this is the desired "as-if-live" behaviour, not a bug)
+    //   - g_indices_disconnect_until cooldown stamps in shadow too
+    //   - [TRADE-COST] log line replaces the prior [SHADOW-CLOSE] line for
+    //     forensic visibility; omega_trade_closes.csv still records every
+    //     close. outcome_class classification continues to live in
+    //     write_trade_close_logs (CSV column).
     //
-    // This guard is the first line of defence. The second line is in quote_loop.hpp
-    // where shutdown/disconnect callbacks pre-filter TradeRecords before even calling
-    // handle_closed_trade, which also blocks send_live_order from firing real orders
-    // on shadow positions that don't exist at the broker.
-    //
-    // Shadow audit side-effects preserved:
-    //   - tick_value_multiplier + apply_realistic_costs (so net_pnl is USD-correct)
-    //   - write_shadow_csv (shadow CSV audit trail)
-    //   - write_trade_close_logs (standard close log for forensic analysis)
-    //   - [TRADE-COST] and [SHADOW-CLOSE] stdout line for live monitoring
-    // ???????????????????????????????????????????????????????????????????????????????
-    {
-        const bool is_shadow = tr_in.shadow || (g_cfg.mode != "LIVE");
-        if (is_shadow) {
-            // Cost-correct PnL for the audit row
-            const double mult = tick_value_multiplier(tr.symbol);
-            tr.pnl *= mult; tr.mfe *= mult; tr.mae *= mult;
-            double cps_sh = 0.0;
-            {
-                const std::string& s = tr.symbol;
-                if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" ||
-                    s == "NZDUSD" || s == "USDJPY" ||
-                    s == "XAUUSD")
-                    cps_sh = 3.0;
-            }
-            omega::apply_realistic_costs(tr, cps_sh, mult);
+    // If the previous behaviour ever needs to be re-instated (e.g. for a
+    // controlled test where shadow trades MUST NOT update risk state),
+    // re-introduce the early-return block keyed off a new explicit flag
+    // (e.g. g_cfg.shadow_isolated_from_ledger) rather than re-coupling
+    // it to g_cfg.mode. Do not remove the send_live_order hard gate.
+    // ------------------------------------------------------------------------
 
-            // S17: outcome_class classification. Single-field outcome tag so
-            // post-hoc audits can distinguish WINNER_CUT (good trade killed
-            // early) from LOSER_CUT (correct early cut) without re-deriving
-            // from reason+mfe+net. Relies on tr.mfe / tr.mae already being
-            // scaled to USD above (tr.pnl *= mult etc).
-            //
-            // Classes (priority-ordered):
-            //   STOP_HIT     : exit == SL_HIT (always; regardless of mfe)
-            //   WINNER_FULL  : net>0 AND exit in {TRAIL_SL, TP_HIT, TRAIL_HIT}
-            //   WINNER_CUT   : net>0 AND exit in {IMB_EXIT, TIMEOUT, STAGNATION,
-            //                                     ADVERSE_EARLY} AND mfe was
-            //                  meaningful (>= 0.5 USD on 0.01 lot XAUUSD)
-            //   LOSER_CUT    : net<0 AND exit in {IMB_EXIT, TIMEOUT, STAGNATION,
-            //                                     ADVERSE_EARLY}
-            //   LOSER_FULL   : net<0 AND exit in {FORCE_CLOSE, BREAKOUT_FAIL,
-            //                                     FORCE_STOP}
-            //   BE           : |net| <= small threshold
-            //   OTHER        : fallback
-            const char* outcome_class = "OTHER";
-            {
-                const std::string& rsn = tr.exitReason;
-                const bool is_sl = (rsn == "SL_HIT");
-                const bool is_full_win = (rsn == "TRAIL_SL" || rsn == "TP_HIT" ||
-                                          rsn == "TRAIL_HIT");
-                const bool is_cut = (rsn == "IMB_EXIT" || rsn == "TIMEOUT" ||
-                                     rsn == "STAGNATION" || rsn == "ADVERSE_EARLY" ||
-                                     rsn == "PARTIAL_TP");
-                const bool is_full_loss = (rsn == "FORCE_CLOSE" ||
-                                           rsn == "BREAKOUT_FAIL" ||
-                                           rsn == "FORCE_STOP");
-                const double net = tr.net_pnl;
-                const double abs_net = net < 0 ? -net : net;
-                if (is_sl)                 outcome_class = "STOP_HIT";
-                else if (abs_net < 0.20)   outcome_class = "BE";
-                else if (is_full_win && net > 0) outcome_class = "WINNER_FULL";
-                else if (is_cut      && net > 0) outcome_class = "WINNER_CUT";
-                else if (is_cut      && net < 0) outcome_class = "LOSER_CUT";
-                else if (is_full_loss)           outcome_class = "LOSER_FULL";
-            }
-
-            // S17: atomic emission via ostringstream -- prevents stdout
-            // interleaving of the same format that caused ghost-trade garbage
-            // lines on 2026-04-14/16 (pre-mutex-fix).
-            {
-                std::ostringstream os;
-                os << "[SHADOW-CLOSE] " << tr.symbol
-                   << " engine=" << tr.engine
-                   << " side=" << tr.side
-                   << " gross=$" << std::fixed << std::setprecision(2) << tr.pnl
-                   << " net=$" << tr.net_pnl
-                   << " exit=" << tr.exitReason
-                   << " outcome_class=" << outcome_class
-                   << " mfe=" << std::setprecision(3) << tr.mfe
-                   << " mae=" << std::setprecision(3) << tr.mae
-                   << " reason=" << (tr_in.shadow ? "engine_shadow" : "global_shadow")
-                   << " -- SKIPPING ledger/risk/perf/TOD/crowding/WFO/cooldown mutation\n";
-                std::cout << os.str();
-                std::cout.flush();
-            }
-
-            // Universal CSV audit trail only. omega_trade_closes.csv records every
-            // trade — shadow or live — since the whole system is run as a
-            // simulate-as-if-live harness. When the system is flipped to LIVE mode
-            // (g_cfg.mode == "LIVE"), the same pipeline writes the same CSV; the
-            // only difference is that send_live_order fires real broker orders
-            // instead of being skipped. S14 2026-04-24: removed the separate
-            // write_shadow_csv call — dual-writing was confusing and produced no
-            // analytical value. Legacy omega_shadow.csv and omega_shadow_trades_*.csv
-            // files on disk are left in place for historical reference.
-            write_trade_close_logs(tr);
-
-            // Step 3: per-engine "last close" side-table -- written for shadow
-            // trades too so the omega-terminal CC/ENG panels reflect the fact
-            // that the engine emitted a signal even when we don't book it.
-            // exitTs is unix seconds; the registry stores unix ms.
-            g_engine_last.record(tr.engine,
-                                 static_cast<int64_t>(tr.exitTs) * 1000LL,
-                                 tr.net_pnl);
-
-            return;
-        }
-    }
 
     // ?? Indices FORCE_CLOSE circuit breaker -- stamp cooldown on disconnect ?????
     // When a US index position is FORCE_CLOSEd (disconnect/reconnect), stamp a 30-min
@@ -298,8 +215,11 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // thread, producing the ghost-trade garbage lines observed on 2026-04-14
     // and 2026-04-16 where two concurrent close events produced a merged
     // [TRADE-COST] line with pnl_usd equal to the exit price and a billion-
-    // second hold time. The SHADOW-CLOSE branch above (line ~170) was
-    // converted to ostringstream at that time; this LIVE branch was missed.
+    // second hold time. (Historical note: the prior [SHADOW-CLOSE] branch
+    // had also been converted to ostringstream at S17 time. That branch was
+    // removed 2026-05-01 SESSION_h; shadow trades now flow through this
+    // [TRADE-COST] path instead, so the ostringstream protection here covers
+    // both shadow and live closes.)
     // Fix: build the full line in a local ostringstream, then issue a single
     // std::cout << str write (which is atomic with respect to other writers
     // that also use single writes).
@@ -338,8 +258,11 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                          tr.net_pnl);
     // S14 2026-04-24: removed write_shadow_csv — system uses single universal
     // trade journal (omega_trade_closes.csv) regardless of shadow/live mode.
-    // In SHADOW mode the early-return at line ~113 handles the trade before
-    // reaching this point, so this branch only runs when g_cfg.mode == "LIVE".
+    // 2026-05-01 SESSION_h: prior comment claimed SHADOW trades were handled
+    // by an early-return at line ~113. That early-return was removed today
+    // (see SHADOW-MODE CENTRAL GUARD REMOVED block above) so write_trade_close_logs
+    // now runs for every close, shadow or live. The single-universal-journal
+    // intent of S14 is preserved.
     write_trade_close_logs(tr);
 
     // ?? Crowding guard -- update directional window on every close (RenTec #4) ????????
