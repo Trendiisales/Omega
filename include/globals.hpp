@@ -2,6 +2,16 @@
 // Section: globals (original lines 435-964)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+// ── Step 2 Omega Terminal: engine snapshot registry ─────────────────────────
+// EngineRegistry types live in include/EngineRegistry.hpp so OmegaApiServer.cpp
+// (a separate translation unit) can read them without dragging in the rest of
+// globals.hpp's engine-instance graph. Here we DEFINE the single g_engines
+// instance with external linkage so the extern declaration in
+// EngineRegistry.hpp resolves to exactly this object at link time. Engines
+// self-register in init_engines() (include/engine_init.hpp, end of function).
+#include "EngineRegistry.hpp"
+omega::EngineRegistry g_engines;
+
 // ?? Per-symbol config manager -- loaded from symbols.ini at startup ????????????
 static SymbolConfigManager g_sym_cfg;
 

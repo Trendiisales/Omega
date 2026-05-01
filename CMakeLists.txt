@@ -63,6 +63,7 @@ set(SOURCES
     src/main.cpp
     src/SymbolConfig.cpp
     src/gui/OmegaTelemetryServer.cpp
+    src/api/OmegaApiServer.cpp        # Step 2 Omega Terminal: HTTP :7781 read-API
     src/gold_coordinator.cpp
 )
 

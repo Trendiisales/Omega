@@ -1762,5 +1762,99 @@ static void init_engines(const std::string& cfg_path)
             std::cout.flush();
         }
     }
+
+    // ── Step 2 Omega Terminal: register engines with g_engines ──────────────
+    // Each lambda returns the engine's current snapshot for OmegaApiServer's
+    // GET /api/v1/omega/engines route. Lambdas read only scalar fields off
+    // the engine globals -- no locks acquired, no engine state mutated.
+    //
+    // 14 engines registered, mapping STEP2_OPENER's "HBI, HBG, MCE, CFE,
+    // Tsmom V1+V2, Donchian, EmaPullback, TrendRider, RSI variants" to actual
+    // globals declared in include/globals.hpp:
+    //
+    //   HBG          -> g_hybrid_gold
+    //   HBI x4       -> g_hybrid_sp / g_hybrid_nq / g_hybrid_us30 / g_hybrid_nas100
+    //   MCE          -> g_macro_crash
+    //   CFE          -> g_candle_flow
+    //   Tsmom V1     -> g_tsmom
+    //   Tsmom V2     -> g_tsmom_v2
+    //   Donchian     -> g_donchian
+    //   EmaPullback  -> g_ema_pullback
+    //   TrendRider   -> g_trend_rider
+    //   RSI Reversal -> g_rsi_reversal
+    //   RSI Extreme  -> g_rsi_extreme
+    //
+    // last_signal_ts and last_pnl are 0 in this step -- per-engine accessors
+    // for those land in Step 3 alongside the CC/ENG/POS panel wiring.
+    auto reg = [](const char* name, bool enabled, bool shadow_mode) -> omega::EngineSnapshot {
+        omega::EngineSnapshot s;
+        s.name           = name;
+        s.enabled        = enabled;
+        s.mode           = shadow_mode ? "SHADOW" : "LIVE";
+        s.state          = enabled ? "RUNNING" : "IDLE";
+        s.last_signal_ts = 0;
+        s.last_pnl       = 0.0;
+        return s;
+    };
+
+    g_engines.register_engine("HybridGold",
+        [reg]{ return reg("HybridGold",
+                          true,
+                          g_hybrid_gold.shadow_mode); });
+    g_engines.register_engine("HybridSP",
+        [reg]{ return reg("HybridSP",
+                          true,
+                          g_hybrid_sp.shadow_mode); });
+    g_engines.register_engine("HybridNQ",
+        [reg]{ return reg("HybridNQ",
+                          true,
+                          g_hybrid_nq.shadow_mode); });
+    g_engines.register_engine("HybridUS30",
+        [reg]{ return reg("HybridUS30",
+                          true,
+                          g_hybrid_us30.shadow_mode); });
+    g_engines.register_engine("HybridNAS100",
+        [reg]{ return reg("HybridNAS100",
+                          true,
+                          g_hybrid_nas100.shadow_mode); });
+    g_engines.register_engine("MacroCrash",
+        [reg]{ return reg("MacroCrash",
+                          g_macro_crash.enabled,
+                          g_macro_crash.shadow_mode); });
+    g_engines.register_engine("CandleFlow",
+        [reg]{ return reg("CandleFlow",
+                          true,
+                          g_candle_flow.shadow_mode); });
+    g_engines.register_engine("Tsmom",
+        [reg]{ return reg("Tsmom",
+                          g_tsmom.enabled,
+                          g_tsmom.shadow_mode); });
+    g_engines.register_engine("TsmomV2",
+        [reg]{ return reg("TsmomV2",
+                          g_tsmom_v2.enabled,
+                          g_tsmom_v2.shadow_mode); });
+    g_engines.register_engine("Donchian",
+        [reg]{ return reg("Donchian",
+                          g_donchian.enabled,
+                          g_donchian.shadow_mode); });
+    g_engines.register_engine("EmaPullback",
+        [reg]{ return reg("EmaPullback",
+                          g_ema_pullback.enabled,
+                          g_ema_pullback.shadow_mode); });
+    g_engines.register_engine("TrendRider",
+        [reg]{ return reg("TrendRider",
+                          g_trend_rider.enabled,
+                          g_trend_rider.shadow_mode); });
+    g_engines.register_engine("RSIReversal",
+        [reg]{ return reg("RSIReversal",
+                          g_rsi_reversal.enabled,
+                          g_rsi_reversal.shadow_mode); });
+    g_engines.register_engine("RSIExtreme",
+        [reg]{ return reg("RSIExtreme",
+                          true,
+                          g_rsi_extreme.shadow_mode); });
+    std::cout << "[OmegaApi] g_engines registered ("
+              << g_engines.snapshot_all().size() << " engines)\n";
+    std::cout.flush();
 }
 

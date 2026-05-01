@@ -3,7 +3,8 @@
 // Strategy: Compression Breakout (CRTP engine, zero virtual dispatch)
 // Broker: BlackBull Markets -- identical FIX stack to ChimeraMetals
 // Primary: MES ? MNQ ? MCL  |  Confirmation: ES NQ CL VIX DX ZN YM RTY
-// GUI: HTTP :7779 / WebSocket :7780
+// GUI: HTTP :7779 / WebSocket :7780  (OmegaTelemetryServer; legacy GUI client)
+// API: HTTP :7781                    (OmegaApiServer; omega-terminal Step 2)
 // ==============================================================================
 
 #include <winsock2.h>
@@ -65,6 +66,9 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "SymbolEngines.hpp"      // SpEngine, NqEngine, OilEngine, MacroContext (includes BreakoutEngine.hpp)
 #include "MacroRegimeDetector.hpp"
 #include "OmegaTelemetryServer.hpp"
+#ifndef OMEGA_BACKTEST
+#include "api/OmegaApiServer.hpp"   // Step 2 read-API for omega-terminal (resolves via -I src)
+#endif
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
 // LatencyEdgeEngines.hpp removed S13 Finding B 2026-04-24 — engine culled.
 #include "CrossAssetEngines.hpp" // 9 cross-asset engines: EsNqDiv, OilFade, BrentWti, FxCascade, CarryUnwind, ORB, VWAPRev, TrendPB, NBM (SilverTurtle removed at Batch 5V)
@@ -104,4 +108,25 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "engine_init.hpp"
 #include "omega_main.hpp"
 
-
+// ── Step 2 Omega Terminal: OmegaApiServer auto-start ────────────────────────
+// The new HTTP read-API for the omega-terminal React UI runs on
+// 127.0.0.1:7781 alongside the existing OmegaTelemetryServer (HTTP :7779 + WS
+// :7780). Started here at static-init time so the accept loop is up before
+// init_engines() registers any engines; pre-registration requests return [].
+//
+// OmegaApiServer::run() does its own WSAStartup, so it is independent of the
+// FIX layer's socket subsystem init. The dtor calls stop() which closesocket()s
+// the listen FD and joins the accept thread, so process exit is clean.
+//
+// Excluded from backtest builds via #ifndef OMEGA_BACKTEST -- the harness has
+// no JSON consumer and the extra port would conflict with parallel runs.
+#ifndef OMEGA_BACKTEST
+static omega::OmegaApiServer g_omega_api_server;
+namespace {
+    struct OmegaApiServerAutoStart {
+        OmegaApiServerAutoStart()  { g_omega_api_server.start(7781); }
+        ~OmegaApiServerAutoStart() { g_omega_api_server.stop();      }
+    };
+    static OmegaApiServerAutoStart g_omega_api_server_autostart;
+}
+#endif
