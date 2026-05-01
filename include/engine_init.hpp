@@ -47,6 +47,17 @@ static void init_engines(const std::string& cfg_path)
     //   positive expectancy. Until then this line stays as `true` not
     //   `kShadowDefault`.
     g_gold_midscalper.shadow_mode = true;
+    // 2026-05-02: EurusdLondonOpenEngine -- pinned shadow-only on first
+    //   deployment regardless of g_cfg.mode. First FX engine since the
+    //   2026-04-06 global FX disable; new engine model (compression-breakout
+    //   with BE-lock + news-blackout + 06-09 UTC session gate, NOT inheriting
+    //   the disabled MacroCrash signal model). Promote to kShadowDefault
+    //   after a 2-week paper validation showing >=30 trades with WR >=35%
+    //   net positive after costs. Until then this line stays as `true`.
+    g_eurusd_london_open.shadow_mode = true;
+    // Cancel callback: matches g_gold_midscalper / g_hybrid_gold pattern. Used
+    //   when PENDING TIMEOUT or one side fills (cancel the loser).
+    g_eurusd_london_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -1832,6 +1843,14 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_gold_midscalper.shadow_mode,
                           {"MidScalperGold"}); });
+    // 2026-05-02: register EurusdLondonOpen for /api/v1/omega/engines.
+    //   Shadow-stamped initially. last_signal_ts/last_pnl resolved via
+    //   g_engine_last lookup against tr.engine="EurusdLondonOpen".
+    g_engines.register_engine("EurusdLondonOpen",
+        [reg]{ return reg("EurusdLondonOpen",
+                          true,
+                          g_eurusd_london_open.shadow_mode,
+                          {"EurusdLondonOpen"}); });
     g_engines.register_engine("HybridSP",
         [reg]{ return reg("HybridSP",
                           true,
@@ -1972,7 +1991,42 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
-    std::cout << "[OmegaApi] g_open_positions sources registered (2 sources: HybridGold, MidScalperGold)\n";
+    // 2026-05-02: EurusdLondonOpen open-position source (parallel to MidScalperGold).
+    //   Mirrors the pattern above, with EURUSD tick-value lookup. tick_value_multiplier
+    //   on EURUSD returns the per-pip USD value normalised for unit price moves --
+    //   for EURUSD this is typically 100000 (1.0 standard lot) or 10000 at 0.10 lot,
+    //   resolved inside tick_value_multiplier from g_sym_cfg / FIX defaults.
+    g_open_positions.register_source("EurusdLondonOpen",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_eurusd_london_open.has_open_position()) return out;
+
+            const auto& p = g_eurusd_london_open.pos;
+            const double mult  = tick_value_multiplier(std::string("EURUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("EURUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "EURUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "EurusdLondonOpen";
+            out.push_back(ps);
+            return out;
+        });
+    std::cout << "[OmegaApi] g_open_positions sources registered (3 sources: HybridGold, MidScalperGold, EurusdLondonOpen)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────

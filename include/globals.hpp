@@ -322,8 +322,16 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   default; promote to live only after a 2-week paper validation.  Wired in
 //   tick_gold.hpp dispatch block parallel to g_hybrid_gold.
 #include "GoldMidScalperEngine.hpp"
+// 2026-05-02: EurusdLondonOpenEngine -- first FX engine since the 2026-04-06
+//   global FX disable. London-open compression bracket on EURUSD, 06:00-09:00
+//   UTC session window, news-blackout-gated for NFP/CPI/FOMC/ECB. Shadow-only
+//   by default; promote to live only after a 2-week paper validation.  Wired
+//   in tick_fx.hpp::on_tick_eurusd() dispatch block. See
+//   docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md for full design.
+#include "EurusdLondonOpenEngine.hpp"
 static omega::GoldHybridBracketEngine         g_hybrid_gold;
 static omega::GoldMidScalperEngine            g_gold_midscalper;
+static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
 static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());
