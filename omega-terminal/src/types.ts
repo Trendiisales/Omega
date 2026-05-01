@@ -15,6 +15,16 @@
 // RouteResult     : router output for a given user-typed string. Step 3
 //                   adds `args` (the trailing tokens after the code) so
 //                   the dispatcher can plumb them through to the panel.
+//
+// Step 7 update:
+//   - Workspace gains `history: HistoryEntry[]` and `historyIdx: number`
+//     so each tab keeps its own back/forward stack. The router never
+//     mutates `history` directly; the dispatcher in App.tsx pushes a new
+//     entry whenever a non-history navigation lands and trims any
+//     forward-tail when the user navigates after going back.
+//   - New `EngineLinkStatus` enumerates the live-status pill states
+//     surfaced by the title bar (replaces the previous hardcoded
+//     "engine link: pending" string).
 
 export type FunctionCode =
   // Shell + meta
@@ -67,6 +77,19 @@ export interface PanelDescriptor {
   aliases?: string[];
 }
 
+/**
+ * One entry in a workspace's back/forward history.
+ *
+ * Step 7 introduces this so the user can navigate ENG -> LDG -> TRADE
+ * and walk back to ENG without losing other tabs' state. The shape is
+ * intentionally identical to the per-workspace `code`/`args` pair so
+ * pushing the current location onto the stack is a structural copy.
+ */
+export interface HistoryEntry {
+  code: FunctionCode;
+  args: string[];
+}
+
 export interface Workspace {
   /** Stable id for React keys. Generated when a tab is opened. */
   id: string;
@@ -79,6 +102,16 @@ export interface Workspace {
    * Empty array when the user just typed the code.
    */
   args: string[];
+  /**
+   * Per-tab back/forward stack. The entry at `history[historyIdx]`
+   * always equals the current `{code, args}` pair. `historyIdx` > 0
+   * means a back-step is available; `historyIdx < history.length - 1`
+   * means a forward-step is available. Bounded to 50 entries to keep
+   * the in-memory shape predictable.
+   */
+  history: HistoryEntry[];
+  /** Index of the current location within `history`. */
+  historyIdx: number;
   /** Optional override label; falls back to the panel's title. */
   label?: string;
 }
@@ -95,3 +128,18 @@ export interface RouteResult {
   descriptor: PanelDescriptor;
   args: string[];
 }
+
+/**
+ * Live status of the engine REST link, surfaced in the title bar pill.
+ *
+ *   - 'connected' : a recent /engines call returned 2xx within the
+ *                   poll window. Pill is green.
+ *   - 'pending'   : no successful response yet (cold start, or the
+ *                   first poll is in flight). Pill is amber. This is
+ *                   the initial state and also the state during a
+ *                   transient retry.
+ *   - 'down'      : the most recent poll failed (HTTP error, network
+ *                   error, timeout). Pill is red. Polling continues
+ *                   so the pill auto-recovers when the engine returns.
+ */
+export type EngineLinkStatus = 'connected' | 'pending' | 'down';
