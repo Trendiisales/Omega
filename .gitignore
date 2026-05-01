@@ -99,3 +99,10 @@ backtest/edgefinder/output/
 # Local downloads / installers -- not source
 Claude.dmg
 Omega-main.zip
+
+# Build artifacts and one-off scripts
+COMMIT_*.sh
+archive/
+backtest/TsmomCellBacktest_mac
+backtest/baselines/
+omega-terminal/dist-verify/
