@@ -279,6 +279,34 @@ is unchanged from Step 4.
 
 ## Hot-fix after first VPS build attempt
 
+The Step-5 deploy bit twice on the VPS before going green. Three
+fixes total, all committed in this same branch:
+
+### Fix 0: CMake toolchain didn't load vcpkg in some shells
+
+After Bugs A and B below were fixed, a third deploy attempt failed
+again at the configure stage with `Could NOT find CURL (missing:
+CURL_LIBRARY CURL_INCLUDE_DIR)` — but this time the call stack
+was `FindCURL.cmake → CMakeLists.txt:66` with NO vcpkg.cmake layer
+in between. That means the vcpkg toolchain wasn't loaded that run,
+so vcpkg-installed libcurl was invisible to `find_package(CURL)`.
+
+Root cause: the original CMakeLists.txt block only loaded the
+toolchain if `VCPKG_ROOT` was set in the env. The shell that
+QUICK_RESTART.ps1 runs in does not always have VCPKG_ROOT exported
+(NSSM service contexts in particular ignore non-Machine-scope
+env-var changes until the service is fully recycled).
+
+Fix in `CMakeLists.txt`: replace the single-branch toolchain load
+with a fallback chain — try `VCPKG_ROOT`, then probe known Windows
+install paths (`C:/vcpkg/vcpkg/...`, `C:/vcpkg/...`,
+`C:/dev/vcpkg/...`) in order, and emit a `STATUS` line saying which
+path won so future failures are diagnosable from the log. Mac/Linux
+unaffected — none of those branches fire there and `find_package`
+falls back to system libcurl as before.
+
+### Bugs A and B (source-side, found at compile)
+
 After the vcpkg curl install (Gotcha #1 below), the second deploy
 attempt got further but failed mid-compile of `OpenBbProxy.cpp` with
 a wall of `curl.h` errors plus a syntax error at line 341. Two real
@@ -344,18 +372,33 @@ equity/discovery) don't contain `()` and keep the simpler form.
 Documented inline in the file with a "Raw-string delimiter note"
 header above the `fetch_mock` definition.
 
-### Push the fix
+### Push the fix (covers all three: toolchain fallback + winsock + raw-string)
 
 ```bash
 cd /Users/jo/omega_repo
-git add src/api/OpenBbProxy.cpp docs/SESSION_2026-05-01d_HANDOFF.md
-git commit -m "Step 5 hot-fix: winsock2 include order + raw-string delimiter in OpenBbProxy mock"
+git add CMakeLists.txt \
+        src/api/OpenBbProxy.cpp \
+        docs/SESSION_2026-05-01d_HANDOFF.md
+git commit -m "Step 5 hot-fix: vcpkg toolchain fallback + winsock2 order + raw-string delim"
 git push origin omega-terminal
 ```
 
 Then on the VPS: `.\QUICK_RESTART.ps1 -Branch omega-terminal`. The
-vcpkg curl install from the prior step is still in place; this is
-purely a source-side fix.
+vcpkg curl install from the prior step is still in place; this push
+just hardens the toolchain detection and patches two source-side
+issues in `OpenBbProxy.cpp`. Configure should now print one of:
+
+```
+-- vcpkg:      toolchain via VCPKG_ROOT=C:\vcpkg\vcpkg
+```
+or
+```
+-- vcpkg:      toolchain autodetected at C:/vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
+
+If you see neither line and the build still fails on CURL, the
+fallback didn't find vcpkg at any of the probed paths -- update the
+candidate list in `CMakeLists.txt` to include your install path.
 
 ## Known gotchas (hit during this session)
 

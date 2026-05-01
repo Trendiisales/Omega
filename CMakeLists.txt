@@ -6,9 +6,45 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "vcpkg toolchain file")
+# vcpkg toolchain resolution.
+#
+# The build needs the vcpkg toolchain to find libcurl (Step 5) and any
+# other vcpkg-installed deps. We try in order:
+#   1. Caller-supplied -DCMAKE_TOOLCHAIN_FILE on the cmake command line.
+#   2. VCPKG_ROOT env var, if set.
+#   3. Hardcoded common Windows install paths as a fallback.
+# This makes the build robust against shells that forgot to export
+# VCPKG_ROOT (which has bitten the QUICK_RESTART deploy at least once
+# -- the recovery path correctly kept the previous binary running, but
+# the configure aborted with "Could NOT find CURL").
+#
+# On macOS / Linux, none of these branches fire and find_package falls
+# back to the system libcurl, which is what we want.
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{VCPKG_ROOT})
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            CACHE STRING "vcpkg toolchain file (from VCPKG_ROOT)")
+        message(STATUS "vcpkg:      toolchain via VCPKG_ROOT=$ENV{VCPKG_ROOT}")
+    else()
+        # Fallback: probe common Windows vcpkg install paths. Order matters
+        # -- C:/vcpkg/vcpkg/... is the actual layout on the Omega VPS;
+        # C:/vcpkg/... is the more common single-level layout.
+        set(_omega_vcpkg_candidates
+            "C:/vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake"
+            "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+            "C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        )
+        foreach(_omega_vcpkg_try ${_omega_vcpkg_candidates})
+            if(EXISTS "${_omega_vcpkg_try}")
+                set(CMAKE_TOOLCHAIN_FILE "${_omega_vcpkg_try}"
+                    CACHE STRING "vcpkg toolchain file (autodetected fallback)")
+                message(STATUS "vcpkg:      toolchain autodetected at ${_omega_vcpkg_try}")
+                break()
+            endif()
+        endforeach()
+        unset(_omega_vcpkg_try)
+        unset(_omega_vcpkg_candidates)
+    endif()
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
