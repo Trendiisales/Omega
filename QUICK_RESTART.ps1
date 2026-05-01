@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# QUICK_RESTART.ps1  -- v3.3 2026-04-30 PM
+# QUICK_RESTART.ps1  -- v3.4 2026-05-01
 # Service-based restart. Stops the Omega NSSM service, pulls source from GitHub,
 # builds, starts the service, verifies via service status + log hash.
 #
@@ -15,6 +15,23 @@
 #   * Removed duplicate $confirm variable (reused for position check AND process kill)
 #   * Unified on omega_service_stdout.log as the single source of truth
 #   * CFE pre-check uses same log
+#
+# v3.4 (2026-05-01) -- multi-branch deploy support:
+#   * Added -Branch parameter (default 'main' for back-compat). All three
+#     hard-coded references to 'main' / 'origin/main' in Step 2 (PULL
+#     SOURCE VIA GIT) now use $Branch / "origin/$Branch":
+#       - git fetch origin $Branch
+#       - git rev-parse "origin/$Branch"
+#       - git reset --hard "origin/$Branch"
+#   * Default behaviour identical to v3.3 (deploys main). To deploy a
+#     feature branch, pass -Branch <name>, e.g.:
+#       .\QUICK_RESTART.ps1 -Branch omega-terminal
+#   * Watchdog implication: OMEGA_WATCHDOG.ps1 invokes this script with no
+#     -Branch arg, so it will continue to deploy main on auto-restart. If
+#     the VPS is intentionally pinned to a non-main branch, either pass
+#     -Branch from the watchdog or merge the branch to main first.
+#   * No change to Step 0/1/3/4, wipe-race retries, recovery flow, or
+#     stale-binary checks. Scope is fully limited to Step 2 git ops.
 #
 # v3.3 (2026-04-30 PM) -- audit-fixes-33 stderr-mangling fix:
 #   * Re-applies the v3.2 wipe-race fix (rolled back at 19d0f93 while an
@@ -84,6 +101,7 @@ param(
     [switch]$SkipVerify,
     [string]$OmegaDir = "C:\Omega",
     [string]$GitHubToken = "",
+    [string]$Branch = "main",
     [int]$StopTimeoutSec = 30,
     [int]$StartupWaitSec = 15,
     [switch]$ForceKill
@@ -165,7 +183,7 @@ $startTime    = Get-Date
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "   OMEGA  |  QUICK RESTART  v3.3" -ForegroundColor Cyan
+Write-Host "   OMEGA  |  QUICK RESTART  v3.4" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 $modeMatch = Select-String -Path $ConfigSrc -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
@@ -359,7 +377,7 @@ Write-Host "[2/4] Pulling source from GitHub..." -ForegroundColor Yellow
 
 Push-Location $OmegaDir
 try {
-    git fetch origin main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    git fetch origin $Branch 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [FATAL] git fetch failed (exit=$LASTEXITCODE)" -ForegroundColor Red
         Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
@@ -368,10 +386,10 @@ try {
         exit 1
     }
 
-    $revParseOut = (git rev-parse origin/main 2>&1)
+    $revParseOut = (git rev-parse "origin/$Branch" 2>&1)
     $revParseExit = $LASTEXITCODE
     if ($revParseExit -ne 0 -or [string]::IsNullOrWhiteSpace($revParseOut)) {
-        Write-Host "  [FATAL] git rev-parse origin/main failed (exit=$revParseExit output='$revParseOut')" -ForegroundColor Red
+        Write-Host "  [FATAL] git rev-parse origin/$Branch failed (exit=$revParseExit output='$revParseOut')" -ForegroundColor Red
         Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
         Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
         Pop-Location
@@ -388,7 +406,7 @@ try {
     $ghSha7 = $ghSha.Substring(0,7)
     Write-Host "  HEAD: $ghSha7" -ForegroundColor Cyan
 
-    git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    git reset --hard "origin/$Branch" 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [FATAL] git reset --hard failed (exit=$LASTEXITCODE)" -ForegroundColor Red
         Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
