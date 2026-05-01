@@ -600,6 +600,196 @@ static std::string build_equity_json(const std::unordered_map<std::string, std::
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Step 7 GUI completion: per-trade detail + per-cell summary
+//
+// Both routes read from existing engine state without requiring any engine-
+// side changes:
+//
+//   /api/v1/omega/trade/<id>
+//     Walks g_omegaLedger.snapshot() for the matching id and returns the
+//     full TradeRecord shape (every field, not just the ledger-row subset
+//     surfaced by /ledger). Lets TradePanel show MFE/MAE/regime/L2/atr
+//     fields that ARE stored on TradeRecord but trimmed by build_ledger_json.
+//
+//     404 on miss; 400 if the id segment is empty or non-numeric.
+//
+//   /api/v1/omega/cells
+//     Derives a cell-grid view from the ledger by grouping closed trades
+//     into (engine, symbol) buckets. For each bucket emits {engine, cell,
+//     symbol, trades, win_rate, total_pnl, last_signal_ts, mfe_avg, mae_avg}.
+//     This is the honest "no engine self-registration yet" path: we report
+//     what the ledger knows, which is enough for the panel to be useful
+//     today. When the engines later self-register their cell registries
+//     (CellSummaryRegistry per CellPanel.tsx §B.1), this builder can switch
+//     to that source without changing the route or the response shape.
+//
+// Both routes return raw JSON (not an OBBject envelope) since they're
+// engine-internal — same idiom as /engines, /positions, /ledger, /equity.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// /api/v1/omega/trade/<id> — full per-trade detail.
+//
+// id_str is the path tail after "/api/v1/omega/trade/" — typically a small
+// integer (TradeRecord::id). We accept any ASCII string but compare against
+// std::to_string(id) for the lookup. Empty id -> 400; not-found -> 404.
+static std::string build_trade_json(const std::string& id_str, int& status)
+{
+    if (id_str.empty()) {
+        status = 400;
+        return std::string("{\"error\":\"missing trade id\"}");
+    }
+
+    // Numeric sanity check — TradeRecord::id is an int. If the id segment
+    // contains non-digit chars we fail fast rather than walking the ledger
+    // with a guaranteed-no-match string.
+    for (char c : id_str) {
+        if (c < '0' || c > '9') {
+            status = 400;
+            return std::string("{\"error\":\"invalid trade id\",\"id\":")
+                 + json_str(id_str) + "}";
+        }
+    }
+
+    const auto trades = g_omegaLedger.snapshot();
+    for (const TradeRecord& tr : trades) {
+        if (std::to_string(tr.id) != id_str) continue;
+
+        const int64_t entry_ms = static_cast<int64_t>(tr.entryTs) * 1000LL;
+        const int64_t exit_ms  = static_cast<int64_t>(tr.exitTs)  * 1000LL;
+        const double  pnl_used = (tr.net_pnl != 0.0 ? tr.net_pnl : tr.pnl);
+
+        std::string out = "{";
+        out += "\"id\":"             + json_str(std::to_string(tr.id))      + ",";
+        out += "\"engine\":"         + json_str(tr.engine)                  + ",";
+        out += "\"symbol\":"         + json_str(tr.symbol)                  + ",";
+        out += "\"side\":"           + json_str(tr.side)                    + ",";
+        out += "\"entry_ts\":"       + json_int(entry_ms)                   + ",";
+        out += "\"exit_ts\":"        + json_int(exit_ms)                    + ",";
+        out += "\"entry\":"          + json_num(tr.entryPrice)              + ",";
+        out += "\"exit\":"           + json_num(tr.exitPrice)               + ",";
+        out += "\"tp\":"             + json_num(tr.tp)                      + ",";
+        out += "\"sl\":"             + json_num(tr.sl)                      + ",";
+        out += "\"size\":"           + json_num(tr.size)                    + ",";
+        out += "\"pnl\":"            + json_num(pnl_used)                   + ",";
+        out += "\"gross_pnl\":"      + json_num(tr.pnl)                     + ",";
+        out += "\"net_pnl\":"        + json_num(tr.net_pnl)                 + ",";
+        out += "\"mfe\":"            + json_num(tr.mfe)                     + ",";
+        out += "\"mae\":"            + json_num(tr.mae)                     + ",";
+        out += "\"reason\":"         + json_str(tr.exitReason)              + ",";
+        out += "\"spread_at_entry\":"+ json_num(tr.spreadAtEntry)           + ",";
+        out += "\"latency_ms\":"     + json_num(tr.latencyMs)               + ",";
+        out += "\"regime\":"         + json_str(tr.regime)                  + ",";
+        out += "\"slippage_entry\":" + json_num(tr.slippage_entry)          + ",";
+        out += "\"slippage_exit\":"  + json_num(tr.slippage_exit)           + ",";
+        out += "\"commission\":"     + json_num(tr.commission)              + ",";
+        out += "\"bracket_hi\":"     + json_num(tr.bracket_hi)              + ",";
+        out += "\"bracket_lo\":"     + json_num(tr.bracket_lo)              + ",";
+        out += "\"l2_imbalance\":"   + json_num(tr.l2_imbalance)            + ",";
+        out += "\"l2_live\":"        + json_bool(tr.l2_live)                + ",";
+        out += "\"atr_at_entry\":"   + json_num(tr.atr_at_entry)            + ",";
+        out += "\"shadow\":"         + json_bool(tr.shadow);
+        out += "}";
+        return out;
+    }
+
+    status = 404;
+    return std::string("{\"error\":\"trade not found\",\"id\":")
+         + json_str(id_str) + "}";
+}
+
+// /api/v1/omega/cells — derived cell-grid view.
+//
+// Groups the ledger snapshot by (engine, symbol). For each group emits one
+// row with trade-count, win-rate, total realized P&L, average MFE/MAE, and
+// the most recent exit timestamp (used as a "last signal" proxy until the
+// engines register live signal timestamps). Optional filter parameters:
+//
+//   engine=<name>   exact-match engine filter  (case-sensitive)
+//   symbol=<sym>    exact-match symbol filter  (case-sensitive, e.g. "XAUUSD")
+//
+// The "cell" identifier in this v1 is just the {engine}|{symbol} composite,
+// since the engines do not yet expose their internal cell ids. When the
+// engines self-register cells, the builder can switch to walking the cell
+// registry; the JSON shape is forward-compatible.
+static std::string build_cells_json(
+    const std::unordered_map<std::string, std::string>& q)
+{
+    std::string engine_filter;
+    std::string symbol_filter;
+    auto it = q.find("engine");
+    if (it != q.end()) engine_filter = it->second;
+    it = q.find("symbol");
+    if (it != q.end()) symbol_filter = it->second;
+
+    struct CellAgg {
+        std::string engine;
+        std::string symbol;
+        int         trades       = 0;
+        int         wins         = 0;
+        double      total_pnl    = 0.0;
+        double      mfe_sum      = 0.0;
+        double      mae_sum      = 0.0;
+        int64_t     last_exit_ms = 0;
+    };
+
+    // Order-preserving map keyed on "engine|symbol". A small linear scan is
+    // fine: the ledger is bounded by g_omegaLedger's retention and the
+    // (engine, symbol) cardinality is tiny in practice.
+    std::vector<CellAgg> aggs;
+    aggs.reserve(32);
+
+    auto find_or_insert = [&](const std::string& eng, const std::string& sym) -> CellAgg& {
+        for (auto& a : aggs) {
+            if (a.engine == eng && a.symbol == sym) return a;
+        }
+        aggs.push_back(CellAgg{eng, sym, 0, 0, 0.0, 0.0, 0.0, 0});
+        return aggs.back();
+    };
+
+    const auto trades = g_omegaLedger.snapshot();
+    for (const TradeRecord& tr : trades) {
+        if (!engine_filter.empty() && tr.engine != engine_filter) continue;
+        if (!symbol_filter.empty() && tr.symbol != symbol_filter) continue;
+
+        CellAgg& a = find_or_insert(tr.engine, tr.symbol);
+        const double pnl_used = (tr.net_pnl != 0.0 ? tr.net_pnl : tr.pnl);
+        a.trades    += 1;
+        a.total_pnl += pnl_used;
+        a.mfe_sum   += tr.mfe;
+        a.mae_sum   += tr.mae;
+        if (pnl_used > 0.0) a.wins += 1;
+        const int64_t exit_ms = static_cast<int64_t>(tr.exitTs) * 1000LL;
+        if (exit_ms > a.last_exit_ms) a.last_exit_ms = exit_ms;
+    }
+
+    std::string out = "[";
+    for (size_t i = 0; i < aggs.size(); ++i) {
+        const CellAgg& a = aggs[i];
+        const double win_rate = (a.trades > 0)
+            ? (static_cast<double>(a.wins) / static_cast<double>(a.trades))
+            : 0.0;
+        const double mfe_avg  = (a.trades > 0) ? (a.mfe_sum / a.trades) : 0.0;
+        const double mae_avg  = (a.trades > 0) ? (a.mae_sum / a.trades) : 0.0;
+
+        if (i > 0) out += ",";
+        out += "{";
+        out += "\"engine\":"         + json_str(a.engine)                + ",";
+        out += "\"cell\":"           + json_str(a.engine + "|" + a.symbol) + ",";
+        out += "\"symbol\":"         + json_str(a.symbol)                + ",";
+        out += "\"trades\":"         + json_int(a.trades)                + ",";
+        out += "\"wins\":"           + json_int(a.wins)                  + ",";
+        out += "\"win_rate\":"       + json_num(win_rate)                + ",";
+        out += "\"total_pnl\":"      + json_num(a.total_pnl)             + ",";
+        out += "\"mfe_avg\":"        + json_num(mfe_avg)                 + ",";
+        out += "\"mae_avg\":"        + json_num(mae_avg)                 + ",";
+        out += "\"last_signal_ts\":" + json_int(a.last_exit_ms);
+        out += "}";
+    }
+    out += "]";
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Step 5: OpenBB-backed routes
 //
 // Each builder converts the panel-facing query parameters into an OpenBB Hub
@@ -1477,6 +1667,16 @@ void OmegaApiServer::run(int port)
         }
         else if (path == "/api/v1/omega/equity") {
             body = build_equity_json(q);
+        }
+        // Step 7 GUI completion. /cells must be checked BEFORE the prefix-
+        // match for /trade/<id> below since both share the /api/v1/omega/
+        // root. /trade/<id> uses prefix matching because the id segment is
+        // variable; all other routes are exact-match.
+        else if (path == "/api/v1/omega/cells") {
+            body = build_cells_json(q);
+        }
+        else if (path.compare(0, 20, "/api/v1/omega/trade/") == 0) {
+            body = build_trade_json(path.substr(20), status);
         }
         else if (path == "/api/v1/omega/intel") {
             body = build_intel_json(q, status);

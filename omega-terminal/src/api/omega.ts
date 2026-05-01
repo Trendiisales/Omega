@@ -47,6 +47,9 @@ import {
   EquityPoint,
   LedgerQuery,
   EquityQuery,
+  TradeDetail,
+  CellRow,
+  CellsQuery,
   IntelArticle,
   IntelQuery,
   CurvPoint,
@@ -323,6 +326,54 @@ export function getEquity(
     interval: query.interval,
   });
   return getJson<EquityPoint[]>(`/equity${qs}`, opts);
+}
+
+/**
+ * GET /api/v1/omega/trade/<id>
+ *
+ * Returns the full TradeDetail row for a single closed trade. The id is
+ * the numeric TradeRecord::id from the engine ledger. Server returns
+ * 400 on missing/non-numeric id, 404 when no trade matches; both come
+ * back through OmegaApiError so consumers can branch on `.status`.
+ *
+ * Encodes the id with encodeURIComponent so callers can pass anything
+ * the user typed without worrying about path injection. Empty id resolves
+ * to a 400 client-side without round-tripping.
+ */
+export function getTrade(
+  id: string,
+  opts: OmegaCallOptions = {},
+): Promise<TradeDetail> {
+  const trimmed = id.trim();
+  if (trimmed.length === 0) {
+    return Promise.reject(
+      new OmegaApiError({
+        message: 'OmegaApi: empty trade id',
+        status: 400,
+        url: `${API_BASE}/trade/`,
+        aborted: false,
+      }),
+    );
+  }
+  return getJson<TradeDetail>(`/trade/${encodeURIComponent(trimmed)}`, opts);
+}
+
+/**
+ * GET /api/v1/omega/cells
+ *
+ * Returns the per-cell summary grid derived from the ledger. Both
+ * filters are exact-match and case-sensitive. Empty filters return all
+ * cells.
+ */
+export function getCells(
+  query: CellsQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<CellRow[]> {
+  const qs = buildQuery({
+    engine: query.engine,
+    symbol: query.symbol,
+  });
+  return getJson<CellRow[]>(`/cells${qs}`, opts);
 }
 
 /* ============================================================ */

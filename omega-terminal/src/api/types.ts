@@ -207,6 +207,114 @@ export interface LedgerQuery {
 }
 
 /* ============================================================ */
+/* GET /api/v1/omega/trade/<id>                                 */
+/* ============================================================ */
+
+/**
+ * Full per-trade detail row, returned by /trade/<id>.
+ *
+ * Superset of LedgerEntry — exposes the TradeRecord fields the engine
+ * actually stores but trims out of /ledger for payload size (mfe, mae,
+ * regime, l2_imbalance, atr_at_entry, slippage/commission breakdown,
+ * etc.). TradePanel uses this to fill the rows that were "deferred" in
+ * the ledger-fallback path.
+ *
+ * 404 maps to the standard OmegaApiError; the panel handles missing
+ * trades gracefully and falls back to scanning the ledger snapshot.
+ */
+export interface TradeDetail {
+  id: string;
+  engine: string;
+  symbol: string;
+  side: Side;
+  entry_ts: number;
+  exit_ts: number;
+  entry: number;
+  exit: number;
+  tp: number;
+  sl: number;
+  size: number;
+  /** Net realized P&L if costs were applied; falls back to gross. */
+  pnl: number;
+  /** Gross realized P&L (price diff * size, no costs). */
+  gross_pnl: number;
+  /** Net realized P&L (gross minus slippage minus commission). */
+  net_pnl: number;
+  /** Max favourable excursion (price units * size). */
+  mfe: number;
+  /** Max adverse excursion (price units * size). */
+  mae: number;
+  reason: string;
+  spread_at_entry: number;
+  latency_ms: number;
+  /** Macro regime label at trade time, may be empty. */
+  regime: string;
+  slippage_entry: number;
+  slippage_exit: number;
+  commission: number;
+  /** Bracket upper bound at arm time (0 if not a bracket trade). */
+  bracket_hi: number;
+  /** Bracket lower bound at arm time (0 if not a bracket trade). */
+  bracket_lo: number;
+  /** Bid/(bid+ask) volume ratio at entry, 0..1. 0.5 = synthetic/balanced. */
+  l2_imbalance: number;
+  /** True iff l2_imbalance came from real cTrader DOM, false = synthetic. */
+  l2_live: boolean;
+  /** Engine ATR at entry (price units, EWM). 0 = not populated. */
+  atr_at_entry: number;
+  /** True iff the originating engine was in shadow mode. */
+  shadow: boolean;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/cells                                      */
+/* ============================================================ */
+
+/**
+ * One row in the cell-grid view, returned by /cells.
+ *
+ * The v1 implementation derives these rows by grouping the closed-trade
+ * ledger by (engine, symbol). When the engines later self-register their
+ * internal cell registries (CellSummaryRegistry mirroring
+ * OpenPositionRegistry), the shape stays identical and CellPanel
+ * automatically picks up the richer source.
+ *
+ *   engine          engine name
+ *   cell            composite "engine|symbol" id (placeholder until
+ *                   engines expose their internal cell ids)
+ *   symbol          instrument symbol
+ *   trades          number of closed trades in the bucket
+ *   wins            number of trades with realized P&L > 0
+ *   win_rate        wins / trades, 0..1 (0 if trades == 0)
+ *   total_pnl       sum of realized (net-or-gross) P&L
+ *   mfe_avg         average max favourable excursion
+ *   mae_avg         average max adverse excursion
+ *   last_signal_ts  unix ms of the most recent exit_ts in the bucket
+ *                   (used as a "last signal" proxy until real signal
+ *                   timestamps are exposed engine-side)
+ */
+export interface CellRow {
+  engine: string;
+  cell: string;
+  symbol: string;
+  trades: number;
+  wins: number;
+  win_rate: number;
+  total_pnl: number;
+  mfe_avg: number;
+  mae_avg: number;
+  last_signal_ts: number;
+}
+
+/** Query parameters for the cells endpoint. Both filters are optional. */
+export interface CellsQuery {
+  /** Exact-match engine filter (case-sensitive). */
+  engine?: string;
+  /** Exact-match symbol filter (case-sensitive). */
+  symbol?: string;
+}
+
+/* ============================================================ */
 /* GET /api/v1/omega/equity                                     */
 /* ============================================================ */
 
