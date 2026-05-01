@@ -6,12 +6,40 @@
 // (the entire translation unit is gated on #ifndef OMEGA_BACKTEST below).
 //
 // Routes:
-//   GET /api/v1/omega/engines    -> [Engine]
-//   GET /api/v1/omega/positions  -> [Position]      (skeleton until Step 3)
-//   GET /api/v1/omega/ledger     -> [LedgerEntry]   from g_omegaLedger
-//   GET /api/v1/omega/equity     -> [EquityPoint]   (skeleton until Step 3)
+//   GET /api/v1/omega/engines    -> [Engine]                       (Step 2)
+//   GET /api/v1/omega/positions  -> [Position]                     (Step 3)
+//   GET /api/v1/omega/ledger     -> [LedgerEntry] from g_omegaLedger
+//   GET /api/v1/omega/equity     -> [EquityPoint]                  (Step 3)
+//   GET /api/v1/omega/intel      -> OpenBB news envelope           (Step 5)
+//   GET /api/v1/omega/curv       -> OpenBB treasury_rates envelope (Step 5)
+//   GET /api/v1/omega/wei        -> OpenBB equity quote envelope   (Step 5)
+//   GET /api/v1/omega/mov        -> OpenBB discovery envelope      (Step 5)
 //   GET /                        -> static file from omega-terminal/dist/
 //   GET /<asset>                 -> static file (or index.html SPA fallback)
+//
+// Step 5 OpenBB routes:
+//   These four routes proxy to OpenBB Hub (https://api.openbb.co/api/v1/) via
+//   src/api/OpenBbProxy. Each returns the OpenBB OBBject envelope verbatim --
+//   no JSON parsing in C++; the UI dereferences `.results` directly. The
+//   proxy reads OMEGA_OPENBB_TOKEN from the env at process start; if unset
+//   and OMEGA_OPENBB_MOCK is also unset, every Step-5 route returns 503 with
+//   a structured error body so the UI's red retry banner surfaces a clear
+//   "API token not configured" message.
+//
+//   Token strategy is server-side on purpose: keeping the token in the engine
+//   binary's env var (rather than in the React bundle) means it never ships
+//   in the JS the browser downloads, and rotating it does not require a UI
+//   redeploy. This is the right shape for the omega-terminal -> production
+//   GUI cutover at Step 7.
+//
+//   Per-route default cache TTLs are sized just below each panel's polling
+//   cadence so repeat polls within a single second hit the cache and a real
+//   OpenBB call only fires when the cache window expires:
+//
+//     INTEL      pollMs 30000  ttl 25000   (news; slow churn)
+//     CURV       pollMs 60000  ttl 50000   (yields; daily-ish)
+//     WEI        pollMs  5000  ttl  4000   (index quotes; light)
+//     MOV        pollMs  1000  ttl   750   (movers; live)
 //
 // Static file serving (added 2026-05-01): any GET that does not match an
 // /api/v1/omega/ route falls through to try_serve_static(), which reads from
@@ -35,6 +63,7 @@
 #ifndef OMEGA_BACKTEST
 
 #include "OmegaApiServer.hpp"
+#include "OpenBbProxy.hpp"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -408,6 +437,171 @@ static std::string build_equity_json(const std::unordered_map<std::string, std::
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Step 5: OpenBB-backed routes
+//
+// Each builder converts the panel-facing query parameters into an OpenBB Hub
+// path + query, calls OpenBbProxy::get(), and returns the OBBject envelope
+// verbatim. The proxy handles cache + token + mock-mode fallbacks; we just
+// pick the right route + cadence. status is set in-place so the dispatcher
+// can propagate the HTTP code (e.g. 503 when the token is not configured).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// INTEL <screen-id>  -> OpenBB /news/world (Step 5 default screen)
+//
+// The screen-id parameter is parsed but currently maps every value to the
+// same /news/world call. Step 6 onward can branch into sector / earnings /
+// macro screens by switching on the screen-id and composing different OpenBB
+// calls (or aggregating multiple). Keeping the parameter wired now means the
+// UI side does not change when we expand the engine-side mapping.
+static std::string build_intel_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    (void)q.count("screen");  // accepted but ignored for v1
+    auto it = q.find("limit");
+    int limit = 20;
+    if (it != q.end()) {
+        try { limit = std::stoi(it->second); } catch (...) { limit = 20; }
+    }
+    if (limit < 1)  limit = 1;
+    if (limit > 50) limit = 50;
+
+    char qbuf[64];
+    std::snprintf(qbuf, sizeof(qbuf), "limit=%d", limit);
+
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "news/world", qbuf, /*ttl_ms=*/25000);
+    status = r.status;
+    return r.body;
+}
+
+// CURV <region>  -> OpenBB /fixedincome/government/treasury_rates
+//
+// region:
+//   "US" (default): federal_reserve provider. Fully wired in v1.
+//   "EU" / "JP":    not yet wired -- returns 200 with a structured note so
+//                   the UI can show a "region not yet supported" message
+//                   instead of a hard error. Step 6 can wire ECB / BoJ via
+//                   their respective OpenBB providers.
+static std::string build_curv_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    std::string region = "US";
+    auto it = q.find("region");
+    if (it != q.end() && !it->second.empty()) region = it->second;
+    // Normalise to upper-case.
+    for (char& c : region) {
+        if (c >= 'a' && c <= 'z') c -= 32;
+    }
+
+    if (region == "US") {
+        const OpenBbResult r = OpenBbProxy::instance().get(
+            "fixedincome/government/treasury_rates",
+            "provider=federal_reserve",
+            /*ttl_ms=*/50000);
+        status = r.status;
+        return r.body;
+    }
+
+    // EU / JP / other: Step-6 follow-up. Surface a friendly empty envelope.
+    status = 200;
+    std::string out = "{\"results\":[],\"provider\":\"omega-stub\",";
+    out += "\"warnings\":[{\"message\":\"region '";
+    out += region;
+    out += "' not yet wired -- US is the only fully-wired CURV region in ";
+    out += "Step 5; Step 6 adds ECB / BoJ providers.\"}],";
+    out += "\"chart\":null,\"extra\":{\"region\":";
+    out += json_str(region);
+    out += "}}";
+    return out;
+}
+
+// WEI <region>  -> OpenBB /equity/price/quote for a curated symbol list
+//
+// region:
+//   "US"    (default): SPY,QQQ,DIA,IWM,VTI       (broad-market index ETFs)
+//   "EU":              VGK,EZU,FEZ,EWG,EWU
+//   "ASIA"  / "AS":    EWJ,FXI,EWY,EWT,EWA
+//   "WORLD" / "W":     VT,ACWI,VEA,VWO,EFA
+//   anything else: forwarded as a literal symbol list (comma-separated) so
+//                  power users can type `WEI AAPL,MSFT,GOOGL` from the
+//                  command bar.
+//
+// provider=yfinance: free-tier on OpenBB Hub. If the user has paid providers
+// configured on their OpenBB account they can override via ?provider=fmp etc.
+static std::string build_wei_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    std::string region = "US";
+    auto it = q.find("region");
+    if (it != q.end() && !it->second.empty()) region = it->second;
+
+    std::string symbols;
+    {
+        std::string up = region;
+        for (char& c : up) {
+            if (c >= 'a' && c <= 'z') c -= 32;
+        }
+        if      (up == "US")                 symbols = "SPY,QQQ,DIA,IWM,VTI";
+        else if (up == "EU")                 symbols = "VGK,EZU,FEZ,EWG,EWU";
+        else if (up == "ASIA" || up == "AS") symbols = "EWJ,FXI,EWY,EWT,EWA";
+        else if (up == "WORLD" || up == "W") symbols = "VT,ACWI,VEA,VWO,EFA";
+        else                                 symbols = region;  // literal list
+    }
+
+    std::string provider = "yfinance";
+    auto pit = q.find("provider");
+    if (pit != q.end() && !pit->second.empty()) provider = pit->second;
+
+    std::string qs = "symbol=";
+    qs += symbols;
+    qs += "&provider=";
+    qs += provider;
+
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        "equity/price/quote", qs, /*ttl_ms=*/4000);
+    status = r.status;
+    return r.body;
+}
+
+// MOV <universe>  -> OpenBB /equity/discovery/<universe>
+//
+// universe ∈ {active, gainers, losers}. Anything else is coerced to "active"
+// so a typo does not 502.
+static std::string build_mov_json(
+    const std::unordered_map<std::string, std::string>& q,
+    int& status)
+{
+    std::string universe = "active";
+    auto it = q.find("universe");
+    if (it != q.end() && !it->second.empty()) universe = it->second;
+    // Normalise.
+    for (char& c : universe) {
+        if (c >= 'A' && c <= 'Z') c += 32;
+    }
+    if (universe != "active" && universe != "gainers" && universe != "losers") {
+        universe = "active";
+    }
+
+    std::string provider = "yfinance";
+    auto pit = q.find("provider");
+    if (pit != q.end() && !pit->second.empty()) provider = pit->second;
+
+    std::string route = "equity/discovery/";
+    route += universe;
+
+    std::string qs = "provider=";
+    qs += provider;
+
+    const OpenBbResult r = OpenBbProxy::instance().get(
+        route, qs, /*ttl_ms=*/750);
+    status = r.status;
+    return r.body;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HTTP request parsing
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -708,6 +902,18 @@ void OmegaApiServer::run(int port)
         else if (path == "/api/v1/omega/equity") {
             body = build_equity_json(q);
         }
+        else if (path == "/api/v1/omega/intel") {
+            body = build_intel_json(q, status);
+        }
+        else if (path == "/api/v1/omega/curv") {
+            body = build_curv_json(q, status);
+        }
+        else if (path == "/api/v1/omega/wei") {
+            body = build_wei_json(q, status);
+        }
+        else if (path == "/api/v1/omega/mov") {
+            body = build_mov_json(q, status);
+        }
         else if (try_serve_static(path, body, ctype, cache, status)) {
             // Handled by static file serving (status/body/ctype/cache filled).
         }
@@ -719,6 +925,8 @@ void OmegaApiServer::run(int port)
         const char* status_text = "OK";
         if      (status == 404) status_text = "Not Found";
         else if (status == 405) status_text = "Method Not Allowed";
+        else if (status == 503) status_text = "Service Unavailable";
+        else if (status == 504) status_text = "Gateway Timeout";
         else if (status != 200) status_text = "Error";
 
         char hdr[512];

@@ -13,6 +13,17 @@
 //   - No retries here. Step 2 is the wire layer; retry policy belongs
 //     in the panels (Step 3+) where it can be UI-aware.
 //
+// Step 5 additions: `getIntel`, `getCurv`, `getWei`, `getMov` — typed
+// wrappers around the OpenBB-backed routes added in OmegaApiServer.cpp.
+// All four return `OpenBbEnvelope<T>` (the OpenBB OBBject wrapper passed
+// through verbatim by OpenBbProxy). The Step-5 panels read `.results`
+// off the envelope and surface `provider` / `warnings` in a corner badge.
+//
+// Per-call timeouts are bumped to 30 s for the OpenBB routes because
+// OpenBB Hub free-tier endpoints can take 5-10 s on cold starts. The
+// engine-side proxy enforces its own 30 s libcurl timeout, so a UI
+// timeout shorter than that would just race the proxy's response.
+//
 // Endpoints are reached via the Vite dev proxy in development:
 //   GET /api/v1/omega/<route>  ->  http://127.0.0.1:7781/api/v1/omega/<route>
 //
@@ -26,6 +37,15 @@ import {
   EquityPoint,
   LedgerQuery,
   EquityQuery,
+  IntelArticle,
+  IntelQuery,
+  CurvPoint,
+  CurvQuery,
+  WeiQuote,
+  WeiQuery,
+  MovRow,
+  MovQuery,
+  OpenBbEnvelope,
   OmegaApiError,
 } from '@/api/types';
 
@@ -45,6 +65,13 @@ let API_BASE = '/api/v1/omega';
  * `timeoutMs` option on each call.
  */
 const DEFAULT_TIMEOUT_MS = 5000;
+
+/**
+ * Step-5 OpenBB routes can take longer than the engine-internal routes
+ * because the proxy is round-tripping over the public internet. Bumped
+ * to 30 s to match the libcurl timeout enforced server-side.
+ */
+const OPENBB_TIMEOUT_MS = 30000;
 
 /**
  * Override the API base. Intended for tests only — production code
@@ -261,4 +288,93 @@ export function getEquity(
     interval: query.interval,
   });
   return getJson<EquityPoint[]>(`/equity${qs}`, opts);
+}
+
+/* ============================================================ */
+/* Step 5: OpenBB-backed market routes                          */
+/* ============================================================ */
+
+/**
+ * GET /api/v1/omega/intel
+ *
+ * Returns an OpenBB news envelope (results: IntelArticle[]). The screen
+ * argument is currently advisory -- the server route always calls
+ * `/news/world` regardless. Step 6 will branch on the screen-id.
+ */
+export function getIntel(
+  query: IntelQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<IntelArticle>> {
+  const qs = buildQuery({
+    screen: query.screen,
+    limit: query.limit,
+  });
+  return getJson<OpenBbEnvelope<IntelArticle>>(`/intel${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/curv
+ *
+ * Returns an OpenBB treasury_rates envelope (results: CurvPoint[]). US
+ * is fully wired via the federal_reserve provider; EU/JP return an
+ * empty results array with a `warnings` entry until Step 6 wires those
+ * providers.
+ */
+export function getCurv(
+  query: CurvQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<CurvPoint>> {
+  const qs = buildQuery({
+    region: query.region,
+  });
+  return getJson<OpenBbEnvelope<CurvPoint>>(`/curv${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/wei
+ *
+ * Returns an OpenBB equity quote envelope (results: WeiQuote[]). The
+ * region argument selects a curated symbol list (US/EU/ASIA/WORLD) on
+ * the server; passing a literal comma-separated symbol list also works.
+ */
+export function getWei(
+  query: WeiQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<WeiQuote>> {
+  const qs = buildQuery({
+    region: query.region,
+    provider: query.provider,
+  });
+  return getJson<OpenBbEnvelope<WeiQuote>>(`/wei${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
+}
+
+/**
+ * GET /api/v1/omega/mov
+ *
+ * Returns an OpenBB discovery envelope (results: MovRow[]). The
+ * universe argument selects the OpenBB sub-route
+ * /equity/discovery/{active|gainers|losers}; anything else is coerced
+ * to "active".
+ */
+export function getMov(
+  query: MovQuery = {},
+  opts: OmegaCallOptions = {},
+): Promise<OpenBbEnvelope<MovRow>> {
+  const qs = buildQuery({
+    universe: query.universe,
+    provider: query.provider,
+  });
+  return getJson<OpenBbEnvelope<MovRow>>(`/mov${qs}`, {
+    timeoutMs: OPENBB_TIMEOUT_MS,
+    ...opts,
+  });
 }

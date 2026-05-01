@@ -18,9 +18,28 @@
 //   - Equity endpoint           -> EquityPoint[]
 //     GET /api/v1/omega/equity?from=<iso>&to=<iso>&interval=<1m|1h|1d>
 //
+// Step 5 additions (OpenBB-backed market routes; engine forwards via
+// src/api/OpenBbProxy):
+//   - INTEL screener            -> OpenBbEnvelope<IntelArticle>
+//     GET /api/v1/omega/intel?screen=<id>&limit=<n>
+//   - CURV yield curves         -> OpenBbEnvelope<CurvPoint>
+//     GET /api/v1/omega/curv?region=US|EU|JP
+//   - WEI world equity indices  -> OpenBbEnvelope<WeiQuote>
+//     GET /api/v1/omega/wei?region=US|EU|ASIA|WORLD|<symbol-list>
+//   - MOV movers                -> OpenBbEnvelope<MovRow>
+//     GET /api/v1/omega/mov?universe=active|gainers|losers
+//
 // All timestamps are unix-epoch milliseconds (int64) on the wire,
 // represented as `number` in TS. The engine guarantees JS-safe range
 // (< 2^53) for all timestamps it produces.
+//
+// OpenBB note: the Step-5 routes pass the OpenBB OBBject envelope
+// through verbatim (no JSON parsing in C++). The UI dereferences
+// `.results` to get the row array; the rest of the wrapper (provider,
+// warnings, chart, extra) is informational. When OMEGA_OPENBB_TOKEN is
+// not set on the server, the proxy returns HTTP 503 with a structured
+// error body — surfacing through OmegaApiError exactly like any other
+// transport error.
 
 /* ============================================================ */
 /* Shared primitives                                            */
@@ -177,6 +196,171 @@ export interface EquityQuery {
   to?: string;
   /** Bucket size for aggregation. */
   interval?: EquityInterval;
+}
+
+/* ============================================================ */
+/* OpenBB envelope (Step 5)                                     */
+/* ============================================================ */
+
+/**
+ * Generic OpenBB OBBject wrapper. Every OpenBB Hub response — and
+ * every Step-5 mock response from OpenBbProxy — comes back in this
+ * shape:
+ *
+ *   {
+ *     "results":  [...],
+ *     "provider": "<provider-id>",
+ *     "warnings": null | [{ "message": string, ... }],
+ *     "chart":    null,
+ *     "extra":    { ... }
+ *   }
+ *
+ * The Step-5 panels read `.results` and surface `provider` / `warnings`
+ * in a corner badge. `chart` is currently unused on the UI side and
+ * `extra` holds OpenBB-internal diagnostics (and `{mock:true}` when the
+ * proxy is in mock mode).
+ */
+export interface OpenBbEnvelope<T> {
+  results: T[];
+  provider?: string;
+  warnings?: Array<{ message: string; [k: string]: unknown }> | null;
+  chart?: unknown;
+  extra?: Record<string, unknown>;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/intel                                      */
+/* ============================================================ */
+
+/**
+ * One news / intel article. Matches the OpenBB `/news/world` row shape
+ * on the most common providers (benzinga, biztoc, fmp, intrinio,
+ * tiingo). Field availability varies by provider; only `title` and
+ * `date` are guaranteed.
+ */
+export interface IntelArticle {
+  title: string;
+  /** ISO-8601 string from OpenBB. May or may not include a Z suffix. */
+  date: string;
+  text?: string;
+  url?: string;
+  source?: string;
+  symbols?: string[];
+  images?: Array<{ url: string }>;
+  [k: string]: unknown;
+}
+
+/**
+ * Query parameters for the intel endpoint. The screen-id parameter is
+ * accepted by the engine route but currently maps every value to the
+ * default OpenBB news call -- Step 6 will branch into sector/macro
+ * screens based on the id.
+ */
+export interface IntelQuery {
+  /** Screener identifier. Default "TOP" (OpenBB /news/world). */
+  screen?: string;
+  /** Number of articles to request. Server clamps to [1, 50]. */
+  limit?: number;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/curv                                       */
+/* ============================================================ */
+
+/**
+ * One yield-curve point. OpenBB
+ * `/fixedincome/government/treasury_rates` returns one row per (date,
+ * maturity) pair when `provider=federal_reserve`. The Step-5 CurvPanel
+ * uses the most recent date and groups by maturity to draw the curve.
+ *
+ * Maturity strings on the federal_reserve provider use the shape
+ * "month_<n>" or "year_<n>" -- e.g. "month_3", "year_10". The CurvPanel
+ * has a small parser that converts these into years for the X axis.
+ */
+export interface CurvPoint {
+  date: string;
+  maturity: string;
+  rate: number;
+  [k: string]: unknown;
+}
+
+/** Query parameters for the curv endpoint. */
+export interface CurvQuery {
+  /**
+   * Curve region. "US" (default) is fully wired via the federal_reserve
+   * OpenBB provider. "EU" and "JP" return a 200 response with an empty
+   * `results` array and a warning -- Step 6 wires those providers.
+   */
+  region?: 'US' | 'EU' | 'JP' | string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/wei                                        */
+/* ============================================================ */
+
+/**
+ * One world-equity-index quote row. Shape matches OpenBB
+ * `/equity/price/quote` on the yfinance provider. Some fields may be
+ * missing on other providers; the WeiPanel guards every cell.
+ */
+export interface WeiQuote {
+  symbol: string;
+  name?: string;
+  last_price?: number;
+  change?: number;
+  change_percent?: number;
+  volume?: number;
+  prev_close?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  [k: string]: unknown;
+}
+
+/** Query parameters for the wei endpoint. */
+export interface WeiQuery {
+  /**
+   * Region preset. Recognised values:
+   *   "US"    SPY,QQQ,DIA,IWM,VTI
+   *   "EU"    VGK,EZU,FEZ,EWG,EWU
+   *   "ASIA"  EWJ,FXI,EWY,EWT,EWA
+   *   "WORLD" VT,ACWI,VEA,VWO,EFA
+   *
+   * Anything else is forwarded as a literal comma-separated symbol list,
+   * so power users can type `WEI AAPL,MSFT,GOOGL` from the command bar.
+   */
+  region?: string;
+  /** Override the OpenBB provider (default "yfinance"). */
+  provider?: string;
+}
+
+/* ============================================================ */
+/* GET /api/v1/omega/mov                                        */
+/* ============================================================ */
+
+/**
+ * One movers row. Shape matches OpenBB `/equity/discovery/<universe>`
+ * on the yfinance provider. The `percent_change` field name varies by
+ * provider; we include both `percent_change` and `change_percent` for
+ * resilience.
+ */
+export interface MovRow {
+  symbol: string;
+  name?: string;
+  price?: number;
+  change?: number;
+  percent_change?: number;
+  change_percent?: number;
+  volume?: number;
+  [k: string]: unknown;
+}
+
+/** Query parameters for the mov endpoint. */
+export interface MovQuery {
+  /** "active" (default) | "gainers" | "losers". Anything else -> "active". */
+  universe?: 'active' | 'gainers' | 'losers' | string;
+  /** Override the OpenBB provider (default "yfinance"). */
+  provider?: string;
 }
 
 /* ============================================================ */

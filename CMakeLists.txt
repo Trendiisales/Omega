@@ -51,6 +51,20 @@ endif()
 
 find_package(OpenSSL REQUIRED)
 
+# ?? libcurl -- required by src/api/OpenBbProxy.cpp (Step 5 of the Omega
+# Terminal build). Used to call OpenBB Hub from the engine binary so the
+# OpenBB API token never ships in the React bundle. Backtest targets do
+# NOT link curl -- they live in their own add_executable() blocks below
+# and the OpenBbProxy translation unit is gated under
+# `#ifndef OMEGA_BACKTEST` so even an accidental include compiles to
+# nothing in those builds.
+#
+# Install:
+#   macOS:   brew install curl   (system libcurl already works too)
+#   Linux:   apt-get install libcurl4-openssl-dev
+#   Windows: vcpkg install curl[ssl]:x64-windows
+find_package(CURL REQUIRED)
+
 include_directories(
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -64,6 +78,7 @@ set(SOURCES
     src/SymbolConfig.cpp
     src/gui/OmegaTelemetryServer.cpp
     src/api/OmegaApiServer.cpp        # Step 2 Omega Terminal: HTTP :7781 read-API
+    src/api/OpenBbProxy.cpp           # Step 5 Omega Terminal: OpenBB Hub HTTPS proxy
     src/gold_coordinator.cpp
 )
 
@@ -86,6 +101,7 @@ target_include_directories(Omega PRIVATE
 target_link_libraries(Omega
     OpenSSL::SSL
     OpenSSL::Crypto
+    CURL::libcurl
     ws2_32
 )
 
@@ -453,8 +469,9 @@ message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
+message(STATUS "libcurl:    ${CURL_VERSION_STRING} (Step 5 OpenBB proxy)")
 message(STATUS "Git hash:   regenerated on every build")
-message(STATUS "OmegaBacktest:          standalone (no OpenSSL)")
+message(STATUS "OmegaBacktest:          standalone (no OpenSSL / no libcurl)")
 message(STATUS "TsmomCellBacktest:      standalone (no OpenSSL) [Phase 2a CellEngine refactor]")
 if(OMEGA_BUILD_SWEEP)
     message(STATUS "OmegaSweepHarness:      standalone (no OpenSSL) [OMEGA_BUILD_SWEEP=ON]")
