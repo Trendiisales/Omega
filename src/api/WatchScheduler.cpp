@@ -1,10 +1,12 @@
 // ==============================================================================
 // WatchScheduler.cpp
 //
-// Step 6 of the Omega Terminal build. See WatchScheduler.hpp for the design
-// notes. Implementation reuses the Step-5 OpenBbProxy for upstream quote
-// pulls so backtest targets stay free of libcurl (this TU is gated on
-// #ifndef OMEGA_BACKTEST and OpenBbProxy is similarly gated).
+// Step 6 of the Omega Terminal build, updated at Step 7 to talk to
+// MarketDataProxy (Yahoo Finance + FRED) instead of the retired OpenBbProxy.
+// See WatchScheduler.hpp for the design notes. Implementation reuses the
+// MarketDataProxy substrate for upstream quote pulls so backtest targets
+// stay free of libcurl (this TU is gated on #ifndef OMEGA_BACKTEST and
+// MarketDataProxy is similarly gated).
 //
 // Threading: one std::thread per scheduler. The worker waits on cv_ until
 // either (a) next_scan_ms() arrives, (b) trigger_now() is called, or
@@ -14,15 +16,17 @@
 // quote data.
 //
 // JSON parsing: we never pull a third-party JSON lib. The screener works on
-// raw OpenBB OBBject bodies via tiny, brace/bracket-aware string scanners
+// raw envelope bodies via tiny, brace/bracket-aware string scanners
 // (extract_results_array + iterate_objects below) -- same idiom used by
-// OmegaApiServer.cpp for the merged FA/KEY/EE envelopes.
+// OmegaApiServer.cpp for the merged FA/KEY/EE envelopes. The Step-7
+// MarketDataProxy preserves the Step-5/6 envelope shape verbatim, so these
+// scanners do not need any changes.
 // ==============================================================================
 
 #ifndef OMEGA_BACKTEST
 
 #include "WatchScheduler.hpp"
-#include "OpenBbProxy.hpp"
+#include "MarketDataProxy.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -83,7 +87,10 @@ static constexpr size_t kSP500Count = sizeof(kSP500) / sizeof(kSP500[0]);
 static constexpr size_t kNDXCount   = sizeof(kNDX)   / sizeof(kNDX[0]);
 
 // ----------------------------------------------------------------------------
-// Tiny brace/bracket-aware string scanners (no JSON lib).
+// Tiny brace/bracket-aware string scanners (no JSON lib). Identical to the
+// helpers in OmegaApiServer.cpp / the retired OpenBbProxy.cpp -- duplicated
+// here for TU isolation. Step 7's MarketDataProxy preserves the legacy
+// OpenBB-OBBject envelope shape so these scanners do not need to change.
 // ----------------------------------------------------------------------------
 
 // Returns the substring of `body` covering the value of the top-level
@@ -160,7 +167,7 @@ static void iterate_objects(const std::string& arr_with_brackets, Cb&& cb)
     }
 }
 
-// Pull a numeric field's value out of a single OpenBB result object (string
+// Pull a numeric field's value out of a single result object (string
 // substring of the form "{...}" containing at least one "key": value pair).
 // Returns NaN on miss / parse failure.
 static double extract_number(const std::string& obj, const char* key)
@@ -290,6 +297,14 @@ static std::string json_escape(const std::string& s)
     return out;
 }
 
+// Default upstream-provider label when no upstream call has yet been made
+// (e.g. when /watch is queried before the first nightly scan completes).
+// Reads from MarketDataProxy so the value tracks mock vs live cleanly.
+static std::string default_provider_label()
+{
+    return MarketDataProxy::instance().mock_mode() ? "mock" : "yahoo";
+}
+
 } // anonymous namespace
 
 // ----------------------------------------------------------------------------
@@ -359,7 +374,7 @@ WatchSnapshot WatchScheduler::snapshot(const std::string& universe)
         empty.last_run_ms = 0;
         empty.next_run_ms = next_scan_ms();
         empty.scanning    = false;
-        empty.provider    = OpenBbProxy::instance().mock_mode() ? "mock" : "openbb";
+        empty.provider    = default_provider_label();
         return empty;
     }
     return it->second;
@@ -401,7 +416,7 @@ void WatchScheduler::worker_loop()
             all.next_run_ms = compute_next_scan_ms(all.last_run_ms);
             all.provider = (sit != registry_.end() ? sit->second.provider :
                             (nit != registry_.end() ? nit->second.provider :
-                             (OpenBbProxy::instance().mock_mode() ? "mock" : "openbb")));
+                             default_provider_label()));
             std::unordered_set<std::string> seen;
             auto absorb = [&](const WatchSnapshot& s) {
                 for (const auto& h : s.hits) {
@@ -437,7 +452,7 @@ void WatchScheduler::run_scan(const std::string& universe)
 
     std::vector<WatchHit> hits;
     hits.reserve(64);
-    std::string upstream_provider = OpenBbProxy::instance().mock_mode() ? "mock" : "openbb";
+    std::string upstream_provider = default_provider_label();
 
     // Batch in groups of 100 to respect provider rate limits.
     constexpr size_t kBatch = 100;
@@ -450,8 +465,9 @@ void WatchScheduler::run_scan(const std::string& universe)
         }
         std::string qs = "symbol=";
         qs += symbols;
-        qs += "&provider=yfinance";
-        const OpenBbResult r = OpenBbProxy::instance().get(
+        // The Step-5/6 query suffix &provider=yfinance is no longer meaningful
+        // -- MarketDataProxy chooses the upstream by route. Left out.
+        const MarketDataResult r = MarketDataProxy::instance().get(
             "equity/price/quote", qs, /*ttl_ms=*/0);
         if (r.status >= 400) continue;
         const std::string up = extract_provider(r.body);
@@ -500,6 +516,14 @@ void WatchScheduler::run_scan(const std::string& universe)
     }
     std::cerr << "[WatchScheduler] scan " << universe << " complete; "
               << registry_[universe].hits.size() << " hits\n";
+}
+
+// Suppress the json_escape unused-static warning when the helper isn't
+// referenced by any active code path (we keep it because OmegaApiServer.cpp
+// and related TUs share the same idiom and we want consistency across the
+// engine-side API layer).
+static void omega_watchscheduler_suppress_unused() {
+    (void)&json_escape;
 }
 
 } // namespace omega

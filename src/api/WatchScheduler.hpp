@@ -2,12 +2,18 @@
 // ==============================================================================
 // WatchScheduler -- cron-style nightly INTEL screener.
 //
-// Step 6 of the Omega Terminal build. Backs the /api/v1/omega/watch route by
-// maintaining an in-process registry of "screener hits" -- symbols flagged by
-// the INTEL screener over a configured universe (S&P 500 / NDX / ALL) on a
-// nightly schedule. The route handler does NOT run the screener; it just
-// snapshots the registry. This keeps /watch latency fast and predictable even
-// when the universe is ~520 symbols deep.
+// Step 6 of the Omega Terminal build. Updated at Step 7 to call
+// MarketDataProxy (Yahoo Finance + FRED) instead of the retired OpenBbProxy
+// (api.openbb.co returned 404 -- OpenBB does not host a public REST endpoint).
+// The scheduler logic, universe constants, screener rule, and on-the-wire
+// envelope shape are unchanged; only the upstream HTTP source flips.
+//
+// Backs the /api/v1/omega/watch route by maintaining an in-process registry
+// of "screener hits" -- symbols flagged by the INTEL screener over a configured
+// universe (S&P 500 / NDX / ALL) on a nightly schedule. The route handler
+// does NOT run the screener; it just snapshots the registry. This keeps
+// /watch latency fast and predictable even when the universe is ~520 symbols
+// deep.
 //
 // Threading:
 //   start() spawns one worker thread that wakes nightly at 00:30 UTC, runs
@@ -21,22 +27,25 @@
 //   "ALL"   -> SP500 + NDX, deduplicated.
 //
 // Screener (v1):
-//   A deliberately-simple momentum + relative-volume screener using the
-//   OpenBB /equity/price/quote endpoint per symbol (batched in groups of 100
-//   to respect provider rate limits). Output: one WatchHit per symbol that
-//   passes the criteria. The screener function is a private member so it can
-//   be swapped for a richer composite (the existing INTEL panel's server-side
-//   rule set) without changing the public surface.
+//   A deliberately-simple momentum + relative-volume screener using
+//   MarketDataProxy's /equity/price/quote route (Yahoo Finance under Step 7,
+//   batched in groups of 100 to respect provider rate limits). Output: one
+//   WatchHit per symbol that passes the criteria. The screener function is
+//   a private member so it can be swapped for a richer composite (the
+//   existing INTEL panel's server-side rule set) without changing the
+//   public surface.
 //
 // Mock mode:
-//   When OMEGA_OPENBB_MOCK=1 is set, the scheduler still runs but uses the
-//   OpenBbProxy mock data path. This lets the WATCH panel be exercised
-//   end-to-end on a dev box without real market data.
+//   When OMEGA_MARKETDATA_MOCK=1 is set, the scheduler still runs but uses
+//   the MarketDataProxy mock data path. This lets the WATCH panel be
+//   exercised end-to-end on a dev box without external network access.
+//   (Step-7 hard-cut: the legacy OMEGA_OPENBB_MOCK env var is no longer
+//   recognised. Operators must use OMEGA_MARKETDATA_MOCK.)
 //
 // Build gate:
 //   The .cpp is gated on `#ifndef OMEGA_BACKTEST` so backtest targets stay
-//   free of libcurl. WatchScheduler.cpp uses no third-party deps beyond the
-//   existing OpenBbProxy + std::thread + std::condition_variable.
+//   free of libcurl. WatchScheduler.cpp uses no third-party deps beyond
+//   MarketDataProxy + std::thread + std::condition_variable.
 // ==============================================================================
 
 #ifndef OMEGA_BACKTEST
@@ -69,7 +78,13 @@ struct WatchSnapshot {
     int64_t               next_run_ms = 0;
     bool                  scanning    = false;
     std::string           universe;
-    std::string           provider;        // "openbb" or "mock" or "omega-stub"
+    // Upstream-provider label. Step 7 values:
+    //   "yahoo"      -- live Yahoo Finance quotes (default)
+    //   "mock"       -- OMEGA_MARKETDATA_MOCK=1 path
+    //   "omega-stub" -- fallthrough (e.g. unknown route)
+    // The /watch route serializes this verbatim into the envelope; the UI
+    // uses it to render the upper-right MOCK / LIVE-yahoo badge.
+    std::string           provider;
 };
 
 class WatchScheduler

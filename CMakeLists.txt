@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # vcpkg toolchain resolution (hardened, Step-6 hot-fix 2026-05-01e).
 #
-# The build needs the vcpkg toolchain to find libcurl (Step 5) and any
+# The build needs the vcpkg toolchain to find libcurl (Step 5/7) and any
 # other vcpkg-installed deps. We try in order:
 #   1. Caller-supplied -DCMAKE_TOOLCHAIN_FILE on the cmake command line.
 #   2. VCPKG_ROOT env var, if set.
@@ -116,26 +116,26 @@ endif()
 
 find_package(OpenSSL REQUIRED)
 
-# ?? libcurl -- required by src/api/OpenBbProxy.cpp (Step 5 of the Omega
-# Terminal build). Used to call OpenBB Hub from the engine binary so the
-# OpenBB API token never ships in the React bundle. Backtest targets do
-# NOT link curl -- they live in their own add_executable() blocks below
-# and the OpenBbProxy translation unit is gated under
-# `#ifndef OMEGA_BACKTEST` so even an accidental include compiles to
-# nothing in those builds.
+# libcurl -- required by src/api/MarketDataProxy.cpp (Step 5/7 of the Omega
+# Terminal build). Used to call free market-data providers (Yahoo Finance +
+# FRED) from the engine binary so no API tokens ship in the React bundle.
+# Backtest targets do NOT link curl -- they live in their own add_executable()
+# blocks below and the MarketDataProxy translation unit is gated under
+# `#ifndef OMEGA_BACKTEST` so even an accidental include compiles to nothing
+# in those builds.
 #
 # Install:
 #   macOS:   brew install curl   (system libcurl already works too)
 #   Linux:   apt-get install libcurl4-openssl-dev
 #   Windows: vcpkg install curl[ssl]:x64-windows
 #
-# Step-6 hot-fix: try find_package(CURL) softly first, then on Windows
-# fall back to a manual probe of the vcpkg-installed tree before
-# erroring out. This rescues the common case of the toolchain being
-# loaded but `vcpkg install curl:x64-windows` having never been run on
-# the host (or having been wiped by a vcpkg upgrade). When everything
-# fails we emit a precise install command in the error message so the
-# operator can copy/paste it into PowerShell.
+# Step-6 hot-fix carried into Step 7: try find_package(CURL) softly first,
+# then on Windows fall back to a manual probe of the vcpkg-installed tree
+# before erroring out. This rescues the common case of the toolchain being
+# loaded but `vcpkg install curl:x64-windows` having never been run on the
+# host (or having been wiped by a vcpkg upgrade). When everything fails we
+# emit a precise install command in the error message so the operator can
+# copy/paste it into PowerShell.
 find_package(CURL QUIET)
 if(NOT CURL_FOUND AND WIN32)
     # Probe vcpkg's installed/x64-windows tree directly. The toolchain file
@@ -196,14 +196,14 @@ set(SOURCES
     src/SymbolConfig.cpp
     src/gui/OmegaTelemetryServer.cpp
     src/api/OmegaApiServer.cpp        # Step 2 Omega Terminal: HTTP :7781 read-API
-    src/api/OpenBbProxy.cpp           # Step 5 Omega Terminal: OpenBB Hub HTTPS proxy
+    src/api/MarketDataProxy.cpp       # Step 5/7 Omega Terminal: market-data proxy (Yahoo Finance + FRED)
     src/api/WatchScheduler.cpp        # Step 6 Omega Terminal: nightly INTEL screener (S&P 500 + NDX)
     src/gold_coordinator.cpp
 )
 
 add_executable(Omega ${SOURCES})
 
-# ?? Precompiled Header -- cuts recompile time 40-60% on MSVC /O2 ????????????
+# Precompiled Header -- cuts recompile time 40-60% on MSVC /O2.
 # omega_pch.hpp contains all stable Windows/OpenSSL/STL includes.
 # Omega .hpp engine headers are NOT in the PCH -- they change often and would
 # invalidate it constantly. Only rebuild PCH when omega_pch.hpp itself changes.
@@ -224,7 +224,7 @@ target_link_libraries(Omega
     ws2_32
 )
 
-# ?? Build version stamp ??????????????????????????????????????????????????????
+# Build version stamp.
 # Git hash + build time are injected as compiler /D defines -- no generated
 # header, no sentinel, no forced recompile of main.cpp every build.
 #
@@ -282,7 +282,7 @@ set_property(SOURCE "${CMAKE_SOURCE_DIR}/src/main.cpp"
 
 target_include_directories(Omega PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-# ?? Copy config files to build output directory ???????????????????????????????
+# Copy config files to build output directory.
 # symbols.ini and omega_config.ini must live next to Omega.exe at runtime.
 # This POST_BUILD step copies them automatically on every build so the binary
 # always has the latest config without manual copying.
@@ -300,7 +300,7 @@ add_custom_command(TARGET Omega POST_BUILD
     COMMENT "Copying config files to build output directory"
 )
 
-# ?? Copy vcpkg runtime DLLs next to Omega.exe (Step-6 hot-fix 2026-05-01e) ???
+# Copy vcpkg runtime DLLs next to Omega.exe (Step-6 hot-fix 2026-05-01e).
 # When find_package(CURL) succeeds via the vcpkg toolchain we link against
 # libcurl.lib (the import library), but at *runtime* Windows needs the
 # matching DLL set: libcurl-x64.dll plus its transitive deps (zlib1.dll,
@@ -366,7 +366,7 @@ if(WIN32)
     unset(_omega_vcpkg_bin)
 endif()
 
-# ?? Push current log to git after every successful build ?????????????????????
+# Push current log to git after every successful build.
 # LOG PUSH REMOVED FROM POST_BUILD -- permanent fix for stale-hash problem.
 # Previously push_log.ps1 ran here after every build, pushing logs/latest.log
 # as a new git commit. This moved HEAD forward to a log-only commit DURING
@@ -419,7 +419,7 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/config/omega_config.ini"
         "$<TARGET_FILE_DIR:OmegaBacktest>/omega_config.ini"
-    COMMENT "Copying config ? OmegaBacktest"
+    COMMENT "Copying config -> OmegaBacktest"
 )
 
 # =============================================================================
@@ -654,7 +654,7 @@ message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenSSL:    ${OPENSSL_VERSION}")
-message(STATUS "libcurl:    ${CURL_VERSION_STRING} (Step 5 OpenBB proxy)")
+message(STATUS "libcurl:    ${CURL_VERSION_STRING} (Step 5/7 market-data proxy)")
 message(STATUS "Git hash:   regenerated on every build")
 message(STATUS "OmegaBacktest:          standalone (no OpenSSL / no libcurl)")
 message(STATUS "TsmomCellBacktest:      standalone (no OpenSSL) [Phase 2a CellEngine refactor]")
