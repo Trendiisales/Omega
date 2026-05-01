@@ -123,6 +123,15 @@ struct IndexHybridConfig {
     //   To disable the gate entirely on a symbol, set start == end.
     int    ny_noise_start_min = 13 * 60 + 15;  // 13:15 UTC default
     int    ny_noise_end_min   = 13 * 60 + 45;  // 13:45 UTC default
+    // S53 2026-05-01 (SESSION_h trade-quality): post-win same-level block.
+    //   Mirrors the existing post-SL SAME_LEVEL_BLOCK at line 391-398 but
+    //   stamps on TRAIL_HIT and TP_HIT (not BE_HIT). Default 10 min.
+    //   Today's NAS100 tape showed 4 same-direction post-win re-arms within
+    //   ±5pt of a recent winner exit; all 4 ended in loss/BE for ~-$78.
+    //   The post-SL block did not catch them (those exits weren't SL_HIT).
+    //   The 30pt block radius (SAME_LEVEL_BLOCK_PTS) is shared with the
+    //   loss-side guard. Set to 0 to disable per-symbol.
+    int    same_level_post_win_block_s = 600;  // 10 min
 };
 
 inline IndexHybridConfig make_sp_config() {
@@ -396,6 +405,22 @@ public:
                     return;
                 }
             }
+            // S53 2026-05-01 (SESSION_h trade-quality): post-win same-level block.
+            //   Same 30pt radius as the loss-side block above. Window length
+            //   from cfg_.same_level_post_win_block_s (default 600s = 10min).
+            //   Stamped on TRAIL_HIT only (BE_HIT and TP_HIT not emitted by
+            //   this engine for non-trail-ratchet exits). Continuation: once
+            //   price has moved >30pt away from the prior win exit, re-arm
+            //   is allowed -- the engine NATURALLY captures trend continuation
+            //   on whatever fresh structure forms in the new price area.
+            //   Today's NAS100 root cause: 4 same-direction post-win re-arms
+            //   within ±5pt of recent winner exit, all 4 ended in loss/BE.
+            if (m_win_exit_price > 0.0 && now_s < m_win_exit_block_ts) {
+                if (std::fabs(w_hi - m_win_exit_price) < SAME_LEVEL_BLOCK_PTS ||
+                    std::fabs(w_lo - m_win_exit_price) < SAME_LEVEL_BLOCK_PTS) {
+                    return;
+                }
+            }
             if (range >= cfg_.min_range && range <= cfg_.max_range) {
                 phase        = Phase::ARMED;
                 bracket_high = w_hi;
@@ -507,6 +532,12 @@ private:
     int     m_sl_cooldown_dir = 0;
     int64_t m_sl_cooldown_ts  = 0;
     double  m_sl_price        = 0.0;  // entry price at last SL hit -- same-level re-arm block
+    // S53 2026-05-01 (SESSION_h trade-quality): post-win same-level block.
+    //   Stamped on TRAIL_HIT or TP_HIT (not BE_HIT).
+    //   Block radius = SAME_LEVEL_BLOCK_PTS (shared with loss-side).
+    //   Block duration = cfg_.same_level_post_win_block_s (default 600s).
+    double  m_win_exit_price        = 0.0;
+    int64_t m_win_exit_block_ts     = 0;
 
     void cancel_losing_side(bool filled_long) noexcept {
         if (filled_long && !pending_short_clOrdId.empty()) {
@@ -612,6 +643,18 @@ private:
             m_sl_cooldown_dir = pos.is_long ? 1 : -1;
             m_sl_cooldown_ts  = now_s + cfg_.dir_sl_cooldown_s;
             m_sl_price        = pos.entry;  // block same-level re-arm after SL
+        }
+        // S53 2026-05-01 (SESSION_h trade-quality): stamp post-win block.
+        //   Engine emits TRAIL_HIT (when SL has ratcheted past entry into
+        //   profit) and BE_HIT (when SL is locked at entry). TP_HIT is
+        //   never emitted -- the SL ratchets all the way to TP via trail.
+        //   So stamping on TRAIL_HIT covers all win exits. BE_HIT carries
+        //   no signal so it is NOT stamped. Set
+        //   cfg_.same_level_post_win_block_s = 0 to disable per-symbol.
+        if (std::strcmp(reason, "TRAIL_HIT") == 0 &&
+            cfg_.same_level_post_win_block_s > 0) {
+            m_win_exit_price    = exit_px;
+            m_win_exit_block_ts = now_s + cfg_.same_level_post_win_block_s;
         }
 
         omega::TradeRecord tr;

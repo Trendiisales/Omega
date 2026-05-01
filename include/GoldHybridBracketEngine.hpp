@@ -141,12 +141,41 @@ public:
     //   the intended ~50% capture-of-MFE outcome instead of the ~20% being
     //   observed in shadow tape.
     static constexpr double MFE_TRAIL_FRAC       = 0.55;
+    // S53 2026-05-01 (SESSION_h trade-quality): break-even lock trigger.
+    //   Move SL to entry once MFE >= BE_TRIGGER_PTS. Fills the gap between
+    //   the original SL and the trail-arm threshold (MIN_TRAIL_ARM_PTS=5.0):
+    //   trades that MFE 3-5 pt then reverse exit at break-even instead of
+    //   taking the original -$3 to -$5 SL. Combined with the trail bump,
+    //   this is "limit downside on small wins, let real winners run".
+    static constexpr double BE_TRIGGER_PTS       = 3.0;
+    // S53 2026-05-01 (SESSION_h): same-level re-arm block.
+    //   Mirrors the IndexHybridBracketEngine SAME_LEVEL_BLOCK at line 391-398.
+    //   After an exit at price P, block re-arming when the new compression's
+    //   hi or lo falls within SAME_LEVEL_BLOCK_PTS of P, for the configured
+    //   timeout. Loss exits block longer (rejected level) than wins
+    //   (exhaustion zone). BE_HIT carries no signal -- it does NOT stamp.
+    //
+    //   Continuation behaviour: once price has moved >SAME_LEVEL_BLOCK_PTS
+    //   away from the prior exit, re-arm is allowed -- the engine NATURALLY
+    //   captures trend continuation when price has run away from the level.
+    //
+    //   Threshold of 5.0pt is chosen relative to MIN_RANGE=6.0: a fresh
+    //   structure of width 6 cannot overlap a prior exit unless one of its
+    //   edges is within 5 of the exit price. So legitimate fresh setups
+    //   are not blocked, only same-level re-runs.
+    static constexpr double SAME_LEVEL_BLOCK_PTS         = 5.0;
+    static constexpr int    SAME_LEVEL_POST_SL_BLOCK_S   = 900;  // 15 min after SL
+    static constexpr int    SAME_LEVEL_POST_WIN_BLOCK_S  = 600;  // 10 min after TP/TRAIL
     static constexpr double MAX_SPREAD           = 2.5;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;
     static constexpr double USD_PER_PT           = 100.0;
     static constexpr int    PENDING_TIMEOUT_S    = 30;
     static constexpr int    COOLDOWN_S           = 60;
+    // DIR_SL_COOLDOWN_S: pre-S53 dead-code constant. m_sl_cooldown_ts was
+    //   set on SL_HIT but never read anywhere. The S53 same-level block
+    //   (above) supersedes this with a working 15-minute post-SL guard
+    //   keyed on m_sl_price overlap. Constant kept for backwards reference.
     static constexpr int    DIR_SL_COOLDOWN_S    = 120;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15; // |book_slope| for lot bonus
     static constexpr double DOM_LOT_BONUS        = 1.3;  // lot multiplier when DOM confirms
@@ -190,6 +219,11 @@ public:
         //   at the moment of fill.
         double  spread_at_entry = 0.0;
         int64_t entry_ts = 0;
+        // S53 2026-05-01 (SESSION_h trade-quality): break-even lock flag.
+        //   Set true once MFE has crossed BE_TRIGGER_PTS and SL has been
+        //   moved to entry. One-shot -- prevents the BE move from being
+        //   re-applied on every tick once the trail starts ratcheting.
+        bool    be_locked = false;
     } pos;
 
     double bracket_high  = 0.0;
@@ -336,6 +370,26 @@ public:
 
         // ── IDLE -> ARMED ─────────────────────────────────────────────────────
         if (phase == Phase::IDLE) {
+            // S53 2026-05-01 (SESSION_h): same-level re-arm block.
+            //   Block re-arming when the new compression's hi or lo overlaps
+            //   a recent exit price within SAME_LEVEL_BLOCK_PTS=5pt and the
+            //   relevant cooldown window is still active.
+            //     m_sl_price       set on SL_HIT; cleared by 15-min timeout
+            //     m_win_exit_price set on TRAIL_HIT/TP_HIT; cleared by 10-min
+            //   Continuation is captured naturally: once price has moved
+            //   beyond the block radius, the new structure can arm normally.
+            if (m_sl_price > 0.0 && now_s < m_sl_cooldown_ts) {
+                if (std::fabs(w_hi - m_sl_price) < SAME_LEVEL_BLOCK_PTS ||
+                    std::fabs(w_lo - m_sl_price) < SAME_LEVEL_BLOCK_PTS) {
+                    return;
+                }
+            }
+            if (m_win_exit_price > 0.0 && now_s < m_win_exit_block_ts) {
+                if (std::fabs(w_hi - m_win_exit_price) < SAME_LEVEL_BLOCK_PTS ||
+                    std::fabs(w_lo - m_win_exit_price) < SAME_LEVEL_BLOCK_PTS) {
+                    return;
+                }
+            }
             if (range >= MIN_RANGE && range <= MAX_RANGE) {
                 phase        = Phase::ARMED;
                 bracket_high = w_hi;
@@ -553,6 +607,21 @@ public:
         //   where a sub-pt MFE on tick 1 armed the trail and bid-ask noise hit it
         //   on tick 2. Either guard set to 0 disables that check.
         const int64_t held_s     = now_s - pos.entry_ts;
+
+        // S53 2026-05-01 (SESSION_h trade-quality): break-even lock.
+        //   Move SL to entry once MFE crosses BE_TRIGGER_PTS=3.0. Fills
+        //   the gap between the original SL and MIN_TRAIL_ARM_PTS=5.0:
+        //   trades that MFE 3-5 then reverse exit at $0 instead of -$3
+        //   to -$5 SL. One-shot via pos.be_locked. The trail step below
+        //   may subsequently ratchet pos.sl above entry (TRAIL_HIT path).
+        //   No hold-time guard here: BE_TRIGGER_PTS=3 is a real $3 move
+        //   on XAUUSD (~10x bid-ask noise) -- not gameable by tick noise.
+        if (move > 0 && !pos.be_locked && pos.mfe >= BE_TRIGGER_PTS) {
+            if (pos.is_long  && pos.entry > pos.sl) pos.sl = pos.entry;
+            if (!pos.is_long && pos.entry < pos.sl) pos.sl = pos.entry;
+            pos.be_locked = true;
+        }
+
         const bool    arm_mfe_ok = (MIN_TRAIL_ARM_PTS  <= 0.0) || (pos.mfe >= MIN_TRAIL_ARM_PTS);
         const bool    arm_hold_ok = (MIN_TRAIL_ARM_SECS <= 0 ) || (held_s  >= MIN_TRAIL_ARM_SECS);
         if (move > 0 && arm_mfe_ok && arm_hold_ok) {
@@ -611,6 +680,14 @@ private:
     int64_t m_cooldown_start = 0;
     int     m_sl_cooldown_dir = 0;
     int64_t m_sl_cooldown_ts  = 0;
+    // S53 2026-05-01 (SESSION_h): same-level re-arm block state.
+    //   m_sl_price       entry price at last SL_HIT (loss-side block)
+    //   m_win_exit_price exit price at last TRAIL_HIT/TP_HIT (win-side block)
+    //   m_win_exit_block_ts time when win-side block expires (now_s + 600s)
+    //   The post-SL block reuses the existing m_sl_cooldown_ts above.
+    double  m_sl_price          = 0.0;
+    double  m_win_exit_price    = 0.0;
+    int64_t m_win_exit_block_ts = 0;
     int64_t m_pending_blocked_since = 0;
     int     m_trade_id        = 0;
     // S47 T4a: simulated/live tick second cached at top of on_tick() so
@@ -697,9 +774,20 @@ private:
             std::cout.flush();
         }
 
+        // S53 2026-05-01 (SESSION_h): same-level re-arm block stamps.
+        //   SL_HIT  -> 15-min block at entry price (rejected level)
+        //   TRAIL_HIT or TP_HIT -> 10-min block at exit price (exhaustion)
+        //   BE_HIT  -> no stamp (carries no directional signal)
+        // Continuation behaviour: once price has moved >SAME_LEVEL_BLOCK_PTS
+        // away from the stamped level, IDLE re-arm is allowed normally.
         if (reason == std::string("SL_HIT")) {
             m_sl_cooldown_dir = is_long_ ? 1 : -1;
-            m_sl_cooldown_ts  = now_s + DIR_SL_COOLDOWN_S;
+            m_sl_cooldown_ts  = now_s + SAME_LEVEL_POST_SL_BLOCK_S;
+            m_sl_price        = entry_;  // same-level reference for re-arm block
+        }
+        if (reason == std::string("TRAIL_HIT") || reason == std::string("TP_HIT")) {
+            m_win_exit_price    = exit_px;
+            m_win_exit_block_ts = now_s + SAME_LEVEL_POST_WIN_BLOCK_S;
         }
 
         omega::TradeRecord tr;
