@@ -18,11 +18,25 @@
 // If OMEGA_OPENBB_MOCK=1 is set, the proxy bypasses the network entirely and
 // returns canned synthetic JSON shaped like an OpenBB OBBject (so the route
 // reshape code in OmegaApiServer.cpp does not branch on mock-vs-real).
+//
+// Windows include order:
+//   <winsock2.h> + <ws2tcpip.h> MUST come BEFORE <curl/curl.h>. libcurl's
+//   header references curl_socket_t / sockaddr / fd_set which are typedef'd
+//   in winsock2.h on Windows, and including curl.h before winsock2.h gives
+//   a cascade of MSVC C2061 / C2079 / C3646 errors. The repo-level CMake
+//   defines _WINSOCKAPI_ globally to keep <windows.h> from pulling in the
+//   older winsock.h, so we have a clean field for winsock2 here. Same idiom
+//   appears in OmegaApiServer.cpp.
 // ==============================================================================
 
 #ifndef OMEGA_BACKTEST
 
 #include "OpenBbProxy.hpp"
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 
 #include <curl/curl.h>
 
@@ -263,6 +277,14 @@ OpenBbResult OpenBbProxy::fetch_remote(const std::string& url)
 //   equity/price/quote                             -> WEI
 //   equity/discovery/{active|gainers|losers}       -> MOV
 // Anything else returns an empty results array with provider "mock".
+//
+// Raw-string delimiter note:
+//   The standard `R"(...)"` form terminates at the first `)"` it sees, which
+//   collides with literal text containing `)"` -- e.g. `"name":"X ETF (mock)"`.
+//   Where that risk exists below we use a custom delimiter such as `R"X(...)X"`
+//   so the raw string only terminates at the matching `)X"`. The mock JSON
+//   strings without parens (news/world, treasury_rates, the outer wrapper of
+//   discovery) keep the simpler `R"(...)"` form.
 // ─────────────────────────────────────────────────────────────────────────────
 
 OpenBbResult OpenBbProxy::fetch_mock(const std::string& route,
@@ -337,10 +359,13 @@ OpenBbResult OpenBbProxy::fetch_mock(const std::string& route,
                 const double change = ((seed % 41) - 20) / 10.0;
                 const double pct    = change / price * 100.0;
                 char buf[256];
+                // NOTE: custom raw-string delimiter `X(...)X` because the
+                // literal text contains `(mock)"`, which would prematurely
+                // terminate the default `R"(...)"` form at the first `)"`.
                 std::snprintf(buf, sizeof(buf),
-                    R"({"symbol":"%s","name":"%s ETF (mock)","last_price":%.2f,)"
-                    R"("change":%.2f,"change_percent":%.4f,"volume":%d,)"
-                    R"("prev_close":%.2f})",
+                    R"X({"symbol":"%s","name":"%s ETF (mock)","last_price":%.2f,)X"
+                    R"X("change":%.2f,"change_percent":%.4f,"volume":%d,)X"
+                    R"X("prev_close":%.2f})X",
                     sym.c_str(), sym.c_str(), price, change, pct,
                     1000000 + (seed * 137), price - change);
                 results += buf;
