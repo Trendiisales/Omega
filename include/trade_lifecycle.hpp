@@ -195,6 +195,14 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
             // files on disk are left in place for historical reference.
             write_trade_close_logs(tr);
 
+            // Step 3: per-engine "last close" side-table -- written for shadow
+            // trades too so the omega-terminal CC/ENG panels reflect the fact
+            // that the engine emitted a signal even when we don't book it.
+            // exitTs is unix seconds; the registry stores unix ms.
+            g_engine_last.record(tr.engine,
+                                 static_cast<int64_t>(tr.exitTs) * 1000LL,
+                                 tr.net_pnl);
+
             return;
         }
     }
@@ -248,6 +256,11 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         // Add to ledger so GUI shows partial close and bell fires correctly (win sound)
         g_omegaLedger.record(tr);
         g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
+        // Step 3: per-engine side-table -- a partial close is a real signal+pnl
+        // event for the UI even though the trade is still half-open.
+        g_engine_last.record(tr.engine,
+                             static_cast<int64_t>(tr.exitTs) * 1000LL,
+                             tr.net_pnl);
         return;
     }
 
@@ -316,6 +329,13 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     g_omegaLedger.record(tr);
     // Accumulate per-engine session P&L for GUI live attribution panel
     g_telemetry.AccumEnginePnl(tr.engine.c_str(), tr.net_pnl);
+    // Step 3: per-engine "last close" side-table -- read by /api/v1/omega/engines
+    // snapshot lambdas so the omega-terminal CC/ENG panels show non-zero
+    // last_signal_ts / last_pnl values for engines that have closed at least
+    // one trade since process start.
+    g_engine_last.record(tr.engine,
+                         static_cast<int64_t>(tr.exitTs) * 1000LL,
+                         tr.net_pnl);
     // S14 2026-04-24: removed write_shadow_csv — system uses single universal
     // trade journal (omega_trade_closes.csv) regardless of shadow/live mode.
     // In SHADOW mode the early-return at line ~113 handles the trade before

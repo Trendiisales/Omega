@@ -1784,77 +1784,158 @@ static void init_engines(const std::string& cfg_path)
     //   RSI Reversal -> g_rsi_reversal
     //   RSI Extreme  -> g_rsi_extreme
     //
-    // last_signal_ts and last_pnl are 0 in this step -- per-engine accessors
-    // for those land in Step 3 alongside the CC/ENG/POS panel wiring.
-    auto reg = [](const char* name, bool enabled, bool shadow_mode) -> omega::EngineSnapshot {
+    // Step 3: snapshot lambdas now read from g_engine_last (a side-table written
+    // by handle_closed_trade in include/trade_lifecycle.hpp). Each registry name
+    // is mapped to one or more trade-record engine strings -- bracket engines
+    // use a single literal (e.g. "HybridBracketGold"), cell-based engines use
+    // a prefix terminator like "Tsmom_" that matches every cell id ("Tsmom_H1_long",
+    // "Tsmom_H4_short", ...) the engine emits via tr.engine = cell_id.
+    //
+    // The HBI four-pack (HybridSP/NQ/US30/NAS100) all stamp tr.engine =
+    // "HybridBracketIndex" today, so until the engine differentiates by symbol
+    // the four registry entries will show the SAME last_signal_ts / last_pnl.
+    // Documented as a known limitation in EngineLastRegistry.hpp.
+    auto reg = [](const char* name,
+                  bool enabled,
+                  bool shadow_mode,
+                  std::initializer_list<const char*> trade_engine_patterns)
+        -> omega::EngineSnapshot
+    {
         omega::EngineSnapshot s;
-        s.name           = name;
-        s.enabled        = enabled;
-        s.mode           = shadow_mode ? "SHADOW" : "LIVE";
-        s.state          = enabled ? "RUNNING" : "IDLE";
-        s.last_signal_ts = 0;
-        s.last_pnl       = 0.0;
+        s.name    = name;
+        s.enabled = enabled;
+        s.mode    = shadow_mode ? "SHADOW" : "LIVE";
+        s.state   = enabled ? "RUNNING" : "IDLE";
+        const auto last = g_engine_last.get_latest_for_any(trade_engine_patterns);
+        s.last_signal_ts = last.last_ts_ms;
+        s.last_pnl       = last.last_pnl;
         return s;
     };
 
     g_engines.register_engine("HybridGold",
         [reg]{ return reg("HybridGold",
                           true,
-                          g_hybrid_gold.shadow_mode); });
+                          g_hybrid_gold.shadow_mode,
+                          {"HybridBracketGold"}); });
     g_engines.register_engine("HybridSP",
         [reg]{ return reg("HybridSP",
                           true,
-                          g_hybrid_sp.shadow_mode); });
+                          g_hybrid_sp.shadow_mode,
+                          {"HybridBracketIndex"}); });
     g_engines.register_engine("HybridNQ",
         [reg]{ return reg("HybridNQ",
                           true,
-                          g_hybrid_nq.shadow_mode); });
+                          g_hybrid_nq.shadow_mode,
+                          {"HybridBracketIndex"}); });
     g_engines.register_engine("HybridUS30",
         [reg]{ return reg("HybridUS30",
                           true,
-                          g_hybrid_us30.shadow_mode); });
+                          g_hybrid_us30.shadow_mode,
+                          {"HybridBracketIndex"}); });
     g_engines.register_engine("HybridNAS100",
         [reg]{ return reg("HybridNAS100",
                           true,
-                          g_hybrid_nas100.shadow_mode); });
+                          g_hybrid_nas100.shadow_mode,
+                          {"HybridBracketIndex"}); });
     g_engines.register_engine("MacroCrash",
         [reg]{ return reg("MacroCrash",
                           g_macro_crash.enabled,
-                          g_macro_crash.shadow_mode); });
+                          g_macro_crash.shadow_mode,
+                          {"MacroCrash"}); });
     g_engines.register_engine("CandleFlow",
         [reg]{ return reg("CandleFlow",
                           true,
-                          g_candle_flow.shadow_mode); });
+                          g_candle_flow.shadow_mode,
+                          {"CandleFlowEngine"}); });
     g_engines.register_engine("Tsmom",
         [reg]{ return reg("Tsmom",
                           g_tsmom.enabled,
-                          g_tsmom.shadow_mode); });
+                          g_tsmom.shadow_mode,
+                          {"Tsmom_"}); });
     g_engines.register_engine("TsmomV2",
         [reg]{ return reg("TsmomV2",
                           g_tsmom_v2.enabled,
-                          g_tsmom_v2.shadow_mode); });
+                          g_tsmom_v2.shadow_mode,
+                          {"TsmomV2_", "Cell_"}); });
     g_engines.register_engine("Donchian",
         [reg]{ return reg("Donchian",
                           g_donchian.enabled,
-                          g_donchian.shadow_mode); });
+                          g_donchian.shadow_mode,
+                          {"Donchian_"}); });
     g_engines.register_engine("EmaPullback",
         [reg]{ return reg("EmaPullback",
                           g_ema_pullback.enabled,
-                          g_ema_pullback.shadow_mode); });
+                          g_ema_pullback.shadow_mode,
+                          {"EmaPullback_"}); });
     g_engines.register_engine("TrendRider",
         [reg]{ return reg("TrendRider",
                           g_trend_rider.enabled,
-                          g_trend_rider.shadow_mode); });
+                          g_trend_rider.shadow_mode,
+                          {"TrendRider_"}); });
     g_engines.register_engine("RSIReversal",
         [reg]{ return reg("RSIReversal",
                           g_rsi_reversal.enabled,
-                          g_rsi_reversal.shadow_mode); });
+                          g_rsi_reversal.shadow_mode,
+                          {"RSIReversal"}); });
     g_engines.register_engine("RSIExtreme",
         [reg]{ return reg("RSIExtreme",
                           true,
-                          g_rsi_extreme.shadow_mode); });
+                          g_rsi_extreme.shadow_mode,
+                          {"RSIExtremeTurn"}); });
     std::cout << "[OmegaApi] g_engines registered ("
               << g_engines.snapshot_all().size() << " engines)\n";
+    std::cout.flush();
+
+    // ── Step 3: open-position sources for /api/v1/omega/positions ─────────
+    // HBG only this session. Lambda captures g_hybrid_gold and g_last_tick_bid
+    // by reference (both live in this TU). Reading pos fields without HBG's
+    // tick-path mutex is documented as an accepted small race window in
+    // OpenPositionRegistry.hpp.
+    g_open_positions.register_source("HybridGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_hybrid_gold.has_open_position()) return out;
+
+            const auto& p = g_hybrid_gold.pos;
+            const double mult  = tick_value_multiplier(std::string("XAUUSD"));
+
+            // Last known XAUUSD bid -> "current" price. ask is not separately
+            // cached; bid is close enough for an open-position display. If
+            // not available, fall back to entry so unrealized_pnl reads 0.
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            // pos.mfe/mae are tracked in price-points only on HBG; convert to
+            // USD using the same (size * mult) factor as unrealized_pnl above.
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "HybridGold";
+            out.push_back(ps);
+            return out;
+        });
+    std::cout << "[OmegaApi] g_open_positions sources registered (1 source: HybridGold)\n";
+    std::cout.flush();
+
+    // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
+    // OmegaApiServer's equity-walk default of 10000.0 matches the schema
+    // default in include/omega_types.hpp; here we override it with the live
+    // config so the absolute equity values track the user's account.
+    omega::set_equity_anchor(g_cfg.account_equity);
+    std::cout << "[OmegaApi] equity anchor set to "
+              << g_cfg.account_equity << "\n";
     std::cout.flush();
 }
 

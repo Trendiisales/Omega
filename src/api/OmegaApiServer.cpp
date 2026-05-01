@@ -54,8 +54,9 @@
 #define Sleep(ms)      ::usleep((ms) * 1000)
 #endif
 
-#include "EngineRegistry.hpp"   // EngineSnapshot + EngineRegistry + g_engines (extern)
-#include "OmegaTradeLedger.hpp" // omega::OmegaTradeLedger / TradeRecord
+#include "EngineRegistry.hpp"      // EngineSnapshot + EngineRegistry + g_engines (extern)
+#include "OpenPositionRegistry.hpp"// PositionSnapshot + OpenPositionRegistry + g_open_positions (extern, Step 3)
+#include "OmegaTradeLedger.hpp"    // omega::OmegaTradeLedger / TradeRecord
 
 #include <atomic>
 #include <chrono>
@@ -72,8 +73,27 @@
 #include <unordered_map>
 #include <vector>
 
-extern omega::OmegaTradeLedger g_omegaLedger;
-// g_engines is declared `extern` in EngineRegistry.hpp; defined in globals.hpp.
+extern omega::OmegaTradeLedger     g_omegaLedger;
+// g_engines and g_open_positions are declared `extern` in their respective
+// headers; both are defined in include/globals.hpp inside main.cpp's TU.
+
+namespace omega {
+
+// Step 3 equity anchor. Stored atomically so the equity route reader thread
+// and any setter caller (currently init_engines via set_equity_anchor()) are
+// safe without a lock. Defaults to 10000.0 -- matches the schema default in
+// include/omega_types.hpp so a process that never calls set_equity_anchor()
+// still produces a sensible curve.
+static std::atomic<double> s_equity_anchor{10000.0};
+
+void set_equity_anchor(double anchor)
+{
+    if (anchor > 0.0 && std::isfinite(anchor)) {
+        s_equity_anchor.store(anchor, std::memory_order_relaxed);
+    }
+}
+
+} // namespace omega
 
 namespace omega {
 
@@ -165,13 +185,34 @@ static std::string build_engines_json()
     return out;
 }
 
-// Stub: open-positions reporting is Step 3 work (panel-side wiring is when
-// we'll need a stable open-position accessor across engines). For now we
-// return an empty array so the route is wired and the UI fetch contract
-// can be validated end-to-end via the proxy.
+// Step 3: open-position read-API. Walks g_open_positions, which is populated
+// by snapshotter callbacks registered in init_engines() (engine_init.hpp).
+// Step 3 ships only the HybridGold source; other engines (Tsmom/Donchian/
+// EmaPullback/TrendRider/HBI) land in a follow-up. The PositionSnapshot
+// struct mirrors the JSON keys in omega-terminal/src/api/types.ts (Position
+// interface) -- field names are byte-identical and must be kept in sync if
+// either side changes.
 static std::string build_positions_json()
 {
-    return "[]";
+    const auto positions = g_open_positions.snapshot_all();
+    std::string out = "[";
+    for (size_t i = 0; i < positions.size(); ++i) {
+        const PositionSnapshot& p = positions[i];
+        if (i > 0) out += ",";
+        out += "{";
+        out += "\"symbol\":"         + json_str(p.symbol)         + ",";
+        out += "\"side\":"           + json_str(p.side)           + ",";
+        out += "\"size\":"           + json_num(p.size)           + ",";
+        out += "\"entry\":"          + json_num(p.entry)          + ",";
+        out += "\"current\":"        + json_num(p.current)        + ",";
+        out += "\"unrealized_pnl\":" + json_num(p.unrealized_pnl) + ",";
+        out += "\"mfe\":"            + json_num(p.mfe)            + ",";
+        out += "\"mae\":"            + json_num(p.mae)            + ",";
+        out += "\"engine\":"         + json_str(p.engine);
+        out += "}";
+    }
+    out += "]";
+    return out;
 }
 
 // Trade ledger -> JSON, with optional filters.
@@ -270,14 +311,100 @@ static std::string build_ledger_json(const std::unordered_map<std::string, std::
     return out;
 }
 
-// Stub: equity time-series is Step 3 work. Server-side aggregation across
-// 1m / 1h / 1d intervals will be implemented when CC's equity strip lands.
-// Returning an empty array lets the UI layer's typing flow through end-to-end
-// without divergence.
+// Step 3: equity time-series. Walks g_omegaLedger.snapshot() (closed trades,
+// chronologically ordered) and emits a series of (ts, equity) points where
+// equity_at_t = s_equity_anchor + sum(net_pnl for trades closed at or before t).
+//
+// Bucketing:
+//   - "1m" / "1h" / "1d" specify the bucket size on the wire; we parse it
+//     here and round each trade's exit_ts down to the bucket start. The
+//     emitted series is one point per bucket the ledger has activity in.
+//   - Default (when interval is omitted) is "1h", which matches the
+//     STEP2_OPENER hint that 1h is the live preferred bucket.
+//   - "from"/"to" filter on exit_ts (ISO-8601 unix-ms, parsed via the same
+//     parse_iso_to_unix_ms helper as the ledger route).
+//
+// Anchor:
+//   - s_equity_anchor defaults to 10000.0; init_engines() should call
+//     set_equity_anchor(g_cfg.account_equity) so the absolute equity values
+//     match the live account. The series shape is correct regardless.
+//
+// Limitations:
+//   - PARTIAL_1R/PARTIAL_2R rows are recorded in the ledger by
+//     handle_closed_trade for the partial-only fast path, so they will
+//     contribute to the cumulative equity walk just like full closes. This
+//     matches the pattern that "the ledger is the truth" and the
+//     panel/equity should reflect every recorded close.
+//   - No deduplication by trade id here; OmegaTradeLedger::record already
+//     dedups upstream.
 static std::string build_equity_json(const std::unordered_map<std::string, std::string>& q)
 {
-    (void)q;
-    return "[]";
+    // ---- parse query: from / to / interval ----
+    int64_t from_ms = 0;
+    int64_t to_ms   = 0;
+    std::string interval = "1h";
+
+    auto it = q.find("from");
+    if (it != q.end()) from_ms = parse_iso_to_unix_ms(it->second);
+    it = q.find("to");
+    if (it != q.end()) to_ms = parse_iso_to_unix_ms(it->second);
+    it = q.find("interval");
+    if (it != q.end() && !it->second.empty()) interval = it->second;
+
+    int64_t bucket_ms = 60LL * 60LL * 1000LL;            // 1h default
+    if      (interval == "1m") bucket_ms =      60LL * 1000LL;
+    else if (interval == "1h") bucket_ms = 60LL*60LL * 1000LL;
+    else if (interval == "1d") bucket_ms = 24LL*60LL*60LL * 1000LL;
+    // Anything unrecognised falls back to 1h silently. The TS side restricts
+    // EquityInterval to "1m" | "1h" | "1d" so we do not surface an error.
+
+    const double anchor = s_equity_anchor.load(std::memory_order_relaxed);
+
+    // Walk the ledger in chronological order (snapshot() returns the internal
+    // m_trades vector which is appended in record() order, i.e. by exit time).
+    const auto trades = g_omegaLedger.snapshot();
+
+    // Aggregate net_pnl into per-bucket buckets. We use a plain vector of
+    // (bucket_start_ms, bucket_pnl) so the output order is preserved without
+    // a sort step. The vector is small in practice (a few hundred buckets
+    // for a multi-month run at 1h cadence) so linear lookup of the most
+    // recent bucket is fine.
+    struct BucketAcc {
+        int64_t bucket_ms;
+        double  pnl_in_bucket;
+    };
+    std::vector<BucketAcc> buckets;
+    buckets.reserve(trades.size());
+
+    for (const TradeRecord& tr : trades) {
+        const int64_t exit_ms = static_cast<int64_t>(tr.exitTs) * 1000LL;
+        if (from_ms != 0 && exit_ms <  from_ms) continue;
+        if (to_ms   != 0 && exit_ms >= to_ms)   continue;
+
+        const int64_t bucket_start = (exit_ms / bucket_ms) * bucket_ms;
+        const double  net = (tr.net_pnl != 0.0 ? tr.net_pnl : tr.pnl);
+
+        if (!buckets.empty() && buckets.back().bucket_ms == bucket_start) {
+            buckets.back().pnl_in_bucket += net;
+        } else {
+            buckets.push_back(BucketAcc{bucket_start, net});
+        }
+    }
+
+    // Emit one point per bucket: equity = anchor + cumulative net_pnl up to
+    // (and including) this bucket.
+    std::string out = "[";
+    double running = 0.0;
+    for (size_t i = 0; i < buckets.size(); ++i) {
+        running += buckets[i].pnl_in_bucket;
+        if (i > 0) out += ",";
+        out += "{";
+        out += "\"ts\":"     + json_int(buckets[i].bucket_ms) + ",";
+        out += "\"equity\":" + json_num(anchor + running);
+        out += "}";
+    }
+    out += "]";
+    return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

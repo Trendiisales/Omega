@@ -7,18 +7,16 @@
 //   - Unknown codes resolve to HELP with `matched: false`, which the UI
 //     surfaces as a "did you mean…" hint.
 //
-// Code surface is locked to docs/SESSION_2026-05-01_HANDOFF.md, steps 1-6:
-//   - HOME, HELP                          (shell, step 1, shipped)
-//   - CC, ENG, POS                        (omega,  step 3, ComingSoon)
-//   - LDG, TRADE, CELL                    (omega,  step 4, ComingSoon)
-//   - INTEL, CURV, WEI, MOV               (market, step 5, ComingSoon)
-//   - OMON, FA, KEY, DVD, EE, NI, GP, QR,
-//     HP, DES, FXC, CRYPTO, WATCH         (market, step 6, ComingSoon)
+// Step 3 additions:
+//   - `resolveCode` now also parses positional args. `resolveCode("POS HBG")`
+//     returns `{ code: 'POS', args: ['HBG'], ... }`. The first whitespace-
+//     separated token is the code lookup; everything after is preserved as
+//     uppercase args for the panel to consume.
+//   - The single-token contract is unchanged: `resolveCode("CC")` returns
+//     `args: []`. Existing callers that ignore `args` see no behaviour
+//     change.
 //
-// Step 2 will add: arg parsing (e.g. "CC EURUSD"), per-panel state, a
-// pluggable registry so panels can self-register, and step 2 itself
-// also adds Vite proxy + IPC contract — but the registry already lists
-// every code so autocomplete shows the full surface from day 1.
+// Code surface is locked to docs/SESSION_2026-05-01_HANDOFF.md, steps 1-6.
 
 import type { FunctionCode, PanelDescriptor, RouteResult } from '@/types';
 
@@ -282,17 +280,45 @@ const ALIAS_INDEX: Map<string, FunctionCode> = (() => {
   return m;
 })();
 
-/** Resolve a raw user-typed string to a panel descriptor. */
+/**
+ * Resolve a raw user-typed string to a panel descriptor + positional args.
+ *
+ * Examples:
+ *   "CC"           -> { matched: true,  code: 'CC',  args: [] }
+ *   "  cc  "       -> { matched: true,  code: 'CC',  args: [] }
+ *   "POS HBG"      -> { matched: true,  code: 'POS', args: ['HBG'] }
+ *   "CC EURUSD H1" -> { matched: true,  code: 'CC',  args: ['EURUSD', 'H1'] }
+ *   "ZZQ"          -> { matched: false, code: 'HELP', args: [] }
+ *
+ * Whitespace handling: any run of spaces/tabs delimits tokens, leading and
+ * trailing whitespace is stripped, empty input resolves to HELP unmatched.
+ */
 export function resolveCode(raw: string): RouteResult {
-  const key = raw.trim().toUpperCase();
-  const code = ALIAS_INDEX.get(key);
+  const tokens = raw.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return {
+      matched: false,
+      code: 'HELP',
+      descriptor: PANEL_REGISTRY.HELP,
+      args: [],
+    };
+  }
+  const head = tokens[0]!;
+  const rest = tokens.slice(1);
+  const code = ALIAS_INDEX.get(head);
   if (code) {
-    return { matched: true, code, descriptor: PANEL_REGISTRY[code] };
+    return {
+      matched: true,
+      code,
+      descriptor: PANEL_REGISTRY[code],
+      args: rest,
+    };
   }
   return {
     matched: false,
     code: 'HELP',
     descriptor: PANEL_REGISTRY.HELP,
+    args: [],
   };
 }
 
@@ -303,27 +329,32 @@ export function resolveCode(raw: string): RouteResult {
  *   - 0: prefix match on canonical code
  *   - 1: prefix match on any alias
  *   - 2: substring match in title
- * Within a tier, codes that are already shipped (step 1) sort before
- * not-yet-shipped codes; ties broken alphabetically.
+ * Within a tier, codes that are already shipped (step 1 OR step 3 in this
+ * commit) sort before not-yet-shipped codes; ties broken alphabetically.
+ *
+ * Note: only the FIRST whitespace-delimited token is used for suggestions
+ * — `"POS HBG"` suggests against `"POS"`, since args are consumed by the
+ * panel and don't enter into the code lookup.
  */
 export function suggestCodes(query: string, limit = 8): PanelDescriptor[] {
-  const q = query.trim().toUpperCase();
-  if (q.length === 0) return PANEL_LIST.slice(0, limit);
+  const head = query.trim().toUpperCase().split(/\s+/)[0] ?? '';
+  if (head.length === 0) return PANEL_LIST.slice(0, limit);
 
   const scored = PANEL_LIST.map((desc): { desc: PanelDescriptor; score: number } => {
     const codeUp = desc.code.toUpperCase();
     const titleUp = desc.title.toUpperCase();
     let score = 999;
-    if (codeUp.startsWith(q)) score = 0;
-    else if ((desc.aliases ?? []).some((a) => a.toUpperCase().startsWith(q))) score = 1;
-    else if (titleUp.includes(q)) score = 2;
+    if (codeUp.startsWith(head)) score = 0;
+    else if ((desc.aliases ?? []).some((a) => a.toUpperCase().startsWith(head))) score = 1;
+    else if (titleUp.includes(head)) score = 2;
     return { desc, score };
   })
     .filter((row) => row.score < 999)
     .sort((a, b) => {
       if (a.score !== b.score) return a.score - b.score;
-      const aShipped = a.desc.step === 1 ? 0 : 1;
-      const bShipped = b.desc.step === 1 ? 0 : 1;
+      // Step 3 panels (CC/ENG/POS) are now live too -- sort live before unlive.
+      const aShipped = a.desc.step <= 3 ? 0 : 1;
+      const bShipped = b.desc.step <= 3 ? 0 : 1;
       if (aShipped !== bShipped) return aShipped - bShipped;
       return a.desc.code.localeCompare(b.desc.code);
     });

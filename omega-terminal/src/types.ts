@@ -9,8 +9,12 @@
 //                   `step` field marks which build step makes the panel
 //                   live (1 = shipped now; >1 = ComingSoon placeholder).
 // PanelGroup      : how HomePanel groups codes for visual scanning.
-// Workspace       : a single named tab in WorkspaceTabs.
-// RouteResult     : router output for a given user-typed string.
+// Workspace       : a single named tab in WorkspaceTabs. Step 3 adds
+//                   `args` so commands like `POS HBG` carry positional
+//                   arguments into the active panel.
+// RouteResult     : router output for a given user-typed string. Step 3
+//                   adds `args` (the trailing tokens after the code) so
+//                   the dispatcher can plumb them through to the panel.
 
 export type FunctionCode =
   // Shell + meta
@@ -68,13 +72,26 @@ export interface Workspace {
   id: string;
   /** The currently routed function code for this tab. */
   code: FunctionCode;
+  /**
+   * Positional arguments parsed from the command bar string.
+   * Step 3 introduces this so commands like `POS HBG` or `CC EURUSD`
+   * route to the same panel but carry context through to it.
+   * Empty array when the user just typed the code.
+   */
+  args: string[];
   /** Optional override label; falls back to the panel's title. */
   label?: string;
 }
 
-/** Result returned by the router for a given user-typed string. */
+/**
+ * Result returned by the router for a given user-typed string.
+ * `args` are the remaining whitespace-separated tokens after the code,
+ * preserved in their original (uppercase) form so panels can pattern-match
+ * (engine names, symbols, etc.).
+ */
 export interface RouteResult {
   matched: boolean;
   code: FunctionCode;
   descriptor: PanelDescriptor;
+  args: string[];
 }

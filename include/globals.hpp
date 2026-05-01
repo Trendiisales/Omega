@@ -12,6 +12,26 @@
 #include "EngineRegistry.hpp"
 omega::EngineRegistry g_engines;
 
+// ── Step 3 Omega Terminal: per-engine "last close" side-table ───────────────
+// EngineLastRegistry holds the most recent (last_ts_ms, last_pnl) per tr.engine
+// string. Written from handle_closed_trade in include/trade_lifecycle.hpp on
+// every closed trade (shadow + live), read by the snapshot lambdas in
+// include/engine_init.hpp so /api/v1/omega/engines returns real
+// last_signal_ts / last_pnl values instead of 0. See EngineLastRegistry.hpp
+// header comment for the full design rationale.
+#include "EngineLastRegistry.hpp"
+omega::EngineLastRegistry g_engine_last;
+
+// ── Step 3 Omega Terminal: open-position read-API registry ──────────────────
+// OpenPositionRegistry holds engine-side snapshotter callbacks that return the
+// list of currently-open positions in a uniform PositionSnapshot shape. Read
+// by OmegaApiServer.cpp's build_positions_json() to serialise
+// /api/v1/omega/positions. Sources self-register in init_engines()
+// (include/engine_init.hpp). Step 3 ships only the HybridGold source; other
+// engines (Tsmom/Donchian/EmaPullback/TrendRider/HBI) land in a follow-up.
+#include "OpenPositionRegistry.hpp"
+omega::OpenPositionRegistry g_open_positions;
+
 // ?? Per-symbol config manager -- loaded from symbols.ini at startup ????????????
 static SymbolConfigManager g_sym_cfg;
 

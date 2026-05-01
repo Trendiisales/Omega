@@ -44,6 +44,14 @@
 
 namespace omega {
 
+// Step 3 Omega Terminal: equity-anchor setter for the /api/v1/omega/equity
+// route. The route walks g_omegaLedger.snapshot() and emits
+// equity_at_t = anchor + cumulative_net_pnl(<= t). Default anchor is 10000.0;
+// init_engines() in engine_init.hpp calls this with g_cfg.account_equity once
+// the config has been loaded so the absolute equity values match the live
+// account. Idempotent and lock-free (atomic store).
+void set_equity_anchor(double anchor);
+
 class OmegaApiServer
 {
 public:

@@ -10,14 +10,27 @@
 //   - Ctrl+K (or Cmd+K) from anywhere on the page focuses the input. The
 //     handler is wired here using a global keydown listener so the parent
 //     doesn't need to forward refs.
+//
+// Step 3 update:
+//   - Dispatch now passes the FULL resolved RouteResult to the parent so
+//     positional args (e.g. "POS HBG" -> args: ['HBG']) are preserved.
+//   - Suggestion clicks dispatch with empty args (the user explicitly chose
+//     a tile without typing args).
+//   - Autocomplete preserves any args the user has typed when accepting a
+//     suggestion via Tab — e.g. "CC EURU" + Tab on the CC suggestion fills
+//     "CC EURU" still in the box, ready for the user to finish typing.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveCode, suggestCodes } from '@/router/functionCodes';
-import type { FunctionCode, PanelDescriptor } from '@/types';
+import type { FunctionCode, PanelDescriptor, RouteResult } from '@/types';
 
 interface Props {
-  /** Called when the user dispatches a code (Enter on resolved input). */
-  onDispatch: (code: FunctionCode) => void;
+  /**
+   * Called when the user dispatches a code via Enter or click. Receives
+   * the FULL RouteResult so args (everything after the code) can be
+   * forwarded to the active workspace.
+   */
+  onDispatch: (result: RouteResult) => void;
 }
 
 export function CommandBar({ onDispatch }: Props) {
@@ -52,10 +65,20 @@ export function CommandBar({ onDispatch }: Props) {
     } else {
       setError(null);
     }
-    onDispatch(result.code);
+    onDispatch(result);
     setOpen(false);
     setQuery('');
     setHighlight(0);
+  }
+
+  function dispatchCode(code: FunctionCode) {
+    // Used by suggestion clicks where the user picks a tile rather than
+    // typing -- args default to empty.
+    onDispatch(resolveCode(code));
+    setOpen(false);
+    setQuery('');
+    setHighlight(0);
+    setError(null);
   }
 
   function handleInput(e: React.ChangeEvent<HTMLInputElement>) {
@@ -84,14 +107,27 @@ export function CommandBar({ onDispatch }: Props) {
     if (e.key === 'Tab') {
       if (open && suggestions[highlight]) {
         e.preventDefault();
-        setQuery(suggestions[highlight].code);
+        // Replace just the head token with the highlighted suggestion's
+        // canonical code, preserving any trailing args the user has typed.
+        const tokens = query.trim().split(/\s+/);
+        const tail = tokens.slice(1).join(' ');
+        setQuery(tail.length > 0
+          ? `${suggestions[highlight].code} ${tail}`
+          : suggestions[highlight].code);
         return;
       }
     }
     if (e.key === 'Enter') {
       e.preventDefault();
       if (open && suggestions[highlight]) {
-        dispatchRaw(suggestions[highlight].code);
+        // If the user has typed args, preserve them when dispatching the
+        // highlighted suggestion. Otherwise dispatch the bare code.
+        const tokens = query.trim().split(/\s+/);
+        const tail = tokens.slice(1).join(' ');
+        const raw = tail.length > 0
+          ? `${suggestions[highlight].code} ${tail}`
+          : suggestions[highlight].code;
+        dispatchRaw(raw);
         return;
       }
       if (query.trim().length > 0) {
@@ -107,7 +143,7 @@ export function CommandBar({ onDispatch }: Props) {
   }
 
   function handleSuggestionClick(desc: PanelDescriptor) {
-    dispatchRaw(desc.code);
+    dispatchCode(desc.code);
   }
 
   return (
@@ -134,7 +170,7 @@ export function CommandBar({ onDispatch }: Props) {
             // small delay so suggestion clicks register first
             setTimeout(() => setOpen(false), 100);
           }}
-          placeholder="Type a function code (e.g. CC, TRADE, HELP)  —  Ctrl+K to focus"
+          placeholder="Type a function code (e.g. CC, POS HBG, HELP)  —  Ctrl+K to focus"
           className="w-full bg-transparent font-mono text-sm uppercase tracking-wider text-amber-300 caret-amber-300 placeholder:text-amber-700 focus:outline-none"
           aria-label="Command bar"
           aria-expanded={open}

@@ -6,19 +6,27 @@
 //   3. WorkspaceTabs.
 //   4. Active workspace panel (rendered via PanelHost).
 //   5. Footer status line.
+//
+// Step 3 update:
+//   - Workspaces now carry an `args: string[]` list parsed from the command
+//     bar (e.g. "POS HBG" -> args: ["HBG"]). The active workspace's args are
+//     forwarded to PanelHost so the live panel can use them for filters.
+//   - HomePanel tile clicks dispatch with empty args (no command-bar typing).
+//   - Navigation by code-only (HomePanel, programmatic) preserves args = [].
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommandBar } from '@/components/CommandBar';
 import { WorkspaceTabs } from '@/components/WorkspaceTabs';
 import { PanelHost } from '@/panels/PanelHost';
-import type { FunctionCode, Workspace } from '@/types';
+import { resolveCode } from '@/router/functionCodes';
+import type { FunctionCode, RouteResult, Workspace } from '@/types';
 
 function makeId(): string {
   return `ws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 const INITIAL_WORKSPACES: Workspace[] = [
-  { id: makeId(), code: 'HOME' },
+  { id: makeId(), code: 'HOME', args: [] },
 ];
 
 export default function App() {
@@ -30,19 +38,33 @@ export default function App() {
     [workspaces, activeId]
   );
 
-  // Route the active workspace to a new code (used by both the command bar
-  // and the HomePanel grid clicks).
-  const navigate = useCallback(
-    (code: FunctionCode) => {
+  // Route the active workspace to a new code via the CommandBar's full
+  // RouteResult (carries parsed args).
+  const dispatchResult = useCallback(
+    (result: RouteResult) => {
       setWorkspaces((prev) =>
-        prev.map((w) => (w.id === activeId ? { ...w, code } : w))
+        prev.map((w) =>
+          w.id === activeId
+            ? { ...w, code: result.code, args: result.args }
+            : w
+        )
       );
     },
     [activeId]
   );
 
+  // Navigate by bare code (HomePanel tile clicks, ENG/POS row clicks in
+  // future panels). Args reset to empty.
+  const navigate = useCallback(
+    (code: FunctionCode) => {
+      const result = resolveCode(code);
+      dispatchResult(result);
+    },
+    [dispatchResult]
+  );
+
   const addWorkspace = useCallback(() => {
-    const ws: Workspace = { id: makeId(), code: 'HOME' };
+    const ws: Workspace = { id: makeId(), code: 'HOME', args: [] };
     setWorkspaces((prev) => [...prev, ws]);
     setActiveId(ws.id);
   }, []);
@@ -90,7 +112,7 @@ export default function App() {
             OMEGA
           </span>
           <span className="font-mono text-[10px] uppercase tracking-widest text-amber-600">
-            terminal &middot; v0.1 &middot; step 1
+            terminal &middot; v0.1 &middot; step 3
           </span>
         </div>
         <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-widest">
@@ -105,7 +127,7 @@ export default function App() {
       </header>
 
       {/* Command bar */}
-      <CommandBar onDispatch={navigate} />
+      <CommandBar onDispatch={dispatchResult} />
 
       {/* Workspace tabs */}
       <WorkspaceTabs
@@ -118,7 +140,11 @@ export default function App() {
 
       {/* Active panel */}
       <main className="flex-1 overflow-hidden">
-        <PanelHost code={activeWorkspace.code} onNavigate={navigate} />
+        <PanelHost
+          code={activeWorkspace.code}
+          args={activeWorkspace.args}
+          onNavigate={navigate}
+        />
       </main>
 
       {/* Footer */}
@@ -126,6 +152,9 @@ export default function App() {
         <span>
           {workspaces.length} workspace{workspaces.length === 1 ? '' : 's'}
           {' '}&middot;{' '}active: {activeWorkspace.code}
+          {activeWorkspace.args.length > 0 && (
+            <> &middot; args: {activeWorkspace.args.join(' ')}</>
+          )}
         </span>
         <span>Ctrl+K cmd  &middot;  Ctrl+T new  &middot;  Ctrl+W close</span>
       </footer>
