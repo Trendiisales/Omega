@@ -1529,7 +1529,12 @@ MarketDataResult MarketDataProxy::yahoo_screener(const std::string& route)
     std::string url = kYahooScreener;
     url += "?scrIds=";
     url += scrid;
-    url += "&count=25";
+    // Step 7: Yahoo's free predefined-screener tier supports up to 100
+    // rows per call. Was 25 (default cap), which was making the MOV panel
+    // feel "very limited" -- 4x more rows here, still inside Yahoo's
+    // free-tier ceiling and still small enough that the on-wire payload
+    // stays under the 30 s libcurl timeout for cold cache.
+    url += "&count=100";
 
     MarketDataResult raw = http_get(url, { kYahooUserAgent });
     if (raw.status < 200 || raw.status >= 300) {

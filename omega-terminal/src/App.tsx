@@ -4,45 +4,41 @@
 //   1. Title bar with back/forward chevrons and live engine-link pill.
 //   2. Command bar with autocomplete.
 //   3. WorkspaceTabs.
-//   4. Active workspace panel (rendered via PanelHost).
-//   5. Footer status line (back/forward hint added in step 7).
+//   4. Persistent back/forward breadcrumb bar (Step 7 — surfaces history
+//      navigation as a primary, always-visible affordance instead of the
+//      easy-to-miss header chevrons).
+//   5. Active workspace panel (rendered via PanelHost).
+//   6. Footer status line.
 //
 // Step 3 update:
 //   - Workspaces now carry an `args: string[]` list parsed from the command
 //     bar (e.g. "POS HBG" -> args: ["HBG"]). The active workspace's args are
 //     forwarded to PanelHost so the live panel can use them for filters.
-//   - HomePanel tile clicks dispatch with empty args (no command-bar typing).
 //
 // Step 4 update:
-//   - `navigate` now accepts a raw target string (e.g. "LDG HybridGold" or
-//     "TRADE 12345") so panel-internal navigation (ENG row click -> LDG,
-//     POS row click -> LDG, LDG row click -> TRADE) can carry arguments.
-//     The router's resolveCode already parses positional args; we just
-//     widen the input type from FunctionCode to string and let the router
-//     do the work.
+//   - `navigate` accepts a raw target string ("LDG HybridGold", "TRADE 12345")
+//     so panel-internal navigation can carry args through resolveCode.
 //
-// Step 7 update (this commit):
-//   - Per-workspace back/forward history. Each workspace carries its own
-//     `history: HistoryEntry[]` + `historyIdx: number`. Forward navigation
-//     (command bar, panel row click, HOME tile) appends to the stack and
-//     trims any forward-tail. Back/forward move `historyIdx` within the
-//     existing stack so the panel state at each step is recoverable.
-//   - Two new buttons in the title bar (◂ / ▸) and four new keyboard
-//     shortcuts (Alt+Left, Alt+Right, Cmd/Ctrl+[, Cmd/Ctrl+]) drive
-//     back/forward.
+// Step 7 update:
+//   - Per-workspace back/forward history stack with Alt+←/→ + Cmd/Ctrl+[/]
+//     and header chevron buttons. Forward navigation pushes onto the stack
+//     and trims any forward-tail.
+//   - **Breadcrumb back bar** added between WorkspaceTabs and the panel.
+//     Always rendered so users on any screen can see their navigation
+//     state and click a single button to go back. Shows the literal panel
+//     title + args of the previous (or next) entry so the destination is
+//     unambiguous before clicking. Hidden only on a fresh tab where there
+//     is no history to traverse — keeps the interior visual quiet.
 //   - Hardcoded "engine link: pending" string replaced by a live status
-//     pill driven by the new useEngineHealth hook (see
-//     src/hooks/useEngineHealth.ts). Pill colour: green=connected,
-//     amber=pending, red=down. The pill carries an accessible title
-//     attribute with the most recent error message so hover tells the
-//     operator what failed.
-//   - Header label bumped to "step 7".
+//     pill driven by useEngineHealth. Pill colour: green=connected,
+//     amber=pending, red=down. Pill carries an accessible title attribute
+//     with the most recent error message.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommandBar } from '@/components/CommandBar';
 import { WorkspaceTabs } from '@/components/WorkspaceTabs';
 import { PanelHost } from '@/panels/PanelHost';
-import { resolveCode } from '@/router/functionCodes';
+import { PANEL_REGISTRY, resolveCode } from '@/router/functionCodes';
 import { useEngineHealth } from '@/hooks/useEngineHealth';
 import type {
   EngineLinkStatus,
@@ -73,15 +69,8 @@ function makeWorkspace(): Workspace {
 const INITIAL_WORKSPACES: Workspace[] = [makeWorkspace()];
 
 /**
- * Push a new history entry onto a workspace, trimming any forward-tail
- * (so navigating after a back-step branches the history) and bounding
- * the stack to MAX_HISTORY entries (oldest dropped first). Returns a
- * new Workspace; never mutates `ws`.
- *
- * If the new entry is byte-identical to the current entry (same code +
- * same args in the same order), this is a no-op — we skip the push so
- * a user repeatedly hitting Enter on the same code doesn't bloat the
- * stack.
+ * Push a new history entry onto a workspace, trimming forward-tail and
+ * bounding the stack. No-op when the new entry equals the current.
  */
 function pushHistory(ws: Workspace, entry: HistoryEntry): Workspace {
   const cur = ws.history[ws.historyIdx];
@@ -91,15 +80,11 @@ function pushHistory(ws: Workspace, entry: HistoryEntry): Workspace {
     cur.args.length === entry.args.length &&
     cur.args.every((a, i) => a === entry.args[i])
   ) {
-    // No-op duplicate; just sync the live fields in case they drifted.
     return { ...ws, code: entry.code, args: entry.args };
   }
 
-  // Trim forward-tail if we navigated after a back-step.
   const head = ws.history.slice(0, ws.historyIdx + 1);
   const next = [...head, entry];
-
-  // Bound the stack from the head end so we keep recent history.
   const trimmed =
     next.length > MAX_HISTORY ? next.slice(next.length - MAX_HISTORY) : next;
 
@@ -112,11 +97,7 @@ function pushHistory(ws: Workspace, entry: HistoryEntry): Workspace {
   };
 }
 
-/**
- * Move the workspace's history pointer by `delta` (-1 = back, +1 = fwd).
- * Returns the workspace unchanged when the move would fall outside the
- * bounds [0, history.length - 1].
- */
+/** Move the workspace's history pointer by `delta`. */
 function stepHistory(ws: Workspace, delta: number): Workspace {
   const target = ws.historyIdx + delta;
   if (target < 0 || target >= ws.history.length) return ws;
@@ -129,6 +110,14 @@ function stepHistory(ws: Workspace, delta: number): Workspace {
   };
 }
 
+/** Format a HistoryEntry as a human label: "TRADE Drill-Down · 12345". */
+function describeEntry(entry: HistoryEntry): string {
+  const desc = PANEL_REGISTRY[entry.code];
+  const title = desc ? desc.title : entry.code;
+  if (entry.args.length === 0) return title;
+  return `${title} · ${entry.args.join(' ')}`;
+}
+
 export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>(INITIAL_WORKSPACES);
   const [activeId, setActiveId] = useState<string>(INITIAL_WORKSPACES[0]!.id);
@@ -138,12 +127,8 @@ export default function App() {
     [workspaces, activeId]
   );
 
-  // Live engine link status for the title-bar pill.
   const engineHealth = useEngineHealth();
 
-  // Route the active workspace to a new code via the CommandBar's full
-  // RouteResult (carries parsed args). Pushes onto the active tab's
-  // history stack so back/forward can return here.
   const dispatchResult = useCallback(
     (result: RouteResult) => {
       setWorkspaces((prev) =>
@@ -157,11 +142,6 @@ export default function App() {
     [activeId]
   );
 
-  // Navigate by raw target string. Accepts either a bare code ("HOME",
-  // "LDG") or a code-with-args string ("LDG HybridGold", "TRADE 12345"),
-  // matching the same surface CommandBar dispatches through. The router
-  // parses head + args identically in both paths, keeping the contract
-  // single-sourced.
   const navigate = useCallback(
     (target: string) => {
       const result = resolveCode(target);
@@ -170,7 +150,6 @@ export default function App() {
     [dispatchResult]
   );
 
-  // Back/forward operate on the active tab only.
   const goBack = useCallback(() => {
     setWorkspaces((prev) =>
       prev.map((w) => (w.id === activeId ? stepHistory(w, -1) : w))
@@ -186,6 +165,12 @@ export default function App() {
   const canGoBack = activeWorkspace.historyIdx > 0;
   const canGoForward =
     activeWorkspace.historyIdx < activeWorkspace.history.length - 1;
+  const prevEntry = canGoBack
+    ? activeWorkspace.history[activeWorkspace.historyIdx - 1]
+    : null;
+  const nextEntry = canGoForward
+    ? activeWorkspace.history[activeWorkspace.historyIdx + 1]
+    : null;
 
   const addWorkspace = useCallback(() => {
     const ws = makeWorkspace();
@@ -209,17 +194,10 @@ export default function App() {
     [activeId]
   );
 
-  // Keyboard shortcuts:
-  //   Ctrl/Cmd+T  -> new tab
-  //   Ctrl/Cmd+W  -> close tab
-  //   Alt+Left    -> back        (matches Chrome/Firefox)
-  //   Alt+Right   -> forward     (matches Chrome/Firefox)
-  //   Ctrl/Cmd+[  -> back        (matches Safari)
-  //   Ctrl/Cmd+]  -> forward     (matches Safari)
-  //
-  // We deliberately swallow the keystroke (preventDefault) so the
-  // browser's own history doesn't fight us. The CommandBar listens for
-  // Ctrl/Cmd+K independently.
+  // Keyboard shortcuts. The command-bar input does NOT preventDefault on
+  // Alt+arrows, so the window listener still fires when the input is
+  // focused. We swallow the keystroke after dispatching to keep the
+  // browser's text-edit interpretation from racing the navigation.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const mod = e.ctrlKey || e.metaKey;
@@ -235,8 +213,6 @@ export default function App() {
         closeWorkspace(activeId);
         return;
       }
-
-      // Alt+Arrow: matches Chrome/Firefox back/forward muscle memory.
       if (e.altKey && !mod && e.key === 'ArrowLeft') {
         e.preventDefault();
         goBack();
@@ -247,8 +223,6 @@ export default function App() {
         goForward();
         return;
       }
-
-      // Cmd/Ctrl+[ / ]: matches Safari back/forward muscle memory.
       if (mod && e.key === '[') {
         e.preventDefault();
         goBack();
@@ -264,7 +238,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [addWorkspace, closeWorkspace, activeId, goBack, goForward]);
 
-  // Pill colour + label keyed off live engine status.
   const pill = engineLinkPill(engineHealth.status);
   const pillTitle =
     engineHealth.status === 'connected'
@@ -274,6 +247,13 @@ export default function App() {
       : engineHealth.lastError
         ? `Engine link ${engineHealth.status}: ${engineHealth.lastError}`
         : `Engine link ${engineHealth.status}`;
+
+  // The breadcrumb bar is suppressed on a fresh, single-entry HOME tab so
+  // the interior is visually quiet on first load. Any forward navigation
+  // (or even a HOME->HOME re-dispatch with args) creates a 2nd entry and
+  // the bar appears with a clearly visible Back affordance.
+  const showBreadcrumbBar =
+    activeWorkspace.history.length > 1 || canGoBack || canGoForward;
 
   return (
     <div className="flex h-full w-full flex-col bg-black text-amber-400">
@@ -289,9 +269,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-widest">
-          {/* Back / forward chevrons. Disabled state is rendered as a
-              dimmed glyph so the operator can see the buttons exist
-              even when the active tab has nothing to walk back to. */}
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -325,7 +302,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Live engine link pill. */}
           <span className="flex items-center gap-1.5" title={pillTitle}>
             <span
               aria-hidden="true"
@@ -347,6 +323,74 @@ export default function App() {
         onClose={closeWorkspace}
         onAdd={addWorkspace}
       />
+
+      {/* Persistent back/forward breadcrumb bar (Step 7).
+          Always rendered when the active tab has any history depth, so
+          back navigation is a primary affordance on every screen. */}
+      {showBreadcrumbBar && (
+        <nav
+          aria-label="Back / forward navigation"
+          className="flex items-center justify-between border-b border-amber-800/50 bg-amber-950/20 px-4 py-1.5"
+        >
+          {/* Left: prominent Back button. */}
+          <button
+            type="button"
+            onClick={goBack}
+            disabled={!canGoBack}
+            className={
+              'flex items-center gap-2 rounded border px-3 py-1 font-mono text-xs uppercase tracking-widest transition-colors ' +
+              (canGoBack
+                ? 'border-amber-600 bg-amber-900/40 text-amber-200 hover:border-amber-400 hover:bg-amber-800/60'
+                : 'cursor-not-allowed border-amber-900/40 bg-black text-amber-800')
+            }
+            title={canGoBack ? 'Alt+Left or Cmd/Ctrl+[' : 'No previous panel'}
+          >
+            <span className="text-base leading-none">{'◀'}</span>
+            <span>
+              Back
+              {prevEntry && (
+                <>
+                  {' '}
+                  <span className="text-amber-400/80">
+                    to {describeEntry(prevEntry)}
+                  </span>
+                </>
+              )}
+            </span>
+          </button>
+
+          {/* Middle: history depth indicator. Tiny but informative. */}
+          <span className="font-mono text-[10px] uppercase tracking-widest text-amber-600">
+            history {activeWorkspace.historyIdx + 1} / {activeWorkspace.history.length}
+          </span>
+
+          {/* Right: forward button (only when meaningful). */}
+          <button
+            type="button"
+            onClick={goForward}
+            disabled={!canGoForward}
+            className={
+              'flex items-center gap-2 rounded border px-3 py-1 font-mono text-xs uppercase tracking-widest transition-colors ' +
+              (canGoForward
+                ? 'border-amber-600 bg-amber-900/40 text-amber-200 hover:border-amber-400 hover:bg-amber-800/60'
+                : 'cursor-not-allowed border-amber-900/40 bg-black text-amber-800')
+            }
+            title={canGoForward ? 'Alt+Right or Cmd/Ctrl+]' : 'No forward panel'}
+          >
+            <span>
+              {nextEntry && (
+                <>
+                  <span className="text-amber-400/80">
+                    {describeEntry(nextEntry)}
+                  </span>{' '}
+                </>
+              )}
+              Forward
+            </span>
+            <span className="text-base leading-none">{'▶'}</span>
+          </button>
+        </nav>
+      )}
 
       {/* Active panel */}
       <main className="flex-1 overflow-hidden">
@@ -381,7 +425,6 @@ export default function App() {
   );
 }
 
-/** Map an engine link status to the pill's display attributes. */
 function engineLinkPill(status: EngineLinkStatus): {
   label: string;
   dotClass: string;
@@ -410,7 +453,6 @@ function engineLinkPill(status: EngineLinkStatus): {
   }
 }
 
-/** Format a wall-clock ms as a human "Ns ago" / "Nm ago" string. */
 function formatAge(ts: number): string {
   const ageMs = Math.max(0, Date.now() - ts);
   const sec = Math.round(ageMs / 1000);
