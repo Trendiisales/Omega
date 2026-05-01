@@ -29,11 +29,12 @@
 //     authorisation after a 2-week paper run shows positive expectancy.
 //   - Uses MIN_BREAK_TICKS = 5 (matches GoldBracket S22c sweep guard).
 //   - Inherits all audit-validated guards from HybridGold lineage:
-//       S20 trail-arm guards (MIN_TRAIL_ARM_PTS=3.0, MIN_TRAIL_ARM_SECS=15)
+//       S20 trail-arm guards (MIN_TRAIL_ARM_PTS=5.0, MIN_TRAIL_ARM_SECS=15)
 //       S43 mae tracker
 //       S47 T4a ATR-expansion gate (EXPANSION_MULT=1.10) with ratchet fix
 //       S51 1A.1.a spread_at_entry capture
-//       S52 MFE_TRAIL_FRAC = 0.40
+//       S52 MFE_TRAIL_FRAC = 0.55 (S53 2026-05-01 raised 0.40 -> 0.55)
+//       S53 2026-05-01 trail-arm bump: 3.0 -> 5.0 (see constant block below)
 //       AUDIT 2026-04-29 mutex on _close path
 //       audit-fixes-18 SpreadRegimeGate per-engine
 //
@@ -102,10 +103,17 @@ public:
     static constexpr double TP_RR                = 4.0;
     static constexpr double TRAIL_FRAC           = 0.25;
     // Trail-arm guards inherited from HybridGold S20 (2026-04-25).
-    static constexpr double MIN_TRAIL_ARM_PTS    = 3.0;
+    // S53 2026-05-01 (SESSION_h trade-quality follow-up): raised 3.0 -> 5.0
+    //   in lockstep with HBG (same shadow tape, same trail-too-tight pattern;
+    //   MidScalper TP target $20-42 means the engine wants the trade to MFE
+    //   significantly before any trail-side close is possible). If MidScalper
+    //   data later shows trail still firing too early on the larger
+    //   $20-40 captures, raise this to 7.0 independently.
+    static constexpr double MIN_TRAIL_ARM_PTS    = 5.0;
     static constexpr int    MIN_TRAIL_ARM_SECS   = 15;
     // S52 MFE give-back: 0.40 (preserve 60% of run, survive normal noise).
-    static constexpr double MFE_TRAIL_FRAC       = 0.40;
+    // S53 2026-05-01 (SESSION_h same audit): raised 0.40 -> 0.55 alongside HBG.
+    static constexpr double MFE_TRAIL_FRAC       = 0.55;
     static constexpr double MAX_SPREAD           = 2.5;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;

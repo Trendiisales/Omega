@@ -114,7 +114,16 @@ public:
     //   MIN_TRAIL_ARM_PTS: position must have MFE >= this before trail recomputes
     //   MIN_TRAIL_ARM_SECS: position must have been open >= this before trail recomputes
     //   Both must be satisfied. Set either to 0 to disable that guard.
-    static constexpr double MIN_TRAIL_ARM_PTS    = 3.0;
+    // S53 2026-05-01 (SESSION_h trade-quality follow-up):
+    //   MIN_TRAIL_ARM_PTS raised 3.0 -> 5.0. Live shadow tape showed 4 of 4
+    //   HBG winners capturing only $0.87-$2.02 net while losers averaged
+    //   -$8 SL_HIT. R:R achieved ~0.2 vs intended 2.0. Root cause:
+    //   range_trail caps at range*0.25 (~$2.50 for a typical $10 range), so
+    //   arming at MFE=$3 with give-back 0.40 produced trail_dist = $1.20 --
+    //   inside normal XAUUSD price oscillation ($0.30-1.00 between trend
+    //   pullbacks). Raising arm threshold to $5 forces the trade to
+    //   establish a real run before any trail-side close becomes possible.
+    static constexpr double MIN_TRAIL_ARM_PTS    = 5.0;
     static constexpr int    MIN_TRAIL_ARM_SECS   = 15;
     // S52 2026-05-01 (trade-quality audit follow-up): trail give-back fraction.
     // PRIOR: hardcoded `pos.mfe * 0.20` at line 513. STAGE1A_FINAL 2026-04-28
@@ -124,7 +133,14 @@ public:
     // give back 40% of the MFE peak rather than 20%, capturing 60% of the run
     // and surviving normal noise. Combined with MIN_TRAIL_ARM_PTS bump 1.5->3.0
     // above, the trail no longer arms on micro-MFEs at all.
-    static constexpr double MFE_TRAIL_FRAC       = 0.40;
+    // S53 2026-05-01 (SESSION_h same audit): give-back raised 0.40 -> 0.55.
+    //   With MIN_TRAIL_ARM_PTS now 5.0, at the arm point trail_dist becomes
+    //   min(range_trail, mfe*0.55) = min($2.50, $2.75) = $2.50 (range-capped),
+    //   versus the prior $1.20 at arm. Trades that MFE to $5 now lock at
+    //   least $2.50; those that run to $8+ lock at least $5.50. Restores
+    //   the intended ~50% capture-of-MFE outcome instead of the ~20% being
+    //   observed in shadow tape.
+    static constexpr double MFE_TRAIL_FRAC       = 0.55;
     static constexpr double MAX_SPREAD           = 2.5;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;
