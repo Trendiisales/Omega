@@ -59,11 +59,12 @@ sed-rewritten per cell, just like scripts/usdjpy_asian_sweep.py does.
 
 CLI
 ---
-    python3 scripts/usdjpy_asian_trail_sweep.py phase1     # single-axis
-    python3 scripts/usdjpy_asian_trail_sweep.py phase2     # composites
-    python3 scripts/usdjpy_asian_trail_sweep.py phase3     # structure lookback
+    python3 scripts/usdjpy_asian_trail_sweep.py phase1       # single-axis
+    python3 scripts/usdjpy_asian_trail_sweep.py phase2       # composites
+    python3 scripts/usdjpy_asian_trail_sweep.py phase2_fine  # MRxSLxMFE 3x3x5 grid
+    python3 scripts/usdjpy_asian_trail_sweep.py phase3       # structure lookback
     python3 scripts/usdjpy_asian_trail_sweep.py oos KEY=VAL ...
-    python3 scripts/usdjpy_asian_trail_sweep.py all        # phase1+phase2+phase3+oos on winner
+    python3 scripts/usdjpy_asian_trail_sweep.py all          # phase1+phase2+phase3+oos on winner
 
 Results CSV
 -----------
@@ -271,6 +272,21 @@ PHASE1_AXES = [
 
 PHASE3_LOOKBACKS = [200, 300, 400, 600, 900]
 
+# Phase 2 fine grid (added 2026-05-02, queue item 1):
+# 3x3x5 = 45 cells around the chosen winner from the trail-fix sweep
+# (MIN_RANGE=0.20, SL_FRAC=0.80, MFE_TRAIL_FRAC=0.15). Confirms the plateau
+# extends in 2-D and looks for a sharper interior optimum. Labels use a
+# consistent 2-decimal format (e.g. MR0.20_SL0.80_MFE0.15) which means the
+# three pre-existing rows MR0.20_SL0.8_MFE0.{10,15,20} (1-decimal SL) are
+# distinct and will be re-run. They reproduce identical results since the
+# backtest is deterministic; the cost is ~30 seconds of redundant compute
+# in exchange for a fully consistent leaderboard label scheme.
+PHASE2_FINE_GRID = {
+    "MIN_RANGE":      [0.19, 0.20, 0.21],
+    "SL_FRAC":        [0.75, 0.80, 0.85],
+    "MFE_TRAIL_FRAC": [0.10, 0.12, 0.15, 0.18, 0.20],
+}
+
 
 def run_phase1():
     done = already_done()
@@ -363,6 +379,54 @@ def run_phase2():
         s = run_one(label, overrides)
         append_row(label, overrides, s, header_done); header_done = True
         _print_row(label, s)
+
+
+def run_phase2_fine():
+    """Phase 2 fine grid (queue item 1, 2026-05-02 session).
+
+    Walks MIN_RANGE x SL_FRAC x MFE_TRAIL_FRAC around the chosen winner
+    (MR=0.20, SL=0.80, MFE=0.15). 3 x 3 x 5 = 45 cells. Resumable: cells
+    already in build/usdjpy_trail_sweep_results.csv are skipped.
+
+    Goal: confirm the 1-D plateau (cells #1-#3 of the prior leaderboard)
+    extends in 2-D, and look for a sharper interior optimum. If the
+    full-period PnL surface has a clean ridge around MR=0.20 / MFE in
+    [0.10, 0.20], the OOS edge is more likely to be real than over-fit.
+    If instead the surface is bumpy with isolated peaks, the prior
+    "winner" is suspect.
+    """
+    done = already_done()
+    header_done = RESULTS_CSV.exists() and RESULTS_CSV.stat().st_size > 0
+
+    mrs  = PHASE2_FINE_GRID["MIN_RANGE"]
+    sls  = PHASE2_FINE_GRID["SL_FRAC"]
+    mfes = PHASE2_FINE_GRID["MFE_TRAIL_FRAC"]
+
+    cells = list(product(mrs, sls, mfes))
+    n_total = len(cells)
+    print(f"[phase2_fine] {n_total} cells: "
+          f"MIN_RANGE={mrs} x SL_FRAC={sls} x MFE_TRAIL_FRAC={mfes}")
+
+    n_done = n_run = 0
+    t0 = time.time()
+    for mr, sl, mfe in cells:
+        label = f"MR{mr:.2f}_SL{sl:.2f}_MFE{mfe:.2f}"
+        overrides = {
+            "MIN_RANGE":      mr,
+            "SL_FRAC":        sl,
+            "MFE_TRAIL_FRAC": mfe,
+        }
+        if label in done:
+            n_done += 1
+            continue
+        s = run_one(label, overrides)
+        append_row(label, overrides, s, header_done); header_done = True
+        _print_row(label, s)
+        n_run += 1
+
+    elapsed = time.time() - t0
+    print(f"[phase2_fine] done. ran {n_run}, skipped {n_done}, "
+          f"elapsed {elapsed:.1f}s ({elapsed/max(n_run,1):.1f}s/cell)")
 
 
 def run_phase3():
@@ -474,6 +538,8 @@ def main():
         run_phase1()
     elif cmd == "phase2":
         run_phase2()
+    elif cmd == "phase2_fine":
+        run_phase2_fine()
     elif cmd == "phase3":
         run_phase3()
     elif cmd == "oos":
@@ -507,7 +573,7 @@ def main():
         cmd_all()
     else:
         print(f"unknown subcommand: {cmd}", file=sys.stderr)
-        print("usage: phase1 | phase2 | phase3 | oos [KEY=VAL ...] | cell LABEL KEY=VAL ... | leaderboard | all", file=sys.stderr)
+        print("usage: phase1 | phase2 | phase2_fine | phase3 | oos [KEY=VAL ...] | cell LABEL KEY=VAL ... | leaderboard | all", file=sys.stderr)
         sys.exit(2)
 
 

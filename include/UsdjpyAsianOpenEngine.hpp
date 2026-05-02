@@ -149,20 +149,34 @@ public:
     // Sweep guard: price must sit inside the formed bracket for this many
     //   consecutive ticks before stop orders are sent. Mirrors EURUSD/gold.
     static constexpr int    MIN_BREAK_TICKS      = 5;
-    // 8-50 pip capture band (mirrors EURUSD S56 in JPY pip units).
-    //   MIN 8 pips: Asian compressions typically 8-15 pips.
+    // S59 exit/SL re-sweep (was S57 0.08, S58 0.20). MIN_RANGE = 20 pips.
+    //   Filters to the genuinely volatile Asian compressions where the
+    //   strategy has positive EV. Cuts trade count vs the S57 8-pip default
+    //   but lifts WR from ~73% to ~84% over the 14mo backtest. Confirmed
+    //   by the S58 fine grid as a 2-D plateau (not a corner peak) and by
+    //   the S59 walk-forward as 7/8 OOS profitable months.
     //   MAX 50 pips: keeps post-news anomaly compressions out while still
     //   admitting wider Tokyo-fix-related ranges.
-    static constexpr double MIN_RANGE            = 0.08;
+    static constexpr double MIN_RANGE            = 0.20;
     static constexpr double MAX_RANGE            = 0.50;
-    // Mirrors EURUSD S56. SL placed in the upper 80% of the compression
-    //   structure -- gives the trade room to develop without wicking.
-    static constexpr double SL_FRAC              = 0.80;
+    // S59 exit/SL re-sweep: SL_FRAC = 1.00 (was S56 0.80). Wider SL means
+    //   bigger individual losses ($33 vs $26 at lot 0.20) but materially
+    //   fewer of them; net WR jumps 79.5% -> 83.9% over the 14mo backtest
+    //   and DD actually drops ($202 -> $186). The S58 fine grid only swept
+    //   {0.75, 0.80, 0.85} and missed this; the S59 wider sweep
+    //   {0.40 .. 1.00} found it. SL placed at the full opposite side of
+    //   the compression structure (no fractional shrink).
+    static constexpr double SL_FRAC              = 1.00;
     // SL_BUFFER = 2 pips: spread (0.6-1.5 pip) + slippage cushion.
     static constexpr double SL_BUFFER            = 0.02;
-    // RR = 2.0 (mirrors EURUSD S55/S56). Captures middle of typical
-    //   USDJPY post-compression continuation; 4-pip TP would be unreachable.
-    static constexpr double TP_RR                = 2.0;
+    // S59 exit sweep: TP_RR = 0.5 (was S55/S56 2.0). At RR=2.0 the TP
+    //   sat ~40 pips away and fired 1/278 trades; trail had to do all the
+    //   work on the win side. At RR=0.5 the TP sits at ~10 pips
+    //   (= p75 winner-MFE), banking early gains on trades that would
+    //   otherwise dribble back to a smaller trail exit. Lifts in-sample
+    //   PnL from $317 to $358 by itself; combined with SL_FRAC=1.00 and
+    //   MFE_TRAIL_FRAC=0.15 yields $407 / PF 1.28 / 9 of 14 months.
+    static constexpr double TP_RR                = 0.5;
     // S56 lineage: TRAIL_FRAC = 0.30 (wider trail; lets winners run).
     static constexpr double TRAIL_FRAC           = 0.30;
     // Trail-arm guards (S20 lineage). MIN_TRAIL_ARM_PTS = 6 pips. Asian
@@ -170,8 +184,13 @@ public:
     //   30-second hold gate carries over unchanged.
     static constexpr double MIN_TRAIL_ARM_PTS    = 0.06;
     static constexpr int    MIN_TRAIL_ARM_SECS   = 30;
-    // S56 lineage: MFE_TRAIL_FRAC = 0.40 (preserve 60% of run).
-    static constexpr double MFE_TRAIL_FRAC       = 0.40;
+    // S58 trail-fix sweep: MFE_TRAIL_FRAC = 0.15 (was S56 0.40). Tighter
+    //   trail captures more of the win on small-MFE runs typical of
+    //   Asian session. Drops avg per-winner clip from ~3.84p to ~1.65p,
+    //   raising avg realised winner from ~6.13p to ~6.60p without
+    //   destabilising the trail-arming logic. Confirmed by S59
+    //   walk-forward (7/8 OOS profitable months at this trail width).
+    static constexpr double MFE_TRAIL_FRAC       = 0.15;
     // S55 lineage: BE-lock at 6 pips MFE. With BE-trigger == trail-arm
     //   threshold, BE-lock and trail-arm fire simultaneously, eliminating
     //   the BE-only zone -- trades transition seamlessly from BE-protected
