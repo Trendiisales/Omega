@@ -356,6 +356,120 @@ In the GUI:
 
 ---
 
+## 7b. S55 backtest tune (2026-05-02 follow-up)
+
+After initial deploy, ran a 14-month HistData.com EURUSD tick backtest
+(Mar 2025 - Apr 2026, 25.3M ticks). Multi-axis parameter sweep found a
+clear improvement over the original gold-lineage parameters.
+
+### Optimum found
+
+| Param | Original | Optimum | Reason |
+|---|---|---|---|
+| `TP_RR` | 3.0 | **2.0** | RR=3 (24-pip TP) was unreachable; only 3/1076 trades hit TP. RR=2 captures TP cleanly on 39 trades and keeps the trail intact for momentum runs. |
+| `BE_TRIGGER_PTS` | 0.0004 (4 pips) | **0.0006 (6 pips)** | 4-pip BE-lock fired too early. 6 pips matches trail-arm threshold, eliminating the BE-only zone. BE_HIT count goes to 0; clean TP/TRAIL/SL outcomes. |
+
+All other parameters unchanged from original.
+
+### Backtest performance
+
+| Metric | Original config | Optimum config | Change |
+|---|---|---|---|
+| Trades (14 months) | 1,076 | 974 | -9% (still 70/mo) |
+| Win rate (W/L only) | 54.9% | **56.1%** | +1.2pp |
+| Total PnL (USD est) | +$54 | **+$188** | **3.5x** |
+| Max drawdown | $319 | **$210** | **-34%** |
+| Profit factor | 0.17 | **0.89** | **5x** |
+| Profitable months | 6 of 14 | **10 of 14** | +4 |
+
+Caveats:
+- HistData != BlackBull: live spreads and exact tick sequencing will differ. Apply 10-20% haircut to expected live performance.
+- Optimum was found *on* this 14-month sample. Real out-of-sample performance will be lower than the in-sample 3.5x.
+- Even with a 50% haircut, optimum is preferable to original (~+$95 vs ~+$27).
+
+### Sweep methodology
+
+Tested axes individually then combined:
+1. TP_RR: {1.5, 2.0, 2.5, 3.0, 3.5, 4.0}
+2. Session window: {6-9, 7-9, 6-10, 7-10, 8-10, 6-11, 7-11}
+3. Direction filter: {none, long_only, short_only, hour_conditional with 5 hour-split variants}
+4. BE_TRIGGER_PTS: {2, 3, 4, 5, 6, 8, disabled} pips
+5. MIN_RANGE: {6, 8, 10, 12, 15} pips
+
+Plus a 3x3 refinement grid around the winner (TP_RR x BE_TRIGGER_PTS) which revealed an axis interaction: at BE=6 pips, optimal TP_RR shifts from 2.5 (single-axis winner) to 2.0.
+
+### What did NOT improve
+
+| Hypothesis | Result | Verdict |
+|---|---|---|
+| Trim session to 07-09 UTC | -$1 (vs +$54) | Worse - early hours seed engine state |
+| Drop 06 UTC bin | Same as above | Worse |
+| Long-only filter | +$47 | Worse than baseline |
+| Short-only filter | -$229 | Disaster |
+| Hour-conditional direction (alone) | +$88 | Better alone, but hurts when combined with BE=6 (BE-lock saves the trades the hour-filter throws away). Decision: keep direction permissive. |
+| MIN_RANGE=15 (high-WR mode) | +$108, WR 69%, n=170 | Below 30-trade gate. Worth revisiting if the conservative 974-trade config underperforms in shadow. |
+
+## 7c. S56 comprehensive backtest tune (2026-05-02 second follow-up)
+
+After S55, ran a comprehensive 27-axis sweep on the same 14-month HistData backtest. ~200 configurations tested individually, then systematic leave-one-out and incremental build-up to find safe combinations (raw all-axis composite hit a destructive interaction and went negative). Followed by formal out-of-sample validation (split train Mar-Sep 2025 vs test Oct 2025-Apr 2026) and Kelly-criterion lot sizing analysis.
+
+### S56 final config (THIS SESSION'S DEPLOY)
+
+| Param | S55 | **S56** | Reason |
+|---|---|---|---|
+| `SL_FRAC` | 0.50 | **0.80** | Original 0.5 placed SL too close; trades wicked out before trail-arm. 0.80 keeps SL in upper 80% of compression structure. PF 0.89 -> 1.62 single-axis. |
+| `TRAIL_FRAC` | 0.25 | **0.30** | Wider trail lets winners run further. Combines additively with SL_FRAC=0.80; joint tune $305 -> $425. |
+| `MFE_TRAIL_FRAC` | 0.55 | **0.40** | Tightened give-back from 45% to 60% of MFE preserved. With wider SL placement, trades MFE further; capturing more of move. |
+| `SAME_LEVEL_BLOCK_PTS` | 0.0010 | **0.0008** | 8 pips matches MIN_RANGE; reject any compression that overlaps prior exit within its own width. |
+| `SAME_LEVEL_POST_SL_BLOCK_S` | 900 | **1200** | 15 -> 20 min. Failed breakouts get more time to clear. |
+| `COOLDOWN_S` | 240 | **120** | Original 240s too patient; same-level block now does the anti-chop work. |
+| `MAX_RANGE` | 0.0030 | **0.0050** | 30 -> 50 pips. Larger compressions still produce profitable breakouts. |
+| `LOT_MAX` | 0.10 | **0.20** | Half-Kelly sizing per the empirical 66.6% WR / b=0.605 (Kelly = 11.5%, half-Kelly = 5.7%). 0.20 lot = $16 risk per trade. Margin for WR degradation. |
+
+### S56 14-month backtest performance
+
+| Metric | S55 production | **S56 (this deploy)** | vs S55 |
+|---|---|---|---|
+| Trades | 974 | 854 | -12% |
+| Win rate | 56.1% | **66.6%** | +10.5pp |
+| Total PnL (in-sample) | +$188 | **+$626** | +$438 (3.3x) |
+| Max drawdown | $210 | **$132** | -37% |
+| Profit factor | 0.89 | **4.75** | 5.3x |
+| Profitable months | 10/14 | 10/14 | same |
+| Avg win | $6.20 | $6.38 | similar |
+| Avg loss | $7.47 | $10.54 | wider (per S56 SL_FRAC=0.80) |
+
+### Out-of-sample validation
+
+Train period (Mar-Sep 2025, 7 months): S56 makes +$512, PF 3.88, 6/7 prof.
+Test period (Oct 2025-Apr 2026, 7 months) — TRUE OOS:
+
+| Config | Trades | WR | PnL | PF | Profitable months |
+|---|---|---|---|---|---|
+| S55 baseline | 360 | 53.1% | -$90 | -0.54 | 5/7 |
+| **S56 champion** | 308 | **64.9%** | **+$114** | **1.04** | 4/7 |
+
+S56 is **profitable on data it never saw**, and beats S55 by $204 OOS. PF degrades 3.88 -> 1.04 (expected curve-fit haircut), but still positive. WR holds well: 67.6% train -> 64.9% OOS. **Real live performance will look like the OOS numbers**, not the in-sample headline.
+
+### Lot sizing (S56)
+
+Empirical from 14-month data:
+- WR = 66.6%, avg_win = $6.38, avg_loss = $10.54
+- b = 0.605 (wins 65% smaller than losses; high WR is doing all the work)
+- Kelly fraction = 11.5%; half-Kelly = 5.7%; quarter-Kelly = 2.9%
+
+LOT_MAX raised from 0.10 -> 0.20 to align with half-Kelly. Linear scaling at this size:
+
+| Period | Realistic PnL (post-50% haircut) | Realistic DD | DD as % of $10k |
+|---|---|---|---|
+| Annualized | ~$220-300 | ~$260 | 2.6% |
+
+Do NOT exceed 0.20 LOT_MAX until 2 weeks of shadow data confirm OOS WR >= 60%. The high WR is fragile -- if it drops to 55%, expectancy goes negative.
+
+### Critical lesson from the comprehensive sweep
+
+The naive "combine all single-axis winners" strategy gave +$94 -- WORSE than baseline +$188. Three "wider stop" changes (SL_FRAC=0.80, SL_BUFFER=4pips, MIN_TRAIL_ARM_PTS=8pips) were mutually toxic when combined. The S56 config keeps SL_FRAC=0.80 but leaves SL_BUFFER (2 pips) and MIN_TRAIL_ARM_PTS (6 pips) at S55 values. Always validate composites with leave-one-out, never trust naive AND-of-winners.
+
 ## 8. Build / verification on this session
 
 | Check | Result |

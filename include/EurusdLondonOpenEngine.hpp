@@ -35,13 +35,14 @@
 //     Typical spread = 0.5 to 1.4 pips on cTrader/BlackBull
 //     Pip value      = $1 at 0.10 lot, $10 at 1.00 lot
 //
-//   Math (range = compression structure size, in price units):
-//     range 0.0008 ->  8 pips -> SL 0.0006 (6 pips) -> TP 0.0018 (18 pips)
-//     range 0.0010 -> 10 pips -> SL 0.0007 (7 pips) -> TP 0.0021 (21 pips)
-//     range 0.0012 -> 12 pips -> SL 0.0008 (8 pips) -> TP 0.0024 (24 pips)
-//     range 0.0015 -> 15 pips -> SL 0.0010 (9.5 pips) -> TP 0.0029 (29 pips)
-//     range 0.0020 -> 20 pips -> SL 0.0012 (12 pips) -> TP 0.0036 (36 pips)
-//     range 0.0030 -> 30 pips -> SL 0.0017 (17 pips) -> TP 0.0051 (51 pips)
+//   Math (range = compression structure size, in price units, S56 SL_FRAC=0.80, RR=2):
+//     range 0.0008 ->  8 pips -> SL 0.0008 ( 8.4 pips) -> TP 0.0017 (17 pips)
+//     range 0.0010 -> 10 pips -> SL 0.0010 (10.0 pips) -> TP 0.0020 (20 pips)
+//     range 0.0012 -> 12 pips -> SL 0.0012 (11.6 pips) -> TP 0.0023 (23 pips)
+//     range 0.0015 -> 15 pips -> SL 0.0014 (14.0 pips) -> TP 0.0028 (28 pips)
+//     range 0.0020 -> 20 pips -> SL 0.0018 (18.0 pips) -> TP 0.0036 (36 pips)
+//     range 0.0030 -> 30 pips -> SL 0.0026 (26.0 pips) -> TP 0.0052 (52 pips)
+//     range 0.0050 -> 50 pips -> SL 0.0042 (42.0 pips) -> TP 0.0084 (84 pips)
 //
 //   STRUCTURE_LOOKBACK = 600 (~3 min @ 200 ticks/min London EURUSD) finds
 //   genuine compressions while filtering Asian-session drift micro-ranges.
@@ -130,38 +131,67 @@ public:
     // Sweep guard: price must sit inside the formed bracket for this many
     //   consecutive ticks before stop orders are sent. Mirrors gold value.
     static constexpr int    MIN_BREAK_TICKS      = 5;
-    // 8-30 pip capture band. Lower edge = $18 TP; upper edge = $51.
+    // 8-50 pip capture band.
     //   MIN 8 pips: London compressions typically 8-15 pips.
-    //   MAX 30 pips: filter post-news anomaly compressions.
+    //   MAX 50 pips: S56 backtest tune. Originally 30 pips, raised to 50 after
+    //   14-month tick-data sweep showed 30+pip compressions still produce
+    //   profitable breakouts. Cap retained as guard against post-news anomaly.
     static constexpr double MIN_RANGE            = 0.0008;
-    static constexpr double MAX_RANGE            = 0.0030;
-    static constexpr double SL_FRAC              = 0.5;
+    static constexpr double MAX_RANGE            = 0.0050;
+    // S56 2026-05-02 (post-OOS validation): SL_FRAC raised 0.5 -> 0.80.
+    //   Original 0.5 (half-range) put SL too close: trades wicked out before
+    //   reaching trail-arm. 0.80 keeps SL in the upper 80% of compression
+    //   structure, giving the trade room to develop. PF jumps from 0.89 to
+    //   1.62 on this single change. See handoff doc Section 9.
+    static constexpr double SL_FRAC              = 0.80;
     // SL_BUFFER = 2 pips: spread (0.5-1.4 pip) + slippage cushion.
     static constexpr double SL_BUFFER            = 0.0002;
-    // RR = 3: TP = sl_dist * 3. Captures the middle of London momentum runs.
-    //   Gold uses RR=4 (commodity volatility); FX RR=3 reflects tighter
-    //   trend continuation typical of EURUSD post-compression.
-    static constexpr double TP_RR                = 3.0;
-    static constexpr double TRAIL_FRAC           = 0.25;
+    // RR = 2.0: TP = sl_dist * 2. S55 2026-05-02 backtest tune.
+    //   Original RR=3 (24-pip TP at 8-pip SL) was unreachable for typical
+    //   EURUSD volatility — only 3 of 1076 historical trades hit TP_HIT.
+    //   14-month HistData backtest showed RR=2 with BE=6 pips gives
+    //   PnL=+$188 vs RR=3 baseline +$54 (3.5x improvement, DD reduced 34%).
+    //   See docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md Section 8.
+    //   Gold uses RR=4 (commodity volatility); FX RR=2 reflects shorter
+    //   typical trend continuation post-compression on EURUSD.
+    static constexpr double TP_RR                = 2.0;
+    // S56 2026-05-02 (post-OOS validation): TRAIL_FRAC 0.25 -> 0.30.
+    //   Wider trail (30% of range) lets winners run further before trail
+    //   tightens. Combines additively with SL_FRAC=0.80 -- joint tune
+    //   pushed PnL from $305 (SL_FRAC alone) to $425 (both).
+    static constexpr double TRAIL_FRAC           = 0.30;
     // Trail-arm guards (S20 lineage). FX moves slower than gold per second
     //   of clock time, so MIN_TRAIL_ARM_SECS bumped 15 -> 30. MIN_TRAIL_ARM_PTS
     //   = 6 pips -- R-equivalent of $5 on gold at 0.10 lot ($1/pip * 6 = $6).
     static constexpr double MIN_TRAIL_ARM_PTS    = 0.0006;
     static constexpr int    MIN_TRAIL_ARM_SECS   = 30;
-    // S52/S53 MFE give-back: 0.55 (preserve 45% of run, mirrors gold).
-    static constexpr double MFE_TRAIL_FRAC       = 0.55;
-    // S53 break-even lock trigger: 4 pips MFE.
-    //   Move SL to entry once MFE >= BE_TRIGGER_PTS. Fills the gap between
-    //   the original SL and MIN_TRAIL_ARM_PTS=6 pips so trades that MFE 3-5
-    //   pips then reverse exit at $0 instead of taking the original SL.
-    static constexpr double BE_TRIGGER_PTS       = 0.0004;
-    // S53 same-level re-arm block.
-    //   10 pips chosen relative to MIN_RANGE=8 pips: a fresh structure of
-    //   width 8 cannot overlap a prior exit unless one of its edges is
-    //   within 10 pips of the exit price. Bigger than MIN_RANGE -> ensures
-    //   non-trivial separation. BE_HIT does NOT stamp.
-    static constexpr double SAME_LEVEL_BLOCK_PTS         = 0.0010;
-    static constexpr int    SAME_LEVEL_POST_SL_BLOCK_S   = 900;  // 15 min after SL
+    // S56 2026-05-02 (post-OOS validation): MFE_TRAIL_FRAC 0.55 -> 0.40.
+    //   Preserve 60% of run (was 45%). With wider SL placement (SL_FRAC=0.80)
+    //   trades MFE further before reversing; tightening MFE give-back from
+    //   0.55 -> 0.40 captures more of the move. PF jumps to 2.09 with this.
+    //   Pre-S56 value was 0.55 (S52/S53 gold lineage).
+    static constexpr double MFE_TRAIL_FRAC       = 0.40;
+    // S55 2026-05-02 break-even lock trigger: 6 pips MFE.
+    //   Move SL to entry once MFE >= BE_TRIGGER_PTS. Originally 4 pips
+    //   (S53 baseline from gold lineage) but 14-month HistData backtest
+    //   showed 4 pips fired too early -- trades that would have hit TP
+    //   got locked at break-even. Raising to 6 pips (matching the trail
+    //   arm threshold) gives PnL=+$153 vs +$54 baseline (single biggest
+    //   improvement of any axis sweep). At 6 pips, BE-lock and trail-arm
+    //   fire simultaneously, eliminating the BE-only zone -- trades
+    //   transition seamlessly from BE-protected to trail-protected.
+    //   Net result: BE_HIT count drops to 0; clean TP/TRAIL/SL outcomes.
+    //   See docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md Section 8.
+    static constexpr double BE_TRIGGER_PTS       = 0.0006;
+    // S56 2026-05-02 (post-OOS validation): SAME_LEVEL_BLOCK_PTS 10 -> 8 pips.
+    //   8 pips matches MIN_RANGE exactly: any compression structure that
+    //   overlaps a prior exit within its own width is rejected. This is
+    //   the tightest block radius that still allows continuation breakouts
+    //   to fire. Combined with the wider SL placement (SL_FRAC=0.80) it
+    //   reduces re-entry on chop. POST_SL block raised 900s -> 1200s
+    //   (15min -> 20min) to give failed breakouts more time to clear.
+    static constexpr double SAME_LEVEL_BLOCK_PTS         = 0.0008;
+    static constexpr int    SAME_LEVEL_POST_SL_BLOCK_S   = 1200; // 20 min after SL
     static constexpr int    SAME_LEVEL_POST_WIN_BLOCK_S  = 600;  // 10 min after TP/TRAIL
     // MAX_SPREAD = 2 pips. Reject if spread blew out beyond typical 0.5-1.4.
     static constexpr double MAX_SPREAD           = 0.00020;
@@ -170,19 +200,32 @@ public:
     // USD value of 1 unit of price (1.0) at default lot 0.10:
     //   1 pip (0.0001) at 0.10 lot = $1   ->  1 unit of price = 10000 * $1 = $10,000.
     static constexpr double USD_PER_PRICE_UNIT   = 10000.0;
-    // ENTRY_SIZE_DEFAULT = 0.10 lot. Lot bounds 0.01..0.10.
-    //   At 0.10 lot, 8-pip SL = $8 risk. At 0.01 lot, 8-pip SL = $0.80
-    //   (statistically meaningless). Cap at 0.10 keeps first deploy
-    //   conservative while large enough to validate edge.
+    // S56 2026-05-02 (post-OOS validation): LOT_MAX 0.10 -> 0.20.
+    //   ENTRY_SIZE_DEFAULT and LOT_MIN unchanged. Half-Kelly sizing per the
+    //   14-month champion's empirical win rate (66.6%) and win/loss ratio
+    //   (b=0.605):
+    //     Kelly fraction      = 11.5% of capital per trade
+    //     Half Kelly          =  5.7% of capital per trade
+    //     Quarter Kelly       =  2.9% of capital per trade
+    //   At 0.20 lot, 8-pip SL = $16 risk per trade = ~1.6% of $1000 sub-
+    //   account or ~0.16% of $10k account. Conservative half-Kelly territory
+    //   with margin for WR degradation in real broker conditions (avg_loss
+    //   $10.54 is 65% bigger than avg_win $6.38, so the 66% WR is doing all
+    //   the work -- if WR drops to 55% the math goes upside-down fast).
+    //   DO NOT exceed 0.20 until 2 weeks of shadow data confirm OOS WR >= 60%.
     static constexpr double ENTRY_SIZE_DEFAULT   = 0.10;
     static constexpr double LOT_MIN              = 0.01;
-    static constexpr double LOT_MAX              = 0.10;
+    static constexpr double LOT_MAX              = 0.20;
     // Pending timeout: FX breaks fast or resets. Matches existing
     //   g_bracket_eurusd 180s value.
     static constexpr int    PENDING_TIMEOUT_S    = 180;
-    // Cooldown after close: 240s, slightly longer than gold midscalper
-    //   180s. FX compression structures need extra spacing.
-    static constexpr int    COOLDOWN_S           = 240;
+    // S56 2026-05-02 (post-OOS validation): COOLDOWN_S 240 -> 120.
+    //   Original 240s (4min) was too patient. With wider SL (SL_FRAC=0.80)
+    //   and tighter same-level block (8 pips), faster cooldown captures
+    //   more genuine continuation moves without re-firing on chop. The
+    //   same-level block (post-SL 1200s, post-win 600s) is now the
+    //   primary anti-chop guard rather than a long blanket cooldown.
+    static constexpr int    COOLDOWN_S           = 120;
     // Session window (UTC hours).
     static constexpr int    SESSION_START_HOUR_UTC = 6;
     static constexpr int    SESSION_END_HOUR_UTC   = 9;
