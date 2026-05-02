@@ -106,3 +106,12 @@ archive/
 backtest/TsmomCellBacktest_mac
 backtest/baselines/
 omega-terminal/dist-verify/
+
+# 2026-05-02: backtest-side copy of UsdjpyAsianOpenEngine.hpp is regenerated
+# by scripts/usdjpy_asian_sweep.py; production header is in include/.
+backtest/usdjpy_bt/UsdjpyAsianOpenEngine.hpp
+build/usdjpy_sweep_results.csv
+build/sweep_*.csv
+build/sweep_log.txt
+build/usdjpy_asian_bt
+/tmp/bt_*.csv

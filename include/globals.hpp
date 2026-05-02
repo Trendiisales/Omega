@@ -329,9 +329,20 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   in tick_fx.hpp::on_tick_eurusd() dispatch block. See
 //   docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md for full design.
 #include "EurusdLondonOpenEngine.hpp"
+// 2026-05-02: UsdjpyAsianOpenEngine -- Asian-session sister engine to
+//   EurusdLondonOpenEngine. 00:00-04:00 UTC compression-breakout on USDJPY
+//   (Tokyo open + first 4 hours, pre-Frankfurt-handoff). Same architectural
+//   pattern as the EURUSD engine with JPY pip math (1 pip = 0.01 price,
+//   USD_PER_PRICE_UNIT=100 at 0.10 lot). News-blackout-gated for NFP/CPI/
+//   FOMC/BoJ. Shadow-only by default; promote to live only after a 2-week
+//   paper validation showing >=30 trades with WR >= 60% net positive after
+//   costs. Wired in tick_fx.hpp::on_tick_usdjpy() dispatch block. See
+//   docs/SESSION_2026-05-02_USDJPY_ASIAN_OPEN_HANDOFF.md for full design.
+#include "UsdjpyAsianOpenEngine.hpp"
 static omega::GoldHybridBracketEngine         g_hybrid_gold;
 static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
+static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
 static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());

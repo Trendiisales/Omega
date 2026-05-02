@@ -58,6 +58,15 @@ static void init_engines(const std::string& cfg_path)
     // Cancel callback: matches g_gold_midscalper / g_hybrid_gold pattern. Used
     //   when PENDING TIMEOUT or one side fills (cancel the loser).
     g_eurusd_london_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    // 2026-05-02: UsdjpyAsianOpenEngine -- pinned shadow-only on first
+    //   deployment regardless of g_cfg.mode. Asian-session compression bracket
+    //   on USDJPY, 00:00-04:00 UTC (Tokyo open). Pre-sweep S56-inherited
+    //   defaults; USDJPY-specific Kelly analysis from the parallel sweep
+    //   harness should retune before live promotion. Promote to kShadowDefault
+    //   after a 2-week paper validation showing >=30 trades with WR >= 60%
+    //   net positive after costs. Until then this line stays as `true`.
+    g_usdjpy_asian_open.shadow_mode = true;
+    g_usdjpy_asian_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -1851,6 +1860,13 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_eurusd_london_open.shadow_mode,
                           {"EurusdLondonOpen"}); });
+    // 2026-05-02: register UsdjpyAsianOpen for /api/v1/omega/engines.
+    //   Same shadow-stamped pattern as EurusdLondonOpen.
+    g_engines.register_engine("UsdjpyAsianOpen",
+        [reg]{ return reg("UsdjpyAsianOpen",
+                          true,
+                          g_usdjpy_asian_open.shadow_mode,
+                          {"UsdjpyAsianOpen"}); });
     g_engines.register_engine("HybridSP",
         [reg]{ return reg("HybridSP",
                           true,
@@ -2026,7 +2042,42 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
-    std::cout << "[OmegaApi] g_open_positions sources registered (3 sources: HybridGold, MidScalperGold, EurusdLondonOpen)\n";
+    // 2026-05-02: UsdjpyAsianOpen open-position source (parallel to EurusdLondonOpen).
+    //   Mirrors the EURUSD pattern with USDJPY tick-value lookup.
+    //   tick_value_multiplier on USDJPY returns 100000.0/g_usdjpy_mid (live JPY/USD
+    //   rate) so unrealized PnL tracks the live conversion -- avoids the static
+    //   approximation drifting ~8% as the rate moves between 140-160.
+    g_open_positions.register_source("UsdjpyAsianOpen",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_usdjpy_asian_open.has_open_position()) return out;
+
+            const auto& p = g_usdjpy_asian_open.pos;
+            const double mult  = tick_value_multiplier(std::string("USDJPY"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("USDJPY");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "USDJPY";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "UsdjpyAsianOpen";
+            out.push_back(ps);
+            return out;
+        });
+    std::cout << "[OmegaApi] g_open_positions sources registered (4 sources: HybridGold, MidScalperGold, EurusdLondonOpen, UsdjpyAsianOpen)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
