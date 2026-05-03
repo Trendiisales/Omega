@@ -357,7 +357,7 @@ Write-Host ""
 Write-Host "[8/9] Verifying symbols.ini..." -ForegroundColor Yellow
 
 $expected = @{
-    "XAUUSD"  = @{ "MIN_RANGE" = "10.00";   "MIN_STRUCTURE_MS" = "30000"; "BREAKOUT_FAIL_MS" = "25000"; "MAX_SPREAD" = "2.50";  "MAX_RANGE" = "18.00"  }
+    "XAUUSD"  = @{ "MIN_RANGE" = "6.00";    "MIN_STRUCTURE_MS" = "30000"; "BREAKOUT_FAIL_MS" = "25000"; "MAX_SPREAD" = "2.50";  "MAX_RANGE" = "12.00"  }   # 2026-05-03: synced with symbols.ini (lowered from 10/18 per comments in symbols.ini -- Asia compressions 3-8pt, ini override of 18->12 per Session 13 2026-04-23)
     "XAGUSD"  = @{ "MIN_RANGE" = "0.40";    "MIN_STRUCTURE_MS" = "20000"; "BREAKOUT_FAIL_MS" = "12000"; "MAX_RANGE" = "0.30"   }
     "US500.F" = @{ "MIN_RANGE" = "12.00";   "MIN_STRUCTURE_MS" = "30000"; "BREAKOUT_FAIL_MS" = "10000"; "MAX_RANGE" = "25.00"  }
     "USTEC.F" = @{ "MIN_RANGE" = "42.00";   "MIN_STRUCTURE_MS" = "45000"; "BREAKOUT_FAIL_MS" = "10000"; "MAX_RANGE" = "90.00"  }
