@@ -113,17 +113,44 @@ whipsaw = nas[(nas.side != nas.prev_side) & (nas.gap_s < 300)]
 HybridBracketIndex without whipsaw entries is the +$172 winner the audit
 already flagged.
 
-**Fix (PENDING — to be implemented next).** Add a cross-engine `index_any_open`
-gate analogous to gold’s. Engines proposed: `g_iflow_*`, `g_hybrid_sp/nq/us30/nas100`,
-`g_minimal_h4_us30`. Locations to patch:
+**Fix (LANDED 2026-05-03, Engine Audit Installment 2).** Two-part block,
+because the documented whipsaw is post-close (1-3 minutes after a same-symbol
+or cross-symbol exit), not concurrent overlap:
 
-- `include/tick_indices.hpp` (the index tick handler) — add the gate
-- `include/globals.hpp` — already has the engine instances
-- Optionally `omega_config.ini` `[risk] index_min_entry_gap_sec=120`
+1. **Cross-engine `index_any_open()` predicate** in `globals.hpp`, mirroring
+   gold's `gold_any_open` at `tick_gold.hpp:36-50`. Returns true if any of
+   `g_iflow_sp/nq/nas/us30`, `g_hybrid_sp/nq/us30/nas100`, or
+   `g_minimal_h4_us30` has an open position right now. Catches concurrent
+   overlap.
 
-This is the next session’s priority. The fix is straightforward (~30 lines)
-but invasive across `tick_indices.hpp`, so it deserves a dedicated commit and
-shadow validation.
+2. **Post-close gap block** via
+   `omega::idx::record_index_close(symbol)` (called from
+   `ca_on_close()` in `trade_lifecycle.hpp` for any close where
+   `tr.symbol` is one of the four US index symbols) and
+   `omega::idx::idx_recent_close_block()` (true if the last index-symbol
+   close was within `omega::idx::g_index_min_entry_gap_sec` seconds, default
+   120). Catches the 1-3 minute follow-on whipsaw that is the actual
+   documented failure mode.
+
+Both predicates are appended as the FINAL conjuncts of every entry-gate
+composition in `tick_indices.hpp`:
+
+- `on_tick_us500`: `hybrid_sp_can_enter` and the IndexFlow `else if` branch
+- `on_tick_ustec`: `hybrid_nq_can_enter` and the IndexFlow `else if` branch
+- `on_tick_dj30`: `hybrid_us30_can_enter` and the IndexFlow `else if` branch
+- `on_tick_nas100`: `hybrid_nas_can_enter` and the IndexFlow `else if` branch
+
+To tune the gap: `omega::idx::g_index_min_entry_gap_sec = N;` from
+`engine_init.hpp` (or equivalent) before the tick loop starts. Optionally
+expose via `omega_config.ini [risk] index_min_entry_gap_sec=N`.
+
+**Validation.** A fresh OmegaBacktest 26-month run on the four US index
+symbols should now show the 59 NAS100 whipsaw entries (KNOWN_BUGS.md Bug #3
+classification) reduced to zero. Pre-fix: 59 trades, sum(net_pnl) ≈ −$55.77.
+Post-fix: zero entries within 300s of an opposite-side prior close on any
+participating engine. The NAS100 HBI baseline (the +$172 winner the audit
+already flagged) should re-emerge cleanly without whipsaw entries
+contaminating the per-engine attribution table.
 
 ---
 
@@ -174,7 +201,7 @@ $22,320 total loss — almost 60 % — without touching any other engine logic.
 |---|---:|---:|---|
 | MacroCrash Apr-15 phantom burst | 61 | −$9,907 | **FIXED** in `675f063f` (C-1 + C-3) |
 | HybridBracketGold Apr-7 100x record | 1 | −$3,008 | **FIXED** in `675f063f` (mutex + sanity) |
-| NAS100 whipsaw across IndexFlow ↔ HybridBracketIndex | 59 | −$56 | **PENDING** (`index_any_open` gate) |
+| NAS100 whipsaw across IndexFlow ↔ HybridBracketIndex | 59 | −$56 | **FIXED** 2026-05-03 (`index_any_open` + `idx_recent_close_block` in `globals.hpp` + `tick_indices.hpp` + `trade_lifecycle.hpp`; Engine Audit Installment 2) |
 | **Total bugs** | **121** | **−$12,971** | |
 
 Once the VPS is running `49d8151b` or later, these patterns cannot recur for

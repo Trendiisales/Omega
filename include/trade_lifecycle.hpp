@@ -1066,6 +1066,7 @@ static bool symbol_gate(
 // ── ca_on_close ──────────────────────────────────────────────────────────────
 static void ca_on_close(const omega::TradeRecord& tr) {
     handle_closed_trade(tr);
+    omega::idx::record_index_close(tr.symbol);  // Bug #3 post-close gap tracking
     send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
 }
 

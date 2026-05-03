@@ -270,9 +270,6 @@ static bool g_disable_dxy_divergence           = true;  // GoldStack sub-engine
 // Architecture: L2 persistence + EWM drift + ATR-prop SL
 // + staircase trail. Per-symbol calibrated (see IndexFlowEngine.hpp).
 //
-// SHADOW mode: IndexMacroCrashEngine instances are shadow-only by default.
-// NEVER set shadow_mode=false without explicit authorization.
-//
 // L2 data: fed from existing AtomicL2 instances (g_l2_sp, g_l2_nq, g_l2_nas,
 // g_l2_us30) already updated by cTrader depth thread in omega_main.hpp.
 // Pass l2_imb via: g_l2_sp.imbalance.load(std::memory_order_relaxed)
@@ -281,8 +278,44 @@ static omega::idx::IndexFlowEngine       g_iflow_sp("US500.F");
 static omega::idx::IndexFlowEngine       g_iflow_nq("USTEC.F");
 static omega::idx::IndexFlowEngine       g_iflow_nas("NAS100");
 static omega::idx::IndexFlowEngine       g_iflow_us30("DJ30.F");
-static omega::idx::IndexMacroCrashEngine g_imacro_sp("US500.F"); // shadow_mode=true always
-static omega::idx::IndexMacroCrashEngine g_imacro_nq("USTEC.F"); // shadow_mode=true always
+
+// IndexMacroCrashEngine -- four-symbol parity, shadow-mode hardcoded.
+// shadow_mode=true is pinned on the engine class (IndexFlowEngine.hpp:816,
+// "NEVER set shadow_mode=false without explicit authorization"). Wired in
+// each on_tick_<sym> handler in tick_indices.hpp.
+static omega::idx::IndexMacroCrashEngine g_imacro_sp("US500.F");
+static omega::idx::IndexMacroCrashEngine g_imacro_nq("USTEC.F");
+static omega::idx::IndexMacroCrashEngine g_imacro_nas("NAS100");
+static omega::idx::IndexMacroCrashEngine g_imacro_us30("DJ30.F");
+
+// Bug #3 (KNOWN_BUGS.md) cross-engine state. Two-part block: index_any_open()
+// (defined later, after engine declarations) catches concurrent overlap;
+// idx_recent_close_block() catches the documented 1-3min post-close whipsaw.
+// record_index_close() called from ca_on_close in trade_lifecycle.hpp.
+namespace omega { namespace idx {
+
+inline std::atomic<int64_t> g_idx_last_close_ts{0};   // unix seconds
+inline int g_index_min_entry_gap_sec = 120;           // KNOWN_BUGS.md default
+
+// Called from the close-hook wrapper in tick_indices.hpp. Symbol must be one
+// of the four US index symbols; other symbols are silently ignored so the
+// helper is safe to call unconditionally from any close path.
+inline void record_index_close(const std::string& symbol) noexcept {
+    if (symbol == "US500.F" || symbol == "USTEC.F" ||
+        symbol == "DJ30.F"  || symbol == "NAS100") {
+        const int64_t now_s = static_cast<int64_t>(std::time(nullptr));
+        g_idx_last_close_ts.store(now_s, std::memory_order_relaxed);
+    }
+}
+
+inline bool idx_recent_close_block() noexcept {
+    const int64_t last = g_idx_last_close_ts.load(std::memory_order_relaxed);
+    if (last == 0) return false;
+    const int64_t now = static_cast<int64_t>(std::time(nullptr));
+    return (now - last) < static_cast<int64_t>(g_index_min_entry_gap_sec);
+}
+
+}} // namespace omega::idx
 
 // VWAPAtrTrail -- ATR-proportional BE lock + trail upgrade for existing
 // VWAPReversionEngine instances. Holds upgrade state only (no new entries).
@@ -362,6 +395,21 @@ static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_co
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
+
+// Bug #3 (KNOWN_BUGS.md) cross-engine "index any open" predicate.
+// Mirrors gold_any_open at tick_gold.hpp:36-50.
+static inline bool index_any_open() noexcept {
+    return  g_iflow_sp.has_open_position()      ||
+            g_iflow_nq.has_open_position()      ||
+            g_iflow_nas.has_open_position()     ||
+            g_iflow_us30.has_open_position()    ||
+            g_hybrid_sp.has_open_position()     ||
+            g_hybrid_nq.has_open_position()     ||
+            g_hybrid_us30.has_open_position()   ||
+            g_hybrid_nas100.has_open_position() ||
+            g_minimal_h4_us30.has_open_position();
+}
+
 static omega::MacroCrashEngine    g_macro_crash;
 // (g_pullback_cont and g_pullback_prem removed S49 X5 — engine culled, see commit message of branch s49-x5-pullback-cull)
 
