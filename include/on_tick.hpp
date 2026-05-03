@@ -1935,8 +1935,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "ESTX50")                           on_tick_estx50(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "EURUSD")                           on_tick_eurusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "GBPUSD")                           on_tick_gbpusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
-    else if (sym == "AUDUSD" || sym == "NZDUSD" || sym == "USDJPY")
-                                                        on_tick_audusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
+    // 2026-05-02: USDJPY split out from the AUDUSD/NZDUSD shared handler so
+    //   on_tick_usdjpy can dispatch UsdjpyAsianOpenEngine. AUDUSD/NZDUSD
+    //   remain on the inert shared handler.
+    else if (sym == "USDJPY")                           on_tick_usdjpy(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
+    else if (sym == "AUDUSD" || sym == "NZDUSD")        on_tick_audusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "NAS100")                           on_tick_nas100(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask, tradeable, lat_ok, regime, rtt_check);

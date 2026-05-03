@@ -2,6 +2,36 @@
 // Section: globals (original lines 435-964)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+// ── Step 2 Omega Terminal: engine snapshot registry ─────────────────────────
+// EngineRegistry types live in include/EngineRegistry.hpp so OmegaApiServer.cpp
+// (a separate translation unit) can read them without dragging in the rest of
+// globals.hpp's engine-instance graph. Here we DEFINE the single g_engines
+// instance with external linkage so the extern declaration in
+// EngineRegistry.hpp resolves to exactly this object at link time. Engines
+// self-register in init_engines() (include/engine_init.hpp, end of function).
+#include "EngineRegistry.hpp"
+omega::EngineRegistry g_engines;
+
+// ── Step 3 Omega Terminal: per-engine "last close" side-table ───────────────
+// EngineLastRegistry holds the most recent (last_ts_ms, last_pnl) per tr.engine
+// string. Written from handle_closed_trade in include/trade_lifecycle.hpp on
+// every closed trade (shadow + live), read by the snapshot lambdas in
+// include/engine_init.hpp so /api/v1/omega/engines returns real
+// last_signal_ts / last_pnl values instead of 0. See EngineLastRegistry.hpp
+// header comment for the full design rationale.
+#include "EngineLastRegistry.hpp"
+omega::EngineLastRegistry g_engine_last;
+
+// ── Step 3 Omega Terminal: open-position read-API registry ──────────────────
+// OpenPositionRegistry holds engine-side snapshotter callbacks that return the
+// list of currently-open positions in a uniform PositionSnapshot shape. Read
+// by OmegaApiServer.cpp's build_positions_json() to serialise
+// /api/v1/omega/positions. Sources self-register in init_engines()
+// (include/engine_init.hpp). Step 3 ships only the HybridGold source; other
+// engines (Tsmom/Donchian/EmaPullback/TrendRider/HBI) land in a follow-up.
+#include "OpenPositionRegistry.hpp"
+omega::OpenPositionRegistry g_open_positions;
+
 // ?? Per-symbol config manager -- loaded from symbols.ini at startup ????????????
 static SymbolConfigManager g_sym_cfg;
 
@@ -287,7 +317,47 @@ static omega::GoldBracketEngine   g_bracket_gold;
 // These are in SHADOW mode by default -- validated against live data before enabling.
 #include "GoldHybridBracketEngine.hpp"
 #include "IndexHybridBracketEngine.hpp"
+// 2026-05-01 SESSION_h: GoldMidScalperEngine -- mid-band sister to HybridGold
+//   targeting the $20-40 P&L zone (range $8-20 with TP_RR=4).  Shadow-only by
+//   default; promote to live only after a 2-week paper validation.  Wired in
+//   tick_gold.hpp dispatch block parallel to g_hybrid_gold.
+#include "GoldMidScalperEngine.hpp"
+// 2026-05-02: EurusdLondonOpenEngine -- first FX engine since the 2026-04-06
+//   global FX disable. London-open compression bracket on EURUSD, 06:00-09:00
+//   UTC session window, news-blackout-gated for NFP/CPI/FOMC/ECB. Shadow-only
+//   by default; promote to live only after a 2-week paper validation.  Wired
+//   in tick_fx.hpp::on_tick_eurusd() dispatch block. See
+//   docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md for full design.
+#include "EurusdLondonOpenEngine.hpp"
+// 2026-05-02: UsdjpyAsianOpenEngine -- Asian-session sister engine to
+//   EurusdLondonOpenEngine. 00:00-04:00 UTC compression-breakout on USDJPY
+//   (Tokyo open + first 4 hours, pre-Frankfurt-handoff). Same architectural
+//   pattern as the EURUSD engine with JPY pip math (1 pip = 0.01 price,
+//   USD_PER_PRICE_UNIT=100 at 0.10 lot). News-blackout-gated for NFP/CPI/
+//   FOMC/BoJ. Shadow-only by default; promote to live only after a 2-week
+//   paper validation showing >=30 trades with WR >= 60% net positive after
+//   costs. Wired in tick_fx.hpp::on_tick_usdjpy() dispatch block. See
+//   docs/SESSION_2026-05-02_USDJPY_ASIAN_OPEN_HANDOFF.md for full design.
+#include "UsdjpyAsianOpenEngine.hpp"
+// 2026-05-02: XauusdFvgEngine -- 15m FVG engine on XAUUSD. C++ port of
+//   scripts/fvg_pnl_backtest_v3.py (v3 #5 ACCEPTED config). Cleared the
+//   four-gate walk-forward bar at two independent train/test cutoffs
+//   (PF 1.95 / 2.44 OOS). Shadow-only on first deployment regardless of
+//   g_cfg.mode (pinned in engine_init.hpp). Wired into the gold cohort
+//   exclusion gate via tick_gold.hpp::gold_any_open. See
+//   docs/DESIGN_XAUUSD_FVG_ENGINE.md and HANDOFF_FVG_BACKTEST.md.
+#include "XauusdFvgEngine.hpp"
+// LogXauusdFvgCsv.hpp is included here (NOT from XauusdFvgEngine.hpp directly)
+// so the engine header stays usable from the synthetic-trace verifier in
+// backtest/verify_xauusd_fvg.cpp without dragging in the side-channel writer.
+// engine_init.hpp wires the side-channel call inside g_xauusd_fvg.on_close_cb,
+// and that call site needs the writer header visible at compile time.
+#include "LogXauusdFvgCsv.hpp"
 static omega::GoldHybridBracketEngine         g_hybrid_gold;
+static omega::GoldMidScalperEngine            g_gold_midscalper;
+static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
+static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
+static omega::XauusdFvgEngine                 g_xauusd_fvg;
 static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());

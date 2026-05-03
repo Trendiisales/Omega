@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# QUICK_RESTART.ps1  -- v3.3 2026-04-30 PM
+# QUICK_RESTART.ps1  -- v3.5 2026-05-01
 # Service-based restart. Stops the Omega NSSM service, pulls source from GitHub,
 # builds, starts the service, verifies via service status + log hash.
 #
@@ -15,6 +15,43 @@
 #   * Removed duplicate $confirm variable (reused for position check AND process kill)
 #   * Unified on omega_service_stdout.log as the single source of truth
 #   * CFE pre-check uses same log
+#
+# v3.5 (2026-05-01) -- omega-terminal UI auto-build:
+#   * Adds Step [3/4] sub-step that runs `npm ci && npm run build` in
+#     omega-terminal/ before the C++ build. Output goes to
+#     omega-terminal/dist/, which OmegaApiServer.cpp now serves at
+#     http://VPS_IP:7781/. After this script finishes, the new GUI is
+#     reachable in a browser with no separate node/Vite process.
+#   * If npm ci or npm run build fails, the script exits via the same
+#     [RECOVERY] path as a C++ build failure: previous Omega.exe is
+#     restarted, live trading is not interrupted, and the operator
+#     fixes the UI build before retry.
+#   * Final banner updated with a UI URL line so the operator sees
+#     where to point a browser.
+#   * Prerequisite: Node.js + npm installed on PATH. Quick check:
+#       node --version    (need >= 18)
+#       npm  --version
+#     If missing on a fresh VPS:  choco install nodejs-lts
+#   * No change to Step 0/1/2/4, wipe-race retries, recovery flow,
+#     or stale-binary checks. Scope is fully limited to a new sub-step
+#     inside Step 3.
+#
+# v3.4 (2026-05-01) -- multi-branch deploy support:
+#   * Added -Branch parameter (default 'main' for back-compat). All three
+#     hard-coded references to 'main' / 'origin/main' in Step 2 (PULL
+#     SOURCE VIA GIT) now use $Branch / "origin/$Branch":
+#       - git fetch origin $Branch
+#       - git rev-parse "origin/$Branch"
+#       - git reset --hard "origin/$Branch"
+#   * Default behaviour identical to v3.3 (deploys main). To deploy a
+#     feature branch, pass -Branch <name>, e.g.:
+#       .\QUICK_RESTART.ps1 -Branch omega-terminal
+#   * Watchdog implication: OMEGA_WATCHDOG.ps1 invokes this script with no
+#     -Branch arg, so it will continue to deploy main on auto-restart. If
+#     the VPS is intentionally pinned to a non-main branch, either pass
+#     -Branch from the watchdog or merge the branch to main first.
+#   * No change to Step 0/1/3/4, wipe-race retries, recovery flow, or
+#     stale-binary checks. Scope is fully limited to Step 2 git ops.
 #
 # v3.3 (2026-04-30 PM) -- audit-fixes-33 stderr-mangling fix:
 #   * Re-applies the v3.2 wipe-race fix (rolled back at 19d0f93 while an
@@ -84,6 +121,7 @@ param(
     [switch]$SkipVerify,
     [string]$OmegaDir = "C:\Omega",
     [string]$GitHubToken = "",
+    [string]$Branch = "main",
     [int]$StopTimeoutSec = 30,
     [int]$StartupWaitSec = 15,
     [switch]$ForceKill
@@ -165,7 +203,7 @@ $startTime    = Get-Date
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "   OMEGA  |  QUICK RESTART  v3.3" -ForegroundColor Cyan
+Write-Host "   OMEGA  |  QUICK RESTART  v3.5" -ForegroundColor Cyan
 Write-Host "=======================================================" -ForegroundColor Cyan
 
 $modeMatch = Select-String -Path $ConfigSrc -Pattern "^mode\s*=\s*(\S+)" -ErrorAction SilentlyContinue
@@ -359,7 +397,7 @@ Write-Host "[2/4] Pulling source from GitHub..." -ForegroundColor Yellow
 
 Push-Location $OmegaDir
 try {
-    git fetch origin main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    git fetch origin $Branch 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [FATAL] git fetch failed (exit=$LASTEXITCODE)" -ForegroundColor Red
         Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
@@ -368,10 +406,10 @@ try {
         exit 1
     }
 
-    $revParseOut = (git rev-parse origin/main 2>&1)
+    $revParseOut = (git rev-parse "origin/$Branch" 2>&1)
     $revParseExit = $LASTEXITCODE
     if ($revParseExit -ne 0 -or [string]::IsNullOrWhiteSpace($revParseOut)) {
-        Write-Host "  [FATAL] git rev-parse origin/main failed (exit=$revParseExit output='$revParseOut')" -ForegroundColor Red
+        Write-Host "  [FATAL] git rev-parse origin/$Branch failed (exit=$revParseExit output='$revParseOut')" -ForegroundColor Red
         Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
         Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
         Pop-Location
@@ -388,7 +426,7 @@ try {
     $ghSha7 = $ghSha.Substring(0,7)
     Write-Host "  HEAD: $ghSha7" -ForegroundColor Cyan
 
-    git reset --hard origin/main 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    git reset --hard "origin/$Branch" 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [FATAL] git reset --hard failed (exit=$LASTEXITCODE)" -ForegroundColor Red
         Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
@@ -555,6 +593,74 @@ Write-Host ""
 Write-Host "[3/4] Building..." -ForegroundColor Yellow
 Write-Host "  (streaming cmake output -- errors in red, compiling files in gray)" -ForegroundColor DarkCyan
 
+# --- UI BUILD (added v3.5) ----------------------------------------------------
+# Build the omega-terminal React app to omega-terminal/dist/. OmegaApiServer
+# (post 2026-05-01) serves that directory at /, so the UI is reachable at
+# http://VPS_IP:7781/ as soon as the C++ build finishes and the service starts.
+#
+# Failure here exits via the same [RECOVERY] path as a C++ build failure: the
+# previous Omega.exe is restarted so live trading does not stop, and the
+# operator fixes the UI before retry. The UI build is run BEFORE the C++ build
+# because (a) it is faster (~30s vs ~90s), and (b) failing fast on a UI typo
+# avoids a wasted C++ compile.
+$uiDir = "$OmegaDir\omega-terminal"
+if (Test-Path $uiDir) {
+    Write-Host "  --- UI build (omega-terminal) ---" -ForegroundColor DarkCyan
+    $uiStart = Get-Date
+
+    # Sanity: node + npm must be on PATH. If missing, abort + recover.
+    $nodeOk = $null -ne (Get-Command node -ErrorAction SilentlyContinue)
+    $npmOk  = $null -ne (Get-Command npm  -ErrorAction SilentlyContinue)
+    if (-not $nodeOk -or -not $npmOk) {
+        Write-Host "  [FATAL] node/npm not on PATH (node=$nodeOk, npm=$npmOk)" -ForegroundColor Red
+        Write-Host "  Install: choco install nodejs-lts  (then reopen shell)" -ForegroundColor Red
+        Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        exit 1
+    }
+
+    Push-Location $uiDir
+    try {
+        # `npm ci` honours package-lock.json and is reproducible. First run on
+        # a fresh VPS will populate node_modules/ (slow, ~60s); subsequent runs
+        # are fast (~5-10s) thanks to npm's module cache.
+        & npm ci 2>&1 | ForEach-Object { Write-Host "    [npm ci] $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  [FATAL] npm ci failed (exit=$LASTEXITCODE)" -ForegroundColor Red
+            Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+            Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            Pop-Location
+            exit 1
+        }
+
+        & npm run build 2>&1 | ForEach-Object { Write-Host "    [vite] $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  [FATAL] npm run build failed (exit=$LASTEXITCODE)" -ForegroundColor Red
+            Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+            Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            Pop-Location
+            exit 1
+        }
+    } finally {
+        Pop-Location
+    }
+
+    $uiSec = [math]::Round(((Get-Date) - $uiStart).TotalSeconds, 1)
+
+    # Sanity: dist/index.html must exist after build, otherwise serve will 404.
+    $distIndex = "$uiDir\dist\index.html"
+    if (-not (Test-Path $distIndex)) {
+        Write-Host "  [FATAL] vite reported success but $distIndex missing" -ForegroundColor Red
+        Write-Host "  [RECOVERY] Restarting service with previous Omega.exe..." -ForegroundColor Yellow
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        exit 1
+    }
+    Write-Host "  [OK] UI built in ${uiSec}s -> omega-terminal\dist\" -ForegroundColor Green
+} else {
+    Write-Host "  [SKIP] omega-terminal/ not found -- UI build skipped" -ForegroundColor DarkYellow
+}
+
+
 # --- CONFIGURE ---
 $cfgStart = Get-Date
 & $cmakeExe -S $OmegaDir -B $buildDir -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$ghSha7" 2>&1 | ForEach-Object {
@@ -704,6 +810,7 @@ Write-Host "  COMMIT : $ghSha7" -ForegroundColor Yellow
 Write-Host "  BUILT  : $builtAt" -ForegroundColor Yellow
 Write-Host "  MODE   : $mode" -ForegroundColor $modeColor
 Write-Host "  GUI    : http://185.167.119.59:7779" -ForegroundColor Yellow
+Write-Host "  UI     : http://185.167.119.59:7781  (omega-terminal)" -ForegroundColor Yellow
 Write-Host "########################################################" -ForegroundColor Yellow
 Write-Host ""
 

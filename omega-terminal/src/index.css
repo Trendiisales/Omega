@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Omega Terminal — base styles
+ * 2026-05-01: replaced the original amber-on-black aesthetic with the same
+ * Bloomberg-style palette as the existing Omega GUI on :7779 (source:
+ * include/OmegaIndexHtml.hpp). Off-white text on near-black, with gold
+ * accents for highlights and green/red for up/down market data.
+ *
+ * The amber-X Tailwind classes used throughout the components have been
+ * remapped in tailwind.config.js, so this file just sets the page chrome
+ * and exposes CSS variables that future panels (Step 3+) can use directly
+ * for ticker rows, bid/ask cells, P&L numbers, etc.
+ * --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+  font-family: 'JetBrains Mono', 'Fira Code', 'IBM Plex Mono', Menlo, Consolas,
+    ui-monospace, SFMono-Regular, monospace;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* ─── Omega palette (mirrors include/OmegaIndexHtml.hpp ::root) ────────── */
+  --bg0:    #05080d;
+  --bg1:    #090d14;
+  --bg2:    #0d1219;
+  --bg3:    #111720;
+  --glass:  rgba(11, 16, 26, 0.88);
+  --border: rgba(255, 255, 255, 0.06);
+  --border2: rgba(255, 255, 255, 0.10);
+
+  --t1: #e8edf5; /* primary text (off-white) */
+  --t2: #8a9ab8; /* secondary text (muted blue-gray) */
+  --t3: #4a5878; /* tertiary text (dim) */
+
+  --gold:     #f5c842;
+  --gold2:    #ffe680;
+  --gold-dim: rgba(245, 200, 66, 0.12);
+
+  --green: #00d97e;       /* UP / profit / LIVE / bid */
+  --red:   #ff3355;       /* DOWN / loss / ask */
+  --amber: #ff8800;       /* shadow-mode badge / warning */
+  --blue:  #2ea8ff;       /* info / brand chrome */
+  --purple: #a47fff;
+  --cyan:  #00c8f0;
+  --teal:  #00e0b0;
+
+  --green-dim: rgba(0, 217, 126, 0.12);
+  --red-dim:   rgba(255, 51, 85, 0.10);
+  --amber-dim: rgba(255, 136, 0, 0.10);
+  --blue-dim:  rgba(46, 168, 255, 0.10);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg0);
+  color: var(--t1);
+  /* Same subtle radial vignette as Omega — gives depth without being noisy. */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(46, 168, 255, 0.06), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(245, 200, 66, 0.04), transparent);
+}
+
+/* Selection: gold background, near-black text — matches Omega's gold accent. */
+::selection {
+  background: var(--gold);
+  color: var(--bg0);
+}
+
+/* Scrollbar: subtle white tint, matches Omega's terminal feel. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) var(--bg0);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--bg0);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  border: 2px solid var(--bg0);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ---------------------------------------------------------------------------
+ * Semantic utility classes for market-data display.
+ * Step 3 panels (CC, ENG, POS) use these for symbol/bid/ask/P&L cells so
+ * the green/red conventions live in one place. New components can also use
+ * Tailwind's `text-up` / `text-down` classes (see tailwind.config.js), but
+ * these CSS classes are convenient for non-Tailwind code paths and SVGs.
+ * --------------------------------------------------------------------------- */
+.up,
+.text-up,
+.price-up,
+.bid {
+  color: var(--green);
+}
+
+.down,
+.text-down,
+.price-down,
+.ask {
+  color: var(--red);
+}
+
+.dim {
+  color: var(--t2);
+}
+
+.dimmer {
+  color: var(--t3);
+}
+
+.gold {
+  color: var(--gold);
+}
+
+/* Direction arrows used by ticker rows. */
+.dir-arrow.up   { color: var(--green); }
+.dir-arrow.down { color: var(--red); }

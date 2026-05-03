@@ -43,7 +43,11 @@ static void on_tick_gold(
         g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
         g_candle_flow.has_open_position()       ||  // AUDIT 2026-04-29: CFE open blocks other gold engines (re-enabled)
         // (g_pullback_cont/prem has_open_position gates removed S49 X5 — engine culled)
-        g_ema_cross.has_open_position()              ;  // ECE open blocks other gold engines
+        g_ema_cross.has_open_position()         ||  // ECE open blocks other gold engines
+        // 2026-05-02: XauusdFvgEngine -- per design doc §7.3 + open Q §11.6.
+        // FVG respects gold one-at-a-time AND adds itself to the gate so the
+        // other gold engines will not enter while FVG holds a position.
+        g_xauusd_fvg.has_open_position()             ;
 
     // ?? Trend day detection ???????????????????????????????????????????????
     const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -2161,6 +2165,91 @@ static void on_tick_gold(
             }
         }
     }
+
+    // -- 2026-05-01 SESSION_h: GoldMidScalperEngine dispatch -----------------
+    // Mid-band sister to HybridGold targeting the $20-40 capture zone (range
+    // $8-20 with TP_RR=4 -> TP $18-42). Runs in shadow mode by default --
+    // no FIX orders, only ledger entries via bracket_on_close.
+    //
+    // Tick-feed model identical to HybridGold (FIX 2026-04-07): on_tick is
+    // called on every tick to keep the 300-tick structure window full, even
+    // when can_enter=false. The engine internally short-circuits the new-
+    // entry path when its gates fail.
+    //
+    // Gating: midscalper does NOT add itself to gold_any_open (other engines
+    // can run alongside it freely while it is shadow-only). It IS gated by
+    // gold_can_enter (session/symbol/post-impulse) like the other XAUUSD
+    // engines. Once promoted to live, add g_gold_midscalper.has_open_position()
+    // to gold_any_open above to enforce 1-at-a-time on the live path.
+    {
+        // Position management -- unconditional when live
+        if (g_gold_midscalper.has_open_position()) {
+            g_gold_midscalper.on_tick(bid, ask, now_ms_g,
+                                      gold_can_enter, false, false, 0,
+                                      bracket_on_close,
+                                      g_macro_ctx.gold_slope,
+                                      g_macro_ctx.gold_vacuum_ask,
+                                      g_macro_ctx.gold_vacuum_bid,
+                                      g_macro_ctx.gold_wall_above,
+                                      g_macro_ctx.gold_wall_below,
+                                      g_macro_ctx.gold_l2_real);
+        }
+        // New entry path: same vol-floor logic as HybridGold so the engine
+        // sits out unseeded cold starts. Re-derived locally because the
+        // hybrid_vol_ok variable from the HybridGold block above is out of
+        // scope after that block's closing brace.
+        const double ms_vol_range    = g_gold_stack.vol_range();
+        const bool   ms_vol_unseeded = (ms_vol_range == 0.0);
+        const double ms_vwap         = g_gold_stack.vwap();
+        const double ms_mid          = (bid + ask) * 0.5;
+        const double ms_vwap_disp    = (ms_vwap > 0.0)
+            ? std::fabs(ms_mid - ms_vwap) : 0.0;
+        const bool ms_macro_bypass   = (ms_vwap_disp >= 6.0)
+                                    || (std::fabs(g_gold_stack.ewm_drift()) >= 2.0)
+                                    || crash_impulse_bypass;
+        const bool ms_vol_ok = (ms_vol_range >= 0.5)
+                            || (ms_vol_unseeded && ms_macro_bypass)
+                            || (!ms_vol_unseeded && ms_macro_bypass);
+        const bool midscalper_can_enter =
+            gold_can_enter
+            && ms_vol_ok
+            && !g_gold_midscalper.has_open_position();
+        if (!g_gold_midscalper.has_open_position()) {
+            g_gold_midscalper.on_tick(bid, ask, now_ms_g,
+                                      midscalper_can_enter, false, false, 0,
+                                      bracket_on_close,
+                                      g_macro_ctx.gold_slope,
+                                      g_macro_ctx.gold_vacuum_ask,
+                                      g_macro_ctx.gold_vacuum_bid,
+                                      g_macro_ctx.gold_wall_above,
+                                      g_macro_ctx.gold_wall_below,
+                                      g_macro_ctx.gold_l2_real);
+        }
+        // No FIX-order block here -- shadow mode means PENDING phase auto-fills
+        // when price crosses bracket boundaries (handled inside on_tick).
+        // When promoted to live, copy the [HYBRID-GOLD] ORDERS SENT block from
+        // above and adapt the prefix to [MID-SCALPER-GOLD] ORDERS SENT.
+    }
+
+    // -- 2026-05-02: XauusdFvgEngine dispatch --------------------------------
+    // 15-minute-bar FVG engine on the XAUUSD tick stream. The engine
+    // accumulates ticks into 15-min UTC-aligned OHLC bars internally and
+    // runs FVG detection / mitigation entry on each bar close. Per design
+    // doc §7.3 the engine is fed every tick (so its bar accumulator,
+    // ATR(14) RMA, and tv_mean rolling-20 stay live regardless of whether a
+    // position is open) and gated at entry by gold_can_enter (which already
+    // includes g_xauusd_fvg.has_open_position() via gold_any_open above, so
+    // the engine cannot fire while another gold-cohort engine holds a
+    // position OR when FVG itself is mid-trade -- one-position-at-a-time
+    // across the whole gold cohort, as designed).
+    //
+    // The engine fires omega::TradeRecord through its own on_close_cb wired
+    // in engine_init.hpp -- no second close-callback is plumbed here. We
+    // pass nullptr for the on_close arg below so on_tick falls back to
+    // on_close_cb, mirroring the comment in XauusdFvgEngine::on_tick.
+    g_xauusd_fvg.on_tick(bid, ask, now_ms_g,
+                         gold_can_enter,
+                         nullptr);
 
     // ?? NBM London position management -- ALWAYS runs when position open ??
     // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a

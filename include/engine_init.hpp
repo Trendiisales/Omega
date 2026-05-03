@@ -46,6 +46,55 @@ static void init_engines(const std::string& cfg_path)
     g_iflow_us30.set_shadow_mode(kShadowDefault);
     // Class C (stamped 2026-04-21):
     g_hybrid_gold.shadow_mode  = kShadowDefault;  // GoldHybridBracketEngine
+    // 2026-05-01 SESSION_h: GoldMidScalperEngine -- pinned shadow-only on
+    //   first deployment regardless of g_cfg.mode. New engine, untested in
+    //   live conditions, $20-40 capture zone. Promote to kShadowDefault
+    //   (i.e. follow g_cfg.mode) after a 2-week paper validation showing
+    //   positive expectancy. Until then this line stays as `true` not
+    //   `kShadowDefault`.
+    g_gold_midscalper.shadow_mode = true;
+    // 2026-05-02: EurusdLondonOpenEngine -- pinned shadow-only on first
+    //   deployment regardless of g_cfg.mode. First FX engine since the
+    //   2026-04-06 global FX disable; new engine model (compression-breakout
+    //   with BE-lock + news-blackout + 06-09 UTC session gate, NOT inheriting
+    //   the disabled MacroCrash signal model). Promote to kShadowDefault
+    //   after a 2-week paper validation showing >=30 trades with WR >=35%
+    //   net positive after costs. Until then this line stays as `true`.
+    g_eurusd_london_open.shadow_mode = true;
+    // Cancel callback: matches g_gold_midscalper / g_hybrid_gold pattern. Used
+    //   when PENDING TIMEOUT or one side fills (cancel the loser).
+    g_eurusd_london_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    // 2026-05-02: UsdjpyAsianOpenEngine -- pinned shadow-only on first
+    //   deployment regardless of g_cfg.mode. Asian-session compression bracket
+    //   on USDJPY, 00:00-04:00 UTC (Tokyo open). Pre-sweep S56-inherited
+    //   defaults; USDJPY-specific Kelly analysis from the parallel sweep
+    //   harness should retune before live promotion. Promote to kShadowDefault
+    //   after a 2-week paper validation showing >=30 trades with WR >= 60%
+    //   net positive after costs. Until then this line stays as `true`.
+    g_usdjpy_asian_open.shadow_mode = true;
+    g_usdjpy_asian_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    // 2026-05-02: XauusdFvgEngine -- pinned shadow-only on first deployment
+    //   regardless of g_cfg.mode. FVG-on-15m engine for XAUUSD per
+    //   docs/DESIGN_XAUUSD_FVG_ENGINE.md  §7.1 / HANDOFF_FVG_BACKTEST.md.
+    //   Backtest expects PF 1.5-1.8, ~50% WR, ~25 trades/month. Promote to
+    //   kShadowDefault after a 3-month shadow run that clears the four-gate
+    //   quarterly re-validation (n>=50, PF>=1.2, PF>All, cost-stress 2x
+    //   PF>=1.0). Until then this line stays as `true`. cancel_fn is wired
+    //   for API parity with the cohort -- the FVG engine does not place
+    //   pending stop orders in v1, so the callback is unused.
+    //   on_close_cb routes closed trades through (a) the standard ledger
+    //   path via handle_closed_trade(tr) AND (b) a side-channel
+    //   live_xauusd_fvg.csv writer for the quarterly v3 re-feed
+    //   (omega::xauusd_fvg::log_xauusd_fvg_csv pulls score_at_entry /
+    //   atr_at_entry / session / fvg_age_bars / bars_held from the engine's
+    //   last_extras() snapshot, which is set BEFORE on_close fires inside
+    //   _close()).
+    g_xauusd_fvg.shadow_mode = true;
+    g_xauusd_fvg.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    g_xauusd_fvg.on_close_cb = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);                              // standard ledger path
+        omega::xauusd_fvg::log_xauusd_fvg_csv(tr, g_xauusd_fvg);
+    };
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -1772,5 +1821,348 @@ static void init_engines(const std::string& cfg_path)
             std::cout.flush();
         }
     }
+
+    // ── Step 2 Omega Terminal: register engines with g_engines ──────────────
+    // Each lambda returns the engine's current snapshot for OmegaApiServer's
+    // GET /api/v1/omega/engines route. Lambdas read only scalar fields off
+    // the engine globals -- no locks acquired, no engine state mutated.
+    //
+    // 14 engines registered, mapping STEP2_OPENER's "HBI, HBG, MCE, CFE,
+    // Tsmom V1+V2, Donchian, EmaPullback, TrendRider, RSI variants" to actual
+    // globals declared in include/globals.hpp:
+    //
+    //   HBG          -> g_hybrid_gold
+    //   HBI x4       -> g_hybrid_sp / g_hybrid_nq / g_hybrid_us30 / g_hybrid_nas100
+    //   MCE          -> g_macro_crash
+    //   CFE          -> g_candle_flow
+    //   Tsmom V1     -> g_tsmom
+    //   Tsmom V2     -> g_tsmom_v2
+    //   Donchian     -> g_donchian
+    //   EmaPullback  -> g_ema_pullback
+    //   TrendRider   -> g_trend_rider
+    //   RSI Reversal -> g_rsi_reversal
+    //   RSI Extreme  -> g_rsi_extreme
+    //
+    // Step 3: snapshot lambdas now read from g_engine_last (a side-table written
+    // by handle_closed_trade in include/trade_lifecycle.hpp). Each registry name
+    // is mapped to one or more trade-record engine strings -- bracket engines
+    // use a single literal (e.g. "HybridBracketGold"), cell-based engines use
+    // a prefix terminator like "Tsmom_" that matches every cell id ("Tsmom_H1_long",
+    // "Tsmom_H4_short", ...) the engine emits via tr.engine = cell_id.
+    //
+    // The HBI four-pack (HybridSP/NQ/US30/NAS100) all stamp tr.engine =
+    // "HybridBracketIndex" today, so until the engine differentiates by symbol
+    // the four registry entries will show the SAME last_signal_ts / last_pnl.
+    // Documented as a known limitation in EngineLastRegistry.hpp.
+    auto reg = [](const char* name,
+                  bool enabled,
+                  bool shadow_mode,
+                  std::initializer_list<const char*> trade_engine_patterns)
+        -> omega::EngineSnapshot
+    {
+        omega::EngineSnapshot s;
+        s.name    = name;
+        s.enabled = enabled;
+        s.mode    = shadow_mode ? "SHADOW" : "LIVE";
+        s.state   = enabled ? "RUNNING" : "IDLE";
+        const auto last = g_engine_last.get_latest_for_any(trade_engine_patterns);
+        s.last_signal_ts = last.last_ts_ms;
+        s.last_pnl       = last.last_pnl;
+        return s;
+    };
+
+    g_engines.register_engine("HybridGold",
+        [reg]{ return reg("HybridGold",
+                          true,
+                          g_hybrid_gold.shadow_mode,
+                          {"HybridBracketGold"}); });
+    // 2026-05-01 SESSION_h: register GoldMidScalper for /api/v1/omega/engines.
+    //   Shadow-stamped (last_signal_ts/last_pnl come from
+    //   g_engine_last lookup against tr.engine="MidScalperGold").
+    g_engines.register_engine("MidScalperGold",
+        [reg]{ return reg("MidScalperGold",
+                          true,
+                          g_gold_midscalper.shadow_mode,
+                          {"MidScalperGold"}); });
+    // 2026-05-02: register EurusdLondonOpen for /api/v1/omega/engines.
+    //   Shadow-stamped initially. last_signal_ts/last_pnl resolved via
+    //   g_engine_last lookup against tr.engine="EurusdLondonOpen".
+    g_engines.register_engine("EurusdLondonOpen",
+        [reg]{ return reg("EurusdLondonOpen",
+                          true,
+                          g_eurusd_london_open.shadow_mode,
+                          {"EurusdLondonOpen"}); });
+    // 2026-05-02: register UsdjpyAsianOpen for /api/v1/omega/engines.
+    //   Same shadow-stamped pattern as EurusdLondonOpen.
+    g_engines.register_engine("UsdjpyAsianOpen",
+        [reg]{ return reg("UsdjpyAsianOpen",
+                          true,
+                          g_usdjpy_asian_open.shadow_mode,
+                          {"UsdjpyAsianOpen"}); });
+    // 2026-05-02: register XauusdFvg for /api/v1/omega/engines.
+    //   Shadow-stamped initially (pinned in init block above). last_signal_ts
+    //   / last_pnl resolved via g_engine_last lookup against
+    //   tr.engine="XauusdFvg" (set in XauusdFvgEngine::_close).
+    g_engines.register_engine("XauusdFvg",
+        [reg]{ return reg("XauusdFvg",
+                          true,
+                          g_xauusd_fvg.shadow_mode,
+                          {"XauusdFvg"}); });
+    g_engines.register_engine("HybridSP",
+        [reg]{ return reg("HybridSP",
+                          true,
+                          g_hybrid_sp.shadow_mode,
+                          {"HybridBracketIndex"}); });
+    g_engines.register_engine("HybridNQ",
+        [reg]{ return reg("HybridNQ",
+                          true,
+                          g_hybrid_nq.shadow_mode,
+                          {"HybridBracketIndex"}); });
+    g_engines.register_engine("HybridUS30",
+        [reg]{ return reg("HybridUS30",
+                          true,
+                          g_hybrid_us30.shadow_mode,
+                          {"HybridBracketIndex"}); });
+    g_engines.register_engine("HybridNAS100",
+        [reg]{ return reg("HybridNAS100",
+                          true,
+                          g_hybrid_nas100.shadow_mode,
+                          {"HybridBracketIndex"}); });
+    g_engines.register_engine("MacroCrash",
+        [reg]{ return reg("MacroCrash",
+                          g_macro_crash.enabled,
+                          g_macro_crash.shadow_mode,
+                          {"MacroCrash"}); });
+    g_engines.register_engine("CandleFlow",
+        [reg]{ return reg("CandleFlow",
+                          true,
+                          g_candle_flow.shadow_mode,
+                          {"CandleFlowEngine"}); });
+    g_engines.register_engine("Tsmom",
+        [reg]{ return reg("Tsmom",
+                          g_tsmom.enabled,
+                          g_tsmom.shadow_mode,
+                          {"Tsmom_"}); });
+    g_engines.register_engine("TsmomV2",
+        [reg]{ return reg("TsmomV2",
+                          g_tsmom_v2.enabled,
+                          g_tsmom_v2.shadow_mode,
+                          {"TsmomV2_", "Cell_"}); });
+    g_engines.register_engine("Donchian",
+        [reg]{ return reg("Donchian",
+                          g_donchian.enabled,
+                          g_donchian.shadow_mode,
+                          {"Donchian_"}); });
+    g_engines.register_engine("EmaPullback",
+        [reg]{ return reg("EmaPullback",
+                          g_ema_pullback.enabled,
+                          g_ema_pullback.shadow_mode,
+                          {"EmaPullback_"}); });
+    g_engines.register_engine("TrendRider",
+        [reg]{ return reg("TrendRider",
+                          g_trend_rider.enabled,
+                          g_trend_rider.shadow_mode,
+                          {"TrendRider_"}); });
+    g_engines.register_engine("RSIReversal",
+        [reg]{ return reg("RSIReversal",
+                          g_rsi_reversal.enabled,
+                          g_rsi_reversal.shadow_mode,
+                          {"RSIReversal"}); });
+    g_engines.register_engine("RSIExtreme",
+        [reg]{ return reg("RSIExtreme",
+                          true,
+                          g_rsi_extreme.shadow_mode,
+                          {"RSIExtremeTurn"}); });
+    std::cout << "[OmegaApi] g_engines registered ("
+              << g_engines.snapshot_all().size() << " engines)\n";
+    std::cout.flush();
+
+    // ── Step 3: open-position sources for /api/v1/omega/positions ─────────
+    // HBG only this session. Lambda captures g_hybrid_gold and g_last_tick_bid
+    // by reference (both live in this TU). Reading pos fields without HBG's
+    // tick-path mutex is documented as an accepted small race window in
+    // OpenPositionRegistry.hpp.
+    g_open_positions.register_source("HybridGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_hybrid_gold.has_open_position()) return out;
+
+            const auto& p = g_hybrid_gold.pos;
+            const double mult  = tick_value_multiplier(std::string("XAUUSD"));
+
+            // Last known XAUUSD bid -> "current" price. ask is not separately
+            // cached; bid is close enough for an open-position display. If
+            // not available, fall back to entry so unrealized_pnl reads 0.
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            // pos.mfe/mae are tracked in price-points only on HBG; convert to
+            // USD using the same (size * mult) factor as unrealized_pnl above.
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "HybridGold";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-01 SESSION_h: GoldMidScalper open-position source (parallel to HybridGold).
+    g_open_positions.register_source("MidScalperGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_midscalper.has_open_position()) return out;
+
+            const auto& p = g_gold_midscalper.pos;
+            const double mult  = tick_value_multiplier(std::string("XAUUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "MidScalperGold";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-02: EurusdLondonOpen open-position source (parallel to MidScalperGold).
+    //   Mirrors the pattern above, with EURUSD tick-value lookup. tick_value_multiplier
+    //   on EURUSD returns the per-pip USD value normalised for unit price moves --
+    //   for EURUSD this is typically 100000 (1.0 standard lot) or 10000 at 0.10 lot,
+    //   resolved inside tick_value_multiplier from g_sym_cfg / FIX defaults.
+    g_open_positions.register_source("EurusdLondonOpen",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_eurusd_london_open.has_open_position()) return out;
+
+            const auto& p = g_eurusd_london_open.pos;
+            const double mult  = tick_value_multiplier(std::string("EURUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("EURUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "EURUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "EurusdLondonOpen";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-02: UsdjpyAsianOpen open-position source (parallel to EurusdLondonOpen).
+    //   Mirrors the EURUSD pattern with USDJPY tick-value lookup.
+    //   tick_value_multiplier on USDJPY returns 100000.0/g_usdjpy_mid (live JPY/USD
+    //   rate) so unrealized PnL tracks the live conversion -- avoids the static
+    //   approximation drifting ~8% as the rate moves between 140-160.
+    g_open_positions.register_source("UsdjpyAsianOpen",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_usdjpy_asian_open.has_open_position()) return out;
+
+            const auto& p = g_usdjpy_asian_open.pos;
+            const double mult  = tick_value_multiplier(std::string("USDJPY"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("USDJPY");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "USDJPY";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "UsdjpyAsianOpen";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-02: XauusdFvg open-position source.
+    //   tick_value_multiplier on XAUUSD returns 100 USD per price-point per
+    //   lot (per OmegaTradeLedger.hpp:88 / SymbolConfig). Unrealized PnL
+    //   tracks the live mid relative to the gross entry boundary; the engine
+    //   stores entry as zone_high/low (gross), entry_with_cost separately.
+    g_open_positions.register_source("XauusdFvg",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xauusd_fvg.has_open_position()) return out;
+
+            const auto& p = g_xauusd_fvg.m_pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir  = p.is_long ? 1.0 : -1.0;
+            const double unrl = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "XauusdFvg";
+            out.push_back(ps);
+            return out;
+        });
+    std::cout << "[OmegaApi] g_open_positions sources registered (5 sources: HybridGold, MidScalperGold, EurusdLondonOpen, UsdjpyAsianOpen, XauusdFvg)\n";
+    std::cout.flush();
+
+    // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
+    // OmegaApiServer's equity-walk default of 10000.0 matches the schema
+    // default in include/omega_types.hpp; here we override it with the live
+    // config so the absolute equity values track the user's account.
+    omega::set_equity_anchor(g_cfg.account_equity);
+    std::cout << "[OmegaApi] equity anchor set to "
+              << g_cfg.account_equity << "\n";
+    std::cout.flush();
 }
 
