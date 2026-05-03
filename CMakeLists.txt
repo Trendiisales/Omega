@@ -650,6 +650,46 @@ else()
     )
 endif()
 
+# =============================================================================
+# verify_xauusd_fvg -- synthetic-trace verifier for XauusdFvgEngine.
+#                     2026-05-02 with the §7 integration of the FVG engine.
+#
+# Replays bars_XAUUSD_15min_*.csv (pre-flattened from the original .pkl by
+# scripts/dump_bars_to_csv.py) through omega::XauusdFvgEngine and asserts
+# row-for-row match against trades_top.csv produced by
+# scripts/fvg_pnl_backtest_v3.py.
+#
+# Self-contained: no OpenSSL / no libcurl / no FIX / no time-shim. Compiles
+# with -DOMEGA_BACKTEST so the engine's g_macroDetector / g_news_blackout
+# call sites compile out cleanly.
+#
+# Build:  cmake --build build --target verify_xauusd_fvg --config Release
+# Run:    ./build/verify_xauusd_fvg <bars.csv> <trades_top.csv>
+# =============================================================================
+add_executable(verify_xauusd_fvg
+    backtest/verify_xauusd_fvg.cpp
+)
+target_include_directories(verify_xauusd_fvg PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+if(MSVC)
+    target_compile_options(verify_xauusd_fvg PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+    )
+    target_compile_definitions(verify_xauusd_fvg PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(verify_xauusd_fvg PRIVATE
+        -O2 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+    )
+    target_compile_definitions(verify_xauusd_fvg PRIVATE OMEGA_BACKTEST)
+endif()
+
 message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
@@ -670,4 +710,5 @@ else()
 endif()
 message(STATUS "OmegaEdgeFinderExtract: standalone (no OpenSSL) [S51 X3.4]")
 message(STATUS "OmegaEdgeFinderTest:    standalone (no OpenSSL) [S51 X3.4]")
+message(STATUS "verify_xauusd_fvg:      standalone (no OpenSSL) [XauusdFvg synthetic-trace verifier]")
 message(STATUS "========================================")

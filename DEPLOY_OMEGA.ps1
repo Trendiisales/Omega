@@ -152,10 +152,56 @@ if (Test-Path "$OmegaDir\build") {
 }
 New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
 Set-Location "$OmegaDir\build"
+# Resolve cmake.exe. 2026-05-03 hardening: the previously hardcoded
+#   C:\vcpkg\downloads\tools\cmake-3.31.10-windows\...\cmake.exe
+# is brittle -- it disappears whenever vcpkg upgrades or wipes its
+# downloads cache (observed on the VPS this date: command not found
+# error during deploy, build aborted). Mirror the vcpkg toolchain
+# autodetect pattern from CMakeLists.txt lines 37-77.
+#
+# Probe order (first hit wins):
+#   1. Original pinned vcpkg path (fastest happy-path on intact hosts)
+#   2. Standalone CMake installer
+#   3. Visual Studio 2022 (Community / BuildTools / Pro / Enterprise) bundled cmake
+#   4. cmake on PATH (Get-Command)
+#   5. Glob the vcpkg downloads/tools tree for any cmake-* version
+# If nothing is found, fail loud with explicit install commands.
+$cmakeCandidates = @(
+    'C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe',
+    'C:\Program Files\CMake\bin\cmake.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
+    'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+)
+$cmakeExe = $null
+foreach ($candidate in $cmakeCandidates) {
+    if (Test-Path $candidate) { $cmakeExe = $candidate; break }
+}
+if (-not $cmakeExe) {
+    $pathCmake = Get-Command cmake -ErrorAction SilentlyContinue
+    if ($pathCmake) { $cmakeExe = $pathCmake.Source }
+}
+if (-not $cmakeExe -and (Test-Path 'C:\vcpkg\downloads\tools')) {
+    $vcpkgGlob = Get-ChildItem -Path 'C:\vcpkg\downloads\tools' -Recurse -Filter 'cmake.exe' `
+        -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\cmake-\d' } |
+        Select-Object -First 1
+    if ($vcpkgGlob) { $cmakeExe = $vcpkgGlob.FullName }
+}
+if (-not $cmakeExe) {
+    Write-Host "      [FAIL] cmake.exe not found in any known location." -ForegroundColor Red
+    Write-Host "      [FAIL] Install via ONE of the following:" -ForegroundColor Red
+    Write-Host "             vcpkg:      C:\vcpkg\vcpkg\vcpkg.exe install vcpkg-cmake" -ForegroundColor Red
+    Write-Host "             choco:      choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'" -ForegroundColor Red
+    Write-Host "             standalone: https://cmake.org/download/ (.msi; tick 'Add to PATH')" -ForegroundColor Red
+    Write-Host "             VS2022:     Install 'C++ CMake tools for Windows' workload" -ForegroundColor Red
+    exit 1
+}
+Write-Host "      [INFO] cmake = $cmakeExe" -ForegroundColor Cyan
+
 $savedPrefCmake = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 if ($needsReconfigure) {
-    $cmakeExe = 'C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe'
     & $cmakeExe .. -DCMAKE_BUILD_TYPE=Release "-DOMEGA_FORCE_GIT_HASH=$sourceHashShort" 2>&1 | Out-Null
 } else {
     Write-Host "      [INFO] Using existing CMake cache -- incremental build" -ForegroundColor Cyan

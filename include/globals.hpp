@@ -339,10 +339,25 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   costs. Wired in tick_fx.hpp::on_tick_usdjpy() dispatch block. See
 //   docs/SESSION_2026-05-02_USDJPY_ASIAN_OPEN_HANDOFF.md for full design.
 #include "UsdjpyAsianOpenEngine.hpp"
+// 2026-05-02: XauusdFvgEngine -- 15m FVG engine on XAUUSD. C++ port of
+//   scripts/fvg_pnl_backtest_v3.py (v3 #5 ACCEPTED config). Cleared the
+//   four-gate walk-forward bar at two independent train/test cutoffs
+//   (PF 1.95 / 2.44 OOS). Shadow-only on first deployment regardless of
+//   g_cfg.mode (pinned in engine_init.hpp). Wired into the gold cohort
+//   exclusion gate via tick_gold.hpp::gold_any_open. See
+//   docs/DESIGN_XAUUSD_FVG_ENGINE.md and HANDOFF_FVG_BACKTEST.md.
+#include "XauusdFvgEngine.hpp"
+// LogXauusdFvgCsv.hpp is included here (NOT from XauusdFvgEngine.hpp directly)
+// so the engine header stays usable from the synthetic-trace verifier in
+// backtest/verify_xauusd_fvg.cpp without dragging in the side-channel writer.
+// engine_init.hpp wires the side-channel call inside g_xauusd_fvg.on_close_cb,
+// and that call site needs the writer header visible at compile time.
+#include "LogXauusdFvgCsv.hpp"
 static omega::GoldHybridBracketEngine         g_hybrid_gold;
 static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
 static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
+static omega::XauusdFvgEngine                 g_xauusd_fvg;
 static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());

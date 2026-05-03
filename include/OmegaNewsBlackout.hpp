@@ -421,7 +421,15 @@ private:
             t.tm_year = std::stoi(d.substr(0,4)) - 1900;
             t.tm_mon  = std::stoi(d.substr(5,2)) - 1;
             t.tm_mday = std::stoi(d.substr(8,2));
+            // Cross-platform UTC mktime (mirrors the #ifdef block at line 179
+            // above) -- _mkgmtime is Windows-only; timegm is the POSIX/macOS
+            // equivalent. Without this branch the file fails to compile on
+            // the Mac verifier build.
+#ifdef _WIN32
             return (int64_t)_mkgmtime(&t);
+#else
+            return (int64_t)timegm(&t);
+#endif
         }
         return 0;
     }

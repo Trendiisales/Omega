@@ -43,7 +43,11 @@ static void on_tick_gold(
         g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
         g_candle_flow.has_open_position()       ||  // AUDIT 2026-04-29: CFE open blocks other gold engines (re-enabled)
         // (g_pullback_cont/prem has_open_position gates removed S49 X5 — engine culled)
-        g_ema_cross.has_open_position()              ;  // ECE open blocks other gold engines
+        g_ema_cross.has_open_position()         ||  // ECE open blocks other gold engines
+        // 2026-05-02: XauusdFvgEngine -- per design doc §7.3 + open Q §11.6.
+        // FVG respects gold one-at-a-time AND adds itself to the gate so the
+        // other gold engines will not enter while FVG holds a position.
+        g_xauusd_fvg.has_open_position()             ;
 
     // ?? Trend day detection ???????????????????????????????????????????????
     const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -2226,6 +2230,26 @@ static void on_tick_gold(
         // When promoted to live, copy the [HYBRID-GOLD] ORDERS SENT block from
         // above and adapt the prefix to [MID-SCALPER-GOLD] ORDERS SENT.
     }
+
+    // -- 2026-05-02: XauusdFvgEngine dispatch --------------------------------
+    // 15-minute-bar FVG engine on the XAUUSD tick stream. The engine
+    // accumulates ticks into 15-min UTC-aligned OHLC bars internally and
+    // runs FVG detection / mitigation entry on each bar close. Per design
+    // doc §7.3 the engine is fed every tick (so its bar accumulator,
+    // ATR(14) RMA, and tv_mean rolling-20 stay live regardless of whether a
+    // position is open) and gated at entry by gold_can_enter (which already
+    // includes g_xauusd_fvg.has_open_position() via gold_any_open above, so
+    // the engine cannot fire while another gold-cohort engine holds a
+    // position OR when FVG itself is mid-trade -- one-position-at-a-time
+    // across the whole gold cohort, as designed).
+    //
+    // The engine fires omega::TradeRecord through its own on_close_cb wired
+    // in engine_init.hpp -- no second close-callback is plumbed here. We
+    // pass nullptr for the on_close arg below so on_tick falls back to
+    // on_close_cb, mirroring the comment in XauusdFvgEngine::on_tick.
+    g_xauusd_fvg.on_tick(bid, ask, now_ms_g,
+                         gold_can_enter,
+                         nullptr);
 
     // ?? NBM London position management -- ALWAYS runs when position open ??
     // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a

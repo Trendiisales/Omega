@@ -67,6 +67,28 @@ static void init_engines(const std::string& cfg_path)
     //   net positive after costs. Until then this line stays as `true`.
     g_usdjpy_asian_open.shadow_mode = true;
     g_usdjpy_asian_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    // 2026-05-02: XauusdFvgEngine -- pinned shadow-only on first deployment
+    //   regardless of g_cfg.mode. FVG-on-15m engine for XAUUSD per
+    //   docs/DESIGN_XAUUSD_FVG_ENGINE.md  §7.1 / HANDOFF_FVG_BACKTEST.md.
+    //   Backtest expects PF 1.5-1.8, ~50% WR, ~25 trades/month. Promote to
+    //   kShadowDefault after a 3-month shadow run that clears the four-gate
+    //   quarterly re-validation (n>=50, PF>=1.2, PF>All, cost-stress 2x
+    //   PF>=1.0). Until then this line stays as `true`. cancel_fn is wired
+    //   for API parity with the cohort -- the FVG engine does not place
+    //   pending stop orders in v1, so the callback is unused.
+    //   on_close_cb routes closed trades through (a) the standard ledger
+    //   path via handle_closed_trade(tr) AND (b) a side-channel
+    //   live_xauusd_fvg.csv writer for the quarterly v3 re-feed
+    //   (omega::xauusd_fvg::log_xauusd_fvg_csv pulls score_at_entry /
+    //   atr_at_entry / session / fvg_age_bars / bars_held from the engine's
+    //   last_extras() snapshot, which is set BEFORE on_close fires inside
+    //   _close()).
+    g_xauusd_fvg.shadow_mode = true;
+    g_xauusd_fvg.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    g_xauusd_fvg.on_close_cb = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);                              // standard ledger path
+        omega::xauusd_fvg::log_xauusd_fvg_csv(tr, g_xauusd_fvg);
+    };
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -1867,6 +1889,15 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_usdjpy_asian_open.shadow_mode,
                           {"UsdjpyAsianOpen"}); });
+    // 2026-05-02: register XauusdFvg for /api/v1/omega/engines.
+    //   Shadow-stamped initially (pinned in init block above). last_signal_ts
+    //   / last_pnl resolved via g_engine_last lookup against
+    //   tr.engine="XauusdFvg" (set in XauusdFvgEngine::_close).
+    g_engines.register_engine("XauusdFvg",
+        [reg]{ return reg("XauusdFvg",
+                          true,
+                          g_xauusd_fvg.shadow_mode,
+                          {"XauusdFvg"}); });
     g_engines.register_engine("HybridSP",
         [reg]{ return reg("HybridSP",
                           true,
@@ -2077,7 +2108,42 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
-    std::cout << "[OmegaApi] g_open_positions sources registered (4 sources: HybridGold, MidScalperGold, EurusdLondonOpen, UsdjpyAsianOpen)\n";
+    // 2026-05-02: XauusdFvg open-position source.
+    //   tick_value_multiplier on XAUUSD returns 100 USD per price-point per
+    //   lot (per OmegaTradeLedger.hpp:88 / SymbolConfig). Unrealized PnL
+    //   tracks the live mid relative to the gross entry boundary; the engine
+    //   stores entry as zone_high/low (gross), entry_with_cost separately.
+    g_open_positions.register_source("XauusdFvg",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xauusd_fvg.has_open_position()) return out;
+
+            const auto& p = g_xauusd_fvg.m_pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir  = p.is_long ? 1.0 : -1.0;
+            const double unrl = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "XauusdFvg";
+            out.push_back(ps);
+            return out;
+        });
+    std::cout << "[OmegaApi] g_open_positions sources registered (5 sources: HybridGold, MidScalperGold, EurusdLondonOpen, UsdjpyAsianOpen, XauusdFvg)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
