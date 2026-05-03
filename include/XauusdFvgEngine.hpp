@@ -1055,7 +1055,10 @@ private:
 
         // Snapshot under lock.
         const bool   is_long_         = m_pos.is_long;
-        const double entry_           = m_pos.entry;
+        // (m_pos.entry is the gross entry; not snapshotted here because the
+        // PnL math below uses entry_w_cost_ exclusively. The previous
+        // `const double entry_ = m_pos.entry;` capture was dead code and
+        // tripped MSVC C4189 under /W4 /WX in the production build.)
         const double entry_w_cost_    = m_pos.entry_with_cost;
         const double sl_              = m_pos.sl;
         const double tp_              = m_pos.tp;
