@@ -255,5 +255,36 @@ positions still open at end-of-run. Live VPS unaffected.
 
 ---
 
+## Bug #5 — IndexHybridBracketEngine `m_pending_blocked_since` not reset
+
+**What happened.** During Bug #3 / Bug #4 validation in
+`IndexBacktest.cpp`, repeated ARM/FIRE/CANCEL loops printed
+`PENDING CANCEL blocked=836084s -- cancelling orders` (9+ days). Every
+new FIRE attempt entered PENDING with `can_enter=false` for one tick and
+immediately tripped the 15-second grace timer because the elapsed reading
+referenced an old timestamp set on a much earlier tick.
+
+**Why it happened.** `IndexHybridBracketEngine::on_tick()` sets
+`m_pending_blocked_since = now_s` the first time it sees PENDING +
+`!can_enter` (line 320). Production resets this back to 0 at line 328
+(`else { m_pending_blocked_since = 0; }`) but only inside the same tick
+when `can_enter` flips back to true. After a `cancel_both(); reset_to_idle()`
+cycle, the engine returns to IDLE -> ARMED -> PENDING but
+`m_pending_blocked_since` is never wiped because `reset_to_idle()` did not
+include it in the reset list (member missed when the field was added at
+[BUG-5 FIX] in 2026-04 grace-period work).
+
+**Severity.** Production: low — `base_can_*` rarely goes false in steady
+state, so the grace timer mostly resets via the `else` branch on the next
+clean tick. Backtest: high — combined with Bug #4 wall-clock issues, this
+makes every FIRE attempt read a multi-day-stale block timestamp.
+
+**Fix (`audit-fixes-34`, 2026-05-03).** Add `m_pending_blocked_since = 0;`
+to `reset_to_idle()` in `include/IndexHybridBracketEngine.hpp`. One-line
+change; no behavioural impact in production beyond the original BUG-5 FIX
+intent.
+
+---
+
 Once the VPS is running `49d8151b` or later, these patterns cannot recur for
 MCE and HBG. The index whipsaw fix lands next session.

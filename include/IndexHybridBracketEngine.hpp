@@ -574,6 +574,13 @@ private:
         phase = Phase::IDLE;
         bracket_high = bracket_low = range = 0.0;
         m_inside_ticks = 0;
+        // Bug #5 (KNOWN_BUGS.md, 2026-05-03) -- reset the PENDING-blocked
+        // grace timer here so the next ARM cycle starts with a clean window.
+        // Without this, a stale m_pending_blocked_since persists across
+        // cancel/reset cycles and the next FIRE -> PENDING that briefly sees
+        // can_enter=false reads "blocked since the very first tick", which
+        // immediately exceeds the 15s grace and cancels the order.
+        m_pending_blocked_since = 0;
         pos = OpenPos{};
         pending_long_clOrdId.clear();
         pending_short_clOrdId.clear();
