@@ -333,8 +333,12 @@ public:
             }
             if (shadow_mode) {
                 // S51 1A.1.a: pass real spread to populate pos.spread_at_entry.
-                if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot, spread); return; }
-                if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot, spread); return; }
+                // 2026-05-03: pass now_ms so entry_ts tracks the tick-stream
+                // timestamp, not wall-clock. Required for backtest replay
+                // where tick-time != wall-clock; otherwise held_s goes
+                // negative and trail-arm guards never satisfy.
+                if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot, spread, now_ms); return; }
+                if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot, spread, now_ms); return; }
             }
             return;
         }
@@ -491,7 +495,8 @@ public:
     //   shadow-mode call sites in on_tick() now pass (ask - bid) so the value
     //   reaches the closing TradeRecord via pos.spread_at_entry.
     void confirm_fill(bool is_long, double fill_px, double fill_lot,
-                      double spread_at_fill = 0.0) noexcept {
+                      double spread_at_fill = 0.0,
+                      int64_t now_ms_at_fill = 0) noexcept {
         if (phase != Phase::PENDING) return;
         cancel_losing_side(is_long);
 
@@ -508,7 +513,14 @@ public:
         pos.mae             = 0.0;   // S51: reset adverse-excursion tracker
         pos.spread_at_entry = spread_at_fill;  // S51: stash for tr.spreadAtEntry at close
         pos.be_locked       = false;
-        pos.entry_ts        = static_cast<int64_t>(std::time(nullptr));
+        // 2026-05-03: prefer now_ms_at_fill (tick-stream timestamp) over
+        // std::time(nullptr) (wall-clock). Required for backtest replay
+        // where tick-time != wall-clock. Production passes now_ms from the
+        // tick handler; legacy callers that don't pass it (default 0) fall
+        // back to wall-clock.
+        pos.entry_ts        = (now_ms_at_fill > 0)
+            ? (now_ms_at_fill / 1000)
+            : static_cast<int64_t>(std::time(nullptr));
         phase               = Phase::LIVE;
 
         std::cout << "[HYBRID-" << cfg_.symbol << "] FILL "

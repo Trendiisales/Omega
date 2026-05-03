@@ -423,6 +423,41 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
 )
 
 # =============================================================================
+# IndexBacktest -- NAS100 cross-engine backtest exercising the index engines
+# (IndexFlow + IndexHybridBracket + IndexMacroCrash) and the Bug #3 cross-
+# engine gate from include/tick_indices.hpp / include/globals.hpp.
+#
+# Reads HistData NSXUSD tick CSVs directly. Self-contained.
+#
+# Build:  cmake --build build --target IndexBacktest --config Release
+# Run:    ./build/IndexBacktest <ticks.csv> [--out f.csv] [--gap N] [--no-gate]
+# =============================================================================
+add_executable(IndexBacktest
+    backtest/IndexBacktest.cpp
+)
+target_include_directories(IndexBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(IndexBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+    )
+    target_compile_definitions(IndexBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(IndexBacktest PRIVATE
+        -O2 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+    )
+    target_compile_definitions(IndexBacktest PRIVATE OMEGA_BACKTEST)
+endif()
+
+# =============================================================================
 # TsmomCellBacktest -- Phase 2a dual-engine harness for the CellEngine refactor.
 # Drives V1 (TsmomPortfolio in TsmomEngine.hpp) and V2 (CellPortfolio<TsmomStrategy>
 # in CellEngine.hpp + TsmomStrategy.hpp) over the same H1 OHLC corpus and emits
