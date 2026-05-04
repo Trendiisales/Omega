@@ -589,7 +589,14 @@ static void init_engines(const std::string& cfg_path)
         g_tsmom.risk_pct          = 0.005;
         g_tsmom.start_equity      = 10000.0;
         g_tsmom.margin_call       = 1000.0;
-        g_tsmom.max_lot_cap       = 0.05;     // tighter than backtest while shadow-validating
+        // 2026-05-04 (post-handoff risk-budget fix): max_lot_cap 0.05 -> 0.02.
+        //   Live shadow tape had a Tsmom_H1_long position lose $23.65 on a
+        //   4.45pt adverse move (~5x bracket-cohort exposure). Capping at
+        //   0.02 brings the same move to $8.90 (~2x bracket cohort) while
+        //   preserving Sharpe (risk_pct unchanged at 0.005). g_tsmom_v2
+        //   below inherits this cap via `= g_tsmom.max_lot_cap`.
+        //   See omega_config.ini [tsmom] section for the parity comment.
+        g_tsmom.max_lot_cap       = 0.02;
         g_tsmom.block_on_risk_off = true;
         g_tsmom.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_tsmom.init();

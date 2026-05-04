@@ -80,23 +80,19 @@
 //   beyond which AUDUSD behaviour shifts toward European-session USD-driven
 //   moves -- a different signal regime.
 //
-//   WRAPAROUND NOTE: the existing `< START || >= END` window check does NOT
-//   handle a wraparound window (START=22, END=2 would reject all hours).
-//   When this engine is promoted to live, the session check needs to switch
-//   to a wraparound-aware form, e.g.:
+//   WRAPAROUND-AWARE CHECK (now active in this engine):
 //       const bool in_window = (SESSION_END_HOUR_UTC > SESSION_START_HOUR_UTC)
 //           ? (utc.tm_hour >= SESSION_START_HOUR_UTC && utc.tm_hour < SESSION_END_HOUR_UTC)
 //           : (utc.tm_hour >= SESSION_START_HOUR_UTC || utc.tm_hour < SESSION_END_HOUR_UTC);
 //       if (!in_window) return;
-//   For the shadow phase the window is widened to 0-24 (S57 audit-fixes-36),
-//   so the wraparound issue is moot until promotion.
+//   The simple `< START || >= END` form does NOT handle a wraparound window
+//   (START=22, END=2 would reject all hours). The ternary above covers both
+//   the forward and wraparound cases.
 //
-//   SHADOW (current): full 24h (START=0, END=24). Same S57 audit-fixes-36
-//   widening as EURUSD/GBPUSD/USDJPY -- shadow engines fire AS IF live so
-//   we get visible ledger/PnL during validation. Engine still self-gates
-//   on news blackout, spread, ATR, same-level block, and compression-range
-//   formation. It will fire whenever AUDUSD presents a valid setup, exactly
-//   like the unrestricted gold engines do.
+//   PRODUCTION (current): START=22, END=2 (live target restored 2026-05-04
+//   after the S57 audit-fixes-36 visibility-only 0-24 widening was reverted).
+//   Engine self-gates on news blackout, spread, ATR, same-level block, and
+//   compression-range formation inside the window.
 //   (Existing positions still managed via manage() regardless of window.)
 //
 // NEWS BLACKOUT:
@@ -259,21 +255,19 @@ public:
     // S56 lineage: COOLDOWN_S = 120s. Same-level block (post-SL 1200s,
     //   post-win 600s) is the primary anti-chop guard.
     static constexpr int    COOLDOWN_S           = 120;
-    // Session window (UTC hours).
-    // S57 2026-05-04 (audit-fixes-36): session window widened to full 24h.
-    //   PRIOR (live target): 22:00-02:00 UTC (4h Sydney + Tokyo handoff
-    //   wraparound window). The wraparound form (START=22, END=2) needs
-    //   the wraparound-aware check described in the SESSION WINDOW header
-    //   comment block above when promoted to live.
-    //   Per Jo (2026-05-04): shadow engines must fire AS IF live and
-    //   produce visible ledger/PnL like the gold shadow engines. Same fix
-    //   as EurusdLondonOpen / GbpusdLondonOpen / UsdjpyAsianOpen --
-    //   widen to 24h so the engine self-gates on news/spread/ATR/range
-    //   formation rather than wall-clock hour. Re-tighten back to 22-02
-    //   when promoting to live (and add the wraparound check above).
-    //   Engine still respects all other gates.
-    static constexpr int    SESSION_START_HOUR_UTC = 0;
-    static constexpr int    SESSION_END_HOUR_UTC   = 24;
+    // Session window (UTC hours): 22:00-02:00 UTC (4h Sydney + Tokyo
+    //   handoff wraparound window). The wraparound form (START=22,
+    //   END=2) requires the wraparound-aware in-window check below.
+    //
+    // 2026-05-04 (post-S57): production window RESTORED.
+    //   The S57 audit-fixes-36 widening (0-24) was a SHADOW-VISIBILITY-ONLY
+    //   override for the FX cohort wiring validation. Restored to 22-02 so
+    //   the engine fires only inside the Sydney/Tokyo handoff window it was
+    //   tuned for. The session-check below was upgraded from the simple
+    //   `< START || >= END` form to the wraparound-aware ternary
+    //   documented in the strategy header above.
+    static constexpr int    SESSION_START_HOUR_UTC = 22;
+    static constexpr int    SESSION_END_HOUR_UTC   = 2;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15;
     static constexpr double DOM_LOT_BONUS        = 1.3;
     static constexpr double DOM_WALL_PENALTY     = 0.5;
@@ -425,12 +419,13 @@ public:
 
         if (!m_spread_gate.can_fire()) return;
 
-        // Session window gate: 22:00-02:00 UTC live target (Sydney + Tokyo
-        // handoff). Outside this window, stay IDLE. Existing LIVE/PENDING/
-        // COOLDOWN paths above already returned. (Currently widened to 0-24
-        // in shadow mode -- see SESSION_START_HOUR_UTC / SESSION_END_HOUR_UTC
-        // comments. The wraparound-aware check noted in the header block
-        // must be added here when promoting to live with START=22 / END=2.)
+        // Session window gate: 22:00-02:00 UTC (Sydney + Tokyo handoff).
+        // Outside this window, stay IDLE. Existing LIVE/PENDING/COOLDOWN
+        // paths above already returned.
+        //
+        // Wraparound-aware check: when END > START it's a normal forward
+        // window; when END <= START (our 22->02 case) the in-window predicate
+        // is the union of [START..23] and [0..END).
         {
             time_t t = static_cast<time_t>(now_s);
             struct tm utc{};
@@ -439,10 +434,13 @@ public:
 #else
             gmtime_r(&t, &utc);
 #endif
-            if (utc.tm_hour < SESSION_START_HOUR_UTC ||
-                utc.tm_hour >= SESSION_END_HOUR_UTC) {
-                return;
-            }
+            const bool in_window =
+                (SESSION_END_HOUR_UTC > SESSION_START_HOUR_UTC)
+                    ? (utc.tm_hour >= SESSION_START_HOUR_UTC &&
+                       utc.tm_hour <  SESSION_END_HOUR_UTC)
+                    : (utc.tm_hour >= SESSION_START_HOUR_UTC ||
+                       utc.tm_hour <  SESSION_END_HOUR_UTC);
+            if (!in_window) return;
         }
 
         // News blackout gate: RBA / AU CPI / AU jobs block AUDUSD via the

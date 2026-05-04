@@ -95,8 +95,16 @@ public:
     // $20-40 capture band. Lower edge = $18 TP after RR4; upper edge = $42.
     static constexpr double MIN_RANGE            = 8.0;
     static constexpr double MAX_RANGE            = 20.0;
-    static constexpr double SL_FRAC              = 0.5;
-    static constexpr double SL_BUFFER            = 0.5;
+    // S60 2026-05-04 (post-handoff noise-floor fix):
+    //   SL_FRAC 0.5 -> 0.6, SL_BUFFER 0.5 -> 1.0.
+    //   Prior min SL = 0.5 * MIN_RANGE + 0.5 = 4.5pt -- still inside the
+    //   $2-3 Asia news-tick noise band. Live tape on 2026-05-04 showed
+    //   the same SL-by-noise pattern as HybridGold (BE-trigger fires, SL
+    //   sits inside the next noise excursion, position closes at the
+    //   moved-up SL). New min SL = 0.6 * 8 + 1.0 = 5.8pt which clears
+    //   noise plus spread. RR=4 capture envelope unchanged.
+    static constexpr double SL_FRAC              = 0.6;
+    static constexpr double SL_BUFFER            = 1.0;
     // RR=4: TP = sl_dist * 4. Drives the $18-42 capture envelope.
     //   HybridGold uses RR=2 for $6-12 scalps; the wider $20-40 band needs
     //   the asymmetric reward to compensate for lower fire frequency.

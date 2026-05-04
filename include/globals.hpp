@@ -381,8 +381,10 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   60-120). News-blackout-gated for BoE/UK CPI/UK GDP via the GBP
 //   currency set, plus NFP/CPI/FOMC via the USD set (auto-included by
 //   the OmegaNewsBlackout symbol-to-country mapping). Shadow-only by
-//   default; session window currently widened to 0-24 (S57) for shadow
-//   ledger visibility -- re-tighten to 07-10 when promoting to live.
+//   default; session window RESTORED to 07-10 UTC (2026-05-04, post-S57):
+//   the audit-fixes-36 0-24 visibility-only widening was reverted to the
+//   live target after live tape on the gold cohort showed the widening
+//   produced session-mismatch ✓BE → SL artefacts.
 //   Wired in tick_fx.hpp::on_tick_gbpusd() dispatch block.
 #include "GbpusdLondonOpenEngine.hpp"
 // 2026-05-04 (audit-fixes-36 + S57): AudusdSydneyOpenEngine -- aussie
@@ -394,9 +396,9 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   USDJPY S55-S59 tuned constants rescaled from JPY 0.01-pip units to
 //   AUD 0.0001-pip units. News-blackout-gated for RBA/AU CPI/AU jobs via
 //   the AUD currency set, plus NFP/CPI/FOMC via the USD set. Shadow-only
-//   by default; session window currently widened to 0-24 (S57) for shadow
-//   ledger visibility -- re-tighten to 22-02 (with wraparound-aware
-//   check) when promoting to live. Wired in
+//   by default; session window RESTORED to 22-02 UTC (2026-05-04, post-S57)
+//   with wraparound-aware in-window check now active in the engine -- the
+//   audit-fixes-36 0-24 visibility-only widening was reverted. Wired in
 //   tick_fx.hpp::on_tick_audusd() dispatch block.
 #include "AudusdSydneyOpenEngine.hpp"
 // 2026-05-04 (audit-fixes-36 + S57): NzdusdAsianOpenEngine -- kiwi sister
@@ -408,11 +410,11 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   also a USD-quote major). All AUDUSD S55-S59 tuned constants reused
 //   as PRE-SWEEP defaults. News-blackout-gated for RBNZ/NZ CPI/NZ jobs
 //   via the NZD currency set, plus NFP/CPI/FOMC via the USD set.
-//   Shadow-only by default; session window currently widened to 0-24 (S57)
-//   for shadow ledger visibility -- re-tighten to 22-04 (with wraparound-
-//   aware check) when promoting to live. Retires the last [FX-NO-ENGINE]
-//   diag stub from on_tick_audusd. Wired in
-//   tick_fx.hpp::on_tick_audusd() NZDUSD branch.
+//   Shadow-only by default; session window RESTORED to 22-04 UTC
+//   (2026-05-04, post-S57) with wraparound-aware in-window check now
+//   active in the engine -- the audit-fixes-36 0-24 visibility-only
+//   widening was reverted. Retires the last [FX-NO-ENGINE] diag stub from
+//   on_tick_audusd. Wired in tick_fx.hpp::on_tick_audusd() NZDUSD branch.
 #include "NzdusdAsianOpenEngine.hpp"
 // 2026-05-02: XauusdFvgEngine -- 15m FVG engine on XAUUSD. C++ port of
 //   scripts/fvg_pnl_backtest_v3.py (v3 #5 ACCEPTED config). Cleared the

@@ -103,8 +103,18 @@ public:
     static constexpr int    MIN_BREAK_TICKS      = 3;
     static constexpr double MIN_RANGE            = 6.0;
     static constexpr double MAX_RANGE            = 25.0;
-    static constexpr double SL_FRAC              = 0.5;
-    static constexpr double SL_BUFFER            = 0.5;
+    // S60 2026-05-04 (post-handoff noise-floor fix):
+    //   SL_FRAC 0.5 -> 0.7, SL_BUFFER 0.5 -> 1.5.
+    //   Prior min SL = 0.5 * MIN_RANGE + 0.5 = 3.5pt -- inside one or two
+    //   normal Asia noise excursions (XAUUSD noise floor $0.30-1.00/min,
+    //   $2-3 news swings). Live tape on 2026-05-04 showed routine bid-ask
+    //   oscillation knocking out positions in 50s-2m47s with the ✓BE -> SL
+    //   shape. New min SL = 0.7 * 6 + 1.5 = 5.7pt, which clears typical
+    //   noise plus spread without changing entry/exit logic. R:R degrades
+    //   ~60% but the prior floor was net-negative -- noise-margin matters
+    //   more than nominal R:R until the SL hits stop being noise hits.
+    static constexpr double SL_FRAC              = 0.7;
+    static constexpr double SL_BUFFER            = 1.5;
     static constexpr double TP_RR                = 2.0;
     static constexpr double TRAIL_FRAC           = 0.25;
     // S20 2026-04-25: trail-arm guards

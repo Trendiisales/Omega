@@ -75,16 +75,11 @@
 //   later: GBP traders front-run the LSE 08:00 UTC equity open and the
 //   first hour of cash-cable flow (09:00 UTC fixings).
 //
-//   SHADOW (current): full 24h (START=0, END=24). Same S57 audit-fixes-36
-//   widening as EURUSD/USDJPY -- shadow engines fire AS IF live so we get
-//   visible ledger/PnL during validation. Engine still self-gates on news
-//   blackout, spread, ATR, same-level block, and compression-range
-//   formation. It will fire whenever GBPUSD presents a valid setup, exactly
-//   like the unrestricted gold engines do.
-//
-//   Promotion to live: when shadow_mode is later flipped to false,
-//   re-tighten this window back to 07-10 UTC (or whatever the live strategy
-//   decides) so the live edge is preserved.
+//   PRODUCTION (current): START=7, END=10 (live target restored 2026-05-04
+//   after the S57 audit-fixes-36 visibility-only 0-24 widening was reverted).
+//   Engine self-gates on news blackout, spread, ATR, same-level block, and
+//   compression-range formation inside the window. (Existing positions are
+//   still managed via manage() regardless of window.)
 //   (Existing positions still managed via manage() regardless of window.)
 //
 // NEWS BLACKOUT:
@@ -234,27 +229,23 @@ public:
     // S56 lineage: COOLDOWN_S = 120s. Same-level block (post-SL 1200s,
     //   post-win 600s) is the primary anti-chop guard.
     static constexpr int    COOLDOWN_S           = 120;
-    // Session window (UTC hours).
-    // S57 2026-05-04 (audit-fixes-36): session window widened to full 24h.
-    //   PRIOR (live target): 07:00-10:00 UTC (3h London-open compression
-    //   window for cable -- one hour later than EUR's 06-09 because GBP
-    //   compressions cluster around the LSE 08:00 UTC equity open).
-    //   In SHADOW mode the 3h window rarely contains a qualifying
-    //   compression structure on any given day. Per Jo (2026-05-04):
-    //   shadow engines must fire AS IF live and produce visible ledger/PnL
-    //   like the gold shadow engines.
+    // Session window (UTC hours): 07:00-10:00 UTC London-open compression
+    //   window for cable. One hour later than EUR's 06-09 because GBP
+    //   compressions cluster around the LSE 08:00 UTC equity open.
     //
-    //   New behaviour: window covers all 24h (START=0, END=24 -> the
-    //   `< START || >= END` check is always false). The engine still
-    //   self-gates on news blackout, spread, ATR, same-level block, and
-    //   compression-range formation. It will fire whenever GBPUSD presents
-    //   a valid setup, exactly like the unrestricted gold engines do.
+    // 2026-05-04 (post-S57): production window RESTORED.
+    //   The S57 audit-fixes-36 widening (0-24) was a SHADOW-VISIBILITY-ONLY
+    //   override so shadow engines would fire during the FX cohort wiring
+    //   validation. Live tape analysis on the gold cohort showed the
+    //   widening pulled comparable engines into Asia compression hours where
+    //   the fade-the-edge dynamic dominates -- producing ✓BE → SL losses
+    //   that look like an engine bug but are actually a session-mismatch
+    //   artefact. Restoring 07-10 protects the cable edge.
     //
-    //   Promotion to live: when shadow_mode is later flipped to false,
-    //   re-tighten this window back to 07-10 UTC (or whatever the live
-    //   strategy decides) so the live edge is preserved.
-    static constexpr int    SESSION_START_HOUR_UTC = 0;
-    static constexpr int    SESSION_END_HOUR_UTC   = 24;
+    //   The `< START || >= END` check below remains correct for the
+    //   non-wraparound 07-10 window.
+    static constexpr int    SESSION_START_HOUR_UTC = 7;
+    static constexpr int    SESSION_END_HOUR_UTC   = 10;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15;
     static constexpr double DOM_LOT_BONUS        = 1.3;
     static constexpr double DOM_WALL_PENALTY     = 0.5;
@@ -409,8 +400,7 @@ public:
         // Session window gate: 07:00-10:00 UTC live target. London cable open
         // + first hour, around the LSE 08:00 UTC equity open. Outside this
         // window, stay IDLE. Existing LIVE/PENDING/COOLDOWN paths above
-        // already returned. (Currently widened to 0-24 in shadow mode -- see
-        // SESSION_START_HOUR_UTC / SESSION_END_HOUR_UTC comments.)
+        // already returned.
         {
             time_t t = static_cast<time_t>(now_s);
             struct tm utc{};

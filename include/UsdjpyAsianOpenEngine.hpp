@@ -232,15 +232,15 @@ public:
     static constexpr int    COOLDOWN_S           = 120;
     // Session window (UTC hours). 00:00 = Tokyo open (09:00 JST),
     //   04:00 = pre-Frankfurt handoff. Asian session in tightest sense.
-    // S57 2026-05-04 (audit-fixes-36): session window widened to full 24h.
-    //   PRIOR: 00:00-04:00 UTC (4h Tokyo-open window). Per Jo (2026-05-04):
-    //   shadow engines must fire AS IF live and produce visible ledger/PnL
-    //   like the gold shadow engines. Same fix as EurusdLondonOpenEngine --
-    //   widen to 24h so the engine self-gates on news/spread/ATR/range
-    //   formation rather than wall-clock hour. Re-tighten back to 00-04
-    //   when promoting to live. Engine still respects all other gates.
+    //
+    // 2026-05-04 (post-S57): production window RESTORED.
+    //   The S57 audit-fixes-36 widening (0-24) was a SHADOW-VISIBILITY-ONLY
+    //   override for the FX cohort wiring validation. Restored to 00-04 so
+    //   the engine fires only inside the Tokyo-open compression window it
+    //   was tuned for. The `< START || >= END` check below remains correct
+    //   for the non-wraparound 00-04 window.
     static constexpr int    SESSION_START_HOUR_UTC = 0;
-    static constexpr int    SESSION_END_HOUR_UTC   = 24;
+    static constexpr int    SESSION_END_HOUR_UTC   = 4;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15;
     static constexpr double DOM_LOT_BONUS        = 1.3;
     static constexpr double DOM_WALL_PENALTY     = 0.5;

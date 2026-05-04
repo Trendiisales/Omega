@@ -42,8 +42,12 @@
 //   compressions cluster around the LSE 08:00 UTC equity open). News
 //   blackout via "GBPUSD" symbol auto-includes BoE/UK CPI/UK GDP via the
 //   GBP currency set plus NFP/CPI/FOMC via the USD set.
-//   shadow_mode = true by default. Session window currently widened to 0-24
-//   for shadow ledger visibility -- re-tighten to 07-10 when promoting.
+//   shadow_mode = true by default. Session window RESTORED to 07-10 UTC
+//   (2026-05-04, post-S57): the audit-fixes-36 0-24 visibility-only
+//   widening was reverted to the live-target window after live tape on the
+//   gold cohort showed shadow widening pulled comparable engines into the
+//   wrong session and produced ✓BE → SL artefacts. The live edge is now
+//   active in shadow.
 //   Promotion gate: 2-week paper run, >=30 trades, WR >=35% net positive
 //   after costs (matches EURUSD S56 promotion gate).
 //
@@ -55,10 +59,11 @@
 //   UTC (Sydney open + Tokyo handoff, pre-Frankfurt cutoff). News
 //   blackout via "AUDUSD" symbol auto-includes RBA/AU CPI/AU jobs via the
 //   AUD currency set plus NFP/CPI/FOMC via the USD set.
-//   shadow_mode = true by default. Session window currently widened to 0-24
-//   for shadow ledger visibility -- re-tighten to 22-02 (with wraparound-
-//   aware check) when promoting. Promotion gate: 2-week paper run, >=30
-//   trades, WR >= 60% net positive after costs (matches USDJPY S56 gate).
+//   shadow_mode = true by default. Session window RESTORED to 22-02 UTC
+//   (2026-05-04, post-S57) with wraparound-aware in-window check now active
+//   in AudusdSydneyOpenEngine -- the audit-fixes-36 0-24 visibility-only
+//   widening was reverted. Promotion gate: 2-week paper run, >=30 trades,
+//   WR >= 60% net positive after costs (matches USDJPY S56 gate).
 //
 // 2026-05-04 NZDUSD RE-ENABLE (audit-fixes-36 + S57):
 //   on_tick_audusd's NZDUSD branch now dispatches to NzdusdAsianOpenEngine.
@@ -69,9 +74,10 @@
 //   settlement). News blackout via "NZDUSD" symbol auto-includes RBNZ/
 //   NZ CPI/NZ jobs via the NZD currency set plus NFP/CPI/FOMC via the
 //   USD set.
-//   shadow_mode = true by default. Session window currently widened to 0-24
-//   for shadow ledger visibility -- re-tighten to 22-04 (with wraparound-
-//   aware check) when promoting. Promotion gate: matches AUD/JPY S56 gate
+//   shadow_mode = true by default. Session window RESTORED to 22-04 UTC
+//   (2026-05-04, post-S57) with wraparound-aware in-window check now active
+//   in NzdusdAsianOpenEngine -- the audit-fixes-36 0-24 visibility-only
+//   widening was reverted. Promotion gate: matches AUD/JPY S56 gate
 //   (>=30 trades / WR >=60% / net positive after costs).
 //   This retires the LAST [FX-NO-ENGINE] diag stub from any FX handler --
 //   the full FX cohort (EUR/GBP/USDJPY/AUD/NZD) is now wired end-to-end.

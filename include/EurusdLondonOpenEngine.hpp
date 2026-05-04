@@ -232,27 +232,24 @@ public:
     //   same-level block (post-SL 1200s, post-win 600s) is now the
     //   primary anti-chop guard rather than a long blanket cooldown.
     static constexpr int    COOLDOWN_S           = 120;
-    // Session window (UTC hours).
-    // S57 2026-05-04 (audit-fixes-36): session window widened to full 24h.
-    //   PRIOR: 06:00-09:00 UTC (3h London-open compression window). This
-    //   was a strategy-edge restriction inherited from backtest analysis,
-    //   but in SHADOW mode it produced effectively zero trades because the
-    //   3h window rarely contained a qualifying compression structure on
-    //   any given day. Per Jo (2026-05-04): shadow engines must fire AS IF
-    //   live and produce visible ledger/PnL like the gold shadow engines.
+    // Session window (UTC hours): 06:00-09:00 UTC London-open compression
+    //   window. 3h window concentrating on the highest-edge London open hour.
     //
-    //   New behaviour: window covers all 24h (START=0, END=24 -> the
-    //   `< START || >= END` check is always false). The engine still
+    // 2026-05-04 (post-S57): production window RESTORED.
+    //   The S57 audit-fixes-36 widening (0-24) was a SHADOW-VISIBILITY-ONLY
+    //   override so shadow engines would fire AS IF live and produce visible
+    //   ledger/PnL during the FX wiring validation. Live tape analysis showed
+    //   the widening pulled the engine into Asia compression hours where the
+    //   "fade-the-edge" pattern dominates (opposite signal to a momentum
+    //   compression-breakout) -- producing the symptomatic ✓BE → SL shape.
+    //   Restoring the production 06-09 window removes that drag. Engine still
     //   self-gates on news blackout, spread, ATR, same-level block, and
-    //   compression-range formation. It will fire whenever EURUSD presents
-    //   a valid setup, exactly like the unrestricted gold engines do.
+    //   compression-range formation inside the window.
     //
-    //   Promotion to live: when shadow_mode is later flipped to false,
-    //   re-tighten this window back to 06-09 UTC (or whatever the live
-    //   strategy decides) so the live edge is preserved. The shadow
-    //   widening is purely for validation visibility.
-    static constexpr int    SESSION_START_HOUR_UTC = 0;
-    static constexpr int    SESSION_END_HOUR_UTC   = 24;
+    //   The `< START || >= END` check below remains correct for the
+    //   non-wraparound 06-09 window.
+    static constexpr int    SESSION_START_HOUR_UTC = 6;
+    static constexpr int    SESSION_END_HOUR_UTC   = 9;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15;
     static constexpr double DOM_LOT_BONUS        = 1.3;
     static constexpr double DOM_WALL_PENALTY     = 0.5;
