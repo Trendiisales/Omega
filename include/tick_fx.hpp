@@ -98,6 +98,12 @@ static void on_tick_eurusd(
 }
 
 // ── GBPUSD ──────────────────────────────────────────────────
+// S57 2026-05-04 (audit-fixes-36): periodic diagnostic so the operator
+//   knows GBPUSD ticks are arriving but no engine is wired. Logs once
+//   per 5 minutes per symbol when ticks are flowing. When the new
+//   GbpusdLondonOpenEngine is built (cloned from EurusdLondonOpen
+//   template, ~700 lines), wire it here using the same two-phase
+//   dispatch pattern as on_tick_eurusd (manage-when-open vs entry-when-flat).
 template<typename Dispatch>
 static void on_tick_gbpusd(
     const std::string& sym, double bid, double ask,
@@ -105,7 +111,16 @@ static void on_tick_gbpusd(
     Dispatch& dispatch)
 {
     g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;
-    (void)sym; (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
+    static int64_t s_last_diag = 0;
+    const int64_t now_s_diag = static_cast<int64_t>(std::time(nullptr));
+    if (now_s_diag - s_last_diag >= 300) {
+        s_last_diag = now_s_diag;
+        printf("[FX-NO-ENGINE] GBPUSD ticks flowing (mid=%.5f tradeable=%d) -- "
+               "no engine wired; build GbpusdLondonOpenEngine to enable\n",
+               g_macro_ctx.gbp_mid_price, (int)tradeable);
+        fflush(stdout);
+    }
+    (void)sym; (void)bid; (void)ask; (void)lat_ok; (void)regime; (void)dispatch;
 }
 
 // ── USDJPY ──────────────────────────────────────────────────
@@ -182,5 +197,27 @@ static void on_tick_audusd(
 {
     // 2026-05-02: USDJPY split out to on_tick_usdjpy. This handler now serves
     //   AUDUSD/NZDUSD only (both still inert; no orders sent).
-    (void)sym; (void)bid; (void)ask; (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
+    // S57 2026-05-04 (audit-fixes-36): periodic diagnostic so the operator
+    //   knows AUDUSD/NZDUSD ticks are arriving but no engine is wired. When
+    //   the new AudusdSydneyOpenEngine / NzdusdAsianOpenEngine are built
+    //   (clones of UsdjpyAsianOpen template, ~700 lines each), wire them
+    //   here using the same two-phase dispatch pattern as on_tick_usdjpy.
+    static int64_t s_last_diag_aud = 0;
+    static int64_t s_last_diag_nzd = 0;
+    const int64_t now_s_diag = static_cast<int64_t>(std::time(nullptr));
+    if (sym == "AUDUSD" && now_s_diag - s_last_diag_aud >= 300) {
+        s_last_diag_aud = now_s_diag;
+        printf("[FX-NO-ENGINE] AUDUSD ticks flowing (bid=%.5f ask=%.5f tradeable=%d) -- "
+               "no engine wired; build AudusdSydneyOpenEngine to enable\n",
+               bid, ask, (int)tradeable);
+        fflush(stdout);
+    }
+    if (sym == "NZDUSD" && now_s_diag - s_last_diag_nzd >= 300) {
+        s_last_diag_nzd = now_s_diag;
+        printf("[FX-NO-ENGINE] NZDUSD ticks flowing (bid=%.5f ask=%.5f tradeable=%d) -- "
+               "no engine wired; build NzdusdAsianOpenEngine to enable\n",
+               bid, ask, (int)tradeable);
+        fflush(stdout);
+    }
+    (void)lat_ok; (void)regime; (void)dispatch;
 }

@@ -233,8 +233,26 @@ public:
     //   primary anti-chop guard rather than a long blanket cooldown.
     static constexpr int    COOLDOWN_S           = 120;
     // Session window (UTC hours).
-    static constexpr int    SESSION_START_HOUR_UTC = 6;
-    static constexpr int    SESSION_END_HOUR_UTC   = 9;
+    // S57 2026-05-04 (audit-fixes-36): session window widened to full 24h.
+    //   PRIOR: 06:00-09:00 UTC (3h London-open compression window). This
+    //   was a strategy-edge restriction inherited from backtest analysis,
+    //   but in SHADOW mode it produced effectively zero trades because the
+    //   3h window rarely contained a qualifying compression structure on
+    //   any given day. Per Jo (2026-05-04): shadow engines must fire AS IF
+    //   live and produce visible ledger/PnL like the gold shadow engines.
+    //
+    //   New behaviour: window covers all 24h (START=0, END=24 -> the
+    //   `< START || >= END` check is always false). The engine still
+    //   self-gates on news blackout, spread, ATR, same-level block, and
+    //   compression-range formation. It will fire whenever EURUSD presents
+    //   a valid setup, exactly like the unrestricted gold engines do.
+    //
+    //   Promotion to live: when shadow_mode is later flipped to false,
+    //   re-tighten this window back to 06-09 UTC (or whatever the live
+    //   strategy decides) so the live edge is preserved. The shadow
+    //   widening is purely for validation visibility.
+    static constexpr int    SESSION_START_HOUR_UTC = 0;
+    static constexpr int    SESSION_END_HOUR_UTC   = 24;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15;
     static constexpr double DOM_LOT_BONUS        = 1.3;
     static constexpr double DOM_WALL_PENALTY     = 0.5;
