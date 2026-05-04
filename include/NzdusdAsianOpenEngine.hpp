@@ -4,102 +4,140 @@
 #include "SpreadRegimeGate.hpp"
 #include "OmegaNewsBlackout.hpp"
 // =============================================================================
-// EurusdLondonOpenEngine.hpp  --  London-open compression bracket for EURUSD
+// NzdusdAsianOpenEngine.hpp  --  Wellington/Tokyo Asian-open compression NZDUSD
 // =============================================================================
 //
-// 2026-05-02 SESSION DESIGN (Claude / Jo):
-//   First FX engine since the 2026-04-06 global FX disable (see tick_fx.hpp
-//   lineage comment). Targets the 06:00-09:00 UTC London-open compression-
-//   breakout window. Mirrors GoldMidScalperEngine architecture (S53 baseline)
-//   with FX-scale parameters and pip-scale price math.
+// 2026-05-04 SESSION DESIGN (Claude / Jo):
+//   Sister engine to AudusdSydneyOpenEngine and UsdjpyAsianOpenEngine. Targets
+//   the 22:00-04:00 UTC Wellington-open + Tokyo-handoff window for NZDUSD.
+//   1:1 architectural port of AudusdSydneyOpenEngine with NZDUSD-specific
+//   DOM plumbing (vacuum-only -- mirrors AUD/JPY DOM shape).
 //
-//   Audit lineage (see docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md):
-//     - Replaces dead-code g_bracket_eurusd (configured every startup but
-//       never invoked from any dispatch path).
+//   Audit lineage:
+//     - Final piece of the FX re-enable wave that covered EURUSD (2026-05-02),
+//       USDJPY (2026-05-02), GBPUSD (2026-05-04), AUDUSD (2026-05-04). NZDUSD
+//       was the last remaining [FX-NO-ENGINE] diag stub in tick_fx.hpp's
+//       on_tick_audusd handler.
+//     - Inherits all S55-S59 USDJPY tuned constants via AudusdSydneyOpen as
+//       PRE-SWEEP defaults (already rescaled from JPY 0.01-pip units to AUD/
+//       NZD 0.0001-pip units). NZD-optimal config will be determined by a
+//       parallel sweep harness before live promotion.
 //     - Does NOT inherit MacroCrashEngine signal model (disabled 2026-04-30
-//       at 4.8% WR / -10,849pts: ATR-extension + vol-surge + drift gating
-//       were the documented loss source).
-//     - Addresses 2026-04-06 BreakoutEngine "enters after move is done"
-//       failure via BE-lock at 4 pips MFE: even late entries cannot
-//       compound losses past break-even.
-//     - Addresses 2026-04-06 "8pip TP barely covers spread" failure via
-//       2-pip SL_BUFFER + 24-pip TP target (3x typical round-trip cost).
-//     - News-event exposure mitigated via g_news_blackout.is_blocked()
-//       at IDLE->ARMED transition (NFP/CPI/FOMC/ECB).
-//     - Session window 06-09 UTC concentrates fires on the highest-edge
-//       FX hour (London open + first hour, pre-NY-overlap).
+//       at 4.8% WR / -10,849pts).
+//     - Same BE-lock + same-level block + news-blackout pattern as AUDUSD.
 //
-//   Pip math reference (EURUSD):
-//     1 pip          = 0.0001 price
-//     Daily ATR      = 60-120 pips
-//     Typical spread = 0.5 to 1.4 pips on cTrader/BlackBull
-//     Pip value      = $1 at 0.10 lot, $10 at 1.00 lot
+//   Pip math reference (NZDUSD):
+//     1 pip          = 0.0001 price (same as EUR/GBP/AUD; kiwi is also a
+//                                     USD-quote major, four-decimal standard)
+//     Daily ATR      = 50-90 pips (slightly tighter than AUD's 50-100; the
+//                                     kiwi tracks AUD closely but with lower
+//                                     headline vol and thinner liquidity)
+//     Typical spread = 0.8 to 2.5 pips on cTrader/BlackBull (wider than AUD's
+//                                     0.7-2.0 due to lower depth, especially
+//                                     during the pre-Sydney 21-22 UTC gap)
+//     Pip value      = $1 at 0.10 lot, $10 at 1.00 lot (USD-quoted, identical
+//                                     to AUD/EUR/GBP pip value -- same quote
+//                                     currency)
 //
-//   Math (range = compression structure size, in price units, S56 SL_FRAC=0.80, RR=2):
-//     range 0.0008 ->  8 pips -> SL 0.0008 ( 8.4 pips) -> TP 0.0017 (17 pips)
-//     range 0.0010 -> 10 pips -> SL 0.0010 (10.0 pips) -> TP 0.0020 (20 pips)
-//     range 0.0012 -> 12 pips -> SL 0.0012 (11.6 pips) -> TP 0.0023 (23 pips)
-//     range 0.0015 -> 15 pips -> SL 0.0014 (14.0 pips) -> TP 0.0028 (28 pips)
-//     range 0.0020 -> 20 pips -> SL 0.0018 (18.0 pips) -> TP 0.0036 (36 pips)
-//     range 0.0030 -> 30 pips -> SL 0.0026 (26.0 pips) -> TP 0.0052 (52 pips)
-//     range 0.0050 -> 50 pips -> SL 0.0042 (42.0 pips) -> TP 0.0084 (84 pips)
+//   Math (range = compression structure size, in price units, S59 SL_FRAC=1.00, RR=0.5):
+//     range 0.0020 -> 20 pips -> SL 0.0022 (22 pips) -> TP 0.0011 (11 pips)
+//     range 0.0025 -> 25 pips -> SL 0.0027 (27 pips) -> TP 0.0014 (14 pips)
+//     range 0.0030 -> 30 pips -> SL 0.0032 (32 pips) -> TP 0.0016 (16 pips)
+//     range 0.0040 -> 40 pips -> SL 0.0042 (42 pips) -> TP 0.0021 (21 pips)
+//     range 0.0050 -> 50 pips -> SL 0.0052 (52 pips) -> TP 0.0026 (26 pips)
 //
-//   STRUCTURE_LOOKBACK = 600 (~3 min @ 200 ticks/min London EURUSD) finds
-//   genuine compressions while filtering Asian-session drift micro-ranges.
+//   STRUCTURE_LOOKBACK = 600 (PRE-SWEEP DEFAULT, matches AUDUSD/USDJPY).
+//   Wellington/Tokyo NZDUSD tick rate is the lowest of the FX-major Asian
+//   handoff cohort (typically 30-70 ticks/min -- AUD runs 40-90, JPY 50-100
+//   in Tokyo proper), so 600 ticks ~= 8-20 min structural lookback. Sweep
+//   should retest {300, 400, 600, 900} once NZD-specific data is collected.
 //
 // SAFETY:
 //   - Defaults to shadow_mode = true. Live promotion requires explicit
 //     authorisation after a 2-week paper run shows positive expectancy.
-//   - 30-trade minimum sample, WR >= 35% net positive after costs.
-//   - Uses MIN_BREAK_TICKS = 5 (matches gold mid-scalper sweep guard).
-//   - Inherits all audit-validated guards from GoldMidScalper lineage:
+//   - 30-trade minimum sample, WR >= 60% per the USDJPY S56 promotion gate
+//     (NZD engine inherits the same gate via AUD lineage).
+//   - Uses MIN_BREAK_TICKS = 5 (matches AUDUSD/USDJPY/EURUSD/gold).
+//   - Inherits all audit-validated guards from the AUDUSD/USDJPY lineage:
 //       S20 trail-arm guards (MIN_TRAIL_ARM_PTS=0.0006, MIN_TRAIL_ARM_SECS=30)
 //       S43 mae tracker
 //       S47 T4a ATR-expansion gate (EXPANSION_MULT=1.10) with ratchet fix
 //       S51 1A.1.a spread_at_entry capture
-//       S52/S53 MFE_TRAIL_FRAC = 0.55
-//       S53 BE-lock at 4 pips MFE
-//       S53 same-level re-arm block (10 pips radius, 15min post-SL / 10min post-win)
+//       S55 BE-lock at 6 pips MFE
+//       S56 TRAIL_FRAC=0.30, S58 MFE_TRAIL_FRAC=0.15, S59 SL_FRAC=1.00 / TP_RR=0.5
+//       S56 same-level re-arm block (20-pip radius, 20min post-SL / 10min post-win)
 //       AUDIT 2026-04-29 mutex on _close path
 //       audit-fixes-18 SpreadRegimeGate per-engine
 //
 // SESSION WINDOW:
-//   06:00 UTC <= now_hh < 09:00 UTC  ->  arming allowed
-//   otherwise                        ->  IDLE only
+//   LIVE TARGET: 22:00 UTC <= now_hh < 04:00 UTC (next day, wraparound)
+//                                                ->  arming allowed.
+//   Wellington opens 22:00 UTC winter / 21:00 UTC summer (NZDT/NZST shift).
+//   Sydney joins at 22:00 UTC (already open through Wellington's first hour
+//   in NZST). Tokyo at 00:00 UTC catches the NZD-side liquidity injection.
+//   The 22-04 window stretches one hour later than AUDUSD's 22-02 because
+//   the kiwi's strongest compression-to-breakout transitions tend to occur
+//   in the post-Tokyo-open hours when AUDNZD cross flows settle. 04:00 UTC
+//   is the pre-Frankfurt cutoff beyond which NZDUSD shifts toward European-
+//   session USD-driven moves -- a different signal regime.
+//
+//   WRAPAROUND-AWARE CHECK (now active in this engine):
+//       const bool in_window = (SESSION_END_HOUR_UTC > SESSION_START_HOUR_UTC)
+//           ? (utc.tm_hour >= SESSION_START_HOUR_UTC && utc.tm_hour < SESSION_END_HOUR_UTC)
+//           : (utc.tm_hour >= SESSION_START_HOUR_UTC || utc.tm_hour < SESSION_END_HOUR_UTC);
+//       if (!in_window) return;
+//   The simple `< START || >= END` form does NOT handle a wraparound window
+//   (START=22, END=4 would reject all hours). The ternary above covers both
+//   the forward and wraparound cases.
+//
+//   PRODUCTION (current): START=22, END=4 (live target restored 2026-05-04
+//   after the S57 audit-fixes-36 visibility-only 0-24 widening was reverted).
+//   Engine self-gates on news blackout, spread, ATR, same-level block, and
+//   compression-range formation inside the window.
 //   (Existing positions still managed via manage() regardless of window.)
 //
 // NEWS BLACKOUT:
-//   At IDLE->ARMED transition, consult g_news_blackout.is_blocked("EURUSD",..).
-//   NFP / CPI / FOMC / ECB cover EURUSD per RecurringEventScheduler.
+//   At IDLE->ARMED transition, consult g_news_blackout.is_blocked("NZDUSD",..).
+//   NZDUSD is in the USD symbol set (NFP/CPI/FOMC) AND the NZD symbol set
+//   (RBNZ, NZ CPI, NZ jobs via country="NZD") per OmegaNewsBlackout.hpp:
+//   392-399. The blackout layer auto-includes both currency sides without
+//   any per-engine filter list -- the single is_blocked("NZDUSD",..) call
+//   covers RBNZ, NZ events, NFP, CPI, FOMC, and the Forex Factory live
+//   calendar overlay (config.hpp:278 refresh path).
 //   Existing positions exit via SL/TP/MAX_HOLD inside manage() -- not via
 //   this gate -- to avoid forcing closes on already-open trades.
 //
-// DOM FILTER (FX variant):
+// DOM FILTER (NZDUSD variant):
 //   At PENDING->FIRE time, DOM confirms which side has a clear path.
-//   EUR-side fields available in g_macro_ctx:
-//     - eur_l2_imbalance (0..1; 0.5 neutral)
-//     - eur_vacuum_ask / eur_vacuum_bid
-//     - eur_wall_above  / eur_wall_below
-//   No eur_slope field exists -- engine receives book_slope = 0.0 from the
-//   dispatcher, so the slope branch is naturally inert. Vacuum and wall
-//   fields drive the lot bonus / penalty. l2_real flag should be wired to
-//   g_macro_ctx.ctrader_l2_live -- when false, DOM filter is bypassed (safe
-//   fallback, both sides equal lots).
+//   NZD-side fields available in g_macro_ctx (mirrors AUD/JPY -- vacuum-only):
+//     - nzd_vacuum_ask / nzd_vacuum_bid
+//   NOT available: nzd_wall_above / nzd_wall_below / nzd_slope.
+//   The dispatcher passes book_slope = 0.0, wall_above = wall_below = false
+//   so the slope/wall branches are naturally inert. Vacuum fields drive
+//   the lot bonus. l2_real flag should be wired to
+//   g_macro_ctx.ctrader_l2_live -- when false, DOM filter is bypassed
+//   (safe fallback, both sides equal lots).
 //
 // SIZING:
-//   Standalone: risk_dollars = $30, SL_dist = range * 0.5 + 0.0002 (2 pips)
+//   Standalone: risk_dollars = $30, SL_dist = range * 1.00 + 0.0002 (2 pips)
 //   Pyramid:    risk_dollars = $10 (30% addon), same SL formula
-//   Lot range:  0.01 to 0.10 (LOT_MIN..LOT_MAX). At 0.10 lot, $1 per pip;
-//               an 8-pip SL = $8 risk -- well within the $30 budget while
-//               staying conservative for a first FX deploy.
-//   ENTRY_SIZE_DEFAULT = 0.10 lot (un-capped from gold's 0.01 cap because
-//   FX requires meaningful size to validate statistically; gold cap was
-//   FIX 2026-04-22 specific to the gold engine cohort).
+//   Lot range:  0.01 to 0.20 (LOT_MIN..LOT_MAX, S56 half-Kelly cap).
+//               At 0.10 lot baseline, 1 pip = $1; a 22-pip SL = $22 risk
+//               -- within the $30 budget but tighter than EUR/GBP because
+//               S59 SL_FRAC=1.00 places SL at the full opposite end of
+//               the compression structure.
+//   ENTRY_SIZE_DEFAULT = 0.10 lot (matches EURUSD/GBPUSD/AUDUSD/USDJPY).
+//
+//   USD_PER_PRICE_UNIT = 10000.0 -- at 0.10 lot, 1 unit of price (1.0 NZD)
+//   = 10000 pips * $1/pip = $10,000. Identical to EURUSD/GBPUSD/AUDUSD
+//   because NZD is a USD-quote major. Real PnL conversion uses the standard
+//   pipeline via tick_value_multiplier in the close pipeline (no live-rate
+//   conversion needed -- USD is the quote currency).
 //
 // LOG NAMESPACE:
-//   All log lines use prefix [EUR-LDN-OPEN] / [EUR-LDN-OPEN-DIAG].
-//   tr.engine = "EurusdLondonOpen" (registered in engine_init.hpp).
-//   tr.regime = "LDN_COMPRESSION".
+//   All log lines use prefix [NZD-ASN-OPEN] / [NZD-ASN-OPEN-DIAG].
+//   tr.engine = "NzdusdAsianOpen" (registered in engine_init.hpp).
+//   tr.regime = "ASN_COMPRESSION".
 // =============================================================================
 
 #include <cstdint>
@@ -118,138 +156,120 @@
 
 namespace omega {
 
-class EurusdLondonOpenEngine {
+class NzdusdAsianOpenEngine {
 public:
-    // -- Parameters (Section 3 of EURUSD handoff doc, user-confirmed 2026-05-02) --
-    // Lookback window: 600 ticks ~= 3 min at 200 ticks/min EURUSD London.
-    //   Wide enough to find genuine 8+ pip compressions; narrow enough to
-    //   fire several times per 3-hour London-open window.
+    // -- Parameters (PRE-SWEEP defaults; mirror AudusdSydneyOpen with NZD pip scale) --
+    // Lookback window: 600 ticks. NOTE -- Wellington/Tokyo NZDUSD has the
+    //   lowest tick rate of the FX-major Asian cohort; 600 ticks ~= 8-20
+    //   min in NZD vs ~7-15 min in AUD. Sweep candidate set:
+    //   {300, 400, 600, 900}.
     static constexpr int    STRUCTURE_LOOKBACK   = 600;
     // Warmup: refuse new arming until at least this many ticks have arrived.
-    //   FX feed cold-start has more noise than gold; 60 vs gold's 30.
+    //   Wellington NZDUSD cold-start is the quietest of any FX major; 60
+    //   ticks may be too few -- sweep should also try 90/120.
     static constexpr int    MIN_ENTRY_TICKS      = 60;
     // Sweep guard: price must sit inside the formed bracket for this many
-    //   consecutive ticks before stop orders are sent. Mirrors gold value.
+    //   consecutive ticks before stop orders are sent. Mirrors
+    //   AUDUSD/USDJPY/EURUSD/gold.
     static constexpr int    MIN_BREAK_TICKS      = 5;
-    // 8-50 pip capture band.
-    //   MIN 8 pips: London compressions typically 8-15 pips.
-    //   MAX 50 pips: S56 backtest tune. Originally 30 pips, raised to 50 after
-    //   14-month tick-data sweep showed 30+pip compressions still produce
-    //   profitable breakouts. Cap retained as guard against post-news anomaly.
-    static constexpr double MIN_RANGE            = 0.0008;
+    // S59 lineage (USDJPY/AUDUSD): MIN_RANGE = 20 pips, MAX_RANGE = 50 pips.
+    //   NZDUSD typical Wellington-Tokyo compressions run 15-30 pips (very
+    //   close to AUD); 20-pip floor cuts dribble micro-ranges that lack
+    //   genuine breakout edge. 50-pip ceiling rejects post-news anomaly
+    //   compressions (RBNZ spike, NZ CPI gap) that span events cleared
+    //   during the lookback window.
+    static constexpr double MIN_RANGE            = 0.0020;
     static constexpr double MAX_RANGE            = 0.0050;
-    // S56 2026-05-02 (post-OOS validation): SL_FRAC raised 0.5 -> 0.80.
-    //   Original 0.5 (half-range) put SL too close: trades wicked out before
-    //   reaching trail-arm. 0.80 keeps SL in the upper 80% of compression
-    //   structure, giving the trade room to develop. PF jumps from 0.89 to
-    //   1.62 on this single change. See handoff doc Section 9.
-    static constexpr double SL_FRAC              = 0.80;
-    // SL_BUFFER = 2 pips: spread (0.5-1.4 pip) + slippage cushion.
+    // S59 lineage: SL_FRAC = 1.00. SL placed at the full opposite side of
+    //   the compression structure (no fractional shrink). Wider SL means
+    //   bigger individual losses but materially fewer of them; net WR
+    //   jumped 79.5% -> 83.9% on the USDJPY 14mo backtest. NZD inherits
+    //   as pre-sweep default via AUD lineage.
+    static constexpr double SL_FRAC              = 1.00;
+    // SL_BUFFER = 2 pips: spread (0.8-2.5 pip on NZD) + slippage cushion.
+    //   Slightly tight at the upper-spread end of the NZD distribution;
+    //   the MAX_SPREAD gate (below) will reject those moments anyway.
     static constexpr double SL_BUFFER            = 0.0002;
-    // RR = 2.0: TP = sl_dist * 2. S55 2026-05-02 backtest tune.
-    //   Original RR=3 (24-pip TP at 8-pip SL) was unreachable for typical
-    //   EURUSD volatility — only 3 of 1076 historical trades hit TP_HIT.
-    //   14-month HistData backtest showed RR=2 with BE=6 pips gives
-    //   PnL=+$188 vs RR=3 baseline +$54 (3.5x improvement, DD reduced 34%).
-    //   See docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md Section 8.
-    //   Gold uses RR=4 (commodity volatility); FX RR=2 reflects shorter
-    //   typical trend continuation post-compression on EURUSD.
-    static constexpr double TP_RR                = 2.0;
-    // S56 2026-05-02 (post-OOS validation): TRAIL_FRAC 0.25 -> 0.30.
-    //   Wider trail (30% of range) lets winners run further before trail
-    //   tightens. Combines additively with SL_FRAC=0.80 -- joint tune
-    //   pushed PnL from $305 (SL_FRAC alone) to $425 (both).
+    // S59 lineage: TP_RR = 0.5. TP sits at ~10-15 pips (= p75 winner-MFE
+    //   on USDJPY backtest), banking early gains on trades that would
+    //   otherwise dribble back to a smaller trail exit. NZD inherits as
+    //   pre-sweep default; sweep should validate against NZD's slightly
+    //   tighter daily ATR.
+    static constexpr double TP_RR                = 0.5;
+    // S56 lineage: TRAIL_FRAC = 0.30 (wider trail; lets winners run).
     static constexpr double TRAIL_FRAC           = 0.30;
-    // Trail-arm guards (S20 lineage). FX moves slower than gold per second
-    //   of clock time, so MIN_TRAIL_ARM_SECS bumped 15 -> 30. MIN_TRAIL_ARM_PTS
-    //   = 6 pips -- R-equivalent of $5 on gold at 0.10 lot ($1/pip * 6 = $6).
+    // Trail-arm guards (S20 lineage). MIN_TRAIL_ARM_PTS = 6 pips.
+    //   NZDUSD pip-per-second comparable to AUD/USDJPY in Asian session;
+    //   30-second hold gate carries over unchanged.
     static constexpr double MIN_TRAIL_ARM_PTS    = 0.0006;
     static constexpr int    MIN_TRAIL_ARM_SECS   = 30;
-    // S56 2026-05-02 (post-OOS validation): MFE_TRAIL_FRAC 0.55 -> 0.40.
-    //   Preserve 60% of run (was 45%). With wider SL placement (SL_FRAC=0.80)
-    //   trades MFE further before reversing; tightening MFE give-back from
-    //   0.55 -> 0.40 captures more of the move. PF jumps to 2.09 with this.
-    //   Pre-S56 value was 0.55 (S52/S53 gold lineage).
-    static constexpr double MFE_TRAIL_FRAC       = 0.40;
-    // S55 2026-05-02 break-even lock trigger: 6 pips MFE.
-    //   Move SL to entry once MFE >= BE_TRIGGER_PTS. Originally 4 pips
-    //   (S53 baseline from gold lineage) but 14-month HistData backtest
-    //   showed 4 pips fired too early -- trades that would have hit TP
-    //   got locked at break-even. Raising to 6 pips (matching the trail
-    //   arm threshold) gives PnL=+$153 vs +$54 baseline (single biggest
-    //   improvement of any axis sweep). At 6 pips, BE-lock and trail-arm
-    //   fire simultaneously, eliminating the BE-only zone -- trades
-    //   transition seamlessly from BE-protected to trail-protected.
-    //   Net result: BE_HIT count drops to 0; clean TP/TRAIL/SL outcomes.
-    //   See docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md Section 8.
+    // S58 lineage: MFE_TRAIL_FRAC = 0.15 (tighter trail captures more of
+    //   the win on small-MFE runs typical of Asian-session moves).
+    static constexpr double MFE_TRAIL_FRAC       = 0.15;
+    // S55 lineage: BE-lock at 6 pips MFE. With BE-trigger == trail-arm
+    //   threshold, BE-lock and trail-arm fire simultaneously, eliminating
+    //   the BE-only zone -- trades transition seamlessly from BE-protected
+    //   to trail-protected.
     static constexpr double BE_TRIGGER_PTS       = 0.0006;
     // S54 2026-05-04 (audit-fixes-35): BE-exit slippage offset.
-    //   EURUSD pip = 0.0001. Round-trip cost on default 0.10 lot is approx
-    //   1-1.5 pips (spread ~0.7 + slippage ~0.5 + commission). Park SL at
-    //   entry +/- BE_OFFSET_PTS (~1.5 pips) so a BE_HIT recovers the cost.
-    //   Same logic as XAUUSD/USDJPY engines, scaled to EUR pip size.
+    //   NZDUSD pip = 0.0001 (same as EUR/GBP/AUD). Round-trip cost on
+    //   default 0.10 lot is approx 1.5-3 pips on NZD (spread ~1.4 + slip
+    //   ~0.5 + commission). Park SL at entry +/- BE_OFFSET_PTS (~1.5 pips)
+    //   so a BE_HIT recovers the cost. Same logic as the EUR/GBP/AUD/JPY
+    //   engines, scaled to NZD pip size (identical to AUD).
     static constexpr double BE_OFFSET_PTS        = 0.00015;
-    // S56 2026-05-02 (post-OOS validation): SAME_LEVEL_BLOCK_PTS 10 -> 8 pips.
-    //   8 pips matches MIN_RANGE exactly: any compression structure that
-    //   overlaps a prior exit within its own width is rejected. This is
-    //   the tightest block radius that still allows continuation breakouts
-    //   to fire. Combined with the wider SL placement (SL_FRAC=0.80) it
-    //   reduces re-entry on chop. POST_SL block raised 900s -> 1200s
-    //   (15min -> 20min) to give failed breakouts more time to clear.
-    static constexpr double SAME_LEVEL_BLOCK_PTS         = 0.0008;
+    // S56 lineage: SAME_LEVEL_BLOCK_PTS = MIN_RANGE = 20 pips.
+    //   POST_SL block 1200s (20 min); POST_WIN block 600s (10 min).
+    //   Wider block radius than EUR (8 pips) because NZD's wider
+    //   compression floor (20 pips vs EUR's 8) needs a proportionally
+    //   wider exclusion zone to avoid re-firing on the same level.
+    static constexpr double SAME_LEVEL_BLOCK_PTS         = 0.0020;
     static constexpr int    SAME_LEVEL_POST_SL_BLOCK_S   = 1200; // 20 min after SL
     static constexpr int    SAME_LEVEL_POST_WIN_BLOCK_S  = 600;  // 10 min after TP/TRAIL
-    // MAX_SPREAD = 2 pips. Reject if spread blew out beyond typical 0.5-1.4.
-    static constexpr double MAX_SPREAD           = 0.00020;
+    // MAX_SPREAD = 2.5 pips. Reject if spread blew out beyond typical 0.8-2.5.
+    //   Wider than AUD's 2-pip cap because NZD's normal upper bound is
+    //   wider; this preserves the same headroom above typical conditions.
+    //   NZD spreads can spike sharply during the pre-Wellington 20-22 UTC
+    //   illiquidity gap and the NY 5pm rollover (21:00 UTC); the cap
+    //   blocks arming during those windows even when the live target
+    //   session is widened.
+    static constexpr double MAX_SPREAD           = 0.00025;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;
     // USD value of 1 unit of price (1.0) at default lot 0.10:
     //   1 pip (0.0001) at 0.10 lot = $1   ->  1 unit of price = 10000 * $1 = $10,000.
+    //   Identical to EURUSD/GBPUSD/AUDUSD: NZD is a USD-quote major with
+    //   the same pip convention.
     static constexpr double USD_PER_PRICE_UNIT   = 10000.0;
-    // S56 2026-05-02 (post-OOS validation): LOT_MAX 0.10 -> 0.20.
-    //   ENTRY_SIZE_DEFAULT and LOT_MIN unchanged. Half-Kelly sizing per the
-    //   14-month champion's empirical win rate (66.6%) and win/loss ratio
-    //   (b=0.605):
-    //     Kelly fraction      = 11.5% of capital per trade
-    //     Half Kelly          =  5.7% of capital per trade
-    //     Quarter Kelly       =  2.9% of capital per trade
-    //   At 0.20 lot, 8-pip SL = $16 risk per trade = ~1.6% of $1000 sub-
-    //   account or ~0.16% of $10k account. Conservative half-Kelly territory
-    //   with margin for WR degradation in real broker conditions (avg_loss
-    //   $10.54 is 65% bigger than avg_win $6.38, so the 66% WR is doing all
-    //   the work -- if WR drops to 55% the math goes upside-down fast).
-    //   DO NOT exceed 0.20 until 2 weeks of shadow data confirm OOS WR >= 60%.
+    // S56 lineage: ENTRY_SIZE_DEFAULT 0.10, LOT_MIN 0.01, LOT_MAX 0.20.
+    //   PRE-SWEEP default; NZDUSD-specific Kelly analysis from the parallel
+    //   sweep should confirm (or downgrade) this LOT_MAX before live
+    //   promotion. DO NOT exceed 0.20 until 2 weeks of shadow data confirm
+    //   OOS WR >= 60%.
     static constexpr double ENTRY_SIZE_DEFAULT   = 0.10;
     static constexpr double LOT_MIN              = 0.01;
     static constexpr double LOT_MAX              = 0.20;
-    // Pending timeout: FX breaks fast or resets. Matches existing
-    //   g_bracket_eurusd 180s value.
+    // Pending timeout: FX breaks fast or resets. Same value as
+    //   EURUSD/GBPUSD/AUDUSD/USDJPY.
     static constexpr int    PENDING_TIMEOUT_S    = 180;
-    // S56 2026-05-02 (post-OOS validation): COOLDOWN_S 240 -> 120.
-    //   Original 240s (4min) was too patient. With wider SL (SL_FRAC=0.80)
-    //   and tighter same-level block (8 pips), faster cooldown captures
-    //   more genuine continuation moves without re-firing on chop. The
-    //   same-level block (post-SL 1200s, post-win 600s) is now the
-    //   primary anti-chop guard rather than a long blanket cooldown.
+    // S56 lineage: COOLDOWN_S = 120s. Same-level block (post-SL 1200s,
+    //   post-win 600s) is the primary anti-chop guard.
     static constexpr int    COOLDOWN_S           = 120;
-    // Session window (UTC hours): 06:00-09:00 UTC London-open compression
-    //   window. 3h window concentrating on the highest-edge London open hour.
+    // Session window (UTC hours): 22:00-04:00 UTC (6h Wellington open +
+    //   Tokyo handoff wraparound window -- one hour wider than AUD's 22-02
+    //   to capture post-Tokyo-open hours when AUDNZD cross flows settle).
+    //   The wraparound form (START=22, END=4) requires the wraparound-aware
+    //   in-window check below.
     //
     // 2026-05-04 (post-S57): production window RESTORED.
     //   The S57 audit-fixes-36 widening (0-24) was a SHADOW-VISIBILITY-ONLY
-    //   override so shadow engines would fire AS IF live and produce visible
-    //   ledger/PnL during the FX wiring validation. Live tape analysis showed
-    //   the widening pulled the engine into Asia compression hours where the
-    //   "fade-the-edge" pattern dominates (opposite signal to a momentum
-    //   compression-breakout) -- producing the symptomatic ✓BE → SL shape.
-    //   Restoring the production 06-09 window removes that drag. Engine still
-    //   self-gates on news blackout, spread, ATR, same-level block, and
-    //   compression-range formation inside the window.
-    //
-    //   The `< START || >= END` check below remains correct for the
-    //   non-wraparound 06-09 window.
-    static constexpr int    SESSION_START_HOUR_UTC = 6;
-    static constexpr int    SESSION_END_HOUR_UTC   = 9;
+    //   override for the FX cohort wiring validation. Restored to 22-04 so
+    //   the engine fires only inside the kiwi Wellington/Tokyo handoff
+    //   window it was tuned for. The session-check below was upgraded from
+    //   the simple `< START || >= END` form to the wraparound-aware ternary
+    //   documented in the strategy header above.
+    static constexpr int    SESSION_START_HOUR_UTC = 22;
+    static constexpr int    SESSION_END_HOUR_UTC   = 4;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15;
     static constexpr double DOM_LOT_BONUS        = 1.3;
     static constexpr double DOM_WALL_PENALTY     = 0.5;
@@ -262,10 +282,10 @@ public:
     enum class Phase { IDLE, ARMED, PENDING, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
 
-    // 2026-05-02: shadow ON by default. Promote to live ONLY after a clean
-    //   2-week paper validation showing positive expectancy in the 8-30 pip
-    //   capture zone. Live promotion via engine_init.hpp override -- do NOT
-    //   change this default in the header.
+    // 2026-05-04: shadow ON by default. Promote to live ONLY after a clean
+    //   2-week paper validation showing positive expectancy in the 20-50
+    //   pip capture zone with WR >= 60%. Live promotion via engine_init.hpp
+    //   override -- do NOT change this default in the header.
     bool  shadow_mode = true;
 
     struct LivePos {
@@ -343,7 +363,7 @@ public:
             {
                 char _buf[512];
                 snprintf(_buf, sizeof(_buf),
-                    "[EUR-LDN-OPEN-DIAG] ticks=%d phase=%d window=%d/%d range=%.5f spread=%.5f\n",
+                    "[NZD-ASN-OPEN-DIAG] ticks=%d phase=%d window=%d/%d range=%.5f spread=%.5f\n",
                     m_ticks_received, (int)phase, (int)m_window.size(), window_needed,
                     live_range, spread);
                 std::cout << _buf;
@@ -374,7 +394,7 @@ public:
                 {
                     char _buf[256];
                     snprintf(_buf, sizeof(_buf),
-                        "[EUR-LDN-OPEN] PENDING TIMEOUT after %ds -- resetting\n",
+                        "[NZD-ASN-OPEN] PENDING TIMEOUT after %ds -- resetting\n",
                         PENDING_TIMEOUT_S);
                     std::cout << _buf;
                     std::cout.flush();
@@ -401,10 +421,13 @@ public:
 
         if (!m_spread_gate.can_fire()) return;
 
-        // Session window gate: 06:00-09:00 UTC only. London open + first hour.
-        // FX edge is concentrated here per multi-source FX research (London
-        // hand-off from Asia, pre-NY-overlap). Outside this window, stay IDLE.
-        // Existing LIVE/PENDING/COOLDOWN paths above already returned.
+        // Session window gate: 22:00-04:00 UTC (Wellington + Tokyo handoff).
+        // Outside this window, stay IDLE. Existing LIVE/PENDING/COOLDOWN
+        // paths above already returned.
+        //
+        // Wraparound-aware check: when END > START it's a normal forward
+        // window; when END <= START (our 22->04 case) the in-window predicate
+        // is the union of [START..23] and [0..END).
         {
             time_t t = static_cast<time_t>(now_s);
             struct tm utc{};
@@ -413,15 +436,20 @@ public:
 #else
             gmtime_r(&t, &utc);
 #endif
-            if (utc.tm_hour < SESSION_START_HOUR_UTC ||
-                utc.tm_hour >= SESSION_END_HOUR_UTC) {
-                return;
-            }
+            const bool in_window =
+                (SESSION_END_HOUR_UTC > SESSION_START_HOUR_UTC)
+                    ? (utc.tm_hour >= SESSION_START_HOUR_UTC &&
+                       utc.tm_hour <  SESSION_END_HOUR_UTC)
+                    : (utc.tm_hour >= SESSION_START_HOUR_UTC ||
+                       utc.tm_hour <  SESSION_END_HOUR_UTC);
+            if (!in_window) return;
         }
 
-        // News blackout gate: NFP/CPI/FOMC/ECB block EURUSD per
-        // RecurringEventScheduler symbol sets. Forex Factory live calendar
-        // (g_live_calendar) layered on top by config.hpp:278 refresh.
+        // News blackout gate: RBNZ / NZ CPI / NZ jobs block NZDUSD via the
+        // NZD currency set; NFP/CPI/FOMC block via the USD set. NZDUSD is
+        // in both per OmegaNewsBlackout.hpp:392-399. Forex Factory live
+        // calendar (g_live_calendar) layered on top by config.hpp:278
+        // refresh.
         // Only blocks NEW arming; already-LIVE positions continue managing
         // via manage() above.
         //
@@ -432,7 +460,7 @@ public:
         // parse time. Direct usage (no extern declaration) avoids the
         // linkage-mismatch warning that an extern would create against the
         // static definition.
-        if (g_news_blackout.is_blocked("EURUSD", now_s)) {
+        if (g_news_blackout.is_blocked("NZDUSD", now_s)) {
             return;
         }
 
@@ -445,9 +473,9 @@ public:
 
         // -- IDLE -> ARMED ---------------------------------------------------
         if (phase == Phase::IDLE) {
-            // S53: same-level re-arm block.
+            // S53/S56: same-level re-arm block.
             //   Block re-arming when the new compression's hi or lo overlaps
-            //   a recent exit price within SAME_LEVEL_BLOCK_PTS=10 pips and
+            //   a recent exit price within SAME_LEVEL_BLOCK_PTS=20 pips and
             //   the relevant cooldown is still active. Continuation captured
             //   naturally once price moves past the block radius.
             if (m_sl_price > 0.0 && now_s < m_sl_cooldown_ts) {
@@ -471,7 +499,7 @@ public:
                 {
                     char _buf[256];
                     snprintf(_buf, sizeof(_buf),
-                        "[EUR-LDN-OPEN] ARMED hi=%.5f lo=%.5f range=%.5f spread=%.5f\n",
+                        "[NZD-ASN-OPEN] ARMED hi=%.5f lo=%.5f range=%.5f spread=%.5f\n",
                         bracket_high, bracket_low, range, spread);
                     std::cout << _buf;
                     std::cout.flush();
@@ -501,14 +529,15 @@ public:
             const double sl_dist = range * SL_FRAC + SL_BUFFER;
             const double tp_dist = sl_dist * TP_RR;
             // FX cost-cover gate: TP must clear 2x spread plus a 1-pip buffer.
-            //   Gold uses min_tp = spread*2 + 0.12 (12 cents); FX equivalent
-            //   is spread*2 + 0.0001 (1 pip).
+            //   EUR/GBP/AUD use spread*2 + 0.0001 (1 pip in their units);
+            //   NZDUSD equivalent is spread*2 + 0.0001 (1 pip in NZD units --
+            //   same 0.0001 pip scale as the other USD-quote majors).
             const double min_tp  = spread * 2.0 + 0.0001;
             if (tp_dist < min_tp) {
                 {
                     char _buf[256];
                     snprintf(_buf, sizeof(_buf),
-                        "[EUR-LDN-OPEN] COST_FAIL range=%.5f sl_dist=%.5f tp_dist=%.5f min=%.5f\n",
+                        "[NZD-ASN-OPEN] COST_FAIL range=%.5f sl_dist=%.5f tp_dist=%.5f min=%.5f\n",
                         range, sl_dist, tp_dist, min_tp);
                     std::cout << _buf;
                     std::cout.flush();
@@ -535,7 +564,7 @@ public:
                     {
                         char _buf[256];
                         snprintf(_buf, sizeof(_buf),
-                            "[EUR-LDN-OPEN] ATR_GATE_FAIL range=%.5f median=%.5f mult=%.2f threshold=%.5f hist=%d\n",
+                            "[NZD-ASN-OPEN] ATR_GATE_FAIL range=%.5f median=%.5f mult=%.2f threshold=%.5f hist=%d\n",
                             range, median, EXPANSION_MULT, threshold,
                             (int)m_range_history.size());
                         std::cout << _buf;
@@ -551,17 +580,22 @@ public:
             const double risk     = is_pyramid ? RISK_DOLLARS_PYRAMID : RISK_DOLLARS;
             // Lot sizing by risk budget. risk_dollars = sl_dist * USD_PER_PRICE_UNIT * lot_fraction
             //   At ENTRY_SIZE_DEFAULT=0.10 lot, 1 unit of price = $10,000.
-            //   sl_dist = 0.0008 (8 pips) -> $8 per lot-fraction-1.
-            //   $30 risk / $8 per unit-lot = 3.75 -> capped at LOT_MAX=0.10.
-            //   $10 pyramid risk / $8 = 1.25 -> capped at LOT_MAX=0.10.
-            // Effectively: most fires hit LOT_MAX. The cap exists for safety
-            // on tighter compressions where sl_dist drops below 6 pips.
+            //   sl_dist = 0.0022 (22 pips) -> $22 per lot-fraction-1.
+            //   $30 risk / $22 per unit-lot = 1.36 -> capped at LOT_MAX=0.20.
+            //   $10 pyramid risk / $22 = 0.45 -> ~0.045 lot, then clamped to LOT_MIN.
+            // Same tighter sizing as AUD because S59 SL_FRAC=1.00 places SL
+            // at the full opposite side of the compression structure.
             const double risk_lot = (sl_dist * USD_PER_PRICE_UNIT > 0.0)
                 ? (risk / (sl_dist * USD_PER_PRICE_UNIT))
                 : LOT_MAX;
             const double base_lot = std::max(LOT_MIN, std::min(LOT_MAX, risk_lot));
 
-            // -- DOM lot sizing (FX variant) ---------------------------------
+            // -- DOM lot sizing (NZDUSD variant) -----------------------------
+            // Note: nzd_wall_above / nzd_wall_below do not exist in g_macro_ctx;
+            //   the dispatcher in tick_fx.hpp passes wall_above = wall_below =
+            //   false unconditionally. The wall branches below remain inert
+            //   for NZDUSD (no DOM_BLOCK / no DOM_WALL_PENALTY scaling).
+            //   Same DOM-shape as AUDUSD/USDJPY: vacuum-only.
             double lot_long  = base_lot;
             double lot_short = base_lot;
 
@@ -570,7 +604,7 @@ public:
                     {
                         char _buf[256];
                         snprintf(_buf, sizeof(_buf),
-                            "[EUR-LDN-OPEN] DOM_BLOCK both walls present -- skipping fire\n");
+                            "[NZD-ASN-OPEN] DOM_BLOCK both walls present -- skipping fire\n");
                         std::cout << _buf;
                         std::cout.flush();
                     }
@@ -595,7 +629,7 @@ public:
             {
                 char _buf[512];
                 snprintf(_buf, sizeof(_buf),
-                    "[EUR-LDN-OPEN] FIRE hi=%.5f lo=%.5f range=%.5f sl=%.5f tp=%.5f "
+                    "[NZD-ASN-OPEN] FIRE hi=%.5f lo=%.5f range=%.5f sl=%.5f tp=%.5f "
                     "lot_base=%.3f lot_L=%.3f lot_S=%.3f slope=%.2f vac_a=%d vac_b=%d "
                     "wall_a=%d wall_b=%d %s\n",
                     bracket_high, bracket_low, range, sl_dist, tp_dist,
@@ -636,7 +670,7 @@ public:
         {
             char _buf[256];
             snprintf(_buf, sizeof(_buf),
-                "[EUR-LDN-OPEN] FILL %s @ %.5f sl=%.5f(dist=%.5f) tp=%.5f lot=%.3f\n",
+                "[NZD-ASN-OPEN] FILL %s @ %.5f sl=%.5f(dist=%.5f) tp=%.5f lot=%.3f\n",
                 is_long ? "LONG" : "SHORT", fill_px, pos.sl, sl_dist, pos.tp, fill_lot);
             std::cout << _buf;
             std::cout.flush();
@@ -654,13 +688,13 @@ public:
         // Trail with S20 arm guards + S52/S53 give-back fraction.
         const int64_t held_s = now_s - pos.entry_ts;
 
-        // S53: break-even lock.
-        //   Move SL to entry once MFE crosses BE_TRIGGER_PTS=4 pips. Fills
-        //   the gap between original SL and MIN_TRAIL_ARM_PTS=6 pips so
-        //   trades that MFE 3-5 pips then reverse exit at $0 instead of SL.
-        //   One-shot via pos.be_locked. No hold-time guard: 4 pips on EURUSD
-        //   is ~3-4x bid-ask noise (typical spread 0.5-1.4 pips), not
-        //   gameable by tick fluctuation.
+        // S55: break-even lock.
+        //   Move SL to entry once MFE crosses BE_TRIGGER_PTS=6 pips. With
+        //   BE-trigger == trail-arm, BE-lock and trail-arm fire simultaneously
+        //   on the same tick -- trades transition seamlessly from BE-protected
+        //   to trail-protected. One-shot via pos.be_locked. No hold-time
+        //   guard: 6 pips on NZDUSD is ~2.5-7x bid-ask noise (typical spread
+        //   0.8-2.5 pips), not gameable by tick fluctuation.
         if (move > 0 && !pos.be_locked && pos.mfe >= BE_TRIGGER_PTS) {
             // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
             //   BE_HIT recovers round-trip cost. Safety guard: only apply
@@ -691,8 +725,9 @@ public:
         if (tp_hit) { _close(pos.tp, "TP_HIT", now_s, on_close); return; }
 
         // SL with S43 TRAIL_HIT/SL_HIT/BE_HIT classifier.
-        // Tolerance for BE detection: 0.5 pip (half typical spread). Larger
-        // than gold's 0.01 because FX noise floor is wider relative to BE.
+        // Tolerance for BE detection: 0.5 pip (half typical spread). Same
+        // 0.00005 as EUR/GBP/AUD because NZD shares the same 0.0001 pip
+        // scale.
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (sl_hit) {
             const double exit_px = pos.is_long ? bid : ask;
@@ -738,7 +773,8 @@ private:
     std::deque<double> m_range_history;
 
     // AUDIT 2026-04-29: serialise the whole _close path. Inherited from
-    //   GoldMidScalper to avoid the Apr-7 -$3,008.38 phantom-pnl race.
+    //   GoldMidScalper / EurusdLondonOpen / UsdjpyAsianOpen / AudusdSydneyOpen
+    //   to avoid the Apr-7 -$3,008.38 phantom-pnl race.
     mutable std::mutex m_close_mtx;
 
     void _close(double exit_px, const char* reason,
@@ -758,25 +794,25 @@ private:
         const double spread_at_entry_ = pos.spread_at_entry;
         const int64_t entry_ts_ = pos.entry_ts;
 
-        // PnL math: price-distance * size * USD_PER_PRICE_UNIT_AT_DEFAULT_LOT
-        //   At 0.10 lot, $1 per pip. So pnl_dollars = price_distance * 10000 * (size / 0.10).
-        //   For uniformity with the gold engine signature (which uses size in
-        //   raw lots and lets the close pipeline multiply by tick value),
-        //   we emit raw price_distance * size and let handle_closed_trade
-        //   do the FX tick-value multiplication. This matches the
-        //   trade_lifecycle.hpp convention used by g_eng_eurusd before the
-        //   2026-04-06 disable.
+        // PnL math: emit raw price_distance * size and let handle_closed_trade
+        //   apply the FX tick-value multiplication via tick_value_multiplier.
+        //   For NZDUSD this resolves through the standard USD-quote path
+        //   (no live cross-rate conversion needed -- USD is the quote
+        //   currency). Matches the trade_lifecycle.hpp convention used by
+        //   the EURUSD/GBPUSD/AUDUSD engines.
         const double pnl = (is_long_ ? (exit_px - entry_) : (entry_ - exit_px)) * size_;
 
-        // Sanity check: clamp anomalous PnL. EURUSD with size <= 0.10 and
-        //   move <= MAX_RANGE should never produce |pnl_raw| > 0.0030 * 0.10
-        //   = 0.0003. Cap at ~10x that for safety.
+        // Sanity check: clamp anomalous PnL. NZDUSD with size <= 0.20 and
+        //   move <= MAX_RANGE should never produce |pnl_raw| > 0.0050 * 0.20
+        //   = 0.0010. Cap at ~10x that for safety: 0.05 * size_ matches the
+        //   EUR/GBP/AUD multiplier (same 0.0001 pip scale, same per-pip
+        //   USD value).
         const double sane_max = std::max(0.01, size_) * 0.05;
         double pnl_to_emit = pnl;
         if (std::fabs(pnl) > sane_max) {
             const double recomputed = (is_long_ ? (exit_px - entry_) : (entry_ - exit_px)) * size_;
             std::ostringstream warn;
-            warn << "[EUR-LDN-OPEN][SANITY] anomalous pnl=" << pnl
+            warn << "[NZD-ASN-OPEN][SANITY] anomalous pnl=" << pnl
                  << " (size=" << size_ << " entry=" << entry_ << " exit=" << exit_px
                  << "). Recomputed=" << recomputed
                  << ". Emitting recomputed value.\n";
@@ -787,7 +823,7 @@ private:
 
         {
             std::ostringstream os;
-            os << "[EUR-LDN-OPEN] EXIT " << (is_long_ ? "LONG" : "SHORT")
+            os << "[NZD-ASN-OPEN] EXIT " << (is_long_ ? "LONG" : "SHORT")
                << " @ " << std::fixed << std::setprecision(5) << exit_px
                << " reason=" << reason
                << " pnl_raw=" << std::setprecision(6) << pnl_to_emit
@@ -798,8 +834,8 @@ private:
             std::cout.flush();
         }
 
-        // S53: same-level re-arm block stamps.
-        //   SL_HIT -> 15-min block at entry price (rejected level).
+        // S53/S56: same-level re-arm block stamps.
+        //   SL_HIT -> 20-min block at entry price (rejected level).
         //   TRAIL_HIT or TP_HIT -> 10-min block at exit price (exhaustion).
         //   BE_HIT -> no stamp.
         if (reason == std::string("SL_HIT")) {
@@ -814,10 +850,10 @@ private:
 
         omega::TradeRecord tr;
         tr.id           = ++m_trade_id;
-        tr.symbol       = "EURUSD";
+        tr.symbol       = "NZDUSD";
         tr.side         = is_long_ ? "LONG" : "SHORT";
-        tr.engine       = "EurusdLondonOpen";
-        tr.regime       = "LDN_COMPRESSION";
+        tr.engine       = "NzdusdAsianOpen";
+        tr.regime       = "ASN_COMPRESSION";
         tr.entryPrice   = entry_;
         tr.exitPrice    = exit_px;
         tr.tp           = tp_;

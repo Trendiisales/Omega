@@ -105,6 +105,13 @@ struct IndexHybridConfig {
     //   more room for the move to mature before BE lock engages.
     //   Default 0.60 applies to all index symbols unless overridden.
     double be_trigger_frac    = 0.60;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage offset in price-points.
+    //   Park SL at entry +/- be_offset_pts so a BE_HIT recovers round-trip
+    //   cost instead of booking a small net loss. Default 1.5pt covers
+    //   typical index spread + slip + commission on 0.10 lot. Per-symbol
+    //   overrides applied in the static config helpers below where needed
+    //   (NAS100 wider tape may want 2.5pt).
+    double be_offset_pts      = 1.5;
     // S23 2026-04-25: trail-arm guards.
     //   Ported from gold S20 70bc25b6 (GoldHybridBracketEngine). The BE lock
     //   and any subsequent trail moves are gated by BOTH:
@@ -333,8 +340,12 @@ public:
             }
             if (shadow_mode) {
                 // S51 1A.1.a: pass real spread to populate pos.spread_at_entry.
-                if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot, spread); return; }
-                if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot, spread); return; }
+                // 2026-05-03: pass now_ms so entry_ts tracks the tick-stream
+                // timestamp, not wall-clock. Required for backtest replay
+                // where tick-time != wall-clock; otherwise held_s goes
+                // negative and trail-arm guards never satisfy.
+                if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot, spread, now_ms); return; }
+                if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot, spread, now_ms); return; }
             }
             return;
         }
@@ -491,7 +502,8 @@ public:
     //   shadow-mode call sites in on_tick() now pass (ask - bid) so the value
     //   reaches the closing TradeRecord via pos.spread_at_entry.
     void confirm_fill(bool is_long, double fill_px, double fill_lot,
-                      double spread_at_fill = 0.0) noexcept {
+                      double spread_at_fill = 0.0,
+                      int64_t now_ms_at_fill = 0) noexcept {
         if (phase != Phase::PENDING) return;
         cancel_losing_side(is_long);
 
@@ -508,7 +520,14 @@ public:
         pos.mae             = 0.0;   // S51: reset adverse-excursion tracker
         pos.spread_at_entry = spread_at_fill;  // S51: stash for tr.spreadAtEntry at close
         pos.be_locked       = false;
-        pos.entry_ts        = static_cast<int64_t>(std::time(nullptr));
+        // 2026-05-03: prefer now_ms_at_fill (tick-stream timestamp) over
+        // std::time(nullptr) (wall-clock). Required for backtest replay
+        // where tick-time != wall-clock. Production passes now_ms from the
+        // tick handler; legacy callers that don't pass it (default 0) fall
+        // back to wall-clock.
+        pos.entry_ts        = (now_ms_at_fill > 0)
+            ? (now_ms_at_fill / 1000)
+            : static_cast<int64_t>(std::time(nullptr));
         phase               = Phase::LIVE;
 
         std::cout << "[HYBRID-" << cfg_.symbol << "] FILL "
@@ -562,6 +581,13 @@ private:
         phase = Phase::IDLE;
         bracket_high = bracket_low = range = 0.0;
         m_inside_ticks = 0;
+        // Bug #5 (KNOWN_BUGS.md, 2026-05-03) -- reset the PENDING-blocked
+        // grace timer here so the next ARM cycle starts with a clean window.
+        // Without this, a stale m_pending_blocked_since persists across
+        // cancel/reset cycles and the next FIRE -> PENDING that briefly sees
+        // can_enter=false reads "blocked since the very first tick", which
+        // immediately exceeds the 15s grace and cancels the order.
+        m_pending_blocked_since = 0;
         pos = OpenPos{};
         pending_long_clOrdId.clear();
         pending_short_clOrdId.clear();
@@ -601,7 +627,16 @@ private:
         //   Raw gate formula: move >= tp_dist * be_trigger_frac AND !be_locked
         //   AND trail-arm guards satisfied.
         if (trail_arm_ok && move >= tp_dist * cfg_.be_trigger_frac && !pos.be_locked) {
-            pos.sl = pos.entry; pos.be_locked = true;
+            // S54 audit-fixes-35: park SL at entry +/- cfg_.be_offset_pts so
+            //   a BE_HIT recovers round-trip cost instead of booking a small
+            //   net loss. Per-symbol offset because index spreads vary.
+            //   Safety guard: only apply offset when current move >= offset.
+            const double effective_offset =
+                (move >= cfg_.be_offset_pts) ? cfg_.be_offset_pts : 0.0;
+            pos.sl = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            pos.be_locked = true;
             std::cout << "[HYBRID-" << cfg_.symbol << "] TRAIL-BE "
                       << (pos.is_long ? "LONG" : "SHORT")
                       << " move=" << std::fixed << std::setprecision(2) << move

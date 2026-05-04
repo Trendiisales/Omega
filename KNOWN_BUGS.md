@@ -113,17 +113,44 @@ whipsaw = nas[(nas.side != nas.prev_side) & (nas.gap_s < 300)]
 HybridBracketIndex without whipsaw entries is the +$172 winner the audit
 already flagged.
 
-**Fix (PENDING — to be implemented next).** Add a cross-engine `index_any_open`
-gate analogous to gold’s. Engines proposed: `g_iflow_*`, `g_hybrid_sp/nq/us30/nas100`,
-`g_minimal_h4_us30`. Locations to patch:
+**Fix (LANDED 2026-05-03, Engine Audit Installment 2).** Two-part block,
+because the documented whipsaw is post-close (1-3 minutes after a same-symbol
+or cross-symbol exit), not concurrent overlap:
 
-- `include/tick_indices.hpp` (the index tick handler) — add the gate
-- `include/globals.hpp` — already has the engine instances
-- Optionally `omega_config.ini` `[risk] index_min_entry_gap_sec=120`
+1. **Cross-engine `index_any_open()` predicate** in `globals.hpp`, mirroring
+   gold's `gold_any_open` at `tick_gold.hpp:36-50`. Returns true if any of
+   `g_iflow_sp/nq/nas/us30`, `g_hybrid_sp/nq/us30/nas100`, or
+   `g_minimal_h4_us30` has an open position right now. Catches concurrent
+   overlap.
 
-This is the next session’s priority. The fix is straightforward (~30 lines)
-but invasive across `tick_indices.hpp`, so it deserves a dedicated commit and
-shadow validation.
+2. **Post-close gap block** via
+   `omega::idx::record_index_close(symbol)` (called from
+   `ca_on_close()` in `trade_lifecycle.hpp` for any close where
+   `tr.symbol` is one of the four US index symbols) and
+   `omega::idx::idx_recent_close_block()` (true if the last index-symbol
+   close was within `omega::idx::g_index_min_entry_gap_sec` seconds, default
+   120). Catches the 1-3 minute follow-on whipsaw that is the actual
+   documented failure mode.
+
+Both predicates are appended as the FINAL conjuncts of every entry-gate
+composition in `tick_indices.hpp`:
+
+- `on_tick_us500`: `hybrid_sp_can_enter` and the IndexFlow `else if` branch
+- `on_tick_ustec`: `hybrid_nq_can_enter` and the IndexFlow `else if` branch
+- `on_tick_dj30`: `hybrid_us30_can_enter` and the IndexFlow `else if` branch
+- `on_tick_nas100`: `hybrid_nas_can_enter` and the IndexFlow `else if` branch
+
+To tune the gap: `omega::idx::g_index_min_entry_gap_sec = N;` from
+`engine_init.hpp` (or equivalent) before the tick loop starts. Optionally
+expose via `omega_config.ini [risk] index_min_entry_gap_sec=N`.
+
+**Validation.** A fresh OmegaBacktest 26-month run on the four US index
+symbols should now show the 59 NAS100 whipsaw entries (KNOWN_BUGS.md Bug #3
+classification) reduced to zero. Pre-fix: 59 trades, sum(net_pnl) ≈ −$55.77.
+Post-fix: zero entries within 300s of an opposite-side prior close on any
+participating engine. The NAS100 HBI baseline (the +$172 winner the audit
+already flagged) should re-emerge cleanly without whipsaw entries
+contaminating the per-engine attribution table.
 
 ---
 
@@ -174,8 +201,90 @@ $22,320 total loss — almost 60 % — without touching any other engine logic.
 |---|---:|---:|---|
 | MacroCrash Apr-15 phantom burst | 61 | −$9,907 | **FIXED** in `675f063f` (C-1 + C-3) |
 | HybridBracketGold Apr-7 100x record | 1 | −$3,008 | **FIXED** in `675f063f` (mutex + sanity) |
-| NAS100 whipsaw across IndexFlow ↔ HybridBracketIndex | 59 | −$56 | **PENDING** (`index_any_open` gate) |
+| NAS100 whipsaw across IndexFlow ↔ HybridBracketIndex | 59 | −$56 | **FIXED** 2026-05-03 (`index_any_open` + `idx_recent_close_block` in `globals.hpp` + `tick_indices.hpp` + `trade_lifecycle.hpp`; Engine Audit Installment 2) |
 | **Total bugs** | **121** | **−$12,971** | |
+
+---
+
+## Bug #4 — Index engines wall-clock vs tick-time (backtest replay only)
+
+**What happened.** During Engine Audit Installment 2 validation
+(IndexBacktest.cpp on April 2026 NSX HistData), `IndexHybridBracketEngine`
+positions opened but never closed. Diagnostic showed `mfe=1422pt` on a long,
+`pos.sl=23803.05` (initial SL, never ratcheted), `pos.be_locked=false`. All
+2.4M ticks elapsed without a single trail-arm transition.
+
+**Why it happened.**
+- `IndexHybridBracketEngine::confirm_fill()` set `pos.entry_ts =
+  std::time(nullptr)` (wall-clock today), not the `now_ms` parameter from
+  `on_tick`.
+- `IndexFlowEngine::idx_now_ms()` and `idx_now_sec()` both read
+  `std::chrono::system_clock::now()` (wall-clock).
+
+In production these are equivalent because tick-time ≈ wall-clock. In
+backtest replay against historical data (April 2026 ticks fed to a binary
+running today, May 2026), they diverge:
+- `now_s` from `now_ms` parameter: April 2026 unix seconds.
+- `pos.entry_ts` from `std::time(nullptr)`: May 2026 unix seconds.
+- `held_s = now_s - pos.entry_ts` becomes NEGATIVE.
+
+Every time-gated transition then breaks: `arm_hold_ok` requires
+`held_s >= cfg_.min_trail_arm_secs` which is never true with negative
+values. `trail_arm_ok` is permanently false. BE-lock never engages. SL
+never ratchets. Positions never close.
+
+**Severity.** Production: **none** (tick-time ≈ wall-clock, masked).
+Backtest replay: **complete** (no exits, every position dangling).
+
+**Fix (`audit-fixes-33`, 2026-05-03 Bug #3 follow-up).**
+- `include/IndexHybridBracketEngine.hpp` — `confirm_fill()` now accepts an
+  optional `now_ms_at_fill` parameter and prefers it over `std::time(nullptr)`
+  when > 0. Both PENDING-phase shadow-fill call sites pass `now_ms`.
+- `include/IndexFlowEngine.hpp` — added `omega::idx::s_idx_test_clock_ms`
+  override + `set_idx_test_clock_ms()` setter. `idx_now_ms()` and
+  `idx_now_sec()` prefer the override when > 0, fall back to wall-clock
+  otherwise. Affects all three engine classes that share the helper:
+  `IndexFlowEngine`, `IndexMacroCrashEngine`, `IndexSwingEngine`.
+
+Production never sets the override → behaviour unchanged. Backtest harnesses
+call `set_idx_test_clock_ms(tick_ts_ms)` per tick → engines see tick-time.
+
+**How to identify.** Pre-fix backtest symptom: `OmegaBacktest` or
+`IndexBacktest` on historical data emits FILL log lines but no EXIT lines;
+positions still open at end-of-run. Live VPS unaffected.
+
+---
+
+## Bug #5 — IndexHybridBracketEngine `m_pending_blocked_since` not reset
+
+**What happened.** During Bug #3 / Bug #4 validation in
+`IndexBacktest.cpp`, repeated ARM/FIRE/CANCEL loops printed
+`PENDING CANCEL blocked=836084s -- cancelling orders` (9+ days). Every
+new FIRE attempt entered PENDING with `can_enter=false` for one tick and
+immediately tripped the 15-second grace timer because the elapsed reading
+referenced an old timestamp set on a much earlier tick.
+
+**Why it happened.** `IndexHybridBracketEngine::on_tick()` sets
+`m_pending_blocked_since = now_s` the first time it sees PENDING +
+`!can_enter` (line 320). Production resets this back to 0 at line 328
+(`else { m_pending_blocked_since = 0; }`) but only inside the same tick
+when `can_enter` flips back to true. After a `cancel_both(); reset_to_idle()`
+cycle, the engine returns to IDLE -> ARMED -> PENDING but
+`m_pending_blocked_since` is never wiped because `reset_to_idle()` did not
+include it in the reset list (member missed when the field was added at
+[BUG-5 FIX] in 2026-04 grace-period work).
+
+**Severity.** Production: low — `base_can_*` rarely goes false in steady
+state, so the grace timer mostly resets via the `else` branch on the next
+clean tick. Backtest: high — combined with Bug #4 wall-clock issues, this
+makes every FIRE attempt read a multi-day-stale block timestamp.
+
+**Fix (`audit-fixes-34`, 2026-05-03).** Add `m_pending_blocked_since = 0;`
+to `reset_to_idle()` in `include/IndexHybridBracketEngine.hpp`. One-line
+change; no behavioural impact in production beyond the original BUG-5 FIX
+intent.
+
+---
 
 Once the VPS is running `49d8151b` or later, these patterns cannot recur for
 MCE and HBG. The index whipsaw fix lands next session.

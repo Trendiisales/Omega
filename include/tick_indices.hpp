@@ -269,7 +269,10 @@ static void on_tick_us500(
             && !g_vwap_rev_sp.has_open_position()
             && !g_trend_pb_sp.has_open_position()
             && !g_nbm_sp.has_open_position()
-            && !g_iflow_sp.has_open_position();
+            && !g_iflow_sp.has_open_position()
+            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+            && !index_any_open()
+            && !omega::idx::idx_recent_close_block();
 
         // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
         // Window was starved when hybrid_sp_can_enter=false -- range stayed 0.00 permanently.
@@ -312,7 +315,10 @@ static void on_tick_us500(
                    && !g_vwap_rev_sp.has_open_position()
                    && !g_trend_pb_sp.has_open_position()
                    && !g_nbm_sp.has_open_position()
-                   && !g_hybrid_sp.has_open_position()) {
+                   && !g_hybrid_sp.has_open_position()
+                   // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+                   && !index_any_open()
+                   && !omega::idx::idx_recent_close_block()) {
             const auto isig = g_iflow_sp.on_tick(sym, bid, ask, sp_l2_imb, ca_on_close, true);
             if (isig.valid) {
                 g_telemetry.UpdateLastSignal("US500.F", isig.is_long?"LONG":"SHORT",
@@ -324,6 +330,22 @@ static void on_tick_us500(
                 else g_iflow_sp.patch_size(g_last_directional_lot);
             }
         }
+    }
+    // ── IndexMacroCrash US500.F (shadow only) ───────────────────────────────
+    // vol_ratio = cur_atr / slow-EWM baseline (alpha=0.001).
+    {
+        static double s_atr_base_sp = 0.0;
+        const double cur_atr_sp = g_iflow_sp.atr();
+        if (s_atr_base_sp <= 0.0) {
+            if (cur_atr_sp > 0.0) s_atr_base_sp = cur_atr_sp;
+        } else {
+            s_atr_base_sp = 0.999 * s_atr_base_sp + 0.001 * cur_atr_sp;
+        }
+        const double sp_vol_ratio = (s_atr_base_sp > 0.0)
+            ? (cur_atr_sp / s_atr_base_sp) : 1.0;
+        const bool sp_trend_regime = g_iflow_sp.is_trending();
+        g_imacro_sp.on_tick(bid, ask, cur_atr_sp, g_iflow_sp.drift(),
+                            sp_vol_ratio, sp_trend_regime, ca_on_close);
     }
     // ?? IndexSwingEngine -- US500.F H1+H4 swing entries (shadow mode) ????????
     {
@@ -546,7 +568,10 @@ static void on_tick_ustec(
             && !g_vwap_rev_nq.has_open_position()
             && !g_trend_pb_nq.has_open_position()
             && !g_nbm_nq.has_open_position()
-            && !g_iflow_nq.has_open_position();
+            && !g_iflow_nq.has_open_position()
+            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+            && !index_any_open()
+            && !omega::idx::idx_recent_close_block();
 
         // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
         // Window was starved when hybrid_nq_can_enter=false -- range stayed 0.00 permanently.
@@ -586,7 +611,10 @@ static void on_tick_ustec(
                    && !g_vwap_rev_nq.has_open_position()
                    && !g_trend_pb_nq.has_open_position()
                    && !g_nbm_nq.has_open_position()
-                   && !g_hybrid_nq.has_open_position()) {
+                   && !g_hybrid_nq.has_open_position()
+                   // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+                   && !index_any_open()
+                   && !omega::idx::idx_recent_close_block()) {
             const auto isig = g_iflow_nq.on_tick(sym, bid, ask, nq_l2_imb, ca_on_close, true);
             if (isig.valid) {
                 g_telemetry.UpdateLastSignal("USTEC.F", isig.is_long?"LONG":"SHORT",
@@ -598,6 +626,21 @@ static void on_tick_ustec(
                 else g_iflow_nq.patch_size(g_last_directional_lot);
             }
         }
+    }
+    // ── IndexMacroCrash USTEC.F (shadow only) ───────────────────────────────
+    {
+        static double s_atr_base_nq = 0.0;
+        const double cur_atr_nq = g_iflow_nq.atr();
+        if (s_atr_base_nq <= 0.0) {
+            if (cur_atr_nq > 0.0) s_atr_base_nq = cur_atr_nq;
+        } else {
+            s_atr_base_nq = 0.999 * s_atr_base_nq + 0.001 * cur_atr_nq;
+        }
+        const double nq_vol_ratio = (s_atr_base_nq > 0.0)
+            ? (cur_atr_nq / s_atr_base_nq) : 1.0;
+        const bool nq_trend_regime = g_iflow_nq.is_trending();
+        g_imacro_nq.on_tick(bid, ask, cur_atr_nq, g_iflow_nq.drift(),
+                            nq_vol_ratio, nq_trend_regime, ca_on_close);
     }
 }
 
@@ -667,7 +710,10 @@ static void on_tick_dj30(
             && !g_eng_us30.pos.active
             && !g_bracket_us30.pos.active
             && !g_nbm_us30.has_open_position()
-            && !g_iflow_us30.has_open_position();
+            && !g_iflow_us30.has_open_position()
+            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+            && !index_any_open()
+            && !omega::idx::idx_recent_close_block();
 
         // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
         // Window was starved when hybrid_us30_can_enter=false -- range stayed 0.00 permanently.
@@ -705,7 +751,10 @@ static void on_tick_dj30(
                    && base_can_us30
                    && !g_eng_us30.pos.active
                    && !g_nbm_us30.has_open_position()
-                   && !g_hybrid_us30.has_open_position()) {
+                   && !g_hybrid_us30.has_open_position()
+                   // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+                   && !index_any_open()
+                   && !omega::idx::idx_recent_close_block()) {
             const auto isig = g_iflow_us30.on_tick(sym, bid, ask, us30_l2_imb, ca_on_close, true);
             if (isig.valid) {
                 g_telemetry.UpdateLastSignal("DJ30.F", isig.is_long?"LONG":"SHORT",
@@ -717,6 +766,21 @@ static void on_tick_dj30(
                 else g_iflow_us30.patch_size(g_last_directional_lot);
             }
         }
+    }
+    // ── IndexMacroCrash DJ30.F (shadow only) ────────────────────────────────
+    {
+        static double s_atr_base_us30 = 0.0;
+        const double cur_atr_us30 = g_iflow_us30.atr();
+        if (s_atr_base_us30 <= 0.0) {
+            if (cur_atr_us30 > 0.0) s_atr_base_us30 = cur_atr_us30;
+        } else {
+            s_atr_base_us30 = 0.999 * s_atr_base_us30 + 0.001 * cur_atr_us30;
+        }
+        const double us30_vol_ratio = (s_atr_base_us30 > 0.0)
+            ? (cur_atr_us30 / s_atr_base_us30) : 1.0;
+        const bool us30_trend_regime = g_iflow_us30.is_trending();
+        g_imacro_us30.on_tick(bid, ask, cur_atr_us30, g_iflow_us30.drift(),
+                              us30_vol_ratio, us30_trend_regime, ca_on_close);
     }
 
     // ?? MinimalH4US30Breakout -- pure H4 Donchian breakout (shadow mode) ???????
@@ -918,7 +982,10 @@ static void on_tick_nas100(
             && !g_eng_nas100.pos.active
             && !g_bracket_nas100.pos.active
             && !g_nbm_nas.has_open_position()
-            && !g_iflow_nas.has_open_position();
+            && !g_iflow_nas.has_open_position()
+            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+            && !index_any_open()
+            && !omega::idx::idx_recent_close_block();
 
         // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
         // Window was starved when hybrid_nas_can_enter=false -- range stayed 0.00 permanently.
@@ -956,7 +1023,10 @@ static void on_tick_nas100(
                    && base_can_nas
                    && !g_eng_nas100.pos.active
                    && !g_nbm_nas.has_open_position()
-                   && !g_hybrid_nas100.has_open_position()) {
+                   && !g_hybrid_nas100.has_open_position()
+                   // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
+                   && !index_any_open()
+                   && !omega::idx::idx_recent_close_block()) {
             const auto isig = g_iflow_nas.on_tick(sym, bid, ask, nas_l2_imb, ca_on_close, true);
             if (isig.valid) {
                 g_telemetry.UpdateLastSignal("NAS100", isig.is_long?"LONG":"SHORT",
@@ -968,6 +1038,21 @@ static void on_tick_nas100(
                 else g_iflow_nas.patch_size(g_last_directional_lot);
             }
         }
+    }
+    // ── IndexMacroCrash NAS100 (shadow only) ────────────────────────────────
+    {
+        static double s_atr_base_nas = 0.0;
+        const double cur_atr_nas = g_iflow_nas.atr();
+        if (s_atr_base_nas <= 0.0) {
+            if (cur_atr_nas > 0.0) s_atr_base_nas = cur_atr_nas;
+        } else {
+            s_atr_base_nas = 0.999 * s_atr_base_nas + 0.001 * cur_atr_nas;
+        }
+        const double nas_vol_ratio = (s_atr_base_nas > 0.0)
+            ? (cur_atr_nas / s_atr_base_nas) : 1.0;
+        const bool nas_trend_regime = g_iflow_nas.is_trending();
+        g_imacro_nas.on_tick(bid, ask, cur_atr_nas, g_iflow_nas.drift(),
+                             nas_vol_ratio, nas_trend_regime, ca_on_close);
     }
     // ?? IndexSwingEngine -- USTEC.F H1+H4 swing entries (shadow mode) ?????????
     {

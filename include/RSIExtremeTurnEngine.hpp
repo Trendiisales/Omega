@@ -59,11 +59,34 @@ public:
     double RSI_EXIT_SHORT     = 45.0;  // exit SHORT when bar RSI crosses below this
     int    MIN_SUSTAINED_BARS = 3;     // RSI must have been in extreme zone for N M1 bars
     double MIN_TURN_PTS       = 0.5;   // min RSI pts change to confirm turn (noise filter)
-    double SL_ATR_MULT        = 0.50;  // SL = 0.5x ATR behind entry
+    // S54 2026-05-04 (audit-fixes-35): SL_ATR_MULT bumped 0.50 -> 0.80.
+    //   2026-05-04 02:02:06 SHORT @ 4615.72 took -$7.55 in 8 seconds:
+    //   ATR was ~1.0pt, SL = 0.5*ATR = 0.5pt, broker fill at 4617.17 was
+    //   1.45pt against entry (3x the SL on Asian-session noise). With
+    //   SL_ATR_MULT=0.80 the same setup would have SL=0.8pt and survive
+    //   the noise pull -- the trade either reverts to RSI exit or hits
+    //   MAX_HOLD without taking the -$7+ loss. Backtest data was 75% WR
+    //   with SL=0.5*ATR but those tests were on London/NY tape where ATR
+    //   was 2-3pt; the same multiplier in Asian sub-tape is too tight.
+    double SL_ATR_MULT        = 0.80;  // SL = 0.8x ATR behind entry (S54)
     double BE_ATR_MULT        = 0.40;  // BE lock at 0.4x ATR profit
     double TRAIL_ATR_MULT     = 0.40;  // trail = 0.4x ATR behind MFE
     double COST_ATR_MULT      = 1.50;  // ATR must be > 1.5x cost to enter
     double MAX_SPREAD_PTS     = 2.5;   // spread gate
+    // S54 2026-05-04 (audit-fixes-35): minimum ATR floor for entry.
+    //   Prevents firing in thin Asian-session tape where ATR collapses to
+    //   ~0.5-1.0pt and any SL multiplier produces a window narrower than
+    //   normal bid-ask noise. The 02:02:06 -$7.55 trade fired with ATR
+    //   ~1.0pt -- this floor blocks it. Tape with ATR < 1.5pt is below
+    //   the engine's edge envelope (RSI extreme + sustained turn requires
+    //   real volatility to produce a real reversion).
+    double MIN_ATR_PTS        = 1.5;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage offset.
+    //   Same fix pattern as GoldHybridBracketEngine -- when BE locks, park
+    //   SL at entry +/- BE_OFFSET_PTS so a BE_HIT recovers round-trip cost
+    //   instead of booking a -$2.50 net loss. Pre-S54 line 365 set
+    //   pos.sl = pos.entry directly.
+    double BE_OFFSET_PTS      = 2.5;
     int    MAX_HOLD_S         = 300;   // 5 min max hold
     int    MIN_HOLD_S         = 5;     // 5s min hold before exit checks
     int    COOLDOWN_S         = 60;    // post-exit cooldown
@@ -234,6 +257,25 @@ public:
 
         const bool is_long = long_setup;
 
+        // S54 audit-fixes-35: thin-tape ATR floor.
+        //   Block entry when tick ATR is below MIN_ATR_PTS. Prevents the
+        //   2026-05-04 02:02:06 SHORT @ 4615.72 -$7.55 trade pattern --
+        //   ATR ~1pt collapses the SL distance to ~0.5pt which gets stopped
+        //   on normal Asian-session noise.
+        if (m_tick_atr < MIN_ATR_PTS) {
+            static int64_t s_log_atr = 0;
+            if (now_s - s_log_atr >= 30) {
+                s_log_atr = now_s;
+                char _buf[256];
+                snprintf(_buf, sizeof(_buf),
+                    "[RSI-EXT-BLOCK] thin tape: tick_atr=%.2f < min_atr=%.2f -- skipping entry\\n",
+                    m_tick_atr, MIN_ATR_PTS);
+                std::cout << _buf;
+                std::cout.flush();
+            }
+            return;
+        }
+
         // ── Enter ─────────────────────────────────────────────────────────────
         const double entry   = is_long ? ask : bid;
         const double sl_dist = std::max(m_tick_atr * SL_ATR_MULT, spread * 1.5);
@@ -362,7 +404,18 @@ private:
 
         // BE lock
         if (!pos.be_locked && move >= pos.atr * BE_ATR_MULT) {
-            pos.sl = pos.entry;
+            // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
+            //   BE_HIT recovers round-trip cost instead of booking a $2.50
+            //   net loss. See header note above on BE_OFFSET_PTS rationale.
+            //
+            // SAFETY GUARD: only apply offset when current move >= offset
+            //   so the parked SL is not above current bid (long) / below
+            //   current ask (short). Falls back to SL = entry when
+            //   retraced below offset (original pre-S54 behaviour).
+            const double effective_offset = (move >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+            pos.sl = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
             pos.be_locked = true;
             {
                 // converted from printf

@@ -92,11 +92,30 @@ namespace idx {
 // =============================================================================
 // Helpers
 // =============================================================================
+// Test-clock override for backtest replay. When > 0, idx_now_ms() and
+// idx_now_sec() return this value instead of wall-clock. Production never
+// sets this -- behavior is unchanged. Backtest harnesses (e.g.
+// backtest/IndexBacktest.cpp) call set_idx_test_clock_ms() per tick from the
+// data's tick timestamp so the engines' "now" matches tick-time, not
+// wall-clock. Fixes the entry_ts / cooldown / hold-time class of bugs
+// that prevent backtest replay from exiting positions.
+//
+// 2026-05-03: introduced after IndexBacktest revealed that
+// pos.entry_ts > now_s (entry_ts wall-clock today, now_s historical April)
+// caused trail_arm_ok to never satisfy and BE-lock to never engage,
+// leaving positions open for the entire backtest.
+inline int64_t s_idx_test_clock_ms = 0;
+
+inline void set_idx_test_clock_ms(int64_t ms) noexcept { s_idx_test_clock_ms = ms; }
+inline int64_t get_idx_test_clock_ms() noexcept { return s_idx_test_clock_ms; }
+
 static inline int64_t idx_now_ms() noexcept {
+    if (s_idx_test_clock_ms > 0) return s_idx_test_clock_ms;
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 static inline int64_t idx_now_sec() noexcept {
+    if (s_idx_test_clock_ms > 0) return s_idx_test_clock_ms / 1000;
     return std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 }

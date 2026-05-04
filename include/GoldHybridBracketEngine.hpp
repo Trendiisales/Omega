@@ -103,8 +103,18 @@ public:
     static constexpr int    MIN_BREAK_TICKS      = 3;
     static constexpr double MIN_RANGE            = 6.0;
     static constexpr double MAX_RANGE            = 25.0;
-    static constexpr double SL_FRAC              = 0.5;
-    static constexpr double SL_BUFFER            = 0.5;
+    // S60 2026-05-04 (post-handoff noise-floor fix):
+    //   SL_FRAC 0.5 -> 0.7, SL_BUFFER 0.5 -> 1.5.
+    //   Prior min SL = 0.5 * MIN_RANGE + 0.5 = 3.5pt -- inside one or two
+    //   normal Asia noise excursions (XAUUSD noise floor $0.30-1.00/min,
+    //   $2-3 news swings). Live tape on 2026-05-04 showed routine bid-ask
+    //   oscillation knocking out positions in 50s-2m47s with the ✓BE -> SL
+    //   shape. New min SL = 0.7 * 6 + 1.5 = 5.7pt, which clears typical
+    //   noise plus spread without changing entry/exit logic. R:R degrades
+    //   ~60% but the prior floor was net-negative -- noise-margin matters
+    //   more than nominal R:R until the SL hits stop being noise hits.
+    static constexpr double SL_FRAC              = 0.7;
+    static constexpr double SL_BUFFER            = 1.5;
     static constexpr double TP_RR                = 2.0;
     static constexpr double TRAIL_FRAC           = 0.25;
     // S20 2026-04-25: trail-arm guards
@@ -148,6 +158,29 @@ public:
     //   taking the original -$3 to -$5 SL. Combined with the trail bump,
     //   this is "limit downside on small wins, let real winners run".
     static constexpr double BE_TRIGGER_PTS       = 3.0;
+    // S54 2026-05-04 (audit-fixes-35 trade-quality follow-up):
+    //   BE-exit slippage trap fix.
+    //
+    //   Pre-S54 the BE lock moved SL exactly to entry. On a 0.01-lot XAUUSD
+    //   trade the round-trip cost is approximately:
+    //     spread_at_entry * size * 100  ($0.88 typical)
+    //   + slippage_entry + slippage_exit  ($1.56 typical, both sides)
+    //   + commission                      ($0.93 typical)
+    //   = ~$2.50-$3.00 net loss for any trade that BE-exits at exactly entry.
+    //
+    //   The 2026-05-04 tape shows three BE_HIT trades booking -$2.49 each --
+    //   the engine was reporting "break-even" while consistently losing the
+    //   round-trip cost. Fix: offset SL by BE_OFFSET_PTS in the favourable
+    //   direction so a BE_HIT exits the trade with net P&L >= 0.
+    //
+    //   Value 2.5 is sized to recover the 0.01-lot round-trip cost almost
+    //   exactly. The offset in price-points is independent of lot size
+    //   because cost and per-pt value both scale linearly with lot.
+    //
+    //   Trigger threshold is unchanged (BE_TRIGGER_PTS=3.0) -- the engine
+    //   still arms BE on the same MFE, but the SL is parked at a level
+    //   that actually breaks even net rather than gross.
+    static constexpr double BE_OFFSET_PTS        = 2.5;
     // S53 2026-05-01 (SESSION_h): same-level re-arm block.
     //   Mirrors the IndexHybridBracketEngine SAME_LEVEL_BLOCK at line 391-398.
     //   After an exit at price P, block re-arming when the new compression's
@@ -617,8 +650,23 @@ public:
         //   No hold-time guard here: BE_TRIGGER_PTS=3 is a real $3 move
         //   on XAUUSD (~10x bid-ask noise) -- not gameable by tick noise.
         if (move > 0 && !pos.be_locked && pos.mfe >= BE_TRIGGER_PTS) {
-            if (pos.is_long  && pos.entry > pos.sl) pos.sl = pos.entry;
-            if (!pos.is_long && pos.entry < pos.sl) pos.sl = pos.entry;
+            // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
+            //   BE-exit recovers round-trip cost (spread+slip+commission) and
+            //   produces net P&L >= 0, not the -$2.49 net loss seen on the
+            //   2026-05-04 tape when SL was parked at exactly entry.
+            //
+            // SAFETY GUARD: the offset is only applied when CURRENT move
+            //   (not the historical mfe peak) is >= BE_OFFSET_PTS. If price
+            //   has retraced from the peak so that current move < offset,
+            //   parking SL at entry+offset would put it ABOVE current bid
+            //   (for long) and trigger an immediate SL on the next tick.
+            //   In that case fall back to SL = entry (original behaviour).
+            const double effective_offset = (move >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+            const double be_target = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            if (pos.is_long  && be_target > pos.sl) pos.sl = be_target;
+            if (!pos.is_long && be_target < pos.sl) pos.sl = be_target;
             pos.be_locked = true;
         }
 

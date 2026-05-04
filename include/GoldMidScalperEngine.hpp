@@ -95,8 +95,16 @@ public:
     // $20-40 capture band. Lower edge = $18 TP after RR4; upper edge = $42.
     static constexpr double MIN_RANGE            = 8.0;
     static constexpr double MAX_RANGE            = 20.0;
-    static constexpr double SL_FRAC              = 0.5;
-    static constexpr double SL_BUFFER            = 0.5;
+    // S60 2026-05-04 (post-handoff noise-floor fix):
+    //   SL_FRAC 0.5 -> 0.6, SL_BUFFER 0.5 -> 1.0.
+    //   Prior min SL = 0.5 * MIN_RANGE + 0.5 = 4.5pt -- still inside the
+    //   $2-3 Asia news-tick noise band. Live tape on 2026-05-04 showed
+    //   the same SL-by-noise pattern as HybridGold (BE-trigger fires, SL
+    //   sits inside the next noise excursion, position closes at the
+    //   moved-up SL). New min SL = 0.6 * 8 + 1.0 = 5.8pt which clears
+    //   noise plus spread. RR=4 capture envelope unchanged.
+    static constexpr double SL_FRAC              = 0.6;
+    static constexpr double SL_BUFFER            = 1.0;
     // RR=4: TP = sl_dist * 4. Drives the $18-42 capture envelope.
     //   HybridGold uses RR=2 for $6-12 scalps; the wider $20-40 band needs
     //   the asymmetric reward to compensate for lower fire frequency.
@@ -119,6 +127,14 @@ public:
     //   the original SL and MIN_TRAIL_ARM_PTS=5.0 -- trades that MFE 3-5pt
     //   then reverse exit at $0 instead of taking the original SL.
     static constexpr double BE_TRIGGER_PTS       = 3.0;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage trap fix.
+    //   Same as GoldHybridBracketEngine -- park SL at entry +/- BE_OFFSET_PTS
+    //   so a BE_HIT recovers round-trip cost (spread+slip+commission ~$2.50
+    //   on 0.01-lot XAUUSD) and produces net P&L >= 0. Pre-S54 the BE lock
+    //   moved SL to exactly entry, guaranteeing a -$2.49 net loss on every
+    //   "break-even" exit. Symmetric pair to GoldHybridBracketEngine; both
+    //   engines share the cost profile so use the same offset.
+    static constexpr double BE_OFFSET_PTS        = 2.5;
     // S53 2026-05-01 (SESSION_h): same-level re-arm block.
     //   Mirrors the IndexHybridBracketEngine SAME_LEVEL_BLOCK pattern.
     //   After an exit, block re-arming when the new compression's hi or lo
@@ -511,8 +527,17 @@ public:
         //   One-shot via pos.be_locked. No hold-time guard: $3 MFE on
         //   XAUUSD is ~10x bid-ask noise, not gameable by tick fluctuation.
         if (move > 0 && !pos.be_locked && pos.mfe >= BE_TRIGGER_PTS) {
-            if (pos.is_long  && pos.entry > pos.sl) pos.sl = pos.entry;
-            if (!pos.is_long && pos.entry < pos.sl) pos.sl = pos.entry;
+            // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
+            //   BE-exit recovers round-trip cost. See GoldHybridBracketEngine
+            //   for full rationale (sister engine, same fix). Safety guard
+            //   below: only apply offset when current move >= offset, else
+            //   fall back to entry to avoid placing SL above current bid.
+            const double effective_offset = (move >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+            const double be_target = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            if (pos.is_long  && be_target > pos.sl) pos.sl = be_target;
+            if (!pos.is_long && be_target < pos.sl) pos.sl = be_target;
             pos.be_locked = true;
         }
 

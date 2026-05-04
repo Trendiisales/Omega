@@ -73,6 +73,40 @@ static void init_engines(const std::string& cfg_path)
     //   net positive after costs. Until then this line stays as `true`.
     g_usdjpy_asian_open.shadow_mode = true;
     g_usdjpy_asian_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    // 2026-05-04 (audit-fixes-36 + S57): GbpusdLondonOpenEngine -- pinned
+    //   shadow-only on first deployment regardless of g_cfg.mode. Cable
+    //   sister to EurusdLondonOpen; targets the 07:00-10:00 UTC London
+    //   compression window with GBP volatility (~50% wider than EUR --
+    //   MIN/MAX_RANGE 12-75 pips vs EUR 8-50). News-blackout gated for
+    //   BoE/UK CPI/UK GDP plus NFP/CPI/FOMC. Promote to kShadowDefault
+    //   after a 2-week paper validation showing >=30 trades with WR >=35%
+    //   net positive after costs (matches EURUSD S56 promotion gate).
+    //   Until then this line stays as `true`.
+    g_gbpusd_london_open.shadow_mode = true;
+    g_gbpusd_london_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    // 2026-05-04 (audit-fixes-36 + S57): AudusdSydneyOpenEngine -- pinned
+    //   shadow-only on first deployment regardless of g_cfg.mode. Aussie
+    //   sister to UsdjpyAsianOpen; targets the 22:00-02:00 UTC Sydney
+    //   open + Tokyo handoff window with AUD pip math (1 pip = 0.0001 --
+    //   identical scale to EUR/GBP, USD-quote major). News-blackout gated
+    //   for RBA/AU CPI/AU jobs plus NFP/CPI/FOMC. Promote to kShadowDefault
+    //   after a 2-week paper validation showing >=30 trades with WR >= 60%
+    //   net positive after costs (matches USDJPY S56 promotion gate).
+    //   Until then this line stays as `true`.
+    g_audusd_sydney_open.shadow_mode = true;
+    g_audusd_sydney_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
+    // 2026-05-04 (audit-fixes-36 + S57): NzdusdAsianOpenEngine -- pinned
+    //   shadow-only on first deployment regardless of g_cfg.mode. Kiwi
+    //   sister to AudusdSydneyOpen; targets the 22:00-04:00 UTC Wellington
+    //   open + Tokyo handoff window with NZD pip math (1 pip = 0.0001 --
+    //   identical scale to EUR/GBP/AUD, USD-quote major). News-blackout
+    //   gated for RBNZ/NZ CPI/NZ jobs plus NFP/CPI/FOMC. Promote to
+    //   kShadowDefault after a 2-week paper validation showing >=30 trades
+    //   with WR >= 60% net positive after costs (matches USDJPY S56 gate).
+    //   Until then this line stays as `true`. Retires the last
+    //   [FX-NO-ENGINE] diag stub from tick_fx.hpp::on_tick_audusd.
+    g_nzdusd_asian_open.shadow_mode = true;
+    g_nzdusd_asian_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     // 2026-05-02: XauusdFvgEngine -- pinned shadow-only on first deployment
     //   regardless of g_cfg.mode. FVG-on-15m engine for XAUUSD per
     //   docs/DESIGN_XAUUSD_FVG_ENGINE.md  §7.1 / HANDOFF_FVG_BACKTEST.md.
@@ -207,7 +241,18 @@ static void init_engines(const std::string& cfg_path)
     // live only if (a) trade count drops by >=60%, (b) WR rises above 30%,
     // (c) no UTC-hour outside 22:00-04:00 produces a winner.  Else revert.
     // --------------------------------------------------------------------------
-    g_macro_crash.enabled         = false; // 2026-04-30 AUDIT DISABLE: 84 trades / 4wk / 4.8% WR / -10,849pts (65% of total bleed). The S44 retune did not fix the bleed -- WR stayed below random. Disable until revisited; existing open positions exit via the engine's internal SL/MAX_HOLD logic before the early-return takes effect on subsequent ticks. (Prior S44 RE-ENABLED comment kept below for context.)
+    // S57 2026-05-04 (audit-fixes-36): RE-ENABLED per Jo.
+    //   The 2026-04-30 disable cited 84 trades / 4.8% WR / -10,849pts. Per
+    //   Jo (2026-05-04): those large losses were PHANTOM TRADES (bookkeeping
+    //   artifacts -- positions reported as closed at large loss were not
+    //   real broker fills, identified at the time as such). The S44 retune
+    //   thresholds (ATR>=12, vol>=3.5x, drift>=10) below are the correct
+    //   spike-only profile for capturing genuine macro impulses. Engine
+    //   stays shadow_mode=true (default) until paper validation shows the
+    //   spike-only thresholds produce positive expectancy on real moves.
+    //   Re-enable now so the engine fires on the next macro spike and
+    //   produces visible shadow ledger entries / PnL.
+    g_macro_crash.enabled         = true;  // S57: re-enabled with S44 spike-only thresholds (ATR>=12, vol>=3.5x, drift>=10)
                                             // S44 RE-ENABLED in shadow with spike-only thresholds (PRIOR STATE)
     g_macro_crash.ATR_THRESHOLD   = 12.0;  // S44 8.0 -> 12.0: London/NY base raised, only fire on macro-scale ATR
     g_macro_crash.VOL_RATIO_MIN   = 3.5;   // S44 2.5 -> 3.5: require >=3.5x baseline vol surge
@@ -554,7 +599,14 @@ static void init_engines(const std::string& cfg_path)
         g_tsmom.risk_pct          = 0.005;
         g_tsmom.start_equity      = 10000.0;
         g_tsmom.margin_call       = 1000.0;
-        g_tsmom.max_lot_cap       = 0.05;     // tighter than backtest while shadow-validating
+        // 2026-05-04 (post-handoff risk-budget fix): max_lot_cap 0.05 -> 0.02.
+        //   Live shadow tape had a Tsmom_H1_long position lose $23.65 on a
+        //   4.45pt adverse move (~5x bracket-cohort exposure). Capping at
+        //   0.02 brings the same move to $8.90 (~2x bracket cohort) while
+        //   preserving Sharpe (risk_pct unchanged at 0.005). g_tsmom_v2
+        //   below inherits this cap via `= g_tsmom.max_lot_cap`.
+        //   See omega_config.ini [tsmom] section for the parity comment.
+        g_tsmom.max_lot_cap       = 0.02;
         g_tsmom.block_on_risk_off = true;
         g_tsmom.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_tsmom.init();
@@ -1899,6 +1951,29 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_usdjpy_asian_open.shadow_mode,
                           {"UsdjpyAsianOpen"}); });
+    // 2026-05-04: register GbpusdLondonOpen for /api/v1/omega/engines.
+    //   Same shadow-stamped pattern as EurusdLondonOpen. last_signal_ts /
+    //   last_pnl resolved via g_engine_last lookup against
+    //   tr.engine="GbpusdLondonOpen".
+    g_engines.register_engine("GbpusdLondonOpen",
+        [reg]{ return reg("GbpusdLondonOpen",
+                          true,
+                          g_gbpusd_london_open.shadow_mode,
+                          {"GbpusdLondonOpen"}); });
+    // 2026-05-04: register AudusdSydneyOpen for /api/v1/omega/engines.
+    //   Same shadow-stamped pattern as UsdjpyAsianOpen.
+    g_engines.register_engine("AudusdSydneyOpen",
+        [reg]{ return reg("AudusdSydneyOpen",
+                          true,
+                          g_audusd_sydney_open.shadow_mode,
+                          {"AudusdSydneyOpen"}); });
+    // 2026-05-04: register NzdusdAsianOpen for /api/v1/omega/engines.
+    //   Same shadow-stamped pattern as AudusdSydneyOpen.
+    g_engines.register_engine("NzdusdAsianOpen",
+        [reg]{ return reg("NzdusdAsianOpen",
+                          true,
+                          g_nzdusd_asian_open.shadow_mode,
+                          {"NzdusdAsianOpen"}); });
     // 2026-05-02: register XauusdFvg for /api/v1/omega/engines.
     //   Shadow-stamped initially (pinned in init block above). last_signal_ts
     //   / last_pnl resolved via g_engine_last lookup against
@@ -2118,6 +2193,111 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
+    // 2026-05-04: GbpusdLondonOpen open-position source (parallel to EurusdLondonOpen).
+    //   Mirrors the EUR pattern with GBPUSD tick-value lookup. tick_value_multiplier
+    //   on GBPUSD resolves through the standard USD-quote path (no live cross-rate
+    //   conversion needed -- USD is the quote currency, identical to EUR).
+    g_open_positions.register_source("GbpusdLondonOpen",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gbpusd_london_open.has_open_position()) return out;
+
+            const auto& p = g_gbpusd_london_open.pos;
+            const double mult  = tick_value_multiplier(std::string("GBPUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("GBPUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "GBPUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "GbpusdLondonOpen";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-04: AudusdSydneyOpen open-position source (parallel to UsdjpyAsianOpen).
+    //   Mirrors the EUR pattern with AUDUSD tick-value lookup. tick_value_multiplier
+    //   on AUDUSD resolves through the standard USD-quote path (USD is the quote
+    //   currency, identical to EUR/GBP -- no live cross-rate conversion needed,
+    //   unlike USDJPY which uses g_usdjpy_mid).
+    g_open_positions.register_source("AudusdSydneyOpen",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_audusd_sydney_open.has_open_position()) return out;
+
+            const auto& p = g_audusd_sydney_open.pos;
+            const double mult  = tick_value_multiplier(std::string("AUDUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("AUDUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "AUDUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "AudusdSydneyOpen";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-04: NzdusdAsianOpen open-position source (parallel to AudusdSydneyOpen).
+    //   Mirrors the AUD pattern with NZDUSD tick-value lookup.
+    //   tick_value_multiplier on NZDUSD resolves through the standard
+    //   USD-quote path (USD is the quote currency, identical to EUR/GBP/AUD --
+    //   no live cross-rate conversion needed, unlike USDJPY which uses
+    //   g_usdjpy_mid).
+    g_open_positions.register_source("NzdusdAsianOpen",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_nzdusd_asian_open.has_open_position()) return out;
+
+            const auto& p = g_nzdusd_asian_open.pos;
+            const double mult  = tick_value_multiplier(std::string("NZDUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("NZDUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "NZDUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "NzdusdAsianOpen";
+            out.push_back(ps);
+            return out;
+        });
     // 2026-05-02: XauusdFvg open-position source.
     //   tick_value_multiplier on XAUUSD returns 100 USD per price-point per
     //   lot (per OmegaTradeLedger.hpp:88 / SymbolConfig). Unrealized PnL
@@ -2153,7 +2333,7 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
-    std::cout << "[OmegaApi] g_open_positions sources registered (5 sources: HybridGold, MidScalperGold, EurusdLondonOpen, UsdjpyAsianOpen, XauusdFvg)\n";
+    std::cout << "[OmegaApi] g_open_positions sources registered (8 sources: HybridGold, MidScalperGold, EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
