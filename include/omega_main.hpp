@@ -53,6 +53,169 @@ int main(int argc, char* argv[])
     // are in engine_init.hpp. main() is responsible for process lifecycle only.
     init_engines(cfg_path);
 
+    // ════════════════════════════════════════════════════════════════════════
+    // WARMUP -- hydrate + load + seed.  No engine may ever require warmup.
+    // ════════════════════════════════════════════════════════════════════════
+    // Per Jo's rule (audit 2026-05-04): "No engine may ever require warmup or
+    // cold-start. Sufficient historical data exists." This block enforces it.
+    //
+    // Pre-condition: init_engines(cfg_path) above has already initialised
+    //   g_rsi_reversal / g_rsi_extreme and called load_indicators() once on
+    //   g_bars_gold/sp/nq (engine_init.hpp:756-808). That sets m1_ready=true
+    //   from disk scalar state. This block then layers the richer hydrate
+    //   replay on top so bar-history dependent indicators are also warm.
+    //
+    // What this block adds on top of init_engines's load:
+    //   1. BAR-HYDRATE -- replays daily-rotating L2 tick CSVs from
+    //      C:\Omega\logs\ for every SymBarState timeframe. hydrate_from_csv
+    //      calls bars_.clear() then re-runs the full indicator pipeline per
+    //      bar, so EMA/RSI/ATR/ADX/EWMA AND bar-history vectors come out
+    //      mathematically correct and fully warmed. This is the ONLY path
+    //      that seeds vol_range, the breakout-bracket window, and any
+    //      indicator that scans bar history (Donchian channel, swing
+    //      channel, breakout window, etc.). Without this MidScalperGold,
+    //      HybridBracketGold and RSIExtremeTurn fire on garbage windows.
+    //   2. BAR-LOAD (fallback) -- if hydrate returned 0 (no CSV on disk)
+    //      load_indicators restores the flat saved scalar state so
+    //      m1_ready stays true and engines have at least the latest
+    //      indicator atomics.
+    //   3. WARMUP-SEED -- calls set_bar_rsi TWICE on RSIReversal and
+    //      RSIExtremeTurn so both current and prev bar_rsi are populated
+    //      from disk state -- eliminates the "need 2 bar closes" entry
+    //      block on every restart. Without this RSIExtremeTurn fires on
+    //      uninitialised prev_bar_rsi on the first bar close after restart,
+    //      producing the -$7+ losses observed in the 2026-05-04 session.
+    //   4. FAIL-LOUD -- if bars_gold_m1.dat exists on disk but m1_ready is
+    //      still false after both paths, abort. Codifies the no-warmup rule
+    //      as a runtime invariant so it can never silently regress.
+    //
+    // S52a 2026-05-04: This entire block was previously nested inside the
+    //   `if (g_cfg.ctrader_depth_enabled && ...)` branch at former line 260.
+    //   With cTrader disabled by config (FIX 264=0 provides L2 since
+    //   2026-04-20), the warmup never ran. Engines started cold despite
+    //   full bar/tick history existing on disk. Symptoms: GOLD-BRK-DIAG
+    //   showed brk_hi=0.00 brk_lo=0.00 range=0.00 hours after startup;
+    //   eight XAUUSD scalps fired in Asian session producing -$23.38 net.
+    //   Moved here, executed unconditionally regardless of cTrader state.
+    {
+        const std::string bs = log_root_dir();
+        const int64_t now_ms_h = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const int h_m1 = g_bars_gold.m1 .hydrate_from_csv(bs, "XAUUSD",    60000LL, now_ms_h, 2);
+        const int h_m5 = g_bars_gold.m5 .hydrate_from_csv(bs, "XAUUSD",   300000LL, now_ms_h, 10);
+        const int h_m15= g_bars_gold.m15.hydrate_from_csv(bs, "XAUUSD",   900000LL, now_ms_h, 30);
+        const int h_h1 = g_bars_gold.h1 .hydrate_from_csv(bs, "XAUUSD",  3600000LL, now_ms_h, 60);
+        const int h_h4 = g_bars_gold.h4 .hydrate_from_csv(bs, "XAUUSD", 14400000LL, now_ms_h, 240);
+        const int h_sp = g_bars_sp.m1   .hydrate_from_csv(bs, "US500",     60000LL, now_ms_h, 2);
+        const int h_nq = g_bars_nq.m1   .hydrate_from_csv(bs, "USTEC",     60000LL, now_ms_h, 2);
+        std::cout << "[BAR-HYDRATE] gold bars: m1=" << h_m1 << " m5=" << h_m5
+                  << " m15=" << h_m15 << " h1=" << h_h1 << " h4=" << h_h4
+                  << " -- sp=" << h_sp << " nq=" << h_nq << "\n";
+        std::cout.flush();
+
+        const bool m1_ok  = g_bars_gold.m1 .load_indicators(bs + "/bars_gold_m1.dat");
+        const bool m5_ok  = g_bars_gold.m5 .load_indicators(bs + "/bars_gold_m5.dat");
+        const bool m15_ok = g_bars_gold.m15.load_indicators(bs + "/bars_gold_m15.dat");
+        const bool h4_ok  = g_bars_gold.h4 .load_indicators(bs + "/bars_gold_h4.dat");
+        const bool sp_ok  = g_bars_sp.m1   .load_indicators(bs + "/bars_sp_m1.dat");
+        const bool nq_ok  = g_bars_nq.m1   .load_indicators(bs + "/bars_nq_m1.dat");
+        std::cout << "[BAR-LOAD] XAUUSD m1=" << m1_ok << " m5=" << m5_ok
+                  << " m15=" << m15_ok << " h4=" << h4_ok
+                  << " sp=" << sp_ok << " nq=" << nq_ok
+                  << " -- m1_ready=" << g_bars_gold.m1.ind.m1_ready.load()
+                  << "\n";
+        std::cout.flush();
+
+        // ── FAIL-LOUD: codify the no-warmup rule as a runtime invariant ──
+        // If bars_gold_m1.dat exists on disk but m1_ready is still false
+        // after both hydrate and load, the system is about to start cold
+        // despite full history being available. That's the bug class we
+        // just fixed by moving this block out of the cTrader gate. Abort
+        // here so it can never silently regress.
+        {
+            const std::string m1_dat = bs + "/bars_gold_m1.dat";
+            std::ifstream test_dat(m1_dat, std::ios::binary);
+            const bool dat_exists = test_dat.is_open();
+            test_dat.close();
+            const bool m1_ready_now = g_bars_gold.m1.ind.m1_ready.load();
+            if (dat_exists && !m1_ready_now && h_m1 == 0) {
+                std::cerr << "\033[1;31m[OMEGA-FATAL] bars_gold_m1.dat exists but m1_ready=false "
+                          << "after hydrate+load.\n"
+                          << "  hydrate m1=" << h_m1 << " load m1_ok=" << m1_ok << "\n"
+                          << "  Engines would start cold -- this violates the no-warmup rule. "
+                          << "Aborting.\n"
+                          << "  Check: file age (>24h), schema version, log_root_dir() "
+                          << "permissions, free disk space.\033[0m\n";
+                std::cerr.flush();
+                if (g_singleton_mutex) {
+                    ReleaseMutex(g_singleton_mutex);
+                    CloseHandle(g_singleton_mutex);
+                    g_singleton_mutex = nullptr;
+                }
+                Sleep(2000);
+                return 1;
+            }
+        }
+
+        if (!m1_ok && h_m1 == 0) {
+            std::cout << "[BAR-LOAD] WARN: bars_gold_m1.dat missing or stale -- "
+                      << "XAUUSD engines blocked until M1 bars seed from tick data (~2min)\n";
+            std::cout.flush();
+        }
+
+        // ── WARMUP SEED: inject disk-loaded bar state into engines that
+        // require 2+ bar closes before firing. Without this, every restart
+        // causes 2-120min blindness depending on engine and tick rate.
+        //
+        // Pattern: call set_bar_rsi / seed_bar_atr TWICE with the same
+        // disk-loaded value. First call sets current, second call moves
+        // current to prev -- engine sees "two bar closes" immediately.
+        // Safe: engines only act on direction CHANGE from prev to current,
+        // so seeding both to the same value means no spurious signals.
+        //
+        // Trigger condition: m1_ready is true (set by either hydrate OR load).
+        // Previously gated only on m1_ok which excluded the hydrate-only path.
+        if (g_bars_gold.m1.ind.m1_ready.load()) {
+            const double seed_rsi = g_bars_gold.m1.ind.rsi14.load();
+            const double seed_mid = g_bars_gold.m1.ind.ema9.load();  // price proxy
+
+            // RSIReversalEngine: seed bar_rsi + bar_rsi_prev from disk
+            // Eliminates the "need 2 bar closes" block on every restart
+            if (seed_rsi > 0.0 && seed_rsi < 100.0) {
+                g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);
+                g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);  // second call sets prev
+                std::cout << "[WARMUP-SEED] RSIReversal bar_rsi=" << seed_rsi
+                          << " (both current+prev seeded from disk)\n";
+                std::cout.flush();
+            }
+
+            // RSIExtremeTurnEngine: seed bar_rsi
+            if (seed_rsi > 0.0 && seed_rsi < 100.0) {
+                g_rsi_extreme.set_bar_rsi(seed_rsi);
+                std::cout << "[WARMUP-SEED] RSIExtreme bar_rsi=" << seed_rsi << "\n";
+                std::cout.flush();
+            }
+
+            // (MicroMomentumEngine warmup-seed REMOVED at Batch 5V §1.2.)
+
+            // (DomPersistEngine warmup-seed REMOVED at Session 15 2026-04-23
+            //  -- no edge in 96-cell walk-forward sweep. See globals.hpp tombstone.)
+
+            std::cout << "[WARMUP-SEED] All engines seeded from disk state -- "
+                      << "no 2-minute blindness on restart\n";
+            std::cout.flush();
+        } else {
+            std::cout << "[WARMUP-SEED] SKIP -- m1_ready=false after hydrate+load. "
+                      << "Engines will warm from live ticks (~2min).\n";
+            std::cout.flush();
+        }
+
+        // Suppress unused-variable warnings on m5/m15/h1/h4/sp/nq paths
+        (void)h_m5; (void)h_m15; (void)h_h1; (void)h_h4; (void)h_sp; (void)h_nq;
+        (void)m5_ok; (void)m15_ok; (void)h4_ok; (void)sp_ok; (void)nq_ok;
+    }
+
     {
         const std::string trade_dir = log_root_dir() + "/trades";
         const std::string gold_dir  = log_root_dir() + "/gold";
@@ -433,123 +596,13 @@ int main(int argc, char* argv[])
         g_ctrader_depth.save_bar_failed(g_ctrader_depth.bar_failed_path_);
         std::cout << "[CTRADER] Pre-blocked trendbar reqs + live subs -- no crash loop\n";
 
-        // ── BAR STATE LOAD -- MUST run before ctrader start() ────────────────
-        // Loads saved indicator state (EMA, ATR, RSI, BB) from prior session.
-        // Sets m1_ready=true immediately so GoldStack/RSIReversal/
-        // CandleFlow/RSIExtremeTurn are all unblocked from tick 1.
-        // (MicroMomentum removed at Batch 5V §1.2.)
-        // Without this every restart is a cold start -- bars never seed because
-        // BlackBull blocks all trendbar API requests (bar_failed_reqs above).
-        // save_indicators() is called on clean shutdown (signal handler below).
-        // Rejection criteria: age > 24h, e9<=0, e50<=0 -- any bad file is deleted.
-
-        // ── HYDRATE FROM TICK CSV -- PREFERRED HOT-LOAD PATH (2026-04-22) ────
-        // Replays daily-rotating L2 tick CSVs from C:\Omega\logs\ for every
-        // SymBarState timeframe. Each hydrate call rebuilds bars_ from real
-        // ticks and runs the full update pipeline per bar, so EMA/RSI/ATR/
-        // ADX/EWMA come out mathematically correct and fully warmed.
-        //
-        // Rationale: BlackBull blocks cTrader trendbar API requests for XAUUSD,
-        // so bars_ is only populated via tick-built bars during live operation.
-        // On cold start that means H4 takes 56h to accumulate enough bars for
-        // ADX14 -- the 2026-04-17 101pt Asian move was missed for exactly this
-        // reason. Replaying the tick CSV at startup is O(seconds) and eliminates
-        // the cold-start window for all engines that read bar indicators.
-        //
-        // Auto-sized lookback per timeframe = max(2h, 20 * bucket_minutes):
-        //   M1  ->   2h (enough for RSI14 + EMA50 convergence on M1)
-        //   M5  ->  10h (20 M5 bars = 1h40m; padded for weekend gap coverage)
-        //   M15 ->  30h
-        //   H1  ->  60h (enough for ADX14 + EMA50 warm on H1)
-        //   H4  -> 240h = 10 days (enough for H4 ADX14 fully warmed)
-        //
-        // MUST run BEFORE load_indicators() below -- load's m1_ready=true flip
-        // would otherwise fight with hydrate's bars_.clear() reset.
-        // If the CSV is missing or empty, hydrate returns 0 and load_indicators
-        // below handles the fallback (flat save-file restore).
-        {
-            const std::string bs = log_root_dir();
-            const int64_t now_ms_h = static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count());
-            const int h_m1 = g_bars_gold.m1 .hydrate_from_csv(bs, "XAUUSD",    60000LL, now_ms_h, 2);
-            const int h_m5 = g_bars_gold.m5 .hydrate_from_csv(bs, "XAUUSD",   300000LL, now_ms_h, 10);
-            const int h_m15= g_bars_gold.m15.hydrate_from_csv(bs, "XAUUSD",   900000LL, now_ms_h, 30);
-            const int h_h1 = g_bars_gold.h1 .hydrate_from_csv(bs, "XAUUSD",  3600000LL, now_ms_h, 60);
-            const int h_h4 = g_bars_gold.h4 .hydrate_from_csv(bs, "XAUUSD", 14400000LL, now_ms_h, 240);
-            const int h_sp = g_bars_sp.m1   .hydrate_from_csv(bs, "US500",     60000LL, now_ms_h, 2);
-            const int h_nq = g_bars_nq.m1   .hydrate_from_csv(bs, "USTEC",     60000LL, now_ms_h, 2);
-            std::cout << "[BAR-HYDRATE] gold bars: m1=" << h_m1 << " m5=" << h_m5
-                      << " m15=" << h_m15 << " h1=" << h_h1 << " h4=" << h_h4
-                      << " -- sp=" << h_sp << " nq=" << h_nq << "\n";
-            std::cout.flush();
-        }
-
-        {
-            const std::string bs = log_root_dir();
-            const bool m1_ok  = g_bars_gold.m1 .load_indicators(bs + "/bars_gold_m1.dat");
-            const bool m5_ok  = g_bars_gold.m5 .load_indicators(bs + "/bars_gold_m5.dat");
-            const bool m15_ok = g_bars_gold.m15.load_indicators(bs + "/bars_gold_m15.dat");
-            const bool h4_ok  = g_bars_gold.h4 .load_indicators(bs + "/bars_gold_h4.dat");
-            const bool sp_ok  = g_bars_sp.m1   .load_indicators(bs + "/bars_sp_m1.dat");
-            const bool nq_ok  = g_bars_nq.m1   .load_indicators(bs + "/bars_nq_m1.dat");
-            std::cout << "[BAR-LOAD] XAUUSD m1=" << m1_ok << " m5=" << m5_ok
-                      << " m15=" << m15_ok << " h4=" << h4_ok
-                      << " sp=" << sp_ok << " nq=" << nq_ok
-                      << " -- m1_ready=" << g_bars_gold.m1.ind.m1_ready.load()
-                      << "\n";
-            std::cout.flush();
-            if (!m1_ok) {
-                std::cout << "[BAR-LOAD] WARN: bars_gold_m1.dat missing or stale -- "
-                          << "XAUUSD engines blocked until M1 bars seed from tick data (~2min)\n";
-                std::cout.flush();
-            }
-
-            // ── WARMUP SEED: inject disk-loaded bar state into engines that
-            // require 2+ bar closes before firing. Without this, every restart
-            // causes 2-120min blindness depending on engine and tick rate.
-            //
-            // Pattern: call set_bar_rsi / seed_bar_atr TWICE with the same
-            // disk-loaded value. First call sets current, second call moves
-            // current to prev -- engine sees "two bar closes" immediately.
-            // Safe: engines only act on direction CHANGE from prev to current,
-            // so seeding both to the same value means no spurious signals.
-            if (m1_ok) {
-                const double seed_rsi = g_bars_gold.m1.ind.rsi14.load();
-                const double seed_mid = g_bars_gold.m1.ind.ema9.load();  // price proxy
-
-                // RSIReversalEngine: seed bar_rsi + bar_rsi_prev from disk
-                // Eliminates the "need 2 bar closes" block on every restart
-                if (seed_rsi > 0.0 && seed_rsi < 100.0) {
-                    g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);
-                    g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);  // second call sets prev
-                    std::cout << "[WARMUP-SEED] RSIReversal bar_rsi=" << seed_rsi
-                              << " (both current+prev seeded from disk)\n";
-                    std::cout.flush();
-                }
-
-                // RSIExtremeTurnEngine: seed bar_rsi
-                if (seed_rsi > 0.0 && seed_rsi < 100.0) {
-                    g_rsi_extreme.set_bar_rsi(seed_rsi);
-                    std::cout << "[WARMUP-SEED] RSIExtreme bar_rsi=" << seed_rsi << "\n";
-                    std::cout.flush();
-                }
-
-                // (MicroMomentumEngine warmup-seed REMOVED at Batch 5V §1.2.)
-
-                // (DomPersistEngine warmup-seed REMOVED at Session 15 2026-04-23
-                //  -- no edge in 96-cell walk-forward sweep. See globals.hpp tombstone.)
-
-                std::cout << "[WARMUP-SEED] All engines seeded from disk state -- "
-                          << "no 2-minute blindness on restart\n";
-                std::cout.flush();
-            } else {
-                std::cout << "[WARMUP-SEED] SKIP -- bars not loaded from disk, "
-                          << "engines will warm from live ticks (~2min)\n";
-                std::cout.flush();
-            }
-        }
-
+        // S52a 2026-05-04: BAR-HYDRATE / BAR-LOAD / WARMUP-SEED previously
+        // lived here. They have ZERO dependency on cTrader -- they read disk
+        // CSV/.dat files only -- so leaving them inside this gate caused the
+        // entire warmup to be skipped whenever cTrader was disabled by config.
+        // Relocated to the unconditional block immediately after
+        // init_engines(cfg_path) above. Search the file for "WARMUP --
+        // hydrate + load + seed" to find the new location.
         g_ctrader_depth.start();
         std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
 

@@ -2111,13 +2111,24 @@ static void on_tick_gold(
         const bool hybrid_vol_ok = (hybrid_vol_range >= 0.5)
                                 || (hybrid_vol_unseeded && hybrid_macro_bypass)
                                 || (!hybrid_vol_unseeded && hybrid_macro_bypass);
+        // S54 2026-05-04 (audit-fixes-35): block HybridGold when MidScalperGold
+        //   already holds an open position. Symmetric counterpart to the
+        //   midscalper_can_enter check below. Without this, MidScalperGold
+        //   could open in tick N and HybridGold could open in tick N+1 on
+        //   the same setup -- producing the double-loss pattern observed in
+        //   the 2026-05-04 03:45:15 trade pair (LONG @ 4609.61 from both).
+        //   Note: MidScalperGold runs AFTER HybridGold in this dispatch,
+        //   so the same-tick block (phase != IDLE) only needs to be on the
+        //   midscalper side. Hybrid only needs the prior-tick block (open
+        //   position from a previous tick).
         const bool hybrid_can_enter =
             gold_can_enter
             && hybrid_vol_ok
             && !g_bracket_gold.has_open_position()
             // && !g_le_stack.has_open_position()  -- REMOVED S13 Finding B 2026-04-24
             && !g_trend_pb_gold.has_open_position()
-            && !g_nbm_gold_london.has_open_position();
+            && !g_nbm_gold_london.has_open_position()
+            && !g_gold_midscalper.has_open_position();   // S54 cross-engine block
 
         // FIX 2026-04-07: always call on_tick to feed the structure window unconditionally.
         // Previously on_tick was only called when hybrid_can_enter=true -- so when
@@ -2210,10 +2221,26 @@ static void on_tick_gold(
         const bool ms_vol_ok = (ms_vol_range >= 0.5)
                             || (ms_vol_unseeded && ms_macro_bypass)
                             || (!ms_vol_unseeded && ms_macro_bypass);
+        // S54 2026-05-04 (audit-fixes-35): block MidScalperGold when HybridGold
+        //   has an open position OR is currently arming/pending/live in the
+        //   same tick. The phase check is the critical bit: HybridGold runs
+        //   FIRST in this dispatch; if it transitioned IDLE -> ARMED on this
+        //   tick, MidScalper would otherwise see has_open_position()=false
+        //   (no fill yet) and fire on the same compression structure --
+        //   producing the 2026-05-04 03:45:15 double LONG @ 4609.61 that
+        //   cost -$2.49 per side at BE exit. With this check, only one of
+        //   the two engines can enter on any given compression structure.
+        //   COOLDOWN is treated as IDLE-equivalent because the prior trade
+        //   has already closed and a fresh setup is allowed.
+        const bool hybrid_active_or_arming =
+            (g_hybrid_gold.phase != omega::GoldHybridBracketEngine::Phase::IDLE)
+         && (g_hybrid_gold.phase != omega::GoldHybridBracketEngine::Phase::COOLDOWN);
         const bool midscalper_can_enter =
             gold_can_enter
             && ms_vol_ok
-            && !g_gold_midscalper.has_open_position();
+            && !g_gold_midscalper.has_open_position()
+            && !g_hybrid_gold.has_open_position()    // S54 prior-tick block
+            && !hybrid_active_or_arming;             // S54 same-tick block
         if (!g_gold_midscalper.has_open_position()) {
             g_gold_midscalper.on_tick(bid, ask, now_ms_g,
                                       midscalper_can_enter, false, false, 0,

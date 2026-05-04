@@ -196,6 +196,12 @@ public:
     //   the BE-only zone -- trades transition seamlessly from BE-protected
     //   to trail-protected.
     static constexpr double BE_TRIGGER_PTS       = 0.06;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage offset.
+    //   USDJPY pip = 0.01. Round-trip cost on default 0.10 lot is approx
+    //   1-1.5 pips (spread ~0.8 + slippage ~0.5 + commission). Park SL at
+    //   entry +/- BE_OFFSET_PTS (~1.5 pips) so a BE_HIT recovers the cost.
+    //   Same logic as XAUUSD engines, scaled to JPY pip size.
+    static constexpr double BE_OFFSET_PTS        = 0.015;
     // S56 lineage: SAME_LEVEL_BLOCK_PTS = MIN_RANGE = 8 pips.
     //   POST_SL block 1200s (20 min); POST_WIN block 600s (10 min).
     static constexpr double SAME_LEVEL_BLOCK_PTS         = 0.08;
@@ -645,8 +651,15 @@ public:
         //   guard: 6 pips on USDJPY is ~4-10x bid-ask noise (typical spread
         //   0.6-1.5 pips), not gameable by tick fluctuation.
         if (move > 0 && !pos.be_locked && pos.mfe >= BE_TRIGGER_PTS) {
-            if (pos.is_long  && pos.entry > pos.sl) pos.sl = pos.entry;
-            if (!pos.is_long && pos.entry < pos.sl) pos.sl = pos.entry;
+            // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
+            //   BE_HIT recovers round-trip cost. Safety guard: only apply
+            //   offset when current move >= offset (else fall back to entry).
+            const double effective_offset = (move >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+            const double be_target = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            if (pos.is_long  && be_target > pos.sl) pos.sl = be_target;
+            if (!pos.is_long && be_target < pos.sl) pos.sl = be_target;
             pos.be_locked = true;
         }
 

@@ -70,6 +70,12 @@ public:
     double SL_ATR_MULT        = 0.6;
     double TRAIL_ATR_MULT     = 0.40;
     double BE_ATR_MULT        = 0.40;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage offset.
+    //   Same fix pattern as RSIExtremeTurnEngine -- pre-S54 the BE lock
+    //   moved SL to exactly entry, guaranteeing a -$2.50 net loss after
+    //   round-trip cost on any "break-even" exit. Park SL at entry +/-
+    //   BE_OFFSET_PTS so a BE_HIT recovers cost and produces net P&L >= 0.
+    double BE_OFFSET_PTS      = 2.5;
     double MAX_SPREAD_PTS     = 2.5;
     double MIN_ATR_PTS        = 1.0;
     int    COOLDOWN_S         = 60;
@@ -537,11 +543,19 @@ private:
             _close(pos.is_long ? bid : ask, "MAX_HOLD", now_s, on_close); return;
         }
         if (!pos.be_locked && move >= pos.atr * BE_ATR_MULT) {
-            pos.sl = pos.entry; pos.be_locked = true;
+            // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
+            //   BE_HIT recovers round-trip cost. See header note for rationale.
+            //   Safety guard: only apply offset when current move >= offset.
+            const double effective_offset = (move >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+            pos.sl = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            pos.be_locked = true;
             {
                 // converted from printf
                 char _buf[512];
-                snprintf(_buf, sizeof(_buf), "[RSI-REV] BE_LOCK %s move=%.2f\n", pos.is_long ? "LONG" : "SHORT", move);
+                snprintf(_buf, sizeof(_buf), "[RSI-REV] BE_LOCK %s move=%.2f sl_offset=%.2f\n",
+                         pos.is_long ? "LONG" : "SHORT", move, effective_offset);
                 std::cout << _buf;
                 std::cout.flush();
             }

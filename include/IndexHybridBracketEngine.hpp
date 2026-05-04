@@ -105,6 +105,13 @@ struct IndexHybridConfig {
     //   more room for the move to mature before BE lock engages.
     //   Default 0.60 applies to all index symbols unless overridden.
     double be_trigger_frac    = 0.60;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage offset in price-points.
+    //   Park SL at entry +/- be_offset_pts so a BE_HIT recovers round-trip
+    //   cost instead of booking a small net loss. Default 1.5pt covers
+    //   typical index spread + slip + commission on 0.10 lot. Per-symbol
+    //   overrides applied in the static config helpers below where needed
+    //   (NAS100 wider tape may want 2.5pt).
+    double be_offset_pts      = 1.5;
     // S23 2026-04-25: trail-arm guards.
     //   Ported from gold S20 70bc25b6 (GoldHybridBracketEngine). The BE lock
     //   and any subsequent trail moves are gated by BOTH:
@@ -620,7 +627,16 @@ private:
         //   Raw gate formula: move >= tp_dist * be_trigger_frac AND !be_locked
         //   AND trail-arm guards satisfied.
         if (trail_arm_ok && move >= tp_dist * cfg_.be_trigger_frac && !pos.be_locked) {
-            pos.sl = pos.entry; pos.be_locked = true;
+            // S54 audit-fixes-35: park SL at entry +/- cfg_.be_offset_pts so
+            //   a BE_HIT recovers round-trip cost instead of booking a small
+            //   net loss. Per-symbol offset because index spreads vary.
+            //   Safety guard: only apply offset when current move >= offset.
+            const double effective_offset =
+                (move >= cfg_.be_offset_pts) ? cfg_.be_offset_pts : 0.0;
+            pos.sl = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            pos.be_locked = true;
             std::cout << "[HYBRID-" << cfg_.symbol << "] TRAIL-BE "
                       << (pos.is_long ? "LONG" : "SHORT")
                       << " move=" << std::fixed << std::setprecision(2) << move

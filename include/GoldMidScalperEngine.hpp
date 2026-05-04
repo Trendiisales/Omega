@@ -119,6 +119,14 @@ public:
     //   the original SL and MIN_TRAIL_ARM_PTS=5.0 -- trades that MFE 3-5pt
     //   then reverse exit at $0 instead of taking the original SL.
     static constexpr double BE_TRIGGER_PTS       = 3.0;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage trap fix.
+    //   Same as GoldHybridBracketEngine -- park SL at entry +/- BE_OFFSET_PTS
+    //   so a BE_HIT recovers round-trip cost (spread+slip+commission ~$2.50
+    //   on 0.01-lot XAUUSD) and produces net P&L >= 0. Pre-S54 the BE lock
+    //   moved SL to exactly entry, guaranteeing a -$2.49 net loss on every
+    //   "break-even" exit. Symmetric pair to GoldHybridBracketEngine; both
+    //   engines share the cost profile so use the same offset.
+    static constexpr double BE_OFFSET_PTS        = 2.5;
     // S53 2026-05-01 (SESSION_h): same-level re-arm block.
     //   Mirrors the IndexHybridBracketEngine SAME_LEVEL_BLOCK pattern.
     //   After an exit, block re-arming when the new compression's hi or lo
@@ -511,8 +519,17 @@ public:
         //   One-shot via pos.be_locked. No hold-time guard: $3 MFE on
         //   XAUUSD is ~10x bid-ask noise, not gameable by tick fluctuation.
         if (move > 0 && !pos.be_locked && pos.mfe >= BE_TRIGGER_PTS) {
-            if (pos.is_long  && pos.entry > pos.sl) pos.sl = pos.entry;
-            if (!pos.is_long && pos.entry < pos.sl) pos.sl = pos.entry;
+            // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
+            //   BE-exit recovers round-trip cost. See GoldHybridBracketEngine
+            //   for full rationale (sister engine, same fix). Safety guard
+            //   below: only apply offset when current move >= offset, else
+            //   fall back to entry to avoid placing SL above current bid.
+            const double effective_offset = (move >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+            const double be_target = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            if (pos.is_long  && be_target > pos.sl) pos.sl = be_target;
+            if (!pos.is_long && be_target < pos.sl) pos.sl = be_target;
             pos.be_locked = true;
         }
 

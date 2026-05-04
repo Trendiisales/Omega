@@ -183,6 +183,12 @@ public:
     //   Net result: BE_HIT count drops to 0; clean TP/TRAIL/SL outcomes.
     //   See docs/SESSION_2026-05-02_EURUSD_LONDON_OPEN_HANDOFF.md Section 8.
     static constexpr double BE_TRIGGER_PTS       = 0.0006;
+    // S54 2026-05-04 (audit-fixes-35): BE-exit slippage offset.
+    //   EURUSD pip = 0.0001. Round-trip cost on default 0.10 lot is approx
+    //   1-1.5 pips (spread ~0.7 + slippage ~0.5 + commission). Park SL at
+    //   entry +/- BE_OFFSET_PTS (~1.5 pips) so a BE_HIT recovers the cost.
+    //   Same logic as XAUUSD/USDJPY engines, scaled to EUR pip size.
+    static constexpr double BE_OFFSET_PTS        = 0.00015;
     // S56 2026-05-02 (post-OOS validation): SAME_LEVEL_BLOCK_PTS 10 -> 8 pips.
     //   8 pips matches MIN_RANGE exactly: any compression structure that
     //   overlaps a prior exit within its own width is rejected. This is
@@ -641,8 +647,15 @@ public:
         //   is ~3-4x bid-ask noise (typical spread 0.5-1.4 pips), not
         //   gameable by tick fluctuation.
         if (move > 0 && !pos.be_locked && pos.mfe >= BE_TRIGGER_PTS) {
-            if (pos.is_long  && pos.entry > pos.sl) pos.sl = pos.entry;
-            if (!pos.is_long && pos.entry < pos.sl) pos.sl = pos.entry;
+            // S54 audit-fixes-35: park SL at entry +/- BE_OFFSET_PTS so a
+            //   BE_HIT recovers round-trip cost. Safety guard: only apply
+            //   offset when current move >= offset (else fall back to entry).
+            const double effective_offset = (move >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+            const double be_target = pos.is_long
+                ? (pos.entry + effective_offset)
+                : (pos.entry - effective_offset);
+            if (pos.is_long  && be_target > pos.sl) pos.sl = be_target;
+            if (!pos.is_long && be_target < pos.sl) pos.sl = be_target;
             pos.be_locked = true;
         }
 
