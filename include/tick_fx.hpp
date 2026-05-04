@@ -33,9 +33,54 @@
 //   (in both USD and JPY country sets per OmegaNewsBlackout.hpp).
 //   shadow_mode = true by default; promote to live after a 2-week paper run
 //   shows >=30 trades / WR >= 60% / net positive after costs.
+//
+// 2026-05-04 GBPUSD RE-ENABLE (audit-fixes-36 + S57):
+//   on_tick_gbpusd now dispatches to GbpusdLondonOpenEngine. 1:1 architectural
+//   port of EurusdLondonOpen with GBP volatility scale (MIN/MAX_RANGE 12-75
+//   pips vs EUR's 8-50, ~50% wider tracking GBP's wider daily ATR). Live
+//   target window 07:00-10:00 UTC (one hour later than EUR's 06-09; cable
+//   compressions cluster around the LSE 08:00 UTC equity open). News
+//   blackout via "GBPUSD" symbol auto-includes BoE/UK CPI/UK GDP via the
+//   GBP currency set plus NFP/CPI/FOMC via the USD set.
+//   shadow_mode = true by default. Session window currently widened to 0-24
+//   for shadow ledger visibility -- re-tighten to 07-10 when promoting.
+//   Promotion gate: 2-week paper run, >=30 trades, WR >=35% net positive
+//   after costs (matches EURUSD S56 promotion gate).
+//
+// 2026-05-04 AUDUSD RE-ENABLE (audit-fixes-36 + S57):
+//   on_tick_audusd now dispatches AUDUSD ticks to AudusdSydneyOpenEngine.
+//   1:1 architectural port of UsdjpyAsianOpen with AUD pip math rescaled
+//   from JPY 0.01-pip units to AUD 0.0001-pip units (AUD is a USD-quote
+//   major, identical pip scale to EUR/GBP). Live target window 22:00-02:00
+//   UTC (Sydney open + Tokyo handoff, pre-Frankfurt cutoff). News
+//   blackout via "AUDUSD" symbol auto-includes RBA/AU CPI/AU jobs via the
+//   AUD currency set plus NFP/CPI/FOMC via the USD set.
+//   shadow_mode = true by default. Session window currently widened to 0-24
+//   for shadow ledger visibility -- re-tighten to 22-02 (with wraparound-
+//   aware check) when promoting. Promotion gate: 2-week paper run, >=30
+//   trades, WR >= 60% net positive after costs (matches USDJPY S56 gate).
+//
+// 2026-05-04 NZDUSD RE-ENABLE (audit-fixes-36 + S57):
+//   on_tick_audusd's NZDUSD branch now dispatches to NzdusdAsianOpenEngine.
+//   1:1 architectural port of AudusdSydneyOpen with NZD-side DOM plumbing
+//   (vacuum-only, no walls -- mirrors AUD/JPY DOM shape). Live target
+//   window 22:00-04:00 UTC (Wellington open + Tokyo handoff, one hour wider
+//   than AUD's 22-02 to capture post-Tokyo-open AUDNZD-cross flow
+//   settlement). News blackout via "NZDUSD" symbol auto-includes RBNZ/
+//   NZ CPI/NZ jobs via the NZD currency set plus NFP/CPI/FOMC via the
+//   USD set.
+//   shadow_mode = true by default. Session window currently widened to 0-24
+//   for shadow ledger visibility -- re-tighten to 22-04 (with wraparound-
+//   aware check) when promoting. Promotion gate: matches AUD/JPY S56 gate
+//   (>=30 trades / WR >=60% / net positive after costs).
+//   This retires the LAST [FX-NO-ENGINE] diag stub from any FX handler --
+//   the full FX cohort (EUR/GBP/USDJPY/AUD/NZD) is now wired end-to-end.
 
 #include "EurusdLondonOpenEngine.hpp"
 #include "UsdjpyAsianOpenEngine.hpp"
+#include "GbpusdLondonOpenEngine.hpp"
+#include "AudusdSydneyOpenEngine.hpp"
+#include "NzdusdAsianOpenEngine.hpp"
 
 // ── EURUSD ──────────────────────────────────────────────────
 template<typename Dispatch>
@@ -98,29 +143,74 @@ static void on_tick_eurusd(
 }
 
 // ── GBPUSD ──────────────────────────────────────────────────
-// S57 2026-05-04 (audit-fixes-36): periodic diagnostic so the operator
-//   knows GBPUSD ticks are arriving but no engine is wired. Logs once
-//   per 5 minutes per symbol when ticks are flowing. When the new
-//   GbpusdLondonOpenEngine is built (cloned from EurusdLondonOpen
-//   template, ~700 lines), wire it here using the same two-phase
-//   dispatch pattern as on_tick_eurusd (manage-when-open vs entry-when-flat).
+// 2026-05-04 (audit-fixes-36 + S57): on_tick_gbpusd now dispatches to
+//   GbpusdLondonOpenEngine using the same two-phase pattern as
+//   on_tick_eurusd (manage-when-open vs entry-when-flat). The periodic
+//   [FX-NO-ENGINE] diag stub has been removed -- the engine's own
+//   [GBP-LDN-OPEN-DIAG] warmup logger now provides the operator-visible
+//   tick-flow signal (every 600 ticks + first 60).
 template<typename Dispatch>
 static void on_tick_gbpusd(
     const std::string& sym, double bid, double ask,
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
+    // Update macro context price -- needed by GBP correlation logic and
+    //   the bracket trend bias accessor at on_tick.hpp:1177.
+    //   Done unconditionally before any engine logic, same pattern as the
+    //   eur_mid_price store in on_tick_eurusd.
     g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;
-    static int64_t s_last_diag = 0;
-    const int64_t now_s_diag = static_cast<int64_t>(std::time(nullptr));
-    if (now_s_diag - s_last_diag >= 300) {
-        s_last_diag = now_s_diag;
-        printf("[FX-NO-ENGINE] GBPUSD ticks flowing (mid=%.5f tradeable=%d) -- "
-               "no engine wired; build GbpusdLondonOpenEngine to enable\n",
-               g_macro_ctx.gbp_mid_price, (int)tradeable);
-        fflush(stdout);
+
+    const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+
+    // Two-phase dispatch (mirrors on_tick_eurusd):
+    //   1) If position open, manage unconditionally (regardless of tradeable/lat_ok).
+    //      This guarantees SL/TP/trail/BE management never stops mid-trade.
+    //   2) If no position, run entry path gated by tradeable && lat_ok.
+    //      The engine internally short-circuits on session window, news
+    //      blackout, spread, ATR gate, and same-level block.
+    //
+    // DOM fields plumbed from g_macro_ctx GBP-side fields:
+    //   - gbp_vacuum_ask, gbp_vacuum_bid, gbp_wall_above, gbp_wall_below
+    //     (mirrors EUR -- gbp_* fields populated alongside eur_* per the
+    //     Priority 6 backlog at SymbolEngines.hpp:107-110).
+    //   - There is no gbp_slope field, so book_slope is hard-coded 0.0.
+    //     The engine's slope branch is naturally inert at slope=0.
+    //   - l2_real is wired to g_macro_ctx.ctrader_l2_live -- when cTrader
+    //     depth is offline (FIX-only feed), DOM filter is bypassed
+    //     (engine's safe l2_real==false fallback).
+    if (g_gbpusd_london_open.has_open_position()) {
+        g_gbpusd_london_open.on_tick(
+            bid, ask, now_ms,
+            /* can_enter        */ false,  // already in position; entry-path skipped via LIVE branch
+            /* flow_live        */ false,
+            /* flow_be_locked   */ false,
+            /* flow_trail_stage */ 0,
+            bracket_on_close,
+            /* book_slope */ 0.0,
+            /* vacuum_ask */ g_macro_ctx.gbp_vacuum_ask,
+            /* vacuum_bid */ g_macro_ctx.gbp_vacuum_bid,
+            /* wall_above */ g_macro_ctx.gbp_wall_above,
+            /* wall_below */ g_macro_ctx.gbp_wall_below,
+            /* l2_real    */ g_macro_ctx.ctrader_l2_live);
+    } else {
+        const bool can_enter = tradeable && lat_ok;
+        g_gbpusd_london_open.on_tick(
+            bid, ask, now_ms,
+            can_enter,
+            /* flow_live        */ false,
+            /* flow_be_locked   */ false,
+            /* flow_trail_stage */ 0,
+            bracket_on_close,
+            /* book_slope */ 0.0,
+            /* vacuum_ask */ g_macro_ctx.gbp_vacuum_ask,
+            /* vacuum_bid */ g_macro_ctx.gbp_vacuum_bid,
+            /* wall_above */ g_macro_ctx.gbp_wall_above,
+            /* wall_below */ g_macro_ctx.gbp_wall_below,
+            /* l2_real    */ g_macro_ctx.ctrader_l2_live);
     }
-    (void)sym; (void)bid; (void)ask; (void)lat_ok; (void)regime; (void)dispatch;
+
+    (void)sym; (void)regime; (void)dispatch;
 }
 
 // ── USDJPY ──────────────────────────────────────────────────
@@ -189,35 +279,129 @@ static void on_tick_usdjpy(
 }
 
 // ── AUDUSD/NZDUSD ──────────────────────────────────────────
+// 2026-05-02: USDJPY split out to on_tick_usdjpy. This handler now serves
+//   AUDUSD (live engine) + NZDUSD (live engine, since 2026-05-04).
+// 2026-05-04 (audit-fixes-36 + S57): AUDUSD dispatches to
+//   AudusdSydneyOpenEngine using the same two-phase pattern as
+//   on_tick_usdjpy (manage-when-open vs entry-when-flat). NZDUSD now
+//   dispatches to NzdusdAsianOpenEngine via the same two-phase pattern
+//   (NZD branch added 2026-05-04). Both [FX-NO-ENGINE] diag stubs have
+//   been removed -- each engine's own [AUD-SYD-OPEN-DIAG] /
+//   [NZD-ASN-OPEN-DIAG] warmup logger provides the operator-visible
+//   tick-flow signal.
 template<typename Dispatch>
 static void on_tick_audusd(
     const std::string& sym, double bid, double ask,
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
-    // 2026-05-02: USDJPY split out to on_tick_usdjpy. This handler now serves
-    //   AUDUSD/NZDUSD only (both still inert; no orders sent).
-    // S57 2026-05-04 (audit-fixes-36): periodic diagnostic so the operator
-    //   knows AUDUSD/NZDUSD ticks are arriving but no engine is wired. When
-    //   the new AudusdSydneyOpenEngine / NzdusdAsianOpenEngine are built
-    //   (clones of UsdjpyAsianOpen template, ~700 lines each), wire them
-    //   here using the same two-phase dispatch pattern as on_tick_usdjpy.
-    static int64_t s_last_diag_aud = 0;
-    static int64_t s_last_diag_nzd = 0;
-    const int64_t now_s_diag = static_cast<int64_t>(std::time(nullptr));
-    if (sym == "AUDUSD" && now_s_diag - s_last_diag_aud >= 300) {
-        s_last_diag_aud = now_s_diag;
-        printf("[FX-NO-ENGINE] AUDUSD ticks flowing (bid=%.5f ask=%.5f tradeable=%d) -- "
-               "no engine wired; build AudusdSydneyOpenEngine to enable\n",
-               bid, ask, (int)tradeable);
-        fflush(stdout);
+    // -- AUDUSD: real engine dispatch --------------------------------------
+    if (sym == "AUDUSD") {
+        const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+
+        // Two-phase dispatch (mirrors on_tick_usdjpy):
+        //   1) If position open, manage unconditionally (regardless of
+        //      tradeable/lat_ok). This guarantees SL/TP/trail/BE management
+        //      never stops mid-trade.
+        //   2) If no position, run entry path gated by tradeable && lat_ok.
+        //      The engine internally short-circuits on session window, news
+        //      blackout, spread, ATR gate, and same-level block.
+        //
+        // DOM fields plumbed from g_macro_ctx AUD-side fields (vacuum-only,
+        // mirrors USDJPY's DOM shape):
+        //   - aud_vacuum_ask, aud_vacuum_bid (populated alongside JPY per
+        //     SymbolEngines.hpp:111-112).
+        //   - NO aud_wall_above / aud_wall_below / aud_slope -- pass false /
+        //     0.0; the engine's wall and slope branches naturally inert at
+        //     those values.
+        //   - l2_real wired to g_macro_ctx.ctrader_l2_live -- safe-fallback
+        //     when cTrader depth is offline.
+        if (g_audusd_sydney_open.has_open_position()) {
+            g_audusd_sydney_open.on_tick(
+                bid, ask, now_ms,
+                /* can_enter        */ false,  // already in position; entry-path skipped via LIVE branch
+                /* flow_live        */ false,
+                /* flow_be_locked   */ false,
+                /* flow_trail_stage */ 0,
+                bracket_on_close,
+                /* book_slope */ 0.0,
+                /* vacuum_ask */ g_macro_ctx.aud_vacuum_ask,
+                /* vacuum_bid */ g_macro_ctx.aud_vacuum_bid,
+                /* wall_above */ false,
+                /* wall_below */ false,
+                /* l2_real    */ g_macro_ctx.ctrader_l2_live);
+        } else {
+            const bool can_enter = tradeable && lat_ok;
+            g_audusd_sydney_open.on_tick(
+                bid, ask, now_ms,
+                can_enter,
+                /* flow_live        */ false,
+                /* flow_be_locked   */ false,
+                /* flow_trail_stage */ 0,
+                bracket_on_close,
+                /* book_slope */ 0.0,
+                /* vacuum_ask */ g_macro_ctx.aud_vacuum_ask,
+                /* vacuum_bid */ g_macro_ctx.aud_vacuum_bid,
+                /* wall_above */ false,
+                /* wall_below */ false,
+                /* l2_real    */ g_macro_ctx.ctrader_l2_live);
+        }
+
+        (void)regime; (void)dispatch;
+        return;
     }
-    if (sym == "NZDUSD" && now_s_diag - s_last_diag_nzd >= 300) {
-        s_last_diag_nzd = now_s_diag;
-        printf("[FX-NO-ENGINE] NZDUSD ticks flowing (bid=%.5f ask=%.5f tradeable=%d) -- "
-               "no engine wired; build NzdusdAsianOpenEngine to enable\n",
-               bid, ask, (int)tradeable);
-        fflush(stdout);
+
+    // -- NZDUSD: real engine dispatch --------------------------------------
+    // 2026-05-04 (audit-fixes-36 + S57): NzdusdAsianOpenEngine wired with
+    //   the same two-phase manage-when-open / entry-when-flat pattern as
+    //   the AUDUSD branch above. DOM fields plumbed from g_macro_ctx
+    //   NZD-side fields (vacuum-only, mirrors AUD/JPY DOM shape):
+    //     - nzd_vacuum_ask, nzd_vacuum_bid (populated alongside AUD per
+    //       SymbolEngines.hpp:113-114).
+    //     - NO nzd_wall_above / nzd_wall_below / nzd_slope -- pass false /
+    //       0.0; the engine's wall and slope branches naturally inert at
+    //       those values.
+    //     - l2_real wired to g_macro_ctx.ctrader_l2_live -- safe-fallback
+    //       when cTrader depth is offline.
+    if (sym == "NZDUSD") {
+        const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+
+        if (g_nzdusd_asian_open.has_open_position()) {
+            g_nzdusd_asian_open.on_tick(
+                bid, ask, now_ms,
+                /* can_enter        */ false,  // already in position; entry-path skipped via LIVE branch
+                /* flow_live        */ false,
+                /* flow_be_locked   */ false,
+                /* flow_trail_stage */ 0,
+                bracket_on_close,
+                /* book_slope */ 0.0,
+                /* vacuum_ask */ g_macro_ctx.nzd_vacuum_ask,
+                /* vacuum_bid */ g_macro_ctx.nzd_vacuum_bid,
+                /* wall_above */ false,
+                /* wall_below */ false,
+                /* l2_real    */ g_macro_ctx.ctrader_l2_live);
+        } else {
+            const bool can_enter = tradeable && lat_ok;
+            g_nzdusd_asian_open.on_tick(
+                bid, ask, now_ms,
+                can_enter,
+                /* flow_live        */ false,
+                /* flow_be_locked   */ false,
+                /* flow_trail_stage */ 0,
+                bracket_on_close,
+                /* book_slope */ 0.0,
+                /* vacuum_ask */ g_macro_ctx.nzd_vacuum_ask,
+                /* vacuum_bid */ g_macro_ctx.nzd_vacuum_bid,
+                /* wall_above */ false,
+                /* wall_below */ false,
+                /* l2_real    */ g_macro_ctx.ctrader_l2_live);
+        }
+
+        (void)regime; (void)dispatch;
+        return;
     }
-    (void)lat_ok; (void)regime; (void)dispatch;
+
+    // Defensive fall-through: if the on_tick.hpp dispatcher ever routes a
+    //   non-AUD/non-NZD symbol here, suppress unused-arg warnings cleanly.
+    (void)bid; (void)ask; (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
 }

@@ -372,6 +372,48 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   costs. Wired in tick_fx.hpp::on_tick_usdjpy() dispatch block. See
 //   docs/SESSION_2026-05-02_USDJPY_ASIAN_OPEN_HANDOFF.md for full design.
 #include "UsdjpyAsianOpenEngine.hpp"
+// 2026-05-04 (audit-fixes-36 + S57): GbpusdLondonOpenEngine -- cable
+//   sister to EurusdLondonOpenEngine. London-open compression-breakout on
+//   GBPUSD with the live target window 07:00-10:00 UTC (one hour later
+//   than EUR's 06-09; cable compressions cluster around the LSE 08:00 UTC
+//   equity open). MIN_RANGE/MAX_RANGE widened ~50% vs EUR (12-75 pips
+//   vs 8-50) to track GBPUSD's ~50% wider daily ATR (80-150 pips vs EUR
+//   60-120). News-blackout-gated for BoE/UK CPI/UK GDP via the GBP
+//   currency set, plus NFP/CPI/FOMC via the USD set (auto-included by
+//   the OmegaNewsBlackout symbol-to-country mapping). Shadow-only by
+//   default; session window currently widened to 0-24 (S57) for shadow
+//   ledger visibility -- re-tighten to 07-10 when promoting to live.
+//   Wired in tick_fx.hpp::on_tick_gbpusd() dispatch block.
+#include "GbpusdLondonOpenEngine.hpp"
+// 2026-05-04 (audit-fixes-36 + S57): AudusdSydneyOpenEngine -- aussie
+//   sister to UsdjpyAsianOpenEngine. Sydney-open + Tokyo-handoff
+//   compression-breakout on AUDUSD with the live target window 22:00-02:00
+//   UTC (Sydney 22:00 + Tokyo overlap, pre-Frankfurt cutoff). AUD pip
+//   math (1 pip = 0.0001 price, USD_PER_PRICE_UNIT=10000 at 0.10 lot --
+//   identical to EUR/GBP because AUD is also a USD-quote major). All
+//   USDJPY S55-S59 tuned constants rescaled from JPY 0.01-pip units to
+//   AUD 0.0001-pip units. News-blackout-gated for RBA/AU CPI/AU jobs via
+//   the AUD currency set, plus NFP/CPI/FOMC via the USD set. Shadow-only
+//   by default; session window currently widened to 0-24 (S57) for shadow
+//   ledger visibility -- re-tighten to 22-02 (with wraparound-aware
+//   check) when promoting to live. Wired in
+//   tick_fx.hpp::on_tick_audusd() dispatch block.
+#include "AudusdSydneyOpenEngine.hpp"
+// 2026-05-04 (audit-fixes-36 + S57): NzdusdAsianOpenEngine -- kiwi sister
+//   to AudusdSydneyOpenEngine. Wellington-open + Tokyo-handoff
+//   compression-breakout on NZDUSD with the live target window 22:00-04:00
+//   UTC (one hour wider than AUD's 22-02 to capture post-Tokyo-open
+//   AUDNZD-cross flow settlement). NZD pip math identical to AUD/EUR/GBP
+//   (1 pip = 0.0001 price, USD_PER_PRICE_UNIT=10000 at 0.10 lot -- NZD is
+//   also a USD-quote major). All AUDUSD S55-S59 tuned constants reused
+//   as PRE-SWEEP defaults. News-blackout-gated for RBNZ/NZ CPI/NZ jobs
+//   via the NZD currency set, plus NFP/CPI/FOMC via the USD set.
+//   Shadow-only by default; session window currently widened to 0-24 (S57)
+//   for shadow ledger visibility -- re-tighten to 22-04 (with wraparound-
+//   aware check) when promoting to live. Retires the last [FX-NO-ENGINE]
+//   diag stub from on_tick_audusd. Wired in
+//   tick_fx.hpp::on_tick_audusd() NZDUSD branch.
+#include "NzdusdAsianOpenEngine.hpp"
 // 2026-05-02: XauusdFvgEngine -- 15m FVG engine on XAUUSD. C++ port of
 //   scripts/fvg_pnl_backtest_v3.py (v3 #5 ACCEPTED config). Cleared the
 //   four-gate walk-forward bar at two independent train/test cutoffs
@@ -390,6 +432,9 @@ static omega::GoldHybridBracketEngine         g_hybrid_gold;
 static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
 static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
+static omega::GbpusdLondonOpenEngine          g_gbpusd_london_open;
+static omega::AudusdSydneyOpenEngine          g_audusd_sydney_open;
+static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
 static omega::XauusdFvgEngine                 g_xauusd_fvg;
 static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
 static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
