@@ -430,6 +430,13 @@ static omega::GoldBracketEngine   g_bracket_gold;
 // engine_init.hpp wires the side-channel call inside g_xauusd_fvg.on_close_cb,
 // and that call site needs the writer header visible at compile time.
 #include "LogXauusdFvgCsv.hpp"
+// 2026-05-05 (audit-fixes-40): per-engine liveness heartbeat. Detects "engine
+//   wired in source but never receives ticks" failure mode (root-cause of the
+//   2026-05-04..05 19h FX silence). Pulse calls in each tick dispatcher;
+//   register_engine + check_misses + run_startup_self_test in main loop.
+//   Header defines `static omega::EngineHeartbeat g_engine_heartbeat;` itself
+//   per the SINGLE-TRANSLATION-UNIT include pattern.
+#include "EngineHeartbeat.hpp"
 static omega::GoldHybridBracketEngine         g_hybrid_gold;
 static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;

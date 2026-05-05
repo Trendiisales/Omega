@@ -9,6 +9,9 @@ static void on_tick_oil(
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulse for USOIL-driven engine.
+    g_engine_heartbeat.pulse("UsoilEngine");
+
     // Session gate: London/NY only (07:00-22:00 UTC)
     const auto t_cl = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti_cl; gmtime_s(&ti_cl, &t_cl);
@@ -73,6 +76,9 @@ static void on_tick_brent(
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulse for BRENT-driven engine.
+    g_engine_heartbeat.pulse("BrentEngine");
+
     const auto t_br = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti_br; gmtime_s(&ti_br, &t_br);
     if (ti_br.tm_hour >= 7) {

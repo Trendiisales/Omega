@@ -12,6 +12,30 @@ static void on_tick_gold(
         bool tradeable, bool lat_ok, const std::string& regime,
         double rtt_check)
 {
+    // 2026-05-05 (audit-fixes-40): per-engine heartbeat pulses. One pulse per
+    //   gold engine driven from this dispatcher. The XAUUSD tick handler
+    //   forwards to all gold engines below, so a single tick drives every
+    //   listed engine. Tsmom_<TF>_long pulses fire here too because
+    //   TsmomPortfolio::on_tick is called from this handler (intrabar SL
+    //   management); on_h1_bar additionally fires every H1 close.
+    g_engine_heartbeat.pulse("HybridGold");
+    g_engine_heartbeat.pulse("MidScalperGold");
+    g_engine_heartbeat.pulse("GoldStack");
+    g_engine_heartbeat.pulse("CandleFlow");
+    g_engine_heartbeat.pulse("EMACross");
+    g_engine_heartbeat.pulse("XauusdFvg");
+    g_engine_heartbeat.pulse("RSIReversal");
+    g_engine_heartbeat.pulse("RSIExtreme");
+    g_engine_heartbeat.pulse("h1_swing_gold");
+    g_engine_heartbeat.pulse("h4_regime_gold");
+    if (g_macro_crash.enabled) g_engine_heartbeat.pulse("MacroCrash");
+    g_engine_heartbeat.pulse("NbmGoldLondon");
+    g_engine_heartbeat.pulse("Tsmom_H1_long");
+    g_engine_heartbeat.pulse("Tsmom_H2_long");
+    g_engine_heartbeat.pulse("Tsmom_H4_long");
+    g_engine_heartbeat.pulse("Tsmom_H6_long");
+    g_engine_heartbeat.pulse("Tsmom_D1_long");
+
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
     // TREND DAY exception: when |ewm_drift| > 5.0 AND vol_ratio > 1.5,

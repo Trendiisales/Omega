@@ -1770,12 +1770,43 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // SIM-VALIDATED: XAUUSD and USOIL.F have proven compression edge.
     // US indices (US500.F, USTEC.F, NAS100, DJ30.F) now routed for
     // NoiseBandMomentumEngine -- Zarattini/Maroy research (Sharpe 3.0-5.9).
-    // All other symbols remain hard-blocked until re-validated.
+    //
+    // 2026-05-05 (audit-fixes-41): FX (EUR/GBP/USDJPY/AUD/NZD), BRENT, and
+    //   euro indices (GER40/UK100/ESTX50) added to the active list.
+    //   Root cause: this gate was authored during the 2026-04-06 global FX
+    //   disable era and was never updated when individual FX engines were
+    //   re-enabled (EURUSD 2026-05-02, USDJPY 2026-05-02, GBPUSD 2026-05-04,
+    //   AUDUSD 2026-05-04, NZDUSD 2026-05-04). Result: 19 hours of live tape
+    //   on 2026-05-04..05 produced ZERO FX trades despite all five FX engines
+    //   being correctly registered (21 engines, 8 position sources confirmed
+    //   in startup banner). The engines' on_tick was never called because
+    //   their tick path returned at this gate before reaching the symbol
+    //   dispatch chain at on_tick.hpp:1929. Same root-cause for BRENT and
+    //   GER40/UK100/ESTX50 (engines wired in tick_brent.hpp / tick_indices.hpp
+    //   but symbol gate dropped their ticks).
+    //
+    //   The XAGUSD hard-block is RETAINED -- silver is genuinely off the
+    //   active list per the engine-level cull at Batch 5V 2026-04-20
+    //   (Sharpe=-16.23 / MaxDD=$18,381 / 0 positive months across 24 months,
+    //   ISSUE-124). Any future re-introduction would require explicit
+    //   addition here AND a fresh real-tick backtest.
     {
-        // All symbols active -- bars now built from FIX ticks directly, no broker bar API needed
-        const bool is_active_sym = (sym == "XAUUSD"  || sym == "USOIL.F"  ||
-                                    sym == "US500.F" || sym == "USTEC.F"  ||
-                                    sym == "NAS100"  || sym == "DJ30.F");
+        const bool is_active_sym = (
+            sym == "XAUUSD"  || sym == "USOIL.F" ||
+            sym == "US500.F" || sym == "USTEC.F" ||
+            sym == "NAS100"  || sym == "DJ30.F"  ||
+            // FX cohort re-enabled 2026-05-02..04 (EurusdLondonOpen +
+            //   GbpusdLondonOpen + UsdjpyAsianOpen + AudusdSydneyOpen +
+            //   NzdusdAsianOpen). Each engine self-gates on its own session
+            //   window inside on_tick (06-09 / 07-10 / 00-04 / 22-02 / 22-04
+            //   UTC respectively).
+            sym == "EURUSD"  || sym == "GBPUSD"  ||
+            sym == "USDJPY"  || sym == "AUDUSD"  ||
+            sym == "NZDUSD"  ||
+            // Cross-asset cohort -- engines wired in tick_brent.hpp /
+            //   tick_indices.hpp; gates open at on_tick.hpp:1929 dispatch.
+            sym == "BRENT"   ||
+            sym == "GER40"   || sym == "UK100"   || sym == "ESTX50");
         // XAGUSD hard-blocked: real-tick backtest of the silver Turtle-style
         // breakout strategy returned Sharpe=-16.23, MaxDD=$18,381, 0 positive
         // months across 24 months on 42M XAGUSD ticks (Jan 2023-Jan 2025).

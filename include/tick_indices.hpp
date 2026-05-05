@@ -32,6 +32,12 @@ static void on_tick_us500(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulses for every US500-driven engine.
+    g_engine_heartbeat.pulse("HybridSP");
+    g_engine_heartbeat.pulse("IFlowSP");
+    g_engine_heartbeat.pulse("IMacroSP");
+    g_engine_heartbeat.pulse("TrendPullbackSP");
+
     // FIX-tick bar builder for US500.F M1/M5
     {
         static OHLCBar s_sp1{}, s_sp5{};
@@ -374,6 +380,12 @@ static void on_tick_ustec(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulses for every USTEC-driven engine.
+    g_engine_heartbeat.pulse("HybridNQ");
+    g_engine_heartbeat.pulse("IFlowNQ");
+    g_engine_heartbeat.pulse("IMacroNQ");
+    g_engine_heartbeat.pulse("TrendPullbackNQ");
+
     // FIX-tick bar builder for USTEC.F M1/M5
     {
         static OHLCBar s_nq1{}, s_nq5{};
@@ -649,6 +661,12 @@ static void on_tick_dj30(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulses for every DJ30-driven engine.
+    g_engine_heartbeat.pulse("HybridUS30");
+    g_engine_heartbeat.pulse("IFlowUS30");
+    g_engine_heartbeat.pulse("IMacroUS30");
+    g_engine_heartbeat.pulse("MinimalH4US30");
+
     const bool base_can_us30 = symbol_gate("DJ30.F",
         g_eng_us30.pos.active      ||
         g_bracket_us30.pos.active  ||
@@ -813,6 +831,9 @@ static void on_tick_ger40(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulse for GER40-driven engines.
+    g_engine_heartbeat.pulse("Ger40");
+
     const bool base_can_ger = symbol_gate("GER40",
         g_eng_ger30.pos.active              ||
         g_bracket_ger30.pos.active          ||
@@ -842,6 +863,9 @@ static void on_tick_uk100(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulse for UK100-driven engines.
+    g_engine_heartbeat.pulse("Uk100");
+
     const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, "", tradeable, lat_ok, regime, bid, ask);
     const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk, sym, bid, ask);
     // SIM: EU index breakout -- no edge. Disabled.
@@ -868,6 +892,9 @@ static void on_tick_estx50(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulse for ESTX50-driven engines.
+    g_engine_heartbeat.pulse("Estx50");
+
     const bool base_can_estx = symbol_gate("ESTX50", g_eng_estx50.pos.active || g_bracket_estx50.pos.active, "", tradeable, lat_ok, regime, bid, ask);
     const auto sdec_estx = sup_decision(g_sup_estx50, g_eng_estx50, base_can_estx, sym, bid, ask);
     // SIM: EU index breakout -- no edge. Disabled.
@@ -894,6 +921,11 @@ static void on_tick_nas100(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulses for every NAS100-driven engine.
+    g_engine_heartbeat.pulse("HybridNAS100");
+    g_engine_heartbeat.pulse("IFlowNAS100");
+    g_engine_heartbeat.pulse("IMacroNAS");
+
     const bool base_can_nas = symbol_gate("NAS100",
         g_eng_nas100.pos.active      ||
         g_bracket_nas100.pos.active  ||

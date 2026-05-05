@@ -199,6 +199,26 @@ struct TsmomCell {
     int    cooldown_bars           = 0;      // legacy; default 0 with multi-pos
     double hard_sl_atr             = 3.0;
     double max_spread_pt           = 1.5;
+    // 2026-05-04 (audit-fixes-39): MAE-based early exit.
+    //   The validated phase1 backtest (sim_c, post_cut_revalidate_all.py)
+    //   runs with hard_sl_atr=3.0 and hold_bars=12 only -- no MAE-stop. Live
+    //   tape on 2026-05-04 produced a Tsmom_H1_long position that ran 41pt
+    //   adverse for 12 hours and force-closed at TIME_EXIT for -$41.62. The
+    //   3*ATR hard SL was just below the time-exit price, so the trade was
+    //   destined to lose ~$40 the moment it crossed 30pt adverse.
+    //
+    //   This early-exit threshold caps the worst-case adverse run at
+    //   2 * ATR_at_signal. For ATR=14, that's 28pt instead of 42pt, cutting
+    //   the worst-case loss per position from ~$42 to ~$28 at 0.01 lot.
+    //
+    //   IMPORTANT: this BREAKS PARITY with the validated backtest. The
+    //   reported +$17,482 H1 long figure was produced WITHOUT this exit.
+    //   Re-validation required: re-run phase1/signal_discovery/
+    //   post_cut_revalidate.py with this MAE_EXIT_ATR layered on top of
+    //   sig_tsmom + sim_c before treating the live numbers as predictive.
+    //
+    //   Set to 0.0 to disable (restores pre-audit-fixes-39 behaviour).
+    double mae_exit_atr            = 2.0;
 
     int    direction       = 1;
     std::string timeframe  = "H1";
@@ -238,6 +258,24 @@ struct TsmomCell {
                 ? (b.low  - p.entry) : (p.entry - b.high);
             if (max_move_this_bar > p.mfe) p.mfe = max_move_this_bar;
             if (min_move_this_bar < p.mae) p.mae = min_move_this_bar;
+
+            // 2026-05-04 (audit-fixes-39): MAE-based early exit.
+            //   Triggers BEFORE the 3*ATR hard SL when adverse excursion
+            //   exceeds mae_exit_atr * ATR_at_signal. Closes the trade at
+            //   the threshold level (synthetic exit), capping the
+            //   worst-case adverse run. mae_exit_atr=0 disables.
+            if (mae_exit_atr > 0.0 && p.atr > 0.0) {
+                const double mae_threshold_pts = mae_exit_atr * p.atr;
+                const bool mae_exit_hit = direction == 1
+                    ? (b.low  <= p.entry - mae_threshold_pts)
+                    : (b.high >= p.entry + mae_threshold_pts);
+                if (mae_exit_hit) {
+                    const double exit_px = p.entry - direction * mae_threshold_pts;
+                    _close(p, exit_px, "MAE_EXIT", now_ms, on_close);
+                    it = positions_.erase(it);
+                    continue;
+                }
+            }
 
             const bool sl_hit = direction == 1
                 ? (b.low  <= p.sl) : (b.high >= p.sl);
@@ -329,16 +367,39 @@ struct TsmomCell {
             if (signed_move > p.mfe) p.mfe = signed_move;
             if (signed_move < p.mae) p.mae = signed_move;
 
+            // 2026-05-04 (audit-fixes-39): MAE-based intrabar early exit.
+            //   Same threshold as on_bar's MAE_EXIT but checked tick-by-tick
+            //   so trades that cross 2*ATR adverse mid-bar exit immediately
+            //   instead of waiting for bar close.
             bool hit = false;
-            if (direction == 1) {
-                if (bid <= p.sl) {
-                    _close(p, bid, "SL_HIT", now_ms, on_close);
-                    hit = true;
+            if (mae_exit_atr > 0.0 && p.atr > 0.0) {
+                const double mae_threshold_pts = mae_exit_atr * p.atr;
+                if (direction == 1) {
+                    if (bid <= p.entry - mae_threshold_pts) {
+                        const double exit_px = p.entry - mae_threshold_pts;
+                        _close(p, exit_px, "MAE_EXIT", now_ms, on_close);
+                        hit = true;
+                    }
+                } else {
+                    if (ask >= p.entry + mae_threshold_pts) {
+                        const double exit_px = p.entry + mae_threshold_pts;
+                        _close(p, exit_px, "MAE_EXIT", now_ms, on_close);
+                        hit = true;
+                    }
                 }
-            } else {
-                if (ask >= p.sl) {
-                    _close(p, ask, "SL_HIT", now_ms, on_close);
-                    hit = true;
+            }
+
+            if (!hit) {
+                if (direction == 1) {
+                    if (bid <= p.sl) {
+                        _close(p, bid, "SL_HIT", now_ms, on_close);
+                        hit = true;
+                    }
+                } else {
+                    if (ask >= p.sl) {
+                        _close(p, ask, "SL_HIT", now_ms, on_close);
+                        hit = true;
+                    }
                 }
             }
 
