@@ -27,7 +27,14 @@ $OmegaExe  = "$OmegaDir\Omega.exe"
 $ConfigSrc = "$OmegaDir\config\omega_config.ini"  # canonical source
 $ConfigDst = "$OmegaDir\omega_config.ini"          # binary working directory copy
 $SymbolSrc = "$OmegaDir\symbols.ini"               # already in root (git tracked)
-$CmakeExe  = "C:\vcpkg\downloads\tools\cmake-3.31.10-windows\cmake-3.31.10-windows-x86_64\bin\cmake.exe"
+# 2026-05-05 (audit-fixes-42): replaced hardcoded cmake path with dot-source
+#   of cmake-discover.ps1, which globs for cmake.exe across known vcpkg
+#   layouts (legacy C:\vcpkg\downloads\..., nested C:\vcpkg\vcpkg\downloads\...,
+#   Program Files, Visual Studio bundled CMake, PATH). Survives vcpkg version
+#   bumps and layout changes. The discoverer sets $cmakeExe (lowercase); we
+#   alias to $CmakeExe so the rest of the script keeps its existing var name.
+. "$OmegaDir\cmake-discover.ps1"
+$CmakeExe  = $cmakeExe
 $NssmExe   = "C:\nssm\nssm-2.24\win64\nssm.exe"
 $ServiceName = "Omega"
 
@@ -268,12 +275,30 @@ if ($gitHash -ne $remoteHash) {
 OK "HEAD: $gitHash  -- $gitMsg"
 
 # ── [3/13] Build directory ───────────────────────────────────────────────────────────────────
+# 2026-05-05 (audit-fixes-42): build dir + cmake-configure handling now robust
+#   against full wipes. If build/CMakeCache.txt is missing OR build/ does not
+#   exist, run cmake configure to regenerate the project files. This is the
+#   missing half of the audit-fixes-38 TODO -- before this fix, anyone who
+#   wiped the build dir (e.g. to break a stale cmake hash cache, as we did
+#   on 2026-05-04) had to manually run cmake -S . -B build outside the script.
+#   With this in place, RESTART_OMEGA.ps1 self-heals after any build wipe.
 Step 3 13 "Checking build directory..."
 if (-not (Test-Path "$OmegaDir\build")) {
     New-Item -ItemType Directory -Path "$OmegaDir\build" -Force | Out-Null
     Write-Host "      [NOTE] Fresh build directory created" -ForegroundColor Yellow
 }
-OK "Build directory ready"
+$cacheFile = "$OmegaDir\build\CMakeCache.txt"
+if (-not (Test-Path $cacheFile)) {
+    Write-Host "      [NOTE] CMakeCache.txt missing -- running cmake configure" -ForegroundColor Yellow
+    if (-not (Test-Path $CmakeExe)) { FAIL "cmake not found at $CmakeExe (cmake-discover.ps1 returned a path that does not exist)" }
+    $cfgProc = Start-Process -FilePath $CmakeExe `
+        -ArgumentList "-S `"$OmegaDir`" -B `"$OmegaDir\build`" -DCMAKE_BUILD_TYPE=Release" `
+        -Wait -PassThru -NoNewWindow
+    if ($cfgProc.ExitCode -ne 0) { FAIL "cmake configure failed (exit $($cfgProc.ExitCode))" }
+    OK "cmake configure complete"
+} else {
+    OK "Build directory already configured"
+}
 
 # ── [4/13] Write version stamp (no cmake) ───────────────────────────────────────────────────
 # Write version_generated.hpp and omega_version.cmake directly in PowerShell.
