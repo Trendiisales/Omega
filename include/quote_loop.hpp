@@ -133,6 +133,29 @@ static void quote_loop() {
                 }
             }
 
+            // 2026-05-05 (audit-fixes-40): per-engine heartbeat checks.
+            //   STARTUP-SELFTEST runs once 60s after init_engines() completes
+            //   (idempotent -- the heartbeat object tracks done-state internally).
+            //   HEARTBEAT-MISS scan runs every 30s, only alerts engines that
+            //   are inside their declared session window AND have exceeded
+            //   their cadence threshold AND haven't been alerted in last 5min
+            //   (rate limit inside check_misses).
+            //
+            //   Both calls are cheap (mutex + map iteration over ~30 engines)
+            //   and synchronous -- no thread spawned. Embedded inline with
+            //   the existing heartbeat infrastructure so a single quote_loop
+            //   pass handles all monitoring.
+            {
+                static auto last_hb_check = now;
+                if (std::chrono::duration_cast<std::chrono::seconds>(now - last_hb_check).count() >= 30) {
+                    last_hb_check = now;
+                    const int64_t hb_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    g_engine_heartbeat.run_startup_self_test(hb_now_ms);  // idempotent
+                    g_engine_heartbeat.check_misses(hb_now_ms);
+                }
+            }
+
             // Diagnostic every 60s -- visibility into engine phase + vol state
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_diag).count() >= 60) {
                 last_diag = now;
@@ -739,16 +762,23 @@ static void quote_loop() {
             // is LIVE. The per-engine shadow flag is the only path that can slip
             // through the outer gate.
             //
-            // handle_closed_trade itself has its own shadow short-circuit as the
-            // central guard (belt), but we also check here (braces) specifically to
-            // stop send_live_order from firing on shadow records.
+            // 2026-05-04 (audit-fixes-39): the central shadow-guard inside
+            // handle_closed_trade was REMOVED 2026-05-01 (SESSION_h, see
+            // trade_lifecycle.hpp:83-124) so shadow trades populate the
+            // ledger / GUI / PnL. This belt-and-braces guard was originally
+            // redundant against that central guard; with the central guard
+            // gone it became the ONLY drop point and silently hid every
+            // shadow shutdown FC from the ledger. Now: handle_closed_trade
+            // ALWAYS fires (ledger gets the record); send_live_order is
+            // skipped only for shadow records (no broker ping when in
+            // per-engine shadow during LIVE mode).
+            handle_closed_trade(tr);
             if (tr.shadow) {
-                printf("[SHUTDOWN-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                printf("[SHUTDOWN-CB-SHADOW-NOORDER] %s %s size=%.4f exit=%.5f -- SHADOW trade, ledger updated, skipping send_live_order\n",
                        tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
                 fflush(stdout);
                 return;
             }
-            handle_closed_trade(tr);
             send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
         };
 
@@ -857,17 +887,17 @@ static void quote_loop() {
                 if (b <= 0.0) { b = 1.0; a = 1.01; }
             };
             auto scb = [](const omega::TradeRecord& tr) {
-                // Shadow-aware guard (2026-04-21): mirror of shutdown_cb. Same
-                // rationale -- per-engine shadow_mode=true while global mode is LIVE
-                // can slip a shadow TradeRecord into this path. Both handle_closed_trade
-                // and send_live_order must be blocked for shadow records.
+                // 2026-05-04 (audit-fixes-39): see SHUTDOWN-CB rationale above.
+                // Central shadow-guard removed 2026-05-01; this redundant guard
+                // was the only drop point for shadow shutdown FCs. Restore
+                // ledger flow; only block broker submit for shadow records.
+                handle_closed_trade(tr);
                 if (tr.shadow) {
-                    printf("[SCB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                    printf("[SCB-SHADOW-NOORDER] %s %s size=%.4f exit=%.5f -- SHADOW trade, ledger updated, skipping send_live_order\n",
                            tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
                     fflush(stdout);
                     return;
                 }
-                handle_closed_trade(tr);
                 send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
             };
 
@@ -959,14 +989,14 @@ static void quote_loop() {
                 eng.forceClose(bid, ask, "DISCONNECT", g_rtt_last,
                     g_macroDetector.regime().c_str(),
                     [](const omega::TradeRecord& tr) {
-                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        // 2026-05-04 (audit-fixes-39): see SHUTDOWN-CB rationale.
+                        handle_closed_trade(tr);
                         if (tr.shadow) {
-                            printf("[FC-DISCONNECT-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                            printf("[FC-DISCONNECT-SHADOW-NOORDER] %s %s size=%.4f exit=%.5f -- SHADOW trade, ledger updated, skipping send_live_order\n",
                                    tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
                             fflush(stdout);
                             return;
                         }
-                        handle_closed_trade(tr);
                         // Send market close -- broker doesn't know we're disconnecting
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
@@ -985,14 +1015,14 @@ static void quote_loop() {
             if (bgld_bid > 0.0 && bgld_ask > 0.0)
                 g_bracket_gold.forceClose(bgld_bid, bgld_ask, "FORCE_CLOSE", g_rtt_last, "",
                     [](const omega::TradeRecord& tr) {
-                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        // 2026-05-04 (audit-fixes-39): see SHUTDOWN-CB rationale.
+                        handle_closed_trade(tr);
                         if (tr.shadow) {
-                            printf("[BRACKET-GOLD-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                            printf("[BRACKET-GOLD-SHADOW-NOORDER] %s %s size=%.4f exit=%.5f -- SHADOW trade, ledger updated, skipping send_live_order\n",
                                    tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
                             fflush(stdout);
                             return;
                         }
-                        handle_closed_trade(tr);
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     });
         }
@@ -1008,14 +1038,14 @@ static void quote_loop() {
             if (b > 0.0 && a > 0.0)
                 beng.forceClose(b, a, "FORCE_CLOSE", g_rtt_last, "",
                     [](const omega::TradeRecord& tr) {
-                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        // 2026-05-04 (audit-fixes-39): see SHUTDOWN-CB rationale.
+                        handle_closed_trade(tr);
                         if (tr.shadow) {
-                            printf("[FC-BRACKET-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                            printf("[FC-BRACKET-SHADOW-NOORDER] %s %s size=%.4f exit=%.5f -- SHADOW trade, ledger updated, skipping send_live_order\n",
                                    tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
                             fflush(stdout);
                             return;
                         }
-                        handle_closed_trade(tr);
                         // Send market close -- broker doesn't know we disconnected.
                         // Matches gold bracket behaviour on disconnect.
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
@@ -1038,14 +1068,14 @@ static void quote_loop() {
         {
             std::function<void(const omega::TradeRecord&)> ca_cb =
                 [](const omega::TradeRecord& tr) {
-                    // Shadow-aware guard (2026-04-21): see shutdown_cb/scb rationale.
+                    // 2026-05-04 (audit-fixes-39): see SHUTDOWN-CB rationale.
+                    handle_closed_trade(tr);
                     if (tr.shadow) {
-                        printf("[CA-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                        printf("[CA-CB-SHADOW-NOORDER] %s %s size=%.4f exit=%.5f -- SHADOW trade, ledger updated, skipping send_live_order\n",
                                tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
                         fflush(stdout);
                         return;
                     }
-                    handle_closed_trade(tr);
                     send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                 };
             auto ca_get_px = [](const char* s, double& b, double& a) {
@@ -1103,14 +1133,14 @@ static void quote_loop() {
             if (g_bid > 0.0 && g_ask > 0.0) {
                 omega::gold::GoldEngineStack::CloseCallback gold_fc_cb =
                     [](const omega::TradeRecord& tr) {
-                        // Shadow-aware guard (2026-04-21): see shutdown_cb rationale.
+                        // 2026-05-04 (audit-fixes-39): see SHUTDOWN-CB rationale.
+                        handle_closed_trade(tr);
                         if (tr.shadow) {
-                            printf("[GOLD-FC-CB-SHADOW] %s %s size=%.4f exit=%.5f -- SHADOW trade, skipping handle_closed_trade and send_live_order\n",
+                            printf("[GOLD-FC-CB-SHADOW-NOORDER] %s %s size=%.4f exit=%.5f -- SHADOW trade, ledger updated, skipping send_live_order\n",
                                    tr.symbol.c_str(), tr.side.c_str(), tr.size, tr.exitPrice);
                             fflush(stdout);
                             return;
                         }
-                        handle_closed_trade(tr);
                         send_live_order(tr.symbol, tr.side == "SHORT", tr.size, tr.exitPrice);
                     };
                 g_gold_stack.force_close(g_bid, g_ask, g_rtt_last, gold_fc_cb);

@@ -2042,6 +2042,93 @@ static void init_engines(const std::string& cfg_path)
               << g_engines.snapshot_all().size() << " engines)\n";
     std::cout.flush();
 
+    // ── EngineHeartbeat registrations (audit-fixes-40 / 2026-05-05) ───────
+    // Per-engine liveness registry. Each entry declares:
+    //   live_required       -- true if absence triggers MISS / STARTUP-FAIL
+    //   expected_cadence_s  -- max seconds between pulses inside session window
+    //   session_start_utc   -- UTC hour the engine is expected to be ticking
+    //   session_end_utc     -- end of session window (wraparound if end<=start)
+    //
+    // Cadence rationale:
+    //   24/7 engines (gold, Tsmom):     3600s (1h) -- generous slack for low-tape
+    //                                                 weekend windows + bar-driven
+    //                                                 engines that sleep between
+    //                                                 H1/H4 closes.
+    //   FX session-windowed engines:    600s (10min) inside their UTC window.
+    //   Index session-windowed engines: 900s (15min) -- slot-driven, NY+London core.
+    //   Brent / EU indices:             900s (15min) -- liquidity windows.
+    //
+    // The pulse is wired at the dispatcher level (top of each tick_*.hpp
+    // handler) so this catches the exact failure mode that hid for 19h:
+    //   active-symbols gate at on_tick.hpp:1786 was dropping FX ticks before
+    //   the dispatch chain. With heartbeat wired the STARTUP-SELFTEST fires
+    //   60s after init -- any engine that didn't pulse logs [STARTUP-FAIL].
+    {
+        // ---- Gold engines (24/7 cadence) ---------------------------------
+        g_engine_heartbeat.register_engine("HybridGold",         true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("MidScalperGold",     true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("GoldStack",          true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("CandleFlow",         true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauusdFvg",          true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("RSIReversal",        true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("RSIExtreme",         true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("h1_swing_gold",      true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("h4_regime_gold",     true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("MacroCrash",         g_macro_crash.enabled, 3600, 0, 24);
+        g_engine_heartbeat.register_engine("NbmGoldLondon",      true,  900,  7, 14);
+
+        // ---- Tsmom portfolio (5 cells, bar-driven on H1) -----------------
+        // bar-driven, but driven from XAUUSD ticks via tick_gold.hpp's
+        // forwarding to TsmomPortfolio::on_tick / on_h1_bar. Pulse fires from
+        // the gold dispatcher so cadence is high; the 3600s envelope is
+        // intentional for weekend safety.
+        g_engine_heartbeat.register_engine("Tsmom_H1_long",      true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_H2_long",      true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_H4_long",      true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_H6_long",      true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_D1_long",      true, 3600,  0, 24);
+
+        // ---- FX session-windowed engines (audit-fixes-37 + 41 cohort) ----
+        g_engine_heartbeat.register_engine("EurusdLondonOpen",   true,  600,  6,  9);
+        g_engine_heartbeat.register_engine("GbpusdLondonOpen",   true,  600,  7, 10);
+        g_engine_heartbeat.register_engine("UsdjpyAsianOpen",    true,  600,  0,  4);
+        g_engine_heartbeat.register_engine("AudusdSydneyOpen",   true,  600, 22,  2);  // wraparound
+        g_engine_heartbeat.register_engine("NzdusdAsianOpen",    true,  600, 22,  4);  // wraparound
+
+        // ---- Index hybrid + flow engines (NY+London core) ----------------
+        g_engine_heartbeat.register_engine("HybridSP",           true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("HybridNQ",           true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("HybridUS30",         true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("HybridNAS100",       true,  900, 13, 22);  // NY core (slot 3-4)
+        g_engine_heartbeat.register_engine("IFlowSP",            true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("IFlowNQ",            true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("IFlowUS30",          true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("IFlowNAS100",        true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("IMacroSP",           true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("IMacroNQ",           true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("IMacroUS30",         true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("IMacroNAS",          true,  900,  7, 22);
+
+        // ---- TrendPullback indices ---------------------------------------
+        g_engine_heartbeat.register_engine("TrendPullbackSP",    true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("TrendPullbackNQ",    true,  900,  7, 22);
+
+        // ---- Minimal H4 US30 ---------------------------------------------
+        g_engine_heartbeat.register_engine("MinimalH4US30",      true,  900,  7, 22);
+
+        // ---- Cross-asset / commodities / EU indices ----------------------
+        g_engine_heartbeat.register_engine("BrentEngine",        true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("UsoilEngine",        true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("Ger40",              true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("Uk100",              true,  900,  7, 22);
+        g_engine_heartbeat.register_engine("Estx50",             true,  900,  7, 22);
+
+        std::cout << "[HEARTBEAT] g_engine_heartbeat registered ("
+                  << g_engine_heartbeat.size() << " engines)\n";
+        std::cout.flush();
+    }
+
     // ── Step 3: open-position sources for /api/v1/omega/positions ─────────
     // HBG only this session. Lambda captures g_hybrid_gold and g_last_tick_bid
     // by reference (both live in this TU). Reading pos fields without HBG's

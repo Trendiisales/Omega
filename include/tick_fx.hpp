@@ -95,6 +95,11 @@ static void on_tick_eurusd(
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
+    // 2026-05-05 (audit-fixes-40): per-engine heartbeat pulse. Confirms the
+    //   dispatcher reaches this handler. Detects "tick path severed before
+    //   engine.on_tick" failures (root cause of 19h FX silence on 2026-05-04).
+    g_engine_heartbeat.pulse("EurusdLondonOpen");
+
     // Update macro context price -- needed by gold correlation logic.
     // Done unconditionally before any engine logic.
     g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;
@@ -161,6 +166,9 @@ static void on_tick_gbpusd(
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
+    g_engine_heartbeat.pulse("GbpusdLondonOpen");
+
     // Update macro context price -- needed by GBP correlation logic and
     //   the bracket trend bias accessor at on_tick.hpp:1177.
     //   Done unconditionally before any engine logic, same pattern as the
@@ -230,6 +238,9 @@ static void on_tick_usdjpy(
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
+    // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
+    g_engine_heartbeat.pulse("UsdjpyAsianOpen");
+
     // Store USDJPY mid for tick_value_multiplier (live JPY/USD conversion).
     //   Done unconditionally before any engine logic, same pattern as the
     //   eur_mid_price store in on_tick_eurusd.
@@ -303,6 +314,9 @@ static void on_tick_audusd(
 {
     // -- AUDUSD: real engine dispatch --------------------------------------
     if (sym == "AUDUSD") {
+        // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
+        g_engine_heartbeat.pulse("AudusdSydneyOpen");
+
         const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
 
         // Two-phase dispatch (mirrors on_tick_usdjpy):
@@ -370,6 +384,9 @@ static void on_tick_audusd(
     //     - l2_real wired to g_macro_ctx.ctrader_l2_live -- safe-fallback
     //       when cTrader depth is offline.
     if (sym == "NZDUSD") {
+        // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
+        g_engine_heartbeat.pulse("NzdusdAsianOpen");
+
         const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
 
         if (g_nzdusd_asian_open.has_open_position()) {
