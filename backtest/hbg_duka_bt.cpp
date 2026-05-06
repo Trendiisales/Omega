@@ -224,6 +224,13 @@ int main(int argc, char* argv[]) {
     omega::GoldHybridBracketEngine hbg;
     hbg.shadow_mode = true;   // safe -- BT does not place real orders
 
+    // Print compile-time trail params so sweep runs are self-documenting.
+    std::cout << "Trail params:\n"
+              << "  MIN_TRAIL_ARM_PTS  = " << omega::GoldHybridBracketEngine::MIN_TRAIL_ARM_PTS << "\n"
+              << "  MIN_TRAIL_ARM_SECS = " << omega::GoldHybridBracketEngine::MIN_TRAIL_ARM_SECS << "\n"
+              << "  MFE_TRAIL_FRAC     = " << omega::GoldHybridBracketEngine::MFE_TRAIL_FRAC << "\n"
+              << "  BE_TRIGGER_PTS     = " << omega::GoldHybridBracketEngine::BE_TRIGGER_PTS << "\n";
+
     int trades = 0, wins = 0, losses = 0;
     double pnl_total = 0.0;
     double cum_min = 0.0, cum_max = 0.0, max_dd = 0.0;

@@ -133,8 +133,17 @@ public:
     //   inside normal XAUUSD price oscillation ($0.30-1.00 between trend
     //   pullbacks). Raising arm threshold to $5 forces the trade to
     //   establish a real run before any trail-side close becomes possible.
-    static constexpr double MIN_TRAIL_ARM_PTS    = 5.0;
-    static constexpr int    MIN_TRAIL_ARM_SECS   = 15;
+    // 2026-05-07 (S8 backtest sweep): wrap with #ifndef so hbg_duka_bt
+    // can override via -DHBG_TRAIL_ARM_PTS=10.0 etc. for parameter sweeps.
+    // Production defaults (5.0pt, 15s) unchanged when overrides not set.
+#ifndef HBG_TRAIL_ARM_PTS
+#define HBG_TRAIL_ARM_PTS 5.0
+#endif
+#ifndef HBG_TRAIL_ARM_SECS
+#define HBG_TRAIL_ARM_SECS 15
+#endif
+    static constexpr double MIN_TRAIL_ARM_PTS    = HBG_TRAIL_ARM_PTS;
+    static constexpr int    MIN_TRAIL_ARM_SECS   = HBG_TRAIL_ARM_SECS;
     // S52 2026-05-01 (trade-quality audit follow-up): trail give-back fraction.
     // PRIOR: hardcoded `pos.mfe * 0.20` at line 513. STAGE1A_FINAL 2026-04-28
     // identified two locks at $0.04 and $2.55 -- with MFE just at the 1.5pt arm
@@ -150,14 +159,20 @@ public:
     //   least $2.50; those that run to $8+ lock at least $5.50. Restores
     //   the intended ~50% capture-of-MFE outcome instead of the ~20% being
     //   observed in shadow tape.
-    static constexpr double MFE_TRAIL_FRAC       = 0.55;
+#ifndef HBG_MFE_TRAIL_FRAC
+#define HBG_MFE_TRAIL_FRAC 0.55
+#endif
+    static constexpr double MFE_TRAIL_FRAC       = HBG_MFE_TRAIL_FRAC;
     // S53 2026-05-01 (SESSION_h trade-quality): break-even lock trigger.
     //   Move SL to entry once MFE >= BE_TRIGGER_PTS. Fills the gap between
     //   the original SL and the trail-arm threshold (MIN_TRAIL_ARM_PTS=5.0):
     //   trades that MFE 3-5 pt then reverse exit at break-even instead of
     //   taking the original -$3 to -$5 SL. Combined with the trail bump,
     //   this is "limit downside on small wins, let real winners run".
-    static constexpr double BE_TRIGGER_PTS       = 3.0;
+#ifndef HBG_BE_TRIGGER_PTS
+#define HBG_BE_TRIGGER_PTS 3.0
+#endif
+    static constexpr double BE_TRIGGER_PTS       = HBG_BE_TRIGGER_PTS;
     // S54 2026-05-04 (audit-fixes-35 trade-quality follow-up):
     //   BE-exit slippage trap fix.
     //
@@ -196,15 +211,31 @@ public:
     //   structure of width 6 cannot overlap a prior exit unless one of its
     //   edges is within 5 of the exit price. So legitimate fresh setups
     //   are not blocked, only same-level re-runs.
-    static constexpr double SAME_LEVEL_BLOCK_PTS         = 5.0;
-    static constexpr int    SAME_LEVEL_POST_SL_BLOCK_S   = 900;  // 15 min after SL
-    static constexpr int    SAME_LEVEL_POST_WIN_BLOCK_S  = 600;  // 10 min after TP/TRAIL
+    // 2026-05-07 (S8 backtest sweep): wrap with #ifndef so hbg_duka_bt can
+    // sweep these. Defaults preserved.
+#ifndef HBG_SAME_LEVEL_BLOCK_PTS
+#define HBG_SAME_LEVEL_BLOCK_PTS 5.0
+#endif
+#ifndef HBG_SAME_LEVEL_POST_SL_BLOCK_S
+#define HBG_SAME_LEVEL_POST_SL_BLOCK_S 900
+#endif
+#ifndef HBG_SAME_LEVEL_POST_WIN_BLOCK_S
+#define HBG_SAME_LEVEL_POST_WIN_BLOCK_S 600
+#endif
+    static constexpr double SAME_LEVEL_BLOCK_PTS         = HBG_SAME_LEVEL_BLOCK_PTS;
+    static constexpr int    SAME_LEVEL_POST_SL_BLOCK_S   = HBG_SAME_LEVEL_POST_SL_BLOCK_S;
+    static constexpr int    SAME_LEVEL_POST_WIN_BLOCK_S  = HBG_SAME_LEVEL_POST_WIN_BLOCK_S;
     static constexpr double MAX_SPREAD           = 2.5;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;
     static constexpr double USD_PER_PT           = 100.0;
     static constexpr int    PENDING_TIMEOUT_S    = 30;
-    static constexpr int    COOLDOWN_S           = 60;
+    // 2026-05-07 (S8 backtest sweep): wrap so hbg_duka_bt can override
+    // via -DHBG_COOLDOWN_S=600 for cooldown sweeps. Default 60s preserved.
+#ifndef HBG_COOLDOWN_S
+#define HBG_COOLDOWN_S 60
+#endif
+    static constexpr int    COOLDOWN_S           = HBG_COOLDOWN_S;
     // DIR_SL_COOLDOWN_S: pre-S53 dead-code constant. m_sl_cooldown_ts was
     //   set on SL_HIT but never read anywhere. The S53 same-level block
     //   (above) supersedes this with a working 15-minute post-SL guard
@@ -307,6 +338,24 @@ public:
                  bool   wall_below  = false,
                  bool   l2_real     = false) noexcept
     {
+        // ── 2026-05-07 (S8): ENGINE CULLED ─────────────────────────────────
+        // Decision driven by 70-combo x 13-day XAUUSD tick backtest sweep:
+        //   Baseline (production params): -$63.33 net (29 trades, 55.2% WR)
+        //   Best trail tune (arm=20, be=5.0): -$18.06 net
+        //   Best cooldown layer (cd=300, slp=5.0): -$11.64 net
+        //   Every one of 70 parameter combos was net negative.
+        // Root cause: structural RR mismatch. Trail wins avg +$1.59, SL
+        // losses avg -$7.04. RR ~0.23:1 vs 50/50 WR cannot break even
+        // through any tuning. Confirms the S7 cull verdict ("the
+        // architecture itself doesn't have edge -- not the parameter tunes").
+        // Sweep harnesses retained: scripts/hbg_trail_sweep.sh and
+        // scripts/hbg_cooldown_sweep.sh. Re-run if architecture changes.
+        // Full code deletion queued for S9 (engine + globals + tick_gold
+        // call sites + telemetry refs). Until then, on_tick() returns
+        // immediately so the engine never arms, never fires, never opens
+        // a position. Sister engines (MacroCrash, MidScalper) check
+        // has_open_position() which now always returns false -- safe.
+        return;
         if (bid <= 0.0 || ask <= 0.0) return;
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
