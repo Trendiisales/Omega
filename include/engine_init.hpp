@@ -33,19 +33,38 @@ static void init_engines(const std::string& cfg_path)
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
     g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine -- restored 2026-04-29 with audit-tightened gates, shadow only
-    // IndexHybridBracket (4 instances, uniform per Q2 decision):
-    g_hybrid_sp.shadow_mode     = kShadowDefault;
-    g_hybrid_nq.shadow_mode     = kShadowDefault;
-    g_hybrid_us30.shadow_mode   = kShadowDefault;
-    g_hybrid_nas100.shadow_mode = kShadowDefault;
+    // IndexHybridBracket (4 instances) -- 2026-05-06 USER INSTRUCTION (S8 wrap):
+    //   Pinned shadow_mode=true regardless of g_cfg.mode after live tape
+    //   2026-05-06 showed RR-asymmetric bleed: NAS100 took 4 SL hits
+    //   (-$112) and 1 trail win (+$82) for net -$30 on the day. Single
+    //   big winners are masking systematic SL clustering during NY chop
+    //   transition (3 of 4 SL hits between 13:00-17:00 UTC). Promote
+    //   back to kShadowDefault only after the S9 sweep (Task 16) returns
+    //   PF>=1.3, n>=30 with tighter MIN_RANGE / time-of-day blackout /
+    //   L2 imbalance gate now that FIX-fed L2 is live.
+    g_hybrid_sp.shadow_mode     = true;
+    g_hybrid_nq.shadow_mode     = true;
+    g_hybrid_us30.shadow_mode   = true;
+    g_hybrid_nas100.shadow_mode = true;
     // IndexFlowEngine (4 instances, uniform):
     // shadow_mode lives on private IdxOpenPosition pos_; use set_shadow_mode() proxy.
     g_iflow_sp.set_shadow_mode(kShadowDefault);
     g_iflow_nq.set_shadow_mode(kShadowDefault);
     g_iflow_nas.set_shadow_mode(kShadowDefault);
     g_iflow_us30.set_shadow_mode(kShadowDefault);
-    // Class C (stamped 2026-04-21):
-    g_hybrid_gold.shadow_mode  = kShadowDefault;  // GoldHybridBracketEngine
+    // Class C (stamped 2026-04-21) -- 2026-05-06 USER INSTRUCTION (S8 wrap):
+    //   GoldHybridBracketEngine pinned shadow_mode=true regardless of
+    //   g_cfg.mode after live tape 2026-05-06 showed 7 SL hits in the
+    //   13:00-14:07 UTC window (-$50 net), all sub-3min durations.
+    //   Trail wins same engine same day were $1-3 each — RR upside-down
+    //   (~0.4:1) needs 65%+ WR to break even, currently below.
+    //   Promote back to kShadowDefault only after the S9 sweep (Task 15)
+    //   returns PF>=1.3, n>=30 with tighter MIN_RANGE / ATR_GATE_MULT /
+    //   post-SL cooldown. Note: same engine had a DEPRECATED tombstone
+    //   on local Mac from S7, but post-L2-fix it produced 3 small trail
+    //   wins today (+$1.79, +$0.25, +$2.22) so the strategy isn't dead
+    //   — it's just being whipsawed during chop. Sweep + L2 gate fix.
+    g_hybrid_gold.shadow_mode  = true;  // GoldHybridBracketEngine
     // 2026-05-01 SESSION_h: GoldMidScalperEngine -- pinned shadow-only on
     //   first deployment regardless of g_cfg.mode. New engine, untested in
     //   live conditions, $20-40 capture zone. Promote to kShadowDefault
