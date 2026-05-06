@@ -225,6 +225,42 @@ struct TsmomCell {
     std::string symbol     = "XAUUSD";
     std::string cell_id    = "Tsmom_H1_long";
 
+    // 2026-05-07 (S8): stage-trail config. Mirrors TrendRiderEngine pattern.
+    // Trail ratchets SL toward profit as MFE grows. hold_bars TIME_EXIT
+    // remains as final safety net so trades don't hold indefinitely on flat
+    // tape. Set trail_enabled=false to restore pre-S8 SL+TIME_EXIT-only
+    // behaviour (matches the validated phase1 backtest baseline).
+    //
+    // Stage thresholds in multiples of ATR_at_signal:
+    //   MFE >= trail_arm1_atr  -> SL ratcheted to entry (BE lock)
+    //   MFE >= trail_arm2_atr  -> SL = peak - trail_dist2_atr * ATR
+    //   MFE >= trail_arm3_atr  -> SL = peak - trail_dist3_atr * ATR
+    //
+    // Defaults match TrendRiderEngine stage_trail = [2N->1.5N, 5N->2.5N, 10N->3.5N]
+    // adapted for Tsmom's MFE/ATR semantics (TrendRider uses N=ATR explicitly,
+    // we mirror that).
+    // 2026-05-07 (S8) BACKTEST VERDICT: trail HURTS. Disabled by default.
+    // C++ tsmom_bt over 6156 H1 bars (Apr 2024 - Apr 2026, all 5 cells):
+    //   baseline (trail OFF): +$6,644 net, 49.6% WR, 833 trades
+    //   trail ON:             +$4,339 net, 42.6% WR, 910 trades  (-$2,305 / -35%)
+    //   Every cell worse: D1 -$291, H1 -$725, H2 -$584, H4 -$344, H6 -$359
+    // Mechanism: trail steals big winners from TIME_EXIT (which captures the
+    // canonical 12-bar momentum hold near-optimally), then BE-lock creates
+    // 112 commission-only "SL_HIT" exits that would have been TIME_EXITs in
+    // baseline. The TSMOM academic spec (Moskowitz/Ooi/Pedersen 2012) holds:
+    // 12 bars or hard SL, no early exit on profit side. Confirms the comment
+    // at hard_sl_atr that warned re-validation was required for any change.
+    // Override with -DTSMOM_TRAIL_ENABLED=true to re-enable for sweeps.
+#ifndef TSMOM_TRAIL_ENABLED
+#define TSMOM_TRAIL_ENABLED false
+#endif
+    bool   trail_enabled       = TSMOM_TRAIL_ENABLED;
+    double trail_arm1_atr      = 2.0;   // BE lock threshold
+    double trail_arm2_atr      = 5.0;   // first ratcheted trail
+    double trail_arm3_atr      = 10.0;  // tight ratcheted trail
+    double trail_dist2_atr     = 1.5;   // distance from peak at stage 2
+    double trail_dist3_atr     = 2.5;   // distance from peak at stage 3
+
     // ---- Rolling closes window ---------------------------------------------
     std::deque<double> closes_;
 
@@ -277,10 +313,37 @@ struct TsmomCell {
                 }
             }
 
+            // 2026-05-07 (S8): stage-trail. Ratchet p.sl toward profit as
+            // MFE grows. SL only moves IN PROFIT DIRECTION -- never widens.
+            // The existing SL_hit check below will then fire on the trailed SL.
+            // Disabled by setting trail_enabled=false (restores pre-S8 baseline).
+            if (trail_enabled && p.atr > 0.0 && p.mfe > 0.0) {
+                const double n    = p.atr;
+                const double peak = (direction == 1) ? (p.entry + p.mfe)
+                                                     : (p.entry - p.mfe);
+                double new_sl = p.sl;
+                if (p.mfe >= trail_arm3_atr * n) {
+                    new_sl = (direction == 1) ? (peak - trail_dist3_atr * n)
+                                              : (peak + trail_dist3_atr * n);
+                } else if (p.mfe >= trail_arm2_atr * n) {
+                    new_sl = (direction == 1) ? (peak - trail_dist2_atr * n)
+                                              : (peak + trail_dist2_atr * n);
+                } else if (p.mfe >= trail_arm1_atr * n) {
+                    new_sl = p.entry;  // BE lock
+                }
+                if (direction == 1 && new_sl > p.sl)  p.sl = new_sl;
+                if (direction == -1 && new_sl < p.sl) p.sl = new_sl;
+            }
+
             const bool sl_hit = direction == 1
                 ? (b.low  <= p.sl) : (b.high >= p.sl);
             if (sl_hit) {
-                _close(p, p.sl, "SL_HIT", now_ms, on_close);
+                // Tag the close reason: if SL has been ratcheted past entry,
+                // it's a TRAIL exit, not a fresh SL hit. Helps post-mortem.
+                const bool is_trail_exit = (direction == 1)
+                    ? (p.sl > p.entry) : (p.sl < p.entry);
+                _close(p, p.sl, is_trail_exit ? "TRAIL_HIT" : "SL_HIT",
+                       now_ms, on_close);
                 it = positions_.erase(it);
                 continue;
             }

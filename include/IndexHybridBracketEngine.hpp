@@ -304,6 +304,20 @@ public:
                  int  flow_trail_stage,
                  CloseCallback on_close) noexcept
     {
+        // ── 2026-05-07 (S8): ENGINE CULLED ─────────────────────────────────
+        // Same compression-breakout architecture as GoldHybridBracketEngine
+        // which was culled this session after a 70-combo x 13-day backtest
+        // (all variants net negative; RR=0.23:1 structurally unfixable).
+        // HBI applied to indices (sp/nq/us30/nas100) shows the same RR
+        // pathology in live tape -- 2026-05-06 NAS100 alone: 4 SLs (-$112)
+        // vs 1 trail win (+$82), net -$30 day. The architecture doesn't
+        // capture edge in current regime, on indices or gold.
+        // Sister verification not required: same-class engine, same-class
+        // failure mode. on_tick() returns immediately so no fires happen.
+        // Position queries continue to return false safely.
+        // Full code deletion (4 instances + tick dispatch + telemetry)
+        // queued for S9 alongside the HBG cull task.
+        return;
         if (bid <= 0.0 || ask <= 0.0) return;
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
