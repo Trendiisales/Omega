@@ -299,11 +299,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.uk100_compressing = (g_eng_uk100.phase  == omega::Phase::COMPRESSION
                                   || g_eng_uk100.phase  == omega::Phase::BREAKOUT_WATCH);
 
-    // ── GOLD L2 IMBALANCE -- cTrader Open API ONLY (ctid=43014358) ────────────
-    // cTrader is the ONLY source of L2 data. FIX does not provide L2.
-    // No BlackBull assumptions. No has_data checks. No bid/ask side requirements.
-    // Rule: if cTrader depth events are flowing for XAUUSD, L2 is live.
-    // Imbalance is derived from price level structure (level count + book slope).
+    // ── L2 IMBALANCE -- FIX MarketData (264=0 full book) ──────────────────────
+    // FIX is the sole L2 source. dispatch_fix() writes per-symbol AtomicL2:
+    //   - imbalance       (vol-weighted from L2Book sizes; falls to 0.5 when sizes=0)
+    //   - microprice_bias (size-weighted mid bias; 0.0 when sizes=0)
+    //   - has_data, last_update_ms
+    // Reads here are lock-free; rd() returns 0.5 when the symbol's L2 is stale.
     {
         const int64_t l2_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -312,63 +313,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         };
 
         {
-            // GOLD L2 IMBALANCE -- cTrader Open API (ctid=43014358) ONLY
-            // Use g_l2_gold.last_update_ms to check if cTrader is delivering
-            // XAUUSD depth events specifically (not just any symbol).
-            // atomic_l2_write_fn sets last_update_ms on every XAUUSD depth event.
-            const bool l2_live = g_l2_gold.fresh(l2_now_ms, 10000);  // raised 3000->10000ms: Asia tape batches depth events, gaps up to 5s are normal at 250 events/min
+            // GOLD L2 IMBALANCE -- FIX-fed via fix_dispatch.hpp.
+            // 10s freshness window (Asia tape batches L2; longer than indices/FX).
+            const bool l2_live = g_l2_gold.fresh(l2_now_ms, 10000);
             g_macro_ctx.gold_l2_real = l2_live;
 
             if (l2_live) {
-                // g_l2_gold.imbalance = book.raw_imbalance() from CTDepthBook.
-                // = raw_bid_count / (raw_bid_count + raw_ask_count) across ALL DOM quotes.
-                // cTrader sends ≥5 levels per side always for XAUUSD. to_l2book() caps at 5,
-                // making imbalance_level() = 5/10 = 0.500 permanently.
-                // raw_imbalance() counts all quotes before the 5-level cap -- real signal.
-                const double raw_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-                // Use GoldMicrostructureAnalyzer delta-based signal as the canonical
-                // gold L2 imbalance for ALL gold engines. This replaces the raw
-                // bid_count/(bid+ask) ratio which was perpetually ~0.5 (dead signal).
-                // micro_edge is computed in CTraderDepthClient on every DOM event
-                // from 5 delta features: imbalance + consumption + pull + absorption + queue.
-                // Range 0..1 -- same as raw_imb, compatible with all existing thresholds.
-                // raw_imb retained for logging/diagnostics only.
-                g_macro_ctx.gold_l2_imbalance = g_l2_gold.micro_edge.load(std::memory_order_relaxed);
-
-                // ── Real DOM override (OmegaDomStreamer cBot on port 8765) ──────────
-                // If real DOM data is fresh (<2s), use volume-weighted imbalance
-                // from actual cTrader platform sizes instead of level-count proxy.
-                // Falls back to micro_edge automatically if cBot disconnects.
-                {
-                    const int64_t REAL_DOM_MAX_STALE_MS = 2000;
-                    const int64_t real_dom_age = l2_now_ms - g_real_dom_last_ms.load(std::memory_order_relaxed);
-                    if (real_dom_age < REAL_DOM_MAX_STALE_MS) {
-                        const double real_imb = real_dom_imbalance(5);
-                        if (real_imb > 0.0 && real_imb < 1.0) {
-                            g_macro_ctx.gold_l2_imbalance = real_imb;
-                            g_macro_ctx.gold_l2_real = true;  // confirm real data present
-                        }
-                    }
-                }
+                // Read FIX-fed vol-weighted imbalance (L2Book::imbalance over 5 levels).
+                // Falls to 0.5 inside L2Book::imbalance() if total volume is 0.
+                g_macro_ctx.gold_l2_imbalance = g_l2_gold.imbalance.load(std::memory_order_relaxed);
 
                 static int64_t s_l2_log_ms = 0;
                 if (l2_now_ms - s_l2_log_ms > 10000) {
                     s_l2_log_ms = l2_now_ms;
                     {
                         char _msg[512];
-                        snprintf(_msg, sizeof(_msg), "[GOLD-L2-LIVE] imb=%.3f age_ms=%lld\n",                            raw_imb,                            (long long)(l2_now_ms - g_l2_gold.last_update_ms.load(std::memory_order_relaxed)));
+                        snprintf(_msg, sizeof(_msg), "[GOLD-L2-LIVE] imb=%.3f age_ms=%lld\n",
+                            g_macro_ctx.gold_l2_imbalance,
+                            (long long)(l2_now_ms - g_l2_gold.last_update_ms.load(std::memory_order_relaxed)));
                         std::cout << _msg;
                         std::cout.flush();
                     }
                 }
             } else {
-                // cTrader XAUUSD events stale. Hold last known imbalance.
+                // FIX XAUUSD L2 stale. Hold last known imbalance (do not flip to neutral).
                 static int64_t s_fallback_log_ms = 0;
                 if (l2_now_ms - s_fallback_log_ms > 10000) {
                     s_fallback_log_ms = l2_now_ms;
                     {
                         char _msg[512];
-                        snprintf(_msg, sizeof(_msg), "[GOLD-L2-WAIT] cTrader stale -- holding imb=%.3f\n",                            g_macro_ctx.gold_l2_imbalance);
+                        snprintf(_msg, sizeof(_msg), "[GOLD-L2-WAIT] FIX stale -- holding imb=%.3f\n",
+                            g_macro_ctx.gold_l2_imbalance);
                         std::cout << _msg;
                         std::cout.flush();
                     }
@@ -391,7 +366,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.nas_l2_imbalance    = rd(g_l2_nas);
         g_macro_ctx.us30_l2_imbalance   = rd(g_l2_us30);
     }
-    // Microprice bias -- still from cTrader atomics (FIX doesn't compute this)
+    // Microprice bias -- FIX-side computation in fix_dispatch.hpp from L2Book sizes.
+    // Formula: microprice = (bid_size*ask_price + ask_size*bid_price)/(bid_size+ask_size); bias = microprice - mid.
+    // Falls to 0.0 if broker omits tag 271 sizes.
     g_macro_ctx.gold_microprice_bias = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.sp_microprice_bias   = g_l2_sp.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.cl_microprice_bias   = g_l2_cl.microprice_bias.load(std::memory_order_relaxed);
@@ -402,9 +379,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.jpy_microprice_bias  = g_l2_jpy.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.ger40_microprice_bias= g_l2_ger40.microprice_bias.load(std::memory_order_relaxed);
 
-    // ?? L2 quality flags -- lock-free reads ????????????????????????????????
-    g_macro_ctx.ctrader_l2_live = (g_ctrader_depth.depth_events_total.load() > 0);
-    // gold_l2_real now set from g_l2_books in the mutex block above
+    // L2 quality flag -- "is FIX L2 healthy somewhere?" (field name preserved for
+    // downstream consumers in tick_fx.hpp / GUI / engines; semantics now FIX-only).
+    // TODO future cleanup: rename ctrader_l2_live -> l2_live across consumers.
+    {
+        const int64_t now_ms_l2q = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        g_macro_ctx.ctrader_l2_live =
+            g_l2_gold.fresh(now_ms_l2q, 30000) ||
+            g_l2_sp.fresh(now_ms_l2q, 30000)   ||
+            g_l2_eur.fresh(now_ms_l2q, 30000);
+    }
+    // gold_l2_real now set from g_l2_gold.fresh() in the block above
 
     // ?? Midnight log rotation -- every tick check, guaranteed rotation ???????????
     // force_rotate_check runs every 60s in diagnostic loop but if stdout is

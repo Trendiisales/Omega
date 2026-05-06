@@ -144,9 +144,12 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 }
                 pos = soh;
             }
-            // Store L2 book
+            // Store L2 book + write atomics. FIX is the sole L2 source as of
+            // 2026-05-06 (cTrader Open API and OmegaDomStreamer cBot culled).
+            // Unconditional write per W/X message -- no staleness gate.
             if (book.bid_count > 0 || book.ask_count > 0) {
                 double imb = 0.5;
+                double mp_bias = 0.0;
                 bool   hd  = false;
                 {
                     std::lock_guard<std::mutex> lk(g_l2_mtx);
@@ -161,27 +164,32 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                     }
                     imb = stored.imbalance();
                     hd  = stored.has_data();
+                    // ── Microprice bias (size-weighted mid - mid) ──────────────
+                    // microprice = (bid_size*ask_price + ask_size*bid_price)
+                    //              / (bid_size + ask_size)
+                    // Used by entry_score_l2() as a direction tiebreaker (+/-1).
+                    // Falls to 0 if broker omits tag 271 (sizes=0).
+                    if (stored.bid_count > 0 && stored.ask_count > 0) {
+                        const double bp = stored.bids[0].price;
+                        const double ap = stored.asks[0].price;
+                        const double bs = stored.bids[0].size;
+                        const double as_ = stored.asks[0].size;
+                        const double total = bs + as_;
+                        if (total > 0.0 && bp > 0.0 && ap > 0.0) {
+                            const double micro = (bs * ap + as_ * bp) / total;
+                            const double mid   = (bp + ap) * 0.5;
+                            mp_bias = micro - mid;
+                        }
+                    }
                 }
-                // Write to per-symbol atomic -- ONLY when cTrader is not already
-                // delivering fresh depth for this symbol.
-                // cTrader Open API (ctid=43014358) is the authoritative DOM source.
-                // FIX W/X snapshots carry single-level quotes with unreliable sizes
-                // (tag 271 MDEntrySize is optional -- BlackBull often sends 0).
-                // If FIX overwrites a valid cTrader imbalance with 0.500 (size=0),
-                // every gate that uses l2_imb gets poisoned with neutral data.
-                // Rule: FIX writes only when cTrader data is stale (>2s old).
                 AtomicL2* al = get_atomic_l2(sym);
                 if (al) {
                     const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
-                    // Only write if cTrader data is stale (last update > 2000ms ago)
-                    const int64_t last_ct = al->last_update_ms.load(std::memory_order_relaxed);
-                    const bool ct_fresh = (last_ct > 0) && ((now_ms - last_ct) < 2000);
-                    if (!ct_fresh) {
-                        al->imbalance.store(imb, std::memory_order_relaxed);
-                        al->has_data.store(hd,  std::memory_order_relaxed);
-                        al->last_update_ms.store(now_ms, std::memory_order_release);
-                    }
+                    al->imbalance.store(imb, std::memory_order_relaxed);
+                    al->microprice_bias.store(mp_bias, std::memory_order_relaxed);
+                    al->has_data.store(hd,  std::memory_order_relaxed);
+                    al->last_update_ms.store(now_ms, std::memory_order_release);
                 }
             }
         }
@@ -226,32 +234,10 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
         }
         if (bid > 0.0 && ask > 0.0) {
-            // ?? FIX price fallback -- only use when cTrader depth is stale ????
-            // cTrader depth drives on_tick() as primary source (see on_tick_fn above).
-            // If cTrader depth is live (<500ms since last event) for this symbol,
-            // suppress FIX on_tick to avoid using batched/lagging FIX prices.
-            // FIX is still the primary ORDER EXECUTION channel -- this only affects
-            // price data used for trading signal decisions.
-            if (!ctrader_depth_is_live(sym)) {
-                // FIX fallback active -- log once per symbol so it's visible
-                static std::unordered_set<std::string> s_fix_fallback_logged;
-                if (!s_fix_fallback_logged.count(sym)) {
-                    s_fix_fallback_logged.insert(sym);
-                    printf("[FIX-FALLBACK] %s using FIX prices (cTrader depth not live)"
-                           " -- check [CTRADER-AUDIT] output for subscription status\n",
-                           sym.c_str());
-                    fflush(stdout);
-                }
-                // 2026-05-01 race fix: do NOT call on_tick directly from the FIX
-                // quote thread. Post to the engine dispatch queue so the single
-                // dispatch worker is the only thread that ever enters on_tick().
-                // The 500ms cTrader-fresh check above stays as a price-source
-                // preference -- it is no longer relied on as a synchronization
-                // primitive (it never was correct in that role: the stale->fresh
-                // transition opened a race window with the cTrader depth thread).
-                // See engine_dispatch.hpp for full design.
-                engine_dispatch_post_tick(sym, bid, ask);
-            }
+            // FIX is the canonical price source for engine signals. Post to
+            // engine dispatch queue (single-writer pattern: only the dispatch
+            // worker ever enters on_tick()). See engine_dispatch.hpp.
+            engine_dispatch_post_tick(sym, bid, ask);
         }
         return;
     }

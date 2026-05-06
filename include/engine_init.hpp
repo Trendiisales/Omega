@@ -140,12 +140,20 @@ static void init_engines(const std::string& cfg_path)
     g_trend_pb_ger40.shadow_mode = kShadowDefault;
     g_trend_pb_nq.shadow_mode    = kShadowDefault;
     g_trend_pb_sp.shadow_mode    = kShadowDefault;
-    // BreakoutEngine non-index instances (FX, uniform per Q2 decision):
-    g_eng_eurusd.shadow_mode  = kShadowDefault;
-    g_eng_gbpusd.shadow_mode  = kShadowDefault;
-    g_eng_audusd.shadow_mode  = kShadowDefault;
-    g_eng_nzdusd.shadow_mode  = kShadowDefault;
-    g_eng_usdjpy.shadow_mode  = kShadowDefault;
+    // BreakoutEngine non-index instances (FX) -- 2026-05-06 USER INSTRUCTION:
+    //   "switch off the fx pairs until we can get them validated".
+    //   Pinned to shadow_mode=true regardless of g_cfg.mode. Gold engines
+    //   continue trading live. Promote back to kShadowDefault only after a
+    //   2-week paper validation showing >=30 trades with WR >=35% net positive
+    //   after costs, per the same gate used for the *_london_open / *_asian_open
+    //   / *_sydney_open cohort above (lines 56-109).
+    //   Trigger trade that prompted this: 2026-05-06 09:19:24 GBPUSD LONG
+    //   GbpusdLondonOpenSL net -$45.50 ($28.10 SL + $17.40 commission).
+    g_eng_eurusd.shadow_mode  = true;
+    g_eng_gbpusd.shadow_mode  = true;
+    g_eng_audusd.shadow_mode  = true;
+    g_eng_nzdusd.shadow_mode  = true;
+    g_eng_usdjpy.shadow_mode  = true;
 
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
