@@ -165,6 +165,24 @@ public:
     //   above supersedes this with a working 15-minute post-SL guard
     //   keyed on m_sl_price overlap. Constant kept for backwards reference.
     static constexpr int    DIR_SL_COOLDOWN_S    = 240;
+    // 2026-05-05 (audit-fixes-43): Asia low-liquidity session gate.
+    //   2026-05-05 05:08 UTC produced a LONG fire that SL_HIT in 5m6s for
+    //   -$6.96. SL distance 6.68pt -- just above the post-S60 noise-floor
+    //   minimum of 5.8pt -- still hit by routine Asia-session bid-ask
+    //   oscillation. Same structural failure mode HBG had before
+    //   audit-fixes-39 added its 06-22 UTC gate. MidScalperGold and
+    //   HybridGold are sister engines with the same noise sensitivity in
+    //   Asia hours; the fix is identical. 06-22 UTC retains London + NY
+    //   + early Asia overlap (most legitimate compression breakouts fire
+    //   there). Wraparound-aware ternary mirrors the EUR/AUD/NZD pattern
+    //   from audit-fixes-37 -- when END > START it reduces to forward,
+    //   otherwise wraparound. For 06-22 it's the forward case.
+    //
+    //   Existing LIVE / PENDING / COOLDOWN management is unaffected --
+    //   those branches above already returned. Only the new-entry
+    //   (IDLE/ARMED) path is gated.
+    static constexpr int    SESSION_START_HOUR_UTC = 6;
+    static constexpr int    SESSION_END_HOUR_UTC   = 22;
     static constexpr double DOM_SLOPE_CONFIRM    = 0.15;
     static constexpr double DOM_LOT_BONUS        = 1.3;
     static constexpr double DOM_WALL_PENALTY     = 0.5;
@@ -317,6 +335,31 @@ public:
 
         const bool flow_pyramid_ok = flow_live && flow_be_locked && flow_trail_stage >= 1;
         if (flow_live && !flow_pyramid_ok && phase == Phase::IDLE) return;
+
+        // 2026-05-05 (audit-fixes-43): Asia low-liquidity session gate.
+        //   Skip new-entry arming outside 06:00-22:00 UTC. Existing LIVE /
+        //   PENDING / COOLDOWN management above already returned, so this
+        //   only short-circuits the IDLE/ARMED entry path. Wraparound-aware
+        //   form matches the EUR/AUD/NZD pattern (and HBG's audit-fixes-39
+        //   gate): when END > START it reduces to the forward case (utc_hour
+        //   in [START..END)); otherwise the union of [START..23] and
+        //   [0..END). For 06-22 it's the forward case.
+        {
+            time_t t = static_cast<time_t>(now_s);
+            struct tm utc{};
+#ifdef _WIN32
+            gmtime_s(&utc, &t);
+#else
+            gmtime_r(&t, &utc);
+#endif
+            const bool in_window =
+                (SESSION_END_HOUR_UTC > SESSION_START_HOUR_UTC)
+                    ? (utc.tm_hour >= SESSION_START_HOUR_UTC &&
+                       utc.tm_hour <  SESSION_END_HOUR_UTC)
+                    : (utc.tm_hour >= SESSION_START_HOUR_UTC ||
+                       utc.tm_hour <  SESSION_END_HOUR_UTC);
+            if (!in_window) return;
+        }
 
         double w_hi = *std::max_element(m_window.begin(), m_window.end());
         double w_lo = *std::min_element(m_window.begin(), m_window.end());
