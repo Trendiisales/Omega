@@ -1812,12 +1812,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     // under indices_enabled=false; UK100/ESTX50 were whitelist-gated
     // zombies whose live entry code is now defensively covered.
     //
-    // SP/NQ L2 tick CSV loggers (2026-04-22) run BEFORE this gate because
-    // capturing tick data is a data concern, not a trading concern -- we
-    // still want to hydrate bars on restart even when indices_enabled=false.
+    // SP/NQ/NAS L2 tick CSV loggers run BEFORE this gate because capturing
+    // tick data is a data concern, not a trading concern -- we still want
+    // to hydrate bars on restart even when indices_enabled=false.
     // Each is a self-contained static-state block writing to daily-rotating
-    // CSV files at C:\Omega\logs\l2_ticks_{US500,USTEC}_YYYY-MM-DD.csv.
+    // CSV files at C:\Omega\logs\l2_ticks_{US500,USTEC,NAS100}_YYYY-MM-DD.csv.
     // Schema matches XAUUSD for uniform hydrate_from_csv() parsing.
+    // 2026-04-22: SP+USTEC writers added.
+    // 2026-05-06: NAS100 writer added (HybridBracketIndex backtest support).
     if (sym == "US500.F") {
         static FILE* s_sp_f = nullptr;
         static int   s_sp_day = -1;
@@ -1932,6 +1934,66 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 0.0,
                 0.0);
             fflush(s_nq_f);
+        }
+    } else if (sym == "NAS100") {
+        // 2026-05-06: NAS100 tick CSV writer added so HybridBracketIndex fires
+        // on NAS100 (separate cash instrument from USTEC.F futures, different
+        // prices) can be backtested. Mirrors US500/USTEC pattern. Same column
+        // order required for hydrate_from_csv() compatibility.
+        static FILE* s_nas_f = nullptr;
+        static int   s_nas_day = -1;
+        const double nas_mid = (bid + ask) * 0.5;
+        const int64_t now_ms_a = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const time_t t_nas = (time_t)(now_ms_a / 1000);
+        struct tm    tm_nas{};
+        gmtime_s(&tm_nas, &t_nas);
+        if (tm_nas.tm_yday != s_nas_day) {
+            if (s_nas_f) { fclose(s_nas_f); s_nas_f = nullptr; }
+            char nas_path[256];
+            snprintf(nas_path, sizeof(nas_path),
+                "C:\\Omega\\logs\\l2_ticks_NAS100_%04d-%02d-%02d.csv",
+                tm_nas.tm_year+1900, tm_nas.tm_mon+1, tm_nas.tm_mday);
+            const bool is_new_nas = (GetFileAttributesA(nas_path) == INVALID_FILE_ATTRIBUTES);
+            s_nas_f = fopen(nas_path, "a");
+            if (s_nas_f) {
+                if (is_new_nas)
+                    fprintf(s_nas_f,
+                        "ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                        "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                        "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+                std::cout << "[L2-CSV-OPEN] " << nas_path
+                          << (is_new_nas ? " (new file, header written)" : " (appending)") << "\n";
+                std::cout.flush();
+            } else {
+                std::cout << "[L2-CSV-OPEN-FAIL] Cannot open " << nas_path
+                          << " -- NAS100 tick data will NOT be saved this session!\n";
+                std::cout.flush();
+            }
+            s_nas_day = tm_nas.tm_yday;
+        }
+        if (s_nas_f) {
+            const int has_pos_nas =
+                (g_eng_nas100.pos.active           ||
+                 g_hybrid_nas100.pos.active        ||
+                 g_iflow_nas.has_open_position()   ||
+                 g_nbm_nas.has_open_position()) ? 1 : 0;
+            fprintf(s_nas_f,
+                "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
+                "%d,%d,%llu,"
+                "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
+                (long long)now_ms_a, nas_mid, bid, ask,
+                0.0, 0.0, 0.0,
+                0, 0, (unsigned long long)0,
+                0,
+                0.0,
+                0,
+                0.0,
+                has_pos_nas,
+                0.0,
+                0.0);
+            fflush(s_nas_f);
         }
     }
 
