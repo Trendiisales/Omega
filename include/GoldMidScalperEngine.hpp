@@ -441,7 +441,32 @@ public:
             if ((int)m_range_history.size() > EXPANSION_HISTORY_LEN)
                 m_range_history.pop_front();
 
-            if ((int)m_range_history.size() >= EXPANSION_MIN_HISTORY) {
+            // S58 2026-05-07: COLD-START GUARD (lineage source for FX cohort).
+            //   Same hole pattern: ATR-expansion gate was previously bypassed
+            //   when m_range_history.size() < EXPANSION_MIN_HISTORY, so the
+            //   first ~5 fires after a restart skipped the expansion filter
+            //   entirely. The hole was first observed on 2026-05-07 in the
+            //   sister EurusdLondonOpen engine (06:07:49 UTC EUR SHORT loss);
+            //   patching the lineage source here keeps gold and FX in sync.
+            //
+            //   Engine warms up by observing brackets without trading them.
+            //   First (EXPANSION_MIN_HISTORY - 1) ARMED brackets after
+            //   restart never reach PENDING.
+            if ((int)m_range_history.size() < EXPANSION_MIN_HISTORY) {
+                {
+                    char _buf[256];
+                    snprintf(_buf, sizeof(_buf),
+                        "[MID-SCALPER-GOLD] COLD_START_BLOCK range=%.2f hist=%d/%d -- skipping fire\n",
+                        range, (int)m_range_history.size(), EXPANSION_MIN_HISTORY);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
+                phase = Phase::IDLE;
+                bracket_high = bracket_low = 0.0;
+                return;
+            }
+
+            {
                 std::vector<double> sorted(m_range_history.begin(),
                                            m_range_history.end());
                 std::sort(sorted.begin(), sorted.end());

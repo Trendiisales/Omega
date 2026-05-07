@@ -221,7 +221,13 @@ public:
     //   DO NOT exceed 0.20 until 2 weeks of shadow data confirm OOS WR >= 60%.
     static constexpr double ENTRY_SIZE_DEFAULT   = 0.10;
     static constexpr double LOT_MIN              = 0.01;
-    static constexpr double LOT_MAX              = 0.20;
+    // S58 2026-05-07: TEMPORARY conservative cut from S56's 0.20 -> 0.10.
+    //   The 06:07:49 UTC EUR loss exposed a cold-start ATR-bypass hole
+    //   (now closed via S58 cold-start guard above). Cutting LOT_MAX in
+    //   half while we confirm the new behavior holds in shadow. Restore
+    //   to the S56 half-Kelly 0.20 cap after 2+ weeks of clean shadow
+    //   data with the cold-start guard active and stable.
+    static constexpr double LOT_MAX              = 0.10;
     // Pending timeout: FX breaks fast or resets. Matches existing
     //   g_bracket_eurusd 180s value.
     static constexpr int    PENDING_TIMEOUT_S    = 180;
@@ -522,7 +528,46 @@ public:
             if ((int)m_range_history.size() > EXPANSION_HISTORY_LEN)
                 m_range_history.pop_front();
 
-            if ((int)m_range_history.size() >= EXPANSION_MIN_HISTORY) {
+            // S58 2026-05-07: COLD-START GUARD.
+            //   Previously the ATR-expansion gate (below) was bypassed when
+            //   m_range_history.size() < EXPANSION_MIN_HISTORY -- the engine
+            //   simply skipped the median check and proceeded to FIRE. That
+            //   created a "first ~5 fires after restart skip the expansion
+            //   filter entirely" hole. The 06:07:49 UTC 2026-05-07 EURUSD
+            //   SHORT loss exhibited the pattern exactly: fired ~10 min
+            //   after service restart, on the smallest qualifying
+            //   compression (range == MIN_RANGE = 8 pips), with hist=1 ->
+            //   ATR gate bypassed -> first-tick-against false breakout ->
+            //   SL hit. Net loss -$28.30 (gross -$17.10 + slippage 10 +
+            //   comm 1.20). See docs analysis 2026-05-07.
+            //
+            //   New behaviour: refuse to fire while history is
+            //   insufficient. The push_back above still runs each ARMED
+            //   iteration, so the engine warms up by observing brackets
+            //   without trading them. Once EXPANSION_MIN_HISTORY ranges
+            //   have accumulated, the ATR gate becomes active and normal
+            //   firing resumes.
+            //
+            //   Cost: first (EXPANSION_MIN_HISTORY - 1) ARMED brackets
+            //   after a restart never reach PENDING -- engine is silent
+            //   for the warmup window (typically ~15-25 min depending on
+            //   compression cadence). Benefit: closes the documented
+            //   cold-start ATR-bypass hole.
+            if ((int)m_range_history.size() < EXPANSION_MIN_HISTORY) {
+                {
+                    char _buf[256];
+                    snprintf(_buf, sizeof(_buf),
+                        "[EUR-LDN-OPEN] COLD_START_BLOCK range=%.5f hist=%d/%d -- skipping fire\n",
+                        range, (int)m_range_history.size(), EXPANSION_MIN_HISTORY);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
+                phase = Phase::IDLE;
+                bracket_high = bracket_low = 0.0;
+                return;
+            }
+
+            {
                 std::vector<double> sorted(m_range_history.begin(),
                                            m_range_history.end());
                 std::sort(sorted.begin(), sorted.end());

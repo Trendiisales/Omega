@@ -223,7 +223,12 @@ public:
     //   OOS WR >= 60%.
     static constexpr double ENTRY_SIZE_DEFAULT   = 0.10;
     static constexpr double LOT_MIN              = 0.01;
-    static constexpr double LOT_MAX              = 0.20;
+    // S58 2026-05-07: TEMPORARY conservative cut from S56's 0.20 -> 0.10.
+    //   Sister-engine cohort consistency with EurusdLondonOpen S58 cut.
+    //   See EurusdLondonOpenEngine.hpp LOT_MAX comment for rationale.
+    //   Restore to the S56 half-Kelly 0.20 cap after 2+ weeks of clean
+    //   shadow data with the cold-start guard active and stable.
+    static constexpr double LOT_MAX              = 0.10;
     // Pending timeout: FX breaks fast or resets. Same value as EURUSD/USDJPY.
     static constexpr int    PENDING_TIMEOUT_S    = 180;
     // S56 lineage: COOLDOWN_S = 120s. Same-level block (post-SL 1200s,
@@ -520,7 +525,33 @@ public:
             if ((int)m_range_history.size() > EXPANSION_HISTORY_LEN)
                 m_range_history.pop_front();
 
-            if ((int)m_range_history.size() >= EXPANSION_MIN_HISTORY) {
+            // S58 2026-05-07: COLD-START GUARD (lineage from EurusdLondonOpen).
+            //   Same hole pattern as the lineage source: ATR-expansion gate
+            //   was previously bypassed when m_range_history.size() <
+            //   EXPANSION_MIN_HISTORY, so the first ~5 fires after a
+            //   restart skipped the expansion filter entirely. Closed via
+            //   hard-block instead of bypass. See
+            //   EurusdLondonOpenEngine.hpp:525 for the original analysis
+            //   (06:07:49 UTC 2026-05-07 EURUSD SHORT loss).
+            //
+            //   Engine warms up by observing brackets without trading
+            //   them. First (EXPANSION_MIN_HISTORY - 1) ARMED brackets
+            //   after restart never reach PENDING.
+            if ((int)m_range_history.size() < EXPANSION_MIN_HISTORY) {
+                {
+                    char _buf[256];
+                    snprintf(_buf, sizeof(_buf),
+                        "[GBP-LDN-OPEN] COLD_START_BLOCK range=%.5f hist=%d/%d -- skipping fire\n",
+                        range, (int)m_range_history.size(), EXPANSION_MIN_HISTORY);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
+                phase = Phase::IDLE;
+                bracket_high = bracket_low = 0.0;
+                return;
+            }
+
+            {
                 std::vector<double> sorted(m_range_history.begin(),
                                            m_range_history.end());
                 std::sort(sorted.begin(), sorted.end());
