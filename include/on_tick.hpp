@@ -1974,9 +1974,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             s_nas_day = tm_nas.tm_yday;
         }
         if (s_nas_f) {
+            // S11 P3b: g_hybrid_nas100 dropped from has_pos_nas -- engine culled in P3a + P3b.
             const int has_pos_nas =
                 (g_eng_nas100.pos.active           ||
-                 g_hybrid_nas100.pos.active        ||
                  g_iflow_nas.has_open_position()   ||
                  g_nbm_nas.has_open_position()) ? 1 : 0;
             fprintf(s_nas_f,

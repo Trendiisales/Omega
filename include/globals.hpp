@@ -437,7 +437,10 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   Header defines `static omega::EngineHeartbeat g_engine_heartbeat;` itself
 //   per the SINGLE-TRANSLATION-UNIT include pattern.
 #include "EngineHeartbeat.hpp"
-static omega::GoldHybridBracketEngine         g_hybrid_gold;
+// S11 P3b: g_hybrid_gold static decl removed (engine culled in P3a + P3b).
+//   #include "GoldHybridBracketEngine.hpp" left intact -- file deletion is
+//   Phase C's job (per NEXT_SESSION_S11.md). Type still compiles, just no
+//   instances exist.
 static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
 static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
@@ -445,22 +448,19 @@ static omega::GbpusdLondonOpenEngine          g_gbpusd_london_open;
 static omega::AudusdSydneyOpenEngine          g_audusd_sydney_open;
 static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
 static omega::XauusdFvgEngine                 g_xauusd_fvg;
-static omega::idx::IndexHybridBracketEngine   g_hybrid_sp(omega::idx::make_sp_config());
-static omega::idx::IndexHybridBracketEngine   g_hybrid_nq(omega::idx::make_nq_config());
-static omega::idx::IndexHybridBracketEngine   g_hybrid_us30(omega::idx::make_us30_config());
-static omega::idx::IndexHybridBracketEngine   g_hybrid_nas100(omega::idx::make_nas100_config());
+// S11 P3b: g_hybrid_sp / g_hybrid_nq / g_hybrid_us30 / g_hybrid_nas100 static
+//   decls removed (engines culled in P3a + P3b). #include of
+//   IndexHybridBracketEngine.hpp left intact -- file deletion is Phase C's job.
 
 // Bug #3 (KNOWN_BUGS.md) cross-engine "index any open" predicate.
 // Mirrors gold_any_open at tick_gold.hpp:36-50.
+// S11 P3b: g_hybrid_sp/nq/us30/nas100 OR-terms removed -- engines culled in
+//   P3a, globals/init removed in P3b. Predicate now covers iflow_* + minimal_h4_us30.
 static inline bool index_any_open() noexcept {
     return  g_iflow_sp.has_open_position()      ||
             g_iflow_nq.has_open_position()      ||
             g_iflow_nas.has_open_position()     ||
             g_iflow_us30.has_open_position()    ||
-            g_hybrid_sp.has_open_position()     ||
-            g_hybrid_nq.has_open_position()     ||
-            g_hybrid_us30.has_open_position()   ||
-            g_hybrid_nas100.has_open_position() ||
             g_minimal_h4_us30.has_open_position();
 }
 

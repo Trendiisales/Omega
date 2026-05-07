@@ -33,7 +33,7 @@ static void on_tick_us500(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every US500-driven engine.
-    g_engine_heartbeat.pulse("HybridSP");
+    // S11 P3b: HybridSP pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowSP");
     g_engine_heartbeat.pulse("IMacroSP");
     g_engine_heartbeat.pulse("TrendPullbackSP");
@@ -264,7 +264,7 @@ static void on_tick_us500(
                    && !g_vwap_rev_sp.has_open_position()
                    && !g_trend_pb_sp.has_open_position()
                    && !g_nbm_sp.has_open_position()
-                   && !g_hybrid_sp.has_open_position()
+                   // S11 P3b: g_hybrid_sp gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
                    && !omega::idx::idx_recent_close_block()) {
@@ -324,7 +324,7 @@ static void on_tick_ustec(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every USTEC-driven engine.
-    g_engine_heartbeat.pulse("HybridNQ");
+    // S11 P3b: HybridNQ pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowNQ");
     g_engine_heartbeat.pulse("IMacroNQ");
     g_engine_heartbeat.pulse("TrendPullbackNQ");
@@ -520,7 +520,7 @@ static void on_tick_ustec(
                    && !g_vwap_rev_nq.has_open_position()
                    && !g_trend_pb_nq.has_open_position()
                    && !g_nbm_nq.has_open_position()
-                   && !g_hybrid_nq.has_open_position()
+                   // S11 P3b: g_hybrid_nq gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
                    && !omega::idx::idx_recent_close_block()) {
@@ -559,7 +559,7 @@ static void on_tick_dj30(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every DJ30-driven engine.
-    g_engine_heartbeat.pulse("HybridUS30");
+    // S11 P3b: HybridUS30 pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowUS30");
     g_engine_heartbeat.pulse("IMacroUS30");
     g_engine_heartbeat.pulse("MinimalH4US30");
@@ -622,7 +622,7 @@ static void on_tick_dj30(
                    && base_can_us30
                    && !g_eng_us30.pos.active
                    && !g_nbm_us30.has_open_position()
-                   && !g_hybrid_us30.has_open_position()
+                   // S11 P3b: g_hybrid_us30 gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
                    && !omega::idx::idx_recent_close_block()) {
@@ -775,7 +775,7 @@ static void on_tick_nas100(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every NAS100-driven engine.
-    g_engine_heartbeat.pulse("HybridNAS100");
+    // S11 P3b: HybridNAS100 pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowNAS100");
     g_engine_heartbeat.pulse("IMacroNAS");
 
@@ -843,7 +843,7 @@ static void on_tick_nas100(
                    && base_can_nas
                    && !g_eng_nas100.pos.active
                    && !g_nbm_nas.has_open_position()
-                   && !g_hybrid_nas100.has_open_position()
+                   // S11 P3b: g_hybrid_nas100 gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
                    && !omega::idx::idx_recent_close_block()) {

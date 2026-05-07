@@ -219,13 +219,8 @@ static void quote_loop() {
                 {
                     bool any_open = false;
                     // (GoldFlow base/reload/addon open-pos logging removed S19 Stage 1B)
-                    // HybridBracketGold
-                    if (g_hybrid_gold.has_open_position()) {
-                        const auto& p = g_hybrid_gold.pos;
-                        printf("[OPEN-POS] HybridBracketGold %s entry=%.2f sl=%.2f mfe=%.2f\n",
-                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe);
-                        any_open = true;
-                    }
+                    // (HybridBracketGold OPEN-POS block removed S11 P3b -- engine culled
+                    //  in P3a + globals/init removed in P3b)
                     // RSIReversal
                     if (g_rsi_reversal.has_open_position()) {
                         const auto& p = g_rsi_reversal.pos;

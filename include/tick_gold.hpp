@@ -18,7 +18,7 @@ static void on_tick_gold(
     //   listed engine. Tsmom_<TF>_long pulses fire here too because
     //   TsmomPortfolio::on_tick is called from this handler (intrabar SL
     //   management); on_h1_bar additionally fires every H1 close.
-    g_engine_heartbeat.pulse("HybridGold");
+    // S11 P3b: HybridGold pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("MidScalperGold");
     g_engine_heartbeat.pulse("GoldStack");
     g_engine_heartbeat.pulse("CandleFlow");
@@ -1559,10 +1559,13 @@ static void on_tick_gold(
         // TrendBracket). MCE was silently opening positions with no row in
         // the open-trades CSV.
         const bool mce_was_open_before_tick = g_macro_crash.has_open_position();
-        const bool mce_bracket_conflict =
-            !g_macro_crash.has_open_position() &&
-            g_hybrid_gold.has_open_position() &&
-            (g_hybrid_gold.pos.is_long ? (mce_ewm_drift < 0) : (mce_ewm_drift > 0));
+        // S11 P3b: g_hybrid_gold culled in P3a, removed in P3b. The original
+        //   guard blocked MCE entry if HBG had an opposing position. With HBG
+        //   gone the conflict is unreachable -- pinned to false. The else-if
+        //   branch below is now dead code preserved as a tombstone (cheap to
+        //   leave, easy to repurpose if a future bracket engine wants the same
+        //   anti-stack guard).
+        const bool mce_bracket_conflict = false;
         // FIX 2026-04-22: HTF hard-block for MacroCrash entry.
         // MCE enters LONG on spikes up, SHORT on crashes (direction = sign of ewm_drift).
         // bias() returns BULLISH/BEARISH only when daily+intraday agree (2/2 rule);
@@ -1601,12 +1604,16 @@ static void on_tick_gold(
                 mce_rsi,
                 g_macro_ctx.session_slot);
         } else if (mce_bracket_conflict) {
+            // S11 P3b: dead branch -- mce_bracket_conflict is pinned to false
+            //   above (HBG was the only producer of this conflict signal and
+            //   has been culled). Kept as tombstone for any future bracket
+            //   engine that wants to reuse the same MCE-conflict pattern.
             static int64_t s_mce_conflict_log = 0;
             if (now_ms_g - s_mce_conflict_log > 10000) {
                 s_mce_conflict_log = now_ms_g;
                 {
                     char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[MCE-BLOCK] MacroCrash entry blocked -- opposing HybridBracket %s active\n",                        g_hybrid_gold.pos.is_long ? "LONG" : "SHORT");
+                    snprintf(_msg, sizeof(_msg), "[MCE-BLOCK] MacroCrash entry blocked -- opposing bracket active\n");
                     std::cout << _msg;
                     std::cout.flush();
                 }
@@ -1674,7 +1681,7 @@ static void on_tick_gold(
             && !g_bracket_gold.has_open_position()
             && !(g_gold_stack.has_open_position() && !gs_winning)
             && !g_trend_pb_gold.has_open_position()
-            && !g_hybrid_gold.has_open_position()
+            // S11 P3b: g_hybrid_gold gate removed -- engine culled in P3a + P3b.
             && !g_nbm_gold_london.has_open_position();
 
         if (rsi_rev_can_enter) {
@@ -1775,7 +1782,7 @@ static void on_tick_gold(
             && !g_gold_stack.has_open_position()
             && !g_trend_pb_gold.has_open_position()
             && !g_rsi_reversal.has_open_position()
-            && !g_hybrid_gold.has_open_position()
+            // S11 P3b: g_hybrid_gold gate removed -- engine culled in P3a + P3b.
             && !g_nbm_gold_london.has_open_position();
 
         if (rsi_ext_can_enter) {
@@ -2095,14 +2102,15 @@ static void on_tick_gold(
     }
 
     // ----------------------------------------------------------------------
-    // HBG culled S10 P3a (2026-05-07): GoldHybridBracketEngine dispatch removed.
-    //   Engine still constructed in globals.hpp + engine_init.hpp.
-    //   Object exists and has_open_position() returns false (no on_tick feed).
-    //   Conflict gates elsewhere that read g_hybrid_gold.has_open_position()
-    //   evaluate to "no hybrid open" -- correct behaviour for the cull.
+    // HBG fully removed S11 P3b (2026-05-07): GoldHybridBracketEngine.
+    //   - Dispatch removed S10 P3a (commit ba5f0e9)
+    //   - Globals decl, init/shadow_mode, register_engine, heartbeat
+    //     registration, heartbeat pulse, g_open_positions source, and all
+    //     gate-reads removed S11 P3b (this commit)
     //   Original dispatch (compression range -> dual stop entry -> first-fill
     //   wins -> cancel loser) was lines ~2097-2202 of tick_gold.hpp pre-S10.
-    //   Phases B-E (S11+) will progressively delete globals/init/file.
+    //   Phase C (next): delete include/GoldHybridBracketEngine.hpp file +
+    //   #include references in tick_gold.hpp / globals.hpp / engine_init.hpp.
     // ----------------------------------------------------------------------
 
     // -- 2026-05-01 SESSION_h: GoldMidScalperEngine dispatch -----------------
@@ -2160,15 +2168,15 @@ static void on_tick_gold(
         //   the two engines can enter on any given compression structure.
         //   COOLDOWN is treated as IDLE-equivalent because the prior trade
         //   has already closed and a fresh setup is allowed.
-        const bool hybrid_active_or_arming =
-            (g_hybrid_gold.phase != omega::GoldHybridBracketEngine::Phase::IDLE)
-         && (g_hybrid_gold.phase != omega::GoldHybridBracketEngine::Phase::COOLDOWN);
+        // S11 P3b: g_hybrid_gold culled in P3a, removed in P3b. The S54 anti-
+        //   double-entry guards (hybrid_active_or_arming + has_open_position)
+        //   become unreachable -- pinned to false, removed from the conjunction.
+        const bool hybrid_active_or_arming = false;
+        (void)hybrid_active_or_arming;  // tombstone, intentionally unused
         const bool midscalper_can_enter =
             gold_can_enter
             && ms_vol_ok
-            && !g_gold_midscalper.has_open_position()
-            && !g_hybrid_gold.has_open_position()    // S54 prior-tick block
-            && !hybrid_active_or_arming;             // S54 same-tick block
+            && !g_gold_midscalper.has_open_position();
         if (!g_gold_midscalper.has_open_position()) {
             g_gold_midscalper.on_tick(bid, ask, now_ms_g,
                                       midscalper_can_enter, false, false, 0,
@@ -2182,8 +2190,9 @@ static void on_tick_gold(
         }
         // No FIX-order block here -- shadow mode means PENDING phase auto-fills
         // when price crosses bracket boundaries (handled inside on_tick).
-        // When promoted to live, copy the [HYBRID-GOLD] ORDERS SENT block from
-        // above and adapt the prefix to [MID-SCALPER-GOLD] ORDERS SENT.
+        // When promoted to live, write a [MID-SCALPER-GOLD] ORDERS SENT block
+        // analogous to the FIX-order patterns used by other live engines
+        // (HBG's pattern was the original reference but HBG was culled S10/S11).
     }
 
     // -- 2026-05-02: XauusdFvgEngine dispatch --------------------------------

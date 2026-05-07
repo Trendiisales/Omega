@@ -33,38 +33,27 @@ static void init_engines(const std::string& cfg_path)
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
     g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine -- restored 2026-04-29 with audit-tightened gates, shadow only
-    // IndexHybridBracket (4 instances) -- 2026-05-06 USER INSTRUCTION (S8 wrap):
-    //   Pinned shadow_mode=true regardless of g_cfg.mode after live tape
-    //   2026-05-06 showed RR-asymmetric bleed: NAS100 took 4 SL hits
-    //   (-$112) and 1 trail win (+$82) for net -$30 on the day. Single
-    //   big winners are masking systematic SL clustering during NY chop
-    //   transition (3 of 4 SL hits between 13:00-17:00 UTC). Promote
-    //   back to kShadowDefault only after the S9 sweep (Task 16) returns
-    //   PF>=1.3, n>=30 with tighter MIN_RANGE / time-of-day blackout /
-    //   L2 imbalance gate now that FIX-fed L2 is live.
-    g_hybrid_sp.shadow_mode     = true;
-    g_hybrid_nq.shadow_mode     = true;
-    g_hybrid_us30.shadow_mode   = true;
-    g_hybrid_nas100.shadow_mode = true;
+    // S11 P3b (2026-05-07): IndexHybridBracket (4 instances) culled.
+    //   Original S8 shadow_mode=true pin (RR-asymmetric bleed analysis from
+    //   2026-05-06 NAS100 tape) preserved in commit ba5f0e9 (S10 P3a) and
+    //   NEXT_SESSION_S11.md. Engines were dispatch-removed in P3a and have
+    //   now been fully removed: globals decls, init blocks, register_engine
+    //   calls, heartbeat registrations, heartbeat pulses, and gate-reads
+    //   across tick_indices.hpp / on_tick.hpp / globals.hpp::index_any_open.
     // IndexFlowEngine (4 instances, uniform):
     // shadow_mode lives on private IdxOpenPosition pos_; use set_shadow_mode() proxy.
     g_iflow_sp.set_shadow_mode(kShadowDefault);
     g_iflow_nq.set_shadow_mode(kShadowDefault);
     g_iflow_nas.set_shadow_mode(kShadowDefault);
     g_iflow_us30.set_shadow_mode(kShadowDefault);
-    // Class C (stamped 2026-04-21) -- 2026-05-06 USER INSTRUCTION (S8 wrap):
-    //   GoldHybridBracketEngine pinned shadow_mode=true regardless of
-    //   g_cfg.mode after live tape 2026-05-06 showed 7 SL hits in the
-    //   13:00-14:07 UTC window (-$50 net), all sub-3min durations.
-    //   Trail wins same engine same day were $1-3 each — RR upside-down
-    //   (~0.4:1) needs 65%+ WR to break even, currently below.
-    //   Promote back to kShadowDefault only after the S9 sweep (Task 15)
-    //   returns PF>=1.3, n>=30 with tighter MIN_RANGE / ATR_GATE_MULT /
-    //   post-SL cooldown. Note: same engine had a DEPRECATED tombstone
-    //   on local Mac from S7, but post-L2-fix it produced 3 small trail
-    //   wins today (+$1.79, +$0.25, +$2.22) so the strategy isn't dead
-    //   — it's just being whipsawed during chop. Sweep + L2 gate fix.
-    g_hybrid_gold.shadow_mode  = true;  // GoldHybridBracketEngine
+    // S11 P3b (2026-05-07): GoldHybridBracketEngine culled.
+    //   Original S8 shadow_mode=true pin (2026-05-06 RR-asymmetric bleed:
+    //   7 SL hits in 13:00-14:07 UTC window for -$50 net, ~0.4:1 RR needing
+    //   65%+ WR to break even) preserved in commit ba5f0e9 (S10 P3a) and
+    //   NEXT_SESSION_S11.md. Engine was dispatch-removed in P3a and has now
+    //   been fully removed: globals decl, init block, register_engine call,
+    //   heartbeat registration, heartbeat pulse, g_open_positions source, and
+    //   gate-reads across tick_gold.hpp / globals.hpp / quote_loop.hpp.
     // 2026-05-01 SESSION_h: GoldMidScalperEngine -- pinned shadow-only on
     //   first deployment regardless of g_cfg.mode. New engine, untested in
     //   live conditions, $20-40 capture zone. Promote to kShadowDefault
@@ -80,7 +69,7 @@ static void init_engines(const std::string& cfg_path)
     //   after a 2-week paper validation showing >=30 trades with WR >=35%
     //   net positive after costs. Until then this line stays as `true`.
     g_eurusd_london_open.shadow_mode = true;
-    // Cancel callback: matches g_gold_midscalper / g_hybrid_gold pattern. Used
+    // Cancel callback: matches g_gold_midscalper pattern. Used
     //   when PENDING TIMEOUT or one side fills (cancel the loser).
     g_eurusd_london_open.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     // 2026-05-02: UsdjpyAsianOpenEngine -- pinned shadow-only on first
@@ -1961,11 +1950,7 @@ static void init_engines(const std::string& cfg_path)
         return s;
     };
 
-    g_engines.register_engine("HybridGold",
-        [reg]{ return reg("HybridGold",
-                          true,
-                          g_hybrid_gold.shadow_mode,
-                          {"HybridBracketGold"}); });
+    // S11 P3b: HybridGold register_engine block removed (engine culled in P3a + P3b).
     // 2026-05-01 SESSION_h: register GoldMidScalper for /api/v1/omega/engines.
     //   Shadow-stamped (last_signal_ts/last_pnl come from
     //   g_engine_last lookup against tr.engine="MidScalperGold").
@@ -2021,26 +2006,8 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_xauusd_fvg.shadow_mode,
                           {"XauusdFvg"}); });
-    g_engines.register_engine("HybridSP",
-        [reg]{ return reg("HybridSP",
-                          true,
-                          g_hybrid_sp.shadow_mode,
-                          {"HybridBracketIndex"}); });
-    g_engines.register_engine("HybridNQ",
-        [reg]{ return reg("HybridNQ",
-                          true,
-                          g_hybrid_nq.shadow_mode,
-                          {"HybridBracketIndex"}); });
-    g_engines.register_engine("HybridUS30",
-        [reg]{ return reg("HybridUS30",
-                          true,
-                          g_hybrid_us30.shadow_mode,
-                          {"HybridBracketIndex"}); });
-    g_engines.register_engine("HybridNAS100",
-        [reg]{ return reg("HybridNAS100",
-                          true,
-                          g_hybrid_nas100.shadow_mode,
-                          {"HybridBracketIndex"}); });
+    // S11 P3b: HybridSP / HybridNQ / HybridUS30 / HybridNAS100 register_engine
+    //   blocks removed (engines culled in P3a + P3b).
     g_engines.register_engine("MacroCrash",
         [reg]{ return reg("MacroCrash",
                           g_macro_crash.enabled,
@@ -2113,7 +2080,7 @@ static void init_engines(const std::string& cfg_path)
     //   60s after init -- any engine that didn't pulse logs [STARTUP-FAIL].
     {
         // ---- Gold engines (24/7 cadence) ---------------------------------
-        g_engine_heartbeat.register_engine("HybridGold",         true, 3600,  0, 24);
+        // S11 P3b: HybridGold heartbeat registration removed (engine culled in P3a + P3b).
         g_engine_heartbeat.register_engine("MidScalperGold",     true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("GoldStack",          true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("CandleFlow",         true, 3600,  0, 24);
@@ -2144,11 +2111,9 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("AudusdSydneyOpen",   true,  600, 22,  2);  // wraparound
         g_engine_heartbeat.register_engine("NzdusdAsianOpen",    true,  600, 22,  4);  // wraparound
 
-        // ---- Index hybrid + flow engines (NY+London core) ----------------
-        g_engine_heartbeat.register_engine("HybridSP",           true,  900,  7, 22);
-        g_engine_heartbeat.register_engine("HybridNQ",           true,  900,  7, 22);
-        g_engine_heartbeat.register_engine("HybridUS30",         true,  900,  7, 22);
-        g_engine_heartbeat.register_engine("HybridNAS100",       true,  900, 13, 22);  // NY core (slot 3-4)
+        // ---- Index flow + macro engines (NY+London core) ----------------
+        // S11 P3b: HybridSP / HybridNQ / HybridUS30 / HybridNAS100 heartbeat
+        //   registrations removed (engines culled in P3a + P3b).
         g_engine_heartbeat.register_engine("IFlowSP",            true,  900,  7, 22);
         g_engine_heartbeat.register_engine("IFlowNQ",            true,  900,  7, 22);
         g_engine_heartbeat.register_engine("IFlowUS30",          true,  900,  7, 22);
@@ -2178,46 +2143,9 @@ static void init_engines(const std::string& cfg_path)
     }
 
     // ── Step 3: open-position sources for /api/v1/omega/positions ─────────
-    // HBG only this session. Lambda captures g_hybrid_gold and g_last_tick_bid
-    // by reference (both live in this TU). Reading pos fields without HBG's
-    // tick-path mutex is documented as an accepted small race window in
-    // OpenPositionRegistry.hpp.
-    g_open_positions.register_source("HybridGold",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            if (!g_hybrid_gold.has_open_position()) return out;
-
-            const auto& p = g_hybrid_gold.pos;
-            const double mult  = tick_value_multiplier(std::string("XAUUSD"));
-
-            // Last known XAUUSD bid -> "current" price. ask is not separately
-            // cached; bid is close enough for an open-position display. If
-            // not available, fall back to entry so unrealized_pnl reads 0.
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) {
-                current = it->second;
-            }
-
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
-
-            omega::PositionSnapshot ps;
-            ps.symbol         = "XAUUSD";
-            ps.side           = p.is_long ? "LONG" : "SHORT";
-            ps.size           = p.size;
-            ps.entry          = p.entry;
-            ps.current        = current;
-            ps.unrealized_pnl = unrl;
-            // pos.mfe/mae are tracked in price-points only on HBG; convert to
-            // USD using the same (size * mult) factor as unrealized_pnl above.
-            ps.mfe            = p.mfe * p.size * mult;
-            ps.mae            = p.mae * p.size * mult;
-            ps.engine         = "HybridGold";
-            out.push_back(ps);
-            return out;
-        });
-    // 2026-05-01 SESSION_h: GoldMidScalper open-position source (parallel to HybridGold).
+    // S11 P3b: HybridGold open-position source removed (engine culled in P3a +
+    //   P3b). MidScalperGold below is the canonical XAUUSD source now.
+    // 2026-05-01 SESSION_h: GoldMidScalper open-position source (parallel pattern to former HybridGold source).
     g_open_positions.register_source("MidScalperGold",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
