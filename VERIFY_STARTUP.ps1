@@ -1,4 +1,20 @@
 #Requires -Version 5.1
+
+# ==============================================================================
+# UTF-8 CONSOLE OUTPUT (FIX 2026-05-07)
+# ------------------------------------------------------------------------------
+# This script prints box-drawing characters (╔═══╗ banners). On a fresh PS host
+# the console defaults to cp1252, which renders those bytes as "â•" / "â•—"
+# mojibake. Force UTF-8 here BEFORE the first Write-Host so banners always
+# render correctly. Same fix as OMEGA.ps1 (queued 2026-05-07).
+# ==============================================================================
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding           = [System.Text.Encoding]::UTF8
+} catch {
+    # Some hosts (ISE, restricted runspaces) reject this -- safe to ignore.
+}
+
 # ==============================================================================
 #  OMEGA - STARTUP VERIFIER
 #
@@ -49,17 +65,26 @@ $ghToken = $null
 # ==============================================================================
 # STEP 0: GitHub API binary staleness check -- RUNS BEFORE EVERYTHING ELSE
 # Hits the GitHub contents API to get live HEAD SHA.
-# Reads the running binary hash from omega_service_stderr.log ([Omega] Git hash: line).
-# If they don't match: RED BANNER, hard exit. Cannot verify a stale binary.
-# This is the check that prevents stale binaries from ever going unnoticed.
+# Reads the running binary hash by globbing every .log under C:\Omega and
+# C:\Omega\logs for the "Git hash:" startup tag. If they don't match: RED
+# BANNER, hard exit. Cannot verify a stale binary. This is the check that
+# prevents stale binaries from ever going unnoticed.
 #
-# FIX 2026-05-07 (post-7ecb748 deploy):
-#   Hash source moved from latest.log (old "RUNNING COMMIT:" tag) to
-#   omega_service_stderr.log ("[Omega] Git hash:" tag emitted by NSSM-wrapped
-#   binary). Watchdog/service redirects stdout/stderr -> *_stderr.log, so the
-#   hash banner no longer reaches latest.log. Reading latest.log here produced
-#   "BINARY HASH NOT FOUND IN LOG" false-positive after every restart even
-#   when the binary was correct.
+# FIX 2026-05-07 (post-beccede deploy, third attempt):
+#   Three failures led to the current implementation:
+#     v1 read latest.log for "RUNNING COMMIT:"  -- wrong tag (binary
+#         actually writes "[OK] Git hash:").
+#     v2 read omega_service_stderr.log for "[Omega] Git hash:"  -- wrong
+#         file (NSSM does not redirect to that name in this config) and
+#         wrong prefix.
+#     v3 (this code) globs every *.log under C:\Omega and C:\Omega\logs,
+#         scans each in full via Select-String, takes the last "Git hash:"
+#         match in the newest file. Confirmed line format:
+#           "HH:MM:SS  [OK] Git hash: <sha7> -- verify against GitHub HEAD"
+#         (from latest.log line 34, 2026-05-07).
+#   Tail-only scanning was tried and rejected: latest.log writes the banner
+#   near the top of the file and grows continuously, so any finite tail
+#   misses the banner once the engine has been up >~5 minutes.
 # ==============================================================================
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
@@ -92,37 +117,82 @@ if (-not (Test-Path $tokenFile)) {
         $ghSha7 = "api_unreachable"
     }
 
-    # Get running binary hash from omega_service_stderr.log [Omega] Git hash: line.
-    # The binary writes "[Omega] Git hash: <sha7>" to stderr at startup; NSSM
-    # redirects stderr to omega_service_stderr.log, so that file is the only
-    # authoritative runtime source of the running binary hash.
-    $runningHash = "not_found"
-    $stderrLog   = "C:\Omega\logs\omega_service_stderr.log"
-    if (Test-Path $stderrLog) {
-        # Read ONLY last 200 lines -- prevents an old session hash from matching.
-        # The "[Omega] Git hash:" line is written within the first 5s of startup.
-        # Reading the entire file risks finding a previous session's hash if the
-        # log is not rotated, producing a false-positive "correct binary" result.
-        # Use -SimpleMatch on Select-String to treat the bracket literally.
-        $rcLine = Get-Content $stderrLog -Tail 200 -ErrorAction SilentlyContinue |
-                  Select-String -SimpleMatch "[Omega] Git hash:" |
-                  Select-Object -Last 1
-        if ($rcLine -and ($rcLine -match "\[Omega\]\s+Git hash:\s+([a-f0-9]{7,12})")) {
-            $runningHash = $Matches[1]
+    # ------------------------------------------------------------------------
+    # Find running-binary hash by globbing every .log under C:\Omega(\logs)
+    # for the "Git hash:" tag emitted at binary startup. The exact file and
+    # exact line prefix have changed over time -- attempts to hard-code
+    # either produced false-positive "BINARY HASH NOT FOUND" banners.
+    #
+    # Confirmed format (from C:\Omega\logs\latest.log line 34, 2026-05-07):
+    #     "HH:MM:SS  [OK] Git hash: <sha7> -- verify against GitHub HEAD"
+    # The "[OK]" prefix may change again -- the regex below only requires
+    # the literal "Git hash:" tag followed by 7-12 hex chars, case-insens.
+    #
+    # Strategy:
+    #   1. Enumerate *.log under C:\Omega\logs\ then C:\Omega\, newest first.
+    #   2. Scan each file IN FULL via Select-String -Path -SimpleMatch.
+    #      Tail-only scanning was tried and rejected: latest.log writes the
+    #      banner near the top (line ~34) and grows continuously, so any
+    #      finite tail window misses the banner once the engine has been
+    #      up for more than ~5 minutes.
+    #   3. Within a file, take the LAST match -- handles dated logs that
+    #      accumulate multiple restart banners across the day.
+    #   4. First file with a hex-tagged match wins (newest by LastWriteTime).
+    #   5. If nothing matches, print every file we tried so the operator
+    #      can grep them manually.
+    # ------------------------------------------------------------------------
+    $runningHash    = "not_found"
+    $hashSourceFile = ""
+    $filesSearched  = @()
+
+    $logDirs = @("C:\Omega\logs", "C:\Omega")
+    $candidateFiles = foreach ($dir in $logDirs) {
+        if (Test-Path $dir) {
+            Get-ChildItem -Path $dir -Filter "*.log" -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending
         }
     }
-    Write-Host "  [LOG] Running hash : $runningHash" -ForegroundColor Cyan
+
+    foreach ($f in $candidateFiles) {
+        $filesSearched += $f.FullName
+        # Full-file scan via Select-String (efficient, streamed). Take the
+        # LAST match in this file -- on dated logs that span multiple
+        # restarts, the last "Git hash:" banner is from the current run.
+        $grepHits = Select-String -Path $f.FullName -Pattern "Git hash:" `
+                                  -SimpleMatch -ErrorAction SilentlyContinue
+        if ($grepHits) {
+            $lastMatch = @($grepHits) | Select-Object -Last 1
+            if ($lastMatch -and ($lastMatch.Line -match "(?i)Git hash:\s*([a-f0-9]{7,12})")) {
+                $runningHash    = $Matches[1]
+                $hashSourceFile = "$($f.FullName):$($lastMatch.LineNumber)"
+                break
+            }
+        }
+    }
+
+    if ($runningHash -ne "not_found") {
+        Write-Host "  [LOG] Running hash : $runningHash" -ForegroundColor Cyan
+        Write-Host "        Source       : $hashSourceFile" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  [LOG] Running hash : not_found" -ForegroundColor Red
+        if ($filesSearched.Count -gt 0) {
+            Write-Host "        Searched $($filesSearched.Count) log file(s) for 'Git hash:' (no match):" -ForegroundColor DarkGray
+            foreach ($p in $filesSearched) { Write-Host "          - $p" -ForegroundColor DarkGray }
+        } else {
+            Write-Host "        No .log files found under C:\Omega\ or C:\Omega\logs\." -ForegroundColor DarkGray
+        }
+    }
 
     if ($ghSha7 -eq "api_unreachable") {
         Write-Host "  [WARN] Cannot verify -- GitHub API unreachable" -ForegroundColor Yellow
     } elseif ($runningHash -eq "not_found") {
         Write-Host ""
         Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-        Write-Host "  ║  BINARY HASH NOT FOUND IN STDERR LOG            ║" -ForegroundColor Red
-        Write-Host "  ║  Omega has not started or stderr log is stale.  ║" -ForegroundColor Red
+        Write-Host "  ║  BINARY HASH NOT FOUND IN ANY LOG               ║" -ForegroundColor Red
+        Write-Host "  ║  Omega has not started or no log holds the      ║" -ForegroundColor Red
+        Write-Host "  ║  'Git hash:' banner. File list above.           ║" -ForegroundColor Red
         Write-Host "  ║  Run: .\RESTART_OMEGA.ps1                       ║" -ForegroundColor Red
         Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
-        Write-Host "  Checked: $stderrLog" -ForegroundColor DarkGray
         Write-Host ""
         exit 1
     } elseif ($runningHash -ne $ghSha7) {
