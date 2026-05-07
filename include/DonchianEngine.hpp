@@ -230,6 +230,17 @@ struct DonchianCell {
     double  pos_spread_at_  = 0.0;
     int     trade_id_       = 0;
 
+    // ---- Breakout fail-safe (S14 2026-05-08) -------------------------------
+    // pos_breakout_level_           = prior 20-bar high (long) or low (short)
+    //                                 captured at signal-fire time. The level
+    //                                 the entry just broke through.
+    // pos_breakout_check_pending_   = true on entry; cleared after the first
+    //                                 parent-TF bar after entry has been
+    //                                 evaluated (whether that bar passed the
+    //                                 hold-above-breakout test or failed it).
+    double  pos_breakout_level_         = 0.0;
+    bool    pos_breakout_check_pending_ = false;
+
     // ---- Diagnostics --------------------------------------------------------
     int    bar_count_           = 0;
     int    signal_cooldown_left_ = 0;        // decrements every bar regardless
@@ -274,6 +285,29 @@ struct DonchianCell {
                 ? (b.low  - pos_entry_) : (pos_entry_ - b.high);
             if (max_move_this_bar > pos_mfe_) pos_mfe_ = max_move_this_bar;
             if (min_move_this_bar < pos_mae_) pos_mae_ = min_move_this_bar;
+
+            // Breakout fail-safe (S14 2026-05-08): on the first parent-TF bar
+            // after entry, require b.close to hold beyond the breakout level
+            // that triggered the entry. If it has closed back through that
+            // level against us, the breakout has been invalidated -- cut at
+            // bar close instead of waiting for the full ATR stop. Asymmetric
+            // protection: only cuts losers, only fires once per trade.
+            // Runs BEFORE intrabar SL/TP checks so that on a bar which both
+            // (a) breached SL intrabar and (b) closed back across breakout,
+            // the better-priced bar-close exit wins.
+            // Triggered by the 2026-05-08 Asian-session Donchian_H2_long
+            // trade that ran 11h to a -$46 ATR stop; backtest of this rule
+            // against that trade caps the loss at <= 1 H2-bar drawdown.
+            if (pos_breakout_check_pending_) {
+                const bool breakout_failed = direction == 1
+                    ? (b.close < pos_breakout_level_)
+                    : (b.close > pos_breakout_level_);
+                pos_breakout_check_pending_ = false;
+                if (breakout_failed) {
+                    _close(b.close, "BREAKOUT_FAIL", now_ms, on_close);
+                    return 0;
+                }
+            }
 
             // Check SL first (matches sim_a's intrabar order: hit_sl then hit_tp)
             const bool sl_hit = direction == 1
@@ -336,6 +370,12 @@ struct DonchianCell {
         pos_mfe_        = 0.0;
         pos_mae_        = 0.0;
         pos_spread_at_  = spread_pt;
+        // Arm the breakout fail-safe (S14): the level just broken is the
+        // prior_high for longs / prior_low for shorts. The check fires on
+        // the very next parent-TF bar -- see the position-management branch
+        // above for details and rationale.
+        pos_breakout_level_         = direction == 1 ? prior_high : prior_low;
+        pos_breakout_check_pending_ = true;
         ++trade_id_;
 
         printf("[%s] ENTRY %s @ %.2f sl=%.2f tp=%.2f size=%.4f atr=%.3f"
@@ -423,6 +463,8 @@ private:
         pos_mfe_        = 0.0;
         pos_mae_        = 0.0;
         pos_spread_at_  = 0.0;
+        pos_breakout_level_         = 0.0;
+        pos_breakout_check_pending_ = false;
     }
 };
 
