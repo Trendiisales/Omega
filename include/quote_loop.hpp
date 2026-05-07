@@ -425,8 +425,10 @@ static void quote_loop() {
                     if (!alert_msg.empty()) {
                         g_telemetry.SetHealthAlert(alert_msg);
                     } else if (!any_critical) {
-                        // Only clear if truly healthy: l2 live, bars seeded, events flowing
-                        if (l2_live && gold_seeded && depth_now > 0)
+                        // Only clear if truly healthy: l2 live, bars seeded, FIX 264=0 fresh.
+                        // (Pre-S13 cTrader cull this also required depth_events_total > 0;
+                        //  l2_age_ms < 30s replaces it.)
+                        if (l2_live && gold_seeded && l2_last_ms > 0 && l2_age_ms < 30000)
                             g_telemetry.ClearHealthAlert();
                     }
                 }
