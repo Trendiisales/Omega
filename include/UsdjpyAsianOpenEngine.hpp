@@ -121,6 +121,7 @@
 // =============================================================================
 
 #include <cstdint>
+#include <cstdlib>
 #include <mutex>
 #include <sstream>
 #include <cstdio>
@@ -209,6 +210,13 @@ public:
     static constexpr int    SAME_LEVEL_POST_WIN_BLOCK_S  = 600;  // 10 min after TP/TRAIL
     // MAX_SPREAD = 2 pips. Reject if spread blew out beyond typical 0.6-1.5.
     static constexpr double MAX_SPREAD           = 0.02;
+    // S59 2026-05-07: PENDING-phase fill spread cap (2x MAX_SPREAD = 4 pips).
+    //   Mirrors EurusdLondonOpen S59 fill-spread reject. Consulted by the
+    //   FILL_SPREAD_REJECT path inside the PENDING block. Closes the gap
+    //   where a spread spike between FIRE and FILL produces a high-cost
+    //   fill. Tolerant of mid-bracket spread fluctuation; only blocks when
+    //   spread is wide AT the fill moment.
+    static constexpr double MAX_FILL_SPREAD      = 0.04;
     static constexpr double RISK_DOLLARS         = 30.0;
     static constexpr double RISK_DOLLARS_PYRAMID = 10.0;
     // USD value of 1 unit of price (1.0 JPY) at default lot 0.10:
@@ -294,6 +302,18 @@ public:
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
+    // S61 2026-05-07: range_history persistence ctor (lineage from EurusdLondonOpen).
+    //   Loads m_range_history from disk if a fresh state file exists
+    //   (age <= RANGE_HIST_STALENESS_S = 7200s = 2h). When load succeeds,
+    //   the S58 cold-start guard inside on_tick() becomes inert immediately
+    //   because m_range_history.size() is already >= EXPANSION_MIN_HISTORY.
+    //   When file is missing or stale, S58 cold-start guard remains active
+    //   for the warmup window -- preserving the original behavior as the
+    //   safe fallback.
+    UsdjpyAsianOpenEngine() noexcept {
+        _try_load_range_history();
+    }
+
     // -- Main tick ------------------------------------------------------------
     void on_tick(double bid, double ask, int64_t now_ms,
                  bool can_enter,
@@ -364,8 +384,39 @@ public:
 
         // -- PENDING: wait for fill -------------------------------------------
         if (phase == Phase::PENDING) {
-            if (ask >= bracket_high) { confirm_fill(true,  bracket_high, pending_lot_long,  spread); return; }
-            if (bid <= bracket_low)  { confirm_fill(false, bracket_low,  pending_lot_short, spread); return; }
+            const bool would_fill_long  = (ask >= bracket_high);
+            const bool would_fill_short = (bid <= bracket_low);
+
+            // S59 2026-05-07: PENDING-phase spread recheck at the fill moment.
+            //   Mirrors EurusdLondonOpen S59. The IDLE->ARMED MAX_SPREAD gate
+            //   only checks spread at bracket formation; without this, a
+            //   spread spike between FIRE and FILL produces a high-cost fill.
+            //   When a fill would otherwise trigger, abort the bracket
+            //   entirely if spread > MAX_FILL_SPREAD. Mid-bracket spikes that
+            //   don't coincide with a fill tick are tolerated.
+            if ((would_fill_long || would_fill_short) && spread > MAX_FILL_SPREAD) {
+                {
+                    char _buf[256];
+                    snprintf(_buf, sizeof(_buf),
+                        "[JPY-ASN-OPEN] FILL_SPREAD_REJECT spread=%.3f max=%.3f side=%s -- aborting bracket\n",
+                        spread, MAX_FILL_SPREAD,
+                        would_fill_long ? "LONG" : "SHORT");
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
+                if (cancel_fn) {
+                    if (!pending_long_clOrdId.empty())  cancel_fn(pending_long_clOrdId);
+                    if (!pending_short_clOrdId.empty()) cancel_fn(pending_short_clOrdId);
+                }
+                pending_long_clOrdId.clear();
+                pending_short_clOrdId.clear();
+                phase = Phase::IDLE;
+                bracket_high = bracket_low = 0.0;
+                return;
+            }
+
+            if (would_fill_long)  { confirm_fill(true,  bracket_high, pending_lot_long,  spread); return; }
+            if (would_fill_short) { confirm_fill(false, bracket_low,  pending_lot_short, spread); return; }
             if (now_s - m_armed_ts > PENDING_TIMEOUT_S) {
                 {
                     char _buf[256];
@@ -518,6 +569,12 @@ public:
             m_range_history.push_back(range);
             if ((int)m_range_history.size() > EXPANSION_HISTORY_LEN)
                 m_range_history.pop_front();
+
+            // S61 2026-05-07: throttled persistence (every 30s during ARMED).
+            //   Captures m_range_history to disk so a service restart can
+            //   reload it instead of triggering the S58 cold-start guard.
+            //   No-op in OMEGA_BACKTEST builds.
+            _save_range_history_if_due(now_s);
 
             // S58 2026-05-07: COLD-START GUARD (lineage from EurusdLondonOpen).
             //   Same hole pattern as the lineage source: ATR-expansion gate
@@ -763,6 +820,84 @@ private:
 
     omega::SpreadRegimeGate m_spread_gate;
     std::deque<double> m_range_history;
+
+    // S61 2026-05-07: range_history persistence (warm-restart for S58 guard).
+    int64_t m_range_history_last_save_s = 0;
+    static constexpr int64_t RANGE_HIST_SAVE_INTERVAL_S = 30;
+    static constexpr int64_t RANGE_HIST_STALENESS_S     = 7200;
+
+    static const char* _range_hist_path() noexcept {
+#ifdef _WIN32
+        return "C:\\Omega\\state\\usdjpy_asian_open_range_history.csv";
+#else
+        return "state/usdjpy_asian_open_range_history.csv";
+#endif
+    }
+
+    void _try_load_range_history() noexcept {
+#ifndef OMEGA_BACKTEST
+        const char* path = _range_hist_path();
+        FILE* f = std::fopen(path, "r");
+        if (!f) {
+            std::printf("[JPY-ASN-OPEN] RANGE_HIST_LOAD no_file path=%s (cold-start)\n", path);
+            std::fflush(stdout);
+            return;
+        }
+        char line[128];
+        long long saved_ts = 0;
+        std::deque<double> tmp;
+        while (std::fgets(line, sizeof(line), f)) {
+            if (line[0] == '#') {
+                const char* p = std::strstr(line, "saved=");
+                if (p) saved_ts = std::strtoll(p + 6, nullptr, 10);
+                continue;
+            }
+            if (line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
+            double v = 0.0;
+            if (std::sscanf(line, "%lf", &v) == 1 && std::isfinite(v) && v > 0.0)
+                tmp.push_back(v);
+        }
+        std::fclose(f);
+        const long long now_s = (long long)std::time(nullptr);
+        if (saved_ts <= 0 || (now_s - saved_ts) > RANGE_HIST_STALENESS_S) {
+            std::printf("[JPY-ASN-OPEN] RANGE_HIST_LOAD stale saved=%lld age_s=%lld (cold-start)\n",
+                        saved_ts, (long long)(now_s - saved_ts));
+            std::fflush(stdout);
+            return;
+        }
+        while ((int)tmp.size() > EXPANSION_HISTORY_LEN) tmp.pop_front();
+        m_range_history = std::move(tmp);
+        std::printf("[JPY-ASN-OPEN] RANGE_HIST_LOAD ok n=%d age_s=%lld\n",
+                    (int)m_range_history.size(), (long long)(now_s - saved_ts));
+        std::fflush(stdout);
+#endif
+    }
+
+    void _save_range_history() noexcept {
+#ifndef OMEGA_BACKTEST
+        const char* path = _range_hist_path();
+        FILE* f = std::fopen(path, "w");
+        if (!f) {
+            std::printf("[JPY-ASN-OPEN] RANGE_HIST_SAVE_FAIL path=%s\n", path);
+            std::fflush(stdout);
+            return;
+        }
+        const long long now_s = (long long)std::time(nullptr);
+        std::fprintf(f, "# range_history v1 saved=%lld\n", now_s);
+        for (const double v : m_range_history) std::fprintf(f, "%.10f\n", v);
+        std::fclose(f);
+#endif
+    }
+
+    void _save_range_history_if_due(int64_t now_s) noexcept {
+#ifndef OMEGA_BACKTEST
+        if ((now_s - m_range_history_last_save_s) < RANGE_HIST_SAVE_INTERVAL_S) return;
+        _save_range_history();
+        m_range_history_last_save_s = now_s;
+#else
+        (void)now_s;
+#endif
+    }
 
     // AUDIT 2026-04-29: serialise the whole _close path. Inherited from
     //   GoldMidScalper / EurusdLondonOpen to avoid the Apr-7 -$3,008.38
