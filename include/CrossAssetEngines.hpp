@@ -1671,6 +1671,31 @@ public:
                     tr.spreadAtEntry=pos_.spread_at_entry;
                     tr.atr_at_entry=pos_.atr_at_entry;
                     tr.shadow=shadow_mode;
+                    // 2026-05-08 (S12): record IMM_REVERSAL toward consecutive
+                    // direction-loss tracking. Previously only SL_HIT incremented
+                    // the counter so 3 back-to-back same-side IMM-REVs (USTEC.F
+                    // 2026-05-08 17:36/19:46/19:52) never triggered the 10-min
+                    // direction block. IMM_REVERSAL is unambiguously a loss --
+                    // include it in the streak.
+                    if (pos_.is_long) {
+                        ++m_consec_sl_long_;
+                        m_consec_sl_short_ = 0;
+                        if (m_consec_sl_long_ >= 2) {
+                            m_long_blocked_until_ = ca_now_sec() + 600;
+                            m_consec_sl_long_ = 0;
+                            printf("[TREND-PB] %s LONG blocked 10min after 2 consec losses (incl IMM_REV)\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    } else {
+                        ++m_consec_sl_short_;
+                        m_consec_sl_long_ = 0;
+                        if (m_consec_sl_short_ >= 2) {
+                            m_short_blocked_until_ = ca_now_sec() + 600;
+                            m_consec_sl_short_ = 0;
+                            printf("[TREND-PB] %s SHORT blocked 10min after 2 consec losses (incl IMM_REV)\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    }
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
                     if (on_close) on_close(tr);
@@ -1707,6 +1732,26 @@ public:
                     tr.spreadAtEntry=pos_.spread_at_entry;
                     tr.atr_at_entry=pos_.atr_at_entry;
                     tr.shadow=shadow_mode;
+                    // 2026-05-08 (S12): TIME_STOP is a loss exit -- count it.
+                    if (pos_.is_long) {
+                        ++m_consec_sl_long_;
+                        m_consec_sl_short_ = 0;
+                        if (m_consec_sl_long_ >= 2) {
+                            m_long_blocked_until_ = ca_now_sec() + 600;
+                            m_consec_sl_long_ = 0;
+                            printf("[TREND-PB] %s LONG blocked 10min after 2 consec losses (incl TIME_STOP)\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    } else {
+                        ++m_consec_sl_short_;
+                        m_consec_sl_long_ = 0;
+                        if (m_consec_sl_short_ >= 2) {
+                            m_short_blocked_until_ = ca_now_sec() + 600;
+                            m_consec_sl_short_ = 0;
+                            printf("[TREND-PB] %s SHORT blocked 10min after 2 consec losses (incl TIME_STOP)\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    }
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
                     if (on_close) on_close(tr);
@@ -1718,15 +1763,22 @@ public:
             // the thesis is dead. The 5-min stop only fires when mfe<1pt.
             // This catches trades that showed brief profit early then reversed.
             // Only fires before BE is locked -- trail manages exit once BE locked.
+            // 2026-05-08 (S12): the prior threshold `spread_at_entry * 2.0`
+            // was way too tight for tight-spread indices. USTEC.F spread ~0.5pt
+            // gave a 1pt threshold, firing on noise. Replaced with
+            // max(spread*5.0, atr*0.5, 3.0) so the bar scales with volatility.
             {
                 const int64_t held_s2 = ca_now_sec() - pos_.entry_ts;
                 const double adverse2 = pos_.is_long ? (pos_.entry - mid)
                                                      : (mid - pos_.entry);
+                const double hard_thresh = std::max({pos_.spread_at_entry * 5.0,
+                                                     atr * 0.5,
+                                                     3.0});
                 if (!be_locked_
                     && held_s2 > 600       // 10 minutes (was 15 -- too long to hold loser)
-                    && adverse2 > pos_.spread_at_entry * 2.0) {  // meaningful loss beyond spread noise
-                    printf("[TREND-PB] %s HARD-TIME-STOP held=%llds adverse=%.2f mfe=%.2f -- 10min no BE\n",
-                           sym.c_str(), (long long)held_s2, adverse2, pos_.mfe);
+                    && adverse2 > hard_thresh) {  // scaled to vol/spread, not raw spread*2
+                    printf("[TREND-PB] %s HARD-TIME-STOP held=%llds adverse=%.2f thresh=%.2f mfe=%.2f -- 10min no BE\n",
+                           sym.c_str(), (long long)held_s2, adverse2, hard_thresh, pos_.mfe);
                     fflush(stdout);
                     const double exit_px = pos_.is_long ? bid : ask;
                     omega::TradeRecord tr;
@@ -1741,6 +1793,26 @@ public:
                     tr.spreadAtEntry=pos_.spread_at_entry;
                     tr.atr_at_entry=pos_.atr_at_entry;
                     tr.shadow=shadow_mode;
+                    // 2026-05-08 (S12): TIME_STOP is a loss exit -- count it.
+                    if (pos_.is_long) {
+                        ++m_consec_sl_long_;
+                        m_consec_sl_short_ = 0;
+                        if (m_consec_sl_long_ >= 2) {
+                            m_long_blocked_until_ = ca_now_sec() + 600;
+                            m_consec_sl_long_ = 0;
+                            printf("[TREND-PB] %s LONG blocked 10min after 2 consec losses (incl HARD-TIME-STOP)\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    } else {
+                        ++m_consec_sl_short_;
+                        m_consec_sl_long_ = 0;
+                        if (m_consec_sl_short_ >= 2) {
+                            m_short_blocked_until_ = ca_now_sec() + 600;
+                            m_consec_sl_short_ = 0;
+                            printf("[TREND-PB] %s SHORT blocked 10min after 2 consec losses (incl HARD-TIME-STOP)\n", sym.c_str());
+                            fflush(stdout);
+                        }
+                    }
                     pos_.reset(); be_locked_=false; prev_at_ema50_=false;
                     cooldown_until_=ca_now_sec()+COOLDOWN_SEC;
                     if (on_close) on_close(tr);

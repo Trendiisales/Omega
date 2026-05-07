@@ -261,6 +261,22 @@ struct TsmomCell {
     double trail_dist2_atr     = 1.5;   // distance from peak at stage 2
     double trail_dist3_atr     = 2.5;   // distance from peak at stage 3
 
+    // 2026-05-08 (S12): post-MAE_EXIT cooldown.
+    //   On 2026-05-08 H1 long fired three back-to-back entries (09:00, 10:00,
+    //   11:00 UTC) on a falling tape. All three MAE_EXIT'd at -2*ATR for a
+    //   combined -$113. Root cause: cooldown_bars=0, so as long as the
+    //   20-bar momentum signal stayed positive the engine kept stacking
+    //   long entries on a downtrending tape. Each new entry was mathematically
+    //   destined to hit the same MAE level as the previous one.
+    //
+    //   This block triggers ONLY after a MAE_EXIT (not after SL_HIT, TRAIL_HIT
+    //   or TIME_EXIT). It silences re-entry for `mae_exit_cooldown_bars` H1
+    //   bars to let the adverse move resolve before the engine fires again.
+    //   Set to 0 to disable.
+    int    mae_exit_cooldown_bars = 4;
+    int    mae_exit_run_thresh    = 2;   // 2nd MAE_EXIT in run -> escalate
+    int    mae_exit_run_cooldown  = 12;  // 12-bar (~12h) cool-off after run
+
     // ---- Rolling closes window ---------------------------------------------
     std::deque<double> closes_;
 
@@ -269,6 +285,8 @@ struct TsmomCell {
     int trade_id_       = 0;
     int bar_count_      = 0;
     int cooldown_left_  = 0;     // decremented each bar; gates new entries
+    int last_mae_exit_bar_ = -10000;   // bar_count_ at last MAE_EXIT (or -inf)
+    int mae_exit_run_      = 0;        // consecutive MAE_EXITs (resets on win)
 
     bool has_open_position() const noexcept { return !positions_.empty(); }
     int  n_open()             const noexcept { return (int)positions_.size(); }
@@ -308,6 +326,9 @@ struct TsmomCell {
                 if (mae_exit_hit) {
                     const double exit_px = p.entry - direction * mae_threshold_pts;
                     _close(p, exit_px, "MAE_EXIT", now_ms, on_close);
+                    // 2026-05-08 (S12): stamp the cooldown gate.
+                    last_mae_exit_bar_ = bar_count_;
+                    ++mae_exit_run_;
                     it = positions_.erase(it);
                     continue;
                 }
@@ -344,11 +365,21 @@ struct TsmomCell {
                     ? (p.sl > p.entry) : (p.sl < p.entry);
                 _close(p, p.sl, is_trail_exit ? "TRAIL_HIT" : "SL_HIT",
                        now_ms, on_close);
+                // 2026-05-08 (S12): a TRAIL_HIT means the trade was profitable
+                // before reversing -- reset the MAE-run counter. A bare SL_HIT
+                // is also acceptable to clear since the size of an SL hit (3*ATR)
+                // is bounded and unrelated to the stacking-MAE failure mode.
+                if (is_trail_exit) mae_exit_run_ = 0;
                 it = positions_.erase(it);
                 continue;
             }
             if (p.bars_held >= hold_bars) {
                 _close(p, b.close, "TIME_EXIT", now_ms, on_close);
+                // 2026-05-08 (S12): TIME_EXIT closing in profit (or BE) means the
+                // momentum thesis worked -- reset the MAE-run counter.
+                const double signed_close = direction == 1
+                    ? (b.close - p.entry) : (p.entry - b.close);
+                if (signed_close >= 0.0) mae_exit_run_ = 0;
                 it = positions_.erase(it);
                 continue;
             }
@@ -373,6 +404,25 @@ struct TsmomCell {
         if (!std::isfinite(spread_pt) || spread_pt < 0.0)              return 0;
         if (spread_pt > max_spread_pt)                                 return 0;
         if (size_lot <= 0.0)                                           return 0;
+
+        // 2026-05-08 (S12): post-MAE_EXIT cooldown gate.
+        //   Block re-entry for `mae_exit_cooldown_bars` after any MAE_EXIT.
+        //   If MAE-runs accumulate (>= mae_exit_run_thresh consecutive),
+        //   escalate to the longer `mae_exit_run_cooldown` to step out of
+        //   strongly-against-trend tape. The run counter resets on any
+        //   profitable close (TRAIL_HIT or in-profit TIME_EXIT).
+        if (mae_exit_cooldown_bars > 0) {
+            const int bars_since_mae = bar_count_ - last_mae_exit_bar_;
+            const int needed = (mae_exit_run_ >= mae_exit_run_thresh)
+                ? mae_exit_run_cooldown
+                : mae_exit_cooldown_bars;
+            if (bars_since_mae < needed) {
+                printf("[%s] MAE_EXIT cooldown -- bars_since=%d need=%d run=%d\n",
+                       cell_id.c_str(), bars_since_mae, needed, mae_exit_run_);
+                fflush(stdout);
+                return 0;
+            }
+        }
 
         // ----- 5. tsmom signal -------------------------------------------
         const double cur     = closes_.back();
@@ -441,12 +491,18 @@ struct TsmomCell {
                     if (bid <= p.entry - mae_threshold_pts) {
                         const double exit_px = p.entry - mae_threshold_pts;
                         _close(p, exit_px, "MAE_EXIT", now_ms, on_close);
+                        // 2026-05-08 (S12): stamp the cooldown gate.
+                        last_mae_exit_bar_ = bar_count_;
+                        ++mae_exit_run_;
                         hit = true;
                     }
                 } else {
                     if (ask >= p.entry + mae_threshold_pts) {
                         const double exit_px = p.entry + mae_threshold_pts;
                         _close(p, exit_px, "MAE_EXIT", now_ms, on_close);
+                        // 2026-05-08 (S12): stamp the cooldown gate.
+                        last_mae_exit_bar_ = bar_count_;
+                        ++mae_exit_run_;
                         hit = true;
                     }
                 }
