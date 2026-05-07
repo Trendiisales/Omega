@@ -745,7 +745,18 @@ static void init_engines(const std::string& cfg_path)
         //   day = ~24% portfolio drawdown. Still recoverable; well clear of
         //   margin_call (10% of equity = $1K floor).
         //   Projection: ~$90K/yr at this sizing vs $19,633 at baseline.
-        g_trend_rider.shadow_mode       = kShadowDefault;
+        // 2026-05-07 (S9 task 7): PINNED shadow_mode=true regardless of
+        //   g_cfg.mode. Engine was effectively LIVE since 2026-04-30 because
+        //   kShadowDefault=false in production. The intended 4-week paper
+        //   validation never started -- the engine was firing real FIX orders
+        //   with risk_pct=0.040 (8x tsmom baseline) on only 7 days of live
+        //   experience. Discovered during S9 audit cross-check between
+        //   chat/NEXT_SESSION ("validating in shadow") and engine_init.hpp
+        //   (kShadowDefault). Pin remains in place until: PF >= 1.3,
+        //   >= 30 trades, expectancy beats Tsmom, AND a deliberate human
+        //   decision to flip back to kShadowDefault. Promotion gate per
+        //   NEXT_SESSION.md S9 priority 3.
+        g_trend_rider.shadow_mode       = true;
         g_trend_rider.enabled           = true;
         g_trend_rider.max_concurrent    = 6;
         g_trend_rider.risk_pct          = 0.040;          // 8x tsmom baseline (~1/8 Kelly)

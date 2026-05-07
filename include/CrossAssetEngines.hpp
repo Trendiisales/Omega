@@ -1638,17 +1638,25 @@ public:
             }
 
             // ?? Immediate reversal guard (M15 scale) ??????????????????????????
-            // If within first 60s price moves >3pts adverse with zero MFE:
+            // If within first 60s price moves > IMM_REV_THRESH adverse with zero MFE:
             // entry was wrong from the start -- close before the full SL fires.
             // Scaled larger than GoldFlow (2pt/15s) because M15 EMAs need more
             // breathing room -- spread noise on gold is ~0.35pt.
+            // 2026-05-07 (S9 task 3): replaced fixed 3.0pt threshold with
+            //   max(3.0, atr*0.3) so the guard scales with current volatility.
+            //   On low-ATR tape the floor (3pt) preserves prior gold behaviour.
+            //   On high-ATR tape (e.g. NQ/SP/GER40 in news regimes where ATR
+            //   can be >>10pt) a 3pt adverse is just spread/noise; the 0.3*ATR
+            //   coefficient widens the guard so we don't bail on legitimate
+            //   trend-pullback shake-out within the first minute.
             {
                 const int64_t held_s  = ca_now_sec() - pos_.entry_ts;
                 const double  adverse = pos_.is_long ? (pos_.entry - mid)
                                                      : (mid - pos_.entry);
-                if (held_s <= 60 && adverse > 3.0 && pos_.mfe < 0.20) {
-                    printf("[TREND-PB] %s IMM-REVERSAL adverse=%.2f in %llds mfe=%.2f -- bail\n",
-                           sym.c_str(), adverse, (long long)held_s, pos_.mfe);
+                const double  imm_rev_thresh = std::max(3.0, atr * 0.3);
+                if (held_s <= 60 && adverse > imm_rev_thresh && pos_.mfe < 0.20) {
+                    printf("[TREND-PB] %s IMM-REVERSAL adverse=%.2f thresh=%.2f in %llds mfe=%.2f -- bail\n",
+                           sym.c_str(), adverse, imm_rev_thresh, (long long)held_s, pos_.mfe);
                     fflush(stdout);
                     const double exit_px = pos_.is_long ? bid : ask;
                     omega::TradeRecord tr;
