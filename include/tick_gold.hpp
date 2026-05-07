@@ -1320,8 +1320,8 @@ static void on_tick_gold(
 
         // g_bracket_gold is GoldBracketEngine (BracketEngineBase subclass).
         // Signature: on_tick(bid, ask, now_ms, can_enter, regime, on_close, vwap, l2_imb)
-        // NOTE: g_hybrid_gold (GoldHybridBracketEngine) is separate and already wired
-        // correctly at lines ~2929/2945 with the bool flow_live signature.
+        // (Stale note removed S12 P3c: g_hybrid_gold/GoldHybridBracketEngine
+        //  retired; nothing parallel to wire.)
         //
         // Session 9: GoldCoordinator BRACKET_LANE gate. Skeleton is allow-by-default
         // (can_enter() always returns true). Present behaviour: unchanged. When the
@@ -2102,15 +2102,18 @@ static void on_tick_gold(
     }
 
     // ----------------------------------------------------------------------
-    // HBG fully removed S11 P3b (2026-05-07): GoldHybridBracketEngine.
-    //   - Dispatch removed S10 P3a (commit ba5f0e9)
+    // HBG fully retired S12 P3c (2026-05-07): GoldHybridBracketEngine.
+    //   - Dispatch removed S10 P3a    (commit ba5f0e9)
     //   - Globals decl, init/shadow_mode, register_engine, heartbeat
     //     registration, heartbeat pulse, g_open_positions source, and all
-    //     gate-reads removed S11 P3b (this commit)
+    //     gate-reads removed S11 P3b (commit a6e3403)
+    //   - Header file include/GoldHybridBracketEngine.hpp DELETED + all
+    //     #include refs removed S12 P3c (this commit)
     //   Original dispatch (compression range -> dual stop entry -> first-fill
     //   wins -> cancel loser) was lines ~2097-2202 of tick_gold.hpp pre-S10.
-    //   Phase C (next): delete include/GoldHybridBracketEngine.hpp file +
-    //   #include references in tick_gold.hpp / globals.hpp / engine_init.hpp.
+    //   Engine family fully retired; backtest harnesses for HBG also removed
+    //   in this commit (see backtest/OmegaBacktest.cpp + backtest/omega_bt.cpp
+    //   diffs; backtest/hbg_duka_bt.cpp deleted entirely).
     // ----------------------------------------------------------------------
 
     // -- 2026-05-01 SESSION_h: GoldMidScalperEngine dispatch -----------------

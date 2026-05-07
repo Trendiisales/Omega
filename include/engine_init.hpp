@@ -40,6 +40,9 @@ static void init_engines(const std::string& cfg_path)
     //   now been fully removed: globals decls, init blocks, register_engine
     //   calls, heartbeat registrations, heartbeat pulses, and gate-reads
     //   across tick_indices.hpp / on_tick.hpp / globals.hpp::index_any_open.
+    // S12 P3c (2026-05-07): IndexHybridBracketEngine.hpp header file DELETED
+    //   + all #include refs removed (production + backtest). Engine family
+    //   fully retired.
     // IndexFlowEngine (4 instances, uniform):
     // shadow_mode lives on private IdxOpenPosition pos_; use set_shadow_mode() proxy.
     g_iflow_sp.set_shadow_mode(kShadowDefault);
@@ -54,6 +57,9 @@ static void init_engines(const std::string& cfg_path)
     //   been fully removed: globals decl, init block, register_engine call,
     //   heartbeat registration, heartbeat pulse, g_open_positions source, and
     //   gate-reads across tick_gold.hpp / globals.hpp / quote_loop.hpp.
+    // S12 P3c (2026-05-07): GoldHybridBracketEngine.hpp header file DELETED
+    //   + all #include refs removed (production + backtest). Engine family
+    //   fully retired.
     // 2026-05-01 SESSION_h: GoldMidScalperEngine -- pinned shadow-only on
     //   first deployment regardless of g_cfg.mode. New engine, untested in
     //   live conditions, $20-40 capture zone. Promote to kShadowDefault

@@ -344,12 +344,12 @@ static std::unordered_map<std::string, int64_t> g_last_cross_entry;
 #include "MacroCrashEngine.hpp"
 static omega::GoldBracketEngine   g_bracket_gold;
 
-// ?? Hybrid bracket engines -- fire both sides simultaneously, cancel loser ??
-// GoldHybridBracketEngine: compression range -> long stop + short stop -> cancel loser on fill
-// IndexHybridBracketEngine: same for SP/NQ/DJ30/NAS100 with per-symbol calibration
-// These are in SHADOW mode by default -- validated against live data before enabling.
-#include "GoldHybridBracketEngine.hpp"
-#include "IndexHybridBracketEngine.hpp"
+// S12 P3c (2026-05-07): GoldHybridBracketEngine + IndexHybridBracketEngine
+//   header files DELETED. Engines were dispatch-removed in S10 P3a (commit
+//   ba5f0e9), globals/init/heartbeat/gate-reads removed in S11 P3b (commit
+//   a6e3403), and the header files plus all #include refs removed in this
+//   commit. Engine families fully retired. See NEXT_SESSION_S12.md for the
+//   commit-trail summary.
 // 2026-05-01 SESSION_h: GoldMidScalperEngine -- mid-band sister to HybridGold
 //   targeting the $20-40 P&L zone (range $8-20 with TP_RR=4).  Shadow-only by
 //   default; promote to live only after a 2-week paper validation.  Wired in
@@ -438,9 +438,8 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   per the SINGLE-TRANSLATION-UNIT include pattern.
 #include "EngineHeartbeat.hpp"
 // S11 P3b: g_hybrid_gold static decl removed (engine culled in P3a + P3b).
-//   #include "GoldHybridBracketEngine.hpp" left intact -- file deletion is
-//   Phase C's job (per NEXT_SESSION_S11.md). Type still compiles, just no
-//   instances exist.
+// S12 P3c (2026-05-07): GoldHybridBracketEngine.hpp file DELETED + #include
+//   removed at line 347 above. Engine fully retired.
 static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
 static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
@@ -449,8 +448,9 @@ static omega::AudusdSydneyOpenEngine          g_audusd_sydney_open;
 static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
 static omega::XauusdFvgEngine                 g_xauusd_fvg;
 // S11 P3b: g_hybrid_sp / g_hybrid_nq / g_hybrid_us30 / g_hybrid_nas100 static
-//   decls removed (engines culled in P3a + P3b). #include of
-//   IndexHybridBracketEngine.hpp left intact -- file deletion is Phase C's job.
+//   decls removed (engines culled in P3a + P3b).
+// S12 P3c (2026-05-07): IndexHybridBracketEngine.hpp file DELETED + #include
+//   removed at line 347 above. Engine family fully retired.
 
 // Bug #3 (KNOWN_BUGS.md) cross-engine "index any open" predicate.
 // Mirrors gold_any_open at tick_gold.hpp:36-50.

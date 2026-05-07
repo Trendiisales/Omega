@@ -14,9 +14,10 @@
 //   --engine  <list>   comma list (default: gold,latency,cross)
 //                      legacy:  gold, latency, cross,
 //                               rsirev, allnew
-//                      S44 new: hybridgold, macrocrash, h1swing, h4regime,
+//                      S44 new: macrocrash, h1swing, h4regime,
 //                               minh4, pdhl,
 //                               rsiextreme, emacross
+//                      (hybridgold removed at S12 P3c 2026-05-07 -- engine retired)
 //                      master:  all  (= every legacy + every S44 runner)
 //
 // TICK CSV -- auto-detected formats:
@@ -73,7 +74,7 @@
 #include "../include/BracketEngine.hpp"
 #include "../include/RSIReversalEngine.hpp"
 // (MicroMomentumEngine.hpp removed at Batch 5V §1.2 2026-04-20.)
-#include "../include/GoldHybridBracketEngine.hpp"
+// (GoldHybridBracketEngine.hpp #include removed at S12 P3c 2026-05-07 — header deleted, engine retired)
 
 // S44: new engine headers required by added runners
 #include "../include/MacroCrashEngine.hpp"
@@ -550,29 +551,10 @@ struct RSIRevRunner {
 // =============================================================================
 
 // -----------------------------------------------------------------------------
-// HybridGoldRunner -- GoldHybridBracketEngine
-//
-// The engine takes (bid, ask, now_ms, can_enter, flow_live, flow_be_locked,
-// flow_trail_stage, on_close, +DOM defaults). For backtest we have no flow
-// engine (GoldFlow culled S19) so we feed flow_live=false and flow_be_locked
-// =false. can_enter=true permits arming on every eligible tick. DOM args are
-// defaulted (no L2 stream). The on_close callback receives a TradeRecord
-// directly.
+// (HybridGoldRunner struct REMOVED at S12 P3c 2026-05-07 -- GoldHybridBracketEngine
+//  retired. The engine was dispatch-removed S10 P3a, globals/init/heartbeat
+//  removed S11 P3b, and header file + #include refs removed S12 P3c.)
 // -----------------------------------------------------------------------------
-struct HybridGoldRunner {
-    omega::GoldHybridBracketEngine eng;
-    HybridGoldRunner(){
-        eng.shadow_mode = false;  // log to store via on_close
-    }
-    void tick(const TickRow& r){
-        eng.on_tick(r.bid, r.ask, (int64_t)r.ts_ms,
-                    /*can_enter=*/   true,
-                    /*flow_live=*/   false,
-                    /*flow_be_locked=*/ false,
-                    /*flow_trail_stage=*/ 0,
-                    [](const omega::TradeRecord& t){ store::add(t); });
-    }
-};
 
 // -----------------------------------------------------------------------------
 // MacroCrashRunner -- MacroCrashEngine
@@ -898,7 +880,8 @@ struct Cfg {
     bool quiet=false;
 
     // S44 new runners (default OFF -- enabled by --engine list)
-    bool hybridgold=false, macrocrash=false, h1swing=false, h4regime=false;
+    // (hybridgold removed at S12 P3c 2026-05-07 -- engine retired)
+    bool macrocrash=false, h1swing=false, h4regime=false;
     bool minh4=false;
     bool pdhl=false, rsiextreme=false, emacross=false;
 
@@ -915,9 +898,10 @@ static Cfg parse(int argc, char** argv){
             "  --engine  <l>   comma list, default = gold,latency,cross\n"
             "                  legacy:  gold latency cross\n"
             "                           rsirev allnew\n"
-            "                  S44 new: hybridgold macrocrash h1swing h4regime\n"
+            "                  S44 new: macrocrash h1swing h4regime\n"
             "                           minh4\n"
             "                           pdhl rsiextreme emacross\n"
+            "                  (hybridgold removed at S12 P3c 2026-05-07 -- engine retired)\n"
             "                  master:  all    (everything)\n"
             "                           clean  (everything except validated bleeders)\n"
             "  --quiet         suppress engine log output (recommended)\n");
@@ -955,7 +939,7 @@ static Cfg parse(int argc, char** argv){
             c.allnew   = (!!strstr(e,"allnew") || all_master);
 
             // S44 new flags
-            c.hybridgold   = !!strstr(e,"hybridgold");
+            // (c.hybridgold removed at S12 P3c 2026-05-07 -- engine retired)
             c.macrocrash   = !!strstr(e,"macrocrash");
             c.h1swing      = !!strstr(e,"h1swing");
             c.h4regime     = !!strstr(e,"h4regime");
@@ -971,7 +955,8 @@ static Cfg parse(int argc, char** argv){
                 // even if someone renames substrings later.
                 c.gold = c.latency = c.cross = true;
                 c.rsirev = true;
-                c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
+                // (c.hybridgold removed at S12 P3c 2026-05-07 -- engine retired)
+                c.macrocrash = c.h1swing = c.h4regime = true;
                 c.minh4 = true;
                 c.pdhl = c.rsiextreme = c.emacross = true;
             }
@@ -980,7 +965,8 @@ static Cfg parse(int argc, char** argv){
                 // Enable every runner except known bleeders.
                 c.gold = c.latency = c.cross = true;
                 c.rsirev = true;
-                c.hybridgold = c.macrocrash = c.h1swing = c.h4regime = true;
+                // (c.hybridgold removed at S12 P3c 2026-05-07 -- engine retired)
+                c.macrocrash = c.h1swing = c.h4regime = true;
                 c.minh4 = true;
                 c.rsiextreme = c.emacross = true;
                 c.pdhl  = false;  // bleeder excluded
@@ -1075,7 +1061,7 @@ int main(int argc, char** argv){
     std::unique_ptr<CrossRunner>         rc;
     std::unique_ptr<RSIRevRunner>        rrsi;
     // S44 new runners
-    std::unique_ptr<HybridGoldRunner>    rhg;
+    // (HybridGoldRunner unique_ptr removed at S12 P3c 2026-05-07 -- engine retired)
     std::unique_ptr<MacroCrashRunner>    rmc;
     std::unique_ptr<H1SwingRunner>       rh1;
     std::unique_ptr<H4RegimeRunner>      rh4;
@@ -1091,7 +1077,7 @@ int main(int argc, char** argv){
     if(cfg.rsirev||cfg.allnew)  rrsi = std::make_unique<RSIRevRunner>();
 
     // S44 new runner construction (independent of allnew -- they have their own flags)
-    if(cfg.hybridgold)   rhg  = std::make_unique<HybridGoldRunner>();
+    // (cfg.hybridgold construct removed at S12 P3c 2026-05-07 -- engine retired)
     if(cfg.macrocrash)   rmc  = std::make_unique<MacroCrashRunner>();
     if(cfg.h1swing)      rh1  = std::make_unique<H1SwingRunner>();
     if(cfg.h4regime)     rh4  = std::make_unique<H4RegimeRunner>();
@@ -1116,7 +1102,7 @@ int main(int argc, char** argv){
         if(rrsi) rrsi->tick(r);
 
         // S44 new runners
-        if(rhg)  rhg->tick(r);
+        // (rhg->tick removed at S12 P3c 2026-05-07 -- HybridGoldRunner retired)
         if(rmc)  rmc->tick(r);
         if(rh1)  rh1->tick(r);
         if(rh4)  rh4->tick(r);
@@ -1164,10 +1150,10 @@ int main(int argc, char** argv){
     printf("  File    : %s\n", cfg.csv);
     printf("  Ticks   : %lld  in %.1fs (%.0f K t/s)\n", (long long)N, ps, N/ps/1000.0);
     printf("  Range   : %s -> %s\n", sa, sb);
-    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s%s\n",
+    printf("  Engines : %s%s%s%s%s%s%s%s%s%s%s\n",
            cfg.gold?"GoldStack ":"",
            cfg.latency?"LatencyEdge ":"", cfg.cross?"CrossAsset ":"",
-           cfg.hybridgold?"HybridGold ":"",
+           // (cfg.hybridgold column removed at S12 P3c 2026-05-07 -- engine retired)
            cfg.macrocrash?"MacroCrash ":"",
            cfg.h1swing?"H1Swing ":"",
            cfg.h4regime?"H4Regime ":"",

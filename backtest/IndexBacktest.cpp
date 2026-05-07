@@ -15,10 +15,12 @@
 //   1. Reads HistData NSX (NSXUSD) tick CSVs in
 //      ~/Tick/Nas/HISTDATA_COM_ASCII_NSXUSD_T*/DAT_ASCII_NSXUSD_T_*.csv
 //      (treats NSXUSD as NAS100 for symbol-routing purposes).
-//   2. Instantiates the three NAS-participating index engines:
+//   2. Instantiates the two remaining NAS-participating index engines:
 //        - IndexFlowEngine        (g_iflow_nas analog)
-//        - IndexHybridBracketEngine (g_hybrid_nas100 analog)
 //        - IndexMacroCrashEngine  (g_imacro_nas analog)
+//      (S12 P3c 2026-05-07: IndexHybridBracketEngine harness component
+//       removed — engine retired; cross-engine gate now exercised against
+//       the 2 surviving engines.)
 //   3. Replicates inline the entry-gate composition from on_tick_nas100
 //      INCLUDING the Bug #3 cross-engine block (index_any_open() +
 //      idx_recent_close_block()) and the IMC wiring with per-symbol slow-EWM
@@ -55,7 +57,7 @@
 #include <algorithm>
 
 #include "../include/IndexFlowEngine.hpp"
-#include "../include/IndexHybridBracketEngine.hpp"
+// (IndexHybridBracketEngine.hpp #include removed at S12 P3c 2026-05-07 — header deleted, engine retired)
 
 // =============================================================================
 // Bug #3 cross-engine state (replicated from globals.hpp, namespace omega::idx)
@@ -93,16 +95,17 @@ static inline bool idx_recent_close_block(int64_t now_s) noexcept {
 }
 
 // Per-NAS index_any_open. In production this checks all index engines across
-// all four symbols. For NAS-only test harness we check the three NAS engines.
+// all four symbols. For NAS-only test harness we check the two surviving NAS
+// engines after S12 P3c HBI cull.
 struct NasEngines {
     omega::idx::IndexFlowEngine*       iflow;
-    omega::idx::IndexHybridBracketEngine* hybrid;
+    // (hybrid field removed at S12 P3c 2026-05-07 -- IndexHybridBracketEngine retired)
     omega::idx::IndexMacroCrashEngine* imacro;
 };
 
 static inline bool index_any_open(const NasEngines& e) noexcept {
     return  e.iflow->has_open_position()  ||
-            e.hybrid->has_open_position() ||
+            // (hybrid->has_open_position() removed at S12 P3c 2026-05-07)
             e.imacro->has_open_position();
 }
 
@@ -192,27 +195,12 @@ int main(int argc, char** argv) {
     std::printf("================================================================\n");
 
     // Engine instances (NAS-only)
-    // ── HBI config patched for HistData NSX volatility profile ───────────────
-    // HistData tick-by-tick range is tighter than the cTrader live feed the
-    // production NAS100 config (min_range=8, lookback=180) is tuned for.
-    // Without these patches the bracket never arms on HistData and we get
-    // zero trades, which means no Bug #3 gate exercise. Patches are diagnostic
-    // only -- do NOT propagate to omega::idx::make_nas100_config() in
-    // include/IndexHybridBracketEngine.hpp.
-    auto hbi_cfg = omega::idx::make_nas100_config();
-    hbi_cfg.min_range          = 0.5;   // was 8.0
-    hbi_cfg.max_range          = 50.0;  // was 40.0
-    hbi_cfg.structure_lookback = 30;    // was 180
-    hbi_cfg.min_entry_ticks    = 20;    // was 150
-    hbi_cfg.max_spread         = 50.0;  // open wide so spread doesn't gate
-    hbi_cfg.cooldown_s         = 5;     // re-arm fast after close
-    hbi_cfg.dir_sl_cooldown_s  = 5;
-    hbi_cfg.min_hold_s         = 1;     // allow rapid exits
-    hbi_cfg.pending_timeout_s  = 30;    // give up on unfilled brackets fast
+    // S12 P3c (2026-05-07): IndexHybridBracketEngine removed; HBI config block
+    //   (min_range/max_range/structure_lookback/etc. patches for HistData
+    //   volatility profile) deleted with it. Surviving engines: IFlow + IMC.
     omega::idx::IndexFlowEngine          iflow_nas("NAS100");
-    omega::idx::IndexHybridBracketEngine hybrid_nas(hbi_cfg);
     omega::idx::IndexMacroCrashEngine    imacro_nas("NAS100");
-    bt::NasEngines engines{&iflow_nas, &hybrid_nas, &imacro_nas};
+    bt::NasEngines engines{&iflow_nas, &imacro_nas};
 
     // Seed IFLOW's atr tracker so the entry gates clear from the first tick
     // rather than waiting for the EWM to warm up. 30pt is the typical NAS100
@@ -286,17 +274,12 @@ int main(int argc, char** argv) {
         omega::idx::set_idx_test_clock_ms(t.ts_ms);
 
         // Diagnostic: every 200k ticks, dump engine state.
+        // S12 P3c (2026-05-07): hbi_phase / hbi_active / hbi_mfe / hbi_sl /
+        //   hbi_be diagnostic columns removed -- IndexHybridBracketEngine retired.
         if (n_ticks % 200000 == 0) {
-            const auto phase = static_cast<int>(hybrid_nas.phase);
-            std::printf("[BT-DIAG] tick=%lld ts=%lld bid=%.2f hbi_phase=%d "
-                "hbi_active=%d hbi_mfe=%.2f hbi_sl=%.2f hbi_be=%d "
+            std::printf("[BT-DIAG] tick=%lld ts=%lld bid=%.2f "
                 "iflow_active=%d imacro_active=%d\n",
                 (long long)n_ticks, (long long)t.ts_s, t.bid,
-                phase,
-                (int)hybrid_nas.pos.active,
-                hybrid_nas.pos.mfe,
-                hybrid_nas.pos.sl,
-                (int)hybrid_nas.pos.be_locked,
                 (int)iflow_nas.has_open_position(),
                 (int)imacro_nas.has_open_position());
             std::fflush(stdout);
@@ -311,26 +294,11 @@ int main(int argc, char** argv) {
         // Approximate L2 imbalance (no L2 data in HistData) -- neutral.
         const double l2_imb = 0.5;
 
-        // ── 1. IndexHybridBracket: two-call pattern, matching production
-        //       tick_indices.hpp:252-278 (us500 handler).
-        //
-        //   First call (manage path): pass the BASE can_enter (true here --
-        //     no session/risk gate in the backtest). The engine's PENDING
-        //     branch reads can_enter to decide whether to cancel resting
-        //     orders. Passing false here triggers the 15s PENDING cancel
-        //     timer at IndexHybridBracketEngine.hpp:320-326, and because
-        //     m_pending_blocked_since is never reset by reset_to_idle(),
-        //     subsequent FIRE attempts hit a "blocked since first tick"
-        //     reading and immediately cancel.
-        //
-        //   Second call (entry path): pass the FULL gate composition
-        //     (Bug #3 cross-engine block + post-close gap). Engine consults
-        //     this only on IDLE/ARMED -> PENDING transition.
-        const bool base_can_enter = true;  // proxy for production base_can_<sym>
-        if (hybrid_nas.has_open_position()) {
-            hybrid_nas.on_tick(bid, ask, t.ts_ms, base_can_enter,
-                               false, false, 0, on_close);
-        }
+        // ── S12 P3c (2026-05-07): IndexHybridBracket two-call dispatch block
+        //   removed (engine retired). Original block was a manage-path call
+        //   followed by an entry-path call gated by the Bug #3 cross-engine
+        //   block + post-close gap. Cross-engine gate exercise is now
+        //   conducted via IFlow + IMC only.
 
         // Entry-gate composition (mirrors on_tick_nas100, lines 915-922 of
         // tick_indices.hpp post-fix). For the backtest we drop the
@@ -345,16 +313,11 @@ int main(int argc, char** argv) {
             ++blocked_by_gate;
         }
 
-        if (!hybrid_nas.has_open_position()) {
-            hybrid_nas.on_tick(bid, ask, t.ts_ms, can_enter,
-                               false, false, 0, on_close);
-        }
-
-        // ── 2. IndexFlow: management + entry attempt ────────────────────────
-        // Same gate composition.
+        // ── 1. IndexFlow: management + entry attempt ────────────────────────
+        // Bug #3 gate composition above gates entry attempts.
         if (iflow_nas.has_open_position()) {
             iflow_nas.on_tick(sym, bid, ask, l2_imb, on_close, /*can_enter=*/false);
-        } else if (can_enter && !hybrid_nas.has_open_position()) {
+        } else if (can_enter) {
             const auto sig = iflow_nas.on_tick(sym, bid, ask, l2_imb, on_close, true);
             if (sig.valid) {
                 // Mirror the patch_size pattern. In production
@@ -386,10 +349,10 @@ int main(int argc, char** argv) {
     if (iflow_nas.has_open_position() && last_bid > 0.0 && last_ask > 0.0) {
         iflow_nas.force_close(last_bid, last_ask, on_close);
     }
-    // (HBI / IMC don't expose a public force_close; their open positions
-    // (if any) won't appear in the CSV. The IndexBacktest is primarily a
-    // gate-validation harness so unflushed IMC/HBI tail positions are an
-    // acceptable simplification.)
+    // (IMC doesn't expose a public force_close; an open IMC position at end of
+    // run won't appear in the CSV. The IndexBacktest is primarily a gate-
+    // validation harness so unflushed IMC tail positions are an acceptable
+    // simplification.  S12 P3c 2026-05-07: HBI mention removed -- engine retired.)
 
     std::fclose(f_trades);
 

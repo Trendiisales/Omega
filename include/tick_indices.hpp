@@ -244,12 +244,13 @@ static void on_tick_us500(
     }
 
     // ----------------------------------------------------------------------
-    // HBI-SP culled S10 P3a (2026-05-07): IndexHybridBracketEngine[US500.F] removed.
-    //   Engine still constructed in globals.hpp + engine_init.hpp.
-    //   Object exists and has_open_position() returns false (no on_tick feed).
+    // HBI-SP fully retired S12 P3c (2026-05-07): IndexHybridBracketEngine[US500.F]
+    //   - Dispatch removed S10 P3a (commit ba5f0e9)
+    //   - Globals decl + init/heartbeat/gate-reads removed S11 P3b (commit a6e3403)
+    //   - Header file include/IndexHybridBracketEngine.hpp DELETED + #include
+    //     refs removed S12 P3c (this commit)
     //   Original dispatch (compression range -> dual stop entry, slot 1-5 only,
     //   shadow by default) was lines ~246-310 of tick_indices.hpp pre-S10.
-    //   Phases B-E (S11+) will progressively delete globals/init/file.
     // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- US500.F ?????????????????????????????????????????????
     // L2 order-flow + EWM drift engine. Runs when no other US500.F position is open.
@@ -503,11 +504,12 @@ static void on_tick_ustec(
     }
 
     // ----------------------------------------------------------------------
-    // HBI-NQ culled S10 P3a (2026-05-07): IndexHybridBracketEngine[USTEC.F] removed.
-    //   Engine still constructed in globals.hpp + engine_init.hpp.
-    //   Object exists and has_open_position() returns false (no on_tick feed).
+    // HBI-NQ fully retired S12 P3c (2026-05-07): IndexHybridBracketEngine[USTEC.F]
+    //   - Dispatch removed S10 P3a (commit ba5f0e9)
+    //   - Globals decl + init/heartbeat/gate-reads removed S11 P3b (commit a6e3403)
+    //   - Header file include/IndexHybridBracketEngine.hpp DELETED + #include
+    //     refs removed S12 P3c (this commit)
     //   Original dispatch was lines ~562-614 of tick_indices.hpp pre-S10.
-    //   Phases B-E (S11+) will progressively delete globals/init/file.
     // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- USTEC.F
     {
@@ -607,11 +609,12 @@ static void on_tick_dj30(
     }
 
     // ----------------------------------------------------------------------
-    // HBI-US30 culled S10 P3a (2026-05-07): IndexHybridBracketEngine[DJ30.F] removed.
-    //   Engine still constructed in globals.hpp + engine_init.hpp.
-    //   Object exists and has_open_position() returns false (no on_tick feed).
+    // HBI-US30 fully retired S12 P3c (2026-05-07): IndexHybridBracketEngine[DJ30.F]
+    //   - Dispatch removed S10 P3a (commit ba5f0e9)
+    //   - Globals decl + init/heartbeat/gate-reads removed S11 P3b (commit a6e3403)
+    //   - Header file include/IndexHybridBracketEngine.hpp DELETED + #include
+    //     refs removed S12 P3c (this commit)
     //   Original dispatch was lines ~712-762 of tick_indices.hpp pre-S10.
-    //   Phases B-E (S11+) will progressively delete globals/init/file.
     // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- DJ30.F
     {
@@ -827,12 +830,13 @@ static void on_tick_nas100(
     }
 
     // ----------------------------------------------------------------------
-    // HBI-NAS culled S10 P3a (2026-05-07): IndexHybridBracketEngine[NAS100] removed.
-    //   Engine still constructed in globals.hpp + engine_init.hpp.
-    //   Object exists and has_open_position() returns false (no on_tick feed).
-    //   Original dispatch (slot 3-4 tightened per 2026-04-30 audit, $154.96/32trd)
-    //   was lines ~976-1048 of tick_indices.hpp pre-S10.
-    //   Phases B-E (S11+) will progressively delete globals/init/file.
+    // HBI-NAS fully retired S12 P3c (2026-05-07): IndexHybridBracketEngine[NAS100]
+    //   - Dispatch removed S10 P3a (commit ba5f0e9)
+    //   - Globals decl + init/heartbeat/gate-reads removed S11 P3b (commit a6e3403)
+    //   - Header file include/IndexHybridBracketEngine.hpp DELETED + #include
+    //     refs removed S12 P3c (this commit)
+    //   Original dispatch (slot 3-4 tightened per 2026-04-30 audit,
+    //   $154.96/32trd) was lines ~976-1048 of tick_indices.hpp pre-S10.
     // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- NAS100
     {
