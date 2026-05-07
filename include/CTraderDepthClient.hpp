@@ -779,6 +779,11 @@ private:
             backoff = 5000;
             if (!do_auth(ssl)) { ssl_close(ssl,sock); sleep_ms(5000); continue; }
             depth_active.store(true);
+            // S12 Finding A: reset event-stamp so the in-recv_loop global stall
+            // detector only trips on stalls that occur on THIS session. Without
+            // this, a previous-session timestamp would make the new connection
+            // appear stale at the very first iteration of recv_loop.
+            last_depth_event_ms.store(0, std::memory_order_relaxed);
             std::cout << "[CTRADER] Depth feed ACTIVE -- " << depth_books_.size() << " symbols\n";
             recv_loop(ssl, sock);
             ssl_close(ssl,sock); depth_active.store(false);
@@ -1071,6 +1076,65 @@ private:
 
         while (running.load()) {
             const auto now = std::chrono::steady_clock::now();
+
+            // S12 Finding A -- GLOBAL FEED-STALL SELF-RECOVERY ────────────────
+            // The TCP layer can stay open while the broker stops sending depth
+            // events entirely. Known triggers per S12_INVESTIGATIONS.md:
+            //   - cTrader Open API token expiry (renewal not automated for
+            //     ctid=43014358)
+            //   - cBot DOM streamer (cTrader-side) dropping its subscription
+            //     while keeping the SSL session alive
+            //   - Silent server-side stall on the underlying market data feed
+            // The existing XAUUSD-specific escalation below (lines ~1187-1300)
+            // ONLY catches XAUUSD-specifically going zero while other symbols
+            // continue to flow. If the broker stops sending ALL events, that
+            // ladder still fires eventually but with a 180s grace -- too long
+            // when the cause is structural (token / streamer dropped). And the
+            // omega_main.hpp L2 watchdog (lines 863-972) detects the dead feed
+            // at 120s but is detection-only -- it does not reconnect.
+            //
+            // This check closes the loop: if last_depth_event_ms is non-zero
+            // (we have received at least one event on this connection) and the
+            // most recent event is more than 60s old, drop the SSL connection
+            // and let loop() reconnect via the existing exponential-backoff
+            // path. last_depth_event_ms is reset to 0 at the top of every new
+            // connection (see loop() above), so this guard correctly excludes
+            // the auth + symbol-list + subscribe phase, which can take ~10-20s
+            // even on a healthy connection.
+            //
+            // 60s threshold per the brief. During market hours this is well
+            // above the natural inter-event gap on liquid symbols (sub-second
+            // for FX/indices, sub-minute even for XAUUSD on quiet sessions).
+            // Outside market hours the broker keeps streaming spot updates
+            // for FX so a 60s gap is still anomalous. If thrash develops on
+            // genuinely thin sessions, raise the threshold here.
+            //
+            // Interaction with the existing XAUUSD ladder: this check trips
+            // first when the WHOLE feed is dead (60s vs 180s grace). When
+            // only XAUUSD is starved while other symbols flow, this does NOT
+            // trip (last_depth_event_ms stays fresh from non-XAUUSD events)
+            // and the XAUUSD-specific Level-1/Level-2 ladder handles it.
+            // The two checks are orthogonal.
+            {
+                const int64_t le_ms = last_depth_event_ms.load(std::memory_order_relaxed);
+                if (le_ms > 0) {
+                    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    const int64_t age_ms = now_ms - le_ms;
+                    if (age_ms >= 60000) {
+                        printf("[CTRADER-RECONNECT] Global feed stall: no depth events for %llds "
+                               "(last_event_ms=%lld now_ms=%lld). TCP open but broker silent. "
+                               "Dropping SSL -- loop() will reconnect with backoff.\n",
+                               (long long)(age_ms / 1000),
+                               (long long)le_ms,
+                               (long long)now_ms);
+                        fflush(stdout);
+                        return;  // drops this TCP session; loop() handles reconnect
+                    }
+                }
+            }
+            // ─── end S12 Finding A ───────────────────────────────────────────
+
             if (std::chrono::duration_cast<std::chrono::seconds>(now-last_hb).count()>=10) { send_msg(ssl,PB::heartbeat()); last_hb=now; }
 
             // Periodic repoll disabled -- broker (BlackBull) returns INVALID_REQUEST
