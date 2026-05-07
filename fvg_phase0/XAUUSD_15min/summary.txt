@@ -1,0 +1,58 @@
+==============================================================================
+Phase 0 FVG Signal Test - XAUUSD - 15min
+==============================================================================
+Window:  2025-09-01 -> 2026-03-01
+Reaction: lookforward=30 bars, threshold=1.0xATR, classification=FIRST-TOUCH
+Score weights: gap=1.0 disp=1.0 trend=1.0 tv=1.0 age=0.5
+
+OVERALL FVG vs RANDOM
+  FVGs detected:        1,884
+  FVGs ever entered:    1,800 (95.5%)
+  Random levels:        1,884
+  Random ever entered:  1,710 (90.8%)
+
+BOUNCE RATE (favorable threshold hit FIRST within 30 bars; same-bar ties -> BREAK)
+  All FVGs:        72.5%  (n=1800)
+  Random control:  39.3%  (n=1710)
+  EDGE vs random:  +33.2 pp
+
+BOUNCE RATE BY SCORE QUARTILE (score_at_entry, includes age decay)
+  Q1_low   : bounce=67.3%  n=450  avg_score=0.213
+  Q2       : bounce=67.8%  n=450  avg_score=0.361
+  Q3       : bounce=71.3%  n=450  avg_score=0.457
+  Q4_high  : bounce=83.6%  n=450  avg_score=0.618
+  Top quartile - bottom quartile: +16.2 pp
+  Top quartile - random:          +44.3 pp
+
+BOUNCE RATE BY ATR QUARTILE (atr_at_entry; A4 = high-vol / news regime)
+  A1_low  : bounce=68.7%  n=450  avg_atr=4.922691
+  A2      : bounce=73.1%  n=450  avg_atr=7.358671
+  A3      : bounce=72.9%  n=450  avg_atr=9.884178
+  A4_high : bounce=75.3%  n=450  avg_atr=19.623211
+  Low-ATR quartile - High-ATR: -6.7 pp  (positive = high-vol regime fares worse)
+
+BY DIRECTION
+  bear : bounce=72.8%  n=739
+  bull : bounce=72.3%  n=1,061
+
+BY SESSION (UTC: asian 00-07, london 07-12, ny 12-21, off 21-24)
+  asian  : bounce=74.9%  n=585
+  london : bounce=72.2%  n=356
+  ny     : bounce=71.5%  n=695
+  off    : bounce=68.9%  n=164
+
+COMPONENT vs OUTCOME (correlation with bounce=1, break=-1, chop=0)
+  s_gap_size          : corr=+0.225
+  s_displacement      : corr=+0.147
+  s_trend_align       : corr=+0.020
+  s_tick_volume       : corr=+0.121
+  s_age_decay         : corr=-0.033
+  gap_height          : corr=+0.151
+  bars_until_entry    : corr=+0.020
+  atr_at_entry        : corr=+0.038
+
+ACCEPTANCE GATES (Phase 0 -> Phase 1)
+  >= 200 entered FVGs               : PASS  (1800)
+  FVG bounce rate - random >= 5pp   : PASS  (+33.2 pp)
+  Top score quartile - bottom>= 10pp: PASS  (+16.2 pp)
+==============================================================================

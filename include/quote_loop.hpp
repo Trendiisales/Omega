@@ -278,7 +278,12 @@ static void quote_loop() {
                     if (s_startup_s == 0) s_startup_s = now_s;
                     const int64_t uptime = now_s - s_startup_s;
 
-                    const int64_t depth_now   = (int64_t)g_ctrader_depth.depth_events_total.load();
+                    // S13 cTrader cull 2026-05-08: depth-events tracker replaced
+                    // by FIX 264=0 staleness check on g_l2_gold.last_update_ms.
+                    const int64_t now_ms_diag = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    const int64_t l2_last_ms  = g_l2_gold.last_update_ms.load(std::memory_order_relaxed);
+                    const int64_t l2_age_ms   = (l2_last_ms > 0) ? (now_ms_diag - l2_last_ms) : -1;
                     const bool    l2_live      = g_macro_ctx.ctrader_l2_live;
                     const bool    gold_seeded  = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
                     const int64_t trade_count  = g_omegaLedger.total();
@@ -287,56 +292,20 @@ static void quote_loop() {
                     std::string alert_msg;
                     bool any_critical = false;
 
-                    // ---- [1] L2 depth feed dead + AUTO-RECONNECT ----------------
-                    // Detection: depth_events_total frozen while l2_live=true
-                    // Fallback:  after 60s dead, force cTrader reconnect (stop/start)
+                    // ---- [1] L2 (FIX 264=0) feed staleness ----------------------
+                    // Detection: g_l2_gold.last_update_ms older than 30s while we
+                    //            otherwise believe L2 is live.
                     // Alert:     GUI "L2 FEED DEAD Xs"
-                    if (l2_live && depth_now == s_last_depth_events && s_last_depth_check_s > 0) {
+                    // Auto-reconnect logic dropped along with cTrader Open API --
+                    // FIX recovery is owned by OmegaFIX session keepalive.
+                    if (l2_age_ms >= 30000 && l2_last_ms > 0) {
                         if (s_depth_dead_since == 0) s_depth_dead_since = now_s;
                         const int64_t dead_secs = now_s - s_depth_dead_since;
-                        if (dead_secs >= 30) {
-                            printf("[SYSTEM-ALERT] L2_DEAD depth_events frozen %llds -- cTrader feed dropped\n",
-                                   (long long)dead_secs);
-                            fflush(stdout);
-                            alert_msg = "L2 FEED DEAD " + std::to_string(dead_secs) + "s";
-                            any_critical = true;
-                        }
-                        if (dead_secs >= 60 && !s_l2_reconnect_blocked) {
-                            // Circuit breaker: track reconnect times in ring buffer
-                            s_l2_reconnect_ts[s_l2_reconnect_idx % 3] = now_s;
-                            ++s_l2_reconnect_idx;
-                            // If 3 reconnects within 5 minutes: block further reconnects
-                            const int64_t oldest = s_l2_reconnect_ts[(s_l2_reconnect_idx) % 3];
-                            const bool loop_detected = (s_l2_reconnect_idx >= 3)
-                                && (now_s - oldest < 300);
-                            if (loop_detected) {
-                                s_l2_reconnect_blocked = true;
-                                printf("[SYSTEM-ALERT] L2_RECONNECT_LOOP 3 reconnects in %llds"
-                                       " -- reconnect blocked, running on FIX prices only\n",
-                                       (long long)(now_s - oldest));
-                                fflush(stdout);
-                                g_telemetry.SetHealthAlert("RECONNECT LOOP -- L2 DISABLED");
-                            } else {
-                                // L2 dead >60s -- LOG ONLY, do NOT restart cTrader.
-                                // Auto-restart was introduced in d7a0a16 but is the ROOT CAUSE
-                                // of the constant cTrader reconnect loop:
-                                //   L2 quiet (normal in Asia) -> restart -> tick data req sent
-                                //   -> BlackBull drops TCP -> L2 dead again -> restart -> loop
-                                // Before d7a0a16 cTrader never restarted mid-session and
-                                // overnight sessions worked fine. Reverting to that behaviour.
-                                // The circuit breaker above still catches genuine stuck feeds.
-                                if (now_s - s_depth_dead_since >= 60) {
-                                    static int64_t s_l2_log = 0;
-                                    if (now_s - s_l2_log >= 60) {
-                                        s_l2_log = now_s;
-                                        printf("[SYSTEM-ALERT] L2_DEAD >%llds -- running on FIX prices (no auto-restart)\n",
-                                               (long long)(now_s - s_depth_dead_since));
-                                        fflush(stdout);
-                                    }
-                                }
-                                alert_msg = "L2 DEAD -- FIX PRICES ONLY";
-                            }
-                        }
+                        printf("[SYSTEM-ALERT] L2_DEAD age=%llds -- FIX 264=0 stale\n",
+                               (long long)dead_secs);
+                        fflush(stdout);
+                        alert_msg = "L2 FEED DEAD " + std::to_string(dead_secs) + "s";
+                        any_critical = true;
                     } else {
                         if (s_depth_dead_since > 0) {
                             printf("[SYSTEM-ALERT] L2_RESTORED after %llds\n",
@@ -346,8 +315,11 @@ static void quote_loop() {
                         }
                         s_depth_dead_since = 0;
                     }
-                    s_last_depth_events  = depth_now;
+                    s_last_depth_events  = 0;     // legacy counter unused after S13
                     s_last_depth_check_s = now_s;
+                    (void)l2_live;
+                    (void)s_l2_reconnect_ts;
+                    (void)s_l2_reconnect_idx;
 
                     // ---- [2] Gold bars unseeded + ATR SNAP FALLBACK -------------
                     // Detection: m1_ready=false after 150s uptime
@@ -371,22 +343,11 @@ static void quote_loop() {
                     // Alert:     GUI "BAR STATE CORRUPT" set at load time (see startup block)
                     // (No runtime action needed — handled at startup)
 
-                    // ---- [4] cTrader reconnect loop -----------------------------
-                    // Handled inside [1] circuit breaker above.
-                    // Additional: expose reconnect count on GUI
-                    {
-                        const bool ct_now_active = g_ctrader_depth.depth_active.load();
-                        if (ct_now_active && s_last_fix_connected == 0)
-                            s_last_fix_connected = now_s;
-                        if (!ct_now_active && s_last_fix_connected > 0) {
-                            ++s_fix_reconnect_n;
-                            s_last_fix_connected = 0;
-                            printf("[SYSTEM-ALERT] CTRADER_RECONNECT #%d\n", s_fix_reconnect_n);
-                            fflush(stdout);
-                            if (alert_msg.empty())
-                                alert_msg = "FIX RECONNECT #" + std::to_string(s_fix_reconnect_n);
-                        }
-                    }
+                    // ---- [4] cTrader reconnect loop ----- REMOVED S13 2026-05-08
+                    // cTrader Open API surface culled. FIX session keepalive owns
+                    // reconnect detection now (printed by OmegaFIX directly).
+                    (void)s_last_fix_connected;
+                    (void)s_fix_reconnect_n;
 
                     // ---- [5] Bracket window stall --------------------------------
                     // Detection: can_arm=1 but range=0.00 for >5 minutes

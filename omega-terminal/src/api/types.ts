@@ -258,7 +258,8 @@ export interface TradeDetail {
   bracket_lo: number;
   /** Bid/(bid+ask) volume ratio at entry, 0..1. 0.5 = synthetic/balanced. */
   l2_imbalance: number;
-  /** True iff l2_imbalance came from real cTrader DOM, false = synthetic. */
+  /** True iff l2_imbalance came from a live FIX 264=0 book update (S13 cull
+   *  2026-05-08 retired the cTrader Open API source); false = synthetic/stale. */
   l2_live: boolean;
   /** Engine ATR at entry (price units, EWM). 0 = not populated. */
   atr_at_entry: number;

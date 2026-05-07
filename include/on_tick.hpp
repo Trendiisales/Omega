@@ -435,15 +435,26 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
 
-    // Log L2 status once per minute
+    // Log L2 status once per minute (FIX-only since S13 cTrader cull 2026-05-08).
     {
         static int64_t s_l2_log = 0;
         const int64_t now_l2 = nowSec();
         if (now_l2 - s_l2_log >= 60) {
             s_l2_log = now_l2;
             {
+                const int64_t now_ms_log = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                const int64_t gold_age_ms = now_ms_log - g_l2_gold.last_update_ms.load(std::memory_order_relaxed);
                 char _msg[512];
-                snprintf(_msg, sizeof(_msg), "[L2-STATUS] ctrader_live=%d events=%llu gold_real=%d gold_imb=%.3f "                    "gold_mp=%.3f sp_real=%d cl_real=%d\n",                    (int)g_macro_ctx.ctrader_l2_live,                    (unsigned long long)g_ctrader_depth.depth_events_total.load(),                    (int)g_macro_ctx.gold_l2_real,                    g_macro_ctx.gold_l2_imbalance,                    g_macro_ctx.gold_microprice_bias,                    (int)g_macro_ctx.sp_l2_real,                    (int)g_macro_ctx.cl_l2_real);
+                snprintf(_msg, sizeof(_msg), "[L2-STATUS] l2_live=%d gold_real=%d gold_imb=%.3f "
+                    "gold_mp=%.3f gold_age_ms=%lld sp_real=%d cl_real=%d\n",
+                    (int)g_macro_ctx.ctrader_l2_live,
+                    (int)g_macro_ctx.gold_l2_real,
+                    g_macro_ctx.gold_l2_imbalance,
+                    g_macro_ctx.gold_microprice_bias,
+                    (long long)gold_age_ms,
+                    (int)g_macro_ctx.sp_l2_real,
+                    (int)g_macro_ctx.cl_l2_real);
                 std::cout << _msg;
                 std::cout.flush();
             }
@@ -465,9 +476,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         std::lock_guard<std::mutex> lk(g_l2_mtx);
         for (const char* cold_sym : COLD_SYMS) {
             auto it = g_l2_books.find(cold_sym);
-            // Use bid_count OR ask_count > 0 -- cTrader sends incremental one-sided
-            // updates so ask_count may be 0 when bids arrive first and vice versa.
-            // has_data() requires BOTH sides which causes empty book on startup.
+            // Use bid_count OR ask_count > 0 -- FIX 264=0 sends one-sided
+            // incremental updates, so ask_count may be 0 when bids arrive first and
+            // vice versa. has_data() requires BOTH sides which causes empty book on
+            // startup.
             if (it != g_l2_books.end() &&
                 (it->second.bid_count > 0 || it->second.ask_count > 0))
                 cold_snap[cold_sym] = {it->second, true};
@@ -479,8 +491,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     };
         // Push L2 book levels to telemetry for GUI depth panel.
         // Always push exactly 5 levels -- pad with price=0/size=0 if book has fewer.
-        // This prevents the JS depth panel from showing/hiding rows as cTrader sends
-        // partial incremental updates (bid_count fluctuates 1-5 between ticks).
+        // This prevents the JS depth panel from showing/hiding rows as the FIX feed
+        // sends partial incremental updates (bid_count fluctuates 1-5 between ticks).
         // Zero-size levels render as invisible rows (zero-width bar, empty size) -- stable.
         auto pushL2 = [&](const char* sym, const L2Book* b) {
             if (!b) return;
@@ -588,16 +600,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_macro_ctx.aud_l2_imbalance, g_macro_ctx.nzd_l2_imbalance,
         g_macro_ctx.jpy_l2_imbalance,
         [&]() -> int {
-            // L2 active: TCP connected AND depth events received within last 30s.
+            // L2 active: any FIX-fed AtomicL2 has been updated within the last 30s.
             // Without the age check, a silent feed stall (connection alive, broker
-            // stopped sending quotes -- common in thin Asian session) shows the badge
-            // green while all imbalance values are frozen stale data.
-            if (!g_ctrader_depth.depth_active.load()) return 0;
-            const int64_t last_ev = g_ctrader_depth.last_depth_event_ms.load();
-            if (last_ev == 0) return 0;  // connected but no events yet
+            // stopped sending quotes -- common in thin Asian session) would show the
+            // badge green while imbalance values are frozen stale data.
+            // S13 cTrader cull 2026-05-08: source flipped from g_ctrader_depth to
+            // FIX 264=0 dispatch (AtomicL2::last_update_ms).
             const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-            return ((now_ms - last_ev) < 30000) ? 1 : 0;  // stale after 30s
+            if (g_l2_gold.fresh(now_ms, 30000)) return 1;
+            if (g_l2_sp.fresh(now_ms, 30000))   return 1;
+            if (g_l2_eur.fresh(now_ms, 30000))  return 1;
+            return 0;
         }());
 
     const bool tradeable = session_tradeable();

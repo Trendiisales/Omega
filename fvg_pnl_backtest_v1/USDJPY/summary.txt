@@ -1,0 +1,59 @@
+==============================================================================
+FVG P&L Backtest v1 - USDJPY - 15min
+==============================================================================
+Window:           2025-09-01 -> 2026-03-01
+Reweighted score: {'w_gap_size': 1.5, 'w_displacement': 1.0, 'w_tick_volume': 1.0, 'w_trend_align': 0.0, 'w_age_decay': 0.0}
+Risk:             SL=1.0xATR  TP=2.0xATR  time_stop=30 bars  risk=0.50%/trade  start_eq=$100,000
+Costs:            slippage=0.5 pips/side (pip=0.01)  cost_mult=1.0x
+
+Detected FVGs:    2,227
+Entered FVGs:     2,161
+Score quartile cutoffs (entered): Q1=0.133  median=0.214  Q3=0.347
+
+PRIMARY (Q4-only) AND BASELINES
+------------------------------------------------------------------------------
+  Q4 (primary)   n= 475  win= 34.9%  avgR=-0.121  PF= 0.84  DD=33.90%  Sharpe=-5.89  $=-28,684
+  Q1 (sanity)    n= 392  win= 31.9%  avgR=-0.265  PF= 0.68  DD=51.76%  Sharpe=-11.82  $=-51,998
+  All FVGs       n=1190  win= 34.0%  avgR=-0.164  PF= 0.79  DD=101.75%  Sharpe=-7.69  $=-97,869
+  All random     n= 987  win= 25.6%  avgR=-0.418  PF= 0.52  DD=209.57%  Sharpe=-23.50  $=-206,491
+
+Diagnostics (cand / taken / overlap / unfillable):
+  Q4               541 /   475 /    66 /     0
+  Q1               541 /   392 /   149 /     0
+  All             2161 /  1190 /   971 /     0
+  Rand            2046 /   987 /  1059 /     0
+
+Q4 EXIT-REASON BREAKDOWN
+------------------------------------------------------------------------------
+  TP    :  159   SL    :  309   TIME  :    7   LONG  :  229   SHORT :  246
+  Avg bars held       : 5.0
+  Longest loss streak : 11
+
+COST STRESS TEST (Q4 at varying cost multipliers)
+------------------------------------------------------------------------------
+  cost x0.0      n= 475  win= 34.9%  avgR=+0.030  PF= 1.05  DD=13.08%  Sharpe= 1.48  $=+7,171
+  cost x1.0      n= 475  win= 34.9%  avgR=-0.121  PF= 0.84  DD=33.90%  Sharpe=-5.89  $=-28,684
+  cost x2.0      n= 475  win= 34.7%  avgR=-0.272  PF= 0.68  DD=66.88%  Sharpe=-13.13  $=-64,539
+
+SL / TP GRID (Q4)
+------------------------------------------------------------------------------
+  SL0.5/TP1.5    n= 498  win= 27.7%  avgR=-0.196  PF= 0.79  DD=53.94%  Sharpe=-11.41  $=-48,893
+  SL1.0/TP2.0    n= 475  win= 34.9%  avgR=-0.121  PF= 0.84  DD=33.90%  Sharpe=-5.89  $=-28,684
+  SL1.5/TP3.0    n= 412  win= 37.6%  avgR=-0.059  PF= 0.91  DD=30.80%  Sharpe=-2.04  $=-12,079
+
+ACCEPTANCE GATES (Phase 1 -> production-track validation)
+------------------------------------------------------------------------------
+  n_trades >= 100                  PASS  (475)
+  Q4 PF >= 1.4                     FAIL  (0.84)
+  Q4 max DD < 15%                  FAIL  (33.90%)
+  Q4 Sharpe >= 1.0                 FAIL  (-5.89)
+  Q4 still PF >= 1.0 at 2x cost    FAIL  (0.68)
+  Q4 PF > All AND Q1 PF            PASS  (Q4=0.84 All=0.79 Q1=0.68)
+
+VERDICT: REJECT. Sniff-test edge did not translate to a tradeable
+         signal under realistic execution. Likely causes:
+           * cost-to-edge ratio too high (small-gap FVGs eat spread)
+           * SL/TP geometry mis-specified (zone half-width vs ATR)
+           * Q4 sample is too small or too concentrated by session
+         Return to component analysis or change the SL/TP basis.
+==============================================================================

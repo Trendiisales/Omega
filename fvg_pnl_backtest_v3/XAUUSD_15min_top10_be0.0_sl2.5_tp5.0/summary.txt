@@ -1,0 +1,65 @@
+==============================================================================
+FVG P&L Backtest v3 - XAUUSD - 15min
+==============================================================================
+Window:           2025-09-01 -> 2025-12-01
+Reweighted score: {'w_gap_size': 1.5, 'w_displacement': 1.0, 'w_tick_volume': 1.0, 'w_trend_align': 0.0, 'w_age_decay': 0.0}
+Top pool:         top 10.0% of entered FVGs by score
+Risk:             SL=2.5xATR  TP=5.0xATR  BE=0.0xATR  time_stop=60 bars  risk=0.50%/trade  start_eq=$100,000
+Costs:            slippage=0.5 pips/side (pip=0.1)  cost_mult=1.0x
+
+Detected FVGs:    1,023
+Entered FVGs:     978
+Score cutoffs:    bot<=0.093  median=0.222  top>=0.478
+
+PRIMARY (TOP-pool) AND BASELINES
+------------------------------------------------------------------------------
+  Top 10%        n=  70  win= 42.9%  avgR=+0.142  PF= 1.27  DD= 4.63%  Sharpe=  2.90  $=+4,986
+  Bot 10%        n=  68  win= 29.4%  avgR=-0.249  PF= 0.65  DD= 8.37%  Sharpe= -6.37  $=-8,480
+  All FVGs       n= 181  win= 40.3%  avgR=+0.051  PF= 1.09  DD= 9.61%  Sharpe=  1.12  $=+4,649
+  All random     n= 196  win= 32.1%  avgR=-0.154  PF= 0.77  DD=18.84%  Sharpe= -3.92  $=-15,049
+
+Diagnostics (cand / taken / overlap / unfillable):
+  Top               98 /    70 /    27 /     1
+  Bot               98 /    68 /    29 /     1
+  All              978 /   181 /   795 /     2
+  Rand             916 /   196 /   718 /     2
+
+TOP-pool EXIT-REASON BREAKDOWN
+------------------------------------------------------------------------------
+  TP :   22   SL :   32   BE_SL :    0   TIME :   16   LONG :   34   SHORT :   36
+  BE armed : 0.0% of trades
+  Avg bars held       : 32.5
+  Longest loss streak : 5
+
+COST STRESS TEST (Top pool at varying cost multipliers)
+------------------------------------------------------------------------------
+  cost x0.0      n=  70  win= 42.9%  avgR=+0.185  PF= 1.36  DD= 4.17%  Sharpe=  3.76  $=+6,464
+  cost x1.0      n=  70  win= 42.9%  avgR=+0.142  PF= 1.27  DD= 4.63%  Sharpe=  2.90  $=+4,986
+  cost x2.0      n=  70  win= 42.9%  avgR=+0.100  PF= 1.18  DD= 5.13%  Sharpe=  2.04  $=+3,508
+
+BREAKEVEN GRID (Top pool, default SL/TP)
+------------------------------------------------------------------------------
+  BE off         n=  70  win= 42.9%  avgR=+0.142  PF= 1.27  DD= 4.63%  Sharpe=  2.90  $=+4,986
+  BE +1.0xATR    n=  91  win=  8.8%  avgR=-0.110  PF= 0.61  DD= 5.76%  Sharpe= -6.45  $=-5,001
+  BE +1.5xATR    n=  86  win= 16.3%  avgR=-0.024  PF= 0.92  DD= 4.66%  Sharpe= -0.92  $=-1,043
+
+SL / TP GRID (Top pool, current BE setting)
+------------------------------------------------------------------------------
+  SL0.5/TP1.5    n=  98  win= 28.6%  avgR=-0.072  PF= 0.92  DD=11.58%  Sharpe= -3.84  $=-3,506
+  SL1.0/TP2.0    n=  97  win= 41.2%  avgR=+0.130  PF= 1.20  DD= 6.88%  Sharpe=  4.90  $=+6,312
+  SL1.5/TP3.0    n=  88  win= 38.6%  avgR=+0.069  PF= 1.11  DD= 4.72%  Sharpe=  1.97  $=+3,053
+  SL2.0/TP4.0    n=  77  win= 36.4%  avgR=-0.016  PF= 0.98  DD= 5.77%  Sharpe= -0.36  $=-609
+  SL2.5/TP5.0    n=  70  win= 42.9%  avgR=+0.142  PF= 1.27  DD= 4.63%  Sharpe=  2.90  $=+4,986
+
+ACCEPTANCE GATES (Phase 1 -> production-track validation)
+------------------------------------------------------------------------------
+  n_trades >= 100                      FAIL  (70)
+  Top PF >= 1.4                        FAIL  (1.27)
+  Top max DD < 15%                     PASS  (4.63%)
+  Top Sharpe >= 1.0                    PASS  (2.90)
+  Top still PF >= 1.0 at 2x cost       PASS  (1.18)
+  Top PF > All AND Bot                 PASS  (Top=1.27 All=1.09 Bot=0.65)
+
+VERDICT: REJECT for this configuration. Check the breakeven and
+         SL/TP grids - they show where the surface peaks.
+==============================================================================

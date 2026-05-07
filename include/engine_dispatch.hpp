@@ -8,19 +8,21 @@
 // =============================================================================
 // PURPOSE
 // =============================================================================
-// Three threads currently mutate engine state with no synchronization:
+// Two threads currently mutate engine state with no synchronization:
 //
 //   1. FIX quote thread (dispatch_fix W/X handler)        -> on_tick(...)
-//   2. cTrader depth thread (on_depth_event -> on_tick_fn)-> on_tick(...)
-//   3. FIX trade thread (trade_loop ttype=="8")           -> handle_execution_report(...)
+//   2. FIX trade thread (trade_loop ttype=="8")           -> handle_execution_report(...)
 //
-// The 500ms "ctrader_depth_is_live" check in fix_dispatch.hpp is NOT a
-// synchronization primitive -- it is a price-source preference. During the
-// stale->fresh transition window it allows both threads to enter on_tick()
-// simultaneously. When that happens, the per-tick std::deque/std::vector/
-// std::function operations inside the four portfolio engines (Tsmom,
-// Donchian, EmaPullback, TrendRider) and the bracket trend state corrupt the
-// segment-heap free list, manifesting as the recurring 0xc0000374 crash at
+// (Historical: a third producer -- the cTrader Open API depth thread -- also
+// posted ticks here. It was retired at S13 2026-05-08 along with the rest of
+// the cTrader surface; FIX 264=0 owns L2 now.)
+//
+// Even with one tick producer remaining, the dispatch worker is still useful:
+// it serialises FIX W/X (quote) vs FIX trade ttype=="8" (exec report) so that
+// per-tick std::deque/std::vector/std::function operations inside the four
+// portfolio engines (Tsmom, Donchian, EmaPullback, TrendRider) and the bracket
+// trend state never run concurrently with execution-report processing. That
+// was the path that produced the 0xc0000374 segment-heap crash at
 // ntdll +0x103e89.
 //
 // The fix is to enforce the "engines are single-threaded" assumption that the

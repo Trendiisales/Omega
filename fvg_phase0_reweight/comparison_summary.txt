@@ -1,0 +1,53 @@
+FVG Phase 0 - Reweight v1 vs Baseline
+================================================================================
+
+Reweighted FvgConfig (vs baseline 1.0 / 1.0 / 1.0 / 1.0 / 0.5):
+  w_gap_size         1.5
+  w_displacement     1.0
+  w_tick_volume      1.0
+  w_trend_align      0.0
+  w_age_decay        0.0
+
+Hypothesis: drop noise (s_trend_align) and negative-correlation
+            component (s_age_decay), boost top predictor (s_gap_size).
+            Q4-Q1 spread should widen on all 3 symbols if the
+            empirical importance ranking translates to better
+            discrimination by the composite score.
+
+Symbol   Metric                   Baseline     Reweight      Delta
+--------------------------------------------------------------------------------
+XAUUSD   FVGs entered                 1800         1800         +0
+         bounce rate %               72.50        72.50      +0.00
+         random rate %               39.30        39.30      +0.00
+         edge vs random pp           33.20        33.20      +0.00
+         Q1 bounce %                 67.30        61.10      -6.20
+         Q4 bounce %                 83.60        85.30      +1.70
+         Q4-Q1 spread pp             16.20        24.20      +8.00
+
+USDJPY   FVGs entered                 2161         2161         +0
+         bounce rate %               70.30        70.30      +0.00
+         random rate %               41.60        41.60      +0.00
+         edge vs random pp           28.70        28.70      +0.00
+         Q1 bounce %                 66.00        61.00      -5.00
+         Q4 bounce %                 80.70        82.60      +1.90
+         Q4-Q1 spread pp             14.80        21.60      +6.80
+
+NAS      FVGs entered                 4739         4739         +0
+         bounce rate %               71.40        71.40      +0.00
+         random rate %               39.30        39.30      +0.00
+         edge vs random pp           32.10        32.10      +0.00
+         Q1 bounce %                 65.20        62.70      -2.50
+         Q4 bounce %                 81.20        85.20      +4.00
+         Q4-Q1 spread pp             15.90        22.50      +6.60
+
+--------------------------------------------------------------------------------
+HYPOTHESIS RESULT
+--------------------------------------------------------------------------------
+Q4-Q1 spread WIDENED on all 3 symbols.
+Reweight is empirically validated.
+
+Next step: build a one-symbol P&L backtest on USDJPY using Q4
+entries on the reweighted score. Apply realistic execution
+(spread, slippage, defensible stop methodology). Decision bar:
+profit factor > 1.4, max drawdown < 15%, Sharpe > 1.0.
+

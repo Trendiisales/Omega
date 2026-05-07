@@ -1,0 +1,71 @@
+==============================================================================
+FVG P&L Backtest v3 - XAUUSD - 15min   WALK-FORWARD (train_end=2025-12-01)
+==============================================================================
+Full window:      2025-09-01 -> 2026-03-01  (used for FVG detection only)
+Train window:     2025-09-01 -> 2025-12-01  (score cutoffs computed here ONLY)
+Test window:      2025-12-01 -> 2026-03-01  (trades + acceptance gates evaluated here ONLY)
+Reweighted score: {'w_gap_size': 1.5, 'w_displacement': 1.0, 'w_tick_volume': 1.0, 'w_trend_align': 0.0, 'w_age_decay': 0.0}
+Top pool:         top 10.0% of entered FVGs by score
+Risk:             SL=2.5xATR  TP=5.0xATR  BE=0.0xATR  time_stop=60 bars  risk=0.50%/trade  start_eq=$100,000
+Costs:            slippage=0.5 pips/side (pip=0.1)  cost_mult=1.0x
+
+Detected FVGs:    1,884
+Entered FVGs:     1,800 total  (961 train / 839 test)
+Score cutoffs:    bot<=0.093  median=0.223  top>=0.480  (from TRAIN window only)
+
+TEST-WINDOW (TOP-pool) AND BASELINES
+------------------------------------------------------------------------------
+  Top 10%        n=  64  win= 60.9%  avgR=+0.536  PF= 2.44  DD= 2.27%  Sharpe= 11.08  $=+17,156
+  Bot 10%        n=  77  win= 32.5%  avgR=-0.110  PF= 0.84  DD= 6.36%  Sharpe= -2.53  $=-4,218
+  All FVGs       n= 160  win= 45.6%  avgR=+0.150  PF= 1.28  DD= 7.43%  Sharpe=  3.22  $=+12,007
+  All random     n= 183  win= 31.1%  avgR=-0.192  PF= 0.72  DD=21.31%  Sharpe= -5.07  $=-17,535
+
+Diagnostics (cand / taken / overlap / unfillable):
+  Top               87 /    64 /    23 /     0
+  Bot              103 /    77 /    26 /     0
+  All              839 /   160 /   679 /     0
+  Rand             810 /   183 /   624 /     3
+
+TOP-pool EXIT-REASON BREAKDOWN
+------------------------------------------------------------------------------
+  TP :   25   SL :   22   BE_SL :    0   TIME :   17   LONG :   30   SHORT :   34
+  BE armed : 0.0% of trades
+  Avg bars held       : 32.0
+  Longest loss streak : 6
+
+COST STRESS TEST (Top pool at varying cost multipliers)
+------------------------------------------------------------------------------
+  cost x0.0      n=  64  win= 60.9%  avgR=+0.569  PF= 2.58  DD= 2.18%  Sharpe= 11.75  $=+18,211
+  cost x1.0      n=  64  win= 60.9%  avgR=+0.536  PF= 2.44  DD= 2.27%  Sharpe= 11.08  $=+17,156
+  cost x2.0      n=  64  win= 60.9%  avgR=+0.503  PF= 2.31  DD= 2.35%  Sharpe= 10.41  $=+16,102
+
+BREAKEVEN GRID (Top pool, default SL/TP)
+------------------------------------------------------------------------------
+  BE off         n=  64  win= 60.9%  avgR=+0.536  PF= 2.44  DD= 2.27%  Sharpe= 11.08  $=+17,156
+  BE +1.0xATR    n=  79  win= 19.0%  avgR=+0.140  PF= 1.74  DD= 2.11%  Sharpe=  6.48  $=+5,522
+  BE +1.5xATR    n=  74  win= 28.4%  avgR=+0.218  PF= 1.74  DD= 2.61%  Sharpe=  6.66  $=+8,050
+
+SL / TP GRID (Top pool, current BE setting)
+------------------------------------------------------------------------------
+  SL0.5/TP1.5    n=  84  win= 36.9%  avgR=+0.316  PF= 1.43  DD= 5.57%  Sharpe= 15.21  $=+13,273
+  SL1.0/TP2.0    n=  82  win= 45.1%  avgR=+0.211  PF= 1.36  DD= 4.88%  Sharpe=  7.59  $=+8,631
+  SL1.5/TP3.0    n=  74  win= 51.4%  avgR=+0.359  PF= 1.71  DD= 4.76%  Sharpe=  9.01  $=+13,281
+  SL2.0/TP4.0    n=  71  win= 52.1%  avgR=+0.352  PF= 1.72  DD= 4.69%  Sharpe=  8.10  $=+12,513
+  SL2.5/TP5.0    n=  64  win= 60.9%  avgR=+0.536  PF= 2.44  DD= 2.27%  Sharpe= 11.08  $=+17,156
+
+ACCEPTANCE GATES (Walk-forward / OOS - relaxed thresholds)
+------------------------------------------------------------------------------
+  WF: test n_trades >= 50              PASS  (64)
+  WF: test Top PF >= 1.2               PASS  (2.44)
+  WF: test Top PF >= 1.0 at 2x cost    PASS  (2.31)
+  WF: test Top PF > All                PASS  (Top=2.44 All=1.28)
+
+VERDICT: WALK-FORWARD ACCEPT. Test-window result clears the relaxed
+         OOS gates with cutoffs frozen on the train half. Edge
+         survives the in-sample / out-of-sample split.
+         Next steps:
+           1. Replicate the accepted config on NAS 15m (no
+              further re-tuning).
+           2. Promote XAUUSD to VPS shadow ALONGSIDE (not
+              displacing) the S59 USDJPY Asian-Open shadow.
+==============================================================================

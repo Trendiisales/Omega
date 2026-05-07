@@ -127,7 +127,7 @@ static void build_id_map() {
 //   depth_supports_long/short() -- enough liquidity to fill our size
 //   is_sweep_long/short()       -- tick volume exceeds L1 size (FIX only)
 //
-// Stateful signals (need previous snapshot -- in CTDepthBook, CTraderDepthClient.hpp):
+// Stateful signals (need previous snapshot -- maintained alongside FIX 264=0 dispatch since S13):
 //   queue_pull_up()      -- ask L1 shrank >50% → sellers pulled → up impulse
 //   queue_pull_down()    -- bid L1 shrank >50% → buyers pulled → down impulse
 //   pull_ratio()         -- total book volume shrank >35% → thin book alert

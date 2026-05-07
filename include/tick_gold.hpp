@@ -333,9 +333,11 @@ static void on_tick_gold(
         // Trail block: 30s after same-direction close, check if this signal
         // would re-enter the same direction. Allow if direction differs (reversal).
         const bool gs_trail_dir_match = gs_trail_blocked;
-        // g_feed_stale_xauusd is set by CTraderDepthClient starvation watchdog.
-        // IntradaySeasonality fired twice into a dead feed (21:00-21:40 UTC 2026-04-13)
-        // because GoldStack had no feed-liveness check. Now all GoldStack entries
+        // g_feed_stale_xauusd is dormant since S13 cTrader cull (2026-05-08) -- the
+        // CTraderDepthClient starvation watchdog that wrote it has been removed.
+        // The flag now permanently reads false, which is correct: FIX 264=0 owns
+        // L2, and FIX session keepalive surfaces feed loss directly. Kept as a
+        // gate input so the existing IntradaySeasonality plumbing stays intact.
         const bool gs_feed_ok = !g_feed_stale_xauusd.load(std::memory_order_relaxed);
         // GoldStack now does its own regime filtering internally.
         const bool stack_enter_effective = gs_feed_ok
@@ -963,11 +965,11 @@ static void on_tick_gold(
     g_corr_matrix.on_price("XAUUSD", xau_mid);
 
     // -- L2 tick logger -- UNCONDITIONAL, every XAUUSD tick ---------------
-    // the logger also stopped, meaning we had ZERO L2 data saved on days
-    // when L2 was supposedly "dead". This is the fix.
-    //
-    // Logs ALL L2 data regardless of engine state: depth levels, bid/ask vol,
-    // event count from CTraderDepthClient, and watchdog dead flag.
+    // Logs the FIX-fed L2 imbalance and core OHLC fields. Historical
+    // depth/event-count columns are kept in the row layout (zeros) so that
+    // appending to today's CSV from a prior binary run does not corrupt the
+    // schema. cTrader-derived fields (raw_bid/raw_ask, depth_events_total,
+    // micro_edge, watchdog_dead) are ALL zero since 2026-05-08 (S13).
     // Daily rotating CSV: C:\Omega\logs\l2_ticks_XAUUSD_YYYY-MM-DD.csv
     // 2026-04-22: renamed from l2_ticks_YYYY-MM-DD.csv (no symbol) to match
     // the new SP/NQ logger naming. Also added 'mid' as the 2nd column so
@@ -1006,17 +1008,18 @@ static void on_tick_gold(
             s_l2_day_unc = tm_l2_unc.tm_yday;
         }
         if (s_l2f_unc) {
-            // Read raw bid/ask counts directly from AtomicL2 -- these are the full
-            // cTrader DOM counts BEFORE the 5-level cap in to_l2book().
-            // This is real data. depth_bid_levels = raw_bid from cTrader DOM.
-            const int    l2_bid_lvls  = g_l2_gold.raw_bid.load(std::memory_order_relaxed);
-            const int    l2_ask_lvls  = g_l2_gold.raw_ask.load(std::memory_order_relaxed);
-            // Volume: cTrader sends sz_raw for each quote. Sum from raw counts * 1.0
-            // (since sz_raw=0 is substituted as 1.0 per level in to_l2book).
-            // Actual volume signal is not available from cTrader for XAUUSD.
-            // Log counts as proxy -- real directional signal is l2_imb (raw_imbalance).
-            const double l2_bvol_unc  = static_cast<double>(l2_bid_lvls);
-            const double l2_avol_unc  = static_cast<double>(l2_ask_lvls);
+            // 2026-05-08 (S13): cTrader-sourced columns ZEROED.
+            //   cTrader Open API was runtime-disabled 2026-04-29 and is being
+            //   culled in S9. The columns below previously read cTrader-only
+            //   atomics (raw_bid, raw_ask, depth_events_total, micro_edge) and
+            //   the cTrader feed-watchdog flag. Mirroring the SP/USTEC pattern
+            //   in on_tick.hpp (which has always written zeros for these),
+            //   we keep the 17-column layout for backward-compatible appends to
+            //   today's CSV but populate cTrader fields with 0. l2_imb stays
+            //   live -- it is sourced from g_macro_ctx.gold_l2_imbalance which
+            //   is FIX-fed via fix_dispatch.hpp since S8.
+            //
+            //   Hydrator only requires ts_ms, mid, bid, ask -- all preserved.
             const double vol_ratio_log = (g_gold_stack.base_vol_pct() > 0.0)
                 ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct() : 0.0;
             // S14 fix 2026-04-24: restore fprintf row-write. S19 Stage 1B (a199bec)
@@ -1028,16 +1031,15 @@ static void on_tick_gold(
                 "%d,%d,%llu,"
                 "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
                 (long long)now_ms_g, xau_mid, bid, ask,
-                g_macro_ctx.gold_l2_imbalance,
-                l2_bvol_unc, l2_avol_unc,
-                l2_bid_lvls, l2_ask_lvls,
-                (unsigned long long)g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed),
-                (int)g_l2_watchdog_dead.load(std::memory_order_relaxed),
+                g_macro_ctx.gold_l2_imbalance,            // FIX-fed (S8 fix)
+                0.0, 0.0,                                 // l2_bid_vol, l2_ask_vol -- cTrader, zeroed
+                0, 0, (unsigned long long)0,              // depth_*_levels, depth_events_total -- cTrader, zeroed
+                0,                                        // watchdog_dead -- cTrader watchdog, zeroed
                 vol_ratio_log,
                 (int)gold_sdec.regime,
                 g_vpin.warmed() ? g_vpin.vpin() : 0.0,
-                0,
-                g_l2_gold.micro_edge.load(std::memory_order_relaxed),
+                0,                                        // has_pos placeholder (legacy 0)
+                0.0,                                      // micro_edge -- cTrader microstructure, zeroed
                 static_cast<double>(g_gold_stack.ewm_drift()));
             fflush(s_l2f_unc);
 
@@ -2257,8 +2259,11 @@ static void on_tick_gold(
             g_macro_ctx.pdl,
             gf_atr_gate,
             g_macro_ctx.gold_l2_imbalance,
-            g_l2_gold.raw_bid.load(std::memory_order_relaxed),
-            g_l2_gold.raw_ask.load(std::memory_order_relaxed),
+            // S13 cTrader cull 2026-05-08: AtomicL2::{raw_bid,raw_ask} removed.
+            // Pass literal 0,0 -- PDHLReversionEngine treats these as auxiliary
+            // signals; live signal is gold_l2_imbalance (FIX-fed since S8).
+            // Engine signature cleanup (drop these two args entirely) deferred.
+            0, 0,
             g_macro_ctx.gold_l2_real,
             static_cast<double>(g_gold_stack.ewm_drift()),
             g_macro_ctx.session_slot,

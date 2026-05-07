@@ -1388,12 +1388,9 @@ function Invoke-Deploy {
     # Truncate latest.log
     if (Test-Path $LatestLog) { Clear-Content $LatestLog -ErrorAction SilentlyContinue }
 
-    # Delete poisoned bar_failed file (recreated clean on first start)
-    $barFailedFile = "$OmegaDir\logs\ctrader_bar_failed.txt"
-    if (Test-Path $barFailedFile) {
-        Remove-Item $barFailedFile -Force -ErrorAction SilentlyContinue
-        Write-Host "  [OK] Deleted ctrader_bar_failed.txt (will be recreated clean)" -ForegroundColor Green
-    }
+    # cTrader bar_failed cleanup removed S13 2026-05-08 -- cTrader Open API
+    # surface culled. Any leftover ctrader_bar_failed.txt from a pre-S13 build
+    # is harmless (no code reads it any more).
 
     Rotate-ServiceLogs
 

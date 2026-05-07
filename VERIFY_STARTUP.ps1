@@ -25,7 +25,7 @@
 #    in_dead_zone  -- must be 0
 #    VIX level     -- confirms VIX.F tick arrived before first entry
 #    Session slot  -- shows what session gold thinks it's in
-#    L2 live       -- ctrader_live=1 confirms book feed connected
+#    L2 live       -- l2_live=1 confirms FIX 264=0 book feed delivering updates
 #    Latency       -- RTTp95 and cap_ok status
 #    Gate blocks   -- lists any gate blocks seen in first 45s
 #    First signal  -- shows first engine signal if any fires
@@ -463,7 +463,7 @@ function Add-Result {
 # diagnostic previously reported these as FAIL ("STALE 243s", "CORRUPT
 # flat/holiday state") which created noise on every weekend restart.
 #
-# XAUUSD (BlackBull / cTrader) schedule:
+# XAUUSD (BlackBull FIX) schedule:
 #   - Closes approximately Fri 21:00 UTC (22:00-23:00 NZ DST)
 #   - Reopens approximately Sun 22:00 UTC (10:00-11:00 NZ Mon morning)
 # Indices (US500, USTEC) follow similar CME weekend maintenance windows.
@@ -616,33 +616,19 @@ if ($lastBrk) {
     Add-Result "Session/Entry State" "INFO" "No BRK-DIAG lines yet" ""
 }
 
-# --- CHECK 8: L2 / cTrader live feed -----------------------------------------
-# L2-STATUS fires every 60s -- outside the 45s VERIFY window. Use CTRADER-STATUS
-# which fires at the 60s diagnostic mark, or CTRADER-EVTS which fires even earlier.
-# Also accept CTRADER-BOOK (first 10 depth events logged at startup).
-$l2StatusLine  = Find-Last "L2-STATUS"
-$ctStatusLine  = Find-Last "CTRADER-STATUS"
-$ctEvtsLine    = Find-Last "CTRADER-EVTS.*XAUUSD="
-$ctBookLine    = Find-Last "CTRADER-BOOK.*XAUUSD"
-$ctActiveLine  = Find-Last "CTRADER.*Depth feed ACTIVE"
-
-if ($l2StatusLine -and $l2StatusLine -match "ctrader_live=1") {
-    $evts = if ($l2StatusLine -match "events=([0-9]+)") { $Matches[1] } else { "?" }
-    Add-Result "L2 / cTrader Feed" "PASS" "ctrader_live=1 events=$evts" $l2StatusLine.Trim()
-} elseif ($l2StatusLine -and $l2StatusLine -match "ctrader_live=0") {
-    Add-Result "L2 / cTrader Feed" "FAIL" "ctrader_live=0" "cTrader not connected -- check API credentials."
-} elseif ($ctStatusLine) {
-    $evts = if ($ctStatusLine -match "events_total=([0-9]+)") { $Matches[1] } else { "?" }
-    Add-Result "L2 / cTrader Feed" "PASS" "cTrader active events_total=$evts" $ctStatusLine.Trim()
-} elseif ($ctEvtsLine) {
-    $xauEvts = if ($ctEvtsLine -match "XAUUSD=([0-9]+)") { $Matches[1] } else { "?" }
-    Add-Result "L2 / cTrader Feed" "PASS" "XAUUSD depth events=$xauEvts this minute" $ctEvtsLine.Trim()
-} elseif ($ctBookLine) {
-    Add-Result "L2 / cTrader Feed" "PASS" "XAUUSD depth book received" $ctBookLine.Trim()
-} elseif ($ctActiveLine) {
-    Add-Result "L2 / cTrader Feed" "PASS" "cTrader depth feed ACTIVE" $ctActiveLine.Trim()
+# --- CHECK 8: L2 feed (FIX 264=0) --------------------------------------------
+# S13 cTrader cull 2026-05-08: L2 source flipped from cTrader Open API to FIX
+# 264=0. The [L2-STATUS] line in on_tick.hpp emits l2_live=<0|1> + gold_age_ms.
+# CTRADER-STATUS / CTRADER-EVTS / CTRADER-BOOK / CTRADER-L2-CHECK / "cTrader
+# depth feed ACTIVE" are dead log tags now -- never check for them.
+$l2StatusLine = Find-Last "L2-STATUS"
+if ($l2StatusLine -and $l2StatusLine -match "l2_live=1") {
+    $age = if ($l2StatusLine -match "gold_age_ms=([0-9]+)") { $Matches[1] } else { "?" }
+    Add-Result "L2 Feed (FIX 264=0)" "PASS" "l2_live=1 gold_age_ms=$age" $l2StatusLine.Trim()
+} elseif ($l2StatusLine -and $l2StatusLine -match "l2_live=0") {
+    Add-Result "L2 Feed (FIX 264=0)" "FAIL" "l2_live=0" "FIX 264=0 not delivering L2 to AtomicL2 dispatch -- check fix_dispatch.hpp wiring."
 } else {
-    Add-Result "L2 / cTrader Feed" "INFO" "No cTrader depth events in first ${WaitSec}s" "cTrader connecting -- check log for CTRADER-EVTS within 60s. If still missing after 2min, check ctid=43014358."
+    Add-Result "L2 Feed (FIX 264=0)" "INFO" "No L2-STATUS yet" "L2-STATUS fires every 60s -- check again after the next interval."
 }
 
 # --- CHECK 8b: L2 tick CSV freshness + imbalance verification ----------------
@@ -689,11 +675,11 @@ if (-not (Test-Path $l2CsvFile_XAU)) {
             Add-Result "L2 Tick CSV XAUUSD" "INFO" "age=${l2Age_XAU}s writing" "CSV writing -- no rows yet. Check again in 30s."
         } elseif ($l2NeutralCount_XAU -eq $l2TotalCount_XAU) {
             Add-Result "L2 Tick CSV XAUUSD" "WARN" "ALL NEUTRAL last $l2TotalCount_XAU rows imb=$([math]::Round($l2LastImb_XAU,3))" `
-                "imbalance=0.500 all rows. Check [CTRADER-L2-CHECK] lines in log for bid_lvls/ask_lvls. If bid_lvls==ask_lvls all day, DOM is genuinely flat. If bid_lvls+ask_lvls=0, cTrader not delivering quotes."
+                "imbalance=0.500 all rows. FIX 264=0 may be delivering equal bid/ask sizes (genuinely flat DOM) or fix_dispatch.hpp may be skipping the AtomicL2 write."
         } else {
             $l2NonNeutral_XAU = $l2TotalCount_XAU - $l2NeutralCount_XAU
             Add-Result "L2 Tick CSV XAUUSD" "PASS" "age=${l2Age_XAU}s imb=$([math]::Round($l2LastImb_XAU,3)) real=$l2NonNeutral_XAU/$l2TotalCount_XAU" `
-                "L2 imbalance_level() producing directional values from cTrader DOM."
+                "L2 imbalance producing directional values from FIX 264=0."
         }
     }
 }
@@ -717,7 +703,7 @@ if (-not (Test-Path $l2CsvFile_SP)) {
         } else {
             $l2FileSize_SP = (Get-Item $l2CsvFile_SP).Length
             Add-Result "L2 Tick CSV US500" "PASS" "age=${l2Age_SP}s rows=$l2RowCount_SP size=${l2FileSize_SP}b" `
-                "US500 tick logger writing to disk. l2_imb is zeroed by design (no cTrader DOM for indices)."
+                "US500 tick logger writing to disk. l2_imb is zeroed by design (FIX 264=0 indices feed only top-of-book)."
         }
     }
 }
@@ -741,38 +727,16 @@ if (-not (Test-Path $l2CsvFile_NQ)) {
         } else {
             $l2FileSize_NQ = (Get-Item $l2CsvFile_NQ).Length
             Add-Result "L2 Tick CSV USTEC" "PASS" "age=${l2Age_NQ}s rows=$l2RowCount_NQ size=${l2FileSize_NQ}b" `
-                "USTEC tick logger writing to disk. l2_imb is zeroed by design (no cTrader DOM for indices)."
+                "USTEC tick logger writing to disk. l2_imb is zeroed by design (FIX 264=0 indices feed only top-of-book)."
         }
     }
 }
 
-# --- CHECK 8b2: CTRADER-L2-CHECK startup log ---------------------------------
-# [CTRADER-L2-CHECK] is logged on first 20 depth events per symbol.
-# It shows bid_lvls, ask_lvls, imb_level, imb_vol for each event.
-# If bid_lvls+ask_lvls > 0 and imb_level != imb_vol: level-count fix is active.
-# If bid_lvls=0 and ask_lvls=0: cTrader sent no quotes for XAUUSD yet.
-$l2CheckLine = Find-Last "CTRADER-L2-CHECK.*XAUUSD"
-if ($l2CheckLine) {
-    $bidLvls  = if ($l2CheckLine -match "bid_lvls=(\d+)")   { [int]$Matches[1] } else { -1 }
-    $askLvls  = if ($l2CheckLine -match "ask_lvls=(\d+)")   { [int]$Matches[1] } else { -1 }
-    $imbLevel = if ($l2CheckLine -match "imb_level=([\d.]+)") { [double]$Matches[1] } else { -1 }
-    $imbVol   = if ($l2CheckLine -match "imb_vol=([\d.]+)")   { [double]$Matches[1] } else { -1 }
-    if ($bidLvls -eq 0 -and $askLvls -eq 0) {
-        Add-Result "L2 Level-Count Check" "FAIL" "bid_lvls=0 ask_lvls=0" `
-            "cTrader sending no XAUUSD DOM quotes. Check ctid=43014358 depth subscription."
-    } elseif ($imbLevel -ge 0 -and $imbVol -ge 0 -and [Math]::Abs($imbLevel - $imbVol) -gt 0.001) {
-        Add-Result "L2 Level-Count Check" "PASS" "bid=$bidLvls ask=$askLvls imb_level=$imbLevel imb_vol=$imbVol" `
-            "imbalance_level() differs from imbalance() -- level-count fix active and working."
-    } elseif ($imbLevel -ge 0) {
-        Add-Result "L2 Level-Count Check" "PASS" "bid=$bidLvls ask=$askLvls imb_level=$imbLevel" `
-            "cTrader DOM levels flowing. imb_level=imb_vol likely means cTrader is sending real sizes today."
-    } else {
-        Add-Result "L2 Level-Count Check" "INFO" "line found but could not parse" $l2CheckLine.Trim()
-    }
-} else {
-    Add-Result "L2 Level-Count Check" "INFO" "No CTRADER-L2-CHECK yet" `
-        "Logged on first 20 depth events -- check again after 30s. If still missing, cTrader depth not subscribed."
-}
+# --- CHECK 8b2 REMOVED S13 2026-05-08 ----------------------------------------
+# CTRADER-L2-CHECK was emitted by CTraderDepthClient on the first 20 depth
+# events per symbol. The cTrader Open API surface was culled at S13, so this
+# log tag is dead. L2 health is now covered by CHECK 8 (L2-STATUS line) and
+# CHECK 8b (L2 tick CSV staleness + imbalance neutrality).
 
 # --- CHECK 8d REMOVED S14: GoldFlow blocking gates --------------------------
 # Engine culled S19 Stage 1B. GF-GATE-BLOCK ENGINE_CULLED, GFE-CONFIG,

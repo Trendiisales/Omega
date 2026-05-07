@@ -404,12 +404,8 @@ int main(int argc, char* argv[])
     gui_server.start(g_cfg.gui_port, g_cfg.ws_port, g_telemetry.snap());
     Sleep(200);  // let GUI threads print their startup lines before we continue
 
-    // ── Real DOM receiver -- connects to OmegaDomStreamer cBot on port 8765 ────
-    // Starts background thread that reads real XAUUSD DOM sizes from cTrader.
-    // Reconnects automatically if cBot restarts. No-op if cBot not running.
-    g_real_dom_receiver.start();
-    printf("[STARTUP] RealDomReceiver started -- connecting to cBot on localhost:8765\n");
-    fflush(stdout);
+    // RealDomReceiver removed S13 2026-05-08 -- OmegaDomStreamer cBot retired
+    // along with the rest of the cTrader Open API surface. FIX 264=0 owns L2.
 
     std::cout << "[OMEGA] GUI http://localhost:" << g_cfg.gui_port
               << "  WS:" << g_cfg.ws_port << "\n";
@@ -417,232 +413,11 @@ int main(int argc, char* argv[])
 
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
-    // ?? cTrader Open API depth feed (parallel to FIX -- read-only L2 data) ????
-    // Provides real multi-level order book (ProtoOADepthEvent) to replace
-    // FIX 264=1 single-level estimates. Runs in its own thread independently.
-    if (g_cfg.ctrader_depth_enabled && !g_cfg.ctrader_access_token.empty() && g_cfg.ctrader_ctid_account_id > 0) {  // disabled: broker hasn't enabled Open API
-        g_ctrader_depth.client_id           = "20304_NqeKlH3FEECOWqeP1JvoT2czQV9xkUHE7UXxfPU2dRuDXrZsIM";
-        g_ctrader_depth.client_secret       = "jeYwDPzelIYSoDppuhSZoRpaRi1q572FcBJ44dXNviuSEKxdB9";
-        g_ctrader_depth.access_token        = g_cfg.ctrader_access_token;
-        g_ctrader_depth.refresh_token       = g_cfg.ctrader_refresh_token;
-        g_ctrader_depth.ctid_account_id     = g_cfg.ctrader_ctid_account_id;
-        g_ctrader_depth.l2_mtx              = &g_l2_mtx;
-        g_ctrader_depth.l2_books            = &g_l2_books;
-        // Do NOT load bar_failed from disk on startup.
-        // The pre-seeded set below (XAUUSD:1 + live subs) is the correct blocked list.
-        // Loading from disk adds stale entries (XAUUSD:0, XAUUSD:5, XAUUSD:7) that
-        // permanently block the GetTickDataReq fallback -- causing vol_range=0.00 all day.
-        // Evidence: April 2 2026 -- every restart loaded stale failures, bars never seeded,
-        // GoldFlow (culled S19) ran blind all session.
-        g_ctrader_depth.bar_failed_path_    = log_root_dir() + "/ctrader_bar_failed.txt";
-        // load_bar_failed intentionally NOT called -- always start clean.
-        // ?? PRIMARY PRICE SOURCE: cTrader depth ? on_tick ????????????????????
-        // cTrader Open API streams every tick from the matching engine directly.
-        // FIX quote feed can lag 0.5-2pts in fast markets due to gateway batching.
-        // Proven: screenshot shows FIX=4643.54 while cTrader depth=4642.54 (1pt off).
-        // Solution: cTrader depth drives on_tick() as primary price source.
-        // FIX W/X handler calls on_tick() ONLY when cTrader depth is stale (>500ms).
-        g_ctrader_depth.on_tick_fn = [](const std::string& sym, double bid, double ask) noexcept {
-            // Track last cTrader tick time per symbol for FIX fallback staleness check
-            set_ctrader_tick_ms(sym, std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-            // 2026-05-01 race fix: do NOT call on_tick directly from the cTrader
-            // depth thread. Post to the engine dispatch queue so the single
-            // dispatch worker is the only thread that ever enters on_tick().
-            // Eliminates the cTrader-vs-FIX concurrent-on_tick race that was
-            // corrupting the segment heap (0xc0000374 at ntdll +0x103e89).
-            // See engine_dispatch.hpp for full design notes.
-            engine_dispatch_post_tick(sym, bid, ask);
-        };
-        // Stamp per-symbol tick time on EVERY depth event, not just when both sides present.
-        // This prevents gold_size_dead from firing during incremental book fill and
-        // triggering connection restarts that clear the book before L2 can stabilise.
-        g_ctrader_depth.on_live_tick_ms_fn = [](const std::string& sym) noexcept {
-            set_ctrader_tick_ms(sym, std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        };
-        // Register atomic write callback -- cTrader thread writes derived scalars
-        // (imbalance, microprice_bias, has_data) lock-free after each depth event.
-        // FIX tick reads these atomics directly with no mutex contention at all.
-        g_ctrader_depth.atomic_l2_write_fn = [](const std::string& sym, double imb, double mp, bool hd, int rbid, int rask, double me) noexcept {
-            AtomicL2* al = get_atomic_l2(sym);
-            if (!al) return;
-            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            al->imbalance.store(imb, std::memory_order_relaxed);
-            al->microprice_bias.store(mp, std::memory_order_relaxed);
-            al->has_data.store(hd, std::memory_order_relaxed);
-            al->raw_bid.store(rbid, std::memory_order_relaxed);
-            al->raw_ask.store(rask, std::memory_order_relaxed);
-            al->micro_edge.store(me, std::memory_order_relaxed);
-            al->last_update_ms.store(now_ms, std::memory_order_release);
-        };
-        // Subscribe depth only for actively traded symbols -- not passive cross-pairs.
-        // cTrader drops connection when too many depth streams are requested at once.
-        for (int i = 0; i < OMEGA_NSYMS; ++i)
-            g_ctrader_depth.symbol_whitelist.insert(OMEGA_SYMS[i].name);
-        for (const auto& e : g_ext_syms)
-            if (e.name[0] != 0) g_ctrader_depth.symbol_whitelist.insert(e.name);
-        // Alternate broker names for gold/silver -- broker may not use .F suffix
-        g_ctrader_depth.symbol_whitelist.insert("XAUUSD");
-        g_ctrader_depth.symbol_whitelist.insert("SILVER");
-        g_ctrader_depth.symbol_whitelist.insert("XAGUSD");
-        g_ctrader_depth.symbol_whitelist.insert("VIX");
-        g_ctrader_depth.dump_all_symbols = false;  // audit complete -- USOIL.F id=2632 confirmed
-        // Alias map: broker name ? internal name used by getImb/getBook
-        // XAUUSD is already the canonical name -- no alias needed
-
-        // ?? cTrader broker name ? internal name aliases ?????????????????????
-        // BlackBull may use different names in cTrader Open API vs FIX feed.
-        // All variants observed or expected mapped here.
-        // Rule: internal name = FIX name (OMEGA_SYMS/g_ext_syms) -- aliases
-        //       translate broker cTrader names to our internal names.
-        // US indices
-        g_ctrader_depth.name_alias["US500"]    = "US500.F";
-        g_ctrader_depth.name_alias["SP500"]    = "US500.F";
-        g_ctrader_depth.name_alias["SPX500"]   = "US500.F";
-        g_ctrader_depth.name_alias["USTEC"]    = "USTEC.F";
-        // NAS100 is NOT aliased to USTEC.F -- it is a separate cash instrument.
-        // The NBM engine runs on "NAS100" and needs its own on_tick() calls.
-        // USTEC.F (futures) and NAS100 (cash) have different prices.
-        g_ctrader_depth.name_alias["NASDAQ"]   = "USTEC.F";
-        g_ctrader_depth.name_alias["TECH100"]  = "USTEC.F";
-        g_ctrader_depth.name_alias["US30"]     = "DJ30.F";
-        g_ctrader_depth.name_alias["DJ30"]     = "DJ30.F";
-        g_ctrader_depth.name_alias["DOW30"]    = "DJ30.F";
-        g_ctrader_depth.name_alias["DOWJONES"] = "DJ30.F";
-        // Metals
-        g_ctrader_depth.name_alias["SILVER"]   = "XAGUSD";
-        g_ctrader_depth.name_alias["XAGUSD"]   = "XAGUSD";
-        // Oil -- USOIL.F id=2632 shows ~$102; may be Brent priced instrument
-        // Aliases cover all known BlackBull oil names until dump_all_symbols confirms
-        g_ctrader_depth.name_alias["USOIL"]    = "USOIL.F";
-        g_ctrader_depth.name_alias["WTI"]      = "USOIL.F";
-        g_ctrader_depth.name_alias["CRUDE"]    = "USOIL.F";
-        g_ctrader_depth.name_alias["OIL"]      = "USOIL.F";
-        g_ctrader_depth.name_alias["UKBRENT"]  = "BRENT";
-        g_ctrader_depth.name_alias["BRENT.F"]  = "BRENT";
-        // EU indices
-        g_ctrader_depth.name_alias["GER30"]    = "GER40";   // old broker name
-        g_ctrader_depth.name_alias["DAX"]      = "GER40";
-        g_ctrader_depth.name_alias["DAX40"]    = "GER40";
-        g_ctrader_depth.name_alias["FTSE100"]  = "UK100";
-        g_ctrader_depth.name_alias["FTSE"]     = "UK100";
-        g_ctrader_depth.name_alias["UK100"]    = "UK100";
-        g_ctrader_depth.name_alias["STOXX50"]  = "ESTX50";
-        g_ctrader_depth.name_alias["SX5E"]     = "ESTX50";
-        g_ctrader_depth.name_alias["EUSTX50"]  = "ESTX50";
-        // FX
-        g_ctrader_depth.name_alias["EUR/USD"]  = "EURUSD";
-        g_ctrader_depth.name_alias["GBP/USD"]  = "GBPUSD";
-        g_ctrader_depth.name_alias["AUD/USD"]  = "AUDUSD";
-        g_ctrader_depth.name_alias["NZD/USD"]  = "NZDUSD";
-        g_ctrader_depth.name_alias["USD/JPY"]  = "USDJPY";
-        // Other
-        g_ctrader_depth.name_alias["VIX"]      = "VIX.F";
-        g_ctrader_depth.name_alias["VOLX"]     = "VIX.F";
-
-        // ?? OHLC bar subscriptions -- XAUUSD M1+M5 only ???????????????????
-        // XAUUSD spot id=41 (hardcoded, same as depth subscription).
-        // On startup: requests 200 M1 + 100 M5 historical bars, then subscribes
-        // live bar closes. Indicators (RSI, ATR, EMA, BB, swing, trend) are
-        // written to g_bars_gold atomically and read by GoldStack and XAUUSD engines.
-        //
-        // REMOVED: US500.F and USTEC.F bar subscriptions.
-        // ROOT CAUSE OF SESSION DESTRUCTION: BlackBull broker returns INVALID_REQUEST
-        // for trendbar requests on US500.F and USTEC.F (cash/futures index instruments).
-        // This causes read_one() to return rc=-1 (SSL connection drop) on EVERY reconnect,
-        // immediately after the depth feed becomes stable. Effect:
-        //   1. Reconnect cycle fires every 5s indefinitely
-        //   2. XAUUSD M1 bars never seed (interrupted before 52 bars load)
-        //   3. m1_ready=false -> Gates 3+4 inactive -> naked XAUUSD engine entries
-        //   4. At 02:39 this caused a full process shutdown, missing the 8-min uptrend
-        //
-        // Evidence from logs: every single reconnect shows exactly:
-        //   [CTRADER-BARS] USTEC.F history req period=1 count=200
-        //   [CTRADER] Error:  -- INVALID_REQUEST
-        //   [CTRADER] Connection error
-        //
-        // GER40 was removed earlier for the same reason (id=1899, same INVALID_REQUEST).
-        // US500.F and USTEC.F now use tick-based vol estimation (same as GER40 fallback).
-        // g_bars_sp and g_bars_nq remain allocated -- indicators just won't be seeded.
-        // Engines that read g_bars_sp/g_bars_nq already handle m1_ready=false gracefully.
-        g_ctrader_depth.bar_subscriptions["XAUUSD"]  = {41,   &g_bars_gold};
-        // Index bar subscriptions removed -- broker sends INVALID_REQUEST for all
-        // GetTrendbarsReq (pt=2137) calls on index symbols, dropping the TCP connection.
-        // g_ctrader_depth.bar_subscriptions["US500.F"] = {2642, &g_bars_sp};
-        // g_ctrader_depth.bar_subscriptions["USTEC.F"] = {2643, &g_bars_nq};
-        // g_ctrader_depth.bar_subscriptions["GER40"]   = {1899, &g_bars_ger};
-
-        // CRITICAL: Pre-seed bar_failed_reqs to permanently block GetTrendbarsReq (pt=2137).
-        // BlackBull cTrader rejects pt=2137 with INVALID_REQUEST for ALL symbols/periods,
-        // then sends a TCP RST which drops the live price feed connection.
-        // This is the root cause of 2000+ reconnects per day.
-        //
-        // Fix: mark ALL period=1 requests as "failed" before start() so they are
-        // skipped entirely. The dispatch loop routes them to GetTickDataReq (pt=2145)
-        // instead, which BlackBull serves correctly.
-        //
-        // The bar_subscriptions loop uses period sentinels:
-        //   period=1   -> was GetTrendbarsReq (pt=2137) -> NOW routed via tick fallback
-        //   period=105 -> GetTickDataReq for M5
-        //   period=107 -> GetTickDataReq for M15
-        // With period=1 now also using tick fallback, pt=2137 is NEVER sent.
-        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:1");        // block pt=2137 for XAUUSD M1
-        // Pre-block live trendbar subs -- BlackBull sends TCP RST on pt=2135
-        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:live:1");
-        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:live:5");
-        g_ctrader_depth.bar_failed_reqs.insert("XAUUSD:live:7");
-        g_ctrader_depth.save_bar_failed(g_ctrader_depth.bar_failed_path_);
-        std::cout << "[CTRADER] Pre-blocked trendbar reqs + live subs -- no crash loop\n";
-
-        // S52a 2026-05-04: BAR-HYDRATE / BAR-LOAD / WARMUP-SEED previously
-        // lived here. They have ZERO dependency on cTrader -- they read disk
-        // CSV/.dat files only -- so leaving them inside this gate caused the
-        // entire warmup to be skipped whenever cTrader was disabled by config.
-        // Relocated to the unconditional block immediately after
-        // init_engines(cfg_path) above. Search the file for "WARMUP --
-        // hydrate + load + seed" to find the new location.
-        g_ctrader_depth.start();
-        std::cout << "[CTRADER] Depth feed starting (ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
-
-        // ?? Symbol subscription cross-check ??????????????????????????????????
-        // Runs 5s after start() -- by then SymbolsListRes should have arrived
-        // and all bar/depth subscriptions resolved.
-        // Logs WARNING for any symbol that will fall back to FIX prices.
-        std::thread([&]() {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-            std::cout << "[CTRADER-AUDIT] Symbol subscription check:\n";
-            // Check primary symbols
-            for (int i = 0; i < OMEGA_NSYMS; ++i) {
-                const std::string& name = OMEGA_SYMS[i].name;
-                const bool has_ct = g_ctrader_depth.has_depth_subscription(name);
-                std::cout << "[CTRADER-AUDIT]   " << name
-                          << (has_ct ? " -> cTrader OK" : " -> *** FIX FALLBACK ONLY ***") << "\n";
-            }
-            // Check ext symbols
-            for (const auto& e : g_ext_syms) {
-                if (e.name[0] == 0) continue;
-                const bool has_ct = g_ctrader_depth.has_depth_subscription(e.name);
-                std::cout << "[CTRADER-AUDIT]   " << e.name
-                          << (has_ct ? " -> cTrader OK" : " -> *** FIX FALLBACK ONLY ***") << "\n";
-            }
-            std::cout.flush();
-        }).detach();
-    } else if (g_cfg.ctrader_depth_enabled) {
-        // S52 2026-05-01: section enabled but credentials incomplete -- this IS
-        //   a real problem worth flagging. Pre-S52 this branch fired with the
-        //   misleading "add [ctrader_api] to omega_config.ini" text even when
-        //   the section was present, just disabled.
-        std::cout << "[CTRADER] Depth feed disabled -- ctrader_api enabled but credentials incomplete "
-                  << "(token_len=" << g_cfg.ctrader_access_token.size()
-                  << " ctid=" << g_cfg.ctrader_ctid_account_id << ")\n";
-    } else {
-        // S52 2026-05-01: intentionally disabled in config. FIX 264=0 has been
-        //   delivering full L2 since 2026-04-20, making cTrader Open API
-        //   redundant. No action required from operator.
-        std::cout << "[CTRADER] Depth feed disabled by config (FIX 264=0 provides L2)\n";
-    }
+    // cTrader Open API depth init block REMOVED S13 2026-05-08.
+    // Source of truth: include/CTraderDepthClient.hpp (deleted in this commit).
+    // FIX 264=0 (full book) delivers multi-level L2 directly into the AtomicL2
+    // structs via fix_dispatch.hpp; no parallel SSL connection is required.
+    std::cout << "[OMEGA] cTrader Open API surface removed at S13 -- FIX 264=0 owns L2.\n";
 
 
     // ?? Engine dispatch worker -- 2026-05-01 race fix ?????????????????????????
@@ -705,31 +480,9 @@ int main(int argc, char* argv[])
                 hash == "unknown" ? "build system did not inject hash" : "verify against GitHub HEAD");
         }
 
-        // ── Check 2: Config loaded with cTrader credentials ───────────────
-        // S52 2026-05-01: skipped when cTrader is intentionally disabled.
-        //   FIX 264=0 has been delivering full L2 since 2026-04-20, so cTrader
-        //   Open API is redundant and was disabled in config on 2026-04-30.
-        //   Pre-S52 the cfg_ok test required ctrader_depth_enabled=true, so on
-        //   the disabled-by-config path this check FAILed and `return;`ed from
-        //   the verification thread, preventing Checks 3-N (mode, FIX feed,
-        //   regime, risk) from ever running. The post-fix behaviour: when
-        //   cTrader is enabled, enforce credential correctness as before; when
-        //   disabled, emit a [OK]-style note and continue to subsequent checks.
-        if (g_cfg.ctrader_depth_enabled) {
-            const bool cfg_ok = !g_cfg.ctrader_access_token.empty()
-                             && g_cfg.ctrader_ctid_account_id == 43014358;
-            print_check(cfg_ok, "Config: ctrader_api section",
-                cfg_ok ? ("ctid=" + std::to_string(g_cfg.ctrader_ctid_account_id))
-                       : "token_len=" + std::to_string(g_cfg.ctrader_access_token.size())
-                         + " ctid=" + std::to_string(g_cfg.ctrader_ctid_account_id));
-            if (!cfg_ok) {
-                write_status("FAIL: ctrader_api config missing or wrong ctid");
-                return;
-            }
-        } else {
-            print_check(true, "Config: ctrader_api disabled by config",
-                "FIX 264=0 provides L2 (cTrader redundant since 2026-04-20)");
-        }
+        // Check 2 removed S13 2026-05-08 -- cTrader Open API surface culled.
+        // [ctrader_api] config section + ctrader_* fields are gone, so there is
+        // nothing to verify here. FIX 264=0 health is still covered by Check 4.
 
         // ── Check 3: Mode is SHADOW ───────────────────────────────────────
         {
@@ -756,62 +509,30 @@ int main(int argc, char* argv[])
             }
         }
 
-        // ── Check 5: cTrader depth client connected ───────────────────────
-        // depth_active goes true once the SSL handshake + auth completes
-        {
-            bool ct_ok = false;
-            for (int i = 0; i < 60 && !ct_ok; ++i) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                ct_ok = g_ctrader_depth.depth_active.load();
-            }
-            print_check(ct_ok, "cTrader: depth client connected (ctid=43014358)",
-                ct_ok ? ("connected at " + std::to_string(elapsed()) + "s")
-                      : "not connected after 60s -- check token expiry / network");
-            if (!ct_ok) {
-                write_status("FAIL: cTrader depth not connected after 60s");
-                return;
-            }
-        }
+        // Checks 5 + 6 removed S13 2026-05-08 -- cTrader depth client culled.
+        //   FIX 264=0 (validated by Check 4) is the sole L2 source.
 
-        // ── Check 6: XAUUSD depth events flowing ─────────────────────────
-        // depth_events_total must be increasing -- the only reliable liveness signal.
-        // L2 watchdog uses depth_events_total (not imbalance value) as liveness check.
-        {
-            const uint64_t ev0 = g_ctrader_depth.depth_events_total.load();
-            std::this_thread::sleep_for(std::chrono::seconds(10));
-            const uint64_t ev1 = g_ctrader_depth.depth_events_total.load();
-            const bool events_ok = (ev1 > ev0);
-            const uint64_t xau_evts = ev1 - ev0;
-            print_check(events_ok, "cTrader: XAUUSD depth events flowing",
-                events_ok ? (std::to_string(xau_evts) + " events in 10s")
-                          : "depth_events_total not increasing -- feed stalled");
-            if (!events_ok) {
-                write_status("FAIL: cTrader depth events not increasing -- feed stalled");
-                return;
-            }
-        }
-
-        // ── Check 7: gold_l2_real flag set (DOM confirmed live) ───────────
-        // gold_l2_real = g_l2_gold.fresh(now, 3000) -- true when depth event
-        // arrived within last 3s. Confirms XAUUSD specifically is receiving events.
+        // ── Check 7 (rewired): gold_l2_real flag set (FIX 264=0 confirmed live) ──
+        // gold_l2_real = g_l2_gold.fresh(now, 3000) -- true when an L2 update
+        // arrived within the last 3s. After the S13 cull this is FIX 264=0
+        // dispatch (fix_dispatch.hpp) rather than the old cTrader thread.
         {
             bool l2_real_ok = false;
             for (int i = 0; i < 15 && !l2_real_ok; ++i) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 l2_real_ok = g_macro_ctx.gold_l2_real;
             }
-            const uint64_t total = g_ctrader_depth.depth_events_total.load();
-            const int rbid = g_l2_gold.raw_bid.load(std::memory_order_relaxed);
-            const int rask = g_l2_gold.raw_ask.load(std::memory_order_relaxed);
-            print_check(l2_real_ok, "cTrader: gold_l2_real flag live",
+            const int64_t now_ms_chk = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            const int64_t last_ms = g_l2_gold.last_update_ms.load(std::memory_order_relaxed);
+            const int64_t age_ms  = (last_ms > 0) ? (now_ms_chk - last_ms) : -1;
+            print_check(l2_real_ok, "L2: gold_l2_real flag live (FIX 264=0)",
                 l2_real_ok
-                    ? ("events_total=" + std::to_string(total)
-                       + " raw_bid=" + std::to_string(rbid)
-                       + " raw_ask=" + std::to_string(rask))
-                    : "gold_l2_real=false after 15s -- XAUUSD depth events not updating g_l2_gold");
+                    ? ("age_ms=" + std::to_string(age_ms))
+                    : "gold_l2_real=false after 15s -- FIX 264=0 not updating g_l2_gold");
             if (!l2_real_ok) {
-                // Not fatal -- entries blocked by L2-dead gate, trading degraded
-                std::cout << WARN << " Trading will be blocked by [L2-DEAD-BLOCK] until DOM recovers\n";
+                // Not fatal -- entries blocked by L2-dead gate, trading degraded.
+                std::cout << WARN << " Trading will be blocked by [L2-DEAD-BLOCK] until L2 recovers\n";
                 std::cout.flush();
             }
         }
@@ -833,208 +554,65 @@ int main(int argc, char* argv[])
         // ── Final status ──────────────────────────────────────────────────
         const bool l2_final = g_macro_ctx.gold_l2_real;
         if (l2_final) {
-            write_status("OK: all checks passed -- cTrader live, gold_l2_real=1, trading active");
+            write_status("OK: all checks passed -- FIX 264=0 live, gold_l2_real=1, trading active");
         } else {
-            write_status("WARN: cTrader connected but gold_l2_real=0 -- entries blocked until DOM recovers");
+            write_status("WARN: FIX feed up but gold_l2_real=0 -- entries blocked until L2 recovers");
         }
     }).detach();
 
     // =========================================================================
-    // L2 WATCHDOG THREAD
-    // =========================================================================
-    // cTrader L2 feed (ctid=43014358) is the BASIS of all L2-dependent engine
-    // functionality. Without L2 imbalance, L2-gated engines degrade to
-    // drift-only mode.
+    // L2 WATCHDOG THREAD removed S13 2026-05-08.
+    //   The watchdog read g_ctrader_depth.depth_events_total and wrote
+    //   g_l2_watchdog_dead -- both gone with the cTrader Open API surface cull.
+    //   FIX 264=0 staleness is detected by the diagnostic loop in
+    //   include/quote_loop.hpp using AtomicL2::last_update_ms; the L2 tick CSV
+    //   verifier in VERIFY_STARTUP.ps1 catches feed staleness from outside the
+    //   process. Position management (trail/SL) was always independent of the
+    //   watchdog and continues to run on every tick.
     //
-    // This watchdog:
-    //   1. Monitors L2 liveness every 30s (depth_events_total increasing)
-    //   2. Sets g_l2_watchdog_dead atomic if L2 has been dead > 120s
-    //   3. Writes C:\Omega\logs\L2_ALERT.txt immediately on failure
-    //   4. Logs [L2-WATCHDOG] DEAD/ALIVE to main log every 30s
-    //   5. On recovery: logs restoration and clears alert file
-    //
-    // L2-dependent engines check g_l2_watchdog_dead via per-engine enabled
-    // gates -- entries blocked when L2 is confirmed dead.
-    // Position management (trail/SL) continues regardless.
-    //
-    // IMMUTABLE: ctid=43014358 is the ONLY account that delivers L2 depth.
-    // DO NOT change ctid_trader_account_id in omega_config.ini.
+    // The 10-min periodic bar-state save block previously lived inside this
+    // thread. It is preserved as a dedicated thread below so warm-restart .dat
+    // snapshots keep refreshing even though the watchdog is gone.
     // =========================================================================
     std::thread([](){
-        const std::string alert_path = log_root_dir() + "/L2_ALERT.txt";
-        int64_t dead_since_ms    = 0;
-        bool    alert_written    = false;
-        bool    was_alive        = false;
-        static constexpr int64_t DEAD_GRACE_MS   = 120000; // 2 min before declaring dead
-        static constexpr int64_t CHECK_INTERVAL  = 30000;  // check every 30s
-
-        // Wait for startup to complete before monitoring
+        // Wait for startup to complete before the first save attempt.
         std::this_thread::sleep_for(std::chrono::seconds(90));
-
         while (g_running.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(CHECK_INTERVAL));
+            std::this_thread::sleep_for(std::chrono::seconds(30));
             if (!g_running.load()) break;
-
-            const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-
-            // L2 liveness = depth_events_total increasing each 30s interval.
-            // cTrader ProtoOADepthEvent sends size_raw=0 for XAUUSD DOM quotes.
-            // imbalance_level() (level count) is used instead of imbalance() (volume),
-            // so 0.500 is valid neutral -- NOT an indicator of dead feed.
-            // The ONLY reliable liveness signal is events_total increasing.
-            static uint64_t s_last_event_count = 0;
-            const uint64_t cur_event_count = g_ctrader_depth.depth_events_total.load(std::memory_order_relaxed);
-            const bool events_flowing = (cur_event_count > s_last_event_count);
-            s_last_event_count = cur_event_count;
-
-            // Liveness = events_flowing ONLY.
-            // imbalance_level() produces 0.500 for genuinely neutral DOM (equal bid/ask
-            // levels from cTrader). Do NOT treat 0.500 as "dead" -- it is valid neutral.
-            // The ONLY reliable signal that cTrader is connected is depth_events_total
-            // increasing each 30s interval.
-            const double cur_imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-            const bool l2_alive = events_flowing;
-
-            // ── Periodic bar state save every 10 min ─────────────────────────
-            // Ensures restart is always warm even if clean shutdown signal is missed.
-            // save_indicators() skips flat/holiday/cold state automatically.
-            {
-                static int64_t s_last_bar_save_s = 0;
-                const int64_t now_s_save = static_cast<int64_t>(std::time(nullptr));
-                if (now_s_save - s_last_bar_save_s >= 600) {
-                    s_last_bar_save_s = now_s_save;
-                    const std::string bs = log_root_dir();
-                    g_bars_gold.m1 .save_indicators(bs + "/bars_gold_m1.dat");
-                    g_bars_gold.m5 .save_indicators(bs + "/bars_gold_m5.dat");
-                    g_bars_gold.m15.save_indicators(bs + "/bars_gold_m15.dat");
-                    g_bars_gold.h1 .save_indicators(bs + "/bars_gold_h1.dat");
-                    g_bars_gold.h4 .save_indicators(bs + "/bars_gold_h4.dat");
-                    g_bars_sp.m1   .save_indicators(bs + "/bars_sp_m1.dat");
-                    g_bars_nq.m1   .save_indicators(bs + "/bars_nq_m1.dat");
-                    // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
-                    g_minimal_h4_us30.save_state(bs + "/bars_us30_h4.dat");
-                    printf("[BAR-SAVE] Periodic save complete (every 10min)\n");
-                    fflush(stdout);
-                }
-            }
-
-            // Diagnostic every 30s -- always visible, confirms imbalance is moving
-            printf("[L2-WATCHDOG] events_total=%llu events_flowing=%d imb=%.4f alive=%d watchdog_dead=%d\n",
-                   (unsigned long long)cur_event_count,
-                   (int)events_flowing,
-                   cur_imb, (int)l2_alive,
-                   (int)g_l2_watchdog_dead.load(std::memory_order_relaxed));
-            fflush(stdout);
-
-            if (l2_alive) {
-                // L2 is flowing
-                if (!was_alive) {
-                    // Just recovered
-                    printf("[L2-WATCHDOG] ALIVE -- L2 depth flowing from ctid=43014358 events=%llu imb=%.3f\n",
-                           (unsigned long long)cur_event_count, cur_imb);
-                    fflush(stdout);
-                    // Clear alert file
-                    { std::ofstream f(alert_path); f << "OK\n"; }
-                    alert_written = false;
-                }
-                was_alive    = true;
-                dead_since_ms = 0;
-                g_l2_watchdog_dead.store(false, std::memory_order_relaxed);
-
-            } else {
-                // L2 not flowing
-                if (dead_since_ms == 0) dead_since_ms = now_ms;
-                const int64_t dead_ms = now_ms - dead_since_ms;
-
-                if (dead_ms >= DEAD_GRACE_MS) {
-                    // Confirmed dead -- gate engines
-                    g_l2_watchdog_dead.store(true, std::memory_order_relaxed);
-
-                    printf("[L2-WATCHDOG] *** DEAD *** cTrader depth from ctid=43014358 dead for %llds\n"
-                           "[L2-WATCHDOG] events_total=%llu imb=%.4f\n"
-                           "[L2-WATCHDOG] DIAGNOSIS: events_total not increasing => cTrader TCP disconnected\n"
-                           "[L2-WATCHDOG] DIAGNOSIS: imb value irrelevant when events=0 (no data flowing)\n"
-                           "[L2-WATCHDOG] L2 engines GATED. ACTION REQUIRED: restart Omega or check ctid=43014358\n",
-                           (long long)(dead_ms / 1000),
-                           (unsigned long long)cur_event_count,
-                           cur_imb);
-                    fflush(stdout);
-
-                    if (!alert_written) {
-                        std::ofstream f(alert_path);
-                        f << "L2_DEAD\n"
-                          << "dead_seconds=" << (dead_ms / 1000) << "\n"
-                          << "events_total=" << cur_event_count << "\n"
-                          << "imbalance=" << cur_imb << "\n"
-                          << "diagnosis=no_depth_events_from_ctid_43014358_TCP_dead_or_auth_failed\n"
-                          << "ctid=43014358 is the ONLY account with L2\n"
-                          << "action=restart_Omega_or_check_cTrader_Open_API_connection\n";
-                        alert_written = true;
-                        printf("[L2-WATCHDOG] Alert written: %s\n", alert_path.c_str());
-                        fflush(stdout);
-                    }
-                    was_alive = false;
-
-                } else {
-                    // Within grace period -- just log
-                    printf("[L2-WATCHDOG] L2 not flowing for %llds (grace=%llds) -- watching\n",
-                           (long long)(dead_ms / 1000), (long long)(DEAD_GRACE_MS / 1000));
-                    fflush(stdout);
-                }
+            static int64_t s_last_bar_save_s = 0;
+            const int64_t now_s_save = static_cast<int64_t>(std::time(nullptr));
+            if (now_s_save - s_last_bar_save_s >= 600) {
+                s_last_bar_save_s = now_s_save;
+                const std::string bs = log_root_dir();
+                g_bars_gold.m1 .save_indicators(bs + "/bars_gold_m1.dat");
+                g_bars_gold.m5 .save_indicators(bs + "/bars_gold_m5.dat");
+                g_bars_gold.m15.save_indicators(bs + "/bars_gold_m15.dat");
+                g_bars_gold.h1 .save_indicators(bs + "/bars_gold_h1.dat");
+                g_bars_gold.h4 .save_indicators(bs + "/bars_gold_h4.dat");
+                g_bars_sp.m1   .save_indicators(bs + "/bars_sp_m1.dat");
+                g_bars_nq.m1   .save_indicators(bs + "/bars_nq_m1.dat");
+                // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
+                g_minimal_h4_us30.save_state(bs + "/bars_us30_h4.dat");
+                printf("[BAR-SAVE] Periodic save complete (every 10min)\n");
+                fflush(stdout);
             }
         }
     }).detach();
     // =========================================================================
-    // Gate FIX thread launch on cTrader being live.
-    // cTrader L2 data WAS essential for supervisor regime classification and
-    // vol baseline warmup -- starting FIX before L2 flowed left the supervisor
-    // with stale l2_imb=0.500 which tipped to HIGH_RISK_NO_TRADE and blocked
-    // entries until the cooldown chain cleared. Since 2026-04-20, FIX 264=0
-    // delivers full L2 directly, so cTrader is redundant.
-    //
-    // S52 2026-05-01: when ctrader_depth_enabled=false (the post-2026-04-30
-    //   default) we skip the 45s wait entirely and start FIX immediately.
-    //   Pre-S52 every restart paid 45s of pointless wait on the disabled path
-    //   ("cTrader L2 not live after 45s -- starting FIX anyway").
-    if (g_cfg.ctrader_depth_enabled) {
-        const auto ct_wait_start = std::chrono::steady_clock::now();
-        bool ct_ready = false;
-        printf("[STARTUP] Waiting for cTrader L2 before starting FIX...\n");
-        fflush(stdout);
-        while (std::chrono::duration_cast<std::chrono::seconds>(
-                   std::chrono::steady_clock::now() - ct_wait_start).count() < 45) {
-            // cTrader is ONLY L2 source. Live = depth_active AND >10 events received.
-            // Do NOT check imbalance != 0.5 -- book fills incrementally from 0.5.
-            const bool depth_up2  = g_ctrader_depth.depth_active.load();
-            const uint64_t events = g_ctrader_depth.depth_events_total.load();
-            if (depth_up2 && events > 10) {
-                const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::steady_clock::now() - ct_wait_start).count();
-                printf("[STARTUP] cTrader L2 live after %llds (events=%llu) -- starting FIX\n",
-                       (long long)elapsed, (unsigned long long)events);
-                fflush(stdout);
-                ct_ready = true;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        }
-        if (!ct_ready) {
-            printf("[STARTUP] cTrader L2 not live after 45s -- starting FIX anyway\n");
-            fflush(stdout);
-        }
-    } else {
-        printf("[STARTUP] cTrader disabled by config -- starting FIX immediately (FIX 264=0 provides L2)\n");
-        fflush(stdout);
-    }
+    // FIX thread launch -- no longer gated on cTrader. The cTrader Open API
+    // surface was removed at S13 2026-05-08; FIX 264=0 delivers full L2 directly
+    // and starts pumping ticks as soon as the FIX session logs on. The legacy
+    // 45s wait was a startup latency tax with no remaining purpose.
+    printf("[STARTUP] Starting FIX immediately (FIX 264=0 provides L2)\n");
+    fflush(stdout);
     std::thread trade_thread(trade_loop);
     Sleep(500);  // Give trade connection 500ms head start before quote loop
     quote_loop();  // blocks until g_running=false
 
     // quote_loop has exited -- g_running is false, trade_loop will exit shortly.
     std::cout << "[OMEGA] Shutdown\n";
-    // Stop cTrader depth feed before joining other threads
-    g_ctrader_depth.stop();
+    // cTrader depth feed shutdown removed S13 2026-05-08 -- surface culled.
 
     // Wait up to 5s for any pending close orders to be ACKed by broker before
     // tearing down the trade connection. Only matters in LIVE mode.

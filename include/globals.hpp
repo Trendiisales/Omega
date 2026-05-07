@@ -317,13 +317,14 @@ inline bool idx_recent_close_block() noexcept {
 
 }} // namespace omega::idx
 
-// VWAPAtrTrail -- ATR-proportional BE lock + trail upgrade for existing
-// VWAPReversionEngine instances. Holds upgrade state only (no new entries).
-// Applied each tick after g_vwap_rev_sp/nq.on_tick() in tick_indices.hpp.
-static omega::idx::VWAPAtrTrail g_vwap_atr_trail_sp;   // US500.F
-static omega::idx::VWAPAtrTrail g_vwap_atr_trail_nq;   // USTEC.F
-static omega::idx::VWAPAtrTrail g_vwap_atr_trail_nas;  // NAS100 (no VWAPRev, unused)
-static omega::idx::VWAPAtrTrail g_vwap_atr_trail_us30; // DJ30.F (no VWAPRev, unused)
+// VWAPAtrTrail -- REMOVED 2026-05-07 (engine audit phase 4).
+//   All four instances (g_vwap_atr_trail_sp/nq/nas/us30) were declared but
+//   never referenced anywhere in the dispatch hot path or supporting code.
+//   The two _nas / _us30 instances were already commented as "no VWAPRev,
+//   unused"; the _sp / _nq instances depended on VWAPReversionEngine which
+//   was disabled (engine_init.hpp:447-457 enabled=false). Confirmed zero
+//   non-declaration references via grep across include/ and backtest/.
+//   See docs/INVENTORY_VERIFICATION_2026-05-07.md §10a for the audit trail.
 
 // Co-location latency edge stack -- GoldSpreadDislocation + GoldEventCompression.
 // GoldSilverLeadLag DELETED 2026-03-31. Both remaining engines run MANAGE-ONLY
@@ -539,28 +540,17 @@ static omega::RSIExtremeTurnEngine g_rsi_extreme;  // RSI extreme + sustained tu
 // Engine pause tracking -- maps engine key to pause_until epoch sec
 // Used by health watchdog to detect consecutive loss pauses
 static std::unordered_map<std::string, int64_t> g_engine_pause;
-// L2 watchdog: set true when cTrader depth (ctid=43014358) not flowing > 120s.
-// Cleared automatically when L2 recovers. Written by L2 watchdog thread in omega_main.hpp.
-// IMMUTABLE: ctid=43014358 is the only account delivering L2 depth.
-static std::atomic<bool>     g_l2_watchdog_dead{false};   // true = L2 dead, XAUUSD entries blocked
+// g_l2_watchdog_dead removed S13 2026-05-08 -- L2 watchdog thread + cTrader
+// depth client both culled. FIX 264=0 owns L2 now; staleness is detected via
+// the L2 tick CSV verifier instead.
 
-// ?? FEED-STALE gate ??????????????????????????????????????????????????????????
-// Set true when cTrader depth has subscribed for XAUUSD but delivered ZERO depth
-// events for >= FEED_STALE_THRESHOLD_S seconds after subscription.
-// Root cause of April 5/6 frozen-session: broker ACKs the depth sub but sends no
-// events, leaving FIX fallback active with a stale cached price from the prior
-// session. This produces 452 identical ticks (4677.03/4677.25) with vol_range=0.00
-// for the entire session while the real market moves $40.
-//
-// BEHAVIOUR WHEN SET:
-//   - Position management (SL/trail) continues unaffected
-//   - [FEED-STALE] logged once per 60s so the frozen state is unmissable
-//   - CTraderDepthClient escalates: re-subscribe -> full reconnect
-//   - Cleared when XAUUSD depth events resume flowing
-//
-// Written by CTraderDepthClient recv_loop (per-symbol starvation watchdog).
-// Read by tick_gold.hpp entry gates.
-std::atomic<bool>            g_feed_stale_xauusd{false};  // true = cTrader depth subscribed but no XAUUSD events
+// ?? FEED-STALE gate (DORMANT after S13) ??????????????????????????????????????
+// Originally set by CTraderDepthClient recv_loop when the depth subscription
+// ACK'd but no events flowed. With the cTrader surface culled (S13 2026-05-08)
+// nothing writes this flag any more, but it stays defined because tick_gold.hpp
+// entry gates still read it -- they now see a permanently-false value, which
+// is correct behaviour (FIX 264=0 owns L2).
+std::atomic<bool>            g_feed_stale_xauusd{false};
 
 // ?? Indices FORCE_CLOSE circuit breaker ??????????????????????????????????????
 // Problem: on April 2 2026, repeated disconnect/reconnect cycles on US indices
@@ -723,18 +713,13 @@ std::unordered_map<std::string, L2Book>   g_l2_books;
 // lock-free on x86-64 -- MSVC falls back to a hidden internal mutex, which is
 // strictly worse. atomic<double>=8 bytes, aligned = genuine lock-free MOV.
 struct AtomicL2 {
-    std::atomic<double>   imbalance{0.5};       // raw_bid/(raw_bid+raw_ask) from CTDepthBook
+    std::atomic<double>   imbalance{0.5};       // bid_size/(bid_size+ask_size), FIX-fed since S8
     std::atomic<double>   microprice_bias{0.0}; // microprice - mid, signed
     std::atomic<bool>     has_data{false};      // true when book has non-zero sizes
-    std::atomic<int64_t>  last_update_ms{0};    // epoch-ms of last cTrader depth event
-    std::atomic<int>      raw_bid{0};           // raw bid quote count from CTDepthBook (all levels)
-    std::atomic<int>      raw_ask{0};           // raw ask quote count from CTDepthBook (all levels)
-    // Microstructure edge score: delta-based signal computed from consecutive L2Book
-    // snapshots by GoldMicrostructureAnalyzer in CTraderDepthClient on every DOM event.
-    // Range 0..1. >0.65 = bullish DOM pressure, <0.35 = bearish DOM pressure, ~0.5 = neutral.
-    // Replaces raw_imbalance() as input to L2 persistence tracking so the path
-    // fires on real order-flow signals instead of perpetual 0.5.
-    std::atomic<double>   micro_edge{0.5};      // GoldMicrostructureAnalyzer output (DOM delta score)
+    std::atomic<int64_t>  last_update_ms{0};    // epoch-ms of last L2 update (FIX 264=0 dispatch)
+    // raw_bid / raw_ask / micro_edge fields removed S13 2026-05-08 along with
+    // the cTrader Open API surface (CTDepthBook + GoldMicrostructureAnalyzer).
+    // FIX 264=0 imbalance/microprice_bias supply the same trading signal.
 
     // fresh(): true only when a real book update arrived within max_age_ms.
     // Prevents engines acting on stale/default-initialised imbalance (0.5).
@@ -760,7 +745,7 @@ static AtomicL2 g_l2_brent;   // BRENT
 static AtomicL2 g_l2_nas;     // NAS100
 static AtomicL2 g_l2_us30;    // DJ30.F
 
-// Map symbol name to AtomicL2* -- used by cTrader write path and FIX tick read path
+// Map symbol name to AtomicL2* -- used by FIX dispatch (writer) and FIX tick path (reader).
 static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
     if (sym=="XAUUSD") return &g_l2_gold;
     if (sym=="US500.F")  return &g_l2_sp;
@@ -780,33 +765,9 @@ static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
     return nullptr;
 }
 
-// ?? cTrader depth tick staleness tracker ?????????????????????????????????????
-// Stores the last time (ms) a cTrader depth event arrived per symbol.
-// FIX W/X suppresses on_tick when cTrader depth is fresh (<500ms) --
-// prevents the 1pt lag from FIX gateway batching in fast markets.
-static std::atomic<int64_t> g_ct_ms_xauusd{0}, g_ct_ms_sp{0},  g_ct_ms_nq{0},
-                             g_ct_ms_cl{0},    g_ct_ms_eur{0},
-                             g_ct_ms_gbp{0},   g_ct_ms_aud{0},  g_ct_ms_nzd{0},
-                             g_ct_ms_jpy{0},   g_ct_ms_ger40{0},g_ct_ms_uk100{0},
-                             g_ct_ms_brent{0}, g_ct_ms_nas{0},  g_ct_ms_us30{0};
-
-static std::atomic<int64_t>* get_ctrader_tick_ms_ptr(const std::string& sym) noexcept {
-    if (sym=="XAUUSD")  return &g_ct_ms_xauusd;
-    if (sym=="US500.F") return &g_ct_ms_sp;
-    if (sym=="USTEC.F") return &g_ct_ms_nq;
-    if (sym=="USOIL.F") return &g_ct_ms_cl;
-    if (sym=="EURUSD")  return &g_ct_ms_eur;
-    if (sym=="GBPUSD")  return &g_ct_ms_gbp;
-    if (sym=="AUDUSD")  return &g_ct_ms_aud;
-    if (sym=="NZDUSD")  return &g_ct_ms_nzd;
-    if (sym=="USDJPY")  return &g_ct_ms_jpy;
-    if (sym=="GER40")   return &g_ct_ms_ger40;
-    if (sym=="UK100")   return &g_ct_ms_uk100;
-    if (sym=="BRENT")   return &g_ct_ms_brent;
-    if (sym=="NAS100")  return &g_ct_ms_nas;
-    if (sym=="DJ30.F")  return &g_ct_ms_us30;
-    return nullptr;
-}
+// cTrader depth tick staleness tracker (g_ct_ms_* + get_ctrader_tick_ms_ptr)
+// removed S13 2026-05-08 -- cTrader Open API surface culled. FIX 264=0 is the
+// sole L2 source; per-symbol staleness is now tracked via AtomicL2::last_update_ms.
 
 // ?? Persistent state directory -- separate from logs/ ??????????????????????
 // All .dat files (bars, ATR, kelly, trend state) live here.

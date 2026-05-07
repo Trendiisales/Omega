@@ -362,12 +362,11 @@ static void load_config(const std::string& path) {
             if (k=="session_end_utc")   g_cfg.session_end_utc   = safe_stoi(v, k);
             if (k=="session_asia")      g_cfg.session_asia      = (v == "true" || v == "1");
         }
-        if (section == "ctrader_api") {
-            if (k=="access_token")           g_cfg.ctrader_access_token     = v;
-            if (k=="refresh_token")          g_cfg.ctrader_refresh_token    = v;
-            if (k=="ctid_trader_account_id") g_cfg.ctrader_ctid_account_id  = std::stoll(v);
-            if (k=="enabled")                g_cfg.ctrader_depth_enabled    = (v == "true" || v == "1");
-        }
+        // [ctrader_api] section parser removed S13 2026-05-08 -- cTrader
+        // Open API surface culled. Stale [ctrader_api] keys in old config
+        // files are silently ignored (no-op): no fall-through into other
+        // sections because the dispatcher matches on `section == "..."`.
+        (void)0;
         if (section == "telemetry") {
             if (k=="gui_port")   g_cfg.gui_port   = safe_stoi(v, k);
             if (k=="ws_port")    g_cfg.ws_port     = safe_stoi(v, k);

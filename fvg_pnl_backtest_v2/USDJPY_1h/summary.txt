@@ -1,0 +1,60 @@
+==============================================================================
+FVG P&L Backtest v2 - USDJPY - 1h
+==============================================================================
+Window:           2025-09-01 -> 2026-03-01
+Reweighted score: {'w_gap_size': 1.5, 'w_displacement': 1.0, 'w_tick_volume': 1.0, 'w_trend_align': 0.0, 'w_age_decay': 0.0}
+Risk:             SL=1.0xATR  TP=2.0xATR  time_stop=30 bars  risk=0.50%/trade  start_eq=$100,000
+Costs:            slippage=0.5 pips/side (pip=0.01)  cost_mult=1.0x
+Min gap pips:     0.0 (absolute floor; 0 = off)
+
+Detected FVGs:    527
+After gap filter: 527
+Entered FVGs:     511
+Score quartile cutoffs (entered): Q1=0.152  median=0.230  Q3=0.345
+
+PRIMARY (Q4-only) AND BASELINES
+------------------------------------------------------------------------------
+  Q4 (primary)   n= 118  win= 34.7%  avgR=-0.033  PF= 0.95  DD= 7.73%  Sharpe= -0.76  $=-1,928
+  Q1 (sanity)    n=  99  win= 29.3%  avgR=-0.237  PF= 0.70  DD=15.60%  Sharpe= -5.71  $=-11,710
+  All FVGs       n= 291  win= 38.5%  avgR=+0.069  PF= 1.10  DD=10.10%  Sharpe=  1.52  $=+10,063
+  All random     n= 259  win= 26.6%  avgR=-0.279  PF= 0.65  DD=41.51%  Sharpe= -8.10  $=-36,132
+
+Diagnostics (cand / taken / overlap / unfillable):
+  Q4               128 /   118 /    10 /     0
+  Q1               128 /    99 /    28 /     1
+  All              511 /   291 /   219 /     1
+  Rand             493 /   259 /   234 /     0
+
+Q4 EXIT-REASON BREAKDOWN
+------------------------------------------------------------------------------
+  TP    :   40   SL    :   77   TIME  :    1   LONG  :   53   SHORT :   65
+  Avg bars held       : 5.5
+  Longest loss streak : 8
+
+COST STRESS TEST (Q4 at varying cost multipliers)
+------------------------------------------------------------------------------
+  cost x0.0      n= 118  win= 34.7%  avgR=+0.037  PF= 1.06  DD= 6.50%  Sharpe=  0.85  $=+2,167
+  cost x1.0      n= 118  win= 34.7%  avgR=-0.033  PF= 0.95  DD= 7.73%  Sharpe= -0.76  $=-1,928
+  cost x2.0      n= 118  win= 34.7%  avgR=-0.102  PF= 0.86  DD= 9.13%  Sharpe= -2.36  $=-6,023
+
+SL / TP GRID (Q4)
+------------------------------------------------------------------------------
+  SL0.5/TP1.5    n= 126  win= 27.8%  avgR=-0.027  PF= 0.97  DD= 7.87%  Sharpe= -0.72  $=-1,715
+  SL1.0/TP2.0    n= 118  win= 34.7%  avgR=-0.033  PF= 0.95  DD= 7.73%  Sharpe= -0.76  $=-1,928
+  SL1.5/TP3.0    n= 104  win= 37.5%  avgR=+0.022  PF= 1.03  DD= 5.47%  Sharpe=  0.38  $=+1,125
+  SL2.0/TP4.0    n=  86  win= 43.0%  avgR=+0.155  PF= 1.28  DD= 3.88%  Sharpe=  2.27  $=+6,659
+  SL2.5/TP5.0    n=  77  win= 44.2%  avgR=+0.040  PF= 1.08  DD= 4.37%  Sharpe=  0.58  $=+1,555
+
+ACCEPTANCE GATES (Phase 1 -> production-track validation)
+------------------------------------------------------------------------------
+  n_trades >= 100                  PASS  (118)
+  Q4 PF >= 1.4                     FAIL  (0.95)
+  Q4 max DD < 15%                  PASS  (7.73%)
+  Q4 Sharpe >= 1.0                 FAIL  (-0.76)
+  Q4 still PF >= 1.0 at 2x cost    FAIL  (0.86)
+  Q4 PF > All AND Q1 PF            FAIL  (Q4=0.95 All=1.10 Q1=0.70)
+
+VERDICT: REJECT for this configuration. Compare against the other
+         configurations in fvg_pnl_backtest_v2/ to see which lever
+         (TF, symbol, gap-pips floor) closes the gap.
+==============================================================================

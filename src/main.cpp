@@ -73,8 +73,8 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 // LatencyEdgeEngines.hpp removed S13 Finding B 2026-04-24 — engine culled.
 #include "CrossAssetEngines.hpp" // 9 cross-asset engines: EsNqDiv, OilFade, BrentWti, FxCascade, CarryUnwind, ORB, VWAPRev, TrendPB, NBM (SilverTurtle removed at Batch 5V)
 #include "IndexFlowEngine.hpp"   // L2 flow + EWM drift engines for equity indices (IndexFlowEngine, IndexMacroCrashEngine)
-#include "CTraderDepthClient.hpp" // cTrader Open API v2 -- full order book depth feed
-#include "RealDomReceiver.hpp"   // OmegaDomStreamer cBot receiver -- real XAUUSD DOM sizes on port 8765
+// CTraderDepthClient.hpp + RealDomReceiver.hpp includes removed S13 2026-05-08
+// (cTrader Open API surface culled; FIX 264=0 owns L2).
 
 // ?? Adaptive intelligence layer (gap-close vs best systems) ??????????????????
 #include "OmegaAdaptiveRisk.hpp"   // Kelly sizing, rolling Sharpe, DD throttle, corr heat

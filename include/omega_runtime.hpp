@@ -2,19 +2,8 @@
 // omega_runtime.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
-static void set_ctrader_tick_ms(const std::string& sym, int64_t ms) noexcept {
-    auto* p = get_ctrader_tick_ms_ptr(sym);
-    if (p) p->store(ms, std::memory_order_relaxed);
-}
-static bool ctrader_depth_is_live(const std::string& sym) noexcept {
-    auto* p = get_ctrader_tick_ms_ptr(sym);
-    if (!p) return false;
-    const int64_t last = p->load(std::memory_order_relaxed);
-    if (last == 0) return false;
-    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    return (now_ms - last) < 500;  // fresh if cTrader event arrived within 500ms
-}
+// cTrader helpers (set_ctrader_tick_ms / ctrader_depth_is_live) removed S13
+// 2026-05-08 -- cTrader Open API surface culled, FIX 264=0 provides full L2.
 
 // RTT
 static double              g_rtt_last = 0.0, g_rtt_p50 = 0.0, g_rtt_p95 = 0.0;

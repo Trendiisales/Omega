@@ -1,7 +1,33 @@
 # NEXT_SESSION — S9 Priority Brief
 
-Date checkpoint: 2026-05-06
-Previous: S8 (this session)
+Date checkpoint: 2026-05-07
+Previous: S8 (2026-05-06 → 2026-05-07)
+
+## S8 outcomes summary
+
+**Bugs fixed:**
+- Gold L2 imbalance bug (engines were L2-blind for 7+ days, now reading FIX-fed signal)
+- FIX microprice signal restored (was cTrader-only, now computed FIX-side)
+- ct_fresh gate dropped, FIX writes unconditionally
+- NAS100 tick CSV writer added (was missing)
+
+**Engines culled** (early-return in on_tick, full deletion queued S9):
+- GoldHybridBracketEngine (70-combo sweep, all net negative)
+- IndexHybridBracketEngine × 4 (sp/nq/us30/nas100, same architecture as HBG)
+
+**Engines pinned shadow:**
+- All 5 FX BracketEngines (g_eng_eurusd/gbpusd/audusd/nzdusd/usdjpy)
+- All `*_london_open / *_asian_open / *_sydney_open` cohort (already pinned from S7, S8 deployed it)
+
+**Tsmom stage-trail:** implemented, backtested, REJECTED. Trail hurts by -$2,305 / -35% over 2yr. Disabled by default. Confirms TSMOM academic spec (12-bar hold, no profit-side early exit).
+
+**New harnesses:**
+- `backtest/tsmom_bt.cpp` (C++ Tsmom backtester, 5 cells)
+- `scripts/hbg_trail_sweep.sh` + `hbg_cooldown_sweep.sh` (param sweep wrappers)
+- `backtest/hbg_duka_bt.cpp` extended with constexpr `#ifndef` overrides
+
+## What's deployed and working
+
 
 ## What S8 fixed (DEPLOYED locally, awaiting VPS deploy)
 
@@ -72,13 +98,16 @@ This is functionally inert because `OmegaConfig::ctrader_depth_enabled = false` 
 
 ## S9 priority order
 
-1. **Verify the S8 fix on VPS.** First restart after deploy: confirm `[GOLD-L2-LIVE] imb=` log shows non-0.5 values (real FIX-fed imbalance). Confirm zero new GBPUSD/EURUSD/etc. live trades fire.
-2. **Re-evaluate disabled engines under working L2.** With `gold_l2_imbalance` no longer stuck at 0.5, gold engines that L2-gate on imbalance may behave differently. Particular interest: HybridBracketGold (still tagged DEPRECATED in `GoldHybridBracketEngine.hpp` from S7 — was that based on broken-L2 backtests? worth a re-test of the 432-combo sweep with the fixed read line).
-3. **Cull cTrader Open API surface** — see the file:line list above. Order: gut omega_main.hpp first (largest blast radius, isolated changes), then helper headers (omega_runtime.hpp, globals.hpp ct_ms trackers, omega_types.hpp), then file deletions (CTraderDepthClient.hpp, RealDomReceiver.hpp, ctrader_cbot/), then comment cleanup, then build verify, then commit.
-4. **Cull `OmegaDomStreamer` cBot** — bundled with item 3. Surface is small (RealDomReceiver.hpp + the C# bot file + 1 startup line + 1 override block in on_tick.hpp).
-5. **Clean tick CSV writer dead columns** — `tick_gold.hpp:993-995` header and `tick_gold.hpp:1026-1041` rows reference `depth_events_total / raw_bid / raw_ask / micro_edge`. After cull, those will all log 0 — drop from CSV. Hydrator only needs `ts_ms,mid,bid,ask` so this is safe. CRITICAL: do not change column ORDER or rename `ts_ms,mid,bid,ask`.
-6. **microprice_bias rename in MacroContext consumers (cosmetic)** — `g_macro_ctx.ctrader_l2_live` → `g_macro_ctx.l2_live`. ~15 files, no behavior change.
-7. **Re-test gold engines.** Run the 432-combo sweep harness again, this time with the L2 reads fixed. Compare verdicts to S7. Re-evaluate whether the bracket-breakout family is dead or whether prior tests were on broken-L2 data.
+1. **Verify the S8 fix on VPS.** First restart after deploy: confirm `[GOLD-L2-LIVE] imb=` log shows non-0.5 values (real FIX-fed imbalance). Confirm zero new GBPUSD/EURUSD/etc. live trades fire. (Deployed 2026-05-06 12:31 UTC, commit e20cb80, build verified, gold_imb varying confirmed.)
+2. **Tsmom stage-trail (USER PRIORITY 2026-05-06).** Currently TsmomEngine has only hard_sl=3*ATR + mae_exit=2*ATR + TIME_EXIT at hold_bars=12. NO trailing — winners that go +50pt then back to entry hit TIME_EXIT at zero, giving back all open profit. Two profitable trades on 2026-05-05 (+$174 / +$141 net 24h holds) hit TIME_EXIT at the bar close, but had MFE much higher mid-trade. Mirror TrendRider stage-trail into TsmomEngine: keep 3*ATR hard SL, keep hold_bars=12 TIME_EXIT as final safety, but ratchet trail when MFE >= 2N (trail at 1.5N), >=5N (2.5N), >=10N (3.5N). CRITICAL: backtest via `phase1/signal_discovery/post_cut_revalidate.py` BEFORE live promotion — comment at TsmomEngine.hpp:202-220 warns any change breaks parity with validated +$17,482 H1 long figure. Re-validation mandatory.
+3. **TrendRider shadow validation (USER PRIORITY 2026-05-06).** Engine already has the desired behavior (period=40, sl=1.5*ATR, no-TP, no-time-exit, stage_trail=[2N->1.5N, 5N->2.5N, 10N->3.5N]). Currently shadow. Just monitor [OMEGA-PERF] for TrendRider over 4 weeks of XAUUSD trading. If PF >= 1.3, >= 30 trades, beats Tsmom expectancy — promote.
+4. **Donchian fire audit (USER PRIORITY 2026-05-06).** User noticed Donchian didn't catch the same gold moves Tsmom did. Engine is initialized at `engine_init.hpp:666-686` shadow_mode=kShadowDefault. Investigate: (a) `signal_cooldown_left_` blocking, (b) single-position assumption, (c) `set_macro_regime()` risk-off block, (d) warmup CSV path loaded. Distinguish DonchianPortfolio (H2/H4/H6/D1 long+short bidirectional) from `[GOLD-ENGINE] DonchianBreakout signals=34` line which is GoldStack's internal Donchian sub-engine (separate code path).
+5. **Long-trade protection audit (USER PRIORITY 2026-05-06).** Survey every engine holding positions >=1h, build comparison table: engine | hold horizon | initial SL | trail behavior | TP behavior | time-exit. Flag every engine without a trail that runs >=4h — these are "give-back-open-profit" candidates. Includes Tsmom, EmaPullback (H1/H2/H4/H6 long), MinimalH4Breakout, C1Retuned_donchian, Tsmom_v2.
+6. **Re-evaluate disabled engines under working L2.** With `gold_l2_imbalance` no longer stuck at 0.5, gold engines that L2-gate on imbalance may behave differently. Particular interest: HybridBracketGold (tagged DEPRECATED in `GoldHybridBracketEngine.hpp` from S7 — but is winning now post-fix per 2026-05-06 trade journal +$1.79, +$0.25, +$2.22 trails). Re-test 432-combo sweep with fixed read line.
+7. **Cull cTrader Open API surface** — see the file:line list above. Order: gut omega_main.hpp first (largest blast radius, isolated changes), then helper headers (omega_runtime.hpp, globals.hpp ct_ms trackers, omega_types.hpp), then file deletions (CTraderDepthClient.hpp, RealDomReceiver.hpp, ctrader_cbot/), then comment cleanup, then build verify, then commit.
+8. **Cull `OmegaDomStreamer` cBot** — bundled with item 7. Surface is small (RealDomReceiver.hpp + the C# bot file + 1 startup line + 1 override block already removed).
+9. **Clean tick CSV writer dead columns** — `tick_gold.hpp:993-995` header and `tick_gold.hpp:1026-1041` rows reference `depth_events_total / raw_bid / raw_ask / micro_edge`. After cull, those will all log 0 — drop from CSV. Hydrator only needs `ts_ms,mid,bid,ask` so this is safe. CRITICAL: do not change column ORDER or rename `ts_ms,mid,bid,ask`.
+10. **microprice_bias rename in MacroContext consumers (cosmetic)** — `g_macro_ctx.ctrader_l2_live` → `g_macro_ctx.l2_live`. ~15 files, no behavior change.
 
 ## Restart procedure
 

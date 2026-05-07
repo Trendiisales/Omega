@@ -1,10 +1,11 @@
 #pragma once
 // =============================================================================
-// OHLCBarEngine.hpp -- OHLC bar data from cTrader ProtoOA trendbar API
+// OHLCBarEngine.hpp -- OHLC bar data
 //
-// Uses the SAME cTrader SSL connection as CTraderDepthClient.
-// On startup (after auth): requests 200 M1 + 100 M5 historical bars.
-// Subscribes to live bar close events (pt=2220).
+// Originally fed by the cTrader ProtoOA trendbar API; that surface was culled
+// at S13 (2026-05-08) and bars are now built tick-by-tick from FIX 264=0.
+// Live bars roll on the standard M1/M5/H1/H4 boundaries; historical seeding
+// happens via the per-symbol bar-state .dat snapshots in C:\Omega\state.
 //
 // Computes per-bar for XAUUSD (and any subscribed symbol):
 //   ? EMA9 / EMA21 / EMA50  (on M1 close)
@@ -192,7 +193,7 @@ struct BarIndicators {
 };
 
 // =============================================================================
-// OHLCBarEngine -- core computation (non-threaded, called from cTrader thread)
+// OHLCBarEngine -- core computation (non-threaded; called from FIX tick path)
 // =============================================================================
 class OHLCBarEngine {
 public:
@@ -903,7 +904,7 @@ private:
     // ?????????????????????????????????????????????????????????????????????????
     // NEW: _update_vwap_slope()
     // Uses EMA50 as rolling VWAP proxy -- volume data is not available in
-    // the bar engine (cTrader doesn't send volume in trendbar messages reliably).
+    // the bar engine (FIX 264=0 doesn't expose tick-aggregated volume).
     // EMA50 is the slowest EMA we compute and closely tracks the session anchor.
     //
     // Slope is computed by unwinding the EMA50 EWM recursion 3 bars back:

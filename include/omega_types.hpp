@@ -275,16 +275,8 @@ struct OmegaConfig {
     // GoldEngineStack config -- passed to g_gold_stack.configure()
     omega::gold::GoldStackCfg gs_cfg;
 
-    // ?? cTrader Open API v2 -- depth feed ????????????????????????????????????
-    // Provides real multi-level L2 book data (ProtoOADepthEvent) in parallel
-    // with the FIX connection. BlackBull FIX only supports 264=1 (top-of-book);
-    // cTrader Open API has no depth limitation.
-    // Obtain tokens: openapi.ctrader.com/apps/20304/playground (Account info scope)
-    // ctid_trader_account_id: found via GetAccountListByAccessToken (8077780 = 44735058)
-    std::string ctrader_access_token        = "";
-    std::string ctrader_refresh_token       = "";
-    int64_t     ctrader_ctid_account_id     = 0;
-    bool        ctrader_depth_enabled       = false;  // set true when token is configured
+    // cTrader Open API config fields removed S13 2026-05-08 -- cTrader
+    // surface culled; FIX 264=0 provides full L2.
 
     // LatencyEdgeStack le_cfg REMOVED at S13 Finding B 2026-04-24 — engine culled.
 };
@@ -293,8 +285,7 @@ static OmegaConfig         g_cfg;
 static std::atomic<bool>   g_running(true);
 static std::atomic<bool>   g_emergency_close(false);  // set by GUI button ? closes all positions immediately
 
-// ?? cTrader Open API depth client -- parallel to FIX, read-only L2 feed ???????
-static CTraderDepthClient  g_ctrader_depth;
+// cTrader Open API depth client removed S13 2026-05-08 -- FIX 264=0 provides L2.
 // OHLC bar state -- populated by cTrader trendbar API (M1+M5 history + live bars)
 // Read lock-free by flow engines and GoldStack via atomic accessors.
 static SymBarState         g_bars_gold;   // XAUUSD M1/M5/H1/H4 bars + indicators
