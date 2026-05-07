@@ -192,18 +192,96 @@ if (-not (Test-Path $tokenFile)) {
         Write-Host "  |  or run: .\RESTART_OMEGA.ps1                         |" -ForegroundColor Yellow
         Write-Host "  +======================================================+" -ForegroundColor Yellow
         Write-Host ""
-    } elseif ($runningHash -ne $ghSha7) {
-        Write-Host ""
-        Write-Host "  +======================================================+" -ForegroundColor Red
-        Write-Host "  |  STALE BINARY DETECTED -- DO NOT TRADE              |" -ForegroundColor Red
-        Write-Host "  |  Running : $runningHash" -ForegroundColor Red
-        Write-Host "  |  GitHub  : $ghSha7" -ForegroundColor Red
-        Write-Host "  |  Fix     : .\RESTART_OMEGA.ps1                      |" -ForegroundColor Red
-        Write-Host "  +======================================================+" -ForegroundColor Red
-        Write-Host ""
-        exit 1
-    } else {
+    } elseif ($runningHash -eq $ghSha7) {
         Write-Host "  [OK] Binary hash MATCHES GitHub HEAD: $runningHash" -ForegroundColor Green
+    } else {
+        # ----------------------------------------------------------------------
+        # SMART STALENESS CHECK (added 2026-05-07)
+        # ----------------------------------------------------------------------
+        # Bare "running != HEAD" produces too many false alarms because
+        # script-only commits (PS hotfixes, doc edits, config tweaks) advance
+        # HEAD without changing the binary. The C++ binary at $runningHash is
+        # functionally identical to anything HEAD would build, so the
+        # "STALE BINARY" red banner + DO NOT TRADE warning is unwarranted.
+        #
+        # Use the GitHub compare API to enumerate every file that changed
+        # between $runningHash and $ghSha7. Bucket each path:
+        #   - "binary"  : C/C++ source (.cpp/.hpp/.h/.c/.cc/.cxx) under
+        #                 include/, src/, external/, OR build config
+        #                 (CMakeLists*, *.cmake, build.ninja, Makefile)
+        #   - "script"  : everything else (PS scripts, docs, .ini, .yml, .md)
+        #
+        # If $binaryDiffPaths is empty -> YELLOW warn-and-continue.
+        # If $binaryDiffPaths is non-empty -> RED hard exit (real stale).
+        # If the API call fails -> RED hard exit (fail safe).
+        # ----------------------------------------------------------------------
+        $binaryDiffPaths = @()
+        $scriptDiffPaths = @()
+        $compareError    = $null
+        try {
+            $compareUri = "https://api.github.com/repos/Trendiisales/Omega/compare/$runningHash...$ghSha7"
+            $compare = Invoke-RestMethod -Uri $compareUri -Headers $apiHeaders -TimeoutSec 15 -ErrorAction Stop
+            foreach ($cf in $compare.files) {
+                $name = $cf.filename
+                $isBinarySrc = ($name -match '\.(cpp|hpp|h|c|cc|cxx)$') -or
+                               ($name -match '^(include|src|external)/')   -or
+                               ($name -match '(CMakeLists|build\.ninja|Makefile)') -or
+                               ($name -match '\.cmake$')
+                if ($isBinarySrc) { $binaryDiffPaths += $name }
+                else              { $scriptDiffPaths += $name }
+            }
+        } catch {
+            $compareError = $_.ToString()
+        }
+
+        if ($compareError) {
+            Write-Host ""
+            Write-Host "  +======================================================+" -ForegroundColor Red
+            Write-Host "  |  STALE BINARY -- DIFF UNVERIFIED (FAIL SAFE)        |" -ForegroundColor Red
+            Write-Host ("  |  Running : {0,-43} |" -f $runningHash) -ForegroundColor Red
+            Write-Host ("  |  GitHub  : {0,-43} |" -f $ghSha7)      -ForegroundColor Red
+            Write-Host "  |  Compare API failed -- cannot tell if binary changed |" -ForegroundColor Red
+            Write-Host "  |  Fix     : .\RESTART_OMEGA.ps1                      |" -ForegroundColor Red
+            Write-Host "  +======================================================+" -ForegroundColor Red
+            Write-Host "  api_error: $compareError" -ForegroundColor DarkGray
+            Write-Host ""
+            exit 1
+        } elseif ($binaryDiffPaths.Count -gt 0) {
+            Write-Host ""
+            Write-Host "  +======================================================+" -ForegroundColor Red
+            Write-Host "  |  STALE BINARY DETECTED -- DO NOT TRADE              |" -ForegroundColor Red
+            Write-Host ("  |  Running : {0,-43} |" -f $runningHash) -ForegroundColor Red
+            Write-Host ("  |  GitHub  : {0,-43} |" -f $ghSha7)      -ForegroundColor Red
+            Write-Host ("  |  Binary source changed in {0,-3} file(s):           |" -f $binaryDiffPaths.Count) -ForegroundColor Red
+            foreach ($p in ($binaryDiffPaths | Select-Object -First 5)) {
+                Write-Host ("  |    - {0,-49} |" -f $p) -ForegroundColor Red
+            }
+            if ($binaryDiffPaths.Count -gt 5) {
+                Write-Host ("  |    ... and {0,-3} more                                  |" -f ($binaryDiffPaths.Count - 5)) -ForegroundColor Red
+            }
+            Write-Host "  |  Fix     : .\RESTART_OMEGA.ps1                      |" -ForegroundColor Red
+            Write-Host "  +======================================================+" -ForegroundColor Red
+            Write-Host ""
+            exit 1
+        } else {
+            # Hash differs but only PS / docs / configs changed -- binary OK
+            Write-Host ""
+            Write-Host "  +======================================================+" -ForegroundColor Yellow
+            Write-Host "  |  HASH MISMATCH -- but binary source UNCHANGED       |" -ForegroundColor Yellow
+            Write-Host ("  |  Running : {0,-43} |" -f $runningHash) -ForegroundColor Yellow
+            Write-Host ("  |  GitHub  : {0,-43} |" -f $ghSha7)      -ForegroundColor Yellow
+            Write-Host ("  |  {0,-3} script/doc file(s) changed -- safe to continue |" -f $scriptDiffPaths.Count) -ForegroundColor Yellow
+            Write-Host "  +======================================================+" -ForegroundColor Yellow
+            Write-Host "  Script-only changes (binary functionally identical):" -ForegroundColor DarkGray
+            foreach ($p in ($scriptDiffPaths | Select-Object -First 10)) {
+                Write-Host "    - $p" -ForegroundColor DarkGray
+            }
+            if ($scriptDiffPaths.Count -gt 10) {
+                Write-Host "    ... and $($scriptDiffPaths.Count - 10) more" -ForegroundColor DarkGray
+            }
+            Write-Host ""
+            # NOT a hard exit -- continue verifier
+        }
     }
 }
 Write-Host ""
