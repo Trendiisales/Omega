@@ -189,7 +189,7 @@ if (-not (Test-Path $tokenFile)) {
         Write-Host "  |  BINARY HASH NOT FOUND -- staleness check skipped    |" -ForegroundColor Yellow
         Write-Host "  |  No .log under C:\Omega\ contains 'Git hash:' yet.   |" -ForegroundColor Yellow
         Write-Host "  |  Engine may have just restarted -- recheck in 30s,   |" -ForegroundColor Yellow
-        Write-Host "  |  or run: .\RESTART_OMEGA.ps1                         |" -ForegroundColor Yellow
+        Write-Host "  |  or run: .\OMEGA.ps1 deploy                         |" -ForegroundColor Yellow
         Write-Host "  +======================================================+" -ForegroundColor Yellow
         Write-Host ""
     } elseif ($runningHash -eq $ghSha7) {
@@ -241,7 +241,7 @@ if (-not (Test-Path $tokenFile)) {
             Write-Host ("  |  Running : {0,-43} |" -f $runningHash) -ForegroundColor Red
             Write-Host ("  |  GitHub  : {0,-43} |" -f $ghSha7)      -ForegroundColor Red
             Write-Host "  |  Compare API failed -- cannot tell if binary changed |" -ForegroundColor Red
-            Write-Host "  |  Fix     : .\RESTART_OMEGA.ps1                      |" -ForegroundColor Red
+            Write-Host "  |  Fix     : .\OMEGA.ps1 deploy                      |" -ForegroundColor Red
             Write-Host "  +======================================================+" -ForegroundColor Red
             Write-Host "  api_error: $compareError" -ForegroundColor DarkGray
             Write-Host ""
@@ -259,7 +259,7 @@ if (-not (Test-Path $tokenFile)) {
             if ($binaryDiffPaths.Count -gt 5) {
                 Write-Host ("  |    ... and {0,-3} more                                  |" -f ($binaryDiffPaths.Count - 5)) -ForegroundColor Red
             }
-            Write-Host "  |  Fix     : .\RESTART_OMEGA.ps1                      |" -ForegroundColor Red
+            Write-Host "  |  Fix     : .\OMEGA.ps1 deploy                      |" -ForegroundColor Red
             Write-Host "  +======================================================+" -ForegroundColor Red
             Write-Host ""
             exit 1
@@ -349,7 +349,7 @@ if ($LogPath -eq "") {
             Write-Host "  latest.log : $(if (Test-Path $latestLog) { 'STALE' } else { 'NOT FOUND' })" -ForegroundColor Red
             Write-Host "  dated log  : NOT FOUND ($datedLog)" -ForegroundColor Red
             Write-Host "  No live log found. Omega has not started or crashed before opening logs." -ForegroundColor Red
-            Write-Host "  Run: .\\RESTART_OMEGA.ps1" -ForegroundColor Yellow
+            Write-Host "  Run: .\OMEGA.ps1 deploy" -ForegroundColor Yellow
             Write-Host ""
             exit 1
         }
@@ -818,7 +818,7 @@ $barLoadLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
     Where-Object { $_ -match "BAR-LOAD" } | Select-Object -Last 1
 if (!$barLoadLine) {
     Add-Result "Bar State Load" "FAIL" "No BAR-LOAD line in log" `
-        "load_indicators() never called OR binary is stale. Run RESTART_OMEGA.ps1 to rebuild."
+        "load_indicators() never called OR binary is stale. Run .\OMEGA.ps1 deploy to rebuild."
 } elseif ($barLoadLine -match "m1_ready=1") {
     $atrVal = if ($barLoadLine -match "ATR=([\d\.]+)") { $Matches[1] } else { "?" }
     Add-Result "Bar State Load" "PASS" "Loaded from disk m1_ready=1 ATR=$atrVal -- warm start" $barLoadLine.Trim()

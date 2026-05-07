@@ -174,10 +174,20 @@ function Format-NativeOutputLine {
     return $Obj.ToString()
 }
 
+$script:lastWdMsg = $null
+$script:lastWdMsgTime = [DateTime]::MinValue
+
 function Write-WD {
     # Watchdog log helper. Mirrors line to host AND appends to watchdog.log.
+    # Dedup guard (added 2026-05-07): suppress consecutive identical messages
+    # within 5s -- prevents the rare double-log race seen at watchdog.log:204/205
+    # ("SERVICE-DOWN: restart #10 complete" appearing twice at 04:16:24).
     param([string]$msg)
-    $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
+    $now = Get-Date
+    if ($msg -eq $script:lastWdMsg -and ($now - $script:lastWdMsgTime).TotalSeconds -lt 5) { return }
+    $script:lastWdMsg     = $msg
+    $script:lastWdMsgTime = $now
+    $ts = $now.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
     $line = "$ts [WATCHDOG] $msg"
     Write-Host $line
     try { Add-Content -Path $WatchdogLog -Value $line -ErrorAction SilentlyContinue } catch { }
