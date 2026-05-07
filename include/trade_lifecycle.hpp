@@ -491,7 +491,23 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
 // ?????????????????????????????????????????????????????????????????????????????
 // Signal handler
 // ?????????????????????????????????????????????????????????????????????????????
-static void sig_handler(int) noexcept { g_running.store(false); }
+static void sig_handler(int sig) noexcept {
+    // S12 issue 3a: log which signal triggered shutdown so latest.log identifies
+    // the cause (Ctrl+C / kill -TERM / etc.) instead of leaving a silent flip.
+    // Windows std::signal handlers for SIGINT/SIGTERM run on a separate thread
+    // (per MSVC docs), so std::fprintf is safe here -- not a true POSIX signal
+    // context. Codebase is Windows-only (see unconditional WINAPI handler below).
+    const char* sig_name =
+        sig == SIGINT  ? "SIGINT"  :
+        sig == SIGTERM ? "SIGTERM" :
+        sig == SIGABRT ? "SIGABRT" :
+        sig == SIGSEGV ? "SIGSEGV" :
+        sig == SIGFPE  ? "SIGFPE"  :
+        sig == SIGILL  ? "SIGILL"  : "UNKNOWN";
+    std::fprintf(stderr, "[OMEGA] g_running=false from signal %s (%d)\n", sig_name, sig);
+    std::fflush(stderr);
+    g_running.store(false);
+}
 
 // Windows console close handler -- handles X button, CTRL+C, CTRL+BREAK, logoff,
 // shutdown. std::signal(SIGINT) is NOT called when the console window is closed
@@ -504,7 +520,20 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
         case CTRL_BREAK_EVENT:
         case CTRL_CLOSE_EVENT:
         case CTRL_LOGOFF_EVENT:
-        case CTRL_SHUTDOWN_EVENT:
+        case CTRL_SHUTDOWN_EVENT: {
+            // S12 issue 3a: log which Windows console event triggered shutdown.
+            // Diagnoses surprise shutdowns: RDP disconnect=CTRL_LOGOFF_EVENT,
+            // scheduled OS update=CTRL_SHUTDOWN_EVENT, X-button=CTRL_CLOSE_EVENT,
+            // Ctrl+C=CTRL_C_EVENT, Ctrl+Break=CTRL_BREAK_EVENT.
+            const char* ev_name =
+                event == CTRL_C_EVENT        ? "CTRL_C_EVENT"        :
+                event == CTRL_BREAK_EVENT    ? "CTRL_BREAK_EVENT"    :
+                event == CTRL_CLOSE_EVENT    ? "CTRL_CLOSE_EVENT"    :
+                event == CTRL_LOGOFF_EVENT   ? "CTRL_LOGOFF_EVENT"   :
+                event == CTRL_SHUTDOWN_EVENT ? "CTRL_SHUTDOWN_EVENT" : "UNKNOWN";
+            std::fprintf(stderr, "[OMEGA] g_running=false from console event %s (%lu)\n",
+                         ev_name, (unsigned long)event);
+            std::fflush(stderr);
             g_running.store(false);
             // Wait for main() to finish cleanup (logout sent, files closed).
             // Worst case: SO_RCVTIMEO(200ms) + quote teardown(~300ms) +
@@ -519,6 +548,7 @@ static BOOL WINAPI console_ctrl_handler(DWORD event) noexcept {
             // Return TRUE only if we completed cleanly -- prevents Windows from
             // also running the default kill on top of our clean exit.
             return g_shutdown_done.load() ? TRUE : FALSE;
+        }
         default:
             return FALSE;
     }
