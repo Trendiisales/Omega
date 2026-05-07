@@ -1121,11 +1121,38 @@ function Invoke-Deploy {
         return 1
     }
 
-    $configSource = "$OmegaDir\config\omega_config.ini"
-    if (-not (Test-Path $configSource)) { $configSource = "$OmegaDir\omega_config.ini" }
-    if (Test-Path $configSource) {
-        Copy-Item $configSource "$OmegaDir\omega_config.ini" -Force
+    # ----- omega_config.ini handling (2026-04-29 AUDIT NOTE) ---------------
+    # The legacy DEPLOY_OMEGA.ps1 copied config\omega_config.ini -> root
+    # omega_config.ini at this step. After the 2026-04-29 audit the ROOT file
+    # is the canonical config and config\omega_config.ini is a header-only
+    # [CONFIG-TOMBSTONE] stub. Doing the legacy copy now silently replaces
+    # the real config with the tombstone, leaving Omega.exe to run with no
+    # mode / no watermark / no broker creds (mode=NOT_FOUND in the [11/12]
+    # banner was the symptom that surfaced this).
+    #
+    # The git pull in [2/12] already restored the canonical root config from
+    # origin/<Branch>, so no copy is needed. We DO still defensively reject a
+    # tombstoned root file -- if origin/<Branch> ever ships a tombstoned root
+    # by accident, halt the deploy before [12/12] starts the service.
+    $rootCfg = "$OmegaDir\omega_config.ini"
+    if (-not (Test-Path $rootCfg)) {
+        Write-Host "  [FATAL] $rootCfg not found after git reset. Aborting." -ForegroundColor Red
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        return 1
     }
+    $cfgFirstLines = Get-Content $rootCfg -TotalCount 5 -ErrorAction SilentlyContinue
+    if ($cfgFirstLines -match 'CONFIG-TOMBSTONE|THIS FILE IS DEPRECATED') {
+        Write-Host "  [FATAL] $rootCfg is a [CONFIG-TOMBSTONE] stub, not a real config." -ForegroundColor Red
+        Write-Host "          Recover with:" -ForegroundColor Red
+        Write-Host "            git show origin/$Branch`:omega_config.ini | Out-File $rootCfg -Encoding utf8 -Force" -ForegroundColor Red
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        return 1
+    }
+
+    # symbols.ini is regenerated from HEAD on every deploy (its values are
+    # version-locked to the engine code). Production headers in include/
+    # are never modified to match a different symbols.ini -- it's the
+    # other way round.
     Push-Location $OmegaDir
     try {
         git show HEAD:symbols.ini 2>$null | Out-File -FilePath "$OmegaDir\symbols.ini" -Encoding utf8 -Force
@@ -1238,6 +1265,19 @@ function Invoke-Deploy {
     Write-Host "=======================================================" -ForegroundColor Yellow
     Write-Host ""
 
+    if ($cfg.Mode -eq "NOT_FOUND" -or $cfg.Watermark -eq "NOT_FOUND") {
+        # NOT_FOUND means the regex `^mode\s*=` (or `session_watermark_pct\s*=`)
+        # didn't match anywhere in omega_config.ini. That happens when the file
+        # is the [CONFIG-TOMBSTONE] stub or otherwise corrupted. We already
+        # rejected a tombstoned root in [7/12], so seeing NOT_FOUND here means
+        # something else clobbered the file between [7/12] and now -- not safe
+        # to start the service.
+        Write-Host "  *** FATAL: mode=$($cfg.Mode), watermark=$($cfg.Watermark) -- omega_config.ini is missing required keys ***" -ForegroundColor Red
+        Write-Host "  *** Recover with:                                              ***" -ForegroundColor Red
+        Write-Host "  ***   git show origin/$Branch`:omega_config.ini | Out-File $rootCfg -Encoding utf8 -Force ***" -ForegroundColor Red
+        Remove-Item $StampFile -Force -ErrorAction SilentlyContinue
+        return 1
+    }
     if ($cfg.Testing) {
         Write-Host "  *** WARNING: session_watermark_pct=$($cfg.Watermark) (TESTING VALUE) ***" -ForegroundColor Red
         Write-Host "  *** No drawdown protection active                                   ***" -ForegroundColor Red
