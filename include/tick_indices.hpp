@@ -243,71 +243,14 @@ static void on_tick_us500(
         }
     }
 
-    // ?? IndexHybridBracketEngine -- US500.F ????????????????????????????????????
-    // Manages open position unconditionally, then checks for new entry.
-    // Gate: base_can_sp (risk/session/latency/circuit-breaker) AND no other US500.F
-    // position open. The hybrid engine has its own structural compression detector
-    // (MIN_RANGE=8pt, MAX_RANGE=40pt over 30 ticks) -- supervisor is NOT consulted.
-    // shadow_mode=true by default -- no real orders until shadow validates.
-    {
-        const int64_t now_ms_h = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-
-        // Position management -- always runs when PENDING or LIVE
-        if (g_hybrid_sp.has_open_position()) {
-            g_hybrid_sp.on_tick(bid, ask, now_ms_h, base_can_sp,
-                                false, false, 0, ca_on_close);
-        }
-
-        // New entry gate: no other US500.F position open
-        // US indices only trade London + NY sessions (slots 1-5, 07:00-22:00 UTC).
-        // Asia (slot 6, 22:00-05:00 UTC) has no US index price discovery.
-        // Evidence: NAS100 LONG 00:16 UTC SL -$24.78 (Asia drift noise armed bracket).
-        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
-                                     g_macro_ctx.session_slot <= 5);
-        const bool hybrid_sp_can_enter =
-            base_can_sp
-            && idx_session_ok
-            && !g_eng_sp.pos.active
-            && !g_bracket_sp.pos.active
-            && !g_orb_us.has_open_position()
-            && !g_vwap_rev_sp.has_open_position()
-            && !g_trend_pb_sp.has_open_position()
-            && !g_nbm_sp.has_open_position()
-            && !g_iflow_sp.has_open_position()
-            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
-            && !index_any_open()
-            && !omega::idx::idx_recent_close_block();
-
-        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
-        // Window was starved when hybrid_sp_can_enter=false -- range stayed 0.00 permanently.
-        if (!g_hybrid_sp.has_open_position()) {
-            g_hybrid_sp.on_tick(bid, ask, now_ms_h, hybrid_sp_can_enter,
-                                false, false, 0, ca_on_close);
-        }
-
-        // When hybrid transitions to PENDING, send both stop orders
-        if (g_hybrid_sp.phase == omega::idx::IndexHybridBracketEngine::Phase::PENDING
-            && g_hybrid_sp.pending_long_clOrdId.empty()
-            && g_hybrid_sp.pending_short_clOrdId.empty()) {
-            const double h_hi  = g_hybrid_sp.bracket_high;
-            const double h_lo  = g_hybrid_sp.bracket_low;
-            const double h_lot = g_hybrid_sp.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_sp.shadow_mode) {
-                g_hybrid_sp.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
-                const std::string h_long_id  = send_live_order("US500.F", true,  h_lot, h_hi);
-                const std::string h_short_id = send_live_order("US500.F", false, h_lot, h_lo);
-                g_hybrid_sp.pending_long_clOrdId  = h_long_id;
-                g_hybrid_sp.pending_short_clOrdId = h_short_id;
-                printf("[HYBRID-SP] ORDERS SENT long_id=%s short_id=%s "
-                       "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",
-                       h_long_id.c_str(), h_short_id.c_str(),
-                       h_hi, h_lo, g_hybrid_sp.range, h_lot);
-                fflush(stdout);
-            }
-        }
-    }
+    // ----------------------------------------------------------------------
+    // HBI-SP culled S10 P3a (2026-05-07): IndexHybridBracketEngine[US500.F] removed.
+    //   Engine still constructed in globals.hpp + engine_init.hpp.
+    //   Object exists and has_open_position() returns false (no on_tick feed).
+    //   Original dispatch (compression range -> dual stop entry, slot 1-5 only,
+    //   shadow by default) was lines ~246-310 of tick_indices.hpp pre-S10.
+    //   Phases B-E (S11+) will progressively delete globals/init/file.
+    // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- US500.F ?????????????????????????????????????????????
     // L2 order-flow + EWM drift engine. Runs when no other US500.F position is open.
     {
@@ -559,59 +502,13 @@ static void on_tick_ustec(
         }
     }
 
-    // ?? IndexHybridBracketEngine -- USTEC.F ????????????????????????????????????
-    {
-        const int64_t now_ms_h = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-
-        if (g_hybrid_nq.has_open_position()) {
-            g_hybrid_nq.on_tick(bid, ask, now_ms_h, base_can_nq,
-                                false, false, 0, ca_on_close);
-        }
-
-        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
-                                     g_macro_ctx.session_slot <= 5);
-        const bool hybrid_nq_can_enter =
-            base_can_nq
-            && idx_session_ok
-            && !g_eng_nq.pos.active
-            && !g_bracket_nq.pos.active
-            && !g_vwap_rev_nq.has_open_position()
-            && !g_trend_pb_nq.has_open_position()
-            && !g_nbm_nq.has_open_position()
-            && !g_iflow_nq.has_open_position()
-            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
-            && !index_any_open()
-            && !omega::idx::idx_recent_close_block();
-
-        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
-        // Window was starved when hybrid_nq_can_enter=false -- range stayed 0.00 permanently.
-        if (!g_hybrid_nq.has_open_position()) {
-            g_hybrid_nq.on_tick(bid, ask, now_ms_h, hybrid_nq_can_enter,
-                                false, false, 0, ca_on_close);
-        }
-
-        if (g_hybrid_nq.phase == omega::idx::IndexHybridBracketEngine::Phase::PENDING
-            && g_hybrid_nq.pending_long_clOrdId.empty()
-            && g_hybrid_nq.pending_short_clOrdId.empty()) {
-            const double h_hi  = g_hybrid_nq.bracket_high;
-            const double h_lo  = g_hybrid_nq.bracket_low;
-            const double h_lot = g_hybrid_nq.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_nq.shadow_mode) {
-                g_hybrid_nq.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
-                const std::string h_long_id  = send_live_order("USTEC.F", true,  h_lot, h_hi);
-                const std::string h_short_id = send_live_order("USTEC.F", false, h_lot, h_lo);
-                g_hybrid_nq.pending_long_clOrdId  = h_long_id;
-                g_hybrid_nq.pending_short_clOrdId = h_short_id;
-                printf("[HYBRID-NQ] ORDERS SENT long_id=%s short_id=%s "
-                       "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",
-                       h_long_id.c_str(), h_short_id.c_str(),
-                       h_hi, h_lo, g_hybrid_nq.range, h_lot);
-                fflush(stdout);
-            }
-        }
-    }
+    // ----------------------------------------------------------------------
+    // HBI-NQ culled S10 P3a (2026-05-07): IndexHybridBracketEngine[USTEC.F] removed.
+    //   Engine still constructed in globals.hpp + engine_init.hpp.
+    //   Object exists and has_open_position() returns false (no on_tick feed).
+    //   Original dispatch was lines ~562-614 of tick_indices.hpp pre-S10.
+    //   Phases B-E (S11+) will progressively delete globals/init/file.
+    // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- USTEC.F
     {
         const double nq_l2_imb = g_macro_ctx.nq_l2_imbalance;
@@ -709,57 +606,13 @@ static void on_tick_dj30(
         }
     }
 
-    // ?? IndexHybridBracketEngine -- DJ30.F ?????????????????????????????????????
-    {
-        const int64_t now_ms_h = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-
-        if (g_hybrid_us30.has_open_position()) {
-            g_hybrid_us30.on_tick(bid, ask, now_ms_h, base_can_us30,
-                                  false, false, 0, ca_on_close);
-        }
-
-        const bool idx_session_ok = (g_macro_ctx.session_slot >= 1 &&
-                                     g_macro_ctx.session_slot <= 5);
-        const bool hybrid_us30_can_enter =
-            base_can_us30
-            && idx_session_ok
-            && !g_eng_us30.pos.active
-            && !g_bracket_us30.pos.active
-            && !g_nbm_us30.has_open_position()
-            && !g_iflow_us30.has_open_position()
-            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
-            && !index_any_open()
-            && !omega::idx::idx_recent_close_block();
-
-        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
-        // Window was starved when hybrid_us30_can_enter=false -- range stayed 0.00 permanently.
-        if (!g_hybrid_us30.has_open_position()) {
-            g_hybrid_us30.on_tick(bid, ask, now_ms_h, hybrid_us30_can_enter,
-                                  false, false, 0, ca_on_close);
-        }
-
-        if (g_hybrid_us30.phase == omega::idx::IndexHybridBracketEngine::Phase::PENDING
-            && g_hybrid_us30.pending_long_clOrdId.empty()
-            && g_hybrid_us30.pending_short_clOrdId.empty()) {
-            const double h_hi  = g_hybrid_us30.bracket_high;
-            const double h_lo  = g_hybrid_us30.bracket_low;
-            const double h_lot = g_hybrid_us30.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_us30.shadow_mode) {
-                g_hybrid_us30.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
-                const std::string h_long_id  = send_live_order("DJ30.F", true,  h_lot, h_hi);
-                const std::string h_short_id = send_live_order("DJ30.F", false, h_lot, h_lo);
-                g_hybrid_us30.pending_long_clOrdId  = h_long_id;
-                g_hybrid_us30.pending_short_clOrdId = h_short_id;
-                printf("[HYBRID-US30] ORDERS SENT long_id=%s short_id=%s "
-                       "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",
-                       h_long_id.c_str(), h_short_id.c_str(),
-                       h_hi, h_lo, g_hybrid_us30.range, h_lot);
-                fflush(stdout);
-            }
-        }
-    }
+    // ----------------------------------------------------------------------
+    // HBI-US30 culled S10 P3a (2026-05-07): IndexHybridBracketEngine[DJ30.F] removed.
+    //   Engine still constructed in globals.hpp + engine_init.hpp.
+    //   Object exists and has_open_position() returns false (no on_tick feed).
+    //   Original dispatch was lines ~712-762 of tick_indices.hpp pre-S10.
+    //   Phases B-E (S11+) will progressively delete globals/init/file.
+    // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- DJ30.F
     {
         const double us30_l2_imb = g_macro_ctx.us30_l2_imbalance;
@@ -973,79 +826,14 @@ static void on_tick_nas100(
         }
     }
 
-    // ?? IndexHybridBracketEngine -- NAS100 ????????????????????????????????????
-    {
-        const int64_t now_ms_h = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-
-        if (g_hybrid_nas100.has_open_position()) {
-            g_hybrid_nas100.on_tick(bid, ask, now_ms_h, base_can_nas,
-                                    false, false, 0, ca_on_close);
-        }
-
-        // ?? NAS100 hybrid bracket session tightening (2026-04-30 audit) ??????????
-        // 8-day shadow ledger audit (2026-04-09 to 2026-04-17, n=53):
-        //   slot 1 (London open  07-09 UTC):  1 trade, WR=0%,    -$24.80
-        //   slot 2 (London core  09-12 UTC):  4 trades, WR=25%,  -$49.58
-        //   slot 3 (Overlap      12-14 UTC): 16 trades, WR=31.2%,+$90.97  <- profitable
-        //   slot 4 (NY open      14-17 UTC): 16 trades, WR=18.8%,+$63.99  <- profitable
-        //   slot 5 (NY late      17-22 UTC): 16 trades, WR=18.8%,-$49.24
-        //   pre-London 05-07 UTC (slot=1 via on_tick.hpp:278 retag): no historical
-        //     trades in dataset, but recent live data confirms losing pattern
-        //     (2026-04-30: 2 of 3 user-reported NAS100 losses occurred 05:01-05:21 UTC).
-        //
-        // Aggregate restricted to slot 3-4: 32 trades, WR=25%, +$154.96, +$4.84/trade.
-        // vs unrestricted 8-day: 53 trades, WR=22.6%, +$31.35, +$0.59/trade.
-        // ~5x improvement in dollar return by removing structural off-hours bleed.
-        //
-        // NAS100 is a US tech index; meaningful liquidity is overlap + NY open only.
-        // The slot=1 retag (05-07 UTC -> "London open" per on_tick.hpp:278) was
-        // intended for instruments with London-pre-open momentum; NAS100 has none.
-        //
-        // To re-widen the gate later, restore "slot >= 1 && slot <= 5" with a fresh
-        // audit. Keep this comment up to date when audit numbers change.
-        // ----------------------------------------------------------------------------
-        const bool idx_session_ok = (g_macro_ctx.session_slot >= 3 &&
-                                     g_macro_ctx.session_slot <= 4);
-        const bool hybrid_nas_can_enter =
-            base_can_nas
-            && idx_session_ok
-            && !g_eng_nas100.pos.active
-            && !g_bracket_nas100.pos.active
-            && !g_nbm_nas.has_open_position()
-            && !g_iflow_nas.has_open_position()
-            // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
-            && !index_any_open()
-            && !omega::idx::idx_recent_close_block();
-
-        // FIX 2026-04-07: call on_tick unconditionally to feed structure window.
-        // Window was starved when hybrid_nas_can_enter=false -- range stayed 0.00 permanently.
-        if (!g_hybrid_nas100.has_open_position()) {
-            g_hybrid_nas100.on_tick(bid, ask, now_ms_h, hybrid_nas_can_enter,
-                                    false, false, 0, ca_on_close);
-        }
-
-        if (g_hybrid_nas100.phase == omega::idx::IndexHybridBracketEngine::Phase::PENDING
-            && g_hybrid_nas100.pending_long_clOrdId.empty()
-            && g_hybrid_nas100.pending_short_clOrdId.empty()) {
-            const double h_hi  = g_hybrid_nas100.bracket_high;
-            const double h_lo  = g_hybrid_nas100.bracket_low;
-            const double h_lot = g_hybrid_nas100.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && !g_hybrid_nas100.shadow_mode) {
-                g_hybrid_nas100.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
-                const std::string h_long_id  = send_live_order("NAS100", true,  h_lot, h_hi);
-                const std::string h_short_id = send_live_order("NAS100", false, h_lot, h_lo);
-                g_hybrid_nas100.pending_long_clOrdId  = h_long_id;
-                g_hybrid_nas100.pending_short_clOrdId = h_short_id;
-                printf("[HYBRID-NAS100] ORDERS SENT long_id=%s short_id=%s "
-                       "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",
-                       h_long_id.c_str(), h_short_id.c_str(),
-                       h_hi, h_lo, g_hybrid_nas100.range, h_lot);
-                fflush(stdout);
-            }
-        }
-    }
+    // ----------------------------------------------------------------------
+    // HBI-NAS culled S10 P3a (2026-05-07): IndexHybridBracketEngine[NAS100] removed.
+    //   Engine still constructed in globals.hpp + engine_init.hpp.
+    //   Object exists and has_open_position() returns false (no on_tick feed).
+    //   Original dispatch (slot 3-4 tightened per 2026-04-30 audit, $154.96/32trd)
+    //   was lines ~976-1048 of tick_indices.hpp pre-S10.
+    //   Phases B-E (S11+) will progressively delete globals/init/file.
+    // ----------------------------------------------------------------------
     // ?? IndexFlowEngine -- NAS100
     {
         const double nas_l2_imb = g_macro_ctx.nas_l2_imbalance;

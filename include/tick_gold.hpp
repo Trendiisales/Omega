@@ -2094,112 +2094,16 @@ static void on_tick_gold(
         }
     }
 
-    // ?? GoldHybridBracketEngine -- compression range -> both sides -> cancel loser ??
-    // SHADOW mode by default. Fires when:
-    //   1. Compression range detected (MIN_RANGE=1.5pt, MAX_RANGE=12pt over 30 ticks)
-    // Both a long stop above hi AND a short stop below lo are sent simultaneously.
-    // First fill becomes the position; the other order is cancelled via cancel_fn.
-    {
-        // Position management -- unconditional when live
-        if (g_hybrid_gold.has_open_position()) {
-            g_hybrid_gold.on_tick(bid, ask, now_ms_g,
-                                  gold_can_enter, false, false, 0,
-                                  bracket_on_close,
-                                  g_macro_ctx.gold_slope,
-                                  g_macro_ctx.gold_vacuum_ask,
-                                  g_macro_ctx.gold_vacuum_bid,
-                                  g_macro_ctx.gold_wall_above,
-                                  g_macro_ctx.gold_wall_below,
-                                  g_macro_ctx.gold_l2_real);
-        }
-        // New entry -- only when no other gold position open AND market is genuinely compressing.
-        // vol_range gate: hybrid bracket needs real compression, not noise oscillation.
-        // Require vol_range >= 2.0pt: confirms the market HAS been compressing recently.
-        // FIX 2026-04-07: add bypass when vol_range is stale (bars frozen/cold-start).
-        // vol_range=0 previously blocked ALL hybrid entries on startup -- even during
-        // genuine 30pt moves. Now: bypass when macro displacement > $6 from VWAP OR
-        // drift > 2.0 (unambiguous directional move regardless of bar state).
-        // This is the "allow trades to happen" fallback -- if price is clearly moving
-        // and compression range forms, let the hybrid bracket arm.
-        const double hybrid_vol_range  = g_gold_stack.vol_range();
-        const bool   hybrid_vol_unseeded = (hybrid_vol_range == 0.0);
-        const double hybrid_vwap        = g_gold_stack.vwap();
-        const double hybrid_mid         = (bid + ask) * 0.5;
-        const double hybrid_vwap_disp   = (hybrid_vwap > 0.0)
-            ? std::fabs(hybrid_mid - hybrid_vwap) : 0.0;
-        // Macro bypass: strong move visible even without bar history
-        const bool hybrid_macro_bypass  = (hybrid_vwap_disp >= 6.0)
-                                       || (std::fabs(g_gold_stack.ewm_drift()) >= 2.0)
-                                       || crash_impulse_bypass;
-        // vol_ok: normal path OR unseeded-but-macro-move
-        const bool hybrid_vol_ok = (hybrid_vol_range >= 0.5)
-                                || (hybrid_vol_unseeded && hybrid_macro_bypass)
-                                || (!hybrid_vol_unseeded && hybrid_macro_bypass);
-        // S54 2026-05-04 (audit-fixes-35): block HybridGold when MidScalperGold
-        //   already holds an open position. Symmetric counterpart to the
-        //   midscalper_can_enter check below. Without this, MidScalperGold
-        //   could open in tick N and HybridGold could open in tick N+1 on
-        //   the same setup -- producing the double-loss pattern observed in
-        //   the 2026-05-04 03:45:15 trade pair (LONG @ 4609.61 from both).
-        //   Note: MidScalperGold runs AFTER HybridGold in this dispatch,
-        //   so the same-tick block (phase != IDLE) only needs to be on the
-        //   midscalper side. Hybrid only needs the prior-tick block (open
-        //   position from a previous tick).
-        const bool hybrid_can_enter =
-            gold_can_enter
-            && hybrid_vol_ok
-            && !g_bracket_gold.has_open_position()
-            // && !g_le_stack.has_open_position()  -- REMOVED S13 Finding B 2026-04-24
-            && !g_trend_pb_gold.has_open_position()
-            && !g_nbm_gold_london.has_open_position()
-            && !g_gold_midscalper.has_open_position();   // S54 cross-engine block
-
-        // FIX 2026-04-07: always call on_tick to feed the structure window unconditionally.
-        // Previously on_tick was only called when hybrid_can_enter=true -- so when
-        // ASIA-GATE blocked entries for the first 35min, m_window never received ticks,
-        // m_ticks_received never reached MIN_ENTRY_TICKS=150, and range stayed 0.00
-        // permanently. The engine was never able to arm even when gates opened.
-        // Fix: call on_tick every tick. When can_enter=false the engine feeds the window
-        // but does not transition IDLE->ARMED. When can_enter becomes true the window
-        // is already full and range computes immediately on the next tick.
-        // Position management path (has_open_position) handled unconditionally above.
-        if (!g_hybrid_gold.has_open_position()) {
-            g_hybrid_gold.on_tick(bid, ask, now_ms_g,
-                                  hybrid_can_enter, false, false, 0,
-                                  bracket_on_close,
-                                  g_macro_ctx.gold_slope,
-                                  g_macro_ctx.gold_vacuum_ask,
-                                  g_macro_ctx.gold_vacuum_bid,
-                                  g_macro_ctx.gold_wall_above,
-                                  g_macro_ctx.gold_wall_below,
-                                  g_macro_ctx.gold_l2_real);
-        }
-
-        // When hybrid transitions to PENDING, send both stop orders.
-        // Use pending_lot computed by the engine (correct SL-based sizing).
-        // Do NOT recompute lot here -- engine already applied risk/sl_dist formula.
-        if (g_hybrid_gold.phase == omega::GoldHybridBracketEngine::Phase::PENDING
-            && g_hybrid_gold.pending_long_clOrdId.empty()
-            && g_hybrid_gold.pending_short_clOrdId.empty()) {
-            const double h_hi  = g_hybrid_gold.bracket_high;
-            const double h_lo  = g_hybrid_gold.bracket_low;
-            const double h_lot = g_hybrid_gold.pending_lot;
-            if (h_hi > 0.0 && h_lo > 0.0 && h_lot >= 0.01 && g_cfg.mode == "LIVE") {
-                // Wire cancel_fn once (idempotent -- already set on re-entry but safe to set again)
-                g_hybrid_gold.cancel_fn = [](const std::string& id) { send_cancel_order(id); };
-                const std::string h_long_id  = send_live_order("XAUUSD", true,  h_lot, h_hi);
-                const std::string h_short_id = send_live_order("XAUUSD", false, h_lot, h_lo);
-                g_hybrid_gold.pending_long_clOrdId  = h_long_id;
-                g_hybrid_gold.pending_short_clOrdId = h_short_id;
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[HYBRID-GOLD] ORDERS SENT long_id=%s short_id=%s "                        "hi=%.2f lo=%.2f range=%.2f lot=%.3f\n",                        h_long_id.c_str(), h_short_id.c_str(),                        h_hi, h_lo, g_hybrid_gold.range, h_lot);
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            }
-        }
-    }
+    // ----------------------------------------------------------------------
+    // HBG culled S10 P3a (2026-05-07): GoldHybridBracketEngine dispatch removed.
+    //   Engine still constructed in globals.hpp + engine_init.hpp.
+    //   Object exists and has_open_position() returns false (no on_tick feed).
+    //   Conflict gates elsewhere that read g_hybrid_gold.has_open_position()
+    //   evaluate to "no hybrid open" -- correct behaviour for the cull.
+    //   Original dispatch (compression range -> dual stop entry -> first-fill
+    //   wins -> cancel loser) was lines ~2097-2202 of tick_gold.hpp pre-S10.
+    //   Phases B-E (S11+) will progressively delete globals/init/file.
+    // ----------------------------------------------------------------------
 
     // -- 2026-05-01 SESSION_h: GoldMidScalperEngine dispatch -----------------
     // Mid-band sister to HybridGold targeting the $20-40 capture zone (range
