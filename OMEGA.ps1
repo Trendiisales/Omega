@@ -105,6 +105,26 @@ Set-StrictMode -Off
 $ErrorActionPreference = "Continue"
 
 # ==============================================================================
+# Console output encoding (fixes vite / box-draw mojibake)
+# ------------------------------------------------------------------------------
+# Native commands under PS5.1 (npm, vite, cmake, MSBuild) emit UTF-8 to stdout,
+# but the default Windows console runs on the legacy OEM/CP-1252 code page,
+# which renders each UTF-8 byte as its CP-1252 glyph. The visible symptoms in
+# deploy output are 'Γ£ô' (= UTF-8 0xE2 0x9C 0x93 = U+2713 CHECK MARK) and
+# 'Γöé' (= UTF-8 0xE2 0x94 0x82 = U+2502 BOX DRAWINGS LIGHT VERTICAL), and
+# 'â• â•' for VERIFY_STARTUP's banner separator. The bytes in the log files
+# are correct -- only the live console rendering is wrong.
+#
+# Setting [Console]::OutputEncoding to UTF-8 here makes the host decode native
+# stdout as UTF-8 and re-encode it for whatever font/encoding the terminal is
+# using. The try/catch lets this silently no-op when OMEGA.ps1 runs under NSSM
+# as a service (no console host attached, [Console]::OutputEncoding throws).
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding           = [System.Text.Encoding]::UTF8
+} catch { }
+
+# ==============================================================================
 # Common variables
 # ==============================================================================
 $ServiceName  = "Omega"

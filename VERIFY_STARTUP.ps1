@@ -49,9 +49,17 @@ $ghToken = $null
 # ==============================================================================
 # STEP 0: GitHub API binary staleness check -- RUNS BEFORE EVERYTHING ELSE
 # Hits the GitHub contents API to get live HEAD SHA.
-# Reads the running binary hash from latest.log ([OMEGA] RUNNING COMMIT line).
+# Reads the running binary hash from omega_service_stderr.log ([Omega] Git hash: line).
 # If they don't match: RED BANNER, hard exit. Cannot verify a stale binary.
 # This is the check that prevents stale binaries from ever going unnoticed.
+#
+# FIX 2026-05-07 (post-7ecb748 deploy):
+#   Hash source moved from latest.log (old "RUNNING COMMIT:" tag) to
+#   omega_service_stderr.log ("[Omega] Git hash:" tag emitted by NSSM-wrapped
+#   binary). Watchdog/service redirects stdout/stderr -> *_stderr.log, so the
+#   hash banner no longer reaches latest.log. Reading latest.log here produced
+#   "BINARY HASH NOT FOUND IN LOG" false-positive after every restart even
+#   when the binary was correct.
 # ==============================================================================
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Cyan
@@ -84,18 +92,22 @@ if (-not (Test-Path $tokenFile)) {
         $ghSha7 = "api_unreachable"
     }
 
-    # Get running binary hash from latest.log RUNNING COMMIT line
+    # Get running binary hash from omega_service_stderr.log [Omega] Git hash: line.
+    # The binary writes "[Omega] Git hash: <sha7>" to stderr at startup; NSSM
+    # redirects stderr to omega_service_stderr.log, so that file is the only
+    # authoritative runtime source of the running binary hash.
     $runningHash = "not_found"
-    $latestLog = "C:\Omega\logs\latest.log"
-    if (Test-Path $latestLog) {
-        # Read ONLY last 200 lines -- prevents old session hash from matching
-        # The RUNNING COMMIT line is written within first 5s of startup.
-        # Reading entire log risks finding previous session's hash if log
-        # is not rotated, producing a false-positive "correct binary" result.
-        $rcLine = Get-Content $latestLog -Tail 200 -ErrorAction SilentlyContinue |
-                  Select-String "RUNNING COMMIT:" |
+    $stderrLog   = "C:\Omega\logs\omega_service_stderr.log"
+    if (Test-Path $stderrLog) {
+        # Read ONLY last 200 lines -- prevents an old session hash from matching.
+        # The "[Omega] Git hash:" line is written within the first 5s of startup.
+        # Reading the entire file risks finding a previous session's hash if the
+        # log is not rotated, producing a false-positive "correct binary" result.
+        # Use -SimpleMatch on Select-String to treat the bracket literally.
+        $rcLine = Get-Content $stderrLog -Tail 200 -ErrorAction SilentlyContinue |
+                  Select-String -SimpleMatch "[Omega] Git hash:" |
                   Select-Object -Last 1
-        if ($rcLine -and ($rcLine -match "RUNNING COMMIT:\s+([a-f0-9]{7,12})")) {
+        if ($rcLine -and ($rcLine -match "\[Omega\]\s+Git hash:\s+([a-f0-9]{7,12})")) {
             $runningHash = $Matches[1]
         }
     }
@@ -106,10 +118,11 @@ if (-not (Test-Path $tokenFile)) {
     } elseif ($runningHash -eq "not_found") {
         Write-Host ""
         Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-        Write-Host "  ║  BINARY HASH NOT FOUND IN LOG                   ║" -ForegroundColor Red
-        Write-Host "  ║  Omega has not started or log is stale.         ║" -ForegroundColor Red
+        Write-Host "  ║  BINARY HASH NOT FOUND IN STDERR LOG            ║" -ForegroundColor Red
+        Write-Host "  ║  Omega has not started or stderr log is stale.  ║" -ForegroundColor Red
         Write-Host "  ║  Run: .\RESTART_OMEGA.ps1                       ║" -ForegroundColor Red
         Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host "  Checked: $stderrLog" -ForegroundColor DarkGray
         Write-Host ""
         exit 1
     } elseif ($runningHash -ne $ghSha7) {
@@ -905,6 +918,3 @@ Write-Host ""
 # Logs stay on disk at C:\Omega\logs\ -- read via RDP or MONITOR.ps1.
 Write-Host "  [OK] State files saved locally (not pushed to git)" -ForegroundColor DarkGray
 Write-Host ""
-
-
-
