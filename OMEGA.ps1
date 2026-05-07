@@ -164,20 +164,25 @@ function Write-WD {
 }
 
 function Send-Notification {
-    # Best-effort Windows toast notification. Silently no-ops on hosts where
-    # Windows.UI.Notifications is unavailable (e.g. older Server SKUs).
+    # No-op stub. The original implementation (carried over from
+    # OmegaWatchdog.ps1) used the WinRT type-load syntax
+    #   [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+    # which the PS5.1 parser only accepts on a single line. When wrapped across
+    # two lines (as the source file did) the parser hits the comma+newline,
+    # treats the construct as an attribute/type literal, and reports
+    # 'Missing ] at end of attribute or type literal' -- a parse-time error
+    # that prevents the entire script from loading, killing the watchdog NSSM
+    # service on start.
+    #
+    # Even with the syntax fixed, the function is pointless in the deployed
+    # environment: when OMEGA.ps1 runs as an NSSM-wrapped LocalSystem service
+    # (the only context in which the watchdog calls this), there is no
+    # interactive desktop session, so the toast never reaches a human. The
+    # real audit trail is logs\watchdog.log via Write-WD, which every caller
+    # of Send-Notification also already writes to. Keeping this as a no-op
+    # eliminates both the parse fragility and a misleading "notification was
+    # sent" code path that does nothing useful.
     param([string]$Title, [string]$Body)
-    try {
-        [Windows.UI.Notifications.ToastNotificationManager,
-         Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-        $tpl = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(
-            [Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-        $tpl.GetElementsByTagName("text")[0].AppendChild($tpl.CreateTextNode($Title)) | Out-Null
-        $tpl.GetElementsByTagName("text")[1].AppendChild($tpl.CreateTextNode($Body))  | Out-Null
-        $toast = [Windows.UI.Notifications.ToastNotification]::new($tpl)
-        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(
-            "Omega Watchdog").Show($toast)
-    } catch { }
 }
 
 function Test-CfeOpen {
