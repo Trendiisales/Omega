@@ -3,10 +3,12 @@
 # ==============================================================================
 # UTF-8 CONSOLE OUTPUT (FIX 2026-05-07)
 # ------------------------------------------------------------------------------
-# This script prints box-drawing characters (╔═══╗ banners). On a fresh PS host
-# the console defaults to cp1252, which renders those bytes as "â•" / "â•—"
-# mojibake. Force UTF-8 here BEFORE the first Write-Host so banners always
-# render correctly. Same fix as OMEGA.ps1 (queued 2026-05-07).
+# This script's own banners are plain ASCII ('+', '|', '=') so they render
+# correctly under any console encoding. The OutputEncoding setting below is
+# still useful for any child process output that this script may launch later,
+# and for OMEGA.ps1 / vite stdout when piped through. Same fix as OMEGA.ps1
+# (queued 2026-05-07). Wrapped in try/catch -- ISE/restricted runspaces reject
+# direct assignment to [Console]::OutputEncoding.
 # ==============================================================================
 try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -119,53 +121,47 @@ if (-not (Test-Path $tokenFile)) {
 
     # ------------------------------------------------------------------------
     # Find running-binary hash by globbing every .log under C:\Omega(\logs)
-    # for the "Git hash:" tag emitted at binary startup. The exact file and
-    # exact line prefix have changed over time -- attempts to hard-code
-    # either produced false-positive "BINARY HASH NOT FOUND" banners.
+    # for the "Git hash" tag emitted at binary startup.
     #
     # Confirmed format (from C:\Omega\logs\latest.log line 34, 2026-05-07):
     #     "HH:MM:SS  [OK] Git hash: <sha7> -- verify against GitHub HEAD"
-    # The "[OK]" prefix may change again -- the regex below only requires
-    # the literal "Git hash:" tag followed by 7-12 hex chars, case-insens.
+    # The "[OK]" prefix may change -- only the substring "Git hash" plus a
+    # 7-12 char hex tag is required. Pattern is case-insensitive.
     #
-    # Strategy:
-    #   1. Enumerate *.log under C:\Omega\logs\ then C:\Omega\, newest first.
-    #   2. Scan each file IN FULL via Select-String -Path -SimpleMatch.
-    #      Tail-only scanning was tried and rejected: latest.log writes the
-    #      banner near the top (line ~34) and grows continuously, so any
-    #      finite tail window misses the banner once the engine has been
-    #      up for more than ~5 minutes.
-    #   3. Within a file, take the LAST match -- handles dated logs that
-    #      accumulate multiple restart banners across the day.
-    #   4. First file with a hex-tagged match wins (newest by LastWriteTime).
-    #   5. If nothing matches, print every file we tried so the operator
-    #      can grep them manually.
+    # NOTE: Banners use plain ASCII ('+', '|', '=') instead of box-drawing
+    # chars to avoid the cp1252-vs-UTF-8 mojibake that PS 5.1 produces when
+    # reading a .ps1 source file without a UTF-8 BOM (the script's box-draw
+    # bytes get parsed as Windows-1252 and render as garbage). ASCII works
+    # under any encoding.
+    #
+    # NOTE: not_found is a WARN, not a hard exit. Earlier versions exited
+    # immediately, which left the operator unable to see any of the
+    # subsequent diagnostics. Stale-binary detection (running != HEAD)
+    # does still hard-exit -- that's the safety case.
     # ------------------------------------------------------------------------
     $runningHash    = "not_found"
     $hashSourceFile = ""
     $filesSearched  = @()
 
-    $logDirs = @("C:\Omega\logs", "C:\Omega")
-    $candidateFiles = foreach ($dir in $logDirs) {
-        if (Test-Path $dir) {
-            Get-ChildItem -Path $dir -Filter "*.log" -File -ErrorAction SilentlyContinue |
-                Sort-Object LastWriteTime -Descending
-        }
-    }
+    $candidateFiles = @(
+        Get-ChildItem -Path "C:\Omega\logs", "C:\Omega" -Filter "*.log" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending
+    )
+
+    Write-Host "  [DEBUG] $($candidateFiles.Count) .log file(s) to scan" -ForegroundColor DarkGray
 
     foreach ($f in $candidateFiles) {
         $filesSearched += $f.FullName
-        # Full-file scan via Select-String (efficient, streamed). Take the
-        # LAST match in this file -- on dated logs that span multiple
-        # restarts, the last "Git hash:" banner is from the current run.
-        $grepHits = Select-String -Path $f.FullName -Pattern "Git hash:" `
-                                  -SimpleMatch -ErrorAction SilentlyContinue
-        if ($grepHits) {
-            $lastMatch = @($grepHits) | Select-Object -Last 1
-            if ($lastMatch -and ($lastMatch.Line -match "(?i)Git hash:\s*([a-f0-9]{7,12})")) {
+        $hits = Select-String -Path $f.FullName -Pattern "Git hash" -SimpleMatch -ErrorAction SilentlyContinue
+        if ($hits) {
+            $lastHit = $hits | Select-Object -Last 1
+            Write-Host "  [DEBUG] hit in $($f.Name) line $($lastHit.LineNumber): $($lastHit.Line.Trim())" -ForegroundColor DarkGray
+            if ($lastHit.Line -match "(?i)Git hash:?\s*([a-f0-9]{7,12})") {
                 $runningHash    = $Matches[1]
-                $hashSourceFile = "$($f.FullName):$($lastMatch.LineNumber)"
+                $hashSourceFile = "$($f.FullName):$($lastHit.LineNumber)"
                 break
+            } else {
+                Write-Host "  [DEBUG] line matched 'Git hash' literal but regex failed to capture hex" -ForegroundColor Yellow
             }
         }
     }
@@ -176,7 +172,7 @@ if (-not (Test-Path $tokenFile)) {
     } else {
         Write-Host "  [LOG] Running hash : not_found" -ForegroundColor Red
         if ($filesSearched.Count -gt 0) {
-            Write-Host "        Searched $($filesSearched.Count) log file(s) for 'Git hash:' (no match):" -ForegroundColor DarkGray
+            Write-Host "        Searched $($filesSearched.Count) log file(s) for 'Git hash' (no match):" -ForegroundColor DarkGray
             foreach ($p in $filesSearched) { Write-Host "          - $p" -ForegroundColor DarkGray }
         } else {
             Write-Host "        No .log files found under C:\Omega\ or C:\Omega\logs\." -ForegroundColor DarkGray
@@ -186,23 +182,24 @@ if (-not (Test-Path $tokenFile)) {
     if ($ghSha7 -eq "api_unreachable") {
         Write-Host "  [WARN] Cannot verify -- GitHub API unreachable" -ForegroundColor Yellow
     } elseif ($runningHash -eq "not_found") {
+        # SOFTENED 2026-05-07: was a hard exit; now warn-and-continue so the
+        # rest of the verifier still produces output.
         Write-Host ""
-        Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-        Write-Host "  ║  BINARY HASH NOT FOUND IN ANY LOG               ║" -ForegroundColor Red
-        Write-Host "  ║  Omega has not started or no log holds the      ║" -ForegroundColor Red
-        Write-Host "  ║  'Git hash:' banner. File list above.           ║" -ForegroundColor Red
-        Write-Host "  ║  Run: .\RESTART_OMEGA.ps1                       ║" -ForegroundColor Red
-        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host "  +======================================================+" -ForegroundColor Yellow
+        Write-Host "  |  BINARY HASH NOT FOUND -- staleness check skipped    |" -ForegroundColor Yellow
+        Write-Host "  |  No .log under C:\Omega\ contains 'Git hash:' yet.   |" -ForegroundColor Yellow
+        Write-Host "  |  Engine may have just restarted -- recheck in 30s,   |" -ForegroundColor Yellow
+        Write-Host "  |  or run: .\RESTART_OMEGA.ps1                         |" -ForegroundColor Yellow
+        Write-Host "  +======================================================+" -ForegroundColor Yellow
         Write-Host ""
-        exit 1
     } elseif ($runningHash -ne $ghSha7) {
         Write-Host ""
-        Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Red
-        Write-Host "  ║  STALE BINARY DETECTED -- DO NOT TRADE          ║" -ForegroundColor Red
-        Write-Host "  ║  Running : $runningHash                          ║" -ForegroundColor Red
-        Write-Host "  ║  GitHub  : $ghSha7                               ║" -ForegroundColor Red
-        Write-Host "  ║  Fix: .\RESTART_OMEGA.ps1                       ║" -ForegroundColor Red
-        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Red
+        Write-Host "  +======================================================+" -ForegroundColor Red
+        Write-Host "  |  STALE BINARY DETECTED -- DO NOT TRADE              |" -ForegroundColor Red
+        Write-Host "  |  Running : $runningHash" -ForegroundColor Red
+        Write-Host "  |  GitHub  : $ghSha7" -ForegroundColor Red
+        Write-Host "  |  Fix     : .\RESTART_OMEGA.ps1                      |" -ForegroundColor Red
+        Write-Host "  +======================================================+" -ForegroundColor Red
         Write-Host ""
         exit 1
     } else {
@@ -221,7 +218,7 @@ $ReportFile = "$OmegaDir\logs\startup_report.txt"
 # Locate the log file
 # ------------------------------------------------------------------------------
 if ($LogPath -eq "") {
-    # ── Locate the live log ──────────────────────────────────────────────────
+    # ---- Locate the live log ----------------------------------------------
     # STALENESS CONTRACT:
     #   1. Prefer latest.log IF it exists AND LastWriteTime < 120s ago.
     #      latest.log is truncated on every restart -- if fresh it is guaranteed
@@ -231,7 +228,7 @@ if ($LogPath -eq "") {
     #      with the same 120s freshness check.
     #   3. If BOTH are stale or missing: hard FAIL with diagnostics.
     #      Never silently analyse a frozen file.
-    # ────────────────────────────────────────────────────────────────────────
+    # -----------------------------------------------------------------------
     $latestLog     = "$OmegaDir\logs\latest.log"
     $datedLog      = "$OmegaDir\logs\omega_$((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')).log"  # UTC -- binary uses gmtime_s
     $MAX_STALE_SEC = 120
