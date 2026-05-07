@@ -125,6 +125,68 @@ try {
 } catch { }
 
 # ==============================================================================
+# S60 2026-05-07 -- BRANCH GUARD
+# ------------------------------------------------------------------------------
+# Hard-block any non-help OMEGA.ps1 command unless the working tree at
+# $OmegaDir is checked out on the expected branch (default 'main', or
+# whatever -Branch was passed). Closes the foot-gun where running
+# 'git pull origin main' from a different branch fast-forwards THAT branch
+# to origin/main and leaves HEAD on it -- subsequent 'git pull' calls
+# (with no args) then sync against the wrong upstream and silently miss
+# new pushes to origin/main, so the live VPS runs an old binary.
+#
+# 2026-05-07 incident: VPS was on 'omega-terminal' for an unknown number
+# of pulls; origin/main had moved 2 commits beyond (analyzer script +
+# .ps1 wrapper) but neither file ever appeared in the working tree. The
+# deploy ran an outdated source and the analyzer command failed with
+# 'file not found' until the operator noticed the wrong-branch state.
+#
+# Behaviour: if HEAD branch != $Branch, print remediation and exit 1.
+#   * Skipped for 'help' and the empty default command (so users can
+#     always read the help text without the repo being in any state).
+#   * Skipped if $OmegaDir is not a git working tree (no .git/), so
+#     non-deploy uses of this script don't trip the guard.
+#   * Override path: pass -Branch <name> explicitly to run on a non-main
+#     branch deliberately (the guard compares HEAD to $Branch, not a
+#     hard-coded 'main', so explicit opt-in is honoured).
+# ==============================================================================
+if ($Command -ne '' -and $Command -ne 'help') {
+    if (Test-Path "$OmegaDir\.git") {
+        $currentBranch = ""
+        try {
+            Push-Location $OmegaDir
+            $currentBranch = (& git branch --show-current 2>$null | Out-String).Trim()
+            Pop-Location
+        } catch {
+            try { Pop-Location } catch { }
+        }
+        if ($currentBranch -and $currentBranch -ne $Branch) {
+            Write-Host ""
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host " BRANCH GUARD: refusing to run." -ForegroundColor Red
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host "  $OmegaDir is on branch '$currentBranch'" -ForegroundColor Yellow
+            Write-Host "  but OMEGA.ps1 expects '$Branch'." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  This usually means 'git pull origin main' was run" -ForegroundColor Yellow
+            Write-Host "  while a different branch was checked out, fast-" -ForegroundColor Yellow
+            Write-Host "  forwarding the wrong branch and leaving HEAD on it." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  To fix:" -ForegroundColor Cyan
+            Write-Host "    cd $OmegaDir" -ForegroundColor Cyan
+            Write-Host "    git checkout $Branch" -ForegroundColor Cyan
+            Write-Host "    git pull" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "  If you genuinely intend to run on '$currentBranch'," -ForegroundColor Cyan
+            Write-Host "  re-invoke OMEGA.ps1 with -Branch $currentBranch." -ForegroundColor Cyan
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host ""
+            exit 1
+        }
+    }
+}
+
+# ==============================================================================
 # Common variables
 # ==============================================================================
 $ServiceName  = "Omega"
