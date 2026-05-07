@@ -1,22 +1,4 @@
 #Requires -Version 5.1
-
-# ==============================================================================
-# UTF-8 CONSOLE OUTPUT (FIX 2026-05-07)
-# ------------------------------------------------------------------------------
-# This script's own banners are plain ASCII ('+', '|', '=') so they render
-# correctly under any console encoding. The OutputEncoding setting below is
-# still useful for any child process output that this script may launch later,
-# and for OMEGA.ps1 / vite stdout when piped through. Same fix as OMEGA.ps1
-# (queued 2026-05-07). Wrapped in try/catch -- ISE/restricted runspaces reject
-# direct assignment to [Console]::OutputEncoding.
-# ==============================================================================
-try {
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    $OutputEncoding           = [System.Text.Encoding]::UTF8
-} catch {
-    # Some hosts (ISE, restricted runspaces) reject this -- safe to ignore.
-}
-
 # ==============================================================================
 #  OMEGA - STARTUP VERIFIER
 #
@@ -55,6 +37,24 @@ param(
     [string] $LogPath = "",
     [string] $OmegaDir = "C:\Omega"
 )
+
+# ==============================================================================
+# UTF-8 CONSOLE OUTPUT (FIX 2026-05-07, moved after param block)
+# ------------------------------------------------------------------------------
+# Was originally placed before the param() block which broke PS's param parsing
+# ("InvalidLeftHandSide" on every default-value assignment). param() must be
+# the first executable statement after #Requires/comments. This script's
+# banners are plain ASCII so encoding doesn't matter for our own Write-Host
+# output -- the setting below is kept for any child-process output piped
+# through this script in the future. try/catch because ISE rejects direct
+# assignment to [Console]::OutputEncoding.
+# ==============================================================================
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding           = [System.Text.Encoding]::UTF8
+} catch {
+    # Some hosts (ISE, restricted runspaces) reject this -- safe to ignore.
+}
 
 # FIX 2026-04-21 (StrictMode safety):
 # $ghToken is loaded conditionally inside STEP 0 (only when C:\Omega\.github_token
