@@ -195,8 +195,19 @@ public:
     static constexpr int    SESSION_START_HOUR   = 6;   // UTC
     static constexpr int    SESSION_END_HOUR     = 22;  // UTC, wraparound-aware
 
-    static constexpr double USD_PER_PT           = 100.0;  // 0.01 lot XAUUSD
-    static constexpr double LIVE_LOT             = 0.01;   // FIX 2026-04-22 cap
+    // 2026-05-08 USER REQUEST: pre-London dead zone -- DISABLED at user
+    // direction. Constant kept (set to -1) so the gate machinery is in
+    // place; flip to 6 (BST) or 7 (GMT) to re-arm. The gate blocks the
+    // hour immediately before London open. SL_DIST/TP_DIST asymmetry is
+    // 3.8x so any chop window where WR drops below ~80% will bleed.
+    static constexpr int    PRE_LONDON_DEAD_HOUR_UTC = -1;
+
+    // 2026-05-08 USER REQUEST: bump live lot from 0.01 -> 0.10. Was
+    // pinned to 0.01 (FIX 2026-04-22 cap) for initial deploy safety.
+    // 10x position size; PnL per trade scales 10x (TP win $0.79 -> $7.90;
+    // SL hit $3.00 -> $30.00). Verify on live shadow before committing.
+    static constexpr double USD_PER_PT           = 100.0;  // per full lot XAUUSD
+    static constexpr double LIVE_LOT             = 0.10;
 
     static constexpr int    MIN_ENTRY_TICKS      = 30;     // warmup before any fire
     static constexpr int    DIAG_EVERY_N_TICKS   = 600;    // ~3min @ 200 ticks/min
@@ -209,6 +220,11 @@ public:
     //   trade count (>=200 fills) on the April-replay + live-shadow cohort.
     //   Live promotion via engine_init.hpp override; do NOT change default.
     bool shadow_mode = true;
+
+    // 2026-05-08 S20+: RiskMonitor wiring. Bound in engine_init.hpp to call
+    //   g_risk_monitor.on_fire("MicroScalperGold", now_s) on every fill.
+    //   Default nullptr = no-op; engine behaviour unchanged when unset.
+    std::function<void(int64_t now_s)> on_fire_hook;
 
     struct LivePos {
         bool    active             = false;
@@ -328,6 +344,10 @@ public:
                     ? (h >= SESSION_START_HOUR && h <  SESSION_END_HOUR)
                     : (h >= SESSION_START_HOUR || h <  SESSION_END_HOUR);
             if (!in_window) return;
+            // 2026-05-08 USER REQUEST: pre-London dead zone -- block the
+            // hour immediately before London open (BST: 06:00-07:00 UTC,
+            // GMT: 07:00-08:00 UTC). PRE_LONDON_DEAD_HOUR_UTC = -1 disables.
+            if (PRE_LONDON_DEAD_HOUR_UTC >= 0 && h == PRE_LONDON_DEAD_HOUR_UTC) return;
         }
 
         // -- Entry signal: 20-tick z-score with L2 confirmation ---------------
@@ -396,6 +416,10 @@ public:
             shadow_mode ? "[SHADOW]" : "[LIVE]");
         std::cout << _fbuf;
         std::cout.flush();
+
+        // 2026-05-08 S20+: notify RiskMonitor of the fire (logging-only in
+        //   v1; no effect on engine state). Bound from engine_init.hpp.
+        if (on_fire_hook) on_fire_hook(now_s);
     }
 
     // External force-close path (e.g. SIGINT shutdown handler in

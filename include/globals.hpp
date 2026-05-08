@@ -368,6 +368,16 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   backtest expectancy. Wired in tick_gold.hpp dispatch block parallel to
 //   g_gold_midscalper.
 #include "GoldMicroScalperEngine.hpp"
+// 2026-05-08 S20+: RiskMonitor -- per-engine logging-only risk surveillance.
+//   Watches WR break-even, fire rate over/under, and spread-at-entry drift
+//   for every engine in data/risk_monitor_thresholds.csv (calibrated by
+//   backtest/calibrate_risk_thresholds). v1 emits WOULD-TRIP log lines only;
+//   does NOT touch any engine's shadow_mode flag. Wired in:
+//     - load at startup        : engine_init.hpp (load_thresholds call)
+//     - close hook             : trade_lifecycle.hpp::handle_closed_trade
+//     - fire hook (microscalper): GoldMicroScalperEngine::on_fire_hook,
+//                                 bound from engine_init.hpp
+#include "RiskMonitor.hpp"
 // 2026-05-02: EurusdLondonOpenEngine -- first FX engine since the 2026-04-06
 //   global FX disable. London-open compression bracket on EURUSD, 06:00-09:00
 //   UTC session window, news-blackout-gated for NFP/CPI/FOMC/ECB. Shadow-only
@@ -455,6 +465,8 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   removed at line 347 above. Engine fully retired.
 static omega::GoldMidScalperEngine            g_gold_midscalper;
 static omega::GoldMicroScalperEngine          g_gold_microscalper;
+// 2026-05-08 S20+: per-engine risk surveillance. Logging-only in v1.
+static omega::RiskMonitor                     g_risk_monitor;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
 static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
 static omega::GbpusdLondonOpenEngine          g_gbpusd_london_open;

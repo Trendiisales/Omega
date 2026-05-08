@@ -11,6 +11,12 @@
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
 
+    // 2026-05-08 S20+: per-engine risk-surveillance hook. The monitor reads
+    //   the original tr_in (engine's emitted view) before any L2-stamping or
+    //   cost-application below mutates it. v1 is logging-only; this call
+    //   never modifies any engine state. See include/RiskMonitor.hpp.
+    g_risk_monitor.on_trade_close(tr_in);
+
     // ?? L2 liveness stamp -- set on every close so CSV audit is accurate ??????
     // tr.l2_live defaults false. Stamp from live MacroContext flags here so
     // every CSV row reflects actual L2 state at time of close.
