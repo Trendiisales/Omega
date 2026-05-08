@@ -244,7 +244,11 @@ public:
     //     8077780). To preserve single-engine semantics under mode=LIVE, the
     //     wire_bracket lambda in engine_init.hpp was hard-pinned to shadow.
     static constexpr double USD_PER_PT           = 100.0;  // per full lot XAUUSD
-    static constexpr double LIVE_LOT             = 0.30;
+    // 2026-05-09 LOT REDUCED 0.30 -> 0.01 (operator order, after orphan-pair
+    // bleed). At 0.01 lot, per-trade exposure is 30x smaller: TP win ~+$0.79
+    // gross, SL hit ~-$3.00 gross. Even worst-case orphan bleed at this size
+    // is fractions of a dollar per pair, not $5-15 per pair as at 0.30.
+    static constexpr double LIVE_LOT             = 0.01;
 
     static constexpr int    MIN_ENTRY_TICKS      = 30;     // warmup before any fire
     static constexpr int    DIAG_EVERY_N_TICKS   = 600;    // ~3min @ 200 ticks/min
