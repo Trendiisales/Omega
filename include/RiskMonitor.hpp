@@ -165,10 +165,25 @@ struct RiskMonitorState {
 // -----------------------------------------------------------------------------
 class RiskMonitor {
 public:
-    // v1 hard-pins to true. v2 will let this be flipped to false to enable
-    // actual engine.shadow_mode write-back. Until then the monitor never
-    // touches any engine state -- it only writes log lines.
-    bool logging_only = true;
+    // 2026-05-08 DEEPSTRIKE: flipped to false for the live deploy. On any
+    //   trip event the monitor would now actually write back to the
+    //   engine's shadow_mode flag instead of just logging WOULD-TRIP.
+    //
+    //   IMPORTANT: v1 has no re-arm gate. Once an engine is auto-pinned to
+    //   shadow by the monitor, it stays shadow until either (a) the operator
+    //   manually flips engine.shadow_mode = false in source + redeploy, or
+    //   (b) v2 ships a re-arm gate that auto-restores live on engines whose
+    //   paper performance recovers to backtest expectancy. For first live
+    //   this one-way trip behaviour IS the safety net; do not flip back to
+    //   logging_only = true without operator awareness.
+    //
+    //   Also see _evaluate_wr / _evaluate_fire / _evaluate_spread below --
+    //   when this flag is false those methods need to actually mutate
+    //   engine state, not just log. v1 implementation logs the WOULD-TRIP
+    //   line AND emits a follow-up TRIPPED line announcing the auto-pin;
+    //   the actual `engine.shadow_mode = true` write happens via a small
+    //   handler block in each evaluator. (See AUTO_PIN_HOOKS below.)
+    bool logging_only = false;
 
     // Load thresholds from CSV. Returns number of rows successfully loaded.
     // Pre-existing state (if any) is preserved; thresholds are upserted.
@@ -183,10 +198,21 @@ public:
     // aggregates. Safe to call multiple times -- empty days emit zeros.
     void emit_daily_summary(int64_t now_s);
 
+    // 2026-05-08 DEEPSTRIKE: register an auto-pin callback per engine.
+    //   When `logging_only = false` and an evaluator hits a WOULD-TRIP
+    //   condition, this callback fires. Convention: the callback should
+    //   set the engine's `shadow_mode = true` and print a one-line
+    //   notification to stdout. The callback is responsible for its own
+    //   idempotency (don't pin if already pinned).
+    void register_shadow_pin_cb(const std::string& engine,
+                                std::function<void(const std::string& reason)> cb);
+
 private:
     mutable std::mutex                                            mtx_;
     std::unordered_map<std::string, RiskMonitorThresholds>        thresholds_;
     std::unordered_map<std::string, RiskMonitorState>             states_;
+    std::unordered_map<std::string,
+                       std::function<void(const std::string&)>>   shadow_pin_cbs_;
     std::ofstream                                                 log_;
     int                                                           current_log_day_idx_ = -1;
 
@@ -194,6 +220,7 @@ private:
     void _evaluate_wr      (RiskMonitorState& s, const RiskMonitorThresholds& t, int64_t now_s);
     void _evaluate_fire    (RiskMonitorState& s, const RiskMonitorThresholds& t, int64_t now_s);
     void _evaluate_spread  (RiskMonitorState& s, const RiskMonitorThresholds& t, int64_t now_s);
+    void _maybe_auto_pin   (const std::string& engine, const std::string& reason);
     void _maybe_roll_day   (RiskMonitorState& s, int64_t now_s);
 
     static int         _utc_hour    (int64_t now_s);
@@ -385,13 +412,19 @@ inline void RiskMonitor::_evaluate_wr(RiskMonitorState& s,
     if (wr < t.trip_wr) {
         std::snprintf(buf, sizeof(buf),
             "[RISK-MON] %s %s WR-EVAL: rolling_n=%d wr=%.3f%% trip_wr=%.3f%%"
-            " margin=%.2fpp WOULD-TRIP\n",
+            " margin=%.2fpp %s\n",
             _utc_date_str(now_s).c_str(), s.engine.c_str(),
-            n, wr * 100.0, t.trip_wr * 100.0, margin_pp);
+            n, wr * 100.0, t.trip_wr * 100.0, margin_pp,
+            logging_only ? "WOULD-TRIP" : "TRIPPED");
         ++s.day_trip_wr;
         ++s.cumulative_trip_wr;
         log_ << buf;
         log_.flush();
+        char reason[160];
+        std::snprintf(reason, sizeof(reason),
+                      "WR %.3f%% < trip %.3f%% over rolling_n=%d",
+                      wr * 100.0, t.trip_wr * 100.0, n);
+        _maybe_auto_pin(s.engine, reason);
     } else {
         // Throttle OK lines to keep the log readable -- one in every 50.
         if ((n % 50) != 0) return;
@@ -435,21 +468,33 @@ inline void RiskMonitor::_evaluate_fire(RiskMonitorState& s,
     if (over) {
         std::snprintf(buf, sizeof(buf),
             "[RISK-MON] %s %s FIRE-EVAL: hour=%02d live=%d expected=%.1f"
-            " ratio=%.2fx WOULD-TRIP (over)\n",
+            " ratio=%.2fx %s (over)\n",
             _utc_date_str(now_s).c_str(), s.engine.c_str(),
-            hour, actual, expected, ratio);
+            hour, actual, expected, ratio,
+            logging_only ? "WOULD-TRIP" : "TRIPPED");
         ++s.day_trip_fire;
         ++s.cumulative_trip_fire;
         log_ << buf;
+        char reason[160];
+        std::snprintf(reason, sizeof(reason),
+                      "FIRE-RATE OVER hour=%02d live=%d expected=%.1f ratio=%.2fx",
+                      hour, actual, expected, ratio);
+        _maybe_auto_pin(s.engine, reason);
     } else if (s.consec_under_hours >= t.fire_under_consec_hours) {
         std::snprintf(buf, sizeof(buf),
             "[RISK-MON] %s %s FIRE-EVAL: hour=%02d live=%d expected=%.1f"
-            " ratio=%.2fx consec_under=%d WOULD-TRIP (under)\n",
+            " ratio=%.2fx consec_under=%d %s (under)\n",
             _utc_date_str(now_s).c_str(), s.engine.c_str(),
-            hour, actual, expected, ratio, s.consec_under_hours);
+            hour, actual, expected, ratio, s.consec_under_hours,
+            logging_only ? "WOULD-TRIP" : "TRIPPED");
         ++s.day_trip_fire;
         ++s.cumulative_trip_fire;
         log_ << buf;
+        char reason[160];
+        std::snprintf(reason, sizeof(reason),
+                      "FIRE-RATE UNDER consec=%d hour=%02d ratio=%.2fx",
+                      s.consec_under_hours, hour, ratio);
+        _maybe_auto_pin(s.engine, reason);
     } else {
         std::snprintf(buf, sizeof(buf),
             "[RISK-MON] %s %s FIRE-EVAL: hour=%02d live=%d expected=%.1f"
@@ -479,13 +524,19 @@ inline void RiskMonitor::_evaluate_spread(RiskMonitorState& s,
     if (median > t.spread_trip_median) {
         std::snprintf(buf, sizeof(buf),
             "[RISK-MON] %s %s SPREAD-EVAL: rolling_n=%d median=%.4f trip=%.4f"
-            " baseline_median=%.4f WOULD-TRIP\n",
+            " baseline_median=%.4f %s\n",
             _utc_date_str(now_s).c_str(), s.engine.c_str(),
-            n, median, t.spread_trip_median, t.backtest_spread_median_filt);
+            n, median, t.spread_trip_median, t.backtest_spread_median_filt,
+            logging_only ? "WOULD-TRIP" : "TRIPPED");
         ++s.day_trip_spread;
         ++s.cumulative_trip_spread;
         log_ << buf;
         log_.flush();
+        char reason[160];
+        std::snprintf(reason, sizeof(reason),
+                      "SPREAD median=%.4f > trip=%.4f rolling_n=%d",
+                      median, t.spread_trip_median, n);
+        _maybe_auto_pin(s.engine, reason);
     } else {
         // Throttle OK lines to keep the log readable.
         if ((n % 50) != 0) return;
@@ -549,6 +600,29 @@ inline void RiskMonitor::_ensure_log_open(int64_t now_s) {
         return;
     }
     current_log_day_idx_ = day_idx;
+}
+
+inline void RiskMonitor::register_shadow_pin_cb(
+    const std::string& engine,
+    std::function<void(const std::string& reason)> cb)
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    shadow_pin_cbs_[engine] = std::move(cb);
+    std::fprintf(stderr, "[RISK-MON] auto-pin callback registered for engine=%s\n",
+                 engine.c_str());
+}
+
+inline void RiskMonitor::_maybe_auto_pin(const std::string& engine,
+                                         const std::string& reason)
+{
+    if (logging_only) return;
+    auto pit = shadow_pin_cbs_.find(engine);
+    if (pit == shadow_pin_cbs_.end() || !pit->second) return;
+    // Caller already holds mtx_; the callback runs under the lock.
+    // The engine.shadow_mode write inside the callback is a single bool
+    // assignment which the engine reads on each tick under its own
+    // serialisation, so no nested-lock risk.
+    pit->second(reason);
 }
 
 inline void RiskMonitor::_maybe_roll_day(RiskMonitorState& s, int64_t now_s) {

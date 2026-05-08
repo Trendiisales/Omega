@@ -181,7 +181,14 @@ public:
     static constexpr double ENTRY_Z              = 0.75;
     static constexpr double L2_IMB_LONG_MIN      = 0.55;
     static constexpr double L2_IMB_SHORT_MAX     = 0.45;
-    static constexpr double MAX_SPREAD           = 1.0;
+    // 2026-05-08 DEEPSTRIKE: tightened 1.0 -> 0.5pt for max protection on
+    //   the live deploy. Backtest filtered p95 spread was 0.22pt and max
+    //   filtered was 0.99pt; 0.5pt still admits the modal-spread fires
+    //   (~95%+ of legitimate signals) but rejects the 0.5-0.99 band that
+    //   was probably suspect anyway. If live tape shows under-firing
+    //   relative to expected_fires_per_hour=81.6, this is the first
+    //   constant to relax.
+    static constexpr double MAX_SPREAD           = 0.5;
     static constexpr double TP_DIST_PTS          = 0.79;
     static constexpr double SL_DIST_PTS          = 3.0;
     static constexpr double BE_TRIGGER_PTS       = 0.5;
@@ -202,12 +209,16 @@ public:
     // 3.8x so any chop window where WR drops below ~80% will bleed.
     static constexpr int    PRE_LONDON_DEAD_HOUR_UTC = -1;
 
-    // 2026-05-08 USER REQUEST: bump live lot from 0.01 -> 0.10. Was
-    // pinned to 0.01 (FIX 2026-04-22 cap) for initial deploy safety.
-    // 10x position size; PnL per trade scales 10x (TP win $0.79 -> $7.90;
-    // SL hit $3.00 -> $30.00). Verify on live shadow before committing.
+    // 2026-05-08 DEEPSTRIKE LIVE: lot set to 0.03 for the single-engine
+    //   live deploy on account 8077780. Earlier 0.10 figure was the user's
+    //   shadow-test bump; for live they chose 0.03 instead.
+    //
+    //   PnL per trade at 0.03 lot:
+    //     TP win  : +0.79pt  ->  +$2.37 gross  ->  ~+$2.04 net (after $0.33 slip)
+    //     SL hit  : -3.00pt  ->  -$9.00 gross  ->  ~-$9.33 net (after $0.33 slip)
+    //   Real-cost BE WR  ~  82.1%   (vs backtest 92.5%, monitor trip 82.16%)
     static constexpr double USD_PER_PT           = 100.0;  // per full lot XAUUSD
-    static constexpr double LIVE_LOT             = 0.10;
+    static constexpr double LIVE_LOT             = 0.03;
 
     static constexpr int    MIN_ENTRY_TICKS      = 30;     // warmup before any fire
     static constexpr int    DIAG_EVERY_N_TICKS   = 600;    // ~3min @ 200 ticks/min

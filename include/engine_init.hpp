@@ -14,7 +14,18 @@ static void init_engines(const std::string& cfg_path)
     // H4Regime, ISwingSP/NQ) override this below
     // with `shadow_mode = true` AFTER this assignment -- those locks are
     // load-bearing safety interlocks and are NOT affected by g_cfg.mode.
-    const bool kShadowDefault = (g_cfg.mode != "LIVE");
+    // 2026-05-08 DEEPSTRIKE: hard-pinned to true regardless of g_cfg.mode.
+    //   Single-engine live deploy policy: ONLY engines with an explicit
+    //   `shadow_mode = false` pin go live. Everything else (whether using
+    //   kShadowDefault or otherwise) stays shadow regardless of the global
+    //   mode flag. This is the defensive whitelist the user asked for --
+    //   "max protection". Today the only authorised live engine is
+    //   GoldMicroScalper (see its explicit `= false` pin below). To re-arm
+    //   mode-following behaviour for any other engine, add an explicit
+    //   `engine.shadow_mode = false;` line elsewhere in this function;
+    //   reverting this line to `(g_cfg.mode != "LIVE")` would re-arm ALL
+    //   engines that use kShadowDefault and is the wrong unit of change.
+    const bool kShadowDefault = true;
 
     // ── ISSUE-5 newly-stamped engines: follow kShadowDefault ─────────────
     // Engines with no prior explicit shadow_mode wiring in engine_init.hpp.
@@ -69,28 +80,31 @@ static void init_engines(const std::string& cfg_path)
     // 2026-05-08 USER REQUEST: only g_gold_microscalper trades on gold;
     //   force every other gold engine to shadow regardless of g_cfg.mode.
     g_gold_midscalper.shadow_mode = true;
-    // 2026-05-08 REVERTED: a previous edit set shadow_mode = false claiming
-    //   "USER REQUEST: promoted to live trading", but the user confirmed
-    //   2026-05-08 that this promotion was NOT authorised. Reverted to
-    //   shadow_mode = true to honour the original 2-week paper-validation
-    //   gate (n >= 500 fills, expectancy within 50% of backtest) before
-    //   any live promotion. Engine stays shadow-only until that gate is
-    //   cleared OR explicit re-authorisation in chat.
+    // 2026-05-08 DEEPSTRIKE LIVE PROMOTION (authorised by user in chat):
+    //   GoldMicroScalper goes live on account 8077780 at 0.03 lot. This
+    //   is the SINGLE engine authorised for live trading under the
+    //   single-engine deploy policy. All other gold + non-gold engines
+    //   stay shadow via the kShadowDefault hard-pin at the top of this
+    //   function plus their existing explicit shadow pins.
     //
-    //   Per the load-bearing-interlock note at the top of this function
-    //   (line ~16), this explicit `= true` overrides g_cfg.mode -- the
-    //   engine is shadow-pinned regardless of whether the global mode
-    //   is SHADOW or LIVE. To promote in future, change this line back
-    //   to `= false` (NOT to `= kShadowDefault`) so the pin remains
-    //   under explicit human control rather than tied to global mode.
+    //   Live-promotion configuration:
+    //     - shadow_mode = false        (this line)
+    //     - LIVE_LOT = 0.03            (GoldMicroScalperEngine.hpp)
+    //     - MAX_SPREAD = 0.5pt         (tightened from 1.0 for max protection)
+    //     - max_lot_gold = 0.03        (omega_config.ini, matches LIVE_LOT)
+    //     - mode = SHADOW              (omega_config.ini stays SHADOW;
+    //                                   per-engine pin is the live override)
+    //     - RiskMonitor logging_only = false (auto-pin on trip)
+    //     - g_nbm_gold_london pinned shadow (was the unpinned default)
     //
-    //   The PRE_LONDON_DEAD_HOUR_UTC change and the 0.01 -> 0.10 lot bump
-    //   live in GoldMicroScalperEngine.hpp (engine header), NOT in this
-    //   file -- those are NOT touched by this revert. They are dormant
-    //   while in shadow but would take immediate effect on any future
-    //   authorised live promotion. Confirm with user whether the lot
-    //   should also be reverted to 0.01 before promotion happens.
-    g_gold_microscalper.shadow_mode = true;
+    //   Risk profile: real-cost BE_WR ~ 82.1% at 0.03 lot. Backtest WR was
+    //   92.5%, leaving ~10pp of headroom. RiskMonitor TRIP_WR = 82.16% will
+    //   auto-shadow this engine if rolling 50+ trade WR drops to BE.
+    //
+    //   To revert to shadow without rebuilding: there is no runtime toggle
+    //   in v1; either flip this line back to `= true` and redeploy, or
+    //   the RiskMonitor will auto-pin on trip.
+    g_gold_microscalper.shadow_mode = false;
 
     // 2026-05-08 S20+: RiskMonitor wiring -------------------------------------
     // Logging-only per-engine surveillance. Watches WR break-even, fire-rate
@@ -111,6 +125,28 @@ static void init_engines(const std::string& cfg_path)
     g_gold_microscalper.on_fire_hook = [](int64_t now_s) {
         g_risk_monitor.on_fire("MicroScalperGold", now_s);
     };
+
+    // 2026-05-08 DEEPSTRIKE auto-pin callback: fired by RiskMonitor when any
+    //   of the three checks (WR / fire-rate / spread) hits its trip
+    //   threshold and `logging_only = false`. Idempotent: only flips the
+    //   engine's shadow_mode the first time, subsequent calls are no-ops.
+    //   This is the actual safety circuit-breaker for the live deploy.
+    g_risk_monitor.register_shadow_pin_cb("MicroScalperGold",
+        [](const std::string& reason) {
+            if (!g_gold_microscalper.shadow_mode) {
+                g_gold_microscalper.shadow_mode = true;
+                printf("[RISK-MON] AUTO-PIN MicroScalperGold to SHADOW: %s\n",
+                       reason.c_str());
+                fflush(stdout);
+            }
+        });
+
+    // 2026-05-08 DEEPSTRIKE belt-and-braces: explicit shadow pin for
+    //   g_nbm_gold_london. Was previously following kShadowDefault, which
+    //   the hard-pin above already forces to true, but stamping it
+    //   explicitly here means the policy survives even if a future edit
+    //   changes the kShadowDefault default back to mode-following.
+    g_nbm_gold_london.shadow_mode = true;
     // 2026-05-02: EurusdLondonOpenEngine -- pinned shadow-only on first
     //   deployment regardless of g_cfg.mode. First FX engine since the
     //   2026-04-06 global FX disable; new engine model (compression-breakout
