@@ -261,10 +261,11 @@ struct CrossPosition {
 #endif
     }
 
-    void force_close(double bid, double ask, CloseCb on_close) noexcept {
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") noexcept {
         if (!active) return;
         const double mid = (bid + ask) * 0.5;
-        emit(mid, "FORCE_CLOSE", on_close);
+        emit(mid, reason, on_close);
     }
     // Patch lot size after enter_directional succeeds -- corrects the hardcoded
     // 0.01 fallback with the actual risk-sized lot for accurate shadow P&L.
@@ -422,7 +423,8 @@ public:
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
     void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") { pos_.force_close(bid, ask, on_close, reason); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
 
@@ -538,7 +540,8 @@ public:
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
     void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") { pos_.force_close(bid, ask, on_close, reason); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
 
@@ -635,7 +638,8 @@ public:
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
     void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") { pos_.force_close(bid, ask, on_close, reason); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
 
@@ -736,19 +740,22 @@ public:
     void rollback_gbp() noexcept { pos_gbp_.reset(); }
     void rollback_aud() noexcept { pos_aud_.reset(); }
     void rollback_nzd() noexcept { pos_nzd_.reset(); }
-    void force_close(double gbp_bid, double gbp_ask, CloseCb on_close) {
-        pos_gbp_.force_close(gbp_bid, gbp_ask, on_close);
+    void force_close(double gbp_bid, double gbp_ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") {
+        pos_gbp_.force_close(gbp_bid, gbp_ask, on_close, reason);
         // AUD/NZD legs use their own price when available, else GBPUSD as proxy
-        pos_aud_.force_close(gbp_bid, gbp_ask, on_close);
-        pos_nzd_.force_close(gbp_bid, gbp_ask, on_close);
+        pos_aud_.force_close(gbp_bid, gbp_ask, on_close, reason);
+        pos_nzd_.force_close(gbp_bid, gbp_ask, on_close, reason);
     }
 
     // Per-pair force-close when caller has the exact price
     void cancel_gbpusd() noexcept { pos_gbp_.reset(); }
     void cancel_audusd() noexcept { pos_aud_.reset(); }
     void cancel_nzdusd() noexcept { pos_nzd_.reset(); }
-    void force_close_audusd(double bid, double ask, CloseCb on_close) { pos_aud_.force_close(bid, ask, on_close); }
-    void force_close_nzdusd(double bid, double ask, CloseCb on_close) { pos_nzd_.force_close(bid, ask, on_close); }
+    void force_close_audusd(double bid, double ask, CloseCb on_close,
+                            const char* reason = "FORCE_CLOSE") { pos_aud_.force_close(bid, ask, on_close, reason); }
+    void force_close_nzdusd(double bid, double ask, CloseCb on_close,
+                            const char* reason = "FORCE_CLOSE") { pos_nzd_.force_close(bid, ask, on_close, reason); }
     void patch_size_gbp(double lot) noexcept { pos_gbp_.patch_size(lot); }
     void patch_size_aud(double lot) noexcept { pos_aud_.patch_size(lot); }
     void patch_size_nzd(double lot) noexcept { pos_nzd_.patch_size(lot); }
@@ -938,7 +945,8 @@ public:
     bool   open_is_long() const { return pos_.is_long; }
     double open_size()    const { return pos_.size; }
     void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") { pos_.force_close(bid, ask, on_close, reason); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
 
@@ -1089,7 +1097,8 @@ public:
     bool has_open_position() const { return pos_.active; }
     int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     void cancel() noexcept { pos_.reset(); }  // phantom rollback -- no trade recorded
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); }
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") { pos_.force_close(bid, ask, on_close, reason); }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); }
 
@@ -1240,7 +1249,7 @@ public:
                        MAE_EXIT_RATIO * 100.0);
                 fflush(stdout);
                 const bool this_long = pos_.is_long;
-                pos_.force_close(bid, ask, on_close);
+                pos_.force_close(bid, ask, on_close, "MAE_EARLY_EXIT");
                 timeout_extended_ = false;
                 cooldown_until_ = ca_now_sec() + MAE_COOLDOWN_SEC;
                 if (last_fc_long_ == this_long) {
@@ -1403,8 +1412,9 @@ public:
     bool has_open_position() const { return pos_.active; }
     int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
     void cancel()  noexcept { pos_.reset(); timeout_extended_ = false; }
-    void force_close(double bid, double ask, CloseCb on_close) {
-        pos_.force_close(bid, ask, on_close);
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") {
+        pos_.force_close(bid, ask, on_close, reason);
         timeout_extended_ = false;
     }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
@@ -2132,7 +2142,8 @@ public:
     bool has_open_position() const { return pos_.active; }
     int     pyramid_adds_   = 0;     // public: read/written by main.cpp pyramid dispatch
     void cancel() noexcept { pos_.reset(); be_locked_ = false; }
-    void force_close(double bid, double ask, CloseCb on_close) { pos_.force_close(bid, ask, on_close); be_locked_ = false; }
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") { pos_.force_close(bid, ask, on_close, reason); be_locked_ = false; }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void rollback() noexcept { pos_.reset(); be_locked_ = false; }
     // Reset cooldown immediately -- used by crash override in main.cpp
@@ -2414,8 +2425,9 @@ public:
     void cancel()   noexcept        { pos_.reset();          }
     void rollback() noexcept        { pos_.reset();          }
     void patch_size(double lot) noexcept { pos_.patch_size(lot); }
-    void force_close(double bid, double ask, CloseCb on_close) {
-        pos_.force_close(bid, ask, on_close);
+    void force_close(double bid, double ask, CloseCb on_close,
+                     const char* reason = "FORCE_CLOSE") {
+        pos_.force_close(bid, ask, on_close, reason);
     }
     // Live position accessors for GUI telemetry
     bool   open_is_long() const { return pos_.is_long; }
@@ -2502,7 +2514,7 @@ private:
             if (vwap_stop) {
                 printf("[NBM] VWAP stop: mid=%.4f vwap=%.4f tol=%.4f\n", mid, vwap_, tol);
                 fflush(stdout);
-                pos_.force_close(bid, ask, on_close);
+                pos_.force_close(bid, ask, on_close, "VWAP_STOP");
                 return;
             }
         }

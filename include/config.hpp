@@ -176,7 +176,7 @@ static void maybe_reset_daily_ledger() {
         // -- Gold engines --
         if (xau_b > 0.0 && xau_a > 0.0) {
             if (g_trend_pb_gold.has_open_position()) {
-                g_trend_pb_gold.force_close(xau_b, xau_a, midnight_cb);
+                g_trend_pb_gold.force_close(xau_b, xau_a, midnight_cb, "MIDNIGHT_ROLLOVER");
                 std::cout << "[MIDNIGHT-ROLLOVER] Force-closed TrendPullback gold\n";
             }
             if (g_gold_stack.has_open_position()) {
@@ -227,7 +227,7 @@ static void maybe_reset_daily_ledger() {
             if (!eng.has_open_position()) return;
             double b=0,a=0; mpx(sym,b,a);
             if (b<=0) return;
-            eng.force_close(b, a, midnight_cb);
+            eng.force_close(b, a, midnight_cb, "MIDNIGHT_ROLLOVER");
             printf("[MIDNIGHT-ROLLOVER] Force-closed TrendPullback %s\n", sym); fflush(stdout);
         };
         mid_tpb(g_trend_pb_sp,    "US500.F");
@@ -239,7 +239,7 @@ static void maybe_reset_daily_ledger() {
             if (!eng.has_open_position()) return;
             double b=0,a=0; mpx(sym,b,a);
             if (b<=0) return;
-            eng.force_close(b, a, midnight_cb);
+            eng.force_close(b, a, midnight_cb, "MIDNIGHT_ROLLOVER");
             printf("[MIDNIGHT-ROLLOVER] Force-closed CA/NBM/ORB/VWAP %s\n", sym); fflush(stdout);
         };
         mid_ca(g_nbm_sp,          "US500.F"); mid_ca(g_nbm_nq,          "USTEC.F");

@@ -602,14 +602,14 @@ static void quote_loop() {
                 if (!is_stale(eng.open_entry_ts())) return;  // same-day position -- preserve it
                 double b=0,a=0; stale_px(sym,b,a);
                 if (b<=0) return;
-                eng.force_close(b, a, stale_cb);
+                eng.force_close(b, a, stale_cb, "STALE_PRIOR_DAY");
                 printf("[STALE-CLOSE] Purged prior-day CA/NBM/ORB/VWAP %s\n", sym); fflush(stdout);
             };
 
             // -- Gold engines (original) --
             if (xb_rc > 0 && xa_rc > 0) {
                 if (g_trend_pb_gold.has_open_position() && is_stale(g_trend_pb_gold.open_entry_ts()))
-                    { g_trend_pb_gold.force_close(xb_rc, xa_rc, stale_cb);
+                    { g_trend_pb_gold.force_close(xb_rc, xa_rc, stale_cb, "STALE_PRIOR_DAY");
                       std::cout << "[STALE-CLOSE] Purged prior-day TrendPullback-Gold\n"; }
                 // (GoldFlow stale-close blocks removed S19 Stage 1B — engine culled)
                 if (g_gold_stack.has_open_position() && is_stale(g_gold_stack.live_entry_ts()))
@@ -669,15 +669,15 @@ static void quote_loop() {
             // stale_ca() now also checks is_stale() but keeping these explicit is clearer.
             if (g_trend_pb_sp.has_open_position() && is_stale(g_trend_pb_sp.open_entry_ts())) {
                 double b=0,a=0; stale_px("US500.F",b,a);
-                if (b>0) { g_trend_pb_sp.force_close(b,a,stale_cb);
+                if (b>0) { g_trend_pb_sp.force_close(b,a,stale_cb,"STALE_PRIOR_DAY");
                            printf("[STALE-CLOSE] Purged prior-day TrendPullback-SP\n"); fflush(stdout); } }
             if (g_trend_pb_nq.has_open_position() && is_stale(g_trend_pb_nq.open_entry_ts())) {
                 double b=0,a=0; stale_px("USTEC.F",b,a);
-                if (b>0) { g_trend_pb_nq.force_close(b,a,stale_cb);
+                if (b>0) { g_trend_pb_nq.force_close(b,a,stale_cb,"STALE_PRIOR_DAY");
                            printf("[STALE-CLOSE] Purged prior-day TrendPullback-NQ\n"); fflush(stdout); } }
             if (g_trend_pb_ger40.has_open_position() && is_stale(g_trend_pb_ger40.open_entry_ts())) {
                 double b=0,a=0; stale_px("GER40",b,a);
-                if (b>0) { g_trend_pb_ger40.force_close(b,a,stale_cb);
+                if (b>0) { g_trend_pb_ger40.force_close(b,a,stale_cb,"STALE_PRIOR_DAY");
                            printf("[STALE-CLOSE] Purged prior-day TrendPullback-GER40\n"); fflush(stdout); } }
             stale_ca(g_ca_esnq,         "US500.F");
             stale_ca(g_ca_eia_fade,     "USOIL.F");
@@ -799,23 +799,23 @@ static void quote_loop() {
 
         // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
         { double b=0,a=0;
-          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb);g_orb_us.force_close(b,a,shutdown_cb);g_vwap_rev_sp.force_close(b,a,shutdown_cb);g_nbm_sp.force_close(b,a,shutdown_cb);g_trend_pb_sp.force_close(b,a,shutdown_cb);}
-          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb);g_nbm_nq.force_close(b,a,shutdown_cb);g_trend_pb_nq.force_close(b,a,shutdown_cb);}
-          snap_px("NAS100",b,a);  if(b>0&&a>0){g_nbm_nas.force_close(b,a,shutdown_cb);}
-          snap_px("DJ30.F",b,a);  if(b>0&&a>0){g_nbm_us30.force_close(b,a,shutdown_cb);}
-          snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb);}
-          snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb);g_vwap_rev_ger40.force_close(b,a,shutdown_cb);g_trend_pb_ger40.force_close(b,a,shutdown_cb);}
-          snap_px("XAUUSD",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb);g_nbm_gold_london.force_close(b,a,shutdown_cb);}
-          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_nbm_oil_london.force_close(b,a,shutdown_cb);}  // London NBM oil
-          snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb);}
-          snap_px("ESTX50",b,a);  if(b>0&&a>0){g_orb_estx50.force_close(b,a,shutdown_cb);}
-          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_ca_eia_fade.force_close(b,a,shutdown_cb);g_ca_brent_wti.force_close(b,a,shutdown_cb);}
-          snap_px("USDJPY",b,a);  if(b>0&&a>0){g_ca_carry_unwind.force_close(b,a,shutdown_cb);}
+          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb,"SHUTDOWN");g_orb_us.force_close(b,a,shutdown_cb,"SHUTDOWN");g_vwap_rev_sp.force_close(b,a,shutdown_cb,"SHUTDOWN");g_nbm_sp.force_close(b,a,shutdown_cb,"SHUTDOWN");g_trend_pb_sp.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb,"SHUTDOWN");g_nbm_nq.force_close(b,a,shutdown_cb,"SHUTDOWN");g_trend_pb_nq.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("NAS100",b,a);  if(b>0&&a>0){g_nbm_nas.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("DJ30.F",b,a);  if(b>0&&a>0){g_nbm_us30.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb,"SHUTDOWN");g_vwap_rev_ger40.force_close(b,a,shutdown_cb,"SHUTDOWN");g_trend_pb_ger40.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("XAUUSD",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb,"SHUTDOWN");g_nbm_gold_london.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_nbm_oil_london.force_close(b,a,shutdown_cb,"SHUTDOWN");}  // London NBM oil
+          snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("ESTX50",b,a);  if(b>0&&a>0){g_orb_estx50.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_ca_eia_fade.force_close(b,a,shutdown_cb,"SHUTDOWN");g_ca_brent_wti.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+          snap_px("USDJPY",b,a);  if(b>0&&a>0){g_ca_carry_unwind.force_close(b,a,shutdown_cb,"SHUTDOWN");}
           { double ab=0,aa=0,nb=0,na=0;
             snap_px("GBPUSD",b,a); snap_px("AUDUSD",ab,aa); snap_px("NZDUSD",nb,na);
-            if(b>0&&a>0){g_ca_fx_cascade.force_close(b,a,shutdown_cb);}
-            if(ab>0&&aa>0){g_ca_fx_cascade.force_close_audusd(ab,aa,shutdown_cb);}
-            if(nb>0&&na>0){g_ca_fx_cascade.force_close_nzdusd(nb,na,shutdown_cb);} }
+            if(b>0&&a>0){g_ca_fx_cascade.force_close(b,a,shutdown_cb,"SHUTDOWN");}
+            if(ab>0&&aa>0){g_ca_fx_cascade.force_close_audusd(ab,aa,shutdown_cb,"SHUTDOWN");}
+            if(nb>0&&na>0){g_ca_fx_cascade.force_close_nzdusd(nb,na,shutdown_cb,"SHUTDOWN");} }
         }
         std::cout << "[OMEGA-SHUTDOWN] All positions closed\n";
         } // end do_reconnect_close (LIVE mode only)
@@ -898,23 +898,23 @@ static void quote_loop() {
 
             // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
             { double b,a;
-              get_px("US500.F",b,a);  g_ca_esnq.force_close(b,a,scb); g_orb_us.force_close(b,a,scb); g_vwap_rev_sp.force_close(b,a,scb); g_nbm_sp.force_close(b,a,scb);
-              get_px("USTEC.F",b,a);  g_vwap_rev_nq.force_close(b,a,scb); g_nbm_nq.force_close(b,a,scb);
-              get_px("NAS100",b,a);   g_nbm_nas.force_close(b,a,scb);
-              get_px("DJ30.F",b,a);   g_nbm_us30.force_close(b,a,scb);
-              get_px("EURUSD",b,a);   g_vwap_rev_eurusd.force_close(b,a,scb);
-              get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb); g_vwap_rev_ger40.force_close(b,a,scb); g_trend_pb_ger40.force_close(b,a,scb);
-              get_px("XAUUSD",b,a);   g_trend_pb_gold.force_close(b,a,scb); g_nbm_gold_london.force_close(b,a,scb);
-              get_px("USOIL.F",b,a);  g_nbm_oil_london.force_close(b,a,scb);  // London NBM oil
-              get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb);
-              get_px("ESTX50",b,a);   g_orb_estx50.force_close(b,a,scb);
-              get_px("USOIL.F",b,a);  g_ca_eia_fade.force_close(b,a,scb); g_ca_brent_wti.force_close(b,a,scb);
-              get_px("USDJPY",b,a);   g_ca_carry_unwind.force_close(b,a,scb);
+              get_px("US500.F",b,a);  g_ca_esnq.force_close(b,a,scb,"SHUTDOWN"); g_orb_us.force_close(b,a,scb,"SHUTDOWN"); g_vwap_rev_sp.force_close(b,a,scb,"SHUTDOWN"); g_nbm_sp.force_close(b,a,scb,"SHUTDOWN");
+              get_px("USTEC.F",b,a);  g_vwap_rev_nq.force_close(b,a,scb,"SHUTDOWN"); g_nbm_nq.force_close(b,a,scb,"SHUTDOWN");
+              get_px("NAS100",b,a);   g_nbm_nas.force_close(b,a,scb,"SHUTDOWN");
+              get_px("DJ30.F",b,a);   g_nbm_us30.force_close(b,a,scb,"SHUTDOWN");
+              get_px("EURUSD",b,a);   g_vwap_rev_eurusd.force_close(b,a,scb,"SHUTDOWN");
+              get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb,"SHUTDOWN"); g_vwap_rev_ger40.force_close(b,a,scb,"SHUTDOWN"); g_trend_pb_ger40.force_close(b,a,scb,"SHUTDOWN");
+              get_px("XAUUSD",b,a);   g_trend_pb_gold.force_close(b,a,scb,"SHUTDOWN"); g_nbm_gold_london.force_close(b,a,scb,"SHUTDOWN");
+              get_px("USOIL.F",b,a);  g_nbm_oil_london.force_close(b,a,scb,"SHUTDOWN");  // London NBM oil
+              get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb,"SHUTDOWN");
+              get_px("ESTX50",b,a);   g_orb_estx50.force_close(b,a,scb,"SHUTDOWN");
+              get_px("USOIL.F",b,a);  g_ca_eia_fade.force_close(b,a,scb,"SHUTDOWN"); g_ca_brent_wti.force_close(b,a,scb,"SHUTDOWN");
+              get_px("USDJPY",b,a);   g_ca_carry_unwind.force_close(b,a,scb,"SHUTDOWN");
               double gb,ga,ab,aa,nb,na;
               get_px("GBPUSD",gb,ga); get_px("AUDUSD",ab,aa); get_px("NZDUSD",nb,na);
-              g_ca_fx_cascade.force_close(gb,ga,scb);
-              g_ca_fx_cascade.force_close_audusd(ab,aa,scb);
-              g_ca_fx_cascade.force_close_nzdusd(nb,na,scb);
+              g_ca_fx_cascade.force_close(gb,ga,scb,"SHUTDOWN");
+              g_ca_fx_cascade.force_close_audusd(ab,aa,scb,"SHUTDOWN");
+              g_ca_fx_cascade.force_close_nzdusd(nb,na,scb,"SHUTDOWN");
             }
             std::cout << "[OMEGA-SHUTDOWN] All positions closed before disconnect\n";
         } // end LIVE mode position close
@@ -1044,41 +1044,41 @@ static void quote_loop() {
             };
             double ca_b = 0.0, ca_a = 0.0;
             ca_get_px("US500.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_esnq.force_close(ca_b, ca_a, ca_cb); g_orb_us.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_esnq.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); g_orb_us.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("USOIL.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_eia_fade.force_close(ca_b, ca_a, ca_cb); g_ca_brent_wti.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_eia_fade.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); g_ca_brent_wti.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("GBPUSD", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_fx_cascade.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_fx_cascade.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             // FxCascade AUD/NZD legs -- force-close with each pair's own price
             { double aud_b = 0.0, aud_a = 0.0; ca_get_px("AUDUSD", aud_b, aud_a);
-              if (aud_b > 0.0 && aud_a > 0.0) g_ca_fx_cascade.force_close_audusd(aud_b, aud_a, ca_cb); }
+              if (aud_b > 0.0 && aud_a > 0.0) g_ca_fx_cascade.force_close_audusd(aud_b, aud_a, ca_cb, "RECONNECT_CLOSE"); }
             { double nzd_b = 0.0, nzd_a = 0.0; ca_get_px("NZDUSD", nzd_b, nzd_a);
-              if (nzd_b > 0.0 && nzd_a > 0.0) g_ca_fx_cascade.force_close_nzdusd(nzd_b, nzd_a, ca_cb); }
+              if (nzd_b > 0.0 && nzd_a > 0.0) g_ca_fx_cascade.force_close_nzdusd(nzd_b, nzd_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("USDJPY", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_carry_unwind.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_carry_unwind.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("GER40", ca_b, ca_a);
             if (ca_b > 0.0 && ca_a > 0.0) {
-                g_orb_ger30.force_close(ca_b, ca_a, ca_cb);
-                g_vwap_rev_ger40.force_close(ca_b, ca_a, ca_cb);
-                g_trend_pb_ger40.force_close(ca_b, ca_a, ca_cb);
+                g_orb_ger30.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE");
+                g_vwap_rev_ger40.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE");
+                g_trend_pb_ger40.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE");
             }
             ca_get_px("UK100", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_uk100.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_uk100.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("ESTX50", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_estx50.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_estx50.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("US500.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_sp.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_sp.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("USTEC.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_nq.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_nq.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("EURUSD", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_eurusd.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_eurusd.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             // FxCascade: force_close() closes all three legs (GBPUSD/AUDUSD/NZDUSD).
             // Each leg uses the GBPUSD price as approximation -- acceptable for emergency
             // disconnect close since the pairs are highly correlated and positions are 0.01 lot.
             // The individual on_tick_audusd/nzdusd calls above already handle manage() on each tick.
             // XAUUSD TrendPullback
             ca_get_px("XAUUSD", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_trend_pb_gold.force_close(ca_b, ca_a, ca_cb); }
+            if (ca_b > 0.0 && ca_a > 0.0) { g_trend_pb_gold.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
         }
         // Force-close GoldEngineStack
         {
