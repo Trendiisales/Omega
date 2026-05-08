@@ -790,10 +790,27 @@ private:
         m_cooldown_start = now_s;
         m_cooldown_dir   = is_long_ ? +1 : -1;
 
+        // 2026-05-08 S21 HEDGING-MODE FIX (CRITICAL ORDER): on_close MUST run
+        //   BEFORE pos is reset. The microscalper_on_close callback reads
+        //   pos.broker_position_id (populated by handle_execution_report on
+        //   the entry-side ACK) to send the hedging-aware close order. If
+        //   pos is reset first via `pos = LivePos{}`, broker_position_id
+        //   becomes empty and the close-side safety branch refuses to send,
+        //   auto-shadowing the engine. Confirmed in latest.log on 11:45:41
+        //   2026-05-08: every close hit [MICROSCALPER-NO-POSID] refusal
+        //   despite a clean [MICROSCALPER-POSID-CAPTURED] entry ACK two
+        //   seconds prior.
+        //
+        //   Safety: m_close_mtx is held throughout this block, so no other
+        //   thread can observe the brief window where pos.active is true
+        //   but the trade has just been emitted. The on_close callback
+        //   doesn't call back into engine state that depends on
+        //   has_open_position(); it calls handle_closed_trade and
+        //   send_live_order, both of which are pos-agnostic.
+        if (on_close) on_close(tr);
+
         pos = LivePos{};
         phase = Phase::COOLDOWN;
-
-        if (on_close) on_close(tr);
     }
 };
 
