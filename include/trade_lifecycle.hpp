@@ -1290,7 +1290,17 @@ static void microscalper_on_close(const omega::TradeRecord& tr) {
               << " posId=" << position_id
               << "\033[0m\n";
     std::cout.flush();
-    send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice, position_id);
+    const std::string close_clOrdId = send_live_order(
+        tr.symbol, close_is_long, tr.size, tr.exitPrice, position_id);
+
+    // 2026-05-09 BROKER RECONCILIATION: stamp the close-side clOrdId onto
+    // the ledger record so handle_execution_report can match the inbound
+    // close ExecReport back to this trade. Without this stamp, broker fill
+    // confirmations for the close leg would have nowhere to land and
+    // brokerRealisedPnl would always show $0 even for cleanly-filled trades.
+    if (!close_clOrdId.empty()) {
+        g_omegaLedger.stampCloseClOrdId(tr.id, close_clOrdId);
+    }
 
     // Clear the position ID after sending the close so it can't be reused.
     // The next entry will capture a fresh ID via the ExecReport handler.

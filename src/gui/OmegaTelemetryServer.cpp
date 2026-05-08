@@ -476,6 +476,35 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         result += "]";
     }
 
+    // 2026-05-09 BROKER RECONCILIATION: append truth-of-state metrics
+    // computed from g_omegaLedger. These let the dashboard distinguish
+    // "engine paper" from "broker realised" so today's NZ$300 disparity
+    // failure mode is visible the moment it starts.
+    {
+        const double engine_pnl     = g_omegaLedger.engineLivePnl();
+        const double broker_pnl     = g_omegaLedger.brokerRealisedPnl();
+        const double disparity      = engine_pnl - broker_pnl;
+        const int    orphan_count   = g_omegaLedger.brokerOrphanCount();
+        const int    reject_count   = g_omegaLedger.brokerRejectCount();
+        const int    confirmed_cnt  = g_omegaLedger.brokerConfirmedCount();
+        char br[512];
+        snprintf(br, sizeof(br),
+            ",\"broker\":{"
+            "\"engine_pnl\":%.2f,"
+            "\"realised_pnl\":%.2f,"
+            "\"disparity\":%.2f,"
+            "\"orphan_count\":%d,"
+            "\"reject_count\":%d,"
+            "\"confirmed_count\":%d"
+            "}",
+            engine_pnl, broker_pnl, disparity,
+            orphan_count, reject_count, confirmed_cnt);
+        // Insert before the closing brace of the root object.
+        // result currently does NOT have the closing "}" yet -- it's added
+        // on the next line.
+        result += br;
+    }
+
     result += "}";  // close root object
     return result;
 }

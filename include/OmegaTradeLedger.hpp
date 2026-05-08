@@ -75,6 +75,53 @@ struct TradeRecord
     //    Engines with their own shadow_mode member should stamp this at TradeRecord construction.
     //    Engines without shadow_mode rely on the g_cfg.mode != "LIVE" fallback in handle_closed_trade.
     bool        shadow          = false;
+
+    // ?? 2026-05-09 BROKER RECONCILIATION FIELDS (user-authorised after the
+    //    NZ$308 disparity incident):
+    //
+    // The fundamental flaw exposed today: handle_closed_trade unconditionally
+    // records every trade the engine THINKS happened, regardless of whether
+    // the broker actually filled it. When live orders fail (volume reject,
+    // FIX disconnect, hedging orphan, shadow-mode gate), the engine ledger
+    // and dashboard keep counting paper wins while the real account bleeds.
+    //
+    // These fields track each trade's actual fate at the broker via inbound
+    // ExecutionReports:
+    //
+    //   entry_clOrdId / close_clOrdId : the FIX 11=ClOrdID for each leg.
+    //     Stamped at the engine dispatch site (entry: tick_gold.hpp;
+    //     close: microscalper_on_close in trade_lifecycle.hpp) right after
+    //     send_live_order returns. Used by handle_execution_report to find
+    //     the matching trade when an inbound 35=8 arrives.
+    //
+    //   broker_entry_filled / broker_close_filled : flipped to true when an
+    //     ExecReport with status=2 (Fill) arrives matching the corresponding
+    //     clOrdId. Both true => trade fully confirmed at broker.
+    //
+    //   broker_entry_rejected / broker_close_rejected : flipped to true on
+    //     ExecReport status=8 (Rejected). Distinct from "not yet acked".
+    //
+    //   broker_entry_fill_px / broker_close_fill_px : actual fill prices
+    //     from FIX tag 31 (LastPx). Used to compute REAL realised P&L
+    //     instead of engine-modeled P&L.
+    //
+    //   broker_pnl : computed when both legs filled, using actual fill
+    //     prices times size times USD_PER_PT. This is the truth value;
+    //     tr.pnl is the engine's prediction.
+    //
+    // Dashboard reads broker_pnl for trades where both flags are true to
+    // display "Broker realised P&L". Trades where one leg filled but the
+    // other didn't (orphans, the NZ$459 incident pattern) are flagged in
+    // a separate "Orphans" counter.
+    std::string entry_clOrdId;
+    std::string close_clOrdId;
+    bool        broker_entry_filled    = false;
+    bool        broker_close_filled    = false;
+    bool        broker_entry_rejected  = false;
+    bool        broker_close_rejected  = false;
+    double      broker_entry_fill_px   = 0.0;
+    double      broker_close_fill_px   = 0.0;
+    double      broker_pnl             = 0.0;   // realised in USD when both legs filled
 };
 
 // ?????????????????????????????????????????????????????????????????????????????
@@ -239,6 +286,161 @@ public:
     double avgLoss() const {
         std::lock_guard<std::mutex> lk(m_mtx);
         return m_losses > 0 ? (m_sum_loss / m_losses) : 0.0;
+    }
+
+    // ?? 2026-05-09 BROKER RECONCILIATION ACCESSORS ???????????????????????????
+    // Today's truth-of-state methods. Distinguish what the engine THINKS from
+    // what the BROKER actually executed. See TradeRecord broker_* field
+    // comments for the full design rationale.
+
+    // Sum of broker_pnl across all trades where both legs filled at the
+    // broker. This is the REAL realised P&L on the live account. Excludes
+    // shadow trades (paper) and orphans (only one leg filled). USD.
+    double brokerRealisedPnl() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        double sum = 0.0;
+        for (const auto& tr : m_trades) {
+            if (tr.shadow) continue;
+            if (tr.broker_entry_filled && tr.broker_close_filled) {
+                sum += tr.broker_pnl;
+            }
+        }
+        return sum;
+    }
+
+    // Count of trades where exactly one leg filled at the broker. These are
+    // the dangerous ones -- entry filled but close didn't (or vice versa)
+    // means a position is open at the broker that the engine thinks is
+    // closed. The NZ$459 hedging incident pattern.
+    int brokerOrphanCount() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        int n = 0;
+        for (const auto& tr : m_trades) {
+            if (tr.shadow) continue;
+            const bool e = tr.broker_entry_filled;
+            const bool c = tr.broker_close_filled;
+            if (e != c) ++n;   // XOR: exactly one filled
+        }
+        return n;
+    }
+
+    // Count of trades where any leg was explicitly rejected by the broker.
+    // The TRADING_BAD_VOLUME incident this morning would have set this
+    // counter to ~30 and made the failure mode immediately visible.
+    int brokerRejectCount() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        int n = 0;
+        for (const auto& tr : m_trades) {
+            if (tr.shadow) continue;
+            if (tr.broker_entry_rejected || tr.broker_close_rejected) ++n;
+        }
+        return n;
+    }
+
+    // Count of trades where both legs filled cleanly at broker -- the
+    // "real wins/losses" count.
+    int brokerConfirmedCount() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        int n = 0;
+        for (const auto& tr : m_trades) {
+            if (tr.shadow) continue;
+            if (tr.broker_entry_filled && tr.broker_close_filled) ++n;
+        }
+        return n;
+    }
+
+    // Engine-side P&L for non-shadow trades (what the engine THOUGHT it
+    // earned on supposedly-live trades). Used as the "paper" comparator.
+    double engineLivePnl() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        double sum = 0.0;
+        for (const auto& tr : m_trades) {
+            if (tr.shadow) continue;
+            sum += tr.net_pnl != 0.0 ? tr.net_pnl : tr.pnl;
+        }
+        return sum;
+    }
+
+    // Disparity between engine view and broker truth (engine - broker).
+    // Positive = engine is overstating gains. Triggers the auto-shadow
+    // safety circuit at >$30 in the entry path.
+    double disparity() const {
+        return engineLivePnl() - brokerRealisedPnl();
+    }
+
+    // Find a trade by clOrdId on either leg. Returns pointer or nullptr.
+    // CALLER MUST HOLD m_mtx (or call findTradeByClOrdIdLocked which does).
+    // Used by handle_execution_report to update broker_* fields.
+    TradeRecord* findTradeByClOrdIdLocked(const std::string& clOrdId, bool& is_entry) {
+        for (auto& tr : m_trades) {
+            if (!clOrdId.empty() && tr.entry_clOrdId == clOrdId) { is_entry = true;  return &tr; }
+            if (!clOrdId.empty() && tr.close_clOrdId == clOrdId) { is_entry = false; return &tr; }
+        }
+        return nullptr;
+    }
+
+    // Apply a broker fill confirmation. Thread-safe; takes the lock.
+    // is_entry: true = entry leg, false = close leg. fill_px from FIX tag 31.
+    // When both legs become filled, computes broker_pnl from fill prices.
+    // Returns true if the trade was found and updated.
+    bool applyBrokerFill(const std::string& clOrdId, double fill_px,
+                         double tick_mult)
+    {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        bool is_entry = false;
+        TradeRecord* tr = findTradeByClOrdIdLocked(clOrdId, is_entry);
+        if (!tr) return false;
+        if (is_entry) {
+            tr->broker_entry_filled  = true;
+            tr->broker_entry_fill_px = fill_px;
+        } else {
+            tr->broker_close_filled  = true;
+            tr->broker_close_fill_px = fill_px;
+        }
+        if (tr->broker_entry_filled && tr->broker_close_filled
+            && tr->broker_entry_fill_px > 0.0
+            && tr->broker_close_fill_px > 0.0)
+        {
+            // Realised P&L from actual broker fills. is_long: long = exit-entry > 0
+            // is profit; short = entry-exit > 0 is profit. tr.side is the entry side.
+            const bool was_long = (tr->side == "LONG");
+            const double diff = was_long
+                ? (tr->broker_close_fill_px - tr->broker_entry_fill_px)
+                : (tr->broker_entry_fill_px - tr->broker_close_fill_px);
+            tr->broker_pnl = diff * tr->size * tick_mult;
+        }
+        return true;
+    }
+
+    // Apply a broker rejection. Thread-safe.
+    bool applyBrokerReject(const std::string& clOrdId)
+    {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        bool is_entry = false;
+        TradeRecord* tr = findTradeByClOrdIdLocked(clOrdId, is_entry);
+        if (!tr) return false;
+        if (is_entry) tr->broker_entry_rejected = true;
+        else          tr->broker_close_rejected = true;
+        return true;
+    }
+
+    // Stamp an entry clOrdId onto the most recent matching trade.
+    // Used by engine dispatch sites right after send_live_order returns.
+    bool stampEntryClOrdId(int trade_id, const std::string& clOrdId)
+    {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        for (auto it = m_trades.rbegin(); it != m_trades.rend(); ++it) {
+            if (it->id == trade_id) { it->entry_clOrdId = clOrdId; return true; }
+        }
+        return false;
+    }
+    bool stampCloseClOrdId(int trade_id, const std::string& clOrdId)
+    {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        for (auto it = m_trades.rbegin(); it != m_trades.rend(); ++it) {
+            if (it->id == trade_id) { it->close_clOrdId = clOrdId; return true; }
+        }
+        return false;
     }
 
     // Clear dedup set -- called on daily reset so new-day trades aren't blocked

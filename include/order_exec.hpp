@@ -499,6 +499,23 @@ static void handle_execution_report(const std::string& msg) {
     std::cout.flush();
 
     if (!clOrdId.empty()) {
+        // 2026-05-09 BROKER RECONCILIATION: notify the ledger of the
+        // ExecReport outcome so engine vs broker disparity stays visible
+        // on the dashboard. applyBrokerFill / applyBrokerReject are
+        // thread-safe and silently no-op when the clOrdId doesn't match
+        // any ledger trade -- safe to call for non-microscalper engines
+        // (whose trades won't have entry/close clOrdIds populated yet).
+        if (ordStatus == "2" || ordStatus == "1") {
+            // Fill (full or partial). Use lastPx if present; tick_value_multiplier
+            // converts price-pt diff to USD. Symbol-specific.
+            double px = 0.0;
+            try { if (!lastPx.empty()) px = std::stod(lastPx); } catch (...) {}
+            const double tm = tick_value_multiplier(symbol);
+            if (px > 0.0) g_omegaLedger.applyBrokerFill(clOrdId, px, tm);
+        } else if (ordStatus == "8") {
+            g_omegaLedger.applyBrokerReject(clOrdId);
+        }
+
         std::lock_guard<std::mutex> lk(g_live_orders_mtx);
         auto it = g_live_orders.find(clOrdId);
         if (it != g_live_orders.end()) {

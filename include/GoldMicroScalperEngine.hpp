@@ -788,6 +788,13 @@ private:
         tr.exitReason    = reason;
         tr.spreadAtEntry = spread_e_;
         tr.shadow        = shadow_mode;
+        // 2026-05-09 BROKER RECONCILIATION: persist the entry-side clOrdId
+        // captured at send_live_order dispatch into the ledger record so
+        // handle_execution_report can match inbound ExecReports to the
+        // correct trade. close_clOrdId is stamped post-on_close in
+        // microscalper_on_close (it doesn't exist yet at this point because
+        // the close FIX message hasn't been built).
+        tr.entry_clOrdId = pos.entry_clOrdId;
 
         // Per-direction cooldown stamp. Same direction is blocked for
         // COOLDOWN_S after exit; opposite direction may fire immediately.

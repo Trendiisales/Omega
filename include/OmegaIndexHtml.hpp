@@ -1410,6 +1410,48 @@ function updateDashboard(d){
   const hasOpen=(d.live_trades&&d.live_trades.length>0)||Math.abs(floating)>0.001;
   if(dotEl)dotEl.className='pnl-live-dot'+(hasOpen?'':' no-pos');
 
+  // 2026-05-09 BROKER RECONCILIATION PANEL: shows real broker-confirmed
+  // P&L next to the engine paper P&L, plus disparity / orphan / reject
+  // counts. Dashboard distinguishes "what the engine thinks" from "what
+  // the broker actually executed" so today's NZ$300 disparity failure
+  // mode is visible at a glance.
+  if(d.broker){
+    const b=d.broker;
+    let bp=document.getElementById('brokerPanel');
+    if(!bp){
+      // First run -- inject the panel just after the existing P&L block.
+      // anchor to pnlNzd if present, else body.
+      const anchor=document.getElementById('pnlNzd')||document.body;
+      bp=document.createElement('div');
+      bp.id='brokerPanel';
+      bp.style.cssText='display:flex;gap:14px;align-items:center;margin-top:6px;padding:6px 10px;border-top:1px solid var(--bdr,#333);font-size:12px;font-family:monospace;flex-wrap:wrap;';
+      bp.innerHTML=
+        '<span style="color:var(--t2,#888)">BROKER:</span>'+
+        '<span id="brokerEngPnl" title="Engine paper P&L (live trades only, not shadow)"></span>'+
+        '<span style="color:var(--t2,#888)">|</span>'+
+        '<span id="brokerRealPnl" title="Real broker-confirmed P&L (only trades where both legs filled)" style="font-weight:bold;font-size:14px"></span>'+
+        '<span style="color:var(--t2,#888)">|</span>'+
+        '<span id="brokerDisp" title="Engine - Broker. Positive = engine overstating gains. >$30 triggers auto-shadow."></span>'+
+        '<span style="color:var(--t2,#888)">|</span>'+
+        '<span id="brokerOrphan" title="Trades where one leg filled but not the other -- the NZ$459 hedging incident pattern"></span>'+
+        '<span style="color:var(--t2,#888)">|</span>'+
+        '<span id="brokerReject" title="Orders explicitly rejected by broker (TRADING_BAD_VOLUME etc)"></span>'+
+        '<span style="color:var(--t2,#888)">|</span>'+
+        '<span id="brokerConf" title="Trades where both legs filled cleanly"></span>';
+      anchor.parentNode&&anchor.parentNode.insertBefore(bp,anchor.nextSibling);
+    }
+    const ep=safe(b.engine_pnl), rp=safe(b.realised_pnl), di=safe(b.disparity);
+    const oc=safe(b.orphan_count), rc=safe(b.reject_count), cc=safe(b.confirmed_count);
+    const setTxt=(id,val,fmt)=>{const e=document.getElementById(id);if(e)e.innerHTML=fmt(val);};
+    setTxt('brokerEngPnl',ep,v=>'eng <span style="color:'+(v>=0?'var(--green)':'var(--red)')+'">'+(v>=0?'+':'')+'$'+v.toFixed(2)+'</span>');
+    setTxt('brokerRealPnl',rp,v=>'real <span style="color:'+(v>=0?'var(--green)':'var(--red)')+'">'+(v>=0?'+':'')+'$'+v.toFixed(2)+'</span>');
+    // disparity: green if small, amber if >$5, red if >$30
+    setTxt('brokerDisp',di,v=>{const a=Math.abs(v);const c=a>30?'var(--red)':a>5?'var(--amber,#fa0)':'var(--green)';return 'disp <span style="color:'+c+'">'+(v>=0?'+':'')+'$'+v.toFixed(2)+'</span>';});
+    setTxt('brokerOrphan',oc,v=>'orph <span style="color:'+(v>0?'var(--red)':'var(--t2)')+'">'+v+'</span>');
+    setTxt('brokerReject',rc,v=>'rej <span style="color:'+(v>0?'var(--red)':'var(--t2)')+'">'+v+'</span>');
+    setTxt('brokerConf',cc,v=>'conf <span style="color:var(--green)">'+v+'</span>');
+  }
+
   // Compact trade count
   const subEl=document.getElementById('pnlSub');
   if(subEl)subEl.textContent=safe(d.total_trades)+'T '+(safe(d.wins))+'W/'+(safe(d.losses))+'L';
