@@ -454,7 +454,19 @@ static void init_engines(const std::string& cfg_path)
     g_vwap_rev_ger40.MAX_EXTENSION_PCT    = 1.00;
     g_vwap_rev_ger40.MAX_HOLD_SEC         = 600;
     // EURUSD: 0.12% extension threshold (FX moves more precisely, smaller range)
+    // S18 explicit tune (was: MAX_EXTENSION_PCT and MAX_HOLD_SEC fell back to
+    // class defaults 0.80 / 900s). Class defaults were calibrated for indices
+    // pre-tune; for an FX pair the threshold-to-max ratio of indices (avg
+    // ~3.25x: SP=3.43, NQ=3.00, GER40=3.33) maps to EURUSD as 0.12 * ~3.3
+    // ≈ 0.40. At EURUSD ~1.10 that's ~44 pips, which is the upper end of a
+    // typical daily range and a reasonable cap for "VWAP dislocation beyond
+    // which mean reversion is unreliable". MAX_HOLD aligned to 600s like the
+    // indices for consistency -- "exit stalled trades faster" rationale at
+    // L446 applies equally to FX. Re-tune from fresh shadow tape once
+    // VWAPReversion has been firing live-shadow for 2-4 weeks.
     g_vwap_rev_eurusd.enabled = true;  g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;
+    g_vwap_rev_eurusd.MAX_EXTENSION_PCT   = 0.40;
+    g_vwap_rev_eurusd.MAX_HOLD_SEC        = 600;
     // ?? NBM London session engines (07:00-13:30 UTC) ????????????????????????????
     // Covers the gap before NY open. Gold and oil are liquid from London open.
     // Uses same ATR/band logic as NY engines but anchored to London open price.
@@ -915,6 +927,27 @@ static void init_engines(const std::string& cfg_path)
             } else {
                 printf("[STARTUP] H4 bar state cold -- H4RegimeEngine needs 20 H4 bars (~80hr)\n");
                 fflush(stdout);
+                // P1-11 (S18): cold-start CSV warm-load fallback for
+                // MinimalH4Breakout. Drop a Dukascopy-style XAUUSD H4 OHLC CSV
+                // at the path below before starting Omega and the Donchian
+                // channel will be seeded immediately rather than waiting for
+                // p.donchian_bars * 4hrs (default 40hrs) of fresh live H4
+                // closes. Schema and supported timestamp formats are
+                // documented at MinimalH4Breakout.hpp:163 (above
+                // seed_channel_from_csv). The H4RegimeEngine remains cold --
+                // CSV warm-load is implemented for MinimalH4Breakout only.
+                const std::string xau_h4_csv = log_root_dir() + "/bars_xauusd_h4.csv";
+                if (g_minimal_h4_gold.seed_channel_from_csv(xau_h4_csv)) {
+                    printf("[STARTUP] MinimalH4Breakout warm-loaded from CSV %s "
+                           "-- engine hot, can fire on first H4 close.\n",
+                           xau_h4_csv.c_str());
+                } else {
+                    printf("[STARTUP] MinimalH4Breakout cold start -- needs ~40hrs of "
+                           "live XAUUSD H4 bars before first signal. Drop a Dukascopy "
+                           "XAUUSD H4 CSV at %s to skip the wait (see MinimalH4Breakout.hpp:163 "
+                           "for schema).\n", xau_h4_csv.c_str());
+                }
+                fflush(stdout);
             }
             printf("[STARTUP] Bar state loaded: M1=%s M5=%s M15=%s H1=%s H4=%s"
                    " EMA50=%.2f ATR=%.2f H4_trend=%d\n",
@@ -925,6 +958,20 @@ static void init_engines(const std::string& cfg_path)
                    g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
         } else {
             printf("[STARTUP] No bar state on disk (cold start) -- 15min M1 warmup required\n");
+            // P1-11 (S18): even when no bar state on disk at all, the CSV
+            // warm-load for MinimalH4Breakout is still useful -- the channel
+            // can be seeded from disk while the M1 EMAs warm up over the next
+            // 15 minutes. Mirror the inner cold-fallback branch above.
+            const std::string xau_h4_csv = log_root_dir() + "/bars_xauusd_h4.csv";
+            if (g_minimal_h4_gold.seed_channel_from_csv(xau_h4_csv)) {
+                printf("[STARTUP] MinimalH4Breakout warm-loaded from CSV %s "
+                       "-- engine hot for first H4 close.\n", xau_h4_csv.c_str());
+            } else {
+                printf("[STARTUP] MinimalH4Breakout cold start -- drop CSV at %s "
+                       "to skip the 40hr Donchian warm-up "
+                       "(see MinimalH4Breakout.hpp:163 for schema).\n",
+                       xau_h4_csv.c_str());
+            }
         }
         fflush(stdout);
     }

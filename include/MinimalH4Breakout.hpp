@@ -45,11 +45,15 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <deque>
 #include <algorithm>
+#include <fstream>
 #include <functional>
 #include <string>
+#include <vector>
 #include "OmegaTradeLedger.hpp"
 #include "OHLCBarEngine.hpp"
 
@@ -155,6 +159,214 @@ struct MinimalH4Breakout {
         }
         fflush(stdout);
     }
+
+    // -------------------------------------------------------------------------
+    // P1-11 (S18) -- Cold-start CSV warm-load fallback for the Donchian channel.
+    //
+    // PURPOSE
+    //   When `g_bars_<sym>.h4` has no persisted binary state (.dat file missing,
+    //   first deploy on a fresh VPS, etc.) the engine cannot use
+    //   seed_channel_from_bars(g_bars_<sym>.h4.get_bars()) because the deque is
+    //   empty -- and the engine then needs `donchian_bars * 4hrs` (default
+    //   40 hours) of fresh live H4 closes before it can fire its first signal.
+    //   This CSV loader provides a one-shot bootstrap: read H4 OHLC bars from
+    //   a CSV file dropped in a known location, seed the channel from them,
+    //   and the engine is ready on the first live H4 close.
+    //
+    // CSV SCHEMA (matches backtest/seed_us30_h4.cpp for cross-engine consistency)
+    //   One bar per line, comma/tab/semicolon separated:
+    //       timestamp, open, high, low, close [, volume]
+    //   Header row(s) and lines beginning with '#' are skipped.
+    //   Timestamp accepts epoch seconds (10 digits), epoch ms (>=13 digits),
+    //   or ISO8601-like strings ("2026-04-18T08:00:00", "2026-04-18 08:00:00",
+    //   "2026/04/18 08:00:00"). Volume is ignored.
+    //   Zero-range bars (high==low==open==close) are silently dropped --
+    //   Dukascopy emits these for closed-market hours and they would skew
+    //   the channel if included.
+    //
+    // SOURCING THE CSV
+    //   For XAUUSD: download H4 from Dukascopy (XAUUSD), or any other vendor
+    //   with H4 OHLC data. The bar prices need not match the broker feed
+    //   exactly -- the channel is rebuilt from live broker bars over the next
+    //   `donchian_bars * 4hrs` of operation, so any vendor drift is
+    //   self-correcting. Need at least `donchian_bars` bars; more is fine
+    //   (only the last `donchian_bars` are used).
+    //
+    // RETURN
+    //   true  -> CSV was opened and at least `donchian_bars` valid bars were
+    //            parsed; channel is now seeded and ready.
+    //   false -> file missing OR insufficient valid bars; channel state
+    //            unchanged. Caller should fall back to cold start.
+    //
+    // FAILURE MODES (logged to stdout, no exceptions thrown)
+    //   - File missing or unreadable -> warn, return false
+    //   - All lines unparseable      -> warn, return false
+    //   - Fewer than donchian_bars valid bars after parse -> warn, return false
+    // -------------------------------------------------------------------------
+    bool seed_channel_from_csv(const std::string& path) noexcept {
+        std::ifstream fin(path);
+        if (!fin.is_open()) {
+            printf("[MINIMAL_H4-%s] CSV warm-load skipped: cannot open %s\n",
+                   symbol.c_str(), path.c_str());
+            fflush(stdout);
+            return false;
+        }
+
+        std::vector<OHLCBar> parsed;
+        parsed.reserve(2048);
+        std::string line;
+        int parsed_count = 0;
+        int skipped      = 0;
+        while (std::getline(fin, line)) {
+            OHLCBar b{};
+            if (_parse_csv_h4_line(line, b)) {
+                parsed.push_back(b);
+                ++parsed_count;
+            } else {
+                ++skipped;
+            }
+        }
+
+        if (parsed_count < p.donchian_bars) {
+            printf("[MINIMAL_H4-%s] CSV warm-load failed: parsed %d valid bars,"
+                   " skipped %d lines, need at least %d for Donchian.\n",
+                   symbol.c_str(), parsed_count, skipped, p.donchian_bars);
+            fflush(stdout);
+            return false;
+        }
+
+        // Sort by timestamp ascending (Dukascopy CSVs are usually already
+        // sorted, but be defensive against vendor variation).
+        std::sort(parsed.begin(), parsed.end(),
+                  [](const OHLCBar& a, const OHLCBar& b){ return a.ts_min < b.ts_min; });
+
+        // seed_channel_from_bars takes a deque -- copy from the vector.
+        std::deque<OHLCBar> dq(parsed.begin(), parsed.end());
+        printf("[MINIMAL_H4-%s] CSV warm-load: parsed %d bars from %s, skipped"
+               " %d lines, last_ts_min=%lld\n",
+               symbol.c_str(), parsed_count, path.c_str(), skipped,
+               (long long)dq.back().ts_min);
+        fflush(stdout);
+        seed_channel_from_bars(dq);
+        return true;
+    }
+
+private:
+    // Parse a single CSV line into an OHLCBar. Returns true if a valid bar was
+    // extracted. Mirrors backtest/seed_us30_h4.cpp::parse_csv_line behaviour
+    // so the same source CSVs work for both engines. ts_min is filled in
+    // minutes-since-epoch (matching OHLCBar's storage convention).
+    static bool _parse_csv_h4_line(const std::string& raw, OHLCBar& out) noexcept {
+        // Skip blank, header, comment lines
+        size_t pos = 0;
+        while (pos < raw.size() && (raw[pos] == ' ' || raw[pos] == '\t')) ++pos;
+        if (pos >= raw.size()) return false;
+        const char first = raw[pos];
+        if (first == '#' || first == '\r' || first == '\n') return false;
+
+        // Accept lines whose first non-whitespace char is a digit, '-', or quote.
+        // Other leading chars are header/text rows -- skip silently.
+        if (!((first >= '0' && first <= '9') || first == '-' || first == '"' ||
+              first == '\''))
+            return false;
+
+        // Make a mutable copy and strip trailing CR/LF/whitespace.
+        std::string buf(raw, pos);
+        while (!buf.empty() && (buf.back() == '\r' || buf.back() == '\n' ||
+                                buf.back() == ' '  || buf.back() == '\t')) {
+            buf.pop_back();
+        }
+        if (buf.empty()) return false;
+
+        // Strip surrounding quotes from the entire line if present.
+        if (buf.front() == '"' || buf.front() == '\'') buf.erase(0, 1);
+        if (!buf.empty() && (buf.back() == '"' || buf.back() == '\'')) buf.pop_back();
+
+        // Tokenise on comma / tab / semicolon (defensive against vendor variation).
+        std::vector<std::string> fields;
+        fields.reserve(8);
+        std::string cur;
+        for (char c : buf) {
+            if (c == ',' || c == '\t' || c == ';') {
+                fields.push_back(cur);
+                cur.clear();
+            } else {
+                cur.push_back(c);
+            }
+        }
+        fields.push_back(cur);
+        if (fields.size() < 5) return false;
+
+        // Trim each field and strip surrounding quotes.
+        for (std::string& f : fields) {
+            while (!f.empty() && (f.front() == ' ' || f.front() == '\t')) f.erase(0, 1);
+            while (!f.empty() && (f.back()  == ' ' || f.back()  == '\t')) f.pop_back();
+            if (!f.empty() && (f.front() == '"' || f.front() == '\'')) f.erase(0, 1);
+            if (!f.empty() && (f.back()  == '"' || f.back()  == '\'')) f.pop_back();
+        }
+
+        // ── Timestamp parse ───────────────────────────────────────────────────
+        const std::string& ts_str = fields[0];
+        if (ts_str.empty()) return false;
+        int64_t ts_sec = 0;
+        bool ts_ok = false;
+
+        // Try epoch numeric first (allow optional leading minus, but H4 epochs
+        // are positive in practice).
+        bool all_digits = true;
+        for (char c : ts_str) {
+            if (c < '0' || c > '9') { all_digits = false; break; }
+        }
+        if (all_digits) {
+            const long long v = std::atoll(ts_str.c_str());
+            if (ts_str.length() >= 13)      { ts_sec = static_cast<int64_t>(v / 1000LL); ts_ok = true; }
+            else if (ts_str.length() >= 9)  { ts_sec = static_cast<int64_t>(v);          ts_ok = true; }
+        }
+
+        if (!ts_ok) {
+            // Try ISO8601: YYYY-MM-DD[T| ]HH:MM:SS[.fff][Z]
+            std::tm tm{};
+            int Y = 0, M = 0, D = 0, h = 0, m = 0, s = 0;
+            if (std::sscanf(ts_str.c_str(), "%d-%d-%d%*c%d:%d:%d", &Y, &M, &D, &h, &m, &s) == 6 ||
+                std::sscanf(ts_str.c_str(), "%d-%d-%d %d:%d:%d",   &Y, &M, &D, &h, &m, &s) == 6 ||
+                std::sscanf(ts_str.c_str(), "%d/%d/%d %d:%d:%d",   &Y, &M, &D, &h, &m, &s) == 6)
+            {
+                tm.tm_year = Y - 1900;
+                tm.tm_mon  = M - 1;
+                tm.tm_mday = D;
+                tm.tm_hour = h;
+                tm.tm_min  = m;
+                tm.tm_sec  = s;
+#ifdef _WIN32
+                ts_sec = static_cast<int64_t>(_mkgmtime(&tm));
+#else
+                ts_sec = static_cast<int64_t>(timegm(&tm));
+#endif
+                if (ts_sec > 0) ts_ok = true;
+            }
+        }
+        if (!ts_ok) return false;
+
+        // ── OHLC parse and validation ─────────────────────────────────────────
+        const double op = std::atof(fields[1].c_str());
+        const double hi = std::atof(fields[2].c_str());
+        const double lo = std::atof(fields[3].c_str());
+        const double cl = std::atof(fields[4].c_str());
+        if (op <= 0.0 || hi <= 0.0 || lo <= 0.0 || cl <= 0.0) return false;
+        if (hi < lo) return false;
+        // Reject zero-range bars (closed-market hours from Dukascopy).
+        if (hi == lo && hi == op && hi == cl) return false;
+
+        out.ts_min = ts_sec / 60LL;  // OHLCBar stores minutes-since-epoch
+        out.open   = op;
+        out.high   = hi;
+        out.low    = lo;
+        out.close  = cl;
+        out.volume = 0;
+        return true;
+    }
+
+public:
 
     // ── Called on every H4 bar close ─────────────────────────────────────────
     // Uses PRIOR window (not including this bar) for Donchian comparison,
