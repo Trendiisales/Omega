@@ -425,12 +425,29 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                       << " pnl=" << ps.live_pnl << "\n";
         }
     }
+    // 2026-05-09 GUI COUNTER FIX: replaced hardcoded "0, 0" for orders/fills
+    // with real counts from g_live_orders. The hardcoded zeros are why the
+    // dashboard's "ORDERS sent" and "FILLS executions" panels have always
+    // shown 0 -- masked the broker-side rejection failures throughout
+    // today's session. Counts come from g_live_orders (populated by
+    // send_live_order on outbound, marked acked=true by handle_execution_report
+    // on inbound 35=8 fills).
+    int orders_sent_count = 0;
+    int fills_count       = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_live_orders_mtx);
+        orders_sent_count = static_cast<int>(g_live_orders.size());
+        for (const auto& kv : g_live_orders) {
+            if (kv.second.acked) ++fills_count;
+        }
+    }
     g_telemetry.UpdateStats(
         g_omegaLedger.dailyPnl() + (g_open_unrealised_cents.load() / 100.0),
         g_omegaLedger.grossDailyPnl() + (g_open_unrealised_cents.load() / 100.0),
         g_omegaLedger.maxDD(),
         g_omegaLedger.total(), g_omegaLedger.wins(), g_omegaLedger.losses(),
-        g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(), 0, 0,
+        g_omegaLedger.winRate(), g_omegaLedger.avgWin(), g_omegaLedger.avgLoss(),
+        orders_sent_count, fills_count,
         g_omegaLedger.dailyPnl(),                     // closed only
         g_open_unrealised_cents.load() / 100.0);      // floating only
     // NOTE: do NOT call UpdateLastSignal("CLOSED") here -- the GUI treats "CLOSED"

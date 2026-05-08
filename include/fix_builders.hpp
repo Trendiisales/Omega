@@ -260,12 +260,31 @@ static std::string build_new_order_single(int seq, const std::string& clOrdId,
       << "59=3\x01"                           // TimeInForce=IOC
       << "60=" << timestamp() << "\x01";      // TransactTime
     if (!position_id.empty()) {
-        // Hedging-mode close path. Emit all three position-targeting tags so
-        // BlackBull's Spotware gateway nets the existing position rather than
-        // open a new opposing one (the NZ$459 incident pattern).
-        b << "1006=" << position_id << "\x01"   // Spotware cTrader PositionId
-          << "721="  << position_id << "\x01"   // FIX 4.4 PosMaintRptID
-          << "77=C\x01";                         // PositionEffect=Close
+        // Hedging-mode close path.
+        //
+        // 2026-05-09 RAW FIX EVIDENCE FROM BLACKBULL DEMO (account 2067070):
+        // The previous emission included tag 77=C (PositionEffect=Close) as
+        // a "broker hint". BlackBull's gateway responded with session-level
+        // reject 35=3 + tag 58 text:
+        //   "Tag not defined for this message type, field=77"
+        //   371=77 372=D 373=2
+        // That dropped EVERY close message at the gateway before it could
+        // reach the matching engine. Result: 10 entries filled cleanly but
+        // no close ever executed -- 10 stuck positions on demo, mirroring
+        // the live-account incident pattern.
+        //
+        // Tag 77 is REMOVED. Tags 1006 (Spotware-custom PositionId) and 721
+        // (FIX 4.4 PosMaintRptID) remain. The inbound entry-fill ExecReport
+        // shows BlackBull populates tag 721 with the position ID, so 721 is
+        // their canonical reference. 1006 is kept for cross-broker
+        // portability (Spotware-deployments that use 1006 instead).
+        //
+        // If 721+1006 STILL produce orphan-pair behaviour after this change,
+        // the next iteration will drop 1006 and try 721-only, then fall back
+        // to a different close mechanism (35=DA TradeCaptureReport or similar
+        // Spotware-specific close request).
+        b << "1006=" << position_id << "\x01"   // Spotware-custom PositionId (kept for cross-broker)
+          << "721="  << position_id << "\x01";  // FIX 4.4 PosMaintRptID -- BlackBull's actual position-id tag
     }
     return wrap_fix(b.str());
 }

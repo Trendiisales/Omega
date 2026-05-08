@@ -1417,38 +1417,59 @@ function updateDashboard(d){
   // mode is visible at a glance.
   if(d.broker){
     const b=d.broker;
+    const ep=safe(b.engine_pnl), rp=safe(b.realised_pnl), di=safe(b.disparity);
+    const oc=safe(b.orphan_count), rc=safe(b.reject_count), cc=safe(b.confirmed_count);
+
+    // 2026-05-09 GUI ALARM BANNER: huge unmissable strip at the top of
+    // the page when orphans or rejects appear. Today's "34 stuck demo
+    // positions" episode hid behind small text -- never again.
+    let alarm=document.getElementById('brokerAlarm');
+    if(!alarm){
+      alarm=document.createElement('div');
+      alarm.id='brokerAlarm';
+      alarm.style.cssText='display:none;position:sticky;top:0;z-index:9999;width:100%;padding:14px 20px;font-family:monospace;font-size:18px;font-weight:bold;text-align:center;letter-spacing:0.5px;border-bottom:3px solid #fff;';
+      document.body.insertBefore(alarm,document.body.firstChild);
+    }
+    if(oc>0||rc>0){
+      const reasons=[];
+      if(oc>0) reasons.push(oc+' ORPHAN POSITION'+(oc>1?'S':'')+' AT BROKER');
+      if(rc>0) reasons.push(rc+' REJECTED ORDER'+(rc>1?'S':''));
+      alarm.style.display='block';
+      alarm.style.background=oc>0?'#900':'#a60';
+      alarm.style.color='#fff';
+      alarm.textContent='WARNING: '+reasons.join('  |  ')+'  --  ENGINE GUI IS NOT BROKER TRUTH. CHECK CTRADER.';
+    } else {
+      alarm.style.display='none';
+    }
+
     let bp=document.getElementById('brokerPanel');
     if(!bp){
       // First run -- inject the panel just after the existing P&L block.
-      // anchor to pnlNzd if present, else body.
       const anchor=document.getElementById('pnlNzd')||document.body;
       bp=document.createElement('div');
       bp.id='brokerPanel';
-      bp.style.cssText='display:flex;gap:14px;align-items:center;margin-top:6px;padding:6px 10px;border-top:1px solid var(--bdr,#333);font-size:12px;font-family:monospace;flex-wrap:wrap;';
+      bp.style.cssText='display:flex;gap:14px;align-items:center;margin-top:6px;padding:6px 10px;border-top:1px solid var(--bdr,#333);font-size:13px;font-family:monospace;flex-wrap:wrap;';
       bp.innerHTML=
-        '<span style="color:var(--t2,#888)">BROKER:</span>'+
+        '<span style="color:var(--t2,#888);font-weight:bold">BROKER TRUTH:</span>'+
         '<span id="brokerEngPnl" title="Engine paper P&L (live trades only, not shadow)"></span>'+
         '<span style="color:var(--t2,#888)">|</span>'+
-        '<span id="brokerRealPnl" title="Real broker-confirmed P&L (only trades where both legs filled)" style="font-weight:bold;font-size:14px"></span>'+
+        '<span id="brokerRealPnl" title="Real broker-confirmed P&L (only trades where both legs filled)" style="font-weight:bold;font-size:15px"></span>'+
         '<span style="color:var(--t2,#888)">|</span>'+
         '<span id="brokerDisp" title="Engine - Broker. Positive = engine overstating gains. >$30 triggers auto-shadow."></span>'+
         '<span style="color:var(--t2,#888)">|</span>'+
-        '<span id="brokerOrphan" title="Trades where one leg filled but not the other -- the NZ$459 hedging incident pattern"></span>'+
+        '<span id="brokerOrphan" title="Trades where one leg filled but not the other -- the NZ$459 hedging incident pattern" style="font-weight:bold"></span>'+
         '<span style="color:var(--t2,#888)">|</span>'+
-        '<span id="brokerReject" title="Orders explicitly rejected by broker (TRADING_BAD_VOLUME etc)"></span>'+
+        '<span id="brokerReject" title="Orders explicitly rejected by broker (TRADING_BAD_VOLUME, tag 77 reject, etc)" style="font-weight:bold"></span>'+
         '<span style="color:var(--t2,#888)">|</span>'+
         '<span id="brokerConf" title="Trades where both legs filled cleanly"></span>';
       anchor.parentNode&&anchor.parentNode.insertBefore(bp,anchor.nextSibling);
     }
-    const ep=safe(b.engine_pnl), rp=safe(b.realised_pnl), di=safe(b.disparity);
-    const oc=safe(b.orphan_count), rc=safe(b.reject_count), cc=safe(b.confirmed_count);
     const setTxt=(id,val,fmt)=>{const e=document.getElementById(id);if(e)e.innerHTML=fmt(val);};
     setTxt('brokerEngPnl',ep,v=>'eng <span style="color:'+(v>=0?'var(--green)':'var(--red)')+'">'+(v>=0?'+':'')+'$'+v.toFixed(2)+'</span>');
     setTxt('brokerRealPnl',rp,v=>'real <span style="color:'+(v>=0?'var(--green)':'var(--red)')+'">'+(v>=0?'+':'')+'$'+v.toFixed(2)+'</span>');
-    // disparity: green if small, amber if >$5, red if >$30
     setTxt('brokerDisp',di,v=>{const a=Math.abs(v);const c=a>30?'var(--red)':a>5?'var(--amber,#fa0)':'var(--green)';return 'disp <span style="color:'+c+'">'+(v>=0?'+':'')+'$'+v.toFixed(2)+'</span>';});
-    setTxt('brokerOrphan',oc,v=>'orph <span style="color:'+(v>0?'var(--red)':'var(--t2)')+'">'+v+'</span>');
-    setTxt('brokerReject',rc,v=>'rej <span style="color:'+(v>0?'var(--red)':'var(--t2)')+'">'+v+'</span>');
+    setTxt('brokerOrphan',oc,v=>'orph <span style="color:'+(v>0?'var(--red)':'var(--t2)')+(v>0?';font-size:15px':'')+'">'+v+'</span>');
+    setTxt('brokerReject',rc,v=>'rej <span style="color:'+(v>0?'var(--red)':'var(--t2)')+(v>0?';font-size:15px':'')+'">'+v+'</span>');
     setTxt('brokerConf',cc,v=>'conf <span style="color:var(--green)">'+v+'</span>');
   }
 
