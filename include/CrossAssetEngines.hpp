@@ -1576,6 +1576,20 @@ public:
     double  PYRAMID_SIZE_MULT   = 0.5;  // add-on = 50% of original size
     int     PYRAMID_MAX_ADDS    = 1;    // max 1 pyramid add-on
 
+    // ── Improvement 9: Consecutive-SL direction block ─────────────────────────
+    // After CONSEC_SL_THRESH consecutive loss exits in the same direction
+    // (any of: SL_HIT, IMM_REVERSAL, TIME_STOP, HARD_TIME_STOP), block that
+    // direction for BLOCK_AFTER_CONSEC_SEC seconds. The opposite direction is
+    // still allowed -- this gates only the side that has been losing.
+    // P1-5 (S18): exposed as members so per-symbol tuning is possible without
+    // editing the engine body. Defaults match the prior hardcoded behaviour
+    // (2 consecutive losses → 10-minute block). Set per-instance from
+    // engine_init.hpp if a symbol needs different gating; INI plumbing is a
+    // future hop. Print messages still say "10min" / "2 consec" -- update those
+    // alongside any non-default value choice.
+    int     CONSEC_SL_THRESH        = 2;     // consecutive losses before direction block
+    int     BLOCK_AFTER_CONSEC_SEC  = 600;   // direction-block duration in seconds (10 min)
+
     bool    shadow_mode         = true; // default true = log only, no live orders (Class C added 2026-04-21)
     // EMA alphas calibrated for ~10 ticks/sec (London gold rate).
     // Using tick-count periods directly produced EMAs with half-life <1s
@@ -1738,8 +1752,8 @@ public:
                     if (pos_.is_long) {
                         ++m_consec_sl_long_;
                         m_consec_sl_short_ = 0;
-                        if (m_consec_sl_long_ >= 2) {
-                            m_long_blocked_until_ = ca_now_sec() + 600;
+                        if (m_consec_sl_long_ >= CONSEC_SL_THRESH) {
+                            m_long_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC;
                             m_consec_sl_long_ = 0;
                             printf("[TREND-PB] %s LONG blocked 10min after 2 consec losses (incl IMM_REV)\n", sym.c_str());
                             fflush(stdout);
@@ -1747,8 +1761,8 @@ public:
                     } else {
                         ++m_consec_sl_short_;
                         m_consec_sl_long_ = 0;
-                        if (m_consec_sl_short_ >= 2) {
-                            m_short_blocked_until_ = ca_now_sec() + 600;
+                        if (m_consec_sl_short_ >= CONSEC_SL_THRESH) {
+                            m_short_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC;
                             m_consec_sl_short_ = 0;
                             printf("[TREND-PB] %s SHORT blocked 10min after 2 consec losses (incl IMM_REV)\n", sym.c_str());
                             fflush(stdout);
@@ -1794,8 +1808,8 @@ public:
                     if (pos_.is_long) {
                         ++m_consec_sl_long_;
                         m_consec_sl_short_ = 0;
-                        if (m_consec_sl_long_ >= 2) {
-                            m_long_blocked_until_ = ca_now_sec() + 600;
+                        if (m_consec_sl_long_ >= CONSEC_SL_THRESH) {
+                            m_long_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC;
                             m_consec_sl_long_ = 0;
                             printf("[TREND-PB] %s LONG blocked 10min after 2 consec losses (incl TIME_STOP)\n", sym.c_str());
                             fflush(stdout);
@@ -1803,8 +1817,8 @@ public:
                     } else {
                         ++m_consec_sl_short_;
                         m_consec_sl_long_ = 0;
-                        if (m_consec_sl_short_ >= 2) {
-                            m_short_blocked_until_ = ca_now_sec() + 600;
+                        if (m_consec_sl_short_ >= CONSEC_SL_THRESH) {
+                            m_short_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC;
                             m_consec_sl_short_ = 0;
                             printf("[TREND-PB] %s SHORT blocked 10min after 2 consec losses (incl TIME_STOP)\n", sym.c_str());
                             fflush(stdout);
@@ -1855,8 +1869,8 @@ public:
                     if (pos_.is_long) {
                         ++m_consec_sl_long_;
                         m_consec_sl_short_ = 0;
-                        if (m_consec_sl_long_ >= 2) {
-                            m_long_blocked_until_ = ca_now_sec() + 600;
+                        if (m_consec_sl_long_ >= CONSEC_SL_THRESH) {
+                            m_long_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC;
                             m_consec_sl_long_ = 0;
                             printf("[TREND-PB] %s LONG blocked 10min after 2 consec losses (incl HARD-TIME-STOP)\n", sym.c_str());
                             fflush(stdout);
@@ -1864,8 +1878,8 @@ public:
                     } else {
                         ++m_consec_sl_short_;
                         m_consec_sl_long_ = 0;
-                        if (m_consec_sl_short_ >= 2) {
-                            m_short_blocked_until_ = ca_now_sec() + 600;
+                        if (m_consec_sl_short_ >= CONSEC_SL_THRESH) {
+                            m_short_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC;
                             m_consec_sl_short_ = 0;
                             printf("[TREND-PB] %s SHORT blocked 10min after 2 consec losses (incl HARD-TIME-STOP)\n", sym.c_str());
                             fflush(stdout);
@@ -1934,8 +1948,8 @@ public:
                     if (pos_.is_long) {
                         ++m_consec_sl_long_;
                         m_consec_sl_short_ = 0;
-                        if (m_consec_sl_long_ >= 2) {
-                            m_long_blocked_until_ = ca_now_sec() + 600; // 10 min block
+                        if (m_consec_sl_long_ >= CONSEC_SL_THRESH) {
+                            m_long_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC; // 10 min block
                             m_consec_sl_long_ = 0;
                             printf("[TREND-PB] %s LONG blocked 10min after 2 consec SL hits\n", sym.c_str());
                             fflush(stdout);
@@ -1943,8 +1957,8 @@ public:
                     } else {
                         ++m_consec_sl_short_;
                         m_consec_sl_long_ = 0;
-                        if (m_consec_sl_short_ >= 2) {
-                            m_short_blocked_until_ = ca_now_sec() + 600;
+                        if (m_consec_sl_short_ >= CONSEC_SL_THRESH) {
+                            m_short_blocked_until_ = ca_now_sec() + BLOCK_AFTER_CONSEC_SEC;
                             m_consec_sl_short_ = 0;
                             printf("[TREND-PB] %s SHORT blocked 10min after 2 consec SL hits\n", sym.c_str());
                             fflush(stdout);
@@ -2320,11 +2334,13 @@ private:
     double  daily_pnl_        = 0.0;   // today's net P&L for this engine instance
     int64_t daily_pnl_day_    = 0;     // UTC day of daily_pnl_ (for reset)
     bool    partial_done_     = false; // true after first partial exit this trade
-    // Consecutive SL tracker -- block direction after 2 consecutive SL hits
-    int     m_consec_sl_long_  = 0;   // consecutive long SL hits
-    int     m_consec_sl_short_ = 0;   // consecutive short SL hits
-    int64_t m_long_blocked_until_  = 0;  // epoch sec, long blocked after 2 consec SL
-    int64_t m_short_blocked_until_ = 0;  // epoch sec, short blocked after 2 consec SL  // true when bar EMAs injected via seed_bar_emas()
+    // Consecutive SL tracker -- block direction after CONSEC_SL_THRESH consecutive
+    // loss exits (any of: SL_HIT, IMM_REVERSAL, TIME_STOP, HARD_TIME_STOP).
+    // Block duration is BLOCK_AFTER_CONSEC_SEC (public knob, see Improvement 9).
+    int     m_consec_sl_long_  = 0;   // consecutive long loss exits
+    int     m_consec_sl_short_ = 0;   // consecutive short loss exits
+    int64_t m_long_blocked_until_  = 0;  // epoch sec, long blocked after CONSEC_SL_THRESH consec loss exits
+    int64_t m_short_blocked_until_ = 0;  // epoch sec, short blocked after CONSEC_SL_THRESH consec loss exits  // true when bar EMAs injected via seed_bar_emas()
     int     tick_count_    = 0;
     bool    prev_at_ema50_ = false;
     double  prev_mid_      = 0.0;
