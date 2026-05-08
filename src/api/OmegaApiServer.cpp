@@ -1730,6 +1730,30 @@ void OmegaApiServer::run(int port)
         else if (path == "/api/v1/omega/watch") {
             body = build_watch_json(q, status);
         }
+        // 2026-05-08 DEEPSTRIKE panic endpoint. Hits this URL = creates
+        // a sentinel file in cwd; GoldMicroScalper polls for it and forces
+        // itself to shadow on next tick (max ~30s latency). Idempotent --
+        // hitting it twice is fine. No "resume" endpoint by design: to
+        // re-enable trading after panic, the operator deletes the file
+        // AND redeploys deliberately. GET method (matches the rest of the
+        // API surface; safety here outweighs REST purity).
+        else if (path == "/api/v1/omega/microscalper/panic") {
+            std::ofstream f("KILL_MICROSCALPER");
+            if (f) {
+                f << "panic triggered via API at unix_s="
+                  << std::time(nullptr) << "\n";
+                body = R"({"ok":true,"action":"panic","engine":"MicroScalperGold","next_check_max_seconds":30,"resume":"delete C:\\Omega\\KILL_MICROSCALPER and redeploy"})";
+            } else {
+                status = 500;
+                body   = R"({"ok":false,"error":"could not create KILL_MICROSCALPER sentinel"})";
+            }
+        }
+        else if (path == "/api/v1/omega/microscalper/status") {
+            std::ifstream f("KILL_MICROSCALPER");
+            const bool tripped = f.good();
+            body = std::string(R"({"engine":"MicroScalperGold","kill_switch_file_present":)")
+                 + (tripped ? "true" : "false") + "}";
+        }
         else if (try_serve_static(path, body, ctype, cache, status)) {
             // Handled by static file serving (status/body/ctype/cache filled).
         }

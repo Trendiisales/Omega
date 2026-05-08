@@ -333,6 +333,36 @@ public:
             return;
         }
 
+        // -- DEEPSTRIKE kill-switch (2026-05-08) ------------------------------
+        //   Presence of file "KILL_MICROSCALPER" in process cwd forces this
+        //   engine to shadow. Checked every 100 ticks (~30s @ ~3 ticks/sec)
+        //   to keep stat() cost negligible. Idempotent: once shadow, the
+        //   check short-circuits because we won't reach this code path
+        //   (return-early before MAX_SPREAD gate would still hit, but the
+        //   live-fire path stops emitting orders).
+        //
+        //   To panic: create C:\Omega\KILL_MICROSCALPER on the VPS, OR hit
+        //     GET /api/v1/omega/microscalper/panic on the API server.
+        //   To resume: delete the file AND redeploy (engine picks up live
+        //     pin from engine_init.hpp on restart). NO runtime resume by
+        //     design -- once you've panicked, you should redeploy
+        //     deliberately rather than via a "resume" button.
+        {
+            static int s_kill_check = 0;
+            if (++s_kill_check >= 100) {
+                s_kill_check = 0;
+                if (!shadow_mode) {
+                    std::ifstream kill("KILL_MICROSCALPER");
+                    if (kill.good()) {
+                        shadow_mode = true;
+                        printf("[MICRO-SCALPER-GOLD] KILL-SWITCH file detected,"
+                               " forcing SHADOW (no further fires until restart)\n");
+                        fflush(stdout);
+                    }
+                }
+            }
+        }
+
         // -- New-entry path: warmup + gates -----------------------------------
         if (m_ticks_received < MIN_ENTRY_TICKS) return;
         if ((int)m_window.size() < ENTRY_LOOKBACK) return;
