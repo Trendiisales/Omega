@@ -1,5 +1,5 @@
 // =============================================================================
-// microscalper_crtp_sweep.cpp -- CRTP sweep harness for GoldMicroScalper
+// microscalper_crtp_sweep.cpp -- CRTP sweep harness for MicroScalper engines
 // =============================================================================
 //
 // 2026-05-08 S19 (Claude / Jo): Standalone CRTP sweep mirroring the established
@@ -10,29 +10,57 @@
 //   The live engine in include/GoldMicroScalperEngine.hpp is NOT modified.
 //   This TU defines a parallel CRTP variant whose body is a faithful port of
 //   the live engine's tick logic, with the 5 swept params hoisted into a
-//   Traits<I> typedef so combos compile to distinct types and the optimiser
-//   gets full constant propagation.
+//   Traits<I> typedef so combos compile to distinct types.
 //
-// SWEPT PARAMS (5)
+// 2026-05-08 S20 PHASE 0 EXPANSION: harness made symbol-parameterized at
+//   runtime. Single binary handles XAUUSD + indices (US500, USTEC, NAS100) +
+//   FX (EURUSD, GBPUSD, USDJPY, AUDUSD, NZDUSD). The Traits<I> now provide
+//   compile-time MULTIPLIERS only; per-symbol BASE values come from a
+//   SymbolSpec table looked up at startup. Symbol is auto-detected from the
+//   first input CSV's filename (l2_ticks_<SYM>_<DATE>.csv -> SYM; legacy
+//   l2_ticks_<DATE>.csv -> XAUUSD) or overridden via --symbol SYM.
+//
+// SWEPT PARAMS (5, multipliers x per-symbol BASE)
 //   p0  ENTRY_Z              -- z-score threshold on 20-tick window
 //   p1  TP_DIST_PTS          -- take-profit distance from entry
 //   p2  SL_DIST_PTS          -- initial stop-loss distance
 //   p3  BE_TRIGGER_PTS       -- MFE that arms the BE lock
 //   p4  TRAIL_DIST_PTS       -- post-BE trail distance below MFE
 //
-// HELD FIXED (live-engine defaults)
-//   ENTRY_LOOKBACK=20, BE_OFFSET_PTS=0.3, REVERSAL_LOOKBACK=5,
-//   REVERSAL_DELTA_PTS=0.30, L2_FLIP_THRESH=0.20, L2_IMB_LONG_MIN=0.55,
-//   L2_IMB_SHORT_MAX=0.45, MAX_SPREAD=1.0, MAX_HOLD_SEC=60, COOLDOWN_S=5,
-//   SESSION_START_HOUR=6, SESSION_END_HOUR=22, MIN_ENTRY_TICKS=30,
-//   USD_PER_PT=100.0, LIVE_LOT=0.01.
+// HELD FIXED ACROSS ALL SYMBOLS (cross-symbol invariants)
+//   ENTRY_LOOKBACK=20, REVERSAL_LOOKBACK=5, L2_FLIP_THRESH=0.20,
+//   L2_IMB_LONG_MIN=0.55, L2_IMB_SHORT_MAX=0.45,
+//   COOLDOWN_S=5, MIN_ENTRY_TICKS=30.
+//
+// HELD FIXED PER SYMBOL (set in SymbolSpec, NOT swept)
+//   max_spread_pts, usd_per_pt, live_lot, session_start_utc,
+//   session_end_utc, be_offset_pts, reversal_delta_pts, max_hold_sec.
+//
+//   max_hold_sec was a hard 60s constant in iteration 1; iteration 2
+//   moved it to SymbolSpec because index sweeps showed 30-62% MAX_HOLD_EXIT
+//   rates (positions timing out before BE-arm could engage). Now 60s for
+//   gold, 300s for indices, 180-240s for FX.
 //
 // USAGE
-//   ./microscalper_crtp_sweep <l2_ticks.csv> [<more.csv>...] [opts]
-//     --warmup <n>      ticks to skip before recording (default 1000)
-//     --out <path>      output CSV (default backtest/sweep_microscalper.csv)
-//     --top <N>         leaderboard rows printed to stdout (default 20)
+//   # Single-symbol sweep (auto-detect from filename):
+//   ./microscalper_crtp_sweep data/l2_ticks_XAUUSD_*.csv [opts]
+//   ./microscalper_crtp_sweep data/l2_ticks_US500_*.csv [opts]
+//
+//   # Force a specific symbol:
+//   ./microscalper_crtp_sweep --symbol US500 path/to/any_data.csv
+//
+//   Options:
+//     --symbol SYM      override auto-detected symbol
+//     --warmup N        ticks to skip before recording (default 1000)
+//     --out PATH        output CSV (default: backtest/sweep_microscalper_<SYM>.csv)
+//     --top N           leaderboard rows printed to stdout (default 20)
 //     --verbose         per-tape progress reporting
+//
+//   Multi-symbol sweep -- run the binary once per symbol from a shell loop:
+//     for s in XAUUSD US500 USTEC NAS100; do
+//         backtest/microscalper_crtp_sweep \
+//             data/l2_ticks_${s}_*.csv --warmup 1000 --top 20 --verbose
+//     done
 //
 // CSV SCHEMA (matches existing L2 captures)
 //   Required columns by name in header:
@@ -123,39 +151,181 @@ constexpr double mult_for_param(int I, int p) {
 }
 
 // -----------------------------------------------------------------------------
-// Live-engine defaults expressed as a traits BaseParams class. Traits<I>
-// scales the 5 swept ones by the per-combo multiplier; everything else is
-// inherited at face value.
+// SymbolSpec -- per-symbol baseline parameters. The CRTP Traits<I> below
+// supply compile-time MULTIPLIERS that the engine applies to these baselines
+// at runtime, so a single binary can sweep any symbol without rebuilding.
+//
+// Trade-off vs the prior 100% constexpr design: per-tick we do 5
+// double*double multiplications instead of reading a constexpr. On a 6.7M-
+// tick * 490-instance hot path that's ~16B FMAs -- modern CPUs swallow it
+// without measurable harness slowdown. In exchange we keep the cohort-
+// pattern CRTP architecture intact while gaining run-time symbol selection.
+//
+// Per-symbol fields:
+//   sym, engine_name      -- TradeRecord stamps
+//   base_*                -- the 5 BASE values that Traits<I>::*_MULT scale
+//   max_spread_pts        -- entry-gate spread cap
+//   usd_per_pt            -- dollar value of 1pt of price at LIVE_LOT
+//   live_lot              -- per-trade lot size
+//   session_start_utc /   -- UTC hour gate (wraparound-aware)
+//     session_end_utc
+//   be_offset_pts         -- BE-arm offset (cost recovery in pts)
+//   reversal_delta_pts    -- 5-tick net-delta against position to trip exit
+//
+// First-pass anchors per symbol use the gold ratios:
+//   TP    ~= 3.6 * typical_spread     (matches XAUUSD: TP 0.79 / spread 0.22)
+//   SL    ~= 4.0 * TP
+//   BE    ~= 0.6 * TP
+//   TR    ~= 0.6 * TP
+// Re-tune from the per-symbol leaderboard once Phase 0 sweeps land.
 // -----------------------------------------------------------------------------
-struct MicroScalperBaseParams {
-    // 2026-05-08 S19 follow-up: ENTRY_Z anchor lowered 1.5 -> 0.75 after the
-    // first full-tape sweep saturated the LOW grid boundary (top-9 configs all
-    // at the swept minimum 0.75). The 7-value geometric grid (0.5x..2.0x) now
-    // covers ENTRY_Z = 0.375 .. 1.5 instead of 0.75 .. 3.0, so the secondary
-    // sweep can find the true low-Z optimum. Other anchors unchanged: their
-    // top-config values were mid-grid (TP=1.0 / SL=2.38 / BE=0.5 / TR=0.5) so
-    // their grids cover the right range already. Live engine default in
-    // GoldMicroScalperEngine.hpp::ENTRY_Z stays at 1.5 -- this anchor is sweep
-    // -only.
-    static constexpr double ENTRY_Z              = 0.75;
-    static constexpr double TP_DIST_PTS          = 1.0;
-    static constexpr double SL_DIST_PTS          = 1.5;
-    static constexpr double BE_TRIGGER_PTS       = 0.5;
-    static constexpr double TRAIL_DIST_PTS       = 0.5;
+struct SymbolSpec {
+    const char* sym;
+    const char* engine_name;
+
+    // BASE values -- scaled by Traits<I>::*_MULT at sweep time.
+    double base_entry_z;
+    double base_tp_dist_pts;
+    double base_sl_dist_pts;
+    double base_be_trigger_pts;
+    double base_trail_dist_pts;
+
+    // Held-fixed per symbol (NOT swept).
+    double max_spread_pts;
+    double usd_per_pt;
+    double live_lot;
+    int    session_start_utc;
+    int    session_end_utc;
+    double be_offset_pts;
+    double reversal_delta_pts;
+    // 2026-05-08 S20 Phase 0 Iteration 2: per-symbol MAX_HOLD_SEC. Gold's
+    // 60s ceiling timed out 30-62% of index trades (US500/USTEC/NAS100
+    // sweep showed positions clustering at avg-hold close to MAX_HOLD).
+    // Extending hold for slower-tape indices gives BE-arm a chance to
+    // actually fire so the engine's signature trail/reversal mechanism
+    // engages instead of running as a vanilla z-score scalper.
+    int    max_hold_sec;
 };
 
+// Symbol table. Add new entries here as Phase 0 expands.
+inline constexpr SymbolSpec SYMBOL_TABLE[] = {
+    // XAUUSD -- calibrated 2026-05-08 (rk12 promotion)
+    {"XAUUSD", "MicroScalperGold",
+        /*Z*/ 0.75, /*TP*/ 0.79, /*SL*/ 3.00, /*BE*/ 0.50, /*TR*/ 0.50,
+        /*max_sp*/ 1.0,    /*usd_pt*/ 100.0,    /*lot*/ 0.01,
+        /*sess*/ 6, 22, /*be_off*/ 0.30, /*rev_delta*/ 0.30,
+        /*max_hold*/ 60},
+
+    // US500 -- BlackBull CFD on the SP500 cash index. Mid ~7135, spread
+    //   rock-steady at 0.81pt observed in 2026-04-22 capture (broker price
+    //   scale is ~1.23x cash-index level, hence 7135 vs ~5800 cash). L2
+    //   columns are zero in capture -- broker doesn't feed index depth, so
+    //   engine runs as pure z-score (graceful fallback).
+    //   TP=3.0pt is 3.7x typical spread (matches XAUUSD ratio 0.79/0.22).
+    //   max_spread=1.5 gives ~85% headroom over typical to tolerate news widening.
+    //   Session 13:30-21:00 UTC = NY equity hours.
+    //   max_hold=300s (5 min) -- iteration 1 sweep showed avg-hold pegged
+    //   at 49s (close to gold's 60s ceiling) with 62% MAX_HOLD_EXIT and 0
+    //   TRAIL_HIT firings -- positions need more time for BE-arm to engage.
+    {"US500", "MicroScalperSp500",
+        /*Z*/ 0.75, /*TP*/ 3.00, /*SL*/ 12.00, /*BE*/ 1.50, /*TR*/ 1.50,
+        /*max_sp*/ 1.50,   /*usd_pt*/ 0.10,    /*lot*/ 0.10,
+        /*sess*/ 13, 21, /*be_off*/ 1.00, /*rev_delta*/ 1.00,
+        /*max_hold*/ 300},
+
+    // USTEC -- BlackBull CFD on the NASDAQ-100 cash index. Mid ~26800,
+    //   spread observed at 2.71pt (= 26800.900 - 26798.190) in 2026-04-22
+    //   capture. Wider scale than US500. L2 zero like the other indices.
+    //   TP=10pt is 3.7x typical spread. max_spread=4.5 gives ~65% headroom.
+    //   max_hold=300s same logic as US500.
+    {"USTEC", "MicroScalperUstec",
+        /*Z*/ 0.75, /*TP*/ 10.00, /*SL*/ 40.00, /*BE*/ 5.00, /*TR*/ 5.00,
+        /*max_sp*/ 4.50,   /*usd_pt*/ 0.10,    /*lot*/ 0.10,
+        /*sess*/ 13, 21, /*be_off*/ 3.00, /*rev_delta*/ 3.00,
+        /*max_hold*/ 300},
+
+    // NAS100 -- BlackBull CFD on the NASDAQ-100 cash index, alternate name
+    //   from USTEC. Mid ~28548, spread observed at ~1.20pt in 2026-05-07
+    //   capture (somewhat tighter than USTEC despite being similarly named --
+    //   broker quotes the same underlying via two contract symbols with
+    //   different spread policies). L2 zero. TP=4.5pt = 3.7x spread.
+    //   max_hold=300s.
+    {"NAS100", "MicroScalperNas100",
+        /*Z*/ 0.75, /*TP*/ 4.50, /*SL*/ 18.00, /*BE*/ 2.50, /*TR*/ 2.50,
+        /*max_sp*/ 2.50,   /*usd_pt*/ 0.10,    /*lot*/ 0.10,
+        /*sess*/ 13, 21, /*be_off*/ 1.50, /*rev_delta*/ 1.50,
+        /*max_hold*/ 300},
+
+    // EURUSD -- USD-quote major, 0.0001 = 1 pip. Most-liquid FX pair.
+    //   1.0 lot = 100k EUR; 0.10 lot value-per-pip = $1. Session: NY-lunch +
+    //   Asia (15:30-04:00 UTC) chop windows where mean-rev dominates;
+    //   exclude London 06-09 + NY 13-15 trending hours via the session gate.
+    //   Phase 0 sweep validates whether the chop hours produce edge.
+    //   max_hold=180s -- FX cadence faster than indices but slower than gold.
+    {"EURUSD", "MicroScalperEur",
+        /*Z*/ 0.75, /*TP*/ 0.0008, /*SL*/ 0.0030, /*BE*/ 0.0005, /*TR*/ 0.0005,
+        /*max_sp*/ 0.0003, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
+        /*sess*/ 15, 4,  /*be_off*/ 0.0003, /*rev_delta*/ 0.0003,
+        /*max_hold*/ 180},
+
+    // GBPUSD -- cable. Trends more than EUR; sweep validation strongly
+    //   recommended before deploying. Wider ATR by ~50%.
+    {"GBPUSD", "MicroScalperGbp",
+        /*Z*/ 0.75, /*TP*/ 0.0010, /*SL*/ 0.0040, /*BE*/ 0.0006, /*TR*/ 0.0006,
+        /*max_sp*/ 0.0004, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
+        /*sess*/ 15, 4,  /*be_off*/ 0.0004, /*rev_delta*/ 0.0004,
+        /*max_hold*/ 180},
+
+    // USDJPY -- 100x scale shift (0.01 = 1 pip). pip math entirely different.
+    //   Tokyo/Asia session 22-04 UTC is the mean-rev window; exclude BoJ
+    //   announcements via news blackout (NOT yet wired in this sweep).
+    {"USDJPY", "MicroScalperJpy",
+        /*Z*/ 0.75, /*TP*/ 0.10,   /*SL*/ 0.40,   /*BE*/ 0.06,   /*TR*/ 0.06,
+        /*max_sp*/ 0.04,   /*usd_pt*/ 1000.0,    /*lot*/ 0.10,
+        /*sess*/ 22, 4,  /*be_off*/ 0.04, /*rev_delta*/ 0.04,
+        /*max_hold*/ 180},
+
+    // AUDUSD -- thinner than EUR/GBP; off-hours cadence may be too low for
+    //   the 20-tick window. Sweep result will say.
+    {"AUDUSD", "MicroScalperAud",
+        /*Z*/ 0.75, /*TP*/ 0.0006, /*SL*/ 0.0024, /*BE*/ 0.0004, /*TR*/ 0.0004,
+        /*max_sp*/ 0.0003, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
+        /*sess*/ 22, 4,  /*be_off*/ 0.0003, /*rev_delta*/ 0.0003,
+        /*max_hold*/ 240},
+
+    // NZDUSD -- thinnest of the USD-quote majors; sweep validation
+    //   absolutely required before any deployment consideration.
+    {"NZDUSD", "MicroScalperNzd",
+        /*Z*/ 0.75, /*TP*/ 0.0006, /*SL*/ 0.0024, /*BE*/ 0.0004, /*TR*/ 0.0004,
+        /*max_sp*/ 0.0003, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
+        /*sess*/ 22, 4,  /*be_off*/ 0.0003, /*rev_delta*/ 0.0003,
+        /*max_hold*/ 240},
+};
+
+inline constexpr int SYMBOL_TABLE_SIZE =
+    sizeof(SYMBOL_TABLE) / sizeof(SYMBOL_TABLE[0]);
+
+// File-scope active symbol pointer, set by main() before sweep starts.
+inline const SymbolSpec* g_active_symbol = &SYMBOL_TABLE[0];
+
+inline const SymbolSpec* find_symbol(const char* sym) {
+    for (int i = 0; i < SYMBOL_TABLE_SIZE; ++i) {
+        if (std::strcmp(SYMBOL_TABLE[i].sym, sym) == 0) return &SYMBOL_TABLE[i];
+    }
+    return nullptr;
+}
+
+// -----------------------------------------------------------------------------
+// Traits<I> -- compile-time MULTIPLIERS for the 5 swept params. Engine
+// applies these to the active symbol's base_* values at runtime.
+// -----------------------------------------------------------------------------
 template <std::size_t I>
 struct MicroScalperTraits {
-    static constexpr double ENTRY_Z =
-        MicroScalperBaseParams::ENTRY_Z         * mult_for_param(static_cast<int>(I), 0);
-    static constexpr double TP_DIST_PTS =
-        MicroScalperBaseParams::TP_DIST_PTS     * mult_for_param(static_cast<int>(I), 1);
-    static constexpr double SL_DIST_PTS =
-        MicroScalperBaseParams::SL_DIST_PTS     * mult_for_param(static_cast<int>(I), 2);
-    static constexpr double BE_TRIGGER_PTS =
-        MicroScalperBaseParams::BE_TRIGGER_PTS  * mult_for_param(static_cast<int>(I), 3);
-    static constexpr double TRAIL_DIST_PTS =
-        MicroScalperBaseParams::TRAIL_DIST_PTS  * mult_for_param(static_cast<int>(I), 4);
+    static constexpr double ENTRY_Z_MULT     = mult_for_param(static_cast<int>(I), 0);
+    static constexpr double TP_DIST_MULT     = mult_for_param(static_cast<int>(I), 1);
+    static constexpr double SL_DIST_MULT     = mult_for_param(static_cast<int>(I), 2);
+    static constexpr double BE_TRIGGER_MULT  = mult_for_param(static_cast<int>(I), 3);
+    static constexpr double TRAIL_DIST_MULT  = mult_for_param(static_cast<int>(I), 4);
 };
 
 // -----------------------------------------------------------------------------
@@ -166,22 +336,25 @@ struct MicroScalperTraits {
 template <typename Derived>
 class MicroScalperBase {
 public:
-    // Held-fixed constants ----------------------------------------------------
+    // Held-fixed constants (cross-symbol invariants) -------------------------
     static constexpr int    ENTRY_LOOKBACK      = 20;
     static constexpr double L2_IMB_LONG_MIN     = 0.55;
     static constexpr double L2_IMB_SHORT_MAX    = 0.45;
-    static constexpr double MAX_SPREAD          = 1.0;
-    static constexpr double BE_OFFSET_PTS       = 0.3;
     static constexpr int    REVERSAL_LOOKBACK   = 5;
-    static constexpr double REVERSAL_DELTA_PTS  = 0.30;
     static constexpr double L2_FLIP_THRESH      = 0.20;
-    static constexpr int    MAX_HOLD_SEC        = 60;
     static constexpr int    COOLDOWN_S          = 5;
-    static constexpr int    SESSION_START_HOUR  = 6;
-    static constexpr int    SESSION_END_HOUR    = 22;
     static constexpr int    MIN_ENTRY_TICKS     = 30;
-    static constexpr double USD_PER_PT          = 100.0;
-    static constexpr double LIVE_LOT            = 0.01;
+
+    // Symbol-specific helpers -- read g_active_symbol at runtime so a
+    // single binary handles any symbol in SYMBOL_TABLE.
+    static double max_spread_pts()       { return g_active_symbol->max_spread_pts; }
+    static double be_offset_pts()        { return g_active_symbol->be_offset_pts; }
+    static double reversal_delta_pts()   { return g_active_symbol->reversal_delta_pts; }
+    static int    session_start_utc()    { return g_active_symbol->session_start_utc; }
+    static int    session_end_utc()      { return g_active_symbol->session_end_utc; }
+    static double usd_per_pt()           { return g_active_symbol->usd_per_pt; }
+    static double live_lot()             { return g_active_symbol->live_lot; }
+    static int    max_hold_sec()         { return g_active_symbol->max_hold_sec; }
 
     enum class Phase { IDLE, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
@@ -242,7 +415,7 @@ public:
 
         if (m_ticks_received < MIN_ENTRY_TICKS) return;
         if (m_window_count < ENTRY_LOOKBACK) return;
-        if (spread > MAX_SPREAD) return;
+        if (spread > max_spread_pts()) return;
 
         // Session window 06-22 UTC (wraparound-aware identical to live).
         {
@@ -255,9 +428,9 @@ public:
 #endif
             const int h = utc.tm_hour;
             const bool in_window =
-                (SESSION_END_HOUR > SESSION_START_HOUR)
-                    ? (h >= SESSION_START_HOUR && h <  SESSION_END_HOUR)
-                    : (h >= SESSION_START_HOUR || h <  SESSION_END_HOUR);
+                (session_end_utc() > session_start_utc())
+                    ? (h >= session_start_utc() && h <  session_end_utc())
+                    : (h >= session_start_utc() || h <  session_end_utc());
             if (!in_window) return;
         }
 
@@ -268,8 +441,9 @@ public:
 
         const bool block_long  = (phase == Phase::COOLDOWN && m_cooldown_dir == +1);
         const bool block_short = (phase == Phase::COOLDOWN && m_cooldown_dir == -1);
-        const bool z_long      = (z <= -T::ENTRY_Z);
-        const bool z_short     = (z >=  T::ENTRY_Z);
+        const double entry_z_eff = g_active_symbol->base_entry_z * T::ENTRY_Z_MULT;
+        const bool z_long      = (z <= -entry_z_eff);
+        const bool z_short     = (z >=  entry_z_eff);
 
         bool l2_ok_long  = true;
         bool l2_ok_short = true;
@@ -287,10 +461,12 @@ public:
 
         const bool   is_long = fire_long;
         const double fill_px = is_long ? ask : bid;
+        const double sl_dist_eff = g_active_symbol->base_sl_dist_pts * T::SL_DIST_MULT;
+        const double tp_dist_eff = g_active_symbol->base_tp_dist_pts * T::TP_DIST_MULT;
         const double sl_px = is_long
-            ? (fill_px - T::SL_DIST_PTS) : (fill_px + T::SL_DIST_PTS);
+            ? (fill_px - sl_dist_eff) : (fill_px + sl_dist_eff);
         const double tp_px = is_long
-            ? (fill_px + T::TP_DIST_PTS) : (fill_px - T::TP_DIST_PTS);
+            ? (fill_px + tp_dist_eff) : (fill_px - tp_dist_eff);
 
         pos = LivePos{};
         pos.active           = true;
@@ -298,7 +474,7 @@ public:
         pos.entry            = fill_px;
         pos.sl               = sl_px;
         pos.tp               = tp_px;
-        pos.size             = LIVE_LOT;
+        pos.size             = live_lot();
         pos.spread_at_entry  = spread;
         pos.entry_ts         = now_s;
         pos.l2_real_at_entry = l2_real;
@@ -372,8 +548,9 @@ private:
             const double last  = _micro_at(m_micro_count - 1);
             const double prior = _micro_at(m_micro_count - REVERSAL_LOOKBACK);
             const double delta = last - prior;
-            if (pos.is_long  && delta <= -REVERSAL_DELTA_PTS) return true;
-            if (!pos.is_long && delta >=  REVERSAL_DELTA_PTS) return true;
+            const double rev_delta = reversal_delta_pts();
+            if (pos.is_long  && delta <= -rev_delta) return true;
+            if (!pos.is_long && delta >=  rev_delta) return true;
         }
         if (pos.l2_real_at_entry && m_last_l2_real) {
             if (pos.is_long  && m_last_book_slope <= -L2_FLIP_THRESH) return true;
@@ -393,8 +570,10 @@ private:
         if (move > pos.mfe) pos.mfe = move;
         if (move < pos.mae) pos.mae = move;
 
-        if (!pos.be_locked && pos.mfe >= T::BE_TRIGGER_PTS) {
-            const double eff_off = (pos.mfe >= BE_OFFSET_PTS) ? BE_OFFSET_PTS : 0.0;
+        const double be_trigger_eff = g_active_symbol->base_be_trigger_pts * T::BE_TRIGGER_MULT;
+        if (!pos.be_locked && pos.mfe >= be_trigger_eff) {
+            const double be_off = be_offset_pts();
+            const double eff_off = (pos.mfe >= be_off) ? be_off : 0.0;
             const double be_target = pos.is_long
                 ? (pos.entry + eff_off) : (pos.entry - eff_off);
             if (pos.is_long  && be_target > pos.sl) pos.sl = be_target;
@@ -404,8 +583,8 @@ private:
 
         if (pos.be_locked) {
             const double trail_sl = pos.is_long
-                ? (pos.entry + pos.mfe - T::TRAIL_DIST_PTS)
-                : (pos.entry - pos.mfe + T::TRAIL_DIST_PTS);
+                ? (pos.entry + pos.mfe - g_active_symbol->base_trail_dist_pts * T::TRAIL_DIST_MULT)
+                : (pos.entry - pos.mfe + g_active_symbol->base_trail_dist_pts * T::TRAIL_DIST_MULT);
             if (pos.is_long  && trail_sl > pos.sl) pos.sl = trail_sl;
             if (!pos.is_long && trail_sl < pos.sl) pos.sl = trail_sl;
         }
@@ -437,7 +616,7 @@ private:
             return;
         }
 
-        if ((now_s - pos.entry_ts) >= MAX_HOLD_SEC) {
+        if ((now_s - pos.entry_ts) >= max_hold_sec()) {
             _close(mid, "MAX_HOLD_EXIT", now_s, sink);
             return;
         }
@@ -454,9 +633,9 @@ private:
 
         omega::TradeRecord tr;
         tr.id            = ++m_trade_id;
-        tr.symbol        = "XAUUSD";
+        tr.symbol        = g_active_symbol->sym;
         tr.side          = pos.is_long ? "LONG" : "SHORT";
-        tr.engine        = "MicroScalperGold";
+        tr.engine        = g_active_symbol->engine_name;
         tr.regime        = "MICRO_TICK";
         tr.entryPrice    = pos.entry;
         tr.exitPrice     = exit_px;
@@ -524,11 +703,11 @@ inline void ms_run_tick(Tup& tup, SinkArr& sinks,
 }
 
 static void params_for_combo(int I, double out[5]) noexcept {
-    out[0] = MicroScalperBaseParams::ENTRY_Z         * mult_for_param(I, 0);
-    out[1] = MicroScalperBaseParams::TP_DIST_PTS     * mult_for_param(I, 1);
-    out[2] = MicroScalperBaseParams::SL_DIST_PTS     * mult_for_param(I, 2);
-    out[3] = MicroScalperBaseParams::BE_TRIGGER_PTS  * mult_for_param(I, 3);
-    out[4] = MicroScalperBaseParams::TRAIL_DIST_PTS  * mult_for_param(I, 4);
+    out[0] = g_active_symbol->base_entry_z         * mult_for_param(I, 0);
+    out[1] = g_active_symbol->base_tp_dist_pts     * mult_for_param(I, 1);
+    out[2] = g_active_symbol->base_sl_dist_pts     * mult_for_param(I, 2);
+    out[3] = g_active_symbol->base_be_trigger_pts  * mult_for_param(I, 3);
+    out[4] = g_active_symbol->base_trail_dist_pts  * mult_for_param(I, 4);
 }
 
 // -----------------------------------------------------------------------------
@@ -821,17 +1000,52 @@ static void print_exit_breakdown(const ms::ComboResult& r) {
 // =============================================================================
 // main
 // =============================================================================
+// -----------------------------------------------------------------------------
+// Symbol detection from CSV filename. Rule:
+//   l2_ticks_<SYMBOL>_<DATE>.csv  -> SYMBOL extracted
+//   l2_ticks_<DATE>.csv           -> "XAUUSD" (legacy unprefixed gold capture)
+// -----------------------------------------------------------------------------
+static std::string detect_symbol_from_path(const std::string& p) {
+    // Find the basename
+    auto slash = p.find_last_of("/\\");
+    std::string base = (slash == std::string::npos) ? p : p.substr(slash + 1);
+
+    static const std::string prefix = "l2_ticks_";
+    if (base.compare(0, prefix.size(), prefix) != 0) return "";
+    std::string rest = base.substr(prefix.size());           // e.g. "XAUUSD_2026-04-22.csv" or "2026-04-09.csv"
+
+    // Strip ".csv"
+    if (rest.size() >= 4 && rest.compare(rest.size() - 4, 4, ".csv") == 0) {
+        rest = rest.substr(0, rest.size() - 4);
+    }
+    // Find the underscore that separates SYMBOL from DATE.
+    auto under = rest.find('_');
+    if (under == std::string::npos) {
+        // No underscore -> legacy unprefixed gold capture (just a date).
+        return "XAUUSD";
+    }
+    return rest.substr(0, under);
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr,
-            "usage: %s <l2_ticks.csv> [<more.csv>...] [--warmup N] [--out PATH] "
-            "[--top N] [--verbose]\n", argv[0]);
+            "usage: %s <l2_ticks.csv> [<more.csv>...] "
+            "[--symbol SYM] [--warmup N] [--out PATH] [--top N] [--verbose]\n",
+            argv[0]);
+        std::fprintf(stderr,
+            "Symbols supported (auto-detected from filename, override with --symbol):\n");
+        for (int i = 0; i < ms::SYMBOL_TABLE_SIZE; ++i) {
+            std::fprintf(stderr, "  %s -> %s\n",
+                         ms::SYMBOL_TABLE[i].sym, ms::SYMBOL_TABLE[i].engine_name);
+        }
         return 2;
     }
 
     std::vector<const char*> csv_paths;
     int64_t warmup = 1000;
-    const char* out_path = "backtest/sweep_microscalper.csv";
+    const char* out_path = nullptr;       // default: auto-derive from symbol
+    const char* symbol_override = nullptr;
     int top = 20;
     bool verbose = false;
 
@@ -841,6 +1055,8 @@ int main(int argc, char** argv) {
             warmup = std::atoll(argv[++i]);
         } else if (std::strcmp(a, "--out") == 0 && i + 1 < argc) {
             out_path = argv[++i];
+        } else if (std::strcmp(a, "--symbol") == 0 && i + 1 < argc) {
+            symbol_override = argv[++i];
         } else if (std::strcmp(a, "--top") == 0 && i + 1 < argc) {
             top = std::atoi(argv[++i]);
         } else if (std::strcmp(a, "--verbose") == 0) {
@@ -852,6 +1068,62 @@ int main(int argc, char** argv) {
     if (csv_paths.empty()) {
         std::fprintf(stderr, "[err] no CSV inputs supplied\n");
         return 2;
+    }
+
+    // -- Resolve active symbol -----------------------------------------------
+    std::string detected_sym;
+    if (symbol_override && *symbol_override) {
+        detected_sym = symbol_override;
+    } else {
+        detected_sym = detect_symbol_from_path(csv_paths[0]);
+        if (detected_sym.empty()) {
+            std::fprintf(stderr,
+                "[err] could not detect symbol from filename '%s'. "
+                "Pass --symbol SYM explicitly.\n", csv_paths[0]);
+            return 2;
+        }
+        // Sanity: warn if any CSV in the input set has a different detected
+        // symbol -- mixing tapes is almost always a mistake.
+        for (const char* p : csv_paths) {
+            std::string s = detect_symbol_from_path(p);
+            if (!s.empty() && s != detected_sym) {
+                std::fprintf(stderr,
+                    "[warn] mixed symbols: '%s' has %s but expected %s. "
+                    "Use --symbol to force one.\n",
+                    p, s.c_str(), detected_sym.c_str());
+            }
+        }
+    }
+
+    const ms::SymbolSpec* spec = ms::find_symbol(detected_sym.c_str());
+    if (!spec) {
+        std::fprintf(stderr,
+            "[err] unknown symbol '%s'. Add a SymbolSpec entry to "
+            "SYMBOL_TABLE in microscalper_crtp_sweep.cpp.\n",
+            detected_sym.c_str());
+        std::fprintf(stderr, "Known symbols:");
+        for (int i = 0; i < ms::SYMBOL_TABLE_SIZE; ++i) {
+            std::fprintf(stderr, " %s", ms::SYMBOL_TABLE[i].sym);
+        }
+        std::fprintf(stderr, "\n");
+        return 2;
+    }
+    ms::g_active_symbol = spec;
+    std::printf("[bt] active symbol: %s -> engine='%s'\n",
+                spec->sym, spec->engine_name);
+    std::printf("[bt] base params: Z=%.4g TP=%.4g SL=%.4g BE=%.4g TR=%.4g  "
+                "max_spread=%.4g session=%d-%d UTC max_hold=%ds\n",
+                spec->base_entry_z, spec->base_tp_dist_pts, spec->base_sl_dist_pts,
+                spec->base_be_trigger_pts, spec->base_trail_dist_pts,
+                spec->max_spread_pts,
+                spec->session_start_utc, spec->session_end_utc,
+                spec->max_hold_sec);
+
+    // Auto-derive output path if not explicitly supplied.
+    std::string auto_out;
+    if (!out_path) {
+        auto_out = std::string("backtest/sweep_microscalper_") + spec->sym + ".csv";
+        out_path = auto_out.c_str();
     }
 
     std::vector<TickRow> ticks;
