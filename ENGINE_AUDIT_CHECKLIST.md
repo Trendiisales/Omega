@@ -1,5 +1,6 @@
 # Omega Engine Audit Checklist
-# Updated: 2026-05-03 (Installment 2 refresh + KNOWN_BUGS.md Bugs #3-#5 cross-reference)
+# Updated: 2026-05-08 (S18 — VWAPReversion live-shadow row + ESNQ confirm-logic rewrite note)
+#          2026-05-03 (Installment 2 refresh + KNOWN_BUGS.md Bugs #3-#5 cross-reference)
 # Maintained every session — never let this slip.
 
 ## THE RULE
@@ -175,12 +176,12 @@ Moved 2026-05-03 refresh: `TrendPullback gold` row — TOMBSTONED, see RETIRED b
 | HybridBracket SP/NQ/NAS/US30 (`g_hybrid_*`) | own flag | ✅ | ✅ | ✅ FIXED d6d00c6 | n/a | ✅ FIXED audit-fixes-32 | LIVE (shadow per kShadowDefault) | Session-gated correctly; NAS100 narrowed to slot 3-4 |
 | IndexFlow SP/NQ/NAS/US30 (`g_iflow_*`) | n/a | ✅ | ✅ | ✅ | n/a | ✅ FIXED audit-fixes-32 | LIVE | Active, wired correctly (tick_indices.hpp:307/582/703/954) |
 | IndexMacroCrash SP/NQ/NAS/US30 (`g_imacro_*`) | shadow=true pinned (class default) | ✅ FIXED audit-fixes-32 | ✅ | ✅ | ✅ FIXED audit-fixes-32 | ✅ | SHADOW (4-symbol wired) | Per-symbol vol_ratio wired in tick_indices.hpp:347/642/782/1054 |
-| VWAPReversion SP/NQ (`g_vwap_rev_sp/nq`) | n/a | ✅ (anchor reset wired despite disable) | ✅ | n/a | n/a | n/a | DISABLED | engine_init.hpp:370,373 — flip `enabled=true` to activate. Anchor reset healthy at tick_indices.hpp:157,446. |
+| VWAPReversion SP/NQ/GER40/EURUSD (`g_vwap_rev_*`) | own flag | ✅ | ✅ | n/a | n/a | n/a | LIVE-SHADOW | engine_init.hpp:447/450/453/457 — RE-ENABLED S17 (commit 1573b7a). Trading mode is SHADOW so paper-only until LIVE flip. EURUSD instance has explicit `EXTENSION_THRESH_PCT=0.12` + `COOLDOWN_SEC=120` only; `MAX_EXTENSION_PCT` and `MAX_HOLD_SEC` fall back to class defaults — explicit tune deferred to post-shadow-tape. |
 | NBM SP/NQ/NAS/US30 (`g_nbm_*`) | enabled=false | — | — | — | — | — | DISABLED | engine_init.hpp:1456-1459 — "live data insufficient", needs shadow first |
 | ORB US/GER30/UK100/ESTX50 (`g_orb_*`) | enabled=false | — | — | — | — | — | DISABLED | engine_init.hpp:1466-1469 — **rationale gap, no inline comment**. See Outstanding #3. |
 | TrendPullback SP/NQ (`g_trend_pb_sp/nq`) | n/a | ✅ | ✅ | n/a | n/a | n/a | LIVE | engine_init.hpp:724,727 — RE-ENABLED S14 2026-04-24, DAILY_LOSS_CAP=$80 |
 | TrendPullback GER40 (`g_trend_pb_ger40`) | n/a | ✅ | ✅ | n/a | n/a | n/a | DISABLED | engine_init.hpp:729 — "not live-validated" |
-| ESNQ Divergence | enabled=false | — | — | — | — | — | DISABLED | Shadow not validated |
+| ESNQ Divergence (`g_ca_esnq`) | enabled=false | — | — | — | — | — | DISABLED | engine_init.hpp:1585. S17 (commit 1573b7a) closed P1-8 confirm-logic rewrite — old version had compounding bugs that made the engine effectively unfireable (is_long hardcoded true → flip-detection dead; per-symbol on_tick reset confirm_count to 0 every non-laggard tick). New approach: signed `confirm_dir_` from sign of div, only count up on laggard-symbol matching-direction ticks, reset only on direction flip or below-threshold. Engine remains `enabled=false`; fix is prep for future enablement. |
 
 ---
 
@@ -207,6 +208,9 @@ re-validation against the cited rationale.**
 | 4 | idx_session_ok declared in SP block, used in NQ/US30/NAS100 functions | Compile error | d6d00c6 |
 | 5 | NAS100 hybrid bracket no Asia session gate | Asia drift noise trade -$24.78 | b1e2413 |
 | 6 | GoldHybridBracket window starved when can_enter=false | range stayed 0.00 forever | f9c5cea |
+| 7 | CrossPosition::force_close hardcoded "FORCE_CLOSE" label, masking MAE_EARLY_EXIT / MIDNIGHT_ROLLOVER / STALE_PRIOR_DAY / RECONNECT_CLOSE / SHUTDOWN distinctions in tape (P1-2) | All 5 supervisor flavours indistinguishable in `exit_reason` column → blocks MAE_EXIT_RATIO retune cohort analysis | 1573b7a (S17 omnibus) |
+| 8 | FxCascade cooldown timer reset at entry instead of close — hold time and cooldown overlapped, COOLDOWN_SEC was not a true minimum gap (P1-3) | Trade frequency higher than design; cooldown semantics undefined | 1573b7a (S17 omnibus) |
+| 9 | EsNqDivergence confirm logic — `is_long` hardcoded true in both qualifying branches (flip-detection dead code) AND per-symbol on_tick dispatch reset `confirm_count_=0` on every non-laggard tick (engine effectively unfireable) (P1-8) | Engine could not fire even if enabled; rewritten to track signed `confirm_dir_` and only count on laggard-symbol matching-direction ticks. Still `enabled=false` — fix is prep work. | 1573b7a (S17 omnibus) |
 
 ### Cross-reference: `KNOWN_BUGS.md` (production-CSV trade-record bugs, separate numbering)
 Status as of 2026-05-03:

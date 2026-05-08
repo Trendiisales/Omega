@@ -6,6 +6,39 @@ Repo HEAD at trace: `4db4750` (S15 P0 fixes + audits + P1-1 trace, pushed earlie
 
 ---
 
+## CLOSURE ANNOTATION — added 2026-05-08, S18 (after S17 fixes landed)
+
+**Status: P1-2 CLOSED. P1-2-a CLOSED.**
+
+S17 implemented the recommended fix shape below and landed it across two commits on top of `4db4750`:
+- `83a4d66` — "P1-2 + P1-2-a: label fidelity for CrossPosition::force_close"
+- `1573b7a` — "S17: P1-2/2a label fidelity + P1-3 FxCascade cooldown + P1-8 EsNqDiv + VWAP re-enable"
+
+**P1-2 fix shipped:**
+- `CrossPosition::force_close` now takes optional `reason` parameter (default `"FORCE_CLOSE"` for backward compat). `CrossAssetEngines.hpp:264`.
+- 14 supervisor call sites updated to pass meaningful labels: `MAE_EARLY_EXIT`, `MIDNIGHT_ROLLOVER`, `STALE_PRIOR_DAY`, `RECONNECT_CLOSE`, `SHUTDOWN`. Sites in `CrossAssetEngines.hpp`, `config.hpp`, `quote_loop.hpp`.
+- All `CrossPosition` wrapper methods updated to forward the reason.
+
+**P1-2-a corrected reading (the original "What needs follow-up" section below is now stale):**
+
+The mystery rows from the historical tape resolve as follows once the codebase is grepped exhaustively for `g_vwap_rev_*.force_close` calls:
+
+- Rows 6, 7, 10 (profitable LONGs, intra-day, in SHADOW) — **explained by engine MAE early-exit at `CrossAssetEngines.hpp:1252`**, NOT a missing supervisor. The original trace's claim "MAE doesn't fire on profit (`adverse < 0`)" was wrong: `adverse` is the *current* drawdown from entry, and a position that was MFE-positive can turn slightly adverse before closing on a small absolute profit. The MAE_EARLY_EXIT path is now distinguishable in fresh tape thanks to the label fix.
+- Rows 15, 16 (7.78h / 7.79h holds, in SHADOW) — **explained by the SIGINT / SIGTERM / `SetConsoleCtrlHandler` graceful-shutdown path at `omega_main.hpp:36-38`**, which runs in SHADOW mode too. The original trace's "Shutdown handler is LIVE only" framing applied only to the `quote_loop` reconnect path at L691-697, not to the OS-signal handler. Date of those trades: 2026-03-27 entries ~11:45 UTC, exits ~19:32 UTC — same UTC day, mid-NY-session, before midnight. The user confirmed this corresponds to a software-update restart on their end.
+
+There is no missing supervisor. Project-wide grep across `include/` confirms the five sources documented above are exhaustive for `CrossPosition::force_close` callers reachable for `g_vwap_rev_*` instances.
+
+**VWAPReversion re-enable:**
+S17 also flipped `enabled = false` → `enabled = true` for all four `g_vwap_rev_*` instances at `engine_init.hpp:447, 450, 453, 457` (SP, NQ, GER40, EURUSD). The engines were architecturally healthy and well-tuned per the May-3 audit; the disable was conservative pre-deploy gating, not a quality cull. Trading mode is `SHADOW` so this re-enable produces paper trades only until the LIVE flip.
+
+**What's still open after S17:**
+- MAE_EXIT_RATIO retune cycle, pending 2-4 weeks of fresh post-deploy tape with the new labels in place. Cohort analysis: filter `engine == "VWAPReversion"` AND `exit_reason == "MAE_EARLY_EXIT"`, look at `mfe`, compute cut-winner rate. Same for `MIDNIGHT_ROLLOVER`, `STALE_PRIOR_DAY`, `RECONNECT_CLOSE` cohorts.
+- VWAPReversion EURUSD tune. Currently `g_vwap_rev_eurusd` only has `EXTENSION_THRESH_PCT = 0.12` and `COOLDOWN_SEC = 120` set explicitly — `MAX_EXTENSION_PCT` and `MAX_HOLD_SEC` fall back to class defaults. Worth an explicit tune once shadow data accumulates.
+
+The "What needs follow-up (P1-2-a)" section below preserves the original (now-superseded) reading for historical context. Hypotheses A/B/C in that section are all closed: A (no missing supervisor — see above), B (`enabled` toggle wasn't the cause), C (no downstream label mutation).
+
+---
+
 ## TL;DR
 
 The handoff's hypothesis "the engine's own close path is dead, or an external supervisor is closing first" is partially right but misframed. The manage path is **reachable in current main and does emit `TP_HIT` / `SL_HIT` / `TIMEOUT` correctly**. The bug is a **label-fidelity defect**: `CrossPosition::force_close` at `CrossAssetEngines.hpp:264-268` hardcodes `"FORCE_CLOSE"` as the exit reason, so any of five different supervisors that close a `VWAPReversion` (or any other `CrossPosition`-based) position writes the same generic label — even when it should be `"MIDNIGHT_ROLLOVER"`, `"STALE_PRIOR_DAY"`, `"SHUTDOWN"`, or similar. The tape's "10 of 10 FORCE_CLOSE" is real but doesn't mean what the audit thought it meant.
