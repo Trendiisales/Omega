@@ -2286,8 +2286,49 @@ static void on_tick_gold(
         //   handling (broker may reject; engine state would diverge from
         //   broker state). For a single-engine deploy in a single trading
         //   session under operator attention, the simple form is
-        //   acceptable; the proper hardening (ExecReport-driven pos.size
-        //   update, reject -> auto-shadow, etc.) is queued follow-up.
+        //   acceptable; the proper hardening is queued follow-up.
+        //
+        // ── 2026-05-08 S21 NEXT-ITERATION ACCOUNTING TODO ──────────────
+        // Required before this engine is left running unattended:
+        //
+        //   1. Track open clOrdId per microscalper position. Store the
+        //      send_live_order return value in a per-engine "open_clOrdId"
+        //      field. Cleared when matching ExecutionReport (8=8 fill or
+        //      8=2 reject) arrives.
+        //   2. ExecReport-driven pos.size update. handle_execution_report
+        //      already parses fills into g_live_orders; extend it so a
+        //      partial fill on a microscalper clOrdId mutates
+        //      g_gold_microscalper.pos.size to the actual filled qty.
+        //      Engine then closes whatever it actually has, not what it
+        //      thought it had.
+        //   3. Reject handling. If ExecReport reports 8=2 (rejected) or
+        //      8=4 (cancelled) for an open clOrdId, immediately:
+        //        a. Force pos.active=false on the engine (engine has no
+        //           position because broker has none).
+        //        b. Auto-pin g_gold_microscalper.shadow_mode = true so
+        //           subsequent entries don't repeat the failure.
+        //        c. Print [MICROSCALPER-REJECT] log line + emit a
+        //           [RISK-MON] notification.
+        //   4. Close-side clOrdId tracking. Same as (1) but for the close
+        //      order. If the close is rejected, the engine's pos is
+        //      already cleared internally but the broker still has an
+        //      open position -- need to re-fire the close order with a
+        //      bounded retry (3 attempts at 200ms intervals) before
+        //      giving up and printing [MICROSCALPER-CLOSE-FAIL].
+        //   5. Position reconciliation heartbeat. Every 60s, query the
+        //      broker's PositionReport (35=AP) and compare net position
+        //      vs engine pos.active * pos.size * (is_long?+1:-1). If
+        //      they disagree, log [MICROSCALPER-DRIFT] and auto-shadow.
+        //   6. Sanity bound on lot. If pos.size from the engine ever
+        //      exceeds max_lot_gold (config), refuse the send_live_order
+        //      and auto-shadow. Belt for the LIVE_LOT vs max_lot mismatch
+        //      bug class that was flagged in the S20 handoff.
+        //
+        // Until items 1-6 ship, treat this engine as operator-attended
+        // only. Walk away => stop the service. The OMEGA.ps1 stop manual
+        // kill is the operator's safety net; the engine cannot be trusted
+        // to recover from a partial-fill or reject by itself.
+        // ──────────────────────────────────────────────────────────────
         const bool ms_pre_entry_open = g_gold_microscalper.has_open_position();
         if (!ms_pre_entry_open) {
             g_gold_microscalper.on_tick(bid, ask, now_ms_g,
