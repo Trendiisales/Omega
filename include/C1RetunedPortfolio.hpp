@@ -50,7 +50,7 @@
 //
 //  HALT CRITERIA
 //  -------------
-//  Per CHOSEN.md: cluster days (4 cells losing same UTC session) >2x
+//  Per CHOSEN.md: cluster days (4 cells losing same UTC day) >2x
 //  expected frequency in first 2 weeks -> pause and re-evaluate. Tracked
 //  internally by C1RetunedPortfolio (cluster_days_, daily_pnl_), surfaced
 //  via halt_status() so a wrapper can call it from on_tick on a 5-minute
@@ -637,7 +637,7 @@ struct C1RetunedPortfolio {
                 cells_lost_today_++;
                 if (cells_lost_today_ >= 4) {
                     cluster_days_total_++;
-                    halt_reason_ = "cluster_day: 4 cells losing same UTC session";
+                    halt_reason_ = "cluster_day: 4 cells losing same UTC day";
                     // Light flag only -- portfolio does NOT auto-disable cells.
                     halt_tripped_ = (max_dd_pct_ <= -0.075)
                                   || (cluster_days_total_ >= 1);
