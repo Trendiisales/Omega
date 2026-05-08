@@ -144,30 +144,45 @@ namespace omega {
 
 class GoldMicroScalperEngine {
 public:
-    // -- Tuned defaults (S19 calibrated 2026-05-08) --------------------------
+    // -- Tuned defaults (S19 calibrated 2026-05-08, rk12 promotion) ---------
     // Source: backtest/microscalper_crtp_sweep over 28 days / 6.7M ticks of
-    // captured XAUUSD L2 (April 9 - May 8 2026). Top-2 combo (rk2):
-    //   ENTRY_Z=0.75 / TP=1.00 / SL=3.00 / BE=0.50 / TR=0.50
-    //   N=31,009 trades  WR=88.3%  PF=3.58  Net=190.8 (pt*lot)  hold=14.0s
-    // Selected over rk1 (SL=2.38) for the materially higher profit factor
-    // (3.58 vs 3.05) at near-identical net PnL. Wider SL = fewer noise
-    // stop-outs; the BE-arm + aggressive trail handles winning-trade exit
-    // tightness so wider SL doesn't blunt the engine's edge.
+    // captured XAUUSD L2 (April 9 - May 8 2026). Two sweep iterations:
     //
-    // ENTRY_Z=0.75 saturated the swept low boundary (1.5 * 0.5) -- a
-    // re-anchored sweep with BaseParams::ENTRY_Z=0.75 (covering 0.375..1.5)
-    // is staged in microscalper_crtp_sweep.cpp; if it finds a meaningfully
-    // better low-Z optimum, retune from the leaderboard.
+    //   Sweep #1 (anchor ENTRY_Z=1.5; grid 0.75..3.0):
+    //     rk2: Z=0.75 TP=1.00 SL=3.00 BE=0.50 TR=0.50
+    //          N=31,009  WR=88.3%  PF=3.58  Net=190.8  hold=14.0s
+    //     ENTRY_Z saturated at the LOW boundary -> sweep again.
     //
-    // Live expectancy will be lower than backtest because the cost model is
+    //   Sweep #2 (anchor ENTRY_Z=0.75; grid 0.375..1.5) -- THIS one:
+    //     rk1:  Z=0.38 TP=1.00 SL=2.38 N=42,277 WR=87.3% PF=3.27 Net=247.8
+    //           (boundary-saturated again at 0.38; max net but overfit risk)
+    //     rk12: Z=0.75 TP=0.79 SL=3.00 BE=0.50 TR=0.50
+    //           N=36,575 WR=92.5% PF=4.40 Net=203.6 hold=10.5s
+    //
+    // PROMOTED rk12. Justification:
+    //   * Mid-grid on every swept parameter -- no boundary saturation, so
+    //     less overfit risk than rk1's Z=0.38 corner.
+    //   * Highest profit factor of the entire leaderboard (4.40 vs 3.27 at
+    //     rk1) and highest WR (92.5% vs 87.3%). Both metrics are robust
+    //     against backtest-vs-live divergence; raw net PnL is the most
+    //     fragile metric to optimise on.
+    //   * TP=0.79pt (down from rk2's 1.00) better matches the engine's
+    //     stated design intent of "lock in small trades quickly" -- the
+    //     tighter TP locks profit ~25% faster.
+    //   * If live fills underperform backtest by 30%, rk12 still profits
+    //     while rk1's marginal edge could vanish entirely.
+    //
+    // Live expectancy WILL be lower than backtest because the cost model is
     // conservative (1 spread per non-TP exit; no slippage; no fill-rejection
-    // probability). Re-tune from 2-4 weeks of live-shadow tape after deploy.
+    // probability). Re-tune from 2-4 weeks of live-shadow tape after deploy
+    // -- that's the calibration signal that actually matters, not another
+    // sweep iteration.
     static constexpr int    ENTRY_LOOKBACK       = 20;
     static constexpr double ENTRY_Z              = 0.75;
     static constexpr double L2_IMB_LONG_MIN      = 0.55;
     static constexpr double L2_IMB_SHORT_MAX     = 0.45;
     static constexpr double MAX_SPREAD           = 1.0;
-    static constexpr double TP_DIST_PTS          = 1.0;
+    static constexpr double TP_DIST_PTS          = 0.79;
     static constexpr double SL_DIST_PTS          = 3.0;
     static constexpr double BE_TRIGGER_PTS       = 0.5;
     static constexpr double BE_OFFSET_PTS        = 0.3;
