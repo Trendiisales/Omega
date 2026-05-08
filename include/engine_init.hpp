@@ -141,12 +141,34 @@ static void init_engines(const std::string& cfg_path)
             }
         });
 
-    // 2026-05-08 DEEPSTRIKE belt-and-braces: explicit shadow pin for
-    //   g_nbm_gold_london. Was previously following kShadowDefault, which
-    //   the hard-pin above already forces to true, but stamping it
-    //   explicitly here means the policy survives even if a future edit
-    //   changes the kShadowDefault default back to mode-following.
-    g_nbm_gold_london.shadow_mode = true;
+    // 2026-05-08 DEEPSTRIKE belt-and-braces (BUILD-FIX 2026-05-08, S21):
+    //   Originally tried `g_nbm_gold_london.shadow_mode = true;` here as an
+    //   explicit shadow pin to back up the kShadowDefault policy. That line
+    //   broke the VPS build with C2039: NoiseBandMomentumEngine
+    //   (CrossAssetEngines.hpp:2379) has NO public `shadow_mode` member.
+    //   The cross-asset cohort stores shadow_mode on the private
+    //   CrossPosition pos_ field (CrossAssetEngines.hpp:156), and only
+    //   IndexFlowEngine exposes a `set_shadow_mode(bool)` proxy
+    //   (IndexFlowEngine.hpp:548). NBM does not have an analogous proxy,
+    //   so there is no compile-clean way to flip shadow on it from here.
+    //
+    //   Removing this pin is SAFE in the current build: NBM's entry-
+    //   dispatch code was removed in the engine-cull audit (96-cell
+    //   walk-forward + 11-day/3.4M tick sweep both showed zero profitable
+    //   configs; production cell WR=22%, net -$47/14d -- see the
+    //   tombstone comment block at tick_gold.hpp:2302-2318). The only
+    //   remaining call site -- tick_gold.hpp:2298-2300 -- runs NBM.on_tick
+    //   strictly inside `if (has_open_position())`, i.e. position-management
+    //   only. There is no path by which NBM can open a fresh position, so
+    //   live-order risk is zero regardless of shadow_mode.
+    //
+    //   If a future session re-arms NBM entry dispatch and a runtime
+    //   shadow gate becomes needed, add a proxy to NoiseBandMomentumEngine
+    //   parallel to IndexFlowEngine.hpp:548:
+    //     void set_shadow_mode(bool b) noexcept { pos_.shadow_mode = b; }
+    //   and call `g_nbm_gold_london.set_shadow_mode(true);` here.
+    // g_nbm_gold_london.shadow_mode = true;  // intentionally NOT compiled --
+    //                                          field does not exist on NBM.
     // 2026-05-02: EurusdLondonOpenEngine -- pinned shadow-only on first
     //   deployment regardless of g_cfg.mode. First FX engine since the
     //   2026-04-06 global FX disable; new engine model (compression-breakout
