@@ -3,6 +3,53 @@
 // Section: order_exec (original lines 2134-2855)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+// 2026-05-08 S21 (authorised by user in chat): FIX volume conversion.
+//
+// cTrader / Spotware FIX gateways expect tag 38 (OrderQty) in **contract base
+// units**, not in lots. For XAUUSD on BlackBull, 1 lot = 100 oz, so a 0.30-lot
+// market order needs 38=30.00 (oz), not 38=0.30 (lots). Without this scaling
+// every microscalper order was being rejected by the broker with:
+//   35=j  text=TRADING_BAD_VOLUME:Order volume = 0.30 is smaller than minimum
+//          allowed volume = 1.00.
+// confirmed in latest.log on 2026-05-08 11:05-11:07 UTC.
+//
+// fix_volume_per_lot(symbol) returns the units-per-lot factor for FIX tag 38.
+// It is DELIBERATELY distinct from tick_value_multiplier() in sizing.hpp --
+// that function returns $/pt/lot for P&L scaling. The two values agree for
+// commodities and FX (XAUUSD: 100 oz/lot AND $100/pt/lot) but diverge for
+// index CFDs, where cTrader's CFD convention is 1 contract == 1 lot for FIX
+// volume but the contract is $1/$5/$20/$50 per pt for P&L. Reusing
+// tick_value_multiplier here would silently over-leverage indices by 5x-50x
+// the moment the first index engine goes live -- exactly the bug class we
+// want to avoid.
+//
+// Conservative table: only symbols we have BlackBull-verified contract sizes
+// for return non-1.0. Unknown / unverified symbols fall through to 1.0 -- the
+// pre-fix behaviour. When any new live engine ships, verify the symbol's
+// "Lot size" field in the cTrader Symbol Info pane and add a row here.
+//
+// XAUUSD verified 2026-05-08 against BlackBull account 8077780 Symbol Info
+// pane: "Lot size: 100 Oz", "Min trade quantity: 0.01 Lots". 0.01 lots = 1 oz
+// = the minimum the broker reported in the rejection text above.
+static double fix_volume_per_lot(const std::string& symbol) noexcept {
+    if (symbol == "XAUUSD")   return 100.0;       // 100 troy oz/lot   (verified live)
+    if (symbol == "XAGUSD")   return 5000.0;      // 5000 troy oz/lot  (per sizing.hpp)
+    if (symbol == "USOIL.F")  return 1000.0;      // 1000 barrels/lot  (per sizing.hpp)
+    if (symbol == "BRENT")    return 1000.0;      // 1000 barrels/lot  (per sizing.hpp)
+    if (symbol == "EURUSD")   return 100000.0;    // FX major, 100k base/lot
+    if (symbol == "GBPUSD")   return 100000.0;
+    if (symbol == "AUDUSD")   return 100000.0;
+    if (symbol == "NZDUSD")   return 100000.0;
+    if (symbol == "USDJPY")   return 100000.0;
+    // Index CFDs (US500.F, USTEC.F, DJ30.F, NAS100, GER40, UK100, ESTX50):
+    // cTrader CFD convention is 1 contract = 1 lot for tag 38. NOT verified
+    // end-to-end against a live BlackBull index trade -- the first index
+    // engine to go live MUST confirm against a sandbox order before relying
+    // on this default. Returning 1.0 = qty unchanged from lots, which is the
+    // pre-fix behaviour and matches cTrader CFD documentation.
+    return 1.0;
+}
+
 static std::string send_limit_order(const std::string& symbol, bool is_long,
                                     double qty, double limit_px) {
     if (g_cfg.mode != "LIVE") return {};
@@ -19,6 +66,10 @@ static std::string send_limit_order(const std::string& symbol, bool is_long,
         std::chrono::system_clock::now().time_since_epoch()).count();
     const std::string clOrdId = "OML-" + std::to_string(nowSec())
                                + "-" + std::to_string(g_order_id_counter++);
+    // 2026-05-08 S21 FIX VOLUME CONVERSION: convert lots -> contract units
+    // for tag 38 before sending. See fix_volume_per_lot() comment block at
+    // the top of this file for the rationale.
+    const double fix_qty = qty * fix_volume_per_lot(symbol);
     std::string msg;
     {
         std::lock_guard<std::mutex> lk(g_trade_mtx);
@@ -26,40 +77,40 @@ static std::string send_limit_order(const std::string& symbol, bool is_long,
             std::cerr << "[LIMIT-ORDER] BLOCKED -- trade SSL null\n";
             return {};
         }
-        msg = build_limit_order_single(g_trade_seq++, clOrdId, sym_id, is_long, qty, limit_px);
+        msg = build_limit_order_single(g_trade_seq++, clOrdId, sym_id, is_long, fix_qty, limit_px);
         const int w = SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
         if (w <= 0) {
             std::cerr << "[LIMIT-ORDER] SSL_write failed for " << symbol << "\n";
             return {};
         }
     }
-    // Track for cancel fallback
+    // Track for cancel fallback (qty in LOTS for engine reconciliation)
     {
         std::lock_guard<std::mutex> lk(g_pending_limits_mtx);
         PendingLimitOrder plo;
         plo.symbol    = symbol;
         plo.is_long   = is_long;
-        plo.qty       = qty;
+        plo.qty       = qty;       // engine-side qty in lots
         plo.limit_px  = limit_px;
         plo.sent_ms   = now_ms;
         plo.expire_ms = now_ms + LIMIT_ORDER_TIMEOUT_MS;
         g_pending_limits[clOrdId] = plo;
     }
-    // Also register in g_live_orders for ACK tracking
+    // Also register in g_live_orders for ACK tracking (qty in LOTS)
     {
         std::lock_guard<std::mutex> lk(g_live_orders_mtx);
         LiveOrderRecord rec;
         rec.clOrdId = clOrdId;
         rec.symbol  = symbol;
         rec.side    = is_long ? "LONG" : "SHORT";
-        rec.qty     = qty;
+        rec.qty     = qty;         // engine-side qty in lots
         rec.price   = limit_px;
         rec.ts      = nowSec();
         g_live_orders[clOrdId] = rec;
     }
-    std::printf("[LIMIT-SENT] %s %s qty=%.2f limit=%.5f clOrdId=%s\n",
+    std::printf("[LIMIT-SENT] %s %s lots=%.4f fix_qty=%.2f limit=%.5f clOrdId=%s\n",
                 symbol.c_str(), is_long ? "BUY" : "SELL",
-                qty, limit_px, clOrdId.c_str());
+                qty, fix_qty, limit_px, clOrdId.c_str());
     std::fflush(stdout);
     return clOrdId;
 }
@@ -85,6 +136,12 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
     const std::string clOrdId = "OM-" + std::to_string(nowSec())
                                + "-" + std::to_string(g_order_id_counter++);
 
+    // 2026-05-08 S21 FIX VOLUME CONVERSION: convert lots -> contract units
+    // for tag 38 before sending. See fix_volume_per_lot() comment block at
+    // the top of this file for the rationale. Pre-fix, every microscalper
+    // order was rejected by BlackBull with TRADING_BAD_VOLUME.
+    const double fix_qty = qty * fix_volume_per_lot(symbol);
+
     std::string msg;
     {
         std::lock_guard<std::mutex> lk(g_trade_mtx);
@@ -92,7 +149,7 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
             std::cerr << "[ORDER] BLOCKED -- trade SSL null\n";
             return {};
         }
-        msg = build_new_order_single(g_trade_seq++, clOrdId, sym_id, is_long, qty);
+        msg = build_new_order_single(g_trade_seq++, clOrdId, sym_id, is_long, fix_qty);
         const int w = SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
         if (w <= 0) {
             std::cerr << "[ORDER] SSL_write failed for " << symbol << "\n";
@@ -100,14 +157,16 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
         }
     }
 
-    // Record for ACK tracking
+    // Record for ACK tracking (qty stored in LOTS for engine reconciliation;
+    // ExecutionReport handler must convert broker-reported fill qty back to
+    // lots before comparing against engine pos.size).
     {
         std::lock_guard<std::mutex> lk(g_live_orders_mtx);
         LiveOrderRecord rec;
         rec.clOrdId = clOrdId;
         rec.symbol  = symbol;
         rec.side    = is_long ? "LONG" : "SHORT";
-        rec.qty     = qty;
+        rec.qty     = qty;         // engine-side qty in lots
         rec.price   = mid_price;
         rec.ts      = nowSec();
         g_live_orders[clOrdId] = rec;
@@ -115,8 +174,9 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
 
     std::cout << "\033[1;33m[ORDER-SENT] " << symbol
               << " " << (is_long ? "BUY" : "SELL")
-              << " qty=" << qty
-              << " mid=" << std::fixed << std::setprecision(4) << mid_price
+              << " lots=" << std::fixed << std::setprecision(4) << qty
+              << " fix_qty=" << std::setprecision(2) << fix_qty
+              << " mid=" << std::setprecision(4) << mid_price
               << " clOrdId=" << clOrdId
               << "\033[0m\n";
     std::cout.flush();
@@ -289,6 +349,14 @@ static std::string send_hard_stop_order(const std::string& symbol, bool pos_is_l
     const std::string clOrdId = "HS-" + std::to_string(nowSec())
                                + "-" + std::to_string(g_order_id_counter++);
 
+    // 2026-05-08 S21 FIX VOLUME CONVERSION: same lots->units conversion the
+    // other order paths got. Without this the hard-stop limit would also be
+    // rejected with TRADING_BAD_VOLUME the moment any live position needs
+    // hard-stop protection (the rejection would silently leave the position
+    // unprotected -- worst-case bug class). See fix_volume_per_lot() at top
+    // of this file.
+    const double fix_qty = current_qty * fix_volume_per_lot(symbol);
+
     std::string msg;
     {
         std::lock_guard<std::mutex> lk(g_trade_mtx);
@@ -301,7 +369,7 @@ static std::string send_hard_stop_order(const std::string& symbol, bool pos_is_l
         }
         // Use build_limit_order_single: LIMIT order at hard_sl_px on the closing side
         msg = build_limit_order_single(g_trade_seq++, clOrdId, sym_id,
-                                       closing_is_buy, current_qty, hard_sl_px);
+                                       closing_is_buy, fix_qty, hard_sl_px);
         const int w = SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
         if (w <= 0) {
             printf("[HARD-STOP] SSL_write failed for %s\n", symbol.c_str());
