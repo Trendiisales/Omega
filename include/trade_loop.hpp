@@ -111,6 +111,21 @@ static void trade_loop() {
                 const std::string tmsg = trade_recv_buf.substr(0u, msg_end);
                 trade_recv_buf = trade_recv_buf.substr(msg_end);
 
+                // 2026-05-09 RAW FIX DIAGNOSTIC LOGGING:
+                // Dump every inbound trade-session FIX message with SOH
+                // bytes replaced by '|' so we can see exactly which tags
+                // BlackBull's gateway emits. Required to figure out the
+                // correct hedging-mode close tag (1006 vs 721 vs 41 vs
+                // 9XXX Spotware-custom). Trade volume is low compared to
+                // quote ticks so this won't blow up the log.
+                {
+                    std::string printable;
+                    printable.reserve(tmsg.size());
+                    for (char c : tmsg) printable.push_back(c == '\x01' ? '|' : c);
+                    std::cout << "[FIX-IN-RAW-TRADE] " << printable << "\n";
+                    std::cout.flush();
+                }
+
                 const std::string ttype = extract_tag(tmsg, "35");
                 if (ttype == "A") {
                     g_trade_ready.store(true);
