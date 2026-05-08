@@ -125,14 +125,75 @@ if (-not (Test-Path $akFile)) {
 }
 
 # Append (deduped) the supplied key.
-$existing = @()
-try { $existing = Get-Content $akFile -ErrorAction Stop } catch { $existing = @() }
-if ($existing -notcontains $PublicKey) {
-    Add-Content -Path $akFile -Value $PublicKey -Encoding ascii
-    Write-Host "Key appended."
-} else {
-    Write-Host "Key already present -- not duplicated."
+#
+# 2026-05-08 BUGFIX (S19 follow-up): the prior implementation used
+#   Add-Content -Value $PublicKey
+# which does NOT prepend a newline. If the existing file lacked a trailing
+# newline (common when notepad / Set-Content / Copy-Item produced it), the
+# new key got concatenated onto the tail of the previous one as:
+#     ssh-ed25519 BLOB1 comment1ssh-ed25519 BLOB2 comment2
+# sshd then parsed that as ONE key (the first) with a giant comment
+# containing the second key's text -- so the new key was effectively
+# never authorised. The 2026-05-08 sshd debug log captured this:
+#     processed 1/1 lines
+#     check options: 'ssh-ed25519 ...6ytX chimera-vpsssh-ed25519 ...gJvT...'
+#
+# Robust fix: read the file as raw text, split it on a lookahead BEFORE
+# each algorithm prefix (so even concatenated keys recover), de-dupe by
+# base64 blob (not full line, to ignore comment differences), then write
+# back with explicit "`n" separators and a trailing newline.
+$rawText = ""
+if (Test-Path $akFile) {
+    $rawText = [System.IO.File]::ReadAllText($akFile)
 }
+
+# Split on every key-algorithm prefix that's followed by whitespace.
+# Recovers cleanly from no-newline-between-keys files.
+$splits = [regex]::Split(
+    $rawText,
+    '(?=(?:ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-\S+)\s)'
+)
+
+function Get-KeyBlob([string]$line) {
+    $parts = $line.Trim() -split '\s+', 3
+    if ($parts.Count -ge 2) { return $parts[1] }
+    return $line.Trim()
+}
+
+$keys = @()
+foreach ($s in $splits) {
+    $line = $s.Trim()
+    if ($line -match '^(ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-\S+)\s+\S+') {
+        $keys += $line
+    }
+}
+
+# De-dupe by base64 blob (key identity), preserving the first occurrence.
+$seen = @{}
+$dedup = @()
+foreach ($k in $keys) {
+    $blob = Get-KeyBlob $k
+    if (-not $seen.ContainsKey($blob)) {
+        $seen[$blob] = $true
+        $dedup += $k
+    }
+}
+$keys = $dedup
+
+# Add the new key if its blob is not already present.
+$newBlob = Get-KeyBlob $PublicKey
+if (-not $seen.ContainsKey($newBlob)) {
+    $keys += $PublicKey
+    Write-Host "Key appended ($($keys.Count) total in file)."
+} else {
+    Write-Host "Key already present (matched by base64 blob) -- not duplicated. $($keys.Count) total in file."
+}
+
+# Write back with explicit LF separators and trailing newline. Using
+# WriteAllText (not Set-Content) so we control encoding + newline exactly
+# and don't depend on PowerShell's per-version defaults.
+$content = ($keys -join "`n") + "`n"
+[System.IO.File]::WriteAllText($akFile, $content, [System.Text.Encoding]::ASCII)
 
 # -----------------------------------------------------------------------------
 # 4. Stamp ACLs. THIS is what fixes StrictModes for good. Both file AND parent
