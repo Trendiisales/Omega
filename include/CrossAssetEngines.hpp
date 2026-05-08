@@ -362,33 +362,63 @@ public:
         const int mins = ti.tm_hour * 60 + ti.tm_min;
         if (mins < 13*60+30 || mins >= 17*60) {
             confirm_count_ = 0;
+            confirm_dir_   = 0;
             return {};
         }
         if (ca_now_sec() < cooldown_until_) return {};
 
-        const double mid    = (bid + ask) * 0.5;
-        const double spread = ask - bid;
+        // P1-8 fix (S17): rewrite of confirm logic.
+        // Old version had two bugs:
+        //   1. is_long was hardcoded true in both qualifying branches (engine
+        //      only goes long the laggard), so the "confirm_is_long_ != is_long"
+        //      flip-detection was dead code -- divergence-sign flips were not
+        //      caught.
+        //   2. on_tick is dispatched per-symbol (US500 ticks AND USTEC ticks),
+        //      so every tick on the non-laggard symbol fell into !qualifies and
+        //      reset confirm_count_ to 0. The count could effectively never
+        //      reach CONFIRM_TICKS.
+        // New approach: track signed direction (confirm_dir_) derived from sign
+        // of div. Reset only on (a) below-threshold or (b) sign flip. Only
+        // count up on a tick from the laggard symbol matching the current
+        // direction. Ticks on the leader symbol are tolerated and do not reset.
+        int div_dir = 0;
+        if      (div >  DIV_ENTRY_THRESH) div_dir = +1;  // ES leading -> long NQ
+        else if (div < -DIV_ENTRY_THRESH) div_dir = -1;  // NQ leading -> long ES
 
-        // Determine if this tick qualifies and in which direction.
-        // Laggard-long only -- shorting the leader is unreliable.
-        bool qualifies = false;
-        bool is_long   = true;
-        if      (div >  DIV_ENTRY_THRESH && sym == "USTEC.F") { qualifies = true; is_long = true; }
-        else if (div < -DIV_ENTRY_THRESH && sym == "US500.F") { qualifies = true; is_long = true; }
-
-        if (!qualifies || confirm_is_long_ != is_long) {
-            confirm_count_   = qualifies ? 1 : 0;
-            confirm_is_long_ = is_long;
+        // No signal -- reset and exit
+        if (div_dir == 0) {
+            confirm_count_ = 0;
+            confirm_dir_   = 0;
             return {};
         }
+
+        // Direction changed since last confirming tick -- restart count
+        if (div_dir != confirm_dir_) {
+            confirm_count_ = 0;
+            confirm_dir_   = div_dir;
+            // Fall through; this tick may still be a laggard tick of the new direction
+        }
+
+        // Only laggard-symbol ticks of the matching direction count up.
+        // Other-symbol ticks are tolerated (count held) so per-symbol dispatch
+        // does not wipe accumulating confirmations.
+        const bool is_laggard_tick =
+            (div_dir == +1 && sym == "USTEC.F") ||
+            (div_dir == -1 && sym == "US500.F");
+        if (!is_laggard_tick) return {};
 
         ++confirm_count_;
         if (confirm_count_ < CONFIRM_TICKS) return {};  // not yet confirmed
 
         confirm_count_ = 0;  // reset -- don't fire every subsequent tick
+        confirm_dir_   = 0;
 
-        const double tp      = mid * (1.0 + (is_long ? 1 : -1) * TP_PCT / 100.0);
-        const double sl      = mid * (1.0 - (is_long ? 1 : -1) * SL_PCT / 100.0);
+        const double mid    = (bid + ask) * 0.5;
+        const double spread = ask - bid;
+        const bool   is_long = true;  // engine is long-laggard-only by design
+
+        const double tp      = mid * (1.0 + TP_PCT / 100.0);
+        const double sl      = mid * (1.0 - SL_PCT / 100.0);
         // tp_dist removed -- cost check now in enter_directional with real lot size
 
         // Cost check removed: enter_directional() performs the definitive
@@ -405,7 +435,7 @@ public:
         sig.size    = 0.01;
         sig.symbol  = sym.c_str();
         sig.engine  = "EsNqDivergence";
-        sig.reason  = is_long ? "NQ_LAGS_ES" : "ES_LAGS_NQ";
+        sig.reason  = (div_dir == +1) ? "NQ_LAGS_ES" : "ES_LAGS_NQ";
 
         pos_.open(sig, spread);
         pos_.allow_tp_extend = false;  // EsNqDiv: mean-reversion, close at target
@@ -433,7 +463,7 @@ private:
     int64_t cooldown_until_    = 0;
     double  last_div_at_entry_ = 0.0;
     int     confirm_count_     = 0;
-    bool    confirm_is_long_   = false;
+    int     confirm_dir_       = 0;   // P1-8 fix: signed direction (1=long-NQ, -1=long-ES, 0=none)
 };
 
 // =============================================================================
@@ -783,6 +813,14 @@ private:
 
         if (pos.active) {
             pos.manage(bid, ask, MAX_HOLD_SEC, on_close);
+            // P1-3 fix (S17): cooldown resets on close, not entry. If manage()
+            // just closed the trade (TP/SL/TIMEOUT), pos.active is now false;
+            // start the cooldown clock from this moment so COOLDOWN_SEC becomes
+            // a real minimum gap between trades rather than overlapping the
+            // held duration.
+            if (!pos.active) {
+                cooldown = ca_now_sec() + COOLDOWN_SEC;
+            }
             return {};
         }
 
@@ -815,7 +853,10 @@ private:
         sig.reason  = armed_long_ ? "EUR_CASCADE_LONG" : "EUR_CASCADE_SHORT";
 
         pos.open(sig, spread);
-        cooldown = ca_now_sec() + COOLDOWN_SEC;
+        // P1-3 fix (S17): cooldown set on close, NOT entry. Cooldown reset
+        // happens in the manage() block above when pos.active transitions to
+        // false. Leaving it on entry caused COOLDOWN_SEC to overlap with the
+        // held duration, allowing rapid re-entry after a quick TP.
         printf("[FX-CASCADE] %s %s entry=%.5f tp=%.5f sl=%.5f\n",
                pair_sym, armed_long_?"LONG":"SHORT", mid, sig.tp, sig.sl);
         fflush(stdout);
