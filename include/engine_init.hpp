@@ -106,22 +106,43 @@ static void init_engines(const std::string& cfg_path)
     //   the RiskMonitor will auto-pin on trip.
     //
     //   2026-05-08 AMENDMENT (S21, authorised by user in chat):
-    //     LIVE_LOT raised from 0.03 to 0.20 in GoldMicroScalperEngine.hpp:221
-    //     and max_lot_gold raised from 0.03 to 0.20 in omega_config.ini:166.
-    //     The values "0.03 lot" and "max_lot_gold = 0.03" in the comment
-    //     block above are SUPERSEDED -- they remain for the original
-    //     authorization paper trail. Authoritative current values:
-    //       LIVE_LOT       = 0.20  (GoldMicroScalperEngine.hpp:221)
-    //       max_lot_gold   = 0.20  (omega_config.ini:166)
+    //     LIVE_LOT raised 0.03 -> 0.20 -> 0.30 (current) in
+    //     GoldMicroScalperEngine.hpp and max_lot_gold raised 0.03 -> 0.30
+    //     (current) in omega_config.ini. The "0.03 lot" / "max_lot_gold =
+    //     0.03" values in the comment block above are SUPERSEDED -- kept
+    //     for the original authorization paper trail. Authoritative
+    //     current values:
+    //       LIVE_LOT       = 0.30  (GoldMicroScalperEngine.hpp)
+    //       max_lot_gold   = 0.30  (omega_config.ini:166)
     //       MAX_SPREAD     = 0.5pt (unchanged from original live promotion)
     //       account        = 8077780 (unchanged)
     //       shadow_mode    = false (unchanged -- this line below)
-    //     Risk delta vs original 0.03 promotion: per-trade $ outcomes 6.67x
-    //     larger. RiskMonitor TRIP_WR=0.8216 still appropriate (anchored to
-    //     backtest expectancy, not $ threshold); auto-pin on trip remains
-    //     the in-process safety circuit. OMEGA.ps1 stop on the VPS is the
-    //     manual kill switch if operator override is needed; no GUI button
-    //     in this deploy (deferred to next session).
+    //
+    //   2026-05-08 LIVE-MODE FLIP (S21 audit, same authorisation):
+    //     omega_config.ini: mode=SHADOW -> mode=LIVE. The original
+    //     DEEPSTRIKE comment block at the top of init_engines() claimed
+    //     `shadow_mode = false` alone made an engine live regardless of
+    //     g_cfg.mode. That was wrong. order_exec.hpp:72 hard-gates
+    //     send_live_order on g_cfg.mode == "LIVE", so under mode=SHADOW
+    //     every microscalper close was being silently dropped at the
+    //     broker submit boundary -- account 8077780 saw zero trades for
+    //     21 minutes despite the engine firing ~30 paper trades during
+    //     that window. With mode=LIVE the broker submit boundary opens
+    //     and microscalper actually places real orders. Single-engine
+    //     deploy semantics preserved by hard-pinning bracket engines'
+    //     shadow_mode=true regardless of g_cfg.mode (see the wire_bracket
+    //     lambda comment further below). Other engines either have
+    //     explicit shadow_mode=true pins or use kShadowDefault=true; only
+    //     g_gold_microscalper has shadow_mode=false in production source.
+    //
+    //   Risk delta vs original 0.03 promotion: per-trade $ outcomes 10x
+    //   larger (TP win ~+$20.40 net, SL hit ~-$93.30 net at 0.30 lot).
+    //   RiskMonitor TRIP_WR=0.8216 anchored to backtest expectancy, not
+    //   $ threshold; auto-pin on trip remains the in-process safety
+    //   circuit. OMEGA.ps1 stop on the VPS is the manual kill switch
+    //   (note: shutdown does NOT currently force-close positions -- the
+    //   proper fix is queued for next deploy; today the stop+manual-
+    //   cTrader-close workaround applies if a position is open at stop).
     g_gold_microscalper.shadow_mode = false;
 
     // 2026-05-08 S20+: RiskMonitor wiring -------------------------------------
@@ -1327,8 +1348,27 @@ static void init_engines(const std::string& cfg_path)
     g_bracket_usdjpy.configure(0.02,    30, 2.0, 45000, 0.20,    0.05, 4000, 8000, 0.0, 45000, 8000, 20, 0.15, 2.0, 0.04,    2.0);
     g_bracket_usdjpy.MAX_RANGE = 0.60;   // ~0.40% of USDJPY ~150
 
-    // Shadow mode + cancel wiring for all new bracket engines
-    const bool shadow = (g_cfg.mode != "LIVE");
+    // Shadow mode + cancel wiring for all new bracket engines.
+    //
+    // 2026-05-08 S21 SINGLE-ENGINE-DEPLOY HARD-PIN (authorised by user in chat):
+    //   Original code: const bool shadow = (g_cfg.mode != "LIVE");
+    //   Problem: g_cfg.mode was just flipped SHADOW -> LIVE to unblock the
+    //   send_live_order hard gate at order_exec.hpp:72 (the actual broker
+    //   submit boundary). The original lambda would then have flipped all
+    //   13 bracket engines (US500, USTEC, DJ30, NAS100, GER40, UK100, ESTX50,
+    //   BRENT, EURUSD, GBPUSD, AUDUSD, NZDUSD, USDJPY) to shadow_mode=false
+    //   at the same moment -- making 13 untested engines go live alongside
+    //   the single authorised microscalper. User policy is single-engine
+    //   live deploy: ONLY g_gold_microscalper trades live for now.
+    //
+    //   Fix: hard-pin shadow=true here, regardless of g_cfg.mode. Bracket
+    //   engines stay shadow even with mode=LIVE. To re-arm any individual
+    //   bracket for live in future, add an explicit
+    //   `g_bracket_<sym>.shadow_mode = false;` line AFTER its wire_bracket
+    //   call below. Restoring the original mode-following behaviour
+    //   (`const bool shadow = (g_cfg.mode != "LIVE");`) in one edit would
+    //   re-arm all 13 brackets at once and is the wrong unit of change.
+    const bool shadow = true;
     auto wire_bracket = [&](auto& beng, int pending_timeout_sec = 180) {
         beng.shadow_mode         = shadow;
         beng.PENDING_TIMEOUT_SEC = pending_timeout_sec;

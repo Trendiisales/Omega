@@ -219,19 +219,32 @@ public:
     //   Real-cost BE WR  ~  82.1%   (vs backtest 92.5%, monitor trip 82.16%)
     //
     //   2026-05-08 LOT BUMP (S21, authorised by user in chat):
-    //     LIVE_LOT raised 0.03 -> 0.20 (6.67x). Per-trade PnL scales
-    //     linearly with lot:
-    //       TP win : +0.79pt -> +$15.80 gross -> ~+$13.60 net (after ~$2.20 slip)
-    //       SL hit : -3.00pt -> -$60.00 gross -> ~-$62.20 net (after ~$2.20 slip)
+    //     LIVE_LOT raised 0.03 -> 0.20 (6.67x), then 0.20 -> 0.30 (current).
+    //     10x vs original 0.03 deploy. Per-trade PnL at 0.30 lot:
+    //       TP win : +0.79pt -> +$23.70 gross -> ~+$20.40 net (after ~$3.30 slip)
+    //       SL hit : -3.00pt -> -$90.00 gross -> ~-$93.30 net (after ~$3.30 slip)
     //     BE_WR unchanged in % terms; RiskMonitor TRIP_WR=0.8216 stays
     //     anchored to backtest expectancy (not a $ threshold). The $
-    //     drawdown velocity per losing trade is 6.67x bigger than the
-    //     original 0.03 lot deploy -- operator attention required.
-    //     OMEGA.ps1 stop on the VPS is the manual kill if needed.
-    //     max_lot_gold in omega_config.ini also raised 0.03 -> 0.20
+    //     drawdown velocity per losing trade is 10x the original 0.03 lot
+    //     deploy -- operator attention required.
+    //     OMEGA.ps1 stop on the VPS is the manual kill if needed (note:
+    //     proper shutdown-force-close is queued for next deploy; today
+    //     stop+manual-cTrader-close is the workaround if a position is open).
+    //     max_lot_gold in omega_config.ini also raised 0.03 -> 0.30
     //     (the per-symbol cap would reject the new lot otherwise).
+    //
+    //   2026-05-08 LIVE-MODE FLIP (S21 audit, authorised by user in chat):
+    //     omega_config.ini mode flipped SHADOW -> LIVE. Reason: the previous
+    //     DEEPSTRIKE comment block in engine_init.hpp claimed shadow_mode=
+    //     false alone was enough to make this engine live; that was wrong.
+    //     order_exec.hpp:72 hard-gates send_live_order on g_cfg.mode=="LIVE",
+    //     so with mode=SHADOW every microscalper close was being silently
+    //     dropped at the broker submit boundary (paper P&L accumulating in
+    //     the dashboard, NZD 5,000.00 untouched on BlackBull account
+    //     8077780). To preserve single-engine semantics under mode=LIVE, the
+    //     wire_bracket lambda in engine_init.hpp was hard-pinned to shadow.
     static constexpr double USD_PER_PT           = 100.0;  // per full lot XAUUSD
-    static constexpr double LIVE_LOT             = 0.20;
+    static constexpr double LIVE_LOT             = 0.30;
 
     static constexpr int    MIN_ENTRY_TICKS      = 30;     // warmup before any fire
     static constexpr int    DIAG_EVERY_N_TICKS   = 600;    // ~3min @ 200 ticks/min
