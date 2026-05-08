@@ -40,6 +40,32 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         }
     }
 
+    // ?? AUDIT-FIX 2026-05-08 (S15 P0-1): timestamp sanitizer ?????????????????
+    // Tape evidence: 48 rows in audit_input/omega_shadow.csv have hold_sec
+    //   ~= -entryTs, the textbook signature of an upstream caller passing a
+    //   seconds-valued timestamp where milliseconds were expected (or vice
+    //   versa). The MacroCrash branch was patched at on_tick.hpp:929-932 by
+    //   passing ds_now_ms; CandleFlowEngine (5 rows) and HybridBracketGold
+    //   (1 row) in the same tape suggest one or more close paths still have
+    //   the bug somewhere upstream. Per the user's "smallest fix that closes
+    //   the tape evidence" preference, sanitise at the central ledger
+    //   ingress instead of patching every engine: any row arriving with
+    //   exitTs < entryTs is coerced to a zero-hold scratch trade and tagged
+    //   so the CSV makes the corruption observable. Upstream call sites
+    //   should still be tracked down in S16+; the [LEDGER-CORRUPT-TS] log
+    //   line is the breadcrumb.
+    if (tr.exitTs < tr.entryTs) {
+        std::fprintf(stderr,
+            "[LEDGER-CORRUPT-TS] %s symbol=%s side=%s entryTs=%lld exitTs=%lld "
+            "reason=%s -- coercing exitTs=entryTs\n",
+            tr.engine.c_str(), tr.symbol.c_str(), tr.side.c_str(),
+            static_cast<long long>(tr.entryTs),
+            static_cast<long long>(tr.exitTs),
+            tr.exitReason.c_str());
+        tr.exitTs      = tr.entryTs;
+        tr.exitReason  = tr.exitReason + "[CORRUPT_TS]";
+    }
+
     // ?? PNL SANITY CAP ???????????????????????????????????????????????????????????
     // Catches inflated PnL from stale carry-over positions opened in a prior session
     // that close during the current session after repeated reconnects.

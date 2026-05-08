@@ -555,11 +555,27 @@ static void load_config(const std::string& path) {
             // S47 T4b 2026-04-27: when true, drop bear-break (SHORT) entries.
             if (k=="long_only")          mp.long_only           = (v == "true" || v == "1");
         }
-        // S47 T4b 2026-04-27: minimal [minimal_h4_us30] parser -- only the
-        //   long_only flag is wired here. Other US30 keys remain documentary
-        //   (engine reads defaults from make_minimal_h4_us30_params()).
+        // 2026-05-08 AUDIT-FIX (S15 P0-4): full [minimal_h4_us30] parser. The
+        //   S47-era parser wired only `long_only`; the other 10 INI keys were
+        //   silently ignored, so operators editing them in the INI got no
+        //   runtime effect. The block below mirrors the [minimal_h4] gold
+        //   parser above and adds the US30-specific fields (atr_period and
+        //   dollars_per_point).
         if (section == "minimal_h4_us30") {
             auto& mp = g_minimal_h4_us30.p;
+            if (k=="enabled")            g_minimal_h4_us30.enabled     = (v == "true" || v == "1");
+            if (k=="shadow_mode")        g_minimal_h4_us30.shadow_mode = (v == "true" || v == "1");
+            if (k=="donchian_bars")      mp.donchian_bars       = safe_stoi(v, k);
+            if (k=="sl_mult")            mp.sl_mult             = safe_stod(v, k);
+            if (k=="tp_mult")            mp.tp_mult             = safe_stod(v, k);
+            if (k=="risk_dollars")       mp.risk_dollars        = safe_stod(v, k);
+            if (k=="max_lot")            mp.max_lot             = safe_stod(v, k);
+            if (k=="dollars_per_point")  mp.dollars_per_point   = safe_stod(v, k);
+            if (k=="max_spread")         mp.max_spread          = safe_stod(v, k);
+            if (k=="timeout_h4_bars")    mp.timeout_h4_bars     = safe_stoi(v, k);
+            if (k=="cooldown_h4_bars")   mp.cooldown_h4_bars    = safe_stoi(v, k);
+            if (k=="atr_period")         mp.atr_period          = safe_stoi(v, k);
+            if (k=="weekend_close_gate") mp.weekend_close_gate  = (v == "true" || v == "1");
             if (k=="long_only")          mp.long_only           = (v == "true" || v == "1");
         }
         // [latency_edge] section parser REMOVED at S13 Finding B 2026-04-24 — engine culled.

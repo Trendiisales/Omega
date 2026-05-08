@@ -1558,6 +1558,18 @@ static void init_engines(const std::string& cfg_path)
     g_nbm_oil_london.enabled  = false;
     //
     // ORB (OpeningRange): no live data. Shelved pending shadow validation.
+    // 2026-05-08 AUDIT-FIX (S15 P0-5): set per-instance UTC open times before
+    //   disabling. The OpeningRangeEngine class defaults to OPEN_HOUR=13 /
+    //   OPEN_MIN=30 (NY open). Only g_orb_us inherits a correct value; the
+    //   three EU instances were silently tracking NY open while named for
+    //   European cash markets. If anyone flips one of these `enabled=true`
+    //   without these per-instance overrides, ORB fires at the wrong session.
+    //   The daily reset path (CrossAssetEngines.hpp:1003-1009) is already
+    //   correct and does not need changes.
+    g_orb_us.OPEN_HOUR     = 13; g_orb_us.OPEN_MIN     = 30;  // NYSE open
+    g_orb_ger30.OPEN_HOUR  = 8;  g_orb_ger30.OPEN_MIN  = 0;   // Xetra open
+    g_orb_uk100.OPEN_HOUR  = 8;  g_orb_uk100.OPEN_MIN  = 0;   // LSE open
+    g_orb_estx50.OPEN_HOUR = 9;  g_orb_estx50.OPEN_MIN = 0;   // Euronext open
     g_orb_us.enabled     = false;
     g_orb_ger30.enabled  = false;
     g_orb_uk100.enabled  = false;

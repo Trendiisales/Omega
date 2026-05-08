@@ -1494,6 +1494,13 @@ public:
     // ── Improvement 2: Per-engine daily loss cap ──────────────────────────────
     double  DAILY_LOSS_CAP      = 0.0;   // max daily loss in dollars; 0=disabled
                                           // set per-symbol in main.cpp
+    // 2026-05-08 AUDIT-FIX (S15 P0-2): conservative budget for the next trade's
+    //   worst-case loss, used by the cap gate so it fires BEFORE the next entry
+    //   could push realised PnL past -DAILY_LOSS_CAP. Defaults to 80.0 to match
+    //   the global [risk] max_loss_per_trade_usd. Only consulted when
+    //   DAILY_LOSS_CAP > 0; safe to leave at default for engines that don't set
+    //   per-instrument SL economics.
+    double  MAX_TRADE_LOSS_USD  = 80.0;  // next-trade headroom for cap gate
 
     // ── Improvement 4: Time-of-day weighting ─────────────────────────────────
     // Best gold M15 windows: London open (07:00-09:30 UTC) and NY open (13:30-15:00 UTC)
@@ -1996,13 +2003,20 @@ public:
         }
 
         // ── Improvement 2: Daily loss cap ────────────────────────────────────
-        // Reset at midnight. If today's P&L is worse than -DAILY_LOSS_CAP, stop.
+        // Reset at midnight. Block new entries BEFORE they can break -DAILY_LOSS_CAP.
+        // 2026-05-08 AUDIT-FIX (S15 P0-2): the previous check `daily_pnl_ <= -CAP`
+        //   fired only AFTER a closed trade had already broken the cap. Reduce
+        //   the effective cap by MAX_TRADE_LOSS_USD so the gate refuses the next
+        //   entry once headroom drops below a single worst-case trade. With the
+        //   defaults (cap=$150, budget=$80) this gates at daily_pnl_ <= -$70.
         if (DAILY_LOSS_CAP > 0.0) {
             const int64_t today = static_cast<int64_t>(std::time(nullptr)) / 86400;
             if (today != daily_pnl_day_) { daily_pnl_ = 0.0; daily_pnl_day_ = today; }
-            if (daily_pnl_ <= -DAILY_LOSS_CAP) {
-                printf("[TREND-PB] %s DAILY_CAP hit pnl=%.2f cap=%.2f -- no more entries today\n",
-                       sym.c_str(), daily_pnl_, DAILY_LOSS_CAP);
+            const double budget        = (MAX_TRADE_LOSS_USD > 0.0) ? MAX_TRADE_LOSS_USD : 0.0;
+            const double effective_cap = std::max(0.0, DAILY_LOSS_CAP - budget);
+            if (daily_pnl_ <= -effective_cap) {
+                printf("[TREND-PB] %s DAILY_CAP guard pnl=%.2f cap=%.2f budget=%.2f -- no more entries today\n",
+                       sym.c_str(), daily_pnl_, DAILY_LOSS_CAP, budget);
                 fflush(stdout);
                 return {};
             }
