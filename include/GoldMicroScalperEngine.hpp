@@ -217,8 +217,21 @@ public:
     //     TP win  : +0.79pt  ->  +$2.37 gross  ->  ~+$2.04 net (after $0.33 slip)
     //     SL hit  : -3.00pt  ->  -$9.00 gross  ->  ~-$9.33 net (after $0.33 slip)
     //   Real-cost BE WR  ~  82.1%   (vs backtest 92.5%, monitor trip 82.16%)
+    //
+    //   2026-05-08 LOT BUMP (S21, authorised by user in chat):
+    //     LIVE_LOT raised 0.03 -> 0.20 (6.67x). Per-trade PnL scales
+    //     linearly with lot:
+    //       TP win : +0.79pt -> +$15.80 gross -> ~+$13.60 net (after ~$2.20 slip)
+    //       SL hit : -3.00pt -> -$60.00 gross -> ~-$62.20 net (after ~$2.20 slip)
+    //     BE_WR unchanged in % terms; RiskMonitor TRIP_WR=0.8216 stays
+    //     anchored to backtest expectancy (not a $ threshold). The $
+    //     drawdown velocity per losing trade is 6.67x bigger than the
+    //     original 0.03 lot deploy -- operator attention required.
+    //     OMEGA.ps1 stop on the VPS is the manual kill if needed.
+    //     max_lot_gold in omega_config.ini also raised 0.03 -> 0.20
+    //     (the per-symbol cap would reject the new lot otherwise).
     static constexpr double USD_PER_PT           = 100.0;  // per full lot XAUUSD
-    static constexpr double LIVE_LOT             = 0.03;
+    static constexpr double LIVE_LOT             = 0.20;
 
     static constexpr int    MIN_ENTRY_TICKS      = 30;     // warmup before any fire
     static constexpr int    DIAG_EVERY_N_TICKS   = 600;    // ~3min @ 200 ticks/min

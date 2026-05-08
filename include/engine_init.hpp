@@ -104,6 +104,24 @@ static void init_engines(const std::string& cfg_path)
     //   To revert to shadow without rebuilding: there is no runtime toggle
     //   in v1; either flip this line back to `= true` and redeploy, or
     //   the RiskMonitor will auto-pin on trip.
+    //
+    //   2026-05-08 AMENDMENT (S21, authorised by user in chat):
+    //     LIVE_LOT raised from 0.03 to 0.20 in GoldMicroScalperEngine.hpp:221
+    //     and max_lot_gold raised from 0.03 to 0.20 in omega_config.ini:166.
+    //     The values "0.03 lot" and "max_lot_gold = 0.03" in the comment
+    //     block above are SUPERSEDED -- they remain for the original
+    //     authorization paper trail. Authoritative current values:
+    //       LIVE_LOT       = 0.20  (GoldMicroScalperEngine.hpp:221)
+    //       max_lot_gold   = 0.20  (omega_config.ini:166)
+    //       MAX_SPREAD     = 0.5pt (unchanged from original live promotion)
+    //       account        = 8077780 (unchanged)
+    //       shadow_mode    = false (unchanged -- this line below)
+    //     Risk delta vs original 0.03 promotion: per-trade $ outcomes 6.67x
+    //     larger. RiskMonitor TRIP_WR=0.8216 still appropriate (anchored to
+    //     backtest expectancy, not $ threshold); auto-pin on trip remains
+    //     the in-process safety circuit. OMEGA.ps1 stop on the VPS is the
+    //     manual kill switch if operator override is needed; no GUI button
+    //     in this deploy (deferred to next session).
     g_gold_microscalper.shadow_mode = false;
 
     // 2026-05-08 S20+: RiskMonitor wiring -------------------------------------
