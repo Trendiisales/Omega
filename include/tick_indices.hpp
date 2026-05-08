@@ -711,6 +711,20 @@ static void on_tick_ger40(
     if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
 
     // GER40 NEW ENTRIES DISABLED -- taken out of play
+    //
+    // P1-6 (S18): g_trend_pb_ger40 is intentionally NOT wired with
+    // seed_bar_emas() or seed_m5_trend() here because new entries are blocked
+    // (engine_init.hpp:824 sets enabled=false; "GER40 NEW ENTRIES DISABLED"
+    // above also gates the dispatch). The manage-only path at line above runs
+    // unconditionally for any open position. If g_trend_pb_ger40.enabled is
+    // ever flipped to true (i.e., GER40 re-validated for live trading), this
+    // handler MUST be extended to mirror the SP/NQ pattern at lines ~122-135
+    // (call seed_bar_emas + seed_m5_trend from g_bars_ger40.m1 indicators
+    // gated on g_bars_ger40.m1.ind.m1_ready). Without that wiring,
+    // m_using_bar_emas_ stays false → tick EMAs are used instead of bar EMAs,
+    // and m5_trend_state_ stays 0 → the M5 trend gate is permissive (allows
+    // any direction). Both effects make the engine fire more loosely than SP/NQ
+    // do, which is fine for shadow but not for live without re-validation.
     (void)sdec_ger;
 }
 
