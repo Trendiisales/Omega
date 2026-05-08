@@ -347,7 +347,17 @@ public:
             // 2026-05-08 USER REQUEST: pre-London dead zone -- block the
             // hour immediately before London open (BST: 06:00-07:00 UTC,
             // GMT: 07:00-08:00 UTC). PRE_LONDON_DEAD_HOUR_UTC = -1 disables.
-            if (PRE_LONDON_DEAD_HOUR_UTC >= 0 && h == PRE_LONDON_DEAD_HOUR_UTC) return;
+            //
+            // 2026-05-08 S20 build fix: MSVC C4127 ("conditional expression is
+            // constant") is treated as an error under /WX because the >= 0
+            // half is compile-time-constant. Wrapping the constexpr comparison
+            // in `if constexpr` lets MSVC dead-code it when the gate is off
+            // (the current default). The runtime `h` check stays as a regular
+            // `if`. Pattern works on clang and MSVC; preserves the disable
+            // semantics exactly.
+            if constexpr (PRE_LONDON_DEAD_HOUR_UTC >= 0) {
+                if (h == PRE_LONDON_DEAD_HOUR_UTC) return;
+            }
         }
 
         // -- Entry signal: 20-tick z-score with L2 confirmation ---------------
