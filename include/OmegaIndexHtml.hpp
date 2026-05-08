@@ -1444,11 +1444,19 @@ function updateDashboard(d){
 
     let bp=document.getElementById('brokerPanel');
     if(!bp){
-      // First run -- inject the panel just after the existing P&L block.
-      const anchor=document.getElementById('pnlNzd')||document.body;
+      // 2026-05-09 LAYOUT FIX: original injection put this panel inside the
+      // narrow Daily P&L column, where flex-row content overflowed
+      // character-by-character vertically (visible bug: "BR/TR/eng/re/..."
+      // cascading down a 30px-wide column). Anchor at document.body with
+      // position:fixed at the very top of the viewport instead -- always
+      // full-width, never collides with the P&L column layout.
       bp=document.createElement('div');
       bp.id='brokerPanel';
-      bp.style.cssText='display:flex;gap:14px;align-items:center;margin-top:6px;padding:6px 10px;border-top:1px solid var(--bdr,#333);font-size:13px;font-family:monospace;flex-wrap:wrap;';
+      bp.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9998;display:flex;gap:18px;align-items:center;justify-content:center;padding:8px 16px;background:rgba(0,0,0,0.92);border-bottom:1px solid var(--bdr,#333);font-size:13px;font-family:monospace;flex-wrap:wrap;';
+      document.body.appendChild(bp);
+      // Push the rest of the page down so the fixed banner doesn't cover
+      // the existing top bar. ~38px = banner height + 1px border.
+      document.body.style.paddingTop='38px';
       bp.innerHTML=
         '<span style="color:var(--t2,#888);font-weight:bold">BROKER TRUTH:</span>'+
         '<span id="brokerEngPnl" title="Engine paper P&L (live trades only, not shadow)"></span>'+
@@ -1462,7 +1470,10 @@ function updateDashboard(d){
         '<span id="brokerReject" title="Orders explicitly rejected by broker (TRADING_BAD_VOLUME, tag 77 reject, etc)" style="font-weight:bold"></span>'+
         '<span style="color:var(--t2,#888)">|</span>'+
         '<span id="brokerConf" title="Trades where both legs filled cleanly"></span>';
-      anchor.parentNode&&anchor.parentNode.insertBefore(bp,anchor.nextSibling);
+      // (panel was already appended via document.body.appendChild above --
+      // do not re-attach; the leftover insertBefore reference to a now-
+      // undefined `anchor` variable would throw and silently kill the
+      // entire telemetry update tick.)
     }
     const setTxt=(id,val,fmt)=>{const e=document.getElementById(id);if(e)e.innerHTML=fmt(val);};
     setTxt('brokerEngPnl',ep,v=>'eng <span style="color:'+(v>=0?'var(--green)':'var(--red)')+'">'+(v>=0?'+':'')+'$'+v.toFixed(2)+'</span>');

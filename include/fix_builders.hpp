@@ -262,29 +262,25 @@ static std::string build_new_order_single(int seq, const std::string& clOrdId,
     if (!position_id.empty()) {
         // Hedging-mode close path.
         //
-        // 2026-05-09 RAW FIX EVIDENCE FROM BLACKBULL DEMO (account 2067070):
-        // The previous emission included tag 77=C (PositionEffect=Close) as
-        // a "broker hint". BlackBull's gateway responded with session-level
-        // reject 35=3 + tag 58 text:
-        //   "Tag not defined for this message type, field=77"
-        //   371=77 372=D 373=2
-        // That dropped EVERY close message at the gateway before it could
-        // reach the matching engine. Result: 10 entries filled cleanly but
-        // no close ever executed -- 10 stuck positions on demo, mirroring
-        // the live-account incident pattern.
+        // 2026-05-09 GROUND TRUTH from Spotware official forum response
+        // (community.ctrader.com/forum/fix-api/11612, 2017-06-20):
+        //   "In order to close a position in a hedging account, you need
+        //    to create an order with the same volume and in the opposite
+        //    direction referencing the position id in PosMaintRptID tag."
         //
-        // Tag 77 is REMOVED. Tags 1006 (Spotware-custom PositionId) and 721
-        // (FIX 4.4 PosMaintRptID) remain. The inbound entry-fill ExecReport
-        // shows BlackBull populates tag 721 with the position ID, so 721 is
-        // their canonical reference. 1006 is kept for cross-broker
-        // portability (Spotware-deployments that use 1006 instead).
+        // PosMaintRptID = FIX 4.4 standard tag 721. That's it. Single tag,
+        // 17 stuck demo positions earlier today were caused by the previous
+        // implementation that sent BOTH tag 1006 (Spotware-custom in some
+        // deployments, but standard FIX 4.4 assigns 1006 to AllocReportID)
+        // AND tag 721. BlackBull's gateway accepts both without rejection
+        // but silently falls back to "new order" semantics on the
+        // ambiguity, which on a hedging account opens an opposing position
+        // (the orphan-pair pattern).
         //
-        // If 721+1006 STILL produce orphan-pair behaviour after this change,
-        // the next iteration will drop 1006 and try 721-only, then fall back
-        // to a different close mechanism (35=DA TradeCaptureReport or similar
-        // Spotware-specific close request).
-        b << "1006=" << position_id << "\x01"   // Spotware-custom PositionId (kept for cross-broker)
-          << "721="  << position_id << "\x01";  // FIX 4.4 PosMaintRptID -- BlackBull's actual position-id tag
+        // Tag 1006 REMOVED. Single tag 721 only. Inbound entry-fill
+        // ExecReport from BlackBull populates tag 721 with the broker's
+        // position ID -- that's the canonical reference Spotware documents.
+        b << "721=" << position_id << "\x01";  // FIX 4.4 PosMaintRptID -- the documented hedging close tag
     }
     return wrap_fix(b.str());
 }
