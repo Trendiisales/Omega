@@ -1,4 +1,6 @@
-# P1-7 / P1-9 / P1-12 — Static Closures + P1-5 / P1-6 / P1-10 / P1-11 — Ready-for-Edit Scopes
+# S18 P1 closeouts — P1-5/6/7/9/10/11/12 + VWAPReversion EURUSD tune
+
+(Originally drafted as "Static Closures + Ready-for-Edit Scopes" before code edits were authorised; updated 2026-05-08 with applied-edit details.)
 
 Prepared: 2026-05-08, S18 (after S17 omnibus landed)
 Repo HEAD at trace: `1573b7a` (S17 omnibus — P1-2/2a/3/8 closed + VWAP re-enable).
@@ -122,24 +124,33 @@ Step 4 is the actual P1 ask (move to INI). Steps 1-3 are the necessary refactor 
 
 ---
 
-### P1-11 — MinimalH4Breakout (gold) cold-start CSV warm-load — READY (medium)
+### P1-11 — MinimalH4Breakout (gold) cold-start CSV warm-load — CLOSED (S18)
 
-**File:** `include/MinimalH4Breakout.hpp:99-187`
+**File:** `include/MinimalH4Breakout.hpp` (header method added) + `include/engine_init.hpp` (two fallback call sites added)
 
-**Current state:** Class already has `seed_channel_from_bars()` at L137-157 that accepts a deque of OHLCBar and populates `h4_highs_` / `h4_lows_` for cold-start Donchian channel readiness. `on_h4_bar()` at L173-187 gates signals on `channel_ready = (h4_highs_.size() >= p.donchian_bars)`. With `donchian_bars = 10`, the engine waits 40 hours of fresh bars before firing if not seeded — a 40h cold-start gap on every restart.
+**Implemented in S18:**
 
-**What's missing:** No CSV loader exists. `seed_channel_from_bars()` requires a caller to provide an already-deserialised `deque<OHLCBar>` from somewhere. There is no header-resident CSV-read helper that loads a persisted H4 bar history off disk.
+1. New `seed_channel_from_csv(const std::string& path)` method on MinimalH4Breakout (~165 lines including parser at `MinimalH4Breakout.hpp:206-367`). Mirrors the parsing logic of `backtest/seed_us30_h4.cpp::parse_csv_line` so the same Dukascopy-style CSVs work for both the gold and US30 H4 engines. Accepts comma/tab/semicolon separators, three timestamp formats (epoch sec, epoch ms, ISO8601), rejects zero-range bars (Dukascopy closed-market hours), header rows, and invalid OHLC. Returns `false` if the CSV is missing, unreadable, or yields fewer than `donchian_bars` valid bars — caller falls back to cold start gracefully.
 
-**Recommended fix shape:**
-1. Add a `seed_channel_from_csv(const std::string& path)` helper to MinimalH4Breakout.hpp (or a sibling header) that reads a CSV with columns `[ts_unix, open, high, low, close]`, parses them into OHLCBars, and calls the existing `seed_channel_from_bars()`.
-2. Call the helper from `engine_init.hpp` (in the same init function that sets up MinimalH4Breakout, around L406 per the C1RetunedPortfolio docstring at L29-30) with the path to a persisted H4 bar history (e.g., `data/xauusd_h4.csv`).
-3. Confirm or add a sidecar process that maintains the CSV (rolls bars on H4 close). If the CSV is updated by an external collector, document the expected schema in MinimalH4Breakout.hpp.
+2. Two fallback call sites in `engine_init.hpp`:
+   - Inside-state-loaded but H4 cold (~L915-939): when `g_bars_gold.h4` was not loaded (e.g., binary state file missing or empty), attempt `g_minimal_h4_gold.seed_channel_from_csv(log_root_dir() + "/bars_xauusd_h4.csv")`. On success the engine is hot for the next H4 close. On failure, the existing 40-hour cold-start path proceeds as before.
+   - Outside-state-cold (~L947-963): mirror of the inner branch for the case when no bar state of any kind is on disk.
 
-**Scope:** ~30-50 lines of CSV parsing helper + 5 lines of plumbing in engine_init.hpp + a sidecar collector if not already present. Medium because the CSV producer side may need attention separately.
+**No sidecar collector needed:** unlike the US30 sister engine which uses a one-shot binary `.dat` produced by `tools/seed_us30_h4.cpp`, the gold engine relies on `g_bars_gold.h4` (a globally-shared `OHLCBarEngine`) for ongoing bar maintenance. The CSV warm-load is bootstrap-only — once the engine is running, live H4 closes from the broker feed populate the channel naturally. Operators only need to supply the CSV once before a cold deploy.
 
-**Risk:** Medium. Has to read a file at startup, parse it, validate it. Failure modes include missing file, malformed lines, stale data. Need a clean fallback (warn + proceed with cold-start) for any of those.
+**CSV path convention:** `<log_root_dir>/bars_xauusd_h4.csv`. Expected schema is documented in the header docstring at `MinimalH4Breakout.hpp:163-205`. The same schema works for any vendor (Dukascopy verified; ISO8601 timestamps and comma separation cover the common cases).
 
-**Verification after edit:** Test with a hand-crafted CSV of 15 H4 bars, confirm `channel_ready` flips true on the first `on_h4_bar()` call after seed, confirm `donchian_bars` reads correctly. Test missing-file path. Test malformed-line path.
+**Verification:** Project-wide grep confirms only `g_minimal_h4_gold` calls the new method; no other callers were affected. The existing `seed_channel_from_bars(...)` call at `engine_init.hpp:914` (warm path) is preserved verbatim.
+
+---
+
+### VWAPReversion EURUSD tune — CLOSED (S18)
+
+**File:** `include/engine_init.hpp:467-469`
+
+**Implemented in S18:** added explicit `MAX_EXTENSION_PCT = 0.40` and `MAX_HOLD_SEC = 600` to `g_vwap_rev_eurusd`. Previously these fell back to class defaults (0.80 / 900s) which were calibrated for indices pre-tune.
+
+**Rationale:** the indices' threshold-to-max-extension ratios average ~3.25x (SP: 0.35→1.20=3.43x; NQ: 0.40→1.20=3.00x; GER40: 0.30→1.00=3.33x). Applying that ratio to EURUSD's `EXTENSION_THRESH_PCT=0.12` gives `0.12 * ~3.3 ≈ 0.40`. At EURUSD ~1.10, 0.40% is ~44 pips, which is the upper end of typical daily range — beyond that, mean reversion is unreliable. `MAX_HOLD_SEC=600` matches the indices to keep the "exit stalled trades faster" rationale at `engine_init.hpp:446` consistent across instruments. Re-tune from fresh shadow tape once VWAPReversion has been firing live-shadow for 2-4 weeks.
 
 ---
 
@@ -157,8 +168,10 @@ For deferral until fresh tape is available:
 3. MAE_EXIT_RATIO retune — needs 2-4 weeks of fresh tape with the new label fidelity.
 
 For future enhancement (not P1):
-1. VWAPReversion EURUSD `MAX_EXTENSION_PCT` and `MAX_HOLD_SEC` explicit tune.
-2. BracketEngine `CONFIRM_SECS` per-symbol INI exposure.
+1. BracketEngine `CONFIRM_SECS` per-symbol INI exposure (currently per-class member fields, not INI-driven).
+2. VWAPReversion EURUSD post-shadow re-tune once 2-4 weeks of live-shadow fill data is available — the S18 conservative-defaults were derived analytically from the index ratio rather than empirically.
+
+S18 closing state: P1-2/2a/3/5/6/7/8/9/10/11/12 all closed. Hard-blocked (P1-1, P1-4) and tape-dependent (MAE_EXIT_RATIO, VWAPReversion live tune) items only.
 
 ---
 
@@ -170,7 +183,9 @@ For future enhancement (not P1):
 - [`include/GoldEngineStack.hpp:1940-2020`](computer:///Users/jo/omega_repo/include/GoldEngineStack.hpp) — LiquiditySweepProEngine class body (P1-10 scope)
 - [`include/CrossAssetEngines.hpp:1735-1818`](computer:///Users/jo/omega_repo/include/CrossAssetEngines.hpp) — TrendPullback IMM_REVERSAL + TIME_STOP consec-SL blocks (P1-5 scope)
 - [`include/CrossAssetEngines.hpp:2218-2219,2315`](computer:///Users/jo/omega_repo/include/CrossAssetEngines.hpp) — `seed_m5_trend()` accessor + `m5_trend_state_` field (P1-6 scope)
-- [`include/MinimalH4Breakout.hpp:99-187`](computer:///Users/jo/omega_repo/include/MinimalH4Breakout.hpp) — class body + existing `seed_channel_from_bars()` (P1-11 scope)
+- [`include/MinimalH4Breakout.hpp:141-367`](computer:///Users/jo/omega_repo/include/MinimalH4Breakout.hpp) — class body + existing `seed_channel_from_bars()` + new `seed_channel_from_csv()` and `_parse_csv_h4_line()` helper (P1-11 closure)
+- [`include/engine_init.hpp:457-469`](computer:///Users/jo/omega_repo/include/engine_init.hpp) — VWAPReversion EURUSD explicit tune (S18 closure)
+- [`include/engine_init.hpp:927-974`](computer:///Users/jo/omega_repo/include/engine_init.hpp) — MinimalH4Breakout CSV warm-load fallback wiring (P1-11 closure)
 - [`HANDOFF_S18_AFTER_S17_FIXES.md`](computer:///Users/jo/omega_repo/HANDOFF_S18_AFTER_S17_FIXES.md) — prior handoff
 - [`AUDIT_S16_P1_2_VWAPREVERSION_TRACE.md`](computer:///Users/jo/omega_repo/AUDIT_S16_P1_2_VWAPREVERSION_TRACE.md) — P1-2 trace with S18 closure annotation
 - [`ENGINE_AUDIT_CHECKLIST.md`](computer:///Users/jo/omega_repo/ENGINE_AUDIT_CHECKLIST.md) — current engine status, S18 row updates
