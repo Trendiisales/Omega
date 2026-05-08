@@ -262,10 +262,15 @@ struct CrossPosition {
     }
 
     void force_close(double bid, double ask, CloseCb on_close,
-                     const char* reason = "FORCE_CLOSE") noexcept {
+                     const char* close_reason = "FORCE_CLOSE") noexcept {
+        // 2026-05-08 (S18 build fix): parameter renamed from `reason` to
+        // `close_reason` to avoid shadowing the class member `reason[32]`
+        // declared at L159. MSVC /W4 emits C4458 here and /WX makes it a
+        // hard error. Functionally identical -- the parameter is forwarded
+        // to emit() unchanged.
         if (!active) return;
         const double mid = (bid + ask) * 0.5;
-        emit(mid, reason, on_close);
+        emit(mid, close_reason, on_close);
     }
     // Patch lot size after enter_directional succeeds -- corrects the hardcoded
     // 0.01 fallback with the actual risk-sized lot for accurate shadow P&L.
