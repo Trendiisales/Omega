@@ -356,6 +356,18 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   default; promote to live only after a 2-week paper validation.  Wired in
 //   tick_gold.hpp dispatch block parallel to g_hybrid_gold.
 #include "GoldMidScalperEngine.hpp"
+// 2026-05-08 S19: GoldMicroScalperEngine -- bidirectional micro-tick scalper
+//   for XAUUSD. Captures many small moves up and down via 20-tick z-score
+//   reversion entry, locks profit fast (BE-arm at 0.5pt MFE), trails
+//   aggressively (0.5pt below MFE post-BE), and exits immediately on
+//   reversal (5-tick net delta or L2 slope flip). Calibrated 2026-05-08 on
+//   28 days of XAUUSD L2 capture (6.7M ticks, 490-combo CRTP sweep) with
+//   operating point Z=0.75 / TP=1.0 / SL=3.0 / BE=0.5 / TR=0.5 producing
+//   34K+ trades at 86% WR / PF 3.05 in shadow simulation. Shadow-only by
+//   default; promote to live only after a 2-week paper validation matches
+//   backtest expectancy. Wired in tick_gold.hpp dispatch block parallel to
+//   g_gold_midscalper.
+#include "GoldMicroScalperEngine.hpp"
 // 2026-05-02: EurusdLondonOpenEngine -- first FX engine since the 2026-04-06
 //   global FX disable. London-open compression bracket on EURUSD, 06:00-09:00
 //   UTC session window, news-blackout-gated for NFP/CPI/FOMC/ECB. Shadow-only
@@ -442,6 +454,7 @@ static omega::GoldBracketEngine   g_bracket_gold;
 // S12 P3c (2026-05-07): GoldHybridBracketEngine.hpp file DELETED + #include
 //   removed at line 347 above. Engine fully retired.
 static omega::GoldMidScalperEngine            g_gold_midscalper;
+static omega::GoldMicroScalperEngine          g_gold_microscalper;
 static omega::EurusdLondonOpenEngine          g_eurusd_london_open;
 static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
 static omega::GbpusdLondonOpenEngine          g_gbpusd_london_open;

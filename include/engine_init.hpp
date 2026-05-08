@@ -67,6 +67,20 @@ static void init_engines(const std::string& cfg_path)
     //   positive expectancy. Until then this line stays as `true` not
     //   `kShadowDefault`.
     g_gold_midscalper.shadow_mode = true;
+    // 2026-05-08 S19: GoldMicroScalperEngine -- pinned shadow-only on first
+    //   deployment regardless of g_cfg.mode. Bidirectional micro-tick scalper
+    //   on XAUUSD targeting "many small moves up and down" via 20-tick
+    //   z-score reversion entry, fast BE-arm (0.5pt MFE), aggressive trail
+    //   (0.5pt below MFE post-BE), and tick-momentum/L2-flip reversal exit.
+    //   Calibrated 2026-05-08 against 28d / 6.7M tick L2 capture (CRTP
+    //   sweep top combo: Z=0.75 TP=1.0 SL=3.0 BE=0.5 TR=0.5 producing
+    //   34K trades 86% WR PF 3.05). Backtest cost model is conservative
+    //   (1 spread per non-TP exit; no slippage modelling) so live
+    //   expectancy will be lower than $748/day-on-0.01-lot backtest
+    //   indicates. Promote to kShadowDefault only after a 2-week paper
+    //   validation matches backtest expectancy within 50% on n>=500 trades.
+    //   Until then this line stays as `true`.
+    g_gold_microscalper.shadow_mode = true;
     // 2026-05-02: EurusdLondonOpenEngine -- pinned shadow-only on first
     //   deployment regardless of g_cfg.mode. First FX engine since the
     //   2026-04-06 global FX disable; new engine model (compression-breakout
@@ -2024,6 +2038,14 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_gold_midscalper.shadow_mode,
                           {"MidScalperGold"}); });
+    // 2026-05-08 S19: register MicroScalperGold for /api/v1/omega/engines.
+    //   Shadow-stamped initially. last_signal_ts/last_pnl resolved via
+    //   g_engine_last lookup against tr.engine="MicroScalperGold".
+    g_engines.register_engine("MicroScalperGold",
+        [reg]{ return reg("MicroScalperGold",
+                          true,
+                          g_gold_microscalper.shadow_mode,
+                          {"MicroScalperGold"}); });
     // 2026-05-02: register EurusdLondonOpen for /api/v1/omega/engines.
     //   Shadow-stamped initially. last_signal_ts/last_pnl resolved via
     //   g_engine_last lookup against tr.engine="EurusdLondonOpen".
@@ -2147,6 +2169,7 @@ static void init_engines(const std::string& cfg_path)
         // ---- Gold engines (24/7 cadence) ---------------------------------
         // S11 P3b: HybridGold heartbeat registration removed (engine culled in P3a + P3b).
         g_engine_heartbeat.register_engine("MidScalperGold",     true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("MicroScalperGold",   true, 3600,  6, 22);
         g_engine_heartbeat.register_engine("GoldStack",          true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("CandleFlow",         true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
@@ -2238,6 +2261,39 @@ static void init_engines(const std::string& cfg_path)
             ps.mfe            = p.mfe * p.size * mult;
             ps.mae            = p.mae * p.size * mult;
             ps.engine         = "MidScalperGold";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-08 S19: GoldMicroScalper open-position source. Same shape as
+    //   MidScalperGold above; engine has the same pos struct fields
+    //   (is_long, entry, size, mfe, mae). XAUUSD tick-value mult applied.
+    g_open_positions.register_source("MicroScalperGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_microscalper.has_open_position()) return out;
+
+            const auto& p = g_gold_microscalper.pos;
+            const double mult  = tick_value_multiplier(std::string("XAUUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "MicroScalperGold";
             out.push_back(ps);
             return out;
         });
@@ -2451,7 +2507,7 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
-    std::cout << "[OmegaApi] g_open_positions sources registered (8 sources: HybridGold, MidScalperGold, EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg)\n";
+    std::cout << "[OmegaApi] g_open_positions sources registered (9 sources: HybridGold, MidScalperGold, MicroScalperGold, EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────

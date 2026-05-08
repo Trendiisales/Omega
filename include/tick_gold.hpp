@@ -20,6 +20,7 @@ static void on_tick_gold(
     //   management); on_h1_bar additionally fires every H1 close.
     // S11 P3b: HybridGold pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("MidScalperGold");
+    g_engine_heartbeat.pulse("MicroScalperGold");
     g_engine_heartbeat.pulse("GoldStack");
     g_engine_heartbeat.pulse("CandleFlow");
     g_engine_heartbeat.pulse("EMACross");
@@ -2198,6 +2199,76 @@ static void on_tick_gold(
         // When promoted to live, write a [MID-SCALPER-GOLD] ORDERS SENT block
         // analogous to the FIX-order patterns used by other live engines
         // (HBG's pattern was the original reference but HBG was culled S10/S11).
+    }
+
+    // -- 2026-05-08 S19: GoldMicroScalperEngine dispatch ---------------------
+    // Bidirectional micro-tick scalper for XAUUSD. Captures many small moves
+    // up and down via 20-tick z-score reversion entry, fast BE-arm (0.5pt),
+    // aggressive trail (0.5pt below MFE post-BE), and tick-momentum/L2-flip
+    // reversal exit. Calibrated 2026-05-08 on 28 days / 6.7M tick L2 capture
+    // (CRTP sweep top combo: Z=0.75 TP=1.0 SL=3.0 BE=0.5 TR=0.5 / 34K trades
+    // 86% WR PF 3.05). Runs in shadow mode by default (engine_init.hpp pin).
+    //
+    // Tick-feed model: the engine maintains a 20-tick rolling z-score window
+    // and a 5-tick reversal window. on_tick must be called every tick to
+    // keep these warm even when can_enter=false; the engine internally
+    // short-circuits the new-entry path when its gates fail.
+    //
+    // Gating: shadow-only on first deployment; does NOT add itself to
+    // gold_any_open. Once promoted to live, add
+    // g_gold_microscalper.has_open_position() to gold_any_open and add an
+    // anti-double-entry guard against MidScalperGold+MicroScalperGold
+    // double-firing on the same compression structure (mirror the S54
+    // audit-fixes-35 pattern documented in the MidScalper dispatch above).
+    //
+    // L2 args sourced from g_macro_ctx. When gold_l2_real=false, the
+    // engine's L2 confirmation gate degrades to z-only entry and the
+    // L2-flip reversal-exit leg is disabled (safe fallback).
+    {
+        // Position management -- unconditional when live.
+        if (g_gold_microscalper.has_open_position()) {
+            g_gold_microscalper.on_tick(bid, ask, now_ms_g,
+                                        gold_can_enter,
+                                        bracket_on_close,
+                                        g_macro_ctx.gold_l2_imbalance,
+                                        g_macro_ctx.gold_slope,
+                                        g_macro_ctx.gold_vacuum_ask,
+                                        g_macro_ctx.gold_vacuum_bid,
+                                        g_macro_ctx.gold_l2_real);
+        }
+        // New-entry path: same vol-floor + macro-bypass logic as MidScalper
+        // so the engine sits out unseeded cold starts. Re-derived locally
+        // because ms_vol_range / ms_macro_bypass are out of scope after the
+        // MidScalper block's closing brace above.
+        const double mcs_vol_range    = g_gold_stack.vol_range();
+        const bool   mcs_vol_unseeded = (mcs_vol_range == 0.0);
+        const double mcs_vwap         = g_gold_stack.vwap();
+        const double mcs_mid          = (bid + ask) * 0.5;
+        const double mcs_vwap_disp    = (mcs_vwap > 0.0)
+            ? std::fabs(mcs_mid - mcs_vwap) : 0.0;
+        const bool mcs_macro_bypass   = (mcs_vwap_disp >= 6.0)
+                                     || (std::fabs(g_gold_stack.ewm_drift()) >= 2.0)
+                                     || crash_impulse_bypass;
+        const bool mcs_vol_ok = (mcs_vol_range >= 0.5)
+                             || (mcs_vol_unseeded && mcs_macro_bypass)
+                             || (!mcs_vol_unseeded && mcs_macro_bypass);
+        const bool microscalper_can_enter =
+            gold_can_enter
+            && mcs_vol_ok
+            && !g_gold_microscalper.has_open_position();
+        if (!g_gold_microscalper.has_open_position()) {
+            g_gold_microscalper.on_tick(bid, ask, now_ms_g,
+                                        microscalper_can_enter,
+                                        bracket_on_close,
+                                        g_macro_ctx.gold_l2_imbalance,
+                                        g_macro_ctx.gold_slope,
+                                        g_macro_ctx.gold_vacuum_ask,
+                                        g_macro_ctx.gold_vacuum_bid,
+                                        g_macro_ctx.gold_l2_real);
+        }
+        // No FIX-order block here -- shadow mode. When promoted to live,
+        // write a [MICRO-SCALPER-GOLD] ORDERS SENT block analogous to the
+        // FIX-order patterns used by other live engines.
     }
 
     // -- 2026-05-02: XauusdFvgEngine dispatch --------------------------------
