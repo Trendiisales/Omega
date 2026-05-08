@@ -2343,6 +2343,14 @@ static void on_tick_gold(
         const bool ms_post_entry_open = g_gold_microscalper.has_open_position();
         if (!ms_pre_entry_open && ms_post_entry_open &&
             !g_gold_microscalper.shadow_mode) {
+            // 2026-05-08 S21 HEDGING-MODE FIX: clear any stale position ID
+            // before the entry order is sent. The fresh entry has no broker
+            // position ID yet -- the ACK handler will populate it once the
+            // ExecutionReport arrives with tag 1006 / 721. Clearing here
+            // means the close-side gate will correctly REFUSE to send a
+            // close if the broker hasn't ACKed yet (very tight race window).
+            g_gold_microscalper.pos.broker_position_id.clear();
+
             const auto& mp = g_gold_microscalper.pos;
             // Use the existing FIRE log marker so the live-order line is
             // immediately adjacent to the engine's own FIRE log.
@@ -2352,7 +2360,13 @@ static void on_tick_gold(
                       << " entry=" << std::fixed << std::setprecision(4) << mp.entry
                       << "\033[0m\n";
             std::cout.flush();
-            send_live_order("XAUUSD", mp.is_long, mp.size, mp.entry);
+            // Entry-side: no position_id (this IS the entry, broker books a
+            // fresh position).
+            const std::string entry_clOrdId = send_live_order(
+                "XAUUSD", mp.is_long, mp.size, mp.entry);
+            // Store the entry clOrdId so handle_execution_report can match
+            // the inbound ExecReport to THIS specific entry.
+            g_gold_microscalper.pos.entry_clOrdId = entry_clOrdId;
         }
     }
 

@@ -117,8 +117,20 @@ static std::string send_limit_order(const std::string& symbol, bool is_long,
 
 // Send a live market order. Does nothing in SHADOW mode.
 // Returns clOrdId on success, empty string on failure/shadow.
+//
+// 2026-05-08 S21 HEDGING-MODE FIX: optional position_id parameter.
+//   - Empty (default)   = entry-side market order. Broker books a fresh
+//                         position. Existing behaviour.
+//   - Non-empty string  = close-side market order targeting the named
+//                         position. The FIX builder appends tag 1006 +
+//                         tag 721 + tag 77=C so BlackBull's Spotware
+//                         gateway nets the named position regardless of
+//                         account mode (hedging vs netting).
+//   See the comment block at fix_builders.hpp:build_new_order_single for
+//   the full rationale + the NZ$459 incident this fix exists to prevent.
 static std::string send_live_order(const std::string& symbol, bool is_long,
-                                   double qty, double mid_price) {
+                                   double qty, double mid_price,
+                                   const std::string& position_id = "") {
     // Hard SHADOW gate -- never send in shadow regardless of anything else
     if (g_cfg.mode != "LIVE") return {};
 
@@ -149,7 +161,7 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
             std::cerr << "[ORDER] BLOCKED -- trade SSL null\n";
             return {};
         }
-        msg = build_new_order_single(g_trade_seq++, clOrdId, sym_id, is_long, fix_qty);
+        msg = build_new_order_single(g_trade_seq++, clOrdId, sym_id, is_long, fix_qty, position_id);
         const int w = SSL_write(g_trade_ssl, msg.c_str(), static_cast<int>(msg.size()));
         if (w <= 0) {
             std::cerr << "[ORDER] SSL_write failed for " << symbol << "\n";
@@ -177,8 +189,11 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
               << " lots=" << std::fixed << std::setprecision(4) << qty
               << " fix_qty=" << std::setprecision(2) << fix_qty
               << " mid=" << std::setprecision(4) << mid_price
-              << " clOrdId=" << clOrdId
-              << "\033[0m\n";
+              << " clOrdId=" << clOrdId;
+    if (!position_id.empty()) {
+        std::cout << " close_posId=" << position_id;
+    }
+    std::cout << "\033[0m\n";
     std::cout.flush();
 
     // Note: fill quality is recorded in handle_execution_report when the actual
@@ -462,6 +477,15 @@ static void handle_execution_report(const std::string& msg) {
     const std::string side     = extract_tag(msg, "54");
     const std::string lastPx   = extract_tag(msg, "31");
     const std::string lastQty  = extract_tag(msg, "32");
+    // 2026-05-08 S21 HEDGING-MODE FIX: extract broker position ID. Spotware
+    // cTrader uses tag 1006 (cTrader-native PositionId); FIX 4.4 standard is
+    // tag 721 (PosMaintRptID). BlackBull's gateway returns one of these in
+    // the entry-side ExecReport and we need either to construct a hedging-
+    // safe close. We try 1006 first; fall back to 721. See the LivePos
+    // comment block in GoldMicroScalperEngine.hpp and the fix_builders.hpp
+    // build_new_order_single comment for the full design.
+    std::string positionId = extract_tag(msg, "1006");
+    if (positionId.empty()) positionId = extract_tag(msg, "721");
 
     std::cout << "[ORDER-ACK] clOrdId=" << clOrdId
               << " status=" << ordStatus
@@ -470,6 +494,7 @@ static void handle_execution_report(const std::string& msg) {
               << " side=" << side
               << " lastPx=" << lastPx
               << " lastQty=" << lastQty
+              << (positionId.empty() ? "" : " posId=" + positionId)
               << (text.empty() ? "" : " text=" + text) << "\n";
     std::cout.flush();
 
@@ -503,6 +528,24 @@ static void handle_execution_report(const std::string& msg) {
                 it->second.acked = true;
                 // Mark limit order as filled so cancel fallback does not fire
                 if (ordStatus == "2" || ordStatus == "1") pending_limit_filled(clOrdId);
+
+                // 2026-05-08 S21 HEDGING-MODE FIX: capture broker's position ID
+                // on the entry-side ACK and store it on the microscalper engine's
+                // pos. Required for hedging-mode close. Match by clOrdId AND by
+                // engine ownership (only microscalper uses this field today).
+                // entry_clOrdId is set in tick_gold.hpp at the moment send_live_order
+                // returns; we compare here to confirm this ACK is for the engine's
+                // current open position (not a stale ACK for a previous entry).
+                if (!positionId.empty()
+                    && it->second.symbol == "XAUUSD"
+                    && g_gold_microscalper.has_open_position()
+                    && g_gold_microscalper.pos.entry_clOrdId == clOrdId
+                    && g_gold_microscalper.pos.broker_position_id.empty()) {
+                    g_gold_microscalper.pos.broker_position_id = positionId;
+                    std::cout << "[MICROSCALPER-POSID-CAPTURED] clOrdId=" << clOrdId
+                              << " posId=" << positionId << "\n";
+                    std::cout.flush();
+                }
                 if (!lastPx.empty() && !lastQty.empty()) {
                     try {
                         const double fill_px  = std::stod(lastPx);

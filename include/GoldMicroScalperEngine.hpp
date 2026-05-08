@@ -277,6 +277,39 @@ public:
         bool    be_locked          = false;
         bool    l2_real_at_entry   = false;
         double  z_at_entry         = 0.0;
+
+        // 2026-05-08 S21 HEDGING-MODE FIX (authorised by user in chat after the
+        //   NZ$459 hedging incident):
+        //   BlackBull account 8077780 is in HEDGING mode, not netting. Sending an
+        //   opposite-direction market order to "close" a position OPENS A NEW
+        //   OPPOSING position instead of netting the existing one. To close a
+        //   specific position in hedging mode, the close FIX 35=D message must
+        //   reference the broker's position ID (Spotware uses tag 1006; FIX 4.4
+        //   standard is tag 721 PosMaintRptID). The close path also benefits
+        //   from FIX standard tag 77=C (PositionEffect=Close) as a hint.
+        //
+        //   Population path:
+        //     1. Entry-side send_live_order returns clOrdId; we store it here
+        //        as entry_clOrdId immediately after dispatch (in tick_gold.hpp).
+        //     2. ExecutionReport arrives ~50-200ms later. handle_execution_report
+        //        matches by clOrdId, extracts tag 1006 or 721 (whichever is
+        //        present), and writes broker_position_id here.
+        //     3. On exit, microscalper_on_close inspects broker_position_id:
+        //          - non-empty: send close FIX message with tag 1006 + 721 + 77=C
+        //          - empty: REFUSE the close, auto-shadow the engine, log
+        //            [MICROSCALPER-NO-POSID]. Operator manually flattens the
+        //            orphan position in cTrader. Better to leave one orphan
+        //            than to double down on every exit.
+        //
+        //   Race window: between entry _open() and the entry ACK arriving back
+        //   (~50-200ms), broker_position_id is empty. If the engine fires an
+        //   exit within that window (extremely unlikely for microscalper which
+        //   needs at least one tick of management), the close refuses to send.
+        //   Engine internal pos.active goes false on exit regardless, so the
+        //   engine returns to a flat state -- but the broker still has the
+        //   long/short orphan. Auto-shadow + log + operator manual close.
+        std::string broker_position_id;
+        std::string entry_clOrdId;
     } pos;
 
     bool has_open_position() const noexcept { return pos.active; }

@@ -224,9 +224,27 @@ static std::mutex g_live_orders_mtx;
 static std::unordered_map<std::string, LiveOrderRecord> g_live_orders;
 static std::atomic<int> g_order_id_counter{1};
 
+// 2026-05-08 S21 HEDGING-MODE FIX: position_id parameter.
+//
+// BlackBull account 8077780 is in HEDGING mode. Without referencing the
+// existing broker position by ID, a "close" order (opposite-direction market)
+// opens a NEW opposing position instead of netting -- exactly the bug that
+// cost NZ$459 on 2026-05-08. To close a specific position, the close 35=D
+// must carry one or more of:
+//   - tag 1006  (Spotware cTrader PositionId, the cTrader-native form)
+//   - tag 721   (FIX 4.4 standard PosMaintRptID, broker fallback)
+//   - tag 77=C  (PositionEffect=Close, FIX 4.4 standard hint)
+//
+// Sending all three on the same close message is permissive: BlackBull's
+// gateway recognises whichever it supports and ignores the rest. Calls with
+// an empty position_id are entry-side and emit the message without these
+// extra tags (existing behaviour preserved). Calls with a non-empty
+// position_id are close-side and emit all three so the broker nets the
+// named position regardless of account mode (hedging vs netting).
 static std::string build_new_order_single(int seq, const std::string& clOrdId,
                                           int sym_id, bool is_long,
-                                          double qty) {
+                                          double qty,
+                                          const std::string& position_id = "") {
     std::ostringstream b;
     b << "35=D\x01"
       << "49=" << g_cfg.sender << "\x01"
@@ -241,6 +259,14 @@ static std::string build_new_order_single(int seq, const std::string& clOrdId,
       << "40=1\x01"                           // OrdType=Market
       << "59=3\x01"                           // TimeInForce=IOC
       << "60=" << timestamp() << "\x01";      // TransactTime
+    if (!position_id.empty()) {
+        // Hedging-mode close path. Emit all three position-targeting tags so
+        // BlackBull's Spotware gateway nets the existing position rather than
+        // open a new opposing one (the NZ$459 incident pattern).
+        b << "1006=" << position_id << "\x01"   // Spotware cTrader PositionId
+          << "721="  << position_id << "\x01"   // FIX 4.4 PosMaintRptID
+          << "77=C\x01";                         // PositionEffect=Close
+    }
     return wrap_fix(b.str());
 }
 

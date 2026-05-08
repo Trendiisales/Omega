@@ -1232,18 +1232,70 @@ static void microscalper_on_close(const omega::TradeRecord& tr) {
     handle_closed_trade(tr);
     if (tr.shadow) return;
 
+    // 2026-05-08 S21 HEDGING-MODE FIX (after the NZ$459 incident):
+    //
+    // BlackBull account 8077780 is in HEDGING mode. Sending an opposite-
+    // direction market order WITHOUT a position-targeting tag opens a NEW
+    // opposing position rather than netting the existing one. To close the
+    // specific position the engine just exited, we MUST reference the
+    // broker's position ID via FIX tags 1006 (Spotware) / 721 (FIX standard)
+    // / 77=C (PositionEffect). The build_new_order_single helper appends
+    // all three when send_live_order is called with a non-empty position_id.
+    //
+    // The position ID was captured into pos.broker_position_id by
+    // handle_execution_report when the entry-side ExecutionReport came back
+    // (typically 50-200ms after entry). If it's still empty here, ONE of:
+    //   a) The entry ACK hasn't arrived yet (tight race window)
+    //   b) BlackBull's gateway didn't send a position ID in either tag
+    //   c) The previous entry was rejected and we should never have got here
+    //
+    // In ANY of those cases, the SAFE response is to REFUSE to send the
+    // close. Sending an unguarded opposite-direction market order in
+    // hedging mode = orphan position = NZ$459 incident pattern. We
+    // auto-shadow the engine so it stops opening new positions, log
+    // [MICROSCALPER-NO-POSID] loudly, and the operator manually flattens
+    // the orphan in cTrader.
+    //
+    // Note: by the time microscalper_on_close fires, pos.active is already
+    // false on the engine (engine's _close() already ran). The engine's
+    // internal state is "closed" -- we cannot recover it; we can only
+    // protect against making things worse.
+    const std::string position_id = g_gold_microscalper.pos.broker_position_id;
+    if (position_id.empty()) {
+        std::cerr << "\033[1;31m[MICROSCALPER-NO-POSID] "
+                  << "Refusing to send close -- broker position ID not captured "
+                  << "(entry ACK race or gateway didn't return tag 1006/721). "
+                  << "Auto-shadowing engine. ORPHAN POSITION at broker -- "
+                  << "operator must flatten manually in cTrader. "
+                  << "symbol=" << tr.symbol
+                  << " entry_side=" << tr.side
+                  << " entry_clOrdId=" << g_gold_microscalper.pos.entry_clOrdId
+                  << " exit_reason=" << tr.exitReason
+                  << "\033[0m\n";
+        std::cerr.flush();
+        g_gold_microscalper.shadow_mode = true;
+        return;
+    }
+
     // Microscalper close is a market order in the OPPOSITE direction of
-    // the entry. tr.side is the entry side ("LONG"/"SHORT"); the close
-    // must be the opposite. is_long=true means BUY-to-close (we were SHORT).
+    // the entry, REFERENCING the specific position to close.
+    // tr.side is the entry side ("LONG"/"SHORT"); the close must be the
+    // opposite. is_long=true means BUY-to-close (we were SHORT).
     const bool close_is_long = (tr.side == "SHORT");
     std::cout << "\033[1;35m[MICROSCALPER-CLOSE] " << tr.symbol
               << " " << (close_is_long ? "BUY" : "SELL") << " (close)"
               << " qty=" << tr.size
               << " exit=" << std::fixed << std::setprecision(4) << tr.exitPrice
               << " reason=" << tr.exitReason
+              << " posId=" << position_id
               << "\033[0m\n";
     std::cout.flush();
-    send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice);
+    send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice, position_id);
+
+    // Clear the position ID after sending the close so it can't be reused.
+    // The next entry will capture a fresh ID via the ExecReport handler.
+    g_gold_microscalper.pos.broker_position_id.clear();
+    g_gold_microscalper.pos.entry_clOrdId.clear();
 }
 
 // ── sup_decision ─────────────────────────────────────────────────────────────
