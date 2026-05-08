@@ -2226,10 +2226,16 @@ static void on_tick_gold(
     // L2-flip reversal-exit leg is disabled (safe fallback).
     {
         // Position management -- unconditional when live.
+        // 2026-05-08 S21: callback changed bracket_on_close -> microscalper_on_close
+        //   so that EVERY exit (TP_HIT / SL_HIT / REVERSAL_EXIT / MAX_HOLD_EXIT /
+        //   FORCE_CLOSE / BREAKOUT_FAIL) sends a real market close to the broker.
+        //   bracket_on_close only sent on FORCE_CLOSE / BREAKOUT_FAIL because it
+        //   assumes the broker has an OCO active; microscalper uses straight
+        //   market entries, no OCO, so every exit needs its own market order.
         if (g_gold_microscalper.has_open_position()) {
             g_gold_microscalper.on_tick(bid, ask, now_ms_g,
                                         gold_can_enter,
-                                        bracket_on_close,
+                                        microscalper_on_close,
                                         g_macro_ctx.gold_l2_imbalance,
                                         g_macro_ctx.gold_slope,
                                         g_macro_ctx.gold_vacuum_ask,
@@ -2256,19 +2262,57 @@ static void on_tick_gold(
             gold_can_enter
             && mcs_vol_ok
             && !g_gold_microscalper.has_open_position();
-        if (!g_gold_microscalper.has_open_position()) {
+
+        // 2026-05-08 S21 LIVE-ENTRY ORDER (authorised by user in chat):
+        //   Detect the "just opened" transition by snapshotting
+        //   has_open_position() BEFORE the entry-path on_tick call, then
+        //   comparing to the post-call state. If pre=false and post=true,
+        //   the engine just opened a fresh position on this tick. Fire a
+        //   market order to the broker IFF the engine is not in shadow.
+        //   This pairs with microscalper_on_close in trade_lifecycle.hpp
+        //   which sends the corresponding market close on every exit
+        //   reason.
+        //
+        //   Why this snapshot-and-diff pattern rather than a time-based
+        //   freshness check (e.g., "entry_ts within last second"): the
+        //   tick rate is ~200/min so multiple ticks land in the same UTC
+        //   second after an entry, and a time-based gate would fire
+        //   duplicate orders. A pre/post transition diff fires exactly
+        //   once per entry, by construction.
+        //
+        //   NOTE: this implementation is intentionally minimal -- no
+        //   partial-fill reconciliation (broker may fill less than 0.30;
+        //   engine internal pos.size won't auto-update), no reject
+        //   handling (broker may reject; engine state would diverge from
+        //   broker state). For a single-engine deploy in a single trading
+        //   session under operator attention, the simple form is
+        //   acceptable; the proper hardening (ExecReport-driven pos.size
+        //   update, reject -> auto-shadow, etc.) is queued follow-up.
+        const bool ms_pre_entry_open = g_gold_microscalper.has_open_position();
+        if (!ms_pre_entry_open) {
             g_gold_microscalper.on_tick(bid, ask, now_ms_g,
                                         microscalper_can_enter,
-                                        bracket_on_close,
+                                        microscalper_on_close,
                                         g_macro_ctx.gold_l2_imbalance,
                                         g_macro_ctx.gold_slope,
                                         g_macro_ctx.gold_vacuum_ask,
                                         g_macro_ctx.gold_vacuum_bid,
                                         g_macro_ctx.gold_l2_real);
         }
-        // No FIX-order block here -- shadow mode. When promoted to live,
-        // write a [MICRO-SCALPER-GOLD] ORDERS SENT block analogous to the
-        // FIX-order patterns used by other live engines.
+        const bool ms_post_entry_open = g_gold_microscalper.has_open_position();
+        if (!ms_pre_entry_open && ms_post_entry_open &&
+            !g_gold_microscalper.shadow_mode) {
+            const auto& mp = g_gold_microscalper.pos;
+            // Use the existing FIRE log marker so the live-order line is
+            // immediately adjacent to the engine's own FIRE log.
+            std::cout << "\033[1;33m[MICROSCALPER-ENTRY] XAUUSD "
+                      << (mp.is_long ? "BUY" : "SELL")
+                      << " qty=" << mp.size
+                      << " entry=" << std::fixed << std::setprecision(4) << mp.entry
+                      << "\033[0m\n";
+            std::cout.flush();
+            send_live_order("XAUUSD", mp.is_long, mp.size, mp.entry);
+        }
     }
 
     // -- 2026-05-02: XauusdFvgEngine dispatch --------------------------------

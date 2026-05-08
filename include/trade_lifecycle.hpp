@@ -1207,6 +1207,45 @@ static void bracket_on_close(const omega::TradeRecord& tr) {
     send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice);
 }
 
+// ── microscalper_on_close ───────────────────────────────────────────────────
+// MicroScalperGold uses MARKET orders for both entry and exit -- there is NO
+// broker-side OCO. So every exit reason (TP_HIT, SL_HIT, REVERSAL_EXIT,
+// MAX_HOLD_EXIT, FORCE_CLOSE, BREAKOUT_FAIL, ...) needs an explicit market
+// close order to flatten the broker-side position. bracket_on_close skips
+// those because it assumes the broker has an OCO live; microscalper has no
+// OCO so we must send the close ourselves on every exit.
+//
+// Path:
+//   handle_closed_trade(tr)             -- ledger / RiskMonitor / telemetry
+//   if (tr.shadow) return               -- shadow trades stay paper
+//   send_live_order(symbol, !was_long, size, exit_px)  -- broker market close
+//
+// 2026-05-08 S21 (authorised by user in chat): added because the previous
+// "DEEPSTRIKE live promotion" of MicroScalperGold did not write the
+// broker-submit code -- microscalper was using bracket_on_close as its close
+// callback but bracket_on_close only sends live close orders for
+// BREAKOUT_FAIL / FORCE_CLOSE (the OCO-pending reasons). Result: NZD 5,000.00
+// untouched on BlackBull account 8077780 despite ~30 paper "live" trades per
+// session. Pair this with the entry-side send_live_order call wired in
+// tick_gold.hpp at the microscalper dispatch site.
+static void microscalper_on_close(const omega::TradeRecord& tr) {
+    handle_closed_trade(tr);
+    if (tr.shadow) return;
+
+    // Microscalper close is a market order in the OPPOSITE direction of
+    // the entry. tr.side is the entry side ("LONG"/"SHORT"); the close
+    // must be the opposite. is_long=true means BUY-to-close (we were SHORT).
+    const bool close_is_long = (tr.side == "SHORT");
+    std::cout << "\033[1;35m[MICROSCALPER-CLOSE] " << tr.symbol
+              << " " << (close_is_long ? "BUY" : "SELL") << " (close)"
+              << " qty=" << tr.size
+              << " exit=" << std::fixed << std::setprecision(4) << tr.exitPrice
+              << " reason=" << tr.exitReason
+              << "\033[0m\n";
+    std::cout.flush();
+    send_live_order(tr.symbol, close_is_long, tr.size, tr.exitPrice);
+}
+
 // ── sup_decision ─────────────────────────────────────────────────────────────
 template<typename EngT>
 static omega::SupervisorDecision sup_decision(
