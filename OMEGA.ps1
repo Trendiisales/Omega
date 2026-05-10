@@ -1492,6 +1492,29 @@ function Get-GitHubHead {
 }
 
 function Get-RunningHash {
+    # Resolve the git hash of the CURRENTLY-RUNNING Omega.exe.
+    #
+    # S22 fix (2026-05-11): the engine prints `[Omega] Git hash: XXXXXXX` to
+    # stderr ONCE at startup (omega_main.hpp line 23). After Omega has been up
+    # for more than a few minutes the line falls off the tail-300 window of
+    # latest.log, and this function returned $null -- which prevented the
+    # GITHUB-POLL branch from ever firing AUTO-UPDATE. The fix is to consult
+    # omega_build.stamp FIRST (canonical source of truth, written by the deploy
+    # pipeline) and fall back to the log scan only if the stamp is missing.
+    try {
+        $stamp = Read-Stamp
+        if ($stamp -and $stamp.GIT_HASH_SHORT) {
+            $h = $stamp.GIT_HASH_SHORT.Trim()
+            if ($h -match '^[a-f0-9]{7}$') { return $h }
+        }
+        if ($stamp -and $stamp.GIT_HASH) {
+            $h = $stamp.GIT_HASH.Trim()
+            if ($h.Length -ge 7 -and $h -match '^[a-f0-9]+$') {
+                return $h.Substring(0, 7)
+            }
+        }
+    } catch { }
+
     try {
         if (-not (Test-Path $LatestLog)) { return $null }
         $tail = Get-Content $LatestLog -Tail 300 -ErrorAction SilentlyContinue
@@ -1502,8 +1525,20 @@ function Get-RunningHash {
 }
 
 function Get-L2CsvPath {
+    # Returns the path to the CANONICAL L2 tick CSV that proves the engine is
+    # capturing market depth. XAUUSD is the canonical symbol because (a) its
+    # writer fires unconditionally on every XAUUSD tick (see tick_gold.hpp
+    # line 989) and (b) XAUUSD is live during every market hour the watchdog
+    # checks.
+    #
+    # S22 fix (2026-05-11): pre-S13 the engine wrote a single
+    # `l2_ticks_YYYY-MM-DD.csv` and this function correctly pointed at it.
+    # S13 cTrader cull (commit 4827ad4, 2026-05-08) split the writer per
+    # symbol (l2_ticks_XAUUSD_YYYY-MM-DD.csv, l2_ticks_US500_..., etc.) and
+    # this function was not updated, so the watchdog has been false-alerting
+    # L2-CSV-MISSING every 15s ever since.
     $today = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
-    return "$OmegaDir\logs\l2_ticks_$today.csv"
+    return "$OmegaDir\logs\l2_ticks_XAUUSD_$today.csv"
 }
 
 function Test-MarketHours {
