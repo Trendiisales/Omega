@@ -3,6 +3,49 @@
 // Section: logging (original lines 2857-3042)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+// S34 (2026-05-12) explicit stdlib includes for the new dedupe ring + diag
+// path. <cmath> is already pulled in by main.cpp:36 and <array> by several
+// headers earlier in the include cascade (SweepableEnginesCRTP.hpp etc.),
+// but listing them here is idempotent via header guards and survives any
+// future re-ordering of the single-TU include chain.
+#include <array>
+#include <cmath>
+
+//
+// 2026-05-12 (S34, operator-instructed: "fix this logging issue and the PNL
+//   i treat this as actual trading and so it should be"):
+//   Two new defensive guards added to write_trade_close_logs():
+//
+//     (1) [CSV-DUP-BLOCK] — close-write dedupe.
+//         A small ring buffer tracks recently-written close keys. The
+//         writer can be reached from three call sites (trade_lifecycle.hpp
+//         line 204 PARTIAL_1R, trade_lifecycle.hpp line 298 normal close,
+//         and quote_loop.hpp line 558 stale_cb prior-day purge). If the
+//         normal close pipeline AND the stale purge both fire for the
+//         same TradeRecord (or any engine emits the same close twice),
+//         the second write would land in the CSV as an exact-duplicate
+//         row — that is the source of the identical 13:35:00 USTEC pair
+//         observed in the operator's pasted log. The dedupe key is
+//         engine|symbol|side|entryTs|exitTs|exitReason; window is
+//         WRITE_DEDUPE_WINDOW_SEC seconds; ring capacity is
+//         WRITE_DEDUPE_RING_SIZE entries. A duplicate within the window
+//         is dropped at the writer and a [CSV-DUP-BLOCK] line is printed
+//         so the upstream double-emit is still visible.
+//
+//     (2) [CSV-ZERO-SIZE] / [CSV-ZERO-PNL] — PnL sanity diagnostics.
+//         Warn (but still write the row, for audit continuity) when a
+//         close has size<=0, or when entry!=exit but net_pnl is zero.
+//         These conditions catch the "$0.00 / -- fee" pattern that any
+//         shadow-only engine produces when its size resolves to zero
+//         (lot-table miss, symbol-key mismatch like "USTEC" vs
+//         "USTEC.F", or shadow lot pinned to 0). Operator's directive is
+//         to treat shadow as actual trading; a zero-PnL close means the
+//         tape says "edge happened" but the ledger says "no money" —
+//         that disagreement must be surfaced, not silently logged.
+//
+//   Both guards are local to logging.hpp; no protected core file (per
+//   HANDOFF_S33_AFTER_S32.md §2.4 rule 3) is modified by this change.
+
 static void rtt_record(double ms) {
     g_rtt_last = ms;
     g_rtts.push_back(ms);
@@ -161,6 +204,55 @@ static std::string build_trade_close_csv_row(const omega::TradeRecord& tr) {
     return o.str();
 }
 
+// ── S34 close-write dedupe (see header comment) ──────────────────────────────
+// Ring-buffer + mutex; constant memory footprint, no allocation on hot path.
+// Window length and ring capacity tuned to keep the buffer covering the
+// realistic re-fire window for any single trade (stale_cb fires within ~1s
+// of the normal close; identical-tick double-emit fires within microseconds).
+static constexpr int    OMEGA_CSV_DEDUPE_WINDOW_SEC = 5;
+static constexpr size_t OMEGA_CSV_DEDUPE_RING_SIZE  = 64;
+
+struct OmegaCsvDedupeEntry {
+    std::string key;
+    int64_t     ts;
+};
+
+static std::mutex                                                 g_csv_dedupe_mtx;
+static std::array<OmegaCsvDedupeEntry, OMEGA_CSV_DEDUPE_RING_SIZE> g_csv_dedupe_ring{};
+static size_t                                                     g_csv_dedupe_head = 0;
+
+static std::string make_close_dedupe_key(const omega::TradeRecord& tr) {
+    std::ostringstream o;
+    o << tr.engine << '|' << tr.symbol << '|' << tr.side
+      << '|' << tr.entryTs << '|' << tr.exitTs
+      << '|' << tr.exitReason;
+    return o.str();
+}
+
+// Returns true if this close is a duplicate within the dedupe window.
+// On the first sighting, records the key in the ring buffer and returns
+// false. The ring is a fixed-capacity circular buffer; oldest entries are
+// silently overwritten when full. The dedupe is intentionally lenient
+// (key match only, not full row hash) -- if two genuinely-distinct closes
+// happen to share engine/symbol/side/entryTs/exitTs/exitReason within 5
+// seconds, that pair is treated as a duplicate. Given that entryTs is a
+// unix-second timestamp and a position cannot enter+exit at the same
+// integer second under any real engine, this collision is non-physical.
+static bool close_already_written(const omega::TradeRecord& tr) {
+    const std::string key = make_close_dedupe_key(tr);
+    const int64_t now_s = nowSec();
+    std::lock_guard<std::mutex> lk(g_csv_dedupe_mtx);
+    for (const auto& e : g_csv_dedupe_ring) {
+        if (e.key.empty()) continue;
+        if (e.key == key && (now_s - e.ts) <= OMEGA_CSV_DEDUPE_WINDOW_SEC) {
+            return true;
+        }
+    }
+    g_csv_dedupe_ring[g_csv_dedupe_head] = {key, now_s};
+    g_csv_dedupe_head = (g_csv_dedupe_head + 1) % OMEGA_CSV_DEDUPE_RING_SIZE;
+    return false;
+}
+
 static void write_trade_close_logs(const omega::TradeRecord& tr) {
     // Phantom-record guard: a valid trade always has a positive entry timestamp
     // and positive entry price. Records with entryTs<=0 or entryPrice<=0 are
@@ -178,6 +270,54 @@ static void write_trade_close_logs(const omega::TradeRecord& tr) {
         fflush(stdout);
         return;
     }
+
+    // S34 dedupe guard: drop exact-duplicate close writes within the window.
+    // This is the writer-side defence against the identical-row pattern in
+    // the operator's pasted log (two USTEC BUYs at 13:35:00 with identical
+    // entry/exit/hold). Upstream double-emit still gets a one-line warning
+    // so the engine bug is visible, but the CSV stays clean.
+    if (close_already_written(tr)) {
+        printf("[CSV-DUP-BLOCK] engine=%s symbol=%s side=%s entryTs=%lld exitTs=%lld "
+               "reason=%s pnl=%.4f net=%.4f -- duplicate close write blocked "
+               "(already written within %d sec)\n",
+               tr.engine.c_str(), tr.symbol.c_str(), tr.side.c_str(),
+               (long long)tr.entryTs, (long long)tr.exitTs,
+               tr.exitReason.c_str(), tr.pnl, tr.net_pnl,
+               OMEGA_CSV_DEDUPE_WINDOW_SEC);
+        fflush(stdout);
+        return;
+    }
+
+    // S34 PnL sanity diagnostics. Still write the row for audit continuity,
+    // but emit a clear warning so the operator can find the upstream cause.
+    //   [CSV-ZERO-SIZE] -- engine emitted a close with size<=0. Almost always
+    //                      a sizing-table miss (symbol-key mismatch like
+    //                      "USTEC" vs "USTEC.F") or a shadow lot pinned to 0.
+    //   [CSV-ZERO-PNL]  -- size is positive and entry != exit, but net_pnl
+    //                      came out zero. Indicates the cost/multiplier path
+    //                      did not run (tick_value_multiplier returned 1.0
+    //                      against an unrecognised symbol, or the close
+    //                      callback skipped apply_realistic_costs).
+    if (tr.size <= 0.0) {
+        printf("[CSV-ZERO-SIZE] engine=%s symbol=%s side=%s size=%.4f "
+               "entry=%.4f exit=%.4f pnl=%.4f net=%.4f reason=%s "
+               "-- zero-size close; PnL will be $0 (check sizing table for symbol)\n",
+               tr.engine.c_str(), tr.symbol.c_str(), tr.side.c_str(),
+               tr.size, tr.entryPrice, tr.exitPrice,
+               tr.pnl, tr.net_pnl, tr.exitReason.c_str());
+        fflush(stdout);
+    } else if (std::fabs(tr.net_pnl) < 1e-9 &&
+               std::fabs(tr.entryPrice - tr.exitPrice) > 1e-6) {
+        printf("[CSV-ZERO-PNL] engine=%s symbol=%s side=%s entry=%.4f exit=%.4f "
+               "size=%.4f pnl=%.4f net=%.4f reason=%s "
+               "-- price moved but PnL is zero (check tick_value_multiplier "
+               "for symbol or close-pipeline cost path)\n",
+               tr.engine.c_str(), tr.symbol.c_str(), tr.side.c_str(),
+               tr.entryPrice, tr.exitPrice, tr.size,
+               tr.pnl, tr.net_pnl, tr.exitReason.c_str());
+        fflush(stdout);
+    }
+
     const std::string row = build_trade_close_csv_row(tr);
     {
         std::lock_guard<std::mutex> lk(g_trade_close_csv_mtx);

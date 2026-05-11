@@ -55,11 +55,119 @@
 //      // tick_indices.hpp every USTEC tick:
 //      g_ustec_tf_5m.on_tick(bid, ask, now_ms, ca_on_close);
 // =============================================================================
+//
+//  S34 (2026-05-12 — operator-instructed: "fix this logging issue and the
+//  PNL i treat this as actual trading and so it should be")
+//
+//  Five bugs in the pre-S34 close path made every trade emitted by this
+//  engine show as $0.00 PnL, with both cells looking like duplicate rows
+//  in the ledger. Every fix is in the _close() path or in the per-position
+//  bookkeeping that feeds it; signal generation, sizing, and SL/TP logic
+//  are untouched.
+//
+//      Bug 1  tr.pnl was never assigned — TradeRecord's default value
+//             of 0.0 propagated to the ledger. trade_lifecycle's
+//             `tr.pnl *= tick_value_multiplier(symbol)` then multiplied
+//             0 by anything and got 0. Fix: set tr.pnl in raw points*lots
+//             ((exit - entry)*sign*lot), matching the BracketEngine
+//             convention at include/BracketEngine.hpp:1216-1218.
+//
+//      Bug 2  tr.symbol = "USTEC" (no .F suffix). sizing.hpp's
+//             tick_value_multiplier table is keyed on "USTEC.F" → $20/pt.
+//             "USTEC" falls through to the 1.0 default. Even if Bug 1
+//             were fixed alone, USTEC PnL would have come out 20× smaller
+//             than reality. Fix: tr.symbol = "USTEC.F".
+//
+//      Bug 3  Both cells (Donchian + Keltner) wrote
+//             tr.engine = "UstecTrendFollow5m". When both fired on the
+//             same 5m bar — which is the strategy's whole point of having
+//             two uncorrelated signal families — the two resulting close
+//             rows looked identical in the engine column and the logging
+//             dedupe could not tell them apart. Fix: append the cell's
+//             short_name (Donchian | Keltner) so the ledger has
+//             "UstecTrendFollow5m_Donchian" and
+//             "UstecTrendFollow5m_Keltner" as distinct engine strings.
+//             The full cell name (with sl/tp multipliers) still rides in
+//             tr.regime for forensic drill-down.
+//
+//      Bug 4  tr.side was "BUY" / "SELL" rather than the LONG / SHORT
+//             convention used by every other engine and consumed by the
+//             omega-terminal LDG panel. Fix: emit LONG / SHORT.
+//
+//      Bug 5  No MFE / MAE tracking. tr.mfe and tr.mae shipped as 0
+//             on every close, so the [TRADE-COST] line and the CSV mfe/mae
+//             columns were always 0 for this engine. Fix: add mfe_pts /
+//             mae_pts to UstecTfPos, reset them on _fire_entry, and update
+//             them on every tick inside _manage_open (mid-price excursion,
+//             stored in raw points; trade_lifecycle multiplies by tick
+//             value just like tr.pnl).
+//
+//  All five fixes live below in the comments tagged "S34 BUG #" so each
+//  change site is traceable from the bug list above.
+// =============================================================================
+//
+//  S34-B (same session, follow-up instruction: "FIX the bad trades,
+//  these should not be occuring, why would i want to keep the engine
+//  firing a bad trade wtaf")
+//
+//  Three structural guards added on top of the S34 close-path fixes.
+//  These do not eliminate every losing trade — a strategy with the
+//  engine's claimed ~45% WR is *designed* to be wrong slightly more
+//  often than right, taking the edge from asymmetric R:R — but they
+//  do eliminate three categories of trade that were losing for
+//  preventable mechanical reasons rather than for "the market went
+//  the other way" reasons.
+//
+//      Guard A  PROVE-IT EXIT.
+//          New constants PROVE_IT_SECS = 90 and
+//          PROVE_IT_MIN_FAVOURABLE_PTS = 4.0 plus a per-position
+//          `proved` flag. For the first 90 seconds after entry, every
+//          tick checks whether MFE has reached 4 pts favourable; if
+//          it has, `proved` flips true and stays true. At 90 seconds,
+//          if `proved` is still false, the position is force-closed
+//          at the current price with reason "PROVE_IT_FAIL". The
+//          structural reasoning: a 5m breakout that has not made
+//          even 4 pts of progress in 90 seconds (~18 ticks at typical
+//          USTEC tempo) is not a breakout that worked; it is a
+//          breakout into noise. A tighter price-based SL would just
+//          take more 1-minute SL hits in the wrong direction. This
+//          exits on the absence of favourable movement instead, which
+//          is the symptom you actually want to cut on.
+//
+//          New constant MIN_SL_PTS_FLOOR = 15.0 backs the prove-it
+//          exit with a hard minimum SL distance, so even in a
+//          low-ATR window the price-based SL can't sit inside the
+//          spread+noise zone.
+//
+//      Guard B  CELL MUTUAL EXCLUSION (same-direction only).
+//          When one cell has an open position in direction X, the
+//          other cell cannot open a position in the same direction
+//          X. Opposite-direction is still allowed (genuine
+//          decorrelation). Pre-S34 the two cells could and did fire
+//          long on the same 5m bar with the same ATR, taking double
+//          exposure at peak correlation rather than minimum. Refusal
+//          is logged as [USTEC-TF-MUTEX-BLOCK].
+//
+//      Guard C  MINIMUM ATR FLOOR.
+//          New constant MIN_ATR_PTS = 10.0. On every 5m bar close,
+//          before either cell's signal is evaluated, if atr14_ is
+//          below this floor the bar is skipped and a
+//          [USTEC-TF-ATR-FLOOR-BLOCK] line is logged. Breakouts fired
+//          in dead chop are noise; this gate keeps the engine quiet
+//          in conditions where its premise (a real intraday
+//          expansion) does not hold.
+//
+//  Tunable: every constant introduced by S34-B is a static constexpr
+//  on the engine; flip them at the top of this file and rebuild. A
+//  config-loaded variant can replace them later; constexpr keeps the
+//  change blast-radius minimal for this first cut.
+// =============================================================================
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <functional>
 #include <string>
@@ -86,6 +194,20 @@ struct UstecTfPos {
     int64_t     entry_ts_ms        = 0;
     int         bars_held          = 0;
     int         cooldown_bars      = 0;
+    // S34 BUG #5: MFE/MAE tracking in raw price points (mid-based).
+    //   mfe_pts is the most favourable excursion seen during the trade
+    //   (positive = trade went your way at its best moment). mae_pts is
+    //   the most adverse (negative or zero, more negative = worse loss
+    //   along the way). Multiplied by lot and tick_value_multiplier
+    //   downstream to produce USD figures in the ledger.
+    double      mfe_pts            = 0.0;
+    double      mae_pts            = 0.0;
+    // S34-B Guard A: prove-it exit state.
+    //   `proved` flips true the first tick at which mfe_pts reaches
+    //   PROVE_IT_MIN_FAVOURABLE_PTS. It does not flip back: once a
+    //   trade has shown favourable movement, the prove-it cut no
+    //   longer applies and the normal SL/TP regime takes over.
+    bool        proved             = false;
     std::string broker_position_id;
     std::string entry_clOrdId;
 };
@@ -96,13 +218,17 @@ struct UstecTfCellConfig {
     UstecTfFamily family;
     double        sl_mult;
     double        tp_mult;
-    const char*   name;
+    const char*   name;        // full cell name, stamped into tr.regime
+    // S34 BUG #3: short_name distinguishes cells in tr.engine so the
+    //   ledger (and the CSV-write dedupe guard in logging.hpp) can tell
+    //   Donchian-cell rows from Keltner-cell rows.
+    const char*   short_name;
 };
 
 // 2 validated cells (15-day L2 sample, all positive)
 static constexpr UstecTfCellConfig kUstecTfCells[] = {
-    { UstecTfFamily::Donchian20, 2.0, 4.0, "Donchian_N20_sl2.0tp4.0" },
-    { UstecTfFamily::Keltner20,  2.0, 4.0, "Keltner_K2_sl2.0tp4.0"   },
+    { UstecTfFamily::Donchian20, 2.0, 4.0, "Donchian_N20_sl2.0tp4.0", "Donchian" },
+    { UstecTfFamily::Keltner20,  2.0, 4.0, "Keltner_K2_sl2.0tp4.0",   "Keltner"  },
 };
 static constexpr int kUstecTfNumCells =
     static_cast<int>(sizeof(kUstecTfCells) / sizeof(kUstecTfCells[0]));
@@ -113,6 +239,22 @@ public:
     bool   enabled     = false;
     double lot         = 0.1;
     double max_spread  = 5.0;
+
+    // ── S34-B Guard A constants (prove-it exit + SL floor) ──────────────────
+    // 90 seconds is ~18 USTEC L2 ticks at typical tempo and ~1.5 of the
+    // engine's 5m bars. PROVE_IT_MIN_FAVOURABLE_PTS = 4 sits below the
+    // engine's smallest reasonable winner (which the backtest reports
+    // averaging $10-13 / 0.1lot * $20 = 5-6 pts of net favourable move
+    // per winner) so a real breakout will clear it almost immediately.
+    static constexpr double PROVE_IT_SECS               = 90.0;
+    static constexpr double PROVE_IT_MIN_FAVOURABLE_PTS = 4.0;
+    static constexpr double MIN_SL_PTS_FLOOR            = 15.0;
+
+    // ── S34-B Guard C constant (minimum ATR floor) ──────────────────────────
+    // USTEC daily range 100-250pt, hourly 20-60pt (IndexFlowEngine.hpp:19).
+    // 5m ATR in a healthy expansion regime sits above ~10pt; below that
+    // the tape is chop and breakout entries are dominated by noise.
+    static constexpr double MIN_ATR_PTS = 10.0;
 
     std::array<UstecTfPos, kUstecTfNumCells> pos{};
 
@@ -169,11 +311,34 @@ public:
         if (atr14_ <= 0.0) return;
         if (ask - bid > max_spread) return;
 
+        // S34-B Guard C: minimum ATR floor. Below this the tape is chop
+        // and Donchian/Keltner breakouts are noise, not signal.
+        if (atr14_ < MIN_ATR_PTS) {
+            printf("[USTEC-TF-ATR-FLOOR-BLOCK] atr14=%.2f floor=%.2f -- "
+                   "bar skipped, no breakout entries in low-vol regime\n",
+                   atr14_, MIN_ATR_PTS);
+            fflush(stdout);
+            return;
+        }
+
         for (int ci = 0; ci < kUstecTfNumCells; ++ci) {
             if (pos[ci].active) continue;
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
+
+            // S34-B Guard B: cell mutual exclusion (same-direction only).
+            // Refuse if any *other* cell already has an open position in
+            // the same direction. Opposite-direction is still allowed.
+            if (_other_cell_open_same_direction(ci, side)) {
+                printf("[USTEC-TF-MUTEX-BLOCK] cell=%s side=%s -- other cell "
+                       "already long-side in same direction, skipping entry\n",
+                       kUstecTfCells[ci].short_name,
+                       side > 0 ? "LONG" : "SHORT");
+                fflush(stdout);
+                continue;
+            }
+
             _fire_entry(ci, side, bid, ask, now_ms);
         }
         (void)on_close;
@@ -223,6 +388,18 @@ private:
         }
     }
 
+    // S34-B Guard B helper: true if any cell other than `ci` is currently
+    // active in the requested direction.
+    bool _other_cell_open_same_direction(int ci, int side) const noexcept {
+        const bool want_long = (side > 0);
+        for (int k = 0; k < kUstecTfNumCells; ++k) {
+            if (k == ci) continue;
+            if (!pos[k].active) continue;
+            if (pos[k].is_long == want_long) return true;
+        }
+        return false;
+    }
+
     int _evaluate_signal(int ci) const noexcept {
         switch (kUstecTfCells[ci].family) {
             case UstecTfFamily::Donchian20: return _sig_donchian();
@@ -260,8 +437,21 @@ private:
         const auto& cfg = kUstecTfCells[ci];
         double entry = (side > 0) ? ask : bid;
         if (entry <= 0.0 || atr14_ <= 0.0) return;
-        double sl_dist = cfg.sl_mult * atr14_;
-        double tp_dist = cfg.tp_mult * atr14_;
+
+        // S34-B Guard A: floor the SL distance so a low-ATR window can't
+        // produce an SL that sits inside the spread+noise zone. Take the
+        // larger of the ATR-derived distance and the hard floor; TP is
+        // also widened proportionally so the cell's R:R is preserved.
+        double sl_dist_atr = cfg.sl_mult * atr14_;
+        double sl_dist     = std::max(sl_dist_atr, MIN_SL_PTS_FLOOR);
+        double tp_dist     = cfg.tp_mult * atr14_;
+        if (sl_dist > sl_dist_atr) {
+            // SL was widened by the floor — widen TP by the same ratio so
+            // R:R stays at the cell's configured value (e.g. 2.0).
+            const double ratio = sl_dist / sl_dist_atr;
+            tp_dist = tp_dist * ratio;
+        }
+
         auto& p = pos[ci];
         p.active        = true;
         p.is_long       = (side > 0);
@@ -272,6 +462,11 @@ private:
         p.entry_ts_ms   = now_ms;
         p.bars_held     = 0;
         p.cooldown_bars = 0;
+        // S34 BUG #5 / S34-B Guard A: zero MFE/MAE and prove-it flag on
+        //   entry; updated on every tick inside _manage_open.
+        p.mfe_pts       = 0.0;
+        p.mae_pts       = 0.0;
+        p.proved        = false;
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
     }
@@ -279,6 +474,40 @@ private:
     void _manage_open(int ci, double bid, double ask, int64_t now_ms,
                       OnCloseFn on_close) noexcept {
         auto& p = pos[ci];
+
+        // S34 BUG #5: update MFE/MAE against live mid before any exit check.
+        //   Done in price points; lot and tick value are applied downstream.
+        //   Long: favourable = mid - entry. Short: favourable = entry - mid.
+        //   Adverse is just negative favourable; we keep both extrema.
+        const double mid = (bid + ask) * 0.5;
+        if (mid > 0.0 && p.entry_px > 0.0) {
+            const double favourable = p.is_long ? (mid - p.entry_px)
+                                                : (p.entry_px - mid);
+            if (favourable > p.mfe_pts) p.mfe_pts = favourable;
+            if (favourable < p.mae_pts) p.mae_pts = favourable;
+
+            // S34-B Guard A: once favourable progress crosses the prove-it
+            // threshold, lock in `proved = true`. It does not flip back.
+            if (!p.proved && p.mfe_pts >= PROVE_IT_MIN_FAVOURABLE_PTS) {
+                p.proved = true;
+            }
+        }
+
+        // S34-B Guard A: prove-it exit. If the trade has been open longer
+        // than PROVE_IT_SECS and it never reached PROVE_IT_MIN_FAVOURABLE_PTS
+        // of favourable excursion, force-close at the current adverse-side
+        // price ("the side we'd have to cross to exit"). Reason
+        // PROVE_IT_FAIL is logged separately from SL_HIT so post-hoc
+        // analysis can separate "stopped by structural cut" from "stopped
+        // by price-based SL".
+        const double elapsed_s =
+            (p.entry_ts_ms > 0) ? (now_ms - p.entry_ts_ms) / 1000.0 : 0.0;
+        if (!p.proved && elapsed_s >= PROVE_IT_SECS) {
+            const double xp = p.is_long ? bid : ask;
+            _close(ci, xp, "PROVE_IT_FAIL", now_ms, on_close);
+            return;
+        }
+
         bool hit_tp = false, hit_sl = false;
         double xp = 0;
         if (p.is_long) {
@@ -296,21 +525,44 @@ private:
                 int64_t now_ms, OnCloseFn on_close) noexcept {
         auto& p = pos[ci];
         if (!p.active) return;
+
+        // S34 BUG #1: raw points*lots P&L, matching BracketEngine convention
+        //   (include/BracketEngine.hpp:1216-1218). trade_lifecycle.hpp:218-222
+        //   multiplies tr.pnl/mfe/mae by tick_value_multiplier(tr.symbol) to
+        //   get USD; tick_value_multiplier("USTEC.F") = 20.0 (sizing.hpp:54).
+        //   Pre-S34 this line did not exist and tr.pnl propagated as 0.0.
+        const double pts_move = p.is_long ? (exit_px - p.entry_px)
+                                          : (p.entry_px - exit_px);
+
         omega::TradeRecord tr;
-        tr.symbol     = "USTEC";
-        tr.engine     = "UstecTrendFollow5m";
-        tr.side       = p.is_long ? "BUY" : "SELL";
+        // S34 BUG #2: "USTEC.F" matches the sizing table; "USTEC" did not.
+        tr.symbol     = "USTEC.F";
+        // S34 BUG #3: per-cell engine string so Donchian and Keltner rows
+        //   are distinct in the ledger and survive the logging.hpp dedupe.
+        //   Full cell name still goes into tr.regime below for forensics.
+        tr.engine     = std::string("UstecTrendFollow5m_") +
+                        kUstecTfCells[ci].short_name;
+        // S34 BUG #4: LONG/SHORT (ledger convention) rather than BUY/SELL.
+        tr.side       = p.is_long ? "LONG" : "SHORT";
         tr.entryPrice = p.entry_px;
         tr.exitPrice  = exit_px;
         tr.tp         = p.tp_px;
         tr.sl         = p.sl_px;
         tr.size       = lot;
+        // S34 BUG #1: actually populate the PnL fields.
+        tr.pnl        = pts_move * lot;
+        tr.net_pnl    = tr.pnl;                  // trade_lifecycle overwrites after costs
+        // S34 BUG #5: emit MFE/MAE in raw pts*lots; downstream applies mult.
+        tr.mfe        = p.mfe_pts * lot;
+        tr.mae        = p.mae_pts * lot;
         tr.entryTs    = p.entry_ts_ms / 1000;
         tr.exitTs     = now_ms / 1000;
         tr.exitReason = reason;
         tr.regime     = kUstecTfCells[ci].name;
         tr.shadow     = shadow_mode;
+
         if (on_close) on_close(tr);
+
         p.active        = false;
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
