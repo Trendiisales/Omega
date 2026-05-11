@@ -136,16 +136,37 @@ static const SymBaseline* lookup_baseline(const std::string& sym) {
 }
 
 // =============================================================================
-// Tick CSV loader (auto-detects 3-col Duka and 16-col L2 formats)
+// Tick CSV loader (auto-detects three formats from the header row)
+//   (A) Duka 3-col:        ts_ms,bid,ask
+//   (B) L2 16-col (S19):   ts_ms,bid,ask,l2_imb,...                  (bid=col1, ask=col2)
+//   (C) L2 17-col (mid):   ts_ms,mid,bid,ask,l2_imb,...              (bid=col2, ask=col3)
+// We detect (C) by checking whether the second header field is "mid".
 // =============================================================================
 static bool load_tick_csv(const std::string& path, std::vector<Tick>& out) {
     std::ifstream f(path);
     if (!f.is_open()) return false;
     std::string line;
     if (!std::getline(f, line)) return false;   // header
+
+    // Parse header for the position of the second field; "mid" → format (C).
     int n_cols = 1;
     for (char c : line) if (c == ',') ++n_cols;
-    bool is_l2 = (n_cols >= 5);                 // S19 L2 capture has many cols
+    bool has_mid_col = false;
+    {
+        size_t first_comma = line.find(',');
+        if (first_comma != std::string::npos) {
+            size_t second_comma = line.find(',', first_comma + 1);
+            std::string col1 = (second_comma == std::string::npos)
+                ? line.substr(first_comma + 1)
+                : line.substr(first_comma + 1, second_comma - first_comma - 1);
+            // trim whitespace
+            while (!col1.empty() && std::isspace(static_cast<unsigned char>(col1.front()))) col1.erase(col1.begin());
+            while (!col1.empty() && std::isspace(static_cast<unsigned char>(col1.back())))  col1.pop_back();
+            if (col1 == "mid") has_mid_col = true;
+        }
+    }
+    (void)n_cols;
+
     while (std::getline(f, line)) {
         if (line.empty()) continue;
         Tick t{};
@@ -153,25 +174,42 @@ static bool load_tick_csv(const std::string& path, std::vector<Tick>& out) {
         char* end = nullptr;
         t.ts_ms = std::strtoll(p, &end, 10); if (*end != ',') continue;
         p = end + 1;
+        if (has_mid_col) {
+            // skip the mid column
+            (void)std::strtod(p, &end); if (*end != ',') continue;
+            p = end + 1;
+        }
         t.bid = std::strtod(p, &end);        if (*end != ',') continue;
         p = end + 1;
         t.ask = std::strtod(p, &end);
         if (t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask) continue;
         out.push_back(t);
     }
-    (void)is_l2;
     return true;
 }
 
-// Extract YYYY year from filename like "..._2024-04-23.csv"; returns 0 on fail.
+// Extract YYYY year from the filename. Supports three shapes:
+//   .../l2_ticks_XAUUSD_2026-05-08.csv  (underscore-separated)
+//   .../duka_xauusd_daily/2025-09-10.csv (hyphen date at filename start)
+//   .../histdata_eurusd_daily/2024-01-15.csv
+// Strategy: scan basename for the first 4-digit run between 1900 and 2099.
 static int extract_year(const std::string& path) {
     auto pos = path.find_last_of('/');
     std::string fn = (pos == std::string::npos) ? path : path.substr(pos + 1);
-    pos = fn.find_last_of('_');
-    if (pos == std::string::npos) return 0;
-    if (fn.size() < pos + 5) return 0;
-    try { return std::stoi(fn.substr(pos + 1, 4)); }
-    catch (...) { return 0; }
+    for (size_t i = 0; i + 4 <= fn.size(); ++i) {
+        bool all_digit = true;
+        for (size_t j = 0; j < 4; ++j) {
+            if (!std::isdigit(static_cast<unsigned char>(fn[i + j]))) {
+                all_digit = false;
+                break;
+            }
+        }
+        if (!all_digit) continue;
+        const int y = std::stoi(fn.substr(i, 4));
+        if (y >= 1900 && y <= 2099) return y;
+        i += 3;     // skip past this number
+    }
+    return 0;
 }
 
 static std::string symbol_from_path(const std::string& path,
@@ -417,14 +455,17 @@ struct CellStats {
     bool                pass_wr       = false;
 };
 
+// Per-file simulation only — accumulates trades into cell.trades but does
+// NOT score. Scoring runs once at the end via finalize_cell, otherwise the
+// scoring loop would re-add every accumulated trade to cell.net_usd_total
+// on every file iteration (O(N_files) inflation of net).
 static void run_cell(const std::vector<Bar1m>& bars,
                      const std::vector<double>& atr14,
-                     const SymBaseline& base,
+                     const SymBaseline& /*base*/,
                      int year_hint,
                      bool do_london, bool do_ny,
-                     double cost_per_rt_usd,
+                     double /*cost_per_rt_usd*/,
                      CellStats& cell) {
-    // Build index of session-open bar positions.
     int prev_day = INT32_MIN;
     bool fired_london_today = false;
     bool fired_ny_today     = false;
@@ -447,9 +488,16 @@ static void run_cell(const std::vector<Bar1m>& bars,
             fired_ny_today = true;
         }
     }
+}
 
-    // Score the cell. Convert points to USD using sym baseline; subtract cost.
+// Score the cell once, after every file has contributed its trades. Idempotent:
+// resets cell.net_usd_total and cell.net_usd_by_year before summing.
+static void finalize_cell(const SymBaseline& base,
+                          double cost_per_rt_usd,
+                          CellStats& cell) {
     cell.n_total = (int)cell.trades.size();
+    cell.net_usd_total = 0.0;
+    cell.net_usd_by_year.clear();
     int wins = 0;
     for (auto& t : cell.trades) {
         t.pnl_usd_gross = t.pnl_pts * base.lot * base.usd_per_pt;
@@ -581,6 +629,9 @@ int main(int argc, char** argv) {
 
     std::fprintf(stdout, "[INFO] loaded %d ticks across %zu files\n",
                  total_ticks, files.size());
+
+    // Score every cell once (idempotent) now that all files have contributed.
+    for (auto& c : cells) finalize_cell(*base, cost, c);
 
     // Output: ranked CSV.
     // Note: outdir is assumed to already exist; create with `mkdir -p` if not.
