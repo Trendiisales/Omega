@@ -1,0 +1,470 @@
+#pragma once
+// =============================================================================
+//  XauTrendFollowD1Engine.hpp -- XAU D1 trend-follow ensemble (S33e 2026-05-11)
+// =============================================================================
+//
+//  PROVENANCE
+//
+//  Built 2026-05-11 from edge_hunt v3 Pass-1 results. D1 was untested
+//  before this pass; it surfaced three positive trend-follow cells on
+//  3 years of Dukascopy (2023-Q4 → 2025-Q3, ~570 daily bars). Realistic
+//  bid/ask fill simulation, $0.06/RT cost subtracted, 0.01 lot.
+//
+//  Cells:
+//      [A] Momentum lookback=20 sl2.0tp4.0   n=31  net=+$1134  $36.6/trade
+//      [B] Keltner  K=2.0       sl2.0tp4.0   n=15  net=+$911   $60.7/trade
+//      [C] ADX_Mom  mom=20 adx>25 sl2.0tp4.0 n=20  net=+$737   $36.9/trade
+//
+//  Yearly breakdown (Momentum lookback=20, the strongest):
+//      2023 Q4 (3 mo):  n=10, net +$178
+//      2024 (full yr):  n=11, net +$107
+//      2025 Jan-Sep:    n=10, net +$643
+//
+//  CAVEATS — different beast from the 4h ensemble:
+//      - Sample size is small per cell (15-31 trades over 30 months).
+//      - 2/3 years positive (not 3/3 like 4h ensemble).
+//      - Per-trade values are the HIGHEST in the project ($36-60), which
+//        is the upside but also means single trades matter a lot.
+//      - Very low cadence: combined ~2 trades/month across all three cells.
+//
+//  ARCHITECTURE
+//
+//  Internally aggregates D1 bars from the H4 stream that tick_gold.hpp
+//  already publishes. Each H4 close updates the engine; the engine groups
+//  by UTC date and emits D1 bars when the date advances. No new bar
+//  aggregation needed in tick_gold.hpp -- just call on_h4_bar() alongside
+//  the 4h engine.
+//
+//  SAFETY
+//      - shadow_mode = true by default; promotion to live requires
+//        operator authorisation AND a minimum 3-month shadow period.
+//      - 0.01 lot per cell, max 3 concurrent positions.
+//      - No protected file touched.
+//      - DOES NOT share state with XauTrendFollow4hEngine; both can run
+//        concurrently with their own positions.
+//
+//  USAGE
+//
+//      // globals.hpp:
+//      static omega::XauTrendFollowD1Engine g_xau_tf_d1;
+//
+//      // engine_init.hpp:
+//      g_xau_tf_d1.shadow_mode = kShadowDefault;
+//      g_xau_tf_d1.enabled     = true;
+//      g_xau_tf_d1.lot         = 0.01;
+//      g_xau_tf_d1.max_spread  = 1.0;
+//      g_xau_tf_d1.init();
+//
+//      // tick_gold.hpp (in the H4-close dispatch block, alongside g_xau_tf_4h):
+//      omega::XauTfD1Bar tf_h4{};
+//      tf_h4.bar_start_ms = s_bar_h4_ms;
+//      tf_h4.open  = s_cur_h4.open;
+//      tf_h4.high  = s_cur_h4.high;
+//      tf_h4.low   = s_cur_h4.low;
+//      tf_h4.close = s_cur_h4.close;
+//      g_xau_tf_d1.on_h4_bar(tf_h4, bid, ask, now_ms_g, bracket_on_close);
+//
+//      // tick_gold.hpp every tick (alongside g_xau_tf_4h.on_tick):
+//      g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+// =============================================================================
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <ctime>
+#include <deque>
+#include <functional>
+#include <string>
+
+#include "OmegaTradeLedger.hpp"
+
+namespace omega {
+
+// Input bar: H4 (we synthesise D1 internally by UTC date).
+struct XauTfD1Bar {
+    int64_t bar_start_ms = 0;
+    double  open  = 0.0;
+    double  high  = 0.0;
+    double  low   = 0.0;
+    double  close = 0.0;
+};
+
+// Internal daily bar (synthesised from H4 input)
+struct XauTfD1DailyBar {
+    long long date_id = 0;          // YYYYMMDD as integer
+    double    open    = 0.0;
+    double    high    = 0.0;
+    double    low     = 0.0;
+    double    close   = 0.0;
+    int       h4_count = 0;
+};
+
+struct XauTfD1Pos {
+    bool        active             = false;
+    bool        is_long            = false;
+    double      entry_px           = 0.0;
+    double      tp_px              = 0.0;
+    double      sl_px              = 0.0;
+    double      atr_at_entry       = 0.0;
+    int64_t     entry_ts_ms        = 0;
+    int         bars_held          = 0;
+    int         cooldown_bars      = 0;
+    std::string broker_position_id;
+    std::string entry_clOrdId;
+};
+
+enum class XauTfD1Family { Momentum20, Keltner20, AdxMom20 };
+struct XauTfD1CellConfig {
+    XauTfD1Family family;
+    double        sl_mult;
+    double        tp_mult;
+    const char*   name;
+};
+
+// Three validated D1 cells (3-year Duka, 2/3 years +ve each, biggest
+// per-trade edges in the project).
+static constexpr XauTfD1CellConfig kXauTfD1Cells[] = {
+    { XauTfD1Family::Momentum20, 2.0, 4.0, "D1_Momentum_lb20_sl2.0tp4.0" },
+    { XauTfD1Family::Keltner20,  2.0, 4.0, "D1_Keltner_K2_sl2.0tp4.0"    },
+    { XauTfD1Family::AdxMom20,   2.0, 4.0, "D1_ADX_Mom_adx25_sl2.0tp4.0" },
+};
+static constexpr int kXauTfD1NumCells =
+    static_cast<int>(sizeof(kXauTfD1Cells) / sizeof(kXauTfD1Cells[0]));
+
+struct XauTrendFollowD1Engine {
+public:
+    bool   shadow_mode = true;
+    bool   enabled     = false;
+    double lot         = 0.01;
+    double max_spread  = 1.0;
+
+    std::array<XauTfD1Pos, kXauTfD1NumCells> pos{};
+
+    // Daily bar history (last 40 days; enough for Momentum20 + ADX + Keltner)
+    static constexpr int kDailyHistory = 40;
+    std::deque<XauTfD1DailyBar> daily_;
+    XauTfD1DailyBar              cur_day_{};
+    bool                         cur_day_open_ = false;
+
+    // Rolling indicators on daily bars
+    static constexpr int kAtrPeriod = 14;
+    double atr14_ = 0.0;
+    int    atr_warmup_count_ = 0;
+
+    static constexpr int kEmaPeriod = 20;
+    double ema20_ = 0.0;
+    bool   ema_initialised_ = false;
+
+    static constexpr int kAdxPeriod = 14;
+    double adx14_ = 0.0;
+    double adx_atr_sum_ = 0.0;
+    double adx_pdm_sum_ = 0.0;
+    double adx_mdm_sum_ = 0.0;
+    double adx_dx_sum_  = 0.0;
+    int    adx_warmup_count_ = 0;
+    int    adx_dx_count_     = 0;
+
+    using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
+
+    void init() noexcept {
+        daily_.clear();
+        cur_day_ = {};
+        cur_day_open_ = false;
+        atr14_ = 0.0;
+        atr_warmup_count_ = 0;
+        ema20_ = 0.0;
+        ema_initialised_ = false;
+        adx14_ = 0.0;
+        adx_atr_sum_ = adx_pdm_sum_ = adx_mdm_sum_ = adx_dx_sum_ = 0.0;
+        adx_warmup_count_ = 0;
+        adx_dx_count_ = 0;
+        for (auto& p : pos) p = {};
+    }
+
+    bool any_open() const noexcept {
+        for (const auto& p : pos) if (p.active) return true;
+        return false;
+    }
+    int open_count() const noexcept {
+        int n = 0; for (const auto& p : pos) if (p.active) ++n; return n;
+    }
+
+    // ============================================================
+    //  on_h4_bar -- aggregates 6 H4 bars into 1 D1 bar; fires on
+    //               D1 close only.
+    // ============================================================
+    void on_h4_bar(const XauTfD1Bar& bar,
+                   double bid, double ask,
+                   int64_t now_ms,
+                   OnCloseFn on_close) noexcept {
+        if (!enabled) return;
+        long long date_id = _date_id_from_ms(bar.bar_start_ms);
+
+        if (!cur_day_open_) {
+            cur_day_ = {};
+            cur_day_.date_id = date_id;
+            cur_day_.open = bar.open;
+            cur_day_.high = bar.high;
+            cur_day_.low  = bar.low;
+            cur_day_.close = bar.close;
+            cur_day_.h4_count = 1;
+            cur_day_open_ = true;
+            return;
+        }
+
+        if (date_id != cur_day_.date_id) {
+            // Day rollover: finalise previous day, then start new day with
+            // the just-received H4 as the first bar of the new day.
+            _finalise_day_and_evaluate(bid, ask, now_ms, on_close);
+
+            cur_day_ = {};
+            cur_day_.date_id = date_id;
+            cur_day_.open = bar.open;
+            cur_day_.high = bar.high;
+            cur_day_.low  = bar.low;
+            cur_day_.close = bar.close;
+            cur_day_.h4_count = 1;
+            cur_day_open_ = true;
+            return;
+        }
+
+        // Same day -- extend current day's OHLC.
+        if (bar.high > cur_day_.high) cur_day_.high = bar.high;
+        if (bar.low  < cur_day_.low)  cur_day_.low  = bar.low;
+        cur_day_.close = bar.close;
+        ++cur_day_.h4_count;
+    }
+
+    // ============================================================
+    //  on_tick -- per-tick position management for any open cell
+    // ============================================================
+    void on_tick(double bid, double ask, int64_t now_ms,
+                 OnCloseFn on_close) noexcept {
+        if (!enabled) return;
+        for (int ci = 0; ci < kXauTfD1NumCells; ++ci) {
+            if (!pos[ci].active) continue;
+            _manage_open(ci, bid, ask, now_ms, on_close);
+        }
+    }
+
+    void force_close(double bid, double ask, int64_t now_ms,
+                     OnCloseFn on_close, const char* reason) noexcept {
+        for (int ci = 0; ci < kXauTfD1NumCells; ++ci) {
+            if (!pos[ci].active) continue;
+            double xp = pos[ci].is_long ? bid : ask;
+            _close(ci, xp, reason ? reason : "FORCE_CLOSE", now_ms, on_close);
+        }
+    }
+
+private:
+    static long long _date_id_from_ms(int64_t bar_start_ms) noexcept {
+        std::time_t tt = (std::time_t)(bar_start_ms / 1000);
+        std::tm tm{};
+#if defined(_WIN32)
+        gmtime_s(&tm, &tt);
+#else
+        gmtime_r(&tt, &tm);
+#endif
+        return (long long)(tm.tm_year + 1900) * 10000LL
+             + (long long)(tm.tm_mon + 1)     * 100LL
+             + (long long)tm.tm_mday;
+    }
+
+    // Day closed: push to history, update indicators, then evaluate cells.
+    void _finalise_day_and_evaluate(double bid, double ask,
+                                    int64_t now_ms,
+                                    OnCloseFn on_close) noexcept {
+        if (!cur_day_open_) return;
+        daily_.push_back(cur_day_);
+        while ((int)daily_.size() > kDailyHistory) daily_.pop_front();
+
+        _update_atr14();
+        _update_ema20();
+        _update_adx14();
+
+        for (auto& p : pos) {
+            if (p.cooldown_bars > 0) --p.cooldown_bars;
+            if (p.active) ++p.bars_held;
+        }
+
+        if ((int)daily_.size() < 22) return;   // need 20-bar momentum + warmup
+        if (atr14_ <= 0.0) return;
+        if (ask - bid > max_spread) return;
+
+        for (int ci = 0; ci < kXauTfD1NumCells; ++ci) {
+            if (pos[ci].active) continue;
+            if (pos[ci].cooldown_bars > 0) continue;
+            int side = _evaluate_signal(ci);
+            if (side == 0) continue;
+            _fire_entry(ci, side, bid, ask, now_ms);
+        }
+        (void)on_close;
+    }
+
+    void _update_atr14() noexcept {
+        if (daily_.size() < 2) { atr14_ = 0.0; return; }
+        const auto& cur  = daily_.back();
+        const auto& prev = daily_[daily_.size() - 2];
+        double tr = std::max(cur.high - cur.low,
+                             std::max(std::abs(cur.high - prev.close),
+                                      std::abs(cur.low  - prev.close)));
+        if (atr_warmup_count_ < kAtrPeriod) {
+            atr14_ = (atr14_ * atr_warmup_count_ + tr) / (atr_warmup_count_ + 1);
+            ++atr_warmup_count_;
+        } else {
+            atr14_ = (atr14_ * (kAtrPeriod - 1) + tr) / kAtrPeriod;
+        }
+    }
+
+    void _update_ema20() noexcept {
+        if (daily_.empty()) return;
+        double c = daily_.back().close;
+        if (!ema_initialised_) { ema20_ = c; ema_initialised_ = true; }
+        else {
+            double a = 2.0 / (kEmaPeriod + 1);
+            ema20_ = a * c + (1.0 - a) * ema20_;
+        }
+    }
+
+    void _update_adx14() noexcept {
+        if (daily_.size() < 2) return;
+        const auto& cur  = daily_.back();
+        const auto& prev = daily_[daily_.size() - 2];
+        double up = cur.high - prev.high;
+        double dn = prev.low - cur.low;
+        double pdm = (up > dn && up > 0) ? up : 0.0;
+        double mdm = (dn > up && dn > 0) ? dn : 0.0;
+        double tr  = std::max(cur.high - cur.low,
+                              std::max(std::abs(cur.high - prev.close),
+                                       std::abs(cur.low  - prev.close)));
+        if (adx_warmup_count_ < kAdxPeriod) {
+            adx_atr_sum_ += tr;
+            adx_pdm_sum_ += pdm;
+            adx_mdm_sum_ += mdm;
+            ++adx_warmup_count_;
+        } else {
+            adx_atr_sum_ = adx_atr_sum_ - adx_atr_sum_ / kAdxPeriod + tr;
+            adx_pdm_sum_ = adx_pdm_sum_ - adx_pdm_sum_ / kAdxPeriod + pdm;
+            adx_mdm_sum_ = adx_mdm_sum_ - adx_mdm_sum_ / kAdxPeriod + mdm;
+        }
+        if (adx_warmup_count_ >= kAdxPeriod && adx_atr_sum_ > 1e-12) {
+            double pdi = 100.0 * adx_pdm_sum_ / adx_atr_sum_;
+            double mdi = 100.0 * adx_mdm_sum_ / adx_atr_sum_;
+            double sum = pdi + mdi;
+            double dx  = (sum > 1e-12) ? 100.0 * std::abs(pdi - mdi) / sum : 0.0;
+            if (adx_dx_count_ < kAdxPeriod) {
+                adx_dx_sum_ += dx;
+                ++adx_dx_count_;
+                if (adx_dx_count_ == kAdxPeriod) adx14_ = adx_dx_sum_ / kAdxPeriod;
+            } else {
+                adx14_ = (adx14_ * (kAdxPeriod - 1) + dx) / kAdxPeriod;
+            }
+        }
+    }
+
+    int _evaluate_signal(int ci) const noexcept {
+        switch (kXauTfD1Cells[ci].family) {
+            case XauTfD1Family::Momentum20: return _sig_momentum(20);
+            case XauTfD1Family::Keltner20:  return _sig_keltner();
+            case XauTfD1Family::AdxMom20:   return _sig_adx_momentum(25.0, 20);
+        }
+        return 0;
+    }
+
+    int _sig_momentum(int N) const noexcept {
+        if ((int)daily_.size() < N + 2) return 0;
+        const int last = (int)daily_.size() - 1;
+        double cur  = daily_[last].close;
+        double prev = daily_[last - N].close;
+        if (cur > prev * 1.001) return +1;
+        if (cur < prev * 0.999) return -1;
+        return 0;
+    }
+
+    int _sig_keltner() const noexcept {
+        if (!ema_initialised_ || atr14_ <= 0.0) return 0;
+        if (daily_.size() < 22) return 0;
+        const auto& cur = daily_.back();
+        double up = ema20_ + 2.0 * atr14_;
+        double lo = ema20_ - 2.0 * atr14_;
+        if (cur.close > up) return +1;
+        if (cur.close < lo) return -1;
+        return 0;
+    }
+
+    int _sig_adx_momentum(double adx_thr, int N) const noexcept {
+        if (adx_dx_count_ < kAdxPeriod) return 0;
+        if (adx14_ < adx_thr) return 0;
+        if ((int)daily_.size() < N + 2) return 0;
+        const int last = (int)daily_.size() - 1;
+        double cur  = daily_[last].close;
+        double prev = daily_[last - N].close;
+        if (cur > prev * 1.001) return +1;
+        if (cur < prev * 0.999) return -1;
+        return 0;
+    }
+
+    void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
+        const auto& cfg = kXauTfD1Cells[ci];
+        double entry = (side > 0) ? ask : bid;
+        if (entry <= 0.0 || atr14_ <= 0.0) return;
+        double sl_dist = cfg.sl_mult * atr14_;
+        double tp_dist = cfg.tp_mult * atr14_;
+        auto& p = pos[ci];
+        p.active        = true;
+        p.is_long       = (side > 0);
+        p.entry_px      = entry;
+        p.sl_px         = (side > 0) ? entry - sl_dist : entry + sl_dist;
+        p.tp_px         = (side > 0) ? entry + tp_dist : entry - tp_dist;
+        p.atr_at_entry  = atr14_;
+        p.entry_ts_ms   = now_ms;
+        p.bars_held     = 0;
+        p.cooldown_bars = 0;
+        p.broker_position_id.clear();
+        p.entry_clOrdId.clear();
+    }
+
+    void _manage_open(int ci, double bid, double ask, int64_t now_ms,
+                      OnCloseFn on_close) noexcept {
+        auto& p = pos[ci];
+        bool hit_tp = false, hit_sl = false;
+        double xp = 0;
+        if (p.is_long) {
+            if (bid <= p.sl_px) { xp = p.sl_px; hit_sl = true; }
+            else if (bid >= p.tp_px) { xp = p.tp_px; hit_tp = true; }
+        } else {
+            if (ask >= p.sl_px) { xp = p.sl_px; hit_sl = true; }
+            else if (ask <= p.tp_px) { xp = p.tp_px; hit_tp = true; }
+        }
+        if (!hit_tp && !hit_sl) return;
+        _close(ci, xp, hit_tp ? "TP_HIT" : "SL_HIT", now_ms, on_close);
+    }
+
+    void _close(int ci, double exit_px, const char* reason,
+                int64_t now_ms, OnCloseFn on_close) noexcept {
+        auto& p = pos[ci];
+        if (!p.active) return;
+        omega::TradeRecord tr;
+        tr.symbol     = "XAUUSD";
+        tr.engine     = "XauTrendFollowD1";
+        tr.side       = p.is_long ? "BUY" : "SELL";
+        tr.entryPrice = p.entry_px;
+        tr.exitPrice  = exit_px;
+        tr.tp         = p.tp_px;
+        tr.sl         = p.sl_px;
+        tr.size       = lot;
+        tr.entryTs    = p.entry_ts_ms / 1000;
+        tr.exitTs     = now_ms / 1000;
+        tr.exitReason = reason;
+        tr.regime     = kXauTfD1Cells[ci].name;
+        tr.shadow     = shadow_mode;
+        if (on_close) on_close(tr);
+        p.active        = false;
+        p.broker_position_id.clear();
+        p.entry_clOrdId.clear();
+        p.cooldown_bars = 1;
+    }
+};
+
+} // namespace omega

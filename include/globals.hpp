@@ -385,6 +385,15 @@ static omega::XauTrendFollow4hEngine g_xau_tf_4h;
 #include "UstecTrendFollow5mEngine.hpp"
 static omega::UstecTrendFollow5mEngine g_ustec_tf_5m;
 
+// 2026-05-11 S33e: XauTrendFollowD1Engine -- daily-timeframe trend-follow
+//   ensemble for XAU. 3 cells (Momentum lb=20, Keltner K=2.0, ADX_Mom adx>25),
+//   all on sl2.0_tp4.0 ATR brackets. Synthesises D1 bars internally from the
+//   H4 stream so no new bar aggregation needed in tick_gold.hpp. 0.01 lot/cell,
+//   max 3 concurrent. Shadow-default. Lower cadence than 4h ensemble (~2
+//   trades/month combined) but biggest per-trade edges in the project ($36-60).
+#include "XauTrendFollowD1Engine.hpp"
+static omega::XauTrendFollowD1Engine g_xau_tf_d1;
+
 // 2026-05-08 S20+: RiskMonitor -- per-engine logging-only risk surveillance.
 //   Watches WR break-even, fire rate over/under, and spread-at-entry drift
 //   for every engine in data/risk_monitor_thresholds.csv (calibrated by

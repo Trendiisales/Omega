@@ -882,8 +882,25 @@ static void init_engines(const std::string& cfg_path)
         g_ustec_tf_5m.lot         = 0.1;
         g_ustec_tf_5m.max_spread  = 5.0;
         g_ustec_tf_5m.init();
-        printf("[OMEGA-INIT] UstecTrendFollow5mEngine initialised: shadow=%d enabled=%d lot=%.2f (HARD SHADOW)\n",
+        printf("[OMEGA-INIT] UstecTrendFollow5mEngine initialised: shadow=%d enabled=%d lot=%.2f cells=2"
+               " (Donchian,Keltner) (HARD SHADOW)\n",
                (int)g_ustec_tf_5m.shadow_mode, (int)g_ustec_tf_5m.enabled, g_ustec_tf_5m.lot);
+        fflush(stdout);
+
+        // ── XauTrendFollowD1Engine (S33e 2026-05-11) ──────────────────────────
+        // 3-cell daily trend-follow ensemble (Momentum lb=20, Keltner K=2.0,
+        // ADX_Mom adx>25). D1 bars synthesised internally from the same
+        // s_cur_h4 stream the 4h engine uses. Shadow-default. 0.01 lot/cell.
+        // Lower cadence than 4h ensemble (~2 trades/month) but biggest
+        // per-trade edges in the project ($36-60). 2/3 Duka years +ve per cell.
+        g_xau_tf_d1.shadow_mode = kShadowDefault;
+        g_xau_tf_d1.enabled     = true;
+        g_xau_tf_d1.lot         = 0.01;
+        g_xau_tf_d1.max_spread  = 1.0;
+        g_xau_tf_d1.init();
+        printf("[OMEGA-INIT] XauTrendFollowD1Engine initialised: shadow=%d enabled=%d lot=%.2f cells=3"
+               " (Momentum,Keltner,ADX_Mom)\n",
+               (int)g_xau_tf_d1.shadow_mode, (int)g_xau_tf_d1.enabled, g_xau_tf_d1.lot);
         fflush(stdout);
 
         // ?? EmaPullbackPortfolio -- Tier-3 ship 2026-04-30 ?????????????????????
