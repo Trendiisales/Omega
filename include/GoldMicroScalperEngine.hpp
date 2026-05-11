@@ -288,12 +288,26 @@
 //   diagnostic we want -- it tells us which engine internal is the source
 //   of the live-vs-backtest gap that bled money on Friday May 8.
 //
-// CAVEAT 3 -- the cTrader real-cost number is still missing:
-//   S32 §4 / §6.2 requires the realized $-per-RT from account 8077780's
-//   May 8-9 ledger. Operator chose to ship anyway with the BlackBull
-//   web-spec $0.06/RT default; if real cost is materially higher the
-//   +$2.31/day backtest headline shrinks or inverts. Re-derive the
-//   expected daily PnL once the ledger arrives.
+// CAVEAT 3 -- 2026-05-11 (S33 update): cost question is RESOLVED at
+//   $0.06/RT (BlackBull ECN Prime web-spec, operator-confirmed). The S32
+//   §4 / §6.2 prerequisite is closed. The actual gating issue is now
+//   GUI-vs-cTrader RECONCILIATION: Omega's trade CSV writer in
+//   omega_main.hpp:281 emits engine `pnl` / `net_pnl` only and does NOT
+//   serialize the `broker_*` fields that already exist on the in-memory
+//   TradeRecord (broker_entry_filled, broker_close_filled,
+//   broker_entry_fill_px, broker_close_fill_px, broker_pnl,
+//   entry_clOrdId, close_clOrdId). FIX ExecutionReports populate those
+//   fields in memory via handle_execution_report, but the GUI/CSV layer
+//   never sees them, so the dashboard shows what the engine THOUGHT
+//   happened, not what the broker actually filled. Friday's NZ$310 gap
+//   is consistent with this pattern: engine reported BE/small-loss while
+//   the broker had unfilled close legs leaving real positions open
+//   (orphan-pair incidents). Fix lives in protected files (omega_main
+//   CSV header + writer line, plus a verification pass in trade_lifecycle
+//   to ensure handle_execution_report is wiring through correctly) and
+//   needs operator sign-off per rule 3 / 4. The reconciliation tool
+//   shipped in S33 (backtest/ledger_reconcile.cpp) lets us measure the
+//   gap once a cTrader CSV is exported, without touching protected code.
 //
 // SAFETY POSTURE (unchanged from S24 + S32):
 //   - Engine starts with shadow_mode = true unless engine_init.hpp pins
