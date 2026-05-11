@@ -866,7 +866,8 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
         g_xau_tf_4h.init();
-        printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=3\n",
+        printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=5"
+               " (Donchian,InsideBar,ER0.20,Keltner,ADX_Mom)\n",
                (int)g_xau_tf_4h.shadow_mode, (int)g_xau_tf_4h.enabled, g_xau_tf_4h.lot);
         fflush(stdout);
 

@@ -104,7 +104,12 @@ struct XauTfPos {
 };
 
 // ---------- Cell config (signal selector + bracket geometry)
-enum class XauTfFamily { Donchian20, InsideBar, ErTrend020 };
+//
+// 2026-05-11 S33d extension: added Keltner20 and AdxMom20 cells based on
+// Pass-1 edge_hunt results showing 3/3-year positive PnL convergence on
+// XAU 4h (Keltner $687, ADX_Mom $648). Both use the same realistic-fill
+// bracket as the original three cells.
+enum class XauTfFamily { Donchian20, InsideBar, ErTrend020, Keltner20, AdxMom20 };
 struct XauTfCellConfig {
     XauTfFamily family;
     double      sl_mult;   // SL = sl_mult * ATR
@@ -112,11 +117,13 @@ struct XauTfCellConfig {
     const char* name;      // e.g. "Donchian_N20_sl1.5tp3.0"
 };
 
-// Three baseline cells -- the validated survivors
+// Five validated survivor cells -- all 3/3 Duka years +ve, realistic fills
 static constexpr XauTfCellConfig kXauTfCells[] = {
     { XauTfFamily::Donchian20,  1.5, 3.0, "Donchian_N20_sl1.5tp3.0" },
     { XauTfFamily::InsideBar,   2.0, 4.0, "InsideBar_sl2.0tp4.0"     },
     { XauTfFamily::ErTrend020,  1.5, 3.0, "ER0.20_sl1.5tp3.0"        },
+    { XauTfFamily::Keltner20,   1.5, 3.0, "Keltner_K2_sl1.5tp3.0"    },
+    { XauTfFamily::AdxMom20,    2.0, 4.0, "ADX_Mom_adx25_sl2.0tp4.0" },
 };
 static constexpr int kXauTfNumCells =
     static_cast<int>(sizeof(kXauTfCells) / sizeof(kXauTfCells[0]));
@@ -145,12 +152,34 @@ public:
     double atr14_ = 0.0;
     int    atr_warmup_count_ = 0;
 
+    // 2026-05-11 S33d-ext: rolling EMA20 (for Keltner channel) and ADX14
+    // (for AdxMom cell).  Updated on each on_h4_bar call.
+    static constexpr int kEmaPeriod = 20;
+    double ema20_ = 0.0;
+    bool   ema_initialised_ = false;
+
+    // ADX Wilder state -- accumulators across bars.
+    static constexpr int kAdxPeriod = 14;
+    double adx14_ = 0.0;
+    double adx_atr_sum_ = 0.0;
+    double adx_pdm_sum_ = 0.0;
+    double adx_mdm_sum_ = 0.0;
+    double adx_dx_sum_  = 0.0;
+    int    adx_warmup_count_ = 0;
+    int    adx_dx_count_     = 0;
+
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
     void init() noexcept {
         bars_.clear();
         atr14_ = 0.0;
         atr_warmup_count_ = 0;
+        ema20_ = 0.0;
+        ema_initialised_ = false;
+        adx14_ = 0.0;
+        adx_atr_sum_ = adx_pdm_sum_ = adx_mdm_sum_ = adx_dx_sum_ = 0.0;
+        adx_warmup_count_ = 0;
+        adx_dx_count_ = 0;
         for (auto& p : pos) p = {};
     }
 
@@ -184,6 +213,10 @@ public:
         } else {
             _update_local_atr();
         }
+
+        // S33d-ext: update EMA20 (for Keltner) and ADX14 (for AdxMom).
+        _update_ema20();
+        _update_adx14();
 
         // Advance cell cooldowns and increment bars_held on open positions.
         for (auto& p : pos) {
@@ -249,13 +282,90 @@ private:
         }
     }
 
+    // ---------- Indicator updaters (S33d-ext: EMA20 + ADX14)
+    void _update_ema20() noexcept {
+        if (bars_.empty()) return;
+        double c = bars_.back().close;
+        if (!ema_initialised_) {
+            ema20_ = c;
+            ema_initialised_ = true;
+        } else {
+            double alpha = 2.0 / (kEmaPeriod + 1);
+            ema20_ = alpha * c + (1.0 - alpha) * ema20_;
+        }
+    }
+
+    void _update_adx14() noexcept {
+        if (bars_.size() < 2) return;
+        const auto& cur  = bars_[bars_.size() - 1];
+        const auto& prev = bars_[bars_.size() - 2];
+        double up = cur.high - prev.high;
+        double dn = prev.low - cur.low;
+        double pdm = (up > dn && up > 0) ? up : 0.0;
+        double mdm = (dn > up && dn > 0) ? dn : 0.0;
+        double tr  = std::max(cur.high - cur.low,
+                              std::max(std::abs(cur.high - prev.close),
+                                       std::abs(cur.low  - prev.close)));
+        // Wilder warmup: simple sum for first kAdxPeriod bars
+        if (adx_warmup_count_ < kAdxPeriod) {
+            adx_atr_sum_ += tr;
+            adx_pdm_sum_ += pdm;
+            adx_mdm_sum_ += mdm;
+            ++adx_warmup_count_;
+        } else {
+            adx_atr_sum_ = adx_atr_sum_ - adx_atr_sum_ / kAdxPeriod + tr;
+            adx_pdm_sum_ = adx_pdm_sum_ - adx_pdm_sum_ / kAdxPeriod + pdm;
+            adx_mdm_sum_ = adx_mdm_sum_ - adx_mdm_sum_ / kAdxPeriod + mdm;
+        }
+        if (adx_warmup_count_ >= kAdxPeriod && adx_atr_sum_ > 1e-12) {
+            double pdi = 100.0 * adx_pdm_sum_ / adx_atr_sum_;
+            double mdi = 100.0 * adx_mdm_sum_ / adx_atr_sum_;
+            double sum = pdi + mdi;
+            double dx  = (sum > 1e-12) ? 100.0 * std::abs(pdi - mdi) / sum : 0.0;
+            if (adx_dx_count_ < kAdxPeriod) {
+                adx_dx_sum_ += dx;
+                ++adx_dx_count_;
+                if (adx_dx_count_ == kAdxPeriod) adx14_ = adx_dx_sum_ / kAdxPeriod;
+            } else {
+                adx14_ = (adx14_ * (kAdxPeriod - 1) + dx) / kAdxPeriod;
+            }
+        }
+    }
+
     // ---------- Signal evaluators
     int _evaluate_signal(int cell_idx) const noexcept {
         switch (kXauTfCells[cell_idx].family) {
             case XauTfFamily::Donchian20:  return _sig_donchian20();
             case XauTfFamily::InsideBar:   return _sig_inside_bar();
             case XauTfFamily::ErTrend020:  return _sig_er_trend(0.20, 20);
+            case XauTfFamily::Keltner20:   return _sig_keltner();
+            case XauTfFamily::AdxMom20:    return _sig_adx_momentum(25.0, 20);
         }
+        return 0;
+    }
+
+    // S33d-ext: Keltner channel break. EMA20 +/- 2*ATR14 envelope.
+    int _sig_keltner() const noexcept {
+        if (!ema_initialised_ || atr14_ <= 0.0) return 0;
+        if (bars_.size() < 22) return 0;
+        const auto& cur = bars_.back();
+        double up = ema20_ + 2.0 * atr14_;
+        double lo = ema20_ - 2.0 * atr14_;
+        if (cur.close > up) return +1;
+        if (cur.close < lo) return -1;
+        return 0;
+    }
+
+    // S33d-ext: ADX-gated momentum.  Only fire when ADX >= adx_thr.
+    int _sig_adx_momentum(double adx_thr, int N) const noexcept {
+        if (adx_dx_count_ < kAdxPeriod) return 0;     // ADX not warm yet
+        if (adx14_ < adx_thr) return 0;
+        if ((int)bars_.size() < N + 2) return 0;
+        const int last = (int)bars_.size() - 1;
+        double cur  = bars_[last].close;
+        double prev = bars_[last - N].close;
+        if (cur > prev * 1.001) return +1;
+        if (cur < prev * 0.999) return -1;
         return 0;
     }
 
