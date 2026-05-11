@@ -58,6 +58,25 @@
 //      // tick_gold.hpp per-tick:
 //      g_xau_tf_2h.on_tick(bid, ask, now_ms_g, bracket_on_close);
 // =============================================================================
+//
+//  S34 P1 FIXES (2026-05-12) -- close-path bug class from HANDOFF_S34.md §3.2,
+//  §4.2. See XauTrendFollow4hEngine.hpp for full diagnosis. Bug numbers
+//  below match the table in §3.2.
+//
+//    #1 tr.pnl was never assigned in _close. Fix: pts_move = (long?
+//       exit-entry : entry-exit); tr.pnl = pts_move * lot. Downstream
+//       handle_closed_trade applies tick_value_multiplier(symbol) for USD.
+//    #3 tr.engine was bare "XauTrendFollow2h" for all 4 cells. Fix:
+//       tr.engine = "XauTrendFollow2h_" + cell.name.
+//    #4 tr.side was BUY/SELL. Fix: LONG/SHORT.
+//    #5 MFE/MAE never tracked. Fix: mfe/mae fields on XauTf2hPos, updated
+//       per tick in _manage_open with mid = (bid+ask)/2, propagated to
+//       TradeRecord.mfe/.mae in _close.
+//
+//  Bug #2 (symbol key) NOT applicable per handoff §4.2 -- "XAUUSD" is
+//  the right sizing-table key. S34-B guards NOT carried over (5m-USTEC
+//  calibrated, meaningless on 2h XAU).
+// =============================================================================
 
 #include <algorithm>
 #include <array>
@@ -90,6 +109,9 @@ struct XauTf2hPos {
     int64_t     entry_ts_ms        = 0;
     int         bars_held          = 0;
     int         cooldown_bars      = 0;
+    // S34 P1 fix #5: per-position MFE/MAE in price units (>=0).
+    double      mfe                = 0.0;
+    double      mae                = 0.0;
     std::string broker_position_id;
     std::string entry_clOrdId;
 };
@@ -350,6 +372,9 @@ private:
         p.entry_ts_ms   = now_ms;
         p.bars_held     = 0;
         p.cooldown_bars = 0;
+        // S34 P1 fix #5: reset MFE/MAE per new entry.
+        p.mfe           = 0.0;
+        p.mae           = 0.0;
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
     }
@@ -357,6 +382,14 @@ private:
     void _manage_open(int ci, double bid, double ask, int64_t now_ms,
                       OnCloseFn on_close) noexcept {
         auto& p = pos[ci];
+
+        // S34 P1 fix #5: update MFE/MAE on every tick using mid price.
+        const double mid = (bid + ask) * 0.5;
+        const double favourable = p.is_long ? (mid - p.entry_px)
+                                            : (p.entry_px - mid);
+        if (favourable > p.mfe) p.mfe = favourable;
+        if (-favourable > p.mae) p.mae = -favourable;
+
         bool hit_tp = false, hit_sl = false;
         double xp = 0;
         if (p.is_long) {
@@ -375,10 +408,16 @@ private:
         auto& p = pos[ci];
         if (!p.active) return;
 
+        // S34 P1 fix #1: pts_move signed against direction so profit is +ve.
+        const double pts_move = p.is_long ? (exit_px - p.entry_px)
+                                          : (p.entry_px - exit_px);
+
         omega::TradeRecord tr;
         tr.symbol     = "XAUUSD";
-        tr.engine     = "XauTrendFollow2h";
-        tr.side       = p.is_long ? "BUY" : "SELL";
+        // S34 P1 fix #3: per-cell engine string.
+        tr.engine     = std::string("XauTrendFollow2h_") + kXauTf2hCells[ci].name;
+        // S34 P1 fix #4: LONG/SHORT, not BUY/SELL.
+        tr.side       = p.is_long ? "LONG" : "SHORT";
         tr.entryPrice = p.entry_px;
         tr.exitPrice  = exit_px;
         tr.tp         = p.tp_px;
@@ -389,6 +428,11 @@ private:
         tr.exitReason = reason;
         tr.regime     = kXauTf2hCells[ci].name;
         tr.shadow     = shadow_mode;
+        // S34 P1 fix #1: gross pnl in price-points*lot; USD via tick_mult.
+        tr.pnl        = pts_move * lot;
+        // S34 P1 fix #5: propagate MFE/MAE.
+        tr.mfe        = p.mfe;
+        tr.mae        = p.mae;
 
         if (on_close) on_close(tr);
 

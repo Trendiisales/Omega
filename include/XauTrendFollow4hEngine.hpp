@@ -65,6 +65,38 @@
 //      // tick_gold.hpp on every tick (alongside g_donchian.on_tick):
 //      g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
 // =============================================================================
+//
+//  S34 P1 FIXES (2026-05-12) -- close-path bug class from HANDOFF_S34.md §3.2,
+//  §4.2. Same pattern as the UstecTrendFollow5mEngine fixes shipped in
+//  commit b1932d2. Bug numbers below match the table in §3.2.
+//
+//    #1 tr.pnl was never assigned in _close(); the trailing comment claimed
+//       handle_closed_trade would compute it, but it does not -- it only
+//       multiplies tr.pnl by tick_value_multiplier(symbol). Result: every
+//       closed trade shipped PnL=$0 to the ledger. Fix: compute
+//       pts_move = (long ? exit-entry : entry-exit), assign
+//       tr.pnl = pts_move * lot. Matches BracketEngine.hpp:1216-1218.
+//
+//    #3 tr.engine was the bare string "XauTrendFollow4h" for all six cells;
+//       ledger queries grouping by engine could not distinguish cells. Fix:
+//       tr.engine = "XauTrendFollow4h_" + cell.name. (Bug #2 from §3.2 --
+//       wrong symbol key -- is NOT present per handoff §4.2: "XAUUSD" is
+//       the correct sizing-table key for these engines.)
+//
+//    #4 tr.side was "BUY"/"SELL"; ledger convention is "LONG"/"SHORT".
+//
+//    #5 MFE/MAE never tracked; tr.mfe and tr.mae shipped as 0. Fix: add
+//       mfe/mae fields to XauTfPos, update each tick in _manage_open using
+//       mid = (bid+ask)/2, propagate to TradeRecord in _close.
+//
+//  Bug #2 (symbol key) deliberately NOT changed -- "XAUUSD" matches the
+//  existing sizing table per handoff §4.2 which omits #2 from the
+//  XAU-engine bug list.
+//
+//  S34-B structural guards (PROVE_IT exit, cell mutual exclusion,
+//  MIN_ATR floor) NOT carried over -- they are calibrated for 5m USTEC and
+//  meaningless on a 4h timeframe.
+// =============================================================================
 
 #include <algorithm>
 #include <array>
@@ -99,6 +131,12 @@ struct XauTfPos {
     int64_t     entry_ts_ms        = 0;
     int         bars_held          = 0;
     int         cooldown_bars      = 0;
+    // S34 P1 fix #5: per-position MFE/MAE in price units. Both stored as
+    // POSITIVE distances from entry. Updated per tick in _manage_open using
+    // mid = (bid+ask)/2; propagated to TradeRecord.mfe / TradeRecord.mae in
+    // _close.
+    double      mfe                = 0.0;   // max favourable excursion (>=0)
+    double      mae                = 0.0;   // max adverse  excursion (>=0)
     std::string broker_position_id;
     std::string entry_clOrdId;
 };
@@ -464,6 +502,9 @@ private:
         p.entry_ts_ms   = now_ms;
         p.bars_held     = 0;
         p.cooldown_bars = 0;
+        // S34 P1 fix #5: reset MFE/MAE per new entry.
+        p.mfe           = 0.0;
+        p.mae           = 0.0;
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
 
@@ -478,6 +519,14 @@ private:
                       OnCloseFn on_close) noexcept {
         auto& p = pos[ci];
         if (!p.active) return;
+
+        // S34 P1 fix #5: update MFE/MAE on every tick using mid price.
+        // Both stored as positive distances from entry.
+        const double mid = (bid + ask) * 0.5;
+        const double favourable = p.is_long ? (mid - p.entry_px)
+                                            : (p.entry_px - mid);
+        if (favourable > p.mfe) p.mfe = favourable;
+        if (-favourable > p.mae) p.mae = -favourable;
 
         // Long: exit at bid when bid touches sl/tp. Short: exit at ask.
         bool hit_tp = false, hit_sl = false;
@@ -500,12 +549,22 @@ private:
         auto& p = pos[ci];
         if (!p.active) return;
 
+        // S34 P1 fix #1: compute pts_move and assign tr.pnl.
+        // pts_move is signed against position direction so that profitable
+        // trades produce a positive number. handle_closed_trade applies the
+        // symbol-specific tick_value_multiplier downstream.
+        const double pts_move = p.is_long ? (exit_px - p.entry_px)
+                                          : (p.entry_px - exit_px);
+
         // Build TradeRecord.  Caller's on_close (e.g. bracket_on_close)
         // handles ledger ingest + PnL math.
         omega::TradeRecord tr;
         tr.symbol     = "XAUUSD";
-        tr.engine     = "XauTrendFollow4h";
-        tr.side       = p.is_long ? "BUY" : "SELL";
+        // S34 P1 fix #3: per-cell engine string so ledger queries grouping
+        // by engine can distinguish cells. Cell name is unique per row.
+        tr.engine     = std::string("XauTrendFollow4h_") + kXauTfCells[ci].name;
+        // S34 P1 fix #4: ledger convention is LONG/SHORT, not BUY/SELL.
+        tr.side       = p.is_long ? "LONG" : "SHORT";
         tr.entryPrice = p.entry_px;
         tr.exitPrice  = exit_px;
         tr.tp         = p.tp_px;
@@ -514,9 +573,15 @@ private:
         tr.entryTs    = p.entry_ts_ms / 1000;
         tr.exitTs     = now_ms / 1000;
         tr.exitReason = reason;
-        tr.regime     = kXauTfCells[ci].name;  // cell name -> regime field
+        tr.regime     = kXauTfCells[ci].name;  // cell name -> regime field (unchanged)
         tr.shadow     = shadow_mode;
-        // pnl will be computed by handle_closed_trade after tick_mult applied.
+        // S34 P1 fix #1: assign gross pnl. tick_value_multiplier(symbol) is
+        // applied downstream by handle_closed_trade to get USD.
+        tr.pnl        = pts_move * lot;
+        // S34 P1 fix #5: propagate MFE/MAE accumulated during the position
+        // life. Both in price units (XAU points).
+        tr.mfe        = p.mfe;
+        tr.mae        = p.mae;
 
         if (on_close) on_close(tr);
 
@@ -525,6 +590,7 @@ private:
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
         p.cooldown_bars = 1;
+        // (mfe/mae reset on next _fire_entry; harmless to leave residual)
     }
 };
 
