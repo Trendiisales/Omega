@@ -124,10 +124,13 @@ struct XauTfD1CellConfig {
 
 // Three validated D1 cells (3-year Duka, 2/3 years +ve each, biggest
 // per-trade edges in the project).
+// S33h 2026-05-11: D1 Keltner R:R upgrade from Pass-5 deep_dive v5.
+// Switching TP from 4.0*ATR to 6.0*ATR (R:R 2:1 -> 3:1 given SL=2.0)
+// lifts net from $911 to $1278 over 30 months (+$367, BE jumps to $106/RT).
 static constexpr XauTfD1CellConfig kXauTfD1Cells[] = {
-    { XauTfD1Family::Momentum20, 2.0, 4.0, "D1_Momentum_lb20_sl2.0tp4.0" },
-    { XauTfD1Family::Keltner20,  2.0, 4.0, "D1_Keltner_K2_sl2.0tp4.0"    },
-    { XauTfD1Family::AdxMom20,   2.0, 4.0, "D1_ADX_Mom_adx25_sl2.0tp4.0" },
+    { XauTfD1Family::Momentum20, 2.0, 4.0, "D1_Momentum_lb20_sl2.0tp4.0"        },
+    { XauTfD1Family::Keltner20,  2.0, 6.0, "D1_Keltner_K2_sl2.0tp6.0_RR3to1"    },  // was 2.0, 4.0
+    { XauTfD1Family::AdxMom20,   2.0, 4.0, "D1_ADX_Mom_adx25_sl2.0tp4.0"        },
 };
 static constexpr int kXauTfD1NumCells =
     static_cast<int>(sizeof(kXauTfD1Cells) / sizeof(kXauTfD1Cells[0]));

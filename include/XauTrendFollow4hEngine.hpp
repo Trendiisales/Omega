@@ -109,7 +109,7 @@ struct XauTfPos {
 // Pass-1 edge_hunt results showing 3/3-year positive PnL convergence on
 // XAU 4h (Keltner $687, ADX_Mom $648). Both use the same realistic-fill
 // bracket as the original three cells.
-enum class XauTfFamily { Donchian20, InsideBar, ErTrend020, Keltner20, AdxMom20 };
+enum class XauTfFamily { Donchian20, InsideBar, ErTrend020, Keltner20, AdxMom20, RangeExpand };
 struct XauTfCellConfig {
     XauTfFamily family;
     double      sl_mult;   // SL = sl_mult * ATR
@@ -117,13 +117,30 @@ struct XauTfCellConfig {
     const char* name;      // e.g. "Donchian_N20_sl1.5tp3.0"
 };
 
-// Five validated survivor cells -- all 3/3 Duka years +ve, realistic fills
+// Five validated survivor cells -- all 3/3 Duka years +ve, realistic fills.
+//
+// 2026-05-11 S33g R:R OPTIMISATION: Pass-4 deep_dive showed two cells were
+// using sub-optimal TP multipliers. Switching to TP=6.0*ATR (R:R 4:1 with
+// SL=1.5*ATR) lifts net materially:
+//   InsideBar:   sl=2.0/tp=4.0 ($657)  ->  sl=1.5/tp=6.0 ($1455)  +$797
+//   ER0.20:      sl=1.5/tp=3.0 ($805)  ->  sl=1.5/tp=6.0 ($1155)  +$351
+//
+// The other three cells (Donchian, Keltner, ADX_Mom) are already at
+// their optimal R:R per the deep_dive sweep -- left unchanged.
+// S33i 2026-05-11: SL-multiplier optimisation from Pass-6 deep_dive v6.
+// SL sweep at fixed TP=6.0 showed each cell has a different optimal SL:
+//   InsideBar:  sl=2.0   n=110  net=+$1680  3/3 yrs  (vs sl=1.5: $1455 -- +$225)
+//   ER0.20:     sl=0.75  n=210  net=+$1279  3/3 yrs  (vs sl=1.5: $1155 -- +$124)
+// Different mechanics want different stops. Lock the optima in.
 static constexpr XauTfCellConfig kXauTfCells[] = {
-    { XauTfFamily::Donchian20,  1.5, 3.0, "Donchian_N20_sl1.5tp3.0" },
-    { XauTfFamily::InsideBar,   2.0, 4.0, "InsideBar_sl2.0tp4.0"     },
-    { XauTfFamily::ErTrend020,  1.5, 3.0, "ER0.20_sl1.5tp3.0"        },
-    { XauTfFamily::Keltner20,   1.5, 3.0, "Keltner_K2_sl1.5tp3.0"    },
-    { XauTfFamily::AdxMom20,    2.0, 4.0, "ADX_Mom_adx25_sl2.0tp4.0" },
+    { XauTfFamily::Donchian20,   1.5, 3.0,  "Donchian_N20_sl1.5tp3.0"       },
+    { XauTfFamily::InsideBar,    2.0, 6.0,  "InsideBar_sl2.0tp6.0_S33i"     },
+    { XauTfFamily::ErTrend020,   0.75, 6.0, "ER0.20_sl0.75tp6.0_S33i"       },
+    { XauTfFamily::Keltner20,    1.5, 3.0,  "Keltner_K2_sl1.5tp3.0"         },
+    { XauTfFamily::AdxMom20,     2.0, 4.0,  "ADX_Mom_adx25_sl2.0tp4.0"      },
+    // S33h Pass-5: RangeExpansion. Fires when bar TR > 1.5*ATR, trades
+    // direction of bar. n=128, net=+$574 across 3 Duka years (all +ve).
+    { XauTfFamily::RangeExpand,  1.5, 6.0,  "RangeExpand_K1.5_sl1.5tp6.0"   },
 };
 static constexpr int kXauTfNumCells =
     static_cast<int>(sizeof(kXauTfCells) / sizeof(kXauTfCells[0]));
@@ -340,7 +357,20 @@ private:
             case XauTfFamily::ErTrend020:  return _sig_er_trend(0.20, 20);
             case XauTfFamily::Keltner20:   return _sig_keltner();
             case XauTfFamily::AdxMom20:    return _sig_adx_momentum(25.0, 20);
+            case XauTfFamily::RangeExpand: return _sig_range_expansion(1.5);
         }
+        return 0;
+    }
+
+    // S33h-ext: range-expansion bar entry. When current bar's true range
+    // exceeds K*ATR14, trade direction of the bar (close vs open).
+    int _sig_range_expansion(double K) const noexcept {
+        if (atr14_ <= 0.0 || bars_.size() < 16) return 0;
+        const auto& cur = bars_.back();
+        double tr = cur.high - cur.low;
+        if (tr < K * atr14_) return 0;
+        if (cur.close > cur.open) return +1;
+        if (cur.close < cur.open) return -1;
         return 0;
     }
 
