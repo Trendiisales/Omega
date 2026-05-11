@@ -23,14 +23,14 @@
 //
 //   None match the rapid bidirectional micro-scalp pattern. This engine does.
 //
-// ALGORITHM
+// ALGORITHM (S19 ORIGINAL -- see S33 block below for the wider-geometry port)
 //   Phase machine: IDLE -> ARMED -> LIVE -> COOLDOWN.
 //
-//   ARMING: every tick the engine maintains a 20-tick rolling window of mid
-//   prices. When |z-score| of the current mid vs the window mean crosses
-//   ENTRY_Z (default 1.5) AND L2 imbalance confirms direction (when l2_real),
+//   ARMING: every tick the engine maintains a rolling window of mid prices
+//   (ENTRY_LOOKBACK ticks). When |z-score| of the current mid vs the window
+//   mean crosses ENTRY_Z AND L2 imbalance confirms direction (when l2_real),
 //   the engine arms in the fade direction. The structure represents micro
-//   exhaustion -- price has stretched far enough from its 20-tick mean that
+//   exhaustion -- price has stretched far enough from its window mean that
 //   reversion is the high-prior outcome.
 //
 //   ENTRY: market-style fill at the side that resolves the fade. LONG on ask
@@ -54,8 +54,8 @@
 //        through reversal logic -- the initial SL handles that case.
 //     4. TP_HIT. Standard limit at TP_DIST_PTS. Fires whether or not BE
 //        is locked.
-//     5. MAX_HOLD timeout (60s). Safety: a position with no progress closes
-//        at mid as MAX_HOLD_EXIT.
+//     5. MAX_HOLD timeout (60s S19 / 7200s S33). Safety: a position with no
+//        progress closes at mid as MAX_HOLD_EXIT.
 //
 //   COOLDOWN: COOLDOWN_S keyed PER DIRECTION. After exit, the same
 //   direction is blocked for COOLDOWN_S; the OPPOSITE direction is permitted
@@ -64,10 +64,9 @@
 // SAFETY
 //   - shadow_mode = true by default. Promotion to live requires explicit
 //     authorisation in engine_init.hpp.
-//   - Spread cap MAX_SPREAD = 0.5pt (post-S20 DEEPSTRIKE tightening).
-//   - Session window 00:00-24:00 UTC (full day; was 06-22 pre-S24 revert,
-//     opened up after May 7-8 multi-day replay showed Asia hours are the
-//     most profitable session for the mean-reversion thesis).
+//   - Spread cap MAX_SPREAD = 0.5pt (S20 DEEPSTRIKE) / 1.0pt (S33 wide port).
+//   - Session window 00:00-24:00 UTC (S24 full day) / 00:00-07:00 UTC
+//     (S33 Asia-only port).
 //   - 0.01 lot uniform cap (FIX 2026-04-22 policy).
 //   - Mutex on _close path. Inherited from HybridGold lineage.
 //
@@ -167,14 +166,14 @@
 //   that further (TP exits eat spread the replay doesn't model + slippage
 //   variance + fill rejection risk in fast markets).
 //
-// NUMERIC CHANGES (this file only):
+// NUMERIC CHANGES (S24, this file only):
 //   SESSION_START_HOUR     6  -> 0   (open Asia)
 //   SESSION_END_HOUR       22 -> 24  (open Asia / overnight)
 //   REGIME_LOOKBACK        n/a -> 200  (NEW: Kaufman ER window)
 //   REGIME_THRESHOLD       n/a -> 0.18 (NEW: ER threshold for trend gate)
 //   All other rk12 constants UNCHANGED from S23 revert state.
 //
-// SAFETY ENVELOPE FOR FIRST LIVE WEEK:
+// SAFETY ENVELOPE FOR FIRST LIVE WEEK (S24 plan -- superseded by S33 below):
 //   - LIVE_LOT stays at 0.01 (no scaling until live tape confirms numbers)
 //   - max_lot_gold in omega_config.ini stays at 0.01
 //   - mode=LIVE on demo account 2067070 first; only swap to 8077780 after
@@ -183,7 +182,8 @@
 //     April regime in the replay had 75% WR -- if live drops below that
 //     band, something is fundamentally different)
 //
-// VERIFICATION PROTOCOL POST-S24 DEPLOY:
+// VERIFICATION PROTOCOL POST-S24 DEPLOY (historical -- see S33 below for
+// the active criteria):
 //   1. Demo account 2067070, mode=LIVE, lot=0.01.
 //   2. Sun 22:00 UTC market open -- verify engine fires through Asia hours
 //      (will see [MICRO-SCALPER-GOLD] FIRE lines in latest.log overnight).
@@ -199,6 +199,126 @@
 // 22-06 UTC ticks. User said "no we can deploy this, what i do want is
 // the best settings we can get".
 // =============================================================================
+//
+// =============================================================================
+// 2026-05-08 (FRIDAY) LIVE BLEED -- S24 geometry ran live on account
+//   8077780 with lot scaled 0.03 -> 0.20 -> 0.30. Net result: -NZ$310 across
+//   two orphan-pair incidents. A 21-day "honest fill" backtest sweep
+//   subsequently scored 0/21 profitable days for this geometry at every
+//   z value tested. Mode flipped LIVE -> SHADOW pending re-validation.
+//   See HANDOFF_S22_DEEPSTRIKE_LIVE.md and omega_config.ini:67-75 for the
+//   full incident record.
+// =============================================================================
+//
+// =============================================================================
+// 2026-05-11 S33 OPTION A SHADOW PORT (authorised by user in chat:
+//   "put the new settings onto the vps so we can test them" + Option A
+//   selection from the S32 §3 / §6.3 menu -- "port geometry only, apply
+//   §3.1-3.3 verbatim".)
+// =============================================================================
+//
+// PURPOSE
+//   Port the S30/S31 256-cell wide-fine sweep TOP-1 (Dukascopy 623-day
+//   corpus) into the live engine in SHADOW so we can compare paper-trade
+//   PnL against the +$2.31/day backtest claim BEFORE any LIVE flip.
+//   The S24 geometry that bled live on May 8 is EXPLICITLY abandoned here.
+//   See HANDOFF_S30/S31/S32 for the sweep results and S32 §3 for the
+//   exact change list reproduced in this block.
+//
+// PRIMARY GEOMETRY (S32 §3.1):
+//   ENTRY_Z              0.75  -> 2.0     (backtest z_thresh)
+//   ENTRY_LOOKBACK       20    -> 200     (backtest window W in ticks)
+//   TP_DIST_PTS          0.79  -> 35.0    (backtest tp_pts)
+//   SL_DIST_PTS          3.0   -> 12.0    (backtest sl_pts)
+//   SESSION_START_HOUR   0     -> 0       (unchanged)
+//   SESSION_END_HOUR     24    -> 7       (Asia-only; backtest --session 0-7)
+//   LIVE_LOT             0.01  -> 0.01    (unchanged; broker minimum)
+//
+// SECONDARY DISABLES (S32 §3.2 -- the trap that breaks literal porting):
+//   The backtest harness does NOT model BE / trail / reversal / L2-flip /
+//   MAX_HOLD / L2-gate. Leaving these at the S24 values means a $35 TP
+//   never gets a chance to fire -- the position gets snapped to BE at
+//   $0.50 or timed out at 60s instead. The disables below restore the
+//   "open-and-let-it-run-to-TP-or-SL" behaviour the backtest assumed.
+//
+//     BE_TRIGGER_PTS       0.50  -> 999.0   (disable BE arm; sentinel value
+//                                            larger than any plausible MFE)
+//     BE_OFFSET_PTS        0.3   -> 0.0     (irrelevant once BE disabled)
+//     TRAIL_DIST_PTS       0.5   -> 999.0   (disable trail)
+//     REVERSAL_LOOKBACK    5     -> 0       (disable reversal exit -- safe
+//                                            because _detect_reversal is only
+//                                            called when pos.be_locked is true,
+//                                            and BE_TRIGGER_PTS=999 prevents
+//                                            be_locked from ever flipping. The
+//                                            =0 setting is documentation-only
+//                                            for that reason.)
+//     REVERSAL_DELTA_PTS   0.30  -> 999.0   (belt-and-braces disable; would
+//                                            also block the reversal even if
+//                                            _detect_reversal somehow ran)
+//     L2_FLIP_THRESH       0.20  -> 999.0   (disable the L2-slope reversal arm)
+//     MAX_HOLD_SEC         60    -> 7200    (2 hours; mean-reversion at 35pt
+//                                            TP needs minutes-to-hours)
+//     COOLDOWN_S           5     -> 60      (backtest 100 ticks ~= 60s at
+//                                            typical XAU tick rate)
+//     L2_IMB_LONG_MIN      0.55  -> 0.50    (S32 instruction: "disable L2
+//     L2_IMB_SHORT_MAX     0.45  -> 0.50    gate" -- but see CAVEAT 1 below;
+//                                            the 0.50/0.50 setting still
+//                                            partially gates by direction)
+//     MAX_SPREAD           0.5   -> 1.0     (backtest --max-spread default)
+//
+// KAUFMAN GATE (S32 §3.3 Option A):
+//   REGIME_THRESHOLD     0.18  -> 1.0     (gate always passes; ER cannot
+//                                          reach 1.0 in practice. Faithful
+//                                          to backtest which had no Kaufman
+//                                          filter.)
+//
+// CAVEAT 1 -- L2 gate at 0.50/0.50 is NOT fully ungated:
+//   With l2_real==true the entry path requires (l2_imbalance >= 0.50)
+//   for LONG and (l2_imbalance <= 0.50) for SHORT. Since L2 imbalance
+//   varies continuously in (0,1), this still admits the directional
+//   half but rejects the contra-direction half. To make truly ungated:
+//   set L2_IMB_LONG_MIN=0.0 and L2_IMB_SHORT_MAX=1.0. Following S32 §3.2
+//   verbatim per operator selection of Option A; flag for re-tune if
+//   shadow trade count diverges materially from backtest's ~1.16/day.
+//
+// CAVEAT 2 -- shadow PnL will NOT exactly match backtest +$2.31/day:
+//   Engine has internal logic (fill model, spread filter, tick-cooldown
+//   semantics, L2 imbalance updates, regime state) the backtest harness
+//   simplifies. Expect 10-50% divergence. That divergence is the
+//   diagnostic we want -- it tells us which engine internal is the source
+//   of the live-vs-backtest gap that bled money on Friday May 8.
+//
+// CAVEAT 3 -- the cTrader real-cost number is still missing:
+//   S32 §4 / §6.2 requires the realized $-per-RT from account 8077780's
+//   May 8-9 ledger. Operator chose to ship anyway with the BlackBull
+//   web-spec $0.06/RT default; if real cost is materially higher the
+//   +$2.31/day backtest headline shrinks or inverts. Re-derive the
+//   expected daily PnL once the ledger arrives.
+//
+// SAFETY POSTURE (unchanged from S24 + S32):
+//   - Engine starts with shadow_mode = true unless engine_init.hpp pins
+//     it live; even if pinned, order_exec.hpp:135 gates send_live_order
+//     on g_cfg.mode == "LIVE", and omega_config.ini is committed at
+//     mode=SHADOW alongside this file (S33 commit).
+//   - KILL_MICROSCALPER sentinel on the VPS forces shadow_mode=true
+//     within 100 ticks of detection; do NOT remove until 24h of clean
+//     shadow telemetry on the new geometry.
+//   - LIVE_LOT stays at 0.01 (broker minimum). Do not raise without
+//     explicit forward-test sign-off.
+//   - max_lot_gold in omega_config.ini stays at 0.01.
+//   - mode=SHADOW until explicit operator authorisation to flip LIVE.
+//
+// VERIFICATION CRITERIA AFTER 24H SHADOW (operator-judged):
+//   - Trade count in the same order of magnitude as backtest (ballpark
+//     ~1.16 fires/day on the Asia-only 0-7 UTC window; deviations of
+//     10x or more in either direction warrant investigation BEFORE any
+//     LIVE flip).
+//   - First [MICRO-SCALPER-GOLD] FIRE log line MUST end with [SHADOW].
+//     If it ends with [LIVE], stop the service immediately.
+//   - Realized shadow PnL distribution centred on a positive median
+//     (NOT the +$2.31 headline -- the median, since the backtest
+//     distribution had wide tails).
+// =============================================================================
 
 #include <cstdint>
 #include <cstdio>
@@ -207,6 +327,7 @@
 #include <ctime>
 #include <algorithm>
 #include <deque>
+#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -219,59 +340,98 @@ namespace omega {
 
 class GoldMicroScalperEngine {
 public:
-    // -- Tuned defaults (S19 calibrated 2026-05-08; S22 attempted then
-    //    reverted in S23 same day; S24 added 24h session + regime gate
-    //    after multi-day replay validation 2026-05-09). ----------------------
-    static constexpr int    ENTRY_LOOKBACK       = 20;
+    // -- Tuned defaults --------------------------------------------------------
+    //   S19 calibrated 2026-05-08; S22 attempted then reverted in S23 same day;
+    //   S24 added 24h session + regime gate after multi-day replay validation
+    //   2026-05-09; S33 ported the S30/S31 wide-fine TOP-1 (z=2.0 W=200
+    //   TP=35 SL=12 Asia 0-7 UTC) into the engine in SHADOW for forward
+    //   evaluation 2026-05-11. See block at top of file for the full S33
+    //   change list and caveats.
+    // ------------------------------------------------------------------------
 
-    // 2026-05-09 S23 REVERT: 1.75 -> 0.75. Mean-reversion thesis works
-    //   at modest fade stretches; wider Z saturates the entry signal.
-    static constexpr double ENTRY_Z              = 0.75;
+    // 2026-05-11 S33: 20 -> 200. Backtest sweep TOP-1 window (W). Maintains
+    //   a 200-tick rolling window for the z-score; std mid is computed over
+    //   the trailing 200 mids in _rolling_stats(). Warmup is now ~200
+    //   ticks before the first entry can fire.
+    static constexpr int    ENTRY_LOOKBACK       = 200;
 
-    static constexpr double L2_IMB_LONG_MIN      = 0.55;
-    static constexpr double L2_IMB_SHORT_MAX     = 0.45;
+    // 2026-05-11 S33: 0.75 -> 2.0. Backtest z_thresh. Wider entry; fewer
+    //   fires (~1.16/day vs S24's ~1,600/day on Asia-only 0-7 UTC).
+    static constexpr double ENTRY_Z              = 2.0;
 
-    // 2026-05-08 DEEPSTRIKE: 1.0 -> 0.5pt. Backtest filtered p95 spread
-    //   was 0.22pt; 0.5pt admits ~95% of fires while rejecting the noisy
-    //   0.5-0.99 band. Keeps holding post-S24 -- Asia spreads observed in
-    //   the multi-day replay were also within this cap.
-    static constexpr double MAX_SPREAD           = 0.5;
+    // 2026-05-11 S33: 0.55 -> 0.50, 0.45 -> 0.50. Per S32 §3.2 "disable L2
+    //   gate". CAVEAT: 0.50/0.50 does NOT fully disable -- it still requires
+    //   l2_imbalance >= 0.50 for LONG and <= 0.50 for SHORT, biasing
+    //   entries to the dominant book side. To truly ungate set 0.0 / 1.0.
+    static constexpr double L2_IMB_LONG_MIN      = 0.50;
+    static constexpr double L2_IMB_SHORT_MAX     = 0.50;
 
-    // 2026-05-09 S23 REVERT: 1.75 -> 0.79. Calibrated to the expected
-    //   reversion distance at z=0.75 entry on a 20-tick window.
-    static constexpr double TP_DIST_PTS          = 0.79;
+    // 2026-05-11 S33: 0.5 -> 1.0. Backtest --max-spread default.
+    static constexpr double MAX_SPREAD           = 1.0;
 
-    static constexpr double SL_DIST_PTS          = 3.0;
+    // 2026-05-11 S33: 0.79 -> 35.0. Backtest tp_pts. 44x wider than S24;
+    //   requires a wider SL to absorb mean-reversion overshoots.
+    static constexpr double TP_DIST_PTS          = 35.0;
 
-    // 2026-05-09 S23 REVERT: 0.80 -> 0.50. BE arms at 63% of TP.
-    static constexpr double BE_TRIGGER_PTS       = 0.50;
+    // 2026-05-11 S33: 3.0 -> 12.0. Backtest sl_pts.
+    static constexpr double SL_DIST_PTS          = 12.0;
 
-    static constexpr double BE_OFFSET_PTS        = 0.3;
-    static constexpr double TRAIL_DIST_PTS       = 0.5;
-    static constexpr int    REVERSAL_LOOKBACK    = 5;
-    static constexpr double REVERSAL_DELTA_PTS   = 0.30;
-    static constexpr double L2_FLIP_THRESH       = 0.20;
+    // 2026-05-11 S33: 0.50 -> 999.0. SENTINEL DISABLE. Backtest harness
+    //   has no break-even arm; leaving BE active would snap the new $35 TP
+    //   trade to a $0.50 BE within the first few seconds.
+    static constexpr double BE_TRIGGER_PTS       = 999.0;
 
-    // 2026-05-09 S23 REVERT: 180 -> 60. Avg hold 2.9-5.1s in replay;
-    //   60s is ~12-20x headroom for the rare slow fades.
-    static constexpr int    MAX_HOLD_SEC         = 60;
+    // 2026-05-11 S33: 0.3 -> 0.0. Irrelevant once BE_TRIGGER_PTS makes
+    //   pos.be_locked unreachable, but kept in this position to preserve
+    //   the constants-block layout.
+    static constexpr double BE_OFFSET_PTS        = 0.0;
 
-    static constexpr int    COOLDOWN_S           = 5;
+    // 2026-05-11 S33: 0.5 -> 999.0. SENTINEL DISABLE. Trail only fires
+    //   once pos.be_locked is true; BE_TRIGGER_PTS=999 prevents that.
+    //   Sentinel kept for documentation.
+    static constexpr double TRAIL_DIST_PTS       = 999.0;
 
-    // 2026-05-09 S24 DEPLOY: 6 -> 0, 22 -> 24. Asia session (22-06 UTC)
-    //   was excluded by inheritance from momentum-strategy defaults but
-    //   is the most profitable window for the mean-reversion thesis.
-    //   Multi-day replay: Asia +0.5622 pt/trade vs full-tape avg +0.4818.
-    //   Effectively disables the session gate because (h >= 0 && h < 24)
-    //   is always true for any UTC hour 0-23.
-    static constexpr int    SESSION_START_HOUR   = 0;   // UTC, was 6
-    static constexpr int    SESSION_END_HOUR     = 24;  // UTC, was 22
+    // 2026-05-11 S33: 5 -> 0. Reversal exit only fires once
+    //   pos.be_locked is true (see _manage), which BE_TRIGGER_PTS=999
+    //   prevents. The =0 value is documentation-only and is safe BECAUSE
+    //   _detect_reversal is unreachable; if you ever re-enable BE, you
+    //   MUST also restore REVERSAL_LOOKBACK to a positive value first or
+    //   the m_micro[n - REVERSAL_LOOKBACK] indexing will be UB.
+    static constexpr int    REVERSAL_LOOKBACK    = 0;
+
+    // 2026-05-11 S33: 0.30 -> 999.0. Belt-and-braces sentinel disable;
+    //   even if _detect_reversal somehow ran, no realistic delta would
+    //   reach 999.
+    static constexpr double REVERSAL_DELTA_PTS   = 999.0;
+
+    // 2026-05-11 S33: 0.20 -> 999.0. Disables the L2-slope reversal arm
+    //   inside _detect_reversal AND the entry-path l2_ok flip-block.
+    static constexpr double L2_FLIP_THRESH       = 999.0;
+
+    // 2026-05-11 S33: 60 -> 7200. Mean-reversion at $35 TP needs minutes
+    //   to hours; 60s would force a MAX_HOLD_EXIT before TP can resolve.
+    //   2 hours is a generous ceiling; backtest had no time exit at all.
+    static constexpr int    MAX_HOLD_SEC         = 7200;
+
+    // 2026-05-11 S33: 5 -> 60. Backtest 100-tick cooldown ~= 60s at
+    //   typical XAU tick rate. Per-direction cooldown still applies.
+    static constexpr int    COOLDOWN_S           = 60;
+
+    // 2026-05-11 S33: SESSION window narrowed from full-24h (S24) to
+    //   Asia-only 0-7 UTC. Backtest sweep TOP-1 cell was --session 0-7;
+    //   the wider geometry's edge concentrates in low-vol Asia hours.
+    //   With START=0, END=7 the in_window check (h >= 0 && h < 7) admits
+    //   hours 0-6 UTC inclusive, totalling 7 trading hours/day.
+    static constexpr int    SESSION_START_HOUR   = 0;   // UTC, was 0 (S24)
+    static constexpr int    SESSION_END_HOUR     = 7;   // UTC, was 24 (S24)
 
     // 2026-05-08 USER REQUEST: pre-London dead zone -- DISABLED at user
     //   direction. Constant kept (set to -1) so the gate machinery is in
     //   place; flip to 6 (BST) or 7 (GMT) to re-arm. Less critical
     //   post-S24 since the session is fully open, but the optional
     //   dead-zone hour cut still works if a problematic hour emerges.
+    //   2026-05-11 S33: still -1; no per-hour dead-zone needed for the
+    //   wider geometry's 7-hour Asia window.
     static constexpr int    PRE_LONDON_DEAD_HOUR_UTC = -1;
 
     // 2026-05-09 S24 DEPLOY: NEW regime classifier constants ---------------
@@ -281,28 +441,36 @@ public:
     //     ER ~ 0 = perfect chop (price wandering, returns cancel out)
     //     ER ~ 1 = perfect trend (price walking, returns reinforce)
     //
-    //   Threshold 0.18 from multi-day sweep -- only setting that beat the
-    //   no-gate baseline at every cost level (0.20/0.25/0.30/0.35 pt).
-    //   At 0.25pt cost @ 0.30 lot: +$3,001 improvement vs no-gate over
-    //   13 active replay days.
-    //
-    //   New entries are refused when m_regime_is_trend == true. Existing
-    //   positions continue to be managed normally regardless of regime --
-    //   the gate is on entries only.
+    //   S24 threshold 0.18 from multi-day sweep; S33 disabled for backtest
+    //   parity (REGIME_THRESHOLD=1.0 means the gate always passes since
+    //   ER cannot reach 1.0 in practice). New entries are refused when
+    //   m_regime_is_trend == true. Existing positions continue to be
+    //   managed normally regardless of regime -- the gate is on entries
+    //   only.
     //
     //   Warmup: until the regime window is full (200 ticks), the
     //   classifier reports chop (default-allow), so very-early entries
     //   in a session aren't blocked by an empty classifier.
     static constexpr int    REGIME_LOOKBACK      = 200;
-    static constexpr double REGIME_THRESHOLD     = 0.18;
+
+    // 2026-05-11 S33: 0.18 -> 1.0. S32 §3.3 Option A. ER cannot reach 1.0
+    //   in real-tick data, so this effectively disables the gate while
+    //   leaving the classifier code path intact for diagnostics.
+    static constexpr double REGIME_THRESHOLD     = 1.0;
 
     // 2026-05-08 LOT BUMP / 2026-05-09 LOT REDUCED 0.30 -> 0.01 history
     //   retained in repo notes. S24 deploy stays at 0.01 for live
-    //   verification; promote ONLY after 50+ clean demo round trips +
-    //   broker-pnl reconciliation within ±5% of engine_pnl.
+    //   verification; S33 keeps 0.01 (broker minimum) for shadow forward
+    //   test. Promote ONLY after operator sign-off + 50+ clean demo round
+    //   trips + broker-pnl reconciliation within ±5% of engine_pnl.
     static constexpr double USD_PER_PT           = 100.0;
     static constexpr double LIVE_LOT             = 0.01;
 
+    // 2026-05-11 S33: warmup gate -- need at least ENTRY_LOOKBACK ticks
+    //   to compute the rolling z-score, so the practical warmup is now
+    //   max(MIN_ENTRY_TICKS, ENTRY_LOOKBACK) = 200. MIN_ENTRY_TICKS=30
+    //   is kept as a hard lower bound for the very-first-tick guard; the
+    //   ENTRY_LOOKBACK gate (line below in on_tick) handles the rest.
     static constexpr int    MIN_ENTRY_TICKS      = 30;
     static constexpr int    DIAG_EVERY_N_TICKS   = 600;
 
@@ -373,7 +541,9 @@ public:
         //   rolling window of REGIME_LOOKBACK mid prices and compute ER
         //   on every tick. Result is cached in m_regime_is_trend for the
         //   entry gate below. Cost: ~200 fabs+sums per tick which is
-        //   negligible vs the engine's overall budget.
+        //   negligible vs the engine's overall budget. S33: classifier
+        //   still runs (kept for diagnostics in the FIRE/DIAG log lines)
+        //   but REGIME_THRESHOLD=1.0 makes m_regime_is_trend never true.
         m_regime_window.push_back(mid);
         if ((int)m_regime_window.size() > REGIME_LOOKBACK) {
             m_regime_window.pop_front();
@@ -440,10 +610,10 @@ public:
         if (!can_enter) return;
         if (spread > MAX_SPREAD) return;
 
-        // 2026-05-09 S24: SESSION_START_HOUR=0, SESSION_END_HOUR=24 means
-        //   the in_window check below is always true (h is 0-23, always
-        //   < 24, always >= 0). The session machinery is preserved so a
-        //   future operator can re-narrow the window without code changes.
+        // 2026-05-11 S33: SESSION_START_HOUR=0, SESSION_END_HOUR=7 means
+        //   the in_window check below admits hours 0-6 UTC inclusive
+        //   (h >= 0 && h < 7), totalling 7 hours/day. Backtest sweep
+        //   TOP-1 was --session 0-7 (Asia only).
         {
             const std::time_t t = static_cast<std::time_t>(now_s);
             std::tm utc{};
@@ -464,16 +634,13 @@ public:
             }
         }
 
-        // 2026-05-09 S24: REGIME GATE. Refuse new entries while the
-        //   Kaufman ER over the last 200 ticks indicates trend regime.
-        //   In multi-day replay this filtered ~70% of entry attempts
-        //   during sustained trend windows; trade count dropped only
-        //   ~1-2% because the next-tick re-arm cycle handles brief
-        //   spikes naturally. Net P&L improvement was +0.9% across the
-        //   13 active replay days at every cost level tested.
+        // 2026-05-09 S24: REGIME GATE. S33 disabled by setting
+        //   REGIME_THRESHOLD=1.0 (m_regime_is_trend never flips true).
+        //   Code path retained so the classifier diagnostics still
+        //   populate the DIAG/FIRE log lines.
         if (m_regime_is_trend) return;
 
-        // -- Entry signal: 20-tick z-score with L2 confirmation ---------------
+        // -- Entry signal: 200-tick z-score with L2 confirmation (S33) --------
         double mean = 0.0, sd = 0.0;
         if (!_rolling_stats(mean, sd)) return;
         if (sd < 0.05) return;
@@ -553,8 +720,9 @@ private:
     std::deque<double>  m_micro;
 
     // 2026-05-09 S24: regime classifier state. Independent of m_window
-    //   because REGIME_LOOKBACK (200) is much larger than ENTRY_LOOKBACK
-    //   (20). Updated every tick in on_tick.
+    //   because REGIME_LOOKBACK (200) was historically much larger than
+    //   ENTRY_LOOKBACK (20). After S33's ENTRY_LOOKBACK=200 they happen
+    //   to match in size but remain logically separate windows.
     std::deque<double>  m_regime_window;
     double              m_regime_er       = 0.0;
     bool                m_regime_is_trend = false;
@@ -586,9 +754,19 @@ private:
     }
 
     bool _detect_reversal() const noexcept {
+        // 2026-05-11 S33: this function is unreachable in the S33 build
+        //   because its only call site (_manage, line `if (pos.be_locked
+        //   && _detect_reversal())`) is gated on pos.be_locked, which the
+        //   S33 BE_TRIGGER_PTS=999 sentinel prevents from ever flipping
+        //   true. Logic preserved unchanged so re-enabling BE in a future
+        //   tune produces the historically-validated behaviour. If you
+        //   re-enable BE you MUST also restore REVERSAL_LOOKBACK to a
+        //   positive value (>= 2) before this function executes; the
+        //   m_micro[n - REVERSAL_LOOKBACK] indexing below is undefined
+        //   behaviour at REVERSAL_LOOKBACK=0 (= m_micro[n], past end).
         if (!pos.active) return false;
         const int n = static_cast<int>(m_micro.size());
-        if (n >= REVERSAL_LOOKBACK) {
+        if (n >= REVERSAL_LOOKBACK && REVERSAL_LOOKBACK > 0) {
             const double last  = m_micro[n - 1];
             const double prior = m_micro[n - REVERSAL_LOOKBACK];
             const double delta = last - prior;
