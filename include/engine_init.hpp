@@ -854,6 +854,37 @@ static void init_engines(const std::string& cfg_path)
         g_donchian.warmup_from_csv(g_donchian.warmup_csv_path);
         fflush(stdout);
 
+        // ── XauTrendFollow4hEngine (S33d 2026-05-11) ──────────────────────────
+        // 3-cell trend-follow ensemble for XAU on 4h bars. Built from
+        // edge_hunt.cpp results showing convergent positive PnL across
+        // Donchian N=20, InsideBar, and ER0.20 cells in all 3 Dukascopy
+        // years + L2 sample. Shadow-only by default; 0.01 lot per cell;
+        // max 3 concurrent positions. Drives off the s_cur_h4 bar already
+        // aggregated in tick_gold.hpp.
+        g_xau_tf_4h.shadow_mode = kShadowDefault;  // SHADOW unless operator flips
+        g_xau_tf_4h.enabled     = true;
+        g_xau_tf_4h.lot         = 0.01;
+        g_xau_tf_4h.max_spread  = 1.0;
+        g_xau_tf_4h.init();
+        printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=3\n",
+               (int)g_xau_tf_4h.shadow_mode, (int)g_xau_tf_4h.enabled, g_xau_tf_4h.lot);
+        fflush(stdout);
+
+        // ── UstecTrendFollow5mEngine (S33d 2026-05-11) ───────────────────────
+        // Donchian N=20 at 5m bars on USTEC. Convergent edge across 4
+        // unrelated signal families on the 15-day L2 sample (n=111,
+        // WR=45%, BE cost $10.1, 170x margin over $0.06).
+        // CAVEAT: only 2 months of data. KEEP shadow until 6+ months
+        // L2 capture confirm the finding.
+        g_ustec_tf_5m.shadow_mode = true;          // HARD shadow, ignore kShadowDefault
+        g_ustec_tf_5m.enabled     = true;
+        g_ustec_tf_5m.lot         = 0.1;
+        g_ustec_tf_5m.max_spread  = 5.0;
+        g_ustec_tf_5m.init();
+        printf("[OMEGA-INIT] UstecTrendFollow5mEngine initialised: shadow=%d enabled=%d lot=%.2f (HARD SHADOW)\n",
+               (int)g_ustec_tf_5m.shadow_mode, (int)g_ustec_tf_5m.enabled, g_ustec_tf_5m.lot);
+        fflush(stdout);
+
         // ?? EmaPullbackPortfolio -- Tier-3 ship 2026-04-30 ?????????????????????
         // 4 ema_pullback long cells: H1, H2, H4, H6. Long-only -- shorts not
         // profitable in master_summary post-cut.

@@ -344,7 +344,24 @@ static void on_tick_ustec(
         else if (b1 != s_nq1_start) { g_bars_nq.m1.add_bar(s_nq1); s_nq1 = {b1/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq1_start = b1; }
         else { if(nq_mid>s_nq1.high)s_nq1.high=nq_mid; if(nq_mid<s_nq1.low)s_nq1.low=nq_mid; s_nq1.close=nq_mid; }
         if (s_nq5_start == 0) { s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5; }
-        else if (b5 != s_nq5_start) { g_bars_nq.m5.add_bar(s_nq5); s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5; }
+        else if (b5 != s_nq5_start) {
+            g_bars_nq.m5.add_bar(s_nq5);
+            // ── UstecTrendFollow5mEngine 5m-close dispatch (S33d 2026-05-11) ──
+            // Donchian N=20 trend-follow on USTEC 5m bars. Shadow-only.
+            {
+                omega::UstecTfBar tf5m{};
+                tf5m.bar_start_ms = s_nq5_start;
+                tf5m.open  = s_nq5.open;
+                tf5m.high  = s_nq5.high;
+                tf5m.low   = s_nq5.low;
+                tf5m.close = s_nq5.close;
+                g_ustec_tf_5m.on_5m_bar(
+                    tf5m, bid, ask,
+                    g_bars_nq.m5.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_n, ca_on_close);
+            }
+            s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5;
+        }
         else { if(nq_mid>s_nq5.high)s_nq5.high=nq_mid; if(nq_mid<s_nq5.low)s_nq5.low=nq_mid; s_nq5.close=nq_mid; }
         // H1 -- HTF swing context for IndexSwingEngine
         static OHLCBar s_nqh1{};
@@ -406,6 +423,14 @@ static void on_tick_ustec(
     }
     if (g_trend_pb_nq.has_open_position()) { g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close); }
     if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
+    // UstecTrendFollow5mEngine -- Donchian N=20 trend-follow on 5m bars (S33d).
+    // Shadow-only by default. Position management every tick.
+    {
+        const int64_t tf_now_ms = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_ustec_tf_5m.on_tick(bid, ask, tf_now_ms, ca_on_close);
+    }
 
     // VWAP Reversion NQ -- anchored to NY open (13:30 UTC)
     if (!g_vwap_rev_nq.has_open_position() && base_can_nq) {

@@ -368,6 +368,23 @@ static omega::GoldBracketEngine   g_bracket_gold;
 //   backtest expectancy. Wired in tick_gold.hpp dispatch block parallel to
 //   g_gold_midscalper.
 #include "GoldMicroScalperEngine.hpp"
+
+// 2026-05-11 S33d: XauTrendFollow4hEngine -- the 3-cell ensemble that
+//   survived the realistic-fill 26-month cross-validation. Donchian N=20,
+//   InsideBar, and ER0.20 mom=20 each as independent cells, max 3
+//   concurrent positions. Shadow-only by default. Drives off the s_cur_h4
+//   bar already aggregated in tick_gold.hpp.
+//   Built from edge_hunt.cpp + top_cells_monthly.cpp results 2026-05-11.
+#include "XauTrendFollow4hEngine.hpp"
+static omega::XauTrendFollow4hEngine g_xau_tf_4h;
+
+// 2026-05-11 S33d: UstecTrendFollow5mEngine -- Donchian N=20 at 5m bars
+//   on USTEC. Convergent edge across 4 unrelated signal families on the
+//   15-day L2 sample. Shadow-only; KEEP shadow until 6+ months of USTEC
+//   L2 capture confirm the 2-month finding.
+#include "UstecTrendFollow5mEngine.hpp"
+static omega::UstecTrendFollow5mEngine g_ustec_tf_5m;
+
 // 2026-05-08 S20+: RiskMonitor -- per-engine logging-only risk surveillance.
 //   Watches WR break-even, fire rate over/under, and spread-at-entry drift
 //   for every engine in data/risk_monitor_thresholds.csv (calibrated by

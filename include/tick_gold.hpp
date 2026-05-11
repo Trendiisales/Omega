@@ -956,6 +956,23 @@ static void on_tick_gold(
                     g_bars_gold.h4.ind.atr14   .load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // ── XauTrendFollow4hEngine (S33d 2026-05-11) ──────────────────────
+            // 3-cell trend-follow ensemble (Donchian N=20, InsideBar, ER0.20).
+            // Shadow-only by default. Driven by the same s_cur_h4 bar as
+            // C1Retuned above. Per-tick position management runs via
+            // g_xau_tf_4h.on_tick() in the post-bar tick loop.
+            {
+                omega::XauTfBar tf_h4{};
+                tf_h4.bar_start_ms = s_bar_h4_ms;
+                tf_h4.open  = s_cur_h4.open;
+                tf_h4.high  = s_cur_h4.high;
+                tf_h4.low   = s_cur_h4.low;
+                tf_h4.close = s_cur_h4.close;
+                g_xau_tf_4h.on_h4_bar(
+                    tf_h4, bid, ask,
+                    g_bars_gold.h4.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, bracket_on_close);
+            }
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
         } else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
     }
@@ -1938,6 +1955,10 @@ static void on_tick_gold(
     // DonchianPortfolio tick management -- 7 cells (H2 long, H4/H6/D1 long+short).
     // Tier-2 shipped 2026-04-30. Bidirectional. No shared state with other engines.
     g_donchian.on_tick(bid, ask, now_ms_g, ca_on_close);
+    // XauTrendFollow4hEngine tick management -- 3 cells (Donchian N=20, InsideBar, ER0.20)
+    // S33d shipped 2026-05-11. Bidirectional. Single-position per cell, 3 max
+    // concurrent. Shadow-only by default. No shared state with other engines.
+    g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // EmaPullbackPortfolio tick management -- 4 long cells (H1/H2/H4/H6).
     // Tier-3 shipped 2026-04-30. Long-only. No shared state.
     g_ema_pullback.on_tick(bid, ask, now_ms_g, ca_on_close);
