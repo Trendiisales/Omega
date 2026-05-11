@@ -230,6 +230,86 @@ static std::vector<double> compute_kaufman_er(const std::vector<Bar>& bars, int 
     return er;
 }
 
+// EMA
+static std::vector<double> compute_ema(const std::vector<Bar>& bars, int n) {
+    std::vector<double> out(bars.size(), 0.0);
+    if (bars.empty()) return out;
+    double alpha = 2.0 / (n + 1);
+    out[0] = bars[0].mid_c();
+    for (int i = 1; i < (int)bars.size(); ++i) {
+        out[i] = alpha * bars[i].mid_c() + (1 - alpha) * out[i-1];
+    }
+    return out;
+}
+
+// Stochastic %K and %D over period N (and D smoothing M)
+struct StochResult { std::vector<double> k, d; };
+static StochResult compute_stochastic(const std::vector<Bar>& bars, int N, int M) {
+    StochResult r;
+    r.k.assign(bars.size(), 50.0);
+    r.d.assign(bars.size(), 50.0);
+    if ((int)bars.size() < N) return r;
+    for (int i = N - 1; i < (int)bars.size(); ++i) {
+        double hh = bars[i-N+1].mid_h(), ll = bars[i-N+1].mid_l();
+        for (int k = i-N+2; k <= i; ++k) {
+            if (bars[k].mid_h() > hh) hh = bars[k].mid_h();
+            if (bars[k].mid_l() < ll) ll = bars[k].mid_l();
+        }
+        double rng = hh - ll;
+        r.k[i] = (rng > 1e-12) ? 100.0 * (bars[i].mid_c() - ll) / rng : 50.0;
+    }
+    // smooth k -> d with simple SMA over M
+    for (int i = N + M - 2; i < (int)bars.size(); ++i) {
+        double s = 0;
+        for (int k = i - M + 1; k <= i; ++k) s += r.k[k];
+        r.d[i] = s / M;
+    }
+    return r;
+}
+
+// ADX (Wilder, 14): trend strength 0-100
+static std::vector<double> compute_adx(const std::vector<Bar>& bars, int n = 14) {
+    std::vector<double> adx(bars.size(), 0.0);
+    if ((int)bars.size() <= n * 2) return adx;
+    std::vector<double> pdm(bars.size(), 0.0), mdm(bars.size(), 0.0), tr(bars.size(), 0.0);
+    for (int i = 1; i < (int)bars.size(); ++i) {
+        double up = bars[i].mid_h() - bars[i-1].mid_h();
+        double dn = bars[i-1].mid_l() - bars[i].mid_l();
+        pdm[i] = (up > dn && up > 0) ? up : 0;
+        mdm[i] = (dn > up && dn > 0) ? dn : 0;
+        double cp = bars[i-1].mid_c();
+        tr[i]  = std::max(bars[i].mid_h() - bars[i].mid_l(),
+                          std::max(std::abs(bars[i].mid_h() - cp), std::abs(bars[i].mid_l() - cp)));
+    }
+    // Wilder smoothed
+    double atr_s = 0, pdi_s = 0, mdi_s = 0;
+    for (int i = 1; i <= n; ++i) { atr_s += tr[i]; pdi_s += pdm[i]; mdi_s += mdm[i]; }
+    std::vector<double> pdi(bars.size(), 0), mdi(bars.size(), 0), dx(bars.size(), 0);
+    if (atr_s > 1e-12) {
+        pdi[n] = 100.0 * pdi_s / atr_s;
+        mdi[n] = 100.0 * mdi_s / atr_s;
+    }
+    for (int i = n + 1; i < (int)bars.size(); ++i) {
+        atr_s = atr_s - atr_s/n + tr[i];
+        pdi_s = pdi_s - pdi_s/n + pdm[i];
+        mdi_s = mdi_s - mdi_s/n + mdm[i];
+        if (atr_s > 1e-12) {
+            pdi[i] = 100.0 * pdi_s / atr_s;
+            mdi[i] = 100.0 * mdi_s / atr_s;
+        }
+        double sum = pdi[i] + mdi[i];
+        dx[i] = sum > 1e-12 ? 100.0 * std::abs(pdi[i] - mdi[i]) / sum : 0.0;
+    }
+    // ADX = Wilder average of DX over n
+    double sum_dx = 0;
+    for (int i = n + 1; i <= 2*n; ++i) sum_dx += dx[i];
+    if (2*n < (int)bars.size()) adx[2*n] = sum_dx / n;
+    for (int i = 2*n + 1; i < (int)bars.size(); ++i) {
+        adx[i] = (adx[i-1] * (n - 1) + dx[i]) / n;
+    }
+    return adx;
+}
+
 // ---------------------------------------------------------------------
 // Trade + bracket
 // ---------------------------------------------------------------------
@@ -598,6 +678,119 @@ static std::vector<Trade> sig_bb_squeeze(const std::vector<Bar>& bars,
         });
 }
 
+// =====================================================================
+// PASS 1 NEW SIGNAL FAMILIES (13-17)
+// =====================================================================
+
+// 13. NEW: Keltner channel break. EMA20 ± 2*ATR14 envelope.
+static std::vector<Trade> sig_keltner(const std::vector<Bar>& bars,
+                                      const std::vector<double>& atr,
+                                      double mult,
+                                      double sl_mult, double tp_mult,
+                                      const SymBaseline& sb) {
+    auto ema = compute_ema(bars, 20);
+    return run_cell(bars, atr, 14, 22, sl_mult, tp_mult, sb,
+        [&](int i) -> int {
+            if (i < 22) return 0;
+            double up = ema[i] + mult * atr[i];
+            double lo = ema[i] - mult * atr[i];
+            if (bars[i].ask_c > up) return +1;
+            if (bars[i].bid_c < lo) return -1;
+            return 0;
+        });
+}
+
+// 14. NEW: Engulfing pattern. bar[i-1] body fully inside bar[i] body,
+//     opposite direction. Bullish: prev bear, curr bull, curr close > prev open,
+//     curr open < prev close.
+static std::vector<Trade> sig_engulfing(const std::vector<Bar>& bars,
+                                        const std::vector<double>& atr,
+                                        double sl_mult, double tp_mult,
+                                        const SymBaseline& sb) {
+    return run_cell(bars, atr, 14, 16, sl_mult, tp_mult, sb,
+        [&](int i) -> int {
+            if (i < 16) return 0;
+            const auto& a = bars[i-1];
+            const auto& b = bars[i];
+            double a_o = a.mid_o(), a_c = a.mid_c();
+            double b_o = b.mid_o(), b_c = b.mid_c();
+            bool a_bear = (a_c < a_o), a_bull = (a_c > a_o);
+            bool b_bull = (b_c > b_o), b_bear = (b_c < b_o);
+            // bullish engulfing
+            if (a_bear && b_bull && b_c > a_o && b_o < a_c) return +1;
+            // bearish engulfing
+            if (a_bull && b_bear && b_c < a_o && b_o > a_c) return -1;
+            return 0;
+        });
+}
+
+// 15. NEW: Stochastic %K/%D extreme cross.  Long when both < 20 and %K crosses
+//     above %D. Short when both > 80 and %K crosses below %D.
+static std::vector<Trade> sig_stochastic(const std::vector<Bar>& bars,
+                                         const std::vector<double>& atr,
+                                         double lo_thr, double hi_thr,
+                                         double sl_mult, double tp_mult,
+                                         const SymBaseline& sb) {
+    auto st = compute_stochastic(bars, 14, 3);
+    return run_cell(bars, atr, 14, 20, sl_mult, tp_mult, sb,
+        [&](int i) -> int {
+            if (i < 20) return 0;
+            double k_prev = st.k[i-1], d_prev = st.d[i-1];
+            double k_cur  = st.k[i],   d_cur  = st.d[i];
+            bool cross_up   = (k_prev <= d_prev) && (k_cur >  d_cur);
+            bool cross_down = (k_prev >= d_prev) && (k_cur <  d_cur);
+            if (cross_up   && k_cur < lo_thr && d_cur < lo_thr) return +1;
+            if (cross_down && k_cur > hi_thr && d_cur > hi_thr) return -1;
+            return 0;
+        });
+}
+
+// 16. NEW: ADX-gated momentum. Only fire momentum signal when ADX above
+//     trend_thr.  Filters out chop where momentum is unreliable.
+static std::vector<Trade> sig_adx_momentum(const std::vector<Bar>& bars,
+                                           const std::vector<double>& atr,
+                                           int mom_n, double adx_thr,
+                                           double sl_mult, double tp_mult,
+                                           const SymBaseline& sb) {
+    auto adx = compute_adx(bars, 14);
+    return run_cell(bars, atr, 14, std::max(mom_n, 30)+2, sl_mult, tp_mult, sb,
+        [&](int i) -> int {
+            if (i < 30) return 0;
+            if (adx[i] < adx_thr) return 0;
+            double cur = bars[i].mid_c(), prev = bars[i-mom_n].mid_c();
+            if (cur > prev * 1.001) return +1;
+            if (cur < prev * 0.999) return -1;
+            return 0;
+        });
+}
+
+// 17. NEW: Two-bar pullback in trend.  Identify a 5-bar trend, then look
+//     for 2 consecutive opposite-color bars (pullback), then enter on
+//     break of pullback range in trend direction.
+static std::vector<Trade> sig_two_bar_pullback(const std::vector<Bar>& bars,
+                                               const std::vector<double>& atr,
+                                               double sl_mult, double tp_mult,
+                                               const SymBaseline& sb) {
+    return run_cell(bars, atr, 14, 16, sl_mult, tp_mult, sb,
+        [&](int i) -> int {
+            if (i < 16) return 0;
+            // 5-bar trend: close[i-3] vs close[i-8]
+            bool up_trend   = bars[i-3].mid_c() > bars[i-8].mid_c() * 1.001;
+            bool down_trend = bars[i-3].mid_c() < bars[i-8].mid_c() * 0.999;
+            const auto& b1 = bars[i-2];
+            const auto& b2 = bars[i-1];
+            bool b1_bear = (b1.mid_c() < b1.mid_o());
+            bool b1_bull = (b1.mid_c() > b1.mid_o());
+            bool b2_bear = (b2.mid_c() < b2.mid_o());
+            bool b2_bull = (b2.mid_c() > b2.mid_o());
+            // Up trend + 2 bear pullback bars, then break above b2 high
+            if (up_trend && b1_bear && b2_bear && bars[i].ask_c > b2.mid_h()) return +1;
+            // Down trend + 2 bull pullback bars, then break below b2 low
+            if (down_trend && b1_bull && b2_bull && bars[i].bid_c < b2.mid_l()) return -1;
+            return 0;
+        });
+}
+
 // ---------------------------------------------------------------------
 // Result aggregation
 // ---------------------------------------------------------------------
@@ -721,7 +914,7 @@ int main(int argc, char** argv) {
 
         // For each timeframe, accumulate per-symbol trades (across years).
         struct TF { const char* lbl; int sec; };
-        TF tfs[] = { {"5m",300}, {"15m",900}, {"1h",3600}, {"4h",14400} };
+        TF tfs[] = { {"5m",300}, {"15m",900}, {"30m",1800}, {"1h",3600}, {"2h",7200}, {"4h",14400}, {"D1",86400} };
 
         // We need bars across the whole sym corpus per timeframe (for indicators
         // that need long histories). Within each year, resample and concatenate
@@ -805,6 +998,17 @@ int main(int argc, char** argv) {
                 push(summarize(sig_nr4(bars,atr,7,br.sl,br.tp,sb), sym, tf.lbl, "NR7", "N=7", br.lbl));
                 // 12. NEW: Bollinger Band squeeze release
                 push(summarize(sig_bb_squeeze(bars,atr,20,br.sl,br.tp,sb), sym, tf.lbl, "BB_Squeeze", "W=20", br.lbl));
+                // 13. PASS-1 NEW: Keltner channel break (K=2.0)
+                push(summarize(sig_keltner(bars,atr,2.0,br.sl,br.tp,sb), sym, tf.lbl, "Keltner", "K=2.0", br.lbl));
+                // 14. PASS-1 NEW: Engulfing pattern
+                push(summarize(sig_engulfing(bars,atr,br.sl,br.tp,sb), sym, tf.lbl, "Engulfing", "", br.lbl));
+                // 15. PASS-1 NEW: Stochastic extreme crosses
+                push(summarize(sig_stochastic(bars,atr,20,80,br.sl,br.tp,sb), sym, tf.lbl, "Stochastic", "lo=20;hi=80", br.lbl));
+                // 16. PASS-1 NEW: ADX-gated momentum
+                push(summarize(sig_adx_momentum(bars,atr,20,25.0,br.sl,br.tp,sb), sym, tf.lbl, "ADX_Mom", "mom=20;adx>25", br.lbl));
+                push(summarize(sig_adx_momentum(bars,atr,50,25.0,br.sl,br.tp,sb), sym, tf.lbl, "ADX_Mom", "mom=50;adx>25", br.lbl));
+                // 17. PASS-1 NEW: Two-bar pullback in trend
+                push(summarize(sig_two_bar_pullback(bars,atr,br.sl,br.tp,sb), sym, tf.lbl, "TwoBarPullback", "", br.lbl));
             }
             all_bars[tf.lbl].clear(); all_bars[tf.lbl].shrink_to_fit();
         }

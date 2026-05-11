@@ -903,6 +903,22 @@ static void init_engines(const std::string& cfg_path)
                (int)g_xau_tf_d1.shadow_mode, (int)g_xau_tf_d1.enabled, g_xau_tf_d1.lot);
         fflush(stdout);
 
+        // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
+        // 4-cell 2h trend-follow ensemble built from Pass-8 deep_dive. Same
+        // XAU trend regime as the 4h/D1 engines, denser cadence (~25
+        // trades/month). Cells: Keltner K=2.0, Donchian N=20, Donchian N=50,
+        // InsideBar -- all sl2.0_tp4.0, all 3/3 Duka years +ve.
+        // Synthesises 2h bars internally from H1 stream.
+        g_xau_tf_2h.shadow_mode = kShadowDefault;
+        g_xau_tf_2h.enabled     = true;
+        g_xau_tf_2h.lot         = 0.01;
+        g_xau_tf_2h.max_spread  = 1.0;
+        g_xau_tf_2h.init();
+        printf("[OMEGA-INIT] XauTrendFollow2hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=4"
+               " (Keltner,Donchian20,Donchian50,InsideBar)\n",
+               (int)g_xau_tf_2h.shadow_mode, (int)g_xau_tf_2h.enabled, g_xau_tf_2h.lot);
+        fflush(stdout);
+
         // ?? EmaPullbackPortfolio -- Tier-3 ship 2026-04-30 ?????????????????????
         // 4 ema_pullback long cells: H1, H2, H4, H6. Long-only -- shorts not
         // profitable in master_summary post-cut.

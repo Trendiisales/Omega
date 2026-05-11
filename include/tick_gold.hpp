@@ -842,6 +842,18 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // ── XauTrendFollow2hEngine H1 dispatch (S33k 2026-05-11) ──────────
+            // 4-cell 2h trend-follow ensemble. Takes H1 bars; aggregates into
+            // 2h internally. Position management via on_tick further below.
+            {
+                omega::XauTf2hBar tf_h1{};
+                tf_h1.bar_start_ms = s_bar_h1_ms;
+                tf_h1.open  = s_cur_h1.open;
+                tf_h1.high  = s_cur_h1.high;
+                tf_h1.low   = s_cur_h1.low;
+                tf_h1.close = s_cur_h1.close;
+                g_xau_tf_2h.on_h1_bar(tf_h1, bid, ask, now_ms_g, bracket_on_close);
+            }
             // EmaPullbackPortfolio H1 dispatch -- Tier-3 ship 2026-04-30.
             // Drives 4 long cells (H1/H2/H4/H6). H1 cell uses raw H1; H2/H4/H6
             // synthesised internally. EWMs warm up via warmup_from_csv at init.
@@ -1978,6 +1990,11 @@ static void on_tick_gold(
     // built internally from H4 stream. Single-position per cell, 3 max
     // concurrent. Shadow-default.
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // XauTrendFollow2hEngine tick management -- 4 2h-timeframe cells
+    // (Keltner, Donchian20, Donchian50, InsideBar). S33k shipped 2026-05-11.
+    // 2h bars built internally from H1 stream. Single-position per cell, 4
+    // max concurrent. Shadow-default.
+    g_xau_tf_2h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // EmaPullbackPortfolio tick management -- 4 long cells (H1/H2/H4/H6).
     // Tier-3 shipped 2026-04-30. Long-only. No shared state.
     g_ema_pullback.on_tick(bid, ask, now_ms_g, ca_on_close);

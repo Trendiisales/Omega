@@ -394,6 +394,17 @@ static omega::UstecTrendFollow5mEngine g_ustec_tf_5m;
 #include "XauTrendFollowD1Engine.hpp"
 static omega::XauTrendFollowD1Engine g_xau_tf_d1;
 
+// 2026-05-11 S33k: XauTrendFollow2hEngine -- denser-cadence sibling of the
+//   4h engine. 4 cells (Keltner K=2, Donchian N=20, Donchian N=50, InsideBar),
+//   all on sl2.0_tp4.0 ATR brackets. All 3/3 Duka years +ve per cell.
+//   Synthesises 2h bars internally from the H1 stream. 0.01 lot, max 4
+//   concurrent. Shadow-default. Backtested +$3,380 over 30 months across 764
+//   trades (~25 trades/month).  Correlated with 4h/D1 engines (same XAU
+//   trend regime, different timescales) -- think of as one XAU multi-TF
+//   position, not as independent diversification.
+#include "XauTrendFollow2hEngine.hpp"
+static omega::XauTrendFollow2hEngine g_xau_tf_2h;
+
 // 2026-05-08 S20+: RiskMonitor -- per-engine logging-only risk surveillance.
 //   Watches WR break-even, fire rate over/under, and spread-at-entry drift
 //   for every engine in data/risk_monitor_thresholds.csv (calibrated by
