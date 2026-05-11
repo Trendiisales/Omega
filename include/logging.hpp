@@ -142,7 +142,22 @@ static std::string build_trade_close_csv_row(const omega::TradeRecord& tr) {
       << ',' << csv_quote(tr.exitReason)
       << std::setprecision(4)
       << ',' << tr.l2_imbalance
-      << ',' << (tr.l2_live ? 1 : 0);
+      << ',' << (tr.l2_live ? 1 : 0)
+      // S33b 2026-05-11: broker reconciliation fields. Column order matches
+      // the extended header in include/omega_main.hpp. clOrdId strings are
+      // CSV-quoted; bools serialised 0/1; fill prices and broker_pnl at 4dp.
+      // Empty values (e.g. entry filled but close still pending) write as
+      // empty string for ids, 0 for bools, 0.0 for prices/pnl -- consumers
+      // should gate on the broker_*_filled flags before trusting fill_px.
+      << ',' << csv_quote(tr.entry_clOrdId)
+      << ',' << csv_quote(tr.close_clOrdId)
+      << ',' << (tr.broker_entry_filled    ? 1 : 0)
+      << ',' << (tr.broker_close_filled    ? 1 : 0)
+      << ',' << (tr.broker_entry_rejected  ? 1 : 0)
+      << ',' << (tr.broker_close_rejected  ? 1 : 0)
+      << ',' << tr.broker_entry_fill_px
+      << ',' << tr.broker_close_fill_px
+      << ',' << tr.broker_pnl;
     return o.str();
 }
 

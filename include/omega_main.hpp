@@ -227,7 +227,18 @@ int main(int argc, char* argv[])
             "slippage_entry,slippage_exit,commission,"
             "slip_entry_pct,slip_exit_pct,comm_per_side,"
             "mfe,mae,hold_sec,spread_at_entry,"
-            "latency_ms,regime,exit_reason,l2_imbalance,l2_live";
+            "latency_ms,regime,exit_reason,l2_imbalance,l2_live,"
+            // S33b 2026-05-11: broker reconciliation columns. The TradeRecord
+            // broker_* fields were added 2026-05-09 (user-authorised after
+            // the NZ$308 disparity incident) and are populated in memory by
+            // handle_execution_report, but were never persisted to CSV --
+            // so the GUI saw engine truth only. These columns close that gap.
+            // Reload parser at lines ~315-360 ignores extra columns past
+            // tok[29], so existing CSVs remain forward-compatible.
+            "entry_clOrdId,close_clOrdId,"
+            "broker_entry_filled,broker_close_filled,"
+            "broker_entry_rejected,broker_close_rejected,"
+            "broker_entry_fill_px,broker_close_fill_px,broker_pnl";
 
         const std::string trade_csv_path = trade_dir + "/omega_trade_closes.csv";
         ensure_parent_dir(trade_csv_path);
