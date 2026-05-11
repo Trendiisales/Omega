@@ -73,6 +73,8 @@
 #include <functional>
 #include <string>
 
+namespace omega {
+
 class GoldMicroScalperEngine {
 public:
     // Pinned-true: this stub cannot be flipped live. Setters appearing in
@@ -141,3 +143,5 @@ public:
         return;
     }
 };
+
+} // namespace omega
