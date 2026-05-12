@@ -56,6 +56,7 @@
 #include <vector>
 #include "OmegaTradeLedger.hpp"
 #include "OHLCBarEngine.hpp"
+#include "OmegaCostGuard.hpp"  // see on_h4_bar() entry guard
 
 namespace omega {
 
@@ -457,6 +458,14 @@ public:
         double size = p.risk_dollars / (sl_pts * 100.0);
         size = std::floor(size / 0.001) * 0.001;
         size = std::max(0.01, std::min(p.max_lot, size));
+
+        // === Cost gate (unified per-symbol layer; cost_ratio_min=1.5 matches
+        // on_tick.hpp:1065 cost_ok lambda). On block: return empty signal;
+        // engine re-evaluates next H4 bar close. ===
+        if (!ExecutionCostGuard::is_viable(symbol.c_str(), (ask - bid),
+                                           tp_pts, size, 1.5)) {
+            return sig;  // sig is still empty (valid=false)
+        }
 
         pos_.active        = true;
         pos_.is_long       = intend_long;

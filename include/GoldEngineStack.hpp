@@ -47,6 +47,7 @@
 #include <iostream>
 #include <unordered_set>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"  // see GoldEngineStack::on_tick() pos_mgr_.open() gate
 
 // ?? Bracket-trend bias state + accessor ??????????????????????????????????????
 // Provides int bracket_trend_bias(const char* sym) plus the per-symbol state
@@ -4154,6 +4155,30 @@ public:
             if (!entry_quality_ok(best, best_score, snap, now_s)) return GoldSignal{};
             GoldSignal gs=to_gold_signal(best);
             apply_vol_scaled_sl(gs);
+
+            // === Cost gate (unified per-symbol layer; cost_ratio_min=1.5
+            // matches on_tick.hpp:1065 cost_ok lambda). ONE gate here
+            // covers all 18 sub-engines because every sub-engine emits a
+            // Signal which is reduced to `best` above and opened via the
+            // single pos_mgr_.open() call below. TP distance derived from
+            // gs.tp_ticks, falling back to sl_ticks*2 when tp_ticks==0
+            // (matches GoldPositionManager::open() fallback at L3636). On
+            // block: return empty signal; the stack re-evaluates next tick. ===
+            {
+                const double tp_ticks_eff = (gs.tp_ticks > 0.0)
+                    ? gs.tp_ticks
+                    : std::max(4.0, gs.sl_ticks) * 2.0;
+                // XAUUSD tick = 0.10 (mirrors GoldPositionManager::TICK_SIZE
+                // at L3213; cannot reference directly -- private constexpr).
+                static constexpr double GS_TICK_SIZE = 0.10;
+                const double tp_dist_px = tp_ticks_eff * GS_TICK_SIZE;
+                const double lot_lp     = (gs.size > 0.0) ? gs.size : 0.01;
+                if (!ExecutionCostGuard::is_viable("XAUUSD", spread,
+                                                  tp_dist_px, lot_lp, 1.5)) {
+                    return GoldSignal{};
+                }
+            }
+
             pos_mgr_.open(gs, spread, latency_ms, current_regime_name());
             has_open_pos_=true;
             last_entry_ts_=now_s;

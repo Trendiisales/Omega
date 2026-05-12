@@ -73,6 +73,7 @@
 #include <string>
 #include <vector>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"  // see on_tick() H4-close entry guard
 
 namespace omega {
 
@@ -313,6 +314,17 @@ struct MinimalH4US30Breakout {
                         size = std::floor(size / 0.01) * 0.01;
                         size = std::max(0.01, std::min(p.max_lot, size));
 
+                        // === Cost gate (unified per-symbol layer;
+                        // cost_ratio_min=1.5 matches on_tick.hpp:1065
+                        // cost_ok lambda). On block: skip this fire-site;
+                        // engine re-evaluates next H4 bar close. ===
+                        if (!ExecutionCostGuard::is_viable(symbol.c_str(),
+                                                           (ask - bid),
+                                                           tp_pts, size,
+                                                           1.5)) {
+                            // sig is still empty (valid=false) - drop entry
+                        } else {
+
                         pos_.active        = true;
                         pos_.is_long       = intend_long;
                         pos_.entry         = entry_px;
@@ -340,7 +352,8 @@ struct MinimalH4US30Breakout {
                         sig.tp      = tp_px;
                         sig.size    = size;
                         sig.reason  = "MINIMAL_H4_DONCHIAN_BREAK";
-                        }
+                        }  // close cost-gate-viable else
+                        }  // close long_only else
                     }
                 }
             }

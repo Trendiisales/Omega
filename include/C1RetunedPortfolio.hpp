@@ -78,6 +78,7 @@
 #include <string>
 #include <vector>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"  // see Donchian / Bollinger cell entry guards
 
 namespace omega {
 
@@ -279,12 +280,21 @@ struct C1DonchianH1LongCell {
         const double tp_pts   = h1_atr14 * tp_atr;
         const double sl_px    = entry_px - sl_pts;
         const double tp_px    = entry_px + tp_pts;
+        const double lot_lp   = std::max(0.01, size_lot);
+
+        // === Cost gate (unified per-symbol layer; cost_ratio_min=1.5 matches
+        // on_tick.hpp:1065 cost_ok lambda). On block: skip entry; cell
+        // re-evaluates next H1 close. ===
+        if (!ExecutionCostGuard::is_viable(symbol.c_str(), (ask - bid),
+                                           tp_pts, lot_lp, 1.5)) {
+            return 0;
+        }
 
         pos_.active      = true;
         pos_.entry       = entry_px;
         pos_.sl          = sl_px;
         pos_.tp          = tp_px;
-        pos_.size        = std::max(0.01, size_lot);
+        pos_.size        = lot_lp;
         pos_.atr_at_open = h1_atr14;
         pos_.entry_ts_ms = now_ms;
         pos_.bars_held   = 0;
@@ -406,12 +416,22 @@ struct C1BollingerLongCell {
         const double entry_px = ask;
         const double sl_pts   = atr14 * hard_sl_atr;
         const double sl_px    = entry_px - sl_pts;
+        const double lot_lp   = std::max(0.01, size_lot);
+
+        // === Cost gate. No fixed TP (indicator exit) -- use sl_pts*1.5 as
+        // TP proxy, same pattern as CandleFlow / on_tick cost_ok lambda.
+        // cost_ratio_min=1.5. On block: skip entry; cell re-evaluates next
+        // bar close. ===
+        if (!ExecutionCostGuard::is_viable(symbol.c_str(), (ask - bid),
+                                           sl_pts * 1.5, lot_lp, 1.5)) {
+            return 0;
+        }
 
         pos_.active      = true;
         pos_.entry       = entry_px;
         pos_.sl          = sl_px;
         pos_.tp          = 0.0;            // no fixed TP -- midline indicator exit
-        pos_.size        = std::max(0.01, size_lot);
+        pos_.size        = lot_lp;
         pos_.atr_at_open = atr14;
         pos_.entry_ts_ms = now_ms;
         pos_.bars_held   = 0;
