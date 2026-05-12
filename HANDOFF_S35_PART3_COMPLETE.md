@@ -1,6 +1,128 @@
 HANDOFF S35 PART 3 — 2026-05-12 (USTEC HTF engine shipped + drop-unprofitable directive)
 End-of-day state after the S35-Part-3 session that (a) located 16 months of NSXUSD + 17 months of SPXUSD HISTDATA tick data in `~/Tick/`, (b) wrote a HISTDATA → edge_hunt-format converter, (c) ran a per-period (2025H1 / 2025H2 / 2026 partial) edge_hunt sweep across both symbols, (d) computed the same 3-period intersection test that produced the XAU verdict, (e) wrote a new `UstecTrendFollowHtfEngine` with 5 cells validated by that intersection, (f) backtested it across all 16 months of NSXUSD ticks (94.7M ticks, +$11,733 net 53% WR PF 1.05, 4,227 trades), and (g) wired it into `globals.hpp` + `engine_init.hpp` with TUNED defaults, HARD shadow + enabled, dormant pending `tick_indices.hpp` dispatch.
 Read this top to bottom before doing anything in a new session.
+
+==========================================================================
+AMENDMENT 2026-05-12 ~03:00 UTC — S36-P1a SHIPPED, S36-P4 STILL BLOCKING
+==========================================================================
+Status changes since the §1 body below was originally written. The body
+text is preserved as historical context; trust this block for current state.
+
+A. WORK SHIPPED THIS SESSION (S36-P1a)
+   - Dropped Donch15m cell (wrapped ALL=-$4002 per §3.7 of this doc)
+   - Dropped Stoch1h cell (wrapped 2025H1=-$1115; operator strict reading
+     of "any period unprofitable => drop", see §4.1)
+   - UstecTrendFollowHtfEngine now ships 3 cells: InsideBar2h + AtrMom1h
+     + Stoch4h.  Projected ALL: +$11,733 -> +$13,670 across same 16mo data.
+     Re-backtest pending (S36-P1a-verify).
+   - Files modified: include/UstecTrendFollowHtfEngine.hpp,
+     include/engine_init.hpp.  globals.hpp and the backtest harness
+     unchanged.  Harness still compiles + links clean.
+   - Committed locally and pushed to origin/main as commit `a3ad262`
+     ("S36-P1a: drop Donch15m + Stoch1h per any-period-unprofitable directive").
+   - VPS watchdog auto-deploys on new origin/main commits (~5 min poll).
+     restart #155 already deployed `d203cb1` (the pre-S36-P1a state) before
+     this push; the next watchdog cycle pulls `a3ad262`.
+
+B. CURRENT STATE (overrides §1.1 / §1.2 prose below)
+   - origin/main HEAD     = a3ad262 (S36-P1a)
+   - Local main HEAD      = a3ad262 (in sync with origin)
+   - Mac working tree     = clean.  The 4 "dirty" files described in §1.1
+                            were committed in S35-P6 (a08724b / ec9ca5a)
+                            + S35-doc (d203cb1) BEFORE this session opened.
+                            The §1.1 prose was written mid-session and
+                            never updated.  No commit-then-push action is
+                            needed at the START of S36 -- just preflight.
+   - VPS running hash     = check explicitly (see C below)
+   - Engines dormant      = UstecTrendFollowHtfEngine still has no
+                            tick_indices.hpp M15 dispatch wired.  See D.
+
+C. VPS DEPLOY-VERIFICATION CHECKLIST (run after every push)
+   The watchdog handles the deploy automatically; you only verify.
+
+       # 1. confirm services are green
+       Get-Service Omega, OmegaWatchdog | Format-Table Name, Status, StartType -AutoSize
+
+       # 2. confirm watchdog pulled the new commit
+       Get-Content C:\Omega\logs\watchdog.log -Tail 10
+       #    Expect a line like:
+       #    [WATCHDOG] AUTO-UPDATE: restart #<N> complete. Expected new hash: a3ad262
+       #    Followed by HEARTBEAT lines with hash=a3ad262 and
+       #    HASH-OK: running=a3ad262 == github=a3ad262
+
+       # 3. confirm the new engine init line landed (the S36-P1a 3-cell version)
+       Get-Content C:\Omega\logs\omega_service_stdout.log -Tail 300 |
+           Select-String "UstecTrendFollowHtfEngine initialised" |
+           Select-Object -Last 1
+       #    Expect: cells=3 (InsideBar2h+AtrMom1h+Stoch4h)
+       #            ... (S36-P1a; tick_indices.hpp M15 dispatch wiring REQUIRED ...)
+       #    If you still see cells=5 after the next watchdog heartbeat,
+       #    the deploy failed -- inspect omega_service_stdout.log for the
+       #    [OMEGA-INIT] block and CMake build errors.
+
+       # 4. confirm NO [LIVE] tags on the new engine (must remain 0 until
+       #    operator explicitly promotes from shadow)
+       Get-Content C:\Omega\logs\omega_service_stdout.log |
+           Select-String "UstecTrendFollowHtf.*\[LIVE\]" |
+           Measure-Object | Select Count
+       #    Expect: Count = 0
+
+   If the watchdog has not auto-updated within 10 min of the push:
+       cd C:\Omega
+       .\OMEGA.ps1 deploy
+   Force-deploy is identical to what the watchdog does (stop, git pull,
+   cmake build, start, verify).  No risk if the watchdog ALSO triggers
+   mid-way -- the second deploy is a no-op because hash already matches.
+
+   ROLLBACK if S36-P1a breaks anything on the VPS:
+       cd C:\Omega
+       git checkout d203cb1481cea6ab02e06451e1037a6fdc798fc4
+       .\OMEGA.ps1 deploy
+   That reverts to the pre-S36-P1a state.  Investigate on the Mac before
+   re-pushing.
+
+D. STILL BLOCKING -- S36-P4 (UstecTrendFollowHtfEngine dispatch wiring)
+   The engine is COMPILED IN, INITIALISED, SHADOW-ARMED, and DORMANT.
+   It receives no M15 bars and no ticks because tick_indices.hpp does
+   not yet dispatch to it.  No trades fire.  The cells=3 init line will
+   appear in startup logs but the engine will not show up in
+   omega_trade_closes.csv until the dispatch is wired.
+
+   This was already documented in §3.9 + §5.6 of this handoff (see below)
+   but is repeated here because it is the single largest remaining piece
+   of work for the new engine to actually trade.  Until S36-P4 lands,
+   S36-P1a is a no-op at runtime -- the cell-list change has no
+   behavioural effect on the live broker tape because the engine never
+   sees a bar.
+
+   tick_indices.hpp is a protected hot-path file (§7 invariant 3).  Same
+   careful-edit treatment as the S35-P5 changes that wired XauThreeBar30m
+   into tick_gold.hpp.  Sketch is in §3.9 below.  Recommended sequence:
+       1. Read tick_indices.hpp end to end before changing anything.
+       2. Identify the existing M5 close branch in the USTEC.F builder
+          (handoff says lines 335-365, verify).
+       3. Add an M15 aggregator next to it (4× M5 bars per M15).
+       4. At M15 close: dispatch to g_ustec_tf_htf.on_15m_bar(...).
+       5. On every USTEC.F tick: dispatch to g_ustec_tf_htf.on_tick(...).
+       6. Compile + run tests/* regression suite.
+       7. Commit + push.  Watchdog auto-deploys.  Verify cells=3 init
+          line still appears AND first trade-close row tagged
+          "UstecTrendFollowHtf_*" appears in omega_trade_closes.csv
+          within 1-2 trading days.
+
+E. NEXT-SESSION KICKOFF (overrides §9 of HANDOFF_S33_FINAL's template)
+   First commands of S36-Pn:
+       cd ~/omega_repo
+       git log --oneline -5                  # expect a3ad262 at top
+       git status                             # expect "working tree clean"
+       bash .claude-preflight.sh              # expect [PREFLIGHT-OK]
+   THEN choose one of S36-P1a-verify (re-bt) / S36-P2 (2024 OOS) /
+   S36-P3 (new regimes) / S36-P4 (dispatch wiring).  S36-P4 has the
+   highest unlocked value because it converts the engine from dormant
+   to actually-trading-in-shadow.
+==========================================================================
+END AMENDMENT
+==========================================================================
 0. The one-paragraph summary
 S35-Part-3 (this session) addressed the open §5.2 question from S35-Part-2 ("cross-year audit on USTEC / US500 / EURUSD"). The repo had only 15 days of recent USTEC L2 ticks, but the operator pointed at `~/Tick/NSXUSD/` and `~/Tick/SPXUSD/` containing 16 months and 17 months respectively of HISTDATA T-format tick data (89.6M + 25.7M ticks, ~5.7 GB raw). A C++ converter normalised HISTDATA EST/EDT timestamps to UTC ms-since-epoch with proper DST handling, splitting the data into three test periods (2025H1, 2025H2, 2026 partial). Six per-period edge_hunt sweeps produced 6 result CSVs. The 3-period intersection test (mirroring S35-Part-2 §3.6 exactly) found 29 NSXUSD cells positive in ALL 3 periods and 13 SPXUSD cells positive in all 3. From the NSXUSD survivors, a 5-cell diversified ensemble (2h InsideBar, 1h Stochastic 20/80, 1h ATR_Mom mom=50, 15m Donchian N=20, 4h Stochastic 20/80) was packaged into a new `UstecTrendFollowHtfEngine` that wraps the bare cells with the `engine_protections.hpp` bundle (BE arm at +1×ATR, trail-after-BE at 0.75×ATR, ATR floor 5.0 raw points, $5.0 spread cap; killswitch / daily-cap disabled). The wrapped engine produced +$11,733 net across the same 16 months in backtest (consistent with the 38% gross-return-haircut pattern XauThreeBar30m showed). The engine is wired in but DORMANT awaiting `tick_indices.hpp` M15 dispatch. The operator's new directive (this session-end): drop unprofitable cells (specifically the Donch15m cell at -$4002 across all 3 periods despite being positive bare), stress-test the profitable cells harder, and hunt for additional signal families/regimes at M15/H1/H2/H4 that the current edge_hunt does not test. Next session = S36-P1 (drop + deepen + extend).
 1. What is at HEAD and what is dirty
