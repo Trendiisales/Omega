@@ -2209,6 +2209,21 @@ static void on_tick_gold(
     // $8-20 with TP_RR=4 -> TP $18-42). Runs in shadow mode by default --
     // no FIX orders, only ledger entries via bracket_on_close.
     //
+    // 2026-05-12 DECOMMISSIONED on XAU. Three independent parameter sweeps
+    //   (Plan A: exit-side; Plan B: TP/SL/trail; entry-side: MIN_RANGE,
+    //   MAX_RANGE, EXPANSION_MULT, vol_regime) over 24 months of Dukascopy
+    //   tick data showed no profitable configuration in the explored space.
+    //   Mean gross/trade slightly negative (-$0.25 best case after entry
+    //   tightening); mean cost/trade $2.50-3.00. Engine cannot break even
+    //   at 0.01 lot on XAU under current regime. See:
+    //     outputs/PLAN_A_B_REPORT.md
+    //     outputs/PLAN_A_B_ADDENDUM.md
+    //   To re-enable: remove the #if 0 / #endif wrapper below.
+    //   The engine source (include/GoldMidScalperEngine.hpp) is preserved
+    //   in place rather than moved to disabled_engines/ so the snapshot
+    //   reporter + heartbeat in engine_init.hpp continue to compile cleanly.
+    //   The dispatch below is the only behavioural change.
+    //
     // Tick-feed model identical to HybridGold (FIX 2026-04-07): on_tick is
     // called on every tick to keep the 300-tick structure window full, even
     // when can_enter=false. The engine internally short-circuits the new-
@@ -2219,6 +2234,7 @@ static void on_tick_gold(
     // gold_can_enter (session/symbol/post-impulse) like the other XAUUSD
     // engines. Once promoted to live, add g_gold_midscalper.has_open_position()
     // to gold_any_open above to enforce 1-at-a-time on the live path.
+#if 0  // 2026-05-12: MidScalperGold decommissioned, see comment block above
     {
         // Position management -- unconditional when live
         if (g_gold_midscalper.has_open_position()) {
@@ -2285,6 +2301,7 @@ static void on_tick_gold(
         // analogous to the FIX-order patterns used by other live engines
         // (HBG's pattern was the original reference but HBG was culled S10/S11).
     }
+#endif  // 2026-05-12: MidScalperGold decommissioned
 
     // -- 2026-05-08 S19: GoldMicroScalperEngine dispatch ---------------------
     // Bidirectional micro-tick scalper for XAUUSD. Captures many small moves

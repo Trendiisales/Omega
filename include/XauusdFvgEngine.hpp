@@ -3,6 +3,7 @@
 #include <iostream>
 #include "SpreadRegimeGate.hpp"
 #include "OmegaNewsBlackout.hpp"
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see open_position()
 // =============================================================================
 // XauusdFvgEngine.hpp  --  Fair-Value-Gap engine on XAUUSD 15-minute bars
 // =============================================================================
@@ -939,6 +940,23 @@ private:
         const double calc_lot = RISK_DOLLARS
                               / (risk_per_unit * USD_PER_PRICE_PER_LOT);
         const double size     = std::max(LOT_MIN, std::min(LOT_MAX, calc_lot));
+
+        // 2026-05-12 cost gate -- refuse this FVG entry if expected gross (the
+        //   TP_ATR_MULT * ATR target) does not cover cost+slippage+commission
+        //   by >=1.5x. Matches the inline gate pattern used by every gated
+        //   engine (AudusdSydneyOpen, EurusdLondonOpen, USTEC TF5m, etc.).
+        //   The 0.5 pips/side internal cost model in this engine's design
+        //   doc is an approximation; ExecutionCostGuard is the system-wide
+        //   per-symbol cost source of truth.
+        {
+            const double tp_dist_pts = TP_ATR_MULT * m_atr14;
+            const double spread_pts  = (bar.spread_mean > 0.0) ? bar.spread_mean : 0.0;
+            if (!ExecutionCostGuard::is_viable("XAUUSD",
+                                               spread_pts, tp_dist_pts, size, 1.5))
+            {
+                return;
+            }
+        }
 
         m_pos = LivePos{};
         m_pos.active            = true;

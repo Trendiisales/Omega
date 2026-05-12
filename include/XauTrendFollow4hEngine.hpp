@@ -108,6 +108,7 @@
 #include <vector>
 
 #include "OmegaTradeLedger.hpp"  // omega::TradeRecord
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -491,6 +492,16 @@ private:
         double tp_dist = cfg.tp_mult * atr14_;
         double sl_px = (side > 0) ? entry - sl_dist : entry + sl_dist;
         double tp_px = (side > 0) ? entry + tp_dist : entry - tp_dist;
+
+        // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+        {
+            const double spread_pts = ask - bid;
+            if (!ExecutionCostGuard::is_viable(
+                    "XAUUSD", spread_pts, tp_dist, lot, 1.5))
+            {
+                return;
+            }
+        }
 
         auto& p = pos[ci];
         p.active        = true;

@@ -31,6 +31,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -160,6 +161,16 @@ public:
         double sz = RISK_USD / (sl_pts * 100.0);
         sz = std::floor(sz / 0.001) * 0.001;
         sz = std::max(MIN_LOT, std::min(MAX_LOT, sz));
+
+        // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+        {
+            const double tp_dist = std::fabs(tp_px - ep);
+            if (!ExecutionCostGuard::is_viable(
+                    "XAUUSD", spread, tp_dist, sz, 1.5))
+            {
+                return;
+            }
+        }
 
         pos = Position{
             true, is_long, ep, sl_px, tp_px, sz, atr,

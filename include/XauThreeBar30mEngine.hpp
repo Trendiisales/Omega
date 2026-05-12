@@ -168,6 +168,7 @@
 
 #include "OmegaTradeLedger.hpp"      // omega::TradeRecord
 #include "engine_protections.hpp"    // S35-P3 ProtectedEngineGuards
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -417,6 +418,16 @@ private:
         // SL distance uses guards.cfg.sl_atr_mult (= SL_MULT from init()).
         const double sl_dist = guards.cfg.sl_atr_mult * atr14_;
         const double tp_dist = TP_MULT * atr14_;
+
+        // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+        {
+            const double spread_pts = ask - bid;
+            if (!ExecutionCostGuard::is_viable(
+                    "XAUUSD", spread_pts, tp_dist, lot, 1.5))
+            {
+                return;
+            }
+        }
 
         pos.active        = true;
         pos.is_long       = (side > 0);

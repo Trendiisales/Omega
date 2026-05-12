@@ -134,6 +134,7 @@
 
 #include "engine_protections.hpp"
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -636,6 +637,16 @@ private:
 
         const double sl_dist = cfg.sl_mult * atr;
         const double tp_dist = cfg.tp_mult * atr;
+
+        // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+        {
+            const double spread_pts = ask - bid;
+            if (!ExecutionCostGuard::is_viable(
+                    "USTEC.F", spread_pts, tp_dist, lot, 1.5))
+            {
+                return;
+            }
+        }
 
         auto& p = pos[ci];
         p.active        = true;

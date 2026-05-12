@@ -15,6 +15,7 @@
 #include <functional>
 #include <cstring>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see BREAKOUT_WATCH fire site
 
 namespace omega {
 
@@ -1171,6 +1172,27 @@ public:
                     std::cout << "[ENG-" << symbol << "] CHOP-PAUSE: "
                               << (is_long ? "LONG" : "SHORT") << " side paused\n";
                     std::cout.flush();
+                    phase = Phase::FLAT;
+                    return {};
+                }
+            }
+
+            // 2026-05-12 cost gate -- refuse the entry if expected gross does
+            //   not cover cost+slippage+commission by >=1.5x. BreakoutEngine
+            //   already runs its own compute_edge_and_execution() above, but
+            //   that uses spread*cost_spread_mult as a rough proxy. Layering
+            //   ExecutionCostGuard here puts every engine on the same per-
+            //   symbol cost model and matches the AudusdSydneyOpen pattern
+            //   (see OmegaCostGuard.hpp for the lookup table).
+            {
+                const double entry_px    = is_long ? ask : bid;
+                const double tp_dist_pts = is_long
+                    ? (edge.tp_price - entry_px)
+                    : (entry_px - edge.tp_price);
+                if (!ExecutionCostGuard::is_viable(symbol,
+                                                   ask - bid, tp_dist_pts,
+                                                   edge.size, 1.5))
+                {
                     phase = Phase::FLAT;
                     return {};
                 }

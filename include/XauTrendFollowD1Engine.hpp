@@ -95,6 +95,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -434,6 +435,15 @@ private:
         if (entry <= 0.0 || atr14_ <= 0.0) return;
         double sl_dist = cfg.sl_mult * atr14_;
         double tp_dist = cfg.tp_mult * atr14_;
+        // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+        {
+            const double spread_pts = ask - bid;
+            if (!ExecutionCostGuard::is_viable(
+                    "XAUUSD", spread_pts, tp_dist, lot, 1.5))
+            {
+                return;
+            }
+        }
         auto& p = pos[ci];
         p.active        = true;
         p.is_long       = (side > 0);

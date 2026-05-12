@@ -3,6 +3,7 @@
 #include <iostream>
 #include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
 #include "SpreadRegimeGate.hpp"   // 2026-04-29 PM Option 1 (audit-fixes-18)
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see on_tick() entry block
 // =============================================================================
 // MacroCrashEngine  v2.0  --  Hybrid Bracket Floor + Safe Cost-Covered Pyramid
 // =============================================================================
@@ -599,6 +600,22 @@ public:
         const double t_lot    = _rl(lot - b_lot);
         const double b_tp     = is_long ? (entry_px + atr * BRACKET_ATR_MULT)
                                         : (entry_px - atr * BRACKET_ATR_MULT);
+
+        // 2026-05-12 cost gate -- refuse this macro-crash entry if expected
+        //   gross does not cover cost+slippage+commission by >=1.5x. MCE has
+        //   a hybrid bracket+velocity-trail exit; the 30% bracket leg is the
+        //   guaranteed component, so we gate on bracket TP distance
+        //   (atr * BRACKET_ATR_MULT). The 70% velocity trail usually captures
+        //   more, but the gate is intentionally conservative -- it matches the
+        //   uniform 1.5x ratio every other gated engine uses (AudusdSydneyOpen
+        //   et al., see OmegaCostGuard.hpp). On a block we start a cooldown.
+        if (!ExecutionCostGuard::is_viable("XAUUSD",
+                                           ask - bid, atr * BRACKET_ATR_MULT,
+                                           lot, 1.5))
+        {
+            m_cooldown_until = now_ms + COOLDOWN_MS;
+            return;
+        }
 
         // Init
         pos              = Position{};

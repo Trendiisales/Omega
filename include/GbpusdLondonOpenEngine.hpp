@@ -3,6 +3,7 @@
 #include <iostream>
 #include "SpreadRegimeGate.hpp"
 #include "OmegaNewsBlackout.hpp"
+#include "OmegaCostGuard.hpp"
 // =============================================================================
 // GbpusdLondonOpenEngine.hpp  --  London-open compression bracket for GBPUSD
 // =============================================================================
@@ -678,6 +679,14 @@ public:
             pending_lot       = base_lot;
             pending_lot_long  = lot_long;
             pending_lot_short = lot_short;
+            // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+            if (!ExecutionCostGuard::is_viable(
+                    "GBPUSD", spread, tp_dist, base_lot, 1.5))
+            {
+                phase = Phase::IDLE;
+                bracket_high = bracket_low = range = 0.0;
+                return;
+            }
             phase             = Phase::PENDING;
             m_armed_ts        = now_s;
             m_pending_blocked_since = 0;

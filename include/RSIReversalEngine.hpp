@@ -45,6 +45,7 @@
 #include <string>
 #include <deque>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see on_tick() entry block
 
 namespace omega {
 
@@ -399,6 +400,21 @@ public:
         // -- Entry -------------------------------------------------------------
         const double entry   = is_long ? ask : bid;
         const double sl_dist = std::max(m_tick_atr * SL_ATR_MULT, spread * 2.0);
+
+        // 2026-05-12 cost gate -- refuse the entry if expected gross does not
+        //   cover cost+slippage+commission by >=1.5x. RSIReversal has no fixed
+        //   TP (RSI-based / BE / trail exits), so we estimate TP conservatively
+        //   at 1.5R (sl_dist * 1.5) -- the same heuristic used by the cost_ok
+        //   lambda in on_tick.hpp for dispatch() / dispatch_bracket() callers.
+        //   On a block we start a fresh cooldown so the same setup isn't
+        //   re-evaluated tick-by-tick. pos.size is hardcoded to 0.01 below
+        //   (SHADOW-mode lot floor) so we gate on that figure.
+        if (!ExecutionCostGuard::is_viable("XAUUSD", spread, sl_dist * 1.5,
+                                           0.01, 1.5))
+        {
+            m_cooldown_until = now_s + COOLDOWN_S;
+            return;
+        }
 
         pos.active    = true;
         pos.is_long   = is_long;
