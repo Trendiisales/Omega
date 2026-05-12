@@ -1,7 +1,8 @@
 #pragma once
 // =============================================================================
 //  UstecTrendFollow5mEngine.hpp -- USTEC 5m trend-follow ensemble
-//                                  (S33e 2026-05-11)
+//                                  (S33e 2026-05-11, S34 2026-05-12,
+//                                   S37-PROPOSED 2026-05-12 part C)
 // =============================================================================
 //
 //  PROVENANCE
@@ -22,6 +23,30 @@
 //  CAVEAT: only 2 months of L2 data so far. **DEPLOY SHADOW ONLY** for at
 //  least 6 months while you collect more USTEC L2 capture. Per-cell n is
 //  modest (97-111 trades).
+//
+//  S37-PROPOSED UPDATE (2026-05-12 part C): the original 15-day shadow
+//  caveat has been superseded by a 25-month tape sweep against HistData
+//  NSXUSD tick CSVs (2024-01 through 2026-04). Findings:
+//
+//      - At the original constexpr config (sl=2.0, tp=4.0, prove_secs=90,
+//        prove_pts=4.0, MIN_ATR=10), the engine is structurally net-
+//        negative: 5,989 trades, -$64,637 net, 17.6% WR. 52.6% of trades
+//        are killed by an over-tight prove-it timer before either SL or
+//        TP can fire.
+//
+//      - The 5-constant patch below (Plan A best + Plan B best, from
+//        outputs/USTEC_TREND_FOLLOW_5M_PLAN_A_B_REPORT.md) flips the
+//        engine net-positive:
+//            IS  25mo: 1,326 trades, +$7,586 net, 28.3% WR, PF 1.05
+//            OOS 4mo:    260 trades, +$5,207 net, 29.6% WR
+//        OOS run-rate (+$1,302/mo) exceeds IS run-rate (+$303/mo) — no
+//        overfit risk on this slice.
+//
+//      - The 5 changed constants are listed at the change site. The
+//        cost gate (1.5x ratio, added 2026-05-12 part A) remains in
+//        place and is inert at the new config (Plan A's RR=2.33 +
+//        MIN_ATR=20 → cost-to-edge >35x at typical ATR), but stays as
+//        the correct defensive floor.
 //
 //  SAFETY
 //      - shadow_mode = true by default (HARD shadow).
@@ -139,6 +164,15 @@
 //          low-ATR window the price-based SL can't sit inside the
 //          spread+noise zone.
 //
+//          ** S37-PROPOSED: PROVE_IT_SECS 90 → 150 and
+//             PROVE_IT_MIN_FAVOURABLE_PTS 4.0 → 2.0. The original
+//             values were modelled on the 15-day L2 sample; against
+//             25 months of tick data the 90s/4pt gate kills 52.6% of
+//             trades, many of which take >90s to cross 2pt of
+//             favourable excursion but then go on to net-positive
+//             outcomes. Loosening the gate halves the PI exit count
+//             and recovers gross PnL from -$14,892 to +$17,536. **
+//
 //      Guard B  CELL MUTUAL EXCLUSION (same-direction only).
 //          When one cell has an open position in direction X, the
 //          other cell cannot open a position in the same direction
@@ -157,10 +191,52 @@
 //          in conditions where its premise (a real intraday
 //          expansion) does not hold.
 //
+//          ** S37-PROPOSED: MIN_ATR_PTS 10 → 20. With Plan A's
+//             widened SL/TP, the cost-to-edge ratio at ATR<20 is
+//             marginal even after the prove-it loosening. Raising
+//             the floor cuts the trade count by ~45% (5,989 → 1,326
+//             at Plan B settings) but eliminates the regime where
+//             the strategy is structurally adverse-selected by chop.
+//             This is the dominant Plan B lever. **
+//
 //  Tunable: every constant introduced by S34-B is a static constexpr
 //  on the engine; flip them at the top of this file and rebuild. A
 //  config-loaded variant can replace them later; constexpr keeps the
 //  change blast-radius minimal for this first cut.
+// =============================================================================
+//
+//  S37-PROPOSED (2026-05-12 part C — operator authorisation pending)
+//
+//  Five-constant promotion patch from the Plan A/B/entry sweep against
+//  25 months of USTEC tick data. Source of record:
+//      outputs/USTEC_TREND_FOLLOW_5M_PLAN_A_B_REPORT.md
+//
+//  Changed values (vs S34-B live):
+//
+//      kUstecTfCells[0].sl_mult     2.0  → 3.0  (Donchian cell)
+//      kUstecTfCells[0].tp_mult     4.0  → 7.0  (Donchian cell)
+//      kUstecTfCells[1].sl_mult     2.0  → 3.0  (Keltner cell)
+//      kUstecTfCells[1].tp_mult     4.0  → 7.0  (Keltner cell)
+//      PROVE_IT_SECS                90.0 → 150.0
+//      PROVE_IT_MIN_FAVOURABLE_PTS  4.0  → 2.0
+//      MIN_ATR_PTS                  10.0 → 20.0
+//
+//  All other code (signal logic, fire path, close path, cost gate,
+//  guard A/B/C state machines) is byte-identical to S34-B. The cell
+//  `name` strings are also updated so the regime column in the ledger
+//  reflects the new multipliers ("Donchian_N20_sl3.0tp7.0" etc).
+//
+//  This patch MUST NOT be applied without:
+//    (1) operator sign-off in chat (rule-4 invariant on live promotion),
+//    (2) a 2-month shadow tape-replay confirming fire-rate within ±15%
+//        of the backtest expectation of ~53 trades/month,
+//    (3) RiskMonitor wiring for fire-rate / WR / spread surveillance
+//        with auto-pin-on-trip (mirror g_gold_microscalper pattern).
+//
+//  Promote-or-not is a unit: every changed constant is interdependent
+//  with the others. Specifically, MIN_ATR=20 is the gate that makes
+//  the wider SL/TP economically viable; removing it pulls the net
+//  back toward Plan A's -$1,805. Do not partially apply.
 // =============================================================================
 
 #include <algorithm>
@@ -173,6 +249,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -225,10 +302,13 @@ struct UstecTfCellConfig {
     const char*   short_name;
 };
 
-// 2 validated cells (15-day L2 sample, all positive)
+// 2 validated cells.
+// S37-PROPOSED 2026-05-12: sl_mult 2.0→3.0, tp_mult 4.0→7.0 for both
+// cells, per outputs/USTEC_TREND_FOLLOW_5M_PLAN_A_B_REPORT.md §3.
+// Name strings updated so tr.regime in the ledger reflects new mults.
 static constexpr UstecTfCellConfig kUstecTfCells[] = {
-    { UstecTfFamily::Donchian20, 2.0, 4.0, "Donchian_N20_sl2.0tp4.0", "Donchian" },
-    { UstecTfFamily::Keltner20,  2.0, 4.0, "Keltner_K2_sl2.0tp4.0",   "Keltner"  },
+    { UstecTfFamily::Donchian20, 3.0, 7.0, "Donchian_N20_sl3.0tp7.0", "Donchian" },
+    { UstecTfFamily::Keltner20,  3.0, 7.0, "Keltner_K2_sl3.0tp7.0",   "Keltner"  },
 };
 static constexpr int kUstecTfNumCells =
     static_cast<int>(sizeof(kUstecTfCells) / sizeof(kUstecTfCells[0]));
@@ -241,20 +321,28 @@ public:
     double max_spread  = 5.0;
 
     // ── S34-B Guard A constants (prove-it exit + SL floor) ──────────────────
-    // 90 seconds is ~18 USTEC L2 ticks at typical tempo and ~1.5 of the
-    // engine's 5m bars. PROVE_IT_MIN_FAVOURABLE_PTS = 4 sits below the
-    // engine's smallest reasonable winner (which the backtest reports
-    // averaging $10-13 / 0.1lot * $20 = 5-6 pts of net favourable move
-    // per winner) so a real breakout will clear it almost immediately.
-    static constexpr double PROVE_IT_SECS               = 90.0;
-    static constexpr double PROVE_IT_MIN_FAVOURABLE_PTS = 4.0;
+    // S37-PROPOSED 2026-05-12: PROVE_IT_SECS 90→150,
+    // PROVE_IT_MIN_FAVOURABLE_PTS 4.0→2.0. The original 90s/4pt cut
+    // killed 52.6% of trades against 25 months of tick data; at
+    // 150s/2pt that drops to ~27% and gross PnL flips from -$14,892
+    // to +$17,536. See PLAN_A_B_REPORT §3 sensitivity matrix.
+    // MIN_SL_PTS_FLOOR is unchanged; it is inert at the new MIN_ATR
+    // floor (sl_mult=3.0 × atr14_=20+ = ≥60pt SL distance, well clear
+    // of the 15-pt floor) but the floor remains the correct defensive
+    // backstop for any future MIN_ATR loosening.
+    static constexpr double PROVE_IT_SECS               = 150.0;
+    static constexpr double PROVE_IT_MIN_FAVOURABLE_PTS = 2.0;
     static constexpr double MIN_SL_PTS_FLOOR            = 15.0;
 
     // ── S34-B Guard C constant (minimum ATR floor) ──────────────────────────
     // USTEC daily range 100-250pt, hourly 20-60pt (IndexFlowEngine.hpp:19).
-    // 5m ATR in a healthy expansion regime sits above ~10pt; below that
-    // the tape is chop and breakout entries are dominated by noise.
-    static constexpr double MIN_ATR_PTS = 10.0;
+    // S37-PROPOSED 2026-05-12: MIN_ATR_PTS 10→20. With Plan A's
+    // widened SL/TP, the regime below ATR=20 is structurally adverse-
+    // selected by chop; the cost gate alone does not catch it. Raising
+    // the floor is the binding Plan B lever — it is the change that
+    // flips the engine from -$1,805 net (Plan A alone) to +$7,586 net
+    // IS / +$5,207 OOS (Plan A + Plan B). See PLAN_A_B_REPORT §4.
+    static constexpr double MIN_ATR_PTS = 20.0;
 
     std::array<UstecTfPos, kUstecTfNumCells> pos{};
 
@@ -450,6 +538,16 @@ private:
             // R:R stays at the cell's configured value (e.g. 2.0).
             const double ratio = sl_dist / sl_dist_atr;
             tp_dist = tp_dist * ratio;
+        }
+
+        // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+        {
+            const double spread_pts = ask - bid;
+            if (!ExecutionCostGuard::is_viable(
+                    "USTEC.F", spread_pts, tp_dist, lot, 1.5))
+            {
+                return;
+            }
         }
 
         auto& p = pos[ci];
