@@ -207,6 +207,20 @@ public:
     void register_shadow_pin_cb(const std::string& engine,
                                 std::function<void(const std::string& reason)> cb);
 
+    // 2026-05-11 S26 §2.0c: external trip path for monitors that live
+    //   outside the WR / FIRE / SPREAD evaluators (currently used by the
+    //   broker-disparity hard-stop at the end of handle_closed_trade in
+    //   trade_lifecycle.hpp). Same semantics as the internal `_maybe_auto_pin`
+    //   except that the wrapper takes the lock since outside callers don't
+    //   hold mtx_. If logging_only is false and a callback is registered
+    //   for `engine`, the callback fires under the monitor lock so the
+    //   engine's shadow_mode flip is serialised against the rest of the
+    //   evaluator state. The callback must be idempotent -- the disparity
+    //   monitor uses a session-scoped one-shot guard but it is reasonable
+    //   for other future callers to invoke this on every offending tick.
+    void trip_engine_to_shadow(const std::string& engine,
+                               const std::string& reason);
+
 private:
     mutable std::mutex                                            mtx_;
     std::unordered_map<std::string, RiskMonitorThresholds>        thresholds_;
@@ -623,6 +637,18 @@ inline void RiskMonitor::_maybe_auto_pin(const std::string& engine,
     // assignment which the engine reads on each tick under its own
     // serialisation, so no nested-lock risk.
     pit->second(reason);
+}
+
+inline void RiskMonitor::trip_engine_to_shadow(const std::string& engine,
+                                               const std::string& reason)
+{
+    // Public wrapper around _maybe_auto_pin so external monitors (e.g. the
+    // broker-disparity hard-stop at the end of handle_closed_trade in
+    // trade_lifecycle.hpp) can pin an engine to shadow without reaching
+    // into RiskMonitor internals. Takes the lock since outside callers
+    // don't hold it.
+    std::lock_guard<std::mutex> lk(mtx_);
+    _maybe_auto_pin(engine, reason);
 }
 
 inline void RiskMonitor::_maybe_roll_day(RiskMonitorState& s, int64_t now_s) {

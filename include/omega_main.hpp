@@ -127,6 +127,64 @@ int main(int argc, char* argv[])
                   << "\n";
         std::cout.flush();
 
+        // ── FAIL-LOUD: mode/account consistency invariant (S26 §2.1) ──────
+        // 2026-05-11 added after operator discovered 3 days of demo-trading
+        // under mode=LIVE label (live FIX session connected with sender =
+        // demo.blackbull.2067070 + username = 2067070, while config.mode
+        // said "LIVE"). Engine logged everything with [LIVE] markers but
+        // every fill landed on the demo account. The live account showed
+        // zero engine activity for the full window. Reference incident:
+        // HANDOFF_S26.md §1.4. The check below refuses to start the
+        // process if mode and FIX credentials disagree, so the failure
+        // mode cannot recur silently.
+        //
+        // Field names per include/engine_config.hpp:282-284:
+        //   g_cfg.mode      -- "LIVE" | "DEMO" | "SHADOW"
+        //   g_cfg.sender    -- FIX SenderCompID (e.g. live.blackbull.8077780)
+        //   g_cfg.username  -- FIX Username (e.g. 8077780)
+        // Demo accounts use either "demo." in sender OR account number
+        // 2067070 (the historical demo account). Live uses "live." in sender.
+        {
+            const std::string& mode   = g_cfg.mode;
+            const std::string& sender = g_cfg.sender;
+            const std::string& user   = g_cfg.username;
+            const bool sender_is_demo = sender.find("demo") != std::string::npos;
+            const bool user_is_demo   = (user.find("demo")   != std::string::npos)
+                                     || (user.find("2067070") != std::string::npos);
+            const bool sender_is_live = sender.find("live") != std::string::npos;
+            if (mode == "LIVE" && (sender_is_demo || user_is_demo)) {
+                std::cerr << "\033[1;31m[OMEGA-FATAL] mode=LIVE but FIX credentials are demo:\n"
+                          << "  sender   = " << sender << "\n"
+                          << "  username = " << user << "\n"
+                          << "  Pick one. Refusing to start. (S26 §2.1 invariant)\033[0m\n";
+                std::cerr.flush();
+                if (g_singleton_mutex) {
+                    ReleaseMutex(g_singleton_mutex);
+                    CloseHandle(g_singleton_mutex);
+                    g_singleton_mutex = nullptr;
+                }
+                Sleep(2000);
+                return 1;
+            }
+            if (mode == "DEMO" && sender_is_live) {
+                std::cerr << "\033[1;31m[OMEGA-FATAL] mode=DEMO but sender is live ("
+                          << sender << "). Pick one. (S26 §2.1 invariant)\033[0m\n";
+                std::cerr.flush();
+                if (g_singleton_mutex) {
+                    ReleaseMutex(g_singleton_mutex);
+                    CloseHandle(g_singleton_mutex);
+                    g_singleton_mutex = nullptr;
+                }
+                Sleep(2000);
+                return 1;
+            }
+            std::cout << "[OMEGA-MODE-CHECK] mode=" << mode
+                      << " sender=" << sender
+                      << " username=" << user
+                      << " -- OK\n";
+            std::cout.flush();
+        }
+
         // ── FAIL-LOUD: codify the no-warmup rule as a runtime invariant ──
         // If bars_gold_m1.dat exists on disk but m1_ready is still false
         // after both hydrate and load, the system is about to start cold

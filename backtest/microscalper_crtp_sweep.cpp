@@ -62,13 +62,31 @@
 //             data/l2_ticks_${s}_*.csv --warmup 1000 --top 20 --verbose
 //     done
 //
-// CSV SCHEMA (matches existing L2 captures)
-//   Required columns by name in header:
-//     ts_ms, bid, ask, l2_imb, l2_bid_vol, l2_ask_vol,
-//     depth_bid_levels, depth_ask_levels, watchdog_dead
-//   Extra columns (vol_ratio, regime, vpin, has_pos, micro_edge, ewm_drift)
-//   are ignored. Header may be in any order; column indices are resolved by
-//   name on the first line.
+// CSV SCHEMA -- THREE FORMATS AUTO-DETECTED FROM THE FIRST LINE
+//
+//   (1) Existing L2 captures (S19+) -- header contains "ts_ms":
+//         ts_ms, bid, ask, l2_imb, l2_bid_vol, l2_ask_vol,
+//         depth_bid_levels, depth_ask_levels, watchdog_dead
+//       Extra columns (vol_ratio, regime, vpin, has_pos, micro_edge, ewm_drift)
+//       are ignored. Header may be in any order; column indices are resolved
+//       by name on the first line.
+//
+//   (2) Dukascopy historical FX ticks -- header contains "timestamp_ms":
+//         timestamp_ms, ask, bid, ask_vol, bid_vol
+//       Produced by download_dukascopy.py. Column 1/2 read order-agnostic
+//       (min->bid, max->ask) so reordered exports also work. L2 fields
+//       zero-defaulted; engine takes the L2-degraded entry path (z-only,
+//       no L2 confirmation gate).
+//
+//   (3) HistData.com ASCII tick CSV -- no header, first column is a
+//       "YYYYMMDD HHMMSSmmm" timestamp:
+//         20240301 100000123,1.08319,1.08321,0.0
+//       Used by backtest/eurusd_bt/, gbpusd_bt/, usdjpy_bt/. L2 fields
+//       zero-defaulted same as Dukascopy.
+//
+//   Format (2)/(3) was added 2026-05-08 in S20 Phase 0 FX (Path B):
+//   Dukascopy fast-fail check. The handoff doc HANDOFF_S20_AFTER_S19_MICROSCALPER.md
+//   step 5.5 lays out why we go to historical FX before live broker L2 capture.
 //
 // BUILD
 //   clang++ -std=c++17 -O3 -DNDEBUG -fbracket-depth=1024 \
@@ -89,6 +107,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cinttypes>
 #include <cmath>
@@ -205,6 +224,17 @@ struct SymbolSpec {
     // actually fire so the engine's signature trail/reversal mechanism
     // engages instead of running as a vanilla z-score scalper.
     int    max_hold_sec;
+    // 2026-05-08 S20 Phase 0 FX (Path B fix): per-symbol noise-floor /
+    // tick-tolerance constant. The XAUUSD live engine uses a hard 0.05
+    // (5 cents @ ~$3000 mid) as both the "flat tape" stdev floor that
+    // suppresses uninformative z-scores AND the price-equality tolerance
+    // for SL/BE/TRAIL classification. That value is XAUUSD-specific:
+    // EURUSD 20-tick stdev is ~1e-5, five orders of magnitude under the
+    // gold floor, so the engine never fires on FX without this fix.
+    // For XAUUSD/indices we keep 0.05 -- preserves rk12 calibration and
+    // the iteration 1+2 indices leaderboards. For FX, set to ~0.3 pip
+    // in each pair's price scale.
+    double min_sd_pts;
 };
 
 // Symbol table. Add new entries here as Phase 0 expands.
@@ -214,7 +244,8 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 0.79, /*SL*/ 3.00, /*BE*/ 0.50, /*TR*/ 0.50,
         /*max_sp*/ 1.0,    /*usd_pt*/ 100.0,    /*lot*/ 0.01,
         /*sess*/ 6, 22, /*be_off*/ 0.30, /*rev_delta*/ 0.30,
-        /*max_hold*/ 60},
+        /*max_hold*/ 60,
+        /*min_sd*/ 0.05},
 
     // US500 -- BlackBull CFD on the SP500 cash index. Mid ~7135, spread
     //   rock-steady at 0.81pt observed in 2026-04-22 capture (broker price
@@ -231,7 +262,8 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 3.00, /*SL*/ 12.00, /*BE*/ 1.50, /*TR*/ 1.50,
         /*max_sp*/ 1.50,   /*usd_pt*/ 0.10,    /*lot*/ 0.10,
         /*sess*/ 13, 21, /*be_off*/ 1.00, /*rev_delta*/ 1.00,
-        /*max_hold*/ 300},
+        /*max_hold*/ 300,
+        /*min_sd*/ 0.05},
 
     // USTEC -- BlackBull CFD on the NASDAQ-100 cash index. Mid ~26800,
     //   spread observed at 2.71pt (= 26800.900 - 26798.190) in 2026-04-22
@@ -242,7 +274,8 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 10.00, /*SL*/ 40.00, /*BE*/ 5.00, /*TR*/ 5.00,
         /*max_sp*/ 4.50,   /*usd_pt*/ 0.10,    /*lot*/ 0.10,
         /*sess*/ 13, 21, /*be_off*/ 3.00, /*rev_delta*/ 3.00,
-        /*max_hold*/ 300},
+        /*max_hold*/ 300,
+        /*min_sd*/ 0.05},
 
     // NAS100 -- BlackBull CFD on the NASDAQ-100 cash index, alternate name
     //   from USTEC. Mid ~28548, spread observed at ~1.20pt in 2026-05-07
@@ -254,19 +287,49 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 4.50, /*SL*/ 18.00, /*BE*/ 2.50, /*TR*/ 2.50,
         /*max_sp*/ 2.50,   /*usd_pt*/ 0.10,    /*lot*/ 0.10,
         /*sess*/ 13, 21, /*be_off*/ 1.50, /*rev_delta*/ 1.50,
-        /*max_hold*/ 300},
+        /*max_hold*/ 300,
+        /*min_sd*/ 0.05},
 
     // EURUSD -- USD-quote major, 0.0001 = 1 pip. Most-liquid FX pair.
-    //   1.0 lot = 100k EUR; 0.10 lot value-per-pip = $1. Session: NY-lunch +
-    //   Asia (15:30-04:00 UTC) chop windows where mean-rev dominates;
-    //   exclude London 06-09 + NY 13-15 trending hours via the session gate.
-    //   Phase 0 sweep validates whether the chop hours produce edge.
-    //   max_hold=180s -- FX cadence faster than indices but slower than gold.
+    //   1.0 lot = 100k EUR; 0.10 lot value-per-pip = $1.
+    //   Session: NY-lunch + Asia (15-04 UTC) chop window. Tick density
+    //   from scripts/fx_tape_stats.py on 2025-03 HistData shows 16-19 UTC
+    //   is a dead zone (1.1-1.4% density); SD floor self-filters those
+    //   hours, so leaving the wider window costs only wall-clock.
+    //   Phase 0 fast-fail status: smoke-test rerun with these anchors
+    //   pending. Indices Phase 0 (US500/USTEC/NAS100) all failed structurally
+    //   on broker spread/TP ratio; FX is the next test.
+    //
+    //   2026-05-08 RECALIBRATION from measured EURUSD-2025-03 tape:
+    //     spread:        p50=5e-5  p90=7e-5  p95=8e-5  p99=1.2e-4  (HistData
+    //                    synthetic; broker live spreads will be wider)
+    //     20-tick stdev: p10=9.6e-6 p50=2.2e-5 p90=4.5e-5 p99=8.0e-5
+    //     20-tick range: p50=7.5e-5 p90=1.45e-4 p95=1.7e-4 p99=2.5e-4
+    //     60s   range:   p50=2.1e-4 p90=4.9e-4 p99=1.28e-3
+    //     180s  range:   p50=3.95e-4 p90=8.75e-4 p99=2.05e-3
+    //     600s  range:   p50=7.4e-4 p90=1.63e-3 p99=3.33e-3
+    //   Anchors derived: TP=range20_p90, SL=4*TP, BE=TR=0.6*TP,
+    //   max_spread=1.5*spread_p99, be_offset=~spread_p99,
+    //   min_sd=0.5*stdev_p10. base_entry_z bumped to 1.0 (from 0.75)
+    //   because the previous sweep saturated at the Z-grid top boundary
+    //   (1.5 = 0.75 * 2.0 mult). max_hold raised to 300s to match
+    //   indices iter-2; with new TP=0.145 pip, 60s_p50=2.1 pip range
+    //   gives BE-arm plenty of fuel.
+    // 2026-05-08 RETUNE-2: shifted from "20-tick p90 anchor" (TP=1.45 pip,
+    // mathematical fast-fail at 50% WR) to "London-open MIN_RANGE territory"
+    // (TP=8 pip). Reasoning: at 1.45 pip TP and ~1 pip cost, breakeven needs
+    // TP - avg_loss > 2 pip; previous run had TP - avg_loss = -0.43 pip.
+    // EurusdLondonOpenEngine runs PF=2.09 on the same tape with TP=16 pip
+    // (8-pip range × RR=2), so FX edge exists at this TP scale. This retune
+    // tests whether micro-scalper's z-score entry can produce edge at
+    // London-open-scale TP values; if not, the architectural verdict is
+    // final and we commit to the EurusdLondonOpenEngine validation.
     {"EURUSD", "MicroScalperEur",
-        /*Z*/ 0.75, /*TP*/ 0.0008, /*SL*/ 0.0030, /*BE*/ 0.0005, /*TR*/ 0.0005,
-        /*max_sp*/ 0.0003, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
-        /*sess*/ 15, 4,  /*be_off*/ 0.0003, /*rev_delta*/ 0.0003,
-        /*max_hold*/ 180},
+        /*Z*/ 1.00, /*TP*/ 0.0008, /*SL*/ 0.0008, /*BE*/ 0.0001, /*TR*/ 0.00025,
+        /*max_sp*/ 0.00018, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
+        /*sess*/ 15, 4,  /*be_off*/ 0.00012, /*rev_delta*/ 0.0001,
+        /*max_hold*/ 300,
+        /*min_sd*/ 0.000005},  // 0.5 * stdev_p10 = 4.78e-6
 
     // GBPUSD -- cable. Trends more than EUR; sweep validation strongly
     //   recommended before deploying. Wider ATR by ~50%.
@@ -274,7 +337,8 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 0.0010, /*SL*/ 0.0040, /*BE*/ 0.0006, /*TR*/ 0.0006,
         /*max_sp*/ 0.0004, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
         /*sess*/ 15, 4,  /*be_off*/ 0.0004, /*rev_delta*/ 0.0004,
-        /*max_hold*/ 180},
+        /*max_hold*/ 180,
+        /*min_sd*/ 0.000004},  // ~0.4 pip noise floor (cable wider than EUR)
 
     // USDJPY -- 100x scale shift (0.01 = 1 pip). pip math entirely different.
     //   Tokyo/Asia session 22-04 UTC is the mean-rev window; exclude BoJ
@@ -283,7 +347,8 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 0.10,   /*SL*/ 0.40,   /*BE*/ 0.06,   /*TR*/ 0.06,
         /*max_sp*/ 0.04,   /*usd_pt*/ 1000.0,    /*lot*/ 0.10,
         /*sess*/ 22, 4,  /*be_off*/ 0.04, /*rev_delta*/ 0.04,
-        /*max_hold*/ 180},
+        /*max_hold*/ 180,
+        /*min_sd*/ 0.0003},   // ~0.3 pip noise floor (JPY-scale 0.01 = 1 pip)
 
     // AUDUSD -- thinner than EUR/GBP; off-hours cadence may be too low for
     //   the 20-tick window. Sweep result will say.
@@ -291,7 +356,8 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 0.0006, /*SL*/ 0.0024, /*BE*/ 0.0004, /*TR*/ 0.0004,
         /*max_sp*/ 0.0003, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
         /*sess*/ 22, 4,  /*be_off*/ 0.0003, /*rev_delta*/ 0.0003,
-        /*max_hold*/ 240},
+        /*max_hold*/ 240,
+        /*min_sd*/ 0.000003},  // ~0.3 pip noise floor
 
     // NZDUSD -- thinnest of the USD-quote majors; sweep validation
     //   absolutely required before any deployment consideration.
@@ -299,7 +365,8 @@ inline constexpr SymbolSpec SYMBOL_TABLE[] = {
         /*Z*/ 0.75, /*TP*/ 0.0006, /*SL*/ 0.0024, /*BE*/ 0.0004, /*TR*/ 0.0004,
         /*max_sp*/ 0.0003, /*usd_pt*/ 100000.0, /*lot*/ 0.10,
         /*sess*/ 22, 4,  /*be_off*/ 0.0003, /*rev_delta*/ 0.0003,
-        /*max_hold*/ 240},
+        /*max_hold*/ 240,
+        /*min_sd*/ 0.000004},  // ~0.4 pip noise floor (thinner than AUDUSD)
 };
 
 inline constexpr int SYMBOL_TABLE_SIZE =
@@ -355,6 +422,7 @@ public:
     static double usd_per_pt()           { return g_active_symbol->usd_per_pt; }
     static double live_lot()             { return g_active_symbol->live_lot; }
     static int    max_hold_sec()         { return g_active_symbol->max_hold_sec; }
+    static double min_sd_pts()           { return g_active_symbol->min_sd_pts; }
 
     enum class Phase { IDLE, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
@@ -436,7 +504,10 @@ public:
 
         double mean = 0.0, sd = 0.0;
         if (!_rolling_stats(mean, sd)) return;
-        if (sd < 0.05) return;
+        // Per-symbol noise floor (XAUUSD live constant 0.05 hoisted to
+        // SymbolSpec::min_sd_pts so EURUSD's 1e-5 stdev doesn't get
+        // silently filtered as "flat tape"). See SymbolSpec docstring.
+        if (sd < min_sd_pts()) return;
         const double z = (mid - mean) / sd;
 
         const bool block_long  = (phase == Phase::COOLDOWN && m_cooldown_dir == +1);
@@ -604,10 +675,14 @@ private:
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
         if (sl_hit) {
             const double exit_px = pos.is_long ? bid : ask;
-            const bool sl_at_be = std::fabs(pos.sl - pos.entry) <= 0.05;
+            // Same per-symbol scale used for the entry SD floor doubles
+            // as the price-equality tolerance for SL/BE/TRAIL classification.
+            // Gold's hard-coded 0.05 was XAUUSD-only; EURUSD needs ~3e-6.
+            const double tol = min_sd_pts();
+            const bool sl_at_be = std::fabs(pos.sl - pos.entry) <= tol;
             const bool trail_in_prof = pos.is_long
-                ? (pos.sl > pos.entry + 0.05)
-                : (pos.sl < pos.entry - 0.05);
+                ? (pos.sl > pos.entry + tol)
+                : (pos.sl < pos.entry - tol);
             const char* reason;
             if      (sl_at_be)      reason = "BE_HIT";
             else if (trail_in_prof) reason = "TRAIL_HIT";
@@ -881,6 +956,242 @@ static bool load_l2_csv(const char* path,
 }
 
 // =============================================================================
+// 2026-05-08 S20 Phase 0 FX Path B -- Dukascopy / HistData CSV reader
+// -----------------------------------------------------------------------------
+// Reads FX historical tick data without L2 columns. Two flavours auto-detected
+// at the row level (not the column level) from the first column's shape:
+//
+//   * Numeric epoch: 1709251200123          (seconds or ms; auto-scaled)
+//   * HistData:      YYYYMMDD HHMMSSmmm     (UTC, space separator)
+//   * ISO 8601:      YYYY-MM-DD[T ]HH:MM:SS[.mmm]
+//
+// The bid/ask columns are read order-agnostic (min->bid, max->ask) so a
+// Dukascopy file with column order ask,bid and a HistData file with column
+// order bid,ask both produce correct ticks without per-format branching.
+//
+// L2 fields are zero-defaulted: l2_imb=0.5 neutral, depth=0, watchdog_dead=0.
+// TickRow::l2_real() returns false on the resulting rows, which steers the
+// engine into its z-only entry path (the production engine degrades cleanly
+// when L2 is unavailable -- see GoldMicroScalperEngine.hpp's L2 confirmation
+// block; the live engine and this CRTP port both branch on l2_real).
+// =============================================================================
+
+static int64_t parse_iso_ts_ms(const std::string& ts) noexcept {
+    // ISO 8601 with optional fractional seconds, e.g.
+    //   "2024-03-01T10:30:00.123" or "2024-03-01 10:30:00".
+    if (ts.size() < 19) return 0;
+    std::tm t{};
+    try {
+        t.tm_year = std::stoi(ts.substr(0, 4)) - 1900;
+        t.tm_mon  = std::stoi(ts.substr(5, 2)) - 1;
+        t.tm_mday = std::stoi(ts.substr(8, 2));
+        t.tm_hour = std::stoi(ts.substr(11, 2));
+        t.tm_min  = std::stoi(ts.substr(14, 2));
+        t.tm_sec  = std::stoi(ts.substr(17, 2));
+    } catch (...) {
+        return 0;
+    }
+    int64_t ms = 0;
+    if (ts.size() >= 23 && ts[19] == '.') {
+        try { ms = std::stol(ts.substr(20, 3)); } catch (...) {}
+    }
+#ifdef _WIN32
+    int64_t epoch_s = static_cast<int64_t>(_mkgmtime(&t));
+#else
+    int64_t epoch_s = static_cast<int64_t>(timegm(&t));
+#endif
+    return epoch_s * 1000 + ms;
+}
+
+static int64_t parse_histdata_ts(const std::string& ts) noexcept {
+    // HistData.com ASCII tick format: "YYYYMMDD HHMMSSmmm" (UTC, no
+    // separators inside the date or inside the time-of-day portion).
+    if (ts.size() < 18) return 0;
+    auto get_int = [&](size_t off, size_t len) -> int {
+        try { return std::stoi(ts.substr(off, len)); } catch (...) { return -1; }
+    };
+    const int Y  = get_int(0, 4);
+    const int M  = get_int(4, 2);
+    const int D  = get_int(6, 2);
+    const int h  = get_int(9, 2);
+    const int mn = get_int(11, 2);
+    const int s  = get_int(13, 2);
+    const int ms = get_int(15, 3);
+    if (Y < 0 || M < 0 || D < 0 || h < 0 || mn < 0 || s < 0 || ms < 0) return 0;
+    std::tm t{};
+    t.tm_year = Y - 1900;
+    t.tm_mon  = M - 1;
+    t.tm_mday = D;
+    t.tm_hour = h;
+    t.tm_min  = mn;
+    t.tm_sec  = s;
+#ifdef _WIN32
+    int64_t epoch_s = static_cast<int64_t>(_mkgmtime(&t));
+#else
+    int64_t epoch_s = static_cast<int64_t>(timegm(&t));
+#endif
+    return epoch_s * 1000 + ms;
+}
+
+static int64_t parse_numeric_ts(const std::string& ts) noexcept {
+    // Numeric epoch -- accept seconds (~1e9 in 2024+) or milliseconds (~1e12)
+    // and normalise to ms. Reject obviously bogus magnitudes.
+    try {
+        const double v = std::stod(ts);
+        if (v > 1e12)      return static_cast<int64_t>(v);
+        else if (v > 1e9)  return static_cast<int64_t>(v * 1000.0);
+        else               return static_cast<int64_t>(v);
+    } catch (...) {
+        return 0;
+    }
+}
+
+// Detect what kind of timestamp string we have.
+//   0 = parse failure / unrecognised
+//   1 = numeric (epoch seconds or ms)
+//   2 = HistData "YYYYMMDD HHMMSSmmm"
+//   3 = ISO 8601
+static int detect_ts_kind(const std::string& ts) noexcept {
+    if (ts.empty()) return 0;
+    // ISO 8601: digits at 0..3, dash at 4, dash at 7
+    if (ts.size() >= 19 && ts[4] == '-' && ts[7] == '-'
+        && std::isdigit(static_cast<unsigned char>(ts[0]))) return 3;
+    // HistData: 8 digits + ' ' or 'T' + 6+ digits
+    if (ts.size() >= 17
+        && std::isdigit(static_cast<unsigned char>(ts[0]))
+        && std::isdigit(static_cast<unsigned char>(ts[7]))
+        && (ts[8] == ' ' || ts[8] == 'T')) return 2;
+    // Otherwise: must be all numeric (sign / digits / dot / exponent)
+    bool numeric = true;
+    for (char c : ts) {
+        if (!std::isdigit(static_cast<unsigned char>(c))
+            && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E') {
+            numeric = false;
+            break;
+        }
+    }
+    return numeric ? 1 : 0;
+}
+
+static int64_t parse_any_ts(const std::string& ts) noexcept {
+    switch (detect_ts_kind(ts)) {
+        case 1: return parse_numeric_ts(ts);
+        case 2: return parse_histdata_ts(ts);
+        case 3: return parse_iso_ts_ms(ts);
+        default: return 0;
+    }
+}
+
+// Sniff CSV format from the first non-empty line.
+//   0 = empty / unrecognised
+//   1 = L2 schema  (header contains "ts_ms")
+//   2 = FX with header (header contains "timestamp_ms")
+//   3 = FX headerless (first line is a data row; column 0 looks like a ts)
+static int sniff_csv_format(const char* path) noexcept {
+    std::ifstream f(path);
+    if (!f.is_open()) return 0;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty() && line.find_first_not_of(" \t\r\n") != std::string::npos) break;
+    }
+    if (line.empty()) return 0;
+    std::string lower; lower.reserve(line.size());
+    for (char c : line) lower.push_back(static_cast<char>(
+        std::tolower(static_cast<unsigned char>(c))));
+    if (lower.find("ts_ms") != std::string::npos) return 1;
+    if (lower.find("timestamp_ms") != std::string::npos) return 2;
+    // Headerless candidate: column 0 must parse as a known timestamp shape.
+    auto comma = line.find(',');
+    if (comma == std::string::npos) return 0;
+    return (detect_ts_kind(line.substr(0, comma)) > 0) ? 3 : 0;
+}
+
+static bool load_fx_csv(const char* path,
+                        std::vector<TickRow>& rows,
+                        bool has_header,
+                        bool verbose) noexcept
+{
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        std::fprintf(stderr, "[err] cannot open %s\n", path);
+        return false;
+    }
+    std::string line;
+    if (has_header) {
+        // Consume one header line; field positions are derived row-by-row
+        // (column 0 = ts, columns 1/2 = bid/ask in some order).
+        if (!std::getline(f, line)) {
+            std::fprintf(stderr, "[err] empty file %s\n", path);
+            return false;
+        }
+    }
+
+    const std::size_t before = rows.size();
+    std::size_t skipped = 0;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        auto fld = split_csv(line);
+        if (fld.size() < 3) { ++skipped; continue; }
+
+        const int64_t ts = parse_any_ts(fld[0]);
+        if (ts <= 0) { ++skipped; continue; }
+
+        double a = 0.0, b = 0.0;
+        try {
+            a = std::stod(fld[1]);
+            b = std::stod(fld[2]);
+        } catch (...) { ++skipped; continue; }
+        if (a <= 0.0 || b <= 0.0) { ++skipped; continue; }
+
+        TickRow r{};
+        r.ts_ms = ts;
+        // Order-agnostic bid/ask: handles both Dukascopy (ask-first) and
+        // HistData (bid-first) without per-format branching.
+        r.bid   = std::min(a, b);
+        r.ask   = std::max(a, b);
+        // L2 fields zero-default (engine takes z-only entry path):
+        r.l2_imb           = 0.5;   // neutral -> book_slope() = 0
+        r.l2_bid_vol       = 0.0;
+        r.l2_ask_vol       = 0.0;
+        r.depth_bid_levels = 0;
+        r.depth_ask_levels = 0;
+        r.watchdog_dead    = 0;
+        rows.push_back(r);
+    }
+    if (verbose) {
+        std::printf("[bt] loaded %zu rows from %s (FX %s, skipped %zu malformed)\n",
+                    rows.size() - before, path,
+                    has_header ? "with header" : "headerless",
+                    skipped);
+        std::fflush(stdout);
+    }
+    return true;
+}
+
+// Top-level dispatcher: sniff the format, then route to the matching loader.
+// Returns false on unrecognised format or open-failure (caller propagates).
+static bool load_csv_any(const char* path,
+                         std::vector<TickRow>& rows,
+                         bool verbose) noexcept
+{
+    const int fmt = sniff_csv_format(path);
+    switch (fmt) {
+        case 1: return load_l2_csv(path, rows, verbose);
+        case 2: return load_fx_csv(path, rows, /*has_header=*/true,  verbose);
+        case 3: return load_fx_csv(path, rows, /*has_header=*/false, verbose);
+        default:
+            std::fprintf(stderr,
+                "[err] unrecognised CSV format in %s\n"
+                "      expected one of:\n"
+                "        L2:        header containing 'ts_ms'\n"
+                "        Dukascopy: header containing 'timestamp_ms'\n"
+                "        HistData:  no header, column 0 = 'YYYYMMDD HHMMSSmmm'\n",
+                path);
+            return false;
+    }
+}
+
+// =============================================================================
 // Sweep runner
 // =============================================================================
 namespace ms = omega::microscalper_sweep;
@@ -955,7 +1266,10 @@ static void write_results_csv(const char* path,
         const double am = (r.n_trades > 0) ? r.sum_mfe / r.n_trades : 0.0;
         const double aa = (r.n_trades > 0) ? r.sum_mae / r.n_trades : 0.0;
         const double cw = (r.n_trades > 0) ? (double)r.cut_winners / r.n_trades : 0.0;
-        f << std::fixed << std::setprecision(4);
+        // 8 decimal places covers both XAUUSD-scale (0.79 -> 0.79000000) and
+        // FX-scale (0.0008 -> 0.00080000, 0.00008 -> 0.00008000). Without
+        // this widening, EURUSD per-trade values round to 0.0000 at p=4.
+        f << std::fixed << std::setprecision(8);
         f << (rk + 1) << "," << r.combo_id << ","
           << r.p[0] << "," << r.p[1] << "," << r.p[2] << "," << r.p[3] << "," << r.p[4] << ","
           << r.n_trades << "," << r.n_wins << "," << wr << ","
@@ -968,7 +1282,9 @@ static void write_results_csv(const char* path,
 
 static void print_top(const std::vector<ms::ComboResult>& results, int top) {
     std::printf("\n=== TOP %d CONFIGS (by net_pnl, secondary profit_factor) ===\n", top);
-    std::printf("%4s %5s %5s %5s %5s %5s  %5s %6s %8s %8s %6s %5s\n",
+    // Column widths sized for both XAUUSD-scale (0.79, 3.00) and FX-scale
+    // (0.0008, 0.0030). %9.5g auto-formats both readably.
+    std::printf("%4s %9s %9s %9s %9s %9s  %6s %6s %10s %10s %6s %6s\n",
                 "rk", "Z", "TP", "SL", "BE", "TR",
                 "N", "WR%", "gross", "net", "PF", "hold");
     for (int rk = 0; rk < top && rk < (int)results.size(); ++rk) {
@@ -976,7 +1292,7 @@ static void print_top(const std::vector<ms::ComboResult>& results, int top) {
         const double wr = (r.n_trades > 0) ? 100.0 * r.n_wins / r.n_trades : 0.0;
         const double ah = (r.n_trades > 0) ? r.sum_hold_s / r.n_trades : 0.0;
         const double pf = (r.gross_l > 0.0) ? (r.gross_w / r.gross_l) : 0.0;
-        std::printf("%4d %5.2f %5.2f %5.2f %5.2f %5.2f  %5d %5.1f%% %8.3f %8.3f %6.2f %4.1fs\n",
+        std::printf("%4d %9.5g %9.5g %9.5g %9.5g %9.5g  %6d %5.1f%% %10.5g %10.5g %6.2f %5.1fs\n",
                     rk + 1,
                     r.p[0], r.p[1], r.p[2], r.p[3], r.p[4],
                     r.n_trades, wr, r.gross_pnl, r.net_pnl, pf, ah);
@@ -1001,30 +1317,64 @@ static void print_exit_breakdown(const ms::ComboResult& r) {
 // main
 // =============================================================================
 // -----------------------------------------------------------------------------
-// Symbol detection from CSV filename. Rule:
-//   l2_ticks_<SYMBOL>_<DATE>.csv  -> SYMBOL extracted
-//   l2_ticks_<DATE>.csv           -> "XAUUSD" (legacy unprefixed gold capture)
+// Symbol detection from CSV filename. Rules in order:
+//   (a) l2_ticks_<SYMBOL>_<DATE>.csv      -> SYMBOL extracted (S19 cohort)
+//   (b) l2_ticks_<DATE>.csv               -> "XAUUSD"          (legacy gold)
+//   (c) Any basename whose stem contains a known SymbolSpec name as a
+//       word-boundary token:
+//         EURUSD_2024_03.csv                       -> EURUSD
+//         EURUSD_2024-03_2026-04_combined.csv      -> EURUSD
+//         XAUUSD_2024-03_2026-04_combined.csv      -> XAUUSD
+//         DAT_ASCII_EURUSD_T_202403.csv            -> EURUSD
+//       The match is bounded: only accept if the token is at start-of-stem
+//       or preceded by '_'/'-', AND followed by '_'/'-'/'.' or end-of-stem.
+//       Avoids false positives on names like 'EUROBOND' or 'GBPUSDX'.
+//   Returns "" if no rule matches; caller should use --symbol or fail loudly.
 // -----------------------------------------------------------------------------
 static std::string detect_symbol_from_path(const std::string& p) {
     // Find the basename
     auto slash = p.find_last_of("/\\");
     std::string base = (slash == std::string::npos) ? p : p.substr(slash + 1);
 
-    static const std::string prefix = "l2_ticks_";
-    if (base.compare(0, prefix.size(), prefix) != 0) return "";
-    std::string rest = base.substr(prefix.size());           // e.g. "XAUUSD_2026-04-22.csv" or "2026-04-09.csv"
+    // Strip ".csv" (case-insensitive)
+    std::string stem = base;
+    if (stem.size() >= 4) {
+        std::string tail = stem.substr(stem.size() - 4);
+        for (char& c : tail) c = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(c)));
+        if (tail == ".csv") stem = stem.substr(0, stem.size() - 4);
+    }
 
-    // Strip ".csv"
-    if (rest.size() >= 4 && rest.compare(rest.size() - 4, 4, ".csv") == 0) {
-        rest = rest.substr(0, rest.size() - 4);
+    // (a)/(b) -- existing l2_ticks_* convention
+    static const std::string prefix = "l2_ticks_";
+    if (stem.compare(0, prefix.size(), prefix) == 0) {
+        std::string rest = stem.substr(prefix.size());
+        auto under = rest.find('_');
+        if (under == std::string::npos) {
+            return "XAUUSD";  // legacy unprefixed gold capture
+        }
+        return rest.substr(0, under);
     }
-    // Find the underscore that separates SYMBOL from DATE.
-    auto under = rest.find('_');
-    if (under == std::string::npos) {
-        // No underscore -> legacy unprefixed gold capture (just a date).
-        return "XAUUSD";
+
+    // (c) -- scan for any SymbolSpec name embedded as a token.
+    for (int i = 0; i < ms::SYMBOL_TABLE_SIZE; ++i) {
+        const char*       sym = ms::SYMBOL_TABLE[i].sym;
+        const std::size_t L   = std::strlen(sym);
+        if (L == 0 || L > stem.size()) continue;
+        for (std::size_t pos = 0; pos + L <= stem.size(); ++pos) {
+            if (stem.compare(pos, L, sym) != 0) continue;
+            const bool ok_pre  = (pos == 0)
+                              || stem[pos - 1] == '_'
+                              || stem[pos - 1] == '-';
+            const bool at_end  = (pos + L == stem.size());
+            const bool ok_post = at_end
+                              || stem[pos + L] == '_'
+                              || stem[pos + L] == '-'
+                              || stem[pos + L] == '.';
+            if (ok_pre && ok_post) return sym;
+        }
     }
-    return rest.substr(0, under);
+    return "";
 }
 
 int main(int argc, char** argv) {
@@ -1129,7 +1479,7 @@ int main(int argc, char** argv) {
     std::vector<TickRow> ticks;
     ticks.reserve(400000);
     for (const char* p : csv_paths) {
-        if (!load_l2_csv(p, ticks, true)) return 1;
+        if (!load_csv_any(p, ticks, true)) return 1;
     }
     if (ticks.empty()) {
         std::fprintf(stderr, "[err] no tick rows loaded\n");

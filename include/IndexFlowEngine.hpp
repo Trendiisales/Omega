@@ -120,7 +120,13 @@ static inline int64_t idx_now_sec() noexcept {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 static inline void idx_utc(struct tm& ti) noexcept {
-    const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    // PATH-A-DEBUG-2026-05-08 BUGFIX: honor the test clock for backtest replay.
+    // Previously this used std::chrono::system_clock::now() unconditionally,
+    // which made the engine's session-window gate use wall-clock-at-run-time
+    // instead of the historical tick timestamp -- silently invalidating
+    // every session-aware backtest. set_idx_test_clock_ms() is set per-tick
+    // by the harness; idx_now_ms() respects it; idx_utc() now does too.
+    const time_t t = static_cast<time_t>(idx_now_ms() / 1000);
 #ifdef _WIN32
     gmtime_s(&ti, &t);
 #else
@@ -541,6 +547,33 @@ public:
     // without breaking encapsulation.
     void   set_shadow_mode(bool b) noexcept { pos_.shadow_mode = b; }
 
+    // ── PATH-A-DEBUG-2026-05-08 ─────────────────────────────────────────────
+    // Temporary instrumentation: counts which return path on_tick takes per
+    // tick. Added 2026-05-08 to debug 0-trades on NSXUSD HistData (S20 Path A).
+    // Purely additive -- no logic changes. Remove or guard with
+    // #ifdef OMEGA_PATH_A_DEBUG before merging if desired. Search for
+    // "PATH-A-DEBUG-2026-05-08" to find every modification site.
+    // ────────────────────────────────────────────────────────────────────────
+    struct DebugStats {
+        int64_t ret_invalid_data    = 0;  // line 560 bid/ask invalid
+        int64_t ret_pos_active      = 0;  // line 592 already in trade (manage path)
+        int64_t ret_cooldown        = 0;  // line 597 cfg_.cooldown_ms not yet expired
+        int64_t ret_no_can_enter    = 0;  // line 601 cross-engine gate said no
+        int64_t ret_atr_not_ready   = 0;  // line 602 atr_tracker count < 50
+        int64_t ret_min_ticks       = 0;  // line 603 tick_count < min_entry_ticks
+        int64_t ret_atr_below       = 0;  // line 609 atr < atr_min
+        int64_t ret_spread_too_wide = 0;  // line 612 spread > max_spread
+        int64_t ret_dead_zone       = 0;  // line 622 22-08 UTC dead zone
+        int64_t ret_ny_open_noise   = 0;  // line 637 13:30-14:00 UTC
+        int64_t ret_sl_cooldown     = 0;  // line 643 90s post-SL block
+        int64_t ret_no_signal       = 0;  // line 676 no drift/L2 signal
+        int64_t ret_long_mom        = 0;  // line 683 momentum opposes long
+        int64_t ret_short_mom       = 0;  // line 684 momentum opposes short
+        int64_t ret_chop_guard      = 0;  // line 692 chop guard fired
+        int64_t entries             = 0;  // line 740 entry built and returned
+    } debug_stats;
+    const DebugStats& get_debug_stats() const noexcept { return debug_stats; }
+
     // Force-close open position (disconnect / session end)
     void force_close(double bid, double ask, CloseCb on_close) noexcept {
         if (!pos_.active) return;
@@ -557,7 +590,10 @@ public:
     IndexFlowSignal on_tick(const std::string& sym, double bid, double ask,
                             double l2_imb, CloseCb on_close,
                             bool can_enter = true) noexcept {
-        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return {};
+        if (bid <= 0.0 || ask <= 0.0 || bid >= ask) {
+            ++debug_stats.ret_invalid_data;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
 
         const double mid    = (bid + ask) * 0.5;
         const double spread = ask - bid;
@@ -589,27 +625,46 @@ public:
                         m_sl_cooldown_until_ms_ = sl_block;
                 }
             }
+            ++debug_stats.ret_pos_active;  // PATH-A-DEBUG-2026-05-08
             return {};
         }
 
         // Cooldown gate
         if (phase == Phase::COOLDOWN) {
-            if (idx_now_ms() < cooldown_until_ms_) return {};
+            if (idx_now_ms() < cooldown_until_ms_) {
+                ++debug_stats.ret_cooldown;  // PATH-A-DEBUG-2026-05-08
+                return {};
+            }
             phase = Phase::IDLE;
         }
 
-        if (!can_enter) return {};
-        if (!atr_tracker_.ready()) return {};
-        if (tick_count_ < cfg_.min_entry_ticks) return {};
+        if (!can_enter) {
+            ++debug_stats.ret_no_can_enter;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
+        if (!atr_tracker_.ready()) {
+            ++debug_stats.ret_atr_not_ready;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
+        if (tick_count_ < cfg_.min_entry_ticks) {
+            ++debug_stats.ret_min_ticks;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
 
         const double atr    = atr_tracker_.atr();
         const double d      = regime_.drift();
 
         // ATR quality gate -- no entry if market is dead tape
-        if (atr < cfg_.atr_min) return {};
+        if (atr < cfg_.atr_min) {
+            ++debug_stats.ret_atr_below;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
 
         // Spread gate
-        if (spread > cfg_.max_spread) return {};
+        if (spread > cfg_.max_spread) {
+            ++debug_stats.ret_spread_too_wide;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
 
         // Session gate for US indices: block Asia session (22:00-13:30 UTC)
         // US equity indices have essentially no volume during Asian hours.
@@ -619,7 +674,10 @@ public:
             const int mins = ti.tm_hour * 60 + ti.tm_min;
             // Block 22:00-08:00 UTC for US indices (Asia + dead zone)
             const bool dead = (mins >= 22 * 60) || (mins < 8 * 60);
-            if (dead) return {};
+            if (dead) {
+                ++debug_stats.ret_dead_zone;  // PATH-A-DEBUG-2026-05-08
+                return {};
+            }
 
             // NY open noise gate: 13:15-14:00 UTC (extended from 13:45)
             // Root cause of 13-trade 26%WR cluster: NY opens at 13:30 UTC with
@@ -634,13 +692,19 @@ public:
             // SL_HIT cluster. Combined with other gates (ATR×1.5, drift_persist=20,
             // SL cooldown) this over-filtered the engine to 0 signals in 20 days.
             const bool ny_open_noise = (mins >= 13 * 60 + 30) && (mins < 14 * 60 + 0);
-            if (ny_open_noise) return {};
+            if (ny_open_noise) {
+                ++debug_stats.ret_ny_open_noise;  // PATH-A-DEBUG-2026-05-08
+                return {};
+            }
         }
 
         // SL cooldown gate: 90s after any SL_HIT before re-entering
         // Prevents immediate re-entry after a stop -- the chop pattern
         // that produced rapid direction flips at NY open.
-        if (idx_now_ms() < m_sl_cooldown_until_ms_) return {};
+        if (idx_now_ms() < m_sl_cooldown_until_ms_) {
+            ++debug_stats.ret_sl_cooldown;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
 
         // ── Signal detection ──────────────────────────────────────────────────
         // Primary: L2 imbalance persistence (30-tick fast + 60-tick slow windows)
@@ -673,6 +737,7 @@ public:
 
         if (!signal_long && !signal_short) {
             phase = Phase::FLOW_BUILDING;
+            ++debug_stats.ret_no_signal;  // PATH-A-DEBUG-2026-05-08
             return {};
         }
 
@@ -680,14 +745,21 @@ public:
         // (prevents stale drift from firing on a paused tape)
         const double momentum = mid_buf_[(mid_buf_head_ - 1 + BUF_SZ) % BUF_SZ]
                               - mid_buf_[(mid_buf_head_ - 13 + BUF_SZ * 4) % BUF_SZ];
-        if (signal_long  && momentum <= 0.0) return {};
-        if (signal_short && momentum >= 0.0) return {};
+        if (signal_long  && momentum <= 0.0) {
+            ++debug_stats.ret_long_mom;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
+        if (signal_short && momentum >= 0.0) {
+            ++debug_stats.ret_short_mom;  // PATH-A-DEBUG-2026-05-08
+            return {};
+        }
 
         // Chop guard: if drift has oscillated (high range / low net), block entry.
         // Prevents straddle-chop patterns where drift spikes but doesn't sustain.
         // drift_range > 4x drift_threshold with low net = chop.
         if (drift_range_ > cfg_.drift_threshold * 4.0 &&
             std::fabs(d) < cfg_.drift_threshold * 1.5) {
+            ++debug_stats.ret_chop_guard;  // PATH-A-DEBUG-2026-05-08
             return {};
         }
 
@@ -736,6 +808,7 @@ public:
                sig.entry, sl, tp, atr, lot, d, l2_live ? 1 : 0);
         fflush(stdout);
 
+        ++debug_stats.entries;  // PATH-A-DEBUG-2026-05-08
         return sig;
     }
 

@@ -368,6 +368,21 @@ public:
         return engineLivePnl() - brokerRealisedPnl();
     }
 
+    // 2026-05-11 S26 §2.2: count of non-shadow ("live-marked") closed trades
+    // in the ledger. Used by the broker-reconciliation plausibility check in
+    // OmegaTelemetryServer.cpp to detect the failure mode where the engine
+    // claims live trades but the broker has none of them on its account
+    // (root cause of the 2026-05-08..-11 demo-under-LIVE incident -- the
+    // engine had ~thousands of trades, broker account 8077780 had zero).
+    int engineLiveTradeCount() const {
+        std::lock_guard<std::mutex> lk(m_mtx);
+        int n = 0;
+        for (const auto& tr : m_trades) {
+            if (!tr.shadow) ++n;
+        }
+        return n;
+    }
+
     // Find a trade by clOrdId on either leg. Returns pointer or nullptr.
     // CALLER MUST HOLD m_mtx (or call findTradeByClOrdIdLocked which does).
     // Used by handle_execution_report to update broker_* fields.
@@ -380,9 +395,65 @@ public:
     }
 
     // Apply a broker fill confirmation. Thread-safe; takes the lock.
-    // is_entry: true = entry leg, false = close leg. fill_px from FIX tag 31.
+    // is_entry: true = entry leg, false = close leg.
+    // fill_px from FIX tag 6 (AvgPx) preferred, tag 31 (LastPx) fallback;
+    //   resolution happens in the caller (handle_execution_report).
     // When both legs become filled, computes broker_pnl from fill prices.
     // Returns true if the trade was found and updated.
+    //
+    // 2026-05-11 S26 §2.0a/§2.0b (CORRECTED 2026-05-12 per Part 1B handoff):
+    //   On entry- and close-leg fills, we update the user-visible trade
+    //   fields from broker truth so the dashboard's Recent Trades row and
+    //   the [TRADE-COST] line match what actually happened on the live
+    //   account. The engine's previously-stored exitPrice was the TP
+    //   target, not the actual fill -- 6 trades on the morning of
+    //   2026-05-11 logged as wins (engine target = TP) were actually
+    //   losses (broker fill below TP). See HANDOFF_S26.md §2.0 for the
+    //   incident and HANDOFF_S26_PART1B_VERIFICATION_REBUILD.md §3 for
+    //   the bug in the prior implementation (which recomputed tr->pnl
+    //   from broker fills end-to-end and then ALSO subtracted slip_exit,
+    //   double-counting cost and reporting ~10x the real loss).
+    //
+    //   The contract this implementation holds:
+    //     tr.pnl          = engine's intended gross (entry_intent → exit_intent)
+    //     tr.slippage_*   = USD cost of (broker_actual − engine_intent)
+    //     tr.net_pnl      = pnl − slip_entry − slip_exit − commission
+    //     tr.broker_pnl   = round-trip from broker fills only (independent)
+    //
+    //   Entry-leg update sequence (when broker entry ExecReport arrives):
+    //     - Overwrite tr->slippage_entry with measured entry slip cost,
+    //       replacing the synthetic half-spread from apply_realistic_costs.
+    //     - Recompute tr->net_pnl with the apply_realistic_costs formula.
+    //     - Emit a [TRADE-COST-RECON-ENTRY] log line for forensics.
+    //
+    //   Close-leg update sequence (when broker close ExecReport arrives):
+    //     (1) Capture engine's intended close (target_close = tr->exitPrice).
+    //     (2) Overwrite tr->exitPrice with the broker's actual fill.
+    //     (3) Compute slip_units in price-space, signed so that a worse-
+    //         than-target fill is positive cost (matches the existing
+    //         slippage_exit cost convention from apply_realistic_costs).
+    //         LONG : cost_units = target - actual (lower close is worse)
+    //         SHORT: cost_units = actual - target (higher close is worse)
+    //     (4) Convert to USD via size * tick_mult and overwrite
+    //         tr->slippage_exit. This may now be NEGATIVE on a price-
+    //         improvement (broker fill better than target) -- that is a
+    //         genuine credit and should reduce reported costs accordingly.
+    //     (5) DO NOT recompute tr->pnl from broker fills here. The
+    //         codebase contract is that tr.pnl is the engine's intended
+    //         gross. Recomputing it would double-count the slip already
+    //         applied in step (4) when (6) subtracts it again.
+    //     (6) Recompute net_pnl = pnl - slippage_entry - slippage_exit
+    //         - commission, same formula apply_realistic_costs uses.
+    //         engineLivePnl() reflects broker truth on confirmed trades
+    //         and disparity() collapses to ~0 on cleanly-filled trades.
+    //         Trades the broker never confirmed keep engine-only pnl, so
+    //         disparity rises and §2.0c / §2.2 monitors catch divergence.
+    //     (7) Emit a one-line [TRADE-COST-RECONCILED] log so the operator
+    //         has forensic visibility on the divergence in real time.
+    //         Distinct prefix from the prior [TRADE-COST] line emitted in
+    //         handle_closed_trade (which fires before the broker reports
+    //         back) so log-greppers can compare engine prediction vs
+    //         broker truth side-by-side.
     bool applyBrokerFill(const std::string& clOrdId, double fill_px,
                          double tick_mult)
     {
@@ -390,20 +461,94 @@ public:
         bool is_entry = false;
         TradeRecord* tr = findTradeByClOrdIdLocked(clOrdId, is_entry);
         if (!tr) return false;
+        const bool was_long = (tr->side == "LONG");
         if (is_entry) {
             tr->broker_entry_filled  = true;
             tr->broker_entry_fill_px = fill_px;
+
+            // ── S26 §2.0a/§2.0b ENTRY-SIDE: real slip vs engine intent ─────
+            // Symmetric to the close-side update below. Replaces the modeled
+            // half-spread that apply_realistic_costs put into slippage_entry
+            // with the actual measured cost of (broker fill − engine intent).
+            // Sign convention: positive = adverse (cost), negative = credit.
+            //   LONG entry: paying higher than intent is adverse.
+            //   SHORT entry: receiving lower than intent is adverse.
+            const double entry_target = tr->entryPrice;
+            const double entry_actual = fill_px;
+            const double entry_slip_units = was_long
+                ? (entry_actual - entry_target)
+                : (entry_target - entry_actual);
+            const double prior_slip_in = tr->slippage_entry;
+            tr->slippage_entry = entry_slip_units * tr->size * tick_mult;
+            tr->net_pnl = tr->pnl - tr->slippage_entry - tr->slippage_exit
+                                  - tr->commission;
+            std::printf("[TRADE-COST-RECON-ENTRY] %s %s id=%d"
+                        " target_entry=%.4f actual_entry=%.4f"
+                        " slip_units=%.4f slip_usd=%.4f"
+                        " (was slip_in=%.4f) net_pnl=%.4f"
+                        " size=%.4f side=%s\n",
+                        tr->symbol.c_str(), tr->engine.c_str(), tr->id,
+                        entry_target, entry_actual,
+                        entry_slip_units, tr->slippage_entry,
+                        prior_slip_in, tr->net_pnl,
+                        tr->size, tr->side.c_str());
+            std::fflush(stdout);
         } else {
             tr->broker_close_filled  = true;
             tr->broker_close_fill_px = fill_px;
+
+            // ── S26 §2.0a/§2.0b CLOSE-SIDE ─────────────────────────────────
+            // (1) target_close = engine's intended exit (TP/SL/scratch level
+            //     the engine wrote into tr->exitPrice when it sent the close)
+            // (2) overwrite tr->exitPrice with broker actual so the dashboard
+            //     Recent Trades row shows broker truth not engine target
+            // (3) measured exit slip (positive = adverse for the trade
+            //     direction; LONG closing lower is adverse, SHORT closing
+            //     higher is adverse)
+            // (4) overwrite tr->slippage_exit with USD cost; may be negative
+            //     on price-improvement (genuine credit; do not floor at 0)
+            // (5) DO NOT recompute tr->pnl from broker fills here -- the
+            //     codebase contract is tr.pnl = engine's intended gross,
+            //     net = pnl - slip_in - slip_out - commission. Recomputing
+            //     pnl from broker fills would double-count the slip we just
+            //     measured and report ~10x the real loss. The S26 P1 code
+            //     prior to this correction had that bug.
+            // (6) recompute net_pnl with the existing apply_realistic_costs
+            //     formula so the dashboard Net column reflects broker truth
+            //     to within ~commission accuracy
+            // (7) forensic log line so [TRADE-COST] (engine prediction) and
+            //     [TRADE-COST-RECONCILED] (broker truth) can be diff'd in
+            //     latest.log
+            const double target_close = tr->exitPrice;
+            const double actual_close = fill_px;
+            const double slip_units = was_long
+                ? (target_close - actual_close)
+                : (actual_close - target_close);
+            const double slip_out_usd = slip_units * tr->size * tick_mult;
+            const double prior_slip_out = tr->slippage_exit;
+            tr->exitPrice    = actual_close;
+            tr->slippage_exit = slip_out_usd;
+            tr->net_pnl = tr->pnl - tr->slippage_entry - tr->slippage_exit
+                                  - tr->commission;
+            std::printf("[TRADE-COST-RECONCILED] %s %s id=%d"
+                        " target_close=%.4f actual_close=%.4f"
+                        " slip_units=%.4f slip_usd=%.4f"
+                        " (was slip_out=%.4f) net_pnl=%.4f"
+                        " entry=%.4f size=%.4f side=%s\n",
+                        tr->symbol.c_str(), tr->engine.c_str(), tr->id,
+                        target_close, actual_close,
+                        slip_units, slip_out_usd,
+                        prior_slip_out, tr->net_pnl,
+                        tr->entryPrice, tr->size, tr->side.c_str());
+            std::fflush(stdout);
         }
+        // Compute broker-truth round-trip pnl when both legs are filled.
+        // This is independent of the engine-intent pnl path above -- it is
+        // the broker's view, used by brokerRealisedPnl() / disparity().
         if (tr->broker_entry_filled && tr->broker_close_filled
             && tr->broker_entry_fill_px > 0.0
             && tr->broker_close_fill_px > 0.0)
         {
-            // Realised P&L from actual broker fills. is_long: long = exit-entry > 0
-            // is profit; short = entry-exit > 0 is profit. tr.side is the entry side.
-            const bool was_long = (tr->side == "LONG");
             const double diff = was_long
                 ? (tr->broker_close_fill_px - tr->broker_entry_fill_px)
                 : (tr->broker_entry_fill_px - tr->broker_close_fill_px);

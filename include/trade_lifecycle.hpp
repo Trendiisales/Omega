@@ -535,6 +535,143 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // CRTP engine positions are closed by broker SL/TP -- partial exit must be
     // reset here so the next entry can re-arm cleanly.
     g_partial_exit.reset(tr.symbol);
+
+    // ════════════════════════════════════════════════════════════════════════
+    // S26 §2.0c + §2.2 -- broker-truth monitors (run on every closed trade)
+    // ════════════════════════════════════════════════════════════════════════
+    // Two safety nets, both reading from g_omegaLedger after the just-closed
+    // trade has been recorded above:
+    //
+    //   §2.0c  DISPARITY HARD-STOP. The dashboard already exposes
+    //          BROKER TRUTH: disp = engine_pnl - broker_pnl as an inert
+    //          indicator. This check makes it active: when the engine view
+    //          and the broker view diverge by more than the larger of $1 or
+    //          10% of |engine_pnl|, AND the divergence is either (a)
+    //          sustained for >60 seconds, OR (b) growing monotonically over
+    //          the last 3+ trades, auto-shadow the microscalper engine.
+    //          This is the specific failure mode that bled USD ~$1.26 on
+    //          live account 8077780 on 2026-05-11 across 6 trades that the
+    //          dashboard logged as wins -- before the §2.0a/§2.0b fix went
+    //          in, exitPrice was the TP target rather than the broker fill,
+    //          so engine_pnl reported wins while broker_pnl reported losses.
+    //          The auto-shadow call is idempotent (RiskMonitor's per-engine
+    //          callback noops on the second-and-later invocation), so it's
+    //          safe to fire on every offending tick.
+    //
+    //   §2.2   BROKER-RECONCILE MISMATCH. Distinct, more dangerous case:
+    //          engine has recorded live trades and shows non-zero pnl, but
+    //          broker_pnl is exactly zero -- meaning NO ExecReports have
+    //          come back to applyBrokerFill at all. This is the root-cause
+    //          signature of the 2026-05-08..-11 demo-under-LIVE incident:
+    //          the engine had ~thousands of trades on demo account 2067070,
+    //          live account 8077780 had zero, and the BROKER TRUTH panel
+    //          showed orph=0 conf=0 because there were no broker ExecReports
+    //          for these trades on the live FIX session. Logged loudly,
+    //          rate-limited to one line per minute to keep latest.log
+    //          readable. (Auto-shadow not used here because the §2.1 mode/
+    //          sender invariant should already have refused to start; this
+    //          monitor exists as a belt-and-braces second-line check in case
+    //          some other config-vs-FIX mismatch slips through.)
+    //
+    // Both monitors read the ledger via the existing thread-safe accessors
+    // (engineLivePnl, brokerRealisedPnl, engineLiveTradeCount). No new lock
+    // is taken in handle_closed_trade itself -- each accessor holds the
+    // ledger mutex for its own snapshot, then releases it before we run
+    // the comparison. State across calls is held in function-static locals,
+    // safe because handle_closed_trade is invoked from the single-threaded
+    // tick loop.
+    //
+    // Reference: HANDOFF_S26.md §2.0c + §2.2.
+    {
+        const double engine_pnl = g_omegaLedger.engineLivePnl();
+        const double broker_pnl = g_omegaLedger.brokerRealisedPnl();
+        const double disp_now   = engine_pnl - broker_pnl;
+        const double disp_abs   = std::fabs(disp_now);
+        const double eng_abs    = std::fabs(engine_pnl);
+        const int    live_n     = g_omegaLedger.engineLiveTradeCount();
+        const int64_t now_unix  = nowSec();
+
+        // ── §2.0c: disparity hard-stop ────────────────────────────────────
+        const double disp_threshold = std::max(1.0, 0.10 * eng_abs);
+        const bool   gate_open      = (disp_abs > disp_threshold);
+
+        // Rolling memory of the last 3 disparities for monotonic-growth check
+        static double  disp_hist[3]      = {0.0, 0.0, 0.0};
+        static int     disp_hist_count   = 0;
+        static int64_t disp_first_open_s = 0;     // unix sec when |disp| first crossed
+        static bool    auto_shadow_fired = false; // session-scoped one-shot
+
+        // Push current disparity onto the rolling window (FIFO of 3)
+        if (disp_hist_count < 3) {
+            disp_hist[disp_hist_count++] = disp_now;
+        } else {
+            disp_hist[0] = disp_hist[1];
+            disp_hist[1] = disp_hist[2];
+            disp_hist[2] = disp_now;
+        }
+
+        bool monotonic_growth = false;
+        if (disp_hist_count == 3) {
+            // "Monotonic over 3+ trades" interpreted as |disp| strictly
+            // increasing over the last 3 closes. Sign-agnostic: protects
+            // against the engine drifting either above OR below broker.
+            const double a = std::fabs(disp_hist[0]);
+            const double b = std::fabs(disp_hist[1]);
+            const double c = std::fabs(disp_hist[2]);
+            monotonic_growth = (b > a) && (c > b) && (c > disp_threshold);
+        }
+
+        bool sustained_60s = false;
+        if (gate_open) {
+            if (disp_first_open_s == 0) disp_first_open_s = now_unix;
+            sustained_60s = (now_unix - disp_first_open_s) > 60;
+        } else {
+            disp_first_open_s = 0;  // gate closed -- restart the 60s clock
+        }
+
+        if (!auto_shadow_fired && (sustained_60s || monotonic_growth)) {
+            auto_shadow_fired = true;
+            char reason[256];
+            std::snprintf(reason, sizeof(reason),
+                "DISPARITY |disp|=%.2f > thresh=%.2f (eng=%.2f real=%.2f) %s%s%s",
+                disp_abs, disp_threshold, engine_pnl, broker_pnl,
+                sustained_60s ? "sustained_60s" : "",
+                (sustained_60s && monotonic_growth) ? "+" : "",
+                monotonic_growth ? "monotonic_3" : "");
+            std::fprintf(stderr,
+                "\033[1;31m[ENGINE-AUTO-SHADOW] disparity exceeds threshold -- "
+                "engine accounting doesn't match broker reality. %s. "
+                "Tripping MicroScalperGold to shadow.\033[0m\n", reason);
+            std::fflush(stderr);
+            g_risk_monitor.trip_engine_to_shadow("MicroScalperGold", reason);
+        }
+
+        // ── §2.2: broker-reconcile plausibility check ─────────────────────
+        // Engine has live-marked trades AND non-zero engine pnl, but broker
+        // realised is essentially zero -- meaning no ExecReports have been
+        // matched into the ledger at all. Strongly indicative of a wrong-
+        // account (demo-under-LIVE) or wrong-sender FIX session.
+        static int64_t recon_last_log_s = 0;
+        if (live_n > 0
+            && std::fabs(engine_pnl) > 0.01
+            && std::fabs(broker_pnl) < 0.001)
+        {
+            if (now_unix - recon_last_log_s >= 60) {
+                recon_last_log_s = now_unix;
+                std::fprintf(stderr,
+                    "[BROKER-RECONCILE-MISMATCH] engine_pnl=%.2f "
+                    "engine_trades=%d broker_pnl=%.2f -- engine claims "
+                    "trades but broker shows none. Are FIX credentials "
+                    "pointing at the wrong account? (cfg sender=%s "
+                    "username=%s mode=%s)\n",
+                    engine_pnl, live_n, broker_pnl,
+                    g_cfg.sender.c_str(),
+                    g_cfg.username.c_str(),
+                    g_cfg.mode.c_str());
+                std::fflush(stderr);
+            }
+        }
+    }
 }
 
 // ?????????????????????????????????????????????????????????????????????????????

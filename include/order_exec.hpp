@@ -476,6 +476,13 @@ static void handle_execution_report(const std::string& msg) {
     const std::string symbol   = extract_tag(msg, "55");
     const std::string side     = extract_tag(msg, "54");
     const std::string lastPx   = extract_tag(msg, "31");
+    // 2026-05-11 S26 §2.0a: AvgPx is the broker's volume-weighted average
+    // fill across all partials of the order. Per HANDOFF_S26.md §2.0, this
+    // is the price the operator wants for accounting -- the close-side
+    // dashboard P&L was using the TP target instead of the actual fill,
+    // making 6 live trades on 2026-05-11 that lost ~USD 1.26 look like
+    // wins. Prefer AvgPx; fall back to LastPx when broker doesn't send 6.
+    const std::string avgPx    = extract_tag(msg, "6");
     const std::string lastQty  = extract_tag(msg, "32");
     // 2026-05-08 S21 HEDGING-MODE FIX: extract broker position ID. Spotware
     // cTrader uses tag 1006 (cTrader-native PositionId); FIX 4.4 standard is
@@ -493,6 +500,7 @@ static void handle_execution_report(const std::string& msg) {
               << " sym=" << symbol
               << " side=" << side
               << " lastPx=" << lastPx
+              << " avgPx=" << avgPx
               << " lastQty=" << lastQty
               << (positionId.empty() ? "" : " posId=" + positionId)
               << (text.empty() ? "" : " text=" + text) << "\n";
@@ -506,10 +514,17 @@ static void handle_execution_report(const std::string& msg) {
         // any ledger trade -- safe to call for non-microscalper engines
         // (whose trades won't have entry/close clOrdIds populated yet).
         if (ordStatus == "2" || ordStatus == "1") {
-            // Fill (full or partial). Use lastPx if present; tick_value_multiplier
-            // converts price-pt diff to USD. Symbol-specific.
+            // Fill (full or partial). 2026-05-11 S26 §2.0a: prefer AvgPx
+            // (tag 6) over LastPx (tag 31). On a single-partial fill they
+            // are equal; on multi-partial fills AvgPx is the volume-weighted
+            // average and is the price the broker actually realised. The
+            // ledger writes this into TradeRecord.exitPrice on close fills,
+            // which is what the dashboard's Recent Trades row displays.
             double px = 0.0;
-            try { if (!lastPx.empty()) px = std::stod(lastPx); } catch (...) {}
+            try {
+                if (!avgPx.empty())       px = std::stod(avgPx);
+                else if (!lastPx.empty()) px = std::stod(lastPx);
+            } catch (...) {}
             const double tm = tick_value_multiplier(symbol);
             if (px > 0.0) g_omegaLedger.applyBrokerFill(clOrdId, px, tm);
         } else if (ordStatus == "8") {
