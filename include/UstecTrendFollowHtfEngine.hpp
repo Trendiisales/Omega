@@ -172,8 +172,14 @@ struct UstecTfHtfPos {
 //  Cell catalogue
 // ----------------------------------------------------------------------------
 enum class UstecTfHtfFamily {
-    AtrMom_1h_50,                    // [C]
     Stochastic_4h_2080,              // [E]
+    // S36-P5  2026-05-12: [C] AtrMom_1h_50 dropped per P2 + P3 verdicts:
+    //                          - 2024 NSXUSD OOS (n=449)        -$2,407   (P2)
+    //                          - SPX in-sample edge 7x weaker than NSXUSD (P3),
+    //                            confirming USTEC microstructure curve-fit
+    //                            rather than structural alpha.
+    //                          NSXUSD in-sample +$13,800 was real money but
+    //                          symbol-specific; not safe to keep live.
     // S36-P1b 2026-05-12: [A] InsideBar_2h dropped (3-cell wrapped -$898 ALL; 2026 -$4420)
     // S36-P1a 2026-05-12: [B] Stochastic_1h_2080 dropped (5-cell wrapped 2025H1 -$1115)
     // S36-P1a 2026-05-12: [D] Donchian20_15m dropped     (5-cell wrapped ALL -$4002)
@@ -191,10 +197,12 @@ struct UstecTfHtfCellConfig {
 };
 
 static constexpr UstecTfHtfCellConfig kUstecTfHtfCells[] = {
-    { UstecTfHtfFamily::AtrMom_1h_50,        UstecTfHtfTf::H1,  2.0, 4.0,
-      "ATR_Mom_1h_m50_sl2.0tp4.0",      "AtrMom1h"     },
     { UstecTfHtfFamily::Stochastic_4h_2080,  UstecTfHtfTf::H4,  2.0, 4.0,
       "Stochastic_4h_2080_sl2.0tp4.0",  "Stoch4h"      },
+    // S36-P5  (2026-05-12) -- dropped per P2 + P3 verdicts:
+    //   { UstecTfHtfFamily::AtrMom_1h_50, ... }         (2-cell wrapped: 2024 OOS -$2,407;
+    //                                                    SPX in-sample edge 7x weaker than NSXUSD,
+    //                                                    i.e. USTEC microstructure curve-fit not real edge.)
     // S36-P1b (2026-05-12) -- dropped per operator directive on verify results:
     //   { UstecTfHtfFamily::InsideBar_2h, ... }         (3-cell wrapped: -$898 ALL, -$4420 in 2026)
     // S36-P1a (2026-05-12) -- earlier drops:
@@ -519,8 +527,9 @@ private:
     // -------------------------------------------------------------------------
     int _evaluate_signal(int ci) const noexcept {
         switch (kUstecTfHtfCells[ci].family) {
-            case UstecTfHtfFamily::AtrMom_1h_50:          return _sig_atr_mom_h1();
             case UstecTfHtfFamily::Stochastic_4h_2080:    return _sig_stoch(bars_h4_);
+            // S36-P5 -- dropped (USTEC-specific curve-fit; SPX edge 7x weaker; 2024 OOS -$2,407):
+            //   case UstecTfHtfFamily::AtrMom_1h_50:        return _sig_atr_mom_h1();
             // S36-P1b -- dropped:
             //   case UstecTfHtfFamily::InsideBar_2h:       return _sig_inside_bar_h2();
             // S36-P1a -- dropped:

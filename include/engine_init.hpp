@@ -1034,10 +1034,13 @@ static void init_engines(const std::string& cfg_path)
         g_ustec_tf_htf.block_hour_end   = -1;
         g_ustec_tf_htf.init();
         printf("[OMEGA-INIT] UstecTrendFollowHtfEngine initialised: shadow=%d enabled=%d lot=%.2f"
-               " cells=2 (AtrMom1h+Stoch4h)"
+               " cells=1 (Stoch4h-only)"
                " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
-               " (S36-P1a + S36-P4 + S36-P1b; M15 dispatch wired in tick_indices.hpp 2026-05-12;"
-               " S36-P1a-verify 16mo NSXUSD HISTDATA ALL=+$19,933 WR~60%% PF~1.20 every period positive)\n",
+               " (S36-P1a + S36-P4 + S36-P1b + S36-P5; M15 dispatch wired in tick_indices.hpp 2026-05-12;"
+               " S36-P2 2024 NSXUSD OOS holdout: 2-cell -$2,677 / Stoch4h-only -$270 (AtrMom1h dropped);"
+               " S36-P3 SPX portability: Stoch4h PF 1.37 on both NSXUSD+SPXUSD in-sample, AtrMom1h"
+               " 7x weaker edge on SPX confirming USTEC-microstructure curve-fit;"
+               " Stoch4h in-sample 2025-2026 NSXUSD +$6,666 PF 1.37 / SPXUSD +$73 PF 1.37)\n",
                (int)g_ustec_tf_htf.shadow_mode,
                (int)g_ustec_tf_htf.enabled,
                g_ustec_tf_htf.lot,

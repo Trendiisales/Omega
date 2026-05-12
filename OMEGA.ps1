@@ -1675,16 +1675,20 @@ function Invoke-Watchdog {
                 } elseif ($ghHead -eq $running) {
                     Write-WD "HASH-OK: running=$running == github=$ghHead"
                 } else {
-                    Write-WD "AUTO-UPDATE: running=$running github=$ghHead -- restart check..."
-                    if (Test-SafeToRestart -Url $TelemetryUrl -TimeoutSec $TelemetryTimeoutSec) {
-                        Write-WD "AUTO-UPDATE: invoking OMEGA.ps1 deploy -SkipVerify (attempt #$($restartCount + 1))"
-                        & $PSCommandPath deploy -OmegaDir $OmegaDir -Branch $Branch -SkipVerify
-                        $restartCount++
-                        Write-WD "AUTO-UPDATE: restart #$restartCount complete. Expected new hash: $ghHead"
-                        Start-Sleep -Seconds $PostRestartWaitSec
-                    } else {
-                        Write-WD "AUTO-UPDATE: deferred -- will retry next cycle"
-                    }
+                    # ================================================================
+                    # S36 2026-05-12 -- AUTO-DEPLOY DISABLED by operator directive.
+                    # ================================================================
+                    # The watchdog still detects when origin/main has moved ahead
+                    # of the running binary and logs the mismatch -- so you keep
+                    # visibility into "VPS is N commits behind GitHub" -- but it
+                    # will NOT pull / build / restart on its own anymore.
+                    #
+                    # To apply a new commit on the VPS, run manually from C:\Omega:
+                    #     .\OMEGA.ps1 deploy
+                    #
+                    # To re-enable auto-deploy, revert this block (see git history
+                    # of OMEGA.ps1 around 2026-05-12 / S36-Pn-deploy-control commit).
+                    Write-WD "HASH-MISMATCH: running=$running github=$ghHead -- AUTO-UPDATE DISABLED (operator directive). Run '.\OMEGA.ps1 deploy' manually to apply."
                 }
             }
         }
