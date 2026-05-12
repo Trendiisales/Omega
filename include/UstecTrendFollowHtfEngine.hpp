@@ -20,30 +20,46 @@
 //  operator is aware; the M5 engine has not been touched here, only flagged
 //  in the [OMEGA-INIT] line of this engine (see engine_init.hpp).
 //
-//  CELLS (3 cells; each independently positive in 2025H1, 2025H2, 2026)
+//  CELLS (2 cells; VERIFIED 2026-05-12 under S36-P1a-verify wrapped
+//  re-backtest on the same 16mo NSXUSD HISTDATA dataset post-S36-P1b drop.
+//  Numbers below are from the wrapped 2-cell engine, NOT bare-cell sweeps.)
 //
-//      [A] 2h  InsideBar              sl1.5_tp3.0
-//          n=74/75/33   net=+5894/+1972/+3407   minP=+1972  ★ top cell
 //      [C] 1h  ATR_Mom mom=50;atr_band=0.2-0.8 sl2.0_tp4.0
-//          n=101/106/52 net=+2110/+2441/+924    minP=+924   ★ strongest wrapped
+//          n=327/335/160  net=+11406/+1981/-1784   ALL=+11603
+//          ★ engine workhorse. 2026 cell-isolated loss (-$1784) offset
+//            by Stoch4h +$2459 -> 2026 period total stays positive (+$675).
 //      [E] 4h  Stochastic lo=20;hi=80 sl2.0_tp4.0
-//          n=29/30/13   net=+965/+3625/+1643    minP=+965
+//          n=46/60/25     net=+2767/+3102/+2459    ALL=+8329
+//          ★ cleanest cell -- positive in every period in isolation.
 //
-//  Sum across cells, worst-period basis: ~$3.9K per period after cost.
+//  PERIOD TOTALS (verified, S36-P1a-verify 2026-05-12; n=965 trades / 16mo)
+//      2025H1     +$14,173.72
+//      2025H2     +$ 5,084.20
+//      2026       +$    675.24  (positive after cross-cell offset)
+//      ALL        +$19,933.15   WR ~60%  PF ~1.20+
 //
-//  S36-P1a (2026-05-12) DROPPED CELLS
-//      [B] 1h  Stochastic lo=20;hi=80 sl2.0_tp4.0
-//          Bare cell minP=+1599 BUT wrapped backtest: 2025H1=-$1115,
-//          2025H2=+$260, 2026=+$2920 (ALL=+$2065). Per operator directive
-//          (drop any cell unprofitable in ANY period), removed.
-//      [D] 15m Donchian N=20          sl2.0_tp4.0
-//          Bare cell positive in all 3 periods; wrapped flipped to -$4002
-//          across ALL (BE+trail clips winners while letting full-SL losers
-//          through). Per operator directive, removed.
+//  DROPPED CELLS HISTORY
+//      [A] 2h  InsideBar  sl1.5_tp3.0        -- S36-P1b 2026-05-12.
+//          Bare-cell sweep positive in all 3 periods (+5894/+1972/+3407).
+//          5-cell wrapped: +$2,287 ALL. 3-cell wrapped re-backtest under
+//          S36-P1a-verify: -$898 ALL with 2026=-$4420 (n=43, -$103/trade).
+//          Dropping Donch15m + Stoch1h freed entry slots that InsideBar2h
+//          then filled with bad trades -- cells are NOT independent. Per
+//          operator directive (any period unprofitable => drop), removed.
+//      [B] 1h  Stochastic lo=20;hi=80 sl2.0_tp4.0 -- S36-P1a 2026-05-12.
+//          5-cell wrapped: 2025H1=-$1115 (-$5.4/trade). Per directive, removed.
+//      [D] 15m Donchian N=20 sl2.0_tp4.0 -- S36-P1a 2026-05-12.
+//          5-cell wrapped: ALL=-$4002. BE+trail clips winners while letting
+//          full-SL losers through. Per directive, removed.
 //
-//  POST-DROP PROJECTION (5-cell ALL +$11,733 minus the two dropped cells):
-//      +$11,733 - (-$4,002) - (+$2,065) = +$13,670 across same 16mo data.
-//      Re-backtest under S36-P1a-verify is the next confirmation step.
+//  KEY FINDING -- cells are NOT independent
+//      The S36-P1a docstring projected the 3-cell engine at +$13,670 by
+//      simple subtraction from the 5-cell baseline. The S36-P1a-verify
+//      re-backtest revealed AtrMom1h +$3.9K STRONGER, Stoch4h +$4.7K
+//      STRONGER, but InsideBar2h -$3.2K WEAKER vs the 5-cell baseline --
+//      cell-interaction (cooldowns / entry-guards / capital allocation)
+//      reshapes trade selection. Future cell drops must be VERIFIED with
+//      a fresh wrapped backtest, not projected.
 //
 //  CAVEAT: cells were chosen for FAMILY DIVERSITY. Other Stochastic variants
 //  (2h sl1.5, 2h sl2.0) survived the intersection test and may be revisited
@@ -156,9 +172,11 @@ struct UstecTfHtfPos {
 //  Cell catalogue
 // ----------------------------------------------------------------------------
 enum class UstecTfHtfFamily {
-    InsideBar_2h,                    // [A]
-    AtrMom_1h_50,                    // [C]   (S36-P1a: [B] Stochastic_1h_2080 dropped)
-    Stochastic_4h_2080,              // [E]   (S36-P1a: [D] Donchian20_15m dropped)
+    AtrMom_1h_50,                    // [C]
+    Stochastic_4h_2080,              // [E]
+    // S36-P1b 2026-05-12: [A] InsideBar_2h dropped (3-cell wrapped -$898 ALL; 2026 -$4420)
+    // S36-P1a 2026-05-12: [B] Stochastic_1h_2080 dropped (5-cell wrapped 2025H1 -$1115)
+    // S36-P1a 2026-05-12: [D] Donchian20_15m dropped     (5-cell wrapped ALL -$4002)
 };
 
 enum class UstecTfHtfTf { M15, H1, H2, H4 };
@@ -173,16 +191,15 @@ struct UstecTfHtfCellConfig {
 };
 
 static constexpr UstecTfHtfCellConfig kUstecTfHtfCells[] = {
-    { UstecTfHtfFamily::InsideBar_2h,        UstecTfHtfTf::H2,  1.5, 3.0,
-      "InsideBar_2h_sl1.5tp3.0",        "InsideBar2h"  },
     { UstecTfHtfFamily::AtrMom_1h_50,        UstecTfHtfTf::H1,  2.0, 4.0,
       "ATR_Mom_1h_m50_sl2.0tp4.0",      "AtrMom1h"     },
     { UstecTfHtfFamily::Stochastic_4h_2080,  UstecTfHtfTf::H4,  2.0, 4.0,
       "Stochastic_4h_2080_sl2.0tp4.0",  "Stoch4h"      },
-    // S36-P1a (2026-05-12) -- dropped two cells per operator directive
-    // (any period unprofitable on wrapped backtest => drop):
-    //   { UstecTfHtfFamily::Stochastic_1h_2080, ... }   (2025H1 wrapped: -$1115)
-    //   { UstecTfHtfFamily::Donchian20_15m,     ... }   (ALL wrapped:    -$4002)
+    // S36-P1b (2026-05-12) -- dropped per operator directive on verify results:
+    //   { UstecTfHtfFamily::InsideBar_2h, ... }         (3-cell wrapped: -$898 ALL, -$4420 in 2026)
+    // S36-P1a (2026-05-12) -- earlier drops:
+    //   { UstecTfHtfFamily::Stochastic_1h_2080, ... }   (5-cell wrapped: 2025H1 -$1115)
+    //   { UstecTfHtfFamily::Donchian20_15m,     ... }   (5-cell wrapped: ALL -$4002)
 };
 static constexpr int kUstecTfHtfNumCells =
     static_cast<int>(sizeof(kUstecTfHtfCells) / sizeof(kUstecTfHtfCells[0]));
@@ -502,9 +519,10 @@ private:
     // -------------------------------------------------------------------------
     int _evaluate_signal(int ci) const noexcept {
         switch (kUstecTfHtfCells[ci].family) {
-            case UstecTfHtfFamily::InsideBar_2h:          return _sig_inside_bar_h2();
             case UstecTfHtfFamily::AtrMom_1h_50:          return _sig_atr_mom_h1();
             case UstecTfHtfFamily::Stochastic_4h_2080:    return _sig_stoch(bars_h4_);
+            // S36-P1b -- dropped:
+            //   case UstecTfHtfFamily::InsideBar_2h:       return _sig_inside_bar_h2();
             // S36-P1a -- dropped:
             //   case UstecTfHtfFamily::Stochastic_1h_2080: return _sig_stoch(bars_h1_);
             //   case UstecTfHtfFamily::Donchian20_15m:     return _sig_donchian_15m();
@@ -517,18 +535,12 @@ private:
     // because atr14_m15_ is still used as the entry regime filter via
     // guards.check_entry_ok() and M15 is the base-TF feed that synthesizes
     // H1/H2/H4 bars internally.
-
-    int _sig_inside_bar_h2() const noexcept {
-        const int sz = (int)bars_h2_.size();
-        if (sz < 3) return 0;
-        const auto& a = bars_h2_[sz - 3];   // bar i-2
-        const auto& b = bars_h2_[sz - 2];   // bar i-1 (the "inside" bar)
-        const auto& cur = bars_h2_[sz - 1]; // bar i (the breakout candidate)
-        if (!(b.high < a.high && b.low > a.low)) return 0;
-        if (cur.close > b.high) return +1;
-        if (cur.close < b.low ) return -1;
-        return 0;
-    }
+    //
+    // S36-P1b (2026-05-12) -- _sig_inside_bar_h2() removed along with the
+    // InsideBar_2h cell. H2 bar history (bars_h2_) is retained for now in
+    // case a future cell uses it; if no H2 cell is ever re-added the H2
+    // synthesizer in on_15m_bar can be stripped (a small CPU saving on
+    // M15 closes; not a correctness concern).
 
     int _sig_stoch(const std::deque<UstecTfHtfBar>& dq) const noexcept {
         constexpr double LO = 20.0, HI = 80.0;
