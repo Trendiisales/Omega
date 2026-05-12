@@ -975,45 +975,44 @@ static void init_engines(const std::string& cfg_path)
                g_xau_threebar_30m.min_atr_floor);
         fflush(stdout);
 
-        // ── UstecTrendFollowHtfEngine (S35-P6 2026-05-12) ──────────────────
-        // Multi-timeframe USTEC.F trend-follow ensemble. 5 cells across
-        // M15/H1/H2/H4 picked from the 16-month NSXUSD HISTDATA 3-period
+        // ── UstecTrendFollowHtfEngine (S35-P6 + S36-P1a 2026-05-12) ────────
+        // Multi-timeframe USTEC.F trend-follow ensemble. 3 cells across
+        // H1/H2/H4, picked from the 16-month NSXUSD HISTDATA 3-period
         // intersection (each cell positive in 2025H1, 2025H2, AND 2026 partial):
         //
         //   [A] 2h  InsideBar              sl1.5_tp3.0
-        //   [B] 1h  Stochastic lo=20;hi=80 sl2.0_tp4.0
         //   [C] 1h  ATR_Mom mom=50;atr=0.2-0.8 sl2.0_tp4.0   * strongest cell
-        //   [D] 15m Donchian N=20          sl2.0_tp4.0      ! see note below
         //   [E] 4h  Stochastic lo=20;hi=80 sl2.0_tp4.0
         //
         // Engine wraps the bare cells with engine_protections.hpp (BE arm,
-        // trail-after-BE, ATR floor). The wrapped backtest on the same
-        // 94.7M-tick HISTDATA dataset produced:
+        // trail-after-BE, ATR floor).
         //
+        // Original 5-cell S35-P6 wrapped backtest (94.7M ticks, 16mo HISTDATA):
         //   2025H1     n=1813  WR=53.9%  net=+$6754
-        //   2025H2     n=1586  WR=51.1%  net=  -$821   (just barely negative)
+        //   2025H2     n=1586  WR=51.1%  net=  -$821
         //   2026       n= 828  WR=54.8%  net=+$5800
         //   ALL        n=4227  WR=53.0%  net=+$11733  PF=1.05
         //
-        // Per-cell across all periods:
+        // Original 5-cell per-cell breakdown:
         //   AtrMom1h    n=1048  net= +$7724  *
         //   Stoch4h     n= 157  net= +$3657
         //   InsideBar2h n= 288  net= +$2287
-        //   Stoch1h     n= 480  net= +$2065
-        //   Donch15m    n=2254  net=  -$4002   ! DRAGS ENSEMBLE
+        //   Stoch1h     n= 480  net= +$2065   ! 2025H1=-$1115 (DROPPED S36-P1a)
+        //   Donch15m    n=2254  net= -$4002   ! ALL=-$4002    (DROPPED S36-P1a)
         //
-        // Donch15m note: the bare M15 Donchian was positive in all 3 periods
-        // in the §C intersection sweep ($832/$3019/$1227), but the BE+trail
-        // wrapping used here closes winners short while letting full-SL losers
-        // through, flipping the cell to net-negative. Two operator options
-        // when you next iterate: (a) drop the Donch15m cell entirely (engine
-        // becomes 4-cell, projected total ~+$15.7K), or (b) refactor engine
-        // to support per-cell guard config and disable BE/trail for the
-        // Donchian cell only. Left in for now so shadow-live data can confirm
-        // the mismatch on the live broker tape before you decide.
+        // S36-P1a operator directive: "drop any cell unprofitable in ANY
+        // period on the wrapped backtest." Donch15m was unprofitable across
+        // ALL periods on wrapped (bare cell was positive; BE+trail clipped
+        // its asymmetric winners). Stoch1h was negative in 2025H1 (-$1115)
+        // despite positive overall. Both removed.
+        //
+        // Post-drop projection: +$11,733 - (-$4,002) - (+$2,065) = +$13,670
+        // ALL across the same 16mo data. Re-backtest under S36-P1a-verify
+        // (rebuild backtest/ustec_tf_htf_S35P6_backtest.cpp; expect ~$13.7K
+        // ALL with InsideBar2h+AtrMom1h+Stoch4h breakdown).
         //
         // Existing UstecTrendFollow5mEngine cells (M5 Donchian + Keltner)
-        // failed the same 3-period test on this dataset (M5 Donchian was
+        // failed the 3-period test on this dataset (M5 Donchian was
         // -$2761/-$2420/-$621). This HTF engine is a COMPANION, not a
         // replacement; the M5 engine is untouched per operator instruction.
         //
@@ -1024,7 +1023,7 @@ static void init_engines(const std::string& cfg_path)
         // REQUIRES tick_indices.hpp dispatch hook in the USTEC.F bar-builder
         // (M15 close => g_ustec_tf_htf.on_15m_bar(...); every USTEC tick
         // => g_ustec_tf_htf.on_tick(...)). Until that wiring lands the engine
-        // is instantiated but DORMANT. Wiring is a separate commit.
+        // is instantiated but DORMANT. Wiring is a separate commit (S36-P4).
         g_ustec_tf_htf.shadow_mode      = true;   // HARD shadow until live-validated
         g_ustec_tf_htf.enabled          = true;   // engine runs (in shadow)
         g_ustec_tf_htf.lot              = 0.1;
@@ -1042,10 +1041,10 @@ static void init_engines(const std::string& cfg_path)
         g_ustec_tf_htf.block_hour_end   = -1;
         g_ustec_tf_htf.init();
         printf("[OMEGA-INIT] UstecTrendFollowHtfEngine initialised: shadow=%d enabled=%d lot=%.2f"
-               " cells=5 (InsideBar2h+Stoch1h+AtrMom1h+Donch15m+Stoch4h)"
+               " cells=3 (InsideBar2h+AtrMom1h+Stoch4h)"
                " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
-               " (S35-P6 TUNED; tick_indices.hpp M15 dispatch wiring REQUIRED before engine fires;"
-               " 16mo NSXUSD HISTDATA backtest +$11,733 net 53%% WR PF 1.05)\n",
+               " (S36-P1a; tick_indices.hpp M15 dispatch wiring REQUIRED before engine fires;"
+               " 5-cell baseline backtest was +$11,733; 3-cell projection +$13,670 pending re-bt)\n",
                (int)g_ustec_tf_htf.shadow_mode,
                (int)g_ustec_tf_htf.enabled,
                g_ustec_tf_htf.lot,
