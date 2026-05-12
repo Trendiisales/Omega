@@ -590,12 +590,27 @@ static void init_engines(const std::string& cfg_path)
     g_vwap_rev_sp.enabled = true;  g_vwap_rev_sp.EXTENSION_THRESH_PCT    = 0.35; g_vwap_rev_sp.COOLDOWN_SEC    = 300;
     g_vwap_rev_sp.MAX_EXTENSION_PCT       = 1.20;
     g_vwap_rev_sp.MAX_HOLD_SEC            = 600;
+    // 2026-05-13 (S37-H-followup): in-flight cut + BE ratchet (index defaults).
+    //   LOSS_CUT_PCT=0.08 -> US500@7400: ~5.9pt cold-loss cut.
+    //   BE_ARM_PCT  =0.05 -> US500@7400: ~3.7pt mfe arms the ratchet.
+    //   BE_BUFFER_PCT=0.02 -> US500@7400: ~1.5pt buffer (~typical spread).
+    g_vwap_rev_sp.LOSS_CUT_PCT            = 0.08;
+    g_vwap_rev_sp.BE_ARM_PCT              = 0.05;
+    g_vwap_rev_sp.BE_BUFFER_PCT           = 0.02;
     g_vwap_rev_nq.enabled = true;  g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.40; g_vwap_rev_nq.COOLDOWN_SEC    = 300;
     g_vwap_rev_nq.MAX_EXTENSION_PCT       = 1.20;
     g_vwap_rev_nq.MAX_HOLD_SEC            = 600;
+    // 2026-05-13 (S37-H-followup): USTEC@28000: ~22pt LOSS_CUT, ~14pt ARM, ~5.6pt buffer.
+    g_vwap_rev_nq.LOSS_CUT_PCT            = 0.08;
+    g_vwap_rev_nq.BE_ARM_PCT              = 0.05;
+    g_vwap_rev_nq.BE_BUFFER_PCT           = 0.02;
     g_vwap_rev_ger40.enabled = true;  g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.30; g_vwap_rev_ger40.COOLDOWN_SEC = 300;
     g_vwap_rev_ger40.MAX_EXTENSION_PCT    = 1.00;
     g_vwap_rev_ger40.MAX_HOLD_SEC         = 600;
+    // 2026-05-13 (S37-H-followup): GER40 index defaults same as US500/USTEC.
+    g_vwap_rev_ger40.LOSS_CUT_PCT         = 0.08;
+    g_vwap_rev_ger40.BE_ARM_PCT           = 0.05;
+    g_vwap_rev_ger40.BE_BUFFER_PCT        = 0.02;
     // EURUSD: 0.12% extension threshold (FX moves more precisely, smaller range)
     // S18 explicit tune (was: MAX_EXTENSION_PCT and MAX_HOLD_SEC fell back to
     // class defaults 0.80 / 900s). Class defaults were calibrated for indices
@@ -610,6 +625,13 @@ static void init_engines(const std::string& cfg_path)
     g_vwap_rev_eurusd.enabled = true;  g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;
     g_vwap_rev_eurusd.MAX_EXTENSION_PCT   = 0.40;
     g_vwap_rev_eurusd.MAX_HOLD_SEC        = 600;
+    // 2026-05-13 (S37-H-followup): FX moves smaller than indices -- tighter cut.
+    //   LOSS_CUT_PCT=0.05 -> EURUSD@1.10: ~5.5pip cold-loss cut.
+    //   BE_ARM_PCT  =0.03 -> EURUSD@1.10: ~3.3pip mfe arms ratchet.
+    //   BE_BUFFER_PCT=0.015 -> EURUSD@1.10: ~1.6pip buffer (~typical spread).
+    g_vwap_rev_eurusd.LOSS_CUT_PCT        = 0.05;
+    g_vwap_rev_eurusd.BE_ARM_PCT          = 0.03;
+    g_vwap_rev_eurusd.BE_BUFFER_PCT       = 0.015;
     // ?? NBM London session engines (07:00-13:30 UTC) ????????????????????????????
     // Covers the gap before NY open. Gold and oil are liquid from London open.
     // Uses same ATR/band logic as NY engines but anchored to London open price.

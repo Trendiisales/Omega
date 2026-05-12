@@ -39,6 +39,7 @@
 #include <string>
 #include <functional>
 #include <algorithm>
+#include <limits>
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -1205,6 +1206,38 @@ public:
                                           // TP = price crossed VWAP; trend may continue same way
     int     MIN_SESSION_MIN      = 120;  // only enter after 2hrs of session data (10:00 UTC)
     bool    enabled              = true;
+    // 2026-05-13 (S37-H-followup): in-flight cost-cover safety net.
+    //   The fire-time ExecutionCostGuard::is_viable() check (further down at the
+    //   entry path) blocks trades that *cannot* cover costs at TP. It is an
+    //   ENTRY filter only -- it does not run again after a position is open.
+    //   That left a gap: cost-gate-positive trades can still bleed because
+    //   (i) signal was wrong, (ii) price wiggles adverse before reverting,
+    //   (iii) MAX_HOLD elapses without TP being touched. The 19-trade live
+    //   slice on 2026-05-13 showed 14/19 exits via T/O and 0 via TP_HIT or
+    //   SL_HIT; cost drag ate 96% of gross PnL.
+    //
+    //   These three fields add an in-flight cut + break-even ratchet:
+    //
+    //   LOSS_CUT_PCT   -- cold-loss cut: cut when adverse >= entry*pct/100.
+    //                     Catches trades that go straight adverse from entry
+    //                     without ever turning profitable. Set 0.0 to disable
+    //                     (restores pre-S37-H behaviour: MAE_EXIT_RATIO +
+    //                     T/O only).
+    //   BE_ARM_PCT     -- arm BE ratchet once mfe >= entry*pct/100.
+    //                     Marks the trade as having validated its thesis,
+    //                     enabling the BE-CUT trigger below. Set 0.0 to
+    //                     disable the ratchet entirely.
+    //   BE_BUFFER_PCT  -- BE_CUT triggers when move <= entry*pct/100 AFTER
+    //                     the ratchet is armed. Typically the entry-time
+    //                     spread expressed as % of entry; lets the position
+    //                     close at break-even (plus tiny buffer for spread)
+    //                     instead of giving back all profit on retrace.
+    //
+    //   Defaults sized for indices: US500@7400 -> 5.9pt LOSS_CUT, 3.7pt ARM,
+    //   1.5pt BUFFER. FX (EURUSD) overridden per-instance in engine_init.hpp.
+    double  LOSS_CUT_PCT         = 0.08;  // cold-loss cut threshold (% of entry)
+    double  BE_ARM_PCT           = 0.05;  // mfe % of entry that arms BE ratchet
+    double  BE_BUFFER_PCT        = 0.02;  // BE_CUT triggers when move <= entry*pct/100 after arm
     // Confluence thresholds
     double  CONF_VIX_THRESH      = 18.0;
     double  CONF_L2_THRESH       = 0.12;
@@ -1263,32 +1296,98 @@ public:
         if (vwap <= 0) return {};
 
         if (pos_.active) {
-            // ?? Progressive timeout: extend if still moving toward VWAP ??????
-            // Standard 15min timeout cuts positions that are slowly reverting.
-            // If price is still trending toward TP at timeout, extend by 5min.
-            // This lets slow-moving reversions complete instead of timing out.
-            const double move_toward = pos_.is_long ? (mid - pos_.entry)
+            // 2026-05-13 (S37-H-followup): two-phase in-flight cut.
+            //   Phase 1 (BE_RATCHET, runs first): once mfe has reached
+            //   BE_ARM_PCT * entry / 100, install a virtual stop at
+            //   (entry + BE_BUFFER_PCT * entry / 100). If price retraces to
+            //   that level, cut at break-even. Catches "trade went +14pt then
+            //   gave it all back" / timeout-erased-profit cases.
+            //   Phase 2 (LOSS_CUT): if the trade went straight adverse from
+            //   entry without ever turning profitable, cut at LOSS_CUT_PCT.
+            //   Catches the outlier -$80 cases (e.g. 2026-05-13 15:15 US500).
+            //   Both phases independently configurable; setting pct = 0.0
+            //   disables that phase.
+            //   Progressive timeout retained but now only applies on losing
+            //   side (winners use eff_max_hold = INT_MAX -- ride the trail).
+            //   Legacy MAE_EXIT_RATIO retained as a safety net behind LOSS_CUT.
+            const double move        = pos_.is_long ? (mid - pos_.entry)
                                                     : (pos_.entry - mid);
+            const double adverse     = -move;  // positive when losing
             const double tp_dist_pos = std::fabs(pos_.tp - pos_.entry);
-            const int64_t held = ca_now_sec() - pos_.entry_ts;
+            const int64_t held       = ca_now_sec() - pos_.entry_ts;
+            // Keep our own mfe in sync. pos_.manage() also updates it at the
+            // end of this block; this ensures the BE-ratchet reads fresh mfe
+            // on the current tick before we evaluate the gate.
+            if (move > pos_.mfe) pos_.mfe = move;
+
+            // === Phase 1: BE RATCHET (giveback prevention) =======================
+            // Disabled when BE_ARM_PCT == 0.0.
+            if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0) {
+                const double arm_pts    = pos_.entry * BE_ARM_PCT    / 100.0;
+                const double buffer_pts = pos_.entry * BE_BUFFER_PCT / 100.0;
+                if (pos_.mfe >= arm_pts && move <= buffer_pts) {
+                    printf("[VWAP-REV] %s BE_CUT -- mfe=%.4f >= arm=%.4f move=%.4f <= buf=%.4f (giveback)\n",
+                           sym.c_str(), pos_.mfe, arm_pts, move, buffer_pts);
+                    fflush(stdout);
+                    pos_.force_close(bid, ask, on_close, "BE_CUT");
+                    timeout_extended_ = false;
+                    // Short cooldown -- BE_CUT is not a real loss, no need to punish.
+                    cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;
+                    // Reset consec-fc counter -- giveback is not a thesis failure.
+                    consec_fc_same_dir_ = 0;
+                    return {};
+                }
+            }
+
+            // === Phase 2: COLD LOSS CUT (trade was never profitable) =============
+            // Disabled when LOSS_CUT_PCT == 0.0. Catches "straight adverse from
+            // entry" cases that the BE_RATCHET cannot see (no mfe armed).
+            if (LOSS_CUT_PCT > 0.0) {
+                const double loss_cut_dist = pos_.entry * LOSS_CUT_PCT / 100.0;
+                if (adverse >= loss_cut_dist) {
+                    printf("[VWAP-REV] %s LOSS_CUT -- adverse=%.4f >= %.4f (%.3f%% of entry)\n",
+                           sym.c_str(), adverse, loss_cut_dist, LOSS_CUT_PCT);
+                    fflush(stdout);
+                    const bool this_long = pos_.is_long;
+                    pos_.force_close(bid, ask, on_close, "LOSS_CUT");
+                    timeout_extended_ = false;
+                    cooldown_until_   = ca_now_sec() + MAE_COOLDOWN_SEC;
+                    if (last_fc_long_ == this_long) ++consec_fc_same_dir_;
+                    else { consec_fc_same_dir_ = 1; last_fc_long_ = this_long; }
+                    if (consec_fc_same_dir_ >= 2) {
+                        fc_block_long_  = this_long;
+                        fc_block_until_ = ca_now_sec() + CONSEC_FC_BLOCK_SEC;
+                        printf("[VWAP-REV] %s %d consecutive LOSS_CUT/MAE in %s -- blocking 30min\n",
+                               sym.c_str(), consec_fc_same_dir_,
+                               this_long ? "LONG" : "SHORT");
+                        fflush(stdout);
+                    }
+                    return {};
+                }
+            }
+
+            // === Progressive timeout (now losing-side only) ======================
+            // Standard MAX_HOLD_SEC timeout cuts positions that are slowly
+            // reverting. If price is still trending toward TP at timeout, extend
+            // by 5min. Winners use eff_max_hold = INT_MAX below and never reach
+            // this branch (move > 0 keeps eff_max_hold at INT_MAX).
             if (held >= MAX_HOLD_SEC) {
-                const double progress = tp_dist_pos > 0 ? move_toward / tp_dist_pos : 0.0;
+                const double progress = tp_dist_pos > 0 ? move / tp_dist_pos : 0.0;
                 if (progress > 0.30) {
-                    // Still 30%+ toward TP and moving right way -- extend 5min, once
                     if (!timeout_extended_) {
                         timeout_extended_ = true;
                         printf("[VWAP-REV] %s timeout extended -- progress=%.0f%% still trending toward TP\n",
                                sym.c_str(), progress * 100.0);
                         fflush(stdout);
-                        // managed by MAX_HOLD_SEC in manage() -- bump entry_ts to extend
                         pos_.entry_ts = ca_now_sec() - MAX_HOLD_SEC + 300; // 5min extension
                     }
                 }
             }
 
-            // ?? MAE early exit -- mean-reversion thesis invalidation ????????????
-            const double adverse = pos_.is_long ? (pos_.entry - mid)
-                                                : (mid - pos_.entry);
+            // === Legacy MAE_EXIT_RATIO safety net =================================
+            // Retained as a backstop behind LOSS_CUT. When LOSS_CUT_PCT > 0 this
+            // rarely fires (LOSS_CUT triggers first). When LOSS_CUT_PCT == 0 this
+            // is the only adverse-cut mechanism, matching pre-S37-H behaviour.
             if (adverse > tp_dist_pos * MAE_EXIT_RATIO && tp_dist_pos > 0.0) {
                 printf("[VWAP-REV] %s MAE exit -- adverse=%.2f > %.2f (%.0f%% of TP dist) -- thesis dead\n",
                        sym.c_str(), adverse, tp_dist_pos * MAE_EXIT_RATIO,
@@ -1313,7 +1412,17 @@ public:
                 }
                 return {};
             }
-            pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
+
+            // === Winners ride the trail (no timeout) =============================
+            // Pass INT_MAX as max_hold so pos_.manage()'s T/O branch is inert
+            // when in profit. The existing BE / mid-lock / trail logic in
+            // CrossPosition::manage() (L171-202) handles natural exit via
+            // TP_HIT or trailed SL_HIT. Losers still see MAX_HOLD_SEC and
+            // get T/O'd at the original deadline.
+            const int eff_max_hold = (move > 0.0)
+                ? std::numeric_limits<int>::max()
+                : MAX_HOLD_SEC;
+            pos_.manage(bid, ask, eff_max_hold, on_close);
             return {};
         }
 

@@ -424,6 +424,42 @@ struct TsmomCell {
             }
         }
 
+        // 2026-05-13 (S37-H-followup): in-flight MAE stacking gate.
+        //   The S12 post-MAE_EXIT cooldown above only triggers AFTER a position
+        //   has actually MAE_EXIT'd. With multi-position semantics (default
+        //   max_positions_per_cell=10), a second long entry can fire one bar
+        //   after the first while the first is still open and already deeply
+        //   adverse. The S12 cooldown is inert at that moment (last_mae_exit_bar_
+        //   is still -10000). Live tape on 2026-05-13: Tsmom_H1_long opened LONG
+        //   at 13:00 and 14:00, both MAE_EXIT'd for combined -$75.46.
+        //
+        //   This gate blocks NEW entries whenever ANY currently-open position
+        //   is already halfway to its MAE_EXIT threshold (p.mae <= -0.5 *
+        //   mae_exit_atr * p.atr). Catches "open position is bleeding, don't
+        //   stack another one in the same direction".
+        //
+        //   Disabled when mae_exit_atr == 0.0 (MAE_EXIT itself is off, so the
+        //   half-MAE threshold has no meaning). Same condition the S12 gate
+        //   effectively requires (mae_exit_cooldown_bars only matters when
+        //   MAE_EXITs can fire).
+        if (mae_exit_atr > 0.0 && !positions_.empty()) {
+            const double half_mae_thresh = 0.5 * mae_exit_atr;  // multiple of per-pos ATR
+            for (const auto& p : positions_) {
+                if (p.atr <= 0.0) continue;
+                // p.mae is signed and <=0 typical; threshold is the per-position
+                // half-MAE in price units (sign matches p.mae).
+                const double half_mae_pts = half_mae_thresh * p.atr;
+                if (p.mae <= -half_mae_pts) {
+                    printf("[%s] IN_FLIGHT_MAE gate -- open pos id=%d mae=%.4f <= -%.4f "
+                           "(half of %.1f*ATR=%.4f) -- blocking new entry\n",
+                           cell_id.c_str(), p.id, p.mae, half_mae_pts,
+                           mae_exit_atr, mae_exit_atr * p.atr);
+                    fflush(stdout);
+                    return 0;
+                }
+            }
+        }
+
         // ----- 5. tsmom signal -------------------------------------------
         const double cur     = closes_.back();
         const double earlier = closes_[closes_.size() - 1 - lookback];
