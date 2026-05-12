@@ -405,6 +405,23 @@ static omega::XauTrendFollowD1Engine g_xau_tf_d1;
 #include "XauTrendFollow2hEngine.hpp"
 static omega::XauTrendFollow2hEngine g_xau_tf_2h;
 
+// 2026-05-11/12 S34 + S35-P3 + S35-P4: XauThreeBar30mEngine -- XAU M30
+//   three-bar continuation. Engine added in S34 (b1932d2), retrofitted
+//   with the standard ProtectedEngineGuards bundle in S35-P3 (1684cfc),
+//   per-year cross-validated against M30 bars aggregated from the
+//   2024-03..2026-04 M15 dataset in S35-P4 (3ee31de). The TUNED config
+//   (BE arm at +1*ATR / trail at 0.75*ATR / ATR floor $0.30) produces
+//   +$1488 over 25mo / 1058 trades / 66.2% WR / PF 1.27 with max DD
+//   $282.83, and is positive in every year (2024 +$199, 2025 +$242,
+//   2026 partial +$1047). HARD shadow + enabled=true at startup --
+//   operator flips shadow_mode to kShadowDefault after 1+ month of
+//   shadow-live data confirms the backtest on the broker's tape.
+//   REQUIRES: tick_gold.hpp dispatch hook (M30 bar aggregation +
+//   on_30m_bar/on_tick calls). Not yet wired as of S35-P4; engine
+//   instantiated but dormant until wiring lands.
+#include "XauThreeBar30mEngine.hpp"
+static omega::XauThreeBar30mEngine g_xau_threebar_30m;
+
 // 2026-05-08 S20+: RiskMonitor -- per-engine logging-only risk surveillance.
 //   Watches WR break-even, fire rate over/under, and spread-at-entry drift
 //   for every engine in data/risk_monitor_thresholds.csv (calibrated by

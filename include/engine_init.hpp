@@ -919,6 +919,62 @@ static void init_engines(const std::string& cfg_path)
                (int)g_xau_tf_2h.shadow_mode, (int)g_xau_tf_2h.enabled, g_xau_tf_2h.lot);
         fflush(stdout);
 
+        // ── XauThreeBar30mEngine (S34 b1932d2 / S35-P3 retrofit 1684cfc /
+        //    S35-P4 backtest 3ee31de) ──────────────────────────────────────
+        // M30 three-bar continuation on XAU. Per-year cross-validation
+        // backtest (S35-P4 commit 3ee31de) on M30 bars aggregated from the
+        // 2024-03..2026-04 M15 dataset (fvg_phase0/XAUUSD_15min/...) shows:
+        //
+        //   Baseline    n= 727  WR=35.1%  net=+$551.79  PF=1.07  DD=$508.96
+        //   TUNED       n=1058  WR=66.2%  net=+$1488.60 PF=1.27  DD=$282.83
+        //   Strict-all  n=  74  WR=50.0%  net=-$10.90   PF=0.95  killswitch
+        //
+        // All three years positive in TUNED (2024 +$199, 2025 +$242,
+        // 2026-partial +$1047). Production config below mirrors TUNED:
+        // BE arm at +1*ATR favourable, trail SL at 0.75*ATR after BE, ATR
+        // floor $0.30 (filter dead tape), $1 spread cap. Killswitch,
+        // daily-cap, time-stop, and session-window block disabled until
+        // shadow-live data refines their calibration -- the strict S35-P3
+        // defaults trip prematurely on a 35%-native-WR baseline.
+        //
+        // HARD shadow_mode = true regardless of kShadowDefault until the
+        // operator confirms ~1 month of shadow-live trade trace matches
+        // the M15->M30 backtest expectations on the live broker tape.
+        // After that confirmation, flip to kShadowDefault here.
+        //
+        // REQUIRES tick_gold.hpp to dispatch M30 bar closes to
+        // g_xau_threebar_30m.on_30m_bar(...) and gold ticks to
+        // g_xau_threebar_30m.on_tick(...). Until that wiring lands the
+        // engine is instantiated but DORMANT (receives no bars, never
+        // fires). Wiring is a separate commit; see HANDOFF_S35.md
+        // Phase 4 for the dispatch sketch.
+        g_xau_threebar_30m.shadow_mode        = true;   // HARD shadow until live-validated
+        g_xau_threebar_30m.enabled            = true;   // engine runs (in shadow)
+        g_xau_threebar_30m.lot                = 0.01;
+        g_xau_threebar_30m.max_spread         = 1.0;
+        g_xau_threebar_30m.be_trigger_atr     = 1.0;    // S35-P4 TUNED
+        g_xau_threebar_30m.be_cost_buffer_pts = 0.10;
+        g_xau_threebar_30m.trail_after_be     = true;   // S35-P4 TUNED
+        g_xau_threebar_30m.trail_atr_mult     = 0.75;
+        g_xau_threebar_30m.min_atr_floor      = 0.30;   // S35-P4 TUNED
+        g_xau_threebar_30m.max_bars_held      = 0;      // disabled
+        g_xau_threebar_30m.daily_loss_limit   = 0.0;    // disabled (strict tripped easily)
+        g_xau_threebar_30m.max_consec_losses  = 0;      // disabled (strict tripped at 5)
+        g_xau_threebar_30m.max_atr_ceil       = 0.0;    // disabled
+        g_xau_threebar_30m.block_hour_start   = -1;     // disabled (XAU Asia has flow)
+        g_xau_threebar_30m.block_hour_end     = -1;
+        g_xau_threebar_30m.init();
+        printf("[OMEGA-INIT] XauThreeBar30mEngine initialised: shadow=%d enabled=%d lot=%.2f"
+               " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
+               " (S35-P4 TUNED; tick_gold.hpp M30 dispatch wiring REQUIRED before engine fires)\n",
+               (int)g_xau_threebar_30m.shadow_mode,
+               (int)g_xau_threebar_30m.enabled,
+               g_xau_threebar_30m.lot,
+               g_xau_threebar_30m.be_trigger_atr,
+               g_xau_threebar_30m.trail_atr_mult,
+               g_xau_threebar_30m.min_atr_floor);
+        fflush(stdout);
+
         // ?? EmaPullbackPortfolio -- Tier-3 ship 2026-04-30 ?????????????????????
         // 4 ema_pullback long cells: H1, H2, H4, H6. Long-only -- shorts not
         // profitable in master_summary post-cut.
