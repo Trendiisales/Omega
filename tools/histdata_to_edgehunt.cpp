@@ -29,6 +29,8 @@
 //  DST HANDLING
 //
 //      Hardcoded transitions for 2024-2026:
+//          2024-03-10 02:00 ET → DST on  (EDT = UTC-4)  [S36-P2 2026-05-12]
+//          2024-11-03 02:00 ET → DST off (EST = UTC-5)  [S36-P2 2026-05-12]
 //          2025-03-09 02:00 ET → DST on  (EDT = UTC-4)
 //          2025-11-02 02:00 ET → DST off (EST = UTC-5)
 //          2026-03-08 02:00 ET → DST on
@@ -49,7 +51,9 @@
 //          OUT_DIR   = directory to write OUT_DIR/PREFIX_PERIOD.csv
 //          PREFIX    = filename prefix (e.g. nsx, spx)
 //
-//      Output files: OUT_DIR/{PREFIX}_2025H1.csv
+//      Output files: OUT_DIR/{PREFIX}_2024H1.csv  [S36-P2 2026-05-12]
+//                    OUT_DIR/{PREFIX}_2024H2.csv  [S36-P2 2026-05-12]
+//                    OUT_DIR/{PREFIX}_2025H1.csv
 //                    OUT_DIR/{PREFIX}_2025H2.csv
 //                    OUT_DIR/{PREFIX}_2026.csv
 //
@@ -95,6 +99,7 @@ inline int64_t naive_utc_ms(int yr, int mo, int dy, int hh, int mm, int ss, int 
 //   spring forward 2026: 2026-03-08 02:00 EST → 03:00 EDT  ⇒ UTC = 2026-03-08 07:00 UTC
 struct DstSpan { int64_t start_utc_ms; int64_t end_utc_ms; };
 static const DstSpan DST_SPANS[] = {
+    {1710054000000LL, 1730613600000LL},   // 2024-03-10 07:00 UTC → 2024-11-03 06:00 UTC  [S36-P2 2026-05-12]
     {1741417200000LL, 1762063200000LL},   // 2025-03-09 07:00 UTC → 2025-11-02 06:00 UTC
     {1773471600000LL, 9999999999999LL},   // 2026-03-08 07:00 UTC → end of data
 };
@@ -128,6 +133,8 @@ const char* bucket_for_ms(int64_t ms) {
 #endif
     int year = utc.tm_year + 1900;
     int mon  = utc.tm_mon + 1;
+    if (year == 2024 && mon >= 1 && mon <= 6)  return "2024H1";   // [S36-P2 2026-05-12]
+    if (year == 2024 && mon >= 7 && mon <= 12) return "2024H2";   // [S36-P2 2026-05-12]
     if (year == 2025 && mon >= 1 && mon <= 6)  return "2025H1";
     if (year == 2025 && mon >= 7 && mon <= 12) return "2025H2";
     if (year == 2026)                          return "2026";
@@ -162,12 +169,14 @@ int main(int argc, char** argv) {
         if (std::ftell(f) == 0) std::fputs("ts_ms,bid,ask\n", f);
         return f;
     };
+    FILE* f24H1 = open_out("2024H1");   // [S36-P2 2026-05-12]
+    FILE* f24H2 = open_out("2024H2");   // [S36-P2 2026-05-12]
     FILE* fH1 = open_out("2025H1");
     FILE* fH2 = open_out("2025H2");
     FILE* f26 = open_out("2026");
 
     char line[256];
-    int64_t n_total = 0, n_h1 = 0, n_h2 = 0, n_2026 = 0, n_other = 0;
+    int64_t n_total = 0, n_24h1 = 0, n_24h2 = 0, n_h1 = 0, n_h2 = 0, n_2026 = 0, n_other = 0;
     while (std::fgets(line, sizeof(line), in)) {
         // Parse "YYYYMMDD HHMMSSmmm,bid,ask,vol"  -- ultra-fast manual parse.
         if (line[0] < '0' || line[0] > '9') continue;
@@ -191,11 +200,15 @@ int main(int argc, char** argv) {
         int64_t ts_ms = est_to_utc_ms(yr, mo, dy, hh, mm, ss, ms);
         const char* bucket = bucket_for_ms(ts_ms);
         // bucket positions:
+        //   "2024H1" -> [0]='2' [1]='0' [2]='2' [3]='4' [4]='H' [5]='1'   [S36-P2 2026-05-12]
+        //   "2024H2" -> [0]='2' [1]='0' [2]='2' [3]='4' [4]='H' [5]='2'   [S36-P2 2026-05-12]
         //   "2025H1" -> [0]='2' [1]='0' [2]='2' [3]='5' [4]='H' [5]='1'
         //   "2025H2" -> [0]='2' [1]='0' [2]='2' [3]='5' [4]='H' [5]='2'
         //   "2026"   -> [0]='2' [1]='0' [2]='2' [3]='6'
         FILE* out = nullptr;
-        if      (bucket[3]=='5' && bucket[4]=='H' && bucket[5]=='1') { out = fH1; ++n_h1; }
+        if      (bucket[3]=='4' && bucket[4]=='H' && bucket[5]=='1') { out = f24H1; ++n_24h1; }
+        else if (bucket[3]=='4' && bucket[4]=='H' && bucket[5]=='2') { out = f24H2; ++n_24h2; }
+        else if (bucket[3]=='5' && bucket[4]=='H' && bucket[5]=='1') { out = fH1; ++n_h1; }
         else if (bucket[3]=='5' && bucket[4]=='H' && bucket[5]=='2') { out = fH2; ++n_h2; }
         else if (bucket[3]=='6')                                      { out = f26; ++n_2026; }
         else { ++n_other; }
@@ -207,11 +220,13 @@ int main(int argc, char** argv) {
         }
         ++n_total;
     }
+    std::fclose(f24H1); std::fclose(f24H2);
     std::fclose(fH1); std::fclose(fH2); std::fclose(f26);
     if (in != stdin) std::fclose(in);
     std::fprintf(stderr,
-        "[CONV] %s: total=%lld  2025H1=%lld  2025H2=%lld  2026=%lld  other=%lld\n",
-        inpath, (long long)n_total, (long long)n_h1, (long long)n_h2,
+        "[CONV] %s: total=%lld  2024H1=%lld  2024H2=%lld  2025H1=%lld  2025H2=%lld  2026=%lld  other=%lld\n",
+        inpath, (long long)n_total, (long long)n_24h1, (long long)n_24h2,
+        (long long)n_h1, (long long)n_h2,
         (long long)n_2026, (long long)n_other);
     return 0;
 }

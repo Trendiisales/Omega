@@ -103,12 +103,16 @@ static Args parse_args(int argc, char** argv) {
 // -----------------------------------------------------------------------------
 struct Tick { int64_t ts_ms; double bid; double ask; };
 
-// Determine which period a UTC ts_ms belongs to: "2025H1" / "2025H2" / "2026" / "OTHER".
+// Determine which period a UTC ts_ms belongs to.
+// Periods: "2024H1" / "2024H2" / "2025H1" / "2025H2" / "2026" / "OTHER".
+//   [S36-P2 2026-05-12]: added 2024H1 / 2024H2 for 2024 OOS holdout test.
 static const char* period_for_ms(int64_t ms) {
     time_t t = (time_t)(ms / 1000);
     struct tm utc{}; gmtime_r(&t, &utc);
     int year = utc.tm_year + 1900;
     int mon  = utc.tm_mon + 1;
+    if (year == 2024 && mon >= 1 && mon <= 6)  return "2024H1";
+    if (year == 2024 && mon >= 7 && mon <= 12) return "2024H2";
     if (year == 2025 && mon >= 1 && mon <= 6)  return "2025H1";
     if (year == 2025 && mon >= 7 && mon <= 12) return "2025H2";
     if (year == 2026)                          return "2026";
