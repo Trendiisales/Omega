@@ -422,6 +422,26 @@ static omega::XauTrendFollow2hEngine g_xau_tf_2h;
 #include "XauThreeBar30mEngine.hpp"
 static omega::XauThreeBar30mEngine g_xau_threebar_30m;
 
+// 2026-05-12 S35-P6: UstecTrendFollowHtfEngine -- multi-timeframe trend-follow
+//   ensemble for USTEC.F. 5 cells across M15/H1/H2/H4 (InsideBar2h, Stoch1h
+//   20/80, ATR_Mom 1h mom=50, Donchian N=20 15m, Stoch4h 20/80). Each cell
+//   was positive in EVERY ONE of 3 periods (2025H1, 2025H2, 2026 partial)
+//   on 16 months of NSXUSD HISTDATA tick data (89.6M ticks). Engine wraps
+//   the bare cells with engine_protections.hpp (BE arm, trail-after-BE, ATR
+//   floor); the wrapped backtest produced +$11,732 net across all 3 periods,
+//   53% WR, PF 1.05, 4,227 trades.
+//   REQUIRES: tick_indices.hpp dispatch hook in the USTEC.F bar-builder
+//   (M15 bar aggregation + on_15m_bar/on_tick calls). Not yet wired in
+//   tick_indices.hpp as of S35-P6; engine instantiated but dormant until
+//   wiring lands.
+//   NOTE: UstecTrendFollow5mEngine cells (Donchian N=20 + Keltner K=2.0)
+//   were NOT positive in the 3-period test on the same 16mo dataset
+//   (Donchian -$2761/-$2420/-$621 across H1/H2/26). The existing M5 engine
+//   has been left untouched per operator instruction; this HTF engine is a
+//   companion, not a replacement.
+#include "UstecTrendFollowHtfEngine.hpp"
+static omega::UstecTrendFollowHtfEngine g_ustec_tf_htf;
+
 // 2026-05-08 S20+: RiskMonitor -- per-engine logging-only risk surveillance.
 //   Watches WR break-even, fire rate over/under, and spread-at-entry drift
 //   for every engine in data/risk_monitor_thresholds.csv (calibrated by
