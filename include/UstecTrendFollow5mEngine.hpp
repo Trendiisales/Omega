@@ -320,6 +320,22 @@ public:
     double lot         = 0.1;
     double max_spread  = 5.0;
 
+    // ── S37-P2 RiskMonitor wiring ──────────────────────────────────────────
+    // 2026-05-12 (part C): fire-side hook for RiskMonitor surveillance.
+    // Bound at engine_init.hpp time to forward to g_risk_monitor.on_fire().
+    // If unbound (e.g. backtest harness), invocation is a no-op. Called
+    // from inside _fire_entry() AFTER cost gate passes and position is set
+    // up, so the live engine state and the surveillance counter advance
+    // together. Threshold calibration lives in
+    // data/risk_monitor_thresholds.csv -- absence of a row there causes
+    // g_risk_monitor.on_fire() to early-return; the wiring is in place
+    // but takes effect only after backtest/calibrate_risk_thresholds is
+    // re-run with UstecTrendFollow5m added to its ENGINE_TABLE. The
+    // shadow_mode auto-pin callback registered in engine_init.hpp works
+    // independently of the calibrated row and can be triggered via
+    // RiskMonitor::trip_engine_to_shadow() at any time.
+    std::function<void(int64_t now_s)> on_fire_hook;
+
     // ── S34-B Guard A constants (prove-it exit + SL floor) ──────────────────
     // S37-PROPOSED 2026-05-12: PROVE_IT_SECS 90→150,
     // PROVE_IT_MIN_FAVOURABLE_PTS 4.0→2.0. The original 90s/4pt cut
@@ -567,6 +583,17 @@ private:
         p.proved        = false;
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
+
+        // S37-P2 RiskMonitor: forward fire event to surveillance.
+        //   No-op if hook is unbound (e.g. backtest harness fork). The
+        //   hook is bound in engine_init.hpp to call
+        //   g_risk_monitor.on_fire("UstecTrendFollow5m", now_s); the
+        //   umbrella engine name (sans cell suffix) is used for the
+        //   surveillance entry because the threshold model treats the
+        //   ensemble as one signal source. Per-cell forensics still live
+        //   in tr.engine ("UstecTrendFollow5m_Donchian" / "_Keltner") on
+        //   the close-side ledger.
+        if (on_fire_hook) on_fire_hook(now_ms / 1000);
     }
 
     void _manage_open(int ci, double bid, double ask, int64_t now_ms,

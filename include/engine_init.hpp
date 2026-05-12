@@ -887,6 +887,60 @@ static void init_engines(const std::string& cfg_path)
                (int)g_ustec_tf_5m.shadow_mode, (int)g_ustec_tf_5m.enabled, g_ustec_tf_5m.lot);
         fflush(stdout);
 
+        // ── S37-P2 RiskMonitor wiring for g_ustec_tf_5m ──────────────────────
+        // 2026-05-12 (part C): mirror the g_gold_microscalper pattern at
+        // lines 162-181 above. Two parts:
+        //
+        //   (a) fire-side hook: every successful _fire_entry inside the
+        //       engine calls g_risk_monitor.on_fire("UstecTrendFollow5m",
+        //       now_s). The umbrella engine name (no cell suffix) is used
+        //       because the threshold model treats the Donchian+Keltner
+        //       ensemble as one signal source for the fire-rate evaluator.
+        //
+        //   (b) auto-pin callback: flips g_ustec_tf_5m.shadow_mode = true
+        //       on any tripped condition. Idempotent: only flips the
+        //       first time. Engine is ALREADY in hard shadow at startup
+        //       (line 880 above), so the auto-pin is currently belt-and-
+        //       braces for the post-promotion path. When operator
+        //       authorises step 5 (flip shadow_mode = false), this
+        //       callback becomes the real circuit-breaker.
+        //
+        // NOTE on calibration: the on_fire path inside RiskMonitor early-
+        // returns if "UstecTrendFollow5m" has no row in
+        // data/risk_monitor_thresholds.csv. The wiring below registers the
+        // infrastructure; producing the calibrated threshold row requires
+        // adding {engine="UstecTrendFollow5m", symbol="USTEC.F", ...} to
+        // ENGINE_TABLE in backtest/calibrate_risk_thresholds.cpp and
+        // re-running. That is a separate task; until it lands the fire-
+        // rate evaluator is a no-op but the auto-pin callback is
+        // available via g_risk_monitor.trip_engine_to_shadow() and other
+        // external trip paths.
+        g_ustec_tf_5m.on_fire_hook = [](int64_t now_s) {
+            g_risk_monitor.on_fire("UstecTrendFollow5m", now_s);
+        };
+        // S37-P3: three auto-pin callbacks. Each flips the same engine
+        //   instance to shadow on any trip. The umbrella name handles
+        //   fire-rate trips; the per-cell names handle close-side WR /
+        //   spread trips because tr.engine carries the cell suffix
+        //   (UstecTrendFollow5mEngine.hpp S34 BUG #3). All three target
+        //   the same g_ustec_tf_5m.shadow_mode -- on a trip from any of
+        //   the three evaluators, the engine pins regardless of which
+        //   cell or which check tripped.
+        auto pin_ustec_tf_5m = [](const std::string& reason) {
+            if (!g_ustec_tf_5m.shadow_mode) {
+                g_ustec_tf_5m.shadow_mode = true;
+                printf("[RISK-MON] AUTO-PIN UstecTrendFollow5m to SHADOW: %s\n",
+                       reason.c_str());
+                fflush(stdout);
+            }
+        };
+        g_risk_monitor.register_shadow_pin_cb("UstecTrendFollow5m",          pin_ustec_tf_5m);
+        g_risk_monitor.register_shadow_pin_cb("UstecTrendFollow5m_Donchian", pin_ustec_tf_5m);
+        g_risk_monitor.register_shadow_pin_cb("UstecTrendFollow5m_Keltner",  pin_ustec_tf_5m);
+        printf("[OMEGA-INIT] UstecTrendFollow5m RiskMonitor wiring installed"
+               " (fire-hook + 3 auto-pin callbacks: umbrella + Donchian + Keltner cells)\n");
+        fflush(stdout);
+
         // ── XauTrendFollowD1Engine (S33e 2026-05-11) ──────────────────────────
         // 3-cell daily trend-follow ensemble (Momentum lb=20, Keltner K=2.0,
         // ADX_Mom adx>25). D1 bars synthesised internally from the same

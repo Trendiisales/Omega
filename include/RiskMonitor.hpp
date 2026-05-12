@@ -325,6 +325,22 @@ inline int RiskMonitor::load_thresholds(const std::string& csv_path) {
             t.fires_per_hour_table[h] = get_dbl(col_idx(hname));
         }
 
+        // 2026-05-12 S37-P3: optional per-engine overrides for the
+        //   fire-rate evaluator. Default values (2.5, 0.4, 3) are tuned
+        //   for high-frequency engines (e.g. MicroScalperGold ~81/hour).
+        //   Low-frequency engines (e.g. UstecTrendFollow5m ~53/month)
+        //   need looser ratios and longer under-fire windows so single
+        //   fires don't trip over-fire and so quiet hours don't trip
+        //   under-fire. Columns are optional -- engines that don't
+        //   provide them (MicroScalperGold legacy row) keep the
+        //   defaults set on the RiskMonitorThresholds struct above.
+        const int over_col   = col_idx("fire_over_ratio");
+        const int under_col  = col_idx("fire_under_ratio");
+        const int consec_col = col_idx("fire_under_consec_hours");
+        if (over_col   >= 0) t.fire_over_ratio        = get_dbl(over_col);
+        if (under_col  >= 0) t.fire_under_ratio       = get_dbl(under_col);
+        if (consec_col >= 0) t.fire_under_consec_hours = get_int(consec_col);
+
         // Derive spread trip threshold. 1.5x filtered median, with an
         // absolute floor of (median + 0.05) so engines with very tight
         // backtest baselines (e.g. 0.05pt median) don't trip on +50%

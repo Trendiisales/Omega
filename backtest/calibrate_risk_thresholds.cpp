@@ -124,9 +124,43 @@ struct EngineConfig {
     double      trip_wr_buffer;        // BE_WR + this -> TRIP_WR (3pp default)
     int         window_n;              // rolling window size for live evaluation
     int         window_n_minimum;      // minimum samples before WR check fires
+
+    // 2026-05-12 S37-P3: optional per-engine overrides for engines whose
+    //   TP/SL are ATR-derived (formula BE_WR doesn't apply) or whose
+    //   fire-rate is too low for the per-hour-bucket evaluator's defaults.
+    //   Leave at 0 / 0.0 to use the formula / RiskMonitor struct defaults.
+    double      manual_trip_wr_override     = 0.0;   // if > 0, used as TRIP_WR directly
+    double      fire_over_ratio_override    = 0.0;   // if > 0, written to CSV; else default 2.5
+    double      fire_under_ratio_override   = 0.0;   // if > 0, written to CSV; else default 0.4
+    int         fire_under_consec_override  = 0;     // if > 0, written to CSV; else default 3
+    // Per-UTC-hour fires-per-hour override. If sum is 0, the calibrator
+    //   uses the flat-split derived from backtest_n_trades. Otherwise
+    //   each hour's value is written directly to the corresponding
+    //   fires_per_hour_HH column in the output CSV.
+    std::array<double, 24> fires_per_hour_override = {};
 };
 
 inline const std::vector<EngineConfig>& engine_table() {
+    // Per-UTC-hour fires-per-hour distribution for UstecTrendFollow5m,
+    // derived from outputs/ustec_trend_follow_5m_planA_baseline.csv
+    // filtered to atr_at_entry >= 20 (S37 MIN_ATR=20 entry filter) and
+    // scaled to the Plan B winner's 1.74-trades-per-day mean rate
+    // (1326 trades / 760 days). Hours with rate < 0.05 fires/hour are
+    // set to 0 so the per-hour evaluator skips them (RiskMonitor.hpp:467
+    // early-returns when expected <= 0.0). The active hours (US-session-
+    // adjacent: 03-04, 07-15, 18) match the engine's empirical fire
+    // distribution; off-hours skip evaluation which is correct given the
+    // engine has no session filter in source but the tape is structurally
+    // quiet during those windows.
+    static constexpr std::array<double, 24> kUstecTfFiresPerHour = {
+        // 00     01     02     03     04     05     06     07
+        0.000, 0.000, 0.000, 0.038, 0.036, 0.000, 0.000, 0.038,
+        // 08     09     10     11     12     13     14     15
+        0.088, 0.209, 0.265, 0.155, 0.142, 0.130, 0.124, 0.119,
+        // 16     17     18     19     20     21     22     23
+        0.000, 0.000, 0.125, 0.000, 0.000, 0.000, 0.000, 0.000
+    };
+
     static const std::vector<EngineConfig> tbl = {
         // MicroScalperGold rk12: see HANDOFF_S20_AFTER_S19_MICROSCALPER.md and
         // include/GoldMicroScalperEngine.hpp lines 159-185 for the calibration
@@ -146,6 +180,121 @@ inline const std::vector<EngineConfig>& engine_table() {
             /* trip_wr_buffer         */ 0.03,
             /* window_n               */ 150,
             /* window_n_minimum       */ 50,
+            // No overrides -- uses BE_WR formula + RiskMonitor defaults
+            // (fire_over_ratio=2.5, fire_under_ratio=0.4, consec=3). Per-hour
+            // table is flat-split inside session window, 0 outside.
+        },
+        // 2026-05-12 S37-P3: UstecTrendFollow5m calibration.
+        //   Source of record:
+        //     outputs/USTEC_TREND_FOLLOW_5M_PLAN_A_B_REPORT.md
+        //   Backtest figures from the Plan B winner row in
+        //     outputs/ustec_trend_follow_5m_planB_leaderboard.csv (rank 1):
+        //       1326 trades over 760 days, WR 28.28%, gross $17,388,
+        //       net $7,586, OOS 260 trades / +$5,207 net.
+        //   TP/SL diagnostic values reflect typical ATR=22 at fire time:
+        //     sl_dist = 3.0 * 22 = 66 pts (sl_mult * atr14_)
+        //     tp_dist = 7.0 * 22 = 154 pts (tp_mult * atr14_)
+        //   Since SL/TP are ATR-derived (not constants), the standard
+        //   BE_WR = sl/(tp+sl) formula gives 0.300 but the empirical
+        //   backtest WR is 0.283 -- the engine is net-positive at
+        //   sub-formula-BE because mean winner > mean TP via right-tail
+        //   captures. We use manual_trip_wr_override = 0.18 (10pp below
+        //   backtest WR; below this WR the engine is clearly out of
+        //   the modelled regime).
+        //   Fire-rate overrides:
+        //     fire_over_ratio=10.0     : single fires don't trip; 2+ fires
+        //                                in a single hour during peak (where
+        //                                expected~0.2) trips
+        //     fire_under_ratio=0.1     : very low; eval is moot for hours
+        //                                where expected is zero (skipped)
+        //     fire_under_consec=6      : 6 consecutive active hours of zero
+        //                                fires trips under-fire. During the
+        //                                ~9-hour active window this means a
+        //                                full session of zero fires.
+        //   tp_pts/sl_pts in this row are diagnostic only -- they do not
+        //   feed any RiskMonitor evaluator at runtime. BE_WR is recomputed
+        //   from them at load time but immediately superseded by trip_wr
+        //   which we override via manual_trip_wr_override.
+        EngineConfig{
+            /* name                   */ "UstecTrendFollow5m",
+            /* symbol                 */ "NAS100",         // L2 capture filename prefix
+            /* tp_pts                 */ 154.00,           // 7.0 * ATR~22 (diagnostic)
+            /* sl_pts                 */ 66.00,            // 3.0 * ATR~22 (diagnostic)
+            /* max_spread_pts         */ 5.00,             // engine MAX_SPREAD
+            /* session_start_utc      */ 0,
+            /* session_end_utc        */ 24,               // engine has no session filter
+            /* backtest_n_trades      */ 1326,
+            /* backtest_n_capture_days*/ 760,              // 25 months
+            /* backtest_wr            */ 0.2828,           // Plan B IS WR
+            /* trip_wr_buffer         */ 0.00,             // unused -- overridden below
+            /* window_n               */ 100,              // rolling window for WR / spread
+            /* window_n_minimum       */ 30,               // minimum closed trades before eval
+            /* manual_trip_wr_override */ 0.18,
+            /* fire_over_ratio_override*/ 10.0,
+            /* fire_under_ratio_override*/0.1,
+            /* fire_under_consec_override*/6,
+            /* fires_per_hour_override*/ kUstecTfFiresPerHour,
+        },
+        // 2026-05-12 S37-P3: per-cell threshold rows for close-side
+        //   WR/spread monitoring. The engine emits tr.engine with a cell
+        //   suffix ("_Donchian" / "_Keltner") so the ledger differentiates
+        //   the two signal families (see UstecTrendFollow5mEngine.hpp S34
+        //   BUG #3). RiskMonitor::on_trade_close matches on tr.engine
+        //   exactly, so per-cell rows are needed for close-side WR and
+        //   spread evaluation to fire.
+        //
+        //   The fire-side hook in engine_init.hpp still calls under the
+        //   umbrella name "UstecTrendFollow5m" so per-cell fire eval would
+        //   never trigger. To avoid spurious behaviour we set every
+        //   fires_per_hour_HH to 0 for the per-cell rows -- the fire
+        //   evaluator's `expected <= 0.0` early-return (RiskMonitor.hpp:467)
+        //   means cell rollover ticks don't trip even if (counterfactually)
+        //   on_fire were called per-cell.
+        //
+        //   Per-cell window_n=50 reflects per-cell trade count: Donchian
+        //   takes ~70% of fires (~37/month), Keltner ~30% (~16/month).
+        //   A 50-trade rolling window is ~1.4 months of Donchian trades
+        //   and ~3 months of Keltner trades. window_n_minimum=20 means
+        //   the first ~20 trades elapse before WR eval starts.
+        EngineConfig{
+            /* name                   */ "UstecTrendFollow5m_Donchian",
+            /* symbol                 */ "NAS100",
+            /* tp_pts                 */ 154.00,
+            /* sl_pts                 */ 66.00,
+            /* max_spread_pts         */ 5.00,
+            /* session_start_utc      */ 0,
+            /* session_end_utc        */ 24,
+            /* backtest_n_trades      */ 926,              // 70% of 1326 = 926
+            /* backtest_n_capture_days*/ 760,
+            /* backtest_wr            */ 0.2832,           // approx, per-cell breakdown
+            /* trip_wr_buffer         */ 0.00,
+            /* window_n               */ 50,
+            /* window_n_minimum       */ 20,
+            /* manual_trip_wr_override */ 0.18,
+            /* fire_over_ratio_override*/ 10.0,
+            /* fire_under_ratio_override*/0.1,
+            /* fire_under_consec_override*/6,
+            /* fires_per_hour_override*/ std::array<double, 24>{},  // all zeros -> skip fire eval
+        },
+        EngineConfig{
+            /* name                   */ "UstecTrendFollow5m_Keltner",
+            /* symbol                 */ "NAS100",
+            /* tp_pts                 */ 154.00,
+            /* sl_pts                 */ 66.00,
+            /* max_spread_pts         */ 5.00,
+            /* session_start_utc      */ 0,
+            /* session_end_utc        */ 24,
+            /* backtest_n_trades      */ 400,              // 30% of 1326 = 400
+            /* backtest_n_capture_days*/ 760,
+            /* backtest_wr            */ 0.2825,           // approx, per-cell breakdown
+            /* trip_wr_buffer         */ 0.00,
+            /* window_n               */ 50,
+            /* window_n_minimum       */ 20,
+            /* manual_trip_wr_override */ 0.18,
+            /* fire_over_ratio_override*/ 10.0,
+            /* fire_under_ratio_override*/0.1,
+            /* fire_under_consec_override*/6,
+            /* fires_per_hour_override*/ std::array<double, 24>{},  // all zeros -> skip fire eval
         },
     };
     return tbl;
@@ -366,7 +515,12 @@ static void write_thresholds_csv(const std::string& path,
            "backtest_spread_median_filtered,backtest_spread_p95_filtered,"
            "window_n,window_n_minimum";
     for (int h = 0; h < 24; ++h) out << ",fires_per_hour_" << (h < 10 ? "0" : "") << h;
-    out << ",calibration_n_l2_rows,calibration_n_l2_rows_filtered,calibration_n_capture_days\n";
+    out << ",calibration_n_l2_rows,calibration_n_l2_rows_filtered,calibration_n_capture_days"
+           // S37-P3 new optional columns. Engines without overrides emit
+           // the default values (2.5 / 0.4 / 3); RiskMonitor.hpp:load_thresholds
+           // also defaults to those values when the columns are absent, so
+           // the new schema is forward+backward compatible with old CSVs.
+           ",fire_over_ratio,fire_under_ratio,fire_under_consec_hours\n";
 
     out << std::fixed;
     for (const auto& r : rows) {
@@ -381,7 +535,14 @@ static void write_thresholds_csv(const std::string& path,
             << r.cfg.window_n << ',' << r.cfg.window_n_minimum;
         for (int h = 0; h < 24; ++h) out << ',' << r.fires_per_hour_table[h];
         out << ',' << r.spread.n << ',' << r.spread.n_filtered
-            << ',' << r.spread.capture_days.size() << '\n';
+            << ',' << r.spread.capture_days.size();
+        // S37-P3 fire-rate evaluator overrides. Use the per-engine override
+        // if set, otherwise emit the RiskMonitor struct defaults so the CSV
+        // is self-describing.
+        const double over_v   = r.cfg.fire_over_ratio_override   > 0.0 ? r.cfg.fire_over_ratio_override   : 2.5;
+        const double under_v  = r.cfg.fire_under_ratio_override  > 0.0 ? r.cfg.fire_under_ratio_override  : 0.4;
+        const int    consec_v = r.cfg.fire_under_consec_override > 0   ? r.cfg.fire_under_consec_override : 3;
+        out << ',' << over_v << ',' << under_v << ',' << consec_v << '\n';
     }
     std::fprintf(stderr, "[CALIB] wrote %zu engine rows -> %s\n",
                  rows.size(), path.c_str());
@@ -416,7 +577,13 @@ static CalibratedRow calibrate_engine(const EngineConfig& cfg,
 
     // BE_WR and TRIP_WR.
     row.be_wr   = cfg.sl_pts / (cfg.tp_pts + cfg.sl_pts);
-    row.trip_wr = row.be_wr + cfg.trip_wr_buffer;
+    if (cfg.manual_trip_wr_override > 0.0) {
+        // S37-P3: empirical override for engines whose TP/SL are ATR-derived
+        // and the formula BE_WR doesn't fit the actual backtest WR.
+        row.trip_wr = cfg.manual_trip_wr_override;
+    } else {
+        row.trip_wr = row.be_wr + cfg.trip_wr_buffer;
+    }
 
     // Expected fire rate per active hour (flat in v1).
     int session_hours = cfg.session_end_utc - cfg.session_start_utc;
@@ -426,12 +593,25 @@ static CalibratedRow calibrate_engine(const EngineConfig& cfg,
         static_cast<double>(cfg.backtest_n_capture_days) /
         static_cast<double>(session_hours);
 
-    // Per-hour table: flat split inside session window, zero outside.
-    for (int h = 0; h < 24; ++h) {
-        row.fires_per_hour_table[h] =
-            in_session(h, cfg.session_start_utc, cfg.session_end_utc)
-                ? row.expected_fires_per_hour
-                : 0.0;
+    // Per-hour table: use the explicit override if present, else flat split
+    // inside session window with zero outside.
+    double override_sum = 0.0;
+    for (int h = 0; h < 24; ++h) override_sum += cfg.fires_per_hour_override[h];
+    if (override_sum > 0.0) {
+        // S37-P3: explicit per-hour distribution from backtest ledger
+        // analysis. Each value is a fires-per-hour rate written verbatim
+        // to the corresponding fires_per_hour_HH column. Hours with 0
+        // skip evaluation in RiskMonitor.hpp:467.
+        for (int h = 0; h < 24; ++h) {
+            row.fires_per_hour_table[h] = cfg.fires_per_hour_override[h];
+        }
+    } else {
+        for (int h = 0; h < 24; ++h) {
+            row.fires_per_hour_table[h] =
+                in_session(h, cfg.session_start_utc, cfg.session_end_utc)
+                    ? row.expected_fires_per_hour
+                    : 0.0;
+        }
     }
 
     // Diagnostic dump.
