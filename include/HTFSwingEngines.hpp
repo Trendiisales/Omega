@@ -65,6 +65,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see H4RegimeEngine::on_bar entry
 #include "OHLCBarEngine.hpp"    // OHLCBar + get_bars() for seed_channel_from_bars()
 
 namespace omega {
@@ -733,6 +734,25 @@ struct H4RegimeEngine {
         double size = p.risk_dollars / (sl_pts * 100.0);
         size = std::floor(size / 0.001) * 0.001;
         size = std::max(0.01, std::min(p.max_lot, size));
+
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   H4Regime fires on H4 bar close. Gates on the fixed TP distance
+        //   (tp_pts = h4_atr * p.tp_mult) at the unified per-symbol cost
+        //   model. cost_ratio_min=1.5. On block we plain-return; the engine
+        //   re-evaluates naturally on the next H4 break (which won't occur
+        //   until the channel breaks again).
+        const double spread_local = ask - bid;
+        if (!ExecutionCostGuard::is_viable(symbol.c_str(), spread_local,
+                                           tp_pts, size, 1.5)) {
+            static int64_t s_cost = 0;
+            if (now_ms - s_cost > 14400000LL) {
+                s_cost = now_ms;
+                printf("[H4REGIME-%s] BLOCKED cost_gate tp=%.2f spread=%.4f size=%.3f\n",
+                       symbol.c_str(), tp_pts, spread_local, size);
+                fflush(stdout);
+            }
+            return sig;
+        }
 
         pos_.active        = true;
         pos_.is_long       = intend_long;

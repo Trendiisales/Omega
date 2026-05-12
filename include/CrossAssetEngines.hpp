@@ -1442,6 +1442,23 @@ public:
         sig.reason           = is_long ? "VWAP_REV_LONG" : "VWAP_REV_SHORT";
         sig.confluence_score = score;
 
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   VWAP mean-reversion to fixed VWAP target. Gate on tp_dist with
+        //   cost_ratio_min=1.5. On block we plain-return and let cooldown
+        //   carry to the next opportunity.
+        if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist,
+                                           sig.size, 1.5)) {
+            static int64_t s_cost_vwr = 0;
+            const int64_t now_s_vwr = ca_now_sec();
+            if (now_s_vwr - s_cost_vwr > 60) {
+                s_cost_vwr = now_s_vwr;
+                printf("[VWAP-REV-%s] BLOCKED cost_gate tp=%.4f spread=%.4f\n",
+                       sym.c_str(), tp_dist, spread);
+                fflush(stdout);
+            }
+            return {};
+        }
+
         pos_.open(sig, spread);
         pos_.allow_tp_extend = false;  // VWAP reversion: close AT VWAP, do not extend past it
                                        // Mean-reversion edge ends when price returns to VWAP
@@ -2185,6 +2202,22 @@ public:
         sig.engine  = "TrendPullback";
         sig.reason  = is_long ? "TREND_PB_LONG" : "TREND_PB_SHORT";
 
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   TrendPullback has a fixed ATR-based TP. Gate on tp_dist at the
+        //   unified per-symbol cost floor. On block we plain-return.
+        if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist,
+                                           sig.size, 1.5)) {
+            static int64_t s_cost_tpb = 0;
+            const int64_t now_s_tpb = ca_now_sec();
+            if (now_s_tpb - s_cost_tpb > 60) {
+                s_cost_tpb = now_s_tpb;
+                printf("[TREND-PB-%s] BLOCKED cost_gate tp=%.4f spread=%.4f size=%.3f\n",
+                       sym.c_str(), tp_dist, spread, sig.size);
+                fflush(stdout);
+            }
+            return {};
+        }
+
         pos_.open(sig, spread, atr_);
         be_locked_      = false;
         partial_done_   = false;
@@ -2471,6 +2504,22 @@ public:
         sig.symbol  = sym.c_str();
         sig.engine  = "NoiseBandMomentum";
         sig.reason  = go_long ? "NBM_LONG" : "NBM_SHORT";
+
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   NBM has fixed TP_PCT/SL_PCT targets. Gate on tp_dist. On block
+        //   we plain-return and rely on the existing COOLDOWN_SEC.
+        if (!ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist,
+                                           sig.size, 1.5)) {
+            static int64_t s_cost_nbm = 0;
+            const int64_t now_s_nbm = ca_now_sec();
+            if (now_s_nbm - s_cost_nbm > 60) {
+                s_cost_nbm = now_s_nbm;
+                printf("[NBM-%s] BLOCKED cost_gate tp=%.4f spread=%.4f\n",
+                       sym.c_str(), tp_dist, spread);
+                fflush(stdout);
+            }
+            return {};
+        }
 
         pos_.open(sig, spread);
         cooldown_until_ = ca_now_sec() + COOLDOWN_SEC;

@@ -58,6 +58,7 @@
 #include "OmegaFIX.hpp"          // L2Book, L2Level
 #include "GoldHMM.hpp"            // 3-state regime HMM for CFE entry gating
 #include "SpreadRegimeGate.hpp"  // 2026-04-29 PM Option 1 (audit-fixes-18)
+#include "OmegaCostGuard.hpp"    // 2026-05-12 cost gate -- see DFE/SUS/enter() fire sites
 
 namespace omega {
 
@@ -775,6 +776,21 @@ struct CandleFlowEngine {
                     double size = risk_dollars / (dfe_sl_pts * 100.0);
                     size = std::floor(size/0.001)*0.001;
                     size = std::max(CFE_MIN_LOT, std::min(CFE_MAX_LOT, size));
+                    // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+                    //   CFE has no fixed TP (L2-imbalance exit). Use the same
+                    //   conservative 1.5x SL as the on_tick.hpp cost_ok lambda.
+                    if (!ExecutionCostGuard::is_viable("XAUUSD", spread,
+                                                       dfe_sl_pts * 1.5, size, 1.5)) {
+                        static int64_t s_cost_dfe = 0;
+                        if (now_ms - s_cost_dfe > 5000) {
+                            s_cost_dfe = now_ms;
+                            std::cout << "[CFE] DFE BLOCKED cost_gate sl_pts=" << dfe_sl_pts
+                                      << " spread=" << spread << " size=" << size << "\n";
+                            std::cout.flush();
+                        }
+                        m_prev_ewm_drift = ewm_drift;
+                        goto cfe_sustained_skip;
+                    }
                     pos.active=true; pos.is_long=dfe_long; pos.entry=entry_px;
                     pos.sl=sl_px; pos.size=size; pos.full_size=size;
                     pos.cost_pts=dfe_cost; pos.entry_ts_ms=now_ms;
@@ -919,6 +935,19 @@ struct CandleFlowEngine {
                 double size = risk_dollars / (sus_sl_pts * 100.0);
                 size = std::floor(size/0.001)*0.001;
                 size = std::max(CFE_MIN_LOT, std::min(CFE_MAX_LOT, size));
+                // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+                if (!ExecutionCostGuard::is_viable("XAUUSD", spread,
+                                                   sus_sl_pts * 1.5, size, 1.5)) {
+                    static int64_t s_cost_sus = 0;
+                    if (now_ms - s_cost_sus > 5000) {
+                        s_cost_sus = now_ms;
+                        std::cout << "[CFE] SUSTAINED BLOCKED cost_gate sl_pts=" << sus_sl_pts
+                                  << " spread=" << spread << " size=" << size << "\n";
+                        std::cout.flush();
+                    }
+                    m_drift_sustained_start_ms = now_ms;  // reset tracker; same effect as natural skip
+                    goto cfe_sustained_skip;
+                }
                 pos.active=true; pos.is_long=sus_long; pos.entry=entry_px;
                 pos.sl=sl_px; pos.size=size; pos.full_size=size;
                 pos.cost_pts=sus_cost; pos.entry_ts_ms=now_ms;
@@ -1502,6 +1531,21 @@ private:
         double size = risk_dollars / (sl_pts * 100.0);
         size = std::floor(size / 0.001) * 0.001;
         size = std::max(CFE_MIN_LOT, std::min(CFE_MAX_LOT, size));
+
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   enter() path (used by the expansion-candle entry). Same 1.5x SL
+        //   conservative R-multiple as the DFE/SUS paths above.
+        if (!ExecutionCostGuard::is_viable("XAUUSD", spread,
+                                           sl_pts * 1.5, size, 1.5)) {
+            static int64_t s_cost_enter = 0;
+            if (now_ms - s_cost_enter > 5000) {
+                s_cost_enter = now_ms;
+                std::cout << "[CFE] ENTRY BLOCKED cost_gate sl_pts=" << sl_pts
+                          << " spread=" << spread << " size=" << size << "\n";
+                std::cout.flush();
+            }
+            return;
+        }
 
         pos.active        = true;
         pos.is_long       = is_long;

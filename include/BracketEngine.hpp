@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <functional>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see arm_both_sides() lock block
 
 namespace omega {
 
@@ -1144,6 +1145,24 @@ protected:
                       << " dist=" << dist
                       << " max=" << MAX_SL_DIST_PTS
                       << " (empirical 100%-loser band)\n";
+            std::cout.flush();
+            phase = BracketPhase::IDLE;
+            bracket_high = 0.0; bracket_low = 0.0;
+            return;
+        }
+
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   This engine already runs several internal cost checks above
+        //   (MAX_SPREAD, round_trip_cost, EDGE_MULTIPLIER). Layering
+        //   ExecutionCostGuard adds the unified per-symbol cost model
+        //   (commission + slippage from OmegaCostGuard.hpp) so all engines
+        //   share a single floor. On a block we drop back to IDLE so the
+        //   bracket must reform.
+        if (!ExecutionCostGuard::is_viable(symbol, spread, tp_dist,
+                                           ENTRY_SIZE, 1.5)) {
+            std::cout << "[BRACKET-" << symbol << "] BLOCKED: cost_gate"
+                      << " tp_dist=" << tp_dist << " spread=" << spread
+                      << " size=" << ENTRY_SIZE << "\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;
             bracket_high = 0.0; bracket_low = 0.0;

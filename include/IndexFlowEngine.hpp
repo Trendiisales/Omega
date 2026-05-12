@@ -85,6 +85,7 @@
 #include <chrono>
 #include "OmegaTradeLedger.hpp"
 #include "OHLCBarEngine.hpp"
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see pos_.open(sig) entry below
 
 namespace omega {
 namespace idx {
@@ -798,6 +799,24 @@ public:
         sig.symbol  = symbol_;
         sig.engine  = "IndexFlow";
         sig.reason  = is_long ? "IFLOW_LONG" : "IFLOW_SHORT";
+
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   Gates on the initial 3x-SL TP target (sig.tp - sig.entry abs).
+        //   On block we plain-return; the engine re-evaluates next tick
+        //   when conditions may differ (drift / regime).
+        if (!ExecutionCostGuard::is_viable(symbol_, spread, tp_dist, lot, 1.5)) {
+            ++debug_stats.ret_chop_guard;  // reuse existing counter -- block is cost-related
+            static int64_t s_cost_iflow = 0;
+            const int64_t now_ms_iflow = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (now_ms_iflow - s_cost_iflow > 60000) {
+                s_cost_iflow = now_ms_iflow;
+                printf("[IFLOW-%s] BLOCKED cost_gate tp=%.2f spread=%.4f lot=%.3f\n",
+                       symbol_, tp_dist, spread, lot);
+                fflush(stdout);
+            }
+            return {};
+        }
 
         pos_.open(sig);
         phase = Phase::LIVE;

@@ -92,6 +92,7 @@
 #include <mutex>      // FIX ECE-MUTEX 2026-04-21: serialize close paths (force_close vs on_tick SL/TP/TIMEOUT)
 #include "OmegaTradeLedger.hpp"
 #include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see _enter() entry guard
 
 namespace omega {
 
@@ -470,6 +471,21 @@ private:
         double size = ECE_RISK_DOLLARS / (sl_safe * 100.0);
         size = std::floor(size / 0.001) * 0.001;
         size = std::max(ECE_MIN_LOT, std::min(ECE_MAX_LOT, size));
+
+        // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+        //   ECE is XAUUSD-only. Gates on the actual tp_dist computed by the
+        //   caller (sl_dist * ECE_TP_RR). cost_ratio_min=1.5 matches the
+        //   project-wide standard. Consume the cross signal on block so we
+        //   don't re-fire on the same cross next tick.
+        if (!ExecutionCostGuard::is_viable("XAUUSD", spread, tp_dist, size, 1.5)) {
+            std::cout << "[ECE] BLOCKED cost_gate"
+                      << " tp_dist=" << tp_dist << " spread=" << spread
+                      << " size=" << size << "\n";
+            std::cout.flush();
+            _cross_dir = 0;
+            (void)on_close;
+            return;
+        }
 
         ++_trade_id;
 

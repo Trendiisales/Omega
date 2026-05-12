@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"
+#include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see PENDING transition in on_tick()
 // =============================================================================
 // GoldMidScalperEngine.hpp  --  Mid-band compression bracket for XAUUSD
 // =============================================================================
@@ -575,6 +576,19 @@ public:
                 if (slope_short || vacuum_bid) lot_short = std::min(0.01, lot_short * DOM_LOT_BONUS);
                 if (wall_above) lot_long  = std::max(0.01, lot_long  * DOM_WALL_PENALTY);
                 if (wall_below) lot_short = std::max(0.01, lot_short * DOM_WALL_PENALTY);
+            }
+
+            // 2026-05-12 ExecutionCostGuard belt-and-suspenders gate.
+            //   The engine-local min_tp check above (line ~476) uses
+            //   spread*2.0+0.12; ExecutionCostGuard adds the unified
+            //   per-symbol cost model (commission + slippage, see
+            //   OmegaCostGuard.hpp). On a block we drop back to IDLE so the
+            //   bracket has to re-form before firing again.
+            if (!ExecutionCostGuard::is_viable("XAUUSD", spread, tp_dist,
+                                               std::max(lot_long, lot_short), 1.5)) {
+                phase = Phase::IDLE;
+                bracket_high = bracket_low = range = 0.0;
+                return;
             }
 
             pending_lot       = base_lot;
