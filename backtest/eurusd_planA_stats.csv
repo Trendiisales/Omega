@@ -1,0 +1,15 @@
+metric,value
+n_trades,1001
+n_wins,590
+n_losses,411
+WR_pct,58.94
+gross_usd,-974.37
+cost_usd,3073.10
+net_usd,-4047.47
+mean_net_per_trade,-4.04
+PF,0.3045
+max_dd_usd,4062.37
+tp_count,6
+trail_count,594
+sl_count,401
+be_count,0
