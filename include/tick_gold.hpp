@@ -720,6 +720,31 @@ static void on_tick_gold(
         if (s_bar15_ms == 0) { s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
         else if (b15 != s_bar15_ms) { g_bars_gold.m15.add_bar(s_cur15); s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
         else { if(xau_mid>s_cur15.high)s_cur15.high=xau_mid; if(xau_mid<s_cur15.low)s_cur15.low=xau_mid; s_cur15.close=xau_mid; }
+        // M30 -- feeds XauThreeBar30mEngine (S36-P4 2026-05-12)
+        // Three-bar continuation pattern at 30m. Single-position; shadow-only by
+        // default. ATR computed locally inside the engine (g_bars_gold has no
+        // m30 indicator pipeline; SymBarState only carries m1/m5/m15/h1/h4).
+        static OHLCBar s_cur30{};
+        static int64_t s_bar30_ms = 0;
+        const int64_t b30 = (now_ms_g / 1800000LL) * 1800000LL;  // 30min
+        if (s_bar30_ms == 0) { s_cur30 = {b30/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar30_ms = b30; }
+        else if (b30 != s_bar30_ms) {
+            // -- XauThreeBar30mEngine 30m-close dispatch (S36-P4 2026-05-12) --
+            {
+                omega::XauThreeBar30mBar bar30m{};
+                bar30m.bar_start_ms = s_bar30_ms;
+                bar30m.open  = s_cur30.open;
+                bar30m.high  = s_cur30.high;
+                bar30m.low   = s_cur30.low;
+                bar30m.close = s_cur30.close;
+                g_xau_threebar_30m.on_30m_bar(
+                    bar30m, bid, ask,
+                    /*atr14_external=*/0.0,
+                    now_ms_g, bracket_on_close);
+            }
+            s_cur30 = {b30/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar30_ms = b30;
+        }
+        else { if(xau_mid>s_cur30.high)s_cur30.high=xau_mid; if(xau_mid<s_cur30.low)s_cur30.low=xau_mid; s_cur30.close=xau_mid; }
         // H1 -- feeds H1SwingEngine + broader HTF context.
         // 14 H1 bars = 14 hours cold; warm restart immediate from saved indicators.
         if (s_bar_h1_ms == 0) { s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1; }
@@ -1995,6 +2020,9 @@ static void on_tick_gold(
     // 2h bars built internally from H1 stream. Single-position per cell, 4
     // max concurrent. Shadow-default.
     g_xau_tf_2h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // XauThreeBar30mEngine tick management -- 30m three-bar continuation (S36-P4).
+    // Shadow-only by default. Intra-bar SL/TP/BE/trail management every tick.
+    g_xau_threebar_30m.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // EmaPullbackPortfolio tick management -- 4 long cells (H1/H2/H4/H6).
     // Tier-3 shipped 2026-04-30. Long-only. No shared state.
     g_ema_pullback.on_tick(bid, ask, now_ms_g, ca_on_close);

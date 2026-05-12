@@ -363,6 +363,32 @@ static void on_tick_ustec(
             s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5;
         }
         else { if(nq_mid>s_nq5.high)s_nq5.high=nq_mid; if(nq_mid<s_nq5.low)s_nq5.low=nq_mid; s_nq5.close=nq_mid; }
+        // M15 -- feeds UstecTrendFollowHtfEngine (S36-P4 2026-05-12)
+        // 3-cell H1/H2/H4 ensemble (InsideBar2h + AtrMom1h + Stoch4h).
+        // Engine synthesises H1/H2/H4 internally from the M15 stream.
+        // Shadow-only by default. ATR computed locally inside the engine
+        // (g_bars_nq has no m15 indicator pipeline populated for indices).
+        static OHLCBar s_nq15{};
+        static int64_t s_nq15_start = 0;
+        const int64_t b15_n = (now_ms_n / 900000LL) * 900000LL;  // 15min
+        if (s_nq15_start == 0) { s_nq15 = {b15_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq15_start = b15_n; }
+        else if (b15_n != s_nq15_start) {
+            // -- UstecTrendFollowHtfEngine 15m-close dispatch (S36-P4 2026-05-12) --
+            {
+                omega::UstecTfHtfBar tf15m{};
+                tf15m.bar_start_ms = s_nq15_start;
+                tf15m.open  = s_nq15.open;
+                tf15m.high  = s_nq15.high;
+                tf15m.low   = s_nq15.low;
+                tf15m.close = s_nq15.close;
+                g_ustec_tf_htf.on_15m_bar(
+                    tf15m, bid, ask,
+                    /*atr15m_external=*/0.0,
+                    now_ms_n, ca_on_close);
+            }
+            s_nq15 = {b15_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq15_start = b15_n;
+        }
+        else { if(nq_mid>s_nq15.high)s_nq15.high=nq_mid; if(nq_mid<s_nq15.low)s_nq15.low=nq_mid; s_nq15.close=nq_mid; }
         // H1 -- HTF swing context for IndexSwingEngine
         static OHLCBar s_nqh1{};
         static int64_t s_nqh1_start = 0;
@@ -430,6 +456,14 @@ static void on_tick_ustec(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_ustec_tf_5m.on_tick(bid, ask, tf_now_ms, ca_on_close);
+    }
+    // UstecTrendFollowHtfEngine -- 3-cell M15/H1/H2/H4 ensemble (S36-P4 2026-05-12).
+    // Shadow-only by default. Intra-bar SL/TP/BE/trail management every tick.
+    {
+        const int64_t tf_htf_now_ms = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_ustec_tf_htf.on_tick(bid, ask, tf_htf_now_ms, ca_on_close);
     }
 
     // VWAP Reversion NQ -- anchored to NY open (13:30 UTC)

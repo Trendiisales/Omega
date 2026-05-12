@@ -966,7 +966,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_threebar_30m.init();
         printf("[OMEGA-INIT] XauThreeBar30mEngine initialised: shadow=%d enabled=%d lot=%.2f"
                " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
-               " (S35-P4 TUNED; tick_gold.hpp M30 dispatch wiring REQUIRED before engine fires)\n",
+               " (S35-P4 TUNED; S36-P4 M30 dispatch wired in tick_gold.hpp 2026-05-12)\n",
                (int)g_xau_threebar_30m.shadow_mode,
                (int)g_xau_threebar_30m.enabled,
                g_xau_threebar_30m.lot,
@@ -1043,7 +1043,7 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] UstecTrendFollowHtfEngine initialised: shadow=%d enabled=%d lot=%.2f"
                " cells=3 (InsideBar2h+AtrMom1h+Stoch4h)"
                " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
-               " (S36-P1a; tick_indices.hpp M15 dispatch wiring REQUIRED before engine fires;"
+               " (S36-P1a + S36-P4; M15 dispatch wired in tick_indices.hpp 2026-05-12;"
                " 5-cell baseline backtest was +$11,733; 3-cell projection +$13,670 pending re-bt)\n",
                (int)g_ustec_tf_htf.shadow_mode,
                (int)g_ustec_tf_htf.enabled,
