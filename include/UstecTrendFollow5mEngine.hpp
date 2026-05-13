@@ -320,6 +320,42 @@ public:
     double lot         = 0.1;
     double max_spread  = 5.0;
 
+    // ── S63 2026-05-14 VWR-pattern in-flight protection ────────────────────
+    // Added in part-L following the part-K audit framework. Completes the
+    // state-E → state-A transition called out in
+    // docs/handoffs/SESSION_HANDOFF_2026-05-13k.md.
+    //
+    // Mirrors CrossAssetEngines.hpp VWAPReversionEngine L1245-1247 with
+    // USTEC-scaled defaults. USTEC.F trades at ~$28,000 in May 2026 so:
+    //
+    //   LOSS_CUT_PCT  = 0.08  → ~22pt cold-loss cut. The S34-B floor
+    //                           sl_mult=3.0 × MIN_ATR_PTS=20 = 60pt SL, so
+    //                           LOSS_CUT only fires on outliers that exceed
+    //                           the ATR-based SL by slippage or gap.
+    //   BE_ARM_PCT    = 0.05  → ~14pt mfe arms the BE ratchet. Typical TP
+    //                           is tp_mult=7.0 × atr14_≥20 = ≥140pt, so the
+    //                           ratchet only engages after a trade has
+    //                           earned ~10% of target — winners that have
+    //                           validated thesis but then give it back.
+    //   BE_BUFFER_PCT = 0.02  → ~5.6pt buffer, ~typical USTEC spread.
+    //
+    // Applied independently per cell inside _manage_open(); the LOSS_CUT
+    // / BE_CUT force-closes the firing cell only, leaving the other cell
+    // (if active) unaffected. Set _PCT = 0.0 in engine_init.hpp to disable
+    // a phase. Set ALL to 0.0 to fully disable S63 (the part-K SP/NQ/EURUSD
+    // VWR pattern — only valid with documented backtest evidence per
+    // engine_init.hpp:597-672 precedent).
+    //
+    // ENABLE FLIP STILL BLOCKED: this wiring unblocks the eventual
+    // `g_ustec_tf_5m.enabled = true` flip but does NOT trigger it. The
+    // operator-side gating step remains a fresh-tape backtest sweep
+    // demonstrating that S63 + the S37 widened SL/TP profile is positive
+    // on USTEC tick data. See part-K handoff §"Recommended next-session
+    // focus" item 3.
+    double LOSS_CUT_PCT  = 0.08;
+    double BE_ARM_PCT    = 0.05;
+    double BE_BUFFER_PCT = 0.02;
+
     // ── S37-P2 RiskMonitor wiring ──────────────────────────────────────────
     // 2026-05-12 (part C): fire-side hook for RiskMonitor surveillance.
     // Bound at engine_init.hpp time to forward to g_risk_monitor.on_fire().
@@ -615,6 +651,57 @@ private:
             // threshold, lock in `proved = true`. It does not flip back.
             if (!p.proved && p.mfe_pts >= PROVE_IT_MIN_FAVOURABLE_PTS) {
                 p.proved = true;
+            }
+
+            // ── S63 2026-05-14 VWR-pattern in-flight protection ────────────
+            // Runs BEFORE the PROVE_IT / SL / TP checks so cold-loss outliers
+            // and giveback retraces take priority. Mirrors
+            // CrossAssetEngines.hpp:1304-1383. Per-cell: independent checks,
+            // _close() force-closes the firing cell only.
+            //
+            // Phase 1: BE_RATCHET. Once mfe_pts crosses BE_ARM_PCT*entry/100,
+            // the position is treated as having validated its thesis;
+            // any retrace to BE_BUFFER_PCT*entry/100 of entry triggers a
+            // break-even cut. Disabled when BE_ARM_PCT == 0.0.
+            //
+            // Phase 2: LOSS_CUT. Cold-loss cut for trades that go straight
+            // adverse without ever turning profitable. Disabled when
+            // LOSS_CUT_PCT == 0.0.
+            //
+            // PROVE_IT_FAIL still runs below for the "stalled at entry"
+            // case that LOSS_CUT can't see (small adverse, no MFE). The
+            // legacy SL_HIT / TP_HIT remain the ultimate price-based gates.
+            const double move    = p.is_long ? (mid - p.entry_px)
+                                             : (p.entry_px - mid);
+            const double adverse = -move;
+            if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0 && p.entry_px > 0.0) {
+                const double arm_pts    = p.entry_px * BE_ARM_PCT    / 100.0;
+                const double buffer_pts = p.entry_px * BE_BUFFER_PCT / 100.0;
+                if (p.mfe_pts >= arm_pts && move <= buffer_pts) {
+                    const double xp = p.is_long ? bid : ask;
+                    printf("[USTEC-TF] %s BE_CUT cell=%s mfe=%.2f arm=%.2f "
+                           "move=%.2f buf=%.2f (giveback)\n",
+                           p.is_long ? "LONG" : "SHORT",
+                           kUstecTfCells[ci].short_name,
+                           p.mfe_pts, arm_pts, move, buffer_pts);
+                    fflush(stdout);
+                    _close(ci, xp, "BE_CUT", now_ms, on_close);
+                    return;
+                }
+            }
+            if (LOSS_CUT_PCT > 0.0 && p.entry_px > 0.0) {
+                const double loss_cut_dist = p.entry_px * LOSS_CUT_PCT / 100.0;
+                if (adverse >= loss_cut_dist) {
+                    const double xp = p.is_long ? bid : ask;
+                    printf("[USTEC-TF] %s LOSS_CUT cell=%s adverse=%.2f >= "
+                           "%.2f (%.3f%% of entry)\n",
+                           p.is_long ? "LONG" : "SHORT",
+                           kUstecTfCells[ci].short_name,
+                           adverse, loss_cut_dist, LOSS_CUT_PCT);
+                    fflush(stdout);
+                    _close(ci, xp, "LOSS_CUT", now_ms, on_close);
+                    return;
+                }
             }
         }
 

@@ -932,6 +932,24 @@ static void init_engines(const std::string& cfg_path)
         g_ustec_tf_5m.enabled     = false;
         g_ustec_tf_5m.lot         = 0.1;
         g_ustec_tf_5m.max_spread  = 5.0;
+        // 2026-05-14 (part L): S63 VWR-pattern in-flight protection — explicit
+        //   re-affirm of the class defaults (USTEC-scaled) for grep visibility.
+        //   Mirrors g_vwap_rev_ger40 precedent at engine_init.hpp:632-634
+        //   where the override matches the class default but documents intent
+        //   and makes the activation discoverable from engine_init.hpp alone.
+        //   See UstecTrendFollow5mEngine.hpp §S63 for per-cell semantics.
+        //
+        //   LOSS_CUT_PCT  = 0.08 -> USTEC@28000: ~22pt cold-loss cut.
+        //   BE_ARM_PCT    = 0.05 -> USTEC@28000: ~14pt mfe arms ratchet.
+        //   BE_BUFFER_PCT = 0.02 -> USTEC@28000: ~5.6pt buffer (~typical spread).
+        //
+        //   Promotion gate: g_ustec_tf_5m.enabled stays FALSE until a fresh-
+        //   tape backtest sweep confirms S63 + S37 widened SL/TP profile is
+        //   net-positive on USTEC. Re-enable is a separate operator decision
+        //   (part-K handoff §"Recommended next-session focus" item 3).
+        g_ustec_tf_5m.LOSS_CUT_PCT  = 0.08;
+        g_ustec_tf_5m.BE_ARM_PCT    = 0.05;
+        g_ustec_tf_5m.BE_BUFFER_PCT = 0.02;
         g_ustec_tf_5m.init();
         printf("[OMEGA-INIT] UstecTrendFollow5mEngine initialised: shadow=%d enabled=%d lot=%.2f cells=2"
                " (Donchian,Keltner) (HARD SHADOW)\n",
@@ -3198,13 +3216,58 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("TrendPullbackNQ",
         _make_tpb_source("TrendPullbackNQ",   "USTEC.F", &g_trend_pb_nq));
 
+    // ── S66-followup-2 (2026-05-14 part L): IndexFlowEngine x4 GUI sources.
+    //   Uses the new IndexFlowEngine::pos() const accessor (added in
+    //   IndexFlowEngine.hpp this session). pos has the full simple shape
+    //   {active, is_long, entry, tp, sl, size, mfe, mae} — same template
+    //   as PDHL/EMACrossGold/etc. Symbol mapping mirrors VWAPReversion:
+    //   US500.F / USTEC.F / NAS100 / DJ30.F. tick_value_multiplier supports
+    //   all four (sizing.hpp).
+    auto _make_iflow_source = [](const char* engine_name, const char* sym,
+                                 omega::idx::IndexFlowEngine* eng) {
+        return [engine_name, sym, eng]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!eng->has_open_position()) return out;
+            const auto& p = eng->pos();
+            const double mult = tick_value_multiplier(std::string(sym));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find(sym);
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir  = p.is_long ? 1.0 : -1.0;
+            const double unrl = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = sym;
+            ps.side   = p.is_long ? "LONG" : "SHORT";
+            ps.size   = p.size;
+            ps.entry  = p.entry;
+            ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = engine_name;
+            out.push_back(ps);
+            return out;
+        };
+    };
+    g_open_positions.register_source("IndexFlowSP",
+        _make_iflow_source("IndexFlowSP",   "US500.F", &g_iflow_sp));
+    g_open_positions.register_source("IndexFlowNQ",
+        _make_iflow_source("IndexFlowNQ",   "USTEC.F", &g_iflow_nq));
+    g_open_positions.register_source("IndexFlowNAS",
+        _make_iflow_source("IndexFlowNAS",  "NAS100",  &g_iflow_nas));
+    g_open_positions.register_source("IndexFlowUS30",
+        _make_iflow_source("IndexFlowUS30", "DJ30.F",  &g_iflow_us30));
+
     // ── S66 (2026-05-13): 6 more engines (EMACross, H4RegimeGold,
     //    MacroCrash, XauTrendFollow 2h/4h/D1). Mechanical follow-ups to S65.
     //    Engines NOT registered yet (different pos shapes): BracketEngine
     //    multi-leg (XAU + 12 FX/index instances), GoldEngineStack legs_,
-    //    IndexFlow / IndexMacroCrash family, CandleFlow, UstecTrendFollow,
-    //    H1SwingGold, MinimalH4 portfolio engines (Donchian/EmaPullback/
-    //    TrendRider/Tsmom), C1RetunedPortfolio wrapper, FX BreakoutEngine x5.
+    //    IndexMacroCrash family (private base_* fields, no MAE tracking),
+    //    CandleFlow (multi-path), H1SwingGold, MinimalH4 portfolio engines
+    //    (Donchian/EmaPullback/TrendRider/Tsmom), C1RetunedPortfolio
+    //    (two-leg portfolio wrapper).
+    //    UstecTrendFollow + FX BreakoutEngine x5 are NOW registered (below).
+    //    IndexFlow x4 is NOW registered (block immediately above this).
 
     // EMACrossGold (XAUUSD). EMACrossEngine.pos is public struct OpenPos
     //   with {active, is_long, entry, sl, tp, size, mfe}. No mae tracked.
@@ -3445,15 +3508,18 @@ static void init_engines(const std::string& cfg_path)
         _make_breakout_source("BreakoutUSDJPY", &g_eng_usdjpy));
 
     // 2026-05-13 S66-followup: HybridGold removed from prose listing (engine
-    //   was culled in S11 P3a+P3b, see line ~2683); count 34 now matches the
+    //   was culled in S11 P3a+P3b, see line ~2683); count 34 then matched the
     //   actual count of register_source() calls in this block.
-    std::cout << "[OmegaApi] g_open_positions sources registered (34 sources: "
+    // 2026-05-14 S66-followup-2 (part L): IndexFlow x4 added (SP/NQ/NAS/US30),
+    //   count 34 -> 38.
+    std::cout << "[OmegaApi] g_open_positions sources registered (38 sources: "
               "MidScalperGold, MicroScalperGold, "
               "EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, "
               "AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg, "
               "PDHLReversion, RSIReversal, MinimalH4Gold, MinimalH4US30, "
               "XauThreeBar30m, NoiseBandMomentumGoldLdn, "
               "VWAPReversion x4, TrendPullback x2, "
+              "IndexFlow x4, "
               "EMACrossGold, H4RegimeGold, MacroCrash, "
               "XauTrendFollow 2h/4h/D1, "
               "H1SwingGold, UstecTrendFollow 5m/HTF, "
