@@ -751,11 +751,15 @@ private:
 
         // -- Max hold ------------------------------------------------------
         // 2026-05-13 (part L): VWR-pattern winner exemption.
+        // 2026-05-13 (part L, MSVC fix): renamed inner mid -> bar_mid to avoid
+        //   C4457 shadowing of _manage's `mid` function parameter (line 709).
+        //   VPS build has /W4 /WX so the shadow was a hard fail. Semantics
+        //   unchanged.
         if (now_ms - pos.entry_ms >= MAX_HOLD_MS) {
-            const double mid = (bid + ask) * 0.5;
+            const double bar_mid = (bid + ask) * 0.5;
             const double cur_move = pos.is_long
-                ? (mid - pos.entry)
-                : (pos.entry - mid);
+                ? (bar_mid - pos.entry)
+                : (pos.entry - bar_mid);
             if (cur_move <= 0.0) {
                 _close_all(pos.is_long ? bid : ask, "MAX_HOLD", now_ms);
                 return;

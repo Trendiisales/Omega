@@ -483,11 +483,15 @@ private:
     {
         // Timeout
         // 2026-05-13 (part L): VWR-pattern winner exemption.
+        // 2026-05-13 (part L, MSVC fix): renamed inner mid -> bar_mid to avoid
+        //   C4457 shadowing of _manage's `mid` function parameter (line 479).
+        //   VPS build has /W4 /WX so the shadow was a hard fail; Mac/clang
+        //   accepted it. Semantics unchanged.
         if (pos_.h1_bars_held >= p.timeout_h1_bars) {
-            const double mid = (bid + ask) * 0.5;
+            const double bar_mid = (bid + ask) * 0.5;
             const double cur_move = pos_.is_long
-                ? (mid - pos_.entry)
-                : (pos_.entry - mid);
+                ? (bar_mid - pos_.entry)
+                : (pos_.entry - bar_mid);
             if (cur_move <= 0.0) {
                 printf("[H1SWING-%s] TIMEOUT after %d H1 bars\n",
                        symbol.c_str(), pos_.h1_bars_held);
