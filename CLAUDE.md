@@ -35,12 +35,24 @@ after the operator decided the friction of re-asking each commit
 outweighed the risk of a misplaced auto-commit, given the
 preconditions above.
 
-**Targeted edits over full-file rewrites.** The operator's standing
-preference says "always full file." When the operator explicitly asks
-for "targeted edits" in a given session, that overrides the default
-for that session. Use `Edit` with surgical `old_string`/`new_string`
-blocks rather than rewriting multi-thousand-line files. ALWAYS confirm
-which mode applies at the start of an edit task.
+**Targeted edits on engine files, full-file on short files.** The
+operator's global user-preference says "always full file." For
+multi-thousand-line files in this repo (engine_init.hpp at ~3,500
+lines, CrossAssetEngines.hpp, GoldEngineStack.hpp, the larger
+*Engine.hpp files, etc.), full-file rewrites are slow, error-prone,
+and waste context. Default to `Edit` with surgical
+`old_string`/`new_string` blocks on those.
+
+Use full-file Write when:
+- The file is short (under ~300 lines).
+- The operator explicitly asks for "full file" for a given task.
+- The change is a wholesale restructure that's easier to read as a
+  fresh write than a diff.
+
+No upfront confirmation needed — proceed with targeted on big files
+unless the operator says otherwise. Operator can flip to full-file
+per-session at any time by saying so. Project-specific override of
+the global "always full file" preference, agreed 2026-05-14a.
 
 **Never modify core code without an explicit instruction.** Core files
 include but are not limited to:
