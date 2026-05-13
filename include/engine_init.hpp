@@ -622,6 +622,23 @@ static void init_engines(const std::string& cfg_path)
     //   USTEC.F baseline itself is marginally net-negative (-0.00147/trade)
     //   -- a separate parameter retune session is warranted, but revert
     //   stops the active bleed first.
+    // 2026-05-14 (part P / S69): parameter retune EXECUTED and FAILED. Phase 1
+    //   univariate sweep (21 cells on the 4.4GB 404-day NSXUSD tape) found
+    //   one cell above the +0.001/trade decision threshold: ext=0.80 at
+    //   +0.00282. Phase 2 robustness check (6-cell ext fine sweep around
+    //   0.80) showed 2/6 positive cells with the positives sandwiched
+    //   between negatives -- classic single-cell-artifact pattern, not a
+    //   stable parameter surface. Phase 2B 2D grid did not improve over
+    //   Phase 2A's best. TP rates were 1-3% across the entire sweep; the
+    //   strategy is not closing trades at profit targets, it's avoiding
+    //   bigger losses via timeout/MAE_EXIT -- risk shaping, not edge.
+    //   Conclusion: parameter tuning cannot rescue USTEC.F VWR. The engine
+    //   stays disabled (g_vwap_rev_nq.enabled = false, L608) until a future
+    //   signal-side rework session (VIX/L2 confluence, session filters etc)
+    //   produces positive baseline expectancy. See outputs/VWR_USTEC_PHASE1_RESULTS_2026-05-14e.md
+    //   and outputs/VWR_USTEC_PHASE2_RESULTS_2026-05-14e.md for full evidence.
+    //   Retune plan at outputs/VWR_USTEC_RETUNE_PLAN_2026-05-14a.md is
+    //   closed -- parameter surface explored, no edge found.
     g_vwap_rev_nq.LOSS_CUT_PCT            = 0.0;
     g_vwap_rev_nq.BE_ARM_PCT              = 0.0;
     g_vwap_rev_nq.BE_BUFFER_PCT           = 0.0;

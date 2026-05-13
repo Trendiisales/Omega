@@ -1,5 +1,25 @@
 # VWAPReversion USTEC.F — Parameter Retune Plan (2026-05-14a)
 
+> **CLOSED 2026-05-14e (part P).** Plan executed end-to-end. Phase 0 (harness
+> CLI extension) shipped at commit `e625b26`. Phase 1 + Phase 2 sweeps ran
+> against the 4.4GB NSXUSD HistData tape; no robust positive-expectancy
+> parameter surface found. The strategy is not tunable on the entry-side
+> parameter axes covered here; risk shaping via timeout/MAE_EXIT is the
+> only mechanism producing positive cells, and those positive cells are
+> sandwiched between negatives (single-cell-artifact pattern, not a stable
+> surface). `g_vwap_rev_nq.enabled = false` stays as the long-term state
+> until structural rework (signal-side: VIX/L2 confluence, session filters)
+> produces baseline positive expectancy. See:
+>
+> - `outputs/VWR_USTEC_PHASE1_RESULTS_2026-05-14e.md`
+> - `outputs/VWR_USTEC_PHASE2_RESULTS_2026-05-14e.md`
+> - `include/engine_init.hpp:625-640` (closure comment block)
+>
+> Plan retained for historical reference and to inform the eventual
+> structural-rework scoping session.
+
+---
+
 **Status:** planning memo, no code changes (other than the small harness
 extension described in Phase 0).
 **Author session:** part 2026-05-14a, following SESSION_HANDOFF_2026-05-14a.md.
