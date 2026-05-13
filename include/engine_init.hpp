@@ -3258,16 +3258,64 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("IndexFlowUS30",
         _make_iflow_source("IndexFlowUS30", "DJ30.F",  &g_iflow_us30));
 
+    // ── S66-followup-2 (2026-05-14a): IndexMacroCrashEngine x4 GUI sources.
+    //   Uses the new is_long()/entry()/sl()/mfe()/size() accessors added to
+    //   IndexMacroCrashEngine this session (IndexFlowEngine.hpp ~L987-1025).
+    //   Engine does NOT track MAE (no base_mae_), so the snapshot synthesises
+    //   mae = 0.0. Symbol mapping mirrors IndexFlow: US500.F / USTEC.F /
+    //   NAS100 / DJ30.F (same four-instrument parity as the rest of the
+    //   index family). Effective size accounts for the bracket-floor leg:
+    //   the size() accessor inside the engine returns velocity_size_ once
+    //   the 30% bracket has fired, so the GUI shows the actually-open lot
+    //   rather than the original base_size_.
+    auto _make_imacro_source = [](const char* engine_name, const char* sym,
+                                  omega::idx::IndexMacroCrashEngine* eng) {
+        return [engine_name, sym, eng]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!eng->has_open_position()) return out;
+            const double mult  = tick_value_multiplier(std::string(sym));
+            const double entry = eng->entry();
+            const double sz    = eng->size();
+            const bool   is_long = eng->is_long();
+            double current = entry;
+            const auto it = g_last_tick_bid.find(sym);
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir  = is_long ? 1.0 : -1.0;
+            const double unrl = (current - entry) * dir * sz * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = sym;
+            ps.side   = is_long ? "LONG" : "SHORT";
+            ps.size   = sz;
+            ps.entry  = entry;
+            ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = eng->mfe() * sz * mult;
+            ps.mae = 0.0;  // engine doesn't track MAE
+            ps.engine = engine_name;
+            out.push_back(ps);
+            return out;
+        };
+    };
+    g_open_positions.register_source("IndexMacroCrashSP",
+        _make_imacro_source("IndexMacroCrashSP",   "US500.F", &g_imacro_sp));
+    g_open_positions.register_source("IndexMacroCrashNQ",
+        _make_imacro_source("IndexMacroCrashNQ",   "USTEC.F", &g_imacro_nq));
+    g_open_positions.register_source("IndexMacroCrashNAS",
+        _make_imacro_source("IndexMacroCrashNAS",  "NAS100",  &g_imacro_nas));
+    g_open_positions.register_source("IndexMacroCrashUS30",
+        _make_imacro_source("IndexMacroCrashUS30", "DJ30.F",  &g_imacro_us30));
+
     // ── S66 (2026-05-13): 6 more engines (EMACross, H4RegimeGold,
     //    MacroCrash, XauTrendFollow 2h/4h/D1). Mechanical follow-ups to S65.
     //    Engines NOT registered yet (different pos shapes): BracketEngine
     //    multi-leg (XAU + 12 FX/index instances), GoldEngineStack legs_,
-    //    IndexMacroCrash family (private base_* fields, no MAE tracking),
     //    CandleFlow (multi-path), H1SwingGold, MinimalH4 portfolio engines
     //    (Donchian/EmaPullback/TrendRider/Tsmom), C1RetunedPortfolio
     //    (two-leg portfolio wrapper).
     //    UstecTrendFollow + FX BreakoutEngine x5 are NOW registered (below).
     //    IndexFlow x4 is NOW registered (block immediately above this).
+    //    IndexMacroCrash x4 is NOW registered (block immediately above this,
+    //    2026-05-14a).
 
     // EMACrossGold (XAUUSD). EMACrossEngine.pos is public struct OpenPos
     //   with {active, is_long, entry, sl, tp, size, mfe}. No mae tracked.
@@ -3388,10 +3436,12 @@ static void init_engines(const std::string& cfg_path)
     //    of the S66 pattern; pos struct shapes verified case-by-case before
     //    writing. Bumps source count 26 -> 34.
     //
+    //    S66-followup-2 (part L, 2026-05-14) added IndexFlow x4 (34 -> 38).
+    //    S66-followup-2 cont. (2026-05-14a) added IndexMacroCrash x4 (38 -> 42).
+    //
     //    Engines still NOT registered (more complex pos shapes deferred to a
     //    later session): BracketEngine multi-leg (XAU + 12 FX/index instances),
-    //    GoldEngineStack legs_ vector, IndexFlow / IndexMacroCrash family,
-    //    CandleFlow, MinimalH4 portfolio wrappers
+    //    GoldEngineStack legs_ vector, CandleFlow, MinimalH4 portfolio wrappers
     //    (Donchian/EmaPullback/TrendRider/Tsmom/Tsmom_v2),
     //    and the C1RetunedPortfolio wrapper.
 
@@ -3512,14 +3562,16 @@ static void init_engines(const std::string& cfg_path)
     //   actual count of register_source() calls in this block.
     // 2026-05-14 S66-followup-2 (part L): IndexFlow x4 added (SP/NQ/NAS/US30),
     //   count 34 -> 38.
-    std::cout << "[OmegaApi] g_open_positions sources registered (38 sources: "
+    // 2026-05-14a S66-followup-2 cont.: IndexMacroCrash x4 added
+    //   (SP/NQ/NAS/US30), count 38 -> 42.
+    std::cout << "[OmegaApi] g_open_positions sources registered (42 sources: "
               "MidScalperGold, MicroScalperGold, "
               "EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, "
               "AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg, "
               "PDHLReversion, RSIReversal, MinimalH4Gold, MinimalH4US30, "
               "XauThreeBar30m, NoiseBandMomentumGoldLdn, "
               "VWAPReversion x4, TrendPullback x2, "
-              "IndexFlow x4, "
+              "IndexFlow x4, IndexMacroCrash x4, "
               "EMACrossGold, H4RegimeGold, MacroCrash, "
               "XauTrendFollow 2h/4h/D1, "
               "H1SwingGold, UstecTrendFollow 5m/HTF, "
