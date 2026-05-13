@@ -1590,6 +1590,15 @@ public:
 
     bool has_open_position() const { return pos_.active; }
     int64_t open_entry_ts()     const { return pos_.entry_ts;  }  // UTC seconds -- stale-position detection
+    // Live position accessors for GUI telemetry (S65). Mirrors the public
+    // accessor convention already used by NoiseBandMomentumEngine and
+    // TrendPullbackEngine in this same file. Additive read-only getters --
+    // no behaviour change to entry/exit logic.
+    bool   open_is_long() const { return pos_.is_long; }
+    double open_entry()   const { return pos_.entry;   }
+    double open_sl()      const { return pos_.sl;      }
+    double open_tp()      const { return pos_.tp;      }
+    double open_size()    const { return pos_.size;    }
     void cancel()  noexcept { pos_.reset(); timeout_extended_ = false; }
     void force_close(double bid, double ask, CloseCb on_close,
                      const char* reason = "FORCE_CLOSE") {

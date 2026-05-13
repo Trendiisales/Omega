@@ -3073,72 +3073,84 @@ static void init_engines(const std::string& cfg_path)
             return out;
         });
 
-    // XauThreeBar30m (XAU). pos has {active, is_long, entry_px, size, mfe_pts, mae_pts}.
+    // XauThreeBar30m (XAU). pos has {active, is_long, entry_px, mfe_pts, mae_pts}.
+    // NOTE: XauThreeBar30mPos has no `size` member -- the engine's lot size
+    // lives on the engine itself as `g_xau_threebar_30m.lot`. Build fix
+    // 2026-05-13: was previously referencing p.size which fails compile.
     g_open_positions.register_source("XauThreeBar30m",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
             if (!g_xau_threebar_30m.has_open_position()) return out;
             const auto& p = g_xau_threebar_30m.pos;
+            const double sz   = g_xau_threebar_30m.lot;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
             double current = p.entry_px;
             const auto it = g_last_tick_bid.find("XAUUSD");
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
             const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry_px) * dir * p.size * mult;
+            const double unrl  = (current - p.entry_px) * dir * sz * mult;
             omega::PositionSnapshot ps;
             ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry_px; ps.current = current;
+            ps.size = sz; ps.entry = p.entry_px; ps.current = current;
             ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe_pts * p.size * mult;
-            ps.mae = p.mae_pts * p.size * mult;
+            ps.mfe = p.mfe_pts * sz * mult;
+            ps.mae = p.mae_pts * sz * mult;
             ps.engine = "XauThreeBar30m";
             out.push_back(ps);
             return out;
         });
 
-    // NoiseBandMomentum gold-london. Uses CrossPosition pos_ (active, is_long,
-    //   entry, size, mfe, mae).
+    // NoiseBandMomentum gold-london. Uses CrossPosition (active, is_long,
+    //   entry, size, mfe, mae) -- private; we go through public accessors
+    //   open_is_long() / open_entry() / open_size(). mfe/mae deferred (no
+    //   public getter on CrossPosition.mfe yet -- S66 follow-up if needed).
     g_open_positions.register_source("NoiseBandMomentumGoldLdn",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            const auto& p = g_nbm_gold_london.pos_;
-            if (!p.active) return out;
+            if (!g_nbm_gold_london.has_open_position()) return out;
+            const bool   is_long = g_nbm_gold_london.open_is_long();
+            const double entry   = g_nbm_gold_london.open_entry();
+            const double sz      = g_nbm_gold_london.open_size();
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = p.entry;
+            double current = entry;
             const auto it = g_last_tick_bid.find("XAUUSD");
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            const double dir   = is_long ? 1.0 : -1.0;
+            const double unrl  = (current - entry) * dir * sz * mult;
             omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.symbol = "XAUUSD"; ps.side = is_long ? "LONG" : "SHORT";
+            ps.size = sz; ps.entry = entry; ps.current = current;
             ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = p.mae * p.size * mult;
+            ps.mfe = 0.0;  // CrossPosition.mfe is private; defer to S66
+            ps.mae = 0.0;
             ps.engine = "NoiseBandMomentumGoldLdn";
             out.push_back(ps);
             return out;
         });
 
-    // VWAPReversion x 4 instances. Same CrossPosition pos_ shape.
+    // VWAPReversion x 4 instances. CrossPosition pos_ is private; we go
+    // through the S65 public accessors (added to VWAPReversionEngine in
+    // CrossAssetEngines.hpp to match the NBM/TrendPullback convention).
     auto _make_vwap_source = [](const char* engine_name, const char* sym,
                                 omega::cross::VWAPReversionEngine* eng) {
         return [engine_name, sym, eng]() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            const auto& p = eng->pos_;
-            if (!p.active) return out;
+            if (!eng->has_open_position()) return out;
+            const bool   is_long = eng->open_is_long();
+            const double entry   = eng->open_entry();
+            const double sz      = eng->open_size();
             const double mult = tick_value_multiplier(std::string(sym));
-            double current = p.entry;
+            double current = entry;
             const auto it = g_last_tick_bid.find(sym);
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            const double dir   = is_long ? 1.0 : -1.0;
+            const double unrl  = (current - entry) * dir * sz * mult;
             omega::PositionSnapshot ps;
-            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.symbol = sym; ps.side = is_long ? "LONG" : "SHORT";
+            ps.size = sz; ps.entry = entry; ps.current = current;
             ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = p.mae * p.size * mult;
+            ps.mfe = 0.0;  // CrossPosition.mfe is private; defer to S66
+            ps.mae = 0.0;
             ps.engine = engine_name;
             out.push_back(ps);
             return out;
@@ -3154,24 +3166,28 @@ static void init_engines(const std::string& cfg_path)
         _make_vwap_source("VWAPReversionEURUSD", "EURUSD",  &g_vwap_rev_eurusd));
 
     // TrendPullback x 2 instances (gold + nq, the LIVE pair per part-F).
+    // CrossPosition pos_ is private; use the public accessors already
+    // exposed by TrendPullbackEngine (open_is_long/open_entry/open_size).
     auto _make_tpb_source = [](const char* engine_name, const char* sym,
                                omega::cross::TrendPullbackEngine* eng) {
         return [engine_name, sym, eng]() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            const auto& p = eng->pos_;
-            if (!p.active) return out;
+            if (!eng->has_open_position()) return out;
+            const bool   is_long = eng->open_is_long();
+            const double entry   = eng->open_entry();
+            const double sz      = eng->open_size();
             const double mult = tick_value_multiplier(std::string(sym));
-            double current = p.entry;
+            double current = entry;
             const auto it = g_last_tick_bid.find(sym);
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            const double dir   = is_long ? 1.0 : -1.0;
+            const double unrl  = (current - entry) * dir * sz * mult;
             omega::PositionSnapshot ps;
-            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.symbol = sym; ps.side = is_long ? "LONG" : "SHORT";
+            ps.size = sz; ps.entry = entry; ps.current = current;
             ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = p.mae * p.size * mult;
+            ps.mfe = 0.0;  // CrossPosition.mfe is private; defer to S66
+            ps.mae = 0.0;
             ps.engine = engine_name;
             out.push_back(ps);
             return out;
