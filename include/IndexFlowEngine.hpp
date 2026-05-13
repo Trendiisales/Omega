@@ -986,6 +986,48 @@ public:
 
     bool has_open_position() const noexcept { return base_active_; }
 
+    // ── S66-followup-2 2026-05-14a: read-only GUI accessors ─────────────────
+    // Used by engine_init.hpp's GUI position-source registration to expose
+    // macro-crash trades on /api/v1/omega/positions while in flight. The
+    // engine state lives in scattered private fields (no single "open
+    // position" struct like IndexFlowEngine::pos_), so each field gets its
+    // own const accessor.
+    //
+    // Notes:
+    //   * is_long / entry / sl / mfe are direct passes through.
+    //   * The engine does NOT track MAE (no base_mae_ member). The GUI
+    //     position-source synthesises mae = 0 on the snapshot side.
+    //   * size() returns the CURRENT open size: after the 30% bracket-floor
+    //     leg fires (bracket_fired_ = true), only velocity_size_ remains
+    //     open. Before the bracket fires the full base_size_ is in play.
+    //     This matches the actual lot the engine would close in
+    //     manage_position()'s emit_partial() call.
+    //   * All accessors return 0/false sentinels when no position is open;
+    //     callers MUST guard via has_open_position() (mirrors the
+    //     IndexFlowEngine::pos() contract — the pos struct lingers with
+    //     active=false after a close).
+    //
+    // Pending GUI surface: tp is not exposed because there's no single TP
+    //   value — the engine has a bracket target (bracket_target_, 30% of
+    //   position) plus a velocity trail (50/70% trailing 2x ATR behind MFE).
+    //   Neither maps cleanly to PositionSnapshot::tp. Same shape limitation
+    //   as the GoldEngineStack legs_ pending audit (handoff §"What did NOT
+    //   land").
+    bool   is_long()  const noexcept { return base_is_long_; }
+    double entry()    const noexcept { return base_entry_; }
+    double sl()       const noexcept { return base_sl_; }
+    double mfe()      const noexcept { return base_mfe_; }
+    double size()     const noexcept {
+        return bracket_fired_ ? velocity_size_ : base_size_;
+    }
+    // NOTE on shadow_mode: this class deliberately exposes `shadow_mode` as a
+    // public member (L964) with a "NEVER set false without authorization"
+    // comment. A set_shadow_mode() proxy is intentionally NOT provided here
+    // (in contrast to IndexFlowEngine::set_shadow_mode() at L585, where the
+    // flag lives on private pos_) — the public member is already directly
+    // assignable, and adding a setter would obscure the "do not flip"
+    // hardening intent.
+
     // vol_ratio: recent_range / ewm_baseline (same computation as GoldEngineStack)
     // drift: from IndexFlowEngine::drift()
     // atr: from IndexFlowEngine::atr()
