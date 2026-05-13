@@ -374,6 +374,15 @@ struct TsmomCell {
                 continue;
             }
             if (p.bars_held >= hold_bars) {
+                // 2026-05-13 (part L): VWR-pattern winner exemption. Only fire
+                // TIME_EXIT when bar-close is at/below entry (long) or
+                // at/above entry (short). Winners ride to trail/MAE/SL exit.
+                const double cur_signed = direction == 1
+                    ? (b.close - p.entry) : (p.entry - b.close);
+                if (cur_signed > 0.0) {
+                    ++it;
+                    continue;
+                }
                 _close(p, b.close, "TIME_EXIT", now_ms, on_close);
                 // 2026-05-08 (S12): TIME_EXIT closing in profit (or BE) means the
                 // momentum thesis worked -- reset the MAE-run counter.

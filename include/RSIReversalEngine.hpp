@@ -555,7 +555,8 @@ private:
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
         if ((now_s - pos.entry_ts) < MIN_HOLD_S) return;
-        if ((now_s - pos.entry_ts) > MAX_HOLD_S) {
+        // 2026-05-13 (part L): VWR-pattern winner exemption.
+        if ((now_s - pos.entry_ts) > MAX_HOLD_S && move <= 0.0) {
             _close(pos.is_long ? bid : ask, "MAX_HOLD", now_s, on_close); return;
         }
         if (!pos.be_locked && move >= pos.atr * BE_ATR_MULT) {

@@ -750,9 +750,16 @@ private:
         }
 
         // -- Max hold ------------------------------------------------------
+        // 2026-05-13 (part L): VWR-pattern winner exemption.
         if (now_ms - pos.entry_ms >= MAX_HOLD_MS) {
-            _close_all(pos.is_long ? bid : ask, "MAX_HOLD", now_ms);
-            return;
+            const double mid = (bid + ask) * 0.5;
+            const double cur_move = pos.is_long
+                ? (mid - pos.entry)
+                : (pos.entry - mid);
+            if (cur_move <= 0.0) {
+                _close_all(pos.is_long ? bid : ask, "MAX_HOLD", now_ms);
+                return;
+            }
         }
 
         const double atr_live = (atr > 0.0)

@@ -451,8 +451,10 @@ public:
         bool timed_out = false;
         if (held >= max_hold_sec && !tp_hit && !sl_hit) {
             const bool trail_profit = is_long ? (sl >= entry) : (sl <= entry);
-            if (trail_profit) {
-                // Trail locked above entry -- let it run (profitable trail, no timeout)
+            // 2026-05-13 (part L): VWR-pattern -- also exempt small winners
+            // whose trail SL hasn't yet locked to BE.
+            const double cur_move = is_long ? (mid - entry) : (entry - mid);
+            if (trail_profit || cur_move > 0.0) {
                 timed_out = false;
             } else {
                 timed_out = true;
@@ -1062,7 +1064,11 @@ private:
         // SL / timeout check
         const bool sl_hit = base_is_long_ ? (bid <= base_sl_) : (ask >= base_sl_);
         const int64_t held = idx_now_sec() - base_entry_ts_;
-        const bool timeout = (held >= cfg_.max_hold_sec);
+        // 2026-05-13 (part L): VWR-pattern winner exemption.
+        const double cur_move_v = base_is_long_
+            ? (mid - base_entry_)
+            : (base_entry_ - mid);
+        const bool timeout = (held >= cfg_.max_hold_sec) && (cur_move_v <= 0.0);
 
         if (sl_hit || timeout) {
             const double exit_px = sl_hit ? base_sl_ : mid;
@@ -1413,7 +1419,10 @@ private:
         }
 
         const bool sl_hit  = is_long_ ? (bid <= trail_sl_) : (ask >= trail_sl_);
-        const bool timeout = (idx_now_sec() - entry_ts_ >= SWING_MAX_HOLD_SEC);
+        // 2026-05-13 (part L): VWR-pattern winner exemption.
+        const double cur_move_s = is_long_ ? (mid - entry_) : (entry_ - mid);
+        const bool timeout = (idx_now_sec() - entry_ts_ >= SWING_MAX_HOLD_SEC)
+                          && cur_move_s <= 0.0;
 
         if (!sl_hit && !timeout) return;
 

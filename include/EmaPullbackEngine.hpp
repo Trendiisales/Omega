@@ -259,8 +259,16 @@ struct EpbCell {
             const bool tp_hit = direction == 1
                 ? (b.high >= pos_tp_) : (b.low  <= pos_tp_);
             if (tp_hit) { _close(pos_tp_, "TP_HIT", now_ms, on_close); return 0; }
+            // 2026-05-13 (part L): VWR-pattern winner exemption. Only fire
+            // the bar-hold timeout when the bar close is at/below entry (long)
+            // or at/above entry (short). Winners ride to TP_HIT or SL_HIT.
             if (pos_bars_held_ >= max_hold_bars) {
-                _close(b.close, "TIME_EXIT", now_ms, on_close); return 0;
+                const double cur_move = direction == 1
+                    ? (b.close - pos_entry_)
+                    : (pos_entry_ - b.close);
+                if (cur_move <= 0.0) {
+                    _close(b.close, "TIME_EXIT", now_ms, on_close); return 0;
+                }
             }
             return 0;
         }

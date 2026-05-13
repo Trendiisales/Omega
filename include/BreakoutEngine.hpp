@@ -741,7 +741,14 @@ public:
                 const double be_short = pos.entry * (1.0 - lock_gain_pct / 100.0);
                 const bool trail_in_profit = pos.is_long ? (pos.sl >= be_long)
                                                          : (pos.sl <= be_short);
-                if (trail_in_profit) {
+                // 2026-05-13 (part L): also exempt small winners that haven't
+                // yet armed the trail. Same fix as GoldPositionManager L3791:
+                // any positive current move grants the exemption -- TP/SL/trail
+                // will close it naturally.
+                const double cur_move = pos.is_long
+                    ? (mid - pos.entry)
+                    : (pos.entry - mid);
+                if (trail_in_profit || cur_move > 0.0) {
                     // Trail is protecting profit -- ride until SL or TP hits.
                     // Log every MAX_HOLD_SEC so we know it is alive.
                     const int64_t held_now = nowSec() - pos.entry_ts;

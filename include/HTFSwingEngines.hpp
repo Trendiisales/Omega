@@ -482,12 +482,19 @@ private:
                  int64_t now_ms, CloseCallback on_close) noexcept
     {
         // Timeout
+        // 2026-05-13 (part L): VWR-pattern winner exemption.
         if (pos_.h1_bars_held >= p.timeout_h1_bars) {
-            printf("[H1SWING-%s] TIMEOUT after %d H1 bars\n",
-                   symbol.c_str(), pos_.h1_bars_held);
-            fflush(stdout);
-            _close(pos_.is_long ? bid : ask, "H1_TIMEOUT", now_ms, on_close);
-            return;
+            const double mid = (bid + ask) * 0.5;
+            const double cur_move = pos_.is_long
+                ? (mid - pos_.entry)
+                : (pos_.entry - mid);
+            if (cur_move <= 0.0) {
+                printf("[H1SWING-%s] TIMEOUT after %d H1 bars\n",
+                       symbol.c_str(), pos_.h1_bars_held);
+                fflush(stdout);
+                _close(pos_.is_long ? bid : ask, "H1_TIMEOUT", now_ms, on_close);
+                return;
+            }
         }
         // EMA9 cross EMA50 against position
         if (prev_h1_ema9_ > 0.0 && h1_ema9 > 0.0) {
@@ -862,7 +869,12 @@ private:
                  double h4_atr, double h4_adx,
                  int64_t now_ms, CloseCallback on_close) noexcept
     {
-        if (pos_.h4_bars_held >= p.timeout_h4_bars) {
+        // 2026-05-13 (part L): VWR-pattern winner exemption -- compute
+        // current move once, gate the timeout below on cur_move <= 0.
+        const double cur_move = pos_.is_long
+            ? (mid - pos_.entry)
+            : (pos_.entry - mid);
+        if (pos_.h4_bars_held >= p.timeout_h4_bars && cur_move <= 0.0) {
             printf("[H4REGIME-%s] TIMEOUT %d H4 bars\n",
                    symbol.c_str(), pos_.h4_bars_held);
             fflush(stdout);

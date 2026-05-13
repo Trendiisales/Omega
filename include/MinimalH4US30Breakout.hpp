@@ -662,10 +662,17 @@ private:
                           CloseCallback on_close) noexcept
     {
         if (pos_.h4_bars_held >= p.timeout_h4_bars) {
-            printf("[MINIMAL_H4-%s] TIMEOUT %d H4 bars\n",
-                   symbol.c_str(), pos_.h4_bars_held);
-            fflush(stdout);
-            _close(pos_.is_long ? bid : ask, "TIMEOUT", now_ms, on_close);
+            // 2026-05-13 (part L): VWR-pattern winner exemption.
+            const double mid = (bid + ask) * 0.5;
+            const double cur_move = pos_.is_long
+                ? (mid - pos_.entry)
+                : (pos_.entry - mid);
+            if (cur_move <= 0.0) {
+                printf("[MINIMAL_H4-%s] TIMEOUT %d H4 bars\n",
+                       symbol.c_str(), pos_.h4_bars_held);
+                fflush(stdout);
+                _close(pos_.is_long ? bid : ask, "TIMEOUT", now_ms, on_close);
+            }
         }
     }
 

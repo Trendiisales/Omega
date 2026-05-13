@@ -264,7 +264,15 @@ struct C1DonchianH1LongCell {
 
         if (pos_.active) {
             pos_.bars_held++;
-            if (pos_.bars_held >= max_hold_bars) _close(bid, "TIMEOUT", now_ms, on_close);
+            // 2026-05-13 (part L): VWR-pattern winner exemption. Long-only
+            // engine; only time out when current mid is at/below entry.
+            // Winners ride to channel-flip or trail-managed exit.
+            if (pos_.bars_held >= max_hold_bars) {
+                const double mid = (bid + ask) * 0.5;
+                if (mid <= pos_.entry) {
+                    _close(bid, "TIMEOUT", now_ms, on_close);
+                }
+            }
             return 0;
         }
 
@@ -399,8 +407,14 @@ struct C1BollingerLongCell {
                 _close(bid, "INDICATOR", now_ms, on_close);
                 return 0;
             }
+            // 2026-05-13 (part L): VWR-pattern winner exemption. Long-only
+            // BB-band engine; only time out when current mid is at/below entry.
+            // Winners ride to BB-midline indicator-exit or trail-managed close.
             if (pos_.bars_held >= max_hold_bars) {
-                _close(bid, "TIMEOUT", now_ms, on_close);
+                const double mid = (bid + ask) * 0.5;
+                if (mid <= pos_.entry) {
+                    _close(bid, "TIMEOUT", now_ms, on_close);
+                }
                 return 0;
             }
             return 0;

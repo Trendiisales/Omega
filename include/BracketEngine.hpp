@@ -464,20 +464,32 @@ public:
             // activates. MAX_HOLD_SEC = 0 disables this gate (prior behaviour).
             // Uses "TIMEOUT" reason so post-close analytics can isolate these
             // exits from trail/SL/TP/REGIME_FLIP paths.
+            //
+            // 2026-05-13 (part L): VWR-pattern winner exemption added. Only
+            // fire the timeout when current mid is at/below entry (long) or
+            // at/above entry (short). Winners ride to TP / trail-managed SL.
+            // Was: 8 live bracket instances (g_bracket_sp/nq/us30/nas100/
+            // ger30/uk100/estx50/gold) all HARD-cutting winners at 1500-3600s.
             if (MAX_HOLD_SEC > 0 &&
                 (now - pos.entry_ts) >= static_cast<int64_t>(MAX_HOLD_SEC)) {
-                const double exit_px = pos.is_long ? bid : ask;
-                std::cout << "[BRACKET-" << symbol << "] MAX_HOLD_TIMEOUT"
-                          << " side=" << (pos.is_long ? "LONG" : "SHORT")
-                          << " hold_s=" << (now - pos.entry_ts)
-                          << " cap_s=" << MAX_HOLD_SEC
-                          << " exit_px=" << exit_px
-                          << " entry=" << pos.entry
-                          << " sl=" << pos.sl
-                          << " mfe=" << pos.mfe << "\n";
-                std::cout.flush();
-                closePos(exit_px, "MAX_HOLD_TIMEOUT", macro_regime, on_close);
-                return;
+                const double mid = (bid + ask) * 0.5;
+                const double cur_move = pos.is_long
+                    ? (mid - pos.entry)
+                    : (pos.entry - mid);
+                if (cur_move <= 0.0) {
+                    const double exit_px = pos.is_long ? bid : ask;
+                    std::cout << "[BRACKET-" << symbol << "] MAX_HOLD_TIMEOUT"
+                              << " side=" << (pos.is_long ? "LONG" : "SHORT")
+                              << " hold_s=" << (now - pos.entry_ts)
+                              << " cap_s=" << MAX_HOLD_SEC
+                              << " exit_px=" << exit_px
+                              << " entry=" << pos.entry
+                              << " sl=" << pos.sl
+                              << " mfe=" << pos.mfe << "\n";
+                    std::cout.flush();
+                    closePos(exit_px, "MAX_HOLD_TIMEOUT", macro_regime, on_close);
+                    return;
+                }
             }
 
             // ?? Regime-flip exit (Session 13, 2026-04-23) ?????????????????????

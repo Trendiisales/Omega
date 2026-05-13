@@ -204,7 +204,14 @@ struct CrossPosition {
 
         const bool tp_hit = is_long ? (bid >= tp) : (ask <= tp);
         const bool sl_hit = is_long ? (bid <= sl) : (ask >= sl);
-        const bool timed_out = (ca_now_sec() - entry_ts) >= max_hold_sec;
+        // 2026-05-13 (part L): VWR-pattern winner exemption at the base class.
+        // Only fire the timeout when held long enough AND current move is at/
+        // below entry. Winners ride to TP_HIT or trailed SL_HIT. Callers that
+        // pass eff_max_hold=INT_MAX (e.g. VWR for winners) still short-circuit
+        // here; this is defense-in-depth for any caller that passes a raw
+        // max_hold_sec.
+        const bool timed_out = (ca_now_sec() - entry_ts) >= max_hold_sec
+                            && move <= 0.0;
 
         // ?? TP hit: don't close fully -- extend TP and tighten trail ??????????
         // When price reaches initial TP (VWAP), lock BE tightly and extend TP
@@ -2029,7 +2036,11 @@ public:
             const int64_t held_s = ca_now_sec() - pos_.entry_ts;
             const bool sl_hit    = (held_s >= 2) &&
                                    (pos_.is_long ? (bid <= pos_.sl) : (ask >= pos_.sl));
-            const bool timed_out = held_s >= MAX_HOLD_SEC;
+            // 2026-05-13 (part L): VWR-pattern winner exemption.
+            const double cur_move_pb = pos_.is_long
+                ? (mid - pos_.entry)
+                : (pos_.entry - mid);
+            const bool timed_out = (held_s >= MAX_HOLD_SEC) && (cur_move_pb <= 0.0);
             if (sl_hit || timed_out) {
                 const double exit_px = sl_hit ? pos_.sl : mid;
                 const char*  reason  = sl_hit ? "SL_HIT" : "TIMEOUT";
@@ -2738,7 +2749,18 @@ private:
                 return;
             }
         }
-        pos_.manage(bid, ask, MAX_HOLD_SEC, on_close);
+        // 2026-05-13 (part L): VWR-pattern winner exemption -- losers see
+        // MAX_HOLD_SEC, winners ride to TP/SL/trail (passing INT_MAX makes
+        // CrossPosition::manage()'s timeout branch inert). Without this, NBM's
+        // 1800s (30min) timeout was cutting gold-london winners that were
+        // still trending toward TP -- the same failure mode that motivated
+        // the VWR L1417 pattern.
+        const double move = pos_.is_long ? (mid - pos_.entry)
+                                         : (pos_.entry - mid);
+        const int eff_max_hold = (move > 0.0)
+            ? std::numeric_limits<int>::max()
+            : MAX_HOLD_SEC;
+        pos_.manage(bid, ask, eff_max_hold, on_close);
     }
 };
 

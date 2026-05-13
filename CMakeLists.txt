@@ -458,6 +458,44 @@ else()
 endif()
 
 # =============================================================================
+# VWAPReversionBacktest -- dedicated harness for VWAPReversionEngine
+# Built to validate the S37-H-followup in-flight cut fields (LOSS_CUT_PCT /
+# BE_ARM_PCT / BE_BUFFER_PCT) against historical per-symbol tick data.
+#
+# Build:  cmake --build build --target VWAPReversionBacktest --config Release
+# Run:    ./build/VWAPReversionBacktest <ticks.csv> --symbol <SYM> [options]
+# Symbols: US500.F | USTEC.F | GER40 | EURUSD
+# Modes:   --mode baseline | tuned (default tuned)
+# See backtest/VWAPReversionBacktest.cpp header for full usage.
+# =============================================================================
+add_executable(VWAPReversionBacktest
+    backtest/VWAPReversionBacktest.cpp
+)
+target_include_directories(VWAPReversionBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(VWAPReversionBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(VWAPReversionBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(VWAPReversionBacktest PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(VWAPReversionBacktest PRIVATE OMEGA_BACKTEST)
+endif()
+
+# =============================================================================
 # TsmomCellBacktest -- Phase 2a dual-engine harness for the CellEngine refactor.
 # Drives V1 (TsmomPortfolio in TsmomEngine.hpp) and V2 (CellPortfolio<TsmomStrategy>
 # in CellEngine.hpp + TsmomStrategy.hpp) over the same H1 OHLC corpus and emits

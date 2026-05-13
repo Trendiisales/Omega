@@ -327,8 +327,15 @@ struct EMACrossEngine {
                 _close(ep, pos.be_done ? "BE" : "SL", now_ms, on_close); return;
             }
             // Timeout
+            // 2026-05-13 (part L): VWR-pattern winner exemption.
             if (now_ms - pos.ets > ECE_TIMEOUT_MS) {
-                _close(ep, "TIMEOUT", now_ms, on_close); return;
+                const double mid_ec = (bid + ask) * 0.5;
+                const double cur_move = pos.is_long
+                    ? (mid_ec - pos.entry)
+                    : (pos.entry - mid_ec);
+                if (cur_move <= 0.0) {
+                    _close(ep, "TIMEOUT", now_ms, on_close); return;
+                }
             }
             // Cross-exit: PERMANENTLY DISABLED (diagnostic: -$256 on 16 trades)
             // Removed to avoid MSVC C4127 constant expression warning

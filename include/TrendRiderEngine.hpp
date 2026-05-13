@@ -306,10 +306,18 @@ struct TrendRiderCell {
             }
 
             // Optional max_hold safety (default 0 = disabled)
+            // 2026-05-13 (part L): VWR-pattern winner exemption. When the
+            // optional safety timeout is configured, still exempt winners --
+            // bar close in profit rides; only losing/breakeven holds cut.
             if (max_hold_bars > 0 && pos_bars_held_ >= max_hold_bars) {
-                _close(b.close, "TIME_EXIT", now_ms, on_close);
-                cooldown_left_ = cooldown_bars;
-                return 0;
+                const double cur_move = direction == 1
+                    ? (b.close - pos_entry_)
+                    : (pos_entry_ - b.close);
+                if (cur_move <= 0.0) {
+                    _close(b.close, "TIME_EXIT", now_ms, on_close);
+                    cooldown_left_ = cooldown_bars;
+                    return 0;
+                }
             }
             return 0;   // still managing -- never open a new entry while in pos
         }

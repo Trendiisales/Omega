@@ -128,7 +128,16 @@ public:
 
         const bool tp_hit = pos.is_long ? (ask >= pos.tp) : (bid <= pos.tp);
         const bool sl_hit = pos.is_long ? (bid <= pos.sl) : (ask >= pos.sl);
-        const bool timeout = (le_now_sec() - pos.entry_ts) >= max_hold_sec;
+        // 2026-05-13 (part L): VWR-pattern winner exemption -- only fire
+        // the timeout when held >= max_hold_sec AND currently not in profit.
+        // Winners ride to TP/SL/trail naturally; trail logic above arms the
+        // BE-lock + 1R/1.5R stages so a runaway is impossible. Was: cut
+        // every position at the fixed hold regardless of P&L, which on
+        // GoldEventCompression (300s) was clipping winning event reactions
+        // mid-move, and on GoldSpreadDislocation (30s) was rarely material
+        // but for consistency we apply the same gate.
+        const bool timeout = (le_now_sec() - pos.entry_ts) >= max_hold_sec
+                          && move <= 0.0;
 
         if (tp_hit || sl_hit || timeout) {
             // Cap timeout at SL if price has blown through -- prevents holding to

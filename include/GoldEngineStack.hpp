@@ -3778,7 +3778,20 @@ public:
                 const bool trail_in_profit = leg.is_long
                     ? (leg.sl >= leg.entry + LOCK_GAIN)
                     : (leg.sl <= leg.entry - LOCK_GAIN);
-                if (trail_in_profit) {
+                // 2026-05-13 (part L): also exempt small winners that haven't yet
+                // armed the trail. Live incident: DonchianBreakout XAUUSD short
+                // entry 4696.37, exit 4695.62 (+0.75pt favourable) timed out at
+                // exactly 10m0s because the trail SL hadn't reached LOCK_GAIN
+                // ($0.60) -- the trail only arms at TRAIL_ARM_1 ($2.50). Per the
+                // VWR pattern (CrossAssetEngines.hpp L1417), any positive current
+                // move should grant the timeout exemption: TP/SL/trail will close
+                // it naturally. Only cut adverse / break-even positions on
+                // timeout. The extended-pyramid logic below still gates on
+                // leg_profit_locked + TRAIL_ARM_1, so add-ons remain conservative.
+                const double cur_move = leg.is_long
+                    ? (mid - leg.entry)
+                    : (leg.entry - mid);
+                if (trail_in_profit || cur_move > 0.0) {
                     {
                         char _msg[512];
                         snprintf(_msg, sizeof(_msg), "[GOLD-STACK-TIMEOUT-SUPPRESSED] %s hold=%lds trail in profit sl=%.2f entry=%.2f mfe=%.2f\n",                            leg.engine, (long)(now - leg.entry_ts), leg.sl, leg.entry, leg.mfe);

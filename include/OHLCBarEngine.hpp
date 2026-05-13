@@ -60,6 +60,20 @@
 #include <algorithm>
 #include <chrono>
 
+// 2026-05-13 (part L cleanup): hydrate_from_csv() below calls Win32
+// GetFileAttributesA / INVALID_FILE_ATTRIBUTES under #ifdef _WIN32.
+// The main Omega.exe target pulls <windows.h> transitively via FIX
+// headers, so it has historically built clean. IndexBacktest.vcxproj
+// has a different include order and the transitive pull-in misses,
+// producing C3861 / C2065 errors. Including <windows.h> here directly
+// (Win32 only) makes the header self-contained for any caller.
+#ifdef _WIN32
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
+  #include <windows.h>
+#endif
+
 // =============================================================================
 // OHLCBar -- one closed candle
 // =============================================================================
