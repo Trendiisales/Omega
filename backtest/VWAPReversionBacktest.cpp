@@ -387,6 +387,17 @@ int main(int argc, char** argv) {
     bool have_be_arm_ovr     = false;
     bool have_be_buffer_ovr  = false;
     double loss_cut_ovr = 0.0, be_arm_ovr = 0.0, be_buffer_ovr = 0.0;
+    // Entry-side overrides (part-P, 2026-05-14e): added for the VWR USTEC.F
+    // retune sweep. See outputs/VWR_USTEC_RETUNE_PLAN_2026-05-14a.md Phase 0.
+    // Pattern mirrors the S63 trio above. Applied AFTER --mode baseline zeroes
+    // out the S63 fields, so a sweep can vary entry-side params under either
+    // baseline or tuned S63 settings.
+    bool have_ext_ovr        = false;
+    bool have_max_ext_ovr    = false;
+    bool have_max_hold_ovr   = false;
+    bool have_cooldown_ovr   = false;
+    double ext_ovr = 0.0, max_ext_ovr = 0.0;
+    int    max_hold_ovr = 0, cooldown_ovr = 0;
 
     for (int i = 2; i < argc; ++i) {
         if      (!std::strcmp(argv[i], "--symbol")    && i + 1 < argc) symbol = argv[++i];
@@ -398,6 +409,10 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--loss-cut")  && i + 1 < argc) { loss_cut_ovr  = std::atof(argv[++i]); have_loss_cut_ovr  = true; }
         else if (!std::strcmp(argv[i], "--be-arm")    && i + 1 < argc) { be_arm_ovr    = std::atof(argv[++i]); have_be_arm_ovr    = true; }
         else if (!std::strcmp(argv[i], "--be-buffer") && i + 1 < argc) { be_buffer_ovr = std::atof(argv[++i]); have_be_buffer_ovr = true; }
+        else if (!std::strcmp(argv[i], "--ext")       && i + 1 < argc) { ext_ovr       = std::atof(argv[++i]); have_ext_ovr       = true; }
+        else if (!std::strcmp(argv[i], "--max-ext")   && i + 1 < argc) { max_ext_ovr   = std::atof(argv[++i]); have_max_ext_ovr   = true; }
+        else if (!std::strcmp(argv[i], "--max-hold")  && i + 1 < argc) { max_hold_ovr  = std::atoi(argv[++i]); have_max_hold_ovr  = true; }
+        else if (!std::strcmp(argv[i], "--cooldown")  && i + 1 < argc) { cooldown_ovr  = std::atoi(argv[++i]); have_cooldown_ovr  = true; }
         else if (!std::strcmp(argv[i], "--quiet"))                      quiet = true;
         else {
             std::fprintf(stderr, "[ERROR] Unknown option: %s\n", argv[i]);
@@ -425,6 +440,12 @@ int main(int argc, char** argv) {
     if (have_loss_cut_ovr)  p.LOSS_CUT_PCT  = loss_cut_ovr;
     if (have_be_arm_ovr)    p.BE_ARM_PCT    = be_arm_ovr;
     if (have_be_buffer_ovr) p.BE_BUFFER_PCT = be_buffer_ovr;
+    // Entry-side overrides apply equally in baseline and tuned modes (they
+    // are not part of the S63 trio that --mode baseline zeroes out).
+    if (have_ext_ovr)       p.EXTENSION_THRESH_PCT = ext_ovr;
+    if (have_max_ext_ovr)   p.MAX_EXTENSION_PCT    = max_ext_ovr;
+    if (have_max_hold_ovr)  p.MAX_HOLD_SEC         = max_hold_ovr;
+    if (have_cooldown_ovr)  p.COOLDOWN_SEC         = cooldown_ovr;
 
     // Optional stdout suppression -- redirect to /dev/null so the per-trade
     // engine printf chatter does not flood logs during long sweeps. The CSV
@@ -444,16 +465,19 @@ int main(int argc, char** argv) {
         "  Trades   : %s\n"
         "  Report   : %s\n"
         "  Params:\n"
-        "    EXTENSION_THRESH_PCT = %.4f\n"
-        "    MAX_EXTENSION_PCT    = %.4f\n"
-        "    MAX_HOLD_SEC         = %d\n"
-        "    COOLDOWN_SEC         = %d\n"
+        "    EXTENSION_THRESH_PCT = %.4f%s\n"
+        "    MAX_EXTENSION_PCT    = %.4f%s\n"
+        "    MAX_HOLD_SEC         = %d%s\n"
+        "    COOLDOWN_SEC         = %d%s\n"
         "    LOSS_CUT_PCT         = %.4f%s\n"
         "    BE_ARM_PCT           = %.4f%s\n"
         "    BE_BUFFER_PCT        = %.4f%s\n"
         "================================================================\n",
         symbol.c_str(), mode.c_str(), in_path, trades_path, report_path,
-        p.EXTENSION_THRESH_PCT, p.MAX_EXTENSION_PCT, p.MAX_HOLD_SEC, p.COOLDOWN_SEC,
+        p.EXTENSION_THRESH_PCT, have_ext_ovr      ? "  (cli override)" : "",
+        p.MAX_EXTENSION_PCT,    have_max_ext_ovr  ? "  (cli override)" : "",
+        p.MAX_HOLD_SEC,         have_max_hold_ovr ? "  (cli override)" : "",
+        p.COOLDOWN_SEC,         have_cooldown_ovr ? "  (cli override)" : "",
         p.LOSS_CUT_PCT,  have_loss_cut_ovr  ? "  (cli override)" : "",
         p.BE_ARM_PCT,    have_be_arm_ovr    ? "  (cli override)" : "",
         p.BE_BUFFER_PCT, have_be_buffer_ovr ? "  (cli override)" : "");
