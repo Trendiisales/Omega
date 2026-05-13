@@ -181,6 +181,34 @@ inline void build_default_tsmom_topology(TsmomPortfolioV2& port) {
     port.add_cell(Spec{TsmomPortfolioV2::TF_H4, +1, "Tsmom_H4_long", cfg});
     port.add_cell(Spec{TsmomPortfolioV2::TF_H6, +1, "Tsmom_H6_long", cfg});
     port.add_cell(Spec{TsmomPortfolioV2::TF_D1, +1, "Tsmom_D1_long", cfg});
+
+    // 2026-05-13 (part L, P2 MAE_EXIT port): configure V1-parity MAE_EXIT
+    //   on every Tsmom V2 cell. Values match the TsmomCell field defaults
+    //   in V1 (TsmomEngine.hpp):
+    //       mae_exit_atr           = 2.0   (audit-fixes-39, line 221)
+    //       mae_exit_cooldown_bars = 4     (S12, line 276)
+    //       mae_exit_run_thresh    = 2     (S12, line 277)
+    //       mae_exit_run_cooldown  = 12    (S12, line 278)
+    //
+    //   These activate the bar-level + intrabar MAE_EXIT path in CellBase
+    //   plus the S12 post-MAE_EXIT cooldown gate. Required for Phase 2a
+    //   parity at --max-pos 1 (byte-for-byte vs TsmomPortfolio V1).
+    //
+    //   Set after add_cell because CellSpec doesn't plumb common-config
+    //   fields. Future cleanup: extend CellSpec or add a portfolio-level
+    //   broadcast in init() if more strategies need MAE_EXIT semantics.
+    //
+    //   NOTE: this does NOT port the V1 in-flight MAE stacking gate
+    //   (TsmomEngine.hpp lines 436-470, S37-H-followup). That gate only
+    //   matters at max_pos > 1 and was out of scope for this port; if
+    //   --max-pos 10 parity is later required, lift that block into
+    //   CellBase the same way.
+    for (auto& c : port.cells_) {
+        c.mae_exit_atr           = 2.0;
+        c.mae_exit_cooldown_bars = 4;
+        c.mae_exit_run_thresh    = 2;
+        c.mae_exit_run_cooldown  = 12;
+    }
 }
 
 }  // namespace omega::cell

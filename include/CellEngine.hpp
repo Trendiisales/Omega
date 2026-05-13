@@ -134,6 +134,26 @@ struct CellBase {
     double      max_spread_pt          = 1.5;
     std::string regime_label           = "CELL";
 
+    // 2026-05-13 (part L, P2 MAE_EXIT port): MAE-based early-exit settings.
+    //   Lifts the V1 TsmomCell MAE_EXIT mechanism (TsmomEngine.hpp lines
+    //   316-335 bar-level, 528-554 tick-level) plus the S12 post-MAE_EXIT
+    //   cooldown gate (V1 lines 417-434) into the generic V2 path.
+    //
+    //   Defaults below are ALL ZEROS (disabled). The 19 sibling engines
+    //   from the 0e37efc rollout pick up CellBase via TsmomStrategy /
+    //   future-strategy specialisations -- defaults-off ensures they
+    //   are not silently re-tuned. Tsmom V2 opts in via
+    //   build_default_tsmom_topology() (TsmomStrategy.hpp) which sets
+    //   mae_exit_atr=2.0, mae_exit_cooldown_bars=4, mae_exit_run_thresh=2,
+    //   mae_exit_run_cooldown=12 (matching TsmomCell defaults in V1).
+    //
+    //   Phase 2a parity contract: with the four values above set on every
+    //   Tsmom V2 cell, V1 vs V2 ledger at --max-pos 1 must be byte-identical.
+    double mae_exit_atr           = 0.0;
+    int    mae_exit_cooldown_bars = 0;
+    int    mae_exit_run_thresh    = 0;
+    int    mae_exit_run_cooldown  = 0;
+
     // ---- Strategy config + state ------------------------------------------
     Cfg         cfg{};
     State       state{};
@@ -143,6 +163,12 @@ struct CellBase {
     int     trade_id_      = 0;
     int     bar_count_     = 0;
     int     cooldown_left_ = 0;
+
+    // 2026-05-13 (part L, P2 MAE_EXIT port): MAE_EXIT runtime state.
+    //   Mirrors V1 TsmomCell::last_mae_exit_bar_ / mae_exit_run_.
+    //   Sentinel -10000 means "never MAE_EXIT'd" (matches V1 default).
+    int     last_mae_exit_bar_ = -10000;
+    int     mae_exit_run_      = 0;
 
     bool has_open_position() const noexcept { return !positions_.empty(); }
     int  n_open()             const noexcept { return static_cast<int>(positions_.size()); }
@@ -174,6 +200,30 @@ struct CellBase {
             if (max_move_this_bar > p.mfe) p.mfe = max_move_this_bar;
             if (min_move_this_bar < p.mae) p.mae = min_move_this_bar;
 
+            // 2026-05-13 (part L, P2 MAE_EXIT port): MAE-based early exit.
+            //   Mirrors V1 TsmomCell::on_bar lines 316-335. Fires BEFORE the
+            //   SL_HIT check below because V1's ordering puts MAE_EXIT first.
+            //   When a bar hits both the MAE threshold and the SL price (the
+            //   MAE threshold sits closer to entry than the SL), V1 exits at
+            //   the synthetic MAE price, not at p.sl. Byte-for-byte parity
+            //   at --max-pos 1 requires V2 to match this ordering.
+            //   Disabled when mae_exit_atr <= 0.0 (CellBase default).
+            if (mae_exit_atr > 0.0 && p.atr > 0.0) {
+                const double mae_threshold_pts = mae_exit_atr * p.atr;
+                const bool mae_exit_hit = (direction == 1)
+                    ? (b.low  <= p.entry - mae_threshold_pts)
+                    : (b.high >= p.entry + mae_threshold_pts);
+                if (mae_exit_hit) {
+                    const double exit_px = p.entry - direction * mae_threshold_pts;
+                    _close(p, exit_px, "MAE_EXIT", now_ms, on_close);
+                    // S12 bookkeeping (V1 TsmomCell::on_bar lines 329-331).
+                    last_mae_exit_bar_ = bar_count_;
+                    ++mae_exit_run_;
+                    it = positions_.erase(it);
+                    continue;
+                }
+            }
+
             const bool sl_hit = (direction == 1)
                 ? (b.low  <= p.sl) : (b.high >= p.sl);
             if (sl_hit) {
@@ -195,6 +245,15 @@ struct CellBase {
                     continue;
                 }
                 _close(p, b.close, "TIME_EXIT", now_ms, on_close);
+                // 2026-05-13 (part L, P2 MAE_EXIT port): TIME_EXIT closing at
+                // BE-or-better resets the MAE-run counter. Mirrors V1
+                // TsmomCell::on_bar lines 389-391. The cur_signed > 0.0
+                // winner-exemption path above already short-circuits, so
+                // execution only reaches here when cur_signed <= 0.0,
+                // making the reset effectively "fire at exact BE only" --
+                // matching V1's net behaviour because V1's pre-part-L
+                // TIME_EXIT had no winner exemption and reset on >= 0.0.
+                if (cur_signed >= 0.0) mae_exit_run_ = 0;
                 it = positions_.erase(it);
                 continue;
             }
@@ -211,6 +270,23 @@ struct CellBase {
         if (!enabled)                                                   return 0;
         if (n_open() >= max_positions_per_cell)                         return 0;
         if (cooldown_left_ > 0)                                         return 0;
+
+        // 2026-05-13 (part L, P2 MAE_EXIT port): S12 post-MAE_EXIT cooldown.
+        //   Mirrors V1 TsmomCell::on_bar lines 423-434. After an MAE_EXIT
+        //   stamps last_mae_exit_bar_, block new entries for
+        //   `mae_exit_cooldown_bars` bars; escalate to
+        //   `mae_exit_run_cooldown` once `mae_exit_run_` reaches
+        //   `mae_exit_run_thresh`. The mae_exit_run_ counter is
+        //   incremented on every MAE_EXIT and reset on profitable
+        //   TIME_EXIT (see above). Disabled when mae_exit_cooldown_bars <= 0.
+        if (mae_exit_cooldown_bars > 0) {
+            const int bars_since_mae = bar_count_ - last_mae_exit_bar_;
+            const int needed = (mae_exit_run_ >= mae_exit_run_thresh)
+                ? mae_exit_run_cooldown
+                : mae_exit_cooldown_bars;
+            if (bars_since_mae < needed) return 0;
+        }
+
         if (!std::isfinite(atr14_at_signal) || atr14_at_signal <= 0.0)  return 0;
         const double spread_pt = ask - bid;
         if (!std::isfinite(spread_pt) || spread_pt < 0.0)               return 0;
@@ -262,6 +338,38 @@ struct CellBase {
                 ? (bid - p.entry) : (p.entry - ask);
             if (signed_move > p.mfe) p.mfe = signed_move;
             if (signed_move < p.mae) p.mae = signed_move;
+
+            // 2026-05-13 (part L, P2 MAE_EXIT port): intrabar MAE-based exit.
+            //   Mirrors V1 TsmomCell::on_tick lines 528-554. Same threshold
+            //   formula and synthetic exit_px as the bar-level MAE_EXIT
+            //   above. Fires BEFORE Strategy::on_tick_manage AND BEFORE the
+            //   SL fill check so a tick that crosses the MAE threshold
+            //   exits at the synthetic threshold price rather than at p.sl
+            //   or whatever the strategy hook would choose.
+            //   Disabled when mae_exit_atr <= 0.0 (CellBase default).
+            if (mae_exit_atr > 0.0 && p.atr > 0.0) {
+                const double mae_threshold_pts = mae_exit_atr * p.atr;
+                bool   mae_intra_hit     = false;
+                double mae_intra_exit_px = 0.0;
+                if (direction == 1) {
+                    if (bid <= p.entry - mae_threshold_pts) {
+                        mae_intra_exit_px = p.entry - mae_threshold_pts;
+                        mae_intra_hit     = true;
+                    }
+                } else {
+                    if (ask >= p.entry + mae_threshold_pts) {
+                        mae_intra_exit_px = p.entry + mae_threshold_pts;
+                        mae_intra_hit     = true;
+                    }
+                }
+                if (mae_intra_hit) {
+                    _close(p, mae_intra_exit_px, "MAE_EXIT", now_ms, on_close);
+                    last_mae_exit_bar_ = bar_count_;
+                    ++mae_exit_run_;
+                    it = positions_.erase(it);
+                    continue;
+                }
+            }
 
             if (Strategy::on_tick_manage(p, bid, ask, state, cfg)) {
                 const double exit_px = (direction == 1) ? bid : ask;
