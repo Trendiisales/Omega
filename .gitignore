@@ -109,6 +109,11 @@ omega-terminal/dist-verify/
 /cfe_duka_bt_trades*.csv
 /hbg_duka_bt_trades*.csv
 /mce_duka_bt_trades*.csv
+# Standalone harness outputs (htf_bt_minimal -- 2026-05-14d/e sessions)
+/htf_bt_minimal_*.csv
+/htf_bt_minimal_*.txt
+# VWAPReversionBacktest smoke-test outputs (S69 P0 default report/trades paths)
+/vrev_*.csv
 
 # ── Backtest result CSVs in backtest/ ─────────────────────────────────────────
 backtest/bt_*.csv
@@ -141,6 +146,7 @@ backtest/goldflow_diag
 backtest/goldflow_gate_diag
 backtest/goldflow_real_bt
 backtest/goldflow_sweep
+backtest/htf_bt_minimal
 backtest/honest_backtest_xauusd
 backtest/honest_backtest_xauusd_v2
 backtest/honest_backtest_xauusd_v2_ext
