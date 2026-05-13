@@ -241,6 +241,19 @@ struct C1DonchianH1LongCell {
 
     bool has_open_position() const noexcept { return pos_.active; }
 
+    // ── S66-followup-2 (2026-05-14b part M): read-only GUI accessor ─────────
+    // Used by engine_init.hpp's GUI position-source registration to expose
+    // the in-flight Donchian H1 cell on /api/v1/omega/positions. The cell is
+    // long-only by design (the whole C1RetunedPortfolio is long-only XAUUSD),
+    // so the register_source lambda hard-codes side="LONG" / dir=1.0 — there
+    // is intentionally no is_long member on C1OpenPos. mfe/mae are tracked
+    // here (unlike IndexMacroCrash which lacks a base_mae_); the lambda can
+    // report real MAE rather than synthesising 0. Const-ref so callers cannot
+    // mutate state. Callers MUST guard via has_open_position(): _close()
+    // zeroes pos_ via `pos_ = C1OpenPos{}` so accessor returns sentinel zeros
+    // (not stale values) post-close, but those zeros still should not render.
+    const C1OpenPos& pos() const noexcept { return pos_; }
+
     // Called on every completed H1 bar.
     // Returns 1 if a NEW position was opened this bar, 0 otherwise.
     int on_h1_bar(const C1Bar& h1, double bid, double ask, double h1_atr14,
@@ -393,6 +406,13 @@ struct C1BollingerLongCell {
     int       bar_count_ = 0;
 
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // ── S66-followup-2 (2026-05-14b part M): read-only GUI accessor ─────────
+    // Same contract as C1DonchianH1LongCell::pos() above — long-only XAUUSD
+    // cell (used at H2 / H4 / H6 timeframes via separate instances), _close()
+    // zeroes pos_, callers MUST guard via has_open_position() before reading.
+    // mfe/mae tracked here, so the register_source lambda reports real values.
+    const C1OpenPos& pos() const noexcept { return pos_; }
 
     // Returns 1 if a new long was opened this bar, 0 otherwise.
     int on_bar(const C1Bar& b, double bid, double ask,

@@ -2993,7 +2993,11 @@ static void init_engines(const std::string& cfg_path)
     //   XauTrendFollow 2h / 4h / D1                   -- TODO: check pos shape
     //   UstecTrendFollow 5m / HTF                     -- TODO: check pos shape
     //   EMACrossEngine, H4RegimeEngine, BreakoutEngine, MacroCrashEngine
-    //   C1RetunedPortfolio                            -- portfolio wrapper
+    //   C1RetunedPortfolio                            -- DONE 2026-05-14b
+    //                                                    (part M) — 4 cells
+    //                                                    registered below
+    //                                                    via per-cell pos()
+    //                                                    accessors.
     //
     // Add those as a follow-up commit once each engine's pos struct is
     // mapped. The deferred set is the "show in GUI when fires" follow-up.
@@ -3305,17 +3309,95 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("IndexMacroCrashUS30",
         _make_imacro_source("IndexMacroCrashUS30", "DJ30.F",  &g_imacro_us30));
 
+    // ── S66-followup-2 (2026-05-14b part M): C1RetunedPortfolio x4 GUI sources.
+    //   The portfolio (g_c1_retuned, globals.hpp:138) is a long-only XAUUSD
+    //   strategy with FOUR cell instances split across two cell classes:
+    //     - donchian_h1_   (C1DonchianH1LongCell)
+    //     - bollinger_h2_  (C1BollingerLongCell, stride-2 synthesised)
+    //     - bollinger_h4_  (C1BollingerLongCell, native H4)
+    //     - bollinger_h6_  (C1BollingerLongCell, stride-6 synthesised)
+    //   Each cell now exposes a const C1OpenPos& pos() accessor (added this
+    //   session in C1RetunedPortfolio.hpp on both cell classes). The cells
+    //   are long-only by class invariant — there is no is_long field on
+    //   C1OpenPos — so we hard-code side="LONG" / dir=1.0. mfe and mae are
+    //   tracked on the cell-level pos_, so we report real values (unlike
+    //   IndexMacroCrash above which synthesises mae=0). The "two sub-strategies"
+    //   wording in part-L's queued plan referred to the two cell classes;
+    //   the actual GUI surface is four sources because each instance has
+    //   independent open-position state. Two factory lambdas (one per cell
+    //   class) match the part-K/L per-engine-family factory convention.
+    auto _make_c1_donchian_source =
+        [](const char* engine_name, omega::C1DonchianH1LongCell* cell) {
+        return [engine_name, cell]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!cell->has_open_position()) return out;
+            const auto& p = cell->pos();
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double unrl = (current - p.entry) * p.size * mult;  // long-only
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD";
+            ps.side   = "LONG";
+            ps.size   = p.size;
+            ps.entry  = p.entry;
+            ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = engine_name;
+            out.push_back(ps);
+            return out;
+        };
+    };
+    auto _make_c1_bollinger_source =
+        [](const char* engine_name, omega::C1BollingerLongCell* cell) {
+        return [engine_name, cell]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!cell->has_open_position()) return out;
+            const auto& p = cell->pos();
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double unrl = (current - p.entry) * p.size * mult;  // long-only
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD";
+            ps.side   = "LONG";
+            ps.size   = p.size;
+            ps.entry  = p.entry;
+            ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = engine_name;
+            out.push_back(ps);
+            return out;
+        };
+    };
+    g_open_positions.register_source("C1RetunedDonchianH1",
+        _make_c1_donchian_source("C1RetunedDonchianH1",  &g_c1_retuned.donchian_h1_));
+    g_open_positions.register_source("C1RetunedBollingerH2",
+        _make_c1_bollinger_source("C1RetunedBollingerH2", &g_c1_retuned.bollinger_h2_));
+    g_open_positions.register_source("C1RetunedBollingerH4",
+        _make_c1_bollinger_source("C1RetunedBollingerH4", &g_c1_retuned.bollinger_h4_));
+    g_open_positions.register_source("C1RetunedBollingerH6",
+        _make_c1_bollinger_source("C1RetunedBollingerH6", &g_c1_retuned.bollinger_h6_));
+
     // ── S66 (2026-05-13): 6 more engines (EMACross, H4RegimeGold,
     //    MacroCrash, XauTrendFollow 2h/4h/D1). Mechanical follow-ups to S65.
     //    Engines NOT registered yet (different pos shapes): BracketEngine
     //    multi-leg (XAU + 12 FX/index instances), GoldEngineStack legs_,
     //    CandleFlow (multi-path), H1SwingGold, MinimalH4 portfolio engines
-    //    (Donchian/EmaPullback/TrendRider/Tsmom), C1RetunedPortfolio
-    //    (two-leg portfolio wrapper).
+    //    (Donchian/EmaPullback/TrendRider/Tsmom).
     //    UstecTrendFollow + FX BreakoutEngine x5 are NOW registered (below).
     //    IndexFlow x4 is NOW registered (block immediately above this).
     //    IndexMacroCrash x4 is NOW registered (block immediately above this,
     //    2026-05-14a).
+    //    C1RetunedPortfolio x4 is NOW registered (block immediately above
+    //    this, 2026-05-14b part M — note the C1Retuned wrapper has FOUR
+    //    cells, not the "two-leg" wording from the part-L queued plan).
 
     // EMACrossGold (XAUUSD). EMACrossEngine.pos is public struct OpenPos
     //   with {active, is_long, entry, sl, tp, size, mfe}. No mae tracked.
@@ -3438,12 +3520,14 @@ static void init_engines(const std::string& cfg_path)
     //
     //    S66-followup-2 (part L, 2026-05-14) added IndexFlow x4 (34 -> 38).
     //    S66-followup-2 cont. (2026-05-14a) added IndexMacroCrash x4 (38 -> 42).
+    //    S66-followup-2 cont. (2026-05-14b part M) added C1Retuned x4
+    //    (DonchianH1 + Bollinger H2/H4/H6 cells, all long-only XAUUSD,
+    //    42 -> 46).
     //
     //    Engines still NOT registered (more complex pos shapes deferred to a
     //    later session): BracketEngine multi-leg (XAU + 12 FX/index instances),
     //    GoldEngineStack legs_ vector, CandleFlow, MinimalH4 portfolio wrappers
-    //    (Donchian/EmaPullback/TrendRider/Tsmom/Tsmom_v2),
-    //    and the C1RetunedPortfolio wrapper.
+    //    (Donchian/EmaPullback/TrendRider/Tsmom/Tsmom_v2).
 
     // H1SwingGold (XAUUSD). H1SwingEngine.pos_ is public (struct member;
     //   H1SwingEngine itself is a `struct`). Fields: {active, is_long,
@@ -3564,7 +3648,10 @@ static void init_engines(const std::string& cfg_path)
     //   count 34 -> 38.
     // 2026-05-14a S66-followup-2 cont.: IndexMacroCrash x4 added
     //   (SP/NQ/NAS/US30), count 38 -> 42.
-    std::cout << "[OmegaApi] g_open_positions sources registered (42 sources: "
+    // 2026-05-14b S66-followup-2 cont. (part M): C1Retuned x4 added
+    //   (DonchianH1/BollingerH2/BollingerH4/BollingerH6 — long-only XAU
+    //   cells of the C1RetunedPortfolio wrapper), count 42 -> 46.
+    std::cout << "[OmegaApi] g_open_positions sources registered (46 sources: "
               "MidScalperGold, MicroScalperGold, "
               "EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, "
               "AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg, "
@@ -3572,6 +3659,7 @@ static void init_engines(const std::string& cfg_path)
               "XauThreeBar30m, NoiseBandMomentumGoldLdn, "
               "VWAPReversion x4, TrendPullback x2, "
               "IndexFlow x4, IndexMacroCrash x4, "
+              "C1Retuned x4, "
               "EMACrossGold, H4RegimeGold, MacroCrash, "
               "XauTrendFollow 2h/4h/D1, "
               "H1SwingGold, UstecTrendFollow 5m/HTF, "
