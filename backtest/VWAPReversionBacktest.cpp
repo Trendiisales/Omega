@@ -360,18 +360,32 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr,
             "Usage: VWAPReversionBacktest <ticks.csv> [options]\n"
-            "  --symbol <SYM>      US500.F | USTEC.F | GER40 | EURUSD (required)\n"
-            "  --mode <m>          baseline | tuned                  (default: tuned)\n"
-            "                      baseline: LOSS_CUT_PCT=0, BE_ARM_PCT=0, BE_BUFFER_PCT=0\n"
-            "                      tuned:    per-symbol engine_init.hpp values\n"
-            "  --loss-cut <pct>    override LOSS_CUT_PCT\n"
-            "  --be-arm <pct>      override BE_ARM_PCT\n"
-            "  --be-buffer <pct>   override BE_BUFFER_PCT\n"
-            "  --trades <file>     trades CSV output     (default: vrev_trades.csv)\n"
-            "  --report <file>     summary report CSV    (default: vrev_report.csv)\n"
-            "  --limit <N>         max ticks to process  (default: unlimited)\n"
-            "  --warmup <N>        warmup ticks pre-trade (default: 5000)\n"
-            "  --quiet             suppress engine printf chatter to stdout\n");
+            "  --symbol <SYM>           US500.F | USTEC.F | GER40 | EURUSD (required)\n"
+            "  --mode <m>               baseline | tuned                  (default: tuned)\n"
+            "                           baseline: LOSS_CUT_PCT=0, BE_ARM_PCT=0, BE_BUFFER_PCT=0\n"
+            "                           tuned:    per-symbol engine_init.hpp values\n"
+            "  --loss-cut <pct>         override LOSS_CUT_PCT\n"
+            "  --be-arm <pct>           override BE_ARM_PCT\n"
+            "  --be-buffer <pct>        override BE_BUFFER_PCT\n"
+            "  --ext <pct>              override EXTENSION_THRESH_PCT\n"
+            "  --max-ext <pct>          override MAX_EXTENSION_PCT\n"
+            "  --max-hold <sec>         override MAX_HOLD_SEC\n"
+            "  --cooldown <sec>         override COOLDOWN_SEC\n"
+            // 2026-05-14g (Tier 1 structural rework, part-Q follow-up):
+            // see outputs/VWR_USTEC_STRUCTURAL_REWORK_SCOPING_2026-05-14f.md
+            "  --ext-sl-ratio <val>     override EXTENSION_SL_RATIO       (Tier 1)\n"
+            "  --mae-exit-ratio <val>   override MAE_EXIT_RATIO           (Tier 1)\n"
+            "  --min-session-min <min>  override MIN_SESSION_MIN          (Tier 1)\n"
+            "  --tp-fraction <val>      override TP_FRACTION              (Tier 1)\n"
+            "                           1.0=TP at VWAP, <1.0=partial reversion\n"
+            "  --ewm-half-life-sec <s>  override EWM_VWAP_HALF_LIFE_SEC   (Tier 1)\n"
+            "  --session-open-hour <h>  override SESSION_OPEN_HOUR  UTC   (Tier 1)\n"
+            "  --session-close-hour <h> override SESSION_CLOSE_HOUR UTC   (Tier 1)\n"
+            "  --trades <file>          trades CSV output     (default: vrev_trades.csv)\n"
+            "  --report <file>          summary report CSV    (default: vrev_report.csv)\n"
+            "  --limit <N>              max ticks to process  (default: unlimited)\n"
+            "  --warmup <N>             warmup ticks pre-trade (default: 5000)\n"
+            "  --quiet                  suppress engine printf chatter to stdout\n");
         return 1;
     }
 
@@ -398,6 +412,26 @@ int main(int argc, char** argv) {
     bool have_cooldown_ovr   = false;
     double ext_ovr = 0.0, max_ext_ovr = 0.0;
     int    max_hold_ovr = 0, cooldown_ovr = 0;
+    // Tier 1 structural-rework overrides (2026-05-14g, part-Q follow-up).
+    // See outputs/VWR_USTEC_STRUCTURAL_REWORK_SCOPING_2026-05-14f.md §6 for
+    // the axis design. All seven flags layer on top of params_for(symbol) and
+    // are independent of --mode baseline/tuned (which only zeroes the S63
+    // trio). Defaults match the engine class header values and preserve
+    // pre-Tier-1 behaviour when no flag is passed.
+    bool have_ext_sl_ratio_ovr     = false;
+    bool have_mae_exit_ratio_ovr   = false;
+    bool have_min_session_min_ovr  = false;
+    bool have_tp_fraction_ovr      = false;
+    bool have_ewm_half_life_ovr    = false;
+    bool have_session_open_hour_ovr  = false;
+    bool have_session_close_hour_ovr = false;
+    double ext_sl_ratio_ovr    = 0.0;
+    double mae_exit_ratio_ovr  = 0.0;
+    int    min_session_min_ovr = 0;
+    double tp_fraction_ovr     = 0.0;
+    double ewm_half_life_ovr   = 0.0;
+    int    session_open_hour_ovr  = 0;
+    int    session_close_hour_ovr = 0;
 
     for (int i = 2; i < argc; ++i) {
         if      (!std::strcmp(argv[i], "--symbol")    && i + 1 < argc) symbol = argv[++i];
@@ -413,6 +447,14 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--max-ext")   && i + 1 < argc) { max_ext_ovr   = std::atof(argv[++i]); have_max_ext_ovr   = true; }
         else if (!std::strcmp(argv[i], "--max-hold")  && i + 1 < argc) { max_hold_ovr  = std::atoi(argv[++i]); have_max_hold_ovr  = true; }
         else if (!std::strcmp(argv[i], "--cooldown")  && i + 1 < argc) { cooldown_ovr  = std::atoi(argv[++i]); have_cooldown_ovr  = true; }
+        // Tier 1 structural-rework overrides (2026-05-14g)
+        else if (!std::strcmp(argv[i], "--ext-sl-ratio")      && i + 1 < argc) { ext_sl_ratio_ovr      = std::atof(argv[++i]); have_ext_sl_ratio_ovr      = true; }
+        else if (!std::strcmp(argv[i], "--mae-exit-ratio")    && i + 1 < argc) { mae_exit_ratio_ovr    = std::atof(argv[++i]); have_mae_exit_ratio_ovr    = true; }
+        else if (!std::strcmp(argv[i], "--min-session-min")   && i + 1 < argc) { min_session_min_ovr   = std::atoi(argv[++i]); have_min_session_min_ovr   = true; }
+        else if (!std::strcmp(argv[i], "--tp-fraction")       && i + 1 < argc) { tp_fraction_ovr       = std::atof(argv[++i]); have_tp_fraction_ovr       = true; }
+        else if (!std::strcmp(argv[i], "--ewm-half-life-sec") && i + 1 < argc) { ewm_half_life_ovr     = std::atof(argv[++i]); have_ewm_half_life_ovr     = true; }
+        else if (!std::strcmp(argv[i], "--session-open-hour") && i + 1 < argc) { session_open_hour_ovr  = std::atoi(argv[++i]); have_session_open_hour_ovr  = true; }
+        else if (!std::strcmp(argv[i], "--session-close-hour")&& i + 1 < argc) { session_close_hour_ovr = std::atoi(argv[++i]); have_session_close_hour_ovr = true; }
         else if (!std::strcmp(argv[i], "--quiet"))                      quiet = true;
         else {
             std::fprintf(stderr, "[ERROR] Unknown option: %s\n", argv[i]);
@@ -458,30 +500,6 @@ int main(int argc, char** argv) {
 #endif
     }
 
-    std::fprintf(stderr,
-        "================================================================\n"
-        "  VWAPReversionBacktest -- %s -- mode=%s\n"
-        "  Input    : %s\n"
-        "  Trades   : %s\n"
-        "  Report   : %s\n"
-        "  Params:\n"
-        "    EXTENSION_THRESH_PCT = %.4f%s\n"
-        "    MAX_EXTENSION_PCT    = %.4f%s\n"
-        "    MAX_HOLD_SEC         = %d%s\n"
-        "    COOLDOWN_SEC         = %d%s\n"
-        "    LOSS_CUT_PCT         = %.4f%s\n"
-        "    BE_ARM_PCT           = %.4f%s\n"
-        "    BE_BUFFER_PCT        = %.4f%s\n"
-        "================================================================\n",
-        symbol.c_str(), mode.c_str(), in_path, trades_path, report_path,
-        p.EXTENSION_THRESH_PCT, have_ext_ovr      ? "  (cli override)" : "",
-        p.MAX_EXTENSION_PCT,    have_max_ext_ovr  ? "  (cli override)" : "",
-        p.MAX_HOLD_SEC,         have_max_hold_ovr ? "  (cli override)" : "",
-        p.COOLDOWN_SEC,         have_cooldown_ovr ? "  (cli override)" : "",
-        p.LOSS_CUT_PCT,  have_loss_cut_ovr  ? "  (cli override)" : "",
-        p.BE_ARM_PCT,    have_be_arm_ovr    ? "  (cli override)" : "",
-        p.BE_BUFFER_PCT, have_be_buffer_ovr ? "  (cli override)" : "");
-
     // ----- Engine setup ------------------------------------------------------
     omega::cross::VWAPReversionEngine eng;
     eng.enabled              = true;
@@ -492,11 +510,68 @@ int main(int argc, char** argv) {
     eng.LOSS_CUT_PCT         = p.LOSS_CUT_PCT;
     eng.BE_ARM_PCT           = p.BE_ARM_PCT;
     eng.BE_BUFFER_PCT        = p.BE_BUFFER_PCT;
-    // The other engine fields (EXTENSION_SL_RATIO, MAE_EXIT_RATIO,
-    // MAE_COOLDOWN_SEC, CONSEC_FC_BLOCK_SEC, TP_FLIP_COOLDOWN_SEC,
-    // MIN_SESSION_MIN, CONF_VIX_THRESH, CONF_L2_THRESH) keep their in-class
-    // defaults, which match engine_init.hpp's "leave alone" behaviour for
-    // those fields across all four live instances at HEAD = 0e95ecd.
+    // The other engine fields (MAE_COOLDOWN_SEC, CONSEC_FC_BLOCK_SEC,
+    // TP_FLIP_COOLDOWN_SEC, CONF_VIX_THRESH, CONF_L2_THRESH) keep their
+    // in-class defaults, which match engine_init.hpp's "leave alone"
+    // behaviour for those fields across all four live instances.
+    //
+    // Tier 1 structural-rework overrides (2026-05-14g, part-Q follow-up).
+    // EXTENSION_SL_RATIO, MAE_EXIT_RATIO, MIN_SESSION_MIN are existing class
+    // fields newly exposed at the CLI; TP_FRACTION, EWM_VWAP_HALF_LIFE_SEC
+    // (promoted from static constexpr), SESSION_OPEN_HOUR, SESSION_CLOSE_HOUR
+    // are new class members added in the same commit. All seven default to
+    // values that preserve pre-Tier-1 behaviour when no flag is passed.
+    if (have_ext_sl_ratio_ovr)       eng.EXTENSION_SL_RATIO     = ext_sl_ratio_ovr;
+    if (have_mae_exit_ratio_ovr)     eng.MAE_EXIT_RATIO         = mae_exit_ratio_ovr;
+    if (have_min_session_min_ovr)    eng.MIN_SESSION_MIN        = min_session_min_ovr;
+    if (have_tp_fraction_ovr)        eng.TP_FRACTION            = tp_fraction_ovr;
+    if (have_ewm_half_life_ovr)      eng.EWM_VWAP_HALF_LIFE_SEC = ewm_half_life_ovr;
+    if (have_session_open_hour_ovr)  eng.SESSION_OPEN_HOUR      = session_open_hour_ovr;
+    if (have_session_close_hour_ovr) eng.SESSION_CLOSE_HOUR     = session_close_hour_ovr;
+
+    // ----- Startup info -----------------------------------------------------
+    // 2026-05-14g: relocated below the engine setup so the Tier 1 fields can be
+    // read off the engine instance directly. Effective per-symbol values still
+    // flow through the VWRParams struct `p` populated earlier; Tier 1 fields
+    // are read straight off `eng` (post-override).
+    std::fprintf(stderr,
+        "================================================================\n"
+        "  VWAPReversionBacktest -- %s -- mode=%s\n"
+        "  Input    : %s\n"
+        "  Trades   : %s\n"
+        "  Report   : %s\n"
+        "  Params:\n"
+        "    EXTENSION_THRESH_PCT  = %.4f%s\n"
+        "    MAX_EXTENSION_PCT     = %.4f%s\n"
+        "    MAX_HOLD_SEC          = %d%s\n"
+        "    COOLDOWN_SEC          = %d%s\n"
+        "    LOSS_CUT_PCT          = %.4f%s\n"
+        "    BE_ARM_PCT            = %.4f%s\n"
+        "    BE_BUFFER_PCT         = %.4f%s\n"
+        "  Tier 1 fields (class defaults shown when no override):\n"
+        "    EXTENSION_SL_RATIO    = %.4f%s\n"
+        "    MAE_EXIT_RATIO        = %.4f%s\n"
+        "    MIN_SESSION_MIN       = %d%s\n"
+        "    TP_FRACTION           = %.4f%s\n"
+        "    EWM_VWAP_HALF_LIFE_SEC= %.1f%s\n"
+        "    SESSION_OPEN_HOUR     = %d%s\n"
+        "    SESSION_CLOSE_HOUR    = %d%s\n"
+        "================================================================\n",
+        symbol.c_str(), mode.c_str(), in_path, trades_path, report_path,
+        p.EXTENSION_THRESH_PCT, have_ext_ovr      ? "  (cli override)" : "",
+        p.MAX_EXTENSION_PCT,    have_max_ext_ovr  ? "  (cli override)" : "",
+        p.MAX_HOLD_SEC,         have_max_hold_ovr ? "  (cli override)" : "",
+        p.COOLDOWN_SEC,         have_cooldown_ovr ? "  (cli override)" : "",
+        p.LOSS_CUT_PCT,  have_loss_cut_ovr  ? "  (cli override)" : "",
+        p.BE_ARM_PCT,    have_be_arm_ovr    ? "  (cli override)" : "",
+        p.BE_BUFFER_PCT, have_be_buffer_ovr ? "  (cli override)" : "",
+        eng.EXTENSION_SL_RATIO,     have_ext_sl_ratio_ovr      ? "  (cli override)" : "",
+        eng.MAE_EXIT_RATIO,         have_mae_exit_ratio_ovr    ? "  (cli override)" : "",
+        eng.MIN_SESSION_MIN,        have_min_session_min_ovr   ? "  (cli override)" : "",
+        eng.TP_FRACTION,            have_tp_fraction_ovr       ? "  (cli override)" : "",
+        eng.EWM_VWAP_HALF_LIFE_SEC, have_ewm_half_life_ovr     ? "  (cli override)" : "",
+        eng.SESSION_OPEN_HOUR,      have_session_open_hour_ovr ? "  (cli override)" : "",
+        eng.SESSION_CLOSE_HOUR,     have_session_close_hour_ovr? "  (cli override)" : "");
 
     // ----- Output files ------------------------------------------------------
     std::FILE* f_trades = std::fopen(trades_path, "w");
@@ -664,7 +739,17 @@ int main(int argc, char** argv) {
         "cooldown_sec,%d\n"
         "loss_cut_pct,%.4f\n"
         "be_arm_pct,%.4f\n"
-        "be_buffer_pct,%.4f\n",
+        "be_buffer_pct,%.4f\n"
+        // Tier 1 structural-rework fields (2026-05-14g). Emit the effective
+        // engine values (post-override) so sweep result CSVs always record the
+        // configuration the run actually used, not just the CLI inputs.
+        "extension_sl_ratio,%.4f\n"
+        "mae_exit_ratio,%.4f\n"
+        "min_session_min,%d\n"
+        "tp_fraction,%.4f\n"
+        "ewm_half_life_sec,%.1f\n"
+        "session_open_hour,%d\n"
+        "session_close_hour,%d\n",
         symbol.c_str(), mode.c_str(),
         static_cast<long long>(row_count),
         static_cast<long long>(parse_skips),
@@ -684,7 +769,11 @@ int main(int argc, char** argv) {
         static_cast<long long>(stats.n_other),
         p.EXTENSION_THRESH_PCT, p.MAX_EXTENSION_PCT,
         p.MAX_HOLD_SEC, p.COOLDOWN_SEC,
-        p.LOSS_CUT_PCT, p.BE_ARM_PCT, p.BE_BUFFER_PCT);
+        p.LOSS_CUT_PCT, p.BE_ARM_PCT, p.BE_BUFFER_PCT,
+        eng.EXTENSION_SL_RATIO, eng.MAE_EXIT_RATIO,
+        eng.MIN_SESSION_MIN,
+        eng.TP_FRACTION, eng.EWM_VWAP_HALF_LIFE_SEC,
+        eng.SESSION_OPEN_HOUR, eng.SESSION_CLOSE_HOUR);
     std::fclose(f_report);
 
     // Stderr summary -- visible even when --quiet redirected stdout.

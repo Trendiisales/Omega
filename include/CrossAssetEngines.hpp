@@ -1195,7 +1195,9 @@ private:
 // Suited for: GER40, US500.F, USTEC.F, EURUSD (liquid, mean-reverting).
 // Not suited for: strongly trending sessions -- gated by extension threshold.
 //
-// Session: London open to NY close (08:00-22:00 UTC).
+// Session: London open to NY close (08:00-22:00 UTC) by default.
+// 2026-05-14g (Tier 1 rework): per-instance SESSION_OPEN_HOUR /
+// SESSION_CLOSE_HOUR members override these defaults (see field block below).
 //
 // Cost check: TP distance to VWAP must exceed execution floor before entry.
 // =============================================================================
@@ -1253,7 +1255,31 @@ public:
     // Each tick we compute decay = 1 - exp(-dt / HALF_LIFE_SEC)
     // At dt=1s: decay?0.0096% per second. After 7200s (2hr): ~50% decayed.
     // This is invariant to whether NQ ticks 10?/sec or 1?/min.
-    static constexpr double EWM_VWAP_HALF_LIFE_SEC = 7200.0;  // 2hr
+    // 2026-05-14g (Tier 1 rework): promoted from `static constexpr double` to a
+    // non-static member so the half-life is per-instance overridable from
+    // engine_init.hpp and from the VWAPReversionBacktest --ewm-half-life-sec
+    // CLI flag. Default 7200.0 preserves prior behaviour for SP/NQ/GER40/EURUSD
+    // exactly (none of those instances set this field in engine_init.hpp).
+    double  EWM_VWAP_HALF_LIFE_SEC = 7200.0;  // 2hr (per-instance overridable)
+
+    // ── Tier 1 structural-rework fields (2026-05-14g) ────────────────────────
+    // Additive members that expand the parameter surface for the VWR USTEC.F
+    // Tier 1 sweep. See outputs/VWR_USTEC_STRUCTURAL_REWORK_SCOPING_2026-05-14f.md
+    // §6 for the design. Defaults preserve pre-Tier-1 behaviour identically
+    // across all four live VWR instances:
+    //   TP_FRACTION=1.0       -> tp == vwap exactly (full reversion target)
+    //   SESSION_OPEN_HOUR=8   -> matches the prior hard-coded `h < 8` gate
+    //   SESSION_CLOSE_HOUR=22 -> matches the prior hard-coded `h >= 22` gate
+    // None of these are set in engine_init.hpp for SP/NQ/GER40/EURUSD; only
+    // VWAPReversionBacktest --tp-fraction / --session-open-hour /
+    // --session-close-hour overrides them during the sweep.
+    double  TP_FRACTION        = 1.0;  // 1.0 = TP at VWAP (full reversion);
+                                       // <1.0 = partial reversion target as a
+                                       //   fraction of the (vwap - mid) distance.
+                                       // Must be > 0. >1.0 valid but overshoots
+                                       // the VWAP line (deeper reversion target).
+    int     SESSION_OPEN_HOUR  = 8;    // UTC hour at/after which entries allowed
+    int     SESSION_CLOSE_HOUR = 22;   // UTC hour at/after which entries blocked
 
     // Reset the EWM VWAP anchor -- called by main.cpp at session open.
     void reset_ewm_vwap(double anchor) noexcept {
@@ -1436,13 +1462,18 @@ public:
         // Reset extension flag on new trade cycle
         timeout_extended_ = false;
 
-        // Session gate: London/NY (08:00-22:00 UTC) -- entry only, not exit
+        // Session gate: London/NY by default (08:00-22:00 UTC) -- entry only,
+        // not exit. 2026-05-14g (Tier 1): SESSION_OPEN_HOUR / SESSION_CLOSE_HOUR
+        // are per-instance overridable (defaults 8/22 preserve prior behaviour).
         struct tm ti{}; ca_utc_time(ti);
         const int h = ti.tm_hour;
-        if (h < 8 || h >= 22) return {};
+        if (h < SESSION_OPEN_HOUR || h >= SESSION_CLOSE_HOUR) return {};
 
-        // Minimum session time gate (10:00 UTC minimum)
-        const int session_min_elapsed = (h - 8) * 60 + ti.tm_min;
+        // Minimum session time gate -- minutes since SESSION_OPEN_HOUR start.
+        // 2026-05-14g: generalised from the prior `(h - 8)` formula so the
+        // session-relative MIN_SESSION_MIN remains correct when the open hour
+        // is overridden.
+        const int session_min_elapsed = (h - SESSION_OPEN_HOUR) * 60 + ti.tm_min;
         if (session_min_elapsed < MIN_SESSION_MIN) return {};
 
         if (ca_now_sec() < cooldown_until_) return {};
@@ -1524,9 +1555,16 @@ public:
         //                     Bid-heavy (imb > 0.5+thresh) = bullish pressure ? long
         //                     Ask-heavy (imb < 0.5-thresh) = bearish pressure ? short
         int score = 1;
-        // Session overlap bonus: NY/London overlap 13:30-17:00 UTC = 5.5-9hrs into session
-        // session_min_elapsed is minutes since 08:00 UTC
-        if (session_min_elapsed >= (5*60+30) && session_min_elapsed < (9*60)) ++score;
+        // Session overlap bonus: NY/London overlap 13:30-17:00 UTC.
+        // 2026-05-14g (Tier 1): refactored from session_min_elapsed-relative
+        // (which assumed SESSION_OPEN_HOUR == 8) to absolute UTC, so the bonus
+        // window stays correct when SESSION_OPEN_HOUR is swept. At default
+        // SESSION_OPEN_HOUR=8 the absolute window [13:30, 17:00) UTC matches
+        // the prior session_min_elapsed [330, 540) min exactly -- no behaviour
+        // change for SP/NQ/GER40/EURUSD with their existing engine_init.hpp
+        // settings.
+        const int abs_min_utc = h * 60 + ti.tm_min;
+        if (abs_min_utc >= (13*60+30) && abs_min_utc < (17*60)) ++score;
         // VIX bonus
         if (vix > CONF_VIX_THRESH) ++score;
         // L2 directional confirmation
@@ -1535,8 +1573,17 @@ public:
                                            : (l2_dev < -CONF_L2_THRESH);  // ask-heavy ? short
         if (l2_confirms) ++score;
 
-        // TP = VWAP level (full reversion)
-        const double tp      = vwap;
+        // TP target: linear interpolation between mid and vwap by TP_FRACTION.
+        // 2026-05-14g (Tier 1): partial-fraction TP introduced. When
+        // TP_FRACTION == 1.0 (default) this reduces to `tp = vwap` exactly
+        // (full reversion target, the prior behaviour). When 0 < TP_FRACTION
+        // < 1.0 the target sits between mid and vwap (cheaper to hit, smaller
+        // per-trade reward). When TP_FRACTION > 1.0 the target overshoots
+        // VWAP (deeper reversion). The formula is direction-symmetric:
+        // above_vwap (mid > vwap, going SHORT) -> tp < mid; below_vwap (mid <
+        // vwap, going LONG) -> tp > mid. The downstream tp_dist <= 0 / sl
+        // ratio gate at L~1547 still rejects degenerate small-TP trades.
+        const double tp      = mid + (vwap - mid) * TP_FRACTION;
         const double tp_dist = std::fabs(tp - mid);
 
         // SL = extension ? SL_RATIO past entry (further from VWAP)
