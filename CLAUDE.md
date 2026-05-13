@@ -7,12 +7,33 @@ core code without instruction) with project-specific safeguards.
 
 ## Edit Discipline
 
-**No commits without explicit go-ahead.** Apply edits to the working
-tree only. Wait for the operator's explicit "commit" instruction before
-running `git commit` or `git push`. This rule exists because in the
-part-G session (2026-05-13) an edit was committed without checking
-in with the operator first — the rule was added to prevent that
-from recurring.
+**Commits permitted.** Relaxed by operator instruction 2026-05-14a.
+AI sessions may run `git commit` and `git push` for work the operator
+has asked for, without re-asking each time. The operator can still
+override per-session at any time by saying "don't commit yet" or
+similar.
+
+Preconditions that still apply before any commit:
+- Mac canary build green (see §"Build Verification"). Sandbox-side
+  `g++ -fsyntax-only` is necessary but NOT sufficient.
+- `git diff` reviewed: only the intended changes, no whitespace drift,
+  no accidental other-file edits.
+- Commit messages reference the standing `S<N>` numbering scheme.
+- Unrelated changes are NOT bundled into one commit — split via
+  `git add -p` when a working tree contains independent chunks.
+- For engine_init.hpp settings touching `LOSS_CUT_PCT` / `BE_ARM_PCT` /
+  `BE_BUFFER_PCT` / `enabled`, the comment block directly above the
+  line has been read and the change is consistent with it (or
+  knowingly overrides it with explicit new evidence).
+- For S63 management-path additions, the call-site activation is in
+  the same commit. No more "fields exist, check never runs" commits.
+
+History: this rule originally said "no commits without explicit
+go-ahead", added after a part-G session (2026-05-13) edit was
+committed without checking with the operator. Relaxed 2026-05-14a
+after the operator decided the friction of re-asking each commit
+outweighed the risk of a misplaced auto-commit, given the
+preconditions above.
 
 **Targeted edits over full-file rewrites.** The operator's standing
 preference says "always full file." When the operator explicitly asks
