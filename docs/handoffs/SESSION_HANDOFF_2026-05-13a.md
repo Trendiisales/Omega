@@ -1,9 +1,52 @@
 # Session Handoff — 2026-05-13 (NZST), part F
 
+> ## STATUS UPDATE 2026-05-13 (post-S62) -- carry-over items CLOSED
+>
+> All four cost-gate carry-over items listed in §"Carry-over to next session"
+> below are **already gated** as of HEAD. The flag in this handoff was stale --
+> one of the intermediate sessions (parts G / H / L / M) closed the holes
+> before they were re-discovered.
+>
+> Per-engine audit (post-S62 verification):
+>
+> | engine | gated? | fire-site | gate site | notes |
+> |---|---|---|---|---|
+> | `MinimalH4Breakout.hpp`     | YES | L470 `pos_.active=true` | L465 `ExecutionCostGuard::is_viable(...)` | cost_ratio_min=1.5; `#include "OmegaCostGuard.hpp"` at L59 |
+> | `MinimalH4US30Breakout.hpp` | YES | L328 `pos_.active=true` | L321 `ExecutionCostGuard::is_viable(...)` | cost_ratio_min=1.5; `#include` at L76 |
+> | `C1RetunedPortfolio.hpp`    | YES | L301 + L444 `pos_.active=true` | L296 + L439 `is_viable(...)` | two fire-sites, each individually gated |
+> | `GoldEngineStack.hpp`       | YES | L4195 `pos_mgr_.open(gs, ...)` | L4189 `is_viable("XAUUSD", ...)` | central chokepoint; the other two `leg.active=true` sites (L3461 add_pyramid_leg, L3647 position-manager `open()` setter) are downstream of the gated entry path |
+>
+> Standing CLAUDE.md audit set-diff (files with `pos.active=true \| pos.open(sig`
+> MINUS files with `OmegaCostGuard`) returns exactly the four intentional
+> non-gates predicted by this part-F handoff:
+> `LatencyEdgeEngines.hpp` (S13 culled), `RSIExtremeTurnEngine.hpp`
+> (S52 disabled, 0/153 combos profitable), `SweepableEngines.hpp` +
+> `SweepableEnginesCRTP.hpp` (research-only sweep harness, not in live runtime).
+>
+> The "no live or hard-shadow engine fires without cost gate" property is
+> therefore **true by construction** at the engine layer, on top of the
+> central chokepoints already in `on_tick.hpp` / `trade_lifecycle.hpp`.
+>
+> Subsequent S62 patch (2026-05-13 post-part-M, this session) added 24/7
+> cold-start persistence + a 3-pip absolute-expansion floor to all five
+> FX-style compression engines. See `outputs/SESSION_HANDOFF_2026-05-13b.md`
+> (S62 detail) and commit `46a9438` on `origin/main`.
+>
+> Genuinely open items as of HEAD:
+>
+> - **VPS deploy S36-P5** (operator-Windows-side) -- still pending.
+> - **S62 must ride the next VPS deploy** with the rest of the cost-gate
+>   rollout.
+> - No other cost-gate work is required at the engine layer.
+
 Read this first next session. Direct follow-up to
 `SESSION_HANDOFF_2026-05-12e.md` (part E). Covers the cost-gate rollout to
 the 7 live + hard-shadow engines that were left in part-E's
 §"Carry-over to next session" list, plus the two commits that landed.
+
+**NOTE**: the §"Carry-over to next session" list below is the original
+part-F-time list and is preserved for historical accuracy. See the
+STATUS UPDATE banner above for the current state.
 
 ## TL;DR
 
