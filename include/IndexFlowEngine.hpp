@@ -570,6 +570,14 @@ public:
     void   patch_size(double lot) noexcept { pos_.patch_size(lot); }
     void   reset_drift()    noexcept { regime_.reset_on_reversal(); }
     void   seed_atr(double v) noexcept { atr_tracker_.seed(v); }
+    // S66-followup-2 2026-05-14 (part L): read-only accessor for the open
+    //   position. Used by engine_init.hpp's GUI position-source registration
+    //   to expose IndexFlow trades on /api/v1/omega/positions while a trade
+    //   is in flight. IdxOpenPosition (declared above, L362) is already a
+    //   public class with public fields, so the accessor doesn't expose any
+    //   new mutation surface beyond what `set_shadow_mode()` already does.
+    //   Const-ref so callers can't accidentally mutate state.
+    const IdxOpenPosition& pos() const noexcept { return pos_; }
     // ISSUE-5: proxy for per-engine shadow_mode control from engine_init.hpp.
     // shadow_mode lives on the private IdxOpenPosition pos_; this setter lets
     // external init code (engine_init.hpp kShadowDefault wiring) flip the flag
