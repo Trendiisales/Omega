@@ -3198,13 +3198,137 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("TrendPullbackNQ",
         _make_tpb_source("TrendPullbackNQ",   "USTEC.F", &g_trend_pb_nq));
 
-    std::cout << "[OmegaApi] g_open_positions sources registered (20 sources: "
+    // ── S66 (2026-05-13): 6 more engines (EMACross, H4RegimeGold,
+    //    MacroCrash, XauTrendFollow 2h/4h/D1). Mechanical follow-ups to S65.
+    //    Engines NOT registered yet (different pos shapes): BracketEngine
+    //    multi-leg (XAU + 12 FX/index instances), GoldEngineStack legs_,
+    //    IndexFlow / IndexMacroCrash family, CandleFlow, UstecTrendFollow,
+    //    H1SwingGold, MinimalH4 portfolio engines (Donchian/EmaPullback/
+    //    TrendRider/Tsmom), C1RetunedPortfolio wrapper, FX BreakoutEngine x5.
+
+    // EMACrossGold (XAUUSD). EMACrossEngine.pos is public struct OpenPos
+    //   with {active, is_long, entry, sl, tp, size, mfe}. No mae tracked.
+    g_open_positions.register_source("EMACrossGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_ema_cross.has_open_position()) return out;
+            const auto& p = g_ema_cross.pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = 0.0;  // EMACrossEngine doesn't track mae
+            ps.engine = "EMACrossGold";
+            out.push_back(ps);
+            return out;
+        });
+
+    // H4RegimeGold (XAUUSD). H4RegimeEngine is a struct (public by default)
+    //   with pos_.{active, is_long, entry, sl, tp, size, mfe, h4_atr, ...}.
+    g_open_positions.register_source("H4RegimeGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_h4_regime_gold.has_open_position()) return out;
+            const auto& p = g_h4_regime_gold.pos_;
+            const std::string sym = g_h4_regime_gold.symbol;
+            const double mult = tick_value_multiplier(sym);
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find(sym);
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = 0.0;  // H4RegimeEngine.pos_ doesn't track mae
+            ps.engine = "H4RegimeGold";
+            out.push_back(ps);
+            return out;
+        });
+
+    // MacroCrash (XAUUSD). MacroCrashEngine.pos is public struct Position
+    //   with {active, is_long, entry, sl, full_size, size, mfe, mae, ...}.
+    //   Reports the BASE position only (size, not full_size). Pyramid adds
+    //   ride alongside but are tracked separately in pyramid_adds[].
+    g_open_positions.register_source("MacroCrash",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_macro_crash.has_open_position()) return out;
+            const auto& p = g_macro_crash.pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;  // MacroCrash tracks mae
+            ps.engine = "MacroCrash";
+            out.push_back(ps);
+            return out;
+        });
+
+    // XauTrendFollow x 3 (2h, 4h, D1). All three are multi-cell engines:
+    //   pos is std::array<XauTf{2h,,D1}Pos, kXauTf{2h,,D1}NumCells>. Each
+    //   cell can hold an independent position. We emit one PositionSnapshot
+    //   per active cell. Field names are identical across all three pos
+    //   structs (active, is_long, entry_px, mfe, mae) so one generic lambda
+    //   factory handles them all -- C++14 generic lambdas.
+    auto _make_xau_tf_source = [](const char* engine_name, auto* eng) {
+        return [engine_name, eng]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current_mid = 0.0;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current_mid = it->second;
+            const double sz = eng->lot;
+            for (size_t i = 0; i < eng->pos.size(); ++i) {
+                const auto& p = eng->pos[i];
+                if (!p.active) continue;
+                const double use_current = (current_mid > 0.0) ? current_mid : p.entry_px;
+                const double dir  = p.is_long ? 1.0 : -1.0;
+                const double unrl = (use_current - p.entry_px) * dir * sz * mult;
+                omega::PositionSnapshot ps;
+                ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+                ps.size = sz; ps.entry = p.entry_px; ps.current = use_current;
+                ps.unrealized_pnl = unrl;
+                ps.mfe = p.mfe * sz * mult;
+                ps.mae = p.mae * sz * mult;
+                ps.engine = engine_name;
+                out.push_back(ps);
+            }
+            return out;
+        };
+    };
+    g_open_positions.register_source("XauTrendFollow2h",
+        _make_xau_tf_source("XauTrendFollow2h", &g_xau_tf_2h));
+    g_open_positions.register_source("XauTrendFollow4h",
+        _make_xau_tf_source("XauTrendFollow4h", &g_xau_tf_4h));
+    g_open_positions.register_source("XauTrendFollowD1",
+        _make_xau_tf_source("XauTrendFollowD1", &g_xau_tf_d1));
+
+    std::cout << "[OmegaApi] g_open_positions sources registered (26 sources: "
               "HybridGold, MidScalperGold, MicroScalperGold, "
               "EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, "
               "AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg, "
               "PDHLReversion, RSIReversal, MinimalH4Gold, MinimalH4US30, "
               "XauThreeBar30m, NoiseBandMomentumGoldLdn, "
-              "VWAPReversion x4, TrendPullback x2)\n";
+              "VWAPReversion x4, TrendPullback x2, "
+              "EMACrossGold, H4RegimeGold, MacroCrash, "
+              "XauTrendFollow 2h/4h/D1)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
