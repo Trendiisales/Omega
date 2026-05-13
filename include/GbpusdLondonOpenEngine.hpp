@@ -284,6 +284,42 @@ public:
     //   negligible expansion gate.
     static constexpr double ABS_EXPANSION_FLOOR   = 0.0003;
 
+    // ====================================================================
+    // S64 2026-05-13 circuit-breaker layer
+    // --------------------------------------------------------------------
+    // Implements the operator's "cover costs and cut losing trades
+    // immediately + stop firing when the engine is losing" rule. Three
+    // pieces, all runtime-mutable via engine_init.hpp:
+    //
+    //   LOSS_CUT_PCT          -- immediate cold-loss cut. Cuts the trade
+    //                            as soon as adverse excursion reaches
+    //                            entry * pct/100. On GBPUSD at 1.35:
+    //                            0.03% = 0.000405 = ~4 pips, tighter than
+    //                            the range-based SL (10-15 pips). Catches
+    //                            cold-loss trades before they bleed past
+    //                            the structural stop. Set 0.0 to disable.
+    //
+    //   CONSEC_LOSS_THRESH    -- circuit breaker: N consecutive losing
+    //                            trades (SL_HIT or LOSS_CUT) within the
+    //                            current UTC day trips the breaker.
+    //                            Default 2 -- after 2 losses in a day,
+    //                            engine pauses for CONSEC_LOSS_BLOCK_S.
+    //                            Counter resets on a winning trade
+    //                            (TP_HIT or TRAIL_HIT) OR UTC day roll.
+    //                            Set 0 to disable.
+    //
+    //   CONSEC_LOSS_BLOCK_S   -- duration of the lockout once the threshold
+    //                            is tripped. Default 14400s = 4 hours --
+    //                            covers a full London-open session window.
+    //
+    // Persisted to disk alongside post-trade-block state (s64 fields in
+    // gbpusd_london_open_post_trade_block.csv) so a service restart inside
+    // an active block does not silently bypass it.
+    // ====================================================================
+    double  LOSS_CUT_PCT          = 0.03;   // 0.03% of entry  (~4 pips on cable)
+    int     CONSEC_LOSS_THRESH    = 2;      // 2 losses in current UTC day -> lockout
+    int64_t CONSEC_LOSS_BLOCK_S   = 14400;  // 4h lockout once threshold tripped
+
     enum class Phase { IDLE, ARMED, PENDING, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
 
@@ -527,6 +563,60 @@ public:
 
         // -- IDLE -> ARMED ---------------------------------------------------
         if (phase == Phase::IDLE) {
+            // S64 2026-05-13 consec-loss circuit breaker.
+            //   Day-roll reset: if UTC day changed since the counter was
+            //   last updated, clear the counter (engine gets a fresh start
+            //   each UTC day). The block_until_s is also cleared on roll
+            //   since per-day semantics imply per-day lockouts.
+            {
+                const int _utc_today = _utc_day_key(now_s);
+                if (m_consec_loss_day_utc != _utc_today &&
+                    m_consec_loss_day_utc != -1)
+                {
+                    if (m_consec_loss_count > 0 ||
+                        m_consec_loss_block_until_s > 0)
+                    {
+                        char _buf[256];
+                        snprintf(_buf, sizeof(_buf),
+                            "[GBP-LDN-OPEN] CONSEC_LOSS_DAY_ROLL reset count=%d->0 "
+                            "block_until=%lld->0\n",
+                            m_consec_loss_count,
+                            (long long)m_consec_loss_block_until_s);
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
+                    m_consec_loss_count         = 0;
+                    m_consec_loss_block_until_s = 0;
+                    m_consec_loss_day_utc       = _utc_today;
+                    if (m_sl_cooldown_ts > 0 || m_win_exit_block_ts > 0 ||
+                        m_consec_loss_count != 0)
+                    {
+                        _save_post_trade_block();
+                    }
+                }
+            }
+            // Active lockout: if the consec-loss block is in effect, refuse
+            //   to arm. This is the "stop firing when the engine is losing"
+            //   guard -- after CONSEC_LOSS_THRESH same-day losses, sit out
+            //   the rest of the session window (CONSEC_LOSS_BLOCK_S = 4h).
+            if (m_consec_loss_block_until_s > 0 &&
+                now_s < m_consec_loss_block_until_s)
+            {
+                static int64_t s_last_log_s = 0;
+                if (now_s - s_last_log_s >= 60) {
+                    s_last_log_s = now_s;
+                    char _buf[256];
+                    snprintf(_buf, sizeof(_buf),
+                        "[GBP-LDN-OPEN] CONSEC_LOSS_BLOCK active count=%d "
+                        "block_remaining_s=%lld -- not arming\n",
+                        m_consec_loss_count,
+                        (long long)(m_consec_loss_block_until_s - now_s));
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
+                return;
+            }
+
             // S53/S56: same-level re-arm block.
             //   Block re-arming when the new compression's hi or lo overlaps
             //   a recent exit price within SAME_LEVEL_BLOCK_PTS=12 pips and
@@ -812,6 +902,32 @@ public:
         if (move > pos.mfe) pos.mfe = move;
         if (move < pos.mae) pos.mae = move;
 
+        // S64 2026-05-13 immediate cold-loss cut.
+        //   "Cover costs and cut losing trades immediately" rule. Fires
+        //   when adverse excursion reaches LOSS_CUT_PCT * entry / 100.
+        //   At GBPUSD 1.35 entry, 0.03% = ~4 pips -- tighter than the
+        //   range-based SL_dist (10-15 pips). Cuts adverse trades before
+        //   they bleed past the structural stop.
+        //   Set LOSS_CUT_PCT = 0.0 to disable.
+        if (LOSS_CUT_PCT > 0.0 && pos.entry > 0.0) {
+            const double adverse       = -move;  // positive when losing
+            const double loss_cut_dist = pos.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = pos.is_long ? bid : ask;
+                {
+                    char _buf[320];
+                    snprintf(_buf, sizeof(_buf),
+                        "[GBP-LDN-OPEN] LOSS_CUT adverse=%.5f >= %.5f "
+                        "(%.3f%% of entry %.5f) -- cutting immediately\n",
+                        adverse, loss_cut_dist, LOSS_CUT_PCT, pos.entry);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
+                _close(exit_px, "LOSS_CUT", now_s, on_close);
+                return;
+            }
+        }
+
         // Trail with S20 arm guards + S52/S53 give-back fraction.
         const int64_t held_s = now_s - pos.entry_ts;
 
@@ -895,6 +1011,31 @@ private:
     int64_t m_last_tick_s     = 0;
     std::deque<double> m_window;
 
+    // S64 2026-05-13 consec-loss circuit-breaker state.
+    //   m_consec_loss_count        -- count of consecutive SL/LOSS_CUT
+    //                                 exits in m_consec_loss_day_utc.
+    //                                 Reset on win (TP/TRAIL) or day roll.
+    //   m_consec_loss_day_utc      -- UTC day (tm_yday + tm_year*1000) of
+    //                                 the count. -1 = never set.
+    //   m_consec_loss_block_until_s -- engine paused until this Unix sec.
+    //                                 0 = no active block.
+    int     m_consec_loss_count        = 0;
+    int     m_consec_loss_day_utc      = -1;
+    int64_t m_consec_loss_block_until_s = 0;
+
+    // S64: compute a comparable "UTC day key" from a Unix second timestamp.
+    //   Returns tm_year*1000 + tm_yday (unique within a millennium).
+    static int _utc_day_key(int64_t now_s) noexcept {
+        time_t t = static_cast<time_t>(now_s);
+        struct tm utc{};
+#ifdef _WIN32
+        gmtime_s(&utc, &t);
+#else
+        gmtime_r(&t, &utc);
+#endif
+        return utc.tm_year * 1000 + utc.tm_yday;
+    }
+
     omega::SpreadRegimeGate m_spread_gate;
     std::deque<double> m_range_history;
 
@@ -955,6 +1096,10 @@ private:
         long long sl_cooldown_ts = 0;
         double win_exit_price = 0.0;
         long long win_exit_block_ts = 0;
+        // S64 fields (default 0 = no carry-over if file pre-dates S64)
+        int       consec_loss_count        = 0;
+        int       consec_loss_day_utc      = -1;
+        long long consec_loss_block_until_s = 0;
         while (std::fgets(line, sizeof(line), f)) {
             if (line[0] == '#' || line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
             char key[64];
@@ -965,6 +1110,9 @@ private:
             else if (std::strcmp(key, "sl_cooldown_ts") == 0)    sl_cooldown_ts    = std::strtoll(val, nullptr, 10);
             else if (std::strcmp(key, "win_exit_price") == 0)    win_exit_price    = std::strtod(val, nullptr);
             else if (std::strcmp(key, "win_exit_block_ts") == 0) win_exit_block_ts = std::strtoll(val, nullptr, 10);
+            else if (std::strcmp(key, "consec_loss_count") == 0)       consec_loss_count        = (int)std::strtol(val, nullptr, 10);
+            else if (std::strcmp(key, "consec_loss_day_utc") == 0)     consec_loss_day_utc      = (int)std::strtol(val, nullptr, 10);
+            else if (std::strcmp(key, "consec_loss_block_until_s") == 0) consec_loss_block_until_s = std::strtoll(val, nullptr, 10);
         }
         std::fclose(f);
         const long long now_s = (long long)std::time(nullptr);
@@ -982,12 +1130,26 @@ private:
             m_win_exit_block_ts = (int64_t)win_exit_block_ts;
             restored_any = true;
         }
-        std::printf("[GBP-LDN-OPEN] POST_TRADE_BLOCK_LOAD restored=%d sl_price=%.5f sl_rem_s=%lld win_price=%.5f win_rem_s=%lld\n",
+        // S64: restore consec-loss state IFF same UTC day (otherwise the
+        //   day-roll reset would have wiped it on the next IDLE pass anyway).
+        const int now_utc_day = _utc_day_key((int64_t)now_s);
+        if (consec_loss_day_utc == now_utc_day) {
+            m_consec_loss_count   = consec_loss_count;
+            m_consec_loss_day_utc = consec_loss_day_utc;
+            if (consec_loss_block_until_s > now_s) {
+                m_consec_loss_block_until_s = (int64_t)consec_loss_block_until_s;
+                restored_any = true;
+            }
+        }
+        std::printf("[GBP-LDN-OPEN] POST_TRADE_BLOCK_LOAD restored=%d sl_price=%.5f sl_rem_s=%lld win_price=%.5f win_rem_s=%lld "
+                    "consec_count=%d consec_block_rem_s=%lld\n",
                     (int)restored_any,
                     m_sl_price,
                     (m_sl_cooldown_ts > now_s) ? (long long)(m_sl_cooldown_ts - now_s) : 0LL,
                     m_win_exit_price,
-                    (m_win_exit_block_ts > now_s) ? (long long)(m_win_exit_block_ts - now_s) : 0LL);
+                    (m_win_exit_block_ts > now_s) ? (long long)(m_win_exit_block_ts - now_s) : 0LL,
+                    m_consec_loss_count,
+                    (m_consec_loss_block_until_s > now_s) ? (long long)(m_consec_loss_block_until_s - now_s) : 0LL);
         std::fflush(stdout);
 #endif
     }
@@ -1003,12 +1165,16 @@ private:
             return;
         }
         const long long now_s = (long long)std::time(nullptr);
-        std::fprintf(f, "# post_trade_block v1 saved=%lld\n", now_s);
+        std::fprintf(f, "# post_trade_block v2 saved=%lld\n", now_s);
         std::fprintf(f, "sl_price=%.10f\n", m_sl_price);
         std::fprintf(f, "sl_cooldown_dir=%d\n", m_sl_cooldown_dir);
         std::fprintf(f, "sl_cooldown_ts=%lld\n", (long long)m_sl_cooldown_ts);
         std::fprintf(f, "win_exit_price=%.10f\n", m_win_exit_price);
         std::fprintf(f, "win_exit_block_ts=%lld\n", (long long)m_win_exit_block_ts);
+        // S64 additions
+        std::fprintf(f, "consec_loss_count=%d\n", m_consec_loss_count);
+        std::fprintf(f, "consec_loss_day_utc=%d\n", m_consec_loss_day_utc);
+        std::fprintf(f, "consec_loss_block_until_s=%lld\n", (long long)m_consec_loss_block_until_s);
         std::fclose(f);
 #endif
     }
@@ -1152,17 +1318,62 @@ private:
         //   (root cause of the 07:29 UTC 2026-05-13 GBP re-arm at 0.3 pips
         //   from the prior SL entry).
         bool _stamp_changed = false;
-        if (reason == std::string("SL_HIT")) {
+        const bool _is_loss_exit = (reason == std::string("SL_HIT") ||
+                                    reason == std::string("LOSS_CUT"));
+        const bool _is_win_exit  = (reason == std::string("TRAIL_HIT") ||
+                                    reason == std::string("TP_HIT"));
+        if (_is_loss_exit) {
             m_sl_cooldown_dir = is_long_ ? 1 : -1;
             m_sl_cooldown_ts  = now_s + SAME_LEVEL_POST_SL_BLOCK_S;
             m_sl_price        = entry_;
             _stamp_changed = true;
         }
-        if (reason == std::string("TRAIL_HIT") || reason == std::string("TP_HIT")) {
+        if (_is_win_exit) {
             m_win_exit_price    = exit_px;
             m_win_exit_block_ts = now_s + SAME_LEVEL_POST_WIN_BLOCK_S;
             _stamp_changed = true;
         }
+
+        // S64 2026-05-13 consec-loss circuit breaker.
+        //   - On loss (SL_HIT or LOSS_CUT): bump counter (resetting if UTC
+        //     day rolled). If counter >= threshold, set block_until.
+        //   - On win (TRAIL_HIT or TP_HIT): reset counter to zero. Winning
+        //     trades signal the engine is functioning; don't penalise it.
+        //   - BE_HIT / FORCE_CLOSE / TIME_STOP: leave counter unchanged
+        //     (BE is round-trip-cost recovery, not a thesis-failure loss).
+        const int _utc_today = _utc_day_key(now_s);
+        if (m_consec_loss_day_utc != _utc_today) {
+            // Day rolled: reset counter even if this exit isn't a loss/win.
+            m_consec_loss_count   = 0;
+            m_consec_loss_day_utc = _utc_today;
+        }
+        if (_is_loss_exit) {
+            ++m_consec_loss_count;
+            if (CONSEC_LOSS_THRESH > 0 &&
+                m_consec_loss_count >= CONSEC_LOSS_THRESH)
+            {
+                m_consec_loss_block_until_s = now_s + CONSEC_LOSS_BLOCK_S;
+                char _buf[384];
+                snprintf(_buf, sizeof(_buf),
+                    "[GBP-LDN-OPEN] CONSEC_LOSS_BLOCK_TRIPPED count=%d "
+                    "threshold=%d block_until=%lld (block_s=%lld) reason=%s\n",
+                    m_consec_loss_count, CONSEC_LOSS_THRESH,
+                    (long long)m_consec_loss_block_until_s,
+                    (long long)CONSEC_LOSS_BLOCK_S, reason);
+                std::cout << _buf;
+                std::cout.flush();
+            }
+            _stamp_changed = true;
+        }
+        if (_is_win_exit) {
+            // Reset breaker: streak of losses broken by a winner.
+            if (m_consec_loss_count > 0 || m_consec_loss_block_until_s > 0) {
+                m_consec_loss_count         = 0;
+                m_consec_loss_block_until_s = 0;
+                _stamp_changed = true;
+            }
+        }
+
         if (_stamp_changed) {
             _save_post_trade_block();
         }
