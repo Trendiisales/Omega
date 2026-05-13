@@ -774,10 +774,11 @@ static void init_engines(const std::string& cfg_path)
         // OOS-validated config: D=10 SL=1.5x TP=4.0x. See header for evidence.
         g_minimal_h4_gold.p           = omega::make_minimal_h4_gold_params();
         g_minimal_h4_gold.symbol      = "XAUUSD";
-        g_minimal_h4_gold.shadow_mode = true;
+        g_minimal_h4_gold.shadow_mode = false;
         g_minimal_h4_gold.enabled     = true;
-        printf("[INIT] MinimalH4Breakout XAUUSD: shadow=true donchian=%d sl=%.1fx"
+        printf("[INIT] MinimalH4Breakout XAUUSD: shadow=%s donchian=%d sl=%.1fx"
                " tp=%.1fx risk=$%.0f max_lot=%.3f timeout=%d bars weekend_gate=%s\n",
+               g_minimal_h4_gold.shadow_mode    ? "true" : "false",
                g_minimal_h4_gold.p.donchian_bars, g_minimal_h4_gold.p.sl_mult,
                g_minimal_h4_gold.p.tp_mult,       g_minimal_h4_gold.p.risk_dollars,
                g_minimal_h4_gold.p.max_lot,       g_minimal_h4_gold.p.timeout_h4_bars,
