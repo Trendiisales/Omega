@@ -3320,15 +3320,144 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("XauTrendFollowD1",
         _make_xau_tf_source("XauTrendFollowD1", &g_xau_tf_d1));
 
-    std::cout << "[OmegaApi] g_open_positions sources registered (26 sources: "
-              "HybridGold, MidScalperGold, MicroScalperGold, "
+    // ── S66-followup (2026-05-13): 8 more sources (H1SwingGold,
+    //    UstecTrendFollow 5m/HTF, FX BreakoutEngine x5). Mechanical extension
+    //    of the S66 pattern; pos struct shapes verified case-by-case before
+    //    writing. Bumps source count 26 -> 34.
+    //
+    //    Engines still NOT registered (more complex pos shapes deferred to a
+    //    later session): BracketEngine multi-leg (XAU + 12 FX/index instances),
+    //    GoldEngineStack legs_ vector, IndexFlow / IndexMacroCrash family,
+    //    CandleFlow, MinimalH4 portfolio wrappers
+    //    (Donchian/EmaPullback/TrendRider/Tsmom/Tsmom_v2),
+    //    and the C1RetunedPortfolio wrapper.
+
+    // H1SwingGold (XAUUSD). H1SwingEngine.pos_ is public (struct member;
+    //   H1SwingEngine itself is a `struct`). Fields: {active, is_long,
+    //   entry, sl, tp1, tp2_trail_sl, tp2_trail_active, partial_done,
+    //   size_full, size_remaining, mfe, h1_atr, entry_ts_ms, h1_bars_held}.
+    //   Reports `size_remaining` (live size after partial TP1 takes 50%).
+    //   No mae tracked. `symbol` is a public std::string on the engine.
+    g_open_positions.register_source("H1SwingGold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_h1_swing_gold.has_open_position()) return out;
+            const auto& p = g_h1_swing_gold.pos_;
+            const std::string sym = g_h1_swing_gold.symbol;
+            const double mult = tick_value_multiplier(sym);
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find(sym);
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir  = p.is_long ? 1.0 : -1.0;
+            const double sz   = p.size_remaining;
+            const double unrl = (current - p.entry) * dir * sz * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = sz; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * sz * mult;
+            ps.mae = 0.0;  // H1SwingEngine doesn't track mae
+            ps.engine = "H1SwingGold";
+            out.push_back(ps);
+            return out;
+        });
+
+    // UstecTrendFollow x 2 (5m + HTF). Both are multi-cell engines like the
+    //   XauTf family, but their pos struct uses `mfe_pts` / `mae_pts` (with
+    //   `_pts` suffix) instead of plain `mfe` / `mae` -- so the XauTf
+    //   generic lambda above will NOT compile for them. Separate factory
+    //   here; identical otherwise. Both engines trade USTEC.F (hardcoded).
+    auto _make_ustec_tf_source = [](const char* engine_name, auto* eng) {
+        return [engine_name, eng]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            const double mult = tick_value_multiplier(std::string("USTEC.F"));
+            double current_mid = 0.0;
+            const auto it = g_last_tick_bid.find("USTEC.F");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current_mid = it->second;
+            const double sz = eng->lot;
+            for (size_t i = 0; i < eng->pos.size(); ++i) {
+                const auto& p = eng->pos[i];
+                if (!p.active) continue;
+                const double use_current = (current_mid > 0.0) ? current_mid : p.entry_px;
+                const double dir  = p.is_long ? 1.0 : -1.0;
+                const double unrl = (use_current - p.entry_px) * dir * sz * mult;
+                omega::PositionSnapshot ps;
+                ps.symbol = "USTEC.F"; ps.side = p.is_long ? "LONG" : "SHORT";
+                ps.size = sz; ps.entry = p.entry_px; ps.current = use_current;
+                ps.unrealized_pnl = unrl;
+                ps.mfe = p.mfe_pts * sz * mult;
+                ps.mae = p.mae_pts * sz * mult;
+                ps.engine = engine_name;
+                out.push_back(ps);
+            }
+            return out;
+        };
+    };
+    g_open_positions.register_source("UstecTrendFollow5m",
+        _make_ustec_tf_source("UstecTrendFollow5m", &g_ustec_tf_5m));
+    g_open_positions.register_source("UstecTrendFollowHtf",
+        _make_ustec_tf_source("UstecTrendFollowHtf", &g_ustec_tf_htf));
+
+    // FX BreakoutEngine x 5 (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDJPY).
+    //   omega::BreakoutEngine inherits from BreakoutEngineBase<BreakoutEngine>
+    //   which exposes `OpenPos pos` and `const char* symbol` as public
+    //   members. OpenPos fields used here: {active, is_long, entry, size,
+    //   mfe, mae}. Pyramid add-on legs ride alongside in pos.pyramid_addons[]
+    //   but are tracked separately and not surfaced here (the GUI shows the
+    //   base position only -- consistent with the MacroCrash convention).
+    //   No has_open_position() method on BreakoutEngine; the codebase
+    //   convention (see trade_lifecycle.hpp, on_tick.hpp) is to check
+    //   `eng->pos.active` directly. tick_value_multiplier covers all five
+    //   FX symbols; USDJPY uses live g_usdjpy_mid for the JPY->USD conv.
+    auto _make_breakout_source = [](const char* engine_name,
+                                    omega::BreakoutEngine* eng) {
+        return [engine_name, eng]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!eng->pos.active) return out;
+            const auto& p = eng->pos;
+            const std::string sym = eng->symbol;
+            const double mult = tick_value_multiplier(sym);
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find(sym);
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir  = p.is_long ? 1.0 : -1.0;
+            const double unrl = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = engine_name;
+            out.push_back(ps);
+            return out;
+        };
+    };
+    g_open_positions.register_source("BreakoutEURUSD",
+        _make_breakout_source("BreakoutEURUSD", &g_eng_eurusd));
+    g_open_positions.register_source("BreakoutGBPUSD",
+        _make_breakout_source("BreakoutGBPUSD", &g_eng_gbpusd));
+    g_open_positions.register_source("BreakoutAUDUSD",
+        _make_breakout_source("BreakoutAUDUSD", &g_eng_audusd));
+    g_open_positions.register_source("BreakoutNZDUSD",
+        _make_breakout_source("BreakoutNZDUSD", &g_eng_nzdusd));
+    g_open_positions.register_source("BreakoutUSDJPY",
+        _make_breakout_source("BreakoutUSDJPY", &g_eng_usdjpy));
+
+    // 2026-05-13 S66-followup: HybridGold removed from prose listing (engine
+    //   was culled in S11 P3a+P3b, see line ~2683); count 34 now matches the
+    //   actual count of register_source() calls in this block.
+    std::cout << "[OmegaApi] g_open_positions sources registered (34 sources: "
+              "MidScalperGold, MicroScalperGold, "
               "EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, "
               "AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg, "
               "PDHLReversion, RSIReversal, MinimalH4Gold, MinimalH4US30, "
               "XauThreeBar30m, NoiseBandMomentumGoldLdn, "
               "VWAPReversion x4, TrendPullback x2, "
               "EMACrossGold, H4RegimeGold, MacroCrash, "
-              "XauTrendFollow 2h/4h/D1)\n";
+              "XauTrendFollow 2h/4h/D1, "
+              "H1SwingGold, UstecTrendFollow 5m/HTF, "
+              "Breakout EURUSD/GBPUSD/AUDUSD/NZDUSD/USDJPY)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
