@@ -605,7 +605,7 @@ static void init_engines(const std::string& cfg_path)
     g_vwap_rev_sp.LOSS_CUT_PCT            = 0.0;
     g_vwap_rev_sp.BE_ARM_PCT              = 0.0;
     g_vwap_rev_sp.BE_BUFFER_PCT           = 0.0;
-    g_vwap_rev_nq.enabled = true;  g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.40; g_vwap_rev_nq.COOLDOWN_SEC    = 300;
+    g_vwap_rev_nq.enabled = false;  g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.40; g_vwap_rev_nq.COOLDOWN_SEC    = 300;
     g_vwap_rev_nq.MAX_EXTENSION_PCT       = 1.20;
     g_vwap_rev_nq.MAX_HOLD_SEC            = 600;
     // 2026-05-13 (S37-H-followup): USTEC@28000: ~22pt LOSS_CUT, ~14pt ARM, ~5.6pt buffer.
@@ -929,7 +929,7 @@ static void init_engines(const std::string& cfg_path)
         // CAVEAT: only 2 months of data. KEEP shadow until 6+ months
         // L2 capture confirm the finding.
         g_ustec_tf_5m.shadow_mode = true;          // HARD shadow, ignore kShadowDefault
-        g_ustec_tf_5m.enabled     = true;
+        g_ustec_tf_5m.enabled     = false;
         g_ustec_tf_5m.lot         = 0.1;
         g_ustec_tf_5m.max_spread  = 5.0;
         g_ustec_tf_5m.init();
