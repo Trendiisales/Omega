@@ -594,16 +594,37 @@ static void init_engines(const std::string& cfg_path)
     //   LOSS_CUT_PCT=0.08 -> US500@7400: ~5.9pt cold-loss cut.
     //   BE_ARM_PCT  =0.05 -> US500@7400: ~3.7pt mfe arms the ratchet.
     //   BE_BUFFER_PCT=0.02 -> US500@7400: ~1.5pt buffer (~typical spread).
-    g_vwap_rev_sp.LOSS_CUT_PCT            = 0.08;
-    g_vwap_rev_sp.BE_ARM_PCT              = 0.05;
-    g_vwap_rev_sp.BE_BUFFER_PCT           = 0.02;
+    // 2026-05-13 (part K): REVERTED to baseline (all zero). VWAPReversionBacktest
+    //   P1 sweep (16 cells of BE_ARM x BE_BUFFER on 830 days of HistData ticks)
+    //   showed baseline gross +3.7085 dominates every threshold combination
+    //   tested. Best wider cell (a=0.10, b=0.06) was -0.33. US500's baseline
+    //   p95 worst loss (-0.13) is already tight, so in-flight cuts amputate
+    //   winners without meaningful tail protection. USTEC and GER40 keep the
+    //   cuts because their fatter baseline tails justify the mechanism. See
+    //   outputs/SESSION_HANDOFF_2026-05-13f.md.
+    g_vwap_rev_sp.LOSS_CUT_PCT            = 0.0;
+    g_vwap_rev_sp.BE_ARM_PCT              = 0.0;
+    g_vwap_rev_sp.BE_BUFFER_PCT           = 0.0;
     g_vwap_rev_nq.enabled = true;  g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.40; g_vwap_rev_nq.COOLDOWN_SEC    = 300;
     g_vwap_rev_nq.MAX_EXTENSION_PCT       = 1.20;
     g_vwap_rev_nq.MAX_HOLD_SEC            = 600;
     // 2026-05-13 (S37-H-followup): USTEC@28000: ~22pt LOSS_CUT, ~14pt ARM, ~5.6pt buffer.
-    g_vwap_rev_nq.LOSS_CUT_PCT            = 0.08;
-    g_vwap_rev_nq.BE_ARM_PCT              = 0.05;
-    g_vwap_rev_nq.BE_BUFFER_PCT           = 0.02;
+    // 2026-05-13 (part L): REVERTED to baseline (all zero). The part-L smoke
+    //   test against VWAPReversionBacktest (NSXUSD 4943 trades) showed the
+    //   same winner-amputation pattern part-K caught on US500/EURUSD:
+    //     TP_HIT      129 -> 58    (-55%, winners cut at BE ratchet)
+    //     gross_pnl   -7.28 -> -8.05  (cuts make a losing strategy worse)
+    //     worst_trade -6.10 -> -8.40  (tail also worsens, not just gross)
+    //     p95_loss    -0.56 -> -0.21  (only p95 improves; abs worst worsens)
+    //   BE_ARM=0.05% on USTEC@28000 = ~14pt; the typical TP is 0.40% (~112pt)
+    //   so the ratchet arms when the trade is only 12% of the way to target
+    //   and any 5.6pt noise retrace triggers BE_CUT. Same shape as US500.
+    //   USTEC.F baseline itself is marginally net-negative (-0.00147/trade)
+    //   -- a separate parameter retune session is warranted, but revert
+    //   stops the active bleed first.
+    g_vwap_rev_nq.LOSS_CUT_PCT            = 0.0;
+    g_vwap_rev_nq.BE_ARM_PCT              = 0.0;
+    g_vwap_rev_nq.BE_BUFFER_PCT           = 0.0;
     g_vwap_rev_ger40.enabled = true;  g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.30; g_vwap_rev_ger40.COOLDOWN_SEC = 300;
     g_vwap_rev_ger40.MAX_EXTENSION_PCT    = 1.00;
     g_vwap_rev_ger40.MAX_HOLD_SEC         = 600;
@@ -629,9 +650,17 @@ static void init_engines(const std::string& cfg_path)
     //   LOSS_CUT_PCT=0.05 -> EURUSD@1.10: ~5.5pip cold-loss cut.
     //   BE_ARM_PCT  =0.03 -> EURUSD@1.10: ~3.3pip mfe arms ratchet.
     //   BE_BUFFER_PCT=0.015 -> EURUSD@1.10: ~1.6pip buffer (~typical spread).
-    g_vwap_rev_eurusd.LOSS_CUT_PCT        = 0.05;
-    g_vwap_rev_eurusd.BE_ARM_PCT          = 0.03;
-    g_vwap_rev_eurusd.BE_BUFFER_PCT       = 0.015;
+    // 2026-05-13 (part K): REVERTED to baseline (all zero). The part-K
+    //   VWAPReversionBacktest precision fix (%.4f -> %.6f) revealed a hidden
+    //   91% regression -- baseline gross +0.000854 vs tuned +0.000078 (part-J
+    //   numbers had truncated both to 0.0009 vs 0.0001, masking the gap). P1b
+    //   sweep (12 cells of BE_ARM x BE_BUFFER on 404 days of HistData ticks)
+    //   found no cell beats baseline -- best (a=0.06, b=0.02) reached
+    //   +0.000761, still 11% short. EURUSD profile matches US500 (tight p95
+    //   -0.000010), so same revert call applies. See part-K handoff.
+    g_vwap_rev_eurusd.LOSS_CUT_PCT        = 0.0;
+    g_vwap_rev_eurusd.BE_ARM_PCT          = 0.0;
+    g_vwap_rev_eurusd.BE_BUFFER_PCT       = 0.0;
     // ?? NBM London session engines (07:00-13:30 UTC) ????????????????????????????
     // Covers the gap before NY open. Gold and oil are liquid from London open.
     // Uses same ATR/band logic as NY engines but anchored to London open price.

@@ -182,6 +182,18 @@ struct CellBase {
                 continue;
             }
             if (Strategy::time_exit(p, cfg)) {
+                // 2026-05-13 (part L): VWR-pattern winner exemption. Skip the
+                // time exit when bar close is in profit for the position side.
+                // 2026-05-13 (part L, smoke-test fix): omega::cell::Position
+                // has no is_long member; reuse the loop-local `direction`
+                // (==1 long, ==-1 short) for the side check.
+                const double cur_signed = (direction == 1)
+                    ? (b.close - p.entry)
+                    : (p.entry - b.close);
+                if (cur_signed > 0.0) {
+                    ++it;
+                    continue;
+                }
                 _close(p, b.close, "TIME_EXIT", now_ms, on_close);
                 it = positions_.erase(it);
                 continue;
