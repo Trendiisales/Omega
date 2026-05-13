@@ -2956,7 +2956,239 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
-    std::cout << "[OmegaApi] g_open_positions sources registered (9 sources: HybridGold, MidScalperGold, MicroScalperGold, EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg)\n";
+    // ====================================================================
+    // S65 2026-05-13 GUI position-source expansion
+    // --------------------------------------------------------------------
+    // The /api/v1/omega/positions endpoint only sees engines that register
+    // themselves here. Pre-S65 this was 8 sources -- which meant any in-
+    // flight trade from a non-FX-London-Open engine was invisible in the
+    // GUI until close (it would only appear in the standard trade ledger
+    // after _close fires). The block below adds open-position visibility
+    // for the engines that share a compatible pos shape with the existing
+    // template.
+    //
+    // NOT yet registered (different / multi-leg pos shapes -- follow-up):
+    //   BracketEngine (XAU + 12 FX/index instances)   -- pyramid leg array
+    //   GoldEngineStack (18 sub-engines)              -- legs_ vector
+    //   IndexFlowEngine / IndexMacroCrash / IndexSwing -- base_entry_ etc.
+    //   CandleFlowEngine (3 paths)                    -- multi-path state
+    //   XauTrendFollow 2h / 4h / D1                   -- TODO: check pos shape
+    //   UstecTrendFollow 5m / HTF                     -- TODO: check pos shape
+    //   EMACrossEngine, H4RegimeEngine, BreakoutEngine, MacroCrashEngine
+    //   C1RetunedPortfolio                            -- portfolio wrapper
+    //
+    // Add those as a follow-up commit once each engine's pos struct is
+    // mapped. The deferred set is the "show in GUI when fires" follow-up.
+    // ====================================================================
+
+    // PDHLReversion (XAU). pos has full {active, is_long, entry, size, mfe, mae}.
+    g_open_positions.register_source("PDHLReversion",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_pdhl_rev.has_open_position()) return out;
+            const auto& p = g_pdhl_rev.pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = "PDHLReversion";
+            out.push_back(ps);
+            return out;
+        });
+
+    // RSIReversal (XAU). pos has {active, is_long, entry, size, mfe}; no mae.
+    g_open_positions.register_source("RSIReversal",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_rsi_reversal.has_open_position()) return out;
+            const auto& p = g_rsi_reversal.pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = 0.0;  // RSIReversal pos struct has no .mae field
+            ps.engine = "RSIReversal";
+            out.push_back(ps);
+            return out;
+        });
+
+    // MinimalH4Breakout (XAU). pos_ has {active, is_long, entry, size}; no mfe/mae.
+    g_open_positions.register_source("MinimalH4Gold",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            const auto& p = g_minimal_h4_gold.pos_;
+            if (!p.active) return out;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = 0.0;  // not tracked on MinimalH4 pos_
+            ps.mae = 0.0;
+            ps.engine = "MinimalH4Gold";
+            out.push_back(ps);
+            return out;
+        });
+
+    // MinimalH4US30Breakout (DJ30.F). Same shape as MinimalH4Gold.
+    g_open_positions.register_source("MinimalH4US30",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            const auto& p = g_minimal_h4_us30.pos_;
+            if (!p.active) return out;
+            const double mult = tick_value_multiplier(std::string("DJ30.F"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("DJ30.F");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "DJ30.F"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = 0.0;
+            ps.mae = 0.0;
+            ps.engine = "MinimalH4US30";
+            out.push_back(ps);
+            return out;
+        });
+
+    // XauThreeBar30m (XAU). pos has {active, is_long, entry_px, size, mfe_pts, mae_pts}.
+    g_open_positions.register_source("XauThreeBar30m",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xau_threebar_30m.has_open_position()) return out;
+            const auto& p = g_xau_threebar_30m.pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry_px;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry_px) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry_px; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe_pts * p.size * mult;
+            ps.mae = p.mae_pts * p.size * mult;
+            ps.engine = "XauThreeBar30m";
+            out.push_back(ps);
+            return out;
+        });
+
+    // NoiseBandMomentum gold-london. Uses CrossPosition pos_ (active, is_long,
+    //   entry, size, mfe, mae).
+    g_open_positions.register_source("NoiseBandMomentumGoldLdn",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            const auto& p = g_nbm_gold_london.pos_;
+            if (!p.active) return out;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = "NoiseBandMomentumGoldLdn";
+            out.push_back(ps);
+            return out;
+        });
+
+    // VWAPReversion x 4 instances. Same CrossPosition pos_ shape.
+    auto _make_vwap_source = [](const char* engine_name, const char* sym,
+                                omega::cross::VWAPReversionEngine* eng) {
+        return [engine_name, sym, eng]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            const auto& p = eng->pos_;
+            if (!p.active) return out;
+            const double mult = tick_value_multiplier(std::string(sym));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find(sym);
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = engine_name;
+            out.push_back(ps);
+            return out;
+        };
+    };
+    g_open_positions.register_source("VWAPReversionSP",
+        _make_vwap_source("VWAPReversionSP",     "US500.F", &g_vwap_rev_sp));
+    g_open_positions.register_source("VWAPReversionNQ",
+        _make_vwap_source("VWAPReversionNQ",     "USTEC.F", &g_vwap_rev_nq));
+    g_open_positions.register_source("VWAPReversionGER40",
+        _make_vwap_source("VWAPReversionGER40",  "GER40",   &g_vwap_rev_ger40));
+    g_open_positions.register_source("VWAPReversionEURUSD",
+        _make_vwap_source("VWAPReversionEURUSD", "EURUSD",  &g_vwap_rev_eurusd));
+
+    // TrendPullback x 2 instances (gold + nq, the LIVE pair per part-F).
+    auto _make_tpb_source = [](const char* engine_name, const char* sym,
+                               omega::cross::TrendPullbackEngine* eng) {
+        return [engine_name, sym, eng]() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            const auto& p = eng->pos_;
+            if (!p.active) return out;
+            const double mult = tick_value_multiplier(std::string(sym));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find(sym);
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double unrl  = (current - p.entry) * dir * p.size * mult;
+            omega::PositionSnapshot ps;
+            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
+            ps.size = p.size; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe = p.mfe * p.size * mult;
+            ps.mae = p.mae * p.size * mult;
+            ps.engine = engine_name;
+            out.push_back(ps);
+            return out;
+        };
+    };
+    g_open_positions.register_source("TrendPullbackGold",
+        _make_tpb_source("TrendPullbackGold", "XAUUSD",  &g_trend_pb_gold));
+    g_open_positions.register_source("TrendPullbackNQ",
+        _make_tpb_source("TrendPullbackNQ",   "USTEC.F", &g_trend_pb_nq));
+
+    std::cout << "[OmegaApi] g_open_positions sources registered (20 sources: "
+              "HybridGold, MidScalperGold, MicroScalperGold, "
+              "EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, "
+              "AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg, "
+              "PDHLReversion, RSIReversal, MinimalH4Gold, MinimalH4US30, "
+              "XauThreeBar30m, NoiseBandMomentumGoldLdn, "
+              "VWAPReversion x4, TrendPullback x2)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────
