@@ -136,6 +136,10 @@
 #include <string>
 #include <deque>
 #include <vector>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -269,6 +273,17 @@ public:
     static constexpr int    EXPANSION_MIN_HISTORY = 5;
     static constexpr double EXPANSION_MULT        = 1.10;
 
+    // 2026-05-13 anti-marginal-fire absolute floor (S62).
+    //   In addition to the percentage multiplier above, range must clear
+    //   median by at least ABS_EXPANSION_FLOOR (3 pips). Blocks the
+    //   marginal-clearance-into-loss pattern observed at 07:02:41 UTC on
+    //   2026-05-13 where the engine fired with range=0.00133 vs
+    //   median=0.00120 (cleared the 1.10x multiplier by 0.5 pip) and
+    //   took an immediate SL_HIT. The absolute floor catches the case
+    //   where median is depressed and the multiplier alone is a
+    //   negligible expansion gate.
+    static constexpr double ABS_EXPANSION_FLOOR   = 0.0003;
+
     enum class Phase { IDLE, ARMED, PENDING, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
 
@@ -318,6 +333,10 @@ public:
     //   safe fallback.
     GbpusdLondonOpenEngine() noexcept {
         _try_load_range_history();
+        // 2026-05-13 (S62): also rehydrate post-trade same-level block state
+        //   so a service restart inside the 20-min post-SL window does NOT
+        //   silently bypass the re-arm block.
+        _try_load_post_trade_block();
     }
 
     // -- Main tick ------------------------------------------------------------
@@ -347,6 +366,15 @@ public:
 #endif
 
         m_last_tick_s = now_s;
+
+        // 2026-05-13 (S62): persist range_history every 30s on ANY tick,
+        //   regardless of phase. Previously the save call only ran inside
+        //   the ARMED branch, so long IDLE windows (or whole sessions where
+        //   compression never formed) left history un-persisted on disk.
+        //   With 24/7 operation, that meant restarts during IDLE silently
+        //   threw away the prior session's history and re-triggered the
+        //   S58 cold-start guard.
+        _save_range_history_if_due(now_s);
 
         ++m_ticks_received;
         m_window.push_back(mid);
@@ -507,12 +535,37 @@ public:
             if (m_sl_price > 0.0 && now_s < m_sl_cooldown_ts) {
                 if (std::fabs(w_hi - m_sl_price) < SAME_LEVEL_BLOCK_PTS ||
                     std::fabs(w_lo - m_sl_price) < SAME_LEVEL_BLOCK_PTS) {
+                    // 2026-05-13 (S62): emit a log line so this block is
+                    //   greppable in production. Previously the return was
+                    //   silent, making it ambiguous whether the block fired
+                    //   or whether its in-memory state had been wiped by a
+                    //   restart.
+                    {
+                        char _buf[320];
+                        snprintf(_buf, sizeof(_buf),
+                            "[GBP-LDN-OPEN] SAME_LEVEL_BLOCK side=SL sl_price=%.5f "
+                            "w_hi=%.5f w_lo=%.5f radius=%.5f remaining_s=%lld\n",
+                            m_sl_price, w_hi, w_lo, SAME_LEVEL_BLOCK_PTS,
+                            (long long)(m_sl_cooldown_ts - now_s));
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                     return;
                 }
             }
             if (m_win_exit_price > 0.0 && now_s < m_win_exit_block_ts) {
                 if (std::fabs(w_hi - m_win_exit_price) < SAME_LEVEL_BLOCK_PTS ||
                     std::fabs(w_lo - m_win_exit_price) < SAME_LEVEL_BLOCK_PTS) {
+                    {
+                        char _buf[320];
+                        snprintf(_buf, sizeof(_buf),
+                            "[GBP-LDN-OPEN] SAME_LEVEL_BLOCK side=WIN win_price=%.5f "
+                            "w_hi=%.5f w_lo=%.5f radius=%.5f remaining_s=%lld\n",
+                            m_win_exit_price, w_hi, w_lo, SAME_LEVEL_BLOCK_PTS,
+                            (long long)(m_win_exit_block_ts - now_s));
+                        std::cout << _buf;
+                        std::cout.flush();
+                    }
                     return;
                 }
             }
@@ -617,13 +670,22 @@ public:
                 const double median = (n % 2 == 1)
                     ? sorted[n / 2]
                     : 0.5 * (sorted[n / 2 - 1] + sorted[n / 2]);
-                const double threshold = median * EXPANSION_MULT;
-                if (range < threshold) {
+                // 2026-05-13 (S62): combined gate. Range must clear BOTH the
+                //   percentage threshold (median * 1.10) AND the absolute
+                //   floor (median + 3 pips). Either condition can block.
+                //   Catches the marginal-clearance pattern where median is
+                //   depressed and the multiplier alone is a negligible
+                //   expansion gate.
+                const double pct_threshold = median * EXPANSION_MULT;
+                const double abs_threshold = median + ABS_EXPANSION_FLOOR;
+                if (range < pct_threshold || range < abs_threshold) {
                     {
-                        char _buf[256];
+                        char _buf[384];
                         snprintf(_buf, sizeof(_buf),
-                            "[GBP-LDN-OPEN] ATR_GATE_FAIL range=%.5f median=%.5f mult=%.2f threshold=%.5f hist=%d\n",
-                            range, median, EXPANSION_MULT, threshold,
+                            "[GBP-LDN-OPEN] ATR_GATE_FAIL range=%.5f median=%.5f "
+                            "mult=%.2f pct_thr=%.5f abs_floor=%.5f abs_thr=%.5f hist=%d\n",
+                            range, median, EXPANSION_MULT,
+                            pct_threshold, ABS_EXPANSION_FLOOR, abs_threshold,
                             (int)m_range_history.size());
                         std::cout << _buf;
                         std::cout.flush();
@@ -837,15 +899,117 @@ private:
     std::deque<double> m_range_history;
 
     // S61 2026-05-07: range_history persistence (warm-restart for S58 guard).
+    // S62 2026-05-13: staleness extended 7200 -> 86400 (24h). Operating model
+    //   is 24/7; a single-day outage should not force a cold-start.
     int64_t m_range_history_last_save_s = 0;
     static constexpr int64_t RANGE_HIST_SAVE_INTERVAL_S = 30;
-    static constexpr int64_t RANGE_HIST_STALENESS_S     = 7200;
+    static constexpr int64_t RANGE_HIST_STALENESS_S     = 86400;
 
     static const char* _range_hist_path() noexcept {
 #ifdef _WIN32
         return "C:\\Omega\\state\\gbpusd_london_open_range_history.csv";
 #else
         return "state/gbpusd_london_open_range_history.csv";
+#endif
+    }
+
+    // S62 2026-05-13: ensure the state directory exists before any save.
+    //   Without this, a missing C:\Omega\state\ silently failed every save
+    //   call -> range_history never persisted -> every restart cold-started
+    //   the ATR gate. Idempotent: existing-dir error from mkdir is ignored.
+    static void _ensure_state_dir() noexcept {
+#ifndef OMEGA_BACKTEST
+#ifdef _WIN32
+        _mkdir("C:\\Omega\\state");
+#else
+        ::mkdir("state", 0755);
+#endif
+#endif
+    }
+
+    // S62 2026-05-13: post-trade same-level block persistence.
+    //   Persists m_sl_price / m_sl_cooldown_dir / m_sl_cooldown_ts /
+    //   m_win_exit_price / m_win_exit_block_ts so that a restart inside the
+    //   20-min post-SL window does NOT silently clear the re-arm block.
+    //   Saves on every state change in _close(). Loads in the ctor.
+    static const char* _post_trade_block_path() noexcept {
+#ifdef _WIN32
+        return "C:\\Omega\\state\\gbpusd_london_open_post_trade_block.csv";
+#else
+        return "state/gbpusd_london_open_post_trade_block.csv";
+#endif
+    }
+
+    void _try_load_post_trade_block() noexcept {
+#ifndef OMEGA_BACKTEST
+        const char* path = _post_trade_block_path();
+        FILE* f = std::fopen(path, "r");
+        if (!f) {
+            std::printf("[GBP-LDN-OPEN] POST_TRADE_BLOCK_LOAD no_file path=%s\n", path);
+            std::fflush(stdout);
+            return;
+        }
+        char line[256];
+        double sl_price = 0.0;
+        int    sl_cooldown_dir = 0;
+        long long sl_cooldown_ts = 0;
+        double win_exit_price = 0.0;
+        long long win_exit_block_ts = 0;
+        while (std::fgets(line, sizeof(line), f)) {
+            if (line[0] == '#' || line[0] == '\n' || line[0] == '\r' || line[0] == '\0') continue;
+            char key[64];
+            char val[128];
+            if (std::sscanf(line, "%63[^=]=%127[^\n]", key, val) != 2) continue;
+            if      (std::strcmp(key, "sl_price") == 0)          sl_price          = std::strtod(val, nullptr);
+            else if (std::strcmp(key, "sl_cooldown_dir") == 0)   sl_cooldown_dir   = (int)std::strtol(val, nullptr, 10);
+            else if (std::strcmp(key, "sl_cooldown_ts") == 0)    sl_cooldown_ts    = std::strtoll(val, nullptr, 10);
+            else if (std::strcmp(key, "win_exit_price") == 0)    win_exit_price    = std::strtod(val, nullptr);
+            else if (std::strcmp(key, "win_exit_block_ts") == 0) win_exit_block_ts = std::strtoll(val, nullptr, 10);
+        }
+        std::fclose(f);
+        const long long now_s = (long long)std::time(nullptr);
+        // Only restore values whose block window is still active. Expired
+        //   blocks carry no meaning at this point.
+        bool restored_any = false;
+        if (sl_cooldown_ts > now_s && sl_price > 0.0) {
+            m_sl_price        = sl_price;
+            m_sl_cooldown_dir = sl_cooldown_dir;
+            m_sl_cooldown_ts  = (int64_t)sl_cooldown_ts;
+            restored_any = true;
+        }
+        if (win_exit_block_ts > now_s && win_exit_price > 0.0) {
+            m_win_exit_price    = win_exit_price;
+            m_win_exit_block_ts = (int64_t)win_exit_block_ts;
+            restored_any = true;
+        }
+        std::printf("[GBP-LDN-OPEN] POST_TRADE_BLOCK_LOAD restored=%d sl_price=%.5f sl_rem_s=%lld win_price=%.5f win_rem_s=%lld\n",
+                    (int)restored_any,
+                    m_sl_price,
+                    (m_sl_cooldown_ts > now_s) ? (long long)(m_sl_cooldown_ts - now_s) : 0LL,
+                    m_win_exit_price,
+                    (m_win_exit_block_ts > now_s) ? (long long)(m_win_exit_block_ts - now_s) : 0LL);
+        std::fflush(stdout);
+#endif
+    }
+
+    void _save_post_trade_block() noexcept {
+#ifndef OMEGA_BACKTEST
+        _ensure_state_dir();
+        const char* path = _post_trade_block_path();
+        FILE* f = std::fopen(path, "w");
+        if (!f) {
+            std::printf("[GBP-LDN-OPEN] POST_TRADE_BLOCK_SAVE_FAIL path=%s\n", path);
+            std::fflush(stdout);
+            return;
+        }
+        const long long now_s = (long long)std::time(nullptr);
+        std::fprintf(f, "# post_trade_block v1 saved=%lld\n", now_s);
+        std::fprintf(f, "sl_price=%.10f\n", m_sl_price);
+        std::fprintf(f, "sl_cooldown_dir=%d\n", m_sl_cooldown_dir);
+        std::fprintf(f, "sl_cooldown_ts=%lld\n", (long long)m_sl_cooldown_ts);
+        std::fprintf(f, "win_exit_price=%.10f\n", m_win_exit_price);
+        std::fprintf(f, "win_exit_block_ts=%lld\n", (long long)m_win_exit_block_ts);
+        std::fclose(f);
 #endif
     }
 
@@ -890,6 +1054,8 @@ private:
 
     void _save_range_history() noexcept {
 #ifndef OMEGA_BACKTEST
+        // S62 2026-05-13: ensure state dir before opening file.
+        _ensure_state_dir();
         const char* path = _range_hist_path();
         FILE* f = std::fopen(path, "w");
         if (!f) {
@@ -979,14 +1145,26 @@ private:
         //   SL_HIT -> 20-min block at entry price (rejected level).
         //   TRAIL_HIT or TP_HIT -> 10-min block at exit price (exhaustion).
         //   BE_HIT -> no stamp.
+        // S62 2026-05-13: persist block state to disk on every stamp so a
+        //   service restart inside the block window does not silently clear
+        //   it. Without this, an in-memory-only m_sl_price reset to 0.0
+        //   on restart allows immediate re-arming near the rejected level
+        //   (root cause of the 07:29 UTC 2026-05-13 GBP re-arm at 0.3 pips
+        //   from the prior SL entry).
+        bool _stamp_changed = false;
         if (reason == std::string("SL_HIT")) {
             m_sl_cooldown_dir = is_long_ ? 1 : -1;
             m_sl_cooldown_ts  = now_s + SAME_LEVEL_POST_SL_BLOCK_S;
             m_sl_price        = entry_;
+            _stamp_changed = true;
         }
         if (reason == std::string("TRAIL_HIT") || reason == std::string("TP_HIT")) {
             m_win_exit_price    = exit_px;
             m_win_exit_block_ts = now_s + SAME_LEVEL_POST_WIN_BLOCK_S;
+            _stamp_changed = true;
+        }
+        if (_stamp_changed) {
+            _save_post_trade_block();
         }
 
         omega::TradeRecord tr;
