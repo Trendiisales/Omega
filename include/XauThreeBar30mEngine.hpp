@@ -231,6 +231,16 @@ public:
     int    block_hour_start    = -1;    // (9) session block start UTC; -1 disables
     int    block_hour_end      = -1;    //     session block end UTC
 
+    // ── S63 2026-05-13 VWR-pattern in-flight protection ───────────────────
+    //   Mirrors VWAPReversionEngine (CrossAssetEngines.hpp L1245-1247) but
+    //   uses entry-price-relative percentages (XAU @ $3700, 0.05 -> $1.85).
+    //   The 3-bar reversal pattern is structural mean-rev; without these
+    //   guards, "fired and stopped" trades that the SL eventually catches
+    //   bleed for longer than needed. Set _PCT = 0.0 to disable a phase.
+    double LOSS_CUT_PCT        = 0.05;  // cold-loss cut threshold (% of entry)
+    double BE_ARM_PCT          = 0.03;  // mfe % of entry that arms BE ratchet
+    double BE_BUFFER_PCT       = 0.012; // BE_CUT trigger after arm
+
     // ── Bracket geometry — locked to Pass-8 sweep optimum ──────────────────
     // SL = 2.0 * ATR14, TP = 4.0 * ATR14 (R:R 2:1). Per the S33 sweep this
     // was the cell variant that produced n=639 +$979 over 30mo at BE=$1.59
@@ -464,6 +474,33 @@ private:
         if (pos.entry_px > 0.0 && pos.atr_at_entry > 0.0 && mid > 0.0) {
             pos.sl_px = guards.update_sl(pos.is_long, pos.entry_px,
                                          pos.sl_px, mid, pos.atr_at_entry);
+        }
+
+        // S63 2026-05-13 VWR-pattern in-flight protection. Runs BEFORE the
+        // standard SL/TP check so cold-loss / giveback cuts take priority.
+        // Uses guards.st.mfe_pts / mae_pts (already updated above) as the
+        // MFE/MAE source.
+        const double move = pos.is_long ? (mid - pos.entry_px)
+                                        : (pos.entry_px - mid);
+        // Phase 1: BE_RATCHET
+        if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0 && pos.entry_px > 0.0) {
+            const double arm_pts    = pos.entry_px * BE_ARM_PCT    / 100.0;
+            const double buffer_pts = pos.entry_px * BE_BUFFER_PCT / 100.0;
+            if (guards.st.mfe_pts >= arm_pts && move <= buffer_pts) {
+                const double exit_px = pos.is_long ? bid : ask;
+                _close(exit_px, "BE_CUT", now_ms, on_close);
+                return;
+            }
+        }
+        // Phase 2: LOSS_CUT
+        if (LOSS_CUT_PCT > 0.0 && pos.entry_px > 0.0) {
+            const double adverse       = -move;
+            const double loss_cut_dist = pos.entry_px * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = pos.is_long ? bid : ask;
+                _close(exit_px, "LOSS_CUT", now_ms, on_close);
+                return;
+            }
         }
 
         // Standard SL/TP check against the (possibly tightened) pos.sl_px.

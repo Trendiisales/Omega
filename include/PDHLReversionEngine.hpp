@@ -56,6 +56,21 @@ public:
     bool    enabled          = true;
     bool    shadow_mode      = true;
 
+    // S63 2026-05-13 VWR-pattern in-flight protection (LOSS_CUT + BE_RATCHET).
+    //   Mirrors CrossAssetEngines.hpp VWAPReversionEngine L1245-1247.
+    //   Defaults sized for gold daily-range scale (PDH-PDL typically 30-80pt
+    //   on XAUUSD; entry inside top/bottom 25% so target distance is roughly
+    //   0.5 * range).
+    //   LOSS_CUT_PCT   -- cut when adverse >= entry*pct/100. Catches trades
+    //                     that go straight adverse from entry. 0.0 disables.
+    //   BE_ARM_PCT     -- mfe % of entry that arms BE ratchet. 0.0 disables.
+    //   BE_BUFFER_PCT  -- BE_CUT triggers when move <= entry*pct/100 after
+    //                     arm. Typical = entry-time spread expressed as %.
+    //   Override per-instance in engine_init.hpp if defaults don't suit.
+    double  LOSS_CUT_PCT     = 0.04;  // ~$1.50 cut at $3700 entry (~10 pips XAU)
+    double  BE_ARM_PCT       = 0.025; // ~$0.92 arm threshold
+    double  BE_BUFFER_PCT    = 0.01;  // ~$0.37 BE-trigger buffer
+
     // -- State ---------------------------------------------------------------
     struct Position {
         bool    active    = false;
@@ -202,6 +217,36 @@ private:
         if (move < pos.mae) pos.mae = move;
 
         const int64_t hold_ms = now_ms - pos.entry_ms;
+
+        // S63 2026-05-13 VWR-pattern in-flight protection.
+        //   Phase 1 (BE_RATCHET): if mfe reached arm threshold and price has
+        //     given back, cut at break-even-plus-buffer. Catches trades that
+        //     went +X then returned to near-entry.
+        //   Phase 2 (LOSS_CUT): if trade went straight adverse, cut early.
+        //   Both run BEFORE the legacy SL/TP/MAX_HOLD chain so they take
+        //   priority. Either phase disable-able by setting _PCT = 0.0.
+        if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0) {
+            const double arm_pts    = pos.entry * BE_ARM_PCT    / 100.0;
+            const double buffer_pts = pos.entry * BE_BUFFER_PCT / 100.0;
+            if (pos.mfe >= arm_pts && move <= buffer_pts) {
+                printf("[PDHL-REV] BE_CUT mfe=%.2f arm=%.2f move=%.2f buf=%.2f\n",
+                       pos.mfe, arm_pts, move, buffer_pts);
+                fflush(stdout);
+                _close(pos.is_long ? bid : ask, "BE_CUT", now_ms, on_close);
+                return;
+            }
+        }
+        if (LOSS_CUT_PCT > 0.0) {
+            const double adverse       = -move;  // positive when losing
+            const double loss_cut_dist = pos.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                printf("[PDHL-REV] LOSS_CUT adverse=%.2f >= %.2f (%.3f%% of entry)\n",
+                       adverse, loss_cut_dist, LOSS_CUT_PCT);
+                fflush(stdout);
+                _close(pos.is_long ? bid : ask, "LOSS_CUT", now_ms, on_close);
+                return;
+            }
+        }
 
         // SL hit
         if ((pos.is_long && bid <= pos.sl) || (!pos.is_long && ask >= pos.sl)) {

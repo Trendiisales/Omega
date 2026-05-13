@@ -2549,6 +2549,18 @@ public:
     int    WARMUP_TICKS      = 120;   // ticks before first signal (ATR warmup)
     bool   enabled           = true;
 
+    // S63 2026-05-13 VWR-pattern in-flight protection (LOSS_CUT + BE_RATCHET).
+    //   Mirrors VWAPReversionEngine pattern (this same file, L1245-1247).
+    //   NoiseBandMomentum is mean-rev + fixed-timeout profile -- same failure
+    //   mode (cost drag from timeout-erased profit + cold-loss outliers) that
+    //   motivated the VWR pattern. Defaults sized for gold-london (the only
+    //   live instance); override per-instance in engine_init.hpp if needed.
+    //   Existing VWAP_STOP early-exit is RETAINED -- it triggers on a different
+    //   condition (price crossed VWAP) and is complementary.
+    double LOSS_CUT_PCT      = 0.06;   // cold-loss cut threshold (% of entry)
+    double BE_ARM_PCT        = 0.04;   // mfe % of entry that arms BE ratchet
+    double BE_BUFFER_PCT     = 0.015;  // BE_CUT triggers at move <= entry*pct/100 after arm
+
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
     CrossSignal on_tick(const std::string& sym, double bid, double ask,
@@ -2736,6 +2748,37 @@ private:
         const double mid = (bid + ask) * 0.5;
         _update_vwap(mid);
 
+        // S63 2026-05-13 VWR-pattern in-flight protection.
+        //   Runs BEFORE the VWAP_STOP check so it has priority on cold-loss
+        //   trades that have not yet crossed VWAP. Both phases disable-able
+        //   by setting _PCT = 0.0.
+        const double move = pos_.is_long ? (mid - pos_.entry) : (pos_.entry - mid);
+        if (move > pos_.mfe) pos_.mfe = move;
+        // Phase 1: BE_RATCHET (giveback prevention)
+        if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0) {
+            const double arm_pts    = pos_.entry * BE_ARM_PCT    / 100.0;
+            const double buffer_pts = pos_.entry * BE_BUFFER_PCT / 100.0;
+            if (pos_.mfe >= arm_pts && move <= buffer_pts) {
+                printf("[NBM] BE_CUT mfe=%.4f arm=%.4f move=%.4f buf=%.4f\n",
+                       pos_.mfe, arm_pts, move, buffer_pts);
+                fflush(stdout);
+                pos_.force_close(bid, ask, on_close, "BE_CUT");
+                return;
+            }
+        }
+        // Phase 2: LOSS_CUT (cold-loss cut)
+        if (LOSS_CUT_PCT > 0.0) {
+            const double adverse       = -move;
+            const double loss_cut_dist = pos_.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                printf("[NBM] LOSS_CUT adverse=%.4f >= %.4f (%.3f%% of entry)\n",
+                       adverse, loss_cut_dist, LOSS_CUT_PCT);
+                fflush(stdout);
+                pos_.force_close(bid, ask, on_close, "LOSS_CUT");
+                return;
+            }
+        }
+
         const int64_t age = ca_now_sec() - entry_time_;
         if (age > 60 && vwap_ > 0.0 && band_half_entry_ > 0.0) {
             const double tol = band_half_entry_ * VWAP_STOP_MULT;
@@ -2755,8 +2798,9 @@ private:
         // 1800s (30min) timeout was cutting gold-london winners that were
         // still trending toward TP -- the same failure mode that motivated
         // the VWR L1417 pattern.
-        const double move = pos_.is_long ? (mid - pos_.entry)
-                                         : (pos_.entry - mid);
+        // S63 2026-05-13: `move` already declared at top of function (for
+        // the LOSS_CUT/BE_RATCHET phase) -- reuse it here instead of
+        // redeclaring.
         const int eff_max_hold = (move > 0.0)
             ? std::numeric_limits<int>::max()
             : MAX_HOLD_SEC;

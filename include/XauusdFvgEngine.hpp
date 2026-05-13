@@ -126,6 +126,23 @@ public:
     static constexpr double TP_ATR_MULT            = 5.0;
     static constexpr int    TIME_STOP_BARS         = 60;        // 15h on 15m
 
+    // S63 2026-05-13 VWR-pattern in-flight protection (LOSS_CUT + BE_RATCHET).
+    //   Non-const (instance-mutable) so engine_init.hpp can tune per-instance
+    //   without touching the constexpr risk parameters above. Disabled in
+    //   first_touch_only_mode (verifier path) to preserve v3 bit-equivalence.
+    //   LOSS_CUT_PCT  -- cold-loss cut when adverse >= entry*pct/100.
+    //                    XAU @ $3700, 0.05 -> $1.85 cut (~18 pips).
+    //                    SL_ATR_MULT=2.5 typically gives 5-15pt SL distance,
+    //                    so LOSS_CUT only fires on outliers that exceed the
+    //                    SL via slippage or that the ATR-based SL hasn't
+    //                    triggered for a fast-moving market.
+    //   BE_ARM_PCT    -- mfe % of entry that arms BE ratchet.
+    //   BE_BUFFER_PCT -- BE_CUT triggers when move <= entry*pct/100 after arm.
+    //   Set _PCT = 0.0 to disable that phase.
+    double LOSS_CUT_PCT  = 0.05;
+    double BE_ARM_PCT    = 0.03;
+    double BE_BUFFER_PCT = 0.012;
+
     // ---- Sizing ($10k baseline, 0.5%/trade) -------------------------------
     static constexpr double STARTING_EQUITY        = 10000.0;
     static constexpr double RISK_PER_TRADE_PCT     = 0.005;
@@ -1043,7 +1060,33 @@ private:
         // what eliminates the half-spread early-trigger drift that ends the
         // engine's overlap window earlier than v3's exit_idx and lets
         // subsequent FVGs that v3 would have overlap-skipped fire.
+        // S63 2026-05-13: VWR-pattern gates also skipped in verifier mode
+        //   so per-tick LOSS_CUT/BE_CUT decisions don't drift v3 equivalence.
         if (first_touch_only_mode) return;
+
+        // S63 2026-05-13 VWR-pattern in-flight protection. Runs BEFORE the
+        // SL/TP first-touch checks below so cold-loss / giveback cuts take
+        // priority. Both phases disable-able via _PCT = 0.0.
+        // Phase 1: BE_RATCHET
+        if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0) {
+            const double arm_pts    = m_pos.entry * BE_ARM_PCT    / 100.0;
+            const double buffer_pts = m_pos.entry * BE_BUFFER_PCT / 100.0;
+            if (m_pos.mfe >= arm_pts && move <= buffer_pts) {
+                const double exit_px = m_pos.is_long ? bid : ask;
+                _close(exit_px, "BE_CUT", now_s, on_close);
+                return;
+            }
+        }
+        // Phase 2: LOSS_CUT
+        if (LOSS_CUT_PCT > 0.0) {
+            const double adverse       = -move;
+            const double loss_cut_dist = m_pos.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = m_pos.is_long ? bid : ask;
+                _close(exit_px, "LOSS_CUT", now_s, on_close);
+                return;
+            }
+        }
 
         // SL takes precedence on intrabar tie -- mirrors v3 simulate_trade()
         // which classifies "if sl_hit and tp_hit" as a stop.

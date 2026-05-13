@@ -400,13 +400,31 @@ public:
     }
 
     // Call every tick. Returns true if position closed.
+    // S63 2026-05-13: loss_cut_pct optional param -- VWR-pattern cold-loss cut.
+    //   Defaults to 0.0 (disabled) for backward compat with any caller that
+    //   didn't update. IndexFlowEngine::on_tick passes its LOSS_CUT_PCT.
     bool manage(double bid, double ask, double atr, int max_hold_sec,
-                const char* regime, CloseCb& on_close) noexcept {
+                const char* regime, CloseCb& on_close,
+                double loss_cut_pct = 0.0) noexcept {
         if (!active) return false;
         const double mid   = (bid + ask) * 0.5;
         const double move  = is_long ? (mid - entry) : (entry - mid);
         if (move > mfe) mfe = move;
         if (-move > mae) mae = -move;
+
+        // S63 2026-05-13 VWR-pattern cold-loss cut. Runs BEFORE staircase
+        // trail / SL / timeout so cold-loss outliers are caught early.
+        // BE_RATCHET intentionally omitted -- staircase Stage 1 (BE@1xATR)
+        // handles giveback prevention already.
+        if (loss_cut_pct > 0.0 && entry > 0.0) {
+            const double adverse       = -move;
+            const double loss_cut_dist = entry * loss_cut_pct / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = is_long ? bid : ask;
+                emit(exit_px, "LOSS_CUT", regime, on_close);
+                return true;
+            }
+        }
 
         // Staircase trail -- ATR-proportional tiered SL advancement
         // Uses atr_at_entry (stable) not current ATR (changes every 25 ticks)
@@ -526,6 +544,14 @@ public:
     enum class Phase { IDLE, FLOW_BUILDING, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
 
+    // S63 2026-05-13 VWR-pattern cold-loss cut (LOSS_CUT only).
+    //   The staircase ATR trail (Stage 1 BE @ 1xATR, Stage 2/3 tightened
+    //   trail) covers giveback well already, so we add ONLY the cold-loss
+    //   phase here. Passed to pos_.manage() as a default-valued parameter
+    //   to avoid breaking IdxOpenPosition's signature for other callers.
+    //   Default 0.07 = ~5.2pt cut at US500@7400 entry. Set to 0.0 to disable.
+    double LOSS_CUT_PCT  = 0.07;
+
     explicit IndexFlowEngine(const char* symbol) {
         if      (strcmp(symbol, "US500.F") == 0) cfg_ = IDX_CFG_SP;
         else if (strcmp(symbol, "USTEC.F") == 0) cfg_ = IDX_CFG_NQ;
@@ -616,7 +642,8 @@ public:
             };
             const bool closed = pos_.manage(bid, ask, atr_tracker_.atr(),
                                             cfg_.max_hold_sec,
-                                            "IFLOW", cb_wrap);
+                                            "IFLOW", cb_wrap,
+                                            LOSS_CUT_PCT);
             if (closed) {
                 phase = Phase::COOLDOWN;
                 cooldown_until_ms_ = idx_now_ms() + cfg_.cooldown_ms;
@@ -929,6 +956,15 @@ public:
     bool shadow_mode     = true;   // NEVER change without authorization
     bool pyramid_shadow  = true;   // NEVER change without authorization
 
+    // S63 2026-05-13 VWR-pattern in-flight protection (LOSS_CUT + BE_RATCHET).
+    //   Macro-crash fade is mean-reversion style with a 60-min timeout
+    //   profile (cfg_.max_hold_sec). Defaults use VWR's index-tuned values
+    //   (US500 @ 7400, 0.08 -> 5.92pt LOSS_CUT). Override per-instance in
+    //   engine_init.hpp if needed.
+    double LOSS_CUT_PCT  = 0.08;
+    double BE_ARM_PCT    = 0.05;
+    double BE_BUFFER_PCT = 0.02;
+
     explicit IndexMacroCrashEngine(const char* symbol) {
         if      (strcmp(symbol, "US500.F") == 0) cfg_ = IDX_CFG_SP;
         else if (strcmp(symbol, "USTEC.F") == 0) cfg_ = IDX_CFG_NQ;
@@ -1033,6 +1069,35 @@ private:
                          CloseCb& on_close) noexcept {
         const double move = base_is_long_ ? (mid - base_entry_) : (base_entry_ - mid);
         if (move > base_mfe_) base_mfe_ = move;
+
+        // S63 2026-05-13 VWR-pattern in-flight protection. Runs BEFORE the
+        // staircase BE/trail so cold-loss / giveback cuts take priority.
+        // Phase 1: BE_RATCHET
+        if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0 && base_entry_ > 0.0) {
+            const double arm_pts    = base_entry_ * BE_ARM_PCT    / 100.0;
+            const double buffer_pts = base_entry_ * BE_BUFFER_PCT / 100.0;
+            if (base_mfe_ >= arm_pts && move <= buffer_pts) {
+                const double exit_px = base_is_long_ ? bid : ask;
+                const double rem_size = bracket_fired_ ? velocity_size_ : base_size_;
+                emit_partial(exit_px, "BE_CUT", on_close, rem_size);
+                base_active_ = false;
+                cooldown_until_ = idx_now_sec() + cfg_.cooldown_ms / 1000;
+                return;
+            }
+        }
+        // Phase 2: LOSS_CUT
+        if (LOSS_CUT_PCT > 0.0 && base_entry_ > 0.0) {
+            const double adverse       = -move;
+            const double loss_cut_dist = base_entry_ * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = base_is_long_ ? bid : ask;
+                const double rem_size = bracket_fired_ ? velocity_size_ : base_size_;
+                emit_partial(exit_px, "LOSS_CUT", on_close, rem_size);
+                base_active_ = false;
+                cooldown_until_ = idx_now_sec() + cfg_.cooldown_ms / 1000;
+                return;
+            }
+        }
 
         const double a = (base_atr_ > 0.0) ? base_atr_ : atr;
 

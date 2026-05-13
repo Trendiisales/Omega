@@ -83,6 +83,19 @@ public:
     int    COOLDOWN_S_VACUUM  = 30;   // reduced cooldown when vacuum confirms direction
     int    MAX_HOLD_S         = 600;
     int    MIN_HOLD_S         = 8;
+
+    // S63 2026-05-13 VWR-pattern cold-loss cut (LOSS_CUT only).
+    //   RSI already has BE_LOCK at 0.4x ATR profit which serves the
+    //   BE_RATCHET role (different mechanism but same intent), so we add
+    //   ONLY the LOSS_CUT phase here. Mirrors VWAPReversionEngine.
+    //   LOSS_CUT_PCT  -- cut when adverse >= entry*pct/100. Catches trades
+    //                    that go straight adverse from entry without ever
+    //                    reaching BE_LOCK. 0.0 disables.
+    //   XAU entry @ $3700 with LOSS_CUT_PCT = 0.05 -> cut at $1.85 adverse
+    //   (~18 pips XAU). SL_ATR_MULT=0.6 typically yields SL_dist ~ 1.2pt
+    //   at ATR=2; LOSS_CUT only fires when ATR-based SL hasn't already
+    //   triggered AND adverse exceeds the absolute floor.
+    double LOSS_CUT_PCT       = 0.05;
     double L2_LONG_MIN        = 0.40; // min imbalance for LONG (not ask-heavy)
     double L2_SHORT_MAX       = 0.60; // max imbalance for SHORT (not bid-heavy)
     bool   enabled            = true;
@@ -555,6 +568,25 @@ private:
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
         if ((now_s - pos.entry_ts) < MIN_HOLD_S) return;
+        // S63 2026-05-13 VWR-pattern cold-loss cut.
+        //   Fires only after MIN_HOLD_S to avoid micro-noise triggers.
+        //   BE_LOCK (below) covers the giveback role.
+        if (LOSS_CUT_PCT > 0.0) {
+            const double adverse       = -move;
+            const double loss_cut_dist = pos.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                {
+                    char _buf[256];
+                    snprintf(_buf, sizeof(_buf),
+                        "[RSI-REV] LOSS_CUT adverse=%.2f >= %.2f (%.3f%% of entry)\n",
+                        adverse, loss_cut_dist, LOSS_CUT_PCT);
+                    std::cout << _buf;
+                    std::cout.flush();
+                }
+                _close(pos.is_long ? bid : ask, "LOSS_CUT", now_s, on_close);
+                return;
+            }
+        }
         // 2026-05-13 (part L): VWR-pattern winner exemption.
         if ((now_s - pos.entry_ts) > MAX_HOLD_S && move <= 0.0) {
             _close(pos.is_long ? bid : ask, "MAX_HOLD", now_s, on_close); return;
