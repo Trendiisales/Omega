@@ -287,6 +287,37 @@ struct CellBase {
             if (bars_since_mae < needed) return 0;
         }
 
+        // 2026-05-13 (part L, P2 follow-up: in-flight MAE stacking gate).
+        //   Mirrors V1 TsmomCell::on_bar lines 436-470 (S37-H-followup).
+        //   The S12 cooldown above only fires AFTER an MAE_EXIT has
+        //   stamped last_mae_exit_bar_. With multi-position semantics
+        //   (max_pos > 1), a second entry can fire one bar after the
+        //   first while the first is still open and already deeply
+        //   adverse -- the S12 gate is inert at that moment because no
+        //   MAE_EXIT has fired yet.
+        //
+        //   This gate blocks NEW entries whenever ANY currently-open
+        //   position is already halfway to its MAE_EXIT threshold
+        //   (p.mae <= -0.5 * mae_exit_atr * p.atr). Catches "open
+        //   position is bleeding, don't stack another one in the same
+        //   direction".
+        //
+        //   Disabled when mae_exit_atr <= 0.0 (MAE_EXIT itself is off,
+        //   so the half-MAE threshold has no meaning -- matches V1).
+        //
+        //   V1 emits a printf on gate fire; CellBase contract is
+        //   no-printf (see file header comment), so the gate-fire signal
+        //   is observable only via the absence of a new entry in the
+        //   ledger. Behavioural parity vs V1 is unaffected.
+        if (mae_exit_atr > 0.0 && !positions_.empty()) {
+            const double half_mae_thresh = 0.5 * mae_exit_atr;
+            for (const auto& openp : positions_) {
+                if (openp.atr <= 0.0) continue;
+                const double half_mae_pts = half_mae_thresh * openp.atr;
+                if (openp.mae <= -half_mae_pts) return 0;
+            }
+        }
+
         if (!std::isfinite(atr14_at_signal) || atr14_at_signal <= 0.0)  return 0;
         const double spread_pt = ask - bid;
         if (!std::isfinite(spread_pt) || spread_pt < 0.0)               return 0;
