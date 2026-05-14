@@ -163,6 +163,30 @@ public:
     double lot         = 0.01;
     double max_spread  = 1.0;
 
+    // S63 2026-05-14 (part W): VWR-pattern in-flight protection (full trio).
+    //   Defaults to ALL ZERO -- S63 is OFF on production until per-instrument
+    //   backtest evidence justifies enabling. The XauTrendFollow trio
+    //   (2h/4h/D1) is in STATE B (hooks declared + mgmt-path implemented +
+    //   deliberately zeroed at class default) until the planned Phase 3
+    //   walk-forward sweep (scripts/xtf_*_wf_t1.py + the dedicated
+    //   XauTrendFollowBacktest harness) produces baseline-vs-tuned evidence.
+    //
+    //   D1 CAVEAT: this engine has very low cadence (~2 trades/month
+    //   combined across 3 cells, n=15-31 per cell over 30 months). S63
+    //   evaluation will have wide error bars. A favourable S63 cell on
+    //   D1 should be triple-checked against the small-n risk before
+    //   activating, and the pass criterion may want to be tightened
+    //   (e.g. min trade count per window) when the sweep runs.
+    //
+    //   LOSS_CUT_PCT  -- cut when adverse >= entry*pct/100. Phase 2 (cold-loss).
+    //   BE_ARM_PCT    -- mfe % of entry that arms BE ratchet. Phase 1 (giveback).
+    //   BE_BUFFER_PCT -- BE_CUT triggers when move <= entry*pct/100 after arm.
+    //   Override via the backtest harness CLI for the sweep; set _PCT = 0.0
+    //   to disable a phase entirely.
+    double LOSS_CUT_PCT  = 0.0;
+    double BE_ARM_PCT    = 0.0;
+    double BE_BUFFER_PCT = 0.0;
+
     std::array<XauTfD1Pos, kXauTfD1NumCells> pos{};
 
     // Daily bar history (last 40 days; enough for Momentum20 + ADX + Keltner)
@@ -471,6 +495,35 @@ private:
                                             : (p.entry_px - mid);
         if (favourable > p.mfe) p.mfe = favourable;
         if (-favourable > p.mae) p.mae = -favourable;
+
+        // S63 2026-05-14 (part W): VWR-pattern in-flight protection. Runs
+        //   BEFORE the SL/TP exit check so cold-loss/giveback cuts take
+        //   priority. Mirrors IndexMacroCrashEngine pattern at
+        //   IndexFlowEngine.hpp:1123-1150. Both phases gated on their _PCT
+        //   field being > 0.0 so defaulting all three to 0.0 (state B) is
+        //   a structural no-op.
+        // Phase 1: BE_RATCHET -- after mfe crosses arm threshold, exit at BE
+        //          if current move falls back to within buffer.
+        if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0 && p.entry_px > 0.0) {
+            const double arm_pts    = p.entry_px * BE_ARM_PCT    / 100.0;
+            const double buffer_pts = p.entry_px * BE_BUFFER_PCT / 100.0;
+            if (p.mfe >= arm_pts && favourable <= buffer_pts) {
+                const double exit_px_be = p.is_long ? bid : ask;
+                _close(ci, exit_px_be, "BE_CUT", now_ms, on_close);
+                return;
+            }
+        }
+        // Phase 2: LOSS_CUT -- cold-loss cut for trades that go straight
+        //          adverse without ever reaching the ATR-based SL.
+        if (LOSS_CUT_PCT > 0.0 && p.entry_px > 0.0) {
+            const double adverse       = -favourable;
+            const double loss_cut_dist = p.entry_px * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px_lc = p.is_long ? bid : ask;
+                _close(ci, exit_px_lc, "LOSS_CUT", now_ms, on_close);
+                return;
+            }
+        }
 
         bool hit_tp = false, hit_sl = false;
         double xp = 0;
