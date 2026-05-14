@@ -186,6 +186,36 @@ struct EpbCell {
     double tp_r                 = 2.5;
     double max_spread_pt        = 1.5;
 
+    // -------------------------------------------------------------------------
+    //  S63 in-flight protection (state-E -> state-B transition, 2026-05-14
+    //  part-X follow-up). Mirrors the VWAPReversionEngine canonical pattern
+    //  at CrossAssetEngines.hpp:1247-1249 + manage block 1330-1399.
+    //
+    //  The hard SL (entry - sl_atr * ATR14) only fires when bid touches the
+    //  SL line. It does NOT cut trades that drift adverse without hitting
+    //  the line, and it does NOT protect against winner-giveback before
+    //  TP_HIT. These three fields add an in-flight cut + break-even ratchet.
+    //
+    //    LOSS_CUT_PCT   -- cold-loss cut: close when adverse >= entry*pct/100.
+    //                      Catches trades that go straight adverse without
+    //                      ever turning profitable. 0.0 disables.
+    //    BE_ARM_PCT     -- arm BE ratchet once mfe >= entry*pct/100.
+    //                      0.0 disables the ratchet entirely.
+    //    BE_BUFFER_PCT  -- BE_CUT triggers when move <= entry*pct/100 AFTER
+    //                      ratchet is armed. Lets the position close at
+    //                      break-even (plus tiny buffer) instead of giving
+    //                      back all profit on retrace.
+    //
+    //  Defaults 0.0 -- protection is wired but inert at runtime, awaiting
+    //  per-cell backtest evidence before activation. Per project discipline
+    //  ("no near-miss"), the one $45.78 EmaPullback_H1 SL on 2026-05-14 is
+    //  not sufficient evidence to activate; queue a Phase 1 sweep + WF
+    //  Phase 3 closure on XAU 2024-2026 tape first. State-B until tuned.
+    // -------------------------------------------------------------------------
+    double LOSS_CUT_PCT   = 0.0;
+    double BE_ARM_PCT     = 0.0;
+    double BE_BUFFER_PCT  = 0.0;
+
     int    direction            = 1;
     std::string timeframe       = "H1";
     std::string symbol          = "XAUUSD";
@@ -345,6 +375,58 @@ struct EpbCell {
         if (signed_move > pos_mfe_) pos_mfe_ = signed_move;
         if (signed_move < pos_mae_) pos_mae_ = signed_move;
 
+        // ---------------------------------------------------------------------
+        //  S63 in-flight protection (BE_RATCHET + LOSS_CUT). Mirrors the
+        //  VWAPReversionEngine pattern at CrossAssetEngines.hpp:1330-1399.
+        //  Both phases independently guarded by *_PCT > 0.0; defaults 0.0
+        //  leave behaviour identical to pre-S63 EmaPullback.
+        //
+        //  Phase 1 (BE_RATCHET) runs first: once mfe has reached
+        //  BE_ARM_PCT * entry / 100, install a virtual stop at
+        //  (entry + BE_BUFFER_PCT * entry / 100) and cut at break-even if
+        //  price retraces to that line. Catches winner-giveback that the
+        //  hard SL/TP cannot.
+        //
+        //  Phase 2 (LOSS_CUT) catches trades that went straight adverse
+        //  from entry without ever turning profitable -- the BE_RATCHET
+        //  cannot see those (no mfe armed). Cuts before the hard SL fires
+        //  when LOSS_CUT_PCT is tighter than sl_atr * ATR.
+        //
+        //  Exit reasons "BE_CUT" / "LOSS_CUT" flow through _close() as
+        //  arbitrary strings -- TradeRecord.exitReason captures verbatim.
+        // ---------------------------------------------------------------------
+        if (pos_entry_ > 0.0) {
+            const double move    = signed_move;          // alias for clarity
+            const double adverse = -signed_move;         // positive when losing
+
+            if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0) {
+                const double arm_pts    = pos_entry_ * BE_ARM_PCT    / 100.0;
+                const double buffer_pts = pos_entry_ * BE_BUFFER_PCT / 100.0;
+                if (pos_mfe_ >= arm_pts && move <= buffer_pts) {
+                    const double exit_px = direction == 1 ? bid : ask;
+                    printf("[%s] BE_CUT mfe=%.4f >= arm=%.4f move=%.4f <= buf=%.4f (giveback)%s\n",
+                           cell_id.c_str(), pos_mfe_, arm_pts, move, buffer_pts,
+                           shadow_mode ? " [SHADOW]" : "");
+                    fflush(stdout);
+                    _close(exit_px, "BE_CUT", now_ms, on_close);
+                    return;
+                }
+            }
+
+            if (LOSS_CUT_PCT > 0.0) {
+                const double loss_cut_dist = pos_entry_ * LOSS_CUT_PCT / 100.0;
+                if (adverse >= loss_cut_dist) {
+                    const double exit_px = direction == 1 ? bid : ask;
+                    printf("[%s] LOSS_CUT adverse=%.4f >= %.4f (%.3f%% of entry)%s\n",
+                           cell_id.c_str(), adverse, loss_cut_dist, LOSS_CUT_PCT,
+                           shadow_mode ? " [SHADOW]" : "");
+                    fflush(stdout);
+                    _close(exit_px, "LOSS_CUT", now_ms, on_close);
+                    return;
+                }
+            }
+        }
+
         if (direction == 1) {
             if (bid <= pos_sl_) { _close(bid, "SL_HIT", now_ms, on_close); return; }
             if (bid >= pos_tp_) { _close(bid, "TP_HIT", now_ms, on_close); return; }
@@ -427,6 +509,17 @@ struct EpbPortfolio {
     bool   block_on_risk_off = true;
     std::string warmup_csv_path = "";
 
+    // S63 in-flight protection -- portfolio-level setters propagated to all 4
+    // cells by init() via the stamp lambda. See EpbCell field block for full
+    // semantics. Defaults 0.0 -- inert at runtime, awaiting backtest evidence
+    // before activation per project discipline ("no near-miss"). Surfaced by
+    // the 2026-05-14 part-X session shadow-mode incident (EmaPullback_H1 SL
+    // -$45.78); engine moves from state E to state B in the S63 audit
+    // framework, pending Phase 1 sweep + Phase 3 WF closure.
+    double LOSS_CUT_PCT      = 0.0;
+    double BE_ARM_PCT        = 0.0;
+    double BE_BUFFER_PCT     = 0.0;
+
     EpbCell h1_long_;
     EpbCell h2_long_;
     EpbCell h4_long_;
@@ -453,7 +546,7 @@ struct EpbPortfolio {
     void set_macro_regime(const std::string& r) noexcept { macro_regime_ = r; }
 
     void init() noexcept {
-        auto stamp = [](EpbCell& c, const char* tf, const char* id) {
+        auto stamp = [this](EpbCell& c, const char* tf, const char* id) {
             c.symbol     = "XAUUSD";
             c.cell_id    = id;
             c.timeframe  = tf;
@@ -464,6 +557,11 @@ struct EpbPortfolio {
             c.tp_r       = 2.5;
             c.max_hold_bars = 30;
             c.signal_cooldown_bars = 5;
+            // S63 propagation -- portfolio-level values copied to each cell.
+            // Defaults 0.0 leave behaviour identical to pre-S63 EmaPullback.
+            c.LOSS_CUT_PCT  = LOSS_CUT_PCT;
+            c.BE_ARM_PCT    = BE_ARM_PCT;
+            c.BE_BUFFER_PCT = BE_BUFFER_PCT;
             c.init_emas();
         };
         stamp(h1_long_, "H1", "EmaPullback_H1_long");
@@ -484,12 +582,14 @@ struct EpbPortfolio {
         printf("[EPB] EmaPullbackPortfolio ARMED (shadow_mode=%s, enabled=%s) "
                "cells=H1,H2,H4,H6 long fast=9 slow=21 sl_atr=1.0 tp_r=2.5 "
                "max_hold=30 cooldown=5 risk_pct=%.4f max_lot_cap=%.3f "
-               "max_concurrent=%d block_on_risk_off=%s equity=$%.2f\n",
+               "max_concurrent=%d block_on_risk_off=%s equity=$%.2f "
+               "S63: loss_cut=%.3f%% be_arm=%.3f%% be_buf=%.3f%%\n",
                shadow_mode ? "true" : "false",
                enabled     ? "true" : "false",
                risk_pct, max_lot_cap, max_concurrent,
                block_on_risk_off ? "true" : "false",
-               equity_);
+               equity_,
+               LOSS_CUT_PCT, BE_ARM_PCT, BE_BUFFER_PCT);
         for (EpbCell* c : cells) {
             printf("[%s] ARMED (shadow_mode=%s, fast=%d, slow=%d, sl=%.1f*atr, tp=%.2f*atr, max_hold=%d)\n",
                    c->cell_id.c_str(),

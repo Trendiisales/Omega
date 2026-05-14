@@ -1291,6 +1291,25 @@ static void init_engines(const std::string& cfg_path)
         g_ema_pullback.max_lot_cap       = 0.05;
         g_ema_pullback.block_on_risk_off = true;
         g_ema_pullback.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
+        // S63 in-flight protection (state-E -> state-B transition, 2026-05-14
+        // part-X follow-up; see docs/handoffs/SESSION_HANDOFF_2026-05-14m.md
+        // next-session item #4). Hooks wired in EmaPullbackEngine.hpp EpbCell
+        // on_tick management block; portfolio-level values propagate to all
+        // 4 cells via EpbPortfolio::init() stamp lambda.
+        //
+        // Defaults 0.0 keep behaviour identical to pre-S63 EmaPullback. Per
+        // project discipline ("no near-miss"), the single XAU H1 SL -$45.78
+        // observed on 2026-05-14 is not sufficient evidence to activate
+        // non-zero values; queue a Phase 1 sweep across LOSS_CUT_PCT /
+        // BE_ARM_PCT / BE_BUFFER_PCT axes on XAU 2024-2026 tape + Phase 3
+        // WF closure before flipping these from 0.0.
+        //
+        // To activate later: set the three values here, leave the hooks
+        // alone. State A is reached once both engine + call-site are
+        // non-zero with documented backtest evidence in the commit.
+        g_ema_pullback.LOSS_CUT_PCT      = 0.0;  // state B: hooks present, gate inert
+        g_ema_pullback.BE_ARM_PCT        = 0.0;
+        g_ema_pullback.BE_BUFFER_PCT     = 0.0;
         g_ema_pullback.init();
         g_ema_pullback.warmup_from_csv(g_ema_pullback.warmup_csv_path);
         fflush(stdout);
