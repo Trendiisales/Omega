@@ -623,6 +623,48 @@ else()
 endif()
 
 # =============================================================================
+# EmaPullbackBacktest -- dedicated harness for the EmaPullback portfolio.
+# Created 2026-05-14 (part-X follow-up to S76 EmaPullback S63 activation;
+# validates the (LOSS_CUT_PCT, BE_ARM_PCT, BE_BUFFER_PCT) tuple against the
+# engine's H1 OHLC validation corpus via a 27-cell sweep). Mirrors
+# TsmomCellBacktest's standalone pattern -- instantiates omega::EpbPortfolio
+# directly, drives it over phase1/signal_discovery/tsmom_warmup_H1.csv, and
+# emits a per-trade ledger + per-config summary report. No production code
+# touched. Self-contained: no OpenSSL, no FIX, no time-shim.
+#
+# Build:
+#   cmake --build build --target EmaPullbackBacktest --config Release
+# Run (Mac/Linux):
+#   ./build/EmaPullbackBacktest               # single-run, S63 OFF baseline
+#   ./build/EmaPullbackBacktest --loss-cut 1.0 --be-arm 0.40 --be-buffer 0.05
+#                                              # single-run, current S76 values
+#   ./build/EmaPullbackBacktest --sweep        # 27-cell 3x3x3 grid
+# =============================================================================
+add_executable(EmaPullbackBacktest
+    backtest/EmaPullbackBacktest.cpp
+)
+target_include_directories(EmaPullbackBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+if(MSVC)
+    target_compile_options(EmaPullbackBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+    )
+    target_compile_definitions(EmaPullbackBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS
+    )
+else()
+    target_compile_options(EmaPullbackBacktest PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function
+    )
+    target_link_libraries(EmaPullbackBacktest PRIVATE pthread)
+endif()
+
+# =============================================================================
 # OmegaSweepHarness -- parameter sweep harness (S51 X3)
 #
 # Runs a pairwise 2-factor parameter grid: for each engine, vary 2 of 5 params
@@ -858,6 +900,7 @@ message(STATUS "libcurl:    ${CURL_VERSION_STRING} (Step 5/7 market-data proxy)"
 message(STATUS "Git hash:   regenerated on every build")
 message(STATUS "OmegaBacktest:          standalone (no OpenSSL / no libcurl)")
 message(STATUS "TsmomCellBacktest:      standalone (no OpenSSL) [Phase 2a CellEngine refactor]")
+message(STATUS "EmaPullbackBacktest:    standalone (no OpenSSL) [part-X S63 sweep harness]")
 if(OMEGA_BUILD_SWEEP)
     message(STATUS "OmegaSweepHarness:      standalone (no OpenSSL) [OMEGA_BUILD_SWEEP=ON]")
 else()
