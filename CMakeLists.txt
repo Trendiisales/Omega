@@ -537,6 +537,52 @@ else()
 endif()
 
 # =============================================================================
+# XauTrendFollowBacktest -- dedicated harness for the XAU trend-follow trio
+# (XauTrendFollow2hEngine / 4hEngine / D1Engine). Added 2026-05-14 (part W).
+#
+# Skeleton state: --engine 2h is fully wired; --engine 4h and --engine d1
+# instantiate the engine + accept the CLI but do not yet feed bars (see
+# header comment 'NEXT-SESSION TODO' items 1-2 inside the .cpp). Build is
+# green either way.
+#
+# Mirrors UstecTrendFollow5mBacktest pattern: instantiates the real
+# omega::XauTrendFollow*Engine, drives tick + bar from CSV, exposes the
+# S63 trio (LOSS_CUT_PCT / BE_ARM_PCT / BE_BUFFER_PCT) at the CLI for the
+# planned Phase 3 walk-forward sweep. Engine cell sl/tp stay pinned at
+# header defaults per part-T phased decision.
+#
+# Build:  cmake --build build --target XauTrendFollowBacktest --config Release
+# Run:    ./build/XauTrendFollowBacktest <ticks.csv> [options]
+# See backtest/XauTrendFollowBacktest.cpp header for full usage.
+# =============================================================================
+add_executable(XauTrendFollowBacktest
+    backtest/XauTrendFollowBacktest.cpp
+)
+target_include_directories(XauTrendFollowBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(XauTrendFollowBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(XauTrendFollowBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(XauTrendFollowBacktest PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(XauTrendFollowBacktest PRIVATE OMEGA_BACKTEST)
+endif()
+
+# =============================================================================
 # TsmomCellBacktest -- Phase 2a dual-engine harness for the CellEngine refactor.
 # Drives V1 (TsmomPortfolio in TsmomEngine.hpp) and V2 (CellPortfolio<TsmomStrategy>
 # in CellEngine.hpp + TsmomStrategy.hpp) over the same H1 OHLC corpus and emits
