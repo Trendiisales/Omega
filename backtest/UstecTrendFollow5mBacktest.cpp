@@ -439,6 +439,9 @@ int main(int argc, char** argv) {
             "  --loss-cut <pct>    override LOSS_CUT_PCT\n"
             "  --be-arm   <pct>    override BE_ARM_PCT\n"
             "  --be-buffer<pct>    override BE_BUFFER_PCT\n"
+            "  --vol-gate-enabled       enable Tier 4 vol-regime entry gate (S90, off by default)\n"
+            "  --vol-pct-threshold <p>  ATR percentile threshold; pct < this blocks entries (default: 75.0)\n"
+            "  --atr-lookback-days <n>  rolling daily-ATR window in days (default: 30; max 60)\n"
             "  --lot <val>         override lot          (default: 0.1)\n"
             "  --max-spread <pts>  override max_spread   (default: 5.0)\n"
             "  --trades <file>     trades CSV output     (default: utf5m_trades.csv)\n"
@@ -468,6 +471,15 @@ int main(int argc, char** argv) {
     double lot_ovr        = 0.0;
     double max_spread_ovr = 0.0;
 
+    // S91 Tier 4 vol-regime gate overrides (default OFF; flags activate it
+    // explicitly via --vol-gate-enabled). All three flags drive the Phase 1
+    // sweep grid (2 lookbacks x 7 thresholds = 14 cells per S92).
+    bool   have_vol_gate_enabled_flag = false;  // true if --vol-gate-enabled was passed
+    bool   have_vol_pct_threshold_ovr = false;
+    bool   have_atr_lookback_days_ovr = false;
+    double vol_pct_threshold_ovr      = 0.0;
+    int    atr_lookback_days_ovr      = 0;
+
     for (int i = 2; i < argc; ++i) {
         if      (!std::strcmp(argv[i], "--mode")        && i + 1 < argc) mode = argv[++i];
         else if (!std::strcmp(argv[i], "--trades")      && i + 1 < argc) trades_path = argv[++i];
@@ -479,6 +491,9 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--be-buffer")   && i + 1 < argc) { be_buffer_ovr  = std::atof(argv[++i]); have_be_buffer_ovr  = true; }
         else if (!std::strcmp(argv[i], "--lot")         && i + 1 < argc) { lot_ovr        = std::atof(argv[++i]); have_lot_ovr        = true; }
         else if (!std::strcmp(argv[i], "--max-spread")  && i + 1 < argc) { max_spread_ovr = std::atof(argv[++i]); have_max_spread_ovr = true; }
+        else if (!std::strcmp(argv[i], "--vol-gate-enabled"))                                     have_vol_gate_enabled_flag = true;
+        else if (!std::strcmp(argv[i], "--vol-pct-threshold") && i + 1 < argc) { vol_pct_threshold_ovr = std::atof(argv[++i]); have_vol_pct_threshold_ovr = true; }
+        else if (!std::strcmp(argv[i], "--atr-lookback-days") && i + 1 < argc) { atr_lookback_days_ovr = std::atoi(argv[++i]); have_atr_lookback_days_ovr = true; }
         else if (!std::strcmp(argv[i], "--quiet"))                       quiet = true;
         else {
             std::fprintf(stderr, "[ERROR] Unknown option: %s\n", argv[i]);
@@ -530,6 +545,26 @@ int main(int argc, char** argv) {
     if (have_be_arm_ovr)    eng.BE_ARM_PCT    = be_arm_ovr;
     if (have_be_buffer_ovr) eng.BE_BUFFER_PCT = be_buffer_ovr;
 
+    // S91 Tier 4 vol-regime entry gate (S90 framework). Default OFF; explicit
+    // --vol-gate-enabled flips the master switch. Threshold and lookback have
+    // engine-header defaults (75.0 pct, 30 days); CLI overrides layer on top.
+    // ATR_LOOKBACK_DAYS is clamped to [1, VG_MAX_LOOKBACK_DAYS] to keep the
+    // history-ring access in-bounds; out-of-range values are rejected loudly
+    // so a misspelled flag value doesn't silently degrade to a different gate.
+    if (have_vol_gate_enabled_flag) eng.VOL_GATE_ENABLED  = true;
+    if (have_vol_pct_threshold_ovr) eng.VOL_PCT_THRESHOLD = vol_pct_threshold_ovr;
+    if (have_atr_lookback_days_ovr) {
+        if (atr_lookback_days_ovr < 1 ||
+            atr_lookback_days_ovr > omega::UstecTrendFollow5mEngine::VG_MAX_LOOKBACK_DAYS) {
+            std::fprintf(stderr,
+                "[ERROR] --atr-lookback-days must be in [1, %d], got %d\n",
+                omega::UstecTrendFollow5mEngine::VG_MAX_LOOKBACK_DAYS,
+                atr_lookback_days_ovr);
+            return 1;
+        }
+        eng.ATR_LOOKBACK_DAYS = atr_lookback_days_ovr;
+    }
+
     eng.init();
 
     // ----- Startup banner ----------------------------------------------------
@@ -545,6 +580,10 @@ int main(int argc, char** argv) {
         "    LOSS_CUT_PCT          = %.4f%s\n"
         "    BE_ARM_PCT            = %.4f%s\n"
         "    BE_BUFFER_PCT         = %.4f%s\n"
+        "  Tier 4 vol-regime entry gate (S90/S91, default OFF):\n"
+        "    VOL_GATE_ENABLED      = %s%s\n"
+        "    VOL_PCT_THRESHOLD     = %.2f%s\n"
+        "    ATR_LOOKBACK_DAYS     = %d%s\n"
         "  Engine header pins (not overridable by this harness):\n"
         "    PROVE_IT_SECS         = %.1f\n"
         "    PROVE_IT_MIN_FAV_PTS  = %.2f\n"
@@ -559,6 +598,12 @@ int main(int argc, char** argv) {
         eng.LOSS_CUT_PCT,  have_loss_cut_ovr   ? "  (cli override)" : "",
         eng.BE_ARM_PCT,    have_be_arm_ovr     ? "  (cli override)" : "",
         eng.BE_BUFFER_PCT, have_be_buffer_ovr  ? "  (cli override)" : "",
+        eng.VOL_GATE_ENABLED  ? "true" : "false",
+                           have_vol_gate_enabled_flag ? "  (cli override)" : "",
+        eng.VOL_PCT_THRESHOLD,
+                           have_vol_pct_threshold_ovr ? "  (cli override)" : "",
+        eng.ATR_LOOKBACK_DAYS,
+                           have_atr_lookback_days_ovr ? "  (cli override)" : "",
         omega::UstecTrendFollow5mEngine::PROVE_IT_SECS,
         omega::UstecTrendFollow5mEngine::PROVE_IT_MIN_FAVOURABLE_PTS,
         omega::UstecTrendFollow5mEngine::MIN_SL_PTS_FLOOR,
@@ -740,7 +785,10 @@ int main(int argc, char** argv) {
         "donchian_sl_mult,%.2f\n"
         "donchian_tp_mult,%.2f\n"
         "keltner_sl_mult,%.2f\n"
-        "keltner_tp_mult,%.2f\n",
+        "keltner_tp_mult,%.2f\n"
+        "vol_gate_enabled,%d\n"
+        "vol_pct_threshold,%.2f\n"
+        "atr_lookback_days,%d\n",
         mode.c_str(),
         static_cast<long long>(row_count),
         static_cast<long long>(parse_skips),
@@ -765,7 +813,10 @@ int main(int argc, char** argv) {
         omega::UstecTrendFollow5mEngine::MIN_SL_PTS_FLOOR,
         omega::UstecTrendFollow5mEngine::MIN_ATR_PTS,
         omega::kUstecTfCells[0].sl_mult, omega::kUstecTfCells[0].tp_mult,
-        omega::kUstecTfCells[1].sl_mult, omega::kUstecTfCells[1].tp_mult);
+        omega::kUstecTfCells[1].sl_mult, omega::kUstecTfCells[1].tp_mult,
+        eng.VOL_GATE_ENABLED ? 1 : 0,
+        eng.VOL_PCT_THRESHOLD,
+        eng.ATR_LOOKBACK_DAYS);
     std::fclose(f_report);
 
     // Stderr summary -- visible even when --quiet redirected stdout.
