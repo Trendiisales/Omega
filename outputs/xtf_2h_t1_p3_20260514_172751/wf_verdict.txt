@@ -1,0 +1,35 @@
+========================================================================
+  XTF-2h XAUUSD Tier 1 Phase 3 walk-forward verdict
+========================================================================
+
+  Configuration:
+    Engine    : XauTrendFollow2hEngine
+    Mode      : --mode baseline (S63 trio = 0.0/0.0/0.0)
+    Harness   : ./build/XauTrendFollowBacktest --engine 2h
+    Windows   : 4
+    avg_pnl threshold : 0.0010
+    PF threshold      : 1.20
+
+  Per-window:
+    Window 1: avg_pnl=-0.459598 pf=0.2206 trades=215 pass=no
+    Window 2: avg_pnl=-0.530216 pf=0.2187 trades=218 pass=no
+    Window 3: avg_pnl=-0.078793 pf=0.7852 trades=212 pass=no
+    Window 4: avg_pnl=0.531025 pf=2.0881 trades=201 pass=yes
+
+  Aggregate: avg_pnl=-0.147008 pf=0.7240 trades=846
+
+  Decision: 1/4 windows pass (need >=3), aggregate PF 0.7240 < (need >=1.20)
+
+  VERDICT: FAIL
+
+  Implication: S63 baseline on XAU 2h trend-follow does NOT
+    clear the WF gate. The S63-adverse pattern from VWR USTEC
+    (S71 P3) and UTF5m USTEC (S73 P3) appears to generalise to
+    XAU trend-follow at the 2h timeframe -- a notable finding
+    given XAU's different tail shape. Engines remain at class-
+    default state-B values (S63 OFF). Next session should:
+      (a) Run sibling drivers xtf_4h_wf_t1.py + xtf_d1_wf_t1.py
+          once those harness paths are filled in. Confirm the
+          pattern across all three timeframes.
+      (b) Consider whether the Tier 4 vol-regime gate explored
+          in the VWR/UTF5m scoping memos applies to XTF too.
