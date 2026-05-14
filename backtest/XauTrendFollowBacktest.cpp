@@ -4,14 +4,18 @@
 // Created 2026-05-14 (session 2026-05-14 part-W, follow-up to part-V handoff
 // SESSION_HANDOFF_2026-05-14k.md §"Recommended next-session focus" item 1).
 //
-// SKELETON STATUS:
-//   This file is a SKELETON. The --engine 2h path is fully wired and
-//   should compile + run end-to-end against a tick CSV. The --engine 4h
-//   and --engine d1 paths are STUBBED with TODO markers -- they
-//   instantiate the engine and accept the CLI but do not yet emit bars
-//   to the engines. Next-session iteration to fill those in is straightforward
-//   (mirror the 2h dispatch in the main tick loop) once a baseline run
-//   on --engine 2h has produced reference numbers.
+// HARNESS STATUS (2026-05-14 part-Z):
+//   All three dispatch paths (--engine 2h | 4h | d1) are now fully wired.
+//   The 4h dispatch (run_4h_engine) and d1 dispatch (run_d1_engine) were
+//   filled in part-Z by mirroring run_2h_engine with the appropriate
+//   bar-type / bucket / signature substitutions. Each is documented inline
+//   above its function definition. The harness is no longer a skeleton.
+//
+//   - --engine 2h  : H1 bar feed -> XauTrendFollow2hEngine::on_h1_bar
+//   - --engine 4h  : H4 bar feed -> XauTrendFollow4hEngine::on_h4_bar
+//                    (atr14_external = 0.0 -> engine computes locally)
+//   - --engine d1  : H4 bar feed -> XauTrendFollowD1Engine::on_h4_bar
+//                    (D1 synthesises daily bars from H4 internally)
 //
 // Purpose:
 //   The XauTrendFollow trio (2h, 4h, D1) was added in S33 (2026-05-11) with
@@ -96,25 +100,22 @@
 // gets one add_executable block (non-core configuration file edit).
 // All other source files untouched.
 //
-// NEXT-SESSION TODO (part-X or whoever picks this up):
-//   1. Fill in --engine 4h dispatch (currently stubbed -- mirror the 2h
-//      block in run_2h_engine()). XauTrendFollow4hEngine consumes
-//      on_h4_bar(bar, bid, ask, atr_external, now_ms, cb) so the bar
-//      construction is the same shape, just at H4 cadence.
-//   2. Fill in --engine d1 dispatch (currently stubbed -- mirror 2h).
-//      XauTrendFollowD1Engine consumes on_h4_bar (it aggregates H4 -> D1
-//      internally via UTC date), so D1's bar feed is the same as 4h's.
-//   3. Validate against a known-good baseline by running --engine 2h
-//      --mode baseline on the existing Dukascopy XAU tape. Pre-S63
-//      production behavior (state E) is structurally identical to
-//      state-B with all-zero defaults; the baseline numbers should
-//      match historical 4-cell results within tick-cost noise.
-//   4. Add CMakeLists.txt entry: add_executable(XauTrendFollowBacktest
-//      backtest/XauTrendFollowBacktest.cpp) with the same -include
-//      OmegaTimeShim flag used for UstecTrendFollow5mBacktest.
-//   5. After build green, write scripts/xtf_2h_wf_t1.py adapted from
-//      scripts/utf5m_wf_t1.py. Decision rule unchanged: PF >= 1.20
-//      aggregate AND >= 3/4 windows with avg_pnl >= +0.001.
+// PART-Z STATUS NOTES:
+//   Items 1 + 2 from the original part-W TODO list are now complete (4h
+//   and d1 dispatch wired -- see run_4h_engine / run_d1_engine).
+//   Item 3 (2h baseline validation) was completed in part-W (the 2h path
+//   shipped operational). Item 4 (CMakeLists.txt entry) was completed in
+//   part-W too. Item 5 (scripts/xtf_2h_wf_t1.py) shipped in part-W.
+//
+//   Part-Z added: scripts/xtf_4h_wf_t1.py (4h sibling of xtf_2h_wf_t1.py,
+//   5-line substitution per the part-W skeleton-state comment in the 2h
+//   driver). scripts/xtf_d1_wf_t1.py remains as a queued follow-up
+//   (mechanically identical patch to swap "4h" -> "d1" in the 4h driver,
+//   plus the small-n caveat documented in XauTrendFollowD1Engine.hpp:174-179
+//   should be considered for a per-window trade-count floor).
+//
+//   Decision rule (Phase 3, applied per-WF run): aggregate PF >= 1.20 AND
+//   >= 3/4 windows with avg_pnl >= +0.001. Same protocol as VWR/UTF5m.
 // =============================================================================
 
 #include <cstdio>
@@ -581,7 +582,22 @@ static int run_2h_engine(const Args& args) {
 }
 
 // =============================================================================
-// run_4h_engine -- STUB. See module docstring "NEXT-SESSION TODO" item 1.
+// run_4h_engine -- fully wired path (filled in 2026-05-14 part-Z)
+//
+// Mirrors run_2h_engine() exactly, with the following XauTrendFollow4hEngine-
+// specific substitutions:
+//   - Bar type:   XauTfBar         (defined in XauTrendFollow4hEngine.hpp)
+//   - Bar bucket: h4_bucket_ms()   (14400000 ms = H4)
+//   - Bar call:   eng.on_h4_bar(tf, bid, ask, atr14_external, now_ms, cb)
+//                 atr14_external = 0.0 -> engine computes ATR14 locally from
+//                 its own bar history (see XauTrendFollow4hEngine.hpp:290-294;
+//                 the external-ATR override is a production-stack convenience
+//                 that pulls from g_bars_gold.h4.ind.atr14, but the harness is
+//                 self-contained so we let the engine compute locally).
+//   - engine_name in report: XauTrendFollow4hEngine
+// All other logic (on_tick management, CSV writing, stats aggregation, S63
+// CLI overrides, mode-baseline-vs-tuned defaults) is byte-equivalent to the
+// 2h path.
 // =============================================================================
 static int run_4h_engine(const Args& args) {
     using namespace omega;
@@ -590,25 +606,209 @@ static int run_4h_engine(const Args& args) {
     eng.enabled     = true;
     if (!std::isnan(args.lot_override))         eng.lot        = args.lot_override;
     if (!std::isnan(args.max_spread_override))  eng.max_spread = args.max_spread_override;
+
+    // S63 mode + overrides (mirrors run_2h_engine)
     if (args.mode == "tuned") {
         eng.LOSS_CUT_PCT  = 0.05;
         eng.BE_ARM_PCT    = 0.03;
         eng.BE_BUFFER_PCT = 0.012;
+    } else {
+        eng.LOSS_CUT_PCT  = 0.0;
+        eng.BE_ARM_PCT    = 0.0;
+        eng.BE_BUFFER_PCT = 0.0;
     }
     if (!std::isnan(args.loss_cut_override))    eng.LOSS_CUT_PCT  = args.loss_cut_override;
     if (!std::isnan(args.be_arm_override))      eng.BE_ARM_PCT    = args.be_arm_override;
     if (!std::isnan(args.be_buffer_override))   eng.BE_BUFFER_PCT = args.be_buffer_override;
+
     eng.init();
-    std::fprintf(stderr,
-        "[XTF-BT] --engine 4h is STUBBED in skeleton harness. Engine wired,\n"
-        "         but bar-feed dispatch not yet implemented. See header\n"
-        "         comment 'NEXT-SESSION TODO' item 1. Doing nothing -- exit 0.\n");
-    (void)eng;
+
+    std::vector<TradeOut> trades;
+    auto on_close = [&](const omega::TradeRecord& tr) {
+        TradeOut t;
+        t.entry_ts = tr.entryTs;
+        t.exit_ts  = tr.exitTs;
+        t.symbol   = tr.symbol;
+        t.side     = tr.side;
+        t.engine   = tr.engine;
+        t.entry    = tr.entryPrice;
+        t.exit     = tr.exitPrice;
+        t.pnl      = tr.pnl;
+        t.mfe      = tr.mfe;
+        t.mae      = tr.mae;
+        t.exit_reason = tr.exitReason;
+        trades.push_back(std::move(t));
+    };
+
+    std::ifstream in(args.tape);
+    if (!in) {
+        std::fprintf(stderr, "ERROR: cannot open tape: %s\n", args.tape.c_str());
+        return 1;
+    }
+    std::string line;
+    TickFmt fmt = TickFmt::Unknown;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        fmt = detect_format(line);
+        if (fmt != TickFmt::Unknown) break;
+    }
+    if (fmt == TickFmt::Unknown) {
+        std::fprintf(stderr, "ERROR: cannot detect tape format\n");
+        return 1;
+    }
+    if (!args.quiet) {
+        std::fprintf(stderr, "[XTF-BT] format detected, beginning replay (4h)\n");
+    }
+    in.close();
+    in.open(args.tape);
+    if (!in) return 1;
+
+    // H4 bar aggregation state (mirrors H1 aggregator in run_2h_engine).
+    H1Bar cur_h4{};         // same struct layout; only the bucket cadence differs
+    bool cur_h4_open = false;
+    int64_t cur_h4_bucket = 0;
+    int64_t row_count = 0, parse_skips = 0;
+
+    auto emit_h4 = [&](const H1Bar& bar, double bid, double ask, int64_t now_ms) {
+        XauTfBar tf{};
+        tf.bar_start_ms = bar.bar_start_ms;
+        tf.open  = bar.open;
+        tf.high  = bar.high;
+        tf.low   = bar.low;
+        tf.close = bar.close;
+        // atr14_external = 0.0 -> engine computes ATR14 locally from bars_
+        eng.on_h4_bar(tf, bid, ask, /*atr14_external=*/0.0, now_ms, on_close);
+    };
+
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        TickRow r;
+        if (!parse_row(line, fmt, r)) { ++parse_skips; continue; }
+        ++row_count;
+        if (args.limit > 0 && row_count > args.limit) break;
+
+        // Tick exit management
+        eng.on_tick(r.bid, r.ask, r.ts_ms, on_close);
+
+        // H4 bar aggregation
+        const int64_t bucket = h4_bucket_ms(r.ts_ms);
+        const double mid = (r.bid + r.ask) * 0.5;
+        if (!cur_h4_open) {
+            cur_h4 = {};
+            cur_h4.bar_start_ms = bucket;
+            cur_h4.open = cur_h4.high = cur_h4.low = cur_h4.close = mid;
+            cur_h4.n_ticks = 1;
+            cur_h4_bucket = bucket;
+            cur_h4_open = true;
+        } else if (bucket != cur_h4_bucket) {
+            emit_h4(cur_h4, r.bid, r.ask, r.ts_ms);
+            cur_h4 = {};
+            cur_h4.bar_start_ms = bucket;
+            cur_h4.open = cur_h4.high = cur_h4.low = cur_h4.close = mid;
+            cur_h4.n_ticks = 1;
+            cur_h4_bucket = bucket;
+            cur_h4_open = true;
+        } else {
+            if (mid > cur_h4.high) cur_h4.high = mid;
+            if (mid < cur_h4.low)  cur_h4.low  = mid;
+            cur_h4.close = mid;
+            ++cur_h4.n_ticks;
+        }
+    }
+    eng.force_close(/*bid*/0.0, /*ask*/0.0, /*now_ms*/0, on_close, "END_OF_DATA");
+
+    if (!args.quiet) {
+        std::fprintf(stderr, "[XTF-BT] rows=%lld skips=%lld trades=%zu\n",
+                     (long long)row_count, (long long)parse_skips, trades.size());
+    }
+
+    // Write trades.csv (schema parity with run_2h_engine)
+    std::ofstream tout(args.trades_path);
+    if (!tout) {
+        std::fprintf(stderr, "ERROR: cannot open trades file: %s\n", args.trades_path.c_str());
+        return 1;
+    }
+    tout << "entry_ts_unix,exit_ts_unix,symbol,side,engine,entry,exit,gross_pnl,"
+            "mfe,mae,exit_reason,hold_sec,spread_at_entry,confluence_score\n";
+    for (const auto& t : trades) {
+        const int64_t hold = (t.exit_ts > t.entry_ts) ? (t.exit_ts - t.entry_ts) : 0;
+        tout << t.entry_ts << "," << t.exit_ts << "," << t.symbol << ","
+             << t.side << "," << t.engine << ","
+             << t.entry << "," << t.exit << "," << t.pnl << ","
+             << t.mfe << "," << t.mae << "," << t.exit_reason << ","
+             << hold << ",0,0\n";
+    }
+    tout.close();
+
+    // Aggregate stats (same logic + schema as run_2h_engine)
+    int n = (int)trades.size();
+    int wins = 0, n_tp = 0, n_sl = 0, n_lc = 0, n_be = 0, n_other = 0;
+    double gross = 0.0, sum_pos = 0.0, sum_neg = 0.0;
+    double worst = 0.0, best = 0.0;
+    for (const auto& t : trades) {
+        gross += t.pnl;
+        if (t.pnl > 0) { sum_pos += t.pnl; ++wins; }
+        else if (t.pnl < 0) sum_neg += t.pnl;
+        if (t.pnl < worst) worst = t.pnl;
+        if (t.pnl > best)  best  = t.pnl;
+        if      (t.exit_reason == "TP_HIT")     ++n_tp;
+        else if (t.exit_reason == "SL_HIT")     ++n_sl;
+        else if (t.exit_reason == "LOSS_CUT")   ++n_lc;
+        else if (t.exit_reason == "BE_CUT")     ++n_be;
+        else                                    ++n_other;
+    }
+    const double pf = (sum_neg < 0) ? (sum_pos / -sum_neg) : 0.0;
+    const double win_rate = (n > 0) ? (100.0 * wins / n) : 0.0;
+
+    std::ofstream rep(args.report_path);
+    if (!rep) {
+        std::fprintf(stderr, "ERROR: cannot open report file: %s\n", args.report_path.c_str());
+        return 1;
+    }
+    rep << "metric,value\n";
+    rep << "engine_name,XauTrendFollow4hEngine\n";
+    rep << "n_trades," << n << "\n";
+    rep << "wins," << wins << "\n";
+    rep << "win_rate_pct," << win_rate << "\n";
+    rep << "gross_pnl," << gross << "\n";
+    rep << "sum_pos," << sum_pos << "\n";
+    rep << "sum_neg," << sum_neg << "\n";
+    rep << "pf," << pf << "\n";
+    rep << "n_tp_hit," << n_tp << "\n";
+    rep << "n_sl_hit," << n_sl << "\n";
+    rep << "n_loss_cut," << n_lc << "\n";
+    rep << "n_be_cut," << n_be << "\n";
+    rep << "n_other," << n_other << "\n";
+    rep << "worst_trade," << worst << "\n";
+    rep << "best_trade," << best << "\n";
+    rep << "loss_cut_pct," << eng.LOSS_CUT_PCT << "\n";
+    rep << "be_arm_pct," << eng.BE_ARM_PCT << "\n";
+    rep << "be_buffer_pct," << eng.BE_BUFFER_PCT << "\n";
+    rep.close();
+
     return 0;
 }
 
 // =============================================================================
-// run_d1_engine -- STUB. See module docstring "NEXT-SESSION TODO" item 2.
+// run_d1_engine -- fully wired path (filled in 2026-05-14 part-Z)
+//
+// Mirrors run_2h_engine() / run_4h_engine() with the following
+// XauTrendFollowD1Engine-specific substitutions:
+//   - Bar type:   XauTfD1Bar       (defined in XauTrendFollowD1Engine.hpp)
+//   - Bar bucket: h4_bucket_ms()   (D1 consumes H4 bars and aggregates to D1
+//                                   internally via UTC date_id; see
+//                                   XauTrendFollowD1Engine.hpp:103-119, 245-269)
+//   - Bar call:   eng.on_h4_bar(tf, bid, ask, now_ms, cb)
+//                 NOTE: D1 signature has NO atr14_external argument
+//                 (see XauTrendFollowD1Engine.hpp:245-248). D1 computes
+//                 daily ATR14 from its own synthesised daily bars.
+//   - engine_name in report: XauTrendFollowD1Engine
+//
+// Small-n caveat (from XauTrendFollowD1Engine.hpp:174-179): D1 cadence
+// is ~2 trades/month combined across 3 cells (n=15-31 per cell over 30
+// months in the original Pass-8 deep_dive). Phase 3 walk-forward windows
+// will have wide error bars; a per-window trade-count floor may want to
+// be added at the WF-driver layer for D1 specifically.
 // =============================================================================
 static int run_d1_engine(const Args& args) {
     using namespace omega;
@@ -617,20 +817,187 @@ static int run_d1_engine(const Args& args) {
     eng.enabled     = true;
     if (!std::isnan(args.lot_override))         eng.lot        = args.lot_override;
     if (!std::isnan(args.max_spread_override))  eng.max_spread = args.max_spread_override;
+
+    // S63 mode + overrides (mirrors run_2h_engine / run_4h_engine)
     if (args.mode == "tuned") {
         eng.LOSS_CUT_PCT  = 0.05;
         eng.BE_ARM_PCT    = 0.03;
         eng.BE_BUFFER_PCT = 0.012;
+    } else {
+        eng.LOSS_CUT_PCT  = 0.0;
+        eng.BE_ARM_PCT    = 0.0;
+        eng.BE_BUFFER_PCT = 0.0;
     }
     if (!std::isnan(args.loss_cut_override))    eng.LOSS_CUT_PCT  = args.loss_cut_override;
     if (!std::isnan(args.be_arm_override))      eng.BE_ARM_PCT    = args.be_arm_override;
     if (!std::isnan(args.be_buffer_override))   eng.BE_BUFFER_PCT = args.be_buffer_override;
+
     eng.init();
-    std::fprintf(stderr,
-        "[XTF-BT] --engine d1 is STUBBED in skeleton harness. Engine wired,\n"
-        "         but bar-feed dispatch not yet implemented. See header\n"
-        "         comment 'NEXT-SESSION TODO' item 2. Doing nothing -- exit 0.\n");
-    (void)eng;
+
+    std::vector<TradeOut> trades;
+    auto on_close = [&](const omega::TradeRecord& tr) {
+        TradeOut t;
+        t.entry_ts = tr.entryTs;
+        t.exit_ts  = tr.exitTs;
+        t.symbol   = tr.symbol;
+        t.side     = tr.side;
+        t.engine   = tr.engine;
+        t.entry    = tr.entryPrice;
+        t.exit     = tr.exitPrice;
+        t.pnl      = tr.pnl;
+        t.mfe      = tr.mfe;
+        t.mae      = tr.mae;
+        t.exit_reason = tr.exitReason;
+        trades.push_back(std::move(t));
+    };
+
+    std::ifstream in(args.tape);
+    if (!in) {
+        std::fprintf(stderr, "ERROR: cannot open tape: %s\n", args.tape.c_str());
+        return 1;
+    }
+    std::string line;
+    TickFmt fmt = TickFmt::Unknown;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        fmt = detect_format(line);
+        if (fmt != TickFmt::Unknown) break;
+    }
+    if (fmt == TickFmt::Unknown) {
+        std::fprintf(stderr, "ERROR: cannot detect tape format\n");
+        return 1;
+    }
+    if (!args.quiet) {
+        std::fprintf(stderr, "[XTF-BT] format detected, beginning replay (d1)\n");
+    }
+    in.close();
+    in.open(args.tape);
+    if (!in) return 1;
+
+    // H4 bar aggregation state. D1 ingests H4 bars and synthesises D1 from
+    // them internally (see XauTrendFollowD1Engine.hpp _finalise_day_and_evaluate).
+    H1Bar cur_h4{};
+    bool cur_h4_open = false;
+    int64_t cur_h4_bucket = 0;
+    int64_t row_count = 0, parse_skips = 0;
+
+    auto emit_h4 = [&](const H1Bar& bar, double bid, double ask, int64_t now_ms) {
+        XauTfD1Bar tf{};
+        tf.bar_start_ms = bar.bar_start_ms;
+        tf.open  = bar.open;
+        tf.high  = bar.high;
+        tf.low   = bar.low;
+        tf.close = bar.close;
+        // D1 signature has no atr14_external arg.
+        eng.on_h4_bar(tf, bid, ask, now_ms, on_close);
+    };
+
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        TickRow r;
+        if (!parse_row(line, fmt, r)) { ++parse_skips; continue; }
+        ++row_count;
+        if (args.limit > 0 && row_count > args.limit) break;
+
+        // Tick exit management
+        eng.on_tick(r.bid, r.ask, r.ts_ms, on_close);
+
+        // H4 bar aggregation
+        const int64_t bucket = h4_bucket_ms(r.ts_ms);
+        const double mid = (r.bid + r.ask) * 0.5;
+        if (!cur_h4_open) {
+            cur_h4 = {};
+            cur_h4.bar_start_ms = bucket;
+            cur_h4.open = cur_h4.high = cur_h4.low = cur_h4.close = mid;
+            cur_h4.n_ticks = 1;
+            cur_h4_bucket = bucket;
+            cur_h4_open = true;
+        } else if (bucket != cur_h4_bucket) {
+            emit_h4(cur_h4, r.bid, r.ask, r.ts_ms);
+            cur_h4 = {};
+            cur_h4.bar_start_ms = bucket;
+            cur_h4.open = cur_h4.high = cur_h4.low = cur_h4.close = mid;
+            cur_h4.n_ticks = 1;
+            cur_h4_bucket = bucket;
+            cur_h4_open = true;
+        } else {
+            if (mid > cur_h4.high) cur_h4.high = mid;
+            if (mid < cur_h4.low)  cur_h4.low  = mid;
+            cur_h4.close = mid;
+            ++cur_h4.n_ticks;
+        }
+    }
+    eng.force_close(/*bid*/0.0, /*ask*/0.0, /*now_ms*/0, on_close, "END_OF_DATA");
+
+    if (!args.quiet) {
+        std::fprintf(stderr, "[XTF-BT] rows=%lld skips=%lld trades=%zu\n",
+                     (long long)row_count, (long long)parse_skips, trades.size());
+    }
+
+    // Write trades.csv (schema parity with run_2h_engine)
+    std::ofstream tout(args.trades_path);
+    if (!tout) {
+        std::fprintf(stderr, "ERROR: cannot open trades file: %s\n", args.trades_path.c_str());
+        return 1;
+    }
+    tout << "entry_ts_unix,exit_ts_unix,symbol,side,engine,entry,exit,gross_pnl,"
+            "mfe,mae,exit_reason,hold_sec,spread_at_entry,confluence_score\n";
+    for (const auto& t : trades) {
+        const int64_t hold = (t.exit_ts > t.entry_ts) ? (t.exit_ts - t.entry_ts) : 0;
+        tout << t.entry_ts << "," << t.exit_ts << "," << t.symbol << ","
+             << t.side << "," << t.engine << ","
+             << t.entry << "," << t.exit << "," << t.pnl << ","
+             << t.mfe << "," << t.mae << "," << t.exit_reason << ","
+             << hold << ",0,0\n";
+    }
+    tout.close();
+
+    // Aggregate stats
+    int n = (int)trades.size();
+    int wins = 0, n_tp = 0, n_sl = 0, n_lc = 0, n_be = 0, n_other = 0;
+    double gross = 0.0, sum_pos = 0.0, sum_neg = 0.0;
+    double worst = 0.0, best = 0.0;
+    for (const auto& t : trades) {
+        gross += t.pnl;
+        if (t.pnl > 0) { sum_pos += t.pnl; ++wins; }
+        else if (t.pnl < 0) sum_neg += t.pnl;
+        if (t.pnl < worst) worst = t.pnl;
+        if (t.pnl > best)  best  = t.pnl;
+        if      (t.exit_reason == "TP_HIT")     ++n_tp;
+        else if (t.exit_reason == "SL_HIT")     ++n_sl;
+        else if (t.exit_reason == "LOSS_CUT")   ++n_lc;
+        else if (t.exit_reason == "BE_CUT")     ++n_be;
+        else                                    ++n_other;
+    }
+    const double pf = (sum_neg < 0) ? (sum_pos / -sum_neg) : 0.0;
+    const double win_rate = (n > 0) ? (100.0 * wins / n) : 0.0;
+
+    std::ofstream rep(args.report_path);
+    if (!rep) {
+        std::fprintf(stderr, "ERROR: cannot open report file: %s\n", args.report_path.c_str());
+        return 1;
+    }
+    rep << "metric,value\n";
+    rep << "engine_name,XauTrendFollowD1Engine\n";
+    rep << "n_trades," << n << "\n";
+    rep << "wins," << wins << "\n";
+    rep << "win_rate_pct," << win_rate << "\n";
+    rep << "gross_pnl," << gross << "\n";
+    rep << "sum_pos," << sum_pos << "\n";
+    rep << "sum_neg," << sum_neg << "\n";
+    rep << "pf," << pf << "\n";
+    rep << "n_tp_hit," << n_tp << "\n";
+    rep << "n_sl_hit," << n_sl << "\n";
+    rep << "n_loss_cut," << n_lc << "\n";
+    rep << "n_be_cut," << n_be << "\n";
+    rep << "n_other," << n_other << "\n";
+    rep << "worst_trade," << worst << "\n";
+    rep << "best_trade," << best << "\n";
+    rep << "loss_cut_pct," << eng.LOSS_CUT_PCT << "\n";
+    rep << "be_arm_pct," << eng.BE_ARM_PCT << "\n";
+    rep << "be_buffer_pct," << eng.BE_BUFFER_PCT << "\n";
+    rep.close();
+
     return 0;
 }
 

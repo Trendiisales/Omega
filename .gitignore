@@ -114,6 +114,15 @@ omega-terminal/dist-verify/
 /htf_bt_minimal_*.txt
 # VWAPReversionBacktest smoke-test outputs (S69 P0 default report/trades paths)
 /vrev_*.csv
+# EmaPullbackBacktest sweep/single-run outputs (part-Y S75-S82 evidence trail
+# kept in outputs/; per-run scratch in repo root ignored)
+/epb_*.csv
+/epb_*.txt
+# XauTrendFollowBacktest single-run defaults (part-Z; WF driver writes into
+# outputs/xtf_*_t1_p3_<ts>/ which is already covered by the outputs/ rule
+# below if applicable, but per-run scratch in repo root ignored here)
+/xtf_trades.csv
+/xtf_report.csv
 
 # ── Backtest result CSVs in backtest/ ─────────────────────────────────────────
 backtest/bt_*.csv
