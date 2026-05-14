@@ -496,6 +496,47 @@ else()
 endif()
 
 # =============================================================================
+# UstecTrendFollow5mBacktest -- dedicated harness for UstecTrendFollow5mEngine
+# Built to answer the promotion-gate question documented at
+# include/engine_init.hpp:964-967: "S63 + S37 widened SL/TP profile net-positive
+# on USTEC fresh tape". Mirrors VWAPReversionBacktest pattern: instantiates the
+# real omega::UstecTrendFollow5mEngine, drives tick + 5m-bar from CSV, exposes
+# the S63 trio (LOSS_CUT_PCT / BE_ARM_PCT / BE_BUFFER_PCT) at the CLI; S34-B
+# guards + cell sl/tp stay pinned at engine header defaults per part-T phased
+# decision (handoff SESSION_HANDOFF_2026-05-14h.md).
+#
+# Build:  cmake --build build --target UstecTrendFollow5mBacktest --config Release
+# Run:    ./build/UstecTrendFollow5mBacktest <ticks.csv> [options]
+# See backtest/UstecTrendFollow5mBacktest.cpp header for full usage.
+# =============================================================================
+add_executable(UstecTrendFollow5mBacktest
+    backtest/UstecTrendFollow5mBacktest.cpp
+)
+target_include_directories(UstecTrendFollow5mBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(UstecTrendFollow5mBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(UstecTrendFollow5mBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(UstecTrendFollow5mBacktest PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(UstecTrendFollow5mBacktest PRIVATE OMEGA_BACKTEST)
+endif()
+
+# =============================================================================
 # TsmomCellBacktest -- Phase 2a dual-engine harness for the CellEngine refactor.
 # Drives V1 (TsmomPortfolio in TsmomEngine.hpp) and V2 (CellPortfolio<TsmomStrategy>
 # in CellEngine.hpp + TsmomStrategy.hpp) over the same H1 OHLC corpus and emits
