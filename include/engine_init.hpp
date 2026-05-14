@@ -961,10 +961,18 @@ static void init_engines(const std::string& cfg_path)
         //   BE_ARM_PCT    = 0.05 -> USTEC@28000: ~14pt mfe arms ratchet.
         //   BE_BUFFER_PCT = 0.02 -> USTEC@28000: ~5.6pt buffer (~typical spread).
         //
-        //   Promotion gate: g_ustec_tf_5m.enabled stays FALSE until a fresh-
-        //   tape backtest sweep confirms S63 + S37 widened SL/TP profile is
-        //   net-positive on USTEC. Re-enable is a separate operator decision
-        //   (part-K handoff §"Recommended next-session focus" item 3).
+        //   Promotion gate (RESOLVED 2026-05-14 -- gate fails):
+        //     - Phase 1 (S72 P1, UTF5M_PHASE1_RESULTS_2026-05-14.md):
+        //       S63 + S37 widened SL/TP is empirically adverse on USTEC.
+        //       Baseline (S63 zeroed) gross=+929; every S63-active cell
+        //       net negative. Phase 2 skipped (signal decisive).
+        //     - Phase 3 (S73, UTF5M_PHASE3_RESULTS_2026-05-14.md):
+        //       4-window WF on baseline fails PF gate (1.1154 vs 1.20).
+        //       3 of 4 windows pass; w1 (2024-H2) anomalous.
+        //     Engine remains disabled. Re-enable requires either a Tier 4
+        //     redesign (vol-regime gate is the leading candidate) OR a
+        //     deliberate operator decision to soften the decision rule
+        //     (NOT recommended -- see Phase 3 memo §7 item 4).
         g_ustec_tf_5m.LOSS_CUT_PCT  = 0.08;
         g_ustec_tf_5m.BE_ARM_PCT    = 0.05;
         g_ustec_tf_5m.BE_BUFFER_PCT = 0.02;
