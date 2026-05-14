@@ -276,12 +276,82 @@ struct EpbCell {
         // 2. Manage existing position FIRST (uses bar's high/low for intrabar)
         if (pos_active_) {
             ++pos_bars_held_;
+            // Capture cumulative mfe BEFORE this bar's update -- the BE_RATCHET
+            // arm gate uses prior-bars mfe only, to avoid intrabar order
+            // ambiguity (did the same bar's high arm BEFORE its low retraced,
+            // or vice versa? OHLC alone can't tell, so we require an earlier
+            // bar to have armed). Matches the conservative interpretation of
+            // the VWR on_tick pattern, where tick order is deterministic.
+            const double mfe_pre = pos_mfe_;
             const double max_move_this_bar = direction == 1
                 ? (b.high - pos_entry_) : (pos_entry_ - b.low);
             const double min_move_this_bar = direction == 1
                 ? (b.low  - pos_entry_) : (pos_entry_ - b.high);
             if (max_move_this_bar > pos_mfe_) pos_mfe_ = max_move_this_bar;
             if (min_move_this_bar < pos_mae_) pos_mae_ = min_move_this_bar;
+
+            // -----------------------------------------------------------------
+            //  S63 in-flight protection -- bar-driven path.
+            //  Mirrors EpbCell::on_tick logic but uses bar extremes instead of
+            //  tick bid/ask. Lives BEFORE the existing SL/TP/TIME checks so a
+            //  triggered S63 close uses the LC / BE line as the exit price
+            //  rather than rolling through to the hard SL.
+            //
+            //  Order: BE_RATCHET first (catches winner-giveback), then
+            //  LOSS_CUT (catches cold loss). Both phases guarded by *_PCT > 0.0;
+            //  defaults 0.0 leave behaviour identical to pre-S63.
+            //
+            //  Added 2026-05-14 part-X S77 follow-up: S75/S76 only wired the
+            //  check into on_tick, but the EmaPullback harness drives on_h1_bar
+            //  in lockstep with the live engine's bar-end management, and
+            //  on_tick is never called in backtest mode. Without this block,
+            //  S63 was effectively dead in shadow-mode bar-driven scenarios
+            //  too (only fired between H1 bar closes on live tick stream).
+            // -----------------------------------------------------------------
+            if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0) {
+                const double arm_pts = pos_entry_ * BE_ARM_PCT / 100.0;
+                if (mfe_pre >= arm_pts) {
+                    const double buf_pts = pos_entry_ * BE_BUFFER_PCT / 100.0;
+                    const double be_line = direction == 1
+                        ? (pos_entry_ + buf_pts)
+                        : (pos_entry_ - buf_pts);
+                    const bool be_hit = direction == 1
+                        ? (b.low  <= be_line)
+                        : (b.high >= be_line);
+                    if (be_hit) {
+                        printf("[%s] BE_CUT bar mfe_pre=%.4f >= arm=%.4f"
+                               " %s=%.4f vs be_line=%.4f%s\n",
+                               cell_id.c_str(), mfe_pre, arm_pts,
+                               direction == 1 ? "low" : "high",
+                               direction == 1 ? b.low : b.high, be_line,
+                               shadow_mode ? " [SHADOW]" : "");
+                        fflush(stdout);
+                        _close(be_line, "BE_CUT", now_ms, on_close);
+                        return 0;
+                    }
+                }
+            }
+            if (LOSS_CUT_PCT > 0.0) {
+                const double lc_pts = pos_entry_ * LOSS_CUT_PCT / 100.0;
+                const double lc_line = direction == 1
+                    ? (pos_entry_ - lc_pts)
+                    : (pos_entry_ + lc_pts);
+                const bool lc_hit = direction == 1
+                    ? (b.low  <= lc_line)
+                    : (b.high >= lc_line);
+                if (lc_hit) {
+                    printf("[%s] LOSS_CUT bar %s=%.4f vs lc_line=%.4f"
+                           " (%.3f%% of entry)%s\n",
+                           cell_id.c_str(),
+                           direction == 1 ? "low" : "high",
+                           direction == 1 ? b.low : b.high, lc_line,
+                           LOSS_CUT_PCT,
+                           shadow_mode ? " [SHADOW]" : "");
+                    fflush(stdout);
+                    _close(lc_line, "LOSS_CUT", now_ms, on_close);
+                    return 0;
+                }
+            }
 
             const bool sl_hit = direction == 1
                 ? (b.low  <= pos_sl_) : (b.high >= pos_sl_);
