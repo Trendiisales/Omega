@@ -1291,7 +1291,7 @@ static void init_engines(const std::string& cfg_path)
         g_ema_pullback.max_lot_cap       = 0.05;
         g_ema_pullback.block_on_risk_off = true;
         g_ema_pullback.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
-        // S63 in-flight protection -- state B (hooks present, gate inert).
+        // S63 in-flight protection -- state A (BE_RATCHET only, evidence-backed).
         //
         // History:
         //   S75 (69a2f83) -- wired hooks into EpbCell::on_tick + propagation
@@ -1307,7 +1307,13 @@ static void init_engines(const std::string& cfg_path)
         //                    Fix: replicate the BE_RATCHET + LOSS_CUT block
         //                    in EpbCell::on_bar with bar-extremes / mfe_pre
         //                    semantics. Both paths now exercise S63 correctly.
-        //   S79 (this)    -- revert call-site to 0.0 per S78-enabled sweep.
+        //   S79           -- revert call-site to 0.0 per S78-enabled sweep,
+        //                    which showed every LC>0 cell + the S76 (1.0,
+        //                    0.40, 0.05) cell net-negative vs baseline.
+        //   S80 (this)    -- activate the evidence-backed BE-only cell
+        //                    (0.0, 0.40, 0.05) -- the only S63 configuration
+        //                    in the 27-cell sweep that beats baseline on
+        //                    BOTH PF and max_dd.
         //
         // Sweep evidence (S77 harness, 27-cell 3x3x3 grid over
         //  LC={0.0, 0.5, 1.0}, ARM={0.0, 0.20, 0.40}, BUF={0.0, 0.025, 0.05}
@@ -1317,29 +1323,40 @@ static void init_engines(const std::string& cfg_path)
         //   Cell                       trades   PF      gross_pnl   max_dd
         //   ------------------------------------------------------------
         //   (0.0, 0.0, 0.0) baseline    475   1.4675    $7,204.77   -12.70%
+        //   (0.0, 0.40, 0.05) = S80     542   1.4904    $5,777.78   -12.18%
         //   (1.0, 0.40, 0.05) = S76     544   1.3574    $4,329.67   -14.25%
-        //   best non-baseline cell:
-        //   (0.0, 0.20, 0.00)           577   1.4993    $4,503.73   -14.75%
         //
-        //   Verdict: every LOSS_CUT>0 cell underperforms baseline on PF
-        //   (1.25-1.40 range vs 1.467 baseline). The "best" non-baseline
-        //   cell is pure BE_RATCHET at LC=0/ARM=0.20, but it loses $2,700
-        //   in absolute return for a 0.03 PF gain. BE_CUT fires 156-281
-        //   times per cell (30-50% of all trades) -- it's the dominant
-        //   exit reason in those cells, killing 35-70 TP hits per run.
-        //   The engine's 2.5R TP requires riding through giveback; BE
-        //   amputates winners before they resolve.
+        //   Activation rationale:
+        //   - PF      : 1.4904 vs 1.4675 baseline -> +0.023 (improvement)
+        //   - max_dd  : -12.18% vs -12.70% baseline -> -0.52pp (improvement)
+        //   - SL_HIT  : 240 vs 295 baseline (55 fewer SL hits caught by BE)
+        //   - BE_CUT  : 163 (new protection firing, ~30% of trades)
+        //   - TP_HIT  : 138 vs 177 baseline (cost: 39 winners cut early)
+        //   - gross_pnl: $5,777 vs $7,204 baseline (-$1,427, -20% absolute)
+        //   - LOSS_CUT: 0 (intentionally off; every LC>0 cell hurt PF)
         //
-        //   Conclusion: S63 protection is net-negative for this engine on
-        //   this corpus. Revert to 0.0 and stay state B.
+        //   This is a risk-vs-return trade. Gives up ~20% absolute return
+        //   in exchange for tighter PF and shallower max drawdown. Pure
+        //   BE_RATCHET only -- no LOSS_CUT, because every LC>0 cell in
+        //   the sweep underperformed baseline (range PF 1.25-1.40 vs
+        //   baseline 1.467). Mean-reversion engines amputate badly under
+        //   LOSS_CUT: trades that briefly go adverse often recover to TP.
         //
-        // If a future tape or regime changes the picture, re-run the sweep
-        // before flipping these to non-zero. Engine code (on_bar + on_tick
-        // S63 management blocks) stays in place — no behaviour change at
-        // runtime when values are 0.0.
-        g_ema_pullback.LOSS_CUT_PCT      = 0.0;   // state B: hooks present, inert
-        g_ema_pullback.BE_ARM_PCT        = 0.0;
-        g_ema_pullback.BE_BUFFER_PCT     = 0.0;
+        //   Mechanic: ARM=0.40 means BE ratchet arms once mfe reaches
+        //   +0.40% of entry (~$9.60 mfe at $2400 XAU). BUF=0.05 means
+        //   close at entry+0.05% (~$1.20 above entry) once armed -- a
+        //   tiny profit floor instead of break-even-exactly. Catches
+        //   trades that peeked profitable then retraced -- the classic
+        //   "winner-turned-loser" pattern that the hard 1 ATR SL alone
+        //   can't address.
+        //
+        // If a future tape or regime changes the picture, re-run the
+        // EmaPullbackBacktest --sweep before changing these. Engine code
+        // (on_bar + on_tick S63 management blocks) is single-sourced --
+        // no code change needed to tune; just edit these three lines.
+        g_ema_pullback.LOSS_CUT_PCT      = 0.0;   // state A: BE-only protection
+        g_ema_pullback.BE_ARM_PCT        = 0.40;
+        g_ema_pullback.BE_BUFFER_PCT     = 0.05;
         g_ema_pullback.init();
         g_ema_pullback.warmup_from_csv(g_ema_pullback.warmup_csv_path);
         fflush(stdout);
