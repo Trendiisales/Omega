@@ -56,6 +56,29 @@ static void init_engines(const std::string& cfg_path)
     //   fully retired.
     // IndexFlowEngine (4 instances, uniform):
     // shadow_mode lives on private IdxOpenPosition pos_; use set_shadow_mode() proxy.
+    //
+    // 2026-05-14 (part W): S63 VWR-pattern in-flight protection — explicit
+    //   re-affirm of the class default (LOSS_CUT only flavor — IndexFlow
+    //   uses a staircase ATR trail that already covers giveback well, so
+    //   only the cold-loss phase is added — see IndexFlowEngine.hpp:547-552
+    //   for the design comment). The override matches the class default
+    //   (IndexFlowEngine.hpp:553 declares LOSS_CUT_PCT = 0.07) but documents
+    //   intent and makes activation discoverable from engine_init.hpp alone.
+    //   Mirrors g_vwap_rev_ger40 precedent at engine_init.hpp:649 and
+    //   g_ustec_tf_5m at engine_init.hpp:976. See
+    //   outputs/S63_STATE_CLASSIFICATION_2026-05-14.md §3.1 for the audit
+    //   that confirmed STATE A via class-default route (mgmt-path at
+    //   IndexFlowEngine.hpp:651-654 invokes pos_.manage(..., LOSS_CUT_PCT)
+    //   every tick; check at L419 of IdxOpenPosition::manage).
+    //
+    //   LOSS_CUT_PCT = 0.07 -> US500@7400 : ~5.18pt cold-loss cut.
+    //                       -> USTEC@28000: ~19.6pt.
+    //                       -> NAS100@22500: ~15.75pt.
+    //                       -> DJ30@45000 : ~31.5pt.
+    g_iflow_sp.LOSS_CUT_PCT   = 0.07;
+    g_iflow_nq.LOSS_CUT_PCT   = 0.07;
+    g_iflow_nas.LOSS_CUT_PCT  = 0.07;
+    g_iflow_us30.LOSS_CUT_PCT = 0.07;
     g_iflow_sp.set_shadow_mode(kShadowDefault);
     g_iflow_nq.set_shadow_mode(kShadowDefault);
     g_iflow_nas.set_shadow_mode(kShadowDefault);
@@ -278,6 +301,23 @@ static void init_engines(const std::string& cfg_path)
     //   atr_at_entry / session / fvg_age_bars / bars_held from the engine's
     //   last_extras() snapshot, which is set BEFORE on_close fires inside
     //   _close()).
+    // 2026-05-14 (part W): S63 VWR-pattern in-flight protection — explicit
+    //   re-affirm of the class defaults (XAU-scaled) for grep visibility.
+    //   Mirrors g_vwap_rev_ger40 precedent at engine_init.hpp:649-651 and
+    //   g_ustec_tf_5m at engine_init.hpp:976-978: the override matches the
+    //   class default but documents intent and makes activation
+    //   discoverable from engine_init.hpp alone. See
+    //   outputs/S63_STATE_CLASSIFICATION_2026-05-14.md §3.2 for the audit
+    //   that confirmed STATE A via class-default route (fields declared
+    //   at XauusdFvgEngine.hpp:142-144; mgmt-path at L1063-1083 fires
+    //   every tick).
+    //
+    //   LOSS_CUT_PCT  = 0.05  -> XAU@3700: ~$1.85 cold-loss cut.
+    //   BE_ARM_PCT    = 0.03  -> XAU@3700: ~$1.11 mfe arms ratchet.
+    //   BE_BUFFER_PCT = 0.012 -> XAU@3700: ~$0.44 buffer (typical XAU spread).
+    g_xauusd_fvg.LOSS_CUT_PCT  = 0.05;
+    g_xauusd_fvg.BE_ARM_PCT    = 0.03;
+    g_xauusd_fvg.BE_BUFFER_PCT = 0.012;
     g_xauusd_fvg.shadow_mode = true;
     g_xauusd_fvg.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     g_xauusd_fvg.on_close_cb = [](const omega::TradeRecord& tr) {
@@ -464,6 +504,25 @@ static void init_engines(const std::string& cfg_path)
     //   Real-tick backtest 4320 trades / 2yr -> -$3,800 (negative EV).
     //   See `// Real-tick backtest:` comment ~20 lines below for source.
     //   Disabling rather than deleting -- file remains for reference.
+    // 2026-05-14 (part W): S63 VWR-pattern in-flight protection — explicit
+    //   re-affirm of the class default (XAU-scaled, LOSS_CUT only flavor) for
+    //   grep visibility. Mirrors g_vwap_rev_ger40 precedent at
+    //   engine_init.hpp:649 and g_ustec_tf_5m at engine_init.hpp:976: the
+    //   override matches the class default but documents intent and makes
+    //   activation discoverable from engine_init.hpp alone. See
+    //   outputs/S63_STATE_CLASSIFICATION_2026-05-14.md §3.4 for the audit
+    //   that confirmed STATE A via class-default route (field declared at
+    //   RSIReversalEngine.hpp:98; mgmt-path at L571-582 — header comment
+    //   L87-94 explicitly notes 'LOSS_CUT only' — no BE_RATCHET on this
+    //   engine's design).
+    //
+    //   IMPORTANT: this engine is currently DISABLED (enabled=false below
+    //   per 2026-05-01 negative-EV finding). The S63 re-affirm here is for
+    //   grep-visibility only — if the engine is ever re-enabled, S63
+    //   protection will already be wired correctly without further config.
+    //
+    //   LOSS_CUT_PCT = 0.05 -> XAU@3700: ~$1.85 adverse cut.
+    g_rsi_reversal.LOSS_CUT_PCT   = 0.05;
     g_rsi_reversal.enabled        = false;  // DISABLED 2026-05-01 -- backtest negative EV
     g_rsi_reversal.shadow_mode    = true;   // SHADOW first -- verify signals before live
     g_rsi_reversal.RSI_OVERSOLD   = 42.0;  // turn from any low -- not just extreme OS
@@ -1097,6 +1156,24 @@ static void init_engines(const std::string& cfg_path)
         // engine is instantiated but DORMANT (receives no bars, never
         // fires). Wiring is a separate commit; see HANDOFF_S35.md
         // Phase 4 for the dispatch sketch.
+        //
+        // 2026-05-14 (part W): S63 VWR-pattern in-flight protection — explicit
+        //   re-affirm of the class defaults (XAU-scaled) for grep visibility.
+        //   Mirrors g_vwap_rev_ger40 precedent at engine_init.hpp:649-651 and
+        //   g_ustec_tf_5m at engine_init.hpp:976-978: the override matches the
+        //   class default but documents intent and makes activation
+        //   discoverable from engine_init.hpp alone. See
+        //   outputs/S63_STATE_CLASSIFICATION_2026-05-14.md §3.5 for the audit
+        //   that confirmed STATE A via class-default route (fields declared
+        //   at XauThreeBar30mEngine.hpp:240-242; mgmt-path at L479-498 fires
+        //   every tick during pos manage).
+        //
+        //   LOSS_CUT_PCT  = 0.05  -> XAU@3700: ~$1.85 cold-loss cut.
+        //   BE_ARM_PCT    = 0.03  -> XAU@3700: ~$1.11 mfe arms ratchet.
+        //   BE_BUFFER_PCT = 0.012 -> XAU@3700: ~$0.44 buffer (typical XAU spread).
+        g_xau_threebar_30m.LOSS_CUT_PCT  = 0.05;
+        g_xau_threebar_30m.BE_ARM_PCT    = 0.03;
+        g_xau_threebar_30m.BE_BUFFER_PCT = 0.012;
         g_xau_threebar_30m.shadow_mode        = true;   // HARD shadow until live-validated
         g_xau_threebar_30m.enabled            = true;   // engine runs (in shadow)
         g_xau_threebar_30m.lot                = 0.01;
@@ -2446,6 +2523,23 @@ static void init_engines(const std::string& cfg_path)
             // -- PDH/PDL Reversion Engine ------------------------------------
             // Research: 2yr/111M tick backtest proves mean reversion inside
             // daily range is the only statistically significant intraday edge.
+            // 2026-05-14 (part W): S63 VWR-pattern in-flight protection — explicit
+            //   re-affirm of the class defaults (XAU-scaled) for grep visibility.
+            //   Mirrors g_vwap_rev_ger40 precedent at engine_init.hpp:649-651 and
+            //   g_ustec_tf_5m at engine_init.hpp:976-978: the override matches the
+            //   class default but documents intent and makes activation
+            //   discoverable from engine_init.hpp alone. See
+            //   outputs/S63_STATE_CLASSIFICATION_2026-05-14.md §3.3 for the audit
+            //   that confirmed STATE A via class-default route (fields declared
+            //   at PDHLReversionEngine.hpp:70-72; mgmt-path at L221-244 fires
+            //   every tick).
+            //
+            //   LOSS_CUT_PCT  = 0.04  -> XAU@3700: ~$1.48 cold-loss cut.
+            //   BE_ARM_PCT    = 0.025 -> XAU@3700: ~$0.93 mfe arms ratchet.
+            //   BE_BUFFER_PCT = 0.01  -> XAU@3700: ~$0.37 buffer (typical XAU spread).
+            g_pdhl_rev.LOSS_CUT_PCT  = 0.04;
+            g_pdhl_rev.BE_ARM_PCT    = 0.025;
+            g_pdhl_rev.BE_BUFFER_PCT = 0.01;
             g_pdhl_rev.shadow_mode      = true;   // shadow until confirmed live
             g_pdhl_rev.enabled          = true;
             g_pdhl_rev.RANGE_ENTRY_PCT  = 0.25;   // top/bottom 25% of daily range
