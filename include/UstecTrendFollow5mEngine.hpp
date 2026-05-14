@@ -396,6 +396,51 @@ public:
     // IS / +$5,207 OOS (Plan A + Plan B). See PLAN_A_B_REPORT §4.
     static constexpr double MIN_ATR_PTS = 20.0;
 
+    // ── Tier 4 vol-regime entry gate (2026-05-15 S90, Phase A) ───────────────
+    // Suppresses ENTRIES when measured volatility (ATR(14) on daily true range)
+    // is in the low-regime tail of a rolling ATR_LOOKBACK_DAYS window.
+    //
+    // Background: Phase 3 closure memo §7 item 1
+    // (outputs/UTF5M_PHASE3_RESULTS_2026-05-14.md) identified w1
+    // (2024-07-27 → 2025-02-19) as a low-vol regime with hostile Donchian/
+    // Keltner breakout behaviour: 17.2M ticks vs 25.9-46.1M elsewhere,
+    // avg_pnl=-0.376 vs +0.118 / +0.950 / +1.261 in the other three windows.
+    // Hypothesis: tight ranges starve breakouts → false signals → losses.
+    // Suppressing entries in that regime is expected to lift aggregate PF
+    // above the 1.20 gate without modifying signal mechanics.
+    //
+    // Mechanism: at each 5m bar in on_5m_bar(), daily H/L is updated from
+    // bar.high / bar.low. At UTC day rollover (detected via now_ms / 86400000)
+    // the previous day's true range is finalised, pushed to the ATR(14) ring,
+    // and once the ring is fully warm (≥ VG_ATR_PERIOD days) the daily-ATR(14)
+    // value is pushed to a rolling ATR_LOOKBACK_DAYS history. At entry-decision
+    // time (top of the cell loop in on_5m_bar) the current ATR is ranked within
+    // the history; if percentile rank < VOL_PCT_THRESHOLD, ALL entries on the
+    // bar are suppressed and a [USTEC-TF-VOL-GATE-BLOCK] line is logged.
+    //
+    // Form: entry-blocking (low vol → no entries). DIFFERENT from VWR's Form A
+    // in CrossAssetEngines.hpp which gates S63 management on/off. UTF5m is
+    // state A (S63 hooks present with non-zero defaults at LOSS_CUT_PCT etc.
+    // above) but Phase 3 ran with --mode baseline (S63 trio = 0.0/0.0/0.0)
+    // and STILL produced w1 avg_pnl=-0.376, so the failing-window evidence
+    // supports entry-suppression rather than S63 gating. S63 in-flight
+    // management is left untouched by this gate.
+    //
+    // Default OFF (VOL_GATE_ENABLED=false): the daily H/L state advances on
+    // every bar but its output is not consumed. Behaviour bit-for-bit
+    // identical to pre-S90 when the gate is inert. Phase A scope activates
+    // the gate via UstecTrendFollow5mBacktest CLI flags only — engine_init.hpp
+    // is NOT touched. Production engine config is unchanged.
+    //
+    // See outputs/UTF5M_PHASE3_RESULTS_2026-05-14.md §7 item 1 for the
+    // UTF5m-specific recommendation and
+    // outputs/TIER4_VOL_REGIME_SCOPING_2026-05-14.md for the original
+    // (VWR-targeted) Form A design that contributed the ATR-percentile
+    // pipeline.
+    bool   VOL_GATE_ENABLED  = false;  // master switch; false => gate inert
+    double VOL_PCT_THRESHOLD = 75.0;   // ATR-pct < this => low vol => entries blocked
+    int    ATR_LOOKBACK_DAYS = 30;     // rolling daily-ATR window (Phase A: 30 or 60)
+
     std::array<UstecTfPos, kUstecTfNumCells> pos{};
 
     static constexpr int kBarHistory = 64;
@@ -410,6 +455,29 @@ public:
     double ema20_ = 0.0;
     bool   ema_initialised_ = false;
 
+    // ── Tier 4 vol-regime gate state (2026-05-15 S90, Phase A) ───────────────
+    // All zero/default-initialised so the gate is bit-for-bit inert until
+    // VOL_GATE_ENABLED is flipped true at the call site (harness CLI for
+    // Phase A research; engine_init.hpp untouched). Daily H/L tracking
+    // advances on every on_5m_bar() invocation but consumes ~728 bytes of
+    // engine state. ATR-percentile history is only populated once the
+    // ATR(14) ring is fully warm (>= VG_ATR_PERIOD days), so percentile rank
+    // is always taken against fully-formed ATR samples.
+    static constexpr int VG_ATR_PERIOD        = 14;
+    static constexpr int VG_MAX_LOOKBACK_DAYS = 60;  // upper bound on ATR_LOOKBACK_DAYS
+    double  vg_day_high_         = 0.0;
+    double  vg_day_low_          = 0.0;
+    double  vg_day_last_close_   = 0.0;  // last bar.close of day (becomes prev_close at rollover)
+    double  vg_prev_close_       = 0.0;  // last completed day's close, for true-range gap calc
+    int64_t vg_cur_day_idx_      = -1;   // current UTC day index (now_ms / 86400000); -1 = uninit
+    double  vg_atr_ring_[VG_ATR_PERIOD] = {};
+    int     vg_atr_ring_pos_     = 0;
+    int     vg_atr_ring_count_   = 0;
+    double  vg_cur_atr_          = 0.0;  // simple-mean ATR(14) finalised at last day rollover
+    double  vg_atr_history_[VG_MAX_LOOKBACK_DAYS] = {};
+    int     vg_atr_history_pos_  = 0;
+    int     vg_atr_history_count_= 0;
+
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
     void init() noexcept {
@@ -418,6 +486,23 @@ public:
         atr_warmup_count_ = 0;
         ema20_ = 0.0;
         ema_initialised_ = false;
+        // S90 (2026-05-15): reset Tier 4 vol-regime gate state. All fields
+        // are zero/default-initialised at declaration so a fresh engine is
+        // bit-for-bit inert when the gate is left OFF; the explicit resets
+        // here cover re-init paths (harness re-uses an engine instance
+        // across symbols / windows).
+        vg_day_high_         = 0.0;
+        vg_day_low_          = 0.0;
+        vg_day_last_close_   = 0.0;
+        vg_prev_close_       = 0.0;
+        vg_cur_day_idx_      = -1;
+        for (auto& v : vg_atr_ring_)    v = 0.0;
+        vg_atr_ring_pos_     = 0;
+        vg_atr_ring_count_   = 0;
+        vg_cur_atr_          = 0.0;
+        for (auto& v : vg_atr_history_) v = 0.0;
+        vg_atr_history_pos_  = 0;
+        vg_atr_history_count_= 0;
         for (auto& p : pos) p = {};
     }
 
@@ -437,6 +522,66 @@ public:
         if (!enabled) return;
         bars_.push_back(bar);
         while ((int)bars_.size() > kBarHistory) bars_.pop_front();
+
+        // ── Tier 4 vol-regime: daily H/L tracking + ATR(14) at UTC rollover ──
+        // Tracked unconditionally (subject to the enabled gate above) so the
+        // ATR history advances even on bars that fail later gates (warm-up,
+        // spread, MIN_ATR floor, vol-gate itself). Inert until
+        // VOL_GATE_ENABLED is set true. Day rollover detected purely
+        // arithmetically from now_ms (= bar timestamp), independent of system
+        // clock — important for backtest reproducibility. At rollover:
+        // finalise true range as max(H-L, |H-prev_close|, |prev_close-L|),
+        // push to ATR(14) ring, recompute simple-mean ATR(14), and push that
+        // to the ATR-percentile history once the ring is fully warm
+        // (>= VG_ATR_PERIOD days). S90 2026-05-15.
+        {
+            const int64_t day_idx = (now_ms > 0) ? (now_ms / 86400000LL) : -1;
+            if (day_idx >= 0) {
+                if (vg_cur_day_idx_ < 0) {
+                    // first bar ever — initialise day, no rollover yet
+                    vg_cur_day_idx_    = day_idx;
+                    vg_day_high_       = bar.high;
+                    vg_day_low_        = bar.low;
+                    vg_day_last_close_ = bar.close;
+                } else if (day_idx != vg_cur_day_idx_) {
+                    // UTC day rollover — finalise previous day's true range
+                    const double tr1 = vg_day_high_ - vg_day_low_;
+                    const double tr2 = (vg_prev_close_ > 0.0)
+                                       ? std::fabs(vg_day_high_ - vg_prev_close_) : 0.0;
+                    const double tr3 = (vg_prev_close_ > 0.0)
+                                       ? std::fabs(vg_prev_close_ - vg_day_low_)  : 0.0;
+                    const double tr  = std::max(std::max(tr1, tr2), tr3);
+                    // push to ATR(14) ring
+                    vg_atr_ring_[vg_atr_ring_pos_] = tr;
+                    vg_atr_ring_pos_ = (vg_atr_ring_pos_ + 1) % VG_ATR_PERIOD;
+                    if (vg_atr_ring_count_ < VG_ATR_PERIOD) ++vg_atr_ring_count_;
+                    // recompute simple-mean ATR(14)
+                    if (vg_atr_ring_count_ > 0) {
+                        double sum = 0.0;
+                        for (int i = 0; i < vg_atr_ring_count_; ++i) sum += vg_atr_ring_[i];
+                        vg_cur_atr_ = sum / static_cast<double>(vg_atr_ring_count_);
+                        // push to ATR-percentile history (only once ring fully warm)
+                        if (vg_atr_ring_count_ >= VG_ATR_PERIOD) {
+                            vg_atr_history_[vg_atr_history_pos_] = vg_cur_atr_;
+                            vg_atr_history_pos_ = (vg_atr_history_pos_ + 1) % VG_MAX_LOOKBACK_DAYS;
+                            if (vg_atr_history_count_ < VG_MAX_LOOKBACK_DAYS) ++vg_atr_history_count_;
+                        }
+                    }
+                    // advance previous close (= last close of day that just ended)
+                    vg_prev_close_     = vg_day_last_close_;
+                    // start new UTC day
+                    vg_cur_day_idx_    = day_idx;
+                    vg_day_high_       = bar.high;
+                    vg_day_low_        = bar.low;
+                    vg_day_last_close_ = bar.close;
+                } else {
+                    // intra-day update
+                    if (bar.high > vg_day_high_) vg_day_high_ = bar.high;
+                    if (bar.low  < vg_day_low_)  vg_day_low_  = bar.low;
+                    vg_day_last_close_ = bar.close;
+                }
+            }
+        }
 
         if (atr14_external > 0.0) atr14_ = atr14_external;
         else _update_local_atr();
@@ -459,6 +604,35 @@ public:
                    atr14_, MIN_ATR_PTS);
             fflush(stdout);
             return;
+        }
+
+        // ── Tier 4 vol-regime entry gate (S90 2026-05-15) ────────────────────
+        // Block all entries on this bar when measured ATR is in the low-vol
+        // tail of the rolling history. Bit-for-bit inert when VOL_GATE_ENABLED
+        // is false OR when the ATR-percentile history is not yet warm
+        // (vg_atr_history_count_ < ATR_LOOKBACK_DAYS); in either case the
+        // function proceeds to the cell loop unchanged. Percentile rank uses
+        // strict-less-than so current ATR can score 0..(n-1)/n, matching the
+        // standard percentile-rank convention used by VWR S85.
+        if (VOL_GATE_ENABLED
+            && vg_atr_history_count_ >= ATR_LOOKBACK_DAYS
+            && vg_cur_atr_ > 0.0) {
+            const int n = std::min(vg_atr_history_count_,
+                                   std::min(ATR_LOOKBACK_DAYS, VG_MAX_LOOKBACK_DAYS));
+            int rank_below = 0;
+            for (int i = 0; i < n; ++i) {
+                if (vg_atr_history_[i] < vg_cur_atr_) ++rank_below;
+            }
+            const double percentile = 100.0 * static_cast<double>(rank_below)
+                                     / static_cast<double>(n);
+            if (percentile < VOL_PCT_THRESHOLD) {
+                printf("[USTEC-TF-VOL-GATE-BLOCK] atr=%.2f pctile=%.1f < %.1f "
+                       "lookback=%d -- low-vol regime, no entries\n",
+                       vg_cur_atr_, percentile, VOL_PCT_THRESHOLD,
+                       ATR_LOOKBACK_DAYS);
+                fflush(stdout);
+                return;
+            }
         }
 
         for (int ci = 0; ci < kUstecTfNumCells; ++ci) {
