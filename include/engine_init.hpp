@@ -1291,13 +1291,13 @@ static void init_engines(const std::string& cfg_path)
         g_ema_pullback.max_lot_cap       = 0.05;
         g_ema_pullback.block_on_risk_off = true;
         g_ema_pullback.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
-        // S63 in-flight protection -- state A (BE_RATCHET only, evidence-backed).
+        // S63 in-flight protection -- state A (LC + BE_RATCHET, evidence-backed).
         //
         // History:
         //   S75 (69a2f83) -- wired hooks into EpbCell::on_tick + propagation
         //                    through EpbPortfolio::init(). Call-site at 0.0.
-        //   S76           -- activated with (1.0, 0.40, 0.05) reasoned from
-        //                    a single shadow trade. (No backtest evidence.)
+        //   S76           -- activated (1.0, 0.40, 0.05) reasoned from one
+        //                    shadow trade. (No backtest evidence.)
         //   S77           -- created backtest/EmaPullbackBacktest.cpp harness
         //                    with 3x3x3 sweep mode.
         //   S78           -- discovered S75/S76 wired S63 into on_tick only.
@@ -1307,54 +1307,71 @@ static void init_engines(const std::string& cfg_path)
         //                    Fix: replicate the BE_RATCHET + LOSS_CUT block
         //                    in EpbCell::on_bar with bar-extremes / mfe_pre
         //                    semantics. Both paths now exercise S63 correctly.
-        //   S79           -- revert call-site to 0.0 per S78-enabled sweep,
-        //                    which showed every LC>0 cell + the S76 (1.0,
-        //                    0.40, 0.05) cell net-negative vs baseline.
-        //   S80 (this)    -- activate the evidence-backed BE-only cell
-        //                    (0.0, 0.40, 0.05) -- the only S63 configuration
-        //                    in the 27-cell sweep that beats baseline on
-        //                    BOTH PF and max_dd.
+        //   S79           -- revert call-site to 0.0 per S78-enabled wide
+        //                    sweep, which showed every LC>0 cell (LC ∈ {0.5,
+        //                    1.0}) net-negative vs baseline.
+        //   S80           -- activate (0.0, 0.40, 0.05) -- BE-only protection
+        //                    from the wide sweep best-PF cell.
+        //   S81           -- harness --sweep grid retuned to TIGHT LC zone
+        //                    matching what other XAU engines actually use
+        //                    (XauusdFvg/XauThreeBar30m=0.05%, PDHL=0.04%,
+        //                    IndexFlow=0.07-0.08%). Original wide grid moved
+        //                    to --wide-sweep flag for back-comparison. The
+        //                    operational band for similar engines was
+        //                    6-20x tighter than what S77 originally tested.
+        //   S82 (this)    -- activate LC=0.10/ARM=0.40/BUF=0.05 per the S81
+        //                    tight-zone sweep, which surfaced a non-monotonic
+        //                    PF curve with a clear peak at LC=0.10%.
         //
-        // Sweep evidence (S77 harness, 27-cell 3x3x3 grid over
-        //  LC={0.0, 0.5, 1.0}, ARM={0.0, 0.20, 0.40}, BUF={0.0, 0.025, 0.05}
+        // Sweep evidence (S77 harness, S81 tight grid; 27 cells, 3x3x3 over
+        //  LC ∈ {0.0, 0.05, 0.10}, ARM ∈ {0.0, 0.20, 0.40},
+        //  BUF ∈ {0.0, 0.025, 0.05}
         //  on phase1/signal_discovery/tsmom_warmup_H1.csv, 6,156 H1 bars,
         //  Apr 2025 - Apr 2026 XAUUSD validation corpus):
         //
-        //   Cell                       trades   PF      gross_pnl   max_dd
-        //   ------------------------------------------------------------
-        //   (0.0, 0.0, 0.0) baseline    475   1.4675    $7,204.77   -12.70%
-        //   (0.0, 0.40, 0.05) = S80     542   1.4904    $5,777.78   -12.18%
-        //   (1.0, 0.40, 0.05) = S76     544   1.3574    $4,329.67   -14.25%
+        //   Cell                          trades   PF      gross    max_dd
+        //   ---------------------------------------------------------------
+        //   (0.0,  0.0,  0.0)  baseline    475   1.4675   $7,204   -12.70%
+        //   (0.0,  0.40, 0.05) S80         542   1.4904   $5,777   -12.18%
+        //   (0.10, 0.40, 0.05) S82 ACTIVE  643   1.6194   $3,380    -5.45%
         //
-        //   Activation rationale:
-        //   - PF      : 1.4904 vs 1.4675 baseline -> +0.023 (improvement)
-        //   - max_dd  : -12.18% vs -12.70% baseline -> -0.52pp (improvement)
-        //   - SL_HIT  : 240 vs 295 baseline (55 fewer SL hits caught by BE)
-        //   - BE_CUT  : 163 (new protection firing, ~30% of trades)
-        //   - TP_HIT  : 138 vs 177 baseline (cost: 39 winners cut early)
-        //   - gross_pnl: $5,777 vs $7,204 baseline (-$1,427, -20% absolute)
-        //   - LOSS_CUT: 0 (intentionally off; every LC>0 cell hurt PF)
+        //   Wide-sweep LC values, for context (S77, --wide-sweep grid):
+        //   (0.5,  0.40, 0.05)             555   1.2794   $3,333   -16.25%
+        //   (1.0,  0.40, 0.05) S76         544   1.3574   $4,329   -14.25%
         //
-        //   This is a risk-vs-return trade. Gives up ~20% absolute return
-        //   in exchange for tighter PF and shallower max drawdown. Pure
-        //   BE_RATCHET only -- no LOSS_CUT, because every LC>0 cell in
-        //   the sweep underperformed baseline (range PF 1.25-1.40 vs
-        //   baseline 1.467). Mean-reversion engines amputate badly under
-        //   LOSS_CUT: trades that briefly go adverse often recover to TP.
+        //   PF curve as a function of LC (with ARM=0.40, BUF=0.05 fixed):
+        //     LC=0.00 : 1.490   (S80, BE-only)
+        //     LC=0.05 : 1.295   (too tight, catches noise; LC fires 614x/682)
+        //     LC=0.10 : 1.619   (S82, peak)
+        //     LC=0.50 : 1.279   (loose; LC fires only 143x/555)
+        //     LC=1.00 : 1.357   (very loose; LC fires only 41x/544)
         //
-        //   Mechanic: ARM=0.40 means BE ratchet arms once mfe reaches
-        //   +0.40% of entry (~$9.60 mfe at $2400 XAU). BUF=0.05 means
-        //   close at entry+0.05% (~$1.20 above entry) once armed -- a
-        //   tiny profit floor instead of break-even-exactly. Catches
-        //   trades that peeked profitable then retraced -- the classic
-        //   "winner-turned-loser" pattern that the hard 1 ATR SL alone
-        //   can't address.
+        //   The curve is NON-MONOTONIC. The S77 wide grid skipped over the
+        //   peak (only tested LC ∈ {0, 0.5, 1.0}); the S81 tight grid found
+        //   it. Lesson logged: test the operational band of similar engines
+        //   in the codebase, not arbitrary coarse grids.
         //
-        // If a future tape or regime changes the picture, re-run the
-        // EmaPullbackBacktest --sweep before changing these. Engine code
+        // S82 activation rationale (vs baseline):
+        //   PF        : 1.6194 vs 1.4675 baseline -> +0.152  (big improvement)
+        //   max_dd    : -5.45% vs -12.70% baseline -> -7.25pp (57% reduction)
+        //   SL_HIT    : 0   vs 295 baseline (LC catches every loser first)
+        //   LOSS_CUT  : 507 firings, ~$24 per cut (vs ~$45 SL hits replaced)
+        //   BE_CUT    : 63 firings (smaller layer on top)
+        //   TP_HIT    : 72  vs 177 baseline (cost: 105 winners cut early)
+        //   gross_pnl : $3,380 vs $7,204 baseline (-$3,824, -53% absolute)
+        //
+        //   This is the protection profile the operator asked for: bad
+        //   trades cut quickly, drawdown shrinks dramatically. Costs ~half
+        //   the absolute return for the risk reduction. Same family as
+        //   what XauusdFvg / XauThreeBar30m / PDHL run at the call-site
+        //   level (LC ∈ 0.04-0.05%), just calibrated at the EmaPullback-
+        //   specific operational peak (LC = 0.10%).
+        //
+        // To revisit: re-run EmaPullbackBacktest --sweep first. The
+        // operational peak may shift with regime/tape changes. Engine code
         // (on_bar + on_tick S63 management blocks) is single-sourced --
-        // no code change needed to tune; just edit these three lines.
-        g_ema_pullback.LOSS_CUT_PCT      = 0.0;   // state A: BE-only protection
+        // no code change to tune; just edit these three lines.
+        g_ema_pullback.LOSS_CUT_PCT      = 0.10;  // state A: LC + BE active
         g_ema_pullback.BE_ARM_PCT        = 0.40;
         g_ema_pullback.BE_BUFFER_PCT     = 0.05;
         g_ema_pullback.init();
