@@ -1291,23 +1291,53 @@ static void init_engines(const std::string& cfg_path)
         g_ema_pullback.max_lot_cap       = 0.05;
         g_ema_pullback.block_on_risk_off = true;
         g_ema_pullback.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
-        // S63 in-flight protection (state-E -> state-B transition, 2026-05-14
-        // part-X follow-up; see docs/handoffs/SESSION_HANDOFF_2026-05-14m.md
-        // next-session item #4). Hooks wired in EmaPullbackEngine.hpp EpbCell
-        // on_tick management block; portfolio-level values propagate to all
-        // 4 cells via EpbPortfolio::init() stamp lambda.
+        // S63 in-flight protection -- state B (hooks present, gate inert).
         //
-        // Defaults 0.0 keep behaviour identical to pre-S63 EmaPullback. Per
-        // project discipline ("no near-miss"), the single XAU H1 SL -$45.78
-        // observed on 2026-05-14 is not sufficient evidence to activate
-        // non-zero values; queue a Phase 1 sweep across LOSS_CUT_PCT /
-        // BE_ARM_PCT / BE_BUFFER_PCT axes on XAU 2024-2026 tape + Phase 3
-        // WF closure before flipping these from 0.0.
+        // History:
+        //   S75 (69a2f83) -- wired hooks into EpbCell::on_tick + propagation
+        //                    through EpbPortfolio::init(). Call-site at 0.0.
+        //   S76           -- activated with (1.0, 0.40, 0.05) reasoned from
+        //                    a single shadow trade. (No backtest evidence.)
+        //   S77           -- created backtest/EmaPullbackBacktest.cpp harness
+        //                    with 3x3x3 sweep mode.
+        //   S78           -- discovered S75/S76 wired S63 into on_tick only.
+        //                    EmaPullback is bar-driven; harness drives
+        //                    on_h1_bar in lockstep with live engine's bar-end
+        //                    management; on_tick never called in backtest.
+        //                    Fix: replicate the BE_RATCHET + LOSS_CUT block
+        //                    in EpbCell::on_bar with bar-extremes / mfe_pre
+        //                    semantics. Both paths now exercise S63 correctly.
+        //   S79 (this)    -- revert call-site to 0.0 per S78-enabled sweep.
         //
-        // To activate later: set the three values here, leave the hooks
-        // alone. State A is reached once both engine + call-site are
-        // non-zero with documented backtest evidence in the commit.
-        g_ema_pullback.LOSS_CUT_PCT      = 0.0;  // state B: hooks present, gate inert
+        // Sweep evidence (S77 harness, 27-cell 3x3x3 grid over
+        //  LC={0.0, 0.5, 1.0}, ARM={0.0, 0.20, 0.40}, BUF={0.0, 0.025, 0.05}
+        //  on phase1/signal_discovery/tsmom_warmup_H1.csv, 6,156 H1 bars,
+        //  Apr 2025 - Apr 2026 XAUUSD validation corpus):
+        //
+        //   Cell                       trades   PF      gross_pnl   max_dd
+        //   ------------------------------------------------------------
+        //   (0.0, 0.0, 0.0) baseline    475   1.4675    $7,204.77   -12.70%
+        //   (1.0, 0.40, 0.05) = S76     544   1.3574    $4,329.67   -14.25%
+        //   best non-baseline cell:
+        //   (0.0, 0.20, 0.00)           577   1.4993    $4,503.73   -14.75%
+        //
+        //   Verdict: every LOSS_CUT>0 cell underperforms baseline on PF
+        //   (1.25-1.40 range vs 1.467 baseline). The "best" non-baseline
+        //   cell is pure BE_RATCHET at LC=0/ARM=0.20, but it loses $2,700
+        //   in absolute return for a 0.03 PF gain. BE_CUT fires 156-281
+        //   times per cell (30-50% of all trades) -- it's the dominant
+        //   exit reason in those cells, killing 35-70 TP hits per run.
+        //   The engine's 2.5R TP requires riding through giveback; BE
+        //   amputates winners before they resolve.
+        //
+        //   Conclusion: S63 protection is net-negative for this engine on
+        //   this corpus. Revert to 0.0 and stay state B.
+        //
+        // If a future tape or regime changes the picture, re-run the sweep
+        // before flipping these to non-zero. Engine code (on_bar + on_tick
+        // S63 management blocks) stays in place — no behaviour change at
+        // runtime when values are 0.0.
+        g_ema_pullback.LOSS_CUT_PCT      = 0.0;   // state B: hooks present, inert
         g_ema_pullback.BE_ARM_PCT        = 0.0;
         g_ema_pullback.BE_BUFFER_PCT     = 0.0;
         g_ema_pullback.init();
