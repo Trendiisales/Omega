@@ -1542,10 +1542,66 @@ public:
             // CrossPosition::manage() (L171-202) handles natural exit via
             // TP_HIT or trailed SL_HIT. Losers still see MAX_HOLD_SEC and
             // get T/O'd at the original deadline.
+            //
+            // 2026-05-14 (S86 hotfix): TIMEOUT-aware consec-FC tracking.
+            //   BUG SURFACED LIVE 2026-05-14: VWAPReversion on US500.F (S63 OFF
+            //   per part-L revert) fired 9 consecutive SHORT trades against an
+            //   uptrend on 10-min cadence (14:42 -> 16:02 UTC), all exiting via
+            //   TIMEOUT, with the consec-FC direction-block never engaging.
+            //   Net -$147 for one engine on one day.
+            //
+            //   Root cause: consec_fc_same_dir_ was only incremented on
+            //   LOSS_CUT (L~1389) and MAE_EXIT (L~1434). TIMEOUT exits go
+            //   through pos_.manage() and bypass both paths. On instruments
+            //   where S63 is OFF, losing trades almost always exit via TIMEOUT
+            //   (LOSS_CUT disabled when LOSS_CUT_PCT==0.0, MAE_EXIT only fires
+            //   above its 50%-of-TP threshold which mean-reversion fades rarely
+            //   reach), so the counter never advanced past 0 -> 30-min
+            //   direction-block never triggered -> engine fired every
+            //   COOLDOWN_SEC into the same losing direction indefinitely.
+            //
+            //   Fix: capture pre-manage state (active flag, losing flag,
+            //   long-side flag) before the manage() call. After manage(), if
+            //   the position just closed AND was adverse at close time, treat
+            //   the same as MAE_EXIT: increment consec_fc_same_dir_, engage
+            //   the direction-block on the second consecutive same-side adverse
+            //   close, and apply MAE_COOLDOWN_SEC instead of the regular
+            //   COOLDOWN_SEC. Symmetric fix applies to all four VWR instances
+            //   (g_vwap_rev_sp/nq/ger40/eurusd).
+            //
+            //   Note: MAE_COOLDOWN_SEC + 30-min FC block is the SAME shaping
+            //   the existing LOSS_CUT/MAE_EXIT paths apply. We are not adding
+            //   a NEW protection; we are closing a hole in an EXISTING one.
+            //   No behaviour change for trades that close winning -- the
+            //   was_losing guard ensures TP_HIT / trailed-SL-above-entry close
+            //   paths are unaffected.
+            const bool was_active_before = pos_.active;
+            const bool was_losing        = (move < 0.0);
+            const bool was_long_before   = pos_.is_long;
+
             const int eff_max_hold = (move > 0.0)
                 ? std::numeric_limits<int>::max()
                 : MAX_HOLD_SEC;
             pos_.manage(bid, ask, eff_max_hold, on_close);
+
+            // If manage() just closed an adverse position (TIMEOUT-loss or
+            // trailed-SL below entry), treat as a direction-bleed for consec-FC
+            // and apply the longer MAE_COOLDOWN_SEC rather than COOLDOWN_SEC.
+            if (was_active_before && !pos_.active && was_losing) {
+                if (last_fc_long_ == was_long_before) ++consec_fc_same_dir_;
+                else { consec_fc_same_dir_ = 1; last_fc_long_ = was_long_before; }
+                if (consec_fc_same_dir_ >= 2) {
+                    fc_block_long_  = was_long_before;
+                    fc_block_until_ = ca_now_sec() + CONSEC_FC_BLOCK_SEC;
+                    printf("[VWAP-REV] %s %d consecutive ADVERSE-CLOSE in %s -- blocking 30min\n",
+                           sym.c_str(), consec_fc_same_dir_,
+                           was_long_before ? "LONG" : "SHORT");
+                    fflush(stdout);
+                }
+                cooldown_until_   = ca_now_sec() + MAE_COOLDOWN_SEC;
+                timeout_extended_ = false;
+            }
+
             return {};
         }
 
