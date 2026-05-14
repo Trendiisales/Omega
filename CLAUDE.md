@@ -86,6 +86,82 @@ cmake --build build --target OmegaBacktest -j
 Windows-only headers and always fails on macOS, even though the
 surrounding green "Built target X" lines can make it look like a pass.
 
+## Deploy Hygiene
+
+Added 2026-05-14 after a load-bearing discovery: VPS `git status`
+showed **HEAD detached at `18b62c8` (S24, late April)** while the
+running binary was `491fd94` (S81, built 5/14 06:49 UTC) and
+`origin/main` was at `f7c18f7` (S86, the live-bug hotfix). Three
+distinct commits — working tree, running binary, and origin/main —
+none of them in agreement. Multiple "stop-bleed" commits over the
+prior week (S68 g_vwap_rev_nq.enabled=false, S82 EmaPullback LC=0.10,
+others) had been shipped under the assumption that "commit + push +
+operator-side rebuild = it's live", but the working tree never moved
+off S24, so any rebuild from current source would have downgraded the
+running binary by a month. The protection actually-in-production was
+unverifiable.
+
+This section codifies the checks that must run before and after any
+ship that affects the running binary, so this can't recur.
+
+### At session start (any session that may commit engine code or shipping config)
+
+The operator runs **before any new engine work begins** and pastes
+back the output:
+
+```powershell
+cd C:\Omega
+git rev-parse HEAD                       # MUST equal what's at origin/main
+git rev-parse origin/main                # for direct comparison
+Get-ChildItem C:\Omega\Omega.exe | Select Name, LastWriteTime
+Get-Content C:\Omega\logs\omega_service_stderr.log -Tail 5 | Select-String "Git hash|version="
+```
+
+Expected: VPS HEAD == origin/main, and the `Git hash:` line in stderr
+also equals that hash. Three values, all matching.
+
+If they don't match: **P0 — investigate before any new ship.** Detached
+HEAD, lagging working tree, or running-binary hash divergent from HEAD
+all mean shipping new code is operating on assumptions that may not
+hold. Reconcile first.
+
+### After every deploy (rebuild + restart)
+
+The operator runs **after the service comes up** and pastes back:
+
+```powershell
+Get-Content C:\Omega\logs\omega_service_stderr.log -Tail 10 | Select-String "Git hash|version="
+git rev-parse origin/main
+```
+
+The `Git hash:` value MUST match the new `origin/main` HEAD. If it
+shows the prior hash, the rebuild didn't pick up the new code OR the
+service restarted from the OLD binary. Either way the deploy didn't
+take and the new fix is NOT in production.
+
+### Build path discipline
+
+The OMEGA.ps1 branch guard (S60: "hard-block when HEAD != main") is
+the canonical build path. **Manual builds bypassing the guard are
+forbidden.** If a one-off rebuild is needed (e.g. a quick incremental),
+the operator must `git checkout main` first, build, then return to
+whatever state they were in. The risk of a manual build creating a
+binary out-of-band of git tracking is exactly what produced the
+2026-05-14 discovery.
+
+### History
+
+The 2026-05-14 incident root cause: on 2026-05-10 a build cycle
+produced two failed binaries (`Omega.exe.broken_65d91b4_*` and
+`Omega.exe.broken_9bc02f9_*`); the operator reverted the working tree
+to S24 via detached checkout (`Omega.exe.working_18b62c8_20260510_*`).
+The detached state then persisted across sessions while the binary was
+rebuilt from a different state at S81 four days later, leaving the
+working tree, the binary, and origin/main in three different commits.
+None of the prior sessions ran a hash-alignment check, so the
+divergence wasn't caught until the S86 hotfix deploy attempted to
+proceed and surfaced it.
+
 ## Standing Audit Checks
 
 Run periodically (any session that touches engine code):
