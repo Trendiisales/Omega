@@ -240,6 +240,14 @@ struct CandleFlowEngine {
     double         m_hmm_last_p   = 1.0;   // last p_continuation (for logging)
     int            m_hmm_last_state = omega::HMM_CONTINUATION;
 
+    // S63 2026-05-15 VWR-pattern cold-loss cut (LOSS_CUT only).
+    //   CFE already has partial-exit at 2x cost, trail at 2x ATR, early-fail
+    //   hard+soft cuts, session-aware scalps, and stagnation exit — so only
+    //   the cold-loss phase is added (no BE_RATCHET). XAU family band:
+    //   0.04-0.05% (XauusdFvg=0.05, PDHL=0.04, XauThreeBar30m=0.05). Class
+    //   default 0.05. At XAU $3700: 0.05% = $1.85 cold-loss cut distance.
+    double LOSS_CUT_PCT = 0.05;
+
     // -------------------------------------------------------------------------
     enum class Phase { IDLE, LIVE, COOLDOWN } phase = Phase::IDLE;
 
@@ -1591,6 +1599,20 @@ private:
 
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
+
+        // S63 LOSS_CUT: cold-loss backstop for trades going straight adverse.
+        //   Fires before partial-exit / trail / early-fail / stagnation logic.
+        //   At XAU $3700, 0.05% = $1.85. Catches entries where the candle-flow
+        //   signal was wrong and price reverses immediately.
+        if (LOSS_CUT_PCT > 0.0 && pos.entry > 0.0) {
+            const double adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            const double loss_cut_dist = pos.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = pos.is_long ? bid : ask;
+                close_pos(exit_px, "LOSS_CUT", now_ms, on_close);
+                return;
+            }
+        }
 
         const int64_t hold_ms = now_ms - pos.entry_ts_ms;
 

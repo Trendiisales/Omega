@@ -188,6 +188,7 @@ struct TsmomCell {
         double  mae           = 0.0;     // signed worst move (<=0 typical)
         double  spread_at     = 0.0;
         int     id            = 0;
+        bool    be_armed      = false;   // S63: per-position BE ratchet state
     };
 
     // ---- Configuration (set at init; immutable during run) ------------------
@@ -219,6 +220,20 @@ struct TsmomCell {
     //
     //   Set to 0.0 to disable (restores pre-audit-fixes-39 behaviour).
     double mae_exit_atr            = 2.0;
+
+    // S63 2026-05-15 VWR-pattern in-flight protection (full trio).
+    //   Tsmom is a trend-following engine with hard ATR-based SL (3.0*ATR),
+    //   MAE early exit (2.0*ATR), and no existing BE mechanism. Full trio:
+    //   LOSS_CUT catches cold-loss misfires, BE_ARM + BE_BUFFER protect
+    //   profits that develop then reverse before hold_bars expires.
+    //   XAU family band: 0.04-0.05%. Class default 0.05.
+    //   At XAU $3700: 0.05% = $1.85 cold-loss distance.
+    //   BE arms at 0.04% MFE ($1.48), ratchets SL to entry + 0.01% ($0.37).
+    //   be_armed is per-position (in Position struct) since multi-pos.
+    //   Sweep validation queued.
+    double LOSS_CUT_PCT  = 0.05;
+    double BE_ARM_PCT    = 0.04;
+    double BE_BUFFER_PCT = 0.01;
 
     int    direction       = 1;
     std::string timeframe  = "H1";
@@ -524,6 +539,33 @@ struct TsmomCell {
                 ? (bid - p.entry) : (p.entry - ask);
             if (signed_move > p.mfe) p.mfe = signed_move;
             if (signed_move < p.mae) p.mae = signed_move;
+
+            const double mid = (bid + ask) * 0.5;
+
+            // S63 LOSS_CUT: cold-loss backstop for trend misfires.
+            //   Fires before MAE_EXIT / SL. At XAU $3700, 0.05% = $1.85.
+            if (LOSS_CUT_PCT > 0.0 && p.entry > 0.0) {
+                const double adverse = (direction == 1)
+                    ? (p.entry - mid) : (mid - p.entry);
+                const double loss_cut_dist = p.entry * LOSS_CUT_PCT / 100.0;
+                if (adverse >= loss_cut_dist) {
+                    const double exit_px = (direction == 1) ? bid : ask;
+                    _close(p, exit_px, "LOSS_CUT", now_ms, on_close);
+                    it = positions_.erase(it);
+                    continue;
+                }
+            }
+
+            // S63 BE_RATCHET: once MFE reaches BE_ARM_PCT, ratchet SL to entry + buffer.
+            if (BE_ARM_PCT > 0.0 && !p.be_armed && p.entry > 0.0) {
+                const double arm_dist = p.entry * BE_ARM_PCT / 100.0;
+                if (p.mfe >= arm_dist) {
+                    p.be_armed = true;
+                    const double buf = p.entry * BE_BUFFER_PCT / 100.0;
+                    p.sl = (direction == 1)
+                        ? (p.entry + buf) : (p.entry - buf);
+                }
+            }
 
             // 2026-05-04 (audit-fixes-39): MAE-based intrabar early exit.
             //   Same threshold as on_bar's MAE_EXIT but checked tick-by-tick

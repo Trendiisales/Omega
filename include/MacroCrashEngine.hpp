@@ -95,6 +95,19 @@ public:
     int64_t COOLDOWN_MS     = 300000; // raised 60s->300s: fired 4x in one session; 5min cooldown prevents overtrading
     int64_t MAX_HOLD_MS     = 7200000;
 
+    // S63 2026-05-15 VWR-pattern cold-loss cut (LOSS_CUT only).
+    //   MCE is a macro-continuation engine with deliberately wide ATR-based
+    //   SL (ATR*1.0 London = ~$8-12, ATR*1.5 Asia = ~$12-18). The standard
+    //   XAU mean-reversion family LOSS_CUT at 0.04-0.05% ($1.48-1.85 at
+    //   $3700) would fire on every adverse trade before the structural SL,
+    //   defeating the engine's wide-stop design. LOSS_CUT here is set wider
+    //   at 0.15% ($5.55 at $3700) — catches genuine misfires earlier than
+    //   the structural SL while respecting MCE's need for room on real
+    //   macro moves. Engine already has ratchet + velocity trail + dollar-
+    //   stop + consec-SL kill → no BE_RATCHET needed.
+    //   Sweep validation queued — value anchored to structural SL band.
+    double LOSS_CUT_PCT = 0.15;
+
     bool    enabled         = true;
     bool    shadow_mode     = true;   // DEFAULT -- change requires explicit auth
 
@@ -716,6 +729,21 @@ private:
         //   pos.mae stays <= 0; tracks worst against-position move in price points.
         //   Mirrors GoldEngineStack.hpp:4377 convention.
         if (move < pos.mae) pos.mae = move;
+
+        // S63 LOSS_CUT: cold-loss backstop for macro-continuation misfires.
+        //   Fires before the bracket/SL/trail logic. At 0.15% and XAU $3700,
+        //   cut distance = $5.55 — tighter than the structural SL (ATR*1.0
+        //   ~$8-12 London) but wide enough to let legitimate macro entries
+        //   develop past initial noise. Catches entries where the "macro
+        //   crash" signal was a reversal, not a continuation.
+        if (LOSS_CUT_PCT > 0.0 && pos.entry > 0.0) {
+            const double adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            const double loss_cut_dist = pos.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                _close_all(pos.is_long ? bid : ask, "LOSS_CUT", now_ms);
+                return;
+            }
+        }
 
         // -- Bracket floor check -------------------------------------------
         if (!pos.bracket_filled && pos.bracket_size >= MIN_LOT) {

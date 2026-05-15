@@ -238,6 +238,18 @@ public:
     // not a protective stop, so whipsaw/CONSEC_SL machinery stays pristine.
     double REGIME_FLIP_MIN_DRIFT      = 0.0;   // 0.0 disables
     int    REGIME_FLIP_CONFIRM_TICKS  = 0;     // 0 disables
+    // S63 2026-05-15 VWR-pattern cold-loss cut (LOSS_CUT only).
+    //   BracketEngine is a CRTP template used across gold + FX. The structural
+    //   SL is at the bracket range boundary (3-6pt gold per MAX_SL_DIST_PTS,
+    //   varies by FX pair). Standard XAU mean-reversion LOSS_CUT at 0.04-0.05%
+    //   ($1.48-1.85 at $3700) is tighter than most bracket SLs and would fire
+    //   on every adverse trade. Default 0.10% ($3.70 at gold $3700, ~11 pips
+    //   EURUSD) sits inside the bracket range for most instruments, catching
+    //   straight-adverse misfires before the structural SL. Override per-
+    //   instance in engine_init.hpp for instrument-specific calibration.
+    //   No BE_RATCHET — engine has its own trail + BE lock mechanism.
+    double LOSS_CUT_PCT = 0.10;
+
     const char* symbol         = "???";
     bool   shadow_mode         = false;  // set by main.cpp -- enables price-triggered fill sim in PENDING
 
@@ -441,6 +453,21 @@ public:
             const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
             if ( move > pos.mfe) pos.mfe =  move;
             if (-move > pos.mae) pos.mae = -move;
+
+            // S63 LOSS_CUT: cold-loss backstop for trades going straight adverse.
+            //   Fires before breakout-fail / trail / SL logic.  Catches entries
+            //   where the breakout was a false signal and price reverses hard.
+            //   Default 0.10% ($3.70 at gold $3700, ~11 pips EURUSD).
+            //   Override per-instance in engine_init.hpp for calibration.
+            if (LOSS_CUT_PCT > 0.0 && pos.entry > 0.0) {
+                const double adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+                const double loss_cut_dist = pos.entry * LOSS_CUT_PCT / 100.0;
+                if (adverse >= loss_cut_dist) {
+                    const double exit_px = pos.is_long ? bid : ask;
+                    closePos(exit_px, "LOSS_CUT", macro_regime, on_close);
+                    return;
+                }
+            }
 
             // Breakout failure: price re-crosses midpoint of bracket
             // FAILURE_WINDOW_MS divided by 1000 uses integer truncation -- values < 1000ms

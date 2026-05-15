@@ -201,6 +201,15 @@ public:
     static constexpr int    EXPANSION_MIN_HISTORY = 5;
     static constexpr double EXPANSION_MULT        = 1.10;
 
+    // S63 2026-05-15 VWR-pattern cold-loss cut (LOSS_CUT only).
+    //   This engine already has its own BE lock (BE_TRIGGER_PTS=3.0 +
+    //   BE_OFFSET_PTS=2.5) and MFE trail, so only the cold-loss phase
+    //   is added — mirrors RSIReversalEngine LOSS_CUT-only flavor.
+    //   XAU family band: 0.04-0.05% (XauusdFvg=0.05, PDHL=0.04,
+    //   XauThreeBar30m=0.05, RSIReversal=0.05). Class default 0.05.
+    //   At XAU $3700: 0.05% = $1.85 cold-loss cut distance.
+    double LOSS_CUT_PCT = 0.05;
+
     enum class Phase { IDLE, ARMED, PENDING, LIVE, COOLDOWN };
     Phase phase = Phase::IDLE;
 
@@ -655,6 +664,20 @@ public:
         const double move = pos.is_long ? (mid - pos.entry) : (pos.entry - mid);
         if (move > pos.mfe) pos.mfe = move;
         if (move < pos.mae) pos.mae = move;
+
+        // S63 LOSS_CUT: cold-loss backstop for trades going straight adverse.
+        //   Fires before the existing BE/trail logic. Catches trades that
+        //   never reach BE_TRIGGER_PTS and would otherwise ride to the
+        //   original SL. At XAU $3700, 0.05% = $1.85 adverse distance.
+        if (LOSS_CUT_PCT > 0.0 && pos.entry > 0.0) {
+            const double adverse = pos.is_long ? (pos.entry - mid) : (mid - pos.entry);
+            const double loss_cut_dist = pos.entry * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = pos.is_long ? bid : ask;
+                _close(exit_px, "LOSS_CUT", now_s, on_close);
+                return;
+            }
+        }
 
         // Trail with S20 arm guards + S52 give-back fraction.
         const int64_t held_s     = now_s - pos.entry_ts;

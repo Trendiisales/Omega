@@ -212,6 +212,19 @@ struct DonchianCell {
     std::string symbol          = "XAUUSD";
     std::string cell_id         = "Donchian_H1_long";
 
+    // S63 2026-05-15 VWR-pattern in-flight protection (full trio).
+    //   Donchian is a breakout/trend engine with hard ATR-based SL and no
+    //   existing BE mechanism. Full trio: LOSS_CUT catches cold-loss misfires,
+    //   BE_ARM + BE_BUFFER protect profits that develop then reverse before TP.
+    //   XAU family band: 0.04-0.05%. Class default 0.05.
+    //   At XAU $3700: 0.05% = $1.85 cold-loss distance.
+    //   BE arms at 0.04% MFE ($1.48), ratchets SL to entry + 0.01% ($0.37).
+    //   Sweep validation queued.
+    double LOSS_CUT_PCT  = 0.05;
+    double BE_ARM_PCT    = 0.04;
+    double BE_BUFFER_PCT = 0.01;
+    bool   be_armed_     = false;  // runtime: true once MFE >= BE_ARM_PCT
+
     // ---- Rolling Donchian channel: highs/lows windows ----------------------
     std::deque<double> highs_;
     std::deque<double> lows_;
@@ -378,6 +391,7 @@ struct DonchianCell {
         pos_bars_held_  = 0;
         pos_mfe_        = 0.0;
         pos_mae_        = 0.0;
+        be_armed_       = false;   // S63: reset BE ratchet state on new entry
         pos_spread_at_  = spread_pt;
         // Arm the breakout fail-safe (S14): the level just broken is the
         // prior_high for longs / prior_low for shorts. The check fires on
@@ -406,6 +420,34 @@ struct DonchianCell {
             ? (bid - pos_entry_) : (pos_entry_ - ask);
         if (signed_move > pos_mfe_) pos_mfe_ = signed_move;
         if (signed_move < pos_mae_) pos_mae_ = signed_move;
+
+        const double mid = (bid + ask) * 0.5;
+
+        // S63 LOSS_CUT: cold-loss backstop for breakout misfires.
+        //   Fires before SL/TP. At XAU $3700, 0.05% = $1.85. Catches entries
+        //   where the Donchian breakout was a false signal and price reverses.
+        if (LOSS_CUT_PCT > 0.0 && pos_entry_ > 0.0) {
+            const double adverse = (direction == 1)
+                ? (pos_entry_ - mid) : (mid - pos_entry_);
+            const double loss_cut_dist = pos_entry_ * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                const double exit_px = (direction == 1) ? bid : ask;
+                _close(exit_px, "LOSS_CUT", now_ms, on_close);
+                return;
+            }
+        }
+
+        // S63 BE_RATCHET: once MFE reaches BE_ARM_PCT, ratchet SL to entry + buffer.
+        //   Protects profits that develop then reverse before hitting TP.
+        if (BE_ARM_PCT > 0.0 && !be_armed_ && pos_entry_ > 0.0) {
+            const double arm_dist = pos_entry_ * BE_ARM_PCT / 100.0;
+            if (pos_mfe_ >= arm_dist) {
+                be_armed_ = true;
+                const double buf = pos_entry_ * BE_BUFFER_PCT / 100.0;
+                pos_sl_ = (direction == 1)
+                    ? (pos_entry_ + buf) : (pos_entry_ - buf);
+            }
+        }
 
         // Tick-level SL fill, then TP fill.
         if (direction == 1) {
