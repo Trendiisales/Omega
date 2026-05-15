@@ -418,7 +418,7 @@ public:
 
         // ?? VWAP update (daily reset at UTC midnight) ?????????????????????
         {
-            const auto t_v = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            const auto t_v = static_cast<time_t>(nowSec());
             struct tm ti_v{};
 #ifdef _WIN32
             gmtime_s(&ti_v, &t_v);
@@ -1298,8 +1298,17 @@ protected:
     int                m_break_confirm_ticks  = 0;   // consecutive ticks price has stayed outside comp boundary (Gate 5)
 
     static int64_t nowSec() noexcept {
+#ifdef OMEGA_BT_SHIM_ACTIVE
+        // Backtest mode: read simulated time directly from OmegaTimeShim.
+        // The macro-redirect (#define system_clock OmegaBtClock) is unreliable
+        // across compilers; this direct read matches the proven pattern in
+        // CrossAssetEngines.hpp ca_now_sec(). Production builds (no shim) use
+        // the real system_clock below.
+        return omega::bt::g_sim_now_ms / 1000LL;
+#else
         return std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
+#endif
     }
 
     template<typename It>

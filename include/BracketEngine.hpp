@@ -1077,8 +1077,15 @@ protected:
     double m_locked_short_tp  = 0.0;
 
     static int64_t nowSec() noexcept {
+#ifdef OMEGA_BT_SHIM_ACTIVE
+        // Backtest mode: read simulated time directly from OmegaTimeShim.
+        // Same pattern as CrossAssetEngines.hpp ca_now_sec() and
+        // BreakoutEngine::nowSec(). Production builds use the real clock.
+        return omega::bt::g_sim_now_ms / 1000LL;
+#else
         return std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
+#endif
     }
 
     void arm_both_sides(double spread, const char* macro_regime) noexcept {

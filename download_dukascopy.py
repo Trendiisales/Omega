@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """
-Dukascopy XAUUSD tick data downloader.
-Downloads 2 years: 2024-03-01 to 2026-03-01.
-Output: CSV per month in ./duka_ticks/XAUUSD_YYYY_MM.csv
+Dukascopy tick data downloader — multi-instrument.
+Output: CSV per month in ./duka_ticks/<SYMBOL>_YYYY_MM.csv
 Format: timestamp_ms,ask,bid,ask_vol,bid_vol
 
 Usage:
-    python3 download_dukascopy.py [--symbol XAUUSD] [--start 2024-03-01] [--end 2026-03-01]
+    python3 download_dukascopy.py --symbol XAUUSD --start 2024-03-01 --end 2026-05-01
+    python3 download_dukascopy.py --symbol USNASDAQIDXUSD --start 2024-03-01 --end 2026-05-01
+    python3 download_dukascopy.py --symbol USA500IDXUSD   --start 2024-03-01 --end 2026-05-01
     python3 download_dukascopy.py --resume   # skip already-complete months
+
+Known Dukascopy symbols + PRICE_DIV:
+    XAUUSD           1000.0    (gold, 3 decimal places)
+    USNASDAQIDXUSD      1.0    (NAS100, 0 decimal places)
+    USA500IDXUSD        1.0    (US500/SPX, 0 decimal places)
+    DEUIDXEUR            1.0    (GER40/DAX, 0 decimal places)
+    GBRIDXGBP            1.0    (UK100/FTSE, 0 decimal places)
+    USA30IDXUSD          1.0    (US30/Dow, 0 decimal places)
 """
 
 import urllib.request
@@ -23,12 +32,33 @@ import csv
 # ── Constants ─────────────────────────────────────────────────────────────────
 BASE_URL    = "https://datafeed.dukascopy.com/datafeed"
 TICK_BYTES  = 20        # each tick record is 20 bytes
-PRICE_DIV   = 1000.0    # XAUUSD: raw int / 1000 = price in USD
 OUT_DIR     = "./duka_ticks"
 RETRY_MAX   = 5
 RETRY_DELAY = 3.0       # seconds between retries
 HOUR_DELAY  = 0.15      # seconds between hour requests (be polite)
 UA          = "Mozilla/5.0 (compatible; tick-downloader/1.0)"
+
+# Per-symbol price divisor lookup (Dukascopy bi5 stores prices as raw ints)
+PRICE_DIV_MAP = {
+    "XAUUSD":           1000.0,   # 3 decimal places
+    "USNASDAQIDXUSD":      1.0,   # 0 decimal places (indices)
+    "USA500IDXUSD":        1.0,
+    "DEUIDXEUR":           1.0,
+    "GBRIDXGBP":           1.0,
+    "USA30IDXUSD":         1.0,
+    "USDJPY":           1000.0,
+    "EURUSD":         100000.0,
+    "GBPUSD":         100000.0,
+    "AUDUSD":         100000.0,
+    "NZDUSD":         100000.0,
+}
+
+def get_price_div(symbol: str) -> float:
+    """Get PRICE_DIV for a symbol. Falls back to 1.0 with a warning."""
+    if symbol in PRICE_DIV_MAP:
+        return PRICE_DIV_MAP[symbol]
+    print(f"WARNING: unknown PRICE_DIV for {symbol}, using 1.0 — verify first few prices!")
+    return 1.0
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -59,7 +89,7 @@ def fetch_hour(symbol: str, year: int, month: int, day: int, hour: int) -> bytes
     return b""
 
 
-def decompress_bi5(data: bytes) -> list:
+def decompress_bi5(data: bytes, price_div: float) -> list:
     """Decompress bi5 LZMA data and return list of (ms_offset, ask, bid, ask_vol, bid_vol)."""
     if not data:
         return []
@@ -73,8 +103,8 @@ def decompress_bi5(data: bytes) -> list:
         off = i * TICK_BYTES
         ms_off, ask_raw, bid_raw = struct.unpack_from(">III", raw, off)
         ask_vol, bid_vol         = struct.unpack_from(">ff",  raw, off + 12)
-        ask = ask_raw / PRICE_DIV
-        bid = bid_raw / PRICE_DIV
+        ask = ask_raw / price_div
+        bid = bid_raw / price_div
         ticks.append((ms_off, ask, bid, float(ask_vol), float(bid_vol)))
     return ticks
 
@@ -87,7 +117,7 @@ def month_done_path(symbol: str, year: int, month: int) -> str:
     return os.path.join(OUT_DIR, f".done_{symbol}_{year}_{month:02d}")
 
 
-def download_month(symbol: str, year: int, month: int) -> int:
+def download_month(symbol: str, year: int, month: int, price_div: float) -> int:
     """Download one full month. Returns total tick count written."""
     csv_path  = month_csv_path(symbol, year, month)
     done_path = month_done_path(symbol, year, month)
@@ -109,7 +139,7 @@ def download_month(symbol: str, year: int, month: int) -> int:
             day_ticks = 0
             for hour in range(24):
                 raw = fetch_hour(symbol, year, month, day, hour)
-                ticks = decompress_bi5(raw)
+                ticks = decompress_bi5(raw, price_div)
 
                 if ticks:
                     # Compute absolute ms timestamp for each tick
@@ -153,12 +183,15 @@ def main():
     parser = argparse.ArgumentParser(description="Download Dukascopy tick data")
     parser.add_argument("--symbol", default="XAUUSD")
     parser.add_argument("--start",  default="2024-03-01")
-    parser.add_argument("--end",    default="2026-03-01")
+    parser.add_argument("--end",    default="2026-05-01")
     parser.add_argument("--resume", action="store_true",
                         help="Skip months that already have a .done marker")
+    parser.add_argument("--price-div", type=float, default=None,
+                        help="Override PRICE_DIV (auto-detected from symbol if omitted)")
     args = parser.parse_args()
 
     symbol = args.symbol
+    price_div = args.price_div if args.price_div else get_price_div(symbol)
     start  = datetime.date.fromisoformat(args.start)
     end    = datetime.date.fromisoformat(args.end)
 
@@ -166,6 +199,7 @@ def main():
 
     months = list(iter_months(start, end))
     print(f"Downloading {symbol} ticks: {start} -> {end}")
+    print(f"PRICE_DIV: {price_div}")
     print(f"Total months: {len(months)}")
     print(f"Output dir:   {os.path.abspath(OUT_DIR)}")
     print(f"Estimated size: ~{len(months) * 150:.0f} MB uncompressed\n")
@@ -183,7 +217,7 @@ def main():
 
         print(f"[{idx:3d}/{len(months)}] {year}-{month:02d} downloading...", flush=True)
         t0 = time.time()
-        n  = download_month(symbol, year, month)
+        n  = download_month(symbol, year, month, price_div)
         elapsed = time.time() - t0
         grand_total += n
         print(f"  -> {n:,} ticks in {elapsed:.0f}s  |  grand total: {grand_total:,}\n",
