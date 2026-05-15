@@ -1,36 +1,33 @@
 // =============================================================================
-// IndexFlowBacktest.cpp
+// IndexFlowBacktest.cpp  (v2 — real tick replay, multi-config sweep)
 // =============================================================================
-// Standalone backtest for IndexFlowEngine + VWAPAtrTrail upgrade.
+// Standalone backtest harness that replays IndexFlowEngine strategy logic on
+// real index tick data (HISTDATA / DUKA / JFOREX CSV formats).
 //
-// Since we don't have index tick CSVs locally, this sim generates synthetic
-// tick streams that replicate the statistical properties of each index as
-// observed from the gold tick data and live log context:
-//   - Apr 2-4 2026 tariff crash: NQ -800pt, SP -200pt, DJ30 -1500pt
-//   - Normal London/NY session: NQ ±100pt/day, SP ±35pt/day, DJ30 ±250pt/day
-//   - Spread and ATR characteristics confirmed from OmegaCostGuard.hpp
+// BUILD:
+//   clang++ -std=c++17 -O3 -o backtest/idx_flow_bt backtest/IndexFlowBacktest.cpp
 //
-// SYNTHETIC DATA GENERATION:
-//   Uses a regime-switching GBM model:
-//     MEAN_REVERSION: μ=-κ(mid-mean), σ=ATR_NORMAL*0.01 per tick
-//     TREND: μ=trend_drift per tick, σ=ATR_NORMAL*0.015 per tick
-//     IMPULSE: μ=impulse_drift per tick, σ=ATR_NORMAL*0.02 per tick
-//   Regime transitions calibrated to match gold session data proportions.
-//   Tick rate: ~8 ticks/sec London, ~12 ticks/sec NY, ~2 ticks/sec Asia
+// USAGE:
+//   ./backtest/idx_flow_bt --instrument SP ~/Tick/SPXUSD/HISTDATA_COM_ASCII_SPXUSD_T*/DAT_ASCII_SPXUSD_T_*.csv
+//   ./backtest/idx_flow_bt --instrument NQ ~/Tick/Nas/HISTDATA_COM_ASCII_NSXUSD_T*/DAT_ASCII_NSXUSD_T_*.csv
 //
-// BUILD (Mac):
-//   cd /tmp/omega_audit/omega
-//   g++ -std=c++17 -O3 -o backtest/IndexFlowBT backtest/IndexFlowBacktest.cpp
-//       -I include
+// TICK FORMAT AUTO-DETECTION:
+//   HISTDATA:      YYYYMMDD HHMMSSmmm,bid,ask,0         (no header)
+//   DUKA_BID_ASK:  timestamp_ms,bid,ask,...              (header with "timestamp")
+//   DUKA_ASK_BID:  timestamp_ms,ask,bid,...              (header, ask before bid)
+//   JFOREX:        Time (EET),Ask,Bid,...                (header with "Time", EET +2h)
 //
-// RUN:
-//   ./backtest/IndexFlowBT [--days N] [--symbol SYM] [--seed N]
-//   Defaults: --days 504 --symbol ALL --seed 42
+// SWEEP:
+//   drift_threshold:    {0.5, 0.8, 1.2} SP; {1.5, 2.0, 3.0} NQ
+//   drift_persist_ticks: {12, 20, 30}
+//   LOSS_CUT_PCT:       {0.0, 0.05, 0.07, 0.10}
+//   = 36 configs per instrument.
 //
 // OUTPUT:
-//   Console: per-engine summary table (WR, total PnL, Sharpe, MaxDD)
-//   bt_index_trades.csv: all trades
-//   bt_index_report.csv: per-engine aggregate
+//   1. Per-config one-liner (params, IS trades/PF, OOS trades/PF, verdict)
+//   2. Best OOS config full report (overall, long/short, exit breakdown,
+//      per-hour PF, IS/OOS with decay)
+//   3. OOS verdict: PASS if PF >= 1.20 and trades >= 20
 // =============================================================================
 
 #include <cstdio>
@@ -38,483 +35,947 @@
 #include <cstring>
 #include <cmath>
 #include <ctime>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <array>
 #include <algorithm>
-#include <functional>
-#include <random>
-#include <unordered_map>
+#include <numeric>
+#include <fstream>
+#include <sstream>
 
-// Engine headers (use real OmegaTradeLedger — no shim needed)
-#include "../include/IndexFlowEngine.hpp"
-
-// =============================================================================
-// Tick generation
-// =============================================================================
-struct TickBar {
-    double bid, ask, l2_imb;
-    int64_t ts_ms;
+// ─────────────────────────────────────────────────────────────────────────────
+// Tick data structures
+// ─────────────────────────────────────────────────────────────────────────────
+struct Tick {
+    int64_t ts_ms;   // milliseconds since epoch UTC
+    double  bid;
+    double  ask;
 };
 
-struct SymParams {
-    const char* symbol;
-    double base_price;    // starting price
-    double normal_atr_hr; // hourly ATR in normal conditions
-    double crash_atr_hr;  // hourly ATR on expansion/crash day
-    double spread_normal; // typical spread
-    double spread_wide;   // wide spread (news/thin)
-    double tick_rate_ny;  // ticks/sec NY session
-    double tick_rate_lon; // ticks/sec London session
-    double tick_rate_asia;// ticks/sec Asia (US indices: ~0)
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// Tick format detection and parsing
+// ─────────────────────────────────────────────────────────────────────────────
+enum TickFormat { FMT_HISTDATA, FMT_DUKA_BID_ASK, FMT_DUKA_ASK_BID, FMT_JFOREX, FMT_UNKNOWN };
 
-static const SymParams SYM_PARAMS[] = {
-    // symbol,      price, atr_hr, crash_hr, spread, wide_sp, tick_ny, tick_lon, tick_asia
-    {"US500.F",     5500.0,  12.0,   45.0,    0.5,    1.5,    10.0,   6.0,   0.5},
-    {"USTEC.F",    19000.0,  35.0,  150.0,    0.8,    2.5,    10.0,   6.0,   0.5},
-    {"NAS100",     19000.0,  35.0,  150.0,    0.8,    2.5,    10.0,   6.0,   0.5},
-    {"DJ30.F",     40000.0,  80.0,  350.0,    2.0,    6.0,    8.0,    4.0,   0.2},
-};
-static const int N_SYMS = 4;
-
-// Regime enum matching IdxRegimeGovernor
-enum SimRegime { SIM_MR=0, SIM_COMPRESSION, SIM_IMPULSE, SIM_TREND };
-
-struct SimState {
-    double mid;
-    double mean_price;    // for MR regime
-    SimRegime regime;
-    int regime_ticks_left;
-    double trend_drift;   // pts/tick in TREND/IMPULSE
-    double atr_now;       // current simulated ATR
-    double vol_ratio;     // recent_range / baseline
-    std::mt19937_64 rng;
-};
-
-static double regime_duration(SimRegime r, std::mt19937_64& rng) {
-    // Average regime durations in ticks (at ~10 ticks/sec):
-    // MR: 3-30min = 1800-18000 ticks
-    // COMPRESSION: 2-15min
-    // IMPULSE: 0.5-5min
-    // TREND: 5-60min
-    std::uniform_int_distribution<int> d;
-    switch(r) {
-        case SIM_MR:          d = std::uniform_int_distribution<int>(1800, 18000); break;
-        case SIM_COMPRESSION: d = std::uniform_int_distribution<int>(600,  9000);  break;
-        case SIM_IMPULSE:     d = std::uniform_int_distribution<int>(300,  3000);  break;
-        case SIM_TREND:       d = std::uniform_int_distribution<int>(3000, 36000); break;
+static TickFormat detect_format(const char* first_line) {
+    std::string s(first_line);
+    // JFOREX: header starts with "Time"
+    if (s.find("Time") != std::string::npos && s.find("EET") != std::string::npos)
+        return FMT_JFOREX;
+    // DUKA: header contains "timestamp" (case-insensitive check)
+    {
+        std::string lower = s;
+        for (auto& c : lower) c = (char)tolower(c);
+        if (lower.find("timestamp") != std::string::npos) {
+            // Determine bid/ask vs ask/bid order from header
+            auto pos_ask = lower.find("ask");
+            auto pos_bid = lower.find("bid");
+            if (pos_ask != std::string::npos && pos_bid != std::string::npos)
+                return (pos_ask < pos_bid) ? FMT_DUKA_ASK_BID : FMT_DUKA_BID_ASK;
+            return FMT_DUKA_BID_ASK;
+        }
     }
-    return d(rng);
+    // HISTDATA: first 8 chars should be digits (YYYYMMDD)
+    if (s.size() >= 8) {
+        bool all_digit = true;
+        for (int i = 0; i < 8; ++i)
+            if (!isdigit((unsigned char)s[i])) { all_digit = false; break; }
+        if (all_digit) return FMT_HISTDATA;
+    }
+    return FMT_UNKNOWN;
 }
 
-static SimRegime next_regime(SimRegime cur, std::mt19937_64& rng) {
-    std::uniform_real_distribution<double> u(0.0, 1.0);
-    double p = u(rng);
-    switch(cur) {
-        case SIM_MR:          return p<0.25 ? SIM_COMPRESSION : (p<0.45 ? SIM_IMPULSE : SIM_MR);
-        case SIM_COMPRESSION: return p<0.40 ? SIM_IMPULSE : (p<0.70 ? SIM_MR : SIM_COMPRESSION);
-        case SIM_IMPULSE:     return p<0.50 ? SIM_TREND : (p<0.80 ? SIM_MR : SIM_IMPULSE);
-        case SIM_TREND:       return p<0.35 ? SIM_MR : (p<0.60 ? SIM_IMPULSE : SIM_TREND);
-    }
-    return SIM_MR;
+// Parse YYYYMMDD HHMMSSmmm -> epoch ms UTC
+static int64_t parse_histdata_ts(const char* s) {
+    // YYYYMMDD HHMMSSmmm
+    // 01234567 8901234567
+    // Position 8 is space, then HHMMSS starts at 9, mmm at 15
+    if (strlen(s) < 18) return 0;
+    struct tm ti{};
+    ti.tm_year = ((s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0')) - 1900;
+    ti.tm_mon  = (s[4]-'0')*10 + (s[5]-'0') - 1;
+    ti.tm_mday = (s[6]-'0')*10 + (s[7]-'0');
+    // s[8] is space
+    ti.tm_hour = (s[9]-'0')*10 + (s[10]-'0');
+    ti.tm_min  = (s[11]-'0')*10 + (s[12]-'0');
+    ti.tm_sec  = (s[13]-'0')*10 + (s[14]-'0');
+    int mmm    = (s[15]-'0')*100 + (s[16]-'0')*10 + (s[17]-'0');
+    // timegm for UTC
+    time_t t = timegm(&ti);
+    return (int64_t)t * 1000 + mmm;
 }
 
-// Generate one tick from the current sim state
-static TickBar gen_tick(const SymParams& sp, SimState& st) {
-    std::normal_distribution<double> norm(0.0, 1.0);
-    std::uniform_real_distribution<double> u01(0.0, 1.0);
+static bool parse_histdata_line(const char* line, Tick& out) {
+    // YYYYMMDD HHMMSSmmm,bid,ask,0
+    const char* comma1 = strchr(line, ',');
+    if (!comma1) return false;
+    int ts_len = (int)(comma1 - line);
+    if (ts_len < 18) return false;
+    out.ts_ms = parse_histdata_ts(line);
+    if (out.ts_ms == 0) return false;
+    out.bid = strtod(comma1 + 1, nullptr);
+    const char* comma2 = strchr(comma1 + 1, ',');
+    if (!comma2) return false;
+    out.ask = strtod(comma2 + 1, nullptr);
+    return (out.bid > 0.0 && out.ask > 0.0);
+}
 
-    // atr_now = expected 100-tick price range for this regime/session.
-    // Per-tick sigma is derived so that 100 ticks produce ~atr_now range.
-    // Empirical: range_100 ≈ sigma * sqrt(100) * 2.5 (range ≈ 2.5σ√n)
-    // → tick_sigma = atr_now / (2.5 * sqrt(100)) = atr_now / 25.0
-    const double tick_sigma = st.atr_now / 25.0;
+static bool parse_duka_line(const char* line, Tick& out, bool ask_first) {
+    // timestamp_ms,field1,field2,...
+    char* end;
+    out.ts_ms = strtoll(line, &end, 10);
+    if (*end != ',') return false;
+    double v1 = strtod(end + 1, &end);
+    if (*end != ',') return false;
+    double v2 = strtod(end + 1, &end);
+    if (ask_first) { out.ask = v1; out.bid = v2; }
+    else           { out.bid = v1; out.ask = v2; }
+    return (out.bid > 0.0 && out.ask > 0.0 && out.ts_ms > 0);
+}
 
-    double dmid = 0.0;
-    switch(st.regime) {
-        case SIM_MR:
-            // Mean reversion: pull toward mean_price
-            dmid = -0.001 * (st.mid - st.mean_price) + norm(st.rng) * tick_sigma;
-            break;
-        case SIM_COMPRESSION:
-            // Tight ranging: low vol, no drift
-            dmid = norm(st.rng) * tick_sigma * 0.4;
-            break;
-        case SIM_IMPULSE:
-            // Directional burst: trend_drift + elevated vol
-            dmid = st.trend_drift + norm(st.rng) * tick_sigma * 1.5;
-            break;
-        case SIM_TREND:
-            // Sustained trend: smaller drift, moderate vol
-            dmid = st.trend_drift * 0.4 + norm(st.rng) * tick_sigma * 1.2;
-            break;
-    }
-
-    st.mid += dmid;
-    // Keep price positive
-    if (st.mid < sp.base_price * 0.5) st.mid = sp.base_price * 0.5;
-
-    // Vol ratio: regime-dependent
-    switch(st.regime) {
-        case SIM_MR:          st.vol_ratio = 0.8 + u01(st.rng) * 0.4; break;
-        case SIM_COMPRESSION: st.vol_ratio = 0.4 + u01(st.rng) * 0.3; break;
-        case SIM_IMPULSE:     st.vol_ratio = 2.5 + u01(st.rng) * 2.0; break;
-        case SIM_TREND:       st.vol_ratio = 1.5 + u01(st.rng) * 1.5; break;
-    }
-
-    // Spread: wider during IMPULSE/TREND high-vol
-    double spread = (st.regime == SIM_IMPULSE || st.vol_ratio > 3.0)
-                    ? sp.spread_wide : sp.spread_normal;
-    // Add some noise to spread
-    spread *= (0.7 + u01(st.rng) * 0.6);
-
-    // L2 imbalance: correlated with regime direction
-    double l2_imb = 0.5;
-    if (st.regime == SIM_IMPULSE || st.regime == SIM_TREND) {
-        const bool dir_up = (st.trend_drift > 0);
-        l2_imb = dir_up ? (0.60 + u01(st.rng) * 0.25) : (0.15 + u01(st.rng) * 0.25);
+static bool parse_jforex_line(const char* line, Tick& out) {
+    // Time (EET),Ask,Bid,...
+    // Example: 01.04.2026 00:00:00.123,23801.683,23802.866,...
+    // or similar date format. EET = UTC+2.
+    // Try parsing "DD.MM.YYYY HH:MM:SS.mmm,ask,bid,..."
+    if (strlen(line) < 23) return false;
+    struct tm ti{};
+    int mmm = 0;
+    // Try DD.MM.YYYY HH:MM:SS.mmm
+    if (sscanf(line, "%d.%d.%d %d:%d:%d.%d",
+               &ti.tm_mday, &ti.tm_mon, &ti.tm_year,
+               &ti.tm_hour, &ti.tm_min, &ti.tm_sec, &mmm) >= 6) {
+        ti.tm_mon -= 1;
+        ti.tm_year -= 1900;
+        // EET = UTC+2, subtract 2 hours
+        time_t t = timegm(&ti);
+        t -= 2 * 3600;
+        out.ts_ms = (int64_t)t * 1000 + mmm;
     } else {
-        l2_imb = 0.35 + u01(st.rng) * 0.30; // neutral-ish
+        return false;
     }
-    l2_imb = std::max(0.0, std::min(1.0, l2_imb));
-
-    // Regime transition
-    --st.regime_ticks_left;
-    if (st.regime_ticks_left <= 0) {
-        SimRegime nr = next_regime(st.regime, st.rng);
-        st.regime = nr;
-        st.regime_ticks_left = (int)regime_duration(nr, st.rng);
-        // Set new trend drift direction on transition to IMPULSE/TREND
-        if (nr == SIM_IMPULSE || nr == SIM_TREND) {
-            std::uniform_real_distribution<double> drift_d(0.0, 1.0);
-            const bool up = drift_d(st.rng) > 0.5;
-            // Drift: in IMPULSE the engine needs to see the EWM fast-slow
-            // gap grow past the drift_threshold within ~20 ticks.
-            // EWM_fast (α=0.05) vs EWM_slow (α=0.005): after 20 ticks of
-            // constant drift d, gap ≈ d * (1/α_slow - 1/α_fast) ≈ d * 180
-            // For SP500: need gap > 0.5pt → d > 0.5/180 ≈ 0.003 pt/tick
-            // Set drift = atr_now * 0.04 → at atr=12: drift=0.48pt/tick
-            // which produces ~86pt/hr trend rate (realistic for IMPULSE)
-            st.trend_drift = (up ? 1.0 : -1.0) * st.atr_now * 0.04;
-        }
-    }
-
-    TickBar tb;
-    tb.bid    = st.mid - spread * 0.5;
-    tb.ask    = st.mid + spread * 0.5;
-    tb.l2_imb = l2_imb;
-    tb.ts_ms  = 0; // filled by caller
-    return tb;
+    const char* comma1 = strchr(line, ',');
+    if (!comma1) return false;
+    out.ask = strtod(comma1 + 1, nullptr);
+    const char* comma2 = strchr(comma1 + 1, ',');
+    if (!comma2) return false;
+    out.bid = strtod(comma2 + 1, nullptr);
+    return (out.bid > 0.0 && out.ask > 0.0 && out.ts_ms > 0);
 }
 
-// =============================================================================
-// Trade stats accumulator
-// =============================================================================
-struct EngineStats {
-    std::string name;
-    int   n_trades   = 0;
-    int   n_wins     = 0;
-    double total_pnl = 0.0;
-    double max_dd    = 0.0;
-    double peak_pnl  = 0.0;
-    double sum_sq    = 0.0;     // for Sharpe
-    double usd_per_pt = 1.0;   // for dollar PnL display
+// ─────────────────────────────────────────────────────────────────────────────
+// Load ticks from multiple CSV files
+// ─────────────────────────────────────────────────────────────────────────────
+static std::vector<Tick> load_ticks(const std::vector<std::string>& paths,
+                                     double price_lo, double price_hi) {
+    std::vector<Tick> ticks;
+    ticks.reserve(50'000'000);
 
-    void record(const omega::TradeRecord& tr) {
-        // PnL in price points * size; need dollar PnL
-        // We store pnl as-is (in points*size) and convert with usd_per_pt
-        const double pnl_dollars = tr.pnl * usd_per_pt;
-        ++n_trades;
-        if (pnl_dollars > 0.0) ++n_wins;
-        total_pnl += pnl_dollars;
-        if (total_pnl > peak_pnl) peak_pnl = total_pnl;
-        const double dd = peak_pnl - total_pnl;
-        if (dd > max_dd) max_dd = dd;
-        sum_sq += pnl_dollars * pnl_dollars;
+    for (const auto& path : paths) {
+        FILE* f = fopen(path.c_str(), "r");
+        if (!f) {
+            fprintf(stderr, "WARN: cannot open %s\n", path.c_str());
+            continue;
+        }
+        char line[512];
+        TickFormat fmt = FMT_UNKNOWN;
+        bool first = true;
+        int line_no = 0;
+        while (fgets(line, sizeof(line), f)) {
+            ++line_no;
+            // Strip trailing newline
+            size_t len = strlen(line);
+            while (len > 0 && (line[len-1]=='\n' || line[len-1]=='\r')) line[--len] = '\0';
+            if (len == 0) continue;
+
+            if (first) {
+                first = false;
+                fmt = detect_format(line);
+                if (fmt == FMT_UNKNOWN) {
+                    fprintf(stderr, "WARN: unknown format in %s, skipping\n", path.c_str());
+                    break;
+                }
+                // If format has a header line, skip it
+                if (fmt == FMT_DUKA_BID_ASK || fmt == FMT_DUKA_ASK_BID || fmt == FMT_JFOREX)
+                    continue;
+            }
+
+            Tick t;
+            bool ok = false;
+            switch (fmt) {
+                case FMT_HISTDATA:     ok = parse_histdata_line(line, t); break;
+                case FMT_DUKA_BID_ASK: ok = parse_duka_line(line, t, false); break;
+                case FMT_DUKA_ASK_BID: ok = parse_duka_line(line, t, true); break;
+                case FMT_JFOREX:       ok = parse_jforex_line(line, t); break;
+                default: break;
+            }
+            if (!ok) continue;
+
+            // Price sanity check
+            double mid = (t.bid + t.ask) * 0.5;
+            if (mid < price_lo || mid > price_hi) continue;
+            // Spread sanity
+            if (t.ask - t.bid < 0.0 || t.ask - t.bid > 50.0) continue;
+
+            ticks.push_back(t);
+        }
+        fclose(f);
+        printf("  Loaded %s (%d lines, %zu ticks so far)\n",
+               path.c_str(), line_no, ticks.size());
     }
 
-    double win_rate() const { return n_trades > 0 ? 100.0 * n_wins / n_trades : 0.0; }
-    double avg_pnl()  const { return n_trades > 0 ? total_pnl / n_trades : 0.0; }
+    // Sort by timestamp
+    std::sort(ticks.begin(), ticks.end(),
+              [](const Tick& a, const Tick& b) { return a.ts_ms < b.ts_ms; });
 
-    double sharpe() const {
-        if (n_trades < 5) return 0.0;
-        const double avg = total_pnl / n_trades;
-        const double var = sum_sq / n_trades - avg * avg;
-        if (var <= 0.0) return 0.0;
-        return avg / std::sqrt(var) * std::sqrt(252.0); // annualised
+    return ticks;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekend / session helpers
+// ─────────────────────────────────────────────────────────────────────────────
+static void ts_to_utc(int64_t ts_ms, struct tm& ti) {
+    time_t t = (time_t)(ts_ms / 1000);
+#ifdef _WIN32
+    gmtime_s(&ti, &t);
+#else
+    gmtime_r(&t, &ti);
+#endif
+}
+
+static bool is_weekend(int64_t ts_ms) {
+    struct tm ti{};
+    ts_to_utc(ts_ms, ti);
+    int wday = ti.tm_wday; // 0=Sun, 6=Sat
+    int mins = ti.tm_hour * 60 + ti.tm_min;
+    if (wday == 0) return true;  // Sunday
+    if (wday == 6) return true;  // Saturday
+    if (wday == 5 && mins >= 21 * 60) return true;  // Friday after 21:00 UTC
+    return false;
+}
+
+static bool is_session_blocked(int64_t ts_ms) {
+    struct tm ti{};
+    ts_to_utc(ts_ms, ti);
+    int mins = ti.tm_hour * 60 + ti.tm_min;
+    // Block 22:00-08:00 UTC
+    if (mins >= 22 * 60 || mins < 8 * 60) return true;
+    // NY open noise: 13:30-14:00 UTC
+    if (mins >= 13 * 60 + 30 && mins < 14 * 60) return true;
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATR tracker (mirrors IdxATRTracker)
+// ─────────────────────────────────────────────────────────────────────────────
+struct ATRTracker {
+    static constexpr int BUF = 256;
+    double buf[BUF] = {};
+    int    head  = 0;
+    int    count = 0;
+    double ewm   = 0.0;
+    bool   init  = false;
+    static constexpr double ALPHA = 0.05;
+
+    void push(double mid) {
+        buf[head % BUF] = mid;
+        ++head; ++count;
+        if (count % 25 != 0) return;
+        int look = std::min(count, 100);
+        if (look < 10) return;
+        double hi = buf[(head - 1 + BUF * 4) % BUF];
+        double lo = hi;
+        for (int k = 1; k < look; ++k) {
+            double p = buf[(head - k - 1 + BUF * 4) % BUF];
+            if (p > hi) hi = p;
+            if (p < lo) lo = p;
+        }
+        double range = hi - lo;
+        if (!init) { ewm = range; init = true; }
+        else        ewm = ALPHA * range + (1.0 - ALPHA) * ewm;
     }
 
-    void print() const {
-        printf("  %-20s  %5dT  WR=%5.1f%%  Total=$%8.0f  Avg=$%6.1f  "
-               "Sharpe=%5.2f  MaxDD=$%6.0f\n",
-               name.c_str(), n_trades, win_rate(), total_pnl,
-               avg_pnl(), sharpe(), max_dd);
+    double atr() const { return ewm; }
+    bool   ready() const { return count >= 50; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EWM drift tracker (mirrors IdxRegimeGovernor)
+// ─────────────────────────────────────────────────────────────────────────────
+struct DriftTracker {
+    double ewm_fast = 0.0;
+    double ewm_slow = 0.0;
+    bool   inited   = false;
+    static constexpr double A_FAST = 0.05;
+    static constexpr double A_SLOW = 0.005;
+
+    void update(double mid) {
+        if (!inited) { ewm_fast = ewm_slow = mid; inited = true; return; }
+        ewm_fast = A_FAST * mid + (1.0 - A_FAST) * ewm_fast;
+        ewm_slow = A_SLOW * mid + (1.0 - A_SLOW) * ewm_slow;
+    }
+
+    double drift() const { return inited ? (ewm_fast - ewm_slow) : 0.0; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trade record
+// ─────────────────────────────────────────────────────────────────────────────
+struct Trade {
+    bool   is_long;
+    double entry_px;
+    double exit_px;
+    double sl;
+    double tp;
+    double atr_at_entry;
+    double pnl_pts;       // (exit - entry) or (entry - exit) in points
+    double pnl_usd;
+    double mfe;
+    double mae;
+    int64_t entry_ts;
+    int64_t exit_ts;
+    int     entry_hour;   // UTC hour of entry
+    const char* exit_reason;  // SL_HIT, TP_HIT, LOSS_CUT, TRAIL, TIMEOUT
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-instrument config
+// ─────────────────────────────────────────────────────────────────────────────
+struct InstrumentCfg {
+    const char* name;
+    double lot_size;
+    double pnl_per_pt;
+    double atr_min;
+    double max_spread;
+    double drift_threshold;     // default, overridden in sweep
+    double price_lo, price_hi;  // sanity bounds
+};
+
+static const InstrumentCfg CFG_SP = {
+    "SP", 0.01, 0.50, 3.0, 1.0, 0.8, 3000.0, 8000.0
+};
+static const InstrumentCfg CFG_NQ = {
+    "NQ", 0.01, 0.20, 8.0, 1.5, 2.0, 10000.0, 25000.0
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sweep config
+// ─────────────────────────────────────────────────────────────────────────────
+struct SweepConfig {
+    double drift_threshold;
+    int    drift_persist_ticks;
+    double loss_cut_pct;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine state for one config run
+// ─────────────────────────────────────────────────────────────────────────────
+struct EngineState {
+    ATRTracker  atr;
+    DriftTracker drift;
+
+    // Mid buffer for momentum
+    static constexpr int MID_BUF = 128;
+    double mid_buf[MID_BUF] = {};
+    int    mid_head = 0;
+
+    // Drift persistence
+    int drift_persist_long  = 0;
+    int drift_persist_short = 0;
+
+    // Drift window for chop guard
+    double drift_window[64] = {};
+    int    drift_win_head = 0;
+    double drift_range    = 0.0;
+
+    int    tick_count = 0;
+
+    // Position state
+    bool   pos_active      = false;
+    bool   pos_is_long     = false;
+    double pos_entry       = 0.0;
+    double pos_sl          = 0.0;
+    double pos_tp          = 0.0;
+    double pos_mfe         = 0.0;
+    double pos_mae         = 0.0;
+    double pos_atr_at_entry = 0.0;
+    int64_t pos_entry_ts   = 0;
+    int    pos_trail_stage = 0;
+    bool   pos_be_locked   = false;
+
+    // Cooldowns
+    int64_t cooldown_until_ms = 0;
+    int64_t sl_cooldown_until_ms = 0;
+
+    // Config
+    double cfg_drift_threshold   = 0.8;
+    int    cfg_drift_persist     = 20;
+    double cfg_loss_cut_pct      = 0.07;
+    double cfg_atr_min           = 3.0;
+    double cfg_max_spread        = 1.0;
+    double cfg_atr_sl_mult       = 1.0;
+
+    // Results
+    std::vector<Trade> trades;
+
+    void reset(const SweepConfig& sc, const InstrumentCfg& ic) {
+        *this = EngineState{};
+        cfg_drift_threshold = sc.drift_threshold;
+        cfg_drift_persist   = sc.drift_persist_ticks;
+        cfg_loss_cut_pct    = sc.loss_cut_pct;
+        cfg_atr_min         = ic.atr_min;
+        cfg_max_spread      = ic.max_spread;
     }
 };
 
-// =============================================================================
-// Main backtest
-// =============================================================================
-int main(int argc, char** argv) {
-    int    n_days  = 504;   // ~2yr trading days
-    int    seed    = 42;
-    bool   run_all = true;
-    std::string run_sym = "";
+// ─────────────────────────────────────────────────────────────────────────────
+// Run one config over all ticks
+// ─────────────────────────────────────────────────────────────────────────────
+static void run_config(EngineState& es, const std::vector<Tick>& ticks,
+                       const InstrumentCfg& ic) {
+    const int N = (int)ticks.size();
 
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--days")   == 0 && i+1 < argc) { n_days  = atoi(argv[++i]); }
-        if (strcmp(argv[i], "--seed")   == 0 && i+1 < argc) { seed    = atoi(argv[++i]); }
-        if (strcmp(argv[i], "--symbol") == 0 && i+1 < argc) {
-            run_sym = argv[++i]; run_all = false;
+    for (int i = 0; i < N; ++i) {
+        const Tick& t = ticks[i];
+
+        // Progress
+        if (i > 0 && i % 10'000'000 == 0)
+            printf("    [progress] %dM / %dM ticks\n", i / 1'000'000, N / 1'000'000);
+
+        // Weekend skip
+        if (is_weekend(t.ts_ms)) continue;
+
+        double mid    = (t.bid + t.ask) * 0.5;
+        double spread = t.ask - t.bid;
+
+        // Always update state
+        es.drift.update(mid);
+        es.atr.push(mid);
+        es.mid_buf[es.mid_head % EngineState::MID_BUF] = mid;
+        ++es.mid_head;
+        ++es.tick_count;
+
+        double d = es.drift.drift();
+
+        // Drift persistence
+        if (d > es.cfg_drift_threshold)        { ++es.drift_persist_long;  es.drift_persist_short = 0; }
+        else if (d < -es.cfg_drift_threshold)  { ++es.drift_persist_short; es.drift_persist_long  = 0; }
+        else                                   { es.drift_persist_long = 0; es.drift_persist_short = 0; }
+
+        // Chop guard: drift range over last 64 values
+        es.drift_window[es.drift_win_head % 64] = d;
+        ++es.drift_win_head;
+        {
+            int n = std::min(es.drift_win_head, 64);
+            double hi = es.drift_window[0], lo = es.drift_window[0];
+            for (int k = 1; k < n; ++k) {
+                if (es.drift_window[k] > hi) hi = es.drift_window[k];
+                if (es.drift_window[k] < lo) lo = es.drift_window[k];
+            }
+            es.drift_range = hi - lo;
         }
-    }
 
-    printf("==========================================================================\n");
-    printf("  IndexFlowEngine Backtest\n");
-    printf("  Days=%d  Seed=%d  Symbol=%s\n",
-           n_days, seed, run_all ? "ALL" : run_sym.c_str());
-    printf("==========================================================================\n\n");
+        // ── Manage open position ────────────────────────────────────────────
+        if (es.pos_active) {
+            double move = es.pos_is_long ? (mid - es.pos_entry) : (es.pos_entry - mid);
+            if (move > es.pos_mfe) es.pos_mfe = move;
+            if (-move > es.pos_mae) es.pos_mae = -move;
 
-    // Output files
-    FILE* f_trades = fopen("bt_index_trades.csv", "w");
-    FILE* f_report = fopen("bt_index_report.csv", "w");
-    if (f_trades)
-        fprintf(f_trades, "sym,engine,side,entry,exit,sl,tp,size,pnl_pts,pnl_usd,"
-                          "mfe,mae,exit_reason,regime,atr_at_entry\n");
-    if (f_report)
-        fprintf(f_report, "sym,engine,trades,wins,wr_pct,total_usd,avg_usd,"
-                          "sharpe,maxdd_usd\n");
+            bool closed = false;
+            const char* why = "";
 
-    // Run per-symbol
-    for (int si = 0; si < N_SYMS; ++si) {
-        const SymParams& sp = SYM_PARAMS[si];
-        if (!run_all && run_sym != sp.symbol) continue;
-
-        printf("── %s ──────────────────────────────────────────────────────────\n",
-               sp.symbol);
-
-        // Determine usd_per_pt from OmegaCostGuard values
-        double usd_per_pt = 1.0;
-        if      (strcmp(sp.symbol,"US500.F")==0) usd_per_pt = 50.0;
-        else if (strcmp(sp.symbol,"USTEC.F")==0) usd_per_pt = 20.0;
-        else if (strcmp(sp.symbol,"NAS100") ==0) usd_per_pt =  1.0;
-        else if (strcmp(sp.symbol,"DJ30.F") ==0) usd_per_pt =  5.0;
-
-        // Engine instances
-        omega::idx::IndexFlowEngine engine(sp.symbol);
-
-        EngineStats stats_flow;
-        stats_flow.name = std::string(sp.symbol) + "_IndexFlow";
-        stats_flow.usd_per_pt = usd_per_pt;
-
-        // Also run VWAPAtrTrail tracking alongside (upgrade sim)
-        EngineStats stats_vwap;
-        stats_vwap.name = std::string(sp.symbol) + "_VWAPAtrUpgrade";
-        stats_vwap.usd_per_pt = usd_per_pt;
-
-        // Init sim state
-        SimState st;
-        st.mid             = sp.base_price;
-        st.mean_price      = sp.base_price;
-        st.regime          = SIM_MR;
-        st.regime_ticks_left = 5000;
-        st.trend_drift     = 0.0;
-        st.atr_now         = sp.normal_atr_hr;  // raw ATR in pts; tick_sigma derived from this
-        st.vol_ratio       = 1.0;
-        st.rng             = std::mt19937_64(seed ^ (si * 12345));
-
-        // Occasional "crash days" (every ~25 trading days on average)
-        std::uniform_int_distribution<int> crash_day_d(15, 45);
-        int next_crash_in = crash_day_d(st.rng);
-
-        int64_t sim_ms = 0;
-        int total_ticks = 0;
-        std::vector<omega::TradeRecord> day_trades;
-
-        // Trade callback
-        auto on_close = [&](const omega::TradeRecord& tr) {
-            const double pnl_usd = tr.pnl * usd_per_pt;
-            stats_flow.record(tr);
-            if (f_trades) {
-                fprintf(f_trades, "%s,%s,%s,%.4f,%.4f,%.4f,%.4f,%.6f,%.4f,%.2f,"
-                                  "%.4f,%.4f,%s,%s,0\n",
-                        sp.symbol, tr.engine.c_str(), tr.side.c_str(),
-                        tr.entryPrice, tr.exitPrice, tr.sl, tr.tp,
-                        tr.size, tr.pnl, pnl_usd,
-                        tr.mfe, tr.mae,
-                        tr.exitReason.c_str(), tr.regime.c_str());
-            }
-        };
-
-        for (int day = 0; day < n_days; ++day) {
-            // Skip weekends (crude: 5 of every 7 days)
-            if (day % 7 == 5 || day % 7 == 6) continue;
-
-            // Crash day injection: every ~25 days, force IMPULSE regime for 2hrs
-            const bool is_crash_day = (next_crash_in <= 0);
-            if (is_crash_day) {
-                st.regime = SIM_IMPULSE;
-                st.regime_ticks_left = 72000; // 2hrs at 10 ticks/sec
-                std::uniform_real_distribution<double> d01(0.0, 1.0);
-                const bool up = d01(st.rng) > 0.40;
-                // trend_drift in pts/tick: crash_atr_hr * 0.04 gives strong signal
-                st.trend_drift = (up ? 1.0 : -1.0) * sp.crash_atr_hr * 0.04;
-                st.atr_now = sp.crash_atr_hr; // raw pts
-                engine.seed_atr(sp.crash_atr_hr * 0.5); // seed so ATR gate clears
-                next_crash_in = crash_day_d(st.rng);
-                printf("  [SIM] Day %3d: CRASH DAY %s drift=%.4f atr=%.1f\n",
-                       day, up?"UP":"DOWN", st.trend_drift, st.atr_now);
-            } else {
-                --next_crash_in;
-                st.atr_now = sp.normal_atr_hr; // raw pts
-                engine.seed_atr(sp.normal_atr_hr * 0.5);
+            // LOSS_CUT (runs first)
+            if (!closed && es.cfg_loss_cut_pct > 0.0 && es.pos_entry > 0.0) {
+                double adverse = -move;
+                double loss_cut_dist = es.pos_entry * es.cfg_loss_cut_pct / 100.0;
+                if (adverse >= loss_cut_dist) {
+                    double exit_px = es.pos_is_long ? t.bid : t.ask;
+                    Trade tr;
+                    tr.is_long     = es.pos_is_long;
+                    tr.entry_px    = es.pos_entry;
+                    tr.exit_px     = exit_px;
+                    tr.sl          = es.pos_sl;
+                    tr.tp          = es.pos_tp;
+                    tr.atr_at_entry = es.pos_atr_at_entry;
+                    tr.pnl_pts     = es.pos_is_long ? (exit_px - es.pos_entry) : (es.pos_entry - exit_px);
+                    tr.pnl_usd     = tr.pnl_pts * ic.pnl_per_pt;
+                    tr.mfe         = es.pos_mfe;
+                    tr.mae         = es.pos_mae;
+                    tr.entry_ts    = es.pos_entry_ts;
+                    tr.exit_ts     = t.ts_ms;
+                    tr.entry_hour  = -1;
+                    { struct tm ti{}; ts_to_utc(es.pos_entry_ts, ti); tr.entry_hour = ti.tm_hour; }
+                    tr.exit_reason = "LOSS_CUT";
+                    es.trades.push_back(tr);
+                    es.pos_active = false;
+                    es.cooldown_until_ms = t.ts_ms + 30000;
+                    closed = true;
+                    why = "LOSS_CUT";
+                }
             }
 
-            // Session structure: Asia(0-8h UTC), London(8-13:30), NY(13:30-22h)
-            // US indices: Asia = minimal ticks (stub through quickly)
-            // London: 5.5hrs, NY: 8.5hrs
-
-            // Asia: generate minimal ticks (keep price moving, but very few)
-            const int asia_ticks   = (int)(0.5 * 60 * 60);  // ~0.5 tick/sec for 8hrs
-            const int london_ticks = (int)(sp.tick_rate_lon * 5.5 * 3600);
-            const int ny_ticks     = (int)(sp.tick_rate_ny  * 8.5 * 3600);
-
-            for (int phase = 0; phase < 3; ++phase) {
-                const int n_ticks = (phase==0) ? asia_ticks
-                                  : (phase==1) ? london_ticks : ny_ticks;
-
-                for (int t = 0; t < n_ticks; ++t) {
-                    TickBar tb = gen_tick(sp, st);
-                    tb.ts_ms = sim_ms;
-                    sim_ms += 100; // ~100ms per tick (simplified)
-                    ++total_ticks;
-
-                    // Determine can_enter from session (US indices: no Asia)
-                    const bool in_session = (phase == 1 || phase == 2);
-
-                    // Engine tick
-                    auto sig = engine.on_tick(sp.symbol, tb.bid, tb.ask,
-                                              tb.l2_imb, on_close, in_session);
-
-                    // If signal fired, log it
-                    if (sig.valid) {
-                        // Size already computed inside engine from risk_dollars/ATR
-                        // For sim display, this is what was sent
-                        (void)sig;
+            // Staircase trail
+            if (!closed) {
+                double a = (es.pos_atr_at_entry > 0.0) ? es.pos_atr_at_entry : es.atr.atr();
+                if (a > 0.0) {
+                    // Stage 1: BE lock at 1x ATR
+                    if (!es.pos_be_locked && move >= a * 1.0) {
+                        es.pos_be_locked = true;
+                        if (es.pos_is_long  && es.pos_entry > es.pos_sl) es.pos_sl = es.pos_entry;
+                        if (!es.pos_is_long && es.pos_entry < es.pos_sl) es.pos_sl = es.pos_entry;
+                        es.pos_trail_stage = 1;
+                    }
+                    // Stage 2: trail 0.5x ATR behind peak from 2x ATR
+                    if (es.pos_be_locked && move >= a * 2.0) {
+                        double trail = es.pos_is_long ? (es.pos_entry + es.pos_mfe - a * 0.5)
+                                                       : (es.pos_entry - es.pos_mfe + a * 0.5);
+                        if (es.pos_is_long  && trail > es.pos_sl) es.pos_sl = trail;
+                        if (!es.pos_is_long && trail < es.pos_sl) es.pos_sl = trail;
+                        es.pos_trail_stage = 2;
+                    }
+                    // Stage 3: tight trail 0.25x ATR from 4x ATR
+                    if (es.pos_be_locked && move >= a * 4.0) {
+                        double trail = es.pos_is_long ? (es.pos_entry + es.pos_mfe - a * 0.25)
+                                                       : (es.pos_entry - es.pos_mfe + a * 0.25);
+                        if (es.pos_is_long  && trail > es.pos_sl) es.pos_sl = trail;
+                        if (!es.pos_is_long && trail < es.pos_sl) es.pos_sl = trail;
+                        es.pos_trail_stage = 3;
                     }
                 }
+
+                // TP hit
+                bool tp_hit = (es.pos_tp > 0.0) &&
+                              (es.pos_is_long ? (t.bid >= es.pos_tp) : (t.ask <= es.pos_tp));
+                // SL hit
+                bool sl_hit = es.pos_is_long ? (t.bid <= es.pos_sl) : (t.ask >= es.pos_sl);
+
+                // Timeout: 60 min, suppressed if in profit
+                int64_t held_s = (t.ts_ms - es.pos_entry_ts) / 1000;
+                bool timed_out = false;
+                if (held_s >= 3600 && !tp_hit && !sl_hit) {
+                    double cur_move = es.pos_is_long ? (mid - es.pos_entry) : (es.pos_entry - mid);
+                    bool trail_profit = es.pos_is_long ? (es.pos_sl >= es.pos_entry)
+                                                        : (es.pos_sl <= es.pos_entry);
+                    if (!trail_profit && cur_move <= 0.0)
+                        timed_out = true;
+                }
+
+                if (tp_hit || sl_hit || timed_out) {
+                    double exit_px;
+                    if (tp_hit)        { exit_px = es.pos_tp;  why = "TP_HIT"; }
+                    else if (sl_hit)   {
+                        exit_px = es.pos_sl;
+                        // Determine if this is a trail exit (stage > 0 and SL above/below entry)
+                        bool trail_exit = (es.pos_trail_stage >= 2);
+                        why = trail_exit ? "TRAIL" : "SL_HIT";
+                    }
+                    else               { exit_px = mid;        why = "TIMEOUT"; }
+
+                    Trade tr;
+                    tr.is_long      = es.pos_is_long;
+                    tr.entry_px     = es.pos_entry;
+                    tr.exit_px      = exit_px;
+                    tr.sl           = es.pos_sl;
+                    tr.tp           = es.pos_tp;
+                    tr.atr_at_entry = es.pos_atr_at_entry;
+                    tr.pnl_pts      = es.pos_is_long ? (exit_px - es.pos_entry) : (es.pos_entry - exit_px);
+                    tr.pnl_usd      = tr.pnl_pts * ic.pnl_per_pt;
+                    tr.mfe          = es.pos_mfe;
+                    tr.mae          = es.pos_mae;
+                    tr.entry_ts     = es.pos_entry_ts;
+                    tr.exit_ts      = t.ts_ms;
+                    tr.entry_hour   = -1;
+                    { struct tm ti{}; ts_to_utc(es.pos_entry_ts, ti); tr.entry_hour = ti.tm_hour; }
+                    tr.exit_reason  = why;
+                    es.trades.push_back(tr);
+                    es.pos_active = false;
+                    es.cooldown_until_ms = t.ts_ms + 30000;
+                    // 90s SL cooldown
+                    if (sl_hit || (strcmp(why, "SL_HIT") == 0)) {
+                        int64_t sl_block = t.ts_ms + 90000;
+                        if (sl_block > es.sl_cooldown_until_ms)
+                            es.sl_cooldown_until_ms = sl_block;
+                    }
+                    closed = true;
+                }
             }
 
-            // End of day: force-close any open position
-            if (engine.has_open_position()) {
-                // Approximate current mid
-                const double mid = st.mid;
-                engine.force_close(mid - 0.5, mid + 0.5, on_close);
-            }
+            continue;  // always skip entry logic when position is active
         }
 
-        printf("\n  Simulation complete: %d total ticks, %d trades\n",
-               total_ticks, stats_flow.n_trades);
-        printf("\n  Results:\n");
-        stats_flow.print();
+        // ── Entry gates ─────────────────────────────────────────────────────
+        // 1. No open position (handled above)
 
-        if (f_report) {
-            fprintf(f_report, "%s,%s,%d,%d,%.1f,%.0f,%.1f,%.2f,%.0f\n",
-                    sp.symbol, stats_flow.name.c_str(),
-                    stats_flow.n_trades, stats_flow.n_wins, stats_flow.win_rate(),
-                    stats_flow.total_pnl, stats_flow.avg_pnl(),
-                    stats_flow.sharpe(), stats_flow.max_dd);
-        }
-        printf("\n");
+        // 2. Cooldown
+        if (t.ts_ms < es.cooldown_until_ms) continue;
+
+        // 3. ATR ready
+        if (!es.atr.ready()) continue;
+
+        // 4. Min ticks
+        if (es.tick_count < 50) continue;
+
+        double atr_val = es.atr.atr();
+
+        // 5. ATR >= atr_min
+        if (atr_val < es.cfg_atr_min) continue;
+
+        // 6. Spread <= max_spread
+        if (spread > es.cfg_max_spread) continue;
+
+        // 7. Session gate: block 22:00-08:00 UTC
+        if (is_session_blocked(t.ts_ms)) continue;
+
+        // 8. SL cooldown (90s after SL hit)
+        if (t.ts_ms < es.sl_cooldown_until_ms) continue;
+
+        // ── Signal ──────────────────────────────────────────────────────────
+        bool drift_long  = (d >  es.cfg_drift_threshold) && (es.drift_persist_long  >= es.cfg_drift_persist);
+        bool drift_short = (d < -es.cfg_drift_threshold) && (es.drift_persist_short >= es.cfg_drift_persist);
+
+        if (!drift_long && !drift_short) continue;
+
+        // 9. Momentum confirmation: mid[now] - mid[12 ticks ago] same sign
+        if (es.mid_head < 13) continue;
+        double momentum = es.mid_buf[(es.mid_head - 1 + EngineState::MID_BUF) % EngineState::MID_BUF]
+                         - es.mid_buf[(es.mid_head - 13 + EngineState::MID_BUF * 4) % EngineState::MID_BUF];
+        if (drift_long  && momentum <= 0.0) continue;
+        if (drift_short && momentum >= 0.0) continue;
+
+        // 10. Chop guard
+        if (es.drift_range > es.cfg_drift_threshold * 4.0 &&
+            std::fabs(d) < es.cfg_drift_threshold * 1.5)
+            continue;
+
+        // ── Build entry ─────────────────────────────────────────────────────
+        bool is_long = drift_long;
+        double sl_dist = std::max(es.cfg_atr_min, atr_val * es.cfg_atr_sl_mult);
+        double tp_dist = sl_dist * 3.0;
+
+        es.pos_active       = true;
+        es.pos_is_long      = is_long;
+        es.pos_entry        = is_long ? t.ask : t.bid;
+        es.pos_sl           = is_long ? (t.bid - sl_dist) : (t.ask + sl_dist);
+        es.pos_tp           = is_long ? (t.ask + tp_dist) : (t.bid - tp_dist);
+        es.pos_atr_at_entry = atr_val;
+        es.pos_mfe          = 0.0;
+        es.pos_mae          = 0.0;
+        es.pos_entry_ts     = t.ts_ms;
+        es.pos_trail_stage  = 0;
+        es.pos_be_locked    = false;
     }
 
-    // ── Parameter calibration validation ──────────────────────────────────────
-    // Run a second pass with ATR gates only (no L2, drift-only) to validate
-    // the drift threshold calibration is not too sensitive
+    // Force close any remaining position at last tick
+    if (es.pos_active && !ticks.empty()) {
+        const Tick& t = ticks.back();
+        double mid = (t.bid + t.ask) * 0.5;
+        Trade tr;
+        tr.is_long      = es.pos_is_long;
+        tr.entry_px     = es.pos_entry;
+        tr.exit_px      = mid;
+        tr.sl           = es.pos_sl;
+        tr.tp           = es.pos_tp;
+        tr.atr_at_entry = es.pos_atr_at_entry;
+        tr.pnl_pts      = es.pos_is_long ? (mid - es.pos_entry) : (es.pos_entry - mid);
+        tr.pnl_usd      = tr.pnl_pts * ic.pnl_per_pt;
+        tr.mfe          = es.pos_mfe;
+        tr.mae          = es.pos_mae;
+        tr.entry_ts     = es.pos_entry_ts;
+        tr.exit_ts      = t.ts_ms;
+        tr.entry_hour   = -1;
+        { struct tm ti{}; ts_to_utc(es.pos_entry_ts, ti); tr.entry_hour = ti.tm_hour; }
+        tr.exit_reason  = "FORCE_CLOSE";
+        es.trades.push_back(tr);
+        es.pos_active = false;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stats computation
+// ─────────────────────────────────────────────────────────────────────────────
+struct Stats {
+    int    n_trades = 0;
+    int    n_wins   = 0;
+    int    n_long   = 0;
+    int    n_short  = 0;
+    int    n_long_wins  = 0;
+    int    n_short_wins = 0;
+    double gross_win  = 0.0;
+    double gross_loss = 0.0;
+    double total_pnl  = 0.0;
+    double max_dd     = 0.0;
+
+    // Exit breakdown
+    int exit_sl = 0, exit_tp = 0, exit_lc = 0, exit_trail = 0, exit_timeout = 0, exit_other = 0;
+
+    // Per-hour PF
+    double hour_win[24]  = {};
+    double hour_loss[24] = {};
+
+    double profit_factor() const {
+        return (gross_loss != 0.0) ? (gross_win / -gross_loss) : (gross_win > 0.0 ? 999.0 : 0.0);
+    }
+    double win_rate() const { return n_trades > 0 ? 100.0 * n_wins / n_trades : 0.0; }
+};
+
+static Stats compute_stats(const std::vector<Trade>& trades) {
+    Stats s;
+    s.n_trades = (int)trades.size();
+    double eq = 0.0;
+    double peak = 0.0;
+
+    for (auto& tr : trades) {
+        double pnl = tr.pnl_usd;
+        eq += pnl;
+        s.total_pnl += pnl;
+        if (pnl > 0.0) { ++s.n_wins; s.gross_win += pnl; }
+        else            { s.gross_loss += pnl; }
+
+        if (tr.is_long) { ++s.n_long; if (pnl > 0.0) ++s.n_long_wins; }
+        else            { ++s.n_short; if (pnl > 0.0) ++s.n_short_wins; }
+
+        if (eq > peak) peak = eq;
+        double dd = peak - eq;
+        if (dd > s.max_dd) s.max_dd = dd;
+
+        // Exit breakdown
+        if      (strcmp(tr.exit_reason, "SL_HIT")   == 0) ++s.exit_sl;
+        else if (strcmp(tr.exit_reason, "TP_HIT")   == 0) ++s.exit_tp;
+        else if (strcmp(tr.exit_reason, "LOSS_CUT") == 0) ++s.exit_lc;
+        else if (strcmp(tr.exit_reason, "TRAIL")    == 0) ++s.exit_trail;
+        else if (strcmp(tr.exit_reason, "TIMEOUT")  == 0) ++s.exit_timeout;
+        else ++s.exit_other;
+
+        // Per-hour PF
+        int h = tr.entry_hour;
+        if (h >= 0 && h < 24) {
+            if (pnl > 0.0) s.hour_win[h] += pnl;
+            else            s.hour_loss[h] += pnl;
+        }
+    }
+    return s;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IS/OOS split
+// ─────────────────────────────────────────────────────────────────────────────
+static void split_is_oos(const std::vector<Trade>& all,
+                          std::vector<Trade>& is_trades,
+                          std::vector<Trade>& oos_trades,
+                          int64_t ts_start, int64_t ts_end) {
+    int64_t split_ts = ts_start + (int64_t)((ts_end - ts_start) * 0.60);
+    for (auto& tr : all) {
+        if (tr.entry_ts < split_ts) is_trades.push_back(tr);
+        else                         oos_trades.push_back(tr);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main
+// ─────────────────────────────────────────────────────────────────────────────
+int main(int argc, char** argv) {
+    // Parse args
+    std::string instrument = "";
+    std::vector<std::string> csv_files;
+
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--instrument") == 0 && i + 1 < argc) {
+            instrument = argv[++i];
+        } else if (argv[i][0] != '-') {
+            csv_files.push_back(argv[i]);
+        }
+    }
+
+    if (instrument.empty() || csv_files.empty()) {
+        fprintf(stderr, "Usage: %s --instrument SP|NQ <csv_files...>\n", argv[0]);
+        return 1;
+    }
+
+    const InstrumentCfg* ic = nullptr;
+    if (instrument == "SP") ic = &CFG_SP;
+    else if (instrument == "NQ") ic = &CFG_NQ;
+    else {
+        fprintf(stderr, "ERROR: unknown instrument '%s' (use SP or NQ)\n", instrument.c_str());
+        return 1;
+    }
+
     printf("==========================================================================\n");
-    printf("  Calibration Check: Drift-threshold sensitivity\n");
-    printf("  (same seed, varying drift_threshold multiplier 0.5x, 1.0x, 1.5x, 2.0x)\n");
+    printf("  IndexFlowEngine Backtest — %s\n", ic->name);
+    printf("  Files: %zu CSVs\n", csv_files.size());
     printf("==========================================================================\n\n");
 
-    for (int si = 0; si < N_SYMS; ++si) {
-        const SymParams& sp = SYM_PARAMS[si];
-        if (!run_all && run_sym != sp.symbol) continue;
+    // Load ticks
+    printf("Loading ticks...\n");
+    auto ticks = load_ticks(csv_files, ic->price_lo, ic->price_hi);
+    printf("Loaded %zu ticks total\n\n", ticks.size());
 
-        double usd_per_pt = 1.0;
-        if      (strcmp(sp.symbol,"US500.F")==0) usd_per_pt = 50.0;
-        else if (strcmp(sp.symbol,"USTEC.F")==0) usd_per_pt = 20.0;
-        else if (strcmp(sp.symbol,"NAS100") ==0) usd_per_pt =  1.0;
-        else if (strcmp(sp.symbol,"DJ30.F") ==0) usd_per_pt =  5.0;
-
-        printf("  %s  (usd/pt=%.0f):\n", sp.symbol, usd_per_pt);
-
-        const double base_thresh = (si == 0) ? 0.5 : (si <= 2 ? 1.5 : 5.0);
-
-        for (double mult : {0.5, 1.0, 1.5, 2.0}) {
-            omega::idx::IndexFlowEngine eng2(sp.symbol);
-            // Patch drift threshold
-            // (Can't directly modify cfg_ from outside -- use a new instance
-            // and print the expected threshold for reference)
-            const double thresh = base_thresh * mult;
-
-            EngineStats s2;
-            s2.name = sp.symbol;
-            s2.usd_per_pt = usd_per_pt;
-
-            SimState st2;
-            st2.mid             = sp.base_price;
-            st2.mean_price      = sp.base_price;
-            st2.regime          = SIM_MR;
-            st2.regime_ticks_left = 5000;
-            st2.trend_drift     = 0.0;
-            st2.atr_now         = sp.normal_atr_hr;
-            st2.vol_ratio       = 1.0;
-            st2.rng             = std::mt19937_64(seed ^ (si * 12345)); // same seed
-
-            std::uniform_int_distribution<int> cd(15,45);
-            int next_crash = cd(st2.rng);
-
-            auto cb2 = [&](const omega::TradeRecord& tr) { s2.record(tr); };
-
-            for (int day = 0; day < n_days; ++day) {
-                if (day % 7 == 5 || day % 7 == 6) continue;
-                if (next_crash <= 0) {
-                    st2.regime = SIM_IMPULSE;
-                    st2.regime_ticks_left = 72000;
-                    st2.trend_drift = -(sp.crash_atr_hr * 0.04);
-                    st2.atr_now = sp.crash_atr_hr;
-                    eng2.seed_atr(sp.crash_atr_hr * 0.5);
-                    next_crash = cd(st2.rng);
-                } else {
-                    --next_crash;
-                    st2.atr_now = sp.normal_atr_hr;
-                    eng2.seed_atr(sp.normal_atr_hr * 0.5);
-                }
-                const int ticks_per_day = (int)(sp.tick_rate_ny * 8.5 * 3600
-                                              + sp.tick_rate_lon * 5.5 * 3600);
-                for (int t = 0; t < ticks_per_day; ++t) {
-                    TickBar tb = gen_tick(sp, st2);
-                    eng2.on_tick(sp.symbol, tb.bid, tb.ask, tb.l2_imb, cb2, true);
-                }
-                if (eng2.has_open_position())
-                    eng2.force_close(st2.mid - 0.5, st2.mid + 0.5, cb2);
-            }
-
-            printf("    drift_thresh=%.3f (%.1fx):  %4dT  WR=%5.1f%%  "
-                   "Total=$%8.0f  Sharpe=%.2f\n",
-                   thresh, mult, s2.n_trades, s2.win_rate(),
-                   s2.total_pnl, s2.sharpe());
-        }
-        printf("\n");
+    if (ticks.empty()) {
+        fprintf(stderr, "ERROR: no valid ticks loaded\n");
+        return 1;
     }
 
-    if (f_trades) fclose(f_trades);
-    if (f_report) fclose(f_report);
+    int64_t ts_start = ticks.front().ts_ms;
+    int64_t ts_end   = ticks.back().ts_ms;
+    {
+        struct tm ts{}, te{};
+        ts_to_utc(ts_start, ts);
+        ts_to_utc(ts_end, te);
+        printf("Date range: %04d-%02d-%02d to %04d-%02d-%02d\n\n",
+               ts.tm_year+1900, ts.tm_mon+1, ts.tm_mday,
+               te.tm_year+1900, te.tm_mon+1, te.tm_mday);
+    }
 
+    // Build sweep configs
+    std::vector<double> drift_thresholds;
+    if (instrument == "SP") drift_thresholds = {0.5, 0.8, 1.2};
+    else                    drift_thresholds = {1.5, 2.0, 3.0};
+
+    std::vector<int>    persist_values = {12, 20, 30};
+    std::vector<double> lc_values      = {0.0, 0.05, 0.07, 0.10};
+
+    std::vector<SweepConfig> configs;
+    for (double dt : drift_thresholds)
+        for (int dp : persist_values)
+            for (double lc : lc_values)
+                configs.push_back({dt, dp, lc});
+
+    printf("Running %zu configs...\n\n", configs.size());
+
+    // ── Sweep ───────────────────────────────────────────────────────────────
+    struct ConfigResult {
+        SweepConfig cfg;
+        Stats is_stats;
+        Stats oos_stats;
+        std::vector<Trade> all_trades;
+    };
+    std::vector<ConfigResult> results;
+    results.reserve(configs.size());
+
+    int best_idx = -1;
+    double best_oos_pf = 0.0;
+
+    printf("%-8s %-8s %-8s | IS: %-6s %-8s | OOS: %-6s %-8s | VERDICT\n",
+           "drift_t", "persist", "lc_pct", "trades", "PF", "trades", "PF");
+    printf("─────────────────────────────────────────────────────────────────────\n");
+
+    for (int ci = 0; ci < (int)configs.size(); ++ci) {
+        const auto& sc = configs[ci];
+
+        EngineState es;
+        es.reset(sc, *ic);
+
+        run_config(es, ticks, *ic);
+
+        // Split IS/OOS
+        std::vector<Trade> is_trades, oos_trades;
+        split_is_oos(es.trades, is_trades, oos_trades, ts_start, ts_end);
+
+        Stats is_s  = compute_stats(is_trades);
+        Stats oos_s = compute_stats(oos_trades);
+
+        // Verdict
+        bool pass = (oos_s.profit_factor() >= 1.20 && oos_s.n_trades >= 20);
+        const char* verdict = pass ? "PASS" : "FAIL";
+
+        printf("%-8.2f %-8d %-8.2f | %6d %8.2f | %6d %8.2f | %s\n",
+               sc.drift_threshold, sc.drift_persist_ticks, sc.loss_cut_pct,
+               is_s.n_trades, is_s.profit_factor(),
+               oos_s.n_trades, oos_s.profit_factor(),
+               verdict);
+
+        ConfigResult cr;
+        cr.cfg        = sc;
+        cr.is_stats   = is_s;
+        cr.oos_stats  = oos_s;
+        cr.all_trades = std::move(es.trades);
+        results.push_back(std::move(cr));
+
+        // Track best OOS
+        if (oos_s.n_trades >= 10 && oos_s.profit_factor() > best_oos_pf) {
+            best_oos_pf = oos_s.profit_factor();
+            best_idx = ci;
+        }
+    }
+
+    // ── Best OOS full report ────────────────────────────────────────────────
+    printf("\n==========================================================================\n");
+    if (best_idx < 0) {
+        printf("  No config with >= 10 OOS trades found.\n");
+        printf("==========================================================================\n");
+        return 0;
+    }
+
+    const auto& best = results[best_idx];
+    bool oos_pass = (best.oos_stats.profit_factor() >= 1.20 && best.oos_stats.n_trades >= 20);
+
+    printf("  BEST OOS CONFIG — %s\n", ic->name);
+    printf("  drift_threshold=%.2f  drift_persist=%d  LOSS_CUT_PCT=%.2f\n",
+           best.cfg.drift_threshold, best.cfg.drift_persist_ticks, best.cfg.loss_cut_pct);
+    printf("  OOS VERDICT: %s (PF=%.2f, trades=%d)\n",
+           oos_pass ? "PASS" : "FAIL",
+           best.oos_stats.profit_factor(), best.oos_stats.n_trades);
+    printf("==========================================================================\n\n");
+
+    // Split trades for detailed report
+    std::vector<Trade> is_trades, oos_trades;
+    split_is_oos(best.all_trades, is_trades, oos_trades, ts_start, ts_end);
+    Stats is_s  = compute_stats(is_trades);
+    Stats oos_s = compute_stats(oos_trades);
+    Stats all_s = compute_stats(best.all_trades);
+
+    auto print_stats = [](const char* label, const Stats& s) {
+        printf("  %-10s  %5dT  WR=%5.1f%%  PF=%5.2f  Total=$%8.2f  MaxDD=$%7.2f\n",
+               label, s.n_trades, s.win_rate(), s.profit_factor(), s.total_pnl, s.max_dd);
+    };
+
+    printf("── Overall ──\n");
+    print_stats("ALL", all_s);
+    print_stats("IS", is_s);
+    print_stats("OOS", oos_s);
+
+    printf("\n── Long / Short ──\n");
+    printf("  LONG:  %5d trades  WR=%5.1f%%\n", all_s.n_long,
+           all_s.n_long > 0 ? 100.0 * all_s.n_long_wins / all_s.n_long : 0.0);
+    printf("  SHORT: %5d trades  WR=%5.1f%%\n", all_s.n_short,
+           all_s.n_short > 0 ? 100.0 * all_s.n_short_wins / all_s.n_short : 0.0);
+
+    printf("\n── Exit Breakdown ──\n");
+    printf("  SL_HIT=%d  TP_HIT=%d  LOSS_CUT=%d  TRAIL=%d  TIMEOUT=%d  OTHER=%d\n",
+           all_s.exit_sl, all_s.exit_tp, all_s.exit_lc, all_s.exit_trail,
+           all_s.exit_timeout, all_s.exit_other);
+
+    printf("\n── Per-Hour PF (UTC, entry hour) ──\n");
+    for (int h = 8; h < 22; ++h) {
+        double w = all_s.hour_win[h];
+        double l = all_s.hour_loss[h];
+        double pf = (l != 0.0) ? (w / -l) : (w > 0.0 ? 999.0 : 0.0);
+        int nt = 0;
+        for (auto& tr : best.all_trades) if (tr.entry_hour == h) ++nt;
+        if (nt == 0) continue;
+        printf("  %02d:00  %4d trades  PF=%5.2f  Win=$%7.2f  Loss=$%7.2f\n",
+               h, nt, pf, w, l);
+    }
+
+    // IS/OOS decay: split IS into two halves
+    printf("\n── IS/OOS Decay ──\n");
+    {
+        int64_t is_split = ts_start + (int64_t)((ts_end - ts_start) * 0.30);
+        std::vector<Trade> is1, is2;
+        for (auto& tr : is_trades) {
+            if (tr.entry_ts < is_split) is1.push_back(tr);
+            else is2.push_back(tr);
+        }
+        Stats s1 = compute_stats(is1);
+        Stats s2 = compute_stats(is2);
+        print_stats("IS-early", s1);
+        print_stats("IS-late", s2);
+        print_stats("OOS", oos_s);
+    }
+
+    printf("\n==========================================================================\n");
+    printf("  Done. %zu total configs, best OOS PF=%.2f\n", configs.size(), best_oos_pf);
     printf("==========================================================================\n");
-    printf("  Trades written to: bt_index_trades.csv\n");
-    printf("  Report written to: bt_index_report.csv\n");
-    printf("==========================================================================\n");
+
     return 0;
 }
