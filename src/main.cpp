@@ -70,6 +70,8 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "api/OmegaApiServer.hpp"   // Step 2 read-API for omega-terminal (resolves via -I src)
 #endif
 #include "GoldEngineStack.hpp"    // Multi-engine gold stack (ported from ChimeraMetals)
+#include "gold_ultimate_integration.hpp"  // GoldUltimateStrategy orchestrator + v12 edge filters
+#include "GoldUltimateEngine.hpp"        // Standalone v12 OOS-validated XAUUSD trend engine
 // LatencyEdgeEngines.hpp removed S13 Finding B 2026-04-24 — engine culled.
 #include "CrossAssetEngines.hpp" // 9 cross-asset engines: EsNqDiv, OilFade, BrentWti, FxCascade, CarryUnwind, ORB, VWAPRev, TrendPB, NBM (SilverTurtle removed at Batch 5V)
 #include "IndexFlowEngine.hpp"   // L2 flow + EWM drift engines for equity indices (IndexFlowEngine, IndexMacroCrashEngine)

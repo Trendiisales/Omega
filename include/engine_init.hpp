@@ -833,7 +833,7 @@ static void init_engines(const std::string& cfg_path)
         g_h4_regime_gold.p           = omega::make_h4_gold_params();
         g_h4_regime_gold.symbol      = "XAUUSD";
         g_h4_regime_gold.shadow_mode = true;
-        g_h4_regime_gold.enabled     = true;
+        g_h4_regime_gold.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
         printf("[INIT] H1SwingEngine  XAUUSD: shadow=true adx_min=%.0f sl=%.1fx"
                " tp1=%.1fx trail_arm=%.1fx trail_dist=%.1fx daily_cap=$%.0f\n",
                g_h1_swing_gold.p.adx_min,    g_h1_swing_gold.p.sl_mult,
@@ -851,7 +851,7 @@ static void init_engines(const std::string& cfg_path)
         g_minimal_h4_gold.p           = omega::make_minimal_h4_gold_params();
         g_minimal_h4_gold.symbol      = "XAUUSD";
         g_minimal_h4_gold.shadow_mode = false;
-        g_minimal_h4_gold.enabled     = true;
+        g_minimal_h4_gold.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
         printf("[INIT] MinimalH4Breakout XAUUSD: shadow=%s donchian=%d sl=%.1fx"
                " tp=%.1fx risk=$%.0f max_lot=%.3f timeout=%d bars weekend_gate=%s\n",
                g_minimal_h4_gold.shadow_mode    ? "true" : "false",
@@ -990,7 +990,7 @@ static void init_engines(const std::string& cfg_path)
         // max 3 concurrent positions. Drives off the s_cur_h4 bar already
         // aggregated in tick_gold.hpp.
         g_xau_tf_4h.shadow_mode = kShadowDefault;  // SHADOW unless operator flips
-        g_xau_tf_4h.enabled     = true;
+        g_xau_tf_4h.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
         g_xau_tf_4h.init();
@@ -1102,7 +1102,7 @@ static void init_engines(const std::string& cfg_path)
         // Lower cadence than 4h ensemble (~2 trades/month) but biggest
         // per-trade edges in the project ($36-60). 2/3 Duka years +ve per cell.
         g_xau_tf_d1.shadow_mode = kShadowDefault;
-        g_xau_tf_d1.enabled     = true;
+        g_xau_tf_d1.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.init();
@@ -1118,7 +1118,7 @@ static void init_engines(const std::string& cfg_path)
         // InsideBar -- all sl2.0_tp4.0, all 3/3 Duka years +ve.
         // Synthesises 2h bars internally from H1 stream.
         g_xau_tf_2h.shadow_mode = kShadowDefault;
-        g_xau_tf_2h.enabled     = true;
+        g_xau_tf_2h.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
         g_xau_tf_2h.lot         = 0.01;
         g_xau_tf_2h.max_spread  = 1.0;
         g_xau_tf_2h.init();
@@ -1175,7 +1175,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_threebar_30m.BE_ARM_PCT    = 0.03;
         g_xau_threebar_30m.BE_BUFFER_PCT = 0.012;
         g_xau_threebar_30m.shadow_mode        = true;   // HARD shadow until live-validated
-        g_xau_threebar_30m.enabled            = true;   // engine runs (in shadow)
+        g_xau_threebar_30m.enabled            = false;  // S91: disabled — GoldUltimateEngine solo test
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;
         g_xau_threebar_30m.be_trigger_atr     = 1.0;    // S35-P4 TUNED
@@ -1199,6 +1199,47 @@ static void init_engines(const std::string& cfg_path)
                g_xau_threebar_30m.be_trigger_atr,
                g_xau_threebar_30m.trail_atr_mult,
                g_xau_threebar_30m.min_atr_floor);
+        fflush(stdout);
+
+        // ── GoldUltimateEngine (S91 2026-05-15) ──────────────────────────
+        // Standalone v12 OOS-validated XAUUSD trend engine. 7-factor entry
+        // filter + edge-hour gate (01/05/23 UTC) + ATR floor 2.5. Self-
+        // contained 1-min bar aggregation, indicators, signal generation,
+        // and position management. No dependency on other engines.
+        //
+        // 26-month backtest (154M ticks, Mar 2024 – Apr 2026):
+        //   PF=1.36  WR=41.8%  Sharpe=8.30  311 trades
+        //   BULL PF=1.45  BEAR PF=1.29
+        //   OOS PF=1.39 (265 trades, Sep 2025 – Apr 2026)
+        //   OOS PF retention: 117% — STRONG PASS
+        //
+        // Geometry: SL=2.0*ATR, TP=5.0*ATR, trail at 3.0*ATR MFE with
+        // 2.0*ATR distance. No break-even, no profit lock.
+        //
+        // Shadow mode for initial live validation. User instruction:
+        // "disable ALL the other gold engines, we only test this new one"
+        g_gold_ultimate_engine.shadow_mode       = true;
+        g_gold_ultimate_engine.enabled           = true;
+        g_gold_ultimate_engine.lot               = 0.01;
+        g_gold_ultimate_engine.max_spread        = 1.0;
+        g_gold_ultimate_engine.atr_entry_floor   = 2.5;
+        g_gold_ultimate_engine.sl_atr_mult       = 2.0;
+        g_gold_ultimate_engine.tp_atr_mult       = 5.0;
+        g_gold_ultimate_engine.trail_trigger_atr  = 3.0;
+        g_gold_ultimate_engine.trail_dist_atr     = 2.0;
+        g_gold_ultimate_engine.drift_min         = 2.0;
+        g_gold_ultimate_engine.init();
+        printf("[OMEGA-INIT] GoldUltimateEngine initialised: shadow=%d enabled=%d lot=%.2f"
+               " sl=%.1f*ATR tp=%.1f*ATR trail=%.1f/%.1f*ATR atr_floor=%.1f"
+               " edge_hours=01,05,23 (S91 v12 OOS-validated)\n",
+               (int)g_gold_ultimate_engine.shadow_mode,
+               (int)g_gold_ultimate_engine.enabled,
+               g_gold_ultimate_engine.lot,
+               g_gold_ultimate_engine.sl_atr_mult,
+               g_gold_ultimate_engine.tp_atr_mult,
+               g_gold_ultimate_engine.trail_trigger_atr,
+               g_gold_ultimate_engine.trail_dist_atr,
+               g_gold_ultimate_engine.atr_entry_floor);
         fflush(stdout);
 
         // ── UstecTrendFollowHtfEngine (S35-P6 + S36-P1a + S36-P1b 2026-05-12) ─
@@ -1283,7 +1324,7 @@ static void init_engines(const std::string& cfg_path)
         // 9/21 EMA pullback-and-recover pattern from sig_ema_pullback.
         // Reuses tsmom warmup CSV (same H1 stream input).
         g_ema_pullback.shadow_mode       = kShadowDefault;
-        g_ema_pullback.enabled           = true;
+        g_ema_pullback.enabled           = false;  // S91: disabled — GoldUltimateEngine solo test
         g_ema_pullback.max_concurrent    = 4;
         g_ema_pullback.risk_pct          = 0.005;
         g_ema_pullback.start_equity      = 10000.0;
@@ -1412,7 +1453,7 @@ static void init_engines(const std::string& cfg_path)
         //   decision to flip back to kShadowDefault. Promotion gate per
         //   NEXT_SESSION.md S9 priority 3.
         g_trend_rider.shadow_mode       = true;
-        g_trend_rider.enabled           = true;
+        g_trend_rider.enabled           = false;  // S91: disabled — GoldUltimateEngine solo test
         g_trend_rider.max_concurrent    = 6;
         g_trend_rider.risk_pct          = 0.040;          // 8x tsmom baseline (~1/8 Kelly)
         g_trend_rider.start_equity      = 10000.0;
@@ -2268,7 +2309,7 @@ static void init_engines(const std::string& cfg_path)
     g_nbm_us30.enabled   = false;
     // NBM gold london: RE-ENABLED 2026-04-01 -- live MT5 data confirms the logic
     // (London open ATR breakout, 51min hold, +$185). Omega NBM is identical concept.
-    g_nbm_gold_london.enabled = true;
+    g_nbm_gold_london.enabled = false;  // S91: disabled — GoldUltimateEngine solo test
     g_nbm_oil_london.enabled  = false;
     //
     // ORB (OpeningRange): no live data. Shelved pending shadow validation.
@@ -3877,5 +3918,21 @@ static void init_engines(const std::string& cfg_path)
     std::cout << "[OmegaApi] equity anchor set to "
               << g_cfg.account_equity << "\n";
     std::cout.flush();
+
+    // ── Step 4: GoldUltimateStrategy activation ─────────────────────────────
+    // S90: v12 OOS-validated edge filters.
+    // Backtest evidence (26 months, 154M ticks XAUUSD):
+    //   PF=1.36, WR=41.8%, Sharpe=8.30 on 311 trades
+    //   BULL PF=1.45, BEAR PF=1.29
+    //   OOS PF=1.39 (265 trades), 117% PF retention
+    // Edge hours: 01,05,23 UTC (Asian/early-London session)
+    // ATR floor: 2.5 (low-vol band PF=0.80 removed)
+    // Defaults baked into class — no overrides needed here.
+    // shadow_mode semantics: the strategy is a GATE overlay, not an engine.
+    // When enabled, it filters entries via evaluate_entry() for any engine
+    // that calls gold_ultimate_gate(). Engines not wired to the gate are
+    // unaffected. The gate adds HOUR_NOT_IN_EDGE_SET and ATR_BELOW_FLOOR
+    // rejections before regime detection.
+    omega::gold_ultimate::gold_ultimate_activate();
 }
 

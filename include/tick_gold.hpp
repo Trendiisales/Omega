@@ -2023,6 +2023,10 @@ static void on_tick_gold(
     // XauThreeBar30mEngine tick management -- 30m three-bar continuation (S36-P4).
     // Shadow-only by default. Intra-bar SL/TP/BE/trail management every tick.
     g_xau_threebar_30m.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // GoldUltimateEngine tick dispatch -- standalone v12 OOS-validated trend
+    // engine. Self-contained 1-min bar aggregation + 7-factor entry filter +
+    // edge-hour/ATR gates. S91 shipped 2026-05-15.
+    g_gold_ultimate_engine.on_tick(bid, ask, now_ms_g, ca_on_close);
     // EmaPullbackPortfolio tick management -- 4 long cells (H1/H2/H4/H6).
     // Tier-3 shipped 2026-04-30. Long-only. No shared state.
     g_ema_pullback.on_tick(bid, ask, now_ms_g, ca_on_close);

@@ -405,6 +405,14 @@ static omega::XauTrendFollowD1Engine g_xau_tf_d1;
 #include "XauTrendFollow2hEngine.hpp"
 static omega::XauTrendFollow2hEngine g_xau_tf_2h;
 
+// 2026-05-15 S91: GoldUltimateEngine -- standalone v12 OOS-validated XAUUSD
+//   trend engine. 7-factor entry filter + edge-hour gate (01/05/23 UTC) +
+//   ATR floor 2.5. SL=2ATR, TP=5ATR, trail at 3ATR MFE / 2ATR distance.
+//   26-month backtest: PF=1.36, WR=41.8%, 311 trades, OOS PF=1.39 (265 trades).
+//   Shadow mode for initial live validation.
+#include "GoldUltimateEngine.hpp"
+static omega::GoldUltimateEngine g_gold_ultimate_engine;
+
 // 2026-05-11/12 S34 + S35-P3 + S35-P4: XauThreeBar30mEngine -- XAU M30
 //   three-bar continuation. Engine added in S34 (b1932d2), retrofitted
 //   with the standard ProtectedEngineGuards bundle in S35-P3 (1684cfc),
