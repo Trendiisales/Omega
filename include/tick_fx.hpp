@@ -104,6 +104,15 @@ static void on_tick_eurusd(
     // Done unconditionally before any engine logic.
     g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;
 
+    // S99: FX engine kill-switch -- all FX LondonOpen/AsianOpen/SydneyOpen
+    //   engines disabled after full BreakoutEngine + BracketEngine sweep
+    //   showed negative expectancy across all 5 FX pairs. Engine dispatch
+    //   cut here at the tick handler level. Macro context price store above
+    //   is preserved (used by gold correlation logic). To re-enable: remove
+    //   this return and rebuild.
+    (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
+    return;
+
     const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
 
     // Two-phase dispatch (mirrors GoldMidScalper pattern in tick_gold.hpp:2180-2222):
@@ -174,6 +183,10 @@ static void on_tick_gbpusd(
     //   Done unconditionally before any engine logic, same pattern as the
     //   eur_mid_price store in on_tick_eurusd.
     g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;
+
+    // S99: FX kill-switch (see on_tick_eurusd comment). GbpusdLondonOpen disabled.
+    (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
+    return;
 
     const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
 
@@ -246,6 +259,10 @@ static void on_tick_usdjpy(
     //   eur_mid_price store in on_tick_eurusd.
     g_usdjpy_mid.store((bid + ask) * 0.5, std::memory_order_relaxed);
 
+    // S99: FX kill-switch (see on_tick_eurusd comment). UsdjpyAsianOpen disabled.
+    (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
+    return;
+
     const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
 
     // Two-phase dispatch (mirrors on_tick_eurusd):
@@ -317,6 +334,10 @@ static void on_tick_audusd(
         // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
         g_engine_heartbeat.pulse("AudusdSydneyOpen");
 
+        // S99: FX kill-switch (see on_tick_eurusd comment). AudusdSydneyOpen disabled.
+        (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
+        return;
+
         const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
 
         // Two-phase dispatch (mirrors on_tick_usdjpy):
@@ -386,6 +407,10 @@ static void on_tick_audusd(
     if (sym == "NZDUSD") {
         // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
         g_engine_heartbeat.pulse("NzdusdAsianOpen");
+
+        // S99: FX kill-switch (see on_tick_eurusd comment). NzdusdAsianOpen disabled.
+        (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
+        return;
 
         const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
 
