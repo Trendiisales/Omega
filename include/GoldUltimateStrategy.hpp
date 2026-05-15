@@ -415,6 +415,7 @@ public:
         // Layer 4: Macro context
         const bool risk_off = (snap.macro_regime == "RISK_OFF");
         const bool risk_on  = (snap.macro_regime == "RISK_ON");
+        (void)risk_off;  // reserved for future BULL_TREND boost logic
 
         // Layer 5: Price structure
         const bool structure_bull = snap.higher_highs;
