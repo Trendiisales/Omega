@@ -214,6 +214,7 @@ public:
     bool   enabled     = false;
     double lot         = 0.01;
     double max_spread  = 1.0;
+    bool   long_only   = false;  // S96: backtest v2 shows short side PF=0.84; long-only OOS PF=1.24
 
     // ── S35-P3 protection knobs (NEW, defaults = "disabled" so the
     //    retrofit is regression-safe unless the operator opts in).
@@ -417,7 +418,7 @@ private:
             (b3.close < b3.open) && (b2.close < b2.open) && (b1.close < b1.open);
 
         if (all_up   && cb.close > b1.high) return +1;
-        if (all_down && cb.close < b1.low ) return -1;
+        if (!long_only && all_down && cb.close < b1.low ) return -1;
         return 0;
     }
 

@@ -572,6 +572,11 @@ struct EpbPortfolio {
     bool   enabled           = true;
     bool   shadow_mode       = true;
     int    max_concurrent    = 4;
+
+    // S96: per-cell enable bitmask. Bit 0=H1, 1=H2, 2=H4, 3=H6.
+    // Default 0x0F = all 4 enabled. Backtest v2 showed H4 PF=1.60, H6 PF=1.53
+    // are the strong cells; H1 PF=1.13, H2 PF=1.27 dilute. Set in engine_init.hpp.
+    uint32_t cell_enable_mask = 0x0F;
     double risk_pct          = 0.005;
     double start_equity      = 10000.0;
     double margin_call       = 1000.0;
@@ -736,24 +741,29 @@ struct EpbPortfolio {
         atr_h1_.on_bar(h1);
         const double eff_h1_atr =
             (std::isfinite(h1_atr14) && h1_atr14 > 0.0) ? h1_atr14 : atr_h1_.value();
-        if (eff_h1_atr > 0.0) {
-            _drive_cell(h1_long_, h1, bid, ask, eff_h1_atr, 0, now_ms, runtime_cb);
-        } else {
-            (void)h1_long_.on_bar(h1, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 0));
+        if (cell_enable_mask & 0x01) {  // S96: H1 cell gate
+            if (eff_h1_atr > 0.0) {
+                _drive_cell(h1_long_, h1, bid, ask, eff_h1_atr, 0, now_ms, runtime_cb);
+            } else {
+                (void)h1_long_.on_bar(h1, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 0));
+            }
         }
 
         synth_h2_.on_h1_bar(h1, [&](const EpbBar& b) {
             atr_h2_.on_bar(b);
+            if (!(cell_enable_mask & 0x02)) return;  // S96: H2 cell gate
             if (atr_h2_.ready()) _drive_cell(h2_long_, b, bid, ask, atr_h2_.value(), 1, now_ms, runtime_cb);
             else                 (void)h2_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 1));
         });
         synth_h4_.on_h1_bar(h1, [&](const EpbBar& b) {
             atr_h4_.on_bar(b);
+            if (!(cell_enable_mask & 0x04)) return;  // S96: H4 cell gate
             if (atr_h4_.ready()) _drive_cell(h4_long_, b, bid, ask, atr_h4_.value(), 2, now_ms, runtime_cb);
             else                 (void)h4_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 2));
         });
         synth_h6_.on_h1_bar(h1, [&](const EpbBar& b) {
             atr_h6_.on_bar(b);
+            if (!(cell_enable_mask & 0x08)) return;  // S96: H6 cell gate
             if (atr_h6_.ready()) _drive_cell(h6_long_, b, bid, ask, atr_h6_.value(), 3, now_ms, runtime_cb);
             else                 (void)h6_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 3));
         });
@@ -762,10 +772,10 @@ struct EpbPortfolio {
     void on_tick(double bid, double ask, int64_t now_ms,
                  OnCloseCb runtime_cb) noexcept {
         if (!enabled) return;
-        h1_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 0));
-        h2_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 1));
-        h4_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 2));
-        h6_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 3));
+        if (cell_enable_mask & 0x01) h1_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 0));
+        if (cell_enable_mask & 0x02) h2_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 1));
+        if (cell_enable_mask & 0x04) h4_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 2));
+        if (cell_enable_mask & 0x08) h6_long_.on_tick(bid, ask, now_ms, wrap(runtime_cb, 3));
     }
 
     void force_close_all(double bid, double ask, int64_t now_ms,

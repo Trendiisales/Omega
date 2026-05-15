@@ -195,6 +195,12 @@ public:
     double lot         = 0.01;
     double max_spread  = 1.0;  // USD; refuse entries above this
 
+    // S96: per-cell enable bitmask. Bit i controls kXauTfCells[i].
+    // Default 0x3F = all 6 cells enabled. Set in engine_init.hpp.
+    // Backtest v2 showed 4h_InsideBar(1)/4h_ER20(2)/4h_ADX_Mom(4) PF<1.0 →
+    // disable those 3 to concentrate on profitable cells.
+    uint32_t cell_enable_mask = 0x3F;  // bits 0-5, all on by default
+
     // S63 2026-05-14 (part W): VWR-pattern in-flight protection (full trio).
     //   Defaults to ALL ZERO -- S63 is OFF on production until per-instrument
     //   backtest evidence justifies enabling. The XauTrendFollow trio
@@ -311,6 +317,7 @@ public:
         if (ask - bid > max_spread) return;
 
         for (int ci = 0; ci < kXauTfNumCells; ++ci) {
+            if (!(cell_enable_mask & (1u << ci))) continue;  // S96: per-cell gate
             if (pos[ci].active) continue;
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);

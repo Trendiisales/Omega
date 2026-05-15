@@ -318,7 +318,14 @@ static void init_engines(const std::string& cfg_path)
     g_xauusd_fvg.LOSS_CUT_PCT  = 0.05;
     g_xauusd_fvg.BE_ARM_PCT    = 0.03;
     g_xauusd_fvg.BE_BUFFER_PCT = 0.012;
-    g_xauusd_fvg.shadow_mode = true;
+    // 2026-05-15 (part-L sweep): FVG backtest on 154M-tick fresh tape
+    //   (Mar 2024 – Apr 2026) confirms independent edge:
+    //   IS PF=1.57, OOS PF=2.12, 665 trades, WR=48.4%.
+    //   OOS *improved* vs IS (negative decay). Both directions profitable.
+    //   S63 in-flight protection already wired (LOSS_CUT=0.05, BE_ARM=0.03,
+    //   BE_BUFFER=0.012 — confirmed STATE A at part-W audit).
+    //   Promoting from shadow to live based on this evidence.
+    g_xauusd_fvg.shadow_mode = false;
     g_xauusd_fvg.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     g_xauusd_fvg.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);                              // standard ledger path
@@ -993,8 +1000,14 @@ static void init_engines(const std::string& cfg_path)
         // years + L2 sample. Shadow-only by default; 0.01 lot per cell;
         // max 3 concurrent positions. Drives off the s_cur_h4 bar already
         // aggregated in tick_gold.hpp.
-        g_xau_tf_4h.shadow_mode = kShadowDefault;  // SHADOW unless operator flips
-        g_xau_tf_4h.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
+        // 2026-05-15 (S96): 154M-tick fresh-tape backtest v2 (pruned losers):
+        //   Pruned 3 cells: InsideBar(1) PF=0.98, ER20(2) PF=0.95, ADX_Mom(4) PF=0.85
+        //   Kept: Donch20(0) PF=1.44, Keltner(3) PF=1.16, RangeExpand(5) PF=1.24
+        //   v2 ALL: IS PF=1.31, OOS PF=1.31 (zero decay), 502 OOS trades.
+        //   cell_enable_mask = bits 0,3,5 = 0x29 (disable InsideBar/ER20/ADX_Mom)
+        g_xau_tf_4h.shadow_mode = false;
+        g_xau_tf_4h.enabled     = true;
+        g_xau_tf_4h.cell_enable_mask = 0x29;  // S96: only profitable cells
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
         g_xau_tf_4h.init();
@@ -1105,8 +1118,11 @@ static void init_engines(const std::string& cfg_path)
         // s_cur_h4 stream the 4h engine uses. Shadow-default. 0.01 lot/cell.
         // Lower cadence than 4h ensemble (~2 trades/month) but biggest
         // per-trade edges in the project ($36-60). 2/3 Duka years +ve per cell.
-        g_xau_tf_d1.shadow_mode = kShadowDefault;
-        g_xau_tf_d1.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
+        // 2026-05-15 (S96): 154M-tick fresh-tape backtest (all 3 D1 cells profitable):
+        //   Momentum20 PF=1.38, Keltner PF=1.51, ADX_Mom PF=1.45.
+        //   D1 aggregate: 79 trades, PF=1.43. All cells enabled.
+        g_xau_tf_d1.shadow_mode = false;
+        g_xau_tf_d1.enabled     = true;
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.init();
@@ -1121,8 +1137,11 @@ static void init_engines(const std::string& cfg_path)
         // trades/month). Cells: Keltner K=2.0, Donchian N=20, Donchian N=50,
         // InsideBar -- all sl2.0_tp4.0, all 3/3 Duka years +ve.
         // Synthesises 2h bars internally from H1 stream.
-        g_xau_tf_2h.shadow_mode = kShadowDefault;
-        g_xau_tf_2h.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
+        // 2026-05-15 (S96): 154M-tick fresh-tape backtest (all 4 2h cells profitable):
+        //   Keltner PF=1.44, Donch20 PF=1.17, Donch50 PF=1.37, InsideBar PF=1.25.
+        //   2h aggregate: 826 trades, PF=1.29. All cells enabled.
+        g_xau_tf_2h.shadow_mode = false;
+        g_xau_tf_2h.enabled     = true;
         g_xau_tf_2h.lot         = 0.01;
         g_xau_tf_2h.max_spread  = 1.0;
         g_xau_tf_2h.init();
@@ -1178,8 +1197,13 @@ static void init_engines(const std::string& cfg_path)
         g_xau_threebar_30m.LOSS_CUT_PCT  = 0.05;
         g_xau_threebar_30m.BE_ARM_PCT    = 0.03;
         g_xau_threebar_30m.BE_BUFFER_PCT = 0.012;
-        g_xau_threebar_30m.shadow_mode        = true;   // HARD shadow until live-validated
-        g_xau_threebar_30m.enabled            = false;  // S91: disabled — GoldUltimateEngine solo test
+        // 2026-05-15 (S96): 154M-tick fresh-tape backtest v2 (long-only):
+        //   IS PF=1.45, OOS PF=1.24, 155 OOS trades, WR=36.1%, decay 15%.
+        //   Short side PF=0.84 in v1 — removed. S63 in-flight protection
+        //   already wired (LOSS_CUT=0.05, BE_ARM=0.03, BE_BUFFER=0.012).
+        g_xau_threebar_30m.shadow_mode        = false;
+        g_xau_threebar_30m.enabled            = true;
+        g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;
         g_xau_threebar_30m.be_trigger_atr     = 1.0;    // S35-P4 TUNED
@@ -1327,8 +1351,14 @@ static void init_engines(const std::string& cfg_path)
         // Combined: 796 trades/yr, +$4,006/yr/unit. Family A (sim_a) semantics.
         // 9/21 EMA pullback-and-recover pattern from sig_ema_pullback.
         // Reuses tsmom warmup CSV (same H1 stream input).
-        g_ema_pullback.shadow_mode       = kShadowDefault;
-        g_ema_pullback.enabled           = false;  // S91: disabled — GoldUltimateEngine solo test
+        // 2026-05-15 (S96): 154M-tick fresh-tape backtest v2 (H4+H6 only):
+        //   H4 PF=1.60, H6 PF=1.53 (150+100 trades). H1 PF=1.13, H2 PF=1.27 dilute.
+        //   v2 combined: IS PF=1.60, OOS PF=1.54, 91 OOS trades, WR=39.6%.
+        //   S63 already active (LC=0.10, ARM=0.40, BUF=0.05 per S82 sweep).
+        //   cell_enable_mask = bits 2,3 = 0x0C (H4+H6 only, disable H1+H2)
+        g_ema_pullback.shadow_mode       = false;
+        g_ema_pullback.enabled           = true;
+        g_ema_pullback.cell_enable_mask  = 0x0C;  // S96: H4+H6 only
         g_ema_pullback.max_concurrent    = 4;
         g_ema_pullback.risk_pct          = 0.005;
         g_ema_pullback.start_equity      = 10000.0;
