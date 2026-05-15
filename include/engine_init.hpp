@@ -646,7 +646,11 @@ static void init_engines(const std::string& cfg_path)
     // 0.40%=$96 requires a genuine VWAP dislocation not a 2-tick wiggle.
     // MAX_EXTENSION raised 0.80->1.20%: prevents blocking real dislocations.
     // MAX_HOLD raised 900->600s: exit stalled trades faster (was holding 15min losers).
-    g_vwap_rev_sp.enabled = true;  g_vwap_rev_sp.EXTENSION_THRESH_PCT    = 0.35; g_vwap_rev_sp.COOLDOWN_SEC    = 300;
+    g_vwap_rev_sp.enabled = false;  g_vwap_rev_sp.EXTENSION_THRESH_PCT    = 0.35; g_vwap_rev_sp.COOLDOWN_SEC    = 300;
+    // S95 2026-05-15: disabled. SPX/US500 UltimateBacktest v1 (4118 trades, PF=0.92)
+    //   and v2 (117 trades, PF=1.13 overall but OOS PF=0.88 — fails >=1.20 criterion).
+    //   SPX lacks persistent trend-following momentum edge. ATR 8-15 band (120 trades,
+    //   PF=1.19) was the only positive segment — too thin for production.
     g_vwap_rev_sp.MAX_EXTENSION_PCT       = 1.20;
     g_vwap_rev_sp.MAX_HOLD_SEC            = 600;
     // 2026-05-13 (S37-H-followup): in-flight cut + BE ratchet (index defaults).
@@ -1520,7 +1524,7 @@ static void init_engines(const std::string& cfg_path)
     g_trend_pb_nq.enabled             = false;   // S94 2026-05-15: disabled — NAS/USTEC engines consolidated into Nas100ShortEngine (OOS-validated PF=3.38). Was live with $80 daily cap.
     g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
     g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
-    g_trend_pb_sp.enabled             = true;    // RE-ENABLED S14 2026-04-24: same rationale as _nq above (paired engine, same Apr 2 / Mar 27 data)
+    g_trend_pb_sp.enabled             = false;   // S95 2026-05-15: disabled — SPX UltimateBacktest OOS failed (v2 OOS PF=0.88). No trend-following edge on US500. Was live with $80 daily cap.
     g_trend_pb_ger40.DAILY_LOSS_CAP   = 80.0;   // GER40 too -- no cap was previously set
     g_trend_pb_ger40.enabled          = false;   // DISABLED: not live-validated
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
