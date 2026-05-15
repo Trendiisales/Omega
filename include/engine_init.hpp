@@ -331,6 +331,8 @@ static void init_engines(const std::string& cfg_path)
         handle_closed_trade(tr);                              // standard ledger path
         omega::xauusd_fvg::log_xauusd_fvg_csv(tr, g_xauusd_fvg);
     };
+    g_xauusd_fvg.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_M15.csv";
+    g_xauusd_fvg.warmup_from_csv(g_xauusd_fvg.warmup_csv_path);
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -1010,7 +1012,9 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.cell_enable_mask = 0x29;  // S96: only profitable cells
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
+        g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
+        g_xau_tf_4h.warmup_from_csv(g_xau_tf_4h.warmup_csv_path);
         printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=6"
                " (Donchian,InsideBar_RR4to1,ER0.20_RR4to1,Keltner,ADX_Mom,RangeExpand)\n",
                (int)g_xau_tf_4h.shadow_mode, (int)g_xau_tf_4h.enabled, g_xau_tf_4h.lot);
@@ -1125,7 +1129,9 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_d1.enabled     = true;
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
+        g_xau_tf_d1.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_d1.init();
+        g_xau_tf_d1.warmup_from_csv(g_xau_tf_d1.warmup_csv_path);
         printf("[OMEGA-INIT] XauTrendFollowD1Engine initialised: shadow=%d enabled=%d lot=%.2f cells=3"
                " (Momentum,Keltner,ADX_Mom)\n",
                (int)g_xau_tf_d1.shadow_mode, (int)g_xau_tf_d1.enabled, g_xau_tf_d1.lot);
@@ -1144,7 +1150,9 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_2h.enabled     = true;
         g_xau_tf_2h.lot         = 0.01;
         g_xau_tf_2h.max_spread  = 1.0;
+        g_xau_tf_2h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
         g_xau_tf_2h.init();
+        g_xau_tf_2h.warmup_from_csv(g_xau_tf_2h.warmup_csv_path);
         printf("[OMEGA-INIT] XauTrendFollow2hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=4"
                " (Keltner,Donchian20,Donchian50,InsideBar)\n",
                (int)g_xau_tf_2h.shadow_mode, (int)g_xau_tf_2h.enabled, g_xau_tf_2h.lot);
@@ -1217,7 +1225,9 @@ static void init_engines(const std::string& cfg_path)
         g_xau_threebar_30m.max_atr_ceil       = 0.0;    // disabled
         g_xau_threebar_30m.block_hour_start   = -1;     // disabled (XAU Asia has flow)
         g_xau_threebar_30m.block_hour_end     = -1;
+        g_xau_threebar_30m.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_M30.csv";
         g_xau_threebar_30m.init();
+        g_xau_threebar_30m.warmup_from_csv(g_xau_threebar_30m.warmup_csv_path);
         printf("[OMEGA-INIT] XauThreeBar30mEngine initialised: shadow=%d enabled=%d lot=%.2f"
                " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
                " (S35-P4 TUNED; S36-P4 M30 dispatch wired in tick_gold.hpp 2026-05-12)\n",

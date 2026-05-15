@@ -79,6 +79,7 @@
 // =============================================================================
 
 #include <cstdint>
+#include <fstream>
 #include <mutex>
 #include <sstream>
 #include <cstdio>
@@ -1306,6 +1307,57 @@ private:
         if (h >= 7  && h < 12)  return 'L';
         if (h >= 12 && h < 21)  return 'N';
         return 'O';
+    }
+
+public:
+    // S101: warmup from pre-built M15 bar CSV. Injects bars directly into
+    //   the internal bar pipeline (close_current_bar + update_indicators +
+    //   on_bar_close) to prime ATR14, tick-volume mean, FVG pool, and the
+    //   3-bar ring. can_enter=false during warmup so no positions open.
+    std::string warmup_csv_path;
+
+    int warmup_from_csv(const std::string& path) noexcept {
+        if (path.empty()) { printf("[XauFVG-WARMUP] skipped -- no path (cold start)\n"); fflush(stdout); return 0; }
+        std::ifstream f(path);
+        if (!f.is_open()) { printf("[XauFVG-WARMUP] FAIL -- cannot open '%s'\n", path.c_str()); fflush(stdout); return 0; }
+
+        int fed = 0;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#' || line[0] == 'b') continue;
+            char* p1; long long ms = std::strtoll(line.c_str(), &p1, 10);
+            if (!p1 || *p1 != ',') continue;
+            char* p2; double o = std::strtod(p1+1, &p2); if (!p2 || *p2 != ',') continue;
+            char* p3; double h = std::strtod(p2+1, &p3); if (!p3 || *p3 != ',') continue;
+            char* p4; double l = std::strtod(p3+1, &p4); if (!p4 || *p4 != ',') continue;
+            char* p5; double c = std::strtod(p4+1, &p5);
+            if (!std::isfinite(o) || !std::isfinite(h) || !std::isfinite(l) || !std::isfinite(c)) continue;
+
+            const int64_t bar_idx = (ms / 1000) / BAR_SECS;
+
+            // Inject bar directly into the internal pipeline
+            m_cur_bar.open       = o;
+            m_cur_bar.high       = h;
+            m_cur_bar.low        = l;
+            m_cur_bar.close      = c;
+            m_cur_bar.bar_idx    = (int)bar_idx;
+            m_cur_bar.start_ts   = ms / 1000;
+            m_cur_bar.tick_count = 100;   // synthetic tick count (reasonable default)
+            m_cur_bar.spread_sum = 0.3 * 100;  // ~0.30 avg spread * tick_count
+            m_current_bar_idx    = bar_idx;
+
+            close_current_bar();
+            update_indicators();
+            on_bar_close(false, CloseCallback{});  // can_enter=false during warmup
+            ++fed;
+        }
+        printf("[XauFVG-WARMUP] fed=%d M15 bars, atr_ready=%d atr=%.4f bars_seen=%d"
+               " pending_fvg=%zu path='%s'\n",
+               fed, (int)m_atr_ready, m_atr14, m_bars_seen,
+               m_pending.size(), path.c_str());
+        fflush(stdout);
+        return fed;
     }
 };
 

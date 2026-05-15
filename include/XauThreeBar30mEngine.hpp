@@ -163,7 +163,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <fstream>
 #include <functional>
+#include <sstream>
 #include <string>
 
 #include "OmegaTradeLedger.hpp"      // omega::TradeRecord
@@ -602,6 +604,40 @@ private:
         // Per-day and per-session state (daily_pnl, consec_losses,
         // daily_capped, killswitch_tripped) are preserved across trades.
         guards.reset_per_trade();
+    }
+
+public:
+    // S101: warmup from pre-built M30 bar CSV. Feeds historical bars
+    //   through on_30m_bar so ATR14, bar deque, and guards are primed.
+    std::string warmup_csv_path;
+
+    int warmup_from_csv(const std::string& path) noexcept {
+        if (!enabled) { printf("[XauThreeBar30m-WARMUP] skipped -- disabled\n"); fflush(stdout); return 0; }
+        if (path.empty()) { printf("[XauThreeBar30m-WARMUP] skipped -- no path (cold start)\n"); fflush(stdout); return 0; }
+        std::ifstream f(path);
+        if (!f.is_open()) { printf("[XauThreeBar30m-WARMUP] FAIL -- cannot open '%s'\n", path.c_str()); fflush(stdout); return 0; }
+
+        int fed = 0;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#' || line[0] == 'b') continue;
+            char* p1; long long ms = std::strtoll(line.c_str(), &p1, 10);
+            if (!p1 || *p1 != ',') continue;
+            char* p2; double o = std::strtod(p1+1, &p2); if (!p2 || *p2 != ',') continue;
+            char* p3; double h = std::strtod(p2+1, &p3); if (!p3 || *p3 != ',') continue;
+            char* p4; double l = std::strtod(p3+1, &p4); if (!p4 || *p4 != ',') continue;
+            char* p5; double c = std::strtod(p4+1, &p5);
+            if (!std::isfinite(o) || !std::isfinite(h) || !std::isfinite(l) || !std::isfinite(c)) continue;
+
+            XauThreeBar30mBar bar; bar.bar_start_ms = ms; bar.open = o; bar.high = h; bar.low = l; bar.close = c;
+            on_30m_bar(bar, c, c, 0.0, ms + 1800LL*1000, OnCloseFn{});
+            ++fed;
+        }
+        printf("[XauThreeBar30m-WARMUP] fed=%d M30 bars, atr=%.4f bars_size=%d path='%s'\n",
+               fed, atr14_, (int)bars_.size(), path.c_str());
+        fflush(stdout);
+        return fed;
     }
 };
 
