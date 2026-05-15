@@ -292,6 +292,17 @@ struct TsmomCell {
     int    mae_exit_run_thresh    = 2;   // 2nd MAE_EXIT in run -> escalate
     int    mae_exit_run_cooldown  = 12;  // 12-bar (~12h) cool-off after run
 
+    // S100 2026-05-16: staggered entry delay (seconds).
+    //   At aligned bar boundaries (e.g. 15:00 = H1+H2+H4), multiple cells
+    //   generate signals simultaneously. All enter at identical prices and
+    //   correlate losses (triple LOSS_CUT at same timestamp). Stagger delays
+    //   each cell's entry by N seconds from the bar close signal:
+    //     H1 = 0s, H2 = 300s, H4 = 600s, H6 = 900s, D1 = 1200s
+    //   Signal evaluation still happens at bar close (on_bar). The pending
+    //   entry executes in on_tick at current bid/ask after the delay elapses.
+    //   Set to 0 for immediate entry (no regression with existing behaviour).
+    int    entry_delay_sec = 0;
+
     // ---- Rolling closes window ---------------------------------------------
     std::deque<double> closes_;
 
@@ -302,6 +313,15 @@ struct TsmomCell {
     int cooldown_left_  = 0;     // decremented each bar; gates new entries
     int last_mae_exit_bar_ = -10000;   // bar_count_ at last MAE_EXIT (or -inf)
     int mae_exit_run_      = 0;        // consecutive MAE_EXITs (resets on win)
+
+    // S100: pending entry state (stagger mechanism). Captured at signal time,
+    //   executed in on_tick once entry_delay_sec has elapsed. Only one pending
+    //   entry at a time per cell (latest signal wins if overwritten).
+    bool    pending_entry_      = false;
+    int64_t pending_signal_ms_  = 0;     // timestamp when on_bar fired the signal
+    double  pending_lot_        = 0.0;   // lot size (computed at signal time)
+    double  pending_atr_        = 0.0;   // ATR at signal (for SL computation)
+    double  pending_ret_n_      = 0.0;   // momentum return (for logging)
 
     bool has_open_position() const noexcept { return !positions_.empty(); }
     int  n_open()             const noexcept { return (int)positions_.size(); }
@@ -495,7 +515,31 @@ struct TsmomCell {
         if (sig_dir == 0)             return 0;
         if (sig_dir != direction)     return 0;   // Tier-1: long-only
 
-        // ----- 6. Open the position --------------------------------------
+        // ----- 6. Open the position (or stash pending if stagger active) ---
+
+        // S100: staggered entry. If entry_delay_sec > 0, capture the signal
+        //   params and defer actual position opening to on_tick. The entry
+        //   will execute at CURRENT bid/ask when the delay expires, giving
+        //   price decorrelation across cells at aligned bar boundaries.
+        if (entry_delay_sec > 0) {
+            pending_entry_     = true;
+            pending_signal_ms_ = now_ms;
+            pending_lot_       = size_lot;
+            pending_atr_       = atr14_at_signal;
+            pending_ret_n_     = ret_n;
+            if (cooldown_bars > 0) cooldown_left_ = cooldown_bars;
+            printf("[%s] STAGGER pending %s delay=%ds lot=%.4f atr=%.3f"
+                   " ret_n=%.3f n_open=%d/%d%s\n",
+                   cell_id.c_str(),
+                   direction == 1 ? "LONG" : "SHORT",
+                   entry_delay_sec, size_lot, atr14_at_signal,
+                   ret_n, n_open(), max_positions_per_cell,
+                   shadow_mode ? " [SHADOW]" : "");
+            fflush(stdout);
+            return 0;  // no position opened yet; on_tick will execute
+        }
+
+        // Immediate entry (entry_delay_sec == 0, original behaviour)
         const double entry_px = direction == 1 ? ask : bid;
         const double sl_pts   = atr14_at_signal * hard_sl_atr;
         const double sl_px    = entry_px - direction * sl_pts;
@@ -533,6 +577,64 @@ struct TsmomCell {
     // -------------------------------------------------------------------------
     void on_tick(double bid, double ask, int64_t now_ms,
                  OnCloseCb on_close) noexcept {
+
+        // S100: execute pending staggered entry once delay has elapsed.
+        //   Re-gates on enabled + max_positions_per_cell. Uses current
+        //   bid/ask for entry price (decorrelates from bar-close price).
+        if (pending_entry_) {
+            const int64_t elapsed_ms = now_ms - pending_signal_ms_;
+            if (elapsed_ms >= (int64_t)entry_delay_sec * 1000) {
+                // Re-gate: cell still enabled and room for another position
+                if (enabled && n_open() < max_positions_per_cell &&
+                    pending_lot_ > 0.0 && pending_atr_ > 0.0) {
+                    const double spread_pt = ask - bid;
+                    if (std::isfinite(spread_pt) && spread_pt >= 0.0 &&
+                        spread_pt <= max_spread_pt) {
+                        const double entry_px = direction == 1 ? ask : bid;
+                        const double sl_pts   = pending_atr_ * hard_sl_atr;
+                        const double sl_px    = entry_px - direction * sl_pts;
+
+                        Position p;
+                        p.entry      = entry_px;
+                        p.sl         = sl_px;
+                        p.size       = pending_lot_;
+                        p.atr        = pending_atr_;
+                        p.entry_ms   = now_ms;
+                        p.bars_held  = 0;
+                        p.mfe        = 0.0;
+                        p.mae        = 0.0;
+                        p.spread_at  = spread_pt;
+                        p.id         = ++trade_id_;
+                        positions_.push_back(p);
+
+                        printf("[%s] STAGGER ENTRY %s @ %.2f sl=%.2f size=%.4f"
+                               " atr=%.3f ret_n=%.3f spread=%.2f delay=%ds"
+                               " n_open=%d/%d%s\n",
+                               cell_id.c_str(),
+                               direction == 1 ? "LONG" : "SHORT",
+                               entry_px, sl_px, pending_lot_, pending_atr_,
+                               pending_ret_n_, spread_pt, entry_delay_sec,
+                               n_open(), max_positions_per_cell,
+                               shadow_mode ? " [SHADOW]" : "");
+                        fflush(stdout);
+                    } else {
+                        printf("[%s] STAGGER CANCELLED -- spread=%.2f > max=%.2f\n",
+                               cell_id.c_str(), ask - bid, max_spread_pt);
+                        fflush(stdout);
+                    }
+                } else {
+                    printf("[%s] STAGGER CANCELLED -- gate: enabled=%s n_open=%d/%d"
+                           " lot=%.4f atr=%.3f\n",
+                           cell_id.c_str(),
+                           enabled ? "true" : "false",
+                           n_open(), max_positions_per_cell,
+                           pending_lot_, pending_atr_);
+                    fflush(stdout);
+                }
+                pending_entry_ = false;  // consumed (executed or cancelled)
+            }
+        }
+
         for (auto it = positions_.begin(); it != positions_.end(); ) {
             Position& p = *it;
             const double signed_move = direction == 1
@@ -619,6 +721,7 @@ struct TsmomCell {
     // -------------------------------------------------------------------------
     void force_close(double bid, double ask, int64_t now_ms,
                      OnCloseCb on_close) noexcept {
+        pending_entry_ = false;  // S100: cancel any pending stagger entry
         const double exit_px = direction == 1 ? bid : ask;
         for (Position& p : positions_) {
             _close(p, exit_px, "FORCE_CLOSE", now_ms, on_close);
@@ -737,6 +840,17 @@ struct TsmomPortfolio {
             c->cooldown_bars          = 0;
         }
 
+        // S100: staggered entry delays. 5-minute spacing so cells that fire
+        //   at aligned bar boundaries (e.g. 15:00 = H1+H2+H4) enter at
+        //   different prices instead of tripling up on identical fills.
+        //   H1 = immediate (anchor cell), H2 = +5min, H4 = +10min,
+        //   H6 = +15min, D1 = +20min.
+        h1_long_.entry_delay_sec =    0;
+        h2_long_.entry_delay_sec =  300;   // 5 min
+        h4_long_.entry_delay_sec =  600;   // 10 min
+        h6_long_.entry_delay_sec =  900;   // 15 min
+        d1_long_.entry_delay_sec = 1200;   // 20 min
+
         synth_h2_.stride =  2;
         synth_h4_.stride =  4;
         synth_h6_.stride =  6;
@@ -758,11 +872,12 @@ struct TsmomPortfolio {
                block_on_risk_off ? "true" : "false",
                equity_);
         for (TsmomCell* c : cells) {
-            printf("[%s] ARMED (shadow_mode=%s, lookback=%d, hold=%d, sl=%.1f*atr, max_pos=%d)\n",
+            printf("[%s] ARMED (shadow_mode=%s, lookback=%d, hold=%d, sl=%.1f*atr,"
+                   " max_pos=%d, stagger=%ds)\n",
                    c->cell_id.c_str(),
                    c->shadow_mode ? "true" : "false",
                    c->lookback, c->hold_bars, c->hard_sl_atr,
-                   c->max_positions_per_cell);
+                   c->max_positions_per_cell, c->entry_delay_sec);
         }
         fflush(stdout);
     }
