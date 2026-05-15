@@ -121,7 +121,8 @@
 #include <functional>
 #include <string>
 
-#include "GoldRegimeRouter.hpp"
+// GoldRegimeRouter.hpp removed — design-only skeleton, not committed.
+// The strategy class does not depend on it.
 #include "GoldHMM.hpp"
 #include "OmegaSignalScorer.hpp"
 #include "OmegaCostGuard.hpp"
