@@ -1285,7 +1285,7 @@ static void init_engines(const std::string& cfg_path)
         // M15 dispatch wired in tick_indices.hpp on 2026-05-12 under S36-P4
         // (commit b6e9495). Engine receives M15 bars and per-tick management.
         g_ustec_tf_htf.shadow_mode      = true;   // HARD shadow until live-validated
-        g_ustec_tf_htf.enabled          = true;   // engine runs (in shadow)
+        g_ustec_tf_htf.enabled          = false;  // S94 2026-05-15: disabled — replaced by Nas100ShortEngine (OOS-validated PF=3.38). Was shadow-only, never live.
         g_ustec_tf_htf.lot              = 0.1;
         g_ustec_tf_htf.max_spread       = 5.0;
         g_ustec_tf_htf.be_trigger_atr   = 1.0;    // S35-P6 TUNED (mirrors XauThreeBar30m)
@@ -1517,7 +1517,7 @@ static void init_engines(const std::string& cfg_path)
     // Daily loss cap stops the engine entirely after a bad sequence.
     g_trend_pb_nq.MIN_EMA_SEP         = 25.0;
     g_trend_pb_nq.DAILY_LOSS_CAP      = 80.0;   // $80 daily cap: ~6 SL hits at $12 each
-    g_trend_pb_nq.enabled             = true;    // RE-ENABLED S14 2026-04-24: Apr 2 post-mortem +$200 strategy-only ($540 FC loss was connectivity, since patched by Hard Stop arch). Mar 27 +$1,183 on 8 paired trades. DAILY_LOSS_CAP=$80 active.
+    g_trend_pb_nq.enabled             = false;   // S94 2026-05-15: disabled — NAS/USTEC engines consolidated into Nas100ShortEngine (OOS-validated PF=3.38). Was live with $80 daily cap.
     g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
     g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
     g_trend_pb_sp.enabled             = true;    // RE-ENABLED S14 2026-04-24: same rationale as _nq above (paired engine, same Apr 2 / Mar 27 data)
