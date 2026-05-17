@@ -580,7 +580,7 @@ static int64_t derive_bar_end_ts(const std::vector<ExpectedTrade>& expected)
     return max_exit + static_cast<int64_t>(omega::XauusdFvgEngine::BAR_SECS);
 }
 
-static bool near(double a, double b, double tol) { return std::fabs(a - b) <= tol; }
+static bool near_eq(double a, double b, double tol) { return std::fabs(a - b) <= tol; }
 
 int main(int argc, char** argv)
 {
@@ -736,27 +736,27 @@ int main(int argc, char** argv)
             fail_at(E.row_idx, "exit_ts",
                     fmt_i(static_cast<long long>(E.exit_ts)),
                     fmt_i(static_cast<long long>(tr.exitTs)));
-        if (!near(ex.score_at_entry, E.score_at_entry, cli.tol_score))
+        if (!near_eq(ex.score_at_entry, E.score_at_entry, cli.tol_score))
             fail_at(E.row_idx, "score_at_entry",
                     fmt_d(E.score_at_entry), fmt_d(ex.score_at_entry));
-        if (!near(ex.atr_at_entry, E.atr_at_entry, cli.tol_score))
+        if (!near_eq(ex.atr_at_entry, E.atr_at_entry, cli.tol_score))
             fail_at(E.row_idx, "atr_at_entry",
                     fmt_d(E.atr_at_entry), fmt_d(ex.atr_at_entry));
-        if (!near(ex.gap_height, E.gap_height, cli.tol_score))
+        if (!near_eq(ex.gap_height, E.gap_height, cli.tol_score))
             fail_at(E.row_idx, "gap_height",
                     fmt_d(E.gap_height), fmt_d(ex.gap_height));
-        if (!near(tr.sl, E.sl, cli.tol_price))
+        if (!near_eq(tr.sl, E.sl, cli.tol_price))
             fail_at(E.row_idx, "sl", fmt_d(E.sl), fmt_d(tr.sl));
-        if (!near(tr.tp, E.tp, cli.tol_price))
+        if (!near_eq(tr.tp, E.tp, cli.tol_price))
             fail_at(E.row_idx, "tp", fmt_d(E.tp), fmt_d(tr.tp));
-        if (!near(tr.entryPrice, E.entry_price, cli.tol_price))
+        if (!near_eq(tr.entryPrice, E.entry_price, cli.tol_price))
             fail_at(E.row_idx, "entry_price",
                     fmt_d(E.entry_price), fmt_d(tr.entryPrice));
         // exit_price: loose tolerance (default 5.0 USD) -- per-tick SL/TP
         // hits at bid/ask drift up to ~half a spread + (sl - bar.low) from
         // v3's gross_exit = sl/tp. This is an ARCHITECTURAL difference,
         // not a bug. Tighten via --tol-exit-price for diagnostic runs.
-        if (!near(tr.exitPrice, E.exit_price, cli.tol_exit_price))
+        if (!near_eq(tr.exitPrice, E.exit_price, cli.tol_exit_price))
             fail_at(E.row_idx, "exit_price",
                     fmt_d(E.exit_price), fmt_d(tr.exitPrice));
 
