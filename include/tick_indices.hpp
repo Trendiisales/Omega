@@ -769,7 +769,7 @@ static void on_tick_ger40(
     }
     if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
 
-    // GER40 NEW ENTRIES DISABLED -- taken out of play
+    // GER40 NEW ENTRIES DISABLED -- taken out of play (ORB/TrendPullback/breakout)
     //
     // P1-6 (S18): g_trend_pb_ger40 is intentionally NOT wired with
     // seed_bar_emas() or seed_m5_trend() here because new entries are blocked
@@ -785,6 +785,16 @@ static void on_tick_ger40(
     // any direction). Both effects make the engine fire more loosely than SP/NQ
     // do, which is fine for shadow but not for live without re-validation.
     (void)sdec_ger;
+
+    // ── Ger40LondonBreakoutEngine -- self-managing, independent position ─────
+    // Asian range break-below at London open. SHORT only. Does NOT compete with
+    // other GER40 engines for the shared position slot -- manages its own pos.
+    {
+        const int64_t now_ms_glb = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_ger40_london_brk.on_tick(bid, ask, now_ms_glb);
+    }
 }
 
 // ── UK100 ──────────────────────────────────────────────────

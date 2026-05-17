@@ -2384,6 +2384,47 @@ static void init_engines(const std::string& cfg_path)
     g_ca_esnq.enabled        = false;
     // ?? END SHELVED ENGINE DISABLE ????????????????????????????????????????????
 
+    // ── Ger40LondonBreakoutEngine (2026-05-17) ─────────────────────────────────
+    // Asian range break-below during London open. SHORT only.
+    // Validated: 2.3yr GER40 ticks, PF=1.42, WR=50.5%, E=+11.6pts,
+    // 20/25 param-grid combos profitable. Structural edge: European
+    // institutional flow breaks overnight Asia consolidation downward.
+    //
+    // Parameters from walk-forward optimal (robust across grid):
+    //   TP_MULT=0.75, SL_MULT=0.50, entry window 07:00-09:00 UTC
+    //   Asian range 21:00-07:00 UTC, max hold 4hr, short only
+    {
+        g_ger40_london_brk.symbol          = "GER40";
+        g_ger40_london_brk.shadow_mode     = false;  // LIVE -- validated edge
+        g_ger40_london_brk.enabled         = true;
+        g_ger40_london_brk.lot             = 0.01;
+        g_ger40_london_brk.max_spread      = 4.0;
+        g_ger40_london_brk.ASIA_START_HOUR = 21;
+        g_ger40_london_brk.ASIA_END_HOUR   = 7;
+        g_ger40_london_brk.ENTRY_START_HOUR = 7;
+        g_ger40_london_brk.ENTRY_START_MIN  = 0;
+        g_ger40_london_brk.ENTRY_END_HOUR   = 9;
+        g_ger40_london_brk.ENTRY_END_MIN    = 0;
+        g_ger40_london_brk.TP_MULT         = 0.75;
+        g_ger40_london_brk.SL_MULT         = 0.50;
+        g_ger40_london_brk.MAX_HOLD_SEC    = 14400;  // 4 hours
+        g_ger40_london_brk.MIN_RANGE_PTS   = 15.0;
+        g_ger40_london_brk.MAX_RANGE_PTS   = 150.0;
+        g_ger40_london_brk.LOSS_CUT_PCT    = 0.0;    // structural SL handles it
+        g_ger40_london_brk.BE_ARM_PCT      = 0.0;
+        g_ger40_london_brk.BE_BUFFER_PCT   = 0.0;
+        g_ger40_london_brk.init();
+        printf("[OMEGA-INIT] Ger40LondonBreakoutEngine: shadow=%s enabled=%s "
+               "lot=%.2f tp_mult=%.2f sl_mult=%.2f entry=%02d:%02d-%02d:%02d\n",
+               g_ger40_london_brk.shadow_mode ? "true" : "false",
+               g_ger40_london_brk.enabled ? "true" : "false",
+               g_ger40_london_brk.lot,
+               g_ger40_london_brk.TP_MULT, g_ger40_london_brk.SL_MULT,
+               g_ger40_london_brk.ENTRY_START_HOUR, g_ger40_london_brk.ENTRY_START_MIN,
+               g_ger40_london_brk.ENTRY_END_HOUR, g_ger40_london_brk.ENTRY_END_MIN);
+        fflush(stdout);
+    }
+
     // ?? Adaptive intelligence layer startup ???????????????????????????????????
     {
         const int64_t now_s = static_cast<int64_t>(

@@ -65,6 +65,11 @@ static omega::cross::CarryUnwindEngine     g_ca_carry_unwind;
 static omega::cross::OpeningRangeEngine    g_orb_us;     // US equity 13:30 UTC
 static omega::cross::OpeningRangeEngine    g_orb_ger30;  // Xetra 08:00 UTC
 static omega::cross::OpeningRangeEngine    g_orb_uk100;  // LSE 08:00 UTC, 15-min window
+
+// GER40 London Breakout Short (2026-05-17): Asian range break below at London open.
+// Validated: PF=1.42, WR=50.5%, 20/25 param combos profitable, 2.3yr tick data.
+#include "Ger40LondonBreakoutEngine.hpp"
+static omega::Ger40LondonBreakoutEngine g_ger40_london_brk;
 static omega::cross::OpeningRangeEngine    g_orb_estx50; // Euronext 09:00 UTC, 15-min window
 
 // Engine 7: VWAP Reversion -- enter on reversal tick back toward daily VWAP
