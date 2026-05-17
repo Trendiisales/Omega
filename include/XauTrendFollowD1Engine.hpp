@@ -217,6 +217,9 @@ public:
 
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
+    // S102: warmup entry guard — see XauTrendFollow2hEngine.hpp for root cause.
+    bool warmup_active_ = false;
+
     void init() noexcept {
         daily_.clear();
         cur_day_ = {};
@@ -229,6 +232,7 @@ public:
         adx_atr_sum_ = adx_pdm_sum_ = adx_mdm_sum_ = adx_dx_sum_ = 0.0;
         adx_warmup_count_ = 0;
         adx_dx_count_ = 0;
+        warmup_active_ = false;
         for (auto& p : pos) p = {};
     }
 
@@ -456,6 +460,8 @@ private:
     }
 
     void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
+        // S102: block entries during warmup — warmup primes indicators only.
+        if (warmup_active_) return;
         const auto& cfg = kXauTfD1Cells[ci];
         double entry = (side > 0) ? ask : bid;
         if (entry <= 0.0 || atr14_ <= 0.0) return;
@@ -589,6 +595,7 @@ public:
         if (path.empty()) { printf("[XauTFD1-WARMUP] skipped -- no path (cold start)\n"); fflush(stdout); return 0; }
         std::ifstream f(path);
         if (!f.is_open()) { printf("[XauTFD1-WARMUP] FAIL -- cannot open '%s'\n", path.c_str()); fflush(stdout); return 0; }
+        warmup_active_ = true;  // S102: block entries during indicator priming
 
         int fed = 0;
         std::string line;
@@ -607,6 +614,7 @@ public:
             on_h4_bar(bar, c, c, ms + 14400LL*1000, OnCloseFn{});
             ++fed;
         }
+        warmup_active_ = false;  // S102: live entries now permitted
         printf("[XauTFD1-WARMUP] fed=%d H4 bars, atr=%.4f daily_size=%d path='%s'\n",
                fed, atr14_, (int)daily_.size(), path.c_str());
         fflush(stdout);

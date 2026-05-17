@@ -272,10 +272,14 @@ public:
 
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
+    // S102: warmup entry guard — see XauTrendFollow2hEngine.hpp for root cause.
+    bool warmup_active_ = false;
+
     void init() noexcept {
         bars_.clear();
         atr14_ = 0.0;
         atr_warmup_count_ = 0;
+        warmup_active_ = false;
         pos = {};
 
         // S35-P3: wire engine knobs into guards.cfg. The guards struct
@@ -425,6 +429,8 @@ private:
     }
 
     void _fire_entry(int side, double bid, double ask, int64_t now_ms) noexcept {
+        // S102: block entries during warmup — warmup primes indicators only.
+        if (warmup_active_) return;
         double entry = (side > 0) ? ask : bid;
         if (entry <= 0.0 || atr14_ <= 0.0) return;
 
@@ -616,6 +622,7 @@ public:
         if (path.empty()) { printf("[XauThreeBar30m-WARMUP] skipped -- no path (cold start)\n"); fflush(stdout); return 0; }
         std::ifstream f(path);
         if (!f.is_open()) { printf("[XauThreeBar30m-WARMUP] FAIL -- cannot open '%s'\n", path.c_str()); fflush(stdout); return 0; }
+        warmup_active_ = true;  // S102: block entries during indicator priming
 
         int fed = 0;
         std::string line;
@@ -634,6 +641,7 @@ public:
             on_30m_bar(bar, c, c, 0.0, ms + 1800LL*1000, OnCloseFn{});
             ++fed;
         }
+        warmup_active_ = false;  // S102: live entries now permitted
         printf("[XauThreeBar30m-WARMUP] fed=%d M30 bars, atr=%.4f bars_size=%d path='%s'\n",
                fed, atr14_, (int)bars_.size(), path.c_str());
         fflush(stdout);

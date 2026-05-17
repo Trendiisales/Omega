@@ -197,6 +197,14 @@ public:
 
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
+    // S102: warmup entry guard. True while warmup_from_csv is running.
+    // Blocks _fire_entry so indicator-priming bars don't open stale
+    // positions at historical price levels. Without this, the first
+    // entry per cell fires at e.g. $2,158 (Feb 2024 warmup data) and
+    // then TP-exits at tp_px=$2,188 the instant the first live tick
+    // arrives at $4,534 — producing phantom trades at wrong prices.
+    bool warmup_active_ = false;
+
     void init() noexcept {
         bars_.clear();
         cur_2h_ = {};
@@ -205,6 +213,7 @@ public:
         atr_warmup_count_ = 0;
         ema20_ = 0.0;
         ema_initialised_ = false;
+        warmup_active_ = false;
         for (auto& p : pos) p = {};
     }
 
@@ -383,6 +392,8 @@ private:
     }
 
     void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
+        // S102: block entries during warmup — warmup primes indicators only.
+        if (warmup_active_) return;
         const auto& cfg = kXauTf2hCells[ci];
         double entry = (side > 0) ? ask : bid;
         if (entry <= 0.0 || atr14_ <= 0.0) return;
@@ -516,6 +527,7 @@ public:
         if (path.empty()) { printf("[XauTF2h-WARMUP] skipped -- no path (cold start)\n"); fflush(stdout); return 0; }
         std::ifstream f(path);
         if (!f.is_open()) { printf("[XauTF2h-WARMUP] FAIL -- cannot open '%s'\n", path.c_str()); fflush(stdout); return 0; }
+        warmup_active_ = true;  // S102: block entries during indicator priming
 
         int fed = 0;
         std::string line;
@@ -534,6 +546,7 @@ public:
             on_h1_bar(bar, c, c, ms + 3600LL*1000, OnCloseFn{});
             ++fed;
         }
+        warmup_active_ = false;  // S102: live entries now permitted
         printf("[XauTF2h-WARMUP] fed=%d H1 bars, atr=%.4f bars_2h=%d path='%s'\n",
                fed, atr14_, (int)bars_.size(), path.c_str());
         fflush(stdout);
