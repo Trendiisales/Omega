@@ -122,9 +122,15 @@ public:
     // re-fit per HANDOFF doc.
     static constexpr double SCORE_CUTOFF           = 0.48;
 
-    // ---- Risk / exit parameters (v3 #5 ACCEPTED) --------------------------
-    static constexpr double SL_ATR_MULT            = 2.5;
-    static constexpr double TP_ATR_MULT            = 5.0;
+    // ---- Risk / exit parameters -----------------------------------------------
+    // S-NEXT 2026-05-17: SL/TP retuned from walk-forward sweep on fresh tape
+    //   (2024-03 → 2026-04, 154M ticks, 50716 15m bars).
+    //   Old (2.5/5.0): PF=0.63, negative all 3 WF folds.
+    //   New (1.5/3.0): passes all 3 folds PF 1.37/1.45/1.41, N≈1100/fold.
+    //   FVG = mean-reversion entry; tighter bracket captures reversion before
+    //   it reverses. Score cutoff 0.48 confirmed stable.
+    static constexpr double SL_ATR_MULT            = 1.5;
+    static constexpr double TP_ATR_MULT            = 3.0;
     static constexpr int    TIME_STOP_BARS         = 60;        // 15h on 15m
 
     // S63 2026-05-13 VWR-pattern in-flight protection (LOSS_CUT + BE_RATCHET).

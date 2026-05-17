@@ -1006,10 +1006,12 @@ static void init_engines(const std::string& cfg_path)
         //   Pruned 3 cells: InsideBar(1) PF=0.98, ER20(2) PF=0.95, ADX_Mom(4) PF=0.85
         //   Kept: Donch20(0) PF=1.44, Keltner(3) PF=1.16, RangeExpand(5) PF=1.24
         //   v2 ALL: IS PF=1.31, OOS PF=1.31 (zero decay), 502 OOS trades.
-        //   cell_enable_mask = bits 0,3,5 = 0x29 (disable InsideBar/ER20/ADX_Mom)
+        //   cell_enable_mask = bits 0,3 = 0x09 (Donchian PF=1.15 + Keltner PF=1.03)
+        //   S-NEXT 2026-05-17: RangeExpand (bit 5) removed — PF=0.82 on fresh tape,
+        //   negative all 3 WF folds. Was 0x29, now 0x09.
         g_xau_tf_4h.shadow_mode = false;
         g_xau_tf_4h.enabled     = true;
-        g_xau_tf_4h.cell_enable_mask = 0x29;  // S96: only profitable cells
+        g_xau_tf_4h.cell_enable_mask = 0x09;  // Donchian + Keltner only
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
@@ -1210,7 +1212,10 @@ static void init_engines(const std::string& cfg_path)
         //   Short side PF=0.84 in v1 — removed. S63 in-flight protection
         //   already wired (LOSS_CUT=0.05, BE_ARM=0.03, BE_BUFFER=0.012).
         g_xau_threebar_30m.shadow_mode        = false;
-        g_xau_threebar_30m.enabled            = true;
+        // S-NEXT 2026-05-17: disabled — fresh-tape sweep (2024-03→2026-04)
+        //   shows PF=0.75 with full protections, negative all 3 WF folds.
+        //   No parameter combination recovers profitability on this tape.
+        g_xau_threebar_30m.enabled            = false;
         g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;
