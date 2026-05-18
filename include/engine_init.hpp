@@ -509,8 +509,7 @@ static void init_engines(const std::string& cfg_path)
     //   spike-only thresholds produce positive expectancy on real moves.
     //   Re-enable now so the engine fires on the next macro spike and
     //   produces visible shadow ledger entries / PnL.
-    g_macro_crash.enabled         = true;  // S57: re-enabled with S44 spike-only thresholds (ATR>=12, vol>=3.5x, drift>=10)
-                                            // S44 RE-ENABLED in shadow with spike-only thresholds (PRIOR STATE)
+    g_macro_crash.enabled         = false; // S99b: stop-bleed disable — MacroCrash fired Asia branch 00:34 UTC 2026-05-18 and lost -$7.07 (LOSS_CUT). Asia thresholds clearly still permissive of non-macro moves. Re-enable ONLY after retune session with backtest evidence for Asia-spike thresholds. London/NY values below left at S44 macro-scale baseline; Asia values reverted to pre-S99b baseline so future retune starts from a clean reference. PRIOR STATE: S57 re-enabled with S44 spike-only thresholds (ATR>=12, vol>=3.5x, drift>=10).
     g_macro_crash.ATR_THRESHOLD   = 12.0;  // S44 8.0 -> 12.0: London/NY base raised, only fire on macro-scale ATR
     g_macro_crash.VOL_RATIO_MIN   = 3.5;   // S44 2.5 -> 3.5: require >=3.5x baseline vol surge
     g_macro_crash.DRIFT_MIN       = 10.0;  // S44 6.0 -> 10.0: drift must be unambiguously directional
@@ -956,7 +955,7 @@ static void init_engines(const std::string& cfg_path)
         // arrive so every cell (H1/H2/H4/H6/D1) is READY when the first
         // live H1 bar fires. Empty path -> cold start fallback.
         g_tsmom.shadow_mode       = kShadowDefault;
-        g_tsmom.enabled           = true;
+        g_tsmom.enabled           = false;  // S99b: disabled — no session filter, no weekend gate, fires 24/7 into chop
         g_tsmom.max_concurrent    = 5;
         g_tsmom.risk_pct          = 0.005;
         g_tsmom.start_equity      = 10000.0;
@@ -1305,7 +1304,7 @@ static void init_engines(const std::string& cfg_path)
         // Shadow mode for initial live validation. User instruction:
         // "disable ALL the other gold engines, we only test this new one"
         g_gold_ultimate_engine.shadow_mode       = true;
-        g_gold_ultimate_engine.enabled           = true;
+        g_gold_ultimate_engine.enabled           = false;  // S99b: disabled — off-hours edge-hour design (01/05/23 UTC) bleeds in practice
         g_gold_ultimate_engine.lot               = 0.01;
         g_gold_ultimate_engine.max_spread        = 1.0;
         g_gold_ultimate_engine.atr_entry_floor   = 2.5;
