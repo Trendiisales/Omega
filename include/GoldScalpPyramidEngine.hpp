@@ -84,6 +84,28 @@
 
 namespace omega {
 
+// =============================================================================
+// Exit philosophy (2026-05-19 part-A):
+//   Runtime selector for how _manage_position handles the aggressive trail.
+//   Default TICK_LEVEL preserves pre-refactor behaviour for live engines.
+//
+//   TICK_LEVEL      -- 4-phase trail ratchet + trail-hit check every tick.
+//                      Hard SL/TP also per-tick. (DEFAULT, live shape.)
+//   BAR_CLOSE_ONLY  -- 4-phase trail ratchet + trail-hit check only at bar
+//                      close. Hard SL/TP + Phase-1 BE lock + S63 still per-
+//                      tick (safety). Closer to the bar-level harness shape
+//                      that reported +$15K paper edge.
+//   GIVE_BACK       -- Skip 4-phase trail entirely. Once mfe >= ATR*0.4,
+//                      exit when (mfe_peak - move) >= TRAIL_TIGHT * mfe_peak
+//                      (i.e. retain (1-TRAIL_TIGHT) of MFE). Phase-1 BE lock
+//                      still applies for safety. exitReason = "GIVEBACK_HIT".
+// =============================================================================
+enum class ExitPhilosophy {
+    TICK_LEVEL     = 0,
+    BAR_CLOSE_ONLY = 1,
+    GIVE_BACK      = 2,
+};
+
 class GoldScalpPyramidEngine {
 public:
     // ---- Timing ---------------------------------------------------------------
@@ -96,6 +118,11 @@ public:
     double SL_ATR_MULT   = 1.0;   // SL = ATR14 * SL_ATR_MULT
     double TP_ATR_MULT   = 2.0;   // TP = ATR14 * TP_ATR_MULT
     double TRAIL_TIGHT   = 0.20;  // tight trail distance as ATR fraction
+
+    // ---- Exit philosophy (2026-05-19 part-A) ----------------------------------
+    // Default TICK_LEVEL = pre-refactor shape. Live engines that don't set
+    // this field continue to behave identically. _manage_position branches.
+    ExitPhilosophy exit_philosophy = ExitPhilosophy::TICK_LEVEL;
 
     // ---- Pyramid config -------------------------------------------------------
     bool   PYRAMID_ON    = true;
@@ -219,6 +246,11 @@ public:
             m_cur_bar = M5Bar{mid, mid, mid, mid, anchor, 1};
             m_cur_anchor = anchor;
             ++m_bars_seen;
+            // For BAR_CLOSE_ONLY: the next _manage_position invocation in
+            // this tick will see this flag, run the 4-phase trail ratchet
+            // + trail-hit check once, and clear it. Live live (TICK_LEVEL)
+            // ignores it.
+            m_bar_just_closed = true;
         } else {
             if (mid > m_cur_bar.high) m_cur_bar.high = mid;
             if (mid < m_cur_bar.low)  m_cur_bar.low  = mid;
@@ -462,6 +494,12 @@ private:
     // ---- Cooldown ----
     int64_t m_cooldown_until = 0;
 
+    // ---- Bar-close gate (2026-05-19 part-A) ----
+    // Set true in on_tick when bar transitions. Consumed (set false) by
+    // _manage_position when exit_philosophy == BAR_CLOSE_ONLY. Unused
+    // by TICK_LEVEL / GIVE_BACK branches.
+    bool m_bar_just_closed = false;
+
     // ---- Consecutive S63 loss tracking ----
     int     m_consec_loss_cut = 0;
     int64_t m_consec_block_until = 0;
@@ -623,51 +661,96 @@ private:
             }
         }
 
-        // ---- 4-phase aggressive trailing stop ----
-        double new_trail = m_pos.hard_sl;
+        // ---- Trail / giveback (branches on exit_philosophy) ----
+        // TICK_LEVEL     -- ratchet 4-phase trail every tick (live shape)
+        // BAR_CLOSE_ONLY -- ratchet only on bar-close ticks (m_bar_just_closed)
+        //                   plus Phase-1 BE lock per tick (safety)
+        // GIVE_BACK      -- no aggressive trail. Phase-1 BE lock per tick.
+        //                   Giveback rule evaluated below before SL/TP checks.
+        const bool do_full_ratchet =
+            (exit_philosophy == ExitPhilosophy::TICK_LEVEL) ||
+            (exit_philosophy == ExitPhilosophy::BAR_CLOSE_ONLY && m_bar_just_closed);
 
-        // Phase 1: BE lock at MFE >= cost * 2.5
-        if (m_pos.mfe_peak >= COST_RT_PTS * 2.5) {
-            double be = m_pos.is_long
-                ? (m_pos.base_entry + COST_RT_PTS)
-                : (m_pos.base_entry - COST_RT_PTS);
-            if (m_pos.is_long) new_trail = std::max(new_trail, be);
-            else               new_trail = std::min(new_trail, be);
+        if (do_full_ratchet) {
+            // ---- 4-phase aggressive trailing stop ----
+            double new_trail = m_pos.hard_sl;
+
+            // Phase 1: BE lock at MFE >= cost * 2.5
+            if (m_pos.mfe_peak >= COST_RT_PTS * 2.5) {
+                double be = m_pos.is_long
+                    ? (m_pos.base_entry + COST_RT_PTS)
+                    : (m_pos.base_entry - COST_RT_PTS);
+                if (m_pos.is_long) new_trail = std::max(new_trail, be);
+                else               new_trail = std::min(new_trail, be);
+            }
+
+            // Phase 2: Profit lock at 35% of MFE
+            if (m_pos.mfe_peak >= m_pos.atr_at_entry * 0.4) {
+                double lock = m_pos.mfe_peak * 0.35;
+                double lv = m_pos.is_long
+                    ? (m_pos.base_entry + lock)
+                    : (m_pos.base_entry - lock);
+                if (m_pos.is_long) new_trail = std::max(new_trail, lv);
+                else               new_trail = std::min(new_trail, lv);
+            }
+
+            // Phase 3: Tight trail behind MFE peak (L2-adaptive distance)
+            if (m_pos.mfe_peak >= m_pos.atr_at_entry * 0.7) {
+                double td = m_pos.atr_at_entry * TRAIL_TIGHT * trail_mult;
+                double tl = m_pos.is_long
+                    ? (m_pos.mfe_price - td)
+                    : (m_pos.mfe_price + td);
+                if (m_pos.is_long) new_trail = std::max(new_trail, tl);
+                else               new_trail = std::min(new_trail, tl);
+            }
+
+            // Phase 4: Very tight at MFE >= ATR * 1.2 (L2-adaptive distance)
+            if (m_pos.mfe_peak >= m_pos.atr_at_entry * 1.2) {
+                double td = m_pos.atr_at_entry * TRAIL_TIGHT * 0.60 * trail_mult;
+                double tl = m_pos.is_long
+                    ? (m_pos.mfe_price - td)
+                    : (m_pos.mfe_price + td);
+                if (m_pos.is_long) new_trail = std::max(new_trail, tl);
+                else               new_trail = std::min(new_trail, tl);
+            }
+
+            // Ratchet trail (only moves in favorable direction)
+            if (m_pos.is_long) m_pos.trail_sl = std::max(m_pos.trail_sl, new_trail);
+            else               m_pos.trail_sl = std::min(m_pos.trail_sl, new_trail);
+        } else if (exit_philosophy == ExitPhilosophy::BAR_CLOSE_ONLY ||
+                   exit_philosophy == ExitPhilosophy::GIVE_BACK) {
+            // Phase-1 BE lock applies every tick regardless (safety / risk-
+            // free zone). The aggressive Phase-2/3/4 trail is what gets
+            // deferred or replaced under these philosophies.
+            if (m_pos.mfe_peak >= COST_RT_PTS * 2.5) {
+                double be = m_pos.is_long
+                    ? (m_pos.base_entry + COST_RT_PTS)
+                    : (m_pos.base_entry - COST_RT_PTS);
+                if (m_pos.is_long) m_pos.trail_sl = std::max(m_pos.trail_sl, be);
+                else               m_pos.trail_sl = std::min(m_pos.trail_sl, be);
+            }
         }
+        // Consume bar-close flag (whether ratchet ran or not)
+        m_bar_just_closed = false;
 
-        // Phase 2: Profit lock at 35% of MFE
-        if (m_pos.mfe_peak >= m_pos.atr_at_entry * 0.4) {
-            double lock = m_pos.mfe_peak * 0.35;
-            double lv = m_pos.is_long
-                ? (m_pos.base_entry + lock)
-                : (m_pos.base_entry - lock);
-            if (m_pos.is_long) new_trail = std::max(new_trail, lv);
-            else               new_trail = std::min(new_trail, lv);
+        // ---- GIVE_BACK exit rule ----
+        // Once MFE >= ATR*0.4 (same arm as Phase-2 in tick-level), exit when
+        // (mfe_peak - current_move) >= TRAIL_TIGHT * mfe_peak, i.e. retain
+        // (1 - TRAIL_TIGHT) of the favourable excursion. Reuses TRAIL_TIGHT
+        // as the giveback fraction so tighter = smaller value (consistent
+        // semantics with tick-level trail).
+        if (exit_philosophy == ExitPhilosophy::GIVE_BACK) {
+            const double arm = m_pos.atr_at_entry * 0.4;
+            if (m_pos.mfe_peak >= arm) {
+                const double giveback = m_pos.mfe_peak - move;
+                if (giveback >= m_pos.mfe_peak * TRAIL_TIGHT) {
+                    _close_position(bid, ask, now_ms, "GIVEBACK_HIT", ext_close);
+                    m_cooldown_until = now_ms + COOLDOWN_SEC * 1000LL;
+                    m_consec_loss_cut = 0;
+                    return;
+                }
+            }
         }
-
-        // Phase 3: Tight trail behind MFE peak (L2-adaptive distance)
-        if (m_pos.mfe_peak >= m_pos.atr_at_entry * 0.7) {
-            double td = m_pos.atr_at_entry * TRAIL_TIGHT * trail_mult;
-            double tl = m_pos.is_long
-                ? (m_pos.mfe_price - td)
-                : (m_pos.mfe_price + td);
-            if (m_pos.is_long) new_trail = std::max(new_trail, tl);
-            else               new_trail = std::min(new_trail, tl);
-        }
-
-        // Phase 4: Very tight at MFE >= ATR * 1.2 (L2-adaptive distance)
-        if (m_pos.mfe_peak >= m_pos.atr_at_entry * 1.2) {
-            double td = m_pos.atr_at_entry * TRAIL_TIGHT * 0.60 * trail_mult;
-            double tl = m_pos.is_long
-                ? (m_pos.mfe_price - td)
-                : (m_pos.mfe_price + td);
-            if (m_pos.is_long) new_trail = std::max(new_trail, tl);
-            else               new_trail = std::min(new_trail, tl);
-        }
-
-        // Ratchet trail (only moves in favorable direction)
-        if (m_pos.is_long) m_pos.trail_sl = std::max(m_pos.trail_sl, new_trail);
-        else               m_pos.trail_sl = std::min(m_pos.trail_sl, new_trail);
 
         // ---- Check exits ----
         double eff_sl = m_pos.is_long
