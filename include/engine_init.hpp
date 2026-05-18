@@ -928,6 +928,11 @@ static void init_engines(const std::string& cfg_path)
         g_c1_retuned.margin_call    = 1000.0;
         g_c1_retuned.max_lot_cap    = 0.05;   // tighter than backtest while shadow-validating
         g_c1_retuned.init();
+        // S99e 2026-05-18: prime from shared H1 bar history (no external CSV needed).
+        // Eliminates cold-start priming gap for the Donchian H1 cell + synthesised
+        // H2/H4/H6 Bollinger cells. Same shape as the GoldScalpPyramid fix in S99e
+        // but uses the H1 bar provider (CellPortfolio drives H1, synthesises rest).
+        g_c1_retuned.prime_from_shared_h1_bars(g_bars_gold.h1.get_bars());
         fflush(stdout);
 
         // ?? TsmomPortfolio -- Tier-1 ship 2026-04-30 ?????????????????????????
@@ -1666,6 +1671,20 @@ static void init_engines(const std::string& cfg_path)
             printf("[STARTUP] H1 bar state cold -- H1SwingEngine needs 14 H1 bars to warm\n");
             fflush(stdout);
         }
+
+        // S99e 2026-05-18: prime GoldScalpPyramidEngine from shared M5 history.
+        // Eliminates the ~105min cold-start EMA21 prime window after every restart.
+        // The engine has no warmup CSV of its own; it consumes the same M5 bars
+        // that omega_main.hpp::hydrate_from_csv() already loads from disk.
+        // Engine becomes firable on the first valid Donchian breakout within the
+        // session window instead of waiting 21 live M5 bars (1h 45min) post-restart.
+        if (m5_ok) {
+            const int fed = g_gold_scalp_pyramid.prime_from_history(
+                                g_bars_gold.m5.get_bars());
+            printf("[STARTUP] GoldScalpPyramid primed: fed=%d M5 bars from shared history\n", fed);
+            fflush(stdout);
+        }
+
         if (m15_ok) {
             // Immediately seed TrendPullback EMAs + ATR from M15 bar state
             g_trend_pb_gold.seed_bar_emas(

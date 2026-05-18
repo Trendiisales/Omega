@@ -80,6 +80,7 @@
 #include <string>
 #include "OmegaCostGuard.hpp"
 #include "OmegaTradeLedger.hpp"
+#include "OHLCBarEngine.hpp"  // S99e: for OHLCBar struct used by prime_from_history()
 
 namespace omega {
 
@@ -319,6 +320,52 @@ public:
         std::fflush(stdout);
     }
 
+    // =========================================================================
+    // Prime indicators from shared M5 bar history (S99e 2026-05-18)
+    //
+    // Call ONCE at startup after g_bars_gold.m5 has been hydrated by
+    // omega_main.hpp (hydrate_from_csv + load_indicators). Feeds every persisted
+    // M5 bar through _on_bar_close() with entry-signal logic suppressed
+    // (m_in_warmup=true). EMA9/EMA21/ATR14/Donchian buffer become primed
+    // immediately, eliminating the ~105min cold-start EMA21 prime window.
+    //
+    // Same warmup-entry-guard pattern as S102's XauusdFvgEngine fix: indicator
+    // updates run, but no live entries fire from warmup-era prices.
+    // Returns bars fed.
+    // =========================================================================
+    int prime_from_history(const std::deque<OHLCBar>& bars) noexcept {
+        if (bars.empty()) {
+            std::printf("[GSP-WARMUP] no bars to feed -- cold start\n");
+            std::fflush(stdout);
+            return 0;
+        }
+        m_in_warmup = true;
+        int fed = 0;
+        for (const auto& b : bars) {
+            const int64_t ts_ms = b.ts_min * 60LL * 1000LL;
+            M5Bar mb;
+            mb.open    = b.open;
+            mb.high    = b.high;
+            mb.low     = b.low;
+            mb.close   = b.close;
+            mb.ts_open = ts_ms;
+            mb.n       = 1;
+            _on_bar_close(mb);
+            ++m_bars_seen;
+            ++fed;
+        }
+        m_in_warmup      = false;
+        m_signal_pending = false;  // discard any tail signal from the warmup feed
+        m_cur_anchor     = -1;     // next live tick starts a fresh in-progress bar
+        std::printf("[GSP-WARMUP] fed=%d M5 bars from shared g_bars_gold.m5 "
+                    "ema9=%d ema21=%d atr=%d donch=%d bars_seen=%lld\n",
+                    fed, (int)m_ema9.primed, (int)m_ema21.primed,
+                    (int)m_atr.primed, (int)m_highs.size(),
+                    (long long)m_bars_seen);
+        std::fflush(stdout);
+        return fed;
+    }
+
 private:
     // ---- Bar state ----
     M5Bar   m_cur_bar{};
@@ -367,6 +414,12 @@ private:
     int     m_consec_loss_cut = 0;
     int64_t m_consec_block_until = 0;
 
+    // ---- Warmup state (S99e 2026-05-18) ----
+    // True only during prime_from_history(). Suppresses entry-signal emission
+    // while indicators are being primed from shared M5 bar history. Same shape
+    // as the S102 warmup-entry-guard pattern in XauusdFvgEngine.
+    bool m_in_warmup = false;
+
     // =========================================================================
     // Bar close: update indicators, check entry signal
     // =========================================================================
@@ -392,6 +445,11 @@ private:
 
         // ---- Entry signal check ----
         m_signal_pending = false;
+
+        // S99e: skip entry-signal logic when priming from historical bars.
+        // Indicator updates above this point still execute so EMAs/ATR/Donchian
+        // become primed. Live entries only fire from live ticks after warmup.
+        if (m_in_warmup) return;
 
         if (!m_atr.primed) return;
         if (!m_ema9.primed || !m_ema21.primed) return;
