@@ -928,11 +928,16 @@ static void init_engines(const std::string& cfg_path)
         g_c1_retuned.margin_call    = 1000.0;
         g_c1_retuned.max_lot_cap    = 0.05;   // tighter than backtest while shadow-validating
         g_c1_retuned.init();
-        // S99e 2026-05-18: prime from shared H1 bar history (no external CSV needed).
-        // Eliminates cold-start priming gap for the Donchian H1 cell + synthesised
-        // H2/H4/H6 Bollinger cells. Same shape as the GoldScalpPyramid fix in S99e
-        // but uses the H1 bar provider (CellPortfolio drives H1, synthesises rest).
-        g_c1_retuned.prime_from_shared_h1_bars(g_bars_gold.h1.get_bars());
+        // S99f 2026-05-18: prime_from_shared_h1_bars call REVERTED.
+        // I mistakenly added the method to CellEngine.hpp (omega::cell::CellPortfolio)
+        // but g_c1_retuned is type omega::C1RetunedPortfolio (separate class in
+        // C1RetunedPortfolio.hpp). The wrong class lookup caused VPS build error
+        // C2039 on this line. C1Retuned priming gap remains as a known issue;
+        // proper fix requires adding the prime method to C1RetunedPortfolio.hpp
+        // directly (uses C1DonchianH1LongCell + C1BollingerLongCell + C1BarSynth,
+        // different architecture than CellPortfolio). Queued for follow-up.
+        // Impact: shadow_mode=true engine, no real PnL, runs cold until first live
+        // H1 bar closes (same state as every prior session before S99e).
         fflush(stdout);
 
         // ?? TsmomPortfolio -- Tier-1 ship 2026-04-30 ?????????????????????????

@@ -62,7 +62,6 @@
 
 #include "CellPrimitives.hpp"
 #include "OmegaTradeLedger.hpp"
-#include "OHLCBarEngine.hpp"  // S99e: for OHLCBar in prime_from_shared_h1_bars()
 
 namespace omega::cell {
 
@@ -829,52 +828,6 @@ struct CellPortfolio {
                static_cast<long long>(first_ms),
                static_cast<long long>(last_ms),
                path.c_str());
-        fflush(stdout);
-        return fed;
-    }
-
-    // -----------------------------------------------------------------------
-    //  prime_from_shared_h1_bars (S99e 2026-05-18) -- consume shared bar provider
-    //
-    //  Same priming pipeline as warmup_from_csv but reads directly from
-    //  g_bars_gold.h1.get_bars() instead of a CSV file. No external data file
-    //  required -- uses the H1 bar history already hydrated by omega_main.hpp
-    //  hydrate_from_csv() + load_indicators() on startup.
-    //
-    //  Each OHLCBar drives _feed_warmup_h1_bar() which is the same private
-    //  path warmup_from_csv uses. Synthesisers + per-TF ATRs + cell on_bar()
-    //  all get primed; size_lot=0 means no positions ever open during prime.
-    //  Returns bars fed.
-    // -----------------------------------------------------------------------
-    int prime_from_shared_h1_bars(const std::deque<OHLCBar>& bars) noexcept {
-        if (!enabled) {
-            printf("[CELL-WARMUP] prime_from_shared skipped -- portfolio disabled\n");
-            fflush(stdout);
-            return 0;
-        }
-        if (bars.empty()) {
-            printf("[CELL-WARMUP] prime_from_shared skipped -- no H1 bars in shared history (cold start)\n");
-            fflush(stdout);
-            return 0;
-        }
-        int fed = 0;
-        int64_t first_ms = 0, last_ms = 0;
-        for (const auto& ob : bars) {
-            if (!std::isfinite(ob.open) || !std::isfinite(ob.high)
-                || !std::isfinite(ob.low) || !std::isfinite(ob.close)) continue;
-            Bar b;
-            b.bar_start_ms = ob.ts_min * 60LL * 1000LL;
-            b.open  = ob.open;
-            b.high  = ob.high;
-            b.low   = ob.low;
-            b.close = ob.close;
-            if (fed == 0) first_ms = b.bar_start_ms;
-            last_ms = b.bar_start_ms;
-            _feed_warmup_h1_bar(b);
-            ++fed;
-        }
-        printf("[CELL-WARMUP] primed from shared bars: fed=%d first_ms=%lld last_ms=%lld\n",
-               fed, static_cast<long long>(first_ms), static_cast<long long>(last_ms));
         fflush(stdout);
         return fed;
     }
