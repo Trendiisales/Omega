@@ -1677,16 +1677,33 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // S99e 2026-05-18: prime GoldScalpPyramidEngine from shared M5 history.
-        // Eliminates the ~105min cold-start EMA21 prime window after every restart.
-        // The engine has no warmup CSV of its own; it consumes the same M5 bars
-        // that omega_main.hpp::hydrate_from_csv() already loads from disk.
-        // Engine becomes firable on the first valid Donchian breakout within the
-        // session window instead of waiting 21 live M5 bars (1h 45min) post-restart.
+        // S99g 2026-05-18: prime GoldScalpPyramidEngine from persisted atomics.
+        // load_indicators() restores the atomic indicator values (EMA9/EMA21/ATR14)
+        // but does NOT populate the bars_ deque -- that's hydrate_from_csv's job
+        // and it may return zero on quiet days / missing CSVs. Live evidence
+        // from S99f's startup log: '[GSP-WARMUP] fed=0' confirmed bars_ was
+        // empty, so the prime_from_history-only approach left EMA21 cold.
+        //
+        // Fix: seed EMA9/EMA21/ATR14 directly from the disk-loaded atomics.
+        // Donchian still needs live bar accumulation (~45 min) but that's the
+        // FASTEST indicator -- the binding 105-min EMA21 cold-prime is gone.
+        //
+        // We also still call prime_from_history below: if bars_ IS populated,
+        // it overwrites the rough atomic seed with recursion-correct values
+        // AND fills the Donchian buffer from the same source.
         if (m5_ok) {
+            const double m5_ema9  = g_bars_gold.m5.ind.ema9 .load(std::memory_order_relaxed);
+            const double m5_ema21 = g_bars_gold.m5.ind.ema21.load(std::memory_order_relaxed);
+            const double m5_atr14 = g_bars_gold.m5.ind.atr14.load(std::memory_order_relaxed);
+            // Best-effort approximation for ATR prev_close: M5 EMA9 is the
+            // tightest persisted reference to recent close. Drift bounded
+            // by (live_first_close - EMA9) which converges in 1 bar.
+            g_gold_scalp_pyramid.prime_from_atomics(m5_ema9, m5_ema21, m5_atr14, m5_ema9);
+
             const int fed = g_gold_scalp_pyramid.prime_from_history(
                                 g_bars_gold.m5.get_bars());
-            printf("[STARTUP] GoldScalpPyramid primed: fed=%d M5 bars from shared history\n", fed);
+            printf("[STARTUP] GoldScalpPyramid primed: atomics(ema9=%.2f ema21=%.2f atr=%.2f) bars_fed=%d\n",
+                   m5_ema9, m5_ema21, m5_atr14, fed);
             fflush(stdout);
         }
 

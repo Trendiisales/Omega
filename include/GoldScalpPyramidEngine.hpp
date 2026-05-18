@@ -333,9 +333,61 @@ public:
     // updates run, but no live entries fire from warmup-era prices.
     // Returns bars fed.
     // =========================================================================
+    // =========================================================================
+    // Prime EMA9/EMA21/ATR14 directly from persisted atomic indicator values
+    // (S99g 2026-05-18). Use this when g_bars_gold.m5.get_bars() returns empty
+    // (load_indicators restored the atomics but bars_ is not populated by load,
+    // only by hydrate_from_csv or live add_bar calls).
+    //
+    // Donchian buffer (m_highs / m_lows) is NOT seeded by this method -- it
+    // requires actual bar high/low history. After this prime, Donchian still
+    // takes 9 live M5 bars (~45 min) to fill. EMA21 priming wait drops from
+    // 1h 45min to ZERO. Net win: engine is firable 60 min sooner than cold.
+    //
+    // Call this BEFORE prime_from_history so the per-bar feed (if bars_ is
+    // populated by hydrate) overwrites cold atomics with the recursion-correct
+    // ones. If bars_ is empty, the atomic seed is what we have.
+    //
+    // last_close: best-effort approximation for ATR's prev_close. Pass the
+    // current mid at startup. Drift on the first live bar's TR is bounded by
+    // (mid - actual_last_close) which converges in 1 bar of Wilder smoothing.
+    // =========================================================================
+    void prime_from_atomics(double ema9_val, double ema21_val,
+                            double atr14_val, double last_close) noexcept {
+        if (!m_ema_inited) {
+            m_ema9.init(9);
+            m_ema21.init(21);
+            m_ema_inited = true;
+        }
+        bool seeded_any = false;
+        if (ema9_val > 0.0) {
+            m_ema9.value  = ema9_val;
+            m_ema9.count  = m_ema9.period;
+            m_ema9.primed = true;
+            seeded_any = true;
+        }
+        if (ema21_val > 0.0) {
+            m_ema21.value  = ema21_val;
+            m_ema21.count  = m_ema21.period;
+            m_ema21.primed = true;
+            seeded_any = true;
+        }
+        if (atr14_val > 0.0) {
+            m_atr.value      = atr14_val;
+            m_atr.primed     = true;
+            m_atr.have_prev  = true;
+            m_atr.prev_close = last_close > 0.0 ? last_close : ema9_val;
+            seeded_any = true;
+        }
+        std::printf("[GSP-PRIME-ATOMICS] ema9=%.2f ema21=%.2f atr14=%.2f last_close=%.2f "
+                    "seeded=%d (Donchian still primes from live: 9 M5 bars / ~45min)\n",
+                    ema9_val, ema21_val, atr14_val, last_close, (int)seeded_any);
+        std::fflush(stdout);
+    }
+
     int prime_from_history(const std::deque<OHLCBar>& bars) noexcept {
         if (bars.empty()) {
-            std::printf("[GSP-WARMUP] no bars to feed -- cold start\n");
+            std::printf("[GSP-WARMUP] no bars to feed -- cold start (use prime_from_atomics for indicator seed)\n");
             std::fflush(stdout);
             return 0;
         }
