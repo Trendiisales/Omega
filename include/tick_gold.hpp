@@ -77,7 +77,9 @@ static void on_tick_gold(
         // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + trail.
         g_gold_scalp_pyramid.has_open_position()          ||
         // 2026-05-18 (part B): BBandScalp -- M1 BB + RSI mean-reversion scalper.
-        g_bband_scalp.has_open_position()                 ;
+        g_bband_scalp.has_open_position()                 ||
+        // 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
+        g_gold_regime_daily.has_open_position()           ;
 
     // ?? Trend day detection ???????????????????????????????????????????????
     const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -2517,6 +2519,20 @@ static void on_tick_gold(
                                  g_macro_ctx.gold_wall_below,
                                  g_macro_ctx.gold_l2_real,
                                  nullptr);
+
+    // ?? GoldRegimeDaily (2026-05-19 S110) ?????????????????????????????????????
+    // H4 EMA-cross trend-follow. Fed every tick for H4 bar accumulation +
+    // per-tick exit management (BE-lock, TP, hard SL, trend-flip on EMA9
+    // vs EMA21 cross-back). L2 fields ignored by this engine (signature
+    // arg slots filled with neutral values).
+    // Close callback wired in engine_init.hpp -> handle_closed_trade.
+    g_gold_regime_daily.on_tick(bid, ask, now_ms_g,
+                                gold_can_enter,
+                                /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
+                                /*vacuum_ask=*/false, /*vacuum_bid=*/false,
+                                /*wall_above=*/false, /*wall_below=*/false,
+                                /*l2_real=*/false,
+                                nullptr);
 
     // ?? BBandScalpEngine (2026-05-18 part B) ?????????????????????????????????
     // M1 Bollinger + RSI mean-reversion scalper. Indicator inputs are pulled

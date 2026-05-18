@@ -387,6 +387,55 @@ static void init_engines(const std::string& cfg_path)
         handle_closed_trade(tr);
     };
 
+    // ---- GoldRegimeDaily (2026-05-19 S110) ----------------------------------
+    // H4 EMA-cross trend-follow engine. FIRST gold engine to clear the full
+    // success criterion (PnL > $5K AND PF > 1.20) on the 154M-tick Dukascopy
+    // XAUUSD 2025/6 subset:
+    //   Best: H4/tr=99/tp=12  PnL $5,854  PF 2.35  WR 92.6%  N=54  DD $2,303
+    //   All 6 sweep cfgs profitable; all PF > 1.81; WR uniform 92.6-92.7%.
+    //
+    // MECHANISM (matches operator's stated trading mechanism):
+    //   1. ENTRY: EMA9 crosses EMA21 on H4 bars. Long on bull cross,
+    //      short on bear cross. The "signal" IS the EMA crossover event.
+    //   2. COST-COVER BE: at MFE >= 5.0pt (10x retail-cost basis), SL
+    //      ratchets to entry + 1.0pt buffer (cost-covered breakeven).
+    //   3. TIGHT TRAIL: TRAIL_DIST=99 (intentionally large) -- ratchet
+    //      never beats BE level, so SL stays at entry+1.0pt after arm.
+    //      Effectively: BE-lock + no aggressive trail. Lets H4 trends run.
+    //   4. EXIT on signal/trend reverse: EMA9 crosses back against
+    //      position direction -> TREND_FLIP_EXIT immediate close.
+    //      Hard SL backstop at 2.0xATR(H4). Hard TP at 12xSL. Time-stop
+    //      at 100 H4 bars (~16 days).
+    //
+    // SIZING: RISK_DOLLARS=$1,200 / LOT_MAX=2.50 (24x scaled vs default).
+    //   At avg ATR(H4)=20pt and SL=2.0xATR=40pt:
+    //     size = $1200 / (40 * $100/pt) = 0.30 lot (clamped to 0.10-0.30 typ).
+    //   Per-trade dollar risk: ~$1200. Worst observed DD: $2,303.
+    //
+    // FREQUENCY: 54 trades / 16 months = 0.17/day. Low by design --
+    //   high-frequency signals on gold M5-M15 do NOT carry edge after
+    //   retail costs (empirically established across S102-S108: 78 high-
+    //   freq configs all negative). H4 regime trades rarely but each
+    //   captures a multi-bar trend.
+    //
+    // SHADOW-OBSERVE PERIOD: minimum 30 days of live shadow on VPS before
+    //   any enabled=true switch. Watch for harness-vs-class divergence
+    //   (the S100 GSP lesson). Verify Git hash + tick-level reproduction
+    //   per CLAUDE.md "Deploy Hygiene" before flipping enabled.
+    //
+    // shadow_mode=true. enabled=false. Operator-approval required.
+    g_gold_regime_daily.enabled                = false;
+    g_gold_regime_daily.shadow_mode            = true;
+    g_gold_regime_daily.SL_ATR_MULT            = 2.0;
+    g_gold_regime_daily.TP_ATR_MULT            = 12.0;
+    g_gold_regime_daily.COST_COVER_PTS         = 5.00;
+    g_gold_regime_daily.BE_BUFFER_PTS          = 1.00;
+    g_gold_regime_daily.TRAIL_DIST             = 99.0;  // disabled ratchet by design
+    g_gold_regime_daily.REVERSAL_ADVERSE_GATE  = 0.50;
+    g_gold_regime_daily.on_close_cb = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+    };
+
     // ?? BBandScalp config (2026-05-18 part B) ????????????????????????????????
     // M1 Bollinger + RSI mean-reversion scalper. Structural-signal entry,
     // BE-lock asymmetric exit. Indicators come from g_bars_gold.m1.ind
@@ -3061,6 +3110,12 @@ static void init_engines(const std::string& cfg_path)
                           g_gold_scalp_pyramid.enabled,
                           g_gold_scalp_pyramid.shadow_mode,
                           {"GoldScalpPyramid"}); });
+    // 2026-05-19 S110: GoldRegimeDaily engine registration.
+    g_engines.register_engine("GoldRegimeDaily",
+        [reg]{ return reg("GoldRegimeDaily",
+                          g_gold_regime_daily.enabled,
+                          g_gold_regime_daily.shadow_mode,
+                          {"GoldRegimeDaily"}); });
     // S11 P3b: HybridSP / HybridNQ / HybridUS30 / HybridNAS100 register_engine
     //   blocks removed (engines culled in P3a + P3b).
     g_engines.register_engine("MacroCrash",
@@ -3143,6 +3198,7 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("XauusdFvg",          true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("GoldScalpPyramid",   g_gold_scalp_pyramid.enabled, 3600, 7, 21);
+        g_engine_heartbeat.register_engine("GoldRegimeDaily",    g_gold_regime_daily.enabled, 14400, 7, 21);
         g_engine_heartbeat.register_engine("RSIReversal",        true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("RSIExtreme",         true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("h1_swing_gold",      true, 3600,  0, 24);
@@ -3506,6 +3562,37 @@ static void init_engines(const std::string& cfg_path)
             ps.mfe            = p.mfe_peak * size * mult;
             ps.mae            = p.mae * size * mult;
             ps.engine         = "GoldScalpPyramid";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-19 S110: GoldRegimeDaily position source.
+    g_open_positions.register_source("GoldRegimeDaily",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_regime_daily.has_open_position()) return out;
+
+            const auto& p = g_gold_regime_daily.m_pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir = p.is_long ? 1.0 : -1.0;
+            const double unrl = (current - p.entry) * dir * p.size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = p.size;
+            ps.entry          = p.entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe_peak * p.size * mult;
+            ps.mae            = p.mae * p.size * mult;
+            ps.engine         = "GoldRegimeDaily";
             out.push_back(ps);
             return out;
         });

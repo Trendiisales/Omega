@@ -564,6 +564,15 @@ static omega::XauusdFvgEngine                 g_xauusd_fvg;
 // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + aggressive trail
 #include "GoldScalpPyramidEngine.hpp"
 static omega::GoldScalpPyramidEngine          g_gold_scalp_pyramid;
+// 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
+//   First gold engine to clear PF>1.20 AND PnL>$5K success criterion on 2025/6.
+//   PF 2.35 / WR 92.6% / PnL $5,854 / N=54 trades over 16 months.
+//   Mechanism: EMA9-cross-EMA21 on H4 + cost-cover BE (5pt) + tight trail
+//   (BE-lock only) + trend-flip exit (EMA9 crosses back).
+//   RISK_DOLLARS=$1200 (scaled 24x from default $50), LOT_MAX=2.50.
+//   shadow_mode=true, enabled=false until operator approval.
+#include "GoldRegimeDailyEngine.hpp"
+static omega::GoldRegimeDailyEngine           g_gold_regime_daily;
 // 2026-05-18 (part B): BBandScalp -- M1 Bollinger + RSI mean-reversion scalper
 //   Structural-signal entry (BB extreme touch + RSI extreme) replacing the
 //   tick-velocity entry that proved counter-predictive in QuickScalp.
