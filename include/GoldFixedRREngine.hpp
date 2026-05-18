@@ -60,6 +60,17 @@ public:
     // a bull regime could be the simplest viable mechanism.
     bool   LONG_ONLY      = false;
 
+    // 2026-05-19 part-E: if true, restrict entries to London open + NY
+    // open windows only (7-11 UTC + 13-17 UTC, ~8h vs 14h default).
+    // Cuts ~40% of low-volume mid-session trades, biasing toward
+    // high-activity entries with stronger directional persistence.
+    bool   TIGHT_SESSION  = false;
+
+    // 2026-05-19 part-E: runtime override for ATR floor (default 1.50).
+    // Raising to 3.0+ filters out low-volatility entries that produce
+    // sub-cost MFE on M5.
+    double ATR_FLOOR_OVERRIDE = 0.0;  // 0 = use static ATR_FLOOR constant
+
     static constexpr double USD_PER_PT_LOT = 100.0;
     static constexpr double RISK_DOLLARS   = 50.0;
     static constexpr double LOT_MIN        = 0.01;
@@ -191,8 +202,12 @@ private:
         if ((int)m_highs.size() <= LOOKBACK) return;
         if (m_pos.active) return;
         if (_is_weekend(bar.ts_open)) return;
-        if (!_is_session_active(bar.ts_open)) return;
-        if (m_atr.value < ATR_FLOOR || m_atr.value > ATR_CAP) return;
+        const bool session_ok = TIGHT_SESSION
+            ? _is_tight_session(bar.ts_open)
+            : _is_session_active(bar.ts_open);
+        if (!session_ok) return;
+        const double atr_floor_eff = (ATR_FLOOR_OVERRIDE > 0.0) ? ATR_FLOOR_OVERRIDE : ATR_FLOOR;
+        if (m_atr.value < atr_floor_eff || m_atr.value > ATR_CAP) return;
 
         double ch_high=-1e18, ch_low=1e18;
         for (int k=(int)m_highs.size()-1-LOOKBACK; k<(int)m_highs.size()-1; ++k) {
@@ -292,6 +307,13 @@ private:
         const int64_t s = ts_ms/1000LL;
         const int hr = static_cast<int>((s%86400LL)/3600LL);
         return (hr>=7 && hr<21);
+    }
+    static bool _is_tight_session(int64_t ts_ms) {
+        // London open block (7-11 UTC) + NY open block (13-17 UTC).
+        // Skips mid-session lull (11-13 UTC) and late-NY chop (17-21 UTC).
+        const int64_t s = ts_ms/1000LL;
+        const int hr = static_cast<int>((s%86400LL)/3600LL);
+        return (hr>=7 && hr<11) || (hr>=13 && hr<17);
     }
 };
 
