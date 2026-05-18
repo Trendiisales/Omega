@@ -25,6 +25,7 @@ static void on_tick_gold(
     g_engine_heartbeat.pulse("CandleFlow");
     g_engine_heartbeat.pulse("EMACross");
     g_engine_heartbeat.pulse("XauusdFvg");
+    g_engine_heartbeat.pulse("GoldScalpPyramid");
     g_engine_heartbeat.pulse("RSIReversal");
     g_engine_heartbeat.pulse("RSIExtreme");
     g_engine_heartbeat.pulse("h1_swing_gold");
@@ -72,7 +73,9 @@ static void on_tick_gold(
         // 2026-05-02: XauusdFvgEngine -- per design doc §7.3 + open Q §11.6.
         // FVG respects gold one-at-a-time AND adds itself to the gate so the
         // other gold engines will not enter while FVG holds a position.
-        g_xauusd_fvg.has_open_position()             ;
+        g_xauusd_fvg.has_open_position()             ||
+        // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + trail.
+        g_gold_scalp_pyramid.has_open_position()          ;
 
     // ?? Trend day detection ???????????????????????????????????????????????
     const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -2495,6 +2498,23 @@ static void on_tick_gold(
     g_xauusd_fvg.on_tick(bid, ask, now_ms_g,
                          gold_can_enter,
                          nullptr);
+
+    // ?? GoldScalpPyramid (2026-05-18) ????????????????????????????????????????
+    // M5 scalper with pyramid + aggressive trail. Fed every tick for bar
+    // accumulation + per-tick trail management. Entry gated by gold_can_enter.
+    // Close callback wired in engine_init.hpp -> handle_closed_trade.
+    // L2 fields from MacroContext: imbalance, slope, vacuum, wall, liveness.
+    // When gold_l2_real=false, engine degrades all L2 filters to neutral.
+    g_gold_scalp_pyramid.on_tick(bid, ask, now_ms_g,
+                                 gold_can_enter,
+                                 g_macro_ctx.gold_l2_imbalance,
+                                 g_macro_ctx.gold_book_slope,
+                                 g_macro_ctx.gold_vacuum_ask,
+                                 g_macro_ctx.gold_vacuum_bid,
+                                 g_macro_ctx.gold_wall_above,
+                                 g_macro_ctx.gold_wall_below,
+                                 g_macro_ctx.gold_l2_real,
+                                 nullptr);
 
     // ?? NBM London position management -- ALWAYS runs when position open ??
     // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a

@@ -333,6 +333,49 @@ static void init_engines(const std::string& cfg_path)
     };
     g_xauusd_fvg.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_M15.csv";
     g_xauusd_fvg.warmup_from_csv(g_xauusd_fvg.warmup_csv_path);
+
+    // ---- GoldScalpPyramid (2026-05-18) ----------------------------------------
+    // M5 Donchian breakout + EMA filter + aggressive 4-phase trail.
+    //
+    // SWEEP v2 RESULTS (154M ticks, 152K M5 bars, Mar 2024 - Apr 2026, 162 configs):
+    //   Harness v2: chronological intra-bar ordering (best_ts vs worst_ts)
+    //   fixes pyramid never-firing artifact from v1.
+    //
+    //   Best: LB=8 SL=1.5 TP=3.0 Trail=0.12 Pyr=Y
+    //   n=5436  PnL=$+15083.97  WR=71.0%  PF=1.45  DD=$-453.91  Lyrs=1.1
+    //
+    //   Runner-up (same params, Pyr=N):
+    //   n=5436  PnL=$+14082.84  WR=71.0%  PF=1.42  DD=$-450.27
+    //   Pyramid adds +$1001 (+7.1%) on best config.
+    //
+    //   SL sensitivity: wider SL=1.5 dominates (WR=71%, trail limits losses).
+    //   Tight SL=0.8 sees biggest pyramid uplift (+33% PnL, Lyrs=1.4) but
+    //   lower absolute PnL. Trail=0.12 universally best across all configs.
+    //
+    // REGIME WARNING: 18-month chop period (Mar24-Sep25) then 7-month trend
+    //   run (Oct25-Apr26). The edge is real but regime-dependent.
+    //   Shadow-observe through one full chop cycle before promoting to live.
+    //
+    // L2 integration (same session): entry confirmation, wall gate, adaptive
+    //   trail, pyramid gating, lot sizing. Live-only enhancement — degrades
+    //   gracefully when gold_l2_real=false.
+    //
+    // shadow_mode=true. Do NOT promote until observed through a chop regime.
+    // S63 in-flight protection: same VWR pattern as XauusdFvg.
+    g_gold_scalp_pyramid.enabled     = true;
+    g_gold_scalp_pyramid.shadow_mode = true;
+    g_gold_scalp_pyramid.LOOKBACK    = 8;     // Donchian channel bars (M5) -- sweep best
+    g_gold_scalp_pyramid.SL_ATR_MULT = 1.5;   // SL = 1.5 * ATR14 -- sweep v2 best (wider, 71% WR)
+    g_gold_scalp_pyramid.TP_ATR_MULT = 3.0;   // TP = 3.0 * ATR14 -- sweep best (decorative, trail exits)
+    g_gold_scalp_pyramid.TRAIL_TIGHT = 0.12;  // trail distance = 0.12 * ATR behind MFE -- sweep best
+    g_gold_scalp_pyramid.PYRAMID_ON  = true;   // sweep v2: Lyrs=1.1, +$1001 uplift on best config
+    g_gold_scalp_pyramid.LOSS_CUT_PCT  = 0.05;
+    g_gold_scalp_pyramid.BE_ARM_PCT    = 0.03;
+    g_gold_scalp_pyramid.BE_BUFFER_PCT = 0.012;
+    g_gold_scalp_pyramid.on_close_cb = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+    };
+
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -2894,6 +2937,12 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_xauusd_fvg.shadow_mode,
                           {"XauusdFvg"}); });
+    // 2026-05-18: GoldScalpPyramid engine registration.
+    g_engines.register_engine("GoldScalpPyramid",
+        [reg]{ return reg("GoldScalpPyramid",
+                          g_gold_scalp_pyramid.enabled,
+                          g_gold_scalp_pyramid.shadow_mode,
+                          {"GoldScalpPyramid"}); });
     // S11 P3b: HybridSP / HybridNQ / HybridUS30 / HybridNAS100 register_engine
     //   blocks removed (engines culled in P3a + P3b).
     g_engines.register_engine("MacroCrash",
@@ -2975,6 +3024,7 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("CandleFlow",         true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("XauusdFvg",          true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("GoldScalpPyramid",   g_gold_scalp_pyramid.enabled, 3600, 7, 21);
         g_engine_heartbeat.register_engine("RSIReversal",        true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("RSIExtreme",         true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("h1_swing_gold",      true, 3600,  0, 24);
@@ -3305,6 +3355,39 @@ static void init_engines(const std::string& cfg_path)
             ps.mfe            = p.mfe * p.size * mult;
             ps.mae            = p.mae * p.size * mult;
             ps.engine         = "XauusdFvg";
+            out.push_back(ps);
+            return out;
+        });
+    // 2026-05-18: GoldScalpPyramid position source.
+    g_open_positions.register_source("GoldScalpPyramid",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_scalp_pyramid.has_open_position()) return out;
+
+            const auto& p = g_gold_scalp_pyramid.m_pos;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+
+            double current = p.base_entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                current = it->second;
+            }
+
+            const double dir   = p.is_long ? 1.0 : -1.0;
+            const double entry = p.weighted_entry();
+            const double size  = p.total_size();
+            const double unrl  = (current - entry) * dir * size * mult;
+
+            omega::PositionSnapshot ps;
+            ps.symbol         = "XAUUSD";
+            ps.side           = p.is_long ? "LONG" : "SHORT";
+            ps.size           = size;
+            ps.entry          = entry;
+            ps.current        = current;
+            ps.unrealized_pnl = unrl;
+            ps.mfe            = p.mfe_peak * size * mult;
+            ps.mae            = p.mae * size * mult;
+            ps.engine         = "GoldScalpPyramid";
             out.push_back(ps);
             return out;
         });

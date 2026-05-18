@@ -560,6 +560,9 @@ static omega::GbpusdLondonOpenEngine          g_gbpusd_london_open;
 static omega::AudusdSydneyOpenEngine          g_audusd_sydney_open;
 static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
 static omega::XauusdFvgEngine                 g_xauusd_fvg;
+// 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + aggressive trail
+#include "GoldScalpPyramidEngine.hpp"
+static omega::GoldScalpPyramidEngine          g_gold_scalp_pyramid;
 // S11 P3b: g_hybrid_sp / g_hybrid_nq / g_hybrid_us30 / g_hybrid_nas100 static
 //   decls removed (engines culled in P3a + P3b).
 // S12 P3c (2026-05-07): IndexHybridBracketEngine.hpp file DELETED + #include
