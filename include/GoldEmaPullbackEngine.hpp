@@ -1,6 +1,6 @@
 #pragma once
 // =============================================================================
-// GoldEmaCrossM30Engine.hpp -- M30 EMA-cross entry, trend-flip primary exit
+// GoldEmaPullbackEngine.hpp -- M30 EMA-cross entry, trend-flip primary exit
 // =============================================================================
 //
 // 2026-05-19 PART-D SESSION DESIGN:
@@ -38,7 +38,7 @@
 //   gold have no directional edge at fixed-RR. Pure EMA-cross tests
 //   whether momentum-aligned entries have any edge.
 //
-// LOG NAMESPACE: [GEC]. tr.engine = "GoldEmaCrossM30". tr.regime = "M30_EMA_CROSS".
+// LOG NAMESPACE: [GEP]. tr.engine = "GoldEmaPullback". tr.regime = "M5_EMA_PULLBACK".
 // =============================================================================
 
 #include <cstdint>
@@ -55,7 +55,7 @@
 
 namespace omega {
 
-class GoldEmaCrossM30Engine {
+class GoldEmaPullbackEngine {
 public:
     int BAR_SECS = 1800;  // default M30 -- runtime tunable from harness
 
@@ -147,7 +147,7 @@ public:
 
         char buf[256];
         std::snprintf(buf, sizeof(buf),
-            "[GEC] OPEN %s entry=%.2f sl=%.2f tp=%.2f size=%.3f atr=%.2f ema9=%.2f ema21=%.2f\n",
+            "[GEP] OPEN %s entry=%.2f sl=%.2f tp=%.2f size=%.3f atr=%.2f ema9=%.2f ema21=%.2f\n",
             m_signal_long?"LONG":"SHORT", entry_px, sl_px, tp_px, size, m_signal_atr,
             m_ema9.value, m_ema21.value);
         std::printf("%s", buf); std::fflush(stdout);
@@ -202,26 +202,31 @@ private:
         if (!_is_session_active(bar.ts_open)) return;
         if (m_atr.value < ATR_FLOOR || m_atr.value > ATR_CAP) return;
 
-        // EMA-CROSS DETECTION (the entry signal)
-        // Track sign of (ema9 - ema21). Cross occurs when sign flips.
-        const double diff = m_ema9.value - m_ema21.value;
-        if (!m_prev_diff_set) {
-            m_prev_ema9_minus_21 = diff;
-            m_prev_diff_set = true;
-            return;  // need 2 closes to detect a cross
+        // PULLBACK ENTRY (the entry signal -- much higher frequency than cross)
+        // In bullish regime (EMA9 > EMA21): buy on bar that touches EMA21 from
+        //   above (bar.low <= EMA21 < bar.close) i.e. dipped to EMA and recovered.
+        // In bearish regime (EMA9 < EMA21): sell on bar that touches EMA21 from
+        //   below (bar.high >= EMA21 > bar.close) i.e. rallied to EMA and rejected.
+        // Fires far more often than EMA-cross because pullback-to-EMA is a
+        //   routine event in trending markets, not a regime-shift signal.
+        const bool bullish_regime = m_ema9.value > m_ema21.value;
+        const bool bearish_regime = m_ema9.value < m_ema21.value;
+        if (!bullish_regime && !bearish_regime) return;
+
+        const double ema21 = m_ema21.value;
+        bool intend_long = false;
+        bool intend_short = false;
+        if (bullish_regime) {
+            // bar touched or crossed below ema21, then closed above it
+            if (bar.low <= ema21 && bar.close > ema21) intend_long = true;
+        } else {
+            // bar touched or crossed above ema21, then closed below it
+            if (bar.high >= ema21 && bar.close < ema21) intend_short = true;
         }
-
-        // Bullish cross: prev <=0 and now >0
-        const bool bull_cross = (m_prev_ema9_minus_21 <= 0.0 && diff > 0.0);
-        // Bearish cross: prev >=0 and now <0
-        const bool bear_cross = (m_prev_ema9_minus_21 >= 0.0 && diff < 0.0);
-
-        m_prev_ema9_minus_21 = diff;
-
-        if (!bull_cross && !bear_cross) return;
+        if (!intend_long && !intend_short) return;
 
         m_signal_pending = true;
-        m_signal_long    = bull_cross;
+        m_signal_long    = intend_long;
         m_signal_atr     = m_atr.value;
     }
 
@@ -296,15 +301,15 @@ private:
 
         char buf[384];
         std::snprintf(buf, sizeof(buf),
-            "[GEC] CLOSE %s entry=%.2f exit=%.2f pnl=$%.2f size=%.3f mfe=%.2f mae=%.2f be=%d bars=%d reason=%s\n",
+            "[GEP] CLOSE %s entry=%.2f exit=%.2f pnl=$%.2f size=%.3f mfe=%.2f mae=%.2f be=%d bars=%d reason=%s\n",
             m_pos.is_long?"LONG":"SHORT", m_pos.entry, exit_px, pnl_usd, m_pos.size,
             m_pos.mfe_peak, m_pos.mae, (int)m_pos.be_armed,
             (int)(m_bars_seen - m_pos.entry_bar_seq), reason);
         std::printf("%s", buf); std::fflush(stdout);
 
         omega::TradeRecord tr;
-        tr.engine="GoldEmaCrossM30"; tr.symbol="XAUUSD";
-        tr.side=m_pos.is_long?"LONG":"SHORT"; tr.regime="M30_EMA_CROSS";
+        tr.engine="GoldEmaPullback"; tr.symbol="XAUUSD";
+        tr.side=m_pos.is_long?"LONG":"SHORT"; tr.regime="M5_EMA_PULLBACK";
         tr.entryPrice=m_pos.entry; tr.exitPrice=exit_px; tr.size=m_pos.size;
         tr.pnl=pnl_pts_lots; tr.entryTs=m_pos.entry_ts/1000LL; tr.exitTs=now_ms/1000LL;
         tr.exitReason=reason;

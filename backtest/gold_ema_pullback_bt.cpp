@@ -14,7 +14,7 @@
 #include <chrono>
 #include <algorithm>
 
-#include "../include/GoldEmaCrossM30Engine.hpp"
+#include "../include/GoldEmaPullbackEngine.hpp"
 
 struct Config {
     int    bar_secs;       // 300=M5, 900=M15, 1800=M30
@@ -32,7 +32,7 @@ struct Result {
 };
 
 struct Driver {
-    omega::GoldEmaCrossM30Engine engine;
+    omega::GoldEmaPullbackEngine engine;
     std::vector<omega::TradeRecord> trades;
     double cum_pnl_usd=0, peak_pnl=0, max_dd=0;
     static constexpr double TV = 100.0;
@@ -80,16 +80,16 @@ static int64_t parse_csv_and_run(Driver& drv, const char* path, const Config& cf
         if (spread > 5.0) { ++n_skipped; continue; }
         drv.on_tick(ts_ms, b, a); ++n_ticks;
         if (n_ticks % 20000000LL == 0) {
-            std::fprintf(stderr, "[GEC-SWEEP] %lldM ticks (%s) cum_pnl=$%.2f n=%zu\n",
+            std::fprintf(stderr, "[GEP-SWEEP] %lldM ticks (%s) cum_pnl=$%.2f n=%zu\n",
                 (long long)(n_ticks/1000000LL), cfg.label, drv.cum_pnl_usd, drv.trades.size());
         }
     }
-    std::fprintf(stderr, "[GEC-SWEEP] Done: ticks=%lld skipped=%lld\n",
+    std::fprintf(stderr, "[GEP-SWEEP] Done: ticks=%lld skipped=%lld\n",
                  (long long)n_ticks, (long long)n_skipped);
     return n_ticks;
 }
 
-static void apply_config(omega::GoldEmaCrossM30Engine& e, const Config& c) {
+static void apply_config(omega::GoldEmaPullbackEngine& e, const Config& c) {
     e.BAR_SECS              = c.bar_secs;
     e.ATR_FLOOR             = c.atr_floor;
     e.SL_ATR_MULT           = 1.5;
@@ -127,7 +127,7 @@ static Result summarize(const Config& cfg, const std::vector<omega::TradeRecord>
 int main(int argc, char** argv) {
     const char* csv_path = (argc>=2) ? argv[1]
         : "/Users/jo/Tick/duka_ticks/XAUUSD_2024-03_2026-04_combined.csv";
-    std::fprintf(stderr, "[GEC-SWEEP] CSV: %s\n", csv_path);
+    std::fprintf(stderr, "[GEP-SWEEP] CSV: %s\n", csv_path);
 
     // 6 configs: trail_dist {0.50, 1.50, 99.00} x TP {3.0, 5.0}
     //   - trail 0.50 = aggressive lock (V1-style)
@@ -150,7 +150,7 @@ int main(int argc, char** argv) {
     std::vector<Config> configs(std::begin(configs_init), std::end(configs_init));
 
     std::printf("===========================================================================================\n");
-    std::printf("  GoldEmaCrossM30 sweep -- M30 EMA-cross entry + cost-cover BE + trail + trend-flip exit\n");
+    std::printf("  GoldEmaPullback sweep -- M30 EMA-cross entry + cost-cover BE + trail + trend-flip exit\n");
     std::printf("  Entry: EMA9 cross EMA21 (both directions). No Donchian. ATR floor 3.0.\n");
     std::printf("  Sweep: TRAIL_DIST {0.50, 1.50, 99.00} x TP_ATR_MULT {3.0, 5.0}\n");
     std::printf("===========================================================================================\n\n");
@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
     const auto t_start = std::chrono::steady_clock::now();
     for (size_t i=0; i<configs.size(); ++i) {
         const auto& cfg = configs[i];
-        std::fprintf(stderr, "[GEC-SWEEP] === Cfg %zu/%zu: %s ===\n", i+1, configs.size(), cfg.label);
+        std::fprintf(stderr, "[GEP-SWEEP] === Cfg %zu/%zu: %s ===\n", i+1, configs.size(), cfg.label);
         Driver drv; drv.reset(); apply_config(drv.engine, cfg);
         const auto t0 = std::chrono::steady_clock::now();
         const int64_t n = parse_csv_and_run(drv, csv_path, cfg);
@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
         Result r = summarize(cfg, drv.trades, drv.max_dd);
         results.push_back(r);
         std::fprintf(stderr,
-            "[GEC-SWEEP] Cfg %zu (%s) %.1fs: n=%d wr=%.1f%% pnl=$%.2f pf=%.2f tf=%d tr=%d sl=%d tp=%d\n\n",
+            "[GEP-SWEEP] Cfg %zu (%s) %.1fs: n=%d wr=%.1f%% pnl=$%.2f pf=%.2f tf=%d tr=%d sl=%d tp=%d\n\n",
             i+1, cfg.label, secs, r.n_trades, r.wr_pct, r.gross_pnl_usd, r.profit_factor,
             r.n_trend_flip, r.n_trail_hit, r.n_sl_hit, r.n_tp_hit);
     }
