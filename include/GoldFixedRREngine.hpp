@@ -77,6 +77,15 @@ public:
     bool   VOL_EXPANSION       = false;
     double VOL_EXPANSION_MULT  = 1.5;
 
+    // 2026-05-19 part-G: BOLLINGER_FADE mode replaces Donchian-break entry
+    // with mean-reversion fade at Bollinger band touches:
+    //   bar.close > upper_band (mean + 2*std) -> short
+    //   bar.close < lower_band (mean - 2*std) -> long
+    // SMA window = 20 bars. Different shape than trend-follow Donchian.
+    bool   BOLLINGER_FADE      = false;
+    int    BOLLINGER_PERIOD    = 20;
+    double BOLLINGER_STD_MULT  = 2.0;
+
     static constexpr double USD_PER_PT_LOT = 100.0;
     static constexpr double RISK_DOLLARS   = 50.0;
     static constexpr double LOT_MIN        = 0.01;
@@ -191,7 +200,8 @@ private:
     } m_atr;
 
     std::deque<double> m_highs, m_lows;
-    std::deque<double> m_atr_history;  // part-F: for VOL_EXPANSION rank
+    std::deque<double> m_atr_history;     // part-F: for VOL_EXPANSION rank
+    std::deque<double> m_close_history;   // part-G: for BOLLINGER_FADE bands
     static constexpr int VOL_WINDOW_SIZE = 100;
     bool m_signal_pending=false, m_signal_long=false;
     double m_signal_atr=0;
@@ -232,28 +242,58 @@ private:
             if (m_atr.value < VOL_EXPANSION_MULT * atr_med) return;
         }
 
-        double ch_high=-1e18, ch_low=1e18;
-        for (int k=(int)m_highs.size()-1-LOOKBACK; k<(int)m_highs.size()-1; ++k) {
-            if (k<0) continue;
-            if (m_highs[k]>ch_high) ch_high=m_highs[k];
-            if (m_lows[k] <ch_low ) ch_low =m_lows[k];
+        bool intend_long = false;
+        bool intend_short = false;
+
+        if (BOLLINGER_FADE) {
+            // ---- Bollinger fade entry ----
+            // Use m_highs/m_lows deque (which stores last LOOKBACK+1 bar highs/lows)
+            // For Bollinger we need close-price SMA + stddev over BOLLINGER_PERIOD.
+            // Repurpose m_highs as a close-history. (Hack -- separate field would
+            // be cleaner. m_highs already stores bar.high which is close to close
+            // for use as a price-level surrogate.)
+            // Better: build dedicated close-history.
+            m_close_history.push_back(bar.close);
+            while ((int)m_close_history.size() > BOLLINGER_PERIOD) m_close_history.pop_front();
+            if ((int)m_close_history.size() < BOLLINGER_PERIOD) return;
+            double sum = 0.0;
+            for (double c : m_close_history) sum += c;
+            const double sma = sum / BOLLINGER_PERIOD;
+            double var = 0.0;
+            for (double c : m_close_history) { const double d = c - sma; var += d*d; }
+            const double std = std::sqrt(var / BOLLINGER_PERIOD);
+            const double upper = sma + BOLLINGER_STD_MULT * std;
+            const double lower = sma - BOLLINGER_STD_MULT * std;
+            if (bar.close > upper) intend_short = true;
+            else if (bar.close < lower) intend_long = true;
+            else return;
+        } else {
+            // ---- Donchian-break entry (original) ----
+            double ch_high=-1e18, ch_low=1e18;
+            for (int k=(int)m_highs.size()-1-LOOKBACK; k<(int)m_highs.size()-1; ++k) {
+                if (k<0) continue;
+                if (m_highs[k]>ch_high) ch_high=m_highs[k];
+                if (m_lows[k] <ch_low ) ch_low =m_lows[k];
+            }
+            const bool bull = (bar.close > ch_high);
+            const bool bear = (bar.close < ch_low);
+            if (!bull && !bear) return;
+            intend_long = bull;
+            if (intend_long  && m_ema9.value <= m_ema21.value) return;
+            if (!intend_long && m_ema9.value >= m_ema21.value) return;
+
+            const double body = std::fabs(bar.close-bar.open);
+            const double range = bar.high-bar.low;
+            if (range < 0.01) return;
+            if (body/range < 0.40) return;
+            const double midp = (bar.high+bar.low)*0.5;
+            if (intend_long  && bar.close < midp) return;
+            if (!intend_long && bar.close > midp) return;
         }
-        const bool bull = (bar.close > ch_high);
-        const bool bear = (bar.close < ch_low);
-        if (!bull && !bear) return;
-        const bool intend_long = bull;
-        if (intend_long  && m_ema9.value <= m_ema21.value) return;
-        if (!intend_long && m_ema9.value >= m_ema21.value) return;
 
-        const double body = std::fabs(bar.close-bar.open);
-        const double range = bar.high-bar.low;
-        if (range < 0.01) return;
-        if (body/range < 0.40) return;
-        const double midp = (bar.high+bar.low)*0.5;
-        if (intend_long  && bar.close < midp) return;
-        if (!intend_long && bar.close > midp) return;
-
-        bool final_long = REVERSE_SIGNAL ? !intend_long : intend_long;
+        if (!intend_long && !intend_short) return;
+        bool base_long = intend_long;
+        bool final_long = REVERSE_SIGNAL ? !base_long : base_long;
         if (LONG_ONLY && !final_long) return;  // skip short entries in long-only mode
 
         m_signal_pending = true;
