@@ -53,6 +53,13 @@ public:
     // (original); true = fade.
     bool   REVERSE_SIGNAL = false;
 
+    // 2026-05-19 part-D: if true, only take LONG entries (skip shorts).
+    // Tests whether the 2024-03..2026-04 gold bull-run (price moved from
+    // ~$1900 to ~$3300, +74%) creates a directional bias that short
+    // trades systematically lose to. Long-only on Donchian-up-break in
+    // a bull regime could be the simplest viable mechanism.
+    bool   LONG_ONLY      = false;
+
     static constexpr double USD_PER_PT_LOT = 100.0;
     static constexpr double RISK_DOLLARS   = 50.0;
     static constexpr double LOT_MIN        = 0.01;
@@ -208,9 +215,12 @@ private:
         if (intend_long  && bar.close < midp) return;
         if (!intend_long && bar.close > midp) return;
 
-        m_signal_pending=true;
-        m_signal_long   = REVERSE_SIGNAL ? !intend_long : intend_long;
-        m_signal_atr    = m_atr.value;
+        bool final_long = REVERSE_SIGNAL ? !intend_long : intend_long;
+        if (LONG_ONLY && !final_long) return;  // skip short entries in long-only mode
+
+        m_signal_pending = true;
+        m_signal_long    = final_long;
+        m_signal_atr     = m_atr.value;
     }
 
     void _manage(double bid, double ask, int64_t now_ms, const CloseCallback* ext_close) {
