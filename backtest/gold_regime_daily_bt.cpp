@@ -21,7 +21,8 @@ struct Config {
     double trail_dist;
     double tp_atr_mult;
     double atr_floor;
-    char   label[48];
+    bool   pyramid_on;     // S112: pyramid layer additions during trend
+    char   label[64];
 };
 
 struct Result {
@@ -97,6 +98,7 @@ static void apply_config(omega::GoldRegimeDailyEngine& e, const Config& c) {
     e.BE_BUFFER_PTS         = 1.0;
     e.TRAIL_DIST            = c.trail_dist;
     e.REVERSAL_ADVERSE_GATE = 0.50;
+    e.PYRAMID_ON            = c.pyramid_on;
     e.shadow_mode = true;
     e.enabled = true;
 }
@@ -137,13 +139,16 @@ int main(int argc, char** argv) {
     // 2025/6 subset sweep: vary TIMEFRAME + trail + RR to find any
     // EMA-cross config that produces 8+ trades/day with positive edge.
     // H4 regime engine sweep: vary trail + TP only (BAR_SECS hardcoded to H4)
+    // S112 sweep: vary trail x TP x PYRAMID -- 8 cfgs.
+    // Baseline (PYRAMID_ON=false) reproduces S110 best (PF 2.35).
+    // PYRAMID_ON=true tests whether layered adds during continuation amplify.
     const Config configs_init[] = {
-        {14400, 10.0, 8.0,  10.0, "H4/tr=10/tp=8"},
-        {14400, 20.0, 8.0,  10.0, "H4/tr=20/tp=8"},
-        {14400, 99.0, 8.0,  10.0, "H4/tr=99/tp=8"},   // no trail -- ride trend
-        {14400, 10.0, 12.0, 10.0, "H4/tr=10/tp=12"},
-        {14400, 20.0, 12.0, 10.0, "H4/tr=20/tp=12"},
-        {14400, 99.0, 12.0, 10.0, "H4/tr=99/tp=12"},
+        {14400, 10.0, 8.0,  10.0, false, "H4/tr=10/tp=8/PYR=N"},
+        {14400, 20.0, 8.0,  10.0, false, "H4/tr=20/tp=8/PYR=N"},
+        {14400, 99.0, 12.0, 10.0, false, "H4/tr=99/tp=12/PYR=N"},  // S110 best baseline
+        {14400, 10.0, 8.0,  10.0, true,  "H4/tr=10/tp=8/PYR=Y"},
+        {14400, 20.0, 8.0,  10.0, true,  "H4/tr=20/tp=8/PYR=Y"},
+        {14400, 99.0, 12.0, 10.0, true,  "H4/tr=99/tp=12/PYR=Y"},
     };
     std::vector<Config> configs(std::begin(configs_init), std::end(configs_init));
 

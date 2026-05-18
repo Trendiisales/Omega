@@ -83,8 +83,24 @@ public:
     bool shadow_mode = true;
     bool enabled     = true;
 
+    // ---- Pyramid config (2026-05-19 S112) ------------------------------------
+    // PYRAMID_ON: add layers when MFE crosses thresholds in ATR(H4) units.
+    //   Layer 2 at MFE >= 1.0*ATR (size mult 0.80 of base)
+    //   Layer 3 at MFE >= 1.5*ATR (size mult 0.65)
+    //   Layer 4 at MFE >= 2.0*ATR (size mult 0.50)
+    //   Layer 5 at MFE >= 3.0*ATR (size mult 0.40)
+    // All layers close together on trend-flip / SL / TP / time-stop.
+    bool PYRAMID_ON = false;            // default OFF; sweep flips to true
+    static constexpr int MAX_LAYERS = 5;
+
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
     CloseCallback on_close_cb;
+
+    struct Layer {
+        bool   active = false;
+        double entry  = 0.0;
+        double size   = 0.0;
+    };
 
     struct LivePos {
         bool    active=false, is_long=false, be_armed=false;
@@ -92,6 +108,24 @@ public:
         double  mfe_peak=0, mfe_price=0, mae=0;
         double  atr_at_entry=0, spread_at_entry=0, size=0;
         int64_t entry_ts=0, entry_bar_seq=0;
+        // Pyramid layers (S112). Layer[0] is the base entry; n_layers=1
+        // means non-pyramid (compatible with pre-S112 behavior).
+        Layer  layers[MAX_LAYERS];
+        int    n_layers          = 0;
+        int    next_pyramid_idx  = 1;
+
+        double total_size() const {
+            double s = 0.0;
+            for (int i = 0; i < n_layers; ++i) if (layers[i].active) s += layers[i].size;
+            return s > 0.0 ? s : size;
+        }
+        double weighted_entry() const {
+            double sv = 0.0, ss = 0.0;
+            for (int i = 0; i < n_layers; ++i) {
+                if (layers[i].active) { sv += layers[i].entry * layers[i].size; ss += layers[i].size; }
+            }
+            return ss > 0.0 ? sv / ss : entry;
+        }
     } m_pos;
 
     bool has_open_position() const noexcept { return m_pos.active; }
@@ -144,6 +178,10 @@ public:
         m_pos.entry=entry_px; m_pos.hard_sl=sl_px; m_pos.hard_tp=tp_px; m_pos.trail_sl=sl_px;
         m_pos.mfe_price=entry_px; m_pos.atr_at_entry=m_signal_atr; m_pos.spread_at_entry=spread;
         m_pos.size=size; m_pos.entry_ts=now_ms; m_pos.entry_bar_seq=m_bars_seen;
+        // S112: register base layer (layer 0)
+        m_pos.layers[0] = {true, entry_px, size};
+        m_pos.n_layers = 1;
+        m_pos.next_pyramid_idx = 1;
 
         char buf[256];
         std::snprintf(buf, sizeof(buf),
@@ -286,18 +324,64 @@ private:
         if (bars_held >= MAX_HOLD_BARS) {
             _close(bid, ask, now_ms, "TIME_STOP", ext_close); m_cooldown_until = now_ms + COOLDOWN_SEC*1000LL; return;
         }
+
+        // ---- Pyramid adds (S112): only after BE armed; trend still aligned ----
+        if (PYRAMID_ON && m_pos.be_armed && m_pos.next_pyramid_idx < MAX_LAYERS) {
+            static const double pyr_thresh[]    = {0.0, 1.0, 1.5, 2.0, 3.0};
+            static const double pyr_size_mult[] = {1.0, 0.80, 0.65, 0.50, 0.40};
+            const int idx = m_pos.next_pyramid_idx;
+            const double threshold = pyr_thresh[idx] * m_pos.atr_at_entry;
+            // Require EMAs still aligned with original direction
+            const bool trend_with = (m_pos.is_long && m_ema9.value > m_ema21.value)
+                                 || (!m_pos.is_long && m_ema9.value < m_ema21.value);
+            if (trend_with && m_pos.mfe_peak >= threshold) {
+                const double base_size = m_pos.layers[0].size;
+                double add_size = base_size * pyr_size_mult[idx];
+                add_size = std::floor(add_size / 0.01) * 0.01;
+                add_size = std::max(LOT_MIN, std::min(LOT_MAX, add_size));
+                const double add_entry = m_pos.is_long ? ask : bid;
+                m_pos.layers[idx] = {true, add_entry, add_size};
+                m_pos.n_layers = idx + 1;
+                m_pos.next_pyramid_idx = idx + 1;
+                char b2[256];
+                std::snprintf(b2, sizeof(b2),
+                    "[GRD] PYRAMID L%d %s entry=%.2f size=%.3f mfe=%.2f\n",
+                    idx + 1, m_pos.is_long?"LONG":"SHORT",
+                    add_entry, add_size, m_pos.mfe_peak);
+                std::printf("%s", b2); std::fflush(stdout);
+            }
+        }
     }
 
     void _close(double bid, double ask, int64_t now_ms, const char* reason, const CloseCallback* ext_close) {
         const double exit_px = m_pos.is_long ? bid : ask;
-        const double move = m_pos.is_long ? (exit_px - m_pos.entry) : (m_pos.entry - exit_px);
-        const double pnl_pts_lots = move * m_pos.size;
-        const double pnl_usd = pnl_pts_lots * USD_PER_PT_LOT;
+
+        // S112: compute weighted total PnL across all active layers
+        double total_pnl_pts_lots = 0.0;
+        double total_size         = 0.0;
+        for (int i = 0; i < m_pos.n_layers; ++i) {
+            if (!m_pos.layers[i].active) continue;
+            const double layer_move = m_pos.is_long
+                ? (exit_px - m_pos.layers[i].entry)
+                : (m_pos.layers[i].entry - exit_px);
+            total_pnl_pts_lots += layer_move * m_pos.layers[i].size;
+            total_size         += m_pos.layers[i].size;
+        }
+        // Fallback for pre-S112 single-leg path (no layers populated)
+        if (total_size <= 0.0) {
+            const double move = m_pos.is_long ? (exit_px - m_pos.entry) : (m_pos.entry - exit_px);
+            total_pnl_pts_lots = move * m_pos.size;
+            total_size         = m_pos.size;
+        }
+        const double pnl_usd = total_pnl_pts_lots * USD_PER_PT_LOT;
+        const double wentry  = m_pos.weighted_entry();
 
         char buf[384];
         std::snprintf(buf, sizeof(buf),
-            "[GRD] CLOSE %s entry=%.2f exit=%.2f pnl=$%.2f size=%.3f mfe=%.2f mae=%.2f be=%d bars=%d reason=%s\n",
-            m_pos.is_long?"LONG":"SHORT", m_pos.entry, exit_px, pnl_usd, m_pos.size,
+            "[GRD] CLOSE %s entry=%.2f exit=%.2f pnl=$%.2f size=%.3f layers=%d "
+            "mfe=%.2f mae=%.2f be=%d bars=%d reason=%s\n",
+            m_pos.is_long?"LONG":"SHORT", wentry, exit_px, pnl_usd, total_size,
+            m_pos.n_layers,
             m_pos.mfe_peak, m_pos.mae, (int)m_pos.be_armed,
             (int)(m_bars_seen - m_pos.entry_bar_seq), reason);
         std::printf("%s", buf); std::fflush(stdout);
@@ -305,10 +389,10 @@ private:
         omega::TradeRecord tr;
         tr.engine="GoldRegimeDaily"; tr.symbol="XAUUSD";
         tr.side=m_pos.is_long?"LONG":"SHORT"; tr.regime="D1_REGIME";
-        tr.entryPrice=m_pos.entry; tr.exitPrice=exit_px; tr.size=m_pos.size;
-        tr.pnl=pnl_pts_lots; tr.entryTs=m_pos.entry_ts/1000LL; tr.exitTs=now_ms/1000LL;
+        tr.entryPrice=wentry; tr.exitPrice=exit_px; tr.size=total_size;
+        tr.pnl=total_pnl_pts_lots; tr.entryTs=m_pos.entry_ts/1000LL; tr.exitTs=now_ms/1000LL;
         tr.exitReason=reason;
-        tr.mfe=m_pos.mfe_peak*m_pos.size; tr.mae=m_pos.mae*m_pos.size;
+        tr.mfe=m_pos.mfe_peak*total_size; tr.mae=m_pos.mae*total_size;
         tr.spreadAtEntry=m_pos.spread_at_entry; tr.shadow=shadow_mode;
         if (ext_close && *ext_close) (*ext_close)(tr);
         else if (on_close_cb) on_close_cb(tr);

@@ -432,6 +432,13 @@ static void init_engines(const std::string& cfg_path)
     g_gold_regime_daily.BE_BUFFER_PTS          = 1.00;
     g_gold_regime_daily.TRAIL_DIST             = 99.0;  // disabled ratchet by design
     g_gold_regime_daily.REVERSAL_ADVERSE_GATE  = 0.50;
+    // S112: PYRAMID_ON = true. Pyramid sweep result:
+    //   PYR=Y tr=99/tp=12: PnL $12,725 / PF 2.17 / WR 75.9% / DD $8,507
+    //   PYR=N tr=99/tp=12: PnL $5,854 / PF 2.35 / WR 92.6% / DD $2,303
+    // 2.17x PnL uplift, PF slightly degrades, DD ~3.7x. Net PnL/DD ratio
+    // remains favorable (~1.5x). Operator can flip back to false if DD
+    // is undesirable; pyramid layers compound size during trend continuation.
+    g_gold_regime_daily.PYRAMID_ON             = true;
     g_gold_regime_daily.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
     };
