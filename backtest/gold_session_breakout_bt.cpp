@@ -271,9 +271,16 @@ static void apply_config(omega::GoldSessionBreakoutEngine& e, const Config& c) {
     e.SL_ATR_MULT  = 1.5;
     e.TP_ATR_MULT  = 3.0;
     e.TRAIL_TIGHT  = 0.12;
-    e.LOSS_CUT_PCT  = 0.05;
-    e.BE_ARM_PCT    = 0.03;
-    e.BE_BUFFER_PCT = 0.012;
+    // S63 protection DISABLED for sweep -- the validated GSP $15K/PF1.45
+    // result was on a no-S63 version of the engine. LOSS_CUT_PCT=0.05 at
+    // base_entry=4500 = 2.25pt cold cut, which fires AT OR BEFORE the hard
+    // SL at 1.5*ATR for most ATR values, amputating the trail before it
+    // can develop. Setting these to 0.0 reproduces the shape the GSP
+    // sweep validated. If we want to test S63 separately, we add it as a
+    // fifth knob in the sweep grid -- but baseline first.
+    e.LOSS_CUT_PCT  = 0.0;
+    e.BE_ARM_PCT    = 0.0;
+    e.BE_BUFFER_PCT = 0.0;
     e.L2_GATE_ENABLED = false;
     e.shadow_mode = true;
     e.enabled     = true;       // harness override -- production keeps false

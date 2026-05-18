@@ -362,7 +362,18 @@ static void init_engines(const std::string& cfg_path)
     //
     // shadow_mode=true. Do NOT promote until observed through a chop regime.
     // S63 in-flight protection: same VWR pattern as XauusdFvg.
-    g_gold_scalp_pyramid.enabled     = true;
+    // 2026-05-18 S100c: DISABLED. The "validated GSP $15K / PF 1.45" edge
+    // was a bar-level-harness artifact. The audit (backtest/gsp_s63_audit_
+    // bt.cpp) drove the GSP CLASS tick-level with S63=OFF (matching the
+    // harness shape exactly) and produced -$16,935 / PF 0.62 over the
+    // same 154M tick / 26-month tape. The harness reported 72 TP_HITs
+    // (+$3,998); tick-level execution produced 0. AvgWin collapsed from
+    // $12.58 (harness) to $5.54 (class) because tick-level exits the
+    // trail before the bar's intra-bar peak is reached. Disabling
+    // pending tick-level-validated exit philosophy (see SESSION_HANDOFF_
+    // 2026-05-18b.md). Do NOT re-enable without harness-class agreement
+    // to within 10% on PnL.
+    g_gold_scalp_pyramid.enabled     = false;
     g_gold_scalp_pyramid.shadow_mode = true;
     g_gold_scalp_pyramid.LOOKBACK    = 8;     // Donchian channel bars (M5) -- sweep best
     g_gold_scalp_pyramid.SL_ATR_MULT = 1.5;   // SL = 1.5 * ATR14 -- sweep v2 best (wider, 71% WR)
