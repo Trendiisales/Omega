@@ -576,7 +576,7 @@ R"OMEGA5(
       <div class="last-sig">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
           <span style="font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:1.5px;">Last Signals</span>
-          <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.3);border-radius:3px;padding:0 5px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;line-height:18px;">BELL</button>
+          <button id="bellBtn" onclick="toggleBell()" style="margin-left:auto;background:rgba(255,214,0,.1);border:1px solid rgba(255,214,0,0.3);border-radius:3px;padding:0 5px;cursor:pointer;font-size:9px;color:#ffd600;font-family:inherit;line-height:18px;">🔕 ARM BELL</button>
           <button onclick="clearLedger()" style="margin-left:6px;background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,0.3);border-radius:3px;padding:0 5px;cursor:pointer;font-size:9px;color:#ff3355;font-family:inherit;line-height:18px;" title="Clear session ledger">CLEAR SESSION</button>
         </div>
         <div id="lastSignalDetail" style="display:flex;flex-direction:column;gap:1px;"><span style="color:var(--t2);font-size:11px;">Waiting for first signal...</span></div>
@@ -738,20 +738,21 @@ R"OMEGA8(
 function toggleBell(){
   _bellEnabled=!_bellEnabled;
   const b=document.getElementById('bellBtn');
-  if(b){b.textContent=_bellEnabled?'? ARMED':'? ARM BELL';b.style.color=_bellEnabled?'var(--green)':'#ffd600';b.style.borderColor=_bellEnabled?'rgba(0,217,126,0.4)':'rgba(255,214,0,0.4)';}
+  if(b){b.textContent=_bellEnabled?'🔔 ARMED':'🔕 ARM BELL';b.style.color=_bellEnabled?'var(--green)':'#ffd600';b.style.borderColor=_bellEnabled?'rgba(0,217,126,0.4)':'rgba(255,214,0,0.4)';}
   if(_bellEnabled&&!_audioCtx){try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(_audioCtx.state==='suspended')_audioCtx.resume();}catch(e){}}
   if(_bellEnabled&&_audioCtx)_playTestBell();
 })OMEGA8"
 R"OMEGA9(
 
-function _playTestBell(){try{const ctx=_audioCtx;if(!ctx)return;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.35,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.35);o.start(t);o.stop(t+0.4);}catch(e){}})OMEGA9"
+function _flashBell(c){const b=document.getElementById('bellBtn');if(!b)return;const orig=b.style.background;b.style.background=c||'rgba(255,214,0,0.7)';setTimeout(function(){b.style.background=orig;},280);}
+function _playTestBell(){try{console.log('[BELL] test fire');_flashBell('rgba(255,214,0,0.85)');const ctx=_audioCtx;if(!ctx){console.log('[BELL] no AudioContext -- click ARM BELL again');return;}if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,880],[0.18,1100],[0.36,1320]].forEach(function(p){const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=p[1];const st=t+p[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(0.7,st+0.01);g.gain.exponentialRampToValueAtTime(0.001,st+0.45);o.start(st);o.stop(st+0.5);});}catch(e){console.log('[BELL] test error',e);}})OMEGA9"
 R"OMEGA10(
 
-function _playWinBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,880,1040],[0.2,1100,1320]].forEach(([dt,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0,t+dt);g.gain.linearRampToValueAtTime(i?0.8:1.6,t+dt+0.008);g.gain.exponentialRampToValueAtTime(0.001,t+dt+1.2);o.start(t+dt);o.stop(t+dt+1.3);});});}catch(e){}})OMEGA10"
+function _playWinBell(){if(!_bellEnabled||!_audioCtx)return;try{console.log('[BELL] WIN');_flashBell('rgba(0,217,126,0.8)');const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,880,1040],[0.2,1100,1320]].forEach(([dt,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0,t+dt);g.gain.linearRampToValueAtTime(i?0.8:1.6,t+dt+0.008);g.gain.exponentialRampToValueAtTime(0.001,t+dt+1.2);o.start(t+dt);o.stop(t+dt+1.3);});});}catch(e){console.log('[BELL] win error',e);}})OMEGA10"
 R"OMEGA11(
 
-function _playLossBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sawtooth';o.frequency.setValueAtTime(280,t);o.frequency.linearRampToValueAtTime(130,t+0.3);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.8,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.5);o.start(t);o.stop(t+0.55);}catch(e){}}
-function _playEntryBell(){if(!_bellEnabled||!_audioCtx)return;try{const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,600,900],[0.12,750,1100]].forEach(([dt,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0,t+dt);g.gain.linearRampToValueAtTime(i?0.6:1.2,t+dt+0.005);g.gain.exponentialRampToValueAtTime(0.001,t+dt+0.25);o.start(t+dt);o.stop(t+dt+0.3);});});}catch(e){}}
+function _playLossBell(){if(!_bellEnabled||!_audioCtx)return;try{console.log('[BELL] LOSS');_flashBell('rgba(255,59,59,0.8)');const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sawtooth';o.frequency.setValueAtTime(280,t);o.frequency.linearRampToValueAtTime(130,t+0.3);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.8,t+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+0.5);o.start(t);o.stop(t+0.55);}catch(e){console.log('[BELL] loss error',e);}}
+function _playEntryBell(){if(!_bellEnabled||!_audioCtx)return;try{console.log('[BELL] ENTRY');_flashBell('rgba(100,180,255,0.8)');const ctx=_audioCtx;if(ctx.state==='suspended')ctx.resume();const t=ctx.currentTime;[[0,600,900],[0.12,750,1100]].forEach(([dt,f1,f2])=>{[f1,f2].forEach((freq,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(0,t+dt);g.gain.linearRampToValueAtTime(i?0.6:1.2,t+dt+0.005);g.gain.exponentialRampToValueAtTime(0.001,t+dt+0.25);o.start(t+dt);o.stop(t+dt+0.3);});});}catch(e){console.log('[BELL] entry error',e);}}
 )OMEGA11"
 R"OMEGA12(
 
