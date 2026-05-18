@@ -2369,17 +2369,27 @@ static void init_engines(const std::string& cfg_path)
     if (g_disable_dxy_divergence) {
         g_gold_stack.set_subengine_audit_disabled("DXYDivergence", true);
     }
+    if (g_disable_asian_range) {
+        // S99d 2026-05-18: live bleed — first London-window fire at 07:01 UTC took
+        // -$5.28 on a 2.5R setup (entry 4548.65 / SL 4540.65 / TP 4568.65, exited
+        // 4543.65 in 2m29s, "AsianRange SL"). Backtest profile is thin: 382 trades
+        // over 2yr, WR=49.7% (~coinflip), total=$279, avg=$0.73, MaxDD=$105. One
+        // bad day wipes weeks of edge. Disable now, retune with fresh sweep before
+        // re-enable. Sub-engine name "AsianRange" matches engine_ ctor at L1183.
+        g_gold_stack.set_subengine_audit_disabled("AsianRange", true);
+    }
     {
         char _msg[512];
         snprintf(_msg, sizeof(_msg),
                  "[GOLDSTACK-AUDIT] sub-engine gates: "
                  "session_mom=%s intraday_seas=%s vwap_snap=%s "
-                 "vwap_stretch=%s dxy_div=%s\n",
+                 "vwap_stretch=%s dxy_div=%s asian_rng=%s\n",
                  g_disable_session_momentum       ? "DISABLED" : "active",
                  g_disable_intraday_seasonality   ? "DISABLED" : "active",
                  g_disable_vwap_snapback          ? "DISABLED" : "active",
                  g_disable_vwap_stretch_reversion ? "DISABLED" : "active",
-                 g_disable_dxy_divergence         ? "DISABLED" : "active");
+                 g_disable_dxy_divergence         ? "DISABLED" : "active",
+                 g_disable_asian_range            ? "DISABLED" : "active");
         std::cout << _msg;
         std::cout.flush();
     }

@@ -267,6 +267,7 @@ static bool g_disable_intraday_seasonality     = true;  // GoldStack sub-engine
 static bool g_disable_vwap_snapback            = true;  // GoldStack sub-engine
 static bool g_disable_vwap_stretch_reversion   = true;  // GoldStack sub-engine
 static bool g_disable_dxy_divergence           = true;  // GoldStack sub-engine
+static bool g_disable_asian_range              = true;  // GoldStack sub-engine — S99d 2026-05-18: bleed on live (-$5.28 first London fire, backtest only $279/2yr at 49.7% WR, marginal edge, retune queued
 
 // Disabled 2026-04-16 after 6-day sweep / 1.5M ticks showed no edge across 7776 configs.
 
