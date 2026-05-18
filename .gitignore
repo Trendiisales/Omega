@@ -139,6 +139,15 @@ backtest/sweep_microscalper*.csv
 backtest/*_trades.csv
 backtest/*_recost.csv
 
+# Standalone-harness stderr captures (often hundreds of MB when the engine
+# logs every OPEN/CLOSE/BE_ARMED line for a multi-config sweep). Keep
+# locally for analysis but never push to GitHub. 2026-05-18 part C: added
+# after a 245MB bband_scalp_results.txt push rejection.
+backtest/*_results.txt
+backtest/quick_scalp_v*_results.txt
+backtest/quick_scalp_results.txt
+backtest/bband_scalp_results.txt
+
 # ── Compiled backtest binaries (no extension; built from .cpp of same name) ───
 backtest/TsmomCellBacktest_mac
 backtest/calibrate_risk_thresholds

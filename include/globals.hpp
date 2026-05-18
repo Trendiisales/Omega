@@ -564,6 +564,12 @@ static omega::XauusdFvgEngine                 g_xauusd_fvg;
 // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + aggressive trail
 #include "GoldScalpPyramidEngine.hpp"
 static omega::GoldScalpPyramidEngine          g_gold_scalp_pyramid;
+// 2026-05-18 (part B): BBandScalp -- M1 Bollinger + RSI mean-reversion scalper
+//   Structural-signal entry (BB extreme touch + RSI extreme) replacing the
+//   tick-velocity entry that proved counter-predictive in QuickScalp.
+//   shadow_mode=true by default. See engine class header for full design.
+#include "BBandScalpEngine.hpp"
+static omega::BBandScalpEngine                g_bband_scalp;
 // S11 P3b: g_hybrid_sp / g_hybrid_nq / g_hybrid_us30 / g_hybrid_nas100 static
 //   decls removed (engines culled in P3a + P3b).
 // S12 P3c (2026-05-07): IndexHybridBracketEngine.hpp file DELETED + #include

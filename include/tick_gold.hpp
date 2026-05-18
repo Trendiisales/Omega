@@ -75,7 +75,9 @@ static void on_tick_gold(
         // other gold engines will not enter while FVG holds a position.
         g_xauusd_fvg.has_open_position()             ||
         // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + trail.
-        g_gold_scalp_pyramid.has_open_position()          ;
+        g_gold_scalp_pyramid.has_open_position()          ||
+        // 2026-05-18 (part B): BBandScalp -- M1 BB + RSI mean-reversion scalper.
+        g_bband_scalp.has_open_position()                 ;
 
     // ?? Trend day detection ???????????????????????????????????????????????
     const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -2515,6 +2517,27 @@ static void on_tick_gold(
                                  g_macro_ctx.gold_wall_below,
                                  g_macro_ctx.gold_l2_real,
                                  nullptr);
+
+    // ?? BBandScalpEngine (2026-05-18 part B) ?????????????????????????????????
+    // M1 Bollinger + RSI mean-reversion scalper. Indicator inputs are pulled
+    // from the persisted M1 atomics (bb_upper/mid/lower, rsi14, atr14) so the
+    // engine is firable from tick 1 with no cold-prime window. Entry gated by
+    // gold_can_enter (which already folds in g_bband_scalp.has_open_position()
+    // via gold_any_open). Close callback wired in engine_init.hpp ->
+    // handle_closed_trade.
+    //
+    // L2 not required: engine accepts l2_imbalance / l2_real but does NOT
+    // block entry on stale L2. This lets the engine validate on price-only
+    // historical tape and run unmodified in live regardless of DOM freshness.
+    g_bband_scalp.on_tick(bid, ask, now_ms_g,
+                          gold_can_enter,
+                          g_bars_gold.m1.ind.bb_upper.load(std::memory_order_relaxed),
+                          g_bars_gold.m1.ind.bb_mid  .load(std::memory_order_relaxed),
+                          g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed),
+                          g_bars_gold.m1.ind.rsi14   .load(std::memory_order_relaxed),
+                          g_bars_gold.m1.ind.atr14   .load(std::memory_order_relaxed),
+                          g_macro_ctx.gold_l2_imbalance,
+                          g_macro_ctx.gold_l2_real);
 
     // ?? NBM London position management -- ALWAYS runs when position open ??
     // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a

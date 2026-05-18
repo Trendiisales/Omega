@@ -376,6 +376,44 @@ static void init_engines(const std::string& cfg_path)
         handle_closed_trade(tr);
     };
 
+    // ?? BBandScalp config (2026-05-18 part B) ????????????????????????????????
+    // M1 Bollinger + RSI mean-reversion scalper. Structural-signal entry,
+    // BE-lock asymmetric exit. Indicators come from g_bars_gold.m1.ind
+    // atomics (BB_P=20, K=2.0 in production OHLCBarEngine) -- no internal
+    // bar accumulator, no warmup. Promote to live only after the sweep
+    // (backtest/bband_scalp_bt.cpp) confirms positive edge on fresh tape.
+    //
+    // Default parameters are the "medium" point of the sweep grid -- 35/65
+    // RSI thresholds, BE arm at 0.30pt (covers cost), 0.40pt structural SL.
+    // If sweep best differs, update these values in the same commit that
+    // promotes from shadow.
+    //
+    // 2026-05-18 part C: DISABLED. The 27-config / 154M-tick sweep showed
+    // PF 0.07-0.09 and WR 7-8% across every BB period / stdev / RSI
+    // threshold combination -- BB extreme touches on gold M1 are
+    // continuation signals, not reversal signals. Engine code retained
+    // for reference + future redesign; enabled=false so no shadow trades
+    // pollute the ledger. See backtest/bband_scalp_results.txt for
+    // evidence. Re-enable only after entry-filter redesign + new sweep.
+    g_bband_scalp.enabled         = false;
+    g_bband_scalp.shadow_mode     = true;
+    g_bband_scalp.RSI_OVERSOLD    = 35.0;
+    g_bband_scalp.RSI_OVERBOUGHT  = 65.0;
+    g_bband_scalp.SL_PTS          = 0.40;
+    g_bband_scalp.BE_ARM_PTS      = 0.30;
+    g_bband_scalp.BE_BUFFER_PTS   = 0.05;
+    g_bband_scalp.TRAIL_TIGHT_PTS = 0.15;
+    g_bband_scalp.ATR_FLOOR_M1    = 0.50;
+    g_bband_scalp.ATR_CAP_M1      = 8.00;
+    g_bband_scalp.SPREAD_CAP_PTS  = 0.40;
+    g_bband_scalp.MAX_HOLD_SEC    = 600;
+    g_bband_scalp.COOLDOWN_SEC    = 60;
+    g_bband_scalp.LOT_BASE        = 0.01;
+    g_bband_scalp.COST_COVER_MULT = 1.0;
+    g_bband_scalp.on_close_cb     = [](const omega::TradeRecord& tr) {
+        handle_closed_trade(tr);
+    };
+
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
     //   LatencyEdgeStack: was DISABLED (VPS RTT ~68ms, needs <1ms). No positions
@@ -1704,6 +1742,25 @@ static void init_engines(const std::string& cfg_path)
                                 g_bars_gold.m5.get_bars());
             printf("[STARTUP] GoldScalpPyramid primed: atomics(ema9=%.2f ema21=%.2f atr=%.2f) bars_fed=%d\n",
                    m5_ema9, m5_ema21, m5_atr14, fed);
+            fflush(stdout);
+        }
+
+        // 2026-05-18 (part B): BBandScalp diagnostic prime.
+        // Engine has no internal indicator state -- bb_upper/mid/lower, rsi14,
+        // atr14 are read from g_bars_gold.m1.ind atomics on every tick.
+        // prime_from_atomics is a no-op-with-log here, mirroring GSP's
+        // startup-wiring shape so the startup log confirms M1 atomics are
+        // live before the NY session opens.
+        if (m1_ok) {
+            const double m1_bbu = g_bars_gold.m1.ind.bb_upper.load(std::memory_order_relaxed);
+            const double m1_bbm = g_bars_gold.m1.ind.bb_mid  .load(std::memory_order_relaxed);
+            const double m1_bbl = g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed);
+            const double m1_rsi = g_bars_gold.m1.ind.rsi14   .load(std::memory_order_relaxed);
+            const double m1_atr = g_bars_gold.m1.ind.atr14   .load(std::memory_order_relaxed);
+            g_bband_scalp.prime_from_atomics(m1_bbu, m1_bbm, m1_bbl, m1_rsi, m1_atr);
+            printf("[STARTUP] BBandScalp primed: bb=[%.2f, %.2f, %.2f] rsi=%.1f atr=%.2f "
+                   "(reads atomics each tick -- no warmup needed)\n",
+                   m1_bbl, m1_bbm, m1_bbu, m1_rsi, m1_atr);
             fflush(stdout);
         }
 
