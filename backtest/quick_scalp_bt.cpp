@@ -188,7 +188,13 @@ struct Driver {
     Driver() {
         engine.on_close_cb = [this](const omega::TradeRecord& tr) {
             trades.push_back(tr);
-            cum_pnl += tr.pnl;
+            // S99h fix (2026-05-18 part C): engine reports tr.pnl in pts*lots
+            // (production path multiplies by tick_value downstream). The
+            // harness does not run trade_lifecycle, so multiply here to
+            // track the USD equity curve / max DD.
+            constexpr double XAUUSD_TICK_VALUE = 100.0;
+            const double pnl_usd = tr.pnl * XAUUSD_TICK_VALUE;
+            cum_pnl += pnl_usd;
             if (cum_pnl > peak_pnl) peak_pnl = cum_pnl;
             double dd = peak_pnl - cum_pnl;
             if (dd > max_dd) max_dd = dd;
@@ -344,11 +350,14 @@ static Result summarize(const Config& cfg, const std::vector<omega::TradeRecord>
     r.max_dd  = max_dd;
     r.n_trades = (int)trades.size();
 
+    // S99h fix: engine reports tr.pnl in pts*lots; harness scales to USD.
+    constexpr double XAUUSD_TICK_VALUE = 100.0;
     double gross_win = 0.0, gross_loss = 0.0;
     for (const auto& t : trades) {
-        r.gross_pnl += t.pnl;
-        if (t.pnl > 0.0) { ++r.n_wins;   gross_win  += t.pnl; }
-        else if (t.pnl < 0.0) { ++r.n_losses; gross_loss += -t.pnl; }
+        const double pnl_usd = t.pnl * XAUUSD_TICK_VALUE;
+        r.gross_pnl += pnl_usd;
+        if (pnl_usd > 0.0)      { ++r.n_wins;   gross_win  += pnl_usd; }
+        else if (pnl_usd < 0.0) { ++r.n_losses; gross_loss += -pnl_usd; }
         if (t.exitReason == "BE_SCRATCH") ++r.n_scratches;
     }
     r.wr_pct = (r.n_trades > 0) ? (100.0 * r.n_wins / r.n_trades) : 0.0;

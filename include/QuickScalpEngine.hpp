@@ -444,13 +444,25 @@ private:
 
     // =========================================================================
     // Close position, emit TradeRecord, set cooldown
+    //
+    // S99h fix (2026-05-18 part C): tr.pnl/mfe/mae are reported in
+    // points*lots (NOT USD). trade_lifecycle.hpp:218-224 multiplies by
+    // tick_value_multiplier(tr.symbol) = 100 for XAUUSD downstream.
+    // Pre-fix this engine pre-multiplied by USD_PER_PT_LOT, so the
+    // downstream multiplier ran a second time and every QSC trade was
+    // reported 100x larger than reality. See GoldScalpPyramidEngine.hpp
+    // _close_position for the full rationale and XauThreeBar30mEngine.hpp
+    // for the reference convention.
     // =========================================================================
     void _close(double bid, double ask, int64_t now_ms, const char* reason) {
         const double exit_px = m_pos.is_long ? bid : ask;
         const double pnl_pts = m_pos.is_long
             ? (exit_px - m_pos.entry)
             : (m_pos.entry - exit_px);
-        const double pnl_usd = pnl_pts * USD_PER_PT_LOT * m_pos.size;
+        // pnl_pts_lots goes into tr.pnl (downstream multiplies to USD).
+        // pnl_usd is kept ONLY for the human-readable stdout log below.
+        const double pnl_pts_lots = pnl_pts * m_pos.size;
+        const double pnl_usd      = pnl_pts_lots * USD_PER_PT_LOT;
 
         char buf[512];
         snprintf(buf, sizeof(buf),
@@ -471,12 +483,12 @@ private:
         tr.entryPrice = m_pos.entry;
         tr.exitPrice  = exit_px;
         tr.size       = m_pos.size;
-        tr.pnl        = pnl_usd;
+        tr.pnl        = pnl_pts_lots;                  // pts*lots; downstream mults to USD
         tr.entryTs    = m_pos.entry_ts / 1000LL;
         tr.exitTs     = now_ms / 1000LL;
         tr.exitReason = reason;
-        tr.mfe        = m_pos.mfe;
-        tr.mae        = m_pos.mae;
+        tr.mfe        = m_pos.mfe * m_pos.size;        // pts*lots
+        tr.mae        = m_pos.mae * m_pos.size;        // pts*lots
         tr.shadow     = shadow_mode;
 
         if (on_close_cb) on_close_cb(tr);

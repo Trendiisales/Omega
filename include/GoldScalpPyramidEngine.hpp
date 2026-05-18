@@ -772,6 +772,15 @@ private:
 
     // =========================================================================
     // Close all layers, fire TradeRecord
+    //
+    // S99h fix (2026-05-18 part C): tr.pnl/mfe/mae are reported in
+    // points*lots (NOT USD). trade_lifecycle.hpp:218-224 multiplies them by
+    // tick_value_multiplier(tr.symbol) = 100 for XAUUSD to produce USD,
+    // before apply_realistic_costs runs. Pre-fix this engine pre-multiplied
+    // by USD_PER_PT_LOT internally, so the downstream multiplier ran a
+    // second time and every GSP trade was reported 100x larger than reality
+    // (e.g. 2026-05-18 12:35 LOSS_CUT showed $1150, actual was $11.50).
+    // Reference convention: XauThreeBar30mEngine.hpp:561-562 + 591/594-595.
     // =========================================================================
     void _close_position(double bid, double ask, int64_t now_ms,
                          const char* reason,
@@ -779,31 +788,34 @@ private:
     {
         double exit_px = m_pos.is_long ? bid : ask;
 
-        // Compute total PnL across all layers
-        double total_pnl = 0.0;
-        double total_size = 0.0;
+        // Compute total PnL across all layers in points*lots units.
+        // The local total_pnl_usd is kept ONLY for the human-readable
+        // stdout log line below; it is NOT written into tr.pnl.
+        double total_pnl_pts_lots = 0.0;
+        double total_size         = 0.0;
         for (int i = 0; i < m_pos.n_layers; ++i) {
             if (!m_pos.layers[i].active) continue;
             double layer_move = m_pos.is_long
                 ? (exit_px - m_pos.layers[i].entry)
                 : (m_pos.layers[i].entry - exit_px);
-            total_pnl  += layer_move * m_pos.layers[i].size * USD_PER_PT_LOT;
-            total_size += m_pos.layers[i].size;
+            total_pnl_pts_lots += layer_move * m_pos.layers[i].size;
+            total_size         += m_pos.layers[i].size;
         }
+        const double total_pnl_usd = total_pnl_pts_lots * USD_PER_PT_LOT;
 
         char buf[512];
         snprintf(buf, sizeof(buf),
             "[GSP] CLOSE %s entry=%.2f exit=%.2f pnl=$%.2f size=%.3f layers=%d "
             "mfe=%.2f mae=%.2f bars=%d reason=%s shadow=%s\n",
             m_pos.is_long ? "LONG" : "SHORT",
-            m_pos.weighted_entry(), exit_px, total_pnl, total_size,
+            m_pos.weighted_entry(), exit_px, total_pnl_usd, total_size,
             m_pos.n_layers, m_pos.mfe_peak, m_pos.mae,
             (int)(m_bars_seen - m_pos.entry_bar_seq), reason,
             shadow_mode ? "true" : "false");
         std::printf("%s", buf);
         std::fflush(stdout);
 
-        // Fire TradeRecord
+        // Fire TradeRecord -- convention is points*lots for pnl/mfe/mae.
         omega::TradeRecord tr;
         tr.engine     = "GoldScalpPyramid";
         tr.symbol     = "XAUUSD";
@@ -812,12 +824,12 @@ private:
         tr.entryPrice = m_pos.weighted_entry();
         tr.exitPrice  = exit_px;
         tr.size       = total_size;
-        tr.pnl        = total_pnl;
-        tr.entryTs    = m_pos.entry_ts / 1000LL;  // TradeRecord uses unix seconds
+        tr.pnl        = total_pnl_pts_lots;                 // pts*lots; downstream mults to USD
+        tr.entryTs    = m_pos.entry_ts / 1000LL;            // TradeRecord uses unix seconds
         tr.exitTs     = now_ms / 1000LL;
         tr.exitReason = reason;
-        tr.mfe        = m_pos.mfe_peak;
-        tr.mae        = m_pos.mae;
+        tr.mfe        = m_pos.mfe_peak * total_size;        // pts*lots
+        tr.mae        = m_pos.mae      * total_size;        // pts*lots
         tr.shadow     = shadow_mode;
 
         if (ext_close && *ext_close) {
