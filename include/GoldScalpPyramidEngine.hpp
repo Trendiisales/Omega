@@ -830,6 +830,7 @@ private:
         tr.exitReason = reason;
         tr.mfe        = m_pos.mfe_peak * total_size;        // pts*lots
         tr.mae        = m_pos.mae      * total_size;        // pts*lots
+        tr.spreadAtEntry = m_pos.spread_at_entry;           // needed by apply_realistic_costs
         tr.shadow     = shadow_mode;
 
         if (ext_close && *ext_close) {

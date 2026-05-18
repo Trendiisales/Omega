@@ -489,6 +489,7 @@ private:
         tr.exitReason = reason;
         tr.mfe        = m_pos.mfe * m_pos.size;        // pts*lots
         tr.mae        = m_pos.mae * m_pos.size;        // pts*lots
+        tr.spreadAtEntry = m_pos.spread_at_entry;      // needed by apply_realistic_costs
         tr.shadow     = shadow_mode;
 
         if (on_close_cb) on_close_cb(tr);
