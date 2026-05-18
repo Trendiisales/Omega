@@ -70,9 +70,9 @@ public:
     double REVERSAL_ADVERSE_GATE = 0.50;
 
     static constexpr double USD_PER_PT_LOT = 100.0;
-    static constexpr double RISK_DOLLARS   = 50.0;
+    static constexpr double RISK_DOLLARS   = 1200.0;   // S110: scaled 24x to hit $5K bar
     static constexpr double LOT_MIN        = 0.01;
-    static constexpr double LOT_MAX        = 0.10;       // larger cap for big-trade regime
+    static constexpr double LOT_MAX        = 2.50;     // S110: cap raised to support scaling
 
     static constexpr double ATR_FLOOR     = 10.0;     // H4 ATR much larger
     static constexpr double ATR_CAP       = 80.0;
