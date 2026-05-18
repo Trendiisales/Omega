@@ -1047,27 +1047,52 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(); }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
-            // Clear in-memory ledger + rename today's CSV so it won't be re-read
+            // Clear in-memory ledger + rename today's CSV so it won't be re-read.
+            //
+            // S113 2026-05-19: path list must match buildHistoryJson's DAILY_DIRS
+            // exactly, OR /api/history will still find the CSV in a directory the
+            // clear endpoint never touched (e.g. C:\Omega\build\Release\logs\trades).
+            // Also iterate ALL paths (don't break on first rename) -- the CSV may
+            // exist in multiple directories during a deploy transition.
             ct = "application/json";
             g_omegaLedger.resetDaily();
-            // Rename today's trade CSV so /api/history returns empty
             char today[16] = {};
-            { time_t t = time(nullptr); struct tm ti{}; gmtime_s(&ti, &t);
+            { time_t t = time(nullptr); struct tm ti{};
+#ifdef _WIN32
+              gmtime_s(&ti, &t);
+#else
+              gmtime_r(&t, &ti);
+#endif
               snprintf(today, sizeof(today), "%04d-%02d-%02d",
                        ti.tm_year+1900, ti.tm_mon+1, ti.tm_mday); }
+            // Match buildHistoryJson DAILY_DIRS list verbatim
             static const char* DIRS[] = {
+                "logs/trades",
                 "C:\\Omega\\logs\\trades",
-                "logs/trades", nullptr };
-            bool cleared = false;
+                "C:\\Omega\\build\\Release\\logs\\trades",
+                "../logs/trades",
+                "..\\..\\logs\\trades",
+                nullptr };
+            int n_cleared = 0;
             for (int pi = 0; DIRS[pi]; ++pi) {
-                char src[512], dst[512];
+                char src[512], dst[640];
                 snprintf(src, sizeof(src), "%s/omega_trade_closes_%s.csv", DIRS[pi], today);
-                snprintf(dst, sizeof(dst), "%s/omega_trade_closes_%s.cleared.csv", DIRS[pi], today);
-                if (rename(src, dst) == 0) { cleared = true; break; }
+                // Append unix-ts suffix so repeated clears don't collide on dst
+                snprintf(dst, sizeof(dst), "%s/omega_trade_closes_%s.cleared_%lld.csv",
+                         DIRS[pi], today, (long long)time(nullptr));
+                if (rename(src, dst) == 0) {
+                    ++n_cleared;
+                    printf("[LEDGER-CLEAR] renamed %s -> %s\n", src, dst);
+                }
             }
-            body = cleared ? "{\"ok\":true,\"msg\":\"Ledger cleared\"}"
-                           : "{\"ok\":true,\"msg\":\"Ledger cleared (no CSV found)\"}" ;
-            printf("[LEDGER-CLEAR] Session ledger cleared via API\n"); fflush(stdout);
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                "{\"ok\":true,\"msg\":\"Ledger cleared\",\"csvs_renamed\":%d}",
+                n_cleared);
+            body = msg;
+            printf("[LEDGER-CLEAR] Session ledger cleared via API (csvs_renamed=%d)\n",
+                   n_cleared);
+            fflush(stdout);
         }
         else if (strstr(buf, "GET /api/shadow_csv"))  {
             // Serve the full shadow CSV for remote analysis -- tries all known paths
