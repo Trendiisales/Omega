@@ -32,6 +32,7 @@
 #include <ctime>
 #include <algorithm>
 #include <deque>
+#include <vector>
 #include <functional>
 #include <string>
 #include "OmegaCostGuard.hpp"
@@ -70,6 +71,11 @@ public:
     // Raising to 3.0+ filters out low-volatility entries that produce
     // sub-cost MFE on M5.
     double ATR_FLOOR_OVERRIDE = 0.0;  // 0 = use static ATR_FLOOR constant
+
+    // 2026-05-19 part-F: if true, require current ATR > VOL_EXPANSION_MULT
+    // x rolling median of last 100 ATR values. Selects only high-vol breakouts.
+    bool   VOL_EXPANSION       = false;
+    double VOL_EXPANSION_MULT  = 1.5;
 
     static constexpr double USD_PER_PT_LOT = 100.0;
     static constexpr double RISK_DOLLARS   = 50.0;
@@ -185,6 +191,8 @@ private:
     } m_atr;
 
     std::deque<double> m_highs, m_lows;
+    std::deque<double> m_atr_history;  // part-F: for VOL_EXPANSION rank
+    static constexpr int VOL_WINDOW_SIZE = 100;
     bool m_signal_pending=false, m_signal_long=false;
     double m_signal_atr=0;
     int64_t m_cooldown_until=0;
@@ -197,6 +205,12 @@ private:
         m_highs.push_back(bar.high); m_lows.push_back(bar.low);
         if ((int)m_highs.size() > LOOKBACK+1) { m_highs.pop_front(); m_lows.pop_front(); }
 
+        // part-F: roll ATR history for vol-expansion rank
+        if (m_atr.primed) {
+            m_atr_history.push_back(m_atr.value);
+            while ((int)m_atr_history.size() > VOL_WINDOW_SIZE) m_atr_history.pop_front();
+        }
+
         m_signal_pending=false;
         if (!m_atr.primed || !m_ema9.primed || !m_ema21.primed) return;
         if ((int)m_highs.size() <= LOOKBACK) return;
@@ -208,6 +222,15 @@ private:
         if (!session_ok) return;
         const double atr_floor_eff = (ATR_FLOOR_OVERRIDE > 0.0) ? ATR_FLOOR_OVERRIDE : ATR_FLOOR;
         if (m_atr.value < atr_floor_eff || m_atr.value > ATR_CAP) return;
+
+        // part-F: vol-expansion filter -- current ATR > MULT * rolling median
+        if (VOL_EXPANSION) {
+            if ((int)m_atr_history.size() < VOL_WINDOW_SIZE) return;
+            std::vector<double> atrs(m_atr_history.begin(), m_atr_history.end());
+            std::nth_element(atrs.begin(), atrs.begin() + atrs.size()/2, atrs.end());
+            const double atr_med = atrs[atrs.size()/2];
+            if (m_atr.value < VOL_EXPANSION_MULT * atr_med) return;
+        }
 
         double ch_high=-1e18, ch_low=1e18;
         for (int k=(int)m_highs.size()-1-LOOKBACK; k<(int)m_highs.size()-1; ++k) {
