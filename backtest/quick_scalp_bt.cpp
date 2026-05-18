@@ -53,13 +53,18 @@
 // Param config struct for the sweep
 // -----------------------------------------------------------------------------
 struct Config {
+    omega::QuickScalpEngine::Mode mode;
     double velocity_pts;
     double be_arm_pts;
-    double tp_atr_mult;
-    double l2_long_min;
+    double tp_min_pts;
     double sl_pts;
     int    vel_window_sec;
+    int    l2_avg_window;
 };
+
+static const char* mode_name(omega::QuickScalpEngine::Mode m) {
+    return m == omega::QuickScalpEngine::Mode::MOMENTUM ? "MOMENT" : "FADE";
+}
 
 // -----------------------------------------------------------------------------
 // Per-config result
@@ -319,13 +324,13 @@ static int64_t parse_csv_and_run(Driver& drv, const char* path) {
 // Apply a config to the engine and reset
 // -----------------------------------------------------------------------------
 static void apply_config(omega::QuickScalpEngine& e, const Config& c) {
+    e.mode                = c.mode;
     e.VELOCITY_PTS        = c.velocity_pts;
     e.BE_ARM_PTS          = c.be_arm_pts;
-    e.TP_ATR_MULT         = c.tp_atr_mult;
-    e.L2_IMBAL_LONG_MIN   = c.l2_long_min;
-    e.L2_IMBAL_SHORT_MAX  = 1.0 - c.l2_long_min;  // symmetric
+    e.TP_MIN_PTS          = c.tp_min_pts;
     e.SL_PTS              = c.sl_pts;
     e.VELOCITY_WINDOW_SEC = c.vel_window_sec;
+    e.L2_AVG_WINDOW       = c.l2_avg_window;
     e.shadow_mode         = true;
     e.enabled             = true;
 }
@@ -360,17 +365,20 @@ int main(int argc, char** argv) {
 
     std::fprintf(stderr, "[QSC-BT] CSV: %s\n", csv_path);
 
-    // Parameter sweep grid (16 configs to start)
+    // Parameter sweep grid -- FAST tunings + mode comparison
     std::vector<Config> configs;
-    const double velocity_pts_grid[] = {0.6, 1.0};
-    const double be_arm_pts_grid[]   = {0.6, 0.8};
-    const double tp_atr_mult_grid[]  = {1.0, 1.5};
-    const double l2_long_min_grid[]  = {0.60, 0.70};
-    for (double v : velocity_pts_grid)
-        for (double b : be_arm_pts_grid)
-            for (double t : tp_atr_mult_grid)
-                for (double l : l2_long_min_grid)
-                    configs.push_back({v, b, t, l, /*sl_pts*/1.0, /*vel_win*/20});
+    using Mode = omega::QuickScalpEngine::Mode;
+    const Mode modes[]               = {Mode::FADE, Mode::MOMENTUM};
+    const double velocity_pts_grid[] = {0.20, 0.30, 0.50};
+    const double be_arm_pts_grid[]   = {0.20, 0.30, 0.40};
+    const double tp_min_pts_grid[]   = {0.80, 1.00};
+    const int    vel_window_grid[]   = {2, 3, 5};
+    for (Mode m : modes)
+        for (double v : velocity_pts_grid)
+            for (double b : be_arm_pts_grid)
+                for (double t : tp_min_pts_grid)
+                    for (int vw : vel_window_grid)
+                        configs.push_back({m, v, b, t, /*sl_pts*/0.60, vw, /*l2_avg*/3});
 
     std::printf("============================================================================\n");
     std::printf("  QuickScalpEngine sweep -- %zu configs\n", configs.size());
@@ -382,9 +390,9 @@ int main(int argc, char** argv) {
 
     for (size_t i = 0; i < configs.size(); ++i) {
         const auto& cfg = configs[i];
-        std::fprintf(stderr, "[QSC-BT] === Config %zu/%zu: VEL=%.2f BE_ARM=%.2f TP_ATR=%.2f L2_MIN=%.2f ===\n",
-                     i + 1, configs.size(),
-                     cfg.velocity_pts, cfg.be_arm_pts, cfg.tp_atr_mult, cfg.l2_long_min);
+        std::fprintf(stderr, "[QSC-BT] === Config %zu/%zu: MODE=%s VEL=%.2f(%ds) BE=%.2f TP=%.2f ===\n",
+                     i + 1, configs.size(), mode_name(cfg.mode),
+                     cfg.velocity_pts, cfg.vel_window_sec, cfg.be_arm_pts, cfg.tp_min_pts);
 
         Driver drv;
         apply_config(drv.engine, cfg);
@@ -410,26 +418,28 @@ int main(int argc, char** argv) {
     std::sort(results.begin(), results.end(),
               [](const Result& a, const Result& b) { return a.gross_pnl > b.gross_pnl; });
 
-    std::printf("\n============================================================================\n");
+    std::printf("\n=========================================================================================\n");
     std::printf("  RESULTS (sorted by gross PnL)\n");
-    std::printf("============================================================================\n");
-    std::printf("%-6s %-7s %-8s %-7s %-6s %-9s %-12s %-7s %-9s %-7s\n",
-                "VEL", "BE_ARM", "TP_ATR", "L2_MIN", "N", "WR%", "PnL$", "PF", "DD$", "Scratch");
-    std::printf("----------------------------------------------------------------------------\n");
+    std::printf("=========================================================================================\n");
+    std::printf("%-7s %-6s %-6s %-6s %-6s %-7s %-7s %-12s %-7s %-9s %-7s\n",
+                "MODE", "VEL", "VW", "BE", "TP", "N", "WR%", "PnL$", "PF", "DD$", "Scratch");
+    std::printf("-----------------------------------------------------------------------------------------\n");
     for (const auto& r : results) {
-        std::printf("%-6.2f %-7.2f %-8.2f %-7.2f %-6d %-9.1f %-+12.2f %-7.2f %-9.2f %-7d\n",
-                    r.cfg.velocity_pts, r.cfg.be_arm_pts, r.cfg.tp_atr_mult, r.cfg.l2_long_min,
+        std::printf("%-7s %-6.2f %-6d %-6.2f %-6.2f %-7d %-7.1f %-+12.2f %-7.2f %-9.2f %-7d\n",
+                    mode_name(r.cfg.mode), r.cfg.velocity_pts, r.cfg.vel_window_sec,
+                    r.cfg.be_arm_pts, r.cfg.tp_min_pts,
                     r.n_trades, r.wr_pct, r.gross_pnl, r.profit_factor, r.max_dd, r.n_scratches);
     }
-    std::printf("============================================================================\n");
+    std::printf("=========================================================================================\n");
 
     if (!results.empty()) {
         const auto& best = results.front();
         std::printf("\nBest config:\n");
-        std::printf("  VELOCITY_PTS      = %.2f\n", best.cfg.velocity_pts);
-        std::printf("  BE_ARM_PTS        = %.2f\n", best.cfg.be_arm_pts);
-        std::printf("  TP_ATR_MULT       = %.2f\n", best.cfg.tp_atr_mult);
-        std::printf("  L2_IMBAL_LONG_MIN = %.2f\n", best.cfg.l2_long_min);
+        std::printf("  MODE                = %s\n", mode_name(best.cfg.mode));
+        std::printf("  VELOCITY_PTS        = %.2f over %d sec\n", best.cfg.velocity_pts, best.cfg.vel_window_sec);
+        std::printf("  BE_ARM_PTS          = %.2f\n", best.cfg.be_arm_pts);
+        std::printf("  TP_MIN_PTS          = %.2f\n", best.cfg.tp_min_pts);
+        std::printf("  SL_PTS              = %.2f\n", best.cfg.sl_pts);
         std::printf("  Trades=%d  WR=%.1f%%  PnL=$%+.2f  PF=%.2f  DD=$%.2f  Scratch=%d\n",
                     best.n_trades, best.wr_pct, best.gross_pnl,
                     best.profit_factor, best.max_dd, best.n_scratches);

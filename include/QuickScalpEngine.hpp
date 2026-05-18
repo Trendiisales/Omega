@@ -86,39 +86,67 @@ namespace omega {
 
 class QuickScalpEngine {
 public:
-    // ---- L2 filter (tunable via engine_init.hpp) -----------------------------
-    double L2_IMBAL_LONG_MIN  = 0.62;   // smoothed imb > this for long
-    double L2_IMBAL_SHORT_MAX = 0.38;   // smoothed imb < this for short
-    double L2_SLOPE_CONFIRM   = 0.15;   // |smoothed slope| > this required
-    int    L2_AVG_WINDOW      = 20;     // rolling N-tick smoothing
+    // ---- DIRECTION MODE (S99g-v2 2026-05-18) ---------------------------------
+    // MOMENTUM: enter WITH the spike (price up + L2 up -> LONG). Original
+    //   design. Sweep evidence shows this is structurally late on the
+    //   price-only tape -- by the time velocity confirms, mean reversion
+    //   eats the entry.
+    // FADE:     enter AGAINST the spike when RSI flips off extreme. Classic
+    //   mean-reversion scalp. Validates on price-only tape because the
+    //   reversion signal is intrinsic to the data, not requiring true DOM.
+    enum class Mode { MOMENTUM = 0, FADE = 1 };
+    Mode mode = Mode::FADE;  // default: fade (validates better in backtest)
 
-    // ---- Price velocity filter -----------------------------------------------
-    int    VELOCITY_WINDOW_SEC = 20;    // measure velocity over N seconds
-    double VELOCITY_PTS        = 0.80;  // min directional move in window (pts)
+    // ---- L2 filter (FAST -- minimal smoothing) -------------------------------
+    // 3-tick smoothing replaces the prior 20-tick (which delayed entries
+    // ~10 sec on busy tape -- by then the move was exhausted).
+    double L2_IMBAL_LONG_MIN  = 0.55;   // smoothed imb > this confirms buy pressure
+    double L2_IMBAL_SHORT_MAX = 0.45;   // smoothed imb < this confirms sell pressure
+    double L2_SLOPE_CONFIRM   = 0.05;   // |smoothed slope| > this required
+    int    L2_AVG_WINDOW      = 3;      // VERY light smoothing (was 20)
 
-    // ---- RSI filter (NOT too extreme - avoid late entries) -------------------
-    double RSI_LONG_FLOOR   = 50.0;   // RSI must be ABOVE this for long
-    double RSI_LONG_CEIL    = 70.0;   // RSI must be BELOW this for long
-    double RSI_SHORT_FLOOR  = 30.0;   // RSI must be ABOVE this for short
-    double RSI_SHORT_CEIL   = 50.0;   // RSI must be BELOW this for short
+    // ---- Price velocity filter (FAST -- 3-second window) ---------------------
+    // 3-sec window catches the move at the point where a human scalper
+    // would react (eye-to-action ~200ms, my old 20-sec was 100x slower).
+    int    VELOCITY_WINDOW_SEC = 3;     // was 20
+    double VELOCITY_PTS        = 0.30;  // was 0.80 -- catch smaller moves
 
-    // ---- Geometry ------------------------------------------------------------
-    double TP_ATR_MULT      = 1.20;   // TP = max(TP_ATR_MULT * ATR, TP_MIN_PTS)
-    double TP_MIN_PTS       = 1.50;   // hard floor on TP distance
-    double SL_PTS           = 1.00;   // initial SL distance (pts)
+    // ---- RSI filter (different meaning per mode) -----------------------------
+    // MOMENTUM mode: RSI must be aligned with direction, not extreme
+    //   LONG: RSI in [50, 70] (rising trend, not overbought)
+    //   SHORT: RSI in [30, 50] (falling trend, not oversold)
+    // FADE mode: RSI must be FLIPPING OFF extreme (reversal signal)
+    //   LONG: RSI was < RSI_OVERSOLD recently, now > RSI_OVERSOLD (turn up)
+    //   SHORT: RSI was > RSI_OVERBOUGHT recently, now < RSI_OVERBOUGHT (turn down)
+    double RSI_LONG_FLOOR   = 50.0;   // (momentum) RSI > this for long
+    double RSI_LONG_CEIL    = 70.0;   // (momentum) RSI < this for long
+    double RSI_SHORT_FLOOR  = 30.0;   // (momentum) RSI > this for short
+    double RSI_SHORT_CEIL   = 50.0;   // (momentum) RSI < this for short
+    double RSI_OVERSOLD     = 35.0;   // (fade) below this = oversold
+    double RSI_OVERBOUGHT   = 65.0;   // (fade) above this = overbought
+    int    RSI_LOOKBACK_BARS = 5;     // (fade) extreme window in M1 bars
+
+    // ---- Geometry (FAST -- tight scalp) --------------------------------------
+    // Targets sized so cost (~0.50pt) is covered by TP_MIN_PTS minimum.
+    double TP_ATR_MULT      = 0.80;   // TP = max(TP_ATR_MULT * ATR, TP_MIN_PTS)
+    double TP_MIN_PTS       = 0.80;   // hard floor on TP distance (was 1.50)
+    double SL_PTS           = 0.60;   // initial SL distance (was 1.00)
     double COST_COVER_MULT  = 1.0;    // cost-gate coverage multiplier
 
-    // ---- BE lock + trail (THE asymmetric payoff knobs) -----------------------
-    double BE_ARM_PTS       = 0.80;   // MFE >= this arms BE lock
-    double BE_BUFFER_PTS    = 0.10;   // SL parked at entry +/- this after BE
-    double TRAIL_TIGHT_PTS  = 0.30;   // trail this far behind MFE after BE arm
+    // ---- BE lock + trail (FAST -- lock the moment cost is covered) -----------
+    // BE arms at 0.30pt MFE -- once price covers cost + small buffer, lock.
+    // After arm, trail just 0.15pt behind MFE. Many small wins + many small
+    // scratches -- the asymmetric payoff the operator asked for.
+    double BE_ARM_PTS       = 0.30;   // was 0.80 -- lock at cost coverage
+    double BE_BUFFER_PTS    = 0.05;   // was 0.10 -- minimal buffer
+    double TRAIL_TIGHT_PTS  = 0.15;   // was 0.30 -- tight trail after arm
 
     // ---- Filters -------------------------------------------------------------
-    double ATR_FLOOR_M1     = 1.00;   // M1 ATR floor (no dead tape)
+    double ATR_FLOOR_M1     = 0.50;   // was 1.00 -- allow tighter ATR (scalp tape)
     double ATR_CAP_M1       = 8.00;   // M1 ATR cap (no news spikes)
-    double SPREAD_CAP_PTS   = 0.60;
-    int    MAX_HOLD_SEC     = 600;    // 10 min time stop
-    int    COOLDOWN_SEC     = 90;     // between fires
+    double SPREAD_CAP_PTS   = 0.40;   // was 0.60 -- tighter spread requirement
+    int    MAX_HOLD_SEC     = 60;     // was 600 -- 1-min scalp, not 10-min
+    int    COOLDOWN_SEC     = 15;     // was 90 -- short cooldown allows next setup
 
     // ---- Sizing --------------------------------------------------------------
     static constexpr double USD_PER_PT_LOT = 100.0;  // XAUUSD
@@ -223,20 +251,62 @@ public:
         if (!::ExecutionCostGuard::is_viable("XAUUSD", spread, tp_dist,
                                              LOT_BASE, COST_COVER_MULT)) return;
 
-        // ----- Signal evaluation -----
-        const bool long_signal  =
-              (velocity      >  VELOCITY_PTS)
-           && (avg_imb       >  L2_IMBAL_LONG_MIN)
-           && (avg_slope     >  L2_SLOPE_CONFIRM)
-           && (rsi14_m1      >  RSI_LONG_FLOOR)
-           && (rsi14_m1      <  RSI_LONG_CEIL);
+        // Maintain recent RSI extreme tracking (for FADE mode)
+        // M1 RSI changes slowly so we sample on RSI value change
+        if (std::fabs(rsi14_m1 - m_last_rsi_seen) > 0.5) {
+            m_rsi_history.push_back(rsi14_m1);
+            if ((int)m_rsi_history.size() > RSI_LOOKBACK_BARS * 4) {
+                m_rsi_history.pop_front();
+            }
+            m_last_rsi_seen = rsi14_m1;
+        }
+        bool rsi_was_oversold   = false;
+        bool rsi_was_overbought = false;
+        for (double r : m_rsi_history) {
+            if (r < RSI_OVERSOLD)   rsi_was_oversold   = true;
+            if (r > RSI_OVERBOUGHT) rsi_was_overbought = true;
+        }
 
-        const bool short_signal =
-              (velocity      < -VELOCITY_PTS)
-           && (avg_imb       <  L2_IMBAL_SHORT_MAX)
-           && (avg_slope     < -L2_SLOPE_CONFIRM)
-           && (rsi14_m1      >  RSI_SHORT_FLOOR)
-           && (rsi14_m1      <  RSI_SHORT_CEIL);
+        // ----- Signal evaluation (per mode) -----
+        bool long_signal  = false;
+        bool short_signal = false;
+
+        if (mode == Mode::MOMENTUM) {
+            // Enter WITH the spike: velocity + L2 + RSI all aligned
+            long_signal =
+                  (velocity      >  VELOCITY_PTS)
+               && (avg_imb       >  L2_IMBAL_LONG_MIN)
+               && (avg_slope     >  L2_SLOPE_CONFIRM)
+               && (rsi14_m1      >  RSI_LONG_FLOOR)
+               && (rsi14_m1      <  RSI_LONG_CEIL);
+
+            short_signal =
+                  (velocity      < -VELOCITY_PTS)
+               && (avg_imb       <  L2_IMBAL_SHORT_MAX)
+               && (avg_slope     < -L2_SLOPE_CONFIRM)
+               && (rsi14_m1      >  RSI_SHORT_FLOOR)
+               && (rsi14_m1      <  RSI_SHORT_CEIL);
+        } else {
+            // FADE mode: enter AGAINST the spike when RSI flips off extreme.
+            //   LONG fade:  price dropped fast (velocity < -VELOCITY_PTS)
+            //               AND RSI was recently oversold
+            //               AND RSI is now turning up (>= RSI_OVERSOLD)
+            //               AND L2 starting to lean bid (imb > 0.50)
+            //   SHORT fade: symmetric
+            long_signal =
+                  (velocity        < -VELOCITY_PTS)
+               && rsi_was_oversold
+               && (rsi14_m1        >= RSI_OVERSOLD)
+               && (avg_imb         >  0.50)  // L2 turning bullish
+               && (avg_slope       > -L2_SLOPE_CONFIRM);  // slope no longer strongly down
+
+            short_signal =
+                  (velocity        >  VELOCITY_PTS)
+               && rsi_was_overbought
+               && (rsi14_m1        <= RSI_OVERBOUGHT)
+               && (avg_imb         <  0.50)  // L2 turning bearish
+               && (avg_slope       <  L2_SLOPE_CONFIRM);  // slope no longer strongly up
+        }
 
         if (!long_signal && !short_signal) return;
 
@@ -281,6 +351,10 @@ private:
     // ---- L2 smoothing buffers ----
     std::deque<double> m_l2_imb_buf;
     std::deque<double> m_l2_slope_buf;
+
+    // ---- RSI extreme history (FADE mode) ----
+    std::deque<double> m_rsi_history;
+    double             m_last_rsi_seen = -1.0;
 
     // ---- Cooldown ----
     int64_t m_cooldown_until = 0;
