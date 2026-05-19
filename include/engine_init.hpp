@@ -1170,21 +1170,22 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.enabled     = true;
         // S116 2026-05-19: bit 6 (0x40) added for EmaCross8_21 cell from the
         // S114 long-trend ensemble research (Python +$30,966 / Sharpe +1.96
-        // / 25mo; C++ +$32,025 / 95 trades).  Default mask leaves bit 6 OFF
-        // so prod behaviour is unchanged.  To activate after S115 evidence
-        // file lands + a 2-week shadow window: change to 0x49.  Recommended
-        // intermediate step: set shadow_mode = true temporarily on this
-        // engine, mask = 0x49, validate the cell trades against the C++
-        // backtest CSV for ≥2 weeks, then revert shadow_mode = false.
-        g_xau_tf_4h.cell_enable_mask = 0x09;  // Donchian + Keltner only
+        // / 25mo; C++ +$32,025 / 95 trades).
+        // S117 2026-05-19: activated.  Service-level mode=SHADOW provides
+        // synthetic-fills safety net; engine.shadow_mode=false keeps the
+        // ledger emission identical to other live cells so we can validate
+        // EmaCross_8_21 fill rate against the S115 backtest CSV.  Expect
+        // ~4 trades/month per the C++ harness (95 trades / 25mo).
+        g_xau_tf_4h.cell_enable_mask = 0x49;  // Donchian + Keltner + EmaCross_8_21
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
         g_xau_tf_4h.warmup_from_csv(g_xau_tf_4h.warmup_csv_path);
-        printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=6"
-               " (Donchian,InsideBar_RR4to1,ER0.20_RR4to1,Keltner,ADX_Mom,RangeExpand)\n",
-               (int)g_xau_tf_4h.shadow_mode, (int)g_xau_tf_4h.enabled, g_xau_tf_4h.lot);
+        printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=7 mask=0x%X"
+               " (Donchian,InsideBar_RR4to1,ER0.20_RR4to1,Keltner,ADX_Mom,RangeExpand,EmaCross8_21_S116)\n",
+               (int)g_xau_tf_4h.shadow_mode, (int)g_xau_tf_4h.enabled, g_xau_tf_4h.lot,
+               (unsigned)g_xau_tf_4h.cell_enable_mask);
         fflush(stdout);
 
         // ── UstecTrendFollow5mEngine (S33d 2026-05-11) ───────────────────────
