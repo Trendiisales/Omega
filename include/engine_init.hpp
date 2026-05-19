@@ -1188,6 +1188,34 @@ static void init_engines(const std::string& cfg_path)
                (unsigned)g_xau_tf_4h.cell_enable_mask);
         fflush(stdout);
 
+        // ── XauTrendFollow1hEngine (S118 2026-05-19) ──────────────────────────
+        // H1 long-only ensemble, 2 cells:
+        //   bit 0: EmaCross_20_80 (long-only EMA(20,80) + slow-rising filter,
+        //                          ATR(14)x4 stop, tp_mult=20 ~= no-TP)
+        //   bit 1: Donchian_N40   (long-only break of 40-bar prior high,
+        //                          exit on close < 40-bar prior low,
+        //                          ATR(14)x5 stop)
+        // S114/S115 evidence (combined two cells, ~25mo):
+        //   A (EmaCross): +$26,024 / Sharpe +1.97 / 173 trades
+        //   C (Donchian): +$27,969 / Sharpe +2.11 / 70 trades
+        // Both shadow-emit through ledger via the bracket_on_close path so
+        // the new cells are auditable against the S115 backtest CSV from
+        // day one.  Service-level mode=SHADOW (config.ini) is the outer
+        // safety net while we validate fill rates.
+        g_xau_tf_1h.shadow_mode = false;
+        g_xau_tf_1h.enabled     = true;
+        g_xau_tf_1h.cell_enable_mask = 0x03;  // both cells
+        g_xau_tf_1h.lot         = 0.01;
+        g_xau_tf_1h.max_spread  = 1.0;
+        g_xau_tf_1h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
+        g_xau_tf_1h.init();
+        g_xau_tf_1h.warmup_from_csv(g_xau_tf_1h.warmup_csv_path);
+        printf("[OMEGA-INIT] XauTrendFollow1hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=2 mask=0x%X"
+               " (EmaCross_20_80_S118, Donchian_N40_S118)\n",
+               (int)g_xau_tf_1h.shadow_mode, (int)g_xau_tf_1h.enabled, g_xau_tf_1h.lot,
+               (unsigned)g_xau_tf_1h.cell_enable_mask);
+        fflush(stdout);
+
         // ── UstecTrendFollow5mEngine (S33d 2026-05-11) ───────────────────────
         // Donchian N=20 at 5m bars on USTEC. Convergent edge across 4
         // unrelated signal families on the 15-day L2 sample (n=111,
@@ -4150,6 +4178,11 @@ static void init_engines(const std::string& cfg_path)
         _make_xau_tf_source("XauTrendFollow4h", &g_xau_tf_4h));
     g_open_positions.register_source("XauTrendFollowD1",
         _make_xau_tf_source("XauTrendFollowD1", &g_xau_tf_d1));
+    // S118: H1 long-only ensemble.  Same generic lambda factory works
+    // because XauTfPos1h shares the same field names as XauTfPos
+    // (active, is_long, entry_px, mfe, mae, etc).
+    g_open_positions.register_source("XauTrendFollow1h",
+        _make_xau_tf_source("XauTrendFollow1h", &g_xau_tf_1h));
 
     // ── S66-followup (2026-05-13): 8 more sources (H1SwingGold,
     //    UstecTrendFollow 5m/HTF, FX BreakoutEngine x5). Mechanical extension

@@ -815,6 +815,22 @@ static void on_tick_gold(
                     g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
                     now_ms_g, ca_on_close);
             }
+            // S118 2026-05-19: XauTrendFollow1hEngine H1 dispatch.
+            // Long-only 2-cell ensemble (EmaCross_20_80 + Donchian_N40).
+            // Per-tick management runs via g_xau_tf_1h.on_tick() in the
+            // post-bar tick loop alongside g_xau_tf_4h.on_tick().
+            {
+                omega::XauTfBar1h tf_h1{};
+                tf_h1.bar_start_ms = s_bar_h1_ms;
+                tf_h1.open  = s_cur_h1.open;
+                tf_h1.high  = s_cur_h1.high;
+                tf_h1.low   = s_cur_h1.low;
+                tf_h1.close = s_cur_h1.close;
+                g_xau_tf_1h.on_h1_bar(
+                    tf_h1, bid, ask,
+                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+                    now_ms_g, bracket_on_close);
+            }
             // TsmomPortfolio H1 dispatch -- Tier-1 ship 2026-04-30. Drives
             // 5 long cells: H1 directly, H2/H4/H6/D1 synthesised internally
             // from H1 bars. Self-contained shadow engine; runs independently
@@ -2017,6 +2033,8 @@ static void on_tick_gold(
     // ER0.20, Keltner, ADX_Mom). S33d shipped 2026-05-11; extended to 5 cells
     // in S33e. Single-position per cell, 5 max concurrent. Shadow-default.
     g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // S118 2026-05-19: H1 long-only ensemble tick management.
+    g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTrendFollowD1Engine tick management -- 3 daily-timeframe cells
     // (Momentum, Keltner, ADX_Mom). S33e shipped 2026-05-11. Daily bars are
     // built internally from H4 stream. Single-position per cell, 3 max

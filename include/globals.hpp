@@ -384,6 +384,14 @@ static omega::GoldBracketEngine   g_bracket_gold;
 #include "XauTrendFollow4hEngine.hpp"
 static omega::XauTrendFollow4hEngine g_xau_tf_4h;
 
+// S118 2026-05-19: XauTrendFollow1hEngine -- H1 long-only ensemble (2 cells:
+//   EmaCross_20_80 + Donchian_N40).  Companion to XauTrendFollow4hEngine
+//   EmaCross_8_21 (S116/S117) -- together they form the verified 3-cell
+//   ensemble from S114 research (~$28k OOS / 25mo / Sharpe +3.21).  Driven
+//   by the s_cur_h1 bar already aggregated in tick_gold.hpp.
+#include "XauTrendFollow1hEngine.hpp"
+static omega::XauTrendFollow1hEngine g_xau_tf_1h;
+
 // 2026-05-11 S33d: UstecTrendFollow5mEngine -- Donchian N=20 at 5m bars
 //   on USTEC. Convergent edge across 4 unrelated signal families on the
 //   15-day L2 sample. Shadow-only; KEEP shadow until 6+ months of USTEC

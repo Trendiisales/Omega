@@ -1,0 +1,481 @@
+#pragma once
+// =============================================================================
+//  XauTrendFollow1hEngine.hpp -- XAU H1 long-only trend ensemble (S118 2026-05-19)
+// =============================================================================
+//
+//  PROVENANCE
+//
+//  Built 2026-05-19 from the S114 long-trend ensemble research.
+//  Two cells, both long-only:
+//
+//      [A] EmaCross_20_80    -- EMA(20) > EMA(80) with EMA(80) rising
+//                               over the last 3 bars. ATR(14)x4 stop.
+//                               Python (S114): +$25,478 (+25.48%) Sharpe +1.97
+//                                              MDD -2.48% / 181 trades / 25mo
+//                               C++    (S115): +$26,024 (+26.02%) / 173 trades
+//
+//      [C] Donchian_N40      -- Long breakout above 40-bar prior high.
+//                               Exit on close below 40-bar prior low.
+//                               ATR(14)x5 stop.
+//                               Python (S114): +$29,634 (+29.63%) Sharpe +2.11
+//                                              MDD -2.33% / 75 trades / 25mo
+//                               C++    (S115): +$27,969 (+27.97%) / 70 trades
+//
+//  Companion to XauTrendFollow4hEngine::EmaCross_8_21 (S116) added on
+//  the H4 timeframe.  Together they form the 3-cell ensemble from the
+//  research: A on H1, B on H4 (in the 4h engine), C on H1.
+//
+//  SAFETY
+//
+//      - shadow_mode = true by default; engine_init.hpp sets the actual
+//        value.  Service-level mode=SHADOW (config.ini) is the outer
+//        safety net.
+//      - DOES NOT touch ANY protected core engine file.
+//      - 0.01 lot cap per cell; max 2 concurrent positions in this engine.
+//      - Spread cap = 1.0 USD; engines refuse new entries when spread
+//        exceeds this (avoids fill quality issues at session boundaries).
+//      - Cooldown per cell = 1 bar (H1) after each trade closes.
+//      - Long-only by design.  Slow-EMA-rising filter and Donchian-low
+//        exit signal both suppress short-side entries entirely.
+//      - All entries use the broker-aware fill side: long on ask.
+//      - ExecutionCostGuard::is_viable() gates every entry, matching the
+//        4hEngine pattern.
+//      - Cell C (Donchian40) does NOT use a bracketed TP -- exit happens
+//        when close drops below the 40-bar prior low (handled in
+//        on_h1_bar bar-close logic).  Cell A uses the standard bracket
+//        with tp_mult=20.0 (effectively no TP) -- runners exit only on
+//        the ATR-based stop.
+//
+//  USAGE
+//
+//      // globals.hpp:
+//      static omega::XauTrendFollow1hEngine g_xau_tf_1h;
+//
+//      // engine_init.hpp:
+//      g_xau_tf_1h.shadow_mode = kShadowDefault;
+//      g_xau_tf_1h.enabled     = true;
+//      g_xau_tf_1h.cell_enable_mask = 0x03;  // both cells on
+//      g_xau_tf_1h.lot         = 0.01;
+//      g_xau_tf_1h.max_spread  = 1.0;
+//      g_xau_tf_1h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
+//      g_xau_tf_1h.init();
+//      g_xau_tf_1h.warmup_from_csv(g_xau_tf_1h.warmup_csv_path);
+//
+//      // tick_gold.hpp at H1 close (after g_bars_gold.h1.add_bar):
+//      omega::XauTfBar1h tf_h1{};
+//      tf_h1.bar_start_ms = s_bar_h1_ms;
+//      tf_h1.open  = s_cur_h1.open;
+//      tf_h1.high  = s_cur_h1.high;
+//      tf_h1.low   = s_cur_h1.low;
+//      tf_h1.close = s_cur_h1.close;
+//      g_xau_tf_1h.on_h1_bar(tf_h1, bid, ask,
+//          g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
+//          now_ms_g, bracket_on_close);
+//
+//      // tick_gold.hpp on every tick (alongside g_xau_tf_4h.on_tick):
+//      g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+// =============================================================================
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <deque>
+#include <fstream>
+#include <functional>
+#include <string>
+
+#include "OmegaTradeLedger.hpp"  // omega::TradeRecord
+#include "OmegaCostGuard.hpp"
+
+namespace omega {
+
+// ---------- Bar input
+struct XauTfBar1h {
+    int64_t bar_start_ms = 0;
+    double  open  = 0.0;
+    double  high  = 0.0;
+    double  low   = 0.0;
+    double  close = 0.0;
+};
+
+// ---------- Per-cell position state
+struct XauTfPos1h {
+    bool        active             = false;
+    bool        is_long            = false;
+    double      entry_px           = 0.0;
+    double      tp_px              = 0.0;
+    double      sl_px              = 0.0;
+    double      atr_at_entry       = 0.0;
+    int64_t     entry_ts_ms        = 0;
+    int         bars_held          = 0;
+    int         cooldown_bars      = 0;
+    double      mfe                = 0.0;
+    double      mae                = 0.0;
+    std::string broker_position_id;
+    std::string entry_clOrdId;
+};
+
+// ---------- Cell config
+enum class XauTf1hFamily { EmaCross20_80, Donchian40 };
+struct XauTf1hCellConfig {
+    XauTf1hFamily family;
+    double        sl_mult;
+    double        tp_mult;    // for EmaCross use 20.0 (no-TP); Donchian uses signal-based exit so this is moot
+    const char*   name;
+};
+
+// Two cells, both long-only.  Ordering matters: bit 0 = cell 0 = EmaCross, bit 1 = Donchian.
+static constexpr XauTf1hCellConfig kXauTf1hCells[] = {
+    { XauTf1hFamily::EmaCross20_80, 4.0, 20.0, "EmaCross_20_80_sl4.0_S118" },
+    { XauTf1hFamily::Donchian40,    5.0, 20.0, "Donchian_N40_sl5.0_S118"   },
+};
+static constexpr int kXauTf1hNumCells =
+    static_cast<int>(sizeof(kXauTf1hCells) / sizeof(kXauTf1hCells[0]));
+
+// =============================================================================
+//  XauTrendFollow1hEngine
+// =============================================================================
+struct XauTrendFollow1hEngine {
+public:
+    // Public knobs (set by engine_init.hpp before init()).
+    bool   shadow_mode = true;
+    bool   enabled     = false;
+    double lot         = 0.01;
+    double max_spread  = 1.0;
+    uint32_t cell_enable_mask = 0x03;  // both cells on by default; engine.enabled gates overall
+
+    // S63-pattern in-flight protection (defaults disabled).
+    double LOSS_CUT_PCT  = 0.0;
+    double BE_ARM_PCT    = 0.0;
+    double BE_BUFFER_PCT = 0.0;
+
+    std::array<XauTfPos1h, kXauTf1hNumCells> pos{};
+
+    static constexpr int kBarHistory = 128;
+    std::deque<XauTfBar1h> bars_;
+
+    static constexpr int kAtrPeriod = 14;
+    double atr14_ = 0.0;
+    int    atr_warmup_count_ = 0;
+
+    // EMA(20) / EMA(80) for cell A.  Slow-rising filter uses ema80_hist_.
+    static constexpr int kEmaFast = 20;
+    static constexpr int kEmaSlow = 80;
+    static constexpr int kSlowRiseLookback = 3;
+    double ema_fast_ = 0.0;
+    double ema_slow_ = 0.0;
+    bool   ema_initialised_ = false;
+    std::deque<double> ema_slow_hist_;
+
+    // Donchian-N for cell C.  Computed on each bar close.
+    static constexpr int kDonchN = 40;
+    double don_high_ = 0.0;
+    double don_low_  = 0.0;
+    bool   don_ready_ = false;
+
+    using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
+
+    bool warmup_active_ = false;
+
+    void init() noexcept {
+        bars_.clear();
+        atr14_ = 0.0;
+        atr_warmup_count_ = 0;
+        ema_fast_ = ema_slow_ = 0.0;
+        ema_initialised_ = false;
+        ema_slow_hist_.clear();
+        don_high_ = don_low_ = 0.0;
+        don_ready_ = false;
+        warmup_active_ = false;
+        for (auto& p : pos) p = {};
+    }
+
+    bool any_open() const noexcept {
+        for (const auto& p : pos) if (p.active) return true;
+        return false;
+    }
+
+    int open_count() const noexcept {
+        int n = 0; for (const auto& p : pos) if (p.active) ++n; return n;
+    }
+
+    // ============================================================
+    //  on_h1_bar -- called by tick_gold.hpp when an H1 bar closes
+    // ============================================================
+    void on_h1_bar(const XauTfBar1h& bar,
+                   double bid, double ask,
+                   double atr14_external,    // from g_bars_gold.h1.ind.atr14
+                   int64_t now_ms,
+                   OnCloseFn on_close) noexcept {
+        if (!enabled) return;
+
+        bars_.push_back(bar);
+        while ((int)bars_.size() > kBarHistory) bars_.pop_front();
+
+        if (atr14_external > 0.0) atr14_ = atr14_external;
+        else                       _update_local_atr();
+
+        _update_emas();
+        _update_donchian();
+
+        for (auto& p : pos) {
+            if (p.cooldown_bars > 0) --p.cooldown_bars;
+            if (p.active) ++p.bars_held;
+        }
+
+        // Donchian C exit on bar close below don_low_ takes priority over a new entry.
+        if (don_ready_ && pos[1].active && bar.close < don_low_) {
+            _close(1, bar.close, "DONCH_LOW_EXIT", now_ms, on_close);
+        }
+
+        if ((int)bars_.size() < kEmaSlow + 4) return;  // need EMA80 + slow-rise lookback
+        if (atr14_ <= 0.0) return;
+        if (ask - bid > max_spread) return;
+
+        for (int ci = 0; ci < kXauTf1hNumCells; ++ci) {
+            if (!(cell_enable_mask & (1u << ci))) continue;
+            if (pos[ci].active) continue;
+            if (pos[ci].cooldown_bars > 0) continue;
+            int side = _evaluate_signal(ci);
+            if (side <= 0) continue;     // long-only: never short
+            _fire_entry(ci, side, bid, ask, now_ms);
+        }
+        (void)on_close;
+    }
+
+    // Tick-level position management (SL/TP/BE/LOSS_CUT)
+    void on_tick(double bid, double ask, int64_t now_ms, OnCloseFn on_close) noexcept {
+        if (!enabled) return;
+        for (int ci = 0; ci < kXauTf1hNumCells; ++ci) {
+            if (!pos[ci].active) continue;
+            _manage_open(ci, bid, ask, now_ms, on_close);
+        }
+    }
+
+    void force_close(double bid, double ask, int64_t now_ms,
+                     OnCloseFn on_close, const char* reason) noexcept {
+        for (int ci = 0; ci < kXauTf1hNumCells; ++ci) {
+            if (!pos[ci].active) continue;
+            double exit_px = pos[ci].is_long ? bid : ask;
+            _close(ci, exit_px, reason ? reason : "FORCE_CLOSE", now_ms, on_close);
+        }
+    }
+
+private:
+    void _update_local_atr() noexcept {
+        if ((int)bars_.size() < 2) { atr14_ = 0.0; return; }
+        const auto& cur  = bars_.back();
+        const auto& prev = bars_[bars_.size() - 2];
+        double tr = std::max(cur.high - cur.low,
+                             std::max(std::abs(cur.high - prev.close),
+                                      std::abs(cur.low  - prev.close)));
+        if (atr_warmup_count_ < kAtrPeriod) {
+            atr14_ = (atr14_ * atr_warmup_count_ + tr) / (atr_warmup_count_ + 1);
+            ++atr_warmup_count_;
+        } else {
+            atr14_ = (atr14_ * (kAtrPeriod - 1) + tr) / kAtrPeriod;
+        }
+    }
+
+    void _update_emas() noexcept {
+        if (bars_.empty()) return;
+        const double c = bars_.back().close;
+        if (!ema_initialised_) {
+            ema_fast_ = ema_slow_ = c;
+            ema_initialised_ = true;
+        } else {
+            const double af = 2.0 / (kEmaFast + 1);
+            const double as = 2.0 / (kEmaSlow + 1);
+            ema_fast_ = af * c + (1.0 - af) * ema_fast_;
+            ema_slow_ = as * c + (1.0 - as) * ema_slow_;
+        }
+        ema_slow_hist_.push_back(ema_slow_);
+        while ((int)ema_slow_hist_.size() > (kSlowRiseLookback + 4)) {
+            ema_slow_hist_.pop_front();
+        }
+    }
+
+    void _update_donchian() noexcept {
+        const int N = kDonchN;
+        if ((int)bars_.size() < N + 1) { don_ready_ = false; return; }
+        // Donchian over the prior N bars (excluding the current bar at back()).
+        double hi = -1e18, lo = 1e18;
+        const int last = (int)bars_.size() - 1;
+        for (int i = last - N; i < last; ++i) {
+            if (bars_[i].high > hi) hi = bars_[i].high;
+            if (bars_[i].low  < lo) lo = bars_[i].low;
+        }
+        don_high_ = hi;
+        don_low_  = lo;
+        don_ready_ = true;
+    }
+
+    // ---------- Signal evaluators (long-only)
+    int _evaluate_signal(int cell_idx) const noexcept {
+        switch (kXauTf1hCells[cell_idx].family) {
+            case XauTf1hFamily::EmaCross20_80: return _sig_ema_20_80();
+            case XauTf1hFamily::Donchian40:    return _sig_donchian40();
+        }
+        return 0;
+    }
+
+    int _sig_ema_20_80() const noexcept {
+        if (!ema_initialised_) return 0;
+        if ((int)ema_slow_hist_.size() <= kSlowRiseLookback) return 0;
+        const double slow_now  = ema_slow_hist_.back();
+        const double slow_then = ema_slow_hist_[ema_slow_hist_.size() - 1 - kSlowRiseLookback];
+        const bool fast_above  = (ema_fast_ > ema_slow_);
+        const bool slow_rising = (slow_now > slow_then);
+        if (fast_above && slow_rising) return +1;
+        return 0;
+    }
+
+    int _sig_donchian40() const noexcept {
+        if (!don_ready_) return 0;
+        const auto& cur = bars_.back();
+        if (cur.close > don_high_) return +1;
+        return 0;
+    }
+
+    // ---------- Entry / exit
+    void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
+        if (warmup_active_) return;
+        const auto& cfg = kXauTf1hCells[ci];
+        double entry = ask;  // long-only
+        if (entry <= 0.0 || atr14_ <= 0.0) return;
+        double sl_dist = cfg.sl_mult * atr14_;
+        double tp_dist = cfg.tp_mult * atr14_;
+        double sl_px = entry - sl_dist;
+        double tp_px = entry + tp_dist;
+
+        // Cost gate (matches 4hEngine pattern)
+        {
+            const double spread_pts = ask - bid;
+            if (!ExecutionCostGuard::is_viable("XAUUSD", spread_pts, tp_dist, lot, 1.5)) {
+                return;
+            }
+        }
+
+        auto& p = pos[ci];
+        p.active        = true;
+        p.is_long       = true;
+        p.entry_px      = entry;
+        p.sl_px         = sl_px;
+        p.tp_px         = tp_px;
+        p.atr_at_entry  = atr14_;
+        p.entry_ts_ms   = now_ms;
+        p.bars_held     = 0;
+        p.cooldown_bars = 0;
+        p.mfe           = 0.0;
+        p.mae           = 0.0;
+        p.broker_position_id.clear();
+        p.entry_clOrdId.clear();
+        (void)side;
+    }
+
+    void _manage_open(int ci, double bid, double ask, int64_t now_ms,
+                      OnCloseFn on_close) noexcept {
+        auto& p = pos[ci];
+        if (!p.active) return;
+
+        const double mid = (bid + ask) * 0.5;
+        const double favourable = mid - p.entry_px;  // long-only
+        if (favourable > p.mfe) p.mfe = favourable;
+        if (-favourable > p.mae) p.mae = -favourable;
+
+        // S63 in-flight protection (off by default)
+        if (BE_ARM_PCT > 0.0 && BE_BUFFER_PCT >= 0.0 && p.entry_px > 0.0) {
+            const double arm_pts    = p.entry_px * BE_ARM_PCT    / 100.0;
+            const double buffer_pts = p.entry_px * BE_BUFFER_PCT / 100.0;
+            if (p.mfe >= arm_pts && favourable <= buffer_pts) {
+                _close(ci, bid, "BE_CUT", now_ms, on_close);
+                return;
+            }
+        }
+        if (LOSS_CUT_PCT > 0.0 && p.entry_px > 0.0) {
+            const double adverse       = -favourable;
+            const double loss_cut_dist = p.entry_px * LOSS_CUT_PCT / 100.0;
+            if (adverse >= loss_cut_dist) {
+                _close(ci, bid, "LOSS_CUT", now_ms, on_close);
+                return;
+            }
+        }
+
+        // SL/TP (long-only).  Bid hits for both since we exit long at bid.
+        if (bid <= p.sl_px) { _close(ci, p.sl_px, "SL_HIT", now_ms, on_close); return; }
+        if (bid >= p.tp_px) { _close(ci, p.tp_px, "TP_HIT", now_ms, on_close); return; }
+    }
+
+    void _close(int ci, double exit_px, const char* reason,
+                int64_t now_ms, OnCloseFn on_close) noexcept {
+        auto& p = pos[ci];
+        if (!p.active) return;
+
+        const double pts_move = exit_px - p.entry_px;  // long-only
+
+        omega::TradeRecord tr;
+        tr.symbol     = "XAUUSD";
+        tr.engine     = std::string("XauTrendFollow1h_") + kXauTf1hCells[ci].name;
+        tr.side       = "LONG";
+        tr.entryPrice = p.entry_px;
+        tr.exitPrice  = exit_px;
+        tr.tp         = p.tp_px;
+        tr.sl         = p.sl_px;
+        tr.size       = lot;
+        tr.entryTs    = p.entry_ts_ms / 1000;
+        tr.exitTs     = now_ms / 1000;
+        tr.exitReason = reason;
+        tr.regime     = kXauTf1hCells[ci].name;
+        tr.shadow     = shadow_mode;
+        tr.pnl        = pts_move * lot;
+        tr.mfe        = p.mfe;
+        tr.mae        = p.mae;
+
+        if (on_close) on_close(tr);
+
+        p.active        = false;
+        p.broker_position_id.clear();
+        p.entry_clOrdId.clear();
+        p.cooldown_bars = 1;
+    }
+
+public:
+    // ---------- Warmup from CSV (matches 4hEngine pattern).
+    //   CSV format: bar_start_ms,open,high,low,close
+    std::string warmup_csv_path;
+
+    int warmup_from_csv(const std::string& path) noexcept {
+        if (!enabled) { printf("[XauTF1h-WARMUP] skipped -- disabled\n"); fflush(stdout); return 0; }
+        if (path.empty()) { printf("[XauTF1h-WARMUP] skipped -- no path (cold start)\n"); fflush(stdout); return 0; }
+        std::ifstream f(path);
+        if (!f.is_open()) { printf("[XauTF1h-WARMUP] FAIL -- cannot open '%s'\n", path.c_str()); fflush(stdout); return 0; }
+        warmup_active_ = true;
+
+        int fed = 0;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#' || line[0] == 'b') continue;
+            char* p1; long long ms = std::strtoll(line.c_str(), &p1, 10);
+            if (!p1 || *p1 != ',') continue;
+            char* p2; double o = std::strtod(p1+1, &p2); if (!p2 || *p2 != ',') continue;
+            char* p3; double h = std::strtod(p2+1, &p3); if (!p3 || *p3 != ',') continue;
+            char* p4; double l = std::strtod(p3+1, &p4); if (!p4 || *p4 != ',') continue;
+            char* p5; double c = std::strtod(p4+1, &p5);
+            if (!std::isfinite(o) || !std::isfinite(h) || !std::isfinite(l) || !std::isfinite(c)) continue;
+
+            XauTfBar1h bar; bar.bar_start_ms = ms; bar.open = o; bar.high = h; bar.low = l; bar.close = c;
+            on_h1_bar(bar, c, c, 0.0, ms + 3600LL*1000, OnCloseFn{});
+            ++fed;
+            (void)p5;
+        }
+        warmup_active_ = false;
+        printf("[XauTF1h-WARMUP] fed=%d bars, atr=%.4f ema_fast=%.4f ema_slow=%.4f bars_size=%d path='%s'\n",
+               fed, atr14_, ema_fast_, ema_slow_, (int)bars_.size(), path.c_str());
+        fflush(stdout);
+        return fed;
+    }
+};
+
+} // namespace omega
