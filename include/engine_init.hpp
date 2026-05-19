@@ -1168,6 +1168,14 @@ static void init_engines(const std::string& cfg_path)
         //   negative all 3 WF folds. Was 0x29, now 0x09.
         g_xau_tf_4h.shadow_mode = false;
         g_xau_tf_4h.enabled     = true;
+        // S116 2026-05-19: bit 6 (0x40) added for EmaCross8_21 cell from the
+        // S114 long-trend ensemble research (Python +$30,966 / Sharpe +1.96
+        // / 25mo; C++ +$32,025 / 95 trades).  Default mask leaves bit 6 OFF
+        // so prod behaviour is unchanged.  To activate after S115 evidence
+        // file lands + a 2-week shadow window: change to 0x49.  Recommended
+        // intermediate step: set shadow_mode = true temporarily on this
+        // engine, mask = 0x49, validate the cell trades against the C++
+        // backtest CSV for ≥2 weeks, then revert shadow_mode = false.
         g_xau_tf_4h.cell_enable_mask = 0x09;  // Donchian + Keltner only
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;

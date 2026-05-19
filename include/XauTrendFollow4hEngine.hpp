@@ -150,7 +150,15 @@ struct XauTfPos {
 // Pass-1 edge_hunt results showing 3/3-year positive PnL convergence on
 // XAU 4h (Keltner $687, ADX_Mom $648). Both use the same realistic-fill
 // bracket as the original three cells.
-enum class XauTfFamily { Donchian20, InsideBar, ErTrend020, Keltner20, AdxMom20, RangeExpand };
+// S116 (2026-05-19): EmaCross8_21 family added for the S114 long-trend
+// ensemble research result.  Long-only, EMA(8)>EMA(21) cross + slow-rising
+// filter, ATR(14)x2.5 stop, effectively-no-TP (tp_mult=20.0).  Bit 6 in
+// cell_enable_mask; off by default (mask stays 0x3F so existing prod
+// behaviour is unchanged).  Engine_init.hpp must explicitly set bit 6
+// (mask |= 0x40) to activate.  Python+C++ evidence:
+//   Python (S114): +$30,966 (+30.97%) Sharpe +1.96 trades 103 over 25mo
+//   C++    (S115): +$32,025 (+32.03%) trades  95 over 25mo (Δ$1,059 / 3.4%)
+enum class XauTfFamily { Donchian20, InsideBar, ErTrend020, Keltner20, AdxMom20, RangeExpand, EmaCross8_21 };
 struct XauTfCellConfig {
     XauTfFamily family;
     double      sl_mult;   // SL = sl_mult * ATR
@@ -182,6 +190,12 @@ static constexpr XauTfCellConfig kXauTfCells[] = {
     // S33h Pass-5: RangeExpansion. Fires when bar TR > 1.5*ATR, trades
     // direction of bar. n=128, net=+$574 across 3 Duka years (all +ve).
     { XauTfFamily::RangeExpand,  1.5, 6.0,  "RangeExpand_K1.5_sl1.5tp6.0"   },
+    // S116 (2026-05-19): EmaCross8_21 -- long-only EMA(8,21) cross + slow
+    // rising filter.  tp_mult=20.0 is effectively-no-TP (TP at 20*ATR is
+    // ~$700 above entry on H4 gold, almost never hit); exits run on stop
+    // or signal flip in _evaluate_signal (returns 0 when fast<=slow).
+    // Bit 6 in cell_enable_mask -- off by default.
+    { XauTfFamily::EmaCross8_21, 2.5, 20.0, "EmaCross_8_21_sl2.5_S116"      },
 };
 static constexpr int kXauTfNumCells =
     static_cast<int>(sizeof(kXauTfCells) / sizeof(kXauTfCells[0]));
@@ -198,10 +212,13 @@ public:
     double max_spread  = 1.0;  // USD; refuse entries above this
 
     // S96: per-cell enable bitmask. Bit i controls kXauTfCells[i].
-    // Default 0x3F = all 6 cells enabled. Set in engine_init.hpp.
+    // Default 0x3F = original 6 cells enabled. Set in engine_init.hpp.
     // Backtest v2 showed 4h_InsideBar(1)/4h_ER20(2)/4h_ADX_Mom(4) PF<1.0 →
     // disable those 3 to concentrate on profitable cells.
-    uint32_t cell_enable_mask = 0x3F;  // bits 0-5, all on by default
+    // S116: bit 6 added for EmaCross8_21 cell; default still 0x3F to keep
+    // production behaviour unchanged.  Engine_init.hpp must explicitly OR
+    // in 0x40 to activate the new cell.
+    uint32_t cell_enable_mask = 0x3F;  // bits 0-5, original 6 cells
 
     // S63 2026-05-14 (part W): VWR-pattern in-flight protection (full trio).
     //   Defaults to ALL ZERO -- S63 is OFF on production until per-instrument
@@ -245,6 +262,17 @@ public:
     double ema20_ = 0.0;
     bool   ema_initialised_ = false;
 
+    // S116: rolling EMA8 + EMA21 for EmaCross8_21 cell.  Slow-rising filter
+    // checks ema21_ against its value 3 bars ago, so we keep the last
+    // ~6 closes of ema21 in a small ring.
+    static constexpr int kEmaFastFor8_21 = 8;
+    static constexpr int kEmaSlowFor8_21 = 21;
+    static constexpr int kEmaSlowRiseLookback = 3;
+    double ema8_  = 0.0;
+    double ema21_ = 0.0;
+    bool   ema8_21_initialised_ = false;
+    std::deque<double> ema21_hist_;  // last ~8 values for rising check
+
     // ADX Wilder state -- accumulators across bars.
     static constexpr int kAdxPeriod = 14;
     double adx14_ = 0.0;
@@ -269,6 +297,9 @@ public:
         atr_warmup_count_ = 0;
         ema20_ = 0.0;
         ema_initialised_ = false;
+        ema8_ = ema21_ = 0.0;
+        ema8_21_initialised_ = false;
+        ema21_hist_.clear();
         adx14_ = 0.0;
         adx_atr_sum_ = adx_pdm_sum_ = adx_mdm_sum_ = adx_dx_sum_ = 0.0;
         adx_warmup_count_ = 0;
@@ -311,6 +342,8 @@ public:
         // S33d-ext: update EMA20 (for Keltner) and ADX14 (for AdxMom).
         _update_ema20();
         _update_adx14();
+        // S116: update EMA8/EMA21 for EmaCross8_21 cell.
+        _update_ema8_21();
 
         // Advance cell cooldowns and increment bars_held on open positions.
         for (auto& p : pos) {
@@ -427,17 +460,59 @@ private:
         }
     }
 
+    // S116: update EMA8 + EMA21 + slow-EMA history for EmaCross8_21 cell.
+    void _update_ema8_21() noexcept {
+        if (bars_.empty()) return;
+        const double c = bars_.back().close;
+        if (!ema8_21_initialised_) {
+            ema8_ = ema21_ = c;
+            ema8_21_initialised_ = true;
+        } else {
+            const double alpha8  = 2.0 / (kEmaFastFor8_21 + 1);
+            const double alpha21 = 2.0 / (kEmaSlowFor8_21 + 1);
+            ema8_  = alpha8  * c + (1.0 - alpha8)  * ema8_;
+            ema21_ = alpha21 * c + (1.0 - alpha21) * ema21_;
+        }
+        ema21_hist_.push_back(ema21_);
+        while ((int)ema21_hist_.size() > (kEmaSlowRiseLookback + 4)) {
+            ema21_hist_.pop_front();
+        }
+    }
+
     // ---------- Signal evaluators
     int _evaluate_signal(int cell_idx) const noexcept {
         switch (kXauTfCells[cell_idx].family) {
-            case XauTfFamily::Donchian20:  return _sig_donchian20();
-            case XauTfFamily::InsideBar:   return _sig_inside_bar();
-            case XauTfFamily::ErTrend020:  return _sig_er_trend(0.20, 20);
-            case XauTfFamily::Keltner20:   return _sig_keltner();
-            case XauTfFamily::AdxMom20:    return _sig_adx_momentum(25.0, 20);
-            case XauTfFamily::RangeExpand: return _sig_range_expansion(1.5);
+            case XauTfFamily::Donchian20:   return _sig_donchian20();
+            case XauTfFamily::InsideBar:    return _sig_inside_bar();
+            case XauTfFamily::ErTrend020:   return _sig_er_trend(0.20, 20);
+            case XauTfFamily::Keltner20:    return _sig_keltner();
+            case XauTfFamily::AdxMom20:     return _sig_adx_momentum(25.0, 20);
+            case XauTfFamily::RangeExpand:  return _sig_range_expansion(1.5);
+            case XauTfFamily::EmaCross8_21: return _sig_ema_cross_8_21();
         }
         return 0;
+    }
+
+    // S116: long-only EMA8>EMA21 cross with slow-rising filter.
+    // Returns +1 when EMA8 > EMA21 AND EMA21 has risen vs. the value
+    // kEmaSlowRiseLookback bars ago.  Never returns -1 (long-only by
+    // design per S114 research).  Exit on signal-flat happens through
+    // the standard bracket -- when the EMA condition fails on next bar
+    // and we are flat, the cell simply doesn't re-enter; existing open
+    // positions exit on the bracketed stop (SL=2.5*ATR) or the very
+    // distant TP (tp_mult=20.0).  S116 does NOT add a signal-flip exit
+    // path -- that's deferred to S117 if the shadow data shows runners
+    // sticking around past the trend.
+    int _sig_ema_cross_8_21() const noexcept {
+        if (!ema8_21_initialised_) return 0;
+        if ((int)ema21_hist_.size() <= kEmaSlowRiseLookback) return 0;
+        if ((int)bars_.size() < kEmaSlowFor8_21 + 2) return 0;
+        const double slow_now  = ema21_hist_.back();
+        const double slow_then = ema21_hist_[ema21_hist_.size() - 1 - kEmaSlowRiseLookback];
+        const bool fast_above  = (ema8_ > ema21_);
+        const bool slow_rising = (slow_now > slow_then);
+        if (fast_above && slow_rising) return +1;
+        return 0;  // long-only: never short
     }
 
     // S33h-ext: range-expansion bar entry. When current bar's true range
