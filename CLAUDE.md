@@ -86,6 +86,35 @@ cmake --build build --target OmegaBacktest -j
 Windows-only headers and always fails on macOS, even though the
 surrounding green "Built target X" lines can make it look like a pass.
 
+## Branch Freshness (added 2026-05-20)
+
+A 2026-05-20 session worked for hours on `s44-bt-validation`, unaware
+that origin/main had moved 201 commits ahead since the branch was
+created (audit-fixes-32-42, S50 X3 engine purge, MacroCrash re-enable,
+FX cohort wiring, ACTIVE_SYMBOLS_GATE, heartbeat infra). The session
+added wiring that conflicted with main and resurrected engines main
+had already retired (TSMomGold, PullbackCont). Recovery required
+cherry-pick + manual conflict resolution onto current main.
+
+**Run at session start:**
+
+```bash
+bash tools/check_branch_freshness.sh
+```
+
+It fetches origin/main read-only and reports how far HEAD has drifted.
+Default threshold: blocks (exit 1) when HEAD is >= 25 commits behind
+origin/main. Override with `STALE_OK=1` or `--force` if intentional.
+
+**Workflow rules:**
+- No long-lived feature branches. Feature work goes into short-lived
+  branches (≤ 1 day) that merge back to main same session. Long
+  branches accumulate drift unobserved.
+- Before adding new engine wiring, verify the target engine still
+  exists on main (`ls include/<EngineName>.hpp`). If main has retired
+  it (search commit log for "purge" or "retire" near that file),
+  do not resurrect — build a new engine instead.
+
 ## Deploy Hygiene
 
 Added 2026-05-14 after a load-bearing discovery: VPS `git status`
