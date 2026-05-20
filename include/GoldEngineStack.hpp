@@ -4169,6 +4169,17 @@ public:
         }
         if(best.valid){
             if (!entry_quality_ok(best, best_score, snap, now_s)) return GoldSignal{};
+            // 2026-05-21: D1 EMA200 regime gate CHOKEPOINT.
+            // ALL gold-stack sub-engines (DonchianBreakout, NR3Breakout, SpikeFade,
+            // VWAPStretchReversion, etc.) funnel through this single dispatch.
+            // Blocks SHORTS during UPTREND regime, LONGS during DOWNTREND.
+            // Added after 2026-05-20 losses on shorts during gold uptrend.
+            if (best.side == TradeSide::SHORT && !omega::gold_d1_trend().short_allowed()) {
+                return GoldSignal{};
+            }
+            if (best.side == TradeSide::LONG && !omega::gold_d1_trend().long_allowed()) {
+                return GoldSignal{};
+            }
             GoldSignal gs=to_gold_signal(best);
             apply_vol_scaled_sl(gs);
 
