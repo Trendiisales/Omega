@@ -41,8 +41,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <fstream>
 #include <functional>
 #include <string>
+#include <tuple>
+#include <vector>
+#include <algorithm>
 #include "OmegaTradeLedger.hpp"
 
 namespace omega {
@@ -344,6 +348,67 @@ struct EurGbpPairsEngine {
     }
 
     void cancel() noexcept { pos_ = OpenPos{}; }
+
+    // Warm-seed from EUR + GBP H1 close CSVs.
+    // CSV format: ts,o,h,l,c (ts in SECONDS).
+    // Replays both legs alternately as synthetic ticks at H1-close timestamps
+    // so internal H1 accumulators + spread_hist_ + z-window populate.
+    // Engine momentarily disabled during seed to suppress entries.
+    size_t seed_from_h1_csvs(const std::string& eur_path,
+                              const std::string& gbp_path) noexcept {
+        // Load each CSV into vectors of (ts_sec, close).
+        auto load = [](const std::string& path,
+                       std::vector<std::pair<int64_t,double>>& out) {
+            std::ifstream f(path);
+            if (!f.is_open()) return;
+            std::string line; std::getline(f, line);  // header
+            while (std::getline(f, line)) {
+                long long ts_s_ll=0; double o=0,h=0,l=0,c=0;
+                if (sscanf(line.c_str(), "%lld,%lf,%lf,%lf,%lf",
+                           &ts_s_ll, &o, &h, &l, &c) == 5) {
+                    out.emplace_back(static_cast<int64_t>(ts_s_ll), c);
+                }
+            }
+        };
+        std::vector<std::pair<int64_t,double>> eur_h1, gbp_h1;
+        load(eur_path, eur_h1);
+        load(gbp_path, gbp_h1);
+        if (eur_h1.empty() || gbp_h1.empty()) {
+            printf("[SEED] EurGbpPairs: missing CSV(s) -- cold start (eur=%zu gbp=%zu)\n",
+                   eur_h1.size(), gbp_h1.size());
+            fflush(stdout); return 0;
+        }
+
+        // Build a sorted timeline of (ts_ms, leg, close).
+        // leg = 0 (eur) or 1 (gbp).
+        std::vector<std::tuple<int64_t,int,double>> stream;
+        stream.reserve(eur_h1.size() + gbp_h1.size());
+        for (auto& [ts, c] : eur_h1) stream.emplace_back(ts*1000LL, 0, c);
+        for (auto& [ts, c] : gbp_h1) stream.emplace_back(ts*1000LL, 1, c);
+        std::sort(stream.begin(), stream.end());
+
+        const bool was_enabled = enabled;
+        enabled = false;
+        auto null_cb = [](const omega::TradeRecord&){};
+
+        // Synthetic spread: EURUSD ~1pip, GBPUSD ~1.2pip
+        const double eur_sp = 0.00010, gbp_sp = 0.00012;
+        size_t n = 0;
+        for (auto& [ts_ms, leg, c] : stream) {
+            if (leg == 0) {
+                on_tick_eur(c - eur_sp/2, c + eur_sp/2, ts_ms, null_cb);
+            } else {
+                on_tick_gbp(c - gbp_sp/2, c + gbp_sp/2, ts_ms, null_cb);
+            }
+            ++n;
+        }
+        enabled = was_enabled;
+        printf("[SEED] EurGbpPairs: %zu H1 ticks replayed (eur=%zu gbp=%zu)"
+               " spread_hist_size=%d -- hot\n",
+               n, eur_h1.size(), gbp_h1.size(), (int)spread_hist_.size());
+        fflush(stdout);
+        return n;
+    }
 };
 
 } // namespace omega

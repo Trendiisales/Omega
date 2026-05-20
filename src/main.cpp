@@ -96,6 +96,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "HTFSwingEngines.hpp"        // H1 ADX+EMA pullback engine + H4 Donchian breakout engine (XAUUSD)
 #include "omega_types.hpp"
 #include "globals.hpp"
+#include "engine_seed_helpers.hpp"
 #include "omega_runtime.hpp"
 #include "on_tick.hpp"
 // 2026-05-01 race fix: single-writer engine dispatch worker. MUST be included

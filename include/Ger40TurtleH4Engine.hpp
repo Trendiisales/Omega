@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <fstream>
 #include <functional>
 #include <string>
 #include <algorithm>
@@ -197,6 +198,41 @@ struct Ger40TurtleH4Engine {
     }
 
     void cancel() noexcept { pos_ = OpenPos{}; }
+
+    // Warm-seed historical H4 bars directly into deques + ATR state.
+    // Bypasses tick aggregation. Called once at startup from engine_init.hpp
+    // so engine is HOT on first live tick instead of cold-warming 80h+.
+    size_t seed_from_h4_csv(const std::string& path) noexcept {
+        std::ifstream f(path);
+        if (!f.is_open()) {
+            printf("[SEED] Ger40TurtleH4: cannot open %s -- cold start\n", path.c_str());
+            fflush(stdout); return 0;
+        }
+        std::string line; std::getline(f, line); // header
+        size_t n = 0;
+        while (std::getline(f, line)) {
+            long long ts_ms_ll=0; double o=0,h=0,l=0,c=0;
+            if (sscanf(line.c_str(), "%lld,%lf,%lf,%lf,%lf",
+                       &ts_ms_ll, &o, &h, &l, &c) == 5) {
+                h4_highs_.push_back(h);
+                h4_lows_.push_back(l);
+                h4_closes_.push_back(c);
+                const int keep = std::max(p.lookback_bars, p.atr_period) + 2;
+                while ((int)h4_highs_.size() > keep) {
+                    h4_highs_.pop_front();
+                    h4_lows_ .pop_front();
+                    h4_closes_.pop_front();
+                }
+                _update_atr_on_bar_close(h, l, c);
+                ++bar_count_;
+                ++n;
+            }
+        }
+        printf("[SEED] Ger40TurtleH4: %zu H4 bars -> hot (atr=%.2f bars=%d)\n",
+               n, atr_, bar_count_);
+        fflush(stdout);
+        return n;
+    }
 
     void _update_atr_on_bar_close(double bar_h, double bar_l, double bar_c) noexcept {
         double tr = bar_h - bar_l;

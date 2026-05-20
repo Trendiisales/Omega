@@ -1455,6 +1455,10 @@ static void init_engines(const std::string& cfg_path)
         g_ger40_turtle_h4.shadow_mode = true;
         g_ger40_turtle_h4.enabled     = true;
         g_ger40_turtle_h4.symbol      = "GER40";
+        // Warm-seed GER40 H4 history (~1600 bars / 11 months) so 20-bar
+        // Donchian + 14-bar ATR are populated. Without seed, cold-warm
+        // requires 80+ hours of live GER40 ticks before first signal.
+        g_ger40_turtle_h4.seed_from_h4_csv("phase1/signal_discovery/warmup_GER40_H4.csv");
         printf("[OMEGA-INIT] Ger40TurtleH4Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_ger40_turtle_h4.shadow_mode,
                g_ger40_turtle_h4.p.lookback_bars,
@@ -1488,6 +1492,32 @@ static void init_engines(const std::string& cfg_path)
                (int)g_xau_inside_bar_d1.shadow_mode,
                g_xau_inside_bar_d1.p.sl_atr_mult, g_xau_inside_bar_d1.p.tp_atr_mult,
                g_xau_inside_bar_d1.p.hold_max_days);
+        fflush(stdout);
+
+        // ── WARM SEED ALL 2026-05-20 NEW ENGINES FROM H4 CSV ────────────────
+        // Replays ~3216 historical H4 bars (~134 days) through each engine to
+        // populate internal ATR / EMA / Donchian / candle-history state.
+        // Engines are momentarily disabled during seeding so no signals fire
+        // on historical bars. After seeding they are HOT — can produce first
+        // signal on the next live H4/D1 close instead of waiting 14-100 days
+        // cold-warmup. Critical: without seed, deploy-day -> first signal gap
+        // is impractical for D1 engines (e.g. PullbackContD1 needs EMA100 =
+        // 100 daily bars from cold start).
+        {
+            const std::string seed_csv = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
+            omega::seed_h4_engine(g_xau_tsmom_fast_d1,    seed_csv, "XauTsmomFastD1");
+            omega::seed_h4_engine(g_xau_turtle_d1,        seed_csv, "XauTurtleD1");
+            omega::seed_h4_engine(g_xau_stop_run_d1,      seed_csv, "XauStopRunD1");
+            omega::seed_h4_engine(g_xau_pullback_cont_h4, seed_csv, "XauPullbackContH4");
+            omega::seed_h4_engine(g_xau_nbm_d1,           seed_csv, "XauNbmD1");
+            omega::seed_h4_engine(g_xau_ema_cross_h4,     seed_csv, "XauEmaCrossH4");
+            omega::seed_h4_engine(g_xau_pullback_cont_d1, seed_csv, "XauPullbackContD1");
+            omega::seed_h4_engine(g_xau_bb_scalp_d1,      seed_csv, "XauBBScalpD1");
+            omega::seed_h4_engine(g_xau_swing_break_d1,   seed_csv, "XauSwingBreakD1");
+            omega::seed_h4_engine(g_xau_doji_rej_d1,      seed_csv, "XauDojiRejD1");
+            omega::seed_h4_engine(g_xau_outside_bar_d1,   seed_csv, "XauOutsideBarD1");
+            omega::seed_h4_engine(g_xau_inside_bar_d1,    seed_csv, "XauInsideBarD1");
+        }
         fflush(stdout);
 
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
@@ -1940,6 +1970,12 @@ static void init_engines(const std::string& cfg_path)
            g_eur_gbp_pairs.p.z_window, g_eur_gbp_pairs.p.z_in, g_eur_gbp_pairs.p.z_out,
            g_eur_gbp_pairs.p.z_stop,   g_eur_gbp_pairs.p.hold_timeout_h1,
            g_eur_gbp_pairs.p.risk_dollars, g_eur_gbp_pairs.p.max_lot_per_leg);
+    // Warm-seed pairs engine from EURUSD + GBPUSD H1 close CSVs (~7000 bars each).
+    // Pre-populates spread_hist_ (z_window=120 bars needed). Without seed,
+    // engine cold-warms 120 hours (5 trading days) before first z-eval.
+    g_eur_gbp_pairs.seed_from_h1_csvs(
+        "phase1/signal_discovery/warmup_EURUSD_H1.csv",
+        "phase1/signal_discovery/warmup_GBPUSD_H1.csv");
     fflush(stdout);
 
     // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
