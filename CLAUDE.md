@@ -115,6 +115,61 @@ origin/main. Override with `STALE_OK=1` or `--force` if intentional.
   it (search commit log for "purge" or "retire" near that file),
   do not resurrect — build a new engine instead.
 
+## Engine Warm-Seed Mandate (added 2026-05-20)
+
+A 2026-05-20 deploy went 2h18min with zero signals because 15 newly-
+added engines had no warm-restart mechanism. Engines with EMA100 /
+Donchian40 / z-window=120 buffers cold-start in 14-100 days. Without
+historical seeding they sit idle waiting for the bar buffer to fill —
+unacceptable on a production deploy.
+
+**Every new D1/H4/H1 engine MUST ship with a warm-seed path before
+merge.** Three accepted patterns:
+
+1. **on_h4_bar engines (preferred):** if the engine's signal-evaluation
+   path is reachable via `on_h4_bar(h, l, c, bid, ask, ts_ms, cb)` and
+   the engine has a public `bool enabled` field, do nothing custom —
+   call `omega::seed_h4_engine(eng, csv_path, "EngineName")` from
+   `engine_init.hpp` after configuring the engine. The shared template
+   in `include/engine_seed_helpers.hpp` replays the CSV while
+   `enabled=false` so no entries fire on historical bars.
+
+2. **Tick-driven engines (own H4/D1 aggregator):** add a
+   `seed_from_h4_csv(path)` method that directly populates the
+   engine's deques (h4_highs_/lows_/closes_ + ATR state) without going
+   through the tick → bar aggregator. Pattern: see
+   `Ger40TurtleH4Engine::seed_from_h4_csv()`.
+
+3. **Multi-leg engines (e.g. pairs):** add a `seed_from_*_csvs(...)`
+   method that reads each leg's CSV, builds a time-sorted stream of
+   (ts, leg, close), and replays via the engine's per-leg tick
+   methods at H1 boundaries. Pattern: see
+   `EurGbpPairsEngine::seed_from_h1_csvs()`.
+
+**Bundled warmup CSVs live in `phase1/signal_discovery/`** and are
+committed to the repo so they ship with every deploy:
+
+```
+phase1/signal_discovery/warmup_XAUUSD_H4.csv  (3216 bars / 134 days)
+phase1/signal_discovery/warmup_GER40_H4.csv   (1600 bars / 11 months)
+phase1/signal_discovery/warmup_EURUSD_H1.csv  (6920 bars / 10 months)
+phase1/signal_discovery/warmup_GBPUSD_H1.csv  (7928 bars / 11 months)
+```
+
+Add a new symbol/timeframe CSV here when adding an engine for it.
+Format conventions:
+- H4 CSVs:  `bar_start_ms,open,high,low,close` (ts in milliseconds)
+- H1 CSVs:  `ts,o,h,l,c`                       (ts in seconds)
+
+**Hash check on first deploy:** boot logs MUST show one `[SEED]` line
+per new engine. Missing `[SEED]` line = engine cold-warming = engine
+silent for days. Treat absence as a P1 — investigate before next ship.
+
+History: this rule originated from the 2026-05-20 incident where 15
+new engines (XauTurtleD1, XauDojiRejD1, EurGbpPairsEngine, etc.) all
+sat idle on deploy. Fixed by adding seed methods + bundled CSVs in
+commit 8f92cbf9. Pattern is mandatory for all future engines.
+
 ## Deploy Hygiene
 
 Added 2026-05-14 after a load-bearing discovery: VPS `git status`
