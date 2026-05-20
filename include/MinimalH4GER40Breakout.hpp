@@ -83,23 +83,26 @@ struct MinimalH4GER40Params {
     double risk_dollars        = 10.0;   // fixed $ risk per trade
     double max_lot             = 0.10;   // GER40 lot cap
     double dollars_per_point   = 25.0;   // GER40/DAX contract: $25/pt at 1.00 lot
-    int    donchian_bars       = 6;      // tuned: 2026-05-20 multi-symbol sweep
-    double sl_mult             = 2.0;    // tuned
-    double tp_mult             = 3.0;    // tuned
+    int    donchian_bars       = 8;      // 2026-05-20 IS/OOS validated retune
+    double sl_mult             = 1.0;    // tight SL -- entries near level
+    double tp_mult             = 3.0;    // 1:3 RR
     double max_spread          = 3.0;    // GER40 spread typically 1-2.5pt
-    int    timeout_h4_bars     = 48;     // tuned: 48 bars = 8 days
+    int    timeout_h4_bars     = 24;     // 4 days max hold
     int    cooldown_h4_bars    = 2;
     int    atr_period          = 14;
     bool   weekend_close_gate  = true;
-    bool   long_only           = true;   // tuned: indices uptrend bias
+    bool   long_only           = true;   // indices uptrend bias 2024-2026
 };
 
 inline MinimalH4GER40Params make_minimal_h4_ger40_params() {
     MinimalH4GER40Params p;
-    // Tuned 2026-05-20 via multi_symbol_scan.py on 1yr GER40 ticks:
-    //   default (don=10 sl=1.0 tp=4.0 lo=false): trivial / no edge
-    //   tuned   (don=6 sl=2.0 tp=3.0 to=48 lo=true): n=50 Sh 3.67 WR 58% PnL $8.40 MaxDD $2.94
-    // Long-only justified: DAX 2025 strong uptrend; short trades net negative.
+    // Retuned 2026-05-20 via C++ engine_sweep IS/OOS robust search on 2yr GER40 ticks
+    // (16mo, 13.6M ticks). Robust config (top-of-min(IS,OOS) Sharpe):
+    //   don=8 sl=1.0 tp=3.0 to=24 cd=2 lo=true
+    //   IS Sh=3.70, OOS Sh=4.45 (split at 50/50 time-mid)
+    //   Full sweep: n=76 trades PnL=$1077 (cost=2.0pt internal)
+    // Prior config (don=6 sl=2.0 tp=3.0 to=48) ranked #166/640 (Sh=1.13)
+    //   and was based on Python sweep that didn't reproduce in C++ rigor.
     return p;
 }
 

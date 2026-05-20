@@ -1333,6 +1333,21 @@ static void init_engines(const std::string& cfg_path)
                (int)g_xau_tf_d1.shadow_mode, (int)g_xau_tf_d1.enabled, g_xau_tf_d1.lot);
         fflush(stdout);
 
+        // ── XauTsmomFastD1Engine (2026-05-20) -- short-lookback momentum sister
+        //   Backtest 2yr daily XAU (long_only, cost 1bps):
+        //     IS Sh=6.69 / OOS Sh=7.65 / FUL Sh=7.57. n=48. PnL=78.1%.
+        //   Cost stress holds: Sh 6.69 at 20bps. Distinct cell from D1 ensemble
+        //   (lb=5 vs lb=20, sl=1.0 vs 2.0, tp=5.0 vs 4.0, hold=20).
+        g_xau_tsmom_fast_d1.p           = omega::make_xau_tsmom_fast_d1_params();
+        g_xau_tsmom_fast_d1.shadow_mode = true;
+        g_xau_tsmom_fast_d1.enabled     = true;
+        g_xau_tsmom_fast_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauTsmomFastD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_tsmom_fast_d1.shadow_mode, (int)g_xau_tsmom_fast_d1.enabled,
+               g_xau_tsmom_fast_d1.p.lookback_days, g_xau_tsmom_fast_d1.p.sl_atr_mult,
+               g_xau_tsmom_fast_d1.p.tp_atr_mult, g_xau_tsmom_fast_d1.p.hold_max_days);
+        fflush(stdout);
+
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
         // 4-cell 2h trend-follow ensemble built from Pass-8 deep_dive. Same
         // XAU trend regime as the 4h/D1 engines, denser cadence (~25

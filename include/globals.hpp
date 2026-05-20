@@ -428,6 +428,13 @@ static omega::UstecTrendFollow5mEngine g_ustec_tf_5m;
 #include "XauTrendFollowD1Engine.hpp"
 static omega::XauTrendFollowD1Engine g_xau_tf_d1;
 
+// 2026-05-20: XauTsmomFastD1Engine -- short-lookback D1 momentum (lb=5, sl=1.0,
+//   tp=5.0, hold=20). Distinct from XauTrendFollowD1Engine's lb=20 cell.
+//   Backtest 2yr daily XAU: IS Sh 6.69 / OOS Sh 7.65 / FUL Sh 7.57 at 1bps cost,
+//   holds to FUL Sh 6.69 at 20bps. n=48 over 670 days. Shadow-default.
+#include "XauTsmomFastD1Engine.hpp"
+static omega::XauTsmomFastD1Engine g_xau_tsmom_fast_d1;
+
 // 2026-05-11 S33k: XauTrendFollow2hEngine -- denser-cadence sibling of the
 //   4h engine. 4 cells (Keltner K=2, Donchian N=20, Donchian N=50, InsideBar),
 //   all on sl2.0_tp4.0 ATR brackets. All 3/3 Duka years +ve per cell.
