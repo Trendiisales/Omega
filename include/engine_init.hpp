@@ -1377,6 +1377,48 @@ static void init_engines(const std::string& cfg_path)
                g_xau_stop_run_d1.p.tp_atr_mult, g_xau_stop_run_d1.p.hold_max_days);
         fflush(stdout);
 
+        // ── XauPullbackContH4Engine (2026-05-20) -- EMA10>EMA50 pullback long
+        //   PullbackCont archetype (S49 X5 retirement). H4 2yr XAU:
+        //   FUL Sh=3.96, IS=3.97, OOS=4.06, n=97 (highest density of D-class).
+        g_xau_pullback_cont_h4.p           = omega::make_xau_pullback_cont_h4_params();
+        g_xau_pullback_cont_h4.shadow_mode = true;
+        g_xau_pullback_cont_h4.enabled     = true;
+        g_xau_pullback_cont_h4.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauPullbackContH4Engine: shadow=%d enabled=%d ef=%d es=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_pullback_cont_h4.shadow_mode, (int)g_xau_pullback_cont_h4.enabled,
+               g_xau_pullback_cont_h4.p.ema_fast, g_xau_pullback_cont_h4.p.ema_slow,
+               g_xau_pullback_cont_h4.p.sl_atr_mult, g_xau_pullback_cont_h4.p.tp_atr_mult,
+               g_xau_pullback_cont_h4.p.hold_max_h4);
+        fflush(stdout);
+
+        // ── XauNbmD1Engine (2026-05-20) -- Noise Band Momentum D1
+        //   Signal from disabled g_nbm_* family. D1 XAU 2yr:
+        //   FUL Sh=8.01, IS=9.60, OOS=7.30, n=25.
+        g_xau_nbm_d1.p           = omega::make_xau_nbm_d1_params();
+        g_xau_nbm_d1.shadow_mode = true;
+        g_xau_nbm_d1.enabled     = true;
+        g_xau_nbm_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauNbmD1Engine: shadow=%d enabled=%d ema=%d band=%.1fx mom=%.1fx sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_nbm_d1.shadow_mode, (int)g_xau_nbm_d1.enabled,
+               g_xau_nbm_d1.p.ema_period, g_xau_nbm_d1.p.atr_band_mult,
+               g_xau_nbm_d1.p.momentum_atr_mult, g_xau_nbm_d1.p.sl_atr_mult,
+               g_xau_nbm_d1.p.tp_atr_mult, g_xau_nbm_d1.p.hold_max_days);
+        fflush(stdout);
+
+        // ── XauEmaCrossH4Engine (2026-05-20) -- 20/100 golden cross H4
+        //   H4 XAU 2yr: FUL Sh=7.15, IS=4.45, OOS=9.19 (OOS > IS).
+        //   Sparse n=20 but cleanly OOS-validated.
+        g_xau_ema_cross_h4.p           = omega::make_xau_ema_cross_h4_params();
+        g_xau_ema_cross_h4.shadow_mode = true;
+        g_xau_ema_cross_h4.enabled     = true;
+        g_xau_ema_cross_h4.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauEmaCrossH4Engine: shadow=%d enabled=%d ef=%d es=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_ema_cross_h4.shadow_mode, (int)g_xau_ema_cross_h4.enabled,
+               g_xau_ema_cross_h4.p.ema_fast, g_xau_ema_cross_h4.p.ema_slow,
+               g_xau_ema_cross_h4.p.sl_atr_mult, g_xau_ema_cross_h4.p.tp_atr_mult,
+               g_xau_ema_cross_h4.p.hold_max_h4);
+        fflush(stdout);
+
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
         // 4-cell 2h trend-follow ensemble built from Pass-8 deep_dive. Same
         // XAU trend regime as the 4h/D1 engines, denser cadence (~25

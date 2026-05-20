@@ -455,6 +455,27 @@ static omega::XauTurtleD1Engine g_xau_turtle_d1;
 #include "XauStopRunD1Engine.hpp"
 static omega::XauStopRunD1Engine g_xau_stop_run_d1;
 
+// 2026-05-20: XauPullbackContH4Engine -- EMA10>EMA50 trend, pullback to EMA10.
+//   Resurrection of PullbackCont archetype (retired S49 X5 Apr 26 2026).
+//   Backtest 2yr H4 XAU: IS Sh=3.97, OOS Sh=4.06, FUL Sh=3.96, n=97, PnL=53.5%.
+//   Densest of the resurrection batch (~50 trades/year on H4).
+#include "XauPullbackContH4Engine.hpp"
+static omega::XauPullbackContH4Engine g_xau_pullback_cont_h4;
+
+// 2026-05-20: XauNbmD1Engine -- Noise Band Momentum on daily.
+//   Signal pattern from main's disabled g_nbm_* (all set enabled=false).
+//   Tested on XAU D1: IS Sh=9.60, OOS Sh=7.30, FUL Sh=8.01, n=25, PnL=35.6%.
+//   Break ABOVE EMA20 + 2.0*ATR + 0.3*ATR momentum.
+#include "XauNbmD1Engine.hpp"
+static omega::XauNbmD1Engine g_xau_nbm_d1;
+
+// 2026-05-20: XauEmaCrossH4Engine -- 20/100 golden cross H4 long.
+//   Main has EMACrossEngine; this is a XAU-specific H4 cell.
+//   Backtest 2yr XAU H4: IS Sh=4.45, OOS Sh=9.19, FUL Sh=7.15, n=20, PnL=12.2%.
+//   OOS > IS (low overfit risk).
+#include "XauEmaCrossH4Engine.hpp"
+static omega::XauEmaCrossH4Engine g_xau_ema_cross_h4;
+
 // 2026-05-11 S33k: XauTrendFollow2hEngine -- denser-cadence sibling of the
 //   4h engine. 4 cells (Keltner K=2, Donchian N=20, Donchian N=50, InsideBar),
 //   all on sl2.0_tp4.0 ATR brackets. All 3/3 Duka years +ve per cell.
