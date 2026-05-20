@@ -1460,6 +1460,34 @@ static void init_engines(const std::string& cfg_path)
                g_ger40_turtle_h4.p.lookback_bars,
                g_ger40_turtle_h4.p.sl_atr_mult, g_ger40_turtle_h4.p.tp_atr_mult,
                g_ger40_turtle_h4.p.hold_max_h4);
+
+        // 2026-05-20 mega_sweep2 candle batch (3 D1 patterns)
+        g_xau_doji_rej_d1.p           = omega::make_xau_doji_rej_d1_params();
+        g_xau_doji_rej_d1.shadow_mode = true;
+        g_xau_doji_rej_d1.enabled     = true;
+        g_xau_doji_rej_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauDojiRejD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d doji_body=%.2f\n",
+               (int)g_xau_doji_rej_d1.shadow_mode,
+               g_xau_doji_rej_d1.p.sl_atr_mult, g_xau_doji_rej_d1.p.tp_atr_mult,
+               g_xau_doji_rej_d1.p.hold_max_days, g_xau_doji_rej_d1.p.doji_body_pct);
+
+        g_xau_outside_bar_d1.p           = omega::make_xau_outside_bar_d1_params();
+        g_xau_outside_bar_d1.shadow_mode = true;
+        g_xau_outside_bar_d1.enabled     = true;
+        g_xau_outside_bar_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauOutsideBarD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_outside_bar_d1.shadow_mode,
+               g_xau_outside_bar_d1.p.sl_atr_mult, g_xau_outside_bar_d1.p.tp_atr_mult,
+               g_xau_outside_bar_d1.p.hold_max_days);
+
+        g_xau_inside_bar_d1.p           = omega::make_xau_inside_bar_d1_params();
+        g_xau_inside_bar_d1.shadow_mode = true;
+        g_xau_inside_bar_d1.enabled     = true;
+        g_xau_inside_bar_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauInsideBarD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_inside_bar_d1.shadow_mode,
+               g_xau_inside_bar_d1.p.sl_atr_mult, g_xau_inside_bar_d1.p.tp_atr_mult,
+               g_xau_inside_bar_d1.p.hold_max_days);
         fflush(stdout);
 
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────

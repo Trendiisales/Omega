@@ -503,6 +503,26 @@ static omega::XauSwingBreakD1Engine g_xau_swing_break_d1;
 #include "Ger40TurtleH4Engine.hpp"
 static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
 
+// 2026-05-20 mega_sweep2 candle-pattern batch (XAU D1, cost-stressed):
+//
+// XauDojiRejD1Engine -- prev=doji + current breaks prev high.
+//   Cost 1bp Sh=9.87, 10bp Sh=9.43, 50bp Sh=7.48 (most robust mega2 winner).
+//   IS Sh=6.97 / OOS Sh=11.20 n=23 PnL=44.6% WR=65.2%.
+#include "XauDojiRejD1Engine.hpp"
+static omega::XauDojiRejD1Engine g_xau_doji_rej_d1;
+
+// XauOutsideBarD1Engine -- outside-bar engulf + bullish close.
+//   Cost 1bp Sh=6.47, 10bp Sh=5.88, 50bp Sh=3.27.
+//   IS Sh=3.72 / OOS Sh=8.39 n=34 PnL=43.0% WR=64.7%.
+#include "XauOutsideBarD1Engine.hpp"
+static omega::XauOutsideBarD1Engine g_xau_outside_bar_d1;
+
+// XauInsideBarD1Engine -- inside bar consolidation + breakout.
+//   Cost 1bp Sh=5.05, 10bp Sh=4.39, 50bp Sh=1.42 (less cost-robust).
+//   IS Sh=4.29 / OOS Sh=3.96 n=49 (highest density), WR=71.4%.
+#include "XauInsideBarD1Engine.hpp"
+static omega::XauInsideBarD1Engine g_xau_inside_bar_d1;
+
 // 2026-05-11 S33k: XauTrendFollow2hEngine -- denser-cadence sibling of the
 //   4h engine. 4 cells (Keltner K=2, Donchian N=20, Donchian N=50, InsideBar),
 //   all on sl2.0_tp4.0 ATR brackets. All 3/3 Duka years +ve per cell.

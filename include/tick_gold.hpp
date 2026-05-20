@@ -1074,6 +1074,13 @@ static void on_tick_gold(
                                          bid, ask, now_ms_g, bracket_on_close);
             g_xau_swing_break_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                             bid, ask, now_ms_g, bracket_on_close);
+            // ── 2026-05-20 mega-sweep2 candle patterns: DojiRej, OutsideBar, InsideBar
+            g_xau_doji_rej_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                         bid, ask, now_ms_g, bracket_on_close);
+            g_xau_outside_bar_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                            bid, ask, now_ms_g, bracket_on_close);
+            g_xau_inside_bar_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                           bid, ask, now_ms_g, bracket_on_close);
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
         } else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
     }
@@ -2080,6 +2087,10 @@ static void on_tick_gold(
     g_xau_pullback_cont_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     g_xau_bb_scalp_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     g_xau_swing_break_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // 2026-05-20 mega-sweep2 candle patterns tick mgmt
+    g_xau_doji_rej_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_xau_outside_bar_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_xau_inside_bar_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTrendFollow2hEngine tick management -- 4 2h-timeframe cells
     // (Keltner, Donchian20, Donchian50, InsideBar). S33k shipped 2026-05-11.
     // 2h bars built internally from H1 stream. Single-position per cell, 4
