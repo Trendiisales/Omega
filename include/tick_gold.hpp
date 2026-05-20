@@ -1081,6 +1081,8 @@ static void on_tick_gold(
                                             bid, ask, now_ms_g, bracket_on_close);
             g_xau_inside_bar_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                            bid, ask, now_ms_g, bracket_on_close);
+            // ── 2026-05-21 GoldD1TrendState update -- regime gate for shorts
+            omega::gold_d1_trend().on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close, now_ms_g);
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
         } else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
     }

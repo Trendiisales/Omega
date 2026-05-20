@@ -48,6 +48,7 @@
 #include <unordered_set>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"  // see GoldEngineStack::on_tick() pos_mgr_.open() gate
+#include "GoldD1TrendState.hpp"  // D1 EMA200 regime gate for DonchianBreakout short path
 
 // ?? Bracket-trend bias state + accessor ??????????????????????????????????????
 // Provides int bracket_trend_bias(const char* sym) plus the per-symbol state
@@ -758,8 +759,8 @@ public:
         Signal sig;
         sig.size = 0.01; sig.sl = SL_TICKS; sig.tp = TP_TICKS;
 
-        // Long breakout -- only when HTF agrees (bull)
-        if (s.mid > dhi && htf_dir == 1) {
+        // Long breakout -- only when HTF agrees (bull) + D1 regime allows long
+        if (s.mid > dhi && htf_dir == 1 && omega::gold_d1_trend().long_allowed()) {
             sig.valid      = true;
             sig.side       = TradeSide::LONG;
             sig.entry      = s.ask;
@@ -767,8 +768,10 @@ public:
             strncpy(sig.reason, "DONCHIAN_LONG",  31);
             strncpy(sig.engine, "DonchianBreakout", 31);
         }
-        // Short breakout -- only when HTF agrees (bear)
-        else if (s.mid < dlo && htf_dir == -1) {
+        // Short breakout -- only when HTF agrees (bear) + D1 regime allows short
+        // 2026-05-21: added g_gold_d1_trend.short_allowed() gate after
+        // -$5.28 short SL during uptrend regime 2026-05-20.
+        else if (s.mid < dlo && htf_dir == -1 && omega::gold_d1_trend().short_allowed()) {
             sig.valid      = true;
             sig.side       = TradeSide::SHORT;
             sig.entry      = s.bid;

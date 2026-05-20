@@ -523,6 +523,15 @@ static omega::XauOutsideBarD1Engine g_xau_outside_bar_d1;
 #include "XauInsideBarD1Engine.hpp"
 static omega::XauInsideBarD1Engine g_xau_inside_bar_d1;
 
+// 2026-05-21: GoldD1TrendState -- D1 EMA200 regime gate for bidirectional engines.
+//   After 2026-05-20 InsideBar SHORT lost -$52 in gold uptrend, added regime
+//   filter. Queried by XauTrendFollow2h InsideBar + DonchianBreakout (short
+//   path) + any other bidirectional XAU engine before firing dir-dependent
+//   entries. Updated from H4 close events in tick_gold.hpp.
+//   Access via singleton: omega::gold_d1_trend() -- avoids include-order
+//   issues (GoldEngineStack.hpp is included before globals.hpp).
+#include "GoldD1TrendState.hpp"
+
 // 2026-05-11 S33k: XauTrendFollow2hEngine -- denser-cadence sibling of the
 //   4h engine. 4 cells (Keltner K=2, Donchian N=20, Donchian N=50, InsideBar),
 //   all on sl2.0_tp4.0 ATR brackets. All 3/3 Duka years +ve per cell.

@@ -1494,6 +1494,13 @@ static void init_engines(const std::string& cfg_path)
                g_xau_inside_bar_d1.p.hold_max_days);
         fflush(stdout);
 
+        // ── GoldD1TrendState (2026-05-21) -- regime gate for shorts/longs.
+        //   Seeded from XAU H4 CSV. Updated on every H4 close in tick_gold.hpp.
+        //   Queried by bidirectional engines (XauTrendFollow2h InsideBar,
+        //   DonchianBreakout short path) before firing direction-dependent entries.
+        omega::gold_d1_trend().seed_from_h4_csv("phase1/signal_discovery/warmup_XAUUSD_H4.csv");
+        fflush(stdout);
+
         // ── WARM SEED ALL 2026-05-20 NEW ENGINES FROM H4 CSV ────────────────
         // Replays ~3216 historical H4 bars (~134 days) through each engine to
         // populate internal ATR / EMA / Donchian / candle-history state.

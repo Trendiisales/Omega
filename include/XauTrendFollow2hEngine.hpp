@@ -89,6 +89,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"
+#include "GoldD1TrendState.hpp"
 #include "OmegaCostGuard.hpp"
 
 namespace omega {
@@ -386,9 +387,16 @@ private:
         const auto& b = bars_[last - 1];
         const auto& c = bars_[last];
         if (!(b.high < a.high && b.low > a.low)) return 0;
-        if (c.close > b.high) return +1;
-        if (c.close < b.low)  return -1;
-        return 0;
+        int raw_sig = 0;
+        if (c.close > b.high) raw_sig = +1;
+        else if (c.close < b.low) raw_sig = -1;
+        else return 0;
+        // 2026-05-21: D1 EMA200 regime gate (added after -$52.31 InsideBar
+        // SHORT loss in gold uptrend 2026-05-20). Suppress direction-counter
+        // signals when D1 trend is opposing.
+        if (raw_sig > 0 && !omega::gold_d1_trend().long_allowed())  return 0;
+        if (raw_sig < 0 && !omega::gold_d1_trend().short_allowed()) return 0;
+        return raw_sig;
     }
 
     void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
