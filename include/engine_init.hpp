@@ -1419,6 +1419,49 @@ static void init_engines(const std::string& cfg_path)
                g_xau_ema_cross_h4.p.hold_max_h4);
         fflush(stdout);
 
+        // ── 2026-05-20 mega-sweep batch (4 new engines) ─────────────────────
+        g_xau_pullback_cont_d1.p           = omega::make_xau_pullback_cont_d1_params();
+        g_xau_pullback_cont_d1.shadow_mode = true;
+        g_xau_pullback_cont_d1.enabled     = true;
+        g_xau_pullback_cont_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauPullbackContD1Engine: shadow=%d ef=%d es=%d pba=%.1f sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_pullback_cont_d1.shadow_mode,
+               g_xau_pullback_cont_d1.p.ema_fast, g_xau_pullback_cont_d1.p.ema_slow,
+               g_xau_pullback_cont_d1.p.pullback_atr,
+               g_xau_pullback_cont_d1.p.sl_atr_mult, g_xau_pullback_cont_d1.p.tp_atr_mult,
+               g_xau_pullback_cont_d1.p.hold_max_days);
+
+        g_xau_bb_scalp_d1.p           = omega::make_xau_bb_scalp_d1_params();
+        g_xau_bb_scalp_d1.shadow_mode = true;
+        g_xau_bb_scalp_d1.enabled     = true;
+        g_xau_bb_scalp_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauBBScalpD1Engine: shadow=%d bb_p=%d std=%.1f sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_bb_scalp_d1.shadow_mode,
+               g_xau_bb_scalp_d1.p.bb_period, g_xau_bb_scalp_d1.p.bb_std_mult,
+               g_xau_bb_scalp_d1.p.sl_atr_mult, g_xau_bb_scalp_d1.p.tp_atr_mult,
+               g_xau_bb_scalp_d1.p.hold_max_days);
+
+        g_xau_swing_break_d1.p           = omega::make_xau_swing_break_d1_params();
+        g_xau_swing_break_d1.shadow_mode = true;
+        g_xau_swing_break_d1.enabled     = true;
+        g_xau_swing_break_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauSwingBreakD1Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_swing_break_d1.shadow_mode,
+               g_xau_swing_break_d1.p.lookback_days,
+               g_xau_swing_break_d1.p.sl_atr_mult, g_xau_swing_break_d1.p.tp_atr_mult,
+               g_xau_swing_break_d1.p.hold_max_days);
+
+        g_ger40_turtle_h4.p           = omega::make_ger40_turtle_h4_params();
+        g_ger40_turtle_h4.shadow_mode = true;
+        g_ger40_turtle_h4.enabled     = true;
+        g_ger40_turtle_h4.symbol      = "GER40";
+        printf("[OMEGA-INIT] Ger40TurtleH4Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_ger40_turtle_h4.shadow_mode,
+               g_ger40_turtle_h4.p.lookback_bars,
+               g_ger40_turtle_h4.p.sl_atr_mult, g_ger40_turtle_h4.p.tp_atr_mult,
+               g_ger40_turtle_h4.p.hold_max_h4);
+        fflush(stdout);
+
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
         // 4-cell 2h trend-follow ensemble built from Pass-8 deep_dive. Same
         // XAU trend regime as the 4h/D1 engines, denser cadence (~25

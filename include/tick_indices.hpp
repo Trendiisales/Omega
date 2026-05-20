@@ -814,6 +814,24 @@ static void on_tick_ger40(
             g_minimal_h4_ger40.check_weekend_close(bid, ask, now_ms_m4, ca_on_close);
         }
     }
+    // Ger40TurtleH4Engine (2026-05-20) -- 20-bar Donchian breakout, shadow.
+    // Self-contained: own H4 OHLC + ATR14 from ticks. Distinct lookback (20)
+    // from MinimalH4GER40 (8) and longer hold (20 H4 bars). Independent pos.
+    {
+        const int64_t now_ms_gt = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const auto gtsig = g_ger40_turtle_h4.on_tick(bid, ask, now_ms_gt, ca_on_close);
+        if (gtsig.valid) {
+            g_telemetry.UpdateLastSignal("GER40",
+                "LONG", gtsig.entry, gtsig.reason,
+                "GER40_TURTLE_H4", regime.c_str(), "GER40_TURTLE_H4",
+                gtsig.tp, gtsig.sl);
+        }
+        if (g_ger40_turtle_h4.has_open_position()) {
+            g_ger40_turtle_h4.check_weekend_close(bid, ask, now_ms_gt, ca_on_close);
+        }
+    }
 }
 
 // ── UK100 ──────────────────────────────────────────────────

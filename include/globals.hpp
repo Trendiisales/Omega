@@ -476,6 +476,33 @@ static omega::XauNbmD1Engine g_xau_nbm_d1;
 #include "XauEmaCrossH4Engine.hpp"
 static omega::XauEmaCrossH4Engine g_xau_ema_cross_h4;
 
+// 2026-05-20 mega-sweep batch (top 4 by cost-stressed Sharpe):
+//
+// XauPullbackContD1Engine -- D1 variant of PullbackContH4 with longer EMA.
+//   Cost stress: 1bp Sh=8.73, 10bp Sh=8.38, 30bp Sh=7.61, 50bp Sh=6.83.
+//   IS Sh=15.73 OOS Sh=6.90 n=33 PnL=71.6% WR=66.7%.
+#include "XauPullbackContD1Engine.hpp"
+static omega::XauPullbackContD1Engine g_xau_pullback_cont_d1;
+
+// XauBBScalpD1Engine -- Bollinger Band fade D1 (close < BB lower).
+//   Resurrection of g_bband_scalp archetype (main has enabled=false).
+//   Cost stress: 1bp Sh=6.47, 10bp Sh=5.90, 30bp Sh=4.63, 50bp Sh=3.37.
+//   IS Sh=10.07 OOS Sh=3.88 n=20 WR=68.4%.
+#include "XauBBScalpD1Engine.hpp"
+static omega::XauBBScalpD1Engine g_xau_bb_scalp_d1;
+
+// XauSwingBreakD1Engine -- HH+HL pattern + 10-day high break.
+//   Cost stress: 1bp Sh=5.49, 10bp Sh=5.08, 30bp Sh=4.17, 50bp Sh=3.25.
+//   IS Sh=10.43 OOS Sh=9.45 n=18 PnL=42.5% WR=61.1%.
+#include "XauSwingBreakD1Engine.hpp"
+static omega::XauSwingBreakD1Engine g_xau_swing_break_d1;
+
+// Ger40TurtleH4Engine -- 20-bar Donchian breakout on GER40 H4.
+//   Turtle archetype applied to DAX H4. IS Sh=5.06 OOS Sh=4.60 FUL Sh=5.00
+//   n=33 PnL=9.4% WR=63.6% mdd=2.0%.
+#include "Ger40TurtleH4Engine.hpp"
+static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
+
 // 2026-05-11 S33k: XauTrendFollow2hEngine -- denser-cadence sibling of the
 //   4h engine. 4 cells (Keltner K=2, Donchian N=20, Donchian N=50, InsideBar),
 //   all on sl2.0_tp4.0 ATR brackets. All 3/3 Duka years +ve per cell.
