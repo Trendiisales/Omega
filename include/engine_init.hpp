@@ -1748,6 +1748,43 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // MinimalH4GER40Breakout -- GER40/DAX sister engine. Same pattern as US30.
+    // Multi-symbol scan 2026-05-20 (backtest/multi_symbol_scan.py): GER40 was
+    // best performer of FX+indices scanned -- Sharpe 3.67 PnL $8.40 50 trades.
+    g_minimal_h4_ger40.p           = omega::make_minimal_h4_ger40_params();
+    g_minimal_h4_ger40.symbol      = "GER40";
+    g_minimal_h4_ger40.shadow_mode = true;
+    g_minimal_h4_ger40.enabled     = true;
+    printf("[INIT] MinimalH4GER40Breakout GER40: shadow=true donchian=%d sl=%.1fx"
+           " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
+           " long_only=%s weekend_gate=%s\n",
+           g_minimal_h4_ger40.p.donchian_bars,    g_minimal_h4_ger40.p.sl_mult,
+           g_minimal_h4_ger40.p.tp_mult,          g_minimal_h4_ger40.p.risk_dollars,
+           g_minimal_h4_ger40.p.max_lot,          g_minimal_h4_ger40.p.dollars_per_point,
+           g_minimal_h4_ger40.p.timeout_h4_bars,
+           g_minimal_h4_ger40.p.long_only ? "true" : "false",
+           g_minimal_h4_ger40.p.weekend_close_gate ? "true" : "false");
+    fflush(stdout);
+
+    // EurGbpPairsEngine -- EURUSD/GBPUSD H1 spread mean reversion (shadow mode).
+    // Backtest 2026-05-20 (backtest/sweep_pairs_v2.csv, C++ engine, M5-interleaved 17mo data):
+    //   Top config w=120 zi=1.5 zo=0.5 h=48: n=358 Sh=7.75 PnL=$638 MDD=$34.67 (cost 1pip/leg)
+    //   6-mode rigor (pairs_rigor_cpp.cpp): IS=7.32 / OOS=7.23, 6/6 WF folds positive,
+    //     14/14 months positive, Monte Carlo p<0.0001, robust to +/-20% perturbation.
+    g_eur_gbp_pairs.p           = omega::make_eur_gbp_pairs_params();
+    g_eur_gbp_pairs.p.z_window  = 120;
+    g_eur_gbp_pairs.p.z_in      = 1.5;
+    g_eur_gbp_pairs.p.z_out     = 0.5;
+    g_eur_gbp_pairs.p.hold_timeout_h1 = 48;
+    g_eur_gbp_pairs.shadow_mode = true;
+    g_eur_gbp_pairs.enabled     = true;
+    printf("[INIT] EurGbpPairsEngine EURUSD+GBPUSD: shadow=true z_window=%d z_in=%.1f"
+           " z_out=%.1f z_stop=%.1f hold_h1=%d risk=$%.0f max_lot=%.2f\n",
+           g_eur_gbp_pairs.p.z_window, g_eur_gbp_pairs.p.z_in, g_eur_gbp_pairs.p.z_out,
+           g_eur_gbp_pairs.p.z_stop,   g_eur_gbp_pairs.p.hold_timeout_h1,
+           g_eur_gbp_pairs.p.risk_dollars, g_eur_gbp_pairs.p.max_lot_per_leg);
+    fflush(stdout);
+
     // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
     // GER40: tighter band (index moves more cleanly around EMAs)
     g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500

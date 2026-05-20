@@ -133,6 +133,26 @@ static omega::MinimalH4Breakout g_minimal_h4_gold;  // XAUUSD pure H4 Donchian b
 #include "MinimalH4US30Breakout.hpp"
 static omega::MinimalH4US30Breakout g_minimal_h4_us30;  // DJ30.F pure H4 Donchian breakout
 
+// MinimalH4GER40Breakout -- GER40 sister of MinimalH4Breakout. Self-contained:
+//   Validated via 2yr Tickstory tick sweep on GER40: 27/27 configs profitable.
+//   2026-05-20 multi-symbol C++ sweep tuned to don=6 sl=2.0 tp=3.0 to=48 long_only=true.
+//   n=50 Sh=3.67 PnL=$8.40 WR=58% MaxDD=$2.94.
+//   Shadow-mode until n>=10 live trades validate backtest expectation.
+#include "MinimalH4GER40Breakout.hpp"
+static omega::MinimalH4GER40Breakout g_minimal_h4_ger40;  // GER40 pure H4 Donchian breakout
+
+// EurGbpPairsEngine -- spread mean-reversion on EURUSD/GBPUSD H1 z-score.
+//   2026-05-20 C++ engine sweep + 6-mode rigor harness:
+//     Sh=7.31 IS=7.32 OOS=7.23 (cost=1.5pip/leg). 6/6 WF folds positive.
+//     Monte Carlo n=10000: p<0.0001. Monthly: 14/14 positive (100%).
+//     Cost stress 0-5pip: Sh 8.62 -> 4.27 monotonic. Robustness +/-20% all Sh>6.3.
+//   Most robust pair edge found in exhaustive cross-asset search (~30 combos tested).
+//   Real EURGBP single-instrument FAILS (15bps microstructure drowns synthetic edge).
+//   2-leg execution (EURUSD + GBPUSD) is the correct path.
+//   Shadow-mode until n>=30 live trades validate.
+#include "EurGbpPairsEngine.hpp"
+static omega::EurGbpPairsEngine g_eur_gbp_pairs;  // EURUSD/GBPUSD spread mean-rev
+
 // C1RetunedPortfolio -- Python-side Phase 2 winner ported to C++ for live shadow.
 // Verdict source: phase2/donchian_postregime/CHOSEN.md.
 // Backtest baseline: +74.12% / -5.85% / PF 1.486 / Sharpe 2.651 / WR 55.2%.

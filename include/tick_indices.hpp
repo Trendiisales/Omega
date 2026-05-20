@@ -795,6 +795,25 @@ static void on_tick_ger40(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_ger40_london_brk.on_tick(bid, ask, now_ms_glb);
     }
+
+    // MinimalH4GER40Breakout -- pure H4 Donchian (shadow mode).
+    // Self-contained: builds own H4 OHLC + ATR14 from tick stream.
+    // Independent of other GER40 engines (shadow only, no broker orders).
+    {
+        const int64_t now_ms_m4 = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const auto m4sig = g_minimal_h4_ger40.on_tick(bid, ask, now_ms_m4, ca_on_close);
+        if (m4sig.valid) {
+            g_telemetry.UpdateLastSignal("GER40",
+                m4sig.is_long ? "LONG" : "SHORT", m4sig.entry, m4sig.reason,
+                "MINIMAL_H4_GER40", regime.c_str(), "MINIMAL_H4_GER40",
+                m4sig.tp, m4sig.sl);
+        }
+        if (g_minimal_h4_ger40.has_open_position()) {
+            g_minimal_h4_ger40.check_weekend_close(bid, ask, now_ms_m4, ca_on_close);
+        }
+    }
 }
 
 // ── UK100 ──────────────────────────────────────────────────

@@ -159,6 +159,22 @@ static void on_tick_eurusd(
             /* l2_real    */ g_macro_ctx.ctrader_l2_live);
     }
 
+    // EurGbpPairsEngine (shadow) -- spread mean-reversion. Engine maintains its
+    // own H1 OHLC accumulator + rolling z-score; signal logic runs on H1 close.
+    // See backtest/sweep_pairs_v2.csv for tuning. Routed in both on_tick_eurusd
+    // and on_tick_gbpusd via separate per-leg methods.
+    {
+        auto ca_on_close = [](const omega::TradeRecord& tr){ (void)tr; };
+        const auto psig = g_eur_gbp_pairs.on_tick_eur(bid, ask, now_ms, ca_on_close);
+        if (psig.valid) {
+            g_telemetry.UpdateLastSignal("EURUSD+GBPUSD",
+                psig.long_spread ? "LONG_SPREAD" : "SHORT_SPREAD",
+                psig.eur_entry, psig.reason,
+                "EUR_GBP_PAIRS", regime.c_str(), "EUR_GBP_PAIRS",
+                0.0, 0.0);
+        }
+    }
+
     (void)sym; (void)regime; (void)dispatch;
 }
 
@@ -235,6 +251,12 @@ static void on_tick_gbpusd(
             /* wall_above */ g_macro_ctx.gbp_wall_above,
             /* wall_below */ g_macro_ctx.gbp_wall_below,
             /* l2_real    */ g_macro_ctx.ctrader_l2_live);
+    }
+
+    // EurGbpPairsEngine -- GBP leg (see on_tick_eurusd for EUR leg).
+    {
+        auto ca_on_close = [](const omega::TradeRecord& tr){ (void)tr; };
+        g_eur_gbp_pairs.on_tick_gbp(bid, ask, now_ms, ca_on_close);
     }
 
     (void)sym; (void)regime; (void)dispatch;
