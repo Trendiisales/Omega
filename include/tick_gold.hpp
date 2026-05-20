@@ -1052,6 +1052,12 @@ static void on_tick_gold(
             // same H4-close stream to synthesise D1 bars internally.
             g_xau_tsmom_fast_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                           bid, ask, now_ms_g, bracket_on_close);
+            // ── XauTurtleD1Engine (2026-05-20) -- 40d Donchian long break
+            g_xau_turtle_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                       bid, ask, now_ms_g, bracket_on_close);
+            // ── XauStopRunD1Engine (2026-05-20) -- 5d stop-run rejection rally
+            g_xau_stop_run_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                         bid, ask, now_ms_g, bracket_on_close);
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
         } else { if(xau_mid>s_cur_h4.high)s_cur_h4.high=xau_mid; if(xau_mid<s_cur_h4.low)s_cur_h4.low=xau_mid; s_cur_h4.close=xau_mid; }
     }
@@ -2047,6 +2053,9 @@ static void on_tick_gold(
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTsmomFastD1Engine tick management (SL/TP per tick).
     g_xau_tsmom_fast_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // XauTurtleD1Engine + XauStopRunD1Engine tick management.
+    g_xau_turtle_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_xau_stop_run_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTrendFollow2hEngine tick management -- 4 2h-timeframe cells
     // (Keltner, Donchian20, Donchian50, InsideBar). S33k shipped 2026-05-11.
     // 2h bars built internally from H1 stream. Single-position per cell, 4

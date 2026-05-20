@@ -435,6 +435,26 @@ static omega::XauTrendFollowD1Engine g_xau_tf_d1;
 #include "XauTsmomFastD1Engine.hpp"
 static omega::XauTsmomFastD1Engine g_xau_tsmom_fast_d1;
 
+// 2026-05-20: XauTurtleD1Engine -- 40-day Donchian break (long-only).
+//   Resurrection of TurtleTick signal archetype (retired S50 X1 Apr 27 2026).
+//   Re-tested on 2yr daily: lb=40 hold=10 sl_atr=1.5 tp_atr=3.0.
+//   Cost stress: 1bps IS Sh=8.08/OOS=18.96/FUL=13.57, 10bps FUL=13.01,
+//                50bps FUL=10.51. WR=70%, n=20 over 670 days (sparse).
+//   CAVEAT: low n, high variance in Sharpe estimate. Shadow only until
+//           n>=5 live shadow trades validate.
+#include "XauTurtleD1Engine.hpp"
+static omega::XauTurtleD1Engine g_xau_turtle_d1;
+
+// 2026-05-20: XauStopRunD1Engine -- stop-hunt rejection rally (long-only).
+//   Resurrection of StopRunReversal archetype (retired S50 X2 Apr 27 2026).
+//   Re-tested on 2yr daily: lb=5 hold=20 sl_atr=1.5 tp_atr=2.0.
+//   Signal: bar.low broke 5d_low AND bar.close > 5d_low.
+//   Cost stress: 1bps IS Sh=7.76/OOS=6.55/FUL=6.84, 10bps FUL=6.34,
+//                50bps FUL=4.12. WR=65.5%, n=29 over 670 days.
+//   Shadow only until n>=5 live shadow trades.
+#include "XauStopRunD1Engine.hpp"
+static omega::XauStopRunD1Engine g_xau_stop_run_d1;
+
 // 2026-05-11 S33k: XauTrendFollow2hEngine -- denser-cadence sibling of the
 //   4h engine. 4 cells (Keltner K=2, Donchian N=20, Donchian N=50, InsideBar),
 //   all on sl2.0_tp4.0 ATR brackets. All 3/3 Duka years +ve per cell.

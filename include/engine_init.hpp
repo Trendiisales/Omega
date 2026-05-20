@@ -1348,6 +1348,35 @@ static void init_engines(const std::string& cfg_path)
                g_xau_tsmom_fast_d1.p.tp_atr_mult, g_xau_tsmom_fast_d1.p.hold_max_days);
         fflush(stdout);
 
+        // ── XauTurtleD1Engine (2026-05-20) -- 40d Donchian break (long-only)
+        //   Resurrection of S50 X1 retired TurtleTick. Re-tested 2yr daily XAU:
+        //     FUL Sh=13.01 at 10bps (IS=7.32 OOS=18.42), n=20, WR=70%.
+        //     Cost-robust to 50bps (FUL Sh=10.51).
+        //   CAVEAT: sparse (~10 trades/year). High Sharpe variance from low n.
+        g_xau_turtle_d1.p           = omega::make_xau_turtle_d1_params();
+        g_xau_turtle_d1.shadow_mode = true;
+        g_xau_turtle_d1.enabled     = true;
+        g_xau_turtle_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauTurtleD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_turtle_d1.shadow_mode, (int)g_xau_turtle_d1.enabled,
+               g_xau_turtle_d1.p.lookback_days, g_xau_turtle_d1.p.sl_atr_mult,
+               g_xau_turtle_d1.p.tp_atr_mult, g_xau_turtle_d1.p.hold_max_days);
+        fflush(stdout);
+
+        // ── XauStopRunD1Engine (2026-05-20) -- 5d stop-run reversal long
+        //   Resurrection of S50 X2 retired StopRunReversal. Re-tested 2yr daily:
+        //     FUL Sh=6.34 at 10bps (IS=7.06 OOS=6.14), n=29, WR=65.5%.
+        //     Cost-robust to 50bps (FUL Sh=4.12).
+        g_xau_stop_run_d1.p           = omega::make_xau_stop_run_d1_params();
+        g_xau_stop_run_d1.shadow_mode = true;
+        g_xau_stop_run_d1.enabled     = true;
+        g_xau_stop_run_d1.symbol      = "XAUUSD";
+        printf("[OMEGA-INIT] XauStopRunD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_xau_stop_run_d1.shadow_mode, (int)g_xau_stop_run_d1.enabled,
+               g_xau_stop_run_d1.p.lookback_days, g_xau_stop_run_d1.p.sl_atr_mult,
+               g_xau_stop_run_d1.p.tp_atr_mult, g_xau_stop_run_d1.p.hold_max_days);
+        fflush(stdout);
+
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
         // 4-cell 2h trend-follow ensemble built from Pass-8 deep_dive. Same
         // XAU trend regime as the 4h/D1 engines, denser cadence (~25
