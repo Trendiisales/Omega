@@ -1509,6 +1509,10 @@ private:
     int64_t last_exit_ms_      = 0;
     double  h1_e9_at_entry_    = 0.0;
     double  h1_e50_at_entry_   = 0.0;
+    // 2026-05-22: escalating SL cooldown. After 2026-05-21 NSX took 2 back-to-back
+    // losses ($100 each) because 30min cooldown expired before mean-reversion
+    // played out. Escalate cooldown 1h/3h/6h on consec SL_HITs. Reset on win.
+    int     consec_sl_         = 0;
 
     static int s_trade_id_;
 
@@ -1571,7 +1575,26 @@ private:
         last_exit_dir_     = is_long_ ? 1 : -1;
         last_exit_ms_      = idx_now_ms();
         active_            = false;
-        cooldown_until_ms_ = idx_now_ms() + SWING_COOLDOWN_MS;
+        // 2026-05-22: escalating cooldown on consec SLs.
+        //   1st consec SL -> 1h cooldown
+        //   2nd consec SL -> 3h cooldown
+        //   3rd+ consec SL -> 6h cooldown
+        // Any non-SL exit (timeout-with-gain, BE-trail TP) resets to 30min standard.
+        if (sl_hit && gross <= 0.0) {
+            ++consec_sl_;
+            int64_t cool_ms = SWING_COOLDOWN_MS;  // 30min default
+            if (consec_sl_ == 1)      cool_ms =  3600000LL;   // 1h
+            else if (consec_sl_ == 2) cool_ms = 10800000LL;   // 3h
+            else                      cool_ms = 21600000LL;   // 6h
+            cooldown_until_ms_ = idx_now_ms() + cool_ms;
+            printf("[ISWING-%s] CONSEC_SL=%d -> cooldown=%lldmin\n",
+                   symbol_, consec_sl_, (long long)(cool_ms / 60000LL));
+            fflush(stdout);
+        } else {
+            // Winning or scratched exit -- reset consec counter, standard cooldown.
+            consec_sl_ = 0;
+            cooldown_until_ms_ = idx_now_ms() + SWING_COOLDOWN_MS;
+        }
 
         if (on_close) on_close(tr);
     }
