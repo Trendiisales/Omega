@@ -180,11 +180,17 @@ class DomRecorder:
         ])
         if self.broadcaster is not None:
             # Compact JSON, newline-delimited. Short keys to keep msg small.
+            # bp/bs/ap/as = per-level price/size arrays (top of book first).
+            bp = ",".join(f"{b.price:.4f}" for b in bids)
+            bs_ = ",".join(f"{(b.size or 0.0):.2f}" for b in bids)
+            ap = ",".join(f"{a.price:.4f}" for a in asks)
+            as_ = ",".join(f"{(a.size or 0.0):.2f}" for a in asks)
             msg = (
                 '{"ts":%d,"s":"%s","b":%.4f,"a":%.4f,'
-                '"bv":%.2f,"av":%.2f,"i":%.4f,"bl":%d,"al":%d}\n'
+                '"bv":%.2f,"av":%.2f,"i":%.4f,"bl":%d,"al":%d,'
+                '"bp":[%s],"bs":[%s],"ap":[%s],"as":[%s]}\n'
                 % (ts, self.sym, bid_px, ask_px, bid_vol, ask_vol, imb,
-                   len(bids), len(asks))
+                   len(bids), len(asks), bp, bs_, ap, as_)
             )
             self.broadcaster.send(msg.encode("ascii"))
         now = time.monotonic()

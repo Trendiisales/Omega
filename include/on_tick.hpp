@@ -318,12 +318,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         };
 
         {
-            // GOLD L2 IMBALANCE -- FIX-fed via fix_dispatch.hpp.
+            // GOLD L2 IMBALANCE -- IBKR bridge preferred when fresh, FIX fallback.
+            // S88 (2026-05-22): IBKR sidecar provides real volume imbalance.
+            // Blackbull FIX sends size_raw=0, so FIX imbalance is a level-count
+            // surrogate. When the bridge is connected (g_ibkr_l2.xau.fresh),
+            // use its volume-weighted imbalance instead.
             // 10s freshness window (Asia tape batches L2; longer than indices/FX).
-            const bool l2_live = g_l2_gold.fresh(l2_now_ms, 10000);
+            const bool ibkr_live = g_ibkr_l2.xau.fresh(l2_now_ms, 5000);
+            const bool fix_live  = g_l2_gold.fresh(l2_now_ms, 10000);
+            const bool l2_live   = ibkr_live || fix_live;
             g_macro_ctx.gold_l2_real = l2_live;
 
-            if (l2_live) {
+            if (ibkr_live) {
+                g_macro_ctx.gold_l2_imbalance =
+                    g_ibkr_l2.xau.imb.load(std::memory_order_relaxed);
+            } else if (fix_live) {
                 // Read FIX-fed vol-weighted imbalance (L2Book::imbalance over 5 levels).
                 // Falls to 0.5 inside L2Book::imbalance() if total volume is 0.
                 g_macro_ctx.gold_l2_imbalance = g_l2_gold.imbalance.load(std::memory_order_relaxed);
@@ -508,7 +517,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             for (int i=0;i<na;++i){ap[i]=b->asks[i].price;as_[i]=b->asks[i].size;}
             g_telemetry.UpdateL2Book(sym, bp, bs, nb, ap, as_, na);
         };
-        if (const L2Book* b = getBook("XAUUSD")) {
+        // S88 (2026-05-22): if IBKR DOM bridge is connected, push IBKR per-level
+        // depth to the GUI panel instead of the (size_raw=0) FIX book. Slope /
+        // wall / vacuum still computed from FIX -- those rely on L2Book methods
+        // and the FIX feed at least has prices. Imbalance switch above is the
+        // load-bearing one for engine logic; this branch is for GUI display.
+        if (g_ibkr_l2.xau.fresh(l2_now_ms, 5000)) {
+            double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
+            int nb = 0, na = 0;
+            g_ibkr_l2.xau.snapshot_levels(bp, bs, nb, ap, as_, na);
+            if (nb > 0 && na > 0) {
+                g_telemetry.UpdateL2Book("XAUUSD", bp, bs, nb, ap, as_, na);
+            }
+            // Slope/wall/vacuum still from FIX book if available (best effort).
+            if (const L2Book* b = getBook("XAUUSD")) {
+                g_macro_ctx.gold_book_slope = b->book_slope();
+                g_macro_ctx.gold_vacuum_ask = b->liquidity_vacuum_ask();
+                g_macro_ctx.gold_slope      = b->book_slope();
+                g_macro_ctx.gold_vacuum_bid = b->liquidity_vacuum_bid();
+                g_macro_ctx.gold_wall_above = b->wall_above(g_macro_ctx.gold_mid_price);
+                g_macro_ctx.gold_wall_below = b->wall_below(g_macro_ctx.gold_mid_price);
+            }
+        } else if (const L2Book* b = getBook("XAUUSD")) {
             g_macro_ctx.gold_book_slope      = b->book_slope();
             g_macro_ctx.gold_vacuum_ask      = b->liquidity_vacuum_ask();
             g_macro_ctx.gold_slope           = b->book_slope();  // weighted bid-ask pressure primer for MCE
@@ -516,6 +546,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_macro_ctx.gold_wall_above      = b->wall_above(g_macro_ctx.gold_mid_price);
             g_macro_ctx.gold_wall_below      = b->wall_below(g_macro_ctx.gold_mid_price);
             pushL2("XAUUSD", b);
+        }
+        // XAGUSD: same pattern -- prefer IBKR depth for GUI panel.
+        if (g_ibkr_l2.xag.fresh(l2_now_ms, 5000)) {
+            double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
+            int nb = 0, na = 0;
+            g_ibkr_l2.xag.snapshot_levels(bp, bs, nb, ap, as_, na);
+            if (nb > 0 && na > 0) {
+                g_telemetry.UpdateL2Book("XAGUSD", bp, bs, nb, ap, as_, na);
+            }
         }
         if (const L2Book* b = getBook("US500.F")) {
             g_macro_ctx.sp_book_slope        = b->book_slope();

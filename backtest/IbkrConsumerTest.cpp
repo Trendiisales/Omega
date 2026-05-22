@@ -24,20 +24,26 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
+        double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
+        int nb = 0, na = 0;
+        bus.xau.snapshot_levels(bp, bs, nb, ap, as_, na);
         std::printf(
-            "t=%lds msgs=%lld errs=%lld reconn=%lld conn=%d  "
-            "XAU imb=%.3f bv=%.0f av=%.0f fresh=%d  "
-            "XAG imb=%.3f bv=%.0f av=%.0f fresh=%d\n",
+            "t=%lds msgs=%lld errs=%lld conn=%d  "
+            "XAU imb=%.3f bv=%.0f av=%.0f lvls=%d/%d fresh=%d\n",
             (long)std::chrono::duration_cast<std::chrono::seconds>(
                 end - std::chrono::steady_clock::now()).count(),
             (long long)stats.msgs_total.load(),
             (long long)stats.parse_errors.load(),
-            (long long)stats.reconnects.load(),
             stats.connected.load() ? 1 : 0,
             bus.xau.imb.load(), bus.xau.bid_vol.load(), bus.xau.ask_vol.load(),
-            bus.xau.fresh(now) ? 1 : 0,
-            bus.xag.imb.load(), bus.xag.bid_vol.load(), bus.xag.ask_vol.load(),
-            bus.xag.fresh(now) ? 1 : 0);
+            nb, na, bus.xau.fresh(now) ? 1 : 0);
+        if (nb > 0 && na > 0) {
+            std::printf("  bid: ");
+            for (int i = 0; i < nb; ++i) std::printf("[%.2f@%.0f] ", bp[i], bs[i]);
+            std::printf("\n  ask: ");
+            for (int i = 0; i < na; ++i) std::printf("[%.2f@%.0f] ", ap[i], as_[i]);
+            std::printf("\n");
+        }
         std::fflush(stdout);
     }
     stop_flag.store(true);

@@ -1154,14 +1154,26 @@ static void on_tick_gold(
             // L2 CSV logger was unconditional by design. Result: header written
             // once per day then zero data rows, CSV stale for every tick since
             // 2026-04-17 (VERIFY_STARTUP flagged 16767s stale 2026-04-24 07:43 UTC).
+            // S88 (2026-05-22): if IBKR bridge fresh, log its volume + level
+            // counts instead of zeros. Schema unchanged so existing readers
+            // (backtest replay, hydrator) keep working.
+            const bool ibkr_fresh_log = g_ibkr_l2.xau.fresh(now_ms_g, 5000);
+            const double log_bid_vol = ibkr_fresh_log
+                ? g_ibkr_l2.xau.bid_vol.load(std::memory_order_relaxed) : 0.0;
+            const double log_ask_vol = ibkr_fresh_log
+                ? g_ibkr_l2.xau.ask_vol.load(std::memory_order_relaxed) : 0.0;
+            const int log_bid_levels = ibkr_fresh_log
+                ? g_ibkr_l2.xau.bid_levels.load(std::memory_order_relaxed) : 0;
+            const int log_ask_levels = ibkr_fresh_log
+                ? g_ibkr_l2.xau.ask_levels.load(std::memory_order_relaxed) : 0;
             fprintf(s_l2f_unc,
                 "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
                 "%d,%d,%llu,"
                 "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
                 (long long)now_ms_g, xau_mid, bid, ask,
-                g_macro_ctx.gold_l2_imbalance,            // FIX-fed (S8 fix)
-                0.0, 0.0,                                 // l2_bid_vol, l2_ask_vol -- cTrader, zeroed
-                0, 0, (unsigned long long)0,              // depth_*_levels, depth_events_total -- cTrader, zeroed
+                g_macro_ctx.gold_l2_imbalance,            // IBKR if fresh, else FIX
+                log_bid_vol, log_ask_vol,                 // IBKR real sizes if fresh, else 0
+                log_bid_levels, log_ask_levels, (unsigned long long)0,
                 0,                                        // watchdog_dead -- cTrader watchdog, zeroed
                 vol_ratio_log,
                 (int)gold_sdec.regime,

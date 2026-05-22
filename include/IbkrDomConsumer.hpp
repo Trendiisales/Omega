@@ -20,7 +20,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <netinet/in.h>
 #include <string>
 #include <sys/socket.h>
@@ -30,6 +32,8 @@
 namespace omega::ibkr {
 
 struct L2Slot {
+    static constexpr int MAX_LEVELS = 5;
+
     std::atomic<double>  imb{0.5};
     std::atomic<double>  bid_vol{0.0};
     std::atomic<double>  ask_vol{0.0};
@@ -39,10 +43,30 @@ struct L2Slot {
     std::atomic<int>     ask_levels{0};
     std::atomic<int64_t> last_ms{0};
 
+    // Per-level arrays. Written under level_mtx, read under same lock.
+    // Used by GUI depth panel + book_slope/wall calculations when fresh.
+    mutable std::mutex level_mtx;
+    double bid_prices[MAX_LEVELS]{};
+    double bid_sizes [MAX_LEVELS]{};
+    double ask_prices[MAX_LEVELS]{};
+    double ask_sizes [MAX_LEVELS]{};
+    int    bid_n = 0;
+    int    ask_n = 0;
+
     // True if last update within max_age_ms.
     bool fresh(int64_t now_ms, int64_t max_age_ms = 2000) const noexcept {
         const int64_t lm = last_ms.load(std::memory_order_relaxed);
         return lm > 0 && (now_ms - lm) < max_age_ms;
+    }
+
+    // Copy snapshot of per-level arrays under lock. Returns counts written.
+    void snapshot_levels(double bp_out[MAX_LEVELS], double bs_out[MAX_LEVELS], int& nb,
+                         double ap_out[MAX_LEVELS], double as_out[MAX_LEVELS], int& na) const {
+        std::lock_guard<std::mutex> lk(level_mtx);
+        nb = bid_n;
+        na = ask_n;
+        for (int i = 0; i < nb; ++i) { bp_out[i] = bid_prices[i]; bs_out[i] = bid_sizes[i]; }
+        for (int i = 0; i < na; ++i) { ap_out[i] = ask_prices[i]; as_out[i] = ask_sizes[i]; }
     }
 };
 
@@ -66,6 +90,23 @@ struct ConsumerStats {
     std::atomic<bool>    connected{false};
 };
 
+// Parse array of doubles "1.23,4.56,7.89" into out[]. Returns count, max=max_out.
+inline int parse_double_array(const char* p, double* out, int max_out) noexcept {
+    if (!p) return 0;
+    int n = 0;
+    while (*p && n < max_out) {
+        // Skip leading whitespace / brackets / commas
+        while (*p == ' ' || *p == '[' || *p == ',') ++p;
+        if (*p == ']' || *p == '\0') break;
+        char* end = nullptr;
+        double v = std::strtod(p, &end);
+        if (end == p) break;
+        out[n++] = v;
+        p = end;
+    }
+    return n;
+}
+
 // Minimal lossy JSON extract -- fields fixed schema from sidecar.
 // Returns true if all required fields parsed. No allocation, no exceptions.
 inline bool parse_line(const char* line, size_t n,
@@ -73,7 +114,9 @@ inline bool parse_line(const char* line, size_t n,
                        double& bid, double& ask,
                        double& bid_vol, double& ask_vol, double& imb,
                        int& bid_levels, int& ask_levels,
-                       int64_t& ts_ms) noexcept
+                       int64_t& ts_ms,
+                       double bid_px_arr[L2Slot::MAX_LEVELS], double bid_sz_arr[L2Slot::MAX_LEVELS], int& bid_n,
+                       double ask_px_arr[L2Slot::MAX_LEVELS], double ask_sz_arr[L2Slot::MAX_LEVELS], int& ask_n) noexcept
 {
     // Expected: {"ts":...,"s":"XAUUSD","b":...,"a":...,"bv":...,"av":...,"i":...,"bl":...,"al":...}
     auto find_after = [&](const char* key) -> const char* {
@@ -120,6 +163,24 @@ inline bool parse_line(const char* line, size_t n,
     ask_levels = p_al ? static_cast<int>(std::strtol(p_al, nullptr, 10)) : 0;
 
     if (bid <= 0.0 || ask <= 0.0 || ask < bid) return false;
+
+    // Optional per-level arrays. Sidecar emits "bp":[..],"bs":[..],"ap":[..],"as":[..]
+    bid_n = 0;
+    ask_n = 0;
+    const char* p_bp = find_after("\"bp\":");
+    const char* p_bs = find_after("\"bs\":");
+    const char* p_ap = find_after("\"ap\":");
+    const char* p_as = find_after("\"as\":");
+    if (p_bp && p_bs) {
+        const int nb = parse_double_array(p_bp, bid_px_arr, L2Slot::MAX_LEVELS);
+        const int sb = parse_double_array(p_bs, bid_sz_arr, L2Slot::MAX_LEVELS);
+        bid_n = (nb < sb) ? nb : sb;
+    }
+    if (p_ap && p_as) {
+        const int na = parse_double_array(p_ap, ask_px_arr, L2Slot::MAX_LEVELS);
+        const int sa = parse_double_array(p_as, ask_sz_arr, L2Slot::MAX_LEVELS);
+        ask_n = (na < sa) ? na : sa;
+    }
     return true;
 }
 
@@ -183,8 +244,13 @@ inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
                 double   bid = 0, ask = 0, bv = 0, av = 0, imb = 0;
                 int      bl = 0, al = 0;
                 int64_t  ts = 0;
+                double   bp_a[L2Slot::MAX_LEVELS]{}, bs_a[L2Slot::MAX_LEVELS]{};
+                double   ap_a[L2Slot::MAX_LEVELS]{}, as_a[L2Slot::MAX_LEVELS]{};
+                int      bn_a = 0, an_a = 0;
                 if (!parse_line(line.c_str(), line.size(),
-                                sym, bid, ask, bv, av, imb, bl, al, ts)) {
+                                sym, bid, ask, bv, av, imb, bl, al, ts,
+                                bp_a, bs_a, bn_a,
+                                ap_a, as_a, an_a)) {
                     stats.parse_errors.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
@@ -197,6 +263,19 @@ inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
                 slot->imb.store(imb, std::memory_order_relaxed);
                 slot->bid_levels.store(bl, std::memory_order_relaxed);
                 slot->ask_levels.store(al, std::memory_order_relaxed);
+                {
+                    std::lock_guard<std::mutex> lk(slot->level_mtx);
+                    slot->bid_n = bn_a;
+                    slot->ask_n = an_a;
+                    for (int i = 0; i < bn_a; ++i) {
+                        slot->bid_prices[i] = bp_a[i];
+                        slot->bid_sizes [i] = bs_a[i];
+                    }
+                    for (int i = 0; i < an_a; ++i) {
+                        slot->ask_prices[i] = ap_a[i];
+                        slot->ask_sizes [i] = as_a[i];
+                    }
+                }
                 slot->last_ms.store(ts, std::memory_order_release);
                 stats.msgs_total.fetch_add(1, std::memory_order_relaxed);
             }
