@@ -506,11 +506,17 @@ int main(int argc, char* argv[])
     if (const char* en = std::getenv("OMEGA_IBKR_BRIDGE"); en && std::string(en) == "1") {
         const char* port_env = std::getenv("OMEGA_IBKR_BRIDGE_PORT");
         const uint16_t port = port_env ? static_cast<uint16_t>(std::atoi(port_env)) : 9701;
-        std::cout << "[IBKR-CONSUMER] starting; localhost:" << port << "\n";
+        // S88-followup (2026-05-22): OMEGA_IBKR_BRIDGE_HOST lets the consumer
+        // reach the sidecar across hosts (e.g. Tailscale mesh, SSH tunnel, LAN).
+        // Default 127.0.0.1 (sidecar on same VPS, original intent).
+        const char* host_env = std::getenv("OMEGA_IBKR_BRIDGE_HOST");
+        // String must outlive the detached thread -- store in a static.
+        static std::string s_ibkr_host = host_env ? host_env : "127.0.0.1";
+        std::cout << "[IBKR-CONSUMER] starting; " << s_ibkr_host << ":" << port << "\n";
         std::cout.flush();
         std::thread([port]{
             omega::ibkr::run_consumer(g_ibkr_l2, g_ibkr_l2_stats,
-                                      g_ibkr_l2_stop, "127.0.0.1", port);
+                                      g_ibkr_l2_stop, s_ibkr_host.c_str(), port);
         }).detach();
     }
 
