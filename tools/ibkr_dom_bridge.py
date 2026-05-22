@@ -22,23 +22,53 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from ib_async import IB, Contract, util
+from ib_async import IB, Contract, Future
 
 
 def now_ms() -> int:
     return int(time.time() * 1000)
 
 
+# Index futures map -- Blackbull symbol -> IBKR Future contract spec.
+# All futures (real institutional L2, continuous front-month via qualifyContracts).
+# USTEC is treated as an alias of NAS100 (both price off NQ); subscribe once,
+# dispatch both Blackbull symbols off the same feed downstream.
+INDEX_FUTURES = {
+    "US500":  dict(symbol="ES",   exchange="CME",   currency="USD"),
+    "NAS100": dict(symbol="NQ",   exchange="CME",   currency="USD"),
+    "USTEC":  dict(symbol="NQ",   exchange="CME",   currency="USD"),  # alias of NAS100
+    "DJ30":   dict(symbol="YM",   exchange="CBOT",  currency="USD"),
+    "GER40":  dict(symbol="FDAX", exchange="EUREX", currency="EUR"),
+    "ESTX50": dict(symbol="FESX", exchange="EUREX", currency="EUR"),
+    "UK100":  dict(symbol="Z",    exchange="ICEEU", currency="GBP"),
+}
+
+
 def make_contract(sym: str) -> Contract:
+    # Accept both "US500.F" (Blackbull suffix) and "US500".
+    u = sym.upper()
+    if u.endswith(".F"):
+        u = u[:-2]
     # XAU on IBKR has multiple variants. Try CMDTY/SMART/USD first (matches
     # the TWS screenshot). Fall back to METAL/SMART if CMDTY not subscribed.
-    if sym.upper() == "XAUUSD":
+    if u == "XAUUSD":
         return Contract(symbol="XAUUSD", secType="CMDTY", exchange="SMART", currency="USD")
-    if sym.upper() == "XAGUSD":
+    if u == "XAGUSD":
         return Contract(symbol="XAGUSD", secType="CMDTY", exchange="SMART", currency="USD")
+    # Index futures (CME/CBOT/EUREX/ICEEU). Empty lastTradeDateOrContractMonth
+    # -- ib.qualifyContracts() at the call site resolves to the front-month
+    # contract automatically, so no manual quarterly-roll logic needed here.
+    if u in INDEX_FUTURES:
+        m = INDEX_FUTURES[u]
+        return Future(
+            symbol=m["symbol"],
+            exchange=m["exchange"],
+            currency=m["currency"],
+            lastTradeDateOrContractMonth="",
+        )
     # FX pairs
-    if len(sym) == 6 and sym.isalpha():
-        base, quote = sym[:3].upper(), sym[3:].upper()
+    if len(u) == 6 and u.isalpha():
+        base, quote = u[:3], u[3:]
         return Contract(symbol=base, secType="CASH", exchange="IDEALPRO", currency=quote)
     raise ValueError(f"Unknown symbol mapping: {sym}")
 
@@ -254,7 +284,13 @@ def main():
                               broadcaster=broadcaster)
             rec.start()
             recorders.append(rec)
-            print(f"subscribed {sym} -> {out_path}", flush=True)
+            # For futures, log the resolved front-month expiry so the operator
+            # can spot when a roll is due (typically 8 trading days before
+            # lastTradeDateOrContractMonth for E-mini / Eurex quarterly cycle).
+            expiry = getattr(contract, "lastTradeDateOrContractMonth", "") or ""
+            sectype = getattr(contract, "secType", "") or ""
+            tag = f" [{sectype} expiry={expiry}]" if expiry else ""
+            print(f"subscribed {sym} -> {out_path}{tag}", flush=True)
         except Exception as e:
             print(f"FAILED {sym}: {e}", file=sys.stderr)
 

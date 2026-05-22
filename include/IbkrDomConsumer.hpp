@@ -108,12 +108,29 @@ struct L2Slot {
 
 // One slot per bridged symbol. Add symbols here as the bridge expands.
 struct L2Bus {
-    L2Slot xau;  // XAUUSD
-    L2Slot xag;  // XAGUSD
+    L2Slot xau;     // XAUUSD              (IBKR XAUUSD CMDTY/SMART)
+    L2Slot xag;     // XAGUSD              (IBKR XAGUSD CMDTY/SMART)
+    L2Slot us500;   // US500.F / US500     (IBKR ES   front-month CME)
+    L2Slot nas100;  // NAS100 / USTEC.F    (IBKR NQ   front-month CME; USTEC aliases NAS100)
+    L2Slot dj30;    // DJ30.F  / DJ30      (IBKR YM   front-month CBOT)
+    L2Slot ger40;   // GER40               (IBKR FDAX front-month EUREX)
+    L2Slot uk100;   // UK100               (IBKR Z    front-month ICEEU)
+    L2Slot estx50;  // ESTX50              (IBKR FESX front-month EUREX)
 
+    // Map bridge-emitted symbol string to the slot it updates.
+    // Bridge symbols come in either "US500.F"/"NAS100"/etc (Blackbull naming
+    // -- the bridge writes whatever was passed via --symbols), so we accept
+    // both forms here. USTEC.F maps to nas100 (same NQ underlying).
     L2Slot* lookup(const char* sym) noexcept {
-        if (std::strcmp(sym, "XAUUSD") == 0) return &xau;
-        if (std::strcmp(sym, "XAGUSD") == 0) return &xag;
+        if (std::strcmp(sym, "XAUUSD")  == 0) return &xau;
+        if (std::strcmp(sym, "XAGUSD")  == 0) return &xag;
+        if (std::strcmp(sym, "US500")   == 0 || std::strcmp(sym, "US500.F")  == 0) return &us500;
+        if (std::strcmp(sym, "NAS100")  == 0
+         || std::strcmp(sym, "USTEC")   == 0 || std::strcmp(sym, "USTEC.F")  == 0) return &nas100;
+        if (std::strcmp(sym, "DJ30")    == 0 || std::strcmp(sym, "DJ30.F")   == 0) return &dj30;
+        if (std::strcmp(sym, "GER40")   == 0) return &ger40;
+        if (std::strcmp(sym, "UK100")   == 0) return &uk100;
+        if (std::strcmp(sym, "ESTX50")  == 0) return &estx50;
         return nullptr;
     }
 };
