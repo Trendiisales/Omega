@@ -4481,8 +4481,6 @@ private:
     double  SAME_LEVEL_REENTRY_BAND     = 1.50;// raised 0.80?1.50: $0.80 band was too tight
     double  MIN_VWAP_DISLOCATION        = 1.20;// raised 0.80?1.20: entries within $1.20 of VWAP are noise territory
     double  MAX_ENTRY_SPREAD            = 2.50;  // raised 1.60?2.50: matches gold spread reality in London ($1.50-$2.50)
-    double  IMPULSE_MIN_CONFIDENCE      = 1.05;
-    double  IMPULSE_MIN_SCORE           = 1.20;
     double  GENERAL_MIN_SCORE           = 1.20;
     int64_t MIN_ENTRY_GAP_SEC           = 90;  // raised 30?90: CB was re-firing 2-3x per compression box
 

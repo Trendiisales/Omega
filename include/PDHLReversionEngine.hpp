@@ -205,8 +205,6 @@ public:
 
 private:
     int64_t m_last_close_ms = 0;
-    int     m_prev_depth_bid = 0;
-    int     m_prev_depth_ask = 0;
 
     void _manage(double bid, double ask, double mid, int64_t now_ms,
                  double l2_imb, bool l2_real,
