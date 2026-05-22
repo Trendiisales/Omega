@@ -24,6 +24,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #ifdef _WIN32
   #include <windows.h>
@@ -105,20 +107,32 @@ inline bool anchor_cwd_to_exe_dir() {
     std::abort();
 }
 
+// SFINAE detector -- engines that expose a public bool `enabled` field
+// can be skipped via the toggle; engines without one (e.g. XauusdFvgEngine
+// which is always-on) just run unconditionally.
+template<typename, typename = void>
+struct has_enabled_field : std::false_type {};
+template<typename T>
+struct has_enabled_field<T,
+    std::void_t<decltype(std::declval<T&>().enabled)>> : std::true_type {};
+
 // Wrapper for the `warmup_from_csv(warmup_csv_path)` pattern used by many
 // engines (TsmomEngine, TrendRiderEngine, CellEngine, XauTrendFollow*,
 // EmaPullbackEngine, XauThreeBar30mEngine, XauusdFvgEngine, etc.).
 // Resolves the CSV path against the exe dir, calls the engine's warmup,
 // and aborts the process if zero bars loaded.
 //
-// Skips silently when the engine itself is disabled — that's an explicit
-// opt-out (e.g. tombstoned strategy) and not a rule violation.
+// Skips silently when the engine exposes a `bool enabled` flag set to
+// false — explicit opt-out (e.g. tombstoned strategy), not a rule
+// violation. Engines without an `enabled` field always seed.
 template<typename Engine>
 int warmup_or_die(Engine& eng, const char* engine_name) {
-    if (!eng.enabled) {
-        std::printf("[SEED] %s: skipped (engine disabled)\n", engine_name);
-        std::fflush(stdout);
-        return 0;
+    if constexpr (has_enabled_field<Engine>::value) {
+        if (!eng.enabled) {
+            std::printf("[SEED] %s: skipped (engine disabled)\n", engine_name);
+            std::fflush(stdout);
+            return 0;
+        }
     }
     if (eng.warmup_csv_path.empty()) {
         std::fprintf(stderr,
