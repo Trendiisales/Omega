@@ -53,6 +53,16 @@ static omega::BreakoutEngine g_eng_usdjpy("USDJPY");
 // Shared macro context -- updated each tick, read by SP/NQ shouldTrade()
 static omega::MacroContext g_macro_ctx;
 
+// ── IBKR DOM bridge (S88, 2026-05-22) ───────────────────────────────────────
+// Optional secondary L2 source from tools/ibkr_dom_bridge.py via TCP.
+// READ-ONLY. Default OFF. Engines opt-in by checking g_ibkr_l2.<sym>.fresh().
+// Primary L2 path (Blackbull FIX -> g_macro_ctx.gold_l2_imbalance) untouched.
+// Started in omega_main.hpp when env OMEGA_IBKR_BRIDGE=1.
+#include "IbkrDomConsumer.hpp"
+static omega::ibkr::L2Bus         g_ibkr_l2;
+static omega::ibkr::ConsumerStats g_ibkr_l2_stats;
+static std::atomic<bool>          g_ibkr_l2_stop{false};
+
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
 // Primary gold executor -- sole handler for all XAUUSD ticks.
 static omega::gold::GoldEngineStack g_gold_stack;

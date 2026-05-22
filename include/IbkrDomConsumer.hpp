@@ -1,0 +1,212 @@
+#pragma once
+// IbkrDomConsumer.hpp -- TCP client thread that reads newline-delimited JSON
+// from tools/ibkr_dom_bridge.py and updates g_ibkr_l2 atomics.
+//
+// Read-only signal source. Default OFF (gated by env OMEGA_IBKR_BRIDGE=1).
+// Adds NO new entry path -- engines must opt-in by querying g_ibkr_l2.
+//
+// Failure modes:
+//   - bridge not running       -> consumer retries connect every 2s, silent.
+//   - bridge dies mid-session  -> reconnects; g_ibkr_l2.<sym>.fresh() goes false
+//                                 ~2s after last message. Engines must check.
+//   - malformed JSON line      -> dropped, counter incremented, no crash.
+//
+// Performance:
+//   - cadence ~20-50 events/sec/symbol from TWS -> trivial CPU.
+//   - blocking recv on dedicated thread; never touches engine state directly.
+
+#include <arpa/inet.h>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdint>
+#include <cstring>
+#include <netinet/in.h>
+#include <string>
+#include <sys/socket.h>
+#include <thread>
+#include <unistd.h>
+
+namespace omega::ibkr {
+
+struct L2Slot {
+    std::atomic<double>  imb{0.5};
+    std::atomic<double>  bid_vol{0.0};
+    std::atomic<double>  ask_vol{0.0};
+    std::atomic<double>  bid{0.0};
+    std::atomic<double>  ask{0.0};
+    std::atomic<int>     bid_levels{0};
+    std::atomic<int>     ask_levels{0};
+    std::atomic<int64_t> last_ms{0};
+
+    // True if last update within max_age_ms.
+    bool fresh(int64_t now_ms, int64_t max_age_ms = 2000) const noexcept {
+        const int64_t lm = last_ms.load(std::memory_order_relaxed);
+        return lm > 0 && (now_ms - lm) < max_age_ms;
+    }
+};
+
+// One slot per bridged symbol. Add symbols here as the bridge expands.
+struct L2Bus {
+    L2Slot xau;  // XAUUSD
+    L2Slot xag;  // XAGUSD
+
+    L2Slot* lookup(const char* sym) noexcept {
+        if (std::strcmp(sym, "XAUUSD") == 0) return &xau;
+        if (std::strcmp(sym, "XAGUSD") == 0) return &xag;
+        return nullptr;
+    }
+};
+
+// Stats for /api/v1/omega health -- read by status endpoint if wired.
+struct ConsumerStats {
+    std::atomic<int64_t> msgs_total{0};
+    std::atomic<int64_t> parse_errors{0};
+    std::atomic<int64_t> reconnects{0};
+    std::atomic<bool>    connected{false};
+};
+
+// Minimal lossy JSON extract -- fields fixed schema from sidecar.
+// Returns true if all required fields parsed. No allocation, no exceptions.
+inline bool parse_line(const char* line, size_t n,
+                       char sym_out[32],
+                       double& bid, double& ask,
+                       double& bid_vol, double& ask_vol, double& imb,
+                       int& bid_levels, int& ask_levels,
+                       int64_t& ts_ms) noexcept
+{
+    // Expected: {"ts":...,"s":"XAUUSD","b":...,"a":...,"bv":...,"av":...,"i":...,"bl":...,"al":...}
+    auto find_after = [&](const char* key) -> const char* {
+        // Hand-rolled needle search (memmem is non-portable: not in libstdc++ <cstring>).
+        const size_t klen = std::strlen(key);
+        if (klen == 0 || klen > n) return static_cast<const char*>(nullptr);
+        for (size_t i = 0; i + klen <= n; ++i) {
+            if (std::memcmp(line + i, key, klen) == 0) {
+                return line + i + klen;
+            }
+        }
+        return static_cast<const char*>(nullptr);
+    };
+    const char* p_ts = find_after("\"ts\":");
+    const char* p_s  = find_after("\"s\":\"");
+    const char* p_b  = find_after("\"b\":");
+    const char* p_a  = find_after("\"a\":");
+    const char* p_bv = find_after("\"bv\":");
+    const char* p_av = find_after("\"av\":");
+    const char* p_i  = find_after("\"i\":");
+    const char* p_bl = find_after("\"bl\":");
+    const char* p_al = find_after("\"al\":");
+    if (!p_ts || !p_s || !p_b || !p_a || !p_bv || !p_av || !p_i) return false;
+
+    // ts: integer
+    ts_ms = std::strtoll(p_ts, nullptr, 10);
+    if (ts_ms <= 0) return false;
+
+    // sym: copy until closing quote
+    size_t i = 0;
+    while (i < 31 && p_s[i] != '"' && p_s[i] != '\0') {
+        sym_out[i] = p_s[i];
+        ++i;
+    }
+    sym_out[i] = '\0';
+    if (i == 0) return false;
+
+    bid     = std::strtod(p_b,  nullptr);
+    ask     = std::strtod(p_a,  nullptr);
+    bid_vol = std::strtod(p_bv, nullptr);
+    ask_vol = std::strtod(p_av, nullptr);
+    imb     = std::strtod(p_i,  nullptr);
+    bid_levels = p_bl ? static_cast<int>(std::strtol(p_bl, nullptr, 10)) : 0;
+    ask_levels = p_al ? static_cast<int>(std::strtol(p_al, nullptr, 10)) : 0;
+
+    if (bid <= 0.0 || ask <= 0.0 || ask < bid) return false;
+    return true;
+}
+
+inline int connect_localhost(const char* host, uint16_t port) noexcept {
+    int s = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return -1;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port   = htons(port);
+    if (::inet_pton(AF_INET, host, &addr.sin_addr) <= 0) {
+        ::close(s);
+        return -1;
+    }
+    if (::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+        ::close(s);
+        return -1;
+    }
+    // Read timeout so we don't block forever if peer stalls.
+    timeval tv{};
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    return s;
+}
+
+// Long-running thread body. Stops when stop_flag goes true.
+inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
+                        std::atomic<bool>& stop_flag,
+                        const char* host, uint16_t port) noexcept
+{
+    using namespace std::chrono;
+    std::string buf;
+    buf.reserve(8192);
+    char tmp[4096];
+
+    while (!stop_flag.load(std::memory_order_relaxed)) {
+        int sock = connect_localhost(host, port);
+        if (sock < 0) {
+            stats.connected.store(false, std::memory_order_relaxed);
+            std::this_thread::sleep_for(seconds(2));
+            continue;
+        }
+        stats.connected.store(true, std::memory_order_relaxed);
+        stats.reconnects.fetch_add(1, std::memory_order_relaxed);
+        std::printf("[IBKR-CONSUMER] connected %s:%u\n", host, port);
+        std::fflush(stdout);
+
+        while (!stop_flag.load(std::memory_order_relaxed)) {
+            ssize_t got = ::recv(sock, tmp, sizeof(tmp), 0);
+            if (got <= 0) break;
+            buf.append(tmp, static_cast<size_t>(got));
+
+            for (;;) {
+                size_t nl = buf.find('\n');
+                if (nl == std::string::npos) break;
+                std::string line = buf.substr(0, nl);
+                buf.erase(0, nl + 1);
+                if (line.empty()) continue;
+
+                char     sym[32]    = {};
+                double   bid = 0, ask = 0, bv = 0, av = 0, imb = 0;
+                int      bl = 0, al = 0;
+                int64_t  ts = 0;
+                if (!parse_line(line.c_str(), line.size(),
+                                sym, bid, ask, bv, av, imb, bl, al, ts)) {
+                    stats.parse_errors.fetch_add(1, std::memory_order_relaxed);
+                    continue;
+                }
+                L2Slot* slot = bus.lookup(sym);
+                if (!slot) continue;
+                slot->bid.store(bid, std::memory_order_relaxed);
+                slot->ask.store(ask, std::memory_order_relaxed);
+                slot->bid_vol.store(bv, std::memory_order_relaxed);
+                slot->ask_vol.store(av, std::memory_order_relaxed);
+                slot->imb.store(imb, std::memory_order_relaxed);
+                slot->bid_levels.store(bl, std::memory_order_relaxed);
+                slot->ask_levels.store(al, std::memory_order_relaxed);
+                slot->last_ms.store(ts, std::memory_order_release);
+                stats.msgs_total.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+        ::close(sock);
+        stats.connected.store(false, std::memory_order_relaxed);
+        std::printf("[IBKR-CONSUMER] disconnected, reconnecting in 2s\n");
+        std::fflush(stdout);
+        std::this_thread::sleep_for(seconds(2));
+    }
+}
+
+} // namespace omega::ibkr

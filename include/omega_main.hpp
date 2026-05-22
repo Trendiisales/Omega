@@ -497,6 +497,23 @@ int main(int argc, char* argv[])
     // See engine_dispatch.hpp for design and shutdown semantics.
     engine_dispatch_start();
 
+    // ── IBKR DOM bridge consumer (S88, 2026-05-22) ──────────────────────────
+    // Opt-in: enabled when env OMEGA_IBKR_BRIDGE=1 is set at launch.
+    // Reads newline-JSON from tools/ibkr_dom_bridge.py over TCP localhost.
+    // Updates g_ibkr_l2.<sym> atomics; engines that opt-in must call
+    // g_ibkr_l2.xau.fresh(now_ms) before reading -- no implicit gating.
+    // Bridge can be off without affecting primary path.
+    if (const char* en = std::getenv("OMEGA_IBKR_BRIDGE"); en && std::string(en) == "1") {
+        const char* port_env = std::getenv("OMEGA_IBKR_BRIDGE_PORT");
+        const uint16_t port = port_env ? static_cast<uint16_t>(std::atoi(port_env)) : 9701;
+        std::cout << "[IBKR-CONSUMER] starting; localhost:" << port << "\n";
+        std::cout.flush();
+        std::thread([port]{
+            omega::ibkr::run_consumer(g_ibkr_l2, g_ibkr_l2_stats,
+                                      g_ibkr_l2_stop, "127.0.0.1", port);
+        }).detach();
+    }
+
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
     // =========================================================================
