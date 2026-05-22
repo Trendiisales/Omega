@@ -38,6 +38,7 @@
 #include <fstream>
 #include <string>
 #include <algorithm>
+#include "SeedGuard.hpp"
 
 namespace omega {
 
@@ -133,11 +134,10 @@ struct GoldD1TrendState {
     // Warm-seed from H4 CSV (CLAUDE.md mandate). Format: bar_start_ms,o,h,l,c
     // Returns count of bars seeded. Sets ema_count_ from history.
     size_t seed_from_h4_csv(const std::string& path) noexcept {
-        std::ifstream f(path);
+        const std::string actual = omega::resolve_seed_path(path);
+        std::ifstream f(actual);
         if (!f.is_open()) {
-            printf("[SEED] GoldD1TrendState: cannot open %s -- regime UNKNOWN until live D1 closes\n",
-                   path.c_str());
-            fflush(stdout); return 0;
+            omega::seed_die("GoldD1TrendState", actual);  // [[noreturn]]
         }
         std::string line; std::getline(f, line);  // header
         size_t n = 0;
@@ -149,8 +149,9 @@ struct GoldD1TrendState {
                 ++n;
             }
         }
-        printf("[SEED] GoldD1TrendState: %zu H4 bars -> EMA200=%.2f slope=%.4f regime=%s\n",
-               n, ema_, current_slope_, regime_name());
+        if (n == 0) omega::seed_die("GoldD1TrendState", actual);  // [[noreturn]]
+        printf("[SEED] GoldD1TrendState: %zu H4 bars -> EMA200=%.2f slope=%.4f regime=%s [%s]\n",
+               n, ema_, current_slope_, regime_name(), actual.c_str());
         fflush(stdout);
         return n;
     }

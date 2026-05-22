@@ -37,17 +37,16 @@
 #include <cstdio>
 #include <cstdint>
 #include "OmegaTradeLedger.hpp"
+#include "SeedGuard.hpp"
 
 namespace omega {
 
 template<typename Engine>
 size_t seed_h4_engine(Engine& eng, const std::string& path, const char* name) {
-    std::ifstream f(path);
+    const std::string actual = omega::resolve_seed_path(path);
+    std::ifstream f(actual);
     if (!f.is_open()) {
-        printf("[SEED] %s: cannot open %s -- engine will cold-warm\n",
-               name, path.c_str());
-        fflush(stdout);
-        return 0;
+        omega::seed_die(name, actual);  // [[noreturn]]
     }
     std::string line;
     std::getline(f, line);  // header
@@ -71,8 +70,11 @@ size_t seed_h4_engine(Engine& eng, const std::string& path, const char* name) {
         }
     }
     eng.enabled = was_enabled;
+    if (n == 0) {
+        omega::seed_die(name, actual);  // [[noreturn]]
+    }
     printf("[SEED] %s: %zu H4 bars replayed from %s -- engine hot\n",
-           name, n, path.c_str());
+           name, n, actual.c_str());
     fflush(stdout);
     return n;
 }

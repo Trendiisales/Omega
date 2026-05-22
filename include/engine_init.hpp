@@ -6,8 +6,17 @@
 //
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+#include "SeedGuard.hpp"
+
 static void init_engines(const std::string& cfg_path)
 {
+    // ── Seed-path anchor (2026-05-22 incident fix) ──────────────────────
+    // Windows services inherit CWD = C:\Windows\System32, which breaks
+    // every "phase1/...", "data/...", "logs/..." relative path the rest
+    // of init_engines uses. Pin CWD to the exe directory before anything
+    // touches disk. See CLAUDE.md > Engine Warm-Seed Mandate.
+    omega::anchor_cwd_to_exe_dir();
+
     // ── SHADOW/LIVE policy (ISSUE-5) ──────────────────────────────────────
     // Global default for newly-stamped engines (#4 Class A + C).
     // Engines in the hardcoded-lock cohort (MCE, RSIReversal, PDHL, H1Swing,
@@ -332,7 +341,7 @@ static void init_engines(const std::string& cfg_path)
         omega::xauusd_fvg::log_xauusd_fvg_csv(tr, g_xauusd_fvg);
     };
     g_xauusd_fvg.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_M15.csv";
-    g_xauusd_fvg.warmup_from_csv(g_xauusd_fvg.warmup_csv_path);
+    omega::warmup_or_die(g_xauusd_fvg, "XauusdFvg");
 
     // ---- GoldScalpPyramid (2026-05-18) ----------------------------------------
     // M5 Donchian breakout + EMA filter + aggressive 4-phase trail.
@@ -1086,7 +1095,7 @@ static void init_engines(const std::string& cfg_path)
         g_tsmom.block_on_risk_off = true;
         g_tsmom.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_tsmom.init();
-        g_tsmom.warmup_from_csv(g_tsmom.warmup_csv_path);
+        omega::warmup_or_die(g_tsmom, "Tsmom");
         fflush(stdout);
 
         // ?? TsmomPortfolioV2 -- Phase 2a CellEngine-refactor live shadow ??????
@@ -1126,7 +1135,7 @@ static void init_engines(const std::string& cfg_path)
         omega::cell::build_default_tsmom_topology(g_tsmom_v2);
         g_tsmom_v2.warmup_csv_path         = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_tsmom_v2.init();
-        g_tsmom_v2.warmup_from_csv(g_tsmom_v2.warmup_csv_path);
+        omega::warmup_or_die(g_tsmom_v2, "TsmomV2");
         omega::cell::shadow::tsmom_writer().open("logs/shadow/tsmom_v2.csv");
         printf("[TSMOM-V2] live shadow ARMED (max_pos_per_cell=%d, ledger=logs/shadow/tsmom_v2.csv)\n",
                g_tsmom_v2.max_positions_per_cell);
@@ -1149,7 +1158,7 @@ static void init_engines(const std::string& cfg_path)
         g_donchian.block_on_risk_off = true;
         g_donchian.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_donchian.init();
-        g_donchian.warmup_from_csv(g_donchian.warmup_csv_path);
+        omega::warmup_or_die(g_donchian, "Donchian");
         fflush(stdout);
 
         // ── XauTrendFollow4hEngine (S33d 2026-05-11) ──────────────────────────
@@ -1181,7 +1190,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.max_spread  = 1.0;
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
-        g_xau_tf_4h.warmup_from_csv(g_xau_tf_4h.warmup_csv_path);
+        omega::warmup_or_die(g_xau_tf_4h, "XauTrendFollow4h");
         printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=7 mask=0x%X"
                " (Donchian,InsideBar_RR4to1,ER0.20_RR4to1,Keltner,ADX_Mom,RangeExpand,EmaCross8_21_S116)\n",
                (int)g_xau_tf_4h.shadow_mode, (int)g_xau_tf_4h.enabled, g_xau_tf_4h.lot,
@@ -1209,7 +1218,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_1h.max_spread  = 1.0;
         g_xau_tf_1h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
         g_xau_tf_1h.init();
-        g_xau_tf_1h.warmup_from_csv(g_xau_tf_1h.warmup_csv_path);
+        omega::warmup_or_die(g_xau_tf_1h, "XauTrendFollow1h");
         printf("[OMEGA-INIT] XauTrendFollow1hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=2 mask=0x%X"
                " (EmaCross_20_80_S118, Donchian_N40_S118)\n",
                (int)g_xau_tf_1h.shadow_mode, (int)g_xau_tf_1h.enabled, g_xau_tf_1h.lot,
@@ -1327,7 +1336,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_d1.init();
-        g_xau_tf_d1.warmup_from_csv(g_xau_tf_d1.warmup_csv_path);
+        omega::warmup_or_die(g_xau_tf_d1, "XauTrendFollowD1");
         printf("[OMEGA-INIT] XauTrendFollowD1Engine initialised: shadow=%d enabled=%d lot=%.2f cells=3"
                " (Momentum,Keltner,ADX_Mom)\n",
                (int)g_xau_tf_d1.shadow_mode, (int)g_xau_tf_d1.enabled, g_xau_tf_d1.lot);
@@ -1542,7 +1551,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_2h.max_spread  = 1.0;
         g_xau_tf_2h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
         g_xau_tf_2h.init();
-        g_xau_tf_2h.warmup_from_csv(g_xau_tf_2h.warmup_csv_path);
+        omega::warmup_or_die(g_xau_tf_2h, "XauTrendFollow2h");
         printf("[OMEGA-INIT] XauTrendFollow2hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=4"
                " (Keltner,Donchian20,Donchian50,InsideBar)\n",
                (int)g_xau_tf_2h.shadow_mode, (int)g_xau_tf_2h.enabled, g_xau_tf_2h.lot);
@@ -1620,7 +1629,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_threebar_30m.block_hour_end     = -1;
         g_xau_threebar_30m.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_M30.csv";
         g_xau_threebar_30m.init();
-        g_xau_threebar_30m.warmup_from_csv(g_xau_threebar_30m.warmup_csv_path);
+        omega::warmup_or_die(g_xau_threebar_30m, "XauThreeBar30m");
         printf("[OMEGA-INIT] XauThreeBar30mEngine initialised: shadow=%d enabled=%d lot=%.2f"
                " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
                " (S35-P4 TUNED; S36-P4 M30 dispatch wired in tick_gold.hpp 2026-05-12)\n",
@@ -1853,7 +1862,7 @@ static void init_engines(const std::string& cfg_path)
         g_ema_pullback.BE_ARM_PCT        = 0.40;
         g_ema_pullback.BE_BUFFER_PCT     = 0.05;
         g_ema_pullback.init();
-        g_ema_pullback.warmup_from_csv(g_ema_pullback.warmup_csv_path);
+        omega::warmup_or_die(g_ema_pullback, "EmaPullback");
         fflush(stdout);
 
         // ?? TrendRiderPortfolio -- Tier-4 ship 2026-04-30 ?????????????????????
@@ -1899,7 +1908,7 @@ static void init_engines(const std::string& cfg_path)
         g_trend_rider.block_on_risk_off = true;
         g_trend_rider.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_trend_rider.init();
-        g_trend_rider.warmup_from_csv(g_trend_rider.warmup_csv_path);
+        omega::warmup_or_die(g_trend_rider, "TrendRider");
         fflush(stdout);
     }
 

@@ -48,6 +48,7 @@
 #include <vector>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "SeedGuard.hpp"
 
 namespace omega {
 
@@ -370,13 +371,19 @@ struct EurGbpPairsEngine {
                 }
             }
         };
+        const std::string eur_actual = omega::resolve_seed_path(eur_path);
+        const std::string gbp_actual = omega::resolve_seed_path(gbp_path);
         std::vector<std::pair<int64_t,double>> eur_h1, gbp_h1;
-        load(eur_path, eur_h1);
-        load(gbp_path, gbp_h1);
+        load(eur_actual, eur_h1);
+        load(gbp_actual, gbp_h1);
         if (eur_h1.empty() || gbp_h1.empty()) {
-            printf("[SEED] EurGbpPairs: missing CSV(s) -- cold start (eur=%zu gbp=%zu)\n",
-                   eur_h1.size(), gbp_h1.size());
-            fflush(stdout); return 0;
+            printf("[SEED-FATAL] EurGbpPairs: empty seed (eur=%zu gbp=%zu) "
+                   "from %s / %s\n",
+                   eur_h1.size(), gbp_h1.size(),
+                   eur_actual.c_str(), gbp_actual.c_str());
+            fflush(stdout);
+            omega::seed_die("EurGbpPairs",
+                            eur_h1.empty() ? eur_actual : gbp_actual);
         }
 
         // Build a sorted timeline of (ts_ms, leg, close).

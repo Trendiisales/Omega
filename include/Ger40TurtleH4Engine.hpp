@@ -25,6 +25,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "SeedGuard.hpp"
 
 namespace omega {
 
@@ -138,7 +139,19 @@ struct Ger40TurtleH4Engine {
             _update_atr_on_bar_close(bar_high, bar_low, bar_close);
             ++bar_count_;
 
+            // Session filter (added 2026-05-23 after 08:00 UTC stopout):
+            // GER40 H4 bars closing at 00/04/08 UTC contain mostly thin
+            // overnight pricing or the Frankfurt-open spike (only ~1h of
+            // real DAX cash inside the 04:00-08:00 bar). Breakouts here
+            // are predominantly false. Allow only bars whose 4h window
+            // sits fully inside Frankfurt cash (closes at 12/16/20 UTC).
+            const int close_hour_utc = static_cast<int>((bucket / 3600000LL) % 24);
+            const bool session_ok = (close_hour_utc == 12
+                                  || close_hour_utc == 16
+                                  || close_hour_utc == 20);
+
             if (!pos_.active && enabled
+                && session_ok
                 && n_prior >= p.lookback_bars && atr_pre > 0.0
                 && bar_close > prior_high
                 && (ask - bid) <= p.max_spread)
@@ -203,10 +216,10 @@ struct Ger40TurtleH4Engine {
     // Bypasses tick aggregation. Called once at startup from engine_init.hpp
     // so engine is HOT on first live tick instead of cold-warming 80h+.
     size_t seed_from_h4_csv(const std::string& path) noexcept {
-        std::ifstream f(path);
+        const std::string actual = omega::resolve_seed_path(path);
+        std::ifstream f(actual);
         if (!f.is_open()) {
-            printf("[SEED] Ger40TurtleH4: cannot open %s -- cold start\n", path.c_str());
-            fflush(stdout); return 0;
+            omega::seed_die("Ger40TurtleH4", actual);  // [[noreturn]]
         }
         std::string line; std::getline(f, line); // header
         size_t n = 0;
@@ -228,8 +241,17 @@ struct Ger40TurtleH4Engine {
                 ++n;
             }
         }
-        printf("[SEED] Ger40TurtleH4: %zu H4 bars -> hot (atr=%.2f bars=%d)\n",
-               n, atr_, bar_count_);
+        if (n < static_cast<size_t>(p.lookback_bars)) {
+            // Donchian lookback gate (`n_prior >= lookback_bars`) will never
+            // satisfy with fewer rows than that -- engine is effectively cold
+            // even though the file opened. Treat as hard fail.
+            printf("[SEED-FATAL] Ger40TurtleH4: only %zu rows in %s (need >= %d)\n",
+                   n, actual.c_str(), p.lookback_bars);
+            fflush(stdout);
+            omega::seed_die("Ger40TurtleH4", actual);  // [[noreturn]]
+        }
+        printf("[SEED] Ger40TurtleH4: %zu H4 bars -> hot (atr=%.2f bars=%d) [%s]\n",
+               n, atr_, bar_count_, actual.c_str());
         fflush(stdout);
         return n;
     }
