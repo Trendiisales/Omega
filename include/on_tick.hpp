@@ -36,16 +36,21 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // (during warmup or quiet tape) from rejecting valid ticks.
                 // Root cause: atr_slow for XAUUSD was 0.11pts -> threshold=0.54pts
                 // -> every normal gold tick-to-tick move rejected -> bars/RSI starved.
-                // Gold moves 0.5-2pts per tick normally. Floor = 5pts (50x normal tick).
-                // A real bad-tick on gold (e.g. 46420 instead of 4642) moves 800pts.
-                // FX floor = 0.002 (20 pips). Index floor = 5pts. Oil floor = 0.5pts.
+                // Same failure mode observed 2026-05-21 on XAGUSD (no floor, FX
+                // default 0.002 rejected normal 0.12 silver ticks), USDJPY (FX
+                // floor 0.002 = 0.2 pip vs JPY normal tick ~0.03 = 3 pips), and
+                // NAS100 (5.0 floor too tight vs active-session 6-15pt ticks).
+                // Sizing rule: floor = ~5x normal tick-to-tick noise for the symbol.
                 const double min_threshold =
                     (sym == "XAUUSD")                     ? 5.0   :  // gold: 5pt floor
-                    (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" ||
-                     sym == "NAS100"  || sym == "GER40"   || sym == "UK100"  ||
-                     sym == "ESTX50")                     ? 5.0   :  // indices: 5pt floor
+                    (sym == "XAGUSD")                     ? 0.30  :  // silver: 30c floor (~5x normal 0.05 tick)
+                    (sym == "US500.F" || sym == "DJ30.F") ? 10.0  :  // SP/DJ: 10pt floor
+                    (sym == "USTEC.F" || sym == "NAS100") ? 20.0  :  // NQ: 20pt floor (active session 6-15pt normal)
+                    (sym == "GER40"   || sym == "UK100"  ||
+                     sym == "ESTX50")                     ? 10.0  :  // EU indices: 10pt floor
                     (sym == "USOIL.F" || sym == "BRENT")  ? 0.5   :  // oil: 0.5pt floor
-                                                            0.002;   // FX: 20 pip floor
+                    (sym == "USDJPY")                     ? 0.20  :  // JPY pair: 20 pip floor (pip=0.01)
+                                                            0.002;   // FX majors: 20 pip floor (pip=0.0001)
                 const double threshold = std::max(5.0 * atr_s, min_threshold);
                 if (move > threshold) {
                     {
