@@ -292,7 +292,22 @@ inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
         while (!stop_flag.load(std::memory_order_relaxed)) {
             // recv returns int on Windows, ssize_t on POSIX. Use intmax-safe.
             int got = static_cast<int>(::recv(sock, tmp, sizeof(tmp), 0));
-            if (got <= 0) break;
+            if (got == 0) break;  // graceful close from peer (FIN)
+            if (got < 0) {
+                // Distinguish RCVTIMEO (idle, expected during weekends or
+                // pre-market) from a real socket error. The 5s SO_RCVTIMEO
+                // set in connect_localhost() will fire every 5s when the
+                // bridge has no ticks to send; treating those as disconnect
+                // produced a tight reconnect loop. Only real errors should
+                // tear down the session.
+#ifdef _WIN32
+                const int err = ibkr_sock::last_err();
+                if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) continue;
+#else
+                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) continue;
+#endif
+                break;  // real error -> reconnect
+            }
             buf.append(tmp, static_cast<size_t>(got));
 
             for (;;) {
