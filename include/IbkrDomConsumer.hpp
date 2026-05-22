@@ -15,7 +15,6 @@
 //   - cadence ~20-50 events/sec/symbol from TWS -> trivial CPU.
 //   - blocking recv on dedicated thread; never touches engine state directly.
 
-#include <arpa/inet.h>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -23,11 +22,48 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
-#include <netinet/in.h>
 #include <string>
-#include <sys/socket.h>
 #include <thread>
-#include <unistd.h>
+
+// Cross-platform socket layer. Windows uses Winsock2; POSIX uses BSD sockets.
+#ifdef _WIN32
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  #pragma comment(lib, "Ws2_32.lib")
+  namespace omega::ibkr_sock {
+    using socket_t = SOCKET;
+    static constexpr socket_t INVALID_SOCK = INVALID_SOCKET;
+    inline void close_sock(socket_t s) noexcept { ::closesocket(s); }
+    inline int  last_err() noexcept { return ::WSAGetLastError(); }
+    inline bool ensure_init() noexcept {
+        static std::atomic<bool> done{false};
+        static std::mutex m;
+        if (done.load(std::memory_order_acquire)) return true;
+        std::lock_guard<std::mutex> lk(m);
+        if (done.load(std::memory_order_acquire)) return true;
+        WSADATA w{};
+        if (::WSAStartup(MAKEWORD(2, 2), &w) != 0) return false;
+        done.store(true, std::memory_order_release);
+        return true;
+    }
+  }
+#else
+  #include <arpa/inet.h>
+  #include <netinet/in.h>
+  #include <sys/socket.h>
+  #include <unistd.h>
+  #include <cerrno>
+  namespace omega::ibkr_sock {
+    using socket_t = int;
+    static constexpr socket_t INVALID_SOCK = -1;
+    inline void close_sock(socket_t s) noexcept { ::close(s); }
+    inline int  last_err() noexcept { return errno; }
+    inline bool ensure_init() noexcept { return true; }
+  }
+#endif
 
 namespace omega::ibkr {
 
@@ -184,25 +220,33 @@ inline bool parse_line(const char* line, size_t n,
     return true;
 }
 
-inline int connect_localhost(const char* host, uint16_t port) noexcept {
-    int s = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) return -1;
+inline ibkr_sock::socket_t connect_localhost(const char* host, uint16_t port) noexcept {
+    if (!ibkr_sock::ensure_init()) return ibkr_sock::INVALID_SOCK;
+    ibkr_sock::socket_t s = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (s == ibkr_sock::INVALID_SOCK) return ibkr_sock::INVALID_SOCK;
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port   = htons(port);
     if (::inet_pton(AF_INET, host, &addr.sin_addr) <= 0) {
-        ::close(s);
-        return -1;
+        ibkr_sock::close_sock(s);
+        return ibkr_sock::INVALID_SOCK;
     }
     if (::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-        ::close(s);
-        return -1;
+        ibkr_sock::close_sock(s);
+        return ibkr_sock::INVALID_SOCK;
     }
     // Read timeout so we don't block forever if peer stalls.
+    // Windows: DWORD milliseconds. POSIX: timeval.
+#ifdef _WIN32
+    DWORD timeout_ms = 5000;
+    ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
+                 reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
+#else
     timeval tv{};
     tv.tv_sec = 5;
     tv.tv_usec = 0;
     ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
     return s;
 }
 
@@ -217,8 +261,8 @@ inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
     char tmp[4096];
 
     while (!stop_flag.load(std::memory_order_relaxed)) {
-        int sock = connect_localhost(host, port);
-        if (sock < 0) {
+        ibkr_sock::socket_t sock = connect_localhost(host, port);
+        if (sock == ibkr_sock::INVALID_SOCK) {
             stats.connected.store(false, std::memory_order_relaxed);
             std::this_thread::sleep_for(seconds(2));
             continue;
@@ -229,7 +273,8 @@ inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
         std::fflush(stdout);
 
         while (!stop_flag.load(std::memory_order_relaxed)) {
-            ssize_t got = ::recv(sock, tmp, sizeof(tmp), 0);
+            // recv returns int on Windows, ssize_t on POSIX. Use intmax-safe.
+            int got = static_cast<int>(::recv(sock, tmp, sizeof(tmp), 0));
             if (got <= 0) break;
             buf.append(tmp, static_cast<size_t>(got));
 
@@ -280,7 +325,7 @@ inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
                 stats.msgs_total.fetch_add(1, std::memory_order_relaxed);
             }
         }
-        ::close(sock);
+        ibkr_sock::close_sock(sock);
         stats.connected.store(false, std::memory_order_relaxed);
         std::printf("[IBKR-CONSUMER] disconnected, reconnecting in 2s\n");
         std::fflush(stdout);
