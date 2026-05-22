@@ -30,18 +30,71 @@ def now_ms() -> int:
 
 
 # Index futures map -- Blackbull symbol -> IBKR Future contract spec.
-# All futures (real institutional L2, continuous front-month via qualifyContracts).
+# All futures (real institutional L2, continuous front-month resolved at
+# runtime by resolve_front_month()).
 # USTEC is treated as an alias of NAS100 (both price off NQ); subscribe once,
 # dispatch both Blackbull symbols off the same feed downstream.
+# Notes on Eurex symbols: external Eurex codes are FDAX / FESX, but IBKR's
+# internal trading-class symbols are plain DAX / ESTX50. Wrong code returns
+# "Error 200: No security definition" rather than an ambiguous-contract list.
 INDEX_FUTURES = {
-    "US500":  dict(symbol="ES",   exchange="CME",   currency="USD"),
-    "NAS100": dict(symbol="NQ",   exchange="CME",   currency="USD"),
-    "USTEC":  dict(symbol="NQ",   exchange="CME",   currency="USD"),  # alias of NAS100
-    "DJ30":   dict(symbol="YM",   exchange="CBOT",  currency="USD"),
-    "GER40":  dict(symbol="FDAX", exchange="EUREX", currency="EUR"),
-    "ESTX50": dict(symbol="FESX", exchange="EUREX", currency="EUR"),
-    "UK100":  dict(symbol="Z",    exchange="ICEEU", currency="GBP"),
+    "US500":  dict(symbol="ES",     exchange="CME",   currency="USD"),
+    "NAS100": dict(symbol="NQ",     exchange="CME",   currency="USD"),
+    "USTEC":  dict(symbol="NQ",     exchange="CME",   currency="USD"),  # alias of NAS100
+    "DJ30":   dict(symbol="YM",     exchange="CBOT",  currency="USD"),
+    "GER40":  dict(symbol="DAX",    exchange="EUREX", currency="EUR"),
+    "ESTX50": dict(symbol="ESTX50", exchange="EUREX", currency="EUR"),
+    "UK100":  dict(symbol="Z",      exchange="ICEEU", currency="GBP"),
 }
+
+
+def resolve_front_month(ib, contract):
+    """For Future contracts without an explicit expiry, query all matching
+    contract details, filter to the nearest non-expired expiry, and return
+    that fully-qualified contract.  Non-future contracts pass through.
+    """
+    if getattr(contract, "secType", "") != "FUT":
+        return contract
+    if getattr(contract, "lastTradeDateOrContractMonth", "") not in ("", None):
+        return contract  # caller already pinned an expiry
+    details = ib.reqContractDetails(contract)
+    if not details:
+        raise ValueError(
+            f"No contract details returned for {contract.symbol}/"
+            f"{contract.exchange} -- check market data subscription or "
+            f"symbol/exchange code"
+        )
+    today = datetime.now(timezone.utc).date()
+    candidates = []
+    for d in details:
+        c = d.contract
+        # IBKR returns either "YYYYMMDD" or "YYYYMMDD HH:MM:SS TZ" or "YYYYMM"
+        raw = (c.lastTradeDateOrContractMonth or "").split(" ")[0]
+        try:
+            if len(raw) == 8:
+                exp = datetime.strptime(raw, "%Y%m%d").date()
+            elif len(raw) == 6:
+                exp = datetime.strptime(raw + "01", "%Y%m%d").date()
+            else:
+                continue
+        except ValueError:
+            continue
+        if exp >= today:
+            candidates.append((exp, c))
+    if not candidates:
+        raise ValueError(
+            f"All contracts for {contract.symbol}/{contract.exchange} are "
+            f"in the past -- IBKR has not listed forward expirations"
+        )
+    candidates.sort(key=lambda x: x[0])
+    chosen = candidates[0][1]
+    print(
+        f"front-month {contract.symbol}/{contract.exchange}: "
+        f"{chosen.localSymbol} expiry={chosen.lastTradeDateOrContractMonth.split(' ')[0]} "
+        f"conId={chosen.conId}",
+        flush=True,
+    )
+    return chosen
 
 
 def make_contract(sym: str) -> Contract:
@@ -276,6 +329,9 @@ def main():
     for sym in syms:
         try:
             contract = make_contract(sym)
+            # For Future contracts left ambiguous (no expiry), pick the
+            # nearest forward expiration. Pass-through for non-futures.
+            contract = resolve_front_month(ib, contract)
             ib.qualifyContracts(contract)
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             out_path = os.path.join(args.out_dir, f"ibkr_l2_{sym}_{today}.csv")
