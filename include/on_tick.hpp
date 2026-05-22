@@ -522,7 +522,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // wall / vacuum still computed from FIX -- those rely on L2Book methods
         // and the FIX feed at least has prices. Imbalance switch above is the
         // load-bearing one for engine logic; this branch is for GUI display.
-        if (g_ibkr_l2.xau.fresh(l2_now_ms, 5000)) {
+        // Local time scope: l2_now_ms above belongs to a different block.
+        const int64_t now_ms_ibkr_push = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        if (g_ibkr_l2.xau.fresh(now_ms_ibkr_push, 5000)) {
             double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
             int nb = 0, na = 0;
             g_ibkr_l2.xau.snapshot_levels(bp, bs, nb, ap, as_, na);
@@ -548,7 +551,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             pushL2("XAUUSD", b);
         }
         // XAGUSD: same pattern -- prefer IBKR depth for GUI panel.
-        if (g_ibkr_l2.xag.fresh(l2_now_ms, 5000)) {
+        if (g_ibkr_l2.xag.fresh(now_ms_ibkr_push, 5000)) {
             double bp[5]{}, bs[5]{}, ap[5]{}, as_[5]{};
             int nb = 0, na = 0;
             g_ibkr_l2.xag.snapshot_levels(bp, bs, nb, ap, as_, na);
