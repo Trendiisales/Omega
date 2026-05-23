@@ -1474,6 +1474,68 @@ static void init_engines(const std::string& cfg_path)
                g_ger40_turtle_h4.p.sl_atr_mult, g_ger40_turtle_h4.p.tp_atr_mult,
                g_ger40_turtle_h4.p.hold_max_h4);
 
+        // ── FxTurtleH4 cohort (2026-05-23) ──────────────────────────────────
+        // Post-S99 FX rebuild: long-only Donchian H4 (Turtle archetype) on
+        // FX majors. EUR/GBP have proven walk-forward edge in repo
+        // (walkforward_b_long_EURUSD_picks.csv, all 3 OOS folds PF 1.14-1.30).
+        // AUD/NZD/JPY enabled=false until their warmup CSVs are sourced;
+        // seed-guard skips disabled engines so boot stays clean.
+        //
+        // Warm-seed pattern: H1 CSV aggregated to H4 inline by
+        // FxTurtleH4Engine::warmup_from_csv() (no offline resample needed).
+
+        g_eurusd_turtle_h4.p               = omega::make_eurusd_turtle_h4_params();
+        g_eurusd_turtle_h4.shadow_mode     = true;
+        g_eurusd_turtle_h4.enabled         = true;
+        g_eurusd_turtle_h4.symbol          = "EURUSD";
+        g_eurusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_EURUSD_H1.csv";
+        omega::warmup_or_die(g_eurusd_turtle_h4, "EurusdTurtleH4");
+        printf("[OMEGA-INIT] EurusdTurtleH4: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d long_only=%d\n",
+               (int)g_eurusd_turtle_h4.shadow_mode, g_eurusd_turtle_h4.p.lookback_bars,
+               g_eurusd_turtle_h4.p.sl_atr_mult, g_eurusd_turtle_h4.p.tp_atr_mult,
+               g_eurusd_turtle_h4.p.hold_max_h4, (int)g_eurusd_turtle_h4.p.long_only);
+
+        g_gbpusd_turtle_h4.p               = omega::make_gbpusd_turtle_h4_params();
+        g_gbpusd_turtle_h4.shadow_mode     = true;
+        g_gbpusd_turtle_h4.enabled         = true;
+        g_gbpusd_turtle_h4.symbol          = "GBPUSD";
+        g_gbpusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
+        omega::warmup_or_die(g_gbpusd_turtle_h4, "GbpusdTurtleH4");
+        printf("[OMEGA-INIT] GbpusdTurtleH4: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d long_only=%d\n",
+               (int)g_gbpusd_turtle_h4.shadow_mode, g_gbpusd_turtle_h4.p.lookback_bars,
+               g_gbpusd_turtle_h4.p.sl_atr_mult, g_gbpusd_turtle_h4.p.tp_atr_mult,
+               g_gbpusd_turtle_h4.p.hold_max_h4, (int)g_gbpusd_turtle_h4.p.long_only);
+
+        // AUD/NZD/JPY: structure in place, awaiting H1 warmup CSVs.
+        // Set enabled=true + add warmup_csv_path once
+        //   phase1/signal_discovery/warmup_AUDUSD_H1.csv
+        //   phase1/signal_discovery/warmup_NZDUSD_H1.csv
+        //   phase1/signal_discovery/warmup_USDJPY_H1.csv
+        // are committed. Until then warmup_or_die() skips them (engine
+        // disabled = explicit opt-out, not rule violation).
+
+        g_audusd_turtle_h4.p           = omega::make_audusd_turtle_h4_params();
+        g_audusd_turtle_h4.shadow_mode = true;
+        g_audusd_turtle_h4.enabled     = false;  // awaiting warmup CSV
+        g_audusd_turtle_h4.symbol      = "AUDUSD";
+        g_audusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_AUDUSD_H1.csv";
+        omega::warmup_or_die(g_audusd_turtle_h4, "AudusdTurtleH4");
+
+        g_nzdusd_turtle_h4.p           = omega::make_nzdusd_turtle_h4_params();
+        g_nzdusd_turtle_h4.shadow_mode = true;
+        g_nzdusd_turtle_h4.enabled     = false;  // awaiting warmup CSV
+        g_nzdusd_turtle_h4.symbol      = "NZDUSD";
+        g_nzdusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_NZDUSD_H1.csv";
+        omega::warmup_or_die(g_nzdusd_turtle_h4, "NzdusdTurtleH4");
+
+        g_usdjpy_turtle_h4.p           = omega::make_usdjpy_turtle_h4_params();
+        g_usdjpy_turtle_h4.shadow_mode = true;
+        g_usdjpy_turtle_h4.enabled     = false;  // awaiting warmup CSV
+        g_usdjpy_turtle_h4.symbol      = "USDJPY";
+        g_usdjpy_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_USDJPY_H1.csv";
+        omega::warmup_or_die(g_usdjpy_turtle_h4, "UsdjpyTurtleH4");
+        printf("[OMEGA-INIT] FxTurtleH4 cohort: EUR+GBP active; AUD/NZD/JPY awaiting warmup CSVs\n");
+
         // 2026-05-20 mega_sweep2 candle batch (3 D1 patterns)
         g_xau_doji_rej_d1.p           = omega::make_xau_doji_rej_d1_params();
         g_xau_doji_rej_d1.shadow_mode = true;

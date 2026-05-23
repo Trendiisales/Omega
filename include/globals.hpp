@@ -513,6 +513,19 @@ static omega::XauSwingBreakD1Engine g_xau_swing_break_d1;
 #include "Ger40TurtleH4Engine.hpp"
 static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
 
+// FxTurtleH4Engine -- 20-bar Donchian breakout on FX majors, long-only.
+//   Built 2026-05-23 as the post-mortem-driven replacement for the S99-
+//   killed FX session-open compression cohort. Same long-only Donchian
+//   H4 pattern that earned Ger40TurtleH4 PF 4.60 OOS and EURUSD long-only
+//   walk-forward PF 1.14-1.30 across all 3 OOS folds. One generic class
+//   instantiated per pair with pair-specific pip math.
+#include "FxTurtleH4Engine.hpp"
+static omega::FxTurtleH4Engine g_eurusd_turtle_h4;
+static omega::FxTurtleH4Engine g_gbpusd_turtle_h4;
+static omega::FxTurtleH4Engine g_audusd_turtle_h4;
+static omega::FxTurtleH4Engine g_nzdusd_turtle_h4;
+static omega::FxTurtleH4Engine g_usdjpy_turtle_h4;
+
 // 2026-05-20 mega_sweep2 candle-pattern batch (XAU D1, cost-stressed):
 //
 // XauDojiRejD1Engine -- prev=doji + current breaks prev high.

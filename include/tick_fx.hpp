@@ -87,6 +87,10 @@
 #include "GbpusdLondonOpenEngine.hpp"
 #include "AudusdSydneyOpenEngine.hpp"
 #include "NzdusdAsianOpenEngine.hpp"
+// 2026-05-23: FX Turtle H4 cohort (post-S99 rebuild). Long-only Donchian
+//   replacement for the session-open compression engines that S99 killed
+//   for negative expectancy. Dispatched BEFORE the S99 kill-switch return.
+#include "FxTurtleH4Engine.hpp"
 
 // ── EURUSD ──────────────────────────────────────────────────
 template<typename Dispatch>
@@ -103,6 +107,17 @@ static void on_tick_eurusd(
     // Update macro context price -- needed by gold correlation logic.
     // Done unconditionally before any engine logic.
     g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;
+
+    // 2026-05-23: FxTurtleH4 dispatch (post-S99 rebuild). Runs BEFORE the
+    //   S99 kill-switch so the new long-only Donchian H4 engine gets ticks
+    //   while the disabled session-open bracket cohort stays dead. Engine
+    //   is internally gated by `enabled` + `shadow_mode`.
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+        g_eurusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
+        g_eurusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+    }
 
     // S99: FX engine kill-switch -- all FX LondonOpen/AsianOpen/SydneyOpen
     //   engines disabled after full BreakoutEngine + BracketEngine sweep
@@ -200,6 +215,14 @@ static void on_tick_gbpusd(
     //   eur_mid_price store in on_tick_eurusd.
     g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;
 
+    // 2026-05-23: FxTurtleH4 GBP dispatch (post-S99 rebuild).
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+        g_gbpusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
+        g_gbpusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+    }
+
     // S99: FX kill-switch (see on_tick_eurusd comment). GbpusdLondonOpen disabled.
     (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
     return;
@@ -281,6 +304,14 @@ static void on_tick_usdjpy(
     //   eur_mid_price store in on_tick_eurusd.
     g_usdjpy_mid.store((bid + ask) * 0.5, std::memory_order_relaxed);
 
+    // 2026-05-23: FxTurtleH4 USDJPY dispatch (post-S99 rebuild).
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+        g_usdjpy_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
+        g_usdjpy_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+    }
+
     // S99: FX kill-switch (see on_tick_eurusd comment). UsdjpyAsianOpen disabled.
     (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
     return;
@@ -356,6 +387,14 @@ static void on_tick_audusd(
         // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
         g_engine_heartbeat.pulse("AudusdSydneyOpen");
 
+        // 2026-05-23: FxTurtleH4 AUD dispatch (post-S99 rebuild).
+        {
+            const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+            auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+            g_audusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
+            g_audusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+        }
+
         // S99: FX kill-switch (see on_tick_eurusd comment). AudusdSydneyOpen disabled.
         (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
         return;
@@ -429,6 +468,14 @@ static void on_tick_audusd(
     if (sym == "NZDUSD") {
         // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
         g_engine_heartbeat.pulse("NzdusdAsianOpen");
+
+        // 2026-05-23: FxTurtleH4 NZD dispatch (post-S99 rebuild).
+        {
+            const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+            auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+            g_nzdusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
+            g_nzdusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+        }
 
         // S99: FX kill-switch (see on_tick_eurusd comment). NzdusdAsianOpen disabled.
         (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
