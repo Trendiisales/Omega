@@ -2940,6 +2940,53 @@ static void init_engines(const std::string& cfg_path)
     g_orb_ger30.enabled  = false;
     g_orb_uk100.enabled  = false;
     g_orb_estx50.enabled = false;
+
+    // ── ORB-SWING cohort (2026-05-23) ────────────────────────────────────────
+    // Big-swing capture on NAS100 + DJ30 at NY open. Uses the same
+    // OpeningRangeEngine class but with swing-scale geometry so the
+    // CrossPosition manage() path (BE lock at 40% TP, trail at 60% TP,
+    // TP-extend at full TP) has room to ride the daily move instead of
+    // closing at a 0.10% scalp.
+    //
+    //   Range:   30 min from 13:30 UTC (NY equities open)
+    //   Buffer:  0.02% above/below range (catch break a touch faster than
+    //            the 0.03% default; index futures need only a small confirm)
+    //   TP:      0.50% target -- typical NAS100 day range is 1.0-1.5%, so
+    //            0.50% is reachable but past the 0.10% scalp default. With
+    //            allow_tp_extend=true (default) the position rides past TP
+    //            by another 0.50% via the manage()-path continuation logic.
+    //   SL:      0.20% -- ~2.5x typical 30-min range. Wide enough to survive
+    //            normal post-open chop but bounded.
+    //   Hold:    6 hours (21600s) -- full NY session 13:30-19:30 UTC.
+    //            Trail/timeout-when-flat exits much earlier on losing days.
+    //
+    // Per-pair instance: DJ30 has slightly wider TP (0.55%) because NYSE
+    // composite Dow drifts further per-percent than tech-heavy NAS100.
+
+    g_orb_nas100.OPEN_HOUR       = 13;
+    g_orb_nas100.OPEN_MIN        = 30;
+    g_orb_nas100.RANGE_WINDOW_MIN = 30;
+    g_orb_nas100.BUFFER_PCT      = 0.02;
+    g_orb_nas100.TP_PCT          = 0.50;
+    g_orb_nas100.SL_PCT          = 0.20;
+    g_orb_nas100.MAX_HOLD_SEC    = 21600;  // 6h
+    g_orb_nas100.enabled         = true;   // shadow-only via global cohort gate
+
+    g_orb_dj30.OPEN_HOUR         = 13;
+    g_orb_dj30.OPEN_MIN          = 30;
+    g_orb_dj30.RANGE_WINDOW_MIN  = 30;
+    g_orb_dj30.BUFFER_PCT        = 0.02;
+    g_orb_dj30.TP_PCT            = 0.55;
+    g_orb_dj30.SL_PCT            = 0.22;
+    g_orb_dj30.MAX_HOLD_SEC      = 21600;  // 6h
+    g_orb_dj30.enabled           = true;
+
+    printf("[OMEGA-INIT] ORB-Swing cohort: NAS100 + DJ30 enabled, "
+           "buf=%.2f%% tp=%.2f/%.2f%% sl=%.2f/%.2f%% hold=%ds (NY 13:30 UTC, 30min range)\n",
+           g_orb_nas100.BUFFER_PCT,
+           g_orb_nas100.TP_PCT, g_orb_dj30.TP_PCT,
+           g_orb_nas100.SL_PCT, g_orb_dj30.SL_PCT,
+           g_orb_nas100.MAX_HOLD_SEC);
     //
     // Cross-asset: EIA fade, BrentWTI spread, FX cascade, carry unwind.
     // All have insufficient live data. Shelved pending shadow validation.

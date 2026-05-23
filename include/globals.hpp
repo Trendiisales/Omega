@@ -73,6 +73,12 @@ static omega::cross::BrentWtiSpreadEngine  g_ca_brent_wti;
 static omega::cross::FxCascadeEngine       g_ca_fx_cascade;
 static omega::cross::CarryUnwindEngine     g_ca_carry_unwind;
 static omega::cross::OpeningRangeEngine    g_orb_us;     // US equity 13:30 UTC
+// 2026-05-23: NY-open ORB-swing instances for big-swing capture on US futures.
+//   Same OpeningRangeEngine class; per-instance params set in engine_init.hpp
+//   give them wider TP/SL + multi-hour hold so the existing CrossPosition
+//   BE-lock + trail + TP-extend continuation logic actually has room to ride.
+static omega::cross::OpeningRangeEngine    g_orb_nas100; // NAS100 NY 13:30 UTC (swing geometry)
+static omega::cross::OpeningRangeEngine    g_orb_dj30;   // DJ30   NY 13:30 UTC (swing geometry)
 static omega::cross::OpeningRangeEngine    g_orb_ger30;  // Xetra 08:00 UTC
 static omega::cross::OpeningRangeEngine    g_orb_uk100;  // LSE 08:00 UTC, 15-min window
 

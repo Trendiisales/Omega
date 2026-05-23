@@ -651,6 +651,10 @@ static void on_tick_dj30(
     // ?? DJ30.F manage block -- ALWAYS run when position open ??
     if (g_nbm_us30.has_open_position()) { g_nbm_us30.on_tick(sym, bid, ask, ca_on_close); }
 
+    // 2026-05-23: ORB-Swing DJ30 (NY 13:30 UTC, 30-min range, ~0.55% TP,
+    //   6h hold). See on_tick_nas100 comment for design rationale.
+    g_orb_dj30.on_tick(sym, bid, ask, ca_on_close);
+
     // NoiseBandMomentum DJ30
     {
         const int slot_us30 = g_macro_ctx.session_slot;
@@ -925,6 +929,13 @@ static void on_tick_nas100(
     (void)sdec_nas;
     // ?? NAS100 manage block -- ALWAYS run when position open ??
     if (g_nbm_nas.has_open_position()) { g_nbm_nas.on_tick(sym, bid, ask, ca_on_close); }
+
+    // 2026-05-23: ORB-Swing NAS100 (NY 13:30 UTC, 30-min range, ~0.50% TP,
+    //   6h hold via CrossPosition trail). Manage when open; entry path
+    //   short-circuits internally on session window + armed flag. Shadow
+    //   only -- standard cross-asset enter_directional() pathway not used
+    //   here since the engine writes pos_ directly inside on_tick().
+    g_orb_nas100.on_tick(sym, bid, ask, ca_on_close);
 
     // NoiseBandMomentum NAS100
     {
