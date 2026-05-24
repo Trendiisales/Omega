@@ -394,7 +394,15 @@ static void on_tick_ustec(
         static int64_t s_nqh1_start = 0;
         const int64_t bh1_n = (now_ms_n / 3600000LL) * 3600000LL;
         if (s_nqh1_start == 0) { s_nqh1 = {bh1_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nqh1_start = bh1_n; }
-        else if (bh1_n != s_nqh1_start) { g_bars_nq.h1.add_bar(s_nqh1); s_nqh1 = {bh1_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nqh1_start = bh1_n; }
+        else if (bh1_n != s_nqh1_start) {
+            g_bars_nq.h1.add_bar(s_nqh1);
+            // ── S136 2026-05-24: NasBbRevLongH1Engine H1-close dispatch ────────
+            // Engine uses its own internal aggregator (Bollinger / RSI / ATR);
+            // we hand it the just-closed H1 bar. ts_ms = bar START (close = +1h).
+            g_nas_bbrev_long_h1.on_h1_bar(s_nqh1.high, s_nqh1.low, s_nqh1.close,
+                                           bid, ask, s_nqh1_start, ca_on_close);
+            s_nqh1 = {bh1_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nqh1_start = bh1_n;
+        }
         else { if(nq_mid>s_nqh1.high)s_nqh1.high=nq_mid; if(nq_mid<s_nqh1.low)s_nqh1.low=nq_mid; s_nqh1.close=nq_mid; }
         // NOTE: L2 tick CSV logger for USTEC is at on_tick.hpp router level
         // (before indices_enabled gate), not here -- see US500 block above.
@@ -743,6 +751,34 @@ static void on_tick_dj30(
             g_minimal_h4_us30.check_weekend_close(bid, ask, now_ms_m4, ca_on_close);
         }
     }
+
+    // ── S136 2026-05-24: Us303BarMomH1Engine ─────────────────────────────────
+    // Build US30 H1 bars from ticks here (no shared g_bars_us30.h1 stream),
+    // dispatch to engine on bar close, and run per-tick management every call.
+    {
+        const double us30_mid = (bid + ask) * 0.5;
+        const int64_t now_ms_u = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const int64_t bh1_u = (now_ms_u / 3600000LL) * 3600000LL;
+        static double s_us30_o = 0, s_us30_h = 0, s_us30_l = 0, s_us30_c = 0;
+        static int64_t s_us30h1_start = 0;
+        if (s_us30h1_start == 0) {
+            s_us30_o = s_us30_h = s_us30_l = s_us30_c = us30_mid;
+            s_us30h1_start = bh1_u;
+        } else if (bh1_u != s_us30h1_start) {
+            // bar closed at s_us30h1_start, new bar starting at bh1_u
+            g_us30_3bar_mom_h1.on_h1_bar(s_us30_h, s_us30_l, s_us30_c,
+                                          bid, ask, s_us30h1_start, ca_on_close);
+            s_us30_o = s_us30_h = s_us30_l = s_us30_c = us30_mid;
+            s_us30h1_start = bh1_u;
+        } else {
+            if (us30_mid > s_us30_h) s_us30_h = us30_mid;
+            if (us30_mid < s_us30_l) s_us30_l = us30_mid;
+            s_us30_c = us30_mid;
+        }
+        g_us30_3bar_mom_h1.on_tick(bid, ask, now_ms_u, ca_on_close);
+    }
 }
 
 // ── GER40 ──────────────────────────────────────────────────
@@ -936,6 +972,14 @@ static void on_tick_nas100(
     //   only -- standard cross-asset enter_directional() pathway not used
     //   here since the engine writes pos_ directly inside on_tick().
     g_orb_nas100.on_tick(sym, bid, ask, ca_on_close);
+
+    // ── S136 2026-05-24: NasBbRevLongH1Engine per-tick management ─────────
+    // Manages SL/TP/BE/trail on the engine's own open position. Engine entry
+    // happens at H1 close (see g_nas_bbrev_long_h1.on_h1_bar dispatch above).
+    {
+        const int64_t now_ms_n_ll = static_cast<int64_t>(std::time(nullptr)) * 1000LL;
+        g_nas_bbrev_long_h1.on_tick(bid, ask, now_ms_n_ll, ca_on_close);
+    }
 
     // NoiseBandMomentum NAS100
     {

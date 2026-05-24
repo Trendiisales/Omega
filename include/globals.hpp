@@ -597,6 +597,41 @@ static omega::GoldUltimateEngine g_gold_ultimate_engine;
 #include "XauThreeBar30mEngine.hpp"
 static omega::XauThreeBar30mEngine g_xau_threebar_30m;
 
+// 2026-05-24 S136: XauDonchian55GatedM30Engine -- XAU M30 Donchian-55 symmetric
+//   with EMA50/200 regime gate + MFE-lock trail (arm=0.7R, lock=80%).
+//   /Users/jo/edge_research validation: 27mo backtest IS PF 1.10 +$460 /
+//   OOS PF 1.67 +$1556 / L2 forward PF 3.03 +$773 DD -$200 / 48 trades.
+//   Walk-forward 4 anchored folds: every fold positive.
+//   First XAU engine validated on L2 forward window (2026-04-09 → 2026-05-19).
+#include "XauDonchian55GatedM30Engine.hpp"
+static omega::XauDonchian55GatedM30Engine g_xau_d55_gated_m30;
+
+// 2026-05-24 S136: Xau3BarMomGatedH4Engine -- XAU H4 three-bar momentum symmetric
+//   with MFE-lock trail (arm=1.0R, lock=90%).
+//   /Users/jo/edge_research validation: 27mo backtest IS PF 1.11 +$983 /
+//   OOS PF 1.07 +$272 / L2 forward PF 1.53 +$365 DD -$257.
+//   Walk-forward 4 folds aggregate OOS +$2931 (no trail).
+#include "Xau3BarMomGatedH4Engine.hpp"
+static omega::Xau3BarMomGatedH4Engine g_xau_3bar_mom_h4;
+
+// 2026-05-24 S136: NasBbRevLongH1Engine -- NAS100 H1 Bollinger-band mean-revert
+//   LONG. BE-then-trail at 1.5×ATR (arm=1R, switch=2R).
+//   /Users/jo/edge_research validation: Walk-forward 4 anchored folds all positive,
+//   OOS aggregate +$7912 / 145 trades, best fold PF 1.83.
+//   No NAS100 L2 data on disk; L2 validation pending.
+#include "NasBbRevLongH1Engine.hpp"
+static omega::NasBbRevLongH1Engine g_nas_bbrev_long_h1;
+
+// 2026-05-24 S136: Us303BarMomH1Engine -- US30 H1 three-bar momentum SYMMETRIC
+//   (long+short). MFE-lock trail arm=1.0R lock=90%.
+//   /Users/jo/edge_research validation on dow30_2yr.csv (2023-10 → 2025-10):
+//   IS 161n PF 1.44 +$11,380 / OOS 32n PF 2.37 +$4489 DD -$682 Sharpe 1.91.
+//   Walk-forward 4 folds ALL positive, aggregate OOS +$10,943 / 160 trades.
+//   Symmetric variant added to defend against regime change (cf. XAU L2 failure
+//   of LONG-only).
+#include "Us303BarMomH1Engine.hpp"
+static omega::Us303BarMomH1Engine g_us30_3bar_mom_h1;
+
 // 2026-05-12 S35-P6: UstecTrendFollowHtfEngine -- multi-timeframe trend-follow
 //   ensemble for USTEC.F. 5 cells across M15/H1/H2/H4 (InsideBar2h, Stoch1h
 //   20/80, ATR_Mom 1h mom=50, Donchian N=20 15m, Stoch4h 20/80). Each cell

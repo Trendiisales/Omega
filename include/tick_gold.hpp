@@ -749,6 +749,9 @@ static void on_tick_gold(
                     /*atr14_external=*/0.0,
                     now_ms_g, bracket_on_close);
             }
+            // -- XauDonchian55GatedM30Engine 30m-close dispatch (S136 2026-05-24) --
+            g_xau_d55_gated_m30.on_m30_bar(s_cur30.high, s_cur30.low, s_cur30.close,
+                                            bid, ask, now_ms_g, bracket_on_close);
             s_cur30 = {b30/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar30_ms = b30;
         }
         else { if(xau_mid>s_cur30.high)s_cur30.high=xau_mid; if(xau_mid<s_cur30.low)s_cur30.low=xau_mid; s_cur30.close=xau_mid; }
@@ -1071,6 +1074,9 @@ static void on_tick_gold(
             g_xau_pullback_cont_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                               bid, ask, now_ms_g, bracket_on_close);
             g_xau_bb_scalp_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                         bid, ask, now_ms_g, bracket_on_close);
+            // ── S136 2026-05-24: Xau3BarMomGatedH4Engine ──────────────────────
+            g_xau_3bar_mom_h4.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                          bid, ask, now_ms_g, bracket_on_close);
             g_xau_swing_break_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                             bid, ask, now_ms_g, bracket_on_close);
@@ -2113,6 +2119,9 @@ static void on_tick_gold(
     // XauThreeBar30mEngine tick management -- 30m three-bar continuation (S36-P4).
     // Shadow-only by default. Intra-bar SL/TP/BE/trail management every tick.
     g_xau_threebar_30m.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // ── S136 2026-05-24: new engines per-tick management ────────────────────
+    g_xau_d55_gated_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_xau_3bar_mom_h4.on_tick  (bid, ask, now_ms_g, bracket_on_close);
     // GoldUltimateEngine tick dispatch -- standalone v12 OOS-validated trend
     // engine. Self-contained 1-min bar aggregation + 7-factor entry filter +
     // edge-hour/ATR gates. S91 shipped 2026-05-15.

@@ -1460,6 +1460,76 @@ static void init_engines(const std::string& cfg_path)
                g_xau_swing_break_d1.p.sl_atr_mult, g_xau_swing_break_d1.p.tp_atr_mult,
                g_xau_swing_break_d1.p.hold_max_days);
 
+        // ── S136 2026-05-24: XauDonchian55GatedM30Engine ───────────────────────
+        // XAU M30 Donchian-55 symmetric + EMA50/200 regime gate.
+        // MFE-lock trail: arm at +0.7R, lock 80% of extreme.
+        // L2-forward-validated (2026-04-09 → 2026-05-19): PF 3.03, +$773 / 48 trades.
+        g_xau_d55_gated_m30.shadow_mode = true;
+        g_xau_d55_gated_m30.enabled     = true;
+        g_xau_d55_gated_m30.symbol      = "XAUUSD";
+        g_xau_d55_gated_m30.seed_from_m30_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
+        printf("[OMEGA-INIT] XauDonchian55GatedM30: shadow=%d enabled=%d n=%d sl=%.1fx tp=%.1fR mb=%d "
+               "trail_arm=%.1fR lock=%.0f%%\n",
+               (int)g_xau_d55_gated_m30.shadow_mode, (int)g_xau_d55_gated_m30.enabled,
+               g_xau_d55_gated_m30.p.donchian_period,
+               g_xau_d55_gated_m30.p.sl_atr_mult, g_xau_d55_gated_m30.p.tp_r_mult,
+               g_xau_d55_gated_m30.p.hold_max_bars,
+               g_xau_d55_gated_m30.p.trail_arm_R, g_xau_d55_gated_m30.p.trail_lock_pct*100.0);
+
+        // ── S136 2026-05-24: Xau3BarMomGatedH4Engine ───────────────────────────
+        // XAU H4 three-bar momentum, symmetric long+short.
+        // MFE-lock trail: arm at +1.0R, lock 90% of extreme.
+        // L2 forward: PF 1.53, +$365 / 34 trades. WF agg OOS +$2931 / 199 trades.
+        g_xau_3bar_mom_h4.shadow_mode = true;
+        g_xau_3bar_mom_h4.enabled     = true;
+        g_xau_3bar_mom_h4.symbol      = "XAUUSD";
+        omega::seed_h4_engine(g_xau_3bar_mom_h4,
+                              "phase1/signal_discovery/warmup_XAUUSD_H4.csv",
+                              "Xau3BarMomGatedH4");
+        printf("[OMEGA-INIT] Xau3BarMomGatedH4: shadow=%d enabled=%d sl=%.1fx tp=%.1fR mb=%d "
+               "trail_arm=%.1fR lock=%.0f%%\n",
+               (int)g_xau_3bar_mom_h4.shadow_mode, (int)g_xau_3bar_mom_h4.enabled,
+               g_xau_3bar_mom_h4.p.sl_atr_mult, g_xau_3bar_mom_h4.p.tp_r_mult,
+               g_xau_3bar_mom_h4.p.hold_max_bars,
+               g_xau_3bar_mom_h4.p.trail_arm_R, g_xau_3bar_mom_h4.p.trail_lock_pct*100.0);
+
+        // ── S136 2026-05-24: Us303BarMomH1Engine ───────────────────────────────
+        // US30 H1 three-bar momentum, symmetric long+short.
+        // MFE-lock trail: arm at +1.0R, lock 90% of extreme.
+        // WF 4 folds all positive, agg OOS +$10,943 / 160 trades.
+        // No US30 H1 warmup CSV in repo yet; engine cold-warms over ~15 H1 bars
+        // before first signal possible. TODO: generate warmup_US30_H1.csv.
+        g_us30_3bar_mom_h1.shadow_mode = true;
+        g_us30_3bar_mom_h1.enabled     = true;
+        g_us30_3bar_mom_h1.symbol      = "US30";
+        printf("[OMEGA-INIT] Us303BarMomH1: shadow=%d enabled=%d sl=%.1fx tp=%.1fR mb=%d "
+               "trail_arm=%.1fR lock=%.0f%%\n",
+               (int)g_us30_3bar_mom_h1.shadow_mode, (int)g_us30_3bar_mom_h1.enabled,
+               g_us30_3bar_mom_h1.p.sl_atr_mult, g_us30_3bar_mom_h1.p.tp_r_mult,
+               g_us30_3bar_mom_h1.p.hold_max_bars,
+               g_us30_3bar_mom_h1.p.trail_arm_R, g_us30_3bar_mom_h1.p.trail_lock_pct*100.0);
+
+        // ── S136 2026-05-24: NasBbRevLongH1Engine ──────────────────────────────
+        // NAS100 H1 Bollinger-band reversion LONG (close<lower BB + RSI cross<30).
+        // BE-then-trail at 1.5×ATR (BE arm at +1R, switch to ATR trail at +2R).
+        // WF 4 folds all positive, OOS aggregate +$7912 / 145 trades.
+        // No NAS L2 data yet; L2 validation pending.
+        g_nas_bbrev_long_h1.shadow_mode = true;
+        g_nas_bbrev_long_h1.enabled     = true;
+        g_nas_bbrev_long_h1.symbol      = "NAS100";
+        // Note: no NAS100 H1 warmup CSV in repo yet. Engine cold-warms
+        // over ~25 H1 bars (1 trading day) before first signal possible.
+        // TODO: generate phase1/signal_discovery/warmup_NAS100_H1.csv
+        printf("[OMEGA-INIT] NasBbRevLongH1: shadow=%d enabled=%d bb=%d/%.1f rsi_lo=%.0f "
+               "sl=%.1fx tp=%.1fR mb=%d trail=BE@%.1fR->ATR@%.1fR x%.1f\n",
+               (int)g_nas_bbrev_long_h1.shadow_mode, (int)g_nas_bbrev_long_h1.enabled,
+               g_nas_bbrev_long_h1.p.bb_period, g_nas_bbrev_long_h1.p.bb_k,
+               g_nas_bbrev_long_h1.p.rsi_oversold,
+               g_nas_bbrev_long_h1.p.sl_atr_mult, g_nas_bbrev_long_h1.p.tp_r_mult,
+               g_nas_bbrev_long_h1.p.hold_max_bars,
+               g_nas_bbrev_long_h1.p.trail_be_arm_R, g_nas_bbrev_long_h1.p.trail_switch_R,
+               g_nas_bbrev_long_h1.p.trail_atr_mult);
+
         g_ger40_turtle_h4.p           = omega::make_ger40_turtle_h4_params();
         g_ger40_turtle_h4.shadow_mode = true;
         g_ger40_turtle_h4.enabled     = true;
