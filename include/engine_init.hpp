@@ -1502,6 +1502,7 @@ static void init_engines(const std::string& cfg_path)
         g_us30_3bar_mom_h1.shadow_mode = true;
         g_us30_3bar_mom_h1.enabled     = true;
         g_us30_3bar_mom_h1.symbol      = "US30";
+        g_us30_3bar_mom_h1.seed_from_h1_csv("phase1/signal_discovery/warmup_US30_H1.csv");
         printf("[OMEGA-INIT] Us303BarMomH1: shadow=%d enabled=%d sl=%.1fx tp=%.1fR mb=%d "
                "trail_arm=%.1fR lock=%.0f%%\n",
                (int)g_us30_3bar_mom_h1.shadow_mode, (int)g_us30_3bar_mom_h1.enabled,
@@ -1517,9 +1518,7 @@ static void init_engines(const std::string& cfg_path)
         g_nas_bbrev_long_h1.shadow_mode = true;
         g_nas_bbrev_long_h1.enabled     = true;
         g_nas_bbrev_long_h1.symbol      = "NAS100";
-        // Note: no NAS100 H1 warmup CSV in repo yet. Engine cold-warms
-        // over ~25 H1 bars (1 trading day) before first signal possible.
-        // TODO: generate phase1/signal_discovery/warmup_NAS100_H1.csv
+        g_nas_bbrev_long_h1.seed_from_h1_csv("phase1/signal_discovery/warmup_NAS100_H1.csv");
         printf("[OMEGA-INIT] NasBbRevLongH1: shadow=%d enabled=%d bb=%d/%.1f rsi_lo=%.0f "
                "sl=%.1fx tp=%.1fR mb=%d trail=BE@%.1fR->ATR@%.1fR x%.1f\n",
                (int)g_nas_bbrev_long_h1.shadow_mode, (int)g_nas_bbrev_long_h1.enabled,
