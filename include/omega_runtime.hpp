@@ -174,6 +174,9 @@ static std::ofstream g_shadow_csv;
 static std::ofstream g_trade_close_csv;
 static std::ofstream g_trade_open_csv;   // entry-time log -- one row per position opened
 static std::mutex    g_trade_close_csv_mtx;
+// g_shadow_signal_csv + g_shadow_signal_csv_mtx live in shadow_signal_log.hpp
+// (included earlier than omega_runtime.hpp because SymbolSupervisor.hpp needs
+// to reference them — wired 2026-05-25 after silent-loss incident).
 
 struct PerfStats {
     int live_trades = 0;

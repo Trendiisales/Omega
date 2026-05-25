@@ -270,6 +270,11 @@ struct OmegaConfig {
     int         ws_port    = 7780;
     int         trade_port = 5212;   // FIX trade connection (orders)
     std::string shadow_csv = "omega_shadow.csv";
+    // S25 2026-05-25: signal-level audit (every supervisor decision change).
+    // Implemented after 2026-05-25 silent-loss incident: config keys existed
+    // but no writer was wired, so signals never landed on disk.
+    std::string shadow_signal_csv        = "omega_shadow_signals.csv";
+    bool        enable_shadow_signal_audit = false;
     std::string log_file   = "";   // if set, tee all stdout+stderr here
 
     // GoldEngineStack config -- passed to g_gold_stack.configure()

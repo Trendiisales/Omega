@@ -15,6 +15,11 @@
 #include <algorithm>
 #include <iostream>
 #include <chrono>
+#include "shadow_signal_log.hpp"  // g_shadow_signal_csv + write_shadow_signal_row()
+// The audit writer is self-gating: write_shadow_signal_row() no-ops if
+// the file isn't open. The opener in omega_main.hpp only opens the file
+// when enable_shadow_signal_audit=true. So evaluate() can call the writer
+// unconditionally — no g_cfg reference needed here.
 
 namespace omega {
 
@@ -507,6 +512,14 @@ public:
                       << " cooldown="  << d.in_cooldown
                       << " reason="    << d.reason << "\n";
             std::cout.flush();
+            // Signal-level audit (S25 2026-05-25). Writes one CSV row per
+            // supervisor decision change. No-op if audit disabled in config
+            // (writer checks g_shadow_signal_csv.is_open()).
+            write_shadow_signal_row(
+                symbol.c_str(), regime_name(d.regime), d.confidence,
+                d.bracket_score, d.breakout_score, top_score, cfg.min_winner_score,
+                d.winner, (d.allow_bracket || d.allow_breakout),
+                d.in_cooldown, d.reason);
         }
 
         last_ = d;

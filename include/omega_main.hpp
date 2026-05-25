@@ -361,6 +361,32 @@ int main(int argc, char* argv[])
                         "hold_sec,exit_reason,spread_at_entry,latency_ms,regime\n";
     std::cout << "[OMEGA] Shadow CSV: " << shadow_csv_path << "\n";
 
+    // S25 2026-05-25 -- signal-level audit. Open omega_shadow_signals.csv
+    // when enable_shadow_signal_audit=true. Treat open-failure as FATAL
+    // for the same reason as the trade-level shadow CSV: silent loss of
+    // research-grade data is exactly the failure mode we're trying to
+    // prevent. The pre-2026-05-25 state (no writer at all) is what put
+    // us in this position; we won't tolerate a silently-failed open.
+    if (g_cfg.enable_shadow_signal_audit) {
+        const std::string sig_csv_path =
+            resolve_audit_log_path(g_cfg.shadow_signal_csv, "shadow/omega_shadow_signals.csv");
+        ensure_parent_dir(sig_csv_path);
+        g_shadow_signal_csv.open(sig_csv_path, std::ios::app);
+        if (!g_shadow_signal_csv.is_open()) {
+            std::cerr << "[OMEGA-FATAL] Failed to open shadow signal CSV: " << sig_csv_path << "\n";
+            return 1;
+        }
+        g_shadow_signal_csv.seekp(0, std::ios::end);
+        if (g_shadow_signal_csv.tellp() == std::streampos(0))
+            g_shadow_signal_csv << "ts_unix,symbol,regime,confidence,bracket_score,"
+                                   "breakout_score,top_score,threshold,winner,allow,"
+                                   "cooldown,reason\n";
+        std::cout << "[OMEGA] Shadow Signal CSV: " << sig_csv_path << "\n";
+    } else {
+        std::cout << "[OMEGA] Shadow signal audit DISABLED "
+                     "(enable_shadow_signal_audit=true in [telemetry] to enable)\n";
+    }
+
     // ?? Startup ledger reload -- restore today's closed trades from CSV ???????
     // g_omegaLedger is in-memory only and resets on restart. On restart mid-session
     // the GUI shows daily_pnl=$0 and total_trades=0 even though trades happened.

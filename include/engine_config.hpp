@@ -371,7 +371,15 @@ static void load_config(const std::string& path) {
             if (k=="gui_port")   g_cfg.gui_port   = safe_stoi(v, k);
             if (k=="ws_port")    g_cfg.ws_port     = safe_stoi(v, k);
             if (k=="shadow_csv") g_cfg.shadow_csv  = v;
+            if (k=="shadow_signal_csv")          g_cfg.shadow_signal_csv          = v;
+            if (k=="enable_shadow_signal_audit") g_cfg.enable_shadow_signal_audit = (v=="true" || v=="1" || v=="yes");
             if (k=="log_file")   g_cfg.log_file    = v;
+        }
+        // The audit ENABLE flag is also accepted in [risk] because the config
+        // file (omega_config.ini L156) historically placed it there alongside
+        // related risk-audit flags. Read from either section — last one wins.
+        if (section == "risk") {
+            if (k=="enable_shadow_signal_audit") g_cfg.enable_shadow_signal_audit = (v=="true" || v=="1" || v=="yes");
         }
         if (section == "extended_ids") {
             if (k=="ger30_id")   g_cfg.ext_ger30_id   = safe_stoi(v, k);
