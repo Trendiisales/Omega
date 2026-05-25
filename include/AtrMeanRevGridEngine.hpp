@@ -229,6 +229,47 @@ struct AmrTraits_EURGBP : AmrBaseParams {
     static constexpr double MAX_SPREAD_PRICE = 0.00030;
 };
 
+// =============================================================================
+// INDEX traits -- from 2026-05-26 deep eval sweep on real tick CSVs.
+// Production symbol names: US500 (=SPXUSD), NAS100 (=NSXUSD), GER40.
+// =============================================================================
+
+// US500 / SPXUSD: H1, X=8, SL_Y=6, TP=ATR_FROM_WAP
+// Sweep result: 86 trd, WR 38%, PF 1.75, +$81.49, DD $31.86, Recovery 2.56
+struct AmrTraits_US500 : AmrBaseParams {
+    static constexpr const char* SYMBOL = "US500";
+    static constexpr double POINT = 0.1;
+    static constexpr std::int64_t BAR_INTERVAL_MS = 3600LL * 1000LL;   // H1
+    static constexpr double       ENTRY_ATR_MULT_X = 8.0;
+    static constexpr double       SL_ATR_BUFFER_Y  = 6.0;
+    static constexpr AmrTpMethod  TP_METHOD = AmrTpMethod::ATR_FROM_WAP;
+    static constexpr double       MAX_SPREAD_PRICE = 2.0;
+};
+
+// NAS100 / NSXUSD: M15, X=14, SL_Y=4, TP=RSI_OR_MA
+// Sweep result: 69 trd, WR 26%, PF 1.55, +$15.50, DD $10.46, Recovery 1.48
+struct AmrTraits_NAS100 : AmrBaseParams {
+    static constexpr const char* SYMBOL = "NAS100";
+    static constexpr double POINT = 0.1;
+    static constexpr std::int64_t BAR_INTERVAL_MS = 900LL * 1000LL;    // M15
+    static constexpr double       ENTRY_ATR_MULT_X = 14.0;
+    static constexpr double       SL_ATR_BUFFER_Y  = 4.0;
+    static constexpr AmrTpMethod  TP_METHOD = AmrTpMethod::RSI_OR_MA;
+    static constexpr double       MAX_SPREAD_PRICE = 5.0;
+};
+
+// GER40: M15, X=14, SL_Y=6, TP=ATR_FROM_WAP
+// Stage-4 stress result: 37 trd, WR 43%, PF 1.86
+struct AmrTraits_GER40 : AmrBaseParams {
+    static constexpr const char* SYMBOL = "GER40";
+    static constexpr double POINT = 0.1;
+    static constexpr std::int64_t BAR_INTERVAL_MS = 900LL * 1000LL;    // M15
+    static constexpr double       ENTRY_ATR_MULT_X = 14.0;
+    static constexpr double       SL_ATR_BUFFER_Y  = 6.0;
+    static constexpr AmrTpMethod  TP_METHOD = AmrTpMethod::ATR_FROM_WAP;
+    static constexpr double       MAX_SPREAD_PRICE = 5.0;
+};
+
 // "Sweep" traits = inherit base only (no per-pair overrides). Macros control all
 // params (X, BAR_INTERVAL_MS, RSI, SL_Y, etc). Used by deep-eval sweep harness.
 struct AmrTraits_SWEEP_EURUSD : AmrBaseParams {

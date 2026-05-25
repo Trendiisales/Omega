@@ -1616,7 +1616,35 @@ static void init_engines(const std::string& cfg_path)
             g_amr_nzdusd.shadow_mode = true;
             g_amr_nzdusd.on_close_cb = write_shadow_csv;
 
-            std::printf("[OMEGA-INIT] AtrMeanRevGrid: EURUSD(M15,X=14)+GBPUSD(H1,X=10) enabled (shadow), AUDUSD+NZDUSD parked\n");
+            std::printf("[OMEGA-INIT] AtrMeanRevGrid FX: EURUSD(M15,X=14)+GBPUSD(H1,X=10) enabled (shadow), AUDUSD+NZDUSD parked\n");
+
+            // ----------------------------------------------------------------
+            // 2026-05-26: Index AMR. Configs from deep eval sweep on tick CSVs.
+            //   US500   H1  X=8  SL_Y=6 ATR_FROM_WAP  PF 1.75 +$81  DD $32 Recov 2.56
+            //   NAS100  M15 X=14 SL_Y=4 RSI_OR_MA     PF 1.55 +$15  DD $10 Recov 1.48
+            //   GER40   M15 X=14 SL_Y=6 ATR_FROM_WAP  PF 1.86 (stage-4)
+            // shadow_mode=true. Warmup CSV per CLAUDE.md "Engine Warm-Seed Mandate".
+            // ----------------------------------------------------------------
+            const char* warmup_us500  = "phase1/signal_discovery/warmup_US500_H1.csv";
+            const char* warmup_nas100 = "phase1/signal_discovery/warmup_NAS100_H1.csv";
+            const char* warmup_ger40  = "phase1/signal_discovery/warmup_GER40_H1.csv";
+
+            g_amr_us500.enabled      = true;   // H1 X=8 ATR_FROM_WAP
+            g_amr_us500.shadow_mode  = true;
+            g_amr_us500.on_close_cb  = write_shadow_csv;
+            g_amr_us500.seed_from_h1_csv(warmup_us500);
+
+            g_amr_nas100.enabled     = true;   // M15 X=14 RSI_OR_MA
+            g_amr_nas100.shadow_mode = true;
+            g_amr_nas100.on_close_cb = write_shadow_csv;
+            g_amr_nas100.seed_from_h1_csv(warmup_nas100);
+
+            g_amr_ger40.enabled      = true;   // M15 X=14 ATR_FROM_WAP
+            g_amr_ger40.shadow_mode  = true;
+            g_amr_ger40.on_close_cb  = write_shadow_csv;
+            g_amr_ger40.seed_from_h1_csv(warmup_ger40);
+
+            std::printf("[OMEGA-INIT] AtrMeanRevGrid INDEX: US500(H1,X=8)+NAS100(M15,X=14)+GER40(M15,X=14) enabled (shadow)\n");
         }
 
         // AUD/NZD/JPY: structure in place, awaiting H1 warmup CSVs.
