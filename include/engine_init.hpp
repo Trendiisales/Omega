@@ -1590,26 +1590,30 @@ static void init_engines(const std::string& cfg_path)
             const char* warmup_eur = "phase1/signal_discovery/warmup_EURUSD_H1.csv";
             const char* warmup_gbp = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
 
-            g_amr_eurusd.enabled     = false;  // gated off until wiring + backtest
+            // Backtest sweep (2yr, ENTRY_ATR_MULT_X across 6/8/10/12):
+            //   EURUSD: best X=10 -> 43 trades, WR 46.5%, PF 1.04, +$2.28, DD $24.52
+            //   GBPUSD: best X=10 -> 13 trades, WR 53.8%, PF 2.11, +$17.35, DD $6.95
+            //   AUDUSD: best X=10 -> 18 trades, WR 33.3%, PF 1.06, +$1.60,  DD $17.30
+            //   NZDUSD: all configs negative; off until tuned.
+            g_amr_eurusd.enabled     = true;  // PF 1.04 (marginal but positive)
             g_amr_eurusd.shadow_mode = true;
             g_amr_eurusd.on_close_cb = write_shadow_csv;
             g_amr_eurusd.seed_from_h1_csv(warmup_eur);
 
-            g_amr_gbpusd.enabled     = false;
+            g_amr_gbpusd.enabled     = true;  // PF 2.11 (strongest)
             g_amr_gbpusd.shadow_mode = true;
             g_amr_gbpusd.on_close_cb = write_shadow_csv;
             g_amr_gbpusd.seed_from_h1_csv(warmup_gbp);
 
-            // AUDUSD / NZDUSD: structure in place, awaiting H1 warmup CSVs.
-            g_amr_audusd.enabled     = false;
+            g_amr_audusd.enabled     = false; // marginal; needs per-pair tuning
             g_amr_audusd.shadow_mode = true;
             g_amr_audusd.on_close_cb = write_shadow_csv;
 
-            g_amr_nzdusd.enabled     = false;
+            g_amr_nzdusd.enabled     = false; // negative across all X tested
             g_amr_nzdusd.shadow_mode = true;
             g_amr_nzdusd.on_close_cb = write_shadow_csv;
 
-            std::printf("[OMEGA-INIT] AtrMeanRevGrid: 4 instances configured (EUR/GBP/AUD/NZD), all gated off pending wiring + backtest\n");
+            std::printf("[OMEGA-INIT] AtrMeanRevGrid: EURUSD+GBPUSD enabled (shadow), AUDUSD+NZDUSD parked\n");
         }
 
         // AUD/NZD/JPY: structure in place, awaiting H1 warmup CSVs.

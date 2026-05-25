@@ -206,8 +206,9 @@ static int64_t run_file(const std::string& path) {
                 } else {
                     Tick t;
                     if (parse_tick_line(buf.data() + line_start, len, t)) {
+                        // Engine internally aggregates H1 bars from ticks now,
+                        // so the harness only needs on_tick().
                         g_eng.on_tick(t.bid, t.ask, t.ts_ms);
-                        g_h1.on_tick(t.bid, t.ask, t.ts_ms, deliver_bar);
                         ++ticks;
                     }
                 }

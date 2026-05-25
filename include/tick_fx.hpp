@@ -174,6 +174,11 @@ static void on_tick_eurusd(
             /* l2_real    */ g_macro_ctx.ctrader_l2_live);
     }
 
+    // AtrMeanRevGrid (shadow) -- forex mean-reversion grid (2026-05-25).
+    // Engine internally aggregates H1 bars from tick mids; we only need to
+    // forward ticks. Backtest sweep: PF 2.11 @ X=10 (13 trades, 2yr).
+    if (g_amr_eurusd.enabled) g_amr_eurusd.on_tick(bid, ask, now_ms);
+
     // EurGbpPairsEngine (shadow) -- spread mean-reversion. Engine maintains its
     // own H1 OHLC accumulator + rolling z-score; signal logic runs on H1 close.
     // See backtest/sweep_pairs_v2.csv for tuning. Routed in both on_tick_eurusd
@@ -275,6 +280,9 @@ static void on_tick_gbpusd(
             /* wall_below */ g_macro_ctx.gbp_wall_below,
             /* l2_real    */ g_macro_ctx.ctrader_l2_live);
     }
+
+    // AtrMeanRevGrid GBPUSD (shadow). Backtest: PF 2.11 @ X=10 (13 trades, 2yr).
+    if (g_amr_gbpusd.enabled) g_amr_gbpusd.on_tick(bid, ask, now_ms);
 
     // EurGbpPairsEngine -- GBP leg (see on_tick_eurusd for EUR leg).
     {
@@ -449,6 +457,9 @@ static void on_tick_audusd(
                 /* l2_real    */ g_macro_ctx.ctrader_l2_live);
         }
 
+        // AtrMeanRevGrid AUDUSD (shadow). Backtest: PF 1.06 (marginal).
+        if (g_amr_audusd.enabled) g_amr_audusd.on_tick(bid, ask, now_ms);
+
         (void)regime; (void)dispatch;
         return;
     }
@@ -513,6 +524,9 @@ static void on_tick_audusd(
                 /* wall_below */ false,
                 /* l2_real    */ g_macro_ctx.ctrader_l2_live);
         }
+
+        // AtrMeanRevGrid NZDUSD (shadow). Backtest: PF 0.92 (negative; keep enabled=false until tuned).
+        if (g_amr_nzdusd.enabled) g_amr_nzdusd.on_tick(bid, ask, now_ms);
 
         (void)regime; (void)dispatch;
         return;

@@ -80,10 +80,18 @@ struct AmrBaseParams {
     static constexpr int    SLOW_MA_PERIOD    = 200;
     static constexpr int    RSI_PERIOD        = 14;
 
-    // Entry / SL geometry (ATR-multiplier based)
-    static constexpr double ENTRY_ATR_MULT_X  = 10.0;    // was 14 -- too strict on 2y EURUSD backtest (6 trades)
-    static constexpr double SL_ATR_BUFFER_Y   = 4.0;     // SL = slowMA -/+ (X+Y)*ATR
+    // Entry / SL geometry (ATR-multiplier based). Sweep override via macros.
+#ifdef AMR_OVERRIDE_X
+    static constexpr double ENTRY_ATR_MULT_X  = AMR_OVERRIDE_X;
+#else
+    static constexpr double ENTRY_ATR_MULT_X  = 10.0;
+#endif
+#ifdef AMR_OVERRIDE_ADD
+    static constexpr double ADD_DIST_BASE_MULT= AMR_OVERRIDE_ADD;
+#else
     static constexpr double ADD_DIST_BASE_MULT= 1.0;
+#endif
+    static constexpr double SL_ATR_BUFFER_Y   = 4.0;     // SL = slowMA -/+ (X+Y)*ATR
 
     // RSI bands
     static constexpr double RSI_ENTRY_LOW     = 20.0;    // SELL mirrors via 100-this
@@ -213,12 +221,33 @@ public:
 
     // -------------------------------------------------------------------------
     // Tick callback -- for broker-style TP modes (2/3/4), check WAP-relative
-    // price targets. Also evaluates SL on every tick (positions store their
-    // own SL price; this method is just monitoring + fill events).
+    // price targets. Also evaluates SL on every tick. Internally aggregates
+    // H1 bars from tick mids; calls on_h1_bar() on bar close so production
+    // dispatchers only need to call on_tick() (no separate H1 hookup needed).
     // -------------------------------------------------------------------------
     void on_tick(double bid, double ask, std::int64_t ts_ms) {
         cached_bid_ = bid;
         cached_ask_ = ask;
+
+        // Internal H1 aggregator
+        const double mid = (bid + ask) * 0.5;
+        constexpr std::int64_t H1_MS = 3600LL * 1000LL;
+        const std::int64_t bar = (ts_ms / H1_MS) * H1_MS;
+        if (!h1_active_) {
+            h1_bar_start_ = bar;
+            h1_o_ = h1_h_ = h1_l_ = h1_c_ = mid;
+            h1_active_ = true;
+        } else if (bar != h1_bar_start_) {
+            // Close prior bar
+            on_h1_bar(h1_o_, h1_h_, h1_l_, h1_c_, h1_bar_start_);
+            h1_bar_start_ = bar;
+            h1_o_ = h1_h_ = h1_l_ = h1_c_ = mid;
+        } else {
+            if (mid > h1_h_) h1_h_ = mid;
+            if (mid < h1_l_) h1_l_ = mid;
+            h1_c_ = mid;
+        }
+
         if (!enabled) return;
 
         // Broker-style WAP TP modes -- intra-bar wick capture
@@ -370,6 +399,10 @@ private:
     Side long_;
     Side short_;
     int  bar_count_ = 0;
+    // Internal H1 aggregator state (so production dispatch can use on_tick only)
+    bool   h1_active_ = false;
+    std::int64_t h1_bar_start_ = 0;
+    double h1_o_ = 0, h1_h_ = 0, h1_l_ = 0, h1_c_ = 0;
 public:
     std::int64_t spread_skips_ = 0;  // count of try_entry calls rejected by spread filter
 private:
