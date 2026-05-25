@@ -99,7 +99,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     const int    trades = s->total_trades;
     const int    wins   = s->wins;
     const double wr     = (trades > 0) ? (100.0 * wins / trades) : 0.0;
-    char buf[8192];
+    char buf[12288];  // bumped 8192 -> 12288 for PDH/PDL fields (S37c 2026-05-26)
     snprintf(buf, sizeof(buf),
         "{"
         "\"sp_bid\":%.4f,\"sp_ask\":%.4f,"
@@ -165,7 +165,15 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"build_version\":\"%s\",\"build_time\":\"%s\","
         "\"uptime_sec\":%lld,"
         "\"last_entry_ts\":%lld,\"last_signal_ts\":%lld,"
-        "\"gf_trail_stage\":%d,\"gf_profit_usd\":%.2f,\"gf_stack_unlocked\":%d,\"gf_atr_at_entry\":%.4f",
+        "\"gf_trail_stage\":%d,\"gf_profit_usd\":%.2f,\"gf_stack_unlocked\":%d,\"gf_atr_at_entry\":%.4f,"
+        "\"sp_pdh\":%.4f,\"sp_pdl\":%.4f,\"nq_pdh\":%.4f,\"nq_pdl\":%.4f,"
+        "\"dj_pdh\":%.4f,\"dj_pdl\":%.4f,\"nas_pdh\":%.4f,\"nas_pdl\":%.4f,"
+        "\"xau_pdh\":%.4f,\"xau_pdl\":%.4f,\"cl_pdh\":%.4f,\"cl_pdl\":%.4f,"
+        "\"ger40_pdh\":%.4f,\"ger40_pdl\":%.4f,\"uk100_pdh\":%.4f,\"uk100_pdl\":%.4f,"
+        "\"estx50_pdh\":%.4f,\"estx50_pdl\":%.4f,\"brent_pdh\":%.4f,\"brent_pdl\":%.4f,"
+        "\"xag_pdh\":%.4f,\"xag_pdl\":%.4f,\"eurusd_pdh\":%.4f,\"eurusd_pdl\":%.4f,"
+        "\"gbpusd_pdh\":%.4f,\"gbpusd_pdl\":%.4f,\"audusd_pdh\":%.4f,\"audusd_pdl\":%.4f,"
+        "\"nzdusd_pdh\":%.4f,\"nzdusd_pdl\":%.4f,\"usdjpy_pdh\":%.4f,\"usdjpy_pdl\":%.4f",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
         s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
         s->dx_bid,     s->dx_ask,     s->dj_bid,  s->dj_ask,
@@ -220,7 +228,15 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->build_version, s->build_time,
         (long long)s->uptime_sec,
         (long long)s->last_entry_ts, (long long)s->last_signal_ts,
-        s->gf_trail_stage, s->gf_profit_usd, s->gf_stack_unlocked, s->gf_atr_at_entry
+        s->gf_trail_stage, s->gf_profit_usd, s->gf_stack_unlocked, s->gf_atr_at_entry,
+        s->sp_pdh, s->sp_pdl, s->nq_pdh, s->nq_pdl,
+        s->dj_pdh, s->dj_pdl, s->nas_pdh, s->nas_pdl,
+        s->xau_pdh, s->xau_pdl, s->cl_pdh, s->cl_pdl,
+        s->ger40_pdh, s->ger40_pdl, s->uk100_pdh, s->uk100_pdl,
+        s->estx50_pdh, s->estx50_pdl, s->brent_pdh, s->brent_pdl,
+        s->xag_pdh, s->xag_pdl, s->eurusd_pdh, s->eurusd_pdl,
+        s->gbpusd_pdh, s->gbpusd_pdl, s->audusd_pdh, s->audusd_pdl,
+        s->nzdusd_pdh, s->nzdusd_pdl, s->usdjpy_pdh, s->usdjpy_pdl
     );
 
     // Append signal_history ring buffer as JSON array (newest first)

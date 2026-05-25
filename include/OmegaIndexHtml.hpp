@@ -1386,6 +1386,33 @@ function updateDashboard(d){
   updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'),null);
   updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'),null);
   updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('XAUUSD'),d.brackets&&d.brackets.gold);
+
+  // S37c 2026-05-26: Override engine-tile HI/LO spans with PREVIOUS-DAY high/low
+  // (PDH/PDL) sourced from g_edges.prev_day. updateEngCell renders CURRENT
+  // compression-range hi/lo; operator wants previous trading day's hi/lo as
+  // small reference numbers at the top of each tile instead. PDH/PDL stays 0
+  // until the first UTC day rollover after engine boot; show '--' then.
+  function setPrevDayHL(cellId,pdh,pdl,decimals){
+    const hi=document.getElementById(cellId+'Hi');
+    const lo=document.getElementById(cellId+'Lo');
+    if(hi){hi.textContent='P '+(pdh>0?pdh.toFixed(decimals):'--');hi.title='Previous day HI';}
+    if(lo){lo.textContent='P '+(pdl>0?pdl.toFixed(decimals):'--');lo.title='Previous day LO';}
+  }
+  setPrevDayHL('engSP',  safe(d.sp_pdh),  safe(d.sp_pdl),  2);
+  setPrevDayHL('engNQ',  safe(d.nq_pdh),  safe(d.nq_pdl),  2);
+  setPrevDayHL('engUS30',safe(d.dj_pdh),  safe(d.dj_pdl),  2);
+  setPrevDayHL('engNAS', safe(d.nas_pdh), safe(d.nas_pdl), 2);
+  setPrevDayHL('engCL',  safe(d.cl_pdh),  safe(d.cl_pdl),  2);
+  setPrevDayHL('engGER', safe(d.ger40_pdh),safe(d.ger40_pdl),2);
+  setPrevDayHL('engUK',  safe(d.uk100_pdh),safe(d.uk100_pdl),2);
+  setPrevDayHL('engESTX',safe(d.estx50_pdh),safe(d.estx50_pdl),2);
+  setPrevDayHL('engBRENT',safe(d.brent_pdh),safe(d.brent_pdl),2);
+  setPrevDayHL('engEUR', safe(d.eurusd_pdh),safe(d.eurusd_pdl),5);
+  setPrevDayHL('engGBP', safe(d.gbpusd_pdh),safe(d.gbpusd_pdl),5);
+  setPrevDayHL('engAUD', safe(d.audusd_pdh),safe(d.audusd_pdl),5);
+  setPrevDayHL('engNZD', safe(d.nzdusd_pdh),safe(d.nzdusd_pdl),5);
+  setPrevDayHL('engJPY', safe(d.usdjpy_pdh),safe(d.usdjpy_pdl),3);
+  setPrevDayHL('engXAU', safe(d.xau_pdh), safe(d.xau_pdl), 2);
   // L2 imbalance bars
   const l2on = d.l2_active === 1;
   updateL2Bar('engSP',d.l2_sp,l2on); updateL2Bar('engNQ',d.l2_nq,l2on);

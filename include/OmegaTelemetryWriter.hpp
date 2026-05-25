@@ -205,6 +205,42 @@ struct OmegaTelemetrySnapshot
     int    sig_head;   // index of most recent signal (0-based, wraps)
     int    sig_count;  // how many valid entries (0-5)
 
+    // --- Previous-day high/low (from g_edges.prev_day) ---
+    // Populated by Update PrevDay() from on_tick.hpp after each tick.
+    // 0.0 = not yet known (first day of run, before first UTC rollover).
+    double sp_pdh        = 0.0;
+    double sp_pdl        = 0.0;
+    double nq_pdh        = 0.0;
+    double nq_pdl        = 0.0;
+    double dj_pdh        = 0.0;
+    double dj_pdl        = 0.0;
+    double nas_pdh       = 0.0;
+    double nas_pdl       = 0.0;
+    double xau_pdh       = 0.0;
+    double xau_pdl       = 0.0;
+    double cl_pdh        = 0.0;
+    double cl_pdl        = 0.0;
+    double ger40_pdh     = 0.0;
+    double ger40_pdl     = 0.0;
+    double uk100_pdh     = 0.0;
+    double uk100_pdl     = 0.0;
+    double estx50_pdh    = 0.0;
+    double estx50_pdl    = 0.0;
+    double brent_pdh     = 0.0;
+    double brent_pdl     = 0.0;
+    double xag_pdh       = 0.0;
+    double xag_pdl       = 0.0;
+    double eurusd_pdh    = 0.0;
+    double eurusd_pdl    = 0.0;
+    double gbpusd_pdh    = 0.0;
+    double gbpusd_pdl    = 0.0;
+    double audusd_pdh    = 0.0;
+    double audusd_pdl    = 0.0;
+    double nzdusd_pdh    = 0.0;
+    double nzdusd_pdl    = 0.0;
+    double usdjpy_pdh    = 0.0;
+    double usdjpy_pdl    = 0.0;
+
     // --- Regime indicators ---
     double vix_level;
     char   macro_regime[32];    // "RISK_ON" / "RISK_OFF" / "NEUTRAL"
@@ -516,6 +552,30 @@ public:
         if (!m_snap) return;
         strcpy_s(m_snap->session_name, name);
         m_snap->session_tradeable = tradeable;
+    }
+
+    // PDH/PDL setter -- called once per tick after g_edges.prev_day.update(sym, ...)
+    // in on_tick.hpp. pdh/pdl are previous trading day's high/low; both 0 until
+    // the first UTC day rollover (initial value comes from edges' DayLevels{}).
+    void UpdatePrevDay(const char* sym, double pdh, double pdl)
+    {
+        if (!m_snap) return;
+        if      (!strcmp(sym,"US500.F"))  { m_snap->sp_pdh = pdh;     m_snap->sp_pdl = pdl;     }
+        else if (!strcmp(sym,"USTEC.F"))  { m_snap->nq_pdh = pdh;     m_snap->nq_pdl = pdl;     }
+        else if (!strcmp(sym,"DJ30.F"))   { m_snap->dj_pdh = pdh;     m_snap->dj_pdl = pdl;     }
+        else if (!strcmp(sym,"NAS100"))   { m_snap->nas_pdh = pdh;    m_snap->nas_pdl = pdl;    }
+        else if (!strcmp(sym,"XAUUSD"))   { m_snap->xau_pdh = pdh;    m_snap->xau_pdl = pdl;    }
+        else if (!strcmp(sym,"USOIL.F"))  { m_snap->cl_pdh = pdh;     m_snap->cl_pdl = pdl;     }
+        else if (!strcmp(sym,"GER40"))    { m_snap->ger40_pdh = pdh;  m_snap->ger40_pdl = pdl;  }
+        else if (!strcmp(sym,"UK100"))    { m_snap->uk100_pdh = pdh;  m_snap->uk100_pdl = pdl;  }
+        else if (!strcmp(sym,"ESTX50"))   { m_snap->estx50_pdh = pdh; m_snap->estx50_pdl = pdl; }
+        else if (!strcmp(sym,"BRENT"))    { m_snap->brent_pdh = pdh;  m_snap->brent_pdl = pdl;  }
+        else if (!strcmp(sym,"XAGUSD"))   { m_snap->xag_pdh = pdh;    m_snap->xag_pdl = pdl;    }
+        else if (!strcmp(sym,"EURUSD"))   { m_snap->eurusd_pdh = pdh; m_snap->eurusd_pdl = pdl; }
+        else if (!strcmp(sym,"GBPUSD"))   { m_snap->gbpusd_pdh = pdh; m_snap->gbpusd_pdl = pdl; }
+        else if (!strcmp(sym,"AUDUSD"))   { m_snap->audusd_pdh = pdh; m_snap->audusd_pdl = pdl; }
+        else if (!strcmp(sym,"NZDUSD"))   { m_snap->nzdusd_pdh = pdh; m_snap->nzdusd_pdl = pdl; }
+        else if (!strcmp(sym,"USDJPY"))   { m_snap->usdjpy_pdh = pdh; m_snap->usdjpy_pdl = pdl; }
     }
 
     void UpdateEngineState(const char* sym, int phase,
