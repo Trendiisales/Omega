@@ -339,8 +339,9 @@ R"OMEGA2(
     <span id="healthBadge" class="badge" style="color:var(--t2);cursor:pointer" title="Click for details" onclick="document.getElementById('healthDetail').style.display=document.getElementById('healthDetail').style.display==='block'?'none':'block'">HEALTH ?</span>
     <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--t2)" id="clock">--:--:-- UTC</span>
   </div>
-  <!-- Health detail dropdown (hidden until badge click) -->
-  <div id="healthDetail" style="display:none;position:absolute;right:10px;top:90px;background:var(--bg);border:1px solid var(--red);border-radius:6px;padding:10px 14px;max-width:520px;font-size:11px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.6);">
+  <!-- Health detail dropdown (hidden until badge click); pinned to top-right
+       under the header bar so it doesn't float over the main grid. -->
+  <div id="healthDetail" style="display:none;position:fixed;right:12px;top:72px;background:var(--bg);border:1px solid var(--red);border-radius:6px;padding:10px 14px;max-width:520px;max-height:60vh;overflow-y:auto;font-size:11px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.6);">
     <div style="font-weight:700;color:var(--red);margin-bottom:6px;letter-spacing:1px;">SYSTEM HEALTH</div>
     <ul id="healthList" style="margin:0;padding-left:18px;list-style:disc;"></ul>
   </div>
@@ -1072,12 +1073,14 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
   const showHi=bktActive?safe(bkt.hi):safe(hi);
   const showLo=bktActive?safe(bkt.lo):safe(lo);
   if(hiEl){
-    if(showHi>0){hiEl.textContent='H '+showHi.toFixed(d);hiEl.style.display='inline';}
-    else{hiEl.style.display='none';}
+    if(showHi>0){hiEl.textContent='H '+showHi.toFixed(d);}
+    else{hiEl.textContent='H --';}
+    hiEl.style.display='inline';
   }
   if(loEl){
-    if(showLo>0){loEl.textContent='L '+showLo.toFixed(d);loEl.style.display='inline';}
-    else{loEl.style.display='none';}
+    if(showLo>0){loEl.textContent='L '+showLo.toFixed(d);}
+    else{loEl.textContent='L --';}
+    loEl.style.display='inline';
   }
 
   // Proximity bar -- how close is price to breaking the compression boundary?
