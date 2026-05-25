@@ -781,15 +781,15 @@ private:
             }
         }
 
-        if constexpr (Traits::TP_METHOD != AmrTpMethod::RSI_OR_MA) return false;
-
-        const double px = is_long ? cached_bid_ : cached_ask_;
-        const double rsi_tp_long  = Traits::RSI_TP_LEVEL;
-        const double rsi_tp_short = 100.0 - Traits::RSI_TP_LEVEL;
-        const bool rsi_or_ma = is_long
-            ? ((rsi >= rsi_tp_long)  || (px > 0.0 && px >= slow_ma))
-            : ((rsi <= rsi_tp_short) || (px > 0.0 && px <= slow_ma));
-        return rsi_or_ma;
+        if constexpr (Traits::TP_METHOD == AmrTpMethod::RSI_OR_MA) {
+            const double px = is_long ? cached_bid_ : cached_ask_;
+            const double rsi_tp_long  = Traits::RSI_TP_LEVEL;
+            const double rsi_tp_short = 100.0 - Traits::RSI_TP_LEVEL;
+            return is_long
+                ? ((rsi >= rsi_tp_long)  || (px > 0.0 && px >= slow_ma))
+                : ((rsi <= rsi_tp_short) || (px > 0.0 && px <= slow_ma));
+        }
+        return false;
     }
 
     // ---------- Close-all (writes shadow CSV records via OmegaTradeLedger) ----------
