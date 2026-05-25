@@ -74,11 +74,32 @@ enum class AmrLotMode : int {
 // compile time, so the optimiser can inline / fold constants.
 // -----------------------------------------------------------------------------
 struct AmrBaseParams {
-    // Indicators
-    static constexpr int    ATR_PERIOD_SHORT  = 100;
-    static constexpr int    ATR_PERIOD_LONG   = 1000;
-    static constexpr int    SLOW_MA_PERIOD    = 200;
-    static constexpr int    RSI_PERIOD        = 14;
+    // Indicators -- per-TF sweep overrides via compile macros so the multi-TF
+    // harness can scale H1-calibrated periods to the chosen bar duration.
+    static constexpr int    ATR_PERIOD_SHORT  =
+    #ifdef AMR_OVERRIDE_ATR_SHORT
+        AMR_OVERRIDE_ATR_SHORT;
+    #else
+        100;
+    #endif
+    static constexpr int    ATR_PERIOD_LONG   =
+    #ifdef AMR_OVERRIDE_ATR_LONG
+        AMR_OVERRIDE_ATR_LONG;
+    #else
+        1000;
+    #endif
+    static constexpr int    SLOW_MA_PERIOD    =
+    #ifdef AMR_OVERRIDE_EMA
+        AMR_OVERRIDE_EMA;
+    #else
+        200;
+    #endif
+    static constexpr int    RSI_PERIOD        =
+    #ifdef AMR_OVERRIDE_RSI
+        AMR_OVERRIDE_RSI;
+    #else
+        14;
+    #endif
 
     // Entry / SL geometry (ATR-multiplier based). Sweep override via macros.
 #ifdef AMR_OVERRIDE_X
@@ -91,11 +112,26 @@ struct AmrBaseParams {
 #else
     static constexpr double ADD_DIST_BASE_MULT= 1.0;
 #endif
-    static constexpr double SL_ATR_BUFFER_Y   = 4.0;     // SL = slowMA -/+ (X+Y)*ATR
+    static constexpr double SL_ATR_BUFFER_Y   =
+    #ifdef AMR_OVERRIDE_SL_Y
+        AMR_OVERRIDE_SL_Y;
+    #else
+        4.0;
+    #endif
 
     // RSI bands
-    static constexpr double RSI_ENTRY_LOW     = 20.0;    // SELL mirrors via 100-this
-    static constexpr double RSI_RECOVERY_OFF  = 15.0;
+    static constexpr double RSI_ENTRY_LOW     =
+    #ifdef AMR_OVERRIDE_RSI_LOW
+        AMR_OVERRIDE_RSI_LOW;
+    #else
+        20.0;
+    #endif
+    static constexpr double RSI_RECOVERY_OFF  =
+    #ifdef AMR_OVERRIDE_RSI_RECOV
+        AMR_OVERRIDE_RSI_RECOV;
+    #else
+        15.0;
+    #endif
     static constexpr double RSI_TP_LEVEL      = 50.0;
 
     // Grid multipliers
@@ -114,7 +150,12 @@ struct AmrBaseParams {
     static constexpr double     RISK_PCT_PER_TRADE = 0.5;
 
     // TP
-    static constexpr AmrTpMethod TP_METHOD     = AmrTpMethod::RSI_OR_MA;
+    static constexpr AmrTpMethod TP_METHOD     =
+    #ifdef AMR_OVERRIDE_TP_METHOD
+        AmrTpMethod::AMR_OVERRIDE_TP_METHOD;
+    #else
+        AmrTpMethod::RSI_OR_MA;
+    #endif
     static constexpr double      TP_FIXED_PIPS = 200.0;  // method 2 (points = 1/POINT units)
     static constexpr double      TP_PCT_FROM_WAP = 0.5;  // method 3 (% of WAP)
     static constexpr double      TP_ATR_MULT_FROM_WAP = 8.0; // method 4
@@ -124,6 +165,16 @@ struct AmrBaseParams {
 
     // Misc
     static constexpr bool        VERBOSE_LOG   = true;
+
+    // Bar interval (ms) -- aggregator + indicator cadence. Default H1.
+    // Override per-TF via -DAMR_OVERRIDE_BAR_MS=<ms>.
+    //   M5 = 300000  M15 = 900000  M30 = 1800000  H1 = 3600000
+    static constexpr std::int64_t BAR_INTERVAL_MS =
+    #ifdef AMR_OVERRIDE_BAR_MS
+        AMR_OVERRIDE_BAR_MS;
+    #else
+        3600LL * 1000LL;
+    #endif
 };
 
 // -----------------------------------------------------------------------------
@@ -133,7 +184,11 @@ struct AmrBaseParams {
 struct AmrTraits_EURUSD : AmrBaseParams {
     static constexpr const char* SYMBOL = "EURUSD";
     static constexpr double POINT = 0.00001;  // 5-dp pricing
-    // Most EURUSD defaults sit on AmrBaseParams. Override here if backtest needs it.
+    // 2026-05-26 multi-TF tick-replay sweep (5 pairs x 4 TFs x X={10,14}):
+    //   EURUSD best cell = M15 X=14 -> 21 trd, WR 52%, PF 1.80, +$9.04, DD $4.31,
+    //   Sharpe-ann 1.04, Recovery 2.10. Override H1 default -> M15 + X=14.
+    static constexpr std::int64_t BAR_INTERVAL_MS = 900LL * 1000LL;  // M15
+    static constexpr double       ENTRY_ATR_MULT_X = 14.0;
 };
 
 struct AmrTraits_GBPUSD : AmrBaseParams {
@@ -151,6 +206,74 @@ struct AmrTraits_NZDUSD : AmrBaseParams {
     static constexpr const char* SYMBOL = "NZDUSD";
     static constexpr double POINT = 0.00001;
     static constexpr double MAX_SPREAD_PRICE = 0.00035; // NZD wider still
+};
+
+// USDJPY: 3-dp pricing; pip = 0.01, point = 0.001. ~10x bigger absolute moves
+// than EURUSD so MAX_SPREAD_PRICE scaled accordingly.
+struct AmrTraits_USDJPY : AmrBaseParams {
+    static constexpr const char* SYMBOL = "USDJPY";
+    static constexpr double POINT = 0.001;
+    static constexpr double MAX_SPREAD_PRICE = 0.050;
+    static constexpr double TP_FIXED_PIPS = 200.0;
+};
+
+struct AmrTraits_USDCAD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "USDCAD";
+    static constexpr double POINT = 0.00001;
+    static constexpr double MAX_SPREAD_PRICE = 0.00035;
+};
+
+struct AmrTraits_EURGBP : AmrBaseParams {
+    static constexpr const char* SYMBOL = "EURGBP";
+    static constexpr double POINT = 0.00001;
+    static constexpr double MAX_SPREAD_PRICE = 0.00030;
+};
+
+// "Sweep" traits = inherit base only (no per-pair overrides). Macros control all
+// params (X, BAR_INTERVAL_MS, RSI, SL_Y, etc). Used by deep-eval sweep harness.
+struct AmrTraits_SWEEP_EURUSD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "EURUSD";
+    static constexpr double POINT = 0.00001;
+};
+struct AmrTraits_SWEEP_GBPUSD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "GBPUSD";
+    static constexpr double POINT = 0.00001;
+    static constexpr double MAX_SPREAD_PRICE = 0.00030;
+};
+struct AmrTraits_SWEEP_AUDUSD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "AUDUSD";
+    static constexpr double POINT = 0.00001;
+};
+struct AmrTraits_SWEEP_NZDUSD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "NZDUSD";
+    static constexpr double POINT = 0.00001;
+    static constexpr double MAX_SPREAD_PRICE = 0.00035;
+};
+struct AmrTraits_SWEEP_USDCAD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "USDCAD";
+    static constexpr double POINT = 0.00001;
+    static constexpr double MAX_SPREAD_PRICE = 0.00035;
+};
+// Non-FX traits (Stage 4 stress test). Adjusted MAX_SPREAD_PRICE for instrument scale.
+struct AmrTraits_SWEEP_BCOUSD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "BCOUSD";  // Brent crude (~$60-90)
+    static constexpr double POINT = 0.01;
+    static constexpr double MAX_SPREAD_PRICE = 0.10;
+};
+struct AmrTraits_SWEEP_GER40 : AmrBaseParams {
+    static constexpr const char* SYMBOL = "GER40";  // DAX (~15000-20000)
+    static constexpr double POINT = 0.1;
+    static constexpr double MAX_SPREAD_PRICE = 5.0;
+};
+struct AmrTraits_SWEEP_SPXUSD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "SPXUSD";  // S&P (~4000-5500)
+    static constexpr double POINT = 0.1;
+    static constexpr double MAX_SPREAD_PRICE = 2.0;
+};
+struct AmrTraits_SWEEP_NSXUSD : AmrBaseParams {
+    static constexpr const char* SYMBOL = "NSXUSD";  // NAS-100 (~15000-21000)
+    static constexpr double POINT = 0.1;
+    static constexpr double MAX_SPREAD_PRICE = 5.0;
 };
 
 // =============================================================================
@@ -229,10 +352,10 @@ public:
         cached_bid_ = bid;
         cached_ask_ = ask;
 
-        // Internal H1 aggregator
+        // Internal bar aggregator (interval from Traits, default H1)
         const double mid = (bid + ask) * 0.5;
-        constexpr std::int64_t H1_MS = 3600LL * 1000LL;
-        const std::int64_t bar = (ts_ms / H1_MS) * H1_MS;
+        constexpr std::int64_t BAR_MS = Traits::BAR_INTERVAL_MS;
+        const std::int64_t bar = (ts_ms / BAR_MS) * BAR_MS;
         if (!h1_active_) {
             h1_bar_start_ = bar;
             h1_o_ = h1_h_ = h1_l_ = h1_c_ = mid;

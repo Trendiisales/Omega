@@ -73,9 +73,18 @@ struct RunStats {
 static RunStats g_stats;
 static std::ofstream g_trades_csv;
 
-// FX direct-USD-quote conversion (1 unit price move at 0.10 lot = $1 per pip):
-//   pnl_raw = (exit - entry) * lots ; multiplier 100000 -> USD.
-static double convert_to_usd(double pnl_raw) noexcept { return pnl_raw * 100000.0; }
+// FX conversion: USD-quote pairs (EURUSD/GBPUSD/AUDUSD/NZDUSD) -> pnl_raw * 100000.
+// JPY-quote (USDJPY): pnl is in JPY -> divide by ~150 to get USD.
+// CAD-quote (USDCAD): pnl is in CAD -> divide by ~1.35.
+// GBP-quote (EURGBP): pnl is in GBP -> multiply by ~1.27 (GBPUSD).
+static double g_usd_mult = 100000.0;
+static void set_usd_mult_for(const std::string& sym) {
+    if      (sym == "USDJPY") g_usd_mult = 100000.0 / 150.0;
+    else if (sym == "USDCAD") g_usd_mult = 100000.0 / 1.35;
+    else if (sym == "EURGBP") g_usd_mult = 100000.0 * 1.27;
+    else                       g_usd_mult = 100000.0;
+}
+static double convert_to_usd(double pnl_raw) noexcept { return pnl_raw * g_usd_mult; }
 static double apply_costs_usd(double pnl_usd, double lot) noexcept {
     const double slip_pips_per_side = 0.2;
     const double slip_usd = slip_pips_per_side * (lot / 0.10) * 1.0 * 2.0;
@@ -280,6 +289,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    set_usd_mult_for(sym_label);
     g_eng.enabled     = true;
     g_eng.shadow_mode = true;
     g_eng.on_close_cb = on_trade_close;
@@ -300,5 +310,7 @@ int main(int argc, char** argv) {
     std::printf("[RUN] %lld ticks, %d H1 bars\n", (long long)n, g_stats.bars);
 
     if (!report_path.empty()) write_report(report_path);
+    std::printf("[DIAG] %s spread_skips=%lld\n",
+                sym_label.c_str(), (long long)g_eng.spread_skips_);
     return 0;
 }

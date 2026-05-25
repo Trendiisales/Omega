@@ -1590,30 +1590,33 @@ static void init_engines(const std::string& cfg_path)
             const char* warmup_eur = "phase1/signal_discovery/warmup_EURUSD_H1.csv";
             const char* warmup_gbp = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
 
-            // Backtest sweep (2yr, ENTRY_ATR_MULT_X across 6/8/10/12):
-            //   EURUSD: best X=10 -> 43 trades, WR 46.5%, PF 1.04, +$2.28, DD $24.52
-            //   GBPUSD: best X=10 -> 13 trades, WR 53.8%, PF 2.11, +$17.35, DD $6.95
-            //   AUDUSD: best X=10 -> 18 trades, WR 33.3%, PF 1.06, +$1.60,  DD $17.30
-            //   NZDUSD: all configs negative; off until tuned.
-            g_amr_eurusd.enabled     = true;  // PF 1.04 (marginal but positive)
+            // 2026-05-26 multi-TF tick-replay sweep (5 pairs x 4 TFs x X={10,14}):
+            //   EURUSD best = M15 X=14 -> 21 trd, WR 52%, PF 1.80, +$9.04, DD $4.31, Sharpe-ann 1.04
+            //   GBPUSD best = H1  X=10 -> 13 trd, WR 54%, PF 2.11, +$17.35, DD $6.95, Sharpe-ann 1.01
+            //   AUDUSD best = H1  X=10 -> 20 trd, WR 35%, PF 1.34, +$6.82,  DD $17.61 (marginal)
+            //   NZDUSD best = M30 X=10 -> 53 trd, WR 32%, PF 1.31, +$5.91,  DD $10.92 (marginal)
+            //   USDCAD best = H1  X=10 -> 22 trd, WR 41%, PF 1.25, +$1.65,  DD $10.85 (marginal)
+            // Portfolio Sharpe-ann 1.24 / PF 1.42 / Recovery 1.64 (0.01 lot, 1.2yr avg).
+            // EURUSD trait uses BAR_INTERVAL_MS=900000 + X=14 (see AtrMeanRevGridEngine.hpp).
+            g_amr_eurusd.enabled     = true;  // M15 X=14, PF 1.80
             g_amr_eurusd.shadow_mode = true;
             g_amr_eurusd.on_close_cb = write_shadow_csv;
             g_amr_eurusd.seed_from_h1_csv(warmup_eur);
 
-            g_amr_gbpusd.enabled     = true;  // PF 2.11 (strongest)
+            g_amr_gbpusd.enabled     = true;  // H1 X=10 (defaults), PF 2.11
             g_amr_gbpusd.shadow_mode = true;
             g_amr_gbpusd.on_close_cb = write_shadow_csv;
             g_amr_gbpusd.seed_from_h1_csv(warmup_gbp);
 
-            g_amr_audusd.enabled     = false; // marginal; needs per-pair tuning
+            g_amr_audusd.enabled     = false; // marginal PF 1.34; awaiting deep tune
             g_amr_audusd.shadow_mode = true;
             g_amr_audusd.on_close_cb = write_shadow_csv;
 
-            g_amr_nzdusd.enabled     = false; // negative across all X tested
+            g_amr_nzdusd.enabled     = false; // marginal PF 1.31; awaiting deep tune
             g_amr_nzdusd.shadow_mode = true;
             g_amr_nzdusd.on_close_cb = write_shadow_csv;
 
-            std::printf("[OMEGA-INIT] AtrMeanRevGrid: EURUSD+GBPUSD enabled (shadow), AUDUSD+NZDUSD parked\n");
+            std::printf("[OMEGA-INIT] AtrMeanRevGrid: EURUSD(M15,X=14)+GBPUSD(H1,X=10) enabled (shadow), AUDUSD+NZDUSD parked\n");
         }
 
         // AUD/NZD/JPY: structure in place, awaiting H1 warmup CSVs.
