@@ -7,7 +7,6 @@
 # ============================================================================
 $ErrorActionPreference = 'Stop'
 
-# bracket-bot/ is the parent of this script's deploy/ folder
 $BotDir = Split-Path -Parent $PSScriptRoot
 Set-Location $BotDir
 Write-Host "Bot directory: $BotDir"
@@ -36,19 +35,34 @@ if (-not $Python) {
 }
 Write-Host ("Using Python: " + $Python)
 
-# --- 2. Create virtual environment -----------------------------------------
-if (-not (Test-Path ".venv")) {
-    Write-Host "Creating virtual environment (.venv)..."
-    & $Python -m venv .venv
-} else {
-    Write-Host "Virtual environment already exists - reusing it."
+# --- 2. Create a fresh virtual environment ---------------------------------
+if (Test-Path ".venv") {
+    Write-Host "Removing existing .venv for a clean install..."
+    Remove-Item -Recurse -Force ".venv"
+}
+Write-Host "Creating virtual environment (.venv)..."
+& $Python -m venv .venv
+$VenvPy = Join-Path $BotDir ".venv\Scripts\python.exe"
+
+# --- 3. Install dependencies -----------------------------------------------
+# NOTE: we deliberately do NOT run "pip install --upgrade pip". Upgrading pip
+# regenerates console-script launchers and can fail on locked-down Windows
+# hosts (the t64.exe error); the bundled pip installs these packages fine.
+
+Write-Host "Installing ib_insync (required by the live strategies)..."
+& $VenvPy -m pip install --disable-pip-version-check --no-input ib_insync==0.9.86
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "ib_insync install failed - the strategies cannot run without it."
+    exit 1
 }
 
-# --- 3. Install dependencies ------------------------------------------------
-Write-Host "Installing dependencies from requirements.txt..."
-& ".venv\Scripts\python.exe" -m pip install --upgrade pip
-& ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+Write-Host "Installing flask (optional - only the monitoring dashboard needs it)..."
+& $VenvPy -m pip install --disable-pip-version-check --no-input flask==3.1.3
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "flask install failed. The dashboard (server.py) will be unavailable,"
+    Write-Warning "but the trading strategies do NOT need it - this is not fatal."
+}
 
 Write-Host ""
 Write-Host "Setup complete."
-Write-Host "Next: run  deploy\register_tasks.ps1  in an ADMINISTRATOR PowerShell to schedule the strategies."
+Write-Host "Next: run  deploy\register_tasks.ps1  in an ADMINISTRATOR PowerShell."
