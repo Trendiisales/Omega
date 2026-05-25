@@ -43,6 +43,30 @@ static void init_engines(const std::string& cfg_path)
     // 41-cell walk-forward sweep showed no edge on 9 days of XAUUSD tick data.
     // See globals.hpp tombstone comment for full details.
     g_ema_cross.shadow_mode    = kShadowDefault;  // EMACrossEngine
+    // ── S37d 2026-05-26: EMERGENCY ENGINE CULL based on 14d shadow audit ──
+    // 73 bug-polluted rows removed (held<0 or >7d, |pnl|>$1000) before audit.
+    // 43 FORCE_CLOSE rows also excluded (shutdown phantoms, not real edge).
+    // Audit results (n>=5 trades, PF<1.0 = DISABLE):
+    //   CandleFlowEngine     411n WR 47.0%  PF 0.69  -$1077  -> DISABLE
+    //   DomPersistEngine      59n WR 28.8%  PF 0.29  -$ 702  -> DISABLE
+    //   XAUUSD_BRACKET        86n WR 12.8%  PF 0.26  -$ 324  -> DISABLE
+    //   GoldFlowEngine        26n WR 23.1%  PF 0.13  -$ 256  -> DISABLE
+    //   BBMeanRev             45n WR 11.1%  PF 0.51  -$ 137  -> DISABLE
+    //   IndexFlow (x4)        34n WR 23.5%  PF 0.15  -$ 112  -> DISABLE
+    //   EMACross              83n WR 31.3%  PF 0.85  -$  74  -> DISABLE (borderline)
+    // (MacroCrash already disabled L626 since S99b 2026-05-18.)
+    // SURVIVORS kept enabled: HybridBracketGold/Index, AsianRange,
+    // Us303BarMomH1, Us30Ensemble (new InsBrkH1).
+    g_ema_cross.enabled        = false;  // S37d cull -- PF 0.85 borderline
+    g_candle_flow.enabled      = false;  // S37d cull -- -$1077, biggest bleed after MacroCrash
+    g_dom_persist.enabled      = false;  // S37d cull -- PF 0.29
+    g_bracket_gold.enabled     = false;  // S37d cull -- XAUUSD_BRACKET PF 0.26
+    g_gold_flow.enabled        = false;  // S37d cull -- PF 0.13
+    g_bb_mr.enabled            = false;  // S37d cull -- BBMeanRev PF 0.51
+    g_iflow_sp.enabled         = false;  // S37d cull -- IndexFlow PF 0.15
+    g_iflow_nq.enabled         = false;
+    g_iflow_nas.enabled        = false;
+    g_iflow_us30.enabled       = false;
     // TOMBSTONE 2026-05-01 (S52 trade-quality follow-up):
     //   153-combo parameter sweep on data/l2_ticks_2026-04-16.csv: 0/153
     //   produced positive PnL. Best combo -$4.30, worst -$225, mean -$81.
