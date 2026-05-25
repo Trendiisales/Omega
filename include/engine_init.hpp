@@ -1499,7 +1499,10 @@ static void init_engines(const std::string& cfg_path)
         // WF 4 folds all positive, agg OOS +$10,943 / 160 trades.
         // No US30 H1 warmup CSV in repo yet; engine cold-warms over ~15 H1 bars
         // before first signal possible. TODO: generate warmup_US30_H1.csv.
-        g_us30_3bar_mom_h1.shadow_mode = true;
+        // 2026-05-26: flipped shadow_mode=false (LIVE) per operator instruction
+        // to capture DJ30 trend gains. Overrides S35-handoff 1-month-shadow rule.
+        // Backing: 27mo PF 1.44, OOS PF 2.37, WF 4/4 folds +ve.
+        g_us30_3bar_mom_h1.shadow_mode = false;
         g_us30_3bar_mom_h1.enabled     = true;
         g_us30_3bar_mom_h1.symbol      = "US30";
         g_us30_3bar_mom_h1.seed_from_h1_csv("phase1/signal_discovery/warmup_US30_H1.csv");
@@ -1509,6 +1512,32 @@ static void init_engines(const std::string& cfg_path)
                g_us30_3bar_mom_h1.p.sl_atr_mult, g_us30_3bar_mom_h1.p.tp_r_mult,
                g_us30_3bar_mom_h1.p.hold_max_bars,
                g_us30_3bar_mom_h1.p.trail_arm_R, g_us30_3bar_mom_h1.p.trail_lock_pct*100.0);
+
+        // ── S37 2026-05-26: Us30EnsembleEngine ─────────────────────────────────
+        // DJ30.F 4-cell ensemble (M15 base; synthesizes M30/H1/H4 internally).
+        // Cells: atr_exp H1, inside_brk H1, atr_exp M30, ema_pullback H4. All
+        // LONG-only. BE/trail OFF by default (sim showed they clip atr_exp
+        // winners; ENGINE_SIM.PY bare +$1411 vs trail -$676 over 2yr at 0.01 lot).
+        // Cells INDEPENDENT (up to 4 concurrent positions per operator choice).
+        // Validation: 3-period intersection + 4/4 walk-forward folds positive
+        // + engine-sim integrated backtest +$1411 / 1711 trades / WR 50%.
+        g_us30_ensemble.shadow_mode        = true;     // HARD shadow per CLAUDE.md ~1mo trace rule
+        g_us30_ensemble.enabled            = true;
+        g_us30_ensemble.lot                = 0.01;
+        g_us30_ensemble.max_spread         = 5.0;
+        g_us30_ensemble.be_trigger_atr     = 0.0;      // OFF (validated bare)
+        g_us30_ensemble.trail_after_be     = false;
+        g_us30_ensemble.trail_atr_mult     = 0.0;
+        g_us30_ensemble.min_atr_floor      = 10.0;     // DJ30 raw points
+        g_us30_ensemble.daily_loss_limit   = 0.0;      // disabled (S35-P4 finding)
+        g_us30_ensemble.max_consec_losses  = 0;        // disabled
+        g_us30_ensemble.init();
+        const int us30_seed = g_us30_ensemble.seed_from_m15_csv(
+            "phase1/signal_discovery/warmup_US30_M15.csv");
+        printf("[OMEGA-INIT] Us30Ensemble: shadow=%d enabled=%d lot=%.2f cells=4 "
+               "(AtrExpH1+InsBrkH1+AtrExpM30+EmaPbH4) seed=%d M15 bars trail=OFF\n",
+               (int)g_us30_ensemble.shadow_mode, (int)g_us30_ensemble.enabled,
+               g_us30_ensemble.lot, us30_seed);
 
         // ── S136 2026-05-24: NasBbRevLongH1Engine ──────────────────────────────
         // NAS100 H1 Bollinger-band reversion LONG (close<lower BB + RSI cross<30).

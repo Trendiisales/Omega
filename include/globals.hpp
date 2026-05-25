@@ -632,6 +632,19 @@ static omega::NasBbRevLongH1Engine g_nas_bbrev_long_h1;
 #include "Us303BarMomH1Engine.hpp"
 static omega::Us303BarMomH1Engine g_us30_3bar_mom_h1;
 
+// 2026-05-26 S37: Us30EnsembleEngine -- DJ30.F 4-cell ensemble.
+//   Cells: atr_exp H1 sl=2tp=3, inside_brk H1 sl=3tp=5, atr_exp M30 sl=3tp=2,
+//          ema_pullback_10_30 H4 sl=1.5tp=5. All LONG-only.
+//   /Users/jo/edge_research validation 2yr Dukascopy USA30 (2023-10 -> 2025-10):
+//     - 3-period intersection: every cell positive in all 3 periods (n>=20 PF>=1.1)
+//     - walk-forward 4 anchored folds: 16/16 fold-cell combinations positive
+//     - engine-sim integrated backtest (bare SL/TP, $4 RT cost): +$1411 / 1711n
+//   BE+trail DEFAULTS OFF in header (sim showed they clip atr_exp winners).
+//   Cells independent (up to 4 concurrent DJ30.F positions at engine lot).
+//   3bar_mom_H1 NOT in this ensemble -- lives in g_us30_3bar_mom_h1 separately.
+#include "Us30EnsembleEngine.hpp"
+static omega::Us30EnsembleEngine g_us30_ensemble;
+
 // 2026-05-12 S35-P6: UstecTrendFollowHtfEngine -- multi-timeframe trend-follow
 //   ensemble for USTEC.F. 5 cells across M15/H1/H2/H4 (InsideBar2h, Stoch1h
 //   20/80, ATR_Mom 1h mom=50, Donchian N=20 15m, Stoch4h 20/80). Each cell

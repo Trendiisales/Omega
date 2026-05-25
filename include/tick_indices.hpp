@@ -788,6 +788,38 @@ static void on_tick_dj30(
         }
         g_us30_3bar_mom_h1.on_tick(bid, ask, now_ms_u, ca_on_close);
     }
+
+    // ── S37 2026-05-26: Us30EnsembleEngine ────────────────────────────────────
+    // Build US30 M15 bars from ticks; engine synthesizes M30/H1/H4 internally.
+    // Feeds 4-cell ensemble (atr_exp H1, inside_brk H1, atr_exp M30, ema_pb H4).
+    // Shadow-only by default. Intra-bar SL/TP management runs every tick.
+    {
+        const double us30_mid_e = (bid + ask) * 0.5;
+        const int64_t now_ms_e = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const int64_t b15_e = (now_ms_e / 900000LL) * 900000LL;  // 15min
+        static omega::Us30EnsembleBar s_us30_15{};
+        static int64_t s_us30_15_start = 0;
+        if (s_us30_15_start == 0) {
+            s_us30_15.bar_start_ms = b15_e;
+            s_us30_15.open = s_us30_15.high = s_us30_15.low = s_us30_15.close = us30_mid_e;
+            s_us30_15_start = b15_e;
+        } else if (b15_e != s_us30_15_start) {
+            // bar just closed at s_us30_15_start; dispatch then start fresh
+            g_us30_ensemble.on_15m_bar(s_us30_15, bid, ask,
+                                        /*atr15m_external=*/0.0,
+                                        now_ms_e, ca_on_close);
+            s_us30_15.bar_start_ms = b15_e;
+            s_us30_15.open = s_us30_15.high = s_us30_15.low = s_us30_15.close = us30_mid_e;
+            s_us30_15_start = b15_e;
+        } else {
+            if (us30_mid_e > s_us30_15.high) s_us30_15.high = us30_mid_e;
+            if (us30_mid_e < s_us30_15.low)  s_us30_15.low  = us30_mid_e;
+            s_us30_15.close = us30_mid_e;
+        }
+        g_us30_ensemble.on_tick(bid, ask, now_ms_e, ca_on_close);
+    }
 }
 
 // ── GER40 ──────────────────────────────────────────────────
