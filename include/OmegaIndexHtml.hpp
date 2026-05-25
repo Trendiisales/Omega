@@ -1211,7 +1211,6 @@ function renderTrades(trades){
   // Newest first: reverse so latest trade is always at top -- no scroll needed
   const rows=[...trades].reverse().slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
-    const isShadow=t.shadow===true;
     const win=net>0,loss=net<0,sc=t.side==='LONG'||t.side==='BUY'?'var(--green)':'var(--red)';
     const reason=t.exitReason||'',result=isOpen?'\u25cf':reason==='TP_HIT'?'\u2713TP':reason==='SL_HIT'?'\u2717SL':reason==='sl_hit'?'\u2717SL':reason==='wap_tp_hit'?'\u2713WAP':reason==='rsi_or_slow_ma'?'\u2713RSI':reason==='TRAIL_HIT'||reason==='TRAIL_SL'?'\u2713TR':reason==='BE_HIT'?'\u2713BE':reason==='TIMEOUT'||reason==='MAX_HOLD_TIMEOUT'?'\u2717TO':reason==='PARTIAL_1R'||reason==='PARTIAL_TP'?'$P1':reason==='PARTIAL_2R'||reason==='PARTIAL_SL'?'$P2':'\u2713FC';
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
@@ -1219,16 +1218,13 @@ function renderTrades(trades){
     let heldStr='--';
     if(isOpen&&safe(t.entryTs)>0){const s=now-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
     else if(safe(t.entryTs)>0&&safe(t.exitTs)>0){const s=safe(t.exitTs)-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
-    // Shadow rows: subtle purple tint over the win/loss color so they stay distinguishable
-    const rowBg=isShadow?(win?'rgba(160,140,255,0.08)':loss?'rgba(180,100,180,0.08)':'rgba(160,140,255,0.04)')
-                       :(isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'');
-    const grossD=isOpen?'':isShadow?'<span style="color:var(--t3);font-size:10px">shadow</span>':(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2);
-    const slipD=isOpen?'':isShadow?'--':slip>0?'-$'+slip.toFixed(2):'--';
-    const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':isShadow?((net>=0?'+':'-')+Math.abs(net).toFixed(4)+'<span style="color:var(--t3);font-size:9px;margin-left:3px">raw</span>'):((net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2));
+    const rowBg=isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'';
+    const grossD=isOpen?'':(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2);
+    const slipD=isOpen?'':slip>0?'-$'+slip.toFixed(2):'--';
+    const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
     const engName=(t.engine||'').replace('Engine','').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG').replace('AtrMeanRevGrid','AMR');
     const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_SL','TRAIL').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('MAX_HOLD_TIMEOUT','T/O').replace('BE_HIT','BE').replace('IMM_REVERSAL','IMM-REV').replace('PARTIAL_TP','P-TP').replace('PARTIAL_SL','P-SL').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('STAGNATION','STAG').replace('wap_tp_hit','WAP-TP').replace('rsi_or_slow_ma','RSI/MA').replace('sl_hit','SL');
-    const shadowBadge=isShadow?'<span style="color:var(--purple,#a07cff);font-size:9px;font-weight:700;margin-right:3px;padding:0 3px;border:1px solid rgba(160,140,255,0.5);border-radius:2px;">S</span>':'';
-    const engReasonCell=`${shadowBadge}<span style="color:${isShadow?'var(--purple,#a07cff)':'var(--cyan)'};font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
+    const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
       <td style="color:var(--t2);font-size:11px">${fmtUTCFull(safe(t.entryTs))}</td>
       <td style="color:var(--blue);font-weight:700;font-size:13px">${t.symbol||'--'}</td>
@@ -2133,17 +2129,18 @@ function clearLedger(){
     .catch(e=>alert('Request failed: '+e.message));
 }
 
-// pollTrades -- reads /api/history (broker trades from disk CSV) AND
-// /api/shadow_trades (audit-only trades from engines with shadow_mode=true).
-// Both go into the SAME Recent Trades table, distinguished by t.shadow=true
-// (rendered with purple tint + [S] badge by renderTrades).
+// pollTrades -- reads /api/history (unified trade journal, omega_trade_closes_
+// _YYYY-MM-DD.csv). Post-S14 (2026-04-24) every trade lands here regardless of
+// mode. When g_cfg.mode=SHADOW, none of these trades reached a real broker --
+// the SHADOW MODE banner at top of dashboard makes that universal.
+//
+// Earlier this session a separate /api/shadow_trades fetch was added that
+// pulled the obsolete legacy omega_shadow.csv (only AMR engines still write
+// there as a side-channel, and AMR is sparse so the file looks dead).
+// Removed: misleading "60 closed" from stale May-5 data.
 function pollTrades(){
-  const realP=fetch('/api/history').then(r=>r.json()).catch(()=>[]);
-  const shadP=fetch('/api/shadow_trades').then(r=>r.json()).catch(()=>[]);
-  Promise.all([realP, shadP]).then(([real, shad])=>{
-    const merged=[...real, ...shad].sort((a,b)=>safe(a.entryTs)-safe(b.entryTs));
-    renderTrades(merged);
-    // Daily summary banner from /api/daily (counts BROKER trades only)
+  fetch('/api/history').then(r=>r.json()).then(trades=>{
+    renderTrades(trades);
     fetch('/api/daily').then(r=>r.json()).then(s=>{
       const el=document.getElementById('tradeCount');
       if(el&&s){
@@ -2157,7 +2154,6 @@ function pollTrades(){
       }
     }).catch(()=>{});
   }).catch(()=>{
-    // Last-ditch fallback to in-memory
     fetch('/api/trades').then(r=>r.json()).then(renderTrades).catch(()=>{});
   });
 }
