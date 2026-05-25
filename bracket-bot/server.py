@@ -190,6 +190,51 @@ def api_open_orders():
             out['error'] = str(e)
     return jsonify(out)
 
+@app.route('/api/health')
+def api_health():
+    """Return latest healthcheck snapshot. Path overridable via
+    OMEGA_HEALTH_STATUS env var. If file missing or stale, surface that."""
+    import os
+    candidates = []
+    if os.environ.get('OMEGA_HEALTH_STATUS'):
+        candidates.append(Path(os.environ['OMEGA_HEALTH_STATUS']))
+    candidates += [
+        Path(r'C:\Omega\logs\health\status.json'),
+        ROOT.parent / 'logs' / 'health' / 'status.json',
+        ROOT / 'logs' / 'health' / 'status.json',
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                payload = json.loads(p.read_text(encoding='utf-8'))
+            except Exception as e:
+                return jsonify({'overall': 'FAIL', 'error': f'parse {p}: {e}',
+                                'checks': [], 'fail_count': 1, 'warn_count': 0})
+            # Stale-snapshot guard: if the healthcheck hasn't run in 10 min,
+            # treat that itself as a FAIL — silent monitoring failure is the
+            # exact thing we're trying to prevent.
+            try:
+                ts = datetime.fromisoformat(payload['ts'].replace('Z', '+00:00'))
+                age_min = (datetime.now(timezone.utc) - ts).total_seconds() / 60.0
+                if age_min > 10:
+                    payload['overall'] = 'FAIL'
+                    payload.setdefault('checks', []).insert(0, {
+                        'name': 'healthcheck.snapshot_fresh', 'severity': 'FAIL',
+                        'status': 'stale',
+                        'detail': f'status.json is {age_min:.1f}m old (limit 10m). Healthcheck task not running?',
+                        'ts': payload['ts']})
+                    payload['fail_count'] = payload.get('fail_count', 0) + 1
+            except Exception: pass
+            payload['source_path'] = str(p)
+            return jsonify(payload)
+    return jsonify({'overall': 'FAIL',
+                    'error': 'status.json not found in any known location',
+                    'checks': [{'name': 'healthcheck.snapshot_present',
+                                'severity': 'FAIL', 'status': 'missing',
+                                'detail': 'Run tools/healthcheck.ps1 on the VPS.'}],
+                    'fail_count': 1, 'warn_count': 0,
+                    'searched': [str(p) for p in candidates]})
+
 @app.route('/api/status')
 def api_status():
     nxt = next_sunday_2255_utc()

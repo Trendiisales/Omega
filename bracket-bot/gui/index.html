@@ -38,15 +38,21 @@
   td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
   tr:hover { background: rgba(255,255,255,0.02); }
   canvas { max-height: 280px; }
-  .sess-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-  .sess { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; opacity: 0.45; transition: all 0.2s; }
-  .sess.active { opacity: 1; border-color: var(--green); box-shadow: 0 0 0 1px var(--green) inset, 0 0 12px rgba(62,207,142,0.25); }
-  .sess.imminent { opacity: 1; border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow) inset, 0 0 12px rgba(255,200,112,0.25); }
-  .sess .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
-  .sess.active .label, .sess.imminent .label { color: var(--text); }
-  .sess .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
-  .sess.active .value { color: var(--green); }
-  .sess.imminent .value { color: var(--yellow); }
+  .pill { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; border: 1px solid var(--line); color: var(--dim); }
+  .pill.active { color: var(--bg); background: var(--green); border-color: var(--green); }
+  .pill.imminent { color: var(--bg); background: var(--yellow); border-color: var(--yellow); }
+  .health-banner { display: none; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-weight: 600; cursor: pointer; user-select: none; }
+  .health-banner.show { display: block; }
+  .health-banner.fail { background: rgba(232,80,91,0.18); border: 1px solid var(--red); color: var(--red); animation: pulse 1.4s ease-in-out infinite; }
+  .health-banner.warn { background: rgba(255,200,112,0.15); border: 1px solid var(--yellow); color: var(--yellow); }
+  .health-banner.ok   { background: rgba(62,207,142,0.10); border: 1px solid var(--green); color: var(--green); }
+  .health-detail { margin-top: 8px; font-weight: 400; font-size: 12px; color: var(--text); display: none; }
+  .health-banner.expanded .health-detail { display: block; }
+  .health-detail ul { margin: 6px 0 0 0; padding-left: 18px; }
+  .health-detail li.FAIL { color: var(--red); }
+  .health-detail li.WARN { color: var(--yellow); }
+  .health-detail li.OK   { color: var(--dim); }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(232,80,91,0.4);} 50%{box-shadow:0 0 0 8px rgba(232,80,91,0);} }
 </style>
 </head>
 <body>
@@ -56,17 +62,16 @@
   <div class="status">
     <span><span class="dot" id="paperDot"></span><span id="paperLbl">paper</span></span>
     <span><span class="dot" id="liveDot"></span><span id="liveLbl">live</span></span>
-    <span class="dim"><span class="dot" id="ldnDot"></span><span id="ldnLbl">LDN --</span></span>
-    <span class="dim"><span class="dot" id="nyDot"></span><span id="nyLbl">NY --</span></span>
-    <span class="dim" id="nextRun">next: --</span>
+    <span class="pill" id="pillLdn">LDN --</span>
+    <span class="pill" id="pillNy">NY --</span>
+    <span class="pill" id="pillSun">SUN --</span>
     <span class="dim" id="nowUtc">--</span>
   </div>
 </header>
 
-<div class="sess-row">
-  <div class="sess" id="sessLdn"><div class="label">LONDON</div><div class="value" id="sessLdnVal">--</div></div>
-  <div class="sess" id="sessNy"><div class="label">NEW YORK</div><div class="value" id="sessNyVal">--</div></div>
-  <div class="sess" id="sessSun"><div class="label">SUNDAY OPEN (CME)</div><div class="value" id="sessSunVal">--</div></div>
+<div id="healthBanner" class="health-banner" onclick="this.classList.toggle('expanded')">
+  <span id="healthSummary">checking health…</span>
+  <div class="health-detail"><ul id="healthList"></ul></div>
 </div>
 
 <div class="grid">
@@ -131,6 +136,73 @@
 <script>
 const $ = q => document.querySelector(q);
 let equityChart = null;
+let lastHealthOverall = null;
+
+// Loud alert: Web Audio beep + browser notification.
+function alertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.value = 0.25;
+    o.connect(g); g.connect(ctx.destination);
+    o.start();
+    o.frequency.setValueAtTime(880, ctx.currentTime);
+    o.frequency.setValueAtTime(660, ctx.currentTime + 0.18);
+    o.frequency.setValueAtTime(880, ctx.currentTime + 0.36);
+    setTimeout(() => { o.stop(); ctx.close(); }, 700);
+  } catch (e) { console.warn('audio alert failed', e); }
+}
+function desktopNotify(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') new Notification(title, { body });
+  else if (Notification.permission !== 'denied') Notification.requestPermission();
+}
+// Prompt for notification permission on first user gesture.
+document.addEventListener('click', () => {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}, { once: true });
+
+async function refreshHealth() {
+  try {
+    const h = await fetch('/api/health').then(r => r.json());
+    const banner = $('#healthBanner');
+    const sum    = $('#healthSummary');
+    const list   = $('#healthList');
+    const overall = h.overall || 'FAIL';
+    banner.classList.add('show');
+    banner.classList.remove('ok', 'warn', 'fail');
+    banner.classList.add(overall.toLowerCase());
+    const fc = h.fail_count || 0, wc = h.warn_count || 0;
+    sum.textContent = overall === 'OK'
+      ? `✓ All systems OK — ${(h.checks || []).length} checks passed`
+      : `⚠ ${overall} — ${fc} fail / ${wc} warn — click to expand`;
+    list.innerHTML = '';
+    for (const c of (h.checks || [])) {
+      const li = document.createElement('li');
+      li.className = c.severity;
+      li.textContent = `[${c.severity}] ${c.name}: ${c.detail}`;
+      list.appendChild(li);
+    }
+    // Transition-into-FAIL: loud alert
+    if (overall === 'FAIL' && lastHealthOverall !== 'FAIL') {
+      alertSound();
+      desktopNotify('OMEGA HEALTH FAIL',
+        `${fc} failure(s): ${(h.checks || []).filter(c => c.severity === 'FAIL').map(c => c.name).join(', ')}`);
+      // Auto-expand so the operator sees details immediately
+      banner.classList.add('expanded');
+    }
+    lastHealthOverall = overall;
+  } catch (e) {
+    const banner = $('#healthBanner');
+    banner.classList.add('show', 'fail');
+    $('#healthSummary').textContent = `⚠ FAIL — /api/health unreachable: ${e.message}`;
+    if (lastHealthOverall !== 'FAIL') { alertSound(); desktopNotify('OMEGA HEALTH', 'Health endpoint unreachable'); }
+    lastHealthOverall = 'FAIL';
+  }
+}
 
 function fmt$(v) {
   if (v == null) return '--';
@@ -328,7 +400,9 @@ document.getElementById('cancelAllBtn').addEventListener('click', async () => {
   refresh();
 });
 refresh();
+refreshHealth();
 setInterval(refresh, 5000);
+setInterval(refreshHealth, 15000);
 </script>
 </body>
 </html>
