@@ -81,7 +81,7 @@ struct AmrBaseParams {
     static constexpr int    RSI_PERIOD        = 14;
 
     // Entry / SL geometry (ATR-multiplier based)
-    static constexpr double ENTRY_ATR_MULT_X  = 14.0;
+    static constexpr double ENTRY_ATR_MULT_X  = 10.0;    // was 14 -- too strict on 2y EURUSD backtest (6 trades)
     static constexpr double SL_ATR_BUFFER_Y   = 4.0;     // SL = slowMA -/+ (X+Y)*ATR
     static constexpr double ADD_DIST_BASE_MULT= 1.0;
 
@@ -98,7 +98,7 @@ struct AmrBaseParams {
 
     // Risk
     static constexpr double MAX_ACCT_EXPOSURE_PCT = 25.0;
-    static constexpr double MAX_SPREAD_PRICE      = 0.00025; // ~2.5 pips on a 5-dp pair
+    static constexpr double MAX_SPREAD_PRICE      = 0.00050; // ~5 pips on 5-dp pair (tick CSVs include off-session quotes)
 
     // Sizing
     static constexpr AmrLotMode LOT_MODE       = AmrLotMode::FIXED;
@@ -370,6 +370,9 @@ private:
     Side long_;
     Side short_;
     int  bar_count_ = 0;
+public:
+    std::int64_t spread_skips_ = 0;  // count of try_entry calls rejected by spread filter
+private:
 
     // Cached indicator values (set on each H1 bar)
     double cached_slow_ma_   = 0.0;
@@ -410,14 +413,12 @@ private:
 
     // ---------- Entry / add ----------
     void try_entry(double slow_ma, double rsi, double atr_short, double atr_long, std::int64_t ts_ms) {
-        // Spread filter
+        // Spread filter (silent skip -- spread excursions are common on tick
+        // CSV data; logging every one floods the backtest output. Counter
+        // can be added if visibility needed.)
         if (cached_bid_ > 0.0 && cached_ask_ > cached_bid_) {
             const double spr = cached_ask_ - cached_bid_;
-            if (spr > Traits::MAX_SPREAD_PRICE) {
-                if (Traits::VERBOSE_LOG)
-                    std::printf("[AMR-%s] skip: spread=%.5f > cap=%.5f\n", Traits::SYMBOL, spr, Traits::MAX_SPREAD_PRICE);
-                return;
-            }
+            if (spr > Traits::MAX_SPREAD_PRICE) { ++spread_skips_; return; }
         }
 
         const double entry_dist = Traits::ENTRY_ATR_MULT_X * atr_short;
