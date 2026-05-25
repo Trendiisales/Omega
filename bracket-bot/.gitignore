@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+
+# Runtime logs & data
+*.log
+logs/
+data/trades.ndjson
+
+# Backups & OS
+*.bak
+.DS_Store

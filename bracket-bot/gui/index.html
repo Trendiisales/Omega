@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Omega — Sunday Bracket Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e15;
+    --panel: #111722;
+    --line: #1e2738;
+    --text: #cfd5e1;
+    --dim: #6f7a8f;
+    --green: #3ecf8e;
+    --red: #e8505b;
+    --yellow: #ffc870;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, Inter, sans-serif; font-size: 13px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  h1 { margin: 0; color: var(--green); font-size: 22px; letter-spacing: 1px; }
+  .status { display: flex; gap: 16px; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot.ok { background: var(--green); }
+  .dot.down { background: var(--red); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .kpi .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .kpi .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  .yellow { color: var(--yellow); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+  .panel h2 { margin: 0 0 12px 0; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  tr:hover { background: rgba(255,255,255,0.02); }
+  canvas { max-height: 280px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>OMEGA · SUNDAY BRACKET</h1>
+  <div class="status">
+    <span><span class="dot" id="paperDot"></span><span id="paperLbl">paper</span></span>
+    <span><span class="dot" id="liveDot"></span><span id="liveLbl">live</span></span>
+    <span class="dim" id="nextRun">next: --</span>
+    <span class="dim" id="nowUtc">--</span>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="kpi"><div class="label">Total Trades</div><div class="value" id="kTotal">0</div></div>
+  <div class="kpi"><div class="label">Total P&L</div><div class="value" id="kPnl">$0</div></div>
+  <div class="kpi"><div class="label">Win Rate</div><div class="value" id="kWin">0%</div></div>
+  <div class="kpi"><div class="label">Profit Factor</div><div class="value" id="kPF">0</div></div>
+  <div class="kpi"><div class="label">Avg Win</div><div class="value green" id="kAvgW">$0</div></div>
+  <div class="kpi"><div class="label">Avg Loss</div><div class="value red" id="kAvgL">$0</div></div>
+  <div class="kpi"><div class="label">Max DD</div><div class="value red" id="kDD">$0</div></div>
+  <div class="kpi"><div class="label">No-Trigger Weeks</div><div class="value yellow" id="kNoTrig">0</div></div>
+</div>
+
+<div class="panel">
+  <h2>Equity Curve (cumulative $)</h2>
+  <canvas id="equityChart"></canvas>
+</div>
+
+<div class="panel">
+  <h2>IB Open Orders (LIVE)</h2>
+  <table>
+    <thead><tr><th>Port</th><th>Client</th><th>Side</th><th>Qty</th><th>Symbol</th><th>Stop/Limit</th><th>OCA Group</th><th>Status</th></tr></thead>
+    <tbody id="openOrdersBody"></tbody>
+  </table>
+  <div style="margin-top:8px"><button id="cancelAllBtn" style="background:#e8505b;color:#fff;border:0;padding:8px 12px;border-radius:4px;cursor:pointer;">CANCEL ALL OPEN ORDERS</button></div>
+</div>
+
+<div class="panel">
+  <h2>By Strategy</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Strategy</th><th>Trades</th><th>Win%</th><th>PF</th><th>Total P&L</th><th>Max DD</th><th>Avg Win</th><th>Avg Loss</th><th>No-Trig</th>
+      </tr>
+    </thead>
+    <tbody id="strategyBody"></tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Trade History</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Date (UTC)</th><th>Strategy</th><th>Instr</th><th>Qty</th><th>Side</th><th>Entry</th><th>Exit</th><th>Reason</th><th>P&L</th><th>Mode</th>
+      </tr>
+    </thead>
+    <tbody id="tradeBody"></tbody>
+  </table>
+</div>
+
+<script>
+const $ = q => document.querySelector(q);
+let equityChart = null;
+
+function fmt$(v) {
+  if (v == null) return '--';
+  const s = v >= 0 ? '+' : '';
+  return s + '$' + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+}
+
+async function refresh() {
+  const [trades, summary, status] = await Promise.all([
+    fetch('/api/trades').then(r => r.json()),
+    fetch('/api/summary').then(r => r.json()),
+    fetch('/api/status').then(r => r.json()),
+  ]);
+
+  // KPIs
+  $('#kTotal').textContent = summary.total_trades;
+  $('#kPnl').textContent = fmt$(summary.total_pnl);
+  $('#kPnl').className = 'value ' + (summary.total_pnl >= 0 ? 'green' : 'red');
+  $('#kWin').textContent = summary.win_rate.toFixed(0) + '%';
+  $('#kPF').textContent = summary.profit_factor.toFixed(2);
+  $('#kAvgW').textContent = fmt$(summary.avg_win);
+  $('#kAvgL').textContent = fmt$(summary.avg_loss);
+  $('#kDD').textContent = fmt$(summary.max_drawdown);
+  $('#kNoTrig').textContent = summary.no_trigger_count;
+
+  // Status
+  $('#paperDot').className = 'dot ' + (status.ib_paper_listening ? 'ok' : 'down');
+  $('#liveDot').className = 'dot ' + (status.ib_live_listening ? 'ok' : 'down');
+  $('#nextRun').textContent = 'next: ' + new Date(status.next_run_utc).toUTCString().replace(' GMT', '');
+  $('#nowUtc').textContent = new Date(status.now_utc).toUTCString().replace(' GMT', '');
+
+  // Open IB orders panel
+  try {
+    const ord = await fetch('/api/open_orders').then(r => r.json());
+    const ob = $('#openOrdersBody');
+    ob.innerHTML = '';
+    if (!ord.orders || ord.orders.length === 0) {
+      ob.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#3ecf8e;">no open orders ✓</td></tr>';
+    } else {
+      for (const o of ord.orders) {
+        const tr = document.createElement('tr');
+        const px = o.aux_price || o.lmt_price || '--';
+        tr.innerHTML = `<td>${o.port}</td><td>${o.client_id}</td><td>${o.action}</td><td>${o.qty}</td><td>${o.symbol}</td><td>${px}</td><td>${o.oca_group || '--'}</td><td class="yellow">${o.status}</td>`;
+        ob.appendChild(tr);
+      }
+    }
+  } catch(e) { console.error(e); }
+
+  // Per-strategy table
+  const sb = $('#strategyBody');
+  sb.innerHTML = '';
+  const by = summary.by_strategy || {};
+  for (const [name, s] of Object.entries(by)) {
+    const tr = document.createElement('tr');
+    const pcls = s.total_pnl > 0 ? 'green' : (s.total_pnl < 0 ? 'red' : '');
+    tr.innerHTML = `
+      <td><b>${name}</b></td>
+      <td>${s.total_trades}</td>
+      <td>${s.win_rate.toFixed(0)}%</td>
+      <td>${s.profit_factor.toFixed(2)}</td>
+      <td class="${pcls}">${fmt$(s.total_pnl)}</td>
+      <td class="red">${fmt$(s.max_drawdown)}</td>
+      <td class="green">${fmt$(s.avg_win)}</td>
+      <td class="red">${fmt$(s.avg_loss)}</td>
+      <td class="yellow">${s.no_trigger_count}</td>`;
+    sb.appendChild(tr);
+  }
+
+  // Trade table
+  const tb = $('#tradeBody');
+  tb.innerHTML = '';
+  const recent = trades.slice().reverse();
+  for (const t of recent) {
+    const tr = document.createElement('tr');
+    const cls = t.pnl_total > 0 ? 'green' : (t.pnl_total < 0 ? 'red' : '');
+    tr.innerHTML = `
+      <td>${(t.ts || '').replace('T', ' ').slice(0, 19)}</td>
+      <td>${t.strategy || '?'}</td>
+      <td>${t.instrument || ''}</td>
+      <td>${t.qty || ''}</td>
+      <td>${t.side || '--'}</td>
+      <td>${t.entry?.toFixed(2) || '--'}</td>
+      <td>${t.exit?.toFixed(2) || '--'}</td>
+      <td>${t.reason || ''}</td>
+      <td class="${cls}">${fmt$(t.pnl_total)}</td>
+      <td>${t.paper ? 'paper' : 'LIVE'}</td>`;
+    tb.appendChild(tr);
+  }
+
+  // Equity curve
+  const traded = trades.filter(t => t.side);
+  let cum = 0;
+  const labels = [];
+  const data = [];
+  for (const t of traded) {
+    cum += t.pnl_total;
+    labels.push((t.ts || '').slice(0, 10));
+    data.push(cum);
+  }
+  if (!equityChart) {
+    equityChart = new Chart($('#equityChart').getContext('2d'), {
+      type: 'line',
+      data: { labels, datasets: [{ data, borderColor: '#3ecf8e', backgroundColor: 'rgba(62,207,142,0.1)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 2 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#888' }, grid: { color: '#1e2738' } },
+          y: { ticks: { color: '#888', callback: v => '$' + v }, grid: { color: '#1e2738' } }
+        }
+      }
+    });
+  } else {
+    equityChart.data.labels = labels;
+    equityChart.data.datasets[0].data = data;
+    equityChart.update('none');
+  }
+}
+
+document.getElementById('cancelAllBtn').addEventListener('click', async () => {
+  if (!confirm('Cancel ALL open IB orders? Cannot undo.')) return;
+  const r = await fetch('/api/cancel_all', { method: 'POST' }).then(r => r.json());
+  alert(r.ok ? `Global cancel sent on port ${r.port}` : `Failed: ${r.error}`);
+  refresh();
+});
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
