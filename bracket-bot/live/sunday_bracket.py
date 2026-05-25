@@ -19,6 +19,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -99,11 +100,17 @@ def get_price_from_depth(ib: IB, contract, secs: int = 10):
 
 def get_current_price(ib: IB, contract) -> float:
     """Reference price for bracket placement.
-    Order: L2 mid (real-time via existing L2 sub) → top-of-book live → frozen → delayed."""
-    px = get_price_from_depth(ib, contract)
-    if px is not None:
-        return px
-    for mdt, label in [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')]:
+    Order: L2 mid (real-time via existing L2 sub) → top-of-book live → frozen → delayed.
+    BRACKET_DELAYED_ONLY=1: skip L2 + live mdt (no /DEEP or top-of-book sub on paper
+    account); go straight to delayed. Unset once real-time sub activates."""
+    delayed_only = os.environ.get('BRACKET_DELAYED_ONLY') == '1'
+    if not delayed_only:
+        px = get_price_from_depth(ib, contract)
+        if px is not None:
+            return px
+    mdts = ([(3, 'delayed'), (4, 'delayed-frozen')] if delayed_only
+            else [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')])
+    for mdt, label in mdts:
         try:
             ib.reqMarketDataType(mdt)
             [ticker] = ib.reqTickers(contract)

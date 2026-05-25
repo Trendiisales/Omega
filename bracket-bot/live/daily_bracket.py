@@ -12,7 +12,7 @@ Usage:
   python live\\daily_bracket.py --paper --qty 1 --instrument MGC --strategy DAILY1300
   python live\\daily_bracket.py --paper --qty 1 --instrument MGC --strategy DAILY1400
 """
-import argparse, json, logging, math, sys
+import argparse, json, logging, math, os, sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from ib_insync import IB, Future, ContFuture, Forex, Stock, StopOrder, LimitOrder, MarketOrder
@@ -74,13 +74,19 @@ def get_price_from_depth(ib, c, secs=10):
     return None
 
 def get_price(ib, c):
-    # 1. L2 depth (real-time via existing IBKR L2 sub)
-    px = get_price_from_depth(ib, c)
-    if px is not None:
-        return px
+    # BRACKET_DELAYED_ONLY=1: skip L2 + live mdt (no /DEEP or top-of-book sub on
+    # paper account); go straight to delayed. Unset once real-time sub activates.
+    delayed_only = os.environ.get('BRACKET_DELAYED_ONLY') == '1'
+    if not delayed_only:
+        # 1. L2 depth (real-time via existing IBKR L2 sub)
+        px = get_price_from_depth(ib, c)
+        if px is not None:
+            return px
     # 2. Top-of-book stream — try real-time first; fall back to frozen/delayed
     # if the account isn't subscribed for this contract. Missing sub never hard-fails.
-    for mdt, label in [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')]:
+    mdts = ([(3, 'delayed'), (4, 'delayed-frozen')] if delayed_only
+            else [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')])
+    for mdt, label in mdts:
         try:
             ib.reqMarketDataType(mdt)
             tk = ib.reqMktData(c, '', False, False)
