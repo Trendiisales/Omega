@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sunday-open gold bracket — live execution via ib_insync.
+r"""Sunday-open gold bracket — live execution via ib_insync.
 
 Validated config (2y backtest):
   offset = $5    (buy_stop @ open+$5, sell_stop @ open-$5)
@@ -7,24 +7,25 @@ Validated config (2y backtest):
   hold   = 60min (time exit if no TP)
   result: 71% win, PF 4.38, +$835/oz over 2.4y
 
-Usage:
-  source /Users/jo/omega_repo/.venv/bin/activate
-  python sunday_bracket.py --paper   # paper trading (port 7497)
-  python sunday_bracket.py --live    # live trading (port 7496)
-  python sunday_bracket.py --qty 1   # 1 contract MGC (default)
-  python sunday_bracket.py --instrument GC --qty 1   # full GC
-  python sunday_bracket.py --instrument XAU --qty 0.01  # CFD via XAU symbol
+Usage (Windows VPS, IB Gateway paper port 4002 by default):
+  & ".\.venv\Scripts\python.exe" live\sunday_bracket.py --paper
+  & ".\.venv\Scripts\python.exe" live\sunday_bracket.py --live      # live port 7496
+  & ".\.venv\Scripts\python.exe" live\sunday_bracket.py --instrument GC --qty 1
+  & ".\.venv\Scripts\python.exe" live\sunday_bracket.py --instrument XAU --qty 0.01
 
 Scheduling: cron entry runs this 5min before CME globex Sunday open.
 """
 import argparse
 import json
 import logging
+import math
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from ib_insync import IB, Future, Forex, StopOrder, LimitOrder, MarketOrder, util
+from ib_insync import IB, Future, ContFuture, Forex, StopOrder, LimitOrder, MarketOrder, util
+
+def utcnow(): return datetime.now(timezone.utc)
 
 TRADES_FILE = Path(__file__).resolve().parent.parent / 'data' / 'trades.ndjson'
 TRADES_FILE.parent.mkdir(exist_ok=True)
@@ -48,7 +49,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler(LOG_DIR / f'bracket_{datetime.utcnow():%Y%m%d}.log'),
+        logging.FileHandler(LOG_DIR / f'bracket_{utcnow():%Y%m%d}.log'),
         logging.StreamHandler(sys.stdout),
     ]
 )
@@ -61,13 +62,10 @@ def round_tick(px, tick=TICK_SZ):
 
 def get_contract(instrument: str, expiry: str = None):
     """Build IB contract by instrument key."""
-    if instrument == 'MGC':
-        return Future('MGC', expiry or '20260618', 'COMEX')
-    if instrument == 'GC':
-        return Future('GC', expiry or '20260618', 'COMEX')
+    if instrument in ('MGC', 'GC'):
+        return Future(instrument, expiry, 'COMEX') if expiry else ContFuture(instrument, 'COMEX')
     if instrument == 'XAUUSD':
         # Spot gold via IB Forex (smallest size = 1 oz)
-        from ib_insync import Forex
         return Forex('XAUUSD')
     if instrument == 'XAU':
         # Spot gold CFD via IBKR SMART (alternative)
@@ -77,20 +75,26 @@ def get_contract(instrument: str, expiry: str = None):
 
 
 def get_current_price(ib: IB, contract) -> float:
-    """Get reference price for bracket placement."""
-    [ticker] = ib.reqTickers(contract)
-    px = ticker.marketPrice()
-    if not px or px <= 0:
-        # Fall back to last
-        px = ticker.last or ticker.close
-    if not px or px <= 0:
-        raise RuntimeError(f'No price for {contract.symbol}')
-    return float(px)
+    """Reference price for bracket placement. Real-time first, fall back to frozen/delayed."""
+    for mdt, label in [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')]:
+        try:
+            ib.reqMarketDataType(mdt)
+            [ticker] = ib.reqTickers(contract)
+            px = ticker.marketPrice()
+            if not px or (isinstance(px, float) and math.isnan(px)) or px <= 0:
+                px = ticker.last or ticker.close
+            if px and not (isinstance(px, float) and math.isnan(px)) and px > 0:
+                log.info(f'price [{label}]: {px}')
+                return float(px)
+            log.warning(f'no price from mdt={mdt} ({label})')
+        except Exception as e:
+            log.warning(f'mdt={mdt} ({label}) failed: {e}')
+    raise RuntimeError(f'No price for {contract.symbol} across all market-data types')
 
 
 def place_brackets(ib: IB, contract, qty: int, open_px: float):
     """Place buy+sell stops OCA-linked, then attach TP children on fill."""
-    oca = f'GOLD_BRK_{datetime.utcnow():%Y%m%d_%H%M%S}'
+    oca = f'GOLD_BRK_{utcnow():%Y%m%d_%H%M%S}'
     buy_trigger  = round_tick(open_px + OFFSET)
     sell_trigger = round_tick(open_px - OFFSET)
 
@@ -139,9 +143,9 @@ def attach_tp_and_time_exit(ib: IB, contract, parent_trade, qty: int, hold_min: 
     log.info(f'ATTACHED OCA exits: TP {exit_action} LMT@{tp_px} | SL {exit_action} STP@{sl_px}  (entry {fill_px})')
 
     # Time-exit watcher — first child fill OR time runs out
-    deadline = datetime.utcnow() + timedelta(minutes=hold_min)
+    deadline = utcnow() + timedelta(minutes=hold_min)
     log.info(f'Time exit deadline: {deadline.isoformat()}')
-    while datetime.utcnow() < deadline:
+    while utcnow() < deadline:
         ib.sleep(2)
         if tp_trade.isDone() and tp_trade.orderStatus.status == 'Filled':
             log.info(f'TP HIT: px={tp_trade.orderStatus.avgFillPrice}')
@@ -166,22 +170,22 @@ def attach_tp_and_time_exit(ib: IB, contract, parent_trade, qty: int, hold_min: 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--paper', action='store_true', help='paper port 7497 (default)')
-    ap.add_argument('--live',  action='store_true', help='live port 7496')
+    ap.add_argument('--paper', action='store_true', help='paper mode (default port 4002 = IB Gateway paper)')
+    ap.add_argument('--live',  action='store_true', help='live mode (override --port for live gateway/TWS)')
     ap.add_argument('--host',  default='127.0.0.1')
-    ap.add_argument('--instrument', default='XAUUSD', choices=['MGC','GC','XAU','XAUUSD'])
+    ap.add_argument('--port',  type=int, default=4002, help='IB Gateway 4002 (paper) / 4001 (live), TWS 7497/7496')
+    ap.add_argument('--instrument', default='MGC', choices=['MGC','GC','XAU','XAUUSD'])
     ap.add_argument('--expiry', default=None)
     ap.add_argument('--qty', type=int, default=1)
     ap.add_argument('--client-id', type=int, default=42)
     args = ap.parse_args()
 
-    port = 7496 if args.live else 7497
-    log.info(f'=== SUNDAY BRACKET — instrument={args.instrument} qty={args.qty} port={port} ===')
+    log.info(f'=== SUNDAY BRACKET — instrument={args.instrument} qty={args.qty} port={args.port} ===')
 
     ib = IB()
     try:
-        ib.connect(args.host, port, clientId=args.client_id)
-        log.info(f'Connected to IB Gateway {args.host}:{port}')
+        ib.connect(args.host, args.port, clientId=args.client_id)
+        log.info(f'Connected to IB Gateway {args.host}:{args.port}')
     except Exception as e:
         log.error(f'Connect failed: {e}')
         sys.exit(2)
@@ -197,9 +201,9 @@ def main():
 
     # Wait for either bracket to trigger (up to HOLD_MIN as no-trigger timeout)
     log.info(f'Watching for trigger (timeout {HOLD_MIN}min)...')
-    trigger_deadline = datetime.utcnow() + timedelta(minutes=HOLD_MIN)
+    trigger_deadline = utcnow() + timedelta(minutes=HOLD_MIN)
     triggered = None
-    while datetime.utcnow() < trigger_deadline:
+    while utcnow() < trigger_deadline:
         ib.sleep(2)
         if buy_trade.isDone() and buy_trade.orderStatus.status == 'Filled':
             triggered = buy_trade; break
@@ -211,7 +215,7 @@ def main():
         ib.cancelOrder(buy_trade.order)
         ib.cancelOrder(sell_trade.order)
         append_trade({
-            'ts': datetime.utcnow().isoformat(),
+            'ts': utcnow().isoformat(),
             'strategy': 'SUNDAY', 'instrument': args.instrument,
             'qty': args.qty,
             'open_px': open_px,
@@ -233,7 +237,7 @@ def main():
     log.info(f'TRADE COMPLETE: side={side} entry={entry_px} exit={exit_px} reason={reason} pnl=${pnl_per_oz:.2f}/oz total=${pnl_total:.2f}')
 
     append_trade({
-        'ts': datetime.utcnow().isoformat(),
+        'ts': utcnow().isoformat(),
         'strategy': 'SUNDAY', 'instrument': args.instrument,
         'qty': args.qty,
         'open_px': open_px,

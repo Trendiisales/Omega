@@ -17,6 +17,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from ib_insync import IB, Future, ContFuture, Forex, Stock, StopOrder, LimitOrder, MarketOrder
 
+def utcnow(): return datetime.now(timezone.utc)
+
 # Validated daily 13/14 UTC config (tighter than Sunday)
 OFFSET = 2.0
 TP_DIST = 50.0
@@ -31,7 +33,7 @@ TRADES_FILE = DATA_DIR / 'trades.ndjson'
 
 logging.basicConfig(level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.FileHandler(LOG_DIR / f'bracket_{datetime.utcnow():%Y%m%d}.log'),
+    handlers=[logging.FileHandler(LOG_DIR / f'bracket_{utcnow():%Y%m%d}.log'),
               logging.StreamHandler(sys.stdout)])
 log = logging.getLogger('daily_bracket')
 
@@ -50,19 +52,23 @@ def get_contract(ib, instrument, expiry=None):
     raise ValueError(f'Unknown instrument: {instrument}')
 
 def get_price(ib, c):
-    ib.reqMarketDataType(4)
-    try:
-        tk = ib.reqMktData(c, '', False, False)
-        for _ in range(4):
-            ib.sleep(2)
-            for cand in (tk.marketPrice(), tk.last, tk.close, tk.bid, tk.ask):
-                if cand and not math.isnan(cand) and cand > 0:
-                    ib.cancelMktData(c)
-                    log.info(f'live(delayed) price: {cand}')
-                    return float(cand)
-        ib.cancelMktData(c)
-    except Exception as e:
-        log.warning(f'live ticker failed: {e}')
+    # Try real-time first; fall back to frozen/delayed if the account
+    # isn't subscribed for this contract, so a missing sub never hard-fails.
+    for mdt, label in [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')]:
+        try:
+            ib.reqMarketDataType(mdt)
+            tk = ib.reqMktData(c, '', False, False)
+            for _ in range(4):
+                ib.sleep(2)
+                for cand in (tk.marketPrice(), tk.last, tk.close, tk.bid, tk.ask):
+                    if cand and not math.isnan(cand) and cand > 0:
+                        ib.cancelMktData(c)
+                        log.info(f'price [{label}]: {cand}')
+                        return float(cand)
+            ib.cancelMktData(c)
+            log.warning(f'no price from mdt={mdt} ({label})')
+        except Exception as e:
+            log.warning(f'mdt={mdt} ({label}) failed: {e}')
     try:
         bars = ib.reqHistoricalData(c, endDateTime='', durationStr='1 D',
                                      barSizeSetting='1 min', whatToShow='TRADES',
@@ -75,7 +81,7 @@ def get_price(ib, c):
     return None
 
 def place_brackets(ib, c, qty, open_px, strategy):
-    oca = f'{strategy}_{datetime.utcnow():%Y%m%d_%H%M%S}'
+    oca = f'{strategy}_{utcnow():%Y%m%d_%H%M%S}'
     bt = round_tick(open_px + OFFSET); st = round_tick(open_px - OFFSET)
     buy = StopOrder('BUY', qty, stopPrice=bt); buy.ocaGroup=oca; buy.ocaType=1; buy.tif='GTC'
     sell = StopOrder('SELL', qty, stopPrice=st); sell.ocaGroup=oca; sell.ocaType=1; sell.tif='GTC'
@@ -94,8 +100,8 @@ def attach_exits(ib, c, parent_tr, qty, hold_min):
     sl = StopOrder(exit_act, qty, stopPrice=sl_px); sl.tif='GTC'; sl.ocaGroup=oca; sl.ocaType=1
     tp_tr = ib.placeOrder(c, tp); sl_tr = ib.placeOrder(c, sl)
     log.info(f'EXITS: TP@{tp_px} SL@{sl_px} (entry {fill})')
-    deadline = datetime.utcnow() + timedelta(minutes=hold_min)
-    while datetime.utcnow() < deadline:
+    deadline = utcnow() + timedelta(minutes=hold_min)
+    while utcnow() < deadline:
         ib.sleep(2)
         if tp_tr.isDone() and tp_tr.orderStatus.status=='Filled':
             return 'TP', tp_tr.orderStatus.avgFillPrice
@@ -124,7 +130,7 @@ def main():
     args = ap.parse_args()
 
     # Weekday check — only fire Mon-Fri (skip Sat=5, Sun=6)
-    wd = datetime.utcnow().weekday()
+    wd = utcnow().weekday()
     if wd >= 5:
         log.info(f'Skipping weekend (weekday={wd})')
         sys.exit(0)
@@ -146,7 +152,7 @@ def main():
     open_px = get_price(ib, c)
     if open_px is None:
         log.warning('NO PRICE — exiting clean')
-        append_trade({'ts':datetime.utcnow().isoformat(),'strategy':args.strategy,
+        append_trade({'ts':utcnow().isoformat(),'strategy':args.strategy,
                       'instrument':args.instrument,'qty':args.qty,
                       'open_px':None,'side':None,'entry':None,'exit':None,'reason':'NO_PRICE',
                       'pnl_per_oz':0.0,'pnl_total':0.0,'paper':not args.live})
@@ -158,9 +164,9 @@ def main():
         ib.disconnect(); sys.exit(0)
 
     oca, bt, st = place_brackets(ib, c, args.qty, open_px, args.strategy)
-    deadline = datetime.utcnow() + timedelta(minutes=HOLD_MIN)
+    deadline = utcnow() + timedelta(minutes=HOLD_MIN)
     triggered = None
-    while datetime.utcnow() < deadline:
+    while utcnow() < deadline:
         ib.sleep(2)
         if bt.isDone() and bt.orderStatus.status=='Filled': triggered=bt; break
         if st.isDone() and st.orderStatus.status=='Filled': triggered=st; break
@@ -171,7 +177,7 @@ def main():
         except: pass
         try: ib.cancelOrder(st.order)
         except: pass
-        append_trade({'ts':datetime.utcnow().isoformat(),'strategy':args.strategy,
+        append_trade({'ts':utcnow().isoformat(),'strategy':args.strategy,
                       'instrument':args.instrument,'qty':args.qty,
                       'open_px':open_px,'side':None,'entry':None,'exit':None,'reason':'NO_TRIGGER',
                       'pnl_per_oz':0.0,'pnl_total':0.0,'paper':not args.live})
@@ -183,7 +189,7 @@ def main():
     pnl_oz = (exit_px-entry) if side=='BUY' else (entry-exit_px)
     pnl_tot = pnl_oz * args.qty
     log.info(f'DONE [{args.strategy}]: {side} entry={entry} exit={exit_px} reason={reason} pnl=${pnl_oz:.2f}/oz total=${pnl_tot:.2f}')
-    append_trade({'ts':datetime.utcnow().isoformat(),'strategy':args.strategy,
+    append_trade({'ts':utcnow().isoformat(),'strategy':args.strategy,
                   'instrument':args.instrument,'qty':args.qty,
                   'open_px':open_px,'side':side,'entry':float(entry),'exit':float(exit_px),
                   'reason':reason,'pnl_per_oz':float(pnl_oz),'pnl_total':float(pnl_tot),
