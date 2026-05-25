@@ -341,7 +341,7 @@ R"OMEGA2(
   </div>
   <!-- Health detail dropdown (hidden until badge click); pinned to top-right
        under the header bar so it doesn't float over the main grid. -->
-  <div id="healthDetail" style="display:none;position:fixed;right:12px;top:72px;background:var(--bg);border:1px solid var(--red);border-radius:6px;padding:10px 14px;max-width:520px;max-height:60vh;overflow-y:auto;font-size:11px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.6);">
+  <div id="healthDetail" style="display:none;position:fixed;right:12px;bottom:12px;background:var(--bg);border:1px solid var(--red);border-radius:6px;padding:10px 14px;max-width:420px;max-height:50vh;overflow-y:auto;font-size:11px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.6);">
     <div style="font-weight:700;color:var(--red);margin-bottom:6px;letter-spacing:1px;">SYSTEM HEALTH</div>
     <ul id="healthList" style="margin:0;padding-left:18px;list-style:disc;"></ul>
   </div>
@@ -2218,7 +2218,10 @@ async function pollHealth(){
     __healthBeep();
     const fn=(h.checks||[]).filter(c=>c.severity==='FAIL').map(c=>c.name).join(', ');
     __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s): '+fn);
-    panel.style.display='block';
+    // 2026-05-26: do NOT auto-open the panel -- it covers the engine tiles
+    // and persistent FAILs (service.running stale, shadow.daily_today)
+    // re-trip every cycle. Click HEALTH badge to view details.
+    // panel.style.display='block';
   }
   __lastHealth=o;
 }
