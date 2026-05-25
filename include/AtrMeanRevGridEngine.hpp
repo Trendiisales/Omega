@@ -788,8 +788,10 @@ private:
             return is_long
                 ? ((rsi >= rsi_tp_long)  || (px > 0.0 && px >= slow_ma))
                 : ((rsi <= rsi_tp_short) || (px > 0.0 && px <= slow_ma));
+        } else {
+            (void)slow_ma; (void)rsi;
+            return false;
         }
-        return false;
     }
 
     // ---------- Close-all (writes shadow CSV records via OmegaTradeLedger) ----------
