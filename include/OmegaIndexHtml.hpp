@@ -610,6 +610,25 @@ R"OMEGA5(
           </table>
         </div>
       </div>
+
+      <!-- SHADOW TRADES (audit-only, no broker fills) -->
+      <div class="trades-card" style="margin-top:10px;border:1px dashed rgba(160,140,255,0.35);background:rgba(60,40,120,0.04);">
+        <div class="card-hd" style="flex-shrink:0;">
+          <span class="dot" style="background:var(--purple,#a07cff)"></span>Shadow Trades
+          <span style="color:var(--purple,#a07cff);font-size:10px;margin-left:6px;font-weight:700;letter-spacing:0.5px;">[AUDIT]</span>
+          <span id="shadowTradeCount" style="font-family:'IBM Plex Mono',monospace;color:var(--t2);margin-left:6px;font-size:11px;"></span>
+          <span style="color:var(--t2);font-size:10px;margin-left:8px;">engines running shadow_mode=true (no broker fills)</span>
+        </div>
+        <div class="trades-scroll">
+          <table>
+            <thead><tr>
+              <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
+              <th>Held</th><th>Result</th><th>Engine / Reason</th><th>PnL (raw)</th>
+            </tr></thead>
+            <tbody id="shadowTradesBody"><tr><td colspan="9" class="no-data">No shadow trades yet</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2130,8 +2149,6 @@ function pollTrades(){
           if(el&&s){
             const pnl=s.net_pnl||0;
             const n=s.total_trades||0;
-            // Always show today's summary -- even when 0 trades (clean slate after UTC midnight)
-            // Never show "(from disk)" -- that label was confusing and implied stale data
             if(n>0){
               el.textContent=n+' CLOSED | '+s.wins+'W/'+(n-s.wins)+'L | '+(pnl>=0?'+':'')+pnl.toFixed(2);
             } else {
@@ -2145,6 +2162,59 @@ function pollTrades(){
       // Fallback to memory
       fetch('/api/trades').then(r=>r.json()).then(renderTrades).catch(()=>{});
     });
+
+  // Shadow trades (audit-only, engines with shadow_mode=true)
+  fetch('/api/shadow_trades').then(r=>r.json()).then(renderShadowTrades).catch(()=>{});
+}
+
+// renderShadowTrades -- audit-only table for engines running shadow_mode=true.
+// Visually distinct (purple accent, dashed border) to make clear these are NOT
+// broker fills and not counted in daily P&L. Columns mirror Recent Trades minus
+// Gross/Slip (shadow has no slippage modelled at write time -- pnl is raw price
+// * lots in instrument-quote currency, not USD).
+function renderShadowTrades(trades){
+  const el=document.getElementById('shadowTradesBody');
+  const cE=document.getElementById('shadowTradeCount');
+  if(!el) return;
+  if(!trades||trades.length===0){
+    el.innerHTML='<tr><td colspan="9" class="no-data">No shadow trades yet</td></tr>';
+    if(cE) cE.textContent='';
+    return;
+  }
+  const closed=trades.filter(t=>t.exitReason&&t.exitReason!=='');
+  const wins=closed.filter(t=>safe(t.net_pnl)>0).length;
+  const losses=closed.filter(t=>safe(t.net_pnl)<0).length;
+  const totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
+  if(cE) cE.textContent=closed.length+' closed → '+wins+'W/'+losses+'L → '+(totalNet>=0?'+':'-')+Math.abs(totalNet).toFixed(4)+' (raw)';
+  const rows=[...trades].reverse().slice(0,40).map(t=>{
+    const net=safe(t.net_pnl);
+    const win=net>0,loss=net<0;
+    const sc=t.side==='LONG'||t.side==='BUY'?'var(--green)':'var(--red)';
+    const reason=t.exitReason||'';
+    const result=reason==='wap_tp_hit'||reason==='rsi_or_slow_ma'?'✓'+reason.split('_')[0]:reason==='sl_hit'?'✗SL':reason;
+    const rc=win?'var(--green)':loss?'var(--red)':'var(--t2)';
+    const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
+    let heldStr='--';
+    if(safe(t.entryTs)>0&&safe(t.exitTs)>0){
+      const s=safe(t.exitTs)-safe(t.entryTs);
+      heldStr=s>=3600?Math.floor(s/3600)+'h'+Math.floor((s%3600)/60)+'m':s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';
+    }
+    const rowBg=win?'rgba(160,140,255,0.05)':loss?'rgba(255,80,120,0.05)':'rgba(160,140,255,0.03)';
+    const engName=(t.engine||'').replace('Engine','').replace('AtrMeanRevGrid','AMR');
+    const netD=(net>=0?'+':'-')+Math.abs(net).toFixed(4);
+    return `<tr style="background:${rowBg}">
+      <td style="color:var(--t2);font-size:11px">${fmtUTC(safe(t.entryTs))}</td>
+      <td style="color:var(--purple,#a07cff);font-weight:700;font-size:13px">${t.symbol||'--'}</td>
+      <td style="color:${sc};font-weight:700">${t.side||'--'}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:12px">${safe(t.price)>0?safe(t.price).toFixed(5):'--'}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:var(--t2);font-size:12px">${safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(5):'--'}</td>
+      <td style="color:var(--t2);font-size:11px">${heldStr}</td>
+      <td style="font-weight:700;color:${rc};font-size:12px">${result}</td>
+      <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:var(--purple,#a07cff);font-size:10px">${engName}</span></td>
+      <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:900;font-size:13px">${netD}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=rows;
 }
 
 

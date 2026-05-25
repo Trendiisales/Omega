@@ -709,6 +709,102 @@ static std::string buildHistoryJson()
 }
 
 // ?????????????????????????????????????????????????????????????????????????????
+// buildShadowTradesJson -- reads omega_shadow.csv and returns last 60 trades
+// as JSON (matching buildTradesJson shape with shadow:true flag added so the
+// dashboard can render them in a tinted "SHADOW (audit)" table alongside the
+// real broker trades. Shadow trades never hit the broker -- they're written by
+// engines running with shadow_mode=true (AtrMeanRevGrid, etc).
+//
+// CSV header (per omega_main.hpp): ts_unix,symbol,side,engine,entry_px,exit_px,
+//                                  pnl,mfe,mae,hold_sec,exit_reason,
+//                                  spread_at_entry,latency_ms,regime
+// ?????????????????????????????????????????????????????????????????????????????
+static std::string buildShadowTradesJson()
+{
+    static const char* PATHS[] = {
+        "C:\\Omega\\logs\\shadow\\omega_shadow.csv",
+        "logs/shadow/omega_shadow.csv",
+        "../logs/shadow/omega_shadow.csv",
+        "../../logs/shadow/omega_shadow.csv",
+        nullptr
+    };
+    FILE* f = nullptr;
+    for (int i = 0; PATHS[i]; ++i) { f = fopen(PATHS[i], "r"); if (f) break; }
+    if (!f) return "[]";
+
+    // Read whole file (bounded -- AMR is sparse, shadow file stays small).
+    std::vector<std::string> lines;
+    char line[2048];
+    bool header_skipped = false;
+    while (fgets(line, sizeof(line), f)) {
+        if (!header_skipped) { header_skipped = true; if (line[0]=='t') continue; }
+        lines.push_back(line);
+    }
+    fclose(f);
+
+    // Keep last 60.
+    const size_t want = 60;
+    size_t start = lines.size() > want ? lines.size() - want : 0;
+
+    std::string out;
+    out.reserve(8192);
+    out += '[';
+    bool first = true;
+    for (size_t i = start; i < lines.size(); ++i) {
+        // tokenise CSV
+        char buf[2048];
+        strncpy(buf, lines[i].c_str(), sizeof(buf)-1); buf[sizeof(buf)-1]='\0';
+        // strip newline
+        size_t L = strlen(buf);
+        if (L > 0 && (buf[L-1]=='\n'||buf[L-1]=='\r')) buf[L-1]='\0';
+        if (L > 1 && buf[L-2]=='\r') buf[L-2]='\0';
+
+        char* fields[32]; int nf = 0; char* p = buf;
+        while (nf < 31 && *p) {
+            fields[nf++] = p;
+            while (*p && *p != ',') ++p;
+            if (*p) { *p++ = '\0'; }
+        }
+        if (nf < 11) continue;
+        long long entry_ts = atoll(fields[0]);
+        const char* symbol = fields[1];
+        const char* side   = fields[2];
+        const char* engine = fields[3];
+        double entry_px = atof(fields[4]);
+        double exit_px  = atof(fields[5]);
+        double pnl      = atof(fields[6]);
+        double mfe      = atof(fields[7]);
+        double mae      = atof(fields[8]);
+        long long hold_sec = atoll(fields[9]);
+        const char* exit_reason = fields[10];
+        double spread = nf > 11 ? atof(fields[11]) : 0.0;
+        double lat    = nf > 12 ? atof(fields[12]) : 0.0;
+        const char* regime = nf > 13 ? fields[13] : "";
+        long long exit_ts = entry_ts + hold_sec;
+
+        if (!first) out += ',';
+        first = false;
+        char row[1024];
+        snprintf(row, sizeof(row),
+            "{\"shadow\":true,\"symbol\":\"%s\",\"side\":\"%s\",\"engine\":\"%s\","
+            "\"price\":%.5f,\"exitPrice\":%.5f,\"pnl\":%.4f,\"net_pnl\":%.4f,"
+            "\"mfe\":%.4f,\"mae\":%.4f,"
+            "\"entryTs\":%lld,\"exitTs\":%lld,"
+            "\"exitReason\":\"%s\",\"regime\":\"%s\","
+            "\"spread_at_entry\":%.5f,\"latency_ms\":%.1f}",
+            symbol, side, engine,
+            entry_px, exit_px, pnl, pnl,
+            mfe, mae,
+            entry_ts, exit_ts,
+            exit_reason, regime,
+            spread, lat);
+        out += row;
+    }
+    out += ']';
+    return out;
+}
+
+// ?????????????????????????????????????????????????????????????????????????????
 // buildDailySummaryJson -- aggregates today's trades from CSV into a summary.
 // Returns net P&L, trade count, win rate, by-engine breakdown.
 // ?????????????????????????????????????????????????????????????????????????????
@@ -1045,6 +1141,7 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/telemetry"))        { ct = "application/json"; body = buildTelemetryJson(snap_); }
         else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
         else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(); }
+        else if (strstr(buf, "GET /api/shadow_trades")) { ct = "application/json"; body = buildShadowTradesJson(); }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
             // Clear in-memory ledger + rename today's CSV so it won't be re-read.
