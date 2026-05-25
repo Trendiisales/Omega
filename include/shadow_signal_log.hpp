@@ -28,7 +28,9 @@
 #include <iomanip>
 #include <string>
 
-namespace omega {
+// NOTE: declared at GLOBAL scope (matching g_shadow_csv in omega_runtime.hpp),
+// NOT inside namespace omega. omega_main.hpp and other callers reference
+// these unqualified.
 
 static std::ofstream g_shadow_signal_csv;
 static std::mutex    g_shadow_signal_csv_mtx;
@@ -65,5 +67,3 @@ static inline void write_shadow_signal_row(
         << (reason ? reason : "") << '\n';
     g_shadow_signal_csv.flush();
 }
-
-} // namespace omega
