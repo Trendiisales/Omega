@@ -756,6 +756,14 @@ static omega::UsdjpyAsianOpenEngine           g_usdjpy_asian_open;
 static omega::GbpusdLondonOpenEngine          g_gbpusd_london_open;
 static omega::AudusdSydneyOpenEngine          g_audusd_sydney_open;
 static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
+// 2026-05-25 AtrMeanRevGrid -- forex mean-reversion grid (CRTP, see AtrMeanRevGridEngine.hpp).
+// Ported from the AtrMeanRevGrid.mq5 MT5 EA. shadow_mode=true until backtest validates.
+// Each instance: own indicator buffers + grid state. Seed via H1 CSV in engine_init.hpp.
+#include "AtrMeanRevGridEngine.hpp"
+static omega::AtrMeanRevGridEngine<omega::AmrTraits_EURUSD> g_amr_eurusd;
+static omega::AtrMeanRevGridEngine<omega::AmrTraits_GBPUSD> g_amr_gbpusd;
+static omega::AtrMeanRevGridEngine<omega::AmrTraits_AUDUSD> g_amr_audusd;
+static omega::AtrMeanRevGridEngine<omega::AmrTraits_NZDUSD> g_amr_nzdusd;
 static omega::XauusdFvgEngine                 g_xauusd_fvg;
 // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + aggressive trail
 #include "GoldScalpPyramidEngine.hpp"

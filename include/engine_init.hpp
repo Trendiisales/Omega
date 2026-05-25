@@ -1575,6 +1575,43 @@ static void init_engines(const std::string& cfg_path)
                g_gbpusd_turtle_h4.p.sl_atr_mult, g_gbpusd_turtle_h4.p.tp_atr_mult,
                g_gbpusd_turtle_h4.p.hold_max_h4, (int)g_gbpusd_turtle_h4.p.long_only);
 
+        // 2026-05-25 AtrMeanRevGrid -- forex mean-reversion grid (CRTP).
+        // Strategy: ATR-normalized entry + SL, RSI confirmation, vol-adaptive
+        // add distance, unified trailing SL anchored to slow EMA, configurable
+        // TP modes. Shadow only until backtest validates expectancy.
+        //
+        // Wiring still required (next session):
+        //   - on_h1_bar() dispatch from quote_loop.hpp / OHLCBarEngine.hpp at
+        //     H1 bar boundaries.
+        //   - on_tick() dispatch from tick_fx.hpp.
+        //   - Backtest harness backtest/amr_bt/AmrBacktest.cpp (port pattern
+        //     from backtest/eurusd_bt/EurusdLondonOpenBacktest.cpp).
+        {
+            const char* warmup_eur = "phase1/signal_discovery/warmup_EURUSD_H1.csv";
+            const char* warmup_gbp = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
+
+            g_amr_eurusd.enabled     = false;  // gated off until wiring + backtest
+            g_amr_eurusd.shadow_mode = true;
+            g_amr_eurusd.on_close_cb = write_shadow_csv;
+            g_amr_eurusd.seed_from_h1_csv(warmup_eur);
+
+            g_amr_gbpusd.enabled     = false;
+            g_amr_gbpusd.shadow_mode = true;
+            g_amr_gbpusd.on_close_cb = write_shadow_csv;
+            g_amr_gbpusd.seed_from_h1_csv(warmup_gbp);
+
+            // AUDUSD / NZDUSD: structure in place, awaiting H1 warmup CSVs.
+            g_amr_audusd.enabled     = false;
+            g_amr_audusd.shadow_mode = true;
+            g_amr_audusd.on_close_cb = write_shadow_csv;
+
+            g_amr_nzdusd.enabled     = false;
+            g_amr_nzdusd.shadow_mode = true;
+            g_amr_nzdusd.on_close_cb = write_shadow_csv;
+
+            std::printf("[OMEGA-INIT] AtrMeanRevGrid: 4 instances configured (EUR/GBP/AUD/NZD), all gated off pending wiring + backtest\n");
+        }
+
         // AUD/NZD/JPY: structure in place, awaiting H1 warmup CSVs.
         // Set enabled=true + add warmup_csv_path once
         //   phase1/signal_discovery/warmup_AUDUSD_H1.csv
