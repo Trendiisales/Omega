@@ -1120,6 +1120,39 @@ void OmegaTelemetryServer::run(int port)
             }
             if (body.empty()) { status = 404; body = "no shadow data yet"; ct = "text/plain"; }
         }
+        else if (strstr(buf, "GET /api/health")) {
+            // Serve the latest healthcheck snapshot from tools/healthcheck.ps1.
+            // Returns the raw JSON; the GUI parses overall + checks. If the
+            // snapshot is missing or stale (>10m), we synthesize a FAIL so the
+            // operator is notified rather than seeing a silently-stale "OK".
+            ct = "application/json";
+            const char* paths[] = {
+                "C:\\Omega\\logs\\health\\status.json",
+                "logs/health/status.json",
+                "../logs/health/status.json",
+                nullptr
+            };
+            for (int pi = 0; paths[pi]; ++pi) {
+                FILE* f = fopen(paths[pi], "rb");
+                if (!f) continue;
+                fseek(f, 0, SEEK_END);
+                long sz = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                if (sz > 0) {
+                    body.resize(static_cast<size_t>(sz));
+                    fread(&body[0], 1, static_cast<size_t>(sz), f);
+                }
+                fclose(f);
+                if (!body.empty()) break;
+            }
+            if (body.empty()) {
+                body = "{\"overall\":\"FAIL\",\"fail_count\":1,\"warn_count\":0,"
+                       "\"checks\":[{\"name\":\"healthcheck.snapshot_present\","
+                       "\"severity\":\"FAIL\",\"status\":\"missing\","
+                       "\"detail\":\"logs/health/status.json not found. Schedule "
+                       "tools/healthcheck.ps1 to run every 2 min as SYSTEM.\"}]}";
+            }
+        }
         else if (strstr(buf, "GET /version"))     {
             ct = "application/json";
             char vbuf[256];

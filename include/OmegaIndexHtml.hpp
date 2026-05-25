@@ -336,7 +336,13 @@ R"OMEGA2(
     <span class="badge" id="fixQuoteHdr" style="color:var(--red)">Q:--</span>
     <span class="badge" id="ctL2Badge" style="color:var(--t2);font-family:'IBM Plex Mono',monospace;font-size:10px;">L2 ?</span>
     <span id="buildBadge" class="badge" style="color:var(--amber);font-size:9px;font-weight:700;letter-spacing:1.5px" title="Git hash -- built version">? <span id="buildVersion">...</span></span>
+    <span id="healthBadge" class="badge" style="color:var(--t2);cursor:pointer" title="Click for details" onclick="document.getElementById('healthDetail').style.display=document.getElementById('healthDetail').style.display==='block'?'none':'block'">HEALTH ?</span>
     <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--t2)" id="clock">--:--:-- UTC</span>
+  </div>
+  <!-- Health detail dropdown (hidden until badge click) -->
+  <div id="healthDetail" style="display:none;position:absolute;right:10px;top:90px;background:var(--bg);border:1px solid var(--red);border-radius:6px;padding:10px 14px;max-width:520px;font-size:11px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.6);">
+    <div style="font-weight:700;color:var(--red);margin-bottom:6px;letter-spacing:1px;">SYSTEM HEALTH</div>
+    <ul id="healthList" style="margin:0;padding-left:18px;list-style:disc;"></ul>
   </div>
 </header>)OMEGA2"
 R"OMEGA3(
@@ -2147,6 +2153,64 @@ connectWS();
 setInterval(httpPoll,1000);
 setInterval(pollTrades,5000);
 pollTrades();
+
+// ---- HEALTH MONITOR ---------------------------------------------------
+// Polls /api/health every 15s. Reads logs/health/status.json written by
+// tools/healthcheck.ps1 (scheduled task, every 2 min). On transition into
+// FAIL: beep (Web Audio) + desktop notification + auto-open detail panel.
+let __lastHealth=null;
+function __healthBeep(){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.value=880;g.gain.value=0.25;
+    o.connect(g);g.connect(ctx.destination);o.start();
+    o.frequency.setValueAtTime(880,ctx.currentTime);
+    o.frequency.setValueAtTime(660,ctx.currentTime+0.18);
+    o.frequency.setValueAtTime(880,ctx.currentTime+0.36);
+    setTimeout(()=>{o.stop();ctx.close();},700);
+  }catch(e){}
+}
+function __healthNotify(title,body){
+  if(!('Notification' in window)) return;
+  if(Notification.permission==='granted') new Notification(title,{body});
+  else if(Notification.permission!=='denied') Notification.requestPermission();
+}
+document.addEventListener('click',()=>{
+  if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+},{once:true});
+async function pollHealth(){
+  const badge=document.getElementById('healthBadge');
+  const list =document.getElementById('healthList');
+  const panel=document.getElementById('healthDetail');
+  if(!badge||!list||!panel) return;
+  let h;
+  try{ h=await fetch('/api/health',{cache:'no-store'}).then(r=>r.json()); }
+  catch(e){ h={overall:'FAIL',fail_count:1,warn_count:0,checks:[{name:'gui.fetch_health',severity:'FAIL',status:'error',detail:String(e)}]}; }
+  const o=(h.overall||'FAIL').toUpperCase();
+  const fc=h.fail_count||0, wc=h.warn_count||0;
+  if(o==='OK'){ badge.style.color='var(--green)'; badge.textContent='HEALTH OK'; panel.style.borderColor='var(--green)'; }
+  else if(o==='WARN'){ badge.style.color='var(--amber)'; badge.textContent='HEALTH '+wc+'W'; panel.style.borderColor='var(--amber)'; }
+  else { badge.style.color='var(--red)'; badge.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); panel.style.borderColor='var(--red)'; }
+  list.innerHTML='';
+  for(const c of (h.checks||[])){
+    const li=document.createElement('li');
+    li.style.color = c.severity==='FAIL'?'var(--red)' : (c.severity==='WARN'?'var(--amber)':'var(--t2)');
+    li.style.margin='2px 0';
+    li.textContent='['+c.severity+'] '+c.name+': '+c.detail;
+    list.appendChild(li);
+  }
+  if(o==='FAIL' && __lastHealth!=='FAIL'){
+    __healthBeep();
+    const fn=(h.checks||[]).filter(c=>c.severity==='FAIL').map(c=>c.name).join(', ');
+    __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s): '+fn);
+    panel.style.display='block';
+  }
+  __lastHealth=o;
+}
+pollHealth();
+setInterval(pollHealth,15000);
+// ----------------------------------------------------------------------
 </script>
 </body>
 </html>
