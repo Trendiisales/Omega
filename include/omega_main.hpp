@@ -737,6 +737,15 @@ int main(int argc, char* argv[])
                 g_bars_nq.m1   .save_indicators(bs + "/bars_nq_m1.dat");
                 // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
                 g_minimal_h4_us30.save_state(bs + "/bars_us30_h4.dat");
+                // AtrMeanRevGrid bar-deque persistence (S37e 2026-05-26):
+                // eliminates per-restart warmup. State files survive reboot ->
+                // engine boots warm + immediately ready for signals.
+                const std::string sr = state_root_dir();
+                g_amr_eurusd.save_state(sr + "/amr_eurusd.dat");
+                g_amr_gbpusd.save_state(sr + "/amr_gbpusd.dat");
+                g_amr_us500.save_state (sr + "/amr_us500.dat");
+                g_amr_nas100.save_state(sr + "/amr_nas100.dat");
+                g_amr_ger40.save_state (sr + "/amr_ger40.dat");
                 printf("[BAR-SAVE] Periodic save complete (every 10min)\n");
                 fflush(stdout);
             }

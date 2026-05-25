@@ -1655,15 +1655,24 @@ static void init_engines(const std::string& cfg_path)
             //   USDCAD best = H1  X=10 -> 22 trd, WR 41%, PF 1.25, +$1.65,  DD $10.85 (marginal)
             // Portfolio Sharpe-ann 1.24 / PF 1.42 / Recovery 1.64 (0.01 lot, 1.2yr avg).
             // EURUSD trait uses BAR_INTERVAL_MS=900000 + X=14 (see AtrMeanRevGridEngine.hpp).
+            // 2026-05-26 S37e: state-first persistence. Try .dat first
+            // (zero-warmup), fall back to CSV seed if .dat missing/stale.
+            const std::string state_dir = state_root_dir();
+            auto amr_boot = [&](auto& eng, const std::string& sym_tag,
+                                const std::string& csv_path) {
+                eng.shadow_mode = true;
+                eng.on_close_cb = write_shadow_csv;
+                const std::string state_path = state_dir + "/amr_" + sym_tag + ".dat";
+                if (!eng.load_state(state_path)) {
+                    eng.seed_from_h1_csv(csv_path);
+                }
+            };
+
             g_amr_eurusd.enabled     = true;  // M15 X=14, PF 1.80
-            g_amr_eurusd.shadow_mode = true;
-            g_amr_eurusd.on_close_cb = write_shadow_csv;
-            g_amr_eurusd.seed_from_h1_csv(warmup_eur);
+            amr_boot(g_amr_eurusd, "eurusd", warmup_eur);
 
             g_amr_gbpusd.enabled     = true;  // H1 X=10 (defaults), PF 2.11
-            g_amr_gbpusd.shadow_mode = true;
-            g_amr_gbpusd.on_close_cb = write_shadow_csv;
-            g_amr_gbpusd.seed_from_h1_csv(warmup_gbp);
+            amr_boot(g_amr_gbpusd, "gbpusd", warmup_gbp);
 
             g_amr_audusd.enabled     = false; // marginal PF 1.34; awaiting deep tune
             g_amr_audusd.shadow_mode = true;
@@ -1687,19 +1696,13 @@ static void init_engines(const std::string& cfg_path)
             const char* warmup_ger40  = "phase1/signal_discovery/warmup_GER40_H1.csv";
 
             g_amr_us500.enabled      = true;   // H1 X=8 ATR_FROM_WAP
-            g_amr_us500.shadow_mode  = true;
-            g_amr_us500.on_close_cb  = write_shadow_csv;
-            g_amr_us500.seed_from_h1_csv(warmup_us500);
+            amr_boot(g_amr_us500, "us500", warmup_us500);
 
             g_amr_nas100.enabled     = true;   // M15 X=14 RSI_OR_MA
-            g_amr_nas100.shadow_mode = true;
-            g_amr_nas100.on_close_cb = write_shadow_csv;
-            g_amr_nas100.seed_from_h1_csv(warmup_nas100);
+            amr_boot(g_amr_nas100, "nas100", warmup_nas100);
 
             g_amr_ger40.enabled      = true;   // M15 X=14 ATR_FROM_WAP
-            g_amr_ger40.shadow_mode  = true;
-            g_amr_ger40.on_close_cb  = write_shadow_csv;
-            g_amr_ger40.seed_from_h1_csv(warmup_ger40);
+            amr_boot(g_amr_ger40, "ger40", warmup_ger40);
 
             std::printf("[OMEGA-INIT] AtrMeanRevGrid INDEX: US500(H1,X=8)+NAS100(M15,X=14)+GER40(M15,X=14) enabled (shadow)\n");
         }
