@@ -152,20 +152,59 @@ if ($freeGB -lt 5) {
     Add-Check "disk.free_gb" "OK" "ok" "$freeGB GB free"
 }
 
-# ---------- 8. Quote rate from latest.log (last 60s) ----------
+# ---------- 8. Quote rate from latest.log (last 2000 lines) ----------
+# 2026-05-25 first-version regex `tick|on_tick|md_update` was a false-positive
+# generator -- the engine actually logs `[TICK] SYMBOL bid/ask` and `[GOLD-L2-LIVE]`
+# /`[GOLD-VOL]`. Match those literally (-SimpleMatch is per-pattern; use regex).
 try {
-    $cutoff = $now.AddSeconds(-60)
     $recent = Get-Content "$Root\logs\latest.log" -Tail 2000 -ErrorAction SilentlyContinue |
-              Select-String -Pattern "tick|on_tick|md_update" -SimpleMatch
+              Select-String -Pattern '\[TICK\]|\[GOLD-L2-LIVE\]|\[GOLD-VOL\]'
     $rate = if ($recent) { $recent.Count } else { 0 }
     if ($rate -lt 1) {
-        Add-Check "quote.recent_rate" "FAIL" "zero" "0 tick lines in last 2000 log lines"
+        Add-Check "quote.recent_rate" "FAIL" "zero" "0 tick/quote lines in last 2000 log lines (feed dead?)"
     } elseif ($rate -lt 20) {
-        Add-Check "quote.recent_rate" "WARN" "low" "$rate tick lines in last 2000 log lines"
+        Add-Check "quote.recent_rate" "WARN" "low" "$rate tick/quote lines in last 2000 log lines"
     } else {
-        Add-Check "quote.recent_rate" "OK" "ok" "$rate tick lines in last 2000 log lines"
+        Add-Check "quote.recent_rate" "OK" "ok" "$rate tick/quote lines in last 2000 log lines"
     }
 } catch { Add-Check "quote.recent_rate" "WARN" "error" $_.Exception.Message }
+
+# ---------- 9. Supervisor signal liveness (NEW 2026-05-25) ----------
+# Counts supervisor decision changes in the last 2000 log lines. The 2026-05-25
+# silent-loss episode was the trigger -- supervisor was firing but downstream
+# (omega_shadow_signals.csv) wasn't recording. Now that the writer exists, we
+# can also assert the supervisor itself is alive (regardless of the CSV writer).
+try {
+    $sup = Get-Content "$Root\logs\latest.log" -Tail 2000 -ErrorAction SilentlyContinue |
+           Select-String -Pattern '\[SUPERVISOR-'
+    $supn = if ($sup) { $sup.Count } else { 0 }
+    if ($supn -lt 1) {
+        Add-Check "supervisor.recent_decisions" "FAIL" "zero" "No supervisor decisions in last 2000 log lines"
+    } elseif ($supn -lt 5) {
+        Add-Check "supervisor.recent_decisions" "WARN" "low" "$supn supervisor decisions in last 2000 log lines"
+    } else {
+        Add-Check "supervisor.recent_decisions" "OK" "ok" "$supn supervisor decisions in last 2000 log lines"
+    }
+} catch { Add-Check "supervisor.recent_decisions" "WARN" "error" $_.Exception.Message }
+
+# ---------- 10. Gold bracket arm liveness ----------
+# brk_hi=0.00 brk_lo=0.00 range=0.00 indefinitely means engine is permanently
+# IDLE -- either correct (QUIET_COMPRESSION) or a config mismatch. Warn if the
+# last 200 [GOLD-BRK-DIAG] lines all show range<eff_min.
+try {
+    $diag = Get-Content "$Root\logs\latest.log" -Tail 2000 -ErrorAction SilentlyContinue |
+            Select-String -Pattern '\[GOLD-BRK-DIAG\]' | Select-Object -Last 200
+    if ($diag) {
+        $nonZero = @($diag | Where-Object { $_.Line -match 'range=([0-9.]+)' -and [double]$matches[1] -gt 0 }).Count
+        if ($nonZero -eq 0) {
+            Add-Check "gold_bracket.range_alive" "WARN" "idle" "Last $($diag.Count) GOLD-BRK-DIAG lines show range=0.00 (engine permanently IDLE; expected in QUIET_COMPRESSION, suspicious otherwise)"
+        } else {
+            Add-Check "gold_bracket.range_alive" "OK" "ok" "$nonZero of $($diag.Count) recent diags show non-zero range"
+        }
+    } else {
+        Add-Check "gold_bracket.range_alive" "WARN" "no_diag" "No [GOLD-BRK-DIAG] lines in last 2000 log lines"
+    }
+} catch { Add-Check "gold_bracket.range_alive" "WARN" "error" $_.Exception.Message }
 
 # ---------- Summary + write status.json (atomic) ----------
 $fails = @($checks | Where-Object { $_.severity -eq 'FAIL' })
