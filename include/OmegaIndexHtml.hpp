@@ -611,25 +611,6 @@ R"OMEGA5(
           </table>
         </div>
       </div>
-
-      <!-- SHADOW TRADES (audit-only, no broker fills) -->
-      <div class="trades-card" style="margin-top:10px;border:1px dashed rgba(160,140,255,0.35);background:rgba(60,40,120,0.04);">
-        <div class="card-hd" style="flex-shrink:0;">
-          <span class="dot" style="background:var(--purple,#a07cff)"></span>Shadow Trades
-          <span style="color:var(--purple,#a07cff);font-size:10px;margin-left:6px;font-weight:700;letter-spacing:0.5px;">[AUDIT]</span>
-          <span id="shadowTradeCount" style="font-family:'IBM Plex Mono',monospace;color:var(--t2);margin-left:6px;font-size:11px;"></span>
-          <span style="color:var(--t2);font-size:10px;margin-left:8px;">engines running shadow_mode=true (no broker fills)</span>
-        </div>
-        <div class="trades-scroll">
-          <table>
-            <thead><tr>
-              <th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
-              <th>Held</th><th>Result</th><th>Engine / Reason</th><th>PnL (raw)</th>
-            </tr></thead>
-            <tbody id="shadowTradesBody"><tr><td colspan="9" class="no-data">No shadow trades yet</td></tr></tbody>
-          </table>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -1084,12 +1065,19 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
   if(askEl&&safe(ask)>0)askEl.textContent=safe(ask).toFixed(d);
   // Session HI / LO flanking the bid|ask. Source = bracket data (today's range
   // high/low computed by the bracket engine for this symbol). Falls back to
-  // hi/lo args (compression-window range). Shows '--' when neither is set.
+  // hi/lo args (compression-window range). Hidden when neither is set so the
+  // bid|ask centring stays clean.
   const hiEl=document.getElementById(cellId+'Hi'),loEl=document.getElementById(cellId+'Lo');
   const showHi=bktActive?safe(bkt.hi):safe(hi);
   const showLo=bktActive?safe(bkt.lo):safe(lo);
-  if(hiEl){hiEl.textContent=showHi>0?'H '+showHi.toFixed(d):'--';}
-  if(loEl){loEl.textContent=showLo>0?'L '+showLo.toFixed(d):'--';}
+  if(hiEl){
+    if(showHi>0){hiEl.textContent='H '+showHi.toFixed(d);hiEl.style.display='inline';}
+    else{hiEl.style.display='none';}
+  }
+  if(loEl){
+    if(showLo>0){loEl.textContent='L '+showLo.toFixed(d);loEl.style.display='inline';}
+    else{loEl.style.display='none';}
+  }
 
   // Proximity bar -- how close is price to breaking the compression boundary?
   // p=0(FLAT): empty. p=1(COMP): fill = how tight compression is (rv/bv inverted).
@@ -1222,22 +1210,24 @@ function renderTrades(trades){
   // Newest first: reverse so latest trade is always at top -- no scroll needed
   const rows=[...trades].reverse().slice(0,60).map(t=>{
     const isOpen=!t.exitReason||t.exitReason==='',net=safe(t.net_pnl),gross=safe(t.pnl),slip=safe(t.slippage_entry)+safe(t.slippage_exit);
-    const win=net>0,loss=net<0,sc=t.side==='LONG'?'var(--green)':'var(--red)';
-    const reason=t.exitReason||'',result=isOpen?'\u25cf':reason==='TP_HIT'?'\u2713TP':reason==='SL_HIT'?'\u2717SL':reason==='TRAIL_HIT'||reason==='TRAIL_SL'?'\u2713TR':reason==='BE_HIT'?'\u2713BE':reason==='TIMEOUT'||reason==='MAX_HOLD_TIMEOUT'?'\u2717TO':reason==='PARTIAL_1R'||reason==='PARTIAL_TP'?'$P1':reason==='PARTIAL_2R'||reason==='PARTIAL_SL'?'$P2':'\u2713FC';
+    const isShadow=t.shadow===true;
+    const win=net>0,loss=net<0,sc=t.side==='LONG'||t.side==='BUY'?'var(--green)':'var(--red)';
+    const reason=t.exitReason||'',result=isOpen?'\u25cf':reason==='TP_HIT'?'\u2713TP':reason==='SL_HIT'?'\u2717SL':reason==='sl_hit'?'\u2717SL':reason==='wap_tp_hit'?'\u2713WAP':reason==='rsi_or_slow_ma'?'\u2713RSI':reason==='TRAIL_HIT'||reason==='TRAIL_SL'?'\u2713TR':reason==='BE_HIT'?'\u2713BE':reason==='TIMEOUT'||reason==='MAX_HOLD_TIMEOUT'?'\u2717TO':reason==='PARTIAL_1R'||reason==='PARTIAL_TP'?'$P1':reason==='PARTIAL_2R'||reason==='PARTIAL_SL'?'$P2':'\u2713FC';
     const rc=isOpen?'var(--blue)':win?'var(--green)':loss?'var(--red)':'var(--t2)';
     const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
     let heldStr='--';
     if(isOpen&&safe(t.entryTs)>0){const s=now-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
     else if(safe(t.entryTs)>0&&safe(t.exitTs)>0){const s=safe(t.exitTs)-safe(t.entryTs);heldStr=s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';}
-    const rowBg=isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'';
-    const grossD=isOpen?'':(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2);
-    const slipD=isOpen?'':slip>0?'-$'+slip.toFixed(2):'--';
-    const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':(net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2);
-    const tReg=t.regime||'';const tEng=t.engine||'';
-    const regCol=tReg.includes('EXPANSION')||tReg.includes('TREND')?'var(--green)':tReg.includes('QUIET')?'var(--amber)':'var(--t2)';
-    const engName=(t.engine||'').replace('Engine','').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG');
-    const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_SL','TRAIL').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('MAX_HOLD_TIMEOUT','T/O').replace('BE_HIT','BE').replace('IMM_REVERSAL','IMM-REV').replace('PARTIAL_TP','P-TP').replace('PARTIAL_SL','P-SL').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('STAGNATION','STAG');
-    const engReasonCell=`<span style="color:var(--cyan);font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
+    // Shadow rows: subtle purple tint over the win/loss color so they stay distinguishable
+    const rowBg=isShadow?(win?'rgba(160,140,255,0.08)':loss?'rgba(180,100,180,0.08)':'rgba(160,140,255,0.04)')
+                       :(isOpen?'rgba(46,168,255,0.06)':win?'rgba(0,217,126,0.05)':loss?'rgba(255,51,85,0.05)':'');
+    const grossD=isOpen?'':isShadow?'<span style="color:var(--t3);font-size:10px">shadow</span>':(gross>=0?'+':'-')+'$'+Math.abs(gross).toFixed(2);
+    const slipD=isOpen?'':isShadow?'--':slip>0?'-$'+slip.toFixed(2):'--';
+    const netD=isOpen?'<span style="color:var(--t2);font-size:10px">live</span>':isShadow?((net>=0?'+':'-')+Math.abs(net).toFixed(4)+'<span style="color:var(--t3);font-size:9px;margin-left:3px">raw</span>'):((net>=0?'+':'-')+'$'+Math.abs(net).toFixed(2));
+    const engName=(t.engine||'').replace('Engine','').replace('WickRejection','WickRej').replace('NoiseBandMomentum','NBM').replace('GoldSilverLeadLag','LeadLag').replace('H1Swing','H1-SW').replace('H4Regime','H4-REG').replace('AtrMeanRevGrid','AMR');
+    const exitRsnShort=(t.exitReason||'').replace('FORCE_CLOSE','FC').replace('TRAIL_SL','TRAIL').replace('TRAIL_HIT','TRAIL').replace('TP_HIT','TP').replace('SL_HIT','SL').replace('TIMEOUT','T/O').replace('MAX_HOLD_TIMEOUT','T/O').replace('BE_HIT','BE').replace('IMM_REVERSAL','IMM-REV').replace('PARTIAL_TP','P-TP').replace('PARTIAL_SL','P-SL').replace('PARTIAL_1R','P1-BANK').replace('PARTIAL_2R','P2-BANK').replace('STAGNATION','STAG').replace('wap_tp_hit','WAP-TP').replace('rsi_or_slow_ma','RSI/MA').replace('sl_hit','SL');
+    const shadowBadge=isShadow?'<span style="color:var(--purple,#a07cff);font-size:9px;font-weight:700;margin-right:3px;padding:0 3px;border:1px solid rgba(160,140,255,0.5);border-radius:2px;">S</span>':'';
+    const engReasonCell=`${shadowBadge}<span style="color:${isShadow?'var(--purple,#a07cff)':'var(--cyan)'};font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
       <td style="color:var(--t2);font-size:11px">${fmtUTC(safe(t.entryTs))}</td>
       <td style="color:var(--blue);font-weight:700;font-size:13px">${t.symbol||'--'}</td>
@@ -2142,88 +2132,33 @@ function clearLedger(){
     .catch(e=>alert('Request failed: '+e.message));
 }
 
-// pollTrades -- reads /api/history which serves from the disk CSV file.
-// This survives restarts: yesterday's +$57 shows up immediately on reload.
-// Falls back to /api/trades (in-memory) only if /api/history fails.
+// pollTrades -- reads /api/history (broker trades from disk CSV) AND
+// /api/shadow_trades (audit-only trades from engines with shadow_mode=true).
+// Both go into the SAME Recent Trades table, distinguished by t.shadow=true
+// (rendered with purple tint + [S] badge by renderTrades).
 function pollTrades(){
-  fetch('/api/history')
-    .then(r=>r.json())
-    .then(trades=>{
-      renderTrades(trades);
-      // Also update daily summary banner from /api/daily
-      fetch('/api/daily')
-        .then(r=>r.json())
-        .then(s=>{
-          const el=document.getElementById('tradeCount');
-          if(el&&s){
-            const pnl=s.net_pnl||0;
-            const n=s.total_trades||0;
-            if(n>0){
-              el.textContent=n+' CLOSED | '+s.wins+'W/'+(n-s.wins)+'L | '+(pnl>=0?'+':'')+pnl.toFixed(2);
-            } else {
-              el.textContent='0 CLOSED | $0.00 today';
-            }
-          }
-        })
-        .catch(()=>{});
-    })
-    .catch(()=>{
-      // Fallback to memory
-      fetch('/api/trades').then(r=>r.json()).then(renderTrades).catch(()=>{});
-    });
-
-  // Shadow trades (audit-only, engines with shadow_mode=true)
-  fetch('/api/shadow_trades').then(r=>r.json()).then(renderShadowTrades).catch(()=>{});
-}
-
-// renderShadowTrades -- audit-only table for engines running shadow_mode=true.
-// Visually distinct (purple accent, dashed border) to make clear these are NOT
-// broker fills and not counted in daily P&L. Columns mirror Recent Trades minus
-// Gross/Slip (shadow has no slippage modelled at write time -- pnl is raw price
-// * lots in instrument-quote currency, not USD).
-function renderShadowTrades(trades){
-  const el=document.getElementById('shadowTradesBody');
-  const cE=document.getElementById('shadowTradeCount');
-  if(!el) return;
-  if(!trades||trades.length===0){
-    el.innerHTML='<tr><td colspan="9" class="no-data">No shadow trades yet</td></tr>';
-    if(cE) cE.textContent='';
-    return;
-  }
-  const closed=trades.filter(t=>t.exitReason&&t.exitReason!=='');
-  const wins=closed.filter(t=>safe(t.net_pnl)>0).length;
-  const losses=closed.filter(t=>safe(t.net_pnl)<0).length;
-  const totalNet=closed.reduce((s,t)=>s+safe(t.net_pnl),0);
-  if(cE) cE.textContent=closed.length+' closed → '+wins+'W/'+losses+'L → '+(totalNet>=0?'+':'-')+Math.abs(totalNet).toFixed(4)+' (raw)';
-  const rows=[...trades].reverse().slice(0,40).map(t=>{
-    const net=safe(t.net_pnl);
-    const win=net>0,loss=net<0;
-    const sc=t.side==='LONG'||t.side==='BUY'?'var(--green)':'var(--red)';
-    const reason=t.exitReason||'';
-    const result=reason==='wap_tp_hit'||reason==='rsi_or_slow_ma'?'✓'+reason.split('_')[0]:reason==='sl_hit'?'✗SL':reason;
-    const rc=win?'var(--green)':loss?'var(--red)':'var(--t2)';
-    const netC=win?'var(--green)':loss?'var(--red)':'var(--t2)';
-    let heldStr='--';
-    if(safe(t.entryTs)>0&&safe(t.exitTs)>0){
-      const s=safe(t.exitTs)-safe(t.entryTs);
-      heldStr=s>=3600?Math.floor(s/3600)+'h'+Math.floor((s%3600)/60)+'m':s>=60?Math.floor(s/60)+'m'+(s%60)+'s':s+'s';
-    }
-    const rowBg=win?'rgba(160,140,255,0.05)':loss?'rgba(255,80,120,0.05)':'rgba(160,140,255,0.03)';
-    const engName=(t.engine||'').replace('Engine','').replace('AtrMeanRevGrid','AMR');
-    const netD=(net>=0?'+':'-')+Math.abs(net).toFixed(4);
-    return `<tr style="background:${rowBg}">
-      <td style="color:var(--t2);font-size:11px">${fmtUTC(safe(t.entryTs))}</td>
-      <td style="color:var(--purple,#a07cff);font-weight:700;font-size:13px">${t.symbol||'--'}</td>
-      <td style="color:${sc};font-weight:700">${t.side||'--'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:12px">${safe(t.price)>0?safe(t.price).toFixed(5):'--'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:var(--t2);font-size:12px">${safe(t.exitPrice)>0?safe(t.exitPrice).toFixed(5):'--'}</td>
-      <td style="color:var(--t2);font-size:11px">${heldStr}</td>
-      <td style="font-weight:700;color:${rc};font-size:12px">${result}</td>
-      <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:var(--purple,#a07cff);font-size:10px">${engName}</span></td>
-      <td style="font-family:'IBM Plex Mono',monospace;color:${netC};font-weight:900;font-size:13px">${netD}</td>
-    </tr>`;
-  }).join('');
-  el.innerHTML=rows;
+  const realP=fetch('/api/history').then(r=>r.json()).catch(()=>[]);
+  const shadP=fetch('/api/shadow_trades').then(r=>r.json()).catch(()=>[]);
+  Promise.all([realP, shadP]).then(([real, shad])=>{
+    const merged=[...real, ...shad].sort((a,b)=>safe(a.entryTs)-safe(b.entryTs));
+    renderTrades(merged);
+    // Daily summary banner from /api/daily (counts BROKER trades only)
+    fetch('/api/daily').then(r=>r.json()).then(s=>{
+      const el=document.getElementById('tradeCount');
+      if(el&&s){
+        const pnl=s.net_pnl||0;
+        const n=s.total_trades||0;
+        if(n>0){
+          el.textContent=n+' CLOSED | '+s.wins+'W/'+(n-s.wins)+'L | '+(pnl>=0?'+':'')+pnl.toFixed(2);
+        } else {
+          el.textContent='0 CLOSED | $0.00 today';
+        }
+      }
+    }).catch(()=>{});
+  }).catch(()=>{
+    // Last-ditch fallback to in-memory
+    fetch('/api/trades').then(r=>r.json()).then(renderTrades).catch(()=>{});
+  });
 }
 
 
