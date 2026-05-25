@@ -205,9 +205,10 @@ def main():
     ap.add_argument('--expiry', default=None)
     ap.add_argument('--qty', type=int, default=1)
     ap.add_argument('--client-id', type=int, default=42)
+    ap.add_argument('--dry-run', action='store_true', help='resolve contract + fetch price, skip order placement')
     args = ap.parse_args()
 
-    log.info(f'=== SUNDAY BRACKET — instrument={args.instrument} qty={args.qty} port={args.port} ===')
+    log.info(f'=== SUNDAY BRACKET — instrument={args.instrument} qty={args.qty} port={args.port} dry={args.dry_run} ===')
 
     ib = IB()
     try:
@@ -223,6 +224,10 @@ def main():
 
     open_px = get_current_price(ib, contract)
     log.info(f'Reference open price: {open_px}')
+
+    if args.dry_run:
+        log.info('DRY RUN — skipping order placement')
+        ib.disconnect(); sys.exit(0)
 
     oca, buy_trade, sell_trade = place_brackets(ib, contract, args.qty, open_px)
 
