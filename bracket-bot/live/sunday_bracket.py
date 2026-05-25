@@ -204,7 +204,7 @@ def main():
     ap.add_argument('--instrument', default='MGC', choices=['MGC','GC','XAU','XAUUSD'])
     ap.add_argument('--expiry', default=None)
     ap.add_argument('--qty', type=int, default=1)
-    ap.add_argument('--client-id', type=int, default=42)
+    ap.add_argument('--client-id', type=int, default=102, help='avoid 42 (ibkr_dom_bridge) and 100 (daily_bracket)')
     ap.add_argument('--dry-run', action='store_true', help='resolve contract + fetch price, skip order placement')
     args = ap.parse_args()
 
