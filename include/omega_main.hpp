@@ -361,6 +361,31 @@ int main(int argc, char* argv[])
                         "hold_sec,exit_reason,spread_at_entry,latency_ms,regime\n";
     std::cout << "[OMEGA] Shadow CSV: " << shadow_csv_path << "\n";
 
+    // 2026-05-26: BOOT WRITE-TEST. Prove the stream actually writes to disk
+    // before the engine accepts ticks. Without this, a silently-failed open
+    // (or write-permission revocation) goes undetected for weeks. If this
+    // write doesn't land + flush + bump mtime, the bug surfaces immediately.
+    // The boot-test row is harmless: symbol=__BOOT__, side=HEARTBEAT, no PnL.
+    {
+        const std::int64_t boot_ts = std::time(nullptr);
+        g_shadow_csv << boot_ts << ",__BOOT__,HEARTBEAT,boot_writetest,0,0,0,0,0,0,"
+                        "boot_writetest,0,0,boot\n";
+        g_shadow_csv.flush();
+        // Verify mtime moved by re-statting -- if filesystem buffering swallows
+        // the write, the operator sees the WARN immediately on next healthcheck.
+        std::ifstream verify(shadow_csv_path);
+        if (verify.good()) {
+            verify.seekg(0, std::ios::end);
+            const auto sz = verify.tellg();
+            std::cout << "[OMEGA] Shadow CSV write-test: OK ("
+                      << static_cast<long long>(sz) << " bytes after boot row)\n";
+        } else {
+            std::cerr << "[OMEGA-FATAL] Shadow CSV write-test failed -- stream open but unreadable: "
+                      << shadow_csv_path << "\n";
+            return 1;
+        }
+    }
+
     // S25 2026-05-25 -- signal-level audit. Open omega_shadow_signals.csv
     // when enable_shadow_signal_audit=true. Treat open-failure as FATAL
     // for the same reason as the trade-level shadow CSV: silent loss of

@@ -739,6 +739,7 @@ function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;})OMEGA6"
 R"OMEGA7(
 
 function fmtUTC(ts){if(!ts)return '--';return new Date(ts*1000).toUTCString().slice(17,25);}
+function fmtUTCFull(ts){if(!ts)return '--';const d=new Date(ts*1000);const today=new Date();const sameDay=d.getUTCFullYear()===today.getUTCFullYear()&&d.getUTCMonth()===today.getUTCMonth()&&d.getUTCDate()===today.getUTCDate();if(sameDay)return d.toUTCString().slice(17,25);return d.toISOString().slice(5,16).replace('T',' ');}
 )OMEGA7"
 R"OMEGA8(
 
@@ -1229,7 +1230,7 @@ function renderTrades(trades){
     const shadowBadge=isShadow?'<span style="color:var(--purple,#a07cff);font-size:9px;font-weight:700;margin-right:3px;padding:0 3px;border:1px solid rgba(160,140,255,0.5);border-radius:2px;">S</span>':'';
     const engReasonCell=`${shadowBadge}<span style="color:${isShadow?'var(--purple,#a07cff)':'var(--cyan)'};font-size:10px">${engName}</span>${!isOpen&&exitRsnShort?`<span style="color:var(--t2);font-size:10px;margin-left:4px">${exitRsnShort}</span>`:''}`;
     return `<tr style="background:${rowBg}">
-      <td style="color:var(--t2);font-size:11px">${fmtUTC(safe(t.entryTs))}</td>
+      <td style="color:var(--t2);font-size:11px">${fmtUTCFull(safe(t.entryTs))}</td>
       <td style="color:var(--blue);font-weight:700;font-size:13px">${t.symbol||'--'}</td>
       <td style="color:${sc};font-weight:700">${t.side||'--'}</td>
       <td style="font-family:'IBM Plex Mono',monospace;font-size:12px">${safe(t.price)>0?safe(t.price).toFixed(2):'--'}</td>

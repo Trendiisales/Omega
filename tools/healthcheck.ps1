@@ -99,6 +99,25 @@ if (-not (Test-Path $todayLog)) {
 }
 
 # ---------- 4. Shadow CSVs (the silent-loss case from 2026-05-25) ----------
+# 2026-05-26 ESCALATION: omega_shadow.csv went silent on 2026-05-05 and the
+# previous WARN-at-60min check fired 15,000+ times over 3 weeks but the
+# WARN-amber-badge was not actioned. Lessons:
+#   1. STALE > 2h during market hours is FAIL not WARN.
+#   2. EMPTY file is FAIL regardless of file existence.
+#   3. We also stat the DAILY rotated shadow file -- cumulative can legitimately
+#      go stale on a server restart, but daily file MUST be fresh in-session.
+# Market hours = Sun 22:00 UTC -> Fri 22:00 UTC (FX 24x5). Outside that, stale
+# is tolerated (WARN only).
+$utcNow = $now.ToUniversalTime()
+$dayOfWeek = [int]$utcNow.DayOfWeek  # 0=Sun, 6=Sat
+$hourUtc   = $utcNow.Hour
+$isMarketHours = -not (
+    ($dayOfWeek -eq 6) -or                        # all Sat
+    ($dayOfWeek -eq 0 -and $hourUtc -lt 22) -or   # Sun before 22 UTC
+    ($dayOfWeek -eq 5 -and $hourUtc -ge 22)       # Fri after 22 UTC
+)
+$staleSeverity = if ($isMarketHours) { 'FAIL' } else { 'WARN' }
+
 $shadowFiles = @{
     'shadow.omega_shadow_csv'          = 'logs\shadow\omega_shadow.csv'
     'shadow.omega_shadow_signals_csv'  = 'logs\shadow\omega_shadow_signals.csv'
@@ -112,11 +131,48 @@ foreach ($kv in $shadowFiles.GetEnumerator()) {
         $ageMin = ($now - $f.LastWriteTime).TotalMinutes
         if ($f.Length -eq 0) {
             Add-Check $kv.Key "FAIL" "empty" "$p is 0 bytes"
+        } elseif ($ageMin -gt 120) {
+            # 2h+ stale: FAIL during market hours, WARN otherwise.
+            Add-Check $kv.Key $staleSeverity "stale" ("{0:N0}m since last write (market_hours={1})" -f $ageMin, $isMarketHours)
         } elseif ($ageMin -gt 60) {
             Add-Check $kv.Key "WARN" "stale" ("{0:N0}m since last write" -f $ageMin)
         } else {
             Add-Check $kv.Key "OK" "ok" ("{0} bytes, {1:N1}m old" -f $f.Length, $ageMin)
         }
+    }
+}
+
+# 4b. Daily rotated shadow trade file (omega_shadow_trades_YYYY-MM-DD.csv).
+# Cumulative file can lag; daily file is the authoritative real-time signal.
+$todayUtc = $utcNow.ToString('yyyy-MM-dd')
+$dailyShadowCandidates = @(
+    "logs\shadow\daily\omega_shadow_trades_$todayUtc.csv",
+    "logs\shadow\omega_shadow_trades_$todayUtc.csv",
+    "logs\daily\omega_shadow_trades_$todayUtc.csv"
+)
+$dailyFound = $false
+foreach ($rel in $dailyShadowCandidates) {
+    $p = Join-Path $Root $rel
+    if (Test-Path $p) {
+        $dailyFound = $true
+        $f = Get-Item $p
+        $ageMin = ($now - $f.LastWriteTime).TotalMinutes
+        if ($f.Length -eq 0) {
+            Add-Check "shadow.daily_today" "WARN" "empty" "Daily shadow trades file exists but is 0 bytes ($p)"
+        } elseif ($isMarketHours -and $ageMin -gt 240) {
+            Add-Check "shadow.daily_today" "WARN" "stale" ("Daily file {0:N0}m old during market hours: $p" -f $ageMin)
+        } else {
+            Add-Check "shadow.daily_today" "OK" "ok" ("{0} bytes, {1:N1}m old" -f $f.Length, $ageMin)
+        }
+        break
+    }
+}
+if (-not $dailyFound) {
+    # No daily file for today yet -- only fail during deep-session market hours
+    if ($isMarketHours -and $hourUtc -ge 8 -and $hourUtc -le 21) {
+        Add-Check "shadow.daily_today" "WARN" "missing" "No omega_shadow_trades_$todayUtc.csv in any expected location"
+    } else {
+        Add-Check "shadow.daily_today" "OK" "ok" "No daily file yet (off-hours or early-session)"
     }
 }
 
