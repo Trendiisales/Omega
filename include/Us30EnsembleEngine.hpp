@@ -180,15 +180,25 @@ struct Us30CellConfig {
     const char*    short_name;  // distinct tag in tr.engine
 };
 
+// Rebalanced 2026-05-26: stripped to single best risk-adjusted cell.
+// engine_sim.py per-cell metrics (bare SL/TP, $4 RT cost, 2yr):
+//   InsBrkH1   PF=1.40  Sharpe=2.21  DD=-$231  RF=2.30  Net=+$533  WR=49.5%
+//   AtrExpH1   PF=1.21  Sharpe=1.79  DD=-$315  RF=1.61  Net=+$507  WR=45.7%
+//   EmaPbH4    PF=1.16  Sharpe=0.64  DD=-$138  RF=0.89  Net=+$123  WR=38.0% (cost drag)
+//   AtrExpM30  PF=1.08  Sharpe=0.91  DD=-$309  RF=0.81  Net=+$249  WR=62.8% (cost drag)
+// InsBrkH1 wins on PF + DD + RF. Pairing with AtrExpH1 raised Sharpe to
+// 2.80 but lowered PF to 1.28 and worsened combined DD to -$485 (overlapping
+// loss days). Operator criteria = highest PF + Sharpe + lowest DD => single.
+//
+// Ensemble array kept (size 1) for future cell additions if fresh data
+// (post Nov 2025) surfaces a second uncorrelated survivor.
 static constexpr Us30CellConfig kUs30EnsembleCells[] = {
-    { Us30CellFamily::AtrExpansion_H1,     Us30CellTf::H1,  2.0, 3.0, 48,
-      "AtrExpansion_H1_sl2.0tp3.0_long",   "AtrExpH1"  },
     { Us30CellFamily::InsideBarBreak_H1,   Us30CellTf::H1,  3.0, 5.0, 48,
       "InsideBarBreak_H1_sl3.0tp5.0_long", "InsBrkH1"  },
-    { Us30CellFamily::AtrExpansion_M30,    Us30CellTf::M30, 3.0, 2.0, 96,
-      "AtrExpansion_M30_sl3.0tp2.0_long",  "AtrExpM30" },
-    { Us30CellFamily::EmaPullback10_30_H4, Us30CellTf::H4,  1.5, 5.0, 24,
-      "EmaPullback10_30_H4_sl1.5tp5.0",    "EmaPbH4"   },
+    // Dropped 2026-05-26 rebalance:
+    // { Us30CellFamily::AtrExpansion_H1, ... }      -- PF 1.21 (#2 best, pair Sharpe 2.80 but DD worse)
+    // { Us30CellFamily::AtrExpansion_M30, ... }     -- PF 1.08 cost drag, RF 0.81
+    // { Us30CellFamily::EmaPullback10_30_H4, ... }  -- PF 1.16 cost drag, RF 0.89
 };
 static constexpr int kUs30EnsembleNumCells =
     static_cast<int>(sizeof(kUs30EnsembleCells) / sizeof(kUs30EnsembleCells[0]));
