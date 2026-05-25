@@ -9,9 +9,17 @@ Serves on http://localhost:5050
 """
 import json
 import subprocess
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, time, timezone, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from flask import Flask, jsonify, send_from_directory
+
+LDN_TZ = ZoneInfo('Europe/London')
+NY_TZ  = ZoneInfo('America/New_York')
+LDN_OPEN = time(8, 0)   # 08:00 London local (DST-aware)
+LDN_CLOSE = time(16, 30)
+NY_OPEN  = time(9, 30)  # 09:30 NY local (DST-aware)
+NY_CLOSE = time(16, 0)
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'data' / 'trades.ndjson'
@@ -36,6 +44,53 @@ def next_sunday_2255_utc():
     target = now.replace(hour=22, minute=55, second=0, microsecond=0) + timedelta(days=days_ahead)
     if target <= now: target += timedelta(days=7)
     return target
+
+def _next_session_open(tz, open_t):
+    """Next local open time (skips weekends), returned as UTC."""
+    now_local = datetime.now(tz)
+    target = now_local.replace(hour=open_t.hour, minute=open_t.minute, second=0, microsecond=0)
+    if target <= now_local:
+        target += timedelta(days=1)
+    while target.weekday() >= 5:  # Sat=5, Sun=6
+        target += timedelta(days=1)
+    return target.astimezone(timezone.utc)
+
+def _in_window(now_local, open_t, close_t):
+    if now_local.weekday() >= 5: return False
+    return open_t <= now_local.timetz().replace(tzinfo=None) <= close_t
+
+def session_state():
+    now_utc = datetime.now(timezone.utc)
+    ldn_local = now_utc.astimezone(LDN_TZ)
+    ny_local  = now_utc.astimezone(NY_TZ)
+    ldn_open_in = _in_window(ldn_local, LDN_OPEN, LDN_CLOSE)
+    ny_open_in  = _in_window(ny_local,  NY_OPEN,  NY_CLOSE)
+    return {
+        'london': {
+            'in_session': ldn_open_in,
+            'local_now': ldn_local.strftime('%H:%M %Z'),
+            'next_open_utc': _next_session_open(LDN_TZ, LDN_OPEN).isoformat(),
+        },
+        'ny': {
+            'in_session': ny_open_in,
+            'local_now': ny_local.strftime('%H:%M %Z'),
+            'next_open_utc': _next_session_open(NY_TZ, NY_OPEN).isoformat(),
+        },
+    }
+
+def classify_session(ts_iso):
+    """Tag a trade UTC timestamp as LONDON / NY / OVERLAP / OFF."""
+    try:
+        dt = datetime.fromisoformat(ts_iso.replace('Z', '+00:00'))
+        if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return 'OFF'
+    in_ldn = _in_window(dt.astimezone(LDN_TZ), LDN_OPEN, LDN_CLOSE)
+    in_ny  = _in_window(dt.astimezone(NY_TZ),  NY_OPEN,  NY_CLOSE)
+    if in_ldn and in_ny: return 'OVERLAP'
+    if in_ldn: return 'LONDON'
+    if in_ny:  return 'NY'
+    return 'OFF'
 
 @app.route('/')
 def index():
@@ -76,6 +131,11 @@ def api_summary():
         sub = [t for t in trades if t.get('strategy', 'UNKNOWN') == s]
         by_strategy[s] = _summarize(sub)
     overall['by_strategy'] = by_strategy
+    by_session = {}
+    for tag in ('LONDON', 'NY', 'OVERLAP', 'OFF'):
+        sub = [t for t in trades if classify_session(t.get('ts', '')) == tag]
+        by_session[tag] = _summarize(sub)
+    overall['by_session'] = by_session
     return jsonify(overall)
 
 @app.route('/api/cancel_all', methods=['POST'])
@@ -143,6 +203,7 @@ def api_status():
         'ib_paper_listening': paper_up,
         'ib_live_listening': live_up,
         'now_utc': datetime.now(timezone.utc).isoformat(),
+        'sessions': session_state(),
     })
 
 if __name__ == '__main__':

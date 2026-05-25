@@ -38,6 +38,15 @@
   td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
   tr:hover { background: rgba(255,255,255,0.02); }
   canvas { max-height: 280px; }
+  .sess-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .sess { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; opacity: 0.45; transition: all 0.2s; }
+  .sess.active { opacity: 1; border-color: var(--green); box-shadow: 0 0 0 1px var(--green) inset, 0 0 12px rgba(62,207,142,0.25); }
+  .sess.imminent { opacity: 1; border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow) inset, 0 0 12px rgba(255,200,112,0.25); }
+  .sess .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .sess.active .label, .sess.imminent .label { color: var(--text); }
+  .sess .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+  .sess.active .value { color: var(--green); }
+  .sess.imminent .value { color: var(--yellow); }
 </style>
 </head>
 <body>
@@ -47,10 +56,18 @@
   <div class="status">
     <span><span class="dot" id="paperDot"></span><span id="paperLbl">paper</span></span>
     <span><span class="dot" id="liveDot"></span><span id="liveLbl">live</span></span>
+    <span class="dim"><span class="dot" id="ldnDot"></span><span id="ldnLbl">LDN --</span></span>
+    <span class="dim"><span class="dot" id="nyDot"></span><span id="nyLbl">NY --</span></span>
     <span class="dim" id="nextRun">next: --</span>
     <span class="dim" id="nowUtc">--</span>
   </div>
 </header>
+
+<div class="sess-row">
+  <div class="sess" id="sessLdn"><div class="label">LONDON</div><div class="value" id="sessLdnVal">--</div></div>
+  <div class="sess" id="sessNy"><div class="label">NEW YORK</div><div class="value" id="sessNyVal">--</div></div>
+  <div class="sess" id="sessSun"><div class="label">SUNDAY OPEN (CME)</div><div class="value" id="sessSunVal">--</div></div>
+</div>
 
 <div class="grid">
   <div class="kpi"><div class="label">Total Trades</div><div class="value" id="kTotal">0</div></div>
@@ -75,6 +92,16 @@
     <tbody id="openOrdersBody"></tbody>
   </table>
   <div style="margin-top:8px"><button id="cancelAllBtn" style="background:#e8505b;color:#fff;border:0;padding:8px 12px;border-radius:4px;cursor:pointer;">CANCEL ALL OPEN ORDERS</button></div>
+</div>
+
+<div class="panel">
+  <h2>P&L by Session</h2>
+  <table>
+    <thead>
+      <tr><th>Session</th><th>Trades</th><th>Win%</th><th>PF</th><th>Total P&L</th><th>Max DD</th><th>Avg Win</th><th>Avg Loss</th></tr>
+    </thead>
+    <tbody id="sessionBody"></tbody>
+  </table>
 </div>
 
 <div class="panel">
@@ -135,6 +162,57 @@ async function refresh() {
   $('#nextRun').textContent = 'next: ' + new Date(status.next_run_utc).toUTCString().replace(' GMT', '');
   $('#nowUtc').textContent = new Date(status.now_utc).toUTCString().replace(' GMT', '');
 
+  // Session indicators
+  const sess = status.sessions || {};
+  const fmtSess = (s, label) => {
+    if (!s) return label + ' --';
+    if (s.in_session) return label + ' OPEN · ' + s.local_now;
+    const ms = new Date(s.next_open_utc) - new Date(status.now_utc);
+    const h  = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+    return label + ' in ' + h + 'h' + String(m).padStart(2, '0') + 'm';
+  };
+  $('#ldnDot').className = 'dot ' + (sess.london?.in_session ? 'ok' : 'down');
+  $('#nyDot').className  = 'dot ' + (sess.ny?.in_session  ? 'ok' : 'down');
+  $('#ldnLbl').textContent = fmtSess(sess.london, 'LDN');
+  $('#nyLbl').textContent  = fmtSess(sess.ny,  'NY');
+
+  // Session blocks (big indicators)
+  const setBlock = (id, valId, info, openLabel) => {
+    const el = $(id); el.className = 'sess';
+    if (!info) { $(valId).textContent = '--'; return; }
+    if (info.in_session) {
+      el.classList.add('active');
+      $(valId).textContent = openLabel + ' · ' + info.local_now;
+    } else {
+      const ms = new Date(info.next_open_utc) - new Date(status.now_utc);
+      const h  = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+      if (ms <= 60 * 60 * 1000) el.classList.add('imminent');
+      $(valId).textContent = 'opens in ' + h + 'h' + String(m).padStart(2, '0') + 'm';
+    }
+  };
+  setBlock('#sessLdn', '#sessLdnVal', sess.london, 'ACTIVE');
+  setBlock('#sessNy',  '#sessNyVal',  sess.ny,     'ACTIVE');
+
+  // Sunday CME block — synth info from next_run_utc
+  const sunMs = new Date(status.next_run_utc) - new Date(status.now_utc);
+  const sunEl = $('#sessSun'); sunEl.className = 'sess';
+  if (sunMs <= 0) {
+    // already past — won't happen since /api/status rolls forward
+  } else if (sunMs <= 15 * 60 * 1000) {
+    // within 15 min of fire time -> active highlight
+    sunEl.classList.add('active');
+    const m = Math.floor(sunMs / 60000), s = Math.floor((sunMs % 60000) / 1000);
+    $('#sessSunVal').textContent = 'FIRES in ' + m + 'm' + String(s).padStart(2, '0') + 's';
+  } else if (sunMs <= 4 * 3600 * 1000) {
+    // within 4 hours -> imminent (yellow)
+    sunEl.classList.add('imminent');
+    const h = Math.floor(sunMs / 3600000), m = Math.floor((sunMs % 3600000) / 60000);
+    $('#sessSunVal').textContent = 'opens in ' + h + 'h' + String(m).padStart(2, '0') + 'm';
+  } else {
+    const h = Math.floor(sunMs / 3600000), m = Math.floor((sunMs % 3600000) / 60000);
+    $('#sessSunVal').textContent = 'opens in ' + h + 'h' + String(m).padStart(2, '0') + 'm';
+  }
+
   // Open IB orders panel
   try {
     const ord = await fetch('/api/open_orders').then(r => r.json());
@@ -151,6 +229,26 @@ async function refresh() {
       }
     }
   } catch(e) { console.error(e); }
+
+  // Per-session table
+  const sessBody = $('#sessionBody');
+  sessBody.innerHTML = '';
+  const bs = summary.by_session || {};
+  for (const tag of ['LONDON', 'NY', 'OVERLAP', 'OFF']) {
+    const s = bs[tag]; if (!s) continue;
+    const tr = document.createElement('tr');
+    const pcls = s.total_pnl > 0 ? 'green' : (s.total_pnl < 0 ? 'red' : '');
+    tr.innerHTML = `
+      <td><b>${tag}</b></td>
+      <td>${s.total_trades}</td>
+      <td>${s.win_rate.toFixed(0)}%</td>
+      <td>${s.profit_factor.toFixed(2)}</td>
+      <td class="${pcls}">${fmt$(s.total_pnl)}</td>
+      <td class="red">${fmt$(s.max_drawdown)}</td>
+      <td class="green">${fmt$(s.avg_win)}</td>
+      <td class="red">${fmt$(s.avg_loss)}</td>`;
+    sessBody.appendChild(tr);
+  }
 
   // Per-strategy table
   const sb = $('#strategyBody');
