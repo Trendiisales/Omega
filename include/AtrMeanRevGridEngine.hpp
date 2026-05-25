@@ -374,7 +374,7 @@ public:
         if (!enabled) return;
 
         // Broker-style WAP TP modes -- intra-bar wick capture
-        if (Traits::TP_METHOD != AmrTpMethod::RSI_OR_MA) {
+        if constexpr (Traits::TP_METHOD != AmrTpMethod::RSI_OR_MA) {
             if (long_.levels_open  > 0) {
                 const double tp_long  = wap_target(/*is_long=*/true);
                 if (tp_long > 0.0 && bid >= tp_long) close_all(/*is_long=*/true,  "wap_tp_hit", ts_ms);
@@ -654,7 +654,7 @@ private:
             long_.first_entry_ts   = ts_ms;
             long_.first_entry_bar  = bar_count_;
         }
-        if (Traits::VERBOSE_LOG)
+        if constexpr (Traits::VERBOSE_LOG)
             std::printf("[AMR-%s] BUY lvl=%d lot=%.4f px=%.5f sl=%.5f rsi=%.2f atr=%.5f shadow=%d\n",
                         Traits::SYMBOL, long_.levels_open, lot, price, init_sl, cached_rsi_, atr_short, (int)shadow_mode);
     }
@@ -680,7 +680,7 @@ private:
             short_.first_entry_ts  = ts_ms;
             short_.first_entry_bar = bar_count_;
         }
-        if (Traits::VERBOSE_LOG)
+        if constexpr (Traits::VERBOSE_LOG)
             std::printf("[AMR-%s] SELL lvl=%d lot=%.4f px=%.5f sl=%.5f rsi=%.2f atr=%.5f shadow=%d\n",
                         Traits::SYMBOL, short_.levels_open, lot, price, init_sl, cached_rsi_, atr_short, (int)shadow_mode);
     }
@@ -707,21 +707,23 @@ private:
         if (wap <= 0.0) return 0.0;
 
         double tgt = 0.0;
-        if      (Traits::TP_METHOD == AmrTpMethod::FIXED_PIPS_FROM_WAP) {
+        if constexpr (Traits::TP_METHOD == AmrTpMethod::FIXED_PIPS_FROM_WAP) {
             const double d = Traits::TP_FIXED_PIPS * Traits::POINT;
             tgt = is_long ? (wap + d) : (wap - d);
-        } else if (Traits::TP_METHOD == AmrTpMethod::PCT_FROM_WAP) {
+        } else if constexpr (Traits::TP_METHOD == AmrTpMethod::PCT_FROM_WAP) {
             const double p = Traits::TP_PCT_FROM_WAP / 100.0;
             tgt = is_long ? wap * (1.0 + p) : wap * (1.0 - p);
-        } else if (Traits::TP_METHOD == AmrTpMethod::ATR_FROM_WAP) {
+        } else if constexpr (Traits::TP_METHOD == AmrTpMethod::ATR_FROM_WAP) {
             if (cached_atr_short_ <= 0.0) return 0.0;
             const double d = Traits::TP_ATR_MULT_FROM_WAP * cached_atr_short_;
             tgt = is_long ? (wap + d) : (wap - d);
-        } else return 0.0;
+        } else { return 0.0; }
 
-        if (Traits::USE_MA_CAP && cached_slow_ma_ > 0.0) {
-            if (is_long) tgt = std::min(tgt, cached_slow_ma_);
-            else         tgt = std::max(tgt, cached_slow_ma_);
+        if constexpr (Traits::USE_MA_CAP) {
+            if (cached_slow_ma_ > 0.0) {
+                if (is_long) tgt = std::min(tgt, cached_slow_ma_);
+                else         tgt = std::max(tgt, cached_slow_ma_);
+            }
         }
         return tgt;
     }
@@ -731,12 +733,14 @@ private:
         const Side& s = is_long ? long_ : short_;
 
         // Time-based fallback (applies regardless of TP mode if toggled)
-        if (Traits::USE_TIME_EXIT && s.first_entry_bar > 0) {
-            const int bars_open = bar_count_ - s.first_entry_bar;
-            if (bars_open >= Traits::TIME_EXIT_BARS) return true;
+        if constexpr (Traits::USE_TIME_EXIT) {
+            if (s.first_entry_bar > 0) {
+                const int bars_open = bar_count_ - s.first_entry_bar;
+                if (bars_open >= Traits::TIME_EXIT_BARS) return true;
+            }
         }
 
-        if (Traits::TP_METHOD != AmrTpMethod::RSI_OR_MA) return false;
+        if constexpr (Traits::TP_METHOD != AmrTpMethod::RSI_OR_MA) return false;
 
         const double px = is_long ? cached_bid_ : cached_ask_;
         const double rsi_tp_long  = Traits::RSI_TP_LEVEL;
@@ -780,7 +784,7 @@ private:
             // write_shadow_csv). Decouples this header from logging.hpp.
             if (on_close_cb) on_close_cb(tr);
         }
-        if (Traits::VERBOSE_LOG)
+        if constexpr (Traits::VERBOSE_LOG)
             std::printf("[AMR-%s] CLOSE-%s reason=%s levels=%d pnl=%.5f\n",
                         Traits::SYMBOL, is_long ? "LONG" : "SHORT", reason, s.levels_open, total_pnl);
         // Reset
