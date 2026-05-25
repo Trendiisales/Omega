@@ -1524,7 +1524,11 @@ static void init_engines(const std::string& cfg_path)
         g_us30_ensemble.shadow_mode        = true;     // HARD shadow per CLAUDE.md ~1mo trace rule
         g_us30_ensemble.enabled            = true;
         g_us30_ensemble.lot                = 0.01;
-        g_us30_ensemble.max_spread         = 5.0;
+        // max_spread bumped 5.0 -> 10.0 (2026-05-26): VPS shadow showed
+        // [GUARD-BLOCK] engine=Us30Ensemble reason=SPREAD_CAP firing every tick
+        // at post-NY-close DJ30 spread ~5.80 pts. 10.0 covers Asia/off-RTH
+        // sessions; tighter live-session spreads (~2-4 pts) still pass.
+        g_us30_ensemble.max_spread         = 10.0;
         g_us30_ensemble.be_trigger_atr     = 0.0;      // OFF (validated bare)
         g_us30_ensemble.trail_after_be     = false;
         g_us30_ensemble.trail_atr_mult     = 0.0;
