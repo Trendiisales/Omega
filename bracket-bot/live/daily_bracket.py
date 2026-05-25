@@ -51,9 +51,35 @@ def get_contract(ib, instrument, expiry=None):
         c = Forex('XAUUSD'); ib.qualifyContracts(c); return c
     raise ValueError(f'Unknown instrument: {instrument}')
 
+def get_price_from_depth(ib, c, secs=10):
+    """L2 best-bid/ask midpoint. Uses existing IBKR L2 sub (separate from
+    top-of-book sub on CME). Returns None if depth not available."""
+    try:
+        ib.reqMarketDataType(1)
+        dom = ib.reqMktDepth(c, numRows=1)
+        for _ in range(secs):
+            ib.sleep(1)
+            if dom.domBids and dom.domAsks:
+                bid = dom.domBids[0].price; ask = dom.domAsks[0].price
+                if (bid and ask and bid > 0 and ask > 0
+                        and not math.isnan(bid) and not math.isnan(ask)):
+                    ib.cancelMktDepth(c)
+                    mid = (bid + ask) / 2.0
+                    log.info(f'price [L2 mid]: {mid} (bid={bid} ask={ask})')
+                    return float(mid)
+        ib.cancelMktDepth(c)
+        log.warning('no L2 depth within timeout')
+    except Exception as e:
+        log.warning(f'L2 depth failed: {e}')
+    return None
+
 def get_price(ib, c):
-    # Try real-time first; fall back to frozen/delayed if the account
-    # isn't subscribed for this contract, so a missing sub never hard-fails.
+    # 1. L2 depth (real-time via existing IBKR L2 sub)
+    px = get_price_from_depth(ib, c)
+    if px is not None:
+        return px
+    # 2. Top-of-book stream — try real-time first; fall back to frozen/delayed
+    # if the account isn't subscribed for this contract. Missing sub never hard-fails.
     for mdt, label in [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')]:
         try:
             ib.reqMarketDataType(mdt)

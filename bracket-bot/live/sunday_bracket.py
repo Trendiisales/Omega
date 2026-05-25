@@ -74,8 +74,35 @@ def get_contract(instrument: str, expiry: str = None):
     raise ValueError(f'Unknown instrument: {instrument}')
 
 
+def get_price_from_depth(ib: IB, contract, secs: int = 10):
+    """L2 best-bid/ask midpoint. Uses existing IBKR L2 sub (separate from
+    top-of-book sub on CME). Returns None if depth not available."""
+    try:
+        ib.reqMarketDataType(1)
+        dom = ib.reqMktDepth(contract, numRows=1)
+        for _ in range(secs):
+            ib.sleep(1)
+            if dom.domBids and dom.domAsks:
+                bid = dom.domBids[0].price; ask = dom.domAsks[0].price
+                if (bid and ask and bid > 0 and ask > 0
+                        and not math.isnan(bid) and not math.isnan(ask)):
+                    ib.cancelMktDepth(contract)
+                    mid = (bid + ask) / 2.0
+                    log.info(f'price [L2 mid]: {mid} (bid={bid} ask={ask})')
+                    return float(mid)
+        ib.cancelMktDepth(contract)
+        log.warning('no L2 depth within timeout')
+    except Exception as e:
+        log.warning(f'L2 depth failed: {e}')
+    return None
+
+
 def get_current_price(ib: IB, contract) -> float:
-    """Reference price for bracket placement. Real-time first, fall back to frozen/delayed."""
+    """Reference price for bracket placement.
+    Order: L2 mid (real-time via existing L2 sub) → top-of-book live → frozen → delayed."""
+    px = get_price_from_depth(ib, contract)
+    if px is not None:
+        return px
     for mdt, label in [(1, 'live'), (2, 'frozen'), (3, 'delayed'), (4, 'delayed-frozen')]:
         try:
             ib.reqMarketDataType(mdt)
