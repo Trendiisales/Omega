@@ -1075,16 +1075,10 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
   // when bracket not armed -- giving a never-blank rolling intraday range.
   const showHi=bktActive?safe(bkt.hi):safe(hi);
   const showLo=bktActive?safe(bkt.lo):safe(lo);
-  if(hiEl){
-    if(showHi>0){hiEl.textContent='H '+showHi.toFixed(d);}
-    else{hiEl.textContent='H --';}
-    hiEl.style.display='inline';
-  }
-  if(loEl){
-    if(showLo>0){loEl.textContent='L '+showLo.toFixed(d);}
-    else{loEl.textContent='L --';}
-    loEl.style.display='inline';
-  }
+  // S37m 2026-05-26: body H/L moved to tile CORNERS (setSessionHL below).
+  // Hide body spans so bid|ask stays centred and uncluttered.
+  if(hiEl){hiEl.textContent='';hiEl.style.display='none';}
+  if(loEl){loEl.textContent='';loEl.style.display='none';}
 
   // Proximity bar -- how close is price to breaking the compression boundary?
   // p=0(FLAT): empty. p=1(COMP): fill = how tight compression is (rv/bv inverted).
@@ -1400,24 +1394,28 @@ R"OMEGA23PDH(
   function setSessionHL(cellId,pdh,pdl,decimals){
     const ph=document.getElementById(cellId+'Pdh');
     const pl=document.getElementById(cellId+'Pdl');
-    if(ph){ph.textContent='H '+(pdh>0?pdh.toFixed(decimals):'--');ph.title='Previous session HI (static)';}
-    if(pl){pl.textContent='L '+(pdl>0?pdl.toFixed(decimals):'--');pl.title='Previous session LO (static)';}
+    if(ph){ph.textContent='H '+(pdh>0?pdh.toFixed(decimals):'--');ph.title='Session HI (rolling, today UTC)';}
+    if(pl){pl.textContent='L '+(pdl>0?pdl.toFixed(decimals):'--');pl.title='Session LO (rolling, today UTC)';}
   }
-  setSessionHL('engSP',  safe(d.sp_pdh),  safe(d.sp_pdl),  2);
-  setSessionHL('engNQ',  safe(d.nq_pdh),  safe(d.nq_pdl),  2);
-  setSessionHL('engUS30',safe(d.dj_pdh),  safe(d.dj_pdl),  2);
-  setSessionHL('engNAS', safe(d.nas_pdh), safe(d.nas_pdl), 2);
-  setSessionHL('engCL',  safe(d.cl_pdh),  safe(d.cl_pdl),  2);
-  setSessionHL('engGER', safe(d.ger40_pdh),safe(d.ger40_pdl),2);
-  setSessionHL('engUK',  safe(d.uk100_pdh),safe(d.uk100_pdl),2);
-  setSessionHL('engESTX',safe(d.estx50_pdh),safe(d.estx50_pdl),2);
-  setSessionHL('engBRENT',safe(d.brent_pdh),safe(d.brent_pdl),2);
-  setSessionHL('engEUR', safe(d.eurusd_pdh),safe(d.eurusd_pdl),5);
-  setSessionHL('engGBP', safe(d.gbpusd_pdh),safe(d.gbpusd_pdl),5);
-  setSessionHL('engAUD', safe(d.audusd_pdh),safe(d.audusd_pdl),5);
-  setSessionHL('engNZD', safe(d.nzdusd_pdh),safe(d.nzdusd_pdl),5);
-  setSessionHL('engJPY', safe(d.usdjpy_pdh),safe(d.usdjpy_pdl),3);
-  setSessionHL('engXAU', safe(d.xau_pdh), safe(d.xau_pdl), 2);
+  // S37m 2026-05-26: corners now show ROLLING session H/L (curh/curl) --
+  // PDH/PDL fields are not in telemetry, so corners were stuck on "H --".
+  // Source switched to *_curh/*_curl which are emitted by the tick edge
+  // system via UpdateCurrentDay() and visible in /api/telemetry.
+  setSessionHL('engSP',  safe(d.sp_curh),  safe(d.sp_curl),  2);
+  setSessionHL('engNQ',  safe(d.nq_curh),  safe(d.nq_curl),  2);
+  setSessionHL('engUS30',safe(d.dj_curh),  safe(d.dj_curl),  2);
+  setSessionHL('engNAS', safe(d.nas_curh), safe(d.nas_curl), 2);
+  setSessionHL('engCL',  safe(d.cl_curh),  safe(d.cl_curl),  2);
+  setSessionHL('engGER', safe(d.ger40_curh),safe(d.ger40_curl),2);
+  setSessionHL('engUK',  safe(d.uk100_curh),safe(d.uk100_curl),2);
+  setSessionHL('engESTX',safe(d.estx50_curh),safe(d.estx50_curl),2);
+  setSessionHL('engBRENT',safe(d.brent_curh),safe(d.brent_curl),2);
+  setSessionHL('engEUR', safe(d.eurusd_curh),safe(d.eurusd_curl),5);
+  setSessionHL('engGBP', safe(d.gbpusd_curh),safe(d.gbpusd_curl),5);
+  setSessionHL('engAUD', safe(d.audusd_curh),safe(d.audusd_curl),5);
+  setSessionHL('engNZD', safe(d.nzdusd_curh),safe(d.nzdusd_curl),5);
+  setSessionHL('engJPY', safe(d.usdjpy_curh),safe(d.usdjpy_curl),3);
+  setSessionHL('engXAU', safe(d.xau_curh), safe(d.xau_curl), 2);
 )OMEGA23PDH"
 R"OMEGA23E(
   // L2 imbalance bars
