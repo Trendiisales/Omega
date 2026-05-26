@@ -409,7 +409,24 @@ static void init_engines(const std::string& cfg_path)
     // Speed advantage now available (LD4 colo sub-ms confirmed) -- the original
     // shadow pin (pending tick-level harness agreement) no longer the bottleneck.
     // 14-day shadow validation required before any live promotion.
-    g_gold_scalp_pyramid.enabled     = true;
+    //
+    // S45 2026-05-27: DISABLED. Today's 21-trade chop-day session (-$130 net,
+    // 13 LOSS_CUTs) prompted re-audit. Built + ran gsp_s63_audit_bt.cpp
+    // (existing dormant harness that drives the REAL engine class on the
+    // 26mo XAUUSD tape, vs the standalone harness which re-implements logic
+    // inline). Result:
+    //   Standalone harness (no S63):  $+33,551 PF=2.64 (5074 trades)
+    //   Real class S63-OFF:           $-12,380 PF=0.63 (5360 trades)
+    //   Real class S63-ON (live cfg): $-152    PF=0.59 (134 trades)
+    // The "validated +$33.5k" was a phantom from the re-impl. Real class
+    // LOSES on 26mo of historical data. S63-ON only loses less because cuts
+    // reduce trade count 40x via cooldowns -- not because S63 adds edge.
+    // Engine has no validated edge; shadow-mode "validation" period was
+    // meaningless. Per the safety rule above ("Do NOT re-enable without
+    // harness-class agreement to within 10% on PnL") this MUST be disabled
+    // pending re-tune against the real class. The harness divergence is
+    // the bug -- engine.enabled re-enable was based on incomplete evidence.
+    g_gold_scalp_pyramid.enabled     = false;  // S45: harness-class disagreement
     g_gold_scalp_pyramid.shadow_mode = true;
     g_gold_scalp_pyramid.LOOKBACK    = 8;     // Donchian channel bars (M5) -- sweep best
     g_gold_scalp_pyramid.SL_ATR_MULT = 1.5;   // SL = 1.5 * ATR14 -- sweep v2 best (wider, 71% WR)
@@ -466,7 +483,15 @@ static void init_engines(const std::string& cfg_path)
                                   int decimals) {
             e.set_pair_config(sym, cost, half_spread, usd_per_pt,
                               atr_floor, atr_cap, spread_cap, decimals);
-            e.enabled         = true;
+            // S45 2026-05-27: DISABLED — same harness-class disagreement as
+            // GoldScalpPyramid (see comment block at L405-407 above). The
+            // 13mo +$5712 standalone-harness profit was an inline-reimpl
+            // result, not the real FxScalpPyramidEngine class. Today's
+            // chop-day session bled 8 FX scalp LOSS_CUTs across the cohort.
+            // No backtest of the real class with live S63 config has shown
+            // positive edge. Disable pending re-tune + harness-class
+            // agreement validation.
+            e.enabled         = false;
             e.shadow_mode     = true;
             e.LOOKBACK        = 8;
             e.SL_ATR_MULT     = 1.5;
