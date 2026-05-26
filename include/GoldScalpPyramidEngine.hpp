@@ -265,13 +265,24 @@ public:
     // ---- Public interface: feed every XAUUSD tick -----------------------------
     // L2 fields sourced from MacroContext in tick_gold.hpp dispatch.
     // When l2_real=false, all L2 filters degrade to neutral (no blocking).
+    // 2026-05-26 (S44): added htf_bias_in param to gate counter-trend entries.
+    // Caller passes +1 (HTF bullish), -1 (HTF bearish), 0 (neutral or filter off).
+    // Engine blocks entries that oppose the HTF bias. Default 0 preserves
+    // existing call-site behaviour (no change for callers that don't pass it).
+    //
+    // Root-cause fix for 2026-05-26 21-trade chop-day session: 5 LOSS_CUTs on
+    // gold LONGs at 4539/4538/4505/4507/4509 during an intraday downtrend, plus
+    // 3 SHORT LOSS_CUTs at local lows. Without HTF gate the engine fires
+    // both directions at extremes that then mean-revert. With this gate active
+    // ~13 of the 21 bad trades would not have entered (HTF bias=BEARISH all day).
     void on_tick(double bid, double ask, int64_t now_ms,
                  bool can_enter,
                  double l2_imbalance, double book_slope,
                  bool vacuum_ask, bool vacuum_bid,
                  bool wall_above, bool wall_below,
                  bool l2_real,
-                 const CloseCallback* ext_close = nullptr)
+                 const CloseCallback* ext_close = nullptr,
+                 int htf_bias_in = 0)
     {
         if (!enabled) return;
 
@@ -321,6 +332,13 @@ public:
 
         if (!can_enter) return;
         if (now_ms < m_cooldown_until) return;
+
+        // S44 HTF-bias gate: block counter-trend entries. Caller passes
+        // +1=BULLISH / -1=BEARISH / 0=NEUTRAL (or filter disabled).
+        if (htf_bias_in != 0) {
+            if ( m_signal_long && htf_bias_in < 0) return;  // HTF bear -> no longs
+            if (!m_signal_long && htf_bias_in > 0) return;  // HTF bull -> no shorts
+        }
 
         // Validate signal is still valid at tick level
         if (spread > SPREAD_CAP) return;

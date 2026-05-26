@@ -210,13 +210,18 @@ public:
     };
 
     // ---- Public interface: feed every FX tick ---------------------------------
+    // 2026-05-26 (S44): added htf_bias_in param to gate counter-trend entries.
+    // Caller passes +1 (HTF bullish), -1 (HTF bearish), 0 (neutral or filter off).
+    // Engine blocks entries that oppose the HTF bias. Mirrors GoldScalpPyramid
+    // root-cause fix. See that engine's comment block for context.
     void on_tick(double bid, double ask, int64_t now_ms,
                  bool can_enter,
                  double l2_imbalance, double book_slope,
                  bool vacuum_ask, bool vacuum_bid,
                  bool wall_above, bool wall_below,
                  bool l2_real,
-                 const CloseCallback* ext_close = nullptr)
+                 const CloseCallback* ext_close = nullptr,
+                 int htf_bias_in = 0)
     {
         if (!enabled) return;
 
@@ -258,6 +263,12 @@ public:
 
         if (!can_enter) return;
         if (now_ms < m_cooldown_until) return;
+
+        // S44 HTF-bias gate (see GoldScalpPyramidEngine for context).
+        if (htf_bias_in != 0) {
+            if ( m_signal_long && htf_bias_in < 0) return;
+            if (!m_signal_long && htf_bias_in > 0) return;
+        }
 
         if (spread > SPREAD_CAP) return;
 

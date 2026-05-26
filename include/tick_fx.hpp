@@ -131,13 +131,19 @@ static void on_tick_eurusd(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         const bool fx_can_enter = tradeable && lat_ok;
+        // S44: HTF-bias gate via bias_opposes (bool-returning helper, no
+        // enum/namespace dependency). +1 BULLISH, -1 BEARISH, 0 NEUTRAL.
+        const bool fxe_opp_long  = g_htf_filter.bias_opposes("EURUSD", true);
+        const bool fxe_opp_short = g_htf_filter.bias_opposes("EURUSD", false);
+        const int fxe_htf_bias = fxe_opp_long ? -1 : (fxe_opp_short ? +1 : 0);
         g_fx_scalp_eurusd.on_tick(bid, ask, now_ms_fx,
                                   fx_can_enter,
                                   /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
                                   /*vacuum_ask=*/false, /*vacuum_bid=*/false,
                                   /*wall_above=*/false, /*wall_below=*/false,
                                   /*l2_real=*/false,
-                                  nullptr);
+                                  nullptr,
+                                  fxe_htf_bias);
     }
 
     // S99: FX engine kill-switch -- all FX LondonOpen/AsianOpen/SydneyOpen
@@ -260,13 +266,18 @@ static void on_tick_gbpusd(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         const bool fx_can_enter = tradeable && lat_ok;
+        // S44: HTF-bias gate.
+        const bool fxg_opp_long  = g_htf_filter.bias_opposes("GBPUSD", true);
+        const bool fxg_opp_short = g_htf_filter.bias_opposes("GBPUSD", false);
+        const int fxg_htf_bias = fxg_opp_long ? -1 : (fxg_opp_short ? +1 : 0);
         g_fx_scalp_gbpusd.on_tick(bid, ask, now_ms_fx,
                                   fx_can_enter,
                                   /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
                                   /*vacuum_ask=*/false, /*vacuum_bid=*/false,
                                   /*wall_above=*/false, /*wall_below=*/false,
                                   /*l2_real=*/false,
-                                  nullptr);
+                                  nullptr,
+                                  fxg_htf_bias);
     }
 
     // S99: FX kill-switch (see on_tick_eurusd comment). GbpusdLondonOpen disabled.
@@ -367,13 +378,18 @@ static void on_tick_usdjpy(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         const bool fx_can_enter = tradeable && lat_ok;
+        // S44: HTF-bias gate.
+        const bool fxj_opp_long  = g_htf_filter.bias_opposes("USDJPY", true);
+        const bool fxj_opp_short = g_htf_filter.bias_opposes("USDJPY", false);
+        const int fxj_htf_bias = fxj_opp_long ? -1 : (fxj_opp_short ? +1 : 0);
         g_fx_scalp_usdjpy.on_tick(bid, ask, now_ms_fx,
                                   fx_can_enter,
                                   /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
                                   /*vacuum_ask=*/false, /*vacuum_bid=*/false,
                                   /*wall_above=*/false, /*wall_below=*/false,
                                   /*l2_real=*/false,
-                                  nullptr);
+                                  nullptr,
+                                  fxj_htf_bias);
     }
 
     // S37g 2026-05-26 FxEnsembleEngine USDJPY (donchian_20 H2 LONG cell).
@@ -470,13 +486,18 @@ static void on_tick_audusd(
         {
             const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
             const bool fx_can_enter = tradeable && lat_ok;
+            // S44: HTF-bias gate.
+            const bool fxa_opp_long  = g_htf_filter.bias_opposes("AUDUSD", true);
+            const bool fxa_opp_short = g_htf_filter.bias_opposes("AUDUSD", false);
+            const int fxa_htf_bias = fxa_opp_long ? -1 : (fxa_opp_short ? +1 : 0);
             g_fx_scalp_audusd.on_tick(bid, ask, now_ms_fx,
                                       fx_can_enter,
                                       /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
                                       /*vacuum_ask=*/false, /*vacuum_bid=*/false,
                                       /*wall_above=*/false, /*wall_below=*/false,
                                       /*l2_real=*/false,
-                                      nullptr);
+                                      nullptr,
+                                      fxa_htf_bias);
         }
 
         // S99: FX kill-switch (see on_tick_eurusd comment). AudusdSydneyOpen disabled.
@@ -633,13 +654,18 @@ static void on_tick_usdcad(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         const bool fx_can_enter = tradeable && lat_ok;
+        // S44: HTF-bias gate.
+        const bool fxc_opp_long  = g_htf_filter.bias_opposes("USDCAD", true);
+        const bool fxc_opp_short = g_htf_filter.bias_opposes("USDCAD", false);
+        const int fxc_htf_bias = fxc_opp_long ? -1 : (fxc_opp_short ? +1 : 0);
         g_fx_scalp_usdcad.on_tick(bid, ask, now_ms_fx,
                                   fx_can_enter,
                                   /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
                                   /*vacuum_ask=*/false, /*vacuum_bid=*/false,
                                   /*wall_above=*/false, /*wall_below=*/false,
                                   /*l2_real=*/false,
-                                  nullptr);
+                                  nullptr,
+                                  fxc_htf_bias);
     }
 
     (void)sym; (void)regime; (void)dispatch;
