@@ -45,6 +45,12 @@ INDEX_FUTURES = {
     "GER40":  dict(symbol="DAX",    exchange="EUREX", currency="EUR"),
     "ESTX50": dict(symbol="ESTX50", exchange="EUREX", currency="EUR"),
     "UK100":  dict(symbol="Z",      exchange="ICEEU", currency="GBP"),
+    # 2026-05-26: MGC micro gold (CME COMEX). Wired ahead of CME L2 sub
+    # activation at month-start (2026-06-01). Until the subscription
+    # turns on, this contract resolution will fail with error 354 "no
+    # market data permissions for MGC" -- do NOT include MGC in --symbols
+    # until then. Once subscribed: --symbols XAUUSD,MGC.
+    "MGC":    dict(symbol="MGC",    exchange="COMEX", currency="USD"),
 }
 
 
