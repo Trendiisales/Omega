@@ -103,6 +103,11 @@ static void on_tick_eurusd(
     //   dispatcher reaches this handler. Detects "tick path severed before
     //   engine.on_tick" failures (root cause of 19h FX silence on 2026-05-04).
     g_engine_heartbeat.pulse("EurusdLondonOpen");
+    // 2026-05-26 (Stage 3): EURUSD-side engine coverage.
+    g_engine_heartbeat.pulse("EurusdTurtleH4");
+    g_engine_heartbeat.pulse("AmrEurusd");
+    g_engine_heartbeat.pulse("EurGbpPairs");
+    g_engine_heartbeat.pulse("VwapRevEurusd");
 
     // Update macro context price -- needed by gold correlation logic.
     // Done unconditionally before any engine logic.
@@ -233,6 +238,9 @@ static void on_tick_gbpusd(
 {
     // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
     g_engine_heartbeat.pulse("GbpusdLondonOpen");
+    // 2026-05-26 (Stage 3): GBPUSD-side engine coverage.
+    g_engine_heartbeat.pulse("GbpusdTurtleH4");
+    g_engine_heartbeat.pulse("AmrGbpusd");
 
     // Update macro context price -- needed by GBP correlation logic and
     //   the bracket trend bias accessor at on_tick.hpp:1177.

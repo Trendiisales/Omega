@@ -37,6 +37,7 @@ static void on_tick_us500(
     g_engine_heartbeat.pulse("IFlowSP");
     g_engine_heartbeat.pulse("IMacroSP");
     g_engine_heartbeat.pulse("TrendPullbackSP");
+    g_engine_heartbeat.pulse("AmrUs500");  // 2026-05-26 (Stage 4)
 
     // AtrMeanRevGrid US500 (shadow). H1 X=8 SL_Y=6 ATR_FROM_WAP, PF 1.75 sweep.
     // Engine aggregates H1 bars from tick mids internally.
@@ -641,6 +642,9 @@ static void on_tick_dj30(
     g_engine_heartbeat.pulse("IFlowUS30");
     g_engine_heartbeat.pulse("IMacroUS30");
     g_engine_heartbeat.pulse("MinimalH4US30");
+    g_engine_heartbeat.pulse("Us30Ensemble");        // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("Us30_3BarMomH1");      // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("OrbDj30");             // 2026-05-26 (Stage 4)
 
     const bool base_can_us30 = symbol_gate("DJ30.F",
         g_eng_us30.pos.active      ||
@@ -829,6 +833,11 @@ static void on_tick_ger40(
 {
     // 2026-05-05 (audit-fixes-40): heartbeat pulse for GER40-driven engines.
     g_engine_heartbeat.pulse("Ger40");
+    g_engine_heartbeat.pulse("AmrGer40");            // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("VwapRevGer40");        // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("Ger40LondonBrk");      // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("Ger40TurtleH4");       // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("MinimalH4Ger40");      // 2026-05-26 (Stage 4)
 
     // AtrMeanRevGrid GER40 (shadow). M15 X=14 SL_Y=6 ATR_FROM_WAP, PF 1.86 stage-4.
     if (g_amr_ger40.enabled) {
@@ -990,6 +999,9 @@ static void on_tick_nas100(
     // S11 P3b: HybridNAS100 pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowNAS100");
     g_engine_heartbeat.pulse("IMacroNAS");
+    g_engine_heartbeat.pulse("AmrNas100");           // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("OrbNas100");           // 2026-05-26 (Stage 4)
+    g_engine_heartbeat.pulse("NasBbRevLongH1");      // 2026-05-26 (Stage 4)
 
     // AtrMeanRevGrid NAS100 (shadow). M15 X=14 SL_Y=4 RSI_OR_MA, PF 1.55 sweep.
     if (g_amr_nas100.enabled) {

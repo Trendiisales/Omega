@@ -3991,6 +3991,62 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("MacroCrash",         g_macro_crash.enabled, 3600, 0, 24);
         g_engine_heartbeat.register_engine("NbmGoldLondon",      true,  900,  7, 14);
 
+        // ---- XAU trend zoo (H1/H2/H4/D1, tick-driven dispatch) ----------
+        // 2026-05-26 (Stage 2 of heartbeat coverage rollout): wire the 18
+        // XAU trend / structure engines that ship enabled=true. on_tick is
+        // forwarded to each from tick_gold.hpp every gold tick, so the
+        // pulse fires high-frequency; the 3600s cadence is the silence
+        // threshold (1hr no-tick = miss). live_required gated by the
+        // engine's own .enabled flag so disabling the engine also disables
+        // its heartbeat tracking automatically.
+        g_engine_heartbeat.register_engine("XauTrendFollow1h",     g_xau_tf_1h.enabled,            3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauTrendFollow2h",     g_xau_tf_2h.enabled,            3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauTrendFollow4h",     g_xau_tf_4h.enabled,            3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauTrendFollowD1",     g_xau_tf_d1.enabled,            3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauTsmomFastD1",       g_xau_tsmom_fast_d1.enabled,    3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauTurtleD1",          g_xau_turtle_d1.enabled,        3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauStopRunD1",         g_xau_stop_run_d1.enabled,      3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauPullbackContH4",    g_xau_pullback_cont_h4.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauPullbackContD1",    g_xau_pullback_cont_d1.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauNbmD1",             g_xau_nbm_d1.enabled,           3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauEmaCrossH4",        g_xau_ema_cross_h4.enabled,     3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauBBScalpD1",         g_xau_bb_scalp_d1.enabled,      3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauSwingBreakD1",      g_xau_swing_break_d1.enabled,   3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauDojiRejD1",         g_xau_doji_rej_d1.enabled,      3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauOutsideBarD1",      g_xau_outside_bar_d1.enabled,   3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauInsideBarD1",       g_xau_inside_bar_d1.enabled,    3600,  0, 24);
+        g_engine_heartbeat.register_engine("Xau3BarMomH4",         g_xau_3bar_mom_h4.enabled,      3600,  0, 24);
+        g_engine_heartbeat.register_engine("XauDonchian55GatedM30",g_xau_d55_gated_m30.enabled,    3600,  0, 24);
+
+        // ---- Gold portfolio (H1-bar driven, dispatched from gold ticks) --
+        g_engine_heartbeat.register_engine("C1Retuned",            g_c1_retuned.enabled,           3600,  0, 24);
+        g_engine_heartbeat.register_engine("Donchian",             g_donchian.enabled,             3600,  0, 24);
+        g_engine_heartbeat.register_engine("EmaPullback",          g_ema_pullback.enabled,         3600,  0, 24);
+        g_engine_heartbeat.register_engine("TsmomV2",              g_tsmom_v2.enabled,             3600,  0, 24);
+        g_engine_heartbeat.register_engine("PdhlRev",              g_pdhl_rev.enabled,             3600,  0, 24);
+
+        // ---- FX cross-asset engines (Stage 3 heartbeat rollout) ----------
+        g_engine_heartbeat.register_engine("EurusdTurtleH4",       g_eurusd_turtle_h4.enabled,     3600,  0, 24);
+        g_engine_heartbeat.register_engine("GbpusdTurtleH4",       g_gbpusd_turtle_h4.enabled,     3600,  0, 24);
+        g_engine_heartbeat.register_engine("AmrEurusd",            g_amr_eurusd.enabled,           3600,  0, 24);
+        g_engine_heartbeat.register_engine("AmrGbpusd",            g_amr_gbpusd.enabled,           3600,  0, 24);
+        g_engine_heartbeat.register_engine("EurGbpPairs",          g_eur_gbp_pairs.enabled,        3600,  0, 24);
+        g_engine_heartbeat.register_engine("VwapRevEurusd",        g_vwap_rev_eurusd.enabled,      3600,  0, 24);
+
+        // ---- Indices (Stage 4 heartbeat rollout) -------------------------
+        g_engine_heartbeat.register_engine("AmrUs500",             g_amr_us500.enabled,            3600,  7, 22);
+        g_engine_heartbeat.register_engine("AmrGer40",             g_amr_ger40.enabled,            3600,  7, 22);
+        g_engine_heartbeat.register_engine("AmrNas100",            g_amr_nas100.enabled,           3600,  7, 22);
+        g_engine_heartbeat.register_engine("VwapRevGer40",         g_vwap_rev_ger40.enabled,       3600,  7, 22);
+        g_engine_heartbeat.register_engine("Ger40LondonBrk",       g_ger40_london_brk.enabled,     3600,  7, 22);
+        g_engine_heartbeat.register_engine("Ger40TurtleH4",        g_ger40_turtle_h4.enabled,      3600,  7, 22);
+        g_engine_heartbeat.register_engine("MinimalH4Ger40",       g_minimal_h4_ger40.enabled,     3600,  7, 22);
+        g_engine_heartbeat.register_engine("Us30Ensemble",         g_us30_ensemble.enabled,        3600,  7, 22);
+        g_engine_heartbeat.register_engine("Us30_3BarMomH1",       g_us30_3bar_mom_h1.enabled,     3600,  7, 22);
+        g_engine_heartbeat.register_engine("OrbDj30",              g_orb_dj30.enabled,             3600, 13, 22);
+        g_engine_heartbeat.register_engine("OrbNas100",            g_orb_nas100.enabled,           3600, 13, 22);
+        g_engine_heartbeat.register_engine("NasBbRevLongH1",       g_nas_bbrev_long_h1.enabled,    3600,  7, 22);
+
         // ---- Tsmom portfolio (5 cells, bar-driven on H1) -----------------
         // bar-driven, but driven from XAUUSD ticks via tick_gold.hpp's
         // forwarding to TsmomPortfolio::on_tick / on_h1_bar. Pulse fires from

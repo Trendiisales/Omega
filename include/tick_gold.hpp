@@ -37,6 +37,36 @@ static void on_tick_gold(
     g_engine_heartbeat.pulse("Tsmom_H4_long");
     g_engine_heartbeat.pulse("Tsmom_H6_long");
     g_engine_heartbeat.pulse("Tsmom_D1_long");
+    // 2026-05-26 (Stage 2): XAU trend zoo coverage. Each engine's on_tick
+    // is dispatched below from this handler; pulse here makes "engine alive"
+    // visible to EngineHeartbeat::check_misses. See engine_contract_check.py
+    // for the gap inventory that motivated this batch.
+    g_engine_heartbeat.pulse("XauTrendFollow1h");
+    g_engine_heartbeat.pulse("XauTrendFollow2h");
+    g_engine_heartbeat.pulse("XauTrendFollow4h");
+    g_engine_heartbeat.pulse("XauTrendFollowD1");
+    g_engine_heartbeat.pulse("XauTsmomFastD1");
+    g_engine_heartbeat.pulse("XauTurtleD1");
+    g_engine_heartbeat.pulse("XauStopRunD1");
+    g_engine_heartbeat.pulse("XauPullbackContH4");
+    g_engine_heartbeat.pulse("XauPullbackContD1");
+    g_engine_heartbeat.pulse("XauNbmD1");
+    g_engine_heartbeat.pulse("XauEmaCrossH4");
+    g_engine_heartbeat.pulse("XauBBScalpD1");
+    g_engine_heartbeat.pulse("XauSwingBreakD1");
+    g_engine_heartbeat.pulse("XauDojiRejD1");
+    g_engine_heartbeat.pulse("XauOutsideBarD1");
+    g_engine_heartbeat.pulse("XauInsideBarD1");
+    g_engine_heartbeat.pulse("Xau3BarMomH4");
+    g_engine_heartbeat.pulse("XauDonchian55GatedM30");
+    // 2026-05-26 (Stage 5): gold-portfolio engines dispatched from this
+    // handler via on_tick + on_h1_bar (g_c1_retuned/donchian/ema_pullback/
+    // tsmom_v2 at the H1-bar block below; g_pdhl_rev at PDHL block).
+    g_engine_heartbeat.pulse("C1Retuned");
+    g_engine_heartbeat.pulse("Donchian");
+    g_engine_heartbeat.pulse("EmaPullback");
+    g_engine_heartbeat.pulse("TsmomV2");
+    g_engine_heartbeat.pulse("PdhlRev");
 
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
@@ -1416,7 +1446,14 @@ static void on_tick_gold(
         // impulse / trend-direction entries now.
 
         // ?? Gold bracket gate diagnostic -- prints every 10s ???????????????
-        {
+        // Suppressed when HybridBracketGold engine is disabled (see
+        // g_disable_bracket_gold in globals.hpp). When disabled, on_tick is
+        // never called for g_bracket_gold so its window never updates --
+        // range/brk_hi/brk_lo stay 0 forever and the diag is misleading
+        // ("can_enter=1 can_arm=1" while the engine receives no ticks).
+        // Print one banner per session-start so log search still finds it,
+        // then go quiet until the disable flag is cleared.
+        if (!g_disable_bracket_gold || g_bracket_gold.has_open_position()) {
             static int64_t s_last_brk_diag = 0;
             if (now_ms_g - s_last_brk_diag >= 10000) {
                 s_last_brk_diag = now_ms_g;
