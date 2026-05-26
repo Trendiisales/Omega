@@ -5,6 +5,7 @@
 // tracks per-lane position counts so later sessions can enforce budget limits
 // without another refactor. Engine behaviour is UNCHANGED in Session 9.
 #include "gold_coordinator.hpp"
+#include "PortfolioGuard.hpp"  // S48: portfolio-level kill-switch + sizing helpers
 
 // -- XAUUSD -------------------------------------------------
 static void on_tick_gold(
@@ -67,6 +68,12 @@ static void on_tick_gold(
     g_engine_heartbeat.pulse("EmaPullback");
     g_engine_heartbeat.pulse("TsmomV2");
     g_engine_heartbeat.pulse("PdhlRev");
+
+    // S48 2026-05-27: portfolio-level kill-switch refresh.
+    // Checks for C:/Omega/KILL_SWITCH.lock every 30s. If file exists,
+    // omega::pg::can_open_new_position() returns false until operator
+    // deletes the file. Existing positions continue to manage to exit.
+    omega::pg::refresh_kill_switch(now_ms_g);
 
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
