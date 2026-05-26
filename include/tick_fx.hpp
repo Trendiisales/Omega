@@ -179,6 +179,10 @@ static void on_tick_eurusd(
     // forward ticks. Backtest sweep: PF 2.11 @ X=10 (13 trades, 2yr).
     if (g_amr_eurusd.enabled) g_amr_eurusd.on_tick(bid, ask, now_ms);
 
+    // S37g 2026-05-26 FxEnsembleEngine -- donchian_55 H1 LONG cell.
+    if (g_fx_ens_eurusd.enabled)
+        g_fx_ens_eurusd.on_tick(bid, ask, now_ms, write_shadow_csv);
+
     // EurGbpPairsEngine (shadow) -- spread mean-reversion. Engine maintains its
     // own H1 OHLC accumulator + rolling z-score; signal logic runs on H1 close.
     // See backtest/sweep_pairs_v2.csv for tuning. Routed in both on_tick_eurusd
@@ -283,6 +287,8 @@ static void on_tick_gbpusd(
 
     // AtrMeanRevGrid GBPUSD (shadow). Backtest: PF 2.11 @ X=10 (13 trades, 2yr).
     if (g_amr_gbpusd.enabled) g_amr_gbpusd.on_tick(bid, ask, now_ms);
+    if (g_fx_ens_gbpusd.enabled)
+        g_fx_ens_gbpusd.on_tick(bid, ask, now_ms, write_shadow_csv);
 
     // EurGbpPairsEngine -- GBP leg (see on_tick_eurusd for EUR leg).
     {
@@ -318,6 +324,13 @@ static void on_tick_usdjpy(
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
         g_usdjpy_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
         g_usdjpy_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+    }
+
+    // S37g 2026-05-26 FxEnsembleEngine USDJPY (donchian_20 H2 LONG cell).
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        if (g_fx_ens_usdjpy.enabled)
+            g_fx_ens_usdjpy.on_tick(bid, ask, now_ms_fx, write_shadow_csv);
     }
 
     // S99: FX kill-switch (see on_tick_eurusd comment). UsdjpyAsianOpen disabled.
@@ -459,6 +472,8 @@ static void on_tick_audusd(
 
         // AtrMeanRevGrid AUDUSD (shadow). Backtest: PF 1.06 (marginal).
         if (g_amr_audusd.enabled) g_amr_audusd.on_tick(bid, ask, now_ms);
+        if (g_fx_ens_audusd.enabled)
+            g_fx_ens_audusd.on_tick(bid, ask, now_ms, write_shadow_csv);
 
         (void)regime; (void)dispatch;
         return;

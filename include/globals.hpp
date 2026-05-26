@@ -779,6 +779,21 @@ static omega::AtrMeanRevGridEngine<omega::AmrTraits_AUDUSD> g_amr_audusd;
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_NZDUSD> g_amr_nzdusd;
 // 2026-05-26 S37f -- EURGBP H1 X=5 SL=3 (validated: OOS PF 1.68, RF 1.39)
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_EURGBP> g_amr_eurgbp;
+
+// 2026-05-26 S37g -- FxEnsembleEngine: 5 cross-family FX cells validated via
+// deep edge hunt (fx_deep_hunt.py). Each instance enables one cell tuned to
+// the pair's best edge per OOS validation. State-persistence inherited.
+//   EURUSD H1 donchian_55 LONG SL=3 TP=3 MB=24  OOS PF 2.80 (Sharpe 1.75)
+//   GBPUSD H2 bb_rev_20   LONG SL=3 TP=5 MB=96  OOS PF 3.24 (Sharpe 1.41)
+//   AUDUSD H4 bb_rev_20   LONG SL=3 TP=2 MB=24  OOS PF inf  (thin n=5)
+//   USDCAD H4 3bar_mom    SHORT SL=1.5 TP=5 MB=24 OOS PF 2.39 (Sharpe 1.76)
+//   USDJPY H2 donchian_20 LONG SL=1.5 TP=5 MB=96 OOS PF 1.67 (Sharpe 0.88)
+#include "FxEnsembleEngine.hpp"
+static omega::FxEnsembleEngine g_fx_ens_eurusd("EURUSD");
+static omega::FxEnsembleEngine g_fx_ens_gbpusd("GBPUSD");
+static omega::FxEnsembleEngine g_fx_ens_audusd("AUDUSD");
+static omega::FxEnsembleEngine g_fx_ens_usdcad("USDCAD");
+static omega::FxEnsembleEngine g_fx_ens_usdjpy("USDJPY");
 // 2026-05-26: Index AMR instances. Configs picked from deep eval sweep on
 // real tick CSVs (SPXUSD/NSXUSD/GER40). See AtrMeanRevGridEngine.hpp traits.
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_US500>  g_amr_us500;

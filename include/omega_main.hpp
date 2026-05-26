@@ -744,6 +744,12 @@ int main(int argc, char* argv[])
                 g_amr_eurusd.save_state(sr + "/amr_eurusd.dat");
                 g_amr_gbpusd.save_state(sr + "/amr_gbpusd.dat");
                 g_amr_eurgbp.save_state(sr + "/amr_eurgbp.dat");
+                // S37g 2026-05-26 FxEnsembleEngine state-persist
+                g_fx_ens_eurusd.save_state(sr + "/fxens_eurusd.dat");
+                g_fx_ens_gbpusd.save_state(sr + "/fxens_gbpusd.dat");
+                g_fx_ens_audusd.save_state(sr + "/fxens_audusd.dat");
+                g_fx_ens_usdcad.save_state(sr + "/fxens_usdcad.dat");
+                g_fx_ens_usdjpy.save_state(sr + "/fxens_usdjpy.dat");
                 g_amr_us500.save_state (sr + "/amr_us500.dat");
                 g_amr_nas100.save_state(sr + "/amr_nas100.dat");
                 g_amr_ger40.save_state (sr + "/amr_ger40.dat");

@@ -1674,6 +1674,50 @@ static void init_engines(const std::string& cfg_path)
             g_amr_gbpusd.enabled     = true;  // H1 X=10 (defaults), PF 2.11 (kept from prior)
             amr_boot(g_amr_gbpusd, "gbpusd", warmup_gbp);
 
+            // S37g 2026-05-26: FxEnsembleEngine -- 5 cross-family validated cells.
+            // Each instance is a different pair; enable_cell() flips on the
+            // one cell that survived 4-gate validation for that pair.
+            auto fx_ens_boot = [&](auto& eng, const std::string& sym_tag,
+                                    const std::string& csv_path,
+                                    double max_spread, double atr_floor) {
+                eng.shadow_mode = true;
+                eng.enabled     = true;
+                eng.lot         = 0.01;
+                eng.max_spread_price = max_spread;
+                eng.min_atr_floor    = atr_floor;
+                eng.init();
+                const std::string sp = state_root_dir() + "/fxens_" + sym_tag + ".dat";
+                eng.load_or_seed_from_h1_csv(sp, csv_path);
+            };
+            // EURUSD: donchian_55 LONG H1 SL=3 TP=3 MB=24
+            g_fx_ens_eurusd.enable_cell(omega::FxCellId::DONCHIAN_55_H1_LONG, 3.0, 1.0, 24);
+            fx_ens_boot(g_fx_ens_eurusd, "eurusd",
+                        "phase1/signal_discovery/warmup_EURUSD_H1.csv",
+                        0.00030, 0.00010);
+            // GBPUSD: bb_rev_20 LONG H2 SL=3 TP=5 MB=96
+            g_fx_ens_gbpusd.enable_cell(omega::FxCellId::BB_REV_20_H2_LONG, 3.0, 1.67, 96);
+            fx_ens_boot(g_fx_ens_gbpusd, "gbpusd",
+                        "phase1/signal_discovery/warmup_GBPUSD_H1.csv",
+                        0.00035, 0.00012);
+            // AUDUSD: bb_rev_20 LONG H4 SL=3 TP=2 MB=24  (thin n=5, shadow only)
+            g_fx_ens_audusd.enable_cell(omega::FxCellId::BB_REV_20_H4_LONG, 3.0, 0.67, 24);
+            fx_ens_boot(g_fx_ens_audusd, "audusd",
+                        "phase1/signal_discovery/warmup_AUDUSD_H1.csv",
+                        0.00035, 0.00012);
+            // USDCAD: 3bar_mom SHORT H4 SL=1.5 TP=5 MB=24
+            g_fx_ens_usdcad.enable_cell(omega::FxCellId::THREE_BAR_MOM_H4_SHORT, 1.5, 3.33, 24);
+            fx_ens_boot(g_fx_ens_usdcad, "usdcad",
+                        "phase1/signal_discovery/warmup_USDCAD_H1.csv",
+                        0.00040, 0.00015);
+            // USDJPY: donchian_20 LONG H2 SL=1.5 TP=5 MB=96
+            g_fx_ens_usdjpy.enable_cell(omega::FxCellId::DONCHIAN_20_H2_LONG, 1.5, 3.33, 96);
+            fx_ens_boot(g_fx_ens_usdjpy, "usdjpy",
+                        "phase1/signal_discovery/warmup_USDJPY_H1.csv",
+                        0.050, 0.01);
+            std::printf("[OMEGA-INIT] FxEnsembleEngine: 5 pairs enabled (shadow) -- "
+                       "EUR(Donch55H1L) GBP(BBrev20H2L) AUD(BBrev20H4L) "
+                       "CAD(3barH4S) JPY(Donch20H2L)\n");
+
             // S37f 2026-05-26: EURGBP H1 X=5 SL=3 -- new pair, validated.
             //   Full validation pipeline: IS PF 1.80 / OOS PF 1.68 / WR 60% /
             //   RF 1.39 / pf_ratio 0.93 (clean -- not curve-fit).
