@@ -36,6 +36,27 @@ namespace latency {
 // ?????????????????????????????????????????????????????????????????????????????
 // Helpers
 // ?????????????????????????????????????????????????????????????????????????????
+// Time-source switch: in backtest mode (OMEGA_BT_SHIM_ACTIVE set by
+// OmegaTimeShim.hpp force-included via CMake) all time accessors read the
+// simulated clock via omega::bt::g_sim_now_ms. In production the macro is
+// undefined and the engine reads wall clock. Mirrors the pattern in
+// CrossAssetEngines.hpp ca_now_sec / ca_utc_time.
+#ifdef OMEGA_BT_SHIM_ACTIVE
+static inline int64_t le_now_sec() noexcept {
+    return omega::bt::g_sim_now_ms / 1000LL;
+}
+static inline int64_t le_now_ms() noexcept {
+    return omega::bt::g_sim_now_ms;
+}
+static inline void le_utc_time(struct tm& ti) noexcept {
+    const time_t t = static_cast<time_t>(omega::bt::g_sim_now_ms / 1000LL);
+#ifdef _WIN32
+    gmtime_s(&ti, &t);
+#else
+    gmtime_r(&t, &ti);
+#endif
+}
+#else
 static inline int64_t le_now_sec() noexcept {
     return std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -45,6 +66,15 @@ static inline int64_t le_now_ms() noexcept {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
+static inline void le_utc_time(struct tm& ti) noexcept {
+    const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+#ifdef _WIN32
+    gmtime_s(&ti, &t);
+#else
+    gmtime_r(&t, &ti);
+#endif
+}
+#endif
 
 // ?????????????????????????????????????????????????????????????????????????????
 // LeSignal -- what these engines return on a new entry
@@ -274,14 +304,7 @@ class GoldSpreadDislocation {
     }
 
     static bool in_active_session() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-            std::chrono::system_clock::now());
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
+        struct tm ti{}; le_utc_time(ti);
         const int h = ti.tm_hour;
         // London + NY: 07:00-20:00 UTC
         // Asia window: 22:00-05:00 UTC (Tokyo open, NZ/AU morning)
@@ -460,14 +483,7 @@ class GoldEventCompression {
     LePositionManager pos_mgr_;
 
     void check_daily_reset() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-            std::chrono::system_clock::now());
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
+        struct tm ti{}; le_utc_time(ti);
         if (ti.tm_yday != last_reset_day_) {
             last_reset_day_ = ti.tm_yday;
             daily_trades_ = 0;
@@ -476,14 +492,7 @@ class GoldEventCompression {
 
     // Returns seconds until next high-impact event, or -1 if not within window
     static int secs_to_next_event() noexcept {
-        const auto t = std::chrono::system_clock::to_time_t(
-            std::chrono::system_clock::now());
-        struct tm ti{};
-#ifdef _WIN32
-        gmtime_s(&ti, &t);
-#else
-        gmtime_r(&t, &ti);
-#endif
+        struct tm ti{}; le_utc_time(ti);
         const int wday = ti.tm_wday;  // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
         const int mins = ti.tm_hour * 60 + ti.tm_min;
         const int secs = mins * 60 + ti.tm_sec;

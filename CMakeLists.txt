@@ -496,6 +496,41 @@ else()
 endif()
 
 # =============================================================================
+# LatencyEdgeBacktest -- harness for LatencyEdgeEngines (Gold)
+# Drives GoldSpreadDislocation + GoldEventCompression directly under
+# OmegaTimeShim so session/event-schedule gates resolve against tape time.
+#
+# Build: cmake --build build --target LatencyEdgeBacktest --config Release
+# Run:   ./build/LatencyEdgeBacktest <ticks.csv> [options]
+# =============================================================================
+add_executable(LatencyEdgeBacktest
+    backtest/LatencyEdgeBacktest.cpp
+)
+target_include_directories(LatencyEdgeBacktest PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(LatencyEdgeBacktest PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(LatencyEdgeBacktest PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(LatencyEdgeBacktest PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(LatencyEdgeBacktest PRIVATE OMEGA_BACKTEST)
+endif()
+
+# =============================================================================
 # UstecTrendFollow5mBacktest -- dedicated harness for UstecTrendFollow5mEngine
 # Built to answer the promotion-gate question documented at
 # include/engine_init.hpp:964-967: "S63 + S37 widened SL/TP profile net-positive
