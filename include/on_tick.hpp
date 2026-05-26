@@ -2092,6 +2092,8 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     //   remain on the inert shared handler.
     else if (sym == "USDJPY")                           on_tick_usdjpy(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "AUDUSD" || sym == "NZDUSD")        on_tick_audusd(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
+    // S38d 2026-05-26: USDCAD dispatch for FxScalpPyramid_USDCAD (shadow).
+    else if (sym == "USDCAD")                           on_tick_usdcad(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "NAS100")                           on_tick_nas100(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask, tradeable, lat_ok, regime, rtt_check);

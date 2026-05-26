@@ -440,6 +440,65 @@ static void init_engines(const std::string& cfg_path)
         handle_closed_trade(tr);
     };
 
+    // ---- FxScalpPyramid x5 (S38d 2026-05-26) --------------------------------
+    // 5 profitable FX pairs from 13-month standalone harness backtest
+    // (backtest/fx_scalp_pyramid_bt.cpp). All shadow-mode pending 14-day
+    // live validation. Per-pair constants below match the harness PRESET
+    // switch (~line 1110). All five share: ADX 10 chop filter, ER disabled
+    // (S38b), pyramid on, SL=1.5xATR, TP=3.0xATR, Trail=0.12.
+    //
+    // Skipped from harness winners: NZDUSD (PF 1.07 marginal),
+    //   EURGBP (PF 0.93 loser).
+    //
+    // 13mo standalone harness PnL @ 0.01 lot:
+    //   EURUSD +$1808 PF 1.56 (best)
+    //   USDJPY +$1688 PF 1.51
+    //   GBPUSD +$1207 PF 1.32
+    //   USDCAD +$506  PF 1.23
+    //   AUDUSD +$410  PF 1.23
+    //   Total: +$5712 / 13mo
+    {
+        auto config_fx_scalp = [](omega::FxScalpPyramidEngine& e,
+                                  const std::string& sym,
+                                  double cost, double half_spread,
+                                  double usd_per_pt, double atr_floor,
+                                  double atr_cap, double spread_cap,
+                                  int decimals) {
+            e.set_pair_config(sym, cost, half_spread, usd_per_pt,
+                              atr_floor, atr_cap, spread_cap, decimals);
+            e.enabled         = true;
+            e.shadow_mode     = true;
+            e.LOOKBACK        = 8;
+            e.SL_ATR_MULT     = 1.5;
+            e.TP_ATR_MULT     = 3.0;
+            e.TRAIL_TIGHT     = 0.12;
+            e.PYRAMID_ON      = true;
+            e.LOSS_CUT_PCT    = 0.05;
+            e.BE_ARM_PCT      = 0.03;
+            e.BE_BUFFER_PCT   = 0.015;
+            e.BE_ARM_COST_MULT = 2.0;
+            e.CHOP_ER_MIN     = 0.0;     // S38b: ER disabled
+            e.CHOP_ADX_MIN    = 10.0;    // S38c: ADX 10 default
+            e.CHOP_ADX_PERIOD = 14;
+            e.RANGE_EXP_MULT  = 0.0;     // off by default
+            e.on_close_cb     = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        };
+
+        // xxxUSD majors (5 decimal places, ATR 30-500 pips, spread cap 50p)
+        config_fx_scalp(g_fx_scalp_eurusd, "EURUSD", 0.00040, 0.00002, 100000.0,
+                        0.00030, 0.00500, 0.00050, 5);
+        // USDJPY (3 decimals, JPY pip math: USD_PER_PT_LOT ~633 at 1USD=158JPY)
+        config_fx_scalp(g_fx_scalp_usdjpy, "USDJPY", 0.04,    0.002,   633.0,
+                        0.03,    0.50,    0.05,    3);
+        config_fx_scalp(g_fx_scalp_gbpusd, "GBPUSD", 0.00040, 0.00002, 100000.0,
+                        0.00030, 0.00500, 0.00050, 5);
+        // USDCAD (5 decimals, USD_PER_PT_LOT ~74000 at 1USD=1.35CAD)
+        config_fx_scalp(g_fx_scalp_usdcad, "USDCAD", 0.00050, 0.00002, 74000.0,
+                        0.00030, 0.00500, 0.00060, 5);
+        config_fx_scalp(g_fx_scalp_audusd, "AUDUSD", 0.00040, 0.00002, 100000.0,
+                        0.00030, 0.00500, 0.00050, 5);
+    }
+
     // ---- GoldRegimeDaily (2026-05-19 S110) ----------------------------------
     // H4 EMA-cross trend-follow engine. FIRST gold engine to clear the full
     // success criterion (PnL > $5K AND PF > 1.20) on the 154M-tick Dukascopy
@@ -2444,6 +2503,14 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
+        // S38d 2026-05-26 TODO: FxScalpPyramid x5 warm-seed.
+        //   No FX M5 bar source currently exists in this binary (no
+        //   g_bars_fx / g_bars_eurusd / etc.). Engines cold-start in ~50min
+        //   on live ticks once EMA21 + ATR14 + Donchian8 prime from fresh
+        //   bars. Acceptable for shadow-mode launch.
+        //   When a shared FX M5 bar source is added (mirror of g_bars_gold.m5),
+        //   wire prime_from_atomics + prime_from_history per engine here.
+
         // 2026-05-18 (part B): BBandScalp diagnostic prime.
         // Engine has no internal indicator state -- bb_upper/mid/lower, rsi14,
         // atr14 are read from g_bars_gold.m1.ind atomics on every tick.
@@ -3796,6 +3863,32 @@ static void init_engines(const std::string& cfg_path)
                           g_gold_scalp_pyramid.enabled,
                           g_gold_scalp_pyramid.shadow_mode,
                           {"GoldScalpPyramid"}); });
+    // S38d 2026-05-26: FxScalpPyramid x5 engine registrations.
+    g_engines.register_engine("FxScalpPyramid_EURUSD",
+        [reg]{ return reg("FxScalpPyramid_EURUSD",
+                          g_fx_scalp_eurusd.enabled,
+                          g_fx_scalp_eurusd.shadow_mode,
+                          {"FxScalpPyramid_EURUSD"}); });
+    g_engines.register_engine("FxScalpPyramid_USDJPY",
+        [reg]{ return reg("FxScalpPyramid_USDJPY",
+                          g_fx_scalp_usdjpy.enabled,
+                          g_fx_scalp_usdjpy.shadow_mode,
+                          {"FxScalpPyramid_USDJPY"}); });
+    g_engines.register_engine("FxScalpPyramid_GBPUSD",
+        [reg]{ return reg("FxScalpPyramid_GBPUSD",
+                          g_fx_scalp_gbpusd.enabled,
+                          g_fx_scalp_gbpusd.shadow_mode,
+                          {"FxScalpPyramid_GBPUSD"}); });
+    g_engines.register_engine("FxScalpPyramid_USDCAD",
+        [reg]{ return reg("FxScalpPyramid_USDCAD",
+                          g_fx_scalp_usdcad.enabled,
+                          g_fx_scalp_usdcad.shadow_mode,
+                          {"FxScalpPyramid_USDCAD"}); });
+    g_engines.register_engine("FxScalpPyramid_AUDUSD",
+        [reg]{ return reg("FxScalpPyramid_AUDUSD",
+                          g_fx_scalp_audusd.enabled,
+                          g_fx_scalp_audusd.shadow_mode,
+                          {"FxScalpPyramid_AUDUSD"}); });
     // 2026-05-19 S110: GoldRegimeDaily engine registration.
     g_engines.register_engine("GoldRegimeDaily",
         [reg]{ return reg("GoldRegimeDaily",
@@ -3884,6 +3977,12 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("XauusdFvg",          true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("GoldScalpPyramid",   g_gold_scalp_pyramid.enabled, 3600, 7, 21);
+        // S38d 2026-05-26: FxScalpPyramid heartbeats. 07-21 UTC session.
+        g_engine_heartbeat.register_engine("FxScalpPyramid_EURUSD", g_fx_scalp_eurusd.enabled, 3600, 7, 21);
+        g_engine_heartbeat.register_engine("FxScalpPyramid_USDJPY", g_fx_scalp_usdjpy.enabled, 3600, 7, 21);
+        g_engine_heartbeat.register_engine("FxScalpPyramid_GBPUSD", g_fx_scalp_gbpusd.enabled, 3600, 7, 21);
+        g_engine_heartbeat.register_engine("FxScalpPyramid_USDCAD", g_fx_scalp_usdcad.enabled, 3600, 7, 21);
+        g_engine_heartbeat.register_engine("FxScalpPyramid_AUDUSD", g_fx_scalp_audusd.enabled, 3600, 7, 21);
         g_engine_heartbeat.register_engine("GoldRegimeDaily",    g_gold_regime_daily.enabled, 14400, 7, 21);
         g_engine_heartbeat.register_engine("RSIReversal",        true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("RSIExtreme",         true, 3600,  0, 24);
@@ -4251,6 +4350,53 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps);
             return out;
         });
+    // S38d 2026-05-26: FxScalpPyramid x5 position sources.
+    //   Same shape as GoldScalpPyramid template above, parameterised over
+    //   (engine_ref, symbol). Registered separately so each shows in the
+    //   /api/v1/omega/positions endpoint with its own engine label.
+    {
+        auto register_fx_scalp = [](const std::string& sym,
+                                    omega::FxScalpPyramidEngine& eng,
+                                    const std::string& engine_label) {
+            g_open_positions.register_source(engine_label,
+                [&eng, sym, engine_label]() -> std::vector<omega::PositionSnapshot> {
+                    std::vector<omega::PositionSnapshot> out;
+                    if (!eng.has_open_position()) return out;
+
+                    const auto& p = eng.m_pos;
+                    const double mult = tick_value_multiplier(sym);
+
+                    double current = p.base_entry;
+                    const auto it = g_last_tick_bid.find(sym);
+                    if (it != g_last_tick_bid.end() && it->second > 0.0) {
+                        current = it->second;
+                    }
+
+                    const double dir   = p.is_long ? 1.0 : -1.0;
+                    const double entry = p.weighted_entry();
+                    const double size  = p.total_size();
+                    const double unrl  = (current - entry) * dir * size * mult;
+
+                    omega::PositionSnapshot ps;
+                    ps.symbol         = sym;
+                    ps.side           = p.is_long ? "LONG" : "SHORT";
+                    ps.size           = size;
+                    ps.entry          = entry;
+                    ps.current        = current;
+                    ps.unrealized_pnl = unrl;
+                    ps.mfe            = p.mfe_peak * size * mult;
+                    ps.mae            = p.mae * size * mult;
+                    ps.engine         = engine_label;
+                    out.push_back(ps);
+                    return out;
+                });
+        };
+        register_fx_scalp("EURUSD", g_fx_scalp_eurusd, "FxScalpPyramid_EURUSD");
+        register_fx_scalp("USDJPY", g_fx_scalp_usdjpy, "FxScalpPyramid_USDJPY");
+        register_fx_scalp("GBPUSD", g_fx_scalp_gbpusd, "FxScalpPyramid_GBPUSD");
+        register_fx_scalp("USDCAD", g_fx_scalp_usdcad, "FxScalpPyramid_USDCAD");
+        register_fx_scalp("AUDUSD", g_fx_scalp_audusd, "FxScalpPyramid_AUDUSD");
+    }
     // 2026-05-19 S110: GoldRegimeDaily position source.
     g_open_positions.register_source("GoldRegimeDaily",
         []() -> std::vector<omega::PositionSnapshot> {

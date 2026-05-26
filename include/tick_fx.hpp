@@ -119,6 +119,22 @@ static void on_tick_eurusd(
         g_eurusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
     }
 
+    // S38d 2026-05-26: FxScalpPyramid_EURUSD dispatch (shadow-mode).
+    //   M5 Donchian + EMA + ADX scalper. Engine internally gated by enabled.
+    //   Runs BEFORE the S99 kill-switch return for the same reason as Turtle.
+    //   L2 fields neutral: no FX L2 surface plumbed.
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        const bool fx_can_enter = tradeable && lat_ok;
+        g_fx_scalp_eurusd.on_tick(bid, ask, now_ms_fx,
+                                  fx_can_enter,
+                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
+                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
+                                  /*wall_above=*/false, /*wall_below=*/false,
+                                  /*l2_real=*/false,
+                                  nullptr);
+    }
+
     // S99: FX engine kill-switch -- all FX LondonOpen/AsianOpen/SydneyOpen
     //   engines disabled after full BreakoutEngine + BracketEngine sweep
     //   showed negative expectancy across all 5 FX pairs. Engine dispatch
@@ -232,6 +248,19 @@ static void on_tick_gbpusd(
         g_gbpusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
     }
 
+    // S38d 2026-05-26: FxScalpPyramid_GBPUSD dispatch (shadow-mode).
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        const bool fx_can_enter = tradeable && lat_ok;
+        g_fx_scalp_gbpusd.on_tick(bid, ask, now_ms_fx,
+                                  fx_can_enter,
+                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
+                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
+                                  /*wall_above=*/false, /*wall_below=*/false,
+                                  /*l2_real=*/false,
+                                  nullptr);
+    }
+
     // S99: FX kill-switch (see on_tick_eurusd comment). GbpusdLondonOpen disabled.
     (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
     return;
@@ -326,6 +355,19 @@ static void on_tick_usdjpy(
         g_usdjpy_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
     }
 
+    // S38d 2026-05-26: FxScalpPyramid_USDJPY dispatch (shadow-mode).
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        const bool fx_can_enter = tradeable && lat_ok;
+        g_fx_scalp_usdjpy.on_tick(bid, ask, now_ms_fx,
+                                  fx_can_enter,
+                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
+                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
+                                  /*wall_above=*/false, /*wall_below=*/false,
+                                  /*l2_real=*/false,
+                                  nullptr);
+    }
+
     // S37g 2026-05-26 FxEnsembleEngine USDJPY (donchian_20 H2 LONG cell).
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
@@ -414,6 +456,19 @@ static void on_tick_audusd(
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
             g_audusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
             g_audusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+        }
+
+        // S38d 2026-05-26: FxScalpPyramid_AUDUSD dispatch (shadow-mode).
+        {
+            const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+            const bool fx_can_enter = tradeable && lat_ok;
+            g_fx_scalp_audusd.on_tick(bid, ask, now_ms_fx,
+                                      fx_can_enter,
+                                      /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
+                                      /*vacuum_ask=*/false, /*vacuum_bid=*/false,
+                                      /*wall_above=*/false, /*wall_below=*/false,
+                                      /*l2_real=*/false,
+                                      nullptr);
         }
 
         // S99: FX kill-switch (see on_tick_eurusd comment). AudusdSydneyOpen disabled.
@@ -552,4 +607,32 @@ static void on_tick_audusd(
     // Defensive fall-through: if the on_tick.hpp dispatcher ever routes a
     //   non-AUD/non-NZD symbol here, suppress unused-arg warnings cleanly.
     (void)bid; (void)ask; (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
+}
+
+// ── USDCAD ──────────────────────────────────────────────────
+// S38d 2026-05-26: new handler added for USDCAD to host FxScalpPyramid_USDCAD.
+//   No prior FX session-open / Turtle wiring for USDCAD; this handler exists
+//   solely to feed M5 ticks to the scalp pyramid engine.
+template<typename Dispatch>
+static void on_tick_usdcad(
+    const std::string& sym, double bid, double ask,
+    bool tradeable, bool lat_ok, const std::string& regime,
+    Dispatch& dispatch)
+{
+    g_engine_heartbeat.pulse("FxScalpPyramid_USDCAD");
+
+    // S38d: FxScalpPyramid_USDCAD dispatch (shadow-mode).
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        const bool fx_can_enter = tradeable && lat_ok;
+        g_fx_scalp_usdcad.on_tick(bid, ask, now_ms_fx,
+                                  fx_can_enter,
+                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
+                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
+                                  /*wall_above=*/false, /*wall_below=*/false,
+                                  /*l2_real=*/false,
+                                  nullptr);
+    }
+
+    (void)sym; (void)regime; (void)dispatch;
 }

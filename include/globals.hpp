@@ -804,6 +804,19 @@ static omega::XauusdFvgEngine                 g_xauusd_fvg;
 // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + aggressive trail
 #include "GoldScalpPyramidEngine.hpp"
 static omega::GoldScalpPyramidEngine          g_gold_scalp_pyramid;
+// 2026-05-26 S38d: FxScalpPyramid -- 5 profitable FX pairs, shadow-mode.
+//   Clone of GoldScalpPyramidEngine adapted for per-pair FX constants.
+//   13-month standalone harness PnL @ 0.01 lot:
+//     EURUSD +$1808 PF 1.56, USDJPY +$1688 PF 1.51, GBPUSD +$1207 PF 1.32,
+//     USDCAD +$506 PF 1.23,  AUDUSD +$410 PF 1.23.
+//   Skipped: NZDUSD (PF 1.07), EURGBP (PF 0.93).
+//   All shadow_mode=true pending 14-day live shadow validation.
+#include "FxScalpPyramidEngine.hpp"
+static omega::FxScalpPyramidEngine            g_fx_scalp_eurusd;
+static omega::FxScalpPyramidEngine            g_fx_scalp_usdjpy;
+static omega::FxScalpPyramidEngine            g_fx_scalp_gbpusd;
+static omega::FxScalpPyramidEngine            g_fx_scalp_usdcad;
+static omega::FxScalpPyramidEngine            g_fx_scalp_audusd;
 // 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
 //   First gold engine to clear PF>1.20 AND PnL>$5K success criterion on 2025/6.
 //   PF 2.35 / WR 92.6% / PnL $5,854 / N=54 trades over 16 months.
