@@ -424,6 +424,17 @@ static void init_engines(const std::string& cfg_path)
     g_gold_scalp_pyramid.BE_ARM_COST_MULT   = 2.0;    // arm Phase-1 BE at MFE >= $1.20
     g_gold_scalp_pyramid.CHOP_ER_MIN        = 0.0;    // S38b 2026-05-26: disabled. ER hurts -- gives up $2K/2yr for $130 less DD
     g_gold_scalp_pyramid.CHOP_ER_LOOKBACK   = 10;     // 10x M5 = 50min ER window (unused when MIN=0)
+    // S38c: ADX 10 chop filter -- free DD safety. Backtest: 0% PnL cost on
+    // 2yr but -24% DD ($443 -> $338). Filters bars where Wilder ADX(14) < 10
+    // (no sustained directional pressure). Operator chose adx10 as default
+    // after 12-config x 3-period sweep (May, Jan-Apr, 2yr).
+    g_gold_scalp_pyramid.CHOP_ADX_MIN       = 10.0;
+    g_gold_scalp_pyramid.CHOP_ADX_PERIOD    = 14;     // Wilder standard
+    // S38d: Range-expansion filter -- off by default. Enable when scaling
+    // beyond 0.01 lot (DD reduction matters more). Recommended 1.2x.
+    // Backtest: 1.2x -> -15% PnL but -32% DD + 8% PF on 2yr.
+    g_gold_scalp_pyramid.RANGE_EXP_MULT     = 0.0;    // 0=off, 1.2 for risk-tier
+    g_gold_scalp_pyramid.RANGE_EXP_LB       = 10;
     g_gold_scalp_pyramid.CONSEC_BE_FREEZE_N = 3;      // 3 consec BE_CUT -> 30min freeze
     g_gold_scalp_pyramid.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);

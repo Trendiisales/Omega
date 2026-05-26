@@ -167,6 +167,22 @@ public:
     int    CHOP_ER_LOOKBACK   = 10;    // M5 bars (50 min) for ER computation
     int    CONSEC_BE_FREEZE_N = 3;     // freeze 30min after N consecutive BE_CUT exits
 
+    // ---- ADX directional-strength filter (S38c 2026-05-26) --------------------
+    // Wilder ADX(14). < threshold = no sustained direction = chop.
+    // Asymmetric to ER -- a trending move with one pullback still scores high
+    // (sustained +DM dominance), unlike ER which punishes path-length.
+    // Tested: ADX 10 -> -1% PnL but -24% DD on 2yr historicals. Free safety.
+    double CHOP_ADX_MIN       = 10.0;  // S38c default after sweep: 10 = free DD reduction
+    int    CHOP_ADX_PERIOD    = 14;    // Wilder period
+
+    // ---- Range-expansion filter (S38d 2026-05-26) -----------------------------
+    // Current bar (high-low) / avg(last N bars range) must exceed mult.
+    // Chop bars are small; trend bars are big. Independent signal vs body/range.
+    // Tested: 1.2x -> +PF +8% / -DD -32% on 2yr / -PnL -15%. Off by default;
+    // enable when scaling beyond 0.01 lot where DD matters more.
+    double RANGE_EXP_MULT     = 0.0;   // S38d: 0 = off; 1.2 = recommended when on
+    int    RANGE_EXP_LB       = 10;    // bars for avg-range window
+
     // ---- Session / filter constants -------------------------------------------
     static constexpr double ATR_FLOOR      = 1.50;
     static constexpr double ATR_CAP        = 15.0;
@@ -501,7 +517,66 @@ private:
     // ---- Donchian channel ----
     std::deque<double> m_highs, m_lows;
     std::deque<double> m_closes;          // S38a: closes for Kaufman ER chop filter
+    std::deque<double> m_ranges;          // S38d: bar high-low for range-expansion
     int                m_consec_be_cut = 0;  // S38a: BE_CUT freeze counter
+
+    // S38c: Wilder ADX state
+    struct ADXState {
+        double tr_smooth = 0.0;
+        double pdm_smooth = 0.0;
+        double mdm_smooth = 0.0;
+        double adx_value = 0.0;
+        bool   primed_di = false;
+        bool   primed_adx = false;
+        int    di_count = 0;
+        int    adx_count = 0;
+        double prev_high = 0.0, prev_low = 0.0, prev_close = 0.0;
+        bool   have_prev = false;
+        double seed_tr = 0.0, seed_pdm = 0.0, seed_mdm = 0.0, seed_dx = 0.0;
+        void push(double high, double low, double close, int period) {
+            if (!have_prev) {
+                prev_high = high; prev_low = low; prev_close = close;
+                have_prev = true;
+                return;
+            }
+            double up_m = high - prev_high;
+            double dn_m = prev_low - low;
+            double pdm = (up_m > dn_m && up_m > 0.0) ? up_m : 0.0;
+            double mdm = (dn_m > up_m && dn_m > 0.0) ? dn_m : 0.0;
+            double tr = std::max(high - low,
+                                 std::max(std::fabs(high - prev_close),
+                                          std::fabs(low - prev_close)));
+            if (!primed_di) {
+                seed_tr += tr; seed_pdm += pdm; seed_mdm += mdm;
+                if (++di_count >= period) {
+                    tr_smooth = seed_tr; pdm_smooth = seed_pdm; mdm_smooth = seed_mdm;
+                    primed_di = true;
+                }
+            } else {
+                tr_smooth  = tr_smooth  - (tr_smooth  / period) + tr;
+                pdm_smooth = pdm_smooth - (pdm_smooth / period) + pdm;
+                mdm_smooth = mdm_smooth - (mdm_smooth / period) + mdm;
+            }
+            prev_high = high; prev_low = low; prev_close = close;
+            if (primed_di && tr_smooth > 1e-9) {
+                double pdi = 100.0 * pdm_smooth / tr_smooth;
+                double mdi = 100.0 * mdm_smooth / tr_smooth;
+                double sum = pdi + mdi;
+                if (sum > 1e-9) {
+                    double dx = 100.0 * std::fabs(pdi - mdi) / sum;
+                    if (!primed_adx) {
+                        seed_dx += dx;
+                        if (++adx_count >= period) {
+                            adx_value = seed_dx / period;
+                            primed_adx = true;
+                        }
+                    } else {
+                        adx_value = (adx_value * (period - 1) + dx) / period;
+                    }
+                }
+            }
+        }
+    } m_adx;
 
     // ---- Signal state ----
     bool   m_signal_pending = false;
@@ -544,9 +619,13 @@ private:
         m_highs.push_back(bar.high);
         m_lows.push_back(bar.low);
         m_closes.push_back(bar.close);
-        const int er_window = std::max(LOOKBACK + 1, CHOP_ER_LOOKBACK + 1);
-        if ((int)m_highs.size()  > er_window) { m_highs.pop_front();  m_lows.pop_front(); }
-        if ((int)m_closes.size() > er_window)   m_closes.pop_front();
+        m_ranges.push_back(bar.high - bar.low);            // S38d: range deque for expansion filter
+        m_adx.push(bar.high, bar.low, bar.close, CHOP_ADX_PERIOD);  // S38c: ADX update
+        const int win = std::max(LOOKBACK + 1,
+                       std::max(CHOP_ER_LOOKBACK + 1, RANGE_EXP_LB + 1));
+        if ((int)m_highs.size()  > win) { m_highs.pop_front();  m_lows.pop_front(); }
+        if ((int)m_closes.size() > win)   m_closes.pop_front();
+        if ((int)m_ranges.size() > win)   m_ranges.pop_front();
 
         // Update bar counter for open position
         if (m_pos.active) {
@@ -573,6 +652,25 @@ private:
 
         // ATR floor/cap
         if (m_atr.value < ATR_FLOOR || m_atr.value > ATR_CAP) return;
+
+        // S38c: Wilder ADX directional-strength gate.
+        // ADX < threshold = no sustained directional pressure = chop.
+        // Asymmetric to ER: a trending move with one pullback still scores
+        // high (sustained +DM dominance). Free safety per 2yr backtest.
+        if (CHOP_ADX_MIN > 0.0 && m_adx.primed_adx && m_adx.adx_value < CHOP_ADX_MIN) {
+            return;
+        }
+
+        // S38d: range-expansion filter.
+        // bar range / avg(last N bars range) must exceed mult. Chop bars
+        // are small; momentum bars are big. Independent of body/range ratio.
+        if (RANGE_EXP_MULT > 0.0 && (int)m_ranges.size() >= RANGE_EXP_LB + 1) {
+            const int end = (int)m_ranges.size() - 1;  // current bar
+            double sum_r = 0.0;
+            for (int k = end - RANGE_EXP_LB; k < end; ++k) sum_r += m_ranges[k];
+            double avg_r = sum_r / RANGE_EXP_LB;
+            if (avg_r > 1e-9 && m_ranges[end] / avg_r < RANGE_EXP_MULT) return;
+        }
 
         // S38a: Kaufman Efficiency Ratio chop filter.
         // ER = |close[t] - close[t-N]| / sum_i(|close[i] - close[i-1]|)
