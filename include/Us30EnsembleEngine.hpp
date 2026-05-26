@@ -166,6 +166,7 @@ enum class Us30CellFamily {
     InsideBarBreak_H1,     // [B]
     AtrExpansion_M30,      // [C]
     EmaPullback10_30_H4,   // [D]
+    RsiExtreme_H1,         // [E] S37i 2026-05-26: rally-robust diversifier
 };
 
 enum class Us30CellTf { M15, M30, H1, H4 };
@@ -192,13 +193,19 @@ struct Us30CellConfig {
 //
 // Ensemble array kept (size 1) for future cell additions if fresh data
 // (post Nov 2025) surfaces a second uncorrelated survivor.
+// S37i 2026-05-26: re-expanded to 2 cells after revalidation on full 2.6yr
+// (2023-10 -> 2026-04, includes the +6.4% rally that was OOS in S37b).
+// InsideBarBreak retained (PF 1.57 full sample, RF 4.72) BUT OOS degraded
+// in rally (ratio 0.59). Add RsiExtreme as rally-robust diversifier:
+//   InsBrkH1  IS PF 1.90 -> OOS PF 1.12 (degraded)
+//   RsiExtH1  IS PF 1.45 -> OOS PF 1.26 (stable, ratio 0.87)
+// Pair gives both edges; signal families uncorrelated (price-pattern vs
+// momentum-oscillator).
 static constexpr Us30CellConfig kUs30EnsembleCells[] = {
-    { Us30CellFamily::InsideBarBreak_H1,   Us30CellTf::H1,  3.0, 5.0, 48,
-      "InsideBarBreak_H1_sl3.0tp5.0_long", "InsBrkH1"  },
-    // Dropped 2026-05-26 rebalance:
-    // { Us30CellFamily::AtrExpansion_H1, ... }      -- PF 1.21 (#2 best, pair Sharpe 2.80 but DD worse)
-    // { Us30CellFamily::AtrExpansion_M30, ... }     -- PF 1.08 cost drag, RF 0.81
-    // { Us30CellFamily::EmaPullback10_30_H4, ... }  -- PF 1.16 cost drag, RF 0.89
+    { Us30CellFamily::InsideBarBreak_H1, Us30CellTf::H1, 3.0, 5.0, 48,
+      "InsideBarBreak_H1_sl3.0tp5.0_long",  "InsBrkH1"  },
+    { Us30CellFamily::RsiExtreme_H1,     Us30CellTf::H1, 3.0, 3.0, 48,
+      "RsiExtreme_H1_sl3.0tp3.0_long",      "RsiExtH1"  },
 };
 static constexpr int kUs30EnsembleNumCells =
     static_cast<int>(sizeof(kUs30EnsembleCells) / sizeof(kUs30EnsembleCells[0]));
@@ -551,7 +558,35 @@ private:
                 return _sig_atr_expansion(bars_m30_, atr14_m30_);
             case Us30CellFamily::EmaPullback10_30_H4:
                 return _sig_ema_pullback_h4();
+            case Us30CellFamily::RsiExtreme_H1:
+                return _sig_rsi_extreme_h1();
         }
+        return 0;
+    }
+
+    // RSI extreme cross (edge_scan sig_rsi_extreme): RSI(14) prev<25 AND
+    // current >= 25 = long; mirror at 75 for short. We only use long here.
+    int _sig_rsi_extreme_h1() const noexcept {
+        const int N = 14;
+        const int sz = (int)bars_h1_.size();
+        if (sz < N + 2) return 0;
+        // Wilder RSI(14)
+        double up = 0.0, dn = 0.0;
+        for (int i = sz - N; i < sz; ++i) {
+            const double d = bars_h1_[i].close - bars_h1_[i-1].close;
+            if (d > 0) up += d; else dn -= d;
+        }
+        if (up + dn <= 0) return 0;
+        const double rsi_cur = 100.0 - 100.0 / (1.0 + up / std::max(dn, 1e-12));
+        // Previous-bar RSI
+        double up_p = 0.0, dn_p = 0.0;
+        for (int i = sz - N - 1; i < sz - 1; ++i) {
+            const double d = bars_h1_[i].close - bars_h1_[i-1].close;
+            if (d > 0) up_p += d; else dn_p -= d;
+        }
+        if (up_p + dn_p <= 0) return 0;
+        const double rsi_prev = 100.0 - 100.0 / (1.0 + up_p / std::max(dn_p, 1e-12));
+        if (rsi_prev < 25.0 && rsi_cur >= 25.0) return +1;
         return 0;
     }
 
