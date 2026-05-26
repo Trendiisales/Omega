@@ -1522,10 +1522,11 @@ static void init_engines(const std::string& cfg_path)
         // WF 4 folds all positive, agg OOS +$10,943 / 160 trades.
         // No US30 H1 warmup CSV in repo yet; engine cold-warms over ~15 H1 bars
         // before first signal possible. TODO: generate warmup_US30_H1.csv.
-        // 2026-05-26: flipped shadow_mode=false (LIVE) per operator instruction
-        // to capture DJ30 trend gains. Overrides S35-handoff 1-month-shadow rule.
-        // Backing: 27mo PF 1.44, OOS PF 2.37, WF 4/4 folds +ve.
-        g_us30_3bar_mom_h1.shadow_mode = false;
+        // 2026-05-26 S37j: REVERTED to shadow per operator directive --
+        // "NOTHING should be live all shadow". Earlier flip (LIVE) at
+        // S37 was operator-approved to capture DJ30 trend gains but now
+        // pulled back. ALL engines now shadow_mode=true.
+        g_us30_3bar_mom_h1.shadow_mode = true;
         g_us30_3bar_mom_h1.enabled     = true;
         g_us30_3bar_mom_h1.symbol      = "US30";
         g_us30_3bar_mom_h1.seed_from_h1_csv("phase1/signal_discovery/warmup_US30_H1.csv");
