@@ -184,11 +184,14 @@ struct AmrBaseParams {
 struct AmrTraits_EURUSD : AmrBaseParams {
     static constexpr const char* SYMBOL = "EURUSD";
     static constexpr double POINT = 0.00001;  // 5-dp pricing
-    // 2026-05-26 multi-TF tick-replay sweep (5 pairs x 4 TFs x X={10,14}):
-    //   EURUSD best cell = M15 X=14 -> 21 trd, WR 52%, PF 1.80, +$9.04, DD $4.31,
-    //   Sharpe-ann 1.04, Recovery 2.10. Override H1 default -> M15 + X=14.
-    static constexpr std::int64_t BAR_INTERVAL_MS = 900LL * 1000LL;  // M15
-    static constexpr double       ENTRY_ATR_MULT_X = 14.0;
+    // 2026-05-26 S37f -- replaced M15 X=14 with H4 X=3 SL=7 per full validation
+    // pipeline (3-period intersect + WF 3/4 folds + OOS hold-out PF>=0.7*IS).
+    // Survivor table:
+    //   H4 X=3 SL=7  IS PF 1.60  OOS PF 1.89  WR 75%  OOS beats IS (clean)
+    // Prior M15 X=14 (PF 1.04 sweep, no WF support) -> failed validation.
+    static constexpr std::int64_t BAR_INTERVAL_MS = 14400LL * 1000LL; // H4
+    static constexpr double       ENTRY_ATR_MULT_X = 3.0;
+    static constexpr double       SL_ATR_MULT_Y    = 7.0;
 };
 
 struct AmrTraits_GBPUSD : AmrBaseParams {
@@ -227,6 +230,11 @@ struct AmrTraits_EURGBP : AmrBaseParams {
     static constexpr const char* SYMBOL = "EURGBP";
     static constexpr double POINT = 0.00001;
     static constexpr double MAX_SPREAD_PRICE = 0.00030;
+    // 2026-05-26 S37f -- validated H1 X=5 SL=3 per full validation pipeline.
+    //   H1 X=5 SL=3  IS PF 1.80  OOS PF 1.68  WR 60%  RF 1.39
+    static constexpr std::int64_t BAR_INTERVAL_MS = 3600LL * 1000LL; // H1
+    static constexpr double       ENTRY_ATR_MULT_X = 5.0;
+    static constexpr double       SL_ATR_MULT_Y    = 3.0;
 };
 
 // =============================================================================

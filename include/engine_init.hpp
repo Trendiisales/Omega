@@ -1668,11 +1668,20 @@ static void init_engines(const std::string& cfg_path)
                 }
             };
 
-            g_amr_eurusd.enabled     = true;  // M15 X=14, PF 1.80
+            g_amr_eurusd.enabled     = true;  // H4 X=3 SL=7 (S37f validated, OOS PF 1.89)
             amr_boot(g_amr_eurusd, "eurusd", warmup_eur);
 
-            g_amr_gbpusd.enabled     = true;  // H1 X=10 (defaults), PF 2.11
+            g_amr_gbpusd.enabled     = true;  // H1 X=10 (defaults), PF 2.11 (kept from prior)
             amr_boot(g_amr_gbpusd, "gbpusd", warmup_gbp);
+
+            // S37f 2026-05-26: EURGBP H1 X=5 SL=3 -- new pair, validated.
+            //   Full validation pipeline: IS PF 1.80 / OOS PF 1.68 / WR 60% /
+            //   RF 1.39 / pf_ratio 0.93 (clean -- not curve-fit).
+            //   3-period intersect: each period +ve, min PF 1.33.
+            //   WF 4 folds: 3/4 positive.
+            const char* warmup_eurgbp = "phase1/signal_discovery/warmup_EURGBP_H1.csv";
+            g_amr_eurgbp.enabled     = true;
+            amr_boot(g_amr_eurgbp, "eurgbp", warmup_eurgbp);
 
             g_amr_audusd.enabled     = false; // marginal PF 1.34; awaiting deep tune
             g_amr_audusd.shadow_mode = true;

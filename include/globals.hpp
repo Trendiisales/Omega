@@ -777,6 +777,8 @@ static omega::AtrMeanRevGridEngine<omega::AmrTraits_EURUSD> g_amr_eurusd;
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_GBPUSD> g_amr_gbpusd;
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_AUDUSD> g_amr_audusd;
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_NZDUSD> g_amr_nzdusd;
+// 2026-05-26 S37f -- EURGBP H1 X=5 SL=3 (validated: OOS PF 1.68, RF 1.39)
+static omega::AtrMeanRevGridEngine<omega::AmrTraits_EURGBP> g_amr_eurgbp;
 // 2026-05-26: Index AMR instances. Configs picked from deep eval sweep on
 // real tick CSVs (SPXUSD/NSXUSD/GER40). See AtrMeanRevGridEngine.hpp traits.
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_US500>  g_amr_us500;

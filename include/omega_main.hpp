@@ -743,6 +743,7 @@ int main(int argc, char* argv[])
                 const std::string sr = state_root_dir();
                 g_amr_eurusd.save_state(sr + "/amr_eurusd.dat");
                 g_amr_gbpusd.save_state(sr + "/amr_gbpusd.dat");
+                g_amr_eurgbp.save_state(sr + "/amr_eurgbp.dat");
                 g_amr_us500.save_state (sr + "/amr_us500.dat");
                 g_amr_nas100.save_state(sr + "/amr_nas100.dat");
                 g_amr_ger40.save_state (sr + "/amr_ger40.dat");
