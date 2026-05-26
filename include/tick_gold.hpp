@@ -2638,33 +2638,16 @@ static void on_tick_gold(
     // Close callback wired in engine_init.hpp -> handle_closed_trade.
     // L2 fields from MacroContext: imbalance, slope, vacuum, wall, liveness.
     // When gold_l2_real=false, engine degrades all L2 filters to neutral.
-    //
-    // S44 2026-05-26: ROOT-CAUSE GATES added after 21-trade chop-day session
-    // (-$130 net, 13 LOSS_CUTs).
-    //   1. Regime gate: refuse entries when local regime=COMPRESSION. The
-    //      engine's breakout setup fires AT extremes during compression where
-    //      the move mean-reverts within seconds (LOSS_CUT in 5-30s repeatedly).
-    //   2. HTF bias gate (engine-side): block counter-trend entries. Today's
-    //      gold was BEARISH on HTF all session yet engine kept buying minor
-    //      bounces. Engine receives +1/-1/0 and self-blocks on direction.
-    {
-        const bool gsp_block_compress = gold_is_compressing;
-        const bool gsp_opp_long  = g_htf_filter.bias_opposes("XAUUSD", true);
-        const bool gsp_opp_short = g_htf_filter.bias_opposes("XAUUSD", false);
-        const int gsp_htf_bias = gsp_opp_long ? -1 : (gsp_opp_short ? +1 : 0);
-        const bool gsp_can_enter_eff = gold_can_enter && !gsp_block_compress;
-        g_gold_scalp_pyramid.on_tick(bid, ask, now_ms_g,
-                                     gsp_can_enter_eff,
-                                     g_macro_ctx.gold_l2_imbalance,
-                                     g_macro_ctx.gold_book_slope,
-                                     g_macro_ctx.gold_vacuum_ask,
-                                     g_macro_ctx.gold_vacuum_bid,
-                                     g_macro_ctx.gold_wall_above,
-                                     g_macro_ctx.gold_wall_below,
-                                     g_macro_ctx.gold_l2_real,
-                                     nullptr,
-                                     gsp_htf_bias);
-    }
+    g_gold_scalp_pyramid.on_tick(bid, ask, now_ms_g,
+                                 gold_can_enter,
+                                 g_macro_ctx.gold_l2_imbalance,
+                                 g_macro_ctx.gold_book_slope,
+                                 g_macro_ctx.gold_vacuum_ask,
+                                 g_macro_ctx.gold_vacuum_bid,
+                                 g_macro_ctx.gold_wall_above,
+                                 g_macro_ctx.gold_wall_below,
+                                 g_macro_ctx.gold_l2_real,
+                                 nullptr);
 
     // ?? GoldRegimeDaily (2026-05-19 S110) ?????????????????????????????????????
     // H4 EMA-cross trend-follow. Fed every tick for H4 bar accumulation +
