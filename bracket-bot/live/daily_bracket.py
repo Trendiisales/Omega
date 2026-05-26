@@ -112,6 +112,63 @@ def get_price(ib, c):
         log.warning(f'historical failed: {e}')
     return None
 
+def cleanup_orphan_orders(ib, instrument):
+    """
+    Cancel ALL open orders for the given instrument before placing new ones.
+    Required because GTC stop orders survive Python process death — orphans
+    accumulate across runs if the script crashes / is killed mid-cycle.
+
+    Uses reqAllOpenOrders() which (under master clientId=0) returns orders
+    placed by ANY client. Without master client, only own-session orders
+    are visible -> orphans from prior runs invisible -> not cleaned.
+
+    Retries up to 3x to absorb reqAllOpenOrders timing race. Final fallback:
+    reqGlobalCancel (cancels everything pending across the whole account --
+    safe only when this script is the sole IBKR client in production).
+    """
+    symbols_to_clean = {instrument}
+    if instrument in ('MGC', 'GC'):
+        symbols_to_clean = {'MGC', 'GC'}  # cancel either contract on switch
+    cancelled = 0
+    for attempt in range(3):
+        ib.reqAllOpenOrders()
+        ib.sleep(2)
+        targets = [
+            t for t in ib.openTrades()
+            if t.contract.symbol in symbols_to_clean
+            and t.order.orderType in ('STP', 'STP LMT', 'LMT', 'MKT')
+            and t.orderStatus.status in ('PreSubmitted', 'Submitted', 'PendingSubmit')
+        ]
+        if not targets and attempt == 0:
+            return 0
+        for t in targets:
+            try:
+                ib.cancelOrder(t.order)
+                log.info(f'cleanup: cancel #{t.order.orderId} {t.contract.localSymbol} '
+                         f'{t.order.action} @ {t.order.auxPrice or t.order.lmtPrice} '
+                         f'(was placed by cid={t.order.clientId})')
+                cancelled += 1
+            except Exception as e:
+                log.warning(f'cleanup: cancel #{t.order.orderId} failed: {e}')
+        ib.sleep(2)
+        ib.reqAllOpenOrders(); ib.sleep(1)
+        leftover = [t for t in ib.openTrades() if t.contract.symbol in symbols_to_clean]
+        if not leftover:
+            break
+        log.warning(f'cleanup: {len(leftover)} order(s) still open after attempt {attempt+1}/3')
+    # Nuclear fallback
+    ib.reqAllOpenOrders(); ib.sleep(1)
+    stubborn = [t for t in ib.openTrades() if t.contract.symbol in symbols_to_clean]
+    if stubborn:
+        log.error(f'cleanup: {len(stubborn)} stubborn order(s) -- calling reqGlobalCancel()')
+        ib.reqGlobalCancel()
+        ib.sleep(3)
+        cancelled += len(stubborn)
+    if cancelled:
+        log.info(f'cleanup: cancelled {cancelled} orphan order(s) before placing new bracket')
+    return cancelled
+
+
 def place_brackets(ib, c, qty, open_px, strategy):
     oca = f'{strategy}_{utcnow():%Y%m%d_%H%M%S}'
     bt = round_tick(open_px + OFFSET); st = round_tick(open_px - OFFSET)
@@ -156,7 +213,10 @@ def main():
     ap.add_argument('--instrument', default='MGC')
     ap.add_argument('--expiry', default=None)
     ap.add_argument('--qty', type=int, default=1)
-    ap.add_argument('--client-id', type=int, default=100)
+    ap.add_argument('--client-id', type=int, default=0,
+                    help='IBKR clientId. 0 = master (sees + cancels all orders across sessions). '
+                         'Required for orphan cleanup. Set Gateway: Configure -> Settings -> API '
+                         '-> Master API client ID = 0')
     ap.add_argument('--strategy', default='DAILY1300', help='label for this run (DAILY1300, DAILY1400, etc.)')
     ap.add_argument('--dry-run', action='store_true')
     args = ap.parse_args()
@@ -180,6 +240,14 @@ def main():
         log.info(f'contract: {c}')
     except Exception as e:
         log.error(f'contract resolve failed: {e}'); ib.disconnect(); sys.exit(2)
+
+    # Cancel any leftover orders from prior runs BEFORE placing new bracket.
+    # GTC stops survive Python process death -> they accumulate without cleanup.
+    # Requires clientId=0 (master) to see orders placed by other clientIds.
+    try:
+        cleanup_orphan_orders(ib, args.instrument)
+    except Exception as e:
+        log.warning(f'cleanup failed (continuing): {e}')
 
     open_px = get_price(ib, c)
     if open_px is None:
