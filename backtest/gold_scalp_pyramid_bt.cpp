@@ -54,10 +54,34 @@ struct Tick {
     int64_t ts_ms;
     double  bid;
     double  ask;
+    double  l2_imb = 0.5;  // 0..1, 0.5 = neutral; only populated for FMT_L2
 };
 
 // Format detection: set once after reading first line
-enum DataFormat { FMT_UNKNOWN, FMT_LEGACY, FMT_DUKASCOPY };
+enum DataFormat { FMT_UNKNOWN, FMT_LEGACY, FMT_DUKASCOPY, FMT_L2 };
+
+// S38a-L2: parse L2 CSV format from VPS logs.
+// ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,depth_bid_levels,depth_ask_levels,...
+static bool parse_l2(const char* s, Tick& t) {
+    if (!isdigit((unsigned char)s[0])) return false;
+    char* end;
+    int64_t ts = strtoll(s, &end, 10);
+    if (end == s || *end != ',') return false;
+    const char* p = end + 1;
+    /* mid */ strtod(p, &end);
+    if (end == p || *end != ',') return false;
+    p = end + 1;
+    double bid = strtod(p, &end);
+    if (end == p || *end != ',') return false;
+    p = end + 1;
+    double ask = strtod(p, &end);
+    if (end == p || *end != ',') return false;
+    p = end + 1;
+    double l2_imb = strtod(p, &end);
+    if (end == p) return false;
+    t.ts_ms = ts; t.bid = bid; t.ask = ask; t.l2_imb = l2_imb;
+    return true;
+}
 
 static bool parse_legacy(const char* s, Tick& t) {
     if (strlen(s) < 18) return false;
@@ -134,6 +158,11 @@ struct M5Bar {
     double  ema21     = 0.0;
     double  atr14     = 0.0;
     bool    atr_primed = false;
+    // S38a-L2: L2 imbalance carried from ticks (last value in bar)
+    double  l2_imb_close = 0.5;
+    double  l2_imb_min   = 1.0;
+    double  l2_imb_max   = 0.0;
+    bool    has_l2       = false;
 };
 
 // =============================================================================
@@ -237,6 +266,9 @@ struct Result {
     double max_dd        = 0.0;
     double profit_factor = 0.0;
     double avg_layers    = 0.0;  // average pyramid layers per trade
+    int    stats_er_blocked = 0; // S38a: signals blocked by chop ER filter
+    int    stats_l2_blocked = 0; // S38a-L2: signals blocked by L2 imb gate
+    int    stats_l2_bars    = 0; // S38a-L2: bars with L2 data attached
     std::vector<Trade> trades;
 };
 
@@ -244,7 +276,13 @@ struct Result {
 // Position with pyramid layers
 // =============================================================================
 static constexpr int MAX_LAYERS = 5;
-static constexpr double COST_RT_PTS    = 0.50;   // round-trip cost in price points
+static constexpr double COST_RT_PTS    = 0.60;   // S38a: realised BB cost @ 0.01 lot
+static constexpr double CHOP_ER_MIN    = 0.30;   // S38a: Kaufman ER threshold
+static constexpr int    CHOP_ER_LOOKBACK = 10;   // S38a: bars for ER window
+static bool             g_er_enabled   = true;   // S38a: CLI --no-er disables
+static bool             g_l2_gate      = false;  // S38a-L2: CLI --l2-gate enables L2 entry filter
+static constexpr double L2_LONG_MIN    = 0.58;   // l2_imb >= this for longs
+static constexpr double L2_SHORT_MAX   = 0.42;   // l2_imb <= this for shorts
 static constexpr double HALF_SPREAD    = 0.25;   // half spread applied at entry/exit
 static constexpr double USD_PER_PT_LOT = 100.0;  // XAUUSD: $100 per point per lot
 static constexpr double RISK_DOLLARS   = 50.0;   // max risk per base layer
@@ -366,8 +404,12 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
         // Auto-detect format on first line
         if (fmt == FMT_UNKNOWN) {
             if (!isdigit((unsigned char)line[0])) {
-                // Header line (Dukascopy)
-                fmt = FMT_DUKASCOPY;
+                // Header line -- look for L2 marker
+                if (strstr(line, "l2_imb")) {
+                    fmt = FMT_L2;
+                } else {
+                    fmt = FMT_DUKASCOPY;
+                }
                 continue;
             }
             // Try legacy first (starts with 8 digits for date)
@@ -384,11 +426,15 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
                 fmt = FMT_DUKASCOPY;
             }
         }
+        // Skip headers in mid-stream (e.g. concatenated daily L2 files)
+        if (!isdigit((unsigned char)line[0])) continue;
 
         Tick tk;
         bool parsed = false;
         if (fmt == FMT_LEGACY) {
             parsed = parse_legacy(line, tk);
+        } else if (fmt == FMT_L2) {
+            parsed = parse_l2(line, tk);
         } else {
             parsed = parse_dukascopy(line, tk);
         }
@@ -424,6 +470,13 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
             cur.ask_low = tk.ask; cur.ask_high = tk.ask;
             cur.bid_min_ts = cur.bid_max_ts = tk.ts_ms;
             cur.ask_min_ts = cur.ask_max_ts = tk.ts_ms;
+            // S38a-L2: seed L2 bar fields from first tick
+            if (fmt == FMT_L2) {
+                cur.has_l2 = true;
+                cur.l2_imb_close = tk.l2_imb;
+                cur.l2_imb_min   = tk.l2_imb;
+                cur.l2_imb_max   = tk.l2_imb;
+            }
             cur_anchor = anchor;
             have_cur = true;
             continue;
@@ -441,6 +494,13 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
             cur.ask_low = tk.ask; cur.ask_high = tk.ask;
             cur.bid_min_ts = cur.bid_max_ts = tk.ts_ms;
             cur.ask_min_ts = cur.ask_max_ts = tk.ts_ms;
+            // S38a-L2: seed L2 bar fields from first tick
+            if (fmt == FMT_L2) {
+                cur.has_l2 = true;
+                cur.l2_imb_close = tk.l2_imb;
+                cur.l2_imb_min   = tk.l2_imb;
+                cur.l2_imb_max   = tk.l2_imb;
+            }
             cur_anchor = anchor;
             continue;
         }
@@ -454,6 +514,13 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
         if (tk.bid > cur.bid_high) { cur.bid_high = tk.bid; cur.bid_max_ts = tk.ts_ms; }
         if (tk.ask < cur.ask_low)  { cur.ask_low  = tk.ask; cur.ask_min_ts = tk.ts_ms; }
         if (tk.ask > cur.ask_high) { cur.ask_high = tk.ask; cur.ask_max_ts = tk.ts_ms; }
+        // S38a-L2: carry L2 imbalance through bar
+        if (fmt == FMT_L2) {
+            cur.has_l2 = true;
+            cur.l2_imb_close = tk.l2_imb;
+            if (tk.l2_imb < cur.l2_imb_min) cur.l2_imb_min = tk.l2_imb;
+            if (tk.l2_imb > cur.l2_imb_max) cur.l2_imb_max = tk.l2_imb;
+        }
     }
 
     if (have_cur) {
@@ -489,6 +556,9 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
     int trade_id = 0;
     int64_t cooldown_until = 0;
     double total_layers = 0.0;
+    int stats_er_blocked = 0;  // S38a: local counter, copied to r at end
+    int stats_l2_blocked = 0;  // S38a-L2: local L2 block counter
+    int stats_l2_bars    = 0;  // S38a-L2: bars with L2 attached
 
     for (size_t i = 0; i < bars.size(); ++i) {
         const M5Bar& b = bars[i];
@@ -713,6 +783,18 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
         // ATR cap: don't trade extreme volatility (news spikes)
         if (b.atr14 > 15.0) continue;
 
+        // S38a: Kaufman Efficiency Ratio chop filter.
+        // ER = |close[t] - close[t-N]| / sum(|close diffs|). < threshold = chop.
+        if (g_er_enabled && (int)i >= CHOP_ER_LOOKBACK) {
+            double net = std::fabs(bars[i].close - bars[i - CHOP_ER_LOOKBACK].close);
+            double path = 0.0;
+            for (int k = (int)i - CHOP_ER_LOOKBACK + 1; k <= (int)i; ++k) {
+                path += std::fabs(bars[k].close - bars[k - 1].close);
+            }
+            double er = (path > 1e-9) ? (net / path) : 0.0;
+            if (er < CHOP_ER_MIN) { ++stats_er_blocked; continue; }
+        }
+
         // Compute Donchian channel over prior N bars (excluding current)
         double ch_high = -1e18, ch_low = 1e18;
         for (int k = (int)i - cfg.lookback; k < (int)i; ++k) {
@@ -729,6 +811,15 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
         // EMA trend alignment filter
         if (intend_long  && b.ema9 <= b.ema21) continue;
         if (!intend_long && b.ema9 >= b.ema21) continue;
+
+        // S38a-L2: L2 imbalance entry confirmation.
+        // Only active when bar has L2 data AND --l2-gate flag set.
+        // Long requires l2_imb_close >= 0.58 (bids stacked), short <= 0.42 (offers).
+        if (g_l2_gate && b.has_l2) {
+            ++stats_l2_bars;
+            if (intend_long  && b.l2_imb_close < L2_LONG_MIN) { ++stats_l2_blocked; continue; }
+            if (!intend_long && b.l2_imb_close > L2_SHORT_MAX) { ++stats_l2_blocked; continue; }
+        }
 
         // Momentum bar filter: bar body > 40% of range, close in direction
         double body = std::fabs(b.close - b.open);
@@ -831,6 +922,9 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
         r.avg_layers  = total_layers / r.n_trades;
     }
     if (gl > 0.0) r.profit_factor = gw / gl;
+    r.stats_er_blocked = stats_er_blocked;  // S38a: surface chop-filter blocks
+    r.stats_l2_blocked = stats_l2_blocked;
+    r.stats_l2_bars    = stats_l2_bars;
     return r;
 }
 
@@ -896,6 +990,11 @@ static void write_results(const char* path, const std::vector<Result>& all,
     fprintf(f, "Max DD:          $-%.2f\n", best.max_dd);
     fprintf(f, "Profit factor:   %.2f\n", best.profit_factor);
     fprintf(f, "Avg layers/trade:%.1f\n", best.avg_layers);
+    fprintf(f, "ER blocked:      %d (chop filter %s)\n",
+            best.stats_er_blocked, g_er_enabled ? "ON" : "OFF");
+    fprintf(f, "L2 blocked:      %d / %d bars-with-L2 (L2 gate %s)\n",
+            best.stats_l2_blocked, best.stats_l2_bars,
+            g_l2_gate ? "ON" : "OFF");
 
     // Monthly breakdown
     fprintf(f, "\nMonthly PnL (best config):\n");
@@ -1013,10 +1112,18 @@ static void write_best_equity(const char* path, const std::vector<Trade>& trades
 // =============================================================================
 int main(int argc, char** argv) {
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <tick_csv> [--no-pyramid] [--no-session-filter]\n", argv[0]);
+        fprintf(stderr, "usage: %s <tick_csv> [--no-er]\n", argv[0]);
         return 1;
     }
     const char* csv_path = argv[1];
+    for (int a = 2; a < argc; ++a) {
+        if (std::string(argv[a]) == "--no-er")   g_er_enabled = false;
+        if (std::string(argv[a]) == "--l2-gate") g_l2_gate    = true;
+    }
+    printf("S38a config: COST=%.2fpt CHOP_ER_MIN=%.2f ER_LB=%d ER=%s L2_GATE=%s\n",
+           COST_RT_PTS, CHOP_ER_MIN, CHOP_ER_LOOKBACK,
+           g_er_enabled ? "ON" : "OFF", g_l2_gate ? "ON" : "OFF");
+    fflush(stdout);
 
     auto t0 = std::chrono::steady_clock::now();
 

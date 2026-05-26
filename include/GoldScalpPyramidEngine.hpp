@@ -148,9 +148,24 @@ public:
     static constexpr double LOT_MIN        = 0.01;
     static constexpr double LOT_MAX        = 0.05;
 
-    // ---- Cost model -----------------------------------------------------------
-    static constexpr double COST_RT_PTS    = 0.50;
-    static constexpr double HALF_SPREAD    = 0.25;
+    // ---- Cost model (tunable via engine_init.hpp) -----------------------------
+    // COST_RT_PTS = realised round-trip cost per oz (spread + slip + commish).
+    // Phase-1 BE-lock triggers at MFE >= COST_RT_PTS * BE_ARM_COST_MULT and
+    // locks SL at entry + COST_RT_PTS so the trade is risk-free + cost-covered.
+    // Bumped default 0.50 -> 0.60 (2026-05-26 S38a) to match observed BB gold
+    // spread $0.22 + slip $0.30 + commish ~$0.08 at 0.01 lot.
+    double COST_RT_PTS        = 0.60;
+    double BE_ARM_COST_MULT   = 2.0;   // arm BE-lock when MFE >= COST*this (was 2.5 hardcoded)
+    double HALF_SPREAD        = 0.25;
+
+    // ---- Chop / whipsaw filter (S38a 2026-05-26) ------------------------------
+    // Kaufman Efficiency Ratio: |close[t] - close[t-N]| / sum(|close diffs|).
+    // 1.0 = perfect trend, 0.0 = perfect chop. Block entries when ER < threshold.
+    // Stops the engine entering Donchian breakouts that immediately revert in
+    // sideways tape -- the dominant loss mode for breakout scalps.
+    double CHOP_ER_MIN        = 0.30;
+    int    CHOP_ER_LOOKBACK   = 10;    // M5 bars (50 min) for ER computation
+    int    CONSEC_BE_FREEZE_N = 3;     // freeze 30min after N consecutive BE_CUT exits
 
     // ---- Session / filter constants -------------------------------------------
     static constexpr double ATR_FLOOR      = 1.50;
@@ -485,6 +500,8 @@ private:
 
     // ---- Donchian channel ----
     std::deque<double> m_highs, m_lows;
+    std::deque<double> m_closes;          // S38a: closes for Kaufman ER chop filter
+    int                m_consec_be_cut = 0;  // S38a: BE_CUT freeze counter
 
     // ---- Signal state ----
     bool   m_signal_pending = false;
@@ -526,7 +543,10 @@ private:
         // Update Donchian channel
         m_highs.push_back(bar.high);
         m_lows.push_back(bar.low);
-        if ((int)m_highs.size() > LOOKBACK + 1) { m_highs.pop_front(); m_lows.pop_front(); }
+        m_closes.push_back(bar.close);
+        const int er_window = std::max(LOOKBACK + 1, CHOP_ER_LOOKBACK + 1);
+        if ((int)m_highs.size()  > er_window) { m_highs.pop_front();  m_lows.pop_front(); }
+        if ((int)m_closes.size() > er_window)   m_closes.pop_front();
 
         // Update bar counter for open position
         if (m_pos.active) {
@@ -553,6 +573,27 @@ private:
 
         // ATR floor/cap
         if (m_atr.value < ATR_FLOOR || m_atr.value > ATR_CAP) return;
+
+        // S38a: Kaufman Efficiency Ratio chop filter.
+        // ER = |close[t] - close[t-N]| / sum_i(|close[i] - close[i-1]|)
+        // < CHOP_ER_MIN => sideways / whipsaw tape, block entry.
+        if (CHOP_ER_MIN > 0.0 && (int)m_closes.size() >= CHOP_ER_LOOKBACK + 1) {
+            const int n   = CHOP_ER_LOOKBACK;
+            const int end = (int)m_closes.size() - 1;
+            const double net = std::fabs(m_closes[end] - m_closes[end - n]);
+            double path = 0.0;
+            for (int k = end - n + 1; k <= end; ++k) {
+                path += std::fabs(m_closes[k] - m_closes[k - 1]);
+            }
+            const double er = (path > 1e-9) ? (net / path) : 0.0;
+            if (er < CHOP_ER_MIN) return;
+        }
+
+        // S38a: consecutive BE_CUT freeze. If the last N exits were all
+        // BE-stops, the regime is whipping us out post-entry -- step away.
+        if (CONSEC_BE_FREEZE_N > 0 && m_consec_be_cut >= CONSEC_BE_FREEZE_N) {
+            return;
+        }
 
         // Compute Donchian channel over prior N bars (exclude current)
         double ch_high = -1e18, ch_low = 1e18;
@@ -640,6 +681,10 @@ private:
                 _close_position(bid, ask, now_ms, "BE_CUT", ext_close);
                 m_cooldown_until = now_ms + COOLDOWN_SEC * 1000LL;
                 m_consec_loss_cut = 0;  // BE_CUT resets consec loss
+                ++m_consec_be_cut;       // S38a: BE-cut freeze counter
+                if (m_consec_be_cut >= CONSEC_BE_FREEZE_N) {
+                    m_consec_block_until = now_ms + 30LL * 60 * 1000LL;  // 30min freeze
+                }
                 return;
             }
         }
@@ -676,7 +721,7 @@ private:
             double new_trail = m_pos.hard_sl;
 
             // Phase 1: BE lock at MFE >= cost * 2.5
-            if (m_pos.mfe_peak >= COST_RT_PTS * 2.5) {
+            if (m_pos.mfe_peak >= COST_RT_PTS * BE_ARM_COST_MULT) {
                 double be = m_pos.is_long
                     ? (m_pos.base_entry + COST_RT_PTS)
                     : (m_pos.base_entry - COST_RT_PTS);
@@ -722,7 +767,7 @@ private:
             // Phase-1 BE lock applies every tick regardless (safety / risk-
             // free zone). The aggressive Phase-2/3/4 trail is what gets
             // deferred or replaced under these philosophies.
-            if (m_pos.mfe_peak >= COST_RT_PTS * 2.5) {
+            if (m_pos.mfe_peak >= COST_RT_PTS * BE_ARM_COST_MULT) {
                 double be = m_pos.is_long
                     ? (m_pos.base_entry + COST_RT_PTS)
                     : (m_pos.base_entry - COST_RT_PTS);
@@ -763,6 +808,7 @@ private:
             _close_position(bid, ask, now_ms, reason, ext_close);
             m_cooldown_until = now_ms + COOLDOWN_SEC * 1000LL;
             if (std::string(reason) == "SL_HIT") m_consec_loss_cut = 0;
+            if (std::string(reason) == "TRAIL_HIT") m_consec_be_cut = 0;  // S38a: trail profit clears freeze
             return;
         }
         if (!m_pos.is_long && ask >= eff_sl) {
@@ -770,6 +816,7 @@ private:
             _close_position(bid, ask, now_ms, reason, ext_close);
             m_cooldown_until = now_ms + COOLDOWN_SEC * 1000LL;
             if (std::string(reason) == "SL_HIT") m_consec_loss_cut = 0;
+            if (std::string(reason) == "TRAIL_HIT") m_consec_be_cut = 0;
             return;
         }
 
@@ -778,12 +825,14 @@ private:
             _close_position(bid, ask, now_ms, "TP_HIT", ext_close);
             m_cooldown_until = now_ms + COOLDOWN_SEC * 1000LL;
             m_consec_loss_cut = 0;
+            m_consec_be_cut   = 0;  // S38a: profitable exit clears BE-freeze
             return;
         }
         if (!m_pos.is_long && ask <= m_pos.hard_tp) {
             _close_position(bid, ask, now_ms, "TP_HIT", ext_close);
             m_cooldown_until = now_ms + COOLDOWN_SEC * 1000LL;
             m_consec_loss_cut = 0;
+            m_consec_be_cut   = 0;
             return;
         }
 

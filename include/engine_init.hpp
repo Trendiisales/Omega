@@ -405,7 +405,11 @@ static void init_engines(const std::string& cfg_path)
     // pending tick-level-validated exit philosophy (see SESSION_HANDOFF_
     // 2026-05-18b.md). Do NOT re-enable without harness-class agreement
     // to within 10% on PnL.
-    g_gold_scalp_pyramid.enabled     = false;
+    // S38a 2026-05-26: re-enable in SHADOW with chop filter + cost-aware BE.
+    // Speed advantage now available (LD4 colo sub-ms confirmed) -- the original
+    // shadow pin (pending tick-level harness agreement) no longer the bottleneck.
+    // 14-day shadow validation required before any live promotion.
+    g_gold_scalp_pyramid.enabled     = true;
     g_gold_scalp_pyramid.shadow_mode = true;
     g_gold_scalp_pyramid.LOOKBACK    = 8;     // Donchian channel bars (M5) -- sweep best
     g_gold_scalp_pyramid.SL_ATR_MULT = 1.5;   // SL = 1.5 * ATR14 -- sweep v2 best (wider, 71% WR)
@@ -414,7 +418,13 @@ static void init_engines(const std::string& cfg_path)
     g_gold_scalp_pyramid.PYRAMID_ON  = true;   // sweep v2: Lyrs=1.1, +$1001 uplift on best config
     g_gold_scalp_pyramid.LOSS_CUT_PCT  = 0.05;
     g_gold_scalp_pyramid.BE_ARM_PCT    = 0.03;
-    g_gold_scalp_pyramid.BE_BUFFER_PCT = 0.012;
+    g_gold_scalp_pyramid.BE_BUFFER_PCT = 0.015;  // S38a: 0.012 -> 0.015 = exit at +$0.68 vs $0.54 (clears $0.60 cost)
+    // S38a tunables (new fields on engine):
+    g_gold_scalp_pyramid.COST_RT_PTS        = 0.60;   // realised BB gold cost @ 0.01 lot
+    g_gold_scalp_pyramid.BE_ARM_COST_MULT   = 2.0;    // arm Phase-1 BE at MFE >= $1.20
+    g_gold_scalp_pyramid.CHOP_ER_MIN        = 0.30;   // Kaufman ER < 0.30 = chop, block entry
+    g_gold_scalp_pyramid.CHOP_ER_LOOKBACK   = 10;     // 10x M5 = 50min ER window
+    g_gold_scalp_pyramid.CONSEC_BE_FREEZE_N = 3;      // 3 consec BE_CUT -> 30min freeze
     g_gold_scalp_pyramid.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
     };
