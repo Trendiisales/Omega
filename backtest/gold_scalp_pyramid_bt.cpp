@@ -157,7 +157,14 @@ struct M5Bar {
     double  ema9      = 0.0;
     double  ema21     = 0.0;
     double  atr14     = 0.0;
+    double  adx14     = 0.0;          // S38c: Wilder ADX(14) for chop filter
+    bool    adx_primed = false;
     bool    atr_primed = false;
+    // S38d: HTF + range expansion
+    double  ema9_m15  = 0.0;          // M15 EMA9 (built from every 3rd M5 close)
+    double  ema21_m15 = 0.0;          // M15 EMA21
+    bool    htf_primed = false;
+    double  range     = 0.0;          // bar high-low (cached for range-exp filter)
     // S38a-L2: L2 imbalance carried from ticks (last value in bar)
     double  l2_imb_close = 0.5;
     double  l2_imb_min   = 1.0;
@@ -226,6 +233,97 @@ struct ATR {
 };
 
 // =============================================================================
+// Wilder ADX(14) -- directional movement index
+// =============================================================================
+// ADX > 25 = trending. < 20 = chop. Asymmetric vs ER -- punishes lack of
+// SUSTAINED directional pressure, not just net distance. Sustained pullbacks
+// in trends still register as trending (high +DM dominance).
+// =============================================================================
+struct ADX {
+    int    period     = 14;
+    double tr_smooth  = 0.0;
+    double pdm_smooth = 0.0;
+    double mdm_smooth = 0.0;
+    double adx_value  = 0.0;
+    bool   primed_di  = false;
+    bool   primed_adx = false;
+    int    di_count   = 0;
+    int    adx_count  = 0;
+    double prev_high  = 0.0;
+    double prev_low   = 0.0;
+    double prev_close = 0.0;
+    bool   have_prev  = false;
+    double seed_tr    = 0.0;
+    double seed_pdm   = 0.0;
+    double seed_mdm   = 0.0;
+    double seed_dx    = 0.0;
+
+    void set(int p) {
+        period = p;
+        tr_smooth = pdm_smooth = mdm_smooth = adx_value = 0.0;
+        primed_di = primed_adx = false;
+        di_count = adx_count = 0;
+        have_prev = false;
+        seed_tr = seed_pdm = seed_mdm = seed_dx = 0.0;
+    }
+
+    void push(double high, double low, double close) {
+        if (!have_prev) {
+            prev_high = high; prev_low = low; prev_close = close;
+            have_prev = true;
+            return;
+        }
+
+        double up_move   = high - prev_high;
+        double down_move = prev_low - low;
+        double pdm = (up_move > down_move && up_move > 0.0) ? up_move : 0.0;
+        double mdm = (down_move > up_move && down_move > 0.0) ? down_move : 0.0;
+        double tr  = std::max(high - low,
+                              std::max(std::fabs(high - prev_close),
+                                       std::fabs(low - prev_close)));
+
+        if (!primed_di) {
+            seed_tr  += tr;
+            seed_pdm += pdm;
+            seed_mdm += mdm;
+            ++di_count;
+            if (di_count >= period) {
+                tr_smooth  = seed_tr;
+                pdm_smooth = seed_pdm;
+                mdm_smooth = seed_mdm;
+                primed_di  = true;
+            }
+        } else {
+            // Wilder's smoothing
+            tr_smooth  = tr_smooth  - (tr_smooth  / period) + tr;
+            pdm_smooth = pdm_smooth - (pdm_smooth / period) + pdm;
+            mdm_smooth = mdm_smooth - (mdm_smooth / period) + mdm;
+        }
+
+        prev_high = high; prev_low = low; prev_close = close;
+
+        if (primed_di && tr_smooth > 1e-9) {
+            double pdi = 100.0 * pdm_smooth / tr_smooth;
+            double mdi = 100.0 * mdm_smooth / tr_smooth;
+            double sum = pdi + mdi;
+            if (sum > 1e-9) {
+                double dx = 100.0 * std::fabs(pdi - mdi) / sum;
+                if (!primed_adx) {
+                    seed_dx += dx;
+                    ++adx_count;
+                    if (adx_count >= period) {
+                        adx_value  = seed_dx / period;
+                        primed_adx = true;
+                    }
+                } else {
+                    adx_value = (adx_value * (period - 1) + dx) / period;
+                }
+            }
+        }
+    }
+};
+
+// =============================================================================
 // Config + Result + Trade
 // =============================================================================
 struct Config {
@@ -269,6 +367,10 @@ struct Result {
     int    stats_er_blocked = 0; // S38a: signals blocked by chop ER filter
     int    stats_l2_blocked = 0; // S38a-L2: signals blocked by L2 imb gate
     int    stats_l2_bars    = 0; // S38a-L2: bars with L2 data attached
+    int    stats_adx_blocked = 0; // S38c: signals blocked by ADX gate
+    int    stats_htf_blocked = 0; // S38d: signals blocked by HTF EMA align
+    int    stats_rng_blocked = 0; // S38d: signals blocked by range expansion
+    int    stats_tim_blocked = 0; // S38d: signals blocked by time-of-day
     std::vector<Trade> trades;
 };
 
@@ -277,12 +379,20 @@ struct Result {
 // =============================================================================
 static constexpr int MAX_LAYERS = 5;
 static constexpr double COST_RT_PTS    = 0.60;   // S38a: realised BB cost @ 0.01 lot
-static constexpr double CHOP_ER_MIN    = 0.30;   // S38a: Kaufman ER threshold
-static constexpr int    CHOP_ER_LOOKBACK = 10;   // S38a: bars for ER window
+static double           CHOP_ER_MIN    = 0.30;   // S38a: Kaufman ER threshold (CLI --er-min X)
+static int              CHOP_ER_LOOKBACK = 10;   // S38a: bars for ER window (CLI --er-lb N)
 static bool             g_er_enabled   = true;   // S38a: CLI --no-er disables
 static bool             g_l2_gate      = false;  // S38a-L2: CLI --l2-gate enables L2 entry filter
-static constexpr double L2_LONG_MIN    = 0.58;   // l2_imb >= this for longs
-static constexpr double L2_SHORT_MAX   = 0.42;   // l2_imb <= this for shorts
+static double           L2_LONG_MIN    = 0.58;   // l2_imb >= this for longs (CLI --l2-long X)
+static double           L2_SHORT_MAX   = 0.42;   // l2_imb <= this for shorts (CLI --l2-short X)
+static double           ADX_MIN        = 0.0;    // S38c: Wilder ADX gate (0 = off, CLI --adx-min N)
+static double           ADX_MIN_OPEN   = 0.0;    // S38e: tighter ADX during open windows (07:55-08:15 + 13:25-13:45 UTC)
+// S38d: extra chop filters
+static bool             g_htf_align    = false;  // M15 EMA9 vs EMA21 alignment (CLI --htf)
+static double           RANGE_EXP_MULT = 0.0;    // current bar range / N-bar avg (0 = off, CLI --range-exp X)
+static int              RANGE_EXP_LB   = 10;     // N for avg-range (CLI --range-lb N)
+static bool             g_time_block   = false;  // skip chop hours 11-13 + 21-23 UTC (CLI --time-block)
+static bool             g_block_dead_hours = false;  // S38e: skip 17:00 + 21:00 UTC (data-driven, loss/breakeven hours)
 static constexpr double HALF_SPREAD    = 0.25;   // half spread applied at entry/exit
 static constexpr double USD_PER_PT_LOT = 100.0;  // XAUUSD: $100 per point per lot
 static constexpr double RISK_DOLLARS   = 50.0;   // max risk per base layer
@@ -394,6 +504,14 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
     ema21.init(21);
     ATR atr;
     atr.set(14);
+    ADX adx;             // S38c: Wilder ADX(14)
+    adx.set(14);
+    // S38d: M15 EMA (sampled every 3rd M5 bar = 15min)
+    EMA ema9_m15, ema21_m15;
+    ema9_m15.init(9);
+    ema21_m15.init(21);
+    int m5_count_for_m15 = 0;
+    double m15_open = 0.0, m15_high = 0.0, m15_low = 0.0, m15_close = 0.0;
 
     char line[256];
     uint64_t ok = 0, fail_count = 0;
@@ -453,10 +571,31 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
             ema9.push(cur.close);
             ema21.push(cur.close);
             atr.push(cur.high, cur.low, cur.close);
+            adx.push(cur.high, cur.low, cur.close);   // S38c
             cur.ema9  = ema9.primed  ? ema9.value  : 0.0;
             cur.ema21 = ema21.primed ? ema21.value : 0.0;
             cur.atr14 = atr.value;
             cur.atr_primed = atr.primed;
+            cur.adx14      = adx.adx_value;
+            cur.adx_primed = adx.primed_adx;
+            cur.range      = cur.high - cur.low;
+            // S38d: M15 aggregation (every 3rd M5 bar = 15min)
+            if (m5_count_for_m15 == 0) {
+                m15_open = cur.open; m15_high = cur.high; m15_low = cur.low;
+            } else {
+                if (cur.high > m15_high) m15_high = cur.high;
+                if (cur.low  < m15_low ) m15_low  = cur.low;
+            }
+            m15_close = cur.close;
+            ++m5_count_for_m15;
+            if (m5_count_for_m15 >= 3) {
+                ema9_m15.push(m15_close);
+                ema21_m15.push(m15_close);
+                m5_count_for_m15 = 0;
+            }
+            cur.ema9_m15   = ema9_m15.primed  ? ema9_m15.value  : 0.0;
+            cur.ema21_m15  = ema21_m15.primed ? ema21_m15.value : 0.0;
+            cur.htf_primed = ema9_m15.primed && ema21_m15.primed;
             bars.push_back(cur);
         };
 
@@ -529,10 +668,17 @@ static std::vector<M5Bar> build_m5_bars(const char* csv_path,
         ema9.push(cur.close);
         ema21.push(cur.close);
         atr.push(cur.high, cur.low, cur.close);
+        adx.push(cur.high, cur.low, cur.close);
         cur.ema9  = ema9.primed  ? ema9.value  : 0.0;
         cur.ema21 = ema21.primed ? ema21.value : 0.0;
         cur.atr14 = atr.value;
         cur.atr_primed = atr.primed;
+        cur.adx14      = adx.adx_value;
+        cur.adx_primed = adx.primed_adx;
+        cur.range      = cur.high - cur.low;
+        cur.ema9_m15   = ema9_m15.primed  ? ema9_m15.value  : 0.0;
+        cur.ema21_m15  = ema21_m15.primed ? ema21_m15.value : 0.0;
+        cur.htf_primed = ema9_m15.primed && ema21_m15.primed;
         bars.push_back(cur);
     }
 
@@ -559,6 +705,10 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
     int stats_er_blocked = 0;  // S38a: local counter, copied to r at end
     int stats_l2_blocked = 0;  // S38a-L2: local L2 block counter
     int stats_l2_bars    = 0;  // S38a-L2: bars with L2 attached
+    int stats_adx_blocked = 0; // S38c: local ADX block counter
+    int stats_htf_blocked = 0; // S38d
+    int stats_rng_blocked = 0;
+    int stats_tim_blocked = 0;
 
     for (size_t i = 0; i < bars.size(); ++i) {
         const M5Bar& b = bars[i];
@@ -783,6 +933,81 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
         // ATR cap: don't trade extreme volatility (news spikes)
         if (b.atr14 > 15.0) continue;
 
+        // S38c/S38e: ADX directional-strength gate, time-of-day-aware.
+        // ADX < threshold = no sustained directional pressure = chop.
+        // S38e: during London open (07:55-08:15) + NY open (13:25-13:45) UTC
+        // -- known whipsaw windows -- use ADX_MIN_OPEN (tighter) if set.
+        {
+            double adx_thresh = ADX_MIN;
+            if (ADX_MIN_OPEN > ADX_MIN) {
+                time_t tt = b.ts_open / 1000;
+                struct tm gm;
+#ifdef _WIN32
+                gmtime_s(&gm, &tt);
+#else
+                gmtime_r(&tt, &gm);
+#endif
+                int hm = gm.tm_hour * 100 + gm.tm_min;
+                if ((hm >= 755 && hm < 815) || (hm >= 1325 && hm < 1345)) {
+                    adx_thresh = ADX_MIN_OPEN;
+                }
+            }
+            if (adx_thresh > 0.0 && b.adx_primed && b.adx14 < adx_thresh) {
+                ++stats_adx_blocked;
+                continue;
+            }
+        }
+
+        // S38e: data-driven dead-hour block (17:00 + 21:00 UTC).
+        // 2yr backtest: hour-21 PnL -$45 / 9 trades. hour-17 PnL -$36 / 361 trades.
+        // Both lose or breakeven. Block them outright.
+        if (g_block_dead_hours) {
+            time_t tt = b.ts_open / 1000;
+            struct tm gm;
+#ifdef _WIN32
+            gmtime_s(&gm, &tt);
+#else
+            gmtime_r(&tt, &gm);
+#endif
+            int h = gm.tm_hour;
+            if (h == 17 || h == 21) {
+                ++stats_tim_blocked;
+                continue;
+            }
+        }
+
+        // S38d: time-of-day chop block.
+        // London lunch (11-13 UTC) + post-NY close (21-23 UTC) = known chop windows.
+        if (g_time_block) {
+            time_t tt = b.ts_open / 1000;
+            struct tm gm;
+#ifdef _WIN32
+            gmtime_s(&gm, &tt);
+#else
+            gmtime_r(&tt, &gm);
+#endif
+            int h = gm.tm_hour;
+            if ((h >= 11 && h < 13) || (h >= 21 && h < 23)) {
+                ++stats_tim_blocked;
+                continue;
+            }
+        }
+
+        // S38d: range-expansion filter.
+        // current bar range / avg(last N bars range) must exceed mult.
+        // Chop bars are small; momentum bars are big.
+        if (RANGE_EXP_MULT > 0.0 && (int)i >= RANGE_EXP_LB) {
+            double sum_r = 0.0;
+            for (int k = (int)i - RANGE_EXP_LB; k < (int)i; ++k) {
+                sum_r += bars[k].range;
+            }
+            double avg_r = sum_r / RANGE_EXP_LB;
+            if (avg_r > 1e-9 && b.range / avg_r < RANGE_EXP_MULT) {
+                ++stats_rng_blocked;
+                continue;
+            }
+        }
+
         // S38a: Kaufman Efficiency Ratio chop filter.
         // ER = |close[t] - close[t-N]| / sum(|close diffs|). < threshold = chop.
         if (g_er_enabled && (int)i >= CHOP_ER_LOOKBACK) {
@@ -811,6 +1036,12 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
         // EMA trend alignment filter
         if (intend_long  && b.ema9 <= b.ema21) continue;
         if (!intend_long && b.ema9 >= b.ema21) continue;
+
+        // S38d: HTF (M15) EMA alignment -- M5 momentum must match M15 direction.
+        if (g_htf_align && b.htf_primed) {
+            if (intend_long  && b.ema9_m15 <= b.ema21_m15) { ++stats_htf_blocked; continue; }
+            if (!intend_long && b.ema9_m15 >= b.ema21_m15) { ++stats_htf_blocked; continue; }
+        }
 
         // S38a-L2: L2 imbalance entry confirmation.
         // Only active when bar has L2 data AND --l2-gate flag set.
@@ -922,9 +1153,13 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
         r.avg_layers  = total_layers / r.n_trades;
     }
     if (gl > 0.0) r.profit_factor = gw / gl;
-    r.stats_er_blocked = stats_er_blocked;  // S38a: surface chop-filter blocks
-    r.stats_l2_blocked = stats_l2_blocked;
-    r.stats_l2_bars    = stats_l2_bars;
+    r.stats_er_blocked  = stats_er_blocked;  // S38a: surface chop-filter blocks
+    r.stats_l2_blocked  = stats_l2_blocked;
+    r.stats_l2_bars     = stats_l2_bars;
+    r.stats_adx_blocked = stats_adx_blocked; // S38c
+    r.stats_htf_blocked = stats_htf_blocked; // S38d
+    r.stats_rng_blocked = stats_rng_blocked;
+    r.stats_tim_blocked = stats_tim_blocked;
     return r;
 }
 
@@ -995,6 +1230,14 @@ static void write_results(const char* path, const std::vector<Result>& all,
     fprintf(f, "L2 blocked:      %d / %d bars-with-L2 (L2 gate %s)\n",
             best.stats_l2_blocked, best.stats_l2_bars,
             g_l2_gate ? "ON" : "OFF");
+    fprintf(f, "ADX blocked:     %d (ADX_MIN=%.1f)\n",
+            best.stats_adx_blocked, ADX_MIN);
+    fprintf(f, "HTF blocked:     %d (M15 align %s)\n",
+            best.stats_htf_blocked, g_htf_align ? "ON" : "OFF");
+    fprintf(f, "RNG blocked:     %d (range_exp_mult=%.2f lb=%d)\n",
+            best.stats_rng_blocked, RANGE_EXP_MULT, RANGE_EXP_LB);
+    fprintf(f, "TIME blocked:    %d (time-block %s)\n",
+            best.stats_tim_blocked, g_time_block ? "ON" : "OFF");
 
     // Monthly breakdown
     fprintf(f, "\nMonthly PnL (best config):\n");
@@ -1117,12 +1360,24 @@ int main(int argc, char** argv) {
     }
     const char* csv_path = argv[1];
     for (int a = 2; a < argc; ++a) {
-        if (std::string(argv[a]) == "--no-er")   g_er_enabled = false;
-        if (std::string(argv[a]) == "--l2-gate") g_l2_gate    = true;
+        std::string arg = argv[a];
+        if (arg == "--no-er")   g_er_enabled = false;
+        if (arg == "--l2-gate") g_l2_gate    = true;
+        if (arg == "--er-min"  && a + 1 < argc) CHOP_ER_MIN     = atof(argv[++a]);
+        if (arg == "--er-lb"   && a + 1 < argc) CHOP_ER_LOOKBACK = atoi(argv[++a]);
+        if (arg == "--l2-long" && a + 1 < argc) L2_LONG_MIN     = atof(argv[++a]);
+        if (arg == "--l2-short"&& a + 1 < argc) L2_SHORT_MAX    = atof(argv[++a]);
+        if (arg == "--adx-min" && a + 1 < argc) ADX_MIN         = atof(argv[++a]);
+        if (arg == "--adx-min-open" && a + 1 < argc) ADX_MIN_OPEN = atof(argv[++a]);
+        if (arg == "--block-dead-hours")             g_block_dead_hours = true;
+        if (arg == "--htf")                     g_htf_align     = true;
+        if (arg == "--range-exp" && a + 1 < argc) RANGE_EXP_MULT = atof(argv[++a]);
+        if (arg == "--range-lb"  && a + 1 < argc) RANGE_EXP_LB   = atoi(argv[++a]);
+        if (arg == "--time-block")              g_time_block    = true;
     }
-    printf("S38a config: COST=%.2fpt CHOP_ER_MIN=%.2f ER_LB=%d ER=%s L2_GATE=%s\n",
+    printf("S38a config: COST=%.2fpt CHOP_ER_MIN=%.2f ER_LB=%d ER=%s L2_GATE=%s ADX_MIN=%.1f\n",
            COST_RT_PTS, CHOP_ER_MIN, CHOP_ER_LOOKBACK,
-           g_er_enabled ? "ON" : "OFF", g_l2_gate ? "ON" : "OFF");
+           g_er_enabled ? "ON" : "OFF", g_l2_gate ? "ON" : "OFF", ADX_MIN);
     fflush(stdout);
 
     auto t0 = std::chrono::steady_clock::now();

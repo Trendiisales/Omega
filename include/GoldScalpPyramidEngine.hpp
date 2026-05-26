@@ -175,6 +175,21 @@ public:
     double CHOP_ADX_MIN       = 10.0;  // S38c default after sweep: 10 = free DD reduction
     int    CHOP_ADX_PERIOD    = 14;    // Wilder period
 
+    // ---- S38e (2026-05-26): time-of-day-aware ADX tightening ------------------
+    // During known whipsaw windows (London/NY opens), tighten ADX threshold to
+    // filter false breakouts. Hardcoded windows match observed loss-prone hours.
+    //   07:55-08:15 UTC = London open spike, runs Asian late-buyer stops
+    //   13:25-13:45 UTC = NY open spike, runs London noon stops
+    // If CHOP_ADX_MIN_OPEN > CHOP_ADX_MIN, the higher threshold applies in
+    // those windows. Set OPEN = 0 to disable (= same behavior as before).
+    double CHOP_ADX_MIN_OPEN  = 0.0;   // 0 = disabled, recommend 20.0 to filter open spikes
+
+    // ---- S38e dead-hour block: skip 17:00 + 21:00 UTC ------------------------
+    // 2yr backtest: hour-21 net PnL -$45 (44% loss rate, 9 trades).
+    //              hour-17 net PnL -$36 (29% loss rate, 361 trades, breakeven).
+    // Blocking both: -1.7% PnL but +1.4% PF + -7% DD over 2yr. Net positive.
+    bool BLOCK_DEAD_HOURS = true;
+
     // ---- Range-expansion filter (S38d 2026-05-26) -----------------------------
     // Current bar (high-low) / avg(last N bars range) must exceed mult.
     // Chop bars are small; trend bars are big. Independent signal vs body/range.
@@ -653,12 +668,43 @@ private:
         // ATR floor/cap
         if (m_atr.value < ATR_FLOOR || m_atr.value > ATR_CAP) return;
 
+        // S38e: dead-hour block. 2yr backtest shows hour-17 (breakeven) and
+        // hour-21 (loss) are net negative. Block both outright.
+        if (BLOCK_DEAD_HOURS) {
+            time_t tt_d = bar.ts_open / 1000;
+            struct tm gm_d;
+#ifdef _WIN32
+            gmtime_s(&gm_d, &tt_d);
+#else
+            gmtime_r(&tt_d, &gm_d);
+#endif
+            if (gm_d.tm_hour == 17 || gm_d.tm_hour == 21) return;
+        }
+
         // S38c: Wilder ADX directional-strength gate.
         // ADX < threshold = no sustained directional pressure = chop.
-        // Asymmetric to ER: a trending move with one pullback still scores
-        // high (sustained +DM dominance). Free safety per 2yr backtest.
-        if (CHOP_ADX_MIN > 0.0 && m_adx.primed_adx && m_adx.adx_value < CHOP_ADX_MIN) {
-            return;
+        // S38e: time-of-day-aware -- during London/NY open windows (known
+        // whipsaw zones) use CHOP_ADX_MIN_OPEN (tighter) if set, else normal.
+        {
+            double adx_thresh = CHOP_ADX_MIN;
+            if (CHOP_ADX_MIN_OPEN > CHOP_ADX_MIN) {
+                time_t tt = bar.ts_open / 1000;
+                struct tm gm;
+#ifdef _WIN32
+                gmtime_s(&gm, &tt);
+#else
+                gmtime_r(&tt, &gm);
+#endif
+                int hm = gm.tm_hour * 100 + gm.tm_min;
+                // 07:55-08:15 UTC London open, 13:25-13:45 UTC NY open
+                bool in_open_window =
+                    (hm >= 755  && hm < 815) ||
+                    (hm >= 1325 && hm < 1345);
+                if (in_open_window) adx_thresh = CHOP_ADX_MIN_OPEN;
+            }
+            if (adx_thresh > 0.0 && m_adx.primed_adx && m_adx.adx_value < adx_thresh) {
+                return;
+            }
         }
 
         // S38d: range-expansion filter.
