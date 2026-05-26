@@ -99,7 +99,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
     const int    trades = s->total_trades;
     const int    wins   = s->wins;
     const double wr     = (trades > 0) ? (100.0 * wins / trades) : 0.0;
-    char buf[12288];  // bumped 8192 -> 12288 for PDH/PDL fields (S37c 2026-05-26)
+    char buf[16384];  // 8192 -> 12288 (S37c PDH/PDL) -> 16384 (S37l CurH/CurL)
     snprintf(buf, sizeof(buf),
         "{"
         "\"sp_bid\":%.4f,\"sp_ask\":%.4f,"
@@ -173,7 +173,15 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"estx50_pdh\":%.4f,\"estx50_pdl\":%.4f,\"brent_pdh\":%.4f,\"brent_pdl\":%.4f,"
         "\"xag_pdh\":%.4f,\"xag_pdl\":%.4f,\"eurusd_pdh\":%.4f,\"eurusd_pdl\":%.4f,"
         "\"gbpusd_pdh\":%.4f,\"gbpusd_pdl\":%.4f,\"audusd_pdh\":%.4f,\"audusd_pdl\":%.4f,"
-        "\"nzdusd_pdh\":%.4f,\"nzdusd_pdl\":%.4f,\"usdjpy_pdh\":%.4f,\"usdjpy_pdl\":%.4f",
+        "\"nzdusd_pdh\":%.4f,\"nzdusd_pdl\":%.4f,\"usdjpy_pdh\":%.4f,\"usdjpy_pdl\":%.4f,"
+        "\"sp_curh\":%.4f,\"sp_curl\":%.4f,\"nq_curh\":%.4f,\"nq_curl\":%.4f,"
+        "\"dj_curh\":%.4f,\"dj_curl\":%.4f,\"nas_curh\":%.4f,\"nas_curl\":%.4f,"
+        "\"xau_curh\":%.4f,\"xau_curl\":%.4f,\"cl_curh\":%.4f,\"cl_curl\":%.4f,"
+        "\"ger40_curh\":%.4f,\"ger40_curl\":%.4f,\"uk100_curh\":%.4f,\"uk100_curl\":%.4f,"
+        "\"estx50_curh\":%.4f,\"estx50_curl\":%.4f,\"brent_curh\":%.4f,\"brent_curl\":%.4f,"
+        "\"xag_curh\":%.4f,\"xag_curl\":%.4f,\"eurusd_curh\":%.4f,\"eurusd_curl\":%.4f,"
+        "\"gbpusd_curh\":%.4f,\"gbpusd_curl\":%.4f,\"audusd_curh\":%.4f,\"audusd_curl\":%.4f,"
+        "\"nzdusd_curh\":%.4f,\"nzdusd_curl\":%.4f,\"usdjpy_curh\":%.4f,\"usdjpy_curl\":%.4f",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
         s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
         s->dx_bid,     s->dx_ask,     s->dj_bid,  s->dj_ask,
@@ -236,7 +244,15 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->estx50_pdh, s->estx50_pdl, s->brent_pdh, s->brent_pdl,
         s->xag_pdh, s->xag_pdl, s->eurusd_pdh, s->eurusd_pdl,
         s->gbpusd_pdh, s->gbpusd_pdl, s->audusd_pdh, s->audusd_pdl,
-        s->nzdusd_pdh, s->nzdusd_pdl, s->usdjpy_pdh, s->usdjpy_pdl
+        s->nzdusd_pdh, s->nzdusd_pdl, s->usdjpy_pdh, s->usdjpy_pdl,
+        s->sp_curh, s->sp_curl, s->nq_curh, s->nq_curl,
+        s->dj_curh, s->dj_curl, s->nas_curh, s->nas_curl,
+        s->xau_curh, s->xau_curl, s->cl_curh, s->cl_curl,
+        s->ger40_curh, s->ger40_curl, s->uk100_curh, s->uk100_curl,
+        s->estx50_curh, s->estx50_curl, s->brent_curh, s->brent_curl,
+        s->xag_curh, s->xag_curl, s->eurusd_curh, s->eurusd_curl,
+        s->gbpusd_curh, s->gbpusd_curl, s->audusd_curh, s->audusd_curl,
+        s->nzdusd_curh, s->nzdusd_curl, s->usdjpy_curh, s->usdjpy_curl
     );
 
     // Append signal_history ring buffer as JSON array (newest first)

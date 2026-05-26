@@ -1070,6 +1070,9 @@ function updateEngCell(cellId,phaseId,volId,sigId,phase,rv,bv,sigs,hi,lo,bid,ask
   // hi/lo args (compression-window range). Hidden when neither is set so the
   // bid|ask centring stays clean.
   const hiEl=document.getElementById(cellId+'Hi'),loEl=document.getElementById(cellId+'Lo');
+  // S37l: rolling source priority -- bracket-range (when armed) > caller arg > 0
+  // Caller will pass d.<sym>_curh/curl as hi/lo args so this picks them up
+  // when bracket not armed -- giving a never-blank rolling intraday range.
   const showHi=bktActive?safe(bkt.hi):safe(hi);
   const showLo=bktActive?safe(bkt.lo):safe(lo);
   if(hiEl){
@@ -1371,21 +1374,23 @@ function updateDashboard(d){
   // Engine cells -- US/Oil group (sp_phase etc from telemetry)
   const live=d.open_positions||[];
   const isLive=sym=>Array.isArray(live)&&live.some(p=>p.symbol===sym);
-  updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,d.sp_comp_high,d.sp_comp_low,d.sp_bid,d.sp_ask,2,isLive('US500.F'),d.brackets&&d.brackets.sp);
-  updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,d.nq_comp_high,d.nq_comp_low,d.nq_bid,d.nq_ask,2,isLive('USTEC.F'),d.brackets&&d.brackets.nq);
-  updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',(d.brackets&&d.brackets.us30?d.brackets.us30.phase:0),0,0,0,(d.brackets&&d.brackets.us30?d.brackets.us30.hi:0),(d.brackets&&d.brackets.us30?d.brackets.us30.lo:0),d.dj_bid,d.dj_ask,2,isLive('DJ30.F'),d.brackets&&d.brackets.us30);
-  updateEngCell('engNAS','engNASPhase','engNASVol','engNASSig',(d.brackets&&d.brackets.nas?d.brackets.nas.phase:0),0,0,0,(d.brackets&&d.brackets.nas?d.brackets.nas.hi:0),(d.brackets&&d.brackets.nas?d.brackets.nas.lo:0),d.nas_bid,d.nas_ask,2,isLive('NAS100'),d.brackets&&d.brackets.nas);
-  updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,d.cl_comp_high,d.cl_comp_low,d.cl_bid,d.cl_ask,2,isLive('USOIL.F'),null);
-  updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',(d.brackets&&d.brackets.ger?d.brackets.ger.phase:0),0,0,0,(d.brackets&&d.brackets.ger?d.brackets.ger.hi:0),(d.brackets&&d.brackets.ger?d.brackets.ger.lo:0),d.ger30_bid,d.ger30_ask,2,isLive('GER40'),d.brackets&&d.brackets.ger);
-  updateEngCell('engUK','engUKPhase','engUKVol','engUKSig',(d.brackets&&d.brackets.uk?d.brackets.uk.phase:0),0,0,0,(d.brackets&&d.brackets.uk?d.brackets.uk.hi:0),(d.brackets&&d.brackets.uk?d.brackets.uk.lo:0),d.uk100_bid,d.uk100_ask,2,isLive('UK100'),d.brackets&&d.brackets.uk);
-  updateEngCell('engESTX','engESTXPhase','engESTXVol','engESTXSig',(d.brackets&&d.brackets.estx?d.brackets.estx.phase:0),0,0,0,(d.brackets&&d.brackets.estx?d.brackets.estx.hi:0),(d.brackets&&d.brackets.estx?d.brackets.estx.lo:0),d.estx50_bid,d.estx50_ask,2,isLive('ESTX50'),d.brackets&&d.brackets.estx);
-  updateEngCell('engBRENT','engBRENTPhase','engBRENTVol','engBRENTSig',d.brent_phase,d.brent_recent_vol_pct,d.brent_baseline_vol_pct,d.brent_signals,d.brent_comp_high,d.brent_comp_low,d.brent_bid,d.brent_ask,2,isLive('BRENT'),d.brackets&&d.brackets.brent);
-  updateEngCell('engEUR','engEURPhase','engEURVol','engEURSig',d.eurusd_phase,d.eurusd_recent_vol_pct,d.eurusd_baseline_vol_pct,d.eurusd_signals,d.eurusd_comp_high,d.eurusd_comp_low,d.eurusd_bid,d.eurusd_ask,5,isLive('EURUSD'),d.brackets&&d.brackets.eur);
-  updateEngCell('engGBP','engGBPPhase','engGBPVol','engGBPSig',d.gbpusd_phase,d.gbpusd_recent_vol_pct,d.gbpusd_baseline_vol_pct,d.gbpusd_signals,d.gbpusd_comp_high,d.gbpusd_comp_low,d.gbpusd_bid,d.gbpusd_ask,5,isLive('GBPUSD'),d.brackets&&d.brackets.gbp);
-  updateEngCell('engAUD','engAUDPhase','engAUDVol','engAUDSig',d.audusd_phase,d.audusd_recent_vol_pct,d.audusd_baseline_vol_pct,d.audusd_signals,d.audusd_comp_high,d.audusd_comp_low,d.audusd_bid,d.audusd_ask,5,isLive('AUDUSD'),null);
-  updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,d.nzdusd_comp_high,d.nzdusd_comp_low,d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'),null);
-  updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'),null);
-  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('XAUUSD'),d.brackets&&d.brackets.gold);
+  // S37l: pass <sym>_curh / <sym>_curl as the hi/lo args so rolling line
+  // shows today's running session high/low whenever bracket not armed.
+  updateEngCell('engSP','engSPPhase','engSPVol','engSPSig',d.sp_phase,d.sp_recent_vol_pct,d.sp_baseline_vol_pct,d.sp_signals,safe(d.sp_curh),safe(d.sp_curl),d.sp_bid,d.sp_ask,2,isLive('US500.F'),d.brackets&&d.brackets.sp);
+  updateEngCell('engNQ','engNQPhase','engNQVol','engNQSig',d.nq_phase,d.nq_recent_vol_pct,d.nq_baseline_vol_pct,d.nq_signals,safe(d.nq_curh),safe(d.nq_curl),d.nq_bid,d.nq_ask,2,isLive('USTEC.F'),d.brackets&&d.brackets.nq);
+  updateEngCell('engUS30','engUS30Phase','engUS30Vol','engUS30Sig',(d.brackets&&d.brackets.us30?d.brackets.us30.phase:0),0,0,0,safe(d.dj_curh),safe(d.dj_curl),d.dj_bid,d.dj_ask,2,isLive('DJ30.F'),d.brackets&&d.brackets.us30);
+  updateEngCell('engNAS','engNASPhase','engNASVol','engNASSig',(d.brackets&&d.brackets.nas?d.brackets.nas.phase:0),0,0,0,safe(d.nas_curh),safe(d.nas_curl),d.nas_bid,d.nas_ask,2,isLive('NAS100'),d.brackets&&d.brackets.nas);
+  updateEngCell('engCL','engCLPhase','engCLVol','engCLSig',d.cl_phase,d.cl_recent_vol_pct,d.cl_baseline_vol_pct,d.cl_signals,safe(d.cl_curh),safe(d.cl_curl),d.cl_bid,d.cl_ask,2,isLive('USOIL.F'),null);
+  updateEngCell('engGER','engGERPhase','engGERVol','engGERSig',(d.brackets&&d.brackets.ger?d.brackets.ger.phase:0),0,0,0,safe(d.ger40_curh),safe(d.ger40_curl),d.ger30_bid,d.ger30_ask,2,isLive('GER40'),d.brackets&&d.brackets.ger);
+  updateEngCell('engUK','engUKPhase','engUKVol','engUKSig',(d.brackets&&d.brackets.uk?d.brackets.uk.phase:0),0,0,0,safe(d.uk100_curh),safe(d.uk100_curl),d.uk100_bid,d.uk100_ask,2,isLive('UK100'),d.brackets&&d.brackets.uk);
+  updateEngCell('engESTX','engESTXPhase','engESTXVol','engESTXSig',(d.brackets&&d.brackets.estx?d.brackets.estx.phase:0),0,0,0,safe(d.estx50_curh),safe(d.estx50_curl),d.estx50_bid,d.estx50_ask,2,isLive('ESTX50'),d.brackets&&d.brackets.estx);
+  updateEngCell('engBRENT','engBRENTPhase','engBRENTVol','engBRENTSig',d.brent_phase,d.brent_recent_vol_pct,d.brent_baseline_vol_pct,d.brent_signals,safe(d.brent_curh),safe(d.brent_curl),d.brent_bid,d.brent_ask,2,isLive('BRENT'),d.brackets&&d.brackets.brent);
+  updateEngCell('engEUR','engEURPhase','engEURVol','engEURSig',d.eurusd_phase,d.eurusd_recent_vol_pct,d.eurusd_baseline_vol_pct,d.eurusd_signals,safe(d.eurusd_curh),safe(d.eurusd_curl),d.eurusd_bid,d.eurusd_ask,5,isLive('EURUSD'),d.brackets&&d.brackets.eur);
+  updateEngCell('engGBP','engGBPPhase','engGBPVol','engGBPSig',d.gbpusd_phase,d.gbpusd_recent_vol_pct,d.gbpusd_baseline_vol_pct,d.gbpusd_signals,safe(d.gbpusd_curh),safe(d.gbpusd_curl),d.gbpusd_bid,d.gbpusd_ask,5,isLive('GBPUSD'),d.brackets&&d.brackets.gbp);
+  updateEngCell('engAUD','engAUDPhase','engAUDVol','engAUDSig',d.audusd_phase,d.audusd_recent_vol_pct,d.audusd_baseline_vol_pct,d.audusd_signals,safe(d.audusd_curh),safe(d.audusd_curl),d.audusd_bid,d.audusd_ask,5,isLive('AUDUSD'),null);
+  updateEngCell('engNZD','engNZDPhase','engNZDVol','engNZDSig',d.nzdusd_phase,d.nzdusd_recent_vol_pct,d.nzdusd_baseline_vol_pct,d.nzdusd_signals,safe(d.nzdusd_curh),safe(d.nzdusd_curl),d.nzdusd_bid,d.nzdusd_ask,5,isLive('NZDUSD'),null);
+  updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,safe(d.usdjpy_curh),safe(d.usdjpy_curl),d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'),null);
+  updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,safe(d.xau_curh),safe(d.xau_curl),d.gold_bid,d.gold_ask,2,isLive('XAUUSD'),d.brackets&&d.brackets.gold);
 
 )OMEGA23"
 R"OMEGA23PDH(

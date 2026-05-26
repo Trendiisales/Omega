@@ -240,6 +240,24 @@ struct OmegaTelemetrySnapshot
     double nzdusd_pdl    = 0.0;
     double usdjpy_pdh    = 0.0;
     double usdjpy_pdl    = 0.0;
+    // --- Current-day running high/low (from g_edges.prev_day.current()) ---
+    // Updates every tick. Rolling intraday session range, NOT static.
+    double sp_curh = 0.0, sp_curl = 0.0;
+    double nq_curh = 0.0, nq_curl = 0.0;
+    double dj_curh = 0.0, dj_curl = 0.0;
+    double nas_curh = 0.0, nas_curl = 0.0;
+    double xau_curh = 0.0, xau_curl = 0.0;
+    double cl_curh = 0.0, cl_curl = 0.0;
+    double ger40_curh = 0.0, ger40_curl = 0.0;
+    double uk100_curh = 0.0, uk100_curl = 0.0;
+    double estx50_curh = 0.0, estx50_curl = 0.0;
+    double brent_curh = 0.0, brent_curl = 0.0;
+    double xag_curh = 0.0, xag_curl = 0.0;
+    double eurusd_curh = 0.0, eurusd_curl = 0.0;
+    double gbpusd_curh = 0.0, gbpusd_curl = 0.0;
+    double audusd_curh = 0.0, audusd_curl = 0.0;
+    double nzdusd_curh = 0.0, nzdusd_curl = 0.0;
+    double usdjpy_curh = 0.0, usdjpy_curl = 0.0;
 
     // --- Regime indicators ---
     double vix_level;
@@ -576,6 +594,27 @@ public:
         else if (!strcmp(sym,"AUDUSD"))   { m_snap->audusd_pdh = pdh; m_snap->audusd_pdl = pdl; }
         else if (!strcmp(sym,"NZDUSD"))   { m_snap->nzdusd_pdh = pdh; m_snap->nzdusd_pdl = pdl; }
         else if (!strcmp(sym,"USDJPY"))   { m_snap->usdjpy_pdh = pdh; m_snap->usdjpy_pdl = pdl; }
+    }
+
+    // Current-day running high/low (updated every tick).
+    void UpdateCurrentDay(const char* sym, double curh, double curl) {
+        if (!m_snap) return;
+        if      (!strcmp(sym,"US500.F"))  { m_snap->sp_curh = curh;     m_snap->sp_curl = curl;     }
+        else if (!strcmp(sym,"USTEC.F"))  { m_snap->nq_curh = curh;     m_snap->nq_curl = curl;     }
+        else if (!strcmp(sym,"DJ30.F"))   { m_snap->dj_curh = curh;     m_snap->dj_curl = curl;     }
+        else if (!strcmp(sym,"NAS100"))   { m_snap->nas_curh = curh;    m_snap->nas_curl = curl;    }
+        else if (!strcmp(sym,"XAUUSD"))   { m_snap->xau_curh = curh;    m_snap->xau_curl = curl;    }
+        else if (!strcmp(sym,"USOIL.F"))  { m_snap->cl_curh = curh;     m_snap->cl_curl = curl;     }
+        else if (!strcmp(sym,"GER40"))    { m_snap->ger40_curh = curh;  m_snap->ger40_curl = curl;  }
+        else if (!strcmp(sym,"UK100"))    { m_snap->uk100_curh = curh;  m_snap->uk100_curl = curl;  }
+        else if (!strcmp(sym,"ESTX50"))   { m_snap->estx50_curh = curh; m_snap->estx50_curl = curl; }
+        else if (!strcmp(sym,"BRENT"))    { m_snap->brent_curh = curh;  m_snap->brent_curl = curl;  }
+        else if (!strcmp(sym,"XAGUSD"))   { m_snap->xag_curh = curh;    m_snap->xag_curl = curl;    }
+        else if (!strcmp(sym,"EURUSD"))   { m_snap->eurusd_curh = curh; m_snap->eurusd_curl = curl; }
+        else if (!strcmp(sym,"GBPUSD"))   { m_snap->gbpusd_curh = curh; m_snap->gbpusd_curl = curl; }
+        else if (!strcmp(sym,"AUDUSD"))   { m_snap->audusd_curh = curh; m_snap->audusd_curl = curl; }
+        else if (!strcmp(sym,"NZDUSD"))   { m_snap->nzdusd_curh = curh; m_snap->nzdusd_curl = curl; }
+        else if (!strcmp(sym,"USDJPY"))   { m_snap->usdjpy_curh = curh; m_snap->usdjpy_curl = curl; }
     }
 
     void UpdateEngineState(const char* sym, int phase,

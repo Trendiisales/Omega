@@ -74,12 +74,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_edges.cvd.update(sym, bid, ask);
         g_edges.spread_gate.update(sym, ask - bid);
         g_edges.prev_day.update(sym, mid, nowSec());
-        // Push PDH/PDL into telemetry snapshot so dashboard tiles can render
-        // small "PDH X / PDL Y" labels at top of each symbol box (S37c 2026-05-26).
+        // Push PDH/PDL + CurH/CurL into telemetry snapshot so dashboard tiles
+        // can render static-corner + rolling-mid hi/lo labels (S37c/S37l).
         {
             const auto prev = g_edges.prev_day.previous(sym);
             if (prev.high > 0.0 || prev.low > 0.0) {
                 g_telemetry.UpdatePrevDay(sym.c_str(), prev.high, prev.low);
+            }
+            const auto cur = g_edges.prev_day.current(sym);
+            if (cur.high > 0.0 || cur.low > 0.0) {
+                g_telemetry.UpdateCurrentDay(sym.c_str(), cur.high, cur.low);
             }
         }
         // Edge 8: Volume profile -- track time-at-price every tick
