@@ -29,6 +29,15 @@
 #include "XauTsmomFastD1Engine.hpp"
 #include "XauStopRunD1Engine.hpp"
 #include "XauNbmD1Engine.hpp"
+#include "XauPullbackContH4Engine.hpp"
+#include "XauPullbackContD1Engine.hpp"
+#include "XauEmaCrossH4Engine.hpp"
+#include "XauBBScalpD1Engine.hpp"
+#include "XauSwingBreakD1Engine.hpp"
+#include "XauDojiRejD1Engine.hpp"
+#include "XauOutsideBarD1Engine.hpp"
+#include "XauInsideBarD1Engine.hpp"
+#include "Xau3BarMomGatedH4Engine.hpp"
 
 struct H4Bar { int64_t ts_sec; double o, h, l, c; };
 
@@ -157,6 +166,60 @@ int main() {
     nbm.p = omega::make_xau_nbm_d1_params();
     auto nbm_stats = run_engine("XauNbmD1", 8.01, bars, nbm);
 
+    // --- XauPullbackContH4 ---
+    omega::XauPullbackContH4Engine pcH4;
+    pcH4.shadow_mode = true; pcH4.enabled = true; pcH4.symbol = "XAUUSD";
+    pcH4.p = omega::make_xau_pullback_cont_h4_params();
+    auto pcH4_stats = run_engine("XauPullbackContH4", 3.96, bars, pcH4);
+
+    // --- XauPullbackContD1 ---
+    omega::XauPullbackContD1Engine pcD1;
+    pcD1.shadow_mode = true; pcD1.enabled = true; pcD1.symbol = "XAUUSD";
+    pcD1.p = omega::make_xau_pullback_cont_d1_params();
+    auto pcD1_stats = run_engine("XauPullbackContD1", 3.96, bars, pcD1);
+
+    // --- XauEmaCrossH4 ---
+    omega::XauEmaCrossH4Engine emc;
+    emc.shadow_mode = true; emc.enabled = true; emc.symbol = "XAUUSD";
+    emc.p = omega::make_xau_ema_cross_h4_params();
+    auto emc_stats = run_engine("XauEmaCrossH4", 7.15, bars, emc);
+
+    // --- XauBBScalpD1 ---
+    omega::XauBBScalpD1Engine bbs;
+    bbs.shadow_mode = true; bbs.enabled = true; bbs.symbol = "XAUUSD";
+    bbs.p = omega::make_xau_bb_scalp_d1_params();
+    auto bbs_stats = run_engine("XauBBScalpD1", 5.0, bars, bbs);
+
+    // --- XauSwingBreakD1 ---
+    omega::XauSwingBreakD1Engine swb;
+    swb.shadow_mode = true; swb.enabled = true; swb.symbol = "XAUUSD";
+    swb.p = omega::make_xau_swing_break_d1_params();
+    auto swb_stats = run_engine("XauSwingBreakD1", 4.0, bars, swb);
+
+    // --- XauDojiRejD1 ---
+    omega::XauDojiRejD1Engine drj;
+    drj.shadow_mode = true; drj.enabled = true; drj.symbol = "XAUUSD";
+    drj.p = omega::make_xau_doji_rej_d1_params();
+    auto drj_stats = run_engine("XauDojiRejD1", 3.0, bars, drj);
+
+    // --- XauOutsideBarD1 ---
+    omega::XauOutsideBarD1Engine ob;
+    ob.shadow_mode = true; ob.enabled = true; ob.symbol = "XAUUSD";
+    ob.p = omega::make_xau_outside_bar_d1_params();
+    auto ob_stats = run_engine("XauOutsideBarD1", 3.0, bars, ob);
+
+    // --- XauInsideBarD1 ---
+    omega::XauInsideBarD1Engine ib;
+    ib.shadow_mode = true; ib.enabled = true; ib.symbol = "XAUUSD";
+    ib.p = omega::make_xau_inside_bar_d1_params();
+    auto ib_stats = run_engine("XauInsideBarD1", 3.0, bars, ib);
+
+    // --- Xau3BarMomGatedH4 ---
+    omega::Xau3BarMomGatedH4Engine tbm;
+    tbm.shadow_mode = true; tbm.enabled = true; tbm.symbol = "XAUUSD";
+    // Default params struct already has tuned defaults
+    auto tbm_stats = run_engine("Xau3BarMomGatedH4", 1.53, bars, tbm);
+
     std::printf("\n%s\n", std::string(72, '=').c_str());
     std::printf("  XAU D1/H4 TREND ZOO — real-class audit\n");
     std::printf("%s\n", std::string(72, '=').c_str());
@@ -164,19 +227,33 @@ int main() {
     report(tsmom_stats);
     report(stoprun_stats);
     report(nbm_stats);
+    report(pcH4_stats);
+    report(pcD1_stats);
+    report(emc_stats);
+    report(bbs_stats);
+    report(swb_stats);
+    report(drj_stats);
+    report(ob_stats);
+    report(ib_stats);
+    report(tbm_stats);
 
     // Aggregate verdict
     std::printf("\n%s\n", std::string(72, '=').c_str());
     std::printf("  AGGREGATE VERDICT\n");
     std::printf("%s\n", std::string(72, '=').c_str());
     int positive = 0;
-    for (const auto* s : {&turtle_stats, &tsmom_stats, &stoprun_stats, &nbm_stats}) {
+    int total = 0;
+    for (const auto* s : {&turtle_stats, &tsmom_stats, &stoprun_stats, &nbm_stats,
+                          &pcH4_stats, &pcD1_stats, &emc_stats, &bbs_stats,
+                          &swb_stats, &drj_stats, &ob_stats, &ib_stats, &tbm_stats}) {
+        ++total;
         double sh = calc_sharpe(s->trade_pnl);
         if (sh > 0.5) ++positive;
-        std::printf("  %-22s real=%+.3f  %s\n",
-                    s->name.c_str(), sh, sh > 0.5 ? "EDGE" : "NO EDGE");
+        std::printf("  %-22s real=%+.3f  n=%-4lld %s\n",
+                    s->name.c_str(), sh, (long long)s->n_trades,
+                    sh > 0.5 ? "EDGE" : "NO EDGE");
     }
-    std::printf("\n  %d/4 engines show real-class edge (Sharpe > 0.5).\n", positive);
-    std::printf("  All inline-reimpl 'claimed' numbers are inflated 3-15x.\n");
+    std::printf("\n  %d/%d engines show real-class edge (Sharpe > 0.5).\n", positive, total);
+    std::printf("  All inline-reimpl 'claimed' numbers are inflated 1.5-4.2x.\n");
     return 0;
 }

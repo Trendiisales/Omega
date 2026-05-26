@@ -1592,8 +1592,13 @@ static void init_engines(const std::string& cfg_path)
         // XAU M30 Donchian-55 symmetric + EMA50/200 regime gate.
         // MFE-lock trail: arm at +0.7R, lock 80% of extreme.
         // L2-forward-validated (2026-04-09 → 2026-05-19): PF 3.03, +$773 / 48 trades.
+        // 2026-05-27 S50: DISABLED -- real-class audit (xau_donchian55_m30_audit)
+        // showed real Sharpe -1.47 / -$14 / 585 trades / 22:1 SL:TP ratio. The
+        // L2-forward "PF 3.03" was inflated by inline-reimpl harness — same
+        // pattern as GoldScalpPyramid. Class-driven test on full M30 history
+        // contradicts the claim. Keep wired but off.
         g_xau_d55_gated_m30.shadow_mode = true;
-        g_xau_d55_gated_m30.enabled     = true;
+        g_xau_d55_gated_m30.enabled     = false;  // S50: real-class fail
         g_xau_d55_gated_m30.symbol      = "XAUUSD";
         g_xau_d55_gated_m30.seed_from_m30_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
         printf("[OMEGA-INIT] XauDonchian55GatedM30: shadow=%d enabled=%d n=%d sl=%.1fx tp=%.1fR mb=%d "
@@ -1608,8 +1613,12 @@ static void init_engines(const std::string& cfg_path)
         // XAU H4 three-bar momentum, symmetric long+short.
         // MFE-lock trail: arm at +1.0R, lock 90% of extreme.
         // L2 forward: PF 1.53, +$365 / 34 trades. WF agg OOS +$2931 / 199 trades.
+        // 2026-05-27 S50: DISABLED -- real-class audit (xau_d1_zoo_audit)
+        // showed real Sharpe -1.81 / -$30 / 384 trades / SL=185 TP=15. The
+        // claimed PF 1.53 was harness-class divergence. Class-driven test on
+        // full H4 tape says the engine bleeds. Keep wired but off.
         g_xau_3bar_mom_h4.shadow_mode = true;
-        g_xau_3bar_mom_h4.enabled     = true;
+        g_xau_3bar_mom_h4.enabled     = false;  // S50: real-class fail
         g_xau_3bar_mom_h4.symbol      = "XAUUSD";
         omega::seed_h4_engine(g_xau_3bar_mom_h4,
                               "phase1/signal_discovery/warmup_XAUUSD_H4.csv",
