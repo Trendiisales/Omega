@@ -298,6 +298,13 @@ static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L,
 static bool g_disable_candle_flow              = true;
 static bool g_disable_bracket_gold             = true;
 static bool g_disable_index_flow               = true;
+// S46 2026-05-27: M5 scalp engines disabled pending real-class validation.
+// All "validated" PnL numbers for these engines came from inline-reimpl
+// harnesses with bar-extreme lookahead bias. gsp_s63_audit_bt confirmed
+// the divergence: standalone +$33.5k vs real class -$12.4k on 26mo XAUUSD.
+// The same architectural pattern (M5 bars + S63 cuts + cost-aware BE)
+// applies to all entries below; until each is class-audited, disable.
+static bool g_disable_xauusd_fvg               = true;  // S46: M5 FVG, S63 cuts, never class-audited
 static bool g_disable_session_momentum         = true;  // GoldStack sub-engine
 static bool g_disable_intraday_seasonality     = true;  // GoldStack sub-engine
 static bool g_disable_vwap_snapback            = true;  // GoldStack sub-engine

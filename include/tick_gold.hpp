@@ -2628,9 +2628,14 @@ static void on_tick_gold(
     // in engine_init.hpp -- no second close-callback is plumbed here. We
     // pass nullptr for the on_close arg below so on_tick falls back to
     // on_close_cb, mirroring the comment in XauusdFvgEngine::on_tick.
-    g_xauusd_fvg.on_tick(bid, ask, now_ms_g,
-                         gold_can_enter,
-                         nullptr);
+    // S46 2026-05-27: gated by g_disable_xauusd_fvg (default true) pending
+    // real-class audit. Has-position branch keeps manage path alive so
+    // any in-flight position exits cleanly via SL/timeout.
+    if (g_xauusd_fvg.has_open_position() || !g_disable_xauusd_fvg) {
+        g_xauusd_fvg.on_tick(bid, ask, now_ms_g,
+                             gold_can_enter,
+                             nullptr);
+    }
 
     // ?? GoldScalpPyramid (2026-05-18) ????????????????????????????????????????
     // M5 scalper with pyramid + aggressive trail. Fed every tick for bar
