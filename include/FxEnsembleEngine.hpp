@@ -67,11 +67,20 @@ namespace omega {
 //  Cell catalogue -- one per validated (pair, family, TF, side) survivor
 // ----------------------------------------------------------------------------
 enum class FxCellId {
-    DONCHIAN_55_H1_LONG,    // EURUSD H1, SL=3 TP=3 MB=24
-    BB_REV_20_H2_LONG,      // GBPUSD H2, SL=3 TP=5 MB=96
-    BB_REV_20_H4_LONG,      // AUDUSD H4, SL=3 TP=2 MB=24
-    THREE_BAR_MOM_H4_SHORT, // USDCAD H4, SL=1.5 TP=5 MB=24
-    DONCHIAN_20_H2_LONG,    // USDJPY H2, SL=1.5 TP=5 MB=96
+    // ── S37g initial cells (5 originals) ────────────────────────────────
+    DONCHIAN_55_H1_LONG,    // EURUSD H1, SL=3 TP=3 MB=24    OOS PF 2.80
+    BB_REV_20_H2_LONG,      // GBPUSD H2, SL=3 TP=5 MB=96    OOS PF 3.24
+    BB_REV_20_H4_LONG,      // AUDUSD H4, SL=3 TP=2 MB=24    OOS PF inf (thin)
+    THREE_BAR_MOM_H4_SHORT, // USDCAD H4, SL=1.5 TP=5 MB=24  OOS PF 2.39
+    DONCHIAN_20_H2_LONG,    // USDJPY H2, SL=1.5 TP=5 MB=96  OOS PF 1.67
+    // ── S37h extra families (Sharpe >= 1.0 only) ────────────────────────
+    KELTNER_H1_LONG,        // EURUSD H1, SL=3 TP=5 MB=24    OOS PF 2.33  Sh 1.77
+    LONDON_MOMO_H4_LONG,    // GBPUSD/USDCAD H4              OOS PF 2.31  Sh 1.84
+    KELTNER_H2_SHORT,       // USDCAD H2, SL=2 TP=1.5 MB=96  OOS PF 2.21  Sh 1.96
+    KUMO_BREAK_H2_SHORT,    // USDCAD H2, SL=3 TP=1.5 MB=24  OOS PF 2.20  Sh 1.34
+    ENGULFING_D1_LONG,      // USDJPY D1, SL=1 TP=1 MB=48    OOS PF 2.10  Sh 1.28
+    LONDON_MOMO_H2_SHORT,   // NZDUSD H2, SL=1.5 TP=1.5 MB=24 OOS PF 1.76 Sh 1.23
+    ASIAN_BREAK_H4_LONG,    // EURUSD H4, SL=1 TP=1 MB=24    OOS PF 1.78  Sh 1.20
 };
 
 enum class FxTf { M15, H1, H2, H4 };
@@ -133,14 +142,20 @@ public:
     explicit FxEnsembleEngine(const char* symbol)
         : symbol_(symbol ? symbol : "UNKNOWN")
     {
-        // Initialize default cell catalogue (all disabled by default;
-        // engine_init.hpp must explicitly enable_cell() the ones validated
-        // for this symbol).
-        cells_[0] = { FxCellId::DONCHIAN_55_H1_LONG,    FxTf::H1, true,  3.0, 1.0, 24, false, "Donch55H1L" };
-        cells_[1] = { FxCellId::BB_REV_20_H2_LONG,      FxTf::H2, true,  3.0, 1.67,96, false, "BBrev20H2L" };
-        cells_[2] = { FxCellId::BB_REV_20_H4_LONG,      FxTf::H4, true,  3.0, 0.67,24, false, "BBrev20H4L" };
-        cells_[3] = { FxCellId::THREE_BAR_MOM_H4_SHORT, FxTf::H4, false, 1.5, 3.33,24, false, "3BarMomH4S" };
-        cells_[4] = { FxCellId::DONCHIAN_20_H2_LONG,    FxTf::H2, true,  1.5, 3.33,96, false, "Donch20H2L" };
+        // Cell catalogue: 12 cells across 8 signal families. All disabled by
+        // default; engine_init.hpp flips on the validated ones per pair.
+        cells_[0]  = { FxCellId::DONCHIAN_55_H1_LONG,    FxTf::H1, true,  3.0, 1.0, 24, false, "Donch55H1L" };
+        cells_[1]  = { FxCellId::BB_REV_20_H2_LONG,      FxTf::H2, true,  3.0, 1.67,96, false, "BBrev20H2L" };
+        cells_[2]  = { FxCellId::BB_REV_20_H4_LONG,      FxTf::H4, true,  3.0, 0.67,24, false, "BBrev20H4L" };
+        cells_[3]  = { FxCellId::THREE_BAR_MOM_H4_SHORT, FxTf::H4, false, 1.5, 3.33,24, false, "3BarMomH4S" };
+        cells_[4]  = { FxCellId::DONCHIAN_20_H2_LONG,    FxTf::H2, true,  1.5, 3.33,96, false, "Donch20H2L" };
+        cells_[5]  = { FxCellId::KELTNER_H1_LONG,        FxTf::H1, true,  3.0, 1.67,24, false, "KeltH1L" };
+        cells_[6]  = { FxCellId::LONDON_MOMO_H4_LONG,    FxTf::H4, true,  1.0, 1.5, 48, false, "LonMomoH4L" };
+        cells_[7]  = { FxCellId::KELTNER_H2_SHORT,       FxTf::H2, false, 2.0, 0.75,96, false, "KeltH2S" };
+        cells_[8]  = { FxCellId::KUMO_BREAK_H2_SHORT,    FxTf::H2, false, 3.0, 0.5, 24, false, "KumoH2S" };
+        cells_[9]  = { FxCellId::ENGULFING_D1_LONG,      FxTf::H4, true,  1.0, 1.0, 48, false, "EngD1L" }; // approx D1 via H4*6
+        cells_[10] = { FxCellId::LONDON_MOMO_H2_SHORT,   FxTf::H2, false, 1.5, 1.0, 24, false, "LonMomoH2S" };
+        cells_[11] = { FxCellId::ASIAN_BREAK_H4_LONG,    FxTf::H4, true,  1.0, 1.0, 24, false, "AsianBrkH4L" };
     }
 
     const std::string& symbol() const { return symbol_; }
@@ -404,7 +419,7 @@ private:
     static constexpr int kM15PerH1 = 4;
     static constexpr int kM15PerH2 = 8;
     static constexpr int kM15PerH4 = 16;
-    static constexpr int kNCells   = 5;
+    static constexpr int kNCells   = 12;
 
     std::string symbol_;
     std::array<FxCellConfig, kNCells> cells_{};
@@ -507,7 +522,146 @@ private:
             case FxCellId::BB_REV_20_H4_LONG:      return _sig_bb_rev_long(bars_h4_, bb_mid_h4_, bb_std_h4_);
             case FxCellId::THREE_BAR_MOM_H4_SHORT: return _sig_3bar_mom_short(bars_h4_);
             case FxCellId::DONCHIAN_20_H2_LONG:    return _sig_donchian_long(bars_h2_, donch_20_hi_h2_);
+            case FxCellId::KELTNER_H1_LONG:        return _sig_keltner_long(bars_h1_);
+            case FxCellId::KELTNER_H2_SHORT:       return _sig_keltner_short(bars_h2_);
+            case FxCellId::LONDON_MOMO_H4_LONG:    return _sig_london_momo(bars_h4_, +1);
+            case FxCellId::LONDON_MOMO_H2_SHORT:   return _sig_london_momo(bars_h2_, -1);
+            case FxCellId::KUMO_BREAK_H2_SHORT:    return _sig_kumo_break(bars_h2_, -1);
+            case FxCellId::ENGULFING_D1_LONG:      return _sig_engulfing(bars_h4_, +1);
+            case FxCellId::ASIAN_BREAK_H4_LONG:    return _sig_asian_break(bars_h4_, +1);
         }
+        return 0;
+    }
+
+    // Keltner channel breakout (EMA20 + 2*ATR bands)
+    int _sig_keltner_long(const std::deque<FxEnsembleBar>& dq) const noexcept {
+        constexpr int N = 20;
+        if ((int)dq.size() < N + 1) return 0;
+        // Compute EMA20 + ATR14 on the fly
+        double e = dq[dq.size()-N].close;
+        const double a = 2.0 / (N + 1.0);
+        for (int i = (int)dq.size() - N + 1; i < (int)dq.size(); ++i)
+            e = a * dq[i].close + (1 - a) * e;
+        double tr_sum = 0;
+        for (int i = (int)dq.size() - 14; i < (int)dq.size(); ++i) {
+            const auto& c = dq[i]; const auto& p = dq[i-1];
+            tr_sum += std::max(c.high - c.low,
+                                std::max(std::abs(c.high - p.close),
+                                         std::abs(c.low  - p.close)));
+        }
+        const double atr14 = tr_sum / 14;
+        const double upper = e + 2.0 * atr14;
+        if (dq.back().close > upper) return +1;
+        return 0;
+    }
+
+    int _sig_keltner_short(const std::deque<FxEnsembleBar>& dq) const noexcept {
+        constexpr int N = 20;
+        if ((int)dq.size() < N + 1) return 0;
+        double e = dq[dq.size()-N].close;
+        const double a = 2.0 / (N + 1.0);
+        for (int i = (int)dq.size() - N + 1; i < (int)dq.size(); ++i)
+            e = a * dq[i].close + (1 - a) * e;
+        double tr_sum = 0;
+        for (int i = (int)dq.size() - 14; i < (int)dq.size(); ++i) {
+            const auto& c = dq[i]; const auto& p = dq[i-1];
+            tr_sum += std::max(c.high - c.low,
+                                std::max(std::abs(c.high - p.close),
+                                         std::abs(c.low  - p.close)));
+        }
+        const double atr14 = tr_sum / 14;
+        const double lower = e - 2.0 * atr14;
+        if (dq.back().close < lower) return -1;
+        return 0;
+    }
+
+    // London-open momentum -- only fires on bars within 08-12 UTC.
+    // side=+1 long when close > prior 4-bar high; -1 short mirror.
+    int _sig_london_momo(const std::deque<FxEnsembleBar>& dq, int side) const noexcept {
+        if (dq.size() < 5) return 0;
+        // Use bar_start_ms to compute UTC hour for the *current* bar.
+        const int64_t sec = dq.back().bar_start_ms / 1000;
+        const int hour_utc = (int)((sec / 3600) % 24);
+        if (hour_utc < 8 || hour_utc >= 12) return 0;
+        double hi = -1e18, lo = 1e18;
+        for (int i = (int)dq.size() - 5; i < (int)dq.size() - 1; ++i) {
+            if (dq[i].high > hi) hi = dq[i].high;
+            if (dq[i].low  < lo) lo = dq[i].low;
+        }
+        if (side > 0 && dq.back().close > hi) return +1;
+        if (side < 0 && dq.back().close < lo) return -1;
+        return 0;
+    }
+
+    // Ichimoku Kumo break (simplified -- needs 52 bars for senkou B).
+    // side=+1 long break above cloud; -1 short break below.
+    int _sig_kumo_break(const std::deque<FxEnsembleBar>& dq, int side) const noexcept {
+        constexpr int N52 = 52, N26 = 26, N9 = 9, SHIFT = 26;
+        if ((int)dq.size() < N52 + SHIFT) return 0;
+        const int last = (int)dq.size() - 1;
+        const int shifted_idx = last - SHIFT;
+        if (shifted_idx < N52 - 1) return 0;
+        auto hi_lo = [&](int end_idx, int n, double& hi, double& lo) {
+            hi = -1e18; lo = 1e18;
+            for (int i = end_idx - n + 1; i <= end_idx; ++i) {
+                if (dq[i].high > hi) hi = dq[i].high;
+                if (dq[i].low  < lo) lo = dq[i].low;
+            }
+        };
+        double h9, l9, h26, l26, h52, l52;
+        hi_lo(shifted_idx, N9, h9, l9);
+        hi_lo(shifted_idx, N26, h26, l26);
+        hi_lo(shifted_idx, N52, h52, l52);
+        const double sa = (((h9 + l9) / 2) + ((h26 + l26) / 2)) / 2;
+        const double sb = (h52 + l52) / 2;
+        const double cloud_top = std::max(sa, sb);
+        const double cloud_bot = std::min(sa, sb);
+        const double prev_close = dq[last - 1].close;
+        const double cur_close  = dq[last].close;
+        if (side > 0 && prev_close <= cloud_top && cur_close > cloud_top) return +1;
+        if (side < 0 && prev_close >= cloud_bot && cur_close < cloud_bot) return -1;
+        return 0;
+    }
+
+    // Engulfing pattern -- 2-bar reversal. Bullish: prev red, current green
+    // engulfs prev range. Bearish mirror.
+    int _sig_engulfing(const std::deque<FxEnsembleBar>& dq, int side) const noexcept {
+        if (dq.size() < 2) return 0;
+        const auto& cur = dq.back();
+        const auto& prv = dq[dq.size() - 2];
+        const double cur_body = std::abs(cur.close - cur.open);
+        const double prv_body = std::abs(prv.close - prv.open);
+        if (side > 0) {
+            const bool prv_bear = prv.close < prv.open;
+            const bool cur_bull = cur.close > cur.open;
+            return (prv_bear && cur_bull && cur_body > prv_body
+                    && cur.close > prv.open) ? +1 : 0;
+        }
+        const bool prv_bull = prv.close > prv.open;
+        const bool cur_bear = cur.close < cur.open;
+        return (prv_bull && cur_bear && cur_body > prv_body
+                && cur.close < prv.open) ? -1 : 0;
+    }
+
+    // Asian range break -- range built 00-06 UTC, break in London 08-12 UTC.
+    // Approximated using last N-bar high/low if current bar is in 08-12 UTC.
+    int _sig_asian_break(const std::deque<FxEnsembleBar>& dq, int side) const noexcept {
+        if (dq.size() < 8) return 0;
+        const int64_t sec = dq.back().bar_start_ms / 1000;
+        const int hour_utc = (int)((sec / 3600) % 24);
+        if (hour_utc < 8 || hour_utc >= 12) return 0;
+        // Asia range = look back 4-8 bars (covers 00-06 UTC on H4 or similar)
+        double asia_hi = -1e18, asia_lo = 1e18;
+        const int look = 6;  // bars covering the Asian session
+        for (int i = (int)dq.size() - look - 1; i < (int)dq.size() - 1; ++i) {
+            if (i < 0) continue;
+            if (dq[i].high > asia_hi) asia_hi = dq[i].high;
+            if (dq[i].low  < asia_lo) asia_lo = dq[i].low;
+        }
+        const double prev = dq[dq.size() - 2].close;
+        const double cur  = dq.back().close;
+        if (side > 0 && prev <= asia_hi && cur > asia_hi) return +1;
+        if (side < 0 && prev >= asia_lo && cur < asia_lo) return -1;
         return 0;
     }
 

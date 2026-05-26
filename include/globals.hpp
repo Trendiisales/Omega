@@ -794,6 +794,7 @@ static omega::FxEnsembleEngine g_fx_ens_gbpusd("GBPUSD");
 static omega::FxEnsembleEngine g_fx_ens_audusd("AUDUSD");
 static omega::FxEnsembleEngine g_fx_ens_usdcad("USDCAD");
 static omega::FxEnsembleEngine g_fx_ens_usdjpy("USDJPY");
+static omega::FxEnsembleEngine g_fx_ens_nzdusd("NZDUSD");  // S37h london_momo H2 SHORT
 // 2026-05-26: Index AMR instances. Configs picked from deep eval sweep on
 // real tick CSVs (SPXUSD/NSXUSD/GER40). See AtrMeanRevGridEngine.hpp traits.
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_US500>  g_amr_us500;

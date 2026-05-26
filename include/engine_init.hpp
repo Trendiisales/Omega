@@ -1689,31 +1689,43 @@ static void init_engines(const std::string& cfg_path)
                 const std::string sp = state_root_dir() + "/fxens_" + sym_tag + ".dat";
                 eng.load_or_seed_from_h1_csv(sp, csv_path);
             };
-            // EURUSD: donchian_55 LONG H1 SL=3 TP=3 MB=24
+            // EURUSD: 3 cells -- donchian_55 H1 LONG + keltner H1 LONG + asian_break H4 LONG
             g_fx_ens_eurusd.enable_cell(omega::FxCellId::DONCHIAN_55_H1_LONG, 3.0, 1.0, 24);
+            g_fx_ens_eurusd.enable_cell(omega::FxCellId::KELTNER_H1_LONG,     3.0, 1.67, 24); // S37h PF 2.33
+            g_fx_ens_eurusd.enable_cell(omega::FxCellId::ASIAN_BREAK_H4_LONG, 1.0, 1.0, 24);  // S37h PF 1.78
             fx_ens_boot(g_fx_ens_eurusd, "eurusd",
                         "phase1/signal_discovery/warmup_EURUSD_H1.csv",
                         0.00030, 0.00010);
-            // GBPUSD: bb_rev_20 LONG H2 SL=3 TP=5 MB=96
+            // GBPUSD: 2 cells -- bb_rev_20 H2 LONG + london_momo H4 LONG
             g_fx_ens_gbpusd.enable_cell(omega::FxCellId::BB_REV_20_H2_LONG, 3.0, 1.67, 96);
+            g_fx_ens_gbpusd.enable_cell(omega::FxCellId::LONDON_MOMO_H4_LONG, 1.0, 1.5, 48);  // S37h PF 2.31 RF 7.47
             fx_ens_boot(g_fx_ens_gbpusd, "gbpusd",
                         "phase1/signal_discovery/warmup_GBPUSD_H1.csv",
                         0.00035, 0.00012);
-            // AUDUSD: bb_rev_20 LONG H4 SL=3 TP=2 MB=24  (thin n=5, shadow only)
+            // AUDUSD: 1 cell -- bb_rev_20 H4 LONG (thin n=5, shadow only)
             g_fx_ens_audusd.enable_cell(omega::FxCellId::BB_REV_20_H4_LONG, 3.0, 0.67, 24);
             fx_ens_boot(g_fx_ens_audusd, "audusd",
                         "phase1/signal_discovery/warmup_AUDUSD_H1.csv",
                         0.00035, 0.00012);
-            // USDCAD: 3bar_mom SHORT H4 SL=1.5 TP=5 MB=24
+            // USDCAD: 4 cells -- 3bar_mom S + london_momo L + keltner S + kumo_break S
             g_fx_ens_usdcad.enable_cell(omega::FxCellId::THREE_BAR_MOM_H4_SHORT, 1.5, 3.33, 24);
+            g_fx_ens_usdcad.enable_cell(omega::FxCellId::LONDON_MOMO_H4_LONG, 1.0, 2.0, 96);  // S37h PF 2.31
+            g_fx_ens_usdcad.enable_cell(omega::FxCellId::KELTNER_H2_SHORT, 2.0, 0.75, 96);    // S37h PF 2.21 Sh 1.96
+            g_fx_ens_usdcad.enable_cell(omega::FxCellId::KUMO_BREAK_H2_SHORT, 3.0, 0.5, 24);  // S37h PF 2.20
             fx_ens_boot(g_fx_ens_usdcad, "usdcad",
                         "phase1/signal_discovery/warmup_USDCAD_H1.csv",
                         0.00040, 0.00015);
-            // USDJPY: donchian_20 LONG H2 SL=1.5 TP=5 MB=96
+            // USDJPY: 2 cells -- donchian_20 H2 LONG + engulfing D1-approx LONG
             g_fx_ens_usdjpy.enable_cell(omega::FxCellId::DONCHIAN_20_H2_LONG, 1.5, 3.33, 96);
+            g_fx_ens_usdjpy.enable_cell(omega::FxCellId::ENGULFING_D1_LONG, 1.0, 1.0, 48);    // S37h PF 2.10
             fx_ens_boot(g_fx_ens_usdjpy, "usdjpy",
                         "phase1/signal_discovery/warmup_USDJPY_H1.csv",
                         0.050, 0.01);
+            // NZDUSD: 1 cell -- london_momo H2 SHORT (NEW S37h)
+            g_fx_ens_nzdusd.enable_cell(omega::FxCellId::LONDON_MOMO_H2_SHORT, 1.5, 1.0, 24); // S37h PF 1.76
+            fx_ens_boot(g_fx_ens_nzdusd, "nzdusd",
+                        "phase1/signal_discovery/warmup_NZDUSD_H1.csv",
+                        0.00040, 0.00015);
             std::printf("[OMEGA-INIT] FxEnsembleEngine: 5 pairs enabled (shadow) -- "
                        "EUR(Donch55H1L) GBP(BBrev20H2L) AUD(BBrev20H4L) "
                        "CAD(3barH4S) JPY(Donch20H2L)\n");

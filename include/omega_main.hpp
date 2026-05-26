@@ -750,6 +750,7 @@ int main(int argc, char* argv[])
                 g_fx_ens_audusd.save_state(sr + "/fxens_audusd.dat");
                 g_fx_ens_usdcad.save_state(sr + "/fxens_usdcad.dat");
                 g_fx_ens_usdjpy.save_state(sr + "/fxens_usdjpy.dat");
+                g_fx_ens_nzdusd.save_state(sr + "/fxens_nzdusd.dat");
                 g_amr_us500.save_state (sr + "/amr_us500.dat");
                 g_amr_nas100.save_state(sr + "/amr_nas100.dat");
                 g_amr_ger40.save_state (sr + "/amr_ger40.dat");

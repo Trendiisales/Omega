@@ -542,6 +542,8 @@ static void on_tick_audusd(
 
         // AtrMeanRevGrid NZDUSD (shadow). Backtest: PF 0.92 (negative; keep enabled=false until tuned).
         if (g_amr_nzdusd.enabled) g_amr_nzdusd.on_tick(bid, ask, now_ms);
+        if (g_fx_ens_nzdusd.enabled)
+            g_fx_ens_nzdusd.on_tick(bid, ask, now_ms, write_shadow_csv);
 
         (void)regime; (void)dispatch;
         return;
