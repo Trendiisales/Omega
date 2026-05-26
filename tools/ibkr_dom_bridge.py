@@ -202,9 +202,26 @@ class DomRecorder:
         self.sym = contract.symbol
         self.max_levels = max_levels
         self.out_path = out_path
+        self.out_dir = os.path.dirname(out_path) or "."
         self.broadcaster = broadcaster
-        new_file = not os.path.exists(out_path) or os.path.getsize(out_path) == 0
-        self.fh = open(out_path, "a", newline="", buffering=1)
+        self.cur_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.fh = None
+        self.w = None
+        self._open_for_date(self.cur_date)
+        self.events = 0
+        self.last_log = 0.0
+        self.ticker = None
+
+    def _open_for_date(self, date_str):
+        path = os.path.join(self.out_dir,
+                            f"ibkr_l2_{self.sym}_{date_str}.csv")
+        new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+        if self.fh is not None:
+            try:
+                self.fh.close()
+            except Exception:
+                pass
+        self.fh = open(path, "a", newline="", buffering=1)
         self.w = csv.writer(self.fh)
         if new_file:
             self.w.writerow([
@@ -213,9 +230,16 @@ class DomRecorder:
                 "depth_bid_levels", "depth_ask_levels",
                 "depth_events_total",
             ])
-        self.events = 0
-        self.last_log = 0.0
-        self.ticker = None
+        self.out_path = path
+
+    def _maybe_rotate(self):
+        d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if d != self.cur_date:
+            print(f"[{self.sym}] UTC midnight rollover {self.cur_date} -> {d} "
+                  f"events_prev_day={self.events}", flush=True)
+            self.cur_date = d
+            self.events = 0
+            self._open_for_date(d)
 
     def start(self):
         self.ticker = self.ib.reqMktDepth(
@@ -235,6 +259,7 @@ class DomRecorder:
             pass
 
     def _on_update(self, _ticker):
+        self._maybe_rotate()
         t = self.ticker
         bids = t.domBids[: self.max_levels] if t.domBids else []
         asks = t.domAsks[: self.max_levels] if t.domAsks else []
