@@ -422,8 +422,8 @@ static void init_engines(const std::string& cfg_path)
     // S38a tunables (new fields on engine):
     g_gold_scalp_pyramid.COST_RT_PTS        = 0.60;   // realised BB gold cost @ 0.01 lot
     g_gold_scalp_pyramid.BE_ARM_COST_MULT   = 2.0;    // arm Phase-1 BE at MFE >= $1.20
-    g_gold_scalp_pyramid.CHOP_ER_MIN        = 0.30;   // Kaufman ER < 0.30 = chop, block entry
-    g_gold_scalp_pyramid.CHOP_ER_LOOKBACK   = 10;     // 10x M5 = 50min ER window
+    g_gold_scalp_pyramid.CHOP_ER_MIN        = 0.0;    // S38b 2026-05-26: disabled. ER hurts -- gives up $2K/2yr for $130 less DD
+    g_gold_scalp_pyramid.CHOP_ER_LOOKBACK   = 10;     // 10x M5 = 50min ER window (unused when MIN=0)
     g_gold_scalp_pyramid.CONSEC_BE_FREEZE_N = 3;      // 3 consec BE_CUT -> 30min freeze
     g_gold_scalp_pyramid.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);
