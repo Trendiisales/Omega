@@ -57,16 +57,15 @@ static void init_engines(const std::string& cfg_path)
     // (MacroCrash already disabled L626 since S99b 2026-05-18.)
     // SURVIVORS kept enabled: HybridBracketGold/Index, AsianRange,
     // Us303BarMomH1, Us30Ensemble (new InsBrkH1).
-    g_ema_cross.enabled        = false;  // S37d cull -- PF 0.85 borderline
-    g_candle_flow.enabled      = false;  // S37d cull -- -$1077, biggest bleed after MacroCrash
-    g_dom_persist.enabled      = false;  // S37d cull -- PF 0.29
-    g_bracket_gold.enabled     = false;  // S37d cull -- XAUUSD_BRACKET PF 0.26
-    g_gold_flow.enabled        = false;  // S37d cull -- PF 0.13
-    g_bb_mr.enabled            = false;  // S37d cull -- BBMeanRev PF 0.51
-    g_iflow_sp.enabled         = false;  // S37d cull -- IndexFlow PF 0.15
-    g_iflow_nq.enabled         = false;
-    g_iflow_nas.enabled        = false;
-    g_iflow_us30.enabled       = false;
+    // S37d cull REVERTED 2026-05-26 (build-fix): these engine classes lack
+    // an `.enabled` field. They are already shadow_mode=kShadowDefault above
+    // (and 3 of the original 8 -- DomPersist, GoldFlow, BBMeanRev -- no
+    // longer exist as globals; that audit data was historical from removed
+    // engines). Live impact: nil (shadow_mode keeps them paper-only).
+    // To truly cull these classes, would need to either add an `.enabled`
+    // member to each engine OR strip their on_tick dispatch sites. Out of
+    // scope for the build-recovery commit; revisit if a surviving engine
+    // shows real-live (not historical-shadow) losses.
     // TOMBSTONE 2026-05-01 (S52 trade-quality follow-up):
     //   153-combo parameter sweep on data/l2_ticks_2026-04-16.csv: 0/153
     //   produced positive PnL. Best combo -$4.30, worst -$225, mean -$81.

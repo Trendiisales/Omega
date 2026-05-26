@@ -1387,11 +1387,10 @@ function updateDashboard(d){
   updateEngCell('engJPY','engJPYPhase','engJPYVol','engJPYSig',d.usdjpy_phase,d.usdjpy_recent_vol_pct,d.usdjpy_baseline_vol_pct,d.usdjpy_signals,d.usdjpy_comp_high,d.usdjpy_comp_low,d.usdjpy_bid,d.usdjpy_ask,3,isLive('USDJPY'),null);
   updateEngCell('engXAU','engXAUPhase','engXAUVol','engXAUSig',safe(d.xau_phase),d.xau_recent_vol_pct,d.xau_baseline_vol_pct,d.xau_signals,0,0,d.gold_bid,d.gold_ask,2,isLive('XAUUSD'),d.brackets&&d.brackets.gold);
 
+)OMEGA23"
+R"OMEGA23PDH(
   // S37c 2026-05-26: Override engine-tile HI/LO spans with PREVIOUS-DAY high/low
-  // (PDH/PDL) sourced from g_edges.prev_day. updateEngCell renders CURRENT
-  // compression-range hi/lo; operator wants previous trading day's hi/lo as
-  // small reference numbers at the top of each tile instead. PDH/PDL stays 0
-  // until the first UTC day rollover after engine boot; show '--' then.
+  // (PDH/PDL). Split into separate chunk to avoid MSVC C2026 string-too-big.
   function setPrevDayHL(cellId,pdh,pdl,decimals){
     const hi=document.getElementById(cellId+'Hi');
     const lo=document.getElementById(cellId+'Lo');
@@ -1413,6 +1412,8 @@ function updateDashboard(d){
   setPrevDayHL('engNZD', safe(d.nzdusd_pdh),safe(d.nzdusd_pdl),5);
   setPrevDayHL('engJPY', safe(d.usdjpy_pdh),safe(d.usdjpy_pdl),3);
   setPrevDayHL('engXAU', safe(d.xau_pdh), safe(d.xau_pdl), 2);
+)OMEGA23PDH"
+R"OMEGA23E(
   // L2 imbalance bars
   const l2on = d.l2_active === 1;
   updateL2Bar('engSP',d.l2_sp,l2on); updateL2Bar('engNQ',d.l2_nq,l2on);
@@ -1576,7 +1577,7 @@ function updateDashboard(d){
   if(l2LblG)l2LblG.style.color=goldReal?'var(--green)':'var(--t3)';
   if(l2LblC)l2LblC.style.color=ctLive?'var(--green)':'var(--t3)';
 
-)OMEGA23"
+)OMEGA23E"
 R"OMEGA23C(
   // ?? Live open trades panel ??????????????????????????????????????????????
   const ltPanel=document.getElementById('liveTradesPanel');
