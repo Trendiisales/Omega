@@ -1632,7 +1632,7 @@ static void init_engines(const std::string& cfg_path)
         // S37 was operator-approved to capture DJ30 trend gains but now
         // pulled back. ALL engines now shadow_mode=true.
         g_us30_3bar_mom_h1.shadow_mode = true;
-        g_us30_3bar_mom_h1.enabled     = true;
+        g_us30_3bar_mom_h1.enabled     = false;  // S47 2026-05-27: scalp-class purge; pending real-class audit
         g_us30_3bar_mom_h1.symbol      = "US30";
         g_us30_3bar_mom_h1.seed_from_h1_csv("phase1/signal_discovery/warmup_US30_H1.csv");
         printf("[OMEGA-INIT] Us303BarMomH1: shadow=%d enabled=%d sl=%.1fx tp=%.1fR mb=%d "
@@ -1678,7 +1678,7 @@ static void init_engines(const std::string& cfg_path)
         // WF 4 folds all positive, OOS aggregate +$7912 / 145 trades.
         // No NAS L2 data yet; L2 validation pending.
         g_nas_bbrev_long_h1.shadow_mode = true;
-        g_nas_bbrev_long_h1.enabled     = true;
+        g_nas_bbrev_long_h1.enabled     = false;  // S47: scalp/mean-rev purge
         g_nas_bbrev_long_h1.symbol      = "NAS100";
         g_nas_bbrev_long_h1.seed_from_h1_csv("phase1/signal_discovery/warmup_NAS100_H1.csv");
         printf("[OMEGA-INIT] NasBbRevLongH1: shadow=%d enabled=%d bb=%d/%.1f rsi_lo=%.0f "
@@ -1773,10 +1773,10 @@ static void init_engines(const std::string& cfg_path)
                 }
             };
 
-            g_amr_eurusd.enabled     = true;  // H4 X=3 SL=7 (S37f validated, OOS PF 1.89)
+            g_amr_eurusd.enabled     = false;  // S47: AMR mean-rev purge pending real-class audit
             amr_boot(g_amr_eurusd, "eurusd", warmup_eur);
 
-            g_amr_gbpusd.enabled     = true;  // H1 X=10 (defaults), PF 2.11 (kept from prior)
+            g_amr_gbpusd.enabled     = false;  // S47: AMR mean-rev purge
             amr_boot(g_amr_gbpusd, "gbpusd", warmup_gbp);
 
             // S37g 2026-05-26: FxEnsembleEngine -- 5 cross-family validated cells.
@@ -1865,13 +1865,13 @@ static void init_engines(const std::string& cfg_path)
             const char* warmup_nas100 = "phase1/signal_discovery/warmup_NAS100_H1.csv";
             const char* warmup_ger40  = "phase1/signal_discovery/warmup_GER40_H1.csv";
 
-            g_amr_us500.enabled      = true;   // H1 X=8 ATR_FROM_WAP
+            g_amr_us500.enabled      = false;  // S47: AMR mean-rev purge
             amr_boot(g_amr_us500, "us500", warmup_us500);
 
-            g_amr_nas100.enabled     = true;   // M15 X=14 RSI_OR_MA
+            g_amr_nas100.enabled     = false;  // S47: M15 micro purge
             amr_boot(g_amr_nas100, "nas100", warmup_nas100);
 
-            g_amr_ger40.enabled      = true;   // M15 X=14 ATR_FROM_WAP
+            g_amr_ger40.enabled      = false;  // S47: M15 micro purge
             amr_boot(g_amr_ger40, "ger40", warmup_ger40);
 
             std::printf("[OMEGA-INIT] AtrMeanRevGrid INDEX: US500(H1,X=8)+NAS100(M15,X=14)+GER40(M15,X=14) enabled (shadow)\n");
@@ -3349,7 +3349,7 @@ static void init_engines(const std::string& cfg_path)
     g_orb_nas100.TP_PCT          = 0.50;
     g_orb_nas100.SL_PCT          = 0.20;
     g_orb_nas100.MAX_HOLD_SEC    = 21600;  // 6h
-    g_orb_nas100.enabled         = true;   // shadow-only via global cohort gate
+    g_orb_nas100.enabled         = false;  // S47: ORB session-scalp purge
 
     g_orb_dj30.OPEN_HOUR         = 13;
     g_orb_dj30.OPEN_MIN          = 30;
@@ -3358,7 +3358,7 @@ static void init_engines(const std::string& cfg_path)
     g_orb_dj30.TP_PCT            = 0.55;
     g_orb_dj30.SL_PCT            = 0.22;
     g_orb_dj30.MAX_HOLD_SEC      = 21600;  // 6h
-    g_orb_dj30.enabled           = true;
+    g_orb_dj30.enabled           = false;  // S47: ORB session-scalp purge
 
     printf("[OMEGA-INIT] ORB-Swing cohort: NAS100 + DJ30 enabled, "
            "buf=%.2f%% tp=%.2f/%.2f%% sl=%.2f/%.2f%% hold=%ds (NY 13:30 UTC, 30min range)\n",
