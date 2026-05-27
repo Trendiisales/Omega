@@ -662,6 +662,45 @@ omega::XauThreeBar30mEngine make_engine_tuned_hmm_slope(int N) {
     return e;
 }
 
+omega::XauThreeBar30mEngine make_engine_tuned_ema200() {
+    omega::XauThreeBar30mEngine e = make_engine_protected();
+    e.use_ema200_gate = true;
+    e.init();
+    return e;
+}
+
+omega::XauThreeBar30mEngine make_engine_tuned_adx(double adx_min_val) {
+    omega::XauThreeBar30mEngine e = make_engine_protected();
+    e.use_adx_gate = true;
+    e.adx_min      = adx_min_val;
+    e.init();
+    return e;
+}
+
+omega::XauThreeBar30mEngine make_engine_tuned_volband(double lo, double hi) {
+    omega::XauThreeBar30mEngine e = make_engine_protected();
+    e.use_vol_band_gate   = true;
+    e.vol_band_low_pct    = lo;
+    e.vol_band_high_pct   = hi;
+    e.init();
+    return e;
+}
+
+omega::XauThreeBar30mEngine make_engine_tuned_all_gates() {
+    // Stack ALL gates (EMA200 + ADX>25 + vol-band + slope_12).
+    omega::XauThreeBar30mEngine e = make_engine_protected();
+    e.use_ema200_gate     = true;
+    e.use_adx_gate        = true;
+    e.adx_min             = 25.0;
+    e.use_vol_band_gate   = true;
+    e.vol_band_low_pct    = 0.30;
+    e.vol_band_high_pct   = 0.85;
+    e.slope_lookback_bars = 12;
+    e.use_slope_gate      = true;
+    e.init();
+    return e;
+}
+
 omega::XauThreeBar30mEngine make_engine_tuned_slope(int N) {
     // TUNED config + N-bar close-slope sign-alignment gate. Per S88-followup
     // Python re-test (research/THREEBAR_F4_DUKA_RETEST.md), slopes in [8, 12]
@@ -820,6 +859,23 @@ int main(int argc, char** argv) {
         auto eng = make_engine_tuned_hmm_slope(12);
         run_one(eng, m30, atr, tuned_hmm_slope12, "tuned_hmm_slope12");
     }
+    BacktestResult tuned_ema200, tuned_adx, tuned_volband, tuned_all;
+    {
+        auto eng = make_engine_tuned_ema200();
+        run_one(eng, m30, atr, tuned_ema200, "tuned_ema200");
+    }
+    {
+        auto eng = make_engine_tuned_adx(25.0);
+        run_one(eng, m30, atr, tuned_adx, "tuned_adx25");
+    }
+    {
+        auto eng = make_engine_tuned_volband(0.30, 0.85);
+        run_one(eng, m30, atr, tuned_volband, "tuned_volband_30_85");
+    }
+    {
+        auto eng = make_engine_tuned_all_gates();
+        run_one(eng, m30, atr, tuned_all, "tuned_all_gates");
+    }
 
     // Restore stdout
     if (old_stdout) {
@@ -857,6 +913,10 @@ int main(int argc, char** argv) {
         {"TUNED+SLOPE12  (TUNED + 12-bar slope sign-align)",         &tuned_slope12},
         {"TUNED+HMM      (TUNED + causal HMM not_NOISE gate)",       &tuned_hmm},
         {"TUNED+HMM+SL12 (TUNED + HMM not_NOISE AND slope_12)",      &tuned_hmm_slope12},
+        {"TUNED+EMA200  (TUNED + EMA200 long-cycle trend filter)",   &tuned_ema200},
+        {"TUNED+ADX25   (TUNED + ADX14 > 25 strength filter)",       &tuned_adx},
+        {"TUNED+VOLBAND (TUNED + ATR-pct in [0.30, 0.85])",          &tuned_volband},
+        {"TUNED+ALL     (TUNED + EMA200 + ADX25 + VOLBAND + SL12)",  &tuned_all},
     };
     write_summary    (out_prefix + "_summary.txt",  runs);
     write_summary_csv(out_prefix + "_summary.csv",  runs);

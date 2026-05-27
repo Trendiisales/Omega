@@ -267,6 +267,38 @@ public:
     bool          use_hmm_gate    = false;
     XauM30HmmGate*hmm_gate        = nullptr;  // engine_init.hpp wires a static instance
 
+    // ── S88-followup (2026-05-27): three additional regime gates, all
+    //   defaulting OFF. Each toggleable independently; ANDed when stacked.
+    //
+    //   (a) use_ema200_gate: long-cycle trend filter.
+    //       Block longs if close < EMA200, shorts if close > EMA200.
+    //       EMA200 on M30 ~= 100hr / 4d context; orthogonal to slope_12
+    //       which operates on 12 bars (6hr) and to HMM which is statistical.
+    //
+    //   (b) use_adx_gate: trend-strength filter.
+    //       Block entries when ADX14 < adx_min (default 25).
+    //       Skips chop where 3-bar pattern fires but no follow-through.
+    //
+    //   (c) use_vol_band_gate: volatility-band filter.
+    //       Block when ATR14 rolling-200-bar percentile outside
+    //       [vol_band_low_pct, vol_band_high_pct]. Skips dead vol
+    //       (no follow-through) and crisis vol (gap risk through SL).
+    bool   use_ema200_gate    = false;
+    bool   use_adx_gate       = false;
+    double adx_min            = 25.0;
+    bool   use_vol_band_gate  = false;
+    double vol_band_low_pct   = 0.30;
+    double vol_band_high_pct  = 0.85;
+
+    // State for the three new gates (updated each bar in on_30m_bar):
+    double ema200_         = 0.0;
+    double adx14_          = 0.0;
+    double plus_di_        = 0.0;
+    double minus_di_       = 0.0;
+    double prev_dx_smooth_ = 0.0;
+    int    adx_warmup_     = 0;
+    std::deque<double> atr_vol_window_;  // rolling 200 ATR values for percentile
+
     // ── S63 2026-05-13 VWR-pattern in-flight protection ───────────────────
     //   Mirrors VWAPReversionEngine (CrossAssetEngines.hpp L1245-1247) but
     //   uses entry-price-relative percentages (XAU @ $3700, 0.05 -> $1.85).
@@ -379,6 +411,62 @@ public:
             hmm_gate->push_bar(hb);
         }
 
+        // S88-followup: update state for the three new regime gates EVERY bar
+        // regardless of position state, so the gates are always current.
+        // Only runs if any of the three is enabled — cheap when all off.
+        if (use_ema200_gate || use_adx_gate || use_vol_band_gate) {
+            // EMA200 -- standard EMA with alpha = 2/(200+1) ≈ 0.00995
+            const double alpha_200 = 2.0 / 201.0;
+            if (ema200_ <= 0.0) {
+                ema200_ = bar.close;
+            } else {
+                ema200_ = alpha_200 * bar.close + (1.0 - alpha_200) * ema200_;
+            }
+
+            // ADX14 -- Wilder's. Requires at least 2 bars.
+            if ((int)bars_.size() >= 2) {
+                const auto& cur  = bars_[bars_.size() - 1];
+                const auto& prev = bars_[bars_.size() - 2];
+                const double up   = cur.high - prev.high;
+                const double down = prev.low  - cur.low;
+                const double plus_dm  = (up > down && up > 0)   ? up   : 0.0;
+                const double minus_dm = (down > up && down > 0) ? down : 0.0;
+                const double tr = std::max(cur.high - cur.low,
+                                  std::max(std::abs(cur.high - prev.close),
+                                           std::abs(cur.low  - prev.close)));
+                const int n = 14;
+                if (adx_warmup_ < n) {
+                    plus_di_  += plus_dm;
+                    minus_di_ += minus_dm;
+                    adx14_    += tr;
+                    ++adx_warmup_;
+                    if (adx_warmup_ == n) {
+                        // Convert sums to first smoothed values
+                        plus_di_  = 100.0 * plus_di_  / std::max(adx14_, 1e-9);
+                        minus_di_ = 100.0 * minus_di_ / std::max(adx14_, 1e-9);
+                    }
+                } else {
+                    // Wilder smoothing
+                    const double atr_w = adx14_;  // running TR sum
+                    const double new_atr = atr_w - atr_w/n + tr;
+                    adx14_ = new_atr;
+                    const double dx = (plus_di_ + minus_di_) > 0
+                        ? 100.0 * std::abs(plus_di_ - minus_di_) / (plus_di_ + minus_di_)
+                        : 0.0;
+                    prev_dx_smooth_ = (prev_dx_smooth_ * (n - 1) + dx) / n;
+                    // Update DI values
+                    plus_di_  = (plus_di_  * (n - 1) + 100.0 * plus_dm  / std::max(tr,1e-9)) / n;
+                    minus_di_ = (minus_di_ * (n - 1) + 100.0 * minus_dm / std::max(tr,1e-9)) / n;
+                }
+            }
+
+            // Vol-band: maintain rolling ATR-200 window for percentile
+            if (atr14_external > 0.0) {
+                atr_vol_window_.push_back(atr14_external);
+                if ((int)atr_vol_window_.size() > 200) atr_vol_window_.pop_front();
+            }
+        }
+
         if (pos.cooldown_bars > 0) --pos.cooldown_bars;
 
         // S35-P3: bars-held + time stop. Increment guards' counter, then
@@ -449,6 +537,50 @@ public:
         if (use_hmm_gate && hmm_gate != nullptr) {
             if (hmm_gate->warmed() && hmm_gate->is_noise()) {
                 omega::log_entry_block("XauThreeBar30m", "HMM_GATE_NOISE");
+                return;
+            }
+        }
+
+        // S88-followup: EMA200 long-cycle trend filter. Block longs when
+        // close < EMA200 (we're below long-run trend); block shorts when
+        // close > EMA200. Catches counter-trend 3-bar fires within a wider
+        // adverse regime.
+        if (use_ema200_gate && ema200_ > 0.0) {
+            const double cb_close = bars_.back().close;
+            if (side > 0 && cb_close < ema200_) {
+                omega::log_entry_block("XauThreeBar30m", "EMA200_LONG_BLOCK");
+                return;
+            }
+            if (side < 0 && cb_close > ema200_) {
+                omega::log_entry_block("XauThreeBar30m", "EMA200_SHORT_BLOCK");
+                return;
+            }
+        }
+
+        // S88-followup: ADX min-trend filter. Skip entry when ADX14 < adx_min,
+        // i.e. the trend's strength is too weak for a continuation signal to
+        // follow through. ADX > 25 is the classic "trending" threshold.
+        if (use_adx_gate && adx_warmup_ >= 14) {
+            if (prev_dx_smooth_ < adx_min) {
+                omega::log_entry_block("XauThreeBar30m", "ADX_TOO_WEAK");
+                return;
+            }
+        }
+
+        // S88-followup: Vol-band filter. Block when current ATR is outside
+        // [low_pct, high_pct] of the rolling 200-bar ATR distribution. Skips
+        // dead vol (no follow-through after entry) AND crisis vol (gap through
+        // SL). Sweet-spot middle band.
+        if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200 && atr14_ > 0.0) {
+            // Count fraction of recent ATR values below current
+            int below = 0;
+            const int n = (int)atr_vol_window_.size();
+            for (int i = 0; i < n; ++i) {
+                if (atr_vol_window_[i] < atr14_) ++below;
+            }
+            const double pct = static_cast<double>(below) / n;
+            if (pct < vol_band_low_pct || pct > vol_band_high_pct) {
+                omega::log_entry_block("XauThreeBar30m", "VOL_BAND_OUT");
                 return;
             }
         }
