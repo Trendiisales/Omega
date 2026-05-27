@@ -928,6 +928,37 @@ else()
 endif()
 
 # =============================================================================
+# gold_bracket_counterfactual -- one-shot harness asking "what would
+#                                 g_bracket_gold have made on a given tape?"
+#                                 Built 2026-05-28 for S37-X observability fix.
+# =============================================================================
+add_executable(gold_bracket_counterfactual
+    backtest/gold_bracket_counterfactual.cpp
+)
+target_include_directories(gold_bracket_counterfactual PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+if(MSVC)
+    target_compile_options(gold_bracket_counterfactual PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+    )
+    target_compile_definitions(gold_bracket_counterfactual PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(gold_bracket_counterfactual PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable
+        -Wno-unused-but-set-variable -Wno-reorder
+    )
+    target_compile_definitions(gold_bracket_counterfactual PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(gold_bracket_counterfactual PRIVATE pthread)
+endif()
+
+# =============================================================================
 # xau_d1_zoo_audit -- standalone harness for the Xau H4/D1 engine cohort.
 #                     Used by S37 Phase H trail audit (2026-05-27b) to test
 #                     gated stage_trail on PullbackContH4/D1, TurtleD1,
