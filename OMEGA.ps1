@@ -1570,6 +1570,29 @@ function Invoke-Watchdog {
 
     $restartCount = 0
     $l2AlertCount = 0
+    # S88-followup (2026-05-27): escalation counters for silent-failure modes.
+    # Without these, GITHUB-POLL failed silently for 2h+ when PAT expired in
+    # May 2026 -- watchdog logged "failed to reach" every 5 min with no
+    # threshold escalation. Same pattern for sustained HASH-MISMATCH (running
+    # binary stale vs origin/main) which previously had no alert path.
+    # Counters reset on the next OK cycle; sentinel file allows external
+    # surfacing (dashboard / push notification / cron alert).
+    $ghPollFailCount  = 0     # consecutive GITHUB-POLL failures
+    $hashMismatchCount = 0    # consecutive cycles with running != github HEAD
+    $GhFailAlertThreshold   = 6    # 6 polls * 5 min = 30 min before alert
+    $HashMismatchAlertThreshold = 12  # 12 polls * 5 min = 60 min before alert
+    $AlertSentinelPath = Join-Path $OmegaDir "logs\WATCHDOG_ALERT.txt"
+    function Write-Sentinel([string]$reason) {
+        $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC"
+        # Append so multiple alerts accumulate; deploy/restart clears the file.
+        Add-Content -Path $AlertSentinelPath -Value "$ts | $reason"
+    }
+    function Clear-Sentinel([string]$reason) {
+        if (Test-Path $AlertSentinelPath) {
+            Remove-Item -Path $AlertSentinelPath -Force -ErrorAction SilentlyContinue
+            Write-WD "WATCHDOG-RECOVERED: $reason -- sentinel cleared"
+        }
+    }
 
     while ($true) {
         Start-Sleep -Seconds $CheckIntervalSec
@@ -1669,12 +1692,25 @@ function Invoke-Watchdog {
                 $LastGitHubCheck = Get-Date
                 $ghHead = Get-GitHubHead
                 if (-not $ghHead) {
-                    Write-WD "GITHUB-POLL: failed to reach GitHub API -- will retry"
+                    $ghPollFailCount++
+                    Write-WD "GITHUB-POLL: failed to reach GitHub API -- will retry (consecutive_fails=$ghPollFailCount)"
+                    if ($ghPollFailCount -eq $GhFailAlertThreshold) {
+                        $minutesDown = [int](($GhFailAlertThreshold * $GitHubPollIntervalSec) / 60)
+                        $msg = "GITHUB-POLL stuck failing for ${minutesDown}+ minutes -- likely PAT expired at $TokenFile or network blocked. Watchdog cannot detect new commits."
+                        Write-WD "[WATCHDOG-ALERT] $msg"
+                        Write-Sentinel "GITHUB-POLL-DOWN: $msg"
+                    }
                 } elseif (-not $running) {
                     Write-WD "GITHUB-POLL: ghHead=$ghHead but running hash unknown -- cannot compare. Will retry."
                 } elseif ($ghHead -eq $running) {
+                    if ($ghPollFailCount -gt 0) { Write-WD "GITHUB-POLL-RECOVERED: after $ghPollFailCount failures"; Clear-Sentinel "GITHUB-POLL recovered" }
+                    if ($hashMismatchCount -gt 0) { Write-WD "HASH-RECOVERED: after $hashMismatchCount mismatch cycles"; Clear-Sentinel "HASH recovered" }
+                    $ghPollFailCount = 0
+                    $hashMismatchCount = 0
                     Write-WD "HASH-OK: running=$running == github=$ghHead"
                 } else {
+                    if ($ghPollFailCount -gt 0) { $ghPollFailCount = 0; Write-WD "GITHUB-POLL-RECOVERED (now showing mismatch)" }
+                    $hashMismatchCount++
                     # ================================================================
                     # S36 2026-05-12 -- AUTO-DEPLOY DISABLED by operator directive.
                     # ================================================================
@@ -1688,7 +1724,13 @@ function Invoke-Watchdog {
                     #
                     # To re-enable auto-deploy, revert this block (see git history
                     # of OMEGA.ps1 around 2026-05-12 / S36-Pn-deploy-control commit).
-                    Write-WD "HASH-MISMATCH: running=$running github=$ghHead -- AUTO-UPDATE DISABLED (operator directive). Run '.\OMEGA.ps1 deploy' manually to apply."
+                    Write-WD "HASH-MISMATCH: running=$running github=$ghHead -- AUTO-UPDATE DISABLED (operator directive). Run '.\OMEGA.ps1 deploy' manually to apply. (consecutive_mismatch=$hashMismatchCount)"
+                    if ($hashMismatchCount -eq $HashMismatchAlertThreshold) {
+                        $minutesStale = [int](($HashMismatchAlertThreshold * $GitHubPollIntervalSec) / 60)
+                        $msg = "Running binary stale for ${minutesStale}+ minutes (running=$running github=$ghHead). Run '.\OMEGA.ps1 deploy' on VPS to ship pending commits."
+                        Write-WD "[WATCHDOG-ALERT] $msg"
+                        Write-Sentinel "HASH-MISMATCH: $msg"
+                    }
                 }
             }
         }
