@@ -43,11 +43,15 @@ $ClientId = 42
 $TcpPort  = 9701        # Omega.exe consumer connects here.
 $MaxLvl   = 5
 
+# IBKR caps concurrent reqMktDepth at 3 streams on this account tier.
+# Until month-end booster pack(s) activate, restrict the live set to the
+# three highest-priority symbols. The bridge logs Error 309 for every
+# subscription beyond the third, leaving the corresponding CSV empty,
+# so adding extras here just wastes startup time.
+# Once additional depth slots are subscribed, append symbols below in
+# priority order: DJ30, GER40, UK100, EURUSD, GBPUSD, USOIL, ...
 $Symbols = @(
-    'XAUUSD','XAGUSD',
-    'US500','NAS100','DJ30','GER40','UK100','ESTX50',
-    'USOIL','UKBRENT','NGAS','VIX','DX',
-    'EURUSD','GBPUSD','AUDUSD','USDJPY','NZDUSD'
+    'XAUUSD','NAS100','US500'
 ) -join ','
 
 if (-not (Test-Path $Py))     { Write-Error "Python not at $Py";      exit 1 }
