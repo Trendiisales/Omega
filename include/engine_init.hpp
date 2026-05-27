@@ -3276,20 +3276,54 @@ static void init_engines(const std::string& cfg_path)
             apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.usdjpy_max_spread_pct);
             apply_supervisor(g_sup_brent,  "BRENT", g_sym_cfg.get("BRENT"), g_cfg.brent_max_spread_pct);
             apply_supervisor(g_sup_gold,   "XAUUSD",  g_sym_cfg.get("XAUUSD"),  g_cfg.bracket_gold_max_spread_pct);
-            // S37-X (2026-05-28): tie supervisor allow_bracket to engine disable
-            // state. Without this, supervisor logs "winner=BRACKET allow=1
-            // reason=valid_signal" on every approving tick while g_bracket_gold
-            // is hardcoded-off in globals.hpp (since 2026-04-30, -324pts cull) --
-            // operator sees "ARMED + ALLOW=1" on the dashboard but no fires ever
-            // happen, with no log line naming the dead gate. This was a 28-day
-            // silent observability hole. If the engine is dead, the supervisor
-            // must say so.
+            // S37-X (2026-05-28): tie supervisor allow_* to engine disable
+            // state. Without this, supervisor logs "winner=X allow=1 reason=
+            // valid_signal" on every approving tick while the engine downstream
+            // is hardcoded-off or has no dispatch wired -- operator sees the
+            // approvals on the dashboard but no fires happen, with no log line
+            // naming the dead gate. This was a 28-day silent observability
+            // hole for XAUUSD bracket. Apply the same tie to every other
+            // supervisor whose downstream is known dead/disconnected:
+            //
+            //   - XAUUSD (g_sup_gold):   bracket dispatched via tick_gold.hpp,
+            //                             gated by g_disable_bracket_gold.
+            //   - INDICES (sp/nq/us30/nas100/uk100/estx50/ger30): supervisor
+            //     dispatch sites in tick_indices.hpp are COMMENTED OUT
+            //     (see lines 101-105, 440-445, 667-669, 944-946, 973-975,
+            //     1030-1032). sup_decision() is called + LOGGED every tick
+            //     but no consumer. Force allow_*=false so the log stops
+            //     lying and CPU is saved on the gate evaluation.
+            //   - FX (eurusd/gbpusd/audusd/nzdusd/usdjpy): instantiated +
+            //     configured here but sup_decision() is NEVER called from
+            //     tick_fx.hpp. Decorative. Same force-off treatment.
+            //   - BRENT (g_sup_brent), USOIL (g_sup_cl): dispatch ACTIVE
+            //     in tick_oil.hpp, leave as-is.
             if (g_disable_bracket_gold) {
                 g_sup_gold.cfg.allow_bracket = false;
                 std::cout << "[SUPERVISOR-XAUUSD] allow_bracket FORCE-OFF: "
                              "g_disable_bracket_gold=true (globals.hpp). "
                              "Re-enable engine first, then supervisor will fire.\n";
             }
+            // Indices: dispatch commented out in tick_indices.hpp.
+            for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_us30, &g_sup_nas100,
+                              &g_sup_uk100, &g_sup_estx50, &g_sup_ger30}) {
+                sup->cfg.allow_bracket  = false;
+                sup->cfg.allow_breakout = false;
+            }
+            std::cout << "[SUPERVISOR-INDICES] allow_bracket/breakout FORCE-OFF on all 7 "
+                         "index supervisors (sp/nq/us30/nas100/uk100/estx50/ger30): "
+                         "dispatch sites in tick_indices.hpp commented out. Re-enable "
+                         "the dispatch call first, then supervisor will fire.\n";
+            // FX: sup_decision never called from tick_fx.hpp.
+            for (auto* sup : {&g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
+                              &g_sup_nzdusd, &g_sup_usdjpy}) {
+                sup->cfg.allow_bracket  = false;
+                sup->cfg.allow_breakout = false;
+            }
+            std::cout << "[SUPERVISOR-FX] allow_bracket/breakout FORCE-OFF on all 5 "
+                         "FX supervisors (eurusd/gbpusd/audusd/nzdusd/usdjpy): "
+                         "sup_decision() never called from tick_fx.hpp. Wire the "
+                         "dispatch first, then supervisor will fire.\n";
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
         } else {
