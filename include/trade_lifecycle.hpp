@@ -1751,10 +1751,18 @@ static double enter_directional(
             l2_imbalance    = (sv == "US500.F") ? g_macro_ctx.sp_l2_imbalance : g_macro_ctx.nq_l2_imbalance;
             vacuum_in_dir   = is_long ? g_macro_ctx.sp_vacuum_ask : g_macro_ctx.sp_vacuum_bid;
             wall_to_tp      = is_long ? g_macro_ctx.sp_wall_above : g_macro_ctx.sp_wall_below;
-        } else if (sv == "USOIL.F" || sv == "BRENT") {
+        } else if (sv == "USOIL.F") {
             microprice_bias = g_macro_ctx.cl_microprice_bias;
             l2_imbalance    = g_macro_ctx.cl_l2_imbalance;
             vacuum_in_dir   = is_long ? g_macro_ctx.cl_vacuum_ask : g_macro_ctx.cl_vacuum_bid;
+        } else if (sv == "BRENT") {
+            // S37 audit fix: BRENT was previously routed to cl_microprice_bias
+            // (WTI's signal) and cl_l2_imbalance, i.e. crude-oil cross-contamination.
+            // Now reads brent-specific atomics. brent has no vacuum fields, so
+            // vacuum_in_dir is left at its default (false) -- BRENT engines that
+            // require a vacuum signal must add the field or skip this gate.
+            microprice_bias = g_macro_ctx.brent_microprice_bias;
+            l2_imbalance    = g_macro_ctx.brent_l2_imbalance;
         } else if (sv == "EURUSD") {
             microprice_bias = g_macro_ctx.eur_microprice_bias;
             l2_imbalance    = g_macro_ctx.eur_l2_imbalance;

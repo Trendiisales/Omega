@@ -63,7 +63,7 @@
 //       -o backtest/honest_backtest_xauusd
 //
 // RUN
-//   backtest/honest_backtest_xauusd data/l2_ticks_2026-04-16.csv
+//   backtest/honest_backtest_xauusd data/l2_ticks_2026-04-16.csv (TOXIC -- see engine_init.hpp:95+ banner)
 //   backtest/honest_backtest_xauusd --quick data/l2_ticks_2026-04-12.csv
 // =============================================================================
 

@@ -68,6 +68,7 @@ struct MacroContext {
     double      gold_microprice_bias = 0.0;
     double      sp_microprice_bias   = 0.0;
     double      cl_microprice_bias   = 0.0;
+    double      brent_microprice_bias = 0.0;  // added S37 audit -- prior to fix, BRENT engines read cl_microprice_bias (wrong-symbol)
     // FX microprice bias -- now populated from real L2 book
     double      eur_microprice_bias  = 0.0;
     double      gbp_microprice_bias  = 0.0;
@@ -147,16 +148,18 @@ struct MacroContext {
     // ?? CVD (Cumulative Volume Delta) direction per key symbol ???????????????
     // +1 = buying dominates last 50 ticks, -1 = selling, 0 = neutral
     // Populated every tick from g_edges.cvd. Degrade to 0 when no data.
+    //
+    // S37 audit (2026-05-27): nq_cvd_dir, eurusd_cvd_dir, usdjpy_cvd_dir,
+    // sp_cvd_bull_div, sp_cvd_bear_div removed -- they were written by
+    // on_tick.hpp:646-648 but no engine reads them. The sp_cvd_dir field
+    // is also currently unread by engines but is kept because the GUI /
+    // omega-terminal read-API may surface it; revisit during the next
+    // dashboard audit. Only gold_cvd_* fields are currently load-bearing.
     int         gold_cvd_dir   = 0;
-    int         sp_cvd_dir     = 0;
-    int         nq_cvd_dir     = 0;
-    int         eurusd_cvd_dir = 0;
-    int         usdjpy_cvd_dir = 0;
+    int         sp_cvd_dir     = 0;  // currently unread by engines, kept for GUI surface area
     // CVD divergence flags: price and CVD moving opposite directions
     bool        gold_cvd_bull_div  = false;  // bullish: price down, CVD up = absorption
     bool        gold_cvd_bear_div  = false;  // bearish: price up, CVD down = distribution
-    bool        sp_cvd_bull_div    = false;
-    bool        sp_cvd_bear_div    = false;
 
     // Previous day high/low -- updated each tick in tick_gold.hpp
     // Used as structural gate: 2yr backtest proves entries INSIDE daily range

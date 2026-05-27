@@ -11,7 +11,7 @@
 # Run:
 #   backtest/microscalper_crtp_sweep \
 #       backtest/l2_ticks_2026-04-09.csv \
-#       data/l2_ticks_2026-04-16.csv \
+#       data/l2_ticks_2026-04-16.csv (TOXIC -- see engine_init.hpp:95+ banner) \
 #       l2_ticks_2026-04-10.csv \
 #       --warmup 1000 --top 20 --verbose
 #

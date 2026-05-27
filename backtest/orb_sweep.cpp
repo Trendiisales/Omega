@@ -38,7 +38,7 @@
 //                       ~/Downloads/l2_ticks_2026-04-13.csv \
 //                       ~/Downloads/l2_ticks_2026-04-14.csv \
 //                       ~/Downloads/l2_ticks_2026-04-15.csv \
-//                       ~/Downloads/l2_ticks_2026-04-16.csv
+//                       ~/Downloads/l2_ticks_2026-04-16.csv (TOXIC -- see engine_init.hpp:95+ banner)
 
 #include <algorithm>
 #include <cmath>

@@ -1,3 +1,22 @@
+// =============================================================================
+// QUARANTINED 2026-05-27 (S37 audit) -- DO NOT RUN
+// =============================================================================
+// This harness reads CSV column index 15 (`micro_edge`) and treats it as a
+// trading signal. The `micro_edge` field was sourced from the cTrader Open
+// API GoldMicrostructureAnalyzer, which was disabled 2026-04-29 and removed
+// entirely in S13 (2026-05-08). EVERY L2 tick capture after 2026-05-08 has
+// `micro_edge = 0.0` hardcoded in `include/tick_gold.hpp` row writer.
+//
+// Consequently, the MICROEDGE, DOM_PERSISTENCE (uses imbalance, may still
+// have signal post-S8), PULL_FADE, and HYBRID strategy families in this
+// file train and validate against a CONSTANT zero. Any positive-edge result
+// reported by this harness is an artifact, not a real edge.
+//
+// To revive: rewrite strategies to read `imbalance` (col 4, FIX-fed since
+// S8) and `microprice_bias` (col 15 candidate for repurposing). Drop the
+// `micro_edge` references entirely. Until then, .QUARANTINE.cpp suffix
+// prevents accidental g++ runs by glob.
+// =============================================================================
 // l2_edge_discovery.cpp
 // Comprehensive L2 edge discovery against real cTrader depth data
 //

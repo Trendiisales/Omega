@@ -1,7 +1,7 @@
 // tse_sweep.cpp — CRTP TSE sweep, same logic as cfe2 but TSE-scaled params
 // RSI slope EMA + sustained drift, warmup=60 ticks, shorter hold
 // Build: clang++ -O3 -std=c++20 -o /tmp/tse_sweep /tmp/tse_sweep.cpp
-// Run:   /tmp/tse_sweep ~/Downloads/l2_ticks_2026-04-16.csv
+// Run:   /tmp/tse_sweep ~/Downloads/l2_ticks_2026-04-16.csv (TOXIC -- see engine_init.hpp:95+ banner)
 
 #include <algorithm>
 #include <chrono>
