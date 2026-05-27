@@ -1509,8 +1509,11 @@ static void init_engines(const std::string& cfg_path)
         //   Cost stress holds: Sh 6.69 at 20bps. Distinct cell from D1 ensemble
         //   (lb=5 vs lb=20, sl=1.0 vs 2.0, tp=5.0 vs 4.0, hold=20).
         g_xau_tsmom_fast_d1.p           = omega::make_xau_tsmom_fast_d1_params();
+        // 2026-05-27 S57: DISABLED -- regime split MID Sharpe -0.86 (negative
+        // in normal-vol regime, 24/59 trades). Operator policy: must pass ALL
+        // rigour tests; one regime negative = fail.
         g_xau_tsmom_fast_d1.shadow_mode = true;
-        g_xau_tsmom_fast_d1.enabled     = true;
+        g_xau_tsmom_fast_d1.enabled     = false;  // S57: regime MID neg
         g_xau_tsmom_fast_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauTsmomFastD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_tsmom_fast_d1.shadow_mode, (int)g_xau_tsmom_fast_d1.enabled,
@@ -1538,8 +1541,10 @@ static void init_engines(const std::string& cfg_path)
         //     FUL Sh=6.34 at 10bps (IS=7.06 OOS=6.14), n=29, WR=65.5%.
         //     Cost-robust to 50bps (FUL Sh=4.12).
         g_xau_stop_run_d1.p           = omega::make_xau_stop_run_d1_params();
+        // 2026-05-27 S57: DISABLED -- regime split LOW Sharpe -3.68 (clear
+        // negative in low-vol regime, 9/28 trades). Operator strict policy.
         g_xau_stop_run_d1.shadow_mode = true;
-        g_xau_stop_run_d1.enabled     = true;
+        g_xau_stop_run_d1.enabled     = false;  // S57: regime LOW neg
         g_xau_stop_run_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauStopRunD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_stop_run_d1.shadow_mode, (int)g_xau_stop_run_d1.enabled,
@@ -1582,8 +1587,11 @@ static void init_engines(const std::string& cfg_path)
         //   H4 XAU 2yr: FUL Sh=7.15, IS=4.45, OOS=9.19 (OOS > IS).
         //   Sparse n=20 but cleanly OOS-validated.
         g_xau_ema_cross_h4.p           = omega::make_xau_ema_cross_h4_params();
+        // 2026-05-27 S57: DISABLED -- regime split LOW Sharpe -8.48 (worst
+        // catastrophic single-regime failure in entire zoo). Overall +6.38
+        // misleading -- engine bleeds heavily when low-vol regime persists.
         g_xau_ema_cross_h4.shadow_mode = true;
-        g_xau_ema_cross_h4.enabled     = true;
+        g_xau_ema_cross_h4.enabled     = false;  // S57: regime LOW catastrophic
         g_xau_ema_cross_h4.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauEmaCrossH4Engine: shadow=%d enabled=%d ef=%d es=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_ema_cross_h4.shadow_mode, (int)g_xau_ema_cross_h4.enabled,
@@ -1981,8 +1989,10 @@ static void init_engines(const std::string& cfg_path)
                g_xau_outside_bar_d1.p.hold_max_days);
 
         g_xau_inside_bar_d1.p           = omega::make_xau_inside_bar_d1_params();
+        // 2026-05-27 S57: DISABLED -- regime split HIGH Sharpe -0.31 (slight
+        // negative in high-vol regime, 12/51 trades). Operator strict policy.
         g_xau_inside_bar_d1.shadow_mode = true;
-        g_xau_inside_bar_d1.enabled     = true;
+        g_xau_inside_bar_d1.enabled     = false;  // S57: regime HIGH neg
         g_xau_inside_bar_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauInsideBarD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_inside_bar_d1.shadow_mode,
