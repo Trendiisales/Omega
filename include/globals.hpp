@@ -263,6 +263,15 @@ static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L,
 //      g_disable_bracket_gold  -- -324pts in 4wk, 12.8% WR
 //                                 (2026-04-30 audit; small absolute but
 //                                 sustained losing pattern).
+//                                 2026-05-28: OPERATOR OVERRIDE -- re-enabled.
+//                                 Engine is designed to arm ONLY at London/NY
+//                                 open compression-break; the 2026-04-30 audit
+//                                 window included all-session fakeouts which
+//                                 BracketEngine session-gate now filters
+//                                 (see [BRACKET-XAUUSD] PENDING CANCELLED
+//                                 "session/risk gate closed"). Full 77GB tick
+//                                 re-backtest queued before any further cull
+//                                 decision.
 //
 //      g_disable_index_flow    -- -112pts across 4 instances
 //                                 (2026-04-30 audit; minor bleed but no
@@ -296,7 +305,7 @@ static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L,
 //                                            to justify continued exposure.
 // =============================================================================
 static bool g_disable_candle_flow              = true;
-static bool g_disable_bracket_gold             = true;
+static bool g_disable_bracket_gold             = false;  // 2026-05-28 operator override; London/NY-open arming only
 static bool g_disable_index_flow               = true;
 // S46 2026-05-27: M5 scalp engines disabled pending real-class validation.
 // All "validated" PnL numbers for these engines came from inline-reimpl
