@@ -234,6 +234,23 @@ public:
     int    block_hour_start    = -1;    // (9) session block start UTC; -1 disables
     int    block_hour_end      = -1;    //     session block end UTC
 
+    // ── S88-followup (2026-05-27): N-bar close-slope sign-alignment gate.
+    //   Filter: signal direction must agree with sign(close[i] - close[i-N]).
+    //   Python re-test on 25mo Duka m30 (TRACK3 followup) showed slopes
+    //   N in [8, 12] form a robust cluster:
+    //       N=8:  net $349 -> $444 (+27%), DD -$236 -> -$177 (-25%),
+    //             removed 71 trades with WR 43.7% (vs baseline 51.7%);
+    //             removed-trades net -$113 (gate selecting losers as desired)
+    //       N=12: net $349 -> $363 (+4%), DD -$236 -> -$183 (-22%),
+    //             removed 116 trades with WR 44.8%, removed net -$16
+    //   Random-baseline test: P(random drop of 71 trades >= slope_8 lift) = 8.3%
+    //   -- borderline; multiple adjacent N's confirm direction (not curve fit).
+    //   On 2024-2025 only (excluding 2026 outlier quarter), lift is +100%.
+    //   See research/THREEBAR_F4_DUKA_RETEST.md for full analysis.
+    //   Defaults disable the gate (regression-safe).
+    int    slope_lookback_bars = 0;     // 0 disables; recommend 12 for shadow A/B
+    bool   use_slope_gate      = false;
+
     // ── S63 2026-05-13 VWR-pattern in-flight protection ───────────────────
     //   Mirrors VWAPReversionEngine (CrossAssetEngines.hpp L1245-1247) but
     //   uses entry-price-relative percentages (XAU @ $3700, 0.05 -> $1.85).
@@ -359,6 +376,27 @@ public:
 
         int side = _evaluate_signal();
         if (side == 0) return;
+
+        // S88-followup: N-bar close-slope sign-alignment gate. Compares the
+        // sign of (current close - close N bars ago) to the signal direction.
+        // Disagreement blocks entry. Causal (uses only completed bars). See
+        // the field declaration above for the empirical rationale and the
+        // research note. Default disabled -> regression-safe.
+        if (use_slope_gate && slope_lookback_bars > 0) {
+            const int last = (int)bars_.size() - 1;
+            if (last - slope_lookback_bars >= 0) {
+                const double slope =
+                    bars_[last].close - bars_[last - slope_lookback_bars].close;
+                const int slope_sign = (slope > 0.0) ? +1 : (slope < 0.0 ? -1 : 0);
+                if (slope_sign == 0 || slope_sign != side) {
+                    omega::log_entry_block("XauThreeBar30m", "SLOPE_GATE");
+                    return;
+                }
+            }
+            // If we don't have enough history yet, allow the entry through —
+            // matches the engine's existing warmup behaviour (signal already
+            // required 4 bars of history; gate adds no extra block during warmup).
+        }
 
         _fire_entry(side, bid, ask, now_ms);
         (void)on_close;  // exits run intra-bar in on_tick

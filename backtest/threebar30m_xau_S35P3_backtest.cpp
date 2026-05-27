@@ -560,6 +560,8 @@ omega::XauThreeBar30mEngine make_engine_baseline() {
     omega::XauThreeBar30mEngine e;
     e.shadow_mode        = false;   // tr.shadow=false so we record live pnl
     e.enabled            = true;
+    e.long_only          = true;    // S96: short side has no edge (PF=0.84);
+                                    // matches engine_init.hpp:2119 production cfg
     e.lot                = 0.01;
     e.max_spread         = 1.0;
     e.max_bars_held      = 0;       // disabled
@@ -573,6 +575,19 @@ omega::XauThreeBar30mEngine make_engine_baseline() {
     e.max_atr_ceil       = 0.0;     // disabled
     e.block_hour_start   = -1;      // disabled
     e.block_hour_end     = -1;
+    // Disable S63 in-flight PCT cuts (LOSS_CUT/BE_ARM/BE_BUFFER). The harness
+    // feeds a synthetic intra-bar tick path (open -> adverse extreme -> favourable
+    // extreme -> close); the adverse-first tick triggers LOSS_CUT_PCT immediately
+    // on essentially every trade because LOSS_CUT_PCT=0.05 = $1.75 cold-loss cut
+    // on a $3500 entry. In live tick flow, LOSS_CUT only fires on COLD direct
+    // adverse moves from entry; the harness can't distinguish that pattern from
+    // a normal trade that briefly dips before recovering. Disabling here lets
+    // the SL/TP/BE/trail logic adjudicate exits (the actual signal-edge layer)
+    // and lets the slope gate's effect surface. The S63 cuts are still active
+    // in production -- this is a harness-fidelity adjustment, not an engine change.
+    e.LOSS_CUT_PCT = 0.0;
+    e.BE_ARM_PCT   = 0.0;
+    e.BE_BUFFER_PCT= 0.0;
     e.init();
     return e;
 }
@@ -590,6 +605,7 @@ omega::XauThreeBar30mEngine make_engine_protected() {
     omega::XauThreeBar30mEngine e;
     e.shadow_mode        = false;
     e.enabled            = true;
+    e.long_only          = true;    // S96: match production
     e.lot                = 0.01;
     e.max_spread         = 1.0;
     e.max_bars_held      = 0;       // disabled (time stop off for tuned)
@@ -603,6 +619,46 @@ omega::XauThreeBar30mEngine make_engine_protected() {
     e.max_atr_ceil       = 0.0;     // disabled
     e.block_hour_start   = -1;      // disabled (was 22 in strict)
     e.block_hour_end     = -1;
+    // Disable S63 in-flight PCT cuts (LOSS_CUT/BE_ARM/BE_BUFFER). The harness
+    // feeds a synthetic intra-bar tick path (open -> adverse extreme -> favourable
+    // extreme -> close); the adverse-first tick triggers LOSS_CUT_PCT immediately
+    // on essentially every trade because LOSS_CUT_PCT=0.05 = $1.75 cold-loss cut
+    // on a $3500 entry. In live tick flow, LOSS_CUT only fires on COLD direct
+    // adverse moves from entry; the harness can't distinguish that pattern from
+    // a normal trade that briefly dips before recovering. Disabling here lets
+    // the SL/TP/BE/trail logic adjudicate exits (the actual signal-edge layer)
+    // and lets the slope gate's effect surface. The S63 cuts are still active
+    // in production -- this is a harness-fidelity adjustment, not an engine change.
+    e.LOSS_CUT_PCT = 0.0;
+    e.BE_ARM_PCT   = 0.0;
+    e.BE_BUFFER_PCT= 0.0;
+    e.init();
+    return e;
+}
+
+omega::XauThreeBar30mEngine make_engine_tuned_slope(int N) {
+    // TUNED config + N-bar close-slope sign-alignment gate. Per S88-followup
+    // Python re-test (research/THREEBAR_F4_DUKA_RETEST.md), slopes in [8, 12]
+    // form a robust cluster that lifts net + cuts DD. This builder lets the
+    // harness run a small slope sweep alongside baseline/tuned/strict to
+    // validate the gate's edge in C++ (matching the engine's M15->M30
+    // aggregation + cost path).
+    omega::XauThreeBar30mEngine e = make_engine_protected();
+    e.slope_lookback_bars = N;
+    e.use_slope_gate      = true;
+    // Disable S63 in-flight PCT cuts (LOSS_CUT/BE_ARM/BE_BUFFER). The harness
+    // feeds a synthetic intra-bar tick path (open -> adverse extreme -> favourable
+    // extreme -> close); the adverse-first tick triggers LOSS_CUT_PCT immediately
+    // on essentially every trade because LOSS_CUT_PCT=0.05 = $1.75 cold-loss cut
+    // on a $3500 entry. In live tick flow, LOSS_CUT only fires on COLD direct
+    // adverse moves from entry; the harness can't distinguish that pattern from
+    // a normal trade that briefly dips before recovering. Disabling here lets
+    // the SL/TP/BE/trail logic adjudicate exits (the actual signal-edge layer)
+    // and lets the slope gate's effect surface. The S63 cuts are still active
+    // in production -- this is a harness-fidelity adjustment, not an engine change.
+    e.LOSS_CUT_PCT = 0.0;
+    e.BE_ARM_PCT   = 0.0;
+    e.BE_BUFFER_PCT= 0.0;
     e.init();
     return e;
 }
@@ -627,6 +683,19 @@ omega::XauThreeBar30mEngine make_engine_strict() {
     e.max_atr_ceil       = 30.0;
     e.block_hour_start   = 22;
     e.block_hour_end     = 8;
+    // Disable S63 in-flight PCT cuts (LOSS_CUT/BE_ARM/BE_BUFFER). The harness
+    // feeds a synthetic intra-bar tick path (open -> adverse extreme -> favourable
+    // extreme -> close); the adverse-first tick triggers LOSS_CUT_PCT immediately
+    // on essentially every trade because LOSS_CUT_PCT=0.05 = $1.75 cold-loss cut
+    // on a $3500 entry. In live tick flow, LOSS_CUT only fires on COLD direct
+    // adverse moves from entry; the harness can't distinguish that pattern from
+    // a normal trade that briefly dips before recovering. Disabling here lets
+    // the SL/TP/BE/trail logic adjudicate exits (the actual signal-edge layer)
+    // and lets the slope gate's effect surface. The S63 cuts are still active
+    // in production -- this is a harness-fidelity adjustment, not an engine change.
+    e.LOSS_CUT_PCT = 0.0;
+    e.BE_ARM_PCT   = 0.0;
+    e.BE_BUFFER_PCT= 0.0;
     e.init();
     return e;
 }
@@ -684,10 +753,13 @@ int main(int argc, char** argv) {
         // with the noise.
     }
 
-    // 5) Three configs: baseline, tuned, strict.
+    // 5) Six configs: baseline, tuned, strict, tuned + slope-{8,10,12}.
     BacktestResult baseline;
     BacktestResult tuned;
     BacktestResult strict;
+    BacktestResult tuned_slope8;
+    BacktestResult tuned_slope10;
+    BacktestResult tuned_slope12;
     {
         auto eng = make_engine_baseline();
         run_one(eng, m30, atr, baseline, "baseline");
@@ -700,6 +772,18 @@ int main(int argc, char** argv) {
         auto eng = make_engine_strict();
         run_one(eng, m30, atr, strict, "strict");
     }
+    {
+        auto eng = make_engine_tuned_slope(8);
+        run_one(eng, m30, atr, tuned_slope8, "tuned_slope8");
+    }
+    {
+        auto eng = make_engine_tuned_slope(10);
+        run_one(eng, m30, atr, tuned_slope10, "tuned_slope10");
+    }
+    {
+        auto eng = make_engine_tuned_slope(12);
+        run_one(eng, m30, atr, tuned_slope12, "tuned_slope12");
+    }
 
     // Restore stdout
     if (old_stdout) {
@@ -708,19 +792,29 @@ int main(int argc, char** argv) {
     }
 
     // 6) Write outputs
-    write_trades_csv(out_prefix + "_baseline_trades.csv", baseline.trades);
-    write_trades_csv(out_prefix + "_tuned_trades.csv",    tuned.trades);
-    write_trades_csv(out_prefix + "_strict_trades.csv",   strict.trades);
-    write_equity_csv(out_prefix + "_baseline_equity.csv", baseline.equity);
-    write_equity_csv(out_prefix + "_tuned_equity.csv",    tuned.equity);
-    write_equity_csv(out_prefix + "_strict_equity.csv",   strict.equity);
+    write_trades_csv(out_prefix + "_baseline_trades.csv",      baseline.trades);
+    write_trades_csv(out_prefix + "_tuned_trades.csv",         tuned.trades);
+    write_trades_csv(out_prefix + "_strict_trades.csv",        strict.trades);
+    write_trades_csv(out_prefix + "_tuned_slope8_trades.csv",  tuned_slope8.trades);
+    write_trades_csv(out_prefix + "_tuned_slope10_trades.csv", tuned_slope10.trades);
+    write_trades_csv(out_prefix + "_tuned_slope12_trades.csv", tuned_slope12.trades);
+    write_equity_csv(out_prefix + "_baseline_equity.csv",      baseline.equity);
+    write_equity_csv(out_prefix + "_tuned_equity.csv",         tuned.equity);
+    write_equity_csv(out_prefix + "_strict_equity.csv",        strict.equity);
+    write_equity_csv(out_prefix + "_tuned_slope8_equity.csv",  tuned_slope8.equity);
+    write_equity_csv(out_prefix + "_tuned_slope10_equity.csv", tuned_slope10.equity);
+    write_equity_csv(out_prefix + "_tuned_slope12_equity.csv", tuned_slope12.equity);
 
     std::vector<std::pair<std::string,BacktestResult*>> runs = {
-        {"BASELINE  (no S35-P3 protections at all)",                  &baseline},
-        {"TUNED     (BE arm + trail + ATR floor + spread cap; "
-         "no killswitch / daily-cap / session-block)",                &tuned},
-        {"STRICT    (full S35-P3 defaults: killswitch=5, "
-         "daily_cap=$5, session_block=22-08 UTC, all the rest)",      &strict},
+        {"BASELINE       (no S35-P3 protections at all)",            &baseline},
+        {"TUNED          (BE+trail+ATR floor+spread cap; "
+         "no killswitch/daily-cap/session-block)",                   &tuned},
+        {"STRICT         (full S35-P3: killswitch=5, "
+         "daily_cap=$5, session_block=22-08 UTC)",                   &strict},
+        {"TUNED+SLOPE8   (TUNED + sign(close[i]-close[i-8]) "
+         "==sign(signal); S88-followup)",                            &tuned_slope8},
+        {"TUNED+SLOPE10  (TUNED + 10-bar slope sign-align)",         &tuned_slope10},
+        {"TUNED+SLOPE12  (TUNED + 12-bar slope sign-align)",         &tuned_slope12},
     };
     write_summary    (out_prefix + "_summary.txt",  runs);
     write_summary_csv(out_prefix + "_summary.csv",  runs);
