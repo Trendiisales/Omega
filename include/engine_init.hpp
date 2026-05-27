@@ -1484,8 +1484,15 @@ static void init_engines(const std::string& cfg_path)
         // 2026-05-15 (S96): 154M-tick fresh-tape backtest (all 3 D1 cells profitable):
         //   Momentum20 PF=1.38, Keltner PF=1.51, ADX_Mom PF=1.45.
         //   D1 aggregate: 79 trades, PF=1.43. All cells enabled.
-        g_xau_tf_d1.shadow_mode = false;
-        g_xau_tf_d1.enabled     = true;
+        // 2026-05-27 S52: DISABLED -- real-class audit (xau_trendfollow_audit)
+        // confirmed Sharpe +2.40 over 95 trades BUT mdd_to_gross=95% (-25.49 /
+        // +26.82). Equity goes deeply underwater before recovery -- high
+        // capitulation risk. Streak DD (7-10 losers stacked, worst single
+        // trade only -3.76). Coverage redundant: XauTrendFollow1h (Sharpe
+        // +3.58, mdd 27%) + XauTrendFollow4h (+1.97, mdd 25%) cover same
+        // trend signals with clean DD profile. Keep wired, off.
+        g_xau_tf_d1.shadow_mode = true;
+        g_xau_tf_d1.enabled     = false;  // S52: DD ratio fail
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
@@ -2013,8 +2020,14 @@ static void init_engines(const std::string& cfg_path)
         // 2026-05-15 (S96): 154M-tick fresh-tape backtest (all 4 2h cells profitable):
         //   Keltner PF=1.44, Donch20 PF=1.17, Donch50 PF=1.37, InsideBar PF=1.25.
         //   2h aggregate: 826 trades, PF=1.29. All cells enabled.
-        g_xau_tf_2h.shadow_mode = false;
-        g_xau_tf_2h.enabled     = true;
+        // 2026-05-27 S52: DISABLED -- real-class audit (xau_trendfollow_audit)
+        // confirmed Sharpe +1.14 over 869 trades BUT mdd_to_gross=75% (-32.52
+        // / +43.08), avg only +$0.05/trade. High variance, thin edge. Streak
+        // DD (10+ losers stacked, worst single -3.13). Coverage redundant:
+        // XauTrendFollow1h (Sharpe +3.58 mdd 27%) + XauTrendFollow4h (+1.97
+        // mdd 25%) cover same trend signals with clean DD profile. Off.
+        g_xau_tf_2h.shadow_mode = true;
+        g_xau_tf_2h.enabled     = false;  // S52: DD ratio fail
         g_xau_tf_2h.lot         = 0.01;
         g_xau_tf_2h.max_spread  = 1.0;
         g_xau_tf_2h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
