@@ -1342,14 +1342,27 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.cell_enable_mask = 0x49;  // Donchian + Keltner + EmaCross_8_21
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
-        // S88-followup 2026-05-27: vol-band gate. Full Duka 2yr backtest:
-        //   baseline:  n=450 PF=1.27 net=$2745 MaxDD=$1090
-        //   +vol_band: n=255 PF=1.33 net=$1700 MaxDD=$ 557 (-49% DD, +5% PF)
-        // Modest PF lift, big DD cut. Worth shadow validation. 4h engine
-        // already enabled live; this is an additive gate not a flip.
+        // S88-followup post-sweep 2026-05-27: 4h per-cell breakdown shows
+        // the engine-wide vol_band over-filtered Donch20 (baseline PF 1.44
+        // already best; vol_band kept PF flat but cut net 50%). Keltner
+        // is the only enabled cell that benefits (+PF, -57% DD). EmaCross
+        // not yet tested -- mask unset there. Engine cell ids:
+        //   0 = Donch20 (NO gate -- baseline wins)
+        //   3 = Keltner (VolBand wins: PF 1.16 -> 1.25, DD -57%)
+        //   6 = EmaCross_8_21 (untested)
+        // Mask 0x8 = bit 3 only (Keltner). RangeExpand bit 5 also lifts
+        // with VolBand if operator ever enables it; bit pre-set in mask
+        // for forward compat -> 0x28.
         g_xau_tf_4h.use_vol_band_gate = true;
         g_xau_tf_4h.vol_band_low_pct  = 0.30;
         g_xau_tf_4h.vol_band_high_pct = 0.85;
+        // CONSERVATIVE mask: only Keltner (bit 3) -- proven on harness.
+        // RangeExpand (bit 5) would also benefit but isn't in production
+        // cell_enable_mask (0x49). EmaCross_8_21 (bit 6) is in production
+        // but untested in this harness; leaves it ungated (safe).
+        g_xau_tf_4h.cell_vol_band_mask = 0x8;
+        // For D1: all 3 cells benefit from vol_band -- mask stays 0xFFFFFFFF
+        // (default all enabled). Bits 0,1,2 = Momentum20, Keltner, ADX_Mom.
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
         omega::warmup_or_die(g_xau_tf_4h, "XauTrendFollow4h");
