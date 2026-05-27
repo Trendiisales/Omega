@@ -3276,6 +3276,20 @@ static void init_engines(const std::string& cfg_path)
             apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.usdjpy_max_spread_pct);
             apply_supervisor(g_sup_brent,  "BRENT", g_sym_cfg.get("BRENT"), g_cfg.brent_max_spread_pct);
             apply_supervisor(g_sup_gold,   "XAUUSD",  g_sym_cfg.get("XAUUSD"),  g_cfg.bracket_gold_max_spread_pct);
+            // S37-X (2026-05-28): tie supervisor allow_bracket to engine disable
+            // state. Without this, supervisor logs "winner=BRACKET allow=1
+            // reason=valid_signal" on every approving tick while g_bracket_gold
+            // is hardcoded-off in globals.hpp (since 2026-04-30, -324pts cull) --
+            // operator sees "ARMED + ALLOW=1" on the dashboard but no fires ever
+            // happen, with no log line naming the dead gate. This was a 28-day
+            // silent observability hole. If the engine is dead, the supervisor
+            // must say so.
+            if (g_disable_bracket_gold) {
+                g_sup_gold.cfg.allow_bracket = false;
+                std::cout << "[SUPERVISOR-XAUUSD] allow_bracket FORCE-OFF: "
+                             "g_disable_bracket_gold=true (globals.hpp). "
+                             "Re-enable engine first, then supervisor will fire.\n";
+            }
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
         } else {
@@ -3309,6 +3323,12 @@ static void init_engines(const std::string& cfg_path)
                               &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
                               &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
                 sup->cfg.allow_bracket = false;
+            // S37-X (2026-05-28): same engine-state tie as the symbols.ini path.
+            if (g_disable_bracket_gold) {
+                g_sup_gold.cfg.allow_bracket = false;
+                std::cout << "[SUPERVISOR-XAUUSD] allow_bracket FORCE-OFF: "
+                             "g_disable_bracket_gold=true.\n";
+            }
             // Raise cooldown threshold from default 3 to 20
             for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
                               &g_sup_ger30, &g_sup_uk100, &g_sup_estx50,
