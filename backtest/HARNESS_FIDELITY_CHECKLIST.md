@@ -71,6 +71,36 @@ Engines using S63 pattern (`LOSS_CUT_PCT`, `BE_ARM_PCT`, `BE_BUFFER_PCT`) trigge
   grep -l "LOSS_CUT_PCT\|BE_ARM_PCT\|BE_BUFFER_PCT" include/*.hpp
   ```
 
+### Check 6 — Causality of any state-classifier output
+
+If your strategy/gate consumes the output of an HMM, regime classifier, or
+any sequence model that has both forward and backward inference modes, the
+backtest MUST use the forward-only (causal) pass.
+
+`hmmlearn.GaussianHMM.predict()` and `predict_proba()` run Viterbi /
+forward-backward over the **entire sequence** — these use FUTURE
+observations to label PAST bars. Trades at bar `t` cannot access future
+data, so any backtest that uses smoothed labels is look-ahead biased.
+
+**Symptom:** unrealistically large lift from a "regime filter" that looks
+trivial to implement. The 2026-05-27 HMM gate test showed +79% net lift
+with smoothed labels; the causal forward-pass-only implementation showed
++20% lift. Same data, same model, same gate — the +59pp gap was pure
+look-ahead.
+
+**Fix:** implement the forward pass manually, OR use the model's
+`score_samples` per step with a growing prefix, OR re-fit at every bar
+on the expanding window (slow but bulletproof).
+
+Reference impl: `/Users/jo/Tick/mid_freq_research/hmm_causal_test.py`,
+`causal_state_path()` function (~30 lines, log-space recursion for numerical
+stability).
+
+State agreement between smoothed and causal labels in the 2026-05-27 test
+was 88.9% — meaning 11% of bars (the regime transitions) carry the
+look-ahead bias. Concentrated at exactly the moments your gate is making
+its biggest decisions.
+
 ### Check 5 — Synthetic tick path realism
 
 If the harness writes its own tick path (instead of replaying a tick CSV), the path matters:
