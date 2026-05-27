@@ -1594,8 +1594,12 @@ static void init_engines(const std::string& cfg_path)
 
         // ── 2026-05-20 mega-sweep batch (4 new engines) ─────────────────────
         g_xau_pullback_cont_d1.p           = omega::make_xau_pullback_cont_d1_params();
+        // 2026-05-27 S54: DISABLED -- walk-forward OOS sign-flip.
+        // IS Sharpe +4.27 / 22 trades / +$6.07 gross
+        // OOS Sharpe -1.12 / 5 trades / -$1.19 gross  <-- sign flipped
+        // Edge does not survive out-of-sample. PullbackH4 robust as backup.
         g_xau_pullback_cont_d1.shadow_mode = true;
-        g_xau_pullback_cont_d1.enabled     = true;
+        g_xau_pullback_cont_d1.enabled     = false;  // S54: WF OOS fail
         g_xau_pullback_cont_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauPullbackContD1Engine: shadow=%d ef=%d es=%d pba=%.1f sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_pullback_cont_d1.shadow_mode,
