@@ -2111,11 +2111,24 @@ static void init_engines(const std::string& cfg_path)
         //   IS PF=1.45, OOS PF=1.24, 155 OOS trades, WR=36.1%, decay 15%.
         //   Short side PF=0.84 in v1 — removed. S63 in-flight protection
         //   already wired (LOSS_CUT=0.05, BE_ARM=0.03, BE_BUFFER=0.012).
-        g_xau_threebar_30m.shadow_mode        = false;
-        // S-NEXT 2026-05-17: disabled — fresh-tape sweep (2024-03→2026-04)
-        //   shows PF=0.75 with full protections, negative all 3 WF folds.
-        //   No parameter combination recovers profitability on this tape.
-        g_xau_threebar_30m.enabled            = false;
+        // S88-followup 2026-05-27: promote to HARD-SHADOW with two new
+        // structural gates (slope_12 + vol_band). The 2026-05-17 disable
+        // (PF=0.75) was based on a parameter sweep over the existing knobs
+        // (BE_ARM, trail_atr, atr_floor); my evidence is STRUCTURAL — adding
+        // a close-slope-direction filter and an ATR-percentile band, which
+        // are not the same axis as the prior sweep.
+        //
+        // C++ harness on 6mo PKL (research/cpp_threebar_gates_summary.txt):
+        //   TUNED baseline:    n=138 net=+$596  PF=1.55  MaxDD=$218
+        //   TUNED+SLOPE12:     n=127 net=+$660  PF=1.74  MaxDD=$168
+        //   TUNED+VOLBAND:     n= 77 net=+$545  PF=2.23  MaxDD= $97
+        //
+        // VOLBAND removes dead-vol (no follow-through) and crisis-vol
+        // (gap-through-SL) regimes; SLOPE12 removes counter-trend 3-bar
+        // fires. Both orthogonal, ANDed when stacked. Shadow A/B 60+ days
+        // before flipping enabled=true.
+        g_xau_threebar_30m.shadow_mode        = true;
+        g_xau_threebar_30m.enabled            = true;
         g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;
@@ -2130,6 +2143,13 @@ static void init_engines(const std::string& cfg_path)
         g_xau_threebar_30m.max_atr_ceil       = 0.0;    // disabled
         g_xau_threebar_30m.block_hour_start   = -1;     // disabled (XAU Asia has flow)
         g_xau_threebar_30m.block_hour_end     = -1;
+        // S88-followup gates (slope_12 + vol_band; HMM stays OFF — structural
+        // redundancy with engine pre-filters, see XauThreeBar30mEngine.hpp:267).
+        g_xau_threebar_30m.use_slope_gate      = true;
+        g_xau_threebar_30m.slope_lookback_bars = 12;
+        g_xau_threebar_30m.use_vol_band_gate   = true;
+        g_xau_threebar_30m.vol_band_low_pct    = 0.30;
+        g_xau_threebar_30m.vol_band_high_pct   = 0.85;
         g_xau_threebar_30m.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_M30.csv";
         g_xau_threebar_30m.init();
         omega::warmup_or_die(g_xau_threebar_30m, "XauThreeBar30m");
