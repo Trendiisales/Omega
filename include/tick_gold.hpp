@@ -73,7 +73,9 @@ static void on_tick_gold(
     // Checks for C:/Omega/KILL_SWITCH.lock every 30s. If file exists,
     // omega::pg::can_open_new_position() returns false until operator
     // deletes the file. Existing positions continue to manage to exit.
-    omega::pg::refresh_kill_switch(now_ms_g);
+    // 2026-05-27 S58: use _pg_now_ms() — now_ms_g not yet declared this early
+    // in on_tick_gold (declared at ~L735); was a build break on VPS.
+    omega::pg::refresh_kill_switch(omega::pg::_pg_now_ms());
 
     // ?? Gold master exclusion gate ????????????????????????????????????????
     // Default: ANY open gold position blocks new entries (1-at-a-time invariant).
