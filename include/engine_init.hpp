@@ -3894,8 +3894,16 @@ static void init_engines(const std::string& cfg_path)
             g_pdhl_rev.LOSS_CUT_PCT  = 0.04;
             g_pdhl_rev.BE_ARM_PCT    = 0.025;
             g_pdhl_rev.BE_BUFFER_PCT = 0.01;
-            g_pdhl_rev.shadow_mode      = true;   // shadow until confirmed live
-            g_pdhl_rev.enabled          = true;
+            // S88-followup 2026-05-27: DISABLED per backtest. 2yr Duka XAU
+            // baseline on drift-fade-proxy branch (l2_real=false, which is
+            // what production has been running since L2 depth logger was
+            // broken until 2026-05-27): n=13,976, WR=10.8%, net=-$8,587,
+            // PF~0.48. SL_HIT=12,352 vs TP_HIT=70. No vol-band tuning
+            // rescues PF 0.48. Structural loser on this branch. Re-evaluate
+            // after 30+ days of fresh L2 captures enable the l2_real branch.
+            // Reference: research/PDHL_BASELINE_BROKEN.md.
+            g_pdhl_rev.shadow_mode      = true;
+            g_pdhl_rev.enabled          = false;
             g_pdhl_rev.RANGE_ENTRY_PCT  = 0.25;   // top/bottom 25% of daily range
             g_pdhl_rev.SL_ATR_MULT      = 0.40;   // tight structural stop
             g_pdhl_rev.TP_RANGE_FRAC    = 0.50;   // target mid-range
