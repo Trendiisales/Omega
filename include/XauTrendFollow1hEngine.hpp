@@ -145,6 +145,14 @@ public:
     double max_spread  = 1.0;
     uint32_t cell_enable_mask = 0x03;  // both cells on by default; engine.enabled gates overall
 
+    // S88-followup (2026-05-27): vol-band + ADX gates (defaults OFF).
+    bool   use_vol_band_gate = false;
+    double vol_band_low_pct  = 0.30;
+    double vol_band_high_pct = 0.85;
+    bool   use_adx_gate      = false;
+    double adx_min           = 25.0;
+    std::deque<double> atr_vol_window_;
+
     // S63-pattern in-flight protection (defaults disabled).
     double LOSS_CUT_PCT  = 0.0;
     double BE_ARM_PCT    = 0.0;
@@ -233,12 +241,26 @@ public:
         if (atr14_ <= 0.0) return;
         if (ask - bid > max_spread) return;
 
+        // S88-followup: rolling ATR for vol-band.
+        if (use_vol_band_gate && atr14_ > 0.0) {
+            atr_vol_window_.push_back(atr14_);
+            if ((int)atr_vol_window_.size() > 200) atr_vol_window_.pop_front();
+        }
+
         for (int ci = 0; ci < kXauTf1hNumCells; ++ci) {
             if (!(cell_enable_mask & (1u << ci))) continue;
             if (pos[ci].active) continue;
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side <= 0) continue;     // long-only: never short
+            // S88-followup vol-band
+            if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {
+                int below = 0;
+                const int n = (int)atr_vol_window_.size();
+                for (int i = 0; i < n; ++i) if (atr_vol_window_[i] < atr14_) ++below;
+                const double pct = static_cast<double>(below) / n;
+                if (pct < vol_band_low_pct || pct > vol_band_high_pct) continue;
+            }
             _fire_entry(ci, side, bid, ask, now_ms);
         }
         (void)on_close;

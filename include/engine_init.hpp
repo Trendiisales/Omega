@@ -2065,8 +2065,20 @@ static void init_engines(const std::string& cfg_path)
         // DD (10+ losers stacked, worst single -3.13). Coverage redundant:
         // XauTrendFollow1h (Sharpe +3.58 mdd 27%) + XauTrendFollow4h (+1.97
         // mdd 25%) cover same trend signals with clean DD profile. Off.
+        // S88-followup 2026-05-27: REVIVED to HARD-SHADOW with ADX gate.
+        // Full Duka 2yr backtest (XauTrendFollowBacktest --adx):
+        //   Baseline (ungated): n=826 PF=1.29 net=$4763 MaxDD=$1108
+        //   +ADX25:              n=597 PF=1.42 net=$4874 MaxDD=$ 738 (+10% PF, -33% DD)
+        // Vol_band did NOT help 2h (PF dropped). ADX25 is the right gate
+        // for this timeframe -- trend-strength threshold removes weak-trend
+        // entries where the cell signal fires but no follow-through.
+        // S52 disable was on UNGATED entries (Sharpe 1.14, mdd 75%); ADX
+        // filtered backtest may flip the DD profile. 60+ days HARD shadow
+        // before live promotion.
         g_xau_tf_2h.shadow_mode = true;
-        g_xau_tf_2h.enabled     = false;  // S52: DD ratio fail
+        g_xau_tf_2h.enabled     = true;   // S88: revived w/ ADX25 gate
+        g_xau_tf_2h.use_adx_gate = true;
+        g_xau_tf_2h.adx_min      = 25.0;
         g_xau_tf_2h.lot         = 0.01;
         g_xau_tf_2h.max_spread  = 1.0;
         g_xau_tf_2h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";

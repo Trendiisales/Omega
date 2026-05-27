@@ -152,14 +152,27 @@ struct XauTrendFollow2hEngine {
 public:
     bool   shadow_mode = true;
     bool   enabled     = false;
-    // S88-followup (2026-05-27): ATR-percentile vol-band gate (see
-    // XauThreeBar30m results: PF 1.55 -> 2.23 on 6mo PKL). Skip entries when
-    // current ATR is outside the [low, high] percentile band of the rolling
-    // 200-bar ATR distribution. Default OFF (regression-safe).
+    // S88-followup (2026-05-27): two regime gates, defaults OFF.
+    //   vol_band: skip when ATR-pct outside [low, high]
+    //   adx_gate: skip when ADX14 < adx_min (trend too weak)
+    // Full Duka 2yr backtest: on 2h cells, ADX25 outperforms vol_band
+    // (PF 1.29 -> 1.42 with ADX vs 1.29 -> 1.27 with vol_band). Wire ADX
+    // for 2h in engine_init.hpp; leave vol_band off here.
     bool   use_vol_band_gate = false;
     double vol_band_low_pct  = 0.30;
     double vol_band_high_pct = 0.85;
     std::deque<double> atr_vol_window_;
+    bool   use_adx_gate      = false;
+    double adx_min           = 25.0;
+    // ADX Wilder state
+    static constexpr int kAdxPeriod = 14;
+    double adx14_           = 0.0;
+    double adx_atr_sum_     = 0.0;
+    double adx_pdm_sum_     = 0.0;
+    double adx_mdm_sum_     = 0.0;
+    double adx_dx_sum_      = 0.0;
+    int    adx_warmup_count_ = 0;
+    int    adx_dx_count_     = 0;
     double lot         = 0.01;
     double max_spread  = 1.0;
 
@@ -309,6 +322,7 @@ private:
 
         _update_atr14();
         _update_ema20();
+        _update_adx14();  // S88-followup
 
         for (auto& p : pos) {
             if (p.cooldown_bars > 0) --p.cooldown_bars;
@@ -340,6 +354,10 @@ private:
                     continue;  // VOL_BAND_OUT
                 }
             }
+            // S88-followup ADX gate (trend-strength threshold)
+            if (use_adx_gate && adx_dx_count_ >= kAdxPeriod && adx14_ < adx_min) {
+                continue;  // ADX_TOO_WEAK
+            }
             _fire_entry(ci, side, bid, ask, now_ms);
         }
         (void)on_close;
@@ -367,6 +385,44 @@ private:
         else {
             double a = 2.0 / (kEmaPeriod + 1);
             ema20_ = a * c + (1.0 - a) * ema20_;
+        }
+    }
+
+    // S88-followup: Wilder ADX14 update (mirror of XauTrendFollow4hEngine).
+    // Maintains running ATR / +DM / -DM sums + Wilder-smoothed DX -> ADX.
+    void _update_adx14() noexcept {
+        if (bars_.size() < 2) return;
+        const auto& cur  = bars_[bars_.size() - 1];
+        const auto& prev = bars_[bars_.size() - 2];
+        double up = cur.high - prev.high;
+        double dn = prev.low - cur.low;
+        double pdm = (up > dn && up > 0) ? up : 0.0;
+        double mdm = (dn > up && dn > 0) ? dn : 0.0;
+        double tr  = std::max(cur.high - cur.low,
+                              std::max(std::abs(cur.high - prev.close),
+                                       std::abs(cur.low  - prev.close)));
+        if (adx_warmup_count_ < kAdxPeriod) {
+            adx_atr_sum_ += tr;
+            adx_pdm_sum_ += pdm;
+            adx_mdm_sum_ += mdm;
+            ++adx_warmup_count_;
+        } else {
+            adx_atr_sum_ = adx_atr_sum_ - adx_atr_sum_ / kAdxPeriod + tr;
+            adx_pdm_sum_ = adx_pdm_sum_ - adx_pdm_sum_ / kAdxPeriod + pdm;
+            adx_mdm_sum_ = adx_mdm_sum_ - adx_mdm_sum_ / kAdxPeriod + mdm;
+        }
+        if (adx_warmup_count_ >= kAdxPeriod && adx_atr_sum_ > 1e-12) {
+            double pdi = 100.0 * adx_pdm_sum_ / adx_atr_sum_;
+            double mdi = 100.0 * adx_mdm_sum_ / adx_atr_sum_;
+            double sum = pdi + mdi;
+            double dx  = (sum > 1e-12) ? 100.0 * std::abs(pdi - mdi) / sum : 0.0;
+            if (adx_dx_count_ < kAdxPeriod) {
+                adx_dx_sum_ += dx;
+                ++adx_dx_count_;
+                if (adx_dx_count_ == kAdxPeriod) adx14_ = adx_dx_sum_ / kAdxPeriod;
+            } else {
+                adx14_ = (adx14_ * (kAdxPeriod - 1) + dx) / kAdxPeriod;
+            }
         }
     }
 

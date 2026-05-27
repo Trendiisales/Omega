@@ -197,15 +197,19 @@ int main(int argc, char* argv[]) {
     if(argc<2){std::fprintf(stderr,"Usage: %s <tick_csv> [--vol-band] [--lo PCT] [--hi PCT]\n",argv[0]);return 1;}
     // S88-followup CLI flags for vol-percentile band gate.
     bool   use_vol_band = false;
-    double vb_low = 0.30, vb_high = 0.85;
+    bool   use_adx      = false;
+    double vb_low = 0.30, vb_high = 0.85, adx_min = 25.0;
     for(int i=2;i<argc;++i){
         std::string a=argv[i];
         if(a=="--vol-band") use_vol_band=true;
+        else if(a=="--adx") use_adx=true;
         else if(a=="--lo" && i+1<argc) vb_low = std::stod(argv[++i]);
         else if(a=="--hi" && i+1<argc) vb_high = std::stod(argv[++i]);
+        else if(a=="--adx-min" && i+1<argc) adx_min = std::stod(argv[++i]);
     }
-    std::printf("[TF-BT] vol_band gate: %s [%.2f, %.2f]\n",
-                use_vol_band?"ON":"OFF", vb_low, vb_high);
+    std::printf("[TF-BT] vol_band gate: %s [%.2f, %.2f]  adx gate: %s (min=%.1f)\n",
+                use_vol_band?"ON":"OFF", vb_low, vb_high,
+                use_adx?"ON":"OFF", adx_min);
     BarBuilder bb2(2LL*3600*1000), bb4(4LL*3600*1000);
     D1Builder d1;
     Cell cells[]={
@@ -272,7 +276,7 @@ int main(int argc, char* argv[]) {
         bool b2h=bb2.on_tick(mid,ts), b4h=bb4.on_tick(mid,ts), bd1=false;
         if(b4h&&bb4.bars.size()>0) bd1=d1.on_4h_bar(bb4.bars.back());
 
-        if(b2h&&bb2.total_bars>=52 && vbpass(bb2.atr_vol_window, bb2.atr)){
+        if(b2h&&bb2.total_bars>=52 && vbpass(bb2.atr_vol_window, bb2.atr) && (!use_adx || bb2.adx>=adx_min)){
             double c=bb2.bars.back().close;
             if(c>bb2.ema20+2*bb2.atr)te(0,true,b,a,ts,bb2.atr);
             else if(c<bb2.ema20-2*bb2.atr)te(0,false,b,a,ts,bb2.atr);
@@ -283,7 +287,7 @@ int main(int argc, char* argv[]) {
                 if(in.high<=mo.high&&in.low>=mo.low){if(c>in.high)te(3,true,b,a,ts,bb2.atr);else if(c<in.low)te(3,false,b,a,ts,bb2.atr);}
             }
         }
-        if(b4h&&bb4.total_bars>=52 && vbpass(bb4.atr_vol_window, bb4.atr)){
+        if(b4h&&bb4.total_bars>=52 && vbpass(bb4.atr_vol_window, bb4.atr) && (!use_adx || bb4.adx>=adx_min)){
             double c=bb4.bars.back().close; const Bar& b4=bb4.bars.back();
             if((int)bb4.bars.size()>=21){if(c>bb4.don20_high)te(4,true,b,a,ts,bb4.atr);else if(c<bb4.don20_low)te(4,false,b,a,ts,bb4.atr);}
             if((int)bb4.bars.size()>=3){const Bar&mo=bb4.bars[bb4.bars.size()-3];const Bar&in=bb4.bars[bb4.bars.size()-2];
@@ -296,7 +300,7 @@ int main(int argc, char* argv[]) {
                 if(mp>0.001)te(8,true,b,a,ts,bb4.atr);else if(mp<-0.001)te(8,false,b,a,ts,bb4.atr);}
             double btr=b4.high-b4.low; if(btr>1.5*bb4.atr){bool bull=(b4.close>b4.open);te(9,bull,b,a,ts,bb4.atr);}
         }
-        if(bd1&&d1.total_bars>=22 && vbpass(d1.atr_vol_window, d1.atr)){
+        if(bd1&&d1.total_bars>=22 && vbpass(d1.atr_vol_window, d1.atr) && (!use_adx || d1.adx>=adx_min)){
             double c=d1.bars.back().close;
             if((int)d1.bars.size()>=21){double pc=d1.bars[d1.bars.size()-21].close;
                 if(c>pc*1.001)te(10,true,b,a,ts,d1.atr);else if(c<pc*0.999)te(10,false,b,a,ts,d1.atr);}
