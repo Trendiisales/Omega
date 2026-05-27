@@ -206,10 +206,20 @@ static Result run_engine(const std::vector<Tick>& ticks,
                          const std::vector<double>& pdh_series,
                          const std::vector<double>& pdl_series,
                          const PDHLParams& P,
-                         bool want_trades_detail)
+                         bool want_trades_detail,
+                         bool use_vol_band = false,
+                         double vb_low = 0.30,
+                         double vb_high = 0.85)
 {
     Result R;
     PDHLState s;
+
+    // S88-followup: maintain rolling 200-sample ATR window for vol-band gate.
+    // Sample once per day boundary (detected via PDH change). For 2yr corpus
+    // gives ~500 daily samples; window of 200 days = ~10 months of vol regime
+    // context for percentile ranking.
+    std::deque<double> atr_vol_window;
+    double prev_pdh = -1.0;
 
     const size_t N = ticks.size();
     for (size_t i = 0; i < N; ++i) {
@@ -224,6 +234,14 @@ static Result run_engine(const std::vector<Tick>& ticks,
         double atr    = atr_series[i];
         double drift  = drift_series[i];
         int    slot   = session_slot_from_utc(t.utc_hour);
+
+        // S88-followup: day-boundary detection (PDH changes once per day).
+        // Sample current ATR into vol window at the day's first tick post-update.
+        if (pdh > 0 && pdh != prev_pdh && atr > 0) {
+            atr_vol_window.push_back(atr);
+            if (atr_vol_window.size() > 200) atr_vol_window.pop_front();
+            prev_pdh = pdh;
+        }
 
         // manage open position
         if (s.active) {
@@ -256,6 +274,14 @@ static Result run_engine(const std::vector<Tick>& ticks,
         if (spread > P.MAX_SPREAD_PTS) continue;
         if (atr < P.MIN_ATR_PTS) continue;
         if (slot == 0) continue;
+
+        // S88-followup vol-band gate: percentile-based entry filter.
+        if (use_vol_band && atr_vol_window.size() >= 100 && atr > 0) {
+            int below = 0;
+            for (double x : atr_vol_window) if (x < atr) ++below;
+            double pct = (double)below / atr_vol_window.size();
+            if (pct < vb_low || pct > vb_high) continue;
+        }
 
         double upper_zone = pdh - range * P.RANGE_ENTRY_PCT;
         double lower_zone = pdl + range * P.RANGE_ENTRY_PCT;
@@ -521,14 +547,27 @@ static void print_breakdown(FILE* out, const Result& R) {
 // ──────────────────────────────────────────────────────────────────────────
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        puts("Usage: pdhl_bt_2y <tick_csv> [output.txt]");
+        puts("Usage: pdhl_bt_2y <tick_csv> [output.txt] [--vol-band] [--lo PCT] [--hi PCT]");
         return 1;
     }
-    FILE* out = stdout;
-    if (argc >= 3) {
-        out = fopen(argv[2], "w");
-        if (!out) { fprintf(stderr, "Cannot open %s for writing\n", argv[2]); return 1; }
+    // S88-followup vol-band CLI
+    bool use_vol_band = false;
+    double vb_low = 0.30, vb_high = 0.85;
+    const char* output_path = nullptr;
+    for (int i = 2; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--vol-band") use_vol_band = true;
+        else if (a == "--lo" && i+1 < argc) vb_low = std::atof(argv[++i]);
+        else if (a == "--hi" && i+1 < argc) vb_high = std::atof(argv[++i]);
+        else if (!output_path) output_path = argv[i];
     }
+    FILE* out = stdout;
+    if (output_path) {
+        out = fopen(output_path, "w");
+        if (!out) { fprintf(stderr, "Cannot open %s for writing\n", output_path); return 1; }
+    }
+    fprintf(stderr, "[PDHL-BT] vol_band: %s [%.2f, %.2f]\n",
+            use_vol_band ? "ON" : "OFF", vb_low, vb_high);
 
     auto t0 = std::chrono::steady_clock::now();
 
@@ -559,7 +598,8 @@ int main(int argc, char* argv[]) {
     fprintf(out, "========================================================================\n\n");
 
     PDHLParams base;
-    Result R_base = run_engine(ticks, atr_series, drift_series, pdh_series, pdl_series, base, true);
+    Result R_base = run_engine(ticks, atr_series, drift_series, pdh_series, pdl_series, base, true,
+                                use_vol_band, vb_low, vb_high);
     fprintf(stderr, "Baseline complete: %d trades, $%+.2f PnL\n", R_base.n, R_base.pnl_sum);
 
     fprintf(out, "========== BASELINE CONFIG (live-engine defaults) ==========\n");
