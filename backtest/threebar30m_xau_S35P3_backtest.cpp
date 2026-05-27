@@ -636,6 +636,32 @@ omega::XauThreeBar30mEngine make_engine_protected() {
     return e;
 }
 
+// Static gate instances scoped to harness — one per config. Allocating on the
+// stack of the make_* functions would dangle once the engine outlives the
+// function frame. File-static lifetime keeps the gate alive for the whole run.
+static omega::XauM30HmmGate s_hmm_gate_combo{};
+static omega::XauM30HmmGate s_hmm_gate_solo{};
+
+omega::XauThreeBar30mEngine make_engine_tuned_hmm() {
+    // TUNED + HMM gate alone. Lets us measure HMM lift independent of slope.
+    omega::XauThreeBar30mEngine e = make_engine_protected();
+    e.use_hmm_gate = true;
+    e.hmm_gate     = &s_hmm_gate_solo;
+    e.init();
+    return e;
+}
+
+omega::XauThreeBar30mEngine make_engine_tuned_hmm_slope(int N) {
+    // TUNED + HMM + slope_N (recommended combined gate).
+    omega::XauThreeBar30mEngine e = make_engine_protected();
+    e.slope_lookback_bars = N;
+    e.use_slope_gate      = true;
+    e.use_hmm_gate        = true;
+    e.hmm_gate            = &s_hmm_gate_combo;
+    e.init();
+    return e;
+}
+
 omega::XauThreeBar30mEngine make_engine_tuned_slope(int N) {
     // TUNED config + N-bar close-slope sign-alignment gate. Per S88-followup
     // Python re-test (research/THREEBAR_F4_DUKA_RETEST.md), slopes in [8, 12]
@@ -760,6 +786,8 @@ int main(int argc, char** argv) {
     BacktestResult tuned_slope8;
     BacktestResult tuned_slope10;
     BacktestResult tuned_slope12;
+    BacktestResult tuned_hmm;
+    BacktestResult tuned_hmm_slope12;
     {
         auto eng = make_engine_baseline();
         run_one(eng, m30, atr, baseline, "baseline");
@@ -784,6 +812,14 @@ int main(int argc, char** argv) {
         auto eng = make_engine_tuned_slope(12);
         run_one(eng, m30, atr, tuned_slope12, "tuned_slope12");
     }
+    {
+        auto eng = make_engine_tuned_hmm();
+        run_one(eng, m30, atr, tuned_hmm, "tuned_hmm");
+    }
+    {
+        auto eng = make_engine_tuned_hmm_slope(12);
+        run_one(eng, m30, atr, tuned_hmm_slope12, "tuned_hmm_slope12");
+    }
 
     // Restore stdout
     if (old_stdout) {
@@ -798,12 +834,16 @@ int main(int argc, char** argv) {
     write_trades_csv(out_prefix + "_tuned_slope8_trades.csv",  tuned_slope8.trades);
     write_trades_csv(out_prefix + "_tuned_slope10_trades.csv", tuned_slope10.trades);
     write_trades_csv(out_prefix + "_tuned_slope12_trades.csv", tuned_slope12.trades);
+    write_trades_csv(out_prefix + "_tuned_hmm_trades.csv",     tuned_hmm.trades);
+    write_trades_csv(out_prefix + "_tuned_hmm_slope12_trades.csv", tuned_hmm_slope12.trades);
     write_equity_csv(out_prefix + "_baseline_equity.csv",      baseline.equity);
     write_equity_csv(out_prefix + "_tuned_equity.csv",         tuned.equity);
     write_equity_csv(out_prefix + "_strict_equity.csv",        strict.equity);
     write_equity_csv(out_prefix + "_tuned_slope8_equity.csv",  tuned_slope8.equity);
     write_equity_csv(out_prefix + "_tuned_slope10_equity.csv", tuned_slope10.equity);
     write_equity_csv(out_prefix + "_tuned_slope12_equity.csv", tuned_slope12.equity);
+    write_equity_csv(out_prefix + "_tuned_hmm_equity.csv",     tuned_hmm.equity);
+    write_equity_csv(out_prefix + "_tuned_hmm_slope12_equity.csv", tuned_hmm_slope12.equity);
 
     std::vector<std::pair<std::string,BacktestResult*>> runs = {
         {"BASELINE       (no S35-P3 protections at all)",            &baseline},
@@ -815,6 +855,8 @@ int main(int argc, char** argv) {
          "==sign(signal); S88-followup)",                            &tuned_slope8},
         {"TUNED+SLOPE10  (TUNED + 10-bar slope sign-align)",         &tuned_slope10},
         {"TUNED+SLOPE12  (TUNED + 12-bar slope sign-align)",         &tuned_slope12},
+        {"TUNED+HMM      (TUNED + causal HMM not_NOISE gate)",       &tuned_hmm},
+        {"TUNED+HMM+SL12 (TUNED + HMM not_NOISE AND slope_12)",      &tuned_hmm_slope12},
     };
     write_summary    (out_prefix + "_summary.txt",  runs);
     write_summary_csv(out_prefix + "_summary.csv",  runs);

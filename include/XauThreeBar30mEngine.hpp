@@ -171,6 +171,7 @@
 #include "OmegaTradeLedger.hpp"      // omega::TradeRecord
 #include "engine_protections.hpp"    // S35-P3 ProtectedEngineGuards
 #include "OmegaCostGuard.hpp"
+#include "XauM30HmmGate.hpp"         // S88-followup HMM regime gate
 
 namespace omega {
 
@@ -250,6 +251,21 @@ public:
     //   Defaults disable the gate (regression-safe).
     int    slope_lookback_bars = 0;     // 0 disables; recommend 12 for shadow A/B
     bool   use_slope_gate      = false;
+
+    // ── S88-followup (2026-05-27): M30 HMM regime gate.
+    //   3-state Gaussian HMM (NOISE / MEAN_REV / CONTINUATION) classifier
+    //   trained on 4 M30 features (drift_norm, atr_norm, range_norm,
+    //   dir_persist). Causal forward-only inference, NO smoothing. Caller
+    //   pushes one HmmM30Bar per M30 close before _evaluate_signal is hit.
+    //   When use_hmm_gate=true, entry blocked if classifier reports NOISE.
+    //   Combined w/ slope_12 gate (ANDed), OOS lift over baseline:
+    //     net +48% ($448 -> $664), PF +21% (1.27 -> 1.54), MaxDD -19% ($183
+    //     -> $149), retains 79% of trades. See
+    //     /Users/jo/Tick/mid_freq_research/HMM_REGIME_GATE_RESULTS.md.
+    //   Gate provider lives at include/XauM30HmmGate.hpp; engine queries
+    //   it via the hmm_gate pointer set at init().
+    bool          use_hmm_gate    = false;
+    XauM30HmmGate*hmm_gate        = nullptr;  // engine_init.hpp wires a static instance
 
     // ── S63 2026-05-13 VWR-pattern in-flight protection ───────────────────
     //   Mirrors VWAPReversionEngine (CrossAssetEngines.hpp L1245-1247) but
@@ -339,6 +355,21 @@ public:
         if (atr14_external > 0.0) atr14_ = atr14_external;
         else _update_local_atr();
 
+        // S88-followup: feed HMM gate EVERY bar regardless of position state.
+        // Gate is causal — needs continuous feature updates to maintain forward
+        // alpha. Originally placed below the position/cooldown returns; that
+        // froze the gate during open trades, leaving it stale by the time the
+        // next entry chance arose. Move to top so updates always run.
+        if (use_hmm_gate && hmm_gate != nullptr && atr14_ > 0.0) {
+            HmmM30Bar hb{};
+            hb.open  = bar.open;
+            hb.high  = bar.high;
+            hb.low   = bar.low;
+            hb.close = bar.close;
+            hb.atr14 = atr14_;
+            hmm_gate->push_bar(hb);
+        }
+
         if (pos.cooldown_bars > 0) --pos.cooldown_bars;
 
         // S35-P3: bars-held + time stop. Increment guards' counter, then
@@ -376,6 +407,29 @@ public:
 
         int side = _evaluate_signal();
         if (side == 0) return;
+
+        // S88-followup: HMM regime gate -- block entries when classifier
+        // reports NOISE state (Asia/dead/no-edge regime). Fail-open: if not
+        // warmed (insufficient history), allow the entry through, matching
+        // the engine's existing warmup behaviour.
+        //
+        // KNOWN GAP 2026-05-27: C++ port of the Python HMM does not replicate
+        // the Python state distribution. On the 6-month PKL data the Python
+        // training showed ~38% NOISE, ~22% MEAN_REV, ~40% CONT; the C++ gate
+        // running the same trained params on the same data labels ~99% of
+        // entry-attempt bars as CONT. Suspected feature computation drift
+        // between Python pandas and C++ deque path (Wilder ATR, rolling
+        // median, or bar source M5->M30 vs M15->M30 reaggregation difference).
+        // Until resolved: use_hmm_gate must stay false in production. Slope
+        // gate (use_slope_gate) remains the live-validated gate.
+        // Reference Python implementation:
+        // /Users/jo/Tick/mid_freq_research/hmm_causal_test.py
+        if (use_hmm_gate && hmm_gate != nullptr) {
+            if (hmm_gate->warmed() && hmm_gate->is_noise()) {
+                omega::log_entry_block("XauThreeBar30m", "HMM_GATE_NOISE");
+                return;
+            }
+        }
 
         // S88-followup: N-bar close-slope sign-alignment gate. Compares the
         // sign of (current close - close N bars ago) to the signal direction.
