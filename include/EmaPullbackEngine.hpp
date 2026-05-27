@@ -29,6 +29,36 @@
 //  Tier-3 here is LONG-ONLY -- the 4 profitable cells per the post-cut
 //  report. Short variants were not in the master_summary profitable set.
 //
+//  S37 Phase H STAGE-TRAIL TOMBSTONE (2026-05-27b).
+//  Tried: TrendRider-mirror 3-stage ATR trail
+//      stage 1: arm >=2.0*ATR -> trail 1.5*ATR behind MFE
+//      stage 2: arm >=5.0*ATR -> trail 2.5*ATR
+//      stage 3: arm >=10.0*ATR -> trail 3.5*ATR
+//  Corpus: phase1/signal_discovery/tsmom_warmup_H1.csv (6156 H1 bars / ~1yr).
+//  Result vs no-trail baseline (all 4 cells, default config):
+//                   baseline   +trail    delta
+//      net PnL      $7204.77   $1724.76  -76.1%
+//      profit fac.  1.4675     1.1357    -22.6%
+//      max DD       -12.70%    -17.57%   WORSE
+//      TP_HIT count 177        67        -110 lost TP wins
+//  Per cell (all HURT, none survive):
+//      H1: net 32.86->5.86 (-82%), PF 1.39->1.09
+//      H2: net 14.40->1.41 (-90%), PF 1.37->1.05
+//      H4: net 16.07->5.46 (-66%), PF 1.87->1.32
+//      H6: net 8.72->4.52  (-48%), PF 1.66->1.38
+//  Root cause: TP=2.5R caps winners at 2.5*ATR; stage1 arms at 2N and
+//  trails 1.5N behind, so a winner that touches 2N MFE is trail-cut at
+//  +0.5N before it can reach TP at +2.5N. TRAIL1 fires 133 times,
+//  replacing ~110 would-be TP_HITs with much smaller wins.
+//  Decision: trail is structurally incompatible with fixed-TP engines
+//  whose TP is within stage1 arm distance. DO NOT re-attempt without
+//  EITHER widening stage1 arm/dist substantially OR removing fixed TP.
+//  Tsmom precedent confirmed -- this is the second engine of that
+//  family (fixed-TP + medium hold) that trail HURTS.
+//  Reproduce: ./build/EmaPullbackBacktest --quiet --stage-trail
+//  Gated via constexpr-style toggle EpbCell::stage_trail_enabled
+//  (default false, engine_init.hpp leaves it untouched).
+//
 //  EXIT (mirrors sim_a):
 //      Entry at next bar open (live: ask for long at bar-close tick).
 //      Hard SL = entry - sl_atr * ATR14_at_signal       (sl_atr=1.0)
@@ -216,6 +246,30 @@ struct EpbCell {
     double BE_ARM_PCT     = 0.0;
     double BE_BUFFER_PCT  = 0.0;
 
+    // -------------------------------------------------------------------------
+    //  S37 Phase H stage trail (2026-05-27b). Mirrors the TrendRiderEngine
+    //  3-stage ATR trail at TrendRiderEngine.hpp:272-293. Default DISABLED;
+    //  flip per-cell via stage_trail_enabled=true once a per-cell backtest
+    //  has shown trail HELPS net PnL + PF + max DD vs baseline.
+    //
+    //  Stage logic (long, mirror for short):
+    //    pos_mfe_ >= stage1_arm_n * ATR  -> trail at entry + mfe - stage1_dist_n*ATR
+    //    pos_mfe_ >= stage2_arm_n * ATR  -> trail at entry + mfe - stage2_dist_n*ATR
+    //    pos_mfe_ >= stage3_arm_n * ATR  -> trail at entry + mfe - stage3_dist_n*ATR
+    //  Trail only RATCHETS pos_sl_ (never loosens). Hard SL at entry-sl_atr*ATR
+    //  remains the floor below stage1_arm_n. Trail-driven SL_HIT is logged
+    //  with reason "TRAIL{1,2,3}" so the exit-reason histogram makes the
+    //  trail's contribution visible.
+    // -------------------------------------------------------------------------
+    bool   stage_trail_enabled = false;
+    double stage1_arm_n        = 2.0;
+    double stage1_dist_n       = 1.5;
+    double stage2_arm_n        = 5.0;
+    double stage2_dist_n       = 2.5;
+    double stage3_arm_n        = 10.0;
+    double stage3_dist_n       = 3.5;
+    int    pos_stage_          = 0;     // 0=initial, 1/2/3=stage trail engaged
+
     int    direction            = 1;
     std::string timeframe       = "H1";
     std::string symbol          = "XAUUSD";
@@ -291,6 +345,31 @@ struct EpbCell {
             if (min_move_this_bar < pos_mae_) pos_mae_ = min_move_this_bar;
 
             // -----------------------------------------------------------------
+            //  S37-H stage trail -- bar-driven. Runs BEFORE BE_RATCHET/LC/SL/TP
+            //  so a ratcheted pos_sl_ is in scope for the SL_HIT check below.
+            //  Inert when stage_trail_enabled = false (default).
+            // -----------------------------------------------------------------
+            if (stage_trail_enabled && pos_atr_ > 0.0) {
+                const double n_unit = pos_atr_;
+                int new_stage = pos_stage_;
+                if      (pos_mfe_ >= stage3_arm_n * n_unit) new_stage = 3;
+                else if (pos_mfe_ >= stage2_arm_n * n_unit) new_stage = std::max(new_stage, 2);
+                else if (pos_mfe_ >= stage1_arm_n * n_unit) new_stage = std::max(new_stage, 1);
+                pos_stage_ = new_stage;
+                if (pos_stage_ > 0) {
+                    const double dist_n = (pos_stage_ == 1) ? stage1_dist_n
+                                        : (pos_stage_ == 2) ? stage2_dist_n
+                                                            : stage3_dist_n;
+                    const double trail_dist = dist_n * n_unit;
+                    const double tsl = direction == 1
+                        ? (pos_entry_ + pos_mfe_ - trail_dist)
+                        : (pos_entry_ - pos_mfe_ + trail_dist);
+                    if (direction == 1  && tsl > pos_sl_) pos_sl_ = tsl;
+                    if (direction == -1 && tsl < pos_sl_) pos_sl_ = tsl;
+                }
+            }
+
+            // -----------------------------------------------------------------
             //  S63 in-flight protection -- bar-driven path.
             //  Mirrors EpbCell::on_tick logic but uses bar extremes instead of
             //  tick bid/ask. Lives BEFORE the existing SL/TP/TIME checks so a
@@ -355,7 +434,14 @@ struct EpbCell {
 
             const bool sl_hit = direction == 1
                 ? (b.low  <= pos_sl_) : (b.high >= pos_sl_);
-            if (sl_hit) { _close(pos_sl_, "SL_HIT", now_ms, on_close); return 0; }
+            if (sl_hit) {
+                const char* reason =
+                    (stage_trail_enabled && pos_stage_ == 1) ? "TRAIL1" :
+                    (stage_trail_enabled && pos_stage_ == 2) ? "TRAIL2" :
+                    (stage_trail_enabled && pos_stage_ == 3) ? "TRAIL3" : "SL_HIT";
+                _close(pos_sl_, reason, now_ms, on_close);
+                return 0;
+            }
             const bool tp_hit = direction == 1
                 ? (b.high >= pos_tp_) : (b.low  <= pos_tp_);
             if (tp_hit) { _close(pos_tp_, "TP_HIT", now_ms, on_close); return 0; }
@@ -423,6 +509,7 @@ struct EpbCell {
         pos_bars_held_  = 0;
         pos_mfe_        = 0.0;
         pos_mae_        = 0.0;
+        pos_stage_      = 0;
         pos_spread_at_  = spread_pt;
         ++trade_id_;
 
@@ -497,12 +584,38 @@ struct EpbCell {
             }
         }
 
+        // S37-H stage trail -- tick-driven mirror of on_bar block.
+        if (stage_trail_enabled && pos_atr_ > 0.0) {
+            const double n_unit = pos_atr_;
+            int new_stage = pos_stage_;
+            if      (pos_mfe_ >= stage3_arm_n * n_unit) new_stage = 3;
+            else if (pos_mfe_ >= stage2_arm_n * n_unit) new_stage = std::max(new_stage, 2);
+            else if (pos_mfe_ >= stage1_arm_n * n_unit) new_stage = std::max(new_stage, 1);
+            pos_stage_ = new_stage;
+            if (pos_stage_ > 0) {
+                const double dist_n = (pos_stage_ == 1) ? stage1_dist_n
+                                    : (pos_stage_ == 2) ? stage2_dist_n
+                                                        : stage3_dist_n;
+                const double trail_dist = dist_n * n_unit;
+                const double tsl = direction == 1
+                    ? (pos_entry_ + pos_mfe_ - trail_dist)
+                    : (pos_entry_ - pos_mfe_ + trail_dist);
+                if (direction == 1  && tsl > pos_sl_) pos_sl_ = tsl;
+                if (direction == -1 && tsl < pos_sl_) pos_sl_ = tsl;
+            }
+        }
+
+        auto sl_reason = [this]() -> const char* {
+            return (stage_trail_enabled && pos_stage_ == 1) ? "TRAIL1" :
+                   (stage_trail_enabled && pos_stage_ == 2) ? "TRAIL2" :
+                   (stage_trail_enabled && pos_stage_ == 3) ? "TRAIL3" : "SL_HIT";
+        };
         if (direction == 1) {
-            if (bid <= pos_sl_) { _close(bid, "SL_HIT", now_ms, on_close); return; }
-            if (bid >= pos_tp_) { _close(bid, "TP_HIT", now_ms, on_close); return; }
+            if (bid <= pos_sl_) { _close(bid, sl_reason(), now_ms, on_close); return; }
+            if (bid >= pos_tp_) { _close(bid, "TP_HIT",      now_ms, on_close); return; }
         } else {
-            if (ask >= pos_sl_) { _close(ask, "SL_HIT", now_ms, on_close); return; }
-            if (ask <= pos_tp_) { _close(ask, "TP_HIT", now_ms, on_close); return; }
+            if (ask >= pos_sl_) { _close(ask, sl_reason(), now_ms, on_close); return; }
+            if (ask <= pos_tp_) { _close(ask, "TP_HIT",      now_ms, on_close); return; }
         }
     }
 
@@ -554,6 +667,7 @@ private:
         pos_sl_         = 0.0;
         pos_tp_         = 0.0;
         pos_size_       = 0.0;
+        pos_stage_      = 0;
         pos_atr_        = 0.0;
         pos_entry_ms_   = 0;
         pos_bars_held_  = 0;
@@ -594,6 +708,13 @@ struct EpbPortfolio {
     double LOSS_CUT_PCT      = 0.0;
     double BE_ARM_PCT        = 0.0;
     double BE_BUFFER_PCT     = 0.0;
+
+    // S37-H stage trail -- portfolio-level toggle, propagated to all cells by
+    // init(). Default false; set true via engine_init.hpp once per-cell backtest
+    // confirms trail HELPS PnL + PF + max DD. See EpbCell stage_trail_* fields
+    // for stage thresholds. Per-cell override possible after init() by setting
+    // e.g. p.h1_long_.stage_trail_enabled = false directly.
+    bool   stage_trail_enabled = false;
 
     // S88-followup (2026-05-27): ATR-percentile vol-band gate. Maintains a
     // rolling 200-bar H1 ATR window; blocks new entries (manage-only) when
@@ -648,6 +769,7 @@ struct EpbPortfolio {
             c.LOSS_CUT_PCT  = LOSS_CUT_PCT;
             c.BE_ARM_PCT    = BE_ARM_PCT;
             c.BE_BUFFER_PCT = BE_BUFFER_PCT;
+            c.stage_trail_enabled = stage_trail_enabled;
             c.init_emas();
         };
         stamp(h1_long_, "H1", "EmaPullback_H1_long");

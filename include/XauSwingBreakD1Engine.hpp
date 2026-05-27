@@ -18,6 +18,13 @@
 //      Cost 30bp:   FUL Sh=4.17
 //      Cost 50bp:   FUL Sh=3.25
 //      n=18 over 670 days, PnL=42.5%, WR=61.1%, mdd=4.3%
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  NOT empirically tested on this engine. Predicted NEGATIVE by analogy to
+//  XauPullbackContH4 (TP=5*ATR, trail -36% Sharpe on xau_d1_zoo_audit).
+//  Same TP geometry (tp_atr_mult=5). D1 swing-break expects multi-bar
+//  follow-through; trail-cut at +0.5N would close winners before the swing
+//  resolves. Trail STAYS OFF and is NOT implemented to keep diff small.
 // =============================================================================
 
 #pragma once

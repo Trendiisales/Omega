@@ -27,6 +27,23 @@
 //  Bidirectional design: would have profited during the 2026-03-18 BEAR
 //  cluster that the long-only C1Retuned cells lost on 4-of-4.
 //
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  Not empirically tested -- no dedicated DonchianBacktest harness exists.
+//  Predicted NEGATIVE by structural analogy to EmaPullback (see
+//  EmaPullbackEngine.hpp S37 tombstone). Identical TP profile:
+//      sl_atr = 1.0, tp_r = 2.5  ->  TP at 2.5 * ATR
+//      stage1 arm at 2.0 * ATR, trail dist 1.5 * ATR
+//      Trail effective floor: entry + 0.5N. TP at entry + 2.5N.
+//  Gap (2N) too narrow -- stage1 trail is ALWAYS armed before TP fires,
+//  so trail-cut wins replace TP_HIT wins at ~5x lower payout.
+//  Plus Donchian has BREAKOUT_FAIL + LOSS_CUT + BE_RATCHET already firing,
+//  so the marginal benefit of an additional trail is even smaller.
+//  EmaPullback empirical result: -76% net PnL, -22% PF, max DD worsened.
+//  Donchian H4/H6/D1 cells are LIKELY worse (D1 holds 10+ days; trail-cut
+//  at +0.5N before a multi-day winner unfolds destroys the edge).
+//  Verification queued: build DonchianBacktest harness if/when this
+//  prediction needs empirical confirmation. Until then, trail STAYS OFF.
+//
 //  SIGNAL (mirrors phase1/signal_discovery/post_cut_revalidate_all.py::sig_donchian):
 //      prior_high = rolling(period).max().shift(1)    # period=20
 //      prior_low  = rolling(period).min().shift(1)

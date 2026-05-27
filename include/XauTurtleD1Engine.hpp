@@ -24,6 +24,16 @@
 //  Distinct from MinimalH4Breakout (gold) which uses H4 timeframe + don=10,
 //  and from XauTrendFollowD1Engine which uses lb=20 momentum + Keltner +
 //  ADX cells. This engine is pure 40-day high-close break, long-only.
+//
+// S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+// NOT empirically tested on this engine. Predicted NEGATIVE by analogy to
+// EmaPullback (TP=2.5R, trail -76% PnL) and XauPullbackContH4 (TP=5N,
+// trail -36% Sharpe). This engine: TP at 3*ATR with SL at 1.5*ATR.
+// Stage1 arm at 2*ATR catches winners at +0.5N before they reach TP at +3N;
+// lost TP_HITs outweigh saved giveback. Trail STAYS OFF and is NOT
+// implemented on this engine to keep diff small. To verify empirically,
+// add the same gated trail block used on XauPullbackContH4Engine.hpp and
+// flip pcH4.p.stage_trail_enabled = true in xau_d1_zoo_audit.
 // =============================================================================
 
 #pragma once

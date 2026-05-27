@@ -31,6 +31,19 @@
 //    Default shadow_mode=true. NEVER set false without minimum 30 closed
 //    shadow trades matching backtest expectation (~50 trades/quarter).
 //
+//  S37 Phase H STAGE-TRAIL NOT-APPLICABLE (2026-05-27b).
+//  The Phase H trail audit considered this engine and rejected trail addition
+//  on STRUCTURAL grounds (not empirical -- no test run).
+//  Reasoning: trail addition assumes the engine seeks unbounded MFE on the
+//  signal side and needs protection against unrealised-profit giveback.
+//  Pairs mean-reversion EXPECTS the spread to revert to zero; the engine's
+//  natural exit is z-score crossing back through ±z_out (the intended
+//  profit-take). There is no "winner-giveback" because there is no fixed TP
+//  to give back from -- exits are state-driven, not target-driven.
+//  A trail would CONFLICT with the z-out exit: trail SL could fire before
+//  the spread reverts, locking small profit at half the natural profit
+//  trajectory. Engine STAYS as-is. Trail NOT implemented.
+//
 //  PERSISTENCE:
 //    Stateless across restarts -- pairs engine re-warms from first H1 closes.
 //    No save_state/load_state (rolling window self-rebuilds in ~60 H1 bars = 2.5 days).

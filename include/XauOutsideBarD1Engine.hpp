@@ -12,6 +12,12 @@
 //    Cost 30bp:   FUL Sh=4.58
 //    Cost 50bp:   FUL Sh=3.27
 //    n=34-37, PnL=43.0%, WR=64.7%, mdd=5.0%
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  NOT empirically tested. Predicted NEGATIVE by analogy to XauPullbackContH4
+//  (-36% Sharpe) and XauStopRunD1 (extrapolated -70%+ at tp=2N). This engine
+//  has tp_atr_mult=3.0 -- sits between the two priors, so predicted impact
+//  is -40 to -60%. Trail STAYS OFF and is NOT implemented to keep diff small.
 // =============================================================================
 
 #pragma once

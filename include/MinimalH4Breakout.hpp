@@ -39,6 +39,16 @@
 //    are silently skipped (return without firing). Bull-break entries
 //    unaffected. Gate is configurable via [minimal_h4] long_only=true in
 //    omega_config.ini. Default-false preserves backtest behaviour byte-exact.
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  NOT empirically tested. Predicted NEGATIVE by analogy to EmaPullback
+//  (-76% net PnL) and XauPullbackContH4 (-36% net Sharpe). This engine: TP at
+//  4*ATR with SL at 1.5*ATR is closer in geometry to pcH4 (TP=5N) than to
+//  EmaPullback. Stage1 arm at 2*ATR puts trail SL at +0.5N; TP at +4N is
+//  reachable but trail catches winners at the +0.5N giveback threshold.
+//  Predicted impact: -30 to -50% net PnL. If verification needed, route
+//  through backtest/htf_bt_minimal.cpp or htf_bt_walkforward.cpp.
+//  Until then, trail STAYS OFF and is NOT implemented to keep the diff small.
 // =============================================================================
 
 #pragma once

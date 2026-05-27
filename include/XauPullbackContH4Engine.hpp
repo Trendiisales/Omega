@@ -14,6 +14,29 @@
 //
 //  HIGHER N than D1 variant (97 vs 33). Reasonable balance of signal +
 //  statistical confidence. Long-only (XAU uptrend regime 2024-2026).
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE (2026-05-27b).
+//  Tried: TrendRider-mirror 3-stage ATR trail (stage1 arm=2N dist=1.5N).
+//  Harness: build/xau_d1_zoo_audit on 2yr_XAUUSD_tick_fresh.h4.csv.
+//  Toggle: STAGE_TRAIL=1 env var + p.stage_trail_enabled = true.
+//  Result:
+//                   baseline   +trail    delta
+//      n_trades     102        149       +46% (faster exits free entry slot)
+//      Sharpe       +2.692     +1.555    -42%
+//      gross        +17.24     +11.02    -36%
+//      max DD       -4.88      -5.78     WORSE 18%
+//      TP_HIT       43         27        -16 TP wins lost
+//      exits        SL=48      SL=57     -- TO=4 (was 11)
+//                   TP=43      TP=27     TRAIL=61
+//  Root cause: stage1 arm at 2N is tighter than the engine's typical
+//  winner-to-TP path. Even with TP wide at 5*ATR (vs 2.5R in EmaPullback),
+//  trail catches winners at +0.5N before they reach the 5N target. The
+//  faster exits also produce ~50% more trades, which dilutes edge.
+//  Consistent with EmaPullback tombstone (-76%) -- trail with stage1 arm
+//  at 2N is structurally incompatible with fixed-TP engines.
+//  DO NOT re-attempt without widening stage1 arm to 4N+ AND empirically
+//  re-verifying. Gated via XauPullbackContH4Params::stage_trail_enabled
+//  (default false).
 // =============================================================================
 
 #pragma once
@@ -41,6 +64,14 @@ struct XauPullbackContH4Params {
     int    atr_period          = 14;
     double max_spread          = 1.0;
     bool   weekend_close_gate  = true;
+    // S37-H stage trail (TrendRider mirror). Default OFF.
+    bool   stage_trail_enabled = false;
+    double stage1_arm_n        = 2.0;
+    double stage1_dist_n       = 1.5;
+    double stage2_arm_n        = 5.0;
+    double stage2_dist_n       = 2.5;
+    double stage3_arm_n        = 10.0;
+    double stage3_dist_n       = 3.5;
 };
 
 inline XauPullbackContH4Params make_xau_pullback_cont_h4_params() { return XauPullbackContH4Params{}; }
@@ -76,6 +107,8 @@ struct XauPullbackContH4Engine {
     struct OpenPos {
         bool active=false;
         double entry=0, sl=0, tp=0, lot=0, mfe=0, mae=0;
+        double atr_at_entry=0;     // S37-H: ATR captured at entry for trail
+        int stage=0;               // S37-H: 0/1/2/3
         int64_t entry_ts_ms=0;
         int bars_held=0;
     } pos_;
@@ -89,7 +122,31 @@ struct XauPullbackContH4Engine {
         const double move = mid - pos_.entry;
         if (move>pos_.mfe) pos_.mfe=move;
         if (move<pos_.mae) pos_.mae=move;
-        if (bid<=pos_.sl)      _close(bid,"SL_HIT",now_ms,on_close);
+
+        // S37-H stage trail (long-only). Ratchets pos_.sl up only.
+        if (p.stage_trail_enabled && pos_.atr_at_entry > 0.0) {
+            const double n_unit = pos_.atr_at_entry;
+            int new_stage = pos_.stage;
+            if      (pos_.mfe >= p.stage3_arm_n * n_unit) new_stage = 3;
+            else if (pos_.mfe >= p.stage2_arm_n * n_unit) new_stage = std::max(new_stage, 2);
+            else if (pos_.mfe >= p.stage1_arm_n * n_unit) new_stage = std::max(new_stage, 1);
+            pos_.stage = new_stage;
+            if (pos_.stage > 0) {
+                const double dist_n = (pos_.stage == 1) ? p.stage1_dist_n
+                                    : (pos_.stage == 2) ? p.stage2_dist_n
+                                                        : p.stage3_dist_n;
+                const double tsl = pos_.entry + pos_.mfe - dist_n * n_unit;
+                if (tsl > pos_.sl) pos_.sl = tsl;
+            }
+        }
+
+        if (bid<=pos_.sl) {
+            const char* reason =
+                (p.stage_trail_enabled && pos_.stage == 1) ? "TRAIL1" :
+                (p.stage_trail_enabled && pos_.stage == 2) ? "TRAIL2" :
+                (p.stage_trail_enabled && pos_.stage == 3) ? "TRAIL3" : "SL_HIT";
+            _close(bid, reason, now_ms, on_close);
+        }
         else if (bid>=pos_.tp) _close(bid,"TP_HIT",now_ms,on_close);
     }
 
@@ -135,6 +192,8 @@ struct XauPullbackContH4Engine {
             omega::pg::register_position_open();  // S51 cap
             pos_.entry=entry_px; pos_.sl=sl_px; pos_.tp=tp_px;
             pos_.lot=p.lot; pos_.mfe=pos_.mae=0;
+            pos_.atr_at_entry = atr_pre;   // S37-H trail uses entry-snapshot ATR
+            pos_.stage = 0;
             pos_.entry_ts_ms=h4_close_ms; pos_.bars_held=0;
             ++m_trade_id_;
 

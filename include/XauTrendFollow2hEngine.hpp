@@ -57,6 +57,12 @@
 //
 //      // tick_gold.hpp per-tick:
 //      g_xau_tf_2h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  Multi-cell engine; cells use TPs at 3-6*ATR. Predicted NEGATIVE by analogy
+//  to XauPullbackContH4 (trail -36% Sharpe at TP=5N). Trail STAYS OFF and is
+//  NOT implemented to keep diff small. See XauTrendFollow4hEngine.hpp
+//  tombstone for full reasoning.
 // =============================================================================
 //
 //  S34 P1 FIXES (2026-05-12) -- close-path bug class from HANDOFF_S34.md §3.2,

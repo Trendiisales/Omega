@@ -64,6 +64,19 @@
 //
 //      // tick_gold.hpp on every tick (alongside g_donchian.on_tick):
 //      g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY for cells [A]/[B]/[C]/[D]/[E]/[F]
+//  (Donchian20/InsideBar/ER0.20/Keltner20/AdxMom20/RangeExpand) (2026-05-27b).
+//  NOT empirically tested. Predicted NEGATIVE by analogy to XauPullbackContH4
+//  (trail -36% Sharpe at TP=5N). These cells have TP at 3-6*ATR; stage1 arm
+//  at 2*ATR catches winners at +0.5N. Trail STAYS OFF for default cells.
+//
+//  S37-H QUEUED EMPIRICAL TEST for cell [G] EmaCross8_21 (bit 6, default off).
+//  This cell has tp_mult=20.0 = effectively-no-TP. Trail MAY help here
+//  because there is no fixed TP to lose. Test deferred: cell is OFF in prod
+//  by default (cell_enable_mask=0x3F excludes bit 6); when operator activates
+//  bit 6, route an empirical baseline-vs-trail comparison through the
+//  XauTrendFollowBacktest harness before shipping.
 // =============================================================================
 //
 //  S34 P1 FIXES (2026-05-12) -- close-path bug class from HANDOFF_S34.md §3.2,
