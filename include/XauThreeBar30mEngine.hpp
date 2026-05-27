@@ -360,13 +360,22 @@ public:
         // alpha. Originally placed below the position/cooldown returns; that
         // froze the gate during open trades, leaving it stale by the time the
         // next entry chance arose. Move to top so updates always run.
-        if (use_hmm_gate && hmm_gate != nullptr && atr14_ > 0.0) {
+        //
+        // CRITICAL ATR alignment: gate the push on atr14_EXTERNAL > 0, NOT
+        // on the engine's local atr14_ which the engine falls back to via
+        // _update_local_atr (returns nonzero from bar 2 onwards). Python
+        // reference pipeline computes ATR with NaN warmup until bar 14;
+        // pushing local-ATR bars to the gate shifts bar_count_ by ~13 vs
+        // Python and misaligns regime labels. Skip first 13 bars so the
+        // gate's bar 1 corresponds to the same m30 index as Python feats row 0
+        // (= m30 idx 14, first bar with valid Wilder ATR-14).
+        if (use_hmm_gate && hmm_gate != nullptr && atr14_external > 0.0) {
             HmmM30Bar hb{};
             hb.open  = bar.open;
             hb.high  = bar.high;
             hb.low   = bar.low;
             hb.close = bar.close;
-            hb.atr14 = atr14_;
+            hb.atr14 = atr14_external;
             hmm_gate->push_bar(hb);
         }
 
@@ -424,6 +433,19 @@ public:
         // gate (use_slope_gate) remains the live-validated gate.
         // Reference Python implementation:
         // /Users/jo/Tick/mid_freq_research/hmm_causal_test.py
+        // KNOWN: on production engine config (long_only=true, ATR floor 0.30,
+        // spread cap, cost gate), the HMM-NOISE filter blocks zero entries
+        // because the 3-bar continuation signal fires only on trending bars
+        // (CONT regime by definition) AND the engine's existing pre-filters
+        // already exclude bars in NOISE regime. The Python research showing
+        // "+20% lift" used a simpler simulator without those filters --
+        // there NOISE-regime bars were passing entry, here they don't.
+        //
+        // C++ HMM IS correct: bar-level state distribution matches Python
+        // causal (33% CONT / 23% MR / 44% NOISE). At entries specifically
+        // C++ always reports CONT because the engine has already filtered.
+        // Gate stays available for engines without those pre-filters; for
+        // XauThreeBar30m it is structurally redundant.
         if (use_hmm_gate && hmm_gate != nullptr) {
             if (hmm_gate->warmed() && hmm_gate->is_noise()) {
                 omega::log_entry_block("XauThreeBar30m", "HMM_GATE_NOISE");
