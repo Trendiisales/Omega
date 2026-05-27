@@ -251,10 +251,11 @@ private:
     double _log_emit(int j, const double feat[N_FEATURES]) const noexcept {
         // log N(feat; mu[j], diag(sig2[j]))
         double s = 0.0;
+        constexpr double TWO_PI = 6.283185307179586476925286766559;  // MSVC: no M_PI
         for (int k = 0; k < N_FEATURES; ++k) {
             const double v = std::max(SIG2[j][k], 1e-12);
             const double d = feat[k] - MU[j][k];
-            s += d * d / v + std::log(2.0 * M_PI * v);
+            s += d * d / v + std::log(TWO_PI * v);
         }
         return -0.5 * s;
     }
