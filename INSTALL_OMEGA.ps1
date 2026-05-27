@@ -211,6 +211,14 @@ if ($InstallService) {
     & $NssmExe set $OmegaSvcName ObjectName        LocalSystem
     & $NssmExe set $OmegaSvcName AppRestartDelay   5000
     & $NssmExe set $OmegaSvcName AppThrottle       30000
+    # S88-followup (2026-05-27): wire IBKR DOM bridge consumer at startup.
+    # Without OMEGA_IBKR_BRIDGE=1, the consumer thread in omega_main.hpp:557
+    # never starts -> g_ibkr_l2.xau.fresh() always false -> the L2 logger at
+    # tick_gold.hpp:1205-1213 writes 0 for depth_bid_levels/depth_ask_levels/
+    # l2_bid_vol/l2_ask_vol on every tick. Captures Apr-30 to May-26 lost ~all
+    # depth data because of this. Setting the env here keeps the fix across
+    # re-installs of the service.
+    & $NssmExe set $OmegaSvcName AppEnvironmentExtra "OMEGA_IBKR_BRIDGE=1"
     & $NssmExe set $OmegaSvcName DisplayName       "Omega Trading Engine"
     & $NssmExe set $OmegaSvcName Description       "Omega commodities + indices breakout trading engine. Managed by NSSM. Use OMEGA.ps1 to start/stop/restart."
 
