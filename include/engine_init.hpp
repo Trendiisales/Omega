@@ -683,20 +683,23 @@ static void init_engines(const std::string& cfg_path)
     g_eng_audusd.shadow_mode  = true;
     g_eng_nzdusd.shadow_mode  = true;
     g_eng_usdjpy.shadow_mode  = true;
-    // S37 audit (2026-05-27): these five BracketEngine FX instances have
+    // S37 audit (2026-05-27): these five BreakoutEngine FX instances have
     // NO on_tick/on_bar/process dispatch in tick_fx.hpp -- they are
     // signal-dead. Per tick_fx.hpp:3-13 header comment, the FX symbols
     // remained "subscribed for macro context" but live trade firing was
     // replaced by the *_london_open / *_asian_open / *_sydney_open cohort.
-    // Hard-disable so they stop appearing in audit grids and engine-state
-    // dumps as if they were active. Force_close paths read pos.active --
-    // since dispatch was already absent, pos.active was already always
-    // false; disabling adds nothing at runtime but cleans the surface.
-    g_eng_eurusd.enabled = false;
-    g_eng_gbpusd.enabled = false;
-    g_eng_audusd.enabled = false;
-    g_eng_nzdusd.enabled = false;
-    g_eng_usdjpy.enabled = false;
+    //
+    // S37-X fixup (2026-05-28): the original audit commit set `.enabled =
+    // false` here, but BreakoutEngine has no `enabled` field (only
+    // shadow_mode + the underlying CRTP base, which does not expose enabled
+    // either). MSVC caught this on the VPS build; Mac OmegaBacktest target
+    // doesn't compile this path so the Mac canary went green. Since these
+    // instances already have shadow_mode = true (lines 681-685) AND there
+    // is no dispatch site that would ever set pos.active = true, they are
+    // already fully inert. Removing the broken-MSVC lines leaves runtime
+    // behaviour unchanged. To formally retire them, delete the static
+    // omega::BreakoutEngine g_eng_<sym> declarations in globals.hpp:46-51
+    // in a follow-up cleanup commit.
 
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
