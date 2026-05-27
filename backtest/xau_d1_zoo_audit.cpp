@@ -142,6 +142,12 @@ int main() {
     std::fprintf(stderr, "loaded %zu H4 bars\n", bars.size());
     if (bars.empty()) return 1;
 
+    // S37-H: env var STAGE_TRAIL=1 toggles trail on every engine that supports
+    // it. Default off keeps the original audit baseline reproducible.
+    const char* st_env = std::getenv("STAGE_TRAIL");
+    const bool stage_trail = (st_env && std::string(st_env) == "1");
+    std::fprintf(stderr, "[zoo] stage_trail=%s\n", stage_trail ? "ON" : "off");
+
     // --- XauTurtleD1 ---
     omega::XauTurtleD1Engine turtle;
     turtle.shadow_mode = true; turtle.enabled = true; turtle.symbol = "XAUUSD";
@@ -170,6 +176,7 @@ int main() {
     omega::XauPullbackContH4Engine pcH4;
     pcH4.shadow_mode = true; pcH4.enabled = true; pcH4.symbol = "XAUUSD";
     pcH4.p = omega::make_xau_pullback_cont_h4_params();
+    pcH4.p.stage_trail_enabled = stage_trail;
     auto pcH4_stats = run_engine("XauPullbackContH4", 3.96, bars, pcH4);
 
     // --- XauPullbackContD1 ---

@@ -23,6 +23,17 @@
 //  Distinct from XauTsmomFastD1Engine (momentum-direction, not reversal).
 //
 //  CAVEAT: n=29 is moderate. Min 5 live shadow trades before LIVE consider.
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  NOT empirically tested. Predicted STRONGLY NEGATIVE by structural analysis.
+//  This engine has tp_atr_mult=2.0 -- TP at 2*ATR is EXACTLY where stage1 trail
+//  arms (stage1_arm_n=2.0). Trail SL ratchets to entry+0.5N when MFE just
+//  touches TP distance, so every winner that hits TP via intrabar high would
+//  simultaneously trigger the trail SL at +0.5N. Result: trail ALWAYS fires
+//  before TP, capping all winners at +0.5N instead of +2N. Predicted impact:
+//  catastrophic -- likely -70% or worse net PnL. Trail STAYS OFF. NOT
+//  implemented to keep diff small. If verification ever needed, expect to
+//  see TRAIL1 count = baseline TP_HIT count almost exactly.
 // =============================================================================
 
 #pragma once

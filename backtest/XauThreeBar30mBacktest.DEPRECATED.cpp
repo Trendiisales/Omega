@@ -1,4 +1,21 @@
 // =============================================================================
+// DEPRECATED 2026-05-27 (S37 audit) -- USE threebar30m_xau_S35P3_backtest.cpp
+// =============================================================================
+// This harness has TWO known fidelity bugs:
+//   1. TP/SL fill at literal price (`exit_px = tp ? trade.tp_px : trade.sl_px`
+//      at line ~240). Real fills require crossing the spread: `bid` if long,
+//      `ask` if short. Phantom edge ~30-60% on XAU spreads.
+//   2. Bar-OHLC reconstruction for fill detection (no synthetic intra-bar
+//      tick path), but the engine's S63 `LOSS_CUT_PCT=0.05` was NOT
+//      disabled in this harness. On real ticks LOSS_CUT fires rarely; on
+//      synthesised paths with adverse-first ticks it fires on every trade.
+//
+// Both bugs are documented in `backtest/HARNESS_FIDELITY_CHECKLIST.md`.
+// The replacement harness `threebar30m_xau_S35P3_backtest.cpp` uses touch
+// fills and disables S63 PCT cuts via constexpr override (see L588/632/724).
+//
+// .DEPRECATED.cpp suffix prevents accidental g++ runs and matches-by-glob.
+// =============================================================================
 // XauThreeBar30mBacktest.cpp -- Standalone backtest for XauThreeBar30mEngine
 // =============================================================================
 //

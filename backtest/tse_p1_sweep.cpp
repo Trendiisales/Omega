@@ -4,7 +4,7 @@
 //  file is standalone and reproduces the P1 logic inline -- no dependency on
 //  the deleted TickScalpEngine.hpp. Preserved as historical sweep record.)
 // Build: clang++ -O3 -std=c++20 -o /tmp/tse_p1 /tmp/tse_p1_sweep.cpp
-// Run:   /tmp/tse_p1 ~/Downloads/l2_ticks_2026-04-16.csv
+// Run:   /tmp/tse_p1 ~/Downloads/l2_ticks_2026-04-16.csv (TOXIC -- see engine_init.hpp:95+ banner)
 
 #include <algorithm>
 #include <chrono>

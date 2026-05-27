@@ -1,7 +1,7 @@
 // fast_sweep.cpp — CFE logic, extended grid searching for fast-entry edge
 // Same CRTP engine as cfe2. Grid extends sm down to 5s, mh down to 30s.
 // Build: clang++ -O3 -std=c++20 -o /tmp/fast_sweep /tmp/fast_sweep.cpp
-// Run:   /tmp/fast_sweep ~/Downloads/l2_ticks_2026-04-16.csv
+// Run:   /tmp/fast_sweep ~/Downloads/l2_ticks_2026-04-16.csv (TOXIC -- see engine_init.hpp:95+ banner)
 
 #include <algorithm>
 #include <chrono>

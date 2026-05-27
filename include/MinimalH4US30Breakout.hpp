@@ -46,6 +46,17 @@
 //      Donchian math used here and writes a valid bars_us30_h4.dat directly,
 //      eliminating the 40-56hr cold-start cost on first deploy.
 //
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  NOT empirically tested on this engine. Predicted NEGATIVE by analogy to
+//  EmaPullback (TP=2.5R, trail -76%) and XauPullbackContH4 (TP=5N, trail -36%).
+//  This engine: TP at 4*ATR = closer to pcH4 (5N) than EmaPullback (2.5R).
+//  Stage1 arm at 2*ATR -> trail SL at +0.5N. TP at +4N. Predicted: trail
+//  catches winners at +0.5N before they reach 4N target, replacing TP_HIT
+//  wins with much smaller TRAIL exits. Predicted impact: -30 to -50% net PnL.
+//  If empirical verification needed, route through htf_bt_US30 or build a
+//  standalone harness. Until then, trail STAYS OFF and is NOT implemented
+//  on this engine to keep the diff small.
+//
 //  NOTES:
 //    - shadow_mode=true default. NEVER set false without N>=10 shadow trade
 //      validation matching backtest expectation (~0.25 trades/day = 5/month).

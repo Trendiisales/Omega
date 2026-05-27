@@ -12,6 +12,13 @@
 //    Cost 30bp:   FUL Sh=8.46
 //    Cost 50bp:   FUL Sh=7.48 (most robust of mega_sweep2 batch)
 //    n=23, PnL=44.6%, WR=65.2%, mdd=4.0%
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  NOT empirically tested. Predicted NEGATIVE by analogy to XauPullbackContH4
+//  (tp_atr_mult=5, trail -36% Sharpe). Same TP geometry. Doji-rej is a
+//  reversal signal -- exit via TP or stop on continuation. Trail-cut at
+//  +0.5N would short-circuit the reversal play before it completes.
+//  Trail STAYS OFF and is NOT implemented to keep diff small.
 // =============================================================================
 
 #pragma once

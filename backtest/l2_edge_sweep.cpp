@@ -214,7 +214,7 @@ inline const SymbolSpec& spec_for(const std::string& sym) {
 
 // Detect symbol from filename. Examples:
 //   l2_ticks_XAUUSD_2026-05-08.csv   -> XAUUSD
-//   l2_ticks_2026-04-16.csv          -> XAUUSD (legacy)
+//   l2_ticks_2026-04-16.csv (TOXIC -- see engine_init.hpp:95+ banner)          -> XAUUSD (legacy)
 //   outputs/duka_xauusd_daily/*.csv  -> XAUUSD
 //   outputs/histdata_eurusd_daily/*  -> EURUSD
 //   outputs/eurusd_daily/*           -> EURUSD
@@ -422,7 +422,10 @@ inline size_t run_trade(const std::vector<Tick>& T, size_t start_idx,
         const Tick& X = T[j];
         const bool tp_hit = is_long ? (X.ask >= tp_px) : (X.bid <= tp_px);
         const bool sl_hit = is_long ? (X.bid <= sl_px) : (X.ask >= sl_px);
-        if (tp_hit) { exit_px = tp_px; }
+        // S37 audit fix: fill TP at touch (bid for long, ask for short),
+        // not at the literal tp_px level. SL leg already correct below.
+        // Filling at tp_px overstated winners by ~half-spread per trade.
+        if (tp_hit) { exit_px = is_long ? X.bid : X.ask; }
         else if (sl_hit) { exit_px = is_long ? X.bid : X.ask; }
         else if ((X.ts_ms / 1000 - entry_ts_s) >= cfg.max_hold_sec) {
             exit_px = X.mid;

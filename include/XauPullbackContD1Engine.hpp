@@ -17,6 +17,13 @@
 //
 //  CAVEAT: IS Sh=15.73 vs OOS Sh=6.90 — IS half is stronger, but OOS still
 //  excellent. ~16 trades/year on D1 = sparse.
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  NOT empirically tested on this engine. Predicted NEGATIVE by analogy to
+//  XauPullbackContH4 (same engine family, TP=5*ATR, trail -36% Sharpe on
+//  xau_d1_zoo_audit). D1 timeframe has multi-day holds; trail-cut at +0.5N
+//  would close winners before the multi-day pullback continuation resolves.
+//  Trail STAYS OFF and is NOT implemented to keep diff small.
 // =============================================================================
 
 #pragma once

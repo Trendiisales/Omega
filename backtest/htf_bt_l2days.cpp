@@ -345,6 +345,11 @@ int main(int argc, char** argv) {
                 else          sl_hit = false;
             }
             if (sl_hit || tp_hit) {
+                // S37 audit fix (verify-only, no code change): the _q suffix
+                // signals these are quoted (bid for long-exit, ask for short-
+                // exit) levels. Detection above tests bid_low/high (long) and
+                // ask_high/low (short), so pos.sl/pos.tp ARE the touch price.
+                // Half-spread bug does not apply to this loop.
                 double exit_px = sl_hit ? sl_px_q : tp_px_q;
                 double pnl_pts = (pos.is_long
                     ? (exit_px - pos.entry)

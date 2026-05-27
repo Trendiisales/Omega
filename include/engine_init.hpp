@@ -97,7 +97,20 @@ static void init_engines(const std::string& cfg_path)
     //   produced positive PnL. Best combo -$4.30, worst -$225, mean -$81.
     //   Original 12-trade / 2-day backtest was a tiny lucky window.
     //   Disabling rather than deleting -- file remains for reference.
-    g_rsi_extreme.enabled      = false;            // DISABLED 2026-05-01 -- 0/153 combos profitable
+    //
+    // ***  S37 AUDIT REVERSAL (2026-05-27): BASELINE WAS CONTAMINATED.  ***
+    // The Apr-16 capture was inside the cTrader-off / FIX-not-wired window
+    // when gold_l2_imbalance was permanently stuck at 0.5 (default-init).
+    // Every one of the 153 sweep combos saw a constant signal at col index
+    // 4 (l2_imb=0.5 forever) and col 15 (micro_edge=0.0 forever). The
+    // "0/153 produced positive PnL" finding is an artifact of constant-
+    // signal data, NOT a no-edge verdict on the engine. RSIExtremeTurn
+    // should be re-tested against a post-S8 (2026-05-06+) L2 capture
+    // before the disable is treated as final. data/l2_ticks_2026-04-16.csv
+    // is retained for reproducibility of the original (contaminated)
+    // sweep but DO NOT use it as a research baseline -- any sweep run
+    // against it is re-fitting the same dead signal.
+    g_rsi_extreme.enabled      = false;            // DISABLED 2026-05-01 -- baseline contaminated, RE-TEST PENDING
     g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
@@ -670,6 +683,20 @@ static void init_engines(const std::string& cfg_path)
     g_eng_audusd.shadow_mode  = true;
     g_eng_nzdusd.shadow_mode  = true;
     g_eng_usdjpy.shadow_mode  = true;
+    // S37 audit (2026-05-27): these five BracketEngine FX instances have
+    // NO on_tick/on_bar/process dispatch in tick_fx.hpp -- they are
+    // signal-dead. Per tick_fx.hpp:3-13 header comment, the FX symbols
+    // remained "subscribed for macro context" but live trade firing was
+    // replaced by the *_london_open / *_asian_open / *_sydney_open cohort.
+    // Hard-disable so they stop appearing in audit grids and engine-state
+    // dumps as if they were active. Force_close paths read pos.active --
+    // since dispatch was already absent, pos.active was already always
+    // false; disabling adds nothing at runtime but cleans the surface.
+    g_eng_eurusd.enabled = false;
+    g_eng_gbpusd.enabled = false;
+    g_eng_audusd.enabled = false;
+    g_eng_nzdusd.enabled = false;
+    g_eng_usdjpy.enabled = false;
 
     apply_engine_config(g_eng_sp);   // [sp] section: tp=0.60%, sl=0.35%, vol=0.04%, regime-gated
     apply_engine_config(g_eng_nq);   // [nq] section: tp=0.70%, sl=0.40%, vol=0.05%, regime-gated
@@ -1939,7 +1966,18 @@ static void init_engines(const std::string& cfg_path)
             //   3-period intersect: each period +ve, min PF 1.33.
             //   WF 4 folds: 3/4 positive.
             const char* warmup_eurgbp = "phase1/signal_discovery/warmup_EURGBP_H1.csv";
-            g_amr_eurgbp.enabled     = true;
+            // S37 audit (2026-05-27): EURGBP is NOT a subscribed FIX feed
+            // symbol in Omega. There is no on_tick_eurgbp handler and no
+            // tick path reaches this engine. The booting code below
+            // initialises state but the engine receives zero ticks.
+            // Disabled until either (a) EURGBP is added to the FIX
+            // subscription list + an on_tick_eurgbp handler is added in
+            // tick_fx.hpp, or (b) the engine is repurposed to read EURGBP
+            // synthetically from EURUSD/GBPUSD cross. Validation cited
+            // above (IS PF 1.80 / OOS PF 1.68) used research-fed ticks
+            // outside the live feed loop and is still load-bearing once
+            // the dispatch lands.
+            g_amr_eurgbp.enabled     = false;
             amr_boot(g_amr_eurgbp, "eurgbp", warmup_eurgbp);
 
             g_amr_audusd.enabled     = false; // marginal PF 1.34; awaiting deep tune
@@ -2310,7 +2348,17 @@ static void init_engines(const std::string& cfg_path)
         // M15 dispatch wired in tick_indices.hpp on 2026-05-12 under S36-P4
         // (commit b6e9495). Engine receives M15 bars and per-tick management.
         g_ustec_tf_htf.shadow_mode      = true;   // HARD shadow until live-validated
-        g_ustec_tf_htf.enabled          = false;  // S94 2026-05-15: disabled — replaced by Nas100ShortEngine (OOS-validated PF=3.38). Was shadow-only, never live.
+        // S37 audit (2026-05-27): RE-ENABLED in HARD shadow. The S94 disable
+        // citing replacement by Nas100ShortEngine was load-bearing on a ghost
+        // -- the class header existed (include/Nas100ShortEngine.hpp) but
+        // was never instantiated as a global, never dispatched, never built.
+        // Net effect of S94: zero NAS/USTEC short coverage running. This
+        // engine had been S35-P3 OOS-validated on 16mo of NSXUSD ticks
+        // (+$11733 net, PF 1.05) and ships shadow-only here so it can be
+        // observed and promoted on real evidence rather than on an
+        // unimplemented "replacement". Promote to enabled=true && shadow_mode=false
+        // only after ≥30 shadow trades w/ WR ≥35% net positive after costs.
+        g_ustec_tf_htf.enabled          = true;   // S37 2026-05-27: re-enabled HARD shadow (ghost replacement reversed)
         g_ustec_tf_htf.lot              = 0.1;
         g_ustec_tf_htf.max_spread       = 5.0;
         g_ustec_tf_htf.be_trigger_atr   = 1.0;    // S35-P6 TUNED (mirrors XauThreeBar30m)
@@ -2591,7 +2639,16 @@ static void init_engines(const std::string& cfg_path)
     // Daily loss cap stops the engine entirely after a bad sequence.
     g_trend_pb_nq.MIN_EMA_SEP         = 25.0;
     g_trend_pb_nq.DAILY_LOSS_CAP      = 80.0;   // $80 daily cap: ~6 SL hits at $12 each
-    g_trend_pb_nq.enabled             = false;   // S94 2026-05-15: disabled — NAS/USTEC engines consolidated into Nas100ShortEngine (OOS-validated PF=3.38). Was live with $80 daily cap.
+    // S37 audit (2026-05-27): RE-ENABLED in HARD shadow. S94 cited
+    // consolidation into Nas100ShortEngine -- which was never instantiated
+    // (see include/Nas100ShortEngine.hpp deletion in same commit). The
+    // consolidation never happened; this engine was simply turned off and
+    // its replacement never showed up. Restored in HARD shadow rather
+    // than restoring to live (prior state) because the live PnL history
+    // pre-S94 is unknown and worth re-observing in shadow first. Promote
+    // by setting shadow_mode = kShadowDefault after evidence.
+    g_trend_pb_nq.shadow_mode         = true;
+    g_trend_pb_nq.enabled             = true;    // S37 2026-05-27: re-enabled HARD shadow (ghost replacement reversed)
     g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
     g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
     g_trend_pb_sp.enabled             = false;   // S95 2026-05-15: disabled — SPX UltimateBacktest OOS failed (v2 OOS PF=0.88). No trend-following edge on US500. Was live with $80 daily cap.
@@ -3219,6 +3276,54 @@ static void init_engines(const std::string& cfg_path)
             apply_supervisor(g_sup_usdjpy, "USDJPY",  g_sym_cfg.get("USDJPY"),  g_cfg.usdjpy_max_spread_pct);
             apply_supervisor(g_sup_brent,  "BRENT", g_sym_cfg.get("BRENT"), g_cfg.brent_max_spread_pct);
             apply_supervisor(g_sup_gold,   "XAUUSD",  g_sym_cfg.get("XAUUSD"),  g_cfg.bracket_gold_max_spread_pct);
+            // S37-X (2026-05-28): tie supervisor allow_* to engine disable
+            // state. Without this, supervisor logs "winner=X allow=1 reason=
+            // valid_signal" on every approving tick while the engine downstream
+            // is hardcoded-off or has no dispatch wired -- operator sees the
+            // approvals on the dashboard but no fires happen, with no log line
+            // naming the dead gate. This was a 28-day silent observability
+            // hole for XAUUSD bracket. Apply the same tie to every other
+            // supervisor whose downstream is known dead/disconnected:
+            //
+            //   - XAUUSD (g_sup_gold):   bracket dispatched via tick_gold.hpp,
+            //                             gated by g_disable_bracket_gold.
+            //   - INDICES (sp/nq/us30/nas100/uk100/estx50/ger30): supervisor
+            //     dispatch sites in tick_indices.hpp are COMMENTED OUT
+            //     (see lines 101-105, 440-445, 667-669, 944-946, 973-975,
+            //     1030-1032). sup_decision() is called + LOGGED every tick
+            //     but no consumer. Force allow_*=false so the log stops
+            //     lying and CPU is saved on the gate evaluation.
+            //   - FX (eurusd/gbpusd/audusd/nzdusd/usdjpy): instantiated +
+            //     configured here but sup_decision() is NEVER called from
+            //     tick_fx.hpp. Decorative. Same force-off treatment.
+            //   - BRENT (g_sup_brent), USOIL (g_sup_cl): dispatch ACTIVE
+            //     in tick_oil.hpp, leave as-is.
+            if (g_disable_bracket_gold) {
+                g_sup_gold.cfg.allow_bracket = false;
+                std::cout << "[SUPERVISOR-XAUUSD] allow_bracket FORCE-OFF: "
+                             "g_disable_bracket_gold=true (globals.hpp). "
+                             "Re-enable engine first, then supervisor will fire.\n";
+            }
+            // Indices: dispatch commented out in tick_indices.hpp.
+            for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_us30, &g_sup_nas100,
+                              &g_sup_uk100, &g_sup_estx50, &g_sup_ger30}) {
+                sup->cfg.allow_bracket  = false;
+                sup->cfg.allow_breakout = false;
+            }
+            std::cout << "[SUPERVISOR-INDICES] allow_bracket/breakout FORCE-OFF on all 7 "
+                         "index supervisors (sp/nq/us30/nas100/uk100/estx50/ger30): "
+                         "dispatch sites in tick_indices.hpp commented out. Re-enable "
+                         "the dispatch call first, then supervisor will fire.\n";
+            // FX: sup_decision never called from tick_fx.hpp.
+            for (auto* sup : {&g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
+                              &g_sup_nzdusd, &g_sup_usdjpy}) {
+                sup->cfg.allow_bracket  = false;
+                sup->cfg.allow_breakout = false;
+            }
+            std::cout << "[SUPERVISOR-FX] allow_bracket/breakout FORCE-OFF on all 5 "
+                         "FX supervisors (eurusd/gbpusd/audusd/nzdusd/usdjpy): "
+                         "sup_decision() never called from tick_fx.hpp. Wire the "
+                         "dispatch first, then supervisor will fire.\n";
             std::cout << "[SUPERVISOR] All supervisors configured from " << sym_ini << "\n";
             std::cout << "[SYMCFG] All engine params overridden from " << sym_ini << "\n";
         } else {
@@ -3252,6 +3357,12 @@ static void init_engines(const std::string& cfg_path)
                               &g_sup_eurusd, &g_sup_gbpusd, &g_sup_audusd,
                               &g_sup_nzdusd, &g_sup_usdjpy, &g_sup_brent})
                 sup->cfg.allow_bracket = false;
+            // S37-X (2026-05-28): same engine-state tie as the symbols.ini path.
+            if (g_disable_bracket_gold) {
+                g_sup_gold.cfg.allow_bracket = false;
+                std::cout << "[SUPERVISOR-XAUUSD] allow_bracket FORCE-OFF: "
+                             "g_disable_bracket_gold=true.\n";
+            }
             // Raise cooldown threshold from default 3 to 20
             for (auto* sup : {&g_sup_sp, &g_sup_nq, &g_sup_cl, &g_sup_us30, &g_sup_nas100,
                               &g_sup_ger30, &g_sup_uk100, &g_sup_estx50,

@@ -1,4 +1,17 @@
 // =============================================================================
+// BROKEN 2026-05-27 (S37 audit) -- WILL NOT COMPILE AGAINST CURRENT TREE
+// =============================================================================
+// This harness `#include`s headers that have been deleted in earlier engine
+// purges (GoldFlowEngine.hpp, DomPersistEngine.hpp). Compilation will fail
+// at the first include. The harness is preserved as a historical record of
+// the multi-engine benchmark protocol (CFE / GFE / MCE / RRE / DPE), not as
+// runnable code.
+//
+// To revive: strip references to the dead engines and re-test the survivors
+// (CandleFlowEngine, MacroCrashEngine, RSIReversalEngine) against a
+// post-S8 L2 capture. Until then, .BROKEN_STALE_INCLUDES.cpp suffix
+// prevents accidental g++ runs and matches-by-glob.
+// =============================================================================
 // omega_bt.cpp -- Multi-engine Omega backtest
 // Tests ALL gold engines independently on 2yr tick data.
 //

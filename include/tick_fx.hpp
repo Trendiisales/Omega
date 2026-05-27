@@ -640,6 +640,15 @@ static void on_tick_usdcad(
                                   /*wall_above=*/false, /*wall_below=*/false,
                                   /*l2_real=*/false,
                                   nullptr);
+
+        // S37 audit fix (2026-05-27): wire previously-orphan g_fx_ens_usdcad
+        // dispatch. The engine has 4 cells configured + booted in
+        // engine_init.hpp:1941-1947 (S37h PF 2.20-2.31 across cells) but
+        // was never dispatched -- the booting code was wired without the
+        // tick-path call site landing. Add it now under the same gating
+        // pattern as g_fx_ens_eurusd / g_fx_ens_gbpusd above.
+        if (g_fx_ens_usdcad.enabled)
+            g_fx_ens_usdcad.on_tick(bid, ask, now_ms_fx, write_shadow_csv);
     }
 
     (void)sym; (void)regime; (void)dispatch;

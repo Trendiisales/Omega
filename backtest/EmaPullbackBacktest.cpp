@@ -282,6 +282,8 @@ struct Args {
     bool        use_vol_band = false;
     double      vb_low       = 0.30;
     double      vb_high      = 0.85;
+    // S37-H stage trail toggle
+    bool        stage_trail  = false;
 };
 
 static void usage(const char* argv0) {
@@ -308,6 +310,7 @@ static void usage(const char* argv0) {
         "                        back-comparison):\n"
         "                          LC={0.0, 0.5, 1.0}  ARM={0.0, 0.20, 0.40}\n"
         "                          BUF={0.0, 0.025, 0.05}\n"
+        "  --stage-trail         enable S37-H 3-stage ATR trail on all cells\n"
         "  --quiet               suppress engine printf chatter\n"
         "  --help / -h           this help\n",
         argv0);
@@ -344,6 +347,7 @@ static Args parse_args(int argc, char** argv) {
         else if (s == "--vol-band")   a.use_vol_band = true;
         else if (s == "--vb-lo")      a.vb_low       = std::strtod(take().c_str(), nullptr);
         else if (s == "--vb-hi")      a.vb_high      = std::strtod(take().c_str(), nullptr);
+        else if (s == "--stage-trail") a.stage_trail = true;
         else if (s == "--help" || s == "-h") { usage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "ERROR: unknown arg '%s'\n", s.c_str());
@@ -376,6 +380,7 @@ static void configure_portfolio(::omega::EpbPortfolio& p, const Args& a,
     p.use_vol_band_gate = a.use_vol_band;
     p.vol_band_low_pct  = a.vb_low;
     p.vol_band_high_pct = a.vb_high;
+    p.stage_trail_enabled = a.stage_trail;
     p.init();
 }
 

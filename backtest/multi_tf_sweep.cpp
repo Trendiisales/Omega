@@ -105,16 +105,18 @@ struct SymBaseline {
     double pt_size = 1.0;        // price-unit per "point"
     double val_per_pt = 1.0;     // $ per (price unit) per lot
     double lot = 0.01;
+    // S37 audit fix: per-symbol half-spread for touch-fill on bar-OHLC exits.
+    double half_spread = 0.15;   // price-units; conservative typical spread/2
 };
 static SymBaseline baseline_for(const std::string& s_in) {
     std::string s = u::upper(s_in);
     SymBaseline b; b.symbol = s;
-    if      (s == "XAUUSD") { b.pt_size = 0.01;   b.val_per_pt = 1.0; b.lot = 0.01; }
-    else if (s == "US500" || s == "SPX500") { b.pt_size = 0.1;  b.val_per_pt = 1.0; b.lot = 0.1; }
-    else if (s == "USTEC" || s == "NAS100") { b.pt_size = 0.1;  b.val_per_pt = 1.0; b.lot = 0.1; }
-    else if (s == "EURUSD" || s == "GBPUSD") { b.pt_size = 0.0001; b.val_per_pt = 1.0; b.lot = 0.01; }
-    else if (s == "USDJPY") { b.pt_size = 0.01;   b.val_per_pt = 1.0; b.lot = 0.01; }
-    else { b.pt_size = 0.01; b.val_per_pt = 1.0; b.lot = 0.01; }  // sensible XAU fallback
+    if      (s == "XAUUSD") { b.pt_size = 0.01;   b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.15; }
+    else if (s == "US500" || s == "SPX500") { b.pt_size = 0.1;  b.val_per_pt = 1.0; b.lot = 0.1; b.half_spread = 0.25; }
+    else if (s == "USTEC" || s == "NAS100") { b.pt_size = 0.1;  b.val_per_pt = 1.0; b.lot = 0.1; b.half_spread = 0.5; }
+    else if (s == "EURUSD" || s == "GBPUSD") { b.pt_size = 0.0001; b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.00005; }
+    else if (s == "USDJPY") { b.pt_size = 0.01;   b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.005; }
+    else { b.pt_size = 0.01; b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.15; }  // sensible XAU fallback
     return b;
 }
 static std::string detect_symbol(const std::string& path) {
@@ -339,15 +341,20 @@ static TradeResult simulate_atr_bracket(const std::vector<Bar>& bars,
 
     size_t end_idx = std::min(bars.size(), entry_idx + 1 + (size_t)max_hold_bars);
     double exit_px = entry_px;
+    // S37 audit fix: fill TP/SL at touch (bid for long exit, ask for short exit).
+    // Bar-OHLC only — model touch as level ± half-spread (long sells worse bid,
+    // short covers worse ask). Filling at the literal level overstates winners
+    // by ~half-spread per trade (~30-60% phantom edge on XAU).
+    const double hs = sb.half_spread;
     for (size_t i = entry_idx + 1; i < end_idx; ++i) {
         const auto& b = bars[i];
         if (side > 0) {
-            if (b.l <= sl) { exit_px = sl; r.hit_sl = true; r.bars = (int)(i - entry_idx); break; }
-            if (b.h >= tp) { exit_px = tp; r.hit_tp = true; r.bars = (int)(i - entry_idx); break; }
+            if (b.l <= sl) { exit_px = sl - hs; r.hit_sl = true; r.bars = (int)(i - entry_idx); break; }
+            if (b.h >= tp) { exit_px = tp - hs; r.hit_tp = true; r.bars = (int)(i - entry_idx); break; }
             exit_px = b.c;
         } else {
-            if (b.h >= sl) { exit_px = sl; r.hit_sl = true; r.bars = (int)(i - entry_idx); break; }
-            if (b.l <= tp) { exit_px = tp; r.hit_tp = true; r.bars = (int)(i - entry_idx); break; }
+            if (b.h >= sl) { exit_px = sl + hs; r.hit_sl = true; r.bars = (int)(i - entry_idx); break; }
+            if (b.l <= tp) { exit_px = tp + hs; r.hit_tp = true; r.bars = (int)(i - entry_idx); break; }
             exit_px = b.c;
         }
     }

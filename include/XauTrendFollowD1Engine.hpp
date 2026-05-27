@@ -66,6 +66,13 @@
 //
 //      // tick_gold.hpp every tick (alongside g_xau_tf_4h.on_tick):
 //      g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+//
+//  S37 Phase H STAGE-TRAIL TOMBSTONE-BY-ANALOGY (2026-05-27b).
+//  Multi-cell engine; cells use TPs at 3-6*ATR. Predicted NEGATIVE by analogy
+//  to XauPullbackContH4 (trail -36% Sharpe at TP=5N). D1 timeframe makes the
+//  trail-vs-multi-day-trend collision sharper -- a D1 winner that touches 2N
+//  MFE on day 1 would be trail-cut at +0.5N before the rest of the multi-day
+//  trend unfolds. Trail STAYS OFF and is NOT implemented to keep diff small.
 // =============================================================================
 //
 //  S34 P1 FIXES (2026-05-12) -- close-path bug class from HANDOFF_S34.md §3.2,

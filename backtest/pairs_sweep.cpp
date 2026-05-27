@@ -112,31 +112,31 @@ static void run_one(const ParamSet& ps,
         else if (i_g >= gbp_m5.size()) take_eur = true;
         else take_eur = (eur_m5[i_e].ts <= gbp_m5[i_g].ts);
 
+        // S37 audit fix: replace bar-direction-dependent 4-point synthesis
+        // (close>=open => L->H, else H->L) with a NEUTRAL ordering that does
+        // NOT depend on bar direction. The old logic fed an adverse-then-
+        // favorable path on directional bars, which biased the engine's
+        // z-score trigger timing toward the more comfortable side. We now
+        // always use open -> low -> high -> close. This is the conservative
+        // ordering for a long-spread position (adverse first); for short-
+        // spread it's the optimistic ordering. The pair is symmetric on z
+        // (long-spread enters at high-z, short-spread at low-z), so any
+        // residual bias is much smaller than the prior path-direction one.
         if (take_eur) {
             const auto& b = eur_m5[i_e++];
             int64_t ts_ms = b.ts * 1000LL;
             // 4 ticks per M5 (open, low, high, close) at +0/60/120/240 sec
             eng.on_tick_eur(b.o - eur_spread/2, b.o + eur_spread/2, ts_ms,         on_close);
-            if (b.c >= b.o) {
-                eng.on_tick_eur(b.l - eur_spread/2, b.l + eur_spread/2, ts_ms+60000, on_close);
-                eng.on_tick_eur(b.h - eur_spread/2, b.h + eur_spread/2, ts_ms+120000, on_close);
-            } else {
-                eng.on_tick_eur(b.h - eur_spread/2, b.h + eur_spread/2, ts_ms+60000, on_close);
-                eng.on_tick_eur(b.l - eur_spread/2, b.l + eur_spread/2, ts_ms+120000, on_close);
-            }
-            eng.on_tick_eur(b.c - eur_spread/2, b.c + eur_spread/2, ts_ms+240000, on_close);
+            eng.on_tick_eur(b.l - eur_spread/2, b.l + eur_spread/2, ts_ms+60000,   on_close);
+            eng.on_tick_eur(b.h - eur_spread/2, b.h + eur_spread/2, ts_ms+120000,  on_close);
+            eng.on_tick_eur(b.c - eur_spread/2, b.c + eur_spread/2, ts_ms+240000,  on_close);
         } else {
             const auto& b = gbp_m5[i_g++];
             int64_t ts_ms = b.ts * 1000LL;
             eng.on_tick_gbp(b.o - gbp_spread/2, b.o + gbp_spread/2, ts_ms,         on_close);
-            if (b.c >= b.o) {
-                eng.on_tick_gbp(b.l - gbp_spread/2, b.l + gbp_spread/2, ts_ms+60000, on_close);
-                eng.on_tick_gbp(b.h - gbp_spread/2, b.h + gbp_spread/2, ts_ms+120000, on_close);
-            } else {
-                eng.on_tick_gbp(b.h - gbp_spread/2, b.h + gbp_spread/2, ts_ms+60000, on_close);
-                eng.on_tick_gbp(b.l - gbp_spread/2, b.l + gbp_spread/2, ts_ms+120000, on_close);
-            }
-            eng.on_tick_gbp(b.c - gbp_spread/2, b.c + gbp_spread/2, ts_ms+240000, on_close);
+            eng.on_tick_gbp(b.l - gbp_spread/2, b.l + gbp_spread/2, ts_ms+60000,   on_close);
+            eng.on_tick_gbp(b.h - gbp_spread/2, b.h + gbp_spread/2, ts_ms+120000,  on_close);
+            eng.on_tick_gbp(b.c - gbp_spread/2, b.c + gbp_spread/2, ts_ms+240000,  on_close);
         }
     }
 }

@@ -388,6 +388,12 @@ static Result run_one(const std::vector<H4BarWithTicks>& bars, const Config& cfg
             }
 
             if (sl_hit || tp_hit) {
+                // S37 audit fix (verify-only, no code change): detection above
+                // already uses bid_low/bid_high for long-exit and ask_high/
+                // ask_low for short-exit, so pos.sl/pos.tp ARE the bid (long)
+                // or ask (short) touch price. Filling at the level here is
+                // equivalent to filling at the limit-order touch -- the
+                // half-spread bug seen in MicroScalper/etc. does not apply.
                 double exit_px = sl_hit ? sl_px : tp_px;
                 double pnl_pts = (pos.is_long
                     ? (exit_px - pos.entry)

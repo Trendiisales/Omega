@@ -404,6 +404,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     g_macro_ctx.nzd_microprice_bias  = g_l2_nzd.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.jpy_microprice_bias  = g_l2_jpy.microprice_bias.load(std::memory_order_relaxed);
     g_macro_ctx.ger40_microprice_bias= g_l2_ger40.microprice_bias.load(std::memory_order_relaxed);
+    g_macro_ctx.brent_microprice_bias= g_l2_brent.microprice_bias.load(std::memory_order_relaxed);
 
     // L2 quality flag -- "is FIX L2 healthy somewhere?" (field name preserved for
     // downstream consumers in tick_fx.hpp / GUI / engines; semantics now FIX-only).
@@ -639,12 +640,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             bull = cs.bullish_divergence();
             bear = cs.bearish_divergence();
         };
+        // S37 audit: nq/eurusd/usdjpy CVD fields + sp_cvd_*_div removed
+        // -- no engine reads them. gold_cvd_dir + gold_cvd_bull_div +
+        // gold_cvd_bear_div remain because tick_gold.hpp consumes them.
+        // sp_cvd_dir retained for GUI surface area.
         bool dummy_b = false, dummy_b2 = false;
-        upd_cvd(g_macro_ctx.gold_cvd_dir,   g_macro_ctx.gold_cvd_bull_div, g_macro_ctx.gold_cvd_bear_div, "XAUUSD");
-        upd_cvd(g_macro_ctx.sp_cvd_dir,     g_macro_ctx.sp_cvd_bull_div,   g_macro_ctx.sp_cvd_bear_div,   "US500.F");
-        upd_cvd(g_macro_ctx.nq_cvd_dir,     dummy_b,  dummy_b2,  "USTEC.F");
-        upd_cvd(g_macro_ctx.eurusd_cvd_dir, dummy_b,  dummy_b2,  "EURUSD");
-        upd_cvd(g_macro_ctx.usdjpy_cvd_dir, dummy_b,  dummy_b2,  "USDJPY");
+        upd_cvd(g_macro_ctx.gold_cvd_dir, g_macro_ctx.gold_cvd_bull_div, g_macro_ctx.gold_cvd_bear_div, "XAUUSD");
+        upd_cvd(g_macro_ctx.sp_cvd_dir,   dummy_b,                       dummy_b2,                       "US500.F");
     }
 
     // Push L2 imbalance snapshot to telemetry
@@ -1940,14 +1942,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 "%d,%d,%llu,"
                 "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
                 (long long)now_ms_s, sp_mid, bid, ask,
-                0.0, 0.0, 0.0,
+                g_l2_sp.imbalance.load(std::memory_order_relaxed), 0.0, 0.0,
                 0, 0, (unsigned long long)0,
                 0,
                 0.0,
                 0,
                 0.0,
                 has_pos_sp,
-                0.0,
+                g_l2_sp.microprice_bias.load(std::memory_order_relaxed),
                 0.0);
             fflush(s_sp_f);
         }
@@ -1997,14 +1999,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 "%d,%d,%llu,"
                 "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
                 (long long)now_ms_n, nq_mid, bid, ask,
-                0.0, 0.0, 0.0,
+                g_l2_nq.imbalance.load(std::memory_order_relaxed), 0.0, 0.0,
                 0, 0, (unsigned long long)0,
                 0,
                 0.0,
                 0,
                 0.0,
                 has_pos_nq,
-                0.0,
+                g_l2_nq.microprice_bias.load(std::memory_order_relaxed),
                 0.0);
             fflush(s_nq_f);
         }
@@ -2057,14 +2059,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 "%d,%d,%llu,"
                 "%d,%.3f,%d,%.3f,%d,%.4f,%.4f\n",
                 (long long)now_ms_a, nas_mid, bid, ask,
-                0.0, 0.0, 0.0,
+                g_l2_nas.imbalance.load(std::memory_order_relaxed), 0.0, 0.0,
                 0, 0, (unsigned long long)0,
                 0,
                 0.0,
                 0,
                 0.0,
                 has_pos_nas,
-                0.0,
+                g_l2_nas.microprice_bias.load(std::memory_order_relaxed),
                 0.0);
             fflush(s_nas_f);
         }
