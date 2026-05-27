@@ -38,19 +38,27 @@ def now_ms() -> int:
 # internal trading-class symbols are plain DAX / ESTX50. Wrong code returns
 # "Error 200: No security definition" rather than an ambiguous-contract list.
 INDEX_FUTURES = {
-    "US500":  dict(symbol="ES",     exchange="CME",   currency="USD"),
-    "NAS100": dict(symbol="NQ",     exchange="CME",   currency="USD"),
-    "USTEC":  dict(symbol="NQ",     exchange="CME",   currency="USD"),  # alias of NAS100
-    "DJ30":   dict(symbol="YM",     exchange="CBOT",  currency="USD"),
-    "GER40":  dict(symbol="DAX",    exchange="EUREX", currency="EUR"),
-    "ESTX50": dict(symbol="ESTX50", exchange="EUREX", currency="EUR"),
-    "UK100":  dict(symbol="Z",      exchange="ICEEU", currency="GBP"),
+    "US500":   dict(symbol="ES",     exchange="CME",       currency="USD"),
+    "NAS100":  dict(symbol="NQ",     exchange="CME",       currency="USD"),
+    "USTEC":   dict(symbol="NQ",     exchange="CME",       currency="USD"),  # alias of NAS100
+    "DJ30":    dict(symbol="YM",     exchange="CBOT",      currency="USD"),
+    "GER40":   dict(symbol="DAX",    exchange="EUREX",     currency="EUR"),
+    "ESTX50":  dict(symbol="ESTX50", exchange="EUREX",     currency="EUR"),
+    "UK100":   dict(symbol="Z",      exchange="ICEEU",     currency="GBP"),
+    # Energies -- NYMEX-listed crude / natural gas; Brent on ICEEU.
+    # USOIL = WTI light sweet (CL), UKBRENT = Brent (COIL on ICEEUSOFT).
+    "USOIL":   dict(symbol="CL",     exchange="NYMEX",     currency="USD"),
+    "UKBRENT": dict(symbol="COIL",   exchange="IPE",       currency="USD"),
+    "NGAS":    dict(symbol="NG",     exchange="NYMEX",     currency="USD"),
+    # Vol + Dollar -- CFE / ICE-US.
+    "VIX":     dict(symbol="VX",     exchange="CFE",       currency="USD"),
+    "DX":      dict(symbol="DX",     exchange="NYBOT",     currency="USD"),
     # 2026-05-26: MGC micro gold (CME COMEX). Wired ahead of CME L2 sub
     # activation at month-start (2026-06-01). Until the subscription
     # turns on, this contract resolution will fail with error 354 "no
     # market data permissions for MGC" -- do NOT include MGC in --symbols
     # until then. Once subscribed: --symbols XAUUSD,MGC.
-    "MGC":    dict(symbol="MGC",    exchange="COMEX", currency="USD"),
+    "MGC":     dict(symbol="MGC",    exchange="COMEX",     currency="USD"),
 }
 
 
