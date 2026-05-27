@@ -652,6 +652,15 @@ int main(int argc, char** argv)
     eng.spread_gate_disabled  = true;
     eng.first_touch_only_mode = true;
 
+    // S37 audit fix: disable in-flight PCT cuts in harness only (production
+    // engine_init.hpp keeps prod values). Synthetic-tick paths trigger
+    // LOSS_CUT_PCT immediately because the first tick is the adverse extreme.
+    // Production live flow has many ticks per bar so this doesn't fire.
+    // XauusdFvgEngine PCT defaults: LOSS_CUT 0.05 / BE_ARM 0.03 / BE_BUF 0.012.
+    eng.LOSS_CUT_PCT  = 0.0;
+    eng.BE_ARM_PCT    = 0.0;
+    eng.BE_BUFFER_PCT = 0.0;
+
     std::vector<EmittedTrade> emitted;
     emitted.reserve(expected.size() + 16);
     eng.on_close_cb = [&](const omega::TradeRecord& tr) {

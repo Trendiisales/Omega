@@ -374,10 +374,12 @@ int main(int argc, char* argv[]) {
             }
 
             if (sl_hit || tp_hit || time_stop) {
+                // S37 audit fix: fill at touch price (bid for long exit,
+                // ask for short exit). Filling at literal tp_px/sl_px
+                // overstates winners by ~half the spread per trade.
                 double exit_px;
-                if (tp_hit) exit_px = trade.tp_px;
-                else if (sl_hit) exit_px = trade.sl_px;
-                else exit_px = mid;  // time stop at market
+                if (tp_hit || sl_hit) exit_px = trade.is_long ? bid : ask;
+                else exit_px = trade.is_long ? bid : ask;  // time stop at market
 
                 const double pnl_pts = trade.is_long ? (exit_px - trade.entry_px)
                                                      : (trade.entry_px - exit_px);

@@ -202,7 +202,11 @@ int main(int argc, char* argv[]) {
                 // We check timeout on bar close below
 
                 if (sl || tp) {
-                    double exit_px = tp ? cell.tp_px : cell.sl_px;
+                    // S37 audit fix: fill at touch price (the bid that
+                    // triggered the cross), not at the literal TP/SL level.
+                    // Filling at tp_px/sl_px overstates winners by ~half
+                    // the spread per trade (~30-60% phantom edge on XAU).
+                    double exit_px = bid;
                     double pnl_pts = exit_px - cell.entry_px;
                     double pnl_usd = pnl_pts * cfg::PNL_PER_PT;
 

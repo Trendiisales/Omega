@@ -1,6 +1,18 @@
 // =============================================================================
 // pdhl_bt_2y.cpp -- PDH/PDL Reversion Engine 2-year XAUUSD tick backtest
 //
+// !!! S37 audit warning: HARNESS DIVERGES FROM LIVE ENGINE !!!
+// This file is an INLINE RE-IMPLEMENTATION of PDHLReversionEngine, not a
+// driver of the live engine class. The live engine
+// (include/PDHLReversionEngine.hpp:70-72) has S63 in-flight PCT cuts
+// (LOSS_CUT_PCT=0.04, BE_ARM_PCT, BE_BUFFER_PCT) that this harness does
+// NOT implement. Any positive-PnL result here OVERSTATES live PnL,
+// because live trades that would have cut early at -0.04% sit open here
+// until SL/TP/MAX_HOLD. Production has g_pdhl_rev.enabled=false (S88),
+// so this harness has no operational decision riding on it -- but if it
+// is ever revived, do not deploy off these numbers without first porting
+// the PCT cut logic from the engine into this loop.
+//
 // Runs the EXACT live engine logic from include/PDHLReversionEngine.hpp
 // against /Users/jo/tick/2yr_XAUUSD_tick.csv (111M tick rows, 2 years).
 //
@@ -251,7 +263,9 @@ static Result run_engine(const std::vector<Tick>& ticks,
             int64_t hold_ms = t.ts_ms - s.entry_ms;
 
             if ((s.is_long && bid <= s.sl) || (!s.is_long && ask >= s.sl)) {
-                close_trade(s, s.sl, t.ts_ms, "SL_HIT", R, want_trades_detail);
+                // S37 audit fix: fill SL at touch (bid long-exit, ask short-exit),
+                // not at the literal s.sl level. TP leg already correct below.
+                close_trade(s, s.is_long ? bid : ask, t.ts_ms, "SL_HIT", R, want_trades_detail);
                 continue;
             }
             if ((s.is_long && bid >= s.tp) || (!s.is_long && ask <= s.tp)) {

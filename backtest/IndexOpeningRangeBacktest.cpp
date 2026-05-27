@@ -575,15 +575,18 @@ static ConfigResult run_config(const std::vector<Tick>& ticks,
             ExitReason reason = ExitReason::NONE;
             double exit_px = 0.0;
 
+            // S37 audit fix: fill TP/SL at touch (bid long-exit, ask short-exit)
+            // not at the literal tp_px/sl_px level (~half-spread phantom edge).
+            const double touch_exit = eng.trade.is_long ? t.bid : t.ask;
             if (tp_hit) {
                 reason = ExitReason::TP_HIT;
-                exit_px = eng.trade.tp_px;
+                exit_px = touch_exit;
             } else if (sl_hit) {
                 reason = eng.trade.trailing ? ExitReason::TRAIL : ExitReason::SL_HIT;
-                exit_px = eng.trade.sl_px;
+                exit_px = touch_exit;
             } else if (timed_out) {
                 reason = ExitReason::TIMEOUT;
-                exit_px = eng.trade.is_long ? t.bid : t.ask;
+                exit_px = touch_exit;
             }
 
             if (reason != ExitReason::NONE) {

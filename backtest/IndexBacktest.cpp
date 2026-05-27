@@ -207,6 +207,18 @@ int main(int argc, char** argv) {
     // hourly ATR per IndexFlowEngine.hpp comments.
     iflow_nas.seed_atr(30.0);
 
+    // S37 audit fix: disable in-flight PCT cuts in harness only (production
+    // engine_init.hpp keeps prod values). Synthetic-tick paths trigger
+    // LOSS_CUT_PCT immediately because the first tick is the adverse extreme.
+    // Production live flow has many ticks per bar so this doesn't fire.
+    // IFlow has only LOSS_CUT_PCT; IMacroCrash has LOSS_CUT_PCT + BE_ARM_PCT +
+    // BE_BUFFER_PCT (see IndexFlowEngine.hpp:553, :972-974). Only iflow_nas
+    // and imacro_nas are instantiated in this harness.
+    iflow_nas.LOSS_CUT_PCT   = 0.0;
+    imacro_nas.LOSS_CUT_PCT  = 0.0;
+    imacro_nas.BE_ARM_PCT    = 0.0;
+    imacro_nas.BE_BUFFER_PCT = 0.0;
+
     // Trades output
     std::FILE* f_trades = std::fopen(out_path, "w");
     if (!f_trades) {

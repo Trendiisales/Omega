@@ -744,7 +744,8 @@ int main(int argc, char* argv[]) {
                 bool tp_hit = trade.is_long ? (t.bid >= trade.tp_px) : (t.ask <= trade.tp_px);
 
                 if (sl_hit || tp_hit) {
-                    double exit_px = tp_hit ? trade.tp_px : trade.sl_px;
+                    // S37 audit fix: fill at touch (bid long-exit, ask short-exit).
+                    double exit_px = trade.is_long ? t.bid : t.ask;
                     const double pnl_pts = trade.is_long ? (exit_px - trade.entry_px)
                                                          : (trade.entry_px - exit_px);
                     const double pnl_usd = pnl_pts * cfg::PNL_PER_PT;

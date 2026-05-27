@@ -128,6 +128,10 @@ static const SymBaseline kBaselines[] = {
     { "US500.F", 50.0,    0.10, 1.5, "L2 capture (sparse, ~30d)" },
 };
 
+// S37 audit fix: per-run half-spread for touch-fill on bar-OHLC exits.
+// Set in main() from the resolved SymBaseline. Defaults to typical XAU 0.15.
+static double g_half_spread = 0.15;
+
 static const SymBaseline* lookup_baseline(const std::string& sym) {
     for (const auto& b : kBaselines) {
         if (sym == b.sym) return &b;
@@ -412,12 +416,15 @@ static int simulate_one_session(const std::vector<Bar1m>& bars,
         const auto& b = bars[j];
         bool hit_sl = false, hit_tp = false;
         double exit_px = 0.0;
+        // S37 audit fix: fill at touch (bid long-exit, ask short-exit).
+        // Bar-OHLC only, so model touch as level ± g_half_spread. Filling
+        // at the literal sl_px/tp_px overstates winners by half-spread/trade.
         if (tr.is_long) {
-            if (b.low  <= tr.sl_px) { exit_px = tr.sl_px; hit_sl = true; }
-            else if (b.high >= tr.tp_px) { exit_px = tr.tp_px; hit_tp = true; }
+            if (b.low  <= tr.sl_px) { exit_px = tr.sl_px - g_half_spread; hit_sl = true; }
+            else if (b.high >= tr.tp_px) { exit_px = tr.tp_px - g_half_spread; hit_tp = true; }
         } else {
-            if (b.high >= tr.sl_px) { exit_px = tr.sl_px; hit_sl = true; }
-            else if (b.low  <= tr.tp_px) { exit_px = tr.tp_px; hit_tp = true; }
+            if (b.high >= tr.sl_px) { exit_px = tr.sl_px + g_half_spread; hit_sl = true; }
+            else if (b.low  <= tr.tp_px) { exit_px = tr.tp_px + g_half_spread; hit_tp = true; }
         }
         if (!hit_sl && !hit_tp) continue;
         tr.exit_px = exit_px;
@@ -599,6 +606,8 @@ int main(int argc, char** argv) {
     }
     std::fprintf(stdout, "[INFO] symbol=%s baseline=%s cost=$%.2f/RT lot=%.4f\n",
                  sym.c_str(), base->note, cost, base->lot);
+    // S37 audit fix: set per-symbol half-spread from baseline.max_spread.
+    g_half_spread = base->max_spread * 0.5;
 
     // Build the grid (288 combos at the default sizes).
     std::vector<OrbParams> grid;

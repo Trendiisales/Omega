@@ -318,6 +318,12 @@ static Result run_one(const std::vector<H4BarWithTicks>& bars,
 
     int trade_id = 0;
 
+    // S37 audit fix: half_spread lifted to function scope so the exit
+    // block can subtract/add it from the touch level (was previously
+    // only declared inside the entry block, leading to literal-px fill
+    // on exit and ~30-60% phantom edge per the harness fidelity bug).
+    constexpr double kHalfSpread = 0.15;
+
     for (int i = bar_start_idx; i < bar_end_idx; ++i) {
         const H4BarWithTicks& bt = bars[i];
         const Bar& b = bt.bar;
@@ -342,7 +348,14 @@ static Result run_one(const std::vector<H4BarWithTicks>& bars,
                 else          sl_hit = false;
             }
             if (sl_hit || tp_hit) {
-                double exit_px = sl_hit ? sl_px : tp_px;
+                // S37 audit fix: exit at touch (bid long-exit, ask short-exit).
+                // For bar-based fill detection, bid/ask are not directly
+                // available; approximate via level - half_spread (long-exit)
+                // or level + half_spread (short-exit). Matches entry-side
+                // spread accounting at line 388.
+                const double level = sl_hit ? sl_px : tp_px;
+                double exit_px = pos.is_long ? (level - kHalfSpread)
+                                             : (level + kHalfSpread);
                 double pnl_pts = (pos.is_long
                     ? (exit_px - pos.entry)
                     : (pos.entry - exit_px)) * pos.size;

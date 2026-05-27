@@ -295,6 +295,13 @@ static Result run_with_costs(const std::vector<H4BarWithTicks>& bars,
                 else          sl_hit = false;
             }
             if (sl_hit || tp_hit) {
+                // S37 audit fix (verify-only, no code change): the _quoted
+                // suffix signals these are bid (long-exit) / ask (short-exit)
+                // levels. Detection above tests bid_low/high (long) and
+                // ask_high/low (short), so the level IS the touch price.
+                // Additional cm.sl_slippage / cm.tp_slippage applied below is
+                // an explicit cost-model add-on (separate from the half-spread
+                // phantom-edge bug fixed in other harnesses).
                 // Apply slippage to the exit price. Slippage is always against us.
                 double exit_px_raw = sl_hit ? sl_px_quoted : tp_px_quoted;
                 double slip = sl_hit ? cm.sl_slippage : cm.tp_slippage;

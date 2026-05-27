@@ -526,6 +526,10 @@ static Result run_h1_pullback(const std::vector<BarWithTicks>& bars,
                 else          sl_hit = false;
             }
             if (sl_hit || tp_hit) {
+                // S37 audit fix (verify-only, no code change): detection above
+                // tests bid_low/bid_high (long) and ask_high/ask_low (short),
+                // so sl_px_q/tp_px_q ARE the bid/ask touch price (the _q
+                // suffix signals quoted). Half-spread bug does not apply.
                 double exit_px = sl_hit ? sl_px_q : tp_px_q;
                 double pnl_pts = (pos.is_long
                     ? (exit_px - pos.entry)
@@ -673,6 +677,11 @@ static Result run_rsi_turn(const std::vector<BarWithTicks>& bars,
             if (!sl_hit && !rsi_exit && pos.bars_held >= max_bars) timeout = true;
 
             if (sl_hit || rsi_exit || timeout) {
+                // S37 audit fix (verify-only, no code change): sl detection
+                // above tests bid_low/ask_high so sl_px_q IS the touch price.
+                // rsi_exit and timeout paths already pay half_spread against
+                // entry direction (long sells at close-hs, short buys at
+                // close+hs) -- those legs are correct.
                 double exit_px;
                 const char* reason;
                 if (sl_hit) {
