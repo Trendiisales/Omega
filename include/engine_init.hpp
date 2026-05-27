@@ -1507,9 +1507,15 @@ static void init_engines(const std::string& cfg_path)
         // gate; 60+ days HARD shadow before considering enabled=live.
         g_xau_tf_d1.shadow_mode = true;
         g_xau_tf_d1.enabled     = true;   // S88: revived w/ vol-band gate, HARD shadow
+        // S88-followup post-sweep 2026-05-27: widen D1 band [0.30,0.85] ->
+        // [0.20,0.90]. Sweep showed D1 entry-vol distribution sits inside the
+        // band already; widening picks up 2 extra cell-Keltner trades (PF
+        // 3.27 standalone) and 1 Momentum20 trade. Modest lift: $3220 -> $3369
+        // over 2yr (+$149). Marginal but free; tighter bands gave identical
+        // result so wider is dominated upside.
         g_xau_tf_d1.use_vol_band_gate = true;
-        g_xau_tf_d1.vol_band_low_pct  = 0.30;
-        g_xau_tf_d1.vol_band_high_pct = 0.85;
+        g_xau_tf_d1.vol_band_low_pct  = 0.20;
+        g_xau_tf_d1.vol_band_high_pct = 0.90;
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
