@@ -6,7 +6,7 @@
 # - Logs every action to C:\Omega\bracket-bot\logs\gateway_watchdog.log
 #
 # Designed to be invoked every 5 min by a scheduled task triggered at logon.
-# REQUIRES a logged-on interactive user (RDP session left connected) — IB
+# REQUIRES a logged-on interactive user (RDP session left connected) -- IB
 # Gateway is GUI; it cannot start in Session 0.
 #
 # Prerequisite for unattended login: in Gateway, tick "Store settings on
@@ -29,19 +29,19 @@ function Log($msg) {
 # --- Already healthy? --------------------------------------------------------
 $listening = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
 if ($listening) {
-    # No need to log every 5-min OK heartbeat — keeps log compact.
+    # No need to log every 5-min OK heartbeat -- keeps log compact.
     exit 0
 }
 
 $running = Get-Process -Name 'ibgateway' -ErrorAction SilentlyContinue
 if ($running) {
-    Log "ibgateway.exe PID(s) $($running.Id -join ',') running but port $Port not listening — leaving alone (likely login screen). Action required: complete login or save creds."
+    Log "ibgateway.exe PID(s) $($running.Id -join ',') running but port $Port not listening -- leaving alone (likely login screen). Action required: complete login or save creds."
     exit 0
 }
 
 # --- Launch newest install --------------------------------------------------
 if (-not (Test-Path $Root)) {
-    Log "ERROR: Gateway root $Root missing — Gateway not installed?"
+    Log "ERROR: Gateway root $Root missing -- Gateway not installed?"
     exit 2
 }
 
@@ -76,7 +76,7 @@ for ($i = 0; $i -lt 12; $i++) {
 }
 
 if ($ok) {
-    Log "port $Port LISTENING — Gateway healthy"
+    Log "port $Port LISTENING -- Gateway healthy"
     exit 0
 } else {
     Log "WARN: launched but port $Port still not listening after 60s (login screen? saved creds missing?)"
