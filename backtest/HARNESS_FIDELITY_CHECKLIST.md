@@ -71,6 +71,36 @@ Engines using S63 pattern (`LOSS_CUT_PCT`, `BE_ARM_PCT`, `BE_BUFFER_PCT`) trigge
   grep -l "LOSS_CUT_PCT\|BE_ARM_PCT\|BE_BUFFER_PCT" include/*.hpp
   ```
 
+### Check 7 — POSIX vs MSVC cross-compilation symbols
+
+The Mac canary build catches most issues but does not exercise the Windows
+MSVC compiler path. Symbols that POSIX/Mac headers define implicitly may
+be undefined on MSVC, causing the VPS build to break only when the operator
+runs `OMEGA.ps1 deploy`.
+
+Known traps to avoid in new engine headers:
+- `M_PI`, `M_E`, `M_LN2`, etc. — POSIX-only macros from `<cmath>`. Use
+  `constexpr double TWO_PI = 6.28318530717958647692...;` instead.
+- `strdup`, `getline` — POSIX C extensions. Use `std::string` ops or
+  `_strdup` (MSVC variant).
+- `__attribute__((...))` — GCC/Clang-specific. Use `[[...]]` attributes
+  or guard with `#ifdef __GNUC__`.
+- `<unistd.h>`, `<sys/socket.h>` — POSIX-only headers. Guard with
+  `#ifdef _WIN32` and use Winsock2 equivalents (already established
+  pattern in `IbkrDomConsumer.hpp`).
+
+**Detection:** the `Build Verification` section of CLAUDE.md says the Mac
+canary is the sufficient check — but only for the OmegaBacktest target,
+which does NOT include all production sources. Headers that ship with
+the main Omega.exe build path get exercised only on Windows. **The first
+operator deploy attempt is the real test for any new header.** Watch for
+the build failure paste; revert or hotfix immediately if it breaks.
+
+History: caught 2026-05-27 — `M_PI` in `XauM30HmmGate.hpp` broke the
+Windows MSVC build but compiled clean on Mac clang. Hotfix in commit
+`babaaae7`. Pattern: replace POSIX-only with `constexpr` literal at
+declaration site, not via `#define _USE_MATH_DEFINES`.
+
 ### Check 6 — Causality of any state-classifier output
 
 If your strategy/gate consumes the output of an HMM, regime classifier, or
