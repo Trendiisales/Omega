@@ -1565,8 +1565,11 @@ static void init_engines(const std::string& cfg_path)
         //   Signal from disabled g_nbm_* family. D1 XAU 2yr:
         //   FUL Sh=8.01, IS=9.60, OOS=7.30, n=25.
         g_xau_nbm_d1.p           = omega::make_xau_nbm_d1_params();
+        // 2026-05-27 S53: DISABLED -- DD/gross=111% (+6.34 / -7.01).
+        // Sharpe +1.91 positive but equity buries deeper than recovers.
+        // Same failure mode as TF2h/D1 (S52).
         g_xau_nbm_d1.shadow_mode = true;
-        g_xau_nbm_d1.enabled     = true;
+        g_xau_nbm_d1.enabled     = false;  // S53: DD ratio fail
         g_xau_nbm_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauNbmD1Engine: shadow=%d enabled=%d ema=%d band=%.1fx mom=%.1fx sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_nbm_d1.shadow_mode, (int)g_xau_nbm_d1.enabled,
@@ -1602,8 +1605,11 @@ static void init_engines(const std::string& cfg_path)
                g_xau_pullback_cont_d1.p.hold_max_days);
 
         g_xau_bb_scalp_d1.p           = omega::make_xau_bb_scalp_d1_params();
+        // 2026-05-27 S53: DISABLED -- DD/gross=240% (+3.68 / -8.85). Worst
+        // DD ratio in the entire zoo. Sharpe +1.75 positive but extremely
+        // unstable equity curve. Same failure mode as TF2h/D1 (S52).
         g_xau_bb_scalp_d1.shadow_mode = true;
-        g_xau_bb_scalp_d1.enabled     = true;
+        g_xau_bb_scalp_d1.enabled     = false;  // S53: DD ratio fail
         g_xau_bb_scalp_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauBBScalpD1Engine: shadow=%d bb_p=%d std=%.1f sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_bb_scalp_d1.shadow_mode,
@@ -1612,8 +1618,10 @@ static void init_engines(const std::string& cfg_path)
                g_xau_bb_scalp_d1.p.hold_max_days);
 
         g_xau_swing_break_d1.p           = omega::make_xau_swing_break_d1_params();
+        // 2026-05-27 S53: DISABLED -- DD/gross=101% (+4.41 / -4.47). Borderline
+        // but same failure mode as TF2h/D1 (S52). Thin Sharpe +1.39.
         g_xau_swing_break_d1.shadow_mode = true;
-        g_xau_swing_break_d1.enabled     = true;
+        g_xau_swing_break_d1.enabled     = false;  // S53: DD ratio fail
         g_xau_swing_break_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauSwingBreakD1Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_swing_break_d1.shadow_mode,
