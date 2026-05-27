@@ -152,6 +152,14 @@ struct XauTrendFollow2hEngine {
 public:
     bool   shadow_mode = true;
     bool   enabled     = false;
+    // S88-followup (2026-05-27): ATR-percentile vol-band gate (see
+    // XauThreeBar30m results: PF 1.55 -> 2.23 on 6mo PKL). Skip entries when
+    // current ATR is outside the [low, high] percentile band of the rolling
+    // 200-bar ATR distribution. Default OFF (regression-safe).
+    bool   use_vol_band_gate = false;
+    double vol_band_low_pct  = 0.30;
+    double vol_band_high_pct = 0.85;
+    std::deque<double> atr_vol_window_;
     double lot         = 0.01;
     double max_spread  = 1.0;
 
@@ -311,11 +319,27 @@ private:
         if (atr14_ <= 0.0) return;
         if (ask - bid > max_spread) return;
 
+        // S88-followup: rolling ATR window for vol-band gate.
+        if (use_vol_band_gate && atr14_ > 0.0) {
+            atr_vol_window_.push_back(atr14_);
+            if ((int)atr_vol_window_.size() > 200) atr_vol_window_.pop_front();
+        }
+
         for (int ci = 0; ci < kXauTf2hNumCells; ++ci) {
             if (pos[ci].active) continue;
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
+            // S88-followup vol-band gate
+            if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {
+                int below = 0;
+                const int n = (int)atr_vol_window_.size();
+                for (int i = 0; i < n; ++i) if (atr_vol_window_[i] < atr14_) ++below;
+                const double pct = static_cast<double>(below) / n;
+                if (pct < vol_band_low_pct || pct > vol_band_high_pct) {
+                    continue;  // VOL_BAND_OUT
+                }
+            }
             _fire_entry(ci, side, bid, ask, now_ms);
         }
         (void)on_close;

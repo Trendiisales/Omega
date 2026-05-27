@@ -1342,6 +1342,14 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.cell_enable_mask = 0x49;  // Donchian + Keltner + EmaCross_8_21
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
+        // S88-followup 2026-05-27: vol-band gate. Full Duka 2yr backtest:
+        //   baseline:  n=450 PF=1.27 net=$2745 MaxDD=$1090
+        //   +vol_band: n=255 PF=1.33 net=$1700 MaxDD=$ 557 (-49% DD, +5% PF)
+        // Modest PF lift, big DD cut. Worth shadow validation. 4h engine
+        // already enabled live; this is an additive gate not a flip.
+        g_xau_tf_4h.use_vol_band_gate = true;
+        g_xau_tf_4h.vol_band_low_pct  = 0.30;
+        g_xau_tf_4h.vol_band_high_pct = 0.85;
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
         omega::warmup_or_die(g_xau_tf_4h, "XauTrendFollow4h");
@@ -1485,14 +1493,23 @@ static void init_engines(const std::string& cfg_path)
         //   Momentum20 PF=1.38, Keltner PF=1.51, ADX_Mom PF=1.45.
         //   D1 aggregate: 79 trades, PF=1.43. All cells enabled.
         // 2026-05-27 S52: DISABLED -- real-class audit (xau_trendfollow_audit)
-        // confirmed Sharpe +2.40 over 95 trades BUT mdd_to_gross=95% (-25.49 /
-        // +26.82). Equity goes deeply underwater before recovery -- high
-        // capitulation risk. Streak DD (7-10 losers stacked, worst single
-        // trade only -3.76). Coverage redundant: XauTrendFollow1h (Sharpe
-        // +3.58, mdd 27%) + XauTrendFollow4h (+1.97, mdd 25%) cover same
-        // trend signals with clean DD profile. Keep wired, off.
+        // confirmed Sharpe +2.40 over 95 trades BUT mdd_to_gross=95%. Equity
+        // goes deeply underwater before recovery -- high capitulation risk.
+        //
+        // S88-followup 2026-05-27: REVIVED to HARD-SHADOW with vol-band gate.
+        // The S52 DD profile (mdd_to_gross 95%) was on UNGATED entries; full
+        // Duka 2yr backtest with vol_band on:
+        //   Baseline (ungated): n=79 PF=1.43 net=$2583 MaxDD=$1470
+        //   +vol_band:           n=50 PF=2.31 net=$3220 MaxDD=$ 908 (-38% DD)
+        // Per-cell PF lift: Mom20 1.38->2.32 (+68%), Keltner 1.51->2.46 (+63%),
+        // ADX_Mom 1.45->2.18 (+50%). MaxDD cut nearly in half.
+        // The DD profile that drove the S52 disable may improve with the
+        // gate; 60+ days HARD shadow before considering enabled=live.
         g_xau_tf_d1.shadow_mode = true;
-        g_xau_tf_d1.enabled     = false;  // S52: DD ratio fail
+        g_xau_tf_d1.enabled     = true;   // S88: revived w/ vol-band gate, HARD shadow
+        g_xau_tf_d1.use_vol_band_gate = true;
+        g_xau_tf_d1.vol_band_low_pct  = 0.30;
+        g_xau_tf_d1.vol_band_high_pct = 0.85;
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";

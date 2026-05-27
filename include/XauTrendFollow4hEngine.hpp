@@ -221,6 +221,17 @@ public:
     // in 0x40 to activate the new cell.
     uint32_t cell_enable_mask = 0x3F;  // bits 0-5, original 6 cells
 
+    // S88-followup (2026-05-27): ATR-percentile vol-band gate (proven on
+    // XauThreeBar30m: PF 1.55 -> 2.23, MaxDD -56% on 6mo PKL). Skip entries
+    // when current ATR is outside the [low, high] percentile band of the
+    // rolling 200-bar ATR distribution. Removes dead-vol (no follow-through)
+    // and crisis-vol (gap-through-SL) entries. Per-cell; ANDed with the
+    // existing cell_enable_mask. Default OFF (regression-safe).
+    bool   use_vol_band_gate = false;
+    double vol_band_low_pct  = 0.30;
+    double vol_band_high_pct = 0.85;
+    std::deque<double> atr_vol_window_;  // rolling ATR(14) values for percentile
+
     // S63 2026-05-14 (part W): VWR-pattern in-flight protection (full trio).
     //   Defaults to ALL ZERO -- S63 is OFF on production until per-instrument
     //   backtest evidence justifies enabling. The XauTrendFollow trio
@@ -359,12 +370,28 @@ public:
         if (atr14_ <= 0.0) return;
         if (ask - bid > max_spread) return;
 
+        // S88-followup: maintain rolling ATR window for vol-band gate.
+        if (use_vol_band_gate && atr14_ > 0.0) {
+            atr_vol_window_.push_back(atr14_);
+            if ((int)atr_vol_window_.size() > 200) atr_vol_window_.pop_front();
+        }
+
         for (int ci = 0; ci < kXauTfNumCells; ++ci) {
             if (!(cell_enable_mask & (1u << ci))) continue;  // S96: per-cell gate
             if (pos[ci].active) continue;
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
+            // S88-followup vol-band gate
+            if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {
+                int below = 0;
+                const int n = (int)atr_vol_window_.size();
+                for (int i = 0; i < n; ++i) if (atr_vol_window_[i] < atr14_) ++below;
+                const double pct = static_cast<double>(below) / n;
+                if (pct < vol_band_low_pct || pct > vol_band_high_pct) {
+                    continue;  // VOL_BAND_OUT (S88-followup)
+                }
+            }
             _fire_entry(ci, side, bid, ask, now_ms);
         }
         (void)on_close; // signature parity; we only emit on exit (in on_tick)
