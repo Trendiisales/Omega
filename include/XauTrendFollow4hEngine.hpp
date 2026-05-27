@@ -230,7 +230,11 @@ public:
     bool   use_vol_band_gate = false;
     double vol_band_low_pct  = 0.30;
     double vol_band_high_pct = 0.85;
-    std::deque<double> atr_vol_window_;  // rolling ATR(14) values for percentile
+    std::deque<double> atr_vol_window_;
+    // S88-followup post-sweep 2026-05-27: per-cell gate mask (default
+    // all-ones = regression-safe). Operator can target specific cells
+    // when their preferred gate differs (see 2h Donch50 ADX-hurts pattern).
+    uint32_t cell_vol_band_mask = 0xFFFFFFFF;  // rolling ATR(14) values for percentile
 
     // S63 2026-05-14 (part W): VWR-pattern in-flight protection (full trio).
     //   Defaults to ALL ZERO -- S63 is OFF on production until per-instrument
@@ -382,8 +386,9 @@ public:
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
-            // S88-followup vol-band gate
-            if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {
+            // S88-followup vol-band gate (per-cell mask)
+            if (use_vol_band_gate && (cell_vol_band_mask & (1u << ci))
+                && (int)atr_vol_window_.size() >= 200) {
                 int below = 0;
                 const int n = (int)atr_vol_window_.size();
                 for (int i = 0; i < n; ++i) if (atr_vol_window_[i] < atr14_) ++below;

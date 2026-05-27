@@ -199,6 +199,11 @@ int main(int argc, char* argv[]) {
     bool   use_vol_band = false;
     bool   use_adx      = false;
     double vb_low = 0.30, vb_high = 0.85, adx_min = 25.0;
+    // S88-followup per-cell masks (default 0xFFFFFFFF = all cells gated).
+    // For 2h cell ids match kXauTf2hCells: 0=Keltner, 1=Donch20, 2=Donch50, 3=InsideBar.
+    // Operator sets via --cell-adx-mask 0xB --cell-vol-mask 0x4 to mirror engine_init.
+    unsigned cell_adx_mask = 0xFFFFFFFFu;
+    unsigned cell_vol_mask = 0xFFFFFFFFu;
     for(int i=2;i<argc;++i){
         std::string a=argv[i];
         if(a=="--vol-band") use_vol_band=true;
@@ -206,10 +211,12 @@ int main(int argc, char* argv[]) {
         else if(a=="--lo" && i+1<argc) vb_low = std::stod(argv[++i]);
         else if(a=="--hi" && i+1<argc) vb_high = std::stod(argv[++i]);
         else if(a=="--adx-min" && i+1<argc) adx_min = std::stod(argv[++i]);
+        else if(a=="--cell-adx-mask" && i+1<argc) cell_adx_mask = std::stoul(argv[++i], nullptr, 0);
+        else if(a=="--cell-vol-mask" && i+1<argc) cell_vol_mask = std::stoul(argv[++i], nullptr, 0);
     }
-    std::printf("[TF-BT] vol_band gate: %s [%.2f, %.2f]  adx gate: %s (min=%.1f)\n",
-                use_vol_band?"ON":"OFF", vb_low, vb_high,
-                use_adx?"ON":"OFF", adx_min);
+    std::printf("[TF-BT] vol_band: %s [%.2f, %.2f] mask=0x%X  adx: %s (>=%.1f) mask=0x%X\n",
+                use_vol_band?"ON":"OFF", vb_low, vb_high, cell_vol_mask,
+                use_adx?"ON":"OFF", adx_min, cell_adx_mask);
     BarBuilder bb2(2LL*3600*1000), bb4(4LL*3600*1000);
     D1Builder d1;
     Cell cells[]={
@@ -249,6 +256,18 @@ int main(int argc, char* argv[]) {
     };
     auto te=[&](int ci,bool il,double b,double a,int64_t ts,double atr){
         if(!cell_enabled[ci])return;
+        // S88-followup per-cell gates: ci 0-3 = 2h, 4-9 = 4h, 10-12 = D1.
+        // Each cell can be selectively gated by ADX or vol_band via the
+        // global cell_adx_mask / cell_vol_mask. Bit i = 1 means cell i is
+        // gated by the corresponding gate when use_X is on.
+        const unsigned bit = (1u << ci);
+        const std::deque<double>* w = nullptr;
+        double adx_v = 100.0;  // default: pass ADX
+        if (ci < 4)      { w = &bb2.atr_vol_window; adx_v = bb2.adx; }
+        else if (ci < 10){ w = &bb4.atr_vol_window; adx_v = bb4.adx; }
+        else             { w = &d1.atr_vol_window;  adx_v = d1.adx;  }
+        if (use_vol_band && (cell_vol_mask & bit) && w && !vbpass(*w, atr)) return;
+        if (use_adx && (cell_adx_mask & bit) && adx_v < adx_min) return;
         if(trades[ci].active)return; auto& t=trades[ci];
         t.active=true;t.is_long=il;t.entry_px=il?a:b;
         t.sl_px=il?t.entry_px-cells[ci].sl_mult*atr:t.entry_px+cells[ci].sl_mult*atr;
@@ -276,7 +295,7 @@ int main(int argc, char* argv[]) {
         bool b2h=bb2.on_tick(mid,ts), b4h=bb4.on_tick(mid,ts), bd1=false;
         if(b4h&&bb4.bars.size()>0) bd1=d1.on_4h_bar(bb4.bars.back());
 
-        if(b2h&&bb2.total_bars>=52 && vbpass(bb2.atr_vol_window, bb2.atr) && (!use_adx || bb2.adx>=adx_min)){
+        if(b2h&&bb2.total_bars>=52){  // S88: gates moved to per-cell te() check
             double c=bb2.bars.back().close;
             if(c>bb2.ema20+2*bb2.atr)te(0,true,b,a,ts,bb2.atr);
             else if(c<bb2.ema20-2*bb2.atr)te(0,false,b,a,ts,bb2.atr);
@@ -287,7 +306,7 @@ int main(int argc, char* argv[]) {
                 if(in.high<=mo.high&&in.low>=mo.low){if(c>in.high)te(3,true,b,a,ts,bb2.atr);else if(c<in.low)te(3,false,b,a,ts,bb2.atr);}
             }
         }
-        if(b4h&&bb4.total_bars>=52 && vbpass(bb4.atr_vol_window, bb4.atr) && (!use_adx || bb4.adx>=adx_min)){
+        if(b4h&&bb4.total_bars>=52){  // S88: per-cell te() gates
             double c=bb4.bars.back().close; const Bar& b4=bb4.bars.back();
             if((int)bb4.bars.size()>=21){if(c>bb4.don20_high)te(4,true,b,a,ts,bb4.atr);else if(c<bb4.don20_low)te(4,false,b,a,ts,bb4.atr);}
             if((int)bb4.bars.size()>=3){const Bar&mo=bb4.bars[bb4.bars.size()-3];const Bar&in=bb4.bars[bb4.bars.size()-2];
@@ -300,7 +319,7 @@ int main(int argc, char* argv[]) {
                 if(mp>0.001)te(8,true,b,a,ts,bb4.atr);else if(mp<-0.001)te(8,false,b,a,ts,bb4.atr);}
             double btr=b4.high-b4.low; if(btr>1.5*bb4.atr){bool bull=(b4.close>b4.open);te(9,bull,b,a,ts,bb4.atr);}
         }
-        if(bd1&&d1.total_bars>=22 && vbpass(d1.atr_vol_window, d1.atr) && (!use_adx || d1.adx>=adx_min)){
+        if(bd1&&d1.total_bars>=22){  // S88: per-cell te() gates
             double c=d1.bars.back().close;
             if((int)d1.bars.size()>=21){double pc=d1.bars[d1.bars.size()-21].close;
                 if(c>pc*1.001)te(10,true,b,a,ts,d1.atr);else if(c<pc*0.999)te(10,false,b,a,ts,d1.atr);}

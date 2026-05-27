@@ -169,6 +169,8 @@ public:
     double vol_band_low_pct  = 0.30;
     double vol_band_high_pct = 0.85;
     std::deque<double> atr_vol_window_;
+    // S88-followup per-cell mask (default all-ones).
+    uint32_t cell_vol_band_mask = 0xFFFFFFFF;
     double lot         = 0.01;
     double max_spread  = 1.0;
 
@@ -364,8 +366,9 @@ private:
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
-            // S88-followup vol-band gate
-            if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {
+            // S88-followup vol-band gate (per-cell mask)
+            if (use_vol_band_gate && (cell_vol_band_mask & (1u << ci))
+                && (int)atr_vol_window_.size() >= 200) {
                 int below = 0;
                 const int n = (int)atr_vol_window_.size();
                 for (int i = 0; i < n; ++i) if (atr_vol_window_[i] < atr14_) ++below;

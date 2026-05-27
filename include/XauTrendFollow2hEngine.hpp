@@ -164,6 +164,15 @@ public:
     std::deque<double> atr_vol_window_;
     bool   use_adx_gate      = false;
     double adx_min           = 25.0;
+    // S88-followup post-sweep 2026-05-27: per-cell gate masks (default
+    // all-ones = regression-safe, gate applies to all enabled cells when
+    // use_X_gate=true). Sweep showed 2h cells split: Keltner/Donch20/
+    // InsideBar prefer ADX25 (PF lifts); Donch50 is HURT by ADX (1.37->
+    // 1.22) but lifts under vol_band (1.37->1.54, DD -44%). With per-cell
+    // masks operator can apply ADX to bits {0,1,3} (0xB) and vol_band to
+    // bit 2 (0x4). Bit i corresponds to kXauTf2hCells[i].
+    uint32_t cell_adx_mask      = 0xFFFFFFFF;
+    uint32_t cell_vol_band_mask = 0xFFFFFFFF;
     // ADX Wilder state
     static constexpr int kAdxPeriod = 14;
     double adx14_           = 0.0;
@@ -344,8 +353,9 @@ private:
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
-            // S88-followup vol-band gate
-            if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {
+            // S88-followup vol-band gate (per-cell mask)
+            if (use_vol_band_gate && (cell_vol_band_mask & (1u << ci))
+                && (int)atr_vol_window_.size() >= 200) {
                 int below = 0;
                 const int n = (int)atr_vol_window_.size();
                 for (int i = 0; i < n; ++i) if (atr_vol_window_[i] < atr14_) ++below;
@@ -354,8 +364,9 @@ private:
                     continue;  // VOL_BAND_OUT
                 }
             }
-            // S88-followup ADX gate (trend-strength threshold)
-            if (use_adx_gate && adx_dx_count_ >= kAdxPeriod && adx14_ < adx_min) {
+            // S88-followup ADX gate (per-cell mask)
+            if (use_adx_gate && (cell_adx_mask & (1u << ci))
+                && adx_dx_count_ >= kAdxPeriod && adx14_ < adx_min) {
                 continue;  // ADX_TOO_WEAK
             }
             _fire_entry(ci, side, bid, ask, now_ms);

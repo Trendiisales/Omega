@@ -2081,10 +2081,24 @@ static void init_engines(const std::string& cfg_path)
         // S52 disable was on UNGATED entries (Sharpe 1.14, mdd 75%); ADX
         // filtered backtest may flip the DD profile. 60+ days HARD shadow
         // before live promotion.
+        // S88-followup post-sweep 2026-05-27: per-cell gate masks. The
+        // engine-wide ADX25 hurt 2h_Donch50 specifically (PF 1.37 -> 1.22).
+        // Per-cell breakdown:
+        //   Keltner (bit 0): baseline PF 1.44 -> +ADX25 1.67  -> ADX
+        //   Donch20 (bit 1): baseline PF 1.17 -> +ADX25 1.33  -> ADX
+        //   Donch50 (bit 2): baseline PF 1.37 -> +ADX25 1.22  -> VolBand 1.54
+        //   InsideBar (bit 3): baseline PF 1.25 -> +ADX25 1.45 -> ADX
+        // Apply ADX to bits {0,1,3} = 0xB; vol_band to bit {2} = 0x4.
+        // Stacked vol+ADX hurt (tested separately); per-cell exclusive is right.
         g_xau_tf_2h.shadow_mode = true;
-        g_xau_tf_2h.enabled     = true;   // S88: revived w/ ADX25 gate
-        g_xau_tf_2h.use_adx_gate = true;
-        g_xau_tf_2h.adx_min      = 25.0;
+        g_xau_tf_2h.enabled     = true;
+        g_xau_tf_2h.use_adx_gate     = true;
+        g_xau_tf_2h.adx_min          = 25.0;
+        g_xau_tf_2h.cell_adx_mask    = 0xB;       // Keltner, Donch20, InsideBar
+        g_xau_tf_2h.use_vol_band_gate= true;
+        g_xau_tf_2h.vol_band_low_pct = 0.30;
+        g_xau_tf_2h.vol_band_high_pct= 0.85;
+        g_xau_tf_2h.cell_vol_band_mask = 0x4;     // Donch50 only
         g_xau_tf_2h.lot         = 0.01;
         g_xau_tf_2h.max_spread  = 1.0;
         g_xau_tf_2h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
