@@ -595,6 +595,17 @@ struct EpbPortfolio {
     double BE_ARM_PCT        = 0.0;
     double BE_BUFFER_PCT     = 0.0;
 
+    // S88-followup (2026-05-27): ATR-percentile vol-band gate. Maintains a
+    // rolling 200-bar H1 ATR window; blocks new entries (manage-only) when
+    // current H1 ATR is outside [vol_band_low_pct, vol_band_high_pct] of the
+    // distribution. Same pattern proven on XauThreeBar30m / XauTrendFollowD1.
+    // Default OFF -- regression-safe. Set in engine_init.hpp after harness
+    // validation via EmaPullbackBacktest --vol-band.
+    bool   use_vol_band_gate = false;
+    double vol_band_low_pct  = 0.30;
+    double vol_band_high_pct = 0.85;
+    std::deque<double> atr_vol_window_h1_;
+
     EpbCell h1_long_;
     EpbCell h2_long_;
     EpbCell h4_long_;
@@ -741,9 +752,35 @@ struct EpbPortfolio {
         atr_h1_.on_bar(h1);
         const double eff_h1_atr =
             (std::isfinite(h1_atr14) && h1_atr14 > 0.0) ? h1_atr14 : atr_h1_.value();
+
+        // S88-followup: maintain rolling 200-bar H1 ATR window + compute pass
+        // flag once for this bar; gate ALL cells (manage-only when fail).
+        // Uses H1 ATR as the regime proxy across H1/H2/H4/H6 cells -- the
+        // longer-TF cells' regime IS the H1 regime aggregated; one ATR window
+        // here keeps the patch small without adding per-TF windows.
+        if (use_vol_band_gate && eff_h1_atr > 0.0) {
+            atr_vol_window_h1_.push_back(eff_h1_atr);
+            if ((int)atr_vol_window_h1_.size() > 200) atr_vol_window_h1_.pop_front();
+        }
+        bool vol_band_open = true;
+        if (use_vol_band_gate && (int)atr_vol_window_h1_.size() >= 200 && eff_h1_atr > 0.0) {
+            int below = 0;
+            const int n = (int)atr_vol_window_h1_.size();
+            for (int i = 0; i < n; ++i) if (atr_vol_window_h1_[i] < eff_h1_atr) ++below;
+            const double pct = (double)below / n;
+            if (pct < vol_band_low_pct || pct > vol_band_high_pct) vol_band_open = false;
+        }
+        // When gate is closed, hand each cell a manage-only call (lot=0) so
+        // existing positions still process SL/TP/BE/trail but no new entries.
+        auto cell_manage_only=[&](EpbCell& c, const EpbBar& b, double bd, double ak,
+                                   double atr, int idx){
+            (void)c.on_bar(b, bd, ak, atr, now_ms, 0.0, wrap(runtime_cb, idx));
+        };
+
         if (cell_enable_mask & 0x01) {  // S96: H1 cell gate
             if (eff_h1_atr > 0.0) {
-                _drive_cell(h1_long_, h1, bid, ask, eff_h1_atr, 0, now_ms, runtime_cb);
+                if (vol_band_open) _drive_cell(h1_long_, h1, bid, ask, eff_h1_atr, 0, now_ms, runtime_cb);
+                else               cell_manage_only(h1_long_, h1, bid, ask, eff_h1_atr, 0);
             } else {
                 (void)h1_long_.on_bar(h1, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 0));
             }
@@ -752,20 +789,26 @@ struct EpbPortfolio {
         synth_h2_.on_h1_bar(h1, [&](const EpbBar& b) {
             atr_h2_.on_bar(b);
             if (!(cell_enable_mask & 0x02)) return;  // S96: H2 cell gate
-            if (atr_h2_.ready()) _drive_cell(h2_long_, b, bid, ask, atr_h2_.value(), 1, now_ms, runtime_cb);
-            else                 (void)h2_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 1));
+            if (atr_h2_.ready()) {
+                if (vol_band_open) _drive_cell(h2_long_, b, bid, ask, atr_h2_.value(), 1, now_ms, runtime_cb);
+                else               cell_manage_only(h2_long_, b, bid, ask, atr_h2_.value(), 1);
+            } else                 (void)h2_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 1));
         });
         synth_h4_.on_h1_bar(h1, [&](const EpbBar& b) {
             atr_h4_.on_bar(b);
             if (!(cell_enable_mask & 0x04)) return;  // S96: H4 cell gate
-            if (atr_h4_.ready()) _drive_cell(h4_long_, b, bid, ask, atr_h4_.value(), 2, now_ms, runtime_cb);
-            else                 (void)h4_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 2));
+            if (atr_h4_.ready()) {
+                if (vol_band_open) _drive_cell(h4_long_, b, bid, ask, atr_h4_.value(), 2, now_ms, runtime_cb);
+                else               cell_manage_only(h4_long_, b, bid, ask, atr_h4_.value(), 2);
+            } else                 (void)h4_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 2));
         });
         synth_h6_.on_h1_bar(h1, [&](const EpbBar& b) {
             atr_h6_.on_bar(b);
             if (!(cell_enable_mask & 0x08)) return;  // S96: H6 cell gate
-            if (atr_h6_.ready()) _drive_cell(h6_long_, b, bid, ask, atr_h6_.value(), 3, now_ms, runtime_cb);
-            else                 (void)h6_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 3));
+            if (atr_h6_.ready()) {
+                if (vol_band_open) _drive_cell(h6_long_, b, bid, ask, atr_h6_.value(), 3, now_ms, runtime_cb);
+                else               cell_manage_only(h6_long_, b, bid, ask, atr_h6_.value(), 3);
+            } else                 (void)h6_long_.on_bar(b, bid, ask, 0.0, now_ms, 0.0, wrap(runtime_cb, 3));
         });
     }
 

@@ -278,6 +278,10 @@ struct Args {
     bool        sweep        = false;
     bool        wide_sweep   = false;
     bool        quiet        = false;
+    // S88-followup vol-band gate
+    bool        use_vol_band = false;
+    double      vb_low       = 0.30;
+    double      vb_high      = 0.85;
 };
 
 static void usage(const char* argv0) {
@@ -337,6 +341,9 @@ static Args parse_args(int argc, char** argv) {
         else if (s == "--sweep")      a.sweep        = true;
         else if (s == "--wide-sweep") { a.sweep      = true; a.wide_sweep = true; }
         else if (s == "--quiet")      a.quiet        = true;
+        else if (s == "--vol-band")   a.use_vol_band = true;
+        else if (s == "--vb-lo")      a.vb_low       = std::strtod(take().c_str(), nullptr);
+        else if (s == "--vb-hi")      a.vb_high      = std::strtod(take().c_str(), nullptr);
         else if (s == "--help" || s == "-h") { usage(argv[0]); std::exit(0); }
         else {
             std::fprintf(stderr, "ERROR: unknown arg '%s'\n", s.c_str());
@@ -365,6 +372,10 @@ static void configure_portfolio(::omega::EpbPortfolio& p, const Args& a,
     p.LOSS_CUT_PCT      = loss_cut;
     p.BE_ARM_PCT        = be_arm;
     p.BE_BUFFER_PCT     = be_buf;
+    // S88-followup vol-band gate (default off, opt-in via --vol-band CLI flag)
+    p.use_vol_band_gate = a.use_vol_band;
+    p.vol_band_low_pct  = a.vb_low;
+    p.vol_band_high_pct = a.vb_high;
     p.init();
 }
 
