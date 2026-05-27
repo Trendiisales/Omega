@@ -26,9 +26,24 @@ from pathlib import Path
 
 from ib_insync import IB, Future, ContFuture, Forex, StopOrder, LimitOrder, MarketOrder, util
 
-def utcnow(): return datetime.now(timezone.utc)
+from live import _common
+from live._common import (
+    utcnow,
+    check_halt_or_exit,
+    verify_account_mode,
+    assert_account_label,
+    assert_market_open,
+    assert_live_allowed,
+    warn_on_clock_drift,
+    is_price_stale,
+    log_mdt_status,
+    write_state,
+    clear_state,
+    write_heartbeat,
+    notify_failure,
+)
 
-TRADES_FILE = Path(__file__).resolve().parent.parent / 'data' / 'trades.ndjson'
+TRADES_FILE = _common.DATA_DIR / 'trades.ndjson'
 TRADES_FILE.parent.mkdir(exist_ok=True)
 
 def append_trade(rec: dict):
@@ -61,18 +76,24 @@ def round_tick(px, tick=TICK_SZ):
     return round(round(px / tick) * tick, 2)
 
 
-def get_contract(instrument: str, expiry: str = None):
-    """Build IB contract by instrument key."""
+def get_contract(ib: IB, instrument: str, expiry: str = None):
+    """Build + qualify an IB contract. Daily and Sunday brackets share the
+    same resolution: explicit expiry if supplied, ContFuture (auto front-
+    month) otherwise. Always qualified before return so callers don't have
+    to remember."""
     if instrument in ('MGC', 'GC'):
-        return Future(instrument, expiry, 'COMEX') if expiry else ContFuture(instrument, 'COMEX')
-    if instrument == 'XAUUSD':
-        # Spot gold via IB Forex (smallest size = 1 oz)
-        return Forex('XAUUSD')
-    if instrument == 'XAU':
-        # Spot gold CFD via IBKR SMART (alternative)
+        c = Future(instrument, expiry, 'COMEX') if expiry else ContFuture(instrument, 'COMEX')
+    elif instrument == 'XAUUSD':
+        c = Forex('XAUUSD')
+    elif instrument == 'XAU':
         from ib_insync import CFD
-        return CFD('XAUUSD', exchange='SMART')
-    raise ValueError(f'Unknown instrument: {instrument}')
+        c = CFD('XAUUSD', exchange='SMART')
+    else:
+        raise ValueError(f'Unknown instrument: {instrument}')
+    qualified = ib.qualifyContracts(c)
+    if not qualified:
+        raise RuntimeError(f'qualifyContracts returned empty for {instrument} expiry={expiry}')
+    return c
 
 
 def get_price_from_depth(ib: IB, contract, secs: int = 10):
@@ -80,6 +101,7 @@ def get_price_from_depth(ib: IB, contract, secs: int = 10):
     top-of-book sub on CME). Returns None if depth not available."""
     try:
         ib.reqMarketDataType(1)
+        log_mdt_status(ib, 1)
         dom = ib.reqMktDepth(contract, numRows=1)
         for _ in range(secs):
             ib.sleep(1)
@@ -113,12 +135,18 @@ def get_current_price(ib: IB, contract) -> float:
     for mdt, label in mdts:
         try:
             ib.reqMarketDataType(mdt)
+            log_mdt_status(ib, mdt)
             [ticker] = ib.reqTickers(contract)
+            # Staleness guard — reject snapshot if ticker.time is far behind
+            # wall-clock for a live/frozen request. Delayed paths skip.
+            if mdt in (1, 2) and is_price_stale(getattr(ticker, 'time', None)):
+                log.warning(f'mdt={mdt} ({label}) returned stale snapshot, trying next')
+                continue
             px = ticker.marketPrice()
             if not px or (isinstance(px, float) and math.isnan(px)) or px <= 0:
                 px = ticker.last or ticker.close
             if px and not (isinstance(px, float) and math.isnan(px)) and px > 0:
-                log.info(f'price [{label}]: {px}')
+                log.info(f'price [{label}]: {px} (ticker.time={getattr(ticker, "time", None)})')
                 return float(px)
             log.warning(f'no price from mdt={mdt} ({label})')
         except Exception as e:
@@ -215,7 +243,19 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='resolve contract + fetch price, skip order placement')
     args = ap.parse_args()
 
+    strategy = 'SUNDAY'
+
+    # Pre-flight: kill-switch, clock, market open (Sunday IS allowed),
+    # port/mode sanity, live-promotion guard.
+    check_halt_or_exit()
+    warn_on_clock_drift()
+    assert_market_open(utcnow(), allow_weekend=True)
+    verify_account_mode(args.port, args.live)
+    if args.live:
+        assert_live_allowed(TRADES_FILE)
+
     log.info(f'=== SUNDAY BRACKET — instrument={args.instrument} qty={args.qty} port={args.port} dry={args.dry_run} ===')
+    write_heartbeat(strategy, 'start', port=args.port, paper=not args.live, dry=args.dry_run)
 
     ib = IB()
     try:
@@ -223,20 +263,46 @@ def main():
         log.info(f'Connected to IB Gateway {args.host}:{args.port}')
     except Exception as e:
         log.error(f'Connect failed: {e}')
+        notify_failure(strategy, f'connect failed: {e}')
         sys.exit(2)
 
-    contract = get_contract(args.instrument, args.expiry)
-    ib.qualifyContracts(contract)
-    log.info(f'Contract: {contract}')
+    try:
+        assert_account_label(ib, args.live)
+    except SystemExit as e:
+        log.error(str(e)); notify_failure(strategy, str(e))
+        ib.disconnect(); raise
 
-    open_px = get_current_price(ib, contract)
+    try:
+        contract = get_contract(ib, args.instrument, args.expiry)
+        log.info(f'Contract: {contract}')
+    except Exception as e:
+        log.error(f'contract resolve failed: {e}')
+        notify_failure(strategy, f'contract resolve failed: {e}')
+        ib.disconnect(); sys.exit(2)
+
+    try:
+        open_px = get_current_price(ib, contract)
+    except RuntimeError as e:
+        log.error(str(e))
+        notify_failure(strategy, str(e))
+        write_heartbeat(strategy, 'no_price')
+        ib.disconnect(); sys.exit(2)
     log.info(f'Reference open price: {open_px}')
 
     if args.dry_run:
         log.info('DRY RUN — skipping order placement')
+        write_heartbeat(strategy, 'dry_run_ok', open_px=open_px)
         ib.disconnect(); sys.exit(0)
 
+    write_state(strategy, {'stage': 'placing_brackets', 'instrument': args.instrument,
+                            'qty': args.qty, 'open_px': open_px, 'paper': not args.live})
     oca, buy_trade, sell_trade = place_brackets(ib, contract, args.qty, open_px)
+    write_state(strategy, {'stage': 'awaiting_trigger', 'oca': oca,
+                            'buy_order_id': buy_trade.order.orderId,
+                            'sell_order_id': sell_trade.order.orderId,
+                            'instrument': args.instrument, 'qty': args.qty,
+                            'open_px': open_px, 'paper': not args.live})
+    write_heartbeat(strategy, 'placed', oca=oca, open_px=open_px)
 
     # Wait for either bracket to trigger (up to HOLD_MIN as no-trigger timeout)
     log.info(f'Watching for trigger (timeout {HOLD_MIN}min)...')
@@ -264,9 +330,17 @@ def main():
             'pnl_total': 0.0,
             'paper': not args.live,
         })
+        clear_state(strategy)
+        write_heartbeat(strategy, 'no_trigger')
         ib.disconnect()
         sys.exit(0)
 
+    write_state(strategy, {'stage': 'in_position', 'oca': oca,
+                            'parent_order_id': triggered.order.orderId,
+                            'side': triggered.order.action,
+                            'entry': float(triggered.orderStatus.avgFillPrice),
+                            'instrument': args.instrument, 'qty': args.qty,
+                            'open_px': open_px, 'paper': not args.live})
     # Attach TP + time exit
     reason, exit_px = attach_tp_and_time_exit(ib, contract, triggered, args.qty, HOLD_MIN)
     entry_px = triggered.orderStatus.avgFillPrice
@@ -288,6 +362,8 @@ def main():
         'pnl_total': float(pnl_total),
         'paper': not args.live,
     })
+    clear_state(strategy)
+    write_heartbeat(strategy, 'done', reason=reason, pnl_total=float(pnl_total))
 
     ib.disconnect()
 

@@ -1,8 +1,10 @@
 # Omega Bracket Bot — Session Handoff
 
-**Date:** 2026-05-25
+**Date:** 2026-05-27
 **Repo:** https://github.com/Trendiisales/Omega — `bracket-bot/` subfolder
-**Status:** Deployed to the Windows VPS and verified. One fix queued — see "NEXT FIX".
+**Status:** Live-execution hardened. Real-time data path landed (L2 mid +
+mdt cascade) and now wrapped in pre-flight gates, staleness guard,
+order-state persistence, kill-switch, heartbeat, and failure webhook.
 
 ---
 
@@ -10,7 +12,7 @@
 
 `bracket-bot/` is the Python execution component of Omega — it runs the live
 gold-bracket trading strategies. It is intentionally Python, not C++ (rationale
-is in `bracket-bot/README.md`). The C++ tick-processing engine in the rest of the
+in `bracket-bot/README.md`). The C++ tick-processing engine in the rest of the
 repo is a separate codebase.
 
 Strategies (OCA bracket orders on gold):
@@ -19,127 +21,139 @@ Strategies (OCA bracket orders on gold):
 
 ---
 
-## Done this session
+## Done this session (2026-05-27)
 
-The bot was previously developed in a standalone Mac folder `~/omega_repo` that
-was not under version control and not connected to GitHub. This session:
+Hardened the live-execution path. Everything below sits at the top of both
+bracket scripts (via `live/_common.py`) so they share identical gates and
+identical failure semantics.
 
-- Committed the bot into `Trendiisales/Omega` under `bracket-bot/`.
-- Added a Windows VPS deployment package (`bracket-bot/deploy/`).
-- Added `bracket-bot/README.md` marking it as a deliberate Python component.
-- Deployed to the Windows VPS and verified end-to-end.
+### Real-time market data
+- L2 best-bid/ask midpoint first (existing IBKR L2 sub).
+- Top-of-book mdt cascade `(1, 2, 3, 4)` w/ historical 1m fallback.
+- Staleness guard rejects live/frozen ticks whose `tk.time` is more than
+  30 s behind wall-clock — catches IBKR's silent downgrade-to-delayed when
+  the account lacks a real-time sub.
+- `log_mdt_status()` logs the type actually requested at each step.
 
-Relevant commits on `main`: `c26a521` (bot), `b70e533` (deploy package),
-`ced33fa` (README), `5757ab6` + `280908a` (deploy-script hardening).
+### Pre-flight gates (both scripts)
+- `HALT` kill-switch — `bracket-bot/HALT` exists → exit cleanly w/ webhook.
+- NTP drift check vs `pool.ntp.org` (warn-only, non-fatal).
+- Weekday + CME holiday calendar (2026 + 2027). Sunday bracket exempts
+  weekend check.
+- `verify_account_mode()` — `--live` only against ports `{4001, 7496}`,
+  `--paper` only against `{4002, 7497}`. Refuses mismatch.
+- `assert_account_label()` — cross-checks `ib.managedAccounts()` (paper
+  = `DU…`, live = `U…`). Catches Gateway logged into the wrong account
+  on the right port.
+- `assert_live_allowed()` — `--live` blocked unless `BRACKET_GO_LIVE=1`
+  AND a recent (< 30 days) paper trade exists in `data/trades.ndjson`.
 
----
+### Order-state persistence
+- `data/state/<STRATEGY>.json` written at `placing_brackets`,
+  `awaiting_trigger`, `in_position`. Cleared on clean exit.
+- `scripts/recover_state.py` — reads stale state files, lists open
+  orders via `reqAllOpenOrders` (clientId 0), flags the P0 case
+  (`in_position` with no child exits), optional `--cancel-orphans`.
 
-## Deployed state (Windows VPS)
+### Heartbeat + failure notification
+- `logs/heartbeat.ndjson` — one record per stage transition
+  (`start`, `placed`, `no_trigger`, `in_position`, `done`, `no_price`,
+  `dry_run_ok`).
+- `scripts/run_with_heartbeat.ps1` wraps every scheduled task. Captures
+  stdout/stderr to `logs/scheduled_<task>_<utc>.log[.err]`, writes
+  wrapper start/end heartbeats, posts to `BRACKET_WEBHOOK_URL` on
+  non-zero exit.
+- `notify_failure()` from inside the bracket script also posts to the
+  same webhook on connect / contract / no-price / mode-mismatch failures.
+- `register_tasks.ps1` updated — all three tasks now run through the
+  wrapper (must be re-registered on the VPS to pick this up).
 
-- Repo cloned at `C:\Omega`; bot at `C:\Omega\bracket-bot`.
-- venv at `C:\Omega\bracket-bot\.venv` with `ib_insync==0.9.86` (+ eventkit,
-  nest_asyncio, numpy). `flask` is NOT installed — see "Open items".
-- VPS clock set to UTC.
-- IB Gateway running on the VPS, paper port 4002, API enabled.
-- Three Windows Task Scheduler jobs registered, all `--paper`:
-  - `Omega Daily Bracket 1300` — Mon–Fri 13:00 UTC
-  - `Omega Daily Bracket 1400` — Mon–Fri 14:00 UTC
-  - `Omega Sunday Bracket` — Sunday 22:55 UTC
-- Smoke test passed: `daily_bracket.py --paper --dry-run` connected to IB
-  Gateway, resolved the MGC Jun-2026 contract, fetched a gold price, exited clean.
+### Deploy hygiene
+- `requirements.lock` — fully pinned transitive closure
+  (blinker, click, eventkit, Flask 3.1.3, ib-insync 0.9.86,
+  itsdangerous, Jinja2, MarkupSafe, nest-asyncio, numpy, Werkzeug).
+  Install w/ `pip install --no-deps -r requirements.lock`.
+- `deploy/DEFENDER-EXCLUSION.md` — exact steps to whitelist the venv
+  so `flask` (and any other console-script package) installs.
 
-Full deploy steps: `bracket-bot/deploy/DEPLOY-WINDOWS.md`.
-
----
-
-## NEXT FIX — switch from delayed to real-time market data
-
-Priority task for the next session.
-
-**Problem.** The bot prices off delayed market data:
-- `live/daily_bracket.py` → `get_price()` calls `ib.reqMarketDataType(4)`
-  (4 = delayed-frozen).
-- `live/sunday_bracket.py` → `get_current_price()` calls `ib.reqTickers()` with
-  no market-data type set.
-
-The bracket is built around a reference "open" price, so a ~10–15 min delay
-misaligns live behaviour against the backtest the configs were validated on.
-
-**Goal.** Price off real-time data. Real-time data IS available on this account —
-it is already used by the Omega C++ engine's L2 / depth-of-market feed
-("we have this via L2").
-
-**Option A — use IBKR real-time directly (minimal change, recommended first).**
-- In `daily_bracket.py`, change `reqMarketDataType(4)` → `reqMarketDataType(1)`
-  (1 = real-time / live).
-- In `sunday_bracket.py`, add `ib.reqMarketDataType(1)` before `reqTickers()`.
-- Keep a graceful fallback: try type 1, fall back to 2 (frozen) / 3 / 4 if the
-  account is not subscribed for that contract, so a missing subscription never
-  hard-fails a scheduled run.
-- Verify the IBKR account has real-time COMEX / MGC market-data permissions.
-
-**Option B — read the reference price from the Omega L2 bridge.**
-- The C++ engine maintains an L2/depth feed and writes an "Omega L2 CSV" (see
-  C++ repo history: "wire IBKR L2 to GUI depth panel + Omega L2 CSV", "add IBKR
-  DOM bridge"). The bracket bot could read its reference price from that feed
-  instead of making its own IBKR market-data request.
-- Pro: one shared real-time source with the engine. Con: needs the CSV path +
-  format and a staleness/freshness check.
-
-**Before implementing, confirm:**
-1. IBKR account real-time data permissions for MGC / COMEX.
-2. If choosing Option B: the path and format of the Omega L2 CSV.
-3. Both scripts need the change — `daily_bracket.py` AND `sunday_bracket.py`.
-4. Re-run `--dry-run` afterward and confirm the printed price matches a live
-   quote, not a stale one.
-
-**Constraint.** User rule: "never modify core code unless clearly instructed."
-This fix is authorised for the pricing path only — do NOT change strategy
-parameters (offsets, TP/SL distances, hold time).
+### Unification
+- `sunday_bracket.get_contract()` now takes `ib` and qualifies inside,
+  matching `daily_bracket.get_contract()`. Both share the same path:
+  explicit `--expiry` overrides; otherwise `ContFuture` (auto front-month).
+- Both scripts source `utcnow`, `LOG_DIR`, `DATA_DIR` from `_common`.
 
 ---
 
-## Open items (not blocking)
+## Deploying these changes to the VPS
 
-- **Dashboard not deployed.** `server.py` needs `flask`. `flask` has a
-  console-script entry point; generating its launcher is expected to hit the
-  same `ValueError: Unable to find resource t64.exe` that broke the earlier
-  `pip install --upgrade pip` on this VPS — pip cannot create console-script
-  `.exe` launchers, most likely Windows Defender quarantining pip's launcher
-  stubs. `ib_insync` installed fine because it has no console scripts. Fix:
-  add a Defender exclusion for the venv and retry, or run the dashboard on the
-  Mac. Do NOT run `pip install --upgrade pip` on the VPS — it corrupts the venv.
-- **`sunday_bracket.py` hard-coded expiry.** `get_contract()` uses
-  `Future('MGC', expiry or '20260618', 'COMEX')`. `daily_bracket.py` uses
-  `ContFuture` (auto front-month, resolved to 20260626 in testing). Align the
-  Sunday bot to `ContFuture`, or verify the expiry before the next Sunday run.
-- **`datetime.utcnow()` deprecation.** Both scripts use the deprecated
-  `datetime.utcnow()`; harmless on Python 3.12, modernise to
-  `datetime.now(datetime.UTC)` eventually.
-- **Mac cron.** Remove any `cron_sunday_bracket.sh` line from the Mac crontab
-  (`crontab -l` / `crontab -e`) so the Sunday bracket does not double-run.
-- **Stray `~/omega_repo` on the Mac.** Original dev folder; no longer the
-  canonical home. Has a broken half-initialised `.git`. Recommend
-  `rm -rf ~/omega_repo/.git` and, going forward, edit the bot inside a clone of
-  `Trendiisales/Omega` so changes push normally.
-- **GitHub token.** The token in the global CLAUDE.md is dead; a fresh one was
-  used this session and should be rotated and CLAUDE.md updated.
-- **Paper vs live.** Everything is `--paper`. Do not switch tasks to `--live`
-  until the real-time-data fix is in and the strategy is validated on paper.
+    # On the VPS, in C:\Omega:
+    git pull origin main
+
+    # Install any new pins (no-op if already on lock):
+    cd C:\Omega\bracket-bot
+    .\.venv\Scripts\python.exe -m pip install --no-deps -r requirements.lock
+
+    # Re-register the scheduled tasks so they go through the wrapper:
+    powershell -ExecutionPolicy Bypass -File deploy\register_tasks.ps1
+
+    # Optional: configure the webhook for failure alerts (Slack-compatible).
+    setx BRACKET_WEBHOOK_URL "https://hooks.slack.com/services/..."
+
+    # Smoke test (places no orders):
+    .\.venv\Scripts\python.exe -m live.daily_bracket --paper --dry-run --strategy SMOKE
+
+---
+
+## Open items
+
+These still belong to the operator, not the bot:
+
+- **Defender exclusion on the venv.** Follow
+  `deploy/DEFENDER-EXCLUSION.md`, then install Flask so the dashboard
+  works.
+- **IBKR market-data subscriptions.** Confirm real-time MGC / COMEX
+  permissions on the IBKR account. Without them the staleness guard
+  will reject every live tick and the bot will fall through to delayed.
+  Verify via account portal or by reading the first `[INFO] price
+  [live]: …` line in a real run.
+- **Mac cron.** Remove `cron_sunday_bracket.sh` from the Mac crontab
+  (`crontab -e`) if still present. The VPS is now authoritative.
+- **Stray `~/omega_repo` on the Mac.** Delete the half-initialised
+  `.git` there: `rm -rf ~/omega_repo/.git`. Edit the bot inside a
+  clone of `Trendiisales/Omega` from now on.
+- **GitHub token.** The token in global CLAUDE.md is dead; the fresh
+  one used last session should be rotated and CLAUDE.md updated.
+- **CME holiday list.** Hard-coded for 2026 + 2027 in `live/_common.py`.
+  Refresh annually.
+- **Going live.** Don't flip `--paper` → `--live` until:
+    1. `BRACKET_GO_LIVE=1` set on the VPS (`setx`).
+    2. Recent paper trade in `data/trades.ndjson`.
+    3. `scripts\live_guard.py` exits 0.
+    4. Real-time subs confirmed (see above).
 
 ---
 
 ## Key commands
 
-Update the VPS to the latest code:
-
-    cd C:\Omega
-    git pull origin main
-
-Re-run the smoke test (places no orders):
+Smoke test (places no orders):
 
     cd C:\Omega\bracket-bot
-    & ".\.venv\Scripts\python.exe" live\daily_bracket.py --paper --dry-run
+    & ".\.venv\Scripts\python.exe" -m live.daily_bracket --paper --dry-run --strategy SMOKE
+
+Crash recovery (after any unscheduled bot death):
+
+    & ".\.venv\Scripts\python.exe" scripts\recover_state.py
+    & ".\.venv\Scripts\python.exe" scripts\recover_state.py --cancel-orphans
+
+Halt all scheduled runs without unregistering tasks:
+
+    New-Item C:\Omega\bracket-bot\HALT
+    # …re-enable with…
+    Remove-Item C:\Omega\bracket-bot\HALT
+
+Tail the heartbeat:
+
+    Get-Content C:\Omega\bracket-bot\logs\heartbeat.ndjson -Tail 20
 
 Re-register scheduled tasks (Administrator PowerShell):
 
@@ -150,7 +164,7 @@ Re-register scheduled tasks (Administrator PowerShell):
 
 ## Suggested skills for the next session
 
-- `mp-skills:diagnose` — if the real-time-data switch misbehaves (wrong price,
-  subscription errors, stale ticks).
-- `mp-skills:review` — to validate the pricing change before anything goes
-  near `--live`.
+- `mp-skills:diagnose` — if the staleness guard rejects every live
+  tick on first VPS deploy (likely cause: missing real-time sub).
+- `mp-skills:review` — to audit any future live-path change before
+  it goes near `--live`.

@@ -17,7 +17,22 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from ib_insync import IB, Future, ContFuture, Forex, Stock, StopOrder, LimitOrder, MarketOrder
 
-def utcnow(): return datetime.now(timezone.utc)
+from live import _common
+from live._common import (
+    utcnow,
+    check_halt_or_exit,
+    verify_account_mode,
+    assert_account_label,
+    assert_market_open,
+    assert_live_allowed,
+    warn_on_clock_drift,
+    is_price_stale,
+    log_mdt_status,
+    write_state,
+    clear_state,
+    write_heartbeat,
+    notify_failure,
+)
 
 # Validated daily 13/14 UTC config (tighter than Sunday)
 OFFSET = 2.0
@@ -26,9 +41,9 @@ SL_DIST = 2.0
 HOLD_MIN = 60
 TICK_SZ = 0.10
 
-ROOT = Path(__file__).resolve().parent.parent
-LOG_DIR = ROOT / 'logs'; LOG_DIR.mkdir(exist_ok=True)
-DATA_DIR = ROOT / 'data'; DATA_DIR.mkdir(exist_ok=True)
+ROOT = _common.ROOT
+LOG_DIR = _common.LOG_DIR; LOG_DIR.mkdir(exist_ok=True)
+DATA_DIR = _common.DATA_DIR; DATA_DIR.mkdir(exist_ok=True)
 TRADES_FILE = DATA_DIR / 'trades.ndjson'
 
 logging.basicConfig(level=logging.INFO,
@@ -56,6 +71,7 @@ def get_price_from_depth(ib, c, secs=10):
     top-of-book sub on CME). Returns None if depth not available."""
     try:
         ib.reqMarketDataType(1)
+        log_mdt_status(ib, 1)
         dom = ib.reqMktDepth(c, numRows=1)
         for _ in range(secs):
             ib.sleep(1)
@@ -89,13 +105,20 @@ def get_price(ib, c):
     for mdt, label in mdts:
         try:
             ib.reqMarketDataType(mdt)
+            log_mdt_status(ib, mdt)
             tk = ib.reqMktData(c, '', False, False)
             for _ in range(4):
                 ib.sleep(2)
+                # Staleness guard — IBKR silently downgrades to delayed when
+                # the account lacks a sub. tk.time stays current even when
+                # marketDataType drops, so we reject anything > threshold old
+                # for live/frozen requests. Delayed paths skip the guard.
+                if mdt in (1, 2) and is_price_stale(getattr(tk, 'time', None)):
+                    continue
                 for cand in (tk.marketPrice(), tk.last, tk.close, tk.bid, tk.ask):
                     if cand and not math.isnan(cand) and cand > 0:
                         ib.cancelMktData(c)
-                        log.info(f'price [{label}]: {cand}')
+                        log.info(f'price [{label}]: {cand} (tk.time={getattr(tk, "time", None)})')
                         return float(cand)
             ib.cancelMktData(c)
             log.warning(f'no price from mdt={mdt} ({label})')
@@ -221,25 +244,39 @@ def main():
     ap.add_argument('--dry-run', action='store_true')
     args = ap.parse_args()
 
-    # Weekday check — only fire Mon-Fri (skip Sat=5, Sun=6)
-    wd = utcnow().weekday()
-    if wd >= 5:
-        log.info(f'Skipping weekend (weekday={wd})')
-        sys.exit(0)
+    # Pre-flight: kill-switch, clock, market open, port/mode sanity.
+    check_halt_or_exit()
+    warn_on_clock_drift()
+    assert_market_open(utcnow())
+    verify_account_mode(args.port, args.live)
+    if args.live:
+        assert_live_allowed(TRADES_FILE)
 
     log.info(f'=== {args.strategy} instr={args.instrument} qty={args.qty} port={args.port} dry={args.dry_run} ===')
+    write_heartbeat(args.strategy, 'start', port=args.port, paper=not args.live, dry=args.dry_run)
     ib = IB()
     try:
         ib.connect(args.host, args.port, clientId=args.client_id, timeout=10)
         log.info(f'connected {args.host}:{args.port} clientId={args.client_id}')
     except Exception as e:
-        log.error(f'connect failed: {e}'); sys.exit(2)
+        log.error(f'connect failed: {e}')
+        notify_failure(args.strategy, f'connect failed: {e}')
+        sys.exit(2)
+
+    # Account-label cross-check (paper accounts start DU, live U).
+    try:
+        assert_account_label(ib, args.live)
+    except SystemExit as e:
+        log.error(str(e)); notify_failure(args.strategy, str(e))
+        ib.disconnect(); raise
 
     try:
         c = get_contract(ib, args.instrument, args.expiry)
         log.info(f'contract: {c}')
     except Exception as e:
-        log.error(f'contract resolve failed: {e}'); ib.disconnect(); sys.exit(2)
+        log.error(f'contract resolve failed: {e}')
+        notify_failure(args.strategy, f'contract resolve failed: {e}')
+        ib.disconnect(); sys.exit(2)
 
     # Cancel any leftover orders from prior runs BEFORE placing new bracket.
     # GTC stops survive Python process death -> they accumulate without cleanup.
@@ -252,18 +289,28 @@ def main():
     open_px = get_price(ib, c)
     if open_px is None:
         log.warning('NO PRICE — exiting clean')
+        notify_failure(args.strategy, 'NO_PRICE — no usable quote across all market-data types')
         append_trade({'ts':utcnow().isoformat(),'strategy':args.strategy,
                       'instrument':args.instrument,'qty':args.qty,
                       'open_px':None,'side':None,'entry':None,'exit':None,'reason':'NO_PRICE',
                       'pnl_per_oz':0.0,'pnl_total':0.0,'paper':not args.live})
+        write_heartbeat(args.strategy, 'no_price')
         ib.disconnect(); sys.exit(0)
     log.info(f'open_px = {open_px}')
 
     if args.dry_run:
         log.info('DRY RUN — skipping order placement')
+        write_heartbeat(args.strategy, 'dry_run_ok', open_px=open_px)
         ib.disconnect(); sys.exit(0)
 
+    write_state(args.strategy, {'stage': 'placing_brackets', 'instrument': args.instrument,
+                                 'qty': args.qty, 'open_px': open_px, 'paper': not args.live})
     oca, bt, st = place_brackets(ib, c, args.qty, open_px, args.strategy)
+    write_state(args.strategy, {'stage': 'awaiting_trigger', 'oca': oca,
+                                 'buy_order_id': bt.order.orderId, 'sell_order_id': st.order.orderId,
+                                 'instrument': args.instrument, 'qty': args.qty,
+                                 'open_px': open_px, 'paper': not args.live})
+    write_heartbeat(args.strategy, 'placed', oca=oca, open_px=open_px)
     deadline = utcnow() + timedelta(minutes=HOLD_MIN)
     triggered = None
     while utcnow() < deadline:
@@ -281,8 +328,16 @@ def main():
                       'instrument':args.instrument,'qty':args.qty,
                       'open_px':open_px,'side':None,'entry':None,'exit':None,'reason':'NO_TRIGGER',
                       'pnl_per_oz':0.0,'pnl_total':0.0,'paper':not args.live})
+        clear_state(args.strategy)
+        write_heartbeat(args.strategy, 'no_trigger')
         ib.disconnect(); sys.exit(0)
 
+    write_state(args.strategy, {'stage': 'in_position', 'oca': oca,
+                                 'parent_order_id': triggered.order.orderId,
+                                 'side': triggered.order.action,
+                                 'entry': float(triggered.orderStatus.avgFillPrice),
+                                 'instrument': args.instrument, 'qty': args.qty,
+                                 'open_px': open_px, 'paper': not args.live})
     reason, exit_px = attach_exits(ib, c, triggered, args.qty, HOLD_MIN)
     entry = triggered.orderStatus.avgFillPrice
     side = triggered.order.action
@@ -294,6 +349,8 @@ def main():
                   'open_px':open_px,'side':side,'entry':float(entry),'exit':float(exit_px),
                   'reason':reason,'pnl_per_oz':float(pnl_oz),'pnl_total':float(pnl_tot),
                   'paper':not args.live})
+    clear_state(args.strategy)
+    write_heartbeat(args.strategy, 'done', reason=reason, pnl_total=float(pnl_tot))
     ib.disconnect()
 
 if __name__ == '__main__': main()
