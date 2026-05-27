@@ -22,6 +22,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "PortfolioGuard.hpp"  // S51: concurrency cap
 
 namespace omega {
 
@@ -117,13 +118,14 @@ struct XauDojiRejD1Engine {
                 const double prev_body = std::fabs(prev_close_ - prev_open_);
                 const double prev_range = prev_high_ - prev_low_;
                 const bool is_doji = (prev_range > 0.0 && prev_body < p.doji_body_pct * prev_range);
-                if (is_doji && bar_close > prev_high_) {
+                if (is_doji && bar_close > prev_high_ && omega::pg::can_open_new_position()) {  // S51 cap
                     const double entry_px = ask;
                     const double atr_pct = atr_pre / bar_close;
                     const double sl_px = entry_px * (1.0 - p.sl_atr_mult * atr_pct);
                     const double tp_px = entry_px * (1.0 + p.tp_atr_mult * atr_pct);
 
                     pos_.active=true;
+                    omega::pg::register_position_open();  // S51 cap
                     pos_.entry=entry_px; pos_.sl=sl_px; pos_.tp=tp_px;
                     pos_.lot=p.lot; pos_.mfe=pos_.mae=0;
                     pos_.entry_ts_ms=h4_close_ms; pos_.days_held=0;
@@ -189,6 +191,7 @@ struct XauDojiRejD1Engine {
 
     void _close(double exit_px, const char* reason, int64_t now_ms, CloseCallback on_close) noexcept {
         if (!pos_.active) return;
+        omega::pg::register_position_close();  // S51 cap
         const double pts_move = exit_px - pos_.entry;
         const double pnl_dollars = pts_move * pos_.lot * p.dollars_per_pt;
         printf("[XAU_DOJI_REJ_D1] EXIT reason=%s entry=%.2f exit=%.2f pts=%.2f pnl=%.2f days=%d%s\n",

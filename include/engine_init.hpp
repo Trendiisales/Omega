@@ -7,9 +7,35 @@
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
 #include "SeedGuard.hpp"
+#include "PortfolioGuard.hpp"
 
 static void init_engines(const std::string& cfg_path)
 {
+    // ── S51 2026-05-27: PortfolioGuard config ──────────────────────────────
+    // After S49/S50 real-class audit confirmed 16 XAU D1/H4 engines have real
+    // edge, the concurrency cap must protect against correlated stacking:
+    // multiple D1 engines fire LONG on the same trend day → 16 simultaneous
+    // longs amplifies the worst-case drawdown linearly. Cap at 2 leaves
+    // headroom for two-engine confirmation patterns (Turtle + Pullback) but
+    // blocks the full-zoo-stack adverse case.
+    //   Why 2 not 4: post-audit MDD-to-gross ratios on TrendFollowD1 (95%)
+    //   and TrendFollow2h (75%) show drawdown stacking risk dominates. Two
+    //   uncorrelated entries can absorb the same trend; four-plus invites
+    //   one bad day wiping a week of gains. Kill-file + vol-scaled lot
+    //   remain available as opt-in per-engine if needed.
+    omega::pg::g_pg_cfg.max_concurrent_positions = 2;
+    omega::pg::g_pg_cfg.kill_file_enabled        = true;
+    omega::pg::g_pg_cfg.kill_file_path           = "C:/Omega/KILL_SWITCH.lock";
+    omega::pg::g_pg_cfg.kill_file_recheck_sec    = 30;
+    // Vol-scaled lot + HTF scalar remain opt-in (per-engine wiring not
+    // applied portfolio-wide -- S44 lesson: hard HTF gate destroyed edge).
+    omega::pg::g_pg_cfg.vol_scale_enabled   = false;
+    omega::pg::g_pg_cfg.htf_scalar_enabled  = false;
+    printf("[OMEGA-INIT] PortfolioGuard: cap=%d kill_file=%s recheck=%ds\n",
+           omega::pg::g_pg_cfg.max_concurrent_positions,
+           omega::pg::g_pg_cfg.kill_file_path,
+           omega::pg::g_pg_cfg.kill_file_recheck_sec);
+
     // ── Seed-path anchor (2026-05-22 incident fix) ──────────────────────
     // Windows services inherit CWD = C:\Windows\System32, which breaks
     // every "phase1/...", "data/...", "logs/..." relative path the rest

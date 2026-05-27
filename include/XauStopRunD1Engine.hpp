@@ -34,6 +34,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "PortfolioGuard.hpp"  // S51: concurrency cap
 
 namespace omega {
 
@@ -157,7 +158,8 @@ struct XauStopRunD1Engine {
                 && atr_pre > 0.0 && prior_low < 1e17
                 && (ask - bid) <= p.max_spread
                 && bar_low < prior_low
-                && bar_close > prior_low)
+                && bar_close > prior_low
+                && omega::pg::can_open_new_position())  // S51 cap
             {
                 const double entry_px = ask;
                 const double atr_pct = atr_pre / bar_close;
@@ -165,6 +167,7 @@ struct XauStopRunD1Engine {
                 const double tp_px = entry_px * (1.0 + p.tp_atr_mult * atr_pct);
 
                 pos_.active=true; pos_.is_long=true;
+                omega::pg::register_position_open();  // S51 cap
                 pos_.entry=entry_px; pos_.sl=sl_px; pos_.tp=tp_px;
                 pos_.lot=p.lot; pos_.mfe=pos_.mae=0;
                 pos_.entry_ts_ms=h4_close_ms; pos_.days_held=0;
@@ -229,6 +232,7 @@ struct XauStopRunD1Engine {
     void _close(double exit_px, const char* reason, int64_t now_ms,
                 CloseCallback on_close) noexcept {
         if (!pos_.active) return;
+        omega::pg::register_position_close();  // S51 cap
         const double pts_move = pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px);
         const double pnl_dollars = pts_move * pos_.lot * p.dollars_per_pt;
 

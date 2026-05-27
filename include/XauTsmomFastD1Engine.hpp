@@ -45,6 +45,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "PortfolioGuard.hpp"  // S51: concurrency cap
 
 namespace omega {
 
@@ -197,13 +198,14 @@ struct XauTsmomFastD1Engine {
                 const double mom = std::log(bar_close / past_close);
 
                 // Long-only: require positive momentum above threshold
-                if (mom >= p.min_mom_pct) {
+                if (mom >= p.min_mom_pct && omega::pg::can_open_new_position()) {  // S51 cap
                     const double entry_px = ask;
                     const double atr_pct  = atr_pre / bar_close;
                     const double sl_px    = entry_px * (1.0 - p.sl_atr_mult * atr_pct);
                     const double tp_px    = entry_px * (1.0 + p.tp_atr_mult * atr_pct);
 
                     pos_.active      = true;
+                    omega::pg::register_position_open();  // S51 cap
                     pos_.is_long     = true;
                     pos_.entry       = entry_px;
                     pos_.sl          = sl_px;
@@ -294,6 +296,7 @@ struct XauTsmomFastD1Engine {
                 CloseCallback on_close) noexcept
     {
         if (!pos_.active) return;
+        omega::pg::register_position_close();  // S51 cap
         const double pts_move = pos_.is_long ? (exit_px - pos_.entry) : (pos_.entry - exit_px);
         const double pnl_dollars = pts_move * pos_.lot * p.dollars_per_pt;
 
