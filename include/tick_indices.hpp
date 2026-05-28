@@ -327,6 +327,16 @@ static void on_tick_us500(
                 "ISWING", regime.c_str(), "IndexSwing",
                 0.0, g_iswing_sp.sl_price());
     }
+
+    // -- IndexIntradayDriftEngine (S37-Z 2026-05-28) -------------------------
+    // BUY at first H1 of UTC day, SELL at last H1 of UTC day. Audit verdict
+    // SPXUSD Sharpe +0.77 net, walk-fwd both halves positive.
+    {
+        const int64_t now_ms_idd = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idd_sp.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
+    }
 }
 
 // ── USTEC.F ────────────────────────────────────────────────
@@ -824,6 +834,16 @@ static void on_tick_dj30(
         }
         g_us30_ensemble.on_tick(bid, ask, now_ms_e, ca_on_close);
     }
+
+    // -- IndexIntradayDriftEngine (S37-Z 2026-05-28) -------------------------
+    // Audit verdict on USA30 corpus Oct-2025..Apr-2026:
+    //   Sharpe +1.31 net, WF1 +1.04, WF2 +1.53 -- strongest of basket.
+    {
+        const int64_t now_ms_idd = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idd_us30.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
+    }
 }
 
 // ── GER40 ──────────────────────────────────────────────────
@@ -959,6 +979,16 @@ static void on_tick_uk100(
         }
     }
     (void)sdec_uk;
+
+    // -- IndexIntradayDriftEngine (S37-Z 2026-05-28) -------------------------
+    // Audit verdict on GBRIDXGBP corpus 2025-01..2025-12:
+    //   Sharpe +1.12 net, WF1 +1.01, WF2 +1.46 -- both halves >+1.0.
+    {
+        const int64_t now_ms_idd = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idd_uk100.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
+    }
 }
 
 // ── ESTX50 ─────────────────────────────────────────────────

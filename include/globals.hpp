@@ -352,6 +352,18 @@ static omega::idx::IndexMacroCrashEngine g_imacro_nq("USTEC.F");
 static omega::idx::IndexMacroCrashEngine g_imacro_nas("NAS100");
 static omega::idx::IndexMacroCrashEngine g_imacro_us30("DJ30.F");
 
+// =============================================================================
+// IndexIntradayDriftEngine (S37-Z 2026-05-28) -- BUY open / SELL close.
+// Audited viable on SPX, USA30 (DJ30), UK100 over 2024-2026 corpus net of
+// 1.5-3pt round-trip retail spread cost. Walk-forward both halves positive
+// on all 3. See include/IndexIntradayDriftEngine.hpp header block for the
+// audit table. NSXUSD and GER40 audited as marginal -- skip until WF fixes.
+// =============================================================================
+#include "IndexIntradayDriftEngine.hpp"
+static omega::IndexIntradayDriftEngine   g_idd_sp;       // US500.F
+static omega::IndexIntradayDriftEngine   g_idd_us30;     // DJ30.F  (USA30 corpus)
+static omega::IndexIntradayDriftEngine   g_idd_uk100;    // UK100   (GBRIDXGBP corpus)
+
 // Bug #3 (KNOWN_BUGS.md) cross-engine state. Two-part block: index_any_open()
 // (defined later, after engine declarations) catches concurrent overlap;
 // idx_recent_close_block() catches the documented 1-3min post-close whipsaw.

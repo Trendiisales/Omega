@@ -154,6 +154,39 @@ static void init_engines(const std::string& cfg_path)
     g_iflow_nq.set_shadow_mode(kShadowDefault);
     g_iflow_nas.set_shadow_mode(kShadowDefault);
     g_iflow_us30.set_shadow_mode(kShadowDefault);
+
+    // -- IndexIntradayDriftEngine (S37-Z 2026-05-28) -------------------------
+    // BUY at first H1 of UTC day / SELL at last H1. 3 viable instances.
+    // Audit (see include/IndexIntradayDriftEngine.hpp header for full table):
+    //   SPXUSD Sharpe +0.77 net, WF1 +1.28, WF2 +0.48 -- VIABLE
+    //   USA30  Sharpe +1.31 net, WF1 +1.04, WF2 +1.53 -- VIABLE (strongest)
+    //   UK100  Sharpe +1.12 net, WF1 +1.01, WF2 +1.46 -- VIABLE (strongest WF)
+    // NSXUSD + GER40 NOT wired -- both flagged MARGINAL (one walk-fwd half
+    // negative). Re-audit after 6mo additional data before wiring.
+    // All 3 start in shadow_mode per kShadowDefault until 30+ live trades
+    // confirm post-deploy expectancy. ENTRY_SIZE matches existing index
+    // bracket defaults (0.01) and scales via AdaptiveRiskManager.
+    g_idd_sp.symbol      = "US500.F";
+    g_idd_us30.symbol    = "DJ30.F";
+    g_idd_uk100.symbol   = "UK100";
+    g_idd_sp.enabled     = true;
+    g_idd_us30.enabled   = true;
+    g_idd_uk100.enabled  = true;
+    g_idd_sp.shadow_mode    = true;   // pinned shadow for first 30 trades
+    g_idd_us30.shadow_mode  = true;
+    g_idd_uk100.shadow_mode = true;
+    g_idd_sp.ENTRY_HOUR_UTC    = 0;    // first H1 of UTC day = 00:00..00:59
+    g_idd_us30.ENTRY_HOUR_UTC  = 0;
+    g_idd_uk100.ENTRY_HOUR_UTC = 0;
+    g_idd_sp.EXIT_HOUR_UTC     = 23;   // close at/after 23:00 UTC
+    g_idd_us30.EXIT_HOUR_UTC   = 23;
+    g_idd_uk100.EXIT_HOUR_UTC  = 23;
+    g_idd_sp.SAFETY_SL_PCT     = 2.5;  // 2.5% black-swan tail stop
+    g_idd_us30.SAFETY_SL_PCT   = 2.5;
+    g_idd_uk100.SAFETY_SL_PCT  = 2.5;
+    g_idd_sp.boot_announce();
+    g_idd_us30.boot_announce();
+    g_idd_uk100.boot_announce();
     // S11 P3b (2026-05-07): GoldHybridBracketEngine culled.
     //   Original S8 shadow_mode=true pin (2026-05-06 RR-asymmetric bleed:
     //   7 SL hits in 13:00-14:07 UTC window for -$50 net, ~0.4:1 RR needing
