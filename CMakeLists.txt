@@ -959,6 +959,45 @@ else()
 endif()
 
 # =============================================================================
+# bracket_gold_2yr_audit -- 2-year XAUUSD backtest for g_bracket_gold.
+#                           Built 2026-05-28 (S37-Y) after operator override
+#                           re-enabled g_disable_bracket_gold. Re-validates
+#                           the 2026-04-30 4-week audit with per-session
+#                           breakdown (London/NY/Asia/Late_NY).
+#
+# Build: cmake --build build --target bracket_gold_2yr_audit -j
+# Run:   ./build/bracket_gold_2yr_audit /Users/jo/Tick/2yr_XAUUSD_tick_fresh.csv
+# =============================================================================
+add_executable(bracket_gold_2yr_audit
+    backtest/bracket_gold_2yr_audit.cpp
+)
+target_include_directories(bracket_gold_2yr_audit PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(bracket_gold_2yr_audit PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(bracket_gold_2yr_audit PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(bracket_gold_2yr_audit PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable
+        -Wno-unused-but-set-variable -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(bracket_gold_2yr_audit PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(bracket_gold_2yr_audit PRIVATE pthread)
+endif()
+
+# =============================================================================
 # xau_d1_zoo_audit -- standalone harness for the Xau H4/D1 engine cohort.
 #                     Used by S37 Phase H trail audit (2026-05-27b) to test
 #                     gated stage_trail on PullbackContH4/D1, TurtleD1,
