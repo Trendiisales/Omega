@@ -263,15 +263,21 @@ static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L,
 //      g_disable_bracket_gold  -- -324pts in 4wk, 12.8% WR
 //                                 (2026-04-30 audit; small absolute but
 //                                 sustained losing pattern).
-//                                 2026-05-28: OPERATOR OVERRIDE -- re-enabled.
-//                                 Engine is designed to arm ONLY at London/NY
-//                                 open compression-break; the 2026-04-30 audit
-//                                 window included all-session fakeouts which
-//                                 BracketEngine session-gate now filters
-//                                 (see [BRACKET-XAUUSD] PENDING CANCELLED
-//                                 "session/risk gate closed"). Full 77GB tick
-//                                 re-backtest queued before any further cull
-//                                 decision.
+//                                 2026-05-28: re-enabled by operator, then
+//                                 RE-DISABLED same day after full audit:
+//                                   * 2yr_audit: 59,471 trades, PF=0.618,
+//                                     WR=28.41%, gross=-$311.58. All sessions
+//                                     negative incl. London (PF 0.58 worst).
+//                                     gold_session_ok=true at tick_gold.hpp:157
+//                                     -- engine has NO session gate, arms 24/7.
+//                                   * sweep_v5 found mask=0xE no-Asia
+//                                     PF=1.16 n=109 +$0.70 on last 12mo.
+//                                   * walk-forward sweep_v6 first 12mo
+//                                     same params PF=0.71 n=18 -$0.27.
+//                                     Edge regime-specific not real.
+//                                 Conclusion: engine cannot cover costs
+//                                 across regimes. Permanent disable until
+//                                 entry logic redesigned (not just retune).
 //
 //      g_disable_index_flow    -- -112pts across 4 instances
 //                                 (2026-04-30 audit; minor bleed but no
@@ -305,7 +311,7 @@ static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L,
 //                                            to justify continued exposure.
 // =============================================================================
 static bool g_disable_candle_flow              = true;
-static bool g_disable_bracket_gold             = false;  // 2026-05-28 operator override; London/NY-open arming only
+static bool g_disable_bracket_gold             = true;   // 2026-05-28 re-disabled: walk-forward failed (last12mo PF 1.16 -> first12mo PF 0.71 mask=0xE; edge regime-specific not real)
 static bool g_disable_index_flow               = true;
 // S46 2026-05-27: M5 scalp engines disabled pending real-class validation.
 // All "validated" PnL numbers for these engines came from inline-reimpl

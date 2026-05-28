@@ -50,6 +50,19 @@
 #include "BracketEngine.hpp"
 
 // ---------------------------------------------------------------------------
+// Silence engine std::cout spam globally for the duration of the sweep.
+// BracketEngine logs [BRACKET-XAUUSD] ARMED/TRAIL/SHADOW FILL on every event.
+// At 80M ticks * 1080 configs that produces 12+ GB of log noise that drowns
+// the disk and stalls the sweep. Redirect cout to a null sink before any
+// engine call. Stderr (sweep progress) stays alive.
+// ---------------------------------------------------------------------------
+struct CoutSilencer {
+    std::streambuf* prev_cout;
+    CoutSilencer() : prev_cout(std::cout.rdbuf(nullptr)) {}
+    ~CoutSilencer() { std::cout.rdbuf(prev_cout); }
+};
+
+// ---------------------------------------------------------------------------
 // Tick + parse
 // ---------------------------------------------------------------------------
 struct Tick { int64_t ts_ms; double bid; double ask; };
@@ -96,6 +109,12 @@ struct Cfg {
     double trail_dist;
     double loss_cut;
     int    lookback;
+    double min_range;     // 0 = no min-range gate
+    double max_spread;    // 0 = no spread gate
+    double atr_range_k;   // 0 = no ATR-scaled range
+    // Session mask: bits Asia=1, London=2, NY=4, Late_NY=8. 0xF = all.
+    // can_enter is set to false outside the mask, so engine arms only inside.
+    int    session_mask;
 };
 
 struct Result {
@@ -126,6 +145,9 @@ static Result run_one(const std::vector<Tick>& ticks, const Cfg& cfg) {
     eng.TRAIL_DISTANCE_PTS   = cfg.trail_dist;
     eng.LOSS_CUT_PCT         = cfg.loss_cut;
     eng.STRUCTURE_LOOKBACK   = cfg.lookback;
+    eng.MIN_RANGE            = cfg.min_range;
+    eng.MAX_SPREAD           = cfg.max_spread;
+    eng.ATR_RANGE_K          = cfg.atr_range_k;
 
     double running_eq = 0, peak_eq = 0;
 
@@ -168,8 +190,17 @@ static Result run_one(const std::vector<Tick>& ticks, const Cfg& cfg) {
 
     for (const Tick& t : ticks) {
         omega::bt::set_sim_time(t.ts_ms);
+        // Session gate: feed window every tick (so price state stays current)
+        // but only allow new arms during whitelist sessions.
+        const char* sess = utc_session_of_ts_ms(t.ts_ms);
+        int sess_bit = 0;
+        if      (!std::strcmp(sess, "Asia"))    sess_bit = 1;
+        else if (!std::strcmp(sess, "London"))  sess_bit = 2;
+        else if (!std::strcmp(sess, "NY"))      sess_bit = 4;
+        else                                    sess_bit = 8;
+        const bool can_enter = (cfg.session_mask & sess_bit) != 0;
         eng.on_tick(t.bid, t.ask, t.ts_ms,
-                    /*can_enter*/ true,
+                    can_enter,
                     /*macro_regime*/ "NEUTRAL",
                     cb);
     }
@@ -181,12 +212,21 @@ static Result run_one(const std::vector<Tick>& ticks, const Cfg& cfg) {
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "Usage: %s <xau_tick_csv> [n_threads]\n", argv[0]);
+        std::fprintf(stderr, "Usage: %s <xau_tick_csv> [n_threads] [report_file]\n", argv[0]);
         return 1;
     }
     const std::string path = argv[1];
     const int n_threads = (argc >= 3) ? std::max(1, std::atoi(argv[2]))
                                       : static_cast<int>(std::thread::hardware_concurrency());
+    const std::string report_path = (argc >= 4) ? std::string(argv[3])
+                                                : std::string("/tmp/bracket_gold_sweep_report.txt");
+    FILE* RPT = std::fopen(report_path.c_str(), "w");
+    if (!RPT) { std::fprintf(stderr, "ERROR: cannot open report file %s\n", report_path.c_str()); return 3; }
+    std::fprintf(stderr, "[SWEEP] report -> %s\n", report_path.c_str());
+
+    // Silence engine std::cout for the duration of main. The CoutSilencer dtor
+    // runs at return and restores the original buffer.
+    CoutSilencer cout_kill;
 
     // -----------------------------------------------------------------------
     // Load ticks into RAM (24 bytes/tick * 80M = ~1.9GB). Single fopen + fgets
@@ -223,16 +263,23 @@ int main(int argc, char** argv) {
     // Build config grid
     // -----------------------------------------------------------------------
     std::vector<Cfg> grid;
-    for (double ta : {1.5, 3.0, 5.0, 8.0, 12.0}) {
-      for (double td : {0.5, 1.5, 3.0, 5.0}) {
-        for (double lc : {0.05, 0.10, 0.20, 1.00}) {
-          for (int lb : {20, 30, 60}) {
-            // SKIP: trail distance >= activation makes trail trigger immediately
-            // (locks negative or zero -- never lets winner run). Drop those.
-            if (td >= ta) continue;
-            grid.push_back(Cfg{ta, td, lc, lb});
-          }
-        }
+    // Entry-selection grid v3. ARK dropped -- prior sweep showed identical
+    // results across {0, 0.5, 1.0, 2.0}, meaning ATR_RANGE_K has zero effect
+    // in this engine path (likely MIN_RANGE dominates or ARK gate not reached).
+    // Wider TA/TD/MR/MXS now that ARK is gone.
+    // v6 validation grid -- proven 12mo positive configs from v5 sweep.
+    // Goal: confirm edge survives 2yr corpus + walk-forward halves.
+    struct PCfg { double ta, td; int lb; double mr, mxs; };
+    const std::vector<PCfg> validated = {
+        {8.0, 1.5, 60,  6.0, 0.30},   // v5 #5 (mask 0xE): n=109 PF=1.16
+        {8.0, 1.5, 120, 6.0, 0.30},   // v5 #4 (mask 0xA): n=126 PF=1.14
+        {8.0, 1.5, 60,  12.0, 0.50},  // v5 #1 (mask 0x8): n=22  PF=2.58
+        {8.0, 3.0, 60,  6.0, 0.30},   // v5 #2 (mask 0x8): n=22  PF=2.22
+    };
+    for (const auto& p : validated) {
+      for (int mask : {0xF, 0xE, 0xA, 0x8}) {
+        grid.push_back(Cfg{p.ta, p.td, /*lc*/1.00, p.lb, p.mr, p.mxs,
+                           /*ark dead*/0.0, mask});
       }
     }
     std::fprintf(stderr, "[SWEEP] %zu configs * %zu ticks, %d threads\n",
@@ -255,10 +302,11 @@ int main(int argc, char** argv) {
             std::lock_guard<std::mutex> lk(log_mtx);
             const auto& r = results[i];
             std::fprintf(stderr,
-                "[CFG %d/%zu] ta=%.1f td=%.1f lc=%.2f lb=%d  n=%-6d  WR=%.1f%%  PF=%.2f  gross=%+.2f  DD=%.2f\n",
-                d, grid.size(),
-                r.cfg.trail_act, r.cfg.trail_dist, r.cfg.loss_cut, r.cfg.lookback,
-                r.n_trades, r.wr(), r.pf(), r.gross, r.max_dd);
+                "[CFG %d/%zu] mask=0x%X ta=%.1f td=%.1f lb=%d mr=%.1f mxs=%.2f  n=%-6d  WR=%.1f%%  PF=%.2f  gross=%+.2f\n",
+                d, grid.size(), r.cfg.session_mask,
+                r.cfg.trail_act, r.cfg.trail_dist, r.cfg.lookback,
+                r.cfg.min_range, r.cfg.max_spread,
+                r.n_trades, r.wr(), r.pf(), r.gross);
         }
     };
 
@@ -272,31 +320,35 @@ int main(int argc, char** argv) {
     std::sort(results.begin(), results.end(),
               [](const Result& a, const Result& b){ return a.gross > b.gross; });
 
-    std::printf("\n");
-    std::printf("==================================================================================================\n");
-    std::printf("  bracket_gold_sweep  --  %s  --  %zu configs\n", path.c_str(), results.size());
-    std::printf("==================================================================================================\n");
-    std::printf("rank,trail_act,trail_dist,loss_cut,lookback,n,WR%%,PF,gross,MaxDD,asia_g,london_g,ny_g,late_g,n_london,n_ny\n");
+    std::fprintf(RPT, "\n");
+    std::fprintf(RPT, "==================================================================================================\n");
+    std::fprintf(RPT, "  bracket_gold_sweep  --  %s  --  %zu configs\n", path.c_str(), results.size());
+    std::fprintf(RPT, "==================================================================================================\n");
+    std::fprintf(RPT, "rank,session_mask,trail_act,trail_dist,loss_cut,lookback,min_range,max_spread,n,WR%%,PF,gross,MaxDD,asia_g,london_g,ny_g,late_g,n_london,n_ny\n");
     for (size_t i = 0; i < results.size(); ++i) {
         const auto& r = results[i];
-        std::printf("%zu,%.1f,%.1f,%.2f,%d,%d,%.2f,%.3f,%+.2f,%.2f,%+.2f,%+.2f,%+.2f,%+.2f,%d,%d\n",
-                    i + 1,
+        std::fprintf(RPT, "%zu,0x%X,%.1f,%.1f,%.2f,%d,%.1f,%.2f,%d,%.2f,%.3f,%+.2f,%.2f,%+.2f,%+.2f,%+.2f,%+.2f,%d,%d\n",
+                    i + 1, r.cfg.session_mask,
                     r.cfg.trail_act, r.cfg.trail_dist, r.cfg.loss_cut, r.cfg.lookback,
+                    r.cfg.min_range, r.cfg.max_spread,
                     r.n_trades, r.wr(), r.pf(), r.gross, r.max_dd,
                     r.g_asia, r.g_london, r.g_ny, r.g_late,
                     r.n_london, r.n_ny);
     }
 
-    std::printf("\nTop 5 detail:\n");
-    for (size_t i = 0; i < std::min<size_t>(5, results.size()); ++i) {
+    std::fprintf(RPT, "\nTop 10 detail:\n");
+    for (size_t i = 0; i < std::min<size_t>(10, results.size()); ++i) {
         const auto& r = results[i];
-        std::printf("  #%zu ta=%.1f td=%.1f lc=%.2f lb=%d  n=%d WR=%.2f%% PF=%.3f gross=%+.2f DD=%.2f\n",
-                    i + 1, r.cfg.trail_act, r.cfg.trail_dist, r.cfg.loss_cut, r.cfg.lookback,
+        std::fprintf(RPT, "  #%zu mask=0x%X ta=%.1f td=%.1f lb=%d mr=%.1f mxs=%.2f  n=%d WR=%.2f%% PF=%.3f gross=%+.2f DD=%.2f\n",
+                    i + 1, r.cfg.session_mask, r.cfg.trail_act, r.cfg.trail_dist, r.cfg.lookback,
+                    r.cfg.min_range, r.cfg.max_spread,
                     r.n_trades, r.wr(), r.pf(), r.gross, r.max_dd);
-        std::printf("     Asia:    n=%d gross=%+.2f\n", r.n_asia,   r.g_asia);
-        std::printf("     London:  n=%d gross=%+.2f\n", r.n_london, r.g_london);
-        std::printf("     NY:      n=%d gross=%+.2f\n", r.n_ny,     r.g_ny);
-        std::printf("     Late_NY: n=%d gross=%+.2f\n", r.n_late,   r.g_late);
+        std::fprintf(RPT, "     Asia:    n=%d gross=%+.2f\n", r.n_asia,   r.g_asia);
+        std::fprintf(RPT, "     London:  n=%d gross=%+.2f\n", r.n_london, r.g_london);
+        std::fprintf(RPT, "     NY:      n=%d gross=%+.2f\n", r.n_ny,     r.g_ny);
+        std::fprintf(RPT, "     Late_NY: n=%d gross=%+.2f\n", r.n_late,   r.g_late);
     }
+    std::fclose(RPT);
+    std::fprintf(stderr, "[SWEEP] report written to %s\n", report_path.c_str());
     return 0;
 }
