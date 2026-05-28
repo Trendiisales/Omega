@@ -1105,7 +1105,7 @@ static void init_engines(const std::string& cfg_path)
     // indices for consistency -- "exit stalled trades faster" rationale at
     // L446 applies equally to FX. Re-tune from fresh shadow tape once
     // VWAPReversion has been firing live-shadow for 2-4 weeks.
-    g_vwap_rev_eurusd.enabled = true;  g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;
+    g_vwap_rev_eurusd.enabled = false; g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;  // S37-Z 2026-05-28 (task #16): disabled. CRTP audit on EURUSD_merged.csv (12mo, 2436 trades) PF=0.952 gross=$0 (effectively breakeven, net loser after spread). No clear edge cluster across 14 months. Was live with current params; flip back requires signal-side rework.
     g_vwap_rev_eurusd.MAX_EXTENSION_PCT   = 0.40;
     g_vwap_rev_eurusd.MAX_HOLD_SEC        = 600;
     // 2026-05-13 (S37-H-followup): FX moves smaller than indices -- tighter cut.
@@ -2684,7 +2684,7 @@ static void init_engines(const std::string& cfg_path)
     // pre-S94 is unknown and worth re-observing in shadow first. Promote
     // by setting shadow_mode = kShadowDefault after evidence.
     g_trend_pb_nq.shadow_mode         = true;
-    g_trend_pb_nq.enabled             = true;    // S37 2026-05-27: re-enabled HARD shadow (ghost replacement reversed)
+    g_trend_pb_nq.enabled             = false;   // S37-Z 2026-05-28 (task #16): re-disabled. CRTP audit on USA30 proxy (7mo, 9032 trades) PF=0.241 gross=-$250.26, all sessions negative, all 7 months negative. S37 re-enable did not survive 2yr corpus replay. Re-enable requires signal-side rework (not parameter retune).
     g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
     g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
     g_trend_pb_sp.enabled             = false;   // S95 2026-05-15: disabled — SPX UltimateBacktest OOS failed (v2 OOS PF=0.88). No trend-following edge on US500. Was live with $80 daily cap.

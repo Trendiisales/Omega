@@ -301,4 +301,73 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------
+// Driver 6: VWAPRev_EURUSD (production instance: g_vwap_rev_eurusd, live).
+// Production params from engine_init.hpp:1108-1125 replicated here.
+// ---------------------------------------------------------------------------
+class VWAPRevEurusdDriver : public EngineDriver<VWAPRevEurusdDriver> {
+public:
+    static constexpr const char* NAME = "VWAPRev_EURUSD";
+    omega::cross::VWAPReversionEngine eng;
+    Stats stats;
+    int64_t latest_ts_ms = 0;
+    double  first_seed   = 0.0;
+
+    VWAPRevEurusdDriver() {
+        // Match production tuning at engine_init.hpp:1108-1125 (live state).
+        eng.enabled              = true;
+        eng.EXTENSION_THRESH_PCT = 0.12;
+        eng.COOLDOWN_SEC         = 120;
+        eng.MAX_EXTENSION_PCT    = 0.40;
+        eng.MAX_HOLD_SEC         = 600;
+        eng.LOSS_CUT_PCT         = 0.0;
+        eng.BE_ARM_PCT           = 0.0;
+        eng.BE_BUFFER_PCT        = 0.0;
+    }
+
+    void feed_tick_impl(double bid, double ask, int64_t ts_ms) noexcept {
+        latest_ts_ms = ts_ms;
+        if (first_seed <= 0.0) first_seed = (bid + ask) * 0.5;
+        omega::bt::set_sim_time(ts_ms);
+        eng.on_tick("EURUSD", bid, ask, first_seed,
+                    [this, bid, ask](const omega::TradeRecord& tr) {
+                        omega::TradeRecord t2 = tr;
+                        if (t2.spreadAtEntry <= 0.0) t2.spreadAtEntry = (ask - bid);
+                        stats.add(t2, latest_ts_ms);
+                    },
+                    /*vix=*/0.0, /*l2_imb=*/0.5);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Driver 7: TrendPullback_NQ (production g_trend_pb_nq, live shadow re-enabled
+// S37 2026-05-27). USA30 ticks as USTEC proxy (no NSXUSD ticks on disk).
+// Symbol string set to "USTEC.F" to match production dispatch site.
+// ---------------------------------------------------------------------------
+class TrendPullbackNqDriver : public EngineDriver<TrendPullbackNqDriver> {
+public:
+    static constexpr const char* NAME = "TrendPullback_NQ_proxyUSA30";
+    omega::cross::TrendPullbackEngine eng;
+    Stats stats;
+    int64_t latest_ts_ms = 0;
+
+    TrendPullbackNqDriver() {
+        eng.enabled = true;
+        // Other params left at engine class defaults -- production matches
+        // class defaults for NQ per engine_init.hpp review (no explicit
+        // .EMA_FAST etc. overrides for g_trend_pb_nq).
+    }
+
+    void feed_tick_impl(double bid, double ask, int64_t ts_ms) noexcept {
+        latest_ts_ms = ts_ms;
+        omega::bt::set_sim_time(ts_ms);
+        eng.on_tick("USTEC.F", bid, ask,
+                    [this, bid, ask](const omega::TradeRecord& tr) {
+                        omega::TradeRecord t2 = tr;
+                        if (t2.spreadAtEntry <= 0.0) t2.spreadAtEntry = (ask - bid);
+                        stats.add(t2, latest_ts_ms);
+                    });
+    }
+};
+
 } // namespace omega::dea
