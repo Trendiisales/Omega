@@ -270,7 +270,7 @@ static void init_engines(const std::string& cfg_path)
     //   (note: shutdown does NOT currently force-close positions -- the
     //   proper fix is queued for next deploy; today the stop+manual-
     //   cTrader-close workaround applies if a position is open at stop).
-    g_gold_microscalper.shadow_mode = false;
+    g_gold_microscalper.shadow_mode = true;   // S37-Z 2026-05-28: pinned shadow. Operator decision: scalp family proven unviable across audits this session (GoldBracket PF=0.36, XauusdFvg PF=0.50, VWAPRev PF=0.54/0.95, TrendPB PF=0.24/0.27, GoldScalpPyramid S45-disabled, 5 FxScalpPyramid S45-disabled, BBandScalp disabled). Microscalper was the last live scalp -- pin shadow to stop bleed. Re-promote only after a documented edge (audit + walk-forward + 30-trade shadow verification).
 
     // 2026-05-08 S20+: RiskMonitor wiring -------------------------------------
     // Logging-only per-engine surveillance. Watches WR break-even, fire-rate
