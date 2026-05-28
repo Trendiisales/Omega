@@ -1036,6 +1036,45 @@ else()
 endif()
 
 # =============================================================================
+# disabled_engine_audit -- multi-engine CRTP audit harness for
+#                          re-validating audit-disabled XAUUSD engines.
+# Built 2026-05-28 (S37-Z / task #9). std::tuple of CRTP-driver wrappers
+# around production engine classes; single tape replay feeds all drivers
+# via fold expression.
+#
+# Build: cmake --build build --target disabled_engine_audit -j
+# Run:   ./build/disabled_engine_audit /Users/jo/Tick/2yr_XAUUSD_tick_fresh.csv
+# =============================================================================
+add_executable(disabled_engine_audit
+    backtest/disabled_engine_audit.cpp
+)
+target_include_directories(disabled_engine_audit PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(disabled_engine_audit PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(disabled_engine_audit PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(disabled_engine_audit PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable
+        -Wno-unused-but-set-variable -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(disabled_engine_audit PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(disabled_engine_audit PRIVATE pthread)
+endif()
+
+# =============================================================================
 # xau_d1_zoo_audit -- standalone harness for the Xau H4/D1 engine cohort.
 #                     Used by S37 Phase H trail audit (2026-05-27b) to test
 #                     gated stage_trail on PullbackContH4/D1, TurtleD1,
