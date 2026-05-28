@@ -61,6 +61,7 @@ documented as a hypothesis to test.
 | `g_xau_stop_run_d1` | DISABLED (S57 regime LOW neg) | S57 | +1.68 (n=28) | Re-audit with S57 regime split before re-enable. |
 | `g_xau_pullback_cont_d1` | DISABLED (S54 WF OOS fail) | S54 | +1.28 (n=33) | Re-audit with explicit WF split before re-enable. |
 | `g_xau_ema_cross_h4` | DISABLED (S57 regime LOW catastrophic) | S57 | +0.74 (n=20) | Marginal Sharpe + sample tiny. Skip -- evidence not strong enough to overturn S57. |
+| `g_gold_ultimate_engine` | DISABLED (S99b "off-hours edge-hour design bleeds") | S99b | OOS PF 1.28 / IS PF 0.85 over 2024-2026 | GoldUltimateBacktest STRONG PASS on OOS half (Mar-2026..Apr-2026, 293 trades). S99b live evidence may have been different regime. Re-audit before re-enable. |
 
 ## DISABLED THIS SESSION  (S37-Z 2026-05-28 commits)
 
@@ -79,7 +80,19 @@ the cost-net audit. No re-enables.
 * `g_xau_outside_bar_d1` -- see THIN
 * `g_xau_doji_rej_d1` -- see THIN
 
-## DEFERRED  (insufficient data this session)
+## CONFIRMED THIS SESSION
+
+| Run | Result |
+|---|---|
+| TrendPullback_NQ on USA30 (21M ticks, 7mo)   | PF 0.241, -$250.26, all mo neg | -> disabled c0dbcfa4 |
+| TrendPullback_NQ on NSXUSD (89M ticks, 16mo) | PF 0.448, -$127.36, all 16 mo neg | confirms USA30 verdict |
+| VWAPRev_EURUSD via CRTP harness   | PF 0.952, ~$0 | -> disabled c0dbcfa4 |
+| VWAPRev_EURUSD via VWAPReversionBacktest direct | gross 0.000757 over 2431 trades | independently confirms |
+| **GoldUltimateBacktest** on 2yr XAU | IS PF 0.85 (40 tr) -> OOS PF **1.28** (293 tr); retention 150% STRONG PASS | DISABLE-CONFLICT (S99b off; flag for re-audit) |
+| Nas100UltimateBacktest on NSX 89M | IS PF 2.36 / 43 SHORT trades; OOS n=0 | inconclusive; not in production |
+| Spx500UltimateBacktest on SPX H1 | n=0 (H1 bars not tick) | needs SPX tick corpus |
+
+## DEFERRED  (need per-engine cmake target build + format adapter)
 
 | Engine | Why deferred | Need |
 |---|---|---|
@@ -96,6 +109,13 @@ the cost-net audit. No re-enables.
 | `g_xau_threebar_30m` | M30 momentum gate | M30 bar harness |
 | `g_vwap_rev_ger40` | LIVE shadow | GER40 tick corpus |
 | GoldScalpPyramid / FxScalpPyramid x5 | All SHADOW; family proven unviable | L2 synthesizer to formally audit |
+| `XauTrendFollow` 4 tfs | XauTrendFollowBacktest returns n=0 (tape format / init issue); separate engine path needed | Debug binary init + run |
+| `UstecTrendFollowHTF` | UstecTrendFollow5mBacktest binary built but rejects ms-epoch ASK_BID; needs ts,bid,ask | Format converter or harness flag |
+| `IndexBacktest` (NAS100/NSX) | Built; 100% parse-fail on ms_ask_bid -- expects HistData YYYYMMDD format | Convert NSX combined to HistData |
+| Per-symbol `*UltimateBacktest` (Gold/SPX/NSX/GER40) | Source files exist; no cmake target | Add 4 add_executable() blocks |
+| `IndexFlowBacktest` / `IndexBracketBacktest` / `IndexORBBacktest` / `IndexVwapRev` / `IndexNbm` | Source files exist; no cmake target | Add 5 add_executable() blocks |
+| `XauEmaPullbackBacktest` / `XauFvgBacktest` | Source files exist; no cmake target | Add 2 add_executable() blocks |
+| `GoldTrendEnsembleBacktest` | Source file exists; no cmake target | Add 1 add_executable() block |
 
 ## RE-VALIDATION DISCIPLINE (for any flag flip)
 

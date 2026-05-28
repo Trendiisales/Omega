@@ -700,6 +700,60 @@ else()
 endif()
 
 # =============================================================================
+# S37-Z 2026-05-28 -- bulk add_executable for backtest binaries that have
+# source files in backtest/ but no cmake target. Future audit sessions can
+# build any of these via `cmake --build build --target <name>`.
+#
+# Each target is built standalone (no OpenSSL / libcurl / Windows-only
+# headers). If a source file requires globals/types from main.cpp it will
+# fail to compile -- the build error tells us which need a different setup.
+# =============================================================================
+set(EXTRA_BT_TARGETS
+    GoldUltimateBacktest
+    Ger40UltimateBacktest
+    Spx500UltimateBacktest
+    Nas100UltimateBacktest
+    IndexFlowBacktest
+    IndexBracketBacktest
+    IndexOpeningRangeBacktest
+    IndexVwapReversionBacktest
+    IndexNoiseBandMomentumBacktest
+    XauEmaPullbackBacktest
+    XauFvgBacktest
+    GoldTrendEnsembleBacktest
+    TsmomStaggerBacktest
+)
+foreach(BT_TGT IN LISTS EXTRA_BT_TARGETS)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/backtest/${BT_TGT}.cpp")
+        add_executable(${BT_TGT} EXCLUDE_FROM_ALL
+            backtest/${BT_TGT}.cpp
+        )
+        target_include_directories(${BT_TGT} PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/include
+        )
+        if(MSVC)
+            target_compile_options(${BT_TGT} PRIVATE
+                /O2 /std:c++20 /W3
+                /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+            )
+            target_compile_definitions(${BT_TGT} PRIVATE
+                _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+                _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+            )
+        else()
+            target_compile_options(${BT_TGT} PRIVATE
+                -O3 -std=c++20 -Wall -Wextra
+                -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable
+                -Wno-unused-but-set-variable -Wno-reorder
+            )
+            target_compile_definitions(${BT_TGT} PRIVATE OMEGA_BACKTEST)
+            target_link_libraries(${BT_TGT} PRIVATE pthread)
+        endif()
+    endif()
+endforeach()
+
+# =============================================================================
 # OmegaSweepHarness -- parameter sweep harness (S51 X3)
 #
 # Runs a pairwise 2-factor parameter grid: for each engine, vary 2 of 5 params
