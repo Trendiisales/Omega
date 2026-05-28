@@ -182,7 +182,7 @@ struct OmegaConfig {
     int    brent_min_gap_sec           = 90;
     double brent_momentum_thresh_pct   = 0.050;
     double brent_min_breakout_pct      = 0.060;
-    double brent_max_spread_pct        = 0.120;
+    double brent_max_spread_pct        = 0.300;  // 2026-05-28 (S37-Z): raised 0.120->0.300. BRENT BlackBull demo spread runs 0.12-0.20 ($0.10-0.16 abs at $78); 0.120% threshold tripped HIGH_RISK_NO_TRADE permanently -> [SUPERVISOR-BRENT] IN_COOLDOWN loop (37 events / 4hr observed 2026-05-27). 0.300% covers $0.23 abs spread at $77 with margin.
     double brent_compression_threshold = 0.80;
 
     // EU Indices (GER40, UK100, ESTX50) -- shared params
@@ -260,7 +260,7 @@ struct OmegaConfig {
     double bracket_gold_tp_pct        = 0.25;
     double bracket_gold_sl_pct        = 0.12;
     double bracket_gold_min_range_pct = 0.04;
-    double bracket_gold_max_spread_pct = 0.06;
+    double bracket_gold_max_spread_pct = 0.10;  // 2026-05-28 (S37-Z): raised 0.06->0.10. At XAU $4452 0.06% = $2.67 cap; live NY-close roll widens spread to $3-5 ($0.07-0.11%) triggering [SUPERVISOR-XAUUSD] HIGH_RISK_NO_TRADE for 49 events / 4hr (2026-05-27 log). 0.10% = $4.45 covers typical roll without permanent block. Real broker rejection still gated by exec_score < 0.1.
     int    bracket_gold_min_gap_sec   = 90;
     int    bracket_gold_cooldown_sl_sec = 120;
     int    bracket_gold_max_hold_sec  = 1800;

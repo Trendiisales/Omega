@@ -30,32 +30,43 @@ static void on_tick(const std::string& sym, double bid, double ask) {
 
         if (prev > 0.0) {
             const double atr_s = g_adaptive_risk.vol_scaler.atr_slow(sym);
+            const double atr_f = g_adaptive_risk.vol_scaler.atr_fast(sym);
             if (atr_s > 0.0) {
                 const double move      = std::fabs(mid - prev);
                 // Per-symbol minimum threshold floor -- prevents near-zero atr_slow
                 // (during warmup or quiet tape) from rejecting valid ticks.
                 // Root cause: atr_slow for XAUUSD was 0.11pts -> threshold=0.54pts
                 // -> every normal gold tick-to-tick move rejected -> bars/RSI starved.
-                // Same failure mode observed 2026-05-21 on XAGUSD (no floor, FX
-                // default 0.002 rejected normal 0.12 silver ticks), USDJPY (FX
-                // floor 0.002 = 0.2 pip vs JPY normal tick ~0.03 = 3 pips), and
-                // NAS100 (5.0 floor too tight vs active-session 6-15pt ticks).
-                // Sizing rule: floor = ~5x normal tick-to-tick noise for the symbol.
+                // 2026-05-28 (S37-Z) -- raised XAUUSD floor 5.0->10.0 + added
+                // 3*atr_fast term. Diagnosis: 22:00 UTC NY-close roll on
+                // 2026-05-27 produced 10 legitimate 5-8pt XAU ticks rejected
+                // at threshold=5.0 (pure floor; 5*atr_slow was <5.0 because the
+                // slow EWM still reflected pre-roll compression). DJ30 had 18pt
+                // move rejected at threshold=14.50. atr_fast tracks expansion
+                // immediately and bridges the slow-EWM lag.
+                // Sizing rule: floor = ~5-10x normal tick-to-tick noise.
                 const double min_threshold =
-                    (sym == "XAUUSD")                     ? 5.0   :  // gold: 5pt floor
+                    (sym == "XAUUSD")                     ? 10.0  :  // gold: 10pt floor (was 5pt, too tight at NY roll)
                     (sym == "XAGUSD")                     ? 0.30  :  // silver: 30c floor (~5x normal 0.05 tick)
-                    (sym == "US500.F" || sym == "DJ30.F") ? 10.0  :  // SP/DJ: 10pt floor
-                    (sym == "USTEC.F" || sym == "NAS100") ? 20.0  :  // NQ: 20pt floor (active session 6-15pt normal)
+                    (sym == "US500.F" || sym == "DJ30.F") ? 20.0  :  // SP/DJ: 20pt floor (was 10pt; DJ30 also rejected on 2026-05-27)
+                    (sym == "USTEC.F" || sym == "NAS100") ? 20.0  :  // NQ: 20pt floor
                     (sym == "GER40"   || sym == "UK100"  ||
                      sym == "ESTX50")                     ? 10.0  :  // EU indices: 10pt floor
                     (sym == "USOIL.F" || sym == "BRENT")  ? 0.5   :  // oil: 0.5pt floor
                     (sym == "USDJPY")                     ? 0.20  :  // JPY pair: 20 pip floor (pip=0.01)
                                                             0.002;   // FX majors: 20 pip floor (pip=0.0001)
-                const double threshold = std::max(5.0 * atr_s, min_threshold);
+                // Threshold = max(5*atr_slow, 3*atr_fast, min_floor).
+                // atr_fast catches expansion immediately; atr_slow lags so
+                // pure 5*atr_slow rejects legitimate post-compression moves
+                // (NY close, news, session open). Floor remains as fallback
+                // for cold-start or quiet tape where both ATRs are near zero.
+                const double threshold = std::max({5.0 * atr_s,
+                                                   3.0 * atr_f,
+                                                   min_threshold});
                 if (move > threshold) {
                     {
                         char _msg[512];
-                        snprintf(_msg, sizeof(_msg), "[TICK-SPIKE] %s REJECTED mid=%.5f prev=%.5f move=%.5f threshold=%.5f (5xATR_SLOW)\n",                            sym.c_str(), mid, prev, move, threshold);
+                        snprintf(_msg, sizeof(_msg), "[TICK-SPIKE] %s REJECTED mid=%.5f prev=%.5f move=%.5f threshold=%.5f (5xATR_SLOW|3xATR_FAST|floor)\n",                            sym.c_str(), mid, prev, move, threshold);
                         std::cout << _msg;
                         std::cout.flush();
                     }
