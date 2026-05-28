@@ -92,13 +92,23 @@ EngineStats run_engine(const std::string& name, double claimed,
                        const std::vector<H4Bar>& bars,
                        Engine& eng) {
     EngineStats stats; stats.name = name; stats.claimed_sharpe = claimed;
+    // S37-Z 2026-05-28: NET-cost mode. Original audit reported GROSS Sharpe
+    // (no spread/slip subtraction) which inflated every engine. Cost model:
+    //   round-trip = spread (in pts) * tick_mult * size
+    //   For XAU lot=0.01: spread*100*0.01 = spread per round-trip.
+    //   Harness synthesizes spread=0.30 (half=0.15 above) so RT cost = $0.30.
+    //   TP exit fills at limit -> half cost. Non-TP pays both legs.
+    const double RT_COST   = 0.30;   // non-TP round-trip
+    const double TP_COST   = 0.15;   // TP fills at limit, no exit slip
     auto cb = [&](const omega::TradeRecord& tr) {
+        const double cost = (tr.exitReason == "TP_HIT") ? TP_COST : RT_COST;
+        const double pnl_net = tr.pnl - cost;
         ++stats.n_trades;
-        stats.gross += tr.pnl;
-        stats.trade_pnl.push_back(tr.pnl);
-        if (tr.pnl > 0) ++stats.wins;
-        if (tr.pnl > stats.best)  stats.best  = tr.pnl;
-        if (tr.pnl < stats.worst) stats.worst = tr.pnl;
+        stats.gross += pnl_net;
+        stats.trade_pnl.push_back(pnl_net);
+        if (pnl_net > 0) ++stats.wins;
+        if (pnl_net > stats.best)  stats.best  = pnl_net;
+        if (pnl_net < stats.worst) stats.worst = pnl_net;
         if (tr.exitReason == "SL_HIT") ++stats.sl;
         else if (tr.exitReason == "TP_HIT") ++stats.tp;
         else if (tr.exitReason == "TIMEOUT") ++stats.timeout;

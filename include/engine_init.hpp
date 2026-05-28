@@ -1656,7 +1656,7 @@ static void init_engines(const std::string& cfg_path)
         //   FUL Sh=3.96, IS=3.97, OOS=4.06, n=97 (highest density of D-class).
         g_xau_pullback_cont_h4.p           = omega::make_xau_pullback_cont_h4_params();
         g_xau_pullback_cont_h4.shadow_mode = true;
-        g_xau_pullback_cont_h4.enabled     = true;
+        g_xau_pullback_cont_h4.enabled     = false;  // S37-Z 2026-05-28: disabled. xau_d1_zoo_audit with NET-cost (0.30/0.15 round-trip) shows Sharpe -1.02 / gross -$6.91 over n=102 (robust sample, 2yr H4 corpus). Original GROSS audit (no cost subtraction) inflated to Sharpe +2.69; cost model added to harness this session catches the real bleed. Re-enable requires walk-fwd both halves Sharpe >= 0.5 NET.
         g_xau_pullback_cont_h4.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauPullbackContH4Engine: shadow=%d enabled=%d ef=%d es=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_pullback_cont_h4.shadow_mode, (int)g_xau_pullback_cont_h4.enabled,
