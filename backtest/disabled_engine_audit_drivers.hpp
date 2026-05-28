@@ -57,6 +57,7 @@
 #include "BracketEngine.hpp"
 #include "XauusdFvgEngine.hpp"
 #include "DonchianEngine.hpp"
+#include "CrossAssetEngines.hpp"   // VWAPReversionEngine, TrendPullbackEngine
 
 namespace omega::dea {
 
@@ -239,6 +240,59 @@ public:
         omega::bt::set_sim_time(ts_ms);
         // Manage-only path. Bar feed required for entries -- deferred.
         eng.on_tick(bid, ask, ts_ms,
+                    [this, bid, ask](const omega::TradeRecord& tr) {
+                        omega::TradeRecord t2 = tr;
+                        if (t2.spreadAtEntry <= 0.0) t2.spreadAtEntry = (ask - bid);
+                        stats.add(t2, latest_ts_ms);
+                    });
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Driver 4: VWAPReversionEngine (XAUUSD instance) -- live, never audited
+// on 2yr corpus. Per session 2026-05-28 review: emits 43 May trades, but
+// 2yr verdict unknown. Engine consumes vwap_seed + optional vix + l2_imb.
+// Synthesize: vwap_seed = first-tick mid; vix=0.0; l2_imb=0.5.
+// ---------------------------------------------------------------------------
+class VWAPRevGoldDriver : public EngineDriver<VWAPRevGoldDriver> {
+public:
+    static constexpr const char* NAME = "VWAPRev_XAU";
+    omega::cross::VWAPReversionEngine eng;
+    Stats stats;
+    int64_t latest_ts_ms = 0;
+    double  first_seed   = 0.0;
+
+    void feed_tick_impl(double bid, double ask, int64_t ts_ms) noexcept {
+        latest_ts_ms = ts_ms;
+        if (first_seed <= 0.0) first_seed = (bid + ask) * 0.5;
+        omega::bt::set_sim_time(ts_ms);
+        eng.on_tick("XAUUSD", bid, ask, first_seed,
+                    [this, bid, ask](const omega::TradeRecord& tr) {
+                        omega::TradeRecord t2 = tr;
+                        if (t2.spreadAtEntry <= 0.0) t2.spreadAtEntry = (ask - bid);
+                        stats.add(t2, latest_ts_ms);
+                    },
+                    /*vix=*/0.0, /*l2_imb=*/0.5);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Driver 5: TrendPullbackEngine (XAUUSD instance) -- live, never audited
+// on 2yr corpus. Per session 2026-05-28 review: emits 25 May trades.
+// Clean (sym, bid, ask, on_close) signature -- internal EMA9/21/50 + ATR
+// computed from ticks.
+// ---------------------------------------------------------------------------
+class TrendPullbackGoldDriver : public EngineDriver<TrendPullbackGoldDriver> {
+public:
+    static constexpr const char* NAME = "TrendPullback_XAU";
+    omega::cross::TrendPullbackEngine eng;
+    Stats stats;
+    int64_t latest_ts_ms = 0;
+
+    void feed_tick_impl(double bid, double ask, int64_t ts_ms) noexcept {
+        latest_ts_ms = ts_ms;
+        omega::bt::set_sim_time(ts_ms);
+        eng.on_tick("XAUUSD", bid, ask,
                     [this, bid, ask](const omega::TradeRecord& tr) {
                         omega::TradeRecord t2 = tr;
                         if (t2.spreadAtEntry <= 0.0) t2.spreadAtEntry = (ask - bid);

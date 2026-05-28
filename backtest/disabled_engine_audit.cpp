@@ -124,7 +124,9 @@ int main(int argc, char** argv) {
     using DriverTuple = std::tuple<
         dea::GoldBracketDriver,
         dea::XauusdFvgDriver,
-        dea::DonchianDriver
+        dea::DonchianDriver,
+        dea::VWAPRevGoldDriver,
+        dea::TrendPullbackGoldDriver
     >;
     DriverTuple drivers;
 
