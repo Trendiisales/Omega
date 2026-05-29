@@ -304,6 +304,11 @@ static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
 //   NQ: sl_pts=25pt, min_ema_sep=1.5pt, pnl_scale=0.2 ($20/pt * 0.01lot = $0.20/pt)
 static omega::idx::IndexSwingEngine g_iswing_sp("US500.F",  8.0, 0.5, 0.5);
 static omega::idx::IndexSwingEngine g_iswing_nq("USTEC.F", 25.0, 1.5, 0.2);
+
+// S38 walk-forward survivors portfolio (13 cells across XAU/GER40/USTEC/USDJPY).
+// Configured + seeded in engine_init.hpp. Per-cell enabled/shadow flags.
+#include "SurvivorPortfolio.hpp"
+static omega::survivor::Portfolio g_survivor;
 static OmegaVolTargeter    g_vol_targeter;   // EWMA vol targeting + momentum regime
 static OmegaSignalScorer   g_signal_scorer;   // Composite signal scoring (13-point system)
 static OmegaCrowdingGuard  g_crowding_guard;  // Directional crowding tracker (RenTec #4)

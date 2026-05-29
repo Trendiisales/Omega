@@ -2169,6 +2169,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
          sym == "NAS100"))
         return;
 
+    // ── S38 SurvivorPortfolio dispatch (13 walk-forward survivors) ──────────
+    // Receives every tick; per-cell symbol filter inside on_tick. Shadow mode.
+    {
+        const int64_t surv_now_ms = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_survivor.on_tick(sym, bid, ask, surv_now_ms, handle_closed_trade);
+    }
+
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
     // ── Symbol dispatch ────────────────────────────────────────────────────────
     if      (sym == "US500.F")                          on_tick_us500(sym, bid, ask, tradeable, lat_ok, regime);

@@ -2935,6 +2935,19 @@ static void init_engines(const std::string& cfg_path)
     g_iswing_sp.shadow_mode = true;
     g_iswing_nq.shadow_mode = true;
 
+    // ── S38 SurvivorPortfolio configure -- 13 walk-forward survivors ─────────
+    // All cells default enabled=true shadow_mode=true. Per-cell promotion gate
+    // per CLAUDE.md: 30 shadow trades + WR >= 35% + net positive.
+    // Seeded from phase1/signal_discovery/warmup_<SYM>_<TF>.csv where present.
+    // Cells with missing CSV cold-warm (acceptable for shadow, will not fire
+    // entries during seed because seed_from_csv sets enabled=false during replay).
+    g_survivor.init_default_cells();
+    g_survivor.seed_all("phase1/signal_discovery");
+    g_survivor.enabled = true;
+    printf("[SURV-INIT] portfolio armed cells=%zu spx_bars=%zu\n",
+           g_survivor.cells.size(), g_survivor.spx.spx_bars.size());
+    fflush(stdout);
+
     // ?? MAX_RANGE caps: ~0.4% of instrument price ?????????????????????????????
     // Prevents bracketing full day-range trending moves as if they were compression.
     // Evidence: ESTX50 bracket fired on 79.8pt range (1.4% of 5600) = entire London
