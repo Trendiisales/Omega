@@ -80,11 +80,32 @@ check is the Mac canary build (operator-side):
 ```bash
 cd ~/omega_repo
 cmake --build build --target OmegaBacktest -j
+bash scripts/mac_canary_engines.sh
 ```
 
 **Do NOT** use the bare `cmake --build build -j` — that target needs
 Windows-only headers and always fails on macOS, even though the
 surrounding green "Built target X" lines can make it look like a pass.
+
+### Mac canary engine-header check (added 2026-05-30)
+
+`scripts/mac_canary_engines.sh` syntax-checks engine headers that
+`OmegaBacktest` does NOT include (DonchianEngine, EmaPullbackEngine,
+IndexFlowEngine, XauTrendFollow4hEngine, SurvivorPortfolio, L2Globals).
+Catches the MSVC-class C++ errors that slipped through OmegaBacktest in
+the 2026-05-30 deploy: `AtomicL2` undeclared (no `L2Globals.hpp`
+include), mixed designated/positional aggregate-init, ODR-violating
+header definitions.
+
+Run BEFORE any commit that touches an engine header. Adds ~5 seconds.
+
+History: added after the 2026-05-30 VPS build failed at MSVC main.cpp
+with 30+ errors across DonchianEngine/EmaPullbackEngine/
+XauTrendFollow4hEngine/IndexFlowEngine/SurvivorPortfolio. None caught
+by the OmegaBacktest target because it doesn't include those headers
+in its TU. The canary script compiles each header in isolation under
+`-fsyntax-only` so the type-resolution path matches MSVC's main.cpp
+compile without needing Windows headers.
 
 ## Branch Freshness (added 2026-05-20)
 
