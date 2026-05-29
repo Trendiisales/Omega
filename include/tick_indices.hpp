@@ -640,6 +640,30 @@ static void on_tick_ustec(
         g_imacro_nq.on_tick(bid, ask, cur_atr_nq, g_iflow_nq.drift(),
                             nq_vol_ratio, nq_trend_regime, ca_on_close);
     }
+    // ── IndexSwingEngine -- USTEC.F H1+H4 swing entries (shadow mode) ───────
+    // 2026-05-30 BUGFIX: this block was previously inside on_tick_nas100,
+    // feeding NAS100 bid/ask into g_iswing_nq (the USTEC.F instance).
+    // Symptom: USTEC.F entries logged at NAS100 prices (e.g. 30237.50 when
+    // USTEC was 30315). Discovered via iswing_replay trade-9 anomaly.
+    {
+        auto swing_nq_cb = [&](const omega::TradeRecord& tr) {
+            // Shadow mode: call handle_closed_trade directly -- NOT ca_on_close.
+            // ca_on_close sends a live market order to close; this engine never
+            // opened a broker position so sending a close order would be a rogue order.
+            handle_closed_trade(tr);
+            printf("[ISWING-CB] USTEC.F %s pnl=%.2f why=%s\n",
+                   tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
+            fflush(stdout);
+        };
+        const bool sw_nq_entered = g_iswing_nq.on_tick(bid, ask, g_bars_nq.h1, g_bars_nq.h4,
+                            g_iflow_nq.drift(), swing_nq_cb);
+        if (sw_nq_entered)
+            g_telemetry.UpdateLastSignal("USTEC.F",
+                g_iswing_nq.is_long_at_entry() ? "LONG" : "SHORT",
+                g_iswing_nq.entry_price(), "H1+H4 EMA swing",
+                "ISWING", regime.c_str(), "IndexSwing",
+                0.0, g_iswing_nq.sl_price());
+    }
 }
 
 // ── DJ30.F ─────────────────────────────────────────────────
@@ -1152,24 +1176,7 @@ static void on_tick_nas100(
         g_imacro_nas.on_tick(bid, ask, cur_atr_nas, g_iflow_nas.drift(),
                              nas_vol_ratio, nas_trend_regime, ca_on_close);
     }
-    // ?? IndexSwingEngine -- USTEC.F H1+H4 swing entries (shadow mode) ?????????
-    {
-        auto swing_nq_cb = [&](const omega::TradeRecord& tr) {
-            // Shadow mode: call handle_closed_trade directly -- NOT ca_on_close.
-            // ca_on_close sends a live market order to close; this engine never
-            // opened a broker position so sending a close order would be a rogue order.
-            handle_closed_trade(tr);
-            printf("[ISWING-CB] USTEC.F %s pnl=%.2f why=%s\n",
-                   tr.side.c_str(), tr.pnl, tr.exitReason.c_str());
-            fflush(stdout);
-        };
-        const bool sw_nq_entered = g_iswing_nq.on_tick(bid, ask, g_bars_nq.h1, g_bars_nq.h4,
-                            g_iflow_nq.drift(), swing_nq_cb);
-        if (sw_nq_entered)
-            g_telemetry.UpdateLastSignal("USTEC.F",
-                g_iswing_nq.is_long_at_entry() ? "LONG" : "SHORT",
-                g_iswing_nq.entry_price(), "H1+H4 EMA swing",
-                "ISWING", regime.c_str(), "IndexSwing",
-                0.0, g_iswing_nq.sl_price());
-    }
+    // (2026-05-30 BUGFIX: g_iswing_nq block REMOVED from here -- it was
+    // feeding NAS100 bid/ask into the USTEC.F IndexSwingEngine. Block
+    // moved to on_tick_ustec where it belongs.)
 }
