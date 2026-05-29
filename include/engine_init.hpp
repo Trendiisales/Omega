@@ -429,7 +429,7 @@ static void init_engines(const std::string& cfg_path)
     //   S63 in-flight protection already wired (LOSS_CUT=0.05, BE_ARM=0.03,
     //   BE_BUFFER=0.012 — confirmed STATE A at part-W audit).
     //   Promoting from shadow to live based on this evidence.
-    g_xauusd_fvg.shadow_mode = false;
+    g_xauusd_fvg.shadow_mode = true;  // 2026-05-29: forced shadow during live-feed cutover (demo->live FIX). Restore false after validation.
     g_xauusd_fvg.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     g_xauusd_fvg.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);                              // standard ledger path
@@ -1243,7 +1243,7 @@ static void init_engines(const std::string& cfg_path)
         // OOS-validated config: D=10 SL=1.5x TP=4.0x. See header for evidence.
         g_minimal_h4_gold.p           = omega::make_minimal_h4_gold_params();
         g_minimal_h4_gold.symbol      = "XAUUSD";
-        g_minimal_h4_gold.shadow_mode = false;
+        g_minimal_h4_gold.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
         g_minimal_h4_gold.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
         printf("[INIT] MinimalH4Breakout XAUUSD: shadow=%s donchian=%d sl=%.1fx"
                " tp=%.1fx risk=$%.0f max_lot=%.3f timeout=%d bars weekend_gate=%s\n",
@@ -1399,7 +1399,7 @@ static void init_engines(const std::string& cfg_path)
         //   cell_enable_mask = bits 0,3 = 0x09 (Donchian PF=1.15 + Keltner PF=1.03)
         //   S-NEXT 2026-05-17: RangeExpand (bit 5) removed — PF=0.82 on fresh tape,
         //   negative all 3 WF folds. Was 0x29, now 0x09.
-        g_xau_tf_4h.shadow_mode = false;
+        g_xau_tf_4h.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
         g_xau_tf_4h.enabled     = true;
         // S116 2026-05-19: bit 6 (0x40) added for EmaCross8_21 cell from the
         // S114 long-trend ensemble research (Python +$30,966 / Sharpe +1.96
@@ -1456,7 +1456,7 @@ static void init_engines(const std::string& cfg_path)
         // the new cells are auditable against the S115 backtest CSV from
         // day one.  Service-level mode=SHADOW (config.ini) is the outer
         // safety net while we validate fill rates.
-        g_xau_tf_1h.shadow_mode = false;
+        g_xau_tf_1h.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
         g_xau_tf_1h.enabled     = true;
         g_xau_tf_1h.cell_enable_mask = 0x03;  // both cells
         g_xau_tf_1h.lot         = 0.01;
@@ -2444,7 +2444,7 @@ static void init_engines(const std::string& cfg_path)
         //   v2 combined: IS PF=1.60, OOS PF=1.54, 91 OOS trades, WR=39.6%.
         //   S63 already active (LC=0.10, ARM=0.40, BUF=0.05 per S82 sweep).
         //   cell_enable_mask = bits 2,3 = 0x0C (H4+H6 only, disable H1+H2)
-        g_ema_pullback.shadow_mode       = false;
+        g_ema_pullback.shadow_mode       = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
         g_ema_pullback.enabled           = true;
         g_ema_pullback.cell_enable_mask  = 0x0C;  // S96: H4+H6 only
         g_ema_pullback.max_concurrent    = 4;
@@ -3694,7 +3694,7 @@ static void init_engines(const std::string& cfg_path)
     //   Asian range 21:00-07:00 UTC, max hold 4hr, short only
     {
         g_ger40_london_brk.symbol          = "GER40";
-        g_ger40_london_brk.shadow_mode     = false;  // LIVE -- validated edge
+        g_ger40_london_brk.shadow_mode     = true;   // 2026-05-29: forced shadow (demo->live FIX cutover). PRIOR: false (LIVE -- validated edge).
         g_ger40_london_brk.enabled         = true;
         g_ger40_london_brk.lot             = 0.01;
         g_ger40_london_brk.max_spread      = 4.0;
