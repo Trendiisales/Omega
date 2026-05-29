@@ -1509,6 +1509,15 @@ private:
     int64_t last_exit_ms_      = 0;
     double  h1_e9_at_entry_    = 0.0;
     double  h1_e50_at_entry_   = 0.0;
+    // 2026-05-30: exit-side fixes per loss-cluster analysis. 10-trade sample
+    // showed winners cut at 0.5R trail (avg $128/130/80) while losers ran
+    // full -1R (-$200 SP, -$100 NQ). Net WR 40% R:R ~1:1 -> breakeven.
+    // Fix surfaces: stage_trail (no-TP runners ok per memory:omega-stage-
+    // trail-result), TP1 50% partial at 1.5R, cold-loss cut at -0.5R if
+    // 15min hold with mfe < 0.3R.
+    int     stage_              = 0;     // 0 init, 1=2R-armed, 2=5R-armed, 3=10R
+    bool    tp1_partial_taken_  = false; // 50% closed at 1.5R MFE
+    double  tp1_pnl_pts_        = 0.0;   // partial-close pts (locked)
     // 2026-05-22: escalating SL cooldown. After 2026-05-21 NSX took 2 back-to-back
     // losses ($100 each) because 30min cooldown expired before mean-reversion
     // played out. Escalate cooldown 1h/3h/6h on consec SL_HITs. Reset on win.
@@ -1520,34 +1529,79 @@ private:
         const double move = is_long_ ? (mid - entry_) : (entry_ - mid);
         if (move > mfe_) mfe_ = move;
 
-        // BE lock at 1x sl_pts_ profit
-        if (!be_locked_ && move >= sl_pts_) {
+        // ── BE lock at 1R MFE ────────────────────────────────────────────────
+        if (!be_locked_ && mfe_ >= sl_pts_) {
             be_locked_ = true;
             trail_sl_  = entry_;
-            printf("[ISWING-%s] BE-LOCK %s move=%.2f sl->%.2f\n",
-                   symbol_, is_long_ ? "LONG" : "SHORT", move, trail_sl_);
+            printf("[ISWING-%s] BE-LOCK %s mfe=%.2f sl->%.2f\n",
+                   symbol_, is_long_ ? "LONG" : "SHORT", mfe_, trail_sl_);
             fflush(stdout);
         }
 
-        // Trail at 0.5x sl_pts_ behind MFE once BE locked
+        // ── TP1 50% partial at 1.5R MFE ──────────────────────────────────────
+        // Lock half position at 1.5R; remainder runs on stage-trail.
+        if (!tp1_partial_taken_ && mfe_ >= sl_pts_ * 1.5) {
+            const double tp1_px = is_long_ ? (entry_ + sl_pts_ * 1.5)
+                                           : (entry_ - sl_pts_ * 1.5);
+            tp1_partial_taken_ = true;
+            tp1_pnl_pts_       = sl_pts_ * 1.5 * 0.5;  // 50% of 1.5R in pts
+            printf("[ISWING-%s] TP1-PARTIAL %s tp1=%.2f mfe=%.2f locked=%.2f pts (50%%)\n",
+                   symbol_, is_long_ ? "LONG" : "SHORT", tp1_px, mfe_, tp1_pnl_pts_);
+            fflush(stdout);
+        }
+
+        // ── Stage trail: looser as MFE grows (no-TP runner) ──────────────────
+        // Stage 1 (MFE >= 2R): trail at 1R behind peak
+        // Stage 2 (MFE >= 5R): trail at 2R behind peak (loosen for trend room)
+        // Stage 3 (MFE >= 10R): trail at 3R behind peak
+        int new_stage = stage_;
+        if      (mfe_ >= sl_pts_ * 10.0) new_stage = 3;
+        else if (mfe_ >= sl_pts_ *  5.0) new_stage = std::max(new_stage, 2);
+        else if (mfe_ >= sl_pts_ *  2.0) new_stage = std::max(new_stage, 1);
+        if (new_stage > stage_) {
+            const char* tag = (new_stage == 1) ? "STAGE1" : (new_stage == 2 ? "STAGE2" : "STAGE3");
+            printf("[ISWING-%s] %s %s mfe=%.2f\n",
+                   symbol_, tag, is_long_ ? "LONG" : "SHORT", mfe_);
+            fflush(stdout);
+            stage_ = new_stage;
+        }
+        double trail_dist = sl_pts_ * 0.5;  // pre-stage: tight 0.5R trail
+        if      (stage_ == 1) trail_dist = sl_pts_ * 1.0;
+        else if (stage_ == 2) trail_dist = sl_pts_ * 2.0;
+        else if (stage_ == 3) trail_dist = sl_pts_ * 3.0;
         if (be_locked_) {
-            const double new_sl = is_long_ ? (entry_ + mfe_ - sl_pts_ * 0.5)
-                                           : (entry_ - mfe_ + sl_pts_ * 0.5);
+            const double new_sl = is_long_ ? (entry_ + mfe_ - trail_dist)
+                                           : (entry_ - mfe_ + trail_dist);
             if (is_long_  && new_sl > trail_sl_) trail_sl_ = new_sl;
             if (!is_long_ && new_sl < trail_sl_) trail_sl_ = new_sl;
         }
 
-        const bool sl_hit  = is_long_ ? (bid <= trail_sl_) : (ask >= trail_sl_);
+        // ── Cold-loss cut: cap losers at -0.5R if 15min no progress ──────────
+        // Catches the -1R-flat losers seen in 2026-05-30 10-trade sample.
+        // Fires only when: 15min held, mfe never reached 0.3R, current adverse.
+        const int64_t held_sec = idx_now_sec() - entry_ts_;
+        const double half_R    = sl_pts_ * 0.5;
+        const double cur_adv   = is_long_ ? (entry_ - mid) : (mid - entry_);
+        const bool cold_cut    = !be_locked_ && held_sec >= 900
+                              && mfe_ < sl_pts_ * 0.3
+                              && cur_adv >= half_R;
+        const bool sl_hit      = is_long_ ? (bid <= trail_sl_) : (ask >= trail_sl_);
         // 2026-05-13 (part L): VWR-pattern winner exemption.
         const double cur_move_s = is_long_ ? (mid - entry_) : (entry_ - mid);
         const bool timeout = (idx_now_sec() - entry_ts_ >= SWING_MAX_HOLD_SEC)
                           && cur_move_s <= 0.0;
 
-        if (!sl_hit && !timeout) return;
+        if (!sl_hit && !timeout && !cold_cut) return;
 
         const double exit_px = sl_hit ? trail_sl_ : mid;
-        const char*  why     = sl_hit ? "SL_HIT"  : "TIMEOUT";
-        const double gross   = is_long_ ? (exit_px - entry_) : (entry_ - exit_px);
+        const char*  why     = cold_cut ? "COLD_CUT" : (sl_hit ? "SL_HIT" : "TIMEOUT");
+        const double remainder_pts = is_long_ ? (exit_px - entry_) : (entry_ - exit_px);
+        // Gross PnL accounting:
+        //   no partial:  gross = remainder_pts (full size on close)
+        //   partial(50%): gross = 0.75*sl_pts_ (locked at 1.5R on half) + 0.5*remainder_pts
+        const double gross   = tp1_partial_taken_
+                             ? (tp1_pnl_pts_ + 0.5 * remainder_pts)
+                             : remainder_pts;
 
         const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
         printf("%s %s CLOSE %s entry=%.2f exit=%.2f pts=%.2f mfe=%.2f why=%s\n",
@@ -1575,6 +1629,10 @@ private:
         last_exit_dir_     = is_long_ ? 1 : -1;
         last_exit_ms_      = idx_now_ms();
         active_            = false;
+        // Reset 2026-05-30 exit-side state for next trade.
+        stage_              = 0;
+        tp1_partial_taken_  = false;
+        tp1_pnl_pts_        = 0.0;
         // 2026-05-22: escalating cooldown on consec SLs.
         //   1st consec SL -> 1h cooldown
         //   2nd consec SL -> 3h cooldown
