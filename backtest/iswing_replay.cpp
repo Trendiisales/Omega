@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-struct Tick { long long ts_ms = 0; double bid = 0, ask = 0, mid = 0; };
+struct Tick { long long ts_ms = 0; double bid = 0, ask = 0, mid = 0; double l2_imb = 0.5; double micro = 0; };
 
 static std::vector<Tick> load_ticks(const std::string& path) {
     std::vector<Tick> out;
@@ -32,16 +32,22 @@ static std::vector<Tick> load_ticks(const std::string& path) {
     if (!f) { std::cerr << "WARN open " << path << "\n"; return out; }
     std::string line; std::getline(f, line);  // header
     while (std::getline(f, line)) {
-        // ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,...
-        const char* s = line.c_str();
+        // ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,depth_bid,depth_ask,
+        //   depth_evts,watchdog,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift
         Tick t;
+        const char* s = line.c_str();
         t.ts_ms = atoll(s);
-        const char* p = strchr(s, ','); if (!p) continue; ++p;
-        t.mid = atof(p);
-        p = strchr(p, ','); if (!p) continue; ++p;
-        t.bid = atof(p);
-        p = strchr(p, ','); if (!p) continue; ++p;
-        t.ask = atof(p);
+        int col = 0;
+        const char* p = s;
+        while (*p) {
+            if      (col == 1) t.mid    = atof(p);
+            else if (col == 2) t.bid    = atof(p);
+            else if (col == 3) t.ask    = atof(p);
+            else if (col == 4) t.l2_imb = atof(p);
+            else if (col == 15) { t.micro = atof(p); break; }
+            const char* nx = strchr(p, ','); if (!nx) break;
+            p = nx + 1; col++;
+        }
         if (t.bid <= 0 || t.ask <= 0) continue;
         out.push_back(t);
     }
@@ -264,6 +270,36 @@ int main() {
         if (i0 == SIZE_MAX) {
             printf("%-19s %-7s %9.2f  NO_MATCH (time=%02d:%02d:%02d entry=%.2f tol=%.1f)\n",
                    t.entry_utc, t.sym, t.entry_px, hh, mm, ss, t.entry_px, tol);
+            continue;
+        }
+        // L2 entry gate using 30-tick PRIOR rolling average (smoother + more
+        // discriminating than single-tick per the entry-analysis harness).
+        //   block LONG if micro_p30 < -mic_block.
+        //   imb usable when |imb_p30 - 0.5| > 0.01.
+        const double mic_block = is_sp ? 0.05 : 0.10;
+        double mic_p = 0, imb_p = 0;
+        int cn = 0;
+        for (size_t j = (i0 >= 30 ? i0 - 30 : 0); j < i0; ++j) {
+            mic_p += tks[j].micro; imb_p += tks[j].l2_imb; cn++;
+        }
+        if (cn > 0) { mic_p /= cn; imb_p /= cn; } else imb_p = 0.5;
+        bool l2_blocked = false;
+        const char* l2_reason = "";
+        if (t.is_long && mic_p < -mic_block) { l2_blocked = true; l2_reason = "MIC-OPP"; }
+        if (!t.is_long && mic_p > +mic_block) { l2_blocked = true; l2_reason = "MIC-OPP"; }
+        if (!l2_blocked && std::abs(imb_p - 0.5) > 0.01) {
+            if (t.is_long && imb_p < 0.45) { l2_blocked = true; l2_reason = "IMB-OPP"; }
+            if (!t.is_long && imb_p > 0.55) { l2_blocked = true; l2_reason = "IMB-OPP"; }
+        }
+        // Suppress unused warnings on raw entry snapshot fields.
+        (void)tks[i0].micro; (void)tks[i0].l2_imb;
+        if (l2_blocked) {
+            old_total += t.old_pnl;
+            // new_total += 0 (trade not fired)
+            printf("%-19s %-7s %9.2f %9s %9s %+9.2f %+9.2f %+9.2f %7.2f %-7s %6d\n",
+                   t.entry_utc, t.sym, t.entry_px, "BLOCKED", "--",
+                   t.old_pnl, 0.0, -t.old_pnl,
+                   0.0, l2_reason, 0);
             continue;
         }
         ReplayOut r = replay(tks, i0, t.is_long, t.entry_px, sl_pts, max_loss_pts);

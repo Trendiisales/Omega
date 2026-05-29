@@ -1398,6 +1398,21 @@ public:
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return false;
         const double mid = (bid + ask) * 0.5;
 
+        // Push L2 sample into ring buffer on every tick (incl. while in pos).
+        // Read from per-symbol L2 global; nullptr means no L2 source.
+        {
+            const ::AtomicL2* l2 = nullptr;
+            if      (strcmp(symbol_, "US500.F") == 0) l2 = &g_l2_sp;
+            else if (strcmp(symbol_, "USTEC.F") == 0) l2 = &g_l2_nq;
+            else if (strcmp(symbol_, "NAS100")  == 0) l2 = &g_l2_nas;
+            if (l2) {
+                l2_mic_buf_[l2_buf_head_] = l2->microprice_bias.load(std::memory_order_relaxed);
+                l2_imb_buf_[l2_buf_head_] = l2->imbalance.load(std::memory_order_relaxed);
+                l2_buf_head_ = (l2_buf_head_ + 1) % L2_BUF_N;
+                if (l2_buf_count_ < L2_BUF_N) ++l2_buf_count_;
+            }
+        }
+
         // Always manage open position first
         if (active_) {
             _manage(bid, ask, mid, on_close);
@@ -1462,6 +1477,54 @@ public:
             if (idx_now_ms() - last_exit_ms_ < 14400000LL) return false;
         }
 
+        // ── L2 alignment gate (added 2026-05-30 per 10-trade analysis) ──────
+        // Sample showed ALIGNED entries WR 67% vs OPPOSED 29%. Block trades
+        // where L2 microprice opposes direction over the 30-tick avg PRIOR
+        // to the entry tick (smoother than single-tick: replay showed a
+        // +$346 winner had mic_e=-0.30 spike but mic_p30=-0.03 clean).
+        //   USTEC: avg_mic < -0.10  -> bearish flow -> block LONG
+        //   US500: avg_mic < -0.05  -> tighter threshold (less L2 noise on SP)
+        // imbalance only used when not stuck at 0.5 (per
+        // memory:feedback-l2-data-quality USTEC imb is ~99% stuck at 0.5).
+        if (l2_buf_count_ >= 10) {  // need 10+ samples to trust avg
+            double mic_block = 0.05;
+            if      (strcmp(symbol_, "USTEC.F") == 0) mic_block = 0.10;
+            else if (strcmp(symbol_, "NAS100")  == 0) mic_block = 0.10;
+            double mic_sum = 0, imb_sum = 0;
+            for (int k = 0; k < l2_buf_count_; ++k) {
+                mic_sum += l2_mic_buf_[k];
+                imb_sum += l2_imb_buf_[k];
+            }
+            const double mic_avg = mic_sum / l2_buf_count_;
+            const double imb_avg = imb_sum / l2_buf_count_;
+            if (is_long  && mic_avg < -mic_block) {
+                printf("[ISWING-%s] L2-GATE-BLOCK LONG avg_mic=%.4f thr=-%.3f n=%d\n",
+                       symbol_, mic_avg, mic_block, l2_buf_count_);
+                fflush(stdout);
+                return false;
+            }
+            if (!is_long && mic_avg > +mic_block) {
+                printf("[ISWING-%s] L2-GATE-BLOCK SHORT avg_mic=%.4f thr=+%.3f n=%d\n",
+                       symbol_, mic_avg, mic_block, l2_buf_count_);
+                fflush(stdout);
+                return false;
+            }
+            if (std::fabs(imb_avg - 0.5) > 0.01) {
+                if (is_long  && imb_avg < 0.45) {
+                    printf("[ISWING-%s] L2-GATE-BLOCK LONG avg_imb=%.3f n=%d\n",
+                           symbol_, imb_avg, l2_buf_count_);
+                    fflush(stdout);
+                    return false;
+                }
+                if (!is_long && imb_avg > 0.55) {
+                    printf("[ISWING-%s] L2-GATE-BLOCK SHORT avg_imb=%.3f n=%d\n",
+                           symbol_, imb_avg, l2_buf_count_);
+                    fflush(stdout);
+                    return false;
+                }
+            }
+        }
+
         // ── Open position ─────────────────────────────────────────────────────
         active_           = true;
         is_long_          = is_long;
@@ -1518,6 +1581,14 @@ private:
     int     stage_              = 0;     // 0 init, 1=2R-armed, 2=5R-armed, 3=10R
     bool    tp1_partial_taken_  = false; // 50% closed at 1.5R MFE
     double  tp1_pnl_pts_        = 0.0;   // partial-close pts (locked)
+    // 2026-05-30: rolling-30-tick L2 EMA. Single-tick L2 too noisy -- replay
+    // showed +$346 US500 winner blocked by mic_e=-0.30 spike but mic_p30=-0.03
+    // (clean). Ring buffer of last 30 ticks gives smoother gate signal.
+    static constexpr int L2_BUF_N = 30;
+    double  l2_mic_buf_[L2_BUF_N] = {};
+    double  l2_imb_buf_[L2_BUF_N] = {};
+    int     l2_buf_head_          = 0;
+    int     l2_buf_count_         = 0;
     // 2026-05-22: escalating SL cooldown. After 2026-05-21 NSX took 2 back-to-back
     // losses ($100 each) because 30min cooldown expired before mean-reversion
     // played out. Escalate cooldown 1h/3h/6h on consec SL_HITs. Reset on win.
