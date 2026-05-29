@@ -67,6 +67,71 @@ venv/
 /cfe_post_*.log
 /hbg_post_*.log
 
+# ── Runtime log directory (VPS-side; should never be committed) ───────────────
+# Source of the 2026-05-29 git pull failure: omega_shadow.csv was tracked
+# and held open by the running Omega.exe service. Add the whole logs/ tree
+# to .gitignore so future pulls never collide on a runtime file write.
+# Tracked-already files (none after the cleanup commit) remain tracked.
+logs/
+data/ibkr_l2/
+data/trades.ndjson
+state/
+
+# ── Pre-S86 / pre-dispatch-fix exe + config backups (operator-side, big) ──────
+Omega.exe.bak-*
+Omega.exe.broken_*
+Omega.exe.old_*
+Omega.exe.pre_*.bak
+Omega.exe.working_*
+*.bak
+*.bak_*
+*.bak.20*
+KILL_MICROSCALPER
+KILL_MICROSCALPER.bak
+omega_build.stamp
+omega_config.ini.*.bak*
+omega_config.ini.demo-bak-*
+symbols.ini.*.bak*
+
+# ── VPS-side DLL drops (operator-side, distributed via build) ─────────────────
+boost_*.dll
+libcrypto-*.dll
+libssl-*.dll
+libcurl.dll
+zlib1.dll
+legacy.dll
+
+# ── Build / configure transcript dumps (regenerable) ──────────────────────────
+build_log.txt
+build_output.txt
+configure_log.txt
+errors.txt
+backtest/*_sweep.txt
+backtest/dpe_sweep/
+backtest/cfe_full_sweep.txt
+backtest/bbmr_full_sweep.txt
+diagnostics/
+dom_audit_output.txt
+_culled_backup_*/
+_export/
+analysis_s*/
+live/
+transfer/
+tools/perl/
+
+# ── Misc operator-side helpers (per-host) ─────────────────────────────────────
+ticks_test.bi5
+tse_backtest.py
+tse_bt.py
+mce_align.py
+mce_diag.py
+mce_replay.py
+momentum_bt.py
+cfe_sweep.py
+scripts/run_daily_dispatcher.bat
+scripts/run_sunday.bat
+bracket-bot/deploy/run_dashboard.cmd
+
 # ── Operator one-off helper scripts (not part of the codebase) ────────────────
 COMMIT_PHASE1.sh
 COMMIT_SESSION_*.sh
