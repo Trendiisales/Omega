@@ -668,6 +668,20 @@ private:
             }
         }
 
+        // ── L2 entry gate (added 2026-05-30) ──
+        // XAUUSD g_l2_gold microprice/imbalance. Loose thresholds.
+        {
+            extern AtomicL2 g_l2_gold;
+            const double mic = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
+            const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+            if (side > 0  && mic < -0.10) return;
+            if (side < 0  && mic >  0.10) return;
+            if (std::fabs(imb - 0.5) > 0.01) {
+                if (side > 0 && imb < 0.40) return;
+                if (side < 0 && imb > 0.60) return;
+            }
+        }
+
         auto& p = pos[ci];
         p.active        = true;
         p.is_long       = (side > 0);

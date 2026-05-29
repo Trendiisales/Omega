@@ -492,6 +492,21 @@ struct EpbCell {
 
         if (sig_dir != direction) return 0;
 
+        // ── L2 entry gate (added 2026-05-30) ──
+        // Same XAUUSD g_l2_gold microprice/imbalance check as DonchianEngine.
+        // Loose thresholds.
+        if (symbol == "XAUUSD") {
+            extern AtomicL2 g_l2_gold;
+            const double mic = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
+            const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
+            if (direction == 1  && mic < -0.10) return 0;
+            if (direction == -1 && mic >  0.10) return 0;
+            if (std::fabs(imb - 0.5) > 0.01) {
+                if (direction == 1  && imb < 0.40) return 0;
+                if (direction == -1 && imb > 0.60) return 0;
+            }
+        }
+
         // 6. Open the position
         const double entry_px = direction == 1 ? ask : bid;
         const double sl_pts   = atr14_at_signal * sl_atr;
