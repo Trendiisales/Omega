@@ -27,6 +27,7 @@
 
 #include "XauTurtleD1Engine.hpp"
 #include "XauTsmomFastD1Engine.hpp"
+#include "XauForecastToFillD1Engine.hpp"
 #include "XauStopRunD1Engine.hpp"
 #include "XauNbmD1Engine.hpp"
 #include "XauPullbackContH4Engine.hpp"
@@ -170,6 +171,14 @@ int main() {
     tsmom.p = omega::make_xau_tsmom_fast_d1_params();
     auto tsmom_stats = run_engine("XauTsmomFastD1", 7.65, bars, tsmom);
 
+    // --- XauForecastToFillD1 (S37-Z task#21, arxiv 2511.08571) ---
+    // Paper claims Sharpe 2.88 OOS 2015-2025 net of 0.7bp + sqrt-impact cost.
+    // Our 2yr corpus is a subset of the paper's sample so verdict is OOS-of-OOS.
+    omega::XauForecastToFillD1Engine ftf;
+    ftf.shadow_mode = true; ftf.enabled = true; ftf.symbol = "XAUUSD";
+    ftf.p = omega::make_xau_forecast_to_fill_d1_params();
+    auto ftf_stats = run_engine("XauForecastToFillD1", 2.88, bars, ftf);
+
     // --- XauStopRunD1 ---
     omega::XauStopRunD1Engine stoprun;
     stoprun.shadow_mode = true; stoprun.enabled = true; stoprun.symbol = "XAUUSD";
@@ -242,6 +251,7 @@ int main() {
     std::printf("%s\n", std::string(72, '=').c_str());
     report(turtle_stats);
     report(tsmom_stats);
+    report(ftf_stats);
     report(stoprun_stats);
     report(nbm_stats);
     report(pcH4_stats);
