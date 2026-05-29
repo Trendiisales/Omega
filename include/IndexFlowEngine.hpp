@@ -1420,6 +1420,14 @@ public:
             return false;
         }
 
+        // L2-confirmed entry delay -- advance pending state machine.
+        if (pending_entry_) {
+            _check_pending(bid, ask);
+            if (active_) return true;  // confirmed -> opened this tick
+            if (pending_entry_) return false;  // still waiting
+            // else: cancelled, fall through (cooldown applies)
+        }
+
         // Cooldown gate
         if (idx_now_ms() < cooldown_until_ms_) return false;
 
@@ -1526,27 +1534,81 @@ public:
             }
         }
 
-        // ── Open position ─────────────────────────────────────────────────────
-        active_           = true;
-        is_long_          = is_long;
-        entry_            = is_long ? ask : bid;
-        sl_               = is_long ? (entry_ - sl_pts_) : (entry_ + sl_pts_);
-        trail_sl_         = sl_;
-        mfe_              = 0.0;
-        be_locked_        = false;
-        entry_ts_         = idx_now_sec();
-        entry_ms_         = idx_now_ms();
-        h1_e9_at_entry_   = h1_e9;
-        h1_e50_at_entry_  = h1_e50;
+        // ── L2-confirmed entry delay (2026-05-30) ──────────────────────────
+        // Don't open immediately. Queue pending entry; require N consecutive
+        // ticks of confirming microprice alignment before opening. Skips
+        // signals where book pressure briefly aligns then immediately
+        // reverses (the "false start" pattern that produces 3-5min losers).
+        if (!pending_entry_) {
+            pending_entry_   = true;
+            pending_is_long_ = is_long;
+            pending_ticks_   = 0;
+            h1_e9_at_entry_  = h1_e9;
+            h1_e50_at_entry_ = h1_e50;
+            const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
+            printf("%s %s SIGNAL-PENDING %s ema_sep=%.2f h1_trend=%d h4_ready=%d "
+                   "drift=%.3f waiting=%d ticks\n",
+                   pfx, symbol_, is_long ? "LONG" : "SHORT",
+                   ema_sep, h1_trend, h4_ready ? 1 : 0, drift,
+                   (int)PENDING_CONFIRM_TICKS);
+            fflush(stdout);
+        }
+        return false;  // entry happens via _check_pending in subsequent ticks
+    }
 
-        const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
-        printf("%s %s %s entry=%.2f sl=%.2f sl_pts=%.2f ema_sep=%.2f "
-               "h1_trend=%d h4_ready=%d drift=%.3f\n",
-               pfx, symbol_, is_long ? "LONG" : "SHORT",
-               entry_, sl_, sl_pts_, ema_sep,
-               h1_trend, h4_ready ? 1 : 0, drift);
-        fflush(stdout);
-        return true;
+    // Called every on_tick before entry/manage to advance pending state.
+    // Opens position when L2 confirms or cancels when max ticks exceeded.
+    void _check_pending(double bid, double ask) noexcept {
+        if (!pending_entry_) return;
+        ++pending_ticks_;
+        if (l2_buf_count_ < PENDING_CONFIRM_TICKS) return;  // need data
+        // Compute mic_avg over the most recent PENDING_CONFIRM_TICKS samples
+        // in the ring buffer.
+        double mic_sum = 0;
+        const int N = std::min(l2_buf_count_, (int)PENDING_CONFIRM_TICKS);
+        int idx = (l2_buf_head_ - 1 + L2_BUF_N) % L2_BUF_N;
+        for (int k = 0; k < N; ++k) {
+            mic_sum += l2_mic_buf_[idx];
+            idx = (idx - 1 + L2_BUF_N) % L2_BUF_N;
+        }
+        const double mic_avg = mic_sum / N;
+        const bool confirmed = pending_is_long_
+                             ? (mic_avg >= PENDING_CONFIRM_MIC)
+                             : (mic_avg <= -PENDING_CONFIRM_MIC);
+        if (confirmed) {
+            // L2-aware sizing: scale base lot by |mic_avg| * factor, clamped.
+            // Strong confirmation -> larger size, weak -> smaller.
+            const double size_mult = std::clamp(std::fabs(mic_avg) * 10.0, 0.5, 2.0);
+            size_mult_at_entry_ = size_mult;
+            // Open
+            active_           = true;
+            is_long_          = pending_is_long_;
+            entry_            = is_long_ ? ask : bid;
+            sl_               = is_long_ ? (entry_ - sl_pts_) : (entry_ + sl_pts_);
+            trail_sl_         = sl_;
+            mfe_              = 0.0;
+            be_locked_        = false;
+            entry_ts_         = idx_now_sec();
+            entry_ms_         = idx_now_ms();
+            const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
+            printf("%s %s %s entry=%.2f sl=%.2f sl_pts=%.2f mic_avg=%.4f "
+                   "size_mult=%.2f confirmed_ticks=%d\n",
+                   pfx, symbol_, is_long_ ? "LONG" : "SHORT",
+                   entry_, sl_, sl_pts_, mic_avg, size_mult, pending_ticks_);
+            fflush(stdout);
+            pending_entry_ = false;
+            return;
+        }
+        if (pending_ticks_ >= PENDING_MAX_TICKS) {
+            const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
+            printf("%s %s PENDING-TIMEOUT %s mic_avg=%.4f thr=%.3f ticks=%d -- SKIP\n",
+                   pfx, symbol_, pending_is_long_ ? "LONG" : "SHORT",
+                   mic_avg, PENDING_CONFIRM_MIC, pending_ticks_);
+            fflush(stdout);
+            pending_entry_ = false;
+            // 30min cooldown on cancelled pending so we don't churn.
+            cooldown_until_ms_ = idx_now_ms() + SWING_COOLDOWN_MS;
+        }
     }
 
 private:
@@ -1590,6 +1652,17 @@ private:
     double  l2_imb_buf_[L2_BUF_N] = {};
     int     l2_buf_head_          = 0;
     int     l2_buf_count_         = 0;
+    // 2026-05-30 L2-leverage: confirmed-entry delay state.
+    bool    pending_entry_        = false;
+    bool    pending_is_long_      = false;
+    int     pending_ticks_        = 0;
+    static constexpr int PENDING_CONFIRM_TICKS = 10;
+    static constexpr int PENDING_MAX_TICKS     = 30;
+    static constexpr double PENDING_CONFIRM_MIC = 0.03;
+    // 2026-05-30 L2-leverage: lot sizing scaler at entry.
+    double  size_mult_at_entry_   = 1.0;
+    // 2026-05-30 L2-leverage: L2-trailing exit threshold.
+    static constexpr double L2_TRAIL_FLIP_MIC = 0.10;
     // 2026-05-22: escalating SL cooldown. After 2026-05-21 NSX took 2 back-to-back
     // losses ($100 each) because 30min cooldown expired before mean-reversion
     // played out. Escalate cooldown 1h/3h/6h on consec SL_HITs. Reset on win.
@@ -1673,22 +1746,51 @@ private:
                               && mfe_ < sl_pts_ * 0.3;
         const bool cold_cut    = cc_t1 || cc_t2;
         const bool sl_hit      = is_long_ ? (bid <= trail_sl_) : (ask >= trail_sl_);
+
+        // ── L2 trailing exit (2026-05-30) ──
+        // Close position when rolling-10-tick microprice flips against side.
+        // Only AFTER mfe has built to >= 0.5R (otherwise noise during early
+        // chop kicks us out of valid signals). Exit at market (current mid).
+        bool l2_flip = false;
+        if (mfe_ >= sl_pts_ * 0.5 && l2_buf_count_ >= PENDING_CONFIRM_TICKS) {
+            double mic_sum = 0;
+            const int N = std::min(l2_buf_count_, (int)PENDING_CONFIRM_TICKS);
+            int idx = (l2_buf_head_ - 1 + L2_BUF_N) % L2_BUF_N;
+            for (int k = 0; k < N; ++k) {
+                mic_sum += l2_mic_buf_[idx];
+                idx = (idx - 1 + L2_BUF_N) % L2_BUF_N;
+            }
+            const double mic_avg = mic_sum / N;
+            if (is_long_  && mic_avg <= -L2_TRAIL_FLIP_MIC) l2_flip = true;
+            if (!is_long_ && mic_avg >=  L2_TRAIL_FLIP_MIC) l2_flip = true;
+            if (l2_flip) {
+                printf("[ISWING-%s] L2-TRAIL-FLIP %s mic_avg=%.4f mfe=%.2f\n",
+                       symbol_, is_long_ ? "LONG" : "SHORT", mic_avg, mfe_);
+                fflush(stdout);
+            }
+        }
         // 2026-05-13 (part L): VWR-pattern winner exemption.
         const double cur_move_s = is_long_ ? (mid - entry_) : (entry_ - mid);
         const bool timeout = (idx_now_sec() - entry_ts_ >= SWING_MAX_HOLD_SEC)
                           && cur_move_s <= 0.0;
 
-        if (!sl_hit && !timeout && !cold_cut) return;
+        if (!sl_hit && !timeout && !cold_cut && !l2_flip) return;
 
         const double exit_px = sl_hit ? trail_sl_ : mid;
-        const char*  why     = cold_cut ? "COLD_CUT" : (sl_hit ? "SL_HIT" : "TIMEOUT");
+        const char*  why     = cold_cut ? "COLD_CUT"
+                             : sl_hit   ? "SL_HIT"
+                             : l2_flip  ? "L2_FLIP"
+                             :            "TIMEOUT";
         const double remainder_pts = is_long_ ? (exit_px - entry_) : (entry_ - exit_px);
         // Gross PnL accounting:
         //   no partial:  gross = remainder_pts (full size on close)
         //   partial(50%): gross = 0.75*sl_pts_ (locked at 1.5R on half) + 0.5*remainder_pts
-        const double gross   = tp1_partial_taken_
-                             ? (tp1_pnl_pts_ + 0.5 * remainder_pts)
-                             : remainder_pts;
+        // Then scale by size_mult_at_entry_ (L2-aware sizing 2026-05-30):
+        // L2-strong-confirm trades sized up to 2x, weak ones down to 0.5x.
+        const double gross_base = tp1_partial_taken_
+                                ? (tp1_pnl_pts_ + 0.5 * remainder_pts)
+                                : remainder_pts;
+        const double gross   = gross_base * size_mult_at_entry_;
 
         const char* pfx = shadow_mode ? "[ISWING-SHADOW]" : "[ISWING]";
         printf("%s %s CLOSE %s entry=%.2f exit=%.2f pts=%.2f mfe=%.2f why=%s\n",
@@ -1720,6 +1822,7 @@ private:
         stage_              = 0;
         tp1_partial_taken_  = false;
         tp1_pnl_pts_        = 0.0;
+        size_mult_at_entry_ = 1.0;
         // 2026-05-22: escalating cooldown on consec SLs.
         //   1st consec SL -> 1h cooldown
         //   2nd consec SL -> 3h cooldown
