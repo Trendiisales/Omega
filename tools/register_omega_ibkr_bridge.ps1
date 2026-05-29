@@ -59,7 +59,7 @@
 $ErrorActionPreference = 'Stop'
 
 $TaskName = 'OmegaIbkrBridge'
-$Py       = 'C:\Omega\bracket-bot\.venv\Scripts\python.exe'
+$Py       = 'C:\Omega\bracket-bot\.venv\Scripts\pythonw.exe'  # 'w' suffix = no console window (else cmd pops every 5min task tick)
 $Script   = 'C:\Omega\tools\ibkr_dom_bridge.py'
 $OutDir   = 'C:\Omega\logs\ibkr_l2'
 $Port     = 4002        # IB Gateway paper. Live = 4001.

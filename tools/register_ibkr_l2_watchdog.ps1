@@ -37,7 +37,7 @@ $principal = New-ScheduledTaskPrincipal -UserId $User `
 
 # powershell.exe runs the script with -ExecutionPolicy Bypass so signed-script
 # requirements don't kill the watchdog on first install.
-$arg    = "-NoProfile -ExecutionPolicy Bypass -File `"$Script`""
+$arg    = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Script`""  # hidden window -- else a PS console pops every 2min task tick
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
                                   -Argument $arg `
                                   -WorkingDirectory 'C:\Omega'
