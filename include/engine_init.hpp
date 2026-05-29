@@ -1000,7 +1000,14 @@ static void init_engines(const std::string& cfg_path)
     // dist > 6pt was a loser (0 wins / 39 losses / -$388 combined). Trades at
     // dist <= 6pt won 6/26 = 23% WR at +$73 net. The 6pt band is where the
     // bracket represents genuine compression vs late-breakout chasing.
-    g_bracket_gold.MAX_SL_DIST_PTS = 6.0;
+    // ?? S37-Z 2026-05-29: raised 6.0 -> 12.0. Diagnosis from 2026-05-28 log:
+    // EVERY London arm (07:00-12:00 UTC, 29 events) hit BLOCKED sl_dist_too_wide
+    // with dist=6.3..8.6pt vs cap=6.00. Cause: gold price moved $2400 -> $4400
+    // since the empirical band was calibrated. The 6pt cap was 0.25% of
+    // price-at-calibration; same proportion at $4400 = $11. Round to 12
+    // matching MAX_RANGE. Re-audit when 60+ new live trades accumulate to
+    // confirm the % equivalent holds at the new price level.
+    g_bracket_gold.MAX_SL_DIST_PTS = 12.0;
     // ?? Regime-flip exit (Session 13, 2026-04-23) -- gold only ?????????????????
     // Thresholds wired for XAUUSD_BRACKET only. See BracketEngine.hpp config block.
     // Trigger: |ewm_drift| >= 2.5 against position for 5 consecutive ticks.
