@@ -1749,10 +1749,12 @@ private:
 
         // ── L2 trailing exit (2026-05-30) ──
         // Close position when rolling-10-tick microprice flips against side.
-        // Only AFTER mfe has built to >= 0.5R (otherwise noise during early
-        // chop kicks us out of valid signals). Exit at market (current mid).
+        // 2026-05-30 iter2 per replay sweep: mfe>=1R (not 0.5R) needed. At
+        // 0.5R the trail fires too early on winners that are still building
+        // (replay: thr=0.10/mfe=0.5R lost $296 vs baseline; thr=0.10/mfe=1R
+        // gained $79). Exit at market (current mid).
         bool l2_flip = false;
-        if (mfe_ >= sl_pts_ * 0.5 && l2_buf_count_ >= PENDING_CONFIRM_TICKS) {
+        if (mfe_ >= sl_pts_ * 1.0 && l2_buf_count_ >= PENDING_CONFIRM_TICKS) {
             double mic_sum = 0;
             const int N = std::min(l2_buf_count_, (int)PENDING_CONFIRM_TICKS);
             int idx = (l2_buf_head_ - 1 + L2_BUF_N) % L2_BUF_N;

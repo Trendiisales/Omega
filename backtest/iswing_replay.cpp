@@ -109,13 +109,57 @@ static long long parse_utc(const char* s) {
 // 2026-05-30 iter4: parameterise cold-cut tiers for sweep. Each tier has
 // (sec_min, adv_min_R, mfe_max_R).
 struct CCTier { int sec_min; double adv_R; double mfe_max_R; };
-struct ReplayOut { double gross_pts = 0; const char* why = "TIMEOUT"; double mfe = 0; int stage = 0; bool tp1_taken = false; int held_sec = 0; double mfe_at_2min=0, mfe_at_3min=0, mfe_at_5min=0; };
+struct ReplayOut { double gross_pts = 0; const char* why = "TIMEOUT"; double mfe = 0; int stage = 0; bool tp1_taken = false; int held_sec = 0; double mfe_at_2min=0, mfe_at_3min=0, mfe_at_5min=0; bool pending_skipped = false; double size_mult = 1.0; double mic_at_confirm = 0; };
+
+// Globals for L2-trail sweep params.
+double g_l2_trail_thr   = 0.10;  // mic_avg flip threshold
+double g_l2_trail_mfe_R = 0.5;   // require this much R of mfe before trail can fire
 static ReplayOut replay(const std::vector<Tick>& tks, size_t i0, bool is_long,
                         double entry, double sl_pts, double max_loss_pts,
-                        const std::vector<CCTier>& tiers) {
+                        const std::vector<CCTier>& tiers,
+                        bool use_pending = false,
+                        bool use_sizing = false,
+                        bool use_l2_trail = false) {
     (void)max_loss_pts;
     ReplayOut r;
     if (i0 >= tks.size()) return r;
+    // ── L2-confirmed pending entry delay (use_pending=true) ──
+    // Advance up to 30 ticks looking for mic_avg over last 10 to align with
+    // direction by >= 0.03. If found, that tick becomes the real entry.
+    // If not found by tick 30, skip the trade entirely.
+    if (use_pending) {
+        const int CONFIRM_N = 10;
+        const int MAX_TICKS = 30;
+        const double THR    = 0.03;
+        bool confirmed = false;
+        size_t confirm_idx = i0;
+        for (int t = 1; t <= MAX_TICKS && i0 + (size_t)t < tks.size(); ++t) {
+            size_t pos = i0 + t;
+            if ((int)pos < CONFIRM_N) continue;
+            double mic_sum = 0;
+            for (int k = 0; k < CONFIRM_N; ++k) mic_sum += tks[pos - 1 - k].micro;
+            double mic_avg = mic_sum / CONFIRM_N;
+            bool ok = is_long ? (mic_avg >= THR) : (mic_avg <= -THR);
+            if (ok) {
+                confirmed = true;
+                confirm_idx = pos;
+                r.mic_at_confirm = mic_avg;
+                if (use_sizing) {
+                    r.size_mult = std::clamp(std::fabs(mic_avg) * 10.0, 0.5, 2.0);
+                }
+                break;
+            }
+        }
+        if (!confirmed) {
+            r.why = "PENDING_SKIP";
+            r.pending_skipped = true;
+            r.size_mult = 0.0;  // not opened, no pnl
+            return r;
+        }
+        i0 = confirm_idx;
+        // Update entry price to confirmed tick's bid/ask side
+        entry = is_long ? tks[i0].ask : tks[i0].bid;
+    }
     // Initial SL = 1R (original, wide), cold-cuts trim losses sooner.
     double sl       = is_long ? (entry - sl_pts) : (entry + sl_pts);
     double trail_sl = sl;
@@ -187,10 +231,23 @@ static ReplayOut replay(const std::vector<Tick>& tks, size_t i0, bool is_long,
         // SL/trail hit
         bool sl_hit = is_long ? (tk.bid <= trail_sl) : (tk.ask >= trail_sl);
 
+        // L2 trailing exit -- flip when mfe>=N*R and mic_avg flips by THR
+        // Configurable via global statics for sweep.
+        bool l2_flip = false;
+        extern double g_l2_trail_thr;
+        extern double g_l2_trail_mfe_R;
+        if (use_l2_trail && mfe >= sl_pts * g_l2_trail_mfe_R && (int)j >= 10) {
+            double mic_sum = 0;
+            for (int k = 0; k < 10; ++k) mic_sum += tks[j - 1 - k].micro;
+            double mic_avg = mic_sum / 10.0;
+            if (is_long  && mic_avg <= -g_l2_trail_thr) l2_flip = true;
+            if (!is_long && mic_avg >=  g_l2_trail_thr) l2_flip = true;
+        }
+
         if (sl_hit) {
             double exit_px = trail_sl;
             double rem = is_long ? (exit_px - entry) : (entry - exit_px);
-            r.gross_pts = tp1_taken ? (tp1_pts + 0.5 * rem) : rem;
+            r.gross_pts = (tp1_taken ? (tp1_pts + 0.5 * rem) : rem) * r.size_mult;
             r.why = "SL_HIT"; r.mfe = mfe; r.stage = stage;
             r.tp1_taken = tp1_taken; r.held_sec = held_sec;
             return r;
@@ -198,8 +255,16 @@ static ReplayOut replay(const std::vector<Tick>& tks, size_t i0, bool is_long,
         if (cold_cut) {
             double exit_px = tk.mid;
             double rem = is_long ? (exit_px - entry) : (entry - exit_px);
-            r.gross_pts = tp1_taken ? (tp1_pts + 0.5 * rem) : rem;
+            r.gross_pts = (tp1_taken ? (tp1_pts + 0.5 * rem) : rem) * r.size_mult;
             r.why = "COLD_CUT"; r.mfe = mfe; r.stage = stage;
+            r.tp1_taken = tp1_taken; r.held_sec = held_sec;
+            return r;
+        }
+        if (l2_flip) {
+            double exit_px = tk.mid;
+            double rem = is_long ? (exit_px - entry) : (entry - exit_px);
+            r.gross_pts = (tp1_taken ? (tp1_pts + 0.5 * rem) : rem) * r.size_mult;
+            r.why = "L2_FLIP"; r.mfe = mfe; r.stage = stage;
             r.tp1_taken = tp1_taken; r.held_sec = held_sec;
             return r;
         }
@@ -318,6 +383,83 @@ int main() {
         }
         printf("%-55s old=%+8.2f new=%+8.2f Δ=%+8.2f killed_winners=%d\n",
                set.name, old_total, new_total, new_total - old_total, n_killed_winner);
+    }
+
+    // ─── L2 leverage 1+2+3 sweep ───
+    // Shipped tier (set0) + each combination of:
+    //   #1 pending-entry-delay
+    //   #2 L2-aware sizing (only if pending on, since sizing uses confirm mic)
+    //   #3 L2 trailing exit
+    printf("\n=== L2 leverage 1+2+3 sweep (shipped tiers, trade 9 skipped) ===\n");
+    auto& set00 = sets[0];
+    struct Combo { const char* tag; bool pending; bool sizing; bool l2_trail; };
+    Combo combos[] = {
+        { "baseline (no L2 leverage)",         false, false, false },
+        { "#3 L2-trail only",                  false, false, true  },
+        { "#1 pending only",                   true,  false, false },
+        { "#1+#3 pending + L2-trail",          true,  false, true  },
+        { "#1+#2 pending + sizing",            true,  true,  false },
+        { "#1+#2+#3 ALL three",                true,  true,  true  },
+    };
+    // L2-trail param sweep -- each combo runs with multiple (thr, mfe_R)
+    struct TrailParam { double thr; double mfe_R; };
+    TrailParam trail_params[] = {
+        {0.10, 0.5}, {0.10, 1.0}, {0.15, 1.0}, {0.20, 1.0}, {0.20, 2.0}, {0.30, 2.0}
+    };
+    for (auto& cb : combos) {
+        // If l2_trail not used: just one run with default. Otherwise sweep.
+        std::vector<TrailParam> runs;
+        if (cb.l2_trail) {
+            for (auto& tp : trail_params) runs.push_back(tp);
+        } else {
+            runs.push_back({0.10, 0.5});
+        }
+        for (auto& tp : runs) {
+            g_l2_trail_thr   = tp.thr;
+            g_l2_trail_mfe_R = tp.mfe_R;
+        double old_total = 0, new_total = 0;
+        int n_skipped = 0;
+        for (size_t ti = 0; ti < sizeof(trades)/sizeof(trades[0]); ++ti) {
+            if (ti == 8) continue;
+            auto& t = trades[ti];
+            bool is_sp = (strcmp(t.sym, "US500.F") == 0);
+            const auto& tks = is_sp ? sp : nq;
+            auto c = cfg(t.sym);
+            int hh, mm, ss;
+            sscanf(t.entry_utc, "%*d-%*d-%*d %d:%d:%d", &hh, &mm, &ss);
+            size_t i0 = find_entry_tick(tks, t.entry_px, hh, mm, ss, is_sp ? 1.5 : 5.0);
+            if (i0 == SIZE_MAX) continue;
+            // L2 30-tick gate
+            const double mic_block = is_sp ? 0.05 : 0.10;
+            double mic_p = 0, imb_p = 0;
+            int cn = 0;
+            for (size_t j = (i0 >= 30 ? i0 - 30 : 0); j < i0; ++j) {
+                mic_p += tks[j].micro; imb_p += tks[j].l2_imb; cn++;
+            }
+            if (cn > 0) { mic_p /= cn; imb_p /= cn; } else imb_p = 0.5;
+            bool l2_blocked = (t.is_long && mic_p < -mic_block)
+                           || (!t.is_long && mic_p > mic_block);
+            if (!l2_blocked && std::abs(imb_p - 0.5) > 0.01) {
+                if (t.is_long && imb_p < 0.45) l2_blocked = true;
+                if (!t.is_long && imb_p > 0.55) l2_blocked = true;
+            }
+            old_total += t.old_pnl;
+            if (l2_blocked) continue;
+            ReplayOut r = replay(tks, i0, t.is_long, t.entry_px, c.sl_pts,
+                                 c.max_loss_pts, set00.tiers,
+                                 cb.pending, cb.sizing, cb.l2_trail);
+            if (r.pending_skipped) { ++n_skipped; continue; }
+            double nd = r.gross_pts * c.dollar_per_pt;
+            new_total += nd;
+        }
+            if (cb.l2_trail) {
+                printf("%-45s thr=%.2f mfeR=%.1f new=%+8.2f Δ=%+8.2f skips=%d\n",
+                       cb.tag, tp.thr, tp.mfe_R, new_total, new_total - old_total, n_skipped);
+            } else {
+                printf("%-45s new=%+8.2f Δ=%+8.2f skips=%d\n",
+                       cb.tag, new_total, new_total - old_total, n_skipped);
+            }
+        }
     }
 
     // ALSO emit per-trade detail under shipped (first) tier set.
