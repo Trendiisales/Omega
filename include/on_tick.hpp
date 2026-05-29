@@ -2083,6 +2083,86 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         }
     }
 
+    // 2026-05-29: FX L2 tick CSV writers -- EUR/GBP/JPY/AUD/NZD.
+    // Activated when IBKR FX L2 subscription comes online (planned 2026-06-01).
+    // Same column schema as indices for uniform hydrate_from_csv() / harness
+    // consumption. Per memory:omega-l2-fx-plan and feedback-l2-data-quality:
+    // verify depth_* columns ARE NOT constant-zero after IBKR feed lands.
+    // Until IBKR feed is live, the broker's BlackBull cTrader FIX feed gives
+    // top-of-book only for FX -- depth_* cols will be 0, l2_imb may be flat
+    // until subscription change. CSV files still write so that historical
+    // mid/bid/ask are captured for retrospective sweeps.
+    {
+        struct FxWriter {
+            const char* sym;
+            const char* file_label;  // e.g. "EURUSD"
+            const AtomicL2* l2;
+            FILE** s_f;
+            int* s_day;
+        };
+        static FILE* s_eur_f = nullptr; static int s_eur_day = -1;
+        static FILE* s_gbp_f = nullptr; static int s_gbp_day = -1;
+        static FILE* s_jpy_f = nullptr; static int s_jpy_day = -1;
+        static FILE* s_aud_f = nullptr; static int s_aud_day = -1;
+        static FILE* s_nzd_f = nullptr; static int s_nzd_day = -1;
+        FxWriter writers[] = {
+            { "EURUSD", "EURUSD", &g_l2_eur, &s_eur_f, &s_eur_day },
+            { "GBPUSD", "GBPUSD", &g_l2_gbp, &s_gbp_f, &s_gbp_day },
+            { "USDJPY", "USDJPY", &g_l2_jpy, &s_jpy_f, &s_jpy_day },
+            { "AUDUSD", "AUDUSD", &g_l2_aud, &s_aud_f, &s_aud_day },
+            { "NZDUSD", "NZDUSD", &g_l2_nzd, &s_nzd_f, &s_nzd_day },
+        };
+        for (auto& w : writers) {
+            if (sym != w.sym) continue;
+            const double fx_mid = (bid + ask) * 0.5;
+            const int64_t fx_now_ms = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            const time_t t_fx = (time_t)(fx_now_ms / 1000);
+            struct tm tm_fx{};
+            gmtime_s(&tm_fx, &t_fx);
+            if (tm_fx.tm_yday != *w.s_day) {
+                if (*w.s_f) { fclose(*w.s_f); *w.s_f = nullptr; }
+                char fx_path[256];
+                snprintf(fx_path, sizeof(fx_path),
+                    "C:\\Omega\\logs\\l2_ticks_%s_%04d-%02d-%02d.csv",
+                    w.file_label, tm_fx.tm_year + 1900, tm_fx.tm_mon + 1, tm_fx.tm_mday);
+                const bool is_new = (GetFileAttributesA(fx_path) == INVALID_FILE_ATTRIBUTES);
+                *w.s_f = fopen(fx_path, "a");
+                if (*w.s_f) {
+                    if (is_new) {
+                        fprintf(*w.s_f,
+                            "ts_ms,mid,bid,ask,l2_imb,l2_bid_vol,l2_ask_vol,"
+                            "depth_bid_levels,depth_ask_levels,depth_events_total,"
+                            "watchdog_dead,vol_ratio,regime,vpin,has_pos,micro_edge,ewm_drift\n");
+                    }
+                    std::cout << "[L2-CSV-OPEN] " << fx_path
+                              << (is_new ? " (new FX, header written)" : " (appending)") << "\n";
+                    std::cout.flush();
+                } else {
+                    std::cout << "[L2-CSV-OPEN-FAIL] " << fx_path
+                              << " -- " << w.file_label << " tick data will NOT be saved this session!\n";
+                    std::cout.flush();
+                }
+                *w.s_day = tm_fx.tm_yday;
+            }
+            if (*w.s_f) {
+                fprintf(*w.s_f,
+                    "%lld,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,"
+                    "%d,%d,%llu,"
+                    "%d,%.3f,%d,%.3f,%d,%.6f,%.4f\n",
+                    (long long)fx_now_ms, fx_mid, bid, ask,
+                    w.l2->imbalance.load(std::memory_order_relaxed), 0.0, 0.0,
+                    0, 0, (unsigned long long)0,
+                    0, 0.0, 0, 0.0, 0,
+                    w.l2->microprice_bias.load(std::memory_order_relaxed),
+                    0.0);
+                fflush(*w.s_f);
+            }
+            break;
+        }
+    }
+
     if (!g_cfg.indices_enabled &&
         (sym == "US500.F" || sym == "USTEC.F" || sym == "DJ30.F" ||
          sym == "GER40"   || sym == "UK100"   || sym == "ESTX50" ||
