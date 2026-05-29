@@ -1,0 +1,20 @@
+# IBKR DOM Bridge -- pinned Python dependencies
+#
+# Install into the bracket-bot venv (the ONE venv that runs the bridge):
+#   & 'C:\Omega\bracket-bot\.venv\Scripts\python.exe' -m pip install -r `
+#     C:\Omega\tools\ibkr_dom_bridge_requirements.txt
+#
+# When the venv is rebuilt (or a fresh VPS provisioned), running the above
+# restores every package the bridge needs. Lock established 2026-05-29 after
+# a missing ib_async module silently aborted the scheduled task for 24 hours
+# while XAUUSD/NAS100/US500 L2 CSVs sat at 0 bytes.
+#
+# To re-freeze after upgrading a package:
+#   & 'C:\Omega\bracket-bot\.venv\Scripts\python.exe' -m pip freeze > `
+#     C:\Omega\tools\ibkr_dom_bridge_requirements.txt
+ibapi==9.81.1.post1
+ib_async==2.1.0
+aeventkit==2.1.0
+nest_asyncio==1.6.0
+tzdata==2025.3
+numpy>=2.0
