@@ -94,6 +94,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "CellPrimitives.hpp"   // Phase 1 of CellEngine refactor; layout sanity asserts below
 #include "L2Globals.hpp"        // 2026-05-30: AtomicL2 + g_l2_<sym> globals
+#include "L2LeverageState.hpp"  // 2026-05-30: L2 sizing + L2-trail flip helper
 
 namespace omega {
 
@@ -281,6 +282,8 @@ struct EpbCell {
     bool   has_first_bar_ = false;   // gate slow_up/down until 2nd bar onward
 
     // Position state
+    // 2026-05-30 L2 leverage state (XAUUSD only)
+    L2LeverageState l2_;
     bool    pos_active_     = false;
     double  pos_entry_      = 0.0;
     double  pos_sl_         = 0.0;
@@ -512,11 +515,14 @@ struct EpbCell {
         const double sl_px    = entry_px - direction * sl_pts;
         const double tp_px    = entry_px + direction * tp_pts;
 
+        // 2026-05-30 L2 sizing: XAU only, scale lot by mic strength [0.5,2.0].
+        double sized_lot = size_lot;
+        if (symbol == "XAUUSD") sized_lot = size_lot * l2_.compute_size_mult();
         pos_active_     = true;
         pos_entry_      = entry_px;
         pos_sl_         = sl_px;
         pos_tp_         = tp_px;
-        pos_size_       = size_lot;
+        pos_size_       = sized_lot;
         pos_atr_        = atr14_at_signal;
         pos_entry_ms_   = now_ms;
         pos_bars_held_  = 0;
@@ -539,11 +545,24 @@ struct EpbCell {
 
     void on_tick(double bid, double ask, int64_t now_ms,
                  OnCloseCb on_close) noexcept {
+        if (symbol == "XAUUSD") l2_.push(g_l2_gold);  // L2 ring buffer always
         if (!pos_active_) return;
         const double signed_move = direction == 1
             ? (bid - pos_entry_) : (pos_entry_ - ask);
         if (signed_move > pos_mfe_) pos_mfe_ = signed_move;
         if (signed_move < pos_mae_) pos_mae_ = signed_move;
+
+        // 2026-05-30 L2 trail flip: close when mic_avg flips against side
+        // AND mfe >= 1R. Replay-validated 1R guard.
+        if (symbol == "XAUUSD") {
+            const double sl_dist = (direction == 1)
+                ? (pos_entry_ - pos_sl_) : (pos_sl_ - pos_entry_);
+            if (sl_dist > 0 && l2_.check_trail_flip(direction, pos_mfe_, sl_dist)) {
+                const double exit_px = (direction == 1) ? bid : ask;
+                _close(exit_px, "L2_FLIP", now_ms, on_close);
+                return;
+            }
+        }
 
         // ---------------------------------------------------------------------
         //  S63 in-flight protection (BE_RATCHET + LOSS_CUT). Mirrors the

@@ -126,6 +126,7 @@
 #include "OmegaCostGuard.hpp"
 #include "GoldD1TrendState.hpp"  // D1 regime gate (added 2026-05-21)
 #include "L2Globals.hpp"         // 2026-05-30: AtomicL2 + g_l2_<sym> globals
+#include "L2LeverageState.hpp"   // 2026-05-30: L2 sizing + L2-trail flip helper
 
 namespace omega {
 
@@ -220,6 +221,9 @@ static constexpr int kXauTfNumCells =
 // =============================================================================
 struct XauTrendFollow4hEngine {
 public:
+    // 2026-05-30 L2 leverage state (XAU only).
+    L2LeverageState l2_;
+
     // Public knobs (set by engine_init.hpp before init()).
     bool   shadow_mode = true;
     bool   enabled     = false;
@@ -421,9 +425,20 @@ public:
     // ============================================================
     void on_tick(double bid, double ask, int64_t now_ms,
                  OnCloseFn on_close) noexcept {
+        l2_.push(g_l2_gold);  // 2026-05-30: maintain L2 ring buffer always
         if (!enabled) return;
         for (int ci = 0; ci < kXauTfNumCells; ++ci) {
             if (!pos[ci].active) continue;
+            // 2026-05-30 L2-trail flip: close cell if mic_avg flips against
+            // side AND mfe >= 1R. (XAU only -- this engine is XAU-specific.)
+            auto& p = pos[ci];
+            const double sl_dist = std::fabs(p.entry_px - p.sl_px);
+            const int side = p.is_long ? +1 : -1;
+            if (sl_dist > 0 && l2_.check_trail_flip(side, p.mfe, sl_dist)) {
+                const double exit_px = p.is_long ? bid : ask;
+                _close(ci, exit_px, "L2_FLIP", now_ms, on_close);
+                continue;
+            }
             _manage_open(ci, bid, ask, now_ms, on_close);
         }
     }
@@ -681,6 +696,9 @@ private:
             }
         }
 
+        // 2026-05-30 L2 sizing skipped here -- XauTfPos lacks per-position size
+        // field (engine ships uniform `lot` to all cells). Sizing would
+        // require pos struct extension; deferred to next iteration.
         auto& p = pos[ci];
         p.active        = true;
         p.is_long       = (side > 0);

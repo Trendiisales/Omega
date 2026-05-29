@@ -128,6 +128,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "CellPrimitives.hpp"   // Phase 1 of CellEngine refactor; layout sanity asserts below
 #include "L2Globals.hpp"        // 2026-05-30: AtomicL2 + g_l2_<sym> globals
+#include "L2LeverageState.hpp"  // 2026-05-30: L2 sizing + L2-trail flip helper
 
 namespace omega {
 
@@ -248,6 +249,9 @@ struct DonchianCell {
     std::deque<double> lows_;
 
     // ---- Position state -----------------------------------------------------
+    // 2026-05-30 L2 leverage state: shared ring buffer + sizing + trail.
+    // Populated on every on_tick by push(g_l2_<sym>). XAUUSD: g_l2_gold.
+    L2LeverageState l2_;
     bool    pos_active_     = false;
     double  pos_entry_      = 0.0;
     double  pos_sl_         = 0.0;
@@ -413,11 +417,18 @@ struct DonchianCell {
         const double sl_px    = entry_px - direction * sl_pts;
         const double tp_px    = entry_px + direction * tp_pts;
 
+        // 2026-05-30 L2 sizing: scale lot by mic_avg confirmation strength.
+        // Clamps [0.5, 2.0]. Only applied for XAUUSD (other syms no L2 source).
+        double sized_lot = size_lot;
+        if (symbol == "XAUUSD") {
+            const double mult = l2_.compute_size_mult();
+            sized_lot = size_lot * mult;
+        }
         pos_active_     = true;
         pos_entry_      = entry_px;
         pos_sl_         = sl_px;
         pos_tp_         = tp_px;
-        pos_size_       = size_lot;
+        pos_size_       = sized_lot;
         pos_atr_        = atr14_at_signal;
         pos_entry_ms_   = now_ms;
         pos_bars_held_  = 0;
@@ -446,6 +457,10 @@ struct DonchianCell {
 
     void on_tick(double bid, double ask, int64_t now_ms,
                  OnCloseCb on_close) noexcept {
+        // 2026-05-30: maintain L2 ring buffer every tick regardless of position.
+        // XAUUSD is the only symbol this engine trades.
+        if (symbol == "XAUUSD") l2_.push(g_l2_gold);
+
         if (!pos_active_) return;
 
         const double signed_move = direction == 1
@@ -454,6 +469,18 @@ struct DonchianCell {
         if (signed_move < pos_mae_) pos_mae_ = signed_move;
 
         const double mid = (bid + ask) * 0.5;
+
+        // 2026-05-30 L2 trail flip: close when L2 mic_avg over 10 ticks flips
+        // against side AND mfe >= 1R. Replay-validated 1R guard.
+        if (symbol == "XAUUSD") {
+            const double sl_dist = (direction == 1)
+                ? (pos_entry_ - pos_sl_) : (pos_sl_ - pos_entry_);
+            if (sl_dist > 0 && l2_.check_trail_flip(direction, pos_mfe_, sl_dist)) {
+                const double exit_px = (direction == 1) ? bid : ask;
+                _close(exit_px, "L2_FLIP", now_ms, on_close);
+                return;
+            }
+        }
 
         // S63 LOSS_CUT: cold-loss backstop for breakout misfires.
         //   Fires before SL/TP. At XAU $3700, 0.05% = $1.85. Catches entries
