@@ -22,12 +22,15 @@
 //
 // USAGE:
 //   cmake --build build --target bracket_gold_2yr_audit -j
-//   ./build/bracket_gold_2yr_audit /Users/jo/Tick/2yr_XAUUSD_tick_fresh.csv
+//   ./build/bracket_gold_2yr_audit /Users/jo/Tick/2yr_XAUUSD_tick_fresh.csv [report.txt]
 //
 // OUTPUT:
 //   stderr: progress meter every 50k ticks
-//   stdout: aggregate stats, per-session breakdown, per-month breakdown,
-//           trade journal (CSV)
+//   argv[2]: aggregate stats, per-session breakdown, per-month breakdown,
+//            trade journal (CSV). Defaults to
+//            /tmp/bracket_gold_2yr_audit_report.txt when omitted.
+//   stdout : redirected to /dev/null so engine cout/printf doesn't pollute
+//            the run -- mirrors disabled_engine_audit.cpp idiom.
 // =============================================================================
 
 // OmegaTimeShim MUST be included before any engine header so its
@@ -150,9 +153,9 @@ struct Stats {
     double avg() const { return n ? gross / n : 0.0; }
 };
 
-static void print_block(const char* tag, const Stats& s) {
-    std::printf("  %-12s n=%-5d  WR=%6.2f%%  PF=%6.3f  gross=%+10.2f  avg=%+7.3f  MaxDD=%8.2f\n",
-                tag, s.n, s.wr(), s.pf(), s.gross, s.avg(), s.max_dd);
+static void print_block(FILE* rpt, const char* tag, const Stats& s) {
+    std::fprintf(rpt, "  %-12s n=%-5d  WR=%6.2f%%  PF=%6.3f  gross=%+10.2f  avg=%+7.3f  MaxDD=%8.2f\n",
+                 tag, s.n, s.wr(), s.pf(), s.gross, s.avg(), s.max_dd);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,19 +163,42 @@ static void print_block(const char* tag, const Stats& s) {
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "Usage: %s <xau_tick_csv>\n", argv[0]);
+        std::fprintf(stderr, "Usage: %s <xau_tick_csv> [report_file]\n", argv[0]);
         return 1;
     }
-    const std::string path = argv[1];
+    const std::string path        = argv[1];
+    const std::string report_path = (argc >= 3) ? std::string(argv[2])
+                                                : std::string("/tmp/bracket_gold_2yr_audit_report.txt");
+
+    // Report file -- explicit FILE* so shell stdout redirects can't lose it.
+    // Same idiom as backtest/disabled_engine_audit.cpp -- prior version wrote
+    // via std::printf and any caller redirecting stdout (`>` or `> /dev/null`)
+    // silently dropped the entire report.
+    FILE* RPT = std::fopen(report_path.c_str(), "w");
+    if (!RPT) { std::fprintf(stderr, "ERROR: cannot open %s\n", report_path.c_str()); return 3; }
+    std::fprintf(stderr, "[BT] report -> %s\n", report_path.c_str());
+
+    // Engines (and OmegaCostGuard) write diagnostics via std::cout / printf().
+    // Over 154M ticks that's tens of GB of noise -- redirect FD 1 to /dev/null.
+    // RPT is a separate FILE* so the report still lands.
+    std::freopen("/dev/null", "w", stdout);
 
     FILE* f = std::fopen(path.c_str(), "r");
-    if (!f) { std::fprintf(stderr, "ERROR: cannot open %s\n", path.c_str()); return 2; }
+    if (!f) { std::fprintf(stderr, "ERROR: cannot open %s\n", path.c_str()); std::fclose(RPT); return 2; }
 
-    // Build production engine.
+    // Build production engine with production-realistic gates so the audit
+    // reflects what live will do (post-S37-Z 2026-05-29 fix). Without these
+    // the engine defaults all gates to 0/off and the audit is unrealistically
+    // permissive vs production.
     omega::GoldBracketEngine eng;
-    eng.symbol      = "XAUUSD";
-    eng.shadow_mode = true;
-    eng.ENTRY_SIZE  = 0.01;
+    eng.symbol           = "XAUUSD";
+    eng.shadow_mode      = true;
+    eng.ENTRY_SIZE       = 0.01;
+    eng.MIN_RANGE        = 2.5;     // matches engine_init.hpp:988
+    eng.MAX_RANGE        = 19.0;    // matches engine_init.hpp:997 (S37-Z 2026-05-29 raise 12->19)
+    eng.MAX_SL_DIST_PTS  = 19.0;    // matches engine_init.hpp:1010 (S37-Z 2026-05-29 raise 6->19)
+    eng.MIN_BREAK_TICKS  = 5;       // matches engine_init.hpp:972
+    eng.MAX_SPREAD       = 2.5;     // typical live BlackBull XAU max
 
     // Trade collector with per-trade enrichment for session/month tagging.
     struct EnrichedTrade {
@@ -243,42 +269,50 @@ int main(int argc, char** argv) {
     }
 
     // -----------------------------------------------------------------------
-    // Report
+    // Report  -- written to RPT (argv[2]) so shell stdout redirects can't
+    // lose it. Trade-journal CSV is appended to the same file inside the
+    // ===TRADE-JOURNAL-{BEGIN,END}=== guards so a downstream tool can sed
+    // it out.
     // -----------------------------------------------------------------------
-    std::printf("\n");
-    std::printf("======================================================================\n");
-    std::printf("  bracket_gold_2yr_audit  --  %s\n", path.c_str());
-    std::printf("  corpus: %lld lines parsed, %.1f days simulated\n",
-                (long long)parsed, hours / 24.0);
-    std::printf("======================================================================\n");
-    std::printf("\nOVERALL\n");
-    print_block("ALL", overall);
+    std::fprintf(RPT, "\n");
+    std::fprintf(RPT, "======================================================================\n");
+    std::fprintf(RPT, "  bracket_gold_2yr_audit  --  %s\n", path.c_str());
+    std::fprintf(RPT, "  corpus: %lld lines parsed, %.1f days simulated\n",
+                 (long long)parsed, hours / 24.0);
+    std::fprintf(RPT, "  gates: MIN_RANGE=%.2f  MAX_RANGE=%.2f  MAX_SL_DIST_PTS=%.2f  MIN_BREAK_TICKS=%d  MAX_SPREAD=%.2f\n",
+                 eng.MIN_RANGE, eng.MAX_RANGE, eng.MAX_SL_DIST_PTS,
+                 eng.MIN_BREAK_TICKS, eng.MAX_SPREAD);
+    std::fprintf(RPT, "======================================================================\n");
+    std::fprintf(RPT, "\nOVERALL\n");
+    print_block(RPT, "ALL", overall);
 
-    std::printf("\nBY SESSION (UTC)\n");
-    print_block("Asia",    by_session["Asia"]);
-    print_block("London",  by_session["London"]);
-    print_block("NY",      by_session["NY"]);
-    print_block("Late_NY", by_session["Late_NY"]);
+    std::fprintf(RPT, "\nBY SESSION (UTC)\n");
+    print_block(RPT, "Asia",    by_session["Asia"]);
+    print_block(RPT, "London",  by_session["London"]);
+    print_block(RPT, "NY",      by_session["NY"]);
+    print_block(RPT, "Late_NY", by_session["Late_NY"]);
 
-    std::printf("\nBY EXIT REASON\n");
-    for (const auto& kv : by_reason) print_block(kv.first.c_str(), kv.second);
+    std::fprintf(RPT, "\nBY EXIT REASON\n");
+    for (const auto& kv : by_reason) print_block(RPT, kv.first.c_str(), kv.second);
 
-    std::printf("\nBY MONTH\n");
-    for (const auto& kv : by_month) print_block(kv.first.c_str(), kv.second);
+    std::fprintf(RPT, "\nBY MONTH\n");
+    for (const auto& kv : by_month) print_block(RPT, kv.first.c_str(), kv.second);
 
     // -----------------------------------------------------------------------
     // Trade journal CSV
     // -----------------------------------------------------------------------
-    std::printf("\n===TRADE-JOURNAL-BEGIN===\n");
-    std::printf("idx,session,month,side,entry,exit,pnl,exit_reason,hold_sec\n");
+    std::fprintf(RPT, "\n===TRADE-JOURNAL-BEGIN===\n");
+    std::fprintf(RPT, "idx,session,month,side,entry,exit,pnl,exit_reason,hold_sec\n");
     for (size_t i = 0; i < trades.size(); ++i) {
         const auto& et = trades[i];
-        std::printf("%zu,%s,%s,%s,%.3f,%.3f,%+.3f,%s,%lld\n",
-                    i + 1, et.session.c_str(), et.month.c_str(),
-                    et.rec.side.c_str(), et.rec.entryPrice, et.rec.exitPrice,
-                    et.rec.pnl, et.rec.exitReason.c_str(),
-                    (long long)(et.rec.exitTs - et.rec.entryTs));
+        std::fprintf(RPT, "%zu,%s,%s,%s,%.3f,%.3f,%+.3f,%s,%lld\n",
+                     i + 1, et.session.c_str(), et.month.c_str(),
+                     et.rec.side.c_str(), et.rec.entryPrice, et.rec.exitPrice,
+                     et.rec.pnl, et.rec.exitReason.c_str(),
+                     (long long)(et.rec.exitTs - et.rec.entryTs));
     }
-    std::printf("===TRADE-JOURNAL-END===\n");
+    std::fprintf(RPT, "===TRADE-JOURNAL-END===\n");
+    std::fclose(RPT);
+    std::fprintf(stderr, "[BT] report written to %s\n", report_path.c_str());
     return 0;
 }
