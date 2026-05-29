@@ -1627,27 +1627,6 @@ static void init_engines(const std::string& cfg_path)
                g_xau_tsmom_fast_d1.p.tp_atr_mult, g_xau_tsmom_fast_d1.p.hold_max_days);
         fflush(stdout);
 
-        // ── XauForecastToFillD1Engine (2026-05-29 S37-Z task#21) ──────────
-        //   Daily EMA-slope + 50d momentum trend follower (arxiv 2511.08571).
-        //   2yr re-audit: n=23, Sharpe_ann +1.44, walk-fwd IS+1.41 / OOS+2.35.
-        //   Trail mechanism disabled (trail_arm_atr_mult=99); hard SL 1.5*ATR
-        //   + 30d timeout only. Megatrend regime favours runner architecture.
-        //   shadow_mode=true, enabled=true: fires signals + records trades in
-        //   shadow ledger but no broker order. Flip shadow_mode=false after
-        //   n>=5 shadow trades match audit expectancy.
-        g_xau_forecast_to_fill_d1.p           = omega::make_xau_forecast_to_fill_d1_params();
-        g_xau_forecast_to_fill_d1.shadow_mode = true;   // shadow track 30d before live
-        g_xau_forecast_to_fill_d1.enabled     = true;
-        g_xau_forecast_to_fill_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauForecastToFillD1Engine: shadow=%d enabled=%d ema=%d mom_lb=%d sl=%.1fx hold=%d entry=%.2f\n",
-               (int)g_xau_forecast_to_fill_d1.shadow_mode, (int)g_xau_forecast_to_fill_d1.enabled,
-               g_xau_forecast_to_fill_d1.p.ema_span_bars,
-               g_xau_forecast_to_fill_d1.p.momentum_lookback,
-               g_xau_forecast_to_fill_d1.p.sl_atr_mult,
-               g_xau_forecast_to_fill_d1.p.hold_max_days,
-               g_xau_forecast_to_fill_d1.p.entry_threshold);
-        fflush(stdout);
-
         // ── XauTurtleD1Engine (2026-05-20) -- 40d Donchian break (long-only)
         //   Resurrection of S50 X1 retired TurtleTick. Re-tested 2yr daily XAU:
         //     FUL Sh=13.01 at 10bps (IS=7.32 OOS=18.42), n=20, WR=70%.
@@ -2157,7 +2136,6 @@ static void init_engines(const std::string& cfg_path)
         {
             const std::string seed_csv = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
             omega::seed_h4_engine(g_xau_tsmom_fast_d1,    seed_csv, "XauTsmomFastD1");
-            omega::seed_h4_engine(g_xau_forecast_to_fill_d1, seed_csv, "XauForecastToFillD1");
             omega::seed_h4_engine(g_xau_turtle_d1,        seed_csv, "XauTurtleD1");
             omega::seed_h4_engine(g_xau_stop_run_d1,      seed_csv, "XauStopRunD1");
             omega::seed_h4_engine(g_xau_pullback_cont_h4, seed_csv, "XauPullbackContH4");
@@ -4365,7 +4343,6 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("XauTrendFollow4h",     g_xau_tf_4h.enabled,            3600,  0, 24);
         g_engine_heartbeat.register_engine("XauTrendFollowD1",     g_xau_tf_d1.enabled,            3600,  0, 24);
         g_engine_heartbeat.register_engine("XauTsmomFastD1",       g_xau_tsmom_fast_d1.enabled,    3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauForecastToFillD1",  g_xau_forecast_to_fill_d1.enabled, 14400, 0, 24);
         g_engine_heartbeat.register_engine("XauTurtleD1",          g_xau_turtle_d1.enabled,        3600,  0, 24);
         g_engine_heartbeat.register_engine("XauStopRunD1",         g_xau_stop_run_d1.enabled,      3600,  0, 24);
         g_engine_heartbeat.register_engine("XauPullbackContH4",    g_xau_pullback_cont_h4.enabled, 3600,  0, 24);
