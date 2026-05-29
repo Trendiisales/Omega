@@ -264,3 +264,7 @@ backtest/top_cells_monthly
 # ── Preflight scratch ─────────────────────────────────────────────────────────
 /tmp/preflight_fetch_err
 .cache/
+
+# ── Local dev artifacts ───────────────────────────────────────────────────────
+utf5m_trades.csv
+.codegraph/
