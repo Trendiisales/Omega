@@ -127,6 +127,7 @@
 #include <string>
 #include "OmegaTradeLedger.hpp"
 #include "CellPrimitives.hpp"   // Phase 1 of CellEngine refactor; layout sanity asserts below
+#include "L2Globals.hpp"        // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 
 namespace omega {
 
@@ -391,17 +392,13 @@ struct DonchianCell {
 
         if (sig_dir != direction)                                   return 0;
 
-        // ── L2 entry gate (added 2026-05-30 per memory:feedback-l2-data-quality)
+        // ── L2 entry gate (2026-05-30) ──
         // XAUUSD L2 microprice + imbalance from g_l2_gold (FIX-fed). Block
-        // entries where book flow opposes signal direction. Single-tick read
-        // (no ring buffer for bar-driven engines -- bar close is one-shot).
-        // Thresholds intentionally loose to avoid killing legit signals;
-        // tightened by per-symbol replay if data supports it.
+        // entries where book flow opposes signal direction. Loose thresholds.
         if (symbol == "XAUUSD") {
-            extern AtomicL2 g_l2_gold;
             const double mic = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
             const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
-            if (direction == 1  && mic < -0.10) return 0;  // bearish flow blocks long
+            if (direction == 1  && mic < -0.10) return 0;
             if (direction == -1 && mic >  0.10) return 0;
             if (std::fabs(imb - 0.5) > 0.01) {
                 if (direction == 1  && imb < 0.40) return 0;

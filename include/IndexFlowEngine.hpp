@@ -86,6 +86,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OHLCBarEngine.hpp"
 #include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see pos_.open(sig) entry below
+#include "L2Globals.hpp"          // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 
 namespace omega {
 namespace idx {

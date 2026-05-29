@@ -93,6 +93,7 @@
 #include <string>
 #include "OmegaTradeLedger.hpp"
 #include "CellPrimitives.hpp"   // Phase 1 of CellEngine refactor; layout sanity asserts below
+#include "L2Globals.hpp"        // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 
 namespace omega {
 
@@ -492,11 +493,8 @@ struct EpbCell {
 
         if (sig_dir != direction) return 0;
 
-        // ── L2 entry gate (added 2026-05-30) ──
-        // Same XAUUSD g_l2_gold microprice/imbalance check as DonchianEngine.
-        // Loose thresholds.
+        // ── L2 entry gate (2026-05-30) ──
         if (symbol == "XAUUSD") {
-            extern AtomicL2 g_l2_gold;
             const double mic = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
             const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
             if (direction == 1  && mic < -0.10) return 0;

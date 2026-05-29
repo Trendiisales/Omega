@@ -125,6 +125,7 @@
 #include "OmegaTradeLedger.hpp"  // omega::TradeRecord
 #include "OmegaCostGuard.hpp"
 #include "GoldD1TrendState.hpp"  // D1 regime gate (added 2026-05-21)
+#include "L2Globals.hpp"         // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 
 namespace omega {
 
@@ -668,10 +669,8 @@ private:
             }
         }
 
-        // ── L2 entry gate (added 2026-05-30) ──
-        // XAUUSD g_l2_gold microprice/imbalance. Loose thresholds.
+        // ── L2 entry gate (2026-05-30) ──
         {
-            extern AtomicL2 g_l2_gold;
             const double mic = g_l2_gold.microprice_bias.load(std::memory_order_relaxed);
             const double imb = g_l2_gold.imbalance.load(std::memory_order_relaxed);
             if (side > 0  && mic < -0.10) return;

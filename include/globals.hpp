@@ -1130,58 +1130,9 @@ std::unordered_map<std::string, L2Book>   g_l2_books;
 // WHY NOT atomic<L2Book>: L2Book=168 bytes. atomic<T> over 16 bytes is NOT
 // lock-free on x86-64 -- MSVC falls back to a hidden internal mutex, which is
 // strictly worse. atomic<double>=8 bytes, aligned = genuine lock-free MOV.
-struct AtomicL2 {
-    std::atomic<double>   imbalance{0.5};       // bid_size/(bid_size+ask_size), FIX-fed since S8
-    std::atomic<double>   microprice_bias{0.0}; // microprice - mid, signed
-    std::atomic<bool>     has_data{false};      // true when book has non-zero sizes
-    std::atomic<int64_t>  last_update_ms{0};    // epoch-ms of last L2 update (FIX 264=0 dispatch)
-    // raw_bid / raw_ask / micro_edge fields removed S13 2026-05-08 along with
-    // the cTrader Open API surface (CTDepthBook + GoldMicrostructureAnalyzer).
-    // FIX 264=0 imbalance/microprice_bias supply the same trading signal.
-
-    // fresh(): true only when a real book update arrived within max_age_ms.
-    // Prevents engines acting on stale/default-initialised imbalance (0.5).
-    // Lock-free, called on hot path.
-    bool fresh(int64_t now_ms, int64_t max_age_ms = 5000) const noexcept {
-        const int64_t t = last_update_ms.load(std::memory_order_relaxed);
-        return (t > 0) && ((now_ms - t) <= max_age_ms);
-    }
-};
-static AtomicL2 g_l2_gold;    // XAUUSD
-static AtomicL2 g_l2_sp;      // US500.F
-static AtomicL2 g_l2_nq;      // USTEC.F
-static AtomicL2 g_l2_cl;      // USOIL.F
-static AtomicL2 g_l2_eur;     // EURUSD
-static AtomicL2 g_l2_gbp;     // GBPUSD
-static AtomicL2 g_l2_aud;     // AUDUSD
-static AtomicL2 g_l2_nzd;     // NZDUSD
-static AtomicL2 g_l2_jpy;     // USDJPY
-static AtomicL2 g_l2_ger40;   // GER40
-static AtomicL2 g_l2_uk100;   // UK100
-static AtomicL2 g_l2_estx50;  // ESTX50
-static AtomicL2 g_l2_brent;   // BRENT
-static AtomicL2 g_l2_nas;     // NAS100
-static AtomicL2 g_l2_us30;    // DJ30.F
-
-// Map symbol name to AtomicL2* -- used by FIX dispatch (writer) and FIX tick path (reader).
-static AtomicL2* get_atomic_l2(const std::string& sym) noexcept {
-    if (sym=="XAUUSD") return &g_l2_gold;
-    if (sym=="US500.F")  return &g_l2_sp;
-    if (sym=="USTEC.F")  return &g_l2_nq;
-    if (sym=="USOIL.F")  return &g_l2_cl;
-    if (sym=="EURUSD")   return &g_l2_eur;
-    if (sym=="GBPUSD")   return &g_l2_gbp;
-    if (sym=="AUDUSD")   return &g_l2_aud;
-    if (sym=="NZDUSD")   return &g_l2_nzd;
-    if (sym=="USDJPY")   return &g_l2_jpy;
-    if (sym=="GER40")    return &g_l2_ger40;
-    if (sym=="UK100")    return &g_l2_uk100;
-    if (sym=="ESTX50")   return &g_l2_estx50;
-    if (sym=="BRENT")    return &g_l2_brent;
-    if (sym=="NAS100")   return &g_l2_nas;
-    if (sym=="DJ30.F")   return &g_l2_us30;
-    return nullptr;
-}
+// 2026-05-30: AtomicL2 type + g_l2_* globals moved to L2Globals.hpp so
+// engine headers can include them without cyclic deps through globals.hpp.
+#include "L2Globals.hpp"
 
 // cTrader depth tick staleness tracker (g_ct_ms_* + get_ctrader_tick_ms_ptr)
 // removed S13 2026-05-08 -- cTrader Open API surface culled. FIX 264=0 is the
