@@ -67,14 +67,24 @@ struct EngineStats {
     std::vector<double> trade_pnl;
 };
 
-static double calc_sharpe(const std::vector<double>& xs, int ann = 252) {
+// FIX 2026-05-29: prior version annualized via sqrt(252) which treats every
+// trade as a daily observation. For low-frequency engines (10-30 trades/yr),
+// this inflated every reported Sharpe by ~sqrt(252/trades_per_year). Example:
+// FTF n=23 over 2.15yr -> per-trade Sharpe 0.44 should annualize at
+// sqrt(10.7)=3.27 (giving 1.44), NOT sqrt(252)=15.87 (giving 6.97).
+//
+// Corrected: caller passes corpus_years; we derive trades_per_year from n.
+// Default 2.15yr corresponds to the standard 2yr DukasCopy XAU tape used by
+// this harness. Callers using a different corpus must override.
+static double calc_sharpe(const std::vector<double>& xs, double corpus_years = 2.15) {
     if (xs.size() < 2) return 0.0;
     double sum = 0; for (double x : xs) sum += x;
     double mean = sum / xs.size();
     double var = 0; for (double x : xs) var += (x - mean) * (x - mean);
     var /= (xs.size() - 1);
     double sd = std::sqrt(var);
-    return sd > 0 ? (mean / sd) * std::sqrt(ann) : 0.0;
+    const double trades_per_year = xs.size() / corpus_years;
+    return sd > 0 ? (mean / sd) * std::sqrt(trades_per_year) : 0.0;
 }
 
 static double calc_max_dd(const std::vector<double>& xs) {
