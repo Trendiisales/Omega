@@ -172,12 +172,15 @@ int main() {
     auto tsmom_stats = run_engine("XauTsmomFastD1", 7.65, bars, tsmom);
 
     // --- XauForecastToFillD1 (S37-Z task#21, arxiv 2511.08571) ---
-    // Paper claims Sharpe 2.88 OOS 2015-2025 net of 0.7bp + sqrt-impact cost.
-    // Our 2yr corpus is a subset of the paper's sample so verdict is OOS-of-OOS.
     omega::XauForecastToFillD1Engine ftf;
     ftf.shadow_mode = true; ftf.enabled = true; ftf.symbol = "XAUUSD";
     ftf.p = omega::make_xau_forecast_to_fill_d1_params();
     auto ftf_stats = run_engine("XauForecastToFillD1", 2.88, bars, ftf);
+
+    // XauSessionBiasH4 is time-triggered, not price-triggered -- the zoo's
+    // low-then-high pessimistic intra-bar tick model makes session-end exits
+    // hit at the bar LOW, which is overly pessimistic for time-based exits.
+    // Run via backtest/xau_session_bias_engine_audit instead.
 
     // --- XauStopRunD1 ---
     omega::XauStopRunD1Engine stoprun;

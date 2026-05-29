@@ -1229,6 +1229,29 @@ else()
     target_link_libraries(xau_session_bias_audit PRIVATE pthread)
 endif()
 
+# =============================================================================
+# xau_session_bias_engine_audit -- dedicated H4 harness for XauSessionBiasH4Engine
+# Build:  cmake --build build --target xau_session_bias_engine_audit
+# Run:    ./build/xau_session_bias_engine_audit
+# =============================================================================
+add_executable(xau_session_bias_engine_audit
+    backtest/xau_session_bias_engine_audit.cpp
+)
+target_include_directories(xau_session_bias_engine_audit PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+if(MSVC)
+    target_compile_options(xau_session_bias_engine_audit PRIVATE /O2 /std:c++20 /W3 /wd4005 /wd4244)
+    target_compile_definitions(xau_session_bias_engine_audit PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST)
+else()
+    target_compile_options(xau_session_bias_engine_audit PRIVATE -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable)
+    target_compile_definitions(xau_session_bias_engine_audit PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(xau_session_bias_engine_audit PRIVATE pthread)
+endif()
+
 message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
