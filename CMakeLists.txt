@@ -1129,6 +1129,47 @@ else()
 endif()
 
 # =============================================================================
+# goldstack_subs_audit -- 10 GoldStack sub-engine CRTP audit harness.
+# Built 2026-05-29 (S37-Z task#18) to re-validate the doubled abs-pt
+# thresholds in include/GoldEngineStack.hpp after the $2400->$4700 price
+# drift. Synthesises GoldSnapshot from raw ticks (no GoldFeatures wall-clock
+# dependency) and intercepts libc time() at link scope so all 21
+# std::time(nullptr) sites in the engine stack see tape time.
+#
+# Build: cmake --build build --target goldstack_subs_audit -j
+# Run:   ./build/goldstack_subs_audit /Users/jo/Tick/2yr_XAUUSD_tick_fresh.csv \
+#                                     /tmp/goldstack_subs_audit.txt
+# =============================================================================
+add_executable(goldstack_subs_audit
+    backtest/goldstack_subs_audit.cpp
+)
+target_include_directories(goldstack_subs_audit PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(goldstack_subs_audit PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(goldstack_subs_audit PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+else()
+    target_compile_options(goldstack_subs_audit PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable
+        -Wno-unused-but-set-variable -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(goldstack_subs_audit PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(goldstack_subs_audit PRIVATE pthread)
+endif()
+
+# =============================================================================
 # xau_d1_zoo_audit -- standalone harness for the Xau H4/D1 engine cohort.
 #                     Used by S37 Phase H trail audit (2026-05-27b) to test
 #                     gated stage_trail on PullbackContH4/D1, TurtleD1,
