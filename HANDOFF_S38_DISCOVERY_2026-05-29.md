@@ -56,17 +56,58 @@ Ranked by full-window Sharpe. Costs subtracted per-symbol per OmegaCostGuard.
 - Estimated raw daily trade volume: **9.7 trades/day**
 - Post-overlap dedup estimate: ~7-8 trades/day
 
-## Symbols With Zero Survivors
+## Symbols With Zero Survivors (v1 sweep)
 EURUSD, GBPUSD, USDJPY, AUDUSD, NZDUSD, USDCAD, EURGBP, BCOUSD, US500/SPXUSD,
-DJ30. Tested families (Donch/BollMR/RSI/MACross/Mom/ZScore) found no edge that
-survives cost + walk-forward. Options:
-- Different families: session-bias (London open break, NY range fade), carry,
-  micro-mean-reversion at M1/M5 with absolute spread cap
-- Different timeframes: M1/M5 scalp tier
-- Different cost model: variable spread with median per-session
+DJ30. Generic families failed for all FX.
 
-User selected: **retry FX with session-bias + carry families.** Queued for
-next sweep.
+## FX v2: SPX-Overlay Sweep
+`backtest/fx_edge_sweep.cpp` -- new harness with 9 FX-targeted families:
+DonchianBO_HTF, WeeklyMom (D1), VolGatedDonch (ATR > Nx median_50, 8 R:R
+variants), LondonFadeAsia / AsianContinuation / NYCloseContinuation /
+NYOpenBO (H1 session-windowed), and SPX_Conditional / SPX_VolGated
+(risk-on/risk-off overlay using SPXUSD EMA20/EMA100 cross over time-
+indexed binary-search lookup).
+
+Result: **USDJPY is the only FX pair with a viable edge.** The SPX overlay
+exploits the classical JPY safe-haven relationship -- USD/JPY trends with
+SPX risk-on / risk-off. Other FX-USD pairs (EUR/GBP/AUD/NZD/CAD/EURGBP) do
+not have a clean cross-asset signature; all candidates failed S43 OOS gate.
+
+### USDJPY H4 SPX_VolGated -- walk-forward survivors (sign +1, vol_mult=1.2)
+70/30 IS/OOS split at unix 1763813590 (2025-11-22 UTC).
+
+| # | Params | IS n | IS Sh | OOS n | OOS Sh | OOS WR | Full Net$ |
+|---|---|---|---|---|---|---|---|
+| 13 | sl=2;tp=5    | 72 | 1.22 | 24 | **2.60** | 62.5% | $57.42 |
+| 14 | sl=1;tp=5    | 72 | 0.80 | 24 | **2.56** | 50.0% | $42.03 |
+| 15 | sl=1.5;tp=4  | 72 | 1.02 | 24 | **2.33** | 58.3% | $41.15 |
+| 16 | sl=1;tp=3    | 72 | 0.57 | 24 | **1.31** | 50.0% | $14.76 |
+
+OOS *better than IS* for all four (post-2025-11-22 USDJPY enjoyed cleaner
+SPX co-trends than the 2025 IS window). Sign-stable. All n >= 20 OOS.
+- **Trade frequency:** ~70 trades/year on H4. ~1.3/week.
+- **PnL scale:** $57/yr at 0.01 lot -> $570/yr at 0.10 lot.
+- **Engine wire spec:** clone trend-follow engine, gate entry on
+  SPX EMA20 > EMA100 (long) or vice versa (short), AND H4 ATR > 1.2x
+  median ATR_50. Bracket: SL = sl_m * ATR_entry, TP = tp_m * ATR_entry.
+  Recommend ship #13 (sl=2/tp=5) -- largest OOS net, highest Sharpe.
+  Optional pyramid #14/#15 once #13 has 30 shadow trades.
+
+### Other FX failures noted but with caveats
+- USDJPY VolGatedDonch (no SPX) IS Sharpe 1.27, OOS Sharpe 0.29 -- works
+  IS, decays badly OOS. SPX_VolGated is the dominant variant.
+- EUR/GBP/AUD/NZD did not respond to SPX overlay. Hypothesis: 2024-25
+  central-bank divergence dominated cross-asset signal. Re-test in 2027
+  if BoE/ECB normalise.
+- USDCAD with sign=-1 (CAD = commodity FX, risk-on -> CAD up -> USDCAD
+  down): still failed. Oil-overlay would be the analogous family but
+  Brent (BCOUSD) data only spans 16mo.
+
+### Other FX paths not yet tried (future sweeps)
+- News-event reaction harness (NFP/CPI/BoJ/ECB day overlay)
+- Pair trading (EUR/USD vs GBP/USD z-score divergence)
+- L2 microstructure (requires VPS-side FX L2 logging -- 3mo wait minimum)
+- Carry overlay using FRED 2y rate differentials
 
 ## Wire Plan (Existing → New Engines)
 
@@ -84,8 +125,9 @@ next sweep.
 | USTEC 4h ZScoreMR W=20 | None | New `g_ustec_zscore` or reuse BollingerMR |
 | GER40 5m RSI N=14 | Same engine as #3 | + 5m cell |
 | GER40 30m RSI N=14/20-80 | Same engine as #3 | + 30m cell |
+| USDJPY H4 SPX_VolGated sl=2/tp=5 | None | New `g_usdjpy_spx_trend` (H4 trend + SPX EMA20/100 gate + ATR median gate) |
 
-**Net new engine instances:** 4
+**Net new engine instances:** 5 (4 indices/cross + 1 USDJPY SPX-overlay)
 - `g_ger40_rsi` (5m, 30m, 1h, 4h cells)
 - `g_ger40_mac` (15m two cells)
 - `g_ger40_donchian` (1h cell)
