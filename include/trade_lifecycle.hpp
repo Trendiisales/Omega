@@ -1159,8 +1159,13 @@ static bool symbol_gate(
         if (g_news_blackout.is_blocked(symbol, nowSec())) return false;
         // ?? Relative spread Z-score gate ??????????????????????????????????
         // Block if current spread is anomalous vs rolling 200-tick median.
-        // Applies in all modes -- shadow is a simulation.
-        {
+        // 2026-05-29: SHADOW BYPASS. Shadow mode is signal-discovery; cost is
+        // applied at backtest analysis time, not at fire time. Gate produces
+        // false positives for ~1-2h after every restart while the 200-tick
+        // window normalises against real live-feed spreads, and the prior
+        // wording "Applies in all modes -- shadow is a simulation" sacrificed
+        // signal observability for no benefit. LIVE mode still gates.
+        if (!shadow_mode) {
             std::lock_guard<std::mutex> lk2(g_book_mtx);
             const auto bid_it = g_bids.find(symbol);
             const auto ask_it = g_asks.find(symbol);

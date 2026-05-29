@@ -107,11 +107,31 @@ int main(int argc, char* argv[])
         const int h_m15= g_bars_gold.m15.hydrate_from_csv(bs, "XAUUSD",   900000LL, now_ms_h, 30);
         const int h_h1 = g_bars_gold.h1 .hydrate_from_csv(bs, "XAUUSD",  3600000LL, now_ms_h, 60);
         const int h_h4 = g_bars_gold.h4 .hydrate_from_csv(bs, "XAUUSD", 14400000LL, now_ms_h, 240);
-        const int h_sp = g_bars_sp.m1   .hydrate_from_csv(bs, "US500",     60000LL, now_ms_h, 2);
-        const int h_nq = g_bars_nq.m1   .hydrate_from_csv(bs, "USTEC",     60000LL, now_ms_h, 2);
-        std::cout << "[BAR-HYDRATE] gold bars: m1=" << h_m1 << " m5=" << h_m5
+        // 2026-05-29: extended index hydrate to cover m5/m15/h1/h4 timeframes.
+        // Prior code only hydrated sp/nq m1; OHLCBarEngine for those symbols
+        // therefore cold-started on every restart, producing "Bar state
+        // SKIPPED (age=...) -- cold start, file kept" for m5/m15/h4 against
+        // stale .dat files. Indices L2 tick CSVs are logged daily on VPS
+        // (US500 287 MB / 34 days, USTEC 700 MB / 34 days), so this is a
+        // pure wiring fix -- the data was already there.
+        const int h_sp_m1  = g_bars_sp.m1 .hydrate_from_csv(bs, "US500",     60000LL, now_ms_h, 2);
+        const int h_sp_m5  = g_bars_sp.m5 .hydrate_from_csv(bs, "US500",    300000LL, now_ms_h, 10);
+        const int h_sp_m15 = g_bars_sp.m15.hydrate_from_csv(bs, "US500",    900000LL, now_ms_h, 30);
+        const int h_sp_h1  = g_bars_sp.h1 .hydrate_from_csv(bs, "US500",   3600000LL, now_ms_h, 60);
+        const int h_sp_h4  = g_bars_sp.h4 .hydrate_from_csv(bs, "US500",  14400000LL, now_ms_h, 240);
+        const int h_nq_m1  = g_bars_nq.m1 .hydrate_from_csv(bs, "USTEC",     60000LL, now_ms_h, 2);
+        const int h_nq_m5  = g_bars_nq.m5 .hydrate_from_csv(bs, "USTEC",    300000LL, now_ms_h, 10);
+        const int h_nq_m15 = g_bars_nq.m15.hydrate_from_csv(bs, "USTEC",    900000LL, now_ms_h, 30);
+        const int h_nq_h1  = g_bars_nq.h1 .hydrate_from_csv(bs, "USTEC",   3600000LL, now_ms_h, 60);
+        const int h_nq_h4  = g_bars_nq.h4 .hydrate_from_csv(bs, "USTEC",  14400000LL, now_ms_h, 240);
+        const int h_sp = h_sp_m1, h_nq = h_nq_m1; // legacy names used downstream + invariant check
+        std::cout << "[BAR-HYDRATE] XAUUSD: m1=" << h_m1 << " m5=" << h_m5
                   << " m15=" << h_m15 << " h1=" << h_h1 << " h4=" << h_h4
-                  << " -- sp=" << h_sp << " nq=" << h_nq << "\n";
+                  << " | US500: m1=" << h_sp_m1 << " m5=" << h_sp_m5
+                  << " m15=" << h_sp_m15 << " h1=" << h_sp_h1 << " h4=" << h_sp_h4
+                  << " | USTEC: m1=" << h_nq_m1 << " m5=" << h_nq_m5
+                  << " m15=" << h_nq_m15 << " h1=" << h_nq_h1 << " h4=" << h_nq_h4
+                  << "\n";
         std::cout.flush();
 
         const bool m1_ok  = g_bars_gold.m1 .load_indicators(bs + "/bars_gold_m1.dat");

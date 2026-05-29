@@ -107,22 +107,40 @@ struct SymBaseline {
     double lot = 0.01;
     // S37 audit fix: per-symbol half-spread for touch-fill on bar-OHLC exits.
     double half_spread = 0.15;   // price-units; conservative typical spread/2
+    // 2026-05-29: per-symbol round-trip cost in USD at the symbol's standard
+    // lot size above. Lifted from include/OmegaCostGuard.hpp production values
+    // (estimated_cost_usd: spread + slippage + commission). Replaces the
+    // global flat --cost-per-rt flag when set (>0).
+    double cost_per_rt_usd = 0.06;  // legacy default fallback
 };
 static SymBaseline baseline_for(const std::string& s_in) {
     std::string s = u::upper(s_in);
     SymBaseline b; b.symbol = s;
-    if      (s == "XAUUSD") { b.pt_size = 0.01;   b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.15; }
-    else if (s == "US500" || s == "SPX500") { b.pt_size = 0.1;  b.val_per_pt = 1.0; b.lot = 0.1; b.half_spread = 0.25; }
-    else if (s == "USTEC" || s == "NAS100") { b.pt_size = 0.1;  b.val_per_pt = 1.0; b.lot = 0.1; b.half_spread = 0.5; }
-    else if (s == "EURUSD" || s == "GBPUSD") { b.pt_size = 0.0001; b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.00005; }
-    else if (s == "USDJPY") { b.pt_size = 0.01;   b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.005; }
-    else { b.pt_size = 0.01; b.val_per_pt = 1.0; b.lot = 0.01; b.half_spread = 0.15; }  // sensible XAU fallback
+    // Cost values per OmegaCostGuard.hpp::estimated_cost_usd at the lot
+    // shown below. Formula: spread_cost (typ_spread * tick_usd_per_lot * lot)
+    // + slip_cost (slip_pts * tick_usd_per_lot * lot) + comm_cost.
+    if      (s == "XAUUSD") { b.pt_size = 0.01;   b.lot = 0.01; b.half_spread = 0.15; b.cost_per_rt_usd = 0.66; }
+    else if (s == "US500" || s == "SPX500" || s == "SPXUSD" || s == "US500.F") { b.pt_size = 0.1; b.lot = 0.10; b.half_spread = 0.25; b.cost_per_rt_usd = 2.00; b.symbol = "US500"; }
+    else if (s == "USTEC" || s == "NAS100" || s == "NSXUSD" || s == "USTEC.F") { b.pt_size = 0.1; b.lot = 0.10; b.half_spread = 0.50; b.cost_per_rt_usd = 1.10; b.symbol = "USTEC"; }
+    else if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") { b.pt_size = 0.0001; b.lot = 0.01; b.half_spread = 0.00005; b.cost_per_rt_usd = 0.36; }
+    else if (s == "EURGBP") { b.pt_size = 0.0001; b.lot = 0.01; b.half_spread = 0.00005; b.cost_per_rt_usd = 0.36; }
+    else if (s == "USDCAD") { b.pt_size = 0.0001; b.lot = 0.01; b.half_spread = 0.00005; b.cost_per_rt_usd = 0.36; }
+    else if (s == "USDJPY") { b.pt_size = 0.01;   b.lot = 0.01; b.half_spread = 0.005;   b.cost_per_rt_usd = 0.22; }
+    else if (s == "GER40")  { b.pt_size = 0.1;    b.lot = 0.10; b.half_spread = 0.50;    b.cost_per_rt_usd = 0.20; }
+    else if (s == "UK100")  { b.pt_size = 0.1;    b.lot = 0.10; b.half_spread = 0.30;    b.cost_per_rt_usd = 0.15; }
+    else if (s == "DJ30" || s == "DJ30.F") { b.pt_size = 1.0; b.lot = 0.10; b.half_spread = 1.5; b.cost_per_rt_usd = 0.30; b.symbol = "DJ30"; }
+    else if (s == "BCOUSD" || s == "BRENT") { b.pt_size = 0.01; b.lot = 0.01; b.half_spread = 0.02; b.cost_per_rt_usd = 0.60; b.symbol = "BCOUSD"; }
+    else if (s == "USOIL" || s == "WTI" || s == "USOIL.F") { b.pt_size = 0.01; b.lot = 0.01; b.half_spread = 0.02; b.cost_per_rt_usd = 0.60; b.symbol = "USOIL"; }
+    else if (s == "XAGUSD") { b.pt_size = 0.001; b.lot = 0.01; b.half_spread = 0.01; b.cost_per_rt_usd = 0.40; }
+    else { b.pt_size = 0.01; b.lot = 0.01; b.half_spread = 0.15; b.cost_per_rt_usd = 0.66; }  // sensible XAU fallback
     return b;
 }
 static std::string detect_symbol(const std::string& path) {
     std::string up = u::upper(u::basename(path));
-    static const std::array<const char*, 7> toks = {
-        "XAUUSD", "US500", "USTEC", "NAS100", "EURUSD", "GBPUSD", "USDJPY"
+    static const std::array<const char*, 17> toks = {
+        "XAUUSD", "US500", "SPX500", "SPXUSD", "USTEC", "NAS100", "NSXUSD",
+        "EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDJPY", "USDCAD", "EURGBP",
+        "GER40", "BCOUSD", "DJ30"
     };
     for (auto* t : toks) if (up.find(t) != std::string::npos) return t;
     if (up.find("XAU") != std::string::npos) return "XAUUSD";
@@ -316,7 +334,9 @@ struct TradeResult {
     double r      = 0.0;   // R-multiple
 };
 
-static double g_cost_per_rt = 0.06;
+// 2026-05-29: default -1.0 = "use SymBaseline.cost_per_rt_usd (per-symbol)".
+// CLI --cost-per-rt N still overrides with a flat value across all symbols.
+static double g_cost_per_rt = -1.0;
 
 static TradeResult simulate_atr_bracket(const std::vector<Bar>& bars,
                                         size_t entry_idx,
@@ -362,7 +382,11 @@ static TradeResult simulate_atr_bracket(const std::vector<Bar>& bars,
 
     double pnl_pts = side > 0 ? (exit_px - entry_px) : (entry_px - exit_px);
     double gross = (pnl_pts / sb.pt_size) * sb.val_per_pt * sb.lot;
-    r.pnl = gross - g_cost_per_rt;
+    // 2026-05-29: per-symbol cost from OmegaCostGuard production values
+    // (sb.cost_per_rt_usd). Global g_cost_per_rt retained as a CLI override
+    // for ad-hoc runs; when left at default it acts as a floor of 0.
+    const double cost_rt = (g_cost_per_rt >= 0.0) ? g_cost_per_rt : sb.cost_per_rt_usd;
+    r.pnl = gross - cost_rt;
     r.r = (sl_dist > 0) ? (pnl_pts / sl_dist) : 0.0;
     return r;
 }
@@ -573,6 +597,9 @@ int main(int argc, char** argv) {
     int max_hold_bars = 50;
     int cooldown_bars = 1;
     bool verbose = false;
+    // 2026-05-29: IS/OOS unix-timestamp window. Ticks outside [from_ts, to_ts)
+    // are dropped before bar resampling. Either side may be 0 = unbounded.
+    long long from_ts = 0, to_ts = 0;
 
     auto need = [&](int& i, const char* f) -> const char* {
         if (i + 1 >= argc) { std::cerr << "ERROR " << f << "\n"; std::exit(2); }
@@ -586,6 +613,8 @@ int main(int argc, char** argv) {
         else if (a == "--symbol-override") sym_override = need(i, "--symbol-override");
         else if (a == "--cost-per-rt")    g_cost_per_rt = std::atof(need(i, "--cost-per-rt"));
         else if (a == "--max-hold-bars")  max_hold_bars = std::atoi(need(i, "--max-hold-bars"));
+        else if (a == "--from-unix")      from_ts = std::atoll(need(i, "--from-unix"));
+        else if (a == "--to-unix")        to_ts   = std::atoll(need(i, "--to-unix"));
         else if (a == "--verbose")        verbose = true;
         else if (a == "--help" || a == "-h") {
             std::cout <<
@@ -638,8 +667,20 @@ int main(int argc, char** argv) {
         }
         std::sort(merged.begin(), merged.end(),
                   [](const Tick& a, const Tick& b){ return a.ts < b.ts; });
+        // 2026-05-29: IS/OOS slice. Tick CSV ts may be ms or sec; load_ticks
+        // normalises to sec, so flags are unix-sec.
+        if (from_ts > 0 || to_ts > 0) {
+            std::vector<Tick> sl; sl.reserve(merged.size());
+            for (auto& t : merged) {
+                if (from_ts > 0 && t.ts < from_ts) continue;
+                if (to_ts   > 0 && t.ts >= to_ts) continue;
+                sl.push_back(t);
+            }
+            merged.swap(sl);
+        }
         if (merged.empty()) continue;
-        if (verbose) std::cerr << "[merged] " << sym << " ticks=" << merged.size() << "\n";
+        if (verbose) std::cerr << "[merged] " << sym << " ticks=" << merged.size()
+                               << " window=[" << from_ts << "," << to_ts << ")\n";
 
         for (const auto& tf : tfs) {
             int tf_sec = parse_tf(tf);
