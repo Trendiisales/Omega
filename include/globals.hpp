@@ -311,7 +311,7 @@ static omega::TrendRiderPortfolio g_trend_rider;  // 6 cells: H2L+S, H4L+S, H6L,
 //                                            to justify continued exposure.
 // =============================================================================
 static bool g_disable_candle_flow              = true;
-static bool g_disable_bracket_gold             = true;   // 2026-05-28 re-disabled: walk-forward failed (last12mo PF 1.16 -> first12mo PF 0.71 mask=0xE; edge regime-specific not real)
+static bool g_disable_bracket_gold             = true;   // 2026-05-29 PERMANENT-DISABLE: 2yr re-audit under corrected gates (MAX_RANGE=19, MAX_SL_DIST_PTS=19) PF=0.705 gross=-$93.26 n=14568 every session loser (Asia PF 0.683, London 0.689, NY 0.722, Late_NY 0.722). 2yr sweep over 16 v6-validated configs: best PF=1.16 n=137 gross=+$0.84 (slip noise, not edge). Engine has no durable cross-regime edge. See /Users/jo/bt_reports/bracket_prodgates.txt + bracket_sweep_2yr.txt.
 static bool g_disable_index_flow               = true;
 // S46 2026-05-27: M5 scalp engines disabled pending real-class validation.
 // All "validated" PnL numbers for these engines came from inline-reimpl
