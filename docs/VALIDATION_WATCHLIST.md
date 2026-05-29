@@ -126,3 +126,75 @@ the cost-net audit. No re-enables.
 5. Sample-size floor n >= 60.
 6. Per-month stability scan (no single month carries the gross).
 7. Update this doc + globals.hpp comment with evidence + commit hash.
+8. **ABSOLUTE-PT THRESHOLD CHECK** (added 2026-05-29 after sl_dist bug).
+   Every engine has hardcoded absolute-pt thresholds (MIN_RANGE,
+   MAX_RANGE, IMPULSE_MIN, NET_MIN, VWAP_DEV_MIN, MIN_SPIKE etc).
+   Cross-reference each with calibration-era price comment. If
+   calibration era price differs from current by >20%, recalculate
+   threshold as % of price and re-audit. Catches the failure mode
+   that killed every London XAUUSD_BRACKET arm 2026-05-28 silently
+   (sl_dist 6.3-8.6pt vs cap 6.00pt set at $2400 gold; now $4700 gold
+   so cap needs raising to 0.25%-0.40% of current price).
+
+---
+
+## ABSOLUTE-PT THRESHOLD AUDIT NEEDED (task #18)
+
+2026-05-29 diagnosis surfaced the systemic risk:
+
+| Constant | Current value | Calibration price | At current price ($4700) |
+|---|---|---|---|
+| `g_bracket_gold.MAX_SL_DIST_PTS` | **was 6.0 -> now 19.0** | ~$2400 (0.25%) | 0.40% (fixed) |
+| `g_bracket_gold.MAX_RANGE` | **was 12.0 -> now 19.0** | ~$2400 (0.50%) | 0.40% (fixed) |
+| `g_bracket_gold.MIN_RANGE` | 2.5 | unknown | 0.053% (may be too tight) |
+| `SessionMomentumEngine::IMPULSE_MIN` | 3.50 | ~$2400 (0.146%) | 0.074% (now triggers too easily) |
+| `SessionMomentumEngine::VWAP_DEV_MIN` | 1.50 | ~$2400 (0.063%) | 0.032% (now triggers too easily) |
+| `NET_MIN` (line 403) | 8.00 | ~$2400 (0.333%) | 0.170% (now triggers too easily) |
+| `VWAP_MIN` (line 405) | 3.00 | ~$2400 (0.125%) | 0.064% (now triggers too easily) |
+| `IntradaySeasonality::IMPULSE_MAX` | 3.00 | ~$2400 (0.125%) | 0.064% (now blocks too aggressively) |
+| `AsianRangeEngine::MIN_RANGE` | 2.00 | ~$2400 (0.083%) | 0.043% (now triggers on noise) |
+| `LiquiditySweepPressure::MIN_SPIKE` | 10.0 | ~$2400 (0.417%) | 0.213% (now triggers too easily) |
+| `DynamicRangeEngine::MIN_RANGE` | 3.0 | ~$2400 (0.125%) | 0.064% (now triggers on noise) |
+| `DynamicRangeEngine::MAX_RANGE` | 50.0 | ~$2400 (2.083%) | 1.064% (was generous; now still OK but tighter) |
+| `DonchianBreakout::MIN_RANGE` | 5.0 | ~$2400 (0.208%) | 0.106% |
+| `DonchianBreakout::MAX_RANGE` | 50.0 | ~$2400 (2.083%) | 1.064% |
+| `NR3TickEngine::MIN_RANGE` | 2.0 | ~$2400 (0.083%) | 0.043% |
+| `TwoBarReversalEngine::MIN_REV_RNG` | 1.5 | ~$2400 (0.063%) | 0.032% |
+| `VWAPSnapbackEngine::VWAP_DEV_ENTRY` | 3.5 | ~$2400 (0.146%) | 0.074% |
+| (and 8 more `MAX_SPREAD` values in 2.0-4.0pt range that are fine) | | | |
+
+**Implications for disabled-engine verdicts this session:**
+
+Audits ran on 2yr corpus spanning $2400 -> $4700. Thresholds applied
+uniformly. As price rose:
+- MIN floors triggered too easily -> engines emitted more low-quality
+  signals in the second half -> WR drag -> "engine bleeds" verdict.
+- MAX ceilings blocked too aggressively -> engines under-fired in the
+  second half -> sample collapse -> "engine illiquid" verdict.
+
+Disable verdicts that may need re-audit:
+- VWAPRev / TrendPullback per-symbol (cost-net audits done; need to
+  redo with %-of-price thresholds in engine)
+- GoldStack sub-engines (especially SessionMomentum, LiquiditySweep,
+  VWAPSnapback)
+- XauusdFvg
+- The 8 disabled XAU D1/H4 zoo engines
+
+The fix is NOT bulk-bumping every threshold. It is rewriting them as
+constexpr fns of `mid_price` (or similar runtime ref) so they
+auto-scale. Pattern:
+
+```cpp
+// BEFORE
+static constexpr double MIN_RANGE = 3.0;
+
+// AFTER
+static double min_range(double mid_px) {
+    return mid_px * 0.000638;  // 0.0638% = original 3.0 at $2400 calibration
+}
+```
+
+Then re-audit each disabled engine with %-scaled gate. Several may
+flip from DISABLED -> VIABLE under correct scaling.
+
+---
