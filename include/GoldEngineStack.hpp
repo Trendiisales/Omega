@@ -288,14 +288,16 @@ public:
 class SessionMomentumEngine : public EngineBase {
     MinMaxCircularBuffer<double,64> history_;
     static constexpr size_t WINDOW=60;
-    // 2026-05-29 (S37-Z task#18): doubled abs-pt thresholds for $2400->$4700
-    // gold price drift. Originally IMPULSE_MIN=3.50 at $2400 calibration =
-    // 0.146% of price. At $4700 that equivalent is 6.85; rounded to 7.00.
-    // Same logic on the others. MAX_SPREAD stays at 2.50pt -- broker spread
-    // is in absolute pt and hasn't changed with price level.
-    static constexpr double IMPULSE_MIN=7.00,MAX_SPREAD=2.50;
+    static constexpr double IMPULSE_MIN=3.50,MAX_SPREAD=2.50;
         static constexpr int TP_TICKS=100,SL_TICKS=50; // DATA-CALIBRATED: $5 SL / $10 TP 2:1 RR
-    static constexpr double VWAP_DEV_MIN=3.00; // 2026-05-29: 1.50->3.00 (price drift); price must be >$3.00 from VWAP to confirm direction
+    // IMPULSE_MIN raised 1.60?3.50: $1.60 range over 60 ticks is normal London
+    // micro-noise. $3.50 is the minimum for a genuine directional session open move.
+    // Observed losing trade: 3s hold, $0.20 gross, $0.18 slip ? $0.02 net.
+    // That impulse was sub-$2.00 -- pure noise, not a momentum signal.
+    // MAX_SPREAD tightened 3.50?2.50: wide spread = price discovery, not momentum.
+    // SL raised 20?25 ticks ($2.00?$2.50): more room vs. London open volatility.
+    // TP raised 50?60 ticks ($5.00?$6.00): keeps R:R at 2.4:1 after spread cost.
+    static constexpr double VWAP_DEV_MIN=1.50; // price must be >$1.50 from VWAP to confirm direction
     std::chrono::steady_clock::time_point last_signal_{std::chrono::steady_clock::now()-std::chrono::milliseconds(1000)};
 
     static bool in_session_window(){
@@ -398,13 +400,10 @@ public:
 // =============================================================================
 class MomentumContinuationEngine : public EngineBase {
     static constexpr int    NET_WINDOW   = 50;
-    // 2026-05-29 (S37-Z task#18): NET_MIN/RECENT_MIN/VWAP_MIN/RANGE_COMMIT
-    // doubled for $2400->$4700 gold price drift. MAX_SPREAD unchanged
-    // (broker pt-spread invariant to price level).
-    static constexpr double NET_MIN      = 16.00;  // was 8.00
-    static constexpr double RECENT_MIN   = 3.00;   // was 1.50
-    static constexpr double VWAP_MIN     = 6.00;   // was 3.00
-    static constexpr double RANGE_COMMIT = 0.60;   // was 0.30
+    static constexpr double NET_MIN      = 8.00;
+    static constexpr double RECENT_MIN   = 1.50;
+    static constexpr double VWAP_MIN     = 3.00;
+    static constexpr double RANGE_COMMIT = 0.30;
     static constexpr double MAX_SPREAD   = 2.50;
     static constexpr int    TP_TICKS     = 150;
     static constexpr int    SL_TICKS     = 60;
@@ -496,11 +495,7 @@ class IntradaySeasonalityEngine : public EngineBase {
     static constexpr double SL_TICKS_D  = 50;
     static constexpr double TP_TICKS_D  = 100;
     static constexpr double MAX_SPREAD  = 2.0;
-    // 2026-05-29 (S37-Z task#18): IMPULSE_MAX doubled 3.0->6.0 for price drift.
-    // IntradaySeasonality blocks entries when |impulse| > IMPULSE_MAX (skips
-    // strong-trending moves to focus on mean-rev windows). At $2400 the 3.0
-    // cap was 0.125%; at $4700 same proportion = 5.875. Round to 6.0.
-    static constexpr double IMPULSE_MAX = 6.0;
+    static constexpr double IMPULSE_MAX = 3.0;
 
     // bucket = hour*2 + (minute>=30?1:0)
     // Only |t|>5 buckets over 718k bars (multiple-comparison corrected).
@@ -1008,7 +1003,7 @@ class SpikeFadeEngine : public EngineBase {
     };
 
     static constexpr int    BAR_MIN      = 5;
-    static constexpr double MIN_SPIKE    = 20.0;  // 2026-05-29 (S37-Z task#18): doubled 10.0->20.0 for $2400->$4700 price drift (was $10 min candle move at $2400 = 0.42%, now $20 at $4700 = same 0.42%)
+    static constexpr double MIN_SPIKE    = 10.0;  // $10 minimum candle move
     static constexpr double MAX_SPREAD   = 3.0;   // wider tolerance during news
     static constexpr int    SL_TICKS     = 80;    // $8.00
     static constexpr int    TP_TICKS     = 150;   // $15.00
@@ -1158,11 +1153,9 @@ public:
 // ?????????????????????????????????????????????????????????????????????????????
 class AsianRangeEngine : public EngineBase {
 
-    // 2026-05-29 (S37-Z task#18): BUFFER + MIN_RANGE + MAX_RANGE doubled
-    // for $2400->$4700 gold drift. MAX_SPREAD unchanged.
-    static constexpr double BUFFER           = 1.00;   // was 0.50
-    static constexpr double MIN_RANGE        = 6.0;    // was 3.0
-    static constexpr double MAX_RANGE        = 100.0;  // was 50.0
+    static constexpr double BUFFER           = 0.50;
+    static constexpr double MIN_RANGE        = 3.0;
+    static constexpr double MAX_RANGE        = 50.0;
     static constexpr double MAX_SPREAD       = 2.0;
     static constexpr int    SL_TICKS         = 80;    // $8.00
     static constexpr int    TP_TICKS         = 200;   // $20.00
@@ -1314,9 +1307,8 @@ class DynamicRangeEngine : public EngineBase {
     static constexpr int    BAR_MIN     = 5;
     static constexpr double ENTRY_PCT   = 0.20;
     static constexpr double EXIT_PCT    = 0.70;
-    // 2026-05-29 (S37-Z task#18): MIN_RANGE+MAX_RANGE doubled for price drift.
-    static constexpr double MIN_RANGE   = 10.0;  // was 5.0
-    static constexpr double MAX_RANGE   = 100.0; // was 50.0
+    static constexpr double MIN_RANGE   = 5.0;
+    static constexpr double MAX_RANGE   = 50.0;
     static constexpr double MAX_SPREAD  = 2.0;
     static constexpr int    SL_TICKS    = 30;   // $3.00
     static constexpr int    TP_TICKS    = 80;   // $8.00
@@ -1484,8 +1476,7 @@ struct TickBarBuffer {
 // SL=$4 TP=$10. Cooldown=300s. COMPRESSION+MEAN_REVERSION.
 // -------------------------------------------------------------------------
 class NR3TickEngine : public EngineBase {
-    // 2026-05-29 (S37-Z task#18): MIN_RANGE doubled for price drift.
-    static constexpr double MIN_RANGE    = 4.0;   // was 2.0
+    static constexpr double MIN_RANGE    = 2.0;
     static constexpr double CONFIRM_PCT  = 0.40;
     static constexpr double MAX_SPREAD   = 2.0;
     static constexpr int    SL_TICKS     = 40;
@@ -1606,8 +1597,7 @@ class TwoBarReversalEngine : public EngineBase {
     static constexpr int    BAR_MIN      = 5;
     static constexpr double ATR_MULT     = 1.5;
     static constexpr double BODY_PCT     = 0.60;
-    // 2026-05-29 (S37-Z task#18): MIN_REV_RNG doubled for price drift.
-    static constexpr double MIN_REV_RNG  = 3.0;  // was 1.5
+    static constexpr double MIN_REV_RNG  = 1.5;  // reversal bar min range
     static constexpr double MAX_SPREAD   = 2.0;
     static constexpr int    SL_TICKS     = 60;   // $6.00
     static constexpr int    TP_TICKS     = 150;  // $15.00
@@ -1909,8 +1899,7 @@ public:
 // 5. VWAPSnapbackEngine (renumbered -- was 4)
 // ?????????????????????????????????????????????????????????????????????????????
 class VWAPSnapbackEngine : public EngineBase {
-    // 2026-05-29 (S37-Z task#18): all 3 VWAP-deviation thresholds doubled for price drift.
-    static constexpr double VWAP_DEV_ENTRY=7.0,VWAP_DEV_STRONG=11.0,MOMENTUM_SPIKE=5.0,MAX_SPREAD=4.00;
+    static constexpr double VWAP_DEV_ENTRY=3.5,VWAP_DEV_STRONG=5.5,MOMENTUM_SPIKE=2.5,MAX_SPREAD=4.00;
         static constexpr int TP_TICKS=100,SL_TICKS=50; // DATA-CALIBRATED: $5 SL / $10 TP 2:1 RR
     // TP $3.50 (35 ticks), SL $1.50 (15 ticks) -- 2.3:1 R:R
     // SL raised from 8 ($0.80): was at spread noise floor. A single ask/bid bounce
@@ -1981,8 +1970,7 @@ class LiquiditySweepProEngine : public EngineBase {
     int    SL_TICKS        = 18;    // $1.80 -- above max spread noise floor for sweep entries
     // Fixed internal constants -- not exposed to config (structural, not tunable)
     static constexpr double SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.70;
-    // 2026-05-29 (S37-Z task#18): MIN_VWAP_DISTANCE + MIN_EXPECTED_MOVE doubled. EXHAUSTION_RATIO is a ratio (0-1), unchanged.
-    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=4.00,MIN_EXPECTED_MOVE=2.00;
+    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=2.00,MIN_EXPECTED_MOVE=1.00;
     static constexpr double TP_RATIO=0.85;
     static constexpr int MOM_WINDOW=6,LIQ_WINDOW=120;
     static constexpr double CLUSTER_RANGE=0.35; static constexpr int MIN_CLUSTER=8;
@@ -2064,8 +2052,7 @@ class LiquiditySweepPressureEngine : public EngineBase {
     double BASE_SIZE   = 0.01;  // fallback min_lot -- overridden by compute_size() in main
     // Fixed internal constants -- not exposed to config (structural, not tunable)
     static constexpr double SWEEP_TRIGGER=0.80,MOMENTUM_SPIKE=0.60;
-    // 2026-05-29 (S37-Z task#18): MIN_VWAP_DISTANCE + MIN_EXPECTED_MOVE doubled.
-    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=3.00,MIN_EXPECTED_MOVE=1.60;
+    static constexpr double EXHAUSTION_RATIO=0.60,MIN_VWAP_DISTANCE=1.50,MIN_EXPECTED_MOVE=0.80;
     static constexpr double TP_RATIO=0.85,PRESSURE_THRESHOLD=0.15;
     static constexpr double CLUSTER_RANGE=0.35,PRESSURE_RANGE=0.45;
     static constexpr int MOM_WINDOW=6,LIQ_WINDOW=150,PRESSURE_WINDOW=50;
