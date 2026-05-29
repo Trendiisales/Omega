@@ -1294,6 +1294,27 @@ else()
     target_link_libraries(xau_walkfwd_audit PRIVATE pthread)
 endif()
 
+# =============================================================================
+# xau_ftf_recent_audit -- $ value translation + recent-period slices for FTF
+# =============================================================================
+add_executable(xau_ftf_recent_audit
+    backtest/xau_ftf_recent_audit.cpp
+)
+target_include_directories(xau_ftf_recent_audit PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+if(MSVC)
+    target_compile_options(xau_ftf_recent_audit PRIVATE /O2 /std:c++20 /W3 /wd4005 /wd4244)
+    target_compile_definitions(xau_ftf_recent_audit PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST)
+else()
+    target_compile_options(xau_ftf_recent_audit PRIVATE -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable)
+    target_compile_definitions(xau_ftf_recent_audit PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(xau_ftf_recent_audit PRIVATE pthread)
+endif()
+
 message(STATUS "========================================")
 message(STATUS "OMEGA -- Commodities & Indices System")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")

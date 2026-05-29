@@ -1094,6 +1094,10 @@ static void on_tick_gold(
             // same H4-close stream to synthesise D1 bars internally.
             g_xau_tsmom_fast_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                           bid, ask, now_ms_g, bracket_on_close);
+            // ── XauForecastToFillD1Engine (2026-05-29 S37-Z task#21) ─────────
+            // Daily EMA-slope + 50d momentum trend follower. Shadow_default.
+            g_xau_forecast_to_fill_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                                bid, ask, now_ms_g, bracket_on_close);
             // ── XauTurtleD1Engine (2026-05-20) -- 40d Donchian long break
             g_xau_turtle_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                        bid, ask, now_ms_g, bracket_on_close);
@@ -2142,6 +2146,8 @@ static void on_tick_gold(
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTsmomFastD1Engine tick management (SL/TP per tick).
     g_xau_tsmom_fast_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // XauForecastToFillD1Engine tick management (hard SL + trail).
+    g_xau_forecast_to_fill_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTurtleD1Engine + XauStopRunD1Engine tick management.
     g_xau_turtle_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     g_xau_stop_run_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
