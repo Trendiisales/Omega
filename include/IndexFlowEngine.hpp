@@ -1576,15 +1576,25 @@ private:
             if (!is_long_ && new_sl < trail_sl_) trail_sl_ = new_sl;
         }
 
-        // ── Cold-loss cut: cap losers at -0.5R if 15min no progress ──────────
-        // Catches the -1R-flat losers seen in 2026-05-30 10-trade sample.
-        // Fires only when: 15min held, mfe never reached 0.3R, current adverse.
+        // ── Cold-loss cuts (T1 at 5min, T2 at 15min) ─────────────────────────
+        // Layered escape for trades where MFE proves signal failed. Initial SL
+        // at -1R stays (gap protection). Cold-cuts trim losses earlier.
+        // T1: held >= 5min, adverse >= 0.5R, mfe < 0.2R -> exit at current
+        // T2: held >= 15min, adverse >= 0.5R, mfe < 0.3R -> exit at current
+        // Replay on 2026-05-29 10-trade sample (iswing_replay.cpp):
+        //   T2-only:           -$15 -> +$45  (commit 71aeb07b)
+        //   T1+T2:             -$15 -> +$141 (this change, saves $96 on 8min losers)
+        //   T0 60s tier added: -$15 -> -$21  (T0 killed legit winners -- REJECTED)
         const int64_t held_sec = idx_now_sec() - entry_ts_;
         const double half_R    = sl_pts_ * 0.5;
         const double cur_adv   = is_long_ ? (entry_ - mid) : (mid - entry_);
-        const bool cold_cut    = !be_locked_ && held_sec >= 900
-                              && mfe_ < sl_pts_ * 0.3
-                              && cur_adv >= half_R;
+        const bool cc_t1       = !be_locked_ && held_sec >= 300
+                              && cur_adv >= half_R
+                              && mfe_ < sl_pts_ * 0.2;
+        const bool cc_t2       = !be_locked_ && held_sec >= 900
+                              && cur_adv >= half_R
+                              && mfe_ < sl_pts_ * 0.3;
+        const bool cold_cut    = cc_t1 || cc_t2;
         const bool sl_hit      = is_long_ ? (bid <= trail_sl_) : (ask >= trail_sl_);
         // 2026-05-13 (part L): VWR-pattern winner exemption.
         const double cur_move_s = is_long_ ? (mid - entry_) : (entry_ - mid);
