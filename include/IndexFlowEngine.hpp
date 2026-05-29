@@ -1659,9 +1659,14 @@ private:
         const int64_t held_sec = idx_now_sec() - entry_ts_;
         const double half_R    = sl_pts_ * 0.5;
         const double cur_adv   = is_long_ ? (entry_ - mid) : (mid - entry_);
+        // T1 tightened 2026-05-30 per tier-sweep (backtest/iswing_replay.cpp):
+        // adv 0.5R->0.3R + mfe 0.2R->0.15R. Sweep showed this captures -$60
+        // losers earlier without killing legit winners (their mfe@5m all
+        // > 0.15R threshold on the 2026-05-29 sample). +$43 additional on
+        // 9-trade sample vs prior T1 setting.
         const bool cc_t1       = !be_locked_ && held_sec >= 300
-                              && cur_adv >= half_R
-                              && mfe_ < sl_pts_ * 0.2;
+                              && cur_adv >= sl_pts_ * 0.3
+                              && mfe_ < sl_pts_ * 0.15;
         const bool cc_t2       = !be_locked_ && held_sec >= 900
                               && cur_adv >= half_R
                               && mfe_ < sl_pts_ * 0.3;

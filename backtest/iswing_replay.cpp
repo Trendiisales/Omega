@@ -105,16 +105,15 @@ static long long parse_utc(const char* s) {
     return (long long)timegm(&tm) * 1000LL;
 }
 
-// Replay new manage logic for one trade. Returns new exit pts + reason.
-// 2026-05-30 iter3: initial SL stays at 1R (gap protection). Layered cold-cuts
-// give early escape when MFE doesn't develop (= signal failed):
-//   T0: held >= 60s,  adverse >= 0.25R, mfe < 0.1R -> exit at -0.25R
-//   T1: held >= 5min, adverse >= 0.5R,  mfe < 0.2R -> exit at -0.5R
-//   T2: held >= 15min, adverse >= 0.5R, mfe < 0.3R -> exit at current (~ -0.5R)
-struct ReplayOut { double gross_pts = 0; const char* why = "TIMEOUT"; double mfe = 0; int stage = 0; bool tp1_taken = false; int held_sec = 0; };
+// Replay new manage logic for one trade.
+// 2026-05-30 iter4: parameterise cold-cut tiers for sweep. Each tier has
+// (sec_min, adv_min_R, mfe_max_R).
+struct CCTier { int sec_min; double adv_R; double mfe_max_R; };
+struct ReplayOut { double gross_pts = 0; const char* why = "TIMEOUT"; double mfe = 0; int stage = 0; bool tp1_taken = false; int held_sec = 0; double mfe_at_2min=0, mfe_at_3min=0, mfe_at_5min=0; };
 static ReplayOut replay(const std::vector<Tick>& tks, size_t i0, bool is_long,
-                        double entry, double sl_pts, double max_loss_pts) {
-    (void)max_loss_pts;  // unused in iter3; kept for signature compat
+                        double entry, double sl_pts, double max_loss_pts,
+                        const std::vector<CCTier>& tiers) {
+    (void)max_loss_pts;
     ReplayOut r;
     if (i0 >= tks.size()) return r;
     // Initial SL = 1R (original, wide), cold-cuts trim losses sooner.
@@ -170,16 +169,21 @@ static ReplayOut replay(const std::vector<Tick>& tks, size_t i0, bool is_long,
             if (is_long  && new_sl > trail_sl) trail_sl = new_sl;
             if (!is_long && new_sl < trail_sl) trail_sl = new_sl;
         }
-        // Cold-loss cut (3 tiers, no BE). Initial SL stays at 1R.
+        // Cold-loss cut: parameterised tiers via `tiers` vector.
         int held_sec = (int)((tk.ts_ms - entry_ts) / 1000);
         double cur_adv = is_long ? (entry - tk.mid) : (tk.mid - entry);
-        // T1 at 5min: requires mfe < 0.2R = signal failed
-        // T2 at 15min: existing
-        bool cc_t1 = !be_locked && held_sec >= 300 && cur_adv >= sl_pts * 0.50
-                                && mfe < sl_pts * 0.20;
-        bool cc_t2 = !be_locked && held_sec >= 900 && cur_adv >= sl_pts * 0.50
-                                && mfe < sl_pts * 0.30;
-        bool cold_cut = cc_t1 || cc_t2;
+        if (held_sec >= 120 && r.mfe_at_2min == 0) r.mfe_at_2min = mfe;
+        if (held_sec >= 180 && r.mfe_at_3min == 0) r.mfe_at_3min = mfe;
+        if (held_sec >= 300 && r.mfe_at_5min == 0) r.mfe_at_5min = mfe;
+        bool cold_cut = false;
+        for (auto& T : tiers) {
+            if (!be_locked && held_sec >= T.sec_min
+                && cur_adv >= sl_pts * T.adv_R
+                && mfe < sl_pts * T.mfe_max_R) {
+                cold_cut = true;
+                break;
+            }
+        }
         // SL/trail hit
         bool sl_hit = is_long ? (tk.bid <= trail_sl) : (tk.ask >= trail_sl);
 
@@ -253,23 +257,90 @@ int main() {
            "-----", "---", "-----", "--------", "--------", "-----", "-----", "------",
            "-------", "---", "-----");
 
-    double old_total = 0, new_total = 0;
-    for (auto& t : trades) {
+    // Sweep cold-cut tier sets, find best on the 9 valid trades.
+    // Trade 9 (USTEC 15:05 +$80) is a DATA ANOMALY (engine logged entry
+    // 30237.50 but real USTEC was 30315 at that UTC -- likely NAS100 tick
+    // leaked into USTEC dispatch; separate engine bug). Skip from sweep.
+    struct TierSet { const char* name; std::vector<CCTier> tiers; };
+    std::vector<TierSet> sets = {
+        { "shipped (T1=5m/0.5R/0.2R + T2=15m/0.5R/0.3R)",
+          { {300, 0.50, 0.20}, {900, 0.50, 0.30} } },
+        { "+T0a (T0=2m/0.4R/0.10R)",
+          { {120, 0.40, 0.10}, {300, 0.50, 0.20}, {900, 0.50, 0.30} } },
+        { "+T0b (T0=3m/0.3R/0.05R)",
+          { {180, 0.30, 0.05}, {300, 0.50, 0.20}, {900, 0.50, 0.30} } },
+        { "+T0c (T0=2m/0.5R/0.05R) -- strictest",
+          { {120, 0.50, 0.05}, {300, 0.50, 0.20}, {900, 0.50, 0.30} } },
+        { "T1=3m/0.4R/0.15R + T2=15m/0.5R/0.3R",
+          { {180, 0.40, 0.15}, {900, 0.50, 0.30} } },
+        { "T1=5m/0.3R/0.15R + T2=15m/0.5R/0.3R",
+          { {300, 0.30, 0.15}, {900, 0.50, 0.30} } },
+    };
+
+    for (auto& set : sets) {
+        double old_total = 0, new_total = 0;
+        int n_killed_winner = 0;
+        std::vector<std::string> hits;
+        for (size_t ti = 0; ti < sizeof(trades)/sizeof(trades[0]); ++ti) {
+            if (ti == 8) continue;  // skip trade 9 anomaly
+            auto& t = trades[ti];
+            bool is_sp = (strcmp(t.sym, "US500.F") == 0);
+            const auto& tks = is_sp ? sp : nq;
+            auto c = cfg(t.sym);
+            double sl_pts = c.sl_pts;
+            double dollar_per_pt = c.dollar_per_pt;
+            double max_loss_pts = c.max_loss_pts;
+            int hh, mm, ss;
+            sscanf(t.entry_utc, "%*d-%*d-%*d %d:%d:%d", &hh, &mm, &ss);
+            double tol = is_sp ? 1.5 : 5.0;
+            size_t i0 = find_entry_tick(tks, t.entry_px, hh, mm, ss, tol);
+            if (i0 == SIZE_MAX) continue;
+            // L2 30-tick rolling gate
+            const double mic_block = is_sp ? 0.05 : 0.10;
+            double mic_p = 0, imb_p = 0;
+            int cn = 0;
+            for (size_t j = (i0 >= 30 ? i0 - 30 : 0); j < i0; ++j) {
+                mic_p += tks[j].micro; imb_p += tks[j].l2_imb; cn++;
+            }
+            if (cn > 0) { mic_p /= cn; imb_p /= cn; } else imb_p = 0.5;
+            bool l2_blocked = (t.is_long && mic_p < -mic_block)
+                           || (!t.is_long && mic_p > mic_block);
+            if (!l2_blocked && std::abs(imb_p - 0.5) > 0.01) {
+                if (t.is_long && imb_p < 0.45) l2_blocked = true;
+                if (!t.is_long && imb_p > 0.55) l2_blocked = true;
+            }
+            old_total += t.old_pnl;
+            if (l2_blocked) continue;  // new_total += 0
+            ReplayOut r = replay(tks, i0, t.is_long, t.entry_px, sl_pts, max_loss_pts, set.tiers);
+            double nd = r.gross_pts * dollar_per_pt;
+            new_total += nd;
+            if (t.old_pnl > 0 && nd < 0) ++n_killed_winner;
+        }
+        printf("%-55s old=%+8.2f new=%+8.2f Δ=%+8.2f killed_winners=%d\n",
+               set.name, old_total, new_total, new_total - old_total, n_killed_winner);
+    }
+
+    // ALSO emit per-trade detail under shipped (first) tier set.
+    printf("\n=== Per-trade detail (shipped tiers, trade 9 skipped) ===\n");
+    printf("%-19s %-7s %-8s %-7s %-7s %-7s %-7s %-7s %-7s %s\n",
+           "time", "sym", "entry", "old$", "new$", "delta",
+           "mfe", "mfe@2m", "mfe@5m", "why");
+    auto& set0 = sets[0];
+    for (size_t ti = 0; ti < sizeof(trades)/sizeof(trades[0]); ++ti) {
+        if (ti == 8) { printf("%-19s SKIP (anomaly)\n", trades[ti].entry_utc); continue; }
+        auto& t = trades[ti];
         bool is_sp = (strcmp(t.sym, "US500.F") == 0);
         const auto& tks = is_sp ? sp : nq;
         auto c = cfg(t.sym);
         double sl_pts = c.sl_pts;
         double dollar_per_pt = c.dollar_per_pt;
         double max_loss_pts = c.max_loss_pts;
-        // Parse hh:mm:ss from entry_utc string.
         int hh, mm, ss;
         sscanf(t.entry_utc, "%*d-%*d-%*d %d:%d:%d", &hh, &mm, &ss);
-        // Tolerance: 1.5 pts for SP, 3 pts for NQ (broker spread + slip).
         double tol = is_sp ? 1.5 : 5.0;
         size_t i0 = find_entry_tick(tks, t.entry_px, hh, mm, ss, tol);
         if (i0 == SIZE_MAX) {
-            printf("%-19s %-7s %9.2f  NO_MATCH (time=%02d:%02d:%02d entry=%.2f tol=%.1f)\n",
-                   t.entry_utc, t.sym, t.entry_px, hh, mm, ss, t.entry_px, tol);
+            printf("%-19s NO_MATCH\n", t.entry_utc);
             continue;
         }
         // L2 entry gate using 30-tick PRIOR rolling average (smoother + more
@@ -291,28 +362,14 @@ int main() {
             if (t.is_long && imb_p < 0.45) { l2_blocked = true; l2_reason = "IMB-OPP"; }
             if (!t.is_long && imb_p > 0.55) { l2_blocked = true; l2_reason = "IMB-OPP"; }
         }
-        // Suppress unused warnings on raw entry snapshot fields.
-        (void)tks[i0].micro; (void)tks[i0].l2_imb;
-        if (l2_blocked) {
-            old_total += t.old_pnl;
-            // new_total += 0 (trade not fired)
-            printf("%-19s %-7s %9.2f %9s %9s %+9.2f %+9.2f %+9.2f %7.2f %-7s %6d\n",
-                   t.entry_utc, t.sym, t.entry_px, "BLOCKED", "--",
-                   t.old_pnl, 0.0, -t.old_pnl,
-                   0.0, l2_reason, 0);
-            continue;
-        }
-        ReplayOut r = replay(tks, i0, t.is_long, t.entry_px, sl_pts, max_loss_pts);
-        double new_dollar = r.gross_pts * dollar_per_pt;
-        double new_exit_px = t.entry_px + (t.is_long ? r.gross_pts : -r.gross_pts);
-        old_total += t.old_pnl;
-        new_total += new_dollar;
-        printf("%-19s %-7s %9.2f %9.2f %9.2f %+9.2f %+9.2f %+9.2f %7.2f %-7s %6d\n",
-               t.entry_utc, t.sym, t.entry_px, t.exit_px_old, new_exit_px,
+        (void)tks[i0].micro; (void)tks[i0].l2_imb; (void)l2_reason;
+        ReplayOut r = replay(tks, i0, t.is_long, t.entry_px, sl_pts, max_loss_pts, set0.tiers);
+        double new_dollar = l2_blocked ? 0 : (r.gross_pts * dollar_per_pt);
+        printf("%-19s %-7s %8.2f %+7.2f %+7.2f %+7.2f %7.2f %7.2f %7.2f %s\n",
+               t.entry_utc, t.sym, t.entry_px,
                t.old_pnl, new_dollar, new_dollar - t.old_pnl,
-               r.mfe, r.why, r.stage);
+               r.mfe, r.mfe_at_2min, r.mfe_at_5min,
+               l2_blocked ? "L2-BLOCKED" : r.why);
     }
-    printf("\n%-29s %38s %+9.2f %+9.2f %+9.2f\n",
-           "TOTAL:", "", old_total, new_total, new_total - old_total);
     return 0;
 }
