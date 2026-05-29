@@ -281,15 +281,20 @@ static std::vector<Cell> sweep_fx(const std::vector<Bar>& bars,
     //    risk-on (commodity currencies up). USDCAD/USDCHF -ve (USD down on
     //    risk-on).
     if (!g_spx_bars.empty() && (tf == "H1" || tf == "H4" || tf == "D1")) {
-        // Sign per symbol -> +1 means LONG when SPX risk-on (+1).
-        int sgn = +1;
-        const std::string& s = sb.symbol;
-        if      (s == "USDJPY") sgn = +1;   // USD up vs safe-haven JPY
-        else if (s == "USDCAD") sgn = -1;   // CAD up on commodity risk-on
-        else if (s == "USDCHF") sgn = -1;   // CHF safe-haven
-        else if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") sgn = +1;
-        else if (s == "EURGBP") sgn = 0;    // no clean signal
-        else sgn = 0;
+        // Sign per (pair, overlay). Default = SPX overlay (risk-on/off).
+        // Override via env OVERLAY_SIGN=+1|-1.
+        int sgn = 0;
+        const char* env_sgn = std::getenv("OVERLAY_SIGN");
+        if (env_sgn) sgn = std::atoi(env_sgn);
+        if (sgn == 0) {
+            const std::string& s = sb.symbol;
+            if      (s == "USDJPY") sgn = +1;
+            else if (s == "USDCAD") sgn = -1;
+            else if (s == "USDCHF") sgn = -1;
+            else if (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") sgn = +1;
+            else if (s == "EURGBP") sgn = 0;
+            else sgn = 0;
+        }
         if (sgn != 0) {
             // Sweep: SPX EMA pair already global (preset by main). Test multiple
             // bracket geometries to find which lot/SL/TP captures the regime.
