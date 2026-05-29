@@ -994,7 +994,7 @@ static void init_engines(const std::string& cfg_path)
     // Indices: leave ATR disabled -- noise floor more stable, fixed MIN_RANGE sufficient
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
-    g_bracket_gold.MAX_RANGE   = 12.0;   // DATA-CALIBRATED: $12 max. Ranges >$12 are trending, not bracketing.
+    g_bracket_gold.MAX_RANGE   = 19.0;   // 2026-05-29 (S37-Z): raised 12.0 -> 19.0. Same price-drift bug as MAX_SL_DIST_PTS. 12.0 was 0.5% of $2400 gold (calibration era); now 0.25% of $4700 -- HALF the 0.40% standard used for SP/NQ/DJ30/etc. London expansion ranges 15-25pt got rejected as "trending" when they were genuine compression-breaks at the new price level. 19.0 = 0.40% of $4700 -- matches index-symbol bracketing band proportions. Re-audit gate: derive band as % of price not absolute pts (see MAX_SL_DIST_PTS comment).
     // ?? S22c 2026-04-25: empirical SL-dist gate (gold only) ?????????????????????
     // 62 live XAUUSD_BRACKET trades 2026-04-13..24: every trade with bracket
     // dist > 6pt was a loser (0 wins / 39 losses / -$388 combined). Trades at
@@ -1007,7 +1007,7 @@ static void init_engines(const std::string& cfg_path)
     // price-at-calibration; same proportion at $4400 = $11. Round to 12
     // matching MAX_RANGE. Re-audit when 60+ new live trades accumulate to
     // confirm the % equivalent holds at the new price level.
-    g_bracket_gold.MAX_SL_DIST_PTS = 12.0;
+    g_bracket_gold.MAX_SL_DIST_PTS = 19.0;  // 2026-05-29 (S37-Z, 2nd revision same day): raised 12.0 -> 19.0 to match MAX_RANGE. Same price-drift principle: 0.40% of $4700.
     // ?? Regime-flip exit (Session 13, 2026-04-23) -- gold only ?????????????????
     // Thresholds wired for XAUUSD_BRACKET only. See BracketEngine.hpp config block.
     // Trigger: |ewm_drift| >= 2.5 against position for 5 consecutive ticks.
