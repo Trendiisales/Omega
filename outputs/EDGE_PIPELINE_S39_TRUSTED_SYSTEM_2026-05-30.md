@@ -191,6 +191,39 @@ but shorts are net-positive, so it is trend TIMING, not passive long beta.
 3. Tier-2 (5/5 blocks, not stress-hardened): NSX 4h Donchian N=50 (short-
    skewed), NSX 4h RSI N=7, XAU 4h Donchian N=100.
 
+## ROUND-2 EDGE HUNT — bracket geometry + new families (3234 cells)
+Added bracket-geometry sweeps + Keltner-breakout + vol-expansion families.
+New edges, all cost-validated at 2× (`--blocks 6 --cost-mult 2`):
+
+| edge | 2× cost | verdict |
+|---|---|---|
+| **XAU 1h Donchian N=55 sl2/tp6** | 6/6 minPF 1.05 | **NEW: wide TP unlocks H1** (failed at default bracket) |
+| **XAU 4h Donchian N=20 sl1/tp3** | 6/6 minPF 1.24 | tighter SL beats production sl1.5 cell |
+| XAU Keltner breakout | robust | new channel confirms the XAU trend complex |
+| NSX 4h VolExp k=2 | 5/6 minPF 0.93 | tier-2, new family |
+| GER40 1h Donchian N=15 | 5/6 minPF 0.94 | tier-2, DAX H1 trend |
+| ~~NSX 5m MA-cross (n=2201)~~ | 4/6, net halved | **KILLED — high-turnover cost artifact** |
+
+**Two structural conclusions:**
+1. **Bracket geometry is a first-class edge dimension.** A wide TP (tp6) makes
+   XAU 1h Donchian robust where the default tp3 failed — the timeframe wasn't
+   dead, the bracket was wrong. The H1 dismissal in round 1 was bracket-bound.
+2. **Every cost-robust edge is trend/breakout (Donchian/Keltner/VolExp) on
+   H1-H4. Intraday 5m fails the 2× cost test** — the harness correctly killed
+   the seductive 2201-trade 5m cell. There is no scalp edge in this data at
+   retail cost (matches the live-shadow + L2-discovery verdicts).
+
+### The XAU Donchian complex (the real "system")
+The dominant, most-robust finding is not one cell but a COMPLEX:
+- 4h Donchian N=15-40 (smooth plateau), best bracket sl1.0/tp3.0
+- 1h Donchian N=30-55 with wide bracket (sl2/tp6)
+- Keltner breakout (same trend, different channel)
+All on XAU, all 6/6 regime-robust, all survive 2× cost. This breadth across
+timeframe + channel + bracket is the strongest possible evidence the gold
+trend-breakout edge is real and not a single overfit point.
+Optional production tweak: XauTrendFollow4h cell-0 bracket sl1.5→1.0 (+6% net,
+6/6 at 2× cost) — small, validate in shadow first.
+
 ## Reproduce
 ```
 backtest/edge_pipeline --tickdir /Users/jo/Tick --out outputs/edge_pipeline_wf.csv --min-n 30 --pf-gate 1.10
