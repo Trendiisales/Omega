@@ -32,6 +32,7 @@ HEADERS=(
   include/IndexFlowEngine.hpp
   include/XauTrendFollow4hEngine.hpp
   include/XauTrendFollow1hEngine.hpp
+  include/Ger40KeltnerH1Engine.hpp
 )
 
 fails=0

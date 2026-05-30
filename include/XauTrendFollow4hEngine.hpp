@@ -174,7 +174,7 @@ struct XauTfPos {
 // (mask |= 0x40) to activate.  Python+C++ evidence:
 //   Python (S114): +$30,966 (+30.97%) Sharpe +1.96 trades 103 over 25mo
 //   C++    (S115): +$32,025 (+32.03%) trades  95 over 25mo (Δ$1,059 / 3.4%)
-enum class XauTfFamily { Donchian20, InsideBar, ErTrend020, Keltner20, AdxMom20, RangeExpand, EmaCross8_21 };
+enum class XauTfFamily { Donchian20, InsideBar, ErTrend020, Keltner20, AdxMom20, RangeExpand, EmaCross8_21, KeltnerEma50 };
 struct XauTfCellConfig {
     XauTfFamily family;
     double      sl_mult;   // SL = sl_mult * ATR
@@ -212,6 +212,17 @@ static constexpr XauTfCellConfig kXauTfCells[] = {
     // or signal flip in _evaluate_signal (returns 0 when fast<=slow).
     // Bit 6 in cell_enable_mask -- off by default.
     { XauTfFamily::EmaCross8_21, 2.5, 20.0, "EmaCross_8_21_sl2.5_S116"      },
+    // S41 (2026-05-30): Keltner EMA50 channel breakout, no-TP runner. From the
+    // XAU deep-edge test (backtest/xau_edge_deep.cpp + edge_validate_s41.cpp):
+    // on H4, keltner EMA50 is ROBUST across the ENTIRE k{1.5,2.0,2.5} x
+    // sl{2.5,3.0,3.5} grid (PF 2.0-3.8, all 5/6 or 6/6 blocks) AND cost-stress
+    // 1x/2x/3x (PF 2.79/2.76/2.72). Entry: close > EMA50 + 2.0*ATR with a slow
+    // bull gate (close > close 30 H4 bars ago). Exit: close < EMA50 (bar-close,
+    // handled in on_h4_bar) OR stop at 3.0*ATR. tp_mult=20.0 == effectively-
+    // no-TP (same convention as the EmaCross8_21 cell). Bit 7 in
+    // cell_enable_mask; OFF by default (mask stays 0x3F) -- engine_init must
+    // OR in 0x80 to activate.
+    { XauTfFamily::KeltnerEma50, 3.0, 20.0, "Keltner_EMA50_k2.0_sl3.0_S41"  },
 };
 static constexpr int kXauTfNumCells =
     static_cast<int>(sizeof(kXauTfCells) / sizeof(kXauTfCells[0]));
@@ -296,6 +307,11 @@ public:
     double ema20_ = 0.0;
     bool   ema_initialised_ = false;
 
+    // S41: EMA50 for the KeltnerEma50 cell (validated H4 channel mid-line).
+    static constexpr int kEmaPeriod50 = 50;
+    double ema50_ = 0.0;
+    bool   ema50_initialised_ = false;
+
     // S116: rolling EMA8 + EMA21 for EmaCross8_21 cell.  Slow-rising filter
     // checks ema21_ against its value 3 bars ago, so we keep the last
     // ~6 closes of ema21 in a small ring.
@@ -331,6 +347,8 @@ public:
         atr_warmup_count_ = 0;
         ema20_ = 0.0;
         ema_initialised_ = false;
+        ema50_ = 0.0;
+        ema50_initialised_ = false;
         ema8_ = ema21_ = 0.0;
         ema8_21_initialised_ = false;
         ema21_hist_.clear();
@@ -375,6 +393,7 @@ public:
 
         // S33d-ext: update EMA20 (for Keltner) and ADX14 (for AdxMom).
         _update_ema20();
+        _update_ema50();   // S41: KeltnerEma50 channel mid-line
         _update_adx14();
         // S116: update EMA8/EMA21 for EmaCross8_21 cell.
         _update_ema8_21();
@@ -383,6 +402,19 @@ public:
         for (auto& p : pos) {
             if (p.cooldown_bars > 0) --p.cooldown_bars;
             if (p.active) ++p.bars_held;
+        }
+
+        // S41: KeltnerEma50 is a no-TP runner that exits on a close back below
+        // EMA50 (channel mid). This is a bar-close exit -- the only one in this
+        // engine -- mirroring the 1h Donchian-low exit. All other cells still
+        // exit purely intra-bar via on_tick. Runs before new-entry decisions.
+        if (ema50_initialised_) {
+            for (int ci = 0; ci < kXauTfNumCells; ++ci) {
+                if (kXauTfCells[ci].family == XauTfFamily::KeltnerEma50
+                    && pos[ci].active && bar.close < ema50_) {
+                    _close(ci, bar.close, "KELT50_MID_EXIT", now_ms, on_close);
+                }
+            }
         }
 
         // Decide entries cell-by-cell. We do NOT re-check exits here --
@@ -485,6 +517,14 @@ private:
         }
     }
 
+    // S41: EMA50 updater for the KeltnerEma50 cell.
+    void _update_ema50() noexcept {
+        if (bars_.empty()) return;
+        const double c = bars_.back().close;
+        if (!ema50_initialised_) { ema50_ = c; ema50_initialised_ = true; }
+        else { const double a = 2.0 / (kEmaPeriod50 + 1); ema50_ = a * c + (1.0 - a) * ema50_; }
+    }
+
     void _update_adx14() noexcept {
         if (bars_.size() < 2) return;
         const auto& cur  = bars_[bars_.size() - 1];
@@ -551,7 +591,25 @@ private:
             case XauTfFamily::AdxMom20:     return _sig_adx_momentum(25.0, 20);
             case XauTfFamily::RangeExpand:  return _sig_range_expansion(1.5);
             case XauTfFamily::EmaCross8_21: return _sig_ema_cross_8_21();
+            case XauTfFamily::KeltnerEma50: return _sig_keltner_ema50();
         }
+        return 0;
+    }
+
+    // S41: Keltner EMA50 upper-channel breakout, long-only, with a self-
+    // contained slow-bull gate (close > close 30 H4 bars ago, ~1 trading week).
+    // EXACT port of the validated edge (edge_validate_s41.cpp keltner_e50_k2.0).
+    // The engine's D1 EMA200 gate in _fire_entry applies on top. Exit is the
+    // close<EMA50 bar-close path in on_h4_bar, or the 3.0*ATR stop.
+    int _sig_keltner_ema50() const noexcept {
+        constexpr int    BULL_LB = 30;
+        constexpr double K       = 2.0;
+        if (!ema50_initialised_ || atr14_ <= 0.0) return 0;
+        const int n = (int)bars_.size();
+        if (n < BULL_LB + 2) return 0;
+        const double c = bars_[n - 1].close;
+        if (!(c > bars_[n - 1 - BULL_LB].close)) return 0;   // slow bull gate
+        if (c > ema50_ + K * atr14_) return +1;              // upper channel break
         return 0;
     }
 
