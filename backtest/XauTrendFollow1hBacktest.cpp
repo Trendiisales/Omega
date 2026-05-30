@@ -30,7 +30,6 @@
 #include <string>
 #include <vector>
 #include <fstream>
-#include <algorithm>
 #include <map>
 
 #include "XauTrendFollow1hEngine.hpp"
