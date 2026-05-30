@@ -127,6 +127,22 @@ static void emit_per_engine(FILE* rpt, const Driver& d) {
     std::fprintf(rpt, "    London  n=%-6d gross=%+10.3f\n", s.n_london, s.g_london);
     std::fprintf(rpt, "    NY      n=%-6d gross=%+10.3f\n", s.n_ny,     s.g_ny);
     std::fprintf(rpt, "    Late_NY n=%-6d gross=%+10.3f\n", s.n_late,   s.g_late);
+    // SESSION x HALF walk-forward: an edge is promotable only if a session
+    // slice is positive in BOTH halves (train 2024-03..2025-03, test
+    // 2025-04..2026-04). Flag *** when both halves net positive AND n>=30 each.
+    std::fprintf(rpt, "  SESSION x HALF (WF: H1=train H2=test)\n");
+    static const char* SN[4] = {"Asia   ", "London ", "NY     ", "Late_NY"};
+    for (int si = 0; si < 4; ++si) {
+        const int    n1 = s.n_sh[si][0],  n2 = s.n_sh[si][1];
+        const double g1 = s.gw_sh[si][0] - s.gl_sh[si][0];
+        const double g2 = s.gw_sh[si][1] - s.gl_sh[si][1];
+        const double p1 = s.gl_sh[si][0] > 0 ? s.gw_sh[si][0] / s.gl_sh[si][0] : 0.0;
+        const double p2 = s.gl_sh[si][1] > 0 ? s.gw_sh[si][1] / s.gl_sh[si][1] : 0.0;
+        const bool wf_ok = (g1 > 0 && g2 > 0 && n1 >= 30 && n2 >= 30);
+        std::fprintf(rpt,
+            "    %s  H1 n=%-4d g=%+9.3f PF=%-5.3f | H2 n=%-4d g=%+9.3f PF=%-5.3f %s\n",
+            SN[si], n1, g1, p1, n2, g2, p2, wf_ok ? "*** WF-POSITIVE" : "");
+    }
     if (!s.g_by_month.empty()) {
         std::fprintf(rpt, "  BY MONTH\n");
         for (const auto& kv : s.g_by_month) {
@@ -183,8 +199,9 @@ int main(int argc, char** argv) {
     // doubled from $2400-era values to track the $4700 price level.
     std::fprintf(RPT, "============================================================\n");
     std::fprintf(RPT, "  goldstack_subs_audit  --  %s\n", path.c_str());
-    std::fprintf(RPT, "  CALIBRATION ERA: thresholds re-fit 2026-05-29 for $4700 gold\n");
-    std::fprintf(RPT, "                    (S37-Z task#18, doubled from $2400 baseline)\n");
+    std::fprintf(RPT, "  THRESHOLDS: $2400-era originals (S37-Z task#18 2x doubling\n");
+    std::fprintf(RPT, "              was REVERTED 03e6ec11). Harness fidelity-fixed S39:\n");
+    std::fprintf(RPT, "              real sweep_size + 256-tick price stddev.\n");
     std::fprintf(RPT, "============================================================\n");
 
     char line[1024];

@@ -84,6 +84,23 @@ struct Stats {
     std::map<std::string, int>    n_by_month;
     double running_eq = 0, peak_eq = 0;
 
+    // SESSION x HALF walk-forward matrix. Split at 2025-04 (corpus is
+    // 2024-03..2026-04 -> 13 months each half). A session-conditional edge is
+    // only real if it is positive in BOTH halves -- full-sample session splits
+    // are in-sample cherry-picking. Index [session 0=Asia/1=London/2=NY/3=Late]
+    // [half 0=train/1=test]. Stored as gross-win / gross-loss so PF is derivable.
+    static constexpr const char* HALF_SPLIT = "2025-04";
+    int    n_sh[4][2]  = {};
+    double gw_sh[4][2] = {};
+    double gl_sh[4][2] = {};
+
+    static int sess_idx(const char* sess) noexcept {
+        if (!std::strcmp(sess, "Asia"))   return 0;
+        if (!std::strcmp(sess, "London")) return 1;
+        if (!std::strcmp(sess, "NY"))     return 2;
+        return 3; // Late_NY
+    }
+
     static const char* utc_session(int64_t ts_ms) noexcept {
         const time_t t_s = static_cast<time_t>(ts_ms / 1000);
         std::tm tm{};
@@ -141,6 +158,12 @@ struct Stats {
         const std::string mo = utc_month(ts_ms);
         g_by_month[mo] += pnl_net;
         n_by_month[mo] += 1;
+
+        const int si = sess_idx(sess);
+        const int half = (mo < HALF_SPLIT) ? 0 : 1;
+        ++n_sh[si][half];
+        if (pnl_net > 0) gw_sh[si][half] += pnl_net;
+        else             gl_sh[si][half] += -pnl_net;
     }
 
     double wr() const { return n_trades ? 100.0 * wins / n_trades : 0.0; }
