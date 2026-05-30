@@ -625,6 +625,7 @@ struct ComboResult {
 // main
 // -----------------------------------------------------------------------------
 int main(int argc, char** argv) {
+    std::srand(42);  // S39: fixed seed -- reservoir ATR sampling must be reproducible run-to-run
     if (argc < 2) {
         std::fprintf(stderr,
             "usage: %s <month1.csv> [<month2.csv>...] \n"
