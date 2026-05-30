@@ -1409,7 +1409,7 @@ static void init_engines(const std::string& cfg_path)
         // ledger emission identical to other live cells so we can validate
         // EmaCross_8_21 fill rate against the S115 backtest CSV.  Expect
         // ~4 trades/month per the C++ harness (95 trades / 25mo).
-        g_xau_tf_4h.cell_enable_mask = 0x49;  // Donchian + Keltner + EmaCross_8_21
+        g_xau_tf_4h.cell_enable_mask = 0xC9;  // S41: + KeltnerEMA50 (bit7); Donchian + Keltner20 + EmaCross_8_21 + KeltnerEMA50
         g_xau_tf_4h.lot         = 0.01;
         g_xau_tf_4h.max_spread  = 1.0;
         // S88-followup post-sweep 2026-05-27: 4h per-cell breakdown shows
@@ -1458,23 +1458,27 @@ static void init_engines(const std::string& cfg_path)
         // safety net while we validate fill rates.
         g_xau_tf_1h.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
         g_xau_tf_1h.enabled     = true;
-        g_xau_tf_1h.cell_enable_mask = 0x03;  // both cells
+        g_xau_tf_1h.cell_enable_mask = 0x0F;  // S40: all 4 ensemble cells (EmaCross+Donchian+Pullback+Keltner)
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
         // ── S39 vol-target + pyramiding on the Donchian40 cell (OFF by default).
         // Validated edge (gold_regime_edges.cpp, 2yr WF + 6-block + 3x-cost):
         // vol-target N40 Donchian PF~3 robust; pyramid K2 lifts avg-win ~3x at
         // higher DD/lower PF. To enable in SHADOW, uncomment + watch the ledger:
-        //   g_xau_tf_1h.use_vol_target  = true;   // size = unit/ATR (clamp 0.01-0.08)
-        //   g_xau_tf_1h.vol_target_unit = 0.10;
-        //   g_xau_tf_1h.pyramid_max_adds = 2;     // start K2; K3/step0.75 = best exp (harness)
-        //   g_xau_tf_1h.pyramid_step_atr = 1.0;
-        //   g_xau_tf_1h.pyramid_sl_atr   = 3.0;
+        // S42 2026-05-30: ACTIVATED in shadow (validated edge; watch ledger fill
+        // rates before any live promotion). vol-target sizes risk across vol
+        // regimes; pyramid K2 lifts avg-win ~3x at higher DD (engine-driven BT
+        // XauTrendFollow1hBacktest: K2 +$26357 exp $70.85 PF2.86).
+        g_xau_tf_1h.use_vol_target  = true;   // size = unit/ATR (clamp 0.01-0.08)
+        g_xau_tf_1h.vol_target_unit = 0.10;
+        g_xau_tf_1h.pyramid_max_adds = 2;     // start K2; K3/step0.75 = best exp (harness)
+        g_xau_tf_1h.pyramid_step_atr = 1.0;
+        g_xau_tf_1h.pyramid_sl_atr   = 3.0;
         g_xau_tf_1h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
         g_xau_tf_1h.init();
         omega::warmup_or_die(g_xau_tf_1h, "XauTrendFollow1h");
-        printf("[OMEGA-INIT] XauTrendFollow1hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=2 mask=0x%X"
-               " (EmaCross_20_80_S118, Donchian_N40_S118)\n",
+        printf("[OMEGA-INIT] XauTrendFollow1hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=4 mask=0x%X"
+               " (EmaCross_20_80_S118, Donchian_N40_S118, Pullback_EMA20_S40, Keltner_EMA50_S40; vol-target+pyramidK2 ON)\n",
                (int)g_xau_tf_1h.shadow_mode, (int)g_xau_tf_1h.enabled, g_xau_tf_1h.lot,
                (unsigned)g_xau_tf_1h.cell_enable_mask);
         fflush(stdout);
@@ -1881,6 +1885,24 @@ static void init_engines(const std::string& cfg_path)
                g_ger40_turtle_h4.p.lookback_bars,
                g_ger40_turtle_h4.p.sl_atr_mult, g_ger40_turtle_h4.p.tp_atr_mult,
                g_ger40_turtle_h4.p.hold_max_h4);
+
+        // ── Ger40KeltnerH1Engine (S41 2026-05-30) ───────────────────────────
+        // First robust non-gold trend edge. GER40 H1 Keltner EMA20 k2.0 sl3.0,
+        // bull_LB=200. Self-aggregates H1 from the GER40 tick stream via
+        // feed_tick() (wired in tick_indices.hpp alongside g_ger40_turtle_h4 --
+        // there is no g_bars_ger40). Warm-seed = the bundled GER40 H1 CSV
+        // (5903 bars, >> the 201 the LB200 gate needs). HARD shadow.
+        g_ger40_kelt.shadow_mode = true;
+        g_ger40_kelt.enabled     = true;
+        g_ger40_kelt.lot         = 0.01;
+        g_ger40_kelt.max_spread  = 5.0;   // GER40 points
+        g_ger40_kelt.warmup_csv_path = "phase1/signal_discovery/warmup_GER40_H1.csv";
+        g_ger40_kelt.init();
+        omega::warmup_or_die(g_ger40_kelt, "Ger40KeltnerH1");
+        printf("[OMEGA-INIT] Ger40KeltnerH1Engine: shadow=%d enabled=%d lot=%.2f LB=%d emaP=%d k=%.1f sl=%.1f\n",
+               (int)g_ger40_kelt.shadow_mode, (int)g_ger40_kelt.enabled, g_ger40_kelt.lot,
+               g_ger40_kelt.kBullLB, g_ger40_kelt.kEmaP, g_ger40_kelt.kChanK, g_ger40_kelt.kSlAtr);
+        fflush(stdout);
 
         // ── FxTurtleH4 cohort (2026-05-23) ──────────────────────────────────
         // Post-S99 FX rebuild: long-only Donchian H4 (Turtle archetype) on
@@ -4401,6 +4423,7 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("VwapRevGer40",         g_vwap_rev_ger40.enabled,       3600,  7, 22);
         g_engine_heartbeat.register_engine("Ger40LondonBrk",       g_ger40_london_brk.enabled,     3600,  7, 22);
         g_engine_heartbeat.register_engine("Ger40TurtleH4",        g_ger40_turtle_h4.enabled,      3600,  7, 22);
+        g_engine_heartbeat.register_engine("Ger40KeltnerH1",       g_ger40_kelt.enabled,           3600,  7, 22);
         g_engine_heartbeat.register_engine("MinimalH4Ger40",       g_minimal_h4_ger40.enabled,     3600,  7, 22);
         g_engine_heartbeat.register_engine("Us30Ensemble",         g_us30_ensemble.enabled,        3600,  7, 22);
         g_engine_heartbeat.register_engine("Us30_3BarMomH1",       g_us30_3bar_mom_h1.enabled,     3600,  7, 22);

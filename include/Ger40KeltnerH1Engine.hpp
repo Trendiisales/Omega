@@ -117,11 +117,25 @@ public:
     bool warmup_active_ = false;
     std::string warmup_csv_path;
 
+    // S42: self-contained H1 tick->bar aggregator (there is NO g_bars_ger40 in
+    // the codebase; GER40 arrives only as raw ticks in tick_indices.hpp, same
+    // as Ger40TurtleH4Engine). feed_tick() buckets ticks by the UTC hour and,
+    // on each H1 rollover, synthesizes the just-closed bar and dispatches it to
+    // on_h1_bar(). Position management still runs every tick. Backtests bypass
+    // this and call on_h1_bar() directly with clean OHLC -- so the validated
+    // signal path is unchanged; only the live bar SOURCE differs (tick-built).
+    struct H1Accum {
+        bool    active    = false;
+        int64_t bucket_ms = 0;
+        double  open=0.0, high=0.0, low=0.0, close=0.0;
+    } h1_acc_;
+
     void init() noexcept {
         bars_.clear();
         atr14_ = 0.0; atr_warmup_count_ = 0;
         ema_ = 0.0; ema_initialised_ = false;
         warmup_active_ = false;
+        h1_acc_ = {};
         pos = {};
     }
 
@@ -158,6 +172,41 @@ public:
     void on_tick(double bid, double ask, int64_t now_ms, OnCloseFn on_close) noexcept {
         if (!enabled || !pos.active) return;
         _manage_open(bid, ask, now_ms, on_close);
+    }
+
+    // S42: LIVE entry point -- aggregate ticks to H1 + manage open pos. This is
+    // what tick_indices.hpp calls. Mirrors Ger40TurtleH4Engine::on_tick's
+    // self-aggregation (H4 there, H1 here). on_h1_bar() handles all signal /
+    // entry / channel-exit logic when a bar closes.
+    void feed_tick(double bid, double ask, int64_t now_ms, OnCloseFn on_close) noexcept {
+        if (!enabled) return;
+        if (bid <= 0.0 || ask <= 0.0) return;
+        const double mid = (bid + ask) * 0.5;
+
+        // manage open position every tick (SL hit etc.)
+        if (pos.active) _manage_open(bid, ask, now_ms, on_close);
+
+        const int64_t bucket = (now_ms / 3600000LL) * 3600000LL;   // UTC hour
+        if (!h1_acc_.active) {
+            h1_acc_.active=true; h1_acc_.bucket_ms=bucket;
+            h1_acc_.open=h1_acc_.high=h1_acc_.low=h1_acc_.close=mid;
+            return;
+        }
+        if (bucket != h1_acc_.bucket_ms) {
+            // H1 rollover: dispatch the just-closed bar through the signal path.
+            Ger40KBar bar;
+            bar.bar_start_ms = h1_acc_.bucket_ms;
+            bar.open = h1_acc_.open; bar.high = h1_acc_.high;
+            bar.low  = h1_acc_.low;  bar.close = h1_acc_.close;
+            on_h1_bar(bar, bid, ask, 0.0, now_ms, on_close);
+            // start the new bucket
+            h1_acc_.bucket_ms=bucket;
+            h1_acc_.open=h1_acc_.high=h1_acc_.low=h1_acc_.close=mid;
+        } else {
+            if (mid > h1_acc_.high) h1_acc_.high = mid;
+            if (mid < h1_acc_.low)  h1_acc_.low  = mid;
+            h1_acc_.close = mid;
+        }
     }
 
     void force_close(double bid, double ask, int64_t now_ms,

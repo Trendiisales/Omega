@@ -974,6 +974,15 @@ static void on_tick_ger40(
             g_ger40_turtle_h4.check_weekend_close(bid, ask, now_ms_gt, ca_on_close);
         }
     }
+    // Ger40KeltnerH1Engine (S41 2026-05-30) -- H1 Keltner EMA20 break, LB200
+    // bull gate, shadow. Self-aggregates H1 from ticks via feed_tick() (no
+    // g_bars_ger40 in the codebase, same as the turtle above). Independent pos.
+    {
+        const int64_t now_ms_gk = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_ger40_kelt.feed_tick(bid, ask, now_ms_gk, ca_on_close);
+    }
 }
 
 // ── UK100 ──────────────────────────────────────────────────

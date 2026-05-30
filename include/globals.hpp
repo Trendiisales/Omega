@@ -553,6 +553,14 @@ static omega::XauSwingBreakD1Engine g_xau_swing_break_d1;
 #include "Ger40TurtleH4Engine.hpp"
 static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
 
+// S41 (2026-05-30): Ger40KeltnerH1Engine -- first robust NON-gold trend edge.
+// GER40 H1 Keltner EMA20 k2.0 sl3.0, bull_LB=200 (slower than gold). Validated
+// full param-plateau + cost-stress 1x/2x/3x (edge_validate_s41.cpp); engine-
+// driven BT PF 2.34. Self-aggregates H1 from the GER40 tick stream (no
+// g_bars_ger40 exists) via feed_tick(), like Ger40TurtleH4Engine.
+#include "Ger40KeltnerH1Engine.hpp"
+static omega::Ger40KeltnerH1Engine g_ger40_kelt;
+
 // FxTurtleH4Engine -- 20-bar Donchian breakout on FX majors, long-only.
 //   Built 2026-05-23 as the post-mortem-driven replacement for the S99-
 //   killed FX session-open compression cohort. Same long-only Donchian
