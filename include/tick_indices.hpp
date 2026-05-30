@@ -982,6 +982,9 @@ static void on_tick_ger40(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_ger40_kelt.feed_tick(bid, ask, now_ms_gk, ca_on_close);
+        // S42 fix: pulse the heartbeat (registered live_required in engine_init
+        // as "Ger40KeltnerH1" but never pulsed -> false HEARTBEAT-MISS spam).
+        g_engine_heartbeat.pulse("Ger40KeltnerH1");
     }
 }
 
