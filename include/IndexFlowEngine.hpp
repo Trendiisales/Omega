@@ -1452,9 +1452,24 @@ public:
         const double h1_e50 = h1bars.ind.ema50.load(std::memory_order_relaxed);
         if (h1_e9 <= 0.0 || h1_e50 <= 0.0) return false;
 
-        // EMA separation gate: crossover must not be marginal
+        // EMA separation gate: crossover must not be marginal.
+        // 2026-05-30 (S39): the fixed absolute floor (min_ema_sep_ = 0.5 SP /
+        // 1.5 NQ) is ~0.006% of price on indices priced in the thousands -- a
+        // near-zero band that admits whippy near-marginal crossovers and is the
+        // root of the 46% WR / PF~0.96 breakeven on the shadow ledger
+        // (ANALYSIS_S39_LIVE_EDGE_AUDIT). Replace with an ATR-relative floor so
+        // the gate auto-scales across instrument price AND volatility regime
+        // (calibration-drift-proof, per memory:feedback-abs-pt-calibration):
+        // require the EMA9-EMA50 gap to be at least EMA_SEP_ATR_FRAC of one H1
+        // ATR -- i.e. a real, non-marginal separation -- with the old absolute
+        // kept only as a hard floor. SHADOW-VALIDATION CANDIDATE: must show WR
+        // improvement over the next shadow window before any promotion.
         const double ema_sep = std::fabs(h1_e9 - h1_e50);
-        if (ema_sep < min_ema_sep_) return false;
+        const double sep_atr = h1bars.ind.atr14.load(std::memory_order_relaxed);
+        const double ema_sep_floor = (sep_atr > 0.0)
+            ? std::max(min_ema_sep_, EMA_SEP_ATR_FRAC * sep_atr)
+            : min_ema_sep_;
+        if (ema_sep < ema_sep_floor) return false;
 
         // EMA direction must match H1 trend_state
         const bool ema_long  = (h1_e9 > h1_e50);
@@ -1659,6 +1674,12 @@ private:
     static constexpr int PENDING_CONFIRM_TICKS = 10;
     static constexpr int PENDING_MAX_TICKS     = 30;
     static constexpr double PENDING_CONFIRM_MIC = 0.03;
+    // 2026-05-30 (S39): ATR-relative EMA-separation floor. The EMA9-EMA50 gap
+    // at entry must be >= this fraction of one H1 ATR for the crossover to
+    // count as non-marginal. 0.25 = a quarter-ATR real separation. Replaces
+    // the price-insensitive absolute min_ema_sep_ as the binding gate on
+    // indices (see entry-gate comment + ANALYSIS_S39_LIVE_EDGE_AUDIT).
+    static constexpr double EMA_SEP_ATR_FRAC = 0.25;
     // 2026-05-30 L2-leverage: lot sizing scaler at entry.
     double  size_mult_at_entry_   = 1.0;
     // 2026-05-30 L2-leverage: L2-trailing exit threshold.
