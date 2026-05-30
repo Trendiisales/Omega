@@ -462,6 +462,17 @@ static omega::XauTrendFollow4hEngine g_xau_tf_4h;
 #include "XauTrendFollow1hEngine.hpp"
 static omega::XauTrendFollow1hEngine g_xau_tf_1h;
 
+// S42 (2026-05-31): SessionMomentumEngine -- clock-based session-window long,
+//   the first NON-trend-breakout edge (new signal axis: time-of-day). Two XAU
+//   instances: NY-afternoon (16:00 UTC, 4h) and Asian overnight (23:00, 5h),
+//   both gated by close>EMA200(h1). Self-aggregates H1 from the gold tick
+//   stream via feed_tick() (wired in tick_gold.hpp). Validated lookahead-free
+//   (xau_session_scan.cpp): NYpm PF1.57 6/6-to-5bp, o/n PF1.56. Live spread at
+//   16h confirmed mean ~1.1bp p90 3.1bp << the 5bp death line. HARD shadow.
+#include "SessionMomentumEngine.hpp"
+static omega::SessionMomentumEngine g_xau_sess_nypm;
+static omega::SessionMomentumEngine g_xau_sess_overnight;
+
 // 2026-05-11 S33d: UstecTrendFollow5mEngine -- Donchian N=20 at 5m bars
 //   on USTEC. Convergent edge across 4 unrelated signal families on the
 //   15-day L2 sample. Shadow-only; KEEP shadow until 6+ months of USTEC

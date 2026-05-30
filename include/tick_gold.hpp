@@ -28,6 +28,8 @@ static void on_tick_gold(
     g_engine_heartbeat.pulse("XauusdFvg");
     g_engine_heartbeat.pulse("GoldScalpPyramid");
     g_engine_heartbeat.pulse("RSIReversal");
+    g_engine_heartbeat.pulse("XauSessNYpm");
+    g_engine_heartbeat.pulse("XauSessOvernight");
     g_engine_heartbeat.pulse("RSIExtreme");
     g_engine_heartbeat.pulse("h1_swing_gold");
     g_engine_heartbeat.pulse("h4_regime_gold");
@@ -2135,6 +2137,10 @@ static void on_tick_gold(
     g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // S118 2026-05-19: H1 long-only ensemble tick management.
     g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // S42 2026-05-31: SessionMomentum x2 -- clock-based session-window long.
+    // feed_tick() self-aggregates H1 + manages the open position (time exit).
+    g_xau_sess_nypm.feed_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_xau_sess_overnight.feed_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTrendFollowD1Engine tick management -- 3 daily-timeframe cells
     // (Momentum, Keltner, ADX_Mom). S33e shipped 2026-05-11. Daily bars are
     // built internally from H4 stream. Single-position per cell, 3 max

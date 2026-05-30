@@ -1904,6 +1904,52 @@ static void init_engines(const std::string& cfg_path)
                g_ger40_kelt.kBullLB, g_ger40_kelt.kEmaP, g_ger40_kelt.kChanK, g_ger40_kelt.kSlAtr);
         fflush(stdout);
 
+        // ── SessionMomentumEngine x2 (S42 2026-05-31) ───────────────────────
+        // Clock-based session-window long on XAU -- first non-trend-breakout
+        // edge (axis: time-of-day). Both gated by close>EMA200(h1); pure time
+        // exit (no TP/SL). Self-aggregate H1 from the gold tick stream via
+        // feed_tick() (wired in tick_gold.hpp). Warm-seed = bundled XAU H1 CSV
+        // (12359 bars >> the 202 the EMA200 gate needs). HARD shadow. Live 16h
+        // spread confirmed mean ~1.1bp p90 3.1bp << 5bp edge-death line; the
+        // cost gate blocks any single wide-spread fill regardless.
+        g_xau_sess_nypm.symbol           = "XAUUSD";
+        g_xau_sess_nypm.label            = "XauSessNYpm_h16L4_EMA200_S42";
+        g_xau_sess_nypm.entry_hour       = 16;
+        g_xau_sess_nypm.hold_hours       = 4;
+        g_xau_sess_nypm.use_trend_filter = true;
+        g_xau_sess_nypm.ema_period       = 200;
+        g_xau_sess_nypm.sl_atr           = 0.0;     // pure time exit (validated)
+        g_xau_sess_nypm.shadow_mode      = true;
+        g_xau_sess_nypm.enabled          = true;
+        g_xau_sess_nypm.lot              = 0.01;
+        g_xau_sess_nypm.max_spread       = 2.0;     // XAU $ (≈4-5bp at $4700)
+        g_xau_sess_nypm.warmup_csv_path  = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
+        g_xau_sess_nypm.init();
+        omega::warmup_or_die(g_xau_sess_nypm, "XauSessNYpm");
+
+        g_xau_sess_overnight.symbol           = "XAUUSD";
+        g_xau_sess_overnight.label            = "XauSessOvernight_h23L5_EMA200_S42";
+        g_xau_sess_overnight.entry_hour       = 23;
+        g_xau_sess_overnight.hold_hours       = 5;
+        g_xau_sess_overnight.use_trend_filter = true;
+        g_xau_sess_overnight.ema_period       = 200;
+        g_xau_sess_overnight.sl_atr           = 0.0;
+        g_xau_sess_overnight.shadow_mode      = true;
+        g_xau_sess_overnight.enabled          = true;
+        g_xau_sess_overnight.lot              = 0.01;
+        g_xau_sess_overnight.max_spread       = 2.0;
+        g_xau_sess_overnight.warmup_csv_path  = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
+        g_xau_sess_overnight.init();
+        omega::warmup_or_die(g_xau_sess_overnight, "XauSessOvernight");
+        printf("[OMEGA-INIT] SessionMomentumEngine x2: NYpm(h%d L%d) o/n(h%d L%d) "
+               "shadow=%d enabled=%d lot=%.2f emaP=%d filter=%d\n",
+               g_xau_sess_nypm.entry_hour, g_xau_sess_nypm.hold_hours,
+               g_xau_sess_overnight.entry_hour, g_xau_sess_overnight.hold_hours,
+               (int)g_xau_sess_nypm.shadow_mode, (int)g_xau_sess_nypm.enabled,
+               g_xau_sess_nypm.lot, g_xau_sess_nypm.ema_period,
+               (int)g_xau_sess_nypm.use_trend_filter);
+        fflush(stdout);
+
         // ── FxTurtleH4 cohort (2026-05-23) ──────────────────────────────────
         // Post-S99 FX rebuild: long-only Donchian H4 (Turtle archetype) on
         // FX majors. EUR/GBP have proven walk-forward edge in repo
@@ -4424,6 +4470,8 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("Ger40LondonBrk",       g_ger40_london_brk.enabled,     3600,  7, 22);
         g_engine_heartbeat.register_engine("Ger40TurtleH4",        g_ger40_turtle_h4.enabled,      3600,  7, 22);
         g_engine_heartbeat.register_engine("Ger40KeltnerH1",       g_ger40_kelt.enabled,           3600,  7, 22);
+        g_engine_heartbeat.register_engine("XauSessNYpm",          g_xau_sess_nypm.enabled,        3600, 16, 21);
+        g_engine_heartbeat.register_engine("XauSessOvernight",     g_xau_sess_overnight.enabled,   3600, 23,  5);
         g_engine_heartbeat.register_engine("MinimalH4Ger40",       g_minimal_h4_ger40.enabled,     3600,  7, 22);
         g_engine_heartbeat.register_engine("Us30Ensemble",         g_us30_ensemble.enabled,        3600,  7, 22);
         g_engine_heartbeat.register_engine("Us30_3BarMomH1",       g_us30_3bar_mom_h1.enabled,     3600,  7, 22);
