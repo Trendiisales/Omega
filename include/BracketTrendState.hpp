@@ -246,8 +246,19 @@ static std::unordered_map<std::string, BracketTrendState> g_bracket_trend;
 // Mean-reversion engines naturally fade INTO the rejected direction, so they
 // require identical gating. Different semantic framing, same gate.
 inline int bracket_trend_bias(const char* sym) noexcept {
+    // block_until_ms is stamped by on_exit()/update_l2() using the now_ms the
+    // ENGINE passes -- which is SIM (tape) time in a backtest. This reader is the
+    // one spot that took the clock itself, and it took WALL time: in a backtest
+    // wall-now (real today) is past nearly every sim block window, so it returned
+    // 0 and the counter-trend bias gate was silently DEAD in every backtest
+    // (engines took counter-trend entries they would block live). Read the same
+    // sim clock the setters use when the shim is active. Production: unchanged.
+#ifdef OMEGA_BT_SHIM_ACTIVE
+    const int64_t now_ms = ::omega::bt::g_sim_now_ms;
+#else
     const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+#endif
     auto it = g_bracket_trend.find(sym);
     if (it == g_bracket_trend.end()) return 0;
     if (now_ms >= it->second.block_until_ms) return 0;  // stale/expired

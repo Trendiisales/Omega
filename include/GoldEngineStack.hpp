@@ -58,6 +58,34 @@
 // BracketTrendState.hpp for the full rationale.
 #include "BracketTrendState.hpp"
 
+// ── Backtest cooldown-clock fidelity (S39) ──────────────────────────────────
+// The sub-engines below gate re-fires with std::chrono::steady_clock::now()
+// (cooldowns 500ms..7200s). In a backtest, OmegaTimeShim hard-links libc time()
+// to tape time -- fixing the SESSION/hour gates -- but it cannot redirect
+// steady_clock (its own note cites an MSVC <thread> conflict). So those
+// cooldowns would run on REAL wall-clock: a 2yr replay compresses 784 sim-days
+// into ~840s wall, allowing only ~840/cooldown_sec fires per engine across the
+// WHOLE run (120s->7, 900s->1, 3700s->2). Engines that were never actually
+// exercised then read as "edgeless". We redirect steady_clock -> OmegaBtClock
+// (which reads g_sim_now_ms) for THIS header only, when the shim is active.
+// Production builds never define OMEGA_BT_SHIM_ACTIVE, so live timing is
+// byte-for-byte unchanged. The scoped #define/#undef (paired at EOF) leaves any
+// <thread> a TU might pull untouched -- exactly why the shim can't do this
+// globally, but a single header safely can. This is the same pattern the
+// templated engine families already use (CrossAssetEngines::ca_now_sec,
+// SweepableEngines::sweep_now_sec, BracketEngine::nowSec).
+// We redirect BOTH steady_clock (sub-engine fire cooldowns) AND system_clock
+// (GoldPositionManager::nowSec at L3281 gates the PYR_ADD_COOLDOWN_SEC pyramid-add
+// cooldown). Neither is caught by the shim's libc-time() hard-link, and unlike
+// CrossAssetEngines/IndexFlow this header's nowSec() has no OMEGA_BT_SHIM_ACTIVE
+// branch. OmegaBtClock is compatible with both (it provides now(), to_time_t,
+// from_time_t).
+#ifdef OMEGA_BT_SHIM_ACTIVE
+namespace std { namespace chrono { using OmegaBtClock = ::omega::bt::OmegaBtClock; } }
+#define steady_clock OmegaBtClock
+#define system_clock OmegaBtClock
+#endif
+
 namespace omega {
 namespace gold {
 
@@ -4783,6 +4811,14 @@ private:
 
 } // namespace gold
 } // namespace omega
+
+// Pair to the scoped steady_clock redirect opened above the namespace (S39
+// backtest cooldown-clock fidelity). Restores the real steady_clock for any
+// translation unit that includes further headers after this one.
+#ifdef OMEGA_BT_SHIM_ACTIVE
+#undef steady_clock
+#undef system_clock
+#endif
 
 
 

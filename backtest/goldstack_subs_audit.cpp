@@ -50,6 +50,10 @@
 #include <chrono>
 #include <iostream>
 
+// NB: the steady_clock cooldown-clock redirect now lives INSIDE
+// GoldEngineStack.hpp (guarded by OMEGA_BT_SHIM_ACTIVE), so it applies to every
+// harness that drives the gold sub-engines -- no per-harness band-aid needed.
+// See the long note above the namespace in include/GoldEngineStack.hpp.
 #include "goldstack_subs_audit_drivers.hpp"
 
 // ---------------------------------------------------------------------------
