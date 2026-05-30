@@ -671,6 +671,7 @@ int main(int argc, char** argv) {
     int    min_n   = 30;     // min trades per half to trust a cell
     double pf_gate = 1.10;   // min TEST profit factor to PASS
     int    max_hold_bars = 50;
+    int    n_blocks = 0;     // >0 => N-block consistency mode instead of 50/50 WF
     bool   verbose = false;
     std::vector<std::string> only_tfs;  // empty = all found
 
@@ -685,6 +686,7 @@ int main(int argc, char** argv) {
         else if (a == "--min-n")         min_n = std::atoi(need(i, "--min-n"));
         else if (a == "--pf-gate")       pf_gate = std::atof(need(i, "--pf-gate"));
         else if (a == "--max-hold-bars") max_hold_bars = std::atoi(need(i, "--max-hold-bars"));
+        else if (a == "--blocks")        n_blocks = std::atoi(need(i, "--blocks"));
         else if (a == "--tf")            only_tfs.push_back(need(i, "--tf"));
         else if (a == "--cost-per-rt")   g_cost_per_rt = std::atof(need(i, "--cost-per-rt"));
         else if (a == "--verbose")       verbose = true;
@@ -712,6 +714,106 @@ int main(int argc, char** argv) {
     }
     std::sort(files.begin(), files.end());
     if (verbose) std::cerr << "[files] " << files.size() << " bar files under " << tickdir << "\n";
+
+    // ===================================================================
+    // N-BLOCK CONSISTENCY MODE (--blocks N)
+    //   Split each symbol/tf series into N disjoint contiguous time blocks
+    //   (each block = a different market period). Run the SAME fixed grid on
+    //   every block. A cell is ROBUST only if it stays net-positive across
+    //   most blocks -- a far harder bar than one 50/50 split and the direct
+    //   test of regime-dependence: a single-period/regime fluke fails because
+    //   it cannot be positive in 4+ of 5 independent windows.
+    // ===================================================================
+    if (n_blocks > 0) {
+        struct Agg {
+            std::string sym, tf, family, params;
+            int blocks_traded = 0, blocks_pos = 0, total_n = 0;
+            double total_net = 0, min_pf = 1e18, sum_pf = 0; int pf_cnt = 0;
+            std::vector<double> block_net;
+        };
+        std::map<std::string, Agg> agg;
+        const int min_block = std::max(5, min_n / std::max(1, n_blocks));
+        for (const auto& f : files) {
+            BarFileInfo bf = parse_bar_filename(f);
+            if (!bf.ok) continue;
+            if (!only_tfs.empty() &&
+                std::find(only_tfs.begin(), only_tfs.end(), bf.tf_label) == only_tfs.end()) continue;
+            SymBaseline sb = baseline_for(bf.sym);
+            if (sb.symbol.empty() || sb.symbol == "UNKNOWN") { sb = baseline_for("XAUUSD"); sb.symbol = bf.sym; }
+            auto bars = load_bars(f, bf.tf_sec);
+            if ((int)bars.size() < n_blocks * (min_block + 120)) {
+                if (verbose) std::cerr << "[thin] " << bf.sym << " " << bf.tf_label
+                                       << " bars=" << bars.size() << " for " << n_blocks << " blocks -- skip\n";
+                continue;
+            }
+            size_t bsz = bars.size() / n_blocks;
+            for (int b = 0; b < n_blocks; ++b) {
+                size_t lo = b * bsz;
+                size_t hi = (b == n_blocks - 1) ? bars.size() : (b + 1) * bsz;
+                std::vector<Bar> blk(bars.begin() + lo, bars.begin() + hi);
+                auto cells = sweep_grid(blk, sb, bf.tf_label, max_hold_bars, 1);
+                for (auto& c : cells) {
+                    std::string key = bf.sym + "|" + bf.tf_label + "|" + c.family + "|" + c.params;
+                    auto& a = agg[key];
+                    a.sym = bf.sym; a.tf = bf.tf_label; a.family = c.family; a.params = c.params;
+                    if (c.n_trades >= min_block) {
+                        ++a.blocks_traded;
+                        if (c.net > 0) ++a.blocks_pos;
+                        double pf = c.pf();
+                        a.min_pf = std::min(a.min_pf, pf); a.sum_pf += pf; ++a.pf_cnt;
+                    }
+                    a.total_n += c.n_trades; a.total_net += c.net; a.block_net.push_back(c.net);
+                }
+            }
+        }
+        std::ofstream out(out_path);
+        if (!out) { std::cerr << "ERR write " << out_path << "\n"; return 1; }
+        out << "symbol,timeframe,family,params,blocks,blocks_traded,blocks_pos,consistency,"
+               "total_n,total_net,min_block_pf,mean_block_pf\n";
+        out << std::fixed << std::setprecision(4);
+        std::vector<Agg> robust;
+        for (auto& kv : agg) {
+            Agg& a = kv.second;
+            double cons = a.blocks_traded ? (double)a.blocks_pos / a.blocks_traded : 0.0;
+            double meanpf = a.pf_cnt ? a.sum_pf / a.pf_cnt : 0.0;
+            double minpf = (a.min_pf > 1e17) ? 0.0 : a.min_pf;
+            out << a.sym << "," << a.tf << "," << a.family << ",\"" << a.params << "\","
+                << n_blocks << "," << a.blocks_traded << "," << a.blocks_pos << "," << cons << ","
+                << a.total_n << "," << a.total_net << "," << minpf << "," << meanpf << "\n";
+            // ROBUST = traded in >=n_blocks-1 blocks, positive in >=2/3, total n>=min_n, net>0
+            if (a.blocks_traded >= n_blocks - 1 && cons >= 0.66
+                && a.total_n >= min_n && a.total_net > 0)
+                robust.push_back(a);
+        }
+        out.close();
+        std::sort(robust.begin(), robust.end(),
+                  [](const Agg& x, const Agg& y){
+                      double cx = x.blocks_traded?(double)x.blocks_pos/x.blocks_traded:0;
+                      double cy = y.blocks_traded?(double)y.blocks_pos/y.blocks_traded:0;
+                      if (cx != cy) return cx > cy; return x.total_net > y.total_net; });
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "\n=== " << n_blocks << "-BLOCK CONSISTENCY SURVIVORS "
+                  << "(positive in >=2/3 of disjoint periods, traded >=" << (n_blocks-1)
+                  << " blocks, total n>=" << min_n << ") ===\n";
+        std::cout << std::left
+                  << std::setw(9) << "sym" << std::setw(5) << "tf"
+                  << std::setw(18) << "family" << std::setw(22) << "params"
+                  << std::setw(8) << "pos/trd" << std::setw(8) << "cons" << std::setw(8) << "minPF"
+                  << std::setw(7) << "n" << std::setw(10) << "net$" << "\n";
+        for (auto& a : robust) {
+            double cons = a.blocks_traded ? (double)a.blocks_pos / a.blocks_traded : 0.0;
+            double minpf = (a.min_pf > 1e17) ? 0.0 : a.min_pf;
+            std::ostringstream pt; pt << a.blocks_pos << "/" << a.blocks_traded;
+            std::cout << std::left
+                      << std::setw(9) << a.sym << std::setw(5) << a.tf
+                      << std::setw(18) << a.family << std::setw(22) << a.params
+                      << std::setw(8) << pt.str() << std::setw(8) << cons << std::setw(8) << minpf
+                      << std::setw(7) << a.total_n << std::setw(10) << a.total_net << "\n";
+        }
+        std::cout << "\nRobust survivors: " << robust.size() << " of " << agg.size() << " cells.\n";
+        std::cerr << "[out] " << out_path << "\n";
+        return 0;
+    }
 
     std::ofstream out(out_path);
     if (!out) { std::cerr << "ERR write " << out_path << "\n"; return 1; }
