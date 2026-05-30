@@ -106,6 +106,83 @@ def main():
     args = ap.parse_args()
 
     rows = list(csv.DictReader(open(args.csv, encoding="utf-8-sig")))
+
+    # ---- Cell mode: edge_pipeline_wf.csv (walk-forward per-cell stats) -------
+    # Detected by the sharpe_test column. Here each ROW is a trial (a
+    # symbol/tf/family/params cell), the per-period SR is recovered from
+    # sharpe_test = SR*sqrt(n), and the whole grid of TEST sharpes is the
+    # trial set for the DSR deflation. This is the correct multiple-testing
+    # correction for a parameter sweep: SR0 rises with the number of cells.
+    if rows and "sharpe_test" in rows[0]:
+        cells = []
+        for r in rows:
+            try:
+                n = int(float(r["n_test"])); sh = float(r["sharpe_test"])
+            except (ValueError, KeyError):
+                continue
+            if n < 2: continue
+            sr = sh / math.sqrt(n)          # recover per-trade SR
+            cells.append((r["symbol"], r["timeframe"], r["family"], r["params"],
+                          n, sr, float(r.get("pf_test", 0) or 0),
+                          float(r.get("net_test", 0) or 0), r.get("pass", "0")))
+        # Trial set for the DSR deflation = adequately-sampled cells only.
+        # Degenerate low-n cells (n<min_n) carry extreme per-trade SRs that
+        # blow up Var(SR) and produce a nonsense benchmark, so they are
+        # excluded from the population the max-of-N inflation is computed over
+        # (they were never realistic selection candidates anyway).
+        trial = [c for c in cells if c[4] >= args.min_n]
+        N = len(trial)
+        srs = sorted(c[5] for c in trial)
+        # Robust spread: degenerate losing cells carry extreme per-trade SR
+        # (tiny pnl-std -> |SR| huge) and would inflate a plain variance,
+        # blowing up the max-of-N benchmark to a nonsense level. Use the
+        # IQR-derived sigma (Q3-Q1)/1.349, the normal-consistent robust
+        # estimator, so the benchmark reflects the bulk of comparable trials.
+        def quant(xs, q):
+            if not xs: return 0.0
+            pos = q*(len(xs)-1); lo = int(pos); frac = pos-lo
+            return xs[lo] if lo+1 >= len(xs) else xs[lo]*(1-frac)+xs[lo+1]*frac
+        iqr = quant(srs, 0.75) - quant(srs, 0.25)
+        sigma_sr = iqr/1.349 if iqr > 1e-9 else (
+            (sum((s-sum(srs)/N)**2 for s in srs)/N)**0.5 if N > 1 else 0.0)
+        var_sr = sigma_sr*sigma_sr
+        sr0 = expected_max_sharpe(var_sr, N)
+        print("="*100)
+        print("DEFLATED SHARPE -- WALK-FORWARD CELL MODE (edge_pipeline output)")
+        print(f"  trials N = {N} cells   Var(SR)={var_sr:.5f}   "
+              f"deflated benchmark SR0 = {sr0:+.4f}/trade (the bar a real edge must clear)")
+        print(f"  A cell is TRUSTWORTHY iff its TEST DSR >= {args.promote_dsr} "
+              f"AND it already PASSed walk-forward (positive both halves).")
+        print("="*100)
+        print(f"{'sym':<8}{'tf':<5}{'family':<18}{'params':<22}{'n':>4}"
+              f"{'SR/trd':>8}{'pf':>7}{'DSR':>8}  verdict")
+        print("-"*100)
+        out = []
+        for sym, tf, fam, par, n, sr, pf, net, passed in cells:
+            # cell-level skew/kurt unknown from aggregates -> assume normal
+            # (skew=0, kurt=3); conservative since fat tails only lower DSR.
+            dsr = deflated_sharpe(sr, n, 0.0, 3.0, sr0)
+            out.append((sym, tf, fam, par, n, sr, pf, dsr, passed, net))
+        for sym, tf, fam, par, n, sr, pf, dsr, passed, net in sorted(out, key=lambda x:-x[7]):
+            wf = (str(passed) == "1")
+            if dsr >= args.promote_dsr and wf:
+                v = ">>> TRUST (WF + DSR)"
+            elif dsr >= args.promote_dsr:
+                v = "DSR-sig but failed WF"
+            elif wf:
+                v = "WF-pass, DSR weak"
+            else:
+                v = "reject"
+            if dsr >= 0.80 or wf:
+                print(f"{sym:<8}{tf:<5}{fam:<18}{par:<22}{n:>4}"
+                      f"{sr:>+8.3f}{pf:>7.2f}{dsr:>8.3f}  {v}")
+        trusted = [o for o in out if o[7] >= args.promote_dsr and str(o[8]) == "1"]
+        print("-"*100)
+        print(f"TRUSTWORTHY cells (WF-pass AND DSR>={args.promote_dsr}): {len(trusted)}")
+        for sym, tf, fam, par, n, sr, pf, dsr, passed, net in sorted(trusted, key=lambda x:-x[7]):
+            print(f"  {sym} {tf} {fam} [{par}]  n={n} pf={pf:.2f} DSR={dsr:.3f} net=${net:.0f}")
+        return
+
     by = defaultdict(list)
     for r in rows:
         try:
