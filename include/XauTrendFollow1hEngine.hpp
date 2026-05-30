@@ -119,6 +119,11 @@ struct XauTfPos1h {
     int         cooldown_bars      = 0;
     double      mfe                = 0.0;
     double      mae                = 0.0;
+    // S39 vol-target + pyramiding (active only when the engine knobs are on;
+    // size defaults to the fixed `lot` so legacy behaviour is unchanged).
+    double      size               = 0.0;   // this position's lot (vol-targeted or fixed)
+    int         n_adds             = 0;     // pyramid units added beyond the base
+    double      last_add_px        = 0.0;   // price of the most recent add (or base entry)
     std::string broker_position_id;
     std::string entry_clOrdId;
 };
@@ -164,6 +169,23 @@ public:
     double LOSS_CUT_PCT  = 0.0;
     double BE_ARM_PCT    = 0.0;
     double BE_BUFFER_PCT = 0.0;
+
+    // S39 VOL-TARGET SIZING (default OFF -> uses fixed `lot`). When on, the entry
+    // lot = clamp(vol_target_unit / atr14, min, max), rounded to 0.01 -- risk is
+    // normalised across vol regimes (validated edge: gold_regime_edges.cpp).
+    bool   use_vol_target  = false;
+    double vol_target_unit = 0.10;   // lot * ATR target; 0.10/ATR$5 ~= 0.02 lot
+    double vol_target_min  = 0.01;
+    double vol_target_max  = 0.08;
+
+    // S39 PYRAMIDING (default OFF -> pyramid_max_adds=0, single-unit as before).
+    // While a cell position runs, add a unit each time price advances
+    // +pyramid_step_atr*ATR above the last add, up to pyramid_max_adds, and TRAIL
+    // the stop up to (last_add - pyramid_sl_atr*ATR). Lifts avg-win ~3x at K2-K3
+    // (harness) at the cost of higher DD/lower PF -- start conservative in shadow.
+    int    pyramid_max_adds = 0;
+    double pyramid_step_atr = 1.0;
+    double pyramid_sl_atr   = 3.0;
 
     std::array<XauTfPos1h, kXauTf1hNumCells> pos{};
 
@@ -243,6 +265,10 @@ public:
         if (don_ready_ && pos[1].active && bar.close < don_low_) {
             _close(1, bar.close, "DONCH_LOW_EXIT", now_ms, on_close);
         }
+
+        // S39 pyramiding: scale into still-open positions on favourable bar closes.
+        for (int ci = 0; ci < kXauTf1hNumCells; ++ci)
+            if (pos[ci].active) _maybe_pyramid(ci, bar.close, now_ms);
 
         if ((int)bars_.size() < kEmaSlow + 4) return;  // need EMA80 + slow-rise lookback
         if (atr14_ <= 0.0) return;
@@ -367,6 +393,16 @@ private:
         return 0;
     }
 
+    // Vol-targeted entry lot (or fixed `lot` when use_vol_target is off).
+    double _entry_size() const noexcept {
+        if (!use_vol_target || atr14_ <= 0.0) return lot;
+        double s = vol_target_unit / atr14_;
+        s = std::round(s * 100.0) / 100.0;                 // round to 0.01 lot
+        if (s < vol_target_min) s = vol_target_min;
+        if (s > vol_target_max) s = vol_target_max;
+        return s;
+    }
+
     // ---------- Entry / exit
     void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
         if (warmup_active_) return;
@@ -377,11 +413,12 @@ private:
         double tp_dist = cfg.tp_mult * atr14_;
         double sl_px = entry - sl_dist;
         double tp_px = entry + tp_dist;
+        const double size = _entry_size();
 
         // Cost gate (matches 4hEngine pattern)
         {
             const double spread_pts = ask - bid;
-            if (!ExecutionCostGuard::is_viable("XAUUSD", spread_pts, tp_dist, lot, 1.5)) {
+            if (!ExecutionCostGuard::is_viable("XAUUSD", spread_pts, tp_dist, size, 1.5)) {
                 return;
             }
         }
@@ -398,9 +435,35 @@ private:
         p.cooldown_bars = 0;
         p.mfe           = 0.0;
         p.mae           = 0.0;
+        p.size          = size;     // S39: vol-targeted (or fixed) lot
+        p.n_adds        = 0;        // S39: pyramid base
+        p.last_add_px   = entry;
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
         (void)side;
+    }
+
+    // S39 pyramiding: called per active cell on each bar close. Adds a unit when
+    // price has advanced +pyramid_step_atr*ATR above the last add (up to
+    // pyramid_max_adds), updates the size-weighted average entry, and trails the
+    // stop up. No-op when pyramid_max_adds==0 (default).
+    void _maybe_pyramid(int ci, double bar_close, int64_t now_ms) noexcept {
+        if (pyramid_max_adds <= 0 || warmup_active_) return;
+        auto& p = pos[ci];
+        if (!p.active || p.atr_at_entry <= 0.0 || atr14_ <= 0.0) return;
+        if (p.n_adds >= pyramid_max_adds) return;
+        if (bar_close < p.last_add_px + pyramid_step_atr * atr14_) return;
+        const double add_sz  = _entry_size();
+        const double add_px  = bar_close;               // fill at bar close (shadow)
+        const double new_sz  = p.size + add_sz;
+        if (new_sz <= 0.0) return;
+        p.entry_px    = (p.entry_px * p.size + add_px * add_sz) / new_sz; // wtd-avg
+        p.size        = new_sz;
+        p.last_add_px = add_px;
+        ++p.n_adds;
+        const double trail = add_px - pyramid_sl_atr * atr14_;            // trail stop up
+        if (trail > p.sl_px) p.sl_px = trail;
+        (void)now_ms;
     }
 
     void _manage_open(int ci, double bid, double ask, int64_t now_ms,
@@ -451,13 +514,13 @@ private:
         tr.exitPrice  = exit_px;
         tr.tp         = p.tp_px;
         tr.sl         = p.sl_px;
-        tr.size       = lot;
+        tr.size       = (p.size > 0.0 ? p.size : lot);   // S39: vol-targeted/pyramided size
         tr.entryTs    = p.entry_ts_ms / 1000;
         tr.exitTs     = now_ms / 1000;
         tr.exitReason = reason;
         tr.regime     = kXauTf1hCells[ci].name;
         tr.shadow     = shadow_mode;
-        tr.pnl        = pts_move * lot;
+        tr.pnl        = pts_move * (p.size > 0.0 ? p.size : lot);
         tr.mfe        = p.mfe;
         tr.mae        = p.mae;
 

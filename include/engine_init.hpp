@@ -1461,6 +1461,15 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_1h.cell_enable_mask = 0x03;  // both cells
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
+        // ── S39 vol-target + pyramiding on the Donchian40 cell (OFF by default).
+        // Validated edge (gold_regime_edges.cpp, 2yr WF + 6-block + 3x-cost):
+        // vol-target N40 Donchian PF~3 robust; pyramid K2 lifts avg-win ~3x at
+        // higher DD/lower PF. To enable in SHADOW, uncomment + watch the ledger:
+        //   g_xau_tf_1h.use_vol_target  = true;   // size = unit/ATR (clamp 0.01-0.08)
+        //   g_xau_tf_1h.vol_target_unit = 0.10;
+        //   g_xau_tf_1h.pyramid_max_adds = 2;     // start K2; K3/step0.75 = best exp (harness)
+        //   g_xau_tf_1h.pyramid_step_atr = 1.0;
+        //   g_xau_tf_1h.pyramid_sl_atr   = 3.0;
         g_xau_tf_1h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
         g_xau_tf_1h.init();
         omega::warmup_or_die(g_xau_tf_1h, "XauTrendFollow1h");

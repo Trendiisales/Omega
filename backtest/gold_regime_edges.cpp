@@ -60,6 +60,16 @@ static void report(const char* name, const Stats& s){
 static inline double pl_long(double e,double x){ return (x-e)-2*HS*COST_MULT; }
 static inline double pl_short(double e,double x){ return (e-x)-2*HS*COST_MULT; }
 
+// expectancy-aware report: avg win $, avg loss $, expectancy/trade, total
+static void report2(const char* name, const Stats& s){
+    int losses = s.n[0]-s.win[0];
+    double avgw = s.win[0]? s.gw[0]/s.win[0] : 0;
+    double avgl = losses? s.gl[0]/losses : 0;
+    double expc = s.n[0]? s.g[0]/s.n[0] : 0;
+    printf("%-22s n=%-4d WR=%4.1f  avgWin=$%7.2f avgLoss=$%7.2f  exp/trade=$%6.2f  PF=%.2f  TOTAL=$%+8.1f mdd=$%.0f blk+=%d/6\n",
+        name, s.n[0], s.wr(0), avgw, avgl, expc, s.pf(0), s.g[0], s.mdd, s.blocks_pos());
+}
+
 int main(int argc,char**argv){
     const char* path=argc>1?argv[1]:"/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv";
     auto B=load_h1(path); int N=B.size();
@@ -81,6 +91,50 @@ int main(int argc,char**argv){
             if(!in){ if(bull&&B[i].c>hi&&atr[i]>0){ e=B[i].c+HS; sz=10.0/atr[i]; slx=e-slatr*atr[i]; in=true; ei=i; } }
             else { double x=0; bool ex=false;
                 if(B[i].l<=slx){x=slx-HS;ex=true;} else if(B[i].c<lo){x=B[i].c-HS;ex=true;}
+                if(ex){ s.add(pl_long(e,x)*sz,B[ei].ts); in=false; } }
+        }
+        return s;
+    };
+
+    // ---- VOL-TARGET DONCHIAN + PYRAMIDING -----------------------------------
+    // Base entry on Donchian breakout (bull-gated), size=lot_unit/ATR. Add up to
+    // K units each time price advances +step*ATR above last add; TRAIL the stop
+    // up to (last_add - slatr*ATR) on every add (protects pyramided gains). Exit
+    // ALL on Donchian-low or stop. One Stats record per CLOSED position (whole
+    // pyramided trade) so avgWin reflects the full scaled position.
+    auto voldon_pyr=[&](int dn,double slatr,int K,double step,double lot_unit)->Stats{
+        Stats s; bool in=false; int ei=0,adds=0; double stop=0,last_add=0;
+        double epx[8]; double esz[8]; int nu=0;
+        for(int i=dn+1;i<N;i++){
+            double hi=0,lo=1e9; for(int k=i-dn;k<i;k++){hi=std::max(hi,B[k].h);lo=std::min(lo,B[k].l);}
+            bool bull=B[i].c>cback(i,120);
+            if(!in){
+                if(bull&&B[i].c>hi&&atr[i]>0){ double sz=lot_unit/atr[i];
+                    epx[0]=B[i].c+HS; esz[0]=sz; nu=1; adds=0; last_add=B[i].c;
+                    stop=epx[0]-slatr*atr[i]; in=true; ei=i; }
+            } else {
+                // pyramid add on favorable advance
+                if(adds<K && nu<8 && B[i].c>=last_add+step*atr[i] && atr[i]>0){
+                    double sz=lot_unit/atr[i]; epx[nu]=B[i].c+HS; esz[nu]=sz; nu++; adds++;
+                    last_add=B[i].c; stop=std::max(stop, B[i].c-slatr*atr[i]); // trail up
+                }
+                bool ex=false; double xpx=0;
+                if(B[i].l<=stop){ xpx=stop-HS; ex=true; }      // SL-first
+                else if(B[i].c<lo){ xpx=B[i].c-HS; ex=true; }
+                if(ex){ double pnl=0; for(int u=0;u<nu;u++) pnl+=(xpx-epx[u])*esz[u]-2*HS*COST_MULT*esz[u];
+                    s.add(pnl,B[ei].ts); in=false; nu=0; }
+            }
+        }
+        return s;
+    };
+    // base (no pyramid) with adjustable lot_unit, one record per trade
+    auto voldon_lot=[&](int dn,double slatr,double lot_unit)->Stats{
+        Stats s; bool in=false; double e=0,slx=0,sz=1; int ei=0;
+        for(int i=dn+1;i<N;i++){
+            double hi=0,lo=1e9; for(int k=i-dn;k<i;k++){hi=std::max(hi,B[k].h);lo=std::min(lo,B[k].l);}
+            bool bull=B[i].c>cback(i,120);
+            if(!in){ if(bull&&B[i].c>hi&&atr[i]>0){ e=B[i].c+HS; sz=lot_unit/atr[i]; slx=e-slatr*atr[i]; in=true; ei=i; } }
+            else { double x=0;bool ex=false; if(B[i].l<=slx){x=slx-HS;ex=true;} else if(B[i].c<lo){x=B[i].c-HS;ex=true;}
                 if(ex){ s.add(pl_long(e,x)*sz,B[ei].ts); in=false; } }
         }
         return s;
@@ -161,6 +215,20 @@ int main(int argc,char**argv){
     for(double m:{1.3,1.6,2.0}){ char nm[40]; snprintf(nm,40,"volexp_%.1fx",m); report(nm,volexp(m,2.0,24)); }
     printf("--- Monday-gap (long Mon open->close) ---\n");
     report("monday_gap",mongap());
+
+    // ===================== PYRAMIDING + LOT SIZING (vd40_sl3.0) ==============
+    COST_MULT=1.0;
+    printf("\n===== PYRAMID + LOT on vd40_sl3.0 (base lot_unit=10/ATR) =====\n");
+    printf("[BASELINE no-pyramid]\n");
+    report2("base_lot10", voldon_lot(40,3.0,10.0));
+    printf("[PYRAMID: K adds, +1.0*ATR step, trail stop up]\n");
+    for(int K:{1,2,3,4}){ char nm[40]; snprintf(nm,40,"pyr_K%d_step1.0",K); report2(nm, voldon_pyr(40,3.0,K,1.0,10.0)); }
+    printf("[PYRAMID step sensitivity (K=3)]\n");
+    for(double st:{0.75,1.0,1.5,2.0}){ char nm[40]; snprintf(nm,40,"pyr_K3_step%.2f",st); report2(nm, voldon_pyr(40,3.0,3,st,10.0)); }
+    printf("[LOT SIZING: base, no pyramid -- linear scale check]\n");
+    for(double lu:{10.0,15.0,20.0,30.0}){ char nm[40]; snprintf(nm,40,"base_lot%.0f",lu); report2(nm, voldon_lot(40,3.0,lu)); }
+    printf("[BEST COMBO: pyramid K3 step1.0 x lot variants]\n");
+    for(double lu:{10.0,15.0,20.0}){ char nm[40]; snprintf(nm,40,"pyrK3_lot%.0f",lu); report2(nm, voldon_pyr(40,3.0,3,1.0,lu)); }
     printf("\nDONE\n");
     return 0;
 }

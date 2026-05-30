@@ -31,6 +31,7 @@ HEADERS=(
   include/EmaPullbackEngine.hpp
   include/IndexFlowEngine.hpp
   include/XauTrendFollow4hEngine.hpp
+  include/XauTrendFollow1hEngine.hpp
 )
 
 fails=0
