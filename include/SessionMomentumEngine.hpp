@@ -123,6 +123,8 @@ public:
     bool   use_trend_filter = true;     // require close > EMA(ema_period)
     int    ema_period       = 200;      // H1 EMA for the trend gate
     double sl_atr           = 0.0;      // 0 => pure time exit (validated default)
+    int    skip_dow_mask    = 0;        // bit d set => skip entries on weekday d
+                                        // (Sun=0..Sat=6). 0 => trade every day.
 
     SessPos pos{};
 
@@ -150,6 +152,7 @@ public:
     int decision_hour() const noexcept { return (entry_hour + 23) % 24; }
     int exit_hour()     const noexcept { return (entry_hour + hold_hours) % 24; }
     static int hourUTC(int64_t ms) noexcept { return (int)((ms / 3600000LL) % 24); }
+    static int dowUTC (int64_t ms) noexcept { return (int)(((ms / 86400000LL) + 4) % 7); } // 1970-01-01 = Thu(4)
 
     void init() noexcept {
         bars_.clear();
@@ -199,6 +202,8 @@ public:
         if (pos.cooldown_bars > 0) return;
         if (ask - bid > max_spread) return;
         if (h != decision_hour()) return;
+        // skip configured weekdays (entry day == decision-bar day, same UTC date)
+        if (skip_dow_mask & (1 << dowUTC(bar.bar_start_ms))) return;
         if (use_trend_filter && !(bar.close > ema_)) return;
 
         _fire_entry(bid, ask, now_ms);

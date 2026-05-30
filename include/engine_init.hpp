@@ -1919,6 +1919,8 @@ static void init_engines(const std::string& cfg_path)
         g_xau_sess_nypm.use_trend_filter = true;
         g_xau_sess_nypm.ema_period       = 200;
         g_xau_sess_nypm.sl_atr           = 0.0;     // pure time exit (validated)
+        g_xau_sess_nypm.skip_dow_mask    = (1 << 5); // skip Friday (weekend de-risk;
+                                                     // Fri NYpm PF0.79 vs PF1.80 w/o)
         g_xau_sess_nypm.shadow_mode      = true;
         g_xau_sess_nypm.enabled          = true;
         g_xau_sess_nypm.lot              = 0.01;
