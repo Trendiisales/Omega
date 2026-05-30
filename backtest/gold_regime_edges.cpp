@@ -140,6 +140,39 @@ int main(int argc,char**argv){
         return s;
     };
 
+    // ---- PULLBACK-CONTINUATION: bull + price pulls back to EMA(ep) then resumes
+    //   up -> long (better entry than breakout, which underperforms). vol-target.
+    auto pullback=[&](int ep,double pb_atr,double slatr)->Stats{
+        Stats s; std::vector<double> ema(N,0); double k=2.0/(ep+1); ema[0]=B[0].c;
+        for(int i=1;i<N;i++) ema[i]=k*B[i].c+(1-k)*ema[i-1];
+        bool in=false; double e=0,slx=0,sz=1; int ei=0;
+        for(int i=130;i<N;i++){
+            double don_lo=1e9; for(int x=i-40;x<i;x++) don_lo=std::min(don_lo,B[x].l);
+            bool bull=B[i].c>cback(i,120) && ema[i]>ema[i-24];          // up + EMA rising
+            if(!in){
+                bool nearema = B[i].l <= ema[i]+pb_atr*atr[i] && B[i].c>ema[i]; // dipped to EMA, closed above
+                if(bull&&nearema&&atr[i]>0){ e=B[i].c+HS; sz=10.0/atr[i]; slx=e-slatr*atr[i]; in=true; ei=i; }
+            } else { double x=0;bool ex=false;
+                if(B[i].l<=slx){x=slx-HS;ex=true;} else if(B[i].c<don_lo){x=B[i].c-HS;ex=true;}
+                if(ex){ s.add(pl_long(e,x)*sz,B[ei].ts); in=false; } }
+        }
+        return s;
+    };
+
+    // ---- KELTNER breakout: long when close > EMA(ep)+k*ATR (bull-gated); exit close<EMA or stop
+    auto keltner=[&](int ep,double kmult,double slatr)->Stats{
+        Stats s; std::vector<double> ema(N,0); double a2=2.0/(ep+1); ema[0]=B[0].c;
+        for(int i=1;i<N;i++) ema[i]=a2*B[i].c+(1-a2)*ema[i-1];
+        bool in=false; double e=0,slx=0,sz=1; int ei=0;
+        for(int i=130;i<N;i++){
+            bool bull=B[i].c>cback(i,120);
+            if(!in){ if(bull&&B[i].c>ema[i]+kmult*atr[i]&&atr[i]>0){ e=B[i].c+HS; sz=10.0/atr[i]; slx=e-slatr*atr[i]; in=true; ei=i; } }
+            else { double x=0;bool ex=false; if(B[i].l<=slx){x=slx-HS;ex=true;} else if(B[i].c<ema[i]){x=B[i].c-HS;ex=true;}
+                if(ex){ s.add(pl_long(e,x)*sz,B[ei].ts); in=false; } }
+        }
+        return s;
+    };
+
     // ---- multi-TF confluence: H4 trend (close>4*30 bar ago) + H1 Donchian entry
     auto mtf=[&](int dn,double slatr)->Stats{
         Stats s; bool in=false; double e=0,slx=0,sz=1; int ei=0;
@@ -215,6 +248,10 @@ int main(int argc,char**argv){
     for(double m:{1.3,1.6,2.0}){ char nm[40]; snprintf(nm,40,"volexp_%.1fx",m); report(nm,volexp(m,2.0,24)); }
     printf("--- Monday-gap (long Mon open->close) ---\n");
     report("monday_gap",mongap());
+    printf("--- PULLBACK-CONTINUATION (buy dip to EMA in bull) ---\n");
+    for(int ep:{20,50}) for(double pb:{0.5,1.0}){ char nm[40]; snprintf(nm,40,"pullback_ema%d_pb%.1f",ep,pb); report(nm,pullback(ep,pb,3.0)); }
+    printf("--- KELTNER breakout (close>EMA+k*ATR, bull) ---\n");
+    for(int ep:{20,50}) for(double k:{1.0,1.5,2.0}){ char nm[40]; snprintf(nm,40,"keltner_ema%d_k%.1f",ep,k); report(nm,keltner(ep,k,3.0)); }
 
     // ===================== PYRAMIDING + LOT SIZING (vd40_sl3.0) ==============
     COST_MULT=1.0;
