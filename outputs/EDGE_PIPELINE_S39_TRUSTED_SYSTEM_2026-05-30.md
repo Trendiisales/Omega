@@ -157,6 +157,40 @@ Anchor the live shadow promotion on the bedrock, sized vol-target + corr-capped:
 3. Tier-2 (5/5): NSX 4h Donchian N=50, NSX 4h RSI N=7, XAU 4h Donchian N=100.
 ALL on the 4h timeframe. Drop the H1 variants — they fail multi-path stress.
 
+## EXTRA VALIDATION (S39 continued) — cost-stress, long/short, param-plateau
+
+**Cost-stress (`--cost-mult`, research red-flag test).** Both bedrock edges
+survive 2× modeled cost with <4% net degradation, still 6/6:
+- XAU 4h Donchian N=20: minPF 1.37→1.30, net $2446→$2359 at 2× cost.
+- GER40 4h RSI N=7:     minPF 1.16→1.15, net $3852→$3833 at 2× cost.
+4h makes few trades with large moves, so cost is a tiny fraction of edge —
+NOT cost-margin artifacts. (This is why H1 failed and 4h survives.)
+
+**Long/short decomposition (`--side`).** Is the edge real or directional beta?
+| edge | LONG | SHORT | read |
+|---|---|---|---|
+| GER40 4h RSI N=7 | 6/6 PF 2.96 | 5/6 PF 1.74 | **both sides robust — real edge, not beta** |
+| XAU 4h Donchian N=20 | 6/6 PF 2.57 | 2/5 PF 1.46 | long-robust trend; shorts don't lose |
+| NSX 4h Donchian N=50 | 4/6 ~flat | 3/4 PF 2.56 | asymmetric short-breakdown — lower trust |
+XAU Donchian's edge is primarily LONG (benefits from the post-2022 gold bull)
+but shorts are net-positive, so it is trend TIMING, not passive long beta.
+
+**Param-plateau (overfit detector — the decisive test).** Finer N grid:
+- **XAU 4h Donchian: smooth plateau N=15-40 ALL 6/6, minPF 1.1-1.5.** A real
+  edge holds across a contiguous param band; an overfit one spikes at one
+  value. This is textbook-robust → **the single most trustworthy edge.**
+- **GER40 4h RSI: narrow ridge — only N=7 is 6/6** (N=9 → 5/6, N=10 → 4/6,
+  threshold-sensitive). Real but fragile to parameter choice → lower trust.
+
+### Revised trust ranking (after all stress tests)
+1. **XAU 4h Donchian breakout (N=20, robust over N=15-40)** — passes EVERY
+   test: WF both halves, 6/6 regime blocks, 2× cost, smooth param plateau,
+   independent-harness fidelity, long-robust + non-losing shorts. **Anchor.**
+2. **GER40 4h RSI-extreme (N=7, 30/70)** — both-sides robust + 6/6 blocks, but
+   a NARROW param ridge → real edge, trade smaller, monitor for decay.
+3. Tier-2 (5/5 blocks, not stress-hardened): NSX 4h Donchian N=50 (short-
+   skewed), NSX 4h RSI N=7, XAU 4h Donchian N=100.
+
 ## Reproduce
 ```
 backtest/edge_pipeline --tickdir /Users/jo/Tick --out outputs/edge_pipeline_wf.csv --min-n 30 --pf-gate 1.10

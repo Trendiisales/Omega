@@ -476,7 +476,8 @@ static std::vector<Cell> sweep_grid(const std::vector<Bar>& bars,
     auto atr = compute_atr(bars, ATR_N);
 
     // 1. Donchian breakout (trend-follow): long on close > donchian.hi[i-1], short on close < donchian.lo[i-1]
-    for (int N : {20, 50, 100}) {
+    // S39 2026-05-30: finer N grid for param-plateau / overfit check.
+    for (int N : {15, 20, 25, 30, 40, 55, 75, 100}) {
         if ((int)bars.size() < N + 5) continue;
         auto dc = compute_donchian(bars, N);
         // sl_mult/tp_mult chosen for trend-follow (wider tp)
@@ -522,7 +523,8 @@ static std::vector<Cell> sweep_grid(const std::vector<Bar>& bars,
     }
 
     // 3. RSI extremes (mean rev): oversold buy, overbought sell
-    for (auto [n, lo, hi] : (std::vector<std::tuple<int,int,int>>{{14,30,70},{14,20,80},{7,30,70}})) {
+    for (auto [n, lo, hi] : (std::vector<std::tuple<int,int,int>>{
+            {14,30,70},{14,20,80},{7,30,70},{7,25,75},{10,30,70},{21,30,70},{9,30,70}})) {
         if ((int)bars.size() < n + 5) continue;
         auto rsi = compute_rsi(bars, n);
         std::ostringstream p; p << "N=" << n << ";lo=" << lo << ";hi=" << hi;
