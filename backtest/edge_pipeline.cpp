@@ -337,6 +337,16 @@ struct TradeResult {
 // 2026-05-29: default -1.0 = "use SymBaseline.cost_per_rt_usd (per-symbol)".
 // CLI --cost-per-rt N still overrides with a flat value across all symbols.
 static double g_cost_per_rt = -1.0;
+// 2026-05-30 (S39): cost-stress multiplier. Scales each symbol's per-symbol
+// round-trip cost by this factor (default 1.0). --cost-mult 2.0 = "does the
+// edge survive double the modeled cost?" -- the research red-flag test for
+// whether an edge is a cost-margin artifact.
+static double g_cost_mult = 1.0;
+// 2026-05-30 (S39): side filter. 0=both, +1=long-only, -1=short-only.
+// Decomposes an edge into its directional halves -- a trend edge that is
+// only profitable long in a bull market is regime beta, not skill; a real
+// edge shows positive expectancy on BOTH sides.
+static int g_side = 0;
 
 static TradeResult simulate_atr_bracket(const std::vector<Bar>& bars,
                                         size_t entry_idx,
@@ -385,7 +395,7 @@ static TradeResult simulate_atr_bracket(const std::vector<Bar>& bars,
     // 2026-05-29: per-symbol cost from OmegaCostGuard production values
     // (sb.cost_per_rt_usd). Global g_cost_per_rt retained as a CLI override
     // for ad-hoc runs; when left at default it acts as a floor of 0.
-    const double cost_rt = (g_cost_per_rt >= 0.0) ? g_cost_per_rt : sb.cost_per_rt_usd;
+    const double cost_rt = ((g_cost_per_rt >= 0.0) ? g_cost_per_rt : sb.cost_per_rt_usd) * g_cost_mult;
     r.pnl = gross - cost_rt;
     r.r = (sl_dist > 0) ? (pnl_pts / sl_dist) : 0.0;
     return r;
@@ -436,6 +446,7 @@ static Cell run_cell(const std::vector<Bar>& bars,
     for (int i = start; i < (int)bars.size(); ++i) {
         if (cd > 0) { --cd; continue; }
         int s = sig(i); if (s == 0) continue;
+        if (g_side != 0 && s != g_side) continue;   // side filter (long/short decomposition)
         if (atr[i] <= 0) continue;
         auto r = simulate_atr_bracket(bars, i, s, atr[i], sl_mult, tp_mult, sb, max_hold_bars);
         if (!r.filled) continue;
@@ -689,6 +700,8 @@ int main(int argc, char** argv) {
         else if (a == "--blocks")        n_blocks = std::atoi(need(i, "--blocks"));
         else if (a == "--tf")            only_tfs.push_back(need(i, "--tf"));
         else if (a == "--cost-per-rt")   g_cost_per_rt = std::atof(need(i, "--cost-per-rt"));
+        else if (a == "--cost-mult")     g_cost_mult = std::atof(need(i, "--cost-mult"));
+        else if (a == "--side")          g_side = std::atoi(need(i, "--side"));
         else if (a == "--verbose")       verbose = true;
         else if (a == "--help" || a == "-h") {
             std::cout <<
