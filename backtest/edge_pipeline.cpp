@@ -583,6 +583,70 @@ static std::vector<Cell> sweep_grid(const std::vector<Bar>& bars,
             }));
     }
 
+    // ===== S39 EXPANDED EDGE HUNT (2026-05-30) ============================
+    // Bracket geometry is the biggest untested driver. Sweep sl/tp on the
+    // proven trend families + add channel-breakout and vol-expansion families.
+    const std::vector<std::pair<double,double>> BRK = {
+        {1.0,2.0},{1.5,3.0},{2.0,4.0},{2.0,6.0},{1.0,3.0},{2.5,5.0}};
+
+    // 7. Donchian breakout x bracket sweep
+    for (int N : {20, 30, 55}) {
+        if ((int)bars.size() < N + 5) continue;
+        auto dc = compute_donchian(bars, N);
+        for (auto& br : BRK) {
+            std::ostringstream p; p << "N=" << N << ";sl" << br.first << ";tp" << br.second;
+            out.push_back(run_cell(bars, atr, ATR_N, br.first, br.second, sb,
+                max_hold_bars, cooldown_bars, "DonchianBrk", p.str(), tf_label,
+                [&, N](int i)->int{ if(i<N+1)return 0;
+                    if(bars[i].c>dc.hi[i-1])return +1; if(bars[i].c<dc.lo[i-1])return -1; return 0;}));
+        }
+    }
+
+    // 8. Keltner channel breakout: close breaks SMA(N) +/- k*ATR (trend)
+    for (auto& nk : (std::vector<std::pair<int,int>>{{20,15},{20,20},{50,20}})) {
+        int N = nk.first; double k = nk.second/10.0;
+        if ((int)bars.size() < N + 5) continue;
+        auto mid = compute_sma(bars, N);
+        for (auto& br : (std::vector<std::pair<double,double>>{{1.5,3.0},{2.0,4.0}})) {
+            std::ostringstream p; p<<"N="<<N<<";k="<<k<<";sl"<<br.first<<";tp"<<br.second;
+            out.push_back(run_cell(bars, atr, ATR_N, br.first, br.second, sb,
+                max_hold_bars, cooldown_bars, "KeltnerBrk", p.str(), tf_label,
+                [&, k](int i)->int{ if(i<1||mid[i]<=0||atr[i]<=0)return 0;
+                    if(bars[i].c > mid[i]+k*atr[i])return +1;
+                    if(bars[i].c < mid[i]-k*atr[i])return -1; return 0;}));
+        }
+    }
+
+    // 9. Volatility-expansion breakout: bar range > k*ATR -> trade bar direction
+    for (int k10 : {15,20,25}) {
+        double k = k10/10.0;
+        for (auto& br : (std::vector<std::pair<double,double>>{{1.5,3.0},{2.0,4.0}})) {
+            std::ostringstream p; p<<"k="<<k<<";sl"<<br.first<<";tp"<<br.second;
+            out.push_back(run_cell(bars, atr, ATR_N, br.first, br.second, sb,
+                max_hold_bars, cooldown_bars, "VolExpBrk", p.str(), tf_label,
+                [&, k](int i)->int{ if(i<1||atr[i]<=0)return 0;
+                    double rng=bars[i].h-bars[i].l;
+                    if(rng < k*atr[i])return 0;
+                    return (bars[i].c>bars[i].o)?+1:((bars[i].c<bars[i].o)?-1:0);}));
+        }
+    }
+
+    // 10. MA-cross x bracket sweep
+    for (auto& fs : (std::vector<std::pair<int,int>>{{10,30},{20,50}})) {
+        int f = fs.first, s = fs.second;
+        if ((int)bars.size() < s + 5) continue;
+        auto fast = compute_sma(bars, f), slow = compute_sma(bars, s);
+        for (auto& br : BRK) {
+            std::ostringstream p; p<<"f="<<f<<";s="<<s<<";sl"<<br.first<<";tp"<<br.second;
+            out.push_back(run_cell(bars, atr, ATR_N, br.first, br.second, sb,
+                max_hold_bars, cooldown_bars, "MACrossBrk", p.str(), tf_label,
+                [&, f, s](int i)->int{ if(i<s+1)return 0;
+                    bool cu=fast[i-1]<=slow[i-1]&&fast[i]>slow[i];
+                    bool cd=fast[i-1]>=slow[i-1]&&fast[i]<slow[i];
+                    return cu?+1:(cd?-1:0);}));
+        }
+    }
+
     return out;
 }
 
