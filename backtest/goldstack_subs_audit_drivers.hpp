@@ -184,12 +184,30 @@ public:
         cum_vol_ += gvwap_w;
         vwap_     = (cum_vol_ > 0.0) ? (cum_pv_ / cum_vol_) : mid;
 
-        // EWM tick-to-tick volatility (matches GoldFeatures L206-210)
-        if (last_price_ > 0.0) {
-            const double move = std::fabs(mid - last_price_);
-            volatility_ = 0.9 * volatility_ + 0.1 * move;
-        }
         last_price_ = mid;
+
+        // 256-tick price-window stddev -- this is what production assigns to
+        // snap.volatility (GoldFeatures::get_price_stddev, L231/239-248), and
+        // it is the z-score denominator for VWAPSnapback / VWAPStretchReversion.
+        // The prior harness assigned the EWM tick-to-tick move (~$0.05) here,
+        // which blew every z-score past VWAP_DEV_STRONG and silently gated those
+        // engines to zero fires. Replicate the real stddev path verbatim.
+        price_ring_[pr_head_] = mid;
+        pr_head_ = (pr_head_ + 1) % 256;
+        if (pr_count_ < 256) ++pr_count_;
+
+        // Sweep detection -- verbatim from GoldFeatures L215-223. 50-tick rolling
+        // hi/lo reset every 50 ticks; sweep_size = signed distance from the swing
+        // extreme. VWAPSnapback gates on |sweep_size| >= MOMENTUM_SPIKE (2.5) and
+        // LiquiditySweepPro keys off it -- both were dead with the old 0.0 stub.
+        if (tick_counter_ == 0) { sweep_hi_ = mid; sweep_lo_ = mid; }
+        if (tick_counter_++ % 50 == 0 && tick_counter_ > 1) {
+            sweep_hi_ = mid; sweep_lo_ = mid;
+        }
+        if (mid > sweep_hi_) sweep_hi_ = mid;
+        if (mid < sweep_lo_) sweep_lo_ = mid;
+        const double sweep_size = (mid > (sweep_hi_ + sweep_lo_) * 0.5)
+            ? (mid - sweep_lo_) : -(sweep_hi_ - mid);
 
         // EWM trend (matches GoldFeatures L226)
         trend_ = 0.95 * trend_ + 0.05 * (mid - vwap_);
@@ -213,9 +231,9 @@ public:
         snap.mid               = mid;
         snap.spread            = spread;
         snap.vwap              = vwap_;
-        snap.volatility        = volatility_;
+        snap.volatility        = price_stddev();
         snap.trend             = trend_;
-        snap.sweep_size        = 0.0;   // not modelled -- engines that rely on it skip
+        snap.sweep_size        = sweep_size;
         snap.prev_mid          = prev_mid_;
         snap.dx_mid            = 0.0;   // no DXY corpus -- DXYDivergenceEngine deferred
         snap.session           = sess;
@@ -225,14 +243,34 @@ public:
     }
 
 private:
-    double cum_pv_     = 0.0;
-    double cum_vol_    = 0.0;
-    double vwap_       = 0.0;
-    double last_price_ = 0.0;
-    double volatility_ = 0.0;
-    double trend_      = 0.0;
-    double prev_mid_   = 0.0;
-    int    last_yday_  = -1;
+    // 256-tick price-window stddev -- mirrors GoldFeatures::get_price_stddev
+    // (L239-248): floor 0.1, returns 1.0 when degenerate. Order-independent
+    // (variance), so a plain ring suffices.
+    double price_stddev() const {
+        const int n = pr_count_ < 256 ? pr_count_ : 256;
+        if (n < 2) return 1.0;
+        double sum = 0.0;
+        for (int i = 0; i < n; ++i) sum += price_ring_[i];
+        const double mean = sum / n;
+        double sq = 0.0;
+        for (int i = 0; i < n; ++i) { const double d = price_ring_[i] - mean; sq += d * d; }
+        const double sd = std::sqrt(sq / (n - 1));
+        return (sd > 0.1) ? sd : 1.0;
+    }
+
+    double   cum_pv_     = 0.0;
+    double   cum_vol_    = 0.0;
+    double   vwap_       = 0.0;
+    double   last_price_ = 0.0;
+    double   trend_      = 0.0;
+    double   prev_mid_   = 0.0;
+    int      last_yday_  = -1;
+    double   price_ring_[256] = {};
+    int      pr_head_    = 0;
+    int      pr_count_   = 0;
+    double   sweep_hi_   = 0.0;
+    double   sweep_lo_   = 0.0;
+    uint64_t tick_counter_ = 0;
 };
 
 // ---------------------------------------------------------------------------
