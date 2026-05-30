@@ -145,7 +145,7 @@ struct XauTfD1Pos {
     std::string entry_clOrdId;
 };
 
-enum class XauTfD1Family { Momentum20, Keltner20, AdxMom20 };
+enum class XauTfD1Family { Momentum20, Keltner20, AdxMom20, Donchian5 };
 struct XauTfD1CellConfig {
     XauTfD1Family family;
     double        sl_mult;
@@ -162,6 +162,17 @@ static constexpr XauTfD1CellConfig kXauTfD1Cells[] = {
     { XauTfD1Family::Momentum20, 2.0, 4.0, "D1_Momentum_lb20_sl2.0tp4.0"        },
     { XauTfD1Family::Keltner20,  2.0, 6.0, "D1_Keltner_K2_sl2.0tp6.0_RR3to1"    },  // was 2.0, 4.0
     { XauTfD1Family::AdxMom20,   2.0, 4.0, "D1_ADX_Mom_adx25_sl2.0tp4.0"        },
+    // S42 (2026-05-31): Donchian-N5 vol-target-style breakout, NO-TP runner.
+    // From the S41 D1 deep test (backtest probe + XauTrendFollowD1Backtest):
+    // voldon N5 / bull_LB30 / sl2.0 was the strongest + most robust D1 cell
+    // (ROBUST 5/6 across lb{20,30,50}, g~+4800bps n=20). Entry: close > prior
+    // 5-day Donchian high with a 30-day bull gate. Exit: close < prior 5-day
+    // Donchian low (bar-close, handled in _finalise_day_and_evaluate) OR the
+    // 2.0*ATR stop. tp_mult=20.0 == effectively-no-TP (same convention as the
+    // 1h Donchian40 + 4h KeltnerEma50 cells). Bit 3 in cell mask; the engine
+    // has no per-cell enable mask, so this cell runs whenever the engine is
+    // enabled -- it is added deliberately as a 4th always-on D1 cell.
+    { XauTfD1Family::Donchian5,  2.0, 20.0, "D1_Donchian_N5_lb30_sl2.0_S42"     },
 };
 static constexpr int kXauTfD1NumCells =
     static_cast<int>(sizeof(kXauTfD1Cells) / sizeof(kXauTfD1Cells[0]));
@@ -368,6 +379,23 @@ private:
             if ((int)atr_vol_window_.size() > 200) atr_vol_window_.pop_front();
         }
 
+        // S42: Donchian5 no-TP runner exits on a close back below the prior
+        // 5-day Donchian low (bar-close exit), mirroring the 1h Donchian40
+        // cell. Runs BEFORE new-entry decisions. The 2.0*ATR stop still fires
+        // intra-bar via _manage_open. Only this cell (family Donchian5) uses
+        // the bar-close low exit; all other cells exit purely on SL/TP.
+        for (int ci = 0; ci < kXauTfD1NumCells; ++ci) {
+            if (kXauTfD1Cells[ci].family != XauTfD1Family::Donchian5) continue;
+            if (!pos[ci].active) continue;
+            const int sz = (int)daily_.size();
+            if (sz < 7) continue;
+            double lo = 1e18;
+            for (int k = sz - 1 - 5; k <= sz - 2; ++k) if (daily_[k].low < lo) lo = daily_[k].low;
+            if (daily_[sz - 1].close < lo) {
+                _close(ci, daily_[sz - 1].close, "DONCH_LOW_EXIT", now_ms, on_close);
+            }
+        }
+
         for (int ci = 0; ci < kXauTfD1NumCells; ++ci) {
             if (pos[ci].active) continue;
             if (pos[ci].cooldown_bars > 0) continue;
@@ -455,7 +483,24 @@ private:
             case XauTfD1Family::Momentum20: return _sig_momentum(20);
             case XauTfD1Family::Keltner20:  return _sig_keltner();
             case XauTfD1Family::AdxMom20:   return _sig_adx_momentum(25.0, 20);
+            case XauTfD1Family::Donchian5:  return _sig_donchian5();
         }
+        return 0;
+    }
+
+    // S42: long-only Donchian-N5 breakout with a 30-day bull gate. EXACT port
+    // of the validated D1 voldon edge. Returns +1 when close > prior 5-day
+    // Donchian high AND close > close 30 days ago. Exit is the close<5-day-low
+    // bar-close path in _finalise_day_and_evaluate, or the 2.0*ATR stop.
+    int _sig_donchian5() const noexcept {
+        constexpr int N = 5;
+        constexpr int BULL_LB = 30;
+        const int sz = (int)daily_.size();
+        if (sz < BULL_LB + 2) return 0;
+        if (!(daily_[sz - 1].close > daily_[sz - 1 - BULL_LB].close)) return 0;  // bull gate
+        double hi = -1e18;
+        for (int k = sz - 1 - N; k <= sz - 2; ++k) if (daily_[k].high > hi) hi = daily_[k].high;
+        if (daily_[sz - 1].close > hi) return +1;
         return 0;
     }
 
