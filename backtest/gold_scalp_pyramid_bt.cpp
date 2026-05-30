@@ -842,20 +842,24 @@ static Result run_one(const std::vector<M5Bar>& bars, const Config& cfg) {
                     ? std::max(pos.hard_sl, pos.trail_sl)
                     : std::min(pos.hard_sl, pos.trail_sl);
 
+                // Fills cross the spread (long exits sell at bid = level-HS, short
+                // exits buy at ask = level+HS) -- matches the entry (L1080) and
+                // trail-exit (L779) convention. Filling at the literal level
+                // overstated every SL/TP exit by half a spread.
                 if (pos.is_long) {
                     if (worst_price <= eff_sl) {
                         if (pos.trail_sl > pos.hard_sl) trail_hit = true;
                         else sl_hit = true;
-                        exit_px = eff_sl;
+                        exit_px = eff_sl - HALF_SPREAD;
                     }
-                    if (best_price >= pos.hard_tp) { tp_hit = true; exit_px = pos.hard_tp; }
+                    if (best_price >= pos.hard_tp) { tp_hit = true; exit_px = pos.hard_tp - HALF_SPREAD; }
                 } else {
                     if (worst_price >= eff_sl) {
                         if (pos.trail_sl < pos.hard_sl) trail_hit = true;
                         else sl_hit = true;
-                        exit_px = eff_sl;
+                        exit_px = eff_sl + HALF_SPREAD;
                     }
-                    if (best_price <= pos.hard_tp) { tp_hit = true; exit_px = pos.hard_tp; }
+                    if (best_price <= pos.hard_tp) { tp_hit = true; exit_px = pos.hard_tp + HALF_SPREAD; }
                 }
 
                 // Same-bar conflict: use chronological order

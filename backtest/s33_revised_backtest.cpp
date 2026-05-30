@@ -240,12 +240,16 @@ static std::vector<Trade> run_backtest(const std::vector<Tick>& ticks,
         if (in_pos) {
             double hi = t.ask, lo = t.bid;
             bool hit_tp = false, hit_sl = false, timed_out = false;
+            // Fill crosses the spread: a long flattens at BID (lo), a short at ASK
+            // (hi). Filling at the literal sl_level/tp_level overstated SL exits
+            // (the triggering bid/ask was already past the level). SL checked
+            // first = conservative same-bar resolution (kept).
             if (cur.side > 0) {
-                if (lo <= sl_level) { cur.exit_px = sl_level; hit_sl = true; }
-                else if (hi >= tp_level) { cur.exit_px = tp_level; hit_tp = true; }
+                if (lo <= sl_level) { cur.exit_px = lo; hit_sl = true; }
+                else if (hi >= tp_level) { cur.exit_px = lo; hit_tp = true; }
             } else {
-                if (hi >= sl_level) { cur.exit_px = sl_level; hit_sl = true; }
-                else if (lo <= tp_level) { cur.exit_px = tp_level; hit_tp = true; }
+                if (hi >= sl_level) { cur.exit_px = hi; hit_sl = true; }
+                else if (lo <= tp_level) { cur.exit_px = hi; hit_tp = true; }
             }
             if (!hit_tp && !hit_sl && (t.ts - cur.entry_ts) >= s33::MAX_HOLD_S) {
                 cur.exit_px = (cur.side > 0) ? t.bid : t.ask;

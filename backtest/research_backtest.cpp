@@ -222,12 +222,16 @@ struct State {
             const char* reason = nullptr;
             double exit_px = 0;
 
+            // Fill at the actual crossing tick (long exits at bid, short at ask) --
+            // consistent with `move` above and the time-exit below. Filling at the
+            // literal TP/SL level understated losses (the triggering bid/ask was
+            // already past the level on an SL).
             if (hit_tp) {
                 reason  = "TP_HIT";
-                exit_px = pos.entry_px + cfg.tp_pts * pos.dir;
+                exit_px = (pos.dir == 1) ? t.bid : t.ask;
             } else if (hit_sl) {
                 reason  = "SL_HIT";
-                exit_px = pos.entry_px - cfg.sl_pts * pos.dir;
+                exit_px = (pos.dir == 1) ? t.bid : t.ask;
             } else if (hit_time) {
                 reason  = "TIME_EXIT";
                 exit_px = (pos.dir == 1) ? t.bid : t.ask;

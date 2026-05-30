@@ -562,15 +562,18 @@ static void run_config(EngineState& es, const std::vector<Tick>& ticks,
                 }
 
                 if (tp_hit || sl_hit || timed_out) {
-                    double exit_px;
-                    if (tp_hit)        { exit_px = es.pos_tp;  why = "TP_HIT"; }
+                    // Fill at the actual crossing price: flattening a long sells at
+                    // BID, a short buys at ASK. Filling at the literal TP/SL level
+                    // overstated SL exits (the triggering bid/ask was already past
+                    // the level), understating losses. Tick-accurate fill below.
+                    double exit_px = es.pos_is_long ? t.bid : t.ask;
+                    if (tp_hit)        { why = "TP_HIT"; }
                     else if (sl_hit)   {
-                        exit_px = es.pos_sl;
                         // Determine if this is a trail exit (stage > 0 and SL above/below entry)
                         bool trail_exit = (es.pos_trail_stage >= 2);
                         why = trail_exit ? "TRAIL" : "SL_HIT";
                     }
-                    else               { exit_px = mid;        why = "TIMEOUT"; }
+                    else               { why = "TIMEOUT"; }
 
                     Trade tr;
                     tr.is_long      = es.pos_is_long;
