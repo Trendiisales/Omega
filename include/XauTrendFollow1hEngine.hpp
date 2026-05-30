@@ -129,7 +129,7 @@ struct XauTfPos1h {
 };
 
 // ---------- Cell config
-enum class XauTf1hFamily { EmaCross20_80, Donchian40 };
+enum class XauTf1hFamily { EmaCross20_80, Donchian40, PullbackEma20, KeltnerEma50 };
 struct XauTf1hCellConfig {
     XauTf1hFamily family;
     double        sl_mult;
@@ -137,10 +137,28 @@ struct XauTf1hCellConfig {
     const char*   name;
 };
 
-// Two cells, both long-only.  Ordering matters: bit 0 = cell 0 = EmaCross, bit 1 = Donchian.
+// Four cells, all long-only.  Ordering matters and is load-bearing for the
+// backtest harness attribution (bit 0=EmaCross, 1=Donchian, 2=Pullback,
+// 3=Keltner -- see XauTrendFollowBacktest.cpp run_1h() cell parsing).
+//
+// S40 (2026-05-30) ENSEMBLE BUILD: added the 2 remaining robust trend-entry
+// mechanics found in gold_regime_edges.cpp (WF both halves, >=5/6 blocks,
+// 3x-cost-robust, param plateaus). With the existing Donchian40 breakout cell
+// these form the 3-uncorrelated-mechanic ensemble the S39b handoff called for:
+// breakout (Donchian) + pullback (EMA dip) + channel (Keltner).
+//   Pullback_EMA20_pb0.5: PF 2.68, +2098 gross (highest total), more trades --
+//     BEATS breakout-chasing. Buy the dip in an EMA20>EMA50 uptrend.
+//   Keltner_EMA50_k2.0:   PF 2.46, 6/6 robust. Close > EMA50 + 2*ATR.
+// Both are stop-only RUNNERS: tp_mult=20.0 is effectively-no-TP (same as the
+// EmaCross cell), so the exit is the ATR stop, EXACTLY matching the validation
+// harness (which had no TP -- exit on SL or series end). sl=2.5*ATR (validated
+// optimum). They flow through the same vol-target/pyramid framework as cells
+// 0/1, so the harness sweep shows their pyramiding/lot-sizing enhancement too.
 static constexpr XauTf1hCellConfig kXauTf1hCells[] = {
     { XauTf1hFamily::EmaCross20_80, 4.0, 20.0, "EmaCross_20_80_sl4.0_S118" },
     { XauTf1hFamily::Donchian40,    5.0, 20.0, "Donchian_N40_sl5.0_S118"   },
+    { XauTf1hFamily::PullbackEma20, 2.5, 20.0, "Pullback_EMA20_pb0.5_S40"  },
+    { XauTf1hFamily::KeltnerEma50,  2.5, 20.0, "Keltner_EMA50_k2.0_S40"    },
 };
 static constexpr int kXauTf1hNumCells =
     static_cast<int>(sizeof(kXauTf1hCells) / sizeof(kXauTf1hCells[0]));
@@ -155,7 +173,7 @@ public:
     bool   enabled     = false;
     double lot         = 0.01;
     double max_spread  = 1.0;
-    uint32_t cell_enable_mask = 0x03;  // both cells on by default; engine.enabled gates overall
+    uint32_t cell_enable_mask = 0x0F;  // S40: all four ensemble cells on; engine.enabled gates overall
 
     // S88-followup (2026-05-27): vol-band + ADX gates (defaults OFF).
     bool   use_vol_band_gate = false;
@@ -205,6 +223,12 @@ public:
     bool   ema_initialised_ = false;
     std::deque<double> ema_slow_hist_;
 
+    // S40: EMA(50) -- shared by the Pullback cell (slow-trend gate: EMA20>EMA50)
+    // and the Keltner cell (channel mid-line, EMA50 +/- k*ATR). Updated in
+    // _update_emas() under the same ema_initialised_ flag as fast/slow.
+    static constexpr int kEmaMid = 50;
+    double ema50_ = 0.0;
+
     // Donchian-N for cell C.  Computed on each bar close.
     static constexpr int kDonchN = 40;
     double don_high_ = 0.0;
@@ -220,6 +244,7 @@ public:
         atr14_ = 0.0;
         atr_warmup_count_ = 0;
         ema_fast_ = ema_slow_ = 0.0;
+        ema50_ = 0.0;
         ema_initialised_ = false;
         ema_slow_hist_.clear();
         don_high_ = don_low_ = 0.0;
@@ -337,13 +362,15 @@ private:
         if (bars_.empty()) return;
         const double c = bars_.back().close;
         if (!ema_initialised_) {
-            ema_fast_ = ema_slow_ = c;
+            ema_fast_ = ema_slow_ = ema50_ = c;
             ema_initialised_ = true;
         } else {
             const double af = 2.0 / (kEmaFast + 1);
             const double as = 2.0 / (kEmaSlow + 1);
+            const double am = 2.0 / (kEmaMid + 1);
             ema_fast_ = af * c + (1.0 - af) * ema_fast_;
             ema_slow_ = as * c + (1.0 - as) * ema_slow_;
+            ema50_    = am * c + (1.0 - am) * ema50_;
         }
         ema_slow_hist_.push_back(ema_slow_);
         while ((int)ema_slow_hist_.size() > (kSlowRiseLookback + 4)) {
@@ -371,6 +398,8 @@ private:
         switch (kXauTf1hCells[cell_idx].family) {
             case XauTf1hFamily::EmaCross20_80: return _sig_ema_20_80();
             case XauTf1hFamily::Donchian40:    return _sig_donchian40();
+            case XauTf1hFamily::PullbackEma20: return _sig_pullback_ema20();
+            case XauTf1hFamily::KeltnerEma50:  return _sig_keltner_ema50();
         }
         return 0;
     }
@@ -390,6 +419,35 @@ private:
         if (!don_ready_) return 0;
         const auto& cur = bars_.back();
         if (cur.close > don_high_) return +1;
+        return 0;
+    }
+
+    // S40 Pullback-continuation (long-only). EXACT port of gold_regime_edges.cpp
+    // sig_pullback() with the validated Pullback_EMA20_pb0.5 params
+    // (ema_fast=20, ema_slow=50, pb_atr=0.5): require an EMA20>EMA50 uptrend,
+    // the PRIOR bar to have dipped to/below (EMA20 - 0.5*ATR) -- the buy zone --
+    // and the CURRENT bar to close back above EMA20 (resumed dip-buy).
+    static constexpr double kPullbackPbAtr = 0.5;
+    int _sig_pullback_ema20() const noexcept {
+        if (!ema_initialised_ || atr14_ <= 0.0) return 0;
+        if ((int)bars_.size() < 3) return 0;
+        if (!(ema_fast_ > ema50_)) return 0;                 // uptrend gate
+        const double dip_line = ema_fast_ - kPullbackPbAtr * atr14_;
+        const auto& prev = bars_[bars_.size() - 2];
+        const auto& cur  = bars_.back();
+        if (prev.low <= dip_line && cur.close > ema_fast_) return +1;
+        return 0;
+    }
+
+    // S40 Keltner channel breakout (long-only). EXACT port of
+    // gold_regime_edges.cpp sig_keltner() with the validated Keltner_EMA50_k2.0
+    // params (ema=50, k=2.0): fire when close > EMA50 + 2.0*ATR.
+    static constexpr double kKeltnerK = 2.0;
+    int _sig_keltner_ema50() const noexcept {
+        if (!ema_initialised_ || atr14_ <= 0.0) return 0;
+        if ((int)bars_.size() < kEmaMid + 2) return 0;
+        const auto& cur = bars_.back();
+        if (cur.close > ema50_ + kKeltnerK * atr14_) return +1;
         return 0;
     }
 
