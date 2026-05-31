@@ -143,6 +143,7 @@ public:
     bool   USE_L2_PROTECT  = false;
     double L2_ARM_R        = 1.0;   // arm the lock once profit >= L2_ARM_R * risk
     double L2_HOSTILE_IMB  = 0.35;  // LONG: g_l2 imbalance <= this (ask-heavy); SHORT mirrored
+    double L2_MICRO_THR    = 0.02;  // |microprice_bias| >= this against the pos = hostile (price units)
     double L2_GIVEBACK_ATR = 0.50;  // give-back from peak >= this*ATR triggers the lock
     double L2_LOCK_ATR     = 0.50;  // snap stop to peak -/+ L2_LOCK_ATR*ATR
 
@@ -180,7 +181,8 @@ public:
     // capture). entry_ms keys the trade; the rest is the live snapshot.
     using L2SampleCallback = std::function<void(
         int64_t entry_ms, int64_t now_ms, double bid, double ask, double imb,
-        double fav, double sl, double risk, double atr, double adx, bool is_long)>;
+        double micro, double fav, double sl, double risk, double atr, double adx,
+        bool is_long)>;
     L2SampleCallback on_l2_sample;
 
     // ── Position ─────────────────────────────────────────────────────────────
@@ -204,10 +206,17 @@ public:
 
     bool has_open_position() const { return pos.active; }
 
-    // Live L2 order-book imbalance feed (bid_size/(bid_size+ask_size), 0.5
-    // neutral). Host pushes this each tick from g_l2_<sym>.imbalance. Only
-    // consulted when USE_L2_PROTECT is on.
-    void set_l2_imbalance(double imb) { m_l2_imb = imb; }
+    // Live L2 microstructure feed (from AtomicL2 / g_l2_<sym>):
+    //   imbalance       bid_size/(bid_size+ask_size), 0.5 neutral
+    //   microprice_bias microprice - mid, SIGNED (size-weighted directional
+    //                   lean; + = bid-heavy/bullish, - = ask-heavy/bearish)
+    //   valid           has_data && fresh() -- skip the L2 gate on stale/empty
+    // Host pushes this each tick. Only consulted when USE_L2_PROTECT is on.
+    void set_l2(double imbalance, double microprice_bias, bool valid) {
+        m_l2_imb = imbalance; m_l2_micro = microprice_bias; m_l2_valid = valid;
+    }
+    // Back-compat shim for harnesses that only drive the imbalance proxy.
+    void set_l2_imbalance(double imb) { m_l2_imb = imb; m_l2_valid = true; }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
     void init() {
@@ -436,7 +445,7 @@ private:
         if (USE_L2_CAPTURE && on_l2_sample &&
             now_ms - m_last_capture_ms >= L2_CAPTURE_SEC * 1000) {
             m_last_capture_ms = now_ms;
-            on_l2_sample(pos.entry_ms, now_ms, bid, ask, m_l2_imb, fav,
+            on_l2_sample(pos.entry_ms, now_ms, bid, ask, m_l2_imb, m_l2_micro, fav,
                          pos.sl_px, pos.risk, pos.atr, pos.adx_entry, pos.is_long);
         }
 
@@ -467,9 +476,14 @@ private:
             const double px = pos.is_long ? bid : ask;
             pos.peak_px = pos.is_long ? std::max(pos.peak_px, px)
                                       : std::min(pos.peak_px, px);
-            const bool gate_ok = !USE_L2_PROTECT ||
-                (pos.is_long ? (m_l2_imb <= L2_HOSTILE_IMB)
-                             : (m_l2_imb >= 1.0 - L2_HOSTILE_IMB));
+            // Hostile = book leaning AGAINST the position, by imbalance OR the
+            // size-weighted microprice bias. Requires valid+fresh L2 -- on
+            // stale/empty book the L2 gate is skipped (pure price-lock still
+            // works). This is the IBKR gold L2 microstructure path.
+            const bool hostile = m_l2_valid && (pos.is_long
+                ? (m_l2_imb <= L2_HOSTILE_IMB || m_l2_micro <= -L2_MICRO_THR)
+                : (m_l2_imb >= 1.0 - L2_HOSTILE_IMB || m_l2_micro >= L2_MICRO_THR));
+            const bool gate_ok = !USE_L2_PROTECT || hostile;
             const double giveback = pos.is_long ? (pos.peak_px - px)
                                                 : (px - pos.peak_px);
             if (gate_ok && giveback >= L2_GIVEBACK_ATR * pos.atr) {
@@ -537,6 +551,8 @@ private:
     int64_t m_last_entry_ms = 0;
     int64_t m_last_capture_ms = 0;  // L2 capture throttle
     double m_l2_imb = 0.5;          // latest L2 imbalance pushed by the host
+    double m_l2_micro = 0.0;        // latest microprice bias (signed)
+    bool   m_l2_valid = false;      // L2 has_data && fresh()
 
 public:
     // ── Warm-seed (Engine Warm-Seed Mandate) ─────────────────────────────────

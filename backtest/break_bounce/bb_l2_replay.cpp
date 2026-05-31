@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-struct Sample { int64_t now; double bid, ask, imb, fav, sl, risk, atr, adx; int is_long; };
+struct Sample { int64_t now; double bid, ask, imb, micro, fav, sl, risk, atr, adx; int is_long; };
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::printf("usage: bbreplay <capture.csv> [arm_r giveback_atr lock_atr hostile_imb]\n"); return 1; }
@@ -41,16 +41,16 @@ int main(int argc, char** argv) {
     std::string line; std::getline(in, line);        // header (skipped if present)
     {
         // If the first line was data (no header), re-handle it.
-        long long em, nm; double bid,ask,imb,fav,sl,risk,atr,adx; int isl;
-        if (std::sscanf(line.c_str(), "%lld,%lld,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d",
-                        &em,&nm,&bid,&ask,&imb,&fav,&sl,&risk,&atr,&adx,&isl) == 11)
-            trades[em].push_back({nm,bid,ask,imb,fav,sl,risk,atr,adx,isl});
+        long long em, nm; double bid,ask,imb,micro,fav,sl,risk,atr,adx; int isl;
+        if (std::sscanf(line.c_str(), "%lld,%lld,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d",
+                        &em,&nm,&bid,&ask,&imb,&micro,&fav,&sl,&risk,&atr,&adx,&isl) == 12)
+            trades[em].push_back({nm,bid,ask,imb,micro,fav,sl,risk,atr,adx,isl});
     }
     while (std::getline(in, line)) {
-        long long em, nm; double bid,ask,imb,fav,sl,risk,atr,adx; int isl;
-        if (std::sscanf(line.c_str(), "%lld,%lld,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d",
-                        &em,&nm,&bid,&ask,&imb,&fav,&sl,&risk,&atr,&adx,&isl) == 11)
-            trades[em].push_back({nm,bid,ask,imb,fav,sl,risk,atr,adx,isl});
+        long long em, nm; double bid,ask,imb,micro,fav,sl,risk,atr,adx; int isl;
+        if (std::sscanf(line.c_str(), "%lld,%lld,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d",
+                        &em,&nm,&bid,&ask,&imb,&micro,&fav,&sl,&risk,&atr,&adx,&isl) == 12)
+            trades[em].push_back({nm,bid,ask,imb,micro,fav,sl,risk,atr,adx,isl});
     }
     if (trades.empty()) { std::printf("no captured samples in %s\n", argv[1]); return 0; }
 

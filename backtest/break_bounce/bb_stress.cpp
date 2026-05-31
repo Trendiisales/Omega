@@ -62,7 +62,7 @@ static std::vector<Trade> run(const std::vector<Tick>& ticks, bool mirror, doubl
     e.init();
 
     std::map<int64_t,double> adx_at_entry;   // entry_ms -> first captured adx
-    e.on_l2_sample = [&](int64_t em,int64_t,double,double,double,double,double,double,double,double adx,bool){
+    e.on_l2_sample = [&](int64_t em,int64_t,double,double,double,double,double,double,double,double,double adx,bool){
         adx_at_entry.emplace(em, adx); };
     std::vector<Trade> out;
     e.on_trade_record = [&](const omega::TradeRecord& tr){
