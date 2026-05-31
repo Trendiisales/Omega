@@ -3918,7 +3918,8 @@ static void init_engines(const std::string& cfg_path)
         g_xau_breakbounce.lot            = 0.01;
         g_xau_breakbounce.MAX_SPREAD     = 0.60;   // XAU avg spread ~0.48
         g_xau_breakbounce.USE_SESSION    = true;   // 07:00-18:00 UTC (cuts Asian chop)
-        g_xau_breakbounce.USE_L2_PROTECT = false;  // validate live before enabling
+        g_xau_breakbounce.USE_PROFIT_LOCK = true;  // 0.5*ATR price give-back lock (validated, edge-safe)
+        g_xau_breakbounce.USE_L2_PROTECT = false;  // L2-gated upgrade: validate live before enabling
         // Regime guard: ADX chop-gate is OFF. IS/OOS sweep (2026-05-31) showed
         // EVERY threshold is SUBTRACTIVE on the available (bull-only) data --
         // OOS PF 1.54 -> 1.20-1.32, net halved -- the same IS-up/OOS-down

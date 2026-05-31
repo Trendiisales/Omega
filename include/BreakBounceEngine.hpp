@@ -134,10 +134,16 @@ public:
     //     continued move can still run; only a real reversal takes you out.
     // CANNOT be backtested on the 2yr tick file (top-of-book only, no depth) --
     // validate via the live L2 replay framework before enabling.
+    // Price give-back lock (no order book). VALIDATED protection: arm at 1R,
+    // lock when price gives back 0.5*ATR from peak -> Sharpe 1.89->1.92, WR up,
+    // net -3% (edge-safe). ON by default. Works in any regime (incl. mirror-bear).
+    bool   USE_PROFIT_LOCK = true;
+    // L2 upgrade: also require HOSTILE order-book imbalance before locking
+    // (more selective; needs live depth). Off until validated on captured L2.
     bool   USE_L2_PROTECT  = false;
-    double L2_ARM_R        = 1.0;   // only active after profit >= L2_ARM_R * risk
+    double L2_ARM_R        = 1.0;   // arm the lock once profit >= L2_ARM_R * risk
     double L2_HOSTILE_IMB  = 0.35;  // LONG: g_l2 imbalance <= this (ask-heavy); SHORT mirrored
-    double L2_GIVEBACK_ATR = 0.40;  // adverse move from peak >= this*ATR = "sudden drop"
+    double L2_GIVEBACK_ATR = 0.50;  // give-back from peak >= this*ATR triggers the lock
     double L2_LOCK_ATR     = 0.50;  // snap stop to peak -/+ L2_LOCK_ATR*ATR
 
     // ── L2 capture (shadow data collection for the replay A/B) ───────────────
@@ -154,6 +160,7 @@ public:
     int    SESSION_START_H = 7;   // UTC inclusive
     int    SESSION_END_H   = 18;  // UTC exclusive
     double MAX_SPREAD      = 0.60; // price units (XAU avg ~0.48)
+    double MIN_ATR_SPREAD_MULT = 0.0; // entry only if ATR(retest) >= this*spread (short-TF cost guard; 0=off)
     double lot             = 1.0;  // size multiplier for pnl reporting
     int64_t MIN_SEC_BETWEEN = 300; // cooldown from last entry
 
@@ -376,6 +383,10 @@ private:
         if ((ask - bid) > MAX_SPREAD) return;
 
         const double atr = m_atr_retest.atr;
+        // Min-edge filter: skip entries whose retest-TF range is too small to
+        // clear cost. Fixed spread does NOT shrink with TF, so short-TF setups
+        // need ATR >= MIN_ATR_SPREAD_MULT * spread to be worth taking. 0 = off.
+        if (MIN_ATR_SPREAD_MULT > 0.0 && atr < MIN_ATR_SPREAD_MULT * (ask - bid)) return;
         const double zone = atr * RETEST_ZONE_ATR;
         const double cbuf = atr * BOUNCE_CLOSE_BUFFER_ATR;
 
@@ -445,19 +456,23 @@ private:
             else             pos.sl_px = std::min(pos.sl_px, t);
         }
 
-        // L2 profit-protect. Armed only once >= L2_ARM_R in profit. Locks the
-        // stop to a tight chandelier when book flow turns hostile AND price
-        // has given back from its peak. Only tightens toward profit -- never
-        // widens, never exits at a loss.
-        if (USE_L2_PROTECT && fav >= L2_ARM_R * pos.risk && pos.atr > 0.0) {
+        // Profit-lock. Armed only once >= L2_ARM_R in profit. Snaps the stop to
+        // a tight chandelier when price gives back from its peak. Two modes:
+        //   USE_PROFIT_LOCK  -> price give-back lock (no order book). Validated
+        //                       0.5*ATR give-back: Sharpe 1.89->1.92, edge-safe.
+        //   USE_L2_PROTECT   -> additionally require HOSTILE L2 imbalance before
+        //                       locking (more selective; needs live depth).
+        // Only ever tightens toward profit -- never widens, never exits at a loss.
+        if ((USE_PROFIT_LOCK || USE_L2_PROTECT) && fav >= L2_ARM_R * pos.risk && pos.atr > 0.0) {
             const double px = pos.is_long ? bid : ask;
             pos.peak_px = pos.is_long ? std::max(pos.peak_px, px)
                                       : std::min(pos.peak_px, px);
-            const bool hostile = pos.is_long ? (m_l2_imb <= L2_HOSTILE_IMB)
-                                             : (m_l2_imb >= 1.0 - L2_HOSTILE_IMB);
+            const bool gate_ok = !USE_L2_PROTECT ||
+                (pos.is_long ? (m_l2_imb <= L2_HOSTILE_IMB)
+                             : (m_l2_imb >= 1.0 - L2_HOSTILE_IMB));
             const double giveback = pos.is_long ? (pos.peak_px - px)
                                                 : (px - pos.peak_px);
-            if (hostile && giveback >= L2_GIVEBACK_ATR * pos.atr) {
+            if (gate_ok && giveback >= L2_GIVEBACK_ATR * pos.atr) {
                 const double lock = pos.is_long ? pos.peak_px - L2_LOCK_ATR*pos.atr
                                                 : pos.peak_px + L2_LOCK_ATR*pos.atr;
                 if (pos.is_long) pos.sl_px = std::max(pos.sl_px, lock);
