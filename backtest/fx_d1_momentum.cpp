@@ -11,6 +11,7 @@
 // BUILD: c++ -std=c++17 -O2 backtest/fx_d1_momentum.cpp -o backtest/fx_d1_momentum
 // =============================================================================
 #include <cstdio>
+#include <ctime>
 #include <cstdint>
 #include <cmath>
 #include <vector>
@@ -27,6 +28,7 @@ static std::vector<DBar> load_d1(const char* path){
         double ts,o,h,l,c;
         if(sscanf(line,"%lf,%lf,%lf,%lf,%lf",&ts,&o,&h,&l,&c)!=5) continue;
         if(c<=0) continue;
+        {time_t _t=(time_t)(ts/1000.0);struct tm _g;gmtime_r(&_t,&_g);if(_g.tm_wday==6)continue;}
         int64_t day=(((int64_t)(ts/1000.0))/86400)*86400;
         v.push_back({day,o,h,l,c});
     }

@@ -37,6 +37,8 @@ static std::vector<Bar> load_h1(const char* path){
         if(sscanf(line,"%lf,%lf,%lf,%lf,%lf",&ts,&b.o,&b.h,&b.l,&b.c)!=5) continue;
         if(b.c<=0) continue;
         b.ts=(ts>1e11)?(int64_t)(ts/1000.0):(int64_t)ts;   // Dukascopy ms OR legacy sec
+        time_t t=(time_t)b.ts; struct tm g; gmtime_r(&t,&g);
+        if(g.tm_wday==6) continue;                          // drop flat Saturday artifact (D1)
         v.push_back(b);
     }
     fclose(f); return v;

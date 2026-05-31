@@ -35,6 +35,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -159,6 +160,7 @@ public:
             if (std::sscanf(line.c_str(), "%lf,%lf,%lf,%lf,%lf", &ts, &o, &h, &l, &c) != 5) continue;
             if (c <= 0.0) continue;
             int64_t day_ms = (ts > 1e11) ? (int64_t)ts : (int64_t)(ts * 1000.0);
+            { time_t tt=(time_t)(day_ms/1000); struct tm g; gmtime_r(&tt,&g); if(g.tm_wday==6) continue; }  // drop flat Saturday
             day_ms = (day_ms / 86400000LL) * 86400000LL;
             const double sp = c * 0.00005;
             on_d1_bar(h, l, c, c - sp, c + sp, day_ms, null_cb);

@@ -10,6 +10,7 @@
 // =============================================================================
 #include "FxCrossRevEngine.hpp"
 #include <cstdio>
+#include <ctime>
 #include <vector>
 using namespace omega;
 
@@ -21,6 +22,7 @@ static std::vector<DBar> load_d1(const char* path){
         if(first){first=false; if(ln[0]<'0'||ln[0]>'9') continue;}
         double ts,o,h,l,c; if(sscanf(ln,"%lf,%lf,%lf,%lf,%lf",&ts,&o,&h,&l,&c)!=5) continue;
         if(c<=0) continue;
+        {time_t _t=(time_t)(ts/1000.0);struct tm _g;gmtime_r(&_t,&_g);if(_g.tm_wday==6)continue;}
         int64_t day_ms=(((int64_t)(ts/1000.0))/86400)*86400*1000LL;
         v.push_back({day_ms,h,l,c});
     }

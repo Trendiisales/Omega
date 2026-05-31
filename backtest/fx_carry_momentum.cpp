@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cmath>
+#include <ctime>
 #include <vector>
 #include <string>
 #include <map>
@@ -41,7 +42,9 @@ using namespace omega;
 struct DBar { int64_t day; double o,h,l,c; };
 
 // Load Dukascopy D1 CSV: "timestamp,open,high,low,close" with ts in MILLISECONDS.
-// Already daily -> no resample; just normalise ts to a UTC day in seconds.
+// DROP Saturday bars (wday==6): Dukascopy emits a flat Saturday dup of Friday's
+// close (~395 of them) -- a pure artifact that corrupts hold-N exits and inflates
+// bar counts. Live FX has no Saturday ticks, so dropping it matches reality.
 static std::vector<DBar> load_d1(const char* path){
     std::vector<DBar> out; FILE* f=fopen(path,"r"); if(!f) return out;
     char line[256]; bool first=true;
@@ -49,7 +52,9 @@ static std::vector<DBar> load_d1(const char* path){
         if(first){first=false; if(line[0]<'0'||line[0]>'9') continue;}  // skip header
         double ts_ms,o,h,l,c;
         if(sscanf(line,"%lf,%lf,%lf,%lf,%lf",&ts_ms,&o,&h,&l,&c)!=5) continue;
-        if(c<=0) continue;                                   // skip weekend/flat gaps
+        if(c<=0) continue;
+        time_t t=(time_t)(ts_ms/1000.0); struct tm g; gmtime_r(&t,&g);
+        if(g.tm_wday==6) continue;                           // drop flat Saturday artifact
         int64_t day=(((int64_t)(ts_ms/1000.0))/86400)*86400;
         out.push_back({day,o,h,l,c});
     }
