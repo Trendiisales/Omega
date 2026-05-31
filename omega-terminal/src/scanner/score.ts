@@ -753,6 +753,26 @@ export interface ScanMode {
 
 export const SCAN_MODES: ScanMode[] = [
   {
+    // DEFAULT landing mode — explosion + breakout is the primary use case.
+    // Tuned slightly looser than the old "Explosion trades" preset so the
+    // best setups are surfaced even on a quieter tape, sorted strongest
+    // explosion first. The panel's Setup filter defaults to the
+    // breakout/explosion action family on top of this.
+    name: 'Explosion + Breakout',
+    live: [],
+    decisions: [],
+    minExplosion: 0,
+    minMomentum: 0,
+    minValue: 0,
+    minRelVolume: 0,
+    minChange: -100,
+    maxChange: 500,
+    minDollarVolume: 1_000_000,
+    maxRsi: 100,
+    sortCol: 'explosion_score',
+    ascending: false,
+  },
+  {
     name: 'Live buy dashboard',
     live: ['BUY TRIGGER', 'BUY WATCH', 'WAIT FOR PULLBACK', 'WAIT FOR VWAP RECLAIM'],
     decisions: [],
@@ -766,21 +786,6 @@ export const SCAN_MODES: ScanMode[] = [
     maxRsi: 100,
     sortCol: 'live_rank',
     ascending: true,
-  },
-  {
-    name: 'Explosion trades',
-    live: [],
-    decisions: ['ACTIONABLE WATCH', 'CONFIRM ON CHART'],
-    minExplosion: 55,
-    minMomentum: 35,
-    minValue: 0,
-    minRelVolume: 1.7,
-    minChange: 2,
-    maxChange: 35,
-    minDollarVolume: 3_000_000,
-    maxRsi: 82,
-    sortCol: 'quality',
-    ascending: false,
   },
   {
     name: 'Momentum continuation',

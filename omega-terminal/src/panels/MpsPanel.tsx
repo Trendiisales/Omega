@@ -48,6 +48,25 @@ type SortKey =
   | 'rsi14'
   | 'symbol';
 
+// Setup families, defined by the SCANNER METRICS (not the conservative
+// action label) so the default view surfaces real candidates even on a
+// quiet tape. Breakout + Explosion are the primary setups this scanner
+// exists for, so they are on by default. A row passes the Setup filter if
+// it matches ANY selected family.
+//
+//   Breakout  — price pushing the 52-week high on above-normal volume
+//   Explosion — high explosion score (vol spike + range expansion + move)
+//   Momentum  — strong momentum score
+//   Value     — strong undervalued score
+const SETUP_PREDICATES: Record<string, (r: ScanRow) => boolean> = {
+  Breakout: (r) =>
+    (r.pct_below_52w_high ?? 999) <= 8 && (r.relative_volume ?? 0) >= 1.2,
+  Explosion: (r) => (r.explosion_score ?? 0) >= 45,
+  Momentum: (r) => (r.momentum_score ?? 0) >= 50,
+  Value: (r) => (r.undervalued_score ?? 0) >= 50,
+};
+const SETUP_ORDER = ['Breakout', 'Explosion', 'Momentum', 'Value'];
+
 const LIVE_TONE: Record<string, string> = {
   'BUY TRIGGER': 'text-emerald-400',
   'BUY WATCH': 'text-emerald-300',
@@ -70,8 +89,23 @@ export function MpsPanel({ args, onNavigate }: Props) {
   const [nonce, setNonce] = useState(0);
 
   const mode: ScanMode = SCAN_MODES[modeIdx]!;
-  const [sortKey, setSortKey] = useState<SortKey>('live_rank');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Default sort matches the default Explosion + Breakout mode.
+  const [sortKey, setSortKey] = useState<SortKey>('explosion_score');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  // Setup filter — the primary control. Defaults to the breakout +
+  // explosion action family, which is the main reason for this scanner.
+  const [setups, setSetups] = useState<Set<string>>(
+    () => new Set(['Breakout', 'Explosion'])
+  );
+
+  function toggleSetup(name: string) {
+    setSetups((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
 
   const fetcher = useCallback(
     (s: AbortSignal) =>
@@ -88,6 +122,14 @@ export function MpsPanel({ args, onNavigate }: Props) {
   // Apply the selected mode preset + keyword filter.
   const filtered = useMemo(() => {
     let rows = applyMode(allRows, mode);
+    // Setup filter (metric-based). Empty selection = no setup constraint.
+    // A row passes if it satisfies ANY selected setup predicate.
+    if (setups.size > 0) {
+      const preds = [...setups].map((s) => SETUP_PREDICATES[s]).filter(Boolean) as Array<
+        (r: ScanRow) => boolean
+      >;
+      rows = rows.filter((r) => preds.some((p) => p(r)));
+    }
     const kw = keyword.trim().toLowerCase();
     if (kw) {
       rows = rows.filter((r) =>
@@ -97,7 +139,7 @@ export function MpsPanel({ args, onNavigate }: Props) {
       );
     }
     return sortRows(rows, sortKey, sortDir);
-  }, [allRows, mode, keyword, sortKey, sortDir]);
+  }, [allRows, mode, keyword, sortKey, sortDir, setups]);
 
   function clickHeader(k: SortKey) {
     if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -136,6 +178,35 @@ export function MpsPanel({ args, onNavigate }: Props) {
           <span className="text-amber-300">{limit}</span>
         </p>
       </header>
+
+      {/* Setup filter — primary control (breakout + explosion by default) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-amber-600">
+          Setups
+        </span>
+        {SETUP_ORDER.map((s) => {
+          const on = setups.has(s);
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => toggleSetup(s)}
+              className={
+                'rounded border px-3 py-1 font-mono text-[11px] uppercase tracking-widest ' +
+                (on
+                  ? 'border-emerald-400 bg-emerald-900/30 text-emerald-300'
+                  : 'border-amber-800 text-amber-500 hover:bg-amber-950/40')
+              }
+              title={`${on ? 'Hide' : 'Show'} ${s} setups`}
+            >
+              {on ? '✓ ' : ''}{s}
+            </button>
+          );
+        })}
+        <span className="font-mono text-[10px] text-amber-700">
+          {setups.size === 0 ? '(all setups)' : ''}
+        </span>
+      </div>
 
       {/* Mode pills */}
       <div className="flex flex-wrap items-center gap-2">

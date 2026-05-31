@@ -259,7 +259,12 @@ export default function App() {
     <div className="flex h-full w-full flex-col bg-black text-amber-400">
       {/* Title bar */}
       <header className="flex items-center justify-between border-b border-amber-700/60 bg-black px-4 py-2">
-        <div className="flex items-baseline gap-3">
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/chimera_logo.png"
+            alt="Omega"
+            className="h-7 w-7 object-contain"
+          />
           <span className="font-mono text-sm font-bold tracking-[0.3em] text-amber-300">
             OMEGA
           </span>

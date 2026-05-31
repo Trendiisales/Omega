@@ -59,6 +59,8 @@ export interface EngineHealthState {
 const DEFAULT_INTERVAL_MS = 5000;
 const DEFAULT_TIMEOUT_MS = 4000;
 const DEFAULT_URL = '/api/v1/omega/engines';
+/** Consecutive failed polls required before the pill flips to 'down'. */
+const FAIL_THRESHOLD = 2;
 
 export function useEngineHealth(opts: UseEngineHealthOptions = {}): EngineHealthState {
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
@@ -77,6 +79,13 @@ export function useEngineHealth(opts: UseEngineHealthOptions = {}): EngineHealth
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef<boolean>(true);
+  // Consecutive-failure counter. A single failed/aborted poll (common when
+  // the proxy is briefly saturated by a heavy panel such as MPS) must NOT
+  // flip the pill to 'down' — that produced a red↔green flash every poll.
+  // We only declare 'down' after FAIL_THRESHOLD consecutive failures, and
+  // until then hold the last-known-good 'connected' state.
+  const failCountRef = useRef<number>(0);
+  const everConnectedRef = useRef<boolean>(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -110,11 +119,7 @@ export function useEngineHealth(opts: UseEngineHealthOptions = {}): EngineHealth
         if (!mountedRef.current) return;
 
         if (!res.ok) {
-          setState({
-            status: 'down',
-            lastOkAt: null,
-            lastError: `HTTP ${res.status} ${res.statusText}`,
-          });
+          fail(`HTTP ${res.status} ${res.statusText}`);
           return;
         }
 
@@ -127,6 +132,9 @@ export function useEngineHealth(opts: UseEngineHealthOptions = {}): EngineHealth
           // Ignore body-drain errors; the status code is what matters.
         }
 
+        // Success: reset the failure streak and latch connected.
+        failCountRef.current = 0;
+        everConnectedRef.current = true;
         setState({
           status: 'connected',
           lastOkAt: Date.now(),
@@ -139,21 +147,25 @@ export function useEngineHealth(opts: UseEngineHealthOptions = {}): EngineHealth
 
         const aborted =
           (err as Error)?.name === 'AbortError' || ac.signal.aborted;
-
-        // An abort fired by *us* during cleanup or because of the next
-        // poll is not really a "down" event; but the abort controller
-        // can't distinguish between user-initiated and timeout-initiated
-        // aborts. We treat any abort as 'down' so the pill always
-        // reflects the latest reachable status — if the engine is up
-        // and just slow, the next poll will recover the pill within
-        // one interval.
-        setState({
-          status: 'down',
-          lastOkAt: null,
-          lastError: aborted
+        fail(
+          aborted
             ? `request aborted (timeout ${timeoutMs}ms)`
-            : `network error: ${(err as Error)?.message ?? 'unknown'}`,
-        });
+            : `network error: ${(err as Error)?.message ?? 'unknown'}`
+        );
+      }
+    }
+
+    // Record a failed poll. Only flip the pill to 'down' after
+    // FAIL_THRESHOLD consecutive failures; while under the threshold and
+    // we have previously connected, hold the last-known-good state so a
+    // single slow/aborted poll doesn't flash the pill. lastError is still
+    // surfaced for the tooltip.
+    function fail(message: string): void {
+      failCountRef.current += 1;
+      if (failCountRef.current >= FAIL_THRESHOLD || !everConnectedRef.current) {
+        setState({ status: 'down', lastOkAt: null, lastError: message });
+      } else {
+        setState((prev) => ({ ...prev, lastError: message }));
       }
     }
 
