@@ -51,9 +51,15 @@ public:
     bool              shadow_mode  = true;
     bool              enabled      = false;
     double            lot          = 0.01;
-    // optional VIX term-structure gate (OFF until VIX3M wired to VPS; see header)
-    bool              gate_by_vix  = false;
-    double            vix_gate_ratio = 1.00;   // skip entry when ratio >= this (backwardation)
+    // optional VIX term-structure gate. Skip entry when VIX/VIX3M >= vix_gate_ratio
+    // (deep backwardation). Validated: gate at 1.05 lifts best-2 sleeve Sharpe
+    // 0.69->0.80 and HALVES maxDD (3608->1755, index_vix_gate.cpp). The ratio is
+    // fed from a file (broker has no VIX3M); if the file is missing/stale the gate
+    // degrades GRACEFULLY to ungated (the proven 0.69 edge) -- never blocks on bad data.
+    bool              gate_by_vix    = false;
+    double            vix_gate_ratio = 1.05;   // skip entry when ratio >= this (backwardation)
+    std::string       vix_ratio_path;          // file "epoch_sec,ratio" refreshed daily by external fetcher
+    int               vix_max_age_days = 4;     // ignore (trade ungated) if ratio older than this
     IndexSeasonalParams p;
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
@@ -87,7 +93,12 @@ public:
             ++pos_.bars_held;
             if (pos_.bars_held >= p.hold_bars) close_position(bid, ask, day_ms, "SEASONAL_EXIT", cb);
         }
+        // Refresh VIX term-structure ratio (once/day, cheap) if gate enabled.
+        if (gate_by_vix && !vix_ratio_path.empty()) refresh_vix_ratio(day_ms);
+
         // Entry: Tuesday or Friday close, long only. Optional VIX-ratio gate.
+        // Gate blocks ONLY when a FRESH ratio says deep backwardation; missing/stale
+        // ratio (cur_vix_ratio_ < 0) => no block => trade the proven ungated edge.
         const bool entry_day = (wd == p.tue_wday) || (wd == p.fri_wday);
         const bool vix_block = gate_by_vix && cur_vix_ratio_ >= 0.0 && cur_vix_ratio_ >= vix_gate_ratio;
         if (enabled && !pos_.active && atr_ > 0.0 && day_count_ >= p.atr_period && entry_day && !vix_block)
@@ -122,6 +133,23 @@ public:
     }
 
 private:
+    // Read the daily VIX/VIX3M ratio file ("epoch_sec,ratio", last line wins).
+    // Sets cur_vix_ratio_ if the file is fresh (within vix_max_age_days of this
+    // bar), else -1 so the gate stays open (graceful degrade to ungated).
+    void refresh_vix_ratio(int64_t day_ms) noexcept {
+        cur_vix_ratio_ = -1.0;
+        std::ifstream f(vix_ratio_path);
+        if (!f.is_open()) return;
+        std::string line, last;
+        while (std::getline(f, line)) if (!line.empty() && (line[0]=='-'||(line[0]>='0'&&line[0]<='9'))) last = line;
+        if (last.empty()) return;
+        double ts=0, ratio=0;
+        if (std::sscanf(last.c_str(), "%lf,%lf", &ts, &ratio) != 2) return;
+        if (ratio <= 0.0 || ts <= 0.0) return;
+        const int64_t age_s = day_ms/1000 - (int64_t)ts;
+        if (age_s > (int64_t)vix_max_age_days*86400) return;   // stale -> ungated
+        cur_vix_ratio_ = ratio;
+    }
     struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; int wday=0; } pos_;
     void update_atr(double h,double l,double c) noexcept {
         if(prev_close_<=0.0){prev_close_=c;return;}

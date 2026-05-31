@@ -77,6 +77,7 @@ int main(){
     };
     run("ungated baseline",0,0);
     run("only contango (ratio<1.00)",1,1.00);
+    run("only contango (ratio<1.05)",1,1.05);
     run("only contango (ratio<0.95)",1,0.95);
     run("only contango (ratio<0.90)",1,0.90);
     run("only backwardation (ratio>=1.00)",2,1.00);
