@@ -2182,6 +2182,19 @@ static void init_engines(const std::string& cfg_path)
                     idx_seas_boot(g_idx_seas_uk100,  10.0, "phase1/signal_discovery/warmup_UK100_D1.csv");
                     idx_seas_boot(g_idx_seas_estx50, 10.0, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
                     std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long) -- shadow, warm-seeded\n");
+
+                    // S44: IndexFomc (pre-FOMC drift, US indices). Long the trading day
+                    //   before a scheduled FOMC announcement, exit FOMC-day close. Decayed
+                    //   but alive (+11.8bp/event 2023-26, index_validate2.cpp). Respects the
+                    //   portfolio risk-gate. usd_per_pt = shadow-PnL scaling only.
+                    auto idx_fomc_boot = [](omega::IndexFomcEngine& e, double upp, const char* warm){
+                        e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0; e.p.usd_per_pt=upp;
+                        e.seed_from_d1_csv(warm);
+                    };
+                    idx_fomc_boot(g_idx_fomc_us500, 50.0, "phase1/signal_discovery/warmup_US500_D1.csv");
+                    idx_fomc_boot(g_idx_fomc_ustec, 20.0, "phase1/signal_discovery/warmup_USTEC_D1.csv");
+                    idx_fomc_boot(g_idx_fomc_dj30,   5.0, "phase1/signal_discovery/warmup_DJ30_D1.csv");
+                    std::printf("[OMEGA-INIT] IndexFomc x3 (US, pre-FOMC long) -- shadow, warm-seeded\n");
                 }
             }
 

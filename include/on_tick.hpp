@@ -2224,6 +2224,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "DJ30.F")  g_idx_seas_dj30.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "UK100")   g_idx_seas_uk100.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "ESTX50")  g_idx_seas_estx50.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+
+        // S44 IndexFomc (pre-FOMC drift, US indices) -- shadow, D1, same sink.
+        if      (sym == "US500.F") g_idx_fomc_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USTEC.F") g_idx_fomc_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "DJ30.F")  g_idx_fomc_dj30.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
     }
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????

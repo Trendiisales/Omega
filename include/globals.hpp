@@ -909,6 +909,11 @@ static omega::IndexSeasonalEngine g_idx_seas_ger40("GER40");
 static omega::IndexSeasonalEngine g_idx_seas_dj30("DJ30.F");
 static omega::IndexSeasonalEngine g_idx_seas_uk100("UK100");
 static omega::IndexSeasonalEngine g_idx_seas_estx50("ESTX50");
+// S44: IndexFomc -- pre-FOMC drift, US indices (decayed but alive, +11.8bp/event 2023-26).
+#include "IndexFomcEngine.hpp"
+static omega::IndexFomcEngine g_idx_fomc_us500("US500.F");
+static omega::IndexFomcEngine g_idx_fomc_ustec("USTEC.F");
+static omega::IndexFomcEngine g_idx_fomc_dj30("DJ30.F");
 // 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
 //   First gold engine to clear PF>1.20 AND PnL>$5K success criterion on 2025/6.
 //   PF 2.35 / WR 92.6% / PnL $5,854 / N=54 trades over 16 months.
