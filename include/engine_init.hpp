@@ -2157,6 +2157,29 @@ static void init_engines(const std::string& cfg_path)
                 seas_boot(g_fx_seas_usdchf,"USDCHF"); seas_boot(g_fx_seas_eurgbp,"EURGBP");
                 seas_boot(g_fx_seas_eurjpy,"EURJPY");
                 std::printf("[OMEGA-INIT] FxSeasonal x9 (Friday-long) -- shadow, warm-seeded\n");
+
+                // S44 2026-05-31: IndexSeasonal (day-of-week, Tue+Fri long) -- validated
+                //   equity-index edge (index_seasonal_sharpe.cpp, 6 indices, 7.4yr incl.
+                //   2020 crash + 2022 bear). best-2 sleeve Sharpe 0.69 vs 0.36 buy&hold,
+                //   net +40775bp > hold, maxDD lower, 40% time-in-mkt, both halves+, blk 5/6,
+                //   regime-robust (survives bear + high-vol), drift-controlled (not beta).
+                //   VIX term-structure gate OFF: VIX3M not on VPS (only VIX.F level), and a
+                //   VIX-level gate tested WORSE -- ungated core is the edge. usd_per_pt is
+                //   a rough CFD per-point value (shadow-PnL scaling only).
+                {
+                    auto idx_seas_boot = [](omega::IndexSeasonalEngine& e, double upp, const char* warm){
+                        e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0; e.p.usd_per_pt=upp;
+                        e.gate_by_vix=false;  // enable once VIX/VIX3M ratio is fed via set_vix_ratio() on VPS
+                        e.seed_from_d1_csv(warm);
+                    };
+                    idx_seas_boot(g_idx_seas_us500,  50.0, "phase1/signal_discovery/warmup_US500_D1.csv");
+                    idx_seas_boot(g_idx_seas_ustec,  20.0, "phase1/signal_discovery/warmup_USTEC_D1.csv");
+                    idx_seas_boot(g_idx_seas_ger40,  25.0, "phase1/signal_discovery/warmup_GER40_D1_idx.csv");
+                    idx_seas_boot(g_idx_seas_dj30,    5.0, "phase1/signal_discovery/warmup_DJ30_D1.csv");
+                    idx_seas_boot(g_idx_seas_uk100,  10.0, "phase1/signal_discovery/warmup_UK100_D1.csv");
+                    idx_seas_boot(g_idx_seas_estx50, 10.0, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
+                    std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long) -- shadow, warm-seeded\n");
+                }
             }
 
             // ----------------------------------------------------------------

@@ -2208,6 +2208,17 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "USDCHF") g_fx_seas_usdchf.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "EURGBP") g_fx_seas_eurgbp.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "EURJPY") g_fx_seas_eurjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+
+        // S44 IndexSeasonal (day-of-week, Tue+Fri long) -- shadow, D1, same sink.
+        //   Receives every tick; each engine aggregates its own UTC-day bar, gated
+        //   internally by enabled/shadow_mode. Runs before the main symbol dispatch
+        //   below (which routes these symbols to their normal trading handlers).
+        if      (sym == "US500.F") g_idx_seas_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USTEC.F") g_idx_seas_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "GER40")   g_idx_seas_ger40.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "DJ30.F")  g_idx_seas_dj30.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "UK100")   g_idx_seas_uk100.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "ESTX50")  g_idx_seas_estx50.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
     }
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????

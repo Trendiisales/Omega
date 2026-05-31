@@ -900,6 +900,15 @@ static omega::FxSeasonalEngine g_fx_seas_usdcad("USDCAD");
 static omega::FxSeasonalEngine g_fx_seas_usdchf("USDCHF");
 static omega::FxSeasonalEngine g_fx_seas_eurgbp("EURGBP");
 static omega::FxSeasonalEngine g_fx_seas_eurjpy("EURJPY");
+// S44 2026-05-31: IndexSeasonal -- equity-index day-of-week seasonality (Tue+Fri long).
+//   best-2 sleeve Sharpe 0.69 vs 0.36 buy&hold, regime-robust, blk 5/6 (index_seasonal_sharpe.cpp).
+#include "IndexSeasonalEngine.hpp"
+static omega::IndexSeasonalEngine g_idx_seas_us500("US500.F");
+static omega::IndexSeasonalEngine g_idx_seas_ustec("USTEC.F");
+static omega::IndexSeasonalEngine g_idx_seas_ger40("GER40");
+static omega::IndexSeasonalEngine g_idx_seas_dj30("DJ30.F");
+static omega::IndexSeasonalEngine g_idx_seas_uk100("UK100");
+static omega::IndexSeasonalEngine g_idx_seas_estx50("ESTX50");
 // 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
 //   First gold engine to clear PF>1.20 AND PnL>$5K success criterion on 2025/6.
 //   PF 2.35 / WR 92.6% / PnL $5,854 / N=54 trades over 16 months.

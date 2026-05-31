@@ -37,6 +37,7 @@ HEADERS=(
   include/FxCarryEngine.hpp
   include/FxCrossRevEngine.hpp
   include/FxSeasonalEngine.hpp
+  include/IndexSeasonalEngine.hpp
 )
 
 fails=0
