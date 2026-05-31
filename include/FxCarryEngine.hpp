@@ -45,7 +45,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <ctime>
 #include <fstream>
 #include <functional>
 #include <string>
@@ -173,8 +172,9 @@ public:
             if (c <= 0.0) continue;
             int64_t day_ms = (ts > 1e11) ? (int64_t)ts : (int64_t)(ts * 1000.0);  // ms vs sec
             // Drop flat Saturday bars (Dukascopy D1 artifact) so the seed matches
-            // live (FX has no Saturday ticks -> no Saturday bar live).
-            { time_t tt=(time_t)(day_ms/1000); struct tm g; gmtime_r(&tt,&g); if(g.tm_wday==6) continue; }
+            // live (FX has no Saturday ticks -> no Saturday bar live). Portable
+            // weekday (no gmtime_r -- not in MSVC): 1970-01-01 = Thursday(4), Sat=6.
+            { int64_t dd=day_ms/86400000LL; int wd=(int)(((dd%7)+4+7)%7); if(wd==6) continue; }
             day_ms = (day_ms / 86400000LL) * 86400000LL;
             const double sp = c * 0.00005;                  // ~0.5bp synthetic spread for seed
             on_d1_bar(o, h, l, c, c - sp, c + sp, day_ms, null_cb);
