@@ -90,6 +90,13 @@ int main(int argc, char** argv) {
         eng.BREAK_TF_SEC  = std::atoll(argv[3]);
         eng.RETEST_TF_SEC = std::atoll(argv[4]);
     }
+    // Optional session window (UTC hours): argv[5]=start argv[6]=end.
+    // start==end (e.g. 0 0) => no session filter (24h).
+    if (argc >= 7) {
+        const int sh = std::atoi(argv[5]), eh = std::atoi(argv[6]);
+        eng.SESSION_START_H = sh; eng.SESSION_END_H = eh;
+        eng.USE_SESSION = (sh != eh);
+    }
     eng.init();
 
     std::vector<omega::TradeRecord> trades;

@@ -3917,8 +3917,15 @@ static void init_engines(const std::string& cfg_path)
         g_xau_breakbounce.enabled        = true;
         g_xau_breakbounce.lot            = 0.01;
         g_xau_breakbounce.MAX_SPREAD     = 0.60;   // XAU avg spread ~0.48
-        g_xau_breakbounce.USE_SESSION    = true;   // 07:00-18:00 UTC
+        g_xau_breakbounce.USE_SESSION    = true;   // 07:00-18:00 UTC (cuts Asian chop)
         g_xau_breakbounce.USE_L2_PROTECT = false;  // validate live before enabling
+        // Regime guard: ADX chop-gate is OFF. IS/OOS sweep (2026-05-31) showed
+        // EVERY threshold is SUBTRACTIVE on the available (bull-only) data --
+        // OOS PF 1.54 -> 1.20-1.32, net halved -- the same IS-up/OOS-down
+        // signature as the ER chop-gate dead-end. The D1 EMA bias is the bear
+        // guard (no longs in a downtrend; shorts arm in a bear). Re-validate ADX
+        // on forward shadow data once a chop/bear regime is captured.
+        g_xau_breakbounce.REGIME_ADX_MIN = 0.0;
         g_xau_breakbounce.init();
 
         // Warm-seed: D1 EMA200 + H1/M20 ATR/range so the engine boots hot

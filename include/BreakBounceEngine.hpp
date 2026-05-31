@@ -110,6 +110,16 @@ public:
     double TRAIL_START_R = 1.5;   // start trailing once profit >= TRAIL_START_R*R
     double TRAIL_ATR     = 2.0;   // chandelier distance = TRAIL_ATR * ATR(retest)
 
+    // ── Regime guard (bear/chop protection) ──────────────────────────────────
+    // ADX(14) on BREAK_TF (Wilder). Only ARM a breakout when trend strength is
+    // adequate -- ADX is low in chop/consolidation, exactly where a
+    // break-and-retest whipsaws. 0 = off. Set from the IS/OOS regime sweep, and
+    // only if the sweep shows it is NOT subtractive (the ER chop-gate dead-end
+    // on the gold trend book cut winners -- ADX is validated separately here,
+    // not assumed). The D1 EMA bias already handles DIRECTION; this handles the
+    // trend-vs-chop axis the EMA stack does not.
+    double REGIME_ADX_MIN = 0.0;
+
     // ── L2 profit-protect (OFF by default) ───────────────────────────────────
     // Lock gains when live order-book flow turns hostile AND price gives back
     // from its peak. Designed to NOT sacrifice the edge:
@@ -196,6 +206,7 @@ public:
         m_bias = Ema{}; m_bias.fast_n = FAST_EMA; m_bias.slow_n = SLOW_EMA;
         m_atr_break = Atr{}; m_atr_break.period = ATR_PERIOD;
         m_atr_retest = Atr{}; m_atr_retest.period = ATR_PERIOD;
+        m_adx = Adx{}; m_adx.period = ATR_PERIOD;
         m_agg_bias = Agg{}; m_agg_break = Agg{}; m_agg_retest = Agg{};
         m_range.clear();
         m_bias_dir = 0; m_bias_ready = false;
@@ -281,6 +292,36 @@ private:
         }
     } m_atr_break, m_atr_retest;
 
+    // ── Wilder ADX (trend strength, on BREAK_TF) ─────────────────────────────
+    struct Adx {
+        int period=14;
+        double trS=0, pdmS=0, ndmS=0;     // Wilder-smoothed TR / +DM / -DM sums
+        double prevH=0, prevL=0, prevC=0; bool have_prev=false;
+        double seed_tr=0, seed_pdm=0, seed_ndm=0; int warm=0; bool di_ready=false;
+        double adx=0, dx_seed=0; int dx_cnt=0; bool ready=false;
+        void push(double h, double l, double c) {
+            if (!have_prev) { prevH=h; prevL=l; prevC=c; have_prev=true; return; }
+            const double up = h - prevH, dn = prevL - l;
+            const double pDM = (up > dn && up > 0) ? up : 0.0;
+            const double nDM = (dn > up && dn > 0) ? dn : 0.0;
+            const double tr  = std::max(h-l, std::max(std::fabs(h-prevC), std::fabs(l-prevC)));
+            prevH=h; prevL=l; prevC=c;
+            if (!di_ready) {
+                seed_tr+=tr; seed_pdm+=pDM; seed_ndm+=nDM;
+                if (++warm >= period) { trS=seed_tr; pdmS=seed_pdm; ndmS=seed_ndm; di_ready=true; }
+                return;
+            }
+            trS  = trS  - trS/period  + tr;
+            pdmS = pdmS - pdmS/period + pDM;
+            ndmS = ndmS - ndmS/period + nDM;
+            if (trS <= 0) return;
+            const double pdi = 100.0*pdmS/trS, ndi = 100.0*ndmS/trS;
+            const double dx  = (pdi+ndi > 0) ? 100.0*std::fabs(pdi-ndi)/(pdi+ndi) : 0.0;
+            if (!ready) { dx_seed+=dx; if (++dx_cnt >= period) { adx=dx_seed/period; ready=true; } }
+            else { adx = (adx*(period-1)+dx)/period; }
+        }
+    } m_adx;
+
     // ── Closed-bar handlers ──────────────────────────────────────────────────
     void _on_bias_close(const Bar& b) {
         m_bias.push(b.c);
@@ -293,8 +334,13 @@ private:
 
     void _on_break_close(const Bar& b) {
         m_atr_break.push(b);
+        m_adx.push(b.h, b.l, b.c);
+        // Regime guard: don't arm a breakout in chop. ADX low = consolidation,
+        // where break-and-retest whipsaws. 0 = off.
+        const bool regime_ok = (REGIME_ADX_MIN <= 0.0) ||
+                               (m_adx.ready && m_adx.adx >= REGIME_ADX_MIN);
         // Need a full lookback window of PRIOR closed bars + warm ATR + bias.
-        if ((int)m_range.size() >= LOOKBACK && m_atr_break.ready && m_bias_ready && m_bias_dir != 0) {
+        if (regime_ok && (int)m_range.size() >= LOOKBACK && m_atr_break.ready && m_bias_ready && m_bias_dir != 0) {
             double resistance = -1e18, support = 1e18;
             for (const auto& r : m_range) { resistance=std::max(resistance,r.h); support=std::min(support,r.l); }
             const double body   = std::fabs(b.c - b.o);
@@ -484,7 +530,7 @@ public:
     // init with the bias / break / retest warm CSVs.
     void warm_bias(double close)              { _on_bias_close(Bar{0,0,0,0,close}); }
     void warm_break(double o,double h,double l,double c) {
-        Bar b{0,o,h,l,c}; m_atr_break.push(b);
+        Bar b{0,o,h,l,c}; m_atr_break.push(b); m_adx.push(h,l,c);
         m_range.push_back(b); while ((int)m_range.size() > LOOKBACK) m_range.pop_front();
     }
     void warm_retest(double o,double h,double l,double c) {
