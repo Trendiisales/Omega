@@ -130,6 +130,15 @@ public:
     double L2_GIVEBACK_ATR = 0.40;  // adverse move from peak >= this*ATR = "sudden drop"
     double L2_LOCK_ATR     = 0.50;  // snap stop to peak -/+ L2_LOCK_ATR*ATR
 
+    // ── L2 capture (shadow data collection for the replay A/B) ───────────────
+    // While a position is open, emit a throttled (entry_ms, now, bid/ask, imb,
+    // fav, sl, risk, atr) sample via on_l2_sample. Lets us accumulate the real
+    // order-book stream around live shadow trades, then replay the protect on
+    // vs off offline (bb_l2_replay) once enough data lands. Independent of
+    // USE_L2_PROTECT -- you capture first, validate, THEN enable the protect.
+    bool    USE_L2_CAPTURE = false;
+    int64_t L2_CAPTURE_SEC = 5;
+
     // ── Filters / sizing ─────────────────────────────────────────────────────
     bool   USE_SESSION    = true;
     int    SESSION_START_H = 7;   // UTC inclusive
@@ -149,6 +158,13 @@ public:
     CloseCallback on_close;
     using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
     TradeRecordCallback on_trade_record;
+
+    // Throttled order-book sample emitted while a position is open (for L2
+    // capture). entry_ms keys the trade; the rest is the live snapshot.
+    using L2SampleCallback = std::function<void(
+        int64_t entry_ms, int64_t now_ms, double bid, double ask, double imb,
+        double fav, double sl, double risk, double atr, bool is_long)>;
+    L2SampleCallback on_l2_sample;
 
     // ── Position ─────────────────────────────────────────────────────────────
     struct Position {
@@ -345,6 +361,7 @@ private:
         pos.tp_px=tp; pos.risk=risk; pos.atr=atr; pos.size=lot; pos.entry_ms=now_ms;
         pos.spread_at_entry=spread;
         pos.peak_px = entry;           // seed give-back peak at entry
+        m_last_capture_ms = 0;         // capture the first manage tick
         m_arm_dir = 0;                 // consume the arm
         m_last_entry_ms = now_ms;
         if (verbose) printf("[%s] %s entry=%.3f sl=%.3f tp=%.3f risk=%.3f\n",
@@ -355,6 +372,14 @@ private:
         const double fav = pos.is_long ? (bid - pos.entry_px) : (pos.entry_px - ask);
         if (fav > pos.mfe) pos.mfe = fav;
         if (fav < pos.mae) pos.mae = fav;
+
+        // L2 capture: throttled snapshot of the open position + live imbalance.
+        if (USE_L2_CAPTURE && on_l2_sample &&
+            now_ms - m_last_capture_ms >= L2_CAPTURE_SEC * 1000) {
+            m_last_capture_ms = now_ms;
+            on_l2_sample(pos.entry_ms, now_ms, bid, ask, m_l2_imb, fav,
+                         pos.sl_px, pos.risk, pos.atr, pos.is_long);
+        }
 
         // R-based break-even.
         if (USE_BREAKEVEN && !pos.be_armed && fav >= BE_ARM_R * pos.risk) {
@@ -447,6 +472,7 @@ private:
     int  m_bias_dir = 0; bool m_bias_ready = false;
     int  m_arm_dir = 0; double m_arm_level = 0.0; int64_t m_arm_expire_ms = 0;
     int64_t m_last_entry_ms = 0;
+    int64_t m_last_capture_ms = 0;  // L2 capture throttle
     double m_l2_imb = 0.5;          // latest L2 imbalance pushed by the host
 
 public:
