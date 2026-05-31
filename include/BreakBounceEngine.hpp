@@ -60,6 +60,7 @@
 #include <cstdio>
 #include <ctime>
 #include <deque>
+#include <fstream>
 #include <functional>
 #include <string>
 
@@ -109,6 +110,26 @@ public:
     double TRAIL_START_R = 1.5;   // start trailing once profit >= TRAIL_START_R*R
     double TRAIL_ATR     = 2.0;   // chandelier distance = TRAIL_ATR * ATR(retest)
 
+    // ── L2 profit-protect (OFF by default) ───────────────────────────────────
+    // Lock gains when live order-book flow turns hostile AND price gives back
+    // from its peak. Designed to NOT sacrifice the edge:
+    //   * armed only once the trade is >= L2_ARM_R * risk in profit (the
+    //     load-bearing guard -- below 1R it does nothing, so losers and small
+    //     winners keep the validated ATR-stop geometry untouched);
+    //   * can only TIGHTEN the stop toward profit, never widen, never exit at
+    //     a loss -> it cannot turn a winner into a loser;
+    //   * requires BOTH hostile imbalance AND a real give-back from peak (not
+    //     a single noisy print);
+    //   * snaps the stop to a tight chandelier (lock, not market-dump) so a
+    //     continued move can still run; only a real reversal takes you out.
+    // CANNOT be backtested on the 2yr tick file (top-of-book only, no depth) --
+    // validate via the live L2 replay framework before enabling.
+    bool   USE_L2_PROTECT  = false;
+    double L2_ARM_R        = 1.0;   // only active after profit >= L2_ARM_R * risk
+    double L2_HOSTILE_IMB  = 0.35;  // LONG: g_l2 imbalance <= this (ask-heavy); SHORT mirrored
+    double L2_GIVEBACK_ATR = 0.40;  // adverse move from peak >= this*ATR = "sudden drop"
+    double L2_LOCK_ATR     = 0.50;  // snap stop to peak -/+ L2_LOCK_ATR*ATR
+
     // ── Filters / sizing ─────────────────────────────────────────────────────
     bool   USE_SESSION    = true;
     int    SESSION_START_H = 7;   // UTC inclusive
@@ -144,9 +165,15 @@ public:
         double mae      = 0.0;
         double spread_at_entry = 0.0;
         bool   be_armed = false;
+        double peak_px  = 0.0;   // best favourable price seen (for L2 give-back)
     } pos;
 
     bool has_open_position() const { return pos.active; }
+
+    // Live L2 order-book imbalance feed (bid_size/(bid_size+ask_size), 0.5
+    // neutral). Host pushes this each tick from g_l2_<sym>.imbalance. Only
+    // consulted when USE_L2_PROTECT is on.
+    void set_l2_imbalance(double imb) { m_l2_imb = imb; }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
     void init() {
@@ -317,6 +344,7 @@ private:
         pos.active=true; pos.is_long=is_long; pos.entry_px=entry; pos.sl_px=sl;
         pos.tp_px=tp; pos.risk=risk; pos.atr=atr; pos.size=lot; pos.entry_ms=now_ms;
         pos.spread_at_entry=spread;
+        pos.peak_px = entry;           // seed give-back peak at entry
         m_arm_dir = 0;                 // consume the arm
         m_last_entry_ms = now_ms;
         if (verbose) printf("[%s] %s entry=%.3f sl=%.3f tp=%.3f risk=%.3f\n",
@@ -342,6 +370,26 @@ private:
                                          : ask + TRAIL_ATR*pos.atr;
             if (pos.is_long) pos.sl_px = std::max(pos.sl_px, t);
             else             pos.sl_px = std::min(pos.sl_px, t);
+        }
+
+        // L2 profit-protect. Armed only once >= L2_ARM_R in profit. Locks the
+        // stop to a tight chandelier when book flow turns hostile AND price
+        // has given back from its peak. Only tightens toward profit -- never
+        // widens, never exits at a loss.
+        if (USE_L2_PROTECT && fav >= L2_ARM_R * pos.risk && pos.atr > 0.0) {
+            const double px = pos.is_long ? bid : ask;
+            pos.peak_px = pos.is_long ? std::max(pos.peak_px, px)
+                                      : std::min(pos.peak_px, px);
+            const bool hostile = pos.is_long ? (m_l2_imb <= L2_HOSTILE_IMB)
+                                             : (m_l2_imb >= 1.0 - L2_HOSTILE_IMB);
+            const double giveback = pos.is_long ? (pos.peak_px - px)
+                                                : (px - pos.peak_px);
+            if (hostile && giveback >= L2_GIVEBACK_ATR * pos.atr) {
+                const double lock = pos.is_long ? pos.peak_px - L2_LOCK_ATR*pos.atr
+                                                : pos.peak_px + L2_LOCK_ATR*pos.atr;
+                if (pos.is_long) pos.sl_px = std::max(pos.sl_px, lock);
+                else             pos.sl_px = std::min(pos.sl_px, lock);
+            }
         }
 
         if (pos.is_long) {
@@ -399,6 +447,63 @@ private:
     int  m_bias_dir = 0; bool m_bias_ready = false;
     int  m_arm_dir = 0; double m_arm_level = 0.0; int64_t m_arm_expire_ms = 0;
     int64_t m_last_entry_ms = 0;
+    double m_l2_imb = 0.5;          // latest L2 imbalance pushed by the host
+
+public:
+    // ── Warm-seed (Engine Warm-Seed Mandate) ─────────────────────────────────
+    // The slow-TF EMA(slow) needs ~SLOW_EMA bias bars before bias is ready
+    // (EMA200 on D1 = ~200 days). These replay CLOSED historical bars straight
+    // into the indicators/range -- NO arming, NO entries, independent of the
+    // `enabled` flag -- so the engine boots hot. Call seed_from_csvs() once at
+    // init with the bias / break / retest warm CSVs.
+    void warm_bias(double close)              { _on_bias_close(Bar{0,0,0,0,close}); }
+    void warm_break(double o,double h,double l,double c) {
+        Bar b{0,o,h,l,c}; m_atr_break.push(b);
+        m_range.push_back(b); while ((int)m_range.size() > LOOKBACK) m_range.pop_front();
+    }
+    void warm_retest(double o,double h,double l,double c) {
+        Bar b{0,o,h,l,c}; m_atr_retest.push(b);
+    }
+
+    // Replay the three warm CSVs (format: "bar_start_ms,open,high,low,close").
+    // Returns total bars replayed. Emits one [SEED] line. Missing paths skip
+    // that TF (a warning, not fatal -- live ticks will still warm it, slowly).
+    size_t seed_from_csvs(const std::string& bias_csv,
+                          const std::string& break_csv,
+                          const std::string& retest_csv) {
+        size_t n = 0;
+        n += _seed_one(bias_csv,   0);   // bias: close only
+        n += _seed_one(break_csv,  1);   // break: OHLC -> ATR + range
+        n += _seed_one(retest_csv, 2);   // retest: OHLC -> ATR
+        printf("[SEED] %s: %zu warm bars replayed (D1/H1/retest) -- engine hot\n",
+               engine_name.c_str(), n);
+        fflush(stdout);
+        return n;
+    }
+
+private:
+    size_t _seed_one(const std::string& path, int which) {
+        if (path.empty()) return 0;
+        std::ifstream f(path);
+        if (!f.is_open()) {
+            printf("[SEED] %s: WARN cannot open %s (TF will warm from live ticks)\n",
+                   engine_name.c_str(), path.c_str());
+            return 0;
+        }
+        std::string line; std::getline(f, line);  // header
+        size_t n = 0; long long ts; double o,h,l,c;
+        while (std::getline(f, line)) {
+            if (std::sscanf(line.c_str(), "%lld,%lf,%lf,%lf,%lf", &ts,&o,&h,&l,&c) == 5) {
+                if (which == 0)      warm_bias(c);
+                else if (which == 1) warm_break(o,h,l,c);
+                else                 warm_retest(o,h,l,c);
+                ++n;
+            }
+        }
+        return n;
+    }
+
+public:
 };
 
 }  // namespace omega

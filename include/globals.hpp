@@ -88,6 +88,13 @@ static omega::cross::OpeningRangeEngine    g_orb_uk100;  // LSE 08:00 UTC, 15-mi
 static omega::Ger40LondonBreakoutEngine g_ger40_london_brk;
 static omega::cross::OpeningRangeEngine    g_orb_estx50; // Euronext 09:00 UTC, 15-min window
 
+// BreakBounceEngine (2026-05-31): MT5 break-and-retest EA ported to Omega.
+// XAUUSD D1 bias / H1 break / M20 retest. Validated 2yr IS/OOS: OOS PF 1.54,
+// WR 55%, DD 46pts (all long, gold-bull only -- not bear-validated). L2
+// profit-protect available (off by default). Shadow.
+#include "BreakBounceEngine.hpp"
+static omega::BreakBounceEngine g_xau_breakbounce;
+
 // Engine 7: VWAP Reversion -- enter on reversal tick back toward daily VWAP
 // Wired to: US500.F, USTEC.F, GER40, EURUSD
 static omega::cross::VWAPReversionEngine   g_vwap_rev_sp;     // US500.F

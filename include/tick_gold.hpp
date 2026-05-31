@@ -2902,5 +2902,13 @@ static void on_tick_gold(
         }
     }
 
+    // ── BreakBounceEngine -- self-managing, independent position (shadow) ───
+    // D1 bias / H1 break / M20 retest. on_trade_record -> handle_closed_trade
+    // (wired in engine_init). Push the live L2 imbalance every tick so the
+    // (off-by-default) L2 profit-protect has fresh book flow when enabled.
+    g_xau_breakbounce.set_l2_imbalance(g_l2_gold.imbalance.load());
+    g_xau_breakbounce.on_tick(bid, ask, now_ms_g);
+    g_engine_heartbeat.pulse("BreakBounce");
+
 }
 

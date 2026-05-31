@@ -3902,6 +3902,53 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // ── BreakBounceEngine (2026-05-31) ─────────────────────────────────────────
+    // MT5 break-and-retest EA ported to Omega. XAUUSD D1 bias / H1 break / M20
+    // retest. 2yr IS/OOS sweep: OOS PF 1.54, WR 55%, DD 46pts (all LONG, gold
+    // bull only -- NOT bear-validated; the D1 bias filter should flatten longs
+    // in a downtrend but that is untested on data). SHADOW until forward-proven.
+    // Engine defaults already hold the validated config (H1/M20, STOP_ATR 1.2,
+    // RR 1.5). L2 profit-protect is OFF by default -- validate via live L2
+    // replay before enabling (the backtest tick file has no depth data).
+    {
+        g_xau_breakbounce.symbol         = "XAUUSD";
+        g_xau_breakbounce.engine_name    = "BreakBounce";
+        g_xau_breakbounce.shadow_mode    = true;
+        g_xau_breakbounce.enabled        = true;
+        g_xau_breakbounce.lot            = 0.01;
+        g_xau_breakbounce.MAX_SPREAD     = 0.60;   // XAU avg spread ~0.48
+        g_xau_breakbounce.USE_SESSION    = true;   // 07:00-18:00 UTC
+        g_xau_breakbounce.USE_L2_PROTECT = false;  // validate live before enabling
+        g_xau_breakbounce.init();
+
+        // Warm-seed: D1 EMA200 + H1/M20 ATR/range so the engine boots hot
+        // (EMA200 on D1 cold-starts ~200 days). Per the Warm-Seed Mandate.
+        g_xau_breakbounce.seed_from_csvs(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_D1.csv"),
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"),
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_M30.csv"));
+
+        // Ledger callback -- fires in BOTH shadow and live (GUI/ledger/CSV).
+        g_xau_breakbounce.on_trade_record = [](const omega::TradeRecord& tr) {
+            handle_closed_trade(tr);
+        };
+        g_xau_breakbounce.on_close = [](double exit_px, bool is_long, double size,
+                                        const std::string& reason) {
+            (void)reason;
+            if (g_xau_breakbounce.shadow_mode) return;   // shadow: no live order
+            send_live_order("XAUUSD", is_long, size, exit_px);
+        };
+
+        printf("[OMEGA-INIT] BreakBounceEngine: shadow=%s enabled=%s lot=%.2f "
+               "TF=D1/H1/M20 stop=%.2f rr=%.2f L2protect=%s\n",
+               g_xau_breakbounce.shadow_mode ? "true" : "false",
+               g_xau_breakbounce.enabled ? "true" : "false",
+               g_xau_breakbounce.lot, g_xau_breakbounce.STOP_ATR,
+               g_xau_breakbounce.REWARD_RISK,
+               g_xau_breakbounce.USE_L2_PROTECT ? "on" : "off");
+        fflush(stdout);
+    }
+
     // ?? Adaptive intelligence layer startup ???????????????????????????????????
     {
         const int64_t now_s = static_cast<int64_t>(
