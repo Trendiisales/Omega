@@ -2144,6 +2144,19 @@ static void init_engines(const std::string& cfg_path)
                 g_fx_xrev_eurgbp.p.require_hook = false;
                 g_fx_xrev_eurgbp.seed_from_d1_csv("phase1/signal_discovery/warmup_EURGBP_D1.csv");
                 std::printf("[OMEGA-INIT] FxCarry x8 (EUR/GBP/JPY-crosses) + FxCrossRev EURGBP -- shadow, warm-seeded\n");
+
+                // S43f: FxSeasonal (Friday-long) -- combined thin-edge sleeve component.
+                auto seas_boot = [](omega::FxSeasonalEngine& e, const char* sym){
+                    e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=50.0;
+                    char path[128]; std::snprintf(path,sizeof path,"phase1/signal_discovery/warmup_%s_D1.csv",sym);
+                    e.seed_from_d1_csv(path);
+                };
+                seas_boot(g_fx_seas_eurusd,"EURUSD"); seas_boot(g_fx_seas_gbpusd,"GBPUSD");
+                seas_boot(g_fx_seas_usdjpy,"USDJPY"); seas_boot(g_fx_seas_audusd,"AUDUSD");
+                seas_boot(g_fx_seas_nzdusd,"NZDUSD"); seas_boot(g_fx_seas_usdcad,"USDCAD");
+                seas_boot(g_fx_seas_usdchf,"USDCHF"); seas_boot(g_fx_seas_eurgbp,"EURGBP");
+                seas_boot(g_fx_seas_eurjpy,"EURJPY");
+                std::printf("[OMEGA-INIT] FxSeasonal x9 (Friday-long) -- shadow, warm-seeded\n");
             }
 
             // ----------------------------------------------------------------

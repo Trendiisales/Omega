@@ -887,6 +887,19 @@ static omega::FxCarryEngine g_fx_carry_eurjpy("EURJPY");
 static omega::FxCarryEngine g_fx_carry_gbpjpy("GBPJPY");
 #include "FxCrossRevEngine.hpp"
 static omega::FxCrossRevEngine g_fx_xrev_eurgbp("EURGBP");
+// 2026-05-31 S43f: FxSeasonal (Friday-long) -- component of the validated combined
+//   thin-edge sleeve (Friday+COT+session, combined Sharpe 0.81, uncorrelated). Friday
+//   leg weekly Sh 1.50 5/6 blocks. Cost-sensitive -> shadow. 9 pairs.
+#include "FxSeasonalEngine.hpp"
+static omega::FxSeasonalEngine g_fx_seas_eurusd("EURUSD");
+static omega::FxSeasonalEngine g_fx_seas_gbpusd("GBPUSD");
+static omega::FxSeasonalEngine g_fx_seas_usdjpy("USDJPY");
+static omega::FxSeasonalEngine g_fx_seas_audusd("AUDUSD");
+static omega::FxSeasonalEngine g_fx_seas_nzdusd("NZDUSD");
+static omega::FxSeasonalEngine g_fx_seas_usdcad("USDCAD");
+static omega::FxSeasonalEngine g_fx_seas_usdchf("USDCHF");
+static omega::FxSeasonalEngine g_fx_seas_eurgbp("EURGBP");
+static omega::FxSeasonalEngine g_fx_seas_eurjpy("EURJPY");
 // 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
 //   First gold engine to clear PF>1.20 AND PnL>$5K success criterion on 2025/6.
 //   PF 2.35 / WR 92.6% / PnL $5,854 / N=54 trades over 16 months.

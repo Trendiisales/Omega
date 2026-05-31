@@ -2198,6 +2198,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "EURJPY") g_fx_carry_eurjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "GBPJPY") g_fx_carry_gbpjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "EURGBP") g_fx_xrev_eurgbp.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        // S43f FxSeasonal (Friday-long) -- runs alongside carry/xrev, same sink.
+        if      (sym == "EURUSD") g_fx_seas_eurusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "GBPUSD") g_fx_seas_gbpusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USDJPY") g_fx_seas_usdjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "AUDUSD") g_fx_seas_audusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "NZDUSD") g_fx_seas_nzdusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USDCAD") g_fx_seas_usdcad.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USDCHF") g_fx_seas_usdchf.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "EURGBP") g_fx_seas_eurgbp.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "EURJPY") g_fx_seas_eurjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
     }
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
