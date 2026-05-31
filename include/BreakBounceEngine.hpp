@@ -142,8 +142,8 @@ public:
     // (more selective; needs live depth). Off until validated on captured L2.
     bool   USE_L2_PROTECT  = false;
     double L2_ARM_R        = 1.0;   // arm the lock once profit >= L2_ARM_R * risk
-    double L2_HOSTILE_IMB  = 0.35;  // LONG: g_l2 imbalance <= this (ask-heavy); SHORT mirrored
-    double L2_MICRO_THR    = 0.02;  // |microprice_bias| >= this against the pos = hostile (price units)
+    double L2_HOSTILE_IMB  = 0.65;  // LONG hostile: imbalance >= this (BID-heavy=contrarian/bearish per data)
+    double L2_MICRO_THR    = 0.02;  // |microprice_bias| against the pos = hostile (price units)
     double L2_GIVEBACK_ATR = 0.50;  // give-back from peak >= this*ATR triggers the lock
     double L2_LOCK_ATR     = 0.50;  // snap stop to peak -/+ L2_LOCK_ATR*ATR
 
@@ -476,13 +476,17 @@ private:
             const double px = pos.is_long ? bid : ask;
             pos.peak_px = pos.is_long ? std::max(pos.peak_px, px)
                                       : std::min(pos.peak_px, px);
-            // Hostile = book leaning AGAINST the position, by imbalance OR the
-            // size-weighted microprice bias. Requires valid+fresh L2 -- on
-            // stale/empty book the L2 gate is skipped (pure price-lock still
-            // works). This is the IBKR gold L2 microstructure path.
+            // Hostile = book signalling a reversal AGAINST the position.
+            // EMPIRICAL (4.3M rows recorded XAU L2, 2026-04/05): gold imbalance
+            // is CONTRARIAN at short horizon -- bid-heavy (imb HIGH) -> price
+            // FALLS (+/-0.12 over 30s, monotonic), ask-heavy (imb LOW) -> rises.
+            // So for a LONG, hostile = bid-heavy (imb >= L2_HOSTILE_IMB);
+            // microprice bias leans the same way (bid-heavy -> microprice>mid).
+            // Requires valid+fresh L2 -- stale/empty book skips the gate (pure
+            // price-lock still runs).
             const bool hostile = m_l2_valid && (pos.is_long
-                ? (m_l2_imb <= L2_HOSTILE_IMB || m_l2_micro <= -L2_MICRO_THR)
-                : (m_l2_imb >= 1.0 - L2_HOSTILE_IMB || m_l2_micro >= L2_MICRO_THR));
+                ? (m_l2_imb >= L2_HOSTILE_IMB || m_l2_micro >= L2_MICRO_THR)
+                : (m_l2_imb <= 1.0 - L2_HOSTILE_IMB || m_l2_micro <= -L2_MICRO_THR));
             const bool gate_ok = !USE_L2_PROTECT || hostile;
             const double giveback = pos.is_long ? (pos.peak_px - px)
                                                 : (px - pos.peak_px);

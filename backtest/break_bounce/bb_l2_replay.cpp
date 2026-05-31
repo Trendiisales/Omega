@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
     const double ARM_R    = argc>2 ? std::atof(argv[2]) : 1.0;
     const double GIVEBACK = argc>3 ? std::atof(argv[3]) : 0.40;
     const double LOCK     = argc>4 ? std::atof(argv[4]) : 0.50;
-    const double HOSTILE  = argc>5 ? std::atof(argv[5]) : 0.35;
+    const double HOSTILE  = argc>5 ? std::atof(argv[5]) : 0.65;  // bid-heavy = contrarian (data)
 
     std::ifstream in(argv[1]);
     if (!in.is_open()) { std::printf("cannot open %s\n", argv[1]); return 1; }
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
             if (!armed) continue;
             const double px = is_long ? x.bid : x.ask;
             peak = is_long ? std::max(peak, px) : std::min(peak, px);
-            const bool hostile = is_long ? (x.imb <= HOSTILE) : (x.imb >= 1.0 - HOSTILE);
+            const bool hostile = is_long ? (x.imb >= HOSTILE) : (x.imb <= 1.0 - HOSTILE);
             const double give = is_long ? (peak - px) : (px - peak);
             if (hostile && give >= GIVEBACK * atr) {
                 const double L = is_long ? peak - LOCK*atr : peak + LOCK*atr;
