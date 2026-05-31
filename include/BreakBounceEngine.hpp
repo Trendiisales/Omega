@@ -173,7 +173,7 @@ public:
     // capture). entry_ms keys the trade; the rest is the live snapshot.
     using L2SampleCallback = std::function<void(
         int64_t entry_ms, int64_t now_ms, double bid, double ask, double imb,
-        double fav, double sl, double risk, double atr, bool is_long)>;
+        double fav, double sl, double risk, double atr, double adx, bool is_long)>;
     L2SampleCallback on_l2_sample;
 
     // ── Position ─────────────────────────────────────────────────────────────
@@ -192,6 +192,7 @@ public:
         double spread_at_entry = 0.0;
         bool   be_armed = false;
         double peak_px  = 0.0;   // best favourable price seen (for L2 give-back)
+        double adx_entry = 0.0;  // ADX(BREAK_TF) at entry (regime tag for capture)
     } pos;
 
     bool has_open_position() const { return pos.active; }
@@ -407,6 +408,7 @@ private:
         pos.tp_px=tp; pos.risk=risk; pos.atr=atr; pos.size=lot; pos.entry_ms=now_ms;
         pos.spread_at_entry=spread;
         pos.peak_px = entry;           // seed give-back peak at entry
+        pos.adx_entry = m_adx.ready ? m_adx.adx : 0.0;  // regime tag for capture
         m_last_capture_ms = 0;         // capture the first manage tick
         m_arm_dir = 0;                 // consume the arm
         m_last_entry_ms = now_ms;
@@ -424,7 +426,7 @@ private:
             now_ms - m_last_capture_ms >= L2_CAPTURE_SEC * 1000) {
             m_last_capture_ms = now_ms;
             on_l2_sample(pos.entry_ms, now_ms, bid, ask, m_l2_imb, fav,
-                         pos.sl_px, pos.risk, pos.atr, pos.is_long);
+                         pos.sl_px, pos.risk, pos.atr, pos.adx_entry, pos.is_long);
         }
 
         // R-based break-even.

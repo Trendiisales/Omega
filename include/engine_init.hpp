@@ -3955,14 +3955,14 @@ static void init_engines(const std::string& cfg_path)
         g_xau_breakbounce.L2_CAPTURE_SEC = 5;
         g_xau_breakbounce.on_l2_sample = [](int64_t entry_ms, int64_t now_ms,
             double bid, double ask, double imb, double fav, double sl,
-            double risk, double atr, bool is_long) {
+            double risk, double atr, double adx, bool is_long) {
             std::ofstream f("outputs/breakbounce_l2_capture.csv", std::ios::app);
             if (!f.is_open()) return;
             if (f.tellp() == std::streampos(0))
-                f << "entry_ms,now_ms,bid,ask,imb,fav,sl,risk,atr,is_long\n";
+                f << "entry_ms,now_ms,bid,ask,imb,fav,sl,risk,atr,adx,is_long\n";
             f << entry_ms << ',' << now_ms << ',' << bid << ',' << ask << ','
               << imb << ',' << fav << ',' << sl << ',' << risk << ',' << atr
-              << ',' << (is_long ? 1 : 0) << '\n';
+              << ',' << adx << ',' << (is_long ? 1 : 0) << '\n';
         };
 
         printf("[OMEGA-INIT] BreakBounceEngine: shadow=%s enabled=%s lot=%.2f "
