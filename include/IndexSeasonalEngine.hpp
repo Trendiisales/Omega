@@ -33,6 +33,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "IndexRiskGate.hpp"     // S44 shared macro risk-off (VIX+credit+dollar)
 
 namespace omega {
 
@@ -100,7 +101,10 @@ public:
         // Gate blocks ONLY when a FRESH ratio says deep backwardation; missing/stale
         // ratio (cur_vix_ratio_ < 0) => no block => trade the proven ungated edge.
         const bool entry_day = (wd == p.tue_wday) || (wd == p.fri_wday);
-        const bool vix_block = gate_by_vix && cur_vix_ratio_ >= 0.0 && cur_vix_ratio_ >= vix_gate_ratio;
+        // own per-instance VIX gate (back-compat) OR the shared portfolio macro
+        // risk-off (VIX+credit+dollar). Combo validated: seasonal Sharpe 1.13->1.27.
+        const bool vix_block = (gate_by_vix && cur_vix_ratio_ >= 0.0 && cur_vix_ratio_ >= vix_gate_ratio)
+                            || omega::index_risk_off();
         if (enabled && !pos_.active && atr_ > 0.0 && day_count_ >= p.atr_period && entry_day && !vix_block)
             open_position(c, ask, day_ms, wd);
     }
