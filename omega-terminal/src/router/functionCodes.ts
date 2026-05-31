@@ -230,6 +230,17 @@ export const PANEL_REGISTRY: Record<FunctionCode, PanelDescriptor> = {
     group: 'market',
     aliases: ['WATCHLIST'],
   },
+
+  // ----------------------------------------------- share scanner step 7
+  MPS: {
+    code: 'MPS',
+    title: 'Share Scanner',
+    description:
+      'MarketPulse share-viability scan: scores + action/decision + live VWAP buy plan over Yahoo movers.',
+    step: 7,
+    group: 'market',
+    aliases: ['SCAN', 'SCANNER', 'MARKETPULSE'],
+  },
 };
 
 /**
@@ -266,6 +277,8 @@ export const PANEL_LIST: PanelDescriptor[] = [
   PANEL_REGISTRY.FXC,
   PANEL_REGISTRY.CRYPTO,
   PANEL_REGISTRY.WATCH,
+  // market step 7
+  PANEL_REGISTRY.MPS,
 ];
 
 /** Build an alias -> code map at module load. */

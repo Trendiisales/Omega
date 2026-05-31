@@ -54,10 +54,12 @@ export type FunctionCode =
   | 'DES'
   | 'FXC'
   | 'CRYPTO'
-  | 'WATCH';
+  | 'WATCH'
+  // Share scanner (MarketPulse port) — step 7
+  | 'MPS';
 
 /** Build step at which a panel becomes live. 1 = shipped in this commit. */
-export type BuildStep = 1 | 3 | 4 | 5 | 6;
+export type BuildStep = 1 | 3 | 4 | 5 | 6 | 7;
 
 /** Coarse group used for HomePanel visual sectioning and HelpPanel ordering. */
 export type PanelGroup = 'shell' | 'omega' | 'market' | 'help';

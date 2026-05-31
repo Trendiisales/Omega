@@ -78,6 +78,7 @@ import { IntelPanel } from './IntelPanel';
 import { KeyPanel } from './KeyPanel';
 import { LdgPanel } from './LdgPanel';
 import { MovPanel } from './MovPanel';
+import { MpsPanel } from './MpsPanel';
 import { NiPanel } from './NiPanel';
 import { OmonPanel } from './OmonPanel';
 import { PosPanel } from './PosPanel';
@@ -152,6 +153,9 @@ export function PanelHost({ code, args, onNavigate }: Props) {
   if (code === 'FXC')    return <FxcPanel    args={args} onNavigate={onNavigate} />;
   if (code === 'CRYPTO') return <CryptoPanel args={args} onNavigate={onNavigate} />;
   if (code === 'WATCH')  return <WatchPanel  args={args} onNavigate={onNavigate} />;
+
+  // Step 7 — share scanner (MarketPulse port; reuses /mov + /hp + /key).
+  if (code === 'MPS')    return <MpsPanel    args={args} onNavigate={onNavigate} />;
 
   // Defensive: if the code somehow lacks a registered descriptor,
   // surface HELP. The exhaustiveness check below guards against
