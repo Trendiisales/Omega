@@ -60,9 +60,9 @@ type SortKey =
 //   Value     — strong undervalued score
 const SETUP_PREDICATES: Record<string, (r: ScanRow) => boolean> = {
   Breakout: (r) =>
-    (r.pct_below_52w_high ?? 999) <= 8 && (r.relative_volume ?? 0) >= 1.2,
-  Explosion: (r) => (r.explosion_score ?? 0) >= 45,
-  Momentum: (r) => (r.momentum_score ?? 0) >= 50,
+    (r.pct_below_52w_high ?? 999) <= 10 && (r.relative_volume ?? 0) >= 1.0,
+  Explosion: (r) => (r.explosion_score ?? 0) >= 40,
+  Momentum: (r) => (r.momentum_score ?? 0) >= 45,
   Value: (r) => (r.undervalued_score ?? 0) >= 50,
 };
 const SETUP_ORDER = ['Breakout', 'Explosion', 'Momentum', 'Value'];
@@ -326,8 +326,30 @@ export function MpsPanel({ args, onNavigate }: Props) {
             {filtered.length === 0 && state.status === 'loading' && <SkeletonRows cols={21} rows={10} />}
             {filtered.length === 0 && state.status === 'ok' && (
               <tr>
-                <td colSpan={21} className="px-3 py-6 text-center text-amber-600">
-                  No rows match this mode. Try “Show everything” or raise the cap, then Rescan.
+                <td colSpan={21} className="px-3 py-8 text-center text-amber-600">
+                  {allRows.length === 0 ? (
+                    'No symbols returned from the movers feed. Try Rescan.'
+                  ) : setups.size > 0 ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <span>
+                        {allRows.length} names scanned — none match the selected setups
+                        {' '}({[...setups].join(' / ')}).
+                      </span>
+                      <span className="text-amber-700">
+                        The US market may be closed — breakout / explosion need live
+                        intraday volume. Comes alive at the open (09:30 ET).
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSetups(new Set())}
+                        className="mt-1 rounded border border-emerald-500 bg-emerald-900/30 px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-emerald-300 hover:bg-emerald-800/40"
+                      >
+                        Clear setups — show all {allRows.length}
+                      </button>
+                    </div>
+                  ) : (
+                    `${allRows.length} scanned — none pass this mode's filters. Try "Show everything" or raise the cap.`
+                  )}
                 </td>
               </tr>
             )}
