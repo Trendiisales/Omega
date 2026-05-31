@@ -38,6 +38,10 @@ HEADERS=(
   include/FxCrossRevEngine.hpp
   include/FxSeasonalEngine.hpp
   include/IndexSeasonalEngine.hpp
+  include/IndexRiskGate.hpp
+  include/Us30EnsembleEngine.hpp
+  include/IndexIntradayDriftEngine.hpp
+  include/Ger40TurtleH4Engine.hpp
 )
 
 fails=0

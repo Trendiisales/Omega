@@ -86,6 +86,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OHLCBarEngine.hpp"
 #include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see pos_.open(sig) entry below
+#include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
 #include "L2Globals.hpp"          // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 
 namespace omega {
@@ -855,6 +856,8 @@ public:
             }
             return {};
         }
+
+        if (omega::index_risk_off()) return {};   // S44 portfolio VIX risk-off: no new entry
 
         pos_.open(sig);
         phase = Phase::LIVE;

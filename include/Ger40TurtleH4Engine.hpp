@@ -26,6 +26,7 @@
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
 #include "SeedGuard.hpp"
+#include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
 
 namespace omega {
 
@@ -154,7 +155,8 @@ struct Ger40TurtleH4Engine {
                 && session_ok
                 && n_prior >= p.lookback_bars && atr_pre > 0.0
                 && bar_close > prior_high
-                && (ask - bid) <= p.max_spread)
+                && (ask - bid) <= p.max_spread
+                && !omega::index_risk_off())   // S44 portfolio VIX risk-off: no new entry
             {
                 const double entry_px = ask;
                 const double atr_pct = atr_pre / bar_close;

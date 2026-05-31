@@ -66,6 +66,7 @@
 
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
 
 namespace omega {
 
@@ -252,6 +253,7 @@ private:
 
     void _fire_entry(double bid, double ask, int64_t now_ms) noexcept {
         if (warmup_active_) return;
+        if (omega::index_risk_off()) return;   // S44 portfolio VIX risk-off: no new entry
         const double entry = ask;
         if (entry <= 0.0 || atr14_ <= 0.0) return;
         const double sl_dist = kSlAtr * atr14_;

@@ -2209,6 +2209,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "EURGBP") g_fx_seas_eurgbp.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "EURJPY") g_fx_seas_eurjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
 
+        // S44 portfolio VIX risk-off gate: refresh shared VIX/VIX3M ratio (once/hr,
+        // throttled internally). All index engines consult omega::index_risk_off()
+        // to suppress NEW entries during deep backwardation (ratio>=1.05).
+        omega::refresh_index_vix_ratio(fx_now_ms / 1000);
+
         // S44 IndexSeasonal (day-of-week, Tue+Fri long) -- shadow, D1, same sink.
         //   Receives every tick; each engine aggregates its own UTC-day bar, gated
         //   internally by enabled/shadow_mode. Runs before the main symbol dispatch

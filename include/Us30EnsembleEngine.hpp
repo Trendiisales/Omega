@@ -124,6 +124,7 @@
 #include "engine_protections.hpp"
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
 
 namespace omega {
 
@@ -643,6 +644,7 @@ private:
     //  Trade lifecycle
     // -------------------------------------------------------------------------
     void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
+        if (omega::index_risk_off()) return;   // S44 portfolio VIX risk-off: no new entry
         const auto& cfg = kUs30EnsembleCells[ci];
         const double atr = _atr_for_cell(ci);
         const double entry = (side > 0) ? ask : bid;

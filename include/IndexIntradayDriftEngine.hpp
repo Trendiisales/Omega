@@ -56,6 +56,7 @@
 #include <functional>
 
 #include "OmegaTradeLedger.hpp"
+#include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
 
 namespace omega {
 
@@ -161,7 +162,8 @@ public:
         //    Once per UTC day (entry_day_id guard).
         // ---------------------------------------------------------------
         if (!pos.active && wday >= 1 && wday <= 5
-            && hour_utc == ENTRY_HOUR_UTC && day_id != m_last_entry_day_id)
+            && hour_utc == ENTRY_HOUR_UTC && day_id != m_last_entry_day_id
+            && !omega::index_risk_off())   // S44 portfolio VIX risk-off: no new entry
         {
             const double entry_px = ask;
             pos.active       = true;
