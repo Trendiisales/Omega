@@ -120,24 +120,44 @@ int main(int argc, char** argv) {
     if (eng.has_open_position()) eng.force_close(last_bid, last_ask, last_ts);
 
     // ---- summary ----
-    double net=0, gw=0, gl=0, peak=0, eq=0, mdd=0; int wins=0, L=0, S=0; double hold=0;
-    for (auto& t : trades) {
-        net += t.pnl; eq += t.pnl;
-        if (t.pnl > 0) { gw += t.pnl; wins++; } else { gl += -t.pnl; }
-        if (eq > peak) peak = eq;
-        if (peak - eq > mdd) mdd = peak - eq;
-        if (t.side == "LONG") L++; else S++;
-        hold += (t.exitTs - t.entryTs);
-    }
-    const int n = (int)trades.size();
-    const double pf = gl > 0 ? gw/gl : (gw>0?999:0);
-    const double wr = n ? 100.0*wins/n : 0;
-    const double avg = n ? net/n : 0;
-    const double avghold = n ? hold/n/60.0 : 0;
+    if (trades.empty()) { std::printf("no trades\n"); return 0; }
+    int64_t first_entry = trades.front().entryTs, last_exit = trades.back().exitTs;
+    for (auto& t : trades) { first_entry = std::min(first_entry, t.entryTs); last_exit = std::max(last_exit, t.exitTs); }
+    const int64_t split = first_entry + (int64_t)((last_exit - first_entry) * 0.60);
 
-    std::printf("ticks=%lld  TF(bias/break/retest)=%lld/%lld/%lld s\n",
-        (long long)nticks, (long long)eng.BIAS_TF_SEC, (long long)eng.BREAK_TF_SEC, (long long)eng.RETEST_TF_SEC);
-    std::printf("trades=%d  long=%d short=%d  WR=%.1f%%  PF=%.2f\n", n, L, S, wr, pf);
-    std::printf("net=%.2f  avg=%.3f  maxDD=%.2f  avgHold=%.1f min\n", net, avg, mdd, avghold);
+    auto metrics = [&](int which) {            // 0=full 1=IS 2=OOS
+        double net=0, gw=0, gl=0, peak=0, eq=0, mdd=0, sum=0, sum2=0, hold=0;
+        int n=0, wins=0; double winsum=0, losssum=0;
+        for (auto& t : trades) {
+            if (which==1 && t.entryTs >= split) continue;
+            if (which==2 && t.entryTs <  split) continue;
+            n++; net += t.pnl; eq += t.pnl; sum += t.pnl; sum2 += t.pnl*t.pnl;
+            if (t.pnl > 0) { gw += t.pnl; wins++; winsum += t.pnl; } else { gl += -t.pnl; losssum += -t.pnl; }
+            if (eq > peak) peak = eq; if (peak - eq > mdd) mdd = peak - eq;
+            hold += (t.exitTs - t.entryTs);
+        }
+        const double mean = n ? sum/n : 0;
+        const double var  = n>1 ? (sum2 - sum*sum/n)/(n-1) : 0;
+        const double sd   = var>0 ? std::sqrt(var) : 0;
+        const double span_days = (last_exit - first_entry)/86400.0;
+        const double tpy  = span_days>0 ? n/(span_days/365.25) : 0;
+        const double sharpe = sd>0 ? (mean/sd)*std::sqrt(tpy) : 0;
+        const double pf = gl>0 ? gw/gl : (gw>0?999:0);
+        const double wr = n ? 100.0*wins/n : 0;
+        const double avgW = wins ? winsum/wins : 0;
+        const double avgL = (n-wins) ? losssum/(n-wins) : 0;
+        const double payoff = avgL>0 ? avgW/avgL : 0;
+        const char* lbl = which==0?"FULL":which==1?"IS  ":"OOS ";
+        std::printf("%-4s | %5d | %5.1f | %5.2f | %6.2f | %7.1f | %6.3f | %6.2f | %6.2f | %5.2f | %6.1f\n",
+            lbl, n, wr, pf, sharpe, net, mean, avgW, avgL, payoff, mdd);
+    };
+
+    std::printf("BreakBounce XAUUSD  TF=%lld/%lld/%lld s  STOP_ATR=%.1f RR=%.1f  (price-points / 1 lot)\n",
+        (long long)eng.BIAS_TF_SEC,(long long)eng.BREAK_TF_SEC,(long long)eng.RETEST_TF_SEC, eng.STOP_ATR, eng.REWARD_RISK);
+    std::printf("seg  | trades |  WR%% |  PF  | Sharpe |   net   |  avg   | avgWin | avgLos | payf |  maxDD\n");
+    std::printf("-----+--------+------+------+--------+---------+--------+--------+--------+------+-------\n");
+    metrics(0); metrics(1); metrics(2);
+    std::printf("(Sharpe = per-trade mean/sd annualized by trades/yr; ~%.0f trades/yr)\n",
+        trades.size()/(((last_exit-first_entry)/86400.0)/365.25));
     return 0;
 }
