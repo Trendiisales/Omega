@@ -97,6 +97,9 @@ int main(int argc, char** argv) {
         eng.SESSION_START_H = sh; eng.SESSION_END_H = eh;
         eng.USE_SESSION = (sh != eh);
     }
+    // Optional MAX_SPREAD override (argv[7], price units) -- needed for
+    // cross-symbol runs (gold's 0.60 would reject every index entry).
+    if (argc >= 8) eng.MAX_SPREAD = std::atof(argv[7]);
     eng.init();
 
     std::vector<omega::TradeRecord> trades;
