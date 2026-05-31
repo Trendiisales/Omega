@@ -34,6 +34,8 @@ HEADERS=(
   include/XauTrendFollow1hEngine.hpp
   include/Ger40KeltnerH1Engine.hpp
   include/SessionMomentumEngine.hpp
+  include/FxCarryEngine.hpp
+  include/FxCrossRevEngine.hpp
 )
 
 fails=0

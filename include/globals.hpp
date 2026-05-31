@@ -870,6 +870,23 @@ static omega::FxScalpPyramidEngine            g_fx_scalp_usdjpy;
 static omega::FxScalpPyramidEngine            g_fx_scalp_gbpusd;
 static omega::FxScalpPyramidEngine            g_fx_scalp_usdcad;
 static omega::FxScalpPyramidEngine            g_fx_scalp_audusd;
+// 2026-05-31 S43: FX CARRY + CROSS-REVERSION -- first VALIDATED FX edges.
+//   Carry (rate-diff premium, Dukascopy D1 2019-2026): full-11 carry-only
+//   Sharpe 0.52, +12-14k bp, 5/6 blocks, cost-3x-proof. JPY crosses = 76-105%
+//   of edge. Cross-RV D1: EURGBP PF 2.0, robust cluster. Both fidelity-passed
+//   (backtest/fx_carry_engine_fidelity.cpp, fx_xrev_engine_fidelity.cpp).
+//   shadow_mode=true. carry on 8 fed pairs (6 routed + EURJPY/GBPJPY); x-rev EURGBP.
+#include "FxCarryEngine.hpp"
+static omega::FxCarryEngine g_fx_carry_eurusd("EURUSD");
+static omega::FxCarryEngine g_fx_carry_gbpusd("GBPUSD");
+static omega::FxCarryEngine g_fx_carry_usdjpy("USDJPY");
+static omega::FxCarryEngine g_fx_carry_audusd("AUDUSD");
+static omega::FxCarryEngine g_fx_carry_nzdusd("NZDUSD");
+static omega::FxCarryEngine g_fx_carry_usdcad("USDCAD");
+static omega::FxCarryEngine g_fx_carry_eurjpy("EURJPY");
+static omega::FxCarryEngine g_fx_carry_gbpjpy("GBPJPY");
+#include "FxCrossRevEngine.hpp"
+static omega::FxCrossRevEngine g_fx_xrev_eurgbp("EURGBP");
 // 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
 //   First gold engine to clear PF>1.20 AND PnL>$5K success criterion on 2025/6.
 //   PF 2.35 / WR 92.6% / PnL $5,854 / N=54 trades over 16 months.

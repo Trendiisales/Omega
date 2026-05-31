@@ -2113,6 +2113,40 @@ static void init_engines(const std::string& cfg_path)
             std::printf("[OMEGA-INIT] AtrMeanRevGrid FX: EURUSD(M15,X=14)+GBPUSD(H1,X=10) enabled (shadow), AUDUSD+NZDUSD parked\n");
 
             // ----------------------------------------------------------------
+            // 2026-05-31 S43: FX CARRY + CROSS-REVERSION -- first validated FX
+            //   edges (Dukascopy D1 2019-2026). Carry-only (momentum gate proven
+            //   to HURT in A/B): dir=sign(rate_diff) when |diff|>=floor, vol-target,
+            //   weekly rebal. Carry on 8 fed pairs (JPY crosses = bulk of edge).
+            //   Cross-RV: EURGBP z-MR D1 (PF2.0 robust cluster). All shadow_mode.
+            //   Both engines fidelity-passed vs backtest. Warm-seed D1 CSVs per mandate.
+            // ----------------------------------------------------------------
+            {
+                auto carry_boot = [](omega::FxCarryEngine& e, const char* sym){
+                    e.shadow_mode = true; e.enabled = true; e.lot = 0.01;
+                    e.p.carry_floor_pct = 0.75; e.p.rebal_days = 5; e.p.target_vol_bps = 50.0;
+                    char path[128];
+                    std::snprintf(path, sizeof path, "phase1/signal_discovery/warmup_%s_D1.csv", sym);
+                    e.seed_from_d1_csv(path);
+                };
+                carry_boot(g_fx_carry_eurusd, "EURUSD");
+                carry_boot(g_fx_carry_gbpusd, "GBPUSD");
+                carry_boot(g_fx_carry_usdjpy, "USDJPY");
+                carry_boot(g_fx_carry_audusd, "AUDUSD");
+                carry_boot(g_fx_carry_nzdusd, "NZDUSD");
+                carry_boot(g_fx_carry_usdcad, "USDCAD");
+                carry_boot(g_fx_carry_eurjpy, "EURJPY");
+                carry_boot(g_fx_carry_gbpjpy, "GBPJPY");
+
+                g_fx_xrev_eurgbp.shadow_mode = true; g_fx_xrev_eurgbp.enabled = true;
+                g_fx_xrev_eurgbp.lot = 0.01;
+                g_fx_xrev_eurgbp.p.z_window = 60; g_fx_xrev_eurgbp.p.z_in = 2.0;
+                g_fx_xrev_eurgbp.p.z_out = 0.4;   g_fx_xrev_eurgbp.p.hold_timeout = 20;
+                g_fx_xrev_eurgbp.p.require_hook = false;
+                g_fx_xrev_eurgbp.seed_from_d1_csv("phase1/signal_discovery/warmup_EURGBP_D1.csv");
+                std::printf("[OMEGA-INIT] FxCarry x8 (EUR/GBP/JPY-crosses) + FxCrossRev EURGBP -- shadow, warm-seeded\n");
+            }
+
+            // ----------------------------------------------------------------
             // 2026-05-26: Index AMR. Configs from deep eval sweep on tick CSVs.
             //   US500   H1  X=8  SL_Y=6 ATR_FROM_WAP  PF 1.75 +$81  DD $32 Recov 2.56
             //   NAS100  M15 X=14 SL_Y=4 RSI_OR_MA     PF 1.55 +$15  DD $10 Recov 1.48

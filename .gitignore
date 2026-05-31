@@ -268,3 +268,5 @@ backtest/top_cells_monthly
 # ── Local dev artifacts ───────────────────────────────────────────────────────
 utf5m_trades.csv
 .codegraph/
+download/
+.dukascopy-cache/

@@ -2178,6 +2178,28 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_survivor.on_tick(sym, bid, ask, surv_now_ms, handle_closed_trade);
     }
 
+    // ── S43 FX CARRY + CROSS-REVERSION dispatch (shadow, D1) ────────────────
+    //   First validated FX edges (Dukascopy D1 2019-2026, both fidelity-passed).
+    //   Same pattern as g_survivor: receives every tick, each engine aggregates
+    //   its own D1 bar + is internally gated by enabled/shadow_mode. Routes the
+    //   passive-subscribed crosses (EURGBP/EURJPY/GBPJPY) which have no trading
+    //   handler in the else-if chain below. handle_closed_trade routes shadow
+    //   records to the audit ledger (tr.shadow stamped by the engine).
+    {
+        const int64_t fx_now_ms = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        if      (sym == "EURUSD") g_fx_carry_eurusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "GBPUSD") g_fx_carry_gbpusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USDJPY") g_fx_carry_usdjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "AUDUSD") g_fx_carry_audusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "NZDUSD") g_fx_carry_nzdusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USDCAD") g_fx_carry_usdcad.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "EURJPY") g_fx_carry_eurjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "GBPJPY") g_fx_carry_gbpjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "EURGBP") g_fx_xrev_eurgbp.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+    }
+
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
     // ── Symbol dispatch ────────────────────────────────────────────────────────
     if      (sym == "US500.F")                          on_tick_us500(sym, bid, ask, tradeable, lat_ok, regime);
