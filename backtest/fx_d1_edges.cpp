@@ -98,6 +98,24 @@ static double BBrev(const std::vector<Bar>&b,int i){
     if(sd<=0)return 0; double z=(b[i].c-m)/sd;
     if(z<-2.0)return +1.0; if(z>2.0)return -1.0; return 0.0;
 }
+// Kaufman efficiency ratio over N (0=pure noise/range, 1=pure trend).
+static double effratio(const std::vector<Bar>&b,int i,int N){
+    double net=std::fabs(b[i].c-b[i-N].c), tot=0; for(int k=i-N+1;k<=i;k++) tot+=std::fabs(b[k].c-b[k-1].c);
+    return tot>0? net/tot : 0.0;
+}
+// Vol-compression breakout: if PRIOR bar's range is the narrowest of last 7
+// (coil), trade the breakout of that bar's high/low (FX coils then expands).
+static double VCB(const std::vector<Bar>&b,int i){
+    double r1=b[i-1].h-b[i-1].l, mn=1e18; for(int k=i-7;k<i;k++){double r=b[k].h-b[k].l; if(r<mn)mn=r;}
+    if(r1>mn+1e-12) return 0.0;                     // prior bar not the narrowest -> no coil
+    if(b[i].c>b[i-1].h) return +1.0; if(b[i].c<b[i-1].l) return -1.0; return 0.0;
+}
+// Regime-conditional MR: Bollinger reversion ONLY when ranging (ER<0.35).
+// (plain BB rev was dead because it also fired in trends — top traders gate MR by regime.)
+static double RegimeMR(const std::vector<Bar>&b,int i){
+    if(effratio(b,i,10)>=0.35) return 0.0;          // trending -> no MR
+    return BBrev(b,i);
+}
 
 int main(){
     printf("FX D1 BROAD EDGE SCAN (S43) -- honest: no-lookahead, real cost, WF+6block, 3x-stress, ALL printed\n");
@@ -144,6 +162,8 @@ int main(){
         {"WeeklyRangeBreak (h5)",5,WRB},
         {"RSI2 reversion (h3)",3,RSI2},
         {"Bollinger2 reversion (h5)",5,BBrev},
+        {"VolCompressBreakout (h3)",3,VCB},
+        {"RegimeMR (ER<.35, h5)",5,RegimeMR},
     };
     for(auto&f:fams){
         Agg a1=run_holdN(f.name,f.hold,1.0,f.fn);
