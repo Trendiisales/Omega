@@ -337,6 +337,15 @@ static void on_tick_us500(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idd_sp.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
     }
+    // IndexSessionEngine US500/SPX (14-22 UTC LONG, flat overnight, risk-off gated).
+    {
+        const int64_t now_ms_isp = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idxsess_sp.set_risk_off(omega::index_risk_off());
+        g_idxsess_sp.on_tick(bid, ask, now_ms_isp);
+        g_engine_heartbeat.pulse("IndexSession_US500");
+    }
 }
 
 // ── USTEC.F ────────────────────────────────────────────────
@@ -937,6 +946,15 @@ static void on_tick_ger40(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_ger40_london_brk.on_tick(bid, ask, now_ms_glb);
     }
+    // IndexSessionEngine GER40 (09-20 UTC LONG, flat overnight, risk-off gated).
+    {
+        const int64_t now_ms_isg = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idxsess_ger40.set_risk_off(omega::index_risk_off());
+        g_idxsess_ger40.on_tick(bid, ask, now_ms_isg);
+        g_engine_heartbeat.pulse("IndexSession_GER40");
+    }
 
     // MinimalH4GER40Breakout -- pure H4 Donchian (shadow mode).
     // Self-contained: builds own H4 OHLC + ATR14 from tick stream.
@@ -1191,4 +1209,13 @@ static void on_tick_nas100(
     // (2026-05-30 BUGFIX: g_iswing_nq block REMOVED from here -- it was
     // feeding NAS100 bid/ask into the USTEC.F IndexSwingEngine. Block
     // moved to on_tick_ustec where it belongs.)
+    // IndexSessionEngine NAS100 (14-22 UTC LONG, flat overnight, risk-off gated).
+    {
+        const int64_t now_ms_isn = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idxsess_nas.set_risk_off(omega::index_risk_off());
+        g_idxsess_nas.on_tick(bid, ask, now_ms_isn);
+        g_engine_heartbeat.pulse("IndexSession_NAS100");
+    }
 }

@@ -95,6 +95,14 @@ static omega::cross::OpeningRangeEngine    g_orb_estx50; // Euronext 09:00 UTC, 
 #include "BreakBounceEngine.hpp"
 static omega::BreakBounceEngine g_xau_breakbounce;
 
+// IndexSessionEngine (2026-06-01): intraday cash-session LONG, flat overnight.
+// Per-symbol instance. Edge = hold into US close; long-only; risk-off gated.
+// SPX OOS Sharpe 0.67, GER40 0.60, NAS 0.34. Shadow.
+#include "IndexSessionEngine.hpp"
+static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
+static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
+static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)
+
 // Engine 7: VWAP Reversion -- enter on reversal tick back toward daily VWAP
 // Wired to: US500.F, USTEC.F, GER40, EURUSD
 static omega::cross::VWAPReversionEngine   g_vwap_rev_sp;     // US500.F

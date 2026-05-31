@@ -3976,6 +3976,36 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // ── IndexSessionEngine x3 (2026-06-01) ─────────────────────────────────────
+    // Intraday cash-session LONG, flat overnight. Edge = hold into the US close
+    // (SPX/NAS 14-22 UTC; GER40 09-20). Long-only (shorts lose); risk-off gated
+    // (the bear guard). OOS Sharpe ~0.3-0.7. SHADOW. The per-tick set_risk_off()
+    // and feed are wired in tick_indices.hpp (on_tick_us500/nas100/ger40).
+    {
+        struct { omega::IndexSessionEngine* e; const char* sym; int oh, ch; const char* d1; } idx[] = {
+            { &g_idxsess_sp,    "US500.F", 14, 22, "phase1/signal_discovery/warmup_US500_D1.csv" },
+            { &g_idxsess_nas,   "NAS100",  14, 22, "phase1/signal_discovery/warmup_USTEC_D1.csv" },
+            { &g_idxsess_ger40, "GER40",    9, 20, "phase1/signal_discovery/warmup_GER40_D1_idx.csv" },
+        };
+        for (auto& c : idx) {
+            c.e->symbol      = c.sym;
+            c.e->engine_name = std::string("IndexSession_") + c.sym;
+            c.e->RTH_OPEN_H  = c.oh;
+            c.e->RTH_CLOSE_H = c.ch;
+            c.e->STOP_ATR    = 2.0;
+            c.e->SKIP_FRIDAY = true;
+            c.e->shadow_mode = true;
+            c.e->enabled     = true;
+            c.e->lot         = 1.0;
+            c.e->init();
+            c.e->seed_from_d1_csv(omega::resolve_seed_path(c.d1));
+            c.e->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+            printf("[OMEGA-INIT] IndexSession %s: shadow=true window=%02d-%02d UTC stop=2.0 skipFri\n",
+                   c.sym, c.oh, c.ch);
+        }
+        fflush(stdout);
+    }
+
     // ?? Adaptive intelligence layer startup ???????????????????????????????????
     {
         const int64_t now_s = static_cast<int64_t>(

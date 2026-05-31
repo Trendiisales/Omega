@@ -46,6 +46,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
+#include <fstream>
 #include <functional>
 #include <string>
 
@@ -102,6 +103,27 @@ public:
     void warm_session_range(double range) {
         if (!m_atr_ready) { m_atr_seed+=range; if(++m_atr_cnt>=ATR_PERIOD){ m_atr=m_atr_seed/ATR_PERIOD; m_atr_ready=true; } }
         else m_atr = (m_atr*(ATR_PERIOD-1)+range)/ATR_PERIOD;
+    }
+
+    // Warm the session-range ATR from a D1 bar CSV (bar_start_ms,o,h,l,c).
+    // The full-day high-low is a slightly-wide proxy for the session range --
+    // good enough to prime the stop so the engine trades on day one. Emits a
+    // [SEED] line (Warm-Seed Mandate). Returns bars replayed.
+    size_t seed_from_d1_csv(const std::string& path) {
+        std::ifstream f(path);
+        if (!f.is_open()) { printf("[SEED] %s: WARN cannot open %s (ATR warms from live)\n",
+                                   engine_name.c_str(), path.c_str()); return 0; }
+        std::string line; std::getline(f, line);  // header
+        size_t n = 0; long long ts; double o,h,l,c;
+        while (std::getline(f, line)) {
+            if (std::sscanf(line.c_str(), "%lld,%lf,%lf,%lf,%lf", &ts,&o,&h,&l,&c) == 5 && h > l) {
+                warm_session_range(h - l); ++n;
+            }
+        }
+        printf("[SEED] %s (%s): %zu D1 ranges replayed -- ATR hot=%d\n",
+               engine_name.c_str(), symbol.c_str(), n, (int)m_atr_ready);
+        fflush(stdout);
+        return n;
     }
 
     // ── Main tick handler ────────────────────────────────────────────────────
