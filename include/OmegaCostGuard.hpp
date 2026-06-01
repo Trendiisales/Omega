@@ -41,8 +41,15 @@ struct ExecutionCostGuard {
             slippage_pts       = 0.020;
             tick_usd_per_lot   = 667.0;
         } else if (s == "XAUUSD") {
-            commission_per_lot = 6.0;
-            slippage_pts       = 0.30;
+            // IBKR gold (GC/MGC CME futures) cost basis -- replaces BlackBull
+            // spot (was commission 6.0 / slippage 0.30). GC commission ~$2.37
+            // per side incl CME + NFA reg fees -> ~$4.74 round-trip, rounded to
+            // 5.0/lot. Slippage ~1 GC tick (0.10). Live bid-ask spread is fed
+            // in separately (spread_pts) and is far tighter on the regulated
+            // futures book than the BlackBull spot markup. NOTE: estimate --
+            // tune commission_per_lot/slippage_pts to actual IBKR fills.
+            commission_per_lot = 5.0;
+            slippage_pts       = 0.10;
             tick_usd_per_lot   = 100.0;
         } else if (s == "XAGUSD") {
             commission_per_lot = 6.0;
