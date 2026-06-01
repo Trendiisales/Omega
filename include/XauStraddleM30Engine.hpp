@@ -50,6 +50,7 @@ struct XauStraddleM30Engine {
     int    hold_max_bars = 48;   // safety timeout (24h on M30)
 
     std::string symbol  = "XAUUSD";
+    std::string engine_name = "XauStraddleM30";  // override per instance (M15 sibling)
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
     // ---- state ----
@@ -90,7 +91,7 @@ struct XauStraddleM30Engine {
         omega::TradeRecord tr{};
         tr.symbol     = symbol;
         tr.side       = pos_.side > 0 ? "LONG" : "SHORT";
-        tr.engine     = "XauStraddleM30";
+        tr.engine     = engine_name;
         tr.exitReason = reason;
         tr.entryPrice = pos_.entry;
         tr.exitPrice  = exit_px;

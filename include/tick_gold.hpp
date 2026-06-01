@@ -781,6 +781,9 @@ static void on_tick_gold(
                 bar15.close = s_cur15.close;
                 g_xau_tf_m15.on_h1_bar(bar15, bid, ask, /*atr14_external=*/0.0,
                                        now_ms_g, bracket_on_close);
+                // OCO straddle on M15 (same engine, fed M15 bars)
+                g_xau_straddle_m15.on_m30_bar(s_cur15.high, s_cur15.low, s_cur15.close,
+                                              bid, ask, now_ms_g, bracket_on_close);
             }
             s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15;
         }
@@ -2210,6 +2213,7 @@ static void on_tick_gold(
     // ── S136 2026-05-24: new engines per-tick management ────────────────────
     g_xau_d55_gated_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);
     g_xau_straddle_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);  // S-2026-06-02 OCO straddle fill+manage
+    g_xau_straddle_m15.on_tick(bid, ask, now_ms_g, bracket_on_close);  // M15 sibling
     g_xau_3bar_mom_h4.on_tick  (bid, ask, now_ms_g, bracket_on_close);
     // GoldUltimateEngine tick dispatch -- standalone v12 OOS-validated trend
     // engine. Self-contained 1-min bar aggregation + 7-factor entry filter +

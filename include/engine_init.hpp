@@ -1833,6 +1833,27 @@ static void init_engines(const std::string& cfg_path)
                g_xau_straddle_m30.tp_r, g_xau_straddle_m30.lot);
         fflush(stdout);
 
+        // ── XauStraddleM15 (S-2026-06-02): M15 sibling, fed M15 bars in tick_gold.
+        // Same engine, same params; the 1R TP makes the higher frequency pay.
+        // Validated BETTER than M30 (OOS PF 1.72-1.78 Sharpe 6.6-7.3, lower MDD,
+        // 3x-cost-robust). Reuses the 49.4k-bar warmup_XAUUSD_M15.csv. HARD shadow,
+        // gate-watched -- the live ledger sorts out its overlap with M30.
+        g_xau_straddle_m15.shadow_mode = true;
+        g_xau_straddle_m15.enabled     = true;
+        g_xau_straddle_m15.symbol      = "XAUUSD";
+        g_xau_straddle_m15.engine_name = "XauStraddleM15";   // distinct ledger/gate key
+        g_xau_straddle_m15.box_n       = 15;
+        g_xau_straddle_m15.stop_atr    = 3.0;
+        g_xau_straddle_m15.tp_r        = 1.0;
+        g_xau_straddle_m15.lot         = 0.01;
+        g_xau_straddle_m15.hold_max_bars = 96;   // 24h on M15
+        g_xau_straddle_m15.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M15.csv");
+        printf("[OMEGA-INIT] XauStraddleM15: shadow=%d enabled=%d boxN=%d stop=%.1fx TP=%.1fR lot=%.2f\n",
+               (int)g_xau_straddle_m15.shadow_mode, (int)g_xau_straddle_m15.enabled,
+               g_xau_straddle_m15.box_n, g_xau_straddle_m15.stop_atr,
+               g_xau_straddle_m15.tp_r, g_xau_straddle_m15.lot);
+        fflush(stdout);
+
         // ── S136 2026-05-24: Xau3BarMomGatedH4Engine ───────────────────────────
         // XAU H4 three-bar momentum, symmetric long+short.
         // MFE-lock trail: arm at +1.0R, lock 90% of extreme.
@@ -5919,6 +5940,7 @@ static void init_engines(const std::string& cfg_path)
             { "MinimalH4GER40Breakout", &g_minimal_h4_ger40.enabled},
             { "BreakBounce",            &g_xau_breakbounce.enabled },
             { "XauStraddleM30",         &g_xau_straddle_m30.enabled},
+            { "XauStraddleM15",         &g_xau_straddle_m15.enabled},
         };
         for (const auto& t : kGateTargets) {
             if (g_engine_gate.is_demoted(t.name) && *t.flag) {

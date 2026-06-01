@@ -697,6 +697,11 @@ static omega::XauDonchian55GatedM30Engine g_xau_d55_gated_m30;
 // Sharpe 4-6, 3x-cost-robust (straddle_breakout_sweep.cpp). Shadow until gate.
 #include "XauStraddleM30Engine.hpp"
 static omega::XauStraddleM30Engine g_xau_straddle_m30;
+// S-2026-06-02: M15 sibling (same engine, fed M15 bars). TP=1R lifts the higher
+// frequency over the cost line -> validated BETTER than M30: OOS PF 1.72-1.78
+// Sharpe 6.6-7.3, MDD lower, 3x-cost-robust (PF 1.44). M5-detector early-exit
+// tested + REJECTED (cuts winners, reintroduces the thousand-cuts).
+static omega::XauStraddleM30Engine g_xau_straddle_m15;
 
 // 2026-05-24 S136: Xau3BarMomGatedH4Engine -- XAU H4 three-bar momentum symmetric
 //   with MFE-lock trail (arm=1.0R, lock=90%).
