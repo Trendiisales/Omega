@@ -73,14 +73,22 @@ int main(int argc,char**argv){
     const int ATR_P=14; double atr=5.0; std::deque<double> tr;
     double ef=0,es=0; bool einit=false; double kf=2.0/(biasFast+1),ks=2.0/(biasSlow+1);
 
+    // pyramid (env): add units on favorable advance, trail stop. PYMAX>0 forces
+    // runner mode (no fixed TP -- pyramid needs room to run).
+    int    PYMAX = getenv("PYMAX")?atoi(getenv("PYMAX")):0;
+    double PYSTEP= getenv("PYSTEP")?atof(getenv("PYSTEP")):1.0;   // atr step between adds
+    double PYSL  = getenv("PYSL")?atof(getenv("PYSL")):3.0;       // trail stop atr below last add
+
     bool pos=false; int dir=0; double entry=0,stop=0,tp=0; int cooldown_until=-1;
+    int units=0; double entry_sum=0, last_add=0;
     double cum=0,peak=0,mdd=0; int nw=0,nl=0; double gw=0,gl=0; int ntr=0;
+    int totAdds=0;
     // leg attribution
     int longN=0,shortN=0; double longNet=0,shortNet=0;
     std::vector<double> tpnl;
 
     auto close=[&](double px,int i){
-        double pnl=(dir>0?(px-entry):(entry-px)) - COST;
+        double pnl=dir*(units*px - entry_sum) - COST*units;
         cum+=pnl; if(cum>peak)peak=cum; double dd=peak-cum; if(dd>mdd)mdd=dd;
         if(pnl>0){nw++;gw+=pnl;}else if(pnl<0){nl++;gl+=-pnl;}
         if(dir>0){longN++;longNet+=pnl;}else{shortN++;shortNet+=pnl;}
@@ -95,6 +103,16 @@ int main(int argc,char**argv){
         atr=std::max(0.5,atr);
         if(!einit){ef=es=bar.c;einit=true;} else {ef=bar.c*kf+ef*(1-kf);es=bar.c*ks+es*(1-ks);}
 
+        // pyramid: add units on favorable advance + trail stop (before exit check)
+        if(pos && PYMAX>0 && units < 1+PYMAX){
+            if(dir>0 && bar.h >= last_add + PYSTEP*atr){
+                double add=last_add+PYSTEP*atr; entry_sum+=add; units++; last_add=add; totAdds++;
+                double ns=last_add - PYSL*atr; if(ns>stop) stop=ns;
+            } else if(dir<0 && bar.l <= last_add - PYSTEP*atr){
+                double add=last_add-PYSTEP*atr; entry_sum+=add; units++; last_add=add; totAdds++;
+                double ns=last_add + PYSL*atr; if(ns<stop) stop=ns;
+            }
+        }
         // manage open pos intrabar (stop priority, then tp)
         if(pos){
             if(dir>0){ if(bar.l<=stop) close(stop,i); else if(tp>0&&bar.h>=tp) close(tp,i); }
@@ -136,8 +154,9 @@ int main(int argc,char**argv){
         if(hitL && hitS){ // both: pick by open proximity (whichever the bar likely hit first)
             if(std::fabs(bar.o-buyStop) <= std::fabs(bar.o-sellStop)){ hitS=false; } else { hitL=false; }
         }
-        if(hitL){ pos=true;dir=1;entry=buyStop;stop=buyStop-stopm*atr; tp=TPr>0?buyStop+TPr*stopm*atr:0; }
-        else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=TPr>0?sellStop-TPr*stopm*atr:0; }
+        double effTP = (PYMAX>0)?0.0:TPr;   // pyramid -> runner (no fixed TP)
+        if(hitL){ pos=true;dir=1;entry=buyStop;stop=buyStop-stopm*atr; tp=effTP>0?buyStop+effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; }
+        else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=effTP>0?sellStop-effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; }
     }
     if(pos) close(b.back().c,(int)b.size()-1);
 
@@ -145,6 +164,6 @@ int main(int argc,char**argv){
     double years; {int n=(int)b.size();int s=std::max(evalStart,1);years=(b[n-1].ts-b[s].ts)/86400.0/365.25;}
     double sh=0; if(ntr>=2&&years>0){double m=0;for(double v:tpnl)m+=v;m/=ntr;double s=0;for(double v:tpnl)s+=(v-m)*(v-m);double sd=std::sqrt(s/(ntr-1));if(sd>0)sh=(m/sd)*std::sqrt((double)ntr/years);}
     std::printf("BIAS=%-5s tf%-3d boxN%-2d buf%.2f stop%.1f TP%.1f | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f | L:%d/%.0f S:%d/%.0f\n",
-        BIAS.c_str(),tf,boxN,buf,stopm,TPr,ntr,cum,pf,sh,hit,mdd,longN,longNet,shortN,shortNet);
+        BIAS.c_str(),tf,boxN,buf,stopm,TPr,ntr,cum,pf,sh,hit,mdd,longN,longNet,shortN,shortNet); (void)totAdds;
     return 0;
 }
