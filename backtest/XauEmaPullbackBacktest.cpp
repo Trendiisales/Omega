@@ -27,6 +27,7 @@
 namespace cfg {
     constexpr double LOT_SIZE   = 0.01;
     constexpr double PNL_PER_PT = LOT_SIZE * 100.0;
+    constexpr double COST_RT_PTS = 0.37;   // IBKR gold round-trip cost (pts)
     constexpr int    ATR_PERIOD = 14;
     constexpr double ATR_INIT   = 5.0;
     constexpr double ATR_MIN    = 0.5;
@@ -169,7 +170,7 @@ int main(int argc, char* argv[]) {
     bool has_header = (first_line.find("timestamp") != std::string::npos || first_line.find("Time") != std::string::npos);
 
     auto parse_duka = [](const std::string& line, int64_t& ts, double& bid, double& ask) -> bool {
-        return std::sscanf(line.c_str(), "%lld,%lf,%lf", (long long*)&ts, &ask, &bid) == 3;
+        return std::sscanf(line.c_str(), "%lld,%lf,%lf", (long long*)&ts, &bid, &ask) == 3;  // format_a: ts,bid,ask
     };
 
     auto process = [&](int64_t ts_ms, double bid, double ask) {
@@ -209,6 +210,7 @@ int main(int argc, char* argv[]) {
                     double exit_px = bid;
                     double pnl_pts = exit_px - cell.entry_px;
                     double pnl_usd = pnl_pts * cfg::PNL_PER_PT;
+                    pnl_usd -= cfg::COST_RT_PTS * cfg::PNL_PER_PT;  // IBKR round-trip cost
 
                     cell.record(pnl_usd);
                     overall.record(pnl_usd);
@@ -235,6 +237,7 @@ int main(int argc, char* argv[]) {
                     double unrealized = mid - cell.entry_px;
                     if (unrealized <= 0) {
                         double pnl_usd = unrealized * cfg::PNL_PER_PT;
+                        pnl_usd -= cfg::COST_RT_PTS * cfg::PNL_PER_PT;  // IBKR round-trip cost
                         cell.record(pnl_usd);
                         overall.record(pnl_usd);
                         if (cell.entry_time < oos_ts) is_m.record(pnl_usd);

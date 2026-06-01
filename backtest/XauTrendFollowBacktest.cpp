@@ -27,6 +27,7 @@
 namespace cfg {
     constexpr double LOT_SIZE   = 0.01;
     constexpr double PNL_PER_PT = LOT_SIZE * 100.0;
+    constexpr double COST_RT_PTS = 0.37;   // IBKR gold round-trip cost (pts per unit)
     constexpr int    ATR_PERIOD = 14;
     constexpr double ATR_INIT   = 5.0;
     constexpr double ATR_MIN    = 0.5;
@@ -185,7 +186,9 @@ struct Cell {
     double pf()const{return gl>0?gw/gl:999.0;} double wr()const{return total>0?100.0*wins/total:0;}
     void print()const{std::printf("  %-22s trades=%4d  WR=%.1f%%  PF=%.2f  PnL=$%.2f  maxDD=$%.2f\n",name,total,wr(),pf(),pnl,mdd);}
 };
-struct SimTrade { bool active=false,is_long=true; double entry_px=0,sl_px=0,tp_px=0; int64_t entry_time=0; };
+struct SimTrade { bool active=false,is_long=true; double entry_px=0,sl_px=0,tp_px=0; int64_t entry_time=0;
+    // S45 pyramiding: stack units as price advances, trail stop behind last add.
+    double atr_at_entry=0; double last_add_px=0; int n_units=0; double sum_entry=0; };
 struct Metrics {
     int total=0,wins=0; double pnl=0,gw=0,gl=0,mdd=0,pk=0;
     void record(double p){total++;pnl+=p;if(p>0){wins++;gw+=p;}else gl+=std::fabs(p);if(pnl>pk)pk=pnl;double d=pk-pnl;if(d>mdd)mdd=d;}
@@ -199,6 +202,29 @@ int main(int argc, char* argv[]) {
     bool   use_vol_band = false;
     bool   use_adx      = false;
     double vb_low = 0.30, vb_high = 0.85, adx_min = 25.0;
+    // S45: Kaufman Efficiency-Ratio trend/chop gate. Skip entries when the
+    // cell's recent ER < er_min (price is chopping, not trending). ER in [0,1]:
+    // ~0 = pure chop, ~1 = pure trend. Mirrors the regime_portfolio/option_a
+    // prototypes (ER>=0.25 = trend). Default OFF -> baseline reproduces exactly.
+    bool   use_er_gate  = false;
+    double er_min       = 0.25;
+    int    er_win       = 20;
+    unsigned cell_er_mask = 0xFFFFFFFFu;
+    // S45 pyramiding (additive lever). Add a unit each time price advances
+    // pyr_step*ATR(entry) beyond the last add, up to pyr_max adds, trailing the
+    // stop to (last_add - pyr_sl*ATR). pyr_no_tp removes the fixed TP -> runner.
+    // Default pyr_max=0 -> single-unit, baseline reproduces exactly.
+    int    pyr_max   = 0;
+    double pyr_step  = 1.0;
+    double pyr_sl    = 3.0;
+    bool   pyr_no_tp = false;
+    // S45 cross-instrument / cross-regime params. price filter (XAU default
+    // 1000-5000; GER40 ~18000 needs --pmin/--pmax); --swap-ba for bid-first CSVs
+    // (GER40_merged is ts,bid,ask vs XAU ts,ask,bid); entry window in epoch-ms to
+    // carve a sub-period (bars still warm on all ticks; entries blocked outside).
+    double pmin = 1000.0, pmax = 5000.0;
+    bool   swap_ba = false;
+    int64_t win_start_ms = 0, win_end_ms = 0;   // 0/0 => no window (all ticks)
     // S88-followup per-cell masks (default 0xFFFFFFFF = all cells gated).
     // For 2h cell ids match kXauTf2hCells: 0=Keltner, 1=Donch20, 2=Donch50, 3=InsideBar.
     // Operator sets via --cell-adx-mask 0xB --cell-vol-mask 0x4 to mirror engine_init.
@@ -213,10 +239,27 @@ int main(int argc, char* argv[]) {
         else if(a=="--adx-min" && i+1<argc) adx_min = std::stod(argv[++i]);
         else if(a=="--cell-adx-mask" && i+1<argc) cell_adx_mask = std::stoul(argv[++i], nullptr, 0);
         else if(a=="--cell-vol-mask" && i+1<argc) cell_vol_mask = std::stoul(argv[++i], nullptr, 0);
+        else if(a=="--er-gate") use_er_gate=true;
+        else if(a=="--er-min" && i+1<argc) er_min = std::stod(argv[++i]);
+        else if(a=="--er-win" && i+1<argc) er_win = std::stoi(argv[++i]);
+        else if(a=="--cell-er-mask" && i+1<argc) cell_er_mask = std::stoul(argv[++i], nullptr, 0);
+        else if(a=="--pyramid" && i+1<argc) pyr_max = std::stoi(argv[++i]);
+        else if(a=="--pyr-step" && i+1<argc) pyr_step = std::stod(argv[++i]);
+        else if(a=="--pyr-sl" && i+1<argc) pyr_sl = std::stod(argv[++i]);
+        else if(a=="--pyr-no-tp") pyr_no_tp = true;
+        else if(a=="--pmin" && i+1<argc) pmin = std::stod(argv[++i]);
+        else if(a=="--pmax" && i+1<argc) pmax = std::stod(argv[++i]);
+        else if(a=="--swap-ba") swap_ba = true;
+        else if(a=="--win-start-ms" && i+1<argc) win_start_ms = std::stoll(argv[++i]);
+        else if(a=="--win-end-ms" && i+1<argc) win_end_ms = std::stoll(argv[++i]);
     }
-    std::printf("[TF-BT] vol_band: %s [%.2f, %.2f] mask=0x%X  adx: %s (>=%.1f) mask=0x%X\n",
+    std::printf("[TF-BT] vol_band: %s [%.2f, %.2f] mask=0x%X  adx: %s (>=%.1f) mask=0x%X  er_gate: %s (>=%.2f win=%d) mask=0x%X\n",
                 use_vol_band?"ON":"OFF", vb_low, vb_high, cell_vol_mask,
-                use_adx?"ON":"OFF", adx_min, cell_adx_mask);
+                use_adx?"ON":"OFF", adx_min, cell_adx_mask,
+                use_er_gate?"ON":"OFF", er_min, er_win, cell_er_mask);
+    std::printf("[TF-BT] pyramid: %s (max=%d step=%.2fATR sl=%.2fATR no_tp=%s)  price[%.0f,%.0f] swap_ba=%s win=[%lld,%lld]\n",
+                pyr_max>0?"ON":"OFF", pyr_max, pyr_step, pyr_sl, pyr_no_tp?"Y":"N",
+                pmin, pmax, swap_ba?"Y":"N", (long long)win_start_ms, (long long)win_end_ms);
     BarBuilder bb2(2LL*3600*1000), bb4(4LL*3600*1000);
     D1Builder d1;
     Cell cells[]={
@@ -228,13 +271,16 @@ int main(int argc, char* argv[]) {
     constexpr int NC=13;
     SimTrade trades[NC]; Metrics tf2,tf4,tfd,all,ism,osm;
     int64_t ots=0; bool oset=false; int64_t ft=0,lt=0; size_t ttk=0; double mnp=99999999,mxp=0;
+    double lb=0,la=0;   // S45: last bid/ask, for force-close of open runners at series end
 
     std::printf("[TF-BT] XAUUSD Multi-cell TrendFollow backtest (2h/4h/D1)\n\n");
     std::ifstream f(argv[1]); if(!f.is_open()){std::fprintf(stderr,"Cannot open %s\n",argv[1]);return 1;}
     std::string fl; std::getline(f,fl);
     bool hdr=(fl.find("timestamp")!=std::string::npos||fl.find("Time")!=std::string::npos);
 
-    auto pd=[](const std::string& l,int64_t& ts,double& b,double& a)->bool{return std::sscanf(l.c_str(),"%lld,%lf,%lf",(long long*)&ts,&a,&b)==3;};
+    auto pd=[&](const std::string& l,int64_t& ts,double& b,double& a)->bool{
+        double x,y; if(std::sscanf(l.c_str(),"%lld,%lf,%lf",(long long*)&ts,&x,&y)!=3) return false;
+        if(swap_ba){b=x;a=y;}else{a=x;b=y;} return true; };
     auto ker=[](const std::deque<Bar>& bars,int n)->double{
         if((int)bars.size()<n+1)return 0;
         double dir=std::fabs(bars.back().close-bars[bars.size()-1-n].close),vol=0;
@@ -256,30 +302,60 @@ int main(int argc, char* argv[]) {
     };
     auto te=[&](int ci,bool il,double b,double a,int64_t ts,double atr){
         if(!cell_enabled[ci])return;
+        if(win_start_ms && ts<win_start_ms) return;   // S45: block entries outside window
+        if(win_end_ms   && ts>win_end_ms)   return;
         // S88-followup per-cell gates: ci 0-3 = 2h, 4-9 = 4h, 10-12 = D1.
         // Each cell can be selectively gated by ADX or vol_band via the
         // global cell_adx_mask / cell_vol_mask. Bit i = 1 means cell i is
         // gated by the corresponding gate when use_X is on.
         const unsigned bit = (1u << ci);
         const std::deque<double>* w = nullptr;
+        const std::deque<Bar>*    barptr = nullptr;
         double adx_v = 100.0;  // default: pass ADX
-        if (ci < 4)      { w = &bb2.atr_vol_window; adx_v = bb2.adx; }
-        else if (ci < 10){ w = &bb4.atr_vol_window; adx_v = bb4.adx; }
-        else             { w = &d1.atr_vol_window;  adx_v = d1.adx;  }
+        if (ci < 4)      { w = &bb2.atr_vol_window; adx_v = bb2.adx; barptr = &bb2.bars; }
+        else if (ci < 10){ w = &bb4.atr_vol_window; adx_v = bb4.adx; barptr = &bb4.bars; }
+        else             { w = &d1.atr_vol_window;  adx_v = d1.adx;  barptr = &d1.bars;  }
         if (use_vol_band && (cell_vol_mask & bit) && w && !vbpass(*w, atr)) return;
         if (use_adx && (cell_adx_mask & bit) && adx_v < adx_min) return;
+        // S45 ER trend/chop gate: skip entry if cell's recent ER < er_min (chop).
+        // Fail-open during warmup (ker returns 0 when bars < er_win+1 -> would
+        // block; guard on size so warmup doesn't suppress every early entry).
+        if (use_er_gate && (cell_er_mask & bit) && barptr &&
+            (int)barptr->size() >= er_win + 1 && ker(*barptr, er_win) < er_min) return;
         if(trades[ci].active)return; auto& t=trades[ci];
         t.active=true;t.is_long=il;t.entry_px=il?a:b;
         t.sl_px=il?t.entry_px-cells[ci].sl_mult*atr:t.entry_px+cells[ci].sl_mult*atr;
         t.tp_px=il?t.entry_px+cells[ci].tp_mult*atr:t.entry_px-cells[ci].tp_mult*atr;
+        if(pyr_no_tp) t.tp_px = il ? 1e18 : -1e18;   // runner mode: no fixed TP
         t.entry_time=ts;
+        t.atr_at_entry=atr; t.last_add_px=t.entry_px; t.n_units=1; t.sum_entry=t.entry_px;
     };
     auto mg=[&](double b,double a,int64_t ts){
         for(int i=0;i<NC;++i){auto& t=trades[i];if(!t.active)continue;
+            const double patr=t.atr_at_entry;
+            // S45 pyramiding: add a unit when price advances pyr_step*ATR beyond
+            // the last add, up to pyr_max adds, ratcheting the stop to
+            // (last_add -/+ pyr_sl*ATR). pyr_max=0 -> never fires -> baseline.
+            if(pyr_max>0 && t.n_units < 1+pyr_max && patr>0.0){
+                if(t.is_long){
+                    if(a >= t.last_add_px + pyr_step*patr){
+                        t.sum_entry+=a; ++t.n_units; t.last_add_px=a;
+                        double ns=t.last_add_px - pyr_sl*patr; if(ns>t.sl_px) t.sl_px=ns;
+                    }
+                } else {
+                    if(b <= t.last_add_px - pyr_step*patr){
+                        t.sum_entry+=b; ++t.n_units; t.last_add_px=b;
+                        double ns=t.last_add_px + pyr_sl*patr; if(ns<t.sl_px) t.sl_px=ns;
+                    }
+                }
+            }
             bool sl=t.is_long?(b<=t.sl_px):(a>=t.sl_px);
             bool tp=t.is_long?(b>=t.tp_px):(a<=t.tp_px);
             if(!sl&&!tp)continue;
-            double ep=tp?t.tp_px:t.sl_px,pp=t.is_long?(ep-t.entry_px):(t.entry_px-ep),pu=pp*cfg::PNL_PER_PT;
+            double ep=tp?t.tp_px:t.sl_px;
+            double pp=t.is_long?(t.n_units*ep - t.sum_entry):(t.sum_entry - t.n_units*ep);
+            double pu=pp*cfg::PNL_PER_PT;
+            pu -= cfg::COST_RT_PTS * (double)t.n_units * cfg::PNL_PER_PT;  // IBKR cost per unit RT
             cells[i].record(pu);all.record(pu);
             if(t.entry_time<ots)ism.record(pu);else osm.record(pu);
             if(i<4)tf2.record(pu);else if(i<10)tf4.record(pu);else tfd.record(pu);
@@ -287,8 +363,8 @@ int main(int argc, char* argv[]) {
         }
     };
     auto proc=[&](int64_t ts,double b,double a){
-        if(b<=0||a<=0||a<b)return; double mid=(b+a)*0.5; if(mid<1000||mid>5000)return;
-        ttk++; if(mid<mnp)mnp=mid; if(mid>mxp)mxp=mid; if(ft==0)ft=ts; lt=ts;
+        if(b<=0||a<=0||a<b)return; double mid=(b+a)*0.5; if(mid<pmin||mid>pmax)return;
+        ttk++; lb=b; la=a; if(mid<mnp)mnp=mid; if(mid>mxp)mxp=mid; if(ft==0)ft=ts; lt=ts;
         if(!oset&&ft>0){ots=ft+(int64_t)(26.0*30*24*3600*1000.0*cfg::OOS_FRAC);oset=true;}
         if(cfg::is_weekend(ts))return;
         mg(b,a,ts);
@@ -333,6 +409,21 @@ int main(int argc, char* argv[]) {
     std::string line; size_t lc=0;
     while(std::getline(f,line)){int64_t ts;double b,a;if(pd(line,ts,b,a))proc(ts,b,a);if(++lc%10000000==0)std::printf("  ... %zuM ticks\n",lc/1000000);}
 
+    // S45: force-close trades still open at series end. ONLY for no-TP runner
+    // mode (else open winners go unrecorded). Gated on pyr_no_tp so baseline +
+    // fixed-TP variants reproduce their prior numbers exactly (fidelity anchor).
+    if(pyr_no_tp && (lb>0.0&&la>0.0)){
+        for(int i=0;i<NC;++i){auto& t=trades[i];if(!t.active)continue;
+            double ep=t.is_long?lb:la;
+            double pp=t.is_long?(t.n_units*ep - t.sum_entry):(t.sum_entry - t.n_units*ep);
+            double pu=pp*cfg::PNL_PER_PT;
+            pu -= cfg::COST_RT_PTS * (double)t.n_units * cfg::PNL_PER_PT;  // IBKR cost per unit RT
+            cells[i].record(pu);all.record(pu);
+            if(t.entry_time<ots)ism.record(pu);else osm.record(pu);
+            if(i<4)tf2.record(pu);else if(i<10)tf4.record(pu);else tfd.record(pu);
+            t.active=false;
+        }
+    }
     double hrs=(lt>ft)?(lt-ft)/3600000.0:0;
     std::printf("\n===============================================================\n");
     std::printf("  XAUUSD MULTI-CELL TREND-FOLLOW BACKTEST (2h/4h/D1)\n");

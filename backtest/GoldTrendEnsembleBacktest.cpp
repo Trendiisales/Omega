@@ -51,6 +51,9 @@
 namespace cfg {
     constexpr double STARTING_EQUITY      = 100000.0;
     constexpr double VOL_TARGET_ANN       = 0.10;
+    // IBKR gold round-trip cost in price points (commission + slippage +
+    // spread, GC-futures basis ~0.37). Deducted per closed trade x units.
+    constexpr double COST_RT_PTS          = 0.37;
     constexpr int    ATR_PERIOD           = 14;
     constexpr double ATR_INIT             = 5.0;
     constexpr double ATR_MIN              = 0.5;
@@ -234,6 +237,7 @@ struct CellRunner {
     double       peak_pnl = 0;
     double       max_dd = 0;
     int          n_wins = 0, n_losses = 0;
+    double       gross_win = 0, gross_loss = 0;   // for PF (post-cost)
     int          bar_idx = 0;
     std::vector<Trade> trades;
     std::vector<double> bar_pnl_track;   // PnL per bar close on this TF (debug/equity)
@@ -313,11 +317,13 @@ struct CellRunner {
 private:
     void _close(double exit_px, int64_t ts_ms, const char* reason) {
         double pnl = (exit_px - pos.entry_px) * pos.units;
+        pnl -= cfg::COST_RT_PTS * std::fabs(pos.units);   // IBKR round-trip cost
         cum_pnl += pnl;
         if (cum_pnl > peak_pnl) peak_pnl = cum_pnl;
         double dd = peak_pnl - cum_pnl;
         if (dd > max_dd) max_dd = dd;
-        if (pnl > 0) ++n_wins; else if (pnl < 0) ++n_losses;
+        if (pnl > 0) { ++n_wins; gross_win += pnl; }
+        else if (pnl < 0) { ++n_losses; gross_loss += -pnl; }
         Trade t;
         t.cell = kCells[ci].name;
         t.entry_ts_ms = pos.entry_ts_ms;
@@ -398,14 +404,14 @@ int main(int argc, char** argv) {
 
     while (std::getline(f, line)) {
         if (line.empty()) continue;
-        // parse timestamp,askPrice,bidPrice
+        // parse timestamp,bid,ask  (format_a column order: ts_ms,bid,ask)
         const char* s = line.c_str();
         char* end = nullptr;
         int64_t ts = strtoll(s, &end, 10);
         if (*end != ',') continue;
-        double ask = strtod(end + 1, &end);
-        if (*end != ',') continue;
         double bid = strtod(end + 1, &end);
+        if (*end != ',') continue;
+        double ask = strtod(end + 1, &end);
         if (ask <= 0 || bid <= 0 || ask <= bid) continue;
         if (cfg::is_weekend(ts)) continue;
         double mid = (ask + bid) * 0.5;
@@ -496,12 +502,23 @@ int main(int argc, char** argv) {
         int nt = (int)r.trades.size();
         double hit = (r.n_wins + r.n_losses > 0)
                      ? 100.0 * r.n_wins / (r.n_wins + r.n_losses) : 0;
-        std::printf("%-22s %+12.2f %+9.2f %7.2f %7d %5.1f\n",
+        double pf = (r.gross_loss > 0) ? r.gross_win / r.gross_loss
+                                       : (r.gross_win > 0 ? 999.0 : 0.0);
+        // trade-based per-cell Sharpe: mean/std of trade PnL, annualized by
+        // trades-per-year (years computed above). Real, post-cost.
+        double cell_sharpe = 0.0;
+        if (nt >= 2 && years > 0) {
+            double m = 0; for (const auto& t : r.trades) m += t.pnl; m /= nt;
+            double v = 0; for (const auto& t : r.trades) v += (t.pnl - m) * (t.pnl - m);
+            double sd = std::sqrt(v / (nt - 1));
+            if (sd > 0) cell_sharpe = (m / sd) * std::sqrt((double)nt / years);
+        }
+        std::printf("%-22s %+12.2f %+9.2f %7.2f %7d %5.1f  PF=%.2f Sh=%+.2f\n",
                     kCells[r.ci].name,
                     r.cum_pnl,
                     r.cum_pnl / cfg::STARTING_EQUITY * 100.0,
                     r.max_dd,
-                    nt, hit);
+                    nt, hit, pf, cell_sharpe);
         total_trades += nt; total_wins += r.n_wins;
     }
     std::printf("--------------------------------------------------------------------------\n");
