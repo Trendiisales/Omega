@@ -47,6 +47,7 @@ struct XauStraddleM30Engine {
     double tp_r        = 1.0;    // TP = tp_r * SL distance (1R)
     double max_spread  = 1.0;    // pts
     double lot         = 0.01;
+    double gap_atr_max = 8.0;    // reject a stop gapped > this*ATR from mid (stale-box / gap phantom guard)
     int    hold_max_bars = 48;   // safety timeout (24h on M30)
 
     std::string symbol  = "XAUUSD";
@@ -139,6 +140,12 @@ struct XauStraddleM30Engine {
         else if (bid <= sell_stop_ && sell_stop_ > 0.0) { side = -1; fill = sell_stop_; }
         if (side == 0) return;
 
+        // gap guard: a stop already gapped far through the market (stale warm-seed
+        // box, or a large overnight gap) must NOT fill at the phantom stop price --
+        // that produces a fake 0-second TP (e.g. seed box ~4716 vs live gold ~4482).
+        const double mid_fill = (bid + ask) * 0.5;
+        if (std::fabs(fill - mid_fill) > gap_atr_max * atr_) { armed_ = false; return; }
+
         const double sl_dist = stop_atr * atr_;
         const double tp_dist = tp_r * sl_dist;
         if (sl_dist <= 0.0) return;
@@ -188,6 +195,10 @@ struct XauStraddleM30Engine {
             if (lows_[i]  < bl) bl = lows_[i];
         }
         buy_stop_ = bh; sell_stop_ = bl; armed_ = true;
+        // NB: a stale warm-seed box (or a large gap) leaves a stop already through
+        // the market; the gap guard in on_tick rejects that phantom fill. We keep
+        // arming faithful to the validated harness (no straddle-arm restriction)
+        // and let the gap guard catch only the pathological >gap_atr_max*ATR case.
     }
 
     // ---- warm-seed: replay M30 bars (bar_start_ms,open,high,low,close) ----

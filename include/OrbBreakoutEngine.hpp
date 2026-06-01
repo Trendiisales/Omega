@@ -52,6 +52,7 @@ struct OrbBreakoutEngine {
     double tp_r         = 2.0;   // TP = tp_r * risk (risk = entry - OR_low)
     double max_spread   = 3.0;   // pts
     double lot          = 0.01;
+    double gap_atr_max  = 8.0;    // reject a stop gapped > this*ATR from mid (stale-box / gap phantom guard)
     bool   long_only    = true;  // short leg dead on every symbol
 
     std::string symbol      = "ESTX50";
@@ -189,6 +190,10 @@ struct OrbBreakoutEngine {
             side = -1; fill = sell_stop; risk = or_high_ - fill;
         }
         if (side == 0 || risk <= 0.0) return;
+
+        // gap guard: never fill a stop gapped far through the market (stale OR after
+        // a restart, or a large gap) -- it would book a phantom 0-second profit.
+        if (std::fabs(fill - mid) > gap_atr_max * atr_) return;
 
         const double tp_dist = tp_r * risk;
         if (!ExecutionCostGuard::is_viable(symbol.c_str(), (ask - bid), tp_dist, lot, 1.5))
