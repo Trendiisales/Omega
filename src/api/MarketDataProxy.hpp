@@ -162,6 +162,12 @@ private:
     MarketDataResult dispatch(const std::string& route,
                               const std::string& query);
 
+    // ---- Yahoo session (cookie + crumb) for chart / quoteSummary ----------
+    // Bootstraps (force=false) or refreshes (force=true) the Yahoo session
+    // cookie and crumb. Fills out_crumb with a snapshot taken under the lock.
+    // Returns true when a crumb is in hand.
+    bool ensure_yahoo_session(bool force, std::string& out_crumb);
+
     // ---- Yahoo Finance fetchers (each reshapes to the legacy envelope) ----
     MarketDataResult yahoo_quote(const std::string& query);
     MarketDataResult yahoo_chart(const std::string& query);
@@ -191,6 +197,12 @@ private:
 
     std::string fred_key_;
     bool        mock_;
+
+    // Yahoo session state, guarded by yahoo_session_mu_ (separate from the
+    // cache mutex so a session bootstrap never blocks cache reads).
+    std::mutex  yahoo_session_mu_;
+    std::string yahoo_crumb_;
+    bool        yahoo_session_ready_ = false;
 
     std::mutex                                   mu_;
     std::unordered_map<std::string, CacheEntry>  cache_;

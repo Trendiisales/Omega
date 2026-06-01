@@ -105,6 +105,16 @@ constexpr const char* kYahooSearch  = "https://query1.finance.yahoo.com/v1/finan
 constexpr const char* kYahooScreener= "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved";
 constexpr const char* kFredObs      = "https://api.stlouisfed.org/fred/series/observations";
 
+// Yahoo now gates /v8/finance/chart and /v10/finance/quoteSummary behind a
+// session cookie (chart) plus an opaque crumb token (quoteSummary). We
+// bootstrap a session once: GET fc.yahoo.com to obtain the A1/A3 cookies,
+// then GET getcrumb to mint the crumb. The cookies are persisted to a shared
+// on-disk jar; every other request reads it read-only (concurrent reads are
+// safe -- only the bootstrap writes back, under yahoo_session_mu_).
+constexpr const char* kYahooBootstrap = "https://fc.yahoo.com/";
+constexpr const char* kYahooCrumbUrl  = "https://query1.finance.yahoo.com/v1/test/getcrumb";
+constexpr const char* kYahooCookieJar = "omega_yahoo_cookies.txt";
+
 // Yahoo Finance occasionally 403s on default libcurl UAs. A browser-like
 // header passes the gate. FRED is happy with anything; we keep our own UA
 // for FRED to make the access logs more legible.
@@ -816,6 +826,11 @@ MarketDataResult MarketDataProxy::http_get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL,       1L);
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");  // accept gzip/deflate
+    // Load the shared Yahoo session cookies read-only. Harmless for non-Yahoo
+    // hosts (cookies are domain-scoped). No COOKIEJAR here: only the one-shot
+    // ensure_yahoo_session() writes the jar, so concurrent requests never race
+    // on the file.
+    curl_easy_setopt(curl, CURLOPT_COOKIEFILE,     kYahooCookieJar);
 
     const CURLcode rc = curl_easy_perform(curl);
 
@@ -837,6 +852,97 @@ MarketDataResult MarketDataProxy::http_get(const std::string& url,
     curl_easy_cleanup(curl);
 
     return MarketDataResult{static_cast<int>(http_code), body, false};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ensure_yahoo_session -- bootstrap (and refresh) the Yahoo cookie + crumb
+//
+// Yahoo's /v8/finance/chart needs a valid session cookie and /v10/finance/
+// quoteSummary additionally needs an opaque crumb tied to that cookie. We do
+// the handshake once and cache the crumb; callers re-invoke with force=true
+// after a 401/403/400 to refresh a stale session. out_crumb is filled with a
+// snapshot taken under the lock so callers never read yahoo_crumb_ racily.
+//
+// Returns true when a crumb is in hand. The cookie jar is written by the
+// bootstrap GET (curl flushes COOKIEJAR on handle cleanup) and read read-only
+// everywhere else, so there is no concurrent write to the jar file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool MarketDataProxy::ensure_yahoo_session(bool force, std::string& out_crumb)
+{
+    std::lock_guard<std::mutex> lk(yahoo_session_mu_);
+
+    if (yahoo_session_ready_ && !yahoo_crumb_.empty() && !force) {
+        out_crumb = yahoo_crumb_;
+        return true;
+    }
+
+    ensure_curl_global_init();
+
+    // Step 1: GET fc.yahoo.com to mint A1/A3 cookies; persist to the jar.
+    {
+        CURL* c = curl_easy_init();
+        if (!c) return false;
+        std::string sink;
+        curl_slist* hdr = curl_slist_append(nullptr, kYahooUserAgent);
+        curl_easy_setopt(c, CURLOPT_URL,            kYahooBootstrap);
+        curl_easy_setopt(c, CURLOPT_HTTPHEADER,     hdr);
+        curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  curl_write_cb);
+        curl_easy_setopt(c, CURLOPT_WRITEDATA,      &sink);
+        curl_easy_setopt(c, CURLOPT_COOKIEFILE,     kYahooCookieJar);  // read existing
+        curl_easy_setopt(c, CURLOPT_COOKIEJAR,      kYahooCookieJar);  // write back
+        curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(c, CURLOPT_TIMEOUT,        20L);
+        curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(c, CURLOPT_NOSIGNAL,       1L);
+        curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
+        curl_easy_perform(c);
+        curl_slist_free_all(hdr);
+        curl_easy_cleanup(c);   // flushes COOKIEJAR to disk
+    }
+
+    // Step 2: GET getcrumb using the freshly-set cookies. The body is a short
+    // opaque token (never HTML/JSON); reject anything that looks like a page.
+    std::string crumb;
+    {
+        CURL* c = curl_easy_init();
+        if (!c) return false;
+        curl_slist* hdr = curl_slist_append(nullptr, kYahooUserAgent);
+        curl_easy_setopt(c, CURLOPT_URL,            kYahooCrumbUrl);
+        curl_easy_setopt(c, CURLOPT_HTTPHEADER,     hdr);
+        curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  curl_write_cb);
+        curl_easy_setopt(c, CURLOPT_WRITEDATA,      &crumb);
+        curl_easy_setopt(c, CURLOPT_COOKIEFILE,     kYahooCookieJar);  // read-only
+        curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(c, CURLOPT_TIMEOUT,        20L);
+        curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(c, CURLOPT_NOSIGNAL,       1L);
+        curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
+        long code = 0;
+        const CURLcode rc = curl_easy_perform(c);
+        curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+        curl_slist_free_all(hdr);
+        curl_easy_cleanup(c);
+
+        while (!crumb.empty() &&
+               (crumb.back() == '\n' || crumb.back() == '\r' ||
+                crumb.back() == ' '  || crumb.back() == '\t')) {
+            crumb.pop_back();
+        }
+        if (rc != CURLE_OK || code < 200 || code >= 300 ||
+            crumb.empty() || crumb.size() > 64 ||
+            crumb.find('<') != std::string::npos ||
+            crumb.find('{') != std::string::npos) {
+            yahoo_session_ready_ = false;
+            yahoo_crumb_.clear();
+            return false;
+        }
+    }
+
+    yahoo_crumb_         = crumb;
+    yahoo_session_ready_ = true;
+    out_crumb            = crumb;
+    return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -979,7 +1085,23 @@ MarketDataResult MarketDataProxy::yahoo_chart(const std::string& query)
         url += "&range=3mo";
     }
 
-    MarketDataResult raw = http_get(url, { kYahooUserAgent });
+    // Yahoo chart needs the session cookie; quoteSummary additionally needs a
+    // crumb. We attach the crumb here too -- harmless for chart, and keeps the
+    // refresh path uniform. Retry once on an auth-style failure with a fresh
+    // session in case the cached cookie/crumb went stale.
+    std::string crumb;
+    ensure_yahoo_session(/*force=*/false, crumb);
+    auto build_chart_url = [&](const std::string& cr) {
+        std::string u = url;
+        if (!cr.empty()) { u += "&crumb="; u += url_encode(cr, /*keep_comma=*/false); }
+        return u;
+    };
+    MarketDataResult raw = http_get(build_chart_url(crumb), { kYahooUserAgent });
+    if (raw.status == 400 || raw.status == 401 || raw.status == 403) {
+        if (ensure_yahoo_session(/*force=*/true, crumb)) {
+            raw = http_get(build_chart_url(crumb), { kYahooUserAgent });
+        }
+    }
     if (raw.status < 200 || raw.status >= 300) {
         return MarketDataResult{
             raw.status,
@@ -1159,7 +1281,21 @@ MarketDataResult MarketDataProxy::yahoo_quote_summary(const std::string& route,
     url += "?modules=";
     url += url_encode(modules, /*keep_comma=*/true);
 
-    MarketDataResult raw = http_get(url, { kYahooUserAgent });
+    // quoteSummary is crumb-gated. Mint a session, attach the crumb, and retry
+    // once with a forced refresh on an auth-style failure (stale crumb).
+    std::string crumb;
+    ensure_yahoo_session(/*force=*/false, crumb);
+    auto build_summary_url = [&](const std::string& cr) {
+        std::string u = url;
+        if (!cr.empty()) { u += "&crumb="; u += url_encode(cr, /*keep_comma=*/false); }
+        return u;
+    };
+    MarketDataResult raw = http_get(build_summary_url(crumb), { kYahooUserAgent });
+    if (raw.status == 400 || raw.status == 401 || raw.status == 403) {
+        if (ensure_yahoo_session(/*force=*/true, crumb)) {
+            raw = http_get(build_summary_url(crumb), { kYahooUserAgent });
+        }
+    }
     if (raw.status < 200 || raw.status >= 300) {
         return MarketDataResult{
             raw.status,
