@@ -911,6 +911,29 @@ function Invoke-Deploy {
     Write-Host ""
 
     # --------------------------------------------------------------------------
+    # [2b/12] Refresh engine warm-seed CSVs from captured l2_ticks (S-2026-06-01).
+    #         Engines seed their breakout box from phase1/signal_discovery/warmup_*.csv.
+    #         The git reset just restored the COMMITTED (stale) snapshot; regenerate it
+    #         from the live l2_ticks_<SYM>_*.csv captures so the box seeds at CURRENT
+    #         price, not a frozen one. A stale box sits off-market and produced phantom
+    #         0-second fills (see the gap/arm guards in XauStraddleM30Engine).
+    #         NON-FATAL: any failure/skip just leaves the git snapshot in place.
+    # --------------------------------------------------------------------------
+    Write-Host "[2b/12] Refreshing warm-seed CSVs from l2_ticks..." -ForegroundColor Yellow
+    Push-Location $OmegaDir
+    try {
+        py scripts\rebuild_warmups.py 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  [WARN] rebuild_warmups exit=$LASTEXITCODE -- keeping git snapshot" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "  [WARN] rebuild_warmups failed: $_ -- keeping git snapshot" -ForegroundColor Yellow
+    } finally {
+        Pop-Location
+    }
+    Write-Host ""
+
+    # --------------------------------------------------------------------------
     # [3/12] Compute SOURCE_HASH (skip log-only commits) -- this is what gets
     #        stamped, shown in the GUI, and verified by start/restart/watchdog.
     #        Walks recent history for the first commit whose changeset is not
