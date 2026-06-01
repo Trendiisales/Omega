@@ -347,51 +347,13 @@ def main():
         sys.exit(2)
 
     ib = IB()
-    print(f"connecting to {args.host}:{args.port} clientId={args.client_id}", flush=True)
-    try:
-        ib.connect(args.host, args.port, clientId=args.client_id, timeout=10)
-    except Exception as e:
-        print(f"CONNECT FAILED: {e}", file=sys.stderr)
-        print("Check: TWS running? File > Global Config > API > Settings:", file=sys.stderr)
-        print("  - 'Enable ActiveX and Socket Clients' checked", file=sys.stderr)
-        print(f"  - Socket port = {args.port}", file=sys.stderr)
-        print(f"  - Trusted IPs includes {args.host}", file=sys.stderr)
-        sys.exit(3)
-    print(f"connected: server={ib.client.serverVersion()} time={ib.reqCurrentTime()}",
-          flush=True)
 
+    # TcpBroadcaster (the server Omega's IbkrDomConsumer connects to) is created
+    # ONCE and kept alive across IB reconnects, so Omega never sees the feed port
+    # drop just because the IB session bounced.
     broadcaster: TcpBroadcaster | None = None
     if args.tcp_port > 0:
         broadcaster = TcpBroadcaster(args.tcp_host, args.tcp_port)
-
-    recorders = []
-    for sym in syms:
-        try:
-            contract = make_contract(sym)
-            # For Future contracts left ambiguous (no expiry), pick the
-            # nearest forward expiration. Pass-through for non-futures.
-            contract = resolve_front_month(ib, contract)
-            ib.qualifyContracts(contract)
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            out_path = os.path.join(args.out_dir, f"ibkr_l2_{sym}_{today}.csv")
-            rec = DomRecorder(ib, contract, out_path,
-                              max_levels=args.max_levels,
-                              broadcaster=broadcaster)
-            rec.start()
-            recorders.append(rec)
-            # For futures, log the resolved front-month expiry so the operator
-            # can spot when a roll is due (typically 8 trading days before
-            # lastTradeDateOrContractMonth for E-mini / Eurex quarterly cycle).
-            expiry = getattr(contract, "lastTradeDateOrContractMonth", "") or ""
-            sectype = getattr(contract, "secType", "") or ""
-            tag = f" [{sectype} expiry={expiry}]" if expiry else ""
-            print(f"subscribed {sym} -> {out_path}{tag}", flush=True)
-        except Exception as e:
-            print(f"FAILED {sym}: {e}", file=sys.stderr)
-
-    if not recorders:
-        ib.disconnect()
-        sys.exit(4)
 
     stop = {"now": False}
 
@@ -402,19 +364,98 @@ def main():
     signal.signal(signal.SIGTERM, _sigint)
 
     deadline = time.monotonic() + args.duration_sec if args.duration_sec > 0 else None
-    print("recording... Ctrl-C to stop", flush=True)
+    RECONNECT_SEC = 15
+
+    def subscribe_all():
+        recs = []
+        for sym in syms:
+            try:
+                contract = make_contract(sym)
+                # For Future contracts left ambiguous (no expiry), pick the
+                # nearest forward expiration. Pass-through for non-futures.
+                contract = resolve_front_month(ib, contract)
+                ib.qualifyContracts(contract)
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                out_path = os.path.join(args.out_dir, f"ibkr_l2_{sym}_{today}.csv")
+                rec = DomRecorder(ib, contract, out_path,
+                                  max_levels=args.max_levels,
+                                  broadcaster=broadcaster)
+                rec.start()
+                recs.append(rec)
+                # For futures, log the resolved front-month expiry so the operator
+                # can spot when a roll is due (typically 8 trading days before
+                # lastTradeDateOrContractMonth for E-mini / Eurex quarterly cycle).
+                expiry = getattr(contract, "lastTradeDateOrContractMonth", "") or ""
+                sectype = getattr(contract, "secType", "") or ""
+                tag = f" [{sectype} expiry={expiry}]" if expiry else ""
+                print(f"subscribed {sym} -> {out_path}{tag}", flush=True)
+            except Exception as e:
+                print(f"FAILED {sym}: {e}", file=sys.stderr)
+        return recs
+
+    # ---- supervise loop: (re)connect + (re)subscribe until stop/deadline ------
+    # A gateway daily-restart or IBKR data-farm reset drops the IB connection.
+    # The bridge previously connected ONCE then idled forever (no reconnect), so
+    # a single drop turned it into a zombie -- alive but producing no DOM, which
+    # caused multi-hour data gaps (e.g. 04:16 -> next manual restart, ~18h). Now
+    # it detects the disconnect via ib.isConnected() and reconnects on its own
+    # within RECONNECT_SEC, re-subscribing all symbols. The freshness watchdog is
+    # now only a last-resort backstop.
     try:
         while not stop["now"]:
-            ib.sleep(0.5)
-            if deadline is not None and time.monotonic() >= deadline:
-                break
+            if not ib.isConnected():
+                try:
+                    print(f"connecting to {args.host}:{args.port} clientId={args.client_id}",
+                          flush=True)
+                    ib.connect(args.host, args.port, clientId=args.client_id, timeout=10)
+                    print(f"connected: server={ib.client.serverVersion()} "
+                          f"time={ib.reqCurrentTime()}", flush=True)
+                except Exception as e:
+                    print(f"CONNECT FAILED: {e} -- retry in {RECONNECT_SEC}s "
+                          f"(gateway up? port {args.port}? API enabled? trusted IP {args.host}?)",
+                          file=sys.stderr)
+                    time.sleep(RECONNECT_SEC)
+                    continue
+
+            recorders = subscribe_all()
+            if not recorders:
+                print(f"no recorders subscribed -- retry in {RECONNECT_SEC}s", file=sys.stderr)
+                try:
+                    ib.disconnect()
+                except Exception:
+                    pass
+                time.sleep(RECONNECT_SEC)
+                continue
+
+            print("recording... Ctrl-C to stop", flush=True)
+            # pump the event loop until the session drops, stop, or deadline
+            while not stop["now"] and ib.isConnected():
+                ib.sleep(0.5)
+                if deadline is not None and time.monotonic() >= deadline:
+                    stop["now"] = True
+                    break
+
+            for r in recorders:
+                print(f"[{r.sym}] total_events={r.events}", flush=True)
+                try:
+                    r.stop()
+                except Exception:
+                    pass
+
+            if not stop["now"]:
+                print(f"DISCONNECTED -- reconnecting in {RECONNECT_SEC}s", file=sys.stderr)
+                try:
+                    ib.disconnect()
+                except Exception:
+                    pass
+                time.sleep(RECONNECT_SEC)
     finally:
-        for r in recorders:
-            print(f"[{r.sym}] total_events={r.events}", flush=True)
-            r.stop()
         if broadcaster is not None:
             broadcaster.stop()
-        ib.disconnect()
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
         print("disconnected", flush=True)
 
 

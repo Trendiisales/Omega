@@ -90,7 +90,11 @@ Write-Host $msg -ForegroundColor Red
 
 # Kill any python process that looks like the bridge so the relaunch is clean.
 # Uses WMI to inspect command-lines (Get-Process doesn't expose them by default).
-$stale = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -EA SilentlyContinue |
+# NOTE: the bridge runs under pythonw.exe (windowless, via the scheduled task), so
+# matching only 'python.exe' missed it entirely -- the zombie survived and the
+# Start-ScheduledTask below no-op'd (task already "running"). Match BOTH.
+$stale = Get-CimInstance Win32_Process `
+        -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" -EA SilentlyContinue |
     Where-Object { $_.CommandLine -like '*ibkr_dom_bridge*' }
 foreach ($p in $stale) {
     try {
