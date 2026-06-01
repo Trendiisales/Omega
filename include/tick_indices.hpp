@@ -1081,6 +1081,15 @@ static void on_tick_estx50(
         }
     }
     (void)sdec_estx;
+    // IndexSessionEngine ESTX50/Euro Stoxx 50 (09-20 UTC LONG, dip-buy, risk-off).
+    {
+        const int64_t now_ms_ise = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idxsess_estx50.set_risk_off(omega::index_risk_off());
+        g_idxsess_estx50.on_tick(bid, ask, now_ms_ise);
+        g_engine_heartbeat.pulse("IndexSession_ESTX50");
+    }
 }
 
 // ── NAS100 ─────────────────────────────────────────────────
