@@ -483,7 +483,13 @@ public:
         // 8.  USTEC  4h RSI N=7
         add({ .tag="USTEC_4h_RSI_N7",  .symbol="USTEC.F", .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 9.  GER40  15m MACross 20/50
-        add({ .tag="GER_15m_MA_20_50", .symbol="GER40",   .tf_sec=900,   .family=Family::MACross, .N=50, .N_fast=20, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=50, .lot=0.10 });
+        // DISABLED 2026-06-02: redundant duplicate of GER_15m_MA_10_30 (cell 4).
+        // Same symbol/TF(15m)/family(MACross), overlapping params, lower Sharpe
+        // (0.99 vs 10_30's 1.96). Live shadow tape 2026-06-02 12:30 showed BOTH
+        // cells firing the IDENTICAL trade (entry 25274.40 -> SL 25164.97,
+        // -$13.24 each) = correlated double-loss, zero diversification. Keep the
+        // higher-Sharpe 10_30; cull this one (dedup, per S46/S37 precedent).
+        // add({ .tag="GER_15m_MA_20_50", .symbol="GER40",   .tf_sec=900,   .family=Family::MACross, .N=50, .N_fast=20, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=50, .lot=0.10 });
         // 10. USTEC  4h ZScoreMR W=20 Z=2.5
         add({ .tag="USTEC_4h_ZMR",     .symbol="USTEC.F", .tf_sec=14400, .family=Family::ZScoreMR, .N=20, .zthr=2.5, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 11. GER40  5m RSI N=14
