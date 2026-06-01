@@ -1066,6 +1066,15 @@ MarketDataResult MarketDataProxy::yahoo_chart(const std::string& query)
         };
         int64_t p1 = parse_date(start_date);
         int64_t p2 = parse_date(end_date);
+        // Yahoo's chart API returns HTTP 400 on a half-open range (period1
+        // with no period2). When a caller passes start_date but no end_date
+        // -- the MPS Share Scanner does exactly this -- cap the window at now
+        // so we always send a closed [period1, period2] pair.
+        if (p1 > 0 && p2 <= 0) {
+            p2 = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+        }
         if (p1 > 0 || p2 > 0) {
             char buf[64];
             if (p1 > 0) {
