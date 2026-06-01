@@ -1504,6 +1504,21 @@ static void on_tick_gold(
                           << "\n";
                 std::cout.flush();
             }
+        } else {
+            // Engine permanently disabled (g_disable_bracket_gold) and no open
+            // position -> the live diag above never fires, so 0 [GOLD-BRK-DIAG]
+            // lines reach the log and the frontend gold_bracket.range_alive
+            // health check perma-warns ("No [GOLD-BRK-DIAG] lines in last 2000").
+            // Emit a terse heartbeat (every 30s) so the check stays satisfied
+            // and the disabled state stays explicit in the log.
+            static int64_t s_last_brk_disabled_diag = 0;
+            if (now_ms_g - s_last_brk_disabled_diag >= 30000) {
+                s_last_brk_disabled_diag = now_ms_g;
+                std::cout << "[GOLD-BRK-DIAG] phase=DISABLED engine_off=1"
+                          << " reason=g_disable_bracket_gold"
+                          << " note=permanent_disable_2026-05-29\n";
+                std::cout.flush();
+            }
         }
         // Phase-aware gate:
         //   IDLE    ? can_arm_bracket: all gates apply to start arming
