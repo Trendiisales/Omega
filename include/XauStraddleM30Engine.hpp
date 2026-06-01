@@ -47,7 +47,10 @@ struct XauStraddleM30Engine {
     double tp_r        = 1.0;    // TP = tp_r * SL distance (1R)
     double max_spread  = 1.0;    // pts
     double lot         = 0.01;
-    double gap_atr_max = 8.0;    // reject a stop gapped > this*ATR from mid (stale-box / gap phantom guard)
+    double gap_atr_max = 3.0;    // reject a stop gapped > this*ATR from mid (stale-box / gap phantom guard).
+                                 // A real breakout fills AT the box edge (|fill-mid|~=0); 3*ATR is already far
+                                 // beyond any legit fill, but << a stale-seed-box gap (hundreds of pts). 8.0 was
+                                 // too loose -- a 204pt stale gap == ~8*ATR(25) slipped through (2026-06-01).
     int    hold_max_bars = 48;   // safety timeout (24h on M30)
 
     std::string symbol  = "XAUUSD";
@@ -194,11 +197,16 @@ struct XauStraddleM30Engine {
             if (highs_[i] > bh) bh = highs_[i];
             if (lows_[i]  < bl) bl = lows_[i];
         }
-        buy_stop_ = bh; sell_stop_ = bl; armed_ = true;
-        // NB: a stale warm-seed box (or a large gap) leaves a stop already through
-        // the market; the gap guard in on_tick rejects that phantom fill. We keep
-        // arming faithful to the validated harness (no straddle-arm restriction)
-        // and let the gap guard catch only the pathological >gap_atr_max*ATR case.
+        buy_stop_ = bh; sell_stop_ = bl;
+        // Guard #2 (ATR-INDEPENDENT): only arm when the box straddles the current
+        // market. A box sitting entirely above/below price (stale warm-seed box, or
+        // a large gap) has one stop already through the market -> it would fill
+        // instantly at the phantom stop price. This catches the stale-box case
+        // regardless of ATR (the on_tick gap guard is the second line). The only
+        // legit case it skips is a bar that closed fully outside its own box (rare
+        // runaway breakout) -- it simply re-arms next bar, negligible vs validated.
+        const double mid_arm = (bid > 0.0 && ask > 0.0) ? (bid + ask) * 0.5 : m30_close;
+        armed_ = (buy_stop_ > mid_arm && sell_stop_ < mid_arm);
     }
 
     // ---- warm-seed: replay M30 bars (bar_start_ms,open,high,low,close) ----

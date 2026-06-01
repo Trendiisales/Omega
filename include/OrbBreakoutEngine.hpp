@@ -52,7 +52,8 @@ struct OrbBreakoutEngine {
     double tp_r         = 2.0;   // TP = tp_r * risk (risk = entry - OR_low)
     double max_spread   = 3.0;   // pts
     double lot          = 0.01;
-    double gap_atr_max  = 8.0;    // reject a stop gapped > this*ATR from mid (stale-box / gap phantom guard)
+    double gap_atr_max  = 3.0;    // reject a stop gapped > this*ATR from mid (stale-box / gap phantom guard).
+                                  // 8.0 was too loose -- a ~204pt stale-box gap == ~8*ATR slipped through.
     bool   long_only    = true;  // short leg dead on every symbol
 
     std::string symbol      = "ESTX50";
