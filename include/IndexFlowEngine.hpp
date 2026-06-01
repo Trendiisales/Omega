@@ -1364,6 +1364,7 @@ struct IndexFlowCfg {
 class IndexSwingEngine {
 public:
     bool shadow_mode = true;   // NEVER set false without explicit authorization
+    bool enabled     = true;   // set false in engine_init.hpp to cull (no entries/mgmt)
 
     // Construct with per-symbol calibration.
     // sl_pts      : fixed SL distance in price points
@@ -1399,6 +1400,7 @@ public:
     bool on_tick(double bid, double ask,
                  const OHLCBarEngine& h1bars, const OHLCBarEngine& h4bars,
                  double drift, CloseCb on_close) noexcept {
+        if (!enabled) return false;   // culled 2026-06-02 (net-neg shadow, see engine_init)
         if (bid <= 0.0 || ask <= 0.0 || bid >= ask) return false;
         const double mid = (bid + ask) * 0.5;
 

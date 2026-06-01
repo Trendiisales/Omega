@@ -3129,6 +3129,16 @@ static void init_engines(const std::string& cfg_path)
     // NEVER set shadow_mode=false without explicit authorization + live validation.
     g_iswing_sp.shadow_mode = true;
     g_iswing_nq.shadow_mode = true;
+    // CULLED 2026-06-02: IndexSwing net-negative in live shadow ledger
+    // (logs/trades/omega_trade_closes_*: n=14, WR 43%, net -$79.91 over the
+    // 2026-05-21..06-01 window; two -$200 US500 SL hits dominate). Confirms the
+    // S39 live-edge audit which already flagged IndexSwing as the go-forward
+    // bleeder -- two independent windows, not a single-trade reaction. H1/H4
+    // EMA-cross swing on indices = trend-on-beta, loses to buy&hold (see
+    // omega-indices-s44 / omega-index-ushours-drift). Re-enable only after a
+    // signal-side rework + fresh walk-forward.
+    g_iswing_sp.enabled = false;
+    g_iswing_nq.enabled = false;
 
     // ── S38 SurvivorPortfolio configure -- 13 walk-forward survivors ─────────
     // All cells default enabled=true shadow_mode=true. Per-cell promotion gate
