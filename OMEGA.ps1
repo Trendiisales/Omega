@@ -1249,7 +1249,7 @@ function Invoke-Deploy {
     # other way round.
     Push-Location $OmegaDir
     try {
-        git show HEAD:symbols.ini 2>$null | Out-File -FilePath "$OmegaDir\symbols.ini" -Encoding utf8 -Force
+        git show HEAD:symbols.ini 2>$null | Out-File -FilePath "$OmegaDir\symbols.ini" -Encoding ascii -Force  # ascii = no BOM (PS5.1 utf8 adds BOM -> perpetual dirty symbols.ini)
     } catch { } finally { Pop-Location }
     Copy-Item "$OmegaDir\src\gui\www\omega_index.html" "$OmegaDir\omega_index.html" -Force -ErrorAction SilentlyContinue
     Copy-Item "$OmegaDir\src\gui\www\chimera_logo.png" "$OmegaDir\chimera_logo.png" -Force -ErrorAction SilentlyContinue
