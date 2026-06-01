@@ -1811,6 +1811,28 @@ static void init_engines(const std::string& cfg_path)
                g_xau_d55_gated_m30.p.hold_max_bars,
                g_xau_d55_gated_m30.p.trail_arm_R, g_xau_d55_gated_m30.p.trail_lock_pct*100.0);
 
+        // ── XauStraddleM30Engine (S-2026-06-02) ────────────────────────────────
+        // OCO breakout straddle (Quantum Dark Gold entry, minus the M5 grid).
+        // M30 boxN15, stop 3*ATR, TP=1R, symmetric. Research
+        // (straddle_breakout_sweep.cpp, 2yr XAUUSD tick): OOS PF 1.64-1.90,
+        // Sharpe 4-6, WR ~62%, both legs net-positive, survives 3x cost.
+        // The EA's "thousand cuts" was the M5 TF (the grid masked it); M30 + 1R
+        // TP removes the bleed -> NO GRID. HARD shadow until the auto-demote gate
+        // judges it on >=30 live trades. Reuses the existing 24.7k-bar M30 warmup.
+        g_xau_straddle_m30.shadow_mode = true;
+        g_xau_straddle_m30.enabled     = true;
+        g_xau_straddle_m30.symbol      = "XAUUSD";
+        g_xau_straddle_m30.box_n       = 15;
+        g_xau_straddle_m30.stop_atr    = 3.0;
+        g_xau_straddle_m30.tp_r        = 1.0;
+        g_xau_straddle_m30.lot         = 0.01;
+        g_xau_straddle_m30.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
+        printf("[OMEGA-INIT] XauStraddleM30: shadow=%d enabled=%d boxN=%d stop=%.1fx TP=%.1fR lot=%.2f\n",
+               (int)g_xau_straddle_m30.shadow_mode, (int)g_xau_straddle_m30.enabled,
+               g_xau_straddle_m30.box_n, g_xau_straddle_m30.stop_atr,
+               g_xau_straddle_m30.tp_r, g_xau_straddle_m30.lot);
+        fflush(stdout);
+
         // ── S136 2026-05-24: Xau3BarMomGatedH4Engine ───────────────────────────
         // XAU H4 three-bar momentum, symmetric long+short.
         // MFE-lock trail: arm at +1.0R, lock 90% of extreme.
@@ -5896,6 +5918,7 @@ static void init_engines(const std::string& cfg_path)
             { "MinimalH4US30Breakout",  &g_minimal_h4_us30.enabled},
             { "MinimalH4GER40Breakout", &g_minimal_h4_ger40.enabled},
             { "BreakBounce",            &g_xau_breakbounce.enabled },
+            { "XauStraddleM30",         &g_xau_straddle_m30.enabled},
         };
         for (const auto& t : kGateTargets) {
             if (g_engine_gate.is_demoted(t.name) && *t.flag) {

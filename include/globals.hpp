@@ -692,6 +692,12 @@ static omega::XauThreeBar30mEngine g_xau_threebar_30m;
 #include "XauDonchian55GatedM30Engine.hpp"
 static omega::XauDonchian55GatedM30Engine g_xau_d55_gated_m30;
 
+// S-2026-06-02: single-shot OCO breakout straddle (Quantum Dark Gold entry,
+// minus the M5 grid). M30 boxN15 stop3*ATR TP=1R symmetric. OOS PF 1.64-1.90
+// Sharpe 4-6, 3x-cost-robust (straddle_breakout_sweep.cpp). Shadow until gate.
+#include "XauStraddleM30Engine.hpp"
+static omega::XauStraddleM30Engine g_xau_straddle_m30;
+
 // 2026-05-24 S136: Xau3BarMomGatedH4Engine -- XAU H4 three-bar momentum symmetric
 //   with MFE-lock trail (arm=1.0R, lock=90%).
 //   /Users/jo/edge_research validation: 27mo backtest IS PF 1.11 +$983 /

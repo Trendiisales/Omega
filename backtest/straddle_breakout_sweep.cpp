@@ -1,0 +1,150 @@
+// =============================================================================
+// straddle_breakout_sweep.cpp -- single-shot OCO straddle breakout (the Quantum
+// Dark Gold entry, minus the grid). At bar granularity an OCO Buy-Stop/Sell-Stop
+// straddle == a SYMMETRIC breakout: break above box high+buf -> long, below box
+// low-buf -> short, one position only, ATR stop, optional RR TP. NO grid.
+//
+// Studies "death by a thousand cuts" = false breakouts + counter-trend leg.
+// Each anti-cut filter is a toggle (env), so we can see what converts bleed->edge:
+//   BIAS    long|short|both   only arm the leg aligned with EMA(fast)>EMA(slow)
+//                             (both = symmetric; long = with-trend on a bull)
+//   COMPRESS k  arm only when box range < k*ATR (real breakouts come from coils)
+//   SESS h0 h1  arm only when UTC hour in [h0,h1) (session breakouts)
+//   COOLDOWN n  block re-arm for n bars after a stop-out (kills whipsaw repeats)
+//   TP r        fixed TP = r*stop (0 = no-TP runner, exit on box-opposite or stop)
+//
+//   g++ -std=c++17 -O2 -o backtest/straddle_breakout_sweep backtest/straddle_breakout_sweep.cpp
+//   ./backtest/straddle_breakout_sweep <m5.csv> <tf_min> <boxN> <buf_atr> <stop_atr> <cost> [oos_frac]
+// =============================================================================
+#include <cstdio>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <string>
+#include <vector>
+#include <deque>
+#include <fstream>
+#include <algorithm>
+
+struct Bar { int64_t ts=0; double o=0,h=0,l=0,c=0; };
+
+static std::vector<Bar> load_agg(const char* path, int tf_min){
+    std::ifstream f(path); std::vector<Bar> out;
+    if(!f){ std::fprintf(stderr,"open fail %s\n",path); return out; }
+    std::string line; std::getline(f,line);
+    int64_t per=(int64_t)tf_min*60; Bar cur; int64_t cb=-1; bool act=false;
+    while(std::getline(f,line)){
+        if(line.empty())continue; const char* s=line.c_str(); char* e=nullptr;
+        int64_t ts=strtoll(s,&e,10); if(*e!=',')continue;
+        double o=strtod(e+1,&e); if(*e!=',')continue;
+        double h=strtod(e+1,&e); if(*e!=',')continue;
+        double l=strtod(e+1,&e); if(*e!=',')continue;
+        double c=strtod(e+1,&e);
+        if(o<=0||h<=0||l<=0||c<=0)continue;
+        int64_t b=(ts/per)*per;
+        if(!act){cur={b,o,h,l,c};cb=b;act=true;continue;}
+        if(b!=cb){out.push_back(cur);cur={b,o,h,l,c};cb=b;}
+        else{if(h>cur.h)cur.h=h;if(l<cur.l)cur.l=l;cur.c=c;}
+    }
+    if(act)out.push_back(cur);
+    return out;
+}
+
+int main(int argc,char**argv){
+    if(argc<7){std::fprintf(stderr,"usage: %s <m5.csv> <tf_min> <boxN> <buf_atr> <stop_atr> <cost> [oos]\n",argv[0]);return 1;}
+    const char* path=argv[1]; int tf=atoi(argv[2]); int boxN=atoi(argv[3]);
+    double buf=atof(argv[4]), stopm=atof(argv[5]), COST=atof(argv[6]);
+    double oos=(argc>7)?atof(argv[7]):0.0;
+
+    std::string BIAS = getenv("BIAS")?getenv("BIAS"):"both";
+    double COMPRESS  = getenv("COMPRESS")?atof(getenv("COMPRESS")):0.0;   // 0=off
+    int    SESS0     = getenv("SESS0")?atoi(getenv("SESS0")):-1;
+    int    SESS1     = getenv("SESS1")?atoi(getenv("SESS1")):-1;
+    int    COOLDOWN  = getenv("COOLDOWN")?atoi(getenv("COOLDOWN")):0;
+    double TPr       = getenv("TP")?atof(getenv("TP")):0.0;               // 0=runner
+    int    biasFast  = getenv("BFAST")?atoi(getenv("BFAST")):20;
+    int    biasSlow  = getenv("BSLOW")?atoi(getenv("BSLOW")):80;
+
+    std::vector<Bar> b=load_agg(path,tf);
+    if((int)b.size()<200){std::fprintf(stderr,"few bars\n");return 1;}
+    int evalStart = (oos>0&&oos<1)?(int)(b.size()*(1.0-oos)):0;
+
+    const int ATR_P=14; double atr=5.0; std::deque<double> tr;
+    double ef=0,es=0; bool einit=false; double kf=2.0/(biasFast+1),ks=2.0/(biasSlow+1);
+
+    bool pos=false; int dir=0; double entry=0,stop=0,tp=0; int cooldown_until=-1;
+    double cum=0,peak=0,mdd=0; int nw=0,nl=0; double gw=0,gl=0; int ntr=0;
+    // leg attribution
+    int longN=0,shortN=0; double longNet=0,shortNet=0;
+    std::vector<double> tpnl;
+
+    auto close=[&](double px,int i){
+        double pnl=(dir>0?(px-entry):(entry-px)) - COST;
+        cum+=pnl; if(cum>peak)peak=cum; double dd=peak-cum; if(dd>mdd)mdd=dd;
+        if(pnl>0){nw++;gw+=pnl;}else if(pnl<0){nl++;gl+=-pnl;}
+        if(dir>0){longN++;longNet+=pnl;}else{shortN++;shortNet+=pnl;}
+        tpnl.push_back(pnl); ntr++; pos=false;
+    };
+
+    for(int i=1;i<(int)b.size();++i){
+        const Bar& bar=b[i]; const Bar& pv=b[i-1];
+        double t=std::max({bar.h-bar.l,std::fabs(bar.h-pv.c),std::fabs(bar.l-pv.c)});
+        tr.push_back(t); if((int)tr.size()>ATR_P)tr.pop_front();
+        if((int)tr.size()>=ATR_P) atr=atr*13.0/14.0+t/14.0; else {double sm=0;for(double v:tr)sm+=v;atr=sm/tr.size();}
+        atr=std::max(0.5,atr);
+        if(!einit){ef=es=bar.c;einit=true;} else {ef=bar.c*kf+ef*(1-kf);es=bar.c*ks+es*(1-ks);}
+
+        // manage open pos intrabar (stop priority, then tp)
+        if(pos){
+            if(dir>0){ if(bar.l<=stop) close(stop,i); else if(tp>0&&bar.h>=tp) close(tp,i); }
+            else     { if(bar.h>=stop) close(stop,i); else if(tp>0&&bar.l<=tp) close(tp,i); }
+        }
+        if(pos && dir>0 && tp<=0){ /* runner: exit on close below box low (computed below) */ }
+
+        int warm=std::max({boxN,biasSlow,ATR_P})+3;
+        if(i<warm) continue;
+
+        // box over prior boxN bars (exclude current)
+        double bh=0,bl=1e18; for(int k=i-boxN;k<i;++k){if(b[k].h>bh)bh=b[k].h;if(b[k].l<bl)bl=b[k].l;}
+        double boxrange=bh-bl;
+
+        // runner exit: opposite box edge on close
+        if(pos && tp<=0){
+            if(dir>0 && bar.c<bl) close(bar.c,i);
+            else if(dir<0 && bar.c>bh) close(bar.c,i);
+        }
+
+        if(i<evalStart) continue;
+        if(pos) continue;
+        if(COOLDOWN>0 && i<cooldown_until) continue;
+
+        // filters
+        bool armL=true, armS=true;
+        if(BIAS=="long"){armS=false;} else if(BIAS=="short"){armL=false;}
+        else { // both, but optionally bias-gate each leg by EMA trend
+            // pure symmetric = both true; trend-gate handled via BIAS=trend
+        }
+        if(BIAS=="trend"){ bool up=ef>es; armL=up; armS=!up; }
+        if(COMPRESS>0.0 && boxrange > COMPRESS*atr){ armL=armS=false; }
+        if(SESS0>=0){ int hr=(int)((bar.ts%86400)/3600); bool in=(SESS0<=SESS1)?(hr>=SESS0&&hr<SESS1):(hr>=SESS0||hr<SESS1); if(!in){armL=armS=false;} }
+
+        double buyStop=bh+buf*atr, sellStop=bl-buf*atr;
+        // intrabar OCO: which triggers this bar? prefer the one nearer the open
+        bool hitL = armL && bar.h>=buyStop;
+        bool hitS = armS && bar.l<=sellStop;
+        if(hitL && hitS){ // both: pick by open proximity (whichever the bar likely hit first)
+            if(std::fabs(bar.o-buyStop) <= std::fabs(bar.o-sellStop)){ hitS=false; } else { hitL=false; }
+        }
+        if(hitL){ pos=true;dir=1;entry=buyStop;stop=buyStop-stopm*atr; tp=TPr>0?buyStop+TPr*stopm*atr:0; }
+        else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=TPr>0?sellStop-TPr*stopm*atr:0; }
+    }
+    if(pos) close(b.back().c,(int)b.size()-1);
+
+    double pf=(gl>0)?gw/gl:(gw>0?999:0); double hit=(nw+nl>0)?100.0*nw/(nw+nl):0;
+    double years; {int n=(int)b.size();int s=std::max(evalStart,1);years=(b[n-1].ts-b[s].ts)/86400.0/365.25;}
+    double sh=0; if(ntr>=2&&years>0){double m=0;for(double v:tpnl)m+=v;m/=ntr;double s=0;for(double v:tpnl)s+=(v-m)*(v-m);double sd=std::sqrt(s/(ntr-1));if(sd>0)sh=(m/sd)*std::sqrt((double)ntr/years);}
+    std::printf("BIAS=%-5s tf%-3d boxN%-2d buf%.2f stop%.1f TP%.1f | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f | L:%d/%.0f S:%d/%.0f\n",
+        BIAS.c_str(),tf,boxN,buf,stopm,TPr,ntr,cum,pf,sh,hit,mdd,longN,longNet,shortN,shortNet);
+    return 0;
+}
