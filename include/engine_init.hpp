@@ -3986,6 +3986,7 @@ static void init_engines(const std::string& cfg_path)
             { &g_idxsess_sp,    "US500.F", 14, 22, "phase1/signal_discovery/warmup_US500_D1.csv" },
             { &g_idxsess_nas,   "NAS100",  14, 22, "phase1/signal_discovery/warmup_USTEC_D1.csv" },
             { &g_idxsess_ger40, "GER40",    9, 20, "phase1/signal_discovery/warmup_GER40_D1_idx.csv" },
+            { &g_idxsess_uk100, "UK100",    9, 20, "phase1/signal_discovery/warmup_UK100_D1.csv" },
         };
         for (auto& c : idx) {
             c.e->symbol      = c.sym;

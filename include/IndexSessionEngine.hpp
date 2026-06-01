@@ -103,6 +103,8 @@ public:
     struct Position { bool active=false; double entry_px=0, stop_px=0, size=0;
                       int64_t entry_ms=0; double mfe=0, mae=0; } pos;
     bool has_open_position() const { return pos.active; }
+    bool   atr_ready() const { return m_atr_ready; }   // diagnostic
+    double atr_value() const { return m_atr; }         // diagnostic
 
     void init() {
         m_day=-1; m_entered_today=false; m_in_session=false;

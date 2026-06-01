@@ -1043,6 +1043,15 @@ static void on_tick_uk100(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idd_uk100.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
     }
+    // IndexSessionEngine UK100/FTSE (09-20 UTC LONG, dip-buy, risk-off gated).
+    {
+        const int64_t now_ms_isu = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idxsess_uk100.set_risk_off(omega::index_risk_off());
+        g_idxsess_uk100.on_tick(bid, ask, now_ms_isu);
+        g_engine_heartbeat.pulse("IndexSession_UK100");
+    }
 }
 
 // ── ESTX50 ─────────────────────────────────────────────────

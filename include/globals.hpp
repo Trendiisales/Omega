@@ -102,6 +102,7 @@ static omega::BreakBounceEngine g_xau_breakbounce;
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)
+static omega::IndexSessionEngine g_idxsess_uk100;  // UK100    (FTSE) -- 2yr dukascopy-validated
 
 // Engine 7: VWAP Reversion -- enter on reversal tick back toward daily VWAP
 // Wired to: US500.F, USTEC.F, GER40, EURUSD
