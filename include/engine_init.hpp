@@ -1094,7 +1094,7 @@ static void init_engines(const std::string& cfg_path)
     g_vwap_rev_nq.LOSS_CUT_PCT            = 0.0;
     g_vwap_rev_nq.BE_ARM_PCT              = 0.0;
     g_vwap_rev_nq.BE_BUFFER_PCT           = 0.0;
-    g_vwap_rev_ger40.enabled = true;  g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.30; g_vwap_rev_ger40.COOLDOWN_SEC = 300;
+    g_vwap_rev_ger40.enabled = false;  g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.30; g_vwap_rev_ger40.COOLDOWN_SEC = 300;  // DISABLED 2026-06-01: VWAP mean-rev no edge (net ~$0/2yr, neg after commission). GER40 = trend book (Keltner/Turtle/MinimalH4).
     g_vwap_rev_ger40.MAX_EXTENSION_PCT    = 1.00;
     g_vwap_rev_ger40.MAX_HOLD_SEC         = 600;
     // 2026-05-13 (S37-H-followup): GER40 index defaults same as US500/USTEC.
