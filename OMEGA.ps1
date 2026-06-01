@@ -808,9 +808,11 @@ function Invoke-Deploy {
     try { $gotMutex = $deployMutex.WaitOne(0) } catch { $gotMutex = $true }
     if (-not $gotMutex) {
         Write-Host "[DEPLOY] Another deploy is already running. Exiting." -ForegroundColor Red
+        $deployMutex.Dispose()
         return 1
     }
 
+    try {
     $cfg = Test-WatermarkConfig
     $modeColor = if ($cfg.Mode -eq "LIVE") { "Red" } elseif ($cfg.Mode -eq "SHADOW") { "Yellow" } else { "Cyan" }
     Write-Host "  Mode: $($cfg.Mode)" -ForegroundColor $modeColor
@@ -1425,6 +1427,16 @@ function Invoke-Deploy {
     Write-Host ("  DONE: {0:mm}m {0:ss}s" -f $elapsed) -ForegroundColor Cyan
     Write-Host "=======================================================" -ForegroundColor Cyan
     return 0
+    }
+    finally {
+        # Always release + dispose the singleton deploy mutex. A completed or
+        # early-returning deploy must never leave Global\OmegaDeployMutex held
+        # for the life of the (long-running watchdog) process -- the prior code
+        # acquired it but never released it, which jammed every later deploy
+        # with "Another deploy is already running."
+        if ($gotMutex) { try { $deployMutex.ReleaseMutex() } catch { } }
+        $deployMutex.Dispose()
+    }
 }
 
 # ==============================================================================
