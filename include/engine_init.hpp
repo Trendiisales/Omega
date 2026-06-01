@@ -1483,6 +1483,36 @@ static void init_engines(const std::string& cfg_path)
                (unsigned)g_xau_tf_1h.cell_enable_mask);
         fflush(stdout);
 
+        // ── XauTrendFollow M15 Donchian-40 (S-2026-06-02) ────────────────────
+        // Same engine type as g_xau_tf_1h, but fed M15 bars in tick_gold.hpp so
+        // it runs the Donchian-40 breakout on M15. Motivation: the IBKR gold
+        // cost cut (0.60->0.37 RT pts) makes higher-frequency gold trend viable
+        // -- M15 Donchian-40 was marginal at BlackBull cost, clearly profitable
+        // at IBKR cost. OOS-validated (last 30%, gold_cost_unlock_sweep.cpp,
+        // IBKR cost): +$13.6k PF2.18 Sharpe3.11 win45%, daily-MTM corr 0.70 to
+        // the live H1/H4 book (partial diversification, not a duplicate).
+        // Donchian40 cell ONLY (mask=0x02). A chop-suppression gate was tested
+        // (ADX/ER/cooldown/breakout-buffer) and REJECTED: all subtractive or
+        // overfit noise on the gold trend book -- the Donchian breakout IS the
+        // chop filter. So no extra gate here. Fixed lot, vol-target + pyramid
+        // OFF (clean entry/exit edge validation first; pyramiding fails
+        // cross-regime per the S45 tombstone). HARD shadow until ledger gate.
+        g_xau_tf_m15.shadow_mode      = true;   // hard shadow (new unproven cell)
+        g_xau_tf_m15.enabled          = true;
+        g_xau_tf_m15.cell_enable_mask = 0x02;   // Donchian40 cell only
+        g_xau_tf_m15.lot              = 0.01;
+        g_xau_tf_m15.max_spread       = 1.0;
+        g_xau_tf_m15.use_vol_target   = false;  // fixed lot for clean shadow read
+        g_xau_tf_m15.pyramid_max_adds = 0;      // OFF (cross-regime failure, S45)
+        g_xau_tf_m15.warmup_csv_path  = "phase1/signal_discovery/warmup_XAUUSD_M15.csv";
+        g_xau_tf_m15.init();
+        omega::warmup_or_die(g_xau_tf_m15, "XauTrendFollowM15");
+        printf("[OMEGA-INIT] XauTrendFollow M15 initialised: shadow=%d enabled=%d lot=%.2f mask=0x%X"
+               " (Donchian_N40 on M15 bars; IBKR-cost-unlock, shadow)\n",
+               (int)g_xau_tf_m15.shadow_mode, (int)g_xau_tf_m15.enabled, g_xau_tf_m15.lot,
+               (unsigned)g_xau_tf_m15.cell_enable_mask);
+        fflush(stdout);
+
         // ── UstecTrendFollow5mEngine (S33d 2026-05-11) ───────────────────────
         // Donchian N=20 at 5m bars on USTEC. Convergent edge across 4
         // unrelated signal families on the 15-day L2 sample (n=111,

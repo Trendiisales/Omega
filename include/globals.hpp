@@ -478,6 +478,14 @@ static omega::XauTrendFollow4hEngine g_xau_tf_4h;
 //   by the s_cur_h1 bar already aggregated in tick_gold.hpp.
 #include "XauTrendFollow1hEngine.hpp"
 static omega::XauTrendFollow1hEngine g_xau_tf_1h;
+// S-2026-06-02: second instance of the SAME engine driven by M15 bars (not H1).
+// IBKR gold cost cut (0.60->0.37 RT) makes M15 Donchian-40 trend viable -- it
+// was marginal at BlackBull cost. OOS-validated (last 30%, gold_cost_unlock_sweep.cpp):
+// +$13.6k PF2.18 Sh3.11, daily-MTM corr 0.70 to the live H1/H4 book (partial
+// diversification, not redundant). Donchian40 cell ONLY (mask 0x02); the engine
+// is timeframe-agnostic (computes its own ATR/EMA/Donchian from fed bars), so
+// feeding it M15 bars makes it an M15 engine. Shadow until the ledger gate.
+static omega::XauTrendFollow1hEngine g_xau_tf_m15;
 
 // S42 (2026-05-31): SessionMomentumEngine -- clock-based session-window long,
 //   the first NON-trend-breakout edge (new signal axis: time-of-day). Two XAU

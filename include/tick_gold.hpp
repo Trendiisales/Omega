@@ -766,7 +766,24 @@ static void on_tick_gold(
         else { if(xau_mid>s_cur5.high)s_cur5.high=xau_mid; if(xau_mid<s_cur5.low)s_cur5.low=xau_mid; s_cur5.close=xau_mid; }
         // M15
         if (s_bar15_ms == 0) { s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
-        else if (b15 != s_bar15_ms) { g_bars_gold.m15.add_bar(s_cur15); s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15; }
+        else if (b15 != s_bar15_ms) {
+            g_bars_gold.m15.add_bar(s_cur15);
+            // -- XauTrendFollow M15 Donchian-40 dispatch (S-2026-06-02) --
+            // Same engine type as g_xau_tf_1h, fed M15 bars. atr14_external=0.0
+            // -> engine uses its own internal Wilder ATR over M15 bars (matches
+            // the gold_cost_unlock_sweep.cpp validation). Donchian40 cell only.
+            {
+                omega::XauTfBar1h bar15{};
+                bar15.bar_start_ms = s_bar15_ms;
+                bar15.open  = s_cur15.open;
+                bar15.high  = s_cur15.high;
+                bar15.low   = s_cur15.low;
+                bar15.close = s_cur15.close;
+                g_xau_tf_m15.on_h1_bar(bar15, bid, ask, /*atr14_external=*/0.0,
+                                       now_ms_g, bracket_on_close);
+            }
+            s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15;
+        }
         else { if(xau_mid>s_cur15.high)s_cur15.high=xau_mid; if(xau_mid<s_cur15.low)s_cur15.low=xau_mid; s_cur15.close=xau_mid; }
         // M30 -- feeds XauThreeBar30mEngine (S36-P4 2026-05-12)
         // Three-bar continuation pattern at 30m. Single-position; shadow-only by
@@ -2152,6 +2169,7 @@ static void on_tick_gold(
     g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // S118 2026-05-19: H1 long-only ensemble tick management.
     g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_xau_tf_m15.on_tick(bid, ask, now_ms_g, bracket_on_close);  // S-2026-06-02 M15 Donchian-40
     // S42 2026-05-31: SessionMomentum x2 -- clock-based session-window long.
     // feed_tick() self-aggregates H1 + manages the open position (time exit).
     g_xau_sess_nypm.feed_tick(bid, ask, now_ms_g, bracket_on_close);
