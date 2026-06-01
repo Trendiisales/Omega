@@ -509,7 +509,7 @@ static void init_engines(const std::string& cfg_path)
     g_gold_scalp_pyramid.BE_ARM_PCT    = 0.03;
     g_gold_scalp_pyramid.BE_BUFFER_PCT = 0.015;  // S38a: 0.012 -> 0.015 = exit at +$0.68 vs $0.54 (clears $0.60 cost)
     // S38a tunables (new fields on engine):
-    g_gold_scalp_pyramid.COST_RT_PTS        = 0.60;   // realised BB gold cost @ 0.01 lot
+    g_gold_scalp_pyramid.COST_RT_PTS        = 0.37;   // IBKR gold cost (GC futures) @ 0.01 lot (was 0.60 BlackBull)
     g_gold_scalp_pyramid.BE_ARM_COST_MULT   = 2.0;    // arm Phase-1 BE at MFE >= $1.20
     g_gold_scalp_pyramid.CHOP_ER_MIN        = 0.0;    // S38b 2026-05-26: disabled. ER hurts -- gives up $2K/2yr for $130 less DD
     g_gold_scalp_pyramid.CHOP_ER_LOOKBACK   = 10;     // 10x M5 = 50min ER window (unused when MIN=0)
