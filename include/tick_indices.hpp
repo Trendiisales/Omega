@@ -1081,6 +1081,19 @@ static void on_tick_estx50(
         }
     }
     (void)sdec_estx;
+
+    // S-2026-06-02: faithful ESTX50 long-only ORB (g_orb_estx50_v2) -- the one
+    // OOS-robust survivor of the multi-symbol ORB sweep. Self-aggregating m5
+    // SHADOW cell (reports closed trades via bracket_on_close -> ledger/gate,
+    // never the live order path). Always run so it builds its own bars + manages.
+    {
+        const int64_t now_ms_orb = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_orb_estx50_v2.on_tick(bid, ask, now_ms_orb, bracket_on_close);
+        g_engine_heartbeat.pulse("OrbEstx50");
+    }
+
     // IndexSessionEngine ESTX50/Euro Stoxx 50 (09-20 UTC LONG, dip-buy, risk-off).
     {
         const int64_t now_ms_ise = static_cast<int64_t>(

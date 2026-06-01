@@ -1854,6 +1854,33 @@ static void init_engines(const std::string& cfg_path)
                g_xau_straddle_m15.tp_r, g_xau_straddle_m15.lot);
         fflush(stdout);
 
+        // ── OrbBreakoutEngine / ESTX50 (S-2026-06-02) ──────────────────────────
+        // Faithful long-only Opening-Range-Breakout. ESTX50 was the ONE OOS-robust
+        // survivor of the multi-symbol ORB sweep (orb_multi_sweep.cpp): OR 07:00-
+        // 08:00 UTC, enter on OR_high+0.05*ATR break, range-SL (opposite OR edge),
+        // TP=2.0R, flat 15:30 UTC, one shot/day. OOS@cost2.0 PF 1.28 Sh 1.41 win 48%
+        // MDD 150. Cost-sensitive (PF 1.35@c1 -> 1.09@c3) -- watch live ESTX50 cost.
+        // Short leg dead -> long_only. Distinct from the disabled %-based
+        // g_orb_estx50 (OpeningRangeEngine). HARD shadow, registered in the gate.
+        g_orb_estx50_v2.shadow_mode = true;
+        g_orb_estx50_v2.enabled     = true;   // shadow=true makes it sim-only
+        g_orb_estx50_v2.symbol      = "ESTX50";
+        g_orb_estx50_v2.engine_name = "OrbEstx50";
+        g_orb_estx50_v2.or_start_min = 420;   // 07:00 UTC
+        g_orb_estx50_v2.or_end_min   = 480;   // 08:00 UTC
+        g_orb_estx50_v2.flat_min     = 930;   // 15:30 UTC
+        g_orb_estx50_v2.buf_atr      = 0.05;
+        g_orb_estx50_v2.tp_r         = 2.0;
+        g_orb_estx50_v2.long_only    = true;
+        g_orb_estx50_v2.lot          = 0.01;
+        g_orb_estx50_v2.seed_from_csv("phase1/signal_discovery/warmup_ESTX50_M5.csv");
+        printf("[OMEGA-INIT] OrbEstx50: shadow=%d enabled=%d OR=%d-%d flat=%d buf=%.2f TP=%.1fR long_only=%d lot=%.2f\n",
+               (int)g_orb_estx50_v2.shadow_mode, (int)g_orb_estx50_v2.enabled,
+               g_orb_estx50_v2.or_start_min, g_orb_estx50_v2.or_end_min, g_orb_estx50_v2.flat_min,
+               g_orb_estx50_v2.buf_atr, g_orb_estx50_v2.tp_r, (int)g_orb_estx50_v2.long_only,
+               g_orb_estx50_v2.lot);
+        fflush(stdout);
+
         // ── S136 2026-05-24: Xau3BarMomGatedH4Engine ───────────────────────────
         // XAU H4 three-bar momentum, symmetric long+short.
         // MFE-lock trail: arm at +1.0R, lock 90% of extreme.
@@ -5941,6 +5968,7 @@ static void init_engines(const std::string& cfg_path)
             { "BreakBounce",            &g_xau_breakbounce.enabled },
             { "XauStraddleM30",         &g_xau_straddle_m30.enabled},
             { "XauStraddleM15",         &g_xau_straddle_m15.enabled},
+            { "OrbEstx50",              &g_orb_estx50_v2.enabled   },
         };
         for (const auto& t : kGateTargets) {
             if (g_engine_gate.is_demoted(t.name) && *t.flag) {

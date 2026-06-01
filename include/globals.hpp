@@ -703,6 +703,14 @@ static omega::XauStraddleM30Engine g_xau_straddle_m30;
 // tested + REJECTED (cuts winners, reintroduces the thousand-cuts).
 static omega::XauStraddleM30Engine g_xau_straddle_m15;
 
+// S-2026-06-02: faithful Opening-Range-Breakout. ESTX50 long-only was the ONE
+// OOS-robust survivor of the multi-symbol ORB sweep (orb_multi_sweep.cpp):
+// OR 07:00-08:00 UTC, range-SL, TP=2R, flat 15:30. OOS@cost2.0 PF 1.28 Sh 1.41.
+// Self-aggregating m5 SHADOW cell, distinct from the %-based g_orb_estx50
+// (OpeningRangeEngine) which stays disabled. Shadow until the gate's 30-trade verdict.
+#include "OrbBreakoutEngine.hpp"
+static omega::OrbBreakoutEngine g_orb_estx50_v2;
+
 // 2026-05-24 S136: Xau3BarMomGatedH4Engine -- XAU H4 three-bar momentum symmetric
 //   with MFE-lock trail (arm=1.0R, lock=90%).
 //   /Users/jo/edge_research validation: 27mo backtest IS PF 1.11 +$983 /
