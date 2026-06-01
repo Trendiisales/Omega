@@ -3994,6 +3994,7 @@ static void init_engines(const std::string& cfg_path)
             c.e->RTH_CLOSE_H = c.ch;
             c.e->STOP_ATR    = 2.0;
             c.e->SKIP_FRIDAY = true;
+            c.e->ENTER_ON_WEAK_ONLY = true;   // dip-buy: SPX OOS Sharpe 0.67->1.48
             c.e->shadow_mode = true;
             c.e->enabled     = true;
             c.e->lot         = 1.0;

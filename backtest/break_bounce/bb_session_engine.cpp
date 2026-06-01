@@ -24,7 +24,9 @@ static bool parse(const char* s,int64_t& ts,double& bid,double& ask){
 int main(int argc,char** argv){
     if(argc<4){ std::printf("usage: bbse <ticks.csv> <OH> <CH>\n"); return 1; }
     omega::IndexSessionEngine e; e.shadow_mode=true;
-    e.RTH_OPEN_H=std::atoi(argv[2]); e.RTH_CLOSE_H=std::atoi(argv[3]); e.init();
+    e.RTH_OPEN_H=std::atoi(argv[2]); e.RTH_CLOSE_H=std::atoi(argv[3]);
+    if(argc>4 && std::atoi(argv[4])) e.ENTER_ON_WEAK_ONLY=true;   // dip-buy filter
+    e.init();
     struct M{int n=0,w=0;double net=0,gw=0,gl=0,sum=0,sq=0; void add(double r){n++;net+=r;sum+=r;sq+=r*r;if(r>0){w++;gw+=r;}else gl+=-r;}
         double pf()const{return gl>0?gw/gl:0;} double wr()const{return n?100.0*w/n:0;}
         double sh()const{if(n<2)return 0;double m=sum/n,v=(sq-sum*sum/n)/(n-1);return v>0?(m/std::sqrt(v))*std::sqrt(252.0):0;}};

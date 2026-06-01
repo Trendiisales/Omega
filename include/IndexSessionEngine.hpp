@@ -18,8 +18,14 @@
 //      SPXUSD 14-22 UTC : PF 1.14  Sharpe 0.65   IS 0.66 / OOS 0.67  DD 11%  <- most robust
 //      NSXUSD 14-22 UTC : PF 1.09  Sharpe 0.46   IS 0.54 / OOS 0.34  DD 15%
 //      GER40  09-20 UTC : PF 1.41  Sharpe 1.87   IS 2.50 / OOS 0.60  DD 6%   (Sharpe IS-inflated)
-//  Real but MODEST (OOS Sharpe ~0.4-0.7, PF ~1.1). 2024-26 data = bull only;
-//  the down-side profit is dip-RECOVERY longs, NOT shorts (shorting loses).
+//  DIP-BUY FILTER (ENTER_ON_WEAK_ONLY) -- the edge is concentrated AFTER
+//  weakness (prior session down OR gap down -> next-session Sharpe +2.3..3.0;
+//  after an up day it's flat). Conditioning entry on it (validated OOS):
+//      SPXUSD 14-22 : OOS Sharpe 0.67 -> 1.48,  PF 1.28,  DD 8.3%
+//      NSXUSD 14-22 : OOS Sharpe 0.34 -> 0.66,  PF 1.11
+//      GER40  09-20 : OOS Sharpe 0.60 -> 0.62,  PF 1.12,  DD 5.2%
+//  ON by default in engine_init. (Turn-of-month = no edge; vol-target = flat.)
+//  2024-26 data = bull only; down-side profit is dip-RECOVERY longs, NOT shorts.
 //
 //  PROFITS IN UP *AND* DOWN -- but LONG-only, NOT by shorting (shorting indices
 //  loses, Sharpe -1 to -2.8; they are structurally long-biased). The down-side
@@ -70,6 +76,13 @@ public:
     double STOP_ATR   = 2.0;    // intraday stop = STOP_ATR * session-ATR below entry
     bool   SKIP_FRIDAY = true;  // Fri is negative across GER40/SPX/NAS
 
+    // Dip-buy filter: the session edge is concentrated AFTER weakness (prior
+    // session down OR gap down -> next session Sharpe +2.3 to +3.0; after an up
+    // day it's flat/negative). Only enter when the prior session closed below
+    // WEAK_PREV_RET%% OR today opens below the prior close. Off by default.
+    bool   ENTER_ON_WEAK_ONLY = false;
+    double WEAK_PREV_RET = 0.0; // prior-session return %% below which counts as "down"
+
     // ── Sizing / control ─────────────────────────────────────────────────────
     double lot         = 1.0;
     bool   enabled     = true;
@@ -95,6 +108,7 @@ public:
         m_day=-1; m_entered_today=false; m_in_session=false;
         m_sess_hi=-1e18; m_sess_lo=1e18; m_have_sess=false;
         m_atr=0; m_atr_seed=0; m_atr_cnt=0; m_atr_ready=false;
+        m_sess_open=0; m_sess_close=0; m_prev_sret=0; m_prev_close=0; m_prev_ready=false;
         pos = Position{};
     }
 
@@ -137,16 +151,22 @@ public:
         if (!ti) return;
         const int wday = ti->tm_wday, hour = ti->tm_hour, yday = ti->tm_yday;
 
-        // ── Day boundary: finalize prior session range -> ATR, reset ─────────
+        // ── Day boundary: finalize prior session range -> ATR + prev-return ──
         if (yday != m_day) {
             if (m_have_sess && m_sess_hi > m_sess_lo)
                 warm_session_range(m_sess_hi - m_sess_lo);
+            if (m_have_sess && m_sess_open > 0.0) {
+                m_prev_sret  = (m_sess_close/m_sess_open - 1.0) * 100.0;
+                m_prev_close = m_sess_close; m_prev_ready = true;
+            }
             m_day = yday; m_entered_today = false;
             m_sess_hi = -1e18; m_sess_lo = 1e18; m_have_sess = false;
+            m_sess_open = 0; m_sess_close = 0;
         }
 
         const bool in_session = (hour >= RTH_OPEN_H && hour < RTH_CLOSE_H);
-        if (in_session) { m_sess_hi=std::max(m_sess_hi,mid); m_sess_lo=std::min(m_sess_lo,mid); m_have_sess=true; }
+        if (in_session) { m_sess_hi=std::max(m_sess_hi,mid); m_sess_lo=std::min(m_sess_lo,mid); m_have_sess=true;
+                          if(m_sess_open<=0) m_sess_open=mid; m_sess_close=mid; }
 
         // ── Manage open position ─────────────────────────────────────────────
         if (pos.active) {
@@ -165,6 +185,12 @@ public:
         if (m_atr <= 0.0) return;
 
         const double entry = ask;                       // buy at ask
+        // Dip-buy filter: require the prior session to have closed DOWN, or
+        // today to open below the prior close (gap down). The edge lives here.
+        if (ENTER_ON_WEAK_ONLY && m_prev_ready) {
+            const double gap = (entry / m_prev_close - 1.0) * 100.0;
+            if (m_prev_sret >= WEAK_PREV_RET && gap >= 0.0) return;
+        }
         pos = Position{};
         pos.active=true; pos.entry_px=entry; pos.stop_px=entry - STOP_ATR*m_atr;
         pos.size=lot; pos.entry_ms=now_ms;
@@ -195,6 +221,7 @@ private:
     int     m_day=-1; bool m_entered_today=false, m_in_session=false;
     double  m_sess_hi=-1e18, m_sess_lo=1e18; bool m_have_sess=false;
     double  m_atr=0, m_atr_seed=0; int m_atr_cnt=0; bool m_atr_ready=false;
+    double  m_sess_open=0, m_sess_close=0, m_prev_sret=0, m_prev_close=0; bool m_prev_ready=false;
     bool    m_risk_off=false;
 };
 
