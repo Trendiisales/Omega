@@ -288,6 +288,9 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     g_engine_last.record(tr.engine,
                          static_cast<int64_t>(tr.exitTs) * 1000LL,
                          tr.net_pnl);
+    // Auto-demote gate: accumulate persistent per-engine lifetime stats so an
+    // engine that loses over >=30 trades gets disabled at next startup.
+    g_engine_gate.record_close(tr.engine, tr.net_pnl);
     // S14 2026-04-24: removed write_shadow_csv — system uses single universal
     // trade journal (omega_trade_closes.csv) regardless of shadow/live mode.
     // 2026-05-01 SESSION_h: prior comment claimed SHADOW trades were handled

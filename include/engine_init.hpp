@@ -5872,5 +5872,39 @@ static void init_engines(const std::string& cfg_path)
     // unaffected. The gate adds HOUR_NOT_IN_EDGE_SET and ATR_BELOW_FLOOR
     // rejections before regime detection.
     omega::gold_ultimate::gold_ultimate_activate();
+
+    // ── Auto-demote gate enforcement ────────────────────────────────────────
+    // Load persistent per-engine lifetime stats and disable any STANDALONE
+    // engine that has lost over a fair sample (n>=30, net<0, WR<35%). Runs LAST
+    // so every engine's enabled flag is already set. Below 30 trades the gate
+    // is a no-op -- it never cuts a validated engine in a short drawdown. Stats
+    // are fed by g_engine_gate.record_close() from the universal close path.
+    // Name keys match each engine's TradeRecord.engine string (prefix-aggregated
+    // for multi-cell engines, e.g. "Ger40KeltnerH1" covers the _EMA20..._S41 tag).
+    g_engine_gate.set_path("logs/engine_gate_stats.csv");
+    g_engine_gate.load();
+    g_engine_gate.evaluate_log();
+    {
+        struct GateTarget { const char* name; bool* flag; };
+        const GateTarget kGateTargets[] = {
+            { "Ger40TurtleH4",          &g_ger40_turtle_h4.enabled},
+            { "Ger40KeltnerH1",         &g_ger40_kelt.enabled     },
+            { "Ger40LondonBreakout",    &g_ger40_london_brk.enabled},
+            { "FxTurtleH4",             &g_eurusd_turtle_h4.enabled},
+            { "FxTurtleH4",             &g_gbpusd_turtle_h4.enabled},
+            { "Us30Ensemble",           &g_us30_ensemble.enabled  },
+            { "MinimalH4US30Breakout",  &g_minimal_h4_us30.enabled},
+            { "MinimalH4GER40Breakout", &g_minimal_h4_ger40.enabled},
+            { "BreakBounce",            &g_xau_breakbounce.enabled },
+        };
+        for (const auto& t : kGateTargets) {
+            if (g_engine_gate.is_demoted(t.name) && *t.flag) {
+                *t.flag = false;
+                std::printf("[ENGINE-GATE] AUTO-DISABLED %s "
+                            "(>=30 trades, net-negative, WR<35%%)\n", t.name);
+            }
+        }
+        std::fflush(stdout);
+    }
 }
 

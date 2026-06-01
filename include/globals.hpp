@@ -22,6 +22,14 @@ omega::EngineRegistry g_engines;
 #include "EngineLastRegistry.hpp"
 omega::EngineLastRegistry g_engine_last;
 
+// ── Auto-demote gate ────────────────────────────────────────────────────────
+// Persistent per-engine lifetime stats (logs/engine_gate_stats.csv). Fed from
+// the universal trade-close path (trade_lifecycle.hpp) and consulted at startup
+// (engine_init.hpp) to auto-disable engines that prove unprofitable over >=30
+// trades (net<0 & WR<35%). See EngineGate.hpp.
+#include "EngineGate.hpp"
+omega::EngineGate g_engine_gate;
+
 // ── Step 3 Omega Terminal: open-position read-API registry ──────────────────
 // OpenPositionRegistry holds engine-side snapshotter callbacks that return the
 // list of currently-open positions in a uniform PositionSnapshot shape. Read
