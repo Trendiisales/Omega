@@ -469,11 +469,13 @@ public:
         // 2.  XAUUSD 4h DonchN100
         add({ .tag="XAU_4h_DonchN100", .symbol="XAUUSD",  .tf_sec=14400, .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
         // 3.  GER40  4h RSI N=7
-        add({ .tag="GER_4h_RSI_N7",    .symbol="GER40",   .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // DISABLED 2026-06-01: GER40 RSI mean-rev shorts the RISK_ON uptrend -> net-negative shadow (counter-trend dead pattern). GER40 edge is trend (KeltnerH1/TurtleH4/MACross).
+        // add({ .tag="GER_4h_RSI_N7",    .symbol="GER40",   .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 4.  GER40  15m MACross 10/30
         add({ .tag="GER_15m_MA_10_30", .symbol="GER40",   .tf_sec=900,   .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=50, .lot=0.10 });
         // 5.  GER40  1h RSI N=14
-        add({ .tag="GER_1h_RSI_N14",   .symbol="GER40",   .tf_sec=3600,  .family=Family::RSI, .N=14, .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // DISABLED 2026-06-01: GER40 RSI mean-rev (counter-trend, net-neg shadow).
+        // add({ .tag="GER_1h_RSI_N14",   .symbol="GER40",   .tf_sec=3600,  .family=Family::RSI, .N=14, .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 6.  GER40  1h DonchN100
         add({ .tag="GER_1h_DonchN100", .symbol="GER40",   .tf_sec=3600,  .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.10 });
         // 7.  XAUUSD 4h MACross 10/30
@@ -485,9 +487,11 @@ public:
         // 10. USTEC  4h ZScoreMR W=20 Z=2.5
         add({ .tag="USTEC_4h_ZMR",     .symbol="USTEC.F", .tf_sec=14400, .family=Family::ZScoreMR, .N=20, .zthr=2.5, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 11. GER40  5m RSI N=14
-        add({ .tag="GER_5m_RSI_N14",   .symbol="GER40",   .tf_sec=300,   .family=Family::RSI, .N=14, .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // DISABLED 2026-06-01: GER40 RSI mean-rev (counter-trend, net-neg shadow).
+        // add({ .tag="GER_5m_RSI_N14",   .symbol="GER40",   .tf_sec=300,   .family=Family::RSI, .N=14, .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 12. GER40  30m RSI N=14/20/80
-        add({ .tag="GER_30m_RSI_N14",  .symbol="GER40",   .tf_sec=1800,  .family=Family::RSI, .N=14, .lo=20, .hi=80, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // DISABLED 2026-06-01: GER40 RSI mean-rev (counter-trend, net-neg shadow).
+        // add({ .tag="GER_30m_RSI_N14",  .symbol="GER40",   .tf_sec=1800,  .family=Family::RSI, .N=14, .lo=20, .hi=80, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 13. USDJPY 4h SPX_VolGated sl=2/tp=5
         add({ .tag="USDJPY_4h_SPXVG",  .symbol="USDJPY",  .tf_sec=14400, .family=Family::SPXVolGatedDonch, .N=20, .spx_sgn=+1, .spx_vm=1.2, .sl_mult=2.0, .tp_mult=5.0, .max_hold_bars=48, .lot=0.01 });
     }
