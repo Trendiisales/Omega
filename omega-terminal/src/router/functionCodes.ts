@@ -301,7 +301,8 @@ const ALIAS_INDEX: Map<string, FunctionCode> = (() => {
  *   "  cc  "       -> { matched: true,  code: 'CC',  args: [] }
  *   "POS HBG"      -> { matched: true,  code: 'POS', args: ['HBG'] }
  *   "CC EURUSD H1" -> { matched: true,  code: 'CC',  args: ['EURUSD', 'H1'] }
- *   "ZZQ"          -> { matched: false, code: 'HELP', args: [] }
+ *   "TBKL"         -> { matched: true,  code: 'DES', args: ['TBKL'] }  (ticker fallback)
+ *   "ZZ TOP"       -> { matched: false, code: 'HELP', args: [] }       (multi-token, no code)
  *
  * Whitespace handling: any run of spaces/tabs delimits tokens, leading and
  * trailing whitespace is stripped, empty input resolves to HELP unmatched.
@@ -325,6 +326,20 @@ export function resolveCode(raw: string): RouteResult {
       code,
       descriptor: PANEL_REGISTRY[code],
       args: rest,
+    };
+  }
+  // Bare single token that isn't a known code but looks like a ticker symbol
+  // (e.g. "TBKL", "AAPL", "BRK.B") -> route to DES (security overview) with the
+  // token as the symbol, so typing a name/ticker "just works" instead of
+  // dead-ending at HELP. If the symbol has no upstream data, DES renders a clean
+  // "no profile returned" state rather than nothing. Multi-token or non-ticker
+  // input still falls through to HELP's "did you mean" hint below.
+  if (rest.length === 0 && /^[A-Z][A-Z0-9.\-]{0,9}$/.test(head)) {
+    return {
+      matched: true,
+      code: 'DES',
+      descriptor: PANEL_REGISTRY.DES,
+      args: [head],
     };
   }
   return {
