@@ -465,11 +465,11 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated):
         for sp in a.spines.values():
             sp.set_color("#333")
     o, h, l, c = (b["open"].values, b["high"].values, b["low"].values, b["close"].values)
-    w = 0.6
+    w = 0.82
     for i in range(n):
         col = X.C_UP if c[i] >= o[i] else X.C_DOWN
         last = (i == n - 1)                       # forming/current bar — emphasize
-        bw = w * 2.0 if last else w
+        bw = w * 1.4 if last else w
         ax.vlines(x[i], l[i], h[i], color=col, linewidth=1.6 if last else 0.6)
         lo_, hi_ = min(o[i], c[i]), max(o[i], c[i])
         ax.add_patch(Rect((x[i] - bw / 2, lo_), bw, max(hi_ - lo_, 1e-9),
@@ -515,13 +515,13 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated):
 
     # LIVE price line + moving dot (the visibly-updating-every-poll element)
     lp = float(live_price if live_price is not None else c[-1])
-    ax.axhline(lp, color="#ffd54f", lw=1.4, ls="--", alpha=0.9, zorder=9)
-    ax.scatter([n - 1], [lp], s=170, c="#ffd54f", edgecolors="#000",
-               linewidths=1.0, zorder=10)
-    ax.annotate(f"{lp:.2f}", (n - 1, lp), color="#0b0e11", fontsize=14,
+    ax.axhline(lp, color="#ffd54f", lw=1.0, ls="--", alpha=0.85, zorder=9)
+    ax.scatter([n - 1], [lp], s=70, c="#ffd54f", edgecolors="#000",
+               linewidths=0.8, zorder=10)
+    ax.annotate(f"{lp:.2f}", (n - 1, lp), color="#0b0e11", fontsize=9,
                 fontweight="bold", xytext=(6, 0), textcoords="offset points",
                 ha="left", va="center", zorder=11,
-                bbox=dict(boxstyle="round,pad=0.3", fc="#ffd54f", ec="none"))
+                bbox=dict(boxstyle="round,pad=0.18", fc="#ffd54f", ec="none"))
     ax.set_title(f"{symbol}  {lp:.2f}   live · updated {updated}",
                  color="#ffd54f", fontsize=15, fontweight="bold")
     ax.legend(loc="upper left", facecolor="#15191e", edgecolor="#333",
@@ -776,7 +776,7 @@ def main():
     ap.add_argument("--lookback", type=int, default=X.DEFAULTS["lookback"])
     ap.add_argument("--trades", default=os.path.expanduser("~/Downloads/omega_trade_closes.csv"))
     ap.add_argument("--chart", default=None)
-    ap.add_argument("--plot-bars", dest="plot_bars", type=int, default=220)
+    ap.add_argument("--plot-bars", dest="plot_bars", type=int, default=150)
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--serve", type=int, nargs="?", const=8089, default=0,
                     metavar="PORT", help="run live web dashboard on PORT (default 8089)")
