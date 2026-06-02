@@ -505,15 +505,23 @@ def run_server(args, here):
     # MAIN thread. matplotlib's pyplot state machine (X.plot) is NOT thread-safe,
     # so it must stay on the main thread or the PNG silently fails to render.
     socketserver.TCPServer.allow_reuse_address = True
-    srv = socketserver.TCPServer(("127.0.0.1", args.serve), H)
+    try:
+        srv = socketserver.TCPServer(("127.0.0.1", args.serve), H)
+    except OSError as e:
+        # Port already in use -> another instance is already serving. Exit CLEANLY
+        # (0) so a launchd KeepAlive does NOT crash-loop and spam browser tabs.
+        print(f"[x1_live] port {args.serve} already in use ({e}); another instance "
+              f"is serving. Exiting cleanly.", file=sys.stderr)
+        sys.exit(0)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://localhost:{args.serve}"
     print(f"[x1_live] dashboard at {url}  (feed {args.gui_url}, refresh {args.interval}s)",
           file=sys.stderr)
-    try:
-        subprocess.run(["open", url], check=False)
-    except Exception:
-        pass
+    if not args.no_open:          # the persistent agent runs with --no-open (no tab spam)
+        try:
+            subprocess.run(["open", url], check=False)
+        except Exception:
+            pass
     serve_worker(args, here_ref)   # blocks on main thread
 
 
@@ -534,6 +542,8 @@ def main():
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--serve", type=int, nargs="?", const=8089, default=0,
                     metavar="PORT", help="run live web dashboard on PORT (default 8089)")
+    ap.add_argument("--no-open", action="store_true",
+                    help="don't auto-open the browser (use for the persistent agent)")
     ap.add_argument("--interval", type=int, default=5, help="poll seconds (GUI pushes ~250ms)")
     args = ap.parse_args()
 
