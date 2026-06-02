@@ -38,6 +38,7 @@ omega::EngineGate g_engine_gate;
 // (include/engine_init.hpp). Step 3 ships only the HybridGold source; other
 // engines (Tsmom/Donchian/EmaPullback/TrendRider/HBI) land in a follow-up.
 #include "OpenPositionRegistry.hpp"
+#include "GoldWaveTrend.hpp"
 omega::OpenPositionRegistry g_open_positions;
 
 // ?? Per-symbol config manager -- loaded from symbols.ini at startup ????????????
@@ -74,6 +75,9 @@ static std::atomic<bool>          g_ibkr_l2_stop{false};
 // SessionMomentum + VWAPSnapback + LiquiditySweepPro + LiquiditySweepPressure
 // Primary gold executor -- sole handler for all XAUUSD ticks.
 static omega::gold::GoldEngineStack g_gold_stack;
+// Live WaveTrend momentum-confirm gate for gold (S-2026-06-03) is a shared
+// accessor singleton omega::gold_wt() in GoldWaveTrend.hpp (fed gold M1 closes
+// in tick_gold.hpp; gates gold TREND engine entries via confirms()).
 // Cross-asset engines
 static omega::cross::EsNqDivergenceEngine  g_ca_esnq;
 static omega::cross::OilEventFadeEngine    g_ca_eia_fade;

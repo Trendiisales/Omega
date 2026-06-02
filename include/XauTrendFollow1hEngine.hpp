@@ -94,6 +94,7 @@
 
 #include "OmegaTradeLedger.hpp"  // omega::TradeRecord
 #include "OmegaCostGuard.hpp"
+#include "GoldWaveTrend.hpp"   // S-2026-06-03 momentum-confirm gate (omega::gold_wt())
 
 namespace omega {
 
@@ -479,6 +480,18 @@ private:
             if (!ExecutionCostGuard::is_viable("XAUUSD", spread_pts, tp_dist, size, 1.5)) {
                 return;
             }
+        }
+
+        // Momentum-confirm gate (S-2026-06-03): gold-validated WaveTrend filter
+        // (incidents/2026-06-02-x1-overlay-validation). Long-only engine -> confirm
+        // the LONG side. Fails open during WaveTrend warmup.
+        if (omega::gold_wt().gate_enabled && !omega::gold_wt().confirms(true)) {
+            printf("[GOLD-MOMGATE] XauTF1h cell=%d SKIP long (no momentum confirm) "
+                   "wt1=%.1f regime_up=%d bars=%ld\n",
+                   ci, omega::gold_wt().wt1(), (int)omega::gold_wt().regime_up(),
+                   omega::gold_wt().bars_seen());
+            fflush(stdout);
+            return;
         }
 
         auto& p = pos[ci];

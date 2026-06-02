@@ -105,6 +105,7 @@
 
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "GoldWaveTrend.hpp"   // S-2026-06-03 momentum-confirm gate (omega::gold_wt())
 #include "GoldD1TrendState.hpp"  // D1 regime gate (added 2026-05-21)
 
 namespace omega {
@@ -557,6 +558,17 @@ private:
                 return;
             }
         }
+
+        // Momentum-confirm gate (S-2026-06-03): gold-validated WaveTrend filter.
+        if (omega::gold_wt().gate_enabled && !omega::gold_wt().confirms(side > 0)) {
+            printf("[GOLD-MOMGATE] XauTFD1 cell=%d SKIP %s (no momentum confirm) "
+                   "wt1=%.1f regime_up=%d bars=%ld\n", ci, side > 0 ? "long" : "short",
+                   omega::gold_wt().wt1(), (int)omega::gold_wt().regime_up(),
+                   omega::gold_wt().bars_seen());
+            fflush(stdout);
+            return;
+        }
+
         auto& p = pos[ci];
         p.active        = true;
         p.is_long       = (side > 0);

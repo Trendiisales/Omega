@@ -1652,6 +1652,21 @@ static void init_engines(const std::string& cfg_path)
                (int)g_xau_tf_d1.shadow_mode, (int)g_xau_tf_d1.enabled, g_xau_tf_d1.lot);
         fflush(stdout);
 
+        // ── Gold WaveTrend momentum-confirm gate (S-2026-06-03) ──────────────
+        // Gold-validated X1 filter now gates XauTrendFollow 1h/4h/D1 entries:
+        // skip a trend entry unless a confirming WaveTrend momentum tag fired in
+        // the last `lookback` M1 bars. Edge: confirmed-trend winners 71.9% vs
+        // losers 51.5% (+12pp, ~2 SE). Fed gold M1 closes in tick_gold.hpp;
+        // fails open during ~55-bar warmup. ACTIVE in shadow for live validation.
+        omega::gold_wt().enabled      = true;
+        omega::gold_wt().gate_enabled = true;
+        omega::gold_wt().lookback     = 10;
+        printf("[OMEGA-INIT] GoldWaveTrend momentum gate: enabled=%d gate=%d lookback=%d "
+               "warmup=%d -> gates XauTrendFollow 1h/4h/D1\n",
+               (int)omega::gold_wt().enabled, (int)omega::gold_wt().gate_enabled,
+               omega::gold_wt().lookback, omega::gold_wt().warmup_bars);
+        fflush(stdout);
+
         // ── XauTsmomFastD1Engine (2026-05-20) -- short-lookback momentum sister
         //   Backtest 2yr daily XAU (long_only, cost 1bps):
         //     IS Sh=6.69 / OOS Sh=7.65 / FUL Sh=7.57. n=48. PnL=78.1%.

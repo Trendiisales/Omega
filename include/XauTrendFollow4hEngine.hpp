@@ -124,6 +124,7 @@
 
 #include "OmegaTradeLedger.hpp"  // omega::TradeRecord
 #include "OmegaCostGuard.hpp"
+#include "GoldWaveTrend.hpp"   // S-2026-06-03 momentum-confirm gate (omega::gold_wt())
 #include "GoldD1TrendState.hpp"  // D1 regime gate (added 2026-05-21)
 #include "L2Globals.hpp"         // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 #include "L2LeverageState.hpp"   // 2026-05-30: L2 sizing + L2-trail flip helper
@@ -740,6 +741,16 @@ private:
             {
                 return;
             }
+        }
+
+        // Momentum-confirm gate (S-2026-06-03): gold-validated WaveTrend filter.
+        if (omega::gold_wt().gate_enabled && !omega::gold_wt().confirms(side > 0)) {
+            printf("[GOLD-MOMGATE] XauTF4h cell=%d SKIP %s (no momentum confirm) "
+                   "wt1=%.1f regime_up=%d bars=%ld\n", ci, side > 0 ? "long" : "short",
+                   omega::gold_wt().wt1(), (int)omega::gold_wt().regime_up(),
+                   omega::gold_wt().bars_seen());
+            fflush(stdout);
+            return;
         }
 
         // ── L2 entry gate (2026-05-30) ──

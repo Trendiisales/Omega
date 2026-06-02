@@ -758,7 +758,7 @@ static void on_tick_gold(
         const int64_t bh4 = (now_ms_g / 14400000LL) * 14400000LL;  // 4h = 14400s
         // M1
         if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
-        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
+        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); omega::gold_wt().on_m1_close(s_cur1.high, s_cur1.low, s_cur1.close); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
         else { if(xau_mid>s_cur1.high)s_cur1.high=xau_mid; if(xau_mid<s_cur1.low)s_cur1.low=xau_mid; s_cur1.close=xau_mid; }
         // M5
         if (s_bar5_ms == 0) { s_cur5 = {b5/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar5_ms = b5; }
