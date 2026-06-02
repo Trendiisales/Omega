@@ -447,7 +447,7 @@ LATEST = {"png": b"", "state": None, "trades": [], "open_all": [], "src": "-",
 _CHART_PATH = "/tmp/_x1_live_chart.png"
 
 
-def draw_chart(b, cfg, out_png, symbol, live_price, updated):
+def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None):
     """Live chart: candles + WaveTrend + tags PLUS a moving live-price line and a
     bright dot at the right edge that visibly shift every poll, and a clock in the
     title — so liveness is obvious even when the M1 candle barely moves."""
@@ -512,6 +512,29 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated):
     mark("momentum_down", +1, "v", X.C_MOMDN, "Momentum Down")
     mark("retr_down", +1, "x", X.C_RETR, "Possible Retr. Down")
     mark("retr_up", -1, "+", X.C_RETR, "Possible Retr. Up")
+
+    # Open gold trades: entry / TP / SL lines so you can SEE where each exits.
+    ymin, ymax = float(np.nanmin(l)), float(np.nanmax(h))
+    def tline(price, col, label):
+        if price is None or price <= 0:
+            return
+        ax.axhline(price, color=col, lw=1.2, ls=(0, (4, 3)), alpha=0.9, zorder=7)
+        # only label if within the visible price window (avoid off-chart clutter)
+        if ymin - (ymax - ymin) * 0.5 <= price <= ymax + (ymax - ymin) * 0.5:
+            ax.annotate(f"{label} {price:.2f}", (0, price), color=col, fontsize=8,
+                        fontweight="bold", xytext=(2, 0), textcoords="offset points",
+                        ha="left", va="center", zorder=12,
+                        bbox=dict(boxstyle="round,pad=0.12", fc="#0b0e11", ec=col, lw=0.8))
+    for t in (gold_trades or []):
+        try:
+            entry = float(t.get("entry", 0)); tp = float(t.get("tp", 0)); sl = float(t.get("sl", 0))
+        except (TypeError, ValueError):
+            continue
+        side = str(t.get("side", "")).upper()
+        eng = str(t.get("engine", ""))[:14]
+        tline(entry, "#ffffff", f"{eng} {side} entry")
+        tline(tp, "#26a69a", "TP")
+        tline(sl, "#ef5350", "SL")
 
     # LIVE price line + moving dot (the visibly-updating-every-poll element)
     lp = float(live_price if live_price is not None else c[-1])
@@ -587,7 +610,8 @@ def serve_worker(args, here):
 
             if b is not None and state is not None:
                 draw_chart(b.iloc[-args.plot_bars:], dict(X.DEFAULTS),
-                           _CHART_PATH, SYMBOL, state["price"], updated)
+                           _CHART_PATH, SYMBOL, state["price"], updated,
+                           gold_trades=trades)
                 with open(_CHART_PATH, "rb") as fh:
                     png = fh.read()
                 LATEST.update(png=png, state=state, src=src, err=None,
