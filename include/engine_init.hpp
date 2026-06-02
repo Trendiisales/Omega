@@ -5424,43 +5424,111 @@ static void init_engines(const std::string& cfg_path)
             return out;
         });
 
-    // XauStraddle M30 / M15 (S-2026-06-02): OCO breakout straddles on XAUUSD.
-    // Were holding positions for hours with zero live visibility — register so
-    // they flow into live_trades via the universal publisher in on_tick.hpp.
-    g_open_positions.register_source("XauStraddleM30",
+    // Straddle engines (S-2026-06-02): XAU + index OCO breakout straddles, all
+    // XauStraddleM30Engine instances. Were holding positions for hours with zero
+    // live visibility — register so they flow into live_trades via the universal
+    // publisher in on_tick.hpp. reg_straddle captures the engine by pointer (a
+    // global → valid for process life) so the snapshotter is safe to escape.
+    {
+        auto reg_straddle = [](const char* label, const char* sym,
+                               const omega::XauStraddleM30Engine* e) {
+            g_open_positions.register_source(label,
+                [e, sym, label]() -> std::vector<omega::PositionSnapshot> {
+                    std::vector<omega::PositionSnapshot> out;
+                    if (!e->has_open_position()) return out;
+                    const auto& p = e->pos_;
+                    const double mult = tick_value_multiplier(std::string(sym));
+                    double current = p.entry;
+                    const auto it = g_last_tick_bid.find(sym);
+                    if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+                    const double dir = (p.side > 0) ? 1.0 : -1.0;
+                    omega::PositionSnapshot ps;
+                    ps.symbol = sym; ps.side = (p.side > 0) ? "LONG" : "SHORT";
+                    ps.size = p.lot; ps.entry = p.entry; ps.current = current;
+                    ps.unrealized_pnl = (current - p.entry) * dir * p.lot * mult;
+                    ps.tp = p.tp; ps.sl = p.sl; ps.entry_ts = p.entry_ts_ms / 1000;
+                    ps.engine = label;
+                    out.push_back(ps);
+                    return out;
+                });
+        };
+        reg_straddle("XauStraddleM30",       "XAUUSD", &g_xau_straddle_m30);
+        reg_straddle("XauStraddleM15",       "XAUUSD", &g_xau_straddle_m15);
+        reg_straddle("IdxStraddleGER40_M30", "GER40",  &g_idx_straddle_ger40_m30);
+        reg_straddle("IdxStraddleGER40_M15", "GER40",  &g_idx_straddle_ger40_m15);
+        reg_straddle("IdxStraddleNAS100_M15","NAS100", &g_idx_straddle_nas_m15);
+        reg_straddle("IdxStraddleNAS100_M30","NAS100", &g_idx_straddle_nas_m30);
+        reg_straddle("IdxStraddleUK100_M30", "UK100",  &g_idx_straddle_uk100_m30);
+        reg_straddle("IdxStraddleUK100_M240","UK100",  &g_idx_straddle_uk100_m240);
+    }
+
+    // Ger40TurtleH4 (S-2026-06-02): pos_ has no direction field — derive from
+    // sl vs entry (sl below entry => long). tp/sl/entry_ts available.
+    g_open_positions.register_source("Ger40TurtleH4",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_xau_straddle_m30.has_open_position()) return out;
-            const auto& p = g_xau_straddle_m30.pos_;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            if (!g_ger40_turtle_h4.has_open_position()) return out;
+            const auto& p = g_ger40_turtle_h4.pos_;
+            const bool is_long = (p.sl < p.entry);
+            const double mult = tick_value_multiplier(std::string("GER40"));
             double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
+            const auto it = g_last_tick_bid.find("GER40");
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir = (p.side > 0) ? 1.0 : -1.0;
+            const double dir = is_long ? 1.0 : -1.0;
             omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = (p.side > 0) ? "LONG" : "SHORT";
+            ps.symbol = "GER40"; ps.side = is_long ? "LONG" : "SHORT";
             ps.size = p.lot; ps.entry = p.entry; ps.current = current;
             ps.unrealized_pnl = (current - p.entry) * dir * p.lot * mult;
-            ps.engine = "XauStraddleM30";
+            ps.tp = p.tp; ps.sl = p.sl; ps.entry_ts = p.entry_ts_ms / 1000;
+            ps.engine = "Ger40TurtleH4";
             out.push_back(ps);
             return out;
         });
-    g_open_positions.register_source("XauStraddleM15",
+
+    // Ger40KeltnerH1 (S-2026-06-02): long-only (short side tombstoned). No tp
+    // field (trail-managed) → tp=0.
+    g_open_positions.register_source("Ger40KeltnerH1",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_xau_straddle_m15.has_open_position()) return out;
-            const auto& p = g_xau_straddle_m15.pos_;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (!g_ger40_kelt.pos.active) return out;
+            const auto& p = g_ger40_kelt.pos;
+            const double mult = tick_value_multiplier(std::string("GER40"));
+            double current = p.entry_px;
+            const auto it = g_last_tick_bid.find("GER40");
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir = (p.side > 0) ? 1.0 : -1.0;
             omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = (p.side > 0) ? "LONG" : "SHORT";
-            ps.size = p.lot; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = (current - p.entry) * dir * p.lot * mult;
-            ps.engine = "XauStraddleM15";
+            ps.symbol = "GER40"; ps.side = "LONG";
+            ps.size = g_ger40_kelt.lot; ps.entry = p.entry_px; ps.current = current;
+            ps.unrealized_pnl = (current - p.entry_px) * g_ger40_kelt.lot * mult;
+            ps.tp = 0.0; ps.sl = p.sl_px; ps.entry_ts = p.entry_ts_ms / 1000;
+            ps.engine = "Ger40KeltnerH1";
             out.push_back(ps);
+            return out;
+        });
+
+    // SurvivorPortfolio (S-2026-06-02): 13-cell GER/XAU/USTEC/USDJPY book. One
+    // source returns every open cell (cfg.tag as engine label).
+    g_open_positions.register_source("Survivor",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            for (const auto& c : g_survivor.cells) {
+                if (!c.st.pos_active) continue;
+                const char* sym = c.cfg.symbol;
+                double current = c.st.pos_entry;
+                const auto it = g_last_tick_bid.find(sym);
+                if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+                const double dir = (c.st.pos_side > 0) ? 1.0 : -1.0;
+                omega::PositionSnapshot ps;
+                ps.symbol = sym;
+                ps.side = (c.st.pos_side > 0) ? "LONG" : "SHORT";
+                ps.size = c.cfg.lot; ps.entry = c.st.pos_entry; ps.current = current;
+                ps.unrealized_pnl = (current - c.st.pos_entry) * dir
+                                    * c.cfg.lot * c.cfg.tick_usd_per_lot;
+                ps.tp = c.st.pos_tp; ps.sl = c.st.pos_sl;
+                ps.entry_ts = c.st.pos_entry_ts;
+                ps.engine = c.cfg.tag;
+                out.push_back(ps);
+            }
             return out;
         });
 

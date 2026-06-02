@@ -985,10 +985,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     auto it = s_first_seen.find(key);
                     if (it != s_first_seen.end()) first = it->second;
                     seen_now[key] = first;
+                    // real entry_ts when the source provides it; else held is
+                    // measured from first-observation.
+                    const int64_t ets = (ps.entry_ts > 0) ? ps.entry_ts : first;
                     const double tv = tick_value_multiplier(ps.symbol);
                     g_telemetry.AddLiveTrade(ps.symbol.c_str(), ps.engine.c_str(),
-                        ps.side.c_str(), ps.entry, ps.current, 0.0, 0.0,
-                        ps.size, ps.unrealized_pnl, tv, first);
+                        ps.side.c_str(), ps.entry, ps.current, ps.tp, ps.sl,
+                        ps.size, ps.unrealized_pnl, tv, ets);
                 }
                 // prune closed positions so a reopen restarts its held clock
                 s_first_seen.swap(seen_now);

@@ -69,6 +69,12 @@ struct PositionSnapshot
     double      mfe            = 0.0;
     double      mae            = 0.0;
     std::string engine;
+    // S-2026-06-02: additive fields for the live_trades publisher (held-time +
+    // TP/SL distance). Purely additive — omega-terminal TS ignores extra JSON
+    // keys; sources that don't set these leave them 0.
+    int64_t     entry_ts       = 0;     // epoch seconds of entry (0 = unknown)
+    double      tp             = 0.0;   // take-profit price (0 = none)
+    double      sl             = 0.0;   // stop-loss price (0 = none)
 };
 
 class OpenPositionRegistry
