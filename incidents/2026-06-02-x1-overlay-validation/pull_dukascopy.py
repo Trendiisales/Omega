@@ -15,9 +15,12 @@ Format notes
     XAUUSD            -> 1000     (3 decimals)
     EURUSD/GBPUSD/... -> 100000   (5 decimals, non-JPY FX)
     USDJPY & JPY xs   -> 1000
-  Index CFDs use Dukascopy's own symbols (e.g. USA500.IDXUSD, USATECH.IDXUSD,
-  DEU.IDXEUR) which differ from broker ".F" names, and their own scale — pass
-  --symbol and --scale explicitly for those.
+  Index CFDs use Dukascopy's own symbols which differ from broker ".F" names,
+  and their own scale — pass --symbol and --scale explicitly for those.
+  VERIFIED codes (NO dot — the dotted forms USA500.IDXUSD etc 404):
+    US500.F -> USA500IDXUSD    (scale 1000)
+    USTEC.F -> USATECHIDXUSD   (scale 1000)
+    GER40   -> DEUIDXEUR       (scale 1000)
 
 Usage
 -----

@@ -45,13 +45,24 @@ import x1_validate as X
 # about: does the engine already enter WITH momentum (trend) or against it
 # (mean-rev), or is it timing-agnostic (scalp / straddle).
 # --------------------------------------------------------------------------- #
+# Order matters: first matching family wins. Mean-rev keys are listed before
+# trend so an "RSI" / "Reversion" engine can't be captured by a looser trend key.
 FAMILY = [
-    ("trend",     ["Tsmom", "Donchian", "EmaPullback", "XauTrendFollow",
-                   "LondonFixMomentum", "MacroCrash"]),
-    ("meanrev",   ["MeanReversion", "DynamicRange", "AsianRange", "XauThreeBar",
-                   "XauusdFvg"]),
-    ("scalp",     ["GoldScalpPyramid", "MidScalperGold", "GoldUltimate"]),
-    ("straddle",  ["XauStraddle"]),
+    # counter-momentum entries (fade) — confirm-filter expected NEUTRAL/NEGATIVE
+    ("meanrev",   ["MeanReversion", "VWAPReversion", "RSI", "DynamicRange",
+                   "AsianRange", "XauThreeBar", "XauusdFvg", "BBrev", "bband",
+                   "BBScalp"]),
+    # momentum-confirming entries (trend / breakout / session-momentum) —
+    # confirm-filter expected POSITIVE
+    ("trend",     ["Tsmom", "Donchian", "DonchN", "EmaPullback", "XauTrendFollow",
+                   "UstecTrendFollow", "Ger40Turtle", "Ger40Keltner", "Keltner",
+                   "_MA_", "LondonFixMomentum", "LondonOpen", "MacroCrash",
+                   "IndexSwing", "Turtle"]),
+    # scalp — fast, timing-agnostic
+    ("scalp",     ["GoldScalpPyramid", "MidScalperGold", "GoldUltimate",
+                   "FxScalpPyramid", "Scalp"]),
+    # straddle / ORB — bidirectional breakout
+    ("straddle",  ["XauStraddle", "IdxStraddle", "Straddle", "Orb", "ORB"]),
 ]
 
 # hold_sec above this is treated as a bad/unclosed record and dropped from any
