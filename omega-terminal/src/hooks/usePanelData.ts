@@ -80,10 +80,17 @@ export function usePanelData<T>(
     controllerRef.current = ac;
 
     setState((prev) => {
-      if (keepPreviousOnRefetch && (prev.status === 'ok' || prev.status === 'err')) {
-        return { status: 'loading', data: prev.data };
+      // First load (no data yet, or keepPrevious disabled): show the loading
+      // skeleton. Once data has ever arrived (incl. an empty result set, where
+      // data is a non-null []), a background refetch stays in its prior state so
+      // the skeleton does NOT re-appear and pulse on every poll. The old impl
+      // flipped status to 'loading' on every refetch, so panels gating their
+      // skeleton on `length===0 && status==='loading'` flashed every 1s on empty
+      // data -- contradicting keepPreviousOnRefetch's own documented intent.
+      if (keepPreviousOnRefetch && prev.data != null) {
+        return prev;
       }
-      return { status: 'loading', data: null };
+      return { status: 'loading', data: keepPreviousOnRefetch ? prev.data : null };
     });
 
     try {
