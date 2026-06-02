@@ -318,7 +318,7 @@ def step(args, here, live, seed_cache):
                f"(~{need-len(b)} min to go; runs continuously, cache persists)")
         print(msg, file=sys.stderr)
         LATEST["err"] = msg if getattr(args, "serve", 0) else LATEST["err"]
-        return
+        return None, None, None, None, None, tele   # warmup: gold not ready, tele still usable
     b = X.compute_tags(b, dict(X.DEFAULTS))
     save_cache(b, here)   # persist live-feed history every poll
 
@@ -338,7 +338,103 @@ def step(args, here, live, seed_cache):
         render_open(open_all)
     if args.chart:
         X.plot(b.iloc[-args.plot_bars:], None, dict(X.DEFAULTS), args.chart, SYMBOL)
-    return state, trades, b, src_lbl, open_all
+    return state, trades, b, src_lbl, open_all, tele
+
+
+# --------------------------------------------------------------------------- #
+# Ported TradingView analytics (computed from Omega telemetry, all symbols).
+# MA suite + signals (on chart), MTF trend/RSI dashboard, multi-symbol screener.
+# VWAP intentionally omitted — the telemetry has no per-bar volume, and a
+# volume-less "VWAP" would be a fake (it degenerates to a moving average).
+# --------------------------------------------------------------------------- #
+# display symbol -> telemetry bid/ask field prefix
+SYMS = [("XAUUSD","gold"), ("XAGUSD","xag"), ("US500.F","sp"), ("USTEC.F","nq"),
+        ("NAS100","nas"), ("DJ30.F","dj"), ("USOIL.F","cl"),
+        ("EURUSD","eurusd"), ("GBPUSD","gbpusd"), ("USDJPY","usdjpy"),
+        ("AUDUSD","audusd"), ("NZDUSD","nzdusd")]
+
+
+def _ema(s, n):
+    return s.ewm(span=n, adjust=False).mean()
+
+
+def _rsi(s, n=14):
+    d = s.diff()
+    up = d.clip(lower=0).ewm(alpha=1.0/n, adjust=False).mean()
+    dn = (-d.clip(upper=0)).ewm(alpha=1.0/n, adjust=False).mean()
+    rs = up / dn.replace(0, float("nan"))
+    return 100 - 100/(1+rs)
+
+
+def indicators(df):
+    """EMA9/21/50, SMA200, RSI14, trend from a close series. None if too short."""
+    if df is None or len(df) < 5:
+        return None
+    c = df["close"]
+    g = lambda v: (None if (v != v) else float(v))   # NaN->None
+    out = dict(price=float(c.iloc[-1]),
+               ema9=g(_ema(c, 9).iloc[-1]) if len(c) >= 9 else None,
+               ema21=g(_ema(c, 21).iloc[-1]) if len(c) >= 21 else None,
+               ema50=g(_ema(c, 50).iloc[-1]) if len(c) >= 50 else None,
+               sma200=g(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else None,
+               rsi=g(_rsi(c).iloc[-1]) if len(c) >= 15 else None)
+    if out["ema21"] and out["ema50"]:
+        out["trend"] = 1 if out["ema21"] > out["ema50"] else -1
+    elif out["ema9"] and out["ema21"]:
+        out["trend"] = 1 if out["ema9"] > out["ema21"] else -1
+    else:
+        out["trend"] = 0
+    return out
+
+
+def sym_mid(tele, pfx):
+    try:
+        b = float(tele.get(pfx + "_bid")); a = float(tele.get(pfx + "_ask"))
+    except (TypeError, ValueError):
+        return None
+    return (a + b) / 2.0 if (b > 0 and a > 0) else None
+
+
+def screener_rows(tele, sym_bars):
+    """One row per symbol: price, day-range position, RSI, trend. Price/range are
+    instant from telemetry; RSI/trend fill in as per-symbol bars accumulate."""
+    rows = []
+    for disp, pfx in SYMS:
+        mid = sym_mid(tele, pfx)
+        if mid is None:
+            rows.append(dict(symbol=disp, price=0, rsi=None, trend=0,
+                             range_pos=None, note="no feed"))
+            continue
+        ind = indicators(sym_bars.get(disp))
+        pos = None
+        try:
+            pdh = float(tele.get(pfx + "_pdh")); pdl = float(tele.get(pfx + "_pdl"))
+            if pdh > pdl:
+                pos = round((mid - pdl) / (pdh - pdl) * 100)
+        except (TypeError, ValueError):
+            pass
+        rows.append(dict(symbol=disp, price=round(mid, 5),
+                         rsi=(round(ind["rsi"], 1) if ind and ind.get("rsi") else None),
+                         trend=(ind["trend"] if ind else 0),
+                         range_pos=pos, note=""))
+    return rows
+
+
+def mtf_rows(b):
+    """Aggregate the chart symbol's M1 bars to higher TFs: trend (EMA9>EMA21) +
+    RSI. Depth-limited by how much M1 history is cached."""
+    if b is None or len(b) < 10:
+        return []
+    rows = []
+    for tf, rule in [("5m", "5min"), ("15m", "15min"), ("1h", "60min"), ("4h", "240min")]:
+        r = b["close"].resample(rule).last().dropna()
+        if len(r) < 5:
+            rows.append(dict(tf=tf, trend=0, rsi=None)); continue
+        ef = _ema(r, 9).iloc[-1]; es = _ema(r, 21).iloc[-1]
+        rv = _rsi(r).iloc[-1] if len(r) >= 15 else float("nan")
+        rows.append(dict(tf=tf, trend=(1 if ef > es else -1),
+                         rsi=(None if rv != rv else round(float(rv), 1))))
+    return rows
 
 
 # --------------------------------------------------------------------------- #
@@ -347,7 +443,7 @@ def step(args, here, live, seed_cache):
 # interpretation as JSON; the page auto-reloads both every `interval` seconds.
 # --------------------------------------------------------------------------- #
 LATEST = {"png": b"", "state": None, "trades": [], "open_all": [], "src": "-",
-          "ts": "", "err": None, "rev": 0}
+          "ts": "", "err": None, "rev": 0, "screener": [], "mtf": []}
 _CHART_PATH = "/tmp/_x1_live_chart.png"
 
 
@@ -378,6 +474,31 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated):
                           facecolor=col, edgecolor=col))
     rng = (np.nanmax(h) - np.nanmin(l)) or 1.0
     off = rng * 0.012
+
+    # MA suite (EMA 9/21/50 + SMA200) — ported from the Pine indicator
+    cs = b["close"]
+    for span, mcol, lab in [(9, "#3fc1c9", "EMA9"), (21, "#ff9f1c", "EMA21"),
+                            (50, "#ffee58", "EMA50")]:
+        if n >= span:
+            ax.plot(x, cs.ewm(span=span, adjust=False).mean().values,
+                    color=mcol, lw=1.0, label=lab)
+    if n >= 200:
+        ax.plot(x, cs.rolling(200).mean().values, color="#e040fb", lw=1.2, label="SMA200")
+
+    # buy/sell signals: EMA9×EMA21 cross + RSI50 filter (Pine signal logic)
+    ef = cs.ewm(span=9, adjust=False).mean()
+    es = cs.ewm(span=21, adjust=False).mean()
+    rs = _rsi(cs)
+    buy = (ef > es) & (ef.shift(1) <= es.shift(1)) & (rs > 50)
+    sell = (ef < es) & (ef.shift(1) >= es.shift(1)) & (rs < 50)
+    bi = np.where(buy.fillna(False).values)[0]
+    si = np.where(sell.fillna(False).values)[0]
+    if len(bi):
+        ax.scatter(bi, l[bi] - off * 1.9, marker="^", c="#00e676", s=70,
+                   edgecolors="#000", linewidths=0.5, zorder=6, label="BUY")
+    if len(si):
+        ax.scatter(si, h[si] + off * 1.9, marker="v", c="#ff1744", s=70,
+                   edgecolors="#000", linewidths=0.5, zorder=6, label="SELL")
 
     def mark(mask, dy, marker, color, label):
         ix = np.where(b[mask].fillna(False).values)[0]
@@ -441,12 +562,27 @@ def _trade_rows(trades, b, lookback, ts):
 
 def serve_worker(args, here):
     live, seed_cache = LiveBars(), {}
+    sym_bars = {disp: LiveBars() for disp, _ in SYMS}   # per-symbol M1 for screener
     while True:
         try:
             res = step(args, here, live, seed_cache)
+            now = dt.datetime.now(dt.timezone.utc)
+            updated = now.strftime("%H:%M:%S") + "Z"
+            # res is a 6-tuple even on warmup; gold fields may be None.
+            state = trades = b = open_all = tele = None
+            src = "-"
             if res:
-                state, trades, b, src, open_all = res
-                updated = dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S") + "Z"
+                state, trades, b, src, open_all, tele = res
+
+            # multi-symbol screener — works off telemetry regardless of gold state
+            if tele:
+                for disp, pfx in SYMS:
+                    m = sym_mid(tele, pfx)
+                    if m is not None:
+                        sym_bars[disp].push(m, now)
+                LATEST["screener"] = screener_rows(tele, {d: sym_bars[d].frame() for d, _ in SYMS})
+
+            if b is not None and state is not None:
                 draw_chart(b.iloc[-args.plot_bars:], dict(X.DEFAULTS),
                            _CHART_PATH, SYMBOL, state["price"], updated)
                 with open(_CHART_PATH, "rb") as fh:
@@ -455,7 +591,11 @@ def serve_worker(args, here):
                               ts=f"{state['ts']:%Y-%m-%d %H:%M}Z",
                               updated=updated, rev=LATEST["rev"] + 1,
                               open_all=open_rows(open_all),
+                              mtf=mtf_rows(b),
                               trades=_trade_rows(trades, b, args.lookback, state["ts"]))
+            else:
+                # gold warming/down: still advance heartbeat + screener
+                LATEST.update(updated=updated, rev=LATEST["rev"] + 1)
         except Exception as e:
             LATEST["err"] = str(e)
             print(f"[serve] {e}", file=sys.stderr)
@@ -482,6 +622,7 @@ def build_page(interval):
 <img id=img style="display:none" onload="this.style.display='block';document.getElementById('wait').style.display='none'">
 <div id=running></div>
 <div class=panel id=panel></div>
+<div class=panel><div id=mtf></div><div id=screener></div></div>
 <script>
 const IV={interval*1000};
 let npoll=0;
@@ -510,7 +651,7 @@ async function tick(){{
   }} else {{ rt+='<div style="color:#7f8a96;padding:4px 0">no open positions — all flat</div>'; }}
   rt+='</div>';
   document.getElementById('running').innerHTML=rt;
-  if(s.err){{document.getElementById('panel').innerHTML='<div class=card stale>error: '+s.err+'</div>';return;}}
+  if(s.err){{hb.innerHTML+=' · <span class=stale>'+s.err+'</span>';}}
   const st=s.state||{{}};
   const reg=st.regime_up?'<span class=up>UP</span>':'<span class=dn>DOWN</span>';
   const lc=st.long_confirmed?'<span class=on>CONFIRMED</span>':'<span class=off>unconfirmed</span>';
@@ -526,6 +667,25 @@ async function tick(){{
    +'<div class=card><div class=k>confirm-filter read</div><div>LONG now: '+lc+'</div><div>SHORT now: '+sc+'</div>'
    +'<div class=k style="margin-top:6px;max-width:320px">base rate: gold confirmed-trend winners 71.9% vs losers 51.5% (+12pp within-trend)</div></div>'
    +'<div class=card><div class=k>open gold trades</div>'+tr+'</div>';
+  // MTF dashboard (chart symbol across timeframes)
+  const mtf=s.mtf||[];
+  let mh='<div class=card><div class=k>MTF — XAUUSD trend / RSI</div>';
+  if(mtf.length){{ mh+='<table><tr><th>TF</th><th>trend</th><th>RSI</th></tr>';
+   for(const m of mtf){{ const tc=m.trend>0?'up':(m.trend<0?'dn':'k'); const ta=m.trend>0?'▲':(m.trend<0?'▼':'—');
+    mh+='<tr><td>'+m.tf+'</td><td class='+tc+'>'+ta+'</td><td>'+(m.rsi==null?'—':m.rsi)+'</td></tr>'; }}
+   mh+='</table>'; }} else {{ mh+='<div class=k style="padding:4px 0">building…</div>'; }}
+  mh+='</div>'; document.getElementById('mtf').innerHTML=mh;
+  // Multi-symbol screener
+  const sc2=s.screener||[];
+  let sh='<div class=card><div class=k>SCREENER — all symbols</div>';
+  if(sc2.length){{ sh+='<table><tr><th>symbol</th><th>price</th><th>trend</th><th>RSI</th><th>day range</th></tr>';
+   for(const r of sc2){{ if(r.note==='no feed'){{ sh+='<tr><td>'+r.symbol+'</td><td colspan=4 class=k>no feed</td></tr>'; continue; }}
+    const tc=r.trend>0?'up':(r.trend<0?'dn':'k'); const ta=r.trend>0?'▲':(r.trend<0?'▼':'—');
+    const rp=r.range_pos==null?'—':(r.range_pos+'%');
+    sh+='<tr><td>'+r.symbol+'</td><td>'+r.price+'</td><td class='+tc+'>'+ta+'</td><td>'+(r.rsi==null?'—':r.rsi)+'</td><td>'+rp+'</td></tr>'; }}
+   sh+='</table><div class=k style="margin-top:4px;max-width:340px">day range = position in prev-day high/low (0%=PDL,100%=PDH). RSI/trend fill in as bars accumulate.</div>'; }}
+  else {{ sh+='<div class=k style="padding:4px 0">waiting for feed…</div>'; }}
+  sh+='</div>'; document.getElementById('screener').innerHTML=sh;
  }}catch(e){{}}
 }}
 tick();setInterval(tick,IV);
@@ -556,6 +716,7 @@ def run_server(args, here):
                     err=LATEST["err"], src=LATEST["src"], ts=LATEST["ts"],
                     updated=LATEST.get("updated", ""), rev=LATEST["rev"],
                     trades=LATEST["trades"], open_all=LATEST["open_all"],
+                    screener=LATEST.get("screener", []), mtf=LATEST.get("mtf", []),
                     state=None if st is None else dict(
                         regime_up=st["regime_up"], wt1=st["wt1"], wt2=st["wt2"],
                         last_tag=st["last_tag"], price=st["price"],
