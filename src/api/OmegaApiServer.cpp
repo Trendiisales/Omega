@@ -361,9 +361,15 @@ static std::string build_engines_json()
 {
     const auto snaps = g_engines.snapshot_all();
     std::string out = "[";
+    // S-2026-06-02: only surface ENABLED engines. Disabled/culled cells (the
+    // registry still holds legacy ones) were rendering as "IDLE" rows and
+    // cluttering the panel -- a disabled engine is not "the live book".
+    bool first = true;
     for (size_t i = 0; i < snaps.size(); ++i) {
         const EngineSnapshot& s = snaps[i];
-        if (i > 0) out += ",";
+        if (!s.enabled) continue;
+        if (!first) out += ",";
+        first = false;
         out += "{";
         out += "\"name\":"            + json_str(s.name)             + ",";
         out += "\"enabled\":"         + json_bool(s.enabled)         + ",";

@@ -4568,14 +4568,9 @@ static void init_engines(const std::string& cfg_path)
     };
 
     // S11 P3b: HybridGold register_engine block removed (engine culled in P3a + P3b).
-    // 2026-05-01 SESSION_h: register GoldMidScalper for /api/v1/omega/engines.
-    //   Shadow-stamped (last_signal_ts/last_pnl come from
-    //   g_engine_last lookup against tr.engine="MidScalperGold").
-    g_engines.register_engine("MidScalperGold",
-        [reg]{ return reg("MidScalperGold",
-                          true,
-                          g_gold_midscalper.shadow_mode,
-                          {"MidScalperGold"}); });
+    // S-2026-06-02: MidScalperGold registration REMOVED -- the engine was
+    // decommissioned (#if 0 in tick_gold.hpp 2026-05-12) but its registration
+    // hardcoded enabled=true, so the /engines panel kept showing it RUNNING.
     // 2026-05-08 S19: register MicroScalperGold for /api/v1/omega/engines.
     //   Shadow-stamped initially. last_signal_ts/last_pnl resolved via
     //   g_engine_last lookup against tr.engine="MicroScalperGold".
@@ -4716,6 +4711,26 @@ static void init_engines(const std::string& cfg_path)
                           true,
                           g_rsi_extreme.shadow_mode,
                           {"RSIExtremeTurn"}); });
+    // S-2026-06-02: register the current straddle / ORB / index-straddle book so
+    // the /engines panel reflects the live engines instead of only the legacy set.
+    g_engines.register_engine("XauStraddleM30",
+        [reg]{ return reg("XauStraddleM30", g_xau_straddle_m30.enabled, g_xau_straddle_m30.shadow_mode, {"XauStraddleM30"}); });
+    g_engines.register_engine("XauStraddleM15",
+        [reg]{ return reg("XauStraddleM15", g_xau_straddle_m15.enabled, g_xau_straddle_m15.shadow_mode, {"XauStraddleM15"}); });
+    g_engines.register_engine("OrbEstx50",
+        [reg]{ return reg("OrbEstx50", g_orb_estx50_v2.enabled, g_orb_estx50_v2.shadow_mode, {"OrbEstx50"}); });
+    g_engines.register_engine("IdxStraddleGER40_M30",
+        [reg]{ return reg("IdxStraddleGER40_M30", g_idx_straddle_ger40_m30.enabled, g_idx_straddle_ger40_m30.shadow_mode, {"IdxStraddleGER40_M30"}); });
+    g_engines.register_engine("IdxStraddleGER40_M15",
+        [reg]{ return reg("IdxStraddleGER40_M15", g_idx_straddle_ger40_m15.enabled, g_idx_straddle_ger40_m15.shadow_mode, {"IdxStraddleGER40_M15"}); });
+    g_engines.register_engine("IdxStraddleNAS100_M15",
+        [reg]{ return reg("IdxStraddleNAS100_M15", g_idx_straddle_nas_m15.enabled, g_idx_straddle_nas_m15.shadow_mode, {"IdxStraddleNAS100_M15"}); });
+    g_engines.register_engine("IdxStraddleNAS100_M30",
+        [reg]{ return reg("IdxStraddleNAS100_M30", g_idx_straddle_nas_m30.enabled, g_idx_straddle_nas_m30.shadow_mode, {"IdxStraddleNAS100_M30"}); });
+    g_engines.register_engine("IdxStraddleUK100_M30",
+        [reg]{ return reg("IdxStraddleUK100_M30", g_idx_straddle_uk100_m30.enabled, g_idx_straddle_uk100_m30.shadow_mode, {"IdxStraddleUK100_M30"}); });
+    g_engines.register_engine("IdxStraddleUK100_M240",
+        [reg]{ return reg("IdxStraddleUK100_M240", g_idx_straddle_uk100_m240.enabled, g_idx_straddle_uk100_m240.shadow_mode, {"IdxStraddleUK100_M240"}); });
     std::cout << "[OmegaApi] g_engines registered ("
               << g_engines.snapshot_all().size() << " engines)\n";
     std::cout.flush();
