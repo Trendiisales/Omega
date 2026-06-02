@@ -293,6 +293,30 @@ private:
         ++st.bar_idx;
     }
 
+    // Trend filter for mean-rev families (RSI, ZScoreMR). Returns +1 up / -1 down
+    // / 0 neutral, from the SLOPE of SMA(TN) over TN/2 bars on the cell's own TF.
+    // Mean-rev fades extremes; without this it shorts strong uptrends / longs
+    // downtrends and bleeds (USTEC 4h RSI/ZMR, GER40 RSI — tombstoned pattern).
+    // Neutral band (|slope| < THR) = chop = mean-rev allowed; a clear trend vetoes
+    // the counter-trend side only. Conservative THR so only obvious trends gate.
+    int trend_dir() const noexcept {
+        const int TN = 50;
+        const int n  = (int)st.bars.size();
+        if (n < TN + TN / 2 + 1) return 0;          // not enough history -> allow
+        auto sma_back = [&](int back) -> double {
+            int e = n - back; double s = 0.0;
+            for (int i = e - TN; i < e; ++i) s += st.bars[i].c;
+            return s / TN;
+        };
+        const double s_now = sma_back(0), s_prev = sma_back(TN / 2);
+        if (s_prev <= 0.0) return 0;
+        const double slope = (s_now - s_prev) / s_prev;
+        const double THR = 0.0015;                  // 0.15% over TN/2 bars = trend
+        if (slope >  THR) return +1;
+        if (slope < -THR) return -1;
+        return 0;
+    }
+
     int compute_signal_dir(const SpxOverlay& spx) const {
         switch (cfg.family) {
             case Family::Donchian: {
@@ -306,11 +330,14 @@ private:
             case Family::RSI: {
                 if ((int)st.bars.size() < cfg.N + 2) return 0;
                 double rsi = compute_rsi(st.bars, cfg.N);
-                // mean-rev: rsi crosses back inside extreme zone
-                // approximate: rsi < lo -> long, rsi > hi -> short
-                if (rsi < cfg.lo) return +1;
-                if (rsi > cfg.hi) return -1;
-                return 0;
+                // mean-rev: rsi < lo -> long, rsi > hi -> short
+                int dir = (rsi < cfg.lo) ? +1 : (rsi > cfg.hi ? -1 : 0);
+                if (dir == 0) return 0;
+                // TREND FILTER: never fade a clear trend (2026-06-03).
+                int td = trend_dir();
+                if (dir < 0 && td > 0) return 0;   // no short into uptrend
+                if (dir > 0 && td < 0) return 0;   // no long into downtrend
+                return dir;
             }
             case Family::MACross: {
                 int F = cfg.N_fast, S = cfg.N;
@@ -335,9 +362,13 @@ private:
             case Family::ZScoreMR: {
                 if ((int)st.bars.size() < cfg.N + 1) return 0;
                 double z = compute_zscore(st.bars, cfg.N);
-                if (z >=  cfg.zthr) return -1;
-                if (z <= -cfg.zthr) return +1;
-                return 0;
+                int dir = (z >= cfg.zthr) ? -1 : (z <= -cfg.zthr ? +1 : 0);
+                if (dir == 0) return 0;
+                // TREND FILTER: never fade a clear trend (2026-06-03).
+                int td = trend_dir();
+                if (dir < 0 && td > 0) return 0;   // no short into uptrend
+                if (dir > 0 && td < 0) return 0;   // no long into downtrend
+                return dir;
             }
             case Family::SPXVolGatedDonch: {
                 // Donch N + ATR > spx_vm * median(ATR_50) + SPX trend gate
@@ -480,14 +511,10 @@ public:
         add({ .tag="GER_1h_DonchN100", .symbol="GER40",   .tf_sec=3600,  .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.10 });
         // 7.  XAUUSD 4h MACross 10/30
         add({ .tag="XAU_4h_MA_10_30",  .symbol="XAUUSD",  .tf_sec=14400, .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
-        // 8.  USTEC  4h RSI N=7
-        // DISABLED 2026-06-03: counter-trend mean-rev shorting the USTEC uptrend
-        // — same dead pattern already culled for GER40 RSI cells (2026-06-01).
-        // Live shadow 2026-06-03: shorted USTEC at 30531 into a rally, -$428 float
-        // held 13h (1.0xATR 4h stop 322pt out, no exit). RSI "overbought" has no
-        // trend filter -> fades strong trends -> bleeds. Mean-rev-into-trend is the
-        // tombstoned pattern; USTEC trend edge (if any) is directional, not fade.
-        // add({ .tag="USTEC_4h_RSI_N7",  .symbol="USTEC.F", .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // 8.  USTEC  4h RSI N=7  — TREND-GATED 2026-06-03 (Family::RSI trend_dir
+        //     filter blocks counter-trend fades; was bleeding -$428 shorting the
+        //     USTEC uptrend before the gate). Re-enabled gated for shadow eval.
+        add({ .tag="USTEC_4h_RSI_N7",  .symbol="USTEC.F", .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 9.  GER40  15m MACross 20/50
         // DISABLED 2026-06-02: redundant duplicate of GER_15m_MA_10_30 (cell 4).
         // Same symbol/TF(15m)/family(MACross), overlapping params, lower Sharpe
@@ -496,13 +523,12 @@ public:
         // -$13.24 each) = correlated double-loss, zero diversification. Keep the
         // higher-Sharpe 10_30; cull this one (dedup, per S46/S37 precedent).
         // add({ .tag="GER_15m_MA_20_50", .symbol="GER40",   .tf_sec=900,   .family=Family::MACross, .N=50, .N_fast=20, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=50, .lot=0.10 });
-        // 10. USTEC  4h ZScoreMR W=20 Z=2.5
-        // DISABLED 2026-06-03: counter-trend mean-rev (z-score fade) shorting the
-        // USTEC uptrend — fired the IDENTICAL short as USTEC_4h_RSI_N7 (same entry
-        // 30531, same -$428 float, same 13h hold) = correlated double-loss, zero
-        // diversification. Same tombstoned mean-rev-into-trend pattern. Culled with
-        // the RSI cell above. Last enabled counter-trend mean-rev cell in the book.
-        // add({ .tag="USTEC_4h_ZMR",     .symbol="USTEC.F", .tf_sec=14400, .family=Family::ZScoreMR, .N=20, .zthr=2.5, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // 10. USTEC  4h ZScoreMR W=20 Z=2.5  — TREND-GATED 2026-06-03 (Family::
+        //     ZScoreMR trend_dir filter blocks counter-trend fades; was firing the
+        //     identical -$428 short as the RSI cell into the USTEC uptrend). Note:
+        //     RSI_N7 + ZMR can still co-fire when gate passes -> consider a per-
+        //     symbol cell cap (follow-up) to avoid correlated double-stacking.
+        add({ .tag="USTEC_4h_ZMR",     .symbol="USTEC.F", .tf_sec=14400, .family=Family::ZScoreMR, .N=20, .zthr=2.5, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 11. GER40  5m RSI N=14
         // DISABLED 2026-06-01: GER40 RSI mean-rev (counter-trend, net-neg shadow).
         // add({ .tag="GER_5m_RSI_N14",   .symbol="GER40",   .tf_sec=300,   .family=Family::RSI, .N=14, .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
