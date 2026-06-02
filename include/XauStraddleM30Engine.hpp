@@ -47,6 +47,12 @@ struct XauStraddleM30Engine {
     double tp_r        = 1.0;    // TP = tp_r * SL distance (1R)
     double max_spread  = 1.0;    // pts
     double lot         = 0.01;
+    // Partial scale-out (S-2026-06-03): bank partial_frac of the position at
+    // +partial_r * 1R, run the rest to TP. Backtest (2yr gold M30): 30%@0.5R ->
+    // PF 1.58->1.65, Sharpe 3.94->4.29, maxDD -33%, net -9% (risk-adjusted win;
+    // unlike BE/trail which were net-negative). Default OFF (frac=0).
+    double partial_frac = 0.0;   // 0 = off
+    double partial_r    = 0.5;   // bank at this *R favorable
     double gap_atr_max = 3.0;    // reject a stop gapped > this*ATR from mid (stale-box / gap phantom guard).
                                  // A real breakout fills AT the box edge (|fill-mid|~=0); 3*ATR is already far
                                  // beyond any legit fill, but << a stale-seed-box gap (hundreds of pts). 8.0 was
@@ -95,6 +101,7 @@ struct XauStraddleM30Engine {
         double mfe = 0.0;
         int64_t entry_ts_ms = 0;
         int    bars_held = 0;
+        bool   part_taken = false;   // partial scale-out already banked
     } pos_;
     int trade_id_ = 0;
 
@@ -138,6 +145,29 @@ struct XauStraddleM30Engine {
         pos_ = OpenPos{};
     }
 
+    // Partial scale-out: bank partial_frac of the lot at exit_px, keep the rest
+    // open to run to TP/SL. Emits a PARTIAL_TP TradeRecord; does NOT reset pos_.
+    void _partial_close(double exit_px, int64_t now_ms, CloseCallback cb) noexcept {
+        const double closed_lot = pos_.lot * partial_frac;
+        if (closed_lot <= 0.0) { pos_.part_taken = true; return; }
+        const double pnl = pos_.side * (exit_px - pos_.entry) * closed_lot;
+        omega::TradeRecord tr{};
+        tr.symbol = symbol; tr.side = pos_.side > 0 ? "LONG" : "SHORT";
+        tr.engine = engine_name; tr.exitReason = "PARTIAL_TP";
+        tr.entryPrice = pos_.entry; tr.exitPrice = exit_px;
+        tr.sl = pos_.sl; tr.tp = pos_.tp; tr.size = closed_lot; tr.pnl = pnl;
+        tr.entryTs = pos_.entry_ts_ms / 1000LL; tr.exitTs = now_ms / 1000LL;
+        tr.mfe = pos_.mfe; tr.atr_at_entry = pos_.sl_dist / std::max(stop_atr, 1e-9);
+        tr.shadow = shadow_mode;
+        std::printf("[%s] PARTIAL %s %.0f%% @ %.2f entry=%.2f pnl=%.2f%s\n",
+                    engine_name.c_str(), tr.side.c_str(), partial_frac * 100.0,
+                    exit_px, pos_.entry, pnl, shadow_mode ? " [SHADOW]" : "");
+        std::fflush(stdout);
+        if (cb) cb(tr);
+        pos_.lot -= closed_lot;        // remainder runs to TP/SL
+        pos_.part_taken = true;
+    }
+
     // ---- tick: fill armed straddle (OCO) + manage open pos ----
     void on_tick(double bid, double ask, int64_t now_ms, CloseCallback cb) noexcept {
         if (bid <= 0.0 || ask <= 0.0) return;
@@ -146,6 +176,11 @@ struct XauStraddleM30Engine {
             const double mid = (bid + ask) * 0.5;
             const double move = pos_.side * (mid - pos_.entry);
             if (move > pos_.mfe) pos_.mfe = move;
+            // partial scale-out: bank partial_frac at +partial_r*1R, run the rest
+            if (partial_frac > 0.0 && !pos_.part_taken && pos_.sl_dist > 0.0
+                && move >= partial_r * pos_.sl_dist) {
+                _partial_close(pos_.entry + pos_.side * partial_r * pos_.sl_dist, now_ms, cb);
+            }
             if (pos_.side > 0) {
                 if (bid <= pos_.sl)      _close(bid, "SL_HIT", now_ms, cb);
                 else if (bid >= pos_.tp) _close(bid, "TP_HIT", now_ms, cb);
