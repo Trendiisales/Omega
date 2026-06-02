@@ -345,6 +345,7 @@ static bool g_disable_index_flow               = true;
 // The same architectural pattern (M5 bars + S63 cuts + cost-aware BE)
 // applies to all entries below; until each is class-audited, disable.
 static bool g_disable_xauusd_fvg               = true;  // S46: M5 FVG, S63 cuts, never class-audited
+static bool g_disable_microscalper             = true;  // S-2026-06-02 CULLED: last live gold scalp. L2 final check (l2_obi_replay.cpp, 67h real DOM, half-spread cost): best-case L2-confirmed scalp PF 0.04-0.65, win 5-33%, all negative -- L2 cannot cover the spread on a gold scalp. Operator decision: cull.
 static bool g_disable_session_momentum         = true;  // GoldStack sub-engine
 static bool g_disable_intraday_seasonality     = true;  // GoldStack sub-engine
 static bool g_disable_vwap_snapback            = true;  // GoldStack sub-engine

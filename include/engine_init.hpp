@@ -4576,7 +4576,7 @@ static void init_engines(const std::string& cfg_path)
     //   g_engine_last lookup against tr.engine="MicroScalperGold".
     g_engines.register_engine("MicroScalperGold",
         [reg]{ return reg("MicroScalperGold",
-                          true,
+                          !g_disable_microscalper,
                           g_gold_microscalper.shadow_mode,
                           {"MicroScalperGold"}); });
     // 2026-05-02: register EurusdLondonOpen for /api/v1/omega/engines.

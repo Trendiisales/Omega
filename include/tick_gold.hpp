@@ -2630,7 +2630,7 @@ static void on_tick_gold(
         // to recover from a partial-fill or reject by itself.
         // ──────────────────────────────────────────────────────────────
         const bool ms_pre_entry_open = g_gold_microscalper.has_open_position();
-        if (!ms_pre_entry_open) {
+        if (!ms_pre_entry_open && !g_disable_microscalper) {   // S-2026-06-02 CULLED (L2 check failed)
             g_gold_microscalper.on_tick(bid, ask, now_ms_g,
                                         microscalper_can_enter,
                                         microscalper_on_close,
