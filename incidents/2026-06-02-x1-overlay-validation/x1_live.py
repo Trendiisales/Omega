@@ -101,6 +101,13 @@ def gold_open_trades(tele):
             if SYMBOL in str(t.get("symbol", ""))]
 
 
+def all_open_trades(tele):
+    """Every currently-running position (all symbols), from live_trades."""
+    if not tele:
+        return []
+    return list(tele.get("live_trades", []))
+
+
 # --------------------------------------------------------------------------- #
 # Live M1 bar builder — aggregates polled mids into minute OHLC.
 # Persists across loop iterations.
@@ -249,6 +256,46 @@ def render(state, trades, b, lookback, src):
               f"entry-confirm: {verdict}{flag}")
 
 
+def open_rows(open_all):
+    """Normalize all-symbol open positions into display dicts (running trades)."""
+    rows = []
+    for t in open_all:
+        try:
+            entry = float(t.get("entry", 0) or 0)
+            cur = float(t.get("current", 0) or 0)
+            tp = float(t.get("tp", 0) or 0)
+            sl = float(t.get("sl", 0) or 0)
+            pnl = float(t.get("live_pnl", 0) or 0)
+            held = float(t.get("held_sec", 0) or 0)
+            side = str(t.get("side", "")).upper()
+            rng = abs(tp - sl) if tp and sl else 0.0
+            # progress toward TP (0..1) along the entry->tp path
+            prog = None
+            if tp and entry and (tp - entry) != 0:
+                prog = max(0.0, min(1.0, (cur - entry) / (tp - entry)))
+            rows.append(dict(symbol=t.get("symbol", "?"), engine=t.get("engine", "?"),
+                             side=side, entry=round(entry, 4), current=round(cur, 4),
+                             tp=round(tp, 4), sl=round(sl, 4), pnl=round(pnl, 2),
+                             held_min=round(held / 60), to_tp=round(float(t.get("dist_tp", 0) or 0), 2),
+                             to_sl=round(float(t.get("dist_sl", 0) or 0), 2),
+                             prog=None if prog is None else round(prog * 100)))
+        except Exception:
+            continue
+    return rows
+
+
+def render_open(open_all):
+    rows = open_rows(open_all)
+    print("  --- RUNNING TRADES (all symbols) ---")
+    if not rows:
+        print("    (no open positions — all flat)")
+    for r in rows:
+        print(f"    {r['symbol']:8} {r['engine']:22} {r['side']:5} "
+              f"entry={r['entry']:.2f} cur={r['current']:.2f} "
+              f"pnl={r['pnl']:+8.2f} held={r['held_min']}m "
+              f"tp_in={r['to_tp']} sl_in={r['to_sl']}")
+
+
 # --------------------------------------------------------------------------- #
 def step(args, here, live, seed_cache):
     tele = None if args.no_gui else fetch_gui(args.gui_url)
@@ -283,13 +330,15 @@ def step(args, here, live, seed_cache):
                        held_sec=(r["exit_dt"] - r["entry_dt"]).total_seconds(),
                        live_pnl=r["net_pnl"]) for _, r in tr.tail(8).iterrows()]
 
+    open_all = all_open_trades(tele)
     state = interpret(b, args.lookback)
     src_lbl = src if src != "offline" else "Dukascopy"
     if not getattr(args, "serve", 0):
         render(state, trades, b, args.lookback, src_lbl)
+        render_open(open_all)
     if args.chart:
         X.plot(b.iloc[-args.plot_bars:], None, dict(X.DEFAULTS), args.chart, SYMBOL)
-    return state, trades, b, src_lbl
+    return state, trades, b, src_lbl, open_all
 
 
 # --------------------------------------------------------------------------- #
@@ -297,8 +346,8 @@ def step(args, here, live, seed_cache):
 # A background thread polls the feed, redraws the chart PNG, and publishes the
 # interpretation as JSON; the page auto-reloads both every `interval` seconds.
 # --------------------------------------------------------------------------- #
-LATEST = {"png": b"", "state": None, "trades": [], "src": "-", "ts": "", "err": None,
-          "rev": 0}
+LATEST = {"png": b"", "state": None, "trades": [], "open_all": [], "src": "-",
+          "ts": "", "err": None, "rev": 0}
 _CHART_PATH = "/tmp/_x1_live_chart.png"
 
 
@@ -396,7 +445,7 @@ def serve_worker(args, here):
         try:
             res = step(args, here, live, seed_cache)
             if res:
-                state, trades, b, src = res
+                state, trades, b, src, open_all = res
                 updated = dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S") + "Z"
                 draw_chart(b.iloc[-args.plot_bars:], dict(X.DEFAULTS),
                            _CHART_PATH, SYMBOL, state["price"], updated)
@@ -405,6 +454,7 @@ def serve_worker(args, here):
                 LATEST.update(png=png, state=state, src=src, err=None,
                               ts=f"{state['ts']:%Y-%m-%d %H:%M}Z",
                               updated=updated, rev=LATEST["rev"] + 1,
+                              open_all=open_rows(open_all),
                               trades=_trade_rows(trades, b, args.lookback, state["ts"]))
         except Exception as e:
             LATEST["err"] = str(e)
@@ -430,6 +480,7 @@ def build_page(interval):
  <span id=hb class=k style="float:right;font-size:12px">connecting…</span></h1>
 <div id=wait>waiting for first chart render (seed warmup)…</div>
 <img id=img style="display:none" onload="this.style.display='block';document.getElementById('wait').style.display='none'">
+<div id=running></div>
 <div class=panel id=panel></div>
 <script>
 const IV={interval*1000};
@@ -446,6 +497,19 @@ async function tick(){{
   const s=await (await fetch('/state?t='+Date.now())).json();
   hb.innerHTML='● live · client '+clk+' · server '+(s.updated||'-')+' · rev '+(s.rev||0)+' · poll '+npoll;
   hb.style.color='#26a69a';
+  // RUNNING TRADES (all symbols) — what's open right now
+  const oa=s.open_all||[];
+  let rt='<div class=card style="width:100%"><div class=k>RUNNING TRADES (all symbols) · '+oa.length+' open</div>';
+  if(oa.length){{
+   rt+='<table style="width:100%"><tr><th>symbol</th><th>engine</th><th>side</th><th>entry</th><th>current</th><th>P&L</th><th>held</th><th>→TP</th><th>→SL</th></tr>';
+   for(const t of oa){{
+    const sd=t.side==='LONG'||t.side==='BUY'?'up':'dn';
+    rt+='<tr><td>'+t.symbol+'</td><td>'+t.engine+'</td><td class='+sd+'>'+t.side+'</td><td>'+t.entry+'</td><td>'+t.current+'</td><td class='+(t.pnl>=0?'up':'dn')+'>'+(t.pnl>=0?'+':'')+t.pnl+'</td><td>'+t.held_min+'m</td><td>'+t.to_tp+'</td><td>'+t.to_sl+'</td></tr>';
+   }}
+   rt+='</table>';
+  }} else {{ rt+='<div style="color:#7f8a96;padding:4px 0">no open positions — all flat</div>'; }}
+  rt+='</div>';
+  document.getElementById('running').innerHTML=rt;
   if(s.err){{document.getElementById('panel').innerHTML='<div class=card stale>error: '+s.err+'</div>';return;}}
   const st=s.state||{{}};
   const reg=st.regime_up?'<span class=up>UP</span>':'<span class=dn>DOWN</span>';
@@ -491,7 +555,7 @@ def run_server(args, here):
                 payload = dict(
                     err=LATEST["err"], src=LATEST["src"], ts=LATEST["ts"],
                     updated=LATEST.get("updated", ""), rev=LATEST["rev"],
-                    trades=LATEST["trades"],
+                    trades=LATEST["trades"], open_all=LATEST["open_all"],
                     state=None if st is None else dict(
                         regime_up=st["regime_up"], wt1=st["wt1"], wt2=st["wt2"],
                         last_tag=st["last_tag"], price=st["price"],
