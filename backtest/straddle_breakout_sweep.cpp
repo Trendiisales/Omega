@@ -84,8 +84,14 @@ int main(int argc,char**argv){
     double PYSTEP= getenv("PYSTEP")?atof(getenv("PYSTEP")):1.0;   // atr step between adds
     double PYSL  = getenv("PYSL")?atof(getenv("PYSL")):3.0;       // trail stop atr below last add
 
+    // partial scale-out (env): bank PARTIAL fraction at +PARTIAL_R, run the rest
+    // to TP/SL. One combined trade for stats. PARTIAL=0 -> off (full size to TP/SL).
+    double PARTIAL   = getenv("PARTIAL")?atof(getenv("PARTIAL")):0.0;   // fraction 0..1
+    double PARTIAL_R = getenv("PARTIAL_R")?atof(getenv("PARTIAL_R")):0.5;
+
     bool pos=false; int dir=0; double entry=0,stop=0,tp=0; int cooldown_until=-1;
     int units=0; double entry_sum=0, last_add=0;
+    double pend_bank=0.0, pos_frac=1.0; bool part_taken=false;   // partial state
     double cum=0,peak=0,mdd=0; int nw=0,nl=0; double gw=0,gl=0; int ntr=0;
     int totAdds=0;
     // leg attribution
@@ -93,7 +99,8 @@ int main(int argc,char**argv){
     std::vector<double> tpnl;
 
     auto close=[&](double px,int i){
-        double pnl=dir*(units*px - entry_sum) - COST*units;
+        double pnl=pend_bank + (dir*(units*px - entry_sum) - COST*units)*pos_frac;
+        pend_bank=0.0; pos_frac=1.0; part_taken=false;
         cum+=pnl; if(cum>peak)peak=cum; double dd=peak-cum; if(dd>mdd)mdd=dd;
         if(pnl>0){nw++;gw+=pnl;}else if(pnl<0){nl++;gl+=-pnl;}
         if(dir>0){longN++;longNet+=pnl;}else{shortN++;shortNet+=pnl;}
@@ -130,6 +137,16 @@ int main(int argc,char**argv){
             if(TRAIL>0 && favR>0){
                 double ts = (dir>0)? bar.h-TRAIL*atr : bar.l+TRAIL*atr;
                 if(dir>0){ if(ts>stop) stop=ts; } else { if(ts<stop) stop=ts; }
+            }
+        }
+        // partial scale-out: bank PARTIAL fraction at +PARTIAL_R, run the rest
+        if(pos && PARTIAL>0 && !part_taken){
+            const double sd=stopm*atr;
+            const double favR=sd>0?((dir>0)?(bar.h-entry):(entry-bar.l))/sd:0.0;
+            if(favR>=PARTIAL_R){
+                double ppx=entry+dir*PARTIAL_R*sd;
+                pend_bank += (dir*(ppx-entry)-COST)*PARTIAL;   // banked fraction (its cost share)
+                pos_frac = 1.0-PARTIAL; part_taken=true;
             }
         }
         // manage open pos intrabar (stop priority, then tp)
@@ -174,15 +191,15 @@ int main(int argc,char**argv){
             if(std::fabs(bar.o-buyStop) <= std::fabs(bar.o-sellStop)){ hitS=false; } else { hitL=false; }
         }
         double effTP = (PYMAX>0)?0.0:TPr;   // pyramid -> runner (no fixed TP)
-        if(hitL){ pos=true;dir=1;entry=buyStop;stop=buyStop-stopm*atr; tp=effTP>0?buyStop+effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; }
-        else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=effTP>0?sellStop-effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; }
+        if(hitL){ pos=true;dir=1;entry=buyStop;stop=buyStop-stopm*atr; tp=effTP>0?buyStop+effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; pend_bank=0;pos_frac=1.0;part_taken=false; }
+        else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=effTP>0?sellStop-effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; pend_bank=0;pos_frac=1.0;part_taken=false; }
     }
     if(pos) close(b.back().c,(int)b.size()-1);
 
     double pf=(gl>0)?gw/gl:(gw>0?999:0); double hit=(nw+nl>0)?100.0*nw/(nw+nl):0;
     double years; {int n=(int)b.size();int s=std::max(evalStart,1);years=(b[n-1].ts-b[s].ts)/86400.0/365.25;}
     double sh=0; if(ntr>=2&&years>0){double m=0;for(double v:tpnl)m+=v;m/=ntr;double s=0;for(double v:tpnl)s+=(v-m)*(v-m);double sd=std::sqrt(s/(ntr-1));if(sd>0)sh=(m/sd)*std::sqrt((double)ntr/years);}
-    std::printf("TP%.1f BE_arm%.2f BE_buf%.2f TRAIL%.1f | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f | L:%d/%.0f S:%d/%.0f\n",
-        TPr,BE_ARM,BE_BUF,TRAIL,ntr,cum,pf,sh,hit,mdd,longN,longNet,shortN,shortNet); (void)totAdds;(void)biasFast;
+    std::printf("TP%.1f PARTIAL%.2f@%.2fR BE_arm%.2f TRAIL%.1f | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f\n",
+        TPr,PARTIAL,PARTIAL_R,BE_ARM,TRAIL,ntr,cum,pf,sh,hit,mdd); (void)totAdds;(void)biasFast;(void)longN;(void)shortN;(void)longNet;(void)shortNet;
     return 0;
 }
