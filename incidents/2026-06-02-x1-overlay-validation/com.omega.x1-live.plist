@@ -15,7 +15,7 @@
         <string>--gui-url</string>
         <string>http://185.167.119.59:7779</string>
         <string>--interval</string>
-        <string>5</string>
+        <string>2</string>
     </array>
 
     <key>WorkingDirectory</key>

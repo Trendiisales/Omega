@@ -468,10 +468,13 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated):
     w = 0.6
     for i in range(n):
         col = X.C_UP if c[i] >= o[i] else X.C_DOWN
-        ax.vlines(x[i], l[i], h[i], color=col, linewidth=0.6)
+        last = (i == n - 1)                       # forming/current bar — emphasize
+        bw = w * 2.0 if last else w
+        ax.vlines(x[i], l[i], h[i], color=col, linewidth=1.6 if last else 0.6)
         lo_, hi_ = min(o[i], c[i]), max(o[i], c[i])
-        ax.add_patch(Rect((x[i] - w / 2, lo_), w, max(hi_ - lo_, 1e-9),
-                          facecolor=col, edgecolor=col))
+        ax.add_patch(Rect((x[i] - bw / 2, lo_), bw, max(hi_ - lo_, 1e-9),
+                          facecolor=col, edgecolor="#ffffff" if last else col,
+                          linewidth=1.4 if last else 0.0, zorder=8 if last else 1))
     rng = (np.nanmax(h) - np.nanmin(l)) or 1.0
     off = rng * 0.012
 
@@ -512,15 +515,15 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated):
 
     # LIVE price line + moving dot (the visibly-updating-every-poll element)
     lp = float(live_price if live_price is not None else c[-1])
-    ax.axhline(lp, color="#ffd54f", lw=0.8, ls="--", alpha=0.8, zorder=6)
-    ax.scatter([n - 1], [lp], s=90, c="#ffd54f", edgecolors="#000",
-               linewidths=0.6, zorder=7)
-    ax.annotate(f"{lp:.2f}", (n - 1, lp), color="#0b0e11", fontsize=9,
-                fontweight="bold", xytext=(4, 0), textcoords="offset points",
-                ha="left", va="center",
-                bbox=dict(boxstyle="round,pad=0.2", fc="#ffd54f", ec="none"))
+    ax.axhline(lp, color="#ffd54f", lw=1.4, ls="--", alpha=0.9, zorder=9)
+    ax.scatter([n - 1], [lp], s=170, c="#ffd54f", edgecolors="#000",
+               linewidths=1.0, zorder=10)
+    ax.annotate(f"{lp:.2f}", (n - 1, lp), color="#0b0e11", fontsize=14,
+                fontweight="bold", xytext=(6, 0), textcoords="offset points",
+                ha="left", va="center", zorder=11,
+                bbox=dict(boxstyle="round,pad=0.3", fc="#ffd54f", ec="none"))
     ax.set_title(f"{symbol}  {lp:.2f}   live · updated {updated}",
-                 color="#ffd54f", fontsize=12)
+                 color="#ffd54f", fontsize=15, fontweight="bold")
     ax.legend(loc="upper left", facecolor="#15191e", edgecolor="#333",
               labelcolor="#ccc", fontsize=8)
 
@@ -605,6 +608,7 @@ def serve_worker(args, here):
 def build_page(interval):
     return f"""<!doctype html><html><head><meta charset=utf-8>
 <title>X1 Live — XAUUSD</title>
+<link rel=icon href="/logo.png">
 <style>
  body{{background:#0b0e11;color:#cfd3d8;font:13px/1.5 -apple-system,Menlo,monospace;margin:0;padding:14px}}
  h1{{font-size:15px;margin:0 0 8px;color:#eaecef}}
@@ -616,8 +620,10 @@ def build_page(interval):
  table{{border-collapse:collapse;font-size:12px}} td,th{{padding:3px 8px;text-align:left;border-bottom:1px solid #20242a}}
  .flag{{color:#ffb74d}} .stale{{color:#ef5350}}
 </style></head><body>
-<h1>X1 Live Overlay — XAUUSD <span class=k>(gold-validated · read-only)</span>
- <span id=hb class=k style="float:right;font-size:12px">connecting…</span></h1>
+<h1 style="display:flex;align-items:center;gap:10px">
+ <img src="/logo.png" height=30 style="border-radius:6px" alt="Chimera">
+ <span>X1 Live Overlay — XAUUSD <span class=k>(gold-validated · read-only)</span></span>
+ <span id=hb class=k style="margin-left:auto;font-size:12px">connecting…</span></h1>
 <div id=wait>waiting for first chart render (seed warmup)…</div>
 <img id=img style="display:none" onload="this.style.display='block';document.getElementById('wait').style.display='none'">
 <div id=running></div>
@@ -695,6 +701,11 @@ tick();setInterval(tick,IV);
 def run_server(args, here):
     here_ref = here
     page = build_page(args.interval).encode()
+    try:
+        with open(os.path.join(here, "chimera_badge.png"), "rb") as fh:
+            logo_png = fh.read()
+    except Exception:
+        logo_png = b""
 
     class H(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -710,6 +721,8 @@ def run_server(args, here):
         def do_GET(self):
             if self.path.startswith("/chart.png"):
                 self._send(200, "image/png", LATEST["png"] or b"")
+            elif self.path.startswith("/logo.png"):
+                self._send(200, "image/png", logo_png)
             elif self.path.startswith("/state"):
                 st = LATEST["state"]
                 payload = dict(
@@ -763,13 +776,13 @@ def main():
     ap.add_argument("--lookback", type=int, default=X.DEFAULTS["lookback"])
     ap.add_argument("--trades", default=os.path.expanduser("~/Downloads/omega_trade_closes.csv"))
     ap.add_argument("--chart", default=None)
-    ap.add_argument("--plot-bars", dest="plot_bars", type=int, default=400)
+    ap.add_argument("--plot-bars", dest="plot_bars", type=int, default=220)
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--serve", type=int, nargs="?", const=8089, default=0,
                     metavar="PORT", help="run live web dashboard on PORT (default 8089)")
     ap.add_argument("--no-open", action="store_true",
                     help="don't auto-open the browser (use for the persistent agent)")
-    ap.add_argument("--interval", type=int, default=5, help="poll seconds (GUI pushes ~250ms)")
+    ap.add_argument("--interval", type=int, default=2, help="poll seconds (GUI pushes ~250ms)")
     args = ap.parse_args()
 
     try:
