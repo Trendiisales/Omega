@@ -75,6 +75,7 @@ struct RunCfg {
     int      pyramid_max_adds=0;
     double   pyramid_step_atr=1.0;
     double   pyramid_sl_atr =3.0;
+    double   pullback_pb_atr=0.5;   // pullback buy-zone depth (ATRs below EMA20)
 };
 
 // Drive the real engine over the bar series; return the global Stat and (opt)
@@ -92,6 +93,7 @@ static Stat run_engine(const std::vector<BarCSV>& bars, const RunCfg& cfg,
     eng.pyramid_max_adds = cfg.pyramid_max_adds;
     eng.pyramid_step_atr = cfg.pyramid_step_atr;
     eng.pyramid_sl_atr   = cfg.pyramid_sl_atr;
+    eng.pullback_pb_atr  = cfg.pullback_pb_atr;
     eng.init();
 
     Stat g;
@@ -182,6 +184,18 @@ int main(int argc, char** argv){
         RunCfg c{ "combo" }; c.use_vol_target=true; c.vol_target_unit=0.10;
         c.pyramid_max_adds=3; c.pyramid_step_atr=0.75; c.pyramid_sl_atr=3.0;
         print_stat("vt0.10_pyrK3_step0.75", run_engine(bars,c));
+    }
+
+    // ---- PULLBACK DEPTH sweep (pullback cell only) -- catch tight grind-up ----
+    // Shallower buy-zone (less ATR below EMA20) should fire on grinds that never
+    // dip 0.5*ATR. Watch: more trades but does PF/DD hold? (2026-06-03)
+    std::printf("\n===== PULLBACK DEPTH sweep  cell=Pullback only  baseline pb=0.5 =====\n");
+    for(double pb : {0.50,0.35,0.25,0.15,0.10}){
+        RunCfg c{ "pbdepth" }; c.cell_mask=0x04; c.pullback_pb_atr=pb;
+        std::map<std::string,Stat> cm; run_engine(bars,c,&cm);
+        Stat s; for(auto& kv:cm) s=kv.second;   // pullback is the only cell in 0x04
+        char nm[40]; std::snprintf(nm,sizeof nm,"pullback_pb%.2f",pb);
+        print_stat(nm, s);
     }
 
     std::printf("\nDONE\n");

@@ -205,6 +205,10 @@ public:
     int    pyramid_max_adds = 0;
     double pyramid_step_atr = 1.0;
     double pyramid_sl_atr   = 3.0;
+    // pullback buy-zone depth in ATRs below EMA20 (was constexpr 0.5; member
+    // 2026-06-03 so a shallower depth can be backtested to catch tight grind-up
+    // trends that never dip 0.5*ATR). Default 0.5 = unchanged live behavior.
+    double pullback_pb_atr  = 0.5;
 
     std::array<XauTfPos1h, kXauTf1hNumCells> pos{};
 
@@ -428,12 +432,11 @@ private:
     // (ema_fast=20, ema_slow=50, pb_atr=0.5): require an EMA20>EMA50 uptrend,
     // the PRIOR bar to have dipped to/below (EMA20 - 0.5*ATR) -- the buy zone --
     // and the CURRENT bar to close back above EMA20 (resumed dip-buy).
-    static constexpr double kPullbackPbAtr = 0.5;
     int _sig_pullback_ema20() const noexcept {
         if (!ema_initialised_ || atr14_ <= 0.0) return 0;
         if ((int)bars_.size() < 3) return 0;
         if (!(ema_fast_ > ema50_)) return 0;                 // uptrend gate
-        const double dip_line = ema_fast_ - kPullbackPbAtr * atr14_;
+        const double dip_line = ema_fast_ - pullback_pb_atr * atr14_;
         const auto& prev = bars_[bars_.size() - 2];
         const auto& cur  = bars_.back();
         if (prev.low <= dip_line && cur.close > ema_fast_) return +1;
