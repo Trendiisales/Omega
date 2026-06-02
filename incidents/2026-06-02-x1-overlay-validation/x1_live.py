@@ -13,9 +13,10 @@ eurusd_bid/ask, ...) plus xau_curh/curl/pdh/pdl. This is a CONTINUOUS live price
 — available whether or not a trade is open. We poll it, take mid=(bid+ask)/2,
 and aggregate the stream into M1 bars on the Mac in real time.
 
-WaveTrend needs ~55 bars of warmup, so on startup we SEED history from a rolling
-Dukascopy XAUUSD M1 pull (lags ~1h), then EXTEND it with live M1 bars built from
-the telemetry mid as the app runs. The two meet as Dukascopy's recent hours close.
+History is built FROM THE FEED. Live M1 bars are persisted to a local cache
+(_x1_live_cache_XAUUSD_m1.csv) so warmup accumulates across restarts — no
+Dukascopy needed. WaveTrend needs ~55 bars; on a first-ever run with no cache it
+warms up from the feed over ~55 min. Use --seed-dukascopy once to skip that.
 
 Scope: XAUUSD only. The confirm-filter edge is gold-specific
 (X1_MULTISYMBOL_FINDINGS.md). Do NOT extend to indices.
@@ -37,9 +38,10 @@ Usage
   # LIVE GRAPHICAL DASHBOARD (auto-refreshing chart + interpretation in browser):
   python3 x1_live.py --serve --gui-url http://185.167.119.59:7779
   #   -> opens http://localhost:8089, chart + WaveTrend + tags + read, redraws each poll
+  #   history builds from the feed into a local cache; NO Dukascopy required.
+  #   first-ever run warms ~55 min; to skip it once: add --seed-dukascopy
 
   python3 x1_live.py --loop --gui-url http://185.167.119.59:7779   # text console, real-time
-  python3 x1_live.py --no-gui --bars XAUUSD_2026-05_m1.csv --hours 0   # offline demo
 """
 
 import argparse
@@ -127,25 +129,50 @@ class LiveBars:
 
 
 # --------------------------------------------------------------------------- #
-# Seed history (Dukascopy) + merge with live bars
+# History source — the GUI feed itself, persisted to a local cache.
+# No Dukascopy by default: the app builds its own M1 history from the live feed
+# and writes it to CACHE_PATH so warmup persists across restarts. Dukascopy is
+# an OPTIONAL one-time bootstrap (--seed-dukascopy) to avoid the first-run warmup.
 # --------------------------------------------------------------------------- #
-def seed_bars(hours_back, bars_csv, refresh, here):
-    path = bars_csv or os.path.join(here, "_x1_seed_XAUUSD_m1.csv")
-    need = refresh and (not os.path.exists(path) or
-                        (time.time() - os.path.getmtime(path)) > 600)
-    if need:
+def cache_path(here):
+    return os.path.join(here, "_x1_live_cache_XAUUSD_m1.csv")
+
+
+def load_seed(args, here):
+    """Initial history. Priority: explicit --bars > Dukascopy bootstrap > local
+    cache of previously-accumulated live bars > empty (warm up from the feed)."""
+    if args.bars and os.path.exists(args.bars):
+        print(f"[seed] explicit bars {args.bars}", file=sys.stderr)
+        return X.load_bars(args.bars)
+    if args.seed_dukascopy:
+        path = cache_path(here)
         to = dt.datetime.now(dt.timezone.utc).date()
-        frm = to - dt.timedelta(days=max(2, hours_back // 24 + 1))
+        frm = to - dt.timedelta(days=3)
         pull = os.path.join(here, "pull_dukascopy.py")
-        cmd = [sys.executable, pull, "--symbol", "XAUUSD",
-               "--from", frm.isoformat(), "--to", to.isoformat(),
-               "--scale", str(DUKAS_SCALE), "--out", path, "--workers", "16"]
-        print(f"[seed] Dukascopy M1 {frm}..{to} -> {path}", file=sys.stderr)
-        subprocess.run(cmd, cwd=here, check=False)
-    if not os.path.exists(path):
-        return pd.DataFrame(columns=["open", "high", "low", "close"])
-    b = X.load_bars(path)
-    return b.iloc[-(hours_back * 60):] if hours_back else b
+        print(f"[seed] one-time Dukascopy bootstrap {frm}..{to}", file=sys.stderr)
+        subprocess.run([sys.executable, pull, "--symbol", "XAUUSD",
+                        "--from", frm.isoformat(), "--to", to.isoformat(),
+                        "--scale", str(DUKAS_SCALE), "--out", path, "--workers", "16"],
+                       cwd=here, check=False)
+        if os.path.exists(path):
+            return X.load_bars(path)
+    cp = cache_path(here)
+    if os.path.exists(cp):
+        print(f"[seed] local live-feed cache {cp}", file=sys.stderr)
+        return X.load_bars(cp)
+    print("[seed] no history — warming up from the live feed (no Dukascopy)",
+          file=sys.stderr)
+    return pd.DataFrame(columns=["open", "high", "low", "close"])
+
+
+def save_cache(b, here, keep=6000):
+    """Persist the merged bar history (live-feed sourced) so it survives restarts."""
+    try:
+        out = b[["open", "high", "low", "close"]].tail(keep).copy()
+        out.insert(0, "ts_utc", out.index.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        out.to_csv(cache_path(here), index=False)
+    except Exception as e:
+        print(f"[cache] write failed: {e}", file=sys.stderr)
 
 
 def merge(seed, live):
@@ -234,14 +261,19 @@ def step(args, here, live, seed_cache):
 
     seed = seed_cache.get("seed")
     if seed is None:
-        seed = seed_bars(args.hours, args.bars, not args.no_refresh, here)
+        seed = load_seed(args, here)
         seed_cache["seed"] = seed
     b = merge(seed, live.frame())
-    if len(b) < max(X.DEFAULTS["ema_slow"], X.DEFAULTS["wt_n2"]) + 5:
-        print(f"[warmup] only {len(b)} bars — waiting for more "
-              f"(seed empty? live accumulating)", file=sys.stderr)
+    need = max(X.DEFAULTS["ema_slow"], X.DEFAULTS["wt_n2"]) + 5
+    if len(b) < need:
+        save_cache(b, here)
+        msg = (f"[warmup] {len(b)}/{need} bars from live feed "
+               f"(~{need-len(b)} min to go; runs continuously, cache persists)")
+        print(msg, file=sys.stderr)
+        LATEST["err"] = msg if getattr(args, "serve", 0) else LATEST["err"]
         return
     b = X.compute_tags(b, dict(X.DEFAULTS))
+    save_cache(b, here)   # persist live-feed history every poll
 
     trades = gold_open_trades(tele)
     if not trades and args.trades and os.path.exists(args.trades) and args.no_gui:
@@ -408,9 +440,11 @@ def main():
     ap = argparse.ArgumentParser(description="Mac-local live X1 gold overlay")
     ap.add_argument("--gui-url", default="http://localhost:7779")
     ap.add_argument("--no-gui", action="store_true")
-    ap.add_argument("--bars", default=None, help="seed bars CSV (default rolling Dukascopy)")
-    ap.add_argument("--no-refresh", action="store_true")
-    ap.add_argument("--hours", type=int, default=48, help="seed window hours (0=all)")
+    ap.add_argument("--bars", default=None, help="explicit seed bars CSV (one-off)")
+    ap.add_argument("--seed-dukascopy", action="store_true",
+                    help="one-time Dukascopy bootstrap to skip first-run warmup (off by default)")
+    ap.add_argument("--no-refresh", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--hours", type=int, default=0, help=argparse.SUPPRESS)
     ap.add_argument("--lookback", type=int, default=X.DEFAULTS["lookback"])
     ap.add_argument("--trades", default=os.path.expanduser("~/Downloads/omega_trade_closes.csv"))
     ap.add_argument("--chart", default=None)
