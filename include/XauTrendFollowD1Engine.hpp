@@ -561,6 +561,7 @@ private:
 
         // Momentum-confirm gate (S-2026-06-03): gold-validated WaveTrend filter.
         if (omega::gold_wt().gate_enabled && !omega::gold_wt().confirms(side > 0)) {
+            omega::gold_wt().record_skip();
             printf("[GOLD-MOMGATE] XauTFD1 cell=%d SKIP %s (no momentum confirm) "
                    "wt1=%.1f regime_up=%d bars=%ld\n", ci, side > 0 ? "long" : "short",
                    omega::gold_wt().wt1(), (int)omega::gold_wt().regime_up(),
@@ -568,6 +569,7 @@ private:
             fflush(stdout);
             return;
         }
+        if (omega::gold_wt().gate_enabled) omega::gold_wt().record_pass();
 
         auto& p = pos[ci];
         p.active        = true;

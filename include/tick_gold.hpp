@@ -756,9 +756,39 @@ static void on_tick_gold(
         const int64_t b15 = (now_ms_g /  900000LL) *  900000LL;
         const int64_t bh1 = (now_ms_g /  3600000LL) * 3600000LL;   // 1h = 3600s
         const int64_t bh4 = (now_ms_g / 14400000LL) * 14400000LL;  // 4h = 14400s
+        // S-2026-06-03: daily momentum-gate summary (fired vs blocked, lifetime)
+        {
+            static int s_momgate_day = -1;
+            const int cur_day = (int)(now_ms_g / 86400000LL);
+            if (s_momgate_day < 0) s_momgate_day = cur_day;
+            else if (cur_day != s_momgate_day) {
+                const long ps = omega::gold_wt().passes();
+                const long sk = omega::gold_wt().skips();
+                const long tot = ps + sk;
+                printf("[GOLD-MOMGATE-DAILY] gold trend entries: fired=%ld blocked=%ld "
+                       "(%.0f%% blocked by momentum gate) lifetime\n",
+                       ps, sk, tot ? 100.0 * sk / tot : 0.0);
+                fflush(stdout);
+                s_momgate_day = cur_day;
+            }
+        }
         // M1
         if (s_bar1_ms == 0) { s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
-        else if (b1 != s_bar1_ms) { g_bars_gold.m1.add_bar(s_cur1); omega::gold_wt().on_m1_close(s_cur1.high, s_cur1.low, s_cur1.close); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
+        else if (b1 != s_bar1_ms) {
+            // S-2026-06-03: one-time warm-seed of the WaveTrend gate from the
+            // disk-hydrated M1 history (get_bars, ~300 bars) so the gate is ready
+            // immediately on restart instead of failing open ~55min. We already
+            // have the bars — use them.
+            static bool s_wt_seeded = false;
+            if (!s_wt_seeded) {
+                for (const auto& wb : g_bars_gold.m1.get_bars())
+                    omega::gold_wt().on_m1_close(wb.high, wb.low, wb.close);
+                s_wt_seeded = true;
+                printf("[GOLD-MOMGATE] WaveTrend warm-seeded from %d M1 bars (warm=%d)\n",
+                       g_bars_gold.m1.bar_count(), (int)omega::gold_wt().warm());
+                fflush(stdout);
+            }
+            g_bars_gold.m1.add_bar(s_cur1); omega::gold_wt().on_m1_close(s_cur1.high, s_cur1.low, s_cur1.close); g_ema_cross.on_bar(s_cur1.close, g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed), g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed), b1); s_cur1 = {b1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar1_ms = b1; }
         else { if(xau_mid>s_cur1.high)s_cur1.high=xau_mid; if(xau_mid<s_cur1.low)s_cur1.low=xau_mid; s_cur1.close=xau_mid; }
         // M5
         if (s_bar5_ms == 0) { s_cur5 = {b5/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar5_ms = b5; }

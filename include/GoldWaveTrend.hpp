@@ -22,6 +22,7 @@
 // FILTERS entries when g_gold_wt.gate_enabled is set.
 // ============================================================================
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <mutex>
@@ -50,6 +51,14 @@ struct GoldWaveTrend {
     int ring_head_ = 0;
 
     mutable std::mutex mu_;
+
+    // --- gate counters (for the daily summary) ---
+    std::atomic<long> n_pass_{0};   // entries the gate allowed (confirmed)
+    std::atomic<long> n_skip_{0};   // entries the gate blocked (no confirm)
+    void record_pass() noexcept { n_pass_.fetch_add(1, std::memory_order_relaxed); }
+    void record_skip() noexcept { n_skip_.fetch_add(1, std::memory_order_relaxed); }
+    long passes() const noexcept { return n_pass_.load(std::memory_order_relaxed); }
+    long skips()  const noexcept { return n_skip_.load(std::memory_order_relaxed); }
 
     static double ema_step(double prev, double x, int n) {
         const double k = 2.0 / (n + 1);

@@ -486,6 +486,7 @@ private:
         // (incidents/2026-06-02-x1-overlay-validation). Long-only engine -> confirm
         // the LONG side. Fails open during WaveTrend warmup.
         if (omega::gold_wt().gate_enabled && !omega::gold_wt().confirms(true)) {
+            omega::gold_wt().record_skip();
             printf("[GOLD-MOMGATE] XauTF1h cell=%d SKIP long (no momentum confirm) "
                    "wt1=%.1f regime_up=%d bars=%ld\n",
                    ci, omega::gold_wt().wt1(), (int)omega::gold_wt().regime_up(),
@@ -493,6 +494,7 @@ private:
             fflush(stdout);
             return;
         }
+        if (omega::gold_wt().gate_enabled) omega::gold_wt().record_pass();
 
         auto& p = pos[ci];
         p.active        = true;
