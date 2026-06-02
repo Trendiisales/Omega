@@ -321,7 +321,10 @@ struct OmegaTelemetrySnapshot
     // ?? Live open trades -- per-trade real-time P&L ????????????????????????????
     // Updated every 250ms by the unrealised P&L push in main.cpp.
     // GUI uses this to show per-trade floating P&L in real time.
-    static constexpr int MAX_LIVE_TRADES = 16;
+    static constexpr int MAX_LIVE_TRADES = 64;  // raised from 16 (S-2026-06-02):
+        // every g_open_positions-registered engine now publishes its open trade
+        // for live visibility; 16 truncated once cell/straddle/zoo engines were
+        // included.
     struct LiveTrade {
         char   symbol[12];    // "XAUUSD", "XAGUSD", etc.
         char   engine[24];    // "GoldFlow", "GoldStack/CompBreakout", etc.

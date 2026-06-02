@@ -5424,6 +5424,46 @@ static void init_engines(const std::string& cfg_path)
             return out;
         });
 
+    // XauStraddle M30 / M15 (S-2026-06-02): OCO breakout straddles on XAUUSD.
+    // Were holding positions for hours with zero live visibility — register so
+    // they flow into live_trades via the universal publisher in on_tick.hpp.
+    g_open_positions.register_source("XauStraddleM30",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xau_straddle_m30.has_open_position()) return out;
+            const auto& p = g_xau_straddle_m30.pos_;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir = (p.side > 0) ? 1.0 : -1.0;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = (p.side > 0) ? "LONG" : "SHORT";
+            ps.size = p.lot; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = (current - p.entry) * dir * p.lot * mult;
+            ps.engine = "XauStraddleM30";
+            out.push_back(ps);
+            return out;
+        });
+    g_open_positions.register_source("XauStraddleM15",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xau_straddle_m15.has_open_position()) return out;
+            const auto& p = g_xau_straddle_m15.pos_;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double current = p.entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            const double dir = (p.side > 0) ? 1.0 : -1.0;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = (p.side > 0) ? "LONG" : "SHORT";
+            ps.size = p.lot; ps.entry = p.entry; ps.current = current;
+            ps.unrealized_pnl = (current - p.entry) * dir * p.lot * mult;
+            ps.engine = "XauStraddleM15";
+            out.push_back(ps);
+            return out;
+        });
+
     // NoiseBandMomentum gold-london. Uses CrossPosition (active, is_long,
     //   entry, size, mfe, mae) -- private; we go through public accessors
     //   open_is_long() / open_entry() / open_size(). mfe/mae deferred (no

@@ -1,6 +1,8 @@
 #pragma once
 #include <iomanip>
 #include <iostream>
+#include <unordered_map>
+#include <string>
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -951,6 +953,46 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_ca_carry_unwind.open_entry(), 0.0, 0.0, g_ca_carry_unwind.open_size(), (int64_t)std::time(nullptr));
             // (TickScalpEngine push_live_trade block REMOVED at Batch 5V §1.3 2026-04-20.
             //  See wiki tombstone wiki/entities/TickScalpEngine.md.)
+
+            // ── Universal open-position visibility (S-2026-06-02) ──────────────
+            // The hand-maintained push_live_trade calls above only cover legacy
+            // core engines (BE/Bracket/NBM/TrendPB/Carry/Cascade). Every engine
+            // registered with g_open_positions (straddles, cells, the XAU trend
+            // zoo, mean-rev, UstecTrendFollow, etc) was holding positions for
+            // hours with ZERO live visibility. Publish them all here so nothing
+            // runs invisibly. Dedup against what the hand list already pushed.
+            // NOTE: the registry snapshot carries no entry_ts/tp/sl, so held is
+            // measured from first-observation (s_first_seen) and tp/sl show 0
+            // for these engines until the snapshotters are enriched (follow-up).
+            {
+                static std::unordered_map<std::string, int64_t> s_first_seen;
+                const int64_t now_s = (int64_t)std::time(nullptr);
+                auto* snp = g_telemetry.snap();
+                std::unordered_map<std::string, int64_t> seen_now;
+                for (const auto& ps : g_open_positions.snapshot_all()) {
+                    bool dup = false;
+                    if (snp) {
+                        for (int i = 0; i < snp->live_trade_count; ++i) {
+                            if (ps.symbol == snp->live_trades[i].symbol &&
+                                ps.engine == snp->live_trades[i].engine) {
+                                dup = true; break;
+                            }
+                        }
+                    }
+                    if (dup) continue;
+                    const std::string key = ps.symbol + "|" + ps.engine;
+                    int64_t first = now_s;
+                    auto it = s_first_seen.find(key);
+                    if (it != s_first_seen.end()) first = it->second;
+                    seen_now[key] = first;
+                    const double tv = tick_value_multiplier(ps.symbol);
+                    g_telemetry.AddLiveTrade(ps.symbol.c_str(), ps.engine.c_str(),
+                        ps.side.c_str(), ps.entry, ps.current, 0.0, 0.0,
+                        ps.size, ps.unrealized_pnl, tv, first);
+                }
+                // prune closed positions so a reopen restarts its held clock
+                s_first_seen.swap(seen_now);
+            }
         }
 
         // ── DOLLAR STOP: emergency per-trade runtime cut ──────────────────
