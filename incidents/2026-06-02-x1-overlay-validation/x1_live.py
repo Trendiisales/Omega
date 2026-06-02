@@ -297,8 +297,80 @@ def step(args, here, live, seed_cache):
 # A background thread polls the feed, redraws the chart PNG, and publishes the
 # interpretation as JSON; the page auto-reloads both every `interval` seconds.
 # --------------------------------------------------------------------------- #
-LATEST = {"png": b"", "state": None, "trades": [], "src": "-", "ts": "", "err": None}
+LATEST = {"png": b"", "state": None, "trades": [], "src": "-", "ts": "", "err": None,
+          "rev": 0}
 _CHART_PATH = "/tmp/_x1_live_chart.png"
+
+
+def draw_chart(b, cfg, out_png, symbol, live_price, updated):
+    """Live chart: candles + WaveTrend + tags PLUS a moving live-price line and a
+    bright dot at the right edge that visibly shift every poll, and a clock in the
+    title — so liveness is obvious even when the M1 candle barely moves."""
+    plt, Rect = X.plt, X.Rectangle
+    n = len(b)
+    import numpy as np
+    x = np.arange(n)
+    fig, (ax, axo) = plt.subplots(
+        2, 1, figsize=(min(34, max(12, n * 0.05)), 8), sharex=True,
+        gridspec_kw={"height_ratios": [3, 1]})
+    fig.patch.set_facecolor("#0b0e11")
+    for a in (ax, axo):
+        a.set_facecolor("#0b0e11")
+        a.tick_params(colors="#aaa")
+        for sp in a.spines.values():
+            sp.set_color("#333")
+    o, h, l, c = (b["open"].values, b["high"].values, b["low"].values, b["close"].values)
+    w = 0.6
+    for i in range(n):
+        col = X.C_UP if c[i] >= o[i] else X.C_DOWN
+        ax.vlines(x[i], l[i], h[i], color=col, linewidth=0.6)
+        lo_, hi_ = min(o[i], c[i]), max(o[i], c[i])
+        ax.add_patch(Rect((x[i] - w / 2, lo_), w, max(hi_ - lo_, 1e-9),
+                          facecolor=col, edgecolor=col))
+    rng = (np.nanmax(h) - np.nanmin(l)) or 1.0
+    off = rng * 0.012
+
+    def mark(mask, dy, marker, color, label):
+        ix = np.where(b[mask].fillna(False).values)[0]
+        if len(ix):
+            yy = (l[ix] - off) if dy < 0 else (h[ix] + off)
+            ax.scatter(ix, yy, marker=marker, c=color, s=42, zorder=5, label=label)
+    mark("momentum_up", -1, "^", X.C_MOMUP, "Momentum Up")
+    mark("momentum_down", +1, "v", X.C_MOMDN, "Momentum Down")
+    mark("retr_down", +1, "x", X.C_RETR, "Possible Retr. Down")
+    mark("retr_up", -1, "+", X.C_RETR, "Possible Retr. Up")
+
+    # LIVE price line + moving dot (the visibly-updating-every-poll element)
+    lp = float(live_price if live_price is not None else c[-1])
+    ax.axhline(lp, color="#ffd54f", lw=0.8, ls="--", alpha=0.8, zorder=6)
+    ax.scatter([n - 1], [lp], s=90, c="#ffd54f", edgecolors="#000",
+               linewidths=0.6, zorder=7)
+    ax.annotate(f"{lp:.2f}", (n - 1, lp), color="#0b0e11", fontsize=9,
+                fontweight="bold", xytext=(4, 0), textcoords="offset points",
+                ha="left", va="center",
+                bbox=dict(boxstyle="round,pad=0.2", fc="#ffd54f", ec="none"))
+    ax.set_title(f"{symbol}  {lp:.2f}   live · updated {updated}",
+                 color="#ffd54f", fontsize=12)
+    ax.legend(loc="upper left", facecolor="#15191e", edgecolor="#333",
+              labelcolor="#ccc", fontsize=8)
+
+    axo.plot(x, b["wt1"].values, color=X.C_WT1, lw=1.0, label="wt1")
+    axo.plot(x, b["wt2"].values, color=X.C_WT2, lw=0.9, label="wt2")
+    axo.fill_between(x, b["wt1"].values, b["wt2"].values,
+                     where=(b["wt1"] >= b["wt2"]).values, color=X.C_UP, alpha=0.25)
+    axo.fill_between(x, b["wt1"].values, b["wt2"].values,
+                     where=(b["wt1"] < b["wt2"]).values, color=X.C_DOWN, alpha=0.25)
+    for lvl in (cfg["wt_ob1"], cfg["wt_ob2"], cfg["wt_os1"], cfg["wt_os2"]):
+        axo.axhline(lvl, color="#555", lw=0.6, ls="--")
+    axo.axhline(0, color="#777", lw=0.5)
+    axo.set_ylabel("WaveTrend", color="#aaa")
+    ticks = np.linspace(0, n - 1, min(10, n)).astype(int)
+    axo.set_xticks(ticks)
+    axo.set_xticklabels([b.index[i].strftime("%m-%d %H:%M") for i in ticks],
+                        rotation=30, ha="right", fontsize=8)
+    plt.tight_layout()
+    fig.savefig(out_png, dpi=110, facecolor=fig.get_facecolor())
+    plt.close(fig)
 
 
 def _trade_rows(trades, b, lookback, ts):
@@ -325,12 +397,14 @@ def serve_worker(args, here):
             res = step(args, here, live, seed_cache)
             if res:
                 state, trades, b, src = res
-                X.plot(b.iloc[-args.plot_bars:], None, dict(X.DEFAULTS),
-                       _CHART_PATH, SYMBOL)
+                updated = dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S") + "Z"
+                draw_chart(b.iloc[-args.plot_bars:], dict(X.DEFAULTS),
+                           _CHART_PATH, SYMBOL, state["price"], updated)
                 with open(_CHART_PATH, "rb") as fh:
                     png = fh.read()
                 LATEST.update(png=png, state=state, src=src, err=None,
                               ts=f"{state['ts']:%Y-%m-%d %H:%M}Z",
+                              updated=updated, rev=LATEST["rev"] + 1,
                               trades=_trade_rows(trades, b, args.lookback, state["ts"]))
         except Exception as e:
             LATEST["err"] = str(e)
@@ -352,19 +426,26 @@ def build_page(interval):
  table{{border-collapse:collapse;font-size:12px}} td,th{{padding:3px 8px;text-align:left;border-bottom:1px solid #20242a}}
  .flag{{color:#ffb74d}} .stale{{color:#ef5350}}
 </style></head><body>
-<h1>X1 Live Overlay — XAUUSD <span class=k>(gold-validated · read-only)</span></h1>
+<h1>X1 Live Overlay — XAUUSD <span class=k>(gold-validated · read-only)</span>
+ <span id=hb class=k style="float:right;font-size:12px">connecting…</span></h1>
 <div id=wait>waiting for first chart render (seed warmup)…</div>
 <img id=img style="display:none" onload="this.style.display='block';document.getElementById('wait').style.display='none'">
 <div class=panel id=panel></div>
 <script>
 const IV={interval*1000};
+let npoll=0;
 async function tick(){{
+ npoll++;
  const im=document.getElementById('img');
  const probe=new Image();
  probe.onload=()=>{{im.src=probe.src;}};
  probe.src='/chart.png?t='+Date.now();
+ const hb=document.getElementById('hb');
+ const clk=new Date().toLocaleTimeString();
  try{{
   const s=await (await fetch('/state?t='+Date.now())).json();
+  hb.innerHTML='● live · client '+clk+' · server '+(s.updated||'-')+' · rev '+(s.rev||0)+' · poll '+npoll;
+  hb.style.color='#26a69a';
   if(s.err){{document.getElementById('panel').innerHTML='<div class=card stale>error: '+s.err+'</div>';return;}}
   const st=s.state||{{}};
   const reg=st.regime_up?'<span class=up>UP</span>':'<span class=dn>DOWN</span>';
@@ -409,6 +490,7 @@ def run_server(args, here):
                 st = LATEST["state"]
                 payload = dict(
                     err=LATEST["err"], src=LATEST["src"], ts=LATEST["ts"],
+                    updated=LATEST.get("updated", ""), rev=LATEST["rev"],
                     trades=LATEST["trades"],
                     state=None if st is None else dict(
                         regime_up=st["regime_up"], wt1=st["wt1"], wt2=st["wt2"],
