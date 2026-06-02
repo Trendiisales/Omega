@@ -2212,6 +2212,8 @@ static void on_tick_gold(
     g_xau_threebar_30m.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // ── S136 2026-05-24: new engines per-tick management ────────────────────
     g_xau_d55_gated_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_xau_straddle_m30.obi_dir = g_macro_ctx.gold_obi_dir;             // OBI overlay (shadow measurement)
+    g_xau_straddle_m15.obi_dir = g_macro_ctx.gold_obi_dir;
     g_xau_straddle_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);  // S-2026-06-02 OCO straddle fill+manage
     g_xau_straddle_m15.on_tick(bid, ask, now_ms_g, bracket_on_close);  // M15 sibling
     g_xau_3bar_mom_h4.on_tick  (bid, ask, now_ms_g, bracket_on_close);

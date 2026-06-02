@@ -1826,6 +1826,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_straddle_m30.stop_atr    = 3.0;
         g_xau_straddle_m30.tp_r        = 1.0;
         g_xau_straddle_m30.lot         = 0.01;
+        g_xau_straddle_m30.obi_tilt    = true;   // OBI overlay measured in shadow (1.25/0.75)
         g_xau_straddle_m30.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
         printf("[OMEGA-INIT] XauStraddleM30: shadow=%d enabled=%d boxN=%d stop=%.1fx TP=%.1fR lot=%.2f\n",
                (int)g_xau_straddle_m30.shadow_mode, (int)g_xau_straddle_m30.enabled,
@@ -1847,6 +1848,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_straddle_m15.tp_r        = 1.0;
         g_xau_straddle_m15.lot         = 0.01;
         g_xau_straddle_m15.hold_max_bars = 96;   // 24h on M15
+        g_xau_straddle_m15.obi_tilt    = true;   // OBI overlay measured in shadow (1.25/0.75)
         g_xau_straddle_m15.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M15.csv");
         printf("[OMEGA-INIT] XauStraddleM15: shadow=%d enabled=%d boxN=%d stop=%.1fx TP=%.1fR lot=%.2f\n",
                (int)g_xau_straddle_m15.shadow_mode, (int)g_xau_straddle_m15.enabled,

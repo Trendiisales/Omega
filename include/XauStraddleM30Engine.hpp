@@ -51,6 +51,19 @@ struct XauStraddleM30Engine {
                                  // A real breakout fills AT the box edge (|fill-mid|~=0); 3*ATR is already far
                                  // beyond any legit fill, but << a stale-seed-box gap (hundreds of pts). 8.0 was
                                  // too loose -- a 204pt stale gap == ~8*ATR(25) slipped through (2026-06-01).
+
+    // S-2026-06-01: OBI sizing overlay (SHADOW measurement). When the smoothed
+    // order-book imbalance agrees with the breakout side, size up; when it fights,
+    // size down. Validated at the SIGNAL level (l2_obi_replay.cpp: OBI 54-56%
+    // directional, large n) but NOT yet on straddle entries (too sparse to prove
+    // offline) -- so this runs in shadow and the live ledger/gate measures whether
+    // the tilt lifts shadow PnL before it ever sizes real capital. obi_dir is set
+    // each tick from g_macro_ctx.gold_obi_dir by the tick_gold dispatch; 0 = stale
+    // book or below threshold -> no tilt.
+    bool   obi_tilt = false;     // overlay on/off (engine_init sets true for shadow)
+    int    obi_dir  = 0;         // +1/-1/0, refreshed per tick from the OBI signal
+    double obi_up   = 1.25;      // lot x when book agrees with the trade side
+    double obi_dn   = 0.75;      // lot x when book disagrees
     int    hold_max_bars = 48;   // safety timeout (24h on M30)
 
     std::string symbol  = "XAUUSD";
@@ -156,15 +169,25 @@ struct XauStraddleM30Engine {
         if (!ExecutionCostGuard::is_viable(symbol.c_str(), (ask - bid), tp_dist, lot, 1.5))
             return;
 
+        // OBI sizing tilt (overlay): scale lot by book agreement. Logged so the
+        // ledger/gate can compare agree vs disagree vs neutral outcomes.
+        double use_lot = lot; int obi_agree = 0;
+        if (obi_tilt && obi_dir != 0) {
+            if (obi_dir == side) { use_lot = lot * obi_up; obi_agree = +1; }
+            else                 { use_lot = lot * obi_dn; obi_agree = -1; }
+        }
+
         pos_.active = true; pos_.side = side; pos_.entry = fill;
         pos_.sl = fill - side * sl_dist;
         pos_.tp = fill + side * tp_dist;
-        pos_.lot = lot; pos_.sl_dist = sl_dist; pos_.mfe = 0.0;
+        pos_.lot = use_lot; pos_.sl_dist = sl_dist; pos_.mfe = 0.0;
         pos_.entry_ts_ms = now_ms; pos_.bars_held = 0;
         armed_ = false;   // one shot until next bar re-arms
         ++trade_id_;
-        std::printf("[XAU_STRADDLE_M30] ENTRY %s @ %.2f sl=%.2f tp=%.2f atr=%.2f%s\n",
-                    side > 0 ? "LONG" : "SHORT", fill, pos_.sl, pos_.tp, atr_,
+        std::printf("[%s] ENTRY %s @ %.2f sl=%.2f tp=%.2f atr=%.2f lot=%.4f obi=%d(%s)%s\n",
+                    engine_name.c_str(), side > 0 ? "LONG" : "SHORT", fill, pos_.sl, pos_.tp,
+                    atr_, use_lot, obi_dir,
+                    obi_agree > 0 ? "AGREE" : obi_agree < 0 ? "DISAGREE" : "neutral",
                     shadow_mode ? " [SHADOW]" : "");
         std::fflush(stdout);
     }
