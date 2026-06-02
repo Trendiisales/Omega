@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.omega.x1-live</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>x1_live.py</string>
+        <string>--serve</string>
+        <string>8089</string>
+        <string>--gui-url</string>
+        <string>http://185.167.119.59:7779</string>
+        <string>--interval</string>
+        <string>5</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jo/Omega/incidents/2026-06-02-x1-overlay-validation</string>
+
+    <!-- start at login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- restart only if it exits non-zero (avoids reopening browser tabs on clean stop) -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- give the network/feed a moment after login before first launch -->
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jo/Omega/incidents/2026-06-02-x1-overlay-validation/x1_live.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jo/Omega/incidents/2026-06-02-x1-overlay-validation/x1_live.log</string>
+</dict>
+</plist>
