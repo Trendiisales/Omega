@@ -386,6 +386,37 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     }
                 }
             }
+
+            // S-2026-06-01: smoothed OBI overlay signal (slow EMA; the edge is
+            // slow). Only advance when L2 is fresh; when stale, force dir=0 so no
+            // engine acts on a frozen book. bias = EMA(imbalance-0.5); dir is the
+            // thresholded sign. Validated overlay, NOT a standalone scalp
+            // (l2_obi_replay.cpp: edge/trade << spread). Consumers query
+            // g_macro_ctx.gold_obi_dir to filter/tilt -- never to scalp.
+            {
+                static double s_obi_ema = 0.0;
+                constexpr double OBI_ALPHA = 0.05;   // validated slow smoothing
+                constexpr double OBI_TH    = 0.15;   // |bias| for a non-zero dir
+                if (l2_live) {
+                    const double x = g_macro_ctx.gold_l2_imbalance - 0.5;
+                    s_obi_ema = OBI_ALPHA * x + (1.0 - OBI_ALPHA) * s_obi_ema;
+                    g_macro_ctx.gold_obi_bias = s_obi_ema;
+                    g_macro_ctx.gold_obi_dir  = (s_obi_ema >  OBI_TH) ?  1
+                                              : (s_obi_ema < -OBI_TH) ? -1 : 0;
+                } else {
+                    g_macro_ctx.gold_obi_dir  = 0;   // stale book -> neutral, never act
+                }
+                static int64_t s_obi_log = 0;
+                if (l2_now_ms - s_obi_log > 30000) {
+                    s_obi_log = l2_now_ms;
+                    char _m[160];
+                    snprintf(_m, sizeof(_m),
+                        "[GOLD-OBI] bias=%+.3f dir=%d imb=%.3f fresh=%d\n",
+                        g_macro_ctx.gold_obi_bias, g_macro_ctx.gold_obi_dir,
+                        g_macro_ctx.gold_l2_imbalance, (int)l2_live);
+                    std::cout << _m; std::cout.flush();
+                }
+            }
         }
 
         g_macro_ctx.sp_l2_imbalance     = rd(g_l2_sp);

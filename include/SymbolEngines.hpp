@@ -46,6 +46,15 @@ struct MacroContext {
     double      nas_l2_imbalance  = 0.5;
     double      us30_l2_imbalance = 0.5;
     double      gold_l2_imbalance = 0.5;
+    // S-2026-06-01: smoothed order-book-imbalance OVERLAY signal (XAU).
+    // Validated in backtest/l2_obi_replay.cpp on 67h real IBKR DOM: raw OBI has a
+    // real 54-56% directional tilt but is cost-dead as a scalp (edge/trade ~$0.03
+    // vs spread ~$0.40). Used ONLY as a zero-extra-cost overlay (entry filter +
+    // sizing tilt) on price entries -- never standalone. Slow EMA (the edge is
+    // slow). gold_obi_bias in [-0.5,+0.5]: +=bid-heavy/up-lean, -=ask-heavy/down.
+    // gold_obi_dir = discrete +1/0/-1 (0 when |bias|<thresh OR L2 not fresh).
+    double      gold_obi_bias = 0.0;   // EMA(imbalance-0.5), 0 when L2 stale
+    int         gold_obi_dir  = 0;     // +1 bullish / -1 bearish / 0 neutral-or-stale
     double      eur_l2_imbalance  = 0.5;
     double      gbp_l2_imbalance  = 0.5;
     double      cl_l2_imbalance   = 0.5;
