@@ -4584,14 +4584,14 @@ static void init_engines(const std::string& cfg_path)
     //   g_engine_last lookup against tr.engine="EurusdLondonOpen".
     g_engines.register_engine("EurusdLondonOpen",
         [reg]{ return reg("EurusdLondonOpen",
-                          true,
+                          false /* S99 FX kill-switch */,
                           g_eurusd_london_open.shadow_mode,
                           {"EurusdLondonOpen"}); });
     // 2026-05-02: register UsdjpyAsianOpen for /api/v1/omega/engines.
     //   Same shadow-stamped pattern as EurusdLondonOpen.
     g_engines.register_engine("UsdjpyAsianOpen",
         [reg]{ return reg("UsdjpyAsianOpen",
-                          true,
+                          false /* S99 FX kill-switch */,
                           g_usdjpy_asian_open.shadow_mode,
                           {"UsdjpyAsianOpen"}); });
     // 2026-05-04: register GbpusdLondonOpen for /api/v1/omega/engines.
@@ -4600,21 +4600,21 @@ static void init_engines(const std::string& cfg_path)
     //   tr.engine="GbpusdLondonOpen".
     g_engines.register_engine("GbpusdLondonOpen",
         [reg]{ return reg("GbpusdLondonOpen",
-                          true,
+                          false /* S99 FX kill-switch */,
                           g_gbpusd_london_open.shadow_mode,
                           {"GbpusdLondonOpen"}); });
     // 2026-05-04: register AudusdSydneyOpen for /api/v1/omega/engines.
     //   Same shadow-stamped pattern as UsdjpyAsianOpen.
     g_engines.register_engine("AudusdSydneyOpen",
         [reg]{ return reg("AudusdSydneyOpen",
-                          true,
+                          false /* S99 FX kill-switch */,
                           g_audusd_sydney_open.shadow_mode,
                           {"AudusdSydneyOpen"}); });
     // 2026-05-04: register NzdusdAsianOpen for /api/v1/omega/engines.
     //   Same shadow-stamped pattern as AudusdSydneyOpen.
     g_engines.register_engine("NzdusdAsianOpen",
         [reg]{ return reg("NzdusdAsianOpen",
-                          true,
+                          false /* S99 FX kill-switch */,
                           g_nzdusd_asian_open.shadow_mode,
                           {"NzdusdAsianOpen"}); });
     // 2026-05-02: register XauusdFvg for /api/v1/omega/engines.
@@ -4623,7 +4623,7 @@ static void init_engines(const std::string& cfg_path)
     //   tr.engine="XauusdFvg" (set in XauusdFvgEngine::_close).
     g_engines.register_engine("XauusdFvg",
         [reg]{ return reg("XauusdFvg",
-                          true,
+                          !g_disable_xauusd_fvg,
                           g_xauusd_fvg.shadow_mode,
                           {"XauusdFvg"}); });
     // 2026-05-18: GoldScalpPyramid engine registration.
@@ -4673,7 +4673,7 @@ static void init_engines(const std::string& cfg_path)
                           {"MacroCrash"}); });
     g_engines.register_engine("CandleFlow",
         [reg]{ return reg("CandleFlow",
-                          true,
+                          !g_disable_candle_flow,
                           g_candle_flow.shadow_mode,
                           {"CandleFlowEngine"}); });
     g_engines.register_engine("Tsmom",
@@ -4708,7 +4708,7 @@ static void init_engines(const std::string& cfg_path)
                           {"RSIReversal"}); });
     g_engines.register_engine("RSIExtreme",
         [reg]{ return reg("RSIExtreme",
-                          true,
+                          g_rsi_extreme.enabled,
                           g_rsi_extreme.shadow_mode,
                           {"RSIExtremeTurn"}); });
     // S-2026-06-02: register the current straddle / ORB / index-straddle book so
