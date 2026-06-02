@@ -34,10 +34,11 @@ Read-only. Never sends orders. Touches no core/engine code.
 
 Usage
 -----
-  python3 x1_live.py --loop                      # real-time, GUI on localhost:7779
-  python3 x1_live.py --gui-url http://localhost:7779 --loop --interval 5 --chart x1_live.png
-  # remote VPS GUI via SSH tunnel:
-  #   ssh -N -L 7779:localhost:7779 trader@185.167.119.59 -p 2222
+  # LIVE GRAPHICAL DASHBOARD (auto-refreshing chart + interpretation in browser):
+  python3 x1_live.py --serve --gui-url http://185.167.119.59:7779
+  #   -> opens http://localhost:8089, chart + WaveTrend + tags + read, redraws each poll
+
+  python3 x1_live.py --loop --gui-url http://185.167.119.59:7779   # text console, real-time
   python3 x1_live.py --no-gui --bars XAUUSD_2026-05_m1.csv --hours 0   # offline demo
 """
 
@@ -47,7 +48,10 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+import http.server
+import socketserver
 import urllib.request
 import pandas as pd
 
@@ -248,9 +252,148 @@ def step(args, here, live, seed_cache):
                        live_pnl=r["net_pnl"]) for _, r in tr.tail(8).iterrows()]
 
     state = interpret(b, args.lookback)
-    render(state, trades, b, args.lookback, src if src != "offline" else "Dukascopy")
+    src_lbl = src if src != "offline" else "Dukascopy"
+    if not getattr(args, "serve", 0):
+        render(state, trades, b, args.lookback, src_lbl)
     if args.chart:
         X.plot(b.iloc[-args.plot_bars:], None, dict(X.DEFAULTS), args.chart, SYMBOL)
+    return state, trades, b, src_lbl
+
+
+# --------------------------------------------------------------------------- #
+# Live web dashboard (--serve) — the graphical output, auto-refreshing.
+# A background thread polls the feed, redraws the chart PNG, and publishes the
+# interpretation as JSON; the page auto-reloads both every `interval` seconds.
+# --------------------------------------------------------------------------- #
+LATEST = {"png": b"", "state": None, "trades": [], "src": "-", "ts": "", "err": None}
+_CHART_PATH = "/tmp/_x1_live_chart.png"
+
+
+def _trade_rows(trades, b, lookback, ts):
+    rows = []
+    for t in trades:
+        side_s = str(t.get("side", "")).upper()
+        side = 1 if side_s in ("LONG", "BUY") else (-1 if side_s in ("SHORT", "SELL") else 0)
+        eng = t.get("engine", "?")
+        fam = family_of(eng)
+        held = float(t.get("held_sec", 0) or 0)
+        pnl = float(t.get("live_pnl", 0) or 0)
+        conf = confirm_at(b, ts - pd.Timedelta(seconds=held), lookback, side)
+        verdict = ("CONFIRMED" if conf else "UNCONFIRMED") if conf is not None else "n/a"
+        rows.append(dict(engine=eng, side=side_s, fam=fam,
+                         held_min=round(held / 60), pnl=round(pnl, 2),
+                         verdict=verdict, trend=(fam == "trend")))
+    return rows
+
+
+def serve_worker(args, here):
+    live, seed_cache = LiveBars(), {}
+    while True:
+        try:
+            res = step(args, here, live, seed_cache)
+            if res:
+                state, trades, b, src = res
+                X.plot(b.iloc[-args.plot_bars:], None, dict(X.DEFAULTS),
+                       _CHART_PATH, SYMBOL)
+                with open(_CHART_PATH, "rb") as fh:
+                    png = fh.read()
+                LATEST.update(png=png, state=state, src=src, err=None,
+                              ts=f"{state['ts']:%Y-%m-%d %H:%M}Z",
+                              trades=_trade_rows(trades, b, args.lookback, state["ts"]))
+        except Exception as e:
+            LATEST["err"] = str(e)
+            print(f"[serve] {e}", file=sys.stderr)
+        time.sleep(max(1, args.interval))
+
+
+def build_page(interval):
+    return f"""<!doctype html><html><head><meta charset=utf-8>
+<title>X1 Live — XAUUSD</title>
+<style>
+ body{{background:#0b0e11;color:#cfd3d8;font:13px/1.5 -apple-system,Menlo,monospace;margin:0;padding:14px}}
+ h1{{font-size:15px;margin:0 0 8px;color:#eaecef}}
+ #img{{width:100%;border:1px solid #222;border-radius:6px;display:block}}
+ .panel{{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap}}
+ .card{{background:#15191e;border:1px solid #2a2f36;border-radius:6px;padding:10px 14px}}
+ .k{{color:#7f8a96}} .up{{color:#26a69a}} .dn{{color:#ef5350}} .on{{color:#00e676;font-weight:600}} .off{{color:#7f8a96}}
+ table{{border-collapse:collapse;font-size:12px}} td,th{{padding:3px 8px;text-align:left;border-bottom:1px solid #20242a}}
+ .flag{{color:#ffb74d}} .stale{{color:#ef5350}}
+</style></head><body>
+<h1>X1 Live Overlay — XAUUSD <span class=k>(gold-validated · read-only)</span></h1>
+<img id=img src="/chart.png">
+<div class=panel id=panel></div>
+<script>
+const IV={interval*1000};
+async function tick(){{
+ document.getElementById('img').src='/chart.png?t='+Date.now();
+ try{{
+  const s=await (await fetch('/state?t='+Date.now())).json();
+  if(s.err){{document.getElementById('panel').innerHTML='<div class=card stale>error: '+s.err+'</div>';return;}}
+  const st=s.state||{{}};
+  const reg=st.regime_up?'<span class=up>UP</span>':'<span class=dn>DOWN</span>';
+  const lc=st.long_confirmed?'<span class=on>CONFIRMED</span>':'<span class=off>unconfirmed</span>';
+  const sc=st.short_confirmed?'<span class=on>CONFIRMED</span>':'<span class=off>unconfirmed</span>';
+  let tr='';
+  if((s.trades||[]).length){{tr='<table><tr><th>engine</th><th>side</th><th>held</th><th>pnl</th><th>entry-confirm</th></tr>';
+   for(const t of s.trades){{tr+='<tr><td>'+t.engine+(t.trend?'':' <span class=flag>['+t.fam+']</span>')+'</td><td>'+t.side+'</td><td>'+t.held_min+'m</td><td class='+(t.pnl>=0?'up':'dn')+'>'+t.pnl+'</td><td>'+t.verdict+'</td></tr>';}}
+   tr+='</table>';}} else {{tr='<span class=k>(none open)</span>';}}
+  document.getElementById('panel').innerHTML=
+   '<div class=card><div class=k>'+s.ts+' · '+s.src+'</div><div style="font-size:20px">'+(st.price||0).toFixed(2)+'</div>'
+   +'<div>regime '+reg+' · WT '+(st.wt1||0).toFixed(1)+'/'+(st.wt2||0).toFixed(1)+'</div>'
+   +'<div>tag: '+(st.last_tag||'-')+'</div></div>'
+   +'<div class=card><div class=k>confirm-filter read</div><div>LONG now: '+lc+'</div><div>SHORT now: '+sc+'</div>'
+   +'<div class=k style="margin-top:6px;max-width:320px">base rate: gold confirmed-trend winners 71.9% vs losers 51.5% (+12pp within-trend)</div></div>'
+   +'<div class=card><div class=k>open gold trades</div>'+tr+'</div>';
+ }}catch(e){{}}
+}}
+tick();setInterval(tick,IV);
+</script></body></html>"""
+
+
+def run_server(args, here):
+    here_ref = here
+    page = build_page(args.interval).encode()
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _send(self, code, ctype, body):
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path.startswith("/chart.png"):
+                self._send(200, "image/png", LATEST["png"] or b"")
+            elif self.path.startswith("/state"):
+                st = LATEST["state"]
+                payload = dict(
+                    err=LATEST["err"], src=LATEST["src"], ts=LATEST["ts"],
+                    trades=LATEST["trades"],
+                    state=None if st is None else dict(
+                        regime_up=st["regime_up"], wt1=st["wt1"], wt2=st["wt2"],
+                        last_tag=st["last_tag"], price=st["price"],
+                        long_confirmed=st["long_confirmed"],
+                        short_confirmed=st["short_confirmed"]))
+                self._send(200, "application/json", json.dumps(payload).encode())
+            else:
+                self._send(200, "text/html", page)
+
+    t = threading.Thread(target=serve_worker, args=(args, here_ref), daemon=True)
+    t.start()
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer(("127.0.0.1", args.serve), H) as srv:
+        url = f"http://localhost:{args.serve}"
+        print(f"[x1_live] dashboard at {url}  (feed {args.gui_url}, refresh {args.interval}s)",
+              file=sys.stderr)
+        try:
+            subprocess.run(["open", url], check=False)
+        except Exception:
+            pass
+        srv.serve_forever()
 
 
 def main():
@@ -266,6 +409,8 @@ def main():
     ap.add_argument("--chart", default=None)
     ap.add_argument("--plot-bars", dest="plot_bars", type=int, default=400)
     ap.add_argument("--loop", action="store_true")
+    ap.add_argument("--serve", type=int, nargs="?", const=8089, default=0,
+                    metavar="PORT", help="run live web dashboard on PORT (default 8089)")
     ap.add_argument("--interval", type=int, default=5, help="poll seconds (GUI pushes ~250ms)")
     args = ap.parse_args()
 
@@ -273,6 +418,11 @@ def main():
         sys.stdout.reconfigure(line_buffering=True)  # stream cleanly when piped
     except Exception:
         pass
+
+    if args.serve:
+        run_server(args, here)
+        return
+
     live, seed_cache = LiveBars(), {}
     if not args.loop:
         step(args, here, live, seed_cache)
