@@ -481,7 +481,13 @@ public:
         // 7.  XAUUSD 4h MACross 10/30
         add({ .tag="XAU_4h_MA_10_30",  .symbol="XAUUSD",  .tf_sec=14400, .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
         // 8.  USTEC  4h RSI N=7
-        add({ .tag="USTEC_4h_RSI_N7",  .symbol="USTEC.F", .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // DISABLED 2026-06-03: counter-trend mean-rev shorting the USTEC uptrend
+        // — same dead pattern already culled for GER40 RSI cells (2026-06-01).
+        // Live shadow 2026-06-03: shorted USTEC at 30531 into a rally, -$428 float
+        // held 13h (1.0xATR 4h stop 322pt out, no exit). RSI "overbought" has no
+        // trend filter -> fades strong trends -> bleeds. Mean-rev-into-trend is the
+        // tombstoned pattern; USTEC trend edge (if any) is directional, not fade.
+        // add({ .tag="USTEC_4h_RSI_N7",  .symbol="USTEC.F", .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 9.  GER40  15m MACross 20/50
         // DISABLED 2026-06-02: redundant duplicate of GER_15m_MA_10_30 (cell 4).
         // Same symbol/TF(15m)/family(MACross), overlapping params, lower Sharpe
@@ -491,7 +497,12 @@ public:
         // higher-Sharpe 10_30; cull this one (dedup, per S46/S37 precedent).
         // add({ .tag="GER_15m_MA_20_50", .symbol="GER40",   .tf_sec=900,   .family=Family::MACross, .N=50, .N_fast=20, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=50, .lot=0.10 });
         // 10. USTEC  4h ZScoreMR W=20 Z=2.5
-        add({ .tag="USTEC_4h_ZMR",     .symbol="USTEC.F", .tf_sec=14400, .family=Family::ZScoreMR, .N=20, .zthr=2.5, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
+        // DISABLED 2026-06-03: counter-trend mean-rev (z-score fade) shorting the
+        // USTEC uptrend — fired the IDENTICAL short as USTEC_4h_RSI_N7 (same entry
+        // 30531, same -$428 float, same 13h hold) = correlated double-loss, zero
+        // diversification. Same tombstoned mean-rev-into-trend pattern. Culled with
+        // the RSI cell above. Last enabled counter-trend mean-rev cell in the book.
+        // add({ .tag="USTEC_4h_ZMR",     .symbol="USTEC.F", .tf_sec=14400, .family=Family::ZScoreMR, .N=20, .zthr=2.5, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 11. GER40  5m RSI N=14
         // DISABLED 2026-06-01: GER40 RSI mean-rev (counter-trend, net-neg shadow).
         // add({ .tag="GER_5m_RSI_N14",   .symbol="GER40",   .tf_sec=300,   .family=Family::RSI, .N=14, .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
