@@ -312,7 +312,8 @@ def build_page(interval):
 <style>
  body{{background:#0b0e11;color:#cfd3d8;font:13px/1.5 -apple-system,Menlo,monospace;margin:0;padding:14px}}
  h1{{font-size:15px;margin:0 0 8px;color:#eaecef}}
- #img{{width:100%;border:1px solid #222;border-radius:6px;display:block}}
+ #img{{width:100%;min-height:420px;background:#0b0e11;border:1px solid #222;border-radius:6px;display:block}}
+ #wait{{color:#7f8a96;padding:8px 2px}}
  .panel{{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap}}
  .card{{background:#15191e;border:1px solid #2a2f36;border-radius:6px;padding:10px 14px}}
  .k{{color:#7f8a96}} .up{{color:#26a69a}} .dn{{color:#ef5350}} .on{{color:#00e676;font-weight:600}} .off{{color:#7f8a96}}
@@ -320,12 +321,16 @@ def build_page(interval):
  .flag{{color:#ffb74d}} .stale{{color:#ef5350}}
 </style></head><body>
 <h1>X1 Live Overlay — XAUUSD <span class=k>(gold-validated · read-only)</span></h1>
-<img id=img src="/chart.png">
+<div id=wait>waiting for first chart render (seed warmup)…</div>
+<img id=img style="display:none" onload="this.style.display='block';document.getElementById('wait').style.display='none'">
 <div class=panel id=panel></div>
 <script>
 const IV={interval*1000};
 async function tick(){{
- document.getElementById('img').src='/chart.png?t='+Date.now();
+ const im=document.getElementById('img');
+ const probe=new Image();
+ probe.onload=()=>{{im.src=probe.src;}};
+ probe.src='/chart.png?t='+Date.now();
  try{{
   const s=await (await fetch('/state?t='+Date.now())).json();
   if(s.err){{document.getElementById('panel').innerHTML='<div class=card stale>error: '+s.err+'</div>';return;}}
@@ -382,18 +387,20 @@ def run_server(args, here):
             else:
                 self._send(200, "text/html", page)
 
-    t = threading.Thread(target=serve_worker, args=(args, here_ref), daemon=True)
-    t.start()
+    # HTTP server in the background thread; the poll+chart-render loop runs on the
+    # MAIN thread. matplotlib's pyplot state machine (X.plot) is NOT thread-safe,
+    # so it must stay on the main thread or the PNG silently fails to render.
     socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("127.0.0.1", args.serve), H) as srv:
-        url = f"http://localhost:{args.serve}"
-        print(f"[x1_live] dashboard at {url}  (feed {args.gui_url}, refresh {args.interval}s)",
-              file=sys.stderr)
-        try:
-            subprocess.run(["open", url], check=False)
-        except Exception:
-            pass
-        srv.serve_forever()
+    srv = socketserver.TCPServer(("127.0.0.1", args.serve), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://localhost:{args.serve}"
+    print(f"[x1_live] dashboard at {url}  (feed {args.gui_url}, refresh {args.interval}s)",
+          file=sys.stderr)
+    try:
+        subprocess.run(["open", url], check=False)
+    except Exception:
+        pass
+    serve_worker(args, here_ref)   # blocks on main thread
 
 
 def main():
