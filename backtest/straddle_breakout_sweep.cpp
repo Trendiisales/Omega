@@ -65,6 +65,11 @@ int main(int argc,char**argv){
     double TPr       = getenv("TP")?atof(getenv("TP")):0.0;               // 0=runner
     int    biasFast  = getenv("BFAST")?atoi(getenv("BFAST")):20;
     int    biasSlow  = getenv("BSLOW")?atoi(getenv("BSLOW")):80;
+    // profit-preservation knobs (2026-06-03): BE = move stop to entry+buffer once
+    // favorable excursion >= BE_ARM (in R); TRAIL = trail stop TRAIL*ATR behind.
+    double BE_ARM    = getenv("BE_ARM")?atof(getenv("BE_ARM")):0.0;       // R to arm breakeven (0=off)
+    double BE_BUF    = getenv("BE_BUF")?atof(getenv("BE_BUF")):0.0;       // lock buffer in R above entry
+    double TRAIL     = getenv("TRAIL")?atof(getenv("TRAIL")):0.0;         // ATR mult trail (0=off)
 
     std::vector<Bar> b=load_agg(path,tf);
     if((int)b.size()<200){std::fprintf(stderr,"few bars\n");return 1;}
@@ -111,6 +116,20 @@ int main(int argc,char**argv){
             } else if(dir<0 && bar.l <= last_add - PYSTEP*atr){
                 double add=last_add-PYSTEP*atr; entry_sum+=add; units++; last_add=add; totAdds++;
                 double ns=last_add + PYSL*atr; if(ns<stop) stop=ns;
+            }
+        }
+        // profit preservation: BE ratchet + ATR trail (before stop/tp check)
+        if(pos && (BE_ARM>0 || TRAIL>0)){
+            const double sd = stopm*atr;               // 1R distance
+            const double fav = (dir>0)? (bar.h-entry) : (entry-bar.l);
+            const double favR = sd>0 ? fav/sd : 0.0;
+            if(BE_ARM>0 && favR>=BE_ARM){
+                double be = entry + dir*BE_BUF*sd;
+                if(dir>0){ if(be>stop) stop=be; } else { if(be<stop) stop=be; }
+            }
+            if(TRAIL>0 && favR>0){
+                double ts = (dir>0)? bar.h-TRAIL*atr : bar.l+TRAIL*atr;
+                if(dir>0){ if(ts>stop) stop=ts; } else { if(ts<stop) stop=ts; }
             }
         }
         // manage open pos intrabar (stop priority, then tp)
@@ -163,7 +182,7 @@ int main(int argc,char**argv){
     double pf=(gl>0)?gw/gl:(gw>0?999:0); double hit=(nw+nl>0)?100.0*nw/(nw+nl):0;
     double years; {int n=(int)b.size();int s=std::max(evalStart,1);years=(b[n-1].ts-b[s].ts)/86400.0/365.25;}
     double sh=0; if(ntr>=2&&years>0){double m=0;for(double v:tpnl)m+=v;m/=ntr;double s=0;for(double v:tpnl)s+=(v-m)*(v-m);double sd=std::sqrt(s/(ntr-1));if(sd>0)sh=(m/sd)*std::sqrt((double)ntr/years);}
-    std::printf("BIAS=%-5s tf%-3d boxN%-2d buf%.2f stop%.1f TP%.1f | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f | L:%d/%.0f S:%d/%.0f\n",
-        BIAS.c_str(),tf,boxN,buf,stopm,TPr,ntr,cum,pf,sh,hit,mdd,longN,longNet,shortN,shortNet); (void)totAdds;
+    std::printf("TP%.1f BE_arm%.2f BE_buf%.2f TRAIL%.1f | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f | L:%d/%.0f S:%d/%.0f\n",
+        TPr,BE_ARM,BE_BUF,TRAIL,ntr,cum,pf,sh,hit,mdd,longN,longNet,shortN,shortNet); (void)totAdds;(void)biasFast;
     return 0;
 }
