@@ -549,7 +549,7 @@ function Test-StaleBinaryAfterStart {
         if (Test-Path $LogStderr) {
             $tail = Get-Content $LogStderr -Tail 200 -ErrorAction SilentlyContinue
             $hashLine = $tail | Where-Object { $_ -match "\[Omega\] Git hash:" } | Select-Object -Last 1
-            if ($hashLine -and $hashLine -match "Git hash:\s*([0-9a-f]{7})") {
+            if ($hashLine -and $hashLine -match "Git hash:\s*([0-9a-f]{7,40})") {
                 $hashInLog = $Matches[1]
                 $hashFound = $true
                 break
@@ -563,7 +563,12 @@ function Test-StaleBinaryAfterStart {
         Write-Host "  Check: $LogStderr" -ForegroundColor Red
         return $false
     }
-    if ($hashInLog -ne $ExpectedShortHash) {
+    # Prefix-compare so a length mismatch between the logged hash and
+    # $ExpectedShortHash is NOT a false "stale" (e.g. 7-char log vs 8-char
+    # expected). Stale only when neither is a prefix of the other.
+    $hashOk = $hashInLog.StartsWith($ExpectedShortHash) -or `
+              $ExpectedShortHash.StartsWith($hashInLog)
+    if (-not $hashOk) {
         Write-Host ""
         Write-Host "  *********************************************************" -ForegroundColor Red
         Write-Host "  *  STALE BINARY DETECTED -- WRONG HASH IN LOG          *" -ForegroundColor Red
