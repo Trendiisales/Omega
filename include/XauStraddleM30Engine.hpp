@@ -130,8 +130,8 @@ struct XauStraddleM30Engine {
         tr.mfe        = pos_.mfe;
         tr.atr_at_entry = pos_.sl_dist / std::max(stop_atr, 1e-9);
         tr.shadow     = shadow_mode;
-        std::printf("[XAU_STRADDLE_M30] CLOSE %s @ %.2f entry=%.2f pnl=%.2f %s%s\n",
-                    tr.side.c_str(), exit_px, pos_.entry, pnl, reason,
+        std::printf("[%s] CLOSE %s @ %.2f entry=%.2f pnl=%.2f %s%s\n",
+                    engine_name.c_str(), tr.side.c_str(), exit_px, pos_.entry, pnl, reason,
                     shadow_mode ? " [SHADOW]" : "");
         std::fflush(stdout);
         if (cb) cb(tr);
@@ -263,7 +263,7 @@ struct XauStraddleM30Engine {
     // ---- warm-seed: replay M30 bars (bar_start_ms,open,high,low,close) ----
     int seed_from_csv(const std::string& path) noexcept {
         std::ifstream f(path);
-        if (!f.is_open()) { std::printf("[XAU_STRADDLE_M30] SEED FAIL '%s'\n", path.c_str()); return 0; }
+        if (!f.is_open()) { std::printf("[%s] SEED FAIL '%s'\n", engine_name.c_str(), path.c_str()); return 0; }
         const bool was = enabled; enabled = false;   // no fills during seed
         std::string line; std::getline(f, line);      // header
         int fed = 0;
@@ -280,8 +280,8 @@ struct XauStraddleM30Engine {
             ++fed;
         }
         enabled = was;
-        std::printf("[XAU_STRADDLE_M30] SEED fed=%d atr=%.3f bars=%d box[%.2f,%.2f]\n",
-                    fed, atr_, (int)highs_.size(), sell_stop_, buy_stop_);
+        std::printf("[%s] SEED fed=%d atr=%.3f bars=%d box[%.2f,%.2f]\n",
+                    engine_name.c_str(), fed, atr_, (int)highs_.size(), sell_stop_, buy_stop_);
         std::fflush(stdout);
         return fed;
     }
