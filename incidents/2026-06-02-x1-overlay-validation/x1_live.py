@@ -269,6 +269,10 @@ def main():
     ap.add_argument("--interval", type=int, default=5, help="poll seconds (GUI pushes ~250ms)")
     args = ap.parse_args()
 
+    try:
+        sys.stdout.reconfigure(line_buffering=True)  # stream cleanly when piped
+    except Exception:
+        pass
     live, seed_cache = LiveBars(), {}
     if not args.loop:
         step(args, here, live, seed_cache)
