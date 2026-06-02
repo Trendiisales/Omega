@@ -1883,6 +1883,44 @@ static void init_engines(const std::string& cfg_path)
                g_orb_estx50_v2.lot);
         fflush(stdout);
 
+        // ── INDEX STRADDLE cells (S-2026-06-02) ────────────────────────────────
+        // Gold straddle archetype on indices: rolling box (boxN15) + 3*ATR stop +
+        // 1R TP, SYMMETRIC. straddle_breakout_sweep.cpp (OOS 0.33, up to 3x cost):
+        //   GER40  M30 PF1.49 Sh4.3 WR62% | M15 PF1.31 Sh4.0 WR58%
+        //   NAS100 M15 PF1.42 Sh4.9 WR59% | M30 PF1.45 Sh4.1 WR59%
+        //   UK100  M30 PF1.40 Sh4.2 WR60% | M240 PF1.85 Sh3.4 WR64% (lowest DD)
+        // Both legs net+ on all. Self-aggregating (tf_min>0). HARD shadow, gate-watched.
+        {
+            struct IdxCell { omega::XauStraddleM30Engine* e; const char* sym; const char* name;
+                             int tf; int hold; double maxsp; const char* warm; };
+            const IdxCell cells[] = {
+                { &g_idx_straddle_ger40_m30,  "GER40",  "IdxStraddleGER40_M30",  30,  48, 6.0, "phase1/signal_discovery/warmup_GER40_M30.csv"  },
+                { &g_idx_straddle_ger40_m15,  "GER40",  "IdxStraddleGER40_M15",  15,  96, 6.0, "phase1/signal_discovery/warmup_GER40_M15.csv"  },
+                { &g_idx_straddle_nas_m15,    "NAS100", "IdxStraddleNAS100_M15", 15,  96, 6.0, "phase1/signal_discovery/warmup_NAS100_M15.csv" },
+                { &g_idx_straddle_nas_m30,    "NAS100", "IdxStraddleNAS100_M30", 30,  48, 6.0, "phase1/signal_discovery/warmup_NAS100_M30.csv" },
+                { &g_idx_straddle_uk100_m30,  "UK100",  "IdxStraddleUK100_M30",  30,  48, 4.0, "phase1/signal_discovery/warmup_UK100_M30.csv"  },
+                { &g_idx_straddle_uk100_m240, "UK100",  "IdxStraddleUK100_M240", 240, 24, 4.0, "phase1/signal_discovery/warmup_UK100_M240.csv" },
+            };
+            for (const auto& c : cells) {
+                c.e->shadow_mode   = true;
+                c.e->enabled       = true;
+                c.e->symbol        = c.sym;
+                c.e->engine_name   = c.name;
+                c.e->box_n         = 15;
+                c.e->stop_atr      = 3.0;
+                c.e->tp_r          = 1.0;
+                c.e->lot           = 0.01;
+                c.e->tf_min        = c.tf;
+                c.e->hold_max_bars = c.hold;
+                c.e->max_spread    = c.maxsp;
+                c.e->obi_tilt      = false;   // OBI signal is XAU-only
+                c.e->seed_from_csv(c.warm);
+                printf("[OMEGA-INIT] %s: shadow=%d tf=%dm boxN=%d stop=%.1fx TP=%.1fR\n",
+                       c.name, (int)c.e->shadow_mode, c.tf, c.e->box_n, c.e->stop_atr, c.e->tp_r);
+            }
+            fflush(stdout);
+        }
+
         // ── S136 2026-05-24: Xau3BarMomGatedH4Engine ───────────────────────────
         // XAU H4 three-bar momentum, symmetric long+short.
         // MFE-lock trail: arm at +1.0R, lock 90% of extreme.
@@ -5971,6 +6009,12 @@ static void init_engines(const std::string& cfg_path)
             { "XauStraddleM30",         &g_xau_straddle_m30.enabled},
             { "XauStraddleM15",         &g_xau_straddle_m15.enabled},
             { "OrbEstx50",              &g_orb_estx50_v2.enabled   },
+            { "IdxStraddleGER40_M30",   &g_idx_straddle_ger40_m30.enabled  },
+            { "IdxStraddleGER40_M15",   &g_idx_straddle_ger40_m15.enabled  },
+            { "IdxStraddleNAS100_M15",  &g_idx_straddle_nas_m15.enabled    },
+            { "IdxStraddleNAS100_M30",  &g_idx_straddle_nas_m30.enabled    },
+            { "IdxStraddleUK100_M30",   &g_idx_straddle_uk100_m30.enabled  },
+            { "IdxStraddleUK100_M240",  &g_idx_straddle_uk100_m240.enabled },
         };
         for (const auto& t : kGateTargets) {
             if (g_engine_gate.is_demoted(t.name) && *t.flag) {

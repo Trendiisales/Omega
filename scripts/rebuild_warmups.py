@@ -34,6 +34,15 @@ TARGETS = [
     ("XAUUSD", 15, "warmup_XAUUSD_M15.csv", 6000),
     ("XAUUSD", 30, "warmup_XAUUSD_M30.csv", 4000),
     ("ESTX50",  5, "warmup_ESTX50_M5.csv",  4000),
+    # Index straddle cells. Symbols with live l2_ticks (NAS100/US500/USTEC) auto-
+    # refresh here; GER40/UK100 have no capture yet -> skip -> keep the bundled
+    # warmup (the straddle gap+arm guards make a stale seed box safe regardless).
+    ("GER40",  15, "warmup_GER40_M15.csv",  4000),
+    ("GER40",  30, "warmup_GER40_M30.csv",  3500),
+    ("NAS100", 15, "warmup_NAS100_M15.csv", 6000),
+    ("NAS100", 30, "warmup_NAS100_M30.csv", 4000),
+    ("UK100",  30, "warmup_UK100_M30.csv",  3500),
+    ("UK100", 240, "warmup_UK100_M240.csv", 2000),
 ]
 
 

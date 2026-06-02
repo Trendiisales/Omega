@@ -711,6 +711,18 @@ static omega::XauStraddleM30Engine g_xau_straddle_m15;
 #include "OrbBreakoutEngine.hpp"
 static omega::OrbBreakoutEngine g_orb_estx50_v2;
 
+// S-2026-06-02: INDEX STRADDLE cells. The gold straddle archetype (rolling box +
+// 1R TP, symmetric) generalizes to indices (straddle_breakout_sweep.cpp, OOS 0.33
+// + up to 3x cost): GER40/NAS100/UK100 WR 59-64%, Sharpe 3.4-4.9, BOTH legs net+,
+// cost-robust. Reuses XauStraddleM30Engine with tf_min>0 (self-aggregating bars
+// from the index tick path -- no external bar feed needed). All shadow, gate-watched.
+static omega::XauStraddleM30Engine g_idx_straddle_ger40_m30;
+static omega::XauStraddleM30Engine g_idx_straddle_ger40_m15;
+static omega::XauStraddleM30Engine g_idx_straddle_nas_m15;
+static omega::XauStraddleM30Engine g_idx_straddle_nas_m30;
+static omega::XauStraddleM30Engine g_idx_straddle_uk100_m30;
+static omega::XauStraddleM30Engine g_idx_straddle_uk100_m240;
+
 // 2026-05-24 S136: Xau3BarMomGatedH4Engine -- XAU H4 three-bar momentum symmetric
 //   with MFE-lock trail (arm=1.0R, lock=90%).
 //   /Users/jo/edge_research validation: 27mo backtest IS PF 1.11 +$983 /

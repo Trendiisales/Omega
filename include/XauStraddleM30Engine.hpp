@@ -64,6 +64,15 @@ struct XauStraddleM30Engine {
     int    obi_dir  = 0;         // +1/-1/0, refreshed per tick from the OBI signal
     double obi_up   = 1.25;      // lot x when book agrees with the trade side
     double obi_dn   = 0.75;      // lot x when book disagrees
+
+    // S-2026-06-02: self-aggregation for symbols WITHOUT an external bar feed
+    // (the index straddle cells). When tf_min > 0, call on_tick_agg() per tick and
+    // the engine builds its own tf_min-minute bars from the mid, drives the box
+    // roll on bar close, then manages the position -- no tick_*.hpp bar aggregator
+    // needed. Gold leaves tf_min=0 and keeps feeding on_m30_bar externally.
+    int     tf_min = 0;          // 0 = external bars (gold); >0 = self-aggregate
+    int64_t agg_bar_ms_ = -1;
+    double  agg_h_ = 0.0, agg_l_ = 0.0, agg_c_ = 0.0;
     int    hold_max_bars = 48;   // safety timeout (24h on M30)
 
     std::string symbol  = "XAUUSD";
@@ -230,6 +239,25 @@ struct XauStraddleM30Engine {
         // runaway breakout) -- it simply re-arms next bar, negligible vs validated.
         const double mid_arm = (bid > 0.0 && ask > 0.0) ? (bid + ask) * 0.5 : m30_close;
         armed_ = (buy_stop_ > mid_arm && sell_stop_ < mid_arm);
+    }
+
+    // ---- self-aggregating tick (tf_min>0): build tf_min bars from mid, roll the
+    //      box on bar close, then manage. For index cells with no external bar feed.
+    void on_tick_agg(double bid, double ask, int64_t now_ms, CloseCallback cb) noexcept {
+        if (tf_min <= 0 || bid <= 0.0 || ask <= 0.0) { on_tick(bid, ask, now_ms, cb); return; }
+        const double mid = (bid + ask) * 0.5;
+        const int64_t tfms = (int64_t)tf_min * 60000LL;
+        const int64_t b = (now_ms / tfms) * tfms;
+        if (agg_bar_ms_ < 0) { agg_bar_ms_ = b; agg_h_ = agg_l_ = agg_c_ = mid; }
+        else if (b != agg_bar_ms_) {
+            on_m30_bar(agg_h_, agg_l_, agg_c_, bid, ask, agg_bar_ms_, cb);  // close prior bar
+            agg_bar_ms_ = b; agg_h_ = agg_l_ = agg_c_ = mid;
+        } else {
+            if (mid > agg_h_) agg_h_ = mid;
+            if (mid < agg_l_) agg_l_ = mid;
+            agg_c_ = mid;
+        }
+        on_tick(bid, ask, now_ms, cb);   // fill armed straddle + manage open pos
     }
 
     // ---- warm-seed: replay M30 bars (bar_start_ms,open,high,low,close) ----

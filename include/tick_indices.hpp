@@ -892,6 +892,15 @@ static void on_tick_ger40(
     g_engine_heartbeat.pulse("Ger40TurtleH4");       // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("MinimalH4Ger40");      // 2026-05-26 (Stage 4)
 
+    {   // S-2026-06-02 index straddle cells (self-aggregating M30/M15, shadow)
+        const int64_t now_ms_str = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idx_straddle_ger40_m30.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
+        g_idx_straddle_ger40_m15.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
+        g_engine_heartbeat.pulse("IdxStraddleGER40");
+    }
+
     // AtrMeanRevGrid GER40 (shadow). M15 X=14 SL_Y=6 ATR_FROM_WAP, PF 1.86 stage-4.
     if (g_amr_ger40.enabled) {
         const int64_t amr_ms = static_cast<int64_t>(
@@ -1014,6 +1023,15 @@ static void on_tick_uk100(
     // 2026-05-05 (audit-fixes-40): heartbeat pulse for UK100-driven engines.
     g_engine_heartbeat.pulse("Uk100");
 
+    {   // S-2026-06-02 index straddle cells (self-aggregating M30/M240, shadow)
+        const int64_t now_ms_str = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idx_straddle_uk100_m30.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
+        g_idx_straddle_uk100_m240.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
+        g_engine_heartbeat.pulse("IdxStraddleUK100");
+    }
+
     const bool base_can_uk = symbol_gate("UK100", g_eng_uk100.pos.active || g_bracket_uk100.pos.active, "", tradeable, lat_ok, regime, bid, ask);
     const auto sdec_uk = sup_decision(g_sup_uk100, g_eng_uk100, base_can_uk, sym, bid, ask);
     // SIM: EU index breakout -- no edge. Disabled.
@@ -1116,6 +1134,15 @@ static void on_tick_nas100(
     g_engine_heartbeat.pulse("IMacroNAS");
     g_engine_heartbeat.pulse("AmrNas100");           // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("OrbNas100");           // 2026-05-26 (Stage 4)
+
+    {   // S-2026-06-02 index straddle cells (self-aggregating M15/M30, shadow)
+        const int64_t now_ms_str = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        g_idx_straddle_nas_m15.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
+        g_idx_straddle_nas_m30.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
+        g_engine_heartbeat.pulse("IdxStraddleNAS100");
+    }
     g_engine_heartbeat.pulse("NasBbRevLongH1");      // 2026-05-26 (Stage 4)
 
     // AtrMeanRevGrid NAS100 (shadow). M15 X=14 SL_Y=4 RSI_OR_MA, PF 1.55 sweep.
