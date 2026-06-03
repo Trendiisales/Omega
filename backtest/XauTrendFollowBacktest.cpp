@@ -188,7 +188,12 @@ struct Cell {
 };
 struct SimTrade { bool active=false,is_long=true; double entry_px=0,sl_px=0,tp_px=0; int64_t entry_time=0;
     // S45 pyramiding: stack units as price advances, trail stop behind last add.
-    double atr_at_entry=0; double last_add_px=0; int n_units=0; double sum_entry=0; };
+    double atr_at_entry=0; double last_add_px=0; int n_units=0; double sum_entry=0;
+    double eR=0,eSlope=0; bool confOK=false; };   // S-2026-06-03: regression-R sizing overlay
+// regression-R sizing accumulator (parallel to flat metrics)
+struct RSacc{double net=0,sumsz=0,cum=0,peak=0,dd=0,h1=0,h2=0;int n=0;
+  void rec(double pu,double conf,bool oos){double v=pu*conf;net+=v;sumsz+=conf;++n;cum+=v;
+    if(cum>peak)peak=cum;if(peak-cum>dd)dd=peak-cum; if(oos)h2+=v;else h1+=v;}};
 struct Metrics {
     int total=0,wins=0; double pnl=0,gw=0,gl=0,mdd=0,pk=0;
     void record(double p){total++;pnl+=p;if(p>0){wins++;gw+=p;}else gl+=std::fabs(p);if(pnl>pk)pk=pnl;double d=pk-pnl;if(d>mdd)mdd=d;}
@@ -270,6 +275,16 @@ int main(int argc, char* argv[]) {
     };
     constexpr int NC=13;
     SimTrade trades[NC]; Metrics tf2,tf4,tfd,all,ism,osm;
+    // S-2026-06-03: regression-R sizing overlay (parallel; does not alter base sim).
+    RSacc rs[4]; const char* rs_name[4]={"flat","linear-R","step-R","slope-floor"};
+    auto szf=[&](int s,double R,double slope,bool ok)->double{ if(!ok)return 1.0;
+        switch(s){case 0:return 1.0; case 1:return std::max(0.0,std::min(1.5,(R-0.4)/0.4));
+        case 2:return R>0.85?1.5:R>0.7?1.0:R>0.5?0.5:0.25; case 3:return slope>0?1.0:0.4;} return 1.0; };
+    auto regR=[&](const std::deque<Bar>* bp,double& slope,double& R,bool& ok){ slope=0;R=0;ok=false;
+        const int W=128; if(!bp||(int)bp->size()<W)return; const auto& d=*bp; int s0=(int)d.size()-W;
+        double Sx=0,Sy=0,Sxx=0,Sxy=0,Syy=0; for(int k=0;k<W;++k){double x=k,y=d[s0+k].close;Sx+=x;Sy+=y;Sxx+=x*x;Sxy+=x*y;Syy+=y*y;}
+        double den=W*Sxx-Sx*Sx; slope=den!=0?(W*Sxy-Sx*Sy)/den:0;
+        double cxx=Sxx-Sx*Sx/W,cyy=Syy-Sy*Sy/W,cxy=Sxy-Sx*Sy/W; R=(cxx>0&&cyy>0)?cxy/std::sqrt(cxx*cyy):0; ok=true; };
     int64_t ots=0; bool oset=false; int64_t ft=0,lt=0; size_t ttk=0; double mnp=99999999,mxp=0;
     double lb=0,la=0;   // S45: last bid/ask, for force-close of open runners at series end
 
@@ -329,6 +344,7 @@ int main(int argc, char* argv[]) {
         if(pyr_no_tp) t.tp_px = il ? 1e18 : -1e18;   // runner mode: no fixed TP
         t.entry_time=ts;
         t.atr_at_entry=atr; t.last_add_px=t.entry_px; t.n_units=1; t.sum_entry=t.entry_px;
+        regR(barptr, t.eSlope, t.eR, t.confOK);   // S-2026-06-03: trend-fit at entry for sizing overlay
     };
     auto mg=[&](double b,double a,int64_t ts){
         for(int i=0;i<NC;++i){auto& t=trades[i];if(!t.active)continue;
@@ -357,6 +373,7 @@ int main(int argc, char* argv[]) {
             double pu=pp*cfg::PNL_PER_PT;
             pu -= cfg::COST_RT_PTS * (double)t.n_units * cfg::PNL_PER_PT;  // IBKR cost per unit RT
             cells[i].record(pu);all.record(pu);
+            for(int s=0;s<4;++s) rs[s].rec(pu, szf(s,t.eR,t.eSlope,t.confOK), !(t.entry_time<ots));
             if(t.entry_time<ots)ism.record(pu);else osm.record(pu);
             if(i<4)tf2.record(pu);else if(i<10)tf4.record(pu);else tfd.record(pu);
             t.active=false;
@@ -419,6 +436,7 @@ int main(int argc, char* argv[]) {
             double pu=pp*cfg::PNL_PER_PT;
             pu -= cfg::COST_RT_PTS * (double)t.n_units * cfg::PNL_PER_PT;  // IBKR cost per unit RT
             cells[i].record(pu);all.record(pu);
+            for(int s=0;s<4;++s) rs[s].rec(pu, szf(s,t.eR,t.eSlope,t.confOK), !(t.entry_time<ots));
             if(t.entry_time<ots)ism.record(pu);else osm.record(pu);
             if(i<4)tf2.record(pu);else if(i<10)tf4.record(pu);else tfd.record(pu);
             t.active=false;
@@ -438,5 +456,14 @@ int main(int argc, char* argv[]) {
     std::printf("===============================================================\n\n");
     ism.print("IS TOTAL"); osm.print("OOS TOTAL");
     std::printf("\n  OOS VERDICT: %s\n\n",(osm.total>=8&&osm.pf()>=1.20)?"PASS":"REVIEW");
+
+    std::printf("===============================================================\n");
+    std::printf("  REGRESSION-R SIZING OVERLAY (W=128, on real cell trades)\n");
+    std::printf("  fair metric = net/avgSize (return per unit exposure); BOTH+ = IS>0 & OOS>0\n");
+    std::printf("===============================================================\n");
+    for(int s=0;s<4;++s){auto&r=rs[s]; double avg=r.n?r.sumsz/r.n:0;
+        std::printf("  %-12s n=%4d avgSize=%.2f net=$%9.1f net/avgSize=$%9.1f rDD=%6.2f | IS=$%8.1f OOS=$%8.1f %s\n",
+            rs_name[s],r.n,avg,r.net,avg>0?r.net/avg:0,r.dd>0?r.net/r.dd:0,r.h1,r.h2,(r.h1>0&&r.h2>0)?"BOTH+":"");}
+    std::printf("\n");
     return 0;
 }
