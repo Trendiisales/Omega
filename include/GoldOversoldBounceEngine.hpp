@@ -65,7 +65,10 @@ struct GoldOversoldBounceEngine {
         const int64_t day = ts_ms / 86400000LL;
 
         if (day != cur_day_) {
-            if (cur_day_ >= 0) _finalize_day();        // push prior day's bar
+            // Only finalize a day we actually built from ticks. After warm-seed
+            // (or first boot) day_close_==0 -> skip, else we'd push a garbage
+            // (0,0,0) bar that corrupts RSI/ATR and fires a spurious entry.
+            if (cur_day_ >= 0 && day_close_ > 0.0) _finalize_day();
             // ---- new UTC day: update indicators, manage, arm ----
             if (pos_.active) pos_.hold_days += 1;
             const double r = rsi();
