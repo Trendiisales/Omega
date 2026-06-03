@@ -447,16 +447,20 @@ LATEST = {"png": b"", "state": None, "trades": [], "open_all": [], "src": "-",
 _CHART_PATH = "/tmp/_x1_live_chart.png"
 
 
-def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None):
+def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None,
+               view_bars=None):
     """Live chart: candles + WaveTrend + tags PLUS a moving live-price line and a
     bright dot at the right edge that visibly shift every poll, and a clock in the
-    title — so liveness is obvious even when the M1 candle barely moves."""
+    title — so liveness is obvious even when the M1 candle barely moves.
+    MAs/WaveTrend compute on the FULL `b` (so EMA50/SMA200 are valid); the view is
+    cropped to the last `view_bars` candles (fat candles) via xlim."""
     plt, Rect = X.plt, X.Rectangle
     n = len(b)
     import numpy as np
     x = np.arange(n)
+    x0 = (n - view_bars) if (view_bars and view_bars < n) else 0   # left edge of visible window
     fig, (ax, axo) = plt.subplots(
-        2, 1, figsize=(min(34, max(12, n * 0.05)), 8), sharex=True,
+        2, 1, figsize=(min(34, max(12, (n - x0) * 0.07)), 8), sharex=True,
         gridspec_kw={"height_ratios": [3, 1]})
     fig.patch.set_facecolor("#0b0e11")
     for a in (ax, axo):
@@ -521,7 +525,7 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None):
         ax.axhline(price, color=col, lw=1.2, ls=(0, (4, 3)), alpha=0.9, zorder=7)
         # only label if within the visible price window (avoid off-chart clutter)
         if ymin - (ymax - ymin) * 0.5 <= price <= ymax + (ymax - ymin) * 0.5:
-            ax.annotate(f"{label} {price:.2f}", (0, price), color=col, fontsize=8,
+            ax.annotate(f"{label} {price:.2f}", (x0, price), color=col, fontsize=8,
                         fontweight="bold", xytext=(2, 0), textcoords="offset points",
                         ha="left", va="center", zorder=12,
                         bbox=dict(boxstyle="round,pad=0.12", fc="#0b0e11", ec=col, lw=0.8))
@@ -560,7 +564,27 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None):
         axo.axhline(lvl, color="#555", lw=0.6, ls="--")
     axo.axhline(0, color="#777", lw=0.5)
     axo.set_ylabel("WaveTrend", color="#aaa")
-    ticks = np.linspace(0, n - 1, min(10, n)).astype(int)
+
+    # crop view to the last `view_bars` candles (fat candles), MAs already computed
+    # on full history so EMA50/SMA200 stay valid + visible.
+    if x0 > 0:
+        ax.set_xlim(x0 - 0.5, n - 0.5)
+        axo.set_xlim(x0 - 0.5, n - 0.5)
+        vlo = float(np.nanmin(l[x0:])); vhi = float(np.nanmax(h[x0:]))
+        extra = [lp]
+        for t in (gold_trades or []):
+            for k in ("entry", "tp", "sl"):
+                try:
+                    v = float(t.get(k, 0))
+                    if v > 0:
+                        extra.append(v)
+                except (TypeError, ValueError):
+                    pass
+        vlo = min(vlo, min(extra)); vhi = max(vhi, max(extra))
+        pad = (vhi - vlo) * 0.04 or 1.0
+        ax.set_ylim(vlo - pad, vhi + pad)
+
+    ticks = np.linspace(x0, n - 1, min(10, n - x0)).astype(int)
     axo.set_xticks(ticks)
     axo.set_xticklabels([b.index[i].strftime("%m-%d %H:%M") for i in ticks],
                         rotation=30, ha="right", fontsize=8)
@@ -609,9 +633,10 @@ def serve_worker(args, here):
                 LATEST["screener"] = screener_rows(tele, {d: sym_bars[d].frame() for d, _ in SYMS})
 
             if b is not None and state is not None:
-                draw_chart(b.iloc[-args.plot_bars:], dict(X.DEFAULTS),
+                calc_bars = args.plot_bars + 210   # +200 for SMA200 to span the view
+                draw_chart(b.iloc[-calc_bars:], dict(X.DEFAULTS),
                            _CHART_PATH, SYMBOL, state["price"], updated,
-                           gold_trades=trades)
+                           gold_trades=trades, view_bars=args.plot_bars)
                 with open(_CHART_PATH, "rb") as fh:
                     png = fh.read()
                 LATEST.update(png=png, state=state, src=src, err=None,
