@@ -51,10 +51,19 @@ struct MgcFastDonchian30mEngine {
     double  day_hi_ = -1e18, day_lo_ = 1e18;
 
     std::vector<double> prior_hvn_; double prior_poc_ = 0.0; bool prior_ok_ = false;
+    // LIVE: HVN levels injected externally (from the daily mgc_volprofile producer)
+    // instead of built from per-bar volume (the DOM price feed has no trade volume).
+    // BACKTEST: leave false -> build internally from the volume fed to on_30m_bar.
+    bool    hvn_external_ = false;
 
     bool    pos_active_ = false; double entry_ = 0.0; int64_t entry_ts_ = 0;
 
     bool has_open_position() const { return pos_active_; }
+
+    // LIVE injection of prior-day HVN levels (spot-adjusted if needed by caller).
+    void set_prior_hvn(const std::vector<double>& hvn, double poc) {
+        prior_hvn_ = hvn; prior_poc_ = poc; prior_ok_ = !hvn.empty(); hvn_external_ = true;
+    }
 
     void _finalize_prior_profile() {
         prior_ok_ = false; prior_hvn_.clear();
@@ -109,7 +118,7 @@ struct MgcFastDonchian30mEngine {
         if (!enabled) return;
         const int day = (int)(ts_sec / 86400);
         if (day != cur_day_) {                  // day flip -> finalize prior profile
-            if (cur_day_ >= 0) _finalize_prior_profile();
+            if (cur_day_ >= 0 && !hvn_external_) _finalize_prior_profile();  // external HVN: caller injects
             cur_day_ = day; day_cv_.clear(); day_hi_ = -1e18; day_lo_ = 1e18;
         }
         day_cv_.push_back({c, v}); day_hi_ = std::max(day_hi_, h); day_lo_ = std::min(day_lo_, l);

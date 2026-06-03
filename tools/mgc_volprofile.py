@@ -35,6 +35,18 @@ ib.connect("127.0.0.1", PORT, clientId=88, timeout=15)
 c = ContFuture("MGC", "COMEX", "USD"); ib.qualifyContracts(c)
 bars = ib.reqHistoricalData(c, "", barSizeSetting=BASE_BAR, durationStr=DUR,
                             whatToShow="TRADES", useRTH=False)
+# basis = MGC futures - XAU spot, so the viewer can shift levels onto the spot
+# (XAUUSD) chart the engines actually trade. Best-effort; 0 if spot unavailable.
+basis = 0.0; spot = None
+try:
+    from ib_async import Forex
+    xau = Forex("XAUUSD"); ib.qualifyContracts(xau)
+    t = ib.reqMktData(xau, "", True, False); ib.sleep(2.5)
+    spot = t.last if (t.last and t.last == t.last) else (t.close if t.close else None)
+    if spot and bars:
+        basis = round(bars[-1].close - spot, 2)
+except Exception as e:
+    print(f"(spot fetch failed, basis=0: {e})")
 ib.disconnect()
 
 # group base bars into HTF candles
@@ -78,65 +90,75 @@ for k in order[-NCAND:]:
 
 payload = {
     "symbol": "MGC", "contract": c.localSymbol, "htf": HTF, "bins": BINS,
+    "basis": basis, "spot": spot,   # futures-spot basis; subtract to map to XAUUSD
     "generated_utc": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
     "candles": candles,
 }
 with open(OUT, "w") as f: json.dump(payload, f, indent=2)
 
-# self-contained HTML viewer (data embedded -> works via file://, no server/CORS)
-HTML = """<!doctype html><html><head><meta charset=utf-8>
-<title>HTF Candle Volume Profile — MGC</title>
+# Compact HVN file the live MgcFastDonchian30m engine reads: prior COMPLETED day
+# POC + HVN (bins >= 60% of max vol). candles[-1] is today (forming) -> use [-2].
+if len(candles) >= 2:
+    pc = candles[-2]
+    mx = max((bn["vol"] for bn in pc["bins"]), default=0.0)
+    hvn = [bn["price"] for bn in pc["bins"] if mx > 0 and bn["vol"] >= 0.60 * mx]
+    with open("data/mgc_hvn.json", "w") as f:
+        json.dump({"day": pc["key"], "poc": pc["poc"], "hvn": hvn,
+                   "basis": basis, "generated_utc": payload["generated_utc"]}, f)
+    print(f"wrote data/mgc_hvn.json: prior-day {pc['key']} POC={pc['poc']} HVN={len(hvn)} levels basis={basis}")
+
+# self-contained HTML viewer (data embedded -> works via file://, no server/CORS).
+# ASCII-only; prices shifted by basis so levels map onto the spot XAUUSD chart.
+HTML = """<!doctype html><html><head><meta charset="utf-8">
+<title>HTF Candle Volume Profile - MGC</title>
 <style>body{background:#0b0e11;color:#cfd6e4;font:13px -apple-system,Segoe UI,sans-serif;margin:0}
 #hd{padding:10px 16px;border-bottom:1px solid #1c2230}#hd b{color:#fff}
 canvas{display:block}</style></head><body>
-<div id=hd><b>HTF Candle Volume Profile</b> — __SYM__ (__CON__) · HTF __HTF__ · real COMEX volume · gen __GEN__
-&nbsp;|&nbsp; <span style=color:#0fcf5d>bull</span> / <span style=color:#f85321>bear</span> · <span style=color:orange>POC</span> · VAH/VAL dashed · H/L dotted</div>
+<div id=hd><b>HTF Candle Volume Profile</b> - __SYM__ (__CON__) | HTF __HTF__ | real COMEX volume | basis __BASIS__ (prices shown spot-adjusted) | gen __GEN__
+&nbsp;|&nbsp; <span style="color:#0fcf5d">bull</span> / <span style="color:#f85321">bear</span> | <span style="color:orange">POC</span> | VAH/VAL dashed | H/L dotted</div>
 <canvas id=c></canvas>
 <script>
+try{
 const DATA=__PAYLOAD__;
+const B=DATA.basis||0, D=p=>p-B;            // spot-adjust
 const cv=document.getElementById('c'),x=cv.getContext('2d');
-const W=Math.max(900,DATA.candles.length*260+80),H=620;cv.width=W;cv.height=H;
-const cs=DATA.candles,allP=cs.flatMap(c=>[c.high,c.low]);
-let pmin=Math.min(...allP),pmax=Math.max(...allP);const pad=(pmax-pmin)*0.06;pmin-=pad;pmax+=pad;
+const cs=DATA.candles;
+const W=Math.max(900,cs.length*260+90),H=620;cv.width=W;cv.height=H;
+const allP=[];cs.forEach(c=>{allP.push(D(c.high),D(c.low));});
+let pmin=Math.min.apply(null,allP),pmax=Math.max.apply(null,allP);
+if(pmax<=pmin)pmax=pmin+1;const pad=(pmax-pmin)*0.06;pmin-=pad;pmax+=pad;
 const top=40,bot=H-30,Y=p=>top+(pmax-p)/(pmax-pmin)*(bot-top);
 x.fillStyle='#0b0e11';x.fillRect(0,0,W,H);
-// price gridlines
-x.strokeStyle='#161c28';x.fillStyle='#5b6678';x.font='11px sans-serif';
+x.strokeStyle='#161c28';x.fillStyle='#5b6678';x.font='11px sans-serif';x.textAlign='left';
 for(let i=0;i<=8;i++){const p=pmin+(pmax-pmin)*i/8,yy=Y(p);x.beginPath();x.moveTo(60,yy);x.lineTo(W,yy);x.stroke();x.fillText(p.toFixed(1),6,yy+3);}
 const slotW=240,gap=20,profW=150;
 cs.forEach((c,ci)=>{
- const x0=70+ci*(slotW+gap);                 // left of slot (profile grows right)
- const bodyX=x0+profW+30;                     // candle body x
+ const x0=70+ci*(slotW+gap), bodyX=x0+profW+30;
  const col=c.bull?'#0fcf5d':'#f85321';
- const maxv=Math.max(...c.bins.map(b=>b.vol),1);
- const binH=(Y(c.low)-Y(c.high))/c.bins.length;
- // volume bins
- c.bins.forEach(b=>{const bw=Math.max(1,b.vol/maxv*profW),yy=Y(b.price);
+ let maxv=1;c.bins.forEach(b=>{if(b.vol>maxv)maxv=b.vol;});
+ const binH=Math.max(1,(Y(D(c.low))-Y(D(c.high)))/c.bins.length);
+ c.bins.forEach(b=>{const bw=Math.max(1,b.vol/maxv*profW),yy=Y(D(b.price));
    const isPoc=Math.abs(b.price-c.poc)<=(c.high-c.low)/c.bins.length/2;
    x.fillStyle=isPoc?'rgba(255,165,0,.85)':(c.bull?'rgba(15,207,93,.35)':'rgba(248,83,33,.35)');
-   x.fillRect(x0,yy-binH/2,bw,Math.max(1,binH));});
- // H/L dotted
- x.setLineDash([2,3]);x.strokeStyle=col;x.beginPath();x.moveTo(x0,Y(c.high));x.lineTo(bodyX+12,Y(c.high));x.moveTo(x0,Y(c.low));x.lineTo(bodyX+12,Y(c.low));x.stroke();
- // VAH/VAL dashed
- x.setLineDash([6,4]);x.strokeStyle='#7da0ff';x.beginPath();x.moveTo(x0,Y(c.vah));x.lineTo(bodyX+12,Y(c.vah));x.moveTo(x0,Y(c.val));x.lineTo(bodyX+12,Y(c.val));x.stroke();
- // POC solid
- x.setLineDash([]);x.strokeStyle='orange';x.lineWidth=1.5;x.beginPath();x.moveTo(x0,Y(c.poc));x.lineTo(bodyX+12,Y(c.poc));x.stroke();x.lineWidth=1;
- // candle wick+body
- x.strokeStyle=col;x.beginPath();x.moveTo(bodyX,Y(c.high));x.lineTo(bodyX,Y(c.low));x.stroke();
- x.fillStyle=col;const yo=Y(c.open),yc=Y(c.close);x.fillRect(bodyX-7,Math.min(yo,yc),14,Math.max(2,Math.abs(yc-yo)));
- // labels
- x.fillStyle='#cfd6e4';x.font='11px sans-serif';x.textAlign='left';
- x.fillText(c.key,x0,top-22);
- x.fillStyle='orange';x.fillText('POC '+c.poc,bodyX+16,Y(c.poc)+3);
- x.fillStyle='#7da0ff';x.fillText('VAH '+c.vah,bodyX+16,Y(c.vah)+3);x.fillText('VAL '+c.val,bodyX+16,Y(c.val)+3);
- x.fillStyle=col;x.fillText('H '+c.high,bodyX+16,Y(c.high)+3);x.fillText('L '+c.low,bodyX+16,Y(c.low)+3);
+   x.fillRect(x0,yy-binH/2,bw,binH);});
+ x.setLineDash([2,3]);x.strokeStyle=col;x.beginPath();x.moveTo(x0,Y(D(c.high)));x.lineTo(bodyX+12,Y(D(c.high)));x.moveTo(x0,Y(D(c.low)));x.lineTo(bodyX+12,Y(D(c.low)));x.stroke();
+ x.setLineDash([6,4]);x.strokeStyle='#7da0ff';x.beginPath();x.moveTo(x0,Y(D(c.vah)));x.lineTo(bodyX+12,Y(D(c.vah)));x.moveTo(x0,Y(D(c.val)));x.lineTo(bodyX+12,Y(D(c.val)));x.stroke();
+ x.setLineDash([]);x.strokeStyle='orange';x.lineWidth=1.5;x.beginPath();x.moveTo(x0,Y(D(c.poc)));x.lineTo(bodyX+12,Y(D(c.poc)));x.stroke();x.lineWidth=1;
+ x.strokeStyle=col;x.beginPath();x.moveTo(bodyX,Y(D(c.high)));x.lineTo(bodyX,Y(D(c.low)));x.stroke();
+ x.fillStyle=col;const yo=Y(D(c.open)),yc=Y(D(c.close));x.fillRect(bodyX-7,Math.min(yo,yc),14,Math.max(2,Math.abs(yc-yo)));
+ x.fillStyle='#cfd6e4';x.font='11px sans-serif';x.fillText(c.key,x0,top-22);
+ x.fillStyle='orange';x.fillText('POC '+D(c.poc).toFixed(1),bodyX+16,Y(D(c.poc))+3);
+ x.fillStyle='#7da0ff';x.fillText('VAH '+D(c.vah).toFixed(1),bodyX+16,Y(D(c.vah))+3);x.fillText('VAL '+D(c.val).toFixed(1),bodyX+16,Y(D(c.val))+3);
+ x.fillStyle=col;x.fillText('H '+D(c.high).toFixed(1),bodyX+16,Y(D(c.high))+3);x.fillText('L '+D(c.low).toFixed(1),bodyX+16,Y(D(c.low))+3);
  x.fillStyle='#5b6678';x.fillText('vol '+Math.round(c.total_vol),x0,bot+18);
 });
+}catch(e){document.body.insertAdjacentHTML('beforeend','<pre style="color:#f85321;padding:16px">RENDER ERROR: '+e+'\\n'+(e.stack||'')+'</pre>');}
 </script></body></html>"""
 html = (HTML.replace("__SYM__", payload["symbol"]).replace("__CON__", payload["contract"])
-            .replace("__HTF__", str(HTF)).replace("__GEN__", payload["generated_utc"])
+            .replace("__HTF__", str(HTF)).replace("__BASIS__", str(basis))
+            .replace("__GEN__", payload["generated_utc"])
             .replace("__PAYLOAD__", json.dumps(payload)))
-with open("data/mgc_volprofile.html", "w") as f: f.write(html)
+with open("data/mgc_volprofile.html", "w", encoding="utf-8") as f: f.write(html)
 print(f"wrote {OUT} + data/mgc_volprofile.html: {len(candles)} HTF candles")
 for c_ in candles:
     print(f"  {c_['key']}  O{c_['open']} H{c_['high']} L{c_['low']} C{c_['close']}  "
