@@ -68,14 +68,18 @@ $TcpPort  = 9701        # Omega.exe consumer connects here.
 $MaxLvl   = 5
 
 # IBKR caps concurrent reqMktDepth at 3 streams on this account tier.
-# Until month-end booster pack(s) activate, restrict the live set to the
-# three highest-priority symbols. The bridge logs Error 309 for every
-# subscription beyond the third, leaving the corresponding CSV empty,
-# so adding extras here just wastes startup time.
-# Once additional depth slots are subscribed, append symbols below in
-# priority order: DJ30, GER40, UK100, EURUSD, GBPUSD, USOIL, ...
+#
+# 2026-06-04: RECORDING IS VITAL (operator, non-optional). Gold is the
+# focus + MGC (COMEX micro gold future) is a PAID Real-Time(NP,L2) sub,
+# so record both gold instruments: XAUUSD spot depth (CMDTY/SMART) and
+# MGC futures depth (COMEX). The previous NAS100/US500 streams produced
+# empty CSVs (101 bytes -- no CME index-depth subscription on this tier),
+# so they were dead weight; dropped to free depth slots for MGC.
+# 2 streams used, 1 free under the 3-stream cap. Append more later in
+# priority order ONLY once their depth sub is confirmed non-empty:
+#   GER40, UK100, DJ30, EURUSD, GBPUSD, USOIL, ...
 $Symbols = @(
-    'XAUUSD','NAS100','US500'
+    'XAUUSD','MGC'
 ) -join ','
 
 if (-not (Test-Path $Py))     { Write-Error "Python venv not at $Py";   exit 1 }
