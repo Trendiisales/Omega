@@ -67,6 +67,26 @@ int main(int argc, char* argv[])
         fflush(stdout);
     }
 
+    // S-2026-06-03: MgcFastDonchian30m — fast intraday gold breakout + prior-day
+    // volume-profile overhead-supply gate, fed by tools/mgc_live_bars.py
+    // (MGC 30m TRADES bars + HVN files). SHADOW (paper) until validated live.
+    // Backtest PF 1.54 / rDD 5.07 / both-halves+. Self-contained file-poll feed;
+    // no engine_init/globals wiring. Inert until the producer writes the files.
+    g_mgc_fastdon.enabled     = true;
+    g_mgc_fastdon.shadow_mode = true;
+    g_mgc_fastdon.lot         = 0.01;
+    g_mgc_fastdon.Nin = 20; g_mgc_fastdon.Nout = 10; g_mgc_fastdon.Kov = 1.5;
+    g_mgc_fastdon.use_hvn_skip = true;
+    std::thread([](){
+        std::this_thread::sleep_for(std::chrono::seconds(45));
+        while (g_running.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(30));
+            if (!g_running.load()) break;
+            poll_mgc_feed("data/mgc_30m_live.csv", "data/mgc_hvn.json",
+                          [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); });
+        }
+    }).detach();
+
     // ════════════════════════════════════════════════════════════════════════
     // WARMUP -- hydrate + load + seed.  No engine may ever require warmup.
     // ════════════════════════════════════════════════════════════════════════
