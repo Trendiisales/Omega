@@ -14,9 +14,11 @@
 // Coverage is added in archetype batches. This file is the one place new
 // engines get wired (a persist-source + a restorer); nothing in engine_init.
 //
-// MUST be included after globals.hpp (engine globals + g_open_positions).
+// MUST be included AFTER globals.hpp in the TU (engine globals + g_open_positions).
+// Do NOT #include "globals.hpp" here — it has no include guard (defined-once by
+// design); a second include redefines every global (C2086). main.cpp includes
+// globals.hpp (line ~98) before this header (~111), so g_* are already visible.
 // ============================================================================
-#include "globals.hpp"
 #include "OpenPositionRegistry.hpp"
 #include <string>
 #include <vector>
