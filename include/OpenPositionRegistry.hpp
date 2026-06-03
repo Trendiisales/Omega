@@ -40,8 +40,11 @@
 // ==============================================================================
 
 #include <cstdint>
+#include <cstdio>
+#include <fstream>
 #include <functional>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -103,9 +106,95 @@ public:
         return out;
     }
 
+    // ========================================================================
+    // S-2026-06-03: open-position PERSISTENCE (write/restore) so restarts and
+    // deploys resume in-flight trades instead of silently dropping RAM-only
+    // positions. The read path (snapshot_all) already enumerates every open
+    // position uniformly; this adds the symmetric write/restore half.
+    //
+    // A restorer is a predicate that ATTEMPTS to adopt one snapshot back into
+    // its owning engine and returns true if it claimed it. On restore the
+    // registry offers each saved position to every restorer until one adopts.
+    // Engines register a restorer the same way they register a source.
+    // ========================================================================
+    using RestoreFn = std::function<bool(const PositionSnapshot&)>;
+
+    void register_restorer(RestoreFn fn)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        restorers_.emplace_back(std::move(fn));
+    }
+
+    // One position per line: engine,symbol,side,size,entry,sl,tp,mfe,mae,entry_ts
+    // (flat delimited — internal state file, parsed by restore() below).
+    std::string serialize() const
+    {
+        const auto all = snapshot_all();
+        std::ostringstream os;
+        for (const auto& p : all) {
+            char buf[640];
+            std::snprintf(buf, sizeof(buf),
+                "%s,%s,%s,%.10g,%.10g,%.10g,%.10g,%.10g,%.10g,%lld\n",
+                p.engine.c_str(), p.symbol.c_str(), p.side.c_str(),
+                p.size, p.entry, p.sl, p.tp, p.mfe, p.mae,
+                static_cast<long long>(p.entry_ts));
+            os << buf;
+        }
+        return os.str();
+    }
+
+    // Atomic-ish save: write temp then rename so a mid-write crash cannot leave
+    // a half-written file. Returns number of positions written.
+    int save(const std::string& path) const
+    {
+        const std::string body = serialize();
+        const std::string tmp  = path + ".tmp";
+        {
+            std::ofstream f(tmp, std::ios::trunc);
+            if (!f) return -1;
+            f << body;
+            if (!f.good()) return -1;
+        }
+        std::remove(path.c_str());
+        std::rename(tmp.c_str(), path.c_str());
+        int n = 0; for (char ch : body) if (ch == '\n') ++n;
+        return n;
+    }
+
+    // Read the file and offer each position to the registered restorers. Returns
+    // {adopted, seen}. Caller logs. Safe to call when file is absent (returns 0,0).
+    std::pair<int,int> restore(const std::string& path)
+    {
+        std::ifstream f(path);
+        if (!f) return {0, 0};
+        std::vector<RestoreFn> rs;
+        { std::lock_guard<std::mutex> lk(mu_); rs = restorers_; }
+        int adopted = 0, seen = 0;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            std::stringstream ss(line); std::string t; std::vector<std::string> tok;
+            while (std::getline(ss, t, ',')) tok.push_back(t);
+            if (tok.size() < 10) continue;
+            PositionSnapshot p;
+            p.engine   = tok[0]; p.symbol = tok[1]; p.side = tok[2];
+            p.size     = std::atof(tok[3].c_str());
+            p.entry    = std::atof(tok[4].c_str());
+            p.sl       = std::atof(tok[5].c_str());
+            p.tp       = std::atof(tok[6].c_str());
+            p.mfe      = std::atof(tok[7].c_str());
+            p.mae      = std::atof(tok[8].c_str());
+            p.entry_ts = std::atoll(tok[9].c_str());
+            ++seen;
+            for (const auto& r : rs) { if (r && r(p)) { ++adopted; break; } }
+        }
+        return {adopted, seen};
+    }
+
 private:
     mutable std::mutex                              mu_;
     std::vector<std::pair<std::string, SourceFn>>   sources_;
+    std::vector<RestoreFn>                          restorers_;
 };
 
 } // namespace omega

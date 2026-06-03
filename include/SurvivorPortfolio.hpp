@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: PositionSnapshot for adopt()
 
 namespace omega::survivor {
 
@@ -237,6 +238,28 @@ public:
     // enforce a per-(symbol,side) concurrency cap (dedup correlated stacking).
     const char* sym_cstr() const { return cfg.symbol; }
     int open_side()        const { return st.pos_active ? st.pos_side : 0; }
+
+    // S-2026-06-03: adopt a persisted position on boot (resume managing it; do
+    // NOT re-enter). Restores side/entry/sl/tp/entry_ts. The hold-clock resets
+    // to now (pos_entry_bar_idx = current bar) so max_hold_bars counts from the
+    // restore point — a deploy can't prematurely time a trade out. mfe resets
+    // to 0 (record-only field, not used for management here).
+    void adopt(const omega::PositionSnapshot& ps) {
+        st.pos_active        = true;
+        st.pos_side          = (ps.side == "LONG") ? 1 : -1;
+        st.pos_entry         = ps.entry;
+        st.pos_sl            = ps.sl;
+        st.pos_tp            = ps.tp;
+        st.pos_mfe           = 0.0;
+        st.pos_bars_held     = 0;
+        st.pos_entry_bar_idx = st.bar_idx;
+        st.pos_entry_ts      = ps.entry_ts;
+        st.last_entry_bar_idx = st.bar_idx;
+        std::printf("[SURV-ADOPT] %s %s entry=%.5f sl=%.5f tp=%.5f (resumed from persist)\n",
+                    cfg.tag, st.pos_side > 0 ? "LONG" : "SHORT",
+                    st.pos_entry, st.pos_sl, st.pos_tp);
+        std::fflush(stdout);
+    }
 
     // Per-tick: aggregate to next bar; manage open position; on bar close,
     // evaluate signal.
@@ -499,6 +522,19 @@ public:
     // (would help in chop/crash). See memory: omega-survivor-cap-deadend.
     bool dedup_enabled = false;
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
+
+    // S-2026-06-03: adopt a persisted position into the matching cell (by tag).
+    // Returns true if a cell claimed it. Wired to g_open_positions restorer.
+    bool adopt(const omega::PositionSnapshot& ps) {
+        for (auto& c : cells) {
+            if (ps.engine == std::string(c.cfg.tag)) {
+                if (c.st.pos_active) return true;   // already holding — don't double
+                c.adopt(ps);
+                return true;
+            }
+        }
+        return false;
+    }
 
     void init_default_cells() {
         // Per-symbol unit costs (price-unit + USD-per-pt-per-lot)

@@ -53,6 +53,21 @@ int main(int argc, char* argv[])
     // are in engine_init.hpp. main() is responsible for process lifecycle only.
     init_engines(cfg_path);
 
+    // S-2026-06-03: restore persisted open positions — resume in-flight trades
+    // across restart/deploy instead of silently dropping them. Engines were
+    // warm-seeded inside init_engines() above, so cells/sources are ready to
+    // adopt. Absent file = clean boot (returns {0,0}). Only engines with a
+    // registered restorer participate (SurvivorPortfolio wired; others tiered).
+    // Restorer registered here (not engine_init) so the persistence feature is
+    // self-contained in this commit.
+    {
+        g_open_positions.register_restorer(
+            [](const omega::PositionSnapshot& ps) -> bool { return g_survivor.adopt(ps); });
+        const auto rr = g_open_positions.restore(state_root_dir() + "/open_positions.dat");
+        printf("[POS-RESTORE] %d/%d persisted open positions resumed\n", rr.first, rr.second);
+        fflush(stdout);
+    }
+
     // ════════════════════════════════════════════════════════════════════════
     // WARMUP -- hydrate + load + seed.  No engine may ever require warmup.
     // ════════════════════════════════════════════════════════════════════════
@@ -774,7 +789,11 @@ int main(int argc, char* argv[])
                 g_amr_us500.save_state (sr + "/amr_us500.dat");
                 g_amr_nas100.save_state(sr + "/amr_nas100.dat");
                 g_amr_ger40.save_state (sr + "/amr_ger40.dat");
-                printf("[BAR-SAVE] Periodic save complete (every 10min)\n");
+                // S-2026-06-03: persist open positions so a restart/deploy
+                // resumes in-flight trades (worst-case loss = positions opened
+                // in the <600s before a HARD crash; graceful stop saves too).
+                const int n_pos = g_open_positions.save(sr + "/open_positions.dat");
+                printf("[BAR-SAVE] Periodic save complete (every 10min); %d open positions persisted\n", n_pos);
                 fflush(stdout);
             }
         }
@@ -882,6 +901,14 @@ int main(int argc, char* argv[])
     g_trend_pb_ger40.save_state(state_root_dir() + "/trend_pb_ger40.dat");
     g_trend_pb_nq.save_state(state_root_dir()    + "/trend_pb_nq.dat");
     g_trend_pb_sp.save_state(state_root_dir()    + "/trend_pb_sp.dat");
+    // S-2026-06-03: final open-position snapshot on graceful shutdown (SIGTERM /
+    // console-close / service stop all route here via g_running=false ->
+    // quote_loop exit). Restart adopts these back.
+    {
+        const int n_pos = g_open_positions.save(state_root_dir() + "/open_positions.dat");
+        printf("[SHUTDOWN] %d open positions persisted -- will resume on restart\n", n_pos);
+        fflush(stdout);
+    }
     g_adaptive_risk.print_summary();
     if (g_tee_buf)   { g_tee_buf->flush_and_close(); std::cout.rdbuf(g_orig_cout); delete g_tee_buf; g_tee_buf = nullptr; }
     WSACleanup();
