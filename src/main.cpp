@@ -109,6 +109,7 @@ static constexpr const char* OMEGA_COMMIT  = OMEGA_GIT_DATE;
 #include "engine_dispatch.hpp"
 #include "trade_loop.hpp"
 #include "engine_init.hpp"
+#include "PositionPersistence.hpp"   // S-2026-06-03: open-position persist/resume (self-contained; after globals)
 #include "omega_main.hpp"
 
 // ── Step 2 Omega Terminal: OmegaApiServer auto-start ────────────────────────

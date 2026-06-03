@@ -103,6 +103,36 @@ int main() {
     auto rr3 = regB.restore("/tmp/omega_pos_persist_test_NOEXIST.dat");
     check(rr3.first == 0 && rr3.second == 0, "absent persist file = clean {0,0}");
 
+    // ---- full-state PERSIST-SOURCE path (LivePos archetype) ----
+    // Proves register_persist_source carries sl/tp through save/restore — the
+    // capability the GUI snapshot sources lacked (they omit sl/tp). Mirrors the
+    // wire_livepos() shape in PositionPersistence.hpp on a local struct.
+    struct LivePosLike { bool active=false, is_long=false; double entry=0,sl=0,tp=0,size=0; long long entry_ts=0; } lpA, lpB;
+    lpA.active=true; lpA.is_long=false; lpA.entry=4484.51; lpA.sl=4562.38; lpA.tp=4328.77; lpA.size=0.02; lpA.entry_ts=1780009999;
+
+    omega::OpenPositionRegistry regP;
+    regP.register_persist_source([&lpA]() {
+        std::vector<omega::PositionSnapshot> out;
+        if (lpA.active) { omega::PositionSnapshot ps;
+            ps.engine="LivePosTest"; ps.symbol="XAUUSD"; ps.side=lpA.is_long?"LONG":"SHORT";
+            ps.size=lpA.size; ps.entry=lpA.entry; ps.sl=lpA.sl; ps.tp=lpA.tp; ps.entry_ts=lpA.entry_ts;
+            out.push_back(ps); }
+        return out;
+    });
+    regP.register_restorer([&lpB](const omega::PositionSnapshot& ps) -> bool {
+        if (ps.engine != "LivePosTest") return false;
+        lpB.active=true; lpB.is_long=(ps.side=="LONG"); lpB.entry=ps.entry; lpB.sl=ps.sl;
+        lpB.tp=ps.tp; lpB.size=ps.size; lpB.entry_ts=ps.entry_ts; return true;
+    });
+    const std::string ppath = "/tmp/omega_pos_persist_livepos.dat";
+    int sp = regP.save(ppath);
+    check(sp == 1, "persist-source full-state serialized 1 position");
+    auto rp = regP.restore(ppath);
+    check(rp.first == 1, "persist-source position restored");
+    check(lpB.active && !lpB.is_long && lpB.entry==4484.51 && lpB.sl==4562.38 &&
+          lpB.tp==4328.77 && lpB.size==0.02 && lpB.entry_ts==1780009999,
+          "LivePos SHORT restored with sl/tp INTACT (GUI path would lose these)");
+
     std::printf("\n%s (%d failures)\n", fails == 0 ? "ALL PASS" : "FAILURES", fails);
     return fails == 0 ? 0 : 1;
 }

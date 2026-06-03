@@ -125,11 +125,38 @@ public:
         restorers_.emplace_back(std::move(fn));
     }
 
+    // S-2026-06-03: persist-sources carry FULL position state (incl sl/tp), read
+    // directly from engine internals — unlike the GUI snapshot sources, many of
+    // which omit sl/tp. serialize()/save() prefer these when any are registered.
+    // Lets the persistence module own complete state without editing the GUI
+    // source lambdas (which live in engine_init.hpp alongside other WIP).
+    void register_persist_source(SourceFn fn)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        persist_sources_.emplace_back(std::move(fn));
+    }
+
+    std::vector<PositionSnapshot> persist_snapshot_all() const
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (persist_sources_.empty()) {  // fall back to GUI sources (lock released first)
+            std::vector<std::pair<std::string, SourceFn>> srcs;
+            { srcs = sources_; }
+            std::vector<PositionSnapshot> out;
+            for (const auto& kv : srcs) if (kv.second) for (auto& ps : kv.second()) out.push_back(ps);
+            return out;
+        }
+        std::vector<PositionSnapshot> out;
+        for (const auto& fn : persist_sources_)
+            if (fn) for (const auto& ps : fn()) out.push_back(ps);
+        return out;
+    }
+
     // One position per line: engine,symbol,side,size,entry,sl,tp,mfe,mae,entry_ts
     // (flat delimited — internal state file, parsed by restore() below).
     std::string serialize() const
     {
-        const auto all = snapshot_all();
+        const auto all = persist_snapshot_all();
         std::ostringstream os;
         for (const auto& p : all) {
             char buf[640];
@@ -195,6 +222,7 @@ private:
     mutable std::mutex                              mu_;
     std::vector<std::pair<std::string, SourceFn>>   sources_;
     std::vector<RestoreFn>                          restorers_;
+    std::vector<SourceFn>                           persist_sources_;
 };
 
 } // namespace omega

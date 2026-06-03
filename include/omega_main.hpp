@@ -61,8 +61,7 @@ int main(int argc, char* argv[])
     // Restorer registered here (not engine_init) so the persistence feature is
     // self-contained in this commit.
     {
-        g_open_positions.register_restorer(
-            [](const omega::PositionSnapshot& ps) -> bool { return g_survivor.adopt(ps); });
+        omega::persist::register_position_persistence();   // survivor + LivePos archetype
         const auto rr = g_open_positions.restore(state_root_dir() + "/open_positions.dat");
         printf("[POS-RESTORE] %d/%d persisted open positions resumed\n", rr.first, rr.second);
         fflush(stdout);
