@@ -86,7 +86,12 @@ if (-not (Test-Path $Py))     { Write-Error "Python venv not at $Py";   exit 1 }
 if (-not (Test-Path $Script)) { Write-Error "bridge not at $Script";    exit 1 }
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 
-$User = "$env:USERDOMAIN\$env:USERNAME"
+# Use COMPUTERNAME, not USERDOMAIN: this is a local WORKGROUP account, and
+# over a non-interactive (ssh) session USERDOMAIN resolves to "WORKGROUP"
+# which fails Register-ScheduledTask with "No mapping between account names
+# and security IDs". COMPUTERNAME ("fxut8777965") is the correct local
+# domain and resolves identically in interactive and ssh sessions.
+$User = "$env:COMPUTERNAME\$env:USERNAME"
 Write-Host "Registering '$TaskName' as $User"
 Write-Host "Python  : $Py"
 Write-Host "ClientId: $ClientId"
