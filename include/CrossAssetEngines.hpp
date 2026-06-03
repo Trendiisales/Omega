@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <limits>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"  // omega::PositionSnapshot (persist_save/restore)
 
 namespace omega {
 namespace cross {
@@ -1844,6 +1845,25 @@ public:
         fflush(stdout);
     }
 
+    // ── S-2026-06-03: open-position persistence (resume in-flight trade across
+    //   restart/deploy). pos_ is private; these two public methods let the
+    //   PositionPersistence wiring save/restore full state without exposing it.
+    bool persist_save(const char* engine, const char* sym,
+                      omega::PositionSnapshot& out) const {
+        if (!pos_.active) return false;
+        out.engine = engine; out.symbol = sym;
+        out.side = pos_.is_long ? "LONG" : "SHORT";
+        out.size = pos_.size; out.entry = pos_.entry; out.sl = pos_.sl; out.tp = pos_.tp;
+        out.entry_ts = pos_.entry_ts;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.is_long = (ps.side == "LONG");
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.size = ps.size;
+        pos_.entry_ts = ps.entry_ts;
+        return true;
+    }
+
 private:
     CrossPosition pos_;
     double  prev_mid_           = 0.0;
@@ -2727,6 +2747,23 @@ public:
         ema50_      = e50;
         atr_        = (atr > 0.0) ? atr : atr_;
         tick_count_ = EMA_WARMUP_TICKS;  // mark as warmed -- skip blind zone
+    }
+
+    // ── S-2026-06-03: open-position persistence (see VWAPReversionEngine above).
+    bool persist_save(const char* engine, const char* sym,
+                      omega::PositionSnapshot& out) const {
+        if (!pos_.active) return false;
+        out.engine = engine; out.symbol = sym;
+        out.side = pos_.is_long ? "LONG" : "SHORT";
+        out.size = pos_.size; out.entry = pos_.entry; out.sl = pos_.sl; out.tp = pos_.tp;
+        out.entry_ts = pos_.entry_ts;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.is_long = (ps.side == "LONG");
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.size = ps.size;
+        pos_.entry_ts = ps.entry_ts;
+        return true;
     }
 
 private:

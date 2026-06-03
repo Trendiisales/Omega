@@ -62,6 +62,26 @@ inline void wire_livepos(E& eng, const char* tag, const char* sym) {
     });
 }
 
+// ---- CrossPosition / IdxOpenPosition archetype -------------------------
+// 14 engines hold a PRIVATE position member (VWAPReversion/TrendPullback use
+// CrossPosition pos_; IndexFlow/IndexMacroCrash use IdxOpenPosition pos_ or
+// scattered base_*_ fields). Because the member is private, each owning class
+// exposes public persist_save()/persist_restore() (added S-2026-06-03). This
+// template wires any engine that exposes that pair — save emits full state,
+// restore routes by tag.
+template <class E>
+inline void wire_cross(E& eng, const char* tag, const char* sym) {
+    g_open_positions.register_persist_source([&eng, tag, sym]() {
+        std::vector<omega::PositionSnapshot> out; omega::PositionSnapshot ps;
+        if (eng.persist_save(tag, sym, ps)) out.push_back(ps);
+        return out;
+    });
+    g_open_positions.register_restorer([&eng, tag](const omega::PositionSnapshot& ps) -> bool {
+        if (ps.engine != tag) return false;
+        return eng.persist_restore(ps);
+    });
+}
+
 // Register every engine's persist-source + restorer. Call once at boot, BEFORE
 // g_open_positions.restore(). Idempotent engines (adopt won't double an
 // already-open slot) keep restore safe to re-run.
@@ -96,10 +116,27 @@ inline void register_position_persistence() {
     wire_livepos(g_audusd_sydney_open,  "AudusdSydneyOpen", "AUDUSD");
     wire_livepos(g_nzdusd_asian_open,   "NzdusdAsianOpen",  "NZDUSD");
 
-    // TODO (next batches): CrossPosition engines (VWAP/TrendPB/IndexFlow/
-    // IndexMacroCrash — private pos_, add class adopt), multi-cell XauTrendFollow
-    // + Ustec arrays (fill-free-cell by tag), OCO straddles, C1Retuned cells,
-    // gold single-pos publics (Fvg/PDHL/RSIRev/MinimalH4/ThreeBar/EMACross/...).
+    // ---- CrossPosition / IdxOpenPosition archetype (14) ----
+    // Globals + symbols + tag strings mirror the GUI register_source() labels in
+    // engine_init.hpp exactly, so save/restore keys match the live position keys.
+    wire_cross(g_vwap_rev_sp,      "VWAPReversionSP",     "US500.F");
+    wire_cross(g_vwap_rev_nq,      "VWAPReversionNQ",     "USTEC.F");
+    wire_cross(g_vwap_rev_ger40,   "VWAPReversionGER40",  "GER40");
+    wire_cross(g_vwap_rev_eurusd,  "VWAPReversionEURUSD", "EURUSD");
+    wire_cross(g_trend_pb_gold,    "TrendPullbackGold",   "XAUUSD");
+    wire_cross(g_trend_pb_nq,      "TrendPullbackNQ",     "USTEC.F");
+    wire_cross(g_iflow_sp,         "IndexFlowSP",         "US500.F");
+    wire_cross(g_iflow_nq,         "IndexFlowNQ",         "USTEC.F");
+    wire_cross(g_iflow_nas,        "IndexFlowNAS",        "NAS100");
+    wire_cross(g_iflow_us30,       "IndexFlowUS30",       "DJ30.F");
+    wire_cross(g_imacro_sp,        "IndexMacroCrashSP",   "US500.F");
+    wire_cross(g_imacro_nq,        "IndexMacroCrashNQ",   "USTEC.F");
+    wire_cross(g_imacro_nas,       "IndexMacroCrashNAS",  "NAS100");
+    wire_cross(g_imacro_us30,      "IndexMacroCrashUS30", "DJ30.F");
+
+    // TODO (next batches): multi-cell XauTrendFollow + Ustec arrays (fill-free-
+    // cell by tag), OCO straddles, C1Retuned cells, gold single-pos publics
+    // (Fvg/PDHL/RSIRev/MinimalH4/ThreeBar/EMACross/...).
 }
 
 } // namespace omega::persist

@@ -84,6 +84,7 @@
 #include <cstdio>
 #include <chrono>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"  // omega::PositionSnapshot (persist_save/restore)
 #include "OHLCBarEngine.hpp"
 #include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see pos_.open(sig) entry below
 #include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
@@ -872,6 +873,26 @@ public:
         return sig;
     }
 
+    // ── S-2026-06-03: open-position persistence (resume in-flight trade across
+    //   restart/deploy). pos_ (IdxOpenPosition) is private; these two public
+    //   methods save/restore full state for the PositionPersistence wiring.
+    //   IdxOpenPosition shares the same field names as CrossPosition for these.
+    bool persist_save(const char* engine, const char* sym,
+                      omega::PositionSnapshot& out) const {
+        if (!pos_.active) return false;
+        out.engine = engine; out.symbol = sym;
+        out.side = pos_.is_long ? "LONG" : "SHORT";
+        out.size = pos_.size; out.entry = pos_.entry; out.sl = pos_.sl; out.tp = pos_.tp;
+        out.entry_ts = pos_.entry_ts;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.is_long = (ps.side == "LONG");
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.size = ps.size;
+        pos_.entry_ts = ps.entry_ts;
+        return true;
+    }
+
 private:
     static constexpr int BUF_SZ = 128;
 
@@ -1096,6 +1117,42 @@ public:
                symbol_, is_long?"LONG":"SHORT",
                base_entry_, bracket_target_, base_sl_, base_size_);
         fflush(stdout);
+    }
+
+    // ── S-2026-06-03: open-position persistence. This engine has NO single
+    //   pos_ struct — state is in scattered base_*_ fields plus a bracket-floor
+    //   leg + velocity trail. We save the core LONG/SHORT/entry/sl/size/entry_ts
+    //   and (best-effort) carry bracket_target_ via PositionSnapshot::tp so the
+    //   30% floor target survives a restart. On restore we re-derive the
+    //   bracket/velocity split (same 30/70 as the entry path); base_atr_ and the
+    //   be_locked_/bracket_fired_ trail-stage flags are NOT round-tripped (not in
+    //   PositionSnapshot) — restore conservatively resumes pre-bracket/pre-BE so
+    //   the next tick re-arms the trail rather than skipping protection.
+    bool persist_save(const char* engine, const char* sym,
+                      omega::PositionSnapshot& out) const {
+        if (!base_active_) return false;
+        out.engine = engine; out.symbol = sym;
+        out.side = base_is_long_ ? "LONG" : "SHORT";
+        out.size = base_size_; out.entry = base_entry_; out.sl = base_sl_;
+        out.tp = bracket_target_;
+        out.entry_ts = base_entry_ts_;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        base_active_   = true;
+        base_is_long_  = (ps.side == "LONG");
+        base_entry_    = ps.entry;
+        base_sl_       = ps.sl;
+        base_size_     = ps.size;
+        base_entry_ts_ = ps.entry_ts;
+        base_mfe_      = 0.0;
+        base_atr_      = 0.0;   // re-learned from live ATR on next tick
+        be_locked_     = false;
+        bracket_fired_ = false;
+        bracket_target_ = ps.tp;
+        bracket_size_  = base_size_ * 0.30;
+        velocity_size_ = base_size_ * 0.70;
+        return true;
     }
 
 private:
