@@ -233,10 +233,16 @@ public:
         return fed;
     }
 
+    // S-2026-06-03: expose open-position symbol/side so the portfolio can
+    // enforce a per-(symbol,side) concurrency cap (dedup correlated stacking).
+    const char* sym_cstr() const { return cfg.symbol; }
+    int open_side()        const { return st.pos_active ? st.pos_side : 0; }
+
     // Per-tick: aggregate to next bar; manage open position; on bar close,
     // evaluate signal.
     void on_tick(const std::string& sym, double bid, double ask, int64_t now_ms,
-                 const SpxOverlay& spx, CloseCb cb) noexcept {
+                 const SpxOverlay& spx, CloseCb cb,
+                 const std::function<bool(const char*, int)>& side_taken = {}) noexcept {
         if (!st.enabled) return;
         if (sym != cfg.symbol) return;
         const double mid = 0.5 * (bid + ask);
@@ -250,7 +256,7 @@ public:
                 // close previous bar
                 push_bar_internal(st.cur);
                 // bar-close evaluation gate
-                if (st.enabled) evaluate_signal(spx, mid, cb);
+                if (st.enabled) evaluate_signal(spx, mid, cb, side_taken);
             }
             st.cur_bar_start = bar_start;
             st.cur = { bar_start, mid, mid, mid, mid };
@@ -393,13 +399,23 @@ private:
         return 0;
     }
 
-    void evaluate_signal(const SpxOverlay& spx, double mid, CloseCb cb) {
+    void evaluate_signal(const SpxOverlay& spx, double mid, CloseCb cb,
+                         const std::function<bool(const char*, int)>& side_taken = {}) {
         if (st.pos_active) return;
         if (!st.atr_ready) return;
         if (st.atr_val <= 0) return;
         if (st.bar_idx - st.last_entry_bar_idx <= cfg.cooldown_bars) return;
         int dir = compute_signal_dir(spx);
         if (dir == 0) return;
+        // S-2026-06-03 dedup: block opening if a sibling survivor cell already
+        // holds this symbol+side (correlated double-stack, e.g. DonchN20+N100,
+        // USTEC RSI+ZMR). Exits are unaffected — this only gates new entries.
+        if (side_taken && side_taken(cfg.symbol, dir)) {
+            printf("[SURV-DEDUP] %s %s entry blocked — sibling already open same symbol/side\n",
+                   cfg.tag, dir > 0 ? "LONG" : "SHORT");
+            fflush(stdout);
+            return;
+        }
         // Open
         const double sl_dist = cfg.sl_mult * st.atr_val;
         const double tp_dist = cfg.tp_mult * st.atr_val;
@@ -559,7 +575,18 @@ public:
     void on_tick(const std::string& sym, double bid, double ask, int64_t now_ms,
                  CloseCb cb) noexcept {
         if (!enabled) return;
-        for (auto& c : cells) c.on_tick(sym, bid, ask, now_ms, spx, cb);
+        // S-2026-06-03: per-(symbol,side) concurrency cap. A cell may open only
+        // if no sibling already holds the same symbol+side — kills correlated
+        // double-stacking (XAU DonchN20+N100, USTEC RSI+ZMR). Scans live cell
+        // state so within-tick opens are seen by later cells in the loop. Exits
+        // always run (the cap gates entry only, inside evaluate_signal).
+        auto side_taken = [this](const char* csym, int side) -> bool {
+            for (const auto& c : cells)
+                if (c.open_side() == side && std::strcmp(c.sym_cstr(), csym) == 0)
+                    return true;
+            return false;
+        };
+        for (auto& c : cells) c.on_tick(sym, bid, ask, now_ms, spx, cb, side_taken);
         // Also feed SPX overlay if SPX tick passes through
         if (sym == "US500.F" || sym == "SPXUSD" || sym == "US500") {
             // Approximate SPX from US500 mid: aggregate into H4 bar.
