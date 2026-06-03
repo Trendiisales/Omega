@@ -610,6 +610,18 @@ static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
 #include "Ger40KeltnerH1Engine.hpp"
 static omega::Ger40KeltnerH1Engine g_ger40_kelt;
 
+// S-2026-06-03: GoldVolBreakoutM30Engine -- XAU M30 long-only vol-breakout
+// runner. From the XauVolBreakout audit + full lever sweep (/tmp/xauvb,
+// XauVB_v3.cpp). config "beoff": M30 entry, H1 EMA200+slope trend, strict
+// impulse breakout (range>=2.0 ATR), NO take-profit, ATR runner trail 3.0,
+// BREAKEVEN OFF, London/NY session. 2yr BT: 43 trades PF 2.41, both halves +
+// (2.51/2.36), cost-insensitive 0.10-0.60pt. CAVEAT: fat-tail dependent
+// (top-3 ~83% of net), thin (43 trades), bull-only sample -> SHADOW ONLY.
+// Fed from tick_gold.hpp: on_h1_close (trend), on_m30_bar (entry/trail),
+// on_tick (SL). Warm-seeded from H1 + M30 CSVs.
+#include "GoldVolBreakoutM30Engine.hpp"
+static omega::GoldVolBreakoutM30Engine g_gold_volbrk_m30;
+
 // FxTurtleH4Engine -- 20-bar Donchian breakout on FX majors, long-only.
 //   Built 2026-05-23 as the post-mortem-driven replacement for the S99-
 //   killed FX session-open compression cohort. Same long-only Donchian

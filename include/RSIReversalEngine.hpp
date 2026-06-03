@@ -45,6 +45,7 @@
 #include <string>
 #include <deque>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 #include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see on_tick() entry block
 
 namespace omega {
@@ -115,6 +116,22 @@ public:
     } pos;
 
     bool has_open_position() const noexcept { return pos.active; }
+
+    // S-2026-06-03: open-position persistence across restart. No TP field on this
+    // engine (ATR stop + RSI-turn exit only) -> tp=0. pos.entry_ts is epoch SECONDS.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos.is_long ? "LONG" : "SHORT";
+        o.size = pos.size; o.entry = pos.entry; o.sl = pos.sl; o.tp = 0.0;
+        o.entry_ts = pos.entry_ts;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos.active = true; pos.is_long = (ps.side == "LONG");
+        pos.entry = ps.entry; pos.sl = ps.sl; pos.size = ps.size;
+        pos.entry_ts = ps.entry_ts;
+        return true;
+    }
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 

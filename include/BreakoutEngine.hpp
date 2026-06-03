@@ -16,6 +16,7 @@
 #include <cstring>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see BREAKOUT_WATCH fire site
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
 
@@ -353,6 +354,24 @@ public:
         if (mid_price <= 0.0 || !m_prices.empty()) return;
         for (int i = 0; i < BASELINE_LOOKBACK; ++i)
             m_prices.push_back(mid_price);
+    }
+
+    // ?? S-2026-06-03: open-position persistence ?????????????????????????????
+    // Resume an in-flight breakout trade across restart/deploy. pos is public
+    // OpenPos; entry_ts is unix seconds. Base position only (pyramid add-ons
+    // re-arm live from the base trade -- not persisted).
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos.is_long ? "LONG" : "SHORT";
+        o.size = pos.size; o.entry = pos.entry; o.sl = pos.sl; o.tp = pos.tp;
+        o.entry_ts = pos.entry_ts;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos.active = true; pos.is_long = (ps.side == "LONG");
+        pos.entry = ps.entry; pos.sl = ps.sl; pos.tp = ps.tp; pos.size = ps.size;
+        pos.entry_ts = ps.entry_ts;
+        return true;
     }
 
 private:

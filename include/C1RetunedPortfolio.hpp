@@ -79,6 +79,7 @@
 #include <vector>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"  // see Donchian / Bollinger cell entry guards
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
 
 namespace omega {
 
@@ -667,6 +668,59 @@ struct C1RetunedPortfolio {
              + (bollinger_h2_.has_open_position() ? 1 : 0)
              + (bollinger_h4_.has_open_position() ? 1 : 0)
              + (bollinger_h6_.has_open_position() ? 1 : 0);
+    }
+
+    // =========================================================================
+    //  S-2026-06-03 open-position PERSISTENCE (save/restore).
+    //  Four separate cells; tagged "<base_engine>#<cell_id>" so restore routes
+    //  by cell_id. Long-only XAUUSD portfolio -> side="LONG". C1OpenPos has no
+    //  mfe/mae management state to reset beyond the record fields.
+    // =========================================================================
+    void persist_save_all(const char* base_engine, const char* sym,
+                          std::vector<omega::PositionSnapshot>& out) const {
+        auto emit = [&](const char* cell_id, const C1OpenPos& p) {
+            if (!p.active) return;
+            omega::PositionSnapshot ps;
+            ps.engine   = std::string(base_engine) + "#" + cell_id;
+            ps.symbol   = sym;
+            ps.side     = "LONG";
+            ps.size     = p.size;
+            ps.entry    = p.entry;
+            ps.sl       = p.sl;
+            ps.tp       = p.tp;
+            ps.entry_ts = p.entry_ts_ms / 1000;
+            out.push_back(ps);
+        };
+        emit(donchian_h1_.cell_id.c_str(),  donchian_h1_.pos());
+        emit(bollinger_h2_.cell_id.c_str(), bollinger_h2_.pos());
+        emit(bollinger_h4_.cell_id.c_str(), bollinger_h4_.pos());
+        emit(bollinger_h6_.cell_id.c_str(), bollinger_h6_.pos());
+    }
+
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        const auto hash = ps.engine.rfind('#');
+        if (hash == std::string::npos) return false;
+        const std::string tag = ps.engine.substr(hash + 1);
+        auto into = [&](const std::string& cell_id, C1OpenPos& p) -> bool {
+            if (tag != cell_id) return false;
+            if (p.active) return true;   // already holding -- don't double
+            p.active      = true;
+            p.entry       = ps.entry;
+            p.sl          = ps.sl;
+            p.tp          = ps.tp;
+            p.size        = ps.size;
+            p.atr_at_open = 0.0;
+            p.entry_ts_ms = ps.entry_ts * 1000;
+            p.bars_held   = 0;
+            p.mfe         = 0.0;
+            p.mae         = 0.0;
+            return true;
+        };
+        if (into(donchian_h1_.cell_id,  donchian_h1_.pos_))  return true;
+        if (into(bollinger_h2_.cell_id, bollinger_h2_.pos_)) return true;
+        if (into(bollinger_h4_.cell_id, bollinger_h4_.pos_)) return true;
+        if (into(bollinger_h6_.cell_id, bollinger_h6_.pos_)) return true;
+        return false;
     }
 
     // Wrapper around the runtime's on_close callback. Updates equity +

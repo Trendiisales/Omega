@@ -73,6 +73,7 @@
 #include <string>
 #include <vector>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
 
@@ -182,6 +183,21 @@ struct MinimalH4GER40Breakout {
     int     m_trade_id_         = 0;
 
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // S-2026-06-03: open-position persistence across restart.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos_.is_long ? "LONG" : "SHORT";
+        o.size = pos_.size; o.entry = pos_.entry; o.sl = pos_.sl; o.tp = pos_.tp;
+        o.entry_ts = pos_.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.is_long = (ps.side == "LONG");
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.size = ps.size;
+        pos_.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     // ── Tick handler -- builds H4 OHLC bars internally ──────────────────────
     // Called on every GER40 tick. Handles:

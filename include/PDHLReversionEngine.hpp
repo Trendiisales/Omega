@@ -31,6 +31,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 #include "OmegaCostGuard.hpp"
 
 namespace omega {
@@ -87,6 +88,21 @@ public:
     } pos;
 
     bool has_open_position() const noexcept { return pos.active; }
+
+    // S-2026-06-03: open-position persistence across restart.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos.is_long ? "LONG" : "SHORT";
+        o.size = pos.size; o.entry = pos.entry; o.sl = pos.sl; o.tp = pos.tp;
+        o.entry_ts = pos.entry_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos.active = true; pos.is_long = (ps.side == "LONG");
+        pos.entry = ps.entry; pos.sl = ps.sl; pos.tp = ps.tp; pos.size = ps.size;
+        pos.entry_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 

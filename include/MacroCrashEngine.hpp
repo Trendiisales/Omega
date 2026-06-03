@@ -55,6 +55,7 @@
 #include <mutex>   // RACE-FIX 2026-04-21: m_close_mtx serialises close paths (cTrader/FIX threads)
 #include <cstring> // FIX MCE-SL-KILL 2026-04-22: std::strcmp
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 #include <array>
 
 namespace omega {
@@ -189,6 +190,29 @@ public:
     int pyramid_add_count = 0;
 
     bool has_open_position() const { return pos.active; }
+
+    // S-2026-06-03: open-position persistence (resume in-flight trade across
+    // restart/deploy). BASE leg only -- pyramid add-ons re-arm live; the bracket
+    // and velocity-trail re-establish on the next ticks. entry_ms is ms. We carry
+    // full_size so the whole position resumes; tp = pending bracket TP (0 once the
+    // bracket leg has already filled).
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos.is_long ? "LONG" : "SHORT";
+        o.size = pos.full_size; o.entry = pos.entry; o.sl = pos.sl;
+        o.tp = pos.bracket_filled ? 0.0 : pos.bracket_tp;
+        o.entry_ts = pos.entry_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos = Position{};
+        pos.active = true; pos.is_long = (ps.side == "LONG");
+        pos.entry = ps.entry; pos.sl = ps.sl;
+        pos.full_size = ps.size; pos.size = ps.size;
+        pos.bracket_tp = ps.tp;
+        pos.entry_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     // Emergency close -- dollar_stop and session-end force exit.
     // Uses _close_all which fires on_trade_record (handle_closed_trade) and on_close.

@@ -82,6 +82,20 @@ inline void wire_cross(E& eng, const char* tag, const char* sym) {
     });
 }
 
+// Multi-cell engines: persist_save_all emits one snapshot per active cell tagged
+// "<base>#<cellkey>"; restorer routes by the base prefix to the owning engine.
+template <class E>
+inline void wire_multicell(E& eng, const char* base, const char* sym) {
+    g_open_positions.register_persist_source([&eng, base, sym]() {
+        std::vector<omega::PositionSnapshot> out; eng.persist_save_all(base, sym, out); return out;
+    });
+    g_open_positions.register_restorer([&eng, base](const omega::PositionSnapshot& ps) -> bool {
+        std::string e = ps.engine; auto h = e.find('#');
+        if (h == std::string::npos || e.substr(0, h) != base) return false;
+        return eng.persist_restore(ps);
+    });
+}
+
 // Register every engine's persist-source + restorer. Call once at boot, BEFORE
 // g_open_positions.restore(). Idempotent engines (adopt won't double an
 // already-open slot) keep restore safe to re-run.
@@ -146,8 +160,60 @@ inline void register_position_persistence() {
     wire_cross(g_idx_straddle_uk100_m240,"IdxStraddleUK100_M240", "UK100");
     wire_cross(g_ger40_kelt,             "Ger40KeltnerH1",        "GER40");
 
-    // TODO (remaining): multi-cell XauTrendFollow + Ustec arrays (fill-free-cell
-    // by tag), C1Retuned cells, gold single-pos publics (Fvg/PDHL/RSIRev/...).
+    // ---- batch 5: gold/index single-pos engines ----
+    wire_cross(g_xauusd_fvg,       "XauusdFvg",        "XAUUSD");
+    wire_cross(g_pdhl_rev,         "PDHLReversion",    "XAUUSD");
+    wire_cross(g_rsi_reversal,     "RSIReversal",      "XAUUSD");
+    wire_cross(g_minimal_h4_gold,  "MinimalH4Gold",    "XAUUSD");
+    wire_cross(g_minimal_h4_us30,  "MinimalH4US30",    "DJ30.F");
+    wire_cross(g_minimal_h4_ger40, "MinimalH4GER40",   "GER40");
+    wire_cross(g_xau_threebar_30m, "XauThreeBar30m",   "XAUUSD");
+    wire_cross(g_ema_cross,        "EMACrossGold",     "XAUUSD");
+    wire_cross(g_ger40_turtle_h4,  "Ger40TurtleH4",    "GER40");
+    wire_cross(g_gold_seasonal,    "GoldSeasonal",     "XAUUSD");
+    wire_cross(g_gold_oversold,    "GoldOversoldBounce","XAUUSD");
+    wire_cross(g_h1_swing_gold,    "H1SwingGold",      "XAUUSD");
+    wire_cross(g_h4_regime_gold,   "H4RegimeGold",     "XAUUSD");
+
+    // ---- batch 5: multi-cell ensembles (per-cell, tag = base#idx/cellid) ----
+    wire_multicell(g_xau_tf_1h,    "XauTrendFollow1h",  "XAUUSD");
+    wire_multicell(g_xau_tf_2h,    "XauTrendFollow2h",  "XAUUSD");
+    wire_multicell(g_xau_tf_4h,    "XauTrendFollow4h",  "XAUUSD");
+    wire_multicell(g_xau_tf_d1,    "XauTrendFollowD1",  "XAUUSD");
+    wire_multicell(g_ustec_tf_5m,  "UstecTrendFollow5m","USTEC.F");
+    wire_multicell(g_ustec_tf_htf, "UstecTrendFollowHtf","USTEC.F");
+    wire_multicell(g_c1_retuned,   "C1Retuned",         "XAUUSD");
+
+    // ---- batch 6: tail — Breakout FX, NBM, FX turtles/scalp, pyramided (base) ----
+    wire_cross(g_eng_eurusd,  "BreakoutEURUSD", "EURUSD");
+    wire_cross(g_eng_gbpusd,  "BreakoutGBPUSD", "GBPUSD");
+    wire_cross(g_eng_audusd,  "BreakoutAUDUSD", "AUDUSD");
+    wire_cross(g_eng_nzdusd,  "BreakoutNZDUSD", "NZDUSD");
+    wire_cross(g_eng_usdjpy,  "BreakoutUSDJPY", "USDJPY");
+    wire_cross(g_nbm_gold_london, "NoiseBandMomentumGoldLdn", "XAUUSD");
+    wire_cross(g_gold_scalp_pyramid, "GoldScalpPyramid", "XAUUSD");
+    wire_cross(g_gold_regime_daily,  "GoldRegimeDaily",  "XAUUSD");
+    wire_cross(g_macro_crash,        "MacroCrash",       "XAUUSD");
+    wire_cross(g_eurusd_turtle_h4, "FxTurtleH4_EURUSD", "EURUSD");
+    wire_cross(g_gbpusd_turtle_h4, "FxTurtleH4_GBPUSD", "GBPUSD");
+    wire_cross(g_audusd_turtle_h4, "FxTurtleH4_AUDUSD", "AUDUSD");
+    wire_cross(g_nzdusd_turtle_h4, "FxTurtleH4_NZDUSD", "NZDUSD");
+    wire_cross(g_usdjpy_turtle_h4, "FxTurtleH4_USDJPY", "USDJPY");
+    wire_cross(g_fx_scalp_eurusd, "FxScalpPyramid_EURUSD", "EURUSD");
+    wire_cross(g_fx_scalp_usdjpy, "FxScalpPyramid_USDJPY", "USDJPY");
+    wire_cross(g_fx_scalp_gbpusd, "FxScalpPyramid_GBPUSD", "GBPUSD");
+    wire_cross(g_fx_scalp_usdcad, "FxScalpPyramid_USDCAD", "USDCAD");
+    wire_cross(g_fx_scalp_audusd, "FxScalpPyramid_AUDUSD", "AUDUSD");
+    // ---- IndexSession (intraday cash-session long, 5 indices) ----
+    wire_cross(g_idxsess_sp,     "IndexSession_SP",     "US500.F");
+    wire_cross(g_idxsess_nas,    "IndexSession_NAS",    "NAS100");
+    wire_cross(g_idxsess_ger40,  "IndexSession_GER40",  "GER40");
+    wire_cross(g_idxsess_uk100,  "IndexSession_UK100",  "UK100");
+    wire_cross(g_idxsess_estx50, "IndexSession_ESTX50", "ESTX50");
+
+    // Coverage now: every position-holding engine on the dashboard persists/resumes.
+    // Mandate: any NEW engine MUST add persist_save/persist_restore + a wire here
+    // (like the warm-seed mandate). Partial persistence = silent position loss.
 }
 
 } // namespace omega::persist

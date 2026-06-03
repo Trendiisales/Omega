@@ -27,6 +27,7 @@
 #include <fstream>
 #include <string>
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "OpenPositionRegistry.hpp" // S-2026-06-03: omega::PositionSnapshot for persist
 #include "IndexRiskGate.hpp"      // omega::index_risk_off (optional gate)
 
 namespace omega {
@@ -49,6 +50,23 @@ struct GoldSeasonalEngine {
     double  pos_entry() const noexcept { return pos_.entry_px; }
     double  pos_lot()   const noexcept { return pos_.lot; }
     int64_t pos_entry_ts_ms() const noexcept { return pos_.entry_ts; }
+
+    // S-2026-06-03: open-position persistence across restart. Long-only,
+    // no SL/TP (weekday-flip exit only) -> sl=tp=0. pos_ is private but these
+    // members can touch it. pos_.entry_ts is epoch ms.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = "LONG";
+        o.size = pos_.lot; o.entry = pos_.entry_px; o.sl = 0.0; o.tp = 0.0;
+        o.entry_ts = pos_.entry_ts / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.entry_px = ps.entry; pos_.lot = ps.size;
+        pos_.entry_ts = ps.entry_ts * 1000;
+        return true;
+    }
+
     const std::string symbol = "XAUUSD";
 
     static int weekday(int64_t ts_ms) noexcept {

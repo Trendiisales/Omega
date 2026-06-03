@@ -65,6 +65,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp" // S-2026-06-03: omega::PositionSnapshot for persist
 #include "OmegaCostGuard.hpp"     // 2026-05-12 cost gate -- see H4RegimeEngine::on_bar entry
 #include "OHLCBarEngine.hpp"    // OHLCBar + get_bars() for seed_channel_from_bars()
 
@@ -236,6 +237,24 @@ struct H1SwingEngine {
     int     m_trade_id_         = 0;
 
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // S-2026-06-03: open-position persistence across restart. tp = TP1; size is
+    // the original full size (size_remaining re-armed to full on restore -- the
+    // partial-TP state is not persisted, so the remaining leg runs to TP1/SL).
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos_.is_long ? "LONG" : "SHORT";
+        o.size = pos_.size_full; o.entry = pos_.entry; o.sl = pos_.sl; o.tp = pos_.tp1;
+        o.entry_ts = pos_.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.is_long = (ps.side == "LONG");
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp1 = ps.tp;
+        pos_.size_full = ps.size; pos_.size_remaining = ps.size;
+        pos_.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     // ── Called every H1 bar close ────────────────────────────────────────────
     HTFSignal on_h1_bar(
@@ -609,6 +628,21 @@ struct H4RegimeEngine {
     int    m_trade_id_   = 0;
 
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // S-2026-06-03: open-position persistence across restart.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos_.is_long ? "LONG" : "SHORT";
+        o.size = pos_.size; o.entry = pos_.entry; o.sl = pos_.sl; o.tp = pos_.tp;
+        o.entry_ts = pos_.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.is_long = (ps.side == "LONG");
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.size = ps.size;
+        pos_.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     // seed_channel_from_bars: call on startup after load_indicators() to pre-fill
     // the Donchian channel from saved H4 bar history. Without this the channel

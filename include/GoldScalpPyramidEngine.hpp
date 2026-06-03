@@ -81,6 +81,7 @@
 #include "OmegaCostGuard.hpp"
 #include "OmegaTradeLedger.hpp"
 #include "OHLCBarEngine.hpp"  // S99e: for OHLCBar struct used by prime_from_history()
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
 
@@ -254,6 +255,29 @@ public:
     } m_pos;
 
     bool has_open_position() const noexcept { return m_pos.active; }
+
+    // S-2026-06-03: open-position persistence (resume in-flight trade across
+    // restart/deploy). BASE position only -- pyramid layers are NOT persisted
+    // (resumes the base trade and re-pyramids live; acceptable). m_pos
+    // {active,is_long,base_entry,hard_sl,hard_tp,entry_ts(ms),layers[]}.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!m_pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = m_pos.is_long ? "LONG" : "SHORT";
+        o.size = m_pos.layers[0].active ? m_pos.layers[0].size : m_pos.total_size();
+        o.entry = m_pos.base_entry; o.sl = m_pos.hard_sl; o.tp = m_pos.hard_tp;
+        o.entry_ts = m_pos.entry_ts / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        m_pos = LivePos{};
+        m_pos.active = true; m_pos.is_long = (ps.side == "LONG");
+        m_pos.base_entry = ps.entry; m_pos.hard_sl = ps.sl; m_pos.hard_tp = ps.tp;
+        m_pos.trail_sl = ps.sl; m_pos.mfe_price = ps.entry;
+        m_pos.entry_ts = ps.entry_ts * 1000;
+        m_pos.layers[0] = {true, ps.entry, ps.size};
+        m_pos.n_layers = 1; m_pos.next_pyramid_idx = 1;
+        return true;
+    }
 
     // ---- M5 bar ---------------------------------------------------------------
     struct M5Bar {

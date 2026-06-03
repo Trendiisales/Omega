@@ -25,6 +25,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 #include "SeedGuard.hpp"
 #include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
 
@@ -90,6 +91,21 @@ struct Ger40TurtleH4Engine {
 
     int m_trade_id_=0;
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // S-2026-06-03: open-position persistence across restart. Long-only engine.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = "LONG";
+        o.size = pos_.lot; o.entry = pos_.entry; o.sl = pos_.sl; o.tp = pos_.tp;
+        o.entry_ts = pos_.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true;
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.lot = ps.size;
+        pos_.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     Ger40TurtleH4Signal on_tick(double bid, double ask, int64_t now_ms,
                                   CloseCallback on_close) noexcept {

@@ -93,6 +93,7 @@
 #include <deque>
 #include <vector>
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
 
@@ -258,6 +259,22 @@ public:
     LastClosedExtras last_extras() const noexcept { return m_last_extras; }
 
     bool has_open_position() const noexcept { return m_pos.active; }
+
+    // S-2026-06-03: open-position persistence across restart. m_pos.entry_ts is
+    // already in epoch SECONDS (bar.start_ts = now_s), so no /1000 conversion.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!m_pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = m_pos.is_long ? "LONG" : "SHORT";
+        o.size = m_pos.size; o.entry = m_pos.entry; o.sl = m_pos.sl; o.tp = m_pos.tp;
+        o.entry_ts = m_pos.entry_ts;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        m_pos.active = true; m_pos.is_long = (ps.side == "LONG");
+        m_pos.entry = ps.entry; m_pos.sl = ps.sl; m_pos.tp = ps.tp; m_pos.size = ps.size;
+        m_pos.entry_ts = ps.entry_ts;
+        return true;
+    }
 
     // -- Live position layout (mirrors S59 LivePos minus BE) ----------------
     struct LivePos {

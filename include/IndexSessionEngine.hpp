@@ -57,6 +57,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: persist
 
 namespace omega {
 
@@ -74,6 +75,12 @@ public:
     // ── Risk geometry ────────────────────────────────────────────────────────
     int    ATR_PERIOD = 14;     // EWM of session range (high-low)
     double STOP_ATR   = 2.0;    // intraday stop = STOP_ATR * session-ATR below entry
+    // S-2026-06-03: hard intraday catastrophe cap. The ATR stop (2*session-ATR
+    // ~2-3% on indices) is wide enough that a normal down-session never hits it
+    // and the position bleeds to SESSION_CLOSE (e.g. GER40 -168 on 2026-06-02).
+    // This caps the per-trade loss independent of ATR. 0 = off.
+    // NEEDS A BACKTEST (index_session_test) before live-enable — it changes exits.
+    double MAX_LOSS_PCT = 1.0;  // exit if price falls > this % below entry intraday
     bool   SKIP_FRIDAY = true;  // Fri is negative across GER40/SPX/NAS
 
     // Dip-buy filter: the session edge is concentrated AFTER weakness (prior
@@ -102,6 +109,19 @@ public:
     // ── Position ─────────────────────────────────────────────────────────────
     struct Position { bool active=false; double entry_px=0, stop_px=0, size=0;
                       int64_t entry_ms=0; double mfe=0, mae=0; } pos;
+
+    // S-2026-06-03: persist/resume (long-only; ATR stop -> sl, no tp).
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos.active) return false;
+        o.engine=eng; o.symbol=sym; o.side="LONG"; o.size=pos.size; o.entry=pos.entry_px;
+        o.sl=pos.stop_px; o.tp=0.0; o.entry_ts=pos.entry_ms/1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos.active=true; pos.entry_px=ps.entry; pos.stop_px=ps.sl; pos.size=ps.size;
+        pos.entry_ms=ps.entry_ts*1000;
+        return true;
+    }
     bool has_open_position() const { return pos.active; }
     bool   atr_ready() const { return m_atr_ready; }   // diagnostic
     double atr_value() const { return m_atr; }         // diagnostic
@@ -176,6 +196,9 @@ public:
             if (fav > pos.mfe) pos.mfe = fav;
             if (fav < pos.mae) pos.mae = fav;
             if (bid <= pos.stop_px)      { _close(bid, now_ms, "STOP"); return; }
+            if (MAX_LOSS_PCT > 0.0 && bid <= pos.entry_px * (1.0 - MAX_LOSS_PCT / 100.0)) {
+                _close(bid, now_ms, "MAX_LOSS"); return;   // S-2026-06-03 catastrophe cap
+            }
             if (hour >= RTH_CLOSE_H || !in_session) { _close(bid, now_ms, "SESSION_CLOSE"); return; }
             return;   // hold through the session
         }

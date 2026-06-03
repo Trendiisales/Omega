@@ -846,6 +846,10 @@ static void on_tick_gold(
             // -- XauStraddleM30Engine 30m-close: roll box + re-arm OCO straddle --
             g_xau_straddle_m30.on_m30_bar(s_cur30.high, s_cur30.low, s_cur30.close,
                                           bid, ask, now_ms_g, bracket_on_close);
+            // -- GoldVolBreakoutM30Engine 30m-close: entry/trail (S-2026-06-03) --
+            // Long-only vol-breakout runner; trend gate set on H1 close above.
+            g_gold_volbrk_m30.on_m30_bar(s_cur30.high, s_cur30.low, s_cur30.close,
+                                         bid, ask, now_ms_g, bracket_on_close);
             s_cur30 = {b30/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar30_ms = b30;
         }
         else { if(xau_mid>s_cur30.high)s_cur30.high=xau_mid; if(xau_mid<s_cur30.low)s_cur30.low=xau_mid; s_cur30.close=xau_mid; }
@@ -854,6 +858,9 @@ static void on_tick_gold(
         if (s_bar_h1_ms == 0) { s_cur_h1 = {bh1/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h1_ms = bh1; }
         else if (bh1 != s_bar_h1_ms) {
             g_bars_gold.h1.add_bar(s_cur_h1);
+            // GoldVolBreakoutM30Engine: H1 EMA200+slope trend gate (S-2026-06-03).
+            // Must run on every H1 close before the M30 entry path uses trend_.
+            g_gold_volbrk_m30.on_h1_close(s_cur_h1.close);
             // H1 bar close dispatch: management always runs; entry only when slot is clear
             if (g_h1_swing_gold.has_open_position()) {
                 g_h1_swing_gold.on_h1_bar(
@@ -2245,6 +2252,7 @@ static void on_tick_gold(
     g_xau_straddle_m30.obi_dir = g_macro_ctx.gold_obi_dir;             // OBI overlay (shadow measurement)
     g_xau_straddle_m15.obi_dir = g_macro_ctx.gold_obi_dir;
     g_xau_straddle_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);  // S-2026-06-02 OCO straddle fill+manage
+    g_gold_volbrk_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);   // S-2026-06-03 vol-breakout SL/trail per-tick
     g_xau_straddle_m15.on_tick(bid, ask, now_ms_g, bracket_on_close);  // M15 sibling
     g_xau_3bar_mom_h4.on_tick  (bid, ask, now_ms_g, bracket_on_close);
     // GoldUltimateEngine tick dispatch -- standalone v12 OOS-validated trend

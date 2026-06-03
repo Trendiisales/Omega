@@ -2063,6 +2063,23 @@ static void init_engines(const std::string& cfg_path)
                g_ger40_kelt.kBullLB, g_ger40_kelt.kEmaP, g_ger40_kelt.kChanK, g_ger40_kelt.kSlAtr);
         fflush(stdout);
 
+        // S-2026-06-03: GoldVolBreakoutM30Engine -- XAU M30 long-only vol-breakout
+        // runner ("beoff" config from the XauVolBreakout audit + lever sweep).
+        // HARD shadow: novel edge, fat-tail dependent, bull-only sample. Forward-
+        // log only; do NOT flip to live until the shadow ledger + a bear-inclusive
+        // dataset confirm. Reuses the existing bundled H1 + M30 warmup CSVs.
+        g_gold_volbrk_m30.shadow_mode = true;   // HARD shadow regardless of kShadowDefault
+        g_gold_volbrk_m30.enabled     = true;
+        g_gold_volbrk_m30.lot         = 0.01;
+        g_gold_volbrk_m30.max_spread  = 0.80;   // gold $ (~80 pts)
+        g_gold_volbrk_m30.init();
+        g_gold_volbrk_m30.seed_h1_from_csv ("phase1/signal_discovery/warmup_XAUUSD_H1.csv");
+        g_gold_volbrk_m30.seed_m30_from_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
+        printf("[OMEGA-INIT] GoldVolBreakoutM30Engine: shadow=%d enabled=%d lot=%.2f donch=%d stop=%.1f trail=%.1f impR=%.1f\n",
+               (int)g_gold_volbrk_m30.shadow_mode, (int)g_gold_volbrk_m30.enabled, g_gold_volbrk_m30.lot,
+               g_gold_volbrk_m30.kDonch, g_gold_volbrk_m30.kStopAtr, g_gold_volbrk_m30.kTrailAtr, g_gold_volbrk_m30.kImpRange);
+        fflush(stdout);
+
         // ── SessionMomentumEngine x2 (S42 2026-05-31) ───────────────────────
         // Clock-based session-window long on XAU -- first non-trend-breakout
         // edge (axis: time-of-day). Both gated by close>EMA200(h1); pure time

@@ -52,6 +52,7 @@
 #include <string>
 #include "OmegaCostGuard.hpp"
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
 
@@ -129,6 +130,27 @@ public:
     } m_pos;
 
     bool has_open_position() const noexcept { return m_pos.active; }
+
+    // S-2026-06-03: open-position persistence (resume in-flight trade across
+    // restart/deploy). BASE position only -- pyramid layers re-arm live.
+    // m_pos {active,is_long,entry,hard_sl,hard_tp,size,entry_ts(ms),layers[]}.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!m_pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = m_pos.is_long ? "LONG" : "SHORT";
+        o.size = m_pos.size; o.entry = m_pos.entry; o.sl = m_pos.hard_sl; o.tp = m_pos.hard_tp;
+        o.entry_ts = m_pos.entry_ts / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        m_pos = LivePos{};
+        m_pos.active = true; m_pos.is_long = (ps.side == "LONG");
+        m_pos.entry = ps.entry; m_pos.hard_sl = ps.sl; m_pos.hard_tp = ps.tp;
+        m_pos.trail_sl = ps.sl; m_pos.mfe_price = ps.entry; m_pos.size = ps.size;
+        m_pos.entry_ts = ps.entry_ts * 1000;
+        m_pos.layers[0] = {true, ps.entry, ps.size};
+        m_pos.n_layers = 1; m_pos.next_pyramid_idx = 1;
+        return true;
+    }
 
     struct BarAccum { double open=0,high=0,low=0,close=0; int64_t ts_open=0; int n=0; };
 

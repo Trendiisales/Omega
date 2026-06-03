@@ -32,6 +32,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "OpenPositionRegistry.hpp" // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
 
@@ -56,6 +57,23 @@ struct GoldOversoldBounceEngine {
     double  pos_lot()   const noexcept { return pos_.lot; }
     double  pos_stop()  const noexcept { return pos_.stop_px; }
     int64_t pos_entry_ts_ms() const noexcept { return pos_.entry_ts; }
+
+    // S-2026-06-03: open-position persistence across restart. Long-only; the hard
+    // ATR stop maps to sl, no fixed TP (RSI/max-hold exit) -> tp=0. pos_ is private
+    // but these members can touch it. pos_.entry_ts is epoch ms.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = "LONG";
+        o.size = pos_.lot; o.entry = pos_.entry_px; o.sl = pos_.stop_px; o.tp = 0.0;
+        o.entry_ts = pos_.entry_ts / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.entry_px = ps.entry; pos_.lot = ps.size;
+        pos_.stop_px = ps.sl; pos_.entry_ts = ps.entry_ts * 1000;
+        return true;
+    }
+
     const std::string symbol = "XAUUSD";
 
     void on_tick(double bid, double ask, int64_t ts_ms, OnCloseFn cb) noexcept {

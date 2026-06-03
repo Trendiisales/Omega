@@ -44,6 +44,7 @@
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
 #include "SeedGuard.hpp"
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
 
@@ -135,6 +136,22 @@ struct FxTurtleH4Engine {
 
     int m_trade_id_=0;
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // S-2026-06-03: open-position persistence (resume in-flight trade across
+    // restart/deploy). pos_ {active,is_long,entry,sl,tp,lot,entry_ts_ms}.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos_.is_long ? "LONG" : "SHORT";
+        o.size = pos_.lot; o.entry = pos_.entry; o.sl = pos_.sl; o.tp = pos_.tp;
+        o.entry_ts = pos_.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.is_long = (ps.side == "LONG");
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.lot = ps.size;
+        pos_.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     // Tick handler. Manages open position every tick; on H4 bucket
     // rollover, evaluates Donchian breakout entry. Long-only by default

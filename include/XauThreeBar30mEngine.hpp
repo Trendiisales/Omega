@@ -169,6 +169,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"      // omega::TradeRecord
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 #include "engine_protections.hpp"    // S35-P3 ProtectedEngineGuards
 #include "OmegaCostGuard.hpp"
 #include "XauM30HmmGate.hpp"         // S88-followup HMM regime gate
@@ -367,6 +368,22 @@ public:
     }
 
     bool has_open_position() const noexcept { return pos.active; }
+
+    // S-2026-06-03: open-position persistence across restart. Size lives on the
+    // engine-level `lot` field (not in pos); pos carries entry_px/sl_px/tp_px.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos.is_long ? "LONG" : "SHORT";
+        o.size = lot; o.entry = pos.entry_px; o.sl = pos.sl_px; o.tp = pos.tp_px;
+        o.entry_ts = pos.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos.active = true; pos.is_long = (ps.side == "LONG");
+        pos.entry_px = ps.entry; pos.sl_px = ps.sl; pos.tp_px = ps.tp; lot = ps.size;
+        pos.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     // ============================================================
     //  on_30m_bar -- called by tick_gold.hpp when an M30 bar closes

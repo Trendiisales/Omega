@@ -128,6 +128,8 @@
 #include "GoldD1TrendState.hpp"  // D1 regime gate (added 2026-05-21)
 #include "L2Globals.hpp"         // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 #include "L2LeverageState.hpp"   // 2026-05-30: L2 sizing + L2-trail flip helper
+#include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
+#include <cstdlib>
 
 namespace omega {
 
@@ -376,6 +378,50 @@ public:
 
     int open_count() const noexcept {
         int n = 0; for (const auto& p : pos) if (p.active) ++n; return n;
+    }
+
+    // ============================================================
+    //  S-2026-06-03 open-position PERSISTENCE (save/restore).
+    //  One snapshot per ACTIVE cell, tagged "<base_engine>#<cellIdx>".
+    //  XauTfPos carries a regression-sizing size_mult; on restore it is
+    //  reset to 1.0 (the overlay re-evaluates on the next fresh entry).
+    // ============================================================
+    void persist_save_all(const char* base_engine, const char* sym,
+                          std::vector<omega::PositionSnapshot>& out) const {
+        for (int ci = 0; ci < kXauTfNumCells; ++ci) {
+            const auto& p = pos[ci];
+            if (!p.active) continue;
+            omega::PositionSnapshot ps;
+            ps.engine   = std::string(base_engine) + "#" + std::to_string(ci);
+            ps.symbol   = sym;
+            ps.side     = p.is_long ? "LONG" : "SHORT";
+            ps.size     = lot;
+            ps.entry    = p.entry_px;
+            ps.sl       = p.sl_px;
+            ps.tp       = p.tp_px;
+            ps.entry_ts = p.entry_ts_ms / 1000;
+            out.push_back(ps);
+        }
+    }
+
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        const auto hash = ps.engine.rfind('#');
+        if (hash == std::string::npos) return false;
+        const int ci = std::atoi(ps.engine.c_str() + hash + 1);
+        if (ci < 0 || ci >= kXauTfNumCells) return false;
+        auto& p = pos[ci];
+        if (p.active) return true;   // already holding -- don't double
+        p.active        = true;
+        p.is_long       = (ps.side == "LONG");
+        p.entry_px      = ps.entry;
+        p.sl_px         = ps.sl;
+        p.tp_px         = ps.tp;
+        p.entry_ts_ms   = ps.entry_ts * 1000;
+        p.bars_held     = 0;
+        p.mfe           = 0.0;
+        p.mae           = 0.0;
+        p.size_mult     = 1.0;       // preserve regression-sizing field at full size
+        return true;
     }
 
     // ============================================================
