@@ -24,3 +24,17 @@ same outcome as the WaveTrend deep-dive. Supersedes the cost-dead framing in
 [[omega-l2-obi-overlay-not-scalp]]: it's not just cost, the directional edge is
 absent on clean data. New-engine value is NOT in OBI. Harnesses: l2_obi_replay.cpp,
 l2_obi_overlay_test.cpp. Good-depth L2 capture continues live (no action needed).
+
+## UPDATE: different L2 feature classes also dead (2026-06-03)
+Feature information-edge study (backtest/l2_feature_edge_study.py) on the same 668k
+clean rows, forward mid move at 2s/5s:
+  imb_level   : 49.7/49.9% directional hit (coin flip)
+  imb_flow    : 49.4/49.5% (the change-not-level idea ALSO dead)
+  lvl_imb     : 48.3/48.8% (no / slight inverse)
+  events->|move| corr -0.01 ; tot_vol->|move| -0.01 (bursts don't predict expansion)
+  spread->|move| corr +0.08/+0.07  <- ONLY signal: wider spread predicts bigger move,
+    but MAGNITUDE not direction, weak, and exploiting = trading when cost highest.
+Every directional feature ~50% on 668k samples. Book efficient at these horizons.
+True queue/iceberg/sweep need RICHER capture (per-level ladder sizes + trade prints)
+which we do NOT log -- that's an infra project before any edge is testable. VERDICT:
+stop L2 engine-hunting on current top-of-book capture. No engine.
