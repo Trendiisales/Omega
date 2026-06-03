@@ -1065,12 +1065,23 @@ function Invoke-Deploy {
         Write-Host "  [OK] Build directory created (first run)" -ForegroundColor Green
     }
 
-    # Force-touch source files so MSVC sees them as newer than any surviving .obj
+    # Force-touch source files so MSVC sees them as newer than any surviving .obj.
+    # Scope to src/ + include/ only (the actual build inputs). Recursing the
+    # whole OmegaDir (backtest/, phase1/, vendored headers) took ~12s > the 10s
+    # guard below and tripped a false "[FATAL] Source touch failed" abort
+    # (2026-06-03). src+include touches in <1s.
     $touchTime = Get-Date
-    Get-ChildItem -Path $OmegaDir -Include "*.cpp","*.hpp","*.h" -Recurse -ErrorAction SilentlyContinue |
-        ForEach-Object { $_.LastWriteTime = $touchTime }
+    @("$OmegaDir\src", "$OmegaDir\include") | ForEach-Object {
+        if (Test-Path $_) {
+            Get-ChildItem -Path $_ -Include "*.cpp","*.hpp","*.h" -Recurse -ErrorAction SilentlyContinue |
+                ForEach-Object { $_.LastWriteTime = $touchTime }
+        }
+    }
     $mainCpp = "$OmegaDir\src\main.cpp"
     if (Test-Path $mainCpp) {
+        # Re-touch main.cpp immediately before the age check so the guard is
+        # deterministic regardless of how long the loop above took.
+        (Get-Item $mainCpp).LastWriteTime = Get-Date
         $mainAge = ((Get-Date) - (Get-Item $mainCpp).LastWriteTime).TotalSeconds
         if ($mainAge -gt 10) {
             Write-Host "  [FATAL] Source touch failed -- main.cpp age=${mainAge}s" -ForegroundColor Red
