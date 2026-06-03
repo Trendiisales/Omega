@@ -66,6 +66,7 @@
 
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 #include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
 
 namespace omega {
@@ -141,6 +142,20 @@ public:
     }
 
     bool any_open() const noexcept { return pos.active; }
+
+    // S-2026-06-03: persistence batch 4 (long-only; no tp -> ema/channel exit).
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = "LONG";
+        o.size = lot; o.entry = pos.entry_px; o.sl = pos.sl_px; o.tp = 0.0;
+        o.entry_ts = pos.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos.active = true; pos.entry_px = ps.entry; pos.sl_px = ps.sl;
+        pos.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     void on_h1_bar(const Ger40KBar& bar, double bid, double ask,
                    double atr14_external, int64_t now_ms, OnCloseFn on_close) noexcept {

@@ -134,9 +134,20 @@ inline void register_position_persistence() {
     wire_cross(g_imacro_nas,       "IndexMacroCrashNAS",  "NAS100");
     wire_cross(g_imacro_us30,      "IndexMacroCrashUS30", "DJ30.F");
 
-    // TODO (next batches): multi-cell XauTrendFollow + Ustec arrays (fill-free-
-    // cell by tag), OCO straddles, C1Retuned cells, gold single-pos publics
-    // (Fvg/PDHL/RSIRev/MinimalH4/ThreeBar/EMACross/...).
+    // ---- batch 4: straddles (gold + index, shared XauStraddleM30Engine class)
+    // + Ger40KeltnerH1 (the engines wiped on the 2026-06-03 MGC-deploy restart) ----
+    wire_cross(g_xau_straddle_m30,      "XauStraddleM30",      "XAUUSD");
+    wire_cross(g_xau_straddle_m15,      "XauStraddleM15",      "XAUUSD");
+    wire_cross(g_idx_straddle_ger40_m30, "IdxStraddleGER40_M30", "GER40");
+    wire_cross(g_idx_straddle_ger40_m15, "IdxStraddleGER40_M15", "GER40");
+    wire_cross(g_idx_straddle_nas_m15,   "IdxStraddleNAS100_M15", "NAS100");
+    wire_cross(g_idx_straddle_nas_m30,   "IdxStraddleNAS100_M30", "NAS100");
+    wire_cross(g_idx_straddle_uk100_m30, "IdxStraddleUK100_M30",  "UK100");
+    wire_cross(g_idx_straddle_uk100_m240,"IdxStraddleUK100_M240", "UK100");
+    wire_cross(g_ger40_kelt,             "Ger40KeltnerH1",        "GER40");
+
+    // TODO (remaining): multi-cell XauTrendFollow + Ustec arrays (fill-free-cell
+    // by tag), C1Retuned cells, gold single-pos publics (Fvg/PDHL/RSIRev/...).
 }
 
 } // namespace omega::persist

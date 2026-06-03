@@ -26,6 +26,7 @@
 #include <string>
 #include <deque>
 #include <functional>
+#include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -106,6 +107,23 @@ struct XauStraddleM30Engine {
     int trade_id_ = 0;
 
     bool has_open_position() const noexcept { return pos_.active; }
+
+    // S-2026-06-03: persistence batch 4 — resume the filled OCO position across
+    // restart (the armed/pending re-arms next bar anyway). Covers all straddle
+    // instances (gold + index) since they share this class.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
+        if (!pos_.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = pos_.side > 0 ? "LONG" : "SHORT";
+        o.size = pos_.lot; o.entry = pos_.entry; o.sl = pos_.sl; o.tp = pos_.tp;
+        o.entry_ts = pos_.entry_ts_ms / 1000;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        pos_.active = true; pos_.side = (ps.side == "LONG") ? 1 : -1;
+        pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.lot = ps.size;
+        pos_.sl_dist = std::fabs(pos_.entry - pos_.sl); pos_.entry_ts_ms = ps.entry_ts * 1000;
+        return true;
+    }
 
     void _update_atr(double h, double l, double c) noexcept {
         if (prev_close_ <= 0.0) { prev_close_ = c; return; }
