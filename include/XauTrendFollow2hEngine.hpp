@@ -122,6 +122,7 @@ struct XauTf2hPos {
     // S34 P1 fix #5: per-position MFE/MAE in price units (>=0).
     double      mfe                = 0.0;
     double      mae                = 0.0;
+    double      size_mult          = 1.0;   // S-2026-06-03: regression-slope sizing overlay
     std::string broker_position_id;
     std::string entry_clOrdId;
 };
@@ -189,6 +190,11 @@ public:
     int    adx_warmup_count_ = 0;
     int    adx_dx_count_     = 0;
     double lot         = 0.01;
+    // S-2026-06-03: regression-slope sizing overlay. Default OFF = byte-identical
+    // behaviour. When ON: down-size to reg_size_floor when the 128-bar regression
+    // slope of close is negative (breakout against the macro trend-fit).
+    bool   reg_slope_size = false;
+    double reg_size_floor = 0.4;
     double max_spread  = 1.0;
 
     // S63 2026-05-14 (part W): VWR-pattern in-flight protection (full trio).
@@ -525,6 +531,20 @@ private:
         // S34 P1 fix #5: reset MFE/MAE per new entry.
         p.mfe           = 0.0;
         p.mae           = 0.0;
+        // S-2026-06-03: regression-slope sizing overlay (default OFF). Down-size
+        // when the 128-bar regression slope of close is negative.
+        p.size_mult = 1.0;
+        if (reg_slope_size) {
+            const int W = 128;
+            if ((int)bars_.size() >= W) {
+                const int s0 = (int)bars_.size() - W;
+                double Sx=0, Sy=0, Sxx=0, Sxy=0;
+                for (int k=0; k<W; ++k) { double x=k, y=bars_[s0+k].close; Sx+=x; Sy+=y; Sxx+=x*x; Sxy+=x*y; }
+                const double den = (double)W*Sxx - Sx*Sx;
+                const double slope = (den != 0.0) ? ((double)W*Sxy - Sx*Sy)/den : 0.0;
+                if (slope < 0.0) p.size_mult = reg_size_floor;
+            }
+        }
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
     }
@@ -601,14 +621,14 @@ private:
         tr.exitPrice  = exit_px;
         tr.tp         = p.tp_px;
         tr.sl         = p.sl_px;
-        tr.size       = lot;
+        tr.size       = lot * p.size_mult;   // S-2026-06-03: regression-slope sizing overlay
         tr.entryTs    = p.entry_ts_ms / 1000;
         tr.exitTs     = now_ms / 1000;
         tr.exitReason = reason;
         tr.regime     = kXauTf2hCells[ci].name;
         tr.shadow     = shadow_mode;
         // S34 P1 fix #1: gross pnl in price-points*lot; USD via tick_mult.
-        tr.pnl        = pts_move * lot;
+        tr.pnl        = pts_move * lot * p.size_mult;   // S-2026-06-03: regression-slope sizing overlay
         // S34 P1 fix #5: propagate MFE/MAE.
         tr.mfe        = p.mfe;
         tr.mae        = p.mae;

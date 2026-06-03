@@ -120,6 +120,7 @@ struct XauTfPos1h {
     int         cooldown_bars      = 0;
     double      mfe                = 0.0;
     double      mae                = 0.0;
+    double      size_mult          = 1.0;   // S-2026-06-03: regression-slope sizing overlay
     // S39 vol-target + pyramiding (active only when the engine knobs are on;
     // size defaults to the fixed `lot` so legacy behaviour is unchanged).
     double      size               = 0.0;   // this position's lot (vol-targeted or fixed)
@@ -173,6 +174,11 @@ public:
     bool   shadow_mode = true;
     bool   enabled     = false;
     double lot         = 0.01;
+    // S-2026-06-03: regression-slope sizing overlay. Default OFF = byte-identical
+    // behaviour. When ON: down-size to reg_size_floor when the 128-bar regression
+    // slope of close is negative (breakout against the macro trend-fit).
+    bool   reg_slope_size = false;
+    double reg_size_floor = 0.4;
     double max_spread  = 1.0;
     uint32_t cell_enable_mask = 0x0F;  // S40: all four ensemble cells on; engine.enabled gates overall
 
@@ -514,6 +520,20 @@ private:
         p.size          = size;     // S39: vol-targeted (or fixed) lot
         p.n_adds        = 0;        // S39: pyramid base
         p.last_add_px   = entry;
+        // S-2026-06-03: regression-slope sizing overlay (default OFF). Down-size
+        // when the 128-bar regression slope of close is negative.
+        p.size_mult = 1.0;
+        if (reg_slope_size) {
+            const int W = 128;
+            if ((int)bars_.size() >= W) {
+                const int s0 = (int)bars_.size() - W;
+                double Sx=0, Sy=0, Sxx=0, Sxy=0;
+                for (int k=0; k<W; ++k) { double x=k, y=bars_[s0+k].close; Sx+=x; Sy+=y; Sxx+=x*x; Sxy+=x*y; }
+                const double den = (double)W*Sxx - Sx*Sx;
+                const double slope = (den != 0.0) ? ((double)W*Sxy - Sx*Sy)/den : 0.0;
+                if (slope < 0.0) p.size_mult = reg_size_floor;
+            }
+        }
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
         (void)side;
@@ -590,13 +610,13 @@ private:
         tr.exitPrice  = exit_px;
         tr.tp         = p.tp_px;
         tr.sl         = p.sl_px;
-        tr.size       = (p.size > 0.0 ? p.size : lot);   // S39: vol-targeted/pyramided size
+        tr.size       = (p.size > 0.0 ? p.size : lot) * p.size_mult;   // S39: vol-targeted/pyramided size; S-2026-06-03 reg-slope overlay
         tr.entryTs    = p.entry_ts_ms / 1000;
         tr.exitTs     = now_ms / 1000;
         tr.exitReason = reason;
         tr.regime     = kXauTf1hCells[ci].name;
         tr.shadow     = shadow_mode;
-        tr.pnl        = pts_move * (p.size > 0.0 ? p.size : lot);
+        tr.pnl        = pts_move * (p.size > 0.0 ? p.size : lot) * p.size_mult;   // S-2026-06-03 reg-slope overlay
         tr.mfe        = p.mfe;
         tr.mae        = p.mae;
 
