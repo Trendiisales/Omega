@@ -1,0 +1,137 @@
+#pragma once
+// =============================================================================
+//  MgcFastDonchian30mEngine.hpp  (S-2026-06-03)
+//  Fast intraday gold breakout on MGC (COMEX micro gold) 30m bars, with a
+//  prior-day volume-profile OVERHEAD-SUPPLY gate. Runs entirely on the IBKR/MGC
+//  feed (signal + volume from the same instrument) -> no spot/futures basis.
+//
+//  Signal : long when close > prior Nin-bar high (Donchian breakout)
+//  Exit   : close < prior Nout-bar low
+//  Gate   : skip the entry if a prior-day HVN (high-volume node) sits within
+//           Kov*ATR ABOVE entry (overhead supply = little room). This gate is
+//           the edge: backtest (MGC 30m, 2yr, cost-incl, WF) PF 1.36->1.54,
+//           maxDD halved, rDD 2.4->5.1, both halves+. See memory
+//           omega-gbb-indicators-eval / mgc_vp_backtest.cpp.
+//
+//  Feeds on REAL COMEX volume (the FIX/spot feed has none). Default shadow +
+//  disabled; live activation requires the MGC 30m bar+volume feed wired into
+//  Omega (separate integration) + a shadow period.
+// =============================================================================
+#include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include <cstdint>
+#include <cmath>
+#include <deque>
+#include <functional>
+#include <string>
+#include <vector>
+
+namespace omega {
+
+struct MgcFastDonchian30mEngine {
+    // ---- config ----
+    bool   enabled       = false;   // wire in engine_init once the MGC feed exists
+    bool   shadow_mode   = true;    // paper until validated
+    double lot           = 0.01;
+    int    Nin           = 20;      // breakout channel (prior bars)
+    int    Nout          = 10;      // exit channel
+    double Kov           = 1.5;     // overhead-supply skip distance (xATR)
+    bool   use_hvn_skip  = true;    // the edge
+    int    profile_bins  = 30;
+    double hvn_frac      = 0.60;    // bins >= frac*max volume = HVN
+
+    using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
+
+    // ---- state ----
+    struct Bar { double o,h,l,c,v; int day; };
+    std::deque<Bar> bars_;               // recent bars for Donchian channels
+    double  atr14_ = 0.0; double prev_close_ = 0.0; bool atr_init_ = false;
+
+    int     cur_day_ = -1;
+    std::vector<std::pair<double,double>> day_cv_;   // (close,vol) for current day
+    double  day_hi_ = -1e18, day_lo_ = 1e18;
+
+    std::vector<double> prior_hvn_; double prior_poc_ = 0.0; bool prior_ok_ = false;
+
+    bool    pos_active_ = false; double entry_ = 0.0; int64_t entry_ts_ = 0;
+
+    bool has_open_position() const { return pos_active_; }
+
+    void _finalize_prior_profile() {
+        prior_ok_ = false; prior_hvn_.clear();
+        if (day_cv_.empty() || day_hi_ <= day_lo_) return;
+        double tv = 0; for (auto& cv : day_cv_) tv += cv.second;
+        if (tv <= 0) return;
+        const double bs = (day_hi_ - day_lo_) / profile_bins;
+        std::vector<double> vb(profile_bins, 0.0);
+        for (auto& cv : day_cv_) {
+            int bi = (int)((cv.first - day_lo_) / bs);
+            bi = std::max(0, std::min(bi, profile_bins - 1));
+            vb[bi] += cv.second;
+        }
+        double mx = 0; int pi = 0;
+        for (int j = 0; j < profile_bins; ++j) if (vb[j] > mx) { mx = vb[j]; pi = j; }
+        prior_poc_ = day_lo_ + bs * (pi + 0.5);
+        for (int j = 0; j < profile_bins; ++j)
+            if (vb[j] >= hvn_frac * mx) prior_hvn_.push_back(day_lo_ + bs * (j + 0.5));
+        prior_ok_ = true;
+    }
+
+    double _chan_high(int n) const {
+        if ((int)bars_.size() < n) return 1e18;     // not warm -> no breakout
+        double hh = -1e18; for (int k = (int)bars_.size() - n; k < (int)bars_.size(); ++k) hh = std::max(hh, bars_[k].h);
+        return hh;
+    }
+    double _chan_low(int n) const {
+        if ((int)bars_.size() < n) return -1e18;
+        double ll = 1e18; for (int k = (int)bars_.size() - n; k < (int)bars_.size(); ++k) ll = std::min(ll, bars_[k].l);
+        return ll;
+    }
+
+    void _close(double exit_px, int64_t ts, OnCloseFn cb) {
+        omega::TradeRecord tr;
+        tr.symbol     = "MGC";
+        tr.engine     = "MgcFastDonchian30m";
+        tr.side       = "LONG";
+        tr.entryPrice = entry_;
+        tr.exitPrice  = exit_px;
+        tr.size       = lot;
+        tr.pnl        = (exit_px - entry_) * lot;   // points*lot; mult applied downstream
+        tr.entryTs    = entry_ts_;
+        tr.exitTs     = ts;
+        tr.shadow     = shadow_mode;
+        pos_active_ = false;
+        if (cb) cb(tr);
+    }
+
+    // Call on each CLOSED 30m MGC bar (OHLCV with real volume).
+    void on_30m_bar(double o, double h, double l, double c, double v,
+                    int64_t ts_sec, OnCloseFn cb) {
+        if (!enabled) return;
+        const int day = (int)(ts_sec / 86400);
+        if (day != cur_day_) {                  // day flip -> finalize prior profile
+            if (cur_day_ >= 0) _finalize_prior_profile();
+            cur_day_ = day; day_cv_.clear(); day_hi_ = -1e18; day_lo_ = 1e18;
+        }
+        day_cv_.push_back({c, v}); day_hi_ = std::max(day_hi_, h); day_lo_ = std::min(day_lo_, l);
+
+        if (atr_init_) { double tr = std::max(h - l, std::max(std::fabs(h - prev_close_), std::fabs(l - prev_close_)));
+                         atr14_ += (tr - atr14_) / 14.0; }
+        else           { atr14_ = h - l; atr_init_ = true; }
+        prev_close_ = c;
+
+        if (pos_active_) {
+            if (c < _chan_low(Nout)) _close(c, ts_sec, cb);
+        } else {
+            if (c > _chan_high(Nin)) {
+                bool skip = false;
+                if (use_hvn_skip && prior_ok_)
+                    for (double hv : prior_hvn_) if (hv > c && hv <= c + Kov * atr14_) { skip = true; break; }
+                if (!skip) { pos_active_ = true; entry_ = c; entry_ts_ = ts_sec; }
+            }
+        }
+        bars_.push_back({o,h,l,c,v,day});
+        while ((int)bars_.size() > 256) bars_.pop_front();
+    }
+};
+
+} // namespace omega
