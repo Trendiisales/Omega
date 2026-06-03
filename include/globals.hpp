@@ -985,6 +985,12 @@ static omega::IndexSeasonalEngine g_idx_seas_estx50("ESTX50");
 //   where every price/book signal died.
 #include "GoldSeasonalEngine.hpp"
 static omega::GoldSeasonalEngine g_gold_seasonal;
+// S-2026-06-03: GoldOversoldBounce -- XAUUSD daily RSI<30 capitulation bounce.
+//   18yr GC=F (incl 2013 bear): t2.76 PF2.17 win73%, 14/19yr+, POSITIVE in bear
+//   windows where naive below-50ma dip-buy DIES. Mean-reversion (buys weakness)
+//   -> uncorrelated with the trend/breakout book + GoldSeasonal. ATR stop.
+#include "GoldOversoldBounceEngine.hpp"
+static omega::GoldOversoldBounceEngine g_gold_oversold;
 // S44: IndexFomc -- pre-FOMC drift, US indices (decayed but alive, +11.8bp/event 2023-26).
 #include "IndexFomcEngine.hpp"
 static omega::IndexFomcEngine g_idx_fomc_us500("US500.F");

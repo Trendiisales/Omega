@@ -2360,6 +2360,25 @@ static void init_engines(const std::string& cfg_path)
                         std::printf("[OMEGA-INIT] GoldSeasonal (XAUUSD Mon+Tue long) -- shadow, warm-seeded\n");
                     }
 
+                    // S-2026-06-03: GoldOversoldBounce (XAUUSD daily RSI<30 capitulation
+                    //   bounce). Mean-reversion — buys deep-oversold weakness, exits on RSI
+                    //   recovery (>50) / 20-day cap / -2.5*ATR stop. 18yr GC=F (incl 2013
+                    //   bear): t2.76 PF2.17 win73%, 14/19yr+, POSITIVE in bear windows where
+                    //   the naive below-50ma dip-buy dies (falling-knife). Uncorrelated with
+                    //   the trend/breakout book + GoldSeasonal. Long-only. usd_per_pt=100.
+                    {
+                        g_gold_oversold.shadow_mode   = true;
+                        g_gold_oversold.enabled       = true;
+                        g_gold_oversold.lot           = 0.01;
+                        g_gold_oversold.usd_per_pt    = 100.0;
+                        g_gold_oversold.entry_rsi     = 30.0;
+                        g_gold_oversold.exit_rsi      = 50.0;
+                        g_gold_oversold.max_hold_days = 20;
+                        g_gold_oversold.stop_atr_mult = 2.5;
+                        g_gold_oversold.seed_from_d1_csv("phase1/signal_discovery/warmup_XAUUSD_D1.csv");
+                        std::printf("[OMEGA-INIT] GoldOversoldBounce (XAUUSD RSI<30 long) -- shadow, warm-seeded\n");
+                    }
+
                     // S44: IndexFomc (pre-FOMC drift, US indices). Long the trading day
                     //   before a scheduled FOMC announcement, exit FOMC-day close. Decayed
                     //   but alive (+11.8bp/event 2023-26, index_validate2.cpp). Respects the
@@ -5982,6 +6001,28 @@ static void init_engines(const std::string& cfg_path)
             ps.unrealized_pnl = (current - entry) * g_gold_seasonal.pos_lot() * mult;
             ps.tp = 0.0; ps.sl = 0.0; ps.entry_ts = g_gold_seasonal.pos_entry_ts_ms() / 1000;
             ps.engine = "GoldSeasonal";
+            out.push_back(ps);
+            return out;
+        });
+
+    // S-2026-06-03: GoldOversoldBounce (XAUUSD RSI<30 long). Long-only, ATR stop
+    //   (sl set), no TP (RSI-recovery / time exit) → tp=0.
+    g_open_positions.register_source("GoldOversoldBounce",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_oversold.has_open_position()) return out;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            const double entry = g_gold_oversold.pos_entry();
+            double current = entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = "LONG";
+            ps.size = g_gold_oversold.pos_lot(); ps.entry = entry; ps.current = current;
+            ps.unrealized_pnl = (current - entry) * g_gold_oversold.pos_lot() * mult;
+            ps.tp = 0.0; ps.sl = g_gold_oversold.pos_stop();
+            ps.entry_ts = g_gold_oversold.pos_entry_ts_ms() / 1000;
+            ps.engine = "GoldOversoldBounce";
             out.push_back(ps);
             return out;
         });

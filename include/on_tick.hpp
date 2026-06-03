@@ -2310,6 +2310,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         //   Holds through the gold ~21:00 UTC daily break (acts only on day-flip;
         //   spread-guard blocks break/illiquid fills).
         if (sym == "XAUUSD") g_gold_seasonal.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+
+        // S-2026-06-03 GoldOversoldBounce (XAUUSD daily RSI<30 long) -- shadow, same sink.
+        //   Mean-reversion bounce; aggregates its own UTC-daily bar, ATR stop.
+        if (sym == "XAUUSD") g_gold_oversold.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
     }
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????

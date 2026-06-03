@@ -41,6 +41,7 @@ HEADERS=(
   include/FxSeasonalEngine.hpp
   include/IndexSeasonalEngine.hpp
   include/GoldSeasonalEngine.hpp
+  include/GoldOversoldBounceEngine.hpp
   include/IndexFomcEngine.hpp
   include/IndexRiskGate.hpp
   include/Us30EnsembleEngine.hpp
