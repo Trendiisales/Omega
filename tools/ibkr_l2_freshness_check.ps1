@@ -30,7 +30,11 @@
 $ErrorActionPreference = 'Continue'
 
 # ---- config ------------------------------------------------------------------
-$Symbols  = @('XAUUSD', 'NAS100', 'US500')
+# 2026-06-04: matches the bridge's live --symbols (register_omega_ibkr_bridge.ps1).
+# NAS100/US500 dropped (empty depth, no CME index sub); MGC added (paid COMEX
+# L2). Keep this list in sync with the bridge or the watchdog false-alarms and
+# kills the (healthy) bridge python on a missing-CSV check.
+$Symbols  = @('XAUUSD', 'MGC')
 $Dir      = 'C:\Omega\logs\ibkr_l2'
 $StaleSec = 180        # CSV must be touched within this many seconds
 $MinBytes = 200        # header alone is ~80-120 bytes; any data writes > 200
