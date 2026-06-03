@@ -518,24 +518,21 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None,
     mark("retr_up", -1, "+", X.C_RETR, "Possible Retr. Up")
 
     # Open gold trades: entry / TP / SL lines so you can SEE where each exits.
-    ymin, ymax = float(np.nanmin(l)), float(np.nanmax(h))
+    # Draw the lines now; COLLECT the labels and place them after ylim is known so
+    # multiple open trades with nearby prices get de-collided (no overlapping boxes).
+    _trade_lbls = []   # (price, text, color)
     def tline(price, col, label):
         if price is None or price <= 0:
             return
         ax.axhline(price, color=col, lw=1.2, ls=(0, (4, 3)), alpha=0.9, zorder=7)
-        # only label if within the visible price window (avoid off-chart clutter)
-        if ymin - (ymax - ymin) * 0.5 <= price <= ymax + (ymax - ymin) * 0.5:
-            ax.annotate(f"{label} {price:.2f}", (x0, price), color=col, fontsize=8,
-                        fontweight="bold", xytext=(2, 0), textcoords="offset points",
-                        ha="left", va="center", zorder=12,
-                        bbox=dict(boxstyle="round,pad=0.12", fc="#0b0e11", ec=col, lw=0.8))
+        _trade_lbls.append((float(price), f"{label} {price:.2f}", col))
     for t in (gold_trades or []):
         try:
             entry = float(t.get("entry", 0)); tp = float(t.get("tp", 0)); sl = float(t.get("sl", 0))
         except (TypeError, ValueError):
             continue
         side = str(t.get("side", "")).upper()
-        eng = str(t.get("engine", ""))[:14]
+        eng = str(t.get("engine", ""))[:20]
         tline(entry, "#ffffff", f"{eng} {side} entry")
         tline(tp, "#26a69a", "TP")
         tline(sl, "#ef5350", "SL")
@@ -551,8 +548,11 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None,
                 bbox=dict(boxstyle="round,pad=0.18", fc="#ffd54f", ec="none"))
     ax.set_title(f"{symbol}  {lp:.2f}   live · updated {updated}",
                  color="#ffd54f", fontsize=15, fontweight="bold")
-    ax.legend(loc="upper left", facecolor="#15191e", edgecolor="#333",
-              labelcolor="#ccc", fontsize=8)
+    # legend in the empty upper-right (the price action hugs the lower-mid band,
+    # so upper-left collided with the MAs + the trade-entry label). ncol=2 keeps
+    # it short; framealpha so any overlap still shows price underneath.
+    ax.legend(loc="upper right", ncol=2, facecolor="#15191e", edgecolor="#333",
+              labelcolor="#ccc", fontsize=8, framealpha=0.85)
 
     axo.plot(x, b["wt1"].values, color=X.C_WT1, lw=1.0, label="wt1")
     axo.plot(x, b["wt2"].values, color=X.C_WT2, lw=0.9, label="wt2")
@@ -571,25 +571,50 @@ def draw_chart(b, cfg, out_png, symbol, live_price, updated, gold_trades=None,
         ax.set_xlim(x0 - 0.5, n - 0.5)
         axo.set_xlim(x0 - 0.5, n - 0.5)
         vlo = float(np.nanmin(l[x0:])); vhi = float(np.nanmax(h[x0:]))
-        extra = [lp]
+        crange = (vhi - vlo) or 1.0
+        # y-axis frames the CANDLES (tall, fat). Include the live price always;
+        # include trade levels ONLY if they sit basically at-the-money (within
+        # 0.2*candle-range) -- a SHORT/D1/H4 line tens-of-points away must NOT
+        # squash the M1 candles into a thin ribbon. Far lines just sit off-screen.
+        margin = crange * 0.20
+        extra = [lp] if (vlo - margin) <= lp <= (vhi + margin) else []
         for t in (gold_trades or []):
             for k in ("entry", "tp", "sl"):
                 try:
                     v = float(t.get(k, 0))
-                    if v > 0:
+                    if v > 0 and (vlo - margin) <= v <= (vhi + margin):
                         extra.append(v)
                 except (TypeError, ValueError):
                     pass
-        vlo = min(vlo, min(extra)); vhi = max(vhi, max(extra))
+        if extra:
+            vlo = min(vlo, min(extra)); vhi = max(vhi, max(extra))
         pad = (vhi - vlo) * 0.04 or 1.0
         ax.set_ylim(vlo - pad, vhi + pad)
+
+    # place collected trade labels at the left edge with vertical de-collision so
+    # multiple open trades at nearby prices don't overlap into unreadable boxes.
+    lo, hi = ax.get_ylim()
+    span = (hi - lo) or 1.0
+    specs = sorted([s for s in _trade_lbls if lo <= s[0] <= hi], key=lambda s: s[0])
+    min_gap = span * 0.045
+    xL = ax.get_xlim()[0]
+    py = None
+    for price, text, col in specs:
+        y = price if py is None else max(price, py + min_gap)
+        py = y
+        ax.annotate(text, (xL, y), color=col, fontsize=8, fontweight="bold",
+                    xytext=(4, 0), textcoords="offset points", ha="left", va="center",
+                    zorder=12, bbox=dict(boxstyle="round,pad=0.12", fc="#0b0e11", ec=col, lw=0.8))
 
     ticks = np.linspace(x0, n - 1, min(10, n - x0)).astype(int)
     axo.set_xticks(ticks)
     axo.set_xticklabels([b.index[i].strftime("%m-%d %H:%M") for i in ticks],
                         rotation=30, ha="right", fontsize=8)
     plt.tight_layout()
-    fig.savefig(out_png, dpi=110, facecolor=fig.get_facecolor())
+    # bbox_inches="tight" + pad guarantees the title is never clipped at the top
+    # edge; higher dpi keeps text sharp when the page upscales the PNG to 100% width.
+    fig.savefig(out_png, dpi=140, facecolor=fig.get_facecolor(),
+                bbox_inches="tight", pad_inches=0.3)
     plt.close(fig)
 
 
@@ -661,7 +686,7 @@ def build_page(interval):
 <style>
  body{{background:#0b0e11;color:#cfd3d8;font:13px/1.5 -apple-system,Menlo,monospace;margin:0;padding:14px}}
  h1{{font-size:15px;margin:0 0 8px;color:#eaecef}}
- #img{{width:100%;min-height:420px;background:#0b0e11;border:1px solid #222;border-radius:6px;display:block}}
+ #img{{width:100%;height:auto;background:#0b0e11;border:1px solid #222;border-radius:6px;display:block}}
  #wait{{color:#7f8a96;padding:8px 2px}}
  .panel{{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap}}
  .card{{background:#15191e;border:1px solid #2a2f36;border-radius:6px;padding:10px 14px}}
@@ -825,7 +850,7 @@ def main():
     ap.add_argument("--lookback", type=int, default=X.DEFAULTS["lookback"])
     ap.add_argument("--trades", default=os.path.expanduser("~/Downloads/omega_trade_closes.csv"))
     ap.add_argument("--chart", default=None)
-    ap.add_argument("--plot-bars", dest="plot_bars", type=int, default=150)
+    ap.add_argument("--plot-bars", dest="plot_bars", type=int, default=55)
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--serve", type=int, nargs="?", const=8089, default=0,
                     metavar="PORT", help="run live web dashboard on PORT (default 8089)")
