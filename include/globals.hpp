@@ -978,6 +978,13 @@ static omega::IndexSeasonalEngine g_idx_seas_ger40("GER40");
 static omega::IndexSeasonalEngine g_idx_seas_dj30("DJ30.F");
 static omega::IndexSeasonalEngine g_idx_seas_uk100("UK100");
 static omega::IndexSeasonalEngine g_idx_seas_estx50("ESTX50");
+// S-2026-06-03: GoldSeasonal -- XAUUSD early-week long seasonality (Mon+Tue).
+//   +24%/yr Sharpe 1.84 (daily sim) / +24.5% Sharpe 1.88 (M5 engine-driven, real
+//   21:00 break), win 61%, +ve every year 2024/25/26, both WF halves+, cost-robust
+//   to 5x, DSR-survives (GOLD_SEASONALITY_FINDING.md). Calendar axis -> survives
+//   where every price/book signal died.
+#include "GoldSeasonalEngine.hpp"
+static omega::GoldSeasonalEngine g_gold_seasonal;
 // S44: IndexFomc -- pre-FOMC drift, US indices (decayed but alive, +11.8bp/event 2023-26).
 #include "IndexFomcEngine.hpp"
 static omega::IndexFomcEngine g_idx_fomc_us500("US500.F");

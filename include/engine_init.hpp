@@ -2342,6 +2342,24 @@ static void init_engines(const std::string& cfg_path)
                     idx_seas_boot(g_idx_seas_estx50, 10.0, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
                     std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long) -- shadow, warm-seeded\n");
 
+                    // S-2026-06-03: GoldSeasonal (XAUUSD early-week long, Mon+Tue). The one
+                    //   new gold edge found after exhausting price/book signals — calendar
+                    //   axis. +24.5%/yr Sharpe 1.88 engine-driven on M5 (real 21:00 daily
+                    //   break), win 59-61%, +ve every year, both WF halves+, cost-robust 5x,
+                    //   DSR-survives. Long-only; exits on UTC day-flip; spread-guard skips
+                    //   break/illiquid fills so the position holds through the daily break.
+                    //   Risk-gate OFF (gold often does BEST risk-off). usd_per_pt=100 (XAU).
+                    {
+                        g_gold_seasonal.shadow_mode = true;
+                        g_gold_seasonal.enabled     = true;
+                        g_gold_seasonal.lot         = 0.01;
+                        g_gold_seasonal.usd_per_pt  = 100.0;
+                        g_gold_seasonal.entry_mask  = (1 << 1) | (1 << 2);   // Mon + Tue
+                        g_gold_seasonal.gate_risk_off = false;
+                        g_gold_seasonal.seed_from_d1_csv("phase1/signal_discovery/warmup_XAUUSD_D1.csv");
+                        std::printf("[OMEGA-INIT] GoldSeasonal (XAUUSD Mon+Tue long) -- shadow, warm-seeded\n");
+                    }
+
                     // S44: IndexFomc (pre-FOMC drift, US indices). Long the trading day
                     //   before a scheduled FOMC announcement, exit FOMC-day close. Decayed
                     //   but alive (+11.8bp/event 2023-26, index_validate2.cpp). Respects the
@@ -5946,6 +5964,27 @@ static void init_engines(const std::string& cfg_path)
     // (active, is_long, entry_px, mfe, mae, etc).
     g_open_positions.register_source("XauTrendFollow1h",
         _make_xau_tf_source("XauTrendFollow1h", &g_xau_tf_1h));
+
+    // S-2026-06-03: GoldSeasonal (XAUUSD Mon+Tue long). Long-only, no TP/SL
+    //   (exits on UTC day-flip) → tp=sl=0.
+    g_open_positions.register_source("GoldSeasonal",
+        []() -> std::vector<omega::PositionSnapshot> {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_seasonal.has_open_position()) return out;
+            const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            const double entry = g_gold_seasonal.pos_entry();
+            double current = entry;
+            const auto it = g_last_tick_bid.find("XAUUSD");
+            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
+            omega::PositionSnapshot ps;
+            ps.symbol = "XAUUSD"; ps.side = "LONG";
+            ps.size = g_gold_seasonal.pos_lot(); ps.entry = entry; ps.current = current;
+            ps.unrealized_pnl = (current - entry) * g_gold_seasonal.pos_lot() * mult;
+            ps.tp = 0.0; ps.sl = 0.0; ps.entry_ts = g_gold_seasonal.pos_entry_ts_ms() / 1000;
+            ps.engine = "GoldSeasonal";
+            out.push_back(ps);
+            return out;
+        });
 
     // ── S66-followup (2026-05-13): 8 more sources (H1SwingGold,
     //    UstecTrendFollow 5m/HTF, FX BreakoutEngine x5). Mechanical extension

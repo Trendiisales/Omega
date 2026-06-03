@@ -2305,6 +2305,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if      (sym == "US500.F") g_idx_fomc_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "USTEC.F") g_idx_fomc_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "DJ30.F")  g_idx_fomc_dj30.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+
+        // S-2026-06-03 GoldSeasonal (XAUUSD Mon+Tue long) -- shadow, UTC-day, same sink.
+        //   Holds through the gold ~21:00 UTC daily break (acts only on day-flip;
+        //   spread-guard blocks break/illiquid fills).
+        if (sym == "XAUUSD") g_gold_seasonal.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
     }
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????

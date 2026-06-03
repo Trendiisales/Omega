@@ -40,6 +40,7 @@ HEADERS=(
   include/FxCrossRevEngine.hpp
   include/FxSeasonalEngine.hpp
   include/IndexSeasonalEngine.hpp
+  include/GoldSeasonalEngine.hpp
   include/IndexFomcEngine.hpp
   include/IndexRiskGate.hpp
   include/Us30EnsembleEngine.hpp
