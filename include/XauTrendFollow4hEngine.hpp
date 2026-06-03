@@ -246,7 +246,7 @@ public:
     // When ON: down-size to reg_size_floor when the 128-bar regression slope of
     // close is negative (breakout against the macro trend-fit). See memory
     // omega-gbb-indicators-eval.
-    bool   reg_slope_size = false;
+    bool   reg_slope_size = true;   // S-2026-06-03: ENABLED (shadow engines -> live shadow validation of the prod-validated overlay)
     double reg_size_floor = 0.4;
     double max_spread  = 1.0;  // USD; refuse entries above this
 
