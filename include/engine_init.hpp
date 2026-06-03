@@ -1841,8 +1841,8 @@ static void init_engines(const std::string& cfg_path)
         g_xau_straddle_m30.stop_atr    = 3.0;
         g_xau_straddle_m30.tp_r        = 1.0;
         g_xau_straddle_m30.lot         = 0.01;
-        g_xau_straddle_m30.partial_frac = 0.30;  // S-2026-06-03: bank 30% at +0.5R
-        g_xau_straddle_m30.partial_r    = 0.5;   // (2yr BT: PF 1.58->1.65, DD -33%)
+        g_xau_straddle_m30.partial_frac = 0.30;  // S-2026-06-03: bank 30% at +0.7R
+        g_xau_straddle_m30.partial_r    = 0.7;   // (2yr BT: net 7114 PF 1.65 Sh 4.26 vs base 7319/1.58)
         g_xau_straddle_m30.obi_tilt    = true;   // OBI overlay measured in shadow (1.25/0.75)
         g_xau_straddle_m30.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
         printf("[OMEGA-INIT] XauStraddleM30: shadow=%d enabled=%d boxN=%d stop=%.1fx TP=%.1fR lot=%.2f\n",
@@ -1865,7 +1865,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_straddle_m15.tp_r        = 1.0;
         g_xau_straddle_m15.lot         = 0.01;
         g_xau_straddle_m15.partial_frac = 0.30;  // S-2026-06-03: bank 30% at +0.5R
-        g_xau_straddle_m15.partial_r    = 0.5;
+        g_xau_straddle_m15.partial_r    = 0.7;
         g_xau_straddle_m15.hold_max_bars = 96;   // 24h on M15
         g_xau_straddle_m15.obi_tilt    = true;   // OBI overlay measured in shadow (1.25/0.75)
         g_xau_straddle_m15.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M15.csv");
