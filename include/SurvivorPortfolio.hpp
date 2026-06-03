@@ -491,6 +491,13 @@ public:
     SpxOverlay spx;
     std::vector<Cell> cells;
     bool enabled = true;
+    // S-2026-06-03: per-(symbol,side) concurrency cap toggle. Default OFF —
+    // backtest (survivor_cap_test.cpp) showed the cap is NET-NEGATIVE on the
+    // trending sample (net -29%, PF 1.37->1.29, maxDD only -12%): a trend book
+    // on a trending tape profits from same-side cell stacking (riding winners),
+    // and the cap cuts that. Mechanism retained for a future regime-gated cap
+    // (would help in chop/crash). See memory: omega-survivor-cap-deadend.
+    bool dedup_enabled = false;
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
     void init_default_cells() {
@@ -580,12 +587,15 @@ public:
         // double-stacking (XAU DonchN20+N100, USTEC RSI+ZMR). Scans live cell
         // state so within-tick opens are seen by later cells in the loop. Exits
         // always run (the cap gates entry only, inside evaluate_signal).
-        auto side_taken = [this](const char* csym, int side) -> bool {
-            for (const auto& c : cells)
-                if (c.open_side() == side && std::strcmp(c.sym_cstr(), csym) == 0)
-                    return true;
-            return false;
-        };
+        std::function<bool(const char*, int)> side_taken = {};
+        if (dedup_enabled) {
+            side_taken = [this](const char* csym, int side) -> bool {
+                for (const auto& c : cells)
+                    if (c.open_side() == side && std::strcmp(c.sym_cstr(), csym) == 0)
+                        return true;
+                return false;
+            };
+        }
         for (auto& c : cells) c.on_tick(sym, bid, ask, now_ms, spx, cb, side_taken);
         // Also feed SPX overlay if SPX tick passes through
         if (sym == "US500.F" || sym == "SPXUSD" || sym == "US500") {
