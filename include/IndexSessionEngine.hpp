@@ -79,8 +79,11 @@ public:
     // ~2-3% on indices) is wide enough that a normal down-session never hits it
     // and the position bleeds to SESSION_CLOSE (e.g. GER40 -168 on 2026-06-02).
     // This caps the per-trade loss independent of ATR. 0 = off.
-    // NEEDS A BACKTEST (index_session_test) before live-enable — it changes exits.
-    double MAX_LOSS_PCT = 1.0;  // exit if price falls > this % below entry intraday
+    // BACKTESTED 2026-06-03 (index_session_cap_test): a 1.0% cap HURT net on
+    // GER40/NAS/US30 (cuts sessions that dip then recover; GER40/US30 H1 turned
+    // negative) — same "subtractive filter cuts winners" pattern. DEFAULT OFF.
+    // Mechanism kept for a future regime-gated variant. The -168 is edge variance.
+    double MAX_LOSS_PCT = 0.0;  // exit if price falls > this % below entry intraday (0=off)
     bool   SKIP_FRIDAY = true;  // Fri is negative across GER40/SPX/NAS
 
     // Dip-buy filter: the session edge is concentrated AFTER weakness (prior
