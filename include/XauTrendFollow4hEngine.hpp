@@ -151,6 +151,7 @@ struct XauTfPos {
     int64_t     entry_ts_ms        = 0;
     int         bars_held          = 0;
     int         cooldown_bars      = 0;
+    double      size_mult          = 1.0;   // S-2026-06-03: regression-slope sizing overlay (1.0 = full)
     // S34 P1 fix #5: per-position MFE/MAE in price units. Both stored as
     // POSITIVE distances from entry. Updated per tick in _manage_open using
     // mid = (bid+ask)/2; propagated to TradeRecord.mfe / TradeRecord.mae in
@@ -240,6 +241,13 @@ public:
     bool   shadow_mode = true;
     bool   enabled     = false;
     double lot         = 0.01;
+    // S-2026-06-03: regression-slope sizing overlay (prod-validated risk-adjusted
+    // lift; rDD +22%, both-halves+). Default OFF = byte-identical behaviour.
+    // When ON: down-size to reg_size_floor when the 128-bar regression slope of
+    // close is negative (breakout against the macro trend-fit). See memory
+    // omega-gbb-indicators-eval.
+    bool   reg_slope_size = false;
+    double reg_size_floor = 0.4;
     double max_spread  = 1.0;  // USD; refuse entries above this
 
     // S96: per-cell enable bitmask. Bit i controls kXauTfCells[i].
@@ -780,6 +788,21 @@ private:
         p.entry_ts_ms   = now_ms;
         p.bars_held     = 0;
         p.cooldown_bars = 0;
+        // S-2026-06-03: regression-slope sizing overlay (default OFF). Down-size
+        // when the 128-bar regression slope of close is negative (breakout against
+        // the macro trend-fit). Prod-validated risk-adjusted lift; see memory.
+        p.size_mult = 1.0;
+        if (reg_slope_size) {
+            const int W = 128;
+            if ((int)bars_.size() >= W) {
+                const int s0 = (int)bars_.size() - W;
+                double Sx=0, Sy=0, Sxx=0, Sxy=0;
+                for (int k=0; k<W; ++k) { double x=k, y=bars_[s0+k].close; Sx+=x; Sy+=y; Sxx+=x*x; Sxy+=x*y; }
+                const double den = (double)W*Sxx - Sx*Sx;
+                const double slope = (den != 0.0) ? ((double)W*Sxy - Sx*Sy)/den : 0.0;
+                if (slope < 0.0) p.size_mult = reg_size_floor;
+            }
+        }
         // S34 P1 fix #5: reset MFE/MAE per new entry.
         p.mfe           = 0.0;
         p.mae           = 0.0;
@@ -876,7 +899,7 @@ private:
         tr.exitPrice  = exit_px;
         tr.tp         = p.tp_px;
         tr.sl         = p.sl_px;
-        tr.size       = lot;
+        tr.size       = lot * p.size_mult;   // S-2026-06-03: regression-slope sizing overlay
         tr.entryTs    = p.entry_ts_ms / 1000;
         tr.exitTs     = now_ms / 1000;
         tr.exitReason = reason;
@@ -884,7 +907,7 @@ private:
         tr.shadow     = shadow_mode;
         // S34 P1 fix #1: assign gross pnl. tick_value_multiplier(symbol) is
         // applied downstream by handle_closed_trade to get USD.
-        tr.pnl        = pts_move * lot;
+        tr.pnl        = pts_move * lot * p.size_mult;   // S-2026-06-03: regression-slope sizing overlay
         // S34 P1 fix #5: propagate MFE/MAE accumulated during the position
         // life. Both in price units (XAU points).
         tr.mfe        = p.mfe;
