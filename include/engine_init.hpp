@@ -4290,6 +4290,24 @@ static void init_engines(const std::string& cfg_path)
             omega::resolve_seed_path("phase1/signal_discovery/warmup_USTEC_D1.csv"));
         g_overnight_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         printf("[OMEGA-INIT] OvernightDrift NAS100: shadow=true long@close->flat@open if close>SMA20\n");
+
+        // ConnorsRSI2 — 3rd index edge (daily mean-reversion dip-buy). Buy@close
+        // if close>SMA200 AND RSI(2)<10, exit next close. Backtest: NDX cash
+        // Sharpe 2.46, IBKR CFD 2.33, NQ future 2.71 (SMA50), all both-halves+,
+        // cost-incl. Orthogonal to FVGcont/Overnight. SMA filter = bear-safe.
+        g_connors_nas.symbol      = "NAS100";
+        g_connors_nas.engine_name = "ConnorsRSI2";
+        g_connors_nas.TREND_SMA   = 200;
+        g_connors_nas.RSI_IN      = 10.0;
+        g_connors_nas.HOLD_DAYS   = 1;
+        g_connors_nas.shadow_mode = true;
+        g_connors_nas.enabled     = true;
+        g_connors_nas.lot         = 1.0;
+        g_connors_nas.init();
+        g_connors_nas.seed_from_d1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_USTEC_D1.csv"));
+        g_connors_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=true dip-buy close>SMA200 & RSI2<10, exit next close\n");
         fflush(stdout);
     }
 
