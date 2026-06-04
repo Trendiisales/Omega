@@ -171,7 +171,7 @@ R"OMEGA1(
 .l2-dot-dead{background:var(--t3);}
 
 /* Engine grid -- all 15 engines in a responsive grid */
-.eng-section{flex-shrink:0;}
+.eng-section{flex-shrink:0;margin-top:2px!important;zoom:0.82;}
 .eng-section-label{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 2px;display:flex;align-items:center;gap:0;}
 .eng-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;}
 .eng-grid.eng-grid-3{grid-template-columns:repeat(3,1fr);}
@@ -197,12 +197,12 @@ R"OMEGA1(
 .eng-px{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;margin-top:1px;
   display:flex;justify-content:center;gap:3px;align-items:center;line-height:1;}
 .eng-bid{color:var(--green);}.eng-ask{color:var(--red);}.eng-sep{color:var(--t2);font-size:11px;}
-.eng-vol{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a8bbd4;margin-top:2px;line-height:1.3;}
+.eng-vol{display:none;}
 /* Proximity bar -- shows how close price is to compression boundary */
-.eng-prox{width:calc(100% - 8px);display:flex;align-items:center;gap:4px;margin:2px 4px 0;}
+.eng-prox{display:none;width:calc(100% - 8px);align-items:center;gap:4px;margin:2px 4px 0;}
 .eng-prox-track{flex:1;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;}
 .eng-prox-fill{height:100%;border-radius:2px;transition:width 0.3s,background 0.3s;}
-.eng-l2{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:2px;}
+.eng-l2{display:none;position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:2px;}
 .eng-l2-fill{position:absolute;top:0;height:100%;border-radius:2px;transition:width 0.25s,background 0.25s,left 0.25s;}
 /* ?? L2 DEPTH PANEL ?? */
 .depth-wrap{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px 8px;}
@@ -225,7 +225,7 @@ R"OMEGA1(
 .eng-prox-pct{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--t2);
   min-width:26px;text-align:right;transition:color 0.3s;flex-shrink:0;}
 /* Signal count badge */
-.eng-sigs{font-size:11px;font-weight:700;color:var(--gold);margin-top:2px;
+.eng-sigs{display:none;font-size:11px;font-weight:700;color:var(--gold);margin-top:2px;
   padding:1px 4px;border-radius:3px;background:rgba(245,200,66,0.1);}
 
 /* Signal + trade area */
