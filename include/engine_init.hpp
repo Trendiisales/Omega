@@ -6095,6 +6095,44 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("XauTrendFollow1h",
         _make_xau_tf_source("XauTrendFollow1h", &g_xau_tf_1h));
 
+    // 2026-06-04: LIVE-DISPLAY sources for the new index engines. wire_cross only
+    // registers the PERSIST source (.dat restore); the dashboard RUNNING TRADES
+    // reads register_source. Without these the engines' open positions were
+    // invisible. FVGcont = bidirectional; Overnight = long-only.
+    auto _nas_px = [](double entry)->double {
+        const auto it = g_last_tick_bid.find("NAS100");
+        return (it!=g_last_tick_bid.end() && it->second>0.0) ? it->second : entry; };
+    g_open_positions.register_source("FvgContinuation", [&,_nas_px]() {
+        std::vector<omega::PositionSnapshot> out;
+        if (!g_fvgcont_nas.has_open_position()) return out;
+        const auto& p = g_fvgcont_nas.pos; const double mult = tick_value_multiplier(std::string("NAS100"));
+        double cur=_nas_px(p.entry_px);
+        omega::PositionSnapshot ps; ps.engine="FvgContinuation"; ps.symbol="NAS100";
+        ps.side=p.dir>0?"LONG":"SHORT"; ps.size=p.size; ps.entry=p.entry_px; ps.current=cur;
+        ps.sl=p.stop_px; ps.tp=p.tp_px; ps.entry_ts=p.entry_ms/1000;
+        ps.unrealized_pnl=(p.dir>0?(cur-p.entry_px):(p.entry_px-cur))*p.size*mult;
+        out.push_back(ps); return out; });
+    g_open_positions.register_source("FvgCont10m", [&,_nas_px]() {
+        std::vector<omega::PositionSnapshot> out;
+        if (!g_fvgcont_nas10.has_open_position()) return out;
+        const auto& p = g_fvgcont_nas10.pos; const double mult = tick_value_multiplier(std::string("NAS100"));
+        double cur=_nas_px(p.entry_px);
+        omega::PositionSnapshot ps; ps.engine="FvgCont10m"; ps.symbol="NAS100";
+        ps.side=p.dir>0?"LONG":"SHORT"; ps.size=p.size; ps.entry=p.entry_px; ps.current=cur;
+        ps.sl=p.stop_px; ps.tp=p.tp_px; ps.entry_ts=p.entry_ms/1000;
+        ps.unrealized_pnl=(p.dir>0?(cur-p.entry_px):(p.entry_px-cur))*p.size*mult;
+        out.push_back(ps); return out; });
+    g_open_positions.register_source("OvernightDrift", [&,_nas_px]() {
+        std::vector<omega::PositionSnapshot> out;
+        if (!g_overnight_nas.has_open_position()) return out;
+        const auto& p = g_overnight_nas.pos; const double mult = tick_value_multiplier(std::string("NAS100"));
+        double cur=_nas_px(p.entry_px);
+        omega::PositionSnapshot ps; ps.engine="OvernightDrift"; ps.symbol="NAS100";
+        ps.side="LONG"; ps.size=p.size; ps.entry=p.entry_px; ps.current=cur;
+        ps.sl=0.0; ps.tp=0.0; ps.entry_ts=p.entry_ms/1000;
+        ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
+        out.push_back(ps); return out; });
+
     // S-2026-06-03: GoldSeasonal (XAUUSD Mon+Tue long). Long-only, no TP/SL
     //   (exits on UTC day-flip) → tp=sl=0.
     g_open_positions.register_source("GoldSeasonal",
