@@ -240,8 +240,9 @@ R"OMEGA1(
 .trades-scroll{flex:1;overflow-y:auto;}
 .trades-scroll::-webkit-scrollbar{width:3px;}
 .trades-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px;}
-#liveTradesPanelOuter::-webkit-scrollbar{width:4px;}
-#liveTradesPanelOuter::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:2px;}
+#liveTradesPanelOuter::-webkit-scrollbar{width:7px;}
+#liveTradesPanelOuter::-webkit-scrollbar-thumb{background:rgba(120,180,255,0.45);border-radius:3px;}
+#liveTradesPanelOuter::-webkit-scrollbar-track{background:rgba(255,255,255,0.04);}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 th{padding:7px 10px;color:var(--t2);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;
   font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--bg1);}
@@ -517,7 +518,7 @@ R"OMEGA3(
       </div>
     </div>
     <!-- Live open trades panel -- full width below stats bar, prominent when positions open -->
-    <div id="liveTradesPanelOuter" style="border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:4px 6px;transition:border-color 0.3s,box-shadow 0.3s;flex-shrink:0;max-height:46vh;overflow-y:auto;">
+    <div id="liveTradesPanelOuter" style="border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:4px 6px;transition:border-color 0.3s,box-shadow 0.3s;flex-shrink:0;max-height:64vh;overflow-y:auto;">
       <div id="liveTradesPanel" style="display:flex;flex-direction:column;gap:2px;"></div>
     </div>
 
@@ -1852,9 +1853,9 @@ R"OMEGA23D(
         </svg>`;
 
         return `<div style="background:${rowBg};border:1px solid rgba(255,255,255,0.06);
-            border-radius:6px;padding:6px 8px 4px;margin-bottom:5px;">
+            border-radius:6px;padding:4px 8px 2px;margin-bottom:0;">
           <!-- Header row -->
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
             <span style="font-family:IBM Plex Mono,monospace;font-size:12px;font-weight:700;
               color:${isLong?'var(--gold)':'var(--purple)'};">${lt.symbol}</span>
             <span style="font-size:10px;font-weight:700;color:${isLong?'var(--green)':'var(--red)'};">
@@ -1868,7 +1869,7 @@ R"OMEGA23D(
             <span style="font-size:10px;color:var(--t3);">${held}</span>
           </div>
           <!-- Engine + stage badges -->
-          <div style="display:flex;align-items:center;gap:4px;margin-bottom:5px;">
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
             <span style="font-size:9px;color:var(--cyan);padding:1px 5px;background:rgba(0,200,240,0.08);
               border-radius:3px;border:1px solid rgba(0,200,240,0.2);">${lt.engine}</span>
             ${stageBadge}${pyramidBadge}
