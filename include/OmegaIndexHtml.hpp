@@ -137,16 +137,16 @@ header{background:var(--glass);border:1px solid var(--border);border-radius:10px
 R"OMEGA1(
 
 /* ?? CENTRE COLUMN ?? */
-.col-centre{grid-column:2;display:flex;flex-direction:column;gap:8px;overflow:hidden;min-height:0;}
+.col-centre{grid-column:2;display:flex;flex-direction:column;gap:5px;overflow:hidden;min-height:0;}
 
 /* Stats row */
 .stats-bar{display:grid;grid-template-columns:200px repeat(4,1fr);gap:8px;flex-shrink:0;}
 .pnl-card{background:var(--glass);border:1px solid var(--border);border-radius:10px;
-  padding:10px 14px;position:relative;overflow:hidden;}
+  padding:5px 12px;position:relative;overflow:hidden;}
 .pnl-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
   background:linear-gradient(90deg,var(--cyan),var(--blue) 50%,transparent);}
-.pnl-num{font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:700;
-  letter-spacing:-0.5px;text-shadow:0 0 20px currentColor;line-height:1;margin:4px 0 2px;}
+.pnl-num{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:700;
+  letter-spacing:-0.5px;text-shadow:0 0 20px currentColor;line-height:1;margin:2px 0 1px;}
 .pnl-pos{color:var(--green)}.pnl-neg{color:var(--red)}
 .pnl-sub{font-size:11px;color:var(--t2);}
 .stat-card{background:var(--glass);border:1px solid var(--border);border-radius:8px;
@@ -172,11 +172,11 @@ R"OMEGA1(
 
 /* Engine grid -- all 15 engines in a responsive grid */
 .eng-section{flex-shrink:0;}
-.eng-section-label{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 5px;display:flex;align-items:center;gap:0;}
-.eng-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
+.eng-section-label{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:2px;padding:0 2px 2px;display:flex;align-items:center;gap:0;}
+.eng-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;}
 .eng-grid.eng-grid-3{grid-template-columns:repeat(3,1fr);}
 .eng-grid.eng-grid-6{grid-template-columns:repeat(6,1fr);}
-.eng-cell{border-radius:7px;padding:6px 5px;border:1px solid var(--border);
+.eng-cell{border-radius:7px;padding:3px 4px;border:1px solid var(--border);
   background:rgba(255,255,255,0.015);text-align:center;cursor:default;transition:all 0.25s;position:relative;}
 .eng-cell.ph1{background:rgba(30,18,0,0.85);border-color:rgba(255,136,0,0.55);
   box-shadow:0 0 8px rgba(255,136,0,0.15);animation:eng-amber 1.8s ease-in-out infinite;}
@@ -187,22 +187,22 @@ R"OMEGA1(
 @keyframes eng-amber{0%,100%{box-shadow:0 0 8px rgba(255,136,0,0.1)}50%{box-shadow:0 0 16px rgba(255,136,0,0.3)}}
 @keyframes eng-green{0%,100%{box-shadow:0 0 10px rgba(0,217,126,0.2)}50%{box-shadow:0 0 22px rgba(0,217,126,0.5)}}
 @keyframes eng-live{0%,100%{box-shadow:0 0 16px rgba(0,217,126,0.4)}50%{box-shadow:0 0 30px rgba(0,217,126,0.9)}}
-.eng-sym{font-size:12px;font-weight:700;color:var(--blue);letter-spacing:0.5px;line-height:1;}
-.eng-ph{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;padding:2px 5px;
+.eng-sym{font-size:11px;font-weight:700;color:var(--blue);letter-spacing:0.5px;line-height:1;}
+.eng-ph{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;padding:1px 4px;
   border-radius:3px;display:inline-block;}
 .eph-flat{background:rgba(255,255,255,0.05);color:var(--t2);}
 .eph-comp{background:var(--amber-dim);color:var(--amber);}
 .eph-brk{background:var(--green-dim);color:var(--green);}
 .eph-live{background:rgba(0,217,126,0.25);color:#fff;font-weight:700;}
-.eng-px{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;margin-top:3px;
+.eng-px{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;margin-top:2px;
   display:flex;justify-content:center;gap:3px;align-items:center;line-height:1;}
 .eng-bid{color:var(--green);}.eng-ask{color:var(--red);}.eng-sep{color:var(--t2);font-size:11px;}
 .eng-vol{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a8bbd4;margin-top:2px;line-height:1.3;}
 /* Proximity bar -- shows how close price is to compression boundary */
-.eng-prox{width:calc(100% - 8px);display:flex;align-items:center;gap:4px;margin:3px 4px 0;}
+.eng-prox{width:calc(100% - 8px);display:flex;align-items:center;gap:4px;margin:2px 4px 0;}
 .eng-prox-track{flex:1;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;}
 .eng-prox-fill{height:100%;border-radius:2px;transition:width 0.3s,background 0.3s;}
-.eng-l2{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:3px;}
+.eng-l2{position:relative;height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:2px;}
 .eng-l2-fill{position:absolute;top:0;height:100%;border-radius:2px;transition:width 0.25s,background 0.25s,left 0.25s;}
 /* ?? L2 DEPTH PANEL ?? */
 .depth-wrap{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px 8px;}
