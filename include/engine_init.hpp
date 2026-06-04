@@ -4239,6 +4239,26 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // ── FvgContinuationEngine (NAS100, 15m FVG → DOL, NY killzone) ──────────────
+    // 2026-06-04 backtest-found edge (backtest/fvg_core.cpp; memory
+    // omega-fvg-continuation-nas-edge): NAS100 only — PF 1.65-1.88, WR ~50%, both
+    // halves +, 3x-cost-robust, 9/9 param-plateau, cross-validated on 2 NAS
+    // datasets. CAVEAT: validated only in the 2025-26 bull regime → SHADOW only.
+    {
+        g_fvgcont_nas.symbol      = "NAS100";
+        g_fvgcont_nas.engine_name = "FvgContinuation";
+        g_fvgcont_nas.shadow_mode = true;     // bull-only caveat: prove on shadow first
+        g_fvgcont_nas.enabled     = true;
+        g_fvgcont_nas.lot         = 1.0;
+        g_fvgcont_nas.init();
+        g_fvgcont_nas.seed_from_m15_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M15.csv"));
+        g_fvgcont_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] FvgContinuation NAS100: shadow=true 15m NY-killzone(13:30-15:00 UTC) "
+               "gap>=1.0ATR dol<=3ATR fresh<=8\n");
+        fflush(stdout);
+    }
+
     // ?? Adaptive intelligence layer startup ???????????????????????????????????
     {
         const int64_t now_s = static_cast<int64_t>(

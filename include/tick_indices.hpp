@@ -1274,6 +1274,7 @@ static void on_tick_nas100(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_nas.set_risk_off(omega::index_risk_off());
         g_idxsess_nas.on_tick(bid, ask, now_ms_isn);
+        g_fvgcont_nas.on_tick(bid, ask, now_ms_isn);   // 2026-06-04 FVG continuation (shadow)
         g_engine_heartbeat.pulse("IndexSession_NAS100");
     }
 }

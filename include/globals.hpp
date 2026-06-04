@@ -111,6 +111,8 @@ static omega::BreakBounceEngine g_xau_breakbounce;
 // Per-symbol instance. Edge = hold into US close; long-only; risk-off gated.
 // SPX OOS Sharpe 0.67, GER40 0.60, NAS 0.34. Shadow.
 #include "IndexSessionEngine.hpp"
+#include "FvgContinuationEngine.hpp"
+static omega::FvgContinuationEngine g_fvgcont_nas; // NAS100 FVG continuation (NY killzone, 15m) -- 2026-06-04 backtest-found edge, shadow
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)
