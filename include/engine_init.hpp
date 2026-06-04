@@ -1922,7 +1922,11 @@ static void init_engines(const std::string& cfg_path)
             };
             for (const auto& c : cells) {
                 c.e->shadow_mode   = true;
-                c.e->enabled       = true;
+                // 2026-06-04: DISABLED. Index-straddle cells make pennies (~$0-2)
+                // on 250-740min holds -> no real edge (distinct from the validated
+                // GOLD XauStraddle). Net ~0 across NAS/GER/UK. Culled; index book =
+                // FVGcont + OvernightDrift.
+                c.e->enabled       = false;
                 c.e->symbol        = c.sym;
                 c.e->engine_name   = c.name;
                 c.e->box_n         = 15;
@@ -4213,11 +4217,17 @@ static void init_engines(const std::string& cfg_path)
         // bleed: drop the $50/pt outlier; revisit only with risk-normalised
         // sizing + a working intraday stop + a backtest.
         struct { omega::IndexSessionEngine* e; const char* sym; int oh, ch; const char* d1; bool en; } idx[] = {
+            // 2026-06-04: ALL legs DISABLED. IndexSession rides intraday to the
+            // cash close with a 2-ATR stop that never fires -> uncapped session-
+            // close losses (GER40 -$97.13, the prior US500.F -$1859). Net-negative
+            // live + structurally flawed + now REDUNDANT: the index book is
+            // FVGcont + OvernightDrift (Sharpe 2.0). Revisit only with a working
+            // intraday stop + risk-normalised sizing + a backtest.
             { &g_idxsess_sp,    "US500.F", 14, 22, "phase1/signal_discovery/warmup_US500_D1.csv",     false },
-            { &g_idxsess_nas,   "NAS100",  14, 22, "phase1/signal_discovery/warmup_USTEC_D1.csv",     true  },
-            { &g_idxsess_ger40, "GER40",    9, 20, "phase1/signal_discovery/warmup_GER40_D1_idx.csv", true  },
-            { &g_idxsess_uk100, "UK100",    9, 20, "phase1/signal_discovery/warmup_UK100_D1.csv",     true  },
-            { &g_idxsess_estx50,"ESTX50",   9, 20, "phase1/signal_discovery/warmup_ESTX50_D1.csv",    true  },
+            { &g_idxsess_nas,   "NAS100",  14, 22, "phase1/signal_discovery/warmup_USTEC_D1.csv",     false },
+            { &g_idxsess_ger40, "GER40",    9, 20, "phase1/signal_discovery/warmup_GER40_D1_idx.csv", false },
+            { &g_idxsess_uk100, "UK100",    9, 20, "phase1/signal_discovery/warmup_UK100_D1.csv",     false },
+            { &g_idxsess_estx50,"ESTX50",   9, 20, "phase1/signal_discovery/warmup_ESTX50_D1.csv",    false },
         };
         for (auto& c : idx) {
             c.e->symbol      = c.sym;
