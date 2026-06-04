@@ -70,6 +70,7 @@ int main(int argc,char**argv){
     double BE_ARM    = getenv("BE_ARM")?atof(getenv("BE_ARM")):0.0;       // R to arm breakeven (0=off)
     double BE_BUF    = getenv("BE_BUF")?atof(getenv("BE_BUF")):0.0;       // lock buffer in R above entry
     double TRAIL     = getenv("TRAIL")?atof(getenv("TRAIL")):0.0;         // ATR mult trail (0=off)
+    int    HOLD      = getenv("HOLD")?atoi(getenv("HOLD")):0;             // max bars in trade (0=off) -- time-stop test
 
     std::vector<Bar> b=load_agg(path,tf);
     if((int)b.size()<200){std::fprintf(stderr,"few bars\n");return 1;}
@@ -89,7 +90,8 @@ int main(int argc,char**argv){
     double PARTIAL   = getenv("PARTIAL")?atof(getenv("PARTIAL")):0.0;   // fraction 0..1
     double PARTIAL_R = getenv("PARTIAL_R")?atof(getenv("PARTIAL_R")):0.5;
 
-    bool pos=false; int dir=0; double entry=0,stop=0,tp=0; int cooldown_until=-1;
+    bool pos=false; int dir=0; double entry=0,stop=0,tp=0; int cooldown_until=-1; int entry_bar=-1;
+    long long holdsum=0;
     int units=0; double entry_sum=0, last_add=0;
     double pend_bank=0.0, pos_frac=1.0; bool part_taken=false;   // partial state
     double cum=0,peak=0,mdd=0; int nw=0,nl=0; double gw=0,gl=0; int ntr=0;
@@ -154,6 +156,7 @@ int main(int argc,char**argv){
             if(dir>0){ if(bar.l<=stop) close(stop,i); else if(tp>0&&bar.h>=tp) close(tp,i); }
             else     { if(bar.h>=stop) close(stop,i); else if(tp>0&&bar.l<=tp) close(tp,i); }
         }
+        if(pos && HOLD>0 && entry_bar>=0 && (i-entry_bar)>=HOLD){ holdsum+=(i-entry_bar); close(bar.c,i); }
         if(pos && dir>0 && tp<=0){ /* runner: exit on close below box low (computed below) */ }
 
         int warm=std::max({boxN,biasSlow,ATR_P})+3;
@@ -191,8 +194,8 @@ int main(int argc,char**argv){
             if(std::fabs(bar.o-buyStop) <= std::fabs(bar.o-sellStop)){ hitS=false; } else { hitL=false; }
         }
         double effTP = (PYMAX>0)?0.0:TPr;   // pyramid -> runner (no fixed TP)
-        if(hitL){ pos=true;dir=1;entry=buyStop;stop=buyStop-stopm*atr; tp=effTP>0?buyStop+effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; pend_bank=0;pos_frac=1.0;part_taken=false; }
-        else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=effTP>0?sellStop-effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; pend_bank=0;pos_frac=1.0;part_taken=false; }
+        if(hitL){ pos=true;dir=1;entry=buyStop;stop=buyStop-stopm*atr; tp=effTP>0?buyStop+effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; pend_bank=0;pos_frac=1.0;part_taken=false; entry_bar=i; }
+        else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=effTP>0?sellStop-effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; pend_bank=0;pos_frac=1.0;part_taken=false; entry_bar=i; }
     }
     if(pos) close(b.back().c,(int)b.size()-1);
 
