@@ -7,8 +7,9 @@
 import sys, os, datetime as _dt
 from ib_async import IB, ContFuture
 
-ENDS = (sys.argv[1].split(",") if len(sys.argv) > 1 else
-        ["20230101 00:00:00", "20240101 00:00:00", "20250101 00:00:00"])
+# ContFuture rejects endDateTime (Error 10339) -> single request, no end,
+# long duration. IBKR returns as far back as available for the bar size.
+DUR  = sys.argv[1] if len(sys.argv) > 1 else "4 Y"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 4002
 OUT  = "data/NQ_15m_hist.csv"
 os.makedirs("data", exist_ok=True)
@@ -21,16 +22,15 @@ c = ContFuture("NQ", "CME", "USD"); ib.qualifyContracts(c)
 print(f"[idxhist] qualified {c.localSymbol}", flush=True)
 
 rows = {}
-for end in ENDS:
-    try:
-        bars = ib.reqHistoricalData(c, end.strip(), durationStr="1 Y",
-                                    barSizeSetting="15 mins", whatToShow="TRADES",
-                                    useRTH=True, timeout=180)
-        for b in bars:
-            rows[_ts(b.date)] = (b.open, b.high, b.low, b.close)
-        print(f"[idxhist] end={end}: {len(bars)} bars (total uniq {len(rows)})", flush=True)
-    except Exception as e:
-        print(f"[idxhist] end={end} FAIL: {e}", flush=True)
+try:
+    bars = ib.reqHistoricalData(c, "", durationStr=DUR,
+                                barSizeSetting="15 mins", whatToShow="TRADES",
+                                useRTH=True, timeout=300)
+    for b in bars:
+        rows[_ts(b.date)] = (b.open, b.high, b.low, b.close)
+    print(f"[idxhist] dur={DUR}: {len(bars)} bars", flush=True)
+except Exception as e:
+    print(f"[idxhist] FAIL: {e}", flush=True)
 
 with open(OUT, "w") as f:
     f.write("ts,open,high,low,close\n")
