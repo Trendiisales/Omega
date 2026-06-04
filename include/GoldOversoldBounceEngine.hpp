@@ -69,7 +69,11 @@ struct GoldOversoldBounceEngine {
         return true;
     }
     bool persist_restore(const omega::PositionSnapshot& ps) {
-        pos_.active = true; pos_.entry_px = ps.entry; pos_.lot = ps.size;
+        // FIXED-LOT engine: re-assert the configured lot, NEVER trust the
+        // snapshot size. A stale open_positions.dat once carried size=1.0 and
+        // restored over the 0.01 config -> a +$1589 shadow trade on a +15.89pt
+        // move (100x). The engine's lot is config, not position state. (2026-06-04)
+        pos_.active = true; pos_.entry_px = ps.entry; pos_.lot = lot;
         pos_.stop_px = ps.sl; pos_.entry_ts = ps.entry_ts * 1000;
         return true;
     }

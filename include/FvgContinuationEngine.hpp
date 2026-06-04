@@ -63,6 +63,10 @@ public:
     double MIN_RR        = 1.0;     // require DOL >= this many R away
     double COST_RATIO    = 1.5;     // ExecutionCostGuard min gross/cost
     bool   ALLOW_SHORT   = true;    // bidirectional; longs are the bull-validated side
+    bool   MACD_GATE     = true;    // gate entries by MACD(12,26,9) direction on the HTF
+                                    // close (long only if MACD>signal, short if <).
+                                    // 2026-06-04: lifts the noisier NQ-future feed
+                                    // PF 0.90->1.07 by cutting counter-momentum entries.
     double lot           = 1.0;
 
     bool   enabled       = true;
@@ -100,6 +104,7 @@ public:
         m_cur_bucket=-1; m_o=m_h=m_l=m_c=0;
         m_atr=0; m_atr_ready=false;
         m_day=-1; m_day_hi=-1e18; m_day_lo=1e18; m_pdh=-1; m_pdl=-1; m_have_pd=false;
+        m_ema12=0; m_ema26=0; m_macd_sig=0; m_macd_init=false; m_macd_bull=false;
         pos = Position{};
     }
 
@@ -177,6 +182,8 @@ public:
             const double rr    = (f.dir>0) ? (dol-entry)/r : (entry-dol)/r;
             if (rr < MIN_RR || rr > 20.0) continue;
             if (f.dir<0 && !ALLOW_SHORT)  continue;
+            if (MACD_GATE) { if (f.dir>0 && !m_macd_bull) continue;     // momentum direction gate
+                             if (f.dir<0 &&  m_macd_bull) continue; }
 
             const double tp_dist = std::fabs(dol-entry);
             const double spread  = std::fabs(ask-bid);
@@ -216,6 +223,12 @@ private:
 
         m_htf.push_back({ts,o,h,l,c});
         if ((int)m_htf.size() > SWING_LB+ATR_LEN+8) m_htf.pop_front();   // bound memory
+
+        // MACD(12,26,9) on the HTF close -> m_macd_bull
+        if (!m_macd_init) { m_ema12=c; m_ema26=c; m_macd_sig=0; m_macd_init=true; }
+        else { m_ema12=c*(2.0/13)+m_ema12*(1-2.0/13); m_ema26=c*(2.0/27)+m_ema26*(1-2.0/27); }
+        { const double macd=m_ema12-m_ema26; m_macd_sig=macd*(2.0/10)+m_macd_sig*(1-2.0/10);
+          m_macd_bull=(macd>m_macd_sig); }
 
         // ATR (simple mean of TR over ATR_LEN)
         const int n=(int)m_htf.size();
@@ -283,6 +296,7 @@ private:
     int64_t m_cur_bucket=-1; double m_o=0,m_h=0,m_l=0,m_c=0;
     double  m_atr=0; bool m_atr_ready=false;
     int64_t m_day=-1; double m_day_hi=-1e18, m_day_lo=1e18, m_pdh=-1, m_pdl=-1; bool m_have_pd=false;
+    double  m_ema12=0, m_ema26=0, m_macd_sig=0; bool m_macd_init=false, m_macd_bull=false;
 };
 
 }  // namespace omega
