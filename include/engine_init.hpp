@@ -4300,8 +4300,13 @@ static void init_engines(const std::string& cfg_path)
         g_connors_nas.TREND_SMA   = 200;
         g_connors_nas.RSI_IN      = 10.0;
         g_connors_nas.HOLD_DAYS   = 1;
+        // 2026-06-04: DROPPED from the index allocation. Combination backtest
+        // (backtest/combine.py): the index book = FVGcont + OvernightDrift
+        // (vol-parity Sharpe 2.00, maxDD 5%, corr ~0.05). Adding Connors does
+        // NOTHING (All-3 Sharpe 1.99 ~= pair 2.00) -- too weak/low-freq (Sharpe
+        // ~0.75, fat-tail-fragile). Disabled; re-enable only with new evidence.
         g_connors_nas.shadow_mode = true;
-        g_connors_nas.enabled     = true;
+        g_connors_nas.enabled     = false;
         g_connors_nas.lot         = 1.0;
         g_connors_nas.init();
         g_connors_nas.seed_from_d1_csv(
