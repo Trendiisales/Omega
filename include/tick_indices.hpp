@@ -962,6 +962,7 @@ static void on_tick_ger40(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_ger40.set_risk_off(omega::index_risk_off());
         g_idxsess_ger40.on_tick(bid, ask, now_ms_isg);
+        g_adhull_ger.on_tick(bid, ask, now_ms_isg);   // adaptive-Hull GER40 trend (shadow)
         g_engine_heartbeat.pulse("IndexSession_GER40");
     }
 

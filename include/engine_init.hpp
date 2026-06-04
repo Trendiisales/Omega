@@ -4326,6 +4326,31 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // ── AdaptiveHullEngine (Ehlers cycle -> adaptive HMA trend, long-only) ──────
+    // 2026-06-05 backtest (backtest/adaptive_hull.cpp; memory omega-pa-adaptive-
+    // hull-eval): XAU 60m all-session PF1.52 Sh1.61, GER40 60m EU-session PF2.03
+    // Sh1.94, both halves+, 3x-cost-robust, long-only (shorts drag). Diversifier
+    // (~0.6 corr w/ trend book). shadow.
+    {
+        g_adhull_xau.symbol="XAUUSD"; g_adhull_xau.engine_name="AdaptiveHullXAU";
+        g_adhull_xau.TF_SEC=3600; g_adhull_xau.PMUL=2.0; g_adhull_xau.KATR=3.0;
+        g_adhull_xau.SESS0=-1; g_adhull_xau.SESS1=-1;   // all-session
+        g_adhull_xau.shadow_mode=true; g_adhull_xau.enabled=true; g_adhull_xau.lot=0.01;
+        g_adhull_xau.init();
+        g_adhull_xau.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
+        g_adhull_xau.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+
+        g_adhull_ger.symbol="GER40"; g_adhull_ger.engine_name="AdaptiveHullGER";
+        g_adhull_ger.TF_SEC=3600; g_adhull_ger.PMUL=2.0; g_adhull_ger.KATR=3.0;
+        g_adhull_ger.SESS0=7; g_adhull_ger.SESS1=16;    // EU session (07-16 UTC)
+        g_adhull_ger.shadow_mode=true; g_adhull_ger.enabled=true; g_adhull_ger.lot=1.0;
+        g_adhull_ger.init();
+        g_adhull_ger.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_GER40_H1.csv"));
+        g_adhull_ger.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] AdaptiveHull: XAU(60m all-sess) + GER40(60m EU-sess) shadow long-only pmul2\n");
+        fflush(stdout);
+    }
+
     // ?? Adaptive intelligence layer startup ???????????????????????????????????
     {
         const int64_t now_s = static_cast<int64_t>(
@@ -6132,6 +6157,21 @@ static void init_engines(const std::string& cfg_path)
         ps.sl=0.0; ps.tp=0.0; ps.entry_ts=p.entry_ms/1000;
         ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
         out.push_back(ps); return out; });
+
+    // AdaptiveHull live-display sources (long-only; current px per symbol)
+    auto _hull_src = [](const char* label, omega::AdaptiveHullEngine* e, const char* sym) {
+        return [label,e,sym]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!e->has_open_position()) return out;
+            const auto& p = e->pos; const double mult = tick_value_multiplier(std::string(sym));
+            double cur=p.entry_px; const auto it=g_last_tick_bid.find(sym);
+            if (it!=g_last_tick_bid.end() && it->second>0.0) cur=it->second;
+            omega::PositionSnapshot ps; ps.engine=label; ps.symbol=sym; ps.side="LONG";
+            ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.stop_px; ps.tp=0.0;
+            ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
+            out.push_back(ps); return out; }; };
+    g_open_positions.register_source("AdaptiveHullXAU", _hull_src("AdaptiveHullXAU", &g_adhull_xau, "XAUUSD"));
+    g_open_positions.register_source("AdaptiveHullGER", _hull_src("AdaptiveHullGER", &g_adhull_ger, "GER40"));
 
     // S-2026-06-03: GoldSeasonal (XAUUSD Mon+Tue long). Long-only, no TP/SL
     //   (exits on UTC day-flip) → tp=sl=0.

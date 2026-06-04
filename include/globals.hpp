@@ -114,6 +114,9 @@ static omega::BreakBounceEngine g_xau_breakbounce;
 #include "FvgContinuationEngine.hpp"
 #include "OvernightDriftEngine.hpp"
 #include "ConnorsRSI2Engine.hpp"
+#include "AdaptiveHullEngine.hpp"
+static omega::AdaptiveHullEngine g_adhull_xau;       // XAUUSD adaptive-Hull trend (60m all-session) -- 2026-06-05, shadow
+static omega::AdaptiveHullEngine g_adhull_ger;       // GER40 adaptive-Hull trend (60m EU-session) -- 2026-06-05, shadow
 static omega::OvernightDriftEngine g_overnight_nas;  // NAS100 overnight drift (trend>SMA20) -- 2nd index edge, shadow
 static omega::ConnorsRSI2Engine    g_connors_nas;    // NAS100 RSI2 dip-buy (mean-rev) -- 3rd index edge, shadow
 static omega::FvgContinuationEngine g_fvgcont_nas;   // NAS100 FVG continuation 15m (NY killzone) -- 2026-06-04 edge, shadow

@@ -2222,6 +2222,7 @@ static void on_tick_gold(
     // built internally from H4 stream. Single-position per cell, 3 max
     // concurrent. Shadow-default.
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_adhull_xau.on_tick(bid, ask, now_ms_g);   // adaptive-Hull XAU trend (shadow)
     // XauTsmomFastD1Engine tick management (SL/TP per tick).
     g_xau_tsmom_fast_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTurtleD1Engine + XauStopRunD1Engine tick management.

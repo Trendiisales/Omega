@@ -78,6 +78,15 @@ int main(int argc,char**argv){
     string EXIT=argc>5?argv[5]:"flip"; double RR=argc>6?atof(argv[6]):1.5;
     string STOP=argc>7?argv[7]:"hma"; double KATR=argc>8?atof(argv[8]):2.0;
     int CONFIRM=argc>9?atoi(argv[9]):1; int SIDE=argc>10?atoi(argv[10]):0; string NAME=argc>11?argv[11]:path;
+    string MODE=getenv("MODE")?getenv("MODE"):"hull";   // hull | donch | super (Supertrend)
+    string DUMP=getenv("DUMP")?getenv("DUMP"):"";        // file: write exit_ts,net per trade
+    double STMULT=getenv("STMULT")?atof(getenv("STMULT")):3.0;  // Supertrend ATR mult
+    int    STLEN =getenv("STLEN")?atoi(getenv("STLEN")):10;     // Supertrend ATR period
+    string PAIR=getenv("PAIR")?getenv("PAIR"):"";        // "" | ema (long only if close>EMA_slow) | adx
+    int    EMASLOW=getenv("EMASLOW")?atoi(getenv("EMASLOW")):100;
+    double ADXMIN=getenv("ADXMIN")?atof(getenv("ADXMIN")):25.0;
+    int    SESS0=getenv("SESS0")?atoi(getenv("SESS0")):-1;   // entry UTC-hour window [SESS0,SESS1) (-1=all)
+    int    SESS1=getenv("SESS1")?atoi(getenv("SESS1")):-1;
     auto m=load(path); if((int)m.size()<2000){printf("[%s] few\n",NAME.c_str());return 1;}
     auto b=agg(m,TF); int N=(int)b.size(); if(N<300){printf("[%s] few agg\n",NAME.c_str());return 1;}
     auto per=ehlers_period(b,0.2);
@@ -91,13 +100,29 @@ int main(int argc,char**argv){
     // ATR
     vector<double> atr(N,0); {double a=0;int c2=0; for(int i=1;i<N;++i){double tr=max(b[i].h-b[i].l,max(fabs(b[i].h-b[i-1].c),fabs(b[i].l-b[i-1].c)));
         if(c2<14){a+=tr;if(++c2==14)a/=14;}else a=(a*13+tr)/14; atr[i]=a;} }
+    // Supertrend direction (median +/- STMULT*ATR(STLEN)) — canonical
+    vector<int> stdir(N,1);
+    { double a=0;int cc=0; double prevFU=0,prevFL=0,prevST=0; bool init=false;
+      for(int i=1;i<N;++i){ double trv=max(b[i].h-b[i].l,max(fabs(b[i].h-b[i-1].c),fabs(b[i].l-b[i-1].c)));
+        if(cc<STLEN){a+=trv;if(++cc==STLEN)a/=STLEN;}else a=(a*(STLEN-1)+trv)/STLEN;
+        double hl2=(b[i].h+b[i].l)*0.5,bU=hl2+STMULT*a,bL=hl2-STMULT*a;
+        if(!init){prevFU=bU;prevFL=bL;prevST=bL;stdir[i]=1;init=true;continue;}
+        double fU=(bU<prevFU||b[i-1].c>prevFU)?bU:prevFU;
+        double fL=(bL>prevFL||b[i-1].c<prevFL)?bL:prevFL;
+        double st=(prevST==prevFU)?((b[i].c<=fU)?fU:fL):((b[i].c>=fL)?fL:fU);
+        stdir[i]=b[i].c>st?1:-1; prevFU=fU;prevFL=fL;prevST=st; } }
+    // EMA(slow) for the PAIR=ema regime filter
+    vector<double> emaS(N,0); { double k=2.0/(EMASLOW+1),e=c[0]; for(int i=0;i<N;++i){e=c[i]*k+e*(1-k);emaS[i]=e;} }
     // strategy: HMA slope flip
-    struct T{double e,sl,tp;int dir;double net,r;bool win;}; vector<T> tr; bool in=false; T cur{}; double trailstop=0;
+    struct T{double e,sl,tp;int dir;double net,r;bool win;int64_t exts;}; vector<T> tr; bool in=false; T cur{}; double trailstop=0;
     int warm=60;
     for(int i=warm;i<N;++i){
         int slope = (hma[i]>hma[i-1])?1:((hma[i]<hma[i-1])?-1:0);
         int pslope= (hma[i-1]>hma[i-2])?1:((hma[i-1]<hma[i-2])?-1:0);
         bool flipUp = slope>0 && pslope<=0; bool flipDn = slope<0 && pslope>=0;
+        if(MODE=="donch"){ double dh=-1e18,dl=1e18; for(int k=max(0,i-20);k<i;++k){dh=max(dh,b[k].h);dl=min(dl,b[k].l);}
+            flipUp = b[i].c>dh; flipDn = b[i].c<dl; }
+        if(MODE=="super"){ flipUp = stdir[i]>0 && stdir[i-1]<=0; flipDn = stdir[i]<0 && stdir[i-1]>=0; }
         // manage
         if(in){
             bool sl = cur.dir>0?(b[i].l<=cur.sl):(b[i].h>=cur.sl);
@@ -108,7 +133,7 @@ int main(int argc,char**argv){
             bool trx = (EXIT=="trail") && (cur.dir>0?(b[i].c<trailstop):(b[i].c>trailstop));
             if(sl||tp||fx||trx){
                 double ex = sl?cur.sl : (tp?cur.tp : b[i].c);
-                double p=(cur.dir>0?(ex-cur.e):(cur.e-ex))-COST; cur.net=p; cur.r=cur.sl!=cur.e?fabs(p)/fabs(cur.e-cur.sl):0; cur.win=p>0;
+                double p=(cur.dir>0?(ex-cur.e):(cur.e-ex))-COST; cur.net=p; cur.r=cur.sl!=cur.e?fabs(p)/fabs(cur.e-cur.sl):0; cur.win=p>0; cur.exts=b[i].ts;
                 tr.push_back(cur); in=false; trailstop=0;
             }
             continue;
@@ -116,6 +141,8 @@ int main(int argc,char**argv){
         if(atr[i]<=0) continue;
         bool wantL = flipUp && (SIDE!=2), wantS = flipDn && (SIDE!=1);
         if(CONFIRM){ if(wantL && b[i].c<=b[i].o) wantL=false; if(wantS && b[i].c>=b[i].o) wantS=false; }
+        if(PAIR=="ema"){ if(wantL && b[i].c<=emaS[i]) wantL=false; if(wantS && b[i].c>=emaS[i]) wantS=false; }  // regime confirm
+        if(SESS0>=0){ int hr=(int)((b[i].ts%86400)/3600); bool ins=(SESS0<=SESS1)?(hr>=SESS0&&hr<SESS1):(hr>=SESS0||hr<SESS1); if(!ins){wantL=wantS=false;} }
         if(wantL||wantS){
             int dir=wantL?1:-1; double e=b[i].c;
             double sl = (STOP=="hma")? hma[i] - dir*0.0 : e - dir*KATR*atr[i];
@@ -135,4 +162,5 @@ int main(int argc,char**argv){
         NAME.c_str(),TF,EXIT.c_str(),RR,STOP.c_str(),KATR,CONFIRM,SIDE,PMUL,COST,(int)tr.size());
     if(tr.empty()){printf("  (none)\n");return 0;}
     rep("ALL",0,(int)tr.size());int mid=(int)tr.size()/2;rep("H1",0,mid);rep("H2",mid,(int)tr.size());
+    if(!DUMP.empty()){ ofstream o(DUMP); o<<"exts,net\n"; for(auto&t:tr) o<<t.exts<<","<<t.net<<"\n"; }
     return 0;}
