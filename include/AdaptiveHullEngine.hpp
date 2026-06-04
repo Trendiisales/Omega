@@ -123,7 +123,8 @@ private:
         double q1 = (m_dt.size()>=7)? (.0962*_at(m_dt,0)+.5769*_at(m_dt,2)-.5769*_at(m_dt,4)-.0962*_at(m_dt,6))*mul : 0;
         double i1 = (m_dt.size()>=4)? _at(m_dt,3) : 0;
         m_q1.push_back(q1); m_i1.push_back(i1);
-        double ph=0; if(std::fabs(i1)>1e-9) ph=std::atan(q1/i1)/(M_PI/180.0);
+        constexpr double kPi=3.14159265358979323846;   // MSVC lacks M_PI without _USE_MATH_DEFINES
+        double ph=0; if(std::fabs(i1)>1e-9) ph=std::atan(q1/i1)/(kPi/180.0);
         if(i1<0&&q1>0)ph=180-ph; else if(i1<0&&q1<0)ph=180+ph; else if(i1>0&&q1<0)ph=-ph;
         m_ph.push_back(ph);
         // phase accumulation -> period
