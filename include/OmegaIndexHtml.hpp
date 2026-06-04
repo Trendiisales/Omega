@@ -1852,40 +1852,33 @@ R"OMEGA23D(
           ${needle}
         </svg>`;
 
-        return `<div style="background:${rowBg};border:1px solid rgba(255,255,255,0.06);
-            border-radius:6px;padding:4px 8px 2px;margin-bottom:0;">
-          <!-- Header row -->
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-            <span style="font-family:IBM Plex Mono,monospace;font-size:12px;font-weight:700;
-              color:${isLong?'var(--gold)':'var(--purple)'};">${lt.symbol}</span>
-            <span style="font-size:10px;font-weight:700;color:${isLong?'var(--green)':'var(--red)'};">
-              ${isLong?'&#9650;':'&#9660;'} ${lt.side}</span>
-            <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--t3);">
-              @${entry.toFixed(dp)}</span>
-            <span style="font-family:IBM Plex Mono,monospace;font-size:11px;font-weight:700;
-              color:var(--t2);">? ${cur.toFixed(dp)}</span>
-            <span style="font-family:IBM Plex Mono,monospace;font-size:13px;font-weight:900;
-              color:${pnlCol};margin-left:auto;">${pnlStr}</span>
-            <span style="font-size:10px;color:var(--t3);">${held}</span>
-          </div>
-          <!-- Engine + stage badges -->
-          <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;">
-            <span style="font-size:9px;color:var(--cyan);padding:1px 5px;background:rgba(0,200,240,0.08);
-              border-radius:3px;border:1px solid rgba(0,200,240,0.2);">${lt.engine}</span>
-            ${stageBadge}${pyramidBadge}
-            ${sl > 0 ? `<span style="font-size:9px;color:var(--t3);margin-left:2px;">
-              SL dist: <span style="color:var(--red);font-family:IBM Plex Mono,monospace;">
-              ${lt.dist_sl!=null?lt.dist_sl.toFixed(2):'?'}</span></span>` : ''}
-            ${tp > 0 ? `<span style="font-size:9px;color:var(--t3);">
-              TP dist: <span style="color:var(--green);font-family:IBM Plex Mono,monospace;">
-              ${lt.dist_tp!=null?lt.dist_tp.toFixed(2):'?'}</span></span>` : ''}
-            ${tp > 0 && sl > 0 ? `<span style="font-size:9px;color:var(--t3);">
-              RR: <span style="font-family:IBM Plex Mono,monospace;color:${
-                (lt.dist_tp/lt.dist_sl)>=2?'var(--green)':(lt.dist_tp/lt.dist_sl)>=1?'var(--amber)':'var(--red)'
-              };">${(lt.dist_tp/lt.dist_sl).toFixed(1)}R</span></span>` : ''}
-          </div>
-          <!-- Price ladder SVG -->
-          <div style="padding:0 2px 2px;">${svgFinal}</div>
+        // ── Compact one-line row (2026-06-04) ──────────────────────────────
+        // Replaced the 83px SVG diamond ladder with a ~26px single-line row so
+        // ALL open trades fit at once without scrolling. Slim inline SL–cur–TP
+        // bar keeps the spatial read; the per-row SVG above is now unused.
+        const sideCol = isLong ? 'var(--green)' : 'var(--red)';
+        const symCol  = isLong ? 'var(--gold)'  : 'var(--purple)';
+        const rr      = (tp>0 && sl>0 && lt.dist_sl) ? (lt.dist_tp/lt.dist_sl) : null;
+        const rrCol   = rr==null ? 'var(--t3)' : (rr>=2?'var(--green)':rr>=1?'var(--amber)':'var(--red)');
+        const bar =
+          `<div style="flex:1;position:relative;height:9px;min-width:90px;background:rgba(255,255,255,0.05);border-radius:2px;">`
+          + (xSl!==null?`<div style="position:absolute;top:0;height:100%;left:${Math.min(xEntry,xSl)}%;width:${Math.abs(xEntry-xSl)}%;background:rgba(255,51,85,0.22);"></div>`:'')
+          + (xTp!==null?`<div style="position:absolute;top:0;height:100%;left:${Math.min(xEntry,xTp)}%;width:${Math.abs(xEntry-xTp)}%;background:rgba(0,217,126,0.20);"></div>`:'')
+          + `<div style="position:absolute;top:-1px;height:11px;width:1px;left:${xEntry}%;background:var(--t2);"></div>`
+          + (xSl!==null?`<div style="position:absolute;top:-1px;height:11px;width:2px;left:${xSl}%;background:var(--red);"></div>`:'')
+          + (xTp!==null?`<div style="position:absolute;top:-1px;height:11px;width:2px;left:${xTp}%;background:var(--green);"></div>`:'')
+          + `<div style="position:absolute;top:-2px;height:13px;width:7px;left:${xCur}%;transform:translateX(-50%);background:${pnlCol};border-radius:2px;box-shadow:0 0 6px ${pnlCol};"></div>`
+          + `</div>`;
+        return `<div style="background:${rowBg};border:1px solid rgba(255,255,255,0.06);border-radius:5px;padding:3px 8px;margin-bottom:3px;display:flex;align-items:center;gap:7px;font-family:IBM Plex Mono,monospace;white-space:nowrap;">
+          <span style="font-size:11px;font-weight:700;color:${symCol};min-width:58px;">${lt.symbol}</span>
+          <span style="font-size:9px;font-weight:700;color:${sideCol};min-width:26px;">${isLong?'&#9650;':'&#9660;'}${lt.side==='LONG'?'L':'S'}</span>
+          <span style="font-size:9px;color:var(--t3);min-width:60px;">@${entry.toFixed(dp)}</span>
+          <span style="font-size:10px;font-weight:700;color:var(--t2);min-width:60px;">${cur.toFixed(dp)}</span>
+          ${bar}
+          <span style="font-size:9px;color:var(--t3);min-width:104px;">SL ${lt.dist_sl!=null?lt.dist_sl.toFixed(1):'?'} / TP ${lt.dist_tp!=null?lt.dist_tp.toFixed(1):'?'}${rr!=null?` / <span style="color:${rrCol};">${rr.toFixed(1)}R</span>`:''}</span>
+          <span style="font-size:9px;color:var(--cyan);max-width:118px;overflow:hidden;text-overflow:ellipsis;">${lt.engine}</span>
+          <span style="font-size:12px;font-weight:900;color:${pnlCol};margin-left:auto;min-width:54px;text-align:right;">${pnlStr}</span>
+          <span style="font-size:9px;color:var(--t3);min-width:38px;text-align:right;">${held}</span>
         </div>`;
       }).join('');
 
