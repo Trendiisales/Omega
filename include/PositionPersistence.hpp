@@ -207,7 +207,8 @@ inline void register_position_persistence() {
     // ---- IndexSession (intraday cash-session long, 5 indices) ----
     wire_cross(g_idxsess_sp,     "IndexSession_SP",     "US500.F");
     wire_cross(g_idxsess_nas,    "IndexSession_NAS",    "NAS100");
-    wire_cross(g_fvgcont_nas,    "FvgContinuation",     "NAS100");   // 2026-06-04 FVG continuation (long+short)
+    wire_cross(g_fvgcont_nas,    "FvgContinuation",     "NAS100");   // FVG continuation 15m (long+short)
+    wire_cross(g_fvgcont_nas10,  "FvgCont10m",          "NAS100");   // FVG continuation 10m (long+short)
     wire_cross(g_idxsess_ger40,  "IndexSession_GER40",  "GER40");
     wire_cross(g_idxsess_uk100,  "IndexSession_UK100",  "UK100");
     wire_cross(g_idxsess_estx50, "IndexSession_ESTX50", "ESTX50");

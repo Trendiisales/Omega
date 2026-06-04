@@ -4256,6 +4256,23 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         printf("[OMEGA-INIT] FvgContinuation NAS100: shadow=true 15m NY-killzone(13:30-15:00 UTC) "
                "gap>=1.0ATR dol<=3ATR fresh<=8\n");
+
+        // 10m variant — best HTF in the sweep (PF 2.37, Sharpe/yr 2.03, ret/DD
+        // 11.5, both halves +, 3x-cost-robust, 9/9 param-plateau). Single-dataset
+        // validated (can't build 10m from the 15m pkl), so run it in SHADOW
+        // alongside the 2-dataset-validated 15m and let live data pick the winner.
+        g_fvgcont_nas10.symbol      = "NAS100";
+        g_fvgcont_nas10.engine_name = "FvgCont10m";
+        g_fvgcont_nas10.HTF_SEC     = 600;    // 10-minute FVG
+        g_fvgcont_nas10.shadow_mode = true;
+        g_fvgcont_nas10.enabled     = true;
+        g_fvgcont_nas10.lot         = 1.0;
+        g_fvgcont_nas10.init();
+        g_fvgcont_nas10.seed_from_m15_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M10.csv"));
+        g_fvgcont_nas10.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] FvgCont10m NAS100: shadow=true 10m NY-killzone "
+               "gap>=1.0ATR dol<=3ATR fresh<=8 (best-HTF shadow compare)\n");
         fflush(stdout);
     }
 
