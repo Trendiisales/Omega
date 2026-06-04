@@ -127,12 +127,20 @@ int main(int argc,char**argv){
             peakFav=0;peakAdv=0;trailStop=0; break;
         }
     }
-    auto rep=[&](const char*tag,int lo,int hi){ int n=0,w=0,reach=0;double net=0,gw=0,gl=0,sR=0,pk=0,cm=0,dd=0,sMfe=0;
-        for(int i=lo;i<hi;++i){auto&t=trades[i];n++;net+=t.netPts;sR+=t.netR;sMfe+=t.mfeR;if(t.win){w++;gw+=t.netPts;}else gl+=-t.netPts;
-            if(t.mfeR>=( (t.tp-t.entry)*0)+0) {} if(t.netR>0&&t.win)reach++; cm+=t.netPts;if(cm>pk)pk=cm;if(pk-cm>dd)dd=pk-cm;}
-        double pf=gl>0?gw/gl:(gw>0?99:0);
-        printf("  %-9s n=%3d WR=%4.1f%% PF=%4.2f net=%8.1fpt avgR=%+5.2f maxDD=%7.1f exp=%+5.2f mfeAvg=%4.2fR\n",
-            tag,n,n?100.0*w/n:0,pf,net,n?sR/n:0,dd,n?net/n:0,n?sMfe/n:0); };
+    auto rep=[&](const char*tag,int lo,int hi){ int n=0,w=0;double net=0,gw=0,gl=0,sR=0,pk=0,cm=0,dd=0;
+        double sumWp=0,sumLp=0; int nw=0,nl=0,consec=0,maxConsec=0; std::vector<double> rs;
+        for(int i=lo;i<hi;++i){auto&t=trades[i];n++;net+=t.netPts;sR+=t.netR;rs.push_back(t.netR);
+            if(t.win){w++;gw+=t.netPts;sumWp+=t.netPts;nw++;consec=0;}else{gl+=-t.netPts;sumLp+=-t.netPts;nl++;consec++;if(consec>maxConsec)maxConsec=consec;}
+            cm+=t.netPts;if(cm>pk)pk=cm;if(pk-cm>dd)dd=pk-cm;}
+        double pf=gl>0?gw/gl:(gw>0?99:0), mR=n?sR/n:0, var=0;
+        for(double r:rs)var+=(r-mR)*(r-mR); double sd=rs.size()>1?std::sqrt(var/(rs.size()-1)):0;
+        double sharpeTrade=sd>0?mR/sd:0;                 // per-trade Sharpe
+        double tpy = n*(12.0/16.0)/ (n? 1:1);            // (NY 16mo sample) approx trades/yr below
+        double trades_per_yr = n>0 ? n/(16.0/12.0) : 0;
+        double sharpeAnn = sharpeTrade*std::sqrt(trades_per_yr>0?trades_per_yr:1);
+        double avgW=nw?sumWp/nw:0, avgL=nl?sumLp/nl:0, plr=avgL>0?avgW/avgL:0;
+        printf("  %-9s n=%3d WR=%4.1f%% PF=%4.2f net=%8.1fpt avgR=%+5.2f | Sharpe/tr=%4.2f Sharpe/yr=%4.2f | avgW=%6.1f avgL=%6.1f W/L=%4.2f | maxDD=%7.1f ret/DD=%4.2f maxConsecL=%d exp=%+5.2fpt\n",
+            tag,n,n?100.0*w/n:0,pf,net,mR, sharpeTrade,sharpeAnn, avgW,-avgL,plr, dd, dd>0?net/dd:0, maxConsec, n?net/n:0); (void)tpy; };
     printf("[%s] HTF=%dm sess=%s cost=%.2f stop=%s k=%.1f maxDol=%.0fA minRR=%.1f exit=%s trail=%.1f | tr=%d\n",
         NAME.c_str(),HTF,SESS.c_str(),COST,SMODE.c_str(),STOPK,MAXDOL,MINRR,EXIT.c_str(),TRAILA,(int)trades.size());
     if(trades.empty()){printf("  (no trades)\n");return 0;}
