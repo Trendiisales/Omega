@@ -4273,6 +4273,23 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas10.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         printf("[OMEGA-INIT] FvgCont10m NAS100: shadow=true 10m NY-killzone "
                "gap>=1.0ATR dol<=3ATR fresh<=8 (best-HTF shadow compare)\n");
+
+        // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.
+        // Long at cash close -> flat at open, only if close>SMA20. Backtest:
+        // NDX cash Sharpe 1.62, NQ future 1.0 (no financing), both halves +,
+        // bear-safe (flat overnight in downtrends). Preferred live vehicle:
+        // IBKR MNQ future. Shadow on the live NAS100 feed for now.
+        g_overnight_nas.symbol      = "NAS100";
+        g_overnight_nas.engine_name = "OvernightDrift";
+        g_overnight_nas.SMA_LEN     = 20;
+        g_overnight_nas.shadow_mode = true;
+        g_overnight_nas.enabled     = true;
+        g_overnight_nas.lot         = 1.0;
+        g_overnight_nas.init();
+        g_overnight_nas.seed_from_d1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_USTEC_D1.csv"));
+        g_overnight_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] OvernightDrift NAS100: shadow=true long@close->flat@open if close>SMA20\n");
         fflush(stdout);
     }
 

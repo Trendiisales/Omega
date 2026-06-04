@@ -209,6 +209,7 @@ inline void register_position_persistence() {
     wire_cross(g_idxsess_nas,    "IndexSession_NAS",    "NAS100");
     wire_cross(g_fvgcont_nas,    "FvgContinuation",     "NAS100");   // FVG continuation 15m (long+short)
     wire_cross(g_fvgcont_nas10,  "FvgCont10m",          "NAS100");   // FVG continuation 10m (long+short)
+    wire_cross(g_overnight_nas,  "OvernightDrift",      "NAS100");   // overnight drift (long-only)
     wire_cross(g_idxsess_ger40,  "IndexSession_GER40",  "GER40");
     wire_cross(g_idxsess_uk100,  "IndexSession_UK100",  "UK100");
     wire_cross(g_idxsess_estx50, "IndexSession_ESTX50", "ESTX50");

@@ -112,6 +112,8 @@ static omega::BreakBounceEngine g_xau_breakbounce;
 // SPX OOS Sharpe 0.67, GER40 0.60, NAS 0.34. Shadow.
 #include "IndexSessionEngine.hpp"
 #include "FvgContinuationEngine.hpp"
+#include "OvernightDriftEngine.hpp"
+static omega::OvernightDriftEngine g_overnight_nas;  // NAS100 overnight drift (trend>SMA20) -- 2nd index edge, shadow
 static omega::FvgContinuationEngine g_fvgcont_nas;   // NAS100 FVG continuation 15m (NY killzone) -- 2026-06-04 edge, shadow
 static omega::FvgContinuationEngine g_fvgcont_nas10; // NAS100 FVG continuation 10m -- best HTF (PF2.37 Sh2.0), shadow compare vs 15m
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
