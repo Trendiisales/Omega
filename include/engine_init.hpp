@@ -4205,12 +4205,19 @@ static void init_engines(const std::string& cfg_path)
     // (the bear guard). OOS Sharpe ~0.3-0.7. SHADOW. The per-tick set_risk_off()
     // and feed are wired in tick_indices.hpp (on_tick_us500/nas100/ger40).
     {
-        struct { omega::IndexSessionEngine* e; const char* sym; int oh, ch; const char* d1; } idx[] = {
-            { &g_idxsess_sp,    "US500.F", 14, 22, "phase1/signal_discovery/warmup_US500_D1.csv" },
-            { &g_idxsess_nas,   "NAS100",  14, 22, "phase1/signal_discovery/warmup_USTEC_D1.csv" },
-            { &g_idxsess_ger40, "GER40",    9, 20, "phase1/signal_discovery/warmup_GER40_D1_idx.csv" },
-            { &g_idxsess_uk100, "UK100",    9, 20, "phase1/signal_discovery/warmup_UK100_D1.csv" },
-            { &g_idxsess_estx50,"ESTX50",   9, 20, "phase1/signal_discovery/warmup_ESTX50_D1.csv" },
+        // 2026-06-04: US500.F leg DISABLED (en=false). Live shadow ledger showed
+        // it the entire IndexSession bleed: size/lot=1 = 1 ES contract = $50/pt,
+        // i.e. ~50x the per-point risk of the other legs (~$1/pt CFD). One -37pt
+        // session-close ride (2026-06-03) = -$1859 = 69% of the whole book's
+        // losses. The other legs lose small ($1/pt chop) and stay shadow. Stop-
+        // bleed: drop the $50/pt outlier; revisit only with risk-normalised
+        // sizing + a working intraday stop + a backtest.
+        struct { omega::IndexSessionEngine* e; const char* sym; int oh, ch; const char* d1; bool en; } idx[] = {
+            { &g_idxsess_sp,    "US500.F", 14, 22, "phase1/signal_discovery/warmup_US500_D1.csv",     false },
+            { &g_idxsess_nas,   "NAS100",  14, 22, "phase1/signal_discovery/warmup_USTEC_D1.csv",     true  },
+            { &g_idxsess_ger40, "GER40",    9, 20, "phase1/signal_discovery/warmup_GER40_D1_idx.csv", true  },
+            { &g_idxsess_uk100, "UK100",    9, 20, "phase1/signal_discovery/warmup_UK100_D1.csv",     true  },
+            { &g_idxsess_estx50,"ESTX50",   9, 20, "phase1/signal_discovery/warmup_ESTX50_D1.csv",    true  },
         };
         for (auto& c : idx) {
             c.e->symbol      = c.sym;
@@ -4221,13 +4228,13 @@ static void init_engines(const std::string& cfg_path)
             c.e->SKIP_FRIDAY = true;
             c.e->ENTER_ON_WEAK_ONLY = true;   // dip-buy: SPX OOS Sharpe 0.67->1.48
             c.e->shadow_mode = true;
-            c.e->enabled     = true;
+            c.e->enabled     = c.en;
             c.e->lot         = 1.0;
             c.e->init();
             c.e->seed_from_d1_csv(omega::resolve_seed_path(c.d1));
             c.e->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
-            printf("[OMEGA-INIT] IndexSession %s: shadow=true window=%02d-%02d UTC stop=2.0 skipFri\n",
-                   c.sym, c.oh, c.ch);
+            printf("[OMEGA-INIT] IndexSession %s: enabled=%s shadow=true window=%02d-%02d UTC stop=2.0 skipFri\n",
+                   c.sym, c.en ? "true" : "false", c.oh, c.ch);
         }
         fflush(stdout);
     }
