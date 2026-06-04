@@ -6,8 +6,12 @@
 # Distinct clientId (77) from the DOM bridge (99) and MGC producer (88).
 # Run on the VPS (has the IB Gateway connection):
 #   python tools/pull_stock_bars.py NVDA,TSLA,AMD,META,AAPL,MSFT,AMZN,GOOGL,AVGO,PLTR
-import sys, os, time
+import sys, os, time, datetime as _dt
 from ib_async import IB, Stock
+
+def _ts(d):
+    if isinstance(d, _dt.datetime): return int(d.timestamp())
+    return int(_dt.datetime(d.year, d.month, d.day).timestamp())   # daily bars = date
 
 SYMS = (sys.argv[1] if len(sys.argv) > 1 else
         "NVDA,TSLA,AMD,META,AAPL,MSFT,AMZN,GOOGL,AVGO,PLTR").split(",")
@@ -39,14 +43,14 @@ for sym in SYMS:
         with open(f"{OUT}/{sym}_15m.csv", "w") as f:
             f.write("ts,open,high,low,close\n")
             for b in b15:
-                f.write(f"{int(b.date.timestamp())},{b.open},{b.high},{b.low},{b.close}\n")
+                f.write(f"{_ts(b.date)},{b.open},{b.high},{b.low},{b.close}\n")
         print(f"[stocks] {sym} 15m: {len(b15)} bars", flush=True)
     bd = pull(sym, "1 day", "2 Y", True, True)
     if bd:
         with open(f"{OUT}/{sym}_d1.csv", "w") as f:
             f.write("ts,open,high,low,close,volume\n")
             for b in bd:
-                f.write(f"{int(b.date.timestamp())},{b.open},{b.high},{b.low},{b.close},{b.volume or 0}\n")
+                f.write(f"{_ts(b.date)},{b.open},{b.high},{b.low},{b.close},{b.volume or 0}\n")
         print(f"[stocks] {sym} d1: {len(bd)} bars", flush=True)
     time.sleep(1)   # pacing
 
