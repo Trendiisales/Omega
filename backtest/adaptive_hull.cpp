@@ -113,6 +113,14 @@ int main(int argc,char**argv){
         stdir[i]=b[i].c>st?1:-1; prevFU=fU;prevFL=fL;prevST=st; } }
     // EMA(slow) for the PAIR=ema regime filter
     vector<double> emaS(N,0); { double k=2.0/(EMASLOW+1),e=c[0]; for(int i=0;i<N;++i){e=c[i]*k+e*(1-k);emaS[i]=e;} }
+    // CCI(5) + Fractal(3) reversal signal (the video). CCI zero-cross + recent fractal.
+    int CCIP=getenv("CCIP")?atoi(getenv("CCIP")):5; int FP=getenv("FP")?atoi(getenv("FP")):3; int FK=getenv("FK")?atoi(getenv("FK")):5;
+    vector<double> cci(N,0); vector<char> fracHi(N,0),fracLo(N,0);
+    for(int i=CCIP-1;i<N;++i){ double tp=0; for(int k=i-CCIP+1;k<=i;++k)tp+=(b[k].h+b[k].l+b[k].c)/3.0; double sma=tp/CCIP;
+        double md=0; for(int k=i-CCIP+1;k<=i;++k)md+=fabs((b[k].h+b[k].l+b[k].c)/3.0-sma); md/=CCIP;
+        double tpi=(b[i].h+b[i].l+b[i].c)/3.0; cci[i]=md>0?(tpi-sma)/(0.015*md):0; }
+    for(int i=FP;i<N-FP;++i){ bool hi=true,lo=true; for(int k=1;k<=FP;++k){ if(b[i].h<=b[i-k].h||b[i].h<=b[i+k].h)hi=false; if(b[i].l>=b[i-k].l||b[i].l>=b[i+k].l)lo=false; }
+        fracHi[i]=hi; fracLo[i]=lo; }   // NOTE: fractal confirmed FP bars late (lookahead-safe: usable at i+FP)
     // strategy: HMA slope flip
     struct T{double e,sl,tp;int dir;double net,r;bool win;int64_t exts;}; vector<T> tr; bool in=false; T cur{}; double trailstop=0;
     int warm=60;
@@ -123,6 +131,9 @@ int main(int argc,char**argv){
         if(MODE=="donch"){ double dh=-1e18,dl=1e18; for(int k=max(0,i-20);k<i;++k){dh=max(dh,b[k].h);dl=min(dl,b[k].l);}
             flipUp = b[i].c>dh; flipDn = b[i].c<dl; }
         if(MODE=="super"){ flipUp = stdir[i]>0 && stdir[i-1]<=0; flipDn = stdir[i]<0 && stdir[i-1]>=0; }
+        if(MODE=="cci"){ bool cu=cci[i]>0&&cci[i-1]<=0, cd=cci[i]<0&&cci[i-1]>=0;
+            bool rLo=false,rHi=false; for(int j=i-FP;j>=max(0,i-FP-FK);--j){ if(fracLo[j])rLo=true; if(fracHi[j])rHi=true; }
+            flipUp = cu&&rLo; flipDn = cd&&rHi; }
         // manage
         if(in){
             bool sl = cur.dir>0?(b[i].l<=cur.sl):(b[i].h>=cur.sl);

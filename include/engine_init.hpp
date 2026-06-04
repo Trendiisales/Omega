@@ -4351,6 +4351,21 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
     }
 
+    // ── SupertrendGoldEngine (XAUUSD 60m, Supertrend(10,3) long-only +EMA) ──────
+    // 2026-06-05: strongest single-indicator result (PF 2.04, Sharpe 2.49, both
+    // halves+, 3x-cost-robust). ST line = trailing stop; exit = flip-down. NO
+    // BE/TP/time-stop (edge-killers); EMA100 regime = chop protection. shadow.
+    {
+        g_supertrend_gold.symbol="XAUUSD"; g_supertrend_gold.engine_name="SupertrendGold";
+        g_supertrend_gold.TF_SEC=3600; g_supertrend_gold.ST_LEN=10; g_supertrend_gold.ST_MULT=3.0;
+        g_supertrend_gold.EMA_LEN=100; g_supertrend_gold.shadow_mode=true; g_supertrend_gold.enabled=true;
+        g_supertrend_gold.lot=0.01; g_supertrend_gold.init();
+        g_supertrend_gold.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
+        g_supertrend_gold.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] SupertrendGold XAUUSD: shadow 60m Supertrend(10,3) long-only +EMA100, flip-exit\n");
+        fflush(stdout);
+    }
+
     // ?? Adaptive intelligence layer startup ???????????????????????????????????
     {
         const int64_t now_s = static_cast<int64_t>(
@@ -6172,6 +6187,16 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps); return out; }; };
     g_open_positions.register_source("AdaptiveHullXAU", _hull_src("AdaptiveHullXAU", &g_adhull_xau, "XAUUSD"));
     g_open_positions.register_source("AdaptiveHullGER", _hull_src("AdaptiveHullGER", &g_adhull_ger, "GER40"));
+    g_open_positions.register_source("SupertrendGold", []() {
+        std::vector<omega::PositionSnapshot> out;
+        if (!g_supertrend_gold.has_open_position()) return out;
+        const auto& p=g_supertrend_gold.pos; const double mult=tick_value_multiplier(std::string("XAUUSD"));
+        double cur=p.entry_px; const auto it=g_last_tick_bid.find("XAUUSD");
+        if (it!=g_last_tick_bid.end() && it->second>0.0) cur=it->second;
+        omega::PositionSnapshot ps; ps.engine="SupertrendGold"; ps.symbol="XAUUSD"; ps.side="LONG";
+        ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.stop_px; ps.tp=0.0;
+        ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
+        out.push_back(ps); return out; });
 
     // S-2026-06-03: GoldSeasonal (XAUUSD Mon+Tue long). Long-only, no TP/SL
     //   (exits on UTC day-flip) → tp=sl=0.

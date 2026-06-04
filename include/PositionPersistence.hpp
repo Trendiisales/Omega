@@ -213,6 +213,7 @@ inline void register_position_persistence() {
     wire_cross(g_connors_nas,    "ConnorsRSI2",         "NAS100");   // RSI2 dip-buy (long-only)
     wire_cross(g_adhull_xau,     "AdaptiveHullXAU",     "XAUUSD");   // adaptive-Hull trend (long-only)
     wire_cross(g_adhull_ger,     "AdaptiveHullGER",     "GER40");    // adaptive-Hull trend (long-only)
+    wire_cross(g_supertrend_gold,"SupertrendGold",      "XAUUSD");   // Supertrend gold (long-only)
     wire_cross(g_idxsess_ger40,  "IndexSession_GER40",  "GER40");
     wire_cross(g_idxsess_uk100,  "IndexSession_UK100",  "UK100");
     wire_cross(g_idxsess_estx50, "IndexSession_ESTX50", "ESTX50");
