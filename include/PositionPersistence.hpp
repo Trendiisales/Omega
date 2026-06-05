@@ -22,8 +22,25 @@
 #include "OpenPositionRegistry.hpp"
 #include <string>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 namespace omega::persist {
+
+// Detect a public `bool enabled` member at compile time. A DISABLED engine must
+// never resurrect a stale persisted position — it would be restored then
+// force-closed on every restart, booking phantom trades for an engine that is
+// off (root cause of the IndexSession/GoldOversold phantom class, 2026-06-05).
+// `if constexpr (has_enabled<E>::value)` guards only engines that expose the
+// member; engines without it compile fine and simply skip the check.
+template <class T, class = void> struct has_enabled : std::false_type {};
+template <class T>
+struct has_enabled<T, std::void_t<decltype(bool(std::declval<const T&>().enabled))>>
+    : std::true_type {};
+template <class E> inline bool restore_blocked_disabled(const E& eng) {
+    if constexpr (has_enabled<E>::value) return !eng.enabled;
+    else return false;
+}
 
 // ---- LivePos archetype --------------------------------------------------
 // 7 engines share the identical `LivePos pos` struct (public):
@@ -49,6 +66,7 @@ inline void wire_livepos(E& eng, const char* tag, const char* sym) {
     });
     g_open_positions.register_restorer([&eng, tag](const omega::PositionSnapshot& ps) -> bool {
         if (ps.engine != tag) return false;
+        if (restore_blocked_disabled(eng)) return false;   // disabled engine -> no resurrect
         eng.pos.active   = true;
         eng.pos.is_long  = (ps.side == "LONG");
         eng.pos.entry    = ps.entry;
@@ -78,6 +96,7 @@ inline void wire_cross(E& eng, const char* tag, const char* sym) {
     });
     g_open_positions.register_restorer([&eng, tag](const omega::PositionSnapshot& ps) -> bool {
         if (ps.engine != tag) return false;
+        if (restore_blocked_disabled(eng)) return false;   // disabled engine -> no resurrect
         return eng.persist_restore(ps);
     });
 }
@@ -92,6 +111,7 @@ inline void wire_multicell(E& eng, const char* base, const char* sym) {
     g_open_positions.register_restorer([&eng, base](const omega::PositionSnapshot& ps) -> bool {
         std::string e = ps.engine; auto h = e.find('#');
         if (h == std::string::npos || e.substr(0, h) != base) return false;
+        if (restore_blocked_disabled(eng)) return false;   // disabled engine -> no resurrect
         return eng.persist_restore(ps);
     });
 }

@@ -121,6 +121,11 @@ public:
         return true;
     }
     bool persist_restore(const omega::PositionSnapshot& ps) {
+        // Disabled engine must NOT resurrect a stale persisted position: it would
+        // be restored then force-closed on every restart, booking phantom trades
+        // for an engine that is off. Returning false drops it from the registry so
+        // the next save self-cleans open_positions.dat. (2026-06-05)
+        if (!enabled) return false;
         pos.active=true; pos.entry_px=ps.entry; pos.stop_px=ps.sl; pos.size=ps.size;
         pos.entry_ms=ps.entry_ts*1000;
         return true;
