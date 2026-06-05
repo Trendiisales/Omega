@@ -173,23 +173,30 @@ public:
             if (f.dir<0 && dolDn<0) continue;
             if (mid < f.lo || mid > f.hi) continue;                  // retrace into gap (mitigation)
 
+            // price IS mitigating a fresh, correctly-pointed gap → a live candidate.
+            // Log the first such candidate's verdict ONCE per HTF bar (verbose only).
+            const bool diag = verbose && (cur_idx != m_diag_bar);
+            #define FVG_DIAG(fmt, ...) do{ if(diag){ printf("[%s] %s BLOCK " fmt, engine_name.c_str(), symbol.c_str(), ##__VA_ARGS__); fflush(stdout); m_diag_bar=cur_idx; } }while(0)
+
             const double entry = (f.dir>0) ? f.hi : f.lo;            // fill at near edge
             const double stop  = (f.dir>0) ? (f.lo - STOP_BUF_ATR*m_atr)
                                            : (f.hi + STOP_BUF_ATR*m_atr);
             const double r     = (f.dir>0) ? (entry-stop) : (stop-entry);
-            if (r <= 0.05*m_atr) { f.used=true; continue; }
+            if (r <= 0.05*m_atr) { FVG_DIAG("dir=%d r~0 (degenerate gap)\n", f.dir); f.used=true; continue; }
             const double dol   = (f.dir>0) ? dolUp : dolDn;
             const double rr    = (f.dir>0) ? (dol-entry)/r : (entry-dol)/r;
-            if (rr < MIN_RR || rr > 20.0) continue;
-            if (f.dir<0 && !ALLOW_SHORT)  continue;
-            if (MACD_GATE) { if (f.dir>0 && !m_macd_bull) continue;     // momentum direction gate
-                             if (f.dir<0 &&  m_macd_bull) continue; }
+            if (rr < MIN_RR || rr > 20.0) { FVG_DIAG("dir=%d rr=%.2f outside[%.1f,20] dol=%.2f entry=%.2f atr=%.2f\n", f.dir, rr, MIN_RR, dol, entry, m_atr); continue; }
+            if (f.dir<0 && !ALLOW_SHORT)  { FVG_DIAG("short setup but ALLOW_SHORT=false\n"); continue; }
+            if (MACD_GATE) { if (f.dir>0 && !m_macd_bull) { FVG_DIAG("long but MACD bearish (macd<sig)\n"); continue; }     // momentum direction gate
+                             if (f.dir<0 &&  m_macd_bull) { FVG_DIAG("short but MACD bullish\n"); continue; } }
 
             const double tp_dist = std::fabs(dol-entry);
             const double spread  = std::fabs(ask-bid);
             if (!ExecutionCostGuard::is_viable(symbol.c_str(), spread, tp_dist, lot, COST_RATIO)) {
+                FVG_DIAG("cost gate: tp_dist=%.2f spread=%.2f lot=%.2f\n", tp_dist, spread, lot);
                 f.used=true; continue;                               // cost gate
             }
+            #undef FVG_DIAG
             pos = Position{}; pos.active=true; pos.dir=f.dir;
             pos.entry_px=entry; pos.stop_px=stop; pos.tp_px=dol; pos.size=lot; pos.entry_ms=now_ms;
             f.used=true;
@@ -297,6 +304,7 @@ private:
     double  m_atr=0; bool m_atr_ready=false;
     int64_t m_day=-1; double m_day_hi=-1e18, m_day_lo=1e18, m_pdh=-1, m_pdl=-1; bool m_have_pd=false;
     double  m_ema12=0, m_ema26=0, m_macd_sig=0; bool m_macd_init=false, m_macd_bull=false;
+    int     m_diag_bar=-1;   // verbose reject-reason latch: at most one diag line per HTF bar
 };
 
 }  // namespace omega

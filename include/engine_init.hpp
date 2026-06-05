@@ -4259,6 +4259,7 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas.engine_name = "FvgContinuation";
         g_fvgcont_nas.shadow_mode = true;     // bull-only caveat: prove on shadow first
         g_fvgcont_nas.enabled     = true;
+        g_fvgcont_nas.verbose     = true;     // log entries + once-per-bar reject reasons
         g_fvgcont_nas.lot         = 1.0;
         g_fvgcont_nas.init();
         g_fvgcont_nas.seed_from_m15_csv(
@@ -4276,6 +4277,7 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas10.HTF_SEC     = 600;    // 10-minute FVG
         g_fvgcont_nas10.shadow_mode = true;
         g_fvgcont_nas10.enabled     = true;
+        g_fvgcont_nas10.verbose     = true;   // log entries + once-per-bar reject reasons
         g_fvgcont_nas10.lot         = 1.0;
         g_fvgcont_nas10.init();
         g_fvgcont_nas10.seed_from_m15_csv(
