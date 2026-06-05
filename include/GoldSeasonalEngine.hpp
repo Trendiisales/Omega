@@ -62,7 +62,11 @@ struct GoldSeasonalEngine {
         return true;
     }
     bool persist_restore(const omega::PositionSnapshot& ps) {
-        pos_.active = true; pos_.entry_px = ps.entry; pos_.lot = ps.size;
+        // FIXED-LOT engine: re-assert the configured lot, NEVER trust the
+        // snapshot size. A stale open_positions.dat carrying size=1.0 would
+        // restore over the 0.01 config -> 100x phantom (same class as the
+        // GoldOversoldBounce guard). The engine's lot is config, not state.
+        pos_.active = true; pos_.entry_px = ps.entry; pos_.lot = lot;
         pos_.entry_ts = ps.entry_ts * 1000;
         return true;
     }
@@ -146,9 +150,12 @@ private:
     void _close(double bid, double ask, int64_t ts_ms, const char* why, OnCloseFn cb) noexcept {
         if (!pos_.active) return;
         const double exit_px = bid;                              // long exits at bid
-        const double pnl = (exit_px - pos_.entry_px) * pos_.lot * usd_per_pt;
+        // RAW pts*lot ONLY -- handle_closed_trade applies tr.pnl *= tick_value_
+        // multiplier (XAUUSD=100). Pre-multiplying by usd_per_pt = DOUBLE-100x
+        // (same class as the GoldOversoldBounce -$1529 phantom, fixed 2026-06-05).
+        const double pnl = (exit_px - pos_.entry_px) * pos_.lot;
         const double spread = std::fabs(ask - bid);
-        const double cost = spread * pos_.lot * usd_per_pt;
+        const double cost = spread * pos_.lot;
         omega::TradeRecord tr{};
         tr.symbol = symbol; tr.side = "LONG"; tr.engine = engine_name_;
         tr.exitReason = why; tr.entryPrice = pos_.entry_px; tr.exitPrice = exit_px;

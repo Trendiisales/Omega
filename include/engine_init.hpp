@@ -4320,6 +4320,9 @@ static void init_engines(const std::string& cfg_path)
         g_overnight_nas.shadow_mode = true;
         g_overnight_nas.enabled     = true;
         g_overnight_nas.lot         = 1.0;
+        g_overnight_nas.stop_pct    = 0.015;  // 2026-06-05: tail-cap (~1.5% ≈ 450pt NAS).
+                                              // Was unstopped -> ate a -$453 overnight gap.
+                                              // Wide: only catches true gaps. Re-backtest pending.
         g_overnight_nas.init();
         g_overnight_nas.seed_from_d1_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_USTEC_D1.csv"));

@@ -35,6 +35,10 @@ public:
     std::string engine_name = "OvernightDrift";
     int    SMA_LEN     = 20;     // trend gate: hold overnight only if close > SMA(N)
     double lot         = 1.0;
+    double stop_pct    = 0.0;    // hard overnight tail-cap: close if bid <= entry*(1-stop_pct).
+                                 // 0 = off. Added 2026-06-05 after a -$453 (1.5% NAS gap)
+                                 // no-stop overnight loss. Wide by design (only catches gaps);
+                                 // NEEDS re-backtest to confirm it doesn't cut the night-effect edge.
     bool   enabled     = true;
     bool   shadow_mode = true;
     bool   verbose     = false;
@@ -89,6 +93,14 @@ public:
         const int et=_et_hm(sec);                       // US-Eastern hh*100+mm (DST-aware)
         const bool in_rth = (et>=930 && et<1600);
         const int64_t d = sec/86400;
+
+        // ---- hard tail-cap stop (every tick while held) ----
+        // Overnight long with no stop ate a full -1.5% NAS gap (-$453) once. Cap
+        // the rare deep adverse gap; wide enough to leave the night-effect edge intact.
+        if (pos.active && stop_pct > 0.0 && bid <= pos.entry_px * (1.0 - stop_pct)) {
+            _close(bid, now_ms, "STOP");
+            return;
+        }
 
         // ---- session-open transition: exit the overnight position, start fresh day ----
         if (in_rth && !m_in_session) {

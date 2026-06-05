@@ -210,9 +210,14 @@ private:
     void _close(double bid, double ask, int64_t ts_ms, const char* why, OnCloseFn cb) noexcept {
         if (!pos_.active) return;
         const double exit_px = bid;                              // long exits at bid
-        const double pnl = (exit_px - pos_.entry_px) * pos_.lot * usd_per_pt;
+        // RAW pts*lot ONLY. handle_closed_trade (trade_lifecycle.hpp:192) does
+        // tr.pnl *= tick_value_multiplier(symbol) (XAUUSD=100). Multiplying by
+        // usd_per_pt HERE too = DOUBLE-100x -> the recurring -$1529 phantom
+        // (root-caused 2026-06-05; the prior "stale size=1.0" diagnosis was a
+        // misattribution). usd_per_pt is informational only; never use in pnl.
+        const double pnl = (exit_px - pos_.entry_px) * pos_.lot;
         const double spread = std::fabs(ask - bid);
-        const double cost = spread * pos_.lot * usd_per_pt;
+        const double cost = spread * pos_.lot;
         omega::TradeRecord tr{};
         tr.symbol = symbol; tr.side = "LONG"; tr.engine = engine_name_;
         tr.exitReason = why; tr.entryPrice = pos_.entry_px; tr.exitPrice = exit_px;
