@@ -1228,3 +1228,25 @@ message(STATUS "OmegaEdgeFinderExtract: standalone (no OpenSSL) [S51 X3.4]")
 message(STATUS "OmegaEdgeFinderTest:    standalone (no OpenSSL) [S51 X3.4]")
 message(STATUS "verify_xauusd_fvg:      standalone (no OpenSSL) [XauusdFvg synthetic-trace verifier]")
 message(STATUS "========================================")
+
+# =============================================================================
+# GapShortEngine -- IBKR gap-short (Evan Shunk). Isolated C++ subsystem, links the
+# vendored TWS API client + winsock. NOT part of Omega.exe / no FIX / no BlackBull.
+# Build (does NOT affect Omega): cmake --build build --target GapShortEngine
+# =============================================================================
+file(GLOB TWS_SOURCES ${CMAKE_SOURCE_DIR}/third_party/twsapi/client/*.cpp)
+add_executable(GapShortEngine
+    ibkr/GapShortEngine.cpp
+    ibkr/bid64_stub.cpp
+    ${TWS_SOURCES}
+)
+target_include_directories(GapShortEngine PRIVATE ${CMAKE_SOURCE_DIR}/third_party/twsapi/client)
+if(MSVC)
+    target_compile_options(GapShortEngine PRIVATE /std:c++17 /EHsc /W0)
+    target_compile_definitions(GapShortEngine PRIVATE _CRT_SECURE_NO_WARNINGS _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(GapShortEngine PRIVATE ws2_32)
+else()
+    target_compile_options(GapShortEngine PRIVATE -std=c++17 -w)
+    target_link_libraries(GapShortEngine PRIVATE pthread)
+endif()
+message(STATUS "GapShortEngine:         IBKR gap-short C++ subsystem (paper)")
