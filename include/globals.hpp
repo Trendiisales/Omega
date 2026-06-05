@@ -123,6 +123,8 @@ static omega::OvernightDriftEngine g_overnight_nas;  // NAS100 overnight drift (
 static omega::ConnorsRSI2Engine    g_connors_nas;    // NAS100 RSI2 dip-buy (mean-rev) -- 3rd index edge, shadow
 static omega::FvgContinuationEngine g_fvgcont_nas;   // NAS100 FVG continuation 15m (NY killzone) -- 2026-06-04 edge, shadow
 static omega::FvgContinuationEngine g_fvgcont_nas10; // NAS100 FVG continuation 10m -- best HTF (PF2.37 Sh2.0), shadow compare vs 15m
+#include "PeachyOrbEngine.hpp"
+static omega::PeachyOrbEngine g_peachy_orb_nas;      // NAS100 one-candle ORB-retest (risk-cap selectivity) -- 2026-06-05 edge, BULL+BEAR robust, shadow
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

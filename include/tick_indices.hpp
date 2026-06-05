@@ -1277,6 +1277,7 @@ static void on_tick_nas100(
         g_idxsess_nas.on_tick(bid, ask, now_ms_isn);
         g_fvgcont_nas.on_tick(bid, ask, now_ms_isn);     // FVG continuation 15m (shadow)
         g_fvgcont_nas10.on_tick(bid, ask, now_ms_isn);   // FVG continuation 10m (shadow compare)
+        g_peachy_orb_nas.on_tick(bid, ask, now_ms_isn);  // Peachy one-candle ORB-retest (shadow)
         g_overnight_nas.on_tick(bid, ask, now_ms_isn);   // overnight drift (shadow)
         g_connors_nas.on_tick(bid, ask, now_ms_isn);     // RSI2 dip-buy (shadow)
         g_engine_heartbeat.pulse("IndexSession_NAS100");

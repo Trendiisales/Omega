@@ -47,6 +47,7 @@ HEADERS=(
   include/Us30EnsembleEngine.hpp
   include/IndexIntradayDriftEngine.hpp
   include/Ger40TurtleH4Engine.hpp
+  include/PeachyOrbEngine.hpp
 )
 
 fails=0

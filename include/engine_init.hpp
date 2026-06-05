@@ -4286,6 +4286,29 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] FvgCont10m NAS100: shadow=true 10m NY-killzone "
                "gap>=1.0ATR dol<=3ATR fresh<=8 (best-HTF shadow compare)\n");
 
+        // ── PeachyOrbEngine (NAS100, one-candle ORB-retest, risk-cap) ──────────
+        // 2026-06-05 backtest-found edge (backtest/peachy_orb_nas.cpp +
+        // peachy_sweep.sh; memory omega-peachy-onecandle-orb-deadend). The Peachy
+        // "one-candle theory" LITERAL rules backtested DEAD (WF half-flip); the
+        // real edge is her unstated risk-SELECTIVITY (only ~20-30pt-stop setups).
+        // Config C (OR15 1330-open, body0.6, retr0.3, maxStop=1.0ATR risk-cap,
+        // closeBuf0.3ATR, EMA100 trend, 2.5R, 1-shot/day, long-only):
+        //   BULL (16mo NAS): n=103 PF 2.19 (H1 2.06/H2 2.34), 9/9 plateau, 3x-robust.
+        //   BEAR (real 2022 NDX -30%): PF 2.25 net+313 maxDD 91pt, 3x:1.97.
+        //   ==> bull AND bear robust (catches bear-bounces; tight stop = small
+        //   losers). Volume filter is dead on proxy → no volume gate. SHADOW first.
+        g_peachy_orb_nas.symbol      = "NAS100";
+        g_peachy_orb_nas.engine_name = "PeachyOrb";
+        g_peachy_orb_nas.shadow_mode = true;     // prove on shadow before any live size
+        g_peachy_orb_nas.enabled     = true;     // shadow=true makes it sim-only
+        g_peachy_orb_nas.verbose     = true;
+        g_peachy_orb_nas.lot         = 1.0;
+        g_peachy_orb_nas.seed_from_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
+        g_peachy_orb_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] PeachyOrb NAS100: shadow=true OR15(13:30-13:45 UTC) "
+               "body0.6 retr0.3 maxStop1.0ATR EMA100 2.5R 1-shot long-only\n");
+
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.
         // Long at cash close -> flat at open, only if close>SMA20. Backtest:
         // NDX cash Sharpe 1.62, NQ future 1.0 (no financing), both halves +,
