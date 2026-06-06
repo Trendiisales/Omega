@@ -41,6 +41,12 @@ omega::EngineGate g_engine_gate;
 #include "GoldWaveTrend.hpp"
 omega::OpenPositionRegistry g_open_positions;
 
+// ── Universal catastrophe net (covers index/FX the gold-only dollar-stop misses) ──
+// Detection+log net over g_open_positions; flattens (LIVE) any position past 3x the
+// per-trade dollar-stop. Shadow-safe (logs only). Wired in on_tick 250ms block.
+#include "CatastrophicGuard.hpp"
+omega::CatastrophicGuard g_catastrophic_guard;
+
 // ?? Per-symbol config manager -- loaded from symbols.ini at startup ????????????
 static SymbolConfigManager g_sym_cfg;
 

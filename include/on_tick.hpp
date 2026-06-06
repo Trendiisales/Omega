@@ -1156,6 +1156,18 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 }
             }  // s_xau_bid valid
         }  // dollar_stop enabled
+
+        // ── UNIVERSAL catastrophe net (all symbols/engines) ───────────────────
+        // Backstop BEYOND each engine's own SL AND the gold-only dollar-stop above:
+        // covers index / FX / any-symbol positions the XAUUSD block can't see. Uses
+        // each position's own unrealised USD P&L from the registry. Edge-safe (only
+        // acts past catastrophe_x * dollar_stop). SHADOW-safe (logs only, never
+        // flattens, when mode!=LIVE -- engine SL must run). Respects dollar_stop=0.
+        {
+            g_catastrophic_guard.live          = (g_cfg.mode == "LIVE");
+            g_catastrophic_guard.per_trade_usd = g_cfg.dollar_stop_usd;
+            g_catastrophic_guard.check(static_cast<int64_t>(std::time(nullptr)));
+        }
     }
 
     // symbol_risk_blocked -- converted to static function (see above on_tick)
