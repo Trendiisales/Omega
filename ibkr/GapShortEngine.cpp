@@ -23,6 +23,7 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_set>
+#include "RiskManager.hpp"
 
 struct Cfg {
     double GAP_MIN=75, PX_LO=3, PX_HI=20, FLO=0, FHI=20e6;  // FLO=0 -> float gate OFF (ship validated no-float)
@@ -40,8 +41,9 @@ class GapShortEngine : public DefaultEWrapper {
     std::map<int,Cand> pend_;
     int scanned_=0; bool scanDone_=false, coverDone_=false;
     std::ofstream log_;
+    RiskManager risk_{50000.0};   // catastrophe protection (tail caps, never shrinks edge)
 public:
-    GapShortEngine(bool cover):coverMode_(cover){ cli_=std::make_unique<EClientSocket>(this,&sig_);
+    GapShortEngine(bool cover):coverMode_(cover){ risk_.new_day(); cli_=std::make_unique<EClientSocket>(this,&sig_);
         log_.open("data/gapshort/trades.csv", std::ios::app); }
     bool connect(const char*h,int p,int id){ if(!cli_->eConnect(h,p,id,false))return false;
         rd_=std::make_unique<EReader>(cli_.get(),&sig_); rd_->start(); return true; }
@@ -83,11 +85,15 @@ public:
     }
     void short_it(Cand& x,double gap){
         double px=x.last, stop=px*(1+cfg_.STOP);
-        long sz=(long)std::max(1.0,(cfg_.BANKROLL*cfg_.KELLY)/(stop-px));
-        char buf[256]; snprintf(buf,sizeof(buf),"%s,SHORT,%.0f,%.2f,%.2f,%ld,%s\n",
-            x.c.symbol.c_str(),gap,px,stop,sz,cfg_.PAPER_ONLY?"PAPER":"LIVE");
-        if(log_) log_<<buf; printf("[GapShort] %s SHORT %s gap=%.0f%% px=%.2f stop=%.2f sz=%ld\n",
-            cfg_.PAPER_ONLY?"PAPER":"LIVE",x.c.symbol.c_str(),gap,px,stop,sz); fflush(stdout);
+        // RISK LAYER: gate (kill switch / concurrency / dup) + size (per-trade + gap-through cap)
+        double notional = risk_.allow_entry(x.c.symbol, px, stop);
+        if(notional<=0.0) return;                          // blocked by a risk gate
+        long sz=(long)std::max(1.0, notional/px);          // shares from risk-capped notional
+        risk_.on_open(x.c.symbol, notional);
+        char buf[256]; snprintf(buf,sizeof(buf),"%s,SHORT,%.0f,%.2f,%.2f,%ld,$%.0f,%s\n",
+            x.c.symbol.c_str(),gap,px,stop,sz,notional,cfg_.PAPER_ONLY?"PAPER":"LIVE");
+        if(log_) log_<<buf; printf("[GapShort] %s SHORT %s gap=%.0f%% px=%.2f stop=%.2f sz=%ld notional=$%.0f [conc=%d]\n",
+            cfg_.PAPER_ONLY?"PAPER":"LIVE",x.c.symbol.c_str(),gap,px,stop,sz,notional,risk_.open_count()); fflush(stdout);
         if(!cfg_.PAPER_ONLY){
             Order so; so.action="SELL"; so.orderType="MKT"; so.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz);
             cli_->placeOrder(nextId_++,x.c,so);
