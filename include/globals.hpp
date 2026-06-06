@@ -132,7 +132,8 @@ static omega::FvgContinuationEngine g_fvgcont_nas10; // NAS100 FVG continuation 
 #include "PeachyOrbEngine.hpp"
 static omega::PeachyOrbEngine g_peachy_orb_nas;      // NAS100 one-candle ORB-retest (risk-cap selectivity) -- 2026-06-05 edge, BULL+BEAR robust, shadow
 #include "GoldOrbRetraceEngine.hpp"
-static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust), gold-bull-only, shadow
+static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
+static omega::GoldOrbRetraceEngine g_nas_orb_retrace;  // NAS100 ORB retrace+RUNNER @US open -- 2026-06-07 (PF1.87 all-3yr+, 3x-robust); 2nd NAS edge vs PeachyOrb retest, shadow
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

@@ -4345,6 +4345,45 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] GoldOrbRetrace XAUUSD: shadow=true ORB30(08:20-08:50 ET) "
                "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided\n");
 
+        // ── NasOrbRetrace (NAS100, same ORB retrace+RUNNER, US cash open) ──────
+        // 2026-06-07 deep-dive: the gold ORB mechanic transfers to NAS at the US
+        // cash open (the per-symbol lever = session-open; everything else holds).
+        // backtest/orb_gold_retrace.cpp OR_START=930: PF 1.87, all 3 years +
+        // (2024 1.96 / 2025 1.84 / 2026 1.62), 3x-cost-robust (1.31), ret/DD 4.91.
+        // A SECOND, complementary NAS edge (retrace+runner) vs PeachyOrb (retest).
+        // Same engine class, NAS config: ORB 09:30-10:00 ET, retr0.382, runner.
+        g_nas_orb_retrace.symbol      = "NAS100";
+        g_nas_orb_retrace.engine_name = "NasOrbRetrace";
+        g_nas_orb_retrace.tag         = "NASORB";
+        g_nas_orb_retrace.or_start_et = 570;       // 09:30 ET -- US cash open
+        g_nas_orb_retrace.or_end_et   = 600;       // 10:00 ET -- first 30 min
+        g_nas_orb_retrace.ema_len     = 50;
+        g_nas_orb_retrace.retr        = 0.382;
+        g_nas_orb_retrace.trail_win   = 3;
+        g_nas_orb_retrace.max_spread  = 5.0;       // NAS points
+        g_nas_orb_retrace.shadow_mode = true;
+        g_nas_orb_retrace.enabled     = true;
+        g_nas_orb_retrace.verbose     = true;
+        g_nas_orb_retrace.lot         = 1.0;
+        g_nas_orb_retrace.seed_from_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
+        g_nas_orb_retrace.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_open_positions.register_source("NasOrbRetrace", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_nas_orb_retrace.pos_;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "NAS100"; s.engine = "NasOrbRetrace";
+                s.side = p.side > 0 ? "LONG" : "SHORT"; s.size = p.lot;
+                s.entry = p.entry; s.sl = p.sl; s.tp = 0.0;
+                s.entry_ts = p.entry_ts_ms / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] NasOrbRetrace NAS100: shadow=true ORB30(09:30-10:00 ET) "
+               "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided (2nd NAS edge)\n");
+
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.
         // Long at cash close -> flat at open, only if close>SMA20. Backtest:
         // NDX cash Sharpe 1.62, NQ future 1.0 (no financing), both halves +,

@@ -70,6 +70,7 @@ struct GoldOrbRetraceEngine {
 
     std::string symbol      = "XAUUSD";
     std::string engine_name = "GoldOrbRetrace";
+    std::string tag         = "GOLDORB";   // log prefix (set per-instance, e.g. NASORB)
     using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
     TradeRecordCallback on_trade_record;
     bool verbose = false;
@@ -129,7 +130,7 @@ struct GoldOrbRetraceEngine {
         tr.sl=pos_.sl; tr.tp=0.0; tr.size=pos_.lot; tr.pnl=pnl;
         tr.entryTs=pos_.entry_ts_ms/1000LL; tr.exitTs=now_ms/1000LL;
         tr.mfe=pos_.mfe; tr.atr_at_entry=atr_; tr.shadow=shadow_mode;
-        std::printf("[GOLDORB] CLOSE %s @ %.2f entry=%.2f pnl=%.2f %s%s\n",
+        std::printf("[%s] CLOSE %s @ %.2f entry=%.2f pnl=%.2f %s%s\n", tag.c_str(),
                     tr.side.c_str(), exit_px, pos_.entry, pnl, reason, shadow_mode?" [SHADOW]":"");
         std::fflush(stdout);
         if (on_trade_record) on_trade_record(tr);
@@ -174,7 +175,7 @@ struct GoldOrbRetraceEngine {
             // trend filter ("larger POV"): bias must agree with EMA50 side
             if ((bias_>0 && !(c > ema_)) || (bias_<0 && !(c < ema_))) { bias_ = 0; return; }
             entry_lvl_ = bias_>0 ? (or_high_ - retr*range) : (or_low_ + retr*range);
-            if (verbose) std::printf("[GOLDORB] BREAKOUT %s or[%.2f,%.2f] lvl=%.2f ema=%.2f\n",
+            if (verbose) std::printf("[%s] BREAKOUT %s or[%.2f,%.2f] lvl=%.2f ema=%.2f\n", tag.c_str(),
                                      bias_>0?"UP":"DN", or_low_, or_high_, entry_lvl_, ema_);
             return;
         }
@@ -188,7 +189,7 @@ struct GoldOrbRetraceEngine {
         pos_.active=true; pos_.side=bias_; pos_.entry=entry_lvl_; pos_.sl=sl;
         pos_.lot=lot; pos_.sl_dist=risk; pos_.mfe=0.0; pos_.entry_ts_ms=bar_start_ms;
         traded_=true; ++trade_id_;
-        std::printf("[GOLDORB] ENTRY %s @ %.2f sl=%.2f risk=%.2f atr=%.2f%s\n",
+        std::printf("[%s] ENTRY %s @ %.2f sl=%.2f risk=%.2f atr=%.2f%s\n", tag.c_str(),
                     bias_>0?"LONG":"SHORT", pos_.entry, pos_.sl, risk, atr_, shadow_mode?" [SHADOW]":"");
         std::fflush(stdout);
     }
@@ -224,7 +225,7 @@ struct GoldOrbRetraceEngine {
     // ---- warm-seed: replay m5 bars (ts[ms|s],o,h,l,c[,v]) ----
     int seed_from_csv(const std::string& path) noexcept {
         std::ifstream f(path);
-        if (!f.is_open()) { std::printf("[GOLDORB] SEED FAIL '%s'\n", path.c_str()); return 0; }
+        if (!f.is_open()) { std::printf("[%s] SEED FAIL '%s'\n", tag.c_str(), path.c_str()); return 0; }
         const bool was = enabled; enabled=false;
         std::string line; std::getline(f,line);
         int fed=0;
@@ -241,7 +242,7 @@ struct GoldOrbRetraceEngine {
             _on_m5_bar(op,hi,lo,cl,ms); ++fed;
         }
         enabled=was;
-        std::printf("[GOLDORB] SEED fed=%d atr=%.3f ema=%.2f or_done=%d or[%.2f,%.2f]\n",
+        std::printf("[%s] SEED fed=%d atr=%.3f ema=%.2f or_done=%d or[%.2f,%.2f]\n", tag.c_str(),
                     fed, atr_, ema_, (int)or_done_, or_low_, or_high_);
         std::fflush(stdout);
         return fed;
