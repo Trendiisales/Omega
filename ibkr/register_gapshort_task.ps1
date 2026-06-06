@@ -38,9 +38,9 @@ $set     = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -
 
 # guarded register: only unregister AFTER the new definition validates
 $principal = New-ScheduledTaskPrincipal -UserId $User -LogonType S4U -RunLevel Limited
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $set -Principal $principal
+$taskDef = New-ScheduledTask -Action $action -Trigger $trigger -Settings $set -Principal $principal
 try {
-    Register-ScheduledTask -TaskName $Task -InputObject $task -Force | Out-Null
+    Register-ScheduledTask -TaskName $Task -InputObject $taskDef -Force | Out-Null
     Write-Host "registered $Task (user=$User) launch 13:30 London weekdays -> $Exe $Args"
 } catch {
     Write-Error "register failed, existing task untouched: $_"; exit 1
