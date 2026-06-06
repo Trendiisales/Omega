@@ -6489,5 +6489,14 @@ static void init_engines(const std::string& cfg_path)
         }
         std::fflush(stdout);
     }
+
+    // ── Universal catastrophe-net LIVE-readiness flag ──────────────────────────
+    // Surfaces the one remaining gap AT the live flip: the guard can DETECT+LOG any
+    // position past 3x dollar-stop across all engines, but auto-FLATTEN needs per-
+    // engine register_flatten() hooks. In SHADOW this is silent (hooks not needed);
+    // the moment mode=LIVE with zero hooks it prints a loud boot WARNING so we wire
+    // them before sizing up. See CatastrophicGuard.hpp.
+    g_catastrophic_guard.per_trade_usd = g_cfg.dollar_stop_usd;
+    g_catastrophic_guard.warn_if_live_unhooked(g_cfg.mode == "LIVE");
 }
 

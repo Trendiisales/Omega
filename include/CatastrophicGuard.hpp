@@ -39,6 +39,24 @@ public:
 
     // key = "symbol|engine" -> flatten action (LIVE only)
     void register_flatten(const std::string& key, std::function<void()> fn){ flatten_[key]=fn; }
+    size_t flatten_count() const { return flatten_.size(); }
+
+    // Boot-time LIVE-readiness gate. Call once at startup AFTER engine init.
+    // If we are LIVE but no per-engine flatten hooks are registered, the guard can
+    // only LOG catastrophic breaches, not auto-close them -> warn loudly so the
+    // operator wires register_flatten() before sizing up. Returns true if ready.
+    bool warn_if_live_unhooked(bool is_live) const {
+        if (!is_live) return true;                 // shadow: hooks not needed
+        if (flatten_count() > 0) {
+            printf("[CATASTROPHE-GUARD] LIVE + %zu flatten hooks registered -- auto-flatten ARMED\n", flatten_count());
+            fflush(stdout); return true;
+        }
+        printf("\n*** [CATASTROPHE-GUARD] WARNING: mode=LIVE but ZERO flatten hooks registered. ***\n"
+               "*** Universal catastrophe net can DETECT+LOG breaches but CANNOT auto-close.   ***\n"
+               "*** Wire register_flatten(\"SYMBOL|Engine\", fn) per live engine BEFORE sizing  ***\n"
+               "*** up, or breaches will only print [CATASTROPHE-NO-HANDLER] for manual cut.   ***\n\n");
+        fflush(stdout); return false;
+    }
 
     // Returns # of catastrophic positions seen this pass. now_s = epoch seconds (throttle).
     int check(int64_t now_s) {
