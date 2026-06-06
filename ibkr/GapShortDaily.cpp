@@ -19,7 +19,7 @@
 #include <cmath>
 
 struct Cfg { double GAP_MIN=75,PX_LO=3,PX_HI=20,STOP=1.0; bool PAPER_ONLY=true; };
-static int et_hhmm(){ time_t t=time(nullptr); struct tm g; gmtime_r(&t,&g); int h=(g.tm_hour+24-4)%24; return h*100+g.tm_min; } // EDT approx
+static int et_hhmm(){ time_t t=time(nullptr); struct tm* g=gmtime(&t); int h=(g->tm_hour+24-4)%24; return h*100+g->tm_min; } // EDT approx (portable)
 
 class GapShortDaily : public DefaultEWrapper {
     EReaderOSSignal sig_{1000}; std::unique_ptr<EClientSocket> cli_; std::unique_ptr<EReader> rd_;
