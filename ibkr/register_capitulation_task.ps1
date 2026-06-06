@@ -5,7 +5,7 @@
 # Account gate: IB **paper** gateway 4002. Add --orders for the live paper rehearsal.
 
 $ErrorActionPreference = "Stop"
-$Exe   = "C:\Omega\build\CapitulationDaily.exe"
+$Exe   = "C:\Omega\build\Release\CapitulationDaily.exe"
 $Args  = ""                       # "--orders" for paper-submit rehearsal
 $Log   = "C:\Omega\logs\capitulation_daily.log"
 $Task  = "OmegaCapitulationDaily"

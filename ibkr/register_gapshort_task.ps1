@@ -12,7 +12,7 @@
 # live paper rehearsal (submits to DU paper acct). Omit = log-only dry run.
 
 $ErrorActionPreference = "Stop"
-$Exe   = "C:\Omega\build\GapShortDaily.exe"
+$Exe   = "C:\Omega\build\Release\GapShortDaily.exe"
 $Args  = ""                       # set to "--orders" for the paper-submit rehearsal
 $Log   = "C:\Omega\logs\gapshort_daily.log"
 $Task  = "OmegaGapShortDaily"
