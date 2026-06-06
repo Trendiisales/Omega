@@ -36,6 +36,22 @@
 
 namespace omega {
 
+// portable UTC time helpers (MSVC lacks gmtime_r / timegm)
+static inline void gorb_gmtime(time_t t, struct tm* out) noexcept {
+#ifdef _WIN32
+    gmtime_s(out, &t);
+#else
+    gmtime_r(&t, out);
+#endif
+}
+static inline time_t gorb_timegm(struct tm* v) noexcept {
+#ifdef _WIN32
+    return _mkgmtime(v);
+#else
+    return timegm(v);
+#endif
+}
+
 struct GoldOrbRetraceEngine {
     bool   shadow_mode = true;
     bool   enabled     = false;
@@ -88,9 +104,9 @@ struct GoldOrbRetraceEngine {
 
     // US Eastern offset (-4 EDT / -5 EST), DST 2nd-Sun-Mar .. 1st-Sun-Nov.
     static int et_off(int64_t ms) noexcept {
-        time_t t = ms/1000LL; struct tm g; gmtime_r(&t,&g);
+        time_t t = ms/1000LL; struct tm g; gorb_gmtime(t,&g);
         int y=g.tm_year+1900, mo=g.tm_mon+1, d=g.tm_mday;
-        auto dow=[](int Y,int M,int D){ struct tm v{}; v.tm_year=Y-1900; v.tm_mon=M-1; v.tm_mday=D; v.tm_hour=12; time_t tt=timegm(&v); struct tm o; gmtime_r(&tt,&o); return o.tm_wday; };
+        auto dow=[](int Y,int M,int D){ struct tm v{}; v.tm_year=Y-1900; v.tm_mon=M-1; v.tm_mday=D; v.tm_hour=12; time_t tt=gorb_timegm(&v); struct tm o; gorb_gmtime(tt,&o); return o.tm_wday; };
         int marSun=14; for(int dd=8;dd<=14;dd++) if(dow(y,3,dd)==0){marSun=dd;break;}
         int novSun=7;  for(int dd=1;dd<=7;dd++)  if(dow(y,11,dd)==0){novSun=dd;break;}
         bool dst; if(mo<3||mo>11) dst=false; else if(mo>3&&mo<11) dst=true; else if(mo==3) dst=(d>=marSun); else dst=(d<novSun);
