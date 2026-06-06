@@ -78,12 +78,18 @@ public:
             if(!cfg_.PAPER_ONLY){ Order o;o.action="BUY";o.orderType="MKT";o.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz); cli_->placeOrder(nextId_++,c,o);} } }
     void positionEnd() override { cli_->cancelPositions(); }
     void error(int,int code,const std::string& m,const std::string&) override { if(code!=2104&&code!=2106&&code!=2158&&code!=2150&&code!=200&&code!=162) printf("[DAILY] err %d %s\n",code,m.c_str()); }
+    void set_paper_only(bool p){ cfg_.PAPER_ONLY=p; }
     bool entered() const { return entered_; }
     bool killed()  const { return killed_; }
 };
 
-int main(int argc,char**argv){ setvbuf(stdout,nullptr,_IONBF,0); int port=argc>1?atoi(argv[1]):4002;
-    GapShortDaily e; if(!e.connect("127.0.0.1",port,86)){printf("connect failed\n");return 1;}
+int main(int argc,char**argv){ setvbuf(stdout,nullptr,_IONBF,0);
+    int port=4002; bool send_orders=false;
+    for(int i=1;i<argc;i++){ if(!strcmp(argv[i],"--orders")) send_orders=true; else port=atoi(argv[i]); }
+    // --orders: actually submit (on the DU paper account = live rehearsal). default = log-only.
+    GapShortDaily e; e.set_paper_only(!send_orders);
+    printf("[DAILY] orders=%s (account gate is IB paper DU; --orders flips submission)\n", send_orders?"ON":"LOG-ONLY");
+    if(!e.connect("127.0.0.1",port,86)){printf("connect failed\n");return 1;}
     printf("[DAILY] up. open=0935 close=1555 ET (current %d)\n",et_hhmm());
     bool covered=false;
     for(int tick=0;;++tick){ e.pump();
