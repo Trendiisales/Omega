@@ -42,7 +42,7 @@ public:
 
     // Returns # of catastrophic positions seen this pass. now_s = epoch seconds (throttle).
     int check(int64_t now_s) {
-        extern omega::OpenPositionRegistry g_open_positions;
+        // g_open_positions extern-declared in OpenPositionRegistry.hpp (included above)
         const double cat = catastrophe_x * per_trade_usd;
         if (cat <= 0.0) return 0;
         int hit = 0;
