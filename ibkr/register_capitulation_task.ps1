@@ -27,9 +27,10 @@ $action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfi
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 14:00
 $set     = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -ExecutionTimeLimit (New-TimeSpan -Hours 6)
 
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $set
+$principal = New-ScheduledTaskPrincipal -UserId $User -LogonType S4U -RunLevel Limited
+$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $set -Principal $principal
 try {
-    Register-ScheduledTask -TaskName $Task -InputObject $task -User $User -RunLevel Limited -Force | Out-Null
+    Register-ScheduledTask -TaskName $Task -InputObject $task -Force | Out-Null
     Write-Host "registered $Task (user=$User) launch 14:00 London weekdays -> $Exe $Args"
 } catch {
     Write-Error "register failed, existing task untouched: $_"; exit 1
