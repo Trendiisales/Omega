@@ -1237,7 +1237,7 @@ message(STATUS "========================================")
 file(GLOB TWS_SOURCES ${CMAKE_SOURCE_DIR}/third_party/twsapi/client/*.cpp)
 add_executable(GapShortEngine
     ibkr/GapShortEngine.cpp
-    ibkr/bid64_stub.cpp
+    ibkr/bid64_integer.cpp
     ${TWS_SOURCES}
 )
 target_include_directories(GapShortEngine PRIVATE ${CMAKE_SOURCE_DIR}/third_party/twsapi/client)
@@ -1252,7 +1252,7 @@ endif()
 message(STATUS "GapShortEngine:         IBKR gap-short C++ subsystem (paper)")
 
 # GapShortDaily -- production daily-loop (enter->monitor->cover, kill switch, locate gate)
-add_executable(GapShortDaily ibkr/GapShortDaily.cpp ibkr/bid64_stub.cpp ${TWS_SOURCES})
+add_executable(GapShortDaily ibkr/GapShortDaily.cpp ibkr/bid64_integer.cpp ${TWS_SOURCES})
 target_include_directories(GapShortDaily PRIVATE ${CMAKE_SOURCE_DIR}/third_party/twsapi/client)
 if(MSVC)
     target_compile_options(GapShortDaily PRIVATE /std:c++17 /EHsc /W0)
@@ -1263,3 +1263,16 @@ else()
     target_link_libraries(GapShortDaily PRIVATE pthread)
 endif()
 message(STATUS "GapShortDaily:          gap-short production daily-loop")
+
+# CapitulationEngine -- Lance capitulation V-reversal (LONG the bounce), same risk layer
+add_executable(CapitulationEngine ibkr/CapitulationEngine.cpp ibkr/bid64_integer.cpp ${TWS_SOURCES})
+target_include_directories(CapitulationEngine PRIVATE ${CMAKE_SOURCE_DIR}/third_party/twsapi/client)
+if(MSVC)
+    target_compile_options(CapitulationEngine PRIVATE /std:c++17 /EHsc /W0)
+    target_compile_definitions(CapitulationEngine PRIVATE _CRT_SECURE_NO_WARNINGS _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(CapitulationEngine PRIVATE ws2_32)
+else()
+    target_compile_options(CapitulationEngine PRIVATE -std=c++17 -w)
+    target_link_libraries(CapitulationEngine PRIVATE pthread)
+endif()
+message(STATUS "CapitulationEngine:     Lance capitulation V-reversal (LONG)")
