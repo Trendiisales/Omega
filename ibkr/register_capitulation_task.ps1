@@ -1,4 +1,4 @@
-# register_capitulation_task.ps1 — daily CapitulationDaily run on the Omega VPS.
+# register_capitulation_task.ps1 -- daily CapitulationDaily run on the Omega VPS.
 # Swing engine: each weekday morning reprotect (re-trail stops on open longs) + scan
 # new entries, then monitor kill switch; GTC orders persist overnight server-side.
 # Launch 14:00 London (idles to 09:45/10:00 ET passes). Same gotchas as gap-short task.
@@ -11,7 +11,7 @@ $Log   = "C:\Omega\logs\capitulation_daily.log"
 $Task  = "OmegaCapitulationDaily"
 $User  = "$env:COMPUTERNAME\trader"
 
-if (-not (Test-Path $Exe)) { Write-Error "missing $Exe — build target CapitulationDaily first"; exit 1 }
+if (-not (Test-Path $Exe)) { Write-Error "missing $Exe -- build target CapitulationDaily first"; exit 1 }
 
 $runner = @"
 `$ts = Get-Date -Format yyyy-MM-ddTHH:mm:ss

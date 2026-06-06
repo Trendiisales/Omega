@@ -1,7 +1,7 @@
-# register_gapshort_task.ps1 — daily GapShortDaily run on the Omega VPS.
+# register_gapshort_task.ps1 -- daily GapShortDaily run on the Omega VPS.
 # GapShortDaily self-gates ET internally (entry 09:35, cover 15:55), so ONE launch
 # per weekday morning covers the whole session. Launch 13:30 London (well before
-# 09:35 ET under BST) — the loop idles until the ET entry window opens.
+# 09:35 ET under BST) -- the loop idles until the ET entry window opens.
 #
 # GOTCHAS baked in (from OmegaMgcLiveBars lessons):
 #  - use $env:COMPUTERNAME not $env:USERDOMAIN (WORKGROUP over ssh -> SID fail 0x80070534)
@@ -18,7 +18,7 @@ $Log   = "C:\Omega\logs\gapshort_daily.log"
 $Task  = "OmegaGapShortDaily"
 $User  = "$env:COMPUTERNAME\trader"
 
-if (-not (Test-Path $Exe)) { Write-Error "missing $Exe — build target GapShortDaily first"; exit 1 }
+if (-not (Test-Path $Exe)) { Write-Error "missing $Exe -- build target GapShortDaily first"; exit 1 }
 
 # foreground wrapper (detached Start-Process dies silently on this box)
 $runner = @"
