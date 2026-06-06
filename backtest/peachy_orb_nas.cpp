@@ -282,13 +282,19 @@ int main(int argc, char** argv){
 
     // ---- metrics ----
     auto report=[&](const char* tag,int lo,int hi){
-        int n=0,w=0; double net=0,gw=0,gl=0,sumR=0,peak=0,cum=0,dd=0;
-        for(int i=lo;i<hi;++i){ auto&t=trades[i]; n++; net+=t.netPts; sumR+=t.netR;
+        int n=0,w=0; double net=0,gw=0,gl=0,sumR=0,sumR2=0,peak=0,cum=0,dd=0,cumR=0,peakR=0,ddR=0;
+        for(int i=lo;i<hi;++i){ auto&t=trades[i]; n++; net+=t.netPts; sumR+=t.netR; sumR2+=t.netR*t.netR;
             if(t.win){w++;gw+=t.netPts;} else gl+=-t.netPts;
-            cum+=t.netPts; if(cum>peak)peak=cum; if(peak-cum>dd)dd=peak-cum; }
+            cum+=t.netPts; if(cum>peak)peak=cum; if(peak-cum>dd)dd=peak-cum;
+            cumR+=t.netR; if(cumR>peakR)peakR=cumR; if(peakR-cumR>ddR)ddR=peakR-cumR; }
         double pf=gl>0?gw/gl:(gw>0?99:0);
-        printf("  %-5s n=%4d  WR=%4.1f%%  PF=%4.2f  net=%10.1fpt  avgR=%+5.2f  maxDD=%8.1fpt  exp=%+6.2fpt\n",
-               tag,n,n?100.0*w/n:0,pf,net,n?sumR/n:0,dd,n?net/n:0);
+        double meanR=n?sumR/n:0, varR=n>1?(sumR2-n*meanR*meanR)/(n-1):0, sdR=varR>0?std::sqrt(varR):0;
+        double shTrade = sdR>0? meanR/sdR : 0;               // per-trade Sharpe
+        double yrs = (n>1)? (double)(trades[hi-1].t - trades[lo].t)/31557600.0 : 0;
+        double tpy = (yrs>0)? n/yrs : 0;                     // trades per year
+        double shAnn = shTrade * (tpy>0? std::sqrt(tpy):0);  // annualized Sharpe
+        printf("  %-5s n=%4d  WR=%4.1f%%  PF=%4.2f  totR=%+7.1f  avgR=%+5.2f  maxDD=%6.1fR  ret/DD=%5.2f  (net=%.0fpt ddPt=%.0f)\n",
+               tag,n,n?100.0*w/n:0,pf,sumR,meanR,ddR, ddR>0?sumR/ddR:99, net,dd);
     };
     printf("[%s] OR=%dm body=%.2f volLB=%d retr=%.2f tpR=%.1f cost=%.1f LO=%d | maxStop=%.1fA closeBuf=%.2fA volRatio=%.2f trendEMA=%d\n"
            "      minStop=%.1fA maxTrade=%d BE=%.1fR trail=%.1fA recency=%d dow=%d pushWick=%.2f atrMaxP=%.0f | bars=%d trades=%d\n",

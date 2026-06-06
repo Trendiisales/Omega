@@ -53,6 +53,7 @@ int main(int argc,char**argv){
     vector<Bar> B; { ifstream f(argv[1]); string ln; bool first=true;
         while(getline(f,ln)){ if(ln.empty())continue; if(first){first=false; if(ln[0]<'0'||ln[0]>'9')continue;}
             const char* s=ln.c_str(); char* e=nullptr; long long ts=strtoll(s,&e,10); if(*e!=',')continue;
+            if(ts>100000000000LL) ts/=1000;   // accept ms timestamps (dukascopy)
             Bar b; b.ts=ts; b.o=strtod(e+1,&e); if(*e!=',')continue; b.h=strtod(e+1,&e); if(*e!=',')continue;
             b.l=strtod(e+1,&e); if(*e!=',')continue; b.c=strtod(e+1,&e); if(b.h>0) B.push_back(b);} }
     int n=B.size(); if(n<500){ fprintf(stderr,"too few bars %d\n",n); return 1; }
@@ -73,9 +74,12 @@ int main(int argc,char**argv){
         // collect this day's bars [ds,de)
         int ds=i; while(i<n && et_day(B[i].ts)==day) i++; int de=i;
         days++;
-        // ORB = bars with 0820 <= et_hm < 0850
+        // ORB window: OR_START (hhmm ET) .. +OR_LEN min  [gold 0820/30 default]
+        static int ORS = getenv("OR_START")? atoi(getenv("OR_START")):820;
+        static int ORL = getenv("OR_LEN")? atoi(getenv("OR_LEN")):30;
+        int orsMin=(ORS/100)*60+(ORS%100); int oreMin=orsMin+ORL; int ORE=(oreMin/60)*100+(oreMin%60);
         double orbH=-1e18, orbL=1e18; int orbEnd=-1;
-        for(int k=ds;k<de;k++){ int hm=et_hm(B[k].ts); if(hm>=820&&hm<850){ orbH=max(orbH,B[k].h); orbL=min(orbL,B[k].l); orbEnd=k; } }
+        for(int k=ds;k<de;k++){ int hm=et_hm(B[k].ts); if(hm>=ORS&&hm<ORE){ orbH=max(orbH,B[k].h); orbL=min(orbL,B[k].l); orbEnd=k; } }
         if(orbEnd<0||orbH<=orbL) continue; hasOrb++;
         double range=orbH-orbL; double mid=(orbH+orbL)*0.5; /* retrace level set per-dir below */
         // find first breakout close beyond ORB after orbEnd, within the cash day (<=1600 ET)
@@ -136,6 +140,7 @@ int main(int argc,char**argv){
         int w=0; double gw=0,gl=0,sum=0,sum2=0; for(auto&x:t){ if(x.R>0){w++;gw+=x.R;}else gl+=-x.R; sum+=x.R; sum2+=x.R*x.R; }
         double pf=gl>0?gw/gl:99, mean=sum/m, sd=sqrt(max(1e-9,(sum2-m*mean*mean)/max(1,m-1)));
         printf("  %-6s n=%d WR=%.1f%% PF=%.2f avgR=%+.3f totR=%+.1f Sharpe/tr=%+.2f\n",tag,m,100.0*w/m,pf,mean,sum,mean/sd); };
+  {double eq=0,pk=0,mdd=0; for(auto&t:trades){eq+=t.R; if(eq>pk)pk=eq; double dd=pk-eq; if(dd>mdd)mdd=dd;} double tot=0; for(auto&t:trades)tot+=t.R; printf("  MAXDD=%.1fR  ret/DD=%.2f  (totR=%.1f peak=%.1f)\n",mdd, mdd>0?tot/mdd:99, tot, pk);}
     stat(trades,"ALL");
     vector<Tr> h1(trades.begin(),trades.begin()+N/2), h2(trades.begin()+N/2,trades.end()); stat(h1,"H1"); stat(h2,"H2");
     vector<int> ys; for(auto&t:trades) if(find(ys.begin(),ys.end(),t.yr)==ys.end()) ys.push_back(t.yr); sort(ys.begin(),ys.end());
