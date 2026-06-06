@@ -2254,6 +2254,7 @@ static void on_tick_gold(
     g_xau_straddle_m30.obi_dir = g_macro_ctx.gold_obi_dir;             // OBI overlay (shadow measurement)
     g_xau_straddle_m15.obi_dir = g_macro_ctx.gold_obi_dir;
     g_xau_straddle_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);  // S-2026-06-02 OCO straddle fill+manage
+    g_gold_orb_retrace.on_tick(bid, ask, now_ms_g);                    // 2026-06-06 ORB 50%-retrace + structural RUNNER (shadow); callback via on_trade_record
     g_gold_volbrk_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);   // S-2026-06-03 vol-breakout SL/trail per-tick
     g_xau_straddle_m15.on_tick(bid, ask, now_ms_g, bracket_on_close);  // M15 sibling
     g_xau_3bar_mom_h4.on_tick  (bid, ask, now_ms_g, bracket_on_close);

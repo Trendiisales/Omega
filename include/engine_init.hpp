@@ -4309,6 +4309,42 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] PeachyOrb NAS100: shadow=true OR15(13:30-13:45 UTC) "
                "body0.6 retr0.3 maxStop1.0ATR EMA100 2.5R 1-shot long-only\n");
 
+        // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
+        // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory
+        // omega-peachy-gold-orb-retrace-edge). Distilled from Peachy's gold-ORB
+        // videos: her STRUCTURE (08:20 ET 30m ORB, retrace-to-38.2%, trend filter,
+        // tight stop, one-shot) + her MANAGEMENT (let winners run = structural
+        // RUNNER trail, no fixed TP). The runner was the missing piece -- it
+        // DOUBLED avgR (+0.69->+1.20) AND made it 3x-cost-robust.
+        //   2yr XAU m5 @IBKR 0.37pt: PF 2.38 avgR+1.20 WR30%, both halves 2.56/2.18,
+        //   all years 2.31/2.69/1.53, 3x-cost 1.12, plateau RETR.382 x TRWIN{2,3,5}.
+        //   Two-sided (ORB-break shorts too). CAVEAT: gold 2024-26 bull-dominated
+        //   (no sustained gold-bear tape) -> SHADOW, not live-size.
+        g_gold_orb_retrace.symbol      = "XAUUSD";
+        g_gold_orb_retrace.engine_name = "GoldOrbRetrace";
+        g_gold_orb_retrace.shadow_mode = true;     // prove on shadow before any live size
+        g_gold_orb_retrace.enabled     = true;     // shadow=true makes it sim-only
+        g_gold_orb_retrace.verbose     = true;
+        g_gold_orb_retrace.lot         = 1.0;
+        g_gold_orb_retrace.seed_from_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_M5.csv"));
+        g_gold_orb_retrace.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_open_positions.register_source("GoldOrbRetrace", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_gold_orb_retrace.pos_;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "XAUUSD"; s.engine = "GoldOrbRetrace";
+                s.side = p.side > 0 ? "LONG" : "SHORT"; s.size = p.lot;
+                s.entry = p.entry; s.sl = p.sl; s.tp = 0.0;
+                s.entry_ts = p.entry_ts_ms / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] GoldOrbRetrace XAUUSD: shadow=true ORB30(08:20-08:50 ET) "
+               "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided\n");
+
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.
         // Long at cash close -> flat at open, only if close>SMA20. Backtest:
         // NDX cash Sharpe 1.62, NQ future 1.0 (no financing), both halves +,
