@@ -158,6 +158,10 @@ struct GoldOrbRetraceEngine {
         while ((int)lows_.size()  > trail_win) lows_.pop_front();
         while ((int)highs_.size() > trail_win) highs_.pop_front();
 
+        // WARM-SEED GUARD: during seed replay (enabled=false) warm ATR/EMA/trail only --
+        // never open positions on historical bars (else phantom multi-month entries).
+        if (!enabled) return;
+
         // accumulate ORB
         if (mod >= or_start_et && mod < or_end_et) { if(h>or_high_)or_high_=h; if(l<or_low_)or_low_=l; return; }
         if (mod >= or_end_et && !or_done_ && or_high_>0.0 && or_low_<1e18) or_done_=true;
