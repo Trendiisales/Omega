@@ -41,6 +41,11 @@ omega::EngineGate g_engine_gate;
 #include "GoldWaveTrend.hpp"
 omega::OpenPositionRegistry g_open_positions;
 
+// Process boot time (epoch sec), stamped at init_engines start. Used by the central
+// phantom-trade net: any closed trade whose entryTs predates boot was opened on a
+// historical (warm-seed) bar or carried from a prior session -> dropped, not ledgered.
+int64_t g_process_boot_sec = 0;
+
 // ── Universal catastrophe net (covers index/FX the gold-only dollar-stop misses) ──
 // Detection+log net over g_open_positions; flattens (LIVE) any position past 3x the
 // per-trade dollar-stop. Shadow-safe (logs only). Wired in on_tick 250ms block.

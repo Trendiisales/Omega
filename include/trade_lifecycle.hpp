@@ -11,6 +11,26 @@
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
 
+    // ?? CENTRAL PHANTOM-TRADE NET 2026-06-07 ????????????????????????????????????
+    // Universal guard against warm-seed / stale-carry-over phantoms: NO live trade
+    // can have opened before this process booted. Any close whose entryTs predates
+    // g_process_boot_sec (minus a 120s grace for the seed->live transition) was
+    // opened on a historical seed bar or a prior session -> DROP it entirely (no
+    // ledger, telemetry, risk-state, or EngineGate pollution). Catches the bug class
+    // for ALL engines present and future, even if a per-engine enabled-gate is missed.
+    // (Recurring incidents: S102 XauTrendFollow, 2026-06-07 GoldOrbRetrace/NasOrbRetrace.)
+    // g_process_boot_sec defined in globals.hpp (included before this TU).
+    if (tr.entryTs > 1000000000LL && g_process_boot_sec > 0 &&
+        tr.entryTs < g_process_boot_sec - 120) {
+        std::fprintf(stderr,
+            "[PHANTOM-DROP] %s %s %s entryTs=%lld < boot=%lld (held %.1fh) pnl=%.2f reason=%s "
+            "-- dropped (opened pre-boot = warm-seed/carry-over phantom)\n",
+            tr.engine.c_str(), tr.symbol.c_str(), tr.side.c_str(),
+            (long long)tr.entryTs, (long long)g_process_boot_sec,
+            (g_process_boot_sec - tr.entryTs)/3600.0, tr.pnl, tr.exitReason.c_str());
+        return;
+    }
+
     // 2026-05-08 S20+: per-engine risk-surveillance hook. The monitor reads
     //   the original tr_in (engine's emitted view) before any L2-stamping or
     //   cost-application below mutates it. v1 is logging-only; this call

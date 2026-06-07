@@ -11,6 +11,13 @@
 
 static void init_engines(const std::string& cfg_path)
 {
+    // Stamp process boot time for the central phantom-trade net (trade_lifecycle.hpp).
+    // Any closed trade whose entryTs predates this = opened on a warm-seed historical
+    // bar or carried from a prior session -> dropped at the ledger, never recorded.
+    g_process_boot_sec = static_cast<int64_t>(std::time(nullptr));
+    printf("[OMEGA-INIT] process boot stamp = %lld (phantom-trade net armed)\n",
+           (long long)g_process_boot_sec);
+
     // ── S51 2026-05-27: PortfolioGuard config ──────────────────────────────
     // After S49/S50 real-class audit confirmed 16 XAU D1/H4 engines have real
     // edge, the concurrency cap must protect against correlated stacking:
