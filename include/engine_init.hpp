@@ -4395,7 +4395,9 @@ static void init_engines(const std::string& cfg_path)
         g_gold_orb_retrace.shadow_mode = true;     // prove on shadow before any live size
         g_gold_orb_retrace.enabled     = true;     // shadow=true makes it sim-only
         g_gold_orb_retrace.verbose     = true;
-        g_gold_orb_retrace.lot         = 1.0;
+        g_gold_orb_retrace.lot         = 0.01;   // 2026-06-09 FIX: was 1.0 (index default) -> 100x oversized on XAU (USD_PER_PT_LOT=100). All gold engines use 0.01.
+        // SIZING GUARD: XAU engines MUST be <=0.05 lot (x100 multiplier). Clamp + loud-warn if a gold engine slips through oversized.
+        if (g_gold_orb_retrace.lot > 0.05) { std::printf("[SIZING-WARN] GoldOrbRetrace lot %.2f >0.05 on XAU (x100) -- clamping to 0.01\n", g_gold_orb_retrace.lot); g_gold_orb_retrace.lot = 0.01; }
         g_gold_orb_retrace.seed_from_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_M5.csv"));
         g_gold_orb_retrace.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };

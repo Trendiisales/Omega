@@ -40,6 +40,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OpenPositionRegistry.hpp"   // PositionSnapshot (persist)
 #include "OmegaCostGuard.hpp"         // ExecutionCostGuard::is_viable (entry gate)
+#include "IndexRiskGate.hpp"          // omega::index_risk_off() -- bull-only regime gate
 
 namespace omega {
 
@@ -163,6 +164,9 @@ public:
         if (!m_atr_ready || m_atr<=0.0) return;
         const int hm = _utc_hm(sec);
         if (hm < SESS_OPEN_HM || hm >= SESS_CLOSE_HM) return;
+        // 2026-06-09: FVG validated bull-only -> no NEW entries in macro risk-off/bear regime.
+        // (open positions above are still managed). Blocks the bear-regime longs that bled.
+        if (omega::index_risk_off()) return;
 
         const double dolUp = _dol_up(mid), dolDn = _dol_dn(mid);
         const int    cur_idx = (int)m_htf.size()-1;     // index of last CLOSED htf bar
