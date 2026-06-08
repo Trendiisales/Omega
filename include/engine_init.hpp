@@ -4310,6 +4310,28 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] FvgCont10m NAS100: shadow=true 10m NY-killzone "
                "gap>=1.0ATR dol<=3ATR fresh<=8 (best-HTF shadow compare)\n");
 
+        // 30m variant -- 2026-06-09 exhaustive FVG sweep WINNER: PF1.98 (3x-cost 1.91),
+        // both halves ~2.0, ret/DD 5.12, WR46%. Beats 10m(1.61) and 15m(1.27). ungated.
+        g_fvgcont_nas30.symbol      = "NAS100";
+        g_fvgcont_nas30.engine_name = "FvgCont30m";
+        g_fvgcont_nas30.HTF_SEC     = 1800;   // 30-minute FVG
+        g_fvgcont_nas30.shadow_mode = true;
+        g_fvgcont_nas30.enabled     = true;
+        g_fvgcont_nas30.verbose     = true;
+        g_fvgcont_nas30.lot         = 1.0;
+        g_fvgcont_nas30.init();
+        g_fvgcont_nas30.seed_from_m15_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M15.csv"));
+        g_fvgcont_nas30.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_open_positions.register_source("FvgCont30m", []() {
+            std::vector<omega::PositionSnapshot> v;
+            omega::PositionSnapshot s;
+            if (g_fvgcont_nas30.has_open_position() && g_fvgcont_nas30.persist_save("FvgCont30m", "NAS100", s))
+                v.push_back(s);
+            return v;
+        });
+        printf("[OMEGA-INIT] FvgCont30m NAS100: shadow=true 30m NY-killzone (sweep WINNER PF1.98 3x-robust)\n");
+
         // ── PeachyOrbEngine (NAS100, one-candle ORB-retest, risk-cap) ──────────
         // 2026-06-05 backtest-found edge (backtest/peachy_orb_nas.cpp +
         // peachy_sweep.sh; memory omega-peachy-onecandle-orb-deadend). The Peachy
