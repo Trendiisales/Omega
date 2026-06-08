@@ -580,10 +580,12 @@ static std::string buildTradesJson()
 // Used by /api/history endpoint so the dashboard always has complete session data.
 // Falls back to in-memory snapshot when CSV is unavailable.
 // ?????????????????????????????????????????????????????????????????????????????
-static std::string buildHistoryJson()
+static std::string buildHistoryJson(bool all_time = false)
 {
     // Determine path: same logic as main.cpp log_root_dir() + /trades/omega_trade_closes.csv
-    // Read TODAY's daily file -- matches the stats header exactly.
+    // Default: read TODAY's daily file -- matches the stats header exactly.
+    // all_time (GET /api/history?all=1): read the cumulative rolling file so the
+    // dashboard can show full trade history across restarts/clears/day-rollover.
     // The old code read omega_trade_closes.csv (cumulative all-time rolling file)
     // which caused the trade table to show trades from previous days, making
     // the PnL in the table disagree with the daily PnL in the header.
@@ -609,16 +611,18 @@ static std::string buildHistoryJson()
     char daily_path[512];
     FILE* f = nullptr;
     for (auto d : DAILY_DIRS) {
-        snprintf(daily_path, sizeof(daily_path), "%s/omega_trade_closes_%s.csv", d, today);
+        if (all_time)
+            snprintf(daily_path, sizeof(daily_path), "%s/omega_trade_closes.csv", d);
+        else
+            snprintf(daily_path, sizeof(daily_path), "%s/omega_trade_closes_%s.csv", d, today);
         f = fopen(daily_path, "r");
         if (f) break;
     }
-    // Fallback to cumulative CSV only if no daily file yet (first trade of the day)
-    // DO NOT fall back -- if today's file doesn't exist, no trades happened today.
-    // Returning the cumulative all-time CSV shows yesterday's trades after UTC midnight,
-    // which is wrong: the GUI shows stale data that doesn't match the daily PnL header.
+    // Default (daily) view: do NOT fall back to cumulative -- if today's file
+    // doesn't exist, no trades happened today, and the cumulative all-time CSV
+    // would show stale data that disagrees with the daily PnL header.
+    // all_time view intentionally reads the cumulative file and may be empty.
     if (!f) {
-        // No trades today -- return empty array, not yesterday's data
         return "[]";
     }
 
@@ -1172,7 +1176,7 @@ void OmegaTelemetryServer::run(int port)
         }
         else if (strstr(buf, "GET /api/telemetry"))        { ct = "application/json"; body = buildTelemetryJson(snap_); }
         else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
-        else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(); }
+        else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(strstr(buf, "all=1") != nullptr); }
         else if (strstr(buf, "GET /api/shadow_trades")) { ct = "application/json"; body = buildShadowTradesJson(); }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {

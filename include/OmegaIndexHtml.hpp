@@ -603,6 +603,7 @@ R"OMEGA5(
         <div class="card-hd" style="flex-shrink:0;">
           <span class="dot" style="background:var(--green)"></span>Recent Trades
           <span id="tradeCount" style="font-family:'IBM Plex Mono',monospace;color:var(--t2);margin-left:6px;font-size:11px;"></span>
+          <button id="histToggle" onclick="toggleHist()" style="margin-left:8px;font-family:'IBM Plex Mono',monospace;font-size:10px;background:transparent;color:var(--t2);border:1px solid var(--t2);border-radius:3px;padding:1px 6px;cursor:pointer;">All-time</button>
         </div>
         <div class="trades-scroll">
           <table>
@@ -2169,9 +2170,12 @@ function clearLedger(){
 // pulled the obsolete legacy omega_shadow.csv (only AMR engines still write
 // there as a side-channel, and AMR is sparse so the file looks dead).
 // Removed: misleading "60 closed" from stale May-5 data.
+let g_histAll=false;
+function toggleHist(){g_histAll=!g_histAll;var b=document.getElementById('histToggle');if(b)b.textContent=g_histAll?'Today':'All-time';pollTrades();}
 function pollTrades(){
-  fetch('/api/history').then(r=>r.json()).then(trades=>{
+  fetch('/api/history'+(g_histAll?'?all=1':'')).then(r=>r.json()).then(trades=>{
     renderTrades(trades);
+    if(g_histAll){var el2=document.getElementById('tradeCount');if(el2)el2.textContent='ALL-TIME | '+trades.length+' trades';return;}
     fetch('/api/daily').then(r=>r.json()).then(s=>{
       const el=document.getElementById('tradeCount');
       if(el&&s){
