@@ -4327,6 +4327,8 @@ static void init_engines(const std::string& cfg_path)
         g_peachy_orb_nas.enabled     = true;
         g_peachy_orb_nas.verbose     = true;
         g_peachy_orb_nas.lot         = 1.0;
+        g_peachy_orb_nas.body_frac     = 0.4;   // 2026-06-09 exhaustive sweep: body0.4+closeBuf0.5 -> PF1.80 net+1561 (+18%), both-halves+, 3x-robust
+        g_peachy_orb_nas.close_buf_atr = 0.5;
         g_peachy_orb_nas.seed_from_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
         g_peachy_orb_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
@@ -4361,6 +4363,7 @@ static void init_engines(const std::string& cfg_path)
         g_peachy_orb_ger40.verbose     = true;
         g_peachy_orb_ger40.lot         = 1.0;
         g_peachy_orb_ger40.tp_r        = 3.0;    // 2026-06-09 sweep: GER40 tpR plateau 1.5-4.0; 3.0 within plateau, wider target for DAX NY-open trends (+599 vs +586 @2.5)
+        g_peachy_orb_ger40.body_frac   = 0.4;    // 2026-06-09 sweep: body0.4 + tp3.0 -> PF2.12 net+881 (+50%), both-halves+ (3.18/1.25), 3x-robust
         g_peachy_orb_ger40.seed_from_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_GER40_M5.csv"));
         g_peachy_orb_ger40.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
