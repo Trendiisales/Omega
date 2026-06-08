@@ -52,6 +52,7 @@ public:
 
     // ── Config (backtest-found defaults; NAS100 15m NY killzone) ─────────────
     int    HTF_SEC       = 900;     // 15-minute HTF FVG bars
+    int    TRENDN        = 0;       // daily-trend gate: long only mid>SMA(htf.c,TRENDN), short only mid<. 0=off. (backtest: 15m wants 288=3day, 10m wants OFF)
     int    SESS_OPEN_HM  = 1330;    // NY killzone open  (UTC hhmm)
     int    SESS_CLOSE_HM = 1500;    // NY killzone close (UTC hhmm)
     double MIN_GAP_ATR   = 1.0;     // FVG size floor (ATR units) — displacement quality
@@ -170,11 +171,17 @@ public:
 
         const double dolUp = _dol_up(mid), dolDn = _dol_dn(mid);
         const int    cur_idx = (int)m_htf.size()-1;     // index of last CLOSED htf bar
+        // 2026-06-09 daily-trend gate (backtested: 15m+288 -> PF1.41 ret/DD3.38 both-halves+;
+        // 10m OFF -> stronger ungated). long only above trend-SMA, short only below.
+        double trendMA = 0.0;
+        if (TRENDN > 0) { const int nn=(int)m_htf.size();
+            if (nn >= TRENDN) { double ss=0.0; for(int k=nn-TRENDN;k<nn;++k) ss+=m_htf[k].c; trendMA=ss/TRENDN; } }
         for (auto& f : m_fvgs) {
             if (f.used) continue;
             if (cur_idx - f.bar_idx > MAX_FVG_AGE) continue;          // freshness
             if (f.dir>0 && dolUp<0) continue;
             if (f.dir<0 && dolDn<0) continue;
+            if (TRENDN>0 && trendMA>0.0) { if (f.dir>0 && mid<trendMA) continue; if (f.dir<0 && mid>trendMA) continue; }
             if (mid < f.lo || mid > f.hi) continue;                  // retrace into gap (mitigation)
 
             // price IS mitigating a fresh, correctly-pointed gap → a live candidate.
@@ -233,7 +240,7 @@ private:
         m_day_hi=std::max(m_day_hi,h); m_day_lo=std::min(m_day_lo,l);
 
         m_htf.push_back({ts,o,h,l,c});
-        if ((int)m_htf.size() > SWING_LB+ATR_LEN+8) m_htf.pop_front();   // bound memory
+        if ((int)m_htf.size() > std::max(SWING_LB+ATR_LEN+8, TRENDN+4)) m_htf.pop_front();   // bound memory (keep >=TRENDN for trend gate)
 
         // MACD(12,26,9) on the HTF close -> m_macd_bull
         if (!m_macd_init) { m_ema12=c; m_ema26=c; m_macd_sig=0; m_macd_init=true; }

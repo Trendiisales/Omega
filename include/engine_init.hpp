@@ -4268,6 +4268,7 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas.enabled     = true;
         g_fvgcont_nas.verbose     = true;     // log entries + once-per-bar reject reasons
         g_fvgcont_nas.lot         = 1.0;
+        g_fvgcont_nas.TRENDN      = 288;   // 2026-06-09 backtest: 15m wants 3-day trend gate (PF1.27->1.41, ret/DD1.86->3.38, maxDD halved, both-halves+). 10m stays OFF (gate hurts it).
         g_fvgcont_nas.init();
         g_fvgcont_nas.seed_from_m15_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M15.csv"));
