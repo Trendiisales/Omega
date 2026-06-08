@@ -4298,6 +4298,14 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas10.seed_from_m15_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M10.csv"));
         g_fvgcont_nas10.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        // 2026-06-09: 10m is the better FVG variant (sweep PF1.61 vs 15m 1.27) -> make it visible too.
+        g_open_positions.register_source("FvgCont10m", []() {
+            std::vector<omega::PositionSnapshot> v;
+            omega::PositionSnapshot s;
+            if (g_fvgcont_nas10.has_open_position() && g_fvgcont_nas10.persist_save("FvgCont10m", "NAS100", s))
+                v.push_back(s);
+            return v;
+        });
         printf("[OMEGA-INIT] FvgCont10m NAS100: shadow=true 10m NY-killzone "
                "gap>=1.0ATR dol<=3ATR fresh<=8 (best-HTF shadow compare)\n");
 
@@ -4351,6 +4359,7 @@ static void init_engines(const std::string& cfg_path)
         g_peachy_orb_ger40.enabled     = true;
         g_peachy_orb_ger40.verbose     = true;
         g_peachy_orb_ger40.lot         = 1.0;
+        g_peachy_orb_ger40.tp_r        = 3.0;    // 2026-06-09 sweep: GER40 tpR plateau 1.5-4.0; 3.0 within plateau, wider target for DAX NY-open trends (+599 vs +586 @2.5)
         g_peachy_orb_ger40.seed_from_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_GER40_M5.csv"));
         g_peachy_orb_ger40.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
