@@ -34,5 +34,6 @@ int main(int argc,char**argv){
     label.c_str(),m,mean,100.0*w/m,t,s,h1,h2,(h1>0&&h2>0)?"both+":"SPLIT");
   for(auto&kv:byYr){double ys=0;for(double r:kv.second)ys+=r;printf("%d:%+.1f ",kv.first,ys);}
   printf("\n");
+  if(const char* dp=getenv("DUMP")){FILE*fp=fopen(dp,"a");if(fp){for(size_t i=1;i<D.size();i++){int wd=(int)(((D[i].first+4)%7+7)%7);if(wd!=1)continue;if(D[i].first-D[i-1].first>3)continue;double r=(D[i].second-D[i-1].second)/D[i-1].second*100.0-COST;fprintf(fp,"%lld,%.4f\n",(long long)(D[i].first*86400),r);}fclose(fp);}}
   return 0;
 }

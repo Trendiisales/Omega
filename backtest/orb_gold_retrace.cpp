@@ -145,5 +145,6 @@ int main(int argc,char**argv){
     vector<Tr> h1(trades.begin(),trades.begin()+N/2), h2(trades.begin()+N/2,trades.end()); stat(h1,"H1"); stat(h2,"H2");
     vector<int> ys; for(auto&t:trades) if(find(ys.begin(),ys.end(),t.yr)==ys.end()) ys.push_back(t.yr); sort(ys.begin(),ys.end());
     for(int y:ys){ vector<Tr> yt; for(auto&t:trades) if(t.yr==y) yt.push_back(t); char tg[8]; snprintf(tg,8,"%d",y); stat(yt,tg); }
+    if(const char* dp=getenv("DUMP")){ FILE* fp=fopen(dp,"a"); if(fp){ for(auto&t:trades) fprintf(fp,"%lld,%.4f\n",(long long)t.ts,t.R); fclose(fp); } }
     return 0;
 }
