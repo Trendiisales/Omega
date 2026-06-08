@@ -124,6 +124,13 @@ static void on_tick_eurusd(
         g_eurusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
     }
 
+    // 2026-06-07 MondayRiskOn calendar (GBPUSD/AUDUSD) -- shadow; callback via on_trade_record.
+    {
+        const int64_t now_ms_mon = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        if      (sym == "GBPUSD") g_monday_gbp.on_tick(bid, ask, now_ms_mon);
+        else if (sym == "AUDUSD") g_monday_aud.on_tick(bid, ask, now_ms_mon);
+    }
+
     // S38d 2026-05-26: FxScalpPyramid_EURUSD dispatch (shadow-mode).
     //   M5 Donchian + EMA + ADX scalper. Engine internally gated by enabled.
     //   Runs BEFORE the S99 kill-switch return for the same reason as Turtle.

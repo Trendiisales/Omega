@@ -4391,6 +4391,47 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] NasOrbRetrace NAS100: shadow=true ORB30(09:30-10:00 ET) "
                "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided (2nd NAS edge)\n");
 
+        // ── MondayRiskOn (NAS100/GBPUSD/AUDUSD) -- weekend-risk-reset calendar edge ──
+        // 2026-06-07 data-mining find (anomaly_scan + monday_test + monday_gated).
+        // Risk-on assets rally Monday; SMA50 risk-on gate is load-bearing (ungated flips
+        // negative in a bear: gold 2022 Mon -0.27%/t-2.06). Validated SMA50-gated m5 2024-26:
+        //   NAS t2.59 WR67% / GBP t2.04 WR71% / AUD t2.45 WR65%, all both-halves+, all-years+.
+        // LONG at Monday UTC open if prevDayClose > SMA50(daily); flat at Monday close.
+        // CAVEAT: bull tape; own-SMA gate = partial bear cover -> macro gate before live-size.
+        {
+            struct MonCfg { omega::MondayRiskOnEngine* e; const char* sym; const char* d1; };
+            const MonCfg mons[] = {
+                { &g_monday_nas, "NAS100", "phase1/signal_discovery/warmup_NAS100_D1.csv" },
+                { &g_monday_gbp, "GBPUSD", "phase1/signal_discovery/warmup_GBPUSD_D1.csv" },
+                { &g_monday_aud, "AUDUSD", "phase1/signal_discovery/warmup_AUDUSD_D1.csv" },
+            };
+            for (const auto& m : mons) {
+                m.e->symbol      = m.sym;
+                m.e->engine_name = std::string("MondayRiskOn_") + m.sym;
+                m.e->tag         = "MONRISK";
+                m.e->sma_len     = 50;
+                m.e->shadow_mode = true;
+                m.e->enabled     = true;
+                m.e->verbose     = false;
+                m.e->lot         = 1.0;
+                m.e->seed_from_csv(omega::resolve_seed_path(m.d1));
+                const char* symc = m.sym; auto* eng = m.e;
+                eng->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                g_open_positions.register_source(eng->engine_name, [eng, symc]() {
+                    std::vector<omega::PositionSnapshot> v;
+                    if (eng->pos_.active) {
+                        omega::PositionSnapshot s;
+                        s.symbol = symc; s.engine = eng->engine_name;
+                        s.side = "LONG"; s.size = eng->pos_.lot; s.entry = eng->pos_.entry;
+                        s.sl = 0.0; s.tp = 0.0; s.entry_ts = eng->pos_.entry_ts / 1000LL;
+                        v.push_back(s);
+                    }
+                    return v;
+                });
+            }
+            printf("[OMEGA-INIT] MondayRiskOn NAS100/GBPUSD/AUDUSD: shadow=true Mon-long SMA50-gate\n");
+        }
+
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.
         // Long at cash close -> flat at open, only if close>SMA20. Backtest:
         // NDX cash Sharpe 1.62, NQ future 1.0 (no financing), both halves +,

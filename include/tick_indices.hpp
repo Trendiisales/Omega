@@ -1279,6 +1279,7 @@ static void on_tick_nas100(
         g_fvgcont_nas10.on_tick(bid, ask, now_ms_isn);   // FVG continuation 10m (shadow compare)
         g_peachy_orb_nas.on_tick(bid, ask, now_ms_isn);  // Peachy one-candle ORB-retest (shadow)
         g_nas_orb_retrace.on_tick(bid, ask, now_ms_isn); // 2026-06-07 ORB retrace+RUNNER @US open (shadow); callback via on_trade_record
+        g_monday_nas.on_tick(bid, ask, now_ms_isn);      // 2026-06-07 Monday risk-on calendar (shadow)
         g_overnight_nas.on_tick(bid, ask, now_ms_isn);   // overnight drift (shadow)
         g_connors_nas.on_tick(bid, ask, now_ms_isn);     // RSI2 dip-buy (shadow)
         g_engine_heartbeat.pulse("IndexSession_NAS100");
