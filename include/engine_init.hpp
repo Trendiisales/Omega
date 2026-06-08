@@ -4338,6 +4338,38 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] PeachyOrb NAS100: shadow=true OR15(13:30-13:45 UTC) "
                "body0.6 retr0.3 maxStop1.0ATR EMA100 2.5R 1-shot long-only\n");
 
+        // ── PeachyOrb GER40 @ NY open (2026-06-08 cross-index find) ────────────
+        // Same CONFIG C as NAS (OR15/1330-open/body0.6/retr0.3/maxStop1.0ATR/EMA100/
+        // 2.5R/long-only/volume-gated). Re-test on proper ticks (vol gate LIVE)
+        // found the DAX trends off the US cash open, not the EU open:
+        //   PF2.06 (H1 3.42/H2 1.06), both regimes + (UP1.50/DOWN2.89),
+        //   3x-cost-robust (1.71), volume load-bearing (gate off = 1.48).
+        //   SPX/UK100/ESTX50 stayed dead. SHADOW-visible.
+        g_peachy_orb_ger40.symbol      = "GER40";
+        g_peachy_orb_ger40.engine_name = "PeachyOrb_GER40";
+        g_peachy_orb_ger40.shadow_mode = true;
+        g_peachy_orb_ger40.enabled     = true;
+        g_peachy_orb_ger40.verbose     = true;
+        g_peachy_orb_ger40.lot         = 1.0;
+        g_peachy_orb_ger40.seed_from_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_GER40_M5.csv"));
+        g_peachy_orb_ger40.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_open_positions.register_source("PeachyOrb_GER40", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_peachy_orb_ger40.pos_;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "GER40"; s.engine = "PeachyOrb_GER40";
+                s.side = p.side > 0 ? "LONG" : "SHORT"; s.size = p.lot;
+                s.entry = p.entry; s.sl = p.sl; s.tp = p.tp;
+                s.entry_ts = p.entry_ts_ms / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] PeachyOrb_GER40: shadow=true OR15(13:30 NY-open) "
+               "CONFIG-C long-only (cross-index find PF2.06)\n");
+
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory
         // omega-peachy-gold-orb-retrace-edge). Distilled from Peachy's gold-ORB
