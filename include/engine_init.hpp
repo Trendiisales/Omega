@@ -4351,6 +4351,7 @@ static void init_engines(const std::string& cfg_path)
         g_peachy_orb_nas.lot         = 1.0;
         g_peachy_orb_nas.body_frac     = 0.4;   // 2026-06-09 exhaustive sweep: body0.4+closeBuf0.5 -> PF1.80 net+1561 (+18%), both-halves+, 3x-robust
         g_peachy_orb_nas.close_buf_atr = 0.5;
+        g_peachy_orb_nas.trail_atr     = 3.0;   // 2026-06-09: runner trail (no fixed TP). Full combo body0.4+closeBuf0.5+trail3.0 -> PF1.89 net+1882 (+43%), both-halves+, 3x-robust 1.63. GER40 stays 0 (trail broke its H2).
         g_peachy_orb_nas.seed_from_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
         g_peachy_orb_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };

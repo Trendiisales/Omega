@@ -58,7 +58,8 @@ struct PeachyOrbEngine {
     double big_atr       = 2.00;  // candle range > big_atr*ATR -> deep retrace
     double deep          = 0.75;  // deep retrace fraction for large impulse candles
     double max_stop_atr  = 1.00;  // HER RISK-CAP: reject setup if stop > this * ATR (the lever)
-    double tp_r          = 2.50;  // TP = tp_r * risk
+    double tp_r          = 2.50;  // TP = tp_r * risk (ignored when trail_atr>0)
+    double trail_atr     = 0.0;   // runner trail: 0=fixed TP; >0 = no TP, drag SL by trail_atr*ATR off each 5m close (harness-faithful)
     double max_spread    = 6.0;   // pts -- skip arming if spread too wide
     double lot           = 1.0;
     bool   long_only     = true;  // shorts dead on NAS (counter-trend on up-drift)
@@ -149,6 +150,14 @@ struct PeachyOrbEngine {
         if (!ema_init_) { ema_ = c; ema_init_ = true; }
         else { const double k = 2.0 / (ema_len + 1); ema_ += k * (c - ema_); }
 
+        // runner trail (harness-faithful): on each closed 5m bar, drag SL by trail_atr*ATR
+        // off the close, ratchet-only. No fixed TP when trailing (gated in the tick manager).
+        if (pos_.active && trail_atr > 0.0 && atr_ > 0.0) {
+            const double t = pos_.side > 0 ? (c - trail_atr * atr_) : (c + trail_atr * atr_);
+            if (pos_.side > 0 && t > pos_.sl) pos_.sl = t;
+            if (pos_.side < 0 && t < pos_.sl) pos_.sl = t;
+        }
+
         // accumulate the opening range
         if (mod >= or_start_min && mod < or_end_min) { if (h > or_high_) or_high_ = h; if (l < or_low_) or_low_ = l; return; }
         if (mod >= or_end_min && !or_done_ && or_high_ > 0.0 && or_low_ < 1e18) or_done_ = true;
@@ -214,10 +223,10 @@ struct PeachyOrbEngine {
             if (move > pos_.mfe) pos_.mfe = move;
             if (pos_.side > 0) {
                 if (bid <= pos_.sl)      { _close(pos_.sl, "SL_HIT", now_ms); return; }
-                else if (bid >= pos_.tp) { _close(pos_.tp, "TP_HIT", now_ms); return; }
+                else if (trail_atr <= 0.0 && bid >= pos_.tp) { _close(pos_.tp, "TP_HIT", now_ms); return; }
             } else {
                 if (ask >= pos_.sl)      { _close(pos_.sl, "SL_HIT", now_ms); return; }
-                else if (ask <= pos_.tp) { _close(pos_.tp, "TP_HIT", now_ms); return; }
+                else if (trail_atr <= 0.0 && ask <= pos_.tp) { _close(pos_.tp, "TP_HIT", now_ms); return; }
             }
             if (mod >= flat_min) { _close(mid, "FLAT_EOD", now_ms); return; }
             return;
