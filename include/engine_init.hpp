@@ -4264,7 +4264,7 @@ static void init_engines(const std::string& cfg_path)
     {
         g_fvgcont_nas.symbol      = "NAS100";
         g_fvgcont_nas.engine_name = "FvgContinuation";
-        g_fvgcont_nas.shadow_mode = true;     // bull-only caveat: prove on shadow first
+        g_fvgcont_nas.shadow_mode = true;     // paper label (whole system is SHADOW); VISIBLE via register_source below (2026-06-08). Observe incl bear tape; do NOT real-size until bear-validated.
         g_fvgcont_nas.enabled     = true;
         g_fvgcont_nas.verbose     = true;     // log entries + once-per-bar reject reasons
         g_fvgcont_nas.lot         = 1.0;
@@ -4272,6 +4272,14 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas.seed_from_m15_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M15.csv"));
         g_fvgcont_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        // 2026-06-08: publish open position so it shows on the live dashboard (was invisible).
+        g_open_positions.register_source("FvgContinuation", []() {
+            std::vector<omega::PositionSnapshot> v;
+            omega::PositionSnapshot s;
+            if (g_fvgcont_nas.has_open_position() && g_fvgcont_nas.persist_save("FvgContinuation", "NAS100", s))
+                v.push_back(s);
+            return v;
+        });
         printf("[OMEGA-INIT] FvgContinuation NAS100: shadow=true 15m NY-killzone(13:30-15:00 UTC) "
                "gap>=1.0ATR dol<=3ATR fresh<=8\n");
 
@@ -4306,13 +4314,27 @@ static void init_engines(const std::string& cfg_path)
         //   losers). Volume filter is dead on proxy → no volume gate. SHADOW first.
         g_peachy_orb_nas.symbol      = "NAS100";
         g_peachy_orb_nas.engine_name = "PeachyOrb";
-        g_peachy_orb_nas.shadow_mode = true;     // prove on shadow before any live size
-        g_peachy_orb_nas.enabled     = true;     // shadow=true makes it sim-only
+        g_peachy_orb_nas.shadow_mode = true;     // paper label (whole system is SHADOW); VISIBLE via register_source below (2026-06-08). Bear-validated (2022 NDX PF2.25).
+        g_peachy_orb_nas.enabled     = true;
         g_peachy_orb_nas.verbose     = true;
         g_peachy_orb_nas.lot         = 1.0;
         g_peachy_orb_nas.seed_from_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
         g_peachy_orb_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        // 2026-06-08: publish open position so it shows on the live dashboard (was invisible).
+        g_open_positions.register_source("PeachyOrb", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_peachy_orb_nas.pos_;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "NAS100"; s.engine = "PeachyOrb";
+                s.side = p.side > 0 ? "LONG" : "SHORT"; s.size = p.lot;
+                s.entry = p.entry; s.sl = p.sl; s.tp = p.tp;
+                s.entry_ts = p.entry_ts_ms / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
         printf("[OMEGA-INIT] PeachyOrb NAS100: shadow=true OR15(13:30-13:45 UTC) "
                "body0.6 retr0.3 maxStop1.0ATR EMA100 2.5R 1-shot long-only\n");
 
