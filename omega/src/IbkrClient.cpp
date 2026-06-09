@@ -16,6 +16,10 @@ void IbkrClient::fail() {
 // ---- IBKR build: real adapter over the TWS API C++ client. ----------------
 // Adjust the #include paths to match your TWS API install if needed.
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -27,8 +31,11 @@ void IbkrClient::fail() {
 #include "EClientSocket.h"
 #include "Contract.h"
 #include "bar.h"
+// Decimal.h provides the Decimal type AND the DecimalFunctions class (with the
+// static decimalToDouble helper) in the TWS API version installed here. Newer
+// API releases split DecimalFunctions into its own header; if you upgrade and
+// the build complains, add:  #include "DecimalFunctions.h"
 #include "Decimal.h"
-#include "DecimalFunctions.h"
 
 namespace omega {
 
@@ -52,9 +59,9 @@ double volToDouble(const Decimal& d) {
 // EWrapper implementation. DefaultEWrapper supplies empty bodies for the ~100
 // callbacks we do not care about; we override only the four we need.
 //
-// NOTE: the error() callback signature has changed across TWS API releases.
-// This targets the 10.x signature. If your SDK is older, change error() to
-// match your installed EWrapper.h (the rest is unaffected).
+// NOTE: the error() callback signature varies across TWS API releases. This
+// targets the 4-parameter form. If you upgrade to an SDK that inserts a
+// `time_t errorTime` as the 2nd argument, add it back (the rest is unaffected).
 struct IbkrClient::Impl : public DefaultEWrapper {
     IbkrConfig cfg;
     EReaderOSSignal signal;
@@ -97,7 +104,7 @@ struct IbkrClient::Impl : public DefaultEWrapper {
         if (reqId == activeReqId) done = true;
     }
 
-    void error(int id, time_t /*errorTime*/, int errorCode,
+    void error(int id, int errorCode,
                const std::string& errorString,
                const std::string& /*advancedOrderRejectJson*/) override {
         // Codes 2104/2106/2158 are benign "data farm OK" notices.
@@ -167,5 +174,63 @@ Series IbkrClient::fetchHistorical(const HistRequest& req) {
 }
 
 } // namespace omega
+
+// ---------------------------------------------------------------------------
+// Self-contained Intel-decimal (libbid) shim.
+//
+// The TWS API's Decimal.cpp references these 8 Intel RDFP math symbols
+// (___bid64_* / ___binary64_to_bid64). The Intel libbid library is NOT included
+// in this vendored SDK copy, which is what made the link fail. Rather than add
+// an external dependency, we satisfy the symbols here.
+//
+// Trick: the API treats `Decimal` (an unsigned long long) as opaque -- it only
+// ever CREATES a Decimal via from_string / binary64_to_bid64 and READS it via
+// to_binary64 / to_string / the arithmetic ops. So we can choose our own
+// internal representation: store the IEEE-754 bit pattern of the value's
+// double. Every round-trip is then exact and consistent (e.g. IB sends volume
+// as the string "12345" -> from_string -> bits of 12345.0 -> to_binary64 ->
+// 12345.0). Zero dependencies, fully deterministic across machines.
+//
+// Signatures match how third_party/twsapi/client/Decimal.cpp calls them:
+//   fn(value(s)..., unsigned int rnd, unsigned int* flags)
+//   to_string(char* out, value, unsigned int* flags)
+namespace {
+inline double   omega_bidBitsToDouble(unsigned long long u) {
+    double d; std::memcpy(&d, &u, sizeof d); return d;
+}
+inline unsigned long long omega_bidDoubleToBits(double d) {
+    unsigned long long u; std::memcpy(&u, &d, sizeof u); return u;
+}
+} // namespace
+
+extern "C" {
+
+double __bid64_to_binary64(unsigned long long x, unsigned int /*rnd*/, unsigned int* /*flags*/) {
+    return omega_bidBitsToDouble(x);
+}
+unsigned long long __binary64_to_bid64(double d, unsigned int /*rnd*/, unsigned int* /*flags*/) {
+    return omega_bidDoubleToBits(d);
+}
+unsigned long long __bid64_from_string(char* s, unsigned int /*rnd*/, unsigned int* /*flags*/) {
+    return omega_bidDoubleToBits(s ? std::strtod(s, nullptr) : 0.0);
+}
+void __bid64_to_string(char* out, unsigned long long x, unsigned int* /*flags*/) {
+    std::sprintf(out, "%.10g", omega_bidBitsToDouble(x));
+}
+unsigned long long __bid64_add(unsigned long long a, unsigned long long b, unsigned int, unsigned int*) {
+    return omega_bidDoubleToBits(omega_bidBitsToDouble(a) + omega_bidBitsToDouble(b));
+}
+unsigned long long __bid64_sub(unsigned long long a, unsigned long long b, unsigned int, unsigned int*) {
+    return omega_bidDoubleToBits(omega_bidBitsToDouble(a) - omega_bidBitsToDouble(b));
+}
+unsigned long long __bid64_mul(unsigned long long a, unsigned long long b, unsigned int, unsigned int*) {
+    return omega_bidDoubleToBits(omega_bidBitsToDouble(a) * omega_bidBitsToDouble(b));
+}
+unsigned long long __bid64_div(unsigned long long a, unsigned long long b, unsigned int, unsigned int*) {
+    double bb = omega_bidBitsToDouble(b);
+    return omega_bidDoubleToBits(bb != 0.0 ? omega_bidBitsToDouble(a) / bb : 0.0);
+}
+
+} // extern "C"
 
 #endif // OMEGA_WITH_IBKR
