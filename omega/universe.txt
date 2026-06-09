@@ -1,0 +1,81 @@
+# Omega scan universe — liquid US names prone to momentum/blowoff moves.
+# One ticker per line. '#' comments and blank lines are ignored.
+# SPY is the benchmark (regime filter + relative strength) and is fetched too.
+SPY
+# --- Mega-cap tech ---
+AAPL
+MSFT
+NVDA
+AMZN
+GOOGL
+META
+TSLA
+AVGO
+AMD
+NFLX
+# --- Semis / AI ---
+SMCI
+ARM
+MU
+QCOM
+INTC
+TXN
+LRCX
+KLAC
+ASML
+MRVL
+TSM
+# --- High-beta / momentum favorites ---
+PLTR
+COIN
+MSTR
+SHOP
+CRWD
+SNOW
+DDOG
+NET
+PANW
+ANET
+DELL
+UBER
+ABNB
+RBLX
+SOFI
+HOOD
+AFRM
+DKNG
+# --- Growth / consumer ---
+LLY
+NVO
+COST
+WMT
+NKE
+SBUX
+CMG
+# --- Energy / industrials / cyclicals ---
+XOM
+CVX
+OXY
+FCX
+CAT
+DE
+BA
+GE
+# --- Biotech / pharma movers ---
+MRNA
+VRTX
+REGN
+# --- China / EV ---
+BABA
+PDD
+NIO
+RIVN
+LCID
+# --- Misc high-volume ---
+GME
+AMC
+F
+BAC
+JPM
+DIS
+PYPL

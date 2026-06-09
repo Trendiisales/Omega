@@ -1,0 +1,9 @@
+# build artifacts
+/build/
+*.o
+*.obj
+# generated fixtures / snapshots (regenerate with data/gen.awk)
+/data/snapshot/
+/data/dates.txt
+# equity curve dumps
+*equity*.csv
