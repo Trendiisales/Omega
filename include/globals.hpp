@@ -695,6 +695,10 @@ static omega::XauInsideBarD1Engine g_xau_inside_bar_d1;
 //   R-mult, ~2-3yr). Break-only; bounce/mean-reversion variants were negative.
 #include "TrendLineBreakEngine.hpp"
 static omega::TrendLineBreakEngine g_trendline_break;
+// 2026-06-09: FX instances carry the real edge (GBPUSD PF1.53, USDJPY PF1.37);
+//   gold (PF1.24) stays disabled. SHADOW. H4-bar driven from tick_fx.hpp.
+static omega::TrendLineBreakEngine g_trendline_break_gbp;
+static omega::TrendLineBreakEngine g_trendline_break_jpy;
 
 // 2026-05-21: GoldD1TrendState -- D1 EMA200 regime gate for bidirectional engines.
 //   After 2026-05-20 InsideBar SHORT lost -$52 in gold uptrend, added regime

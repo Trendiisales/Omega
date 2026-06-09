@@ -67,6 +67,10 @@ struct TrendLineBreakEngine {
     bool enabled     = false;
     TrendLineBreakParams p;
     std::string symbol = "XAUUSD";
+    // Per-instance ledger/dashboard label. Running 2+ instances under one
+    // hardcoded "TrendLineBreak" tag would collide all closed trades. Set this
+    // per instance (e.g. "TrendLineBreakGBP") so the ledger + dashboard separate.
+    std::string engine_name = "TrendLineBreak";
 
     using CloseCallback = std::function<void(const omega::TradeRecord&)>;
 
@@ -163,14 +167,14 @@ struct TrendLineBreakEngine {
         const double pnl = pos_.side * (exit_px - pos_.entry) * pos_.lot;
         omega::TradeRecord tr{};
         tr.symbol = symbol; tr.side = pos_.side > 0 ? "LONG" : "SHORT";
-        tr.engine = "TrendLineBreak"; tr.exitReason = reason;
+        tr.engine = engine_name; tr.exitReason = reason;
         tr.entryPrice = pos_.entry; tr.exitPrice = exit_px;
         tr.sl = pos_.sl; tr.tp = 0.0; tr.size = pos_.lot; tr.pnl = pnl;
         tr.entryTs = pos_.entry_ts_ms / 1000LL; tr.exitTs = now_ms / 1000LL;
         tr.mfe = pos_.mfe; tr.atr_at_entry = pos_.atr_entry; tr.shadow = shadow_mode;
         if (cb) cb(tr);
-        printf("[TRENDLINE_BREAK] CLOSE %s @ %.2f entry=%.2f pnl=%.2f reason=%s bars=%d%s\n",
-               pos_.side > 0 ? "LONG" : "SHORT", exit_px, pos_.entry, pnl, reason,
+        printf("[%s] CLOSE %s @ %.2f entry=%.2f pnl=%.2f reason=%s bars=%d%s\n",
+               engine_name.c_str(), pos_.side > 0 ? "LONG" : "SHORT", exit_px, pos_.entry, pnl, reason,
                pos_.bars_held, shadow_mode ? " [SHADOW]" : "");
         fflush(stdout);
         pos_ = OpenPos{}; cooldown_ = p.cooldown_bars;
@@ -272,8 +276,8 @@ struct TrendLineBreakEngine {
         s.sl = sl; s.lot = p.lot; s.touches = touches; s.reason = r; return s;
     }
     void _log_entry(int side, double entry, double sl, int touches) noexcept {
-        printf("[TRENDLINE_BREAK] ENTRY %s @ %.2f safety=%.2f touches=%d atr=%.2f%s\n",
-               side > 0 ? "LONG" : "SHORT", entry, sl, touches, atr_,
+        printf("[%s] ENTRY %s @ %.2f safety=%.2f touches=%d atr=%.2f%s\n",
+               engine_name.c_str(), side > 0 ? "LONG" : "SHORT", entry, sl, touches, atr_,
                shadow_mode ? " [SHADOW]" : "");
         fflush(stdout);
     }

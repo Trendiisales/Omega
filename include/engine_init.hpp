@@ -2508,11 +2508,33 @@ static void init_engines(const std::string& cfg_path)
 
         // TrendLineBreakEngine -- validated hull-break (2026-06-09). SHADOW only.
         g_trendline_break.symbol      = "XAUUSD";
+        g_trendline_break.engine_name = "TrendLineBreak";
         g_trendline_break.shadow_mode = true;
-        g_trendline_break.enabled     = false;   // arm after seed + Mac canary
+        g_trendline_break.enabled     = false;   // disabled: PF1.24 below keep-bar; FX (GBP/JPY) carry the edge
         printf("[OMEGA-INIT] TrendLineBreakEngine: shadow=%d win=%d min_touch=%d\n",
                (int)g_trendline_break.shadow_mode, g_trendline_break.p.window,
                g_trendline_break.p.min_touch);
+        fflush(stdout);
+
+        // TrendLineBreakEngine FX -- GBPUSD PF1.53 + USDJPY PF1.37 (the real edge).
+        //   SHADOW (sim-only): enabled=true so signals fire + ledger, but shadow_mode
+        //   means no broker orders. H4-bar driven from tick_fx.hpp dispatch; on_tick
+        //   runs the intrabar safety-line stop. Seeded from H4 warmup CSVs below.
+        g_trendline_break_gbp.symbol      = "GBPUSD";
+        g_trendline_break_gbp.engine_name = "TrendLineBreakGBP";
+        g_trendline_break_gbp.shadow_mode = true;
+        g_trendline_break_gbp.enabled     = true;   // SHADOW (sim-only)
+        printf("[OMEGA-INIT] TrendLineBreakGBP: shadow=%d win=%d min_touch=%d\n",
+               (int)g_trendline_break_gbp.shadow_mode, g_trendline_break_gbp.p.window,
+               g_trendline_break_gbp.p.min_touch);
+
+        g_trendline_break_jpy.symbol      = "USDJPY";
+        g_trendline_break_jpy.engine_name = "TrendLineBreakJPY";
+        g_trendline_break_jpy.shadow_mode = true;
+        g_trendline_break_jpy.enabled     = true;   // SHADOW (sim-only)
+        printf("[OMEGA-INIT] TrendLineBreakJPY: shadow=%d win=%d min_touch=%d\n",
+               (int)g_trendline_break_jpy.shadow_mode, g_trendline_break_jpy.p.window,
+               g_trendline_break_jpy.p.min_touch);
         fflush(stdout);
 
         // ── GoldD1TrendState (2026-05-21) -- regime gate for shorts/longs.
@@ -2547,6 +2569,13 @@ static void init_engines(const std::string& cfg_path)
             omega::seed_h4_engine(g_xau_inside_bar_d1,    seed_csv, "XauInsideBarD1");
             omega::seed_h4_engine(g_trendline_break,      seed_csv, "TrendLineBreak");
         }
+        fflush(stdout);
+
+        // ── TrendLineBreak FX warm-seed (GBPUSD + USDJPY H4 CSVs) ───────────
+        //   Separate CSVs per symbol (hull geometry uses an internal bar counter;
+        //   seeding fires no entries while enabled is toggled off by the helper).
+        omega::seed_h4_engine(g_trendline_break_gbp, "phase1/signal_discovery/warmup_GBPUSD_H4.csv", "TrendLineBreakGBP");
+        omega::seed_h4_engine(g_trendline_break_jpy, "phase1/signal_discovery/warmup_USDJPY_H4.csv", "TrendLineBreakJPY");
         fflush(stdout);
 
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
@@ -5284,6 +5313,8 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("XauOutsideBarD1",      g_xau_outside_bar_d1.enabled,   3600,  0, 24);
         g_engine_heartbeat.register_engine("XauInsideBarD1",       g_xau_inside_bar_d1.enabled,    3600,  0, 24);
         g_engine_heartbeat.register_engine("TrendLineBreak",       g_trendline_break.enabled,      3600,  0, 24);
+        g_engine_heartbeat.register_engine("TrendLineBreakGBP",    g_trendline_break_gbp.enabled,  3600,  0, 24);
+        g_engine_heartbeat.register_engine("TrendLineBreakJPY",    g_trendline_break_jpy.enabled,  3600,  0, 24);
         g_engine_heartbeat.register_engine("Xau3BarMomH4",         g_xau_3bar_mom_h4.enabled,      3600,  0, 24);
         g_engine_heartbeat.register_engine("XauDonchian55GatedM30",g_xau_d55_gated_m30.enabled,    3600,  0, 24);
 
@@ -6673,6 +6704,22 @@ static void init_engines(const std::string& cfg_path)
         g_open_positions.register_source("FxTurtleH4_EURUSD", _turtle_src("FxTurtleH4_EURUSD", &g_eurusd_turtle_h4, "EURUSD"));
         g_open_positions.register_source("FxTurtleH4_GBPUSD", _turtle_src("FxTurtleH4_GBPUSD", &g_gbpusd_turtle_h4, "GBPUSD"));
 
+        // --- TrendLineBreakEngine FX x2 (GBPUSD, USDJPY), SHADOW ---
+        //   pos_: {active, side(+1/-1 int), entry, sl, lot, entry_ts_ms, mfe};
+        //   has_open_position(); tp=0 (trails the opposing hull safety line).
+        auto _tlb_src = [_cur_px](const char* label, omega::TrendLineBreakEngine* e, const char* sym) {
+            return [label,e,sym,_cur_px]() {
+                std::vector<omega::PositionSnapshot> out;
+                if (!e->has_open_position()) return out;
+                const auto& p = e->pos_; const double mult = tick_value_multiplier(std::string(sym));
+                double cur=_cur_px(sym, p.entry); const double dir=(p.side>0)?1.0:-1.0;
+                omega::PositionSnapshot ps; ps.engine=label; ps.symbol=sym; ps.side=(p.side>0)?"LONG":"SHORT";
+                ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=0.0;
+                ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
+                out.push_back(ps); return out; }; };
+        g_open_positions.register_source("TrendLineBreakGBP", _tlb_src("TrendLineBreakGBP", &g_trendline_break_gbp, "GBPUSD"));
+        g_open_positions.register_source("TrendLineBreakJPY", _tlb_src("TrendLineBreakJPY", &g_trendline_break_jpy, "USDJPY"));
+
         // --- g_minimal_h4_ger40 : MinimalH4GER40Breakout, GER40 ---
         //   pos_: {active, is_long, entry, sl, tp, size, entry_ts_ms}; has_open_position().
         g_open_positions.register_source("MinimalH4GER40", [_cur_px]() {
@@ -6938,6 +6985,8 @@ static void init_engines(const std::string& cfg_path)
             "Us30Ensemble", "BreakBounce", "XauDojiRejD1", "XauOutsideBarD1",
             "XauTurtleD1", "XauSessNYpm", "XauSessOvernight",
             "DonchianPortfolio", "EmaPullbackPortfolio", "TsmomPortfolioV2",
+            // 2026-06-09: TrendLineBreak FX shadow instances (GBP/JPY).
+            "TrendLineBreakGBP", "TrendLineBreakJPY",
         };
         const std::vector<std::string> registered = g_open_positions.source_labels();
         auto _is_registered = [&registered](const char* tag) -> bool {

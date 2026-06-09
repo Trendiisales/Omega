@@ -248,6 +248,7 @@ static void on_tick_gbpusd(
     // 2026-05-26 (Stage 3): GBPUSD-side engine coverage.
     g_engine_heartbeat.pulse("GbpusdTurtleH4");
     g_engine_heartbeat.pulse("AmrGbpusd");
+    g_engine_heartbeat.pulse("TrendLineBreakGBP");
 
     // Update macro context price -- needed by GBP correlation logic and
     //   the bracket trend bias accessor at on_tick.hpp:1177.
@@ -261,6 +262,34 @@ static void on_tick_gbpusd(
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
         g_gbpusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
         g_gbpusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+    }
+
+    // 2026-06-09: TrendLineBreakGBP (SHADOW) -- H4 hull-break, GBPUSD PF1.53.
+    //   The engine needs EXTERNAL H4 bars (it does not self-aggregate). We
+    //   build a 4h OHLC bar from mid here; on rollover we call on_h4_bar with
+    //   the JUST-CLOSED bar, then start a fresh one. on_tick runs every tick for
+    //   the intrabar safety-line stop. State is GBP-only (this function only
+    //   runs on GBPUSD ticks; static is per-symbol by virtue of that guard).
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        const double  mid       = (bid + ask) * 0.5;
+        static double s_tlb_o = 0.0, s_tlb_h = 0.0, s_tlb_l = 0.0, s_tlb_c = 0.0;
+        static int64_t s_tlb_bar_ms = 0;
+        const int64_t bh4 = (now_ms_fx / 14400000LL) * 14400000LL;
+        if (s_tlb_bar_ms == 0) {
+            s_tlb_o = s_tlb_h = s_tlb_l = s_tlb_c = mid; s_tlb_bar_ms = bh4;
+        } else if (bh4 != s_tlb_bar_ms) {
+            // bar rolled over -> dispatch the JUST-CLOSED bar, then start new
+            g_trendline_break_gbp.on_h4_bar(s_tlb_h, s_tlb_l, s_tlb_c,
+                                            bid, ask, s_tlb_bar_ms, bracket_on_close);
+            s_tlb_o = s_tlb_h = s_tlb_l = s_tlb_c = mid; s_tlb_bar_ms = bh4;
+        } else {
+            if (mid > s_tlb_h) s_tlb_h = mid;
+            if (mid < s_tlb_l) s_tlb_l = mid;
+            s_tlb_c = mid;
+        }
+        // intrabar safety-line stop (every tick)
+        g_trendline_break_gbp.on_tick(bid, ask, now_ms_fx, bracket_on_close);
     }
 
     // S38d 2026-05-26: FxScalpPyramid_GBPUSD dispatch (shadow-mode).
@@ -356,6 +385,7 @@ static void on_tick_usdjpy(
 {
     // 2026-05-05 (audit-fixes-40): heartbeat pulse (see on_tick_eurusd).
     g_engine_heartbeat.pulse("UsdjpyAsianOpen");
+    g_engine_heartbeat.pulse("TrendLineBreakJPY");
 
     // Store USDJPY mid for tick_value_multiplier (live JPY/USD conversion).
     //   Done unconditionally before any engine logic, same pattern as the
@@ -368,6 +398,31 @@ static void on_tick_usdjpy(
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
         g_usdjpy_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
         g_usdjpy_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
+    }
+
+    // 2026-06-09: TrendLineBreakJPY (SHADOW) -- H4 hull-break, USDJPY PF1.37.
+    //   External H4 bars built from mid (engine does not self-aggregate). On
+    //   rollover -> on_h4_bar with the just-closed bar; on_tick every tick for
+    //   the intrabar safety-line stop. State is JPY-only (this fn only runs on
+    //   USDJPY ticks). Mirror of the GBP block in on_tick_gbpusd.
+    {
+        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        const double  mid       = (bid + ask) * 0.5;
+        static double s_tlbj_o = 0.0, s_tlbj_h = 0.0, s_tlbj_l = 0.0, s_tlbj_c = 0.0;
+        static int64_t s_tlbj_bar_ms = 0;
+        const int64_t bh4 = (now_ms_fx / 14400000LL) * 14400000LL;
+        if (s_tlbj_bar_ms == 0) {
+            s_tlbj_o = s_tlbj_h = s_tlbj_l = s_tlbj_c = mid; s_tlbj_bar_ms = bh4;
+        } else if (bh4 != s_tlbj_bar_ms) {
+            g_trendline_break_jpy.on_h4_bar(s_tlbj_h, s_tlbj_l, s_tlbj_c,
+                                            bid, ask, s_tlbj_bar_ms, bracket_on_close);
+            s_tlbj_o = s_tlbj_h = s_tlbj_l = s_tlbj_c = mid; s_tlbj_bar_ms = bh4;
+        } else {
+            if (mid > s_tlbj_h) s_tlbj_h = mid;
+            if (mid < s_tlbj_l) s_tlbj_l = mid;
+            s_tlbj_c = mid;
+        }
+        g_trendline_break_jpy.on_tick(bid, ask, now_ms_fx, bracket_on_close);
     }
 
     // S38d 2026-05-26: FxScalpPyramid_USDJPY dispatch (shadow-mode).
