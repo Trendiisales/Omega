@@ -60,6 +60,12 @@ public:
     int    MAX_FVG_AGE   = 8;       // FVG must be this fresh (HTF bars) at entry
     int    FVG_TTL       = 24;      // FVG expires after this many HTF bars
     double STOP_BUF_ATR  = 0.10;    // structural stop sits this far beyond the gap far edge
+    double FILL_TOL_ATR  = 0.25;    // 2026-06-10 fill-fidelity: only fill when price is within
+                                    //   this of the entry edge. Live previously booked the edge
+                                    //   price the instant mid entered the gap (even mid-gap) ->
+                                    //   a fill the market never traded (the 4s -87 NAS short).
+                                    //   The backtest (fvg_core) fills only when the bar reaches
+                                    //   the edge; this makes the live engine match it.
     int    ATR_LEN       = 14;      // HTF ATR lookback
     int    SWING_LB      = 48;      // HTF bars for the swing-high/low DOL
     double MIN_RR        = 1.0;     // require DOL >= this many R away
@@ -183,6 +189,16 @@ public:
             if (f.dir<0 && dolDn<0) continue;
             if (TRENDN>0 && trendMA>0.0) { if (f.dir>0 && mid<trendMA) continue; if (f.dir<0 && mid>trendMA) continue; }
             if (mid < f.lo || mid > f.hi) continue;                  // retrace into gap (mitigation)
+            // 2026-06-10 fill-fidelity: the entry is booked AT the gap edge (f.lo short /
+            //   f.hi long). Only fill once price has actually retraced TO that edge -- else
+            //   we'd record a price the market never traded (the 4s -87 NAS short, where
+            //   mid was mid-gap but entry was booked at the far edge). f.used stays unset
+            //   so the gap remains a live candidate until price reaches the edge. Matches
+            //   the backtest (fvg_core), which fills only when the bar's range reaches it.
+            {
+                const double _edge = (f.dir>0) ? f.hi : f.lo;
+                if (m_atr > 0.0 && std::fabs(mid - _edge) > FILL_TOL_ATR * m_atr) continue;
+            }
 
             // price IS mitigating a fresh, correctly-pointed gap → a live candidate.
             // Log the first such candidate's verdict ONCE per HTF bar (verbose only).
