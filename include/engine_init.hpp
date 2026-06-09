@@ -6940,6 +6940,33 @@ static void init_engines(const std::string& cfg_path)
             return out; });
     } // end S-2026-06-09 visibility fix block
 
+    // S-2026-06-09 round-2 visibility: register the 10 persisted-but-invisible
+    //   engines the guardrail flagged (FxTurtleH4 AUD/NZD/JPY, IndexSession x5,
+    //   ConnorsRSI2, C1Retuned). Reuse each engine's own persist_save(_all) -- the
+    //   proven snapshotter -- so no per-engine field access. -> [VIS-AUDIT] missing=0.
+    {
+        auto _ps_src = [](const char* tag, const char* sym, auto* eng) {
+            g_open_positions.register_source(tag, [tag, sym, eng]() {
+                std::vector<omega::PositionSnapshot> v; omega::PositionSnapshot ps;
+                if (eng->persist_save(tag, sym, ps)) v.push_back(ps);
+                return v; });
+        };
+        _ps_src("FxTurtleH4_AUDUSD", "AUDUSD",  &g_audusd_turtle_h4);
+        _ps_src("FxTurtleH4_NZDUSD", "NZDUSD",  &g_nzdusd_turtle_h4);
+        _ps_src("FxTurtleH4_USDJPY", "USDJPY",  &g_usdjpy_turtle_h4);
+        _ps_src("IndexSession_SP",     "US500.F", &g_idxsess_sp);
+        _ps_src("IndexSession_NAS",    "NAS100",  &g_idxsess_nas);
+        _ps_src("IndexSession_GER40",  "GER40",   &g_idxsess_ger40);
+        _ps_src("IndexSession_UK100",  "UK100",   &g_idxsess_uk100);
+        _ps_src("IndexSession_ESTX50", "ESTX50",  &g_idxsess_estx50);
+        _ps_src("ConnorsRSI2",         "NAS100",  &g_connors_nas);
+        // C1Retuned is multi-cell -> persist_save_all emits one snapshot per cell.
+        g_open_positions.register_source("C1Retuned", []() {
+            std::vector<omega::PositionSnapshot> v;
+            g_c1_retuned.persist_save_all("C1Retuned", "XAUUSD", v);
+            return v; });
+    }
+
     // ====================================================================
     // S-2026-06-09 visibility GUARDRAIL (WARN-only): cross-check that every
     //   persist tag in PositionPersistence.hpp has a matching dashboard source.
