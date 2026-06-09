@@ -60,6 +60,7 @@ static void on_tick_gold(
     g_engine_heartbeat.pulse("XauDojiRejD1");
     g_engine_heartbeat.pulse("XauOutsideBarD1");
     g_engine_heartbeat.pulse("XauInsideBarD1");
+    g_engine_heartbeat.pulse("TrendLineBreak");
     g_engine_heartbeat.pulse("Xau3BarMomH4");
     g_engine_heartbeat.pulse("XauDonchian55GatedM30");
     // 2026-05-26 (Stage 5): gold-portfolio engines dispatched from this
@@ -1188,6 +1189,8 @@ static void on_tick_gold(
                                             bid, ask, now_ms_g, bracket_on_close);
             g_xau_inside_bar_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                            bid, ask, now_ms_g, bracket_on_close);
+            g_trendline_break.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
+                                        bid, ask, now_ms_g, bracket_on_close);
             // ── 2026-05-21 GoldD1TrendState update -- regime gate for shorts
             omega::gold_d1_trend().on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close, now_ms_g);
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
@@ -2241,6 +2244,7 @@ static void on_tick_gold(
     g_xau_doji_rej_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     g_xau_outside_bar_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     g_xau_inside_bar_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    g_trendline_break.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTrendFollow2hEngine tick management -- 4 2h-timeframe cells
     // (Keltner, Donchian20, Donchian50, InsideBar). S33k shipped 2026-05-11.
     // 2h bars built internally from H1 stream. Single-position per cell, 4

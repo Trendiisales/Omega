@@ -690,6 +690,12 @@ static omega::XauOutsideBarD1Engine g_xau_outside_bar_d1;
 #include "XauInsideBarD1Engine.hpp"
 static omega::XauInsideBarD1Engine g_xau_inside_bar_d1;
 
+// TrendLineBreakEngine -- non-intersecting trend-line break, safety-line trail.
+//   2026-06-09: validated hull-break (trendline_fan_v2). Gold PF~1.24 (2-touch,
+//   R-mult, ~2-3yr). Break-only; bounce/mean-reversion variants were negative.
+#include "TrendLineBreakEngine.hpp"
+static omega::TrendLineBreakEngine g_trendline_break;
+
 // 2026-05-21: GoldD1TrendState -- D1 EMA200 regime gate for bidirectional engines.
 //   After 2026-05-20 InsideBar SHORT lost -$52 in gold uptrend, added regime
 //   filter. Queried by XauTrendFollow2h InsideBar + DonchianBreakout (short

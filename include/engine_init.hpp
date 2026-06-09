@@ -2506,6 +2506,15 @@ static void init_engines(const std::string& cfg_path)
                g_xau_inside_bar_d1.p.hold_max_days);
         fflush(stdout);
 
+        // TrendLineBreakEngine -- validated hull-break (2026-06-09). SHADOW only.
+        g_trendline_break.symbol      = "XAUUSD";
+        g_trendline_break.shadow_mode = true;
+        g_trendline_break.enabled     = false;   // arm after seed + Mac canary
+        printf("[OMEGA-INIT] TrendLineBreakEngine: shadow=%d win=%d min_touch=%d\n",
+               (int)g_trendline_break.shadow_mode, g_trendline_break.p.window,
+               g_trendline_break.p.min_touch);
+        fflush(stdout);
+
         // ── GoldD1TrendState (2026-05-21) -- regime gate for shorts/longs.
         //   Seeded from XAU H4 CSV. Updated on every H4 close in tick_gold.hpp.
         //   Queried by bidirectional engines (XauTrendFollow2h InsideBar,
@@ -2536,6 +2545,7 @@ static void init_engines(const std::string& cfg_path)
             omega::seed_h4_engine(g_xau_doji_rej_d1,      seed_csv, "XauDojiRejD1");
             omega::seed_h4_engine(g_xau_outside_bar_d1,   seed_csv, "XauOutsideBarD1");
             omega::seed_h4_engine(g_xau_inside_bar_d1,    seed_csv, "XauInsideBarD1");
+            omega::seed_h4_engine(g_trendline_break,      seed_csv, "TrendLineBreak");
         }
         fflush(stdout);
 
@@ -5273,6 +5283,7 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("XauDojiRejD1",         g_xau_doji_rej_d1.enabled,      3600,  0, 24);
         g_engine_heartbeat.register_engine("XauOutsideBarD1",      g_xau_outside_bar_d1.enabled,   3600,  0, 24);
         g_engine_heartbeat.register_engine("XauInsideBarD1",       g_xau_inside_bar_d1.enabled,    3600,  0, 24);
+        g_engine_heartbeat.register_engine("TrendLineBreak",       g_trendline_break.enabled,      3600,  0, 24);
         g_engine_heartbeat.register_engine("Xau3BarMomH4",         g_xau_3bar_mom_h4.enabled,      3600,  0, 24);
         g_engine_heartbeat.register_engine("XauDonchian55GatedM30",g_xau_d55_gated_m30.enabled,    3600,  0, 24);
 
@@ -6404,26 +6415,11 @@ static void init_engines(const std::string& cfg_path)
     auto _nas_px = [](double entry)->double {
         const auto it = g_last_tick_bid.find("NAS100");
         return (it!=g_last_tick_bid.end() && it->second>0.0) ? it->second : entry; };
-    g_open_positions.register_source("FvgContinuation", [&,_nas_px]() {
-        std::vector<omega::PositionSnapshot> out;
-        if (!g_fvgcont_nas.has_open_position()) return out;
-        const auto& p = g_fvgcont_nas.pos; const double mult = tick_value_multiplier(std::string("NAS100"));
-        double cur=_nas_px(p.entry_px);
-        omega::PositionSnapshot ps; ps.engine="FvgContinuation"; ps.symbol="NAS100";
-        ps.side=p.dir>0?"LONG":"SHORT"; ps.size=p.size; ps.entry=p.entry_px; ps.current=cur;
-        ps.sl=p.stop_px; ps.tp=p.tp_px; ps.entry_ts=p.entry_ms/1000;
-        ps.unrealized_pnl=(p.dir>0?(cur-p.entry_px):(p.entry_px-cur))*p.size*mult;
-        out.push_back(ps); return out; });
-    g_open_positions.register_source("FvgCont10m", [&,_nas_px]() {
-        std::vector<omega::PositionSnapshot> out;
-        if (!g_fvgcont_nas10.has_open_position()) return out;
-        const auto& p = g_fvgcont_nas10.pos; const double mult = tick_value_multiplier(std::string("NAS100"));
-        double cur=_nas_px(p.entry_px);
-        omega::PositionSnapshot ps; ps.engine="FvgCont10m"; ps.symbol="NAS100";
-        ps.side=p.dir>0?"LONG":"SHORT"; ps.size=p.size; ps.entry=p.entry_px; ps.current=cur;
-        ps.sl=p.stop_px; ps.tp=p.tp_px; ps.entry_ts=p.entry_ms/1000;
-        ps.unrealized_pnl=(p.dir>0?(cur-p.entry_px):(p.entry_px-cur))*p.size*mult;
-        out.push_back(ps); return out; });
+    // S-2026-06-09 dedup: FvgContinuation + FvgCont10m are ALSO registered earlier
+    // (the persist_save-based sources at ~L4287/4313, added 2026-06-08, which win
+    // the on_tick symbol+engine dedup). These 2026-06-04 direct-field duplicates
+    // double-published into snapshot_all() (a double row on /api/v1/omega/positions).
+    // Removed here; the earlier persist_save sources remain the single source.
     g_open_positions.register_source("OvernightDrift", [&,_nas_px]() {
         std::vector<omega::PositionSnapshot> out;
         if (!g_overnight_nas.has_open_position()) return out;
@@ -6631,6 +6627,338 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("BreakoutUSDJPY",
         _make_breakout_source("BreakoutUSDJPY", &g_eng_usdjpy));
 
+    // ====================================================================
+    // S-2026-06-09 visibility fix: register engines that were active-but-invisible
+    //   These 23 engines were enabled + fed ticks + persisted (wire_cross/
+    //   wire_multicell/wire_livepos in PositionPersistence.hpp) but had NO
+    //   dashboard source, so their open positions held silently. Field names
+    //   were read from each engine header. current px = g_last_tick_bid[sym]
+    //   fallback to entry. unrealized = signed move * size * tick_value_mult.
+    // ====================================================================
+    {
+        // small helper: current mid for a symbol (fallback to entry)
+        auto _cur_px = [](const char* sym, double entry) -> double {
+            const auto it = g_last_tick_bid.find(sym);
+            return (it != g_last_tick_bid.end() && it->second > 0.0) ? it->second : entry;
+        };
+
+        // --- g_xau_tf_m15 : reuse the XauTf factory (XauTfPos1h field shape) ---
+        g_open_positions.register_source("XauTrendFollowM15",
+            _make_xau_tf_source("XauTrendFollowM15", &g_xau_tf_m15));
+
+        // --- g_overnight_spx : OvernightDriftEngine, US500.F, long-only ---
+        //   pos: {active, entry_px, size, entry_ms}; has_open_position(); no sl/tp.
+        g_open_positions.register_source("OvernightDriftSPX", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_overnight_spx.has_open_position()) return out;
+            const auto& p = g_overnight_spx.pos; const double mult = tick_value_multiplier(std::string("US500.F"));
+            double cur = _cur_px("US500.F", p.entry_px);
+            omega::PositionSnapshot ps; ps.engine="OvernightDriftSPX"; ps.symbol="US500.F"; ps.side="LONG";
+            ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=0.0; ps.tp=0.0;
+            ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
+            out.push_back(ps); return out; });
+
+        // --- FxTurtleH4Engine x2 (EURUSD, GBPUSD) ---
+        //   pos_: {active, is_long, entry, sl, tp, lot, entry_ts_ms}; has_open_position().
+        auto _turtle_src = [_cur_px](const char* label, omega::FxTurtleH4Engine* e, const char* sym) {
+            return [label,e,sym,_cur_px]() {
+                std::vector<omega::PositionSnapshot> out;
+                if (!e->has_open_position()) return out;
+                const auto& p = e->pos_; const double mult = tick_value_multiplier(std::string(sym));
+                double cur=_cur_px(sym, p.entry); const double dir=p.is_long?1.0:-1.0;
+                omega::PositionSnapshot ps; ps.engine=label; ps.symbol=sym; ps.side=p.is_long?"LONG":"SHORT";
+                ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
+                ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
+                out.push_back(ps); return out; }; };
+        g_open_positions.register_source("FxTurtleH4_EURUSD", _turtle_src("FxTurtleH4_EURUSD", &g_eurusd_turtle_h4, "EURUSD"));
+        g_open_positions.register_source("FxTurtleH4_GBPUSD", _turtle_src("FxTurtleH4_GBPUSD", &g_gbpusd_turtle_h4, "GBPUSD"));
+
+        // --- g_minimal_h4_ger40 : MinimalH4GER40Breakout, GER40 ---
+        //   pos_: {active, is_long, entry, sl, tp, size, entry_ts_ms}; has_open_position().
+        g_open_positions.register_source("MinimalH4GER40", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_minimal_h4_ger40.has_open_position()) return out;
+            const auto& p = g_minimal_h4_ger40.pos_; const double mult = tick_value_multiplier(std::string("GER40"));
+            double cur=_cur_px("GER40", p.entry); const double dir=p.is_long?1.0:-1.0;
+            omega::PositionSnapshot ps; ps.engine="MinimalH4GER40"; ps.symbol="GER40"; ps.side=p.is_long?"LONG":"SHORT";
+            ps.size=p.size; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
+            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.size*mult;
+            out.push_back(ps); return out; });
+
+        // --- g_eur_gbp_pairs : EurGbpPairsEngine, EURGBP spread pair ---
+        //   pos_: {active, long_spread, eur_entry, gbp_entry, entry_spread, lot,
+        //   entry_ts_ms}. Display the EUR leg entry; side from long_spread; no sl/tp.
+        g_open_positions.register_source("EurGbpPairs", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_eur_gbp_pairs.has_open_position()) return out;
+            const auto& p = g_eur_gbp_pairs.pos_;
+            double cur=_cur_px("EURGBP", p.eur_entry);
+            omega::PositionSnapshot ps; ps.engine="EurGbpPairs"; ps.symbol="EURGBP";
+            ps.side=p.long_spread?"LONG":"SHORT"; ps.size=p.lot; ps.entry=p.eur_entry; ps.current=cur;
+            ps.sl=0.0; ps.tp=0.0; ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=0.0;
+            out.push_back(ps); return out; });
+
+        // --- g_fx_xrev_eurgbp : FxCrossRevEngine, EURGBP (pos_ private; read via
+        //   S-2026-06-09 accessors pos_is_long/pos_entry/pos_lot/pos_entry_ts(ms)) ---
+        g_open_positions.register_source("FxCrossRevEURGBP", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_fx_xrev_eurgbp.has_open_position()) return out;
+            const double mult = tick_value_multiplier(std::string("EURGBP"));
+            const double entry=g_fx_xrev_eurgbp.pos_entry(); const bool is_long=g_fx_xrev_eurgbp.pos_is_long();
+            const double sz=g_fx_xrev_eurgbp.pos_lot(); double cur=_cur_px("EURGBP", entry); const double dir=is_long?1.0:-1.0;
+            omega::PositionSnapshot ps; ps.engine="FxCrossRevEURGBP"; ps.symbol="EURGBP"; ps.side=is_long?"LONG":"SHORT";
+            ps.size=sz; ps.entry=entry; ps.current=cur; ps.sl=0.0; ps.tp=0.0;
+            ps.entry_ts=g_fx_xrev_eurgbp.pos_entry_ts()/1000; ps.unrealized_pnl=(cur-entry)*dir*sz*mult;
+            out.push_back(ps); return out; });
+
+        // --- g_ger40_london_brk : Ger40LondonBreakoutEngine, GER40 (short-only) ---
+        //   pos: {active, is_long, entry_px, tp_px, sl_px, size, entry_ms, mfe, mae}.
+        g_open_positions.register_source("Ger40LondonBrk", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_ger40_london_brk.has_open_position()) return out;
+            const auto& p = g_ger40_london_brk.pos; const double mult = tick_value_multiplier(std::string("GER40"));
+            double cur=_cur_px("GER40", p.entry_px); const double dir=p.is_long?1.0:-1.0;
+            omega::PositionSnapshot ps; ps.engine="Ger40LondonBrk"; ps.symbol="GER40"; ps.side=p.is_long?"LONG":"SHORT";
+            ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
+            ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*dir*p.size*mult;
+            out.push_back(ps); return out; });
+
+        // --- g_gold_volbrk_m30 : GoldVolBreakoutM30Engine, XAUUSD (long-only) ---
+        //   pos: {active, entry_px, sl_px, entry_ts_ms}; size from eng.lot; any_open(); no tp.
+        g_open_positions.register_source("GoldVolBreakoutM30", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_gold_volbrk_m30.any_open()) return out;
+            const auto& p = g_gold_volbrk_m30.pos; const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double cur=_cur_px("XAUUSD", p.entry_px); const double sz=g_gold_volbrk_m30.lot;
+            omega::PositionSnapshot ps; ps.engine="GoldVolBreakoutM30"; ps.symbol="XAUUSD"; ps.side="LONG";
+            ps.size=sz; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=0.0;
+            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*sz*mult;
+            out.push_back(ps); return out; });
+
+        // --- IndexIntradayDriftEngine x3 (US500.F, UK100, DJ30.F), long-only ---
+        //   pos: {active, is_long(=true), entry, sl, size, entry_ts(sec)}; has_open_position(); no tp.
+        auto _idd_src = [_cur_px](const char* label, omega::IndexIntradayDriftEngine* e, const char* sym) {
+            return [label,e,sym,_cur_px]() {
+                std::vector<omega::PositionSnapshot> out;
+                if (!e->has_open_position()) return out;
+                const auto& p = e->pos; const double mult = tick_value_multiplier(std::string(sym));
+                double cur=_cur_px(sym, p.entry);
+                omega::PositionSnapshot ps; ps.engine=label; ps.symbol=sym; ps.side=p.is_long?"LONG":"SHORT";
+                ps.size=p.size; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=0.0;
+                ps.entry_ts=p.entry_ts; ps.unrealized_pnl=(cur-p.entry)*(p.is_long?1.0:-1.0)*p.size*mult;
+                out.push_back(ps); return out; }; };
+        g_open_positions.register_source("IndexIntradayDrift_SP",    _idd_src("IndexIntradayDrift_SP",    &g_idd_sp,    "US500.F"));
+        g_open_positions.register_source("IndexIntradayDrift_UK100", _idd_src("IndexIntradayDrift_UK100", &g_idd_uk100, "UK100"));
+        g_open_positions.register_source("IndexIntradayDrift_US30",  _idd_src("IndexIntradayDrift_US30",  &g_idd_us30,  "DJ30.F"));
+
+        // --- g_orb_estx50_v2 : OrbBreakoutEngine, ESTX50 ---
+        //   pos_: {active, side(+1/-1 int), entry, sl, tp, lot, entry_ts_ms}; has_open_position().
+        g_open_positions.register_source("OrbEstx50", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_orb_estx50_v2.has_open_position()) return out;
+            const auto& p = g_orb_estx50_v2.pos_; const double mult = tick_value_multiplier(std::string("ESTX50"));
+            double cur=_cur_px("ESTX50", p.entry); const double dir=(p.side>0)?1.0:-1.0;
+            omega::PositionSnapshot ps; ps.engine="OrbEstx50"; ps.symbol="ESTX50"; ps.side=(p.side>0)?"LONG":"SHORT";
+            ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
+            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
+            out.push_back(ps); return out; });
+
+        // --- g_us30_ensemble : Us30EnsembleEngine, DJ30.F (multi-cell array pos[]) ---
+        //   pos[]: {active, is_long, entry_px, sl_px, tp_px, entry_ts_ms, mfe_pts}; size from eng.lot.
+        g_open_positions.register_source("Us30Ensemble", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            const double mult = tick_value_multiplier(std::string("DJ30.F")); const double sz=g_us30_ensemble.lot;
+            for (const auto& p : g_us30_ensemble.pos) {
+                if (!p.active) continue;
+                double cur=_cur_px("DJ30.F", p.entry_px); const double dir=p.is_long?1.0:-1.0;
+                omega::PositionSnapshot ps; ps.engine="Us30Ensemble"; ps.symbol="DJ30.F"; ps.side=p.is_long?"LONG":"SHORT";
+                ps.size=sz; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
+                ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*dir*sz*mult;
+                out.push_back(ps);
+            }
+            return out; });
+
+        // --- g_xau_breakbounce : BreakBounceEngine, XAUUSD ---
+        //   pos: {active, is_long, entry_px, stop_px, tp_px?, size, entry_ms}; has_open_position().
+        g_open_positions.register_source("BreakBounce", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xau_breakbounce.has_open_position()) return out;
+            const auto& p = g_xau_breakbounce.pos; const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            double cur=_cur_px("XAUUSD", p.entry_px); const double dir=p.is_long?1.0:-1.0;
+            omega::PositionSnapshot ps; ps.engine="BreakBounce"; ps.symbol="XAUUSD"; ps.side=p.is_long?"LONG":"SHORT";
+            ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
+            ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*dir*p.size*mult;
+            out.push_back(ps); return out; });
+
+        // --- XAU D1 engines x3 (DojiRej, OutsideBar, Turtle) ---
+        //   pos_: {active, [is_long], entry, sl, tp, entry_ts_ms}; lot from p.lot; has_open_position().
+        //   DojiRej + OutsideBar fire long only at entry; Turtle is long-only.
+        g_open_positions.register_source("XauDojiRejD1", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xau_doji_rej_d1.has_open_position()) return out;
+            const auto& p = g_xau_doji_rej_d1.pos_; const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            const double sz=g_xau_doji_rej_d1.p.lot; double cur=_cur_px("XAUUSD", p.entry);
+            omega::PositionSnapshot ps; ps.engine="XauDojiRejD1"; ps.symbol="XAUUSD"; ps.side="LONG";
+            ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
+            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*sz*mult;
+            out.push_back(ps); return out; });
+        g_open_positions.register_source("XauOutsideBarD1", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xau_outside_bar_d1.has_open_position()) return out;
+            const auto& p = g_xau_outside_bar_d1.pos_; const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            const double sz=g_xau_outside_bar_d1.p.lot; double cur=_cur_px("XAUUSD", p.entry);
+            omega::PositionSnapshot ps; ps.engine="XauOutsideBarD1"; ps.symbol="XAUUSD"; ps.side="LONG";
+            ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
+            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*sz*mult;
+            out.push_back(ps); return out; });
+        g_open_positions.register_source("XauTurtleD1", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_xau_turtle_d1.has_open_position()) return out;
+            const auto& p = g_xau_turtle_d1.pos_; const double mult = tick_value_multiplier(std::string("XAUUSD"));
+            const double sz=g_xau_turtle_d1.p.lot; double cur=_cur_px("XAUUSD", p.entry); const double dir=p.is_long?1.0:-1.0;
+            omega::PositionSnapshot ps; ps.engine="XauTurtleD1"; ps.symbol="XAUUSD"; ps.side=p.is_long?"LONG":"SHORT";
+            ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
+            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*sz*mult;
+            out.push_back(ps); return out; });
+
+        // --- SessionMomentumEngine x2 (XAU NYpm + overnight), long-only ---
+        //   pos: {active, entry_px, sl_px(0=none), entry_ts_ms}; size from eng.lot; any_open(); no tp.
+        auto _sess_src = [_cur_px](const char* label, omega::SessionMomentumEngine* e) {
+            return [label,e,_cur_px]() {
+                std::vector<omega::PositionSnapshot> out;
+                if (!e->any_open()) return out;
+                const auto& p = e->pos; const double mult = tick_value_multiplier(std::string("XAUUSD"));
+                double cur=_cur_px("XAUUSD", p.entry_px); const double sz=e->lot;
+                omega::PositionSnapshot ps; ps.engine=label; ps.symbol="XAUUSD"; ps.side="LONG";
+                ps.size=sz; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=0.0;
+                ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*sz*mult;
+                out.push_back(ps); return out; }; };
+        g_open_positions.register_source("XauSessNYpm",     _sess_src("XauSessNYpm",     &g_xau_sess_nypm));
+        g_open_positions.register_source("XauSessOvernight", _sess_src("XauSessOvernight", &g_xau_sess_overnight));
+
+        // --- multi-cell portfolios: Donchian + EmaPullback (XAUUSD cells) ---
+        //   DonchianCell / EpbCell public fields: {pos_active_, pos_entry_, pos_sl_,
+        //   pos_tp_, pos_size_, pos_entry_ms_, direction(+1/-1), symbol, cell_id}.
+        //   One snapshot per active cell; per-cell tag = "<base>#<cell_id>".
+        auto _emit_donch_cell = [_cur_px](std::vector<omega::PositionSnapshot>& out,
+                                          const char* base, const auto& c) {
+            if (!c.pos_active_) return;
+            const double mult = tick_value_multiplier(c.symbol);
+            double cur=_cur_px(c.symbol.c_str(), c.pos_entry_); const double dir=(c.direction>0)?1.0:-1.0;
+            omega::PositionSnapshot ps; ps.engine=std::string(base)+"#"+c.cell_id; ps.symbol=c.symbol;
+            ps.side=(c.direction>0)?"LONG":"SHORT"; ps.size=c.pos_size_; ps.entry=c.pos_entry_; ps.current=cur;
+            ps.sl=c.pos_sl_; ps.tp=c.pos_tp_; ps.entry_ts=c.pos_entry_ms_/1000;
+            ps.unrealized_pnl=(cur-c.pos_entry_)*dir*c.pos_size_*mult;
+            out.push_back(ps); };
+        g_open_positions.register_source("DonchianPortfolio", [_emit_donch_cell]() {
+            std::vector<omega::PositionSnapshot> out;
+            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h2_long_);
+            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h4_long_);
+            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h4_short_);
+            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h6_long_);
+            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h6_short_);
+            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.d1_long_);
+            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.d1_short_);
+            return out; });
+        g_open_positions.register_source("EmaPullbackPortfolio", [_emit_donch_cell]() {
+            std::vector<omega::PositionSnapshot> out;
+            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h1_long_);
+            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h2_long_);
+            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h4_long_);
+            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h6_long_);
+            return out; });
+
+        // --- g_tsmom_v2 : TsmomPortfolioV2 = CellPortfolio<TsmomStrategy> ---
+        //   public cells_ vector; each Cell (CellBase) has positions_ (vector<Position>),
+        //   direction(+1/-1), symbol, cell_id. Position: {entry, sl, tp, size, entry_ms,
+        //   mfe, mae}. One snapshot per open position across all cells.
+        g_open_positions.register_source("TsmomPortfolioV2", []() {
+            std::vector<omega::PositionSnapshot> out;
+            for (const auto& c : g_tsmom_v2.cells_) {
+                if (c.positions_.empty()) continue;
+                const double mult = tick_value_multiplier(c.symbol);
+                const double dir = (c.direction > 0) ? 1.0 : -1.0;
+                double cur = c.positions_.front().entry;
+                const auto it = g_last_tick_bid.find(c.symbol);
+                if (it != g_last_tick_bid.end() && it->second > 0.0) cur = it->second;
+                for (const auto& p : c.positions_) {
+                    omega::PositionSnapshot ps;
+                    ps.engine = std::string("TsmomPortfolioV2#") + c.cell_id; ps.symbol = c.symbol;
+                    ps.side = (c.direction > 0) ? "LONG" : "SHORT";
+                    ps.size = p.size; ps.entry = p.entry; ps.current = cur; ps.sl = p.sl; ps.tp = p.tp;
+                    ps.entry_ts = p.entry_ms / 1000; ps.unrealized_pnl = (cur - p.entry) * dir * p.size * mult;
+                    out.push_back(ps);
+                }
+            }
+            return out; });
+    } // end S-2026-06-09 visibility fix block
+
+    // ====================================================================
+    // S-2026-06-09 visibility GUARDRAIL (WARN-only): cross-check that every
+    //   persist tag in PositionPersistence.hpp has a matching dashboard source.
+    //   Tag list is read directly from that file's wire_cross/wire_multicell/
+    //   wire_livepos calls. Never aborts — prints warnings + a summary.
+    // ====================================================================
+    {
+        static const char* const kPersistTags[] = {
+            // wire_livepos (7)
+            "MidScalperGold", "MicroScalperGold", "EurusdLondonOpen", "UsdjpyAsianOpen",
+            "GbpusdLondonOpen", "AudusdSydneyOpen", "NzdusdAsianOpen",
+            // wire_cross CrossPosition/IdxOpenPosition (14)
+            "VWAPReversionSP", "VWAPReversionNQ", "VWAPReversionGER40", "VWAPReversionEURUSD",
+            "TrendPullbackGold", "TrendPullbackNQ", "IndexFlowSP", "IndexFlowNQ", "IndexFlowNAS",
+            "IndexFlowUS30", "IndexMacroCrashSP", "IndexMacroCrashNQ", "IndexMacroCrashNAS",
+            "IndexMacroCrashUS30",
+            // batch 4: straddles + Ger40Keltner
+            "XauStraddleM30", "XauStraddleM15", "IdxStraddleGER40_M30", "IdxStraddleGER40_M15",
+            "IdxStraddleNAS100_M15", "IdxStraddleNAS100_M30", "IdxStraddleUK100_M30",
+            "IdxStraddleUK100_M240", "Ger40KeltnerH1",
+            // batch 5: single-pos gold/index
+            "XauusdFvg", "PDHLReversion", "RSIReversal", "MinimalH4Gold", "MinimalH4US30",
+            "MinimalH4GER40", "XauThreeBar30m", "EMACrossGold", "Ger40TurtleH4", "GoldSeasonal",
+            "GoldOversoldBounce", "H1SwingGold", "H4RegimeGold",
+            // batch 5: multi-cell ensembles (base tags)
+            "XauTrendFollow1h", "XauTrendFollow2h", "XauTrendFollow4h", "XauTrendFollowD1",
+            "UstecTrendFollow5m", "UstecTrendFollowHtf", "C1Retuned",
+            // batch 6: Breakout FX, NBM, FX turtles/scalp, pyramided
+            "BreakoutEURUSD", "BreakoutGBPUSD", "BreakoutAUDUSD", "BreakoutNZDUSD", "BreakoutUSDJPY",
+            "NoiseBandMomentumGoldLdn", "GoldScalpPyramid", "GoldRegimeDaily", "MacroCrash",
+            "FxTurtleH4_EURUSD", "FxTurtleH4_GBPUSD", "FxTurtleH4_AUDUSD", "FxTurtleH4_NZDUSD",
+            "FxTurtleH4_USDJPY", "FxScalpPyramid_EURUSD", "FxScalpPyramid_USDJPY",
+            "FxScalpPyramid_GBPUSD", "FxScalpPyramid_USDCAD", "FxScalpPyramid_AUDUSD",
+            // IndexSession + S118 batch
+            "IndexSession_SP", "IndexSession_NAS", "FvgContinuation", "FvgCont10m", "OvernightDrift",
+            "ConnorsRSI2", "AdaptiveHullXAU", "AdaptiveHullGER", "SupertrendGold",
+            "IndexSession_GER40", "IndexSession_UK100", "IndexSession_ESTX50",
+            // S-2026-06-09 visibility fix: never-persisted strays now registered.
+            // Asserted here so a future drop of any registration trips [VIS-AUDIT].
+            "XauTrendFollowM15", "OvernightDriftSPX", "EurGbpPairs", "FxCrossRevEURGBP",
+            "Ger40LondonBrk", "GoldVolBreakoutM30", "IndexIntradayDrift_SP",
+            "IndexIntradayDrift_UK100", "IndexIntradayDrift_US30", "OrbEstx50",
+            "Us30Ensemble", "BreakBounce", "XauDojiRejD1", "XauOutsideBarD1",
+            "XauTurtleD1", "XauSessNYpm", "XauSessOvernight",
+            "DonchianPortfolio", "EmaPullbackPortfolio", "TsmomPortfolioV2",
+        };
+        const std::vector<std::string> registered = g_open_positions.source_labels();
+        auto _is_registered = [&registered](const char* tag) -> bool {
+            for (const auto& l : registered) if (l == tag) return true;
+            return false;
+        };
+        int n_tags = 0, missing = 0;
+        for (const char* tag : kPersistTags) {
+            ++n_tags;
+            if (!_is_registered(tag)) {
+                std::cout << "[VIS-AUDIT] WARN: '" << tag
+                          << "' persists positions but has NO dashboard source\n";
+                ++missing;
+            }
+        }
+        std::cout << "[VIS-AUDIT] persist-tags=" << n_tags
+                  << " registered-sources=" << registered.size()
+                  << " missing=" << missing << "\n";
+        std::cout.flush();
+    }
+
     // 2026-05-13 S66-followup: HybridGold removed from prose listing (engine
     //   was culled in S11 P3a+P3b, see line ~2683); count 34 then matched the
     //   actual count of register_source() calls in this block.
@@ -6641,19 +6969,11 @@ static void init_engines(const std::string& cfg_path)
     // 2026-05-14b S66-followup-2 cont. (part M): C1Retuned x4 added
     //   (DonchianH1/BollingerH2/BollingerH4/BollingerH6 — long-only XAU
     //   cells of the C1RetunedPortfolio wrapper), count 42 -> 46.
-    std::cout << "[OmegaApi] g_open_positions sources registered (46 sources: "
-              "MidScalperGold, MicroScalperGold, "
-              "EurusdLondonOpen, UsdjpyAsianOpen, GbpusdLondonOpen, "
-              "AudusdSydneyOpen, NzdusdAsianOpen, XauusdFvg, "
-              "PDHLReversion, RSIReversal, MinimalH4Gold, MinimalH4US30, "
-              "XauThreeBar30m, NoiseBandMomentumGoldLdn, "
-              "VWAPReversion x4, TrendPullback x2, "
-              "IndexFlow x4, IndexMacroCrash x4, "
-              "C1Retuned x4, "
-              "EMACrossGold, H4RegimeGold, MacroCrash, "
-              "XauTrendFollow 2h/4h/D1, "
-              "H1SwingGold, UstecTrendFollow 5m/HTF, "
-              "Breakout EURUSD/GBPUSD/AUDUSD/NZDUSD/USDJPY)\n";
+    // S-2026-06-09: dynamic count (was a hand-maintained "46 sources" prose list
+    // that went stale every time a source was added). The [VIS-AUDIT] line below
+    // prints the authoritative coverage check.
+    std::cout << "[OmegaApi] g_open_positions sources registered ("
+              << g_open_positions.source_labels().size() << " sources)\n";
     std::cout.flush();
 
     // ── Step 3: equity anchor for /api/v1/omega/equity ────────────────────

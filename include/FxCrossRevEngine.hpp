@@ -72,6 +72,14 @@ public:
     const std::string& symbol() const noexcept { return symbol_; }
     bool has_open_position() const noexcept { return pos_.active; }
 
+    // S-2026-06-09 visibility fix: read-only accessors so the dashboard
+    // register_source() can surface this engine's open position (pos_ is
+    // private). entry_ts is stored in ms (set from day_ms in open_position).
+    bool    pos_is_long()  const noexcept { return pos_.is_long; }
+    double  pos_entry()    const noexcept { return pos_.entry_px; }
+    double  pos_lot()      const noexcept { return pos_.lot; }
+    int64_t pos_entry_ts() const noexcept { return pos_.entry_ts; }
+
     void on_tick(double bid, double ask, int64_t now_ms, OnCloseFn on_close) noexcept {
         if (bid <= 0.0 || ask <= 0.0) return;
         last_bid_ = bid; last_ask_ = ask;

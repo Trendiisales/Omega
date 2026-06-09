@@ -106,6 +106,18 @@ public:
         return out;
     }
 
+    // S-2026-06-09 visibility fix: enumerate the label of every registered GUI
+    // source. Mutex-guarded like snapshot_all. Lets a boot-time guardrail
+    // cross-check which engines feed the dashboard vs which only persist.
+    std::vector<std::string> source_labels() const
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        std::vector<std::string> out;
+        out.reserve(sources_.size());
+        for (const auto& kv : sources_) out.push_back(kv.first);
+        return out;
+    }
+
     // ========================================================================
     // S-2026-06-03: open-position PERSISTENCE (write/restore) so restarts and
     // deploys resume in-flight trades instead of silently dropping RAM-only
