@@ -4544,6 +4544,25 @@ static void init_engines(const std::string& cfg_path)
         g_overnight_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         printf("[OMEGA-INIT] OvernightDrift NAS100: shadow=true long@close->flat@open if close>SMA20\n");
 
+        // OvernightDrift US500 (S&P) — 2026-06-09. Same night-effect edge, SMA50
+        // gate. PROPER backtest incl freshly-pulled FULL-YEAR 2022 bear (dukascopy
+        // usa500idxusd): gated bull +18.6% PF1.29 Sharpe1.39 (halves +9/+9, maxDD7%),
+        // 2022 bear -1.2% maxDD5% (vs B&H -20%) -- gate sits ~flat through the bear.
+        // SMA50 beat SMA100 on SPX bull. Naked (ungated) FAILS 2022 (-14%) -> gate
+        // is load-bearing. US cash session (same RTH as NAS). Shadow.
+        g_overnight_spx.symbol      = "US500";
+        g_overnight_spx.engine_name = "OvernightDrift";
+        g_overnight_spx.SMA_LEN     = 50;
+        g_overnight_spx.shadow_mode = true;
+        g_overnight_spx.enabled     = true;
+        g_overnight_spx.lot         = 1.0;
+        g_overnight_spx.stop_pct    = 0.015;  // tail-cap (~1.5%), mirrors NAS gap-protection.
+        g_overnight_spx.init();
+        g_overnight_spx.seed_from_d1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_US500_D1.csv"));
+        g_overnight_spx.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        printf("[OMEGA-INIT] OvernightDrift US500: shadow=true long@close->flat@open if close>SMA50\n");
+
         // ConnorsRSI2 — 3rd index edge (daily mean-reversion dip-buy). Buy@close
         // if close>SMA200 AND RSI(2)<10, exit next close. Backtest: NDX cash
         // Sharpe 2.46, IBKR CFD 2.33, NQ future 2.71 (SMA50), all both-halves+,

@@ -131,6 +131,7 @@ static omega::AdaptiveHullEngine g_adhull_ger;       // GER40 adaptive-Hull tren
 #include "SupertrendGoldEngine.hpp"
 static omega::SupertrendGoldEngine g_supertrend_gold; // XAUUSD Supertrend(10,3) 60m long-only +EMA -- 2026-06-05, shadow (PF2.0)
 static omega::OvernightDriftEngine g_overnight_nas;  // NAS100 overnight drift (trend>SMA20) -- 2nd index edge, shadow
+static omega::OvernightDriftEngine g_overnight_spx;  // US500 overnight drift (trend>SMA50) -- 2026-06-09, full-2022-bear-validated, shadow
 static omega::ConnorsRSI2Engine    g_connors_nas;    // NAS100 RSI2 dip-buy (mean-rev) -- 3rd index edge, shadow
 static omega::FvgContinuationEngine g_fvgcont_nas;   // NAS100 FVG continuation 15m (NY killzone) -- 2026-06-04 edge, shadow
 static omega::FvgContinuationEngine g_fvgcont_nas10; // NAS100 FVG continuation 10m -- best HTF (PF2.37 Sh2.0), shadow compare vs 15m

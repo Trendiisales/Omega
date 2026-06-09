@@ -344,6 +344,7 @@ static void on_tick_us500(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_sp.set_risk_off(omega::index_risk_off());
         g_idxsess_sp.on_tick(bid, ask, now_ms_isp);
+        g_overnight_spx.on_tick(bid, ask, now_ms_isp);   // overnight drift US500 (trend>SMA50, shadow)
         g_engine_heartbeat.pulse("IndexSession_US500");
     }
 }
