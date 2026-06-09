@@ -738,7 +738,7 @@ R"OMEGA6(
 
 <script>
 'use strict';
-let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null,_lastOpenCount=0,_openBootDone=false,_ltFingerprint='';
+let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null,_lastOpenCount=0,_openBootDone=false,_ltFingerprint='',_lastUptimeSec=0;
 
 function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;})OMEGA6"
 R"OMEGA7(
@@ -1978,7 +1978,15 @@ R"OMEGA23B(
   const ub=document.getElementById('uptimeBadge');
   if(ub&&d.uptime_sec!=null){const s=d.uptime_sec,h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60;
     ub.textContent='UP '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sc).padStart(2,'0');
-    ub.style.color=h>=1?'var(--green)':'var(--t2)';}
+    ub.style.color=h>=1?'var(--green)':'var(--t2)';
+    // Restart chime: uptime was running (>60s) and just jumped back near zero =>
+    //   Omega is back up after a restart -> play the WIN bell once. Needs ARM BELL
+    //   (browser autoplay policy); uptime_sec is monotonic so no false positives.
+    if(_lastUptimeSec>60 && s < _lastUptimeSec-30){
+      console.log('[BOOT] Omega back up after restart ('+_lastUptimeSec+'s -> '+s+'s)');
+      _flashBell('rgba(0,217,126,0.9)'); _playWinBell();
+    }
+    _lastUptimeSec=s;}
 
 
 
