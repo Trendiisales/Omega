@@ -61,7 +61,7 @@ def slope(closes):
     return b/m*100.0 if m > 0 else 0.0
 
 
-def run_day(bars, variant, gate, slip_pct):
+def run_day(bars, variant, gate, slip_pct, min_warmup=LB+21):
     """Long-only 5m sim, bar-path exits (mirrors pump_backtest mechanics)."""
     if not bars: return []
     day_open = bars[0][1]
@@ -95,7 +95,7 @@ def run_day(bars, variant, gate, slip_pct):
         crossed_this_bar = gate_now and not gate_armed_prev
         gate_armed_prev = gate_armed_prev or gate_now
         if not gate_now: continue
-        if len(closes) < LB+21 and variant != "GATECROSS": continue
+        if len(closes) < min_warmup and variant != "GATECROSS": continue
         vwap = cum_pv/cum_v if cum_v > 0 else 0
         sl_ok = (c > vwap and slope(closes) >= SLOPE_MIN) if vwap > 0 else True
         if variant == "GATECROSS":
@@ -120,6 +120,8 @@ def main():
     ap.add_argument("--days", default=BASKET)
     ap.add_argument("--slip", type=float, default=1.0)
     ap.add_argument("--gate", type=float, default=100.0)
+    ap.add_argument("--min-warmup", type=int, default=LB+21,
+                    help="bars before entries allowed (live engine is seed-warmed; use 4 for partial days)")
     a = ap.parse_args()
 
     ib = IB(); ib.connect(IB_HOST, IB_PORT, clientId=IB_CID, timeout=20)
@@ -143,7 +145,7 @@ def main():
             allt = []
             per = []
             for tok, bars in data.items():
-                t = run_day(bars, variant, a.gate, slip)
+                t = run_day(bars, variant, a.gate, slip, a.min_warmup)
                 allt += t
                 if t: per.append((tok, sum(t)))
             gp = sum(x for x in allt if x > 0); gl = -sum(x for x in allt if x < 0)
@@ -155,7 +157,7 @@ def main():
         # per-day detail for the decider
     print("\nper-day net% (BASE | NOVOL | GATECROSS) @ slip", a.slip)
     for tok, bars in data.items():
-        row = [sum(run_day(bars, v, a.gate, a.slip)) for v in ("BASE", "NOVOL", "GATECROSS")]
+        row = [sum(run_day(bars, v, a.gate, a.slip, a.min_warmup)) for v in ("BASE", "NOVOL", "GATECROSS")]
         print(f"  {tok:16} {row[0]:8.1f} {row[1]:8.1f} {row[2]:8.1f}")
 
 
