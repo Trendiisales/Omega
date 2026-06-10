@@ -35,6 +35,7 @@ SERVE_PORT    = 7782      # TCP server for the in-Omega PumpFeedConsumer (--serv
 # (standalone pump_shadow.exe). A background thread owns the accept loop.
 _conn = None
 _serve = False
+_need_reseed = False   # set by accept loop on (re)connect; consumed by main loop
 _candidates = {}          # sym -> dict(px, day_open, up, ts) for the scanner web page
 SCANNER_HTTP_PORT = 7783  # "separate address": http://<vps>:7783 shows live pump candidates
 
@@ -104,7 +105,7 @@ def _http_thread(port):
 
 
 def _serve_thread(port):
-    global _conn
+    global _conn, _need_reseed
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", port)); srv.listen(1)
@@ -113,6 +114,11 @@ def _serve_thread(port):
         c, _ = srv.accept()
         sys.stderr.write("[pump_bridge] consumer connected\n"); sys.stderr.flush()
         _conn = c
+        # New consumer = fresh (or restarted) Omega: its engines are COLD with a
+        # re-anchored day_open -> gate reads ~0% on a +200% name and the LB+21
+        # bar warmup blocks entries for hours. Flag a full re-seed; the MAIN
+        # loop does the actual ib calls (ib_async is not thread-safe here).
+        _need_reseed = True
 
 
 def emit(s: str):
@@ -198,8 +204,23 @@ def main():
     last_scan = 0.0
     emit("# pump_feed_bridge up")
 
+    global _need_reseed
     while True:
         now = time.time()
+
+        # ---- consumer (re)connected: replay today's history for every tracked
+        #      symbol so a restarted Omega recovers true day_open + run_high +
+        #      full bar warmup instead of re-anchoring at the reconnect price ----
+        if _need_reseed and subs:
+            _need_reseed = False
+            for sym, s in list(subs.items()):
+                sd = seed(ib, sym)                  # re-emits S lines (warm only)
+                if sd and sd[0] > 0:
+                    s.day_open = sd[0]
+                emit(f"# reseed {sym} day_open={s.day_open:.3f}")
+        elif _need_reseed:
+            _need_reseed = False                    # nothing tracked yet
+
         # ---- periodic scan + subscribe ----
         if now - last_scan >= SCAN_EVERY:
             last_scan = now
