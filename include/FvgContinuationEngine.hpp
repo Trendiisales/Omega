@@ -40,6 +40,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OpenPositionRegistry.hpp"   // PositionSnapshot (persist)
 #include "OmegaCostGuard.hpp"         // ExecutionCostGuard::is_viable (entry gate)
+#include "ClusterGate.hpp"            // cross-engine same-direction cluster cap (S-2026-06-11)
 #include "IndexRiskGate.hpp"          // omega::index_risk_off() -- bull-only regime gate
 
 namespace omega {
@@ -222,6 +223,10 @@ public:
             if (!ExecutionCostGuard::is_viable(symbol.c_str(), spread, tp_dist, lot, COST_RATIO)) {
                 FVG_DIAG("cost gate: tp_dist=%.2f spread=%.2f lot=%.2f\n", tp_dist, spread, lot);
                 f.used=true; continue;                               // cost gate
+            }
+            if (!omega::ClusterGate::allow_entry(symbol.c_str(), f.dir>0, engine_name.c_str())) {
+                FVG_DIAG("cluster gate: same-direction cap reached\n");
+                f.used=true; continue;                               // correlation cap
             }
             #undef FVG_DIAG
             pos = Position{}; pos.active=true; pos.dir=f.dir;

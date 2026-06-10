@@ -4428,13 +4428,19 @@ static void init_engines(const std::string& cfg_path)
         // live fills + dud-rate are measured.
         g_pump_manager.shadow_mode  = true;
         g_pump_manager.day_gate_pct = 100.0;
-        g_pump_manager.trail_pct    = 3.0;
+        // S-2026-06-11 exit upgrade (pump_exit_bt.py BE2T2 — wins every basket day
+        // at 1% AND 2% slip): trail 3->2, BE-lock arm+2%/floor+2% (pop-then-fade
+        // exits ~net-flat instead of trailing negative; WR 55->67 @2% slip).
+        g_pump_manager.trail_pct    = 2.0;
+        g_pump_manager.be_arm_pct   = 2.0;
+        g_pump_manager.be_floor_pct = 2.0;
+        g_pump_manager.single_position_per_symbol = true;  // trio shares one slot/symbol
         g_pump_manager.pyr_adds     = 0;
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
-        printf("[OMEGA-INIT] PumpScalp manager: 5/10/15m gate100 trail3 shadow "
-               "(dynamic universe; feed via OMEGA_PUMP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] PumpScalp manager: 5/10/15m gate100 trail2 BE-lock(2/2) "
+               "1-pos/symbol shadow (dynamic universe; feed via OMEGA_PUMP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory

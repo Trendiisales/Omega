@@ -25,7 +25,10 @@ class PumpScalpManager {
 public:
     bool   shadow_mode  = true;
     double day_gate_pct = 100.0;   // extreme-mover gate (see engine: durable edge lives here)
-    double trail_pct    = 3.0;     // hard trailing stop (sweep: tighter=better, 3% for AH-slip margin)
+    double trail_pct    = 2.0;     // hard trailing stop. 3->2 2026-06-11 (pump_exit_bt.py:
+                                   // BE2T2 wins every basket day at 1% AND 2% slip)
+    double be_arm_pct   = 2.0;     // BE-lock arm (engine BE_ARM_PCT); 0 = off
+    double be_floor_pct = 2.0;     // BE-lock stop floor = entry +/- this %
     double volx         = 0.0;     // ignition volume-surge condition DISABLED (2026-06-10 A/B:
                                    // v>=3x avg20 self-defeats in a sustained frenzy -- every bar is
                                    // huge so none is 3x its neighbors; blocked CIIT +65% while pooled
@@ -33,6 +36,9 @@ public:
                                    // PF 28.7/16.1 at 1%/2% slip). pump_variant_bt.py both windows.
     int    pyr_adds     = 0;       // pyramid OFF (conditional leverage, hurts durable regime)
     int    max_symbols  = 12;      // cap concurrent pumps tracked
+    bool   single_position_per_symbol = true;  // S-2026-06-11: trio shares one slot per symbol
+                                   // (3 TFs taking the same thrust = 3x concentration).
+                                   // Tradeoff: per-TF A/B becomes first-to-fire, accepted.
     bool   verbose      = false;
     PumpScalpEngine::TradeRecordCallback on_trade_record;   // one sink for all engines
 
@@ -126,6 +132,8 @@ private:
             e.TF_SEC       = tf;
             e.DAY_GATE_PCT = day_gate_pct;
             e.TRAIL_PCT    = trail_pct;
+            e.BE_ARM_PCT   = be_arm_pct;
+            e.BE_FLOOR_PCT = be_floor_pct;
             e.VOLX         = volx;
             e.PYR_ADDS     = pyr_adds;
             e.MAXHOLD_SEC  = 30 * tf;       // ~30 bars of this timeframe
@@ -135,6 +143,14 @@ private:
             e.init();
         };
         setup(t.e5, 300, "5m"); setup(t.e10, 600, "10m"); setup(t.e15, 900, "15m");
+        // S-2026-06-11: one position per SYMBOL across the trio. holds_position()
+        // covers all three TF engines; the asking engine's own pos.active is
+        // false at entry-check time, so only siblings count.
+        if (single_position_per_symbol) {
+            t.e5.entry_permit  = [this, sym]() { return !holds_position(sym); };
+            t.e10.entry_permit = [this, sym]() { return !holds_position(sym); };
+            t.e15.entry_permit = [this, sym]() { return !holds_position(sym); };
+        }
     }
 
     Trio& ensure(const std::string& sym, int64_t ts_ms) {

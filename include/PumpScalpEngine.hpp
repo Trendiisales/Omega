@@ -81,8 +81,18 @@ public:
     double RUNUP_PCT    = 20.0;    // exhaustion: min runup from day-open
     double EXT_PCT      = 5.0;     // exhaustion: min % extension above EMA9
     int    NEWHOD_M     = 8;       // exhaustion: HOD must be this fresh (bars)
-    double TRAIL_PCT    = 3.0;     // HARD trailing stop off peak/trough (checked every tick)
+    double TRAIL_PCT    = 2.0;     // HARD trailing stop off peak/trough (checked every tick).
+                                   // 3->2 2026-06-11: pump_exit_bt.py BE2T2 beats TRAIL3 on
+                                   // EVERY basket day, both slip levels (net 1294->1342 @1%,
+                                   // PF 26.7->35.1). Original sweep already said 2% best.
     double HARD_PCT     = 6.0;     // hard stop from entry
+    // BE-lock (operator ask 2026-06-11, validated pump_exit_bt.py BE2T2): once
+    // the move runs BE_ARM_PCT past entry, the stop floors at NET break-even
+    // (BE_FLOOR_PCT ~ 2x per-side slip) — a pop that fades exits ~flat instead
+    // of trailing to a negative. WR 55->67 at 2% slip, never hurts a runner
+    // (floor only binds when the trail would exit BELOW it). 0 = disabled.
+    double BE_ARM_PCT   = 2.0;     // arm once peak/trough is this % past entry
+    double BE_FLOOR_PCT = 2.0;     // stop floor: entry +/- this % (net-BE at ~1%/side slip)
     int    MAXHOLD_SEC  = 30*300;  // time stop (default 30 x 5m bars worth of seconds)
     bool   ALLOW_SHORT  = true;    // strict exhaustion fade ONLY (continuation LOSES — never add)
     int    PYR_ADDS     = 0;       // pyramid adds onto a winner (0=OFF; leverage not edge)
@@ -101,6 +111,12 @@ public:
 
     using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
     TradeRecordCallback on_trade_record;
+
+    // S-2026-06-11 concurrency cap: manager-injected entry permit. The 5/10/15m
+    // trio used to take the SAME thrust 3x (HCAI: 3 simultaneous positions =
+    // 3x concentration + triple-counted shadow stats). Returns false when a
+    // sibling TF engine already holds this symbol -> entry suppressed.
+    std::function<bool()> entry_permit;
 
     // ── Position: a stack of units sharing ONE trailing exit ─────────────────
     struct Position { bool active=false; int dir=0; double size_each=0;
@@ -142,7 +158,7 @@ public:
     //   IMMEDIATELY on the turn (all three TF engines share this behaviour). ──
     void on_price(double px, int64_t ts_ms) {
         if (px <= 0) return;
-        const int64_t day = (ts_ms/1000)/86400;
+        const int64_t day = _session_day(ts_ms);
         if (day != m_day) _new_day(day);
         if (m_day_open <= 0) m_day_open = px;          // fallback only; bars set the true session open
         m_run_high = std::max(m_run_high, px);
@@ -157,14 +173,18 @@ public:
             if (PYR_ADDS>0 && (int)pos.units.size()<1+PYR_ADDS && px >= pos.last_add*(1+PYR_STEP/100)) {
                 pos.units.push_back(px); pos.last_add=px;
             }
-            const double stop = std::max(pos.peak*(1-TRAIL_PCT/100), base*(1-HARD_PCT/100));
+            double stop = std::max(pos.peak*(1-TRAIL_PCT/100), base*(1-HARD_PCT/100));
+            if (BE_ARM_PCT > 0 && pos.peak >= base*(1+BE_ARM_PCT/100))
+                stop = std::max(stop, base*(1+BE_FLOOR_PCT/100));   // BE-lock armed
             if (px <= stop) { _close(stop, ts_ms, "TRAIL"); return; }
         } else {
             pos.trough = std::min(pos.trough, px);
             if (PYR_ADDS>0 && (int)pos.units.size()<1+PYR_ADDS && px <= pos.last_add*(1-PYR_STEP/100)) {
                 pos.units.push_back(px); pos.last_add=px;
             }
-            const double stop = std::min(pos.trough*(1+TRAIL_PCT/100), base*(1+HARD_PCT/100));
+            double stop = std::min(pos.trough*(1+TRAIL_PCT/100), base*(1+HARD_PCT/100));
+            if (BE_ARM_PCT > 0 && pos.trough <= base*(1-BE_ARM_PCT/100))
+                stop = std::min(stop, base*(1-BE_FLOOR_PCT/100));   // BE-lock armed
             if (px >= stop) { _close(stop, ts_ms, "TRAIL"); return; }
         }
         if (ts_ms - pos.entry_ms >= (int64_t)MAXHOLD_SEC*1000) _close(px, ts_ms, "TIME");
@@ -175,7 +195,7 @@ public:
     //   (warm-seed mandate: historical bars must never open a phantom trade). ──
     void on_entry_bar(double o, double h, double l, double c, double v, int64_t ts_ms, bool is_seed=false) {
         if (h < l || c <= 0) return;
-        const int64_t day = (ts_ms/1000)/86400;
+        const int64_t day = _session_day(ts_ms);
         if (day != m_day) _new_day(day);
         if (m_day_open <= 0) m_day_open = o;             // session open = first bar's open
         m_run_high = std::max(m_run_high, h);
@@ -191,6 +211,7 @@ public:
 
         if (is_seed) return;                             // SEED: warm only — never enter on history
         if (pos.active || !enabled) return;              // exits are on_price's job
+        if (entry_permit && !entry_permit()) return;     // sibling TF holds this symbol (S-2026-06-11)
         if (m_day_open<=0 || (m_run_high/m_day_open - 1.0)*100.0 < DAY_GATE_PCT) return;  // gate
         if (idx < LB + 21) return;
 
@@ -226,6 +247,14 @@ private:
         m_bars.clear(); m_ema9=0; m_ema_init=false;
         m_cum_pv=0; m_cum_v=0;
     }
+
+    // US-session day, rolled at 08:00 UTC (4am EDT / 3am EST — always inside the
+    // overnight dead zone, never mid-session). Plain UTC midnight = 8pm ET =
+    // MID-after-hours: names tracked through it re-anchored m_day_open at the AH
+    // trough, inflating day_up_pct -> the +100% gate passed on +8-60% names
+    // (CHSN/CDTG/HCAI, 2026-06-11). Matches the bridge's "1 D" premarket-anchored
+    // seed window = the backtest's day-expansion baseline.
+    static int64_t _session_day(int64_t ts_ms) { return (ts_ms/1000 - 8*3600)/86400; }
 
     double _vwap() const { return m_cum_v>0 ? m_cum_pv/m_cum_v : 0.0; }
 

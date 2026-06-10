@@ -39,6 +39,7 @@
 #include <sstream>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "ClusterGate.hpp"   // cross-engine same-direction cluster cap (S-2026-06-11)
 
 namespace omega {
 
@@ -245,6 +246,7 @@ struct PeachyOrbEngine {
         if (risk <= 0.0) { armed_ = false; return; }
         // cost gate: TP distance = tp_r * risk (disarm on block, same as zero-risk path)
         if (!ExecutionCostGuard::is_viable(symbol.c_str(), ask - bid, tp_r * risk, lot, 1.5)) { armed_ = false; return; }
+        if (!ClusterGate::allow_entry(symbol.c_str(), side > 0, engine_name.c_str())) { armed_ = false; return; }
         pos_.active = true; pos_.side = side; pos_.entry = arm_entry_;
         pos_.sl = arm_sl_; pos_.tp = arm_entry_ + side * tp_r * risk;
         pos_.lot = lot; pos_.sl_dist = risk; pos_.mfe = 0.0; pos_.entry_ts_ms = now_ms;

@@ -34,6 +34,7 @@
 #include <sstream>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "ClusterGate.hpp"   // cross-engine same-direction cluster cap (S-2026-06-11)
 
 namespace omega {
 
@@ -194,6 +195,9 @@ struct GoldOrbRetraceEngine {
         if (risk <= 0.05*atr_) { traded_=true; return; }
         // cost gate: no-TP runner -> stop distance as gross proxy; spread from last tick
         if (!ExecutionCostGuard::is_viable(symbol.c_str(), m_spread_, risk, lot, 1.5)) { traded_=true; return; }
+        // XAUUSD instances resolve to no cluster (always allowed); the NAS100
+        // instance is capped together with FvgCont/PeachyOrb (S-2026-06-11)
+        if (!ClusterGate::allow_entry(symbol.c_str(), bias_>0, tag.c_str())) { traded_=true; return; }
         pos_.active=true; pos_.side=bias_; pos_.entry=entry_lvl_; pos_.sl=sl;
         pos_.lot=lot; pos_.sl_dist=risk; pos_.mfe=0.0; pos_.entry_ts_ms=bar_start_ms;
         traded_=true; ++trade_id_;
