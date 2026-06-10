@@ -33,6 +33,7 @@
 #include <fstream>
 #include <sstream>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -78,6 +79,7 @@ struct GoldOrbRetraceEngine {
     // ---- m5 aggregation state ----
     int64_t bar_start_ms_ = -1;
     double  bar_o_ = 0.0, bar_h_ = 0.0, bar_l_ = 0.0, bar_c_ = 0.0;
+    double  m_spread_ = 0.0;   // last live spread (entry cost gate)
 
     // ---- ATR (SMA TR) + EMA(ema_len) of close + recent lows/highs for the trail ----
     std::deque<double> trq_;
@@ -190,6 +192,8 @@ struct GoldOrbRetraceEngine {
         const double sl = bias_>0 ? (l - buf_atr*atr_) : (h + buf_atr*atr_);
         const double risk = bias_>0 ? (entry_lvl_ - sl) : (sl - entry_lvl_);
         if (risk <= 0.05*atr_) { traded_=true; return; }
+        // cost gate: no-TP runner -> stop distance as gross proxy; spread from last tick
+        if (!ExecutionCostGuard::is_viable(symbol.c_str(), m_spread_, risk, lot, 1.5)) { traded_=true; return; }
         pos_.active=true; pos_.side=bias_; pos_.entry=entry_lvl_; pos_.sl=sl;
         pos_.lot=lot; pos_.sl_dist=risk; pos_.mfe=0.0; pos_.entry_ts_ms=bar_start_ms;
         traded_=true; ++trade_id_;
@@ -201,6 +205,7 @@ struct GoldOrbRetraceEngine {
     // ---- tick: aggregate m5, manage open position (RUNNER trail) ----
     void on_tick(double bid, double ask, int64_t now_ms) noexcept {
         if (bid <= 0.0 || ask <= 0.0) return;
+        m_spread_ = ask - bid;            // last live spread (entry cost gate)
         const double mid = (bid + ask) * 0.5;
         const int64_t b5 = (now_ms/300000LL)*300000LL;
         if (bar_start_ms_ < 0) { bar_start_ms_=b5; bar_o_=bar_h_=bar_l_=bar_c_=mid; }

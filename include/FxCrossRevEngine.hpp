@@ -41,6 +41,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -207,10 +208,13 @@ private:
     }
     void open_position(bool is_long, double close_px, double bid, double ask,
                        int64_t day_ms, double z) noexcept {
+        const double L = sized_lot(close_px);
+        // cost gate: 1-ATR expected reversion proxy
+        if (atr_ > 0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask - bid, atr_, L, 1.5)) return;
         pos_ = Pos{};
         pos_.active = true; pos_.is_long = is_long;
         pos_.entry_px = is_long ? ask : bid;
-        pos_.lot = sized_lot(close_px);
+        pos_.lot = L;
         pos_.entry_ts = day_ms; pos_.z_at_entry = z;
         std::printf("[FxXRev-%s] ENTRY %s z=%+.2f px=%.5f lot=%.3f%s\n",
                     symbol_.c_str(), is_long ? "LONG" : "SHORT", z, pos_.entry_px, pos_.lot,

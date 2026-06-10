@@ -20,6 +20,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -71,7 +72,7 @@ public:
         }
         // Entry: Friday close, long only.
         if (enabled && !pos_.active && atr_ > 0.0 && day_count_ >= p.atr_period && wd == p.fri_wday)
-            open_position(c, ask, day_ms);
+            open_position(c, bid, ask, day_ms);
     }
 
     void force_close(int64_t day_ms, OnCloseFn cb) noexcept {
@@ -113,8 +114,11 @@ private:
         if(atr_<=0.0||price<=0.0)return lot; double ab=atr_/price*10000.0; if(ab<=0)return lot;
         double L=(p.target_vol_bps/ab)*lot; if(L<0.01)L=0.01; if(L>p.max_lot)L=p.max_lot; return L;
     }
-    void open_position(double close_px,double ask,int64_t day_ms) noexcept {
-        pos_=Pos{}; pos_.active=true; pos_.entry_px=ask; pos_.lot=sized_lot(close_px); pos_.entry_ts=day_ms;
+    void open_position(double close_px,double bid,double ask,int64_t day_ms) noexcept {
+        const double L=sized_lot(close_px);
+        // cost gate: 1-ATR expected move proxy (1-day seasonal hold)
+        if (atr_>0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask-bid, atr_, L, 1.5)) return;
+        pos_=Pos{}; pos_.active=true; pos_.entry_px=ask; pos_.lot=L; pos_.entry_ts=day_ms;
         std::printf("[FxSeasonal-%s] ENTRY LONG (Fri) px=%.5f lot=%.3f%s\n",symbol_.c_str(),ask,pos_.lot,shadow_mode?" [SHADOW]":"");
         std::fflush(stdout);
     }

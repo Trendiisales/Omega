@@ -33,6 +33,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "IndexRiskGate.hpp"     // S44 shared macro risk-off (VIX+credit+dollar)
 
 namespace omega {
@@ -106,7 +107,7 @@ public:
         const bool vix_block = (gate_by_vix && cur_vix_ratio_ >= 0.0 && cur_vix_ratio_ >= vix_gate_ratio)
                             || omega::index_risk_off();
         if (enabled && !pos_.active && atr_ > 0.0 && day_count_ >= p.atr_period && entry_day && !vix_block)
-            open_position(c, ask, day_ms, wd);
+            open_position(c, bid, ask, day_ms, wd);
     }
 
     void force_close(int64_t day_ms, OnCloseFn cb) noexcept {
@@ -165,8 +166,11 @@ private:
         if(atr_<=0.0||price<=0.0)return lot; double ab=atr_/price*10000.0; if(ab<=0)return lot;
         double L=(p.target_vol_bps/ab)*lot; if(L<0.01)L=0.01; if(L>p.max_lot)L=p.max_lot; return L;
     }
-    void open_position(double close_px,double ask,int64_t day_ms,int wd) noexcept {
-        pos_=Pos{}; pos_.active=true; pos_.entry_px=ask; pos_.lot=sized_lot(close_px); pos_.entry_ts=day_ms; pos_.wday=wd;
+    void open_position(double close_px,double bid,double ask,int64_t day_ms,int wd) noexcept {
+        const double L=sized_lot(close_px);
+        // cost gate: 1-ATR expected move proxy (1-day seasonal hold)
+        if (atr_>0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask-bid, atr_, L, 1.5)) return;
+        pos_=Pos{}; pos_.active=true; pos_.entry_px=ask; pos_.lot=L; pos_.entry_ts=day_ms; pos_.wday=wd;
         std::printf("[IndexSeasonal-%s] ENTRY LONG (%s) px=%.2f lot=%.3f%s\n",symbol_.c_str(),
                     wd==p.tue_wday?"Tue":"Fri",ask,pos_.lot,shadow_mode?" [SHADOW]":"");
         std::fflush(stdout);

@@ -50,6 +50,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "FxRateTable.hpp"
 
 namespace omega {
@@ -223,11 +224,14 @@ private:
 
     void open_position(bool is_long, double close_px, double bid, double ask,
                        int64_t day_ms, double carry) noexcept {
+        const double L = sized_lot(close_px);
+        // cost gate: 1-ATR expected move proxy (daily-rebalance hold)
+        if (atr_ > 0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask - bid, atr_, L, 1.5)) return;
         pos_ = Pos{};
         pos_.active           = true;
         pos_.is_long          = is_long;
         pos_.entry_px         = is_long ? ask : bid;     // cross the spread in
-        pos_.lot              = sized_lot(close_px);
+        pos_.lot              = L;
         pos_.entry_ts_ms      = day_ms;
         pos_.carry_at_entry   = carry;
         std::printf("[FxCarry-%s] ENTRY %s carry=%+.2f%% px=%.5f lot=%.3f%s\n",

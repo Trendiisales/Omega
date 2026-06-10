@@ -25,6 +25,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 #include "SeedGuard.hpp"
 #include "IndexRiskGate.hpp"      // S44 portfolio VIX risk-off gate (entry-only)
@@ -185,6 +186,10 @@ struct Ger40TurtleH4Engine {
                 size = std::floor(size / 0.01) * 0.01;
                 size = std::max(0.01, std::min(p.lot * 10, size));  // cap at 0.10
 
+                // cost gate: TP distance vs spread cost at sized lot. NO early
+                // return -- the h4_acc_ reset below must run on a blocked entry.
+                if (ExecutionCostGuard::is_viable("GER40", ask - bid, tp_px - entry_px, size, 1.5)) {
+
                 pos_.active=true;
                 pos_.entry=entry_px; pos_.sl=sl_px; pos_.tp=tp_px;
                 pos_.lot=size; pos_.mfe=pos_.mae=0;
@@ -199,6 +204,7 @@ struct Ger40TurtleH4Engine {
 
                 sig.valid=true; sig.entry=entry_px; sig.sl=sl_px; sig.tp=tp_px; sig.lot=size;
                 sig.reason = "GER40_TURTLE_H4_LONG";
+                }
             }
 
             if (pos_.active) {

@@ -30,6 +30,7 @@
 #include <sstream>
 #include <ctime>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -103,13 +104,15 @@ struct MondayRiskOnEngine {
             // a new day starts: if it's Monday + risk-on + enabled -> open LONG at the open
             const int new_wd = weekday(day);
             if (enabled && !pos_.active && new_wd == 1 && (int)sma_q_.size() >= sma_len) {
-                if (prev_day_close_ > sma()) {
+                // cost gate: 1-day hold; expected move proxy = 0.5% of price (pct-based)
+                if (prev_day_close_ > sma()
+                    && ExecutionCostGuard::is_viable(symbol.c_str(), ask-bid, mid*0.005, lot, 1.5)) {
                     pos_.active=true; pos_.entry=mid; pos_.lot=lot; pos_.mfe=0.0; pos_.entry_ts=now_ms;
                     std::printf("[%s] ENTRY %s LONG @ %.4f (Mon risk-on: prevC %.4f > SMA%d %.4f)%s\n",
                                 tag.c_str(), symbol.c_str(), mid, prev_day_close_, sma_len, sma(),
                                 shadow_mode?" [SHADOW]":"");
                     std::fflush(stdout);
-                } else if (verbose) {
+                } else if (verbose && prev_day_close_ <= sma()) {
                     std::printf("[%s] SKIP %s Mon: prevC %.4f <= SMA%d %.4f (risk-off)\n",
                                 tag.c_str(), symbol.c_str(), prev_day_close_, sma_len, sma());
                 }

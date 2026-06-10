@@ -278,8 +278,20 @@ for f in include/*.hpp; do
     if ! grep -q "OmegaCostGuard" "$f"; then echo "UNGATED: $f"; fi
   fi
 done
-# Expect ONLY: LatencyEdgeEngines, RSIExtremeTurnEngine,
-# SweepableEngines, SweepableEnginesCRTP.
+# Expect ONLY (updated S-2026-06-10 after the 21-engine cost-gate fix):
+#   False positives (not entry paths): PositionPersistence, engine_init,
+#     SweepableEngines, SweepableEnginesCRTP, PumpScalpEngine (equity feed;
+#     CFD cost table not applicable -- gate lives in pump backtest model),
+#     LatencyEdgeEngines (manage-only since S13), IndexSessionEngine (all
+#     instances disabled).
+#   DISABLED engines (must gain a gate before any re-enable): ConnorsRSI2,
+#     NasBbRevLongH1, RSIExtremeTurn,
+#     Us303BarMomH1, Xau3BarMomGatedH4, XauBBScalpD1, XauDonchian55GatedM30,
+#     XauEmaCrossH4, XauInsideBarD1, XauNbmD1, XauPullbackContD1/H4,
+#     XauStopRunD1, XauSwingBreakD1, XauTsmomFastD1.
+# Any ENABLED engine appearing here = P1 regression. History: 2026-06-10
+# audit found 21 enabled shadow engines ungated (cost-blind shadow ledgers);
+# all 21 gated with ExecutionCostGuard::is_viable same session.
 
 # 2. GoldEngineStack chokepoint audit
 grep -nE "\.open\(" include/GoldEngineStack.hpp

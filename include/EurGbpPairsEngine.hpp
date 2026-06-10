@@ -61,6 +61,7 @@
 #include <vector>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "SeedGuard.hpp"
 
 namespace omega {
@@ -246,6 +247,12 @@ struct EurGbpPairsEngine {
         const double lot = std::max(0.01, std::min(p.max_lot_per_leg, 0.01));
         const double eur_entry = sig.long_spread ? eur_last_ask_ : eur_last_bid_;
         const double gbp_entry = sig.long_spread ? gbp_last_bid_ : gbp_last_ask_;
+
+        // cost gate per leg: expected reversion = (z_in - z_out)*sd in spread
+        // units, split half per leg (the convergence is shared across legs)
+        const double leg_move = 0.5 * (p.z_in - p.z_out) * sd;
+        if (!ExecutionCostGuard::is_viable("EURUSD", eur_last_ask_ - eur_last_bid_, leg_move, lot, 1.5)) return sig;
+        if (!ExecutionCostGuard::is_viable("GBPUSD", gbp_last_ask_ - gbp_last_bid_, leg_move, lot, 1.5)) return sig;
 
         pos_.active        = true;
         pos_.long_spread   = sig.long_spread;

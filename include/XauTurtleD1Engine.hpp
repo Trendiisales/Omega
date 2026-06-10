@@ -45,6 +45,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "PortfolioGuard.hpp"  // S51: concurrency cap
 
 namespace omega {
@@ -177,6 +178,10 @@ struct XauTurtleD1Engine {
                 const double sl_px = entry_px * (1.0 - p.sl_atr_mult * atr_pct);
                 const double tp_px = entry_px * (1.0 + p.tp_atr_mult * atr_pct);
 
+                // cost gate: TP distance vs spread cost. NO early return -- the
+                // d1_acc_ reset below must still run on a blocked entry.
+                if (ExecutionCostGuard::is_viable("XAUUSD", ask - bid, tp_px - entry_px, p.lot, 1.5)) {
+
                 pos_.active=true; pos_.is_long=true;
                 omega::pg::register_position_open();  // S51 cap
                 pos_.entry=entry_px; pos_.sl=sl_px; pos_.tp=tp_px;
@@ -193,6 +198,7 @@ struct XauTurtleD1Engine {
                 sig.valid=true; sig.is_long=true;
                 sig.entry=entry_px; sig.sl=sl_px; sig.tp=tp_px; sig.lot=p.lot;
                 sig.reason = "XAU_TURTLE_D1_LONG";
+                }
             }
 
             if (pos_.active) {

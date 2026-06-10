@@ -28,6 +28,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "PortfolioGuard.hpp"  // S51: concurrency cap
 
 namespace omega {
@@ -99,7 +100,10 @@ struct XauOutsideBarD1Engine {
                 // Outside bar: bh > prev_high AND bl < prev_low
                 const bool outside = (bh > prev_high_) && (bl < prev_low_);
                 const bool bullish = bc > bo;
-                if (outside && bullish && omega::pg::can_open_new_position()) {  // S51 cap
+                if (outside && bullish && omega::pg::can_open_new_position()  // S51 cap
+                    // cost gate: TP distance vs spread cost (in-condition: no flow change)
+                    && ExecutionCostGuard::is_viable("XAUUSD", ask - bid,
+                           ask * p.tp_atr_mult * (atr_pre / bc), p.lot, 1.5)) {
                     const double entry_px = ask;
                     const double atr_pct = atr_pre / bc;
                     const double sl_px = entry_px * (1.0 - p.sl_atr_mult*atr_pct);

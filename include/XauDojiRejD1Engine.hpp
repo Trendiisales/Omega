@@ -29,6 +29,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "PortfolioGuard.hpp"  // S51: concurrency cap
 
 namespace omega {
@@ -125,7 +126,10 @@ struct XauDojiRejD1Engine {
                 const double prev_body = std::fabs(prev_close_ - prev_open_);
                 const double prev_range = prev_high_ - prev_low_;
                 const bool is_doji = (prev_range > 0.0 && prev_body < p.doji_body_pct * prev_range);
-                if (is_doji && bar_close > prev_high_ && omega::pg::can_open_new_position()) {  // S51 cap
+                if (is_doji && bar_close > prev_high_ && omega::pg::can_open_new_position()  // S51 cap
+                    // cost gate: TP distance vs spread cost (in-condition: no flow change)
+                    && ExecutionCostGuard::is_viable("XAUUSD", ask - bid,
+                           ask * p.tp_atr_mult * (atr_pre / bar_close), p.lot, 1.5)) {
                     const double entry_px = ask;
                     const double atr_pct = atr_pre / bar_close;
                     const double sl_px = entry_px * (1.0 - p.sl_atr_mult * atr_pct);

@@ -21,6 +21,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "OpenPositionRegistry.hpp"
 
 namespace omega {
@@ -82,6 +83,7 @@ public:
         if (!enabled) return;
         if (bid<=0.0 || ask<=0.0 || ask<bid) return;
         const double mid=(bid+ask)*0.5; const int64_t sec=now_ms/1000;
+        m_spread = ask - bid;                       // last live spread for the entry cost gate
         const int64_t bucket=(sec/TF_SEC)*TF_SEC;
         if (m_cur_bucket<0) { m_cur_bucket=bucket; m_o=m_h=m_l=m_c=mid; }
         else if (bucket!=m_cur_bucket) { _finalize_bar(m_cur_bucket,m_o,m_h,m_l,m_c); m_cur_bucket=bucket; m_o=m_h=m_l=m_c=mid; }
@@ -116,6 +118,8 @@ private:
             if (flipDn) { _close(c, close_ms, "ST_FLIP"); return; } }
         // entry: flip-up + uptrend regime (close>EMA). enabled-guard for seed.
         if (enabled && !pos.active && flipUp && c>m_ema) {
+            // cost gate: no-TP runner -> use ST-line stop distance as gross proxy
+            if (c-m_st_line<=0 || !ExecutionCostGuard::is_viable(symbol.c_str(), m_spread, c-m_st_line, lot, 1.5)) return;
             pos=Position{}; pos.active=true; pos.entry_px=c; pos.stop_px=m_st_line; pos.size=lot; pos.entry_ms=close_ms;
             if (verbose) printf("[%s] %s LONG entry=%.2f st=%.2f ema=%.2f%s\n",
                 engine_name.c_str(), symbol.c_str(), c, m_st_line, m_ema, shadow_mode?" [SHADOW]":"");
@@ -133,6 +137,7 @@ private:
     }
     std::deque<double> m_close;
     int64_t m_cur_bucket=-1; double m_o=0,m_h=0,m_l=0,m_c=0;
+    double m_spread=0;   // last live spread (entry cost gate)
     double m_atr=0, m_prev_close=0; int m_atr_n=0;
     double m_pFU=0,m_pFL=0,m_pST=0,m_st_line=0; bool m_st_init=false; int m_dir=1;
     double m_ema=0; bool m_ema_init=false;

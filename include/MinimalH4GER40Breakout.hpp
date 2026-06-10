@@ -73,6 +73,7 @@
 #include <string>
 #include <vector>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
@@ -340,6 +341,10 @@ struct MinimalH4GER40Breakout {
                         size = std::floor(size / 0.01) * 0.01;
                         size = std::max(0.01, std::min(p.max_lot, size));
 
+                        // cost gate: TP distance vs spread cost at sized lot. NO
+                        // early return -- bar bookkeeping below must still run.
+                        if (ExecutionCostGuard::is_viable(symbol.c_str(), ask - bid, tp_pts, size, 1.5)) {
+
                         pos_.active        = true;
                         pos_.is_long       = intend_long;
                         pos_.entry         = entry_px;
@@ -367,6 +372,7 @@ struct MinimalH4GER40Breakout {
                         sig.tp      = tp_px;
                         sig.size    = size;
                         sig.reason  = "MINIMAL_H4_DONCHIAN_BREAK";
+                        }
                         }
                     }
                 }

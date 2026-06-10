@@ -21,6 +21,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "OpenPositionRegistry.hpp"
 
 namespace omega {
@@ -86,6 +87,7 @@ public:
         if (!enabled) return;
         if (bid<=0.0 || ask<=0.0 || ask<bid) return;
         const double mid=(bid+ask)*0.5; const int64_t sec=now_ms/1000;
+        m_spread = ask - bid;                       // last live spread for the entry cost gate
         const int64_t bucket=(sec/TF_SEC)*TF_SEC;
         if (m_cur_bucket<0) { m_cur_bucket=bucket; m_o=m_h=m_l=m_c=mid; }
         else if (bucket!=m_cur_bucket) { _finalize_bar(m_cur_bucket,m_o,m_h,m_l,m_c); m_cur_bucket=bucket; m_o=m_h=m_l=m_c=mid; }
@@ -154,6 +156,8 @@ private:
             if (SESS0>=0) { int hr=(int)(((ts%86400)+86400)%86400)/3600;
                 bool in=(SESS0<=SESS1)?(hr>=SESS0&&hr<SESS1):(hr>=SESS0||hr<SESS1); if(!in) return; }
             const double stop=c-KATR*m_atr; if (c-stop<0.1*m_atr) return;
+            // cost gate: no-TP runner -> use stop distance as the gross proxy (GVB precedent)
+            if (!ExecutionCostGuard::is_viable(symbol.c_str(), m_spread, c-stop, lot, 1.5)) return;
             pos=Position{}; pos.active=true; pos.entry_px=c; pos.stop_px=stop; pos.trail_px=hcur; pos.size=lot; pos.entry_ms=ts*1000+TF_SEC*1000;
             if (verbose) printf("[%s] %s LONG entry=%.2f stop=%.2f hma=%.2f per=%.1f%s\n",
                 engine_name.c_str(), symbol.c_str(), c, stop, hcur, m_per, shadow_mode?" [SHADOW]":"");
@@ -174,6 +178,7 @@ private:
     }
     std::deque<double> m_px,m_sm,m_dt,m_q1,m_i1,m_ph,m_close,m_raw,m_hma;
     int64_t m_cur_bucket=-1; double m_o=0,m_h=0,m_l=0,m_c=0;
+    double m_spread=0;   // last live spread (entry cost gate)
     double m_per=15, m_atr=0, m_prev_close=0; int m_atr_n=0;
 };
 

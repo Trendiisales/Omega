@@ -43,6 +43,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "SeedGuard.hpp"
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 
@@ -252,6 +253,10 @@ struct FxTurtleH4Engine {
                     size = std::floor(size / 0.01) * 0.01;
                     size = std::max(0.01, std::min(p.lot * 10, size));
 
+                    // cost gate: TP distance vs spread cost at sized lot. NO early
+                    // return -- the h4_acc_ reset below must run on a blocked entry.
+                    if (ExecutionCostGuard::is_viable(symbol.c_str(), ask - bid, tp_dist, size, 1.5)) {
+
                     pos_.active=true;
                     pos_.is_long=is_long;
                     pos_.entry=entry_px; pos_.sl=sl_px; pos_.tp=tp_px;
@@ -271,6 +276,7 @@ struct FxTurtleH4Engine {
                     sig.valid=true; sig.is_long=is_long;
                     sig.entry=entry_px; sig.sl=sl_px; sig.tp=tp_px; sig.lot=size;
                     sig.reason = is_long ? "FX_TURTLE_H4_LONG" : "FX_TURTLE_H4_SHORT";
+                    }
                 }
             }
 

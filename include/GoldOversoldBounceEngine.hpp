@@ -32,6 +32,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "OmegaCostGuard.hpp"     // ExecutionCostGuard::is_viable entry gate
 #include "OpenPositionRegistry.hpp" // S-2026-06-03: omega::PositionSnapshot for persist
 
 namespace omega {
@@ -117,7 +118,7 @@ struct GoldOversoldBounceEngine {
         // fill an armed entry on the first tradeable (non-break) tick
         if (want_entry_ && !pos_.active) {
             const double sp = ask - bid;
-            if (sp > 0.0 && sp <= max_spread) { _open(ask, ts_ms); want_entry_ = false; }
+            if (sp > 0.0 && sp <= max_spread) { _open(ask, sp, ts_ms); want_entry_ = false; }
         }
     }
 
@@ -198,8 +199,10 @@ private:
         return s / (double)n;
     }
 
-    void _open(double ask, int64_t ts_ms) noexcept {
+    void _open(double ask, double spread, int64_t ts_ms) noexcept {
         const double a = atr();
+        // cost gate: bounce target ~ stop distance (stop_atr_mult * ATR) as gross proxy
+        if (a > 0.0 && !ExecutionCostGuard::is_viable(symbol.c_str(), spread, stop_atr_mult * a, lot, 1.5)) return;
         pos_ = Pos{}; pos_.active = true; pos_.entry_px = ask; pos_.lot = lot;
         pos_.entry_ts = ts_ms; pos_.hold_days = 0;
         pos_.stop_px = (a > 0.0) ? (ask - stop_atr_mult * a) : 0.0;

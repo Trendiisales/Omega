@@ -27,6 +27,7 @@
 #include <fstream>
 #include <string>
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "OmegaCostGuard.hpp"     // ExecutionCostGuard::is_viable entry gate
 #include "OpenPositionRegistry.hpp" // S-2026-06-03: omega::PositionSnapshot for persist
 #include "IndexRiskGate.hpp"      // omega::index_risk_off (optional gate)
 
@@ -97,7 +98,7 @@ struct GoldSeasonalEngine {
         // day-flip), exiting at the next day's first fresh tick.
         if (want_entry_ && !pos_.active) {
             const double sp = ask - bid;
-            if (sp > 0.0 && sp <= max_spread) { _open(ask, ts_ms, entry_wd_); want_entry_ = false; }
+            if (sp > 0.0 && sp <= max_spread) { _open(ask, sp, ts_ms, entry_wd_); want_entry_ = false; }
         }
     }
 
@@ -140,7 +141,10 @@ private:
     int     entry_wd_ = 0;
     std::string engine_name_ = "GoldSeasonal";
 
-    void _open(double ask, int64_t ts_ms, int wd) noexcept {
+    void _open(double ask, double spread, int64_t ts_ms, int wd) noexcept {
+        // cost gate: 1-day hold; conservative expected move = 0.5% of price
+        // (pct-based so it survives price drift -- abs-pt thresholds rot).
+        if (!ExecutionCostGuard::is_viable(symbol.c_str(), spread, ask * 0.005, lot, 1.5)) return;
         pos_ = Pos{}; pos_.active = true; pos_.entry_px = ask; pos_.lot = lot;
         pos_.entry_ts = ts_ms; pos_.wday = wd;
         std::printf("[GoldSeasonal] ENTRY LONG wd=%d px=%.2f lot=%.3f%s\n",

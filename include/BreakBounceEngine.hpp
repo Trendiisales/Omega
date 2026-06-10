@@ -65,6 +65,7 @@
 #include <string>
 
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 
 namespace omega {
 
@@ -423,6 +424,8 @@ private:
     // ── Position open / manage / close ───────────────────────────────────────
     void _open(bool is_long, double entry, double sl, double tp, double risk,
                double atr, double spread, int64_t now_ms) {
+        // cost gate: TP distance = risk * REWARD_RISK
+        if (!ExecutionCostGuard::is_viable(symbol.c_str(), spread, risk * REWARD_RISK, lot, 1.5)) return;
         pos = Position{};
         pos.active=true; pos.is_long=is_long; pos.entry_px=entry; pos.sl_px=sl;
         pos.tp_px=tp; pos.risk=risk; pos.atr=atr; pos.size=lot; pos.entry_ms=now_ms;

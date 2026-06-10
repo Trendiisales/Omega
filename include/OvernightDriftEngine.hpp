@@ -25,6 +25,7 @@
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
+#include "OmegaCostGuard.hpp"
 #include "OpenPositionRegistry.hpp"
 
 namespace omega {
@@ -122,6 +123,9 @@ public:
                 double sma=0; for (int i=(int)m_closes.size()-SMA_LEN; i<(int)m_closes.size(); ++i) sma+=m_closes[i];
                 sma/=SMA_LEN;
                 if (m_day_close > sma) {                        // uptrend -> hold overnight
+                    // cost gate: overnight drift; expected move proxy = 0.1% of price
+                    // (pct-based so it survives price drift)
+                    if (!ExecutionCostGuard::is_viable(symbol.c_str(), ask-bid, ask*0.001, lot, 1.5)) return;
                     pos=Position{}; pos.active=true; pos.entry_px=ask; pos.size=lot; pos.entry_ms=now_ms;
                     m_entered_tonight=true;
                     if (verbose) printf("[%s] %s OVERNIGHT LONG entry=%.2f close=%.2f sma=%.2f%s\n",
