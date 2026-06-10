@@ -900,9 +900,7 @@ static void on_tick_ger40(
         g_idx_straddle_ger40_m30.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
         g_idx_straddle_ger40_m15.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
         g_engine_heartbeat.pulse("IdxStraddleGER40");
-        // 2026-06-08: PeachyOrb GER40 @ NY open (validated PF2.06, shadow-visible)
-        g_peachy_orb_ger40.on_tick(bid, ask, now_ms_str);
-        g_engine_heartbeat.pulse("PeachyOrbGER40");
+        // PeachyOrb GER40 removed 2026-06-10 (failed OOS, net-negative — see engine_init).
     }
 
     // AtrMeanRevGrid GER40 (shadow). M15 X=14 SL_Y=6 ATR_FROM_WAP, PF 1.86 stage-4.

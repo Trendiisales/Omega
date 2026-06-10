@@ -138,7 +138,7 @@ static omega::FvgContinuationEngine g_fvgcont_nas10; // NAS100 FVG continuation 
 static omega::FvgContinuationEngine g_fvgcont_nas30; // NAS100 FVG continuation 30m -- 2026-06-09 sweep BEST (PF1.98, 3x-robust 1.91, both-halves ~2.0, ret/DD5.12), shadow
 #include "PeachyOrbEngine.hpp"
 static omega::PeachyOrbEngine g_peachy_orb_nas;      // NAS100 one-candle ORB-retest (risk-cap selectivity) -- 2026-06-05 edge, BULL+BEAR robust, shadow
-static omega::PeachyOrbEngine g_peachy_orb_ger40;    // GER40 one-candle ORB @ NY open -- 2026-06-08 cross-index find (PF2.06 WF+ 3x-robust both-regimes vol-gated), shadow
+// g_peachy_orb_ger40 REMOVED 2026-06-10 — failed held-out OOS (net-negative every cost), overfit to discovery window.
 #include "GoldOrbRetraceEngine.hpp"
 static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
 static omega::GoldOrbRetraceEngine g_nas_orb_retrace;  // NAS100 ORB retrace+RUNNER @US open -- 2026-06-07 (PF1.87 all-3yr+, 3x-robust); 2nd NAS edge vs PeachyOrb retest, shadow
