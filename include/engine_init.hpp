@@ -1266,7 +1266,15 @@ static void init_engines(const std::string& cfg_path)
         // Long-only, XAUUSD only, shadow_mode=true. Self-contained engine
         // (does not interfere with other engines or borrow their state).
         g_c1_retuned.shadow_mode    = true;
-        g_c1_retuned.enabled        = true;
+        // S-2026-06-11 TOMBSTONED (operator order). Backtest provenance is real
+        // (CHOSEN.md, WF pass) but the corpus was 2024-03..2026-04 = gold BULL
+        // only. Engine is a LONG-ONLY dip-buyer (BBand lower-band touch H2/H4/H6)
+        // with no trend/regime gate — in the current confirmed downtrend it
+        // catches falling knives (lifetime live record: n=2, 0 wins, −118.14,
+        // both bollinger_H4 SLs). Same BBand-long-XAU family the 2026-06-01
+        // mean-rev audit culled elsewhere. Do NOT re-enable without a bear-tape
+        // backtest + trend gate.
+        g_c1_retuned.enabled        = false;
         g_c1_retuned.max_concurrent = 4;
         g_c1_retuned.risk_pct       = 0.005;
         g_c1_retuned.start_equity   = 10000.0;
@@ -4437,11 +4445,17 @@ static void init_engines(const std::string& cfg_path)
         g_pump_manager.be_arm_pct   = 2.0;
         g_pump_manager.be_floor_pct = 2.0;
         g_pump_manager.pyr_adds     = 0;
+        // S-2026-06-11 honest accounting: $1000 notional per trade + 1%/side
+        // slip haircut in recorded PnL (matches pump_*_bt.py cost model). The
+        // old 1-share zero-cost shadow printed lifetime net +$1.72 over 46
+        // trades — unjudgeable. Now the gate (n>=30) judges REAL viability.
+        g_pump_manager.notional_usd = 1000.0;
+        g_pump_manager.slip_pct     = 1.0;
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
         printf("[OMEGA-INIT] PumpScalp manager: 3m-only gate100 trail2 BE-lock(2/2) "
-               "shadow (dynamic universe; feed via OMEGA_PUMP_BRIDGE=1)\n");
+               "$1000-notional slip1%%/side shadow (feed via OMEGA_PUMP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory

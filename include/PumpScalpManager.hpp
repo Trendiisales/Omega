@@ -37,6 +37,8 @@ public:
                                    // 8-day basket net is EQUAL-OR-BETTER without it (1139 vs 1108,
                                    // PF 28.7/16.1 at 1%/2% slip). pump_variant_bt.py both windows.
     int    pyr_adds     = 0;       // pyramid OFF (conditional leverage, hurts durable regime)
+    double notional_usd = 1000.0;  // $ per trade (shares = notional/entry) — honest scale
+    double slip_pct     = 1.0;     // %/side haircut in recorded PnL (backtest-equivalent cost)
     int    max_symbols  = 12;      // cap concurrent pumps tracked
     bool   verbose      = false;
     PumpScalpEngine::TradeRecordCallback on_trade_record;   // one sink for all engines
@@ -127,6 +129,8 @@ private:
         e.BE_FLOOR_PCT = be_floor_pct;
         e.VOLX         = volx;
         e.PYR_ADDS     = pyr_adds;
+        e.NOTIONAL_USD = notional_usd;
+        e.SLIP_PCT     = slip_pct;
         e.MAXHOLD_SEC  = 30 * 180;      // ~30 bars of 3m
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;

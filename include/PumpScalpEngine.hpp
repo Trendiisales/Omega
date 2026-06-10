@@ -104,6 +104,14 @@ public:
     int    REG_LB       = 12;      // regression-slope lookback bars
     double SLOPE_MIN    = 0.0;     // min |slope| (%/bar) to allow a trade (0 = just sign agreement)
     double lot          = 1.0;
+    // S-2026-06-11 honest-accounting upgrade (operator: "pennies per trade,
+    // real costs higher"). Lifetime 5m shadow was n=46 net=+$1.72 — 1 SHARE
+    // per trade with ZERO spread modeled = meaningless paper. Now:
+    double NOTIONAL_USD = 1000.0;  // shares per trade = NOTIONAL_USD/entry_px (0 = legacy 1-lot)
+    double SLIP_PCT     = 1.0;     // %/side haircut baked into recorded PnL — matches the
+                                   // pump_*_bt.py backtest cost model (1% base, 2% stress).
+                                   // Shadow PnL is now comparable to backtest + survives gate
+                                   // honestly: an engine that can't beat 2% round-trip is dead.
 
     bool   enabled      = true;
     bool   shadow_mode  = true;    // gated shadow — AH fills + borrow + dud-rate all unmeasured
@@ -273,7 +281,8 @@ private:
     }
 
     void _open(int dir, double px, int64_t ts_ms) {
-        pos = Position{}; pos.active=true; pos.dir=dir; pos.size_each=lot;
+        pos = Position{}; pos.active=true; pos.dir=dir;
+        pos.size_each = (NOTIONAL_USD > 0 && px > 0) ? NOTIONAL_USD/px : lot;
         pos.units = {px}; pos.peak=px; pos.trough=px; pos.last_add=px; pos.entry_ms=ts_ms;
         if (verbose) printf("[%s] %s %s entry=%.4f gate=%.0f%%\n", engine_name.c_str(),
             symbol.c_str(), dir>0?"LONG":"SHORT", px, (m_run_high/m_day_open-1)*100);
@@ -282,7 +291,9 @@ private:
     void _close(double exit_px, int64_t now_ms, const char* reason) {
         if (!pos.active || pos.units.empty()) return;
         double pnl_px = 0;                                            // sum over the unit stack
-        for (double u : pos.units) pnl_px += pos.dir>0 ? (exit_px-u) : (u-exit_px);
+        const double s = SLIP_PCT/100.0;                              // %/side cost haircut
+        for (double u : pos.units)
+            pnl_px += (pos.dir>0 ? (exit_px-u) : (u-exit_px)) - (u + exit_px)*s;
         omega::TradeRecord tr{};
         tr.symbol=symbol; tr.engine=engine_name; tr.side = pos.dir>0?"LONG":"SHORT";
         tr.entryPrice=pos.units.front(); tr.exitPrice=exit_px;
