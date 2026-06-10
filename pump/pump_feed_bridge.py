@@ -38,6 +38,10 @@ _serve = False
 _candidates = {}          # sym -> dict(px, day_open, up, ts) for the scanner web page
 SCANNER_HTTP_PORT = 7783  # "separate address": http://<vps>:7783 shows live pump candidates
 
+# Chimera brand mark (same PNG as the Omega dashboard header) inlined as base64 so
+# the scanner page is self-contained; recoloured BLUE via a CSS hue-rotate filter.
+LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAI80lEQVR4nO2bCYydVRXHf++bN+2bGVpsaW2xLiylBRREDdJFqxEFl7YCCmKxGo0gcU8UFPeFADECplpRg2jFCKIGBSvurSJVUalaQEUtFLGbdpkuM11m3jM3+d3k5stbZ6YB/fwnkzfzvnvvu+ec/1nuuW9KB1fNrFFgZBQcGQVHRsGRUXBkFBxloETBFVCjwCgXnQEZBUeZxwZmAluA3R3O6wMmA3OAxwH/Bm79b1LAW4G5wA+BXwLjFaIZDgPOAuYDU4AJwOOBAWAd8ArgJmDlY10BHwDOBN4AzAIuB56iIN8Frq4zZwbwCeA4/644/l/AkAwKYz4InAB80nHTgc31NlE6uCqwryPMMHbsAl4p/X4PLO9gjWOA7wCfBoaBS4D7gVuAnVoxWHNZbt4NCrYX+CfwG+AkYB5wAOgHrgMm6RIbgacDfwRuHAsGLNVi+9X20SojWHAxsA1Y40aDZRrhXGBQQSdJ/7cBe3z+feB1+vd231usUJuA9cC7fT/MP8fXEBOeBfwDuEP3CJ/TEOUOFfAtYBqwBOhRCcFiP5EZZ0jLXwG/bbDGq4BXa624wXHAh4EnOO9aYEVu3jNdO+Bryfs7gC+22PfEsUiDE4AXAqdp3ZobX6EiQuD5uv4WfO+jWiSP50n7sMaDiUvMNwgGetdDn8+79fdOENx11Az4rP50UOtl/n6xLvB54D4tvEfKBhd5Z0JjpHEXcK8R/zgVmKm04Pv10J+w5jz9etTI2hgTNP8uKfht4DKtFCrIqiwIAenJwCLjQ5dCj3dexAuAY6VtSH9n6wKZc0KEf2qDfaxS0UMG3pBFjhytAsotnr8EuBB4kgKFNHW4/p/SMAh9skqJQSdQdV/OoktlTdWfA7pSzTUf1M+n+Znh/Ucsku4yPQbFPSTDgiLWmoUe0hCbx1IBZX/2uvGjtfigAkSUFCZFEP5pwNuB9xs7gqW3Ake4xnBSzX3ZKu71prUeFRA++25T5nuBjxtsq64x3TQ6oOuFLPFT4HvtVJZZi+eHG5lLbrK3jvBRASXXi7+XpfoCg9xf3eR0BQtKuUifvhn4MfAlYKHs2a8Sx/leiEFTLXLeokuEcUfpPjEjnWqKvF62jEoB90nBbRYlX9DSWXKMjgLXO1VGap+mC12ipYNyHnDt27T8FQq73XlRociaYxQcU+VlBuBPmfODMk5UcT9zfnh2+mhcYK0FyWxpiCxY6kbrKTAqIgpRSYJVoOjvfD+mphD4PqJ1dyd7KiWv47Xu8w2if/fZZmv+lbrVfGuUU/2sAdnwJ6vCEZfCV2rJAa1ZkZ6NLB83fkA3eFgGDec2MsnK8pwkG0SkDMO5h2ndEAuaFT2XS//gVqf4evVo6oBpBqZN0u8kmdCsIKmqtA9J9RAL3mjZO2g9MMu1d+nHzdBlQHyO9cIKS+I8dinsDZbFQWnHN1q03KYCgn9eBXxFn23nqFmTukEJFwDP1k9fpKWrsmhPrjXXrEMV0+wZusPPga8Cf8mN2+C4PrNXLKFHrIC/efLDmv0IN97VwPdrrt2tXx9rENtmkEr9O2sgeCnXryzlmNBlnRKYdTvwDQVHt5rhwWxqcsgasQIiFpmSdjSZW5N2d1jqlkx9Kc3zwnWKuE6/v58PvFhX6zF1bzd4TzXIjokCXiNtY75PUUteu9X+DzwbzEjOD6NB/jOjK+1UlhMNvPuk/UQLolvHQgFz1OhWBWy0Xsjl95iibnLsYBsUr4d2OtYlWTBkepzkPjbIwhAjGAsFDBtdz1W7Qzm/77ZDM88qbLGl8A4D0Uja7zGeNEu3cW+horzGOqOSxIOmyDrYTBButRpOhUcL7DHXL9MPF8qW4VHePYx3n8OJQvKIBjjZg1NbwjMCn+yrcw6oqvF7rQ1uN1enAa9T1JIT43qjfm+dz45jY28inFc6Qtbh+I0Gs3ze7vU4Osda//gkWNbbLHXOEWnFV/YgNkUGLDeujM8xIQ28kQWHVAG7PB9kRtsuX0P6eaLPZ5v28n4fW2ixhE6pXFWwcVqxXyaFI/Cvdbtljmu057j+IVVAwDetCtdazgaB3mMz4oCxIAauiKrus9qqraLAQ47tNWU9otDv8/BVMcXtdP27DXZhboqSCp/hWm2jTOdY589aKT9FJaxxkzsthCIDqlLzYdvdH3N8jwLut6NzmwedvfYKLkiUGaj/I1Pac5PjeFRyZOR0q8PQvW4LGSPDBM/Z7wD+4IFmuZu70+epf/aZRWZaFpeMJ7d4H3CxBUvsCG9R+K26w1Y70rNkyOQkUEaUnH+RBVto3x2yq7EJ3uvdZdMhWn2WUbs7V+9HFgTWXCqDQrOlEVaaRifLkLKsWWh/oseTZeYRfUi3yPx5E/BmC7GgsDFnwALnztPyF8qEK/TDmPujEgaSK7SbWwiPx+5LtX4lCZKRVdfLvjVSv6JRyo7d69hntBIkG6ECFrmhPa6xxACHDYj0WqyiIOu8V2gXD9jY6FKR+7xDCDfDmB3CncNrDcI3etqsuKchmTLmClhgno9aDh/yZ7PD7OSGN66/w9fPyZJOcH9yioz1QegnpNisK15nPNlhOoyF0ZFjrYAlajemtgN2aOKtbkxxB1XOJju5YWOd4nwLon0Jkz7TZPwmb5173VevFzZjpoCzpXi/i/cbcNYZ4c/ULUr65Gqpek+z+7kGeKmNjdgxqlofhAZnM9yZMLDb9t2ossBcg0nVk+CA1lhvvp5vipprvh5U+xssXEKqaxcvV3EVL0gGpX+3bfBGN854/phoRYrzulqlw3KLDZ3iEbgnCXpDbjD43Mv0u90KvTe5ObqyxXcE8jhPIQ8aWyKTem2s/qLJ3KPMQL26yz6Fr/n1mxErYKnCbtcKXf69ReHOMggN+7w7GbepWS8uhz6/M7A7yftlBbq2lRCycKJflSnr2hWVFlyiIUot7gVmKlBa1cXiY5v0Suvy2AyNtXsnOCF3wiu5drhSa4UpNmpjn6KmETa2MkJpBN8R+p9CRsGRUXBkFBwZBUdGwZFRcJT//w8TFPsfJspFZ0BGwZFRcGQUHBkFR/Zob+DRxn8AM8dvx2O9DVIAAAAASUVORK5CYII="  # noqa: E501
+
 
 class _ScanHandler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -63,12 +67,20 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "<style>"
                 "body{background:#0a0a0a;color:#c8c8c8;font:13px/1.5 'SF Mono',Menlo,monospace;margin:0;padding:18px}"
                 ".panel{border:1px solid #1d1d1d;border-radius:6px;padding:14px 16px;max-width:720px}"
+                ".brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}"
+                # gold PNG -> blue: hue-rotate ~185deg + saturate to land on the teal/blue theme
+                ".brand img{width:26px;height:26px;border-radius:4px;"
+                "filter:hue-rotate(185deg) saturate(2.2) brightness(1.05)}"
+                ".brand .t{color:#5fd3e0;letter-spacing:3px;font-weight:bold;font-size:14px}"
+                ".brand .v{color:#3a5b62;letter-spacing:2px;font-size:10px;text-transform:uppercase}"
                 ".hdr{color:#9aa0a6;letter-spacing:.5px;font-size:12px;margin-bottom:10px}"
                 "table{border-collapse:collapse;width:100%}"
                 "th{text-align:left;color:#5fd3e0;font-weight:normal;padding:4px 16px 8px 0;border-bottom:1px solid #1d1d1d}"
                 "td{padding:5px 16px 5px 0;white-space:nowrap}"
                 ".foot{color:#6b6b6b;font-size:11px;margin-top:12px}"
                 "</style></head><body><div class=panel>"
+                f"<div class=brand><img src='data:image/png;base64,{LOGO_B64}' alt='Chimera'>"
+                "<span class=t>CHIMERA</span><span class=v>pump scalp</span></div>"
                 f"<div class=hdr>PUMP SCANNER &middot; {len(rows)} live movers &middot; {n_trade} at gate (&ge;100%)</div>"
                 "<table><tr><th>symbol</th><th>price</th><th>trend</th><th>up from open</th>"
                 "<th>day open</th><th>status</th></tr>"
