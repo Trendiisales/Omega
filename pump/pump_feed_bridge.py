@@ -55,7 +55,9 @@ def load_state():
 IB_HOST, IB_PORT, IB_CID = "127.0.0.1", 4002, 33   # paper; distinct clientId
 PREFILTER_PCT = 40.0      # only subscribe names already this far up from open (engine gate is 100)
 MAX_SYMBOLS   = 12
-TFS           = [300, 600, 900]
+TFS           = [180, 300, 900]   # 3/5/15m. 10m->3m 2026-06-11: pump_tf_bt.py — 3m
+                                  # n=42 PF 36.4/20.7 @1%/2% slip, catches the SLGB
+                                  # monster, wins ex-monster; 2m/4m missed the monster.
 SCAN_EVERY    = 30
 TICK_EVERY    = 5
 SERVE_PORT    = 7782      # TCP server for the in-Omega PumpFeedConsumer (--serve)
@@ -236,7 +238,7 @@ class Sub:
 
 
 def fetch_seed(ib, sym):
-    """Fetch today's 5/10/15m history. Returns (day_open, day_high, seed_lines,
+    """Fetch today's 3/5/15m history. Returns (day_open, day_high, seed_lines,
     contract) or None. Caller decides whether to EMIT (emit R first: the consumer
     resets the symbol's engines so a re-seed never double-counts bars/VWAP)."""
     c = Stock(sym, "SMART", "USD")
@@ -248,7 +250,7 @@ def fetch_seed(ib, sym):
     day_open = day_high = None
     lines = []
     for tf in TFS:
-        bs = "5 mins" if tf == 300 else ("10 mins" if tf == 600 else "15 mins")
+        bs = "3 mins" if tf == 180 else ("5 mins" if tf == 300 else "15 mins")
         try:
             bars = ib.reqHistoricalData(c, endDateTime="", durationStr="1 D",
                                         barSizeSetting=bs, whatToShow="TRADES",
@@ -258,10 +260,11 @@ def fetch_seed(ib, sym):
         for b in bars:
             ts = int(b.date.timestamp() * 1000)
             lines.append(f"S,{sym},{tf},{b.open},{b.high},{b.low},{b.close},{b.volume},{ts}")  # S=seed: warm only
-            if tf == 300:
-                if day_open is None and b.open > 0:
-                    day_open = b.open
-                day_high = b.high if day_high is None else max(day_high, b.high)
+            # day anchor from whichever TF returns bars (was 5m-only; a failed
+            # 5m fetch killed the subscribe even when 3m/15m succeeded)
+            if day_open is None and b.open > 0:
+                day_open = b.open
+            day_high = b.high if day_high is None else max(day_high, b.high)
     return (day_open, day_high, lines, c) if day_open else None
 
 

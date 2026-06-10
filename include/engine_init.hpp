@@ -4418,7 +4418,7 @@ static void init_engines(const std::string& cfg_path)
         // churn. Engine instance deleted (PeachyOrbEngine class kept for NAS).
 
         // ── PumpScalpManager (micro-cap pump scalp, DYNAMIC universe) ──────────
-        // Trades whatever explodes today (5/10/15m per pumping symbol), fed by
+        // Trades whatever explodes today (3/5/15m per pumping symbol), fed by
         // pump_feed_bridge.py via PumpFeedConsumer when OMEGA_PUMP_BRIDGE=1 (else
         // dormant — zero effect on the live service). gate>=100% (extreme movers),
         // HARD trail 3%, pyramid OFF, strict-exhaustion shorts. Validated
@@ -4439,7 +4439,7 @@ static void init_engines(const std::string& cfg_path)
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
-        printf("[OMEGA-INIT] PumpScalp manager: 5/10/15m gate100 trail2 BE-lock(2/2) "
+        printf("[OMEGA-INIT] PumpScalp manager: 3/5/15m gate100 trail2 BE-lock(2/2) "
                "1-pos/symbol shadow (dynamic universe; feed via OMEGA_PUMP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──

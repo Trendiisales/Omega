@@ -69,7 +69,7 @@ class PumpScalpEngine {
 public:
     // ── Identity ─────────────────────────────────────────────────────────────
     std::string symbol      = "";            // set per active pump symbol by the manager
-    std::string engine_name = "PumpScalp";   // manager suffixes _5m/_10m/_15m
+    std::string engine_name = "PumpScalp";   // manager suffixes _3m/_5m/_15m
 
     // ── Config (backtest-found defaults) ─────────────────────────────────────
     int    TF_SEC       = 300;     // ENTRY timeframe: 300/600/900 = 5/10/15m (all validated)

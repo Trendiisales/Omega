@@ -3,7 +3,7 @@
 // PumpScalpManager — dynamic-universe owner for PumpScalpEngine.
 //
 //   Every other Omega engine trades a FIXED symbol. Pump scalping trades whatever
-//   explodes today, so this manager holds a per-symbol TRIO of engines (5m / 10m
+//   explodes today, so this manager holds a per-symbol TRIO of engines (3m / 5m
 //   / 15m), creates a trio the first time a pumping symbol appears in the feed,
 //   routes that symbol's bars/prices to its trio, and retires cold symbols.
 //
@@ -42,13 +42,15 @@ public:
     bool   verbose      = false;
     PumpScalpEngine::TradeRecordCallback on_trade_record;   // one sink for all engines
 
-    struct Trio { PumpScalpEngine e5, e10, e15; int64_t last_ms = 0; };
+    // 2026-06-11: 10m slot -> 3m (pump_tf_bt.py: 3m n=42 PF 36.4/20.7 @1%/2%
+    // slip, catches the SLGB monster AND wins ex-monster; 2m/4m missed it).
+    struct Trio { PumpScalpEngine e3, e5, e15; int64_t last_ms = 0; };
 
     void on_bar(const std::string& sym, int tf_sec,
                 double o, double h, double l, double c, double v, int64_t ts_ms, bool is_seed=false) {
         Trio& t = ensure(sym, ts_ms);
-        if      (tf_sec == 300) t.e5.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
-        else if (tf_sec == 600) t.e10.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
+        if      (tf_sec == 180) t.e3.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
+        else if (tf_sec == 300) t.e5.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
         else if (tf_sec == 900) t.e15.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
     }
 
@@ -57,8 +59,8 @@ public:
     void reset_symbol(const std::string& sym) {
         auto it = m_book.find(sym);
         if (it == m_book.end()) return;
+        it->second->e3.reset_for_reseed();
         it->second->e5.reset_for_reseed();
-        it->second->e10.reset_for_reseed();
         it->second->e15.reset_for_reseed();
     }
 
@@ -66,8 +68,8 @@ public:
         auto it = m_book.find(sym);
         if (it == m_book.end()) return;
         it->second->last_ms = ts_ms;
+        it->second->e3.on_price(px, ts_ms);
         it->second->e5.on_price(px, ts_ms);
-        it->second->e10.on_price(px, ts_ms);
         it->second->e15.on_price(px, ts_ms);
     }
 
@@ -80,8 +82,8 @@ public:
         omega::PositionSnapshot s;
         for (auto& kv : m_book) {
             auto& t = *kv.second;
+            if (t.e3.persist_save ("PumpScalp_3m",  kv.first.c_str(), s)) v.push_back(s);
             if (t.e5.persist_save ("PumpScalp_5m",  kv.first.c_str(), s)) v.push_back(s);
-            if (t.e10.persist_save("PumpScalp_10m", kv.first.c_str(), s)) v.push_back(s);
             if (t.e15.persist_save("PumpScalp_15m", kv.first.c_str(), s)) v.push_back(s);
         }
         return v;
@@ -110,9 +112,9 @@ public:
             if (cd.up_pct < day_gate_pct) continue;          // only armed names matter
             auto it = m_book.find(kv.first);
             if (it == m_book.end()) continue;                // trio not built yet
-            const double eng_up = it->second->e5.day_up_pct();
+            const double eng_up = it->second->e3.day_up_pct();
             if (eng_up >= 0.0 && eng_up < cd.up_pct * 0.5) return true;   // cold anchor
-            if (it->second->e5.bars_seen() < 24) return true;             // warmup hole
+            if (it->second->e3.bars_seen() < 24) return true;             // warmup hole
         }
         return false;
     }
@@ -120,7 +122,7 @@ public:
     bool holds_position(const std::string& sym) const {
         auto it = m_book.find(sym);
         if (it == m_book.end()) return false;
-        return it->second->e5.has_open_position() || it->second->e10.has_open_position()
+        return it->second->e3.has_open_position() || it->second->e5.has_open_position()
             || it->second->e15.has_open_position();
     }
 
@@ -142,13 +144,13 @@ private:
             e.on_trade_record = on_trade_record;
             e.init();
         };
-        setup(t.e5, 300, "5m"); setup(t.e10, 600, "10m"); setup(t.e15, 900, "15m");
+        setup(t.e3, 180, "3m"); setup(t.e5, 300, "5m"); setup(t.e15, 900, "15m");
         // S-2026-06-11: one position per SYMBOL across the trio. holds_position()
         // covers all three TF engines; the asking engine's own pos.active is
         // false at entry-check time, so only siblings count.
         if (single_position_per_symbol) {
+            t.e3.entry_permit  = [this, sym]() { return !holds_position(sym); };
             t.e5.entry_permit  = [this, sym]() { return !holds_position(sym); };
-            t.e10.entry_permit = [this, sym]() { return !holds_position(sym); };
             t.e15.entry_permit = [this, sym]() { return !holds_position(sym); };
         }
     }
