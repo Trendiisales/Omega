@@ -34,11 +34,11 @@ public:
     struct Trio { PumpScalpEngine e5, e10, e15; int64_t last_ms = 0; };
 
     void on_bar(const std::string& sym, int tf_sec,
-                double o, double h, double l, double c, double v, int64_t ts_ms) {
+                double o, double h, double l, double c, double v, int64_t ts_ms, bool is_seed=false) {
         Trio& t = ensure(sym, ts_ms);
-        if      (tf_sec == 300) t.e5.on_entry_bar(o, h, l, c, v, ts_ms);
-        else if (tf_sec == 600) t.e10.on_entry_bar(o, h, l, c, v, ts_ms);
-        else if (tf_sec == 900) t.e15.on_entry_bar(o, h, l, c, v, ts_ms);
+        if      (tf_sec == 300) t.e5.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
+        else if (tf_sec == 600) t.e10.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
+        else if (tf_sec == 900) t.e15.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
     }
 
     void on_price(const std::string& sym, double px, int64_t ts_ms) {

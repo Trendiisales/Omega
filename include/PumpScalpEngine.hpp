@@ -118,17 +118,15 @@ public:
     }
     bool has_open_position() const { return pos.active; }
 
-    void init() {
-        m_bars.clear(); m_day=-1; m_day_open=0; m_run_high=0; m_hod=-1e18; m_hod_idx=-1;
-        m_ema9=0; m_ema_init=false; pos = Position{};
-    }
+    void init() { _new_day(-1); pos = Position{}; }
 
     // ── FAST path: every price update. Manages the open position so it exits
     //   IMMEDIATELY on the turn (all three TF engines share this behaviour). ──
     void on_price(double px, int64_t ts_ms) {
         if (px <= 0) return;
         const int64_t day = (ts_ms/1000)/86400;
-        if (day != m_day) { m_day=day; m_day_open=px; m_run_high=px; m_hod=px; m_hod_idx=-1; }
+        if (day != m_day) _new_day(day);
+        if (m_day_open <= 0) m_day_open = px;          // fallback only; bars set the true session open
         m_run_high = std::max(m_run_high, px);
         if (!pos.active) return;
 
@@ -154,11 +152,15 @@ public:
         if (ts_ms - pos.entry_ms >= (int64_t)MAXHOLD_SEC*1000) _close(px, ts_ms, "TIME");
     }
 
-    // ── ENTRY path: one CLOSED TF OHLCV bar (with volume) from the bridge ────
-    void on_entry_bar(double o, double h, double l, double c, double v, int64_t ts_ms) {
+    // ── ENTRY path: one CLOSED TF OHLCV bar (with volume).
+    //   is_seed=true => warm history/EMA/day-open/gate state ONLY, fire NO entries
+    //   (warm-seed mandate: historical bars must never open a phantom trade). ──
+    void on_entry_bar(double o, double h, double l, double c, double v, int64_t ts_ms, bool is_seed=false) {
         if (h < l || c <= 0) return;
         const int64_t day = (ts_ms/1000)/86400;
-        if (day != m_day_bar) { m_day_bar=day; m_bars.clear(); m_ema9=c; m_ema_init=true; m_hod=h; m_hod_idx=0; }
+        if (day != m_day) _new_day(day);
+        if (m_day_open <= 0) m_day_open = o;             // session open = first bar's open
+        m_run_high = std::max(m_run_high, h);
         const int idx = (int)m_bars.size();
         if (h > m_hod) { m_hod=h; m_hod_idx=idx; }
         const double k = 2.0/(9.0+1.0);
@@ -168,7 +170,8 @@ public:
         m_bars.push_back({o,h,l,c,v});
         if (m_bars.size() > 64) m_bars.pop_front();
 
-        if (pos.active || !enabled) return;                          // exits are on_price's job
+        if (is_seed) return;                             // SEED: warm only — never enter on history
+        if (pos.active || !enabled) return;              // exits are on_price's job
         if (m_day_open<=0 || (m_run_high/m_day_open - 1.0)*100.0 < DAY_GATE_PCT) return;  // gate
         if (idx < LB + 21) return;
 
@@ -193,6 +196,11 @@ public:
 
 private:
     struct Bar { double o,h,l,c,v; };
+
+    void _new_day(int64_t day) {                          // single source of session reset
+        m_day=day; m_day_open=0; m_run_high=0; m_hod=-1e18; m_hod_idx=-1;
+        m_bars.clear(); m_ema9=0; m_ema_init=false;
+    }
 
     void _open(int dir, double px, int64_t ts_ms) {
         pos = Position{}; pos.active=true; pos.dir=dir; pos.size_each=lot;
@@ -220,7 +228,7 @@ private:
     }
 
     std::deque<Bar> m_bars;
-    int64_t m_day=-1, m_day_bar=-1; double m_day_open=0, m_run_high=0, m_hod=-1e18; int m_hod_idx=-1;
+    int64_t m_day=-1; double m_day_open=0, m_run_high=0, m_hod=-1e18; int m_hod_idx=-1;
     double  m_ema9=0; bool m_ema_init=false;
 };
 

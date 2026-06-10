@@ -63,10 +63,11 @@ int main(int argc, char** argv) {
 
     char line[1024];
     while (fgets(line, sizeof(line), stdin)) {
-        if (line[0] == 'B') {
+        if (line[0] == 'B' || line[0] == 'S') {           // B=live closed bar, S=seed (warm only)
+            const bool is_seed = (line[0] == 'S');
             char sym[64]; int tf; double o,h,l,c,v; long long ts;
-            if (sscanf(line, "B,%63[^,],%d,%lf,%lf,%lf,%lf,%lf,%lld", sym, &tf, &o,&h,&l,&c,&v,&ts) == 8)
-                mgr.on_bar(sym, tf, o,h,l,c,v, (int64_t)ts);
+            if (sscanf(line+1, ",%63[^,],%d,%lf,%lf,%lf,%lf,%lf,%lld", sym, &tf, &o,&h,&l,&c,&v,&ts) == 8)
+                mgr.on_bar(sym, tf, o,h,l,c,v, (int64_t)ts, is_seed);
         } else if (line[0] == 'P') {
             char sym[64]; double px; long long ts;
             if (sscanf(line, "P,%63[^,],%lf,%lld", sym, &px, &ts) == 3)

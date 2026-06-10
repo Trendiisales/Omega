@@ -65,13 +65,15 @@ class Sub:
 
 
 def seed(ib, sym):
-    """Replay today's 5/10/15m history as B lines so the engine warms instantly."""
+    """Replay today's 5/10/15m history as B lines so the engine warms instantly.
+    Returns (day_open, day_high) from the 5m bars for a reliable prefilter."""
     c = Stock(sym, "SMART", "USD")
     try:
         q = ib.qualifyContracts(c)
         if q: c = q[0]
     except Exception:
-        return
+        return None
+    day_open = day_high = None
     for tf in TFS:
         bs = "5 mins" if tf == 300 else ("10 mins" if tf == 600 else "15 mins")
         try:
@@ -82,7 +84,12 @@ def seed(ib, sym):
             continue
         for b in bars:
             ts = int(b.date.timestamp() * 1000)
-            emit(f"B,{sym},{tf},{b.open},{b.high},{b.low},{b.close},{b.volume},{ts}")
+            emit(f"S,{sym},{tf},{b.open},{b.high},{b.low},{b.close},{b.volume},{ts}")  # S=seed: warm only
+            if tf == 300:
+                if day_open is None and b.open > 0:
+                    day_open = b.open
+                day_high = b.high if day_high is None else max(day_high, b.high)
+    return (day_open, day_high) if day_open else None
 
 
 def main():
@@ -118,18 +125,19 @@ def main():
                         if q: c = q[0]
                     except Exception:
                         continue
+                    # use today's real 5m bars (not the cold ticker) to judge the move
+                    sd = seed(ib, sym)
+                    if not sd:
+                        continue
+                    d_open, d_high = sd
+                    move = (d_high / d_open - 1.0) * 100.0 if d_open else 0.0
+                    if move < PREFILTER_PCT:                       # not a real mover -> skip
+                        continue
                     tk = ib.reqMktData(c, "", False, False)
-                    ib.sleep(1.0)
-                    px = tk.last or tk.close or tk.marketPrice()
-                    op = tk.open or px
-                    if not px or not op or op <= 0:
-                        ib.cancelMktData(c); continue
-                    if (px / op - 1.0) * 100.0 < PREFILTER_PCT:   # not moving enough yet
-                        ib.cancelMktData(c); continue
-                    s = Sub(tk); s.day_open = op
+                    ib.sleep(0.5)
+                    s = Sub(tk); s.day_open = d_open
                     subs[sym] = s
-                    emit(f"# subscribe {sym} px={px:.3f} up={ (px/op-1)*100 :.0f}%")
-                    seed(ib, sym)
+                    emit(f"# subscribe {sym} day {d_open:.3f}->{d_high:.3f} up={move:.0f}%")
             except Exception as e:
                 emit(f"# scan error: {e}")
 
