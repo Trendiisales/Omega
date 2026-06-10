@@ -117,7 +117,7 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "setInterval(rf,5000); rf();\n"
                 "</script>")
             body = (
-                "<html><head><title>PUMP SCANNER</title>"
+                "<html><head><meta charset=utf-8><title>PUMP SCANNER</title>"
                 f"<link rel=icon type=image/png href='data:image/png;base64,{LOGO_BLUE_B64}'>"
                 "<style>"
                 "body{background:#0a0a0a;color:#c8c8c8;font:13px/1.5 'SF Mono',Menlo,monospace;margin:0;padding:18px}"
@@ -141,7 +141,7 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "<div class=foot>up = % above today's open &middot; TRADE = past the 100% gate the 5/10/15m "
                 "engines act on &middot; live pump trades show in the dashboard RUNNING TRADES panel</div>"
                 f"</div>{script}</body></html>").encode()
-            ctype = "text/html"
+            ctype = "text/html; charset=utf-8"
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Access-Control-Allow-Origin", "*")   # so the dashboard could embed it later
