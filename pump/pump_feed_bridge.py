@@ -19,7 +19,8 @@ Feed protocol (stdout, line-buffered):
 
 Run:  python pump_feed_bridge.py | pump_shadow.exe --gate 100
 """
-import sys, time, math
+import sys, time, math, socket, threading, json
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from ib_async import IB, Stock, ScannerSubscription, util
 
 IB_HOST, IB_PORT, IB_CID = "127.0.0.1", 4002, 33   # paper; distinct clientId
@@ -28,11 +29,71 @@ MAX_SYMBOLS   = 12
 TFS           = [300, 600, 900]
 SCAN_EVERY    = 30
 TICK_EVERY    = 5
+SERVE_PORT    = 7782      # TCP server for the in-Omega PumpFeedConsumer (--serve)
+
+# In server mode, feed lines stream to the connected Omega consumer; else stdout
+# (standalone pump_shadow.exe). A background thread owns the accept loop.
+_conn = None
+_serve = False
+_candidates = {}          # sym -> dict(px, day_open, up, ts) for the scanner web page
+SCANNER_HTTP_PORT = 7783  # "separate address": http://<vps>:7783 shows live pump candidates
+
+
+class _ScanHandler(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        rows = sorted(_candidates.values(), key=lambda c: -c["up"])
+        if self.path.startswith("/api"):
+            body = json.dumps(rows).encode(); ctype = "application/json"
+        else:
+            trs = "".join(
+                f"<tr><td>{c['sym']}</td><td>{c['px']:.3f}</td>"
+                f"<td>+{c['up']:.0f}%</td><td>{c['day_open']:.3f}</td></tr>" for c in rows)
+            body = (f"<html><head><title>Pump Scanner</title>"
+                    f"<meta http-equiv=refresh content=5>"
+                    f"<style>body{{background:#111;color:#ddd;font:14px monospace}}"
+                    f"td{{padding:4px 12px}}th{{text-align:left;color:#6cf}}</style></head>"
+                    f"<body><h3>Pump Scanner — {len(rows)} live movers (gate 100% to trade)</h3>"
+                    f"<table><tr><th>sym</th><th>price</th><th>up</th><th>open</th></tr>"
+                    f"{trs}</table></body></html>").encode()
+            ctype = "text/html"
+        self.send_response(200); self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.wfile.write(body)
+
+
+def _http_thread(port):
+    try:
+        HTTPServer(("0.0.0.0", port), _ScanHandler).serve_forever()
+    except Exception as e:
+        sys.stderr.write(f"[pump_bridge] scanner http error: {e}\n")
+
+
+def _serve_thread(port):
+    global _conn
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", port)); srv.listen(1)
+    sys.stderr.write(f"[pump_bridge] serving on 127.0.0.1:{port}\n"); sys.stderr.flush()
+    while True:
+        c, _ = srv.accept()
+        sys.stderr.write("[pump_bridge] consumer connected\n"); sys.stderr.flush()
+        _conn = c
 
 
 def emit(s: str):
-    sys.stdout.write(s + "\n")
-    sys.stdout.flush()
+    global _conn
+    if _serve:
+        if _conn is not None:
+            try:
+                _conn.sendall((s + "\n").encode())
+            except Exception:
+                try: _conn.close()
+                except Exception: pass
+                _conn = None        # accept loop will pick up the next consumer
+    else:
+        sys.stdout.write(s + "\n")
+        sys.stdout.flush()
 
 
 class Sub:
@@ -141,7 +202,7 @@ def main():
             except Exception as e:
                 emit(f"# scan error: {e}")
 
-        # ---- emit ticks + roll bars for all subs ----
+        # ---- emit ticks + roll bars + scanner candidate for all subs ----
         ts_ms = int(now * 1000)
         for sym, s in list(subs.items()):
             tk = s.ticker
@@ -149,6 +210,11 @@ def main():
             vol = getattr(tk, "volume", None)
             try:
                 s.roll(sym, float(px) if px else None, float(vol) if vol else None, ts_ms)
+                if px and s.day_open:                              # C = scanner candidate (feed + web page)
+                    up = (float(px) / s.day_open - 1.0) * 100.0
+                    emit(f"C,{sym},{float(px)},{s.day_open},{up:.1f},{ts_ms}")
+                    _candidates[sym] = {"sym": sym, "px": float(px), "day_open": s.day_open,
+                                        "up": up, "ts": ts_ms}
             except Exception:
                 pass
 
@@ -156,6 +222,12 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--serve" in sys.argv:
+        _serve = True
+        i = sys.argv.index("--serve")
+        port = int(sys.argv[i+1]) if i+1 < len(sys.argv) and sys.argv[i+1].isdigit() else SERVE_PORT
+        threading.Thread(target=_serve_thread, args=(port,), daemon=True).start()
+    threading.Thread(target=_http_thread, args=(SCANNER_HTTP_PORT,), daemon=True).start()  # scanner web page
     try:
         main()
     except KeyboardInterrupt:

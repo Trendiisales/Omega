@@ -139,6 +139,10 @@ static omega::FvgContinuationEngine g_fvgcont_nas30; // NAS100 FVG continuation 
 #include "PeachyOrbEngine.hpp"
 static omega::PeachyOrbEngine g_peachy_orb_nas;      // NAS100 one-candle ORB-retest (risk-cap selectivity) -- 2026-06-05 edge, BULL+BEAR robust, shadow
 // g_peachy_orb_ger40 REMOVED 2026-06-10 — failed held-out OOS (net-negative every cost), overfit to discovery window.
+#include "PumpScalpManager.hpp"
+static omega::PumpScalpManager g_pump_manager;       // micro-cap pump scalp (dynamic universe, 5/10/15m). Fed by PumpFeedConsumer when OMEGA_PUMP_BRIDGE=1. Shadow.
+static std::atomic<bool>       g_pump_stop{false};   // PumpFeedConsumer thread stop flag
+#include "PumpFeedConsumer.hpp"                       // TCP client thread (winsock already set up by IbkrDomConsumer above)
 #include "GoldOrbRetraceEngine.hpp"
 static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
 static omega::GoldOrbRetraceEngine g_nas_orb_retrace;  // NAS100 ORB retrace+RUNNER @US open -- 2026-06-07 (PF1.87 all-3yr+, 3x-robust); 2nd NAS edge vs PeachyOrb retest, shadow

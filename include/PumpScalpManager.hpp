@@ -52,6 +52,32 @@ public:
 
     int  active() const { return (int)m_book.size(); }
 
+    // ── GUI visibility: every active pump position across all symbols/timeframes,
+    //   for g_open_positions.register_source -> shows in the live_trades panel + bell.
+    std::vector<omega::PositionSnapshot> collect_positions() {
+        std::vector<omega::PositionSnapshot> v;
+        omega::PositionSnapshot s;
+        for (auto& kv : m_book) {
+            auto& t = *kv.second;
+            if (t.e5.persist_save ("PumpScalp_5m",  kv.first.c_str(), s)) v.push_back(s);
+            if (t.e10.persist_save("PumpScalp_10m", kv.first.c_str(), s)) v.push_back(s);
+            if (t.e15.persist_save("PumpScalp_15m", kv.first.c_str(), s)) v.push_back(s);
+        }
+        return v;
+    }
+
+    // ── Scanner visibility: current pump candidates the bridge is tracking
+    //   (symbol, price, % up from open). Served to the GUI scanner panel. ───────
+    struct Candidate { std::string sym; double px=0, day_open=0, up_pct=0; int64_t ts=0; };
+    void set_candidate(const std::string& sym, double px, double day_open, double up_pct, int64_t ts) {
+        m_cands[sym] = Candidate{sym, px, day_open, up_pct, ts};
+    }
+    std::vector<Candidate> candidates() const {
+        std::vector<Candidate> v; v.reserve(m_cands.size());
+        for (auto& kv : m_cands) v.push_back(kv.second);
+        return v;
+    }
+
     bool holds_position(const std::string& sym) const {
         auto it = m_book.find(sym);
         if (it == m_book.end()) return false;
@@ -100,6 +126,7 @@ private:
     }
 
     std::unordered_map<std::string, std::unique_ptr<Trio>> m_book;
+    std::unordered_map<std::string, Candidate> m_cands;   // scanner candidates (for the GUI panel)
 };
 
 }  // namespace omega

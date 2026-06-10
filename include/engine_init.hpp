@@ -4417,6 +4417,25 @@ static void init_engines(const std::string& cfg_path)
         // rescued it. Overfit to the discovery window; live ran 0-second SL_HIT
         // churn. Engine instance deleted (PeachyOrbEngine class kept for NAS).
 
+        // ── PumpScalpManager (micro-cap pump scalp, DYNAMIC universe) ──────────
+        // Trades whatever explodes today (5/10/15m per pumping symbol), fed by
+        // pump_feed_bridge.py via PumpFeedConsumer when OMEGA_PUMP_BRIDGE=1 (else
+        // dormant — zero effect on the live service). gate>=100% (extreme movers),
+        // HARD trail 3%, pyramid OFF, strict-exhaustion shorts. Validated
+        // 2026-06-10 (memory pump-scalp-ah-momentum-edge): durable multi-month OOS,
+        // survives 1-2%/side slip. Registers with g_open_positions so its trades
+        // show in the live_trades GUI panel + ring the entry bell. SHADOW until
+        // live fills + dud-rate are measured.
+        g_pump_manager.shadow_mode  = true;
+        g_pump_manager.day_gate_pct = 100.0;
+        g_pump_manager.trail_pct    = 3.0;
+        g_pump_manager.pyr_adds     = 0;
+        g_pump_manager.verbose      = true;
+        g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
+        printf("[OMEGA-INIT] PumpScalp manager: 5/10/15m gate100 trail3 shadow "
+               "(dynamic universe; feed via OMEGA_PUMP_BRIDGE=1)\n");
+
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory
         // omega-peachy-gold-orb-retrace-edge). Distilled from Peachy's gold-ORB

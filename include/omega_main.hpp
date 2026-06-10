@@ -625,6 +625,23 @@ int main(int argc, char* argv[])
         }).detach();
     }
 
+    // ── PumpScalp feed consumer (2026-06-10) ────────────────────────────────
+    // Opt-in: enabled when env OMEGA_PUMP_BRIDGE=1. Reads B/S/P/C lines from
+    // pump/pump_feed_bridge.py (server mode) over TCP localhost and drives
+    // g_pump_manager (which is registered with g_open_positions -> trades show
+    // in the live_trades GUI panel + bell). Off => dormant, no effect.
+    if (const char* en = std::getenv("OMEGA_PUMP_BRIDGE"); en && std::string(en) == "1") {
+        const char* port_env = std::getenv("OMEGA_PUMP_BRIDGE_PORT");
+        const uint16_t pport = port_env ? static_cast<uint16_t>(std::atoi(port_env)) : 7782;
+        const char* host_env = std::getenv("OMEGA_PUMP_BRIDGE_HOST");
+        static std::string s_pump_host = host_env ? host_env : "127.0.0.1";
+        std::cout << "[PUMP-CONSUMER] starting; " << s_pump_host << ":" << pport << "\n";
+        std::cout.flush();
+        std::thread([pport]{
+            omega::pump_feed::run(g_pump_manager, g_pump_stop, s_pump_host.c_str(), pport);
+        }).detach();
+    }
+
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
     // =========================================================================
