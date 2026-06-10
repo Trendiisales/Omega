@@ -46,18 +46,40 @@ class _ScanHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/api"):
             body = json.dumps(rows).encode(); ctype = "application/json"
         else:
-            trs = "".join(
-                f"<tr><td>{c['sym']}</td><td>{c['px']:.3f}</td>"
-                f"<td>+{c['up']:.0f}%</td><td>{c['day_open']:.3f}</td></tr>" for c in rows)
-            body = (f"<html><head><title>Pump Scanner</title>"
-                    f"<meta http-equiv=refresh content=5>"
-                    f"<style>body{{background:#111;color:#ddd;font:14px monospace}}"
-                    f"td{{padding:4px 12px}}th{{text-align:left;color:#6cf}}</style></head>"
-                    f"<body><h3>Pump Scanner — {len(rows)} live movers (gate 100% to trade)</h3>"
-                    f"<table><tr><th>sym</th><th>price</th><th>up</th><th>open</th></tr>"
-                    f"{trs}</table></body></html>").encode()
+            # styled to match the Omega dashboard SCREENER panel (dark/mono/teal)
+            def row(c):
+                arrow = '<span style="color:#3ddc97">&#9650;</span>'   # up-mover
+                gate = '<span style="color:#3ddc97">TRADE</span>' if c["up"] >= 100 else \
+                       '<span style="color:#6b6b6b">watch</span>'
+                return (f"<tr><td style='color:#d8d8d8'>{c['sym']}</td>"
+                        f"<td>{c['px']:.3f}</td><td>{arrow}</td>"
+                        f"<td style='color:#e6a23c'>+{c['up']:.0f}%</td>"
+                        f"<td>{c['day_open']:.3f}</td><td>{gate}</td></tr>")
+            trs = "".join(row(c) for c in rows) or \
+                  "<tr><td colspan=6 style='color:#6b6b6b'>no live movers — waiting for a pump</td></tr>"
+            n_trade = sum(1 for c in rows if c["up"] >= 100)
+            body = (
+                "<html><head><title>PUMP SCANNER</title><meta http-equiv=refresh content=5>"
+                "<style>"
+                "body{background:#0a0a0a;color:#c8c8c8;font:13px/1.5 'SF Mono',Menlo,monospace;margin:0;padding:18px}"
+                ".panel{border:1px solid #1d1d1d;border-radius:6px;padding:14px 16px;max-width:720px}"
+                ".hdr{color:#9aa0a6;letter-spacing:.5px;font-size:12px;margin-bottom:10px}"
+                "table{border-collapse:collapse;width:100%}"
+                "th{text-align:left;color:#5fd3e0;font-weight:normal;padding:4px 16px 8px 0;border-bottom:1px solid #1d1d1d}"
+                "td{padding:5px 16px 5px 0;white-space:nowrap}"
+                ".foot{color:#6b6b6b;font-size:11px;margin-top:12px}"
+                "</style></head><body><div class=panel>"
+                f"<div class=hdr>PUMP SCANNER &middot; {len(rows)} live movers &middot; {n_trade} at gate (&ge;100%)</div>"
+                "<table><tr><th>symbol</th><th>price</th><th>trend</th><th>up from open</th>"
+                "<th>day open</th><th>status</th></tr>"
+                f"{trs}</table>"
+                "<div class=foot>up = % above today's open &middot; TRADE = past the 100% gate the 5/10/15m "
+                "engines act on &middot; live pump trades show in the dashboard RUNNING TRADES panel</div>"
+                "</div></body></html>").encode()
             ctype = "text/html"
-        self.send_response(200); self.send_header("Content-Type", ctype)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Access-Control-Allow-Origin", "*")   # so the dashboard could embed it later
         self.send_header("Content-Length", str(len(body))); self.end_headers()
         self.wfile.write(body)
 
