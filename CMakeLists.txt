@@ -270,12 +270,16 @@ endif()
 # only refreshed at configure time, so incremental `cmake --build` shipped a
 # stale badge while running new code (chronic deploy-verification breakage).
 # main.cpp #include's the header (single source of truth); build time = __DATE__.
+# NOTE: deliberately does NOT pass -DOMEGA_FORCE_GIT_HASH. That override is for
+# OMEGA.ps1's explicit deploy stamp only; passing the CMake-scope variable here
+# re-applied a STALE forced hash cached from the last official deploy (the badge
+# showed 7f8a044a while HEAD was f1f6c3b). At build time, in the real checkout,
+# `git rev-parse HEAD` IS the truth — let UpdateGitHash read it directly.
 add_custom_target(omega_version ALL
     COMMAND ${CMAKE_COMMAND}
             -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
             -DOUTPUT_FILE=${VERSION_CMAKE_FILE}
             -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
-            -DOMEGA_FORCE_GIT_HASH=${OMEGA_FORCE_GIT_HASH}
             -P ${CMAKE_SOURCE_DIR}/cmake/UpdateGitHash.cmake
     BYPRODUCTS ${CMAKE_SOURCE_DIR}/include/version_generated.hpp
     COMMENT "[Omega] Regenerating git-hash header (build-time, copy-if-different)"
