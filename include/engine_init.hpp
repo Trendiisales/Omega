@@ -4418,7 +4418,9 @@ static void init_engines(const std::string& cfg_path)
         // churn. Engine instance deleted (PeachyOrbEngine class kept for NAS).
 
         // ── PumpScalpManager (micro-cap pump scalp, DYNAMIC universe) ──────────
-        // Trades whatever explodes today (3/5/15m per pumping symbol), fed by
+        // Trades whatever explodes today (3m per pumping symbol; S-2026-06-11
+        // trio->3m-only — 1-pos/symbol made 5m/15m pure slower-entry duplicates;
+        // 3m is the backtested winner, pump_tf_bt.py), fed by
         // pump_feed_bridge.py via PumpFeedConsumer when OMEGA_PUMP_BRIDGE=1 (else
         // dormant — zero effect on the live service). gate>=100% (extreme movers),
         // HARD trail 3%, pyramid OFF, strict-exhaustion shorts. Validated
@@ -4434,13 +4436,12 @@ static void init_engines(const std::string& cfg_path)
         g_pump_manager.trail_pct    = 2.0;
         g_pump_manager.be_arm_pct   = 2.0;
         g_pump_manager.be_floor_pct = 2.0;
-        g_pump_manager.single_position_per_symbol = true;  // trio shares one slot/symbol
         g_pump_manager.pyr_adds     = 0;
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
-        printf("[OMEGA-INIT] PumpScalp manager: 3/5/15m gate100 trail2 BE-lock(2/2) "
-               "1-pos/symbol shadow (dynamic universe; feed via OMEGA_PUMP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] PumpScalp manager: 3m-only gate100 trail2 BE-lock(2/2) "
+               "shadow (dynamic universe; feed via OMEGA_PUMP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory

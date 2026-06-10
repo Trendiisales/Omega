@@ -268,6 +268,10 @@ public:
         std::printf("[SURV-ADOPT] %s %s entry=%.5f sl=%.5f tp=%.5f (resumed from persist)\n",
                     cfg.tag, st.pos_side > 0 ? "LONG" : "SHORT",
                     st.pos_entry, st.pos_sl, st.pos_tp);
+        if (already_held >= cfg.max_hold_bars)
+            std::printf("[SURV-ADOPT] %s OVER-HELD at adopt (held=%d max=%d bars) — "
+                        "TIMEOUT fires on first managed tick\n",
+                        cfg.tag, already_held, cfg.max_hold_bars);
         std::fflush(stdout);
     }
 
@@ -276,7 +280,12 @@ public:
     void on_tick(const std::string& sym, double bid, double ask, int64_t now_ms,
                  const SpxOverlay& spx, CloseCb cb,
                  const std::function<bool(const char*, int)>& side_taken = {}) noexcept {
-        if (!st.enabled) return;
+        // S-2026-06-11 zombie hardening: a disabled cell must still MANAGE an
+        // open position (aggregate bars so the bar-count timeout advances + run
+        // manage_position) or the position freezes forever — this early-return
+        // used to sit before manage. Disabled now blocks ENTRIES only
+        // (evaluate_signal stays gated on st.enabled below).
+        if (!st.enabled && !st.pos_active) return;
         if (sym != cfg.symbol) return;
         const double mid = 0.5 * (bid + ask);
         if (mid <= 0) return;

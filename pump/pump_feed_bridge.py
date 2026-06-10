@@ -10,8 +10,8 @@ PumpScalpManager downstream.
 What it does, every 5s:
   - (every 30s) scan IBKR for top % gainers; subscribe streaming quotes for names
     already up >= PREFILTER_PCT from the day open (cap MAX_SYMBOLS).
-  - on first subscribe, SEED today's 5/10/15m history so the engine is warm.
-  - emit a price tick and roll 5/10/15m bars from the streaming last price.
+  - on first subscribe, SEED today's 3m history (5m kept for diag) so the engine is warm.
+  - emit a price tick and roll 3m+5m bars (engine eats 3m only) from the streaming last price.
 
 Feed protocol (stdout, line-buffered):
   B,SYM,TF_SEC,o,h,l,c,v,ts_ms     one CLOSED timeframe bar
@@ -55,9 +55,10 @@ def load_state():
 IB_HOST, IB_PORT, IB_CID = "127.0.0.1", 4002, 33   # paper; distinct clientId
 PREFILTER_PCT = 40.0      # only subscribe names already this far up from open (engine gate is 100)
 MAX_SYMBOLS   = 12
-TFS           = [180, 300, 900]   # 3/5/15m. 10m->3m 2026-06-11: pump_tf_bt.py — 3m
-                                  # n=42 PF 36.4/20.7 @1%/2% slip, catches the SLGB
-                                  # monster, wins ex-monster; 2m/4m missed the monster.
+TFS           = [180, 300]        # S-2026-06-11 trio->3m-only: 180 = the ONLY engine
+                                  # feed (PumpScalpManager drops tf!=180); 300 kept
+                                  # purely for the _diag_5m /api mirror. 3m edge:
+                                  # pump_tf_bt.py n=42 PF 36.4/20.7 @1%/2% slip.
 SCAN_EVERY    = 30
 TICK_EVERY    = 5
 SERVE_PORT    = 7782      # TCP server for the in-Omega PumpFeedConsumer (--serve)
@@ -140,7 +141,7 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "<table><tr><th>symbol</th><th>price</th><th>trend</th><th>up from open</th>"
                 "<th>day open</th><th>status</th></tr>"
                 f"<tbody id=rows>{trs}</tbody></table>"
-                "<div class=foot>up = % above today's open &middot; TRADE = past the 100% gate the 5/10/15m "
+                "<div class=foot>up = % above today's open &middot; TRADE = past the 100% gate the 3m "
                 "engines act on &middot; live pump trades show in the dashboard RUNNING TRADES panel</div>"
                 f"</div>{script}</body></html>").encode()
             ctype = "text/html; charset=utf-8"
