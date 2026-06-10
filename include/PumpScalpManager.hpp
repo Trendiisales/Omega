@@ -114,9 +114,13 @@ private:
     }
 
     Trio& ensure(const std::string& sym, int64_t ts_ms) {
+        // Seed bars carry HISTORICAL ts; evicting against them finds no victim
+        // (everyone looks newer than "now") -> book grew unbounded (active=43
+        // vs cap 12, 2026-06-10). Evict against the max event time ever seen.
+        if (ts_ms > m_now) m_now = ts_ms;
         auto it = m_book.find(sym);
         if (it == m_book.end()) {
-            if ((int)m_book.size() >= max_symbols) evict_coldest(ts_ms);
+            if ((int)m_book.size() >= max_symbols) evict_coldest(m_now);
             auto t = std::make_unique<Trio>();
             configure(*t, sym);
             it = m_book.emplace(sym, std::move(t)).first;
@@ -137,6 +141,7 @@ private:
 
     std::unordered_map<std::string, std::unique_ptr<Trio>> m_book;
     std::unordered_map<std::string, Candidate> m_cands;   // scanner candidates (for the GUI panel)
+    int64_t m_now = 0;   // max event ts seen (eviction clock; seed ts are historical)
 };
 
 }  // namespace omega
