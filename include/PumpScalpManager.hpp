@@ -26,6 +26,11 @@ public:
     bool   shadow_mode  = true;
     double day_gate_pct = 100.0;   // extreme-mover gate (see engine: durable edge lives here)
     double trail_pct    = 3.0;     // hard trailing stop (sweep: tighter=better, 3% for AH-slip margin)
+    double volx         = 0.0;     // ignition volume-surge condition DISABLED (2026-06-10 A/B:
+                                   // v>=3x avg20 self-defeats in a sustained frenzy -- every bar is
+                                   // huge so none is 3x its neighbors; blocked CIIT +65% while pooled
+                                   // 8-day basket net is EQUAL-OR-BETTER without it (1139 vs 1108,
+                                   // PF 28.7/16.1 at 1%/2% slip). pump_variant_bt.py both windows.
     int    pyr_adds     = 0;       // pyramid OFF (conditional leverage, hurts durable regime)
     int    max_symbols  = 12;      // cap concurrent pumps tracked
     bool   verbose      = false;
@@ -88,6 +93,24 @@ public:
         return v;
     }
 
+    // ── Health: bridge truth (candidates carry the bridge's day_open/up%) vs
+    //   the engines' own view. A symbol the bridge says is past the gate whose
+    //   engines see less than HALF that expansion is COLD-ANCHORED (the
+    //   2026-06-10 silent-no-trades class); a thin bar buffer on an armed name
+    //   is a warmup hole. Either -> the consumer should request a seed replay. ──
+    bool reseed_wanted() const {
+        for (const auto& kv : m_cands) {
+            const Candidate& cd = kv.second;
+            if (cd.up_pct < day_gate_pct) continue;          // only armed names matter
+            auto it = m_book.find(kv.first);
+            if (it == m_book.end()) continue;                // trio not built yet
+            const double eng_up = it->second->e5.day_up_pct();
+            if (eng_up >= 0.0 && eng_up < cd.up_pct * 0.5) return true;   // cold anchor
+            if (it->second->e5.bars_seen() < 24) return true;             // warmup hole
+        }
+        return false;
+    }
+
     bool holds_position(const std::string& sym) const {
         auto it = m_book.find(sym);
         if (it == m_book.end()) return false;
@@ -103,6 +126,7 @@ private:
             e.TF_SEC       = tf;
             e.DAY_GATE_PCT = day_gate_pct;
             e.TRAIL_PCT    = trail_pct;
+            e.VOLX         = volx;
             e.PYR_ADDS     = pyr_adds;
             e.MAXHOLD_SEC  = 30 * tf;       // ~30 bars of this timeframe
             e.shadow_mode  = shadow_mode;
