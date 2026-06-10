@@ -19,9 +19,38 @@ Feed protocol (stdout, line-buffered):
 
 Run:  python pump_feed_bridge.py | pump_shadow.exe --gate 100
 """
-import sys, time, math, socket, threading, json
+import sys, time, math, socket, threading, json, os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from ib_async import IB, Stock, ScannerSubscription, util
+
+# Restart persistence: candidates + tracked symbols survive a bridge restart so
+# the scanner page is never blank and tracked pumps are re-subscribed instantly.
+STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pump_state.json")
+
+def _utc_day():
+    return time.strftime("%Y%m%d", time.gmtime())
+
+def save_state(subs):
+    try:
+        tmp = STATE_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"date": _utc_day(), "candidates": _candidates,
+                       "subs": {s: sub.day_open for s, sub in subs.items()}}, f)
+        os.replace(tmp, STATE_PATH)
+    except Exception:
+        pass
+
+def load_state():
+    """Return {sym: day_open} of same-day tracked symbols; preload candidates."""
+    try:
+        with open(STATE_PATH) as f:
+            st = json.load(f)
+        if st.get("date") != _utc_day():
+            return {}                      # stale day -> start fresh
+        _candidates.update(st.get("candidates", {}))
+        return dict(st.get("subs", {}))
+    except Exception:
+        return {}
 
 IB_HOST, IB_PORT, IB_CID = "127.0.0.1", 4002, 33   # paper; distinct clientId
 PREFILTER_PCT = 40.0      # only subscribe names already this far up from open (engine gate is 100)
@@ -52,7 +81,9 @@ class _ScanHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/api"):
             body = json.dumps(rows).encode(); ctype = "application/json"
         else:
-            # styled to match the Omega dashboard SCREENER panel (dark/mono/teal)
+            # styled to match the Omega dashboard SCREENER panel (dark/mono/teal).
+            # NO meta-refresh: a tiny script polls /api every 5s and rewrites the
+            # table in place — no full reload, no favicon flash, no tab spinner.
             def row(c):
                 arrow = '<span style="color:#3ddc97">&#9650;</span>'   # up-mover
                 gate = '<span style="color:#3ddc97">TRADE</span>' if c["up"] >= 100 else \
@@ -64,14 +95,34 @@ class _ScanHandler(BaseHTTPRequestHandler):
             trs = "".join(row(c) for c in rows) or \
                   "<tr><td colspan=6 style='color:#6b6b6b'>no live movers — waiting for a pump</td></tr>"
             n_trade = sum(1 for c in rows if c["up"] >= 100)
+            script = (
+                "<script>\n"
+                "async function rf(){try{\n"
+                " const r=await fetch('/api',{cache:'no-store'}); const d=await r.json();\n"
+                " d.sort((a,b)=>b.up-a.up);\n"
+                " const esc=s=>String(s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));\n"
+                " let h='';\n"
+                " for(const c of d){\n"
+                "  const gate=c.up>=100?'<span style=\"color:#3ddc97\">TRADE</span>':'<span style=\"color:#6b6b6b\">watch</span>';\n"
+                "  h+='<tr><td style=\"color:#d8d8d8\">'+esc(c.sym)+'</td><td>'+c.px.toFixed(3)+'</td>'\n"
+                "    +'<td><span style=\"color:#3ddc97\">&#9650;</span></td>'\n"
+                "    +'<td style=\"color:#e6a23c\">+'+Math.round(c.up)+'%</td>'\n"
+                "    +'<td>'+c.day_open.toFixed(3)+'</td><td>'+gate+'</td></tr>';\n"
+                " }\n"
+                " if(!h) h='<tr><td colspan=6 style=\"color:#6b6b6b\">no live movers — waiting for a pump</td></tr>';\n"
+                " document.getElementById('rows').innerHTML=h;\n"
+                " const ng=d.filter(c=>c.up>=100).length;\n"
+                " document.getElementById('hdr').textContent='PUMP SCANNER · '+d.length+' live movers · '+ng+' at gate (≥100%)';\n"
+                "}catch(e){}}\n"
+                "setInterval(rf,5000); rf();\n"
+                "</script>")
             body = (
-                "<html><head><title>PUMP SCANNER</title><meta http-equiv=refresh content=5>"
+                "<html><head><title>PUMP SCANNER</title>"
                 f"<link rel=icon type=image/png href='data:image/png;base64,{LOGO_BLUE_B64}'>"
                 "<style>"
                 "body{background:#0a0a0a;color:#c8c8c8;font:13px/1.5 'SF Mono',Menlo,monospace;margin:0;padding:18px}"
                 ".panel{border:1px solid #1d1d1d;border-radius:6px;padding:14px 16px;max-width:720px}"
                 ".brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}"
-                # gold PNG -> blue: hue-rotate ~185deg + saturate to land on the teal/blue theme
                 ".brand img{width:26px;height:26px;border-radius:4px}"
                 ".brand .t{color:#5fd3e0;letter-spacing:3px;font-weight:bold;font-size:14px}"
                 ".brand .v{color:#3a5b62;letter-spacing:2px;font-size:10px;text-transform:uppercase}"
@@ -83,13 +134,13 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "</style></head><body><div class=panel>"
                 f"<div class=brand><img src='data:image/png;base64,{LOGO_BLUE_B64}' alt='Chimera'>"
                 "<span class=t>CHIMERA</span><span class=v>pump scalp</span></div>"
-                f"<div class=hdr>PUMP SCANNER &middot; {len(rows)} live movers &middot; {n_trade} at gate (&ge;100%)</div>"
+                f"<div class=hdr id=hdr>PUMP SCANNER &middot; {len(rows)} live movers &middot; {n_trade} at gate (&ge;100%)</div>"
                 "<table><tr><th>symbol</th><th>price</th><th>trend</th><th>up from open</th>"
                 "<th>day open</th><th>status</th></tr>"
-                f"{trs}</table>"
+                f"<tbody id=rows>{trs}</tbody></table>"
                 "<div class=foot>up = % above today's open &middot; TRADE = past the 100% gate the 5/10/15m "
                 "engines act on &middot; live pump trades show in the dashboard RUNNING TRADES panel</div>"
-                "</div></body></html>").encode()
+                f"</div>{script}</body></html>").encode()
             ctype = "text/html"
         self.send_response(200)
         self.send_header("Content-Type", ctype)
@@ -166,9 +217,10 @@ class Sub:
                 b[2] = max(b[2], px); b[3] = min(b[3], px); b[4] = px; b[5] += dv
 
 
-def seed(ib, sym):
-    """Replay today's 5/10/15m history as B lines so the engine warms instantly.
-    Returns (day_open, day_high) from the 5m bars for a reliable prefilter."""
+def fetch_seed(ib, sym):
+    """Fetch today's 5/10/15m history. Returns (day_open, day_high, seed_lines,
+    contract) or None. Caller decides whether to EMIT (emit R first: the consumer
+    resets the symbol's engines so a re-seed never double-counts bars/VWAP)."""
     c = Stock(sym, "SMART", "USD")
     try:
         q = ib.qualifyContracts(c)
@@ -176,6 +228,7 @@ def seed(ib, sym):
     except Exception:
         return None
     day_open = day_high = None
+    lines = []
     for tf in TFS:
         bs = "5 mins" if tf == 300 else ("10 mins" if tf == 600 else "15 mins")
         try:
@@ -186,12 +239,35 @@ def seed(ib, sym):
             continue
         for b in bars:
             ts = int(b.date.timestamp() * 1000)
-            emit(f"S,{sym},{tf},{b.open},{b.high},{b.low},{b.close},{b.volume},{ts}")  # S=seed: warm only
+            lines.append(f"S,{sym},{tf},{b.open},{b.high},{b.low},{b.close},{b.volume},{ts}")  # S=seed: warm only
             if tf == 300:
                 if day_open is None and b.open > 0:
                     day_open = b.open
                 day_high = b.high if day_high is None else max(day_high, b.high)
-    return (day_open, day_high) if day_open else None
+    return (day_open, day_high, lines, c) if day_open else None
+
+
+def subscribe_symbol(ib, subs, sym, min_move):
+    """Qualify + seed + stream one symbol. min_move=0 restores a previously
+    tracked name unconditionally (it earned tracking earlier in the day)."""
+    if sym in subs or len(subs) >= MAX_SYMBOLS:
+        return False
+    sd = fetch_seed(ib, sym)
+    if not sd:
+        return False
+    d_open, d_high, lines, c = sd
+    move = (d_high / d_open - 1.0) * 100.0 if d_open else 0.0
+    if move < min_move:
+        return False
+    emit(f"R,{sym}")                       # consumer: clean re-warm before seed batch
+    for ln in lines:
+        emit(ln)
+    tk = ib.reqMktData(c, "", False, False)
+    ib.sleep(0.5)
+    s = Sub(tk); s.day_open = d_open
+    subs[sym] = s
+    emit(f"# subscribe {sym} day {d_open:.3f}->{d_high:.3f} up={move:.0f}%")
+    return True
 
 
 def main():
@@ -203,11 +279,18 @@ def main():
         pass
     subs = {}           # sym -> Sub
     last_scan = 0.0
-    emit("# pump_feed_bridge up")
+    pending = load_state()    # same-day symbols from a prior run (restart persistence)
+    emit(f"# pump_feed_bridge up (restoring {len(pending)} persisted symbols)")
 
     global _need_reseed
     while True:
         now = time.time()
+
+        # ---- restore persisted same-day symbols (first pass after restart) ----
+        if pending:
+            for sym in list(pending.keys()):
+                subscribe_symbol(ib, subs, sym, min_move=0.0)   # tracked before -> keep
+                pending.pop(sym, None)
 
         # ---- consumer (re)connected: replay today's history for every tracked
         #      symbol so a restarted Omega recovers true day_open + run_high +
@@ -215,9 +298,13 @@ def main():
         if _need_reseed and subs:
             _need_reseed = False
             for sym, s in list(subs.items()):
-                sd = seed(ib, sym)                  # re-emits S lines (warm only)
-                if sd and sd[0] > 0:
-                    s.day_open = sd[0]
+                sd = fetch_seed(ib, sym)
+                if sd:
+                    emit(f"R,{sym}")               # reset-then-warm: no double-count
+                    for ln in sd[2]:
+                        emit(ln)
+                    if sd[0] > 0:
+                        s.day_open = sd[0]
                 emit(f"# reseed {sym} day_open={s.day_open:.3f}")
         elif _need_reseed:
             _need_reseed = False                    # nothing tracked yet
@@ -234,27 +321,7 @@ def main():
                     if len(subs) >= MAX_SYMBOLS:
                         break
                     sym = str(item.contractDetails.contract.symbol).upper()
-                    if sym in subs:
-                        continue
-                    c = Stock(sym, "SMART", "USD")
-                    try:
-                        q = ib.qualifyContracts(c)
-                        if q: c = q[0]
-                    except Exception:
-                        continue
-                    # use today's real 5m bars (not the cold ticker) to judge the move
-                    sd = seed(ib, sym)
-                    if not sd:
-                        continue
-                    d_open, d_high = sd
-                    move = (d_high / d_open - 1.0) * 100.0 if d_open else 0.0
-                    if move < PREFILTER_PCT:                       # not a real mover -> skip
-                        continue
-                    tk = ib.reqMktData(c, "", False, False)
-                    ib.sleep(0.5)
-                    s = Sub(tk); s.day_open = d_open
-                    subs[sym] = s
-                    emit(f"# subscribe {sym} day {d_open:.3f}->{d_high:.3f} up={move:.0f}%")
+                    subscribe_symbol(ib, subs, sym, min_move=PREFILTER_PCT)
             except Exception as e:
                 emit(f"# scan error: {e}")
 
@@ -274,6 +341,7 @@ def main():
             except Exception:
                 pass
 
+        save_state(subs)        # restart persistence: candidates + tracked symbols
         ib.sleep(TICK_EVERY)
 
 

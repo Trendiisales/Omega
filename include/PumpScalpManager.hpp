@@ -41,6 +41,16 @@ public:
         else if (tf_sec == 900) t.e15.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
     }
 
+    // Bridge 'R' line: clean re-warm of an already-tracked symbol ahead of a
+    // seed replay (bridge restart / consumer reconnect). No-op if untracked.
+    void reset_symbol(const std::string& sym) {
+        auto it = m_book.find(sym);
+        if (it == m_book.end()) return;
+        it->second->e5.reset_for_reseed();
+        it->second->e10.reset_for_reseed();
+        it->second->e15.reset_for_reseed();
+    }
+
     void on_price(const std::string& sym, double px, int64_t ts_ms) {
         auto it = m_book.find(sym);
         if (it == m_book.end()) return;

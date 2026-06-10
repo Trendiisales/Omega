@@ -126,6 +126,11 @@ public:
 
     void init() { _new_day(-1); pos = Position{}; }
 
+    // Clean re-warm before a seed REPLAY (bridge 'R' line): wipe all bar/day
+    // state so the incoming seed batch never double-counts bars/EMA/VWAP, but
+    // KEEP any open position — its management continues on live ticks.
+    void reset_for_reseed() { _new_day(m_day); }
+
     // ── FAST path: every price update. Manages the open position so it exits
     //   IMMEDIATELY on the turn (all three TF engines share this behaviour). ──
     void on_price(double px, int64_t ts_ms) {

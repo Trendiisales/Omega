@@ -13,6 +13,7 @@
 //   B,SYM,TF,o,h,l,c,v,ts_ms   live closed bar (may enter)
 //   P,SYM,px,ts_ms             price tick (drives the fast trailing exit)
 //   C,SYM,px,day_open,up,ts_ms scanner candidate (for the GUI scanner panel)
+//   R,SYM                      reset-for-reseed (precedes a seed replay batch)
 //
 // The manager registers its positions with g_open_positions, so pump trades show
 // in the live_trades GUI panel + ring the entry bell exactly like every engine.
@@ -79,6 +80,9 @@ inline void dispatch_line(PumpScalpManager& mgr, const char* ln) {
     } else if (ln[0]=='C') {
         if (std::sscanf(ln+1, ",%63[^,],%lf,%lf,%lf,%lld", sym,&px,&dopen,&up,&ts)==5)
             mgr.set_candidate(sym, px, dopen, up, (int64_t)ts);
+    } else if (ln[0]=='R') {
+        if (std::sscanf(ln+1, ",%63[^,\n]", sym)==1)
+            mgr.reset_symbol(sym);       // clean re-warm before a seed replay
     }
 }
 
