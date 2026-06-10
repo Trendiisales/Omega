@@ -240,10 +240,14 @@ public:
     int open_side()        const { return st.pos_active ? st.pos_side : 0; }
 
     // S-2026-06-03: adopt a persisted position on boot (resume managing it; do
-    // NOT re-enter). Restores side/entry/sl/tp/entry_ts. The hold-clock resets
-    // to now (pos_entry_bar_idx = current bar) so max_hold_bars counts from the
-    // restore point — a deploy can't prematurely time a trade out. mfe resets
-    // to 0 (record-only field, not used for management here).
+    // NOT re-enter). Restores side/entry/sl/tp/entry_ts. mfe resets to 0
+    // (record-only field, not used for management here).
+    // S-2026-06-11 ZOMBIE FIX: the hold-clock used to reset to the restore
+    // point ("a deploy can't prematurely time a trade out") — but with frequent
+    // deploys the max_hold timeout NEVER fired: USDJPY_4h_SPXVG (max_hold 48
+    // bars = 8d) was found alive at 13 DAYS. Now the clock back-dates from the
+    // ORIGINAL entry_ts, so an over-held adopted position times out on the
+    // next bar close — the time stop fires as if the restarts never happened.
     void adopt(const omega::PositionSnapshot& ps) {
         st.pos_active        = true;
         st.pos_side          = (ps.side == "LONG") ? 1 : -1;
@@ -252,7 +256,13 @@ public:
         st.pos_tp            = ps.tp;
         st.pos_mfe           = 0.0;
         st.pos_bars_held     = 0;
-        st.pos_entry_bar_idx = st.bar_idx;
+        int already_held = 0;
+        if (ps.entry_ts > 0 && cfg.tf_sec > 0) {
+            const long long now_s = (long long)std::time(nullptr);
+            already_held = (int)((now_s - (long long)ps.entry_ts) / cfg.tf_sec);
+            if (already_held < 0) already_held = 0;
+        }
+        st.pos_entry_bar_idx = st.bar_idx - already_held;
         st.pos_entry_ts      = ps.entry_ts;
         st.last_entry_bar_idx = st.bar_idx;
         std::printf("[SURV-ADOPT] %s %s entry=%.5f sl=%.5f tp=%.5f (resumed from persist)\n",

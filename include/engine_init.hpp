@@ -6957,11 +6957,13 @@ static void init_engines(const std::string& cfg_path)
         _ps_src("IndexSession_UK100",  "UK100",   &g_idxsess_uk100);
         _ps_src("IndexSession_ESTX50", "ESTX50",  &g_idxsess_estx50);
         _ps_src("ConnorsRSI2",         "NAS100",  &g_connors_nas);
-        // C1Retuned is multi-cell -> persist_save_all emits one snapshot per cell.
-        g_open_positions.register_source("C1Retuned", []() {
-            std::vector<omega::PositionSnapshot> v;
-            g_c1_retuned.persist_save_all("C1Retuned", "XAUUSD", v);
-            return v; });
+        // S-2026-06-11 DEDUP: the "C1Retuned" persist_save_all GUI source is
+        // REMOVED. Its cells are already published live (with current px) by the
+        // per-cell sources C1RetunedDonchianH1/BollingerH2/H4/H6 (~L6297). This
+        // source double-displayed every open cell under "C1Retuned#<cellkey>"
+        // with current=0 -> the GUI rendered a phantom row with an SL distance
+        // of -<sl> (operator report 2026-06-11). Persistence is unaffected —
+        // wire_multicell in PositionPersistence.hpp owns save/restore.
     }
 
     // ====================================================================
@@ -6990,7 +6992,10 @@ static void init_engines(const std::string& cfg_path)
             "GoldOversoldBounce", "H1SwingGold", "H4RegimeGold",
             // batch 5: multi-cell ensembles (base tags)
             "XauTrendFollow1h", "XauTrendFollow2h", "XauTrendFollow4h", "XauTrendFollowD1",
-            "UstecTrendFollow5m", "UstecTrendFollowHtf", "C1Retuned",
+            // "C1Retuned" intentionally absent (S-2026-06-11): its cells are
+            // displayed by the per-cell C1Retuned* sources; the base-tag GUI
+            // source was a double-display (see dedup note above).
+            "UstecTrendFollow5m", "UstecTrendFollowHtf",
             // batch 6: Breakout FX, NBM, FX turtles/scalp, pyramided
             "BreakoutEURUSD", "BreakoutGBPUSD", "BreakoutAUDUSD", "BreakoutNZDUSD", "BreakoutUSDJPY",
             "NoiseBandMomentumGoldLdn", "GoldScalpPyramid", "GoldRegimeDaily", "MacroCrash",
