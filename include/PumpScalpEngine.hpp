@@ -131,6 +131,13 @@ public:
     // KEEP any open position — its management continues on live ticks.
     void reset_for_reseed() { _new_day(m_day); }
 
+    // Health introspection (cold-anchor detection, 2026-06-10 failure class):
+    // the engine's own view of today's expansion + bar warmup depth.
+    double day_up_pct() const {
+        return (m_day_open > 0 && m_run_high > 0) ? (m_run_high/m_day_open - 1.0)*100.0 : -1.0;
+    }
+    int bars_seen() const { return (int)m_bars.size(); }
+
     // ── FAST path: every price update. Manages the open position so it exits
     //   IMMEDIATELY on the turn (all three TF engines share this behaviour). ──
     void on_price(double px, int64_t ts_ms) {
