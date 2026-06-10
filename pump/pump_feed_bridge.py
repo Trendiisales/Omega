@@ -195,6 +195,23 @@ class Sub:
         self.day_open = 0.0
         self.last_vol = None
         self.bars = {tf: None for tf in TFS}   # tf -> [bucket_ms, o,h,l,c,v]
+        self.h5   = []                          # closed 5m bars [o,h,l,c,v] (diag mirror)
+        self.diag = ""                          # engine-condition mirror of the last closed 5m bar
+
+    def _diag_5m(self, o, h, l, c, v):
+        """Mirror the engine's ignition conditions on the just-closed 5m bar so
+        a blocked entry is visible from /api (which condition failed and why)."""
+        self.h5.append([o, h, l, c, v])
+        if len(self.h5) > 26: self.h5.pop(0)
+        if len(self.h5) < 5: self.diag = "warmup"; return
+        c_lb  = self.h5[-4][3]                                  # close 3 bars back
+        ig    = (c/c_lb - 1.0)*100.0 if c_lb > 0 else 0.0
+        prior = [b[4] for b in self.h5[:-1]][-20:]
+        avgv  = (sum(prior)/len(prior)) if prior else 0.0
+        volx  = (v/avgv) if avgv > 0 else -1.0                  # -1 = no live volume at all
+        stren = (c-l)/(h-l) if h > l else 1.0
+        self.diag = (f"ig={ig:+.1f}%(need+3) volx={volx:.1f}(need3) "
+                     f"str={stren:.2f}(need.60) v={v:.0f} avg={avgv:.0f}")
 
     def roll(self, sym, px, vol, ts_ms):
         if px is None or px <= 0 or px != px:
@@ -212,6 +229,7 @@ class Sub:
                 self.bars[tf] = [bkt, px, px, px, px, dv]
             elif bkt != b[0]:
                 emit(f"B,{sym},{tf},{b[1]},{b[2]},{b[3]},{b[4]},{b[5]},{b[0]}")   # closed bar
+                if tf == 300: self._diag_5m(b[1], b[2], b[3], b[4], b[5])
                 self.bars[tf] = [bkt, px, px, px, px, dv]
             else:
                 b[2] = max(b[2], px); b[3] = min(b[3], px); b[4] = px; b[5] += dv
@@ -337,7 +355,7 @@ def main():
                     up = (float(px) / s.day_open - 1.0) * 100.0
                     emit(f"C,{sym},{float(px)},{s.day_open},{up:.1f},{ts_ms}")
                     _candidates[sym] = {"sym": sym, "px": float(px), "day_open": s.day_open,
-                                        "up": up, "ts": ts_ms}
+                                        "up": up, "ts": ts_ms, "diag": s.diag}
             except Exception:
                 pass
 
