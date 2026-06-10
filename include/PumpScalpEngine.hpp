@@ -87,6 +87,12 @@ public:
     bool   ALLOW_SHORT  = true;    // strict exhaustion fade ONLY (continuation LOSES — never add)
     int    PYR_ADDS     = 0;       // pyramid adds onto a winner (0=OFF; leverage not edge)
     double PYR_STEP     = 8.0;     // pyramid: % advance beyond last add to trigger next unit
+    bool   VOL_REG_FILTER = true;  // volume-regression filter: require VWAP + regression-slope agreement.
+                                   // Backtest 2026-06-10 (06-08/06-09 + OOS Apr-08): cuts ~half the trades
+                                   // (the false ones) -> avg/trade +30-67%, win% up, PF 2-14x, lower DD.
+                                   // ~10-15% less total net (fewer trades) — quality over quantity.
+    int    REG_LB       = 12;      // regression-slope lookback bars
+    double SLOPE_MIN    = 0.0;     // min |slope| (%/bar) to allow a trade (0 = just sign agreement)
     double lot          = 1.0;
 
     bool   enabled      = true;
@@ -169,11 +175,17 @@ public:
         const Bar prev = m_bars.empty() ? Bar{o,h,l,c,v} : m_bars.back();
         m_bars.push_back({o,h,l,c,v});
         if (m_bars.size() > 64) m_bars.pop_front();
+        m_cum_pv += (h+l+c)/3.0 * v; m_cum_v += v;        // intraday VWAP accumulation
 
         if (is_seed) return;                             // SEED: warm only — never enter on history
         if (pos.active || !enabled) return;              // exits are on_price's job
         if (m_day_open<=0 || (m_run_high/m_day_open - 1.0)*100.0 < DAY_GATE_PCT) return;  // gate
         if (idx < LB + 21) return;
+
+        // volume-regression filter: VWAP + slope must agree with the trade direction
+        const double vwap = _vwap(), slope = _slope();
+        const bool long_ok  = (!VOL_REG_FILTER) || (vwap<=0) || (c > vwap && slope >=  SLOPE_MIN);
+        const bool short_ok = (!VOL_REG_FILTER) || (vwap<=0) || (c < vwap && slope <= -SLOPE_MIN);
 
         double avgv=0; int n=0;
         for (int i=(int)m_bars.size()-2; i>=0 && n<20; --i,++n) avgv += m_bars[i].v;
@@ -182,14 +194,14 @@ public:
         // IGNITION long
         const double c_lb = m_bars[(int)m_bars.size()-1-LB].c;
         const bool strong = (h>l) ? (c >= l + STRENGTH*(h-l)) : true;
-        if ((c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) { _open(+1, c, ts_ms); return; }
+        if (long_ok && (c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) { _open(+1, c, ts_ms); return; }
 
         // EXHAUSTION short (strict top-fade only)
         const double runup = (c/m_day_open - 1.0)*100.0;
         const double ext   = (c/m_ema9   - 1.0)*100.0;
         const bool new_hod = (idx - m_hod_idx) <= NEWHOD_M;
         const bool bear_brk = (c < o) && (c < prev.l);
-        if (ALLOW_SHORT && runup>=RUNUP_PCT && ext>=EXT_PCT && new_hod && bear_brk) { _open(-1, c, ts_ms); }
+        if (short_ok && ALLOW_SHORT && runup>=RUNUP_PCT && ext>=EXT_PCT && new_hod && bear_brk) { _open(-1, c, ts_ms); }
     }
 
     void force_close(double px, int64_t now_ms) { if (pos.active) _close(px, now_ms, "FORCE_CLOSE"); }
@@ -200,6 +212,23 @@ private:
     void _new_day(int64_t day) {                          // single source of session reset
         m_day=day; m_day_open=0; m_run_high=0; m_hod=-1e18; m_hod_idx=-1;
         m_bars.clear(); m_ema9=0; m_ema_init=false;
+        m_cum_pv=0; m_cum_v=0;
+    }
+
+    double _vwap() const { return m_cum_v>0 ? m_cum_pv/m_cum_v : 0.0; }
+
+    // least-squares slope of the last REG_LB closes, normalized to %/bar
+    double _slope() const {
+        const int n = std::min((int)m_bars.size(), REG_LB);
+        if (n < 3) return 0.0;
+        const int base = (int)m_bars.size() - n;
+        double sx=0,sy=0,sxx=0,sxy=0;
+        for (int k=0;k<n;++k){ double x=k, y=m_bars[base+k].c; sx+=x; sy+=y; sxx+=x*x; sxy+=x*y; }
+        const double den = n*sxx - sx*sx;
+        if (std::fabs(den) < 1e-9) return 0.0;
+        const double b = (n*sxy - sx*sy)/den;
+        const double mean = sy/n;
+        return mean>0 ? b/mean*100.0 : 0.0;
     }
 
     void _open(int dir, double px, int64_t ts_ms) {
@@ -230,6 +259,7 @@ private:
     std::deque<Bar> m_bars;
     int64_t m_day=-1; double m_day_open=0, m_run_high=0, m_hod=-1e18; int m_hod_idx=-1;
     double  m_ema9=0; bool m_ema_init=false;
+    double  m_cum_pv=0, m_cum_v=0;   // intraday VWAP accumulators
 };
 
 }  // namespace omega
