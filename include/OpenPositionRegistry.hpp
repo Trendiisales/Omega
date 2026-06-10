@@ -202,8 +202,12 @@ public:
 
     // Read the file and offer each position to the registered restorers. Returns
     // {adopted, seen}. Caller logs. Safe to call when file is absent (returns 0,0).
+    // S-2026-06-11: entry_ts of every ADOPTED line is recorded in
+    // last_restored_entry_ts() so the central phantom-drop guard can exempt
+    // legitimately-restored positions (their entry predates boot but they are real).
     std::pair<int,int> restore(const std::string& path)
     {
+        restored_entry_ts_.clear();
         std::ifstream f(path);
         if (!f) return {0, 0};
         std::vector<RestoreFn> rs;
@@ -225,16 +229,22 @@ public:
             p.mae      = std::atof(tok[8].c_str());
             p.entry_ts = std::atoll(tok[9].c_str());
             ++seen;
-            for (const auto& r : rs) { if (r && r(p)) { ++adopted; break; } }
+            for (const auto& r : rs) {
+                if (r && r(p)) { ++adopted; restored_entry_ts_.push_back(p.entry_ts); break; }
+            }
         }
         return {adopted, seen};
     }
+
+    // entry_ts of every position adopted by the most recent restore() call.
+    const std::vector<int64_t>& last_restored_entry_ts() const { return restored_entry_ts_; }
 
 private:
     mutable std::mutex                              mu_;
     std::vector<std::pair<std::string, SourceFn>>   sources_;
     std::vector<RestoreFn>                          restorers_;
     std::vector<SourceFn>                           persist_sources_;
+    std::vector<int64_t>                            restored_entry_ts_;   // S-2026-06-11
 };
 
 } // namespace omega

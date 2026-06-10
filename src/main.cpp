@@ -47,14 +47,24 @@
 #include "SymbolSupervisor.hpp"
 #include "OmegaCostGuard.hpp"    // ExecutionCostGuard -- must precede templated lambdas (MSVC)
 
-// ?? Build version -- injected as compiler /D defines by CMake ???????????????
-// Passed via target_compile_definitions() -- no generated header, no forced recompile.
-// Falls back to "unknown" if build system doesn't provide them.
+// ?? Build version ??????????????????????????????????????????????????????????
+// S-2026-06-11: version_generated.hpp (regenerated at BUILD time by the cmake
+// omega_version target, copy_if_different) is now the SINGLE source of truth for
+// the git hash. The old configure-time /D compile-define went STALE on
+// incremental builds — the badge showed an old commit while running new code,
+// which repeatedly broke deploy verification. The header #undef's then
+// #define's so it always wins over any leftover -D. Build time comes from the
+// compiler's own __DATE__/__TIME__ so it is always the real compile moment.
+#if defined(__has_include)
+#  if __has_include("version_generated.hpp")
+#    include "version_generated.hpp"
+#  endif
+#endif
 #ifndef OMEGA_GIT_HASH
 #  define OMEGA_GIT_HASH   "unknown"
 #endif
 #ifndef OMEGA_BUILD_TIME
-#  define OMEGA_BUILD_TIME "unknown"
+#  define OMEGA_BUILD_TIME (__DATE__ " " __TIME__)
 #endif
 #ifndef OMEGA_GIT_DATE
 #  define OMEGA_GIT_DATE   "unknown"

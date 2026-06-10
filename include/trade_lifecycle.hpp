@@ -20,7 +20,12 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     // for ALL engines present and future, even if a per-engine enabled-gate is missed.
     // (Recurring incidents: S102 XauTrendFollow, 2026-06-07 GoldOrbRetrace/NasOrbRetrace.)
     // g_process_boot_sec defined in globals.hpp (included before this TU).
-    if (tr.entryTs > 1000000000LL && g_process_boot_sec > 0 &&
+    // S-2026-06-11: a position legitimately RESTORED from open_positions.dat at
+    // boot has a real entry that predates boot — exempt it, else its close (TP/SL/
+    // timeout) is silently dropped and its PnL never books. This was the
+    // XAU_4h_DonchN20/N100 +191.88 closes that vanished from the ledger.
+    const bool restored_real = (g_restored_entry_ts.count(tr.entryTs) != 0);
+    if (!restored_real && tr.entryTs > 1000000000LL && g_process_boot_sec > 0 &&
         tr.entryTs < g_process_boot_sec - 120) {
         std::fprintf(stderr,
             "[PHANTOM-DROP] %s %s %s entryTs=%lld < boot=%lld (held %.1fh) pnl=%.2f reason=%s "

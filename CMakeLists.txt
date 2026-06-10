@@ -264,12 +264,24 @@ else()
     set(OMEGA_BUILD_TIME "unknown")
 endif()
 
-# Pass as compiler defines -- no header file needed, no forced recompile
-target_compile_definitions(Omega PRIVATE
-    OMEGA_GIT_HASH="${OMEGA_GIT_HASH}"
-    OMEGA_GIT_DATE="${OMEGA_GIT_DATE}"
-    OMEGA_BUILD_TIME="${OMEGA_BUILD_TIME}"
+# S-2026-06-11: the git hash is delivered via include/version_generated.hpp
+# (generated above at configure for the first build, and regenerated at BUILD
+# time by the omega_version target below). Compile-defines were REMOVED — they
+# only refreshed at configure time, so incremental `cmake --build` shipped a
+# stale badge while running new code (chronic deploy-verification breakage).
+# main.cpp #include's the header (single source of truth); build time = __DATE__.
+add_custom_target(omega_version ALL
+    COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -DOUTPUT_FILE=${VERSION_CMAKE_FILE}
+            -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+            -DOMEGA_FORCE_GIT_HASH=${OMEGA_FORCE_GIT_HASH}
+            -P ${CMAKE_SOURCE_DIR}/cmake/UpdateGitHash.cmake
+    BYPRODUCTS ${CMAKE_SOURCE_DIR}/include/version_generated.hpp
+    COMMENT "[Omega] Regenerating git-hash header (build-time, copy-if-different)"
+    VERBATIM
 )
+add_dependencies(Omega omega_version)
 
 # Engine headers as OBJECT_DEPENDS -- main.cpp recompiles when headers change.
 # The sentinel (old approach) has been removed -- it caused a full recompile

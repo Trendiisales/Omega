@@ -63,7 +63,11 @@ int main(int argc, char* argv[])
     {
         omega::persist::register_position_persistence();   // survivor + LivePos archetype
         const auto rr = g_open_positions.restore(state_root_dir() + "/open_positions.dat");
-        printf("[POS-RESTORE] %d/%d persisted open positions resumed\n", rr.first, rr.second);
+        // S-2026-06-11: exempt these restored positions from the phantom-drop guard
+        // so their eventual close books PnL (their entry legitimately predates boot).
+        for (int64_t ets : g_open_positions.last_restored_entry_ts()) g_restored_entry_ts.insert(ets);
+        printf("[POS-RESTORE] %d/%d persisted open positions resumed (%zu entry_ts exempted from phantom-drop)\n",
+               rr.first, rr.second, g_restored_entry_ts.size());
         fflush(stdout);
     }
 

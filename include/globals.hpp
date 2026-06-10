@@ -46,6 +46,15 @@ omega::OpenPositionRegistry g_open_positions;
 // historical (warm-seed) bar or carried from a prior session -> dropped, not ledgered.
 int64_t g_process_boot_sec = 0;
 
+// S-2026-06-11 PnL FIX: entry_ts of every position legitimately RESTORED from
+// open_positions.dat at boot. A restored position's real entry predates boot, so
+// when it closes the phantom-drop guard above would WRONGLY nuke it (silent PnL
+// loss across all persisted engines — the XAU_4h_DonchN20/N100 +191.88 closes
+// that never reached the ledger). The guard exempts any close whose entryTs is in
+// this set. Populated once in omega_main right after g_open_positions.restore().
+#include <unordered_set>
+std::unordered_set<int64_t> g_restored_entry_ts;
+
 // ── Universal catastrophe net (covers index/FX the gold-only dollar-stop misses) ──
 // Detection+log net over g_open_positions; flattens (LIVE) any position past 3x the
 // per-trade dollar-stop. Shadow-safe (logs only). Wired in on_tick 250ms block.
