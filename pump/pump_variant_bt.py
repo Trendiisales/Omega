@@ -76,19 +76,19 @@ def run_day(bars, variant, gate, slip_pct):
         closes.append(c); vols.append(v)
         # ---- manage open (bar-path: low first for longs) ----
         if pos:
-            e, peak = pos
+            e, peak, ei = pos
             peak = max(peak, h)
             stop = max(peak*(1-TRAIL_PCT/100), e*(1-HARD_PCT/100))
             exit_px = None
             if l <= stop: exit_px = stop
-            elif i - pos[2] >= MAXHOLD: exit_px = c
+            elif i - ei >= MAXHOLD: exit_px = c
             if exit_px is not None:
                 gross = (exit_px/e - 1)*100
                 net = gross - 2*slip_pct
                 trades.append(net)
                 pos = None
             else:
-                pos = (e, peak, pos[2])
+                pos = (e, peak, ei)
         # ---- entries ----
         if pos or day_open <= 0: continue
         gate_now = (run_high/day_open - 1)*100 >= gate

@@ -355,7 +355,8 @@ def main():
                     up = (float(px) / s.day_open - 1.0) * 100.0
                     emit(f"C,{sym},{float(px)},{s.day_open},{up:.1f},{ts_ms}")
                     _candidates[sym] = {"sym": sym, "px": float(px), "day_open": s.day_open,
-                                        "up": up, "ts": ts_ms, "diag": s.diag}
+                                        "up": up, "ts": ts_ms, "diag": s.diag,
+                                        "nb5": len(s.h5)}   # closed-5m-bar count (plumbing truth)
             except Exception:
                 pass
 
