@@ -4438,24 +4438,33 @@ static void init_engines(const std::string& cfg_path)
         // live fills + dud-rate are measured.
         g_pump_manager.shadow_mode  = true;
         g_pump_manager.day_gate_pct = 100.0;
-        // S-2026-06-11 exit upgrade (pump_exit_bt.py BE2T2 — wins every basket day
-        // at 1% AND 2% slip): trail 3->2, BE-lock arm+2%/floor+2% (pop-then-fade
-        // exits ~net-flat instead of trailing negative; WR 55->67 @2% slip).
-        g_pump_manager.trail_pct    = 2.0;
-        g_pump_manager.be_arm_pct   = 2.0;
-        g_pump_manager.be_floor_pct = 2.0;
+        // S-2026-06-11 RECALIBRATION (operator model + full lever sweep,
+        // pump_recalib_bt.py / cap_probe.py on 16-day basket, net$ @ $5k notional,
+        // cost-inclusive both 1%/2% slip): jump in on the +100% mover, TRAIL
+        // IMMEDIATELY at 2%, exit when price turns (trail) with a 15-min time
+        // backstop. Findings: trail 0.5-1% = slippage artifact (trail inside the
+        // 1-2% cost band, fantasy fills) — rejected. Strict 3-min cap (cap=1) was
+        // the WORST cap in every trail row (cuts winners at bar 1); 15-min
+        // (cap=5) nets more on BOTH monster + non-monster names. BE-lock dropped
+        // (operator's simple model; sweep showed it marginal). Edge survives
+        // removing the SLGB monster (~+$22k/15d ex-monster @ $5k), but sample is
+        // small (n=44, 16d, 1 monster=62% of gross) => SHADOW, fat-tail dependent.
+        g_pump_manager.trail_pct    = 2.0;    // exit on the turn
+        g_pump_manager.be_arm_pct   = 0.0;    // BE OFF (trail + time-cap only)
+        g_pump_manager.be_floor_pct = 0.0;
+        g_pump_manager.maxhold_bars = 5;      // 15-min backstop (was strict 3-min; cut winners)
         g_pump_manager.pyr_adds     = 0;
-        // S-2026-06-11 honest accounting: $1000 notional per trade + 1%/side
-        // slip haircut in recorded PnL (matches pump_*_bt.py cost model). The
-        // old 1-share zero-cost shadow printed lifetime net +$1.72 over 46
-        // trades — unjudgeable. Now the gate (n>=30) judges REAL viability.
-        g_pump_manager.notional_usd = 1000.0;
+        // Honest accounting: $5000 notional (shares=notional/entry) + 1%/side slip
+        // haircut baked into recorded PnL (matches the backtest cost model). The
+        // old 1-share zero-cost shadow printed +$1.72/46tr — unjudgeable. $5k makes
+        // the dollars real; edge % is size-independent so the config is too.
+        g_pump_manager.notional_usd = 5000.0;
         g_pump_manager.slip_pct     = 1.0;
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
-        printf("[OMEGA-INIT] PumpScalp manager: 3m-only gate100 trail2 BE-lock(2/2) "
-               "$1000-notional slip1%%/side shadow (feed via OMEGA_PUMP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] PumpScalp manager: 3m-only gate100 trail2 NO-BE 15min-cap "
+               "$5000-notional slip1%%/side shadow (feed via OMEGA_PUMP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory

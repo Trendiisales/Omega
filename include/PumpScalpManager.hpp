@@ -37,8 +37,14 @@ public:
                                    // 8-day basket net is EQUAL-OR-BETTER without it (1139 vs 1108,
                                    // PF 28.7/16.1 at 1%/2% slip). pump_variant_bt.py both windows.
     int    pyr_adds     = 0;       // pyramid OFF (conditional leverage, hurts durable regime)
-    double notional_usd = 1000.0;  // $ per trade (shares = notional/entry) — honest scale
+    double notional_usd = 5000.0;  // $ per trade (shares = notional/entry). 1000->5000 2026-06-11:
+                                   // edge % is size-independent, $5k makes the dollars real
+                                   // (pump_recalib_bt.py: ex-monster ~+$22k/15d @ $5k).
     double slip_pct     = 1.0;     // %/side haircut in recorded PnL (backtest-equivalent cost)
+    int    maxhold_bars = 5;       // time-stop = this many 3m bars (5 = 15min). 2026-06-11
+                                   // pump_recalib_bt.py: strict 3-min (cap=1) cuts winners
+                                   // (worst in every trail row); 15-min trail-to-turn nets more
+                                   // on BOTH monster + non-monster names (cap5 > cap1 each trail).
     int    max_symbols  = 12;      // cap concurrent pumps tracked
     bool   verbose      = false;
     PumpScalpEngine::TradeRecordCallback on_trade_record;   // one sink for all engines
@@ -131,7 +137,7 @@ private:
         e.PYR_ADDS     = pyr_adds;
         e.NOTIONAL_USD = notional_usd;
         e.SLIP_PCT     = slip_pct;
-        e.MAXHOLD_SEC  = 30 * 180;      // ~30 bars of 3m
+        e.MAXHOLD_SEC  = maxhold_bars * 180;   // time-stop (5 bars = 15min); trail exits on the turn first
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;
         e.on_trade_record = on_trade_record;
