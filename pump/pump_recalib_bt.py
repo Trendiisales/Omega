@@ -91,7 +91,7 @@ def usd(entry, exit_px, notional, slip_pct):
 
 
 def run_day(bars, gate, slip_pct, notional, trail, timecap, be_arm, be_floor,
-            hard, grace, min_dvol=0.0, price_min=0.0, max_entries=0):
+            hard, grace, min_dvol=0.0, price_min=0.0, max_entries=0, ig_max=0.0):
     # max_entries>0 = per-name re-entry cap (block re-arming the same mover after a
     # trade closes; 0 = unlimited, the old leaky behaviour). Mirrors the engine cap.
     if not bars: return []
@@ -135,7 +135,8 @@ def run_day(bars, gate, slip_pct, notional, trail, timecap, be_arm, be_floor,
         if vwap > 0 and not (c > vwap and slope(closes) >= SLOPE_MIN): continue
         c_lb = closes[-1-LB] if len(closes) > LB else None
         if c_lb is None or c_lb <= 0: continue
-        ig = (c/c_lb-1)*100 >= IG_PCT
+        ig_val = (c/c_lb-1)*100
+        ig = ig_val >= IG_PCT and (ig_max <= 0 or ig_val <= ig_max)   # ig_max = parabolic-spike cap
         stren = (c >= l + STRENGTH*(h-l)) if h > l else True
         if ig and stren:
             if max_entries > 0 and n_entries >= max_entries: continue   # re-entry cap

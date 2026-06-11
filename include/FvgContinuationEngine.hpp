@@ -74,6 +74,13 @@ public:
     bool   ALLOW_SHORT   = true;    // bidirectional; longs are the bull-validated side
     bool   MACD_GATE     = true;    // gate entries by MACD(12,26,9) direction on the HTF
                                     // close (long only if MACD>signal, short if <).
+    bool   REV_EXIT      = true;    // S-2026-06-11 reversal-exit: cut an OPEN position early
+                                    // when the HTF MACD flips AGAINST it, but ONLY before +1R
+                                    // (mfe < risk) -- rescues failing counter-trend trades,
+                                    // never cuts a winner. Backtest (fvg_trend.cpp, engine-
+                                    // faithful MACD+TRENDN288, NAS): avgLoss -50->-42 (-16%),
+                                    // PF held 1.22->1.23. Tighter stops were proven catastrophic
+                                    // (PF 1.22->0.95); this is the one safe loss-containment.
                                     // 2026-06-04: lifts the noisier NQ-future feed
                                     // PF 0.90->1.07 by cutting counter-momentum entries.
     double lot           = 1.0;
@@ -158,6 +165,14 @@ public:
         if (pos.active) {
             const double fav = pos.dir>0 ? (bid-pos.entry_px) : (pos.entry_px-ask);
             if (fav>pos.mfe) pos.mfe=fav; if (fav<pos.mae) pos.mae=fav;
+            // reversal-exit: HTF MACD flipped against us AND still below +1R -> cut now.
+            if (REV_EXIT) {
+                const double risk = std::fabs(pos.entry_px - pos.stop_px);
+                const bool flipped = pos.dir>0 ? !m_macd_bull : m_macd_bull;
+                if (flipped && risk > 0.0 && pos.mfe < risk) {
+                    _close(pos.dir>0?bid:ask, now_ms, "MACD_REV"); return;
+                }
+            }
             if (pos.dir>0) {
                 if (bid<=pos.stop_px) { _close(bid, now_ms, "STOP"); return; }
                 if (bid>=pos.tp_px)   { _close(bid, now_ms, "DOL");  return; }
