@@ -342,7 +342,11 @@ static void on_tick_gbpusd(
             /* wall_below */ g_macro_ctx.gbp_wall_below,
             /* l2_real    */ g_macro_ctx.ctrader_l2_live);
     } else {
-        const bool can_enter = tradeable && lat_ok;
+        // TOMBSTONED 2026-06-11 (operator winners-only cull). Live shadow ledger
+        // (May 11-Jun 11): n=9, PF=0.03, net -$74. GbpusdLondonOpen has no enabled
+        // flag, so entries are killed here (can_enter=false) while the manage/close
+        // path above still drains any open position. Re-enable = restore tradeable&&lat_ok.
+        const bool can_enter = false;  // was: tradeable && lat_ok
         g_gbpusd_london_open.on_tick(
             bid, ask, now_ms,
             can_enter,

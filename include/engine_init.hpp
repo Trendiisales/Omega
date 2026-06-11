@@ -2052,7 +2052,11 @@ static void init_engines(const std::string& cfg_path)
 
         g_ger40_turtle_h4.p           = omega::make_ger40_turtle_h4_params();
         g_ger40_turtle_h4.shadow_mode = true;
-        g_ger40_turtle_h4.enabled     = true;
+        // TOMBSTONED 2026-06-11 (operator winners-only cull). Live shadow ledger
+        // (May 11-Jun 11): n=7, 0 wins, PF=0.00, net -$206. Turtle breakout whipsaws
+        // in the GER40 chop regime; the validated GER40 edge is Keltner (g_ger40_kelt).
+        // Also in the n>=30 auto-demote gate list (L7132) but n<30 so it never fired.
+        g_ger40_turtle_h4.enabled     = false;  // was: true
         g_ger40_turtle_h4.symbol      = "GER40";
         // Warm-seed GER40 H4 history (~1600 bars / 11 months) so 20-bar
         // Donchian + 14-bar ATR are populated. Without seed, cold-warm
@@ -4037,6 +4041,13 @@ static void init_engines(const std::string& cfg_path)
         // bad day wipes weeks of edge. Disable now, retune with fresh sweep before
         // re-enable. Sub-engine name "AsianRange" matches engine_ ctor at L1183.
         g_gold_stack.set_subengine_audit_disabled("AsianRange", true);
+        // TOMBSTONED 2026-06-11 (operator winners-only cull). Live shadow ledger
+        // (May 11-Jun 11): DonchianBreakout n=16 PF=0.39 net -$22; DynamicRange
+        // n=11 PF=0.04 net -$19 (WR 9%). Both bleed in the current regime; the
+        // GoldEngineStack's gold edge does not live in these two sub-engines.
+        // set_subengine_audit_disabled both skips the process loop AND setEnabled(false).
+        g_gold_stack.set_subengine_audit_disabled("DonchianBreakout", true);
+        g_gold_stack.set_subengine_audit_disabled("DynamicRange", true);
     }
     {
         char _msg[512];
