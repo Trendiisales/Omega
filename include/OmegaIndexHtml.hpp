@@ -738,7 +738,7 @@ R"OMEGA6(
 
 <script>
 'use strict';
-let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null,_lastOpenCount=0,_openBootDone=false,_ltFingerprint='',_lastUptimeSec=0;
+let wsConnected=false,lastData={},_bellEnabled=false,_lastTradeCount=0,_bellBootCount=-1,_audioCtx=null,_openSeen={},_openBootDone=false,_ltFingerprint='',_lastUptimeSec=0;
 
 function safe(v,d=0){const n=Number(v);return isNaN(n)?d:n;})OMEGA6"
 R"OMEGA7(
@@ -1591,10 +1591,24 @@ R"OMEGA23C(
   const ltPanel=document.getElementById('liveTradesPanel');
   if(ltPanel){
     const trades=d.live_trades||[];
-    // Fire entry bell when a new position opens
-    if(!_openBootDone){_lastOpenCount=trades.length;_openBootDone=true;}
-    if(_bellEnabled&&trades.length>_lastOpenCount)_playEntryBell();
-    _lastOpenCount=trades.length;
+    // Entry bell — IDENTITY-based, not count-based (S-2026-06-11 phantom-bell fix).
+    // Old logic rang whenever the open COUNT rose, so it fired on (a) a restart
+    // repopulating the panel and (b) any source flickering a position out/in.
+    // Now: ring once per genuinely NEW position key, with a 90s memory so a
+    // flicker-and-return doesn't re-ring, and a restart/boot guard (uptime reset)
+    // so repopulation after a restart is silent (the restart WIN chime covers that).
+    const _up=d.uptime_sec||0;
+    const _justBooted=(_up<45)||(_lastUptimeSec>60&&_up<_lastUptimeSec-30);
+    const _tnow=Date.now();
+    let _fresh=false;
+    for(const lt of trades){
+      const k=lt.engine+'|'+lt.symbol+'|'+lt.side+'|'+(+lt.entry||0).toFixed(4);
+      if(_openSeen[k]===undefined) _fresh=true;
+      _openSeen[k]=_tnow;
+    }
+    for(const k in _openSeen){ if(_tnow-_openSeen[k]>90000) delete _openSeen[k]; }
+    if(_openBootDone&&_bellEnabled&&!_justBooted&&_fresh)_playEntryBell();
+    _openBootDone=true;
     // Update panel border/glow when positions are open
     const ltOuter=document.getElementById('liveTradesPanelOuter');
     const totalFloat=trades.reduce((s,lt)=>s+lt.live_pnl,0);
