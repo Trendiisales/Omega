@@ -623,7 +623,16 @@ public:
         // DISABLED 2026-06-01: GER40 RSI mean-rev (counter-trend, net-neg shadow).
         // add({ .tag="GER_30m_RSI_N14",  .symbol="GER40",   .tf_sec=1800,  .family=Family::RSI, .N=14, .lo=20, .hi=80, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 13. USDJPY 4h SPX_VolGated sl=2/tp=5
-        add({ .tag="USDJPY_4h_SPXVG",  .symbol="USDJPY",  .tf_sec=14400, .family=Family::SPXVolGatedDonch, .N=20, .spx_sgn=+1, .spx_vm=1.2, .sl_mult=2.0, .tp_mult=5.0, .max_hold_bars=48, .lot=0.01 });
+        // TOMBSTONED 2026-06-11 (operator: "trading 8 days for $4 is plain stupid").
+        // Structural outlier of the whole roster: only cell with tp_mult=5.0 (rest
+        // 2-3) and max_hold_bars=48 / 8 days (rest 30). A 5-ATR target on 4h USDJPY
+        // almost never resolves -> trades die by TIMEOUT near-flat. Its only live
+        // shadow trade confirmed the pathology: 192h hold -> TIMEOUT, true PnL
+        // $4.46 (displayed $2775.88 under the now-fixed double-multiply bug). The
+        // sweep "Sharpe 2.58" is an unvalidated, harness-optimism number with zero
+        // live confirmation; tp=5ATR sweep cells overfit the rare runner. Thin
+        // single-symbol/single-family cell -> no diversification cost to cull.
+        // add({ .tag="USDJPY_4h_SPXVG",  .symbol="USDJPY",  .tf_sec=14400, .family=Family::SPXVolGatedDonch, .N=20, .spx_sgn=+1, .spx_vm=1.2, .sl_mult=2.0, .tp_mult=5.0, .max_hold_bars=48, .lot=0.01 });
     }
 
     void seed_all(const std::string& base_dir) {
