@@ -90,6 +90,12 @@ param(
     [int]   $StartupWaitSec = 15,
     [switch]$SkipVerify,
     [switch]$ForceKill,
+    # -Fast: incremental build. Preserves build/*.obj/*.pch and SKIPS the force-
+    # touch, so MSBuild recompiles ONLY the TUs whose sources changed (after git
+    # reset, just the edited files have a new mtime) + relinks -- ~2-4min vs the
+    # 7-10min full rebuild. Use for routine code-only deploys you trust. The full
+    # safe path (wipe-on-crash always still fires) is the DEFAULT when -Fast is off.
+    [switch]$Fast,
 
     # ----- watchdog subcommand parameters -----
     [int]   $StaleThresholdSec      = 60,
@@ -1026,6 +1032,8 @@ function Invoke-Deploy {
             } else {
                 Write-Host "  [PARTIAL] build/ not fully wiped; configure will surface any breakage." -ForegroundColor Yellow
             }
+        } elseif ($Fast) {
+            Write-Host "  [fast] incremental build -- preserving .obj/.pch (only changed TUs recompile)" -ForegroundColor Cyan
         } else {
             $artifacts = @(Get-ChildItem -Path $BuildDir -Include "*.obj","*.pch","*.pdb","*.iobj","*.ipdb" -Recurse -ErrorAction SilentlyContinue)
             $totalArtifacts = $artifacts.Count
@@ -1070,6 +1078,7 @@ function Invoke-Deploy {
     # whole OmegaDir (backtest/, phase1/, vendored headers) took ~12s > the 10s
     # guard below and tripped a false "[FATAL] Source touch failed" abort
     # (2026-06-03). src+include touches in <1s.
+    if (-not $Fast) {
     $touchTime = Get-Date
     @("$OmegaDir\src", "$OmegaDir\include") | ForEach-Object {
         if (Test-Path $_) {
@@ -1092,6 +1101,9 @@ function Invoke-Deploy {
         Write-Host "  [OK] Source timestamps updated (main.cpp age=${mainAge}s)" -ForegroundColor Green
     } else {
         Write-Host "  [WARN] Cannot verify touch -- main.cpp not found" -ForegroundColor Yellow
+    }
+    } else {
+        Write-Host "  [fast] skipping force-touch -- MSBuild dependency tracking decides rebuilds" -ForegroundColor Cyan
     }
     Write-Host ""
 
