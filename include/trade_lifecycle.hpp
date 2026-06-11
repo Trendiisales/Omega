@@ -36,6 +36,24 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         return;
     }
 
+    // ?? STALE-CARRY HOLD-CAP (S-2026-06-11) ?????????????????????????????????????
+    // Even a legitimately-RESTORED position (exempted above) cannot be held longer
+    // than any engine intends. 2026-06-11: a NasOrbRetrace close showed entry 23565
+    // held 1591h (66 days) booking a phantom +$5246 (FLAT_EOD) -- a stale seed /
+    // carry-over the restored_real exemption let straight through into the ledger
+    // and equity. No engine holds > 45 days (longest real intent = D1 swing, days-
+    // to-weeks), so any close exceeding that is a stale-carry phantom -> drop.
+    if (tr.entryTs > 1000000000LL && tr.exitTs > tr.entryTs &&
+        (tr.exitTs - tr.entryTs) > 45LL*86400LL) {
+        std::fprintf(stderr,
+            "[PHANTOM-DROP] %s %s %s held %.1fd (entry=%lld exit=%lld) pnl=%.2f reason=%s "
+            "-- dropped (stale-carry: hold exceeds 45d max engine intent)\n",
+            tr.engine.c_str(), tr.symbol.c_str(), tr.side.c_str(),
+            (tr.exitTs - tr.entryTs)/86400.0, (long long)tr.entryTs,
+            (long long)tr.exitTs, tr.pnl, tr.exitReason.c_str());
+        return;
+    }
+
     // 2026-05-08 S20+: per-engine risk-surveillance hook. The monitor reads
     //   the original tr_in (engine's emitted view) before any L2-stamping or
     //   cost-application below mutates it. v1 is logging-only; this call
