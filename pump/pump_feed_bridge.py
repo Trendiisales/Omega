@@ -375,7 +375,22 @@ if __name__ == "__main__":
         port = int(sys.argv[i+1]) if i+1 < len(sys.argv) and sys.argv[i+1].isdigit() else SERVE_PORT
         threading.Thread(target=_serve_thread, args=(port,), daemon=True).start()
     threading.Thread(target=_http_thread, args=(SCANNER_HTTP_PORT,), daemon=True).start()  # scanner web page
+    # S-2026-06-11: auto-reconnect supervisor. The bridge previously had NO
+    # reconnect -- an IBKR "Socket disconnect" killed main(), the process exited,
+    # and the daemon 7782/7783 threads (incl. the scanner web page) died with it,
+    # leaving http://<vps>:7783 down until a manual task restart. Re-call main()
+    # (which builds a fresh IB() + connect) on any disconnect so the scanner page
+    # and feed survive socket blips. Same class as the L2-bridge no-reconnect fix.
     try:
-        main()
+        while True:
+            try:
+                main()
+                break                      # clean return (shouldn't happen) -> stop
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                print(f"# [bridge] main() exited: {type(e).__name__}: {e} "
+                      f"-- reconnecting in 10s", flush=True)
+                time.sleep(10)
     except KeyboardInterrupt:
         pass
