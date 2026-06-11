@@ -4454,17 +4454,23 @@ static void init_engines(const std::string& cfg_path)
         g_pump_manager.be_floor_pct = 0.0;
         g_pump_manager.maxhold_bars = 5;      // 15-min backstop (was strict 3-min; cut winners)
         g_pump_manager.pyr_adds     = 0;
-        // Honest accounting: $5000 notional (shares=notional/entry) + 1%/side slip
-        // haircut baked into recorded PnL (matches the backtest cost model). The
-        // old 1-share zero-cost shadow printed +$1.72/46tr — unjudgeable. $5k makes
-        // the dollars real; edge % is size-independent so the config is too.
-        g_pump_manager.notional_usd = 5000.0;
+        // S-2026-06-11 ANTI-SLIPPAGE recalibration (operator: "we cannot be caught
+        // with the 5% issue"). Notional $5000->$1000 (smaller order walks the thin
+        // book far less) + LIQUIDITY GATE: only trade names priced >=$1 with bar
+        // $-volume >=$2M, so a $1k order is <0.05% of a bar's flow and the 2%
+        // trail exits near the quote. liq_calib.py over the FULL last-month
+        // universe (mover_scan.py: 173 names >100%): the gate RAISED net@2% to
+        // +$22.7k AND cut the @5%-slip worst case from -$37k to -$7.4k. The thin
+        // sub-$1 rockets (the slippage traps) are now skipped by design.
+        g_pump_manager.notional_usd = 1000.0;
         g_pump_manager.slip_pct     = 1.0;
+        g_pump_manager.min_dvol_usd = 2.0e6;   // bar close*volume floor
+        g_pump_manager.price_min    = 1.0;     // skip sub-$1 thin names
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
         printf("[OMEGA-INIT] PumpScalp manager: 3m-only gate100 trail2 NO-BE 15min-cap "
-               "$5000-notional slip1%%/side shadow (feed via OMEGA_PUMP_BRIDGE=1)\n");
+               "$1000-notional liq(p>=1,$vol>=2M) slip1%%/side shadow (feed via OMEGA_PUMP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory

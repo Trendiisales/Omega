@@ -112,6 +112,15 @@ public:
                                    // pump_*_bt.py backtest cost model (1% base, 2% stress).
                                    // Shadow PnL is now comparable to backtest + survives gate
                                    // honestly: an engine that can't beat 2% round-trip is dead.
+    // S-2026-06-11 ANTI-SLIPPAGE liquidity gate (operator: "we cannot be caught
+    // with the 5% issue"). On illiquid sub-$1 / thin names a $-order walks a
+    // paper-thin book + reopens through LULD halts => 5%+/side slip => the month
+    // sim flipped to -$185k@5k / -$37k@1k. liq_calib.py: requiring price>=$1 AND
+    // bar $-volume>=$2M (our $1k order is then <0.05% of a bar's flow, fills near
+    // the quote) RAISED net@2% to +$22.7k AND cut the @5% tail from -$37k to
+    // -$7.4k. Only trade names deep enough that the 2% trail exits cleanly.
+    double MIN_DVOL_USD = 0.0;     // entry requires close*bar_volume >= this ($ liquidity floor; 0=off)
+    double PRICE_MIN    = 0.0;     // entry requires close >= this (skip ultra-thin sub-$X; 0=off)
 
     bool   enabled      = true;
     bool   shadow_mode  = true;    // gated shadow — AH fills + borrow + dud-rate all unmeasured
@@ -222,6 +231,8 @@ public:
         if (entry_permit && !entry_permit()) return;     // sibling TF holds this symbol (S-2026-06-11)
         if (m_day_open<=0 || (m_run_high/m_day_open - 1.0)*100.0 < DAY_GATE_PCT) return;  // gate
         if (idx < LB + 21) return;
+        if (PRICE_MIN > 0 && c < PRICE_MIN) return;            // anti-slippage: skip sub-$X thin names
+        if (MIN_DVOL_USD > 0 && c*v < MIN_DVOL_USD) return;    // anti-slippage: bar $-volume floor
 
         // volume-regression filter: VWAP + slope must agree with the trade direction
         const double vwap = _vwap(), slope = _slope();

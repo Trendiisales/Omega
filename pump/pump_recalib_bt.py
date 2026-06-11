@@ -91,7 +91,7 @@ def usd(entry, exit_px, notional, slip_pct):
 
 
 def run_day(bars, gate, slip_pct, notional, trail, timecap, be_arm, be_floor,
-            hard, grace):
+            hard, grace, min_dvol=0.0, price_min=0.0):
     if not bars: return []
     day_open = bars[0][1]
     run_high = 0.0; cum_pv = cum_v = 0.0; closes = []
@@ -126,6 +126,8 @@ def run_day(bars, gate, slip_pct, notional, trail, timecap, be_arm, be_floor,
         if pos or day_open <= 0: continue
         if (run_high/day_open-1)*100 < gate: continue
         if len(closes) < MIN_WARMUP: continue
+        if price_min > 0 and c < price_min: continue          # liquidity: skip ultra-thin sub-$X
+        if min_dvol > 0 and c*v < min_dvol: continue          # liquidity: bar $-volume floor
         vwap = cum_pv/cum_v if cum_v > 0 else 0
         if vwap > 0 and not (c > vwap and slope(closes) >= SLOPE_MIN): continue
         c_lb = closes[-1-LB] if len(closes) > LB else None
