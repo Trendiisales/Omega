@@ -344,6 +344,7 @@ static void on_tick_us500(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_sp.set_risk_off(omega::index_risk_off());
         g_idxsess_sp.on_tick(bid, ask, now_ms_isp);
+        g_idx_bear_short_sp.on_tick(bid, ask, now_ms_isp); // 2026-06-12 risk-off SHORT breakdown (shadow); SPX2022 cross-validated; callback via on_close_cb
         g_overnight_spx.on_tick(bid, ask, now_ms_isp);   // overnight drift US500 (trend>SMA50, shadow)
         g_engine_heartbeat.pulse("IndexSession_US500");
     }
@@ -1282,6 +1283,7 @@ static void on_tick_nas100(
         g_fvgcont_nas30.on_tick(bid, ask, now_ms_isn);   // FVG continuation 30m -- 2026-06-09 sweep BEST
         g_peachy_orb_nas.on_tick(bid, ask, now_ms_isn);  // Peachy one-candle ORB-retest (shadow)
         g_nas_orb_retrace.on_tick(bid, ask, now_ms_isn); // 2026-06-07 ORB retrace+RUNNER @US open (shadow); callback via on_trade_record
+        g_idx_bear_short_nas.on_tick(bid, ask, now_ms_isn); // 2026-06-12 risk-off SHORT breakdown on bad days (shadow); callback via on_close_cb
         g_monday_nas.on_tick(bid, ask, now_ms_isn);      // 2026-06-07 Monday risk-on calendar (shadow)
         g_overnight_nas.on_tick(bid, ask, now_ms_isn);   // overnight drift (shadow)
         g_connors_nas.on_tick(bid, ask, now_ms_isn);     // RSI2 dip-buy (shadow)

@@ -54,12 +54,16 @@ public:
                                    // net + best PF (42) vs unlimited chop (PF18) or cap1
                                    // (kills edge, $1.7k). 0 = unlimited (old behaviour).
     bool   verbose      = false;
+    bool   enabled      = true;    // 2026-06-12 KILL-SWITCH: false => ignore all feed, no
+                                   // new pump entries arm (stop-bleed). Open sim positions
+                                   // still close via on_price. Flip in engine_init.
     PumpScalpEngine::TradeRecordCallback on_trade_record;   // one sink for all engines
 
     struct Cell { PumpScalpEngine e3; int64_t last_ms = 0; };
 
     void on_bar(const std::string& sym, int tf_sec,
                 double o, double h, double l, double c, double v, int64_t ts_ms, bool is_seed=false) {
+        if (!enabled) return;        // disabled -> no cells built, no entries arm
         if (tf_sec != 180) return;   // 3m-only (bridge may replay old multi-TF seeds)
         Cell& t = ensure(sym, ts_ms);
         t.e3.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);

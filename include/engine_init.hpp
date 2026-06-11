@@ -4453,6 +4453,10 @@ static void init_engines(const std::string& cfg_path)
         // survives 1-2%/side slip. Registers with g_open_positions so its trades
         // show in the live_trades GUI panel + ring the entry bell. SHADOW until
         // live fills + dud-rate are measured.
+        g_pump_manager.enabled      = false;  // 2026-06-12 OPERATOR KILL: draining -- disabled
+                                              // until a solution is found. No new pump entries
+                                              // arm (on_bar no-ops). Re-enable only after a
+                                              // documented fix + re-validation.
         g_pump_manager.shadow_mode  = true;
         g_pump_manager.day_gate_pct = 100.0;
         // S-2026-06-11 RECALIBRATION (operator model + full lever sweep,
@@ -4531,6 +4535,109 @@ static void init_engines(const std::string& cfg_path)
         });
         printf("[OMEGA-INIT] GoldOrbRetrace XAUUSD: shadow=true ORB30(08:20-08:50 ET) "
                "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided\n");
+
+        // ── GoldPanicBounce (XAUUSD "big reversal day" V-bounce) ───────────────
+        // 2026-06-12 deep-dive (backtest/panic_bounce_bt.cpp, H1, cost-incl 0.37):
+        //   long-only capitulation bounce -- ALWAYS-ON monitor recomputes rolling
+        //   drawdown depth in ATR each H1 bar; arm at depth>=DROP_K ATR + a TURN
+        //   (bullish bar reclaims prior high after a red bar); exit = aggressive
+        //   chandelier ATR-trail (NO TP, ride the V), structural selloff-low stop.
+        //   XAU 24-26 drop8/lb250/tr4.5: PF 1.97 net +967pt n=113, BOTH halves+
+        //   (1.82/2.01), robust ridge drop{4,6,8}/lb250/tr4.5 all both-halves+ AND
+        //   2022-bear+ (OOS PF 1.08). Velocity gate HURTS gold (depth, not speed).
+        //   Index version FAILED cross-instrument/bear -> NOT built. Same family as
+        //   CapitulationEngine (PF1.82 equities). CAVEAT: low-win fat-tail, bull-
+        //   dominated corpus though bear passed -> SHADOW, observe before live size.
+        g_gold_panic_bounce.shadow_mode = true;     // prove on shadow before any live size
+        g_gold_panic_bounce.enabled     = true;     // shadow=true makes it sim-only
+        g_gold_panic_bounce.DROP_K      = 8.0;
+        g_gold_panic_bounce.DD_LOOKBACK = 250;
+        g_gold_panic_bounce.TRAIL_ATR   = 4.5;
+        g_gold_panic_bounce.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_gold_panic_bounce.seed_from_h1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
+        g_open_positions.register_source("GoldPanicBounce", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_gold_panic_bounce.m_pos;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "XAUUSD"; s.engine = "GoldPanicBounce";
+                s.side = "LONG"; s.size = p.size;
+                s.entry = p.entry; s.sl = p.init_stop; s.tp = 0.0;
+                s.entry_ts = p.entry_ts / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] GoldPanicBounce XAUUSD: shadow=true drop>=8ATR(lb250) "
+               "TURN-entry chandelier-trail(4.5xATR) NO-TP long-only\n");
+
+        // ── IndexBearShort (NAS100 risk-off SHORT for bad days) ────────────────
+        // 2026-06-12 deep-dive (backtest/index_bear_short_bt.cpp, H1, cost-incl):
+        //   The long bounce-catcher FAILS on indices (fights the downtrend). The
+        //   money on bad days is SHORT: sustained-bear gate (price<EMA200, EMA200
+        //   falling over 100 bars, EMA50<EMA200) + Donchian-48 breakdown + FIXED
+        //   2R TP (a trail gives it back on the bear counter-rally: PF0.87 vs
+        //   fixed-TP 1.60). NAS 2022 bear PF 1.60 +1623pt n=18 BOTH halves+
+        //   (1.70/1.50); regime gate keeps it ~flat in the 24-26 bull (pooled
+        //   +702 vs ungated -9025). CAVEAT: ONE bear instrument so far -- SPX/GER
+        //   2022 cross-validation PENDING -> SHADOW only, NAS100 instance first.
+        g_idx_bear_short_nas.symbol      = "NAS100";
+        g_idx_bear_short_nas.engine_name = "IndexBearShort";
+        g_idx_bear_short_nas.shadow_mode = true;     // prove on shadow + cross-instrument before any live size
+        g_idx_bear_short_nas.enabled     = true;
+        g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
+        g_idx_bear_short_nas.lot         = 1.0;
+        g_idx_bear_short_nas.USE_RISKOFF_GATE = false;  // price-structure gate is the validated one; flip on once VIX/credit feed trusted
+        g_idx_bear_short_nas.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_idx_bear_short_nas.seed_from_h1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_H1.csv"));
+        g_open_positions.register_source("IndexBearShort", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_idx_bear_short_nas.m_pos;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "NAS100"; s.engine = "IndexBearShort";
+                s.side = "SHORT"; s.size = p.size;
+                s.entry = p.entry; s.sl = p.stop; s.tp = p.tp;
+                s.entry_ts = p.entry_ts / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] IndexBearShort NAS100: shadow=true sustained-bear-gate "
+               "Donchian48-breakdown FIXED-2R-TP SHORT-only (bad-day engine)\n");
+
+        // ── IndexBearShort (US500 instance — cross-validated SPX 2022) ─────────
+        // 2026-06-12: same class, US500 symbol. SPX 2022 cross-validation PASSED
+        // (PF 1.84 net +532pt both-halves+ 2.60/1.32 on the real -25% SPX bear)
+        // -> two independent index bears now agree (NAS2022 1.60 + SPX2022 1.84),
+        // GER40-artifact/single-feed caveat cleared. Still SHADOW.
+        g_idx_bear_short_sp.symbol      = "US500.F";
+        g_idx_bear_short_sp.engine_name = "IndexBearShort";
+        g_idx_bear_short_sp.shadow_mode = true;
+        g_idx_bear_short_sp.enabled     = true;
+        g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts
+        g_idx_bear_short_sp.lot         = 1.0;
+        g_idx_bear_short_sp.USE_RISKOFF_GATE = false;
+        g_idx_bear_short_sp.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_idx_bear_short_sp.seed_from_h1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_US500_H1.csv"));
+        g_open_positions.register_source("IndexBearShortSP", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_idx_bear_short_sp.m_pos;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "US500.F"; s.engine = "IndexBearShort";
+                s.side = "SHORT"; s.size = p.size;
+                s.entry = p.entry; s.sl = p.stop; s.tp = p.tp;
+                s.entry_ts = p.entry_ts / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] IndexBearShort US500: shadow=true sustained-bear-gate "
+               "Donchian48-breakdown FIXED-2R-TP SHORT-only (SPX2022 cross-validated)\n");
 
         // ── NasOrbRetrace (NAS100, same ORB retrace+RUNNER, US cash open) ──────
         // 2026-06-07 deep-dive: the gold ORB mechanic transfers to NAS at the US
