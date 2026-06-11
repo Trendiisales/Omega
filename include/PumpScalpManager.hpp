@@ -49,6 +49,10 @@ public:
                                    // (worst in every trail row); 15-min trail-to-turn nets more
                                    // on BOTH monster + non-monster names (cap5 > cap1 each trail).
     int    max_symbols  = 12;      // cap concurrent pumps tracked
+    int    max_entries_per_day = 2; // RE-ENTRY CAP per name/session (chop-bleed guard).
+                                   // reentry_cap_bt.py (16-day basket): cap2 keeps 84% of
+                                   // net + best PF (42) vs unlimited chop (PF18) or cap1
+                                   // (kills edge, $1.7k). 0 = unlimited (old behaviour).
     bool   verbose      = false;
     PumpScalpEngine::TradeRecordCallback on_trade_record;   // one sink for all engines
 
@@ -143,6 +147,7 @@ private:
         e.MIN_DVOL_USD = min_dvol_usd;
         e.PRICE_MIN    = price_min;
         e.MAXHOLD_SEC  = maxhold_bars * 180;   // time-stop (5 bars = 15min); trail exits on the turn first
+        e.MAX_ENTRIES_PER_DAY = max_entries_per_day;   // re-entry cap (chop-bleed guard)
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;
         e.on_trade_record = on_trade_record;

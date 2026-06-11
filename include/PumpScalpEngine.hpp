@@ -121,6 +121,13 @@ public:
     // -$7.4k. Only trade names deep enough that the 2% trail exits cleanly.
     double MIN_DVOL_USD = 0.0;     // entry requires close*bar_volume >= this ($ liquidity floor; 0=off)
     double PRICE_MIN    = 0.0;     // entry requires close >= this (skip ultra-thin sub-$X; 0=off)
+    // S-2026-06-11 RE-ENTRY CAP: max entries per name per session. Live shadow
+    // showed CHOW entered 4x (+50,-32,-38,-39 = re-entry chop bleed). Backtest
+    // (16-day basket, deployed cfg, reentry_cap_bt.py): unlimited=57tr net$13.6k
+    // PF18; cap1=10tr $1.7k PF9 (TOO TIGHT — monster continuations need a re-entry,
+    // kills the edge); cap2=18tr $11.5k PF42 = keeps 84% of net, cuts the chop
+    // bleed, best PF. 0 = unlimited (old leaky behaviour).
+    int    MAX_ENTRIES_PER_DAY = 2;
 
     bool   enabled      = true;
     bool   shadow_mode  = true;    // gated shadow — AH fills + borrow + dud-rate all unmeasured
@@ -228,6 +235,7 @@ public:
 
         if (is_seed) return;                             // SEED: warm only — never enter on history
         if (pos.active || !enabled) return;              // exits are on_price's job
+        if (MAX_ENTRIES_PER_DAY > 0 && m_entries_today >= MAX_ENTRIES_PER_DAY) return;  // re-entry cap (chop-bleed guard)
         if (entry_permit && !entry_permit()) return;     // sibling TF holds this symbol (S-2026-06-11)
         if (m_day_open<=0 || (m_run_high/m_day_open - 1.0)*100.0 < DAY_GATE_PCT) return;  // gate
         if (idx < LB + 21) return;
@@ -264,7 +272,7 @@ private:
     void _new_day(int64_t day) {                          // single source of session reset
         m_day=day; m_day_open=0; m_run_high=0; m_hod=-1e18; m_hod_idx=-1;
         m_bars.clear(); m_ema9=0; m_ema_init=false;
-        m_cum_pv=0; m_cum_v=0;
+        m_cum_pv=0; m_cum_v=0; m_entries_today=0;        // reset re-entry cap each session
     }
 
     // US-session day, rolled at 08:00 UTC (4am EDT / 3am EST — always inside the
@@ -295,6 +303,7 @@ private:
         pos = Position{}; pos.active=true; pos.dir=dir;
         pos.size_each = (NOTIONAL_USD > 0 && px > 0) ? NOTIONAL_USD/px : lot;
         pos.units = {px}; pos.peak=px; pos.trough=px; pos.last_add=px; pos.entry_ms=ts_ms;
+        ++m_entries_today;                                // re-entry cap: count this session entry
         if (verbose) printf("[%s] %s %s entry=%.4f gate=%.0f%%\n", engine_name.c_str(),
             symbol.c_str(), dir>0?"LONG":"SHORT", px, (m_run_high/m_day_open-1)*100);
     }
@@ -321,6 +330,7 @@ private:
 
     std::deque<Bar> m_bars;
     int64_t m_day=-1; double m_day_open=0, m_run_high=0, m_hod=-1e18; int m_hod_idx=-1;
+    int m_entries_today=0;                               // re-entry cap counter (reset in _new_day)
     double  m_ema9=0; bool m_ema_init=false;
     double  m_cum_pv=0, m_cum_v=0;   // intraday VWAP accumulators
 };

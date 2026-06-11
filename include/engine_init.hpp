@@ -4471,6 +4471,11 @@ static void init_engines(const std::string& cfg_path)
         g_pump_manager.be_floor_pct = 0.0;
         g_pump_manager.maxhold_bars = 5;      // 15-min backstop (was strict 3-min; cut winners)
         g_pump_manager.pyr_adds     = 0;
+        // S-2026-06-11 RE-ENTRY CAP: live shadow showed CHOW entered 4x (+50,-32,
+        // -38,-39 = re-entry chop bleed). reentry_cap_bt.py (16-day basket, deployed
+        // cfg): cap2 = keeps 84% of net + best PF (42) vs unlimited (PF18, chop) or
+        // cap1 (kills the edge: $13.6k->$1.7k -- monster continuations need a re-add).
+        g_pump_manager.max_entries_per_day = 2;
         // S-2026-06-11 ANTI-SLIPPAGE recalibration (operator: "we cannot be caught
         // with the 5% issue"). Notional $5000->$1000 (smaller order walks the thin
         // book far less) + LIQUIDITY GATE: only trade names priced >=$1 with bar
