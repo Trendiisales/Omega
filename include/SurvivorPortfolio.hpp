@@ -493,7 +493,16 @@ private:
         const char* why = sl_hit ? "SL_HIT" : (tp_hit ? "TP_HIT" : "TIMEOUT");
         const double gross_pts = (st.pos_side > 0) ? (exit_px - st.pos_entry)
                                                    : (st.pos_entry - exit_px);
-        const double gross_usd = gross_pts * cfg.tick_usd_per_lot * cfg.lot;
+        const double gross_usd = gross_pts * cfg.tick_usd_per_lot * cfg.lot;  // engine-internal USD (stats/log only)
+        // S-2026-06-11 DOUBLE-MULTIPLY FIX: the ledger (trade_lifecycle.hpp Step 1)
+        // multiplies tr.pnl by tick_value_multiplier(sym). cfg.tick_usd_per_lot is
+        // an exact local copy of that multiplier (XAU 100, USDJPY 667, GER40 1.10,
+        // USTEC 20), so emitting gross_usd into tr.pnl made the ledger DOUBLE-
+        // multiply every cell -- USDJPY showed $2775.88 vs true $4.46, XAU cells
+        // 100x, USTEC 20x, GER40 +10%. Emit RAW price_pts * lot; the ledger applies
+        // the contract size. (Same gotcha class fixed earlier in GoldOversold/
+        // GoldSeasonal/GSP -- SurvivorPortfolio was missed.)
+        const double gross_raw = gross_pts * cfg.lot;
         // Build TradeRecord
         omega::TradeRecord tr;
         tr.symbol     = cfg.symbol;
@@ -503,7 +512,7 @@ private:
         tr.exitPrice  = exit_px;
         tr.sl         = st.pos_sl;
         tr.size       = cfg.lot;
-        tr.pnl        = gross_usd;
+        tr.pnl        = gross_raw;   // RAW pts*lot -- ledger applies tick_value_multiplier
         tr.mfe        = st.pos_mfe;
         tr.entryTs    = st.pos_entry_ts;
         tr.exitTs     = now_s;

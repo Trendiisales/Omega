@@ -238,6 +238,44 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         return;
     }
 
+    // ?? PNL DOUBLE-MULTIPLY GUARD (S-2026-06-11) ????????????????????????????????
+    // The ledger is the SINGLE place allowed to scale raw price-points to USD
+    // (Step 1 below multiplies tr.pnl by tick_value_multiplier). Engines MUST emit
+    // tr.pnl as RAW price_pts * lot. Recurring bug class: an engine ALSO pre-
+    // multiplies by the contract size, so the ledger double-multiplies and the
+    // trade shows ~mult? too big -- XAUUSD 100?, USTEC 20?, USDJPY ~623?, FX
+    // 100000?. Surfaced repeatedly (GoldOversold/GoldSeasonal/GSP; 2026-06-11
+    // SurvivorPortfolio USDJPY displayed $2775.88 vs true $4.46).
+    //
+    // This central net catches the CATASTROPHIC (mult>=5) cases for ALL engines,
+    // present and future, using only on-record prices -- independent of any per-
+    // engine fix. Signature: emitted |pnl| ? |exit-entry| * size * mult (a correct
+    // engine emits ratio?1; a double emits ratio?mult). On a hit: divide pnl back
+    // to RAW so Step 1 yields the correct USD, and emit a P1 so the offending
+    // engine gets a permanent SOURCE fix (this net is a backstop, not the fix).
+    // mfe/mae are zeroed on a hit (record-only fields; their unit can't be trusted
+    // once the emitter is known buggy). The small-mult cases (GER40 1.10) are
+    // BELOW noise/pyramid tolerance and are NOT caught here -- they must be fixed
+    // at the engine. PARTIAL_1R is excluded (handled on its own path above).
+    {
+        const double mult_g      = tick_value_multiplier(tr.symbol);
+        const double price_move  = std::fabs(tr.exitPrice - tr.entryPrice);
+        const double expected_raw = price_move * tr.size;
+        if (mult_g >= 5.0 && expected_raw > 1e-9 && tr.exitReason != "PARTIAL_1R") {
+            const double ratio = std::fabs(tr.pnl) / expected_raw;
+            if (ratio >= mult_g * 0.7 && ratio <= mult_g * 1.4) {
+                std::fprintf(stderr,
+                    "[PNL-DOUBLE-MULT] P1 %s %s pnl=%.4f appears pre-multiplied by %.1f "
+                    "(expected_raw=%.6f ratio=%.1f) -- engine must emit RAW pts*lot. "
+                    "Auto-correcting to raw; FIX THE ENGINE SOURCE.\n",
+                    tr.engine.c_str(), tr.symbol.c_str(), tr.pnl, mult_g,
+                    expected_raw, ratio);
+                tr.pnl /= mult_g;
+                tr.mfe = 0.0; tr.mae = 0.0;
+            }
+        }
+    }
+
     // Step 1: Scale raw price-point P&L to USD using per-instrument contract size.
     // This MUST happen before apply_realistic_costs so slippage is computed in USD.
     // Previously apply_realistic_costs ran first with raw price values, causing
