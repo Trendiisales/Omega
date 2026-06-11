@@ -2539,7 +2539,13 @@ static void init_engines(const std::string& cfg_path)
         g_trendline_break_jpy.symbol      = "USDJPY";
         g_trendline_break_jpy.engine_name = "TrendLineBreakJPY";
         g_trendline_break_jpy.shadow_mode = true;
-        g_trendline_break_jpy.enabled     = true;   // SHADOW (sim-only)
+        // DISABLED 2026-06-11 (operator: kill the open USDJPY trade, not viable).
+        // Was the only open USDJPY position on the live dashboard (stale scratch,
+        // SL-only/no-TP runner). Disabling stops new USDJPY trendline entries and
+        // drops the open virtual position on next restart (shadow = no broker
+        // order to close). Sister TrendLineBreakGBP left enabled (operator scoped
+        // this to USDJPY); revisit if the GBP scratch is also unwanted.
+        g_trendline_break_jpy.enabled     = false;  // was: true (SHADOW sim-only)
         printf("[OMEGA-INIT] TrendLineBreakJPY: shadow=%d win=%d min_touch=%d\n",
                (int)g_trendline_break_jpy.shadow_mode, g_trendline_break_jpy.p.window,
                g_trendline_break_jpy.p.min_touch);
