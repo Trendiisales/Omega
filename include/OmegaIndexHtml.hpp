@@ -387,13 +387,31 @@ setInterval(poll,1000);poll();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=30;
-function parseShadow(txt){var out=[];var ls=txt.split('\n');
- for(var i=0;i<ls.length;i++){var L=ls[i];if(!L||L[0]==='t')continue;var f=L.split(',');if(f.length<11)continue;
-  var ts=parseInt(f[0],10);if(!ts)continue;
-  if(f[1]==='__BOOT__'||f[3]==='boot_writetest')continue;
-  out.push({ts:ts+Math.max(0,parseInt(f[9],10)||0),sym:f[1],side:f[2],eng:f[3],pnl:parseFloat(f[6])||0,
-   mfe:parseFloat(f[7])||0,mae:parseFloat(f[8])||0,hold:parseInt(f[9],10)||0,reason:(f[10]||'').trim(),
-   spread:parseFloat(f[11])||0,lat:parseFloat(f[12])||0});}
+function parseShadow(txt){
+ /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
+    12-column layout that never matched the real 41-column file (col 0 is
+    trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
+    analytics showed "$0 / no shadow closes". Map columns by header name. */
+ var out=[];var ls=txt.split('\n');if(ls.length<2)return out;
+ var hdr=ls[0].split(','),ix={};
+ for(var h=0;h<hdr.length;h++)ix[hdr[h].trim()]=h;
+ function need(n){return ix[n]!==undefined;}
+ if(!need('exit_ts_unix')||!need('symbol')||!need('engine')||!need('net_pnl'))return out;
+ function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
+ for(var i=1;i<ls.length;i++){var L=ls[i];if(!L)continue;var f=L.split(',');
+  if(f.length<hdr.length-2)continue;
+  var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
+  var sym=unq(f[ix.symbol]),eng=unq(f[ix.engine]);
+  if(sym==='__BOOT__'||eng==='boot_writetest')continue;
+  var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
+  out.push({ts:ts,sym:sym,side:side,eng:eng,
+   pnl:parseFloat(f[ix.net_pnl])||0,
+   mfe:ix.mfe!==undefined?(parseFloat(f[ix.mfe])||0):0,
+   mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
+   hold:ix.hold_sec!==undefined?(parseInt(f[ix.hold_sec],10)||0):0,
+   reason:ix.exit_reason!==undefined?unq(f[ix.exit_reason]):'',
+   spread:ix.spread_at_entry!==undefined?(parseFloat(f[ix.spread_at_entry])||0):0,
+   lat:ix.latency_ms!==undefined?(parseFloat(f[ix.latency_ms])||0):0});}
  out.sort(function(a,b){return a.ts-b.ts;});return out;}
 function winRows(){if(WIN>=9999)return ROWS;var cut=Date.now()/1000-WIN*86400;return ROWS.filter(function(r){return r.ts>=cut;});}
 
@@ -411,7 +429,8 @@ function drawEquity(){var cv=el('eqc'),ctx=cv.getContext('2d');
  [lo,0,hi].forEach(function(g){ctx.moveTo(0,Y(g));ctx.lineTo(W,Y(g));});ctx.stroke();
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText(fmt$(hi),2,Y(hi)+9);ctx.fillText('$0',2,Y(0)-3);
- ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
+)OMEGAD1"
+R"OMEGAD2( ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.strokeStyle='#2EBD85';ctx.lineWidth=1.4;ctx.stroke();
  ctx.lineTo(X(cum.length-1),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();
  ctx.fillStyle='rgba(46,189,133,0.08)';ctx.fill();
@@ -423,8 +442,7 @@ function drawEquity(){var cv=el('eqc'),ctx=cv.getContext('2d');
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
-)OMEGAD1"
-R"OMEGAD2(function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
+function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/US500|USTEC|NAS|DJ30|GER|UK100|ESTX|US30/i.test(sym))return 'INDEX';
  if(/USD|EUR|GBP|AUD|NZD|JPY/.test(sym)&&sym.length===6)return 'FX';
  if(/XAG|SILVER/i.test(sym))return 'SILVER';
@@ -601,12 +619,13 @@ loadCsv();setInterval(loadCsv,120000);
 drawBlot();setInterval(drawBlot,20000);
 
 [['w7',7],['w30',30],['wall',9999]].forEach(function(b){el(b[0]).onclick=function(){WIN=b[1];
- ['w7','w30','wall'].forEach(function(x){el(x).className=x===b[0]?'on':'';});redrawAll();};});
+)OMEGAD2"
+R"OMEGAD3( ['w7','w30','wall'].forEach(function(x){el(x).className=x===b[0]?'on':'';});redrawAll();};});
 el('mmsym').onchange=drawMM;
 window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
 </html>
-)OMEGAD2"
+)OMEGAD3"
 ;
 } // namespace omega_gui
