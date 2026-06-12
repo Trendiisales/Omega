@@ -65,10 +65,14 @@ public:
 
     struct Cell { PumpScalpEngine e3; int64_t last_ms = 0; };
 
-    void on_bar(const std::string& sym, int tf_sec,
+    // 2026-06-12b: param renamed bar_tf_sec (was tf_sec -- MSVC C4458 shadow = build
+    // break) AND the filter now compares against the INSTANCE tf_sec member instead of
+    // hardcoded 180 (the hardcode silently dropped every 5m bar for the big-cap
+    // instance -- BigCapMomo would never have seen a bar).
+    void on_bar(const std::string& sym, int bar_tf_sec,
                 double o, double h, double l, double c, double v, int64_t ts_ms, bool is_seed=false) {
         if (!enabled) return;        // disabled -> no cells built, no entries arm
-        if (tf_sec != 180) return;   // 3m-only (bridge may replay old multi-TF seeds)
+        if (bar_tf_sec != tf_sec) return;  // accept only this instance's TF (bridge may replay old multi-TF seeds)
         Cell& t = ensure(sym, ts_ms);
         t.e3.on_entry_bar(o, h, l, c, v, ts_ms, is_seed);
     }
