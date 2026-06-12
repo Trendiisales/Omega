@@ -4355,7 +4355,11 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas.symbol      = "NAS100";
         g_fvgcont_nas.engine_name = "FvgContinuation";
         g_fvgcont_nas.shadow_mode = true;     // paper label (whole system is SHADOW); VISIBLE via register_source below (2026-06-08). Observe incl bear tape; do NOT real-size until bear-validated.
-        g_fvgcont_nas.enabled     = true;
+        g_fvgcont_nas.enabled     = false;  // ⛔ TOMBSTONED 2026-06-13 (operator cull of consistent
+                                            // live losers): n=11 net -$266 PF 0.65 WR 27% in live
+                                            // shadow -- backtest validation (2-dataset 15m) did NOT
+                                            // translate. Family total -$649/19 trades. Re-eval only
+                                            // with a documented live-vs-backtest divergence root cause.
         g_fvgcont_nas.verbose     = true;     // log entries + once-per-bar reject reasons
         g_fvgcont_nas.lot         = 1.0;
         g_fvgcont_nas.TRENDN      = 288;   // 2026-06-09 backtest: 15m wants 3-day trend gate (PF1.27->1.41, ret/DD1.86->3.38, maxDD halved, both-halves+). 10m stays OFF (gate hurts it).
@@ -4382,7 +4386,7 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas10.engine_name = "FvgCont10m";
         g_fvgcont_nas10.HTF_SEC     = 600;    // 10-minute FVG
         g_fvgcont_nas10.shadow_mode = true;
-        g_fvgcont_nas10.enabled     = true;
+        g_fvgcont_nas10.enabled     = false;  // ⛔ TOMBSTONED 2026-06-13 with family (see 15m note).
         g_fvgcont_nas10.verbose     = true;   // log entries + once-per-bar reject reasons
         g_fvgcont_nas10.lot         = 1.0;
         g_fvgcont_nas10.init();
@@ -4406,7 +4410,9 @@ static void init_engines(const std::string& cfg_path)
         g_fvgcont_nas30.engine_name = "FvgCont30m";
         g_fvgcont_nas30.HTF_SEC     = 1800;   // 30-minute FVG
         g_fvgcont_nas30.shadow_mode = true;
-        g_fvgcont_nas30.enabled     = true;
+        g_fvgcont_nas30.enabled     = false;  // ⛔ TOMBSTONED 2026-06-13: n=8 net -$383 PF 0.27 WR 12%
+                                              // live (sweep WINNER PF1.98 backtest -- worst live
+                                              // translation in the book; -$417 family bleed on 06-12 alone).
         g_fvgcont_nas30.verbose     = true;
         g_fvgcont_nas30.lot         = 1.0;
         g_fvgcont_nas30.init();
@@ -4576,7 +4582,14 @@ static void init_engines(const std::string& cfg_path)
                                                // deployed gate5+trail4 1.83/1.65/1.53/1.32. gate3
                                                // tripled trades but died by 30bps (PF1.28) -- skipped.
                                                // Tight (<=2.5%) trails die by 20bps. Moves need room.
-        g_bigcap_momo.volx         = 3.0;      // require a real volume surge on the ignition bar
+        g_bigcap_momo.volx         = 0.0;      // S-2026-06-13k OFF live: bridge bar volume = deltas
+                                               // of delayed-feed cumulative ticker.volume -- spiky/
+                                               // unreliable units vs the sweep's clean Yahoo bars
+                                               // (observed absurd $bn-scale bar dvol). Same call as
+                                               // the 2026-06-10 pump VOLX kill. Selectivity remains:
+                                               // gate4% + ignition 3%/3-bars + strength 0.60.
+                                               // DIVERGENCE FROM VALIDATED CONFIG -- EngineGate
+                                               // shadow stats are the revalidation.
         g_bigcap_momo.be_arm_pct   = 0.0;
         g_bigcap_momo.be_floor_pct = 0.0;
         g_bigcap_momo.maxhold_bars = 48;       // 48 x 5m = 4h backstop
@@ -4584,7 +4597,12 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.max_entries_per_day = 2;
         g_bigcap_momo.notional_usd = 1000.0;
         g_bigcap_momo.slip_pct     = 0.15;     // big-cap realistic (vs micro 1.0%)
-        g_bigcap_momo.min_dvol_usd = 100.0e6;  // LIQUIDITY: bar close*vol >= $100M (large/mid-cap)
+        g_bigcap_momo.min_dvol_usd = 0.0;      // S-2026-06-13k ZERO-TRADES ROOT CAUSE: $100M per
+                                               // 5-MINUTE bar = $12B/day turnover -- virtually no
+                                               // stock passes; the validated sweep (bigcap_scalp_
+                                               // sweep.py) had NO dvol gate at all. Liquidity is
+                                               // already enforced upstream by the scanner (cap
+                                               // >=$2B + price>=$10 + TOP_PERC_GAIN universe).
         g_bigcap_momo.price_min    = 10.0;     // not a penny stock
         g_bigcap_momo.verbose      = true;
         g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
