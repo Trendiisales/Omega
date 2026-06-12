@@ -1715,6 +1715,17 @@ static void init_engines(const std::string& cfg_path)
                g_xau_turtle_d1.p.tp_atr_mult, g_xau_turtle_d1.p.hold_max_days);
         fflush(stdout);
 
+        // ── Shared price-based regime brain (RegimeState / gold_regime()) ─────
+        //   2026-06-12: warm-seed the gold bull/bear classifier so it is queryable
+        //   on the first live tick (else ~13 days cold-warm). Fed per-tick in
+        //   tick_gold.hpp; queried by long-only gold engines to skip longs in a
+        //   sustained bear. Validated: gold_regime_gate_bt.cpp (XAU H1 2020-23) --
+        //   H1-sustained-bear gate beat D1-slope (which HURT) and D1-sustained-bear.
+        omega::gold_regime().seed_from_h1_csv("phase1/signal_discovery/tsmom_warmup_H1.csv");
+        printf("[OMEGA-INIT] gold_regime() brain: regime=%s warm=%d (long-only gold engines gate on long_blocked())\n",
+               omega::gold_regime().regime_name(), (int)omega::gold_regime().warm());
+        fflush(stdout);
+
         // ── XauStopRunD1Engine (2026-05-20) -- 5d stop-run reversal long
         //   Resurrection of S50 X2 retired StopRunReversal. Re-tested 2yr daily:
         //     FUL Sh=6.34 at 10bps (IS=7.06 OOS=6.14), n=29, WR=65.5%.

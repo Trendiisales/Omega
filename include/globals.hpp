@@ -157,6 +157,7 @@ static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace
 static omega::GoldOrbRetraceEngine g_nas_orb_retrace;  // NAS100 ORB retrace+RUNNER @US open -- 2026-06-07 (PF1.87 all-3yr+, 3x-robust); 2nd NAS edge vs PeachyOrb retest, shadow
 #include "GoldPanicBounceEngine.hpp"
 static omega::GoldPanicBounceEngine g_gold_panic_bounce; // XAUUSD "big reversal day" V-bounce: deep-drawdown(>=8ATR)+turn -> long, chandelier-trail no-TP -- 2026-06-12 (PF1.97 both-halves+, 2022-bear PF1.08+), shadow
+#include "RegimeState.hpp"   // 2026-06-12: shared price-based bull/bear regime brain (gold_regime()), fed in tick_gold.hpp, queried by long-only gold engines
 #include "IndexBearShortEngine.hpp"
 static omega::IndexBearShortEngine g_idx_bear_short_nas; // NAS100 risk-off SHORT: sustained-bear gate + Donchian breakdown + fixed 2R TP -- 2026-06-12 (NAS2022 PF1.60 both-halves+, bull-gated +702), shadow
 static omega::IndexBearShortEngine g_idx_bear_short_sp;  // US500 risk-off SHORT (same class) -- 2026-06-12 cross-validated SPX2022 PF1.84 both-halves+ (2.60/1.32), shadow

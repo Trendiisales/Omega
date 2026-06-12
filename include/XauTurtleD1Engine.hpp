@@ -47,6 +47,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
 #include "PortfolioGuard.hpp"  // S51: concurrency cap
+#include "RegimeState.hpp"     // 2026-06-12: shared price-based bull/bear gate
 
 namespace omega {
 
@@ -171,6 +172,12 @@ struct XauTurtleD1Engine {
                 && atr_pre > 0.0 && prior_high > 0.0
                 && (ask - bid) <= p.max_spread
                 && bar_close > prior_high
+                && !omega::gold_regime().long_blocked()  // 2026-06-12 regime gate:
+                                                         //   skip Donchian-breakout longs in a sustained
+                                                         //   gold bear (close<EMA200 + EMA200 falling +
+                                                         //   EMA50<EMA200). Backtest gold_regime_gate_bt
+                                                         //   (XAU H1 2020-23): net +141->+153, H2/bear
+                                                         //   bleed -189->-85. Inert in bull (blocks ~0).
                 && omega::pg::can_open_new_position())  // S51 cap
             {
                 const double entry_px = ask;

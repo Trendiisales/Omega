@@ -20,6 +20,12 @@ static void on_tick_gold(
     //   TsmomPortfolio::on_tick is called from this handler (intrabar SL
     //   management); on_h1_bar additionally fires every H1 close.
     // S11 P3b: HybridGold pulse removed (engine culled in P3a + globals/init removed in P3b).
+    // 2026-06-12: feed the shared price-based regime brain once per gold tick so
+    //   every gold engine can query omega::gold_regime() for the bull/bear state
+    //   (sustained-bear long-block). Self-contained (no external feed) -> cannot
+    //   silently degrade to all-clear in a real bear. See RegimeState.hpp.
+    omega::gold_regime().on_tick(bid, ask, omega::pg::_pg_now_ms());
+
     g_engine_heartbeat.pulse("MidScalperGold");
     g_engine_heartbeat.pulse("MicroScalperGold");
     g_engine_heartbeat.pulse("GoldStack");
