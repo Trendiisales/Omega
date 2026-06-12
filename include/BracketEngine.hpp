@@ -88,6 +88,13 @@ public:
     int    COOLDOWN_MS         = 120000;
     double MIN_RANGE           = 0.0;
     double MAX_RANGE           = 0.0;  // if >0, blocks arm when range EXCEEDS this (prevents bracketing trending moves)
+    // 2026-06-12 re-opt (settings-drift fix): %-of-price variants of the two abs-pt
+    //   gates below. When >0 they OVERRIDE the absolute pt value with pct%*price,
+    //   so the band auto-tracks price and never needs manual recalibration as the
+    //   instrument drifts (gold went $2400->$4700->$4213 and the abs 12->19 had to
+    //   be hand-bumped twice, lagging each move). 0 = use the absolute pt value.
+    double MAX_RANGE_PCT       = 0.0;  // e.g. 0.40 = block when recent range > 0.40% of price
+    double MAX_SL_DIST_PCT     = 0.0;  // e.g. 0.40 = block when SL dist  > 0.40% of price
     int    MIN_HOLD_MS         = 15000;
     int    FAILURE_WINDOW_MS   = 5000;
     double VWAP_MIN_DIST       = 0.0;
@@ -1090,6 +1097,13 @@ protected:
 
     void arm_both_sides(double spread, const char* macro_regime) noexcept {
         const double dist = bracket_high - bracket_low;
+        // 2026-06-12: effective caps -- %-of-price overrides the abs pt value when set
+        //   (auto-tracks price; see MAX_RANGE_PCT/MAX_SL_DIST_PCT). px = bracket mid.
+        const double px_ref = (bracket_high + bracket_low) * 0.5;
+        const double eff_max_range = (MAX_RANGE_PCT   > 0.0 && px_ref > 0.0)
+                                   ? MAX_RANGE_PCT   * 0.01 * px_ref : MAX_RANGE;
+        const double eff_max_sl    = (MAX_SL_DIST_PCT > 0.0 && px_ref > 0.0)
+                                   ? MAX_SL_DIST_PCT * 0.01 * px_ref : MAX_SL_DIST_PTS;
 
         // ?? Max spread gate ??????????????????????????????????????????????????
         // Block entry if current spread exceeds configured maximum.
@@ -1133,11 +1147,11 @@ protected:
         //   Recent=1.5pt < MAX_RANGE=12 -> PASS (market compressing NOW).
         //   Recent=25pt  > MAX_RANGE=12 -> BLOCK (market still trending NOW).
         //   MAX_RANGE=0 disables the cap entirely.
-        if (MAX_RANGE > 0.0 && m_recent_range > MAX_RANGE) {
+        if (eff_max_range > 0.0 && m_recent_range > eff_max_range) {
             std::cout << "[BRACKET-" << symbol << "] BLOCKED: recent_range_too_large"
                       << " recent_range=" << m_recent_range
                       << " raw_range=" << raw_range
-                      << " max=" << MAX_RANGE << "\n";
+                      << " max=" << eff_max_range << "\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;
             bracket_high = 0.0; bracket_low = 0.0;
@@ -1190,10 +1204,10 @@ protected:
         // cap, the bracket is too wide -- whichever side fills is a late
         // breakout reversal candidate. Refuse to arm; reset to IDLE and let
         // the structure reform at tighter range.
-        if (MAX_SL_DIST_PTS > 0.0 && dist > MAX_SL_DIST_PTS) {
+        if (eff_max_sl > 0.0 && dist > eff_max_sl) {
             std::cout << "[BRACKET-" << symbol << "] BLOCKED: sl_dist_too_wide"
                       << " dist=" << dist
-                      << " max=" << MAX_SL_DIST_PTS
+                      << " max=" << eff_max_sl
                       << " (empirical 100%-loser band)\n";
             std::cout.flush();
             phase = BracketPhase::IDLE;

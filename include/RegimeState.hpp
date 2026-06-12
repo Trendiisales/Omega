@@ -65,6 +65,11 @@ struct RegimeState {
 
     // tick->H1 accumulator
     int64_t acc_bar_ = -1; double a_c_ = 0.0; int a_n_ = 0;
+    double last_mid_ = 0.0;   // live mid, updated every tick (for %-of-price thresholds)
+
+    // Live price for %-of-price threshold scaling. Falls back to the last H1 close
+    // (warm-seed) before the first live tick. >0 once fed.
+    double price() const noexcept { return last_mid_ > 0.0 ? last_mid_ : last_close_; }
 
     // ---- queries (graceful: until warm => neutral => blocks nothing) ----
     bool warm()  const noexcept { return bars_ >= EMA_SLOW + PERSIST; }
@@ -94,6 +99,7 @@ struct RegimeState {
     // ---- feed: every tick (aggregates H1 like IndexBearShortEngine) ----
     void on_tick(double bid, double ask, int64_t now_ms) noexcept {
         const double mid = (bid+ask)*0.5;
+        last_mid_ = mid;
         const int64_t bar = now_ms/1000/BAR_SECS;
         if (a_n_ == 0) { a_c_ = mid; acc_bar_ = bar; a_n_ = 1; }
         else if (bar == acc_bar_) { a_c_ = mid; ++a_n_; }
@@ -124,6 +130,18 @@ struct RegimeState {
 inline RegimeState& gold_regime() noexcept {
     static RegimeState inst = []{ RegimeState r; r.name = "XAU"; return r; }();
     return inst;
+}
+
+// ── %-of-price threshold helper (settings-drift fix, 2026-06-12) ──────────────
+//   Convert a percent-of-price band into points at the CURRENT gold price, so an
+//   engine expresses a threshold once as a % and never needs re-editing when gold
+//   drifts ($2400->$4700->$4213 forced two manual abs-pt bumps; this ends that).
+//   Usage in a gold engine:  const double cap = omega::gold_pct_to_pts(0.40);
+//   Returns 0 if price is not yet known (caller should treat 0 as "gate disabled"
+//   or fall back to its abs default, exactly like the BracketEngine eff_* pattern).
+inline double gold_pct_to_pts(double pct) noexcept {
+    const double p = gold_regime().price();
+    return p > 0.0 ? pct * 0.01 * p : 0.0;
 }
 
 // Market-wide equity regime proxy (NAS100 = bellwether). Used by IndexRiskGate as
