@@ -195,8 +195,13 @@ a{color:var(--blu);text-decoration:none}
     <div id="promo" style="font-size:11px"></div>
   </div>
   <div class="pan" style="padding:6px 0 4px">
-    <div class="lbl" style="padding:0 11px 4px">SHADOW BLOTTER — last closes (paper)</div>
-    <table id="blot"><tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>pnl</th><th>mfe</th><th class="l">exit</th></tr></table>
+    <div style="display:flex;align-items:baseline;gap:8px;padding:0 11px 4px">
+      <span class="lbl">TRADE HISTORY — all shadow closes (newest first)</span>
+      <span id="histn" class="lbl"></span>
+    </div>
+    <div style="max-height:340px;overflow-y:auto">
+      <table id="hist"><tr><td class="l d">loading…</td></tr></table>
+    </div>
   </div>
 </div>
 
@@ -530,15 +535,20 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
- var rows=a.slice(-14).reverse().map(function(t){
-  var d=new Date(safe(t.exitTs)*1000);
-  var hh=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
-  return '<tr><td class="l num d">'+hh+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(t.symbol||'')+'</td>'
-   +'<td class="'+((t.side==='LONG'||t.side==='BUY')?'g':'r')+'">'+((t.side==='LONG'||t.side==='BUY')?'L':'S')+'</td>'
-   +'<td class="num '+(t.pnl>=0?'g':'r')+'">'+fmt$(safe(t.pnl))+'</td>'
-   +'<td class="num d">'+fmt2(t.mfe,1)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';}).join('');
- el('blot').innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>pnl</th><th>mfe</th><th class="l">exit</th></tr>'+rows;
 }).catch(function(){});}
+function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
+ var rows=ROWS.slice().reverse().map(function(r){
+  var d=new Date(r.ts*1000);
+  var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
+   +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
+  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
+   +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
+   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
+   +'<td class="num '+(r.pnl>=0?'g':'r')+'">'+fmt$(r.pnl)+'</td>'
+   +'<td class="num d">'+hold+'</td><td class="l d">'+esc(r.reason||'')+'</td></tr>';}).join('');
+ h.innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>entry</th><th>exit</th><th>pnl</th><th>held</th><th class="l">exit</th></tr>'+rows;
+ el('histn').textContent=ROWS.length+' trades';}
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
@@ -639,7 +649,7 @@ function drawPR(){var cv=el('prc'),ctx=cv.getContext('2d');
 function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
 loadPR();setInterval(loadPR,30000);
 
-function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();}
+function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();}
 function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
  ROWS=parseShadow(t);el('csvinfo').textContent=ROWS.length+' shadow closes loaded';
  fillSymSel();redrawAll();}).catch(function(){el('csvinfo').textContent='shadow csv unavailable';});}

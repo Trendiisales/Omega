@@ -201,8 +201,13 @@ a{color:var(--blu);text-decoration:none}
     <div id="promo" style="font-size:11px"></div>
   </div>
   <div class="pan" style="padding:6px 0 4px">
-    <div class="lbl" style="padding:0 11px 4px">SHADOW BLOTTER — last closes (paper)</div>
-    <table id="blot"><tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>pnl</th><th>mfe</th><th class="l">exit</th></tr></table>
+    <div style="display:flex;align-items:baseline;gap:8px;padding:0 11px 4px">
+      <span class="lbl">TRADE HISTORY — all shadow closes (newest first)</span>
+      <span id="histn" class="lbl"></span>
+    </div>
+    <div style="max-height:340px;overflow-y:auto">
+      <table id="hist"><tr><td class="l d">loading…</td></tr></table>
+    </div>
   </div>
 </div>
 
@@ -236,9 +241,9 @@ el('snd').onclick=function(){SND=!SND;localStorage.setItem('omega_snd',SND?'1':'
 sndBtn();
 function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.currentTime;
  notes.forEach(function(n){var o=ACTX.createOscillator(),g=ACTX.createGain();
-  o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
 )OMEGAD0"
-R"OMEGAD1(  var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
+R"OMEGAD1(  o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
+  var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
   g.gain.exponentialRampToValueAtTime(0.001,st+0.5);o.start(st);o.stop(st+0.55);});}
 function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
@@ -425,10 +430,10 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0;
  var el1=el('daypnl');el1.textContent=fmt$(p);el1.style.color=p>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)';}
 
-function drawEquity(){var cv=el('eqc'),ctx=cv.getContext('2d');
- cv.width=cv.clientWidth*2;cv.height=340;ctx.scale(2,2);
 )OMEGAD1"
-R"OMEGAD2( var W=cv.clientWidth,H=170;ctx.clearRect(0,0,W,H);
+R"OMEGAD2(function drawEquity(){var cv=el('eqc'),ctx=cv.getContext('2d');
+ cv.width=cv.clientWidth*2;cv.height=340;ctx.scale(2,2);
+ var W=cv.clientWidth,H=170;ctx.clearRect(0,0,W,H);
  var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);el('eqtot').textContent='$0';el('eqstats').innerHTML='';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
@@ -538,15 +543,20 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
- var rows=a.slice(-14).reverse().map(function(t){
-  var d=new Date(safe(t.exitTs)*1000);
-  var hh=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
-  return '<tr><td class="l num d">'+hh+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(t.symbol||'')+'</td>'
-   +'<td class="'+((t.side==='LONG'||t.side==='BUY')?'g':'r')+'">'+((t.side==='LONG'||t.side==='BUY')?'L':'S')+'</td>'
-   +'<td class="num '+(t.pnl>=0?'g':'r')+'">'+fmt$(safe(t.pnl))+'</td>'
-   +'<td class="num d">'+fmt2(t.mfe,1)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';}).join('');
- el('blot').innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>pnl</th><th>mfe</th><th class="l">exit</th></tr>'+rows;
 }).catch(function(){});}
+function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
+ var rows=ROWS.slice().reverse().map(function(r){
+  var d=new Date(r.ts*1000);
+  var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
+   +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
+  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
+   +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
+   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
+   +'<td class="num '+(r.pnl>=0?'g':'r')+'">'+fmt$(r.pnl)+'</td>'
+   +'<td class="num d">'+hold+'</td><td class="l d">'+esc(r.reason||'')+'</td></tr>';}).join('');
+ h.innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>entry</th><th>exit</th><th>pnl</th><th>held</th><th class="l">exit</th></tr>'+rows;
+ el('histn').textContent=ROWS.length+' trades';}
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
@@ -609,7 +619,8 @@ function drawPR(){var cv=el('prc'),ctx=cv.getContext('2d');
  (function(){
   if(typeof ROWS==='undefined'||!ROWS.length)return;
   var t0=bars[0][0],t1=bars[n-1][0]+ (bars[1]?bars[1][0]-bars[0][0]:300);
-  function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
+)OMEGAD2"
+R"OMEGAD3(  function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
   function bx(ts){var lo=0,hi=n-1;
    while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
    return lo;}
@@ -620,8 +631,7 @@ function drawPR(){var cv=el('prc'),ctx=cv.getContext('2d');
    var xe=X(bx(r.ets)),ye=Y(r.epx);
    var xx=X(bx(r.ts)), yx=Y(r.xpx||r.epx);
    if(r.ets>=t0&&r.ts<=t1){ctx.strokeStyle=c;ctx.globalAlpha=0.55;ctx.setLineDash([3,3]);
-)OMEGAD2"
-R"OMEGAD3(    ctx.beginPath();ctx.moveTo(xe,ye);ctx.lineTo(xx,yx);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
+    ctx.beginPath();ctx.moveTo(xe,ye);ctx.lineTo(xx,yx);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
    if(r.ets>=t0){ctx.beginPath();   /* entry: triangle, points up=LONG / down=SHORT */
     if(r.side==='LONG'){ctx.moveTo(xe,ye-6);ctx.lineTo(xe-5,ye+3);ctx.lineTo(xe+5,ye+3);}
     else{ctx.moveTo(xe,ye+6);ctx.lineTo(xe-5,ye-3);ctx.lineTo(xe+5,ye-3);}
@@ -648,7 +658,7 @@ R"OMEGAD3(    ctx.beginPath();ctx.moveTo(xe,ye);ctx.lineTo(xx,yx);ctx.stroke();c
 function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
 loadPR();setInterval(loadPR,30000);
 
-function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();}
+function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();}
 function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
  ROWS=parseShadow(t);el('csvinfo').textContent=ROWS.length+' shadow closes loaded';
  fillSymSel();redrawAll();}).catch(function(){el('csvinfo').textContent='shadow csv unavailable';});}
