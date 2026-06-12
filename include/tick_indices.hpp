@@ -1139,6 +1139,12 @@ static void on_tick_nas100(
     g_engine_heartbeat.pulse("AmrNas100");           // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("OrbNas100");           // 2026-05-26 (Stage 4)
 
+    // 2026-06-12: feed the market-bear PROXY (NAS = bellwether). IndexRiskGate uses
+    //   it as a price-based FALLBACK when the macro VIX/credit/dollar feed is dead,
+    //   so index long engines stay protected in a real bear with no feed. Price-only
+    //   => can't silently degrade to all-clear. See RegimeState.hpp / IndexRiskGate.hpp.
+    omega::index_market_regime().on_tick(bid, ask, omega::pg::_pg_now_ms());
+
     {   // S-2026-06-02 index straddle cells (self-aggregating M15/M30, shadow)
         const int64_t now_ms_str = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(

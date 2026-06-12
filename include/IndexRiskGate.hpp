@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <fstream>
 #include <string>
+#include "RegimeState.hpp"   // 2026-06-12: price-based bear PROXY for the dead-feed fallback
 
 namespace omega {
 
@@ -90,7 +91,13 @@ inline void refresh_index_vix_ratio(int64_t now_s) noexcept {
 // True when the macro backdrop is risk-off (any enabled leg trips). Index
 // engines call this to block NEW entries only. Graceful: invalid feed => false.
 inline bool index_risk_off() noexcept {
-    if (!g_index_regime_valid.load(std::memory_order_relaxed)) return false;
+    // 2026-06-12 DEAD-FEED FALLBACK: previously a dead/stale macro feed returned
+    //   false (risk-ON) -> in a real bear WITH a feed outage, index longs traded
+    //   unprotected. Now fall back to the self-contained PRICE proxy (NAS sustained-
+    //   bear). When the feed is live, behaviour is unchanged. The price read can
+    //   only ADD risk-off (never the sole all-clear), per the price-core + macro-
+    //   tighten decision.
+    if (!g_index_regime_valid.load(std::memory_order_relaxed)) return index_market_regime().is_bear();
     const double vix = g_vix_term_ratio.load(std::memory_order_relaxed);
     const double cr  = g_index_credit_mom.load(std::memory_order_relaxed);
     const double dx  = g_index_dxy_mom.load(std::memory_order_relaxed);

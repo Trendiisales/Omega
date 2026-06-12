@@ -1726,6 +1726,13 @@ static void init_engines(const std::string& cfg_path)
                omega::gold_regime().regime_name(), (int)omega::gold_regime().warm());
         fflush(stdout);
 
+        // Market-bear PROXY (NAS bellwether) -- IndexRiskGate's price-based dead-feed
+        //   fallback so index longs stay protected in a bear even with no macro feed.
+        omega::index_market_regime().seed_from_h1_csv("phase1/signal_discovery/warmup_NAS100_H1.csv");
+        printf("[OMEGA-INIT] index_market_regime() proxy: regime=%s warm=%d (IndexRiskGate dead-feed fallback)\n",
+               omega::index_market_regime().regime_name(), (int)omega::index_market_regime().warm());
+        fflush(stdout);
+
         // ── XauStopRunD1Engine (2026-05-20) -- 5d stop-run reversal long
         //   Resurrection of S50 X2 retired StopRunReversal. Re-tested 2yr daily:
         //     FUL Sh=6.34 at 10bps (IS=7.06 OOS=6.14), n=29, WR=65.5%.

@@ -126,4 +126,13 @@ inline RegimeState& gold_regime() noexcept {
     return inst;
 }
 
+// Market-wide equity regime proxy (NAS100 = bellwether). Used by IndexRiskGate as
+// the PRICE-BASED FALLBACK when the macro feed (VIX/credit/dollar) is dead/stale, so
+// index long engines stay protected in a real bear even with no feed. Fed from the
+// NAS100 tick handler (tick_indices.hpp), warm-seeded in engine_init.
+inline RegimeState& index_market_regime() noexcept {
+    static RegimeState inst = []{ RegimeState r; r.name = "NAS-MKT"; return r; }();
+    return inst;
+}
+
 } // namespace omega
