@@ -27,6 +27,7 @@
 #include <fstream>
 #include <string>
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "RegimeState.hpp"        // 2026-06-12: shared price-based bull/bear gate
 #include "OmegaCostGuard.hpp"     // ExecutionCostGuard::is_viable entry gate
 #include "OpenPositionRegistry.hpp" // S-2026-06-03: omega::PositionSnapshot for persist
 #include "IndexRiskGate.hpp"      // omega::index_risk_off (optional gate)
@@ -142,6 +143,9 @@ private:
     std::string engine_name_ = "GoldSeasonal";
 
     void _open(double ask, double spread, int64_t ts_ms, int wd) noexcept {
+        // 2026-06-12 regime gate: skip the Mon/Tue seasonal long in a sustained gold
+        //   bear (a weekday-drift edge does not survive a downtrend). Inert in bull.
+        if (omega::gold_regime().long_blocked()) return;
         // cost gate: 1-day hold; conservative expected move = 0.5% of price
         // (pct-based so it survives price drift -- abs-pt thresholds rot).
         if (!ExecutionCostGuard::is_viable(symbol.c_str(), spread, ask * 0.005, lot, 1.5)) return;

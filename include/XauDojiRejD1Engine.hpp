@@ -30,6 +30,7 @@
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "RegimeState.hpp"   // 2026-06-12: shared price-based bull/bear gate
 #include "PortfolioGuard.hpp"  // S51: concurrency cap
 
 namespace omega {
@@ -127,6 +128,7 @@ struct XauDojiRejD1Engine {
                 const double prev_range = prev_high_ - prev_low_;
                 const bool is_doji = (prev_range > 0.0 && prev_body < p.doji_body_pct * prev_range);
                 if (is_doji && bar_close > prev_high_ && omega::pg::can_open_new_position()  // S51 cap
+                    && !omega::gold_regime().long_blocked()   // 2026-06-12 regime gate: no longs in sustained gold bear (gold_regime_gate_bt)
                     // cost gate: TP distance vs spread cost (in-condition: no flow change)
                     && ExecutionCostGuard::is_viable("XAUUSD", ask - bid,
                            ask * p.tp_atr_mult * (atr_pre / bar_close), p.lot, 1.5)) {

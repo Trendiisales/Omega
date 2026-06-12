@@ -32,6 +32,7 @@
 #include <string>
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "RegimeState.hpp"        // 2026-06-12: shared price-based bull/bear gate
 #include "OmegaCostGuard.hpp"     // ExecutionCostGuard::is_viable entry gate
 #include "OpenPositionRegistry.hpp" // S-2026-06-03: omega::PositionSnapshot for persist
 
@@ -200,6 +201,10 @@ private:
     }
 
     void _open(double ask, double spread, int64_t ts_ms) noexcept {
+        // 2026-06-12 regime gate: don't catch a falling knife -- no oversold-bounce
+        //   longs in a sustained gold bear. Backtest gold_regime_gate_bt (RSI-oversold
+        //   long, XAU H1 2020-23): net -262->-172, bleed cut 35%. Inert in bull.
+        if (omega::gold_regime().long_blocked()) return;
         const double a = atr();
         // cost gate: bounce target ~ stop distance (stop_atr_mult * ATR) as gross proxy
         if (a > 0.0 && !ExecutionCostGuard::is_viable(symbol.c_str(), spread, stop_atr_mult * a, lot, 1.5)) return;
