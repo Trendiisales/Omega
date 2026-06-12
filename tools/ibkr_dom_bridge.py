@@ -245,6 +245,27 @@ class DomRecorder:
                 "depth_events_total",
             ])
         self.out_path = path
+        # 2026-06-12 iceberg groundwork: SECOND file with the full per-level
+        # book (5 levels x price,size per side, one row per book update).
+        # The aggregate file above is untouched (existing consumers safe);
+        # this is the data an iceberg/reload detector needs offline. ~40MB/day.
+        lpath = os.path.join(self.out_dir,
+                             f"ibkr_l2levels_{self.sym}_{date_str}.csv")
+        lnew = not os.path.exists(lpath) or os.path.getsize(lpath) == 0
+        if getattr(self, "lfh", None) is not None:
+            try:
+                self.lfh.close()
+            except Exception:
+                pass
+        self.lfh = open(lpath, "a", newline="", buffering=1)
+        self.lw = csv.writer(self.lfh)
+        if lnew:
+            hdr = ["ts_ms"]
+            for i in range(1, self.max_levels + 1):
+                hdr += [f"b{i}p", f"b{i}s"]
+            for i in range(1, self.max_levels + 1):
+                hdr += [f"a{i}p", f"a{i}s"]
+            self.lw.writerow(hdr)
 
     def _maybe_rotate(self):
         d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -269,6 +290,78 @@ class DomRecorder:
                 pass
         try:
             self.fh.close()
+        except Exception:
+            pass
+        try:
+            self.lfh.close()
+        except Exception:
+            pass
+
+
+class TradesRecorder:
+    """2026-06-12 iceberg groundwork: tick-by-tick trade prints (AllLast).
+
+    Iceberg/reload detection needs executions at a price level to compare
+    against displayed size -- the DOM alone can't see hidden liquidity get
+    consumed. Futures only (MGC): spot CFD XAUUSD has no centralized tape.
+    Writes ibkr_trades_{sym}_{date}.csv: ts_ms,price,size,exch,spec.
+    """
+    def __init__(self, ib: IB, contract: Contract, out_dir: str):
+        self.ib = ib
+        self.contract = contract
+        self.sym = contract.symbol
+        self.out_dir = out_dir
+        self.cur_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.fh = None
+        self.w = None
+        self.n = 0
+        self._open_for_date(self.cur_date)
+        self.ticker = None
+
+    def _open_for_date(self, date_str):
+        path = os.path.join(self.out_dir, f"ibkr_trades_{self.sym}_{date_str}.csv")
+        new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+        if self.fh is not None:
+            try:
+                self.fh.close()
+            except Exception:
+                pass
+        self.fh = open(path, "a", newline="", buffering=1)
+        self.w = csv.writer(self.fh)
+        if new_file:
+            self.w.writerow(["ts_ms", "price", "size", "exch", "spec"])
+
+    def start(self):
+        self.ticker = self.ib.reqTickByTickData(self.contract, "AllLast", 0, False)
+        self.ticker.updateEvent += self._on_update
+
+    def stop(self):
+        try:
+            self.ib.cancelTickByTickData(self.contract, "AllLast")
+        except Exception:
+            pass
+        try:
+            self.fh.close()
+        except Exception:
+            pass
+
+    def _on_update(self, ticker):
+        d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if d != self.cur_date:
+            self.cur_date = d
+            self._open_for_date(d)
+        for t in (ticker.tickByTicks or []):
+            try:
+                ts = int(t.time.timestamp() * 1000) if hasattr(t.time, "timestamp") else now_ms()
+                self.w.writerow([ts, f"{t.price:.4f}", f"{t.size:.2f}",
+                                 getattr(t, "exchange", ""),
+                                 getattr(t, "specialConditions", "")])
+                self.n += 1
+            except Exception:
+                continue
+        # ib_async leaves processed ticks in the list; clear so we don't rewrite
+        try:
+            ticker.tickByTicks.clear()
         except Exception:
             pass
 
@@ -300,6 +393,19 @@ class DomRecorder:
             f"{imb:.4f}", f"{bid_vol:.2f}", f"{ask_vol:.2f}",
             len(bids), len(asks), self.events,
         ])
+        # per-level row (iceberg groundwork; pads short books with 0,0)
+        lrow = [ts]
+        for i in range(self.max_levels):
+            if i < len(bids):
+                lrow += [f"{bids[i].price:.4f}", f"{(bids[i].size or 0.0):.2f}"]
+            else:
+                lrow += ["0", "0"]
+        for i in range(self.max_levels):
+            if i < len(asks):
+                lrow += [f"{asks[i].price:.4f}", f"{(asks[i].size or 0.0):.2f}"]
+            else:
+                lrow += ["0", "0"]
+        self.lw.writerow(lrow)
         if self.broadcaster is not None:
             # Compact JSON, newline-delimited. Short keys to keep msg small.
             # bp/bs/ap/as = per-level price/size arrays (top of book first).
@@ -382,6 +488,13 @@ def main():
                                   broadcaster=broadcaster)
                 rec.start()
                 recs.append(rec)
+                # 2026-06-12 iceberg groundwork: trade prints for futures only
+                # (centralized tape exists; spot CFD has none).
+                if (getattr(contract, "secType", "") or "") == "FUT":
+                    tr = TradesRecorder(ib, contract, args.out_dir)
+                    tr.start()
+                    recs.append(tr)
+                    print(f"trade-prints ON {sym} (AllLast)", flush=True)
                 # For futures, log the resolved front-month expiry so the operator
                 # can spot when a roll is due (typically 8 trading days before
                 # lastTradeDateOrContractMonth for E-mini / Eurex quarterly cycle).
