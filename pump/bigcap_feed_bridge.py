@@ -18,6 +18,7 @@ Run (on the VPS, IB Gateway/TWS up):  python3 pump/bigcap_feed_bridge.py --serve
 Dev without IBKR: use bigcap_feed_bridge_yahoo.py instead.
 """
 import sys, time, socket, threading, json, os
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from ib_async import IB, Stock, ScannerSubscription
 
 # ── config (big-cap) ─────────────────────────────────────────────────────────
@@ -30,6 +31,15 @@ MAX_SYMBOLS   = 30
 TFS           = [300]        # 5m bars only (engine tf_sec=300)
 SCAN_EVERY    = 30           # seconds between scanner passes
 TICK_EVERY    = 5            # seconds between tick/roll passes
+
+# ── scanner web page (2026-06-12: takes over :7783 from the retired micro-cap
+#    pump scanner). Shows ONLY what the live engine can act on, using the SAME
+#    gates engine_init ships for g_bigcap_momo: day-move >= GATE_PCT, price >=
+#    PRICE_MIN, day $vol >= DVOL_MIN. status TRADE = all gates pass.
+SCANNER_HTTP_PORT = int(os.environ.get("OMEGA_BIGCAP_SCANNER_PORT", "7783"))
+GATE_PCT  = 5.0              # engine day_gate_pct
+DVOL_MIN  = 100e6            # engine liq gate: day dollar-volume >= $100M
+_candidates = {}             # sym -> dict(sym,px,day_open,up,dvol,ts)
 
 # ── TCP server -> in-Omega PumpFeedConsumer (one consumer) ───────────────────
 _conn=None; _lock=threading.Lock(); _need_reseed=False
@@ -56,11 +66,107 @@ def _serve_thread(port):
         with _lock: _conn=c; _need_reseed=True
         print("# consumer connected -> reseed", file=sys.stderr)
 
+class _ScanHandler(BaseHTTPRequestHandler):
+    """BIGCAP MOMO scanner page -- replaces the retired micro-cap PUMP SCANNER
+    on this port. Engine-faithful: gate logic mirrors g_bigcap_momo settings.
+    LIQ column = day dollar-volume; the iceberg/absorption column lights up once
+    the MGC-validated detector ships (per-symbol equity depth is subscribed only
+    for the symbol in an active trade -- IBKR depth-line budget)."""
+    def log_message(self, *a): pass
+
+    def do_GET(self):
+        rows = sorted(_candidates.values(), key=lambda c: -c["up"])
+        if self.path.startswith("/api"):
+            body = json.dumps(rows).encode(); ctype = "application/json"
+        else:
+            def gate(c):
+                return c["up"] >= GATE_PCT and c["px"] >= PRICE_MIN and c["dvol"] >= DVOL_MIN
+            def row(c):
+                ok = gate(c)
+                st = '<span style="color:#3ddc97">TRADE</span>' if ok else \
+                     '<span style="color:#6b6b6b">watch</span>'
+                liq = c["dvol"] / 1e6
+                liq_s = (f'<span style="color:#3ddc97">{liq:,.0f}M</span>' if c["dvol"] >= DVOL_MIN
+                         else f'<span style="color:#6b6b6b">{liq:,.0f}M</span>')
+                return (f"<tr><td style='color:#d8d8d8'>{c['sym']}</td>"
+                        f"<td>{c['px']:.2f}</td>"
+                        f"<td style='color:#e6a23c'>+{c['up']:.1f}%</td>"
+                        f"<td>{c['day_open']:.2f}</td><td>{liq_s}</td><td>{st}</td></tr>")
+            trs = "".join(row(c) for c in rows) or \
+                  "<tr><td colspan=6 style='color:#6b6b6b'>no big-cap movers ≥ prefilter — scanning</td></tr>"
+            n_trade = sum(1 for c in rows if gate(c))
+            script = (
+                "<script>\n"
+                "const GATE=%f, PMIN=%f, DVMIN=%f;\n"
+                "async function rf(){try{\n"
+                " const r=await fetch('/api',{cache:'no-store'}); const d=await r.json();\n"
+                " d.sort((a,b)=>b.up-a.up);\n"
+                " const esc=s=>String(s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));\n"
+                " let h='';\n"
+                " for(const c of d){\n"
+                "  const ok=c.up>=GATE&&c.px>=PMIN&&c.dvol>=DVMIN;\n"
+                "  const st=ok?'<span style=\"color:#3ddc97\">TRADE</span>':'<span style=\"color:#6b6b6b\">watch</span>';\n"
+                "  const lm=(c.dvol/1e6).toLocaleString(undefined,{maximumFractionDigits:0});\n"
+                "  const liq=c.dvol>=DVMIN?('<span style=\"color:#3ddc97\">'+lm+'M</span>'):('<span style=\"color:#6b6b6b\">'+lm+'M</span>');\n"
+                "  h+='<tr><td style=\"color:#d8d8d8\">'+esc(c.sym)+'</td><td>'+c.px.toFixed(2)+'</td>'\n"
+                "    +'<td style=\"color:#e6a23c\">+'+c.up.toFixed(1)+'%</td>'\n"
+                "    +'<td>'+c.day_open.toFixed(2)+'</td><td>'+liq+'</td><td>'+st+'</td></tr>';\n"
+                " }\n"
+                " if(!h) h='<tr><td colspan=6 style=\"color:#6b6b6b\">no big-cap movers \\u2265 prefilter \\u2014 scanning</td></tr>';\n"
+                " document.getElementById('rows').innerHTML=h;\n"
+                " const ng=d.filter(c=>c.up>=GATE&&c.px>=PMIN&&c.dvol>=DVMIN).length;\n"
+                " document.getElementById('hdr').textContent='BIGCAP MOMO \\u00b7 '+d.length+' movers \\u00b7 '"
+                "+ng+' tradeable (\\u2265"
+                "%.0f%%%% + $%.0fM liq)';\n"
+                "}catch(e){}}\n"
+                "setInterval(rf,5000); rf();\n"
+                "</script>") % (GATE_PCT, PRICE_MIN, DVOL_MIN, GATE_PCT, DVOL_MIN / 1e6)
+            body = (
+                "<html><head><meta charset=utf-8><title>BIGCAP MOMO</title>"
+                "<style>"
+                "body{background:#0a0a0a;color:#c8c8c8;font:13px/1.5 'SF Mono',Menlo,monospace;margin:0;padding:18px}"
+                ".panel{border:1px solid #1d1d1d;border-radius:6px;padding:14px 16px;max-width:760px}"
+                ".brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}"
+                ".brand .t{color:#5fd3e0;letter-spacing:3px;font-weight:bold;font-size:14px}"
+                ".brand .v{color:#3a5b62;letter-spacing:2px;font-size:10px;text-transform:uppercase}"
+                ".hdr{color:#9aa0a6;letter-spacing:.5px;font-size:12px;margin-bottom:10px}"
+                "table{border-collapse:collapse;width:100%}"
+                "th{text-align:left;color:#5fd3e0;font-weight:normal;padding:4px 16px 8px 0;border-bottom:1px solid #1d1d1d}"
+                "td{padding:5px 16px 5px 0;white-space:nowrap}"
+                ".foot{color:#6b6b6b;font-size:11px;margin-top:12px}"
+                "</style></head><body><div class=panel>"
+                "<div class=brand><span class=t>OMEGA</span><span class=v>bigcap momo</span></div>"
+                f"<div class=hdr id=hdr>BIGCAP MOMO &middot; {len(rows)} movers &middot; {n_trade} tradeable "
+                f"(&ge;{GATE_PCT:.0f}% + ${DVOL_MIN/1e6:.0f}M liq)</div>"
+                "<table><tr><th>symbol</th><th>price</th><th>up from open</th>"
+                "<th>day open</th><th>liq ($vol)</th><th>status</th></tr>"
+                f"<tbody id=rows>{trs}</tbody></table>"
+                "<div class=foot>engine settings: gate &ge;5% from open &middot; price &ge;$10 &middot; "
+                "day $vol &ge;$100M &middot; volx3 ignition + 4% trail at entry &middot; shadow trades show in the "
+                "dashboard RUNNING TRADES panel &middot; iceberg/absorption column arrives once the MGC-validated "
+                "detector ships (depth subscribed for in-trade symbols only)</div>"
+                f"</div>{script}</body></html>").encode()
+            ctype = "text/html; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.wfile.write(body)
+
+
+def _http_thread(port):
+    try:
+        HTTPServer(("0.0.0.0", port), _ScanHandler).serve_forever()
+    except Exception as e:
+        sys.stderr.write(f"[bigcap_bridge] scanner http error on :{port}: {e}\n")
+
+
 # ── per-symbol 5m bar roller (mirrors pump bridge Sub) ───────────────────────
 class Sub:
     def __init__(self, ticker):
         self.ticker=ticker; self.day_open=0.0; self.last_vol=None
         self.bars={tf:None for tf in TFS}
+        self.last_bar_dvol=0.0   # close*vol of last COMPLETED 5m bar (engine liq gate unit)
     def roll(self, sym, px, vol, ts_ms):
         if px is None or px<=0 or px!=px: return
         emit(f"P,{sym},{px},{ts_ms}")
@@ -72,6 +178,7 @@ class Sub:
             if b is None: self.bars[tf]=[bkt,px,px,px,px,dv]
             elif bkt!=b[0]:
                 emit(f"B,{sym},{tf},{b[1]},{b[2]},{b[3]},{b[4]},{b[5]},{b[0]}")
+                self.last_bar_dvol=b[4]*b[5]   # SAME math as the engine's bar-close*vol liq gate
                 self.bars[tf]=[bkt,px,px,px,px,dv]
             else:
                 b[2]=max(b[2],px); b[3]=min(b[3],px); b[4]=px; b[5]+=dv
@@ -113,6 +220,7 @@ def subscribe_symbol(ib, subs, sym, min_move):
 
 def main():
     threading.Thread(target=_serve_thread, args=(SERVE_PORT,), daemon=True).start()
+    threading.Thread(target=_http_thread, args=(SCANNER_HTTP_PORT,), daemon=True).start()
     ib=IB(); ib.connect(IB_HOST, IB_PORT, clientId=IB_CID, timeout=15)
     try: ib.reqMarketDataType(3)   # delayed ok in paper without live entitlement
     except Exception: pass
@@ -149,6 +257,8 @@ def main():
                 emit(f"# scan error: {e}")
         # stream ticks + roll bars + candidate
         ts_ms=int(now*1000)
+        for k in [k for k,v in _candidates.items() if ts_ms-v["ts"]>600_000]:
+            _candidates.pop(k,None)   # prune names that stopped updating (10 min)
         for sym,s in list(subs.items()):
             tk=s.ticker
             px=tk.last or tk.marketPrice() or tk.close
@@ -158,6 +268,8 @@ def main():
                 if px and s.day_open:
                     up=(float(px)/s.day_open-1.0)*100.0
                     emit(f"C,{sym},{float(px)},{s.day_open},{up:.1f},{ts_ms}")
+                    _candidates[sym]={"sym":sym,"px":float(px),"day_open":s.day_open,
+                                      "up":up,"dvol":s.last_bar_dvol,"ts":ts_ms}
             except Exception: pass
         ib.sleep(TICK_EVERY)
 
