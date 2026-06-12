@@ -1001,7 +1001,14 @@ static void init_engines(const std::string& cfg_path)
     // Indices: leave ATR disabled -- noise floor more stable, fixed MIN_RANGE sufficient
     // MAX_RANGE: prevents bracketing full trending session moves instead of real compression
     // Gold at $4400: 0.4% = $17.6 max range. Tight compression is $8-16. Day range is $40-120.
-    g_bracket_gold.MAX_RANGE   = 19.0;   // 2026-05-29 (S37-Z): raised 12.0 -> 19.0. Same price-drift bug as MAX_SL_DIST_PTS. 12.0 was 0.5% of $2400 gold (calibration era); now 0.25% of $4700 -- HALF the 0.40% standard used for SP/NQ/DJ30/etc. London expansion ranges 15-25pt got rejected as "trending" when they were genuine compression-breaks at the new price level. 19.0 = 0.40% of $4700 -- matches index-symbol bracketing band proportions. Re-audit gate: derive band as % of price not absolute pts (see MAX_SL_DIST_PTS comment).
+    // 2026-06-12 re-opt: DONE the "derive band as % of price" fix the old comment kept
+    //   asking for. MAX_RANGE_PCT auto-tracks price (gold $2400->$4700->$4213 forced
+    //   two manual abs bumps; this ends that). 0.40% = the index-symbol bracketing
+    //   proportion. 2yr A/B (bracket_gold_2yr_audit, PCT_MODE): PF 0.700 vs abs-19's
+    //   0.705 -- statistically identical, so the switch is safe + future-proof. The
+    //   abs values stay as a fallback for the (never-hit) px_ref==0 case.
+    g_bracket_gold.MAX_RANGE_PCT   = 0.40;   // %-of-price; overrides MAX_RANGE below
+    g_bracket_gold.MAX_RANGE        = 19.0;  // fallback only (used iff px_ref==0)
     // ?? S22c 2026-04-25: empirical SL-dist gate (gold only) ?????????????????????
     // 62 live XAUUSD_BRACKET trades 2026-04-13..24: every trade with bracket
     // dist > 6pt was a loser (0 wins / 39 losses / -$388 combined). Trades at
@@ -1014,7 +1021,8 @@ static void init_engines(const std::string& cfg_path)
     // price-at-calibration; same proportion at $4400 = $11. Round to 12
     // matching MAX_RANGE. Re-audit when 60+ new live trades accumulate to
     // confirm the % equivalent holds at the new price level.
-    g_bracket_gold.MAX_SL_DIST_PTS = 19.0;  // 2026-05-29 (S37-Z, 2nd revision same day): raised 12.0 -> 19.0 to match MAX_RANGE. Same price-drift principle: 0.40% of $4700.
+    g_bracket_gold.MAX_SL_DIST_PCT = 0.40;  // 2026-06-12: %-of-price, auto-tracks (see MAX_RANGE_PCT). overrides the abs below
+    g_bracket_gold.MAX_SL_DIST_PTS = 19.0;  // fallback only (used iff px_ref==0)
     // ?? Regime-flip exit (Session 13, 2026-04-23) -- gold only ?????????????????
     // Thresholds wired for XAUUSD_BRACKET only. See BracketEngine.hpp config block.
     // Trigger: |ewm_drift| >= 2.5 against position for 5 consecutive ticks.
