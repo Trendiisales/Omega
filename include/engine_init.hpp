@@ -4479,10 +4479,13 @@ static void init_engines(const std::string& cfg_path)
         // survives 1-2%/side slip. Registers with g_open_positions so its trades
         // show in the live_trades GUI panel + ring the entry bell. SHADOW until
         // live fills + dud-rate are measured.
-        g_pump_manager.enabled      = false;  // 2026-06-12 OPERATOR KILL: draining -- disabled
-                                              // until a solution is found. No new pump entries
-                                              // arm (on_bar no-ops). Re-enable only after a
-                                              // documented fix + re-validation.
+        g_pump_manager.enabled      = true;   // 2026-06-12b SHADOW RE-ENABLE (operator-approved,
+                                              // data-gathering ONLY -- shadow_mode stays true).
+                                              // Purpose: measure honest-accounting net at 3m with
+                                              // the raised re-entry cap below. The 06-12 morning
+                                              // kill reason (live fills worse than backtest) is
+                                              // unchanged; LIVE sizing still blocked until the
+                                              // tiny-size real-fill measurement is done.
         g_pump_manager.shadow_mode  = true;
         g_pump_manager.day_gate_pct = 100.0;
         // S-2026-06-11 RECALIBRATION (operator model + full lever sweep,
@@ -4505,7 +4508,13 @@ static void init_engines(const std::string& cfg_path)
         // -38,-39 = re-entry chop bleed). reentry_cap_bt.py (16-day basket, deployed
         // cfg): cap2 = keeps 84% of net + best PF (42) vs unlimited (PF18, chop) or
         // cap1 (kills the edge: $13.6k->$1.7k -- monster continuations need a re-add).
-        g_pump_manager.max_entries_per_day = 2;
+        // S-2026-06-12b cap 2 -> 4 (operator-approved): pump_lever_bt.py (Yahoo 5m
+        // extended-hours, 98 mover name-days incl. fresh OOS 06-11, both 1%/2% slip):
+        // maxent4 n97 +$5485 PF4.3 vs maxent2 n58 +$3659 PF4.8 @2% -- +50% net, PF
+        // holds, broad (top name 14%, ex-top2 +$4085), both halves +. Tension with
+        // the 06-11 3m result (cap2 best PF) acknowledged -- this SHADOW run is the
+        // prod-faithful A/B that settles it via EngineGate honest accounting.
+        g_pump_manager.max_entries_per_day = 4;
         // S-2026-06-11 ANTI-SLIPPAGE recalibration (operator: "we cannot be caught
         // with the 5% issue"). Notional $5000->$1000 (smaller order walks the thin
         // book far less) + LIQUIDITY GATE: only trade names priced >=$1 with bar
@@ -4521,8 +4530,8 @@ static void init_engines(const std::string& cfg_path)
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
-        printf("[OMEGA-INIT] PumpScalp manager: 3m-only gate100 trail2 NO-BE 15min-cap "
-               "$1000-notional liq(p>=1,$vol>=2M) slip1%%/side shadow (feed via OMEGA_PUMP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] PumpScalp manager: RE-ENABLED(shadow) 3m-only gate100 trail2 NO-BE 15min-cap "
+               "maxent4 $1000-notional liq(p>=1,$vol>=2M) slip1%%/side (feed via OMEGA_PUMP_BRIDGE=1)\n");
 
         // ── BigCapMomo (NAS/SPX big-cap day-mover scalp; 5m) ────────────────────
         // 2026-06-12 (operator): the micro-cap pump died on SLIPPAGE, not momentum.
@@ -4537,11 +4546,15 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.shadow_mode  = true;
         g_bigcap_momo.tf_sec       = 300;      // 5m entry bars (validated TF)
         g_bigcap_momo.label        = "BigCapMomo";
-        g_bigcap_momo.day_gate_pct = 5.0;      // only names already +5% on the session (the lever)
-        g_bigcap_momo.trail_pct    = 4.0;      // 4% trail -- bigcap_scalp_stress.py: most slippage-
-                                               // robust width (PF 1.83/1.65/1.53/1.32 at 8/15/20/30bps
-                                               // vs trail3 1.79/1.57/1.44/1.21). Tight (2.5%) dies by
-                                               // 20bps. Big-cap moves need room.
+        g_bigcap_momo.day_gate_pct = 4.0;      // S-2026-06-12b 5->4 (operator-approved): extended
+                                               // sweep+stress (bigcap_sweep_ext/stress_ext, cached
+                                               // 508-name 5m): gate4 n84 vs gate5 n51 (+65% trades)
+                                               // AND higher PF at every slip tier (see trail note).
+        g_bigcap_momo.trail_pct    = 5.0;      // S-2026-06-12b 4->5: gate4+trail5 = most slip-robust
+                                               // config: PF 2.37/2.14/2.00/1.73 @8/15/20/30bps vs
+                                               // deployed gate5+trail4 1.83/1.65/1.53/1.32. gate3
+                                               // tripled trades but died by 30bps (PF1.28) -- skipped.
+                                               // Tight (<=2.5%) trails die by 20bps. Moves need room.
         g_bigcap_momo.volx         = 3.0;      // require a real volume surge on the ignition bar
         g_bigcap_momo.be_arm_pct   = 0.0;
         g_bigcap_momo.be_floor_pct = 0.0;
@@ -4555,7 +4568,7 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.verbose      = true;
         g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("BigCapMomo", []() { return g_bigcap_momo.collect_positions(); });
-        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate5%% trail4%% volx3 4h-cap "
+        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% trail5%% volx3 4h-cap "
                "$1000-notional liq(p>=10,$vol>=100M) slip0.15%%/side shadow (feed via OMEGA_BIGCAP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
