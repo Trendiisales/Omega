@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store,no-cache,must-revalidate">
 <title>OMEGA desk</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230B0F14'/%3E%3Crect x='2' y='2' width='60' height='60' rx='10' fill='none' stroke='%232EBD85' stroke-width='3'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle' fill='%232EBD85' font-family='Georgia,serif' font-weight='bold'%3E%CE%A9%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -48,7 +49,10 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ RIBBON ═══ -->
 <div class="pan" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--pan2);padding:7px 12px">
-  <span style="font-size:14px;font-weight:600;color:var(--w)">OMEGA <span style="color:var(--t2);font-weight:400">desk</span></span>
+  <span style="display:inline-flex;align-items:center;gap:8px">
+    <span style="width:22px;height:22px;border-radius:5px;background:#0a4434;border:1px solid #0F6E56;color:#9FE1CB;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;font-family:Georgia,serif">&#937;</span>
+    <span style="font-size:14px;font-weight:600;color:var(--w)">OMEGA <span style="color:var(--t2);font-weight:400">desk</span></span>
+  </span>
   <span id="mode" class="chip" style="background:var(--ambD);color:var(--ambB)">MODE …</span>
   <span class="lbl"><span class="dot" id="fixq" style="background:var(--t3)"></span>FIX-Q</span>
   <span class="lbl"><span class="dot" id="fixt" style="background:var(--t3)"></span>FIX-T</span>
@@ -63,6 +67,16 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ TICKER ═══ -->
 <div id="ticker" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:8px;overflow-x:auto;background:var(--pan)"></div>
+
+<!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
+<div class="pan" style="margin-top:8px">
+  <div style="display:flex;align-items:baseline;gap:10px">
+    <span class="lbl">LIVE OPEN TRADES</span>
+    <span id="ltcount" class="lbl"></span>
+    <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
+  </div>
+  <table id="lt" style="margin-top:4px"><tr><td class="l d">FLAT — no open positions</td></tr></table>
+</div>
 
 <!-- ═══ EQUITY + RISK ═══ -->
 <div class="grid g2" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
@@ -164,16 +178,8 @@ a{color:var(--blu);text-decoration:none}
   </div>
 </div>
 
-<!-- ═══ LIVE TRADES (hidden when empty) ═══ -->
-<div class="pan" id="ltwrap" style="margin-top:8px;display:none">
-  <div class="lbl" style="margin-bottom:4px">LIVE OPEN TRADES</div>
-  <table id="lt"><tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr></table>
-</div>
-
 <div style="display:flex;gap:14px;align-items:center;margin-top:8px" class="lbl">
   <a href="/legacy">legacy GUI</a>
-  <a href="/api/telemetry">telemetry</a>
-  <a href="/api/shadow_csv">shadow csv</a>
   <span id="csvinfo"></span>
   <button style="margin-left:auto" onclick="if(confirm('Clear ledger?'))fetch('/api/clear_ledger',{method:'POST'})">clear ledger</button>
 </div>
@@ -287,13 +293,16 @@ function render(J){lastJ=J;
    +'<span class="num">'+fmt2(s.price,2)+'</span> <span class="d">'+esc(s.engine||'')+'</span> <span class="d">'+esc(s.reason||'').slice(0,28)+'</span></div>';}).join('');
  el('sigs').innerHTML=sh||'<span class="d">no signals yet this session</span>';
 
- var lts=J.live_trades||[];el('ltwrap').style.display=lts.length?'block':'none';
- if(lts.length){var rows=lts.map(function(t){
+ var lts=J.live_trades||[];
+ el('ltcount').textContent=lts.length?lts.length+' open':'';
+ if(!lts.length){el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';}
+ else{var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>';}).join('');
-  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;}
+  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
+  el('ltpnl').textContent=fmt$(sum)+' unrealised';el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
 
 /* ── ws + poll ── */
@@ -311,6 +320,7 @@ var ROWS=[],WIN=30;
 function parseShadow(txt){var out=[];var ls=txt.split('\n');
  for(var i=0;i<ls.length;i++){var L=ls[i];if(!L||L[0]==='t')continue;var f=L.split(',');if(f.length<11)continue;
   var ts=parseInt(f[0],10);if(!ts)continue;
+  if(f[1]==='__BOOT__'||f[3]==='boot_writetest')continue;
   out.push({ts:ts+Math.max(0,parseInt(f[9],10)||0),sym:f[1],side:f[2],eng:f[3],pnl:parseFloat(f[6])||0,
    mfe:parseFloat(f[7])||0,mae:parseFloat(f[8])||0,hold:parseInt(f[9],10)||0,reason:(f[10]||'').trim(),
    spread:parseFloat(f[11])||0,lat:parseFloat(f[12])||0});}
@@ -420,6 +430,8 @@ function drawPromo(){var by={};
 
 function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json();}).then(function(a){
  if(!a||!a.length){return;}
+ a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
+ if(!a.length){return;}
  var rows=a.slice(-14).reverse().map(function(t){
   var d=new Date(safe(t.exitTs)*1000);
   var hh=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');

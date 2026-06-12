@@ -11,6 +11,7 @@ R"OMEGAD0(<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-store,no-cache,must-revalidate">
 <title>OMEGA desk</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230B0F14'/%3E%3Crect x='2' y='2' width='60' height='60' rx='10' fill='none' stroke='%232EBD85' stroke-width='3'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle' fill='%232EBD85' font-family='Georgia,serif' font-weight='bold'%3E%CE%A9%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -54,7 +55,10 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ RIBBON ═══ -->
 <div class="pan" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--pan2);padding:7px 12px">
-  <span style="font-size:14px;font-weight:600;color:var(--w)">OMEGA <span style="color:var(--t2);font-weight:400">desk</span></span>
+  <span style="display:inline-flex;align-items:center;gap:8px">
+    <span style="width:22px;height:22px;border-radius:5px;background:#0a4434;border:1px solid #0F6E56;color:#9FE1CB;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;font-family:Georgia,serif">&#937;</span>
+    <span style="font-size:14px;font-weight:600;color:var(--w)">OMEGA <span style="color:var(--t2);font-weight:400">desk</span></span>
+  </span>
   <span id="mode" class="chip" style="background:var(--ambD);color:var(--ambB)">MODE …</span>
   <span class="lbl"><span class="dot" id="fixq" style="background:var(--t3)"></span>FIX-Q</span>
   <span class="lbl"><span class="dot" id="fixt" style="background:var(--t3)"></span>FIX-T</span>
@@ -69,6 +73,16 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ TICKER ═══ -->
 <div id="ticker" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:8px;overflow-x:auto;background:var(--pan)"></div>
+
+<!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
+<div class="pan" style="margin-top:8px">
+  <div style="display:flex;align-items:baseline;gap:10px">
+    <span class="lbl">LIVE OPEN TRADES</span>
+    <span id="ltcount" class="lbl"></span>
+    <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
+  </div>
+  <table id="lt" style="margin-top:4px"><tr><td class="l d">FLAT — no open positions</td></tr></table>
+</div>
 
 <!-- ═══ EQUITY + RISK ═══ -->
 <div class="grid g2" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
@@ -170,16 +184,8 @@ a{color:var(--blu);text-decoration:none}
   </div>
 </div>
 
-<!-- ═══ LIVE TRADES (hidden when empty) ═══ -->
-<div class="pan" id="ltwrap" style="margin-top:8px;display:none">
-  <div class="lbl" style="margin-bottom:4px">LIVE OPEN TRADES</div>
-  <table id="lt"><tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr></table>
-</div>
-
 <div style="display:flex;gap:14px;align-items:center;margin-top:8px" class="lbl">
   <a href="/legacy">legacy GUI</a>
-  <a href="/api/telemetry">telemetry</a>
-  <a href="/api/shadow_csv">shadow csv</a>
   <span id="csvinfo"></span>
   <button style="margin-left:auto" onclick="if(confirm('Clear ledger?'))fetch('/api/clear_ledger',{method:'POST'})">clear ledger</button>
 </div>
@@ -228,7 +234,8 @@ function render(J){lastJ=J;
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
  el('build').textContent=(J.build_version||'').slice(0,12);
  var st=el('sesstrade');st.textContent=(J.session_name||'?')+(safe(J.session_tradeable)?' · tradeable':' · blocked');
- st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
+)OMEGAD0"
+R"OMEGAD1( st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
  el('macro').textContent=J.macro_regime||'?';
  el('macro').style.color=(J.macro_regime||'')==='RISK_OFF'?'var(--redB)':'var(--grnB)';
  el('vix').textContent=fmt2(J.vix_level,1);
@@ -241,8 +248,7 @@ function render(J){lastJ=J;
    if(hi>lo&&b>0){var p=Math.max(0,Math.min(1,(b-lo)/(hi-lo)));var r=el('tkr_'+t[0]);r.style.width=(p*100)+'%';
     r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}}});
 
-)OMEGAD0"
-R"OMEGAD1( var govRows=[['Spread gate',J.gov_spread],['Latency gate',J.gov_latency],['PnL governor',J.gov_pnl],
+ var govRows=[['Spread gate',J.gov_spread],['Latency gate',J.gov_latency],['PnL governor',J.gov_pnl],
   ['Position cap',J.gov_positions],['Consec-loss',J.gov_consec_loss],
   ['Cost guard blocked',J.cost_guard_blocked],['Cost guard passed',J.cost_guard_passed]];
  el('gov').innerHTML=govRows.map(function(r){var v=safe(r[1]);
@@ -294,13 +300,16 @@ R"OMEGAD1( var govRows=[['Spread gate',J.gov_spread],['Latency gate',J.gov_laten
    +'<span class="num">'+fmt2(s.price,2)+'</span> <span class="d">'+esc(s.engine||'')+'</span> <span class="d">'+esc(s.reason||'').slice(0,28)+'</span></div>';}).join('');
  el('sigs').innerHTML=sh||'<span class="d">no signals yet this session</span>';
 
- var lts=J.live_trades||[];el('ltwrap').style.display=lts.length?'block':'none';
- if(lts.length){var rows=lts.map(function(t){
+ var lts=J.live_trades||[];
+ el('ltcount').textContent=lts.length?lts.length+' open':'';
+ if(!lts.length){el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';}
+ else{var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>';}).join('');
-  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;}
+  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
+  el('ltpnl').textContent=fmt$(sum)+' unrealised';el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
 
 /* ── ws + poll ── */
@@ -318,6 +327,7 @@ var ROWS=[],WIN=30;
 function parseShadow(txt){var out=[];var ls=txt.split('\n');
  for(var i=0;i<ls.length;i++){var L=ls[i];if(!L||L[0]==='t')continue;var f=L.split(',');if(f.length<11)continue;
   var ts=parseInt(f[0],10);if(!ts)continue;
+  if(f[1]==='__BOOT__'||f[3]==='boot_writetest')continue;
   out.push({ts:ts+Math.max(0,parseInt(f[9],10)||0),sym:f[1],side:f[2],eng:f[3],pnl:parseFloat(f[6])||0,
    mfe:parseFloat(f[7])||0,mae:parseFloat(f[8])||0,hold:parseInt(f[9],10)||0,reason:(f[10]||'').trim(),
    spread:parseFloat(f[11])||0,lat:parseFloat(f[12])||0});}
@@ -401,7 +411,8 @@ function drawTOD(){var rs=ROWS;var grid={};
   if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
  var h='<div style="display:grid;grid-template-columns:24px repeat(24,1fr);gap:1px">';
  h+='<span></span>';for(var c=0;c<24;c++)h+='<span class="lbl" style="font-size:8px;text-align:center">'+(c%4===0?c:'')+'</span>';
- [1,2,3,4,5,0].forEach(function(d){h+='<span class="lbl" style="font-size:9px">'+DAYS[d]+'</span>';
+)OMEGAD1"
+R"OMEGAD2( [1,2,3,4,5,0].forEach(function(d){h+='<span class="lbl" style="font-size:9px">'+DAYS[d]+'</span>';
   for(var c=0;c<24;c++){var g=grid[d+'_'+c],bg='#141a22',ti='';
    if(g&&g.n>=2){var wr=g.w/g.n;
     bg=wr>0.58?'#0F6E56':wr>0.5?'#155446':wr>0.44?'#1d2733':wr>0.36?'#5c1f1f':'#A32D2D';
@@ -418,8 +429,7 @@ function drawPromo(){var by={};
  ks.forEach(function(k){var e=by[k],avg=e.pnl/e.n,ok=e.n>=GATE;
   var col=e.n<10?'var(--t2)':avg>0?(ok?'var(--grn)':'var(--ambB)'):'var(--red)';
   var tag=e.n<10?'n small':avg>0?(ok?'judgeable +EV':'building'):(ok?'judgeable −EV':'building');
-)OMEGAD1"
-R"OMEGAD2(  h+='<div style="display:grid;grid-template-columns:minmax(90px,1.4fr) 2fr 46px 64px 80px;gap:7px;align-items:center;margin-bottom:4px">'
+  h+='<div style="display:grid;grid-template-columns:minmax(90px,1.4fr) 2fr 46px 64px 80px;gap:7px;align-items:center;margin-bottom:4px">'
    +'<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</span>'
    +'<span class="bar"><i style="width:'+Math.min(100,e.n/GATE*100)+'%;background:'+col+'"></i></span>'
    +'<span class="num d">'+e.n+'/'+GATE+'</span><span class="num" style="color:'+col+'">'+fmt$(avg)+'/t</span>'
@@ -428,6 +438,8 @@ R"OMEGAD2(  h+='<div style="display:grid;grid-template-columns:minmax(90px,1.4fr
 
 function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json();}).then(function(a){
  if(!a||!a.length){return;}
+ a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
+ if(!a.length){return;}
  var rows=a.slice(-14).reverse().map(function(t){
   var d=new Date(safe(t.exitTs)*1000);
   var hh=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
