@@ -195,8 +195,15 @@ int main(int argc, char** argv) {
     eng.shadow_mode      = true;
     eng.ENTRY_SIZE       = 0.01;
     eng.MIN_RANGE        = 2.5;     // matches engine_init.hpp:988
-    eng.MAX_RANGE        = 19.0;    // matches engine_init.hpp:997 (S37-Z 2026-05-29 raise 12->19)
-    eng.MAX_SL_DIST_PTS  = 19.0;    // matches engine_init.hpp:1010 (S37-Z 2026-05-29 raise 6->19)
+    // 2026-06-12 re-opt A/B: PCT_MODE env => %-of-price gates (auto-tracks price);
+    //   else the legacy absolute 19.0pt (calibrated to ~$4700, drifts as gold moves).
+    if (std::getenv("PCT_MODE")) {
+        eng.MAX_RANGE_PCT   = 0.40;  eng.MAX_RANGE       = 0.0;
+        eng.MAX_SL_DIST_PCT = 0.40;  eng.MAX_SL_DIST_PTS = 0.0;
+    } else {
+        eng.MAX_RANGE        = 19.0;    // matches engine_init.hpp (S37-Z 2026-05-29 raise 12->19)
+        eng.MAX_SL_DIST_PTS  = 19.0;    // matches engine_init.hpp (S37-Z 2026-05-29 raise 6->19)
+    }
     eng.MIN_BREAK_TICKS  = 5;       // matches engine_init.hpp:972
     eng.MAX_SPREAD       = 2.5;     // typical live BlackBull XAU max
 
