@@ -7,6 +7,7 @@
 // ==============================================================================
 #include "OmegaTelemetryServer.hpp"
 #include "OmegaIndexHtml.hpp"   // HTML embedded at build time
+#include "OmegaIndexHtmlLegacy.hpp"  // pre-2026-06-12 GUI, served at /legacy
 #include "OmegaTradeLedger.hpp"
 #include <unordered_map>
 #include <ctime>
@@ -1296,6 +1297,10 @@ void OmegaTelemetryServer::run(int port)
             body = vbuf;
         }
         else if (strstr(buf, "GET /chimera_logo.png")) { ct = "image/png"; body = loadFile("chimera_logo.png"); }
+        else if (strstr(buf, "GET /legacy")) {
+            ct = "text/html";
+            body = omega_gui_legacy::INDEX_HTML;
+        }
         else if (strstr(buf, "GET / ") || strstr(buf, "GET /index.html")) {
             ct = "text/html";
             body = omega_gui::INDEX_HTML;
