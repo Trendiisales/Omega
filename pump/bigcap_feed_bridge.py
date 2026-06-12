@@ -95,9 +95,12 @@ class _ScanHandler(BaseHTTPRequestHandler):
             trs = "".join(row(c) for c in rows) or \
                   "<tr><td colspan=6 style='color:#6b6b6b'>no big-cap movers ≥ prefilter — scanning</td></tr>"
             n_trade = sum(1 for c in rows if gate(c))
+            # NOTE: no %-formatting here -- the JS contains literal '%' (e.g.
+            # +'%</td>') which blows up printf-style formatting and killed the
+            # HTML route with a silent ValueError. Token replacement instead.
             script = (
                 "<script>\n"
-                "const GATE=%f, PMIN=%f, DVMIN=%f;\n"
+                "const GATE=@GATE@, PMIN=@PMIN@, DVMIN=@DVMIN@;\n"
                 "async function rf(){try{\n"
                 " const r=await fetch('/api',{cache:'no-store'}); const d=await r.json();\n"
                 " d.sort((a,b)=>b.up-a.up);\n"
@@ -116,11 +119,15 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 " document.getElementById('rows').innerHTML=h;\n"
                 " const ng=d.filter(c=>c.up>=GATE&&c.px>=PMIN&&c.dvol>=DVMIN).length;\n"
                 " document.getElementById('hdr').textContent='BIGCAP MOMO \\u00b7 '+d.length+' movers \\u00b7 '"
-                "+ng+' tradeable (\\u2265"
-                "%.0f%%%% + $%.0fM liq)';\n"
+                "+ng+' tradeable (\\u2265@GPCT@% + $@DVM@M liq)';\n"
                 "}catch(e){}}\n"
                 "setInterval(rf,5000); rf();\n"
-                "</script>") % (GATE_PCT, PRICE_MIN, DVOL_MIN, GATE_PCT, DVOL_MIN / 1e6)
+                "</script>")
+            script = (script.replace("@GATE@", f"{GATE_PCT:.1f}")
+                            .replace("@PMIN@", f"{PRICE_MIN:.1f}")
+                            .replace("@DVMIN@", f"{DVOL_MIN:.0f}")
+                            .replace("@GPCT@", f"{GATE_PCT:.0f}")
+                            .replace("@DVM@", f"{DVOL_MIN/1e6:.0f}"))
             body = (
                 "<html><head><meta charset=utf-8><title>BIGCAP MOMO</title>"
                 "<style>"
