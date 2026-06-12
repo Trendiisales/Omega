@@ -86,6 +86,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OpenPositionRegistry.hpp"   // S-2026-06-03: omega::PositionSnapshot for persist
 #include "OmegaCostGuard.hpp"  // see on_tick() H4-close entry guard
+#include "IndexRiskGate.hpp"   // 2026-06-12: index_risk_off() long gate (price-fallback)
 
 namespace omega {
 
@@ -313,6 +314,20 @@ struct MinimalH4US30Breakout {
                     if (bull_break || bear_break) {
                         const bool intend_long = bull_break;
 
+                        // 2026-06-12 regime gate: drop bull-break LONGS when index
+                        //   risk-off (macro VIX/credit/dollar OR the price-based NAS
+                        //   sustained-bear fallback). Donchian-breakout longs bleed in
+                        //   a bear (gold-Turtle family); bear-break SHORTS ride the
+                        //   breakdown -> unaffected.
+                        if (intend_long && omega::index_risk_off()) {
+                            static int64_t s_ro = 0;
+                            if (now_ms - s_ro > 3600000LL) {
+                                s_ro = now_ms;
+                                printf("[MINIMAL_H4-%s] index risk-off: dropping LONG bull-break entry\n",
+                                       symbol.c_str());
+                                fflush(stdout);
+                            }
+                        } else
                         // S47 T4b 2026-04-27: long_only gate. When p.long_only
                         //   is true, drop bear-break entries silently. Bull
                         //   entries are unaffected.
