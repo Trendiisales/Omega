@@ -94,6 +94,7 @@
 
 #include "OmegaTradeLedger.hpp"  // omega::TradeRecord
 #include "OmegaCostGuard.hpp"
+#include "RegimeState.hpp"       // 2026-06-12: shared price-based bull/bear gate
 #include "GoldWaveTrend.hpp"   // S-2026-06-03 momentum-confirm gate (omega::gold_wt())
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
 #include <vector>
@@ -523,6 +524,9 @@ private:
     // ---------- Entry / exit
     void _fire_entry(int ci, int side, double bid, double ask, int64_t now_ms) noexcept {
         if (warmup_active_) return;
+        // 2026-06-12 regime gate: long-only engine -> skip ALL entries in a sustained
+        //   gold bear (shared price brain, gold_regime_gate_bt-validated). Inert in bull.
+        if (omega::gold_regime().long_blocked()) return;
         const auto& cfg = kXauTf1hCells[ci];
         double entry = ask;  // long-only
         if (entry <= 0.0 || atr14_ <= 0.0) return;

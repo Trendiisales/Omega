@@ -172,6 +172,7 @@
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03: omega::PositionSnapshot for persist
 #include "engine_protections.hpp"    // S35-P3 ProtectedEngineGuards
 #include "OmegaCostGuard.hpp"
+#include "RegimeState.hpp"           // 2026-06-12: shared price-based bull/bear gate
 #include "XauM30HmmGate.hpp"         // S88-followup HMM regime gate
 
 namespace omega {
@@ -572,6 +573,14 @@ public:
                 omega::log_entry_block("XauThreeBar30m", "EMA200_SHORT_BLOCK");
                 return;
             }
+        }
+
+        // 2026-06-12 regime gate: block LONGS in a sustained gold bear (shared
+        //   price brain, gold_regime_gate_bt-validated). Confirms the downtrend the
+        //   instantaneous EMA200 check above can pass during a below-trend bounce.
+        if (side > 0 && omega::gold_regime().long_blocked()) {
+            omega::log_entry_block("XauThreeBar30m", "REGIME_BEAR_LONG_BLOCK");
+            return;
         }
 
         // S88-followup: ADX min-trend filter. Skip entry when ADX14 < adx_min,
