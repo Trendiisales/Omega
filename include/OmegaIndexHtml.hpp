@@ -66,7 +66,8 @@ a{color:var(--blu);text-decoration:none}
   <span class="lbl"><span class="dot" id="domd" style="background:var(--t3)"></span>GOLD-DOM</span>
   <span class="lbl" id="uptime">up …</span>
   <span class="lbl" id="build"></span>
-  <button id="snd" style="margin-left:auto">SND OFF</button>
+  <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">TODAY</span><span id="daypnl" class="num" style="font-size:18px;font-weight:600;color:var(--w)">…</span><span id="daypnln" class="lbl"></span></span>
+  <button id="snd">SND OFF</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
 </div>
@@ -115,7 +116,7 @@ a{color:var(--blu);text-decoration:none}
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
     <span style="color:var(--grnB)">━ S2  /  ┄ S1 support</span> ·
-    ▲▼ breakout / reversal · levels hold flat until the center steps
+    ▲▼ breakout / reversal · <span style="color:var(--w)">▲/▼ + ○ our trade entries/exits (win green, loss red)</span> · levels hold flat until the center steps
   </div>
 </div>
 
@@ -126,7 +127,7 @@ a{color:var(--blu);text-decoration:none}
       <span class="lbl">SHADOW EQUITY (paper, all engines)</span>
       <span id="eqtot" class="num" style="font-size:16px;color:var(--grn)">…</span>
       <span style="margin-left:auto;display:flex;gap:5px">
-        <button id="w7">7d</button><button id="w30" class="on">30d</button><button id="wall">all</button>
+        <button id="w1" class="on">1d</button><button id="w7">7d</button><button id="w30">30d</button><button id="wall">all</button>
       </span>
     </div>
     <canvas id="eqc" height="170" style="margin-top:6px"></canvas>
@@ -236,13 +237,13 @@ sndBtn();
 function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.currentTime;
  notes.forEach(function(n){var o=ACTX.createOscillator(),g=ACTX.createGain();
   o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
-  var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
+)OMEGAD0"
+R"OMEGAD1(  var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
   g.gain.exponentialRampToValueAtTime(0.001,st+0.5);o.start(st);o.stop(st+0.55);});}
 function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
 function sigTick(){chime([[0,660,0.25]]);}
-)OMEGAD0"
-R"OMEGAD1(function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
+function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
 /* browsers suspend AudioContext until a user gesture -- with SND persisted ON a
    reloaded page was SILENT until the user happened to click. Resume on first
    gesture so persisted-ON actually rings. */
@@ -386,7 +387,7 @@ function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r
 setInterval(poll,1000);poll();
 
 /* ── shadow csv analytics ── */
-var ROWS=[],WIN=30;
+var ROWS=[],WIN=1;
 function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
     12-column layout that never matched the real 41-column file (col 0 is
@@ -405,6 +406,9 @@ function parseShadow(txt){
   if(sym==='__BOOT__'||eng==='boot_writetest')continue;
   var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
   out.push({ts:ts,sym:sym,side:side,eng:eng,
+   ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
+   epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
+   xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
    pnl:parseFloat(f[ix.net_pnl])||0,
    mfe:ix.mfe!==undefined?(parseFloat(f[ix.mfe])||0):0,
    mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
@@ -413,11 +417,18 @@ function parseShadow(txt){
    spread:ix.spread_at_entry!==undefined?(parseFloat(f[ix.spread_at_entry])||0):0,
    lat:ix.latency_ms!==undefined?(parseFloat(f[ix.latency_ms])||0):0});}
  out.sort(function(a,b){return a.ts-b.ts;});return out;}
-function winRows(){if(WIN>=9999)return ROWS;var cut=Date.now()/1000-WIN*86400;return ROWS.filter(function(r){return r.ts>=cut;});}
+function winRows(){if(WIN>=9999)return ROWS;
+ var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
+ return ROWS.filter(function(r){return r.ts>=cut;});}
+function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0;
+ ROWS.forEach(function(r){if(r.ts>=cut){n++;p+=r.pnl;}});
+ var el1=el('daypnl');el1.textContent=fmt$(p);el1.style.color=p>=0?'var(--grn)':'var(--red)';
+ el('daypnln').textContent=n+' closes today (UTC)';}
 
 function drawEquity(){var cv=el('eqc'),ctx=cv.getContext('2d');
  cv.width=cv.clientWidth*2;cv.height=340;ctx.scale(2,2);
- var W=cv.clientWidth,H=170;ctx.clearRect(0,0,W,H);
+)OMEGAD1"
+R"OMEGAD2( var W=cv.clientWidth,H=170;ctx.clearRect(0,0,W,H);
  var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);el('eqtot').textContent='$0';el('eqstats').innerHTML='';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
@@ -429,8 +440,7 @@ function drawEquity(){var cv=el('eqc'),ctx=cv.getContext('2d');
  [lo,0,hi].forEach(function(g){ctx.moveTo(0,Y(g));ctx.lineTo(W,Y(g));});ctx.stroke();
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText(fmt$(hi),2,Y(hi)+9);ctx.fillText('$0',2,Y(0)-3);
-)OMEGAD1"
-R"OMEGAD2( ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
+ ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.strokeStyle='#2EBD85';ctx.lineWidth=1.4;ctx.stroke();
  ctx.lineTo(X(cum.length-1),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();
  ctx.fillStyle='rgba(46,189,133,0.08)';ctx.fill();
@@ -594,6 +604,33 @@ function drawPR(){var cv=el('prc'),ctx=cv.getContext('2d');
   if(sg>0){y=Y(bars[i][3])+11;ctx.moveTo(x,y-7);ctx.lineTo(x-4.5,y);ctx.lineTo(x+4.5,y);ctx.fillStyle='#2EBD85';}
   else{y=Y(bars[i][2])-11;ctx.moveTo(x,y+7);ctx.lineTo(x-4.5,y);ctx.lineTo(x+4.5,y);ctx.fillStyle='#E2484D';}
   ctx.closePath();ctx.fill();}
+ /* closed-trade overlay: entries + exits from the shadow ledger (ROWS),
+    mapped to the visible bar range of the selected symbol */
+ (function(){
+  if(typeof ROWS==='undefined'||!ROWS.length)return;
+  var t0=bars[0][0],t1=bars[n-1][0]+ (bars[1]?bars[1][0]-bars[0][0]:300);
+  function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
+  function bx(ts){var lo=0,hi=n-1;
+   while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
+   return lo;}
+  ROWS.forEach(function(r){
+   if(!sm(r.sym)||!r.ets||!r.epx)return;
+   if(r.ets>t1||r.ts<t0)return;
+   var win=r.pnl>=0,c=win?'#2EBD85':'#E2484D';
+   var xe=X(bx(r.ets)),ye=Y(r.epx);
+   var xx=X(bx(r.ts)), yx=Y(r.xpx||r.epx);
+   if(r.ets>=t0&&r.ts<=t1){ctx.strokeStyle=c;ctx.globalAlpha=0.55;ctx.setLineDash([3,3]);
+)OMEGAD2"
+R"OMEGAD3(    ctx.beginPath();ctx.moveTo(xe,ye);ctx.lineTo(xx,yx);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
+   if(r.ets>=t0){ctx.beginPath();   /* entry: triangle, points up=LONG / down=SHORT */
+    if(r.side==='LONG'){ctx.moveTo(xe,ye-6);ctx.lineTo(xe-5,ye+3);ctx.lineTo(xe+5,ye+3);}
+    else{ctx.moveTo(xe,ye+6);ctx.lineTo(xe-5,ye-3);ctx.lineTo(xe+5,ye-3);}
+    ctx.closePath();ctx.fillStyle=c;ctx.fill();
+    ctx.strokeStyle='#0B0F14';ctx.lineWidth=0.8;ctx.stroke();}
+   if(r.ts<=t1){ctx.beginPath();ctx.arc(xx,yx,3.4,0,6.3);   /* exit: ring */
+    ctx.fillStyle='#0B0F14';ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=1.6;ctx.stroke();}
+  });
+ })();
  var lastC=bars[n-1][4],yl=Y(lastC),trend=0;
  for(var i=n-1;i>=0;i--){if(bars[i][10]){trend=bars[i][10];break;}}
  var tc=trend>0?'#2EBD85':trend<0?'#E2484D':'#85B7EB';
@@ -611,16 +648,15 @@ function drawPR(){var cv=el('prc'),ctx=cv.getContext('2d');
 function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
 loadPR();setInterval(loadPR,30000);
 
-function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();}
+function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();}
 function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
  ROWS=parseShadow(t);el('csvinfo').textContent=ROWS.length+' shadow closes loaded';
  fillSymSel();redrawAll();}).catch(function(){el('csvinfo').textContent='shadow csv unavailable';});}
 loadCsv();setInterval(loadCsv,120000);
 drawBlot();setInterval(drawBlot,20000);
 
-[['w7',7],['w30',30],['wall',9999]].forEach(function(b){el(b[0]).onclick=function(){WIN=b[1];
-)OMEGAD2"
-R"OMEGAD3( ['w7','w30','wall'].forEach(function(x){el(x).className=x===b[0]?'on':'';});redrawAll();};});
+[['w1',1],['w7',7],['w30',30],['wall',9999]].forEach(function(b){el(b[0]).onclick=function(){WIN=b[1];
+ ['w1','w7','w30','wall'].forEach(function(x){el(x).className=x===b[0]?'on':'';});redrawAll();};});
 el('mmsym').onchange=drawMM;
 window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
