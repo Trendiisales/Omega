@@ -4607,8 +4607,8 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.verbose      = true;
         g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("BigCapMomo", []() { return g_bigcap_momo.collect_positions(); });
-        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% trail5%% volx3 4h-cap "
-               "$1000-notional liq(p>=10,$vol>=100M) slip0.15%%/side shadow (feed via OMEGA_BIGCAP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% trail5%% NO-volx NO-dvol-gate 4h-cap "
+               "$1000-notional p>=10 slip0.15%%/side shadow (liq via scanner; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory
