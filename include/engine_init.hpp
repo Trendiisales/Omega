@@ -4538,7 +4538,10 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.tf_sec       = 300;      // 5m entry bars (validated TF)
         g_bigcap_momo.label        = "BigCapMomo";
         g_bigcap_momo.day_gate_pct = 5.0;      // only names already +5% on the session (the lever)
-        g_bigcap_momo.trail_pct    = 3.0;      // 3% trail (tight loses on big-caps)
+        g_bigcap_momo.trail_pct    = 4.0;      // 4% trail -- bigcap_scalp_stress.py: most slippage-
+                                               // robust width (PF 1.83/1.65/1.53/1.32 at 8/15/20/30bps
+                                               // vs trail3 1.79/1.57/1.44/1.21). Tight (2.5%) dies by
+                                               // 20bps. Big-cap moves need room.
         g_bigcap_momo.volx         = 3.0;      // require a real volume surge on the ignition bar
         g_bigcap_momo.be_arm_pct   = 0.0;
         g_bigcap_momo.be_floor_pct = 0.0;
@@ -4552,7 +4555,7 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.verbose      = true;
         g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("BigCapMomo", []() { return g_bigcap_momo.collect_positions(); });
-        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate5%% trail3%% volx3 4h-cap "
+        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate5%% trail4%% volx3 4h-cap "
                "$1000-notional liq(p>=10,$vol>=100M) slip0.15%%/side shadow (feed via OMEGA_BIGCAP_BRIDGE=1)\n");
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
