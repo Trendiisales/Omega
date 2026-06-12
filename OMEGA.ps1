@@ -97,6 +97,16 @@ param(
     # safe path (wipe-on-crash always still fires) is the DEFAULT when -Fast is off.
     [switch]$Fast,
 
+    # -ColdStop: legacy deploy ordering -- stop the service BEFORE pull+build,
+    # leaving Omega down for the entire UI+C++ build (6-10 min observed).
+    # DEFAULT (off) is HOT-SWAP: the service keeps running on the previous
+    # binary through git pull, warmup-CSV regen, UI build and C++ build; it is
+    # stopped only at [7/12] for the exe copy + stamp + restart, so downtime is
+    # the stop/copy/start window (~20-40 s). Build failures under hot-swap
+    # leave the running service untouched (no recovery restart needed).
+    # Added S-2026-06-12e after operator flagged 6-7 min deploy downtime.
+    [switch]$ColdStop,
+
     # ----- watchdog subcommand parameters -----
     [int]   $StaleThresholdSec      = 60,
     [int]   $L2StaleThresholdSec    = 120,
@@ -868,9 +878,13 @@ function Invoke-Deploy {
     # [1/12] Stop service (write deploy sentinel first so watchdog doesn't
     #        treat this as a crash)
     # --------------------------------------------------------------------------
-    Write-Host "[1/12] Stopping Omega service..." -ForegroundColor Yellow
     Set-Content -Path $DeployFlag -Value (Get-Date).ToString("o") -Encoding UTF8
-    if (-not (Stop-OmegaService -Force:$ForceKill)) { return 1 }
+    if ($ColdStop) {
+        Write-Host "[1/12] Stopping Omega service (-ColdStop legacy ordering)..." -ForegroundColor Yellow
+        if (-not (Stop-OmegaService -Force:$ForceKill)) { return 1 }
+    } else {
+        Write-Host "[1/12] HOT-SWAP: service stays UP through pull+build; stop deferred to [7/12]" -ForegroundColor Cyan
+    }
     Write-Host ""
 
     # --------------------------------------------------------------------------
@@ -1253,6 +1267,14 @@ function Invoke-Deploy {
     # [7/12] Copy binary + assets
     # --------------------------------------------------------------------------
     Write-Host "[7/12] Copying assets..." -ForegroundColor Yellow
+    if (-not $ColdStop) {
+        Write-Host "  [hot-swap] build done -- stopping service now (downtime window opens here)" -ForegroundColor Cyan
+        if (-not (Confirm-CfePosition)) {
+            Write-Host "  [hot-swap] aborted pre-stop; service still running on previous binary" -ForegroundColor Yellow
+            return 0
+        }
+        if (-not (Stop-OmegaService -Force:$ForceKill)) { return 1 }
+    }
     $copyOk = $false
     for ($i = 0; $i -lt 5; $i++) {
         try { Copy-Item $BuildExe $OmegaExe -Force -ErrorAction Stop; $copyOk = $true; break }
