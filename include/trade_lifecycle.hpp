@@ -7,6 +7,7 @@
 // bracket_on_close() below. Allow-by-default skeleton; engine behaviour unchanged.
 #include "gold_coordinator.hpp"
 #include <sstream>  // S17: ostringstream for atomic SHADOW-CLOSE + TRADE-COST emission (prevents stdout interleaving)
+#include "RegimeState.hpp"  // 2026-06-12: bear-event lockout for choppy-bear instruments (symbol_gate)
 
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
@@ -974,6 +975,28 @@ static bool symbol_gate(
 {
     const bool shadow_mode = (g_cfg.mode == "SHADOW");
     if (symbol == "XAUUSD" && g_disable_gold_stack) return false;
+
+    // 2026-06-12 BEAR-EVENT LOCKOUT (operator directive). Instruments that do NOT
+    //   trend down cleanly -- US30/GER40/ESTX50/UK100 -- have no tradeable edge in
+    //   either direction during a bear: longs bleed on whipsawed breakouts, and the
+    //   bear-SHORT archetype FAILS backtest on them (US30 2022 H2-negative, GER40
+    //   PF0.73, both reject the both-halves bar -- index_bear_short_bt). So block ALL
+    //   new entries on them while the broad market is in a sustained PRICE-bear
+    //   (index_market_regime, NAS bellwether -- robust, no feed dependency). NAS/SPX
+    //   are excluded: they trend cleanly and have a validated bear-short book (IBS).
+    //   Releases automatically when the market reclaims its trend (is_bear() clears).
+    if ((symbol == "DJ30.F" || symbol == "GER40" || symbol == "ESTX50" || symbol == "UK100")
+        && omega::index_market_regime().is_bear()) {
+        static std::unordered_map<std::string, int64_t> s_lockout_log;
+        const int64_t now_l = nowSec();
+        if (now_l - s_lockout_log[symbol] >= 300) {
+            s_lockout_log[symbol] = now_l;
+            printf("[BEAR-LOCKOUT] %s blocked -- market in sustained bear; no clean edge either side\n",
+                   symbol.c_str());
+            fflush(stdout);
+        }
+        return false;
+    }
     // Connection stability gate: block new entries for N seconds after reconnect.
     // Prevents opening positions on the first tick after logon when the FIX session
     // may be unstable -- avoids the open?immediate-FORCE_CLOSE pattern seen in logs.
