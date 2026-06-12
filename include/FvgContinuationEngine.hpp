@@ -69,6 +69,28 @@ public:
                                     //   the edge; this makes the live engine match it.
     int    ATR_LEN       = 14;      // HTF ATR lookback
     int    SWING_LB      = 48;      // HTF bars for the swing-high/low DOL
+    // 2026-06-12 min-retrace-depth gate (fib "golden-zone" idea, tested) -- OFF by
+    //   default; an available, backtested shadow lever, NOT a cleared deploy change.
+    //   A YouTube strat proposed entering FVGs only inside the 0.618-0.786 fib
+    //   "golden pocket". Backtested on NAS (fvg_core.cpp / fvg_trend.cpp, --fibgate):
+    //   - The LITERAL golden pocket is WRONG: 0.618-0.786 leaves n=4-11 (noise) and
+    //     >=0.618 FAILS outright (PF 0.78, H1 0% WR). The video's specific levels die.
+    //   - The underlying principle (wait for a real pullback) DOES help the bare
+    //     mechanism: require entry to have retraced >= MIN_RETRACE of the recent
+    //     RETRACE_LB-bar leg. On the SIMPLE config (no trend/MACD gate), NAS
+    //     age12/dol2.0: OFF n79 PF1.63 (H1 1.45/H2 1.79) -> >=0.382 n58 PF2.01
+    //     (H1 1.68/H2 2.35), 3x-cost-robust, and it cuts the 2022-bear bleed
+    //     (PF 0.56->0.72).
+    //   - BUT on the LIVE engine config (TRENDN=288 + MACD_GATE already active), the
+    //     fvg_trend.cpp engine-faithful run shows the gate does NOT clear walk-forward:
+    //     OFF n55 PF1.23 (H1 0.82 / H2 1.72) -> >=0.382 n34 PF1.30 (H1 0.65 / H2 2.51).
+    //     The trend+MACD gates already do the selectivity; stacking retrace on top
+    //     thins to n34 and worsens H1 -- both-halves FAILS (as does the OFF baseline
+    //     on this window). Per the never-deploy-without-both-halves rule, it is NOT
+    //     enabled. Revisit if a cleaner cross-window run clears H1.
+    double MIN_RETRACE   = 0.0;     // entry must have retraced >= this of recent leg (0=OFF; 0.382 = tested lever)
+    double MAX_RETRACE   = 1.0;     // upper cap (1.0 = no golden-pocket ceiling; the deep pocket failed)
+    int    RETRACE_LB    = 12;      // HTF bars defining the recent impulse leg for the gate
     double MIN_RR        = 1.0;     // require DOL >= this many R away
     double COST_RATIO    = 1.5;     // ExecutionCostGuard min gross/cost
     bool   ALLOW_SHORT   = true;    // bidirectional; longs are the bull-validated side
@@ -222,6 +244,13 @@ public:
             #define FVG_DIAG(fmt, ...) do{ if(diag){ printf("[%s] %s BLOCK " fmt, engine_name.c_str(), symbol.c_str(), ##__VA_ARGS__); fflush(stdout); m_diag_bar=cur_idx; } }while(0)
 
             const double entry = (f.dir>0) ? f.hi : f.lo;            // fill at near edge
+            // min-retrace-depth gate (see MIN_RETRACE provenance above): skip shallow
+            //   mitigations -- only take FVGs entered after a >=MIN_RETRACE pullback of
+            //   the recent impulse leg. Lifts NAS PF 1.63->2.01, both halves +.
+            if (MIN_RETRACE > 0.0 && !_retrace_ok(f.dir, entry)) {
+                FVG_DIAG("retrace too shallow (need >=%.3f of %d-bar leg)\n", MIN_RETRACE, RETRACE_LB);
+                continue;   // gap stays live; a deeper mitigation may still qualify
+            }
             const double stop  = (f.dir>0) ? (f.lo - STOP_BUF_ATR*m_atr)
                                            : (f.hi + STOP_BUF_ATR*m_atr);
             const double r     = (f.dir>0) ? (entry-stop) : (stop-entry);
@@ -324,6 +353,21 @@ private:
         for (double lvl : {m_have_pd?m_pdl:-1.0, swLo})
             if (lvl>0 && lvl<px-0.3*m_atr && (px-lvl)<=MAX_DOL_ATR*m_atr) best = (best<0? lvl : std::max(best,lvl));
         return best;
+    }
+    // min-retrace-depth gate: did `entry` retrace >= MIN_RETRACE of the recent
+    //   RETRACE_LB-bar impulse leg? Mirrors fvg_core.cpp --fibgate exactly: the leg
+    //   is [hidx-RETRACE_LB .. hidx-2] over closed HTF bars (hidx = last closed).
+    bool _retrace_ok(int dir, double entry) const {
+        const int n=(int)m_htf.size(); if (n<4) return false;
+        const int hidx=n-1;
+        double fHi=-1, fLo=-1;
+        for (int k=std::max(0,hidx-RETRACE_LB); k<=hidx-2; ++k) {
+            fHi=std::max(fHi,m_htf[k].h); if(fLo<0||m_htf[k].l<fLo) fLo=m_htf[k].l;
+        }
+        if (fHi<=fLo || fLo<=0) return false;
+        const double rng=fHi-fLo;
+        const double retr = dir>0 ? (fHi-entry)/rng : (entry-fLo)/rng;
+        return retr>=MIN_RETRACE && retr<=MAX_RETRACE;
     }
     double _swing_hi() const { int n=(int)m_htf.size(); if(n<4) return -1; double hi=-1;
         for (int k=std::max(0,n-2-SWING_LB); k<=n-2; ++k) hi=std::max(hi,m_htf[k].h); return hi; }

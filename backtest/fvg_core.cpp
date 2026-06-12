@@ -53,6 +53,13 @@ int main(int argc,char**argv){
     double MINGAP=argc>11?atof(argv[11]):0.05;   // min FVG size in ATR (displacement quality)
     int    MAXAGE=argc>12?atoi(argv[12]):24;     // max HTF bars old at entry (freshness)
     string NAME=argc>13?argv[13]:path;
+    // --- fib golden-zone confluence gate (video strat 3) : opt-in, default OFF ---
+    // require the FVG retrace-entry to land within [FIBLO,FIBHI] retracement of the
+    // recent swing leg (swLo->swHi for longs, swHi->swLo for shorts). 0=off.
+    int    FIBGATE=argc>14?atoi(argv[14]):0;     // 0=off 1=zone-gate
+    double FIBLO=argc>15?atof(argv[15]):0.618;   // golden-zone near edge
+    double FIBHI=argc>16?atof(argv[16]):0.786;   // golden-zone far edge
+    int    FIBLB=argc>17?atoi(argv[17]):48;      // swing-leg lookback (HTF bars) for the fib gate
     auto m1=load(path); if((int)m1.size()<500){printf("[%s] few bars\n",NAME.c_str());return 1;}
     auto htf=agg(m1,HTF);
     // prior-day H/L
@@ -112,6 +119,14 @@ int main(int argc,char**argv){
             if(f.dir>0&&dolUp<0)continue; if(f.dir<0&&dolDn<0)continue;
             bool tag=(L<=f.hi&&H>=f.lo); if(!tag)continue;       // retrace into gap
             double entry = f.dir>0? f.hi : f.lo;                 // fill at near edge (mitigation)
+            if(FIBGATE){                                          // golden-zone confluence (video strat 3)
+                double fHi=-1,fLo=-1;                              // recent-impulse swing leg
+                if(hidx>=4){int lo=max(0,hidx-FIBLB);for(int k=lo;k<=hidx-2;++k){fHi=max(fHi,htf[k].h);if(fLo<0||htf[k].l<fLo)fLo=htf[k].l;}}
+                if(fHi<=fLo||fLo<=0)continue;                     // need a valid swing leg
+                double rng=fHi-fLo;
+                double retr = f.dir>0? (fHi-entry)/rng : (entry-fLo)/rng;
+                if(retr<FIBLO||retr>FIBHI)continue;               // entry must sit in the golden zone
+            }
             double slPx;
             if(SMODE=="gap") slPx = f.dir>0? (f.lo-STOPK*0.1*atr):(f.hi+STOPK*0.1*atr); // just beyond far edge
             else            slPx = f.dir>0? (entry-STOPK*atr):(entry+STOPK*atr);

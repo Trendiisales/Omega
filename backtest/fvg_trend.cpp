@@ -56,6 +56,10 @@ int main(int argc,char**argv){
     int    MACDG=argc>14?atoi(argv[14]):0;      // MACD(12,26,9) HTF direction gate (1=on) -- matches engine MACD_GATE
     int    REVEXIT=argc>15?atoi(argv[15]):0;    // reversal-exit: cut when HTF MACD flips AGAINST the open position
     string NAME=argc>16?argv[16]:path;
+    int    FIBGATE=argc>17?atoi(argv[17]):0;     // min-retrace-depth gate (0=off)
+    double FIBLO=argc>18?atof(argv[18]):0.382;
+    double FIBHI=argc>19?atof(argv[19]):1.0;
+    int    FIBLB=argc>20?atoi(argv[20]):12;      // recent-impulse leg lookback (HTF bars)
     auto m1=load(path); if((int)m1.size()<500){printf("[%s] few bars\n",NAME.c_str());return 1;}
     auto htf=agg(m1,HTF);
     // S-2026-06-11 TREND GATE: EMA over HTF closes -- only take continuations
@@ -135,6 +139,13 @@ int main(int argc,char**argv){
             if(MACDG && hidx>=0){ if(f.dir>0 && !macdBull[hidx])continue; if(f.dir<0 && macdBull[hidx])continue; } // MACD gate (engine-faithful)
             bool tag=(L<=f.hi&&H>=f.lo); if(!tag)continue;       // retrace into gap
             double entry = f.dir>0? f.hi : f.lo;                 // fill at near edge (mitigation)
+            if(FIBGATE){                                          // min-retrace-depth gate (engine-faithful)
+                double fHi=-1,fLo=-1;
+                if(hidx>=4){int lo=max(0,hidx-FIBLB);for(int k=lo;k<=hidx-2;++k){fHi=max(fHi,htf[k].h);if(fLo<0||htf[k].l<fLo)fLo=htf[k].l;}}
+                if(fHi<=fLo||fLo<=0)continue;
+                double rng=fHi-fLo, retr = f.dir>0? (fHi-entry)/rng : (entry-fLo)/rng;
+                if(retr<FIBLO||retr>FIBHI)continue;
+            }
             double slPx;
             if(SMODE=="gap") slPx = f.dir>0? (f.lo-STOPK*0.1*atr):(f.hi+STOPK*0.1*atr); // just beyond far edge
             else            slPx = f.dir>0? (entry-STOPK*atr):(entry+STOPK*atr);
