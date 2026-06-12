@@ -4524,6 +4524,37 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] PumpScalp manager: 3m-only gate100 trail2 NO-BE 15min-cap "
                "$1000-notional liq(p>=1,$vol>=2M) slip1%%/side shadow (feed via OMEGA_PUMP_BRIDGE=1)\n");
 
+        // ── BigCapMomo (NAS/SPX big-cap day-mover scalp; 5m) ────────────────────
+        // 2026-06-12 (operator): the micro-cap pump died on SLIPPAGE, not momentum.
+        // Same engine, BIG-CAP config: only scalp deep-liquidity NAS/SPX names that
+        // are already up >= DAY_GATE on the session, ride continuation, exit on the
+        // trail. Backtest bigcap_scalp_sweep.py (5m, ~2-3mo, 508 NAS/SPX names):
+        //   day-gate 5% + trail 3% => PF 1.79 (n52);  gate 3% + trail 3% => PF 1.46
+        //   (n149). A TIGHT 1-1.5% trail LOSES (stopped on noise) -- big-cap intraday
+        //   moves need room, so trail 3%. CAVEAT: 2-3mo / one regime / thin n / 8bps
+        //   slip assumed -> SHADOW until live-shadow confirms fills + frequency.
+        g_bigcap_momo.enabled      = true;     // shadow
+        g_bigcap_momo.shadow_mode  = true;
+        g_bigcap_momo.tf_sec       = 300;      // 5m entry bars (validated TF)
+        g_bigcap_momo.label        = "BigCapMomo";
+        g_bigcap_momo.day_gate_pct = 5.0;      // only names already +5% on the session (the lever)
+        g_bigcap_momo.trail_pct    = 3.0;      // 3% trail (tight loses on big-caps)
+        g_bigcap_momo.volx         = 3.0;      // require a real volume surge on the ignition bar
+        g_bigcap_momo.be_arm_pct   = 0.0;
+        g_bigcap_momo.be_floor_pct = 0.0;
+        g_bigcap_momo.maxhold_bars = 48;       // 48 x 5m = 4h backstop
+        g_bigcap_momo.pyr_adds     = 0;
+        g_bigcap_momo.max_entries_per_day = 2;
+        g_bigcap_momo.notional_usd = 1000.0;
+        g_bigcap_momo.slip_pct     = 0.15;     // big-cap realistic (vs micro 1.0%)
+        g_bigcap_momo.min_dvol_usd = 100.0e6;  // LIQUIDITY: bar close*vol >= $100M (large/mid-cap)
+        g_bigcap_momo.price_min    = 10.0;     // not a penny stock
+        g_bigcap_momo.verbose      = true;
+        g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_open_positions.register_source("BigCapMomo", []() { return g_bigcap_momo.collect_positions(); });
+        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate5%% trail3%% volx3 4h-cap "
+               "$1000-notional liq(p>=10,$vol>=100M) slip0.15%%/side shadow (feed via OMEGA_BIGCAP_BRIDGE=1)\n");
+
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory
         // omega-peachy-gold-orb-retrace-edge). Distilled from Peachy's gold-ORB

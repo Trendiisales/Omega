@@ -26,6 +26,10 @@ namespace omega {
 class PumpScalpManager {
 public:
     bool   shadow_mode  = true;
+    // 2026-06-12: parameterized so a BIG-CAP instance (5m, distinct label) can reuse
+    //   this manager alongside the micro-cap one. Defaults = the micro-cap 3m engine.
+    int    tf_sec       = 180;     // entry bar timeframe (180=3m micro, 300=5m big-cap)
+    std::string label   = "PumpScalp_3m";   // engine_name on emitted trades
     double day_gate_pct = 100.0;   // extreme-mover gate (see engine: durable edge lives here)
     double trail_pct    = 2.0;     // hard trailing stop. 3->2 2026-06-11 (pump_exit_bt.py:
                                    // BE2T2 wins every basket day at 1% AND 2% slip)
@@ -138,8 +142,8 @@ private:
     void configure(Cell& t, const std::string& sym) {
         PumpScalpEngine& e = t.e3;
         e.symbol       = sym;
-        e.engine_name  = "PumpScalp_3m";
-        e.TF_SEC       = 180;
+        e.engine_name  = label;
+        e.TF_SEC       = tf_sec;
         e.DAY_GATE_PCT = day_gate_pct;
         e.TRAIL_PCT    = trail_pct;
         e.BE_ARM_PCT   = be_arm_pct;
@@ -150,7 +154,7 @@ private:
         e.SLIP_PCT     = slip_pct;
         e.MIN_DVOL_USD = min_dvol_usd;
         e.PRICE_MIN    = price_min;
-        e.MAXHOLD_SEC  = maxhold_bars * 180;   // time-stop (5 bars = 15min); trail exits on the turn first
+        e.MAXHOLD_SEC  = maxhold_bars * tf_sec;   // time-stop; trail exits on the turn first
         e.MAX_ENTRIES_PER_DAY = max_entries_per_day;   // re-entry cap (chop-bleed guard)
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;

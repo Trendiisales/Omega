@@ -646,6 +646,22 @@ int main(int argc, char* argv[])
         }).detach();
     }
 
+    // ── BigCapMomo feed consumer (2026-06-12) ───────────────────────────────
+    // Opt-in: OMEGA_BIGCAP_BRIDGE=1. Same B/S/P/C protocol, separate port (default
+    // 7784), fed by pump/bigcap_feed_bridge.py (NAS/SPX day-mover scanner). Drives
+    // g_bigcap_momo (big-cap config). Off => dormant.
+    if (const char* en = std::getenv("OMEGA_BIGCAP_BRIDGE"); en && std::string(en) == "1") {
+        const char* port_env = std::getenv("OMEGA_BIGCAP_BRIDGE_PORT");
+        const uint16_t bport = port_env ? static_cast<uint16_t>(std::atoi(port_env)) : 7784;
+        const char* host_env = std::getenv("OMEGA_BIGCAP_BRIDGE_HOST");
+        static std::string s_bigcap_host = host_env ? host_env : "127.0.0.1";
+        std::cout << "[BIGCAP-CONSUMER] starting; " << s_bigcap_host << ":" << bport << "\n";
+        std::cout.flush();
+        std::thread([bport]{
+            omega::pump_feed::run(g_bigcap_momo, g_bigcap_stop, s_bigcap_host.c_str(), bport);
+        }).detach();
+    }
+
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
     // =========================================================================

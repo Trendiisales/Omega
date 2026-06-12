@@ -151,6 +151,13 @@ static omega::PeachyOrbEngine g_peachy_orb_nas;      // NAS100 one-candle ORB-re
 #include "PumpScalpManager.hpp"
 static omega::PumpScalpManager g_pump_manager;       // micro-cap pump scalp (dynamic universe, 3m-only since S-2026-06-11). Fed by PumpFeedConsumer when OMEGA_PUMP_BRIDGE=1. Shadow.
 static std::atomic<bool>       g_pump_stop{false};   // PumpFeedConsumer thread stop flag
+// 2026-06-12 BigCapMomo: same PumpScalpManager engine, BIG-CAP config (NAS/SPX day-
+//   movers, not pennies). Backtest bigcap_scalp_sweep.py (5m, ~2-3mo, 508 NAS/SPX):
+//   day-expansion gate 3-5% + 3% trail = PF 1.46-1.79. The slippage that killed the
+//   micro-cap pump is small on deep-liquidity big-caps. Fed by its OWN bridge thread
+//   (OMEGA_BIGCAP_BRIDGE=1) so it doesn't share the micro-cap feed. Shadow.
+static omega::PumpScalpManager g_bigcap_momo;
+static std::atomic<bool>       g_bigcap_stop{false};
 #include "PumpFeedConsumer.hpp"                       // TCP client thread (winsock already set up by IbkrDomConsumer above)
 #include "GoldOrbRetraceEngine.hpp"
 static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
