@@ -129,6 +129,7 @@
 #include "L2Globals.hpp"         // 2026-05-30: AtomicL2 + g_l2_<sym> globals
 #include "L2LeverageState.hpp"   // 2026-05-30: L2 sizing + L2-trail flip helper
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
+#include "RegimeState.hpp"       // 2026-06-12 Tier-2 re-opt: gold_regime() long-gate
 #include <cstdlib>
 
 namespace omega {
@@ -260,6 +261,15 @@ public:
     // production behaviour unchanged.  Engine_init.hpp must explicitly OR
     // in 0x40 to activate the new cell.
     uint32_t cell_enable_mask = 0x3F;  // bits 0-5, original 6 cells
+
+    // 2026-06-12 Tier-2 re-opt: skip LONG entries while gold_regime() reports a
+    // sustained H1 bear. TESTED AND REJECTED -- leave OFF. A/B on XAU2022_bear
+    // (backtest/xau_tf4h_cell_sweep.cpp): gate changed bear net -0.69->-0.90
+    // (Donchian), EmaCross 0.42->0.42 PF (its 2022 bleed is false-cross chop
+    // OUTSIDE sustained-bear windows, so the gate never fires on those losers),
+    // and cost bull-tape PF 1.58->1.55. Kept as an inert flag so the negative
+    // result is discoverable and nobody re-chases it.
+    bool use_regime_long_gate = false;
 
     // S88-followup (2026-05-27): ATR-percentile vol-band gate (proven on
     // XauThreeBar30m: PF 1.55 -> 2.23, MaxDD -56% on 6mo PKL). Skip entries
@@ -491,6 +501,9 @@ public:
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
+            // 2026-06-12 regime gate: no new longs in sustained gold bear.
+            if (use_regime_long_gate && side > 0
+                && omega::gold_regime().long_blocked()) continue;
             // S88-followup vol-band gate (per-cell mask)
             if (use_vol_band_gate && (cell_vol_band_mask & (1u << ci))
                 && (int)atr_vol_window_.size() >= 200) {
