@@ -54,7 +54,7 @@ a{color:var(--blu);text-decoration:none}
 <body>
 
 <!-- ═══ RIBBON ═══ -->
-<div class="pan" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--pan2);padding:7px 12px">
+<div class="pan" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--pan2);padding:7px 12px;border-radius:6px 6px 0 0">
   <span style="display:inline-flex;align-items:center;gap:8px">
     <span style="width:22px;height:22px;border-radius:5px;background:#0a4434;border:1px solid #0F6E56;color:#9FE1CB;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;font-family:Georgia,serif">&#937;</span>
     <span style="font-size:14px;font-weight:600;color:var(--w)">OMEGA <span style="color:var(--t2);font-weight:400">desk</span></span>
@@ -64,11 +64,24 @@ a{color:var(--blu);text-decoration:none}
   <span class="lbl"><span class="dot" id="fixt" style="background:var(--t3)"></span>FIX-T</span>
   <span class="lbl"><span class="dot" id="l2d" style="background:var(--t3)"></span>L2</span>
   <span class="lbl"><span class="dot" id="domd" style="background:var(--t3)"></span>GOLD-DOM</span>
-  <span class="lbl" id="sessname">session …</span>
   <span class="lbl" id="uptime">up …</span>
   <span class="lbl" id="build"></span>
-  <span class="num" id="clk" style="margin-left:auto;color:var(--w)">--:--:-- UTC</span>
+  <button id="snd" style="margin-left:auto">SND OFF</button>
+  <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
+</div>
+
+<!-- ═══ SESSION STRIP (in top block) ═══ -->
+<div style="border:1px solid var(--bd);border-top:none;border-radius:0 0 6px 6px;background:var(--pan);padding:7px 12px;margin-top:-6px">
+  <div id="sessbar" style="position:relative;height:14px;border-radius:3px;overflow:hidden;display:flex"></div>
+  <div style="display:flex;justify-content:space-between" class="lbl"><span>00 Asia</span><span>05 pre-Ldn</span><span>07 London</span><span>13:30 NY-KZ</span><span>15 NY</span><span>20 late</span><span>22 Asia</span></div>
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px">
+    <span id="sesstrade" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
+    <span id="phases" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+    <span class="lbl" style="margin-left:auto">REGIME</span>
+    <span id="macro" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
+    <span class="lbl">VIX <span id="vix" class="num w">…</span></span>
+  </div>
 </div>
 
 <!-- ═══ TICKER ═══ -->
@@ -104,20 +117,6 @@ a{color:var(--blu);text-decoration:none}
     <div id="expo" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:2px;font-size:11.5px"></div>
     <div id="cooldowns" style="margin-top:7px"></div>
   </div>
-</div>
-
-<!-- ═══ SESSION CLOCK + REGIME ═══ -->
-<div class="pan" style="margin-top:8px">
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">SESSION CLOCK UTC</span>
-    <span id="sesstrade" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
-    <span class="lbl" style="margin-left:auto">REGIME</span>
-    <span id="macro" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
-    <span class="lbl">VIX <span id="vix" class="num w">…</span></span>
-  </div>
-  <div id="sessbar" style="position:relative;height:22px;border-radius:3px;overflow:hidden;display:flex"></div>
-  <div style="display:flex;justify-content:space-between" class="lbl"><span>00 Asia</span><span>05 pre-Ldn</span><span>07 London</span><span>13:30 NY-KZ</span><span>15 NY</span><span>20 late</span><span>22 Asia</span></div>
-  <div id="phases" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px"></div>
 </div>
 
 <!-- ═══ DOM + MICRO + SIGNALS ═══ -->
@@ -204,6 +203,23 @@ function tickClk(){var d=new Date();el('clk').textContent=
  var mk=el('sessmk');if(mk)mk.style.left=(((d.getUTCHours()+d.getUTCMinutes()/60)/24)*100)+'%';}
 setInterval(tickClk,1000);
 
+/* ── sounds ── */
+var SND=localStorage.getItem('omega_snd')==='1',ACTX=null;
+function sndBtn(){var b=el('snd');b.textContent=SND?'SND ON':'SND OFF';b.className=SND?'on':'';}
+function ensureCtx(){if(!ACTX){try{ACTX=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+ if(ACTX&&ACTX.state==='suspended')ACTX.resume();}
+el('snd').onclick=function(){SND=!SND;localStorage.setItem('omega_snd',SND?'1':'0');sndBtn();
+ if(SND){ensureCtx();chime([[0,880,0.5],[0.12,1320,0.4]]);}};
+sndBtn();
+function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.currentTime;
+ notes.forEach(function(n){var o=ACTX.createOscillator(),g=ACTX.createGain();
+  o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
+  var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
+  g.gain.exponentialRampToValueAtTime(0.001,st+0.5);o.start(st);o.stop(st+0.55);});}
+function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
+function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
+function sigTick(){chime([[0,660,0.25]]);}
+
 /* ── session strip ── */
 (function(){var z=[[0,5,'#1d2733'],[5,7,'#143042'],[7,13,'#155446'],[13,13.5,'#0F6E56'],[13.5,15,'#7a5a14'],[15,20,'#155446'],[20,22,'#143042'],[22,24,'#1d2733']];
  var h='';z.forEach(function(s){h+='<span style="flex:'+(s[1]-s[0])+';background:'+s[2]+'"></span>';});
@@ -217,7 +233,8 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
   +'<div class="lbl">'+t[1]+'</div><div class="num" id="tk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
   +'<div class="lbl num" id="tks_'+t[0]+'"></div>'
   +(t[2]?'<div class="bar" style="height:4px;margin-top:3px"><i id="tkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>':'')
-  +'</div>';});
+)OMEGAD0"
+R"OMEGAD1(  +'</div>';});
  el('ticker').innerHTML=h;})();
 
 /* ── telemetry render ── */
@@ -230,12 +247,10 @@ function render(J){lastJ=J;
  dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
  dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
  dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
- el('sessname').textContent='session '+(J.session_name||'?');
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
  el('build').textContent=(J.build_version||'').slice(0,12);
  var st=el('sesstrade');st.textContent=(J.session_name||'?')+(safe(J.session_tradeable)?' · tradeable':' · blocked');
-)OMEGAD0"
-R"OMEGAD1( st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
+ st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
  el('macro').textContent=J.macro_regime||'?';
  el('macro').style.color=(J.macro_regime||'')==='RISK_OFF'?'var(--redB)':'var(--grnB)';
  el('vix').textContent=fmt2(J.vix_level,1);
@@ -294,6 +309,10 @@ R"OMEGAD1( st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
   ['Orphans',safe(bk.orphan_count),safe(bk.orphan_count)>0?'r':'d'],['Rejects',safe(bk.reject_count),safe(bk.reject_count)>0?'a':'d'],
   ['Confirmed',safe(bk.confirmed_count),'d']].map(function(r){return '<span>'+r[0]+'</span><span class="'+r[2]+'">'+r[1]+'</span>';}).join('');
 
+ var sig0=(J.signal_history||[])[0];
+ if(sig0){var sk=sig0.symbol+'|'+sig0.engine+'|'+sig0.price;
+  if(window._lastSig===undefined)window._lastSig=sk;
+  else if(window._lastSig!==sk){window._lastSig=sk;sigTick();}}
  var sh=(J.signal_history||[]).slice(0,9).map(function(s){
   var c=s.side==='LONG'||s.side==='BUY'?'g':'r';
   return '<div><span class="'+c+'">'+esc(s.side||'')+'</span> <span class="w">'+esc(s.symbol||'')+'</span> '
@@ -395,7 +414,8 @@ function drawMM(){var cv=el('mmc'),ctx=cv.getContext('2d');
  var W=cv.clientWidth,H=190;ctx.clearRect(0,0,W,H);
  var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
  if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no trades for '+sym,10,20);return;}
- var xs=rs.map(function(r){return r.mae;}),ys=rs.map(function(r){return r.mfe;});
+)OMEGAD1"
+R"OMEGAD2( var xs=rs.map(function(r){return r.mae;}),ys=rs.map(function(r){return r.mfe;});
  function pct(a,p){var b=a.slice().sort(function(x,y){return x-y;});return b[Math.min(b.length-1,Math.floor(p*b.length))];}
  var mx=Math.max(pct(xs,0.97),0.1),my=Math.max(pct(ys,0.97),0.1);
  function X(v){return 26+(W-34)*Math.min(1,v/mx);}function Y(v){return H-18-(H-30)*Math.min(1,v/my);}
@@ -411,8 +431,7 @@ function drawTOD(){var rs=ROWS;var grid={};
   if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
  var h='<div style="display:grid;grid-template-columns:24px repeat(24,1fr);gap:1px">';
  h+='<span></span>';for(var c=0;c<24;c++)h+='<span class="lbl" style="font-size:8px;text-align:center">'+(c%4===0?c:'')+'</span>';
-)OMEGAD1"
-R"OMEGAD2( [1,2,3,4,5,0].forEach(function(d){h+='<span class="lbl" style="font-size:9px">'+DAYS[d]+'</span>';
+ [1,2,3,4,5,0].forEach(function(d){h+='<span class="lbl" style="font-size:9px">'+DAYS[d]+'</span>';
   for(var c=0;c<24;c++){var g=grid[d+'_'+c],bg='#141a22',ti='';
    if(g&&g.n>=2){var wr=g.w/g.n;
     bg=wr>0.58?'#0F6E56':wr>0.5?'#155446':wr>0.44?'#1d2733':wr>0.36?'#5c1f1f':'#A32D2D';
@@ -440,6 +459,13 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  if(!a||!a.length){return;}
  a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
  if(!a.length){return;}
+ var newest=safe(a[a.length-1].exitTs);
+ if(window._lastClose===undefined)window._lastClose=newest;
+ else if(newest>window._lastClose){
+  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+  var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
+  window._lastClose=newest;
+  if(net>=0)winBell();else lossBell();}
  var rows=a.slice(-14).reverse().map(function(t){
   var d=new Date(safe(t.exitTs)*1000);
   var hh=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
