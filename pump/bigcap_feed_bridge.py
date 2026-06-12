@@ -25,7 +25,9 @@ from ib_async import IB, Stock, ScannerSubscription
 IB_HOST, IB_PORT, IB_CID = "127.0.0.1", 4002, 34   # paper gateway; clientId distinct from pump(33)
 SERVE_PORT    = int(os.environ.get("OMEGA_BIGCAP_BRIDGE_PORT", "7784"))
 PREFILTER_PCT = 3.0          # subscribe names already >=3% up (engine gates at 5%)
-MARKETCAP_MIN = 2.0e9        # big/mid-cap only (scanner filter)
+MARKETCAP_MIN = 2000.0       # big/mid-cap only -- UNITS = MILLIONS USD (TWS scanner
+                             # convention). 2000 = $2B. BUG 2026-06-13: was 2.0e9 =
+                             # "$2 quadrillion" -> scanner returned 0 rows since ship.
 PRICE_MIN     = 10.0         # not a penny stock
 MAX_SYMBOLS   = 30
 TFS           = [300]        # 5m bars only (engine tf_sec=300)
@@ -37,7 +39,7 @@ TICK_EVERY    = 5            # seconds between tick/roll passes
 #    gates engine_init ships for g_bigcap_momo: day-move >= GATE_PCT, price >=
 #    PRICE_MIN, day $vol >= DVOL_MIN. status TRADE = all gates pass.
 SCANNER_HTTP_PORT = int(os.environ.get("OMEGA_BIGCAP_SCANNER_PORT", "7783"))
-GATE_PCT  = 5.0              # engine day_gate_pct
+GATE_PCT  = 4.0              # engine day_gate_pct (S-2026-06-13a: 5 -> 4)
 DVOL_MIN  = 100e6            # engine liq gate: day dollar-volume >= $100M
 _candidates = {}             # sym -> dict(sym,px,day_open,up,dvol,ts)
 
@@ -148,8 +150,8 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "<table><tr><th>symbol</th><th>price</th><th>up from open</th>"
                 "<th>day open</th><th>liq ($vol)</th><th>status</th></tr>"
                 f"<tbody id=rows>{trs}</tbody></table>"
-                "<div class=foot>engine settings: gate &ge;5% from open &middot; price &ge;$10 &middot; "
-                "day $vol &ge;$100M &middot; volx3 ignition + 4% trail at entry &middot; shadow trades show in the "
+                "<div class=foot>engine settings: gate &ge;4% from open &middot; price &ge;$10 &middot; "
+                "day $vol &ge;$100M &middot; volx3 ignition + 5% trail at entry &middot; shadow trades show in the "
                 "dashboard RUNNING TRADES panel &middot; iceberg/absorption column arrives once the MGC-validated "
                 "detector ships (depth subscribed for in-trade symbols only)</div>"
                 f"</div>{script}</body></html>").encode()

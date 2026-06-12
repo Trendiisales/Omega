@@ -4479,13 +4479,13 @@ static void init_engines(const std::string& cfg_path)
         // survives 1-2%/side slip. Registers with g_open_positions so its trades
         // show in the live_trades GUI panel + ring the entry bell. SHADOW until
         // live fills + dud-rate are measured.
-        g_pump_manager.enabled      = true;   // 2026-06-12b SHADOW RE-ENABLE (operator-approved,
-                                              // data-gathering ONLY -- shadow_mode stays true).
-                                              // Purpose: measure honest-accounting net at 3m with
-                                              // the raised re-entry cap below. The 06-12 morning
-                                              // kill reason (live fills worse than backtest) is
-                                              // unchanged; LIVE sizing still blocked until the
-                                              // tiny-size real-fill measurement is done.
+        g_pump_manager.enabled      = false;  // 2026-06-13 OPERATOR KILL #2 (final): "get rid of
+                                              // the penny stocks ... which we agreed are rubbish".
+                                              // The 06-13a shadow re-enable lasted ~6h of data
+                                              // gathering; operator direction is BIG CAPS ONLY --
+                                              // g_bigcap_momo below is the continuation. Do NOT
+                                              // re-enable the penny universe without an explicit
+                                              // operator instruction.
         g_pump_manager.shadow_mode  = true;
         g_pump_manager.day_gate_pct = 100.0;
         // S-2026-06-11 RECALIBRATION (operator model + full lever sweep,
@@ -4530,8 +4530,8 @@ static void init_engines(const std::string& cfg_path)
         g_pump_manager.verbose      = true;
         g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
-        printf("[OMEGA-INIT] PumpScalp manager: RE-ENABLED(shadow) 3m-only gate100 trail2 NO-BE 15min-cap "
-               "maxent4 $1000-notional liq(p>=1,$vol>=2M) slip1%%/side (feed via OMEGA_PUMP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] PumpScalp manager: DISABLED (operator kill 2026-06-13 -- penny universe retired; "
+               "BigCapMomo is the mover engine)\n");
 
         // ── BigCapMomo (NAS/SPX big-cap day-mover scalp; 5m) ────────────────────
         // 2026-06-12 (operator): the micro-cap pump died on SLIPPAGE, not momentum.
