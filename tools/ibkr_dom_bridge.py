@@ -298,6 +298,73 @@ class DomRecorder:
             pass
 
 
+    def _on_update(self, _ticker):
+        self._maybe_rotate()
+        t = self.ticker
+        bids = t.domBids[: self.max_levels] if t.domBids else []
+        asks = t.domAsks[: self.max_levels] if t.domAsks else []
+        if not bids or not asks:
+            return
+        # Filter out level rows with zero / NaN size (IBKR sometimes emits
+        # a level skeleton before the first size update).
+        bid_vol = sum((b.size or 0.0) for b in bids)
+        ask_vol = sum((a.size or 0.0) for a in asks)
+        total = bid_vol + ask_vol
+        if total <= 0.0:
+            return
+        imb = bid_vol / total
+        bid_px = bids[0].price
+        ask_px = asks[0].price
+        if not bid_px or not ask_px or ask_px <= bid_px:
+            return
+        mid = (bid_px + ask_px) / 2.0
+        self.events += 1
+        ts = now_ms()
+        self.w.writerow([
+            ts,
+            f"{mid:.4f}", f"{bid_px:.4f}", f"{ask_px:.4f}",
+            f"{imb:.4f}", f"{bid_vol:.2f}", f"{ask_vol:.2f}",
+            len(bids), len(asks), self.events,
+        ])
+        # per-level row (iceberg groundwork; pads short books with 0,0)
+        lrow = [ts]
+        for i in range(self.max_levels):
+            if i < len(bids):
+                lrow += [f"{bids[i].price:.4f}", f"{(bids[i].size or 0.0):.2f}"]
+            else:
+                lrow += ["0", "0"]
+        for i in range(self.max_levels):
+            if i < len(asks):
+                lrow += [f"{asks[i].price:.4f}", f"{(asks[i].size or 0.0):.2f}"]
+            else:
+                lrow += ["0", "0"]
+        self.lw.writerow(lrow)
+        if self.broadcaster is not None:
+            # Compact JSON, newline-delimited. Short keys to keep msg small.
+            # bp/bs/ap/as = per-level price/size arrays (top of book first).
+            bp = ",".join(f"{b.price:.4f}" for b in bids)
+            bs_ = ",".join(f"{(b.size or 0.0):.2f}" for b in bids)
+            ap = ",".join(f"{a.price:.4f}" for a in asks)
+            as_ = ",".join(f"{(a.size or 0.0):.2f}" for a in asks)
+            msg = (
+                '{"ts":%d,"s":"%s","b":%.4f,"a":%.4f,'
+                '"bv":%.2f,"av":%.2f,"i":%.4f,"bl":%d,"al":%d,'
+                '"bp":[%s],"bs":[%s],"ap":[%s],"as":[%s]}\n'
+                % (ts, self.sym, bid_px, ask_px, bid_vol, ask_vol, imb,
+                   len(bids), len(asks), bp, bs_, ap, as_)
+            )
+            self.broadcaster.send(msg.encode("ascii"))
+        now = time.monotonic()
+        if now - self.last_log >= 5.0:
+            self.last_log = now
+            print(f"[{self.sym}] events={self.events} "
+                  f"bid={bid_px} ask={ask_px} imb={imb:.3f} "
+                  f"bid_vol={bid_vol:.0f} ask_vol={ask_vol:.0f}",
+                  flush=True)
+
+
+
+
 class TradesRecorder:
     """2026-06-12 iceberg groundwork: tick-by-tick trade prints (AllLast).
 
@@ -364,71 +431,6 @@ class TradesRecorder:
             ticker.tickByTicks.clear()
         except Exception:
             pass
-
-    def _on_update(self, _ticker):
-        self._maybe_rotate()
-        t = self.ticker
-        bids = t.domBids[: self.max_levels] if t.domBids else []
-        asks = t.domAsks[: self.max_levels] if t.domAsks else []
-        if not bids or not asks:
-            return
-        # Filter out level rows with zero / NaN size (IBKR sometimes emits
-        # a level skeleton before the first size update).
-        bid_vol = sum((b.size or 0.0) for b in bids)
-        ask_vol = sum((a.size or 0.0) for a in asks)
-        total = bid_vol + ask_vol
-        if total <= 0.0:
-            return
-        imb = bid_vol / total
-        bid_px = bids[0].price
-        ask_px = asks[0].price
-        if not bid_px or not ask_px or ask_px <= bid_px:
-            return
-        mid = (bid_px + ask_px) / 2.0
-        self.events += 1
-        ts = now_ms()
-        self.w.writerow([
-            ts,
-            f"{mid:.4f}", f"{bid_px:.4f}", f"{ask_px:.4f}",
-            f"{imb:.4f}", f"{bid_vol:.2f}", f"{ask_vol:.2f}",
-            len(bids), len(asks), self.events,
-        ])
-        # per-level row (iceberg groundwork; pads short books with 0,0)
-        lrow = [ts]
-        for i in range(self.max_levels):
-            if i < len(bids):
-                lrow += [f"{bids[i].price:.4f}", f"{(bids[i].size or 0.0):.2f}"]
-            else:
-                lrow += ["0", "0"]
-        for i in range(self.max_levels):
-            if i < len(asks):
-                lrow += [f"{asks[i].price:.4f}", f"{(asks[i].size or 0.0):.2f}"]
-            else:
-                lrow += ["0", "0"]
-        self.lw.writerow(lrow)
-        if self.broadcaster is not None:
-            # Compact JSON, newline-delimited. Short keys to keep msg small.
-            # bp/bs/ap/as = per-level price/size arrays (top of book first).
-            bp = ",".join(f"{b.price:.4f}" for b in bids)
-            bs_ = ",".join(f"{(b.size or 0.0):.2f}" for b in bids)
-            ap = ",".join(f"{a.price:.4f}" for a in asks)
-            as_ = ",".join(f"{(a.size or 0.0):.2f}" for a in asks)
-            msg = (
-                '{"ts":%d,"s":"%s","b":%.4f,"a":%.4f,'
-                '"bv":%.2f,"av":%.2f,"i":%.4f,"bl":%d,"al":%d,'
-                '"bp":[%s],"bs":[%s],"ap":[%s],"as":[%s]}\n'
-                % (ts, self.sym, bid_px, ask_px, bid_vol, ask_vol, imb,
-                   len(bids), len(asks), bp, bs_, ap, as_)
-            )
-            self.broadcaster.send(msg.encode("ascii"))
-        now = time.monotonic()
-        if now - self.last_log >= 5.0:
-            self.last_log = now
-            print(f"[{self.sym}] events={self.events} "
-                  f"bid={bid_px} ask={ask_px} imb={imb:.3f} "
-                  f"bid_vol={bid_vol:.0f} ask_vol={ask_vol:.0f}",
-                  flush=True)
-
 
 def main():
     ap = argparse.ArgumentParser()
