@@ -70,7 +70,7 @@ inline double cap_for(const std::string& eng) {
 // Estimate unrealised USD for a snapshot. Prefer the source-provided value;
 // fall back to (current-entry) x dir x size x tick_value when the snapshotter
 // left it 0 but did provide a current price.
-inline double unrealised_usd(const PositionSnapshot& ps) {
+inline double unrealised_usd(const omega::PositionSnapshot& ps) {
     if (ps.unrealized_pnl != 0.0) return ps.unrealized_pnl;
     if (ps.current <= 0.0 || ps.entry <= 0.0 || ps.size <= 0.0) return 0.0;
     const double dir = (ps.side == "SHORT") ? -1.0 : 1.0;
@@ -79,7 +79,7 @@ inline double unrealised_usd(const PositionSnapshot& ps) {
 
 // Run one oversight pass. Phase 1: throttled breach logging only.
 // Returns the number of positions currently in breach.
-inline int check(const std::vector<PositionSnapshot>& open, int64_t now_s) {
+inline int check(const std::vector<omega::PositionSnapshot>& open, int64_t now_s) {
     static std::unordered_map<std::string, int64_t> s_last_log;  // key -> last log ts
     int breaches = 0;
     for (const auto& ps : open) {
