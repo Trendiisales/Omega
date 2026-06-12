@@ -1179,6 +1179,13 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
         else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(strstr(buf, "all=1") != nullptr); }
         else if (strstr(buf, "GET /api/shadow_trades")) { ct = "application/json"; body = buildShadowTradesJson(); }
+        else if (strstr(buf, "GET /api/predictive_ranges")) {
+            // S-2026-06-12c: stepped Predictive Ranges snapshot, written every 60s
+            // by the on_tick [BAR-SAVE] block (logs/predictive_ranges.json).
+            ct = "application/json";
+            body = loadFile("logs/predictive_ranges.json");
+            if (body.empty()) body = "{\"updated\":0,\"datasets\":{}}";
+        }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
             // Clear in-memory ledger + rename today's CSV so it won't be re-read.

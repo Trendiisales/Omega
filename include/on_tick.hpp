@@ -3,6 +3,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <string>
+#include "PredictiveRanges.hpp"  // GUI predictive-range snapshot (parent-TU header; needs omega_types/omega_runtime first)
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -501,6 +502,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     std::cout << _msg;
                     std::cout.flush();
                 }
+                // S-2026-06-12c: Predictive Ranges snapshot for the desk GUI
+                // (:7779 /api/predictive_ranges). Same thread as the bar deques
+                // -> race-free read; ~5KB-300KB JSON, atomic tmp+rename swap.
+                omega_pr::pr_write_snapshot(base + "/predictive_ranges.json");
             }
         }
     }
