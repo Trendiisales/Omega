@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <string>
 #include "PredictiveRanges.hpp"  // GUI predictive-range snapshot (parent-TU header; needs omega_types/omega_runtime first)
+#include "AccountingGuard.hpp"   // S-2026-06-13h independent runaway-position oversight (parent-TU header)
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -1001,6 +1002,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 // prune closed positions so a reopen restarts its held clock
                 s_first_seen.swap(seen_now);
             }
+
+            // ── S-2026-06-13h ACCOUNTING GUARD (250ms, same cadence as the
+            // publisher above). Independent oversight: flags any open position
+            // whose unrealised loss exceeds 3x its engine's median loss (engine
+            // SL has FAILED at that point -- dead-SL / sizing-bug / zombie
+            // class). Phase 1 LOG-ONLY; enforcement flips with per-engine
+            // close hooks after log review. See AccountingGuard.hpp.
+            omega_acct::check(g_open_positions.snapshot_all(),
+                              (int64_t)std::time(nullptr));
         }
 
         // ── DOLLAR STOP: emergency per-trade runtime cut ──────────────────
