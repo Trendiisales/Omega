@@ -114,6 +114,15 @@ public:
     // ── Callbacks ────────────────────────────────────────────────────────────
     using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
     TradeRecordCallback on_trade_record;
+    // S-2026-06-13g FAMILY DEDUP: optional veto checked immediately before an
+    // entry executes. Wired in engine_init across the 10m/15m/30m NAS A/B/C
+    // instances so only ONE variant holds a position at a time (first-to-fire
+    // wins -- same tradeoff the operator accepted for the pump trio 2026-06-11).
+    // Cause: 2026-06-12 ledger showed FvgContinuation + FvgCont30m booking the
+    // IDENTICAL NAS entry (13:30:03 + 13:30:19) -- ClusterGate caps at 2 so the
+    // pair passed; this closes the intra-family hole. No permit wired = no veto.
+    using EntryPermit = std::function<bool()>;
+    EntryPermit entry_permit;
 
     // ── Position ─────────────────────────────────────────────────────────────
     struct Position { bool active=false; int dir=0; double entry_px=0, stop_px=0,
@@ -271,6 +280,10 @@ public:
             if (!omega::ClusterGate::allow_entry(symbol.c_str(), f.dir>0, engine_name.c_str())) {
                 FVG_DIAG("cluster gate: same-direction cap reached\n");
                 f.used=true; continue;                               // correlation cap
+            }
+            if (entry_permit && !entry_permit()) {
+                FVG_DIAG("family dedup: sibling FVG variant already holds a position\n");
+                f.used=true; continue;                               // S-2026-06-13g intra-family dedup
             }
             #undef FVG_DIAG
             pos = Position{}; pos.active=true; pos.dir=f.dir;

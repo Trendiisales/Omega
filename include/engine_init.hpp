@@ -4422,6 +4422,27 @@ static void init_engines(const std::string& cfg_path)
         });
         printf("[OMEGA-INIT] FvgCont30m NAS100: shadow=true 30m NY-killzone (sweep WINNER PF1.98 3x-robust)\n");
 
+        // S-2026-06-13g FVG FAMILY DEDUP (operator: "we agreed to dedup -- why
+        // 2 trades firing at the same time"). 2026-06-12 ledger: FvgContinuation
+        // + FvgCont30m booked the IDENTICAL NAS100 long twice (13:30:03 and
+        // 13:30:19, same entry px) -- ClusterGate caps same-direction US_EQUITY
+        // at 2, so the pair passed. Family permit: an FVG variant may only enter
+        // when ALL THREE variants are flat (first-to-fire wins; the A/B/C
+        // comparison continues via per-variant EngineGate stats, just without
+        // concurrent duplicate risk -- same tradeoff accepted for the pump trio
+        // on 2026-06-11).
+        {
+            auto fvg_family_flat = []() {
+                return !g_fvgcont_nas.has_open_position()
+                    && !g_fvgcont_nas10.has_open_position()
+                    && !g_fvgcont_nas30.has_open_position();
+            };
+            g_fvgcont_nas.entry_permit   = fvg_family_flat;
+            g_fvgcont_nas10.entry_permit = fvg_family_flat;
+            g_fvgcont_nas30.entry_permit = fvg_family_flat;
+            printf("[OMEGA-INIT] FVG family dedup: 1 position across 10m/15m/30m (first-to-fire)\n");
+        }
+
         // ── PeachyOrbEngine (NAS100, one-candle ORB-retest, risk-cap) ──────────
         // 2026-06-05 backtest-found edge (backtest/peachy_orb_nas.cpp +
         // peachy_sweep.sh; memory omega-peachy-onecandle-orb-deadend). The Peachy
