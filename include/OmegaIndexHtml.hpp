@@ -241,10 +241,16 @@ function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.curr
 function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
 function sigTick(){chime([[0,660,0.25]]);}
+)OMEGAD0"
+R"OMEGAD1(function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
+/* browsers suspend AudioContext until a user gesture -- with SND persisted ON a
+   reloaded page was SILENT until the user happened to click. Resume on first
+   gesture so persisted-ON actually rings. */
+['click','keydown','touchstart'].forEach(function(ev){
+ document.addEventListener(ev,function(){if(SND)ensureCtx();},{once:true,capture:true});});
 
 /* ── session strip ── */
-)OMEGAD0"
-R"OMEGAD1((function(){var z=[[0,5,'#1d2733'],[5,7,'#143042'],[7,13,'#155446'],[13,13.5,'#0F6E56'],[13.5,15,'#7a5a14'],[15,20,'#155446'],[20,22,'#143042'],[22,24,'#1d2733']];
+(function(){var z=[[0,5,'#1d2733'],[5,7,'#143042'],[7,13,'#155446'],[13,13.5,'#0F6E56'],[13.5,15,'#7a5a14'],[15,20,'#155446'],[20,22,'#143042'],[22,24,'#1d2733']];
  var h='';z.forEach(function(s){h+='<span style="flex:'+(s[1]-s[0])+';background:'+s[2]+'"></span>';});
  el('sessbar').innerHTML=h+'<div id="sessmk" style="position:absolute;top:0;bottom:0;width:2px;background:#E6EDF3"></div>';tickClk();})();
 
@@ -342,6 +348,22 @@ function render(J){lastJ=J;
  el('sigs').innerHTML=sh||'<span class="d">no signals yet this session</span>';
 
  var lts=J.live_trades||[];
+ /* entry bell -- identity-based (engine|symbol|side|entry), NOT count-based.
+    Count-based rang on restarts + source flicker (2026-06-11 phantom-bell bug).
+    Guards: first render baselines silently; uptime drop (restart) re-baselines
+    silently; a key re-appearing within 90s does not re-ring. */
+ (function(){var now=Date.now();
+  if(window._seenTr===undefined){window._seenTr={};window._trBase=true;}
+  var up=safe(J.uptime_sec);
+  if(window._lastUp!==undefined&&up<window._lastUp-5)window._trBase=true;
+  window._lastUp=up;
+  var fresh=0;
+  lts.forEach(function(t){var k=(t.engine||'')+'|'+(t.symbol||'')+'|'+(t.side||'')+'|'+fmt2(t.entry,4);
+   if(!(k in window._seenTr)||(now-window._seenTr[k])>90000){if(!window._trBase)fresh++;}
+   window._seenTr[k]=now;});
+  for(var k in window._seenTr){if(now-window._seenTr[k]>600000)delete window._seenTr[k];}
+  if(fresh>0&&!window._trBase)entryBell();
+  window._trBase=false;})();
  el('ltcount').textContent=lts.length?lts.length+' open':'';
  if(!lts.length){el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';}
  else{var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
@@ -401,7 +423,8 @@ function drawEquity(){var cv=el('eqc'),ctx=cv.getContext('2d');
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
-function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
+)OMEGAD1"
+R"OMEGAD2(function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/US500|USTEC|NAS|DJ30|GER|UK100|ESTX|US30/i.test(sym))return 'INDEX';
  if(/USD|EUR|GBP|AUD|NZD|JPY/.test(sym)&&sym.length===6)return 'FX';
  if(/XAG|SILVER/i.test(sym))return 'SILVER';
@@ -419,8 +442,7 @@ function drawHeat(){var rs=winRows();var by={};
   groups[g].forEach(function(k){var e=by[k],t=e.pnl/mxAbs;
    var bg='#1d2733',fg='#8B97A5';
    if(e.pnl>1){bg=t>0.4?'#0F6E56':'#0a4434';fg='#9FE1CB';}
-)OMEGAD1"
-R"OMEGAD2(   else if(e.pnl<-1){bg=t<-0.4?'#A32D2D':'#5c1f1f';fg='#F7C1C1';}
+   else if(e.pnl<-1){bg=t<-0.4?'#A32D2D':'#5c1f1f';fg='#F7C1C1';}
    var nm=k.replace(/Engine$/,'');
    h+='<div class="tile" style="background:'+bg+'" title="'+esc(k)+' n='+e.n+' pnl='+fmt$(e.pnl)+'">'
     +'<b style="color:'+fg+'">'+esc(nm)+'</b><span class="num" style="color:'+fg+'">'+fmt$(e.pnl)+' · '+e.n+'</span></div>';});
