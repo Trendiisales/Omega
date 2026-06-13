@@ -242,6 +242,7 @@ function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
 )OMEGAD0"
 R"OMEGAD1(function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});}
 function fmt2(v,n){return safe(v).toFixed(n===undefined?2:n);}
+function lots(v){v=safe(v);return v>0?String(+v.toFixed(4)):'—';}
 function el(id){return document.getElementById(id);}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 /* DPR-aware canvas setup: crisp on retina/4K (old code hardcoded 2x). Returns
@@ -305,6 +306,14 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
   +(t[2]?'<div class="bar" style="height:4px;margin-top:3px"><i id="tkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>':'')
   +'</div>';});
  el('ticker').innerHTML=h;})();
+
+/* ── position registry fallback (read-API :7781, CORS-open) ── */
+var REGPOS=[];
+function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
+ .then(function(r){return r.json();})
+ .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
+ .catch(function(){});}
+setInterval(pollReg,30000);pollReg();
 
 /* ── telemetry render ── */
 var lastJ=null;
@@ -405,14 +414,28 @@ function render(J){lastJ=J;
   for(var k in window._seenTr){if(now-window._seenTr[k]>600000)delete window._seenTr[k];}
   if(fresh>0&&!window._trBase){entryBell();flashPan('ltpan');}
   window._trBase=false;})();
- el('ltcount').textContent=lts.length?lts.length+' open':'';
- if(!lts.length){el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';}
- else{var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+ if(!lts.length){
+  /* tick-driven publisher goes quiet when the market is closed -- positions can
+     still be OPEN (held over the weekend). Fall back to the position REGISTRY
+     served by the read-API on :7781 so the desk never shows a phantom FLAT. */
+  if(REGPOS.length){var sum2=0;var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
+   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
+    +'<td class="num d">'+lots(t.size)+'</td>'
+    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
+    +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>';}).join('');
+   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
+   el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
+   el('ltpnl').textContent='';}
+  else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
+ else{el('ltcount').textContent=lts.length+' open';
+)OMEGAD1"
+R"OMEGAD2(  var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
+   +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>';}).join('');
-  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
+  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
   el('ltpnl').textContent=fmt$(sum)+' unrealised';el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
 
@@ -424,8 +447,7 @@ function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)
  s.onclose=function(){wsOk=false;setConn(false);setTimeout(ws,3000);};
  s.onerror=function(){wsOk=false;};}catch(e){wsOk=false;}})();
 function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r.json();}).then(function(j){render(j);setConn(true,'http');}).catch(function(){setConn(false);});}
-)OMEGAD1"
-R"OMEGAD2(setInterval(poll,1000);poll();
+setInterval(poll,1000);poll();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
@@ -451,6 +473,7 @@ function parseShadow(txt){
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
    xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
    pnl:parseFloat(f[ix.net_pnl])||0,
+   size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
    mfe:ix.mfe!==undefined?(parseFloat(f[ix.mfe])||0):0,
    mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
    hold:ix.hold_sec!==undefined?(parseInt(f[ix.hold_sec],10)||0):0,
@@ -601,7 +624,8 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
-  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+)OMEGAD2"
+R"OMEGAD3(  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
@@ -614,16 +638,16 @@ function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class
   var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
   return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
+   +'<td class="num d">'+lots(r.size)+'</td>'
    +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
    +'<td class="num '+(r.pnl>=0?'g':'r')+'">'+fmt$(r.pnl)+'</td>'
    +'<td class="num d">'+hold+'</td><td class="l d">'+esc(r.reason||'')+'</td></tr>';}).join('');
- h.innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>entry</th><th>exit</th><th>pnl</th><th>held</th><th class="l">exit</th></tr>'+rows;
+ h.innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>lots</th><th>entry</th><th>exit</th><th>pnl</th><th>held</th><th class="l">exit</th></tr>'+rows;
  el('histn').textContent=ROWS.length+' trades';}
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
-)OMEGAD2"
-R"OMEGAD3(var PRSYMS=['XAUUSD','US500','USTEC'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
+var PRSYMS=['XAUUSD','US500','USTEC'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
@@ -786,9 +810,12 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
+ var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
-  +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span>'
-  +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>';
+  +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
+  +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
+  +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
+  +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
  tip.style.display='block';
  var tw2=tip.offsetWidth,th2=tip.offsetHeight;
  tip.style.left=Math.min(window.innerWidth-tw2-8,cx+14)+'px';
@@ -799,7 +826,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
   var hit=null,best=160;
   PRMK.forEach(function(m){var dx=m.x-PRMOUSE.x,dy=m.y-PRMOUSE.y,d2=dx*dx+dy*dy;
    if(d2<best){best=d2;hit=m;}});
-  PRHOVER=hit;prTip(hit,e.clientX,e.clientY);});
+)OMEGAD3"
+R"OMEGAD4(  PRHOVER=hit;prTip(hit,e.clientX,e.clientY);});
  cvp.addEventListener('mouseleave',function(){PRMOUSE=null;PRHOVER=null;prTip(null);drawPR();});})();
 /* ~30fps redraw only while hovering, or while the newest exit (<10 min) pulses;
    paused when the tab is hidden. Static otherwise — zero idle cost. */
@@ -822,6 +850,6 @@ window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
 </html>
-)OMEGAD3"
+)OMEGAD4"
 ;
 } // namespace omega_gui
