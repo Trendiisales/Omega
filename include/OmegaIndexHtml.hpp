@@ -53,6 +53,10 @@ a{color:var(--blu);text-decoration:none}
 .flashg{animation:flashG 1.4s ease-out}
 #prtip{position:fixed;display:none;z-index:50;pointer-events:none;background:rgba(14,20,27,.96);border:1px solid var(--bd2);border-radius:5px;padding:6px 9px;font-size:11px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.55)}
 #prc{cursor:crosshair}
+.ops .pan{padding:6px 9px}
+.ops .lbl{font-size:9.5px}
+.ops .num{font-size:10.5px}
+.ops #dom{font-size:10px}
 @media(max-width:980px){.g2,.g3{grid-template-columns:1fr !important}}
 </style>
 </head>
@@ -72,6 +76,7 @@ a{color:var(--blu);text-decoration:none}
   <span class="lbl" id="uptime">up …</span>
   <span class="lbl" id="build"></span>
   <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">TODAY</span><span id="daypnl" class="num" style="font-size:18px;font-weight:600;color:var(--w)">…</span><span id="daypnln" class="lbl"></span></span>
+  <span style="display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">ALL-TIME</span><span id="totpnl" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <button id="snd">SND OFF</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
@@ -138,34 +143,31 @@ a{color:var(--blu);text-decoration:none}
     <canvas id="eqc" height="170" style="margin-top:6px"></canvas>
     <div id="eqstats" class="lbl num" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:5px"></div>
   </div>
-  <div class="pan">
-    <div class="lbl" style="margin-bottom:5px">RISK &amp; GOVERNOR — blocks this session</div>
-    <div id="gov" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:2px;font-size:11.5px"></div>
-    <div class="lbl" style="margin:8px 0 4px">CLUSTER EXPOSURE $</div>
-    <div id="expo" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:2px;font-size:11.5px"></div>
-    <div id="cooldowns" style="margin-top:7px"></div>
+  <div class="pan" style="padding:6px 0 4px;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:baseline;gap:8px;padding:0 11px 4px">
+      <span class="lbl">TRADE HISTORY — all shadow closes (newest first)</span>
+      <span id="histn" class="lbl"></span>
+    </div>
+    <div style="max-height:300px;overflow-y:auto;flex:1">
+      <table id="hist"><tr><td class="l d">loading…</td></tr></table>
+    </div>
   </div>
 </div>
 
-<!-- ═══ DOM + MICRO + SIGNALS ═══ -->
-<div class="grid g3" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.2fr)">
+<!-- ═══ ENGINE LEDGER (running totals) + PROMOTION ═══ -->
+<div class="grid g2" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)">
   <div class="pan">
-    <div class="lbl" style="margin-bottom:5px">DOM — XAUUSD L2 (cTrader)</div>
-    <div id="dom" class="num"></div>
-    <div style="margin-top:6px">
-      <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
-      <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+      <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
+      <span id="ledgern" class="lbl" style="margin-left:auto"></span>
+    </div>
+    <div style="max-height:280px;overflow-y:auto">
+      <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
     </div>
   </div>
   <div class="pan">
-    <div class="lbl" style="margin-bottom:5px">MICROSTRUCTURE</div>
-    <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:2px;font-size:11.5px"></div>
-    <div class="lbl" style="margin:8px 0 3px">BROKER RECON</div>
-    <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:2px;font-size:11.5px"></div>
-  </div>
-  <div class="pan">
-    <div class="lbl" style="margin-bottom:5px">SIGNAL TAPE — last fires</div>
-    <div id="sigs" style="font-size:11px;line-height:1.65;overflow:hidden"></div>
+    <div class="lbl" style="margin-bottom:6px">PROMOTION TRACKER — shadow n vs gate (30) · expectancy</div>
+    <div id="promo" style="font-size:11px;max-height:280px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -199,20 +201,29 @@ a{color:var(--blu);text-decoration:none}
   </div>
 </div>
 
-<!-- ═══ PROMOTION + BLOTTER ═══ -->
-<div class="grid g2" style="grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)">
+<!-- ═══ OPS STRIP — risk / cluster / DOM / micro / signals (compact) ═══ -->
+<div class="grid g3 ops" style="grid-template-columns:minmax(0,1.1fr) minmax(0,0.9fr) minmax(0,1.2fr)">
   <div class="pan">
-    <div class="lbl" style="margin-bottom:6px">PROMOTION TRACKER — shadow n vs gate (30) · expectancy</div>
-    <div id="promo" style="font-size:11px"></div>
+    <div class="lbl" style="margin-bottom:4px">RISK &amp; GOVERNOR — blocks this session</div>
+    <div id="gov" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
+    <div class="lbl" style="margin:6px 0 3px">CLUSTER EXPOSURE $</div>
+    <div id="expo" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
+    <div id="cooldowns" style="margin-top:5px"></div>
   </div>
-  <div class="pan" style="padding:6px 0 4px">
-    <div style="display:flex;align-items:baseline;gap:8px;padding:0 11px 4px">
-      <span class="lbl">TRADE HISTORY — all shadow closes (newest first)</span>
-      <span id="histn" class="lbl"></span>
+  <div class="pan">
+    <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
+    <div id="dom" class="num"></div>
+    <div style="margin-top:5px">
+      <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
+      <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
     </div>
-    <div style="max-height:340px;overflow-y:auto">
-      <table id="hist"><tr><td class="l d">loading…</td></tr></table>
-    </div>
+  </div>
+  <div class="pan">
+    <div class="lbl" style="margin-bottom:4px">MICROSTRUCTURE · BROKER · SIGNALS</div>
+    <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
+    <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px;margin-top:5px"></div>
+    <div class="lbl" style="margin:6px 0 2px">SIGNAL TAPE</div>
+    <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -228,7 +239,8 @@ a{color:var(--blu);text-decoration:none}
 <script>
 'use strict';
 function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
-function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});}
+)OMEGAD0"
+R"OMEGAD1(function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});}
 function fmt2(v,n){return safe(v).toFixed(n===undefined?2:n);}
 function el(id){return document.getElementById(id);}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -237,8 +249,7 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;
 function prep(cv,h){var dpr=window.devicePixelRatio||1,w=cv.clientWidth||300;
  cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);cv.style.height=h+'px';
  var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return ctx;}
-)OMEGAD0"
-R"OMEGAD1(/* GSAP-backed number tween (falls back to instant set when CDN unavailable) */
+/* GSAP-backed number tween (falls back to instant set when CDN unavailable) */
 var _tw={};
 function tweenNum(id,val,fmtFn){var e=el(id);if(!e)return;
  var prev=_tw[id];
@@ -413,7 +424,8 @@ function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)
  s.onclose=function(){wsOk=false;setConn(false);setTimeout(ws,3000);};
  s.onerror=function(){wsOk=false;};}catch(e){wsOk=false;}})();
 function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r.json();}).then(function(j){render(j);setConn(true,'http');}).catch(function(){setConn(false);});}
-setInterval(poll,1000);poll();
+)OMEGAD1"
+R"OMEGAD2(setInterval(poll,1000);poll();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
@@ -427,8 +439,7 @@ function parseShadow(txt){
  for(var h=0;h<hdr.length;h++)ix[hdr[h].trim()]=h;
  function need(n){return ix[n]!==undefined;}
  if(!need('exit_ts_unix')||!need('symbol')||!need('engine')||!need('net_pnl'))return out;
-)OMEGAD1"
-R"OMEGAD2( function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
+ function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
  for(var i=1;i<ls.length;i++){var L=ls[i];if(!L)continue;var f=L.split(',');
   if(f.length<hdr.length-2)continue;
   var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
@@ -450,10 +461,30 @@ R"OMEGAD2( function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
 function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
  return ROWS.filter(function(r){return r.ts>=cut;});}
-function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0;
- ROWS.forEach(function(r){if(r.ts>=cut){n++;p+=r.pnl;}});
+function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
+ ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  tweenNum('daypnl',p,fmt$);el('daypnl').style.color=p>=0?'var(--grn)':'var(--red)';
- el('daypnln').textContent=n+' closes today (UTC)';}
+ el('daypnln').textContent=n+' closes today (UTC)';
+ tweenNum('totpnl',tot,fmt$);el('totpnl').style.color=tot>=0?'var(--grn)':'var(--red)';}
+
+/* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
+function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent='';return;}
+ var by={};
+ ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
+  var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
+ var ks=Object.keys(by).sort(function(a,b){return by[b].pnl-by[a].pnl;});
+ var mx=1;ks.forEach(function(k){mx=Math.max(mx,Math.abs(by[k].pnl));});
+ var rows=ks.map(function(k){var e=by[k],c=e.pnl>=0?'g':'r';
+  var w=Math.max(2,Math.abs(e.pnl)/mx*100);
+  return '<tr><td class="l" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</td>'
+   +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
+   +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
+   +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
+   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
+   +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>';}).join('');
+ t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
+ var net=0;ks.forEach(function(k){net+=by[k].pnl;});
+ el('ledgern').textContent=ks.length+' engines · net '+fmt$(net);}
 
 function drawEquity(){var cv=el('eqc'),H=170,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
@@ -591,7 +622,8 @@ function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
-var PRSYMS=['XAUUSD','US500','USTEC'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
+)OMEGAD2"
+R"OMEGAD3(var PRSYMS=['XAUUSD','US500','USTEC'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
@@ -622,8 +654,7 @@ function drawPR(){var cv=el('prc'),H=250,ctx=prep(cv,H);
  for(var t=0;t<=4;t++){var ii=Math.round((n-1)*t/4),d=new Date(bars[ii][0]*1000);
   var lb=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
    +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
-)OMEGAD2"
-R"OMEGAD3(  ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.beginPath();ctx.moveTo(X(ii),padT);ctx.lineTo(X(ii),padT+ph);ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.beginPath();ctx.moveTo(X(ii),padT);ctx.lineTo(X(ii),padT+ph);ctx.stroke();
   ctx.fillText(lb,Math.min(X(ii),W-padR-62),H-4);}
  function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
   if(i>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);p.push([X(i),Y(v)]);}return p;}
@@ -664,6 +695,18 @@ R"OMEGAD3(  ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.beginPath();ctx.moveTo(
   var nx=0,exVis=0;
   vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
   window._prNewest=nx;
+  if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
+   var lastR=null;
+   ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
+   if(lastR){var dd2=(Date.now()/1000-lastR.ts)/86400;
+    var note='no '+PRSYM.replace('USD','')+' closes in window — last '
+     +(dd2>=1?Math.round(dd2)+'d':Math.round(dd2*24)+'h')+' ago '+fmt$(lastR.pnl)
+     +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
+    ctx.font='10px IBM Plex Mono';
+    var nw=ctx.measureText(note).width;
+    ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
+    ctx.fillStyle='#6B7785';ctx.fillText(note,padL+pw-nw-7,padT+12);}
+   return;}
   var pills=exVis<=14;   /* suppress $ labels when the window is crowded */
   vis.forEach(function(r,vi){
    var win=r.pnl>=0,c=win?'#2EBD85':'#E2484D';
@@ -765,7 +808,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
  if(performance.now()-(window._prDrawT||0)<33)return;
  if(PRMOUSE||(window._prNewest&&(Date.now()/1000-window._prNewest)<600))drawPR();})();
 
-function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();}
+function redrawAll(){drawEquity();drawHeat();drawMM();drawTOD();drawPromo();updDayPnl();drawPR();drawHist();drawLedger();}
 function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).then(function(t){
  ROWS=parseShadow(t);el('csvinfo').textContent=ROWS.length+' shadow closes loaded';
  fillSymSel();redrawAll();}).catch(function(){el('csvinfo').textContent='shadow csv unavailable';});}
