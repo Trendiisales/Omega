@@ -4465,7 +4465,12 @@ static void init_engines(const std::string& cfg_path)
         g_peachy_orb_nas.shadow_mode = true;     // paper label (whole system is SHADOW); VISIBLE via register_source below (2026-06-08). Bear-validated (2022 NDX PF2.25).
         g_peachy_orb_nas.enabled     = true;
         g_peachy_orb_nas.verbose     = true;
-        g_peachy_orb_nas.lot         = 1.0;
+        g_peachy_orb_nas.lot         = 0.3;   // 2026-06-13 (S-2026-06-13q): 1.0 -> 0.3
+        // dollar-risk normalization. Validated edge (PF1.89, 3x-robust, bear-passed)
+        // is scale-invariant under lot change. NAS ORB swings ~100pt; at 1.0 lot
+        // (~$1/pt) a stopped breakout cost ~$50-100 (live 0/4 -252) vs the gold
+        // book's ~$30. Shrink $ to match; keep the (validated) edge. NOT a cull --
+        // small live n on a validated engine is the documented don't-tombstone trap.
         g_peachy_orb_nas.body_frac     = 0.4;   // 2026-06-09 exhaustive sweep: body0.4+closeBuf0.5 -> PF1.80 net+1561 (+18%), both-halves+, 3x-robust
         g_peachy_orb_nas.close_buf_atr = 0.5;
         g_peachy_orb_nas.trail_atr     = 3.0;   // 2026-06-09: runner trail (no fixed TP). Full combo body0.4+closeBuf0.5+trail3.0 -> PF1.89 net+1882 (+43%), both-halves+, 3x-robust 1.63. GER40 stays 0 (trail broke its H2).
@@ -4840,11 +4845,16 @@ static void init_engines(const std::string& cfg_path)
         g_overnight_nas.engine_name = "OvernightDrift";
         g_overnight_nas.SMA_LEN     = 20;
         g_overnight_nas.shadow_mode = true;
-        g_overnight_nas.enabled     = true;
+        // 2026-06-13 CULL (S-2026-06-13q risk-roster review): DISABLED. The 1.5%
+        // tail-cap = ~450pt NAS = ~$450 at lot 1.0 = a full month of XauStraddleM15
+        // profit on ONE trade; live -453 realized on a single trade; the stop was
+        // itself flagged "Re-backtest pending" (never validated). Unlike the SPX
+        // sibling below (2022-bear-validated, gated PF1.29), the NAS cell has no
+        // reproduced backtest. Re-enable only after a tight cap (<=$40) + a
+        // reproduced backtest. (SPX OvernightDrift stays ENABLED — it is validated.)
+        g_overnight_nas.enabled     = false;
         g_overnight_nas.lot         = 1.0;
         g_overnight_nas.stop_pct    = 0.015;  // 2026-06-05: tail-cap (~1.5% ≈ 450pt NAS).
-                                              // Was unstopped -> ate a -$453 overnight gap.
-                                              // Wide: only catches true gaps. Re-backtest pending.
         g_overnight_nas.init();
         g_overnight_nas.seed_from_d1_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_USTEC_D1.csv"));
@@ -4861,8 +4871,12 @@ static void init_engines(const std::string& cfg_path)
         g_overnight_spx.engine_name = "OvernightDrift";
         g_overnight_spx.SMA_LEN     = 50;
         g_overnight_spx.shadow_mode = true;
-        g_overnight_spx.enabled     = true;
-        g_overnight_spx.lot         = 1.0;
+        g_overnight_spx.enabled     = true;   // validated (2022-bear-survived, gated PF1.29) -- KEEP
+        // 2026-06-13 (S-2026-06-13q): lot 1.0 -> 0.3 dollar-risk normalization
+        // (scale-invariant; edge unchanged). SPX overnight gap at 1.0 lot risked
+        // ~$1/pt of a ~60pt overnight = comparable tail to the culled NAS sibling;
+        // shrink the $ so one bad gap can't erase weeks of the gold book.
+        g_overnight_spx.lot         = 0.3;
         g_overnight_spx.stop_pct    = 0.015;  // tail-cap (~1.5%), mirrors NAS gap-protection.
         g_overnight_spx.init();
         g_overnight_spx.seed_from_d1_csv(
@@ -4912,7 +4926,13 @@ static void init_engines(const std::string& cfg_path)
         g_adhull_ger.symbol="GER40"; g_adhull_ger.engine_name="AdaptiveHullGER";
         g_adhull_ger.TF_SEC=3600; g_adhull_ger.PMUL=2.0; g_adhull_ger.KATR=3.0;
         g_adhull_ger.SESS0=7; g_adhull_ger.SESS1=16;    // EU session (07-16 UTC)
-        g_adhull_ger.shadow_mode=true; g_adhull_ger.enabled=true; g_adhull_ger.lot=1.0;
+        // 2026-06-13 (S-2026-06-13q risk-roster review): lot 1.0 -> 0.3. The
+        // validated edge (PF2.03 GER40, 3x-robust) is UNCHANGED -- reducing lot is
+        // scale-invariant (every trade's $ scales equally; PF/WR/Sharpe identical).
+        // GER40 point-swings are ~4x gold's, so at lot 1.0 (~$1.10/pt) it risked
+        // ~$100-160/trade (live -351 over 3) vs the gold book's ~$30/trade.
+        // Normalizing $-risk to the book median, NOT killing the edge.
+        g_adhull_ger.shadow_mode=true; g_adhull_ger.enabled=true; g_adhull_ger.lot=0.3;
         g_adhull_ger.init();
         g_adhull_ger.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_GER40_H1.csv"));
         g_adhull_ger.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };

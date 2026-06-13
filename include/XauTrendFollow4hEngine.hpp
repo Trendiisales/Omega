@@ -792,6 +792,13 @@ private:
         // 2026-05-21: D1 EMA200 regime gate (chokepoint for all 4h cells).
         if (side > 0 && !omega::gold_d1_trend().long_allowed())  return;
         if (side < 0 && !omega::gold_d1_trend().short_allowed()) return;
+        // 2026-06-13: ALSO gate shorts on the price-based sustained-bull regime
+        // (gold_regime().short_blocked() = is_bull). The laggy D1 EMA200 gate let
+        // SHORT cells fill into the gold bull (XAU_4h_DonchN20/N100 SHORT 4196 ->
+        // stopped 4203 over the weekend). RegimeState releases the moment price
+        // loses EMA200, so it never blocks a genuine bear short. Strictly
+        // subtractive: can only reject shorts during a confirmed uptrend.
+        if (side < 0 && omega::gold_regime().short_blocked()) return;
         const auto& cfg = kXauTfCells[ci];
         double entry = (side > 0) ? ask : bid;
         if (entry <= 0.0 || atr14_ <= 0.0) return;
