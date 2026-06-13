@@ -4463,28 +4463,29 @@ static void init_engines(const std::string& cfg_path)
         g_peachy_orb_nas.symbol      = "NAS100";
         g_peachy_orb_nas.engine_name = "PeachyOrb";
         g_peachy_orb_nas.shadow_mode = true;
-        // ===== TOMBSTONED 2026-06-13 (S-2026-06-13r, operator cull) =====
-        // The 2022-validated edge (bull PF2.19 / bear PF2.25) DOES NOT GENERALIZE
-        // to the current NAS tape. RETEST on last week's real recorded tick tape
-        // (NAS100 June 8-12 2026, pulled from VPS l2_ticks, ~1.75M ticks):
-        //   live deployed config (body0.4 closeBuf0.5 trail3.0 maxStop1.0 EMA100):
-        //                                  n=7  WR=28.6%  PF=0.46  net=-133pt
-        //   validated Config C (body0.6 retr0.3 maxStop1.0 closeBuf0.3 2.5R):
-        //                                  n=5  WR=40.0%  PF=0.75  net=-51pt
-        //   permissive raw breakout-retest: PF=1.75 -> the TAPE has edge; Peachy's
-        //   risk-cap+EMA+closeBuf filters now make it WORSE, not better.
-        // Live ledger agreed: 0 wins / 4 trades, -252. The discretion-selectivity
-        // mechanization that worked on 2022 is regime-specific and has decayed.
-        // Bear-validation data (duka USATECHIDXUSD 2022) is also GONE locally
-        // (only 1 week of May survives) -> cannot re-confirm the original claim.
-        // RE-ENABLE BAR: a fresh walk-forward on >=3 months of current NAS tape
-        //   showing PF>=1.5 both-halves + 3x-cost, NOT a re-run of the 2022 set.
-        g_peachy_orb_nas.enabled     = false;
+        // ===== REVIVED 2026-06-13 (S-2026-06-13t) -- KILLER FOUND: the runner trail =====
+        // Tombstoned r briefly (deployed config PF0.46 on current tape). Filter
+        // ablation on 5 weeks of REAL NAS tape (May 6 - Jun 12 2026, 6.3M ticks,
+        // n=14) isolated the killer: the runner-trail (trail_atr=3.0), NOT any entry
+        // filter. The 2026-06-09 sweep that switched to the trail (+43% claim) was
+        // OVERFIT to old data -- on current tape it gives back every breakout on the
+        // choppy reversals (WR 64->46%, maxDD 1.1R->3.1R, PF 2.5->0.9).
+        // ABLATION (fixed 2R vs each filter added):
+        //   permissive fixed-2R: PF2.51 | +maxStop1.0: 2.51 (inert) | +EMA100: 2.51
+        //   (inert) | +body0.4: 2.34 | +closeBuf0.5: 1.35 (hurts) | +trail3.0: 0.92 (KILL)
+        // FIX = revert to a FIXED 2R TP (the original 2022 exit style was fixed 2.5R,
+        // never the trail). Validated config (body0.4 maxStop1.0 EMA100, closeBuf OFF,
+        // fixed 2R): PF2.34 WR61% maxDD1.1R; 3x-cost PF2.18; H1 PF3.36 / H2 PF2.06
+        // (both halves +). MEETS the re-enable bar. Harness backtest/peachy_orb_nas.cpp,
+        // tape /tmp/nas_5wk.csv. lot stays 0.3 (dollar-normalized). n=14/5wk still
+        // modest -> shadow, watch the live ledger.
+        g_peachy_orb_nas.enabled     = true;
         g_peachy_orb_nas.verbose     = true;
         g_peachy_orb_nas.lot         = 0.3;
-        g_peachy_orb_nas.body_frac     = 0.4;   // 2026-06-09 exhaustive sweep: body0.4+closeBuf0.5 -> PF1.80 net+1561 (+18%), both-halves+, 3x-robust
-        g_peachy_orb_nas.close_buf_atr = 0.5;
-        g_peachy_orb_nas.trail_atr     = 3.0;   // 2026-06-09: runner trail (no fixed TP). Full combo body0.4+closeBuf0.5+trail3.0 -> PF1.89 net+1882 (+43%), both-halves+, 3x-robust 1.63. GER40 stays 0 (trail broke its H2).
+        g_peachy_orb_nas.body_frac     = 0.4;
+        g_peachy_orb_nas.close_buf_atr = 0.0;   // 2026-06-13: closeBuf hurt on current tape (PF2.51->1.35); OFF.
+        g_peachy_orb_nas.tp_r          = 2.0;   // 2026-06-13: fixed 2R (the killer was the trail; 2R best, 3R dies).
+        g_peachy_orb_nas.trail_atr     = 0.0;   // 2026-06-13: KILLED the runner trail -- it was the killer (PF2.5->0.9).
         g_peachy_orb_nas.seed_from_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
         g_peachy_orb_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
