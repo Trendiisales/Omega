@@ -122,6 +122,13 @@ struct XauStraddleM30Engine {
         pos_.active = true; pos_.side = (ps.side == "LONG") ? 1 : -1;
         pos_.entry = ps.entry; pos_.sl = ps.sl; pos_.tp = ps.tp; pos_.lot = ps.size;
         pos_.sl_dist = std::fabs(pos_.entry - pos_.sl); pos_.entry_ts_ms = ps.entry_ts * 1000;
+        // part_taken is not in the snapshot. Treat a restored position as
+        // already-banked: the partial is one-shot by design, and without this a
+        // restart re-banked partial_frac of the REMAINDER at the same level
+        // (observed 2026-06-12: M15 4201.33 long banked 0.0030 at 15:24, then
+        // 0.0021 again at the 18:39 deploy-restart -- same exit px 4225.3672).
+        // Conservative direction: restored runner runs straight to TP/SL.
+        pos_.part_taken = true;
         return true;
     }
 
