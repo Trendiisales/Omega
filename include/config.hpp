@@ -118,6 +118,149 @@ static void apply_shadow_research_profile() noexcept {
     (void)0;
 }
 
+// ── Book-wide force-close of EVERY open position across all engine classes.
+// Extracted from maybe_reset_daily_ledger 2026-06-13 (S-2026-06-13r) so the same
+// proven cascade can fire on BOTH the midnight rollover AND the Friday weekend cut.
+// `reason` is the TradeRecord exitReason + log label. Behaviour for the midnight
+// caller is byte-identical (reason="MIDNIGHT_ROLLOVER").
+static void force_close_all_open(const char* reason) {
+    // Snapshot all prices we need under one lock
+    std::unordered_map<std::string, std::pair<double,double>> px_snap;
+    {
+        std::lock_guard<std::mutex> lk(g_book_mtx);
+        for (const auto& kv : g_bids) {
+            const auto ai = g_asks.find(kv.first);
+            if (ai != g_asks.end() && kv.second > 0.0 && ai->second > 0.0)
+                px_snap[kv.first] = {kv.second, ai->second};
+        }
+    }
+    auto mpx = [&](const char* sym, double& b, double& a) {
+        const auto it = px_snap.find(sym);
+        b = a = 0.0;
+        if (it != px_snap.end()) { b = it->second.first; a = it->second.second; }
+    };
+    double xau_b=0, xau_a=0; mpx("XAUUSD", xau_b, xau_a);
+
+    const std::string reason_s = reason;
+    auto close_cb = [reason_s](const omega::TradeRecord& tr) {
+        omega::TradeRecord t = tr;
+        const double mult = tick_value_multiplier(t.symbol);
+        t.pnl *= mult; t.mfe *= mult; t.mae *= mult;
+        double cps = 0.0;
+        { const std::string& s = t.symbol;
+          if (s=="XAUUSD"||s=="EURUSD"||s=="GBPUSD"||
+              s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
+        omega::apply_realistic_costs(t, cps, mult);
+        g_omegaLedger.record(t);
+        g_telemetry.AccumEnginePnl(t.engine.c_str(), t.net_pnl);
+        printf("[%s] Closed %s %s pnl=$%.2f reason=%s\n",
+               t.exitReason.c_str(), t.symbol.c_str(), t.engine.c_str(),
+               t.net_pnl, t.exitReason.c_str());
+        fflush(stdout);
+    };
+
+    // -- Gold engines --
+    if (xau_b > 0.0 && xau_a > 0.0) {
+        if (g_trend_pb_gold.has_open_position()) {
+            g_trend_pb_gold.force_close(xau_b, xau_a, close_cb, reason);
+            printf("[%s] Force-closed TrendPullback gold\n", reason); fflush(stdout);
+        }
+        if (g_gold_stack.has_open_position()) {
+            g_gold_stack.force_close(xau_b, xau_a, g_rtt_last, close_cb);
+            printf("[%s] Force-closed GoldStack\n", reason); fflush(stdout);
+        }
+    } else {
+        printf("[%s] WARNING: no XAUUSD price -- gold positions may carry\n", reason); fflush(stdout);
+    }
+    // -- Breakout engines (all symbols) --
+    auto cls_beng = [&](auto& eng, const char* sym) {
+        if (!eng.pos.active) return;
+        double b=0,a=0; mpx(sym,b,a);
+        if (b<=0) { b=eng.pos.entry*0.9999; a=eng.pos.entry*1.0001; }
+        eng.forceClose(b, a, reason, g_rtt_last, "", close_cb);
+        printf("[%s] Force-closed Breakout %s\n", reason, sym); fflush(stdout);
+    };
+    cls_beng(g_eng_sp,     "US500.F"); cls_beng(g_eng_nq,     "USTEC.F");
+    cls_beng(g_eng_us30,   "DJ30.F");  cls_beng(g_eng_nas100, "NAS100");
+    cls_beng(g_eng_ger30,  "GER40");   cls_beng(g_eng_uk100,  "UK100");
+    cls_beng(g_eng_estx50, "ESTX50");  cls_beng(g_eng_cl,     "USOIL.F");
+    cls_beng(g_eng_brent,  "BRENT");
+    cls_beng(g_eng_eurusd, "EURUSD");  cls_beng(g_eng_gbpusd, "GBPUSD");
+    cls_beng(g_eng_audusd, "AUDUSD");  cls_beng(g_eng_nzdusd, "NZDUSD");
+    cls_beng(g_eng_usdjpy, "USDJPY");
+    // -- Bracket engines --
+    auto cls_bracket = [&](auto& eng, const char* sym) {
+        if (!eng.has_open_position()) return;
+        double b=0,a=0; mpx(sym,b,a);
+        if (b<=0) { b=1.0; a=1.0; }
+        eng.forceClose(b, a, reason, g_rtt_last, "", close_cb);
+        printf("[%s] Force-closed Bracket %s\n", reason, sym); fflush(stdout);
+    };
+    cls_bracket(g_bracket_gold,   "XAUUSD");
+    cls_bracket(g_bracket_sp,     "US500.F"); cls_bracket(g_bracket_nq,     "USTEC.F");
+    cls_bracket(g_bracket_us30,   "DJ30.F");  cls_bracket(g_bracket_nas100, "NAS100");
+    cls_bracket(g_bracket_ger30,  "GER40");   cls_bracket(g_bracket_uk100,  "UK100");
+    cls_bracket(g_bracket_estx50, "ESTX50");  cls_bracket(g_bracket_eurusd, "EURUSD");
+    cls_bracket(g_bracket_gbpusd, "GBPUSD");  cls_bracket(g_bracket_audusd, "AUDUSD");
+    cls_bracket(g_bracket_nzdusd, "NZDUSD");  cls_bracket(g_bracket_usdjpy, "USDJPY");
+    cls_bracket(g_bracket_brent,  "BRENT");
+    // -- TrendPullback non-gold --
+    auto cls_tpb = [&](auto& eng, const char* sym) {
+        if (!eng.has_open_position()) return;
+        double b=0,a=0; mpx(sym,b,a);
+        if (b<=0) return;
+        eng.force_close(b, a, close_cb, reason);
+        printf("[%s] Force-closed TrendPullback %s\n", reason, sym); fflush(stdout);
+    };
+    cls_tpb(g_trend_pb_sp,    "US500.F");
+    cls_tpb(g_trend_pb_nq,    "USTEC.F");
+    cls_tpb(g_trend_pb_ger40, "GER40");
+    // -- NBM / ORB / VWAP / CrossAsset --
+    auto cls_ca = [&](auto& eng, const char* sym) {
+        if (!eng.has_open_position()) return;
+        double b=0,a=0; mpx(sym,b,a);
+        if (b<=0) return;
+        eng.force_close(b, a, close_cb, reason);
+        printf("[%s] Force-closed CA/NBM/ORB/VWAP %s\n", reason, sym); fflush(stdout);
+    };
+    cls_ca(g_nbm_sp,          "US500.F"); cls_ca(g_nbm_nq,          "USTEC.F");
+    cls_ca(g_nbm_nas,         "NAS100");  cls_ca(g_nbm_us30,        "DJ30.F");
+    cls_ca(g_nbm_gold_london, "XAUUSD");  cls_ca(g_nbm_oil_london,  "USOIL.F");
+    cls_ca(g_orb_us,          "US500.F"); cls_ca(g_orb_ger30,       "GER40");
+    cls_ca(g_orb_uk100,       "UK100");   cls_ca(g_orb_estx50,      "ESTX50");
+    cls_ca(g_vwap_rev_sp,     "US500.F"); cls_ca(g_vwap_rev_nq,     "USTEC.F");
+    cls_ca(g_vwap_rev_ger40,  "GER40");   cls_ca(g_vwap_rev_eurusd, "EURUSD");
+    cls_ca(g_ca_esnq,         "US500.F"); cls_ca(g_ca_eia_fade,     "USOIL.F");
+    cls_ca(g_ca_brent_wti,    "USOIL.F"); cls_ca(g_ca_carry_unwind, "USDJPY");
+    std::cout.flush();
+}
+
+// ── Weekend flat (S-2026-06-13r, operator: "Friday close all pending trades, no
+// weekend holds"). Window = Fri 20:45 UTC through Sun 22:00 UTC. Entry-blocked via
+// symbol_gate; open positions force-closed ONCE on crossing into the window.
+static inline bool weekend_flat_window() noexcept {
+    const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    struct tm ti{}; gmtime_s(&ti, &t);
+    const int dow = ti.tm_wday;                       // 0=Sun..6=Sat
+    const int mod = ti.tm_hour * 60 + ti.tm_min;      // minute-of-day UTC
+    if (dow == 5 && mod >= 20*60 + 45) return true;    // Fri >= 20:45
+    if (dow == 6) return true;                          // all Saturday
+    if (dow == 0 && mod <  22*60)      return true;    // Sun < 22:00
+    return false;
+}
+static int g_weekend_flat_done = -1;   // tm_yday of the Friday we last flattened
+static void maybe_weekend_flat() {
+    if (!weekend_flat_window()) return;
+    const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    struct tm ti{}; gmtime_s(&ti, &t);
+    if (ti.tm_wday != 5) return;                       // force-close fires Friday only
+    if (g_weekend_flat_done == ti.tm_yday) return;     // once per Friday
+    g_weekend_flat_done = ti.tm_yday;
+    printf("[WEEKEND-FLAT] Fri 20:45 UTC cut -- force-closing all open positions, "
+           "blocking new entries until Sun 22:00 UTC\n"); fflush(stdout);
+    force_close_all_open("WEEKEND_CLOSE");
+}
+
 static void maybe_reset_daily_ledger() {
     const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti{};
@@ -129,134 +272,13 @@ static void maybe_reset_daily_ledger() {
     if (ti.tm_yday == g_last_ledger_utc_day) return;
     g_last_ledger_utc_day = ti.tm_yday;
 
-    // ?? MIDNIGHT FORCE-CLOSE: close ALL open positions before ledger reset ????
-    // ROOT CAUSE of recurring $844 bug: any engine's position opened in the prior
-    // session that survives midnight rollover in engine memory will close hours
-    // into the new day and post PnL into the fresh ledger as a phantom trade.
-    // Original fix only covered gold engines -- non-gold TrendPB, breakout, bracket,
-    // NBM, ORB, VWAP, CA engines were all missed.  Same fix applied here as in the
-    // reconnect stale purge (commit 8d55931): cover ALL 40+ engines.
-    {
-        // Snapshot all prices we need under one lock
-        std::unordered_map<std::string, std::pair<double,double>> px_snap;
-        {
-            std::lock_guard<std::mutex> lk(g_book_mtx);
-            for (const auto& kv : g_bids) {
-                const auto ai = g_asks.find(kv.first);
-                if (ai != g_asks.end() && kv.second > 0.0 && ai->second > 0.0)
-                    px_snap[kv.first] = {kv.second, ai->second};
-            }
-        }
-        auto mpx = [&](const char* sym, double& b, double& a) {
-            const auto it = px_snap.find(sym);
-            b = a = 0.0;
-            if (it != px_snap.end()) { b = it->second.first; a = it->second.second; }
-        };
-        double xau_b=0, xau_a=0; mpx("XAUUSD", xau_b, xau_a);
+    // MIDNIGHT FORCE-CLOSE: close ALL open positions before ledger reset. ROOT CAUSE
+    // of the recurring $844 bug -- a position surviving midnight in engine memory
+    // closes hours into the new day and posts phantom PnL into the fresh ledger.
+    // Now delegates to the shared cascade (also used by the Friday weekend cut).
+    force_close_all_open("MIDNIGHT_ROLLOVER");
 
-        auto midnight_cb = [](const omega::TradeRecord& tr) {
-            // Book into OLD day ledger (before resetDaily below) so PnL lands correctly.
-            // Cannot call handle_closed_trade() here -- it is defined later in this file.
-            // Minimal inline: apply tick_val, costs, record to ledger.
-            omega::TradeRecord t = tr;
-            const double mult = tick_value_multiplier(t.symbol);
-            t.pnl *= mult; t.mfe *= mult; t.mae *= mult;
-            double cps = 0.0;
-            { const std::string& s = t.symbol;
-              if (s=="XAUUSD"||s=="EURUSD"||s=="GBPUSD"||
-                  s=="AUDUSD"||s=="NZDUSD"||s=="USDJPY") cps = 3.0; }
-            omega::apply_realistic_costs(t, cps, mult);
-            g_omegaLedger.record(t);
-            g_telemetry.AccumEnginePnl(t.engine.c_str(), t.net_pnl);
-            printf("[MIDNIGHT-ROLLOVER] Closed %s %s pnl=$%.2f reason=%s\n",
-                   t.symbol.c_str(), t.engine.c_str(), t.net_pnl, t.exitReason.c_str());
-            fflush(stdout);
-        };
-
-        // -- Gold engines --
-        if (xau_b > 0.0 && xau_a > 0.0) {
-            if (g_trend_pb_gold.has_open_position()) {
-                g_trend_pb_gold.force_close(xau_b, xau_a, midnight_cb, "MIDNIGHT_ROLLOVER");
-                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed TrendPullback gold\n";
-            }
-            if (g_gold_stack.has_open_position()) {
-                g_gold_stack.force_close(xau_b, xau_a, g_rtt_last, midnight_cb);
-                std::cout << "[MIDNIGHT-ROLLOVER] Force-closed GoldStack\n";
-            }
-            // (LatencyEdge midnight force_close block REMOVED at S13 Finding B 2026-04-24 — engine culled)
-        } else {
-            std::cout << "[MIDNIGHT-ROLLOVER] WARNING: no XAUUSD price -- gold positions may carry\n";
-        }
-
-        // -- Breakout engines (all symbols) --
-        auto mid_beng = [&](auto& eng, const char* sym) {
-            if (!eng.pos.active) return;
-            double b=0,a=0; mpx(sym,b,a);
-            if (b<=0) { b=eng.pos.entry*0.9999; a=eng.pos.entry*1.0001; }
-            eng.forceClose(b, a, "MIDNIGHT_ROLLOVER", g_rtt_last, "", midnight_cb);
-            printf("[MIDNIGHT-ROLLOVER] Force-closed Breakout %s\n", sym); fflush(stdout);
-        };
-        mid_beng(g_eng_sp,     "US500.F"); mid_beng(g_eng_nq,     "USTEC.F");
-        mid_beng(g_eng_us30,   "DJ30.F");  mid_beng(g_eng_nas100, "NAS100");
-        mid_beng(g_eng_ger30,  "GER40");   mid_beng(g_eng_uk100,  "UK100");
-        mid_beng(g_eng_estx50, "ESTX50");  mid_beng(g_eng_cl,     "USOIL.F");
-        mid_beng(g_eng_brent,  "BRENT");
-        mid_beng(g_eng_eurusd, "EURUSD");  mid_beng(g_eng_gbpusd, "GBPUSD");
-        mid_beng(g_eng_audusd, "AUDUSD");  mid_beng(g_eng_nzdusd, "NZDUSD");
-        mid_beng(g_eng_usdjpy, "USDJPY");
-
-        // -- Bracket engines --
-        auto mid_bracket = [&](auto& eng, const char* sym) {
-            if (!eng.has_open_position()) return;
-            double b=0,a=0; mpx(sym,b,a);
-            if (b<=0) { b=1.0; a=1.0; }
-            eng.forceClose(b, a, "MIDNIGHT_ROLLOVER", g_rtt_last, "", midnight_cb);
-            printf("[MIDNIGHT-ROLLOVER] Force-closed Bracket %s\n", sym); fflush(stdout);
-        };
-        mid_bracket(g_bracket_gold,   "XAUUSD");
-        mid_bracket(g_bracket_sp,     "US500.F"); mid_bracket(g_bracket_nq,     "USTEC.F");
-        mid_bracket(g_bracket_us30,   "DJ30.F");  mid_bracket(g_bracket_nas100, "NAS100");
-        mid_bracket(g_bracket_ger30,  "GER40");   mid_bracket(g_bracket_uk100,  "UK100");
-        mid_bracket(g_bracket_estx50, "ESTX50");  mid_bracket(g_bracket_eurusd, "EURUSD");
-        mid_bracket(g_bracket_gbpusd, "GBPUSD");  mid_bracket(g_bracket_audusd, "AUDUSD");
-        mid_bracket(g_bracket_nzdusd, "NZDUSD");  mid_bracket(g_bracket_usdjpy, "USDJPY");
-        mid_bracket(g_bracket_brent,  "BRENT");
-
-        // -- TrendPullback non-gold (has open_entry_ts so can is_stale -- always close at midnight) --
-        auto mid_tpb = [&](auto& eng, const char* sym) {
-            if (!eng.has_open_position()) return;
-            double b=0,a=0; mpx(sym,b,a);
-            if (b<=0) return;
-            eng.force_close(b, a, midnight_cb, "MIDNIGHT_ROLLOVER");
-            printf("[MIDNIGHT-ROLLOVER] Force-closed TrendPullback %s\n", sym); fflush(stdout);
-        };
-        mid_tpb(g_trend_pb_sp,    "US500.F");
-        mid_tpb(g_trend_pb_nq,    "USTEC.F");
-        mid_tpb(g_trend_pb_ger40, "GER40");
-
-        // -- NBM / ORB / VWAP / CrossAsset --
-        auto mid_ca = [&](auto& eng, const char* sym) {
-            if (!eng.has_open_position()) return;
-            double b=0,a=0; mpx(sym,b,a);
-            if (b<=0) return;
-            eng.force_close(b, a, midnight_cb, "MIDNIGHT_ROLLOVER");
-            printf("[MIDNIGHT-ROLLOVER] Force-closed CA/NBM/ORB/VWAP %s\n", sym); fflush(stdout);
-        };
-        mid_ca(g_nbm_sp,          "US500.F"); mid_ca(g_nbm_nq,          "USTEC.F");
-        mid_ca(g_nbm_nas,         "NAS100");  mid_ca(g_nbm_us30,        "DJ30.F");
-        mid_ca(g_nbm_gold_london, "XAUUSD");  mid_ca(g_nbm_oil_london,  "USOIL.F");
-        mid_ca(g_orb_us,          "US500.F"); mid_ca(g_orb_ger30,       "GER40");
-        mid_ca(g_orb_uk100,       "UK100");   mid_ca(g_orb_estx50,      "ESTX50");
-        mid_ca(g_vwap_rev_sp,     "US500.F"); mid_ca(g_vwap_rev_nq,     "USTEC.F");
-        mid_ca(g_vwap_rev_ger40,  "GER40");   mid_ca(g_vwap_rev_eurusd, "EURUSD");
-        mid_ca(g_ca_esnq,         "US500.F"); mid_ca(g_ca_eia_fade,     "USOIL.F");
-        mid_ca(g_ca_brent_wti,    "USOIL.F"); mid_ca(g_ca_carry_unwind, "USDJPY");
-        // g_ca_fx_cascade: private legs -- always short-lived, prior-day carry impossible
-
-        std::cout.flush();
-    }
-
-    // ?? Snapshot session PnL BEFORE reset -- multiday throttle needs this ??
+    // Snapshot session PnL BEFORE reset -- multiday throttle needs this.
     // resetDaily() zeroes the ledger. We must capture the final value first.
     const double session_final_pnl = g_omegaLedger.dailyPnl();
 

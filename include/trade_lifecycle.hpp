@@ -976,6 +976,21 @@ static bool symbol_gate(
     const bool shadow_mode = (g_cfg.mode == "SHADOW");
     if (symbol == "XAUUSD" && g_disable_gold_stack) return false;
 
+    // 2026-06-13 (S-2026-06-13r, operator: "no weekend holds"). Universal weekend
+    // entry block -- no NEW positions from Fri 20:45 UTC through Sun 22:00 UTC, for
+    // every symbol/engine. The Friday force-close of OPEN positions is handled by
+    // maybe_weekend_flat() (config.hpp); this is the entry half of the same gate.
+    if (weekend_flat_window()) {
+        static int64_t s_wkblock_log = 0;
+        const int64_t now_w = nowSec();
+        if (now_w - s_wkblock_log >= 600) {
+            s_wkblock_log = now_w;
+            printf("[WEEKEND-FLAT] new entries blocked (Fri 20:45 -> Sun 22:00 UTC)\n");
+            fflush(stdout);
+        }
+        return false;
+    }
+
     // 2026-06-12 BEAR-EVENT LOCKOUT (operator directive). Instruments that do NOT
     //   trend down cleanly -- US30/GER40/ESTX50/UK100 -- have no tradeable edge in
     //   either direction during a bear: longs bleed on whipsawed breakouts, and the

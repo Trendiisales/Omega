@@ -4462,15 +4462,26 @@ static void init_engines(const std::string& cfg_path)
         //   losers). Volume filter is dead on proxy → no volume gate. SHADOW first.
         g_peachy_orb_nas.symbol      = "NAS100";
         g_peachy_orb_nas.engine_name = "PeachyOrb";
-        g_peachy_orb_nas.shadow_mode = true;     // paper label (whole system is SHADOW); VISIBLE via register_source below (2026-06-08). Bear-validated (2022 NDX PF2.25).
-        g_peachy_orb_nas.enabled     = true;
+        g_peachy_orb_nas.shadow_mode = true;
+        // ===== TOMBSTONED 2026-06-13 (S-2026-06-13r, operator cull) =====
+        // The 2022-validated edge (bull PF2.19 / bear PF2.25) DOES NOT GENERALIZE
+        // to the current NAS tape. RETEST on last week's real recorded tick tape
+        // (NAS100 June 8-12 2026, pulled from VPS l2_ticks, ~1.75M ticks):
+        //   live deployed config (body0.4 closeBuf0.5 trail3.0 maxStop1.0 EMA100):
+        //                                  n=7  WR=28.6%  PF=0.46  net=-133pt
+        //   validated Config C (body0.6 retr0.3 maxStop1.0 closeBuf0.3 2.5R):
+        //                                  n=5  WR=40.0%  PF=0.75  net=-51pt
+        //   permissive raw breakout-retest: PF=1.75 -> the TAPE has edge; Peachy's
+        //   risk-cap+EMA+closeBuf filters now make it WORSE, not better.
+        // Live ledger agreed: 0 wins / 4 trades, -252. The discretion-selectivity
+        // mechanization that worked on 2022 is regime-specific and has decayed.
+        // Bear-validation data (duka USATECHIDXUSD 2022) is also GONE locally
+        // (only 1 week of May survives) -> cannot re-confirm the original claim.
+        // RE-ENABLE BAR: a fresh walk-forward on >=3 months of current NAS tape
+        //   showing PF>=1.5 both-halves + 3x-cost, NOT a re-run of the 2022 set.
+        g_peachy_orb_nas.enabled     = false;
         g_peachy_orb_nas.verbose     = true;
-        g_peachy_orb_nas.lot         = 0.3;   // 2026-06-13 (S-2026-06-13q): 1.0 -> 0.3
-        // dollar-risk normalization. Validated edge (PF1.89, 3x-robust, bear-passed)
-        // is scale-invariant under lot change. NAS ORB swings ~100pt; at 1.0 lot
-        // (~$1/pt) a stopped breakout cost ~$50-100 (live 0/4 -252) vs the gold
-        // book's ~$30. Shrink $ to match; keep the (validated) edge. NOT a cull --
-        // small live n on a validated engine is the documented don't-tombstone trap.
+        g_peachy_orb_nas.lot         = 0.3;
         g_peachy_orb_nas.body_frac     = 0.4;   // 2026-06-09 exhaustive sweep: body0.4+closeBuf0.5 -> PF1.80 net+1561 (+18%), both-halves+, 3x-robust
         g_peachy_orb_nas.close_buf_atr = 0.5;
         g_peachy_orb_nas.trail_atr     = 3.0;   // 2026-06-09: runner trail (no fixed TP). Full combo body0.4+closeBuf0.5+trail3.0 -> PF1.89 net+1882 (+43%), both-halves+, 3x-robust 1.63. GER40 stays 0 (trail broke its H2).
@@ -4845,13 +4856,14 @@ static void init_engines(const std::string& cfg_path)
         g_overnight_nas.engine_name = "OvernightDrift";
         g_overnight_nas.SMA_LEN     = 20;
         g_overnight_nas.shadow_mode = true;
-        // 2026-06-13 CULL (S-2026-06-13q risk-roster review): DISABLED. The 1.5%
-        // tail-cap = ~450pt NAS = ~$450 at lot 1.0 = a full month of XauStraddleM15
-        // profit on ONE trade; live -453 realized on a single trade; the stop was
-        // itself flagged "Re-backtest pending" (never validated). Unlike the SPX
-        // sibling below (2022-bear-validated, gated PF1.29), the NAS cell has no
-        // reproduced backtest. Re-enable only after a tight cap (<=$40) + a
-        // reproduced backtest. (SPX OvernightDrift stays ENABLED — it is validated.)
+        // ===== TOMBSTONED 2026-06-13 (S-2026-06-13r, operator cull) =====
+        // 1.5% tail-cap = ~450pt NAS = ~$450 at lot 1.0 = a full month of
+        // XauStraddleM15 profit ON ONE TRADE; live -453 realized on a single trade.
+        // The stop was self-flagged "Re-backtest pending" -- never validated; the
+        // overnight-drift edge on NAS was never reproduced with a tail this size.
+        // Per-trade tail incompatible with a $1-50/trade book. (SPX sibling below
+        // STAYS ENABLED -- it IS 2022-bear-validated, gated PF1.29, now lot 0.3.)
+        // RE-ENABLE BAR: reproduced NAS backtest with a tight cap (<=$40/trade).
         g_overnight_nas.enabled     = false;
         g_overnight_nas.lot         = 1.0;
         g_overnight_nas.stop_pct    = 0.015;  // 2026-06-05: tail-cap (~1.5% ≈ 450pt NAS).
@@ -4926,13 +4938,18 @@ static void init_engines(const std::string& cfg_path)
         g_adhull_ger.symbol="GER40"; g_adhull_ger.engine_name="AdaptiveHullGER";
         g_adhull_ger.TF_SEC=3600; g_adhull_ger.PMUL=2.0; g_adhull_ger.KATR=3.0;
         g_adhull_ger.SESS0=7; g_adhull_ger.SESS1=16;    // EU session (07-16 UTC)
-        // 2026-06-13 (S-2026-06-13q risk-roster review): lot 1.0 -> 0.3. The
-        // validated edge (PF2.03 GER40, 3x-robust) is UNCHANGED -- reducing lot is
-        // scale-invariant (every trade's $ scales equally; PF/WR/Sharpe identical).
-        // GER40 point-swings are ~4x gold's, so at lot 1.0 (~$1.10/pt) it risked
-        // ~$100-160/trade (live -351 over 3) vs the gold book's ~$30/trade.
-        // Normalizing $-risk to the book median, NOT killing the edge.
-        g_adhull_ger.shadow_mode=true; g_adhull_ger.enabled=true; g_adhull_ger.lot=0.3;
+        // ===== TOMBSTONED 2026-06-13 (S-2026-06-13r, operator cull) =====
+        // Live: -351 over 3 trades, 0% WR, all losing TRAIL exits in chop. At lot
+        // 1.0 (~$1.10/pt) GER40's ~4x-gold point-swings made each loss $100-160.
+        // The historical validation (PF2.03 GER40 H1) could NOT be re-confirmed on
+        // current tape: no recent GER40 tick recordings exist (only XAUUSD + NAS/
+        // US500 L2 are recorded), so a fresh walk-forward is not possible today.
+        // Tombstoned on live evidence + operator directive; the validated claim is
+        // stale and unverifiable. The XAU sibling (g_adhull_xau, lot 0.01, all-
+        // session) stays enabled -- low $, separate instrument, not in the cull.
+        // RE-ENABLE BAR: start recording GER40 ticks, then a fresh walk-forward
+        //   (PF>=1.5 both-halves + 3x-cost) on >=3 months of current GER40 tape.
+        g_adhull_ger.shadow_mode=true; g_adhull_ger.enabled=false; g_adhull_ger.lot=0.3;
         g_adhull_ger.init();
         g_adhull_ger.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_GER40_H1.csv"));
         g_adhull_ger.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };

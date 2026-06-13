@@ -177,6 +177,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     }
 
     maybe_reset_daily_ledger();
+    maybe_weekend_flat();   // S-2026-06-13r: Fri 20:45 UTC force-close-all + entry block
 
     const double mid = (bid + ask) * 0.5;
     if (sym == "VIX.F")   g_macroDetector.updateVIX(mid);
