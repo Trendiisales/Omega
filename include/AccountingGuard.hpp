@@ -29,11 +29,19 @@
 // Called from the on_tick 250ms universal-publisher block -- same thread that
 // publishes the snapshots.
 // ============================================================================
+#include <unordered_set>   // enforcement breach-tracking (Phase 2); std headers only
+#include <string>
 
 namespace omega_acct {
 
-// Phase 2 flips this to true (per-engine close hooks land with it).
-inline bool g_enforce = false;
+// Phase 2 ARMED 2026-06-13 (S-2026-06-13u, operator directive). Enforcement
+// force-closes a runaway via g_open_positions.close_matching() -> the engine's
+// own force_close (books + clears its slot). Surgical: ledger-proven to cut only
+// genuine runaways (2 of 269 closes / 32d), never a normal stop. A breach must
+// PERSIST >= ACCT_CONFIRM_SEC before it force-closes (a single tick spike past
+// the cap does not trigger).
+inline bool g_enforce = true;
+inline constexpr int64_t ACCT_CONFIRM_SEC = 5;
 
 // Per-engine runaway cap in USD = max(3 x median realized loss, $25).
 // Derived 2026-06-13 from the cleaned cumulative ledger (442 closes). Engines
@@ -80,7 +88,10 @@ inline double unrealised_usd(const omega::PositionSnapshot& ps) {
 // Run one oversight pass. Phase 1: throttled breach logging only.
 // Returns the number of positions currently in breach.
 inline int check(const std::vector<omega::PositionSnapshot>& open, int64_t now_s) {
-    static std::unordered_map<std::string, int64_t> s_last_log;  // key -> last log ts
+    static std::unordered_map<std::string, int64_t> s_last_log;     // key -> last log ts
+    static std::unordered_map<std::string, int64_t> s_breach_since; // key -> first-seen breach ts
+    static std::unordered_set<std::string>          s_seen_this;    // keys breaching this pass
+    s_seen_this.clear();
     int breaches = 0;
     for (const auto& ps : open) {
         const double unr = unrealised_usd(ps);
@@ -88,17 +99,42 @@ inline int check(const std::vector<omega::PositionSnapshot>& open, int64_t now_s
         const double cap = cap_for(ps.engine);
         if (-unr < cap) continue;
         ++breaches;
-        const std::string key = ps.engine + "|" + ps.symbol + "|" + ps.side;
+        // position identity includes entry_ts so a NEW trade in the same engine
+        // is a fresh breach window, not a stale carry-over.
+        const std::string key = ps.engine + "|" + ps.symbol + "|" + ps.side + "|" +
+                                std::to_string(ps.entry_ts);
+        s_seen_this.insert(key);
+        int64_t& since = s_breach_since[key];
+        if (since == 0) since = now_s;                 // first tick over cap
+        const bool confirmed = (now_s - since) >= ACCT_CONFIRM_SEC;
+
         int64_t& last = s_last_log[key];
-        if (now_s - last >= 60) {
+        if (now_s - last >= 60 || (g_enforce && confirmed)) {
             last = now_s;
+            const char* disp = !g_enforce ? "LOG-ONLY (phase 1)"
+                             : !confirmed  ? "watching (confirm window)"
+                                           : "ENFORCE -> force-closing";
             std::printf("[ACCT-GUARD] BREACH %s %s %s entry=%.4f cur=%.4f unr=$%.2f cap=$%.2f -- %s\n",
                         ps.engine.c_str(), ps.symbol.c_str(), ps.side.c_str(),
-                        ps.entry, ps.current, unr, cap,
-                        g_enforce ? "FORCE-CLOSING" : "LOG-ONLY (phase 1; enforcement off)");
+                        ps.entry, ps.current, unr, cap, disp);
             std::fflush(stdout);
         }
-        // Phase 2: per-engine close hook fires here when g_enforce==true.
+        // Phase 2 enforcement: on a SUSTAINED breach, force-close via the engine's
+        // own closer (books + clears its slot). One shot per position identity.
+        if (g_enforce && confirmed) {
+            const bool closed = g_open_positions.close_matching(ps, "ACCT_GUARD_RUNAWAY");
+            std::printf("[ACCT-GUARD] %s %s %s -- %s\n",
+                        closed ? "FORCE-CLOSED" : "UNENFORCEABLE (no closer wired for)",
+                        ps.engine.c_str(), ps.symbol.c_str(),
+                        closed ? "runaway cut" : "position left open -- needs a closer");
+            std::fflush(stdout);
+            s_breach_since[key] = now_s + 3600;  // suppress re-fire on this identity for 1h
+        }
+    }
+    // GC: drop breach timers for positions no longer breaching (they recovered/closed)
+    for (auto it = s_breach_since.begin(); it != s_breach_since.end(); ) {
+        if (s_seen_this.find(it->first) == s_seen_this.end()) it = s_breach_since.erase(it);
+        else ++it;
     }
     return breaches;
 }

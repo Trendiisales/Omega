@@ -108,6 +108,14 @@ struct XauStraddleM30Engine {
 
     bool has_open_position() const noexcept { return pos_.active; }
 
+    // S-2026-06-13u: public force-close so the AccountingGuard closer + the
+    // book-wide cascades can flatten this position (wraps the private _close).
+    void force_close(double bid, double ask, CloseCallback cb, const char* reason) noexcept {
+        if (!pos_.active) return;
+        const double px = pos_.side > 0 ? bid : ask;
+        _close(px, reason, (int64_t)std::time(nullptr) * 1000, cb);
+    }
+
     // S-2026-06-03: persistence batch 4 — resume the filled OCO position across
     // restart (the armed/pending re-arms next bar anyway). Covers all straddle
     // instances (gold + index) since they share this class.

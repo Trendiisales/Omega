@@ -137,6 +137,36 @@ public:
         restorers_.emplace_back(std::move(fn));
     }
 
+    // ========================================================================
+    // S-2026-06-13u: AccountingGuard ENFORCEMENT (Phase 2). A closer is a
+    // predicate that ATTEMPTS to force-close the position matching one snapshot
+    // (book the trade through the engine's own on_trade_record callback + clear
+    // the engine's internal slot) and returns true if it claimed+closed it.
+    // Mirrors the restorer pattern exactly. AccountingGuard offers a breached
+    // snapshot to every closer until one closes it; returns false if NONE
+    // claimed (engine has no closer wired -> guard logs "unenforceable", never
+    // silently fails). Engines register a closer the same way as a restorer.
+    // ========================================================================
+    using CloseFn = std::function<bool(const PositionSnapshot&, const char* reason)>;
+
+    void register_closer(CloseFn fn)
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        closers_.emplace_back(std::move(fn));
+    }
+
+    // Offer the breached snapshot to every closer until one force-closes it.
+    // Returns true if a closer claimed+closed; false if none could (unenforceable).
+    bool close_matching(const PositionSnapshot& ps, const char* reason)
+    {
+        std::vector<CloseFn> snap;
+        { std::lock_guard<std::mutex> lk(mu_); snap = closers_; }
+        for (const auto& fn : snap) {
+            if (fn && fn(ps, reason)) return true;
+        }
+        return false;
+    }
+
     // S-2026-06-03: persist-sources carry FULL position state (incl sl/tp), read
     // directly from engine internals — unlike the GUI snapshot sources, many of
     // which omit sl/tp. serialize()/save() prefer these when any are registered.
@@ -243,6 +273,7 @@ private:
     mutable std::mutex                              mu_;
     std::vector<std::pair<std::string, SourceFn>>   sources_;
     std::vector<RestoreFn>                          restorers_;
+    std::vector<CloseFn>                            closers_;             // S-2026-06-13u AccountingGuard Phase 2
     std::vector<SourceFn>                           persist_sources_;
     std::vector<int64_t>                            restored_entry_ts_;   // S-2026-06-11
 };

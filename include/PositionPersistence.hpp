@@ -42,12 +42,55 @@ template <class E> inline bool restore_blocked_disabled(const E& eng) {
     else return false;
 }
 
+// ---- AccountingGuard Phase 2 enforcement helpers (S-2026-06-13u) --------
+// A closer force-closes a runaway position through the engine's OWN force_close
+// (which books via on_trade_record = handle_closed_trade AND clears the engine's
+// internal slot -> no double-book) at the current book price.
+inline bool acct_book_px(const char* sym, double& b, double& a) {
+    std::lock_guard<std::mutex> lk(g_book_mtx);
+    auto bi = g_bids.find(sym), ai = g_asks.find(sym);
+    if (bi == g_bids.end() || ai == g_asks.end() || bi->second <= 0.0 || ai->second <= 0.0)
+        return false;
+    b = bi->second; a = ai->second; return true;
+}
+inline void acct_book_cb(const omega::TradeRecord& tr) { handle_closed_trade(tr); }
+
+// Is this engine holding an open position? (open-accessor varies across engines)
+template <class E>
+inline bool acct_has_open(E& eng) {
+    if      constexpr (requires { eng.has_open_position(); }) return eng.has_open_position();
+    else if constexpr (requires { eng.pos.active; })          return eng.pos.active;
+    else if constexpr (requires { eng.any_open(); })          return eng.any_open();
+    else return false;
+}
+// Force-close via whichever force_close signature this engine exposes. C++20
+// requires-dispatch keeps ONE generic closer correct across the engine zoo:
+//   (b,a,cb,reason)      cross-asset / straddle / breakout
+//   (b,a,now_ms,cb)      LivePos scalpers + FX session opens
+// Returns false (engine left open -> guard logs UNENFORCEABLE) when neither
+// matches (e.g. IndexFlow's (b,a,regime,cb&) or multicell force_close_all).
+template <class E>
+inline bool acct_try_close(E& eng, const char* sym, const char* reason) {
+    if (!acct_has_open(eng)) return false;
+    double b, a; if (!acct_book_px(sym, b, a)) return false;
+    if      constexpr (requires { eng.force_close(b, a, acct_book_cb, reason); }) {
+        eng.force_close(b, a, acct_book_cb, reason); return true;
+    } else if constexpr (requires { eng.force_close(b, a, (int64_t)0, acct_book_cb); }) {
+        eng.force_close(b, a, (int64_t)0, acct_book_cb); return true;
+    } else return false;
+}
+
 // ---- LivePos archetype --------------------------------------------------
 // 7 engines share the identical `LivePos pos` struct (public):
 //   pos.active / is_long / entry / sl / tp / size / entry_ts (+ mfe/mae).
 // One template covers all: emit full state on save, set it back on restore.
 template <class E>
 inline void wire_livepos(E& eng, const char* tag, const char* sym) {
+    g_open_positions.register_closer(
+        [&eng, tag, sym](const omega::PositionSnapshot& ps, const char* reason) -> bool {
+            if (ps.engine != tag) return false;
+            return acct_try_close(eng, sym, reason);
+        });
     g_open_positions.register_persist_source([&eng, tag, sym]() {
         std::vector<omega::PositionSnapshot> out;
         if (eng.pos.active) {
@@ -89,6 +132,11 @@ inline void wire_livepos(E& eng, const char* tag, const char* sym) {
 // restore routes by tag.
 template <class E>
 inline void wire_cross(E& eng, const char* tag, const char* sym) {
+    g_open_positions.register_closer(
+        [&eng, tag, sym](const omega::PositionSnapshot& ps, const char* reason) -> bool {
+            if (ps.engine != tag) return false;
+            return acct_try_close(eng, sym, reason);
+        });
     g_open_positions.register_persist_source([&eng, tag, sym]() {
         std::vector<omega::PositionSnapshot> out; omega::PositionSnapshot ps;
         if (eng.persist_save(tag, sym, ps)) out.push_back(ps);
