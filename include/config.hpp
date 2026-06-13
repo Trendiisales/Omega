@@ -123,7 +123,9 @@ static void apply_shadow_research_profile() noexcept {
 // proven cascade can fire on BOTH the midnight rollover AND the Friday weekend cut.
 // `reason` is the TradeRecord exitReason + log label. Behaviour for the midnight
 // caller is byte-identical (reason="MIDNIGHT_ROLLOVER").
-static void force_close_all_open(const char* reason) {
+// include_multiday=false (midnight): leave the D1/H4/H1 swing engines holding --
+//   they carry across midnight BY DESIGN. true (weekend cut): ALSO flatten them.
+static void force_close_all_open(const char* reason, bool include_multiday = false) {
     // Snapshot all prices we need under one lock
     std::unordered_map<std::string, std::pair<double,double>> px_snap;
     {
@@ -232,6 +234,28 @@ static void force_close_all_open(const char* reason) {
     cls_ca(g_vwap_rev_ger40,  "GER40");   cls_ca(g_vwap_rev_eurusd, "EURUSD");
     cls_ca(g_ca_esnq,         "US500.F"); cls_ca(g_ca_eia_fade,     "USOIL.F");
     cls_ca(g_ca_brent_wti,    "USOIL.F"); cls_ca(g_ca_carry_unwind, "USDJPY");
+
+    // -- Multi-day swing engines (D1/H4/H1) -- WEEKEND ONLY (hold across midnight
+    //    by design). Force-close ALL regardless of P&L (the existing per-engine
+    //    weekend_close_gate only closed winners -- losers gapped). reason carries
+    //    the WEEKEND_CLOSE label through each engine's force_close.
+    if (include_multiday) {
+        const int64_t now_ms = static_cast<int64_t>(std::time(nullptr)) * 1000LL;
+        double ger_b=0, ger_a=0; mpx("GER40", ger_b, ger_a);
+        if (xau_b > 0.0 && xau_a > 0.0) {
+            g_xau_tf_1h.force_close(xau_b, xau_a, now_ms, close_cb, reason);
+            g_xau_tf_2h.force_close(xau_b, xau_a, now_ms, close_cb, reason);
+            g_xau_tf_4h.force_close(xau_b, xau_a, now_ms, close_cb, reason);
+            g_xau_tf_d1.force_close(xau_b, xau_a, now_ms, close_cb, reason);
+            g_donchian.force_close_all(xau_b, xau_a, now_ms, close_cb);   // gold cells
+            printf("[%s] Force-closed XAU swing engines (TF 1h/2h/4h/D1 + Donchian)\n", reason);
+            fflush(stdout);
+        }
+        if (ger_b > 0.0 && ger_a > 0.0) {
+            g_ger40_kelt.force_close(ger_b, ger_a, now_ms, close_cb, reason);
+            printf("[%s] Force-closed GER40 Keltner\n", reason); fflush(stdout);
+        }
+    }
     std::cout.flush();
 }
 
@@ -258,7 +282,7 @@ static void maybe_weekend_flat() {
     g_weekend_flat_done = ti.tm_yday;
     printf("[WEEKEND-FLAT] Fri 20:45 UTC cut -- force-closing all open positions, "
            "blocking new entries until Sun 22:00 UTC\n"); fflush(stdout);
-    force_close_all_open("WEEKEND_CLOSE");
+    force_close_all_open("WEEKEND_CLOSE", /*include_multiday=*/true);
 }
 
 static void maybe_reset_daily_ledger() {
