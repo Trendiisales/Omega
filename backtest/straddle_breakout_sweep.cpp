@@ -71,6 +71,10 @@ int main(int argc,char**argv){
     double BE_BUF    = getenv("BE_BUF")?atof(getenv("BE_BUF")):0.0;       // lock buffer in R above entry
     double TRAIL     = getenv("TRAIL")?atof(getenv("TRAIL")):0.0;         // ATR mult trail (0=off)
     int    HOLD      = getenv("HOLD")?atoi(getenv("HOLD")):0;             // max bars in trade (0=off) -- time-stop test
+    // weekend-flat (2026-06-13): force-close any open position at/after Friday
+    // FRIDAY_FLAT minutes-of-day UTC (e.g. 1245 = 20:45), and block new entries
+    // from then until the weekend gap. 0 = off (hold across weekend, baseline).
+    int    FRIDAY_FLAT = getenv("FRIDAY_FLAT")?atoi(getenv("FRIDAY_FLAT")):0;
 
     std::vector<Bar> b=load_agg(path,tf);
     if((int)b.size()<200){std::fprintf(stderr,"few bars\n");return 1;}
@@ -95,7 +99,7 @@ int main(int argc,char**argv){
     int units=0; double entry_sum=0, last_add=0;
     double pend_bank=0.0, pos_frac=1.0; bool part_taken=false;   // partial state
     double cum=0,peak=0,mdd=0; int nw=0,nl=0; double gw=0,gl=0; int ntr=0;
-    int totAdds=0;
+    int totAdds=0; int nFF=0;
     // leg attribution
     int longN=0,shortN=0; double longNet=0,shortNet=0;
     std::vector<double> tpnl;
@@ -157,6 +161,13 @@ int main(int argc,char**argv){
             else     { if(bar.h>=stop) close(stop,i); else if(tp>0&&bar.l<=tp) close(tp,i); }
         }
         if(pos && HOLD>0 && entry_bar>=0 && (i-entry_bar)>=HOLD){ holdsum+=(i-entry_bar); close(bar.c,i); }
+        // weekend-flat: dow via (days+4)%7 -> Sun=0..Fri=5 (epoch 1970-01-01 = Thursday=4)
+        bool ffWindow=false;
+        if(FRIDAY_FLAT>0){
+            int dow=(int)((bar.ts/86400+4)%7), mod=(int)((bar.ts%86400)/60);
+            ffWindow=(dow==5 && mod>=FRIDAY_FLAT);
+            if(pos && ffWindow){ nFF++; close(bar.c,i); }
+        }
         if(pos && dir>0 && tp<=0){ /* runner: exit on close below box low (computed below) */ }
 
         int warm=std::max({boxN,biasSlow,ATR_P})+3;
@@ -174,6 +185,7 @@ int main(int argc,char**argv){
 
         if(i<evalStart) continue;
         if(pos) continue;
+        if(ffWindow) continue;   // no fresh entries into the weekend-flat window
         if(COOLDOWN>0 && i<cooldown_until) continue;
 
         // filters
@@ -202,7 +214,7 @@ int main(int argc,char**argv){
     double pf=(gl>0)?gw/gl:(gw>0?999:0); double hit=(nw+nl>0)?100.0*nw/(nw+nl):0;
     double years; {int n=(int)b.size();int s=std::max(evalStart,1);years=(b[n-1].ts-b[s].ts)/86400.0/365.25;}
     double sh=0; if(ntr>=2&&years>0){double m=0;for(double v:tpnl)m+=v;m/=ntr;double s=0;for(double v:tpnl)s+=(v-m)*(v-m);double sd=std::sqrt(s/(ntr-1));if(sd>0)sh=(m/sd)*std::sqrt((double)ntr/years);}
-    std::printf("TP%.1f PARTIAL%.2f@%.2fR BE_arm%.2f TRAIL%.1f | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f\n",
-        TPr,PARTIAL,PARTIAL_R,BE_ARM,TRAIL,ntr,cum,pf,sh,hit,mdd); (void)totAdds;(void)biasFast;(void)longN;(void)shortN;(void)longNet;(void)shortNet;
+    std::printf("TP%.1f PARTIAL%.2f@%.2fR BE_arm%.2f TRAIL%.1f FF%d | tr=%-4d net=%-8.0f PF=%.2f Sh=%+.2f win=%.0f%% mdd=%.0f ffClosed=%d\n",
+        TPr,PARTIAL,PARTIAL_R,BE_ARM,TRAIL,FRIDAY_FLAT,ntr,cum,pf,sh,hit,mdd,nFF); (void)totAdds;(void)biasFast;(void)longN;(void)shortN;(void)longNet;(void)shortNet;
     return 0;
 }

@@ -193,9 +193,28 @@ struct XauStraddleM30Engine {
         pos_.part_taken = true;
     }
 
+    // Weekend-flat (S-2026-06-13p): force-close any open position at/after
+    // Friday 20:45 UTC and take no new fills until the weekend gap. Backtested
+    // 2yr gold M15 prod config vs hold-across: net -2.5%, PF 1.60->1.57,
+    // maxDD IMPROVES 316->289, OOS half agrees (1.79 vs 1.76) -- edge-neutral
+    // gap insurance. dow formula: (days+4)%7 -> Sun=0..Fri=5 (epoch = Thu).
+    bool weekend_flat = true;
+
+    bool _weekend_window(int64_t now_ms) const noexcept {
+        if (!weekend_flat) return false;
+        const int dow = (int)((now_ms / 86400000LL + 4) % 7);   // Sun=0..Fri=5
+        const int mod = (int)((now_ms / 60000LL) % 1440);
+        return dow == 5 && mod >= 20 * 60 + 45;                  // Fri >= 20:45 UTC
+    }
+
     // ---- tick: fill armed straddle (OCO) + manage open pos ----
     void on_tick(double bid, double ask, int64_t now_ms, CloseCallback cb) noexcept {
         if (bid <= 0.0 || ask <= 0.0) return;
+
+        if (_weekend_window(now_ms)) {
+            if (pos_.active) _close((bid + ask) * 0.5, "WEEKEND_CLOSE", now_ms, cb);
+            return;   // no new fills into the gap
+        }
 
         if (pos_.active) {
             const double mid = (bid + ask) * 0.5;
