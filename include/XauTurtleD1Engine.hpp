@@ -109,6 +109,15 @@ struct XauTurtleD1Engine {
     int m_trade_id_=0;
     bool has_open_position() const noexcept { return pos_.active; }
 
+    // S-2026-06-13v: public force-close (wraps _close) so the weekend-flat sweep +
+    // AccountingGuard registry closer can flatten this D1 position. The pre-existing
+    // check_weekend_close only closed WINNERS; this closes regardless of P&L.
+    void force_close(double bid, double ask, CloseCallback on_close, const char* reason) noexcept {
+        if (!pos_.active) return;
+        const double px = pos_.is_long ? bid : ask;
+        _close(px, reason, (int64_t)std::time(nullptr) * 1000, on_close);
+    }
+
     void on_tick(double bid, double ask, int64_t now_ms, CloseCallback on_close) noexcept {
         if (!pos_.active || bid<=0 || ask<=0) return;
         const double mid=(bid+ask)*0.5;

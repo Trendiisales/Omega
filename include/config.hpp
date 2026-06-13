@@ -248,7 +248,9 @@ static void force_close_all_open(const char* reason, bool include_multiday = fal
             g_xau_tf_4h.force_close(xau_b, xau_a, now_ms, close_cb, reason);
             g_xau_tf_d1.force_close(xau_b, xau_a, now_ms, close_cb, reason);
             g_donchian.force_close_all(xau_b, xau_a, now_ms, close_cb);   // gold cells
-            printf("[%s] Force-closed XAU swing engines (TF 1h/2h/4h/D1 + Donchian)\n", reason);
+            if (g_xau_turtle_d1.has_open_position())                     // D1 turtle (4-arg sig)
+                g_xau_turtle_d1.force_close(xau_b, xau_a, close_cb, reason);
+            printf("[%s] Force-closed XAU swing engines (TF 1h/2h/4h/D1 + Donchian + Turtle)\n", reason);
             fflush(stdout);
         }
         if (ger_b > 0.0 && ger_a > 0.0) {
@@ -277,12 +279,36 @@ static void maybe_weekend_flat() {
     if (!weekend_flat_window()) return;
     const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti{}; gmtime_s(&ti, &t);
-    if (ti.tm_wday != 5) return;                       // force-close fires Friday only
-    if (g_weekend_flat_done == ti.tm_yday) return;     // once per Friday
-    g_weekend_flat_done = ti.tm_yday;
-    printf("[WEEKEND-FLAT] Fri 20:45 UTC cut -- force-closing all open positions, "
-           "blocking new entries until Sun 22:00 UTC\n"); fflush(stdout);
-    force_close_all_open("WEEKEND_CLOSE", /*include_multiday=*/true);
+
+    // (1) One-shot HEAVY cascade at the Friday 20:45 cut -- force-closes the
+    //     hardcoded engine set (breakout/bracket/trendpb/CA + multiday swing).
+    if (ti.tm_wday == 5 && g_weekend_flat_done != ti.tm_yday) {
+        g_weekend_flat_done = ti.tm_yday;
+        printf("[WEEKEND-FLAT] Fri 20:45 UTC cut -- force-closing all open positions, "
+               "blocking new entries until Sun 22:00 UTC\n"); fflush(stdout);
+        force_close_all_open("WEEKEND_CLOSE", /*include_multiday=*/true);
+    }
+
+    // (2) CONTINUOUS registry sweep (throttled 60 s) through the ENTIRE weekend
+    //     window -- guarantees NOTHING is ever held over the weekend, catching any
+    //     straggler the hardcoded cascade cannot reach (straddles, scalpers, etc.).
+    //     Closes each open position via its engine's registered closer; loudly logs
+    //     anything that has NO closer wired so the gap is never silent. Operator
+    //     directive: weekend holds are NOT allowed.
+    static int64_t s_last_sweep = 0;
+    const int64_t now_s = (int64_t)std::time(nullptr);
+    if (now_s - s_last_sweep < 60) return;
+    s_last_sweep = now_s;
+    const auto open = g_open_positions.snapshot_all();
+    for (const auto& ps : open) {
+        if (g_open_positions.close_matching(ps, "WEEKEND_CLOSE"))
+            printf("[WEEKEND-FLAT] swept %s %s (registry)\n",
+                   ps.engine.c_str(), ps.symbol.c_str());
+        else
+            printf("[WEEKEND-FLAT] WARN uncloseable over weekend: %s %s -- no closer wired\n",
+                   ps.engine.c_str(), ps.symbol.c_str());
+        fflush(stdout);
+    }
 }
 
 static void maybe_reset_daily_ledger() {
