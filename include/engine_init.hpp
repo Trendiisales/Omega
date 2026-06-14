@@ -2240,8 +2240,8 @@ static void init_engines(const std::string& cfg_path)
         //   - Backtest harness backtest/amr_bt/AmrBacktest.cpp (port pattern
         //     from backtest/eurusd_bt/EurusdLondonOpenBacktest.cpp).
         {
-            const char* warmup_eur = "phase1/signal_discovery/warmup_EURUSD_H1.csv";
-            const char* warmup_gbp = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
+            const char* warmup_eur_h4 = "phase1/signal_discovery/warmup_EURUSD_H4.csv"; // EURUSD trait is H4 -> H4-cadence seed
+            const char* warmup_gbp    = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
 
             // 2026-05-26 multi-TF tick-replay sweep (5 pairs x 4 TFs x X={10,14}):
             //   EURUSD best = M15 X=14 -> 21 trd, WR 52%, PF 1.80, +$9.04, DD $4.31, Sharpe-ann 1.04
@@ -2250,7 +2250,7 @@ static void init_engines(const std::string& cfg_path)
             //   NZDUSD best = M30 X=10 -> 53 trd, WR 32%, PF 1.31, +$5.91,  DD $10.92 (marginal)
             //   USDCAD best = H1  X=10 -> 22 trd, WR 41%, PF 1.25, +$1.65,  DD $10.85 (marginal)
             // Portfolio Sharpe-ann 1.24 / PF 1.42 / Recovery 1.64 (0.01 lot, 1.2yr avg).
-            // EURUSD trait uses BAR_INTERVAL_MS=900000 + X=14 (see AtrMeanRevGridEngine.hpp).
+            // EURUSD trait uses BAR_INTERVAL_MS=14400000 (H4) + X=3 SL=7 (see AtrMeanRevGridEngine.hpp; M15 X=14 replaced 2026-05-26).
             // 2026-05-26 S37e: state-first persistence. Try .dat first
             // (zero-warmup), fall back to CSV seed if .dat missing/stale.
             const std::string state_dir = state_root_dir();
@@ -2264,10 +2264,25 @@ static void init_engines(const std::string& cfg_path)
                 }
             };
 
-            g_amr_eurusd.enabled     = false;  // S47: AMR mean-rev purge pending real-class audit
-            amr_boot(g_amr_eurusd, "eurusd", warmup_eur);
+            // S-2026-06-14: AMR real-class audit COMPLETE (S47 purge was
+            // "pending real-class audit"). Independent cost-inclusive walk-forward
+            // on HistData ticks->bars (engine pays spread via bid/ask):
+            //   GBPUSD H1 X=10 : PF 1.90, WR 69%, both halves + (1.39/2.52),
+            //                    holds 1.83 @ 3x cost. The video's hero pair.
+            //   EURUSD H4 X=3  : PF 1.39, WR 71%, both halves + (1.77/1.17) AFTER
+            //                    the SL_ATR_BUFFER_Y typo fix (ran SL=4 not 7).
+            // Regime split (EMA200 slope): edge concentrated in down-trends;
+            // grid stays DORMANT (<=2 levels, rare) so no martingale blow-up;
+            // both-directional so the short side hedges dip-buys; US500 survived
+            // the real Apr-2025 -19% S&P crash positive. NAS100 (PF0.27) +
+            // US500 (3x-fragile) + GER40 (no data) + AUD/NZD (marginal) stay purged.
+            // Re-enabled in SHADOW (shadow_mode=true) to gather forward data;
+            // thin n (13/14) -> NOT live-size yet. EURUSD seeds from H4-cadence
+            // warmup (was H1 -> EMA200/ATR cadence mismatch, fixed this session).
+            g_amr_eurusd.enabled     = true;
+            amr_boot(g_amr_eurusd, "eurusd", warmup_eur_h4);
 
-            g_amr_gbpusd.enabled     = false;  // S47: AMR mean-rev purge
+            g_amr_gbpusd.enabled     = true;
             amr_boot(g_amr_gbpusd, "gbpusd", warmup_gbp);
 
             // S37g 2026-05-26: FxEnsembleEngine -- 5 cross-family validated cells.

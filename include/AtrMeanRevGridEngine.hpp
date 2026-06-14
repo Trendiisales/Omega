@@ -191,7 +191,11 @@ struct AmrTraits_EURUSD : AmrBaseParams {
     // Prior M15 X=14 (PF 1.04 sweep, no WF support) -> failed validation.
     static constexpr std::int64_t BAR_INTERVAL_MS = 14400LL * 1000LL; // H4
     static constexpr double       ENTRY_ATR_MULT_X = 3.0;
-    static constexpr double       SL_ATR_MULT_Y    = 7.0;
+    // 2026-06-14: was SL_ATR_MULT_Y (wrong name -> silently ignored, engine
+    // reads SL_ATR_BUFFER_Y). Bug ran EURUSD at base SL=4 not validated 7.
+    // Independent HistData WF: SL=4 PF1.06 (H2 0.61, fails) -> SL=7 PF1.39
+    // (both halves +, WR71%). Corrected to the validated value.
+    static constexpr double       SL_ATR_BUFFER_Y  = 7.0;
 };
 
 struct AmrTraits_GBPUSD : AmrBaseParams {
@@ -234,7 +238,10 @@ struct AmrTraits_EURGBP : AmrBaseParams {
     //   H1 X=5 SL=3  IS PF 1.80  OOS PF 1.68  WR 60%  RF 1.39
     static constexpr std::int64_t BAR_INTERVAL_MS = 3600LL * 1000LL; // H1
     static constexpr double       ENTRY_ATR_MULT_X = 5.0;
-    static constexpr double       SL_ATR_MULT_Y    = 3.0;
+    // 2026-06-14: same wrong-name bug as EURUSD (was SL_ATR_MULT_Y, ignored).
+    // EURGBP is PARKED (not enabled) and fails WF either way (SL=4 PF0.72,
+    // SL=3 PF0.53 on HistData) -- rename is correctness only; stays parked.
+    static constexpr double       SL_ATR_BUFFER_Y  = 3.0;
 };
 
 // =============================================================================
