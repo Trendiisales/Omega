@@ -2,15 +2,27 @@
 //|                                              AtrMeanRevGrid.mq5  |
 //|     Forex mean-reversion grid EA. ATR-normalized entry + SL,     |
 //|     RSI confirmation, vol-adaptive add distance, unified         |
-//|     trailing SL anchored to slow EMA, five TP methods.           |
+//|     trailing SL anchored to slow EMA, four TP methods.           |
 //|                                                                  |
 //|     Slow MA only (fast MA removed -- it was firing exit too      |
 //|     close to entry on mean-rev cycles).                          |
 //|                                                                  |
+//|     SYMBOL & TIMEFRAME:                                          |
+//|       Trades the CHART symbol it is attached to (_Symbol) on     |
+//|       the CHART timeframe (InpTimeframe = PERIOD_CURRENT). There |
+//|       is deliberately NO symbol input -- this is an OnTick EA,   |
+//|       so it evaluates on the chart's own ticks. To trade a       |
+//|       different instrument, drag it onto that instrument's       |
+//|       chart. To run several instruments, attach one instance     |
+//|       per chart (the magic number scopes positions per-symbol,   |
+//|       so instances do not collide). True single-chart            |
+//|       multi-symbol is a separate build (the C++ port             |
+//|       AtrMeanRevGridEngine handles the multi-symbol case).       |
+//|                                                                  |
 //|     Build -> Test -> Learn -> Refine.                            |
 //+------------------------------------------------------------------+
 #property copyright "2026"
-#property version   "0.20"
+#property version   "0.21"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -363,7 +375,7 @@ void ReconstructGridFromPositions()
 }
 
 //===================================================================
-//  Compute the broker-side TP price for WAP-based methods (3/4/5)
+//  Compute the broker-side TP price for WAP-based methods (2/3/4)
 //===================================================================
 bool ComputeBrokerSideTp(ENUM_POSITION_TYPE side, double &out_tp)
 {
@@ -619,8 +631,9 @@ void ApplyUnifiedSl(ENUM_POSITION_TYPE side, double new_sl)
 
 //===================================================================
 //  TP evaluation
-//   Methods 1/2 : checked on candle close (internal -- not on broker)
-//   Methods 3/4/5: broker-side TP, plus time-exit fallback
+//   Method 1   : checked on candle close (internal -- not on broker)
+//   Methods 2/3/4: broker-side TP (pushed in SyncBrokerSideTp),
+//                  plus the optional time-exit fallback below
 //===================================================================
 bool ShouldCloseAll_Internal(ENUM_POSITION_TYPE side, double slow_ma, double rsi, string &reason)
 {
@@ -633,8 +646,10 @@ bool ShouldCloseAll_Internal(ENUM_POSITION_TYPE side, double slow_ma, double rsi
         }
     }
 
-    // Internal-only checks for methods 1 and 2
-    if (InpTpMethod != TP_RSI_OR_MA_EITHER && InpTpMethod != TP_RSI_OR_MA_AND_POSITIVE)
+    // Internal-only check for method 1 (TP_RSI_OR_MA). The WAP methods
+    // (2/3/4) exit broker-side via ApplyBrokerSideTp(), so there is nothing
+    // to evaluate here for them.
+    if (InpTpMethod != TP_RSI_OR_MA)
         return false;
 
     sym.RefreshRates();
@@ -646,13 +661,8 @@ bool ShouldCloseAll_Internal(ENUM_POSITION_TYPE side, double slow_ma, double rsi
                      : ((rsi <= rsi_tp_short) || (px <= slow_ma));
     if (!rsi_or_ma) return false;
 
-    if (InpTpMethod == TP_RSI_OR_MA_EITHER) { reason = "rsi_or_slow_ma"; return true; }
-
-    // TP_RSI_OR_MA_AND_POSITIVE -- gate on combined PnL > 0
-    double wap=0, vol=0, fpnl=0;
-    ComputeWap(side, wap, vol, fpnl);
-    if (fpnl > 0.0) { reason = "rsi_or_slow_ma_in_profit"; return true; }
-    return false;
+    reason = "rsi_or_slow_ma";
+    return true;
 }
 
 void CloseAllSide(ENUM_POSITION_TYPE side, string reason)
