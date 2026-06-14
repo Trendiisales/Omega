@@ -1202,6 +1202,26 @@ static void on_tick_nas100(
         g_nas_bbrev_long_h1.on_tick(bid, ask, now_ms_n_ll, ca_on_close);
     }
 
+    // NasTurtleD1Engine (2026-06-14) -- 20-day Donchian breakout on NAS100,
+    // long-only, shadow. Self-contained: own D1 OHLC + ATR14 from ticks
+    // (warm-seeded). Seykota/Donchian D1 archetype; NAS validated as one of only
+    // two trend horses (with XAU) in the Omega universe. Independent pos.
+    {
+        const int64_t now_ms_nt = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const auto ntsig = g_nas_turtle_d1.on_tick(bid, ask, now_ms_nt, ca_on_close);
+        if (ntsig.valid) {
+            g_telemetry.UpdateLastSignal("NAS100",
+                "LONG", ntsig.entry, ntsig.reason,
+                "NAS_TURTLE_D1", regime.c_str(), "NAS_TURTLE_D1",
+                ntsig.tp, ntsig.sl);
+        }
+        if (g_nas_turtle_d1.has_open_position()) {
+            g_nas_turtle_d1.check_weekend_close(bid, ask, now_ms_nt, ca_on_close);
+        }
+    }
+
     // NoiseBandMomentum NAS100
     {
         const bool nas_nbm_offhours = (g_macro_ctx.session_slot == 6 ||

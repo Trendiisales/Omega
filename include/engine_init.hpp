@@ -2094,6 +2094,25 @@ static void init_engines(const std::string& cfg_path)
                g_ger40_turtle_h4.p.sl_atr_mult, g_ger40_turtle_h4.p.tp_atr_mult,
                g_ger40_turtle_h4.p.hold_max_h4);
 
+        // ── NasTurtleD1Engine (2026-06-14) ──────────────────────────────────
+        // Seykota/Donchian D1 archetype on NAS100, long-only, SHADOW. Clone of
+        // the Ger40TurtleH4 index-turtle chassis retuned to D1 + NAS100 (DAX
+        // session filter removed; index VIX risk-off gate kept). NAS validated
+        // as one of only two Omega trend horses with XAU (Yahoo daily 2016-26
+        // long-only MAR 0.44 PF 2.10; reconfirms the FVG/Peachy NAS edge).
+        // Warm-seeded from the bundled NAS100 D1 CSV so 20-day Donchian + ATR14
+        // are hot on first tick. >=5 live shadow trades before any LIVE thought.
+        g_nas_turtle_d1.p           = omega::make_nas_turtle_d1_params();
+        g_nas_turtle_d1.shadow_mode = true;
+        g_nas_turtle_d1.enabled     = true;
+        g_nas_turtle_d1.symbol      = "NAS100";
+        g_nas_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
+        printf("[OMEGA-INIT] NasTurtleD1Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
+               (int)g_nas_turtle_d1.shadow_mode,
+               g_nas_turtle_d1.p.lookback_bars,
+               g_nas_turtle_d1.p.sl_atr_mult, g_nas_turtle_d1.p.tp_atr_mult,
+               g_nas_turtle_d1.p.hold_max_bars);
+
         // ── Ger40KeltnerH1Engine (S41 2026-05-30) ───────────────────────────
         // First robust non-gold trend edge. GER40 H1 Keltner EMA20 k2.0 sl3.0,
         // bull_LB=200. Self-aggregates H1 from the GER40 tick stream via

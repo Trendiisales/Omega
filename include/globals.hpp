@@ -663,6 +663,13 @@ static omega::XauSwingBreakD1Engine g_xau_swing_break_d1;
 #include "Ger40TurtleH4Engine.hpp"
 static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
 
+// NasTurtleD1Engine (2026-06-14): 20-day Donchian breakout on NAS100 D1,
+// long-only, shadow. Seykota/Donchian D1 archetype; NAS validated as one of
+// only two trend horses (with XAU) in the Omega universe (Yahoo daily 2016-26
+// long-only MAR 0.44 PF 2.10). Self-aggregates D1 from ticks; warm-seeded.
+#include "NasTurtleD1Engine.hpp"
+static omega::NasTurtleD1Engine g_nas_turtle_d1;
+
 // S41 (2026-05-30): Ger40KeltnerH1Engine -- first robust NON-gold trend edge.
 // GER40 H1 Keltner EMA20 k2.0 sl3.0, bull_LB=200 (slower than gold). Validated
 // full param-plateau + cost-stress 1x/2x/3x (edge_validate_s41.cpp); engine-
