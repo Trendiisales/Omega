@@ -3104,6 +3104,7 @@ static void init_engines(const std::string& cfg_path)
     g_minimal_h4_us30.symbol      = "DJ30.F";
     g_minimal_h4_us30.shadow_mode = true;
     g_minimal_h4_us30.enabled     = true;
+    g_minimal_h4_us30.p.weekend_close_gate = false;  // S-2026-06-15a: H4 holds over weekend (operator dir); global weekend-flat exempts H4+ engines by name
     printf("[INIT] MinimalH4US30Breakout DJ30.F: shadow=true donchian=%d sl=%.1fx"
            " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
            " atr_period=%d weekend_gate=%s\n",
@@ -3140,6 +3141,7 @@ static void init_engines(const std::string& cfg_path)
     g_minimal_h4_ger40.symbol      = "GER40";
     g_minimal_h4_ger40.shadow_mode = true;
     g_minimal_h4_ger40.enabled     = true;
+    g_minimal_h4_ger40.p.weekend_close_gate = false;  // S-2026-06-15a: H4 holds over weekend (operator dir); global weekend-flat exempts H4+ engines by name
     printf("[INIT] MinimalH4GER40Breakout GER40: shadow=true donchian=%d sl=%.1fx"
            " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
            " long_only=%s weekend_gate=%s\n",

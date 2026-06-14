@@ -275,18 +275,38 @@ static inline bool weekend_flat_window() noexcept {
     return false;
 }
 static int g_weekend_flat_done = -1;   // tm_yday of the Friday we last flattened
+
+// Weekend HOLD-exemption (operator directive 2026-06-15, S-2026-06-15a): the
+// longer-timeframe trend engines (H4 and slower) may carry across the weekend
+// BY DESIGN -- their edge is the multi-day hold. The shorter/intraday engines
+// (H1 and faster, scalps, straddles, ORB) are riskier over the gap, so they are
+// still force-closed. Decided by the TF token in the per-position engine name
+// (e.g. "XAU_4h_DonchN20"/"XauTrendFollowD1" hold; "GER_1h_DonchN100"/
+// "Ger40KeltnerH1"/"XauStraddleM30" close). Unknown/no-TF names default to
+// CLOSE (risk-eliminate). Threshold = H4: raise/lower by editing the token set.
+static bool weekend_hold_exempt(const std::string& e) {
+    auto has = [&](const char* s){ return e.find(s) != std::string::npos; };
+    return has("D1") || has("d1") || has("Daily") || has("daily") || has("Turtle")
+        || has("4h") || has("4H") || has("H4")
+        || has("6h") || has("H6") || has("8h") || has("H8")
+        || has("12h") || has("H12") || has("W1");
+}
 static void maybe_weekend_flat() {
     if (!weekend_flat_window()) return;
     const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm ti{}; gmtime_s(&ti, &t);
 
     // (1) One-shot HEAVY cascade at the Friday 20:45 cut -- force-closes the
-    //     hardcoded engine set (breakout/bracket/trendpb/CA + multiday swing).
+    //     hardcoded SHORT-TERM engine set (breakout/bracket/trendpb/CA). The
+    //     longer-TF swing engines (H4/D1) are NOT bulk-closed here (S-2026-06-15a,
+    //     include_multiday=false) -- they hold across the weekend by design; the
+    //     SHORTER swing cells (H1 Donchian/Keltner/1h TF) are caught + closed by
+    //     the per-name registry sweep below (weekend_hold_exempt gate).
     if (ti.tm_wday == 5 && g_weekend_flat_done != ti.tm_yday) {
         g_weekend_flat_done = ti.tm_yday;
-        printf("[WEEKEND-FLAT] Fri 20:45 UTC cut -- force-closing all open positions, "
-               "blocking new entries until Sun 22:00 UTC\n"); fflush(stdout);
-        force_close_all_open("WEEKEND_CLOSE", /*include_multiday=*/true);
+        printf("[WEEKEND-FLAT] Fri 20:45 UTC cut -- force-closing short-term positions; "
+               "H4+ trend engines hold; blocking new entries until Sun 22:00 UTC\n"); fflush(stdout);
+        force_close_all_open("WEEKEND_CLOSE", /*include_multiday=*/false);
     }
 
     // (2) CONTINUOUS registry sweep (throttled 60 s) through the ENTIRE weekend
@@ -301,6 +321,12 @@ static void maybe_weekend_flat() {
     s_last_sweep = now_s;
     const auto open = g_open_positions.snapshot_all();
     for (const auto& ps : open) {
+        if (weekend_hold_exempt(ps.engine)) {       // S-2026-06-15a: H4+ trend engines hold
+            printf("[WEEKEND-FLAT] HELD over weekend (longer-TF trend): %s %s\n",
+                   ps.engine.c_str(), ps.symbol.c_str());
+            fflush(stdout);
+            continue;
+        }
         if (g_open_positions.close_matching(ps, "WEEKEND_CLOSE"))
             printf("[WEEKEND-FLAT] swept %s %s (registry)\n",
                    ps.engine.c_str(), ps.symbol.c_str());
