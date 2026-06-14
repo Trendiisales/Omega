@@ -482,19 +482,24 @@ public:
     // Persist bar deques to disk -- eliminates the per-restart warmup pain.
     // Called once per minute from the bar-save thread; loaded once at boot.
     // Format (binary, little-endian, host-native double):
-    //   header: magic 'AMRS' + version u32 + n_bars u32 + prev_close f64
-    //   body:   n_bars * (close f64, high f64, low f64, tr f64)
+    //   header(v2): magic 'AMRS' + version u32 + bar_interval_ms u64 + n_bars u32 + prev_close f64
+    //   body:       n_bars * (close f64, high f64, low f64, tr f64)
+    // v2 added bar_interval_ms (cadence guard): a stale .dat from a different
+    // timeframe would otherwise load a wrong-cadence deque and corrupt the
+    // indicators. load_state rejects mismatched cadence (and all v1) -> re-seed.
     // Returns bytes written / -1 on error.
     // -------------------------------------------------------------------------
     int save_state(const std::string& path) const noexcept {
         std::FILE* f = std::fopen(path.c_str(), "wb");
         if (!f) return -1;
-        const std::uint32_t magic = 0x53524D41; // 'AMRS'
-        const std::uint32_t ver   = 1u;
-        const std::uint32_t n     = static_cast<std::uint32_t>(bar_closes_.deque.size());
-        std::fwrite(&magic, 4, 1, f);
-        std::fwrite(&ver,   4, 1, f);
-        std::fwrite(&n,     4, 1, f);
+        const std::uint32_t magic  = 0x53524D41; // 'AMRS'
+        const std::uint32_t ver    = 2u;
+        const std::uint64_t bar_ms = static_cast<std::uint64_t>(Traits::BAR_INTERVAL_MS);
+        const std::uint32_t n      = static_cast<std::uint32_t>(bar_closes_.deque.size());
+        std::fwrite(&magic,  4, 1, f);
+        std::fwrite(&ver,    4, 1, f);
+        std::fwrite(&bar_ms, 8, 1, f);
+        std::fwrite(&n,      4, 1, f);
         std::fwrite(&prev_close_, sizeof(double), 1, f);
         for (std::uint32_t i = 0; i < n; ++i) {
             const double c = bar_closes_.deque[i];
@@ -507,7 +512,7 @@ public:
             std::fwrite(&t, sizeof(double), 1, f);
         }
         std::fclose(f);
-        return 16 + static_cast<int>(n) * 32;
+        return 28 + static_cast<int>(n) * 32;
     }
 
     // Load persisted state. Returns true if loaded; false on missing/corrupt.
@@ -516,8 +521,21 @@ public:
         std::FILE* f = std::fopen(path.c_str(), "rb");
         if (!f) return false;
         std::uint32_t magic = 0, ver = 0, n = 0;
+        std::uint64_t bar_ms = 0;
         if (std::fread(&magic, 4, 1, f) != 1 || magic != 0x53524D41) { std::fclose(f); return false; }
-        if (std::fread(&ver, 4, 1, f) != 1   || ver != 1u)            { std::fclose(f); return false; }
+        // v2 only -- v1 (no cadence field) is discarded so it re-seeds clean.
+        if (std::fread(&ver, 4, 1, f) != 1   || ver != 2u)            { std::fclose(f); return false; }
+        // Bar-interval (cadence) guard: a stale .dat from a different timeframe
+        // (e.g. EURUSD M15->H4) loads a wrong-cadence deque and corrupts
+        // EMA/ATR/RSI for months. Mismatch -> discard -> CSV re-seed.
+        if (std::fread(&bar_ms, 8, 1, f) != 1)                        { std::fclose(f); return false; }
+        if (bar_ms != static_cast<std::uint64_t>(Traits::BAR_INTERVAL_MS)) {
+            std::printf("[STATE-LOAD] %s discarded stale-cadence state (file=%llums trait=%llums) -- will re-seed\n",
+                        Traits::SYMBOL, (unsigned long long)bar_ms,
+                        (unsigned long long)Traits::BAR_INTERVAL_MS);
+            std::fflush(stdout);
+            std::fclose(f); return false;
+        }
         if (std::fread(&n, 4, 1, f) != 1     || n > 10000)            { std::fclose(f); return false; }
         double prev_c = 0.0;
         if (std::fread(&prev_c, sizeof(double), 1, f) != 1)           { std::fclose(f); return false; }
