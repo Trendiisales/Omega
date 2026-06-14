@@ -437,9 +437,10 @@ static void init_engines(const std::string& cfg_path)
     //   BE_BUFFER=0.012 — confirmed STATE A at part-W audit).
     //   Promoting from shadow to live based on this evidence.
     g_xauusd_fvg.shadow_mode = true;  // 2026-05-29: forced shadow during live-feed cutover (demo->live FIX). Restore false after validation.
-    g_xauusd_fvg.enabled     = false;  // ⛔ TOMBSTONED S-2026-06-15b (operator cull): FVG continuation died on
-    //   full NAS M1 data this session (favorable-slice artifact; full-span Sharpe negative -- same finding
-    //   that tombstoned g_fvgcont_nas 2026-06-13). Live shadow ledger -$71 over 4 closes, 0% WR. Dead.
+    // ⛔ TOMBSTONE note S-2026-06-15b (operator cull): XauusdFvg died on full NAS M1 (slice artifact;
+    //   same finding that culled g_fvgcont_nas). Already gated OFF via g_disable_xauusd_fvg=true
+    //   (globals.hpp:412) -- the engine has NO `enabled` field; the disable flag IS the off-switch.
+    //   Leaving it; do NOT flip g_disable_xauusd_fvg to false without cross-regime proof.
     g_xauusd_fvg.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     g_xauusd_fvg.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);                              // standard ledger path
