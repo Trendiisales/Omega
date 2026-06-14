@@ -43,7 +43,13 @@ PRICE_MIN     = 10.0         # not a penny stock
 MAX_SYMBOLS   = 30
 TFS           = [300]        # 5m bars only (engine tf_sec=300)
 SCAN_EVERY    = 30           # seconds between scanner passes
-TICK_EVERY    = 5            # seconds between tick/roll passes
+# tick/roll cadence = the EXIT-reaction clock. The engine's trailing/hard stop is
+# checked on every P line (on_price), so this poll interval IS the giveback-control
+# latency. 5s was too slow for protecting profit on a fast mover. 2s default; with
+# real-time data (OMEGA_BIGCAP_MKTDATA=1) this gives ~2s exit reaction. NOTE: with
+# delayed data (mdtype=3) the PRICE is ~15min stale regardless of poll speed -- the
+# real near-real-time unlock is the live market-data entitlement, not this number.
+TICK_EVERY    = float(os.environ.get("OMEGA_BIGCAP_TICK", "2"))
 
 # ── scanner web page (2026-06-12: takes over :7783 from the retired micro-cap
 #    pump scanner). Shows ONLY what the live engine can act on, using the SAME
