@@ -437,6 +437,9 @@ static void init_engines(const std::string& cfg_path)
     //   BE_BUFFER=0.012 — confirmed STATE A at part-W audit).
     //   Promoting from shadow to live based on this evidence.
     g_xauusd_fvg.shadow_mode = true;  // 2026-05-29: forced shadow during live-feed cutover (demo->live FIX). Restore false after validation.
+    g_xauusd_fvg.enabled     = false;  // ⛔ TOMBSTONED S-2026-06-15b (operator cull): FVG continuation died on
+    //   full NAS M1 data this session (favorable-slice artifact; full-span Sharpe negative -- same finding
+    //   that tombstoned g_fvgcont_nas 2026-06-13). Live shadow ledger -$71 over 4 closes, 0% WR. Dead.
     g_xauusd_fvg.cancel_fn   = [](const std::string& id) { send_cancel_order(id); };
     g_xauusd_fvg.on_close_cb = [](const omega::TradeRecord& tr) {
         handle_closed_trade(tr);                              // standard ledger path
@@ -4515,7 +4518,10 @@ static void init_engines(const std::string& cfg_path)
         // (both halves +). MEETS the re-enable bar. Harness backtest/peachy_orb_nas.cpp,
         // tape /tmp/nas_5wk.csv. lot stays 0.3 (dollar-normalized). n=14/5wk still
         // modest -> shadow, watch the live ledger.
-        g_peachy_orb_nas.enabled     = true;
+        g_peachy_orb_nas.enabled     = false;  // ⛔ TOMBSTONED S-2026-06-15b (operator cull): DIED on full
+        //   NAS M1 data this session (the 5wk re-enable was slice-luck -- full 2024-2026 NAS Sharpe ~0.55,
+        //   FVG/ORB-family slice artifacts); live shadow ledger -$253 over 4 closes, 0% WR. Both backtest +
+        //   forward agree = dead. Do NOT re-enable without cross-regime (2022 incl) walk-forward proof.
         g_peachy_orb_nas.verbose     = true;
         g_peachy_orb_nas.lot         = 0.3;
         g_peachy_orb_nas.body_frac     = 0.4;
@@ -4920,7 +4926,11 @@ static void init_engines(const std::string& cfg_path)
         g_overnight_spx.engine_name = "OvernightDrift";
         g_overnight_spx.SMA_LEN     = 50;
         g_overnight_spx.shadow_mode = true;
-        g_overnight_spx.enabled     = true;   // validated (2022-bear-survived, gated PF1.29) -- KEEP
+        g_overnight_spx.enabled     = false;  // ⛔ TOMBSTONED S-2026-06-15b (operator cull). The prior
+        //   "2022-bear-survived PF1.29 KEEP" claim was UNVERIFIABLE -- the 2026-06 index audit found
+        //   OvernightDrift only had 2024-2026 (bull-only) data, no real 2022. Cross-regime retest of the
+        //   long-index-overnight-w/-SMA20-gate archetype = -27% in 2022 (the gate does NOT dodge the bear);
+        //   live shadow ledger -$453 (single catastrophic gap, 0% WR). Explicit new evidence overrides KEEP.
         // 2026-06-13 (S-2026-06-13q): lot 1.0 -> 0.3 dollar-risk normalization
         // (scale-invariant; edge unchanged). SPX overnight gap at 1.0 lot risked
         // ~$1/pt of a ~60pt overnight = comparable tail to the culled NAS sibling;

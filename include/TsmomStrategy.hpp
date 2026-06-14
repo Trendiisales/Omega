@@ -176,7 +176,11 @@ inline void build_default_tsmom_topology(TsmomPortfolioV2& port) {
     using Spec = TsmomPortfolioV2::CellSpec;
     TsmomStrategy::Config cfg{};   // lookback=20, hold_bars=12, hard_sl_atr=3.0
 
-    port.add_cell(Spec{TsmomPortfolioV2::TF_H1, +1, "Tsmom_H1_long", cfg});
+    // ⛔ Tsmom_H1_long TOMBSTONED S-2026-06-15b (operator cull): H1 TSMOM = fast momentum into chop,
+    //   cost-fragile (daily TSMOM only Sharpe ~0.5; H1 strictly worse). Live shadow -$152 over n=13, 15% WR
+    //   -- the single biggest TSMOM-cell bleeder. Slower cells (H2/H4/H6/D1) kept (~flat-to-edge). Re-add
+    //   only with cross-regime proof that the H1 timeframe pays after cost.
+    // port.add_cell(Spec{TsmomPortfolioV2::TF_H1, +1, "Tsmom_H1_long", cfg});
     port.add_cell(Spec{TsmomPortfolioV2::TF_H2, +1, "Tsmom_H2_long", cfg});
     port.add_cell(Spec{TsmomPortfolioV2::TF_H4, +1, "Tsmom_H4_long", cfg});
     port.add_cell(Spec{TsmomPortfolioV2::TF_H6, +1, "Tsmom_H6_long", cfg});
