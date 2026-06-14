@@ -18,6 +18,17 @@ Run (on the VPS, IB Gateway/TWS up):  python3 pump/bigcap_feed_bridge.py --serve
 Dev without IBKR: use bigcap_feed_bridge_yahoo.py instead.
 """
 import sys, time, socket, threading, json, os
+# ── visibility: this bridge runs under pythonw (no console) via ScheduledTask
+#    OmegaBigCapBridge, so sys.stdout/stderr are None and every diagnostic was
+#    silently dropped -- that is why "no stderr" + the zero-trades gap could not
+#    be explained. Tee ALL output to a real logfile (line-buffered). (2026-06-14)
+_LOG_PATH = os.environ.get("OMEGA_BIGCAP_LOG", r"C:\Omega\logs\bigcap_bridge.log")
+try:
+    _logf = open(_LOG_PATH, "a", buffering=1, encoding="utf-8")
+    sys.stdout = _logf
+    sys.stderr = _logf
+except Exception:
+    pass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from ib_async import IB, Stock, ScannerSubscription
 
@@ -40,7 +51,16 @@ TICK_EVERY    = 5            # seconds between tick/roll passes
 #    PRICE_MIN, day $vol >= DVOL_MIN. status TRADE = all gates pass.
 SCANNER_HTTP_PORT = int(os.environ.get("OMEGA_BIGCAP_SCANNER_PORT", "7783"))
 GATE_PCT  = 4.0              # engine day_gate_pct (S-2026-06-13a: 5 -> 4)
-DVOL_MIN  = 100e6            # engine liq gate: day dollar-volume >= $100M
+# 2026-06-14: SYNC TO ENGINE. engine_init g_bigcap_momo.min_dvol_usd = 0 since the
+# 06-13k fix (liquidity enforced upstream by the $2B-cap scanner, not a per-bar
+# dvol gate). The page kept DVOL_MIN=$100M, so its TRADE/watch status used a
+# STRICTER gate than the engine AND the delayed-feed dvol reads ~0 -> the page
+# could NEVER show TRADE even on names the engine would act on. Set 0 to match.
+DVOL_MIN  = float(os.environ.get("OMEGA_BIGCAP_DVOL_MIN", "0"))
+# market-data type: 1=live (needs a funded IBKR real-time US-equity subscription),
+# 3=delayed (paper default). Delayed = laggy prices + unreliable volume; flip to 1
+# once your IBKR account's market-data entitlement is active. (2026-06-14)
+MKT_DATA_TYPE = int(os.environ.get("OMEGA_BIGCAP_MKTDATA", "3"))
 _candidates = {}             # sym -> dict(sym,px,day_open,up,dvol,ts)
 
 # ── TCP server -> in-Omega PumpFeedConsumer (one consumer) ───────────────────
@@ -151,9 +171,9 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "<th>day open</th><th>liq ($vol)</th><th>status</th></tr>"
                 f"<tbody id=rows>{trs}</tbody></table>"
                 "<div class=foot>engine settings: gate &ge;4% from open &middot; price &ge;$10 &middot; "
-                "day $vol &ge;$100M &middot; volx3 ignition + 5% trail at entry &middot; shadow trades show in the "
-                "dashboard RUNNING TRADES panel &middot; iceberg/absorption column arrives once the MGC-validated "
-                "detector ships (depth subscribed for in-trade symbols only)</div>"
+                "no dvol gate (liquidity via $2B-cap scanner) &middot; no-TP runner, 5% trail off peak + 6% hard "
+                "&middot; SHADOW (paper-record) &middot; shadow trades show in the dashboard RUNNING TRADES panel "
+                "&middot; iceberg/absorption column arrives once the MGC-validated detector ships</div>"
                 f"</div>{script}</body></html>").encode()
             ctype = "text/html; charset=utf-8"
         self.send_response(200)
@@ -231,9 +251,12 @@ def main():
     threading.Thread(target=_serve_thread, args=(SERVE_PORT,), daemon=True).start()
     threading.Thread(target=_http_thread, args=(SCANNER_HTTP_PORT,), daemon=True).start()
     ib=IB(); ib.connect(IB_HOST, IB_PORT, clientId=IB_CID, timeout=15)
-    try: ib.reqMarketDataType(3)   # delayed ok in paper without live entitlement
+    try: ib.reqMarketDataType(MKT_DATA_TYPE)   # 3=delayed(paper) 1=live(entitled)
     except Exception: pass
     subs={}; last_scan=0.0
+    print(f"[BIGCAP-BRIDGE] up | ib={IB_HOST}:{IB_PORT} cid={IB_CID} "
+          f"mdtype={MKT_DATA_TYPE} gate={GATE_PCT}% dvol_min={DVOL_MIN:.0f} "
+          f"serve=:{SERVE_PORT} scanner=:{SCANNER_HTTP_PORT}", flush=True)
     emit("# bigcap_feed_bridge (IBKR) up")
     global _need_reseed
     while True:
@@ -264,6 +287,14 @@ def main():
                     subscribe_symbol(ib, subs, sym, min_move=PREFILTER_PCT)
             except Exception as e:
                 emit(f"# scan error: {e}")
+            # heartbeat -> logfile: streaming health + why-no-trade visibility
+            _top = max(_candidates.values(), key=lambda c: c["up"], default=None)
+            _arm = sum(1 for c in _candidates.values()
+                       if c["up"]>=GATE_PCT and c["px"]>=PRICE_MIN and c["dvol"]>=DVOL_MIN)
+            print(f"[HB {time.strftime('%H:%M:%S')}] subs={len(subs)} cand={len(_candidates)} "
+                  f"tradeable={_arm} consumer={'Y' if _conn else 'N'} mdtype={MKT_DATA_TYPE} "
+                  f"top={(_top['sym']+' +'+format(_top['up'],'.1f')+'%') if _top else '-'}",
+                  flush=True)
         # stream ticks + roll bars + candidate
         ts_ms=int(now*1000)
         for k in [k for k,v in _candidates.items() if ts_ms-v["ts"]>600_000]:
