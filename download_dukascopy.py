@@ -35,7 +35,7 @@ TICK_BYTES  = 20        # each tick record is 20 bytes
 OUT_DIR     = "./duka_ticks"
 RETRY_MAX   = 5
 RETRY_DELAY = 3.0       # seconds between retries
-HOUR_DELAY  = 0.15      # seconds between hour requests (be polite)
+HOUR_DELAY  = 0.02
 UA          = "Mozilla/5.0 (compatible; tick-downloader/1.0)"
 
 # Per-symbol price divisor lookup (Dukascopy bi5 stores prices as raw ints)
@@ -148,7 +148,7 @@ def download_month(symbol: str, year: int, month: int, price_div: float) -> int:
                     base_ms = int(base_dt.timestamp() * 1000)
                     for ms_off, ask, bid, av, bv in ticks:
                         writer.writerow([base_ms + ms_off,
-                                         f"{ask:.3f}", f"{bid:.3f}",
+                                         f"{ask:.5f}", f"{bid:.5f}",
                                          f"{av:.2f}", f"{bv:.2f}"])
                     day_ticks += len(ticks)
 
