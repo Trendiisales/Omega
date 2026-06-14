@@ -103,6 +103,7 @@ int main(int argc,char**argv){
     // leg attribution
     int longN=0,shortN=0; double longNet=0,shortNet=0;
     std::vector<double> tpnl;
+    std::vector<int64_t> tts;   // PORT_DUMP: exit-bar ts per trade
 
     auto close=[&](double px,int i){
         double pnl=pend_bank + (dir*(units*px - entry_sum) - COST*units)*pos_frac;
@@ -110,7 +111,7 @@ int main(int argc,char**argv){
         cum+=pnl; if(cum>peak)peak=cum; double dd=peak-cum; if(dd>mdd)mdd=dd;
         if(pnl>0){nw++;gw+=pnl;}else if(pnl<0){nl++;gl+=-pnl;}
         if(dir>0){longN++;longNet+=pnl;}else{shortN++;shortNet+=pnl;}
-        tpnl.push_back(pnl); ntr++; pos=false;
+        tpnl.push_back(pnl); tts.push_back(b[i].ts); ntr++; pos=false;
     };
 
     for(int i=1;i<(int)b.size();++i){
@@ -210,6 +211,8 @@ int main(int argc,char**argv){
         else if(hitS){ pos=true;dir=-1;entry=sellStop;stop=sellStop+stopm*atr; tp=effTP>0?sellStop-effTP*stopm*atr:0; units=1; entry_sum=entry; last_add=entry; pend_bank=0;pos_frac=1.0;part_taken=false; entry_bar=i; }
     }
     if(pos) close(b.back().c,(int)b.size()-1);
+
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(size_t k=0;k<tpnl.size();++k)fprintf(pd,"%lld,%.4f\n",(long long)tts[k],tpnl[k]);fclose(pd);}
 
     double pf=(gl>0)?gw/gl:(gw>0?999:0); double hit=(nw+nl>0)?100.0*nw/(nw+nl):0;
     double years; {int n=(int)b.size();int s=std::max(evalStart,1);years=(b[n-1].ts-b[s].ts)/86400.0/365.25;}

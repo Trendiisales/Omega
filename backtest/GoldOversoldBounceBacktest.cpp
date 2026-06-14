@@ -20,7 +20,9 @@ int main(int argc,char**argv){
     omega::GoldOversoldBounceEngine g; g.shadow_mode=false; g.enabled=true; g.lot=0.01;
     std::vector<double> rets; double cum=0,peak=0,mdd=0,gw=0,gl=0; int nw=0,nl=0;
     std::map<int,double> yr; std::map<std::string,int> why;
+    std::vector<std::pair<long long,double>> dump;
     auto cb=[&](const omega::TradeRecord&tr){
+        dump.push_back({(long long)tr.exitTs,tr.pnl});
         double pct=(tr.exitPrice-tr.entryPrice)/tr.entryPrice*100.0;
         double cost=0.37/tr.entryPrice*100.0; pct-=cost;
         rets.push_back(pct); cum+=pct; if(cum>peak)peak=cum; if(peak-cum>mdd)mdd=peak-cum;
@@ -38,5 +40,6 @@ int main(int argc,char**argv){
         n,cum,pf,100.0*nw/(n?n:1),mean,mdd);
     printf("per-year:"); for(auto&kv:yr)printf(" %d:%+.1f%%",kv.first,kv.second); printf("\n");
     printf("exits:"); for(auto&kv:why)printf(" %s=%d",kv.first.c_str(),kv.second); printf("\n");
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(auto&d:dump)fprintf(pd,"%lld,%.4f\n",d.first,d.second);fclose(pd);}
     return 0;
 }

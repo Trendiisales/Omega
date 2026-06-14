@@ -53,11 +53,13 @@ struct Stats {
     int64_t n_trades = 0, wins = 0, sl = 0, tp = 0, weekend = 0, timeout = 0, other = 0;
     double gross_pnl = 0.0, best = 0.0, worst = 0.0;
     std::vector<double> per_trade_pnl;
+    std::vector<int64_t> per_trade_ts;
 
     void record(const omega::TradeRecord& tr) {
         ++n_trades;
         gross_pnl += tr.pnl;
         per_trade_pnl.push_back(tr.pnl);
+        per_trade_ts.push_back(tr.exitTs);
         if (tr.pnl > 0) ++wins;
         if (tr.pnl > best)  best  = tr.pnl;
         if (tr.pnl < worst) worst = tr.pnl;
@@ -129,6 +131,8 @@ int main(int argc, char** argv) {
             eng.on_tick(nb.h - half_spread, nb.h + half_spread, nts_ms, cb);
         }
     }
+
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(size_t k=0;k<stats.per_trade_pnl.size();++k)fprintf(pd,"%lld,%.4f\n",(long long)stats.per_trade_ts[k],stats.per_trade_pnl[k]);fclose(pd);}
 
     // ---- Report ----
     const double sh = sharpe(stats.per_trade_pnl);

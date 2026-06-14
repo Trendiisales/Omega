@@ -29,6 +29,7 @@ static std::vector<Bar> load(const char*p){std::vector<Bar> v;std::ifstream f(p)
 struct P{ int atr_n=24, don=48, ema_n=50, ema_slow=200, dd_lb=250; double sl_atr=2.0, trail_atr=3.0, dd_min=0.06; int persist=100;
   int max_hold=240, cooldown=12; double cost=1.5; double tp_r=0.0; /*0=trail,>0=fixed R TP*/ };
 struct St{int n=0,w=0,l=0,trail=0,stop=0,tim=0;double net=0,gw=0,gl=0,dd=0;
+  std::vector<std::pair<int64_t,double>> trades;  // (exit_ts_sec, pnl)
   double pf()const{return gl>1e-9?gw/gl:(gw>0?999:0);} double wr()const{return n?100.0*w/n:0;}};
 
 static void run(const std::vector<Bar>&B,const P&pp,St&st){
@@ -57,6 +58,7 @@ static void run(const std::vector<Bar>&B,const P&pp,St&st){
       }
       if(why){ double pnl=(entry-ex)-pp.cost; st.n++;st.net+=pnl; if(pnl>0){st.w++;st.gw+=pnl;}else{st.l++;st.gl+=-pnl;}
         if(why[0]=='T'&&why[1]=='R')st.trail++;else if(why[0]=='S')st.stop++;else st.tim++;
+        st.trades.push_back({B[i].ts,pnl});   // PORT_DUMP: exit ts (sec, CSV is sec-epoch) + pnl(pt)
         cum+=pnl;if(cum>pk)pk=cum;if(pk-cum>st.dd)st.dd=pk-cum; inpos=false;last_exit=i; }
       continue;
     }
@@ -92,6 +94,7 @@ int main(int argc,char**argv){
     std::printf("%-16s %5s %6s %10s %6s %9s  %s\n","series","N","WR%","net(pt)","PF","maxDD","TP/ST/TI");
     St a=runseg(s,pp,0); row("FULL",a);
     St h1=runseg(s,pp,1),h2=runseg(s,pp,2); row("  H1",h1); row("  H2",h2);
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(auto&t:a.trades)fprintf(pd,"%lld,%.4f\n",(long long)t.first,t.second);fclose(pd);std::printf("[PORT_DUMP] %zu trades -> %s\n",a.trades.size(),getenv("PORT_DUMP"));}
     return 0;
   }
   std::vector<Series> bull={{"SPX24-26","/Users/jo/Tick/SPXUSD_merged.h1.csv",0.6},{"NAS24-26","/Users/jo/Tick/NSXUSD_merged.h1.csv",2.0},{"GER40-25","/Users/jo/Tick/GER40_merged.h1.csv",1.5}};

@@ -65,12 +65,13 @@ int main(int argc, char** argv) {
     int64_t n = 0, wins = 0;
     double gross = 0, wsum = 0, lsum = 0;
     std::vector<double> pnl;
+    std::vector<int64_t> pts;
 
     omega::GoldVolBreakoutM30Engine eng;
     eng.shadow_mode = true; eng.enabled = true; eng.lot = 0.01;
     eng.init(); eng.enabled = true;
     auto cb = [&](const omega::TradeRecord& tr) {
-        ++n; gross += tr.pnl; pnl.push_back(tr.pnl);
+        ++n; gross += tr.pnl; pnl.push_back(tr.pnl); pts.push_back(tr.exitTs);
         if (tr.pnl > 0) { ++wins; wsum += tr.pnl; } else lsum += -tr.pnl;
     };
     // H1 close = every M30 bar whose end falls on the hour boundary.
@@ -89,6 +90,7 @@ int main(int argc, char** argv) {
             eng.on_tick(nb.h - half, nb.h + half, nts, cb);
         }
     }
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(size_t k=0;k<pnl.size();++k)fprintf(pd,"%lld,%.4f\n",(long long)pts[k],pnl[k]);fclose(pd);}
     double eq = 0, peak = 0, mdd = 0;
     for (double x : pnl) { eq += x; if (eq > peak) peak = eq; if (peak - eq > mdd) mdd = peak - eq; }
     const double pf = lsum > 0 ? wsum / lsum : (wsum > 0 ? 99.0 : 0.0);

@@ -15,6 +15,7 @@
 // BUILD: c++ -std=c++17 -O2 backtest/index_seasonal_sharpe.cpp -o backtest/index_seasonal_sharpe
 // =============================================================================
 #include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cmath>
 #include <ctime>
@@ -89,7 +90,10 @@ int main(){
     printf("  %-26s netbp   Sharpe  maxDD(bp) %%time  H1bp   H2bp  blocks\n","sleeve");
     int64_t TMIN=P[0].b.front().day,TMAX=0; for(auto&p:P){if(p.b.front().day<TMIN)TMIN=p.b.front().day; if(p.b.back().day>TMAX)TMAX=p.b.back().day;}
     int64_t SPLIT=TMIN+(TMAX-TMIN)/2;
-    for(auto&S:sleeves){
+    int sleeve_idx=-1;
+    for(auto&S:sleeves){ ++sleeve_idx;
+        // PORT_DUMP: per-trade stream for the best-2 sleeve (sleeve index 1) on SPX500.
+        FILE* pd=nullptr; if(sleeve_idx==1 && getenv("PORT_DUMP")) pd=fopen(getenv("PORT_DUMP"),"w");
         // build per-symbol daily PnL fraction series, then pool by aligning on index (equal-weight)
         std::vector<double> series; double h1=0,h2=0; double blk[6]={0};
         for(auto&p:P){
@@ -97,10 +101,12 @@ int main(){
                 int wd=p.b[i].wday; if(wd<1||wd>5)continue; int d=S.dir[wd]; if(d==0){series.push_back(0);continue;}
                 double r=(p.b[i].c/p.b[i-1].c-1)*1e4*d - 2.0*p.hs_bps; // bp net
                 series.push_back(r/1e4); // fraction for sharpe
+                if(pd && p.name=="SPX500") fprintf(pd,"%lld,%.4f\n",(long long)p.b[i].day,(r/1e4)*1000.0); // $1000 notional/trade
                 if(p.b[i].day<SPLIT)h1+=r; else h2+=r;
                 int bi=(int)(6.0*(p.b[i].day-TMIN)/(double)(TMAX-TMIN+1)); if(bi<0)bi=0;if(bi>5)bi=5; blk[bi]+=r;
             }
         }
+        if(pd){fclose(pd);}
         double sh,dd,tt; stats(series,sh,dd,tt);
         int bp=0; for(int i=0;i<6;i++)if(blk[i]>0)bp++;
         int trades=0; for(double x:series)if(x!=0)trades++;

@@ -63,6 +63,7 @@ static int run(const char* barfile, double spread, const char* label) {
     }
     // overall
     std::sort(trades.begin(), trades.end(), [](const Closed&a,const Closed&b){return a.exitTs<b.exitTs;});
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(auto&t:trades)fprintf(pd,"%lld,%.6f\n",t.exitTs,t.pnl);fclose(pd);}
     auto stats = [](const std::vector<Closed>& v, double& net, double& pf, double& wr, int& n){
         n=(int)v.size(); net=0; double gw=0,gl=0; int w=0;
         for (auto&t:v){ net+=t.pnl; if(t.pnl>0){gw+=t.pnl;++w;} else gl+=-t.pnl; }

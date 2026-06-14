@@ -1,0 +1,8 @@
+{
+  "_comment": "Curated diversified book. The allocator auto-detects the gold-momentum cluster (corr>=0.4) and down-weights it to one effective bet. Add/remove engines by editing this list; regenerate streams via each harness with PORT_DUMP=streams/<Name>_trades.txt.",
+  "book": [
+    "Gold-trend", "XauStraddleM30", "XauSessionMomentum", "SupertrendGold",
+    "XauTurtleD1", "XauVolBreakoutM30", "fx_xrev_eurgbp",
+    "IndexSession", "IndexSeasonal", "OvernightDrift"
+  ]
+}

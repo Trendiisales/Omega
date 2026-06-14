@@ -283,6 +283,7 @@ int main(int argc, char** argv){
     // ---- metrics ----
     auto report=[&](const char* tag,int lo,int hi){
         int n=0,w=0; double net=0,gw=0,gl=0,sumR=0,sumR2=0,peak=0,cum=0,dd=0,cumR=0,peakR=0,ddR=0;
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(auto&tt:trades)fprintf(pd,"%lld,%.6f\n",(long long)tt.t,tt.netPts);fclose(pd);}
         for(int i=lo;i<hi;++i){ auto&t=trades[i]; n++; net+=t.netPts; sumR+=t.netR; sumR2+=t.netR*t.netR;
             if(t.win){w++;gw+=t.netPts;} else gl+=-t.netPts;
             cum+=t.netPts; if(cum>peak)peak=cum; if(peak-cum>dd)dd=peak-cum;

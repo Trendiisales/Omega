@@ -76,7 +76,7 @@ int main(int argc,char**argv){
         if(htf[i-2].h<htf[i].l){double g=htf[i].l-htf[i-2].h; if(g>=MINGAP*a&&g<=6*a) fvgs.push_back({+1,htf[i-2].h,htf[i].l,i,htf[i].ts+(int64_t)HTF*60,false});}
         if(htf[i-2].l>htf[i].h){double g=htf[i-2].l-htf[i].h; if(g>=MINGAP*a&&g<=6*a) fvgs.push_back({-1,htf[i].h,htf[i-2].l,i,htf[i].ts+(int64_t)HTF*60,false});}
     }
-    struct T{double entry,sl,tp,r;int dir;double netPts,netR,mfeR,maeR;bool win;};
+    struct T{double entry,sl,tp,r;int dir;double netPts,netR,mfeR,maeR;bool win; int64_t ts;};
     vector<T> trades;
     const int TTL=24;
     // drive on m1 for entry/exit precision
@@ -104,7 +104,7 @@ int main(int argc,char**argv){
                 double pts=(cur.dir>0?(exit-cur.entry):(cur.entry-exit))-COST;
                 cur.netPts=pts; cur.netR=cur.r>0?pts/cur.r:0; cur.win=pts>0;
                 cur.mfeR=cur.r>0?peakFav/cur.r:0; cur.maeR=cur.r>0?peakAdv/cur.r:0;
-                trades.push_back(cur); inT=false;
+                cur.ts=now; trades.push_back(cur); inT=false;
             }
             continue;
         }
@@ -142,6 +142,7 @@ int main(int argc,char**argv){
             peakFav=0;peakAdv=0;trailStop=0; break;
         }
     }
+    if(getenv("PORT_DUMP")){FILE*pd=fopen(getenv("PORT_DUMP"),"w");for(auto&td:trades)fprintf(pd,"%lld,%.4f\n",(long long)td.ts,td.netPts);fclose(pd);}
     auto rep=[&](const char*tag,int lo,int hi){ int n=0,w=0;double net=0,gw=0,gl=0,sR=0,pk=0,cm=0,dd=0;
         double sumWp=0,sumLp=0; int nw=0,nl=0,consec=0,maxConsec=0; std::vector<double> rs;
         for(int i=lo;i<hi;++i){auto&t=trades[i];n++;net+=t.netPts;sR+=t.netR;rs.push_back(t.netR);

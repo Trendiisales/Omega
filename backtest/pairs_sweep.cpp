@@ -83,7 +83,8 @@ static void run_one(const ParamSet& ps,
                     const std::vector<Bar>& eur_m5,
                     const std::vector<Bar>& gbp_m5,
                     double cost_per_leg,
-                    TradeStats& st)
+                    TradeStats& st,
+                    std::vector<std::pair<long long,double>>* dump = nullptr)
 {
     omega::EurGbpPairsEngine eng;
     eng.shadow_mode = true; eng.enabled = true;
@@ -96,11 +97,13 @@ static void run_one(const ParamSet& ps,
     eng.p.weekend_close_gate = false;
 
     // Cost = 2 * spread; we model it as a flat per-leg deduction at exit.
-    auto on_close = [&st, cost_per_leg](const omega::TradeRecord& tr) {
+    auto on_close = [&st, cost_per_leg, dump](const omega::TradeRecord& tr) {
         // cost_per_leg is in PRICE units (0.00010 = 1 pip). PnL per pip at 0.01 lot = $0.10.
         // So $cost = cost_per_leg * 100000 * size * 2 legs.
         const double cost_dollars = cost_per_leg * 100000.0 * tr.size * 2.0;
-        st.add(tr.pnl - cost_dollars);
+        const double net = tr.pnl - cost_dollars;
+        st.add(net);
+        if (dump) dump->push_back({(long long)tr.exitTs, net});
     };
 
     // Interleave EUR + GBP M5 bars by ts. We need to call on_tick_* in order.
@@ -150,6 +153,23 @@ int main(int argc, char** argv) {
     auto gbp = load_m5(argv[2]);
     double cost = (argc>=5) ? atof(argv[4]) : 0.00010;
     fprintf(stderr, "[LOAD] eur=%zu gbp=%zu cost_per_leg=%.5f\n", eur.size(), gbp.size(), cost);
+
+    // PORT_DUMP: run ONLY the validated config (w=120 zi=1.5 zo=0.5 h=48) and
+    // dump per-trade "exitTs,net_pnl" to the file. Skips the full sweep.
+    if (const char* pd = getenv("PORT_DUMP")) {
+        ParamSet vps{120, 1.5, 0.5, 48};
+        if (getenv("PW")) vps.z_window = atoi(getenv("PW"));
+        if (getenv("PZI")) vps.z_in = atof(getenv("PZI"));
+        if (getenv("PZO")) vps.z_out = atof(getenv("PZO"));
+        if (getenv("PH")) vps.hold = atoi(getenv("PH"));
+        TradeStats st; std::vector<std::pair<long long,double>> dump;
+        run_one(vps, eur, gbp, cost, st, &dump);
+        FILE* pf = fopen(pd, "w");
+        if (pf) { for (auto& x : dump) fprintf(pf, "%lld,%.6f\n", x.first, x.second); fclose(pf); }
+        fprintf(stderr, "[PORT_DUMP] cfg w=120 zi=1.5 zo=0.5 h=48 n=%d pnl=%.2f WR=%.1f%% sharpe=%.2f mdd=%.2f -> %s\n",
+                st.n, st.pnl, st.n?100.0*st.wins/st.n:0, st.sharpe(), st.mdd, pd);
+        return 0;
+    }
 
     g_csv = fopen(argv[3], "w");
     if (!g_csv) { fprintf(stderr, "cannot open %s\n", argv[3]); return 1; }
