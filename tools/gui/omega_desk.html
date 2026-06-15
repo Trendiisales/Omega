@@ -657,7 +657,10 @@ function drawPR(){var cv=el('prc'),H=250,ctx=prep(cv,H);
  var bars=ds.bars.slice(-Math.max(60,Math.min(ds.bars.length,Math.floor((W-70)/5))));
  var n=bars.length,padR=58,padB=18,padT=8,padL=4,pw=W-padL-padR,ph=H-padT-padB;
  var lo=1e18,hi=-1e18;
- bars.forEach(function(b){lo=Math.min(lo,b[3],b[9]);hi=Math.max(hi,b[2],b[7]);});
+ // range from candles always; include r2/s2 ONLY when warmed (>0) so an unwarmed
+ // 0-level bar can't collapse lo to 0 and squash the whole chart (was hiding bands).
+ bars.forEach(function(b){lo=Math.min(lo,b[3]);hi=Math.max(hi,b[2]);
+  if(b[9]>0)lo=Math.min(lo,b[9]); if(b[7]>0)hi=Math.max(hi,b[7]);});
  var pad=(hi-lo)*0.06||1;lo-=pad;hi+=pad;
  var dp=hi<100?3:hi<1000?2:1;
  function X(i){return padL+pw*i/Math.max(1,n-1);}
@@ -671,17 +674,23 @@ function drawPR(){var cv=el('prc'),H=250,ctx=prep(cv,H);
    +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.beginPath();ctx.moveTo(X(ii),padT);ctx.lineTo(X(ii),padT+ph);ctx.stroke();
   ctx.fillText(lb,Math.min(X(ii),W-padR-62),H-4);}
+ /* step points; emit null as a gap when a level is unwarmed (<=0) so the line
+    never drops to Y(0)/off-chart (that was hiding resistance). */
  function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
-  if(i>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);p.push([X(i),Y(v)]);}return p;}
- function strokeSteps(p,col,wd,dash){ctx.beginPath();p.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
+  if(v<=0){p.push(null);continue;}
+  if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
+  p.push([X(i),Y(v)]);}return p;}
+ function strokeSteps(p,col,wd,dash){ctx.beginPath();var pen=false;p.forEach(function(q){
+   if(!q){pen=false;return;}if(pen)ctx.lineTo(q[0],q[1]);else ctx.moveTo(q[0],q[1]);pen=true;});
   ctx.strokeStyle=col;ctx.lineWidth=wd;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);}
- function cloud(fa,fb,col){var A=spts(fa),B=spts(fb);ctx.beginPath();
+ function cloud(fa,fb,col){var A=spts(fa).filter(Boolean),B=spts(fb).filter(Boolean);
+  if(A.length<2||B.length<2)return;ctx.beginPath();
   A.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
   for(var i=B.length-1;i>=0;i--)ctx.lineTo(B[i][0],B[i][1]);
   ctx.closePath();ctx.fillStyle=col;ctx.fill();}
- cloud(7,6,'rgba(226,72,77,0.08)');cloud(8,9,'rgba(46,189,133,0.08)');cloud(6,8,'rgba(133,183,235,0.035)');
- strokeSteps(spts(7),'#E2484D',1.4);strokeSteps(spts(9),'#2EBD85',1.4);
- strokeSteps(spts(6),'rgba(226,72,77,0.55)',1,[4,4]);strokeSteps(spts(8),'rgba(46,189,133,0.55)',1,[4,4]);
+ cloud(7,6,'rgba(226,72,77,0.10)');cloud(8,9,'rgba(46,189,133,0.10)');cloud(6,8,'rgba(133,183,235,0.04)');
+ strokeSteps(spts(7),'#FF5A5F',2.0);strokeSteps(spts(9),'#2EBD85',2.0);                 /* R2 / S2 solid, brighter+thicker */
+ strokeSteps(spts(6),'rgba(255,90,95,0.85)',1.4,[5,4]);strokeSteps(spts(8),'rgba(46,189,133,0.85)',1.4,[5,4]); /* R1 / S1 dashed */
  var bw=Math.max(1,Math.min(7,pw/n*0.62));
  for(var i=0;i<n;i++){var b=bars[i],up=b[4]>=b[1],c=up?'#2EBD85':'#E2484D',x=X(i);
   ctx.strokeStyle=c;ctx.globalAlpha=0.85;ctx.lineWidth=bw>3?1:0.7;
@@ -691,6 +700,14 @@ function drawPR(){var cv=el('prc'),H=250,ctx=prep(cv,H);
  var ap=spts(5);
  ctx.save();ctx.shadowColor='#85B7EB';ctx.shadowBlur=7;strokeSteps(ap,'rgba(133,183,235,0.45)',3.5);ctx.restore();
  strokeSteps(ap,'#85B7EB',1.8);
+ /* current-level labels on the right edge (R2/R1/PR/S1/S2) -- clarity */
+ (function(){var lb=bars[n-1],defs=[[7,'R2','#FF5A5F'],[6,'R1','#FF8A8E'],[5,'PR','#85B7EB'],[8,'S1','#7FD9B0'],[9,'S2','#2EBD85']];
+  ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
+  defs.forEach(function(d){var v=lb[d[0]];if(v<=0)return;var y=Y(v);if(y<padT||y>padT+ph)return;
+   var tx=padL+pw+2,txt=d[1]+' '+v.toFixed(dp);
+   ctx.fillStyle='rgba(11,15,20,0.85)';ctx.fillRect(tx,y-6,54,11);
+   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
+  ctx.textAlign='start';})();
  for(var i=0;i<n;i++){var sg=bars[i][11];if(!sg)continue;var x=X(i),y;
   ctx.beginPath();
   if(sg>0){y=Y(bars[i][3])+11;ctx.moveTo(x,y-7);ctx.lineTo(x-4.5,y);ctx.lineTo(x+4.5,y);ctx.fillStyle='#2EBD85';}
