@@ -70,7 +70,8 @@ DJ30 2.09, GER40 1.47, EURGBP 1pip.
 - **VIABLE (kept):** XauTrendFollow 1h/2h/4h/D1, XauStraddleM30, GoldSeasonal, GoldPanicBounce, XauTurtleD1, XauDojiRejD1, XauOutsideBarD1, GoldVolBreakoutM30, XauSessNYpm (all XAU, net+ on 6mo).
 - **SurvivorPortfolio:** RESTORED (S38 walk-forward validated; net ~+$1,300/6mo). Donchian/ZMR cells win; XAU_4h_MA + GER_15m_MA cells are losers (cell-level cull candidates). Weekend-hold bug FIXED (config.hpp `_4h` exemption exclusion).
 - **TOMBSTONED on 6mo-bull (REVISIT cross-regime):** index engines (idd, IndexBearShort, nas_orb_retrace, us30_ensemble, minimal_h4_us30, ustec_tf_htf) + gold (AdaptiveHull, Supertrend, SessOvernight, BreakBounce, Tsmom). **NasOrbRetrace proven +$390 in 2022 bear vs −$708 bull → it's a BEAR engine, wrongly culled on bull-only data.** Cross-regime re-validation in progress.
-- **FLAGGED (not culled, inconclusive 6mo):** GER40 Keltner/London/MinimalH4, FX amr/turtle/xrev.
+- **FLAGGED (not culled, inconclusive 6mo):** GER40 Keltner/London/MinimalH4, FX amr/xrev.
+- **FX TURTLES CULLED 2026-06-16** (EurusdTurtleH4 + GbpusdTurtleH4): recheck on more data (backtest/fx_turtle_recheck.cpp). GBPUSD 18mo CROSS-REGIME (2022 H2 bear + 2025-26) PF0.88, no improvable config (sweep best = flat noise PF1.01); EURUSD PF1.31 single-regime only (no EURUSD bear data) → identical-param sibling failing cross-regime = regime-luck. Operator bar "marginal not good enough". Live FX book = EurGbpPairs (strong) + FxCrossRev + AMR.
 
 **CROSS-REGIME AUDIT (2026-06-15, 2022-bear + 2024-2026 data):**
 - **SurvivorPortfolio** — cull was WRONG, RESTORED. USTEC cells +~$18k cross-regime. (init needs `init_default_cells()`.)
