@@ -2619,7 +2619,7 @@ static void init_engines(const std::string& cfg_path)
         g_trendline_break_gbp.symbol      = "GBPUSD";
         g_trendline_break_gbp.engine_name = "TrendLineBreakGBP";
         g_trendline_break_gbp.shadow_mode = true;
-        g_trendline_break_gbp.enabled     = true;   // SHADOW (sim-only)
+        g_trendline_break_gbp.enabled     = false;   // SHADOW (sim-only)
         printf("[OMEGA-INIT] TrendLineBreakGBP: shadow=%d win=%d min_touch=%d\n",
                (int)g_trendline_break_gbp.shadow_mode, g_trendline_break_gbp.p.window,
                g_trendline_break_gbp.p.min_touch);

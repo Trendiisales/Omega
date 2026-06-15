@@ -590,12 +590,12 @@ public:
         // DISABLED 2026-06-01: GER40 RSI mean-rev shorts the RISK_ON uptrend -> net-negative shadow (counter-trend dead pattern). GER40 edge is trend (KeltnerH1/TurtleH4/MACross).
         // add({ .tag="GER_4h_RSI_N7",    .symbol="GER40",   .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 4.  GER40  15m MACross 10/30
-        add({ .tag="GER_15m_MA_10_30", .symbol="GER40",   .tf_sec=900,   .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=50, .lot=0.10 });
+        // CULLED 2026-06-15 (GER40 dropped, losing live): add({ .tag="GER_15m_MA_10_30", .symbol="GER40",   .tf_sec=900,   .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=50, .lot=0.10 });
         // 5.  GER40  1h RSI N=14
         // DISABLED 2026-06-01: GER40 RSI mean-rev (counter-trend, net-neg shadow).
         // add({ .tag="GER_1h_RSI_N14",   .symbol="GER40",   .tf_sec=3600,  .family=Family::RSI, .N=14, .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
         // 6.  GER40  1h DonchN100
-        add({ .tag="GER_1h_DonchN100", .symbol="GER40",   .tf_sec=3600,  .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.10 });
+        // CULLED 2026-06-15 (GER40 dropped, losing live): add({ .tag="GER_1h_DonchN100", .symbol="GER40",   .tf_sec=3600,  .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.10 });
         // 7.  XAUUSD 4h MACross 10/30
         add({ .tag="XAU_4h_MA_10_30",  .symbol="XAUUSD",  .tf_sec=14400, .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
         // 8.  USTEC  4h RSI N=7  — TREND-GATED 2026-06-03 (Family::RSI trend_dir
