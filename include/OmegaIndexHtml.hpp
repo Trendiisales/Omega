@@ -33,7 +33,7 @@ body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consola
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
 td,th{padding:2px 7px;text-align:right;font-size:11.5px;white-space:nowrap}
-#lt td,#lt th{padding:1px 6px;font-size:10.5px;line-height:1.2}  /* compact live-open-trades to free vertical space */
+#lt td,#lt th{padding:0 6px;font-size:9.5px;line-height:1.45}  /* compact live-open-trades to free vertical space (capped + scroll) */
 td:first-child,th:first-child,td.l,th.l{text-align:left}
 th{color:var(--t2);font-weight:400}
 tr:nth-child(even) td{background:rgba(255,255,255,0.015)}
@@ -106,7 +106,7 @@ a{color:var(--blu);text-decoration:none}
     <span id="ltcount" class="lbl"></span>
     <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
   </div>
-  <table id="lt" style="margin-top:4px"><tr><td class="l d">FLAT — no open positions</td></tr></table>
+  <div style="max-height:132px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
 </div>
 
 <!-- ═══ PREDICTIVE RANGES ═══ -->
@@ -122,7 +122,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="340" style="margin-top:6px"></canvas>
+  <canvas id="prc" height="430" style="margin-top:6px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -141,7 +141,7 @@ a{color:var(--blu);text-decoration:none}
         <button id="w1" class="on">1d</button><button id="w7">7d</button><button id="w30">30d</button><button id="wall">all</button>
       </span>
     </div>
-    <canvas id="eqc" height="170" style="margin-top:6px"></canvas>
+    <canvas id="eqc" height="110" style="margin-top:6px"></canvas>
     <div id="eqstats" class="lbl num" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:5px"></div>
   </div>
   <div class="pan" style="padding:6px 0 4px;display:flex;flex-direction:column">
@@ -236,11 +236,11 @@ a{color:var(--blu);text-decoration:none}
 
 <div id="prtip"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+)OMEGAD0"
+R"OMEGAD1(<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <script>
 'use strict';
-)OMEGAD0"
-R"OMEGAD1(function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
+function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
 function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});}
 function fmt2(v,n){return safe(v).toFixed(n===undefined?2:n);}
 function lots(v){v=safe(v);return v>0?String(+v.toFixed(4)):'—';}
@@ -510,7 +510,7 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
  el('ledgern').textContent=ks.length+' engines · net '+fmt$(net);}
 
-function drawEquity(){var cv=el('eqc'),H=170,ctx=prep(cv,H);
+function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
  var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);_tw.eqtot=0;el('eqtot').textContent='$0';el('eqstats').innerHTML='';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
@@ -656,7 +656,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el('prc'),H=340,ctx=prep(cv,H);
+function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
