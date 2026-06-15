@@ -176,9 +176,9 @@ static void init_engines(const std::string& cfg_path)
     g_idd_sp.symbol      = "US500.F";
     g_idd_us30.symbol    = "DJ30.F";
     g_idd_uk100.symbol   = "UK100";
-    g_idd_sp.enabled     = true;
-    g_idd_us30.enabled   = true;
-    g_idd_uk100.enabled  = true;
+    g_idd_sp.enabled     = false;
+    g_idd_us30.enabled   = false;
+    g_idd_uk100.enabled  = false;
     g_idd_sp.shadow_mode    = true;   // pinned shadow for first 30 trades
     g_idd_us30.shadow_mode  = true;
     g_idd_uk100.shadow_mode = true;
@@ -1372,7 +1372,7 @@ static void init_engines(const std::string& cfg_path)
         // All other config matches g_tsmom 1:1 so the V1 vs V2 comparison
         // isolates the refactor only.
         g_tsmom_v2.shadow_mode             = true;          // ALWAYS shadow (refactor validation)
-        g_tsmom_v2.enabled                 = true;
+        g_tsmom_v2.enabled                 = false;
         g_tsmom_v2.max_concurrent          = 50;            // headroom; per-cell cap binds
         g_tsmom_v2.max_positions_per_cell  = 1;             // Phase 2a -- flip to 10 in Phase 2b
         g_tsmom_v2.risk_pct                = g_tsmom.risk_pct;
@@ -1400,7 +1400,7 @@ static void init_engines(const std::string& cfg_path)
         // Bidirectional: would have profited during 2026-03-18 BEAR cluster.
         // Reuses tsmom warmup CSV (same H1 stream input).
         g_donchian.shadow_mode       = kShadowDefault;
-        g_donchian.enabled           = true;
+        g_donchian.enabled           = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$186; standalone DonchianPortfolio is a net loser — the real vol-targeted Donchian edge lives INSIDE XauTrendFollow1h (see [[omega-voldonchian-edge]]), not here.
         g_donchian.max_concurrent    = 7;
         g_donchian.risk_pct          = 0.005;
         g_donchian.start_equity      = 10000.0;
@@ -1902,7 +1902,7 @@ static void init_engines(const std::string& cfg_path)
         // 3x-cost-robust). Reuses the 49.4k-bar warmup_XAUUSD_M15.csv. HARD shadow,
         // gate-watched -- the live ledger sorts out its overlap with M30.
         g_xau_straddle_m15.shadow_mode = true;
-        g_xau_straddle_m15.enabled     = true;
+        g_xau_straddle_m15.enabled     = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$559; gold fast-TF straddle scalp — the M5->M30 research already proved faster=worse, M30 sibling (+$996) is the only survivor. Gold scalp never works.
         g_xau_straddle_m15.symbol      = "XAUUSD";
         g_xau_straddle_m15.engine_name = "XauStraddleM15";   // distinct ledger/gate key
         g_xau_straddle_m15.box_n       = 15;
@@ -2040,7 +2040,7 @@ static void init_engines(const std::string& cfg_path)
         // Validation: 3-period intersection + 4/4 walk-forward folds positive
         // + engine-sim integrated backtest +$1411 / 1711 trades / WR 50%.
         g_us30_ensemble.shadow_mode        = true;     // HARD shadow per CLAUDE.md ~1mo trace rule
-        g_us30_ensemble.enabled            = true;
+        g_us30_ensemble.enabled            = false;
         g_us30_ensemble.lot                = 0.01;
         // max_spread bumped 5.0 -> 10.0 (2026-05-26): VPS shadow showed
         // [GUARD-BLOCK] engine=Us30Ensemble reason=SPREAD_CAP firing every tick
@@ -2108,7 +2108,7 @@ static void init_engines(const std::string& cfg_path)
         // are hot on first tick. >=5 live shadow trades before any LIVE thought.
         g_nas_turtle_d1.p           = omega::make_nas_turtle_d1_params();
         g_nas_turtle_d1.shadow_mode = true;
-        g_nas_turtle_d1.enabled     = true;
+        g_nas_turtle_d1.enabled     = false;
         g_nas_turtle_d1.symbol      = "NAS100";
         g_nas_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
         printf("[OMEGA-INIT] NasTurtleD1Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
@@ -2185,7 +2185,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_sess_overnight.ema_period       = 200;
         g_xau_sess_overnight.sl_atr           = 0.0;
         g_xau_sess_overnight.shadow_mode      = true;
-        g_xau_sess_overnight.enabled          = true;
+        g_xau_sess_overnight.enabled          = false;
         g_xau_sess_overnight.lot              = 0.01;
         g_xau_sess_overnight.max_spread       = 2.0;
         g_xau_sess_overnight.warmup_csv_path  = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
@@ -2472,7 +2472,7 @@ static void init_engines(const std::string& cfg_path)
                     //   the trend/breakout book + GoldSeasonal. Long-only. usd_per_pt=100.
                     {
                         g_gold_oversold.shadow_mode   = true;
-                        g_gold_oversold.enabled       = true;
+                        g_gold_oversold.enabled       = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$457; gold oversold mean-rev = net loser on full-tick book.
                         g_gold_oversold.lot           = 0.01;
                         g_gold_oversold.usd_per_pt    = 100.0;
                         g_gold_oversold.entry_rsi     = 30.0;
@@ -2781,7 +2781,7 @@ static void init_engines(const std::string& cfg_path)
         // fires. Both orthogonal, ANDed when stacked. Shadow A/B 60+ days
         // before flipping enabled=true.
         g_xau_threebar_30m.shadow_mode        = true;
-        g_xau_threebar_30m.enabled            = true;
+        g_xau_threebar_30m.enabled            = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$371; gold 3-bar momentum scalp = net loser.
         g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;
@@ -2911,7 +2911,7 @@ static void init_engines(const std::string& cfg_path)
         // observed and promoted on real evidence rather than on an
         // unimplemented "replacement". Promote to enabled=true && shadow_mode=false
         // only after ≥30 shadow trades w/ WR ≥35% net positive after costs.
-        g_ustec_tf_htf.enabled          = true;   // S37 2026-05-27: re-enabled HARD shadow (ghost replacement reversed)
+        g_ustec_tf_htf.enabled          = false;   // S37 2026-05-27: re-enabled HARD shadow (ghost replacement reversed)
         g_ustec_tf_htf.lot              = 0.1;
         g_ustec_tf_htf.max_spread       = 5.0;
         g_ustec_tf_htf.be_trigger_atr   = 1.0;    // S35-P6 TUNED (mirrors XauThreeBar30m)
@@ -2955,7 +2955,7 @@ static void init_engines(const std::string& cfg_path)
         //   S63 already active (LC=0.10, ARM=0.40, BUF=0.05 per S82 sweep).
         //   cell_enable_mask = bits 2,3 = 0x0C (H4+H6 only, disable H1+H2)
         g_ema_pullback.shadow_mode       = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
-        g_ema_pullback.enabled           = true;
+        g_ema_pullback.enabled           = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$275; standalone EpbPortfolio is a net loser — the winning pullback edge lives as a CELL inside XauTrendFollow1h (+$6,202), not this standalone.
         g_ema_pullback.cell_enable_mask  = 0x0C;  // S96: H4+H6 only
         g_ema_pullback.max_concurrent    = 4;
         g_ema_pullback.risk_pct          = 0.005;
@@ -3107,7 +3107,7 @@ static void init_engines(const std::string& cfg_path)
     g_minimal_h4_us30.p           = omega::make_minimal_h4_us30_params();
     g_minimal_h4_us30.symbol      = "DJ30.F";
     g_minimal_h4_us30.shadow_mode = true;
-    g_minimal_h4_us30.enabled     = true;
+    g_minimal_h4_us30.enabled     = false;
     g_minimal_h4_us30.p.weekend_close_gate = false;  // S-2026-06-15a: H4 holds over weekend (operator dir); global weekend-flat exempts H4+ engines by name
     printf("[INIT] MinimalH4US30Breakout DJ30.F: shadow=true donchian=%d sl=%.1fx"
            " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
@@ -4278,7 +4278,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_breakbounce.symbol         = "XAUUSD";
         g_xau_breakbounce.engine_name    = "BreakBounce";
         g_xau_breakbounce.shadow_mode    = true;
-        g_xau_breakbounce.enabled        = true;
+        g_xau_breakbounce.enabled        = false;
         g_xau_breakbounce.lot            = 0.01;
         g_xau_breakbounce.MAX_SPREAD     = 0.60;   // XAU avg spread ~0.48
         g_xau_breakbounce.USE_SESSION    = true;   // 07:00-18:00 UTC (cuts Asian chop)
@@ -4684,7 +4684,7 @@ static void init_engines(const std::string& cfg_path)
         g_gold_orb_retrace.symbol      = "XAUUSD";
         g_gold_orb_retrace.engine_name = "GoldOrbRetrace";
         g_gold_orb_retrace.shadow_mode = true;     // prove on shadow before any live size
-        g_gold_orb_retrace.enabled     = true;     // shadow=true makes it sim-only
+        g_gold_orb_retrace.enabled     = false;     // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$276; gold ORB-retrace scalp = net loser. Gold scalp never works.
         g_gold_orb_retrace.verbose     = true;
         g_gold_orb_retrace.lot         = 0.01;   // 2026-06-09 FIX: was 1.0 (index default) -> 100x oversized on XAU (USD_PER_PT_LOT=100). All gold engines use 0.01.
         // SIZING GUARD: XAU engines MUST be <=0.05 lot (x100 multiplier). Clamp + loud-warn if a gold engine slips through oversized.
@@ -4757,7 +4757,7 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_nas.symbol      = "NAS100";
         g_idx_bear_short_nas.engine_name = "IndexBearShort";
         g_idx_bear_short_nas.shadow_mode = true;     // prove on shadow + cross-instrument before any live size
-        g_idx_bear_short_nas.enabled     = true;
+        g_idx_bear_short_nas.enabled     = false;
         g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
         g_idx_bear_short_nas.lot         = 1.0;
         g_idx_bear_short_nas.USE_RISKOFF_GATE = false;  // price-structure gate is the validated one; flip on once VIX/credit feed trusted
@@ -4788,7 +4788,7 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_sp.symbol      = "US500.F";
         g_idx_bear_short_sp.engine_name = "IndexBearShort";
         g_idx_bear_short_sp.shadow_mode = true;
-        g_idx_bear_short_sp.enabled     = true;
+        g_idx_bear_short_sp.enabled     = false;
         g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts
         g_idx_bear_short_sp.lot         = 1.0;
         g_idx_bear_short_sp.USE_RISKOFF_GATE = false;
@@ -4828,7 +4828,7 @@ static void init_engines(const std::string& cfg_path)
         g_nas_orb_retrace.trail_win   = 3;
         g_nas_orb_retrace.max_spread  = 5.0;       // NAS points
         g_nas_orb_retrace.shadow_mode = true;
-        g_nas_orb_retrace.enabled     = true;
+        g_nas_orb_retrace.enabled     = false;
         g_nas_orb_retrace.verbose     = true;
         g_nas_orb_retrace.lot         = 1.0;
         g_nas_orb_retrace.seed_from_csv(
@@ -4978,7 +4978,7 @@ static void init_engines(const std::string& cfg_path)
         g_adhull_xau.symbol="XAUUSD"; g_adhull_xau.engine_name="AdaptiveHullXAU";
         g_adhull_xau.TF_SEC=3600; g_adhull_xau.PMUL=2.0; g_adhull_xau.KATR=3.0;
         g_adhull_xau.SESS0=-1; g_adhull_xau.SESS1=-1;   // all-session
-        g_adhull_xau.shadow_mode=true; g_adhull_xau.enabled=true; g_adhull_xau.lot=0.01;
+        g_adhull_xau.shadow_mode=true; g_adhull_xau.enabled=false; g_adhull_xau.lot=0.01;
         g_adhull_xau.init();
         g_adhull_xau.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
         g_adhull_xau.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
@@ -5012,7 +5012,7 @@ static void init_engines(const std::string& cfg_path)
     {
         g_supertrend_gold.symbol="XAUUSD"; g_supertrend_gold.engine_name="SupertrendGold";
         g_supertrend_gold.TF_SEC=3600; g_supertrend_gold.ST_LEN=10; g_supertrend_gold.ST_MULT=3.0;
-        g_supertrend_gold.EMA_LEN=100; g_supertrend_gold.shadow_mode=true; g_supertrend_gold.enabled=true;
+        g_supertrend_gold.EMA_LEN=100; g_supertrend_gold.shadow_mode=true; g_supertrend_gold.enabled=false;
         g_supertrend_gold.lot=0.01; g_supertrend_gold.init();
         g_supertrend_gold.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
         g_supertrend_gold.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
