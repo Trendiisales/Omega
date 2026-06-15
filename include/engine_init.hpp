@@ -4763,7 +4763,7 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_nas.symbol      = "NAS100";
         g_idx_bear_short_nas.engine_name = "IndexBearShort";
         g_idx_bear_short_nas.shadow_mode = true;     // prove on shadow + cross-instrument before any live size
-        g_idx_bear_short_nas.enabled     = false;
+        g_idx_bear_short_nas.enabled     = true;   // RE-INSTATED S-2026-06-15 (cross-regime VINDICATION): full 2022 (incl H2 crash)+2024-26 retest US500 +$14.7k / NAS +$788 net. Bear hedge; the 6mo-bull cull + Jan-Jun-2022-only retest both MISSED its home regime.
         g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
         g_idx_bear_short_nas.lot         = 1.0;
         g_idx_bear_short_nas.USE_RISKOFF_GATE = false;  // price-structure gate is the validated one; flip on once VIX/credit feed trusted
@@ -4794,7 +4794,7 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_sp.symbol      = "US500.F";
         g_idx_bear_short_sp.engine_name = "IndexBearShort";
         g_idx_bear_short_sp.shadow_mode = true;
-        g_idx_bear_short_sp.enabled     = false;
+        g_idx_bear_short_sp.enabled     = true;
         g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts
         g_idx_bear_short_sp.lot         = 1.0;
         g_idx_bear_short_sp.USE_RISKOFF_GATE = false;

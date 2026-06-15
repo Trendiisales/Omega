@@ -77,8 +77,8 @@ DJ30 2.09, GER40 1.47, EURGBP 1pip.
 - **PeachyOrb** — cull CORRECT (confirmed). Full lever sweep: brilliant in isolated 2022-bear (PF3+) but EVERY config PF<1.1 full-span. Discretionary edge doesn't mechanize cross-regime.
 - **NasOrbRetrace** — cull correct. +$390 bear but −$1,361 bull → net −$971 cross-regime.
 - **IndexIntradayDrift** — cull correct (marginal gross +, negative after cost over multi-year).
-- **IndexBearShort** — PENDING: only have choppy Jan-Jun 2022, not its validation regime (sustained H2-2022 bear). Need full 2022. Not culled-dead, not live.
-- **NasTurtleD1** — PENDING: validated on 10yr Yahoo DAILY; tick run too short (n=19). Need multi-year daily.
+- **IndexBearShort** — RE-INSTATED (cull WRONG, 2nd reversal). Full 2022 (incl sustained H2 crash) + 2024-26: US500 +$14.7k gross / NAS +$788. Genuine bear hedge (idle in bull, strong in bear).
+- **NasTurtleD1** — still INCONCLUSIVE: full-2022 retest n=24, −$15 flat. Validated on 10yr Yahoo daily; tick test underpowered (2022-05→2023 data gap). Keep flagged. Need multi-year daily.
 
 **LESSON (hard, repeated): never cull on a single-regime slice.** 6mo Nov25-Apr26
 = gold bull; it punishes bear engines (index shorts) and flatters trend. Always
