@@ -83,3 +83,5 @@ DJ30 2.09, GER40 1.47, EURGBP 1pip.
 **LESSON (hard, repeated): never cull on a single-regime slice.** 6mo Nov25-Apr26
 = gold bull; it punishes bear engines (index shorts) and flatters trend. Always
 cross-regime (2022 bear) before tombstoning.
+
+**GER40/UK100 + daily-turtle cross-regime (2026-06-15, Yahoo daily 2016-2026 incl 2022 bear, Donch20/ema100 long-only):** DJ30 PF2.10 (+13267pt), NAS100 PF2.69, SPX PF2.52 — STRONG daily trend edge → a DAILY-TURTLE FLEET (DJ30+SPX+NasTurtle) is a viable cross-regime trend book (Yahoo-validatable). GER40 PF1.14 (marginal), UK100 PF0.80 (NO edge). UK100 closed (idd culled, no trend edge). GER40 flagged H1/H4 engines (Keltner/MinimalH4/London) stay shadow — need intraday 2022-2024 to settle; daily proxy = thin edge. DATA SOURCE FIX: Yahoo Finance for daily multi-year (^GDAXI/^FTSE/^GSPC/^DJI/^NDX) — free/instant, ditch Dukascopy for daily.
