@@ -286,6 +286,12 @@ static int g_weekend_flat_done = -1;   // tm_yday of the Friday we last flattene
 // CLOSE (risk-eliminate). Threshold = H4: raise/lower by editing the token set.
 static bool weekend_hold_exempt(const std::string& e) {
     auto has = [&](const char* s){ return e.find(s) != std::string::npos; };
+    // SurvivorPortfolio tactical cells are tagged "<SYM>_<tf>_<family>" (e.g.
+    // "XAU_4h_DonchN20") -- the UNDERSCORE-TF naming distinguishes them from the
+    // deliberate trend engines (XauTrendFollow4h / XauTurtleD1, no "_4h"). They
+    // are NOT meant to carry the weekend gap (a survivor XAU_4h_Donch SHORT held
+    // 70h over a weekend for -$111). Never exempt an underscore-TF cell.
+    if (has("_4h")||has("_4H")||has("_6h")||has("_8h")||has("_12h")||has("_d1")||has("_D1")) return false;
     return has("D1") || has("d1") || has("Daily") || has("daily") || has("Turtle")
         || has("4h") || has("4H") || has("H4")
         || has("6h") || has("H6") || has("8h") || has("H8")
