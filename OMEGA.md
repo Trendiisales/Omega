@@ -88,3 +88,5 @@ cross-regime (2022 bear) before tombstoning.
 
 **GER40/UK100 H4 cross-regime UPDATE (2026-06-15, Yahoo 1h->H4, 2024-06..2026 = 2yr):** H4 turtle (Donch20/ema100) GER40 PF1.36 (+1774 n=25), UK100 PF1.81 (+933 n=24). BOTH have a positive H4 trend edge — UK100 has one at H4 even though DAILY missed it (PF0.80). Reverses "UK100 closed": UK100 = H4-edge candidate. GER40 MinimalH4 flagged engine SUPPORTED. Caveats: thin n, Yahoo 1h=bar-close approx (no tick fills/cost), 2yr only (Yahoo 1h cap ~730d, can't reach 2022 bear). Directional, not deploy-grade. YAHOO INTRADAY LIMITS: 1h=~730d, 5/15/30m=60d, 1m=7d, daily=full history. For pre-2024 intraday -> HISTDATA/paid source.
 
+**GER40/UK100 — DROPPED 2026-06-15 (operator: not viable, not pursuing).** GER40 H4 turtle FAILED both-halves (H2 neg); UK100 H4 marginal/thin; live GER40 engines were losing. Culled (kelt/london/minimal_h4 off; UK100 idd off). NOT worth chasing 2022-2023 intraday for marginal edges. Do not re-chase without a strong new hypothesis. Index trend edge lives in DJ30/SPX/NAS daily turtles (built, live-shadow) — not the EU indices intraday.
+
