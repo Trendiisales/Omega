@@ -2108,7 +2108,7 @@ static void init_engines(const std::string& cfg_path)
         // are hot on first tick. >=5 live shadow trades before any LIVE thought.
         g_nas_turtle_d1.p           = omega::make_nas_turtle_d1_params();
         g_nas_turtle_d1.shadow_mode = true;
-        g_nas_turtle_d1.enabled     = false;
+        g_nas_turtle_d1.enabled     = true;   // RE-INSTATED S-2026-06-15 (3rd reversal): confirmed on its proper 10yr Yahoo daily (NDX 2016-2026, Donch20/ema100 long-only) PF 2.69 +13183pt n=48. The tick-cull (n=19) was underpowered + wrong granularity.
         g_nas_turtle_d1.symbol      = "NAS100";
         g_nas_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
         printf("[OMEGA-INIT] NasTurtleD1Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
