@@ -33,6 +33,7 @@ body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consola
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
 td,th{padding:2px 7px;text-align:right;font-size:11.5px;white-space:nowrap}
+#lt td,#lt th{padding:1px 6px;font-size:10.5px;line-height:1.2}  /* compact live-open-trades to free vertical space */
 td:first-child,th:first-child,td.l,th.l{text-align:left}
 th{color:var(--t2);font-weight:400}
 tr:nth-child(even) td{background:rgba(255,255,255,0.015)}
@@ -121,7 +122,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="250" style="margin-top:6px"></canvas>
+  <canvas id="prc" height="340" style="margin-top:6px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -238,9 +239,9 @@ a{color:var(--blu);text-decoration:none}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <script>
 'use strict';
-function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
 )OMEGAD0"
-R"OMEGAD1(function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});}
+R"OMEGAD1(function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
+function fmt$(v){var s=v<0?'-':'+';return s+'$'+Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0});}
 function fmt2(v,n){return safe(v).toFixed(n===undefined?2:n);}
 function lots(v){v=safe(v);return v>0?String(+v.toFixed(4)):'—';}
 function el(id){return document.getElementById(id);}
@@ -426,10 +427,10 @@ function render(J){lastJ=J;
    el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
    el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
    el('ltpnl').textContent='';}
-  else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
- else{el('ltcount').textContent=lts.length+' open';
 )OMEGAD1"
-R"OMEGAD2(  var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+R"OMEGAD2(  else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
+ else{el('ltcount').textContent=lts.length+' open';
+  var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
@@ -620,12 +621,12 @@ function drawPromo(){var by={};
 function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json();}).then(function(a){
  if(!a||!a.length){return;}
  a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
- if(!a.length){return;}
+)OMEGAD2"
+R"OMEGAD3( if(!a.length){return;}
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
-)OMEGAD2"
-R"OMEGAD3(  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
@@ -655,7 +656,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el('prc'),H=250,ctx=prep(cv,H);
+function drawPR(){var cv=el('prc'),H=340,ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
@@ -824,11 +825,11 @@ loadPR();setInterval(loadPR,30000);
 /* ── PR chart interactivity: marker hover tooltip + crosshair + pulse loop ── */
 function prTip(m,cx,cy){var tip=el('prtip');
  if(!m){tip.style.display='none';return;}
- var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
+)OMEGAD3"
+R"OMEGAD4( var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
-)OMEGAD3"
-R"OMEGAD4( var isPart=/^PARTIAL/.test(r.reason||'');
+ var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
   +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'

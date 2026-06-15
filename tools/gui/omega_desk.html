@@ -27,6 +27,7 @@ body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consola
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
 td,th{padding:2px 7px;text-align:right;font-size:11.5px;white-space:nowrap}
+#lt td,#lt th{padding:1px 6px;font-size:10.5px;line-height:1.2}  /* compact live-open-trades to free vertical space */
 td:first-child,th:first-child,td.l,th.l{text-align:left}
 th{color:var(--t2);font-weight:400}
 tr:nth-child(even) td{background:rgba(255,255,255,0.015)}
@@ -115,7 +116,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="250" style="margin-top:6px"></canvas>
+  <canvas id="prc" height="340" style="margin-top:6px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -646,7 +647,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el('prc'),H=250,ctx=prep(cv,H);
+function drawPR(){var cv=el('prc'),H=340,ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
