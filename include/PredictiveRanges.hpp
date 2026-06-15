@@ -144,6 +144,35 @@ inline void pr_append_dataset(std::ostringstream& js, const char* tf,
     js << "]}";
 }
 
+// pr_aggregate -- roll a finer bar deque up into `mins`-minute buckets and return
+// a LOCAL deque. GUI fallback ONLY: never mutates shared state, never seen by any
+// engine. Used to synthesise an m5 series from the always-fresh m1 deque when the
+// real m5 deque is still warming up (the first minutes after a market open or a
+// restart), so the desk m5 chart is never blank while m1 already has data. If the
+// finer deque is thin (e.g. indices that don't feed m1), this returns few/zero
+// rows and the caller keeps whatever real m5 bars exist -- no worse than before.
+inline std::deque<OHLCBar> pr_aggregate(const std::deque<OHLCBar>& src, int64_t mins) {
+    std::deque<OHLCBar> out;
+    if (src.empty() || mins <= 0) return out;
+    int64_t cur_bucket = -1;
+    for (const OHLCBar& b : src) {
+        const int64_t bucket = (b.ts_min / mins) * mins;   // bucket open minute
+        if (bucket != cur_bucket) {                         // first bar of bucket
+            OHLCBar nb = b;                                 // open = this bar's open
+            nb.ts_min = bucket;
+            out.push_back(nb);
+            cur_bucket = bucket;
+        } else {                                            // fold into open bucket
+            OHLCBar& a = out.back();
+            if (b.high > a.high) a.high = b.high;
+            if (b.low  < a.low ) a.low  = b.low;
+            a.close   = b.close;                            // close = last bar's close
+            a.volume += b.volume;
+        }
+    }
+    return out;
+}
+
 // Build the full snapshot JSON and atomically swap it into place.
 // Datasets: XAUUSD / US500 / USTEC x { m5, m15, h1 }. Presets per the
 // operator-supplied predictive_range_charts.cpp (gold ATR20 f2.5 hlc3,
@@ -163,7 +192,21 @@ inline void pr_write_snapshot(const std::string& path) {
     for (auto& s : sets) {
         std::ostringstream sym_js;
         bool first_tf = true;
-        pr_append_dataset(sym_js, "m5",  s.st->m5.get_bars(),  s.ps, first_tf);
+        // m5: prefer the real m5 deque, but if it's still warming up (fewer than
+        // atr_length+5 bars -> pr_compute can't seed ATR -> blank chart), fall
+        // back to an m5 series synthesised from the deeper m1 deque so the desk
+        // chart is never empty at/after a market open. GUI-only; shared m5 (read
+        // by GoldScalpPyramidEngine) is never touched. Pick whichever has more bars.
+        const std::deque<OHLCBar>& real_m5 = s.st->m5.get_bars();
+        const std::size_t m5_warm = static_cast<std::size_t>(s.ps.atr_length) + 5;
+        if (real_m5.size() >= m5_warm) {
+            pr_append_dataset(sym_js, "m5", real_m5, s.ps, first_tf);
+        } else {
+            const std::deque<OHLCBar> m5_from_m1 = pr_aggregate(s.st->m1.get_bars(), 5);
+            pr_append_dataset(sym_js, "m5",
+                              m5_from_m1.size() > real_m5.size() ? m5_from_m1 : real_m5,
+                              s.ps, first_tf);
+        }
         pr_append_dataset(sym_js, "m15", s.st->m15.get_bars(), s.ps, first_tf);
         pr_append_dataset(sym_js, "h1",  s.st->h1.get_bars(),  s.ps, first_tf);
         if (first_tf) continue;  // no usable bars for this symbol yet
