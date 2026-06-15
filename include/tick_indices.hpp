@@ -348,6 +348,21 @@ static void on_tick_us500(
         g_overnight_spx.on_tick(bid, ask, now_ms_isp);   // overnight drift US500 (trend>SMA50, shadow)
         g_engine_heartbeat.pulse("IndexSession_US500");
     }
+
+    // SPX D1 turtle (2026-06-15) -- NasTurtleD1 chassis, Yahoo-daily xregime
+    // PF2.49 both-halves+ (incl 2022 bear), cost-incl. Self-aggregates D1; shadow.
+    {
+        const int64_t now_ms_st = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const auto stsig = g_spx_turtle_d1.on_tick(bid, ask, now_ms_st, ca_on_close);
+        if (stsig.valid) {
+            g_telemetry.UpdateLastSignal("US500.F", "LONG", stsig.entry, stsig.reason,
+                "SPX_TURTLE_D1", "", "SPX_TURTLE_D1", stsig.tp, stsig.sl);
+        }
+        if (g_spx_turtle_d1.has_open_position())
+            g_spx_turtle_d1.check_weekend_close(bid, ask, now_ms_st, ca_on_close);
+    }
 }
 
 // ── USTEC.F ────────────────────────────────────────────────
@@ -878,6 +893,21 @@ static void on_tick_dj30(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idd_us30.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
+    }
+
+    // DJ30 D1 turtle (2026-06-15) -- NasTurtleD1 chassis, Yahoo-daily xregime
+    // PF2.09 both-halves+ (incl 2022 bear), cost-incl. Self-aggregates D1; shadow.
+    {
+        const int64_t now_ms_dt = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const auto dtsig = g_dj30_turtle_d1.on_tick(bid, ask, now_ms_dt, ca_on_close);
+        if (dtsig.valid) {
+            g_telemetry.UpdateLastSignal("DJ30.F", "LONG", dtsig.entry, dtsig.reason,
+                "DJ30_TURTLE_D1", "", "DJ30_TURTLE_D1", dtsig.tp, dtsig.sl);
+        }
+        if (g_dj30_turtle_d1.has_open_position())
+            g_dj30_turtle_d1.check_weekend_close(bid, ask, now_ms_dt, ca_on_close);
     }
 }
 

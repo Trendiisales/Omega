@@ -2117,6 +2117,26 @@ static void init_engines(const std::string& cfg_path)
                g_nas_turtle_d1.p.sl_atr_mult, g_nas_turtle_d1.p.tp_atr_mult,
                g_nas_turtle_d1.p.hold_max_bars);
 
+        // ── DJ30 + SPX D1 turtles (2026-06-15) ──────────────────────────────
+        // Same NasTurtleD1 chassis. Cross-regime validated Yahoo daily 2016-2026
+        // (incl 2022 bear), cost-inclusive both-halves: DJ30 PF2.09 (+13173, H1+/H2+),
+        // SPX PF2.49 (+2435, H1+/H2+). Self-aggregate D1 from ticks; warm-seeded.
+        // dollars_per_pt set per BlackBull CFD lot (DJ30 5, US500 50). HARD shadow.
+        g_dj30_turtle_d1.p               = omega::make_nas_turtle_d1_params();
+        g_dj30_turtle_d1.p.dollars_per_pt = 5.0;
+        g_dj30_turtle_d1.shadow_mode     = true;
+        g_dj30_turtle_d1.enabled         = true;
+        g_dj30_turtle_d1.symbol          = "DJ30.F";
+        g_dj30_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_DJ30_D1.csv");
+        g_spx_turtle_d1.p                = omega::make_nas_turtle_d1_params();
+        g_spx_turtle_d1.p.dollars_per_pt = 50.0;
+        g_spx_turtle_d1.shadow_mode      = true;
+        g_spx_turtle_d1.enabled          = true;
+        g_spx_turtle_d1.symbol           = "US500.F";
+        g_spx_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_US500_D1.csv");
+        printf("[OMEGA-INIT] DJ30+SPX D1 turtles: shadow=1 enabled=%d/%d (Yahoo-daily xregime PF2.09/2.49)\n",
+               (int)g_dj30_turtle_d1.enabled, (int)g_spx_turtle_d1.enabled);
+
         // ── Ger40KeltnerH1Engine (S41 2026-05-30) ───────────────────────────
         // First robust non-gold trend edge. GER40 H1 Keltner EMA20 k2.0 sl3.0,
         // bull_LB=200. Self-aggregates H1 from the GER40 tick stream via
@@ -2124,7 +2144,7 @@ static void init_engines(const std::string& cfg_path)
         // there is no g_bars_ger40). Warm-seed = the bundled GER40 H1 CSV
         // (5903 bars, >> the 201 the LB200 gate needs). HARD shadow.
         g_ger40_kelt.shadow_mode = true;
-        g_ger40_kelt.enabled     = true;
+        g_ger40_kelt.enabled     = false;
         g_ger40_kelt.lot         = 0.01;
         g_ger40_kelt.max_spread  = 5.0;   // GER40 points
         g_ger40_kelt.warmup_csv_path = "phase1/signal_discovery/warmup_GER40_H1.csv";
@@ -3144,7 +3164,7 @@ static void init_engines(const std::string& cfg_path)
     g_minimal_h4_ger40.p           = omega::make_minimal_h4_ger40_params();
     g_minimal_h4_ger40.symbol      = "GER40";
     g_minimal_h4_ger40.shadow_mode = true;
-    g_minimal_h4_ger40.enabled     = true;
+    g_minimal_h4_ger40.enabled     = false;
     g_minimal_h4_ger40.p.weekend_close_gate = false;  // S-2026-06-15a: H4 holds over weekend (operator dir); global weekend-flat exempts H4+ engines by name
     printf("[INIT] MinimalH4GER40Breakout GER40: shadow=true donchian=%d sl=%.1fx"
            " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
@@ -4237,7 +4257,7 @@ static void init_engines(const std::string& cfg_path)
     {
         g_ger40_london_brk.symbol          = "GER40";
         g_ger40_london_brk.shadow_mode     = true;   // 2026-05-29: forced shadow (demo->live FIX cutover). PRIOR: false (LIVE -- validated edge).
-        g_ger40_london_brk.enabled         = true;
+        g_ger40_london_brk.enabled         = false;
         g_ger40_london_brk.lot             = 0.01;
         g_ger40_london_brk.max_spread      = 4.0;
         g_ger40_london_brk.ASIA_START_HOUR = 21;

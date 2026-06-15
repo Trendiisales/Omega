@@ -669,6 +669,12 @@ static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
 // long-only MAR 0.44 PF 2.10). Self-aggregates D1 from ticks; warm-seeded.
 #include "NasTurtleD1Engine.hpp"
 static omega::NasTurtleD1Engine g_nas_turtle_d1;
+// DJ30 + SPX D1 turtles (2026-06-15): same NasTurtleD1 chassis, cross-regime
+// validated on Yahoo daily 2016-2026 incl 2022 bear, cost-inclusive both-halves
+// (DJ30 PF2.09 +13173 H1+H2+; SPX PF2.49 +2435 H1+H2+). Self-aggregate D1 from
+// ticks; warm-seeded from warmup_DJ30_D1.csv / warmup_US500_D1.csv. Shadow.
+static omega::NasTurtleD1Engine g_dj30_turtle_d1;
+static omega::NasTurtleD1Engine g_spx_turtle_d1;
 
 // S41 (2026-05-30): Ger40KeltnerH1Engine -- first robust NON-gold trend edge.
 // GER40 H1 Keltner EMA20 k2.0 sl3.0, bull_LB=200 (slower than gold). Validated
