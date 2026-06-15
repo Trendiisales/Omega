@@ -51,6 +51,7 @@ PRICE_DIV_MAP = {
     "GBPUSD":         100000.0,
     "AUDUSD":         100000.0,
     "NZDUSD":         100000.0,
+    "USDCHF":         100000.0,
 }
 
 def get_price_div(symbol: str) -> float:
