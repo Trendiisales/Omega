@@ -85,6 +85,7 @@ omega::OpenPositionRegistry g_open_positions;
 #include "../include/AtrMeanRevGridEngine.hpp"
 #include "../include/FxTurtleH4Engine.hpp"
 #include "../include/FxCrossRevEngine.hpp"
+#include "../include/SurvivorPortfolio.hpp"
 #include "../include/EurGbpPairsEngine.hpp"
 #include "../include/TrendLineBreakEngine.hpp"
 
@@ -300,6 +301,7 @@ static omega::AtrMeanRevGridEngine<omega::AmrTraits_GBPUSD> g_amr_gbpusd;
 static omega::FxTurtleH4Engine          g_eurusd_turtle_h4;
 static omega::FxTurtleH4Engine          g_gbpusd_turtle_h4;
 static omega::FxCrossRevEngine          g_fx_xrev_eurgbp{"EURGBP"};
+static omega::survivor::Portfolio        g_survivor;   // S38 walk-forward survivor cells (XAU/GER40/USTEC)
 
 // Tag a TradeRecord's engine field on emit (some engines don't set it; we
 // stamp it so per-engine breakdown is correct).  Wrap store::add with a name.
@@ -611,6 +613,7 @@ static void init_nonxau() {
 }
 
 static inline void dispatch_nonxau(double bid, double ask, int64_t now_ms) {
+    g_survivor.on_tick(g_inst=="NAS100"?"USTEC.F":g_inst, bid, ask, now_ms, tagCB("Survivor"));
     if (g_inst=="NAS100") {
         g_idx_bear_short_nas.on_tick(bid, ask, now_ms);
         g_nas_orb_retrace.on_tick(bid, ask, now_ms);
@@ -663,6 +666,8 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[INIT] configuring non-XAU engines for %s ...\n", g_inst.c_str());
         init_nonxau();
     }
+    g_survivor.init_default_cells();   // ADD the 13 S38 survivor cells (engine_init does this; ctor does NOT)
+    g_survivor.enabled = true;         // backtest all 3 symbols
 
     // Warmup window: skip a fixed lead so own-bar engines (orb/panic/breakbounce
     // etc.) that warm from the LIVE stream are hot before we record. The CSV is
@@ -705,6 +710,7 @@ int main(int argc, char** argv) {
         g_xau_sess_nypm.feed_tick(bid, ask, now_ms, tagCB("XauSessNYpm"));
         g_xau_sess_overnight.feed_tick(bid, ask, now_ms, tagCB("XauSessOvernight"));
         g_gold_seasonal.on_tick(bid, ask, now_ms, tagCB("GoldSeasonal"));
+        g_survivor.on_tick("XAUUSD", bid, ask, now_ms, tagCB("Survivor"));
         g_gold_oversold.on_tick(bid, ask, now_ms, tagCB("GoldOversold"));
 
         // =====================================================================

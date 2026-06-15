@@ -107,6 +107,31 @@ in its TU. The canary script compiles each header in isolation under
 `-fsyntax-only` so the type-resolution path matches MSVC's main.cpp
 compile without needing Windows headers.
 
+## Engine Backtesting — MANDATORY READ (added 2026-06-15)
+
+Before backtesting ANY engine, read **`backtest/ENGINE_BACKTEST_REGISTRY.md`**.
+It exists because sessions kept re-deriving engine wiring by trial-and-error and
+making the same catastrophic mistakes (testing tombstoned engines, missing
+`init_default_cells()`/`.init()` → 0 trades that look "dead", ×1000 data glitches,
+column-order swaps, pnl-unit double-multiply). The registry documents the faithful
+recipe + every known trap.
+
+Two non-negotiable rules:
+1. **The live SHADOW LEDGER is the primary record of engine performance** —
+   `<log_root>/trades/omega_trade_closes.csv` (+ daily, + `shadow/omega_shadow.csv`;
+   VPS `C:\Omega\logs\trades\`). Every enabled engine writes its closed trades there
+   with the engine tag. To judge "is this engine viable", READ THIS FIRST — it's the
+   real forward record. Don't rebuild a fragile tick-replay when the answer is logged.
+2. **Two pre-flight gates on every backtest:** (a) cross-check each engine is
+   `enabled=true` in `engine_init.hpp` (the harness runner list is independent and
+   will test disabled engines); (b) run `backtest/data_integrity_gate.py` on every
+   tick file (catches ×1000 glitches / column swaps / gaps). A REJECTED file is not used.
+
+History: 2026-06-15 — a full-book "backtest" tested 6 tombstoned + a whole graveyard
+of disabled index engines, on DJ30 data that was 25% ×1000-corrupted (fake +$2.4M),
+and reported 0 trades for SurvivorPortfolio because `init_default_cells()` was never
+called. All preventable with the above. The registry + these rules close that gap.
+
 ## Branch Freshness (added 2026-05-20)
 
 A 2026-05-20 session worked for hours on `s44-bt-validation`, unaware
