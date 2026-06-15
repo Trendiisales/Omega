@@ -4523,6 +4523,12 @@ static void init_engines(const std::string& cfg_path)
         //   NAS M1 data this session (the 5wk re-enable was slice-luck -- full 2024-2026 NAS Sharpe ~0.55,
         //   FVG/ORB-family slice artifacts); live shadow ledger -$253 over 4 closes, 0% WR. Both backtest +
         //   forward agree = dead. Do NOT re-enable without cross-regime (2022 incl) walk-forward proof.
+        //   2026-06-15 CROSS-REGIME LEVER SWEEP DONE (operator: "she had it working"): full span
+        //   2022-bear + 2024-2026 NAS, swept body{0.5-0.7} x tpR{2-3} x closeBuf{0-0.5}. In ISOLATED
+        //   2022-bear her body0.6 config is brilliant (PF 3+) = the slice-luck source. But across the
+        //   FULL span EVERY config is PF<1.1 (her documented winner b0.6/tp2.5/cb0.3 = PF0.93; best
+        //   any-config = PF1.05; maxDD 28-41R). The discretionary edge does NOT mechanize cross-regime.
+        //   CULL CONFIRMED. Tools: /tmp/peachy_sweep (backtest/peachy_orb_nas.cpp), /tmp/nas_fullspan.csv.
         g_peachy_orb_nas.verbose     = true;
         g_peachy_orb_nas.lot         = 0.3;
         g_peachy_orb_nas.body_frac     = 0.4;

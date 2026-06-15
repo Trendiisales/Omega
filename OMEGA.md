@@ -72,6 +72,14 @@ DJ30 2.09, GER40 1.47, EURGBP 1pip.
 - **TOMBSTONED on 6mo-bull (REVISIT cross-regime):** index engines (idd, IndexBearShort, nas_orb_retrace, us30_ensemble, minimal_h4_us30, ustec_tf_htf) + gold (AdaptiveHull, Supertrend, SessOvernight, BreakBounce, Tsmom). **NasOrbRetrace proven +$390 in 2022 bear vs −$708 bull → it's a BEAR engine, wrongly culled on bull-only data.** Cross-regime re-validation in progress.
 - **FLAGGED (not culled, inconclusive 6mo):** GER40 Keltner/London/MinimalH4, FX amr/turtle/xrev.
 
+**CROSS-REGIME AUDIT (2026-06-15, 2022-bear + 2024-2026 data):**
+- **SurvivorPortfolio** — cull was WRONG, RESTORED. USTEC cells +~$18k cross-regime. (init needs `init_default_cells()`.)
+- **PeachyOrb** — cull CORRECT (confirmed). Full lever sweep: brilliant in isolated 2022-bear (PF3+) but EVERY config PF<1.1 full-span. Discretionary edge doesn't mechanize cross-regime.
+- **NasOrbRetrace** — cull correct. +$390 bear but −$1,361 bull → net −$971 cross-regime.
+- **IndexIntradayDrift** — cull correct (marginal gross +, negative after cost over multi-year).
+- **IndexBearShort** — PENDING: only have choppy Jan-Jun 2022, not its validation regime (sustained H2-2022 bear). Need full 2022. Not culled-dead, not live.
+- **NasTurtleD1** — PENDING: validated on 10yr Yahoo DAILY; tick run too short (n=19). Need multi-year daily.
+
 **LESSON (hard, repeated): never cull on a single-regime slice.** 6mo Nov25-Apr26
 = gold bull; it punishes bear engines (index shorts) and flatters trend. Always
 cross-regime (2022 bear) before tombstoning.
