@@ -5,6 +5,11 @@ working in this repository. They supplement the operator's global
 user-preferences (full-file edits, 70% chat warning, never modify
 core code without instruction) with project-specific safeguards.
 
+> **START HERE: read `OMEGA.md`** — the master system reference (data inventory
+> in /Users/jo/Tick, backtest recipe, real costs, deploy, shadow ledger, engine
+> status). It exists so sessions stop re-deriving where data lives / how engines
+> wire / what costs are. Backtest specifics: `backtest/ENGINE_BACKTEST_REGISTRY.md`.
+
 ## Edit Discipline
 
 **Commits permitted.** Relaxed by operator instruction 2026-05-14a.
