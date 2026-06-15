@@ -2230,9 +2230,18 @@ static void init_engines(const std::string& cfg_path)
         // Warm-seed pattern: H1 CSV aggregated to H4 inline by
         // FxTurtleH4Engine::warmup_from_csv() (no offline resample needed).
 
+        // TOMBSTONED 2026-06-16 (operator: "marginal is not good enough; if we
+        // cannot improve it, it goes"). Recheck on more data (backtest/fx_turtle_recheck.cpp):
+        //   EURUSD 14mo (2025-26, single regime): PF1.31 both-halves+ — but MARGINAL
+        //     and only one regime (no EURUSD bear data exists in Tick).
+        //   GBPUSD 18mo CROSS-REGIME (2022 H2 bear + 2025-26), IDENTICAL params/construction:
+        //     PF0.88 net-$30, both-halves NEG. Full sweep lb{20,30,40,55}×tp{3,4,6}:
+        //     best is flat noise (PF1.01 +$3), NO improvable plateau, every wider config worse.
+        //   The identical-param sibling failing across a bear ⇒ EURUSD PF1.31 = single-regime
+        //   luck, not robust edge (same tell as PeachyOrb's 2022 slice). Cannot improve ⇒ culled.
         g_eurusd_turtle_h4.p               = omega::make_eurusd_turtle_h4_params();
         g_eurusd_turtle_h4.shadow_mode     = true;
-        g_eurusd_turtle_h4.enabled         = true;
+        g_eurusd_turtle_h4.enabled         = false;  // CULLED 2026-06-16 (see above)
         g_eurusd_turtle_h4.symbol          = "EURUSD";
         g_eurusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_EURUSD_H1.csv";
         omega::warmup_or_die(g_eurusd_turtle_h4, "EurusdTurtleH4");
@@ -2243,7 +2252,7 @@ static void init_engines(const std::string& cfg_path)
 
         g_gbpusd_turtle_h4.p               = omega::make_gbpusd_turtle_h4_params();
         g_gbpusd_turtle_h4.shadow_mode     = true;
-        g_gbpusd_turtle_h4.enabled         = true;
+        g_gbpusd_turtle_h4.enabled         = false;  // CULLED 2026-06-16: PF0.88 cross-regime, no improvable config (see EurusdTurtleH4 tombstone above)
         g_gbpusd_turtle_h4.symbol          = "GBPUSD";
         g_gbpusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
         omega::warmup_or_die(g_gbpusd_turtle_h4, "GbpusdTurtleH4");
