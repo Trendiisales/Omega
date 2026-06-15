@@ -86,6 +86,7 @@ omega::OpenPositionRegistry g_open_positions;
 #include "../include/FxTurtleH4Engine.hpp"
 #include "../include/FxCrossRevEngine.hpp"
 #include "../include/SurvivorPortfolio.hpp"
+#include "../include/PeachyOrbEngine.hpp"
 #include "../include/EurGbpPairsEngine.hpp"
 #include "../include/TrendLineBreakEngine.hpp"
 
@@ -302,6 +303,7 @@ static omega::FxTurtleH4Engine          g_eurusd_turtle_h4;
 static omega::FxTurtleH4Engine          g_gbpusd_turtle_h4;
 static omega::FxCrossRevEngine          g_fx_xrev_eurgbp{"EURGBP"};
 static omega::survivor::Portfolio        g_survivor;   // S38 walk-forward survivor cells (XAU/GER40/USTEC)
+static omega::PeachyOrbEngine          g_peachy_orb_nas;   // NAS100 one-candle ORB-retest (cross-regime retest)
 
 // Tag a TradeRecord's engine field on emit (some engines don't set it; we
 // stamp it so per-engine breakdown is correct).  Wrap store::add with a name.
@@ -551,6 +553,12 @@ static void init_nonxau() {
     g_nas_orb_retrace.lot=1.0; g_nas_orb_retrace.verbose=false;
     g_nas_orb_retrace.shadow_mode=false; g_nas_orb_retrace.enabled=true;
     g_nas_orb_retrace.on_trade_record=tagCB("NasOrbRetrace");
+    g_peachy_orb_nas.symbol="NAS100"; g_peachy_orb_nas.lot=0.3; g_peachy_orb_nas.body_frac=0.4;
+    g_peachy_orb_nas.close_buf_atr=0.0; g_peachy_orb_nas.tp_r=2.0; g_peachy_orb_nas.trail_atr=0.0;
+    g_peachy_orb_nas.max_stop_atr=1.0; g_peachy_orb_nas.ema_len=100; g_peachy_orb_nas.verbose=false;
+    g_peachy_orb_nas.shadow_mode=false; g_peachy_orb_nas.enabled=true;
+    g_peachy_orb_nas.on_trade_record=tagCB("PeachyOrb");
+    g_peachy_orb_nas.seed_from_csv("/Users/jo/Omega/phase1/signal_discovery/warmup_NAS100_M5.csv");
 
     g_ustec_tf_htf.lot=0.1; g_ustec_tf_htf.max_spread=5.0;
     g_ustec_tf_htf.be_trigger_atr=1.0; g_ustec_tf_htf.be_cost_buffer_pts=0.50; g_ustec_tf_htf.trail_after_be=true;
@@ -617,6 +625,7 @@ static inline void dispatch_nonxau(double bid, double ask, int64_t now_ms) {
     if (g_inst=="NAS100") {
         g_idx_bear_short_nas.on_tick(bid, ask, now_ms);
         g_nas_orb_retrace.on_tick(bid, ask, now_ms);
+        g_peachy_orb_nas.on_tick(bid, ask, now_ms);
         g_ustec_tf_htf.on_tick(bid, ask, now_ms, tagCB("UstecTfHtf"));
         g_nas_turtle_d1.on_tick(bid, ask, now_ms, tagCB("NasTurtleD1"));
     } else if (g_inst=="DJ30") {
