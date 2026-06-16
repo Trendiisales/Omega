@@ -56,7 +56,9 @@ export type FunctionCode =
   | 'CRYPTO'
   | 'WATCH'
   // Share scanner (MarketPulse port) — step 7
-  | 'MPS';
+  | 'MPS'
+  // Order-flow liquidity heatshelves (Aurora) — gold MGC + nasdaq NQ
+  | 'AUR';
 
 /** Build step at which a panel becomes live. 1 = shipped in this commit. */
 export type BuildStep = 1 | 3 | 4 | 5 | 6 | 7;

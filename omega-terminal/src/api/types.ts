@@ -1043,3 +1043,56 @@ export class OmegaApiError extends Error {
     Object.setPrototypeOf(this, OmegaApiError.prototype);
   }
 }
+
+/* ============================================================ */
+/* Aurora order-flow liquidity heatshelves  (GET /aurora)       */
+/* ============================================================ */
+
+/** One liquidity shelf surfaced by the Aurora footprint engine. */
+export interface AuroraLevel {
+  side: 'supply' | 'demand';
+  kind: 'absorption' | 'initiative';
+  mid: number;
+  top: number;
+  bot: number;
+  vol: number;
+  delta: number;
+  touches: number;
+  flipped: boolean;
+  strength: number;
+  dist_atr: number;
+}
+
+/** Per-symbol snapshot (one footprint instrument: MGC, NQ). */
+export interface AuroraSnap {
+  sym: string;
+  tf_min?: number;
+  price?: number;
+  atr?: number;
+  poc?: number | null;
+  window_delta?: number;
+  bias?: 'buyers' | 'sellers' | string;
+  n_shelves?: number;
+  nearest_supply?: AuroraLevel | null;
+  nearest_demand?: AuroraLevel | null;
+  key_supply?: AuroraLevel[];
+  key_demand?: AuroraLevel[];
+  error?: string;
+  _meta?: {
+    trades?: number;
+    bars?: number;
+    l2_quotes?: number;
+    delta_via?: string;
+    note?: string;
+  };
+}
+
+/** Combined envelope served by /api/v1/omega/aurora (aurora_all.json). */
+export interface AuroraAll {
+  stale?: boolean;
+  date?: string;
+  stamp_ms?: number | null;
+  symbols: string[];
+  snaps: Record<string, AuroraSnap>;
+  note?: string;
+}

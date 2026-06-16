@@ -241,6 +241,17 @@ export const PANEL_REGISTRY: Record<FunctionCode, PanelDescriptor> = {
     group: 'market',
     aliases: ['SCAN', 'SCANNER', 'MARKETPULSE'],
   },
+
+  // ------------------------------------------------- order flow (Aurora)
+  AUR: {
+    code: 'AUR',
+    title: 'Aurora Flow',
+    description:
+      'Order-flow liquidity heatshelves: absorption/initiative walls + key supply/demand from the recorded MGC/NQ footprint tape.',
+    step: 7,
+    group: 'market',
+    aliases: ['AURORA', 'FLOW', 'FOOTPRINT'],
+  },
 };
 
 /**
@@ -279,6 +290,8 @@ export const PANEL_LIST: PanelDescriptor[] = [
   PANEL_REGISTRY.WATCH,
   // market step 7
   PANEL_REGISTRY.MPS,
+  // order flow (Aurora)
+  PANEL_REGISTRY.AUR,
 ];
 
 /** Build an alias -> code map at module load. */

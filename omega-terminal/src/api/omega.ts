@@ -84,6 +84,7 @@ import {
   WatchQuery,
   OpenBbEnvelope,
   OmegaApiError,
+  AuroraAll,
 } from '@/api/types';
 
 /* ============================================================ */
@@ -724,4 +725,21 @@ export function getWatch(
 ): Promise<WatchEnvelope> {
   const qs = buildQuery({ universe: query.universe });
   return getJson<WatchEnvelope>(`/watch${qs}`, opts);
+}
+
+/* ============================================================ */
+/* Aurora order-flow liquidity heatshelves                      */
+/* ============================================================ */
+
+/**
+ * GET /api/v1/omega/aurora
+ *
+ * Returns the latest Aurora liquidity map (footprint shelves for the
+ * recorded futures tape — MGC gold + NQ nasdaq). The engine route just
+ * serves logs/aurora/aurora_all.json, written by ibkr/aurora_snapshot.py;
+ * a missing file yields { stale: true, snaps: {} } (status 200) so the
+ * panel shows "waiting for tape" rather than erroring.
+ */
+export function getAurora(opts: OmegaCallOptions = {}): Promise<AuroraAll> {
+  return getJson<AuroraAll>('/aurora', opts);
 }

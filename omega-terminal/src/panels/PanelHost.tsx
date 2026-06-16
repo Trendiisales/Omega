@@ -70,6 +70,7 @@ import { DvdPanel } from './DvdPanel';
 import { EePanel } from './EePanel';
 import { EngPanel } from './EngPanel';
 import { FaPanel } from './FaPanel';
+import { AuroraPanel } from './AuroraPanel';
 import { FxcPanel } from './FxcPanel';
 import { HelpPanel } from './HelpPanel';
 import { HomePanel } from './HomePanel';
@@ -156,6 +157,9 @@ export function PanelHost({ code, args, onNavigate }: Props) {
 
   // Step 7 — share scanner (MarketPulse port; reuses /mov + /hp + /key).
   if (code === 'MPS')    return <MpsPanel    args={args} onNavigate={onNavigate} />;
+
+  // Order-flow liquidity heatshelves (Aurora; /aurora -> MGC/NQ footprint).
+  if (code === 'AUR')    return <AuroraPanel args={args} onNavigate={onNavigate} />;
 
   // Defensive: if the code somehow lacks a registered descriptor,
   // surface HELP. The exhaustiveness check below guards against

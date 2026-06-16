@@ -1451,6 +1451,30 @@ static bool ends_with(const std::string& s, const char* suffix)
     return s.size() >= n && std::memcmp(s.data() + s.size() - n, suffix, n) == 0;
 }
 
+// /api/v1/omega/aurora -> the latest Aurora footprint liquidity map. The C++
+// server does NOT compute footprints; ibkr/aurora_snapshot.py runs the shelf
+// engine on the recorded MGC/NQ tape (scheduled) and writes logs/aurora/
+// aurora_all.json. This route just serves that file (read relative to the
+// service cwd = C:\Omega in prod). Missing file = tape not recorded yet ->
+// a graceful empty envelope (status 200) so the panel shows "waiting", not an
+// error. Keeps the live trading binary free of the footprint compute path.
+static std::string build_aurora_json(int& status)
+{
+    std::ifstream f("logs/aurora/aurora_all.json", std::ios::binary);
+    if (!f.good()) {
+        status = 200;
+        return R"({"stale":true,"snaps":{},"symbols":[],"note":"no aurora_all.json yet -- aurora_snapshot.py has not run / no tape recorded"})";
+    }
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    std::string s = ss.str();
+    if (s.empty()) {
+        status = 200;
+        return R"({"stale":true,"snaps":{},"symbols":[],"note":"aurora_all.json empty"})";
+    }
+    return s;
+}
+
 static bool try_serve_static(const std::string& path,
                              std::string& body,
                              std::string& ctype,
@@ -1735,6 +1759,11 @@ void OmegaApiServer::run(int port)
         }
         else if (path == "/api/v1/omega/watch") {
             body = build_watch_json(q, status);
+        }
+        // Aurora order-flow liquidity heatshelves (MGC gold + NQ nasdaq).
+        // Served from logs/aurora/aurora_all.json, written by aurora_snapshot.py.
+        else if (path == "/api/v1/omega/aurora") {
+            body = build_aurora_json(status);
         }
         // 2026-05-08 DEEPSTRIKE panic endpoint. Hits this URL = creates
         // a sentinel file in cwd; GoldMicroScalper polls for it and forces
