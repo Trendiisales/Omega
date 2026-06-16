@@ -91,3 +91,41 @@ cross-regime (2022 bear) before tombstoning.
 
 **GER40/UK100 — DROPPED 2026-06-15 (operator: not viable, not pursuing).** GER40 H4 turtle FAILED both-halves (H2 neg); UK100 H4 marginal/thin; live GER40 engines were losing. Culled (kelt/london/minimal_h4 off; UK100 idd off). NOT worth chasing 2022-2023 intraday for marginal edges. Do not re-chase without a strong new hypothesis. Index trend edge lives in DJ30/SPX/NAS daily turtles (built, live-shadow) — not the EU indices intraday.
 
+
+---
+
+## 6. CONTINUOUS IMPROVEMENT LOOP (added 2026-06-16)
+
+**Standing rule: the book is never "done" — every session that touches engines
+runs the analytics review and acts on the ranked flags.** The ledger captures rich
+per-trade data (mfe, mae, slippage, commission, regime, hold, broker fills); the
+job is to keep mining it for fixable leaks.
+
+**Mechanism:**
+- `tools/analytics/ledger_analytics.py <ledger.csv>` — omnibus per-engine + book
+  diagnostics: capture ratio (exit tightness), expectancy (R), payoff, MAE-p90
+  (stop placement), cost% of gross (friction), $/hr (hold efficiency), max-consec-loss,
+  per-regime split, engine-return correlation (hidden concentration), broker
+  reconciliation, book Sharpe/Sortino/Calmar/maxDD/Ulcer. Emits RANKED FLAGS.
+- `tools/analytics/capture_ratio.py` — focused capture-ratio view.
+- `tools/analytics/run_review.ps1` — VPS runner; pools cumulative+daily+shadow
+  closes, writes `logs/analytics/review_<date>.txt`, surfaces flags to the service
+  log. Scheduled WEEKLY (task `OmegaWeeklyReview`).
+
+**Act on flags (the to-do this generates):**
+| Flag | Meaning | Action |
+|---|---|---|
+| LOOSE-EXIT (capture<0.35) | banks <35% of the favorable move | tighten trail / rework TP |
+| NEG-EXPECTANCY (expR<0) | no edge | cull / redesign |
+| COST-FRAGILE (cost>40% gross) | friction eats the edge | drop or move to cheaper venue/TF |
+| REGIME-DEPENDENT | loses in one regime | add a regime gate (see BigCapMomo SPY-200MA pattern) |
+| BROKER-MISMATCH | engine pnl != broker pnl | fill/phantom audit |
+| BAD-PAYOFF | small wins, big losses | fix R:R |
+
+**Known gaps to close as data fills:** ~10 engines emit MFE=0 (capture-blind) —
+wire `pos.mfe = max(...)` into their manage block. Engine-return correlation +
+book equity metrics need the shadow ledger to accumulate (was wiped 2026-06-15).
+
+**The rule in one line:** run `run_review.ps1` (or the analyzer on the ledger)
+on any engine-touching session, fix the top-ranked flag, log it. Compounding small
+exit/cost/regime fixes is where the durable edge improvement lives — not just new engines.
