@@ -210,7 +210,12 @@ set(SOURCES
 file(GLOB TWS_SOURCES_OMEGA ${CMAKE_SOURCE_DIR}/third_party/twsapi/client/*.cpp)
 # src/ibkr_exec.cpp is the ONLY Omega TU that includes the TWS API headers
 # (isolates the TWS C <stdlib.h> from the main TU -> no std::atoll pollution).
-set(IBKR_OMEGA_SOURCES ${CMAKE_SOURCE_DIR}/src/ibkr_exec.cpp)
+# bid64_integer.cpp provides the Intel-RDFP __bid64_* symbols that TWS Decimal.cpp
+# needs (same stub GapShortEngine links). STUB today -> replace with real
+# IntelRDFPMathLib2U before any LIVE order SIZING (paper fine). See ibkr/README.
+set(IBKR_OMEGA_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/ibkr_exec.cpp
+    ${CMAKE_SOURCE_DIR}/ibkr/bid64_integer.cpp)
 if(MSVC)
     # Vendored TWS API + the TU that includes its headers emit warnings; Omega
     # builds /W4 /WX (warnings = errors) -> C2220. Suppress on the TWS sources +
