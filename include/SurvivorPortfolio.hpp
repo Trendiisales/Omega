@@ -239,6 +239,20 @@ public:
     const char* sym_cstr() const { return cfg.symbol; }
     int open_side()        const { return st.pos_active ? st.pos_side : 0; }
 
+    // S-2026-06-16: Kaufman Efficiency Ratio over the last w CLOSED bars
+    // (1.0 = clean directional trend, ~0 = chop). Drives the regime-gated dedup
+    // cap. Insufficient bars -> 1.0 (treat as trend = no cap = the proven-good
+    // default), so cold-start never spuriously caps.
+    double efficiency_ratio(int w) const {
+        const auto& b = st.bars;
+        const int m = (int)b.size();
+        if (w < 1 || m < w + 1) return 1.0;
+        const double net = std::fabs(b[m-1].c - b[m-1-w].c);
+        double sum = 0.0;
+        for (int i = m - w; i < m; ++i) sum += std::fabs(b[i].c - b[i-1].c);
+        return sum > 1e-12 ? net / sum : 1.0;
+    }
+
     // S-2026-06-03: adopt a persisted position on boot (resume managing it; do
     // NOT re-enter). Restores side/entry/sl/tp/entry_ts. mfe resets to 0
     // (record-only field, not used for management here).
@@ -549,6 +563,19 @@ public:
     // and the cap cuts that. Mechanism retained for a future regime-gated cap
     // (would help in chop/crash). See memory: omega-survivor-cap-deadend.
     bool dedup_enabled = false;
+    // S-2026-06-16: the "future regime-gated cap" above, now built.
+    //   dedup_mode: 0=off, 1=always-blanket (proven net-negative on trend),
+    //   2=regime-gated -> cap ON only when the symbol is CHOPPY (correlated cells
+    //   whipsaw together), OFF in trend (same-side stacking rides the winner).
+    //   Regime = per-symbol Kaufman ER < er_chop_thr. dedup_enabled=true maps to
+    //   mode 1 for back-compat with the original A/B harness.
+    int    dedup_mode  = 0;
+    int    er_window   = 10;
+    double er_chop_thr = 0.25;   // validated (survivor_cap_test.cpp ER sweep
+    //   2026-06-16): at <=0.25 regime-gated net >= OFF on the trend tape (no
+    //   edge damage, unlike blanket); >=0.30 starts cutting trend stacks. Caps
+    //   only genuine extreme-chop -> the chop/crash double-stack protection
+    //   without the blanket cap's -29% trend cost.
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
     // S-2026-06-03: adopt a persisted position into the matching cell (by tag).
@@ -660,9 +687,18 @@ public:
         // double-stacking (XAU DonchN20+N100, USTEC RSI+ZMR). Scans live cell
         // state so within-tick opens are seen by later cells in the loop. Exits
         // always run (the cap gates entry only, inside evaluate_signal).
+        const int eff_mode = dedup_mode != 0 ? dedup_mode : (dedup_enabled ? 1 : 0);
         std::function<bool(const char*, int)> side_taken = {};
-        if (dedup_enabled) {
-            side_taken = [this](const char* csym, int side) -> bool {
+        if (eff_mode != 0) {
+            side_taken = [this, eff_mode](const char* csym, int side) -> bool {
+                // mode 2 (regime-gated): cap only in CHOP; in a trend let same-side
+                // cells stack (the proven edge). Chop = per-symbol Kaufman ER low.
+                if (eff_mode == 2) {
+                    double er = 1.0;
+                    for (const auto& c : cells)
+                        if (std::strcmp(c.sym_cstr(), csym) == 0) { er = c.efficiency_ratio(er_window); break; }
+                    if (er >= er_chop_thr) return false;   // trending -> no cap, stack away
+                }
                 for (const auto& c : cells)
                     if (c.open_side() == side && std::strcmp(c.sym_cstr(), csym) == 0)
                         return true;

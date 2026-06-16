@@ -61,10 +61,11 @@ static double rt_cost_usd(const std::string& sym) {
     return 0.50;
 }
 
-static std::vector<omega::TradeRecord> run(bool cap, const std::vector<Tick>& ticks) {
+static std::vector<omega::TradeRecord> run(int mode, const std::vector<Tick>& ticks, double er_thr=0.25) {
     omega::survivor::Portfolio p;
     p.init_default_cells();
-    p.dedup_enabled = cap;
+    p.dedup_mode = mode;   // 0=off, 1=blanket cap, 2=regime-gated
+    p.er_chop_thr = er_thr;
     std::vector<omega::TradeRecord> trades;
     auto cb = [&](const omega::TradeRecord& tr) { trades.push_back(tr); };
     for (const auto& tk : ticks) p.on_tick(tk.sym, tk.px, tk.px, tk.ts_ms, cb);
@@ -107,51 +108,64 @@ int main() {
               [](const Tick& a, const Tick& b){ return a.ts_ms < b.ts_ms; });
     std::printf("[tape] %zu ticks merged\n\n", ticks.size());
 
-    auto off = run(false, ticks);
-    auto on  = run(true,  ticks);
+    auto off = run(0, ticks);   // production (no cap)
+    auto on  = run(1, ticks);   // blanket cap (proven net-negative on trend)
+    auto reg = run(2, ticks);   // regime-gated (cap only in chop)
 
-    auto Aoff = agg(off), Aon = agg(on);
+    auto Aoff = agg(off), Aon = agg(on), Areg = agg(reg);
 
     // ---- overall ----
     std::printf("================ OVERALL (cost-incl) ================\n");
-    std::printf("%-16s %12s %12s\n", "", "CAP OFF", "CAP ON");
-    std::printf("%-16s %12d %12d\n", "trades", Aoff.n, Aon.n);
-    std::printf("%-16s %11.1f%% %11.1f%%\n", "win rate", wr(Aoff), wr(Aon));
-    std::printf("%-16s %12.2f %12.2f\n", "profit factor", pf(Aoff), pf(Aon));
-    std::printf("%-16s %12.0f %12.0f\n", "net USD", Aoff.net, Aon.net);
-    std::printf("%-16s %12.0f %12.0f\n", "maxDD USD", Aoff.maxdd, Aon.maxdd);
-    std::printf("%-16s %12.2f %12.2f\n", "return/DD",
-                Aoff.maxdd>0?Aoff.net/Aoff.maxdd:0, Aon.maxdd>0?Aon.net/Aon.maxdd:0);
+    std::printf("%-16s %12s %12s %12s\n", "", "OFF (prod)", "ON blanket", "REGIME");
+    std::printf("%-16s %12d %12d %12d\n", "trades", Aoff.n, Aon.n, Areg.n);
+    std::printf("%-16s %11.1f%% %11.1f%% %11.1f%%\n", "win rate", wr(Aoff), wr(Aon), wr(Areg));
+    std::printf("%-16s %12.2f %12.2f %12.2f\n", "profit factor", pf(Aoff), pf(Aon), pf(Areg));
+    std::printf("%-16s %12.0f %12.0f %12.0f\n", "net USD", Aoff.net, Aon.net, Areg.net);
+    std::printf("%-16s %12.0f %12.0f %12.0f\n", "maxDD USD", Aoff.maxdd, Aon.maxdd, Areg.maxdd);
+    std::printf("%-16s %12.2f %12.2f %12.2f\n", "return/DD",
+                Aoff.maxdd>0?Aoff.net/Aoff.maxdd:0, Aon.maxdd>0?Aon.net/Aon.maxdd:0,
+                Areg.maxdd>0?Areg.net/Areg.maxdd:0);
 
-    // ---- per-symbol ----
-    std::printf("\n================ PER-SYMBOL (cost-incl) ================\n");
-    std::printf("%-9s | %s | %s\n", "", "  OFF: n   net    PF   DD", "  ON: n   net    PF   DD");
+    // ---- per-symbol (net / PF / DD) ----
+    std::printf("\n================ PER-SYMBOL net/PF/DD (cost-incl) ================\n");
+    std::printf("%-9s | %16s | %16s | %16s\n", "", "OFF  n net PF DD", "ON   n net PF DD", "REG  n net PF DD");
     for (const char* s : {"XAUUSD","GER40","USTEC.F"}) {
-        auto fo = agg(filt(off,s)), fn = agg(filt(on,s));
-        std::printf("%-9s | %4d %7.0f %5.2f %6.0f | %4d %7.0f %5.2f %6.0f\n",
-            s, fo.n, fo.net, pf(fo), fo.maxdd, fn.n, fn.net, pf(fn), fn.maxdd);
+        auto fo = agg(filt(off,s)), fn = agg(filt(on,s)), fr = agg(filt(reg,s));
+        std::printf("%-9s | %3d %5.0f %4.2f %4.0f | %3d %5.0f %4.2f %4.0f | %3d %5.0f %4.2f %4.0f\n",
+            s, fo.n, fo.net, pf(fo), fo.maxdd, fn.n, fn.net, pf(fn), fn.maxdd, fr.n, fr.net, pf(fr), fr.maxdd);
     }
 
-    // ---- walk-forward: 6 calendar windows ----
+    // ---- walk-forward: 6 windows, REGIME vs OFF (the ship decision) ----
     int64_t tmin = off.front().exitTs, tmax = off.front().exitTs;
     for (auto& t : off) { tmin = std::min(tmin,t.exitTs); tmax = std::max(tmax,t.exitTs); }
-    for (auto& t : on)  { tmin = std::min(tmin,t.exitTs); tmax = std::max(tmax,t.exitTs); }
+    for (auto& t : reg) { tmin = std::min(tmin,t.exitTs); tmax = std::max(tmax,t.exitTs); }
     const int W = 6; int64_t span = (tmax - tmin)/W + 1;
     std::printf("\n================ WALK-FORWARD (%d windows, cost-incl net) ================\n", W);
-    std::printf("%-22s %9s %9s %9s   %s\n", "window", "OFF net", "ON net", "delta", "cap better?");
-    int cap_wins = 0;
+    std::printf("%-12s %9s %9s %9s   %s\n", "window", "OFF", "REGIME", "delta", "regime>=off?");
+    int reg_ok = 0;
     for (int w=0; w<W; ++w) {
         int64_t lo = tmin + w*span, hi = lo + span;
-        double no=0, no_on=0;
+        double no=0, nr=0;
         for (auto& t : off) if (t.exitTs>=lo && t.exitTs<hi) no += t.pnl;
-        for (auto& t : on)  if (t.exitTs>=lo && t.exitTs<hi) no_on += t.pnl;
+        for (auto& t : reg) if (t.exitTs>=lo && t.exitTs<hi) nr += t.pnl;
         time_t lt = (time_t)lo; char buf[32]; std::strftime(buf,sizeof(buf),"%Y-%m-%d",gmtime(&lt));
-        bool better = no_on > no; if (better) cap_wins++;
-        std::printf("%-22s %9.0f %9.0f %9.0f   %s\n", buf, no, no_on, no_on-no,
-                    better ? "YES" : "no");
+        bool ok = nr >= no - 1e-6; if (ok) reg_ok++;
+        std::printf("%-12s %9.0f %9.0f %9.0f   %s\n", buf, no, nr, nr-no, ok ? "YES" : "no");
     }
-    std::printf("\ncap won %d / %d windows\n", cap_wins, W);
-    std::printf("DELTA overall (ON-OFF): net $%+.0f | trades %+d | maxDD $%+.0f\n",
-                Aon.net-Aoff.net, Aon.n-Aoff.n, Aon.maxdd-Aoff.maxdd);
+    std::printf("\nregime >= off in %d / %d windows\n", reg_ok, W);
+    std::printf("DELTA vs OFF: regime net $%+.0f (trades %+d, maxDD $%+.0f) | blanket net $%+.0f\n",
+                Areg.net-Aoff.net, Areg.n-Aoff.n, Areg.maxdd-Aoff.maxdd, Aon.net-Aoff.net);
+    std::printf("VERDICT: regime-gated net %s OFF (%+.0f), and %s blanket-ON (%+.0f). "
+                "Ship if it preserves OFF on this trend tape (chop benefit needs choppy data).\n",
+                Areg.net>=Aoff.net-1e-6?">=":"<", Areg.net-Aoff.net,
+                Areg.net>=Aon.net?">=":"<", Areg.net-Aon.net);
+
+    // ---- ER threshold sweep (does any threshold make regime >= OFF?) ----
+    std::printf("\n================ ER-THRESHOLD SWEEP (regime net vs OFF=%.0f) ================\n", Aoff.net);
+    for (double thr : {0.10, 0.20, 0.25, 0.30, 0.35, 0.45, 0.60}) {
+        auto r = agg(run(2, ticks, thr));
+        std::printf("  er_chop_thr=%.2f -> regime net $%+.0f  PF %.2f  trades %d  (%s OFF)\n",
+                    thr, r.net, pf(r), r.n, r.net>=Aoff.net-1e-6?">=":"<");
+    }
     return 0;
 }

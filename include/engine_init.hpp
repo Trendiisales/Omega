@@ -3496,8 +3496,15 @@ static void init_engines(const std::string& cfg_path)
     g_survivor.init_default_cells();
     g_survivor.seed_all("phase1/signal_discovery");
     g_survivor.enabled = true;
-    printf("[SURV-INIT] portfolio armed cells=%zu spx_bars=%zu\n",
-           g_survivor.cells.size(), g_survivor.spx.spx_bars.size());
+    // S-2026-06-16: regime-gated dedup (mode 2). Caps correlated same-symbol/side
+    // cell stacking ONLY in extreme chop (Kaufman ER < er_chop_thr 0.25), leaving
+    // trend stacking intact. survivor_cap_test.cpp: net >= OFF on the trend tape
+    // (blanket cap was -29%). Prevents the XAU DonchN20+N100 / USTEC RSI+ZMR
+    // double-whipsaw in chop/crash without the blanket cap's trend cost.
+    g_survivor.dedup_mode = 2;
+    printf("[SURV-INIT] portfolio armed cells=%zu spx_bars=%zu dedup_mode=%d(ER<%.2f)\n",
+           g_survivor.cells.size(), g_survivor.spx.spx_bars.size(),
+           g_survivor.dedup_mode, g_survivor.er_chop_thr);
     fflush(stdout);
 
     // ?? MAX_RANGE caps: ~0.4% of instrument price ?????????????????????????????
