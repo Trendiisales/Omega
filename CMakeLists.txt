@@ -208,6 +208,12 @@ set(SOURCES
 # (OmegaBacktest, GapShortEngine, ...) do NOT define it and are unaffected.
 # FIX/OmegaFIX/BlackBull path stays intact; IBKR routing is runtime-gated too.
 file(GLOB TWS_SOURCES_OMEGA ${CMAKE_SOURCE_DIR}/third_party/twsapi/client/*.cpp)
+if(MSVC)
+    # Vendored TWS API emits warnings; Omega builds /W4 /WX (warnings = errors),
+    # so they fail as C2220. Suppress warnings on the TWS sources ONLY (mirrors the
+    # GapShortEngine /W0 treatment) -- Omega's own code keeps /W4 /WX.
+    set_source_files_properties(${TWS_SOURCES_OMEGA} PROPERTIES COMPILE_OPTIONS "/W0;/WX-")
+endif()
 add_executable(Omega ${SOURCES} ${TWS_SOURCES_OMEGA})
 
 # Precompiled Header -- cuts recompile time 40-60% on MSVC /O2.
