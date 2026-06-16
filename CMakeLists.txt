@@ -208,13 +208,17 @@ set(SOURCES
 # (OmegaBacktest, GapShortEngine, ...) do NOT define it and are unaffected.
 # FIX/OmegaFIX/BlackBull path stays intact; IBKR routing is runtime-gated too.
 file(GLOB TWS_SOURCES_OMEGA ${CMAKE_SOURCE_DIR}/third_party/twsapi/client/*.cpp)
+# src/ibkr_exec.cpp is the ONLY Omega TU that includes the TWS API headers
+# (isolates the TWS C <stdlib.h> from the main TU -> no std::atoll pollution).
+set(IBKR_OMEGA_SOURCES ${CMAKE_SOURCE_DIR}/src/ibkr_exec.cpp)
 if(MSVC)
-    # Vendored TWS API emits warnings; Omega builds /W4 /WX (warnings = errors),
-    # so they fail as C2220. Suppress warnings on the TWS sources ONLY (mirrors the
-    # GapShortEngine /W0 treatment) -- Omega's own code keeps /W4 /WX.
-    set_source_files_properties(${TWS_SOURCES_OMEGA} PROPERTIES COMPILE_OPTIONS "/W0;/WX-")
+    # Vendored TWS API + the TU that includes its headers emit warnings; Omega
+    # builds /W4 /WX (warnings = errors) -> C2220. Suppress on the TWS sources +
+    # ibkr_exec.cpp ONLY (mirrors GapShortEngine /W0). Omega's own code keeps /W4 /WX.
+    set_source_files_properties(${TWS_SOURCES_OMEGA} ${IBKR_OMEGA_SOURCES}
+                                PROPERTIES COMPILE_OPTIONS "/W0;/WX-")
 endif()
-add_executable(Omega ${SOURCES} ${TWS_SOURCES_OMEGA})
+add_executable(Omega ${SOURCES} ${IBKR_OMEGA_SOURCES} ${TWS_SOURCES_OMEGA})
 
 # Precompiled Header -- cuts recompile time 40-60% on MSVC /O2.
 # omega_pch.hpp contains all stable Windows/OpenSSL/STL includes.

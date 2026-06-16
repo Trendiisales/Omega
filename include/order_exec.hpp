@@ -3,7 +3,7 @@
 // Section: order_exec (original lines 2134-2855)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
-#include "IbkrExecGlobal.hpp"   // g_ibkr_exec (no-op unless OMEGA_WITH_IBKR)
+#include "IbkrExec.hpp"   // thin TWS-free interface to IBKR execution
 
 // 2026-05-08 S21 (authorised by user in chat): FIX volume conversion.
 //
@@ -142,7 +142,7 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
     // paper_only + refuse-on-live-port) so this stays safe even if
     // execution_broker is flipped before full validation.
     if (g_cfg.execution_broker == "IBKR") {
-        const long oid = omega::g_ibkr_exec.place_order(symbol, is_long, qty, "MKT");
+        const long oid = omega::ibkr_exec::place_order(symbol, is_long, qty, "MKT");
         return oid >= 0 ? ("IB-" + std::to_string(oid)) : std::string{};
     }
 #endif

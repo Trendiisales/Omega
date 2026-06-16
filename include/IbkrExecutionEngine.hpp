@@ -36,6 +36,8 @@
 #include "Order.h"
 #include "Execution.h"
 
+#include "IbkrExec.hpp"   // omega::IbkrFill (shared, TWS-free)
+
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -48,17 +50,8 @@
 
 namespace omega {
 
-// A reconciled IBKR fill, handed to the ledger sink (on_fill).
-struct IbkrFill {
-    std::string omega_symbol;   // "XAUUSD", "US500.F", ...
-    std::string ibkr_symbol;    // "GC", "ES", ...
-    std::string side;           // "BOT" / "SLD" (IBKR Execution.side)
-    double      qty   = 0.0;    // contracts filled (this exec)
-    double      price = 0.0;    // fill price
-    long        order_id = 0;
-    std::string exec_id;        // IBKR execId (dedup key)
-    int64_t     ts_unix = 0;    // parsed from Execution.time when available
-};
+// IbkrFill is defined in IbkrExec.hpp (shared, TWS-free) so the main TU can
+// reference fills without pulling TWS headers.
 
 // Static per-symbol contract spec (full-size). Expiry resolved at runtime via
 // reqContractDetails (front month) so we never hardcode a rolling contract month.

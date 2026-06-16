@@ -8,6 +8,7 @@
 
 #include "SeedGuard.hpp"
 #include "PortfolioGuard.hpp"
+#include "IbkrExec.hpp"   // thin TWS-free IBKR execution interface
 
 static void init_engines(const std::string& cfg_path)
 {
@@ -5361,21 +5362,21 @@ static void init_engines(const std::string& cfg_path)
             // Real fills still require mode=LIVE (send_live_order's hard SHADOW gate).
             if (const char* eb = std::getenv("OMEGA_EXECUTION_BROKER")) g_cfg.execution_broker = eb;
             if (g_cfg.execution_broker == "IBKR") {
-                g_ibkr_exec.host       = "127.0.0.1";
-                g_ibkr_exec.port       = std::getenv("OMEGA_IBKR_PORT") ? atoi(std::getenv("OMEGA_IBKR_PORT")) : 4002;
-                g_ibkr_exec.paper_only = !(std::getenv("OMEGA_IBKR_LIVE_ORDERS") &&
-                                           std::string(std::getenv("OMEGA_IBKR_LIVE_ORDERS")) == "1");
-                g_ibkr_exec.enabled    = true;
-                g_ibkr_exec.on_fill    = [](const omega::IbkrFill& f){
+                const int  ib_port  = std::getenv("OMEGA_IBKR_PORT") ? atoi(std::getenv("OMEGA_IBKR_PORT")) : 4002;
+                const bool ib_paper = !(std::getenv("OMEGA_IBKR_LIVE_ORDERS") &&
+                                        std::string(std::getenv("OMEGA_IBKR_LIVE_ORDERS")) == "1");
+                omega::ibkr_exec::configure("127.0.0.1", ib_port, ib_paper);
+                omega::ibkr_exec::set_enabled(true);
+                omega::ibkr_exec::set_on_fill([](const omega::IbkrFill& f){
                     std::cout << "[IBKR-EXEC] LEDGER-FILL " << f.omega_symbol << " " << f.side
                               << " qty=" << f.qty << " px=" << f.price
                               << " oid=" << f.order_id << " exec=" << f.exec_id << "\n";
                     // TODO Phase 2: reconcile into OmegaTradeLedger as a real broker fill
                     // (entry/exit match + pnl), mirroring the FIX ExecutionReport path.
-                };
-                if (g_ibkr_exec.connect())
-                    std::cout << "[IBKR-EXEC] execution_broker=IBKR ACTIVE port=" << g_ibkr_exec.port
-                              << " paper_only=" << (int)g_ibkr_exec.paper_only << "\n";
+                });
+                if (omega::ibkr_exec::connect())
+                    std::cout << "[IBKR-EXEC] execution_broker=IBKR ACTIVE port=" << ib_port
+                              << " paper_only=" << (int)ib_paper << "\n";
                 else
                     std::cout << "[IBKR-EXEC] execution_broker=IBKR but CONNECT FAILED -- orders rejected\n";
             } else {
