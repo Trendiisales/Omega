@@ -21,6 +21,9 @@ struct OmegaConfig {
     int         connection_warmup_sec = 30;  // seconds after reconnect before new entries allowed
 
     std::string mode       = "SHADOW";
+    // Execution venue (2026-06-16 IBKR migration). BLACKBULL_FIX = legacy FIX path
+    // (OmegaFIX, unchanged). IBKR = route orders via the native C++ IbkrExecutionEngine.
+    std::string execution_broker = "BLACKBULL_FIX";  // BLACKBULL_FIX | IBKR
 
     // Breakout params
     double vol_thresh_pct        = 0.050;

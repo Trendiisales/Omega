@@ -3,6 +3,8 @@
 // Section: order_exec (original lines 2134-2855)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
+#include "IbkrExecGlobal.hpp"   // g_ibkr_exec (no-op unless OMEGA_WITH_IBKR)
+
 // 2026-05-08 S21 (authorised by user in chat): FIX volume conversion.
 //
 // cTrader / Spotware FIX gateways expect tag 38 (OrderQty) in **contract base
@@ -133,6 +135,17 @@ static std::string send_live_order(const std::string& symbol, bool is_long,
                                    const std::string& position_id = "") {
     // Hard SHADOW gate -- never send in shadow regardless of anything else
     if (g_cfg.mode != "LIVE") return {};
+
+#ifdef OMEGA_WITH_IBKR
+    // IBKR execution route (2026-06-16 migration). Bypasses the FIX/BlackBull
+    // session entirely. IbkrExecutionEngine is itself gated (enabled +
+    // paper_only + refuse-on-live-port) so this stays safe even if
+    // execution_broker is flipped before full validation.
+    if (g_cfg.execution_broker == "IBKR") {
+        const long oid = omega::g_ibkr_exec.place_order(symbol, is_long, qty, "MKT");
+        return oid >= 0 ? ("IB-" + std::to_string(oid)) : std::string{};
+    }
+#endif
 
     if (!g_trade_ready.load()) {
         std::cerr << "[ORDER] BLOCKED -- trade session not ready\n";

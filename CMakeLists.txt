@@ -201,7 +201,14 @@ set(SOURCES
     src/gold_coordinator.cpp
 )
 
-add_executable(Omega ${SOURCES})
+# IBKR execution migration (2026-06-16): link the vendored TWS API client into
+# Omega.exe so the native C++ IbkrExecutionEngine can route orders to IBKR.
+# OMEGA_WITH_IBKR (defined below, Omega target only) gates every IBKR code path
+# (IbkrExecGlobal.hpp / order_exec routing / engine_init) -- other targets
+# (OmegaBacktest, GapShortEngine, ...) do NOT define it and are unaffected.
+# FIX/OmegaFIX/BlackBull path stays intact; IBKR routing is runtime-gated too.
+file(GLOB TWS_SOURCES_OMEGA ${CMAKE_SOURCE_DIR}/third_party/twsapi/client/*.cpp)
+add_executable(Omega ${SOURCES} ${TWS_SOURCES_OMEGA})
 
 # Precompiled Header -- cuts recompile time 40-60% on MSVC /O2.
 # omega_pch.hpp contains all stable Windows/OpenSSL/STL includes.
@@ -215,6 +222,7 @@ target_include_directories(Omega PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/gui
     ${OPENSSL_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/twsapi/client
 )
 
 target_link_libraries(Omega
@@ -223,6 +231,10 @@ target_link_libraries(Omega
     CURL::libcurl
     ws2_32
 )
+
+# IBKR execution path gate (Omega target only). TWS headers also want these
+# winsock defines; harmless if Omega already sets them (same values).
+target_compile_definitions(Omega PRIVATE OMEGA_WITH_IBKR)
 
 # Build version stamp.
 # Git hash + build time are injected as compiler /D defines -- no generated

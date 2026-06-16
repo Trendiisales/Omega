@@ -5351,6 +5351,37 @@ static void init_engines(const std::string& cfg_path)
             // Previously this was printed via std::printf before tee opened -- went to
             // NSSM stdout only, never to latest.log. Now it goes to both.
             std::cout << "[OMEGA] RUNNING COMMIT: " << OMEGA_VERSION << " built=" << OMEGA_BUILT << "\n";
+
+#ifdef OMEGA_WITH_IBKR
+            // --- IBKR execution wiring (2026-06-16 migration) ---
+            // Env opt-ins (default = idle, no behaviour change):
+            //   OMEGA_EXECUTION_BROKER=IBKR   route orders to IBKR instead of FIX
+            //   OMEGA_IBKR_PORT=4001          connect to live gateway (default 4002 paper)
+            //   OMEGA_IBKR_LIVE_ORDERS=1      allow REAL orders (default paper_only=true)
+            // Real fills still require mode=LIVE (send_live_order's hard SHADOW gate).
+            if (const char* eb = std::getenv("OMEGA_EXECUTION_BROKER")) g_cfg.execution_broker = eb;
+            if (g_cfg.execution_broker == "IBKR") {
+                g_ibkr_exec.host       = "127.0.0.1";
+                g_ibkr_exec.port       = std::getenv("OMEGA_IBKR_PORT") ? atoi(std::getenv("OMEGA_IBKR_PORT")) : 4002;
+                g_ibkr_exec.paper_only = !(std::getenv("OMEGA_IBKR_LIVE_ORDERS") &&
+                                           std::string(std::getenv("OMEGA_IBKR_LIVE_ORDERS")) == "1");
+                g_ibkr_exec.enabled    = true;
+                g_ibkr_exec.on_fill    = [](const omega::IbkrFill& f){
+                    std::cout << "[IBKR-EXEC] LEDGER-FILL " << f.omega_symbol << " " << f.side
+                              << " qty=" << f.qty << " px=" << f.price
+                              << " oid=" << f.order_id << " exec=" << f.exec_id << "\n";
+                    // TODO Phase 2: reconcile into OmegaTradeLedger as a real broker fill
+                    // (entry/exit match + pnl), mirroring the FIX ExecutionReport path.
+                };
+                if (g_ibkr_exec.connect())
+                    std::cout << "[IBKR-EXEC] execution_broker=IBKR ACTIVE port=" << g_ibkr_exec.port
+                              << " paper_only=" << (int)g_ibkr_exec.paper_only << "\n";
+                else
+                    std::cout << "[IBKR-EXEC] execution_broker=IBKR but CONNECT FAILED -- orders rejected\n";
+            } else {
+                std::cout << "[IBKR-EXEC] execution_broker=BLACKBULL_FIX (IBKR path idle)\n";
+            }
+#endif
             // ENGINE CONFIG SUMMARY -- must be emitted AFTER tee opens so it goes into the log file.
             std::cout << "[RSI-REV] RSIReversalEngine configured (shadow_mode="
                       << (g_rsi_reversal.shadow_mode ? "true" : "false")
