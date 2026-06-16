@@ -4727,7 +4727,7 @@ static void init_engines(const std::string& cfg_path)
         g_gold_orb_retrace.symbol      = "XAUUSD";
         g_gold_orb_retrace.engine_name = "GoldOrbRetrace";
         g_gold_orb_retrace.shadow_mode = true;     // prove on shadow before any live size
-        g_gold_orb_retrace.enabled     = false;     // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$276; gold ORB-retrace scalp = net loser. Gold scalp never works.
+        g_gold_orb_retrace.enabled     = true;      // UN-TOMBSTONED 2026-06-16: the 06-15 cull ("-$276 6mo shadow BT") was WRONG. Fresh 2yr backtest at the engine's REAL config (retr0.382, runner-trail, tight, 1-shot, COST0.37) reproduces PF 2.38 (both halves 2.56/2.18, robust EMAN/TRWIN, 3x-cost). The -$784 ledger = pre-fix lot=1.0 (100x) + 53-day-phantom artifact, NOT real perf. Shadow.
         g_gold_orb_retrace.verbose     = true;
         g_gold_orb_retrace.lot         = 0.01;   // 2026-06-09 FIX: was 1.0 (index default) -> 100x oversized on XAU (USD_PER_PT_LOT=100). All gold engines use 0.01.
         // SIZING GUARD: XAU engines MUST be <=0.05 lot (x100 multiplier). Clamp + loud-warn if a gold engine slips through oversized.
@@ -4867,11 +4867,11 @@ static void init_engines(const std::string& cfg_path)
         g_nas_orb_retrace.or_start_et = 570;       // 09:30 ET -- US cash open
         g_nas_orb_retrace.or_end_et   = 600;       // 10:00 ET -- first 30 min
         g_nas_orb_retrace.ema_len     = 50;
-        g_nas_orb_retrace.retr        = 0.382;
+        g_nas_orb_retrace.retr        = 0.5;        // 2026-06-16 RE-BACKTEST: on the current NAS100 corpus retr0.382 LOSES (PF0.80, H2 collapses, cost-fragile); retr0.5 = PF1.88, both halves (2.21/1.54), 2022/24/25 PF1.8-2.3, 3x-cost-robust, ret/DD5.83. Optimal retr FLIPPED vs the old (now-gone) 3yr where 0.382 won -> NAS less robust than gold; shadow re-validates fwd.
         g_nas_orb_retrace.trail_win   = 3;
         g_nas_orb_retrace.max_spread  = 5.0;       // NAS points
         g_nas_orb_retrace.shadow_mode = true;
-        g_nas_orb_retrace.enabled     = false;
+        g_nas_orb_retrace.enabled     = true;      // RE-ENABLED 2026-06-16 (shadow) at retr0.5; the +5309 ledger was a 66-day phantom (pre-FLAT_EOD), not real perf.
         g_nas_orb_retrace.verbose     = true;
         g_nas_orb_retrace.lot         = 1.0;
         g_nas_orb_retrace.seed_from_csv(
