@@ -86,6 +86,7 @@ struct GoldOversoldBounceEngine {
         if (bid <= 0.0 || ask <= 0.0) return;
         last_bid_ = bid; last_ask_ = ask;
         const double mid = 0.5 * (bid + ask);
+        if (pos_.active) { double fav=mid-pos_.entry_px; if(fav>pos_.mfe)pos_.mfe=fav; double adv=pos_.entry_px-mid; if(adv>pos_.mae)pos_.mae=adv; }  // LONG excursion
         const int64_t day = ts_ms / 86400000LL;
 
         if (day != cur_day_) {
@@ -152,7 +153,7 @@ struct GoldOversoldBounceEngine {
     }
 
 private:
-    struct Pos { bool active=false; double entry_px=0, lot=0, stop_px=0; int64_t entry_ts=0; int hold_days=0; } pos_;
+    struct Pos { bool active=false; double entry_px=0, lot=0, stop_px=0; int64_t entry_ts=0; int hold_days=0; double mfe=0,mae=0; } pos_;
     int64_t cur_day_ = -1;
     double  last_bid_ = 0, last_ask_ = 0;
     double  day_hi_ = 0, day_lo_ = 0, day_close_ = 0;
@@ -233,6 +234,7 @@ private:
         tr.sl = pos_.stop_px; tr.tp = 0.0;
         tr.entryTs = pos_.entry_ts / 1000LL; tr.exitTs = ts_ms / 1000LL;
         tr.spreadAtEntry = spread; tr.shadow = shadow_mode;
+        tr.mfe = pos_.mfe; tr.mae = pos_.mae;
         std::printf("[GoldOversoldBounce] EXIT %s pnl=%.2f held=%dd%s\n",
                     why, pnl, pos_.hold_days, shadow_mode ? " [SHADOW]" : "");
         std::fflush(stdout);

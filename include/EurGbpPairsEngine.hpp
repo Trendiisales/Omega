@@ -137,6 +137,7 @@ struct EurGbpPairsEngine {
         int64_t entry_ts_ms   = 0;
         int     bars_held     = 0;
         double  z_at_entry    = 0.0;
+        double  mfe = 0.0, mae = 0.0;   // spread-excursion terms
     } pos_;
 
     int m_trade_id_ = 0;
@@ -214,6 +215,7 @@ struct EurGbpPairsEngine {
         if ((int)spread_hist_.size() < p.z_window + 1) return sig;
         if (pos_.active) {
             ++pos_.bars_held;
+            { double fav=(pos_.long_spread?(spread-pos_.entry_spread):(pos_.entry_spread-spread)); if(fav>pos_.mfe)pos_.mfe=fav; if(-fav>pos_.mae)pos_.mae=-fav; }  // spread excursion
             return sig;
         }
         if (!enabled) return sig;
@@ -340,6 +342,7 @@ struct EurGbpPairsEngine {
         tr.exitTs     = now_ms / 1000;
         tr.engine     = "EurGbpPairs";
         tr.exitReason = reason;
+        tr.mfe = pos_.mfe; tr.mae = pos_.mae;
         if (on_close) on_close(tr);
 
         pos_ = OpenPos{};
@@ -364,6 +367,7 @@ struct EurGbpPairsEngine {
         tr.exitTs  = now_ms / 1000;
         tr.engine = "EurGbpPairs";
         tr.exitReason = "FORCE_CLOSE";
+        tr.mfe = pos_.mfe; tr.mae = pos_.mae;
         if (cb) cb(tr);
         pos_ = OpenPos{};
     }

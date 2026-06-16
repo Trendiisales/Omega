@@ -76,7 +76,7 @@ public:
         last_bid_ = bid; last_ask_ = ask;
         update_atr(h, l, c); prev_close_ = c; ++day_count_;
 
-        if (pos_.active) { ++pos_.bars_held; if (pos_.bars_held >= p.hold_bars) close_position(bid, ask, day_ms, "FOMC_EXIT", cb); }
+        if (pos_.active) { ++pos_.bars_held; { double fav=h-pos_.entry_px; if(fav>pos_.mfe)pos_.mfe=fav; double adv=pos_.entry_px-l; if(adv>pos_.mae)pos_.mae=adv; } if (pos_.bars_held >= p.hold_bars) close_position(bid, ask, day_ms, "FOMC_EXIT", cb); }
 
         // Entry: this bar is the last trading day BEFORE a scheduled FOMC day.
         const bool entry_day = next_trading_day_is_fomc(day_ms);
@@ -111,7 +111,7 @@ public:
     }
 
 private:
-    struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; } pos_;
+    struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; double mfe=0,mae=0; } pos_;
 
     // YYYYMMDD for a UTC day_ms, via portable civil-from-days (Howard Hinnant).
     static int ymd_from_days(int64_t z) {
@@ -160,6 +160,7 @@ private:
         omega::TradeRecord tr{}; tr.symbol=symbol_; tr.side="LONG"; tr.entryPrice=pos_.entry_px; tr.exitPrice=exit_px;
         tr.size=pos_.lot; tr.pnl=pnl; tr.net_pnl=pnl-cost; tr.entryTs=pos_.entry_ts/1000; tr.exitTs=day_ms/1000;
         tr.engine=engine_name_; tr.exitReason=why; tr.spreadAtEntry=spread; tr.shadow=shadow_mode;
+        tr.mfe=pos_.mfe; tr.mae=pos_.mae;
         if(cb) cb(tr); pos_=Pos{};
     }
     std::string symbol_, engine_name_;

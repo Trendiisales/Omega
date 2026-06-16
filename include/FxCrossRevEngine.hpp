@@ -117,6 +117,7 @@ public:
         // Manage open position on the z just computed.
         if (pos_.active && have_z) {
             ++pos_.bars_held;
+            { double fav=(pos_.is_long?(c-pos_.entry_px):(pos_.entry_px-c)); if(fav>pos_.mfe)pos_.mfe=fav; if(-fav>pos_.mae)pos_.mae=-fav; }  // side-aware excursion
             bool ex = false; const char* why = "";
             if (pos_.is_long) {
                 if (z >= -p.z_out)      { ex = true; why = "Z_OUT"; }
@@ -190,6 +191,7 @@ private:
         int64_t entry_ts   = 0;
         int     bars_held  = 0;
         double  z_at_entry = 0.0;
+        double  mfe = 0.0, mae = 0.0;
     } pos_;
 
     void update_atr(double h, double l, double c) noexcept {
@@ -243,6 +245,7 @@ private:
         tr.entryTs = pos_.entry_ts / 1000; tr.exitTs = day_ms / 1000;
         tr.engine = engine_name_; tr.exitReason = why;
         tr.spreadAtEntry = spread; tr.shadow = shadow_mode;
+        tr.mfe = pos_.mfe; tr.mae = pos_.mae;
         if (on_close) on_close(tr);
         pos_ = Pos{};
     }

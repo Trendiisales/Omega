@@ -93,6 +93,7 @@ public:
         // Exit an open position once held hold_bars (runs before entry -> no overlap).
         if (pos_.active) {
             ++pos_.bars_held;
+            { double fav=h-pos_.entry_px; if(fav>pos_.mfe)pos_.mfe=fav; double adv=pos_.entry_px-l; if(adv>pos_.mae)pos_.mae=adv; }  // LONG excursion
             if (pos_.bars_held >= p.hold_bars) close_position(bid, ask, day_ms, "SEASONAL_EXIT", cb);
         }
         // Refresh VIX term-structure ratio (once/day, cheap) if gate enabled.
@@ -155,7 +156,7 @@ private:
         if (age_s > (int64_t)vix_max_age_days*86400) return;   // stale -> ungated
         cur_vix_ratio_ = ratio;
     }
-    struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; int wday=0; } pos_;
+    struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; int wday=0; double mfe=0,mae=0; } pos_;
     void update_atr(double h,double l,double c) noexcept {
         if(prev_close_<=0.0){prev_close_=c;return;}
         double tr=std::fmax(h-l,std::fmax(std::fabs(h-prev_close_),std::fabs(l-prev_close_)));
@@ -186,6 +187,7 @@ private:
         omega::TradeRecord tr{}; tr.symbol=symbol_; tr.side="LONG"; tr.entryPrice=pos_.entry_px; tr.exitPrice=exit_px;
         tr.size=pos_.lot; tr.pnl=pnl; tr.net_pnl=pnl-cost; tr.entryTs=pos_.entry_ts/1000; tr.exitTs=day_ms/1000;
         tr.engine=engine_name_; tr.exitReason=why; tr.spreadAtEntry=spread; tr.shadow=shadow_mode;
+        tr.mfe=pos_.mfe; tr.mae=pos_.mae;
         if(cb) cb(tr); pos_=Pos{};
     }
     std::string symbol_, engine_name_;

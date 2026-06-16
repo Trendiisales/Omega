@@ -56,7 +56,7 @@ struct MgcFastDonchian30mEngine {
     // BACKTEST: leave false -> build internally from the volume fed to on_30m_bar.
     bool    hvn_external_ = false;
 
-    bool    pos_active_ = false; double entry_ = 0.0; int64_t entry_ts_ = 0;
+    bool    pos_active_ = false; double entry_ = 0.0; int64_t entry_ts_ = 0; double mfe_ = 0.0, mae_ = 0.0;
 
     bool has_open_position() const { return pos_active_; }
 
@@ -108,6 +108,7 @@ struct MgcFastDonchian30mEngine {
         tr.entryTs    = entry_ts_;
         tr.exitTs     = ts;
         tr.shadow     = shadow_mode;
+        tr.mfe        = mfe_; tr.mae = mae_;
         pos_active_ = false;
         if (cb) cb(tr);
     }
@@ -129,13 +130,14 @@ struct MgcFastDonchian30mEngine {
         prev_close_ = c;
 
         if (pos_active_) {
+            { double fav=h-entry_; if(fav>mfe_)mfe_=fav; double adv=entry_-l; if(adv>mae_)mae_=adv; }  // LONG excursion
             if (c < _chan_low(Nout)) _close(c, ts_sec, cb);
         } else {
             if (c > _chan_high(Nin)) {
                 bool skip = false;
                 if (use_hvn_skip && prior_ok_)
                     for (double hv : prior_hvn_) if (hv > c && hv <= c + Kov * atr14_) { skip = true; break; }
-                if (!skip) { pos_active_ = true; entry_ = c; entry_ts_ = ts_sec; }
+                if (!skip) { pos_active_ = true; entry_ = c; entry_ts_ = ts_sec; mfe_ = 0.0; mae_ = 0.0; }
             }
         }
         bars_.push_back({o,h,l,c,v,day});

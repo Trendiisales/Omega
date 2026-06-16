@@ -226,7 +226,7 @@ private:
         tr.engine = "GoldPanicBounce"; tr.regime = "PANIC_BOUNCE"; tr.symbol = "XAUUSD";
         tr.side = "LONG"; tr.entryPrice = m_pos.entry; tr.exitPrice = exit_px; tr.size = m_pos.size;
         tr.pnl = pnl_pts * m_pos.size;            // RAW pts*lot; ledger applies USD_PER_PT (gotcha memory)
-        tr.mae = m_pos.mae; tr.atr_at_entry = m_pos.atr_at_entry; tr.shadow = shadow_mode;
+        tr.mae = m_pos.mae; tr.mfe = (m_pos.hh > m_pos.entry ? m_pos.hh - m_pos.entry : 0.0); tr.atr_at_entry = m_pos.atr_at_entry; tr.shadow = shadow_mode;
         tr.exitReason = why; tr.entryTs = m_pos.entry_ts/1000; tr.exitTs = ts_.back()/1000;
         if (on_close_cb) on_close_cb(tr);
         if (ext_close && *ext_close) (*ext_close)(tr);

@@ -2,7 +2,7 @@ import csv,sys,collections
 # tick value (USD per point per 1.0 lot) — from include/sizing.hpp
 TV={"XAUUSD":100,"XAGUSD":5000,"US500.F":50,"USTEC.F":20,"DJ30.F":5,"NAS100":1,
     "GER40":1.10,"UK100":1.33,"ESTX50":1.10,"EURUSD":100000,"GBPUSD":100000,"EURGBP":100000,
-    "AUDUSD":100000,"NZDUSD":100000,"USDJPY":667}
+    "AUDUSD":100000,"NZDUSD":100000,"USDJPY":667,"EURUSD+GBPUSD":100000,"MGC":10}
 rows=[]
 hdr=None
 for ln in open("(sys.argv[1] if len(sys.argv)>1 else "/tmp/all_closes_raw.csv")"):

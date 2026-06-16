@@ -123,6 +123,9 @@ public:
             ++pos_.bars_held;
             const double dir = pos_.is_long ? 1.0 : -1.0;
             pos_.accrued_carry_bp += dir * carry * 100.0 / 365.0;   // % p.a. -> bp/day
+            { double fav = pos_.is_long ? (h-pos_.entry_px) : (pos_.entry_px-l);
+              double adv = pos_.is_long ? (pos_.entry_px-l) : (h-pos_.entry_px);
+              if(fav>pos_.mfe)pos_.mfe=fav; if(adv>pos_.mae)pos_.mae=adv; }  // side-aware excursion
         }
 
         if (!enabled || atr_ <= 0.0 || day_count_ < p.atr_period) return;
@@ -198,6 +201,7 @@ private:
         int     bars_held        = 0;
         double  accrued_carry_bp = 0.0;
         double  carry_at_entry   = 0.0;
+        double  mfe = 0.0, mae = 0.0;
     } pos_;
 
     void update_atr(double h, double l, double c) noexcept {
@@ -275,6 +279,7 @@ private:
         tr.exitReason    = reason;
         tr.spreadAtEntry = std::fabs(ask - bid);
         tr.shadow        = shadow_mode;
+        tr.mfe           = pos_.mfe; tr.mae = pos_.mae;
         if (on_close) on_close(tr);
 
         pos_ = Pos{};
