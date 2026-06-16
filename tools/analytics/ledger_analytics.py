@@ -37,10 +37,23 @@ def main():
     rows=load(path)
     print(f"# ledger: {path}  |  {len(rows)} closed trades  |  per-engine min-n for verdicts: {min_n}\n")
 
+    # --- artifact filter (2026-06-16): the shadow ledger carries pre-fix lot=1.0
+    # (100x on metals) trades + multi-day PHANTOM holds that poisoned BOTH these
+    # analytics flags AND the 2026-06-15 "6mo shadow-book BT" cull batch (e.g.
+    # GoldOrb's fake -$784 vs its real PF 2.38). Excluded unless --raw.
+    # --since YYYY-MM-DD adds a date cutoff (e.g. post the 2026-06-09 lot fix). ---
+    RAW = "--raw" in sys.argv
+    SINCE = sys.argv[sys.argv.index("--since")+1] if "--since" in sys.argv else None
+    EX = collections.Counter()
+
     E=collections.defaultdict(lambda:{"net":[],"gross":[],"cap":[],"R":[],"mae_usd":[],
         "cost":[],"hrs":[],"wins":0,"reg":collections.defaultdict(float),"recon":0,"seq":[]})
     for r in rows:
         eng=r.get("engine","?").strip('"'); sym=r.get("symbol","?").strip('"'); tv=TV.get(sym,1)
+        if not RAW:
+            if f(r.get("hold_sec")) > 7*86400: EX["phantom_hold>7d"]+=1; continue
+            if sym in ("XAUUSD","XAGUSD") and (f(r.get("size")) or 0) > 0.05: EX["oversized_metal_lot"]+=1; continue
+            if SINCE and r.get("exit_ts_utc","").strip('"')[:10] < SINCE: EX["pre_since"]+=1; continue
         net=f(r.get("net_pnl")); gross=f(r.get("gross_pnl")); sz=f(r.get("size")) or 1
         mfe=abs(f(r.get("mfe")))*sz*tv; mae=abs(f(r.get("mae")))*sz*tv
         entry=f(r.get("entry_px")); sl=f(r.get("sl")); risk=abs(entry-sl)*sz*tv
@@ -54,6 +67,8 @@ def main():
         a["mae_usd"].append(mae); a["cost"].append(cost); a["hrs"].append(hrs)
         a["reg"][reg]+=net
         if bfilled in ("1","true","True") and abs(bpnl-net)>max(5.0,0.1*abs(net)): a["recon"]+=1
+
+    if EX: print("# EXCLUDED artifacts: " + "  ".join(f"{k}={v}" for k,v in EX.items()) + "   (--raw to include)\n")
 
     def pct(v,p):
         if not v: return 0
