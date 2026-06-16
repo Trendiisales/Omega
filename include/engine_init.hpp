@@ -4744,6 +4744,7 @@ static void init_engines(const std::string& cfg_path)
             if (const char* h = std::getenv("OMEGA_BIGCAP_IBKR_HOST"))   bc.host      = h;
             if (const char* p = std::getenv("OMEGA_BIGCAP_IBKR_PORT"))   bc.port      = std::atoi(p);
             if (const char* c = std::getenv("OMEGA_BIGCAP_IBKR_CLIENT")) bc.client_id = std::atoi(c);
+            if (const char* m = std::getenv("OMEGA_BIGCAP_IBKR_MDTYPE")) bc.market_data_type = std::atoi(m);
             omega::bigcap_momo_ibkr::configure(bc);
             omega::bigcap_momo_ibkr::set_on_trade_record(
                 [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });

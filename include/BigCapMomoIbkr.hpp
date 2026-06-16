@@ -38,6 +38,7 @@ struct Config {
     int    port             = 4001;   // IBKR gateway (data); 4002 = paper
     int    client_id        = 86;     // matches the standalone engine's clientId
     bool   paper_only       = true;   // shadow: log trades, route NO live orders
+    int    market_data_type = 1;      // IBKR mkt-data type: 1=live 2=frozen 3=delayed 4=delayed-frozen
     double gate_pct         = 3.0;    // day-expansion gate: only trade names already +GATE% on session
     double trail_pct        = 0.04;   // 4.0% wide trail off peak (the validated lever)
     double ig_pct           = 3.0;    // ignition: +IG% over LB 5m bars

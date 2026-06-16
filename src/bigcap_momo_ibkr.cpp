@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <deque>
@@ -47,8 +48,10 @@ namespace {
 struct Sym {
     Contract c;
     double day_open = 0.0;
-    long   cur_bucket = -1;                       // floor(epoch/300) of building 5m bar
-    double bo=0, bh=0, bl=0, bc=0; double bv=0;   // building 5m bar OHLCV
+    // ── 5m bar feed via reqHistoricalData(keepUpToDate): forming-bar cache + warmup flag ──
+    bool   hist_done=false;                       // initial historical dump done -> live updates eval entries
+    long   hb_t=-1;                               // epoch sec of the forming 5m bar (formatDate=2)
+    double hb_o=0, hb_h=0, hb_l=0, hb_c=0, hb_v=0;// forming 5m bar OHLCV
     std::deque<double> closes;                    // finalized 5m closes (ignition lookback)
     std::deque<double> vols;                      // finalized 5m volumes (surge avg)
     bool   inpos=false; double entry=0, peak=0; int hold=0; double notional=0;
@@ -127,6 +130,7 @@ public:
     }
 
     void nextValidId(OrderId id) override { nextId_=id;
+        cli_->reqMarketDataType(cfg_.market_data_type);   // 1=live 2=frozen 3=delayed 4=delayed-frozen
         ScannerSubscription s; s.instrument="STK"; s.locationCode="STK.US.MAJOR"; s.scanCode="TOP_PERC_GAIN";
         s.abovePrice=cfg_.px_min; s.aboveVolume=100000;
         cli_->reqScannerSubscription(9100,s,TagValueListSPtr(),TagValueListSPtr());
@@ -135,44 +139,54 @@ public:
                cfg_.gate_pct,cfg_.trail_pct*100,cfg_.ig_pct,cfg_.volx,(int)cfg_.regime_gate,cfg_.paper_only?"PAPER":"LIVE"); fflush(stdout);
     }
 
-    // ── SPY daily bars -> market regime ──
+    // ── historical bars: MKT_REQ = SPY daily (regime); subs_ rids = per-symbol 5m feed ──
     void historicalData(TickerId rid, const Bar& b) override {
-        if((int)rid!=MKT_REQ) return;
-        mkt_closes_.push_back(b.close); if((int)mkt_closes_.size()>400) mkt_closes_.pop_front();
+        if((int)rid==MKT_REQ){
+            mkt_closes_.push_back(b.close); if((int)mkt_closes_.size()>400) mkt_closes_.pop_front(); return; }
+        // per-symbol 5m warmup bar -> seed rolling history + session open (NO entry eval)
+        std::lock_guard<std::mutex> lk(book_mu_);
+        auto it=subs_.find((int)rid); if(it==subs_.end()) return; Sym& s=it->second;
+        if(s.day_open<=0) s.day_open=b.open;
+        s.last=b.close;
+        s.closes.push_back(b.close); s.vols.push_back(DecimalFunctions::decimalToDouble(b.volume));
+        if((int)s.closes.size()>200) s.closes.pop_front();
+        if((int)s.vols.size()>200)   s.vols.pop_front();
     }
     void historicalDataEnd(int rid,const std::string&,const std::string&) override {
         if(rid==MKT_REQ){ recompute_regime();
-            printf("[BigCapMomo] regime seeded: %zu SPY daily closes, market_ok=%d\n",mkt_closes_.size(),(int)market_ok_); fflush(stdout); }
+            printf("[BigCapMomo] regime seeded: %zu SPY daily closes, market_ok=%d\n",mkt_closes_.size(),(int)market_ok_); fflush(stdout); return; }
+        std::lock_guard<std::mutex> lk(book_mu_);
+        auto it=subs_.find(rid); if(it!=subs_.end()) it->second.hist_done=true;   // live updates now eval entries
     }
     void historicalDataUpdate(TickerId rid, const Bar& b) override {
-        if((int)rid!=MKT_REQ) return;
-        if(!mkt_closes_.empty()) mkt_closes_.back()=b.close; else mkt_closes_.push_back(b.close);
-        recompute_regime();
+        if((int)rid==MKT_REQ){
+            if(!mkt_closes_.empty()) mkt_closes_.back()=b.close; else mkt_closes_.push_back(b.close);
+            recompute_regime(); return; }
+        // per-symbol live 5m bar: IBKR re-sends the forming bar each update, new ts on rollover.
+        std::lock_guard<std::mutex> lk(book_mu_);
+        auto it=subs_.find((int)rid); if(it==subs_.end()) return; Sym& s=it->second;
+        long t = atol(b.time.c_str());                    // epoch sec (formatDate=2)
+        double v = DecimalFunctions::decimalToDouble(b.volume);
+        s.last=b.close; if(s.inpos && (s.trough<=0 || b.low<s.trough)) s.trough=b.low;
+        if(s.hb_t<0){ s.hb_t=t; s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v; return; }
+        if(t==s.hb_t){ s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v; return; }
+        // new timestamp -> previous 5m bar complete -> evaluate (entries only after warmup)
+        if(s.hist_done) on_5m_bar(s, s.hb_o, s.hb_h, s.hb_l, s.hb_c, s.hb_v, s.hb_t);
+        s.hb_t=t; s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v;
     }
 
     void scannerData(int,int rank,const ContractDetails& cd,const std::string&,const std::string&,const std::string&,const std::string&) override {
         if(rank>=20) return;                         // top-20 movers only
         int rid=next_rt_++; Sym x; x.c=cd.contract;
         { std::lock_guard<std::mutex> lk(book_mu_); subs_[rid]=x; }
-        cli_->reqRealTimeBars(rid, x.c, 5, "TRADES", true, TagValueListSPtr());
+        // 5m bars via reqHistoricalData(keepUpToDate) -- works with the US-equity data
+        // entitlement (reqRealTimeBars is live-only and 420s even when the data is held).
+        // formatDate=2 -> bar.time is epoch seconds; useRTH=1; endDateTime="" required for keepUpToDate.
+        cli_->reqHistoricalData(rid, x.c, "", "1 D", "5 mins", "TRADES", 1, 2, true, TagValueListSPtr());
     }
     void scannerDataEnd(int rid) override { cli_->cancelScannerSubscription(rid); scanDone_=true; }
 
-    // 5-second bar -> aggregate into the current 5m bucket; finalize on rollover.
-    void realtimeBar(TickerId rid,long t,double o,double h,double l,double c,Decimal vol,Decimal,int) override {
-        std::lock_guard<std::mutex> lk(book_mu_);
-        auto it=subs_.find((int)rid); if(it==subs_.end()) return; Sym& s=it->second;
-        s.last=c; if(s.inpos && (s.trough<=0 || c<s.trough)) s.trough=c;
-        long bucket = t/300;                          // 5-minute bucket
-        double v = DecimalFunctions::decimalToDouble(vol);
-        if(s.cur_bucket<0){ s.cur_bucket=bucket; s.bo=o; s.bh=h; s.bl=l; s.bc=c; s.bv=v; return; }
-        if(bucket==s.cur_bucket){ if(h>s.bh)s.bh=h; if(l<s.bl)s.bl=l; s.bc=c; s.bv+=v; return; }
-        // bucket rolled -> finalize the completed 5m bar, then start the new one
-        on_5m_bar(s, s.bo, s.bh, s.bl, s.bc, s.bv, t);
-        s.cur_bucket=bucket; s.bo=o; s.bh=h; s.bl=l; s.bc=c; s.bv=v;
-    }
-
-    // called with book_mu_ HELD (from realtimeBar)
+    // called with book_mu_ HELD (from historicalDataUpdate, on 5m bar completion)
     void on_5m_bar(Sym& s, double o, double h, double l, double c, double v, long t) {
         if(s.day_open<=0) s.day_open=o;
         // ── manage open position first ──
