@@ -101,7 +101,27 @@ def resolve_front_month(ib, contract):
             f"in the past -- IBKR has not listed forward expirations"
         )
     candidates.sort(key=lambda x: x[0])
-    chosen = candidates[0][1]
+    # ROLL OFFSET (2026-06-17): the NEAREST non-expired contract is NOT the
+    # liquid one near expiry -- trade volume rolls to the next contract ~a week
+    # out while the expiring one still QUOTES (depth floods, tape goes to ~0).
+    # That starved the Aurora footprint feed: NQ June (exp in 3d) had volume in
+    # Sept; MGC June rolling to Aug. If the front expires within ROLL_DAYS and a
+    # next contract exists, record the next one (the liquid month). Recording a
+    # liquid next-month slightly early is harmless; recording a dead front month
+    # loses the whole tape. Pin an explicit expiry upstream to override.
+    ROLL_DAYS = 10
+    idx = 0
+    days_to_exp = (candidates[0][0] - today).days
+    if days_to_exp <= ROLL_DAYS and len(candidates) > 1:
+        idx = 1
+        print(
+            f"[roll] {contract.symbol}/{contract.exchange}: front "
+            f"{candidates[0][1].localSymbol} expires in {days_to_exp}d "
+            f"(<= {ROLL_DAYS}) -> rolling to liquid next "
+            f"{candidates[1][1].localSymbol}",
+            flush=True,
+        )
+    chosen = candidates[idx][1]
     print(
         f"front-month {contract.symbol}/{contract.exchange}: "
         f"{chosen.localSymbol} expiry={chosen.lastTradeDateOrContractMonth.split(' ')[0]} "
