@@ -215,6 +215,10 @@ file(GLOB TWS_SOURCES_OMEGA ${CMAKE_SOURCE_DIR}/third_party/twsapi/client/*.cpp)
 # IntelRDFPMathLib2U before any LIVE order SIZING (paper fine). See ibkr/README.
 set(IBKR_OMEGA_SOURCES
     ${CMAKE_SOURCE_DIR}/src/ibkr_exec.cpp
+    # src/bigcap_momo_ibkr.cpp -- the in-process BigCapMomo engine (its own IBKR
+    # scanner/data thread). Same TWS-isolation rule as ibkr_exec.cpp: only this
+    # TU sees the TWS headers; the main TU includes only the thin BigCapMomoIbkr.hpp.
+    ${CMAKE_SOURCE_DIR}/src/bigcap_momo_ibkr.cpp
     ${CMAKE_SOURCE_DIR}/ibkr/bid64_integer.cpp)
 if(MSVC)
     # Vendored TWS API + the TU that includes its headers emit warnings; Omega
@@ -238,6 +242,7 @@ target_include_directories(Omega PRIVATE
     ${CMAKE_SOURCE_DIR}/src/gui
     ${OPENSSL_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/twsapi/client
+    ${CMAKE_SOURCE_DIR}/ibkr   # RiskManager.hpp for src/bigcap_momo_ibkr.cpp
 )
 
 target_link_libraries(Omega

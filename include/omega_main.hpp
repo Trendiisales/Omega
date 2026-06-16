@@ -662,6 +662,22 @@ int main(int argc, char* argv[])
         }).detach();
     }
 
+    // ── BigCapMomo IN-PROCESS IBKR engine (2026-06-16) ──────────────────────
+    // Opt-in: OMEGA_BIGCAP_IBKR=1. Activates the in-process engine wired in
+    // engine_init (configure + sink + register_source already done there). It
+    // owns its OWN IBKR scanner/data thread (start() connects to the gateway +
+    // spawns the reader loop) so running + closed trades surface in the GUI.
+    // Mutually exclusive with OMEGA_BIGCAP_BRIDGE (the Python :7784 path) -- run
+    // ONE. Off => dormant. Connection knobs: OMEGA_BIGCAP_IBKR_{HOST,PORT,CLIENT}.
+    if (const char* en = std::getenv("OMEGA_BIGCAP_IBKR"); en && std::string(en) == "1") {
+        omega::bigcap_momo_ibkr::set_enabled(true);
+        std::cout << "[BIGCAP-IBKR] activating in-process IBKR BigCapMomo engine\n";
+        std::cout.flush();
+        if (!omega::bigcap_momo_ibkr::start())
+            std::cout << "[BIGCAP-IBKR] start() failed (disabled / no OMEGA_WITH_IBKR / connect refused)\n";
+        std::cout.flush();
+    }
+
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
     // =========================================================================

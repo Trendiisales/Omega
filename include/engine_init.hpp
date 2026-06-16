@@ -9,6 +9,7 @@
 #include "SeedGuard.hpp"
 #include "PortfolioGuard.hpp"
 #include "IbkrExec.hpp"   // thin TWS-free IBKR execution interface
+#include "BigCapMomoIbkr.hpp"   // thin TWS-free interface to the in-process BigCapMomo engine
 
 static void init_engines(const std::string& cfg_path)
 {
@@ -4712,6 +4713,45 @@ static void init_engines(const std::string& cfg_path)
         g_open_positions.register_source("BigCapMomo", []() { return g_bigcap_momo.collect_positions(); });
         printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% trail5%% NO-volx NO-dvol-gate 4h-cap "
                "$1000-notional p>=10 slip0.15%%/side shadow (liq via scanner; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
+
+        // ── BigCapMomo IN-PROCESS IBKR engine (2026-06-16) ───────────────────
+        // SAME validated big-cap momentum continuation edge as g_bigcap_momo
+        // above, but running on its OWN IBKR scanner/data thread INSIDE Omega.exe
+        // -- NOT the standalone ibkr/BigCapMomoEngine.cpp exe, and NOT the Python
+        // :7784 bridge. This is the path that shows BOTH running + closed trades
+        // in the GUI, because that panel is in-process telemetry (g_open_positions
+        // + shared mem) a separate exe cannot inject into. Trading params mirror
+        // the live-validated g_bigcap_momo values (gate4 / trail5% / volx-off /
+        // regime-gate / $1000 shadow). Connection from env (defaults: live gateway
+        // 4001, clientId 86 -- US-equity scanner needs the live entitlement; paper
+        // 4002 returns nan prices). ACTIVATED by OMEGA_BIGCAP_IBKR=1 in omega_main
+        // (set_enabled + start); off => dormant, collect_positions returns empty
+        // so there are NO double GUI rows vs the bridge path. Use ONE path at a
+        // time (OMEGA_BIGCAP_IBKR xor OMEGA_BIGCAP_BRIDGE).
+        {
+            omega::bigcap_momo_ibkr::Config bc;
+            bc.gate_pct     = 4.0;     // == g_bigcap_momo.day_gate_pct
+            bc.trail_pct    = 0.05;    // == g_bigcap_momo.trail_pct (5.0% as fraction)
+            bc.volx         = 0.0;     // OFF live (realtime-bar volume = deltas, not surge-comparable)
+            bc.ig_pct       = 3.0;
+            bc.lb           = 6;       // ignition lookback (6*5m = 30min)
+            bc.maxhold      = 48;      // 48*5m = 4h backstop
+            bc.px_min       = 10.0;    // not a penny stock
+            bc.regime_gate  = true;    // SPY price>SMA200 AND SMA200 rising
+            bc.notional_usd = 1000.0;
+            bc.paper_only   = true;    // SHADOW: log trades, route NO live orders
+            bc.engine_tag   = "BigCapMomo";
+            if (const char* h = std::getenv("OMEGA_BIGCAP_IBKR_HOST"))   bc.host      = h;
+            if (const char* p = std::getenv("OMEGA_BIGCAP_IBKR_PORT"))   bc.port      = std::atoi(p);
+            if (const char* c = std::getenv("OMEGA_BIGCAP_IBKR_CLIENT")) bc.client_id = std::atoi(c);
+            omega::bigcap_momo_ibkr::configure(bc);
+            omega::bigcap_momo_ibkr::set_on_trade_record(
+                [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
+            g_open_positions.register_source("BigCapMomoIbkr",
+                []() { return omega::bigcap_momo_ibkr::collect_positions(); });
+            printf("[OMEGA-INIT] BigCapMomo IN-PROCESS IBKR engine wired (gate4%% trail5%% volx-off "
+                   "regime-gate $1000 shadow); activate with OMEGA_BIGCAP_IBKR=1\n");
+        }
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
         // 2026-06-06 backtest edge (backtest/orb_gold_retrace.cpp; memory
