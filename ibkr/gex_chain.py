@@ -32,6 +32,8 @@ def main():
     ap.add_argument("--strikes-pct", type=float, default=5.0)  # NTM band +/- % of spot
     ap.add_argument("--dealer-sign", default="classic", choices=["classic", "inverse"])
     ap.add_argument("--out", default=None)
+    ap.add_argument("--append", default=None, help="append a snapshot row to this history CSV (builds the validation dataset)")
+    ap.add_argument("--ts", default="", help="UTC timestamp for the row (caller stamps; no clock here)")
     a = ap.parse_args()
     cfg = INDEX[a.index]
     sgn = 1.0 if a.dealer_sign == "classic" else -1.0  # classic: call +, put -
@@ -100,6 +102,12 @@ def main():
                per_strike={str(k): round(v, 1) for k, v in sorted(per_strike.items())})
     print(json.dumps({k: v for k, v in out.items() if k != "per_strike"}, indent=2), flush=True)
     print(f"[gex] CALL WALL {call_wall}  PUT WALL {put_wall}  FLIP {flip}  spot {spot}", flush=True)
+    if a.append:
+        newf = not os.path.exists(a.append) or os.path.getsize(a.append) == 0
+        with open(a.append, "a") as fh:
+            if newf: fh.write("ts_utc,index,spot,net_gex,regime,flip,call_wall,put_wall,dealer_sign\n")
+            fh.write(f"{a.ts},{a.index},{spot},{net},{out['regime']},{flip},{call_wall},{put_wall},{a.dealer_sign}\n")
+        print(f"[gex] appended snapshot -> {a.append}", flush=True)
     if a.out:
         out["ts"] = "STAMP"  # caller stamps real time (no Date.now in this context)
         open(a.out, "w").write(json.dumps(out, indent=2))
