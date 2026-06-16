@@ -551,7 +551,9 @@ def main():
                     break
 
             for r in recorders:
-                print(f"[{r.sym}] total_events={r.events}", flush=True)
+                # DomRecorder has .events, TradesRecorder has .n -- fall back so
+                # the shutdown summary never AttributeErrors on a mixed list.
+                print(f"[{r.sym}] total_events={getattr(r, 'events', getattr(r, 'n', 0))}", flush=True)
                 try:
                     r.stop()
                 except Exception:

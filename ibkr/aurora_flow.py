@@ -190,10 +190,13 @@ class AuroraEngine:
 
     # --- ATR over bar high/low/close ---
     def _atr(self):
+        # floor to 10 ticks so a flat/thin window (all TR=0) never yields atr=0
+        # -> guards every atr division (_score, dist_atr, min_gap).
+        floor = 10 * self.cfg.mintick
         if not self.tr_window:
-            return 10 * self.cfg.mintick
+            return floor
         w = self.tr_window[-self.cfg.atr_n:]
-        return sum(w) / len(w)
+        return max(sum(w) / len(w), floor)
 
     def _push_tr(self, hi, lo, cl):
         tr = hi - lo
@@ -405,6 +408,13 @@ def run_file(trades_path, l2_path, cfg: AuroraCfg, sym):
     for b in bars:
         total_events += len(eng.feed_bar(b))
     price = bars[-1]["close"] if bars else 0.0
+    if not bars or price <= 0:
+        return {"sym": sym, "tf_min": cfg.tf_min, "price": price,
+                "key_supply": [], "key_demand": [], "events": [],
+                "_meta": {"trades": len(trades), "bars": len(bars),
+                          "l2_quotes": len(q_ts),
+                          "note": "no usable bars (market closed / empty file). "
+                                  "COMEX gold halts 21:00-22:00 UTC; record during RTH."}}
     snap = eng.snapshot(price, sym=sym)
     quote_cov = sum(1 for _, _, _, s in signed if s != 0) and len(q_ts) > 0
     snap["_meta"] = {"trades": len(trades), "bars": len(bars),
