@@ -1294,6 +1294,24 @@ else()
 endif()
 message(STATUS "GapShortEngine:         IBKR gap-short C++ subsystem (paper)")
 
+# =============================================================================
+# BigCapMomoEngine -- LONG big-cap momentum continuation (long mirror of GapShort).
+# Validated 2026-06-16 (pump/bigcap_scalp_*): day-expansion gate3% + wide trail4.0%,
+# PF 1.63, walk-forward-stable, fat-tail-resilient, slip-robust. PAPER_ONLY default.
+# Isolated C++ subsystem (TWS API + winsock). NOT part of Omega.exe / no FIX.
+# =============================================================================
+add_executable(BigCapMomoEngine ibkr/BigCapMomoEngine.cpp ibkr/bid64_integer.cpp ${TWS_SOURCES})
+target_include_directories(BigCapMomoEngine PRIVATE ${CMAKE_SOURCE_DIR}/third_party/twsapi/client)
+if(MSVC)
+    target_compile_options(BigCapMomoEngine PRIVATE /std:c++17 /EHsc /W0)
+    target_compile_definitions(BigCapMomoEngine PRIVATE _CRT_SECURE_NO_WARNINGS _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(BigCapMomoEngine PRIVATE ws2_32)
+else()
+    target_compile_options(BigCapMomoEngine PRIVATE -std=c++17 -w)
+    target_link_libraries(BigCapMomoEngine PRIVATE pthread)
+endif()
+message(STATUS "BigCapMomoEngine:       IBKR long-momentum C++ subsystem (paper)")
+
 # GapShortDaily -- production daily-loop (enter->monitor->cover, kill switch, locate gate)
 add_executable(GapShortDaily ibkr/GapShortDaily.cpp ibkr/bid64_integer.cpp ${TWS_SOURCES})
 target_include_directories(GapShortDaily PRIVATE ${CMAKE_SOURCE_DIR}/third_party/twsapi/client)
