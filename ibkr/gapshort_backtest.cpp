@@ -19,14 +19,15 @@ struct HBar{ int hr; double o,h,l,c; };
 
 int main(int argc,char**argv){
     string gp=argv[1], ip=argv[2], fp=argv[3];
+    bool useFloat = (fp!="none");   // pass "none" to ship the validated no-float config (PF 1.45)
     double GAP=argc>4?atof(argv[4]):75, STOP=argc>5?atof(argv[5]):1.00;   // improved: 100% stop
     int COVER=argc>6?atoi(argv[6]):99;                                    // 99 = cover at close
     double COST=argc>7?atof(argv[7]):0.01;
     double PXLO=3,PXHI=20,FLO=3e6,FHI=20e6,KELLY=0.12;
 
-    // float
+    // float (optional: pass "none" to ship the validated no-float config -> PF 1.45)
     unordered_map<string,double> flt;
-    { ifstream f(fp); string ln; getline(f,ln);
+    if(useFloat){ ifstream f(fp); string ln; getline(f,ln);
       while(getline(f,ln)){ auto p=ln.find(','); auto q=ln.find(',',p+1);
         if(p==string::npos)continue; string t=ln.substr(0,p); double v=atof(ln.substr(p+1,q-p-1).c_str()); if(v>0)flt[t]=v; } }
     // gappers -> meta keyed "ticker|date"
@@ -47,7 +48,7 @@ int main(int argc,char**argv){
         string t=key.substr(0,key.find('|')), d=key.substr(key.find('|')+1);
         if(mi->second.g<GAP) continue; c_meta++;
         if(!(PXLO<=mi->second.o && mi->second.o<=PXHI)) continue; c_gp++;
-        auto fi=flt.find(t); if(fi==flt.end()) continue; if(!(FLO<=fi->second && fi->second<FHI)) continue; c_flt++;
+        if(useFloat){ auto fi=flt.find(t); if(fi==flt.end()) continue; if(!(FLO<=fi->second && fi->second<FHI)) continue; } c_flt++;
         auto bars=kv.second; bars.erase(remove_if(bars.begin(),bars.end(),[](const HBar&b){return b.hr<9||b.hr>16;}),bars.end());
         if(bars.size()<3) continue; sort(bars.begin(),bars.end(),[](const HBar&a,const HBar&b){return a.hr<b.hr;});
         double o=bars[0].o, stop=o*(1+STOP), ex=-1;

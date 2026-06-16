@@ -17,8 +17,10 @@
 #include <memory>
 #include <ctime>
 #include <cmath>
+#include <fstream>
 
 struct Cfg { double GAP_MIN=75,PX_LO=3,PX_HI=20,STOP=1.0; bool PAPER_ONLY=true; };
+static std::string iso_utc(){ time_t t=time(nullptr); struct tm* g=gmtime(&t); char b[24]; strftime(b,sizeof(b),"%Y-%m-%dT%H:%M:%SZ",g); return std::string(b); }
 static int et_hhmm(){ time_t t=time(nullptr); struct tm* g=gmtime(&t); int h=(g->tm_hour+24-4)%24; return h*100+g->tm_min; } // EDT approx (portable)
 
 class GapShortDaily : public DefaultEWrapper {
@@ -28,8 +30,21 @@ class GapShortDaily : public DefaultEWrapper {
     std::map<int,Cand> hist_; std::map<int,Cand> loc_;   // reqId -> candidate (hist then locate)
     std::map<long,std::pair<Contract,long>> openpos_;     // permId-ish -> (contract, shares)
     bool scanDone_=false; int scanned_=0; bool entered_=false; bool killed_=false;
+    std::ofstream led_;                                   // forward ledger (entry/cover/kill)
+    // forward-record ledger: every entry/cover/flatten/kill -> data/gapshort/daily_ledger.csv
+    void ledger(const char* ev,const std::string& sym,const char* side,double gap,double px,double stop,long sz,double notional,const char* note){
+        if(!led_) return;
+        char b[320]; snprintf(b,sizeof(b),"%s,%s,%s,%s,%.1f,%.4f,%.4f,%ld,%.0f,%s,%s\n",
+            iso_utc().c_str(),ev,sym.c_str(),side,gap,px,stop,sz,notional,cfg_.PAPER_ONLY?"PAPER":"LIVE",note);
+        led_<<b; led_.flush();
+    }
 public:
-    GapShortDaily(){ cli_=std::make_unique<EClientSocket>(this,&sig_); }
+    GapShortDaily(){ cli_=std::make_unique<EClientSocket>(this,&sig_);
+        system("mkdir -p data/gapshort 2>/dev/null");
+        bool isnew = !std::ifstream("data/gapshort/daily_ledger.csv").good();
+        led_.open("data/gapshort/daily_ledger.csv", std::ios::app);
+        if(isnew && led_) led_<<"ts_utc,event,symbol,side,gap_pct,price,stop,shares,notional,mode,note\n";
+    }
     bool connect(const char*h,int p,int id){ if(!cli_->eConnect(h,p,id,false))return false; rd_=std::make_unique<EReader>(cli_.get(),&sig_); rd_->start(); return true; }
     void pump(){ sig_.waitForSignal(); rd_->processMsgs(); }
     EClientSocket* cli(){ return cli_.get(); }
@@ -67,14 +82,16 @@ public:
         long sz=(long)std::max(1.0,notional/px); risk_.on_open(x.c.symbol,notional);
         printf("[DAILY] %s SHORT %s gap=%.0f%% px=%.2f stop=%.2f sz=%ld notional=$%.0f conc=%d\n",
             cfg_.PAPER_ONLY?"PAPER":"LIVE",x.c.symbol.c_str(),gap,px,stop,sz,notional,risk_.open_count());
+        ledger("ENTRY",x.c.symbol,"SHORT",gap,px,stop,sz,notional,"");
         if(!cfg_.PAPER_ONLY){ Order so;so.action="SELL";so.orderType="MKT";so.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz); cli_->placeOrder(nextId_++,x.c,so);
             Order st;st.action="BUY";st.orderType="STP";st.auxPrice=stop;st.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz); cli_->placeOrder(nextId_++,x.c,st);
             openpos_[nextId_]={x.c,sz}; } }
     // --- COVER / FLATTEN ---
-    void flatten_all(const char* why){ printf("[DAILY] FLATTEN ALL (%s) @ %d ET\n",why,et_hhmm()); cli_->reqGlobalCancel(); cli_->reqPositions(); }
+    void flatten_all(const char* why){ printf("[DAILY] FLATTEN ALL (%s) @ %d ET\n",why,et_hhmm()); ledger("FLATTEN","*","-",0,0,0,0,0,why); cli_->reqGlobalCancel(); cli_->reqPositions(); }
     void position(const std::string&,const Contract& c,Decimal pos,double) override {
         double p=DecimalFunctions::decimalToDouble(pos);
         if(p<0){ long sz=(long)(-p); printf("[DAILY] %s COVER %s sz=%ld\n",cfg_.PAPER_ONLY?"PAPER":"LIVE",c.symbol.c_str(),sz);
+            ledger("COVER",c.symbol,"BUY",0,0,0,sz,0,"flatten");
             if(!cfg_.PAPER_ONLY){ Order o;o.action="BUY";o.orderType="MKT";o.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz); cli_->placeOrder(nextId_++,c,o);} } }
     void positionEnd() override { cli_->cancelPositions(); }
     void error(int,int code,const std::string& m,const std::string&) override { if(code!=2104&&code!=2106&&code!=2158&&code!=2150&&code!=200&&code!=162) printf("[DAILY] err %d %s\n",code,m.c_str()); }
