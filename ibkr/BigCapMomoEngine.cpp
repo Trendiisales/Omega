@@ -42,6 +42,12 @@ struct Cfg {
     int    MAXHOLD = 48;   // 48*5m = 4h backstop
     double KELLY = 0.12, BANKROLL = 50000;
     bool   PAPER_ONLY = true;
+    // MARKET-REGIME gate (validated 2026-06-16, 10y daily x-regime): only trade when
+    // the broad market (SPY) is in a confirmed uptrend -> price>SMA200 AND SMA200
+    // rising. Cuts grind/chop (2018/2022/2025); turns BEAR bucket positive. Variant B.
+    int    MKT_SMA = 200;        // market SMA period (daily)
+    int    MKT_SLOPE_LB = 20;    // 200MA must exceed its value MKT_SLOPE_LB days ago
+    bool   REGIME_GATE = true;   // master switch for the regime filter
 };
 
 // per-symbol live state
@@ -63,6 +69,22 @@ class BigCapMomoEngine : public DefaultEWrapper {
     std::map<int,Sym> subs_;            // reqId -> Sym (real-time-bar stream id)
     int next_rt_=20000; int scanned_=0; bool scanDone_=false;
     RiskManager risk_{50000.0};
+    // ---- market-regime detector (SPY 200MA + rising) ----
+    static const int MKT_REQ=9001;
+    std::deque<double> mkt_closes_;     // SPY daily closes
+    bool market_ok_=false;              // true = uptrend, ok to trade
+    Contract spy() const { Contract c; c.symbol="SPY"; c.secType="STK"; c.exchange="SMART"; c.currency="USD"; return c; }
+    void recompute_regime(){
+        if(!cfg_.REGIME_GATE){ market_ok_=true; return; }
+        int n=(int)mkt_closes_.size(), need=cfg_.MKT_SMA+cfg_.MKT_SLOPE_LB;
+        if(n<need){ market_ok_=false; return; }
+        double sma=0,smap=0;
+        for(int k=0;k<cfg_.MKT_SMA;k++){ sma+=mkt_closes_[n-1-k]; smap+=mkt_closes_[n-1-cfg_.MKT_SLOPE_LB-k]; }
+        sma/=cfg_.MKT_SMA; smap/=cfg_.MKT_SMA; double c=mkt_closes_[n-1];
+        bool was=market_ok_; market_ok_=(c>sma && sma>smap);
+        if(market_ok_!=was){ printf("[BigCapMomo] REGIME %s (SPY=%.2f sma200=%.2f rising=%d)\n",
+            market_ok_?"ON uptrend":"OFF grind/chop->FLAT",c,sma,(int)(sma>smap)); fflush(stdout); }
+    }
 public:
     BigCapMomoEngine(){ risk_.new_day(); cli_=std::make_unique<EClientSocket>(this,&sig_); }
     void set(double gate,double trail,bool live){ cfg_.GATE=gate; cfg_.TRAIL=trail; cfg_.PAPER_ONLY=!live; }
@@ -75,8 +97,24 @@ public:
         ScannerSubscription s; s.instrument="STK"; s.locationCode="STK.US.MAJOR"; s.scanCode="TOP_PERC_GAIN";
         s.abovePrice=cfg_.PX_MIN; s.aboveVolume=100000;
         cli_->reqScannerSubscription(9100,s,TagValueListSPtr(),TagValueListSPtr());
-        printf("[BigCapMomo] scan TOP_PERC_GAIN (gate>=%.0f%% trail=%.0f%% IG=%.0f%% volx=%.0f) %s\n",
-               cfg_.GATE,cfg_.TRAIL*100,cfg_.IG,cfg_.VOLX,cfg_.PAPER_ONLY?"PAPER":"LIVE"); fflush(stdout);
+        // market-regime feed: SPY daily, keepUpToDate -> 200MA + slope gate
+        if(cfg_.REGIME_GATE) cli_->reqHistoricalData(MKT_REQ, spy(), "", "1 Y", "1 day", "TRADES", 1, 1, true, TagValueListSPtr());
+        printf("[BigCapMomo] scan TOP_PERC_GAIN (gate>=%.0f%% trail=%.0f%% IG=%.0f%% volx=%.0f regime_gate=%d) %s\n",
+               cfg_.GATE,cfg_.TRAIL*100,cfg_.IG,cfg_.VOLX,(int)cfg_.REGIME_GATE,cfg_.PAPER_ONLY?"PAPER":"LIVE"); fflush(stdout);
+    }
+    // ---- SPY daily bars -> market regime ----
+    void historicalData(TickerId rid, const Bar& b) override {
+        if((int)rid!=MKT_REQ) return;
+        mkt_closes_.push_back(b.close); if((int)mkt_closes_.size()>400) mkt_closes_.pop_front();
+    }
+    void historicalDataEnd(int rid,const std::string&,const std::string&) override {
+        if(rid==MKT_REQ){ recompute_regime();
+            printf("[BigCapMomo] regime seeded: %zu SPY daily closes, market_ok=%d\n",mkt_closes_.size(),(int)market_ok_); fflush(stdout); }
+    }
+    void historicalDataUpdate(TickerId rid, const Bar& b) override {
+        if((int)rid!=MKT_REQ) return;
+        if(!mkt_closes_.empty()) mkt_closes_.back()=b.close; else mkt_closes_.push_back(b.close);
+        recompute_regime();
     }
     void scannerData(int,int rank,const ContractDetails& cd,const std::string&,const std::string&,const std::string&,const std::string&) override {
         if(rank>=20) return;                         // top-20 movers only
@@ -112,7 +150,8 @@ public:
         }
         // ---- entry gates (mirror the validated backtest exactly) ----
         bool fire=false;
-        if(c>=cfg_.PX_MIN && s.day_open>0){
+        // REGIME GATE: no entries unless the market is in a confirmed uptrend.
+        if(c>=cfg_.PX_MIN && s.day_open>0 && (market_ok_ || !cfg_.REGIME_GATE)){
             double day_up=(c/s.day_open-1)*100;
             if(day_up>=cfg_.GATE && (int)s.vols.size()>=20 && (int)s.closes.size()>=cfg_.LB){
                 double avgv=0; for(int k=0;k<20;k++) avgv+=s.vols[s.vols.size()-1-k]; avgv/=20.0;
