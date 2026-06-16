@@ -3497,12 +3497,16 @@ static void init_engines(const std::string& cfg_path)
     g_survivor.init_default_cells();
     g_survivor.seed_all("phase1/signal_discovery");
     g_survivor.enabled = true;
-    // S-2026-06-16: regime-gated dedup (mode 2). Caps correlated same-symbol/side
-    // cell stacking ONLY in extreme chop (Kaufman ER < er_chop_thr 0.25), leaving
-    // trend stacking intact. survivor_cap_test.cpp: net >= OFF on the trend tape
-    // (blanket cap was -29%). Prevents the XAU DonchN20+N100 / USTEC RSI+ZMR
-    // double-whipsaw in chop/crash without the blanket cap's trend cost.
-    g_survivor.dedup_mode = 2;
+    // S-2026-06-17: BLANKET dedup (mode 1) -- operator policy override. NEVER run
+    // two cells on the same symbol+side at once (the XAU DonchN20+N100 double-short
+    // that prompted this). Supersedes the S-2026-06-16 regime-gated mode 2 (which
+    // allowed same-side stacking in trend, ER>=0.25). TRADE-OFF: survivor_cap_test.cpp
+    // measured the blanket cap at ~-29% vs OFF on a pure trend tape (it forgoes
+    // riding a winner with a second cell). Operator accepts that: correlated
+    // double-exposure on one symbol is a risk-concentration the book should not
+    // carry, and the live book is net-negative anyway so the trend-stack upside
+    // is not materialising. Revert to 2 to restore regime-gated stacking.
+    g_survivor.dedup_mode = 1;
     printf("[SURV-INIT] portfolio armed cells=%zu spx_bars=%zu dedup_mode=%d(ER<%.2f)\n",
            g_survivor.cells.size(), g_survivor.spx.spx_bars.size(),
            g_survivor.dedup_mode, g_survivor.er_chop_thr);
