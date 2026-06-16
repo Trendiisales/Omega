@@ -12,20 +12,20 @@ gap-up ≥75% | $3–20 | (float 3–20M optional) | SHORT@open | **100% hard mk
 - `IbkrClient.cpp`      — TWS API wrapper (connect + scanner) [verified live]
 - `GapShortEngine.cpp`  — ENTRY (scan→short@open+stop) / `--cover` (buy-to-cover all) [verified paper]
 - `gapshort_backtest.cpp` — C++ backtest harness (reproduces the result)
-- `bid64_stub.cpp`      — TEMP Intel-decimal stub; **replace w/ real IntelRDFPMathLib2U before LIVE order sizing**
-- `build.sh`            — g++ build (VPS: same .cpp via MSVC)
+- `bid64_integer.cpp`   — CORRECT decimal64 (BID) for INTEGER order quantities; the full Intel RDFP lib is **NOT needed** (share counts are integers <2^53 → exact BID64 encoding). Supersedes the old stub. Linked into Omega `577d0bab`.
+- `build.sh`            — g++ build (VPS: same .cpp via MSVC `build_msvc.bat`)
 
-## Run (on the Omega VPS gateway, port 4002)
-- entry:  `./gapshort_engine 4002`            (PAPER_ONLY default = no live orders)
-- cover:  `./gapshort_engine --cover 4002`    (at close)
-- float:  `./gapshort_engine --float float.csv 4002`
+## Run (LIVE IBKR gateway, port 4001 as of 2026-06-16)
+- entry:  `./gapshort_engine 4001`            (PAPER_ONLY default = no live orders)
+- cover:  `./gapshort_engine --cover 4001`    (at close)
+- float:  `./gapshort_engine --float float.csv 4001`
 
 ## Production TODOs before LIVE
-1. Real `libbid` (Intel RDFP) for order sizing
-2. Float source (IBKR fundamentals not entitled) -> external/cached float.csv
+1. ~~Real `libbid` (Intel RDFP) for order sizing~~ — **DONE** (`bid64_integer.cpp`; integer share counts are exact, no Intel lib required).
+2. Float source (IBKR fundamentals not entitled) -> external/cached float.csv (loader is wired: `--float`; ships fine without it at PF 1.45)
 3. Locate gate: reqMktData tick 236 shortable + skip borrow >10% of price
 4. Wire OmegaTradeLedger; schedule entry ~9:35 ET + cover ~15:55 ET
-5. IBKR PAPER account -> flip PAPER_ONLY=false -> small live
+5. IBKR PAPER account -> flip PAPER_ONLY=false -> small live (operator decision)
 
 ## Research/data
 Backtest data regenerated via yfinance pullers in ~/gapshort_research/ (gappers/intraday/float CSVs, not committed — large).
