@@ -69,6 +69,16 @@ struct CellCfg {
     double tp_mult  = 3.0;    // TP = tp_mult * ATR(14)
     int    max_hold_bars = 30;
     int    cooldown_bars = 1;
+    // S-2026-06-17 failed-breakout (reclaim) exit — Donchian only. Cut a breakout
+    // that CLOSES back through the channel level it broke (the bear trap). Validated
+    // in backtest/donch_reclaim_test.py on 2yr XAU H4: the NAIVE both-sides/any-time
+    // reclaim is NOT robust (H1 negative on both cells — it bleeds long-pullbacks +
+    // slow recoveries); SHORT-only within <=3 bars IS robust on BOTH cells and BOTH
+    // walk-forward halves (N20 +264pt, N100 +31pt, PF up, avgL down). Checked AFTER
+    // SL/TP so it only helps when price snaps back without first hitting the stop.
+    bool   reclaim_exit       = false;
+    int    reclaim_max_bars   = 3;     // only fire the reclaim within K bars of entry
+    bool   reclaim_short_only = true;  // long-side reclaim hurt in BT — shorts only
     double lot      = 0.01;
     // per-symbol point conversion (price unit and $-per-pt-per-lot)
     double pt_size       = 0.01;
@@ -99,6 +109,7 @@ struct CellState {
     int    pos_bars_held = 0;
     int64_t pos_entry_ts = 0;
     int    pos_entry_bar_idx = 0;
+    double pos_break_lvl = 0;   // Donchian channel level broken at entry (reclaim ref)
     // Stats
     int n_trades = 0, n_wins = 0;
     double cum_net = 0;
@@ -388,6 +399,15 @@ private:
                 if (c > d.hi) return +1;
                 if (c < d.lo) return -1;
                 return 0;
+                // NO TREND FILTER on Donchian (deliberate, 2026-06-16). A trend
+                // gate (mirroring the RSI/ZScoreMR filter) was tested against the
+                // XAU_4h_DonchN20/N100 cells on the H4 warmup: it HALVED N20
+                // (net +2337 PF2.23 -> +1099 PF1.69) by blocking counter-trend
+                // downside breakouts that are profitable gold-correction catches
+                // (the cell's fat tail). N100 was neutral. The "short into a long"
+                // these cells show on the open-positions screen backtests +EV; it
+                // is NOT a bug. Harness: /tmp/sgt_donch.cpp (extends
+                // backtest/survivor_trendgate_test.cpp with the Donchian family).
             }
             case Family::RSI: {
                 if ((int)st.bars.size() < cfg.N + 2) return 0;
@@ -484,6 +504,11 @@ private:
         st.pos_bars_held = 0;
         st.pos_entry_bar_idx = st.bar_idx;
         st.pos_entry_ts = st.bars.back().ts_sec;
+        // store the broken channel level for the reclaim (failed-breakout) exit
+        if (cfg.family == Family::Donchian) {
+            auto dch = compute_donch(st.bars, cfg.N);
+            st.pos_break_lvl = (dir < 0) ? dch.lo : dch.hi;
+        }
         st.last_entry_bar_idx = st.bar_idx;
         printf("[SURV-OPEN] %s %s entry=%.5f sl=%.5f tp=%.5f atr=%.5f bar_idx=%d%s\n",
                cfg.tag, dir > 0 ? "LONG" : "SHORT",
@@ -502,9 +527,22 @@ private:
         bool sl_hit = (st.pos_side > 0) ? (bid <= st.pos_sl) : (ask >= st.pos_sl);
         bool tp_hit = (st.pos_side > 0) ? (bid >= st.pos_tp) : (ask <= st.pos_tp);
         bool timeout = bars_held >= cfg.max_hold_bars;
-        if (!sl_hit && !tp_hit && !timeout) return;
+        // Failed-breakout (reclaim) exit — Donchian only, checked AFTER SL/TP so it
+        // only acts when price closed back through the broken level WITHOUT hitting
+        // the stop. Bar-close signal: uses the last completed bar's close. Gated to
+        // shorts + the first reclaim_max_bars bars (the validated robust config).
+        bool reclaim_hit = false;
+        if (cfg.reclaim_exit && cfg.family == Family::Donchian && !st.bars.empty()
+                && bars_held <= cfg.reclaim_max_bars
+                && (!cfg.reclaim_short_only || st.pos_side < 0)) {
+            const double last_c = st.bars.back().c;
+            reclaim_hit = (st.pos_side < 0) ? (last_c > st.pos_break_lvl)
+                                            : (last_c < st.pos_break_lvl);
+        }
+        if (!sl_hit && !tp_hit && !reclaim_hit && !timeout) return;
         const double exit_px = sl_hit ? st.pos_sl : (tp_hit ? st.pos_tp : mid);
-        const char* why = sl_hit ? "SL_HIT" : (tp_hit ? "TP_HIT" : "TIMEOUT");
+        const char* why = sl_hit ? "SL_HIT"
+                        : (tp_hit ? "TP_HIT" : (reclaim_hit ? "RECLAIM" : "TIMEOUT"));
         const double gross_pts = (st.pos_side > 0) ? (exit_px - st.pos_entry)
                                                    : (st.pos_entry - exit_px);
         const double gross_usd = gross_pts * cfg.tick_usd_per_lot * cfg.lot;  // engine-internal USD (stats/log only)
@@ -610,9 +648,9 @@ public:
         };
         // All designated to satisfy MSVC's strict designated-init rule.
         // 1.  XAUUSD 4h DonchN20
-        add({ .tag="XAU_4h_DonchN20",  .symbol="XAUUSD",  .tf_sec=14400, .family=Family::Donchian, .N=20,  .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
+        add({ .tag="XAU_4h_DonchN20",  .symbol="XAUUSD",  .tf_sec=14400, .family=Family::Donchian, .N=20,  .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .reclaim_exit=true, .lot=0.01 });
         // 2.  XAUUSD 4h DonchN100
-        add({ .tag="XAU_4h_DonchN100", .symbol="XAUUSD",  .tf_sec=14400, .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
+        add({ .tag="XAU_4h_DonchN100", .symbol="XAUUSD",  .tf_sec=14400, .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .reclaim_exit=true, .lot=0.01 });
         // 3.  GER40  4h RSI N=7
         // DISABLED 2026-06-01: GER40 RSI mean-rev shorts the RISK_ON uptrend -> net-negative shadow (counter-trend dead pattern). GER40 edge is trend (KeltnerH1/TurtleH4/MACross).
         // add({ .tag="GER_4h_RSI_N7",    .symbol="GER40",   .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
