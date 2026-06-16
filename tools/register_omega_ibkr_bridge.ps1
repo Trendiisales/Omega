@@ -83,8 +83,12 @@ $MaxLvl   = 5
 # priority order ONLY once their depth sub is confirmed non-empty:
 #   GER40, UK100, DJ30, EURUSD, GBPUSD, USOIL, ...
 $Symbols = @(
-    'XAUUSD','MGC'
+    'XAUUSD','MGC','NQ'
 ) -join ','
+# 2026-06-17: +NQ (E-mini Nasdaq future, CME). Aurora footprint needs a real
+# tape; NQ futures HAVE one under the active CME Real-Time(NP,L2) sub (the old
+# "empty" NAS100/US500 streams were the spot CFD, no depth -- different thing).
+# XAUUSD,MGC,NQ = 3 depth streams = AT the 3-stream cap. ES needs a freed slot.
 
 if (-not (Test-Path $Py))     { Write-Error "Python venv not at $Py";   exit 1 }
 if (-not (Test-Path $Script)) { Write-Error "bridge not at $Script";    exit 1 }
