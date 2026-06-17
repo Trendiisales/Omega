@@ -84,6 +84,35 @@ def one_pass(in_dir, out_dir, date_str, stamp_ms=None):
             fh.write("\n".join(lines) + "\n")
     except Exception:
         pass  # gate-file write must never break the snapshotter
+
+    # Append-only gate history -> scored later by tools/analytics/aurora_gate_eval.py
+    # (forward-return of each verdict vs what price did next -> is the gate adding
+    # value / does it earn a size bump). One row per symbol per snapshot. price is
+    # the futures (MGC/NQ) mid -- the series the gate is computed in; forward
+    # return there == spot/index forward return (basis ~constant).
+    try:
+        hist = os.path.join(out_dir, "aurora_gate_history.csv")
+        new = not os.path.exists(hist)
+        with open(hist, "a") as fh:
+            if new:
+                fh.write("stamp_ms,fut,sym,price,allow_long,allow_short,bias,"
+                         "room_long_atr,room_short_atr\n")
+            for fut, tradables in GATE_MAP.items():
+                snap = results.get(fut) or {}
+                g = snap.get("gate")
+                if not g:
+                    continue
+                price = snap.get("price", 0.0)
+                al  = 1 if g.get("allow_long")  else 0
+                ash = 1 if g.get("allow_short") else 0
+                bias = g.get("bias", "neutral")
+                rl  = g.get("room_long_atr", 99.0)
+                rs  = g.get("room_short_atr", 99.0)
+                for t in tradables:
+                    fh.write(f"{int(stamp_ms)},{fut},{t},{price},{al},{ash},"
+                             f"{bias},{rl},{rs}\n")
+    except Exception:
+        pass
     return results
 
 
