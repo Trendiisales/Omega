@@ -74,6 +74,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include "AuroraGate.hpp"
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -261,6 +262,11 @@ private:
         {
             const double spread_pts = ask - bid;
             if (!ExecutionCostGuard::is_viable("XAUUSD", spread_pts, sl_dist, lot, 1.5)) return;
+        }
+        // AuroraGate: MGC-tape order-flow gate (long-only breakout). Fail-open.
+        if (!omega::aurora_allow("XAUUSD", true, now_ms)) {
+            std::printf("[AURORA-GATE] XAUUSD LONG BLOCKED -- GoldVolBreakoutM30\n");
+            return;
         }
         pos.active = true;
         pos.entry_px = entry;

@@ -80,6 +80,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include "AuroraGate.hpp"
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -288,6 +289,11 @@ private:
             if (!ExecutionCostGuard::is_viable(symbol.c_str(), spread_pts, span, lot, 1.0)) return;
         }
 
+        // AuroraGate: MGC-tape order-flow gate (session-momentum long). Fail-open.
+        if (!omega::aurora_allow(symbol.c_str(), true, now_ms)) {
+            std::printf("[AURORA-GATE] %s LONG BLOCKED -- SessionMomentum\n", symbol.c_str());
+            return;
+        }
         pos.active        = true;
         pos.entry_px      = entry;
         pos.sl_px         = sl_px;

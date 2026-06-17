@@ -20,6 +20,18 @@ static void init_engines(const std::string& cfg_path)
     printf("[OMEGA-INIT] process boot stamp = %lld (phantom-trade net armed)\n",
            (long long)g_process_boot_sec);
 
+    // ── AuroraGate engine hook: routes omega::aurora_allow() (called by the
+    // trend/breakout gold engines -- GoldVolBreakoutM30, SessionMomentum,
+    // GoldOrbRetrace) through g_aurora_gate. Fail-open on stale/missing tape;
+    // kill instantly via g_aurora_gate.enabled_=false. enter_directional uses
+    // g_aurora_gate directly. Mean-rev + multi-cell engines intentionally NOT
+    // gated (room-to-wall logic suits trend/breakout only).
+    omega::aurora_gate_hook() = [](const char* s, bool is_long, int64_t now_ms) {
+        return g_aurora_gate.allow(std::string(s), is_long, now_ms);
+    };
+    printf("[OMEGA-INIT] AuroraGate hook installed (enabled=%d path=%s)\n",
+           (int)g_aurora_gate.enabled_, g_aurora_gate.path_.c_str());
+
     // ── S51 2026-05-27: PortfolioGuard config ──────────────────────────────
     // After S49/S50 real-class audit confirmed 16 XAU D1/H4 engines have real
     // edge, the concurrency cap must protect against correlated stacking:

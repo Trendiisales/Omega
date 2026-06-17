@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <cstdint>
+#include <functional>
 
 namespace omega {
 
@@ -117,5 +118,24 @@ struct AuroraGate {
                std::to_string(room).substr(0, 4) + "A";
     }
 };
+
+// -----------------------------------------------------------------------------
+// Engine-side hook. Engine headers are compiled standalone in backtest harnesses
+// (no globals.hpp / no g_aurora_gate), so they must NOT reference the global
+// directly. Instead they call omega::aurora_allow(...), which routes through a
+// hook the live binary installs in engine_init (lambda -> g_aurora_gate.allow).
+// In harnesses the hook is empty -> aurora_allow returns true (fail-open, zero
+// behavior change). Set once at startup, read-only during trading.
+// Use this ONLY for trend / breakout engines (room-to-wall logic); mean-reversion
+// engines fade INTO walls and must NOT be gated this way.
+// -----------------------------------------------------------------------------
+inline std::function<bool(const char*, bool, int64_t)>& aurora_gate_hook() {
+    static std::function<bool(const char*, bool, int64_t)> h;
+    return h;
+}
+inline bool aurora_allow(const char* sym, bool is_long, int64_t now_ms) {
+    auto& h = aurora_gate_hook();
+    return h ? h(sym, is_long, now_ms) : true;   // no hook -> allow
+}
 
 }  // namespace omega

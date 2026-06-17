@@ -27,6 +27,7 @@
 #include <string>
 #include <deque>
 #include <functional>
+#include "AuroraGate.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -198,6 +199,11 @@ struct GoldOrbRetraceEngine {
         // XAUUSD instances resolve to no cluster (always allowed); the NAS100
         // instance is capped together with FvgCont/PeachyOrb (S-2026-06-11)
         if (!ClusterGate::allow_entry(symbol.c_str(), bias_>0, tag.c_str())) { traded_=true; return; }
+        // AuroraGate: MGC/NQ-tape order-flow gate (ORB breakout). Fail-open.
+        if (!omega::aurora_allow(symbol.c_str(), bias_>0, bar_start_ms)) {
+            std::printf("[AURORA-GATE] %s %s BLOCKED -- %s\n", symbol.c_str(), bias_>0?"LONG":"SHORT", tag.c_str());
+            traded_=true; return;
+        }
         pos_.active=true; pos_.side=bias_; pos_.entry=entry_lvl_; pos_.sl=sl;
         pos_.lot=lot; pos_.sl_dist=risk; pos_.mfe=0.0; pos_.entry_ts_ms=bar_start_ms;
         traded_=true; ++trade_id_;
