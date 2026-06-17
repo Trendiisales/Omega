@@ -46,8 +46,11 @@ def load(path):
             p=ln.rstrip("\n").split(",")
             if p and p[0]=="trade_id": hdr=p; continue
             if hdr and len(p)==len(hdr):
-                if p[0] in seen: continue
-                seen.add(p[0]); rows.append(dict(zip(hdr,p)))
+                # dedup by the FULL row -- trade_id is NOT globally unique (resets
+                # per session), so deduping on it collapses distinct trades. An
+                # identical line across cumulative+daily files is a true duplicate.
+                if ln in seen: continue
+                seen.add(ln); rows.append(dict(zip(hdr,p)))
         fh.close()
     return rows
 
