@@ -1737,9 +1737,13 @@ static void init_engines(const std::string& cfg_path)
         //     FUL Sh=13.01 at 10bps (IS=7.32 OOS=18.42), n=20, WR=70%.
         //     Cost-robust to 50bps (FUL Sh=10.51).
         //   CAVEAT: sparse (~10 trades/year). High Sharpe variance from low n.
+        // CULL S-2026-06-17 (retest campaign): xau_d1_zoo_audit real-class
+        // Sharpe=+0.33 (n=28) vs this comment's claimed FUL Sh=13.01 = ~40x
+        // inline inflation (BACKTEST_TRUTH disease). Positive-but-sub-0.5 =
+        // marginal noise, not edge. Disabled. Reversible: shadow, lot 0.01.
         g_xau_turtle_d1.p           = omega::make_xau_turtle_d1_params();
         g_xau_turtle_d1.shadow_mode = true;
-        g_xau_turtle_d1.enabled     = true;
+        g_xau_turtle_d1.enabled     = false;
         g_xau_turtle_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauTurtleD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_turtle_d1.shadow_mode, (int)g_xau_turtle_d1.enabled,
@@ -2336,10 +2340,15 @@ static void init_engines(const std::string& cfg_path)
             // Re-enabled in SHADOW (shadow_mode=true) to gather forward data;
             // thin n (13/14) -> NOT live-size yet. EURUSD seeds from H4-cadence
             // warmup (was H1 -> EMA200/ATR cadence mismatch, fixed this session).
-            g_amr_eurusd.enabled     = true;
+            // CULL S-2026-06-17 (marginal-engine retest campaign): faithful
+            // real-class amr_grid_bt on EURUSD H1 = PF0.75 WR41% BOTH HALVES NEG
+            // (H1 0.72/H2 0.77), net-. No edge -> disabled. GBPUSD disabled by
+            // sibling-inference (same dead mean-rev grid family; its own bar data
+            // not yet assembled for a direct run). Reversible: shadow, lot 0.01.
+            g_amr_eurusd.enabled     = false;
             amr_boot(g_amr_eurusd, "eurusd", warmup_eur_h4);
 
-            g_amr_gbpusd.enabled     = true;
+            g_amr_gbpusd.enabled     = false;
             amr_boot(g_amr_gbpusd, "gbpusd", warmup_gbp);
 
             // S37g 2026-05-26: FxEnsembleEngine -- 5 cross-family validated cells.
@@ -2609,18 +2618,24 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] FxTurtleH4 cohort: EUR+GBP active; AUD/NZD/JPY awaiting warmup CSVs\n");
 
         // 2026-05-20 mega_sweep2 candle batch (3 D1 patterns)
+        // CULL S-2026-06-17 (retest campaign): xau_d1_zoo_audit real-class
+        // Sharpe=+0.18 (n=46) vs claimed 3.00 = 16.9x inline inflation.
+        // Marginal no-edge (<0.5). Disabled. Reversible: shadow, lot 0.01.
         g_xau_doji_rej_d1.p           = omega::make_xau_doji_rej_d1_params();
         g_xau_doji_rej_d1.shadow_mode = true;
-        g_xau_doji_rej_d1.enabled     = true;
+        g_xau_doji_rej_d1.enabled     = false;
         g_xau_doji_rej_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauDojiRejD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d doji_body=%.2f\n",
                (int)g_xau_doji_rej_d1.shadow_mode,
                g_xau_doji_rej_d1.p.sl_atr_mult, g_xau_doji_rej_d1.p.tp_atr_mult,
                g_xau_doji_rej_d1.p.hold_max_days, g_xau_doji_rej_d1.p.doji_body_pct);
 
+        // CULL S-2026-06-17 (retest campaign): xau_d1_zoo_audit real-class
+        // Sharpe=+0.30 (n=34) vs claimed 3.00 = 9.9x inline inflation.
+        // Marginal no-edge (<0.5). Disabled. Reversible: shadow, lot 0.01.
         g_xau_outside_bar_d1.p           = omega::make_xau_outside_bar_d1_params();
         g_xau_outside_bar_d1.shadow_mode = true;
-        g_xau_outside_bar_d1.enabled     = true;
+        g_xau_outside_bar_d1.enabled     = false;
         g_xau_outside_bar_d1.symbol      = "XAUUSD";
         printf("[OMEGA-INIT] XauOutsideBarD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d\n",
                (int)g_xau_outside_bar_d1.shadow_mode,
