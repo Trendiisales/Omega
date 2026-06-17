@@ -249,6 +249,50 @@ public:
     // enforce a per-(symbol,side) concurrency cap (dedup correlated stacking).
     const char* sym_cstr() const { return cfg.symbol; }
     int open_side()        const { return st.pos_active ? st.pos_side : 0; }
+    bool has_open()        const { return st.pos_active; }
+
+    // S-2026-06-17 dedup-RESOLVE: unconditionally market-close a redundant
+    // duplicate (a sibling cell already holds this symbol+side). Uses the SAME
+    // close path as a normal SL/TP exit (emits a TradeRecord via cb -> the
+    // ledger / broker path handle it exactly as any other exit) -- introduces NO
+    // new order behavior, just an earlier exit for the redundant cell. The
+    // blanket dedup gates new ENTRIES; this clears legacy / same-bar dup OPENS
+    // (e.g. XAU DonchN20 + DonchN100 firing on one breakout) that the entry gate
+    // can't undo. Reason "DEDUP_CLOSE" so it is distinguishable in the ledger.
+    void force_close_dup(double bid, double ask, int64_t now_s, CloseCb cb) noexcept {
+        if (!st.pos_active) return;
+        const double mid = 0.5 * (bid + ask);
+        const double exit_px  = mid;
+        const double gross_pts = (st.pos_side > 0) ? (exit_px - st.pos_entry)
+                                                   : (st.pos_entry - exit_px);
+        const double gross_usd = gross_pts * cfg.tick_usd_per_lot * cfg.lot;  // stats/log only
+        const double gross_raw = gross_pts * cfg.lot;                          // ledger applies mult
+        omega::TradeRecord tr;
+        tr.symbol     = cfg.symbol;
+        tr.side       = (st.pos_side > 0) ? "LONG" : "SHORT";
+        tr.engine     = cfg.tag;
+        tr.entryPrice = st.pos_entry;
+        tr.exitPrice  = exit_px;
+        tr.sl         = st.pos_sl;
+        tr.size       = cfg.lot;
+        tr.pnl        = gross_raw;
+        tr.mfe        = st.pos_mfe;
+        tr.entryTs    = st.pos_entry_ts;
+        tr.exitTs     = now_s;
+        tr.exitReason = "DEDUP_CLOSE";
+        tr.regime     = "SURV";
+        tr.shadow     = st.shadow_mode;
+        ++st.n_trades;
+        if (gross_usd > 0) ++st.n_wins;
+        st.cum_net += gross_usd;
+        printf("[SURV-DEDUP-CLOSE] %s %s entry=%.5f exit=%.5f $=%+.2f -- redundant dup closed%s\n",
+               cfg.tag, st.pos_side > 0 ? "LONG" : "SHORT", st.pos_entry, exit_px,
+               gross_usd, st.shadow_mode ? " [SHADOW]" : "");
+        fflush(stdout);
+        st.pos_active = false;
+        st.pos_side   = 0;
+        if (cb) cb(tr);
+    }
 
     // S-2026-06-16: Kaufman Efficiency Ratio over the last w CLOSED bars
     // (1.0 = clean directional trend, ~0 = chop). Drives the regime-gated dedup
@@ -744,6 +788,27 @@ public:
             };
         }
         for (auto& c : cells) c.on_tick(sym, bid, ask, now_ms, spx, cb, side_taken);
+
+        // S-2026-06-17 dedup-RESOLVE: the entry gate (side_taken) blocks NEW
+        // double-stacks, but legacy positions (opened before the gate existed) and
+        // same-bar simultaneous opens (e.g. XAU DonchN20 + DonchN100 on one
+        // breakout) can leave two cells holding the same symbol+side. Keep the
+        // FIRST cell in registration order; market-close the rest via the cell's
+        // normal exit path. Only in blanket mode (eff_mode==1) -- mode 2 (regime-
+        // gated) deliberately allows same-side stacking in trends, so it is not
+        // resolved here. Operator policy is blanket (mode 1) since 85952e16.
+        if (eff_mode == 1) {
+            for (size_t i = 0; i < cells.size(); ++i) {
+                if (!cells[i].has_open()) continue;
+                for (size_t j = i + 1; j < cells.size(); ++j) {
+                    if (cells[j].has_open()
+                        && cells[j].open_side() == cells[i].open_side()
+                        && std::strcmp(cells[j].sym_cstr(), cells[i].sym_cstr()) == 0) {
+                        cells[j].force_close_dup(bid, ask, now_ms / 1000, cb);
+                    }
+                }
+            }
+        }
         // Also feed SPX overlay if SPX tick passes through
         if (sym == "US500.F" || sym == "SPXUSD" || sym == "US500") {
             // Approximate SPX from US500 mid: aggregate into H4 bar.
