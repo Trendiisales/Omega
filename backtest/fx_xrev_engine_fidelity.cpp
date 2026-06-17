@@ -41,7 +41,8 @@ static void run(const char* sym,const char* path,double hs_bps,
     double gw=0,gl=0; int n=0,win=0;
     std::vector<std::pair<long long,double>> dump;
     auto cb=[&](const omega::TradeRecord& t){ ++n; if(t.net_pnl>0){++win;gw+=t.net_pnl;} else gl+=-t.net_pnl; dump.push_back({(long long)t.exitTs,t.net_pnl}); };
-    const double sp=hs_bps/10000.0;
+    double _mult=1.0; if(const char* m=getenv("SPREAD_MULT")) _mult=atof(m);
+    const double sp=(hs_bps*_mult)/10000.0;
     for(auto&b:bars){ double half=b.c*sp; eng.on_d1_bar(b.h,b.l,b.c,b.c-half,b.c+half,b.day_ms,cb); }
     eng.force_close(bars.back().day_ms,cb);
     if(const char* pd=getenv("PORT_DUMP")){ FILE* pf=fopen(pd,"w"); if(pf){ for(auto&x:dump) fprintf(pf,"%lld,%.6f\n",x.first,x.second); fclose(pf);} }

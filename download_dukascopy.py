@@ -41,6 +41,7 @@ UA          = "Mozilla/5.0 (compatible; tick-downloader/1.0)"
 # Per-symbol price divisor lookup (Dukascopy bi5 stores prices as raw ints)
 PRICE_DIV_MAP = {
     "XAUUSD":           1000.0,   # 3 decimal places
+    "XAGUSD":           1000.0,   # silver ~$30, 3 decimals (verify first prices)
     "USNASDAQIDXUSD":      1.0,   # 0 decimal places (indices)
     "USA500IDXUSD":        1.0,
     "DEUIDXEUR":           1.0,

@@ -62,6 +62,7 @@ class FxCrossRevEngine {
 public:
     bool             shadow_mode = true;
     bool             enabled     = false;
+    bool             bypass_cost_gate = false;  // harness-only diagnostic; production leaves false
     double           lot         = 0.01;
     FxCrossRevParams p;
 
@@ -212,7 +213,7 @@ private:
                        int64_t day_ms, double z) noexcept {
         const double L = sized_lot(close_px);
         // cost gate: 1-ATR expected reversion proxy
-        if (atr_ > 0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask - bid, atr_, L, 1.5)) return;
+        if (!bypass_cost_gate && atr_ > 0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask - bid, atr_, L, 1.5)) return;
         pos_ = Pos{};
         pos_.active = true; pos_.is_long = is_long;
         pos_.entry_px = is_long ? ask : bid;
