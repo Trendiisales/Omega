@@ -369,7 +369,43 @@ class AuroraEngine:
         win_cum = sum(self.win_delta)
         nearest_sup = min((s for s in sup_keys), key=lambda s: s.mid - price, default=None)
         nearest_dem = max((s for s in dem_keys), key=lambda s: s.mid - price, default=None)
+
+        # ── AuroraGate verdict (SHADOW / observe-only) ───────────────────────
+        # Per-symbol order-flow micro-regime, exposed for the regime dispatch +
+        # AUR panel. mode="shadow": this is a SIGNAL, the C++ trading binary does
+        # NOT block entries on it yet (flip to live once observed). Logic:
+        #   - room to the nearest OPPOSING wall (in ATR) -- no room => no entry
+        #   - a thick ABSORPTION wall <MIN_ROOM away = hard block (it will hold)
+        #   - flow alignment: only long when net delta is buyers, short when sellers
+        #   - bias from net delta + most-recent FLIP (structure shift)
+        MIN_ROOM = 1.0
+        def _dist(s):  # absolute ATR distance price->wall
+            return abs(s.mid - price) / atr if (s and atr > 0) else 999.0
+        room_long  = _dist(nearest_sup)   # clear room above before resistance
+        room_short = _dist(nearest_dem)   # clear room below before support
+        sup_abs_block = bool(nearest_sup and nearest_sup.is_abs and room_long  < MIN_ROOM)
+        dem_abs_block = bool(nearest_dem and nearest_dem.is_abs and room_short < MIN_ROOM)
+        allow_long  = bool(room_long  >= MIN_ROOM and not sup_abs_block and win_cum >= 0)
+        allow_short = bool(room_short >= MIN_ROOM and not dem_abs_block and win_cum <= 0)
+        flip_bias = 0
+        for ev in (self.last_events or []):
+            if ev.get("event") == "flipped":
+                flip_bias = 1 if ev.get("side") == "buy" else -1
+        if win_cum > 0 and flip_bias >= 0:   gate_bias = "long"
+        elif win_cum < 0 and flip_bias <= 0: gate_bias = "short"
+        else:                                gate_bias = "neutral"
+        gate = {
+            "mode": "shadow", "bias": gate_bias,
+            "allow_long": allow_long, "allow_short": allow_short,
+            "room_long_atr": round(room_long, 2), "room_short_atr": round(room_short, 2),
+            "min_room_atr": MIN_ROOM,
+            "sup_abs_block": sup_abs_block, "dem_abs_block": dem_abs_block,
+            "reason": (f"L:{'ok' if allow_long else 'block'}({room_long:.1f}A) "
+                       f"S:{'ok' if allow_short else 'block'}({room_short:.1f}A) "
+                       f"bias={gate_bias} delta={'+' if win_cum>=0 else '-'}"),
+        }
         return {
+            "gate": gate,
             "sym": sym, "tf_min": tf or cfg.tf_min, "price": round(price, 4),
             "atr": round(atr, 4), "poc": round(self.last_poc, 4) if self.last_poc else None,
             "window_delta": round(win_cum, 2),
