@@ -262,6 +262,16 @@ public:
     void force_close_dup(double bid, double ask, int64_t now_s, CloseCb cb) noexcept {
         if (!st.pos_active) return;
         const double mid = 0.5 * (bid + ask);
+        // Sanity guard: refuse to book a close at an implausible price (bad/cross-
+        // symbol tick). A real exit is within ~25% of entry; anything past that is
+        // a feed glitch -- skip this tick, retry on the next valid one.
+        if (mid <= 0 || st.pos_entry <= 0 ||
+            std::abs(mid - st.pos_entry) / st.pos_entry > 0.25) {
+            printf("[SURV-DEDUP-SKIP] %s bad mid=%.5f vs entry=%.5f -- skip dup-close this tick\n",
+                   cfg.tag, mid, st.pos_entry);
+            fflush(stdout);
+            return;
+        }
         const double exit_px  = mid;
         const double gross_pts = (st.pos_side > 0) ? (exit_px - st.pos_entry)
                                                    : (st.pos_entry - exit_px);
@@ -800,10 +810,15 @@ public:
         if (eff_mode == 1) {
             for (size_t i = 0; i < cells.size(); ++i) {
                 if (!cells[i].has_open()) continue;
+                // CRITICAL: only resolve cells of the CURRENT tick's symbol -- the
+                // bid/ask passed in are for `sym`, so closing a cell of a different
+                // symbol would book the wrong-symbol price (S-2026-06-17 bugfix:
+                // first cut closed a XAU short at the EURUSD mid -> phantom +$4293).
+                if (std::strcmp(cells[i].sym_cstr(), sym.c_str()) != 0) continue;
                 for (size_t j = i + 1; j < cells.size(); ++j) {
                     if (cells[j].has_open()
-                        && cells[j].open_side() == cells[i].open_side()
-                        && std::strcmp(cells[j].sym_cstr(), cells[i].sym_cstr()) == 0) {
+                        && std::strcmp(cells[j].sym_cstr(), sym.c_str()) == 0
+                        && cells[j].open_side() == cells[i].open_side()) {
                         cells[j].force_close_dup(bid, ask, now_ms / 1000, cb);
                     }
                 }
