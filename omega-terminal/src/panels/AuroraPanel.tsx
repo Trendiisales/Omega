@@ -47,6 +47,74 @@ function ShelfRow({ l }: { l: AuroraLevel }) {
   );
 }
 
+function shelfFill(l: AuroraLevel): string {
+  if (l.kind === 'absorption') return l.side === 'demand' ? '#10b981' : '#f43f5e';
+  return l.side === 'demand' ? '#38bdf8' : '#fbbf24';
+}
+
+/** Pine-style heatshelf chart: candles + horizontal supply/demand zones. */
+function FootprintChart({ snap }: { snap: AuroraSnap }) {
+  const bars = snap.bars ?? [];
+  const shelves = [...(snap.key_supply ?? []), ...(snap.key_demand ?? [])];
+  if (bars.length < 2) {
+    return <div className="py-3 text-center text-xs text-neutral-600">building chart — need more bars…</div>;
+  }
+  const W = 760, H = 240, padL = 6, padR = 78, padT = 8, padB = 8;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const price = snap.price ?? bars[bars.length - 1][4];
+
+  let lo = Infinity, hi = -Infinity;
+  for (const b of bars) { lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
+  for (const s of shelves) { lo = Math.min(lo, s.bot); hi = Math.max(hi, s.top); }
+  lo = Math.min(lo, price); hi = Math.max(hi, price);
+  const span = (hi - lo) || 1;
+  lo -= span * 0.04; hi += span * 0.04;
+  const y = (p: number) => padT + (hi - p) / (hi - lo) * plotH;
+  const cw = plotW / bars.length;
+  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" style={{ height: 240 }}>
+      {/* shelf zones — projected full width, like the Pine heatshelves */}
+      {shelves.map((s, i) => {
+        const yt = y(s.top), yb = y(s.bot);
+        const h = Math.max(1.5, yb - yt);
+        const op = Math.min(0.34, 0.12 + (s.touches || 0) * 0.05 + (s.kind === 'absorption' ? 0.08 : 0));
+        return (
+          <g key={`z${i}`}>
+            <rect x={padL} y={yt} width={plotW + padR} height={h} fill={shelfFill(s)} opacity={op} />
+            <line x1={padL} x2={padL + plotW + padR} y1={y(s.mid)} y2={y(s.mid)}
+                  stroke={shelfFill(s)} strokeWidth={0.8} opacity={0.7} />
+            <text x={W - padR + 3} y={y(s.mid) + 3} fontSize={9} fill={shelfFill(s)} fontFamily="monospace">
+              {s.side === 'supply' ? '▲' : '▼'}{fmt(s.mid)} {s.flipped ? '⟲' : (s.touches > 0 ? `×${s.touches}` : '')}
+            </text>
+          </g>
+        );
+      })}
+      {/* candles */}
+      {bars.map((b, i) => {
+        const [, o, h, l, c] = b;
+        const x = padL + i * cw + cw * 0.5;
+        const up = c >= o;
+        const col = up ? '#34d399' : '#fb7185';
+        const bodyT = y(Math.max(o, c)), bodyB = y(Math.min(o, c));
+        const bw = Math.max(1, cw * 0.6);
+        return (
+          <g key={`c${i}`}>
+            <line x1={x} x2={x} y1={y(h)} y2={y(l)} stroke={col} strokeWidth={0.7} />
+            <rect x={x - bw / 2} y={bodyT} width={bw} height={Math.max(0.8, bodyB - bodyT)} fill={col} />
+          </g>
+        );
+      })}
+      {/* current price */}
+      <line x1={padL} x2={W - padR} y1={y(price)} y2={y(price)} stroke="#e5e7eb"
+            strokeWidth={0.7} strokeDasharray="3 3" opacity={0.7} />
+      <rect x={W - padR} y={y(price) - 7} width={padR} height={14} fill="#1f2937" />
+      <text x={W - padR + 3} y={y(price) + 3} fontSize={9} fill="#e5e7eb" fontFamily="monospace">{fmt(price)}</text>
+    </svg>
+  );
+}
+
 function SymbolCard({ snap }: { snap: AuroraSnap }) {
   const meta = snap._meta ?? {};
   const bias = snap.bias === 'buyers' ? 'text-emerald-400' : 'text-rose-400';
@@ -88,6 +156,8 @@ function SymbolCard({ snap }: { snap: AuroraSnap }) {
           ) : (
             dem.map((l, i) => <ShelfRow key={`d${i}`} l={l} />)
           )}
+
+          <FootprintChart snap={snap} />
         </>
       )}
     </div>

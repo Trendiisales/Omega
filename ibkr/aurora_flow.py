@@ -158,8 +158,8 @@ def build_bar_footprints(signed_trades, cfg: AuroraCfg):
     for ts, px, sz, sign in signed_trades:
         bkey = ts // bar_ms
         if bkey not in bars:
-            bars[bkey] = {"bar_ms": bkey * bar_ms, "high": px, "low": px,
-                          "close": px, "rows": {}}
+            bars[bkey] = {"bar_ms": bkey * bar_ms, "open": px, "high": px,
+                          "low": px, "close": px, "rows": {}}
             order.append(bkey)
         b = bars[bkey]
         b["high"] = max(b["high"], px); b["low"] = min(b["low"], px); b["close"] = px
@@ -416,7 +416,9 @@ def run_file(trades_path, l2_path, cfg: AuroraCfg, sym):
                           "note": "no usable bars (market closed / empty file). "
                                   "COMEX gold halts 21:00-22:00 UTC; record during RTH."}}
     snap = eng.snapshot(price, sym=sym)
-    quote_cov = sum(1 for _, _, _, s in signed if s != 0) and len(q_ts) > 0
+    # last N bars (OHLC) for the GUI chart -- [bar_ms, open, high, low, close]
+    snap["bars"] = [[b["bar_ms"], round(b["open"], 4), round(b["high"], 4),
+                     round(b["low"], 4), round(b["close"], 4)] for b in bars[-90:]]
     snap["_meta"] = {"trades": len(trades), "bars": len(bars),
                      "l2_quotes": len(q_ts), "total_events": total_events,
                      "delta_via": "quote_rule+L2" if q_ts else "tick_rule_only(no L2)"}

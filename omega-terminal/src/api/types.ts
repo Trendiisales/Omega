@@ -1077,6 +1077,8 @@ export interface AuroraSnap {
   nearest_demand?: AuroraLevel | null;
   key_supply?: AuroraLevel[];
   key_demand?: AuroraLevel[];
+  /** recent footprint bars for the chart: [bar_ms, open, high, low, close] */
+  bars?: number[][];
   error?: string;
   _meta?: {
     trades?: number;
