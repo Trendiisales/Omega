@@ -26,6 +26,23 @@ if (-not (Test-Path $Script)) { Write-Error "bridge not at $Script";   exit 1 }
 $User = "$env:COMPUTERNAME\$env:USERNAME"
 Write-Host "Registering '$TaskName' as $User"
 
+# ── S-2026-06-17: select the bridge path PERMANENTLY (Machine scope persists across
+#    deploys + reboots). Registering the bridge implies Omega should CONSUME it, so
+#    set OMEGA_BIGCAP_BRIDGE=1 and drop the mutually-exclusive in-process IBKR path
+#    (OMEGA_BIGCAP_IBKR -> stub/no-op unless the binary is built with OMEGA_WITH_IBKR).
+#    Root cause this fixes: IBKR path was selected on a non-IBKR build = zero trades,
+#    silent, for weeks. NOTE: the Omega SERVICE must restart to read new Machine env
+#    -- OMEGA.ps1 deploy does that. ──
+[Environment]::SetEnvironmentVariable('OMEGA_BIGCAP_BRIDGE','1',  'Machine')
+[Environment]::SetEnvironmentVariable('OMEGA_BIGCAP_IBKR',  $null,'Machine')
+Write-Host "env: OMEGA_BIGCAP_BRIDGE=1 set, OMEGA_BIGCAP_IBKR removed (Machine). Restart Omega service to apply."
+
+# kill any STALE bigcap bridge procs (the 2026-06-17 double-launch: two pythonw
+# bound-fighting :7784). Start-ScheduledTask below relaunches exactly one.
+Get-CimInstance Win32_Process -Filter "Name like 'pythonw%'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*bigcap_feed_bridge.py*' } |
+    ForEach-Object { Write-Host "killing stale bridge pid $($_.ProcessId)"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
 $action = New-ScheduledTaskAction -Execute $Py `
                                   -Argument "`"$Script`"" `
                                   -WorkingDirectory 'C:\Omega'
