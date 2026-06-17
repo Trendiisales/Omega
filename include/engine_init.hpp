@@ -1957,7 +1957,12 @@ static void init_engines(const std::string& cfg_path)
         // Short leg dead -> long_only. Distinct from the disabled %-based
         // g_orb_estx50 (OpeningRangeEngine). HARD shadow, registered in the gate.
         g_orb_estx50_v2.shadow_mode = true;
-        g_orb_estx50_v2.enabled     = true;   // shadow=true makes it sim-only
+        // CULL S-2026-06-17 (retest campaign): faithful real-class BT on REAL
+        // ESTX50 (=EUSIDXEUR) Dukascopy ticks, 6mo (orb_estx50_revalidate.cpp):
+        // PF0.97 NEGATIVE at ZERO cost, both halves neg (0.75/0.98), -251pt @2pt
+        // cost, n=109. Prior PF1.28 was the optimistic orb_multi_sweep (m5
+        // bar-replay); faithful tick = dead. Reversible: shadow, lot 0.01.
+        g_orb_estx50_v2.enabled     = false;
         g_orb_estx50_v2.symbol      = "ESTX50";
         g_orb_estx50_v2.engine_name = "OrbEstx50";
         g_orb_estx50_v2.or_start_min = 420;   // 07:00 UTC
@@ -3244,7 +3249,14 @@ static void init_engines(const std::string& cfg_path)
     g_eur_gbp_pairs.p.z_out     = 0.5;
     g_eur_gbp_pairs.p.hold_timeout_h1 = 48;
     g_eur_gbp_pairs.shadow_mode = true;
-    g_eur_gbp_pairs.enabled     = true;
+    // CULL S-2026-06-17 (retest campaign): faithful pairs_rigor_cpp at THIS exact
+    // config on real 7yr EURUSD+GBPUSD = Sh-2.04 both halves, robust all-9-neg;
+    // clean recent-17mo = Sh-1.16 (n=359 ~ prior n=358, same entries); leg-swap
+    // = also -2.04 (rules out orientation bug). The prior Sh+7.75/MC-p<0.0001
+    // above used an M5 input file that no longer exists / can't be reproduced on
+    // real EUR+GBP feeds. Decisive faithful failure -> disabled. Reversible:
+    // shadow, lot 0.01. Re-open ONLY if the original blessed m5 reproduces +7.75.
+    g_eur_gbp_pairs.enabled     = false;
     printf("[INIT] EurGbpPairsEngine EURUSD+GBPUSD: shadow=true z_window=%d z_in=%.1f"
            " z_out=%.1f z_stop=%.1f hold_h1=%d risk=$%.0f max_lot=%.2f\n",
            g_eur_gbp_pairs.p.z_window, g_eur_gbp_pairs.p.z_in, g_eur_gbp_pairs.p.z_out,
