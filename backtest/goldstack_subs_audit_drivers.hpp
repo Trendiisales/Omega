@@ -66,6 +66,10 @@
 #include "OmegaTradeLedger.hpp"
 #include "GoldEngineStack.hpp"
 
+// Audit-time cost stress in $/oz applied per trade by Stats::add. Defined in
+// the harness TU; default 0.0. Global scope so both audit variants share it.
+extern double g_gsa_cost_stress_pts;
+
 namespace omega::gsa {
 
 // ---------------------------------------------------------------------------
@@ -138,7 +142,12 @@ struct Stats {
         const double rt_cost = (tr.exitReason == "TP_HIT")
             ? (tr.spreadAtEntry * 0.5)
             :  tr.spreadAtEntry;
-        const double pnl_net = tr.pnl - (rt_cost / 100.0);
+        // GSA_COST_STRESS_PTS: extra round-trip commission in $/oz applied to
+        // EVERY trade (audit-time cost stress; default 0.0 keeps prior
+        // behaviour). Models IBKR commission + extra slippage on top of the
+        // half-spread already embedded in raw pnl (entry at mid, exit at the
+        // adverse quote side). Set via env at main() startup.
+        const double pnl_net = tr.pnl - (rt_cost / 100.0) - (::g_gsa_cost_stress_pts);
 
         ++n_trades;
         gross      += pnl_net;

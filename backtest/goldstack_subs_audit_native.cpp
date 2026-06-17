@@ -79,28 +79,24 @@ extern "C" time_t time(time_t* t) {
 
 namespace gsa = omega::gsa;
 
-// Audit-time cost stress (see drivers header). Original harness keeps 0.0.
-double g_gsa_cost_stress_pts = 0.0;
-
 // ---------------------------------------------------------------------------
 // Tick parser -- DukasCopy YYYYMMDD,HH:MM:SS,bid,ask (same as the other audits)
 // ---------------------------------------------------------------------------
 struct Tick { int64_t ts_ms; double bid; double ask; };
 
+// Native combined-corpus format: timestamp_ms,askPrice,bidPrice
+// (file XAUUSD_2024-03_2026-04_combined.csv). Column order = ts,ASK,BID.
 static bool parse_duka_xau(const char* line, Tick& out) {
-    int Y, M, D, h, m, s; double bid, ask;
-    if (std::sscanf(line, "%4d%2d%2d,%d:%d:%d,%lf,%lf",
-                    &Y, &M, &D, &h, &m, &s, &bid, &ask) != 8) return false;
+    long long ts; double ask, bid;
+    if (std::sscanf(line, "%lld,%lf,%lf", &ts, &ask, &bid) != 3) return false;
     if (bid <= 0.0 || ask <= 0.0 || ask < bid) return false;
-    std::tm tm{};
-    tm.tm_year = Y - 1900; tm.tm_mon = M - 1; tm.tm_mday = D;
-    tm.tm_hour = h;        tm.tm_min  = m;    tm.tm_sec  = s;
-    const time_t epoch_s = timegm(&tm);
-    if (epoch_s <= 0) return false;
-    out.ts_ms = static_cast<int64_t>(epoch_s) * 1000LL;
+    out.ts_ms = static_cast<int64_t>(ts);
     out.bid = bid; out.ask = ask;
     return true;
 }
+
+// Cost-stress global referenced by Stats::add (drivers header). Default 0.0.
+double g_gsa_cost_stress_pts = 0.0;
 
 // ---------------------------------------------------------------------------
 // Silence engine cout / printf -- 154M ticks * 10 engines blowing up the
@@ -174,9 +170,14 @@ int main(int argc, char** argv) {
     const std::string report_path = (argc >= 3) ? std::string(argv[2])
                                                 : std::string("/tmp/goldstack_subs_audit.txt");
 
+    if (const char* cs = std::getenv("GSA_COST_STRESS_PTS")) {
+        g_gsa_cost_stress_pts = std::atof(cs);
+    }
+
     FILE* RPT = std::fopen(report_path.c_str(), "w");
     if (!RPT) { std::fprintf(stderr, "ERROR: cannot open %s\n", report_path.c_str()); return 3; }
-    std::fprintf(stderr, "[GSA] report -> %s\n", report_path.c_str());
+    std::fprintf(stderr, "[GSA] report -> %s  cost_stress_pts=%.4f\n",
+                 report_path.c_str(), g_gsa_cost_stress_pts);
 
     CoutSilencer cout_kill;
     std::freopen("/dev/null", "w", stdout);

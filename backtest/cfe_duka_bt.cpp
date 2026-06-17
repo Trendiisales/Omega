@@ -51,6 +51,11 @@
 #include "OmegaFIX.hpp"          // L2Level, L2Book + microstructure methods
 #include "OmegaTradeLedger.hpp"  // omega::TradeRecord + apply_realistic_costs
 #include "GoldHMM.hpp"
+#include "MacroRegimeDetector.hpp"
+// CFE references the global macro-regime detector (defined in omega_types.hpp in
+// the live build). Provide it here so the faithful harness links standalone.
+namespace omega { }
+static omega::MacroRegimeDetector g_macroDetector;
 #include "CandleFlowEngine.hpp"
 
 // ----------------------------------------------------------------------------
