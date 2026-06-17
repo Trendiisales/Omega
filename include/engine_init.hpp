@@ -1900,7 +1900,11 @@ static void init_engines(const std::string& cfg_path)
         // TP removes the bleed -> NO GRID. HARD shadow until the auto-demote gate
         // judges it on >=30 live trades. Reuses the existing 24.7k-bar M30 warmup.
         g_xau_straddle_m30.shadow_mode = true;
-        g_xau_straddle_m30.enabled     = true;
+        // S-2026-06-17 CULLED: ledger_analytics (n=8) NEG-EXPECTANCY, net -$123,
+        // expR -0.51 -- the bar-replay overstatement (validated PF 1.6-1.9) caught
+        // live. Straddle's wrong-leg bleed isn't covered by the right-leg edge at
+        // IBKR cost. Disabled; revisit only via engine-faithful tick BT.
+        g_xau_straddle_m30.enabled     = false;
         g_xau_straddle_m30.symbol      = "XAUUSD";
         g_xau_straddle_m30.box_n       = 15;
         g_xau_straddle_m30.stop_atr    = 3.0;
@@ -4835,7 +4839,11 @@ static void init_engines(const std::string& cfg_path)
         //   CapitulationEngine (PF1.82 equities). CAVEAT: low-win fat-tail, bull-
         //   dominated corpus though bear passed -> SHADOW, observe before live size.
         g_gold_panic_bounce.shadow_mode = true;     // prove on shadow before any live size
-        g_gold_panic_bounce.enabled     = true;     // shadow=true makes it sim-only
+        // S-2026-06-17 CULLED: ledger_analytics net -$205 (biggest $ loser),
+        // MAEp90 $5781 = catastrophic adverse excursion -- falling-knife long that
+        // catches dips that keep falling. n=4 thin but the structural flaw is clear
+        // + it's the book's top bleeder. Disabled; needs an entry filter not an exit.
+        g_gold_panic_bounce.enabled     = false;    // shadow=true makes it sim-only
         g_gold_panic_bounce.DROP_K      = 8.0;
         g_gold_panic_bounce.DD_LOOKBACK = 250;
         g_gold_panic_bounce.TRAIL_ATR   = 4.5;
