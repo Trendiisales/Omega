@@ -83,12 +83,14 @@ $MaxLvl   = 5
 # priority order ONLY once their depth sub is confirmed non-empty:
 #   GER40, UK100, DJ30, EURUSD, GBPUSD, USOIL, ...
 $Symbols = @(
-    'XAUUSD','MGC','NQ'
+    'XAUUSD','MGC','NAS100'
 ) -join ','
-# 2026-06-17: +NQ (E-mini Nasdaq future, CME). Aurora footprint needs a real
-# tape; NQ futures HAVE one under the active CME Real-Time(NP,L2) sub (the old
-# "empty" NAS100/US500 streams were the spot CFD, no depth -- different thing).
-# XAUUSD,MGC,NQ = 3 depth streams = AT the 3-stream cap. ES needs a freed slot.
+# 2026-06-17: +NAS100 (E-mini Nasdaq future, CME) for the Aurora index footprint.
+# Use the symbol-MAP KEY 'NAS100' (make_contract maps it -> Future symbol 'NQ' on
+# CME) -- 'NQ' is NOT a key and fails with "Unknown symbol mapping: NQ". The
+# recorder still writes ibkr_trades_NQ_*.csv (contract.symbol='NQ'), which Aurora
+# reads. NQ futures have a real tape under the active CME Real-Time(NP,L2) sub.
+# XAUUSD,MGC,NAS100 = 3 depth streams = AT the 3-stream cap. ES needs a freed slot.
 
 if (-not (Test-Path $Py))     { Write-Error "Python venv not at $Py";   exit 1 }
 if (-not (Test-Path $Script)) { Write-Error "bridge not at $Script";    exit 1 }
