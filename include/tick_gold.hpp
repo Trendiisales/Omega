@@ -25,6 +25,12 @@ static void on_tick_gold(
     //   (sustained-bear long-block). Self-contained (no external feed) -> cannot
     //   silently degrade to all-clear in a real bear. See RegimeState.hpp.
     omega::gold_regime().on_tick(bid, ask, omega::pg::_pg_now_ms());
+    // 2026-06-17: macro-hostile tightening ON TOP of the price core. Fail-safe --
+    //   g_macro_gold_gate.hostile() returns false on disabled/missing/stale feed,
+    //   so this can only ADD a long block when real yields + dollar rise hard,
+    //   never unblock. All 8 long-only gold engines inherit it via long_blocked().
+    //   Producer: tools/macro_gold_gate.py (daily). See MacroGoldGate.hpp.
+    omega::gold_regime().set_macro_hostile(g_macro_gold_gate.hostile(omega::pg::_pg_now_ms()));
 
     g_engine_heartbeat.pulse("MidScalperGold");
     g_engine_heartbeat.pulse("MicroScalperGold");

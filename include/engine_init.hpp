@@ -32,6 +32,14 @@ static void init_engines(const std::string& cfg_path)
     printf("[OMEGA-INIT] AuroraGate hook installed (enabled=%d path=%s)\n",
            (int)g_aurora_gate.enabled_, g_aurora_gate.path_.c_str());
 
+    // ── MacroGoldGate (2026-06-17): macro-hostile de-risk tightening for the gold
+    // book, layered ON TOP of the price-based gold_regime() core. Fed each gold
+    // tick in tick_gold.hpp; all 8 long-only gold engines inherit it via
+    // long_blocked(). Fail-safe (false on missing/stale feed). Producer:
+    // tools/macro_gold_gate.py (daily). Kill via g_macro_gold_gate.enabled_=false.
+    printf("[OMEGA-INIT] MacroGoldGate installed (enabled=%d path=%s, fail-safe=false-on-stale)\n",
+           (int)g_macro_gold_gate.enabled_, g_macro_gold_gate.path_.c_str());
+
     // ── S51 2026-05-27: PortfolioGuard config ──────────────────────────────
     // After S49/S50 real-class audit confirmed 16 XAU D1/H4 engines have real
     // edge, the concurrency cap must protect against correlated stacking:

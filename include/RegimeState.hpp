@@ -62,6 +62,15 @@ struct RegimeState {
     int    bars_ = 0;
     double last_close_ = 0.0;
     bool   bear_ = false, bull_ = false;
+    // 2026-06-17: optional EXTERNAL macro-hostile tightening (real-yield + dollar
+    // rising hard => de-risk gold longs). Set each tick from g_macro_gold_gate
+    // (fail-safe: defaults false, cleared on stale/missing feed). It ONLY adds a
+    // long block ON TOP of the price core -- it can never UNblock, so the
+    // "cannot silently degrade to all-clear in a bear" guarantee is preserved.
+    // Validated daily-overlay, marginal value confirmed OVER the price gate:
+    // bull near-free (Sharpe 1.11->1.14, maxDD -20.2%->-14.7%), bear flips
+    // -2.6%->+7.8% maxDD -35.9%->-29.1% (backtest/macro_gold_regime.py).
+    bool   macro_hostile_ = false;
 
     // tick->H1 accumulator
     int64_t acc_bar_ = -1; double a_c_ = 0.0; int a_n_ = 0;
@@ -73,11 +82,14 @@ struct RegimeState {
 
     // ---- queries (graceful: until warm => neutral => blocks nothing) ----
     bool warm()  const noexcept { return bars_ >= EMA_SLOW + PERSIST; }
-    bool is_bear() const noexcept { return bear_; }
+    bool is_bear() const noexcept { return bear_; }         // PRICE core only (a bear engine keys off this, not macro)
     bool is_bull() const noexcept { return bull_; }
-    bool long_blocked()  const noexcept { return bear_; }   // don't buy a sustained downtrend
+    // long_blocked = price-bear OR macro-hostile (the asymmetric bear-insurance tightening).
+    bool long_blocked()  const noexcept { return bear_ || macro_hostile_; }
     bool short_blocked() const noexcept { return bull_; }   // don't short a sustained uptrend
-    const char* regime_name() const noexcept { return bear_ ? "BEAR" : (bull_ ? "BULL" : "NEUTRAL"); }
+    bool macro_hostile() const noexcept { return macro_hostile_; }
+    void set_macro_hostile(bool h) noexcept { macro_hostile_ = h; }
+    const char* regime_name() const noexcept { return bear_ ? "BEAR" : (bull_ ? "BULL" : (macro_hostile_ ? "MACRO-HOSTILE" : "NEUTRAL")); }
 
     // ---- feed: one CLOSED H1 bar ----
     void on_h1_bar(double /*o*/, double /*h*/, double /*l*/, double c) noexcept {

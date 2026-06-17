@@ -40,8 +40,10 @@ omega::EngineGate g_engine_gate;
 #include "OpenPositionRegistry.hpp"
 #include "GoldWaveTrend.hpp"
 #include "AuroraGate.hpp"
+#include "MacroGoldGate.hpp"
 omega::OpenPositionRegistry g_open_positions;
 omega::AuroraGate g_aurora_gate;   // order-flow entry gate (MGC/NQ tape); fail-open
+omega::MacroGoldGate g_macro_gold_gate;   // 2026-06-17: macro-hostile gold de-risk tightening; fail-safe (false)
 
 // Process boot time (epoch sec), stamped at init_engines start. Used by the central
 // phantom-trade net: any closed trade whose entryTs predates boot was opened on a
