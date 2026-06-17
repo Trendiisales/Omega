@@ -300,7 +300,17 @@ int main() {
     };
     auto setup_d1 = [](omega::XauTrendFollowD1Engine& e) {
         e.shadow_mode = true; e.enabled = true;
-        e.lot = 0.01; e.max_spread = 1.0; e.init();
+        e.lot = 0.01; e.max_spread = 1.0;
+        if (getenv("TFD1_OFF")) {
+            e.use_vol_band_gate = false;                 // gate OFF (not production)
+        } else if (getenv("TFD1_HI")) {
+            e.use_vol_band_gate = true;                  // alt: high-only skip
+            e.vol_band_low_pct  = 0.0; e.vol_band_high_pct = 0.85;
+        } else {
+            e.use_vol_band_gate = true;                  // PRODUCTION (engine_init 1689-91)
+            e.vol_band_low_pct  = 0.20; e.vol_band_high_pct = 0.90;
+        }
+        e.init();
     };
 
     auto r1 = run_battery<omega::XauTrendFollow1hEngine>(
