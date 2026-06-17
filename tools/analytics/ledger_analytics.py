@@ -13,7 +13,7 @@ Flags the worst offenders so the review has a ranked to-do.
 
 usage: ledger_analytics.py <ledger.csv> [--min-n 5]
 """
-import csv,sys,math,collections,datetime
+import csv,sys,math,collections,datetime,glob,os
 
 TV={"XAUUSD":100,"XAGUSD":5000,"US500.F":50,"USTEC.F":20,"DJ30.F":5,"NAS100":1,
     "GER40":1.10,"UK100":1.33,"ESTX50":1.10,"EURUSD":100000,"GBPUSD":100000,
@@ -23,16 +23,40 @@ def f(x):
     try: return float(x)
     except: return 0.0
 
+def _resolve(path):
+    """Path -> list of csv files. Glob/dir expands to all daily close files;
+    excludes .bak / .cleared snapshots. Single file passes through."""
+    if any(c in path for c in "*?["):
+        files = sorted(glob.glob(path))
+    elif os.path.isdir(path):
+        files = sorted(glob.glob(os.path.join(path, "omega_trade_closes*.csv")))
+    else:
+        return [path]
+    return [f for f in files if ".bak" not in f and "cleared" not in f]
+
 def load(path):
-    rows=[]; hdr=None
-    for ln in open(path):
-        p=ln.rstrip("\n").split(",")
-        if p and p[0]=="trade_id": hdr=p; continue
-        if hdr and len(p)==len(hdr): rows.append(dict(zip(hdr,p)))
+    # 2026-06-17: glob + concatenate the DAILY close files (dedup by trade_id) so
+    # we read the FULL history, not the cumulative file that resets on every deploy
+    # (a reset 30-trade snapshot made a +$3900 book look negative -- never again).
+    rows=[]; hdr=None; seen=set()
+    for fp in _resolve(path):
+        try: fh=open(fp)
+        except OSError: continue
+        for ln in fh:
+            p=ln.rstrip("\n").split(",")
+            if p and p[0]=="trade_id": hdr=p; continue
+            if hdr and len(p)==len(hdr):
+                if p[0] in seen: continue
+                seen.add(p[0]); rows.append(dict(zip(hdr,p)))
+        fh.close()
     return rows
 
 def main():
-    path=sys.argv[1] if len(sys.argv)>1 else "/tmp/all_closes_raw.csv"
+    # default: glob ALL daily close files under the standard trades dir (cwd-relative
+    # so `cd C:\Omega; python tools\analytics\ledger_analytics.py` reads full history).
+    DEFLT = "logs/trades/omega_trade_closes*.csv"
+    args=[a for a in sys.argv[1:] if not a.startswith("--")]
+    path=args[0] if args else DEFLT
     min_n=int(sys.argv[sys.argv.index("--min-n")+1]) if "--min-n" in sys.argv else 5
     rows=load(path)
     print(f"# ledger: {path}  |  {len(rows)} closed trades  |  per-engine min-n for verdicts: {min_n}\n")
