@@ -69,7 +69,8 @@ DVOL_MIN  = float(os.environ.get("OMEGA_BIGCAP_DVOL_MIN", "0"))
 # 3=delayed (paper default). Delayed = laggy prices + unreliable volume; flip to 1
 # once your IBKR account's market-data entitlement is active. (2026-06-14)
 MKT_DATA_TYPE = int(os.environ.get("OMEGA_BIGCAP_MKTDATA", "3"))
-_candidates = {}             # sym -> dict(sym,px,day_open,up,dvol,ts)
+_candidates = {}             # sym -> dict(sym,name,px,day_open,up,dvol,ts)
+_names = {}                  # sym -> company longName (IBKR contractDetails)
 
 # ── TCP server -> in-Omega PumpFeedConsumer (one consumer) ───────────────────
 _conn=None; _lock=threading.Lock(); _need_reseed=False
@@ -119,12 +120,14 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 liq = c["dvol"] / 1e6
                 liq_s = (f'<span style="color:#3ddc97">{liq:,.0f}M</span>' if c["dvol"] >= DVOL_MIN
                          else f'<span style="color:#6b6b6b">{liq:,.0f}M</span>')
+                nm = (c.get("name") or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
                 return (f"<tr><td style='color:#d8d8d8'>{c['sym']}</td>"
+                        f"<td style='color:#9aa0a6'>{nm}</td>"
                         f"<td>{c['px']:.2f}</td>"
                         f"<td style='color:#e6a23c'>+{c['up']:.1f}%</td>"
                         f"<td>{c['day_open']:.2f}</td><td>{liq_s}</td><td>{st}</td></tr>")
             trs = "".join(row(c) for c in rows) or \
-                  "<tr><td colspan=6 style='color:#6b6b6b'>no big-cap movers ≥ prefilter — scanning</td></tr>"
+                  "<tr><td colspan=7 style='color:#6b6b6b'>no big-cap movers ≥ prefilter — scanning</td></tr>"
             n_trade = sum(1 for c in rows if gate(c))
             # NOTE: no %-formatting here -- the JS contains literal '%' (e.g.
             # +'%</td>') which blows up printf-style formatting and killed the
@@ -142,11 +145,13 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "  const st=ok?'<span style=\"color:#3ddc97\">TRADE</span>':'<span style=\"color:#6b6b6b\">watch</span>';\n"
                 "  const lm=(c.dvol/1e6).toLocaleString(undefined,{maximumFractionDigits:0});\n"
                 "  const liq=c.dvol>=DVMIN?('<span style=\"color:#3ddc97\">'+lm+'M</span>'):('<span style=\"color:#6b6b6b\">'+lm+'M</span>');\n"
-                "  h+='<tr><td style=\"color:#d8d8d8\">'+esc(c.sym)+'</td><td>'+c.px.toFixed(2)+'</td>'\n"
+                "  h+='<tr><td style=\"color:#d8d8d8\">'+esc(c.sym)+'</td>'\n"
+                "    +'<td style=\"color:#9aa0a6\">'+esc(c.name||'')+'</td>'\n"
+                "    +'<td>'+c.px.toFixed(2)+'</td>'\n"
                 "    +'<td style=\"color:#e6a23c\">+'+c.up.toFixed(1)+'%</td>'\n"
                 "    +'<td>'+c.day_open.toFixed(2)+'</td><td>'+liq+'</td><td>'+st+'</td></tr>';\n"
                 " }\n"
-                " if(!h) h='<tr><td colspan=6 style=\"color:#6b6b6b\">no big-cap movers \\u2265 prefilter \\u2014 scanning</td></tr>';\n"
+                " if(!h) h='<tr><td colspan=7 style=\"color:#6b6b6b\">no big-cap movers \\u2265 prefilter \\u2014 scanning</td></tr>';\n"
                 " document.getElementById('rows').innerHTML=h;\n"
                 " const ng=d.filter(c=>c.up>=GATE&&c.px>=PMIN&&c.dvol>=DVMIN).length;\n"
                 " document.getElementById('hdr').textContent='BIGCAP MOMO \\u00b7 '+d.length+' movers \\u00b7 '"
@@ -163,7 +168,7 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "<html><head><meta charset=utf-8><title>BIGCAP MOMO</title>"
                 "<style>"
                 "body{background:#0a0a0a;color:#c8c8c8;font:13px/1.5 'SF Mono',Menlo,monospace;margin:0;padding:18px}"
-                ".panel{border:1px solid #1d1d1d;border-radius:6px;padding:14px 16px;max-width:760px}"
+                ".panel{border:1px solid #1d1d1d;border-radius:6px;padding:14px 16px;max-width:920px}"
                 ".brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}"
                 ".brand .t{color:#5fd3e0;letter-spacing:3px;font-weight:bold;font-size:14px}"
                 ".brand .v{color:#3a5b62;letter-spacing:2px;font-size:10px;text-transform:uppercase}"
@@ -176,7 +181,7 @@ class _ScanHandler(BaseHTTPRequestHandler):
                 "<div class=brand><span class=t>OMEGA</span><span class=v>bigcap momo</span></div>"
                 f"<div class=hdr id=hdr>BIGCAP MOMO &middot; {len(rows)} movers &middot; {n_trade} tradeable "
                 f"(&ge;{GATE_PCT:.0f}% + ${DVOL_MIN/1e6:.0f}M liq)</div>"
-                "<table><tr><th>symbol</th><th>price</th><th>up from open</th>"
+                "<table><tr><th>symbol</th><th>name</th><th>price</th><th>up from open</th>"
                 "<th>day open</th><th>liq ($vol)</th><th>status</th></tr>"
                 f"<tbody id=rows>{trs}</tbody></table>"
                 "<div class=foot>engine settings: gate &ge;4% from open &middot; price &ge;$10 &middot; "
@@ -249,6 +254,12 @@ def subscribe_symbol(ib, subs, sym, min_move):
     d_open,d_high,lines,c=sd
     move=(d_high/d_open-1.0)*100.0 if d_open else 0.0
     if move<min_move: return False
+    if sym not in _names:               # scanner didn't supply longName -> resolve directly
+        try:
+            cds=ib.reqContractDetails(c)
+            nm=(cds[0].longName or "").strip() if cds else ""
+            if nm: _names[sym]=nm
+        except Exception: pass
     emit(f"R,{sym}")
     for ln in lines: emit(ln)
     tk=ib.reqMktData(c,"",False,False); ib.sleep(0.5)
@@ -292,7 +303,10 @@ def main():
                 rows=ib.reqScannerData(sc)
                 for item in rows[:40]:
                     if len(subs)>=MAX_SYMBOLS: break
-                    sym=str(item.contractDetails.contract.symbol).upper()
+                    cd=item.contractDetails
+                    sym=str(cd.contract.symbol).upper()
+                    nm=(getattr(cd,"longName","") or "").strip()
+                    if nm: _names[sym]=nm
                     subscribe_symbol(ib, subs, sym, min_move=PREFILTER_PCT)
             except Exception as e:
                 emit(f"# scan error: {e}")
@@ -334,7 +348,8 @@ def main():
                 if px and s.day_open:
                     up=(float(px)/s.day_open-1.0)*100.0
                     emit(f"C,{sym},{float(px)},{s.day_open},{up:.1f},{ts_ms}")
-                    _candidates[sym]={"sym":sym,"px":float(px),"day_open":s.day_open,
+                    _candidates[sym]={"sym":sym,"name":_names.get(sym,""),
+                                      "px":float(px),"day_open":s.day_open,
                                       "up":up,"dvol":s.last_bar_dvol,"ts":ts_ms}
             except Exception: pass
         ib.sleep(TICK_EVERY)
