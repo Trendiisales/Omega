@@ -39,7 +39,9 @@ omega::EngineGate g_engine_gate;
 // engines (Tsmom/Donchian/EmaPullback/TrendRider/HBI) land in a follow-up.
 #include "OpenPositionRegistry.hpp"
 #include "GoldWaveTrend.hpp"
+#include "AuroraGate.hpp"
 omega::OpenPositionRegistry g_open_positions;
+omega::AuroraGate g_aurora_gate;   // order-flow entry gate (MGC/NQ tape); fail-open
 
 // Process boot time (epoch sec), stamped at init_engines start. Used by the central
 // phantom-trade net: any closed trade whose entryTs predates boot was opened on a

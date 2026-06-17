@@ -1655,6 +1655,23 @@ static double enter_directional(
     // Returns computed lot size on success, 0.0 on failure/blocked.
     // Callers use the return value directly -- eliminates g_last_directional_lot
     // dependency which caused cross-symbol lot corruption (the $1407 bug).
+
+    // ── AuroraGate: order-flow entry gate driven by the real MGC/NQ CME tape.
+    // FAIL-OPEN -- only symbols present + fresh in logs/aurora/aurora_gate.tsv
+    // (XAUUSD<-MGC, NAS100<-NQ) can be blocked; everything else passes through.
+    // Disable instantly via g_aurora_gate.enabled_ = false. ─────────────────
+    {
+        const int64_t agt_now = nowSec() * 1000LL;
+        if (!g_aurora_gate.allow(std::string(esym), is_long, agt_now)) {
+            printf("[AURORA-GATE] %s %s BLOCKED -- %s (engine=%s)\n",
+                   esym, is_long ? "LONG" : "SHORT",
+                   g_aurora_gate.reason(std::string(esym), is_long, agt_now).c_str(),
+                   engine_name);
+            fflush(stdout);
+            return 0.0;
+        }
+    }
+
     const double sl_abs_raw = std::fabs(entry - sl);
     // ATR-normalised SL floor -- same logic as breakout dispatch
     const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(

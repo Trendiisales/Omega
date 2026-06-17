@@ -36,6 +36,8 @@ def utc_date():
 
 
 def one_pass(in_dir, out_dir, date_str, stamp_ms=None):
+    if stamp_ms is None:
+        stamp_ms = int(time.time() * 1000)   # epoch ms -- drives AuroraGate staleness
     os.makedirs(out_dir, exist_ok=True)
     results = {}
     for sym, p in SYMBOLS.items():
@@ -58,6 +60,30 @@ def one_pass(in_dir, out_dir, date_str, stamp_ms=None):
     with open(os.path.join(out_dir, "aurora_all.json"), "w") as fh:
         json.dump({"stamp_ms": stamp_ms, "date": date_str,
                    "symbols": list(SYMBOLS), "snaps": results}, fh, indent=2)
+
+    # Flat gate file consumed by the C++ entry gate (include/AuroraGate.hpp).
+    # Maps each futures-tape symbol to the tradable symbol(s) it proxies (spot
+    # gold has no tape -> MGC; NQ -> NAS100). A symbol with no/errored gate is
+    # OMITTED so the C++ side fails open (allows) for it -- never block on a gap.
+    GATE_MAP = {"MGC": ["XAUUSD"], "NQ": ["NAS100"]}
+    try:
+        st = int(stamp_ms) if stamp_ms else 0
+        lines = ["# SYMBOL\tallow_long\tallow_short\tbias\troom_long_atr\troom_short_atr\tstamp_ms"]
+        for fut, tradables in GATE_MAP.items():
+            g = (results.get(fut) or {}).get("gate")
+            if not g:
+                continue
+            al   = 1 if g.get("allow_long")  else 0
+            ash  = 1 if g.get("allow_short") else 0
+            bias = g.get("bias", "neutral")
+            rl   = g.get("room_long_atr", 99.0)
+            rs   = g.get("room_short_atr", 99.0)
+            for t in tradables:
+                lines.append(f"{t}\t{al}\t{ash}\t{bias}\t{rl}\t{rs}\t{st}")
+        with open(os.path.join(out_dir, "aurora_gate.tsv"), "w") as fh:
+            fh.write("\n".join(lines) + "\n")
+    except Exception:
+        pass  # gate-file write must never break the snapshotter
     return results
 
 
