@@ -1430,6 +1430,13 @@ static void init_engines(const std::string& cfg_path)
         //   negative all 3 WF folds. Was 0x29, now 0x09.
         g_xau_tf_4h.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
         g_xau_tf_4h.enabled     = true;
+        // S-2026-06-17: in-flight cold-loss protection (was 0.0/OFF by default).
+        // Faithful per-TF backtest (backtest/losscut_xau_faithful.py, 2yr XAU
+        // M30->H4): LC=1.5% holds net (+20) while cutting maxDD -38% (-449->-278)
+        // and worst trade -163->-83. TF-scaled (H4 wider than H1/H2). Shadow ->
+        // live ledger is the final gate. Protects the big adverse swing without
+        // killing the trend ride; see [[omega-runner-profit-protect-regime]].
+        g_xau_tf_4h.LOSS_CUT_PCT = 1.5;
         // S116 2026-05-19: bit 6 (0x40) added for EmaCross8_21 cell from the
         // S114 long-trend ensemble research (Python +$30,966 / Sharpe +1.96
         // / 25mo; C++ +$32,025 / 95 trades).
@@ -1487,6 +1494,10 @@ static void init_engines(const std::string& cfg_path)
         // safety net while we validate fill rates.
         g_xau_tf_1h.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
         g_xau_tf_1h.enabled     = true;
+        // S-2026-06-17 cold-loss protection. Faithful M30->H1 backtest: LC=0.5%
+        // -> net +337, maxDD -44% (-602->-339), worst -191->-27. Tighter than H4
+        // (faster TF). See backtest/losscut_xau_faithful.py.
+        g_xau_tf_1h.LOSS_CUT_PCT = 0.5;
         g_xau_tf_1h.cell_enable_mask = 0x0F;  // S40: all 4 ensemble cells (EmaCross+Donchian+Pullback+Keltner)
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
@@ -1528,6 +1539,10 @@ static void init_engines(const std::string& cfg_path)
         // cross-regime per the S45 tombstone). HARD shadow until ledger gate.
         g_xau_tf_m15.shadow_mode      = true;   // hard shadow (new unproven cell)
         g_xau_tf_m15.enabled          = true;
+        // S-2026-06-17 cold-loss protection. EXTRAPOLATED tighter than H1's 0.5%
+        // (m15 = faster TF, smaller bars) -- NOT yet backtested at m15; shadow
+        // ledger validates. Conservative first value; retune on its own M30->m15 test.
+        g_xau_tf_m15.LOSS_CUT_PCT = 0.4;
         g_xau_tf_m15.cell_enable_mask = 0x02;   // Donchian40 cell only
         g_xau_tf_m15.lot              = 0.01;
         g_xau_tf_m15.max_spread       = 1.0;
@@ -1662,6 +1677,9 @@ static void init_engines(const std::string& cfg_path)
         // gate; 60+ days HARD shadow before considering enabled=live.
         g_xau_tf_d1.shadow_mode = true;
         g_xau_tf_d1.enabled     = true;   // S88: revived w/ vol-band gate, HARD shadow
+        // S-2026-06-17 cold-loss protection. Daily backtest (losscut_batch_b.py):
+        // LC=1.0% -> net flat, maxDD -68% (-341->-110), worst -174->-53.
+        g_xau_tf_d1.LOSS_CUT_PCT = 1.0;
         // S88-followup post-sweep 2026-05-27: widen D1 band [0.30,0.85] ->
         // [0.20,0.90]. Sweep showed D1 entry-vol distribution sits inside the
         // band already; widening picks up 2 extra cell-Keltner trades (PF
@@ -2727,6 +2745,10 @@ static void init_engines(const std::string& cfg_path)
         // Stacked vol+ADX hurt (tested separately); per-cell exclusive is right.
         g_xau_tf_2h.shadow_mode = true;
         g_xau_tf_2h.enabled     = true;
+        // S-2026-06-17 cold-loss protection. Faithful M30->H2 backtest: LC=0.5%
+        // -> net +189, maxDD -66% (-802->-269), worst -238->-27 (strongest DD cut
+        // of the cluster). See backtest/losscut_xau_faithful.py.
+        g_xau_tf_2h.LOSS_CUT_PCT = 0.5;
         g_xau_tf_2h.use_adx_gate     = true;
         g_xau_tf_2h.adx_min          = 25.0;
         g_xau_tf_2h.cell_adx_mask    = 0xB;       // Keltner, Donch20, InsideBar
