@@ -2504,7 +2504,11 @@ static void init_engines(const std::string& cfg_path)
                     //   Risk-gate OFF (gold often does BEST risk-off). usd_per_pt=100 (XAU).
                     {
                         g_gold_seasonal.shadow_mode = true;
-                        g_gold_seasonal.enabled     = true;
+                        // S-2026-06-17 CULLED: ledger_analytics ranked flag --
+                        // n=17 NEG-EXPECTANCY + COST-FRAGILE (58% of gross eaten by
+                        // cost, expR -0.00). Calendar churn with no edge net of
+                        // spread; flagged repeatedly in memory. Disabled.
+                        g_gold_seasonal.enabled     = false;
                         g_gold_seasonal.lot         = 0.01;
                         g_gold_seasonal.usd_per_pt  = 100.0;
                         g_gold_seasonal.entry_mask  = (1 << 1) | (1 << 2);   // Mon + Tue
