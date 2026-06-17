@@ -841,6 +841,17 @@ int main(int argc, char* argv[])
         while (g_running.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(30));
             if (!g_running.load()) break;
+            // ── PUMP WATCHDOG (2026-06-18): feed-independent force-close. Pump
+            //   exits (trail/hard/MAXHOLD) are 100% tick-gated in on_price(); a
+            //   dead AH/halt/bridge feed froze 7 positions open 200+min (GUI
+            //   now=0, +$0). Heartbeat closes stale / over-MAXHOLD positions at
+            //   last known price. No-op while ticks flow. Cheap (loops <=12 cells).
+            {
+                const int64_t now_ms_wd = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                g_pump_manager.on_heartbeat(now_ms_wd);
+                g_bigcap_momo.on_heartbeat(now_ms_wd);
+            }
             static int64_t s_last_bar_save_s = 0;
             const int64_t now_s_save = static_cast<int64_t>(std::time(nullptr));
             if (now_s_save - s_last_bar_save_s >= 600) {

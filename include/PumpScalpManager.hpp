@@ -53,6 +53,10 @@ public:
                                    // (worst in every trail row); 15-min trail-to-turn nets more
                                    // on BOTH monster + non-monster names (cap5 > cap1 each trail).
     int    max_symbols  = 12;      // cap concurrent pumps tracked
+    double stale_sec    = 120.0;   // WATCHDOG: force-close an open position whose feed has been
+                                   // silent this long (2026-06-18: dead AH/halt/bridge feed left
+                                   // 7 positions frozen open 200+min — exits were 100% tick-gated).
+                                   // 120s = 24x the 5s tick cadence = unambiguously dead.
     int    max_entries_per_day = 2; // RE-ENTRY CAP per name/session (chop-bleed guard).
                                    // reentry_cap_bt.py (16-day basket): cap2 keeps 84% of
                                    // net + best PF (42) vs unlimited chop (PF18) or cap1
@@ -93,6 +97,15 @@ public:
     }
 
     int  active() const { return (int)m_book.size(); }
+
+    // ── WATCHDOG heartbeat: call from the main loop (NOT the feed thread). Forces
+    //   a feed-independent exit on any position whose price feed has gone stale or
+    //   that has exceeded MAXHOLD — so a dead feed can never freeze a trade open.
+    //   No-op while ticks flow (each engine's m_last_px_ms stays fresh). ─────────
+    void on_heartbeat(int64_t now_ms) {
+        const int64_t stale_ms = (int64_t)(stale_sec * 1000.0);
+        for (auto& kv : m_book) kv.second->e3.watchdog(now_ms, stale_ms);
+    }
 
     // ── GUI visibility: every active pump position across all symbols,
     //   for g_open_positions.register_source -> shows in the live_trades panel + bell.

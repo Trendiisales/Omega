@@ -129,6 +129,33 @@ public:
     // bleed, best PF. 0 = unlimited (old leaky behaviour).
     int    MAX_ENTRIES_PER_DAY = 2;
 
+    // ── EXIT-RESEARCH LEVERS (2026-06-18). ALL DEFAULT-OFF => on_price()/
+    //   on_entry_bar() behave BYTE-IDENTICAL to the live engine. pump_exit_sweep
+    //   .cpp toggles these to find a faster-reversal / more-runner-capture exit.
+    //   Operator ask: "try every lever/setting until you find the best." Tested,
+    //   not shipped — a winner must beat the live exit at BOTH slip levels AND
+    //   both basket halves before any flag flips on the live engine.
+    //   • ATR trail: trail distance = ATR_MULT * ATR(ATR_LEN bars) instead of a
+    //     fixed %. Adapts to each name's volatility (a +400% name's 2% is noise).
+    //     Set ATR_LEN>0 to enable; pair with TRAIL_PCT=0 to test ATR-only.
+    int    ATR_LEN       = 0;
+    double ATR_MULT      = 0.0;
+    //   • Structure exit: close on a bar that closes through the extreme of the
+    //     last STRUCT_LB closed bars (long: below the min low). 0 = off.
+    int    STRUCT_LB     = 0;
+    //   • Rollover exit: close on a bar that closes back below VWAP / EMA9 (long).
+    bool   ROLLOVER_VWAP = false;
+    bool   ROLLOVER_EMA  = false;
+    //   • Give-back exit: close once price retraces GIVEBACK_FRAC of the peak gain
+    //     (MFE) back from the peak. 0 = off. Locks more of a runner on the turn.
+    double GIVEBACK_FRAC = 0.0;
+
+    // ── ENTRY-RESEARCH lever (2026-06-18, default-OFF). Anti-late-chase: skip an
+    //   ignition long whose close is already > this % above VWAP (we'd be buying
+    //   the top of a thrust that already ran). The exit sweep proved no exit fixes
+    //   the bleed; the leak is entering late/extended. 0 = off (live behavior).
+    double ENTRY_MAX_EXT_PCT = 0.0;
+
     bool   enabled      = true;
     bool   shadow_mode  = true;    // gated shadow — AH fills + borrow + dud-rate all unmeasured
     bool   verbose      = false;
@@ -154,6 +181,11 @@ public:
         o.size=pos.size_each*(double)pos.units.size(); o.entry=pos.units.front();
         o.sl = pos.dir>0 ? pos.units.front()*(1-HARD_PCT/100) : pos.units.front()*(1+HARD_PCT/100);
         o.tp=0; o.entry_ts=pos.entry_ms/1000;
+        // Real standing cost (2026-06-18): mark at last known price, costs in —
+        // NOT 0. A stale-feed position now shows its true unrealized loss/gain.
+        o.current = mark_px();
+        o.unrealized_pnl = mark_pnl(o.current);
+        o.mfe = pos.mfe*pos.size_each; o.mae = std::fabs(pos.mae)*pos.size_each;
         return true;
     }
     bool persist_restore(const omega::PositionSnapshot& ps) {
@@ -163,6 +195,20 @@ public:
         return true;
     }
     bool has_open_position() const { return pos.active; }
+
+    // Mark-to-market PnL of the open stack at `px`, costs included — IDENTICAL to
+    // what _close() books at exit_px=px. Used for the live unrealized mark so a
+    // frozen-feed position shows its REAL standing cost instead of a misleading
+    // +$0 (2026-06-18: dead feed marked current=0 -> GUI hid the true loss).
+    double mark_pnl(double px) const {
+        if (!pos.active || pos.units.empty() || px <= 0) return 0.0;
+        const double s = SLIP_PCT/100.0; double p = 0;
+        for (double u : pos.units) p += (pos.dir>0 ? (px-u) : (u-px)) - (u+px)*s;
+        return p * pos.size_each;
+    }
+    // Best available mark price: last live tick, else entry (never 0 -> the GUI
+    // never shows a $0.00 price / fake +$0 PnL on a stale-feed position).
+    double mark_px() const { return m_last_px > 0 ? m_last_px : (pos.units.empty()?0.0:pos.units.front()); }
 
     void init() { _new_day(-1); pos = Position{}; }
 
@@ -182,6 +228,7 @@ public:
     //   IMMEDIATELY on the turn (all three TF engines share this behaviour). ──
     void on_price(double px, int64_t ts_ms) {
         if (px <= 0) return;
+        m_last_px = px; m_last_px_ms = ts_ms;          // watchdog: last good tick (feed-stale force-close)
         const int64_t day = _session_day(ts_ms);
         if (day != m_day) _new_day(day);
         if (m_day_open <= 0) m_day_open = px;          // fallback only; bars set the true session open
@@ -197,19 +244,27 @@ public:
             if (PYR_ADDS>0 && (int)pos.units.size()<1+PYR_ADDS && px >= pos.last_add*(1+PYR_STEP/100)) {
                 pos.units.push_back(px); pos.last_add=px;
             }
-            double stop = std::max(pos.peak*(1-TRAIL_PCT/100), base*(1-HARD_PCT/100));
+            double stop = base*(1-HARD_PCT/100);                                    // hard floor (always)
+            if (TRAIL_PCT > 0)        stop = std::max(stop, pos.peak*(1-TRAIL_PCT/100));   // % trail
+            if (ATR_LEN > 0 && m_atr>0) stop = std::max(stop, pos.peak - ATR_MULT*m_atr);  // ATR trail (research)
             if (BE_ARM_PCT > 0 && pos.peak >= base*(1+BE_ARM_PCT/100))
-                stop = std::max(stop, base*(1+BE_FLOOR_PCT/100));   // BE-lock armed
+                stop = std::max(stop, base*(1+BE_FLOOR_PCT/100));                   // BE-lock armed
             if (px <= stop) { _close(stop, ts_ms, "TRAIL"); return; }
+            if (GIVEBACK_FRAC > 0 && pos.peak > base &&
+                (pos.peak - px) >= GIVEBACK_FRAC*(pos.peak - base)) { _close(px, ts_ms, "GIVEBACK"); return; }
         } else {
             pos.trough = std::min(pos.trough, px);
             if (PYR_ADDS>0 && (int)pos.units.size()<1+PYR_ADDS && px <= pos.last_add*(1-PYR_STEP/100)) {
                 pos.units.push_back(px); pos.last_add=px;
             }
-            double stop = std::min(pos.trough*(1+TRAIL_PCT/100), base*(1+HARD_PCT/100));
+            double stop = base*(1+HARD_PCT/100);                                    // hard ceiling (always)
+            if (TRAIL_PCT > 0)        stop = std::min(stop, pos.trough*(1+TRAIL_PCT/100));
+            if (ATR_LEN > 0 && m_atr>0) stop = std::min(stop, pos.trough + ATR_MULT*m_atr);
             if (BE_ARM_PCT > 0 && pos.trough <= base*(1-BE_ARM_PCT/100))
-                stop = std::min(stop, base*(1-BE_FLOOR_PCT/100));   // BE-lock armed
+                stop = std::min(stop, base*(1-BE_FLOOR_PCT/100));                   // BE-lock armed
             if (px >= stop) { _close(stop, ts_ms, "TRAIL"); return; }
+            if (GIVEBACK_FRAC > 0 && pos.trough < base &&
+                (px - pos.trough) >= GIVEBACK_FRAC*(base - pos.trough)) { _close(px, ts_ms, "GIVEBACK"); return; }
         }
         if (ts_ms - pos.entry_ms >= (int64_t)MAXHOLD_SEC*1000) _close(px, ts_ms, "TIME");
     }
@@ -232,6 +287,28 @@ public:
         m_bars.push_back({o,h,l,c,v});
         if (m_bars.size() > 64) m_bars.pop_front();
         m_cum_pv += (h+l+c)/3.0 * v; m_cum_v += v;        // intraday VWAP accumulation
+        if (ATR_LEN > 0) {                                // research: ATR for the ATR-trail exit
+            double tr_sum=0; int cnt=0;
+            for (int i=(int)m_bars.size()-1; i>=1 && cnt<ATR_LEN; --i,++cnt) {
+                const Bar& cu=m_bars[i]; const Bar& pr=m_bars[i-1];
+                tr_sum += std::max(cu.h-cu.l, std::max(std::fabs(cu.h-pr.c), std::fabs(cu.l-pr.c)));
+            }
+            m_atr = cnt>0 ? tr_sum/cnt : 0;
+        }
+
+        // ── BAR-CLOSE EXITS (research, default-off): reversal cuts evaluated on a
+        //   CLOSED bar — faster than waiting for a %/ATR give-back from the peak.
+        //   Skipped on seed bars and when no position is open. ───────────────────
+        if (!is_seed && pos.active) {
+            bool ex=false; const char* r="";
+            if      (ROLLOVER_VWAP && _vwap()>0 && (pos.dir>0 ? c < _vwap() : c > _vwap())) { ex=true; r="ROLL_VWAP"; }
+            else if (ROLLOVER_EMA  && m_ema_init && (pos.dir>0 ? c < m_ema9 : c > m_ema9))  { ex=true; r="ROLL_EMA"; }
+            else if (STRUCT_LB > 0) {
+                const double sw = _swing_extreme(STRUCT_LB, pos.dir>0);
+                if (sw>0 && (pos.dir>0 ? c < sw : c > sw)) { ex=true; r="STRUCT"; }
+            }
+            if (ex) { _close(c, ts_ms, r); return; }
+        }
 
         if (is_seed) return;                             // SEED: warm only — never enter on history
         if (pos.active || !enabled) return;              // exits are on_price's job
@@ -254,7 +331,8 @@ public:
         // IGNITION long
         const double c_lb = m_bars[(int)m_bars.size()-1-LB].c;
         const bool strong = (h>l) ? (c >= l + STRENGTH*(h-l)) : true;
-        if (long_ok && (c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) { _open(+1, c, ts_ms); return; }
+        const bool not_extended = (ENTRY_MAX_EXT_PCT<=0) || (vwap<=0) || ((c/vwap - 1.0)*100.0 <= ENTRY_MAX_EXT_PCT);
+        if (long_ok && not_extended && (c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) { _open(+1, c, ts_ms); return; }
 
         // EXHAUSTION short (strict top-fade only)
         const double runup = (c/m_day_open - 1.0)*100.0;
@@ -266,13 +344,30 @@ public:
 
     void force_close(double px, int64_t now_ms) { if (pos.active) _close(px, now_ms, "FORCE_CLOSE"); }
 
+    // ── WATCHDOG: feed-INDEPENDENT exit. Driven by the main-loop heartbeat, NOT
+    //   the price feed. ALL the tick exits (trail / hard / MAXHOLD) live inside
+    //   on_price(), so when the pump feed goes stale — after-hours, halt, bridge
+    //   or IBKR drop — on_price() stops firing and a position hangs open forever
+    //   (2026-06-18: 7 names held 200+min, GUI now=0, +$0; the 15-min MAXHOLD
+    //   never fired because it too was tick-gated). This closes such a position
+    //   at the last known price:
+    //     • MAXHOLD elapsed (wall clock) — the time-stop the engine ALWAYS meant
+    //       to enforce, now independent of whether a tick arrived.
+    //     • feed stale >= stale_ms with no new tick — the feed is dead, get flat.
+    //   No-op when a live tick is arriving (on_price keeps m_last_px_ms fresh).
+    void watchdog(int64_t now_ms, int64_t stale_ms) {
+        if (!pos.active || m_last_px <= 0) return;
+        if ((now_ms - pos.entry_ms) >= (int64_t)MAXHOLD_SEC*1000) { _close(m_last_px, now_ms, "TIME_WD"); return; }
+        if (stale_ms > 0 && (now_ms - m_last_px_ms) >= stale_ms)  { _close(m_last_px, now_ms, "STALE_WD"); return; }
+    }
+
 private:
     struct Bar { double o,h,l,c,v; };
 
     void _new_day(int64_t day) {                          // single source of session reset
         m_day=day; m_day_open=0; m_run_high=0; m_hod=-1e18; m_hod_idx=-1;
         m_bars.clear(); m_ema9=0; m_ema_init=false;
-        m_cum_pv=0; m_cum_v=0; m_entries_today=0;        // reset re-entry cap each session
+        m_cum_pv=0; m_cum_v=0; m_entries_today=0; m_atr=0;  // reset re-entry cap + ATR each session
     }
 
     // US-session day, rolled at 08:00 UTC (4am EDT / 3am EST — always inside the
@@ -284,6 +379,17 @@ private:
     static int64_t _session_day(int64_t ts_ms) { return (ts_ms/1000 - 8*3600)/86400; }
 
     double _vwap() const { return m_cum_v>0 ? m_cum_pv/m_cum_v : 0.0; }
+
+    // Min low (long) / max high (short) over the `lb` CLOSED bars BEFORE the
+    // current one — the swing the current close would break (structure exit).
+    double _swing_extreme(int lb, bool isLong) const {
+        const int n=(int)m_bars.size();
+        if (n < 2) return 0.0;
+        double ext = isLong ? 1e18 : -1e18; int cnt=0;
+        for (int i=n-2; i>=0 && cnt<lb; --i,++cnt)
+            ext = isLong ? std::min(ext, m_bars[i].l) : std::max(ext, m_bars[i].h);
+        return cnt>0 ? ext : 0.0;
+    }
 
     // least-squares slope of the last REG_LB closes, normalized to %/bar
     double _slope() const {
@@ -333,6 +439,8 @@ private:
     int m_entries_today=0;                               // re-entry cap counter (reset in _new_day)
     double  m_ema9=0; bool m_ema_init=false;
     double  m_cum_pv=0, m_cum_v=0;   // intraday VWAP accumulators
+    double  m_atr=0;                 // research: ATR(ATR_LEN) for the ATR-trail exit (0 when ATR_LEN=0)
+    double  m_last_px=0; int64_t m_last_px_ms=0;   // watchdog: last tick seen (feed-stale force-close)
 };
 
 }  // namespace omega
