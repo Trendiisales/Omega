@@ -118,7 +118,9 @@ def main():
     fname_sym = m["symbol"]   # 'NQ'/'MGC'/'ES' -> matches aurora glob
     print(f"[pull] {a.symbol} -> {c.localSymbol or m['symbol']} ({m['exchange']}), {a.days}d", flush=True)
 
-    end = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    # tz-AWARE UTC throughout -- IBKR returns aware tick times, so all the
+    # comparisons/arithmetic in pull() must be aware too.
+    end = dt.datetime.now(dt.timezone.utc)
     start = end - dt.timedelta(days=a.days)
     for what in ("TRADES", "BID_ASK"):
         print(f"[pull] {what} ...", flush=True)
