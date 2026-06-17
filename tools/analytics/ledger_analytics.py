@@ -55,7 +55,13 @@ def main():
     # default: glob ALL daily close files under the standard trades dir (cwd-relative
     # so `cd C:\Omega; python tools\analytics\ledger_analytics.py` reads full history).
     DEFLT = "logs/trades/omega_trade_closes*.csv"
-    args=[a for a in sys.argv[1:] if not a.startswith("--")]
+    VALUE_FLAGS={"--since","--min-n"}   # these consume the next token
+    args=[]; skip=False
+    for a in sys.argv[1:]:
+        if skip: skip=False; continue
+        if a in VALUE_FLAGS: skip=True; continue
+        if a.startswith("--"): continue
+        args.append(a)
     path=args[0] if args else DEFLT
     min_n=int(sys.argv[sys.argv.index("--min-n")+1]) if "--min-n" in sys.argv else 5
     rows=load(path)
