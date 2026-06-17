@@ -660,6 +660,7 @@ int main(int argc, char* argv[])
         std::thread([bport]{
             omega::pump_feed::run(g_bigcap_momo, g_bigcap_stop, s_bigcap_host.c_str(), bport);
         }).detach();
+        g_bigcap_feed_ok = true;   // bridge feed path configured (consumer-drop covered by bridge-side consumer=N alert)
     }
 
     // ── BigCapMomo IN-PROCESS IBKR engine (2026-06-16) ──────────────────────
@@ -673,9 +674,19 @@ int main(int argc, char* argv[])
         omega::bigcap_momo_ibkr::set_enabled(true);
         std::cout << "[BIGCAP-IBKR] activating in-process IBKR BigCapMomo engine\n";
         std::cout.flush();
-        if (!omega::bigcap_momo_ibkr::start())
-            std::cout << "[BIGCAP-IBKR] start() failed (disabled / no OMEGA_WITH_IBKR / connect refused)\n";
-        std::cout.flush();
+        const bool bigcap_ibkr_ok = omega::bigcap_momo_ibkr::start();
+        g_bigcap_feed_ok = bigcap_ibkr_ok;   // false => no-op stub / no OMEGA_WITH_IBKR / connect refused
+        if (!bigcap_ibkr_ok) {
+            // LOUD: this is the exact silent-death we hit 2026-06-17 (IBKR path selected
+            //   on a binary built without OMEGA_WITH_IBKR -> stub -> zero trades, no error).
+            //   Route through the same [SYSTEM-ALERT] channel as L2_DEAD etc.; the quote_loop
+            //   watchdog re-raises it every 60s + pins it on the GUI health banner.
+            std::cout << "[SYSTEM-ALERT] BIGCAP_IBKR_DOWN start() returned false "
+                         "(no OMEGA_WITH_IBKR build, or gateway connect refused) -- "
+                         "ZERO bigcap trades possible. Use OMEGA_BIGCAP_BRIDGE=1 or rebuild with IBKR.\n";
+            std::cout.flush();
+            g_telemetry.SetHealthAlert("BIGCAP IBKR DOWN");
+        }
     }
 
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";

@@ -73,6 +73,7 @@ _candidates = {}             # sym -> dict(sym,px,day_open,up,dvol,ts)
 
 # ── TCP server -> in-Omega PumpFeedConsumer (one consumer) ───────────────────
 _conn=None; _lock=threading.Lock(); _need_reseed=False
+_starve_hb=0   # consecutive heartbeats with consumer=N while names tradeable (S-2026-06-17 alert)
 def emit(s):
     global _conn
     with _lock:
@@ -303,6 +304,23 @@ def main():
                   f"tradeable={_arm} consumer={'Y' if _conn else 'N'} mdtype={MKT_DATA_TYPE} "
                   f"top={(_top['sym']+' +'+format(_top['up'],'.1f')+'%') if _top else '-'}",
                   flush=True)
+            # S-2026-06-17: LOUD escalation — bridge streaming movers but NO Omega consumer
+            #   attached while names are tradeable = the engine is starved (zero trades, silent).
+            #   Greppable [BIGCAP-ALERT] + sentinel file the watchdog/operator can poll.
+            global _starve_hb
+            if (not _conn) and _arm > 0:
+                _starve_hb += 1
+                if _starve_hb >= 2:   # ~1 min of orphaned feed with live candidates
+                    print(f"[BIGCAP-ALERT] consumer=N for {_starve_hb} HBs while tradeable={_arm} "
+                          f"-- Omega NOT consuming :{SERVE_PORT}; check OMEGA_BIGCAP_BRIDGE=1 + single bridge proc",
+                          flush=True)
+                    try:
+                        with open(os.path.join(os.environ.get("OMEGA_LOG_DIR","C:\\Omega\\logs"),
+                                               "bigcap_consumer_down.flag"),"w") as _f:
+                            _f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} consumer=N tradeable={_arm}\n")
+                    except Exception: pass
+            else:
+                _starve_hb = 0
         # stream ticks + roll bars + candidate
         ts_ms=int(now*1000)
         for k in [k for k,v in _candidates.items() if ts_ms-v["ts"]>600_000]:

@@ -407,6 +407,21 @@ static void quote_loop() {
                         s_vix_dead_since = 0;
                     }
 
+                    // ---- [7b] BigCapMomo feed dead (S-2026-06-17) ---------------
+                    // Detection: bigcap engine enabled in config but NO feed path is
+                    //   live (g_bigcap_feed_ok false = IBKR start() no-op/connect-fail,
+                    //   or no OMEGA_BIGCAP_BRIDGE/IBKR env selected).
+                    // Fallback:  none — engine simply never trades (the silent 2026-06-17
+                    //   bug). This makes it LOUD + pins the GUI banner until fixed.
+                    // Alert:     GUI "BIGCAP NO FEED"
+                    if (g_bigcap_momo.enabled && !g_bigcap_feed_ok.load()) {
+                        printf("[SYSTEM-ALERT] BIGCAP_DOWN engine enabled but no feed live "
+                               "(IBKR stub/connect-fail or no OMEGA_BIGCAP_BRIDGE/IBKR env) -- zero bigcap trades\n");
+                        fflush(stdout);
+                        if (alert_msg.empty())
+                            alert_msg = "BIGCAP NO FEED";
+                    }
+
                     // ---- [8] Consecutive loss pause -----------------------------
                     // Detection: pause_until > now on any engine state
                     // Fallback:  built-in — entries blocked until pause expires

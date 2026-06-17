@@ -162,6 +162,13 @@ static std::atomic<bool>       g_pump_stop{false};   // PumpFeedConsumer thread 
 //   (OMEGA_BIGCAP_BRIDGE=1) so it doesn't share the micro-cap feed. Shadow.
 static omega::PumpScalpManager g_bigcap_momo;
 static std::atomic<bool>       g_bigcap_stop{false};
+// S-2026-06-17: feed-liveness flag for the health watchdog. Set true ONLY by the
+//   bigcap path that actually starts (IBKR start()==true, or bridge env selected).
+//   Stays false when the selected path is a no-op stub / connect-fail / unconfigured.
+//   quote_loop's [SYSTEM-ALERT] watchdog raises BIGCAP_DOWN when enabled && !this.
+//   Root cause it guards: 2026-06-17 OMEGA_BIGCAP_IBKR=1 on a binary built without
+//   OMEGA_WITH_IBKR -> start() no-op stub -> zero trades for weeks, SILENT.
+static std::atomic<bool>       g_bigcap_feed_ok{false};
 #include "PumpFeedConsumer.hpp"                       // TCP client thread (winsock already set up by IbkrDomConsumer above)
 #include "GoldOrbRetraceEngine.hpp"
 static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
