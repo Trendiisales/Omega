@@ -86,4 +86,17 @@ if [ $fails -gt 0 ]; then
   exit 1
 fi
 echo "[mac-canary-engines] all $((${#HEADERS[@]})) headers ok"
+
+# ---------------------------------------------------------------------
+# STANDING GATE — adverse-protection mandate (added 2026-06-19 after the
+# NqMomentum no-protection regression). Every NEW position-opening engine must
+# carry a backtested ADVERSE-PROTECTION verdict. Makes the rule a build gate,
+# not an advisory memory note.
+# ---------------------------------------------------------------------
+echo ""
+echo "[mac-canary-engines] running adverse-protection audit..."
+bash "$(dirname "$0")/adverse_protection_audit.sh" || {
+  echo "[mac-canary-engines] adverse-protection audit FAILED -- fix before commit."
+  exit 1
+}
 exit 0

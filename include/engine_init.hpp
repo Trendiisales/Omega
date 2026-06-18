@@ -4818,16 +4818,21 @@ static void init_engines(const std::string& cfg_path)
         // SINGLE liquid instrument (the NAS100 index tick path) => no micro-cap
         // slippage. Fed in tick_indices.hpp on_tick_nas100. Ledger writes via the
         // bracket_on_close callback (same as the index straddle cells).
-        // Engine-faithful tick BT (backtest/nq_momentum_faithful.cpp, drives THIS
-        // class): GATED positive BOTH regimes, both WF halves+ (bull n129 PF2.34
-        // +1395; bear-2022 n40 PF1.26 +426). Gate is LOAD-BEARING — ungated bear
-        // = PF0.99 -44 (bull-beta). regime_gate stays TRUE. Caveat: validated on a
-        // NAS100-index proxy for NQ; SHADOW until the gate's forward verdict +
-        // real-fill confirmation. See [[omega-nq-momentum-continuation]].
+        // ⚠ DISABLED S-2026-06-19 — clean-data re-validation FAILED the wiki claim.
+        // The "+both regimes both-WF-halves+ PF2.34/1.26" provenance below was run on
+        // DOWNSAMPLE-GRADE data (10x + a missing 2023; nq_momentum_faithful.cpp also had
+        // a HHMMSSmmm time-parse bug shifting ticks ~750d — both fixed S-2026-06-19).
+        // Re-run on CLEAN continuous NSXUSD 2022-2026 (271M ticks, cost 3pt, gate ON):
+        //   BASELINE PF1.01 net+616pt, WF NOT both-halves+ (H1 -1874 / H2 +2490) = bull-
+        //   biased / breakeven. +ATR-BE -> net-2493 ; +loss_cut2.0 -> net-1817 (protection
+        //   makes it WORSE — see ADVERSE-PROTECTION verdict in NqMomentumEngine.hpp).
+        // Marginal edge + protection-resistant => PAUSE pending a real edge re-validation
+        // on the live instrument (USTEC.F CFD), NOT the NSXUSD/NAS100 cash proxy.
+        // Original (now-suspect) provenance: bull n129 PF2.34 +1395; bear n40 PF1.26 +426.
         g_nq_momentum.symbol      = "NAS100";
         g_nq_momentum.engine_name = "NqMomentum";
         g_nq_momentum.shadow_mode = true;
-        g_nq_momentum.enabled     = true;
+        g_nq_momentum.enabled     = false;  // was true; disabled S-2026-06-19 (clean-data marginal)
         g_nq_momentum.p.ig_pct        = 0.30;   // ignition: +0.30% over lb bars
         g_nq_momentum.p.lb            = 6;       // 6 x 5m = 30 min
         g_nq_momentum.p.atr_len       = 30;

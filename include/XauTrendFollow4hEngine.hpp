@@ -305,6 +305,18 @@ public:
     //   BE_BUFFER_PCT -- BE_CUT triggers when move <= entry*pct/100 after arm.
     //   Override via the backtest harness CLI for the sweep; set _PCT = 0.0
     //   to disable a phase entirely.
+    //
+    // ADVERSE-PROTECTION: (S-2026-06-19 — backtested verdict, MANDATORY per CLAUDE.md gate)
+    //   Verdict = TRAIL-ONLY (no profit-banking). The give-back of open profit is the
+    //   INTRINSIC cost of the trend-runner edge. Deep-BE profit-lock swept 10 configs
+    //   (xau_tf4h_cell_sweep.cpp --be-arm/--be-buf) across BOTH regimes:
+    //     BULL  (gold 2024-26): baseline PF1.58 net+57.7 -> every BE config 1.3-1.44, net DOWN.
+    //     BEAR  (gold 2022-23, metal -22%): baseline PF1.13 net+4.5 (engine is cross-regime
+    //           positive — NOT bull-beta) -> BE neutral-to-worse.
+    //   No config improves net OR reduces the worst trade in either regime; banking clips the
+    //   runners that ARE the edge. So LOSS_CUT/BE stay 0.0 by design (a recorded "trail-only,
+    //   cut hurts net" verdict — valid per the standing rule). Re-test only with new evidence.
+    //   See [[omega-runner-profit-protect-regime]].
     double LOSS_CUT_PCT  = 0.0;
     double BE_ARM_PCT    = 0.0;
     double BE_BUFFER_PCT = 0.0;

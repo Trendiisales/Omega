@@ -11,6 +11,17 @@
 //  Self-aggregates 5m bars from on_tick (mid), like XauStraddleM30Engine::on_tick_agg
 //  — one call drives signal + intrabar exit. Emits omega::TradeRecord on close.
 //  SHADOW by default. NOT wired live until faithful BT + shadow confirm.
+//
+//  ADVERSE-PROTECTION: (S-2026-06-19 — backtested verdict, MANDATORY per CLAUDE.md gate)
+//    Levers (this file): loss_cut_atr = hard cold-loss cut; be_arm_atr/be_floor_atr =
+//    ATR-scaled BE ratchet (the legacy %-BE never armed on an index -> the live -71 give-back).
+//    Faithful sweep (nq_momentum_faithful.cpp, NAS100 2022-2026): a cold loss-cut LOWERS net on
+//    this trail-momentum engine (1.0/1.5/2.0 ATR all bled ~-30k across hundreds of fires; net
+//    +7949 -> +3826/+4609/+5530), and the ATR-BE alone also costs net without reducing the
+//    -464pt worst trade. Matches the standing swing-protection finding: tightening hurts
+//    trend/trail engines. The original BT data was DOWNSAMPLE-GRADE (10x + a 2023 gap) -> the
+//    engine is marginal / bull-biased (WF not both-halves+) on it, an EDGE problem protection
+//    cannot fix. DECISION + chosen config: see engine_init.hpp NqMomentum block.
 // =============================================================================
 #pragma once
 #include <cmath>
@@ -30,8 +41,15 @@ struct NqMomentumParams {
     int    atr_len       = 14;     // ATR (5m bars)
     double atr_mult      = 3.0;    // trailing stop = peak - atr_mult * ATR (S-2026-06-18 tuned 4.0->3.0:
                                    // tighter trail, bull PF 2.60->3.24, bear stays both-WF-halves+ PF1.18)
-    double be_arm_pct    = 0.03;   // arm BE-floor once +3% in profit
+    double be_arm_pct    = 0.03;   // arm BE-floor once +3% in profit (LEGACY %-BE; ~mis-scaled for an index)
     double be_floor_pct  = 0.02;   // floor stop at entry +2% (net-BE)
+    // --- in-flight adverse protection (S-2026-06-19) — MANDATORY per CLAUDE.md adverse-protection rule ---
+    // The engine previously had NO cold-loss cut: a straight-adverse trade rode the 3xATR trail (~107pt on
+    // NAS100) before stopping, and the %-BE above never armed on an index (3% = +900pt @30000). These ATR-scaled
+    // levers fix both. Backward-compatible: all 0 => legacy %-BE + wide-trail behaviour exactly.
+    double loss_cut_atr  = 0.0;    // HARD cold-loss cut: close if adverse >= loss_cut_atr * entry-ATR, BEFORE BE arms (0=off)
+    double be_arm_atr    = 0.0;    // arm BE once peak >= entry + be_arm_atr*ATR  (0 => fall back to be_arm_pct)
+    double be_floor_atr  = 0.0;    // BE floor stop at entry + be_floor_atr*ATR
     int    maxhold_bars  = 48;     // 48 x 5m = 4h backstop (skipped while in profit)
     int    regime_sma    = 200;    // bull-regime gate: trade only when close > SMA(regime_sma)
     bool   regime_gate   = true;   // LOAD-BEARING — false = bull-beta
@@ -116,9 +134,28 @@ struct NqMomentumEngine {
         if(pos_.active){
             if(mid>pos_.peak) pos_.peak=mid;
             double fav=mid-pos_.entry; if(fav>pos_.mfe) pos_.mfe=fav;
-            double tstop = (p.atr_len>0 && atr_>0) ? (pos_.peak - p.atr_mult*atr_) : 0.0;
-            if(p.be_arm_pct>0 && pos_.peak >= pos_.entry*(1+p.be_arm_pct)){ double bf=pos_.entry*(1+p.be_floor_pct); if(bf>tstop)tstop=bf; }
-            if(tstop>0 && bid<=tstop){ _close(tstop,"TRAIL",now_ms,cb); /* fall through to bar agg */ }
+            const double a  = atr_>0 ? atr_ : 0.0;
+            const double a0 = pos_.sl_atr>0 ? pos_.sl_atr : a;   // entry-time ATR -> fixed cold-loss stop distance
+            // BE armed? (ATR-scaled if be_arm_atr set, else legacy %-based)
+            const bool be_armed = (p.be_arm_atr>0 && a>0)
+                                    ? (pos_.peak >= pos_.entry + p.be_arm_atr*a)
+                                    : (p.be_arm_pct>0 && pos_.peak >= pos_.entry*(1+p.be_arm_pct));
+            // (1) HARD COLD-LOSS CUT (S-2026-06-19) — fixed stop at entry - loss_cut_atr*ATR(entry), only before BE
+            //     arms. Caps the straight-adverse loss the wide trail used to let run. Tighter than the trail early.
+            if(p.loss_cut_atr>0 && a0>0 && !be_armed){
+                double hardstop = pos_.entry - p.loss_cut_atr*a0;
+                if(bid<=hardstop){ _close(hardstop,"LOSS_CUT",now_ms,cb); }
+            }
+            // (2) trailing stop + BE ratchet (ATR-scaled BE if be_arm_atr set, else legacy %-BE)
+            if(pos_.active){
+                double tstop = (p.atr_len>0 && a>0) ? (pos_.peak - p.atr_mult*a) : 0.0;
+                if(p.be_arm_atr>0 && a>0){
+                    if(pos_.peak >= pos_.entry + p.be_arm_atr*a){ double bf=pos_.entry + p.be_floor_atr*a; if(bf>tstop)tstop=bf; }
+                } else if(p.be_arm_pct>0 && pos_.peak >= pos_.entry*(1+p.be_arm_pct)){
+                    double bf=pos_.entry*(1+p.be_floor_pct); if(bf>tstop)tstop=bf;
+                }
+                if(tstop>0 && bid<=tstop){ _close(tstop,"TRAIL",now_ms,cb); /* fall through to bar agg */ }
+            }
         }
         // fill a pending entry at this tick
         if(armed_ && !pos_.active){

@@ -52,6 +52,7 @@ int main(int argc, char** argv) {
     uint32_t mask = 0xC9; double half = 0.15;
     int64_t t0 = 0, t1 = 0; const char* name = "";
     const char* h1_path = nullptr; bool regime_gate = false;
+    double be_arm = 0.0, be_buf = 0.0;   // S-2026-06-19 deep-BE profit-lock sweep (% of entry)
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--mask" && i + 1 < argc)  mask = (uint32_t)std::stoul(argv[++i], nullptr, 0);
@@ -61,6 +62,8 @@ int main(int argc, char** argv) {
         else if (a == "--name" && i + 1 < argc)  name = argv[++i];
         else if (a == "--h1" && i + 1 < argc)    h1_path = argv[++i];
         else if (a == "--regime-gate")           regime_gate = true;
+        else if (a == "--be-arm" && i + 1 < argc) be_arm = std::atof(argv[++i]);
+        else if (a == "--be-buf" && i + 1 < argc) be_buf = std::atof(argv[++i]);
     }
     auto h4 = load_csv(argv[1], t0, t1);
     if (h4.empty()) { std::fprintf(stderr, "no bars\n"); return 1; }
@@ -81,11 +84,15 @@ int main(int argc, char** argv) {
     eng.shadow_mode = true; eng.enabled = true;
     eng.cell_enable_mask = mask;
     eng.use_regime_long_gate = regime_gate;
+    eng.BE_ARM_PCT = be_arm; eng.BE_BUFFER_PCT = be_buf;   // deep-BE profit-lock
     eng.lot = 0.01; eng.max_spread = 1.0; eng.init();
     size_t h1_i = 0;
+    double sum_mfe = 0, worst = 0; long n_be = 0;
     auto cb = [&](const omega::TradeRecord& tr) {
         ++n; gross += tr.pnl; pnl.push_back(tr.pnl);
         if (tr.pnl > 0) { ++wins; wsum += tr.pnl; } else lsum += -tr.pnl;
+        sum_mfe += tr.mfe; if (tr.pnl < worst) worst = tr.pnl;
+        if (std::string(tr.exitReason).find("BE") != std::string::npos) ++n_be;
     };
     for (size_t i = 0; i < h4.size(); ++i) {
         const auto& b = h4[i];
@@ -109,8 +116,8 @@ int main(int argc, char** argv) {
     double eq = 0, peak = 0, mdd = 0;
     for (double x : pnl) { eq += x; if (eq > peak) peak = eq; if (peak - eq > mdd) mdd = peak - eq; }
     const double pf = lsum > 0 ? wsum / lsum : (wsum > 0 ? 99.0 : 0.0);
-    std::printf("%-14s mask=0x%02X half=%.2f bars=%zu  n=%-4lld WR=%5.1f%%  net=%+9.2f  PF=%5.2f  mdd=%8.2f\n",
-                name, mask, half, h4.size(), (long long)n,
-                n > 0 ? 100.0 * wins / n : 0.0, gross, pf, mdd);
+    std::printf("%-16s be=%.1f/%.1f n=%-4lld WR=%5.1f%% net=%+9.2f PF=%5.2f mdd=%8.2f worst=%+8.2f sumMFE=%9.2f be_exits=%ld\n",
+                name, be_arm, be_buf, (long long)n,
+                n > 0 ? 100.0 * wins / n : 0.0, gross, pf, mdd, worst, sum_mfe, n_be);
     return 0;
 }

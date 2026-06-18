@@ -347,6 +347,39 @@ LOSS_CUT + BE_RATCHET fields (added in the part-H follow-up,
 Engines that share this profile (mean-reversion + fixed timeout) are
 candidates for the same pattern.
 
+## Engine Adverse-Protection Mandate (added 2026-06-19)
+
+Every NEW position-opening engine MUST ship with a **backtested in-flight
+adverse-protection verdict** before merge. This was previously only a
+memory note (`feedback-new-engine-adverse-protection-step`) — advisory text
+a session could skip. It was skipped: `NqMomentumEngine` shipped (shadow,
+2026-06-18) with NO cold-loss cut and a %-scaled BE ratchet that never armed
+on an index, leaving a faithful-BT worst trade of **−464pt** with the only
+"protection" a 3×ATR trail. A written rule with no gate fails the first time
+a session ignores it.
+
+It is now a **build gate**, not a rule:
+
+- `scripts/adverse_protection_audit.sh` scans every `include/*Engine.hpp`
+  that opens a position (`pos_.active = true` / `.open(`). Each must carry an
+  `ADVERSE-PROTECTION:` header comment stating the **backtested verdict**.
+- The verdict is NOT required to be a loss-cut. Per the 2026-06-17
+  swing-protection sweep, tightening hurts most trend/trail engines — so a
+  verdict of *"trail-only — backtested, a cold cut lowers net (ref)"* is
+  fully valid. What is forbidden is **skipping the backtest step**.
+- Engines present when the gate was introduced are grandfathered via
+  `scripts/adverse_protection_legacy.txt` (printed as backfill-owed warnings,
+  do not fail). Any engine NOT in that list and NOT annotated is a NEW engine
+  and **fails the build**.
+- The audit runs at the end of `scripts/mac_canary_engines.sh` — the
+  mandated pre-commit canary — so a non-compliant new engine cannot be
+  committed.
+
+Backfill debt: 81 legacy entry-engines still owe an annotation (the first
+audit also revealed 33 with no loss-cut/BE field at all — the memory claim
+"LOSS_CUT_PCT exists on 28 engines" was never verified against code). Burn
+the list down opportunistically when touching each engine.
+
 ## Session Handoffs
 
 Each session ends with a handoff document at
