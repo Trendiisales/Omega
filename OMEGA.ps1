@@ -203,6 +203,35 @@ if ($Command -ne '' -and $Command -ne 'help') {
 }
 
 # ==============================================================================
+# CONFIG-DRIFT GUARD (S-2026-06-18) -- pre-build gate
+# ------------------------------------------------------------------------------
+# Stops the "claimed PF != deployed/faithful config" falsification class (the NAS
+# PF2.69-vs-shipped-1.26 case). Hard-blocks the build ONLY when a deploy-line PF
+# claim in engine_init.hpp CONTRADICTS the faithful audit in
+# backtest/AUDITED_CONFIGS.tsv. Unbacked claims / marginal-shadow enables / owed
+# audits are reported as warnings (non-blocking). Python-tolerant: if python is
+# absent, warn and continue (never break the Windows build over a missing tool).
+# ==============================================================================
+if ($Command -eq 'deploy') {
+    $py = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $py) { $py = Get-Command python3 -ErrorAction SilentlyContinue }
+    if ($py) {
+        Write-Host "[DRIFT-GUARD] checking config-drift (engine_init claims vs faithful audit)..." -ForegroundColor Cyan
+        & $py.Source "$OmegaDir\tools\config_drift_guard.py"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "==========================================================" -ForegroundColor Red
+            Write-Host " CONFIG-DRIFT GUARD FAILED -- a deploy-line PF claim" -ForegroundColor Red
+            Write-Host " contradicts backtest/AUDITED_CONFIGS.tsv. Fix the comment" -ForegroundColor Red
+            Write-Host " or re-audit + update the manifest before deploying." -ForegroundColor Red
+            Write-Host "==========================================================" -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "[DRIFT-GUARD] python not found -- skipping config-drift check (non-fatal)." -ForegroundColor Yellow
+    }
+}
+
+# ==============================================================================
 # Common variables
 # ==============================================================================
 $ServiceName  = "Omega"

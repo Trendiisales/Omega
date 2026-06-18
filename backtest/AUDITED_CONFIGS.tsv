@@ -1,0 +1,14 @@
+# AUDITED_CONFIGS.tsv — the ONLY trustworthy per-engine faithful-BT record.
+# A PF is real only if it appears here with a faithful-tick/engine-faithful harness + date.
+# Inline-comment PFs in engine_init.hpp are CLAIMS until matched here (config_drift_guard.py enforces).
+# columns: engine <TAB> faithful_pf <TAB> audit_date <TAB> harness <TAB> verdict <TAB> note
+# verdict ∈ EDGE | MARGINAL | DEAD | SHADOW-CANDIDATE
+NasTurtleD1	1.26	2026-06-18	index_turtle_d1_audit.cpp	MARGINAL	shipped Donch20 no-ema100 sl1.5/tp5/hold20; 10yr daily; bear ~flat; ema100/wide-exit variants = bull-beta, rejected
+SpxTurtleD1	1.69	2026-06-18	index_turtle_d1_audit.cpp	EDGE	10yr daily; 2022-bear +92; both WF halves+
+Dj30TurtleD1	1.40	2026-06-18	index_turtle_d1_audit.cpp	EDGE	10yr daily; 2022-bear +63; both WF halves+
+BigCapMomo	2.30	2026-06-18	bigcap_sweep.cpp	SHADOW-CANDIDATE	LIVE g4/trail5 baseline 60d Yahoo 5m; E_ATR30_x4_mh96 PF4.05 + ride+BE-ratchet PF3.15 beat it; 60d/1-regime → shadow not live-size
+GoldOrbRetrace	2.38	2026-06-16	faithful (gold_xregime_recheck)	EDGE	un-tombstoned; 2yr; retr0.382/tight/1-shot
+NasOrbRetrace	1.88	2026-06-16	faithful	EDGE	retuned retr0.5; both halves
+SurvivorPortfolio	1.26	2026-06-18	survivor_faithful_revalidate.cpp	SHADOW-CANDIDATE	book PF1.26 both-halves+ cost-robust 2yr; but +10.6k/14.1k is USTEC_RSI_N7 H2-concentrated (H1 -279), no 2022 bear; XAU_DonchN20 robust anchor; MA_10_30 fat-tail noise
+survivor	1.26	2026-06-18	survivor_faithful_revalidate.cpp	SHADOW-CANDIDATE	alias of SurvivorPortfolio (g_survivor)
+XauThreeBar30m	1.29	2026-06-18	threebar30m_xau_S35P3_backtest.cpp	SHADOW-CANDIDATE	resurrected from polluted 06-15 cull; production engine M30 2024-26 PF1.29 n365 all-years+; BEAR-TEST PASSED 2026-06-18: 2022 PF1.01 (survives gold selloff) + 2023 PF1.32; positive-or-flat all years 2022-2026, NOT bull-beta. Cross-regime-confirmed.

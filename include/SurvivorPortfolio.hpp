@@ -704,7 +704,9 @@ public:
         // 1.  XAUUSD 4h DonchN20
         add({ .tag="XAU_4h_DonchN20",  .symbol="XAUUSD",  .tf_sec=14400, .family=Family::Donchian, .N=20,  .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .reclaim_exit=true, .lot=0.01 });
         // 2.  XAUUSD 4h DonchN100
-        add({ .tag="XAU_4h_DonchN100", .symbol="XAUUSD",  .tf_sec=14400, .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .reclaim_exit=true, .lot=0.01 });
+        // CULLED 2026-06-18 (faithful survivor_faithful_revalidate.cpp): n=2 over 2yr H4 = dead
+        // (slow N100 Donchian barely fires + dedup gates it behind DonchN20 same symbol/side).
+        // Pure noise in the book; removed. Was: add({ .tag="XAU_4h_DonchN100", .symbol="XAUUSD", .tf_sec=14400, .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .reclaim_exit=true, .lot=0.01 });
         // 3.  GER40  4h RSI N=7
         // DISABLED 2026-06-01: GER40 RSI mean-rev shorts the RISK_ON uptrend -> net-negative shadow (counter-trend dead pattern). GER40 edge is trend (KeltnerH1/TurtleH4/MACross).
         // add({ .tag="GER_4h_RSI_N7",    .symbol="GER40",   .tf_sec=14400, .family=Family::RSI, .N=7,  .lo=30, .hi=70, .sl_mult=1.0, .tp_mult=2.0, .max_hold_bars=30, .lot=0.10 });
@@ -716,7 +718,9 @@ public:
         // 6.  GER40  1h DonchN100
         // CULLED 2026-06-15 (GER40 dropped, losing live): add({ .tag="GER_1h_DonchN100", .symbol="GER40",   .tf_sec=3600,  .family=Family::Donchian, .N=100, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.10 });
         // 7.  XAUUSD 4h MACross 10/30
-        add({ .tag="XAU_4h_MA_10_30",  .symbol="XAUUSD",  .tf_sec=14400, .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
+        // CULLED 2026-06-18 (faithful survivor_faithful_revalidate.cpp): n=67 PF1.07 net+$120
+        // but top3=437% — the entire net is 3 fat-tail trades; strip them and it's negative.
+        // Not an edge, just noise the book carried. Was: add({ .tag="XAU_4h_MA_10_30", .symbol="XAUUSD", .tf_sec=14400, .family=Family::MACross, .N=30, .N_fast=10, .sl_mult=1.5, .tp_mult=3.0, .max_hold_bars=30, .lot=0.01 });
         // 8.  USTEC  4h RSI N=7  — TREND-GATED 2026-06-03 (Family::RSI trend_dir
         //     filter blocks counter-trend fades; was bleeding -$428 shorting the
         //     USTEC uptrend before the gate). Re-enabled gated for shadow eval.

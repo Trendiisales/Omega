@@ -14,8 +14,11 @@ $report = Join-Path $outdir "review_$stamp.txt"
 $tmp = Join-Path $env:TEMP "omega_all_closes.csv"
 Get-ChildItem C:\Omega\logs\trades\*closes*.csv, C:\Omega\logs\trades\shadow\*.csv -ErrorAction SilentlyContinue |
     ForEach-Object { Get-Content $_.FullName } | Set-Content $tmp
-python C:\Omega\tools\analytics\ledger_analytics.py $tmp --min-n 5 *> $report
-python C:\Omega\tools\analytics\capture_ratio.py $tmp *>> $report
+# --since 2026-06-01 excludes the pre-fix 100x-contaminated archive (S-2026-06-18);
+# verdicts are PF-based (contamination-immune) but this keeps the $ report clean too.
+$since = "2026-06-01"
+python C:\Omega\tools\analytics\ledger_analytics.py $tmp --min-n 5 --since $since *> $report
+python C:\Omega\tools\analytics\capture_ratio.py $tmp --since $since *>> $report
 Write-Output "[REVIEW] $stamp -> $report"
 # surface the ranked flags to the service log so they're visible in monitoring
 $flags = Select-String -Path $report -Pattern "RANKED FLAGS" -Context 0,12

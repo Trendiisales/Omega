@@ -35,6 +35,14 @@ public:
                                    // BE2T2 wins every basket day at 1% AND 2% slip)
     double be_arm_pct   = 2.0;     // BE-lock arm (engine BE_ARM_PCT); 0 = off
     double be_floor_pct = 2.0;     // BE-lock stop floor = entry +/- this %
+    // ATR-trail (engine ATR_LEN/ATR_MULT): when atr_len>0 the trail rides ATR_MULT*ATR
+    // off the peak instead of (or alongside) the % trail. 2026-06-18 bigcap_sweep: ATR-trail
+    // (len30 x4) is the best robust BigCap exit (PF4.05 vs %-trail 2.30). 0 = off.
+    int    atr_len      = 0;
+    double atr_mult     = 0.0;
+    // ride winners past the wall-clock while still net-profitable (engine MAXHOLD_SKIP_IF_PROFIT).
+    // 2026-06-18: the 240-min cap was clocking out QURE/NTLA/PRAX mid-run. true = ride to trail turn.
+    bool   maxhold_skip_if_profit = false;
     double volx         = 0.0;     // ignition volume-surge condition DISABLED (2026-06-10 A/B:
                                    // v>=3x avg20 self-defeats in a sustained frenzy -- every bar is
                                    // huge so none is 3x its neighbors; blocked CIIT +65% while pooled
@@ -171,7 +179,10 @@ private:
         e.SLIP_PCT     = slip_pct;
         e.MIN_DVOL_USD = min_dvol_usd;
         e.PRICE_MIN    = price_min;
+        e.ATR_LEN      = atr_len;                  // ATR-trail (0 = off)
+        e.ATR_MULT     = atr_mult;
         e.MAXHOLD_SEC  = maxhold_bars * tf_sec;   // time-stop; trail exits on the turn first
+        e.MAXHOLD_SKIP_IF_PROFIT = maxhold_skip_if_profit;   // ride winners past the clock
         e.MAX_ENTRIES_PER_DAY = max_entries_per_day;   // re-entry cap (chop-bleed guard)
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;

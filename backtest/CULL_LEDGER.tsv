@@ -1,0 +1,46 @@
+# CULL_LEDGER.tsv — the standing audit of EVERY performance cull (tombstoned engine).
+# Companion to TOMBSTONE_AUDIT.md (prose) + AUDITED_CONFIGS.tsv (live engines). Machine-checked
+# by tools/cull_audit.py, which surfaces every cull still OWED a faithful re-check.
+#
+# basis ∈ FAITHFUL | LEDGER | POLLUTED | BAR-REPLAY | UNVERIFIED | UNEVALUABLE | OPERATOR | RESEARCH
+#   FAITHFUL/LEDGER/OPERATOR  -> trustworthy, owed=NO (leave dead unless operator revisits)
+#   POLLUTED/BAR-REPLAY/UNVERIFIED/UNEVALUABLE -> SUSPECT, owed=YES (faithful re-check owed)
+#   RESEARCH = harness-only dead-end (no engine built); owed=NO unless re-mined
+# columns: engine <TAB> cull_date <TAB> basis <TAB> owed <TAB> faithful_verdict <TAB> note
+FvgContinuation(nas/10/30)	2026-06-16	FAITHFUL	NO	DEAD	fvg_engine_bt.cpp net-neg all regimes; bar-replay PF1.65/1.25 were artifacts
+XauusdFvg	2026-06-16	FAITHFUL	NO	DEAD	slice artifact + FVG faithful finding
+eurusd_turtle_h4	2026-06-16	FAITHFUL	NO	DEAD	cross-regime PF0.88 regime-luck
+gbpusd_turtle_h4	2026-06-16	FAITHFUL	NO	DEAD	cross-regime PF0.88
+IndexSwing	2026-06-02	LEDGER	NO	DEAD	live ledger net-negative
+SqueezeSlingshot	2026-06-18	FAITHFUL	NO	DEAD	squeeze_xregime_nas.cpp (tick, real engine) all variants bear-neg + squeeze_predicate.cpp no gate edge
+GoldOversoldBounce	2026-06-16	FAITHFUL	NO	DEAD	+419/-455/+45 x-regime; bull-beta dip-buyer dies in crash; gate-incompatible
+EmaPullback	2026-06-16	FAITHFUL	NO	DEAD	0 trades standalone (gated); edge may live as XauTrendFollow1h cell
+Donchian(portfolio)	2026-06-16	FAITHFUL	NO	DEAD	0 trades standalone gated; no winner signal
+GoldHybridBracket	2026-05-07	BAR-REPLAY	RECOVER	?	CODE-DELETED commit 768b0ba0 (S12 P3c); culled on 70-combo sweep (S8 24d9761d). git-recover .hpp + reconstruct before faithful re-check possible. Heavier/lower-EV.
+IndexHybridBracket(x4 sp/nq/us30/nas100)	2026-05-07	BAR-REPLAY	RECOVER	?	CODE-DELETED commit 768b0ba0 (S12 P3c). git-recover before re-check.
+# S52 batch enumerated 2026-06-18: TrendFollow2h + TrendFollowD1 disabled S52 but REVIVED post-audit (bea0b8f9 ADX gate; tf_d1 assessed marginal 06-17) = NOT standing culls. Real S52 standing culls = the 2 RSI engines below.
+g_rsi_extreme	2026-05-01	FAITHFUL	NO	DEAD	RE-CHECKED 2026-06-18 (rsi_extreme_faithful.cpp, real RSIExtremeTurnEngine, 2yr XAU tick): PF0.34 n23 net-NEG all-years, both WF halves neg. cost-gate(ATR>1.5x cost)+MIN_ATR1.5 throttle it to near-silence on gold M1 (ATR~1.0-1.3<floor); the few fires lose. "contaminated baseline" worry RESOLVED — confirmed negative + barely-trades. Cull CORRECT, dead-as-shipped.
+g_rsi_reversal	2026-05-01	UNEVAL-ON-TAPE	NO	LEAVE-DEAD	RE-CHECK ATTEMPTED 2026-06-18 (rsi_reversal_faithful.cpp, real engine, bar-RSI/ATR fed, DOM-off): 0 trades — engine tick-ATR gate (MIN_ATR_PTS=1.0) never clears on historical tick (computes ~0.30; calibrated for live cTrader tick scale). Faithful backtest IMPOSSIBLE on available tape. S52 cull stands as best-available; tick-microstructure scalp needs live tick to evaluate. Leave dead.
+LatencyEdgeStack	2026-04-24	UNEVAL-NO-DATA	NO	LEAVE-DEAD	Latency + L2-depth dependent; no historical L2/latency capture to re-check faithfully (same wall as rsi_reversal's tick-ATR — microstructure gates don't function off live tape). Bar-replay S13 cull stands as best-available. Leave dead unless live L2+latency capture exists.
+Xau3BarMom30m	2026-06-15	FAITHFUL	NO	RESURRECT-SHADOW	RE-CHECKED 2026-06-18 (threebar30m_xau_S35P3_backtest.cpp, production engine M30): PF1.29 n365 all-years+ (2024+25/2025+451/2026+64) — NOT the -$371 net-loser it was culled as (06-15 polluted basis, same batch as wrongly-killed GoldOrb). BEAR-TEST PASSED 2026-06-18 (2022-2023 histdata XAUUSD, /tmp/xau_2022_2023.m15.csv): 2022 PF1.01 (flat, survives gold selloff, maxDD91) + 2023 PF1.32 -> positive-or-flat EVERY year 2022-2026, NOT bull-beta. Caveat CLEARED. Cross-regime-confirmed shadow->live candidate (histdata EST+5h approx = minor session-shift caveat).
+XauStraddleM15	2026-06-15	FAITHFUL	NO	DEAD	RE-CHECKED 2026-06-18 (straddle_tf_audit.cpp, real XauStraddleM30Engine via on_tick_agg M15, 2yr XAU tick): M15 PF0.95 net-NEG vs M30 sibling PF1.15 net+ (same harness) — 2x trades, thousand-cuts cost-bleed kills it (same as M5). Cull CORRECT. STAYS DEAD.
+PumpScalp(variants)	2026-06-12	OPERATOR	NO	-	big-caps-only operator order + live slippage death (faithful exit sweep confirmed)
+C1Retuned	2026-06-11	OPERATOR	NO	-	bull-only BT, long-only dip-buyer; operator call
+mean-rev book (amr_x8/bband/rsi)	2026-06-01	OPERATOR	NO	-	mean-rev disabled by design (counter-trend dead pattern)
+MACD-ZLR	2026-06-17	RESEARCH	NO	DEAD	harness-only; regime-concentrated bull-beta, mid-third flat-neg
+MarketMemory-kNN	2026-06-05	RESEARCH	NO	DEAD	1248 configs null; IC<=0.06 can't pay spread
+SweepFlip-SMC	2026-06-16	RESEARCH	NO	DEAD	DAX 2025 looked great but fat-tail + dies 2022 bear OOS
+MSS-reversal	2026-06-10	RESEARCH	NO	DEAD	framework not edge; reversal side dead, continuation = FVG (also dead)
+VWAP-reclaim	2026-06-05	RESEARCH	NO	DEAD	untestable on our corpus; needs equity universe + real volume
+# L108 disable batch — CONTAMINATION-IMMUNE PF verdicts (2026-06-18 blast-radius audit, April shadow archive).
+# $ nets were 100x-contaminated but PF (ratio) is immune; all confirmed genuine losers by PF -> culls CORRECT, basis upgraded from contaminated-$ to PF-IMMUNE.
+MacroCrash	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.01 n79 (April archive, XAU single-sym). $ net was 100x-contaminated (-10855 fake) but PF immune = genuine loser. cull correct.
+CandleFlowEngine	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.13 n362. $ net contaminated; PF genuine loser. cull correct.
+DomPersistEngine	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.14 n49. genuine loser by PF (DPE also re-checked 5E faithful).
+GoldFlowEngine	2026-05-01	PF-IMMUNE	NO	DEAD	PF~0.13 (L108) n7 archive; genuine loser by PF. cull correct.
+BBMeanRev	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.51 n45. genuine loser. cull correct.
+IndexFlow	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.08 n17 (2-sym). genuine loser by PF. cull correct.
+EMACross	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.85 n83. mild loser by PF (<1). cull correct (borderline).
+CompBreakout	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.72 n85. genuine loser by PF. cull correct.
+XAUUSD_BRACKET	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.22 n56. genuine loser by PF. cull correct.
+TurtleTick	2026-05-01	PF-IMMUNE	NO	DEAD	PF0.95 n10 (April archive) BORDERLINE but engine CODE-DELETED (was SilverTurtleTickEngine, removed 5V 2026-04-20; real-tick Sharpe -16.23). n10=noise. Leave dead (git-recovery not worth it).

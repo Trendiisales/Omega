@@ -94,6 +94,12 @@ public:
     double BE_ARM_PCT   = 2.0;     // arm once peak/trough is this % past entry
     double BE_FLOOR_PCT = 2.0;     // stop floor: entry +/- this % (net-BE at ~1%/side slip)
     int    MAXHOLD_SEC  = 30*300;  // time stop (default 30 x 5m bars worth of seconds)
+    // When true, the MAXHOLD time-stop is SKIPPED for a position still in net profit
+    // (beyond round-trip slip) — let winners ride to the trail/BE-lock turn instead of
+    // a wall-clock cut. Default OFF (deployed behaviour unchanged). 2026-06-18: live
+    // ledger showed the 240-min cap exiting QURE/NTLA/PRAX mid-run (caught the mover,
+    // clocked out before the fade). Gate on faithful sweep before enable.
+    bool   MAXHOLD_SKIP_IF_PROFIT = false;
     bool   ALLOW_SHORT  = true;    // strict exhaustion fade ONLY (continuation LOSES — never add)
     int    PYR_ADDS     = 0;       // pyramid adds onto a winner (0=OFF; leverage not edge)
     double PYR_STEP     = 8.0;     // pyramid: % advance beyond last add to trigger next unit
@@ -266,7 +272,18 @@ public:
             if (GIVEBACK_FRAC > 0 && pos.trough < base &&
                 (px - pos.trough) >= GIVEBACK_FRAC*(base - pos.trough)) { _close(px, ts_ms, "GIVEBACK"); return; }
         }
-        if (ts_ms - pos.entry_ms >= (int64_t)MAXHOLD_SEC*1000) _close(px, ts_ms, "TIME");
+        if (ts_ms - pos.entry_ms >= (int64_t)MAXHOLD_SEC*1000) {
+            if (MAXHOLD_SKIP_IF_PROFIT) {
+                // skip the clock-cut while the trade is still net-profitable — let the
+                // trail / BE-lock exit it on the turn (ride until it fades).
+                const double net_be = 2.0 * SLIP_PCT / 100.0;   // round-trip slip as a fraction
+                const bool in_profit = pos.dir>0 ? (px > base*(1+net_be))
+                                                 : (px < base*(1-net_be));
+                if (!in_profit) _close(px, ts_ms, "TIME");
+            } else {
+                _close(px, ts_ms, "TIME");
+            }
+        }
     }
 
     // ── ENTRY path: one CLOSED TF OHLCV bar (with volume).

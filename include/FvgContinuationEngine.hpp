@@ -105,6 +105,30 @@ public:
                                     // (PF 1.22->0.95); this is the one safe loss-containment.
                                     // 2026-06-04: lifts the noisier NQ-future feed
                                     // PF 0.90->1.07 by cutting counter-momentum entries.
+    // ── 2026-06-16 trend-beta config — CODED BUT FALSIFIED, DO NOT ENABLE ──────────────
+    //   A bar-replay sweep (backtest/fvg_regime.cpp) suggested M30 + TRAIL + ER-gate was
+    //   cross-regime ROBUST (NAS PF1.25 incl 2022 bear). FALSIFIED by the engine-faithful
+    //   tick backtest (backtest/fvg_engine_bt.cpp, which drives THIS class): net-NEGATIVE
+    //   in every regime (PF 0.76-1.04). The same driver reproduces the ORIGINAL 15m config
+    //   at PF0.95 — matching its live-losing tombstone, NOT the fvg_core PF1.65 claim.
+    //   CONCLUSION: the bar-replay harnesses (fvg_core/fvg_regime) overstate FVG by ~0.5-0.7
+    //   PF via within-bar trail look-ahead + optimistic edge-fills the live tick engine can't
+    //   reproduce. The TRAIL/ER/RISK_OFF_BLOCK fields below are kept as default-OFF optionality
+    //   but are NOT validated. Engine remains TOMBSTONED (enabled=false in engine_init).
+    //   See memory omega-fvg-trend-beta-regime-gate (corrected) + fvg_engine_bt.cpp. ──
+    bool   TRAIL_EXIT  = false;   // ride winners with an ATR trail (arms only after +1R fav);
+                                  //   replaces hold-to-DOL TP. DOL still gates entry rr (room).
+    double TRAIL_ATR   = 2.0;     // trail distance from peak-favorable (ATR units)
+    bool   ER_GATE     = false;   // Kaufman efficiency-ratio trend-gate: enter only when the HTF
+                                  //   is cleanly trending (ER over ER_PERIOD >= ER_THR). Skips
+                                  //   chop; direction-agnostic (FVG dir carries bull/bear).
+    int    ER_PERIOD   = 20;      // ER lookback (HTF bars)
+    double ER_THR      = 0.30;    // ER >= this == trending
+    bool   RISK_OFF_BLOCK = true; // legacy bull-only safety: block ALL entries in macro risk-off.
+                                  //   MUST be false for the trend-beta config — the edge's bear
+                                  //   robustness comes from SHORT continuation in a clean bear
+                                  //   (NAS-2022 shorts = +1919); risk-off-block kills exactly that.
+                                  //   Keep true only for a long-bias bull-regime overlay.
     double lot           = 1.0;
 
     bool   enabled       = true;
@@ -204,6 +228,21 @@ public:
                     _close(pos.dir>0?bid:ask, now_ms, "MACD_REV"); return;
                 }
             }
+            // TRAIL exit (2026-06-16 re-validation): ride the trend; arm an ATR trail only
+            //   after +1R favorable so a winner is never cut early. NO DOL TP in this mode --
+            //   the trail (or the structural stop pre-1R) is the only exit. This is the lever
+            //   that made the edge cross-regime robust (rides the 2022-bear shorts to the floor).
+            if (TRAIL_EXIT) {
+                const double risk = std::fabs(pos.entry_px - pos.stop_px);
+                const bool armed = (m_atr>0.0 && risk>0.0 && pos.mfe >= risk);
+                if (armed) {   // ratchet the structural stop toward peak-favorable
+                    if (pos.dir>0) { const double ts=(pos.entry_px+pos.mfe)-TRAIL_ATR*m_atr; if (ts>pos.stop_px) pos.stop_px=ts; }
+                    else           { const double ts=(pos.entry_px-pos.mfe)+TRAIL_ATR*m_atr; if (ts<pos.stop_px) pos.stop_px=ts; }
+                }
+                if (pos.dir>0) { if (bid<=pos.stop_px){ _close(bid,now_ms, armed?"TRAIL":"STOP"); return; } }
+                else           { if (ask>=pos.stop_px){ _close(ask,now_ms, armed?"TRAIL":"STOP"); return; } }
+                return;   // one position at a time; no DOL TP in trail mode
+            }
             if (pos.dir>0) {
                 if (bid<=pos.stop_px) { _close(bid, now_ms, "STOP"); return; }
                 if (bid>=pos.tp_px)   { _close(bid, now_ms, "DOL");  return; }
@@ -220,7 +259,10 @@ public:
         if (hm < SESS_OPEN_HM || hm >= SESS_CLOSE_HM) return;
         // 2026-06-09: FVG validated bull-only -> no NEW entries in macro risk-off/bear regime.
         // (open positions above are still managed). Blocks the bear-regime longs that bled.
-        if (omega::index_risk_off()) return;
+        if (RISK_OFF_BLOCK && omega::index_risk_off()) return;
+        // ER trend-gate (2026-06-16): only enter when the HTF is cleanly trending. Chop is
+        //   where FVG continuation dies (SPX-2022 grind); the gate skips it. Direction-agnostic.
+        if (ER_GATE) { const double er=_efficiency_ratio(ER_PERIOD); if (er>=0.0 && er<ER_THR) return; }
 
         const double dolUp = _dol_up(mid), dolDn = _dol_dn(mid);
         const int    cur_idx = (int)m_htf.size()-1;     // index of last CLOSED htf bar
@@ -381,6 +423,14 @@ private:
         const double rng=fHi-fLo;
         const double retr = dir>0 ? (fHi-entry)/rng : (entry-fLo)/rng;
         return retr>=MIN_RETRACE && retr<=MAX_RETRACE;
+    }
+    // Kaufman efficiency ratio over the last `n` CLOSED HTF closes: |net move| / sum(|bar moves|).
+    //   1 = clean trend, 0 = chop. Direction-agnostic. -1 when insufficient history.
+    double _efficiency_ratio(int n) const {
+        const int sz=(int)m_htf.size(); if (n<1 || sz < n+1) return -1.0;
+        const double dir = std::fabs(m_htf[sz-1].c - m_htf[sz-1-n].c);
+        double vol=0.0; for (int k=sz-n; k<sz; ++k) vol += std::fabs(m_htf[k].c - m_htf[k-1].c);
+        return vol>0.0 ? dir/vol : 0.0;
     }
     double _swing_hi() const { int n=(int)m_htf.size(); if(n<4) return -1; double hi=-1;
         for (int k=std::max(0,n-2-SWING_LB); k<=n-2; ++k) hi=std::max(hi,m_htf[k].h); return hi; }

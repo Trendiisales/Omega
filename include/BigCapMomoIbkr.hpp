@@ -40,7 +40,14 @@ struct Config {
     bool   paper_only       = true;   // shadow: log trades, route NO live orders
     int    market_data_type = 1;      // IBKR mkt-data type: 1=live 2=frozen 3=delayed 4=delayed-frozen
     double gate_pct         = 3.0;    // day-expansion gate: only trade names already +GATE% on session
-    double trail_pct        = 0.04;   // 4.0% wide trail off peak (the validated lever)
+    double trail_pct        = 0.04;   // %-trail off peak (0 = off; ATR-trail below replaces it)
+    // S-2026-06-18 gain-protect exit — ported from PumpScalpEngine (+52% / PF2.30->4.72,
+    // bigcap_exit_compare.cpp). ATR-trail rides + BE-ratchet locks gains + ride-in-profit.
+    int    atr_len          = 30;     // ATR-trail length in 5m bars (0 = off)
+    double atr_mult         = 4.0;    // trailing stop = peak - atr_mult * ATR ($)
+    double be_arm_pct       = 0.03;   // arm BE-floor once +3% in profit (fraction)
+    double be_floor_pct     = 0.02;   // floor stop at entry +2% (net-breakeven)
+    bool   maxhold_skip_if_profit = true;  // don't clock-cut a position still in profit
     double ig_pct           = 3.0;    // ignition: +IG% over LB 5m bars
     double volx             = 3.0;    // volume surge vs 20-bar avg (0 = disable, bridge-delta caveat)
     double px_min           = 10.0;   // big-cap / deep-liquidity floor

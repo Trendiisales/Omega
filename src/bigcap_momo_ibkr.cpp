@@ -55,6 +55,7 @@ struct Sym {
     std::deque<double> closes;                    // finalized 5m closes (ignition lookback)
     std::deque<double> vols;                      // finalized 5m volumes (surge avg)
     bool   inpos=false; double entry=0, peak=0; int hold=0; double notional=0;
+    double atr=0, atr_sum=0, prev_c_atr=0; int atr_n=0;   // Wilder ATR for ATR-trail (S-2026-06-18)
     // ── telemetry additions ──
     double  last=0;                               // latest traded price (for current/unrealized)
     double  trough=0;                             // min price since entry (for MAE)
@@ -123,7 +124,8 @@ public:
             ps.engine         = cfg_.engine_tag;
             ps.entry_ts       = s.entry_ts;
             ps.tp             = 0.0;                          // runner: no TP
-            ps.sl             = s.peak * (1 - cfg_.trail_pct); // current trailing stop
+            ps.sl             = (cfg_.atr_len>0 && s.atr>0) ? (s.peak - cfg_.atr_mult*s.atr)
+                                                            : s.peak * (1 - cfg_.trail_pct); // current trailing stop
             v.push_back(ps);
         }
         return v;
@@ -189,13 +191,24 @@ public:
     // called with book_mu_ HELD (from historicalDataUpdate, on 5m bar completion)
     void on_5m_bar(Sym& s, double o, double h, double l, double c, double v, long t) {
         if(s.day_open<=0) s.day_open=o;
-        // ── manage open position first ──
+        // ── Wilder ATR every bar (for ATR-trail), S-2026-06-18 ──
+        { double tr=h-l; if(s.prev_c_atr>0){ double a=h-s.prev_c_atr; if(a<0)a=-a; double b=s.prev_c_atr-l; if(b<0)b=-b; if(a>tr)tr=a; if(b>tr)tr=b; }
+          s.prev_c_atr=c;
+          if(cfg_.atr_len>0){ if(s.atr_n<cfg_.atr_len){ s.atr_sum+=tr; if(++s.atr_n==cfg_.atr_len) s.atr=s.atr_sum/cfg_.atr_len; }
+                              else s.atr=(s.atr*(cfg_.atr_len-1)+tr)/cfg_.atr_len; } }
+        // ── manage open position first (gain-protect exit: ATR-trail + BE-ratchet + ride) ──
         if(s.inpos){
             s.hold++;
             if(h>s.peak) s.peak=h;
-            double tstop=s.peak*(1-cfg_.trail_pct);
-            if(l<=tstop){ close_pos(s,tstop,"TRAIL"); return; }
-            if(s.hold>=cfg_.maxhold){ close_pos(s,c,"MAXHOLD"); return; }
+            double tstop = (cfg_.trail_pct>0.0) ? s.peak*(1-cfg_.trail_pct) : 0.0;        // %-trail (if on)
+            if(cfg_.atr_len>0 && s.atr>0){ double a=s.peak - cfg_.atr_mult*s.atr; if(a>tstop) tstop=a; }  // ATR-trail
+            if(cfg_.be_arm_pct>0 && s.peak >= s.entry*(1+cfg_.be_arm_pct)){              // BE-ratchet lock
+                double bf=s.entry*(1+cfg_.be_floor_pct); if(bf>tstop) tstop=bf; }
+            if(tstop>0 && l<=tstop){ close_pos(s,tstop,"TRAIL"); return; }
+            if(s.hold>=cfg_.maxhold){
+                bool in_profit = c > s.entry;   // ride a still-profitable winner past the clock
+                if(!(cfg_.maxhold_skip_if_profit && in_profit)){ close_pos(s,c,"MAXHOLD"); return; }
+            }
             return;
         }
         // ── entry gates (mirror the validated backtest exactly) ──

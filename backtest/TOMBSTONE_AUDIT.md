@@ -72,7 +72,7 @@ stack) to fire standalone — not worth it given ledger + structure already show
 | `g_gbpusd_turtle_h4` | **FAITHFUL** cross-regime PF0.88 (2026-06-16) | STAY DEAD |
 | `IndexSwing` | **LIVE LEDGER** net-negative (2026-06-02) | STAY DEAD |
 | `PumpScalp` variants, `C1Retuned`, mean-rev book | **OPERATOR-ORDER** (big-caps-only / winners-only) | operator call |
-| SqueezeSlingshot | bar-replay x-regime, 2022 bear neg every variant — but bar-replay; **borderline** | likely dead; if ever revisited, confirm faithfully |
+| SqueezeSlingshot | ~~bar-replay borderline~~ → **FAITHFUL-CONFIRMED DEAD 2026-06-18**: squeeze_xregime_nas.cpp IS tick-driven on the real SqueezeSlingshotEngine (NOT bar-replay — label was wrong). 5 variants all bear-negative, none both-WF-halves, cost-fragile; best (H1_strictC PF1.08) bull/H2-concentrated. Path-B predicate (squeeze_predicate.cpp): fire→fwd-move 1.03× baseline NAS / 1.13× SPX = no vol-gate edge, direction coinflip; only tier≥2 thin (n24). | **confirmed faithfully — STAYS DEAD, do not re-mine** |
 
 ---
 

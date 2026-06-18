@@ -28,6 +28,24 @@ within-bar trail look-ahead (peak set by bar-high, trail exit checked against th
 low) + optimistic edge-fills the live tick engine can't reproduce. **A bar-replay PF is not a
 deploy number. It is a discovery hint that must be discounted and then confirmed faithfully.**
 
+## THE METRIC RULE — cull on PF/WR, NEVER on raw $ net (added 2026-06-18)
+
+**A cull/keep verdict must be made on PF or WR, not on the dollar net.** Dollar net is
+**contaminable** three proven ways — pnl double-multiply (engine ×usd_per_pt AND ledger ×100),
+lot bug (1.0 vs 0.01 = 100×), phantom multi-day-hold entries. PF and WR are **ratios**: a uniform
+scaling error cancels out, so they survive the contamination intact.
+
+Proven 2026-06-18 (contamination blast-radius audit over the April shadow archive, 1327 trades):
+the −$10k-class nets (MacroCrash, CandleFlow, …) were 100×-inflated **fakes**, yet every one of
+those engines was a **genuine loser by PF** (0.01–0.85) — so the PF-based L108 cull batch was
+**correct**. The ONLY wrongful kills were the two decided on **dollar net** — GoldOrb (−$784) and
+Xau3BarMom30m (−$371) — both later resurrected (PF2.38 / PF1.29). **Had this rule been in force,
+neither would have been wrongly killed.** The contamination's entire decision-impact was the
+handful of $-net-based culls; everything judged on PF was safe.
+
+Corollary: a single-symbol engine's PF is fully contamination-immune (uniform scaling). A
+multi-symbol engine's PF can distort if only *some* symbols are mis-scaled — confirm per-symbol.
+
 ## THE PROTOCOL (in order — stop at the first that answers)
 
 ### 1. LEDGER FIRST (cheapest truth; usually ends it)

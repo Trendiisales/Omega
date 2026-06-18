@@ -5,10 +5,20 @@ TV={"XAUUSD":100,"XAGUSD":5000,"US500.F":50,"USTEC.F":20,"DJ30.F":5,"NAS100":1,
     "AUDUSD":100000,"NZDUSD":100000,"USDJPY":667,"EURUSD+GBPUSD":100000,"MGC":10}
 rows=[]
 hdr=None
-for ln in open("(sys.argv[1] if len(sys.argv)>1 else "/tmp/all_closes_raw.csv")"):
+# --since YYYY-MM-DD : drop trades whose exit pre-dates the cutoff (excludes the
+# pre-fix contaminated archive from the forward capture report).
+since=None
+args=[a for a in sys.argv[1:]]
+for i,a in enumerate(args):
+    if a=="--since" and i+1<len(args): since=args[i+1]
+path=next((a for a in args if not a.startswith("--") and a!=since), "/tmp/all_closes_raw.csv")
+for ln in open(path):
     p=ln.rstrip("\n").split(",")
     if p and p[0]=="trade_id": hdr=p; continue
-    if hdr and len(p)==len(hdr): rows.append(dict(zip(hdr,p)))
+    if hdr and len(p)==len(hdr):
+        r=dict(zip(hdr,p))
+        if since and (r.get("exit_ts_utc","") or "").strip('"')[:10] < since: continue
+        rows.append(r)
 print(f"# parsed {len(rows)} closed trades")
 def f(x):
     try: return float(x)

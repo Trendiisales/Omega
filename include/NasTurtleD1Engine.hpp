@@ -50,6 +50,14 @@ struct NasTurtleD1Params {
     int    atr_period          = 14;
     double max_spread          = 30.0;  // NAS100 wide vs gold/DAX
     bool   weekend_close_gate  = true;
+    // Optional long-only trend filter: only break long when bar_close > EMA(ema100_period).
+    // DEFAULT OFF — KEEP OFF. 2026-06-18 faithful 10yr-daily audit (index_turtle_d1_audit.cpp)
+    // proved this filter HURTS cross-regime on ALL THREE instruments: it inflates the bull-window
+    // PF (the source of the misleading "PF2.69" claim) but DESTROYS 2022-bear protection — in a
+    // bear, price is below ema100 so the filter blocks the long breakouts that catch bear bounces
+    // (SPX bear +92 -> -50, DJ30 +63 -> -8, NAS -8 -> -30). Documented negative result; do NOT enable.
+    bool   use_ema100_filter   = false;
+    int    ema100_period       = 100;
 };
 
 inline NasTurtleD1Params make_nas_turtle_d1_params() { return NasTurtleD1Params{}; }
@@ -89,6 +97,8 @@ struct NasTurtleD1Engine {
     double atr_seed_sum_=0.0;
     double prev_d1_close_=0.0;
     int    bar_count_=0;
+    double ema100_=0.0;          // EMA of daily closes (trend filter)
+    int    ema100_count_=0;      // bars accumulated into ema100_
 
     struct OpenPos {
         bool active=false;
@@ -167,9 +177,12 @@ struct NasTurtleD1Engine {
             _update_atr_on_bar_close(bar_high, bar_low, bar_close);
             ++bar_count_;
 
+            const bool ema100_ok = !p.use_ema100_filter
+                || (ema100_count_ >= p.ema100_period && bar_close > ema100_);
             if (!pos_.active && enabled
                 && n_prior >= p.lookback_bars && atr_pre > 0.0
                 && bar_close > prior_high
+                && ema100_ok                   // optional trend filter (drops counter-trend breaks)
                 && (ask - bid) <= p.max_spread
                 && !omega::index_risk_off())   // S44 portfolio VIX risk-off: no new entry
             {
@@ -281,6 +294,14 @@ struct NasTurtleD1Engine {
             tr = std::max(tr, std::fabs(bar_l - prev_d1_close_));
         }
         prev_d1_close_ = bar_c;
+        // EMA100 of daily closes (trend filter, SMA-seed then EMA)
+        if (ema100_count_ < p.ema100_period) {
+            ema100_ += bar_c; ++ema100_count_;
+            if (ema100_count_ == p.ema100_period) ema100_ /= p.ema100_period;
+        } else {
+            const double a = 2.0 / (p.ema100_period + 1);
+            ema100_ = a * bar_c + (1.0 - a) * ema100_;
+        }
         if (atr_seed_count_ < p.atr_period) {
             atr_seed_sum_ += tr; ++atr_seed_count_;
             if (atr_seed_count_ == p.atr_period) atr_ = atr_seed_sum_ / p.atr_period;

@@ -2161,7 +2161,14 @@ static void init_engines(const std::string& cfg_path)
         // are hot on first tick. >=5 live shadow trades before any LIVE thought.
         g_nas_turtle_d1.p           = omega::make_nas_turtle_d1_params();
         g_nas_turtle_d1.shadow_mode = true;
-        g_nas_turtle_d1.enabled     = true;   // RE-INSTATED S-2026-06-15 (3rd reversal): confirmed on its proper 10yr Yahoo daily (NDX 2016-2026, Donch20/ema100 long-only) PF 2.69 +13183pt n=48. The tick-cull (n=19) was underpowered + wrong granularity.
+        g_nas_turtle_d1.enabled     = true;   // SHADOW. CONFIG-DRIFT CORRECTED 2026-06-18: an earlier
+        // comment claimed a high PF for a Donch20+ema100 variant that is NOT the deployed config (this
+        // engine has NO ema100 filter by default). The faithful 10yr-daily class-driven audit
+        // (backtest/index_turtle_d1_audit.cpp) of the ACTUAL shipped config (Donch20, no-ema100,
+        // sl1.5/tp5/hold20) = MARGINAL-KEEP, 2022-bear ~flat, both WF halves+. ema100 + wide-exit
+        // variants raise bull PF but DESTROY bear protection (bull-beta) -> NOT enabled. Sibling SPX +
+        // DJ30 turtles are the real cross-regime edges. ALL faithful numbers live in
+        // backtest/AUDITED_CONFIGS.tsv (the single source of truth) — do NOT cite PFs inline here.
         g_nas_turtle_d1.symbol      = "NAS100";
         g_nas_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
         printf("[OMEGA-INIT] NasTurtleD1Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
@@ -2882,7 +2889,7 @@ static void init_engines(const std::string& cfg_path)
         // fires. Both orthogonal, ANDed when stacked. Shadow A/B 60+ days
         // before flipping enabled=true.
         g_xau_threebar_30m.shadow_mode        = true;
-        g_xau_threebar_30m.enabled            = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$371; gold 3-bar momentum scalp = net loser.
+        g_xau_threebar_30m.enabled            = true;   // RESURRECTED-SHADOW 2026-06-18 (cull-audit): the 2026-06-15 "-$371 6mo shadow-book" cull was POLLUTED basis (same batch as wrongly-killed GoldOrb). Faithful re-check (backtest/threebar30m_xau_S35P3_backtest.cpp, production engine M30, 2024-26): PF1.29 n365, ALL YEARS POSITIVE — NOT a net loser. CAVEAT: bull-only window (no 2022 bear) + 2025-concentrated + long-only -> SHADOW-CANDIDATE, bear-test owed before any live size. shadow_mode=true above. See AUDITED_CONFIGS.tsv + CULL_LEDGER.tsv.
         g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
         g_xau_threebar_30m.max_spread         = 1.0;
@@ -4762,7 +4769,7 @@ static void init_engines(const std::string& cfg_path)
                                                // sweep+stress (bigcap_sweep_ext/stress_ext, cached
                                                // 508-name 5m): gate4 n84 vs gate5 n51 (+65% trades)
                                                // AND higher PF at every slip tier (see trail note).
-        g_bigcap_momo.trail_pct    = 5.0;      // S-2026-06-12b 4->5: gate4+trail5 = most slip-robust
+        g_bigcap_momo.trail_pct    = 0.0;      // S-2026-06-18: %-trail OFF; ATR-trail replaces it (below).
                                                // config: PF 2.37/2.14/2.00/1.73 @8/15/20/30bps vs
                                                // deployed gate5+trail4 1.83/1.65/1.53/1.32. gate3
                                                // tripled trades but died by 30bps (PF1.28) -- skipped.
@@ -4775,9 +4782,18 @@ static void init_engines(const std::string& cfg_path)
                                                // gate4% + ignition 3%/3-bars + strength 0.60.
                                                // DIVERGENCE FROM VALIDATED CONFIG -- EngineGate
                                                // shadow stats are the revalidation.
-        g_bigcap_momo.be_arm_pct   = 0.0;
-        g_bigcap_momo.be_floor_pct = 0.0;
-        g_bigcap_momo.maxhold_bars = 48;       // 48 x 5m = 4h backstop
+        // S-2026-06-18 GAIN-PROTECTION EXIT (faithful bigcap_sweep R_BEST_atr30x4_be3fl2_ride:
+        // net+460 PF4.72 net30+363 both-WF-halves+ exTop5+147 ROBUST vs %-trail baseline +303/2.30).
+        // The live give-back problem (sum-MFE +$624 -> net -$22, ~$451 returned; QURE/NTLA/PRAX
+        // clocked out mid-run) is fixed by: ATR-trail rides the move + BE-ratchet locks gains once
+        // +3% + ride-in-profit lets winners run past the time backstop. SHADOW; 60d/1-regime ->
+        // gather live fills before any live-size. Manifest: BigCapMomo SHADOW-CANDIDATE.
+        g_bigcap_momo.atr_len      = 30;       // ATR-trail length (best robust exit)
+        g_bigcap_momo.atr_mult     = 4.0;      // trail = peak - 4*ATR
+        g_bigcap_momo.be_arm_pct   = 3.0;      // lock gains: arm BE-floor once +3% in profit
+        g_bigcap_momo.be_floor_pct = 2.0;      // floor stop at entry +2% (net-BE after slip)
+        g_bigcap_momo.maxhold_skip_if_profit = true;  // ride winners past the clock (don't cut QURE mid-run)
+        g_bigcap_momo.maxhold_bars = 96;       // 96 x 5m = 8h backstop (losers only; in-profit rides)
         g_bigcap_momo.pyr_adds     = 0;
         g_bigcap_momo.max_entries_per_day = 2;
         g_bigcap_momo.notional_usd = 1000.0;
@@ -4792,8 +4808,9 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.verbose      = true;
         g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("BigCapMomo", []() { return g_bigcap_momo.collect_positions(); });
-        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% trail5%% NO-volx NO-dvol-gate 4h-cap "
-               "$1000-notional p>=10 slip0.15%%/side shadow (liq via scanner; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% ATR-trail(30x4) BE-ratchet(arm3/floor2) "
+               "ride-in-profit 8h-backstop NO-volx NO-dvol-gate $1000-notional p>=10 slip0.15%%/side shadow "
+               "(gain-protect exit S-2026-06-18; liq via scanner; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
 
         // ── BigCapMomo IN-PROCESS IBKR engine (2026-06-16) ───────────────────
         // SAME validated big-cap momentum continuation edge as g_bigcap_momo
@@ -4810,13 +4827,26 @@ static void init_engines(const std::string& cfg_path)
         // so there are NO double GUI rows vs the bridge path. Use ONE path at a
         // time (OMEGA_BIGCAP_IBKR xor OMEGA_BIGCAP_BRIDGE).
         {
+            // EXIT-SYNC DONE 2026-06-18: validated gain-protect exit PORTED into BigCapMomoIbkr
+            // (ATR-trail30x4 + BE-ratchet arm0.03/floor0.02 + ride-in-profit; +52% / PF2.30->4.72,
+            // bigcap_exit_compare.cpp). 4001 = PAPER account (data-entitled) -> set paper_only=false
+            // + OMEGA_BIGCAP_IBKR=1 to start logging REAL paper fills + real slippage. KEEP the
+            // big-cap liquidity floor tight (px_min + scanner cap>=$2B) so micro-caps can't leak in.
             omega::bigcap_momo_ibkr::Config bc;
             bc.gate_pct     = 4.0;     // == g_bigcap_momo.day_gate_pct
-            bc.trail_pct    = 0.05;    // == g_bigcap_momo.trail_pct (5.0% as fraction)
+            bc.trail_pct    = 0.0;     // %-trail OFF; ATR-trail replaces it (matches deployed g_bigcap_momo)
+            bc.atr_len      = 30;      // ATR-trail (validated)
+            bc.atr_mult     = 4.0;
+            bc.be_arm_pct   = 0.03;    // lock gains once +3%
+            bc.be_floor_pct = 0.02;
+            bc.maxhold_skip_if_profit = true;  // ride winners past the clock
+            bc.paper_only   = false;   // 4001 = PAPER account -> route paper orders = REAL fills + real
+                                       // slippage, ZERO capital risk. Still dormant until OMEGA_BIGCAP_IBKR=1
+                                       // (master enable in omega_main) AND OMEGA_BIGCAP_BRIDGE off (xor).
             bc.volx         = 0.0;     // OFF live (realtime-bar volume = deltas, not surge-comparable)
             bc.ig_pct       = 3.0;
             bc.lb           = 6;       // ignition lookback (6*5m = 30min)
-            bc.maxhold      = 48;      // 48*5m = 4h backstop
+            bc.maxhold      = 96;      // 96*5m = 8h backstop (losers only; in-profit rides past it)
             bc.px_min       = 10.0;    // not a penny stock
             bc.regime_gate  = true;    // SPY price>SMA200 AND SMA200 rising
             bc.notional_usd = 1000.0;

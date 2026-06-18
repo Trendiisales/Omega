@@ -41,7 +41,15 @@ but it throttles past the first year-chunk; pulls beyond early-2022 mostly FAILE
 GRXEUR=DAX, UKXGBP=FTSE, ETXEUR=EuroStoxx50, SPXUSD=S&P, NSXUSD=Nasdaq. **HISTDATA
 has NO Dow Jones** (UDXUSD=Dollar Index, not DJ30 — use duka USA30IDXUSD).
 
-## 2. BACKTESTING — see `backtest/ENGINE_BACKTEST_REGISTRY.md`
+## 2. BACKTESTING — **READ `backtest/BACKTEST_TRUTH.md` FIRST** + `backtest/ENGINE_BACKTEST_REGISTRY.md`
+
+- **BACKTEST_TRUTH.md is the protocol that stops the tombstone oscillation** (engines killed,
+  re-mined "in another guise", re-flagged, re-falsified — burning tokens). Order: **ledger first
+  → reproduce the kill → engine-faithful tick BT gates deploy → bar-replay is a discounted hint,
+  never a verdict.** Bar-replay harnesses OVERSTATE ~0.5-0.7 PF (proven: FVG fvg_core PF1.65 →
+  faithful PF0.95 → live-loss). Deploy decisions gate ONLY on the faithful arbiter
+  (`faithful_engine_bt_TEMPLATE.cpp` — drives the REAL engine class). `TOMBSTONE_AUDIT.md` lists
+  which dead engines were killed on polluted/bar-replay numbers (RE-CHECK) vs faithful (stay dead).
 
 - Harness: `backtest/ShadowBook_mi.cpp` → `clang++ -O2 -std=c++20 -DOMEGA_BACKTEST -Iinclude -o /tmp/ShadowMI backtest/ShadowBook_mi.cpp`. Run: `/tmp/ShadowMI <datafile> <out.csv> <INSTRUMENT>`.
 - Gate: `backtest/data_integrity_gate.py <file>` — MANDATORY before use.
