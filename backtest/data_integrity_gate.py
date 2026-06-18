@@ -31,7 +31,10 @@ def parse_ts_px(line, histdata):
             return ts, float(parts[1]), float(parts[2])
         except Exception: return None
     else:
-        try: return int(parts[0]), float(parts[1]), float(parts[2])
+        try:
+            ts = int(parts[0])
+            if ts < 100000000000: ts *= 1000   # epoch SECONDS (10-digit) -> ms; 13-digit already ms
+            return ts, float(parts[1]), float(parts[2])
         except Exception: return None
 
 def main():
@@ -111,9 +114,19 @@ def main():
     # 5. coverage hole — HARD REJECT > 10d (legit weekends ~49h, holidays ~96h)
     if max_gap_h > 240: fails.append(f"COVERAGE HOLE: largest gap {max_gap_h:.0f}h ({max_gap_h/24:.1f}d) — missing data, not continuous")
     elif max_gap_h > 96: warns.append(f"largest gap {max_gap_h:.0f}h ({max_gap_h/24:.1f}d) — inspect (holiday?)")
-    # 6. downsample / density — HARD REJECT decimated tick spacing
-    if med_dt > 10.0: fails.append(f"DOWNSAMPLED: median tick spacing {med_dt:.1f}s — decimated, not raw tick (breaks bar agg)")
-    elif med_dt > 3.0: warns.append(f"sparse: median tick spacing {med_dt:.1f}s — confirm not downsampled")
+    # 6. downsample / density — distinguish a BAR file (regular interval, legit) from a
+    #    DECIMATED tick file (irregular sparse, breaks bar agg). A bar file has tightly
+    #    clustered dt == the bar interval; a downsampled tick stream is irregular.
+    regular = (sum(1 for d in dt_samp if abs(d/1000.0 - med_dt) <= 0.15*med_dt) / len(dt_samp)) if dt_samp and med_dt > 0 else 0.0
+    BAR_INTERVALS = {60:'M1',300:'M5',900:'M15',1800:'M30',3600:'H1',14400:'H4',86400:'D1'}
+    is_bar = med_dt >= 55 and regular >= 0.5
+    if is_bar:
+        lbl = next((v for k,v in BAR_INTERVALS.items() if abs(med_dt-k) <= 0.15*k), f'{med_dt:.0f}s')
+        warns.append(f"BAR FILE ({lbl} bars, {100*regular:.0f}% regular) — not raw tick; gate validated continuity+prices only, not tick density")
+    elif med_dt > 10.0:
+        fails.append(f"DOWNSAMPLED: median tick spacing {med_dt:.1f}s, only {100*regular:.0f}% regular — decimated tick stream, not raw tick and not clean bars (breaks bar agg)")
+    elif med_dt > 3.0:
+        warns.append(f"sparse: median tick spacing {med_dt:.1f}s — confirm not downsampled")
 
     print(f"--- {path.split('/')[-1]} ---")
     print(f"  rows={n:,}  median_px={med:.3f}  median_spread={medspr:.5f}  span={span_days:.0f}d  median_tick_dt={med_dt:.2f}s  ask_first={askfirst}")
