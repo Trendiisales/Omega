@@ -1558,7 +1558,7 @@ static void init_engines(const std::string& cfg_path)
         // OFF (clean entry/exit edge validation first; pyramiding fails
         // cross-regime per the S45 tombstone). HARD shadow until ledger gate.
         g_xau_tf_m15.shadow_mode      = true;   // hard shadow (new unproven cell)
-        g_xau_tf_m15.enabled          = true;
+        g_xau_tf_m15.enabled          = false;  // DISABLED S-2026-06-19 (audit FAIL): faithful real-class run on CLEAN 2022-23 gold m15 (XAUUSD_2022_2023.m15.csv) = PF0.75 net-neg, BOTH WF halves negative (H1 PF0.48). Bull-only validation shipped it; gold_regime bear-block does NOT rescue. Edge fails in bear on clean data. Re-validate cross-regime before any re-enable.
         // S-2026-06-17 cold-loss protection. EXTRAPOLATED tighter than H1's 0.5%
         // (m15 = faster TF, smaller bars) -- NOT yet backtested at m15; shadow
         // ledger validates. Conservative first value; retune on its own M30->m15 test.
@@ -5028,7 +5028,7 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_sp.symbol      = "US500.F";
         g_idx_bear_short_sp.engine_name = "IndexBearShort";
         g_idx_bear_short_sp.shadow_mode = true;
-        g_idx_bear_short_sp.enabled     = true;
+        g_idx_bear_short_sp.enabled     = false;  // DISABLED S-2026-06-19 (audit FAIL): validation file SPX2022_bear_h1.csv does NOT EXIST on disk; the PF1.84 "cross-val passed" claim is unreproducible, no faithful BT drives the real class, and wiki self-contradicts (index.md "cross-val pending" vs entity "PASSED"). Cannot verify -> off until reproducibly validated on real SPX bear data.
         g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts
         g_idx_bear_short_sp.lot         = 1.0;
         g_idx_bear_short_sp.USE_RISKOFF_GATE = false;
@@ -5068,7 +5068,7 @@ static void init_engines(const std::string& cfg_path)
         g_nas_orb_retrace.trail_win   = 3;
         g_nas_orb_retrace.max_spread  = 5.0;       // NAS points
         g_nas_orb_retrace.shadow_mode = true;
-        g_nas_orb_retrace.enabled     = true;      // RE-ENABLED 2026-06-16 (shadow) at retr0.5; the +5309 ledger was a 66-day phantom (pre-FLAT_EOD), not real perf.
+        g_nas_orb_retrace.enabled     = false;     // DISABLED S-2026-06-19 (audit FAIL): two problems. (1) DATA — validated on NAS100_full_ds10.csv which has a 367-day COVERAGE HOLE (all of 2023 missing, jumps 202212->202401); the PF1.88 both-halves claim rests on holey data. Proper 2023-inclusive NAS data EXISTS (NSXUSD, complete) — re-validate on THAT. (2) CONFIG-DRIFT — faithful harness ShadowBook_mi.cpp hardcodes retr=0.382 but prod ships retr=0.5; the AUDITED_CONFIGS "retr0.5 EDGE" record is NOT reproducible from the committed harness, and boot printf still advertises retr0.382. Re-validate on NSXUSD at a reconciled config before re-enable. (was: RE-ENABLED 2026-06-16 retr0.5; +5309 ledger was a 66-day phantom.)
         g_nas_orb_retrace.verbose     = true;
         g_nas_orb_retrace.lot         = 1.0;
         g_nas_orb_retrace.seed_from_csv(
