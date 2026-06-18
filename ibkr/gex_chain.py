@@ -70,6 +70,11 @@ def main():
                 opt = Option(cfg["symbol"], exp, k, right, cfg["opt_exch"], tradingClass=cfg["symbol"], multiplier=cfg["mult"], currency=cfg["cur"])
                 try: ib.qualifyContracts(opt)
                 except Exception: continue
+                if not opt.conId: continue   # 2026-06-18: unqualified strike (e.g. NDX/DAX w/o
+                                             # entitlement) -> conId stays empty -> reqMktData would
+                                             # hash an unhashable contract and crash the whole run.
+                                             # Skip gracefully so the index falls through to the
+                                             # "no greeks/OI" abort instead of dying.
                 t = ib.reqMktData(opt, "100,101", False, False); ib.sleep(0.6)
                 g = t.modelGreeks.gamma if t.modelGreeks else None
                 oi = (t.callOpenInterest if right == "C" else t.putOpenInterest)
