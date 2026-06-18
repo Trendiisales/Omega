@@ -4831,7 +4831,11 @@ static void init_engines(const std::string& cfg_path)
         g_nq_momentum.p.ig_pct        = 0.30;   // ignition: +0.30% over lb bars
         g_nq_momentum.p.lb            = 6;       // 6 x 5m = 30 min
         g_nq_momentum.p.atr_len       = 30;
-        g_nq_momentum.p.atr_mult      = 4.0;
+        g_nq_momentum.p.atr_mult      = 3.0;    // S-2026-06-18 TUNED 4.0->3.0: exit-lever sweep
+                                                // (nq_momentum_faithful.cpp, cross-regime) — tighter
+                                                // trail lifts bull PF 2.60->3.24 (+1645pt, more trades,
+                                                // lower DD) while bear stays both-WF-halves+ (PF1.18).
+                                                // 2.0/2.5 over-tighten (bear H1 flips neg); 3.0 = robust optimum.
         g_nq_momentum.p.be_arm_pct    = 0.03;
         g_nq_momentum.p.be_floor_pct  = 0.02;
         g_nq_momentum.p.maxhold_bars  = 48;     // 4h backstop (skipped while in profit)
@@ -4839,7 +4843,7 @@ static void init_engines(const std::string& cfg_path)
         g_nq_momentum.p.regime_gate   = true;
         g_nq_momentum.p.dollars_per_pt= 1.0;    // shadow scale (pts*lot; ledger owns tick-value)
         g_nq_momentum.p.lot           = 1.0;
-        printf("[OMEGA-INIT] NqMomentum: NAS100 5m ignition0.30%%/30min ATR-trail(30x4) "
+        printf("[OMEGA-INIT] NqMomentum: NAS100 5m ignition0.30%%/30min ATR-trail(30x3) "
                "BE-ratchet(arm3/floor2) ride-in-profit regime-gate(SMA200) shadow=%d enabled=%d "
                "(faithful BT: gated +both regimes; gate load-bearing)\n",
                g_nq_momentum.shadow_mode, g_nq_momentum.enabled);

@@ -24,11 +24,15 @@ int main(int argc,char**argv){
     const int    LB  = argc>3?atoi(argv[3]):6;
     const double cost= argc>4?atof(argv[4]):2.0;   // round-trip pts, applied to net at report time
 
+    auto envd=[&](const char*k,double d){ const char*v=getenv(k); return v?atof(v):d; };
+    auto envi=[&](const char*k,int d){ const char*v=getenv(k); return v?atoi(v):d; };
     omega::NqMomentumEngine eng;
     eng.shadow_mode = true;
-    eng.p.ig_pct = IG; eng.p.lb = LB; eng.p.atr_len = 30; eng.p.atr_mult = 4.0;
-    eng.p.be_arm_pct = 0.03; eng.p.be_floor_pct = 0.02; eng.p.maxhold_bars = 48;
-    eng.p.regime_sma = 200; eng.p.regime_gate = (getenv("NOGATE")==nullptr);
+    eng.p.ig_pct = IG; eng.p.lb = LB;
+    eng.p.atr_len = envi("ATRLEN",30); eng.p.atr_mult = envd("ATRMULT",4.0);
+    eng.p.be_arm_pct = envd("BEARM",0.03); eng.p.be_floor_pct = envd("BEFLOOR",0.02);
+    eng.p.maxhold_bars = envi("MAXHOLD",48);
+    eng.p.regime_sma = envi("RGSMA",200); eng.p.regime_gate = (getenv("NOGATE")==nullptr);
     eng.p.dollars_per_pt = 1.0; eng.p.lot = 1.0;
 
     struct Tr{ int64_t ts; double pnl_pts; };

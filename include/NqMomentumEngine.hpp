@@ -28,7 +28,8 @@ struct NqMomentumParams {
     double ig_pct        = 0.30;   // ignition: close up >= this % over lb bars
     int    lb            = 6;      // ignition lookback (6 x 5m = 30 min)
     int    atr_len       = 14;     // ATR (5m bars)
-    double atr_mult      = 4.0;    // trailing stop = peak - atr_mult * ATR
+    double atr_mult      = 3.0;    // trailing stop = peak - atr_mult * ATR (S-2026-06-18 tuned 4.0->3.0:
+                                   // tighter trail, bull PF 2.60->3.24, bear stays both-WF-halves+ PF1.18)
     double be_arm_pct    = 0.03;   // arm BE-floor once +3% in profit
     double be_floor_pct  = 0.02;   // floor stop at entry +2% (net-BE)
     int    maxhold_bars  = 48;     // 48 x 5m = 4h backstop (skipped while in profit)
