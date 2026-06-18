@@ -835,6 +835,15 @@ static omega::XauStraddleM30Engine g_idx_straddle_nas_m30;
 static omega::XauStraddleM30Engine g_idx_straddle_uk100_m30;
 static omega::XauStraddleM30Engine g_idx_straddle_uk100_m240;
 
+// 2026-06-18: NqMomentumEngine — regime-gated intraday momentum-continuation on
+//   NAS100/NQ (liquid-futures sibling of BigCapMomo: same ATR-trail+BE-ratchet+ride
+//   exit, single liquid instrument => no micro-cap slippage). Engine-faithful tick
+//   BT (backtest/nq_momentum_faithful.cpp): GATED positive BOTH regimes, both WF
+//   halves+ (bull PF2.34 +1395; bear PF1.26 +426). Gate LOAD-BEARING (ungated bear
+//   PF0.99). Fed from the NAS100 index tick path. Shadow until the gate's verdict.
+#include "NqMomentumEngine.hpp"
+static omega::NqMomentumEngine g_nq_momentum;
+
 // 2026-05-24 S136: Xau3BarMomGatedH4Engine -- XAU H4 three-bar momentum symmetric
 //   with MFE-lock trail (arm=1.0R, lock=90%).
 //   /Users/jo/edge_research validation: 27mo backtest IS PF 1.11 +$983 /

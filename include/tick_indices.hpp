@@ -1182,6 +1182,14 @@ static void on_tick_nas100(
         g_idx_straddle_nas_m15.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
         g_idx_straddle_nas_m30.on_tick_agg(bid, ask, now_ms_str, bracket_on_close);
         g_engine_heartbeat.pulse("IdxStraddleNAS100");
+
+        // 2026-06-18 NqMomentumEngine (regime-gated momentum-continuation, NAS100/NQ).
+        //   Self-aggregating 5m bars from this tick path; BigCapMomo exit chassis on a
+        //   liquid single instrument. Shadow. Faithful BT: gated positive both regimes.
+        if (g_nq_momentum.enabled) {
+            g_nq_momentum.on_tick(bid, ask, now_ms_str, bracket_on_close);
+            g_engine_heartbeat.pulse("NqMomentum");
+        }
     }
     g_engine_heartbeat.pulse("NasBbRevLongH1");      // 2026-05-26 (Stage 4)
 

@@ -4812,6 +4812,38 @@ static void init_engines(const std::string& cfg_path)
                "ride-in-profit 8h-backstop NO-volx NO-dvol-gate $1000-notional p>=10 slip0.15%%/side shadow "
                "(gain-protect exit S-2026-06-18; liq via scanner; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
 
+        // ── NqMomentumEngine (S-2026-06-18) ──────────────────────────────────
+        // Regime-gated intraday momentum-continuation on NAS100/NQ. Same exit
+        // chassis as BigCapMomo (ATR-trail + BE-ratchet + ride-in-profit) but a
+        // SINGLE liquid instrument (the NAS100 index tick path) => no micro-cap
+        // slippage. Fed in tick_indices.hpp on_tick_nas100. Ledger writes via the
+        // bracket_on_close callback (same as the index straddle cells).
+        // Engine-faithful tick BT (backtest/nq_momentum_faithful.cpp, drives THIS
+        // class): GATED positive BOTH regimes, both WF halves+ (bull n129 PF2.34
+        // +1395; bear-2022 n40 PF1.26 +426). Gate is LOAD-BEARING — ungated bear
+        // = PF0.99 -44 (bull-beta). regime_gate stays TRUE. Caveat: validated on a
+        // NAS100-index proxy for NQ; SHADOW until the gate's forward verdict +
+        // real-fill confirmation. See [[omega-nq-momentum-continuation]].
+        g_nq_momentum.symbol      = "NAS100";
+        g_nq_momentum.engine_name = "NqMomentum";
+        g_nq_momentum.shadow_mode = true;
+        g_nq_momentum.enabled     = true;
+        g_nq_momentum.p.ig_pct        = 0.30;   // ignition: +0.30% over lb bars
+        g_nq_momentum.p.lb            = 6;       // 6 x 5m = 30 min
+        g_nq_momentum.p.atr_len       = 30;
+        g_nq_momentum.p.atr_mult      = 4.0;
+        g_nq_momentum.p.be_arm_pct    = 0.03;
+        g_nq_momentum.p.be_floor_pct  = 0.02;
+        g_nq_momentum.p.maxhold_bars  = 48;     // 4h backstop (skipped while in profit)
+        g_nq_momentum.p.regime_sma    = 200;    // bull-regime gate (load-bearing)
+        g_nq_momentum.p.regime_gate   = true;
+        g_nq_momentum.p.dollars_per_pt= 1.0;    // shadow scale (pts*lot; ledger owns tick-value)
+        g_nq_momentum.p.lot           = 1.0;
+        printf("[OMEGA-INIT] NqMomentum: NAS100 5m ignition0.30%%/30min ATR-trail(30x4) "
+               "BE-ratchet(arm3/floor2) ride-in-profit regime-gate(SMA200) shadow=%d enabled=%d "
+               "(faithful BT: gated +both regimes; gate load-bearing)\n",
+               g_nq_momentum.shadow_mode, g_nq_momentum.enabled);
+
         // ── BigCapMomo IN-PROCESS IBKR engine (2026-06-16) ───────────────────
         // SAME validated big-cap momentum continuation edge as g_bigcap_momo
         // above, but running on its OWN IBKR scanner/data thread INSIDE Omega.exe
@@ -5822,6 +5854,8 @@ static void init_engines(const std::string& cfg_path)
         [reg]{ return reg("IdxStraddleUK100_M30", g_idx_straddle_uk100_m30.enabled, g_idx_straddle_uk100_m30.shadow_mode, {"IdxStraddleUK100_M30"}); });
     g_engines.register_engine("IdxStraddleUK100_M240",
         [reg]{ return reg("IdxStraddleUK100_M240", g_idx_straddle_uk100_m240.enabled, g_idx_straddle_uk100_m240.shadow_mode, {"IdxStraddleUK100_M240"}); });
+    g_engines.register_engine("NqMomentum",
+        [reg]{ return reg("NqMomentum", g_nq_momentum.enabled, g_nq_momentum.shadow_mode, {"NqMomentum"}); });
     std::cout << "[OmegaApi] g_engines registered ("
               << g_engines.snapshot_all().size() << " engines)\n";
     std::cout.flush();
@@ -5920,6 +5954,7 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("AmrUs500",             g_amr_us500.enabled,            3600,  7, 22);
         g_engine_heartbeat.register_engine("AmrGer40",             g_amr_ger40.enabled,            3600,  7, 22);
         g_engine_heartbeat.register_engine("AmrNas100",            g_amr_nas100.enabled,           3600,  7, 22);
+        g_engine_heartbeat.register_engine("NqMomentum",          g_nq_momentum.enabled,          3600, 13, 21);
         g_engine_heartbeat.register_engine("VwapRevGer40",         g_vwap_rev_ger40.enabled,       3600,  7, 22);
         g_engine_heartbeat.register_engine("Ger40LondonBrk",       g_ger40_london_brk.enabled,     3600,  7, 22);
         g_engine_heartbeat.register_engine("Ger40TurtleH4",        g_ger40_turtle_h4.enabled,      3600,  7, 22);

@@ -28,6 +28,7 @@ HEADERS=(
   include/L2LeverageState.hpp
   include/SurvivorPortfolio.hpp
   include/PumpScalpManager.hpp
+  include/NqMomentumEngine.hpp
   include/DonchianEngine.hpp
   include/EmaPullbackEngine.hpp
   include/IndexFlowEngine.hpp
