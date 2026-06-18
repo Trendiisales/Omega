@@ -235,6 +235,7 @@ static void init_engines(const std::string& cfg_path)
     //   `kShadowDefault`.
     // 2026-05-08 USER REQUEST: only g_gold_microscalper trades on gold;
     //   force every other gold engine to shadow regardless of g_cfg.mode.
+    g_gold_midscalper.enabled     = false;  // RETIRED S-2026-06-19 (scalp family). Registration already removed 2026-06-02; this hard-disables for config authority + drops it from heartbeat/GUI.
     g_gold_midscalper.shadow_mode = true;
     // 2026-05-08 DEEPSTRIKE LIVE PROMOTION (authorised by user in chat):
     //   GoldMicroScalper goes live on account 8077780 at 0.03 lot. This
@@ -299,7 +300,20 @@ static void init_engines(const std::string& cfg_path)
     //   (note: shutdown does NOT currently force-close positions -- the
     //   proper fix is queued for next deploy; today the stop+manual-
     //   cTrader-close workaround applies if a position is open at stop).
-    g_gold_microscalper.enabled     = false;  // RETIRED S-2026-06-19 (operator directive): full retirement of the scalp/micro family, not shadow-pin. The whole sub-minute/microstructure scalp class is proven unviable (see comment below + retired_micro_engines.hpp). enabled=false = no dispatch, no fire, no GUI.
+    // ===== SCALP/MICRO FAMILY — HARD RETIREMENT (operator directive S-2026-06-19) =====
+    // The sub-minute/microstructure scalp class is proven unviable across audits
+    // (GoldBracket PF0.36, XauusdFvg 0.50, VWAPRev 0.54/0.95, TrendPB 0.24/0.27,
+    // GoldScalpPyramid S45, BBandScalp 27-cfg/154M-tick PF0.07-0.09, 78 HF gold
+    // configs all neg). Full retirement = enabled=false (no dispatch/fire/GUI), NOT
+    // shadow-pin. Tombstone: include/retired_micro_engines.hpp.
+    // CONFIG-AUTHORITY FIX: FxScalpPyramidEngine struct DEFAULTS enabled=true, and
+    // these 5 had NO explicit disable -> they were live despite "S45-disabled" docs.
+    g_fx_scalp_eurusd.enabled = false;  g_fx_scalp_eurusd.shadow_mode = true;
+    g_fx_scalp_usdjpy.enabled = false;  g_fx_scalp_usdjpy.shadow_mode = true;
+    g_fx_scalp_gbpusd.enabled = false;  g_fx_scalp_gbpusd.shadow_mode = true;
+    g_fx_scalp_usdcad.enabled = false;  g_fx_scalp_usdcad.shadow_mode = true;
+    g_fx_scalp_audusd.enabled = false;  g_fx_scalp_audusd.shadow_mode = true;
+    g_gold_microscalper.enabled     = false;  // RETIRED S-2026-06-19: last live scalp. enabled=false = no dispatch, no fire, no GUI.
     g_gold_microscalper.shadow_mode = true;   // S37-Z 2026-05-28: pinned shadow. Operator decision: scalp family proven unviable across audits this session (GoldBracket PF=0.36, XauusdFvg PF=0.50, VWAPRev PF=0.54/0.95, TrendPB PF=0.24/0.27, GoldScalpPyramid S45-disabled, 5 FxScalpPyramid S45-disabled, BBandScalp disabled). Microscalper was the last live scalp -- pin shadow to stop bleed. Re-promote only after a documented edge (audit + walk-forward + 30-trade shadow verification).
 
     // 2026-05-08 S20+: RiskMonitor wiring -------------------------------------
