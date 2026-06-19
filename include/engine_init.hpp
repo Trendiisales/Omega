@@ -5887,6 +5887,46 @@ static void init_engines(const std::string& cfg_path)
               << g_engines.snapshot_all().size() << " engines)\n";
     std::cout.flush();
 
+    // ── ENGINE_TABLE startup audit surface (S-2026-06-19 Phase 1) ─────────
+    // Phase-0 handoff item: dump every registered engine's enabled/mode/state
+    // at boot so the live audit surface is one grep away in the stderr log.
+    // ROOT REASON: this session-class repeatedly mis-stated which engines were
+    // live (FxScalpPyramid x5 defaulted enabled=true; "disabled" docs lied).
+    // A boot-time table from the authoritative registry (snapshot_all) makes
+    // the truth verifiable directly off the running binary -- no scraping
+    // engine_init.hpp's per-engine flags, no /api round-trip.
+    //
+    // Columns are limited to what the EngineRegistry actually holds today
+    // (name/enabled/mode/state). symbol/TF/dir/risk/regime are NOT in the
+    // snapshot struct -- adding them needs a per-engine metadata contract,
+    // tracked as a Phase-1 follow-on, deliberately not bolted on here.
+    {
+        auto rows = g_engines.snapshot_all();
+        int n_live = 0, n_shadow = 0, n_idle = 0;
+        std::cout << "[ENGINE_TABLE] ==== " << rows.size()
+                  << " registered engines (boot snapshot) ====\n";
+        std::cout << "[ENGINE_TABLE] "
+                  << std::left << std::setw(30) << "NAME"
+                  << std::setw(9)  << "ENABLED"
+                  << std::setw(8)  << "MODE"
+                  << std::setw(9)  << "STATE" << "\n";
+        for (const auto& r : rows) {
+            if (!r.enabled)            ++n_idle;
+            else if (r.mode == "LIVE") ++n_live;
+            else                       ++n_shadow;
+            std::cout << "[ENGINE_TABLE] "
+                      << std::left << std::setw(30) << r.name
+                      << std::setw(9)  << (r.enabled ? "yes" : "no")
+                      << std::setw(8)  << r.mode
+                      << std::setw(9)  << r.state << "\n";
+        }
+        std::cout << "[ENGINE_TABLE] ==== summary: "
+                  << n_live   << " LIVE-enabled, "
+                  << n_shadow << " SHADOW-enabled, "
+                  << n_idle   << " disabled ====\n";
+        std::cout.flush();
+    }
+
     // ── EngineHeartbeat registrations (audit-fixes-40 / 2026-05-05) ───────
     // Per-engine liveness registry. Each entry declares:
     //   live_required       -- true if absence triggers MISS / STARTUP-FAIL
@@ -5911,8 +5951,13 @@ static void init_engines(const std::string& cfg_path)
     {
         // ---- Gold engines (24/7 cadence) ---------------------------------
         // S11 P3b: HybridGold heartbeat registration removed (engine culled in P3a + P3b).
-        g_engine_heartbeat.register_engine("MidScalperGold",     true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("MicroScalperGold",   true, 3600,  6, 22);
+        // S-2026-06-19 Phase 1: live_required was hardcoded `true` on engines
+        // that are decommissioned/disabled but still PULSE (tick_gold.hpp:35-36
+        // pulse unconditionally) -> heartbeat showed them "active" when off.
+        // Mirror the engine's real enabled flag, matching the XAU-zoo blocks
+        // below. MidScalper has no enabled member (engine #if 0'd) -> literal false.
+        g_engine_heartbeat.register_engine("MidScalperGold",     false, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("MicroScalperGold",   !g_disable_microscalper, 3600,  6, 22);
         g_engine_heartbeat.register_engine("GoldStack",          true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("CandleFlow",         true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
@@ -5925,10 +5970,10 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("FxScalpPyramid_USDCAD", g_fx_scalp_usdcad.enabled, 3600, 7, 21);
         g_engine_heartbeat.register_engine("FxScalpPyramid_AUDUSD", g_fx_scalp_audusd.enabled, 3600, 7, 21);
         g_engine_heartbeat.register_engine("GoldRegimeDaily",    g_gold_regime_daily.enabled, 14400, 7, 21);
-        g_engine_heartbeat.register_engine("RSIReversal",        true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("RSIExtreme",         true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("h1_swing_gold",      true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("h4_regime_gold",     true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("RSIReversal",        g_rsi_reversal.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("RSIExtreme",         g_rsi_extreme.enabled,  3600,  0, 24);
+        g_engine_heartbeat.register_engine("h1_swing_gold",      g_h1_swing_gold.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("h4_regime_gold",     g_h4_regime_gold.enabled, 3600,  0, 24);
         g_engine_heartbeat.register_engine("MacroCrash",         g_macro_crash.enabled, 3600, 0, 24);
         g_engine_heartbeat.register_engine("NbmGoldLondon",      true,  900,  7, 14);
 
@@ -6000,11 +6045,11 @@ static void init_engines(const std::string& cfg_path)
         // forwarding to TsmomPortfolio::on_tick / on_h1_bar. Pulse fires from
         // the gold dispatcher so cadence is high; the 3600s envelope is
         // intentional for weekend safety.
-        g_engine_heartbeat.register_engine("Tsmom_H1_long",      true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_H2_long",      true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_H4_long",      true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_H6_long",      true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_D1_long",      true, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_H1_long",      g_tsmom.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_H2_long",      g_tsmom.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_H4_long",      g_tsmom.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_H6_long",      g_tsmom.enabled, 3600,  0, 24);
+        g_engine_heartbeat.register_engine("Tsmom_D1_long",      g_tsmom.enabled, 3600,  0, 24);
 
         // ---- FX session-windowed engines (audit-fixes-37 + 41 cohort) ----
         g_engine_heartbeat.register_engine("EurusdLondonOpen",   true,  600,  6,  9);
