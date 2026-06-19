@@ -1407,6 +1407,24 @@ static void init_engines(const std::string& cfg_path)
         // S-2026-06-17 cold-loss protection. Daily backtest (losscut_batch_b.py):
         // LC=1.0% -> net flat, maxDD -68% (-341->-110), worst -174->-53.
         g_xau_tf_d1.LOSS_CUT_PCT = 1.0;
+        // S-2026-06-19 giveback protection (Phase-3 sweep, the planned S63 D1
+        // evaluation — see XauTrendFollowD1Engine.hpp BE_ARM comment block).
+        // BE_ARM_PCT=3 / BE_BUFFER_PCT=0: arms a break-even ratchet once mfe
+        // reaches 3% of entry, cuts only on a FULL round-trip back to entry
+        // (buf=0) -> protects the giveback case WITHOUT truncating live runners
+        // (the designated Donchian_N5 no-TP runner cell is left untouched in BT).
+        // Wide-arm is mandatory: a tight 1% arm GUTS the trend edge (PF<1, 2-3x
+        // trades) -- confirms the swing-protection-sweep prior.
+        // FAITHFUL BT (xau_tf_d1_bearm_sweep, engine-driven, bull+bear, 3x-cost):
+        //   net-positive BOTH regimes + BOTH halves + 3x-cost-robust + broad
+        //   cell attribution + plateau arm3-5, on the reproducible (raw-cell and
+        //   full-config) baselines. CAVEAT: the production vol-band gate is NOT
+        //   standalone-reproducible (needs live rolling-percentile state), so the
+        //   production-faithful number comes from the SHADOW LEDGER -- arbiter.
+        //   Complementary to g_rider_d1 (BE-arm fires on round-trips; the rider
+        //   has already banked its +N*ATR legs by then). small-n: D1 ~2 trades/mo.
+        g_xau_tf_d1.BE_ARM_PCT    = 3.0;
+        g_xau_tf_d1.BE_BUFFER_PCT = 0.0;
         // S88-followup post-sweep 2026-05-27: widen D1 band [0.30,0.85] ->
         // [0.20,0.90]. Sweep showed D1 entry-vol distribution sits inside the
         // band already; widening picks up 2 extra cell-Keltner trades (PF
