@@ -978,6 +978,10 @@ function Invoke-Deploy {
         $ghSha7 = $ghSha.Substring(0,7)
         Write-Host "  HEAD: $ghSha7" -ForegroundColor Cyan
 
+        # S-2026-06-20: capture pre-reset HEAD so [5/12] can skip the UI build when
+        # omega-terminal didn't change in this pull.
+        $prevHead = (git rev-parse HEAD 2>$null)
+
         git reset --hard "origin/$Branch" 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [FATAL] git reset --hard failed (exit=$LASTEXITCODE)" -ForegroundColor Red
@@ -1182,7 +1186,16 @@ function Invoke-Deploy {
     # --------------------------------------------------------------------------
     Write-Host "[5/12] UI build (omega-terminal)..." -ForegroundColor Yellow
     $uiDir = "$OmegaDir\omega-terminal"
-    if (Test-Path $uiDir) {
+    # S-2026-06-20 DEPLOY-SPEED: skip the ~32s UI build (npm ci + vite) when
+    # omega-terminal is unchanged vs the previous HEAD AND a built dist exists.
+    $uiSkip = $false
+    if ((Test-Path $uiDir) -and $prevHead -and (Test-Path "$uiDir\dist\index.html")) {
+        git -C $OmegaDir diff --quiet $prevHead HEAD -- omega-terminal 2>$null
+        if ($LASTEXITCODE -eq 0) { $uiSkip = $true }
+    }
+    if ($uiSkip) {
+        Write-Host "  [skip] omega-terminal unchanged since $($prevHead.Substring(0,7)) + dist present -- skipping UI build (~32s saved)" -ForegroundColor Cyan
+    } elseif (Test-Path $uiDir) {
         $uiStart = Get-Date
         $nodeOk = $null -ne (Get-Command node -ErrorAction SilentlyContinue)
         $npmOk  = $null -ne (Get-Command npm  -ErrorAction SilentlyContinue)

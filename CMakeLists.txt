@@ -287,14 +287,17 @@ execute_process(
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
-# Read the computed variables into CMake scope
-if(EXISTS "${VERSION_CMAKE_FILE}")
-    include("${VERSION_CMAKE_FILE}")
-else()
-    set(OMEGA_GIT_HASH   "unknown")
-    set(OMEGA_GIT_DATE   "unknown")
-    set(OMEGA_BUILD_TIME "unknown")
-endif()
+# S-2026-06-20 DEPLOY-SPEED: do NOT include() omega_version.cmake.
+# The OMEGA_GIT_HASH/_DATE/_BUILD_TIME CMake-scope vars it set are DEAD --
+# compile-defines were removed 2026-06-11 (the git hash now reaches the binary
+# ONLY via include/version_generated.hpp, generated below copy-if-different).
+# include()-ing it made omega_version.cmake a TRACKED configure dependency, and
+# the build-time omega_version target rewrites that file every build -> CMake
+# reconfigured mid-build on EVERY deploy -> MSBuild rebuilt all 9 Omega-own TUs
+# even when nothing changed (~90s/deploy wasted; only main.cpp actually depends
+# on the hash, via the header). No include() = no tracked dep = no reconfigure.
+# The configure-time execute_process above still seeds version_generated.hpp for
+# a clean first build; the build-time target keeps it fresh thereafter.
 
 # S-2026-06-11: the git hash is delivered via include/version_generated.hpp
 # (generated above at configure for the first build, and regenerated at BUILD
