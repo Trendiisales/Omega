@@ -44,6 +44,18 @@ struct NasTurtleD1Params {
     int    hold_max_bars       = 20;
     double sl_atr_mult         = 1.5;
     double tp_atr_mult         = 5.0;
+    // S-2026-06-19 giveback BE-ratchet (default OFF — KEEP OFF, documented-NEGATIVE).
+    // Once mfe(pts) >= entry*BE_ARM_PCT/100, raise SL to entry+entry*BE_BUFFER_PCT/100.
+    // FAITHFUL 10yr-daily audit (index_turtle_d1_audit.cpp argv9/10) on SPX/DJ30/NDX:
+    // BE-arm does NOT improve any instrument — neutral-to-slightly-NEGATIVE net at
+    // arm2/3/5, never beats baseline, and arm3/buf1 BREAKS NDX both-halves (H2 -36).
+    // Root: the turtle already exits tight (1.5-ATR SL + 5-ATR TP + 20-bar timeout)
+    // so BE-arm only trims winners that would have recovered — same as the fast 4h
+    // (BE-arm helps ONLY loose/no-TP exits, e.g. XauTrendFollowD1 runner cells).
+    // Fields kept (default 0) so the lever is re-testable without re-adding; do NOT
+    // enable. Same disposition as use_ema100_filter (tested, negative, off).
+    double BE_ARM_PCT          = 0.0;
+    double BE_BUFFER_PCT       = 0.0;
     double risk_dollars        = 10.0;
     double lot                 = 0.01;
     double dollars_per_pt      = 1.0;   // NAS100 CFD ~ $1/pt at 1.0 lot (shadow PnL scale)
@@ -139,6 +151,15 @@ struct NasTurtleD1Engine {
             const double move = mid - pos_.entry;
             if (move > pos_.mfe) pos_.mfe = move;
             if (move < pos_.mae) pos_.mae = move;
+            // S-2026-06-19 giveback BE-ratchet (default OFF). Arm on mfe, raise SL to
+            // entry+buffer so a reverse before TP exits ~breakeven not full round-trip.
+            if (p.BE_ARM_PCT > 0.0 && pos_.entry > 0.0) {
+                const double arm_pts = pos_.entry * p.BE_ARM_PCT / 100.0;
+                if (pos_.mfe >= arm_pts) {
+                    const double be_sl = pos_.entry + pos_.entry * p.BE_BUFFER_PCT / 100.0;
+                    if (be_sl > pos_.sl) pos_.sl = be_sl;
+                }
+            }
             if (bid <= pos_.sl)      { _close(bid, "SL_HIT", now_ms, on_close); return sig; }
             else if (bid >= pos_.tp) { _close(bid, "TP_HIT", now_ms, on_close); return sig; }
         }

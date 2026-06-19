@@ -92,6 +92,8 @@ int main(int argc, char** argv) {
     const int    hold_ov     = argc > 6 ? std::atoi(argv[6]) : 0;
     const double sl_mult_ov  = argc > 7 ? std::atof(argv[7]) : 0.0;
     const bool   ema100_ov   = argc > 8 ? std::atoi(argv[8]) != 0 : false;
+    const double be_arm_ov   = argc > 9 ? std::atof(argv[9])  : 0.0;  // BE_ARM_PCT (0=off)
+    const double be_buf_ov   = argc >10 ? std::atof(argv[10]) : 0.0;  // BE_BUFFER_PCT
 
     auto bars = load_daily_csv(path);
     if (bars.size() < 50) { std::fprintf(stderr, "[%s] only %zu bars -- abort\n", label.c_str(), bars.size()); return 1; }
@@ -107,6 +109,7 @@ int main(int argc, char** argv) {
     if (hold_ov    > 0)   eng.p.hold_max_bars = hold_ov;
     if (sl_mult_ov > 0.0) eng.p.sl_atr_mult  = sl_mult_ov;
     if (ema100_ov)        eng.p.use_ema100_filter = true;
+    if (be_arm_ov > 0.0){ eng.p.BE_ARM_PCT = be_arm_ov; eng.p.BE_BUFFER_PCT = be_buf_ov; }
 
     Stats all, y2022, pre22, post22;
     std::vector<double> first_half, second_half;
