@@ -3211,9 +3211,21 @@ static void init_engines(const std::string& cfg_path)
         //   decision to flip back to kShadowDefault. Promotion gate per
         //   NEXT_SESSION.md S9 priority 3.
         g_trend_rider.shadow_mode       = true;
-        g_trend_rider.enabled           = false;  // S91: disabled — GoldUltimateEngine solo test
+        // S-2026-06-19 Phase 1 item 3: re-enabled to SHADOW only. The S91 "solo
+        // test" disable is stale — GoldUltimateEngine is itself enabled=false
+        // (S99b) and the book runs many shadow engines. shadow_mode stays true;
+        // the whole system is SHADOW (order_exec hard-gates on mode==LIVE), so
+        // this just adds TrendRider to the forward shadow ledger for observation.
+        // PROMOTION TO LIVE-SIZE IS GATED on a fresh 2022-current walk-forward
+        // (BACKTEST_TRUTH) — not yet run. Do NOT flip shadow_mode=false until it
+        // passes both-halves cross-regime.
+        g_trend_rider.enabled           = true;   // SHADOW observation (was false, S91 solo test — stale)
         g_trend_rider.max_concurrent    = 6;
-        g_trend_rider.risk_pct          = 0.040;          // 8x tsmom baseline (~1/8 Kelly)
+        // risk_pct 0.040 (4%) -> 0.0025 (0.25%). The 4% was "8x tsmom ~1/8 Kelly"
+        // and is far hotter than the Phase-1 0.25-0.50% R band; 0.25% = the
+        // conservative floor for an unvalidated engine (handoff item 3). max_lot_cap
+        // 0.50 below is now a non-binding ceiling at 16x-lower risk.
+        g_trend_rider.risk_pct          = 0.0025;         // 0.25% (was 0.040=4%) — R-consistent floor
         g_trend_rider.start_equity      = 10000.0;
         g_trend_rider.margin_call       = 1000.0;
         g_trend_rider.max_lot_cap       = 0.50;           // 10x tsmom baseline
