@@ -314,6 +314,9 @@ static void load_config(const std::string& path) {
             if (k=="hourly_loss_limit")    g_cfg.hourly_loss_limit   = safe_stod(v, k);
             if (k=="weekly_loss_limit")    g_cfg.weekly_loss_limit   = safe_stod(v, k);       // S-2026-06-19 Phase 1 (7R)
             if (k=="per_symbol_loss_limit") g_cfg.per_symbol_loss_limit = safe_stod(v, k);    // S-2026-06-19 Phase 1 (2R)
+            if (k=="portfolio_governor_enabled")   g_cfg.portfolio_governor_enabled   = (v=="true"||v=="1");  // S-2026-06-19 Phase 1 item 2
+            if (k=="governor_max_total_campaigns") g_cfg.governor_max_total_campaigns = safe_stoi(v, k);
+            if (k=="governor_max_per_corr_group")  g_cfg.governor_max_per_corr_group  = safe_stoi(v, k);
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = safe_stoi(v, k);
             if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = safe_stoi(v, k);
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");

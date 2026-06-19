@@ -8,6 +8,7 @@
 #include "gold_coordinator.hpp"
 #include <sstream>  // S17: ostringstream for atomic SHADOW-CLOSE + TRADE-COST emission (prevents stdout interleaving)
 #include "RegimeState.hpp"  // 2026-06-12: bear-event lockout for choppy-bear instruments (symbol_gate)
+#include "PortfolioGovernor.hpp"  // S-2026-06-19 Phase 1 item 2: correlation-aware cross-symbol campaign cap (symbol_gate)
 
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
@@ -1174,6 +1175,33 @@ static bool symbol_gate(
             // overlap (slot 3) and London/NY get full cap
             if (open_positions >= session_cap) {
                 ++g_gov_pos;
+                return false;
+            }
+        }
+        // ?? Correlation-aware portfolio governor (S-2026-06-19 Phase 1 item 2) ?
+        // Cross-symbol campaign cap: max N distinct-symbol campaigns + max 1 per
+        // correlation group (NAS/SPX/USTEC/DJ30 = one US_EQUITY group). The
+        // per-symbol single-campaign rule is already handled above
+        // (symbol_has_open_position). Snapshot only runs when a 2nd concurrent
+        // campaign is even possible (open_positions > 0) to bound hot-path cost.
+        if (g_cfg.portfolio_governor_enabled && open_positions > 0) {
+            omega::PortfolioGovernorCfg gcfg;
+            gcfg.enabled             = true;
+            gcfg.max_total_campaigns = g_cfg.governor_max_total_campaigns;
+            gcfg.max_per_corr_group  = g_cfg.governor_max_per_corr_group;
+            const auto snap = g_open_positions.snapshot_all();
+            const omega::GovernorVerdict gv = omega::governor_check(gcfg, snap, symbol);
+            if (!gv.allow) {
+                ++g_gov_pos;
+                static std::unordered_map<std::string,int64_t> s_gov_log;
+                if (nowSec() - s_gov_log[symbol] > 60) {
+                    s_gov_log[symbol] = nowSec();
+                    printf("[PORTFOLIO-GOV] %s blocked: %s (group=%s open=%d) -- correlation/campaign cap\n",
+                           symbol.c_str(), gv.reason,
+                           omega::corr_group_name(omega::corr_group_of(symbol)),
+                           open_positions);
+                    fflush(stdout);
+                }
                 return false;
             }
         }

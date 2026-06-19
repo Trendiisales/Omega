@@ -66,6 +66,13 @@ struct OmegaConfig {
     // 0.375%/$11k base, R=$41.25 -> weekly 7R, per-symbol 2R.
     double weekly_loss_limit = 0.0;      // 0=disabled. Block ALL new entries if rolling 7-day net loss > this (7R).
     double per_symbol_loss_limit = 0.0;  // 0=disabled. Block new entries on a SYMBOL once its daily net loss > this (2R).
+    // S-2026-06-19 Phase 1 item 2: correlation-aware PortfolioGovernor (see
+    // include/PortfolioGovernor.hpp). Flat fields here; the cfg struct is built
+    // at the symbol_gate call site to avoid pulling the governor's includes
+    // into this low-level header.
+    bool   portfolio_governor_enabled    = false;  // master switch
+    int    governor_max_total_campaigns  = 2;      // global cap on distinct-symbol campaigns
+    int    governor_max_per_corr_group   = 1;      // 1 correlated index/equity campaign
     int    max_consec_losses = 3;
     int    loss_pause_sec    = 300;
     int    max_open_positions = 4;     // allow up to 4 concurrent positions across different symbols

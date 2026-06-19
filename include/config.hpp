@@ -28,6 +28,8 @@ static void sanitize_config() noexcept {
     g_cfg.hourly_loss_limit      = clampd(g_cfg.hourly_loss_limit,      0.0, 1000000.0, 0.0);
     g_cfg.weekly_loss_limit      = clampd(g_cfg.weekly_loss_limit,      0.0, 1000000.0, 0.0);  // S-2026-06-19 Phase 1
     g_cfg.per_symbol_loss_limit  = clampd(g_cfg.per_symbol_loss_limit,  0.0, 1000000.0, 0.0);  // S-2026-06-19 Phase 1
+    g_cfg.governor_max_total_campaigns = clampi(g_cfg.governor_max_total_campaigns, 1, 50, 2);  // S-2026-06-19 Phase 1 item 2
+    g_cfg.governor_max_per_corr_group  = clampi(g_cfg.governor_max_per_corr_group,  1, 50, 1);  // S-2026-06-19 Phase 1 item 2
     g_cfg.momentum_thresh_pct = clampd(g_cfg.momentum_thresh_pct, 0.0, 10.0, 0.05);
     g_cfg.min_breakout_pct    = clampd(g_cfg.min_breakout_pct, 0.0, 10.0, 0.25);
     g_cfg.ustec_pilot_size    = clampd(g_cfg.ustec_pilot_size, 0.05, 2.0, 0.35);
