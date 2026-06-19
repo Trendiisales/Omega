@@ -295,6 +295,7 @@ int main(int argc, char* argv[])
         if (g_bars_gold.m1.ind.m1_ready.load()) {
             const double seed_rsi = g_bars_gold.m1.ind.rsi14.load();
             const double seed_mid = g_bars_gold.m1.ind.ema9.load();  // price proxy
+            (void)seed_mid;
 
             // RSIReversalEngine: seed bar_rsi + bar_rsi_prev from disk
             // Eliminates the "need 2 bar closes" block on every restart

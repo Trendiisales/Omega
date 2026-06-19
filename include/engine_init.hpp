@@ -1817,7 +1817,9 @@ static void init_engines(const std::string& cfg_path)
         //     from backtest/eurusd_bt/EurusdLondonOpenBacktest.cpp).
         {
             const char* warmup_eur_h4 = "phase1/signal_discovery/warmup_EURUSD_H4.csv"; // EURUSD trait is H4 -> H4-cadence seed
+            (void)warmup_eur_h4;
             const char* warmup_gbp    = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
+            (void)warmup_gbp;
 
             // 2026-05-26 multi-TF tick-replay sweep (5 pairs x 4 TFs x X={10,14}):
             //   EURUSD best = M15 X=14 -> 21 trd, WR 52%, PF 1.80, +$9.04, DD $4.31, Sharpe-ann 1.04
@@ -1925,6 +1927,7 @@ static void init_engines(const std::string& cfg_path)
             //   3-period intersect: each period +ve, min PF 1.33.
             //   WF 4 folds: 3/4 positive.
             const char* warmup_eurgbp = "phase1/signal_discovery/warmup_EURGBP_H1.csv";
+            (void)warmup_eurgbp;
             // S37 audit (2026-05-27): EURGBP is NOT a subscribed FIX feed
             // symbol in Omega. There is no on_tick_eurgbp handler and no
             // tick path reaches this engine. The booting code below
@@ -2060,8 +2063,11 @@ static void init_engines(const std::string& cfg_path)
             // shadow_mode=true. Warmup CSV per CLAUDE.md "Engine Warm-Seed Mandate".
             // ----------------------------------------------------------------
             const char* warmup_us500  = "phase1/signal_discovery/warmup_US500_H1.csv";
+            (void)warmup_us500;
             const char* warmup_nas100 = "phase1/signal_discovery/warmup_NAS100_H1.csv";
+            (void)warmup_nas100;
             const char* warmup_ger40  = "phase1/signal_discovery/warmup_GER40_H1.csv";
+            (void)warmup_ger40;
 
 
 
@@ -2685,6 +2691,7 @@ static void init_engines(const std::string& cfg_path)
                 const double st_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
                 const int st_trend  = (st_e9 > 0.0 && st_e50 > 0.0)
                     ? (st_e9 < st_e50 ? -1 : +1) : 0;
+                (void)st_trend;
                 printf("[STARTUP] M1 bar state loaded: EMA9=%.2f EMA50=%.2f RSI=%.1f trend=%+d"
                        " -- GoldStack bar gates active immediately\n",
                        st_e9, st_e50,
@@ -2696,6 +2703,7 @@ static void init_engines(const std::string& cfg_path)
                 const double st_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
                 const int st_trend  = (st_e9 > 0.0 && st_e50 > 0.0)
                     ? (st_e9 < st_e50 ? -1 : +1) : 0;
+                (void)st_trend;
             }
             // Immediately seed H4 HTF trend gate -- no need to wait for first tick
             if (h4_ok) {

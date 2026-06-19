@@ -763,11 +763,6 @@ static void quote_loop() {
           // (LEStack shutdown force_close REMOVED at S13 Finding B 2026-04-24 — engine culled)
         }
 
-        // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
-        { double b=0,a=0;
-          { double ab=0,aa=0,nb=0,na=0;
-          }
-        }
         std::cout << "[OMEGA-SHUTDOWN] All positions closed\n";
         } // end do_reconnect_close (LIVE mode only)
 
@@ -847,11 +842,6 @@ static void quote_loop() {
             }
             // (LEStack daily-close force_close REMOVED at S13 Finding B 2026-04-24 — engine culled)
 
-            // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
-            { double b,a;
-              double gb,ga,ab,aa,nb,na;
-              get_px("GBPUSD",gb,ga); get_px("AUDUSD",ab,aa); get_px("NZDUSD",nb,na);
-            }
             std::cout << "[OMEGA-SHUTDOWN] All positions closed before disconnect\n";
         } // end LIVE mode position close
         else {

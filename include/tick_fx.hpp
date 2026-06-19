@@ -119,6 +119,7 @@ static void on_tick_eurusd(
     //   is internally gated by `enabled` + `shadow_mode`.
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        (void)now_ms_fx;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
         (void)on_close_cb;
     }
@@ -232,6 +233,7 @@ static void on_tick_gbpusd(
     // 2026-05-23: FxTurtleH4 GBP dispatch (post-S99 rebuild).
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        (void)now_ms_fx;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
         (void)on_close_cb;
     }
@@ -244,6 +246,7 @@ static void on_tick_gbpusd(
     //   runs on GBPUSD ticks; static is per-symbol by virtue of that guard).
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        (void)now_ms_fx;
         const double  mid       = (bid + ask) * 0.5;
         static double s_tlb_o = 0.0, s_tlb_h = 0.0, s_tlb_l = 0.0, s_tlb_c = 0.0;
         static int64_t s_tlb_bar_ms = 0;
@@ -357,6 +360,7 @@ static void on_tick_usdjpy(
     // 2026-05-23: FxTurtleH4 USDJPY dispatch (post-S99 rebuild).
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        (void)now_ms_fx;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
         (void)on_close_cb;
     }
@@ -368,6 +372,7 @@ static void on_tick_usdjpy(
     //   USDJPY ticks). Mirror of the GBP block in on_tick_gbpusd.
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        (void)now_ms_fx;
         const double  mid       = (bid + ask) * 0.5;
         static double s_tlbj_o = 0.0, s_tlbj_h = 0.0, s_tlbj_l = 0.0, s_tlbj_c = 0.0;
         static int64_t s_tlbj_bar_ms = 0;
@@ -389,6 +394,7 @@ static void on_tick_usdjpy(
     // S37g 2026-05-26 FxEnsembleEngine USDJPY (donchian_20 H2 LONG cell).
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        (void)now_ms_fx;
         if (g_fx_ens_usdjpy.enabled)
             g_fx_ens_usdjpy.on_tick(bid, ask, now_ms_fx, write_shadow_csv);
     }
@@ -471,6 +477,7 @@ static void on_tick_audusd(
         // 2026-05-23: FxTurtleH4 AUD dispatch (post-S99 rebuild).
         {
             const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+            (void)now_ms_fx;
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
             (void)on_close_cb;
         }
@@ -559,6 +566,7 @@ static void on_tick_audusd(
         // 2026-05-23: FxTurtleH4 NZD dispatch (post-S99 rebuild).
         {
             const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+            (void)now_ms_fx;
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
             (void)on_close_cb;
         }
@@ -628,6 +636,7 @@ static void on_tick_usdcad(
     // S38d: FxScalpPyramid_USDCAD dispatch (shadow-mode).
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        (void)now_ms_fx;
         const bool fx_can_enter = tradeable && lat_ok;
         // FxScalpPyramid_USDCAD dispatch REMOVED S-2026-06-19 — scalp family retired (retired_micro_engines.hpp).
         (void)now_ms_fx; (void)fx_can_enter;
