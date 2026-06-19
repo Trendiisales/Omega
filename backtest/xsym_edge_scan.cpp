@@ -135,6 +135,10 @@ int main(int argc,char**argv){
         {"NZDUSD", "/Users/jo/Tick/NZDUSD_merged.h1.csv",  1.0},
         {"USDCAD", "/Users/jo/Tick/USDCAD_merged.h1.csv",  0.8},
         {"EURGBP", "/Users/jo/Tick/EURGBP_merged.h1.csv",  0.8},
+        // S-2026-06-19: unmined metals (H4, 2024-09->; conservative illiquid-CFD half-spread bps)
+        {"XPTUSD", "/Users/jo/Omega/download/xptcmdusd-h4-bid-2024-09-01-2026-06-01.csv", 10.0},
+        {"XPDUSD", "/Users/jo/Omega/download/xpdcmdusd-h4-bid-2024-09-01-2026-06-01.csv", 15.0},
+        {"COPPER", "/Users/jo/Omega/download/coppercmdusd-h4-bid-2024-09-01-2026-06-01.csv", 8.0},
     };
     (void)argc;(void)argv;
     printf("CROSS-SYMBOL EDGE SCAN -- 3 validated XAU trend families, bps-cost, WF + 6-block\n");
