@@ -1103,7 +1103,7 @@ static bool symbol_gate(
             static_cast<int>(g_eng_brent.pos.active) +
             static_cast<int>(g_gold_stack.has_open_position()) +
             // static_cast<int>(g_le_stack.has_open_position()) + -- REMOVED S13 Finding B 2026-04-24
-            0 +
+            0;
             // (GoldFlow + reload count removed S19 Stage 1B)
         // ?? Session-aware position cap ????????????????????????????????
         // Asia = max 2 (low liquidity, wide spreads, few signals worth taking)
@@ -1411,7 +1411,7 @@ static bool symbol_gate(
         static_cast<int>(g_eng_brent.pos.active) +
         static_cast<int>(g_gold_stack.has_open_position()) +
         // static_cast<int>(g_le_stack.has_open_position()) + -- REMOVED S13 Finding B 2026-04-24
-        0 +
+        0;
         // (GoldFlow + reload count removed S19 Stage 1B)
     // Session-aware cap (mirrors independent_symbols path)
     int session_cap2 = g_cfg.max_open_positions;

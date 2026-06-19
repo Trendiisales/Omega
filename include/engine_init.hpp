@@ -5229,25 +5229,6 @@ static void init_engines(const std::string& cfg_path)
     //   entry, size, mfe, mae) -- private; we go through public accessors
     //   open_is_long() / open_entry() / open_size(). mfe/mae deferred (no
     //   public getter on CrossPosition.mfe yet -- S66 follow-up if needed).
-    g_open_positions.register_source("NoiseBandMomentumGoldLdn",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = is_long ? 1.0 : -1.0;
-            const double unrl  = (current - entry) * dir * sz * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = is_long ? "LONG" : "SHORT";
-            ps.size = sz; ps.entry = entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = 0.0;  // CrossPosition.mfe is private; defer to S66
-            ps.mae = 0.0;
-            ps.engine = "NoiseBandMomentumGoldLdn";
-            out.push_back(ps);
-            return out;
-        });
 
     // VWAPReversion x 4 instances. CrossPosition pos_ is private; we go
     // through the S65 public accessors (added to VWAPReversionEngine in
@@ -5582,35 +5563,9 @@ static void init_engines(const std::string& cfg_path)
 
     // S-2026-06-03: GoldSeasonal (XAUUSD Mon+Tue long). Long-only, no TP/SL
     //   (exits on UTC day-flip) → tp=sl=0.
-    g_open_positions.register_source("GoldSeasonal",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = "LONG";
-            ps.engine = "GoldSeasonal";
-            out.push_back(ps);
-            return out;
-        });
 
     // S-2026-06-03: GoldOversoldBounce (XAUUSD RSI<30 long). Long-only, ATR stop
     //   (sl set), no TP (RSI-recovery / time exit) → tp=0.
-    g_open_positions.register_source("GoldOversoldBounce",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = "LONG";
-            ps.engine = "GoldOversoldBounce";
-            out.push_back(ps);
-            return out;
-        });
 
     // ── S66-followup (2026-05-13): 8 more sources (H1SwingGold,
     //    UstecTrendFollow 5m/HTF, FX BreakoutEngine x5). Mechanical extension
