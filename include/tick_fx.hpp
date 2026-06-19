@@ -120,6 +120,7 @@ static void on_tick_eurusd(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+        (void)on_close_cb;
     }
 
     // 2026-06-07 MondayRiskOn calendar (GBPUSD/AUDUSD) -- shadow; callback via on_trade_record.
@@ -232,6 +233,7 @@ static void on_tick_gbpusd(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+        (void)on_close_cb;
     }
 
     // 2026-06-09: TrendLineBreakGBP (SHADOW) -- H4 hull-break, GBPUSD PF1.53.
@@ -356,6 +358,7 @@ static void on_tick_usdjpy(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+        (void)on_close_cb;
     }
 
     // 2026-06-09: TrendLineBreakJPY (SHADOW) -- H4 hull-break, USDJPY PF1.37.
@@ -469,6 +472,7 @@ static void on_tick_audusd(
         {
             const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+            (void)on_close_cb;
         }
 
         // S38d 2026-05-26: FxScalpPyramid_AUDUSD dispatch (shadow-mode).
@@ -556,6 +560,7 @@ static void on_tick_audusd(
         {
             const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
+            (void)on_close_cb;
         }
 
         // S99: FX kill-switch (see on_tick_eurusd comment). NzdusdAsianOpen disabled.

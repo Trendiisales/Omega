@@ -216,6 +216,7 @@ static void on_tick_us500(
         const int64_t now_ms_idd = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)now_ms_idd;
     }
     // IndexSessionEngine US500/SPX (14-22 UTC LONG, flat overnight, risk-off gated).
     {
@@ -639,6 +640,7 @@ static void on_tick_dj30(
         const int64_t now_ms_idd = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)now_ms_idd;
     }
 
     // DJ30 D1 turtle (2026-06-15) -- NasTurtleD1 chassis, Yahoo-daily xregime
@@ -778,6 +780,7 @@ static void on_tick_uk100(
         const int64_t now_ms_idd = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)now_ms_idd;
     }
     // IndexSessionEngine UK100/FTSE (09-20 UTC LONG, dip-buy, risk-off gated).
     {

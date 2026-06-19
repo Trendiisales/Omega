@@ -2717,6 +2717,7 @@ static void init_engines(const std::string& cfg_path)
                 // seed_channel_from_csv). The H4RegimeEngine remains cold --
                 // CSV warm-load is implemented for MinimalH4Breakout only.
                 const std::string xau_h4_csv = log_root_dir() + "/bars_xauusd_h4.csv";
+                (void)xau_h4_csv;
                 fflush(stdout);
             }
             printf("[STARTUP] Bar state loaded: M1=%s M5=%s M15=%s H1=%s H4=%s"
@@ -2733,6 +2734,7 @@ static void init_engines(const std::string& cfg_path)
             // can be seeded from disk while the M1 EMAs warm up over the next
             // 15 minutes. Mirror the inner cold-fallback branch above.
             const std::string xau_h4_csv = log_root_dir() + "/bars_xauusd_h4.csv";
+            (void)xau_h4_csv;
         }
         fflush(stdout);
     }
