@@ -41,6 +41,21 @@ public:
     // reverts to the legacy HOLD_DAYS exit.
     int    SHORT_SMA   = 5;      // exit when close > SMA(SHORT_SMA)
     int    MAXHOLD     = 10;     // safety cap on hold (days)
+    // S-2026-06-19 v2 SCALE-IN (Connors cumulative, default OFF). While the position is
+    // open and STILL oversold (RSI<RSI_IN, close>SMA(TREND_SMA)), average a 2nd unit in.
+    // Faithful 10yr NDX: PF1.90->2.27 WR81% (connors_opt.cpp). COST: up to MAX_UNITS x
+    // size + averages into a continued dip -> larger per-episode risk. Default off; enable
+    // per-instrument after faithful confirm.
+    bool   SCALEIN     = false;
+    int    MAX_UNITS   = 2;
+    // S-2026-06-19 v2 SESSION PARAM (default = NAS cash ET 09:30-16:00). For non-US
+    // instruments (e.g. GER40 DAX Xetra 09:00-17:30 CET) set the local window + tz.
+    // TZ_STD_OFF_MIN: standard-time UTC offset in minutes (ET=-300, CET=+60).
+    // TZ_EU_DST: false = US DST rules (2nd-Sun-Mar..1st-Sun-Nov), true = EU (last-Sun).
+    int    SESS_OPEN_HM   = 930;
+    int    SESS_CLOSE_HM  = 1600;
+    int    TZ_STD_OFF_MIN = -300;   // ET
+    bool   TZ_EU_DST      = false;  // US rules
     // ADVERSE-PROTECTION: (S-2026-06-19, backtested verdict) NONE needed / by-design exempt.
     // Long-only daily MEAN-REVERSION gated by close>SMA(TREND_SMA) — the trend filter IS the
     // adverse protection (no dip-buying below the 200d SMA = sits out bears; faithful 2022:
@@ -55,7 +70,7 @@ public:
     using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
     TradeRecordCallback on_trade_record;
 
-    struct Position { bool active=false; double entry_px=0, size=0; int64_t entry_ms=0; int held=0; double mfe=0,mae=0; } pos;
+    struct Position { bool active=false; double entry_px=0, size=0; int64_t entry_ms=0; int held=0; int units=0; double mfe=0,mae=0; } pos;
 
     bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const {
         if (!pos.active) return false;
@@ -89,8 +104,8 @@ public:
         if (!enabled) return;
         if (bid<=0.0 || ask<=0.0 || ask<bid) return;
         const double mid=(bid+ask)*0.5;
-        const int et=_et_hm(now_ms/1000);
-        const bool in_rth=(et>=930 && et<1600);
+        const int et=_local_hm(now_ms/1000, TZ_STD_OFF_MIN, TZ_EU_DST);
+        const bool in_rth=(et>=SESS_OPEN_HM && et<SESS_CLOSE_HM);
 
         if (in_rth) { m_day_close=mid; m_have_day=true; if(!m_in_session){m_in_session=true; m_done_today=false;} }
 
@@ -111,7 +126,20 @@ public:
                     double ss=0; for (int i=N-kk;i<N;++i) ss+=m_closes[i]; ss/=kk;
                     do_exit = (close > ss) || (pos.held >= MAXHOLD);
                 } else do_exit = (pos.held >= HOLD_DAYS);
-                if (do_exit) _close(bid>0?bid:close, now_ms, "RSI2_EXIT");
+                if (do_exit) { _close(bid>0?bid:close, now_ms, "RSI2_EXIT"); }
+                else if (SCALEIN && pos.units < MAX_UNITS && (int)m_closes.size()>=TREND_SMA) {
+                    // still oversold inside the uptrend -> average a unit in (Connors cumulative)
+                    const int N=(int)m_closes.size();
+                    double sma=0; for (int i=N-TREND_SMA;i<N;++i) sma+=m_closes[i]; sma/=TREND_SMA;
+                    const double r=_rsi(RSI_LEN);
+                    if (close>sma && r<RSI_IN) {
+                        const double px=ask>0?ask:close;
+                        pos.entry_px=(pos.entry_px*pos.units + px)/(pos.units+1);
+                        pos.units+=1; pos.size=pos.units*lot;
+                        if (verbose) printf("[%s] %s SCALE-IN unit%d avg=%.2f rsi2=%.1f\n",
+                            engine_name.c_str(), symbol.c_str(), pos.units, pos.entry_px, r);
+                    }
+                }
             }
             // 3) entry: uptrend + deep-oversold + flat
             if (!pos.active && (int)m_closes.size()>=TREND_SMA && !m_done_today) {
@@ -119,7 +147,7 @@ public:
                 double sma=0; for (int i=N-TREND_SMA;i<N;++i) sma+=m_closes[i]; sma/=TREND_SMA;
                 const double r=_rsi(RSI_LEN);
                 if (close>sma && r<RSI_IN) {
-                    pos=Position{}; pos.active=true; pos.entry_px=ask>0?ask:close; pos.size=lot; pos.entry_ms=now_ms; pos.held=0;
+                    pos=Position{}; pos.active=true; pos.entry_px=ask>0?ask:close; pos.size=lot; pos.units=1; pos.entry_ms=now_ms; pos.held=0;
                     m_done_today=true;
                     if (verbose) printf("[%s] %s DIP-BUY entry=%.2f rsi2=%.1f close=%.2f sma%d=%.2f%s\n",
                         engine_name.c_str(), symbol.c_str(), pos.entry_px, r, close, TREND_SMA, sma, shadow_mode?" [SHADOW]":"");
@@ -149,7 +177,10 @@ private:
         if (verbose) printf("[%s] CLOSE %s exit=%.2f pnl=%.2f\n", engine_name.c_str(), reason, exit_px, pnl);
         pos=Position{};
     }
-    static int _et_hm(int64_t sec) {
+    // Local hh:mm (HHMM int) at a given UTC sec, with std offset + DST rules.
+    // eu_dst=false -> US rules (2nd-Sun-Mar 02:00 .. 1st-Sun-Nov); true -> EU (last-Sun-Mar..last-Sun-Oct).
+    // Day-granularity DST (the 1-hour intraday transition moment is immaterial for a daily-close engine).
+    static int _local_hm(int64_t sec, int std_off_min, bool eu_dst) {
         std::time_t t=(std::time_t)sec; std::tm g{};
 #if defined(_WIN32)
         gmtime_s(&g,&t);
@@ -157,11 +188,17 @@ private:
         gmtime_r(&t,&g);
 #endif
         const int m=g.tm_mon+1, dd=g.tm_mday, wd=g.tm_wday; bool dst;
-        if (m<3||m>11) dst=false; else if (m>3&&m<11) dst=true;
-        else { const int fd=(((wd-((dd-1)%7))%7)+7)%7;
-               if (m==3){int s=1+((7-fd)%7)+7; dst=dd>=s;} else {int s=1+((7-fd)%7); dst=dd<s;} }
-        int etmin=((g.tm_hour*60+g.tm_min)+(dst?-4:-5)*60); etmin=((etmin%1440)+1440)%1440;
-        return (etmin/60)*100+etmin%60;
+        if (!eu_dst) { // US
+            if (m<3||m>11) dst=false; else if (m>3&&m<11) dst=true;
+            else { const int fd=(((wd-((dd-1)%7))%7)+7)%7;
+                   if (m==3){int s=1+((7-fd)%7)+7; dst=dd>=s;} else {int s=1+((7-fd)%7); dst=dd<s;} }
+        } else {       // EU: last Sunday of Mar .. last Sunday of Oct
+            if (m<3||m>10) dst=false; else if (m>3&&m<10) dst=true;
+            else { const int L=31; const int wdL=(((wd+(L-dd))%7)+7)%7; const int lastSun=L-wdL;
+                   dst = (m==3) ? (dd>=lastSun) : (dd<lastSun); }
+        }
+        int lm=((g.tm_hour*60+g.tm_min)+std_off_min+(dst?60:0)); lm=((lm%1440)+1440)%1440;
+        return (lm/60)*100+lm%60;
     }
     std::deque<double> m_closes;
     double m_day_close=0; bool m_have_day=false, m_in_session=false, m_done_today=false;

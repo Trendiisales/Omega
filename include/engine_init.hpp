@@ -4144,6 +4144,8 @@ static void init_engines(const std::string& cfg_path)
         g_connors_nas.RSI_IN      = 10.0;
         g_connors_nas.SHORT_SMA   = 5;      // enhanced exit: close back above SMA5 = MR complete
         g_connors_nas.MAXHOLD     = 10;     // safety cap (days)
+        g_connors_nas.SCALEIN     = true;   // v2: Connors cumulative avg-in (faithful NDX PF1.90->2.27)
+        g_connors_nas.MAX_UNITS   = 2;      // up to 2x size; SMA200 filter caps dip risk
         g_connors_nas.lot         = 0.3;    // dollar-normalized shadow size (index convention)
         g_connors_nas.shadow_mode = true;
         g_connors_nas.enabled     = true;   // SHADOW
@@ -4151,8 +4153,33 @@ static void init_engines(const std::string& cfg_path)
         g_connors_nas.init();
         g_connors_nas.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
         g_engine_heartbeat.register_engine("ConnorsRSI2", g_connors_nas.enabled, 3600, 0, 24);
-        printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=%d enabled=%d dip-buy close>SMA200 & RSI2<10, exit close>SMA5/maxhold10\n",
-               (int)g_connors_nas.shadow_mode, (int)g_connors_nas.enabled);
+        printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=%d enabled=%d dip-buy close>SMA200 & RSI2<10, exit close>SMA5/maxhold10 scalein=%d\n",
+               (int)g_connors_nas.shadow_mode, (int)g_connors_nas.enabled, (int)g_connors_nas.SCALEIN);
+        fflush(stdout);
+
+        // S-2026-06-19 v2: ConnorsRSI2 GER40 (DAX) — the enhanced close>SMA5 exit REVIVES
+        // GER40 (faithful 10yr PF1.39 both-halves+, 2022 +290 positive bear). CET session
+        // (Xetra 09:00-17:30) via the session params. No scale-in (GER scale-in was neutral
+        // in the sweep; base enhanced is the win). Distinct engine_name + warmup.
+        g_connors_ger.symbol      = "GER40";
+        g_connors_ger.engine_name = "ConnorsRSI2_GER";
+        g_connors_ger.TREND_SMA   = 200;
+        g_connors_ger.RSI_IN      = 10.0;
+        g_connors_ger.SHORT_SMA   = 5;
+        g_connors_ger.MAXHOLD     = 10;
+        g_connors_ger.SESS_OPEN_HM   = 900;    // DAX Xetra cash 09:00-17:30 CET
+        g_connors_ger.SESS_CLOSE_HM  = 1730;
+        g_connors_ger.TZ_STD_OFF_MIN = 60;     // CET = UTC+1
+        g_connors_ger.TZ_EU_DST      = true;   // EU last-Sunday DST rules
+        g_connors_ger.lot         = 0.3;
+        g_connors_ger.shadow_mode = true;
+        g_connors_ger.enabled     = true;   // SHADOW
+        g_connors_ger.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+        g_connors_ger.init();
+        g_connors_ger.seed_from_d1_csv("phase1/signal_discovery/warmup_GER40_D1.csv");
+        g_engine_heartbeat.register_engine("ConnorsRSI2_GER", g_connors_ger.enabled, 3600, 0, 24);
+        printf("[OMEGA-INIT] ConnorsRSI2 GER40: shadow=%d enabled=%d CET 09:00-17:30 dip-buy close>SMA200 & RSI2<10\n",
+               (int)g_connors_ger.shadow_mode, (int)g_connors_ger.enabled);
         fflush(stdout);
     }
 
@@ -5982,7 +6009,7 @@ static void init_engines(const std::string& cfg_path)
             "FxScalpPyramid_GBPUSD", "FxScalpPyramid_USDCAD", "FxScalpPyramid_AUDUSD",
             // IndexSession + S118 batch
             "IndexSession_SP", "IndexSession_NAS", "FvgContinuation", "FvgCont10m", "OvernightDrift",
-            "ConnorsRSI2", "AdaptiveHullXAU", "AdaptiveHullGER", "SupertrendGold",
+            "ConnorsRSI2", "ConnorsRSI2_GER", "AdaptiveHullXAU", "AdaptiveHullGER", "SupertrendGold",
             "IndexSession_GER40", "IndexSession_UK100", "IndexSession_ESTX50",
             // S-2026-06-09 visibility fix: never-persisted strays now registered.
             // Asserted here so a future drop of any registration trips [VIS-AUDIT].

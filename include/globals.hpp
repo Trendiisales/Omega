@@ -130,6 +130,8 @@ static omega::gold::GoldEngineStack g_gold_stack;
 // 3x(8pt)-cost-robust, bear-safe (SMA200 sits out 2022). Was class-only/never instantiated;
 // shelved 2026-06-04 for portfolio redundancy w/ FVGcont+OvernightDrift, both since DEAD.
 static omega::ConnorsRSI2Engine g_connors_nas;
+// S-2026-06-19 v2: GER40 instance (CET session) — enhanced exit revives it (PF1.39 both+, 2022 +290).
+static omega::ConnorsRSI2Engine g_connors_ger;
 #include "AdaptiveHullEngine.hpp"
 #include "SupertrendGoldEngine.hpp"
 #include "PeachyOrbEngine.hpp"

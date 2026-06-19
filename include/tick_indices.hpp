@@ -671,6 +671,9 @@ static void on_tick_ger40(
     g_engine_heartbeat.pulse("Ger40LondonBrk");      // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("Ger40TurtleH4");       // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("MinimalH4Ger40");      // 2026-05-26 (Stage 4)
+    // S-2026-06-19 v2: ConnorsRSI2 GER40 daily mean-reversion (shadow, CET session).
+    g_engine_heartbeat.pulse("ConnorsRSI2_GER");
+    g_connors_ger.on_tick(bid, ask, static_cast<int64_t>(std::time(nullptr)) * 1000);
 
     {   // S-2026-06-02 index straddle cells (self-aggregating M30/M15, shadow)
         const int64_t now_ms_str = static_cast<int64_t>(
