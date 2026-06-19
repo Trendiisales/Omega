@@ -9,9 +9,16 @@
 # miss, coverage hole > 10 days, any hour-plus backward timestamp jump
 # (non-chronological file), or decimated tick spacing (downsampled, breaks bars).
 #
-# STREAMING: single pass, O(1) memory (sampled medians) — runs on 10GB+ files
-# in minutes, not an OOM grind. A gate too slow/heavy to run is a gate that
-# gets skipped.
+# ROW FLOOR is GRANULARITY-AWARE (fixed 2026-06-20): a raw tick file needs
+# >= 1000 rows; a legitimate bar/aggregate file (D1/H4/H1...) is certified with
+# far fewer (a 2-year daily file is ~520 bars). The old flat `n < 1000` floor
+# false-rejected legit daily/h4 aggregates as "only N rows parsed" before the
+# bar-detection logic ran. Sampling is now a decimating reservoir so small files
+# still populate medians, and the bar-interval cap reaches D1.
+#
+# STREAMING: single pass, O(1) memory (reservoir-sampled medians) — runs on
+# 10GB+ files in minutes, not an OOM grind. A gate too slow/heavy to run is a
+# gate that gets skipped.
 #
 # Usage: data_integrity_gate.py <file.csv> [expected_price_lo] [expected_price_hi]
 # Auto-detects HISTDATA (YYYYMMDD HHMMSSmmm,bid,ask) and MS_TS (ts_ms,c1,c2).
@@ -32,7 +39,15 @@ def parse_ts_px(line, histdata):
         except Exception: return None
     else:
         try:
-            ts = int(parts[0])
+            v = int(parts[0])
+            # date-only daily bar: 8-digit YYYYMMDD, cols are O,H,L,C (no bid/ask).
+            # An epoch-seconds value is 10 digits (~1.7e9) so there is no collision.
+            if len(parts[0]) == 8 and 19000101 <= v <= 21001231:
+                y = v//10000; mo = (v//100)%100; d = v%100
+                ts = int(datetime.datetime(y,mo,d,tzinfo=datetime.timezone.utc).timestamp()*1000)
+                px = float(parts[4]) if len(parts) >= 5 else float(parts[1])
+                return ts, px, px            # bid==ask==close (no spread on a bar file)
+            ts = v
             if ts < 100000000000: ts *= 1000   # epoch SECONDS (10-digit) -> ms; 13-digit already ms
             return ts, float(parts[1]), float(parts[2])
         except Exception: return None
@@ -46,8 +61,21 @@ def main():
     prev_ts = None; first_ts = None; last_ts = None
     max_gap_h = 0.0; nonmono = 0; max_back_h = 0.0
     neg_spr = 0; zero_spr = 0
-    px_samp = []; spr_samp = []; dt_samp = []   # sampled for medians (every Nth)
-    SAMP = 997  # prime stride
+    px_samp = []; spr_samp = []; dt_samp = []   # decimating reservoirs (full-file)
+    CAP = 4000
+    strides = {'px': 1, 'spr': 1, 'dt': 1}
+    # Accept gaps up to ~5 days into the tick-spacing sample so weekend-spanning
+    # D1/H4 bars register as bars (median is robust to the weekend minority).
+    # For tick files the sub-second median dominates, so tick classification is
+    # unchanged by this wider cap.
+    DT_MAX_MS = 5 * 86400 * 1000
+
+    def reservoir(lst, val, key):
+        if n % strides[key] == 0:
+            lst.append(val)
+            if len(lst) > CAP:
+                del lst[::2]            # keep half — deterministic, O(1) amortized
+                strides[key] *= 2
 
     with open(path, 'rb') as f:
         firstline = True
@@ -82,14 +110,14 @@ def main():
                 else:
                     gh = d/3600000.0
                     if gh > max_gap_h: max_gap_h = gh
-                    if 0 < d <= 3600000 and (n % 7 == 0): dt_samp.append(d)
+                    if 0 < d <= DT_MAX_MS: reservoir(dt_samp, d, 'dt')
             prev_ts = ts
-            if n % SAMP == 0:
-                px_samp.append(mid)
-                if spr > 0: spr_samp.append(spr)
+            reservoir(px_samp, mid, 'px')
+            if spr > 0: reservoir(spr_samp, spr, 'spr')
 
-    if n < 1000:
-        print(f"FAIL: only {n} rows parsed"); sys.exit(1)
+    # absolute minimum to establish any median / span at all
+    if n < 60:
+        print(f"FAIL: only {n} rows parsed — too few to validate"); sys.exit(1)
     med = statistics.median(px_samp) if px_samp else 0.0
     medspr = statistics.median(spr_samp) if spr_samp else 0.0
     med_dt = statistics.median(dt_samp)/1000.0 if dt_samp else 0.0
@@ -127,6 +155,11 @@ def main():
         fails.append(f"DOWNSAMPLED: median tick spacing {med_dt:.1f}s, only {100*regular:.0f}% regular — decimated tick stream, not raw tick and not clean bars (breaks bar agg)")
     elif med_dt > 3.0:
         warns.append(f"sparse: median tick spacing {med_dt:.1f}s — confirm not downsampled")
+    # 7. granularity-aware row floor — tick files need >=1000 rows; bar files are
+    #    legit with far fewer. Applied AFTER bar-detection so a 2yr daily (~520
+    #    bars) is no longer false-rejected as "only N rows parsed".
+    if not is_bar and n < 1000:
+        fails.append(f"TOO FEW ROWS: {n} rows and not a recognized bar file (median dt {med_dt:.1f}s) — too small to certify as tick data")
 
     print(f"--- {path.split('/')[-1]} ---")
     print(f"  rows={n:,}  median_px={med:.3f}  median_spread={medspr:.5f}  span={span_days:.0f}d  median_tick_dt={med_dt:.2f}s  ask_first={askfirst}")
