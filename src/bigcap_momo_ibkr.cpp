@@ -82,6 +82,14 @@ class Engine : public DefaultEWrapper {
     // this with a timeout so a dead handshake fails LOUD (BIGCAP_IBKR_DOWN) instead of
     // a silent "connected, returned true, scanned nothing" death (root cause 06-19).
     std::atomic<bool> handshake_done_{false};
+    // S-2026-06-20 liveness: a connected engine that silently stops receiving scanner/bar
+    // data is the failure class no check caught on 06-19. Track last-data time + a scanner
+    // hit count; the pump thread logs a 60s heartbeat and exposes last_activity_ms() so the
+    // omega_main watchdog can raise [SYSTEM-ALERT] BIGCAP_STALE during RTH.
+    std::atomic<long long> last_activity_ms_{0};   // wall-clock ms of last scanner/bar event
+    std::atomic<long>      scan_hits_{0};          // cumulative scanner movers seen
+    static long long now_ms(){ return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count(); }
 
     // ── market-regime detector (SPY 200MA + rising) ──
     static const int MKT_REQ=9001;
@@ -105,12 +113,42 @@ public:
     Engine(){ risk_.new_day(); cli_=std::make_unique<EClientSocket>(this,&sig_); }
     void set_config(const Config& c){ cfg_=c; }
     bool handshake_done() const { return handshake_done_.load(std::memory_order_relaxed); }
+    long long last_activity_ms() const { return last_activity_ms_.load(std::memory_order_relaxed); }
+    void log_heartbeat(){
+        long long la = last_activity_ms_.load(std::memory_order_relaxed);
+        double ago = la>0 ? (now_ms()-la)/1000.0 : -1.0;
+        size_t subs; { std::lock_guard<std::mutex> lk(book_mu_); subs=subs_.size(); }
+        printf("[BigCapMomo] ALIVE subs=%zu scan_hits=%ld market_ok=%d last_data=%s\n",
+               subs, scan_hits_.load(), (int)market_ok_,
+               ago<0 ? "NEVER" : (std::to_string((long)ago)+"s ago").c_str());
+        fflush(stdout);
+    }
     void set_sink(std::function<void(const TradeRecord&)> cb){ on_trade_record_=std::move(cb); }
 
+    void set_client_id(int id){ cfg_.client_id = id; }
+
+    // Connect AND confirm the API handshake synchronously. eConnect()==true is only a
+    // TCP connect; nextValidId arriving is the only proof the API session is live. We
+    // pump messages here (no long-lived thread yet) for up to ~12s. A gateway that
+    // accepts the socket but never handshakes (stale clientId / not logged in / API off)
+    // returns false so start() can rotate the clientId and retry, then fail LOUD --
+    // instead of the 06-19 silent "connected, returned true, scanned nothing" death.
     bool connect(){
+        handshake_done_.store(false, std::memory_order_relaxed);
         if(!cli_->eConnect(cfg_.host.c_str(),cfg_.port,cfg_.client_id,false)) return false;
-        rd_=std::make_unique<EReader>(cli_.get(),&sig_); rd_->start(); return true;
+        rd_=std::make_unique<EReader>(cli_.get(),&sig_); rd_->start();
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+        while(std::chrono::steady_clock::now() < deadline){
+            rd_->processMsgs();                                  // drain reader queue
+            if(handshake_done_.load(std::memory_order_relaxed)) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        return false;                                            // TCP up, no nextValidId
     }
+    // Clean teardown for a retry: drop socket + reader, rebuild a fresh socket so the
+    // next eConnect (new clientId) starts from a clean state.
+    void hard_disconnect(){ if(cli_) cli_->eDisconnect(); rd_.reset();
+                            cli_=std::make_unique<EClientSocket>(this,&sig_); }
     void pump(){ sig_.waitForSignal(); rd_->processMsgs(); }
     void disconnect(){ if(cli_) cli_->eDisconnect(); }
 
@@ -177,6 +215,7 @@ public:
             if(!mkt_closes_.empty()) mkt_closes_.back()=b.close; else mkt_closes_.push_back(b.close);
             recompute_regime(); return; }
         // per-symbol live 5m bar: IBKR re-sends the forming bar each update, new ts on rollover.
+        last_activity_ms_.store(now_ms(), std::memory_order_relaxed);   // liveness: data flowing
         std::lock_guard<std::mutex> lk(book_mu_);
         auto it=subs_.find((int)rid); if(it==subs_.end()) return; Sym& s=it->second;
         long t = atol(b.time.c_str());                    // epoch sec (formatDate=2)
@@ -191,6 +230,8 @@ public:
 
     void scannerData(int,int rank,const ContractDetails& cd,const std::string&,const std::string&,const std::string&,const std::string&) override {
         if(rank>=20) return;                         // top-20 movers only
+        scan_hits_.fetch_add(1, std::memory_order_relaxed);
+        last_activity_ms_.store(now_ms(), std::memory_order_relaxed);   // liveness: scanner alive
         int rid=next_rt_++; Sym x; x.c=cd.contract;
         { std::lock_guard<std::mutex> lk(book_mu_); subs_[rid]=x; }
         // 5m bars via reqHistoricalData(keepUpToDate) -- works with the US-equity data
@@ -304,6 +345,7 @@ static std::thread        g_thread;
 void configure(const Config& cfg){ g_cfg=cfg; eng().set_config(cfg); }
 void set_enabled(bool on){ g_enabled.store(on); }
 bool is_enabled(){ return g_enabled.load(); }
+long long last_activity_ms(){ return g_running.load() ? eng().last_activity_ms() : 0; }
 void set_on_trade_record(std::function<void(const TradeRecord&)> cb){ eng().set_sink(std::move(cb)); }
 
 std::vector<PositionSnapshot> collect_positions(){
@@ -315,35 +357,48 @@ bool start(){
     if(!g_enabled.load()) return false;
     if(g_running.exchange(true)) return true;          // already running -> no-op
     eng().set_config(g_cfg);
-    if(!eng().connect()){
-        printf("[BigCapMomo] connect failed (%s:%d id=%d)\n",g_cfg.host.c_str(),g_cfg.port,g_cfg.client_id); fflush(stdout);
-        g_running.store(false); return false;
+    // Connect with HANDSHAKE CONFIRMATION + clientId rotation. connect() returns true
+    // ONLY after nextValidId proves the API session is live (not just a TCP accept). A
+    // stale clientId left by a prior process -- the exact 06-19 cause -- is dodged by
+    // retrying on id+1/id+2. No long-lived pump thread is spawned until live.
+    const int base_id = g_cfg.client_id;
+    int win_id = base_id; bool live = false;
+    for(int attempt=0; attempt<3 && !live; ++attempt){
+        const int id = base_id + attempt;
+        eng().set_client_id(id);
+        if(eng().connect()){
+            win_id = id; live = true;
+            printf("[BigCapMomo] API handshake OK (nextValidId) -- engine live %s:%d id=%d\n",
+                   g_cfg.host.c_str(), g_cfg.port, id); fflush(stdout);
+            break;
+        }
+        printf("[BigCapMomo] connect/handshake FAILED %s:%d id=%d (attempt %d/3) -- %s\n",
+               g_cfg.host.c_str(), g_cfg.port, id, attempt+1,
+               attempt<2 ? "TCP up but no nextValidId; rotating clientId" : "giving up");
+        fflush(stdout);
+        eng().hard_disconnect();
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    if(!live){
+        printf("[BigCapMomo] DOWN -- no API handshake after 3 clientId attempts (%d-%d). "
+               "Gateway logged in? API enabled? clientId range free?\n", base_id, base_id+2);
+        fflush(stdout);
+        g_running.store(false);
+        return false;   // -> omega_main [SYSTEM-ALERT] BIGCAP_IBKR_DOWN + GUI health banner
     }
     g_stop.store(false);
-    g_thread = std::thread([]{
-        printf("[BigCapMomo] in-process IBKR engine thread up (%s:%d)\n",g_cfg.host.c_str(),g_cfg.port); fflush(stdout);
-        while(!g_stop.load()) eng().pump();            // long-running intraday stream
+    g_thread = std::thread([win_id]{
+        printf("[BigCapMomo] in-process IBKR engine thread up (%s:%d id=%d)\n",
+               g_cfg.host.c_str(), g_cfg.port, win_id); fflush(stdout);
+        auto last_hb = std::chrono::steady_clock::now();
+        while(!g_stop.load()){
+            eng().pump();                              // long-running intraday stream (<=2s/iter)
+            auto now = std::chrono::steady_clock::now();
+            if(now - last_hb >= std::chrono::seconds(60)){ eng().log_heartbeat(); last_hb = now; }
+        }
         eng().disconnect();
         printf("[BigCapMomo] engine thread stopped\n"); fflush(stdout);
     });
-    // S-2026-06-20: eConnect()==true only means TCP connected. The gateway can accept
-    // the socket yet never complete the API session (stale clientId, gateway not logged
-    // in / API not enabled) -> nextValidId never arrives -> the engine scans NOTHING,
-    // silently, while start() returns true and no alert fires. That is the exact 06-19
-    // failure (9x "activating", zero [BigCapMomo] output, zero trades, no alarm).
-    // Confirm the handshake; if it never lands, return false so omega_main raises the
-    // loud [SYSTEM-ALERT] BIGCAP_IBKR_DOWN + GUI health banner instead of silent death.
-    for(int i=0; i<120 && !eng().handshake_done(); ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));   // up to ~12s
-    if(!eng().handshake_done()){
-        printf("[BigCapMomo] HANDSHAKE TIMEOUT 12s -- %s:%d accepted TCP but no nextValidId "
-               "(clientId %d stale from a prior restart? gateway logged in + API enabled?) "
-               "-- reporting DOWN\n", g_cfg.host.c_str(), g_cfg.port, g_cfg.client_id);
-        fflush(stdout);
-        return false;   // -> omega_main [SYSTEM-ALERT] BIGCAP_IBKR_DOWN
-    }
-    printf("[BigCapMomo] API handshake OK (nextValidId) -- engine live %s:%d id=%d\n",
-           g_cfg.host.c_str(), g_cfg.port, g_cfg.client_id); fflush(stdout);
     return true;
 }
 
@@ -364,6 +419,7 @@ namespace bigcap_momo_ibkr {
 void configure(const Config&) {}
 void set_enabled(bool) {}
 bool is_enabled() { return false; }
+long long last_activity_ms() { return 0; }
 void set_on_trade_record(std::function<void(const TradeRecord&)>) {}
 std::vector<PositionSnapshot> collect_positions() { return {}; }
 bool start() { return false; }

@@ -76,6 +76,11 @@ void configure(const Config& cfg);
 void set_enabled(bool on);
 bool is_enabled();
 
+// Liveness for the omega_main watchdog: wall-clock ms of the last scanner/bar event
+// (0 = never / not running). A connected engine whose feed silently dies during RTH is
+// the 06-19 failure class -- the watchdog uses this to raise [SYSTEM-ALERT] BIGCAP_STALE.
+long long last_activity_ms();
+
 // Closed-trade sink -> handle_closed_trade (shadow ledger + telemetry). Plain
 // std::function, no TWS types. Set in engine_init alongside the other engines.
 void set_on_trade_record(std::function<void(const TradeRecord&)> cb);

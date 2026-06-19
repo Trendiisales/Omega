@@ -833,6 +833,44 @@ int main(int argc, char* argv[])
                     std::chrono::system_clock::now().time_since_epoch()).count();
                 g_bigcap_momo.on_heartbeat(now_ms_wd);
             }
+            // ── BIGCAP-IBKR LIVENESS WATCHDOG (2026-06-20) ──────────────────────────
+            //   The 06-19 silent-death guard. The in-process IBKR engine can connect
+            //   yet receive ZERO scanner/bar data during RTH and trade nothing, with no
+            //   alarm (start() returned true). If its last data event is stale (>5min)
+            //   inside US cash RTH, raise the loud [SYSTEM-ALERT] + GUI health banner.
+            {
+                static const bool s_bigcap_ibkr = [](){
+                    const char* e = std::getenv("OMEGA_BIGCAP_IBKR"); return e && std::string(e) == "1"; }();
+                if (s_bigcap_ibkr) {
+                    const std::time_t tnow = std::time(nullptr);
+                    std::tm ut{};
+#if defined(_WIN32)
+                    gmtime_s(&ut, &tnow);
+#else
+                    gmtime_r(&tnow, &ut);
+#endif
+                    const int mins = ut.tm_hour * 60 + ut.tm_min;
+                    const bool rth = (ut.tm_wday >= 1 && ut.tm_wday <= 5)
+                                     && mins >= 13 * 60 + 30 && mins < 20 * 60;   // 13:30-20:00 UTC
+                    if (rth) {
+                        const long long la = omega::bigcap_momo_ibkr::last_activity_ms();
+                        const int64_t now_ms2 = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        const bool stale = (la == 0) || (now_ms2 - la > 300000);   // never, or >5min
+                        static int64_t s_last_alert_s = 0;
+                        if (stale && (static_cast<int64_t>(tnow) - s_last_alert_s >= 120)) {
+                            s_last_alert_s = static_cast<int64_t>(tnow);
+                            const long ago = la > 0 ? static_cast<long>((now_ms2 - la) / 1000) : -1;
+                            std::cout << "[SYSTEM-ALERT] BIGCAP_STALE in-process IBKR engine has no scanner/bar "
+                                         "data in RTH (last_data="
+                                      << (ago < 0 ? std::string("NEVER") : std::to_string(ago) + "s")
+                                      << ") -- enabled but trading NOTHING. Check gateway login / clientId.\n";
+                            std::cout.flush();
+                            g_telemetry.SetHealthAlert("BIGCAP STALE");
+                        }
+                    }
+                }
+            }
             static int64_t s_last_bar_save_s = 0;
             const int64_t now_s_save = static_cast<int64_t>(std::time(nullptr));
             if (now_s_save - s_last_bar_save_s >= 600) {
