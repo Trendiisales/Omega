@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Omega research-loop scheduler (launchd, Mac).
+     Fires run_all.sh once daily at 06:30 local. Tier2 ticks every run; tier3 is
+     governed to ~weekly cadence internally (cheap re-runs are dry-streak no-ops).
+     The schedule IS the loop — launchd fires discrete bounded ticks, nothing
+     spins. To pause: `python3 tools/loop/loop_governor.py halt` (no need to
+     unload). To stop entirely: launchctl unload this plist.
+
+     INSTALL (operator):
+       cp tools/loop/com.omega.loops.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.omega.loops.plist
+     Edit the two REPO paths below if the repo is not at ~/Omega. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.omega.loops</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jo/Omega/tools/loop/run_all.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>6</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jo/Omega/outputs/loops/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jo/Omega/outputs/loops/launchd.err.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
