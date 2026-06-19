@@ -847,7 +847,9 @@ function Invoke-Restart {
         $latestLog    = "$OmegaDir\logs\latest.log"
         $bootStart    = Get-Date
         $bootDeadline = $bootStart.AddSeconds(60)
-        $bootPat      = "Git hash.*" + [regex]::Escape($displayHash)
+        # match the 7-char short hash the binary actually logs (version_generated.hpp
+        # uses git --short=7), tolerant of a longer stamp hash.
+        $bootPat      = "Git hash.*" + [regex]::Escape($displayHash.Substring(0, [Math]::Min(7, $displayHash.Length)))
         $booted       = $false
         while ((Get-Date) -lt $bootDeadline) {
             Start-Sleep -Seconds 2
@@ -1453,10 +1455,18 @@ function Invoke-Deploy {
             $versionContent = Get-Content $versionFile -Raw
             if ($versionContent -match 'OMEGA_GIT_HASH\s+"([a-f0-9]+)"') {
                 $guiHash = $Matches[1]
-                if ($guiHash -ne $stamp.GIT_HASH_SHORT) {
+                # S-2026-06-20: PREFIX-tolerant compare (same convention as
+                # Test-StaleBinaryAfterStart). The build-time header uses git
+                # --short=7 (e.g. 4766cd9) while the stamp carries SOURCE_HASH
+                # (often 9 chars, e.g. 4766cd9aa) -- same commit when one is a
+                # prefix of the other. The prior exact-compare aborted the deploy
+                # (leaving the service stopped) once the reconfigure-removal made
+                # the header the canonical 7-char short hash.
+                $hashMatch = $guiHash.StartsWith($stamp.GIT_HASH_SHORT) -or $stamp.GIT_HASH_SHORT.StartsWith($guiHash)
+                if (-not $hashMatch) {
                     $errors += "GUI hash MISMATCH: version_generated.hpp=$guiHash  stamp_source=$($stamp.GIT_HASH_SHORT) -- run cmake configure again."
                 } else {
-                    Write-Host "  [OK] GUI hash matches source hash: $guiHash" -ForegroundColor Green
+                    Write-Host "  [OK] GUI hash matches source hash: $guiHash ~ $($stamp.GIT_HASH_SHORT)" -ForegroundColor Green
                 }
             } else {
                 $errors += "version_generated.hpp exists but OMEGA_GIT_HASH not found -- file corrupt"
@@ -1577,7 +1587,9 @@ function Invoke-Deploy {
         $latestLog    = "$OmegaDir\logs\latest.log"
         $bootStart    = Get-Date
         $bootDeadline = $bootStart.AddSeconds(60)
-        $bootPat      = "Git hash.*" + [regex]::Escape($sourceHashShort)
+        # match the 7-char short hash the binary actually logs (version_generated.hpp
+        # uses git --short=7), tolerant of a longer stamp hash.
+        $bootPat      = "Git hash.*" + [regex]::Escape($sourceHashShort.Substring(0, [Math]::Min(7, $sourceHashShort.Length)))
         $booted       = $false
         while ((Get-Date) -lt $bootDeadline) {
             Start-Sleep -Seconds 2
