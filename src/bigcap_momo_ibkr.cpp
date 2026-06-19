@@ -135,6 +135,9 @@ public:
         cli_->reqMarketDataType(cfg_.market_data_type);   // 1=live 2=frozen 3=delayed 4=delayed-frozen
         ScannerSubscription s; s.instrument="STK"; s.locationCode="STK.US.MAJOR"; s.scanCode="TOP_PERC_GAIN";
         s.abovePrice=cfg_.px_min; s.aboveVolume=100000;
+        // S-2026-06-19: real big-cap floor (micro-caps = slippage death). IBKR
+        // marketCapAbove unit = MILLIONS (2000 = $2B; 2e9 = the 0-rows bug).
+        if(cfg_.market_cap_above_musd > 0.0) s.marketCapAbove = cfg_.market_cap_above_musd;
         cli_->reqScannerSubscription(9100,s,TagValueListSPtr(),TagValueListSPtr());
         if(cfg_.regime_gate) cli_->reqHistoricalData(MKT_REQ, spy(), "", "1 Y", "1 day", "TRADES", 1, 1, true, TagValueListSPtr());
         printf("[BigCapMomo] scan TOP_PERC_GAIN (gate>=%.0f%% trail=%.0f%% IG=%.0f%% volx=%.0f regime_gate=%d) %s\n",

@@ -50,7 +50,15 @@ struct Config {
     bool   maxhold_skip_if_profit = true;  // don't clock-cut a position still in profit
     double ig_pct           = 3.0;    // ignition: +IG% over LB 5m bars
     double volx             = 3.0;    // volume surge vs 20-bar avg (0 = disable, bridge-delta caveat)
-    double px_min           = 10.0;   // big-cap / deep-liquidity floor
+    double px_min           = 10.0;   // big-cap / deep-liquidity floor (price only)
+    // S-2026-06-19 universe risk fix: enforce a real market-cap floor in the IBKR
+    // scanner so micro-caps (the slippage-death names PBLS/SHAZ-type that killed
+    // PumpScalp) cannot leak in. px_min alone does NOT do this -- a $10 NASDAQ name
+    // at 100k vol can be a $100M micro-cap. UNIT GOTCHA: IBKR marketCapAbove is in
+    // MILLIONS of USD -- 2000 = $2B (50 rows); the raw 2e9 = the documented 0-rows
+    // bug. Big-cap momo is the validated edge (small-cap = slippage death), so this
+    // tightens risk WITHOUT touching the edge. 0 = disable.
+    double market_cap_above_musd = 2000.0;  // $2B floor, in MILLIONS (IBKR unit)
     int    lb               = 6;      // ignition lookback (6*5m = 30min)
     int    maxhold          = 48;     // 48*5m = 4h backstop
     bool   regime_gate      = true;   // SPY price>SMA200 AND SMA200 rising
