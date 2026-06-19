@@ -135,17 +135,7 @@ static void on_tick_eurusd(
     //   M5 Donchian + EMA + ADX scalper. Engine internally gated by enabled.
     //   Runs BEFORE the S99 kill-switch return for the same reason as Turtle.
     //   L2 fields neutral: no FX L2 surface plumbed.
-    {
-        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
-        const bool fx_can_enter = tradeable && lat_ok;
-        g_fx_scalp_eurusd.on_tick(bid, ask, now_ms_fx,
-                                  fx_can_enter,
-                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
-                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
-                                  /*wall_above=*/false, /*wall_below=*/false,
-                                  /*l2_real=*/false,
-                                  nullptr);
-    }
+    // FxScalpPyramid_EURUSD dispatch REMOVED S-2026-06-19 — scalp family retired (retired_micro_engines.hpp).
 
     // S99: FX engine kill-switch -- all FX LondonOpen/AsianOpen/SydneyOpen
     //   engines disabled after full BreakoutEngine + BracketEngine sweep
@@ -293,17 +283,7 @@ static void on_tick_gbpusd(
     }
 
     // S38d 2026-05-26: FxScalpPyramid_GBPUSD dispatch (shadow-mode).
-    {
-        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
-        const bool fx_can_enter = tradeable && lat_ok;
-        g_fx_scalp_gbpusd.on_tick(bid, ask, now_ms_fx,
-                                  fx_can_enter,
-                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
-                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
-                                  /*wall_above=*/false, /*wall_below=*/false,
-                                  /*l2_real=*/false,
-                                  nullptr);
-    }
+    // FxScalpPyramid_GBPUSD dispatch REMOVED S-2026-06-19 — scalp family retired (retired_micro_engines.hpp).
 
     // S99: FX kill-switch (see on_tick_eurusd comment). GbpusdLondonOpen disabled.
     (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
@@ -430,17 +410,7 @@ static void on_tick_usdjpy(
     }
 
     // S38d 2026-05-26: FxScalpPyramid_USDJPY dispatch (shadow-mode).
-    {
-        const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
-        const bool fx_can_enter = tradeable && lat_ok;
-        g_fx_scalp_usdjpy.on_tick(bid, ask, now_ms_fx,
-                                  fx_can_enter,
-                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
-                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
-                                  /*wall_above=*/false, /*wall_below=*/false,
-                                  /*l2_real=*/false,
-                                  nullptr);
-    }
+    // FxScalpPyramid_USDJPY dispatch REMOVED S-2026-06-19 — scalp family retired (retired_micro_engines.hpp).
 
     // S37g 2026-05-26 FxEnsembleEngine USDJPY (donchian_20 H2 LONG cell).
     {
@@ -533,17 +503,7 @@ static void on_tick_audusd(
         }
 
         // S38d 2026-05-26: FxScalpPyramid_AUDUSD dispatch (shadow-mode).
-        {
-            const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
-            const bool fx_can_enter = tradeable && lat_ok;
-            g_fx_scalp_audusd.on_tick(bid, ask, now_ms_fx,
-                                      fx_can_enter,
-                                      /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
-                                      /*vacuum_ask=*/false, /*vacuum_bid=*/false,
-                                      /*wall_above=*/false, /*wall_below=*/false,
-                                      /*l2_real=*/false,
-                                      nullptr);
-        }
+        // FxScalpPyramid_AUDUSD dispatch REMOVED S-2026-06-19 — scalp family retired (retired_micro_engines.hpp).
 
         // S99: FX kill-switch (see on_tick_eurusd comment). AudusdSydneyOpen disabled.
         (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
@@ -699,13 +659,8 @@ static void on_tick_usdcad(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         const bool fx_can_enter = tradeable && lat_ok;
-        g_fx_scalp_usdcad.on_tick(bid, ask, now_ms_fx,
-                                  fx_can_enter,
-                                  /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
-                                  /*vacuum_ask=*/false, /*vacuum_bid=*/false,
-                                  /*wall_above=*/false, /*wall_below=*/false,
-                                  /*l2_real=*/false,
-                                  nullptr);
+        // FxScalpPyramid_USDCAD dispatch REMOVED S-2026-06-19 — scalp family retired (retired_micro_engines.hpp).
+        (void)now_ms_fx; (void)fx_can_enter;
 
         // S37 audit fix (2026-05-27): wire previously-orphan g_fx_ens_usdcad
         // dispatch. The engine has 4 cells configured + booted in
