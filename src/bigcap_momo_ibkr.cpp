@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -75,6 +76,12 @@ class Engine : public DefaultEWrapper {
     std::mutex book_mu_;                          // guards subs_ vs collect_positions thread
     std::function<void(const TradeRecord&)> on_trade_record_;
     int trade_id_=0;
+    // S-2026-06-20: handshake liveness. eConnect returns true on bare TCP even when
+    // the gateway never completes the API session (stale clientId / not logged in).
+    // nextValidId arrival is the ONLY proof the API session is live. start() waits on
+    // this with a timeout so a dead handshake fails LOUD (BIGCAP_IBKR_DOWN) instead of
+    // a silent "connected, returned true, scanned nothing" death (root cause 06-19).
+    std::atomic<bool> handshake_done_{false};
 
     // ── market-regime detector (SPY 200MA + rising) ──
     static const int MKT_REQ=9001;
@@ -97,6 +104,7 @@ class Engine : public DefaultEWrapper {
 public:
     Engine(){ risk_.new_day(); cli_=std::make_unique<EClientSocket>(this,&sig_); }
     void set_config(const Config& c){ cfg_=c; }
+    bool handshake_done() const { return handshake_done_.load(std::memory_order_relaxed); }
     void set_sink(std::function<void(const TradeRecord&)> cb){ on_trade_record_=std::move(cb); }
 
     bool connect(){
@@ -132,6 +140,7 @@ public:
     }
 
     void nextValidId(OrderId id) override { nextId_=id;
+        handshake_done_.store(true, std::memory_order_relaxed);   // API session live (root-cause guard 06-20)
         cli_->reqMarketDataType(cfg_.market_data_type);   // 1=live 2=frozen 3=delayed 4=delayed-frozen
         ScannerSubscription s; s.instrument="STK"; s.locationCode="STK.US.MAJOR"; s.scanCode="TOP_PERC_GAIN";
         s.abovePrice=cfg_.px_min; s.aboveVolume=100000;
@@ -317,6 +326,24 @@ bool start(){
         eng().disconnect();
         printf("[BigCapMomo] engine thread stopped\n"); fflush(stdout);
     });
+    // S-2026-06-20: eConnect()==true only means TCP connected. The gateway can accept
+    // the socket yet never complete the API session (stale clientId, gateway not logged
+    // in / API not enabled) -> nextValidId never arrives -> the engine scans NOTHING,
+    // silently, while start() returns true and no alert fires. That is the exact 06-19
+    // failure (9x "activating", zero [BigCapMomo] output, zero trades, no alarm).
+    // Confirm the handshake; if it never lands, return false so omega_main raises the
+    // loud [SYSTEM-ALERT] BIGCAP_IBKR_DOWN + GUI health banner instead of silent death.
+    for(int i=0; i<120 && !eng().handshake_done(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));   // up to ~12s
+    if(!eng().handshake_done()){
+        printf("[BigCapMomo] HANDSHAKE TIMEOUT 12s -- %s:%d accepted TCP but no nextValidId "
+               "(clientId %d stale from a prior restart? gateway logged in + API enabled?) "
+               "-- reporting DOWN\n", g_cfg.host.c_str(), g_cfg.port, g_cfg.client_id);
+        fflush(stdout);
+        return false;   // -> omega_main [SYSTEM-ALERT] BIGCAP_IBKR_DOWN
+    }
+    printf("[BigCapMomo] API handshake OK (nextValidId) -- engine live %s:%d id=%d\n",
+           g_cfg.host.c_str(), g_cfg.port, g_cfg.client_id); fflush(stdout);
     return true;
 }
 
