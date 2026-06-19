@@ -120,8 +120,6 @@ static void on_tick_eurusd(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
-        g_eurusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
-        g_eurusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
     }
 
     // 2026-06-07 MondayRiskOn calendar (GBPUSD/AUDUSD) -- shadow; callback via on_trade_record.
@@ -195,27 +193,11 @@ static void on_tick_eurusd(
     // AtrMeanRevGrid (shadow) -- forex mean-reversion grid (2026-05-25).
     // Engine internally aggregates H1 bars from tick mids; we only need to
     // forward ticks. Backtest sweep: PF 2.11 @ X=10 (13 trades, 2yr).
-    if (g_amr_eurusd.enabled) g_amr_eurusd.on_tick(bid, ask, now_ms);
 
     // S37g 2026-05-26 FxEnsembleEngine -- donchian_55 H1 LONG cell.
     if (g_fx_ens_eurusd.enabled)
         g_fx_ens_eurusd.on_tick(bid, ask, now_ms, write_shadow_csv);
 
-    // EurGbpPairsEngine (shadow) -- spread mean-reversion. Engine maintains its
-    // own H1 OHLC accumulator + rolling z-score; signal logic runs on H1 close.
-    // See backtest/sweep_pairs_v2.csv for tuning. Routed in both on_tick_eurusd
-    // and on_tick_gbpusd via separate per-leg methods.
-    {
-        auto ca_on_close = [](const omega::TradeRecord& tr){ (void)tr; };
-        const auto psig = g_eur_gbp_pairs.on_tick_eur(bid, ask, now_ms, ca_on_close);
-        if (psig.valid) {
-            g_telemetry.UpdateLastSignal("EURUSD+GBPUSD",
-                psig.long_spread ? "LONG_SPREAD" : "SHORT_SPREAD",
-                psig.eur_entry, psig.reason,
-                "EUR_GBP_PAIRS", regime.c_str(), "EUR_GBP_PAIRS",
-                0.0, 0.0);
-        }
-    }
 
     (void)sym; (void)regime; (void)dispatch;
 }
@@ -250,8 +232,6 @@ static void on_tick_gbpusd(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
-        g_gbpusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
-        g_gbpusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
     }
 
     // 2026-06-09: TrendLineBreakGBP (SHADOW) -- H4 hull-break, GBPUSD PF1.53.
@@ -270,8 +250,6 @@ static void on_tick_gbpusd(
             s_tlb_o = s_tlb_h = s_tlb_l = s_tlb_c = mid; s_tlb_bar_ms = bh4;
         } else if (bh4 != s_tlb_bar_ms) {
             // bar rolled over -> dispatch the JUST-CLOSED bar, then start new
-            g_trendline_break_gbp.on_h4_bar(s_tlb_h, s_tlb_l, s_tlb_c,
-                                            bid, ask, s_tlb_bar_ms, bracket_on_close);
             s_tlb_o = s_tlb_h = s_tlb_l = s_tlb_c = mid; s_tlb_bar_ms = bh4;
         } else {
             if (mid > s_tlb_h) s_tlb_h = mid;
@@ -279,7 +257,6 @@ static void on_tick_gbpusd(
             s_tlb_c = mid;
         }
         // intrabar safety-line stop (every tick)
-        g_trendline_break_gbp.on_tick(bid, ask, now_ms_fx, bracket_on_close);
     }
 
     // S38d 2026-05-26: FxScalpPyramid_GBPUSD dispatch (shadow-mode).
@@ -343,14 +320,12 @@ static void on_tick_gbpusd(
     }
 
     // AtrMeanRevGrid GBPUSD (shadow). Backtest: PF 2.11 @ X=10 (13 trades, 2yr).
-    if (g_amr_gbpusd.enabled) g_amr_gbpusd.on_tick(bid, ask, now_ms);
     if (g_fx_ens_gbpusd.enabled)
         g_fx_ens_gbpusd.on_tick(bid, ask, now_ms, write_shadow_csv);
 
     // EurGbpPairsEngine -- GBP leg (see on_tick_eurusd for EUR leg).
     {
         auto ca_on_close = [](const omega::TradeRecord& tr){ (void)tr; };
-        g_eur_gbp_pairs.on_tick_gbp(bid, ask, now_ms, ca_on_close);
     }
 
     (void)sym; (void)regime; (void)dispatch;
@@ -380,8 +355,6 @@ static void on_tick_usdjpy(
     {
         const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
-        g_usdjpy_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
-        g_usdjpy_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
     }
 
     // 2026-06-09: TrendLineBreakJPY (SHADOW) -- H4 hull-break, USDJPY PF1.37.
@@ -398,15 +371,12 @@ static void on_tick_usdjpy(
         if (s_tlbj_bar_ms == 0) {
             s_tlbj_o = s_tlbj_h = s_tlbj_l = s_tlbj_c = mid; s_tlbj_bar_ms = bh4;
         } else if (bh4 != s_tlbj_bar_ms) {
-            g_trendline_break_jpy.on_h4_bar(s_tlbj_h, s_tlbj_l, s_tlbj_c,
-                                            bid, ask, s_tlbj_bar_ms, bracket_on_close);
             s_tlbj_o = s_tlbj_h = s_tlbj_l = s_tlbj_c = mid; s_tlbj_bar_ms = bh4;
         } else {
             if (mid > s_tlbj_h) s_tlbj_h = mid;
             if (mid < s_tlbj_l) s_tlbj_l = mid;
             s_tlbj_c = mid;
         }
-        g_trendline_break_jpy.on_tick(bid, ask, now_ms_fx, bracket_on_close);
     }
 
     // S38d 2026-05-26: FxScalpPyramid_USDJPY dispatch (shadow-mode).
@@ -498,8 +468,6 @@ static void on_tick_audusd(
         {
             const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
-            g_audusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
-            g_audusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
         }
 
         // S38d 2026-05-26: FxScalpPyramid_AUDUSD dispatch (shadow-mode).
@@ -560,7 +528,6 @@ static void on_tick_audusd(
         }
 
         // AtrMeanRevGrid AUDUSD (shadow). Backtest: PF 1.06 (marginal).
-        if (g_amr_audusd.enabled) g_amr_audusd.on_tick(bid, ask, now_ms);
         if (g_fx_ens_audusd.enabled)
             g_fx_ens_audusd.on_tick(bid, ask, now_ms, write_shadow_csv);
 
@@ -588,8 +555,6 @@ static void on_tick_audusd(
         {
             const int64_t now_ms_fx = static_cast<int64_t>(std::time(nullptr)) * 1000;
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
-            g_nzdusd_turtle_h4.on_tick(bid, ask, now_ms_fx, on_close_cb);
-            g_nzdusd_turtle_h4.check_weekend_close(bid, ask, now_ms_fx, on_close_cb);
         }
 
         // S99: FX kill-switch (see on_tick_eurusd comment). NzdusdAsianOpen disabled.
@@ -630,7 +595,6 @@ static void on_tick_audusd(
         }
 
         // AtrMeanRevGrid NZDUSD (shadow). Backtest: PF 0.92 (negative; keep enabled=false until tuned).
-        if (g_amr_nzdusd.enabled) g_amr_nzdusd.on_tick(bid, ask, now_ms);
         if (g_fx_ens_nzdusd.enabled)
             g_fx_ens_nzdusd.on_tick(bid, ask, now_ms, write_shadow_csv);
 

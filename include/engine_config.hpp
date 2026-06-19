@@ -546,16 +546,8 @@ static void load_config(const std::string& path) {
             if (k=="sweep_pres_base_size")    gs.sweep_pres_base_size     = safe_stod(v, k);
         }
         if (section == "cross_asset") {
-            if (k=="esnq_enabled")       g_ca_esnq.enabled       = (v == "true" || v == "1");
-            if (k=="esnq_confirm_ticks") g_ca_esnq.CONFIRM_TICKS = safe_stoi(v, k);
-            if (k=="esnq_cooldown_sec")  g_ca_esnq.COOLDOWN_SEC  = safe_stoi(v, k);
-            if (k=="esnq_tp_pct")        g_ca_esnq.TP_PCT        = safe_stod(v, k);
-            if (k=="esnq_sl_pct")        g_ca_esnq.SL_PCT        = safe_stod(v, k);
         }
         if (section == "minimal_h4") {
-            auto& mp = g_minimal_h4_gold.p;
-            if (k=="enabled")            g_minimal_h4_gold.enabled     = (v == "true" || v == "1");
-            if (k=="shadow_mode")        g_minimal_h4_gold.shadow_mode = (v == "true" || v == "1");
             if (k=="donchian_bars")      mp.donchian_bars       = safe_stoi(v, k);
             if (k=="sl_mult")            mp.sl_mult             = safe_stod(v, k);
             if (k=="tp_mult")            mp.tp_mult             = safe_stod(v, k);
@@ -575,9 +567,6 @@ static void load_config(const std::string& path) {
         //   parser above and adds the US30-specific fields (atr_period and
         //   dollars_per_point).
         if (section == "minimal_h4_us30") {
-            auto& mp = g_minimal_h4_us30.p;
-            if (k=="enabled")            g_minimal_h4_us30.enabled     = (v == "true" || v == "1");
-            if (k=="shadow_mode")        g_minimal_h4_us30.shadow_mode = (v == "true" || v == "1");
             if (k=="donchian_bars")      mp.donchian_bars       = safe_stoi(v, k);
             if (k=="sl_mult")            mp.sl_mult             = safe_stod(v, k);
             if (k=="tp_mult")            mp.tp_mult             = safe_stod(v, k);

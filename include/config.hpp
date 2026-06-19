@@ -167,10 +167,6 @@ static void force_close_all_open(const char* reason, bool include_multiday = fal
 
     // -- Gold engines --
     if (xau_b > 0.0 && xau_a > 0.0) {
-        if (g_trend_pb_gold.has_open_position()) {
-            g_trend_pb_gold.force_close(xau_b, xau_a, close_cb, reason);
-            printf("[%s] Force-closed TrendPullback gold\n", reason); fflush(stdout);
-        }
         if (g_gold_stack.has_open_position()) {
             g_gold_stack.force_close(xau_b, xau_a, g_rtt_last, close_cb);
             printf("[%s] Force-closed GoldStack\n", reason); fflush(stdout);
@@ -218,9 +214,6 @@ static void force_close_all_open(const char* reason, bool include_multiday = fal
         eng.force_close(b, a, close_cb, reason);
         printf("[%s] Force-closed TrendPullback %s\n", reason, sym); fflush(stdout);
     };
-    cls_tpb(g_trend_pb_sp,    "US500.F");
-    cls_tpb(g_trend_pb_nq,    "USTEC.F");
-    cls_tpb(g_trend_pb_ger40, "GER40");
     // -- NBM / ORB / VWAP / CrossAsset --
     auto cls_ca = [&](auto& eng, const char* sym) {
         if (!eng.has_open_position()) return;
@@ -229,15 +222,6 @@ static void force_close_all_open(const char* reason, bool include_multiday = fal
         eng.force_close(b, a, close_cb, reason);
         printf("[%s] Force-closed CA/NBM/ORB/VWAP %s\n", reason, sym); fflush(stdout);
     };
-    cls_ca(g_nbm_sp,          "US500.F"); cls_ca(g_nbm_nq,          "USTEC.F");
-    cls_ca(g_nbm_nas,         "NAS100");  cls_ca(g_nbm_us30,        "DJ30.F");
-    cls_ca(g_nbm_gold_london, "XAUUSD");  cls_ca(g_nbm_oil_london,  "USOIL.F");
-    cls_ca(g_orb_us,          "US500.F"); cls_ca(g_orb_ger30,       "GER40");
-    cls_ca(g_orb_uk100,       "UK100");   cls_ca(g_orb_estx50,      "ESTX50");
-    cls_ca(g_vwap_rev_sp,     "US500.F"); cls_ca(g_vwap_rev_nq,     "USTEC.F");
-    cls_ca(g_vwap_rev_ger40,  "GER40");   cls_ca(g_vwap_rev_eurusd, "EURUSD");
-    cls_ca(g_ca_esnq,         "US500.F"); cls_ca(g_ca_eia_fade,     "USOIL.F");
-    cls_ca(g_ca_brent_wti,    "USOIL.F"); cls_ca(g_ca_carry_unwind, "USDJPY");
 
     // -- Multi-day swing engines (D1/H4/H1) -- WEEKEND ONLY (hold across midnight
     //    by design). Force-close ALL regardless of P&L (the existing per-engine
@@ -251,14 +235,10 @@ static void force_close_all_open(const char* reason, bool include_multiday = fal
             g_xau_tf_2h.force_close(xau_b, xau_a, now_ms, close_cb, reason);
             g_xau_tf_4h.force_close(xau_b, xau_a, now_ms, close_cb, reason);
             g_xau_tf_d1.force_close(xau_b, xau_a, now_ms, close_cb, reason);
-            g_donchian.force_close_all(xau_b, xau_a, now_ms, close_cb);   // gold cells
-            if (g_xau_turtle_d1.has_open_position())                     // D1 turtle (4-arg sig)
-                g_xau_turtle_d1.force_close(xau_b, xau_a, close_cb, reason);
             printf("[%s] Force-closed XAU swing engines (TF 1h/2h/4h/D1 + Donchian + Turtle)\n", reason);
             fflush(stdout);
         }
         if (ger_b > 0.0 && ger_a > 0.0) {
-            g_ger40_kelt.force_close(ger_b, ger_a, now_ms, close_cb, reason);
             printf("[%s] Force-closed GER40 Keltner\n", reason); fflush(stdout);
         }
     }
@@ -411,17 +391,12 @@ static void maybe_reset_daily_ledger() {
     // day rollover; process restart uses load_atr_state()'s 4-hour staleness
     // check path instead.
     g_gold_stack.reset_drift_on_day_rollover();
-    g_trend_pb_gold.save_state(state_root_dir()  + "/trend_pb_gold.dat");
-    g_trend_pb_ger40.save_state(state_root_dir() + "/trend_pb_ger40.dat");
-    g_trend_pb_nq.save_state(state_root_dir()    + "/trend_pb_nq.dat");
-    g_trend_pb_sp.save_state(state_root_dir()    + "/trend_pb_sp.dat");
     // Save OHLCBarEngine indicator state -- eliminates tick data request on restart
     g_bars_gold.m1 .save_indicators(state_root_dir() + "/bars_gold_m1.dat");
     g_bars_gold.m5 .save_indicators(state_root_dir() + "/bars_gold_m5.dat");
     g_bars_gold.m15.save_indicators(state_root_dir() + "/bars_gold_m15.dat");
     g_bars_gold.h4 .save_indicators(state_root_dir() + "/bars_gold_h4.dat");
     // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
-    g_minimal_h4_us30.save_state(state_root_dir() + "/bars_us30_h4.dat");
     g_edges.reset_daily();  // resets CVD session hi/lo; prev_day updates via on_tick
 
     // Multi-day throttle: record this session's final PnL before resetting the ledger.

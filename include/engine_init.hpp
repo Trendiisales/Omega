@@ -139,8 +139,6 @@ static void init_engines(const std::string& cfg_path)
     // is retained for reproducibility of the original (contaminated)
     // sweep but DO NOT use it as a research baseline -- any sweep run
     // against it is re-fitting the same dead signal.
-    g_rsi_extreme.enabled      = false;            // DISABLED 2026-05-01 -- baseline contaminated, RE-TEST PENDING
-    g_rsi_extreme.shadow_mode  = kShadowDefault;  // RSIExtremeTurnEngine
     // 11-day/3.4M tick sweep showed no edge. See globals.hpp tombstone.
     // 96-cell walk-forward sweep. See globals.hpp tombstone comment.
     g_candle_flow.shadow_mode  = kShadowDefault;  // CandleFlowEngine -- restored 2026-04-29 with audit-tightened gates, shadow only
@@ -195,27 +193,6 @@ static void init_engines(const std::string& cfg_path)
     // All 3 start in shadow_mode per kShadowDefault until 30+ live trades
     // confirm post-deploy expectancy. ENTRY_SIZE matches existing index
     // bracket defaults (0.01) and scales via AdaptiveRiskManager.
-    g_idd_sp.symbol      = "US500.F";
-    g_idd_us30.symbol    = "DJ30.F";
-    g_idd_uk100.symbol   = "UK100";
-    g_idd_sp.enabled     = false;
-    g_idd_us30.enabled   = false;
-    g_idd_uk100.enabled  = false;
-    g_idd_sp.shadow_mode    = true;   // pinned shadow for first 30 trades
-    g_idd_us30.shadow_mode  = true;
-    g_idd_uk100.shadow_mode = true;
-    g_idd_sp.ENTRY_HOUR_UTC    = 0;    // first H1 of UTC day = 00:00..00:59
-    g_idd_us30.ENTRY_HOUR_UTC  = 0;
-    g_idd_uk100.ENTRY_HOUR_UTC = 0;
-    g_idd_sp.EXIT_HOUR_UTC     = 23;   // close at/after 23:00 UTC
-    g_idd_us30.EXIT_HOUR_UTC   = 23;
-    g_idd_uk100.EXIT_HOUR_UTC  = 23;
-    g_idd_sp.SAFETY_SL_PCT     = 2.5;  // 2.5% black-swan tail stop
-    g_idd_us30.SAFETY_SL_PCT   = 2.5;
-    g_idd_uk100.SAFETY_SL_PCT  = 2.5;
-    g_idd_sp.boot_announce();
-    g_idd_us30.boot_announce();
-    g_idd_uk100.boot_announce();
     // S11 P3b (2026-05-07): GoldHybridBracketEngine culled.
     //   Original S8 shadow_mode=true pin (2026-05-06 RR-asymmetric bleed:
     //   7 SL hits in 13:00-14:07 UTC window for -$50 net, ~0.4:1 RR needing
@@ -309,11 +286,6 @@ static void init_engines(const std::string& cfg_path)
     // shadow-pin. Tombstone: include/retired_micro_engines.hpp.
     // CONFIG-AUTHORITY FIX: FxScalpPyramidEngine struct DEFAULTS enabled=true, and
     // these 5 had NO explicit disable -> they were live despite "S45-disabled" docs.
-    g_fx_scalp_eurusd.enabled = false;  g_fx_scalp_eurusd.shadow_mode = true;
-    g_fx_scalp_usdjpy.enabled = false;  g_fx_scalp_usdjpy.shadow_mode = true;
-    g_fx_scalp_gbpusd.enabled = false;  g_fx_scalp_gbpusd.shadow_mode = true;
-    g_fx_scalp_usdcad.enabled = false;  g_fx_scalp_usdcad.shadow_mode = true;
-    g_fx_scalp_audusd.enabled = false;  g_fx_scalp_audusd.shadow_mode = true;
     // GoldMicroScalperEngine has no `enabled` member — it is disabled via the
     // global g_disable_microscalper (globals.hpp:424, =true since S-2026-06-02 cull).
     // register_engine uses !g_disable_microscalper, so it is already OFF. shadow_mode below kept.
@@ -549,36 +521,14 @@ static void init_engines(const std::string& cfg_path)
     // harness-class agreement to within 10% on PnL") this MUST be disabled
     // pending re-tune against the real class. The harness divergence is
     // the bug -- engine.enabled re-enable was based on incomplete evidence.
-    g_gold_scalp_pyramid.enabled     = false;  // S45: harness-class disagreement
-    g_gold_scalp_pyramid.shadow_mode = true;
-    g_gold_scalp_pyramid.LOOKBACK    = 8;     // Donchian channel bars (M5) -- sweep best
-    g_gold_scalp_pyramid.SL_ATR_MULT = 1.5;   // SL = 1.5 * ATR14 -- sweep v2 best (wider, 71% WR)
-    g_gold_scalp_pyramid.TP_ATR_MULT = 3.0;   // TP = 3.0 * ATR14 -- sweep best (decorative, trail exits)
-    g_gold_scalp_pyramid.TRAIL_TIGHT = 0.12;  // trail distance = 0.12 * ATR behind MFE -- sweep best
-    g_gold_scalp_pyramid.PYRAMID_ON  = true;   // sweep v2: Lyrs=1.1, +$1001 uplift on best config
-    g_gold_scalp_pyramid.LOSS_CUT_PCT  = 0.05;
-    g_gold_scalp_pyramid.BE_ARM_PCT    = 0.03;
-    g_gold_scalp_pyramid.BE_BUFFER_PCT = 0.015;  // S38a: 0.012 -> 0.015 = exit at +$0.68 vs $0.54 (clears $0.60 cost)
     // S38a tunables (new fields on engine):
-    g_gold_scalp_pyramid.COST_RT_PTS        = 0.37;   // IBKR gold cost (GC futures) @ 0.01 lot (was 0.60 BlackBull)
-    g_gold_scalp_pyramid.BE_ARM_COST_MULT   = 2.0;    // arm Phase-1 BE at MFE >= $1.20
-    g_gold_scalp_pyramid.CHOP_ER_MIN        = 0.0;    // S38b 2026-05-26: disabled. ER hurts -- gives up $2K/2yr for $130 less DD
-    g_gold_scalp_pyramid.CHOP_ER_LOOKBACK   = 10;     // 10x M5 = 50min ER window (unused when MIN=0)
     // S38c: ADX 10 chop filter -- free DD safety. Backtest: 0% PnL cost on
     // 2yr but -24% DD ($443 -> $338). Filters bars where Wilder ADX(14) < 10
     // (no sustained directional pressure). Operator chose adx10 as default
     // after 12-config x 3-period sweep (May, Jan-Apr, 2yr).
-    g_gold_scalp_pyramid.CHOP_ADX_MIN       = 10.0;
-    g_gold_scalp_pyramid.CHOP_ADX_PERIOD    = 14;     // Wilder standard
     // S38d: Range-expansion filter -- off by default. Enable when scaling
     // beyond 0.01 lot (DD reduction matters more). Recommended 1.2x.
     // Backtest: 1.2x -> -15% PnL but -32% DD + 8% PF on 2yr.
-    g_gold_scalp_pyramid.RANGE_EXP_MULT     = 0.0;    // 0=off, 1.2 for risk-tier
-    g_gold_scalp_pyramid.RANGE_EXP_LB       = 10;
-    g_gold_scalp_pyramid.CONSEC_BE_FREEZE_N = 3;      // 3 consec BE_CUT -> 30min freeze
-    g_gold_scalp_pyramid.on_close_cb = [](const omega::TradeRecord& tr) {
-        handle_closed_trade(tr);
-    };
 
     // ---- FxScalpPyramid x5 (S38d 2026-05-26) --------------------------------
     // 5 profitable FX pairs from 13-month standalone harness backtest
@@ -633,18 +583,8 @@ static void init_engines(const std::string& cfg_path)
         };
 
         // xxxUSD majors (5 decimal places, ATR 30-500 pips, spread cap 50p)
-        config_fx_scalp(g_fx_scalp_eurusd, "EURUSD", 0.00040, 0.00002, 100000.0,
-                        0.00030, 0.00500, 0.00050, 5);
         // USDJPY (3 decimals, JPY pip math: USD_PER_PT_LOT ~633 at 1USD=158JPY)
-        config_fx_scalp(g_fx_scalp_usdjpy, "USDJPY", 0.04,    0.002,   633.0,
-                        0.03,    0.50,    0.05,    3);
-        config_fx_scalp(g_fx_scalp_gbpusd, "GBPUSD", 0.00040, 0.00002, 100000.0,
-                        0.00030, 0.00500, 0.00050, 5);
         // USDCAD (5 decimals, USD_PER_PT_LOT ~74000 at 1USD=1.35CAD)
-        config_fx_scalp(g_fx_scalp_usdcad, "USDCAD", 0.00050, 0.00002, 74000.0,
-                        0.00030, 0.00500, 0.00060, 5);
-        config_fx_scalp(g_fx_scalp_audusd, "AUDUSD", 0.00040, 0.00002, 100000.0,
-                        0.00030, 0.00500, 0.00050, 5);
     }
 
     // ---- GoldRegimeDaily (2026-05-19 S110) ----------------------------------
@@ -684,24 +624,12 @@ static void init_engines(const std::string& cfg_path)
     //   per CLAUDE.md "Deploy Hygiene" before flipping enabled.
     //
     // shadow_mode=true. enabled=false. Operator-approval required.
-    g_gold_regime_daily.enabled                = false;
-    g_gold_regime_daily.shadow_mode            = true;
-    g_gold_regime_daily.SL_ATR_MULT            = 2.0;
-    g_gold_regime_daily.TP_ATR_MULT            = 12.0;
-    g_gold_regime_daily.COST_COVER_PTS         = 5.00;
-    g_gold_regime_daily.BE_BUFFER_PTS          = 1.00;
-    g_gold_regime_daily.TRAIL_DIST             = 99.0;  // disabled ratchet by design
-    g_gold_regime_daily.REVERSAL_ADVERSE_GATE  = 0.50;
     // S112: PYRAMID_ON = true. Pyramid sweep result:
     //   PYR=Y tr=99/tp=12: PnL $12,725 / PF 2.17 / WR 75.9% / DD $8,507
     //   PYR=N tr=99/tp=12: PnL $5,854 / PF 2.35 / WR 92.6% / DD $2,303
     // 2.17x PnL uplift, PF slightly degrades, DD ~3.7x. Net PnL/DD ratio
     // remains favorable (~1.5x). Operator can flip back to false if DD
     // is undesirable; pyramid layers compound size during trend continuation.
-    g_gold_regime_daily.PYRAMID_ON             = true;
-    g_gold_regime_daily.on_close_cb = [](const omega::TradeRecord& tr) {
-        handle_closed_trade(tr);
-    };
 
     // ?? BBandScalp config (2026-05-18 part B) ????????????????????????????????
     // M1 Bollinger + RSI mean-reversion scalper. Structural-signal entry,
@@ -722,24 +650,6 @@ static void init_engines(const std::string& cfg_path)
     // for reference + future redesign; enabled=false so no shadow trades
     // pollute the ledger. See backtest/bband_scalp_results.txt for
     // evidence. Re-enable only after entry-filter redesign + new sweep.
-    g_bband_scalp.enabled         = false;
-    g_bband_scalp.shadow_mode     = true;
-    g_bband_scalp.RSI_OVERSOLD    = 35.0;
-    g_bband_scalp.RSI_OVERBOUGHT  = 65.0;
-    g_bband_scalp.SL_PTS          = 0.40;
-    g_bband_scalp.BE_ARM_PTS      = 0.30;
-    g_bband_scalp.BE_BUFFER_PTS   = 0.05;
-    g_bband_scalp.TRAIL_TIGHT_PTS = 0.15;
-    g_bband_scalp.ATR_FLOOR_M1    = 0.50;
-    g_bband_scalp.ATR_CAP_M1      = 8.00;
-    g_bband_scalp.SPREAD_CAP_PTS  = 0.40;
-    g_bband_scalp.MAX_HOLD_SEC    = 600;
-    g_bband_scalp.COOLDOWN_SEC    = 60;
-    g_bband_scalp.LOT_BASE        = 0.01;
-    g_bband_scalp.COST_COVER_MULT = 1.0;
-    g_bband_scalp.on_close_cb     = [](const omega::TradeRecord& tr) {
-        handle_closed_trade(tr);
-    };
 
     // (LatencyEdgeStack startup-flag block removed S13 Finding B 2026-04-24 — engine culled)
     // OLD COMMENT PRESERVED BELOW FOR CONTEXT (can be deleted in a later sweep):
@@ -749,10 +659,6 @@ static void init_engines(const std::string& cfg_path)
     // 2026-05-08 USER REQUEST: was kShadowDefault, now hard-pinned to shadow.
     g_gold_stack.set_shadow_mode(true);  // GoldEngineStack / GoldPositionManager via proxy
     // TrendPullbackEngine (4 instances, uniform per Q1 decision):
-    g_trend_pb_gold.shadow_mode  = kShadowDefault;
-    g_trend_pb_ger40.shadow_mode = kShadowDefault;
-    g_trend_pb_nq.shadow_mode    = kShadowDefault;
-    g_trend_pb_sp.shadow_mode    = kShadowDefault;
     // BreakoutEngine non-index instances (FX) -- 2026-05-06 USER INSTRUCTION:
     //   "switch off the fx pairs until we can get them validated".
     //   Pinned to shadow_mode=true regardless of g_cfg.mode. Gold engines
@@ -838,7 +744,6 @@ static void init_engines(const std::string& cfg_path)
     //   re-fire guard rework; code preserved (not culled) for autopsy and
     //   future revival. Do not flip back to true without new guards in
     //   place and a fresh 2-year backtest.
-    g_macro_crash.shadow_mode     = true;  // SHADOW: enable live after validation
     // S44 SPIKE-ONLY RETUNE (2026-04-29 LATE) ----------------------------------
     //
     // Re-enabled after S17 demote (2026-04-24, kept=false until guards added).
@@ -891,38 +796,10 @@ static void init_engines(const std::string& cfg_path)
     //   spike-only thresholds produce positive expectancy on real moves.
     //   Re-enable now so the engine fires on the next macro spike and
     //   produces visible shadow ledger entries / PnL.
-    g_macro_crash.enabled         = false; // S99b: stop-bleed disable — MacroCrash fired Asia branch 00:34 UTC 2026-05-18 and lost -$7.07 (LOSS_CUT). Asia thresholds clearly still permissive of non-macro moves. Re-enable ONLY after retune session with backtest evidence for Asia-spike thresholds. London/NY values below left at S44 macro-scale baseline; Asia values reverted to pre-S99b baseline so future retune starts from a clean reference. PRIOR STATE: S57 re-enabled with S44 spike-only thresholds (ATR>=12, vol>=3.5x, drift>=10).
-    g_macro_crash.ATR_THRESHOLD   = 12.0;  // S44 8.0 -> 12.0: London/NY base raised, only fire on macro-scale ATR
-    g_macro_crash.VOL_RATIO_MIN   = 3.5;   // S44 2.5 -> 3.5: require >=3.5x baseline vol surge
-    g_macro_crash.DRIFT_MIN       = 10.0;  // S44 6.0 -> 10.0: drift must be unambiguously directional
-    g_macro_crash.ATR_THRESHOLD_ASIA = 6.0;  // S44 4.0 -> 6.0: lift Asia floor to winner ATR profile
-    g_macro_crash.VOL_RATIO_MIN_ASIA = 2.5;  // S44 2.0 -> 2.5: small lift, keeps Asia plenty of fires
-    g_macro_crash.DRIFT_MIN_ASIA     = 5.0;  // S44 3.0 -> 5.0: drift bar matches winner empirical floor
-    g_macro_crash.SL_ATR_MULT_ASIA   = 1.3;  // S44 1.5 -> 1.3: tighter SL on higher-quality entries
-    g_macro_crash.BASE_RISK_USD   = 80.0;  // scales with ATR (6x max = 0.48 lots at ATR=10)
-    g_macro_crash.STEP1_TRIGGER_USD = 200.0; // S42 revert to validated Apr 2 2026 baseline (was 80.0; matches crash-size moves)
                                               // S42 revert: original $200 step matches Apr 2 crash-size moves (continued from L139)
-    g_macro_crash.STEP2_TRIGGER_USD = 400.0; // S42 revert to validated Apr 2 2026 baseline (was 160.0; matches crash-size moves)
-    g_macro_crash.on_close = [](double exit_px, bool is_long, double size, const std::string& reason) {
-        if (g_macro_crash.shadow_mode) return;  // shadow: no live order
-        send_live_order("XAUUSD", is_long, size, exit_px);
-        printf("[MCE] Live close sent %s %.3f @ %.2f reason=%s\n",
-               is_long ? "LONG" : "SHORT", size, exit_px, reason.c_str());
-        fflush(stdout);
-    };
     // Wire trade record callback -- fires in BOTH shadow and live.
     // This is what makes MCE trades appear in GUI, ledger, and CSV with correct costs.
-    g_macro_crash.on_trade_record = [](const omega::TradeRecord& tr) {
-        handle_closed_trade(tr);
-    };
 
-    printf("[MCE] MacroCrashEngine ARMED (shadow_mode=%s, enabled=%s) "
-           "BASE: ATR>=%.1f vol>=%.1fx drift>=%.1f  ASIA: ATR>=%.1f vol>=%.1fx drift>=%.1f sl_x=%.2f\n",
-           g_macro_crash.shadow_mode ? "true" : "false",
-           g_macro_crash.enabled     ? "true" : "false",
-           g_macro_crash.ATR_THRESHOLD, g_macro_crash.VOL_RATIO_MIN, g_macro_crash.DRIFT_MIN,
-           g_macro_crash.ATR_THRESHOLD_ASIA, g_macro_crash.VOL_RATIO_MIN_ASIA, g_macro_crash.DRIFT_MIN_ASIA,
-           g_macro_crash.SL_ATR_MULT_ASIA);
     // RSI Reversal Engine startup config
     // RSIReversalEngine -- tuned for high-frequency XAUUSD mean-reversion scalping.
     // Based on documented backtest results (TradingView, QuantifiedStrategies):
@@ -955,26 +832,6 @@ static void init_engines(const std::string& cfg_path)
     //   protection will already be wired correctly without further config.
     //
     //   LOSS_CUT_PCT = 0.05 -> XAU@3700: ~$1.85 adverse cut.
-    g_rsi_reversal.LOSS_CUT_PCT   = 0.05;
-    g_rsi_reversal.enabled        = false;  // DISABLED 2026-05-01 -- backtest negative EV
-    g_rsi_reversal.shadow_mode    = true;   // SHADOW first -- verify signals before live
-    g_rsi_reversal.RSI_OVERSOLD   = 42.0;  // turn from any low -- not just extreme OS
-    g_rsi_reversal.RSI_OVERBOUGHT = 58.0;  // turn from any high -- not just extreme OB
-    g_rsi_reversal.RSI_EXIT_LONG  = 55.0;  // exit when RSI recovers to 55
-    g_rsi_reversal.RSI_EXIT_SHORT = 45.0;  // exit when RSI fades to 45
-    g_rsi_reversal.SL_ATR_MULT    = 0.6;   // SL = 0.6x ATR
-    g_rsi_reversal.TRAIL_ATR_MULT = 0.40;  // trail at 0.4x ATR behind MFE
-    g_rsi_reversal.BE_ATR_MULT    = 0.40;  // BE at 0.4x ATR profit
-    g_rsi_reversal.COOLDOWN_S     = 30;    // 30s between entries
-    g_rsi_reversal.COOLDOWN_S_VACUUM = 15; // 15s with vacuum confirm
-    g_rsi_reversal.MAX_HOLD_S     = 300;   // 5min max -- RSI turns can take time
-    g_rsi_reversal.MIN_HOLD_S     = 5;     // 5s minimum hold
-    printf("[RSI-REV] RSIReversalEngine configured (shadow_mode=%s "
-           "oversold=%.0f overbought=%.0f sl_mult=%.1fx)\n",
-           g_rsi_reversal.shadow_mode ? "true" : "false",
-           g_rsi_reversal.RSI_OVERSOLD,
-           g_rsi_reversal.RSI_OVERBOUGHT,
-           g_rsi_reversal.SL_ATR_MULT);
     fflush(stdout);
 
     //  Real-tick backtest: 4320 trades / 2yr, -$3.8k. Momentum = negative EV.
@@ -982,10 +839,6 @@ static void init_engines(const std::string& cfg_path)
     // [BUG-5 NOTE] MCE is shadow_mode=true by design -- it logs [MCE-SHADOW] but sends
     // no FIX orders. Entry/exit logic is fully functional via on_close callback wired above.
     // To enable live MCE trades: set g_macro_crash.shadow_mode = false (requires authorisation).
-    if (g_macro_crash.shadow_mode) {
-        printf("[MCE] WARNING: MacroCrashEngine is in SHADOW mode -- no live orders will fire.\n"
-               "[MCE] To enable: change shadow_mode=false in omega_main.hpp after validation.\n");
-    }
     fflush(stdout);
     fflush(stdout);
     // PENDING_TIMEOUT_SEC: gold compresses for minutes before breaking -- 60s was expiring before the move
@@ -1080,27 +933,16 @@ static void init_engines(const std::string& cfg_path)
     g_bracket_gold.REGIME_FLIP_MIN_DRIFT     = 2.5;
     g_bracket_gold.REGIME_FLIP_CONFIRM_TICKS = 5;
     // Configure opening range engines
-    g_orb_us.OPEN_HOUR    = 13; g_orb_us.OPEN_MIN    = 30;  // NY open 13:30 UTC
-    g_orb_ger30.OPEN_HOUR = 8;  g_orb_ger30.OPEN_MIN = 0;   // Xetra open 08:00 UTC
     // New ORB instruments: LSE and Euronext with tighter 15-min range windows
-    g_orb_uk100.OPEN_HOUR  = 8;  g_orb_uk100.OPEN_MIN  = 0;   // LSE open 08:00 UTC
-    g_orb_uk100.RANGE_WINDOW_MIN = 15;  // 15-min range (LSE moves fast at open)
-    g_orb_uk100.TP_PCT  = 0.12;  g_orb_uk100.SL_PCT  = 0.07;  // UK100 TP/SL calibrated to GBP volatility
-    g_orb_estx50.OPEN_HOUR = 9;  g_orb_estx50.OPEN_MIN = 0;   // Euronext open 09:00 UTC
-    g_orb_estx50.RANGE_WINDOW_MIN = 15; // 15-min range
-    g_orb_estx50.TP_PCT = 0.10;  g_orb_estx50.SL_PCT = 0.06;  // ESTX50 TP/SL similar to GER40
     // VWAPReversionEngine params -- per-instrument tuning
     // Indices: raised 0.20->0.40% -- USTEC at $24000: 0.20%=$48 fires on noise.
     // 0.40%=$96 requires a genuine VWAP dislocation not a 2-tick wiggle.
     // MAX_EXTENSION raised 0.80->1.20%: prevents blocking real dislocations.
     // MAX_HOLD raised 900->600s: exit stalled trades faster (was holding 15min losers).
-    g_vwap_rev_sp.enabled = false;  g_vwap_rev_sp.EXTENSION_THRESH_PCT    = 0.35; g_vwap_rev_sp.COOLDOWN_SEC    = 300;
     // S95 2026-05-15: disabled. SPX/US500 UltimateBacktest v1 (4118 trades, PF=0.92)
     //   and v2 (117 trades, PF=1.13 overall but OOS PF=0.88 — fails >=1.20 criterion).
     //   SPX lacks persistent trend-following momentum edge. ATR 8-15 band (120 trades,
     //   PF=1.19) was the only positive segment — too thin for production.
-    g_vwap_rev_sp.MAX_EXTENSION_PCT       = 1.20;
-    g_vwap_rev_sp.MAX_HOLD_SEC            = 600;
     // 2026-05-13 (S37-H-followup): in-flight cut + BE ratchet (index defaults).
     //   LOSS_CUT_PCT=0.08 -> US500@7400: ~5.9pt cold-loss cut.
     //   BE_ARM_PCT  =0.05 -> US500@7400: ~3.7pt mfe arms the ratchet.
@@ -1113,12 +955,6 @@ static void init_engines(const std::string& cfg_path)
     //   winners without meaningful tail protection. USTEC and GER40 keep the
     //   cuts because their fatter baseline tails justify the mechanism. See
     //   outputs/SESSION_HANDOFF_2026-05-13f.md.
-    g_vwap_rev_sp.LOSS_CUT_PCT            = 0.0;
-    g_vwap_rev_sp.BE_ARM_PCT              = 0.0;
-    g_vwap_rev_sp.BE_BUFFER_PCT           = 0.0;
-    g_vwap_rev_nq.enabled = false;  g_vwap_rev_nq.EXTENSION_THRESH_PCT    = 0.40; g_vwap_rev_nq.COOLDOWN_SEC    = 300;
-    g_vwap_rev_nq.MAX_EXTENSION_PCT       = 1.20;
-    g_vwap_rev_nq.MAX_HOLD_SEC            = 600;
     // 2026-05-13 (S37-H-followup): USTEC@28000: ~22pt LOSS_CUT, ~14pt ARM, ~5.6pt buffer.
     // 2026-05-13 (part L): REVERTED to baseline (all zero). The part-L smoke
     //   test against VWAPReversionBacktest (NSXUSD 4943 trades) showed the
@@ -1150,16 +986,7 @@ static void init_engines(const std::string& cfg_path)
     //   and outputs/VWR_USTEC_PHASE2_RESULTS_2026-05-14e.md for full evidence.
     //   Retune plan at outputs/VWR_USTEC_RETUNE_PLAN_2026-05-14a.md is
     //   closed -- parameter surface explored, no edge found.
-    g_vwap_rev_nq.LOSS_CUT_PCT            = 0.0;
-    g_vwap_rev_nq.BE_ARM_PCT              = 0.0;
-    g_vwap_rev_nq.BE_BUFFER_PCT           = 0.0;
-    g_vwap_rev_ger40.enabled = false;  g_vwap_rev_ger40.EXTENSION_THRESH_PCT = 0.30; g_vwap_rev_ger40.COOLDOWN_SEC = 300;  // DISABLED 2026-06-01: VWAP mean-rev no edge (net ~$0/2yr, neg after commission). GER40 = trend book (Keltner/Turtle/MinimalH4).
-    g_vwap_rev_ger40.MAX_EXTENSION_PCT    = 1.00;
-    g_vwap_rev_ger40.MAX_HOLD_SEC         = 600;
     // 2026-05-13 (S37-H-followup): GER40 index defaults same as US500/USTEC.
-    g_vwap_rev_ger40.LOSS_CUT_PCT         = 0.08;
-    g_vwap_rev_ger40.BE_ARM_PCT           = 0.05;
-    g_vwap_rev_ger40.BE_BUFFER_PCT        = 0.02;
     // EURUSD: 0.12% extension threshold (FX moves more precisely, smaller range)
     // S18 explicit tune (was: MAX_EXTENSION_PCT and MAX_HOLD_SEC fell back to
     // class defaults 0.80 / 900s). Class defaults were calibrated for indices
@@ -1171,9 +998,6 @@ static void init_engines(const std::string& cfg_path)
     // indices for consistency -- "exit stalled trades faster" rationale at
     // L446 applies equally to FX. Re-tune from fresh shadow tape once
     // VWAPReversion has been firing live-shadow for 2-4 weeks.
-    g_vwap_rev_eurusd.enabled = false; g_vwap_rev_eurusd.EXTENSION_THRESH_PCT = 0.12; g_vwap_rev_eurusd.COOLDOWN_SEC = 120;  // S37-Z 2026-05-28 (task #16): disabled. CRTP audit on EURUSD_merged.csv (12mo, 2436 trades) PF=0.952 gross=$0 (effectively breakeven, net loser after spread). No clear edge cluster across 14 months. Was live with current params; flip back requires signal-side rework.
-    g_vwap_rev_eurusd.MAX_EXTENSION_PCT   = 0.40;
-    g_vwap_rev_eurusd.MAX_HOLD_SEC        = 600;
     // 2026-05-13 (S37-H-followup): FX moves smaller than indices -- tighter cut.
     //   LOSS_CUT_PCT=0.05 -> EURUSD@1.10: ~5.5pip cold-loss cut.
     //   BE_ARM_PCT  =0.03 -> EURUSD@1.10: ~3.3pip mfe arms ratchet.
@@ -1186,23 +1010,10 @@ static void init_engines(const std::string& cfg_path)
     //   found no cell beats baseline -- best (a=0.06, b=0.02) reached
     //   +0.000761, still 11% short. EURUSD profile matches US500 (tight p95
     //   -0.000010), so same revert call applies. See part-K handoff.
-    g_vwap_rev_eurusd.LOSS_CUT_PCT        = 0.0;
-    g_vwap_rev_eurusd.BE_ARM_PCT          = 0.0;
-    g_vwap_rev_eurusd.BE_BUFFER_PCT       = 0.0;
     // ?? NBM London session engines (07:00-13:30 UTC) ????????????????????????????
     // Covers the gap before NY open. Gold and oil are liquid from London open.
     // Uses same ATR/band logic as NY engines but anchored to London open price.
-    g_nbm_gold_london.SESSION_OPEN_UTC  =  7;  g_nbm_gold_london.SESSION_OPEN_MIN  =  0;
-    g_nbm_gold_london.SESSION_CLOSE_UTC = 13;  g_nbm_gold_london.SESSION_CLOSE_MIN = 30;
-    g_nbm_gold_london.MAX_SPREAD_PCT    = 0.02;  // gold spread tighter than indices
-    g_nbm_gold_london.WARMUP_TICKS      = 120;
-    g_nbm_gold_london.COOLDOWN_SEC      = 600;
 
-    g_nbm_oil_london.SESSION_OPEN_UTC  =  7;  g_nbm_oil_london.SESSION_OPEN_MIN  =  0;
-    g_nbm_oil_london.SESSION_CLOSE_UTC = 13;  g_nbm_oil_london.SESSION_CLOSE_MIN = 30;
-    g_nbm_oil_london.MAX_SPREAD_PCT    = 0.05;
-    g_nbm_oil_london.WARMUP_TICKS      = 120;
-    g_nbm_oil_london.COOLDOWN_SEC      = 600;
 
     // TrendPullbackEngine params -- per-instrument tuning
     //
@@ -1230,34 +1041,16 @@ static void init_engines(const std::string& cfg_path)
     //   Leave at class defaults (2.0x arm, 1.0x dist, 1.0x BE).
     //
     //   BE_ATR_MULT: lock BE at 1x M15 ATR (~5pts). Unchanged -- good.
-    g_trend_pb_gold.PULLBACK_BAND_PCT  = 0.50;  // M15: ?23.5pts at $4700. Old 0.08% (?3.7pts) never fired.
-    g_trend_pb_gold.COOLDOWN_SEC       = 60;    // 60s cooldown -- reduced from 900s (15min was insane, missed 100pt moves)
-    g_trend_pb_gold.MIN_EMA_SEP        = 5.0;   // gold: 5pt EMA9-EMA50 separation = real trend
-    g_trend_pb_gold.H4_GATE_ENABLED    = true;  // gate M15 entries on H4 trend direction
-    g_trend_pb_gold.ATR_SL_MULT        = 1.2;   // SL floor = 1.2x M15 ATR (adaptive, not fixed 8pt)
     // Improvement 1: vol regime sizing
-    g_trend_pb_gold.VOL_SCALE_HIGH_MULT = 1.5;
-    g_trend_pb_gold.VOL_SCALE_LOW_MULT  = 0.7;
-    g_trend_pb_gold.VOL_SCALE_CUT       = 0.60;
-    g_trend_pb_gold.VOL_SCALE_BOOST     = 1.20;
     // Improvement 2: daily loss cap -- stop gold TrendPB after $150 loss in a day
-    g_trend_pb_gold.DAILY_LOSS_CAP      = 150.0;
     // Improvement 4: time-of-day weighting
-    g_trend_pb_gold.TOD_WEIGHT_ENABLED  = true;
     // Improvement 5: CVD gate
-    g_trend_pb_gold.CVD_GATE_ENABLED    = true;
     // Improvement 7: news SL widening
-    g_trend_pb_gold.NEWS_WARN_SECS      = 900;   // 15min before event
-    g_trend_pb_gold.NEWS_SL_MULT        = 1.5;
     // Widen pullback band: 0.15% -> 0.50% (?23pts at 4620)
     // Default 0.15% = ?6.9pts. On a $20 trending move price is 20pts from EMA50
     // and never enters the band -- engine silent on all clean trends.
     // 0.50% allows entry when price is trending away from EMA50 but still directional.
-    g_trend_pb_gold.PULLBACK_BAND_PCT   = 0.50;
     // Improvement 8: pyramid on second pullback
-    g_trend_pb_gold.PYRAMID_ENABLED     = true;
-    g_trend_pb_gold.PYRAMID_SIZE_MULT   = 0.5;
-    g_trend_pb_gold.PYRAMID_MAX_ADDS    = 1;
     // Trail/BE params: class defaults are correct for M15 ATR scale (4-8pts)
     // TRAIL_ARM_ATR_MULT=2.0, TRAIL_DIST_ATR_MULT=1.0, BE_ATR_MULT=1.0 -- no change needed
 
@@ -1272,7 +1065,6 @@ static void init_engines(const std::string& cfg_path)
     // a real bug but not the root cause; v6 ran with H4 gate cold-start fixed and
     // still finds no edge. Tombstone: do not re-enable without fundamentally new logic.
     // See: bt_trades.csv (S44 v6, HEAD aa6624b0 on s44-bt-validation).
-    g_trend_pb_gold.enabled = false;
 
     // HTF swing engines v2 -- per-instrument params, partial TP, weekend close gate.
     // shadow_mode=true always. To go live: validate shadow signals then set false.
@@ -1282,42 +1074,20 @@ static void init_engines(const std::string& cfg_path)
         g_h1_swing_gold.shadow_mode = true;
         // 2026-05-08 USER REQUEST: was true, only microscalper trades on gold.
         g_h1_swing_gold.enabled     = false;
-        g_h4_regime_gold.p           = omega::make_h4_gold_params();
-        g_h4_regime_gold.symbol      = "XAUUSD";
-        g_h4_regime_gold.shadow_mode = true;
-        g_h4_regime_gold.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
         printf("[INIT] H1SwingEngine  XAUUSD: shadow=true adx_min=%.0f sl=%.1fx"
                " tp1=%.1fx trail_arm=%.1fx trail_dist=%.1fx daily_cap=$%.0f\n",
                g_h1_swing_gold.p.adx_min,    g_h1_swing_gold.p.sl_mult,
                g_h1_swing_gold.p.tp1_mult,   g_h1_swing_gold.p.tp2_trail_arm_mult,
                g_h1_swing_gold.p.tp2_trail_dist_mult, g_h1_swing_gold.p.daily_cap);
-        printf("[INIT] H4RegimeEngine XAUUSD: shadow=true channel=%d bars adx=%.0f"
-               " sl=%.1fx tp=%.1fx trail_arm=%.1fx trail_dist=%.1fx daily_cap=$%.0f\n",
-               g_h4_regime_gold.p.channel_bars, g_h4_regime_gold.p.adx_min,
-               g_h4_regime_gold.p.sl_struct_mult, g_h4_regime_gold.p.tp_mult,
-               g_h4_regime_gold.p.trail_arm_mult, g_h4_regime_gold.p.trail_dist_mult,
-               g_h4_regime_gold.p.daily_cap);
 
         // MinimalH4Breakout -- pure Donchian, no filters. Runs PARALLEL to H4Regime.
         // OOS-validated config: D=10 SL=1.5x TP=4.0x. See header for evidence.
-        g_minimal_h4_gold.p           = omega::make_minimal_h4_gold_params();
-        g_minimal_h4_gold.symbol      = "XAUUSD";
-        g_minimal_h4_gold.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
-        g_minimal_h4_gold.enabled     = false;  // S91: disabled — GoldUltimateEngine solo test
-        printf("[INIT] MinimalH4Breakout XAUUSD: shadow=%s donchian=%d sl=%.1fx"
-               " tp=%.1fx risk=$%.0f max_lot=%.3f timeout=%d bars weekend_gate=%s\n",
-               g_minimal_h4_gold.shadow_mode    ? "true" : "false",
-               g_minimal_h4_gold.p.donchian_bars, g_minimal_h4_gold.p.sl_mult,
-               g_minimal_h4_gold.p.tp_mult,       g_minimal_h4_gold.p.risk_dollars,
-               g_minimal_h4_gold.p.max_lot,       g_minimal_h4_gold.p.timeout_h4_bars,
-               g_minimal_h4_gold.p.weekend_close_gate ? "true" : "false");
 
         // C1RetunedPortfolio -- Phase 2 winner from CHOSEN.md, ported from
         // Python sim. Donchian H1 long retuned (period=20, sl=3.0 ATR,
         // tp=5.0 ATR) + Bollinger H2/H4/H6 long, max_concurrent=4, 0.5% risk.
         // Long-only, XAUUSD only, shadow_mode=true. Self-contained engine
         // (does not interfere with other engines or borrow their state).
-        g_c1_retuned.shadow_mode    = true;
         // S-2026-06-11 TOMBSTONED (operator order). Backtest provenance is real
         // (CHOSEN.md, WF pass) but the corpus was 2024-03..2026-04 = gold BULL
         // only. Engine is a LONG-ONLY dip-buyer (BBand lower-band touch H2/H4/H6)
@@ -1326,13 +1096,6 @@ static void init_engines(const std::string& cfg_path)
         // both bollinger_H4 SLs). Same BBand-long-XAU family the 2026-06-01
         // mean-rev audit culled elsewhere. Do NOT re-enable without a bear-tape
         // backtest + trend gate.
-        g_c1_retuned.enabled        = false;
-        g_c1_retuned.max_concurrent = 4;
-        g_c1_retuned.risk_pct       = 0.005;
-        g_c1_retuned.start_equity   = 10000.0;
-        g_c1_retuned.margin_call    = 1000.0;
-        g_c1_retuned.max_lot_cap    = 0.05;   // tighter than backtest while shadow-validating
-        g_c1_retuned.init();
         // S99f 2026-05-18: prime_from_shared_h1_bars call REVERTED.
         // I mistakenly added the method to CellEngine.hpp (omega::cell::CellPortfolio)
         // but g_c1_retuned is type omega::C1RetunedPortfolio (separate class in
@@ -1369,12 +1132,6 @@ static void init_engines(const std::string& cfg_path)
         // Fed through synthesisers/ATRs/closes_ deques BEFORE live ticks
         // arrive so every cell (H1/H2/H4/H6/D1) is READY when the first
         // live H1 bar fires. Empty path -> cold start fallback.
-        g_tsmom.shadow_mode       = kShadowDefault;
-        g_tsmom.enabled           = false;  // S99b: disabled — no session filter, no weekend gate, fires 24/7 into chop
-        g_tsmom.max_concurrent    = 5;
-        g_tsmom.risk_pct          = 0.005;
-        g_tsmom.start_equity      = 10000.0;
-        g_tsmom.margin_call       = 1000.0;
         // 2026-05-04 (post-handoff risk-budget fix): max_lot_cap 0.05 -> 0.02.
         //   Live shadow tape had a Tsmom_H1_long position lose $23.65 on a
         //   4.45pt adverse move (~5x bracket-cohort exposure). Capping at
@@ -1382,11 +1139,6 @@ static void init_engines(const std::string& cfg_path)
         //   preserving Sharpe (risk_pct unchanged at 0.005). g_tsmom_v2
         //   below inherits this cap via `= g_tsmom.max_lot_cap`.
         //   See omega_config.ini [tsmom] section for the parity comment.
-        g_tsmom.max_lot_cap       = 0.02;
-        g_tsmom.block_on_risk_off = true;
-        g_tsmom.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
-        g_tsmom.init();
-        omega::warmup_or_die(g_tsmom, "Tsmom");
         fflush(stdout);
 
         // ?? TsmomPortfolioV2 -- Phase 2a CellEngine-refactor live shadow ??????
@@ -1411,25 +1163,7 @@ static void init_engines(const std::string& cfg_path)
         //
         // All other config matches g_tsmom 1:1 so the V1 vs V2 comparison
         // isolates the refactor only.
-        g_tsmom_v2.shadow_mode             = true;          // ALWAYS shadow (refactor validation)
-        g_tsmom_v2.enabled                 = false;
-        g_tsmom_v2.max_concurrent          = 50;            // headroom; per-cell cap binds
-        g_tsmom_v2.max_positions_per_cell  = 1;             // Phase 2a -- flip to 10 in Phase 2b
-        g_tsmom_v2.risk_pct                = g_tsmom.risk_pct;
-        g_tsmom_v2.start_equity            = g_tsmom.start_equity;
-        g_tsmom_v2.margin_call             = g_tsmom.margin_call;
-        g_tsmom_v2.max_lot_cap             = g_tsmom.max_lot_cap;
-        g_tsmom_v2.usd_per_pt_per_lot      = 100.0;         // XAUUSD baseline
-        g_tsmom_v2.block_on_risk_off       = g_tsmom.block_on_risk_off;
-        g_tsmom_v2.symbol                  = "XAUUSD";
-        g_tsmom_v2.regime_label            = "TSMOM_V2";    // distinguishable in shadow CSV
-        omega::cell::build_default_tsmom_topology(g_tsmom_v2);
-        g_tsmom_v2.warmup_csv_path         = "phase1/signal_discovery/tsmom_warmup_H1.csv";
-        g_tsmom_v2.init();
-        omega::warmup_or_die(g_tsmom_v2, "TsmomV2");
         omega::cell::shadow::tsmom_writer().open("logs/shadow/tsmom_v2.csv");
-        printf("[TSMOM-V2] live shadow ARMED (max_pos_per_cell=%d, ledger=logs/shadow/tsmom_v2.csv)\n",
-               g_tsmom_v2.max_positions_per_cell);
         fflush(stdout);
 
         // ?? DonchianPortfolio -- Tier-2 ship 2026-04-30 ???????????????????????
@@ -1439,17 +1173,6 @@ static void init_engines(const std::string& cfg_path)
         // Combined: 328 trades/yr, +$5,620 = 47% of unshipped post-cut edge.
         // Bidirectional: would have profited during 2026-03-18 BEAR cluster.
         // Reuses tsmom warmup CSV (same H1 stream input).
-        g_donchian.shadow_mode       = kShadowDefault;
-        g_donchian.enabled           = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$186; standalone DonchianPortfolio is a net loser — the real vol-targeted Donchian edge lives INSIDE XauTrendFollow1h (see [[omega-voldonchian-edge]]), not here.
-        g_donchian.max_concurrent    = 7;
-        g_donchian.risk_pct          = 0.005;
-        g_donchian.start_equity      = 10000.0;
-        g_donchian.margin_call       = 1000.0;
-        g_donchian.max_lot_cap       = 0.05;
-        g_donchian.block_on_risk_off = true;
-        g_donchian.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
-        g_donchian.init();
-        omega::warmup_or_die(g_donchian, "Donchian");
         fflush(stdout);
 
         // ── XauTrendFollow4hEngine (S33d 2026-05-11) ──────────────────────────
@@ -1575,24 +1298,9 @@ static void init_engines(const std::string& cfg_path)
         // chop filter. So no extra gate here. Fixed lot, vol-target + pyramid
         // OFF (clean entry/exit edge validation first; pyramiding fails
         // cross-regime per the S45 tombstone). HARD shadow until ledger gate.
-        g_xau_tf_m15.shadow_mode      = true;   // hard shadow (new unproven cell)
-        g_xau_tf_m15.enabled          = false;  // DISABLED S-2026-06-19 (audit FAIL): faithful real-class run on CLEAN 2022-23 gold m15 (XAUUSD_2022_2023.m15.csv) = PF0.75 net-neg, BOTH WF halves negative (H1 PF0.48). Bull-only validation shipped it; gold_regime bear-block does NOT rescue. Edge fails in bear on clean data. Re-validate cross-regime before any re-enable.
         // S-2026-06-17 cold-loss protection. EXTRAPOLATED tighter than H1's 0.5%
         // (m15 = faster TF, smaller bars) -- NOT yet backtested at m15; shadow
         // ledger validates. Conservative first value; retune on its own M30->m15 test.
-        g_xau_tf_m15.LOSS_CUT_PCT = 0.4;
-        g_xau_tf_m15.cell_enable_mask = 0x02;   // Donchian40 cell only
-        g_xau_tf_m15.lot              = 0.01;
-        g_xau_tf_m15.max_spread       = 1.0;
-        g_xau_tf_m15.use_vol_target   = false;  // fixed lot for clean shadow read
-        g_xau_tf_m15.pyramid_max_adds = 0;      // OFF (cross-regime failure, S45)
-        g_xau_tf_m15.warmup_csv_path  = "phase1/signal_discovery/warmup_XAUUSD_M15.csv";
-        g_xau_tf_m15.init();
-        omega::warmup_or_die(g_xau_tf_m15, "XauTrendFollowM15");
-        printf("[OMEGA-INIT] XauTrendFollow M15 initialised: shadow=%d enabled=%d lot=%.2f mask=0x%X"
-               " (Donchian_N40 on M15 bars; IBKR-cost-unlock, shadow)\n",
-               (int)g_xau_tf_m15.shadow_mode, (int)g_xau_tf_m15.enabled, g_xau_tf_m15.lot,
-               (unsigned)g_xau_tf_m15.cell_enable_mask);
         fflush(stdout);
 
         // ── UstecTrendFollow5mEngine (S33d 2026-05-11) ───────────────────────
@@ -1601,10 +1309,6 @@ static void init_engines(const std::string& cfg_path)
         // WR=45%, BE cost $10.1, 170x margin over $0.06).
         // CAVEAT: only 2 months of data. KEEP shadow until 6+ months
         // L2 capture confirm the finding.
-        g_ustec_tf_5m.shadow_mode = true;          // HARD shadow, ignore kShadowDefault
-        g_ustec_tf_5m.enabled     = false;
-        g_ustec_tf_5m.lot         = 0.1;
-        g_ustec_tf_5m.max_spread  = 5.0;
         // 2026-05-14 (part L): S63 VWR-pattern in-flight protection — explicit
         //   re-affirm of the class defaults (USTEC-scaled) for grep visibility.
         //   Mirrors g_vwap_rev_ger40 precedent at engine_init.hpp:632-634
@@ -1628,13 +1332,6 @@ static void init_engines(const std::string& cfg_path)
         //     redesign (vol-regime gate is the leading candidate) OR a
         //     deliberate operator decision to soften the decision rule
         //     (NOT recommended -- see Phase 3 memo §7 item 4).
-        g_ustec_tf_5m.LOSS_CUT_PCT  = 0.08;
-        g_ustec_tf_5m.BE_ARM_PCT    = 0.05;
-        g_ustec_tf_5m.BE_BUFFER_PCT = 0.02;
-        g_ustec_tf_5m.init();
-        printf("[OMEGA-INIT] UstecTrendFollow5mEngine initialised: shadow=%d enabled=%d lot=%.2f cells=2"
-               " (Donchian,Keltner) (HARD SHADOW)\n",
-               (int)g_ustec_tf_5m.shadow_mode, (int)g_ustec_tf_5m.enabled, g_ustec_tf_5m.lot);
         fflush(stdout);
 
         // ── S37-P2 RiskMonitor wiring for g_ustec_tf_5m ──────────────────────
@@ -1665,9 +1362,6 @@ static void init_engines(const std::string& cfg_path)
         // rate evaluator is a no-op but the auto-pin callback is
         // available via g_risk_monitor.trip_engine_to_shadow() and other
         // external trip paths.
-        g_ustec_tf_5m.on_fire_hook = [](int64_t now_s) {
-            g_risk_monitor.on_fire("UstecTrendFollow5m", now_s);
-        };
         // S37-P3: three auto-pin callbacks. Each flips the same engine
         //   instance to shadow on any trip. The umbrella name handles
         //   fire-rate trips; the per-cell names handle close-side WR /
@@ -1677,12 +1371,6 @@ static void init_engines(const std::string& cfg_path)
         //   the three evaluators, the engine pins regardless of which
         //   cell or which check tripped.
         auto pin_ustec_tf_5m = [](const std::string& reason) {
-            if (!g_ustec_tf_5m.shadow_mode) {
-                g_ustec_tf_5m.shadow_mode = true;
-                printf("[RISK-MON] AUTO-PIN UstecTrendFollow5m to SHADOW: %s\n",
-                       reason.c_str());
-                fflush(stdout);
-            }
         };
         g_risk_monitor.register_shadow_pin_cb("UstecTrendFollow5m",          pin_ustec_tf_5m);
         g_risk_monitor.register_shadow_pin_cb("UstecTrendFollow5m_Donchian", pin_ustec_tf_5m);
@@ -1757,17 +1445,9 @@ static void init_engines(const std::string& cfg_path)
         //     IS Sh=6.69 / OOS Sh=7.65 / FUL Sh=7.57. n=48. PnL=78.1%.
         //   Cost stress holds: Sh 6.69 at 20bps. Distinct cell from D1 ensemble
         //   (lb=5 vs lb=20, sl=1.0 vs 2.0, tp=5.0 vs 4.0, hold=20).
-        g_xau_tsmom_fast_d1.p           = omega::make_xau_tsmom_fast_d1_params();
         // 2026-05-27 S57: DISABLED -- regime split MID Sharpe -0.86 (negative
         // in normal-vol regime, 24/59 trades). Operator policy: must pass ALL
         // rigour tests; one regime negative = fail.
-        g_xau_tsmom_fast_d1.shadow_mode = true;
-        g_xau_tsmom_fast_d1.enabled     = false;  // S57: regime MID neg
-        g_xau_tsmom_fast_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauTsmomFastD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_tsmom_fast_d1.shadow_mode, (int)g_xau_tsmom_fast_d1.enabled,
-               g_xau_tsmom_fast_d1.p.lookback_days, g_xau_tsmom_fast_d1.p.sl_atr_mult,
-               g_xau_tsmom_fast_d1.p.tp_atr_mult, g_xau_tsmom_fast_d1.p.hold_max_days);
         fflush(stdout);
 
         // ── XauTurtleD1Engine (2026-05-20) -- 40d Donchian break (long-only)
@@ -1779,14 +1459,6 @@ static void init_engines(const std::string& cfg_path)
         // Sharpe=+0.33 (n=28) vs this comment's claimed FUL Sh=13.01 = ~40x
         // inline inflation (BACKTEST_TRUTH disease). Positive-but-sub-0.5 =
         // marginal noise, not edge. Disabled. Reversible: shadow, lot 0.01.
-        g_xau_turtle_d1.p           = omega::make_xau_turtle_d1_params();
-        g_xau_turtle_d1.shadow_mode = true;
-        g_xau_turtle_d1.enabled     = false;
-        g_xau_turtle_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauTurtleD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_turtle_d1.shadow_mode, (int)g_xau_turtle_d1.enabled,
-               g_xau_turtle_d1.p.lookback_days, g_xau_turtle_d1.p.sl_atr_mult,
-               g_xau_turtle_d1.p.tp_atr_mult, g_xau_turtle_d1.p.hold_max_days);
         fflush(stdout);
 
         // ── Shared price-based regime brain (RegimeState / gold_regime()) ─────
@@ -1811,94 +1483,40 @@ static void init_engines(const std::string& cfg_path)
         //   Resurrection of S50 X2 retired StopRunReversal. Re-tested 2yr daily:
         //     FUL Sh=6.34 at 10bps (IS=7.06 OOS=6.14), n=29, WR=65.5%.
         //     Cost-robust to 50bps (FUL Sh=4.12).
-        g_xau_stop_run_d1.p           = omega::make_xau_stop_run_d1_params();
         // 2026-05-27 S57: DISABLED -- regime split LOW Sharpe -3.68 (clear
         // negative in low-vol regime, 9/28 trades). Operator strict policy.
-        g_xau_stop_run_d1.shadow_mode = true;
-        g_xau_stop_run_d1.enabled     = false;  // S57: regime LOW neg
-        g_xau_stop_run_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauStopRunD1Engine: shadow=%d enabled=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_stop_run_d1.shadow_mode, (int)g_xau_stop_run_d1.enabled,
-               g_xau_stop_run_d1.p.lookback_days, g_xau_stop_run_d1.p.sl_atr_mult,
-               g_xau_stop_run_d1.p.tp_atr_mult, g_xau_stop_run_d1.p.hold_max_days);
         fflush(stdout);
 
         // ── XauPullbackContH4Engine (2026-05-20) -- EMA10>EMA50 pullback long
         //   PullbackCont archetype (S49 X5 retirement). H4 2yr XAU:
         //   FUL Sh=3.96, IS=3.97, OOS=4.06, n=97 (highest density of D-class).
-        g_xau_pullback_cont_h4.p           = omega::make_xau_pullback_cont_h4_params();
-        g_xau_pullback_cont_h4.shadow_mode = true;
-        g_xau_pullback_cont_h4.enabled     = false;  // S37-Z 2026-05-28: disabled. xau_d1_zoo_audit with NET-cost (0.30/0.15 round-trip) shows Sharpe -1.02 / gross -$6.91 over n=102 (robust sample, 2yr H4 corpus). Original GROSS audit (no cost subtraction) inflated to Sharpe +2.69; cost model added to harness this session catches the real bleed. Re-enable requires walk-fwd both halves Sharpe >= 0.5 NET.
-        g_xau_pullback_cont_h4.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauPullbackContH4Engine: shadow=%d enabled=%d ef=%d es=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_pullback_cont_h4.shadow_mode, (int)g_xau_pullback_cont_h4.enabled,
-               g_xau_pullback_cont_h4.p.ema_fast, g_xau_pullback_cont_h4.p.ema_slow,
-               g_xau_pullback_cont_h4.p.sl_atr_mult, g_xau_pullback_cont_h4.p.tp_atr_mult,
-               g_xau_pullback_cont_h4.p.hold_max_h4);
         fflush(stdout);
 
         // ── XauNbmD1Engine (2026-05-20) -- Noise Band Momentum D1
         //   Signal from disabled g_nbm_* family. D1 XAU 2yr:
         //   FUL Sh=8.01, IS=9.60, OOS=7.30, n=25.
-        g_xau_nbm_d1.p           = omega::make_xau_nbm_d1_params();
         // 2026-05-27 S53: DISABLED -- DD/gross=111% (+6.34 / -7.01).
         // Sharpe +1.91 positive but equity buries deeper than recovers.
         // Same failure mode as TF2h/D1 (S52).
-        g_xau_nbm_d1.shadow_mode = true;
-        g_xau_nbm_d1.enabled     = false;  // S53: DD ratio fail
-        g_xau_nbm_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauNbmD1Engine: shadow=%d enabled=%d ema=%d band=%.1fx mom=%.1fx sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_nbm_d1.shadow_mode, (int)g_xau_nbm_d1.enabled,
-               g_xau_nbm_d1.p.ema_period, g_xau_nbm_d1.p.atr_band_mult,
-               g_xau_nbm_d1.p.momentum_atr_mult, g_xau_nbm_d1.p.sl_atr_mult,
-               g_xau_nbm_d1.p.tp_atr_mult, g_xau_nbm_d1.p.hold_max_days);
         fflush(stdout);
 
         // ── XauEmaCrossH4Engine (2026-05-20) -- 20/100 golden cross H4
         //   H4 XAU 2yr: FUL Sh=7.15, IS=4.45, OOS=9.19 (OOS > IS).
         //   Sparse n=20 but cleanly OOS-validated.
-        g_xau_ema_cross_h4.p           = omega::make_xau_ema_cross_h4_params();
         // 2026-05-27 S57: DISABLED -- regime split LOW Sharpe -8.48 (worst
         // catastrophic single-regime failure in entire zoo). Overall +6.38
         // misleading -- engine bleeds heavily when low-vol regime persists.
-        g_xau_ema_cross_h4.shadow_mode = true;
-        g_xau_ema_cross_h4.enabled     = false;  // S57: regime LOW catastrophic
-        g_xau_ema_cross_h4.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauEmaCrossH4Engine: shadow=%d enabled=%d ef=%d es=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_ema_cross_h4.shadow_mode, (int)g_xau_ema_cross_h4.enabled,
-               g_xau_ema_cross_h4.p.ema_fast, g_xau_ema_cross_h4.p.ema_slow,
-               g_xau_ema_cross_h4.p.sl_atr_mult, g_xau_ema_cross_h4.p.tp_atr_mult,
-               g_xau_ema_cross_h4.p.hold_max_h4);
         fflush(stdout);
 
         // ── 2026-05-20 mega-sweep batch (4 new engines) ─────────────────────
-        g_xau_pullback_cont_d1.p           = omega::make_xau_pullback_cont_d1_params();
         // 2026-05-27 S54: DISABLED -- walk-forward OOS sign-flip.
         // IS Sharpe +4.27 / 22 trades / +$6.07 gross
         // OOS Sharpe -1.12 / 5 trades / -$1.19 gross  <-- sign flipped
         // Edge does not survive out-of-sample. PullbackH4 robust as backup.
-        g_xau_pullback_cont_d1.shadow_mode = true;
-        g_xau_pullback_cont_d1.enabled     = false;  // S54: WF OOS fail
-        g_xau_pullback_cont_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauPullbackContD1Engine: shadow=%d ef=%d es=%d pba=%.1f sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_pullback_cont_d1.shadow_mode,
-               g_xau_pullback_cont_d1.p.ema_fast, g_xau_pullback_cont_d1.p.ema_slow,
-               g_xau_pullback_cont_d1.p.pullback_atr,
-               g_xau_pullback_cont_d1.p.sl_atr_mult, g_xau_pullback_cont_d1.p.tp_atr_mult,
-               g_xau_pullback_cont_d1.p.hold_max_days);
 
-        g_xau_bb_scalp_d1.p           = omega::make_xau_bb_scalp_d1_params();
         // 2026-05-27 S53: DISABLED -- DD/gross=240% (+3.68 / -8.85). Worst
         // DD ratio in the entire zoo. Sharpe +1.75 positive but extremely
         // unstable equity curve. Same failure mode as TF2h/D1 (S52).
-        g_xau_bb_scalp_d1.shadow_mode = true;
-        g_xau_bb_scalp_d1.enabled     = false;  // S53: DD ratio fail
-        g_xau_bb_scalp_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauBBScalpD1Engine: shadow=%d bb_p=%d std=%.1f sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_bb_scalp_d1.shadow_mode,
-               g_xau_bb_scalp_d1.p.bb_period, g_xau_bb_scalp_d1.p.bb_std_mult,
-               g_xau_bb_scalp_d1.p.sl_atr_mult, g_xau_bb_scalp_d1.p.tp_atr_mult,
-               g_xau_bb_scalp_d1.p.hold_max_days);
 
         g_xau_swing_break_d1.p           = omega::make_xau_swing_break_d1_params();
         // 2026-05-27 S53: DISABLED -- DD/gross=101% (+4.41 / -4.47). Borderline
@@ -1921,17 +1539,6 @@ static void init_engines(const std::string& cfg_path)
         // L2-forward "PF 3.03" was inflated by inline-reimpl harness — same
         // pattern as GoldScalpPyramid. Class-driven test on full M30 history
         // contradicts the claim. Keep wired but off.
-        g_xau_d55_gated_m30.shadow_mode = true;
-        g_xau_d55_gated_m30.enabled     = false;  // S50: real-class fail
-        g_xau_d55_gated_m30.symbol      = "XAUUSD";
-        g_xau_d55_gated_m30.seed_from_m30_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
-        printf("[OMEGA-INIT] XauDonchian55GatedM30: shadow=%d enabled=%d n=%d sl=%.1fx tp=%.1fR mb=%d "
-               "trail_arm=%.1fR lock=%.0f%%\n",
-               (int)g_xau_d55_gated_m30.shadow_mode, (int)g_xau_d55_gated_m30.enabled,
-               g_xau_d55_gated_m30.p.donchian_period,
-               g_xau_d55_gated_m30.p.sl_atr_mult, g_xau_d55_gated_m30.p.tp_r_mult,
-               g_xau_d55_gated_m30.p.hold_max_bars,
-               g_xau_d55_gated_m30.p.trail_arm_R, g_xau_d55_gated_m30.p.trail_lock_pct*100.0);
 
         // ── XauStraddleM30Engine (S-2026-06-02) ────────────────────────────────
         // OCO breakout straddle (Quantum Dark Gold entry, minus the M5 grid).
@@ -1941,25 +1548,10 @@ static void init_engines(const std::string& cfg_path)
         // The EA's "thousand cuts" was the M5 TF (the grid masked it); M30 + 1R
         // TP removes the bleed -> NO GRID. HARD shadow until the auto-demote gate
         // judges it on >=30 live trades. Reuses the existing 24.7k-bar M30 warmup.
-        g_xau_straddle_m30.shadow_mode = true;
         // S-2026-06-17 CULLED: ledger_analytics (n=8) NEG-EXPECTANCY, net -$123,
         // expR -0.51 -- the bar-replay overstatement (validated PF 1.6-1.9) caught
         // live. Straddle's wrong-leg bleed isn't covered by the right-leg edge at
         // IBKR cost. Disabled; revisit only via engine-faithful tick BT.
-        g_xau_straddle_m30.enabled     = false;
-        g_xau_straddle_m30.symbol      = "XAUUSD";
-        g_xau_straddle_m30.box_n       = 15;
-        g_xau_straddle_m30.stop_atr    = 3.0;
-        g_xau_straddle_m30.tp_r        = 1.0;
-        g_xau_straddle_m30.lot         = 0.01;
-        g_xau_straddle_m30.partial_frac = 0.30;  // S-2026-06-03: bank 30% at +0.7R
-        g_xau_straddle_m30.partial_r    = 0.7;   // (2yr BT: net 7114 PF 1.65 Sh 4.26 vs base 7319/1.58)
-        g_xau_straddle_m30.obi_tilt    = true;   // OBI overlay measured in shadow (1.25/0.75)
-        g_xau_straddle_m30.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M30.csv");
-        printf("[OMEGA-INIT] XauStraddleM30: shadow=%d enabled=%d boxN=%d stop=%.1fx TP=%.1fR lot=%.2f\n",
-               (int)g_xau_straddle_m30.shadow_mode, (int)g_xau_straddle_m30.enabled,
-               g_xau_straddle_m30.box_n, g_xau_straddle_m30.stop_atr,
-               g_xau_straddle_m30.tp_r, g_xau_straddle_m30.lot);
         fflush(stdout);
 
         // ── XauStraddleM15 (S-2026-06-02): M15 sibling, fed M15 bars in tick_gold.
@@ -1967,23 +1559,6 @@ static void init_engines(const std::string& cfg_path)
         // Validated BETTER than M30 (OOS PF 1.72-1.78 Sharpe 6.6-7.3, lower MDD,
         // 3x-cost-robust). Reuses the 49.4k-bar warmup_XAUUSD_M15.csv. HARD shadow,
         // gate-watched -- the live ledger sorts out its overlap with M30.
-        g_xau_straddle_m15.shadow_mode = true;
-        g_xau_straddle_m15.enabled     = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$559; gold fast-TF straddle scalp — the M5->M30 research already proved faster=worse, M30 sibling (+$996) is the only survivor. Gold scalp never works.
-        g_xau_straddle_m15.symbol      = "XAUUSD";
-        g_xau_straddle_m15.engine_name = "XauStraddleM15";   // distinct ledger/gate key
-        g_xau_straddle_m15.box_n       = 15;
-        g_xau_straddle_m15.stop_atr    = 3.0;
-        g_xau_straddle_m15.tp_r        = 1.0;
-        g_xau_straddle_m15.lot         = 0.01;
-        g_xau_straddle_m15.partial_frac = 0.30;  // S-2026-06-03: bank 30% at +0.5R
-        g_xau_straddle_m15.partial_r    = 0.7;
-        g_xau_straddle_m15.hold_max_bars = 96;   // 24h on M15
-        g_xau_straddle_m15.obi_tilt    = true;   // OBI overlay measured in shadow (1.25/0.75)
-        g_xau_straddle_m15.seed_from_csv("phase1/signal_discovery/warmup_XAUUSD_M15.csv");
-        printf("[OMEGA-INIT] XauStraddleM15: shadow=%d enabled=%d boxN=%d stop=%.1fx TP=%.1fR lot=%.2f\n",
-               (int)g_xau_straddle_m15.shadow_mode, (int)g_xau_straddle_m15.enabled,
-               g_xau_straddle_m15.box_n, g_xau_straddle_m15.stop_atr,
-               g_xau_straddle_m15.tp_r, g_xau_straddle_m15.lot);
         fflush(stdout);
 
         // ── OrbBreakoutEngine / ESTX50 (S-2026-06-02) ──────────────────────────
@@ -1994,28 +1569,11 @@ static void init_engines(const std::string& cfg_path)
         // MDD 150. Cost-sensitive (PF 1.35@c1 -> 1.09@c3) -- watch live ESTX50 cost.
         // Short leg dead -> long_only. Distinct from the disabled %-based
         // g_orb_estx50 (OpeningRangeEngine). HARD shadow, registered in the gate.
-        g_orb_estx50_v2.shadow_mode = true;
         // CULL S-2026-06-17 (retest campaign): faithful real-class BT on REAL
         // ESTX50 (=EUSIDXEUR) Dukascopy ticks, 6mo (orb_estx50_revalidate.cpp):
         // PF0.97 NEGATIVE at ZERO cost, both halves neg (0.75/0.98), -251pt @2pt
         // cost, n=109. Prior PF1.28 was the optimistic orb_multi_sweep (m5
         // bar-replay); faithful tick = dead. Reversible: shadow, lot 0.01.
-        g_orb_estx50_v2.enabled     = false;
-        g_orb_estx50_v2.symbol      = "ESTX50";
-        g_orb_estx50_v2.engine_name = "OrbEstx50";
-        g_orb_estx50_v2.or_start_min = 420;   // 07:00 UTC
-        g_orb_estx50_v2.or_end_min   = 480;   // 08:00 UTC
-        g_orb_estx50_v2.flat_min     = 930;   // 15:30 UTC
-        g_orb_estx50_v2.buf_atr      = 0.05;
-        g_orb_estx50_v2.tp_r         = 2.0;
-        g_orb_estx50_v2.long_only    = true;
-        g_orb_estx50_v2.lot          = 0.01;
-        g_orb_estx50_v2.seed_from_csv("phase1/signal_discovery/warmup_ESTX50_M5.csv");
-        printf("[OMEGA-INIT] OrbEstx50: shadow=%d enabled=%d OR=%d-%d flat=%d buf=%.2f TP=%.1fR long_only=%d lot=%.2f\n",
-               (int)g_orb_estx50_v2.shadow_mode, (int)g_orb_estx50_v2.enabled,
-               g_orb_estx50_v2.or_start_min, g_orb_estx50_v2.or_end_min, g_orb_estx50_v2.flat_min,
-               g_orb_estx50_v2.buf_atr, g_orb_estx50_v2.tp_r, (int)g_orb_estx50_v2.long_only,
-               g_orb_estx50_v2.lot);
         fflush(stdout);
 
         // ── INDEX STRADDLE cells (S-2026-06-02) ────────────────────────────────
@@ -2068,18 +1626,6 @@ static void init_engines(const std::string& cfg_path)
         // showed real Sharpe -1.81 / -$30 / 384 trades / SL=185 TP=15. The
         // claimed PF 1.53 was harness-class divergence. Class-driven test on
         // full H4 tape says the engine bleeds. Keep wired but off.
-        g_xau_3bar_mom_h4.shadow_mode = true;
-        g_xau_3bar_mom_h4.enabled     = false;  // S50: real-class fail
-        g_xau_3bar_mom_h4.symbol      = "XAUUSD";
-        omega::seed_h4_engine(g_xau_3bar_mom_h4,
-                              "phase1/signal_discovery/warmup_XAUUSD_H4.csv",
-                              "Xau3BarMomGatedH4");
-        printf("[OMEGA-INIT] Xau3BarMomGatedH4: shadow=%d enabled=%d sl=%.1fx tp=%.1fR mb=%d "
-               "trail_arm=%.1fR lock=%.0f%%\n",
-               (int)g_xau_3bar_mom_h4.shadow_mode, (int)g_xau_3bar_mom_h4.enabled,
-               g_xau_3bar_mom_h4.p.sl_atr_mult, g_xau_3bar_mom_h4.p.tp_r_mult,
-               g_xau_3bar_mom_h4.p.hold_max_bars,
-               g_xau_3bar_mom_h4.p.trail_arm_R, g_xau_3bar_mom_h4.p.trail_lock_pct*100.0);
 
         // ── S136 2026-05-24: Us303BarMomH1Engine ───────────────────────────────
         // US30 H1 three-bar momentum, symmetric long+short.
@@ -2091,16 +1637,6 @@ static void init_engines(const std::string& cfg_path)
         // "NOTHING should be live all shadow". Earlier flip (LIVE) at
         // S37 was operator-approved to capture DJ30 trend gains but now
         // pulled back. ALL engines now shadow_mode=true.
-        g_us30_3bar_mom_h1.shadow_mode = true;
-        g_us30_3bar_mom_h1.enabled     = false;  // S47 2026-05-27: scalp-class purge; pending real-class audit
-        g_us30_3bar_mom_h1.symbol      = "US30";
-        g_us30_3bar_mom_h1.seed_from_h1_csv("phase1/signal_discovery/warmup_US30_H1.csv");
-        printf("[OMEGA-INIT] Us303BarMomH1: shadow=%d enabled=%d sl=%.1fx tp=%.1fR mb=%d "
-               "trail_arm=%.1fR lock=%.0f%%\n",
-               (int)g_us30_3bar_mom_h1.shadow_mode, (int)g_us30_3bar_mom_h1.enabled,
-               g_us30_3bar_mom_h1.p.sl_atr_mult, g_us30_3bar_mom_h1.p.tp_r_mult,
-               g_us30_3bar_mom_h1.p.hold_max_bars,
-               g_us30_3bar_mom_h1.p.trail_arm_R, g_us30_3bar_mom_h1.p.trail_lock_pct*100.0);
 
         // ── S37 2026-05-26: Us30EnsembleEngine ─────────────────────────────────
         // DJ30.F 4-cell ensemble (M15 base; synthesizes M30/H1/H4 internally).
@@ -2110,27 +1646,10 @@ static void init_engines(const std::string& cfg_path)
         // Cells INDEPENDENT (up to 4 concurrent positions per operator choice).
         // Validation: 3-period intersection + 4/4 walk-forward folds positive
         // + engine-sim integrated backtest +$1411 / 1711 trades / WR 50%.
-        g_us30_ensemble.shadow_mode        = true;     // HARD shadow per CLAUDE.md ~1mo trace rule
-        g_us30_ensemble.enabled            = false;
-        g_us30_ensemble.lot                = 0.01;
         // max_spread bumped 5.0 -> 10.0 (2026-05-26): VPS shadow showed
         // [GUARD-BLOCK] engine=Us30Ensemble reason=SPREAD_CAP firing every tick
         // at post-NY-close DJ30 spread ~5.80 pts. 10.0 covers Asia/off-RTH
         // sessions; tighter live-session spreads (~2-4 pts) still pass.
-        g_us30_ensemble.max_spread         = 10.0;
-        g_us30_ensemble.be_trigger_atr     = 0.0;      // OFF (validated bare)
-        g_us30_ensemble.trail_after_be     = false;
-        g_us30_ensemble.trail_atr_mult     = 0.0;
-        g_us30_ensemble.min_atr_floor      = 10.0;     // DJ30 raw points
-        g_us30_ensemble.daily_loss_limit   = 0.0;      // disabled (S35-P4 finding)
-        g_us30_ensemble.max_consec_losses  = 0;        // disabled
-        g_us30_ensemble.init();
-        const int us30_seed = g_us30_ensemble.seed_from_m15_csv(
-            "phase1/signal_discovery/warmup_US30_M15.csv");
-        printf("[OMEGA-INIT] Us30Ensemble: shadow=%d enabled=%d lot=%.2f cells=4 "
-               "(AtrExpH1+InsBrkH1+AtrExpM30+EmaPbH4) seed=%d M15 bars trail=OFF\n",
-               (int)g_us30_ensemble.shadow_mode, (int)g_us30_ensemble.enabled,
-               g_us30_ensemble.lot, us30_seed);
 
         // ── S136 2026-05-24: NasBbRevLongH1Engine ──────────────────────────────
         // NAS100 H1 Bollinger-band reversion LONG (close<lower BB + RSI cross<30).
@@ -2151,23 +1670,13 @@ static void init_engines(const std::string& cfg_path)
                g_nas_bbrev_long_h1.p.trail_be_arm_R, g_nas_bbrev_long_h1.p.trail_switch_R,
                g_nas_bbrev_long_h1.p.trail_atr_mult);
 
-        g_ger40_turtle_h4.p           = omega::make_ger40_turtle_h4_params();
-        g_ger40_turtle_h4.shadow_mode = true;
         // TOMBSTONED 2026-06-11 (operator winners-only cull). Live shadow ledger
         // (May 11-Jun 11): n=7, 0 wins, PF=0.00, net -$206. Turtle breakout whipsaws
         // in the GER40 chop regime; the validated GER40 edge is Keltner (g_ger40_kelt).
         // Also in the n>=30 auto-demote gate list (L7132) but n<30 so it never fired.
-        g_ger40_turtle_h4.enabled     = false;  // was: true
-        g_ger40_turtle_h4.symbol      = "GER40";
         // Warm-seed GER40 H4 history (~1600 bars / 11 months) so 20-bar
         // Donchian + 14-bar ATR are populated. Without seed, cold-warm
         // requires 80+ hours of live GER40 ticks before first signal.
-        g_ger40_turtle_h4.seed_from_h4_csv("phase1/signal_discovery/warmup_GER40_H4.csv");
-        printf("[OMEGA-INIT] Ger40TurtleH4Engine: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_ger40_turtle_h4.shadow_mode,
-               g_ger40_turtle_h4.p.lookback_bars,
-               g_ger40_turtle_h4.p.sl_atr_mult, g_ger40_turtle_h4.p.tp_atr_mult,
-               g_ger40_turtle_h4.p.hold_max_h4);
 
         // ── NasTurtleD1Engine (2026-06-14) ──────────────────────────────────
         // Seykota/Donchian D1 archetype on NAS100, long-only, SHADOW. Clone of
@@ -2221,16 +1730,6 @@ static void init_engines(const std::string& cfg_path)
         // feed_tick() (wired in tick_indices.hpp alongside g_ger40_turtle_h4 --
         // there is no g_bars_ger40). Warm-seed = the bundled GER40 H1 CSV
         // (5903 bars, >> the 201 the LB200 gate needs). HARD shadow.
-        g_ger40_kelt.shadow_mode = true;
-        g_ger40_kelt.enabled     = false;
-        g_ger40_kelt.lot         = 0.01;
-        g_ger40_kelt.max_spread  = 5.0;   // GER40 points
-        g_ger40_kelt.warmup_csv_path = "phase1/signal_discovery/warmup_GER40_H1.csv";
-        g_ger40_kelt.init();
-        omega::warmup_or_die(g_ger40_kelt, "Ger40KeltnerH1");
-        printf("[OMEGA-INIT] Ger40KeltnerH1Engine: shadow=%d enabled=%d lot=%.2f LB=%d emaP=%d k=%.1f sl=%.1f\n",
-               (int)g_ger40_kelt.shadow_mode, (int)g_ger40_kelt.enabled, g_ger40_kelt.lot,
-               g_ger40_kelt.kBullLB, g_ger40_kelt.kEmaP, g_ger40_kelt.kChanK, g_ger40_kelt.kSlAtr);
         fflush(stdout);
 
         // S-2026-06-03: GoldVolBreakoutM30Engine -- XAU M30 long-only vol-breakout
@@ -2275,24 +1774,9 @@ static void init_engines(const std::string& cfg_path)
         g_xau_sess_nypm.init();
         omega::warmup_or_die(g_xau_sess_nypm, "XauSessNYpm");
 
-        g_xau_sess_overnight.symbol           = "XAUUSD";
-        g_xau_sess_overnight.label            = "XauSessOvernight_h23L5_EMA200_S42";
-        g_xau_sess_overnight.entry_hour       = 23;
-        g_xau_sess_overnight.hold_hours       = 5;
-        g_xau_sess_overnight.use_trend_filter = true;
-        g_xau_sess_overnight.ema_period       = 200;
-        g_xau_sess_overnight.sl_atr           = 0.0;
-        g_xau_sess_overnight.shadow_mode      = true;
-        g_xau_sess_overnight.enabled          = false;
-        g_xau_sess_overnight.lot              = 0.01;
-        g_xau_sess_overnight.max_spread       = 2.0;
-        g_xau_sess_overnight.warmup_csv_path  = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
-        g_xau_sess_overnight.init();
-        omega::warmup_or_die(g_xau_sess_overnight, "XauSessOvernight");
-        printf("[OMEGA-INIT] SessionMomentumEngine x2: NYpm(h%d L%d) o/n(h%d L%d) "
+        printf("[OMEGA-INIT] SessionMomentumEngine: NYpm(h%d L%d) "
                "shadow=%d enabled=%d lot=%.2f emaP=%d filter=%d\n",
                g_xau_sess_nypm.entry_hour, g_xau_sess_nypm.hold_hours,
-               g_xau_sess_overnight.entry_hour, g_xau_sess_overnight.hold_hours,
                (int)g_xau_sess_nypm.shadow_mode, (int)g_xau_sess_nypm.enabled,
                g_xau_sess_nypm.lot, g_xau_sess_nypm.ema_period,
                (int)g_xau_sess_nypm.use_trend_filter);
@@ -2317,27 +1801,7 @@ static void init_engines(const std::string& cfg_path)
         //     best is flat noise (PF1.01 +$3), NO improvable plateau, every wider config worse.
         //   The identical-param sibling failing across a bear ⇒ EURUSD PF1.31 = single-regime
         //   luck, not robust edge (same tell as PeachyOrb's 2022 slice). Cannot improve ⇒ culled.
-        g_eurusd_turtle_h4.p               = omega::make_eurusd_turtle_h4_params();
-        g_eurusd_turtle_h4.shadow_mode     = true;
-        g_eurusd_turtle_h4.enabled         = false;  // CULLED 2026-06-16 (see above)
-        g_eurusd_turtle_h4.symbol          = "EURUSD";
-        g_eurusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_EURUSD_H1.csv";
-        omega::warmup_or_die(g_eurusd_turtle_h4, "EurusdTurtleH4");
-        printf("[OMEGA-INIT] EurusdTurtleH4: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d long_only=%d\n",
-               (int)g_eurusd_turtle_h4.shadow_mode, g_eurusd_turtle_h4.p.lookback_bars,
-               g_eurusd_turtle_h4.p.sl_atr_mult, g_eurusd_turtle_h4.p.tp_atr_mult,
-               g_eurusd_turtle_h4.p.hold_max_h4, (int)g_eurusd_turtle_h4.p.long_only);
 
-        g_gbpusd_turtle_h4.p               = omega::make_gbpusd_turtle_h4_params();
-        g_gbpusd_turtle_h4.shadow_mode     = true;
-        g_gbpusd_turtle_h4.enabled         = false;  // CULLED 2026-06-16: PF0.88 cross-regime, no improvable config (see EurusdTurtleH4 tombstone above)
-        g_gbpusd_turtle_h4.symbol          = "GBPUSD";
-        g_gbpusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
-        omega::warmup_or_die(g_gbpusd_turtle_h4, "GbpusdTurtleH4");
-        printf("[OMEGA-INIT] GbpusdTurtleH4: shadow=%d lb=%d sl=%.1fx tp=%.1fx hold=%d long_only=%d\n",
-               (int)g_gbpusd_turtle_h4.shadow_mode, g_gbpusd_turtle_h4.p.lookback_bars,
-               g_gbpusd_turtle_h4.p.sl_atr_mult, g_gbpusd_turtle_h4.p.tp_atr_mult,
-               g_gbpusd_turtle_h4.p.hold_max_h4, (int)g_gbpusd_turtle_h4.p.long_only);
 
         // 2026-05-25 AtrMeanRevGrid -- forex mean-reversion grid (CRTP).
         // Strategy: ATR-normalized entry + SL, RSI confirmation, vol-adaptive
@@ -2395,11 +1859,7 @@ static void init_engines(const std::string& cfg_path)
             // (H1 0.72/H2 0.77), net-. No edge -> disabled. GBPUSD disabled by
             // sibling-inference (same dead mean-rev grid family; its own bar data
             // not yet assembled for a direct run). Reversible: shadow, lot 0.01.
-            g_amr_eurusd.enabled     = false;
-            amr_boot(g_amr_eurusd, "eurusd", warmup_eur_h4);
 
-            g_amr_gbpusd.enabled     = false;
-            amr_boot(g_amr_gbpusd, "gbpusd", warmup_gbp);
 
             // S37g 2026-05-26: FxEnsembleEngine -- 5 cross-family validated cells.
             // Each instance is a different pair; enable_cell() flips on the
@@ -2474,16 +1934,8 @@ static void init_engines(const std::string& cfg_path)
             // above (IS PF 1.80 / OOS PF 1.68) used research-fed ticks
             // outside the live feed loop and is still load-bearing once
             // the dispatch lands.
-            g_amr_eurgbp.enabled     = false;
-            amr_boot(g_amr_eurgbp, "eurgbp", warmup_eurgbp);
 
-            g_amr_audusd.enabled     = false; // marginal PF 1.34; awaiting deep tune
-            g_amr_audusd.shadow_mode = true;
-            g_amr_audusd.on_close_cb = write_shadow_csv;
 
-            g_amr_nzdusd.enabled     = false; // marginal PF 1.31; awaiting deep tune
-            g_amr_nzdusd.shadow_mode = true;
-            g_amr_nzdusd.on_close_cb = write_shadow_csv;
 
             std::printf("[OMEGA-INIT] AtrMeanRevGrid FX: EURUSD(M15,X=14)+GBPUSD(H1,X=10) enabled (shadow), AUDUSD+NZDUSD parked\n");
 
@@ -2566,17 +2018,10 @@ static void init_engines(const std::string& cfg_path)
                     //   break/illiquid fills so the position holds through the daily break.
                     //   Risk-gate OFF (gold often does BEST risk-off). usd_per_pt=100 (XAU).
                     {
-                        g_gold_seasonal.shadow_mode = true;
                         // S-2026-06-17 CULLED: ledger_analytics ranked flag --
                         // n=17 NEG-EXPECTANCY + COST-FRAGILE (58% of gross eaten by
                         // cost, expR -0.00). Calendar churn with no edge net of
                         // spread; flagged repeatedly in memory. Disabled.
-                        g_gold_seasonal.enabled     = false;
-                        g_gold_seasonal.lot         = 0.01;
-                        g_gold_seasonal.usd_per_pt  = 100.0;
-                        g_gold_seasonal.entry_mask  = (1 << 1) | (1 << 2);   // Mon + Tue
-                        g_gold_seasonal.gate_risk_off = false;
-                        g_gold_seasonal.seed_from_d1_csv("phase1/signal_discovery/warmup_XAUUSD_D1.csv");
                         std::printf("[OMEGA-INIT] GoldSeasonal (XAUUSD Mon+Tue long) -- shadow, warm-seeded\n");
                     }
 
@@ -2587,15 +2032,6 @@ static void init_engines(const std::string& cfg_path)
                     //   the naive below-50ma dip-buy dies (falling-knife). Uncorrelated with
                     //   the trend/breakout book + GoldSeasonal. Long-only. usd_per_pt=100.
                     {
-                        g_gold_oversold.shadow_mode   = true;
-                        g_gold_oversold.enabled       = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$457; gold oversold mean-rev = net loser on full-tick book.
-                        g_gold_oversold.lot           = 0.01;
-                        g_gold_oversold.usd_per_pt    = 100.0;
-                        g_gold_oversold.entry_rsi     = 30.0;
-                        g_gold_oversold.exit_rsi      = 50.0;
-                        g_gold_oversold.max_hold_days = 20;
-                        g_gold_oversold.stop_atr_mult = 2.5;
-                        g_gold_oversold.seed_from_d1_csv("phase1/signal_discovery/warmup_XAUUSD_D1.csv");
                         std::printf("[OMEGA-INIT] GoldOversoldBounce (XAUUSD RSI<30 long) -- shadow, warm-seeded\n");
                     }
 
@@ -2625,14 +2061,8 @@ static void init_engines(const std::string& cfg_path)
             const char* warmup_nas100 = "phase1/signal_discovery/warmup_NAS100_H1.csv";
             const char* warmup_ger40  = "phase1/signal_discovery/warmup_GER40_H1.csv";
 
-            g_amr_us500.enabled      = false;  // S47: AMR mean-rev purge
-            amr_boot(g_amr_us500, "us500", warmup_us500);
 
-            g_amr_nas100.enabled     = false;  // S47: M15 micro purge
-            amr_boot(g_amr_nas100, "nas100", warmup_nas100);
 
-            g_amr_ger40.enabled      = false;  // S47: M15 micro purge
-            amr_boot(g_amr_ger40, "ger40", warmup_ger40);
 
             std::printf("[OMEGA-INIT] AtrMeanRevGrid INDEX: US500(H1,X=8)+NAS100(M15,X=14)+GER40(M15,X=14) enabled (shadow)\n");
         }
@@ -2645,100 +2075,37 @@ static void init_engines(const std::string& cfg_path)
         // are committed. Until then warmup_or_die() skips them (engine
         // disabled = explicit opt-out, not rule violation).
 
-        g_audusd_turtle_h4.p           = omega::make_audusd_turtle_h4_params();
-        g_audusd_turtle_h4.shadow_mode = true;
-        g_audusd_turtle_h4.enabled     = false;  // awaiting warmup CSV
-        g_audusd_turtle_h4.symbol      = "AUDUSD";
-        g_audusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_AUDUSD_H1.csv";
-        omega::warmup_or_die(g_audusd_turtle_h4, "AudusdTurtleH4");
 
-        g_nzdusd_turtle_h4.p           = omega::make_nzdusd_turtle_h4_params();
-        g_nzdusd_turtle_h4.shadow_mode = true;
-        g_nzdusd_turtle_h4.enabled     = false;  // awaiting warmup CSV
-        g_nzdusd_turtle_h4.symbol      = "NZDUSD";
-        g_nzdusd_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_NZDUSD_H1.csv";
-        omega::warmup_or_die(g_nzdusd_turtle_h4, "NzdusdTurtleH4");
 
-        g_usdjpy_turtle_h4.p           = omega::make_usdjpy_turtle_h4_params();
-        g_usdjpy_turtle_h4.shadow_mode = true;
-        g_usdjpy_turtle_h4.enabled     = false;  // awaiting warmup CSV
-        g_usdjpy_turtle_h4.symbol      = "USDJPY";
-        g_usdjpy_turtle_h4.warmup_csv_path = "phase1/signal_discovery/warmup_USDJPY_H1.csv";
-        omega::warmup_or_die(g_usdjpy_turtle_h4, "UsdjpyTurtleH4");
         printf("[OMEGA-INIT] FxTurtleH4 cohort: EUR+GBP active; AUD/NZD/JPY awaiting warmup CSVs\n");
 
         // 2026-05-20 mega_sweep2 candle batch (3 D1 patterns)
         // CULL S-2026-06-17 (retest campaign): xau_d1_zoo_audit real-class
         // Sharpe=+0.18 (n=46) vs claimed 3.00 = 16.9x inline inflation.
         // Marginal no-edge (<0.5). Disabled. Reversible: shadow, lot 0.01.
-        g_xau_doji_rej_d1.p           = omega::make_xau_doji_rej_d1_params();
-        g_xau_doji_rej_d1.shadow_mode = true;
-        g_xau_doji_rej_d1.enabled     = false;
-        g_xau_doji_rej_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauDojiRejD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d doji_body=%.2f\n",
-               (int)g_xau_doji_rej_d1.shadow_mode,
-               g_xau_doji_rej_d1.p.sl_atr_mult, g_xau_doji_rej_d1.p.tp_atr_mult,
-               g_xau_doji_rej_d1.p.hold_max_days, g_xau_doji_rej_d1.p.doji_body_pct);
 
         // CULL S-2026-06-17 (retest campaign): xau_d1_zoo_audit real-class
         // Sharpe=+0.30 (n=34) vs claimed 3.00 = 9.9x inline inflation.
         // Marginal no-edge (<0.5). Disabled. Reversible: shadow, lot 0.01.
-        g_xau_outside_bar_d1.p           = omega::make_xau_outside_bar_d1_params();
-        g_xau_outside_bar_d1.shadow_mode = true;
-        g_xau_outside_bar_d1.enabled     = false;
-        g_xau_outside_bar_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauOutsideBarD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_outside_bar_d1.shadow_mode,
-               g_xau_outside_bar_d1.p.sl_atr_mult, g_xau_outside_bar_d1.p.tp_atr_mult,
-               g_xau_outside_bar_d1.p.hold_max_days);
 
-        g_xau_inside_bar_d1.p           = omega::make_xau_inside_bar_d1_params();
         // 2026-05-27 S57: DISABLED -- regime split HIGH Sharpe -0.31 (slight
         // negative in high-vol regime, 12/51 trades). Operator strict policy.
-        g_xau_inside_bar_d1.shadow_mode = true;
-        g_xau_inside_bar_d1.enabled     = false;  // S57: regime HIGH neg
-        g_xau_inside_bar_d1.symbol      = "XAUUSD";
-        printf("[OMEGA-INIT] XauInsideBarD1Engine: shadow=%d sl=%.1fx tp=%.1fx hold=%d\n",
-               (int)g_xau_inside_bar_d1.shadow_mode,
-               g_xau_inside_bar_d1.p.sl_atr_mult, g_xau_inside_bar_d1.p.tp_atr_mult,
-               g_xau_inside_bar_d1.p.hold_max_days);
         fflush(stdout);
 
         // TrendLineBreakEngine -- validated hull-break (2026-06-09). SHADOW only.
-        g_trendline_break.symbol      = "XAUUSD";
-        g_trendline_break.engine_name = "TrendLineBreak";
-        g_trendline_break.shadow_mode = true;
-        g_trendline_break.enabled     = false;   // disabled: PF1.24 below keep-bar; FX (GBP/JPY) carry the edge
-        printf("[OMEGA-INIT] TrendLineBreakEngine: shadow=%d win=%d min_touch=%d\n",
-               (int)g_trendline_break.shadow_mode, g_trendline_break.p.window,
-               g_trendline_break.p.min_touch);
         fflush(stdout);
 
         // TrendLineBreakEngine FX -- GBPUSD PF1.53 + USDJPY PF1.37 (the real edge).
         //   SHADOW (sim-only): enabled=true so signals fire + ledger, but shadow_mode
         //   means no broker orders. H4-bar driven from tick_fx.hpp dispatch; on_tick
         //   runs the intrabar safety-line stop. Seeded from H4 warmup CSVs below.
-        g_trendline_break_gbp.symbol      = "GBPUSD";
-        g_trendline_break_gbp.engine_name = "TrendLineBreakGBP";
-        g_trendline_break_gbp.shadow_mode = true;
-        g_trendline_break_gbp.enabled     = false;   // SHADOW (sim-only)
-        printf("[OMEGA-INIT] TrendLineBreakGBP: shadow=%d win=%d min_touch=%d\n",
-               (int)g_trendline_break_gbp.shadow_mode, g_trendline_break_gbp.p.window,
-               g_trendline_break_gbp.p.min_touch);
 
-        g_trendline_break_jpy.symbol      = "USDJPY";
-        g_trendline_break_jpy.engine_name = "TrendLineBreakJPY";
-        g_trendline_break_jpy.shadow_mode = true;
         // DISABLED 2026-06-11 (operator: kill the open USDJPY trade, not viable).
         // Was the only open USDJPY position on the live dashboard (stale scratch,
         // SL-only/no-TP runner). Disabling stops new USDJPY trendline entries and
         // drops the open virtual position on next restart (shadow = no broker
         // order to close). Sister TrendLineBreakGBP left enabled (operator scoped
         // this to USDJPY); revisit if the GBP scratch is also unwanted.
-        g_trendline_break_jpy.enabled     = false;  // was: true (SHADOW sim-only)
-        printf("[OMEGA-INIT] TrendLineBreakJPY: shadow=%d win=%d min_touch=%d\n",
-               (int)g_trendline_break_jpy.shadow_mode, g_trendline_break_jpy.p.window,
-               g_trendline_break_jpy.p.min_touch);
         fflush(stdout);
 
         // ── GoldD1TrendState (2026-05-21) -- regime gate for shorts/longs.
@@ -2759,27 +2126,13 @@ static void init_engines(const std::string& cfg_path)
         // 100 daily bars from cold start).
         {
             const std::string seed_csv = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
-            omega::seed_h4_engine(g_xau_tsmom_fast_d1,    seed_csv, "XauTsmomFastD1");
-            omega::seed_h4_engine(g_xau_turtle_d1,        seed_csv, "XauTurtleD1");
-            omega::seed_h4_engine(g_xau_stop_run_d1,      seed_csv, "XauStopRunD1");
-            omega::seed_h4_engine(g_xau_pullback_cont_h4, seed_csv, "XauPullbackContH4");
-            omega::seed_h4_engine(g_xau_nbm_d1,           seed_csv, "XauNbmD1");
-            omega::seed_h4_engine(g_xau_ema_cross_h4,     seed_csv, "XauEmaCrossH4");
-            omega::seed_h4_engine(g_xau_pullback_cont_d1, seed_csv, "XauPullbackContD1");
-            omega::seed_h4_engine(g_xau_bb_scalp_d1,      seed_csv, "XauBBScalpD1");
             omega::seed_h4_engine(g_xau_swing_break_d1,   seed_csv, "XauSwingBreakD1");
-            omega::seed_h4_engine(g_xau_doji_rej_d1,      seed_csv, "XauDojiRejD1");
-            omega::seed_h4_engine(g_xau_outside_bar_d1,   seed_csv, "XauOutsideBarD1");
-            omega::seed_h4_engine(g_xau_inside_bar_d1,    seed_csv, "XauInsideBarD1");
-            omega::seed_h4_engine(g_trendline_break,      seed_csv, "TrendLineBreak");
         }
         fflush(stdout);
 
         // ── TrendLineBreak FX warm-seed (GBPUSD + USDJPY H4 CSVs) ───────────
         //   Separate CSVs per symbol (hull geometry uses an internal bar counter;
         //   seeding fires no entries while enabled is toggled off by the helper).
-        omega::seed_h4_engine(g_trendline_break_gbp, "phase1/signal_discovery/warmup_GBPUSD_H4.csv", "TrendLineBreakGBP");
-        omega::seed_h4_engine(g_trendline_break_jpy, "phase1/signal_discovery/warmup_USDJPY_H4.csv", "TrendLineBreakJPY");
         fflush(stdout);
 
         // ── XauTrendFollow2hEngine (S33k 2026-05-11) ─────────────────────────
@@ -2960,28 +2313,6 @@ static void init_engines(const std::string& cfg_path)
         //
         // Shadow mode for initial live validation. User instruction:
         // "disable ALL the other gold engines, we only test this new one"
-        g_gold_ultimate_engine.shadow_mode       = true;
-        g_gold_ultimate_engine.enabled           = false;  // S99b: disabled — off-hours edge-hour design (01/05/23 UTC) bleeds in practice
-        g_gold_ultimate_engine.lot               = 0.01;
-        g_gold_ultimate_engine.max_spread        = 1.0;
-        g_gold_ultimate_engine.atr_entry_floor   = 2.5;
-        g_gold_ultimate_engine.sl_atr_mult       = 2.0;
-        g_gold_ultimate_engine.tp_atr_mult       = 5.0;
-        g_gold_ultimate_engine.trail_trigger_atr  = 3.0;
-        g_gold_ultimate_engine.trail_dist_atr     = 2.0;
-        g_gold_ultimate_engine.drift_min         = 2.0;
-        g_gold_ultimate_engine.init();
-        printf("[OMEGA-INIT] GoldUltimateEngine initialised: shadow=%d enabled=%d lot=%.2f"
-               " sl=%.1f*ATR tp=%.1f*ATR trail=%.1f/%.1f*ATR atr_floor=%.1f"
-               " edge_hours=01,05,23 (S91 v12 OOS-validated)\n",
-               (int)g_gold_ultimate_engine.shadow_mode,
-               (int)g_gold_ultimate_engine.enabled,
-               g_gold_ultimate_engine.lot,
-               g_gold_ultimate_engine.sl_atr_mult,
-               g_gold_ultimate_engine.tp_atr_mult,
-               g_gold_ultimate_engine.trail_trigger_atr,
-               g_gold_ultimate_engine.trail_dist_atr,
-               g_gold_ultimate_engine.atr_entry_floor);
         fflush(stdout);
 
         // ── UstecTrendFollowHtfEngine (S35-P6 + S36-P1a + S36-P1b 2026-05-12) ─
@@ -3026,7 +2357,6 @@ static void init_engines(const std::string& cfg_path)
         //
         // M15 dispatch wired in tick_indices.hpp on 2026-05-12 under S36-P4
         // (commit b6e9495). Engine receives M15 bars and per-tick management.
-        g_ustec_tf_htf.shadow_mode      = true;   // HARD shadow until live-validated
         // S37 audit (2026-05-27): RE-ENABLED in HARD shadow. The S94 disable
         // citing replacement by Nas100ShortEngine was load-bearing on a ghost
         // -- the class header existed (include/Nas100ShortEngine.hpp) but
@@ -3037,35 +2367,6 @@ static void init_engines(const std::string& cfg_path)
         // observed and promoted on real evidence rather than on an
         // unimplemented "replacement". Promote to enabled=true && shadow_mode=false
         // only after ≥30 shadow trades w/ WR ≥35% net positive after costs.
-        g_ustec_tf_htf.enabled          = false;   // S37 2026-05-27: re-enabled HARD shadow (ghost replacement reversed)
-        g_ustec_tf_htf.lot              = 0.1;
-        g_ustec_tf_htf.max_spread       = 5.0;
-        g_ustec_tf_htf.be_trigger_atr   = 1.0;    // S35-P6 TUNED (mirrors XauThreeBar30m)
-        g_ustec_tf_htf.be_cost_buffer_pts = 0.50;
-        g_ustec_tf_htf.trail_after_be   = true;   // S35-P6 TUNED
-        g_ustec_tf_htf.trail_atr_mult   = 0.75;
-        g_ustec_tf_htf.min_atr_floor    = 5.0;    // M15 ATR floor in raw points
-        g_ustec_tf_htf.max_atr_ceil     = 0.0;    // disabled
-        g_ustec_tf_htf.daily_loss_limit = 0.0;    // disabled (matches XAU TUNED)
-        g_ustec_tf_htf.max_consec_losses = 0;     // disabled
-        g_ustec_tf_htf.max_bars_held    = 0;      // disabled
-        g_ustec_tf_htf.block_hour_start = -1;     // disabled
-        g_ustec_tf_htf.block_hour_end   = -1;
-        g_ustec_tf_htf.init();
-        printf("[OMEGA-INIT] UstecTrendFollowHtfEngine initialised: shadow=%d enabled=%d lot=%.2f"
-               " cells=1 (Stoch4h-only)"
-               " be_trig=%.2f*ATR trail=%.2f*ATR atr_floor=%.2f"
-               " (S36-P1a + S36-P4 + S36-P1b + S36-P5; M15 dispatch wired in tick_indices.hpp 2026-05-12;"
-               " S36-P2 2024 NSXUSD OOS holdout: 2-cell -$2,677 / Stoch4h-only -$270 (AtrMom1h dropped);"
-               " S36-P3 SPX portability: Stoch4h PF 1.37 on both NSXUSD+SPXUSD in-sample, AtrMom1h"
-               " 7x weaker edge on SPX confirming USTEC-microstructure curve-fit;"
-               " Stoch4h in-sample 2025-2026 NSXUSD +$6,666 PF 1.37 / SPXUSD +$73 PF 1.37)\n",
-               (int)g_ustec_tf_htf.shadow_mode,
-               (int)g_ustec_tf_htf.enabled,
-               g_ustec_tf_htf.lot,
-               g_ustec_tf_htf.be_trigger_atr,
-               g_ustec_tf_htf.trail_atr_mult,
-               g_ustec_tf_htf.min_atr_floor);
         fflush(stdout);
 
         // ?? EmaPullbackPortfolio -- Tier-3 ship 2026-04-30 ?????????????????????
@@ -3080,16 +2381,6 @@ static void init_engines(const std::string& cfg_path)
         //   v2 combined: IS PF=1.60, OOS PF=1.54, 91 OOS trades, WR=39.6%.
         //   S63 already active (LC=0.10, ARM=0.40, BUF=0.05 per S82 sweep).
         //   cell_enable_mask = bits 2,3 = 0x0C (H4+H6 only, disable H1+H2)
-        g_ema_pullback.shadow_mode       = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
-        g_ema_pullback.enabled           = false;  // TOMBSTONED 2026-06-15 (operator cull): 6mo shadow-book BT net -$275; standalone EpbPortfolio is a net loser — the winning pullback edge lives as a CELL inside XauTrendFollow1h (+$6,202), not this standalone.
-        g_ema_pullback.cell_enable_mask  = 0x0C;  // S96: H4+H6 only
-        g_ema_pullback.max_concurrent    = 4;
-        g_ema_pullback.risk_pct          = 0.005;
-        g_ema_pullback.start_equity      = 10000.0;
-        g_ema_pullback.margin_call       = 1000.0;
-        g_ema_pullback.max_lot_cap       = 0.05;
-        g_ema_pullback.block_on_risk_off = true;
-        g_ema_pullback.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         // S63 in-flight protection -- state A (LC + BE_RATCHET, evidence-backed).
         //
         // History:
@@ -3170,11 +2461,6 @@ static void init_engines(const std::string& cfg_path)
         // operational peak may shift with regime/tape changes. Engine code
         // (on_bar + on_tick S63 management blocks) is single-sourced --
         // no code change to tune; just edit these three lines.
-        g_ema_pullback.LOSS_CUT_PCT      = 0.10;  // state A: LC + BE active
-        g_ema_pullback.BE_ARM_PCT        = 0.40;
-        g_ema_pullback.BE_BUFFER_PCT     = 0.05;
-        g_ema_pullback.init();
-        omega::warmup_or_die(g_ema_pullback, "EmaPullback");
         fflush(stdout);
 
         // ?? TrendRiderPortfolio -- Tier-4 ship 2026-04-30 ?????????????????????
@@ -3246,57 +2532,12 @@ static void init_engines(const std::string& cfg_path)
     // SL=1.0x TP=4.0x): n=184, PF=1.54, +$637, WR=28.3%. Initialised outside
     // the gold-conditional block above because it has no dependency on
     // g_bars_gold or any gold infrastructure.
-    g_minimal_h4_us30.p           = omega::make_minimal_h4_us30_params();
-    g_minimal_h4_us30.symbol      = "DJ30.F";
-    g_minimal_h4_us30.shadow_mode = true;
-    g_minimal_h4_us30.enabled     = false;
-    g_minimal_h4_us30.p.weekend_close_gate = false;  // S-2026-06-15a: H4 holds over weekend (operator dir); global weekend-flat exempts H4+ engines by name
-    printf("[INIT] MinimalH4US30Breakout DJ30.F: shadow=true donchian=%d sl=%.1fx"
-           " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
-           " atr_period=%d weekend_gate=%s\n",
-           g_minimal_h4_us30.p.donchian_bars,    g_minimal_h4_us30.p.sl_mult,
-           g_minimal_h4_us30.p.tp_mult,          g_minimal_h4_us30.p.risk_dollars,
-           g_minimal_h4_us30.p.max_lot,          g_minimal_h4_us30.p.dollars_per_point,
-           g_minimal_h4_us30.p.timeout_h4_bars,  g_minimal_h4_us30.p.atr_period,
-           g_minimal_h4_us30.p.weekend_close_gate ? "true" : "false");
     fflush(stdout);
 
-    // Warm restart for MinimalH4US30Breakout (S26 2026-04-25):
-    // load bars_us30_h4.dat if present and <=8h old. On success the engine
-    // skips the ~40-56hr cold start (Donchian10 + Wilder ATR14 seed).
-    // First-deploy bootstrap: tools/seed_us30_h4.cpp can write this file
-    // directly from a Dukascopy USA30 H4 CSV before the first start.
-    {
-        const std::string us30_dat = log_root_dir() + "/bars_us30_h4.dat";
-        const bool us30_h4_ok = g_minimal_h4_us30.load_state(us30_dat);
-        if (us30_h4_ok) {
-            printf("[STARTUP] MinimalH4US30Breakout warm-loaded from %s -- "
-                   "engine hot, can fire on first H4 close.\n", us30_dat.c_str());
-        } else {
-            printf("[STARTUP] MinimalH4US30Breakout cold start -- needs ~40hrs of "
-                   "live DJ30.F H4 bars before first signal. Seed via "
-                   "tools/seed_us30_h4.cpp + Dukascopy CSV to skip the wait.\n");
-        }
-        fflush(stdout);
-    }
 
     // MinimalH4GER40Breakout -- GER40/DAX sister engine. Same pattern as US30.
     // Multi-symbol scan 2026-05-20 (backtest/multi_symbol_scan.py): GER40 was
     // best performer of FX+indices scanned -- Sharpe 3.67 PnL $8.40 50 trades.
-    g_minimal_h4_ger40.p           = omega::make_minimal_h4_ger40_params();
-    g_minimal_h4_ger40.symbol      = "GER40";
-    g_minimal_h4_ger40.shadow_mode = true;
-    g_minimal_h4_ger40.enabled     = false;
-    g_minimal_h4_ger40.p.weekend_close_gate = false;  // S-2026-06-15a: H4 holds over weekend (operator dir); global weekend-flat exempts H4+ engines by name
-    printf("[INIT] MinimalH4GER40Breakout GER40: shadow=true donchian=%d sl=%.1fx"
-           " tp=%.1fx risk=$%.0f max_lot=%.2f $/pt=%.1f timeout=%d bars"
-           " long_only=%s weekend_gate=%s\n",
-           g_minimal_h4_ger40.p.donchian_bars,    g_minimal_h4_ger40.p.sl_mult,
-           g_minimal_h4_ger40.p.tp_mult,          g_minimal_h4_ger40.p.risk_dollars,
-           g_minimal_h4_ger40.p.max_lot,          g_minimal_h4_ger40.p.dollars_per_point,
-           g_minimal_h4_ger40.p.timeout_h4_bars,
-           g_minimal_h4_ger40.p.long_only ? "true" : "false",
-           g_minimal_h4_ger40.p.weekend_close_gate ? "true" : "false");
     fflush(stdout);
 
     // EurGbpPairsEngine -- EURUSD/GBPUSD H1 spread mean reversion (shadow mode).
@@ -3304,12 +2545,6 @@ static void init_engines(const std::string& cfg_path)
     //   Top config w=120 zi=1.5 zo=0.5 h=48: n=358 Sh=7.75 PnL=$638 MDD=$34.67 (cost 1pip/leg)
     //   6-mode rigor (pairs_rigor_cpp.cpp): IS=7.32 / OOS=7.23, 6/6 WF folds positive,
     //     14/14 months positive, Monte Carlo p<0.0001, robust to +/-20% perturbation.
-    g_eur_gbp_pairs.p           = omega::make_eur_gbp_pairs_params();
-    g_eur_gbp_pairs.p.z_window  = 120;
-    g_eur_gbp_pairs.p.z_in      = 1.5;
-    g_eur_gbp_pairs.p.z_out     = 0.5;
-    g_eur_gbp_pairs.p.hold_timeout_h1 = 48;
-    g_eur_gbp_pairs.shadow_mode = true;
     // CULL S-2026-06-17 (retest campaign): faithful pairs_rigor_cpp at THIS exact
     // config on real 7yr EURUSD+GBPUSD = Sh-2.04 both halves, robust all-9-neg;
     // clean recent-17mo = Sh-1.16 (n=359 ~ prior n=358, same entries); leg-swap
@@ -3317,32 +2552,18 @@ static void init_engines(const std::string& cfg_path)
     // above used an M5 input file that no longer exists / can't be reproduced on
     // real EUR+GBP feeds. Decisive faithful failure -> disabled. Reversible:
     // shadow, lot 0.01. Re-open ONLY if the original blessed m5 reproduces +7.75.
-    g_eur_gbp_pairs.enabled     = false;
-    printf("[INIT] EurGbpPairsEngine EURUSD+GBPUSD: shadow=true z_window=%d z_in=%.1f"
-           " z_out=%.1f z_stop=%.1f hold_h1=%d risk=$%.0f max_lot=%.2f\n",
-           g_eur_gbp_pairs.p.z_window, g_eur_gbp_pairs.p.z_in, g_eur_gbp_pairs.p.z_out,
-           g_eur_gbp_pairs.p.z_stop,   g_eur_gbp_pairs.p.hold_timeout_h1,
-           g_eur_gbp_pairs.p.risk_dollars, g_eur_gbp_pairs.p.max_lot_per_leg);
     // Warm-seed pairs engine from EURUSD + GBPUSD H1 close CSVs (~7000 bars each).
     // Pre-populates spread_hist_ (z_window=120 bars needed). Without seed,
     // engine cold-warms 120 hours (5 trading days) before first z-eval.
-    g_eur_gbp_pairs.seed_from_h1_csvs(
-        "phase1/signal_discovery/warmup_EURUSD_H1.csv",
-        "phase1/signal_discovery/warmup_GBPUSD_H1.csv");
     fflush(stdout);
 
     // DISABLED: Index TrendPullback never explicitly disabled -- no live validation.
     // GER40: tighter band (index moves more cleanly around EMAs)
-    g_trend_pb_ger40.PULLBACK_BAND_PCT = 0.05;  // 0.05% of GER40 = ~11pts at 22500
-    g_trend_pb_ger40.COOLDOWN_SEC     = 120;
-    g_trend_pb_ger40.MIN_EMA_SEP      = 15.0;
     // NQ/SP TrendPullback: daily loss cap + tighter controls
     // Without DAILY_LOSS_CAP, NQ TrendPullback fired 7 consecutive losing entries
     // during the Apr 2 tariff crash (NQ dropped ~1000pts). Each SL hit was $12-13,
     // but the direction block (2 consec SL hits = 10min pause) was the only guard.
     // Daily loss cap stops the engine entirely after a bad sequence.
-    g_trend_pb_nq.MIN_EMA_SEP         = 25.0;
-    g_trend_pb_nq.DAILY_LOSS_CAP      = 80.0;   // $80 daily cap: ~6 SL hits at $12 each
     // S37 audit (2026-05-27): RE-ENABLED in HARD shadow. S94 cited
     // consolidation into Nas100ShortEngine -- which was never instantiated
     // (see include/Nas100ShortEngine.hpp deletion in same commit). The
@@ -3351,18 +2572,7 @@ static void init_engines(const std::string& cfg_path)
     // than restoring to live (prior state) because the live PnL history
     // pre-S94 is unknown and worth re-observing in shadow first. Promote
     // by setting shadow_mode = kShadowDefault after evidence.
-    g_trend_pb_nq.shadow_mode         = true;
-    g_trend_pb_nq.enabled             = false;   // S37-Z 2026-05-28 (task #16): re-disabled. CRTP audit on USA30 proxy (7mo, 9032 trades) PF=0.241 gross=-$250.26, all sessions negative, all 7 months negative. S37 re-enable did not survive 2yr corpus replay. Re-enable requires signal-side rework (not parameter retune).
-    g_trend_pb_sp.MIN_EMA_SEP         = 15.0;
-    g_trend_pb_sp.DAILY_LOSS_CAP      = 80.0;   // same cap for SP
-    g_trend_pb_sp.enabled             = false;   // S95 2026-05-15: disabled — SPX UltimateBacktest OOS failed (v2 OOS PF=0.88). No trend-following edge on US500. Was live with $80 daily cap.
-    g_trend_pb_ger40.DAILY_LOSS_CAP   = 80.0;   // GER40 too -- no cap was previously set
-    g_trend_pb_ger40.enabled          = false;   // DISABLED: not live-validated
     // Load warm EMA state -- skips EMA_WARMUP_TICKS cold period on restart
-    g_trend_pb_gold.load_state(state_root_dir()  + "/trend_pb_gold.dat");
-    g_trend_pb_ger40.load_state(state_root_dir() + "/trend_pb_ger40.dat");
-    g_trend_pb_nq.load_state(state_root_dir()    + "/trend_pb_nq.dat");
-    g_trend_pb_sp.load_state(state_root_dir()    + "/trend_pb_sp.dat");
 
     // ?? Nuke stale ctrader_bar_failed.txt on every startup ??????????????????
     // Old binaries wrote M5/M15 periods (5/7) and BOM-prefixed keys into this
@@ -3432,12 +2642,7 @@ static void init_engines(const std::string& cfg_path)
             // Best-effort approximation for ATR prev_close: M5 EMA9 is the
             // tightest persisted reference to recent close. Drift bounded
             // by (live_first_close - EMA9) which converges in 1 bar.
-            g_gold_scalp_pyramid.prime_from_atomics(m5_ema9, m5_ema21, m5_atr14, m5_ema9);
 
-            const int fed = g_gold_scalp_pyramid.prime_from_history(
-                                g_bars_gold.m5.get_bars());
-            printf("[STARTUP] GoldScalpPyramid primed: atomics(ema9=%.2f ema21=%.2f atr=%.2f) bars_fed=%d\n",
-                   m5_ema9, m5_ema21, m5_atr14, fed);
             fflush(stdout);
         }
 
@@ -3461,7 +2666,6 @@ static void init_engines(const std::string& cfg_path)
             const double m1_bbl = g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed);
             const double m1_rsi = g_bars_gold.m1.ind.rsi14   .load(std::memory_order_relaxed);
             const double m1_atr = g_bars_gold.m1.ind.atr14   .load(std::memory_order_relaxed);
-            g_bband_scalp.prime_from_atomics(m1_bbu, m1_bbm, m1_bbl, m1_rsi, m1_atr);
             printf("[STARTUP] BBandScalp primed: bb=[%.2f, %.2f, %.2f] rsi=%.1f atr=%.2f "
                    "(reads atomics each tick -- no warmup needed)\n",
                    m1_bbl, m1_bbm, m1_bbu, m1_rsi, m1_atr);
@@ -3470,18 +2674,12 @@ static void init_engines(const std::string& cfg_path)
 
         if (m15_ok) {
             // Immediately seed TrendPullback EMAs + ATR from M15 bar state
-            g_trend_pb_gold.seed_bar_emas(
-                g_bars_gold.m15.ind.ema9 .load(std::memory_order_relaxed),
-                g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
-                g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
-                g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
             // M1 EMA crossover for bar trend gate -- loaded from disk, no 15-min warmup
             if (m1_ok) {
                 const double st_e9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
                 const double st_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
                 const int st_trend  = (st_e9 > 0.0 && st_e50 > 0.0)
                     ? (st_e9 < st_e50 ? -1 : +1) : 0;
-                g_trend_pb_gold.seed_m5_trend(st_trend);
                 printf("[STARTUP] M1 bar state loaded: EMA9=%.2f EMA50=%.2f RSI=%.1f trend=%+d"
                        " -- GoldStack bar gates active immediately\n",
                        st_e9, st_e50,
@@ -3493,19 +2691,14 @@ static void init_engines(const std::string& cfg_path)
                 const double st_e50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
                 const int st_trend  = (st_e9 > 0.0 && st_e50 > 0.0)
                     ? (st_e9 < st_e50 ? -1 : +1) : 0;
-                g_trend_pb_gold.seed_m5_trend(st_trend);
             }
             // Immediately seed H4 HTF trend gate -- no need to wait for first tick
             if (h4_ok) {
-                g_trend_pb_gold.seed_h4_trend(
-                    g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
                 // Seed H4RegimeEngine Donchian channel from saved H4 bar history.
                 // Without this the channel needs 20 new H4 bars (80 hours) to warm.
                 // With this: channel is ready from tick 1 -- engine is hot immediately.
-                g_h4_regime_gold.seed_channel_from_bars(g_bars_gold.h4.get_bars());
                 // Seed MinimalH4Breakout Donchian channel from same saved H4 bar history.
                 // 10-bar channel: needs 40 hours warm-up cold vs. tick-1 ready warm.
-                g_minimal_h4_gold.seed_channel_from_bars(g_bars_gold.h4.get_bars());
             } else {
                 printf("[STARTUP] H4 bar state cold -- H4RegimeEngine needs 20 H4 bars (~80hr)\n");
                 fflush(stdout);
@@ -3519,16 +2712,6 @@ static void init_engines(const std::string& cfg_path)
                 // seed_channel_from_csv). The H4RegimeEngine remains cold --
                 // CSV warm-load is implemented for MinimalH4Breakout only.
                 const std::string xau_h4_csv = log_root_dir() + "/bars_xauusd_h4.csv";
-                if (g_minimal_h4_gold.seed_channel_from_csv(xau_h4_csv)) {
-                    printf("[STARTUP] MinimalH4Breakout warm-loaded from CSV %s "
-                           "-- engine hot, can fire on first H4 close.\n",
-                           xau_h4_csv.c_str());
-                } else {
-                    printf("[STARTUP] MinimalH4Breakout cold start -- needs ~40hrs of "
-                           "live XAUUSD H4 bars before first signal. Drop a Dukascopy "
-                           "XAUUSD H4 CSV at %s to skip the wait (see MinimalH4Breakout.hpp:163 "
-                           "for schema).\n", xau_h4_csv.c_str());
-                }
                 fflush(stdout);
             }
             printf("[STARTUP] Bar state loaded: M1=%s M5=%s M15=%s H1=%s H4=%s"
@@ -3545,15 +2728,6 @@ static void init_engines(const std::string& cfg_path)
             // can be seeded from disk while the M1 EMAs warm up over the next
             // 15 minutes. Mirror the inner cold-fallback branch above.
             const std::string xau_h4_csv = log_root_dir() + "/bars_xauusd_h4.csv";
-            if (g_minimal_h4_gold.seed_channel_from_csv(xau_h4_csv)) {
-                printf("[STARTUP] MinimalH4Breakout warm-loaded from CSV %s "
-                       "-- engine hot for first H4 close.\n", xau_h4_csv.c_str());
-            } else {
-                printf("[STARTUP] MinimalH4Breakout cold start -- drop CSV at %s "
-                       "to skip the 40hr Donchian warm-up "
-                       "(see MinimalH4Breakout.hpp:163 for schema).\n",
-                       xau_h4_csv.c_str());
-            }
         }
         fflush(stdout);
     }
@@ -4301,14 +3475,8 @@ static void init_engines(const std::string& cfg_path)
     // Existing positions (if any) are still drained via has_open_position() paths.
     //
     // NBM indices: live data insufficient, not validated. Still shelved.
-    g_nbm_sp.enabled     = false;
-    g_nbm_nq.enabled     = false;
-    g_nbm_nas.enabled    = false;
-    g_nbm_us30.enabled   = false;
     // NBM gold london: RE-ENABLED 2026-04-01 -- live MT5 data confirms the logic
     // (London open ATR breakout, 51min hold, +$185). Omega NBM is identical concept.
-    g_nbm_gold_london.enabled = false;  // S91: disabled — GoldUltimateEngine solo test
-    g_nbm_oil_london.enabled  = false;
     //
     // ORB (OpeningRange): no live data. Shelved pending shadow validation.
     // 2026-05-08 AUDIT-FIX (S15 P0-5): set per-instance UTC open times before
@@ -4319,14 +3487,6 @@ static void init_engines(const std::string& cfg_path)
     //   without these per-instance overrides, ORB fires at the wrong session.
     //   The daily reset path (CrossAssetEngines.hpp:1003-1009) is already
     //   correct and does not need changes.
-    g_orb_us.OPEN_HOUR     = 13; g_orb_us.OPEN_MIN     = 30;  // NYSE open
-    g_orb_ger30.OPEN_HOUR  = 8;  g_orb_ger30.OPEN_MIN  = 0;   // Xetra open
-    g_orb_uk100.OPEN_HOUR  = 8;  g_orb_uk100.OPEN_MIN  = 0;   // LSE open
-    g_orb_estx50.OPEN_HOUR = 9;  g_orb_estx50.OPEN_MIN = 0;   // Euronext open
-    g_orb_us.enabled     = false;
-    g_orb_ger30.enabled  = false;
-    g_orb_uk100.enabled  = false;
-    g_orb_estx50.enabled = false;
 
     // ── ORB-SWING cohort (2026-05-23) ────────────────────────────────────────
     // Big-swing capture on NAS100 + DJ30 at NY open. Uses the same
@@ -4350,39 +3510,12 @@ static void init_engines(const std::string& cfg_path)
     // Per-pair instance: DJ30 has slightly wider TP (0.55%) because NYSE
     // composite Dow drifts further per-percent than tech-heavy NAS100.
 
-    g_orb_nas100.OPEN_HOUR       = 13;
-    g_orb_nas100.OPEN_MIN        = 30;
-    g_orb_nas100.RANGE_WINDOW_MIN = 30;
-    g_orb_nas100.BUFFER_PCT      = 0.02;
-    g_orb_nas100.TP_PCT          = 0.50;
-    g_orb_nas100.SL_PCT          = 0.20;
-    g_orb_nas100.MAX_HOLD_SEC    = 21600;  // 6h
-    g_orb_nas100.enabled         = false;  // S47: ORB session-scalp purge
 
-    g_orb_dj30.OPEN_HOUR         = 13;
-    g_orb_dj30.OPEN_MIN          = 30;
-    g_orb_dj30.RANGE_WINDOW_MIN  = 30;
-    g_orb_dj30.BUFFER_PCT        = 0.02;
-    g_orb_dj30.TP_PCT            = 0.55;
-    g_orb_dj30.SL_PCT            = 0.22;
-    g_orb_dj30.MAX_HOLD_SEC      = 21600;  // 6h
-    g_orb_dj30.enabled           = false;  // S47: ORB session-scalp purge
 
-    printf("[OMEGA-INIT] ORB-Swing cohort: NAS100 + DJ30 enabled, "
-           "buf=%.2f%% tp=%.2f/%.2f%% sl=%.2f/%.2f%% hold=%ds (NY 13:30 UTC, 30min range)\n",
-           g_orb_nas100.BUFFER_PCT,
-           g_orb_nas100.TP_PCT, g_orb_dj30.TP_PCT,
-           g_orb_nas100.SL_PCT, g_orb_dj30.SL_PCT,
-           g_orb_nas100.MAX_HOLD_SEC);
     //
     // Cross-asset: EIA fade, BrentWTI spread, FX cascade, carry unwind.
     // All have insufficient live data. Shelved pending shadow validation.
-    g_ca_eia_fade.enabled    = false;
-    g_ca_brent_wti.enabled   = false;
-    g_ca_fx_cascade.enabled  = false;
-    g_ca_carry_unwind.enabled = false;
     // ESNQ: already guarded by esnq_enabled=false in config. Belt-and-suspenders.
-    g_ca_esnq.enabled        = false;
     // ?? END SHELVED ENGINE DISABLE ????????????????????????????????????????????
 
     // ── Ger40LondonBreakoutEngine (2026-05-17) ─────────────────────────────────
@@ -4395,34 +3528,6 @@ static void init_engines(const std::string& cfg_path)
     //   TP_MULT=0.75, SL_MULT=0.50, entry window 07:00-09:00 UTC
     //   Asian range 21:00-07:00 UTC, max hold 4hr, short only
     {
-        g_ger40_london_brk.symbol          = "GER40";
-        g_ger40_london_brk.shadow_mode     = true;   // 2026-05-29: forced shadow (demo->live FIX cutover). PRIOR: false (LIVE -- validated edge).
-        g_ger40_london_brk.enabled         = false;
-        g_ger40_london_brk.lot             = 0.01;
-        g_ger40_london_brk.max_spread      = 4.0;
-        g_ger40_london_brk.ASIA_START_HOUR = 21;
-        g_ger40_london_brk.ASIA_END_HOUR   = 7;
-        g_ger40_london_brk.ENTRY_START_HOUR = 7;
-        g_ger40_london_brk.ENTRY_START_MIN  = 0;
-        g_ger40_london_brk.ENTRY_END_HOUR   = 9;
-        g_ger40_london_brk.ENTRY_END_MIN    = 0;
-        g_ger40_london_brk.TP_MULT         = 0.75;
-        g_ger40_london_brk.SL_MULT         = 0.50;
-        g_ger40_london_brk.MAX_HOLD_SEC    = 14400;  // 4 hours
-        g_ger40_london_brk.MIN_RANGE_PTS   = 15.0;
-        g_ger40_london_brk.MAX_RANGE_PTS   = 150.0;
-        g_ger40_london_brk.LOSS_CUT_PCT    = 0.0;    // structural SL handles it
-        g_ger40_london_brk.BE_ARM_PCT      = 0.0;
-        g_ger40_london_brk.BE_BUFFER_PCT   = 0.0;
-        g_ger40_london_brk.init();
-        printf("[OMEGA-INIT] Ger40LondonBreakoutEngine: shadow=%s enabled=%s "
-               "lot=%.2f tp_mult=%.2f sl_mult=%.2f entry=%02d:%02d-%02d:%02d\n",
-               g_ger40_london_brk.shadow_mode ? "true" : "false",
-               g_ger40_london_brk.enabled ? "true" : "false",
-               g_ger40_london_brk.lot,
-               g_ger40_london_brk.TP_MULT, g_ger40_london_brk.SL_MULT,
-               g_ger40_london_brk.ENTRY_START_HOUR, g_ger40_london_brk.ENTRY_START_MIN,
-               g_ger40_london_brk.ENTRY_END_HOUR, g_ger40_london_brk.ENTRY_END_MIN);
         fflush(stdout);
     }
 
@@ -4435,68 +3540,24 @@ static void init_engines(const std::string& cfg_path)
     // RR 1.5). L2 profit-protect is OFF by default -- validate via live L2
     // replay before enabling (the backtest tick file has no depth data).
     {
-        g_xau_breakbounce.symbol         = "XAUUSD";
-        g_xau_breakbounce.engine_name    = "BreakBounce";
-        g_xau_breakbounce.shadow_mode    = true;
-        g_xau_breakbounce.enabled        = false;
-        g_xau_breakbounce.lot            = 0.01;
-        g_xau_breakbounce.MAX_SPREAD     = 0.60;   // XAU avg spread ~0.48
-        g_xau_breakbounce.USE_SESSION    = true;   // 07:00-18:00 UTC (cuts Asian chop)
-        g_xau_breakbounce.USE_PROFIT_LOCK = true;  // 0.5*ATR price give-back lock (validated, edge-safe)
-        g_xau_breakbounce.USE_L2_PROTECT = false;  // L2-gated upgrade: validate live before enabling
         // Regime guard: ADX chop-gate is OFF. IS/OOS sweep (2026-05-31) showed
         // EVERY threshold is SUBTRACTIVE on the available (bull-only) data --
         // OOS PF 1.54 -> 1.20-1.32, net halved -- the same IS-up/OOS-down
         // signature as the ER chop-gate dead-end. The D1 EMA bias is the bear
         // guard (no longs in a downtrend; shorts arm in a bear). Re-validate ADX
         // on forward shadow data once a chop/bear regime is captured.
-        g_xau_breakbounce.REGIME_ADX_MIN = 0.0;
-        g_xau_breakbounce.init();
 
         // Warm-seed: D1 EMA200 + H1/M20 ATR/range so the engine boots hot
         // (EMA200 on D1 cold-starts ~200 days). Per the Warm-Seed Mandate.
-        g_xau_breakbounce.seed_from_csvs(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_D1.csv"),
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"),
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_M30.csv"));
 
         // Ledger callback -- fires in BOTH shadow and live (GUI/ledger/CSV).
-        g_xau_breakbounce.on_trade_record = [](const omega::TradeRecord& tr) {
-            handle_closed_trade(tr);
-        };
-        g_xau_breakbounce.on_close = [](double exit_px, bool is_long, double size,
-                                        const std::string& reason) {
-            (void)reason;
-            if (g_xau_breakbounce.shadow_mode) return;   // shadow: no live order
-            send_live_order("XAUUSD", is_long, size, exit_px);
-        };
 
         // L2 capture: while a BreakBounce position is open, append a throttled
         // (5s) snapshot of price + live g_l2_gold imbalance to a CSV keyed by
         // entry_ms. This is the "data to come" -- bb_l2_replay A/Bs the protect
         // on vs off over it once enough trades accumulate. Capture runs even
         // though USE_L2_PROTECT is off: collect first, validate, then enable.
-        g_xau_breakbounce.USE_L2_CAPTURE = true;
-        g_xau_breakbounce.L2_CAPTURE_SEC = 5;
-        g_xau_breakbounce.on_l2_sample = [](int64_t entry_ms, int64_t now_ms,
-            double bid, double ask, double imb, double micro, double fav, double sl,
-            double risk, double atr, double adx, bool is_long) {
-            std::ofstream f("outputs/breakbounce_l2_capture.csv", std::ios::app);
-            if (!f.is_open()) return;
-            if (f.tellp() == std::streampos(0))
-                f << "entry_ms,now_ms,bid,ask,imb,micro,fav,sl,risk,atr,adx,is_long\n";
-            f << entry_ms << ',' << now_ms << ',' << bid << ',' << ask << ','
-              << imb << ',' << micro << ',' << fav << ',' << sl << ',' << risk << ','
-              << atr << ',' << adx << ',' << (is_long ? 1 : 0) << '\n';
-        };
 
-        printf("[OMEGA-INIT] BreakBounceEngine: shadow=%s enabled=%s lot=%.2f "
-               "TF=D1/H1/M20 stop=%.2f rr=%.2f L2protect=%s\n",
-               g_xau_breakbounce.shadow_mode ? "true" : "false",
-               g_xau_breakbounce.enabled ? "true" : "false",
-               g_xau_breakbounce.lot, g_xau_breakbounce.STOP_ATR,
-               g_xau_breakbounce.REWARD_RISK,
-               g_xau_breakbounce.USE_L2_PROTECT ? "on" : "off");
         fflush(stdout);
     }
 
@@ -4552,27 +3613,14 @@ static void init_engines(const std::string& cfg_path)
     // halves +, 3x-cost-robust, 9/9 param-plateau, cross-validated on 2 NAS
     // datasets. CAVEAT: validated only in the 2025-26 bull regime → SHADOW only.
     {
-        g_fvgcont_nas.symbol      = "NAS100";
-        g_fvgcont_nas.engine_name = "FvgContinuation";
-        g_fvgcont_nas.shadow_mode = true;     // paper label (whole system is SHADOW); VISIBLE via register_source below (2026-06-08). Observe incl bear tape; do NOT real-size until bear-validated.
-        g_fvgcont_nas.enabled     = false;  // ⛔ TOMBSTONED 2026-06-13 (operator cull of consistent
                                             // live losers): n=11 net -$266 PF 0.65 WR 27% in live
                                             // shadow -- backtest validation (2-dataset 15m) did NOT
                                             // translate. Family total -$649/19 trades. Re-eval only
                                             // with a documented live-vs-backtest divergence root cause.
-        g_fvgcont_nas.verbose     = true;     // log entries + once-per-bar reject reasons
-        g_fvgcont_nas.lot         = 1.0;
-        g_fvgcont_nas.TRENDN      = 288;   // 2026-06-09 backtest: 15m wants 3-day trend gate (PF1.27->1.41, ret/DD1.86->3.38, maxDD halved, both-halves+). 10m stays OFF (gate hurts it).
-        g_fvgcont_nas.init();
-        g_fvgcont_nas.seed_from_m15_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M15.csv"));
-        g_fvgcont_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         // 2026-06-08: publish open position so it shows on the live dashboard (was invisible).
         g_open_positions.register_source("FvgContinuation", []() {
             std::vector<omega::PositionSnapshot> v;
             omega::PositionSnapshot s;
-            if (g_fvgcont_nas.has_open_position() && g_fvgcont_nas.persist_save("FvgContinuation", "NAS100", s))
-                v.push_back(s);
             return v;
         });
         printf("[OMEGA-INIT] FvgContinuation NAS100: shadow=true 15m NY-killzone(13:30-15:00 UTC) "
@@ -4582,23 +3630,10 @@ static void init_engines(const std::string& cfg_path)
         // 11.5, both halves +, 3x-cost-robust, 9/9 param-plateau). Single-dataset
         // validated (can't build 10m from the 15m pkl), so run it in SHADOW
         // alongside the 2-dataset-validated 15m and let live data pick the winner.
-        g_fvgcont_nas10.symbol      = "NAS100";
-        g_fvgcont_nas10.engine_name = "FvgCont10m";
-        g_fvgcont_nas10.HTF_SEC     = 600;    // 10-minute FVG
-        g_fvgcont_nas10.shadow_mode = true;
-        g_fvgcont_nas10.enabled     = false;  // ⛔ TOMBSTONED 2026-06-13 with family (see 15m note).
-        g_fvgcont_nas10.verbose     = true;   // log entries + once-per-bar reject reasons
-        g_fvgcont_nas10.lot         = 1.0;
-        g_fvgcont_nas10.init();
-        g_fvgcont_nas10.seed_from_m15_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M10.csv"));
-        g_fvgcont_nas10.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         // 2026-06-09: 10m is the better FVG variant (sweep PF1.61 vs 15m 1.27) -> make it visible too.
         g_open_positions.register_source("FvgCont10m", []() {
             std::vector<omega::PositionSnapshot> v;
             omega::PositionSnapshot s;
-            if (g_fvgcont_nas10.has_open_position() && g_fvgcont_nas10.persist_save("FvgCont10m", "NAS100", s))
-                v.push_back(s);
             return v;
         });
         printf("[OMEGA-INIT] FvgCont10m NAS100: shadow=true 10m NY-killzone "
@@ -4606,24 +3641,11 @@ static void init_engines(const std::string& cfg_path)
 
         // 30m variant -- 2026-06-09 exhaustive FVG sweep WINNER: PF1.98 (3x-cost 1.91),
         // both halves ~2.0, ret/DD 5.12, WR46%. Beats 10m(1.61) and 15m(1.27). ungated.
-        g_fvgcont_nas30.symbol      = "NAS100";
-        g_fvgcont_nas30.engine_name = "FvgCont30m";
-        g_fvgcont_nas30.HTF_SEC     = 1800;   // 30-minute FVG
-        g_fvgcont_nas30.shadow_mode = true;
-        g_fvgcont_nas30.enabled     = false;  // ⛔ TOMBSTONED 2026-06-13: n=8 net -$383 PF 0.27 WR 12%
                                               // live (sweep WINNER PF1.98 backtest -- worst live
                                               // translation in the book; -$417 family bleed on 06-12 alone).
-        g_fvgcont_nas30.verbose     = true;
-        g_fvgcont_nas30.lot         = 1.0;
-        g_fvgcont_nas30.init();
-        g_fvgcont_nas30.seed_from_m15_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M15.csv"));
-        g_fvgcont_nas30.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("FvgCont30m", []() {
             std::vector<omega::PositionSnapshot> v;
             omega::PositionSnapshot s;
-            if (g_fvgcont_nas30.has_open_position() && g_fvgcont_nas30.persist_save("FvgCont30m", "NAS100", s))
-                v.push_back(s);
             return v;
         });
         printf("[OMEGA-INIT] FvgCont30m NAS100: shadow=true 30m NY-killzone (sweep WINNER PF1.98 3x-robust)\n");
@@ -4639,13 +3661,7 @@ static void init_engines(const std::string& cfg_path)
         // on 2026-06-11).
         {
             auto fvg_family_flat = []() {
-                return !g_fvgcont_nas.has_open_position()
-                    && !g_fvgcont_nas10.has_open_position()
-                    && !g_fvgcont_nas30.has_open_position();
             };
-            g_fvgcont_nas.entry_permit   = fvg_family_flat;
-            g_fvgcont_nas10.entry_permit = fvg_family_flat;
-            g_fvgcont_nas30.entry_permit = fvg_family_flat;
             printf("[OMEGA-INIT] FVG family dedup: 1 position across 10m/15m/30m (first-to-fire)\n");
         }
 
@@ -4660,9 +3676,6 @@ static void init_engines(const std::string& cfg_path)
         //   BEAR (real 2022 NDX -30%): PF 2.25 net+313 maxDD 91pt, 3x:1.97.
         //   ==> bull AND bear robust (catches bear-bounces; tight stop = small
         //   losers). Volume filter is dead on proxy → no volume gate. SHADOW first.
-        g_peachy_orb_nas.symbol      = "NAS100";
-        g_peachy_orb_nas.engine_name = "PeachyOrb";
-        g_peachy_orb_nas.shadow_mode = true;
         // ===== REVIVED 2026-06-13 (S-2026-06-13t) -- KILLER FOUND: the runner trail =====
         // Tombstoned r briefly (deployed config PF0.46 on current tape). Filter
         // ablation on 5 weeks of REAL NAS tape (May 6 - Jun 12 2026, 6.3M ticks,
@@ -4679,7 +3692,6 @@ static void init_engines(const std::string& cfg_path)
         // (both halves +). MEETS the re-enable bar. Harness backtest/peachy_orb_nas.cpp,
         // tape /tmp/nas_5wk.csv. lot stays 0.3 (dollar-normalized). n=14/5wk still
         // modest -> shadow, watch the live ledger.
-        g_peachy_orb_nas.enabled     = false;  // ⛔ TOMBSTONED S-2026-06-15b (operator cull): DIED on full
         //   NAS M1 data this session (the 5wk re-enable was slice-luck -- full 2024-2026 NAS Sharpe ~0.55,
         //   FVG/ORB-family slice artifacts); live shadow ledger -$253 over 4 closes, 0% WR. Both backtest +
         //   forward agree = dead. Do NOT re-enable without cross-regime (2022 incl) walk-forward proof.
@@ -4689,19 +3701,9 @@ static void init_engines(const std::string& cfg_path)
         //   FULL span EVERY config is PF<1.1 (her documented winner b0.6/tp2.5/cb0.3 = PF0.93; best
         //   any-config = PF1.05; maxDD 28-41R). The discretionary edge does NOT mechanize cross-regime.
         //   CULL CONFIRMED. Tools: /tmp/peachy_sweep (backtest/peachy_orb_nas.cpp), /tmp/nas_fullspan.csv.
-        g_peachy_orb_nas.verbose     = true;
-        g_peachy_orb_nas.lot         = 0.3;
-        g_peachy_orb_nas.body_frac     = 0.4;
-        g_peachy_orb_nas.close_buf_atr = 0.0;   // 2026-06-13: closeBuf hurt on current tape (PF2.51->1.35); OFF.
-        g_peachy_orb_nas.tp_r          = 2.0;   // 2026-06-13: fixed 2R (the killer was the trail; 2R best, 3R dies).
-        g_peachy_orb_nas.trail_atr     = 0.0;   // 2026-06-13: KILLED the runner trail -- it was the killer (PF2.5->0.9).
-        g_peachy_orb_nas.seed_from_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
-        g_peachy_orb_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         // 2026-06-08: publish open position so it shows on the live dashboard (was invisible).
         g_open_positions.register_source("PeachyOrb", []() {
             std::vector<omega::PositionSnapshot> v;
-            const auto& p = g_peachy_orb_nas.pos_;
             if (p.active) {
                 omega::PositionSnapshot s;
                 s.symbol = "NAS100"; s.engine = "PeachyOrb";
@@ -4732,15 +3734,12 @@ static void init_engines(const std::string& cfg_path)
         // survives 1-2%/side slip. Registers with g_open_positions so its trades
         // show in the live_trades GUI panel + ring the entry bell. SHADOW until
         // live fills + dud-rate are measured.
-        g_pump_manager.enabled      = false;  // 2026-06-13 OPERATOR KILL #2 (final): "get rid of
                                               // the penny stocks ... which we agreed are rubbish".
                                               // The 06-13a shadow re-enable lasted ~6h of data
                                               // gathering; operator direction is BIG CAPS ONLY --
                                               // g_bigcap_momo below is the continuation. Do NOT
                                               // re-enable the penny universe without an explicit
                                               // operator instruction.
-        g_pump_manager.shadow_mode  = true;
-        g_pump_manager.day_gate_pct = 100.0;
         // S-2026-06-11 RECALIBRATION (operator model + full lever sweep,
         // pump_recalib_bt.py / cap_probe.py on 16-day basket, net$ @ $5k notional,
         // cost-inclusive both 1%/2% slip): jump in on the +100% mover, TRAIL
@@ -4752,11 +3751,6 @@ static void init_engines(const std::string& cfg_path)
         // (operator's simple model; sweep showed it marginal). Edge survives
         // removing the SLGB monster (~+$22k/15d ex-monster @ $5k), but sample is
         // small (n=44, 16d, 1 monster=62% of gross) => SHADOW, fat-tail dependent.
-        g_pump_manager.trail_pct    = 2.0;    // exit on the turn
-        g_pump_manager.be_arm_pct   = 0.0;    // BE OFF (trail + time-cap only)
-        g_pump_manager.be_floor_pct = 0.0;
-        g_pump_manager.maxhold_bars = 5;      // 15-min backstop (was strict 3-min; cut winners)
-        g_pump_manager.pyr_adds     = 0;
         // S-2026-06-11 RE-ENTRY CAP: live shadow showed CHOW entered 4x (+50,-32,
         // -38,-39 = re-entry chop bleed). reentry_cap_bt.py (16-day basket, deployed
         // cfg): cap2 = keeps 84% of net + best PF (42) vs unlimited (PF18, chop) or
@@ -4767,7 +3761,6 @@ static void init_engines(const std::string& cfg_path)
         // holds, broad (top name 14%, ex-top2 +$4085), both halves +. Tension with
         // the 06-11 3m result (cap2 best PF) acknowledged -- this SHADOW run is the
         // prod-faithful A/B that settles it via EngineGate honest accounting.
-        g_pump_manager.max_entries_per_day = 4;
         // S-2026-06-11 ANTI-SLIPPAGE recalibration (operator: "we cannot be caught
         // with the 5% issue"). Notional $5000->$1000 (smaller order walks the thin
         // book far less) + LIQUIDITY GATE: only trade names priced >=$1 with bar
@@ -4776,13 +3769,6 @@ static void init_engines(const std::string& cfg_path)
         // universe (mover_scan.py: 173 names >100%): the gate RAISED net@2% to
         // +$22.7k AND cut the @5%-slip worst case from -$37k to -$7.4k. The thin
         // sub-$1 rockets (the slippage traps) are now skipped by design.
-        g_pump_manager.notional_usd = 1000.0;
-        g_pump_manager.slip_pct     = 1.0;
-        g_pump_manager.min_dvol_usd = 2.0e6;   // bar close*volume floor
-        g_pump_manager.price_min    = 1.0;     // skip sub-$1 thin names
-        g_pump_manager.verbose      = true;
-        g_pump_manager.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
-        g_open_positions.register_source("PumpScalp", []() { return g_pump_manager.collect_positions(); });
         printf("[OMEGA-INIT] PumpScalp manager: DISABLED (operator kill 2026-06-13 -- penny universe retired; "
                "BigCapMomo is the mover engine)\n");
 
@@ -4863,29 +3849,10 @@ static void init_engines(const std::string& cfg_path)
         // Marginal edge + protection-resistant => PAUSE pending a real edge re-validation
         // on the live instrument (USTEC.F CFD), NOT the NSXUSD/NAS100 cash proxy.
         // Original (now-suspect) provenance: bull n129 PF2.34 +1395; bear n40 PF1.26 +426.
-        g_nq_momentum.symbol      = "NAS100";
-        g_nq_momentum.engine_name = "NqMomentum";
-        g_nq_momentum.shadow_mode = true;
-        g_nq_momentum.enabled     = false;  // was true; disabled S-2026-06-19 (clean-data marginal)
-        g_nq_momentum.p.ig_pct        = 0.30;   // ignition: +0.30% over lb bars
-        g_nq_momentum.p.lb            = 6;       // 6 x 5m = 30 min
-        g_nq_momentum.p.atr_len       = 30;
-        g_nq_momentum.p.atr_mult      = 3.0;    // S-2026-06-18 TUNED 4.0->3.0: exit-lever sweep
                                                 // (nq_momentum_faithful.cpp, cross-regime) — tighter
                                                 // trail lifts bull PF 2.60->3.24 (+1645pt, more trades,
                                                 // lower DD) while bear stays both-WF-halves+ (PF1.18).
                                                 // 2.0/2.5 over-tighten (bear H1 flips neg); 3.0 = robust optimum.
-        g_nq_momentum.p.be_arm_pct    = 0.03;
-        g_nq_momentum.p.be_floor_pct  = 0.02;
-        g_nq_momentum.p.maxhold_bars  = 48;     // 4h backstop (skipped while in profit)
-        g_nq_momentum.p.regime_sma    = 200;    // bull-regime gate (load-bearing)
-        g_nq_momentum.p.regime_gate   = true;
-        g_nq_momentum.p.dollars_per_pt= 1.0;    // shadow scale (pts*lot; ledger owns tick-value)
-        g_nq_momentum.p.lot           = 1.0;
-        printf("[OMEGA-INIT] NqMomentum: NAS100 5m ignition0.30%%/30min ATR-trail(30x3) "
-               "BE-ratchet(arm3/floor2) ride-in-profit regime-gate(SMA200) shadow=%d enabled=%d "
-               "(faithful BT: gated +both regimes; gate load-bearing)\n",
-               g_nq_momentum.shadow_mode, g_nq_momentum.enabled);
 
         // ── BigCapMomo IN-PROCESS IBKR engine (2026-06-16) ───────────────────
         // SAME validated big-cap momentum continuation edge as g_bigcap_momo
@@ -4990,21 +3957,12 @@ static void init_engines(const std::string& cfg_path)
         //   Index version FAILED cross-instrument/bear -> NOT built. Same family as
         //   CapitulationEngine (PF1.82 equities). CAVEAT: low-win fat-tail, bull-
         //   dominated corpus though bear passed -> SHADOW, observe before live size.
-        g_gold_panic_bounce.shadow_mode = true;     // prove on shadow before any live size
         // S-2026-06-17 CULLED: ledger_analytics net -$205 (biggest $ loser),
         // MAEp90 $5781 = catastrophic adverse excursion -- falling-knife long that
         // catches dips that keep falling. n=4 thin but the structural flaw is clear
         // + it's the book's top bleeder. Disabled; needs an entry filter not an exit.
-        g_gold_panic_bounce.enabled     = false;    // shadow=true makes it sim-only
-        g_gold_panic_bounce.DROP_K      = 8.0;
-        g_gold_panic_bounce.DD_LOOKBACK = 250;
-        g_gold_panic_bounce.TRAIL_ATR   = 4.5;
-        g_gold_panic_bounce.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
-        g_gold_panic_bounce.seed_from_h1_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
         g_open_positions.register_source("GoldPanicBounce", []() {
             std::vector<omega::PositionSnapshot> v;
-            const auto& p = g_gold_panic_bounce.m_pos;
             if (p.active) {
                 omega::PositionSnapshot s;
                 s.symbol = "XAUUSD"; s.engine = "GoldPanicBounce";
@@ -5059,19 +4017,8 @@ static void init_engines(const std::string& cfg_path)
         // (PF 1.84 net +532pt both-halves+ 2.60/1.32 on the real -25% SPX bear)
         // -> two independent index bears now agree (NAS2022 1.60 + SPX2022 1.84),
         // GER40-artifact/single-feed caveat cleared. Still SHADOW.
-        g_idx_bear_short_sp.symbol      = "US500.F";
-        g_idx_bear_short_sp.engine_name = "IndexBearShort";
-        g_idx_bear_short_sp.shadow_mode = true;
-        g_idx_bear_short_sp.enabled     = false;  // DISABLED S-2026-06-19 (audit FAIL): validation file SPX2022_bear_h1.csv does NOT EXIST on disk; the PF1.84 "cross-val passed" claim is unreproducible, no faithful BT drives the real class, and wiki self-contradicts (index.md "cross-val pending" vs entity "PASSED"). Cannot verify -> off until reproducibly validated on real SPX bear data.
-        g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts
-        g_idx_bear_short_sp.lot         = 1.0;
-        g_idx_bear_short_sp.USE_RISKOFF_GATE = false;
-        g_idx_bear_short_sp.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
-        g_idx_bear_short_sp.seed_from_h1_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_US500_H1.csv"));
         g_open_positions.register_source("IndexBearShortSP", []() {
             std::vector<omega::PositionSnapshot> v;
-            const auto& p = g_idx_bear_short_sp.m_pos;
             if (p.active) {
                 omega::PositionSnapshot s;
                 s.symbol = "US500.F"; s.engine = "IndexBearShort";
@@ -5092,25 +4039,8 @@ static void init_engines(const std::string& cfg_path)
         // (2024 1.96 / 2025 1.84 / 2026 1.62), 3x-cost-robust (1.31), ret/DD 4.91.
         // A SECOND, complementary NAS edge (retrace+runner) vs PeachyOrb (retest).
         // Same engine class, NAS config: ORB 09:30-10:00 ET, retr0.382, runner.
-        g_nas_orb_retrace.symbol      = "NAS100";
-        g_nas_orb_retrace.engine_name = "NasOrbRetrace";
-        g_nas_orb_retrace.tag         = "NASORB";
-        g_nas_orb_retrace.or_start_et = 570;       // 09:30 ET -- US cash open
-        g_nas_orb_retrace.or_end_et   = 600;       // 10:00 ET -- first 30 min
-        g_nas_orb_retrace.ema_len     = 50;
-        g_nas_orb_retrace.retr        = 0.5;        // 2026-06-16 RE-BACKTEST: on the current NAS100 corpus retr0.382 LOSES (PF0.80, H2 collapses, cost-fragile); retr0.5 = PF1.88, both halves (2.21/1.54), 2022/24/25 PF1.8-2.3, 3x-cost-robust, ret/DD5.83. Optimal retr FLIPPED vs the old (now-gone) 3yr where 0.382 won -> NAS less robust than gold; shadow re-validates fwd.
-        g_nas_orb_retrace.trail_win   = 3;
-        g_nas_orb_retrace.max_spread  = 5.0;       // NAS points
-        g_nas_orb_retrace.shadow_mode = true;
-        g_nas_orb_retrace.enabled     = false;     // DISABLED S-2026-06-19 (audit FAIL): two problems. (1) DATA — validated on NAS100_full_ds10.csv which has a 367-day COVERAGE HOLE (all of 2023 missing, jumps 202212->202401); the PF1.88 both-halves claim rests on holey data. Proper 2023-inclusive NAS data EXISTS (NSXUSD, complete) — re-validate on THAT. (2) CONFIG-DRIFT — faithful harness ShadowBook_mi.cpp hardcodes retr=0.382 but prod ships retr=0.5; the AUDITED_CONFIGS "retr0.5 EDGE" record is NOT reproducible from the committed harness, and boot printf still advertises retr0.382. Re-validate on NSXUSD at a reconciled config before re-enable. (was: RE-ENABLED 2026-06-16 retr0.5; +5309 ledger was a 66-day phantom.)
-        g_nas_orb_retrace.verbose     = true;
-        g_nas_orb_retrace.lot         = 1.0;
-        g_nas_orb_retrace.seed_from_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_M5.csv"));
-        g_nas_orb_retrace.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("NasOrbRetrace", []() {
             std::vector<omega::PositionSnapshot> v;
-            const auto& p = g_nas_orb_retrace.pos_;
             if (p.active) {
                 omega::PositionSnapshot s;
                 s.symbol = "NAS100"; s.engine = "NasOrbRetrace";
@@ -5170,10 +4100,6 @@ static void init_engines(const std::string& cfg_path)
         // NDX cash Sharpe 1.62, NQ future 1.0 (no financing), both halves +,
         // bear-safe (flat overnight in downtrends). Preferred live vehicle:
         // IBKR MNQ future. Shadow on the live NAS100 feed for now.
-        g_overnight_nas.symbol      = "NAS100";
-        g_overnight_nas.engine_name = "OvernightDrift";
-        g_overnight_nas.SMA_LEN     = 20;
-        g_overnight_nas.shadow_mode = true;
         // ===== TOMBSTONED 2026-06-13 (S-2026-06-13r, operator cull) =====
         // 1.5% tail-cap = ~450pt NAS = ~$450 at lot 1.0 = a full month of
         // XauStraddleM15 profit ON ONE TRADE; live -453 realized on a single trade.
@@ -5182,13 +4108,6 @@ static void init_engines(const std::string& cfg_path)
         // Per-trade tail incompatible with a $1-50/trade book. (SPX sibling below
         // STAYS ENABLED -- it IS 2022-bear-validated, gated PF1.29, now lot 0.3.)
         // RE-ENABLE BAR: reproduced NAS backtest with a tight cap (<=$40/trade).
-        g_overnight_nas.enabled     = false;
-        g_overnight_nas.lot         = 1.0;
-        g_overnight_nas.stop_pct    = 0.015;  // 2026-06-05: tail-cap (~1.5% ≈ 450pt NAS).
-        g_overnight_nas.init();
-        g_overnight_nas.seed_from_d1_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_USTEC_D1.csv"));
-        g_overnight_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         printf("[OMEGA-INIT] OvernightDrift NAS100: shadow=true long@close->flat@open if close>SMA20\n");
 
         // OvernightDrift US500 (S&P) — 2026-06-09. Same night-effect edge, SMA50
@@ -5197,11 +4116,6 @@ static void init_engines(const std::string& cfg_path)
         // 2022 bear -1.2% maxDD5% (vs B&H -20%) -- gate sits ~flat through the bear.
         // SMA50 beat SMA100 on SPX bull. Naked (ungated) FAILS 2022 (-14%) -> gate
         // is load-bearing. US cash session (same RTH as NAS). Shadow.
-        g_overnight_spx.symbol      = "US500";
-        g_overnight_spx.engine_name = "OvernightDrift";
-        g_overnight_spx.SMA_LEN     = 50;
-        g_overnight_spx.shadow_mode = true;
-        g_overnight_spx.enabled     = false;  // ⛔ TOMBSTONED S-2026-06-15b (operator cull). The prior
         //   "2022-bear-survived PF1.29 KEEP" claim was UNVERIFIABLE -- the 2026-06 index audit found
         //   OvernightDrift only had 2024-2026 (bull-only) data, no real 2022. Cross-regime retest of the
         //   long-index-overnight-w/-SMA20-gate archetype = -27% in 2022 (the gate does NOT dodge the bear);
@@ -5210,35 +4124,17 @@ static void init_engines(const std::string& cfg_path)
         // (scale-invariant; edge unchanged). SPX overnight gap at 1.0 lot risked
         // ~$1/pt of a ~60pt overnight = comparable tail to the culled NAS sibling;
         // shrink the $ so one bad gap can't erase weeks of the gold book.
-        g_overnight_spx.lot         = 0.3;
-        g_overnight_spx.stop_pct    = 0.015;  // tail-cap (~1.5%), mirrors NAS gap-protection.
-        g_overnight_spx.init();
-        g_overnight_spx.seed_from_d1_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_US500_D1.csv"));
-        g_overnight_spx.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         printf("[OMEGA-INIT] OvernightDrift US500: shadow=true long@close->flat@open if close>SMA50\n");
 
         // ConnorsRSI2 — 3rd index edge (daily mean-reversion dip-buy). Buy@close
         // if close>SMA200 AND RSI(2)<10, exit next close. Backtest: NDX cash
         // Sharpe 2.46, IBKR CFD 2.33, NQ future 2.71 (SMA50), all both-halves+,
         // cost-incl. Orthogonal to FVGcont/Overnight. SMA filter = bear-safe.
-        g_connors_nas.symbol      = "NAS100";
-        g_connors_nas.engine_name = "ConnorsRSI2";
-        g_connors_nas.TREND_SMA   = 200;
-        g_connors_nas.RSI_IN      = 10.0;
-        g_connors_nas.HOLD_DAYS   = 1;
         // 2026-06-04: DROPPED from the index allocation. Combination backtest
         // (backtest/combine.py): the index book = FVGcont + OvernightDrift
         // (vol-parity Sharpe 2.00, maxDD 5%, corr ~0.05). Adding Connors does
         // NOTHING (All-3 Sharpe 1.99 ~= pair 2.00) -- too weak/low-freq (Sharpe
         // ~0.75, fat-tail-fragile). Disabled; re-enable only with new evidence.
-        g_connors_nas.shadow_mode = true;
-        g_connors_nas.enabled     = false;
-        g_connors_nas.lot         = 1.0;
-        g_connors_nas.init();
-        g_connors_nas.seed_from_d1_csv(
-            omega::resolve_seed_path("phase1/signal_discovery/warmup_USTEC_D1.csv"));
-        g_connors_nas.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=true dip-buy close>SMA200 & RSI2<10, exit next close\n");
         fflush(stdout);
     }
@@ -5249,17 +4145,7 @@ static void init_engines(const std::string& cfg_path)
     // Sh1.94, both halves+, 3x-cost-robust, long-only (shorts drag). Diversifier
     // (~0.6 corr w/ trend book). shadow.
     {
-        g_adhull_xau.symbol="XAUUSD"; g_adhull_xau.engine_name="AdaptiveHullXAU";
-        g_adhull_xau.TF_SEC=3600; g_adhull_xau.PMUL=2.0; g_adhull_xau.KATR=3.0;
-        g_adhull_xau.SESS0=-1; g_adhull_xau.SESS1=-1;   // all-session
-        g_adhull_xau.shadow_mode=true; g_adhull_xau.enabled=false; g_adhull_xau.lot=0.01;
-        g_adhull_xau.init();
-        g_adhull_xau.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
-        g_adhull_xau.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
 
-        g_adhull_ger.symbol="GER40"; g_adhull_ger.engine_name="AdaptiveHullGER";
-        g_adhull_ger.TF_SEC=3600; g_adhull_ger.PMUL=2.0; g_adhull_ger.KATR=3.0;
-        g_adhull_ger.SESS0=7; g_adhull_ger.SESS1=16;    // EU session (07-16 UTC)
         // ===== TOMBSTONED 2026-06-13 (S-2026-06-13r, operator cull) =====
         // Live: -351 over 3 trades, 0% WR, all losing TRAIL exits in chop. At lot
         // 1.0 (~$1.10/pt) GER40's ~4x-gold point-swings made each loss $100-160.
@@ -5271,10 +4157,6 @@ static void init_engines(const std::string& cfg_path)
         // session) stays enabled -- low $, separate instrument, not in the cull.
         // RE-ENABLE BAR: start recording GER40 ticks, then a fresh walk-forward
         //   (PF>=1.5 both-halves + 3x-cost) on >=3 months of current GER40 tape.
-        g_adhull_ger.shadow_mode=true; g_adhull_ger.enabled=false; g_adhull_ger.lot=0.3;
-        g_adhull_ger.init();
-        g_adhull_ger.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_GER40_H1.csv"));
-        g_adhull_ger.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
         printf("[OMEGA-INIT] AdaptiveHull: XAU(60m all-sess) + GER40(60m EU-sess) shadow long-only pmul2\n");
         fflush(stdout);
     }
@@ -5284,12 +4166,6 @@ static void init_engines(const std::string& cfg_path)
     // halves+, 3x-cost-robust). ST line = trailing stop; exit = flip-down. NO
     // BE/TP/time-stop (edge-killers); EMA100 regime = chop protection. shadow.
     {
-        g_supertrend_gold.symbol="XAUUSD"; g_supertrend_gold.engine_name="SupertrendGold";
-        g_supertrend_gold.TF_SEC=3600; g_supertrend_gold.ST_LEN=10; g_supertrend_gold.ST_MULT=3.0;
-        g_supertrend_gold.EMA_LEN=100; g_supertrend_gold.shadow_mode=true; g_supertrend_gold.enabled=false;
-        g_supertrend_gold.lot=0.01; g_supertrend_gold.init();
-        g_supertrend_gold.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
-        g_supertrend_gold.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
         printf("[OMEGA-INIT] SupertrendGold XAUUSD: shadow 60m Supertrend(10,3) long-only +EMA100, flip-exit\n");
         fflush(stdout);
     }
@@ -5622,11 +4498,6 @@ static void init_engines(const std::string& cfg_path)
             }
 #endif
             // ENGINE CONFIG SUMMARY -- must be emitted AFTER tee opens so it goes into the log file.
-            std::cout << "[RSI-REV] RSIReversalEngine configured (shadow_mode="
-                      << (g_rsi_reversal.shadow_mode ? "true" : "false")
-                      << " oversold=" << (int)g_rsi_reversal.RSI_OVERSOLD
-                      << " overbought=" << (int)g_rsi_reversal.RSI_OVERBOUGHT
-                      << " sl_mult=" << g_rsi_reversal.SL_ATR_MULT << "x)\n";
             std::cout.flush();
 
             // -- PDH/PDL Reversion Engine ------------------------------------
@@ -5646,9 +4517,6 @@ static void init_engines(const std::string& cfg_path)
             //   LOSS_CUT_PCT  = 0.04  -> XAU@3700: ~$1.48 cold-loss cut.
             //   BE_ARM_PCT    = 0.025 -> XAU@3700: ~$0.93 mfe arms ratchet.
             //   BE_BUFFER_PCT = 0.01  -> XAU@3700: ~$0.37 buffer (typical XAU spread).
-            g_pdhl_rev.LOSS_CUT_PCT  = 0.04;
-            g_pdhl_rev.BE_ARM_PCT    = 0.025;
-            g_pdhl_rev.BE_BUFFER_PCT = 0.01;
             // S88-followup 2026-05-27: DISABLED per backtest. 2yr Duka XAU
             // baseline on drift-fade-proxy branch (l2_real=false, which is
             // what production has been running since L2 depth logger was
@@ -5657,29 +4525,11 @@ static void init_engines(const std::string& cfg_path)
             // rescues PF 0.48. Structural loser on this branch. Re-evaluate
             // after 30+ days of fresh L2 captures enable the l2_real branch.
             // Reference: research/PDHL_BASELINE_BROKEN.md.
-            g_pdhl_rev.shadow_mode      = true;
-            g_pdhl_rev.enabled          = false;
-            g_pdhl_rev.RANGE_ENTRY_PCT  = 0.25;   // top/bottom 25% of daily range
-            g_pdhl_rev.SL_ATR_MULT      = 0.40;   // tight structural stop
-            g_pdhl_rev.TP_RANGE_FRAC    = 0.50;   // target mid-range
-            g_pdhl_rev.L2_LONG_MIN      = 0.55;   // bids building for long
-            g_pdhl_rev.L2_SHORT_MAX     = 0.45;   // asks building for short
-            g_pdhl_rev.DRIFT_FADE_MIN   = 1.5;    // proxy when no real L2
-            g_pdhl_rev.MIN_RANGE_PTS    = 8.0;    // skip thin days
-            g_pdhl_rev.RISK_USD         = 30.0;
-            g_pdhl_rev.COOLDOWN_MS      = 120'000;
-            g_pdhl_rev.MAX_HOLD_MS      = 900'000;
-
             // shadow trades; in LIVE mode it would place real orders.
             // Historical 2yr backtest (14.8% WR, -$27k) predates current HMM
             // gate, VWAP filter, and chop gate; recent shadow WR is materially
             // different. Re-evaluate before promoting to LIVE.
 
-            std::cout << "[PDHL-REV] PDHLReversionEngine configured"
-                      << " shadow=" << (g_pdhl_rev.shadow_mode ? "true" : "false")
-                      << " entry_pct=" << g_pdhl_rev.RANGE_ENTRY_PCT
-                      << " sl_mult=" << g_pdhl_rev.SL_ATR_MULT
-                      << " tp_frac=" << g_pdhl_rev.TP_RANGE_FRAC << "\n";
             std::cout.flush();
         }
     }
@@ -5793,98 +4643,22 @@ static void init_engines(const std::string& cfg_path)
                           g_xauusd_fvg.shadow_mode,
                           {"XauusdFvg"}); });
     // 2026-05-18: GoldScalpPyramid engine registration.
-    g_engines.register_engine("GoldScalpPyramid",
-        [reg]{ return reg("GoldScalpPyramid",
-                          g_gold_scalp_pyramid.enabled,
-                          g_gold_scalp_pyramid.shadow_mode,
-                          {"GoldScalpPyramid"}); });
     // S38d 2026-05-26: FxScalpPyramid x5 engine registrations.
-    g_engines.register_engine("FxScalpPyramid_EURUSD",
-        [reg]{ return reg("FxScalpPyramid_EURUSD",
-                          g_fx_scalp_eurusd.enabled,
-                          g_fx_scalp_eurusd.shadow_mode,
-                          {"FxScalpPyramid_EURUSD"}); });
-    g_engines.register_engine("FxScalpPyramid_USDJPY",
-        [reg]{ return reg("FxScalpPyramid_USDJPY",
-                          g_fx_scalp_usdjpy.enabled,
-                          g_fx_scalp_usdjpy.shadow_mode,
-                          {"FxScalpPyramid_USDJPY"}); });
-    g_engines.register_engine("FxScalpPyramid_GBPUSD",
-        [reg]{ return reg("FxScalpPyramid_GBPUSD",
-                          g_fx_scalp_gbpusd.enabled,
-                          g_fx_scalp_gbpusd.shadow_mode,
-                          {"FxScalpPyramid_GBPUSD"}); });
-    g_engines.register_engine("FxScalpPyramid_USDCAD",
-        [reg]{ return reg("FxScalpPyramid_USDCAD",
-                          g_fx_scalp_usdcad.enabled,
-                          g_fx_scalp_usdcad.shadow_mode,
-                          {"FxScalpPyramid_USDCAD"}); });
-    g_engines.register_engine("FxScalpPyramid_AUDUSD",
-        [reg]{ return reg("FxScalpPyramid_AUDUSD",
-                          g_fx_scalp_audusd.enabled,
-                          g_fx_scalp_audusd.shadow_mode,
-                          {"FxScalpPyramid_AUDUSD"}); });
     // 2026-05-19 S110: GoldRegimeDaily engine registration.
-    g_engines.register_engine("GoldRegimeDaily",
-        [reg]{ return reg("GoldRegimeDaily",
-                          g_gold_regime_daily.enabled,
-                          g_gold_regime_daily.shadow_mode,
-                          {"GoldRegimeDaily"}); });
     // S11 P3b: HybridSP / HybridNQ / HybridUS30 / HybridNAS100 register_engine
     //   blocks removed (engines culled in P3a + P3b).
-    g_engines.register_engine("MacroCrash",
-        [reg]{ return reg("MacroCrash",
-                          g_macro_crash.enabled,
-                          g_macro_crash.shadow_mode,
-                          {"MacroCrash"}); });
     g_engines.register_engine("CandleFlow",
         [reg]{ return reg("CandleFlow",
                           !g_disable_candle_flow,
                           g_candle_flow.shadow_mode,
                           {"CandleFlowEngine"}); });
-    g_engines.register_engine("Tsmom",
-        [reg]{ return reg("Tsmom",
-                          g_tsmom.enabled,
-                          g_tsmom.shadow_mode,
-                          {"Tsmom_"}); });
-    g_engines.register_engine("TsmomV2",
-        [reg]{ return reg("TsmomV2",
-                          g_tsmom_v2.enabled,
-                          g_tsmom_v2.shadow_mode,
-                          {"TsmomV2_", "Cell_"}); });
-    g_engines.register_engine("Donchian",
-        [reg]{ return reg("Donchian",
-                          g_donchian.enabled,
-                          g_donchian.shadow_mode,
-                          {"Donchian_"}); });
-    g_engines.register_engine("EmaPullback",
-        [reg]{ return reg("EmaPullback",
-                          g_ema_pullback.enabled,
-                          g_ema_pullback.shadow_mode,
-                          {"EmaPullback_"}); });
     g_engines.register_engine("TrendRider",
         [reg]{ return reg("TrendRider",
                           g_trend_rider.enabled,
                           g_trend_rider.shadow_mode,
                           {"TrendRider_"}); });
-    g_engines.register_engine("RSIReversal",
-        [reg]{ return reg("RSIReversal",
-                          g_rsi_reversal.enabled,
-                          g_rsi_reversal.shadow_mode,
-                          {"RSIReversal"}); });
-    g_engines.register_engine("RSIExtreme",
-        [reg]{ return reg("RSIExtreme",
-                          g_rsi_extreme.enabled,
-                          g_rsi_extreme.shadow_mode,
-                          {"RSIExtremeTurn"}); });
     // S-2026-06-02: register the current straddle / ORB / index-straddle book so
     // the /engines panel reflects the live engines instead of only the legacy set.
-    g_engines.register_engine("XauStraddleM30",
-        [reg]{ return reg("XauStraddleM30", g_xau_straddle_m30.enabled, g_xau_straddle_m30.shadow_mode, {"XauStraddleM30"}); });
-    g_engines.register_engine("XauStraddleM15",
-        [reg]{ return reg("XauStraddleM15", g_xau_straddle_m15.enabled, g_xau_straddle_m15.shadow_mode, {"XauStraddleM15"}); });
-    g_engines.register_engine("OrbEstx50",
-        [reg]{ return reg("OrbEstx50", g_orb_estx50_v2.enabled, g_orb_estx50_v2.shadow_mode, {"OrbEstx50"}); });
     g_engines.register_engine("IdxStraddleGER40_M30",
         [reg]{ return reg("IdxStraddleGER40_M30", g_idx_straddle_ger40_m30.enabled, g_idx_straddle_ger40_m30.shadow_mode, {"IdxStraddleGER40_M30"}); });
     g_engines.register_engine("IdxStraddleGER40_M15",
@@ -5897,8 +4671,6 @@ static void init_engines(const std::string& cfg_path)
         [reg]{ return reg("IdxStraddleUK100_M30", g_idx_straddle_uk100_m30.enabled, g_idx_straddle_uk100_m30.shadow_mode, {"IdxStraddleUK100_M30"}); });
     g_engines.register_engine("IdxStraddleUK100_M240",
         [reg]{ return reg("IdxStraddleUK100_M240", g_idx_straddle_uk100_m240.enabled, g_idx_straddle_uk100_m240.shadow_mode, {"IdxStraddleUK100_M240"}); });
-    g_engines.register_engine("NqMomentum",
-        [reg]{ return reg("NqMomentum", g_nq_momentum.enabled, g_nq_momentum.shadow_mode, {"NqMomentum"}); });
     std::cout << "[OmegaApi] g_engines registered ("
               << g_engines.snapshot_all().size() << " engines)\n";
     std::cout.flush();
@@ -5978,19 +4750,8 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("CandleFlow",         true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("XauusdFvg",          true, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("GoldScalpPyramid",   g_gold_scalp_pyramid.enabled, 3600, 7, 21);
         // S38d 2026-05-26: FxScalpPyramid heartbeats. 07-21 UTC session.
-        g_engine_heartbeat.register_engine("FxScalpPyramid_EURUSD", g_fx_scalp_eurusd.enabled, 3600, 7, 21);
-        g_engine_heartbeat.register_engine("FxScalpPyramid_USDJPY", g_fx_scalp_usdjpy.enabled, 3600, 7, 21);
-        g_engine_heartbeat.register_engine("FxScalpPyramid_GBPUSD", g_fx_scalp_gbpusd.enabled, 3600, 7, 21);
-        g_engine_heartbeat.register_engine("FxScalpPyramid_USDCAD", g_fx_scalp_usdcad.enabled, 3600, 7, 21);
-        g_engine_heartbeat.register_engine("FxScalpPyramid_AUDUSD", g_fx_scalp_audusd.enabled, 3600, 7, 21);
-        g_engine_heartbeat.register_engine("GoldRegimeDaily",    g_gold_regime_daily.enabled, 14400, 7, 21);
-        g_engine_heartbeat.register_engine("RSIReversal",        g_rsi_reversal.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("RSIExtreme",         g_rsi_extreme.enabled,  3600,  0, 24);
         g_engine_heartbeat.register_engine("h1_swing_gold",      g_h1_swing_gold.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("h4_regime_gold",     g_h4_regime_gold.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("MacroCrash",         g_macro_crash.enabled, 3600, 0, 24);
         g_engine_heartbeat.register_engine("NbmGoldLondon",      true,  900,  7, 14);
 
         // ---- XAU trend zoo (H1/H2/H4/D1, tick-driven dispatch) ----------
@@ -6005,55 +4766,14 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("XauTrendFollow2h",     g_xau_tf_2h.enabled,            3600,  0, 24);
         g_engine_heartbeat.register_engine("XauTrendFollow4h",     g_xau_tf_4h.enabled,            3600,  0, 24);
         g_engine_heartbeat.register_engine("XauTrendFollowD1",     g_xau_tf_d1.enabled,            3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauTsmomFastD1",       g_xau_tsmom_fast_d1.enabled,    3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauTurtleD1",          g_xau_turtle_d1.enabled,        3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauStopRunD1",         g_xau_stop_run_d1.enabled,      3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauPullbackContH4",    g_xau_pullback_cont_h4.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauPullbackContD1",    g_xau_pullback_cont_d1.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauNbmD1",             g_xau_nbm_d1.enabled,           3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauEmaCrossH4",        g_xau_ema_cross_h4.enabled,     3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauBBScalpD1",         g_xau_bb_scalp_d1.enabled,      3600,  0, 24);
         g_engine_heartbeat.register_engine("XauSwingBreakD1",      g_xau_swing_break_d1.enabled,   3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauDojiRejD1",         g_xau_doji_rej_d1.enabled,      3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauOutsideBarD1",      g_xau_outside_bar_d1.enabled,   3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauInsideBarD1",       g_xau_inside_bar_d1.enabled,    3600,  0, 24);
-        g_engine_heartbeat.register_engine("TrendLineBreak",       g_trendline_break.enabled,      3600,  0, 24);
-        g_engine_heartbeat.register_engine("TrendLineBreakGBP",    g_trendline_break_gbp.enabled,  3600,  0, 24);
-        g_engine_heartbeat.register_engine("TrendLineBreakJPY",    g_trendline_break_jpy.enabled,  3600,  0, 24);
-        g_engine_heartbeat.register_engine("Xau3BarMomH4",         g_xau_3bar_mom_h4.enabled,      3600,  0, 24);
-        g_engine_heartbeat.register_engine("XauDonchian55GatedM30",g_xau_d55_gated_m30.enabled,    3600,  0, 24);
 
         // ---- Gold portfolio (H1-bar driven, dispatched from gold ticks) --
-        g_engine_heartbeat.register_engine("C1Retuned",            g_c1_retuned.enabled,           3600,  0, 24);
-        g_engine_heartbeat.register_engine("Donchian",             g_donchian.enabled,             3600,  0, 24);
-        g_engine_heartbeat.register_engine("EmaPullback",          g_ema_pullback.enabled,         3600,  0, 24);
-        g_engine_heartbeat.register_engine("TsmomV2",              g_tsmom_v2.enabled,             3600,  0, 24);
-        g_engine_heartbeat.register_engine("PdhlRev",              g_pdhl_rev.enabled,             3600,  0, 24);
 
         // ---- FX cross-asset engines (Stage 3 heartbeat rollout) ----------
-        g_engine_heartbeat.register_engine("EurusdTurtleH4",       g_eurusd_turtle_h4.enabled,     3600,  0, 24);
-        g_engine_heartbeat.register_engine("GbpusdTurtleH4",       g_gbpusd_turtle_h4.enabled,     3600,  0, 24);
-        g_engine_heartbeat.register_engine("AmrEurusd",            g_amr_eurusd.enabled,           3600,  0, 24);
-        g_engine_heartbeat.register_engine("AmrGbpusd",            g_amr_gbpusd.enabled,           3600,  0, 24);
-        g_engine_heartbeat.register_engine("EurGbpPairs",          g_eur_gbp_pairs.enabled,        3600,  0, 24);
-        g_engine_heartbeat.register_engine("VwapRevEurusd",        g_vwap_rev_eurusd.enabled,      3600,  0, 24);
 
         // ---- Indices (Stage 4 heartbeat rollout) -------------------------
-        g_engine_heartbeat.register_engine("AmrUs500",             g_amr_us500.enabled,            3600,  7, 22);
-        g_engine_heartbeat.register_engine("AmrGer40",             g_amr_ger40.enabled,            3600,  7, 22);
-        g_engine_heartbeat.register_engine("AmrNas100",            g_amr_nas100.enabled,           3600,  7, 22);
-        g_engine_heartbeat.register_engine("NqMomentum",          g_nq_momentum.enabled,          3600, 13, 21);
-        g_engine_heartbeat.register_engine("VwapRevGer40",         g_vwap_rev_ger40.enabled,       3600,  7, 22);
-        g_engine_heartbeat.register_engine("Ger40LondonBrk",       g_ger40_london_brk.enabled,     3600,  7, 22);
-        g_engine_heartbeat.register_engine("Ger40TurtleH4",        g_ger40_turtle_h4.enabled,      3600,  7, 22);
-        g_engine_heartbeat.register_engine("Ger40KeltnerH1",       g_ger40_kelt.enabled,           3600,  7, 22);
         g_engine_heartbeat.register_engine("XauSessNYpm",          g_xau_sess_nypm.enabled,        3600, 16, 21);
-        g_engine_heartbeat.register_engine("XauSessOvernight",     g_xau_sess_overnight.enabled,   3600, 23,  5);
-        g_engine_heartbeat.register_engine("MinimalH4Ger40",       g_minimal_h4_ger40.enabled,     3600,  7, 22);
-        g_engine_heartbeat.register_engine("Us30Ensemble",         g_us30_ensemble.enabled,        3600,  7, 22);
-        g_engine_heartbeat.register_engine("Us30_3BarMomH1",       g_us30_3bar_mom_h1.enabled,     3600,  7, 22);
-        g_engine_heartbeat.register_engine("OrbDj30",              g_orb_dj30.enabled,             3600, 13, 22);
-        g_engine_heartbeat.register_engine("OrbNas100",            g_orb_nas100.enabled,           3600, 13, 22);
         g_engine_heartbeat.register_engine("NasBbRevLongH1",       g_nas_bbrev_long_h1.enabled,    3600,  7, 22);
 
         // ---- Tsmom portfolio (5 cells, bar-driven on H1) -----------------
@@ -6061,11 +4781,6 @@ static void init_engines(const std::string& cfg_path)
         // forwarding to TsmomPortfolio::on_tick / on_h1_bar. Pulse fires from
         // the gold dispatcher so cadence is high; the 3600s envelope is
         // intentional for weekend safety.
-        g_engine_heartbeat.register_engine("Tsmom_H1_long",      g_tsmom.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_H2_long",      g_tsmom.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_H4_long",      g_tsmom.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_H6_long",      g_tsmom.enabled, 3600,  0, 24);
-        g_engine_heartbeat.register_engine("Tsmom_D1_long",      g_tsmom.enabled, 3600,  0, 24);
 
         // ---- FX session-windowed engines (audit-fixes-37 + 41 cohort) ----
         g_engine_heartbeat.register_engine("EurusdLondonOpen",   true,  600,  6,  9);
@@ -6386,9 +5101,7 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("GoldScalpPyramid",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_gold_scalp_pyramid.has_open_position()) return out;
 
-            const auto& p = g_gold_scalp_pyramid.m_pos;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
 
             double current = p.base_entry;
@@ -6456,19 +5169,12 @@ static void init_engines(const std::string& cfg_path)
                     return out;
                 });
         };
-        register_fx_scalp("EURUSD", g_fx_scalp_eurusd, "FxScalpPyramid_EURUSD");
-        register_fx_scalp("USDJPY", g_fx_scalp_usdjpy, "FxScalpPyramid_USDJPY");
-        register_fx_scalp("GBPUSD", g_fx_scalp_gbpusd, "FxScalpPyramid_GBPUSD");
-        register_fx_scalp("USDCAD", g_fx_scalp_usdcad, "FxScalpPyramid_USDCAD");
-        register_fx_scalp("AUDUSD", g_fx_scalp_audusd, "FxScalpPyramid_AUDUSD");
     }
     // 2026-05-19 S110: GoldRegimeDaily position source.
     g_open_positions.register_source("GoldRegimeDaily",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_gold_regime_daily.has_open_position()) return out;
 
-            const auto& p = g_gold_regime_daily.m_pos;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
 
             double current = p.entry;
@@ -6526,8 +5232,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("PDHLReversion",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_pdhl_rev.has_open_position()) return out;
-            const auto& p = g_pdhl_rev.pos;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
             double current = p.entry;
             const auto it = g_last_tick_bid.find("XAUUSD");
@@ -6549,8 +5253,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("RSIReversal",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_rsi_reversal.has_open_position()) return out;
-            const auto& p = g_rsi_reversal.pos;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
             double current = p.entry;
             const auto it = g_last_tick_bid.find("XAUUSD");
@@ -6572,7 +5274,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("MinimalH4Gold",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            const auto& p = g_minimal_h4_gold.pos_;
             if (!p.active) return out;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
             double current = p.entry;
@@ -6595,7 +5296,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("MinimalH4US30",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            const auto& p = g_minimal_h4_us30.pos_;
             if (!p.active) return out;
             const double mult = tick_value_multiplier(std::string("DJ30.F"));
             double current = p.entry;
@@ -6669,8 +5369,6 @@ static void init_engines(const std::string& cfg_path)
                     return out;
                 });
         };
-        reg_straddle("XauStraddleM30",       "XAUUSD", &g_xau_straddle_m30);
-        reg_straddle("XauStraddleM15",       "XAUUSD", &g_xau_straddle_m15);
         reg_straddle("IdxStraddleGER40_M30", "GER40",  &g_idx_straddle_ger40_m30);
         reg_straddle("IdxStraddleGER40_M15", "GER40",  &g_idx_straddle_ger40_m15);
         reg_straddle("IdxStraddleNAS100_M15","NAS100", &g_idx_straddle_nas_m15);
@@ -6684,8 +5382,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("Ger40TurtleH4",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_ger40_turtle_h4.has_open_position()) return out;
-            const auto& p = g_ger40_turtle_h4.pos_;
             const bool is_long = (p.sl < p.entry);
             const double mult = tick_value_multiplier(std::string("GER40"));
             double current = p.entry;
@@ -6707,16 +5403,12 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("Ger40KeltnerH1",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_ger40_kelt.pos.active) return out;
-            const auto& p = g_ger40_kelt.pos;
             const double mult = tick_value_multiplier(std::string("GER40"));
             double current = p.entry_px;
             const auto it = g_last_tick_bid.find("GER40");
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
             omega::PositionSnapshot ps;
             ps.symbol = "GER40"; ps.side = "LONG";
-            ps.size = g_ger40_kelt.lot; ps.entry = p.entry_px; ps.current = current;
-            ps.unrealized_pnl = (current - p.entry_px) * g_ger40_kelt.lot * mult;
             ps.tp = 0.0; ps.sl = p.sl_px; ps.entry_ts = p.entry_ts_ms / 1000;
             ps.engine = "Ger40KeltnerH1";
             out.push_back(ps);
@@ -6756,10 +5448,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("NoiseBandMomentumGoldLdn",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_nbm_gold_london.has_open_position()) return out;
-            const bool   is_long = g_nbm_gold_london.open_is_long();
-            const double entry   = g_nbm_gold_london.open_entry();
-            const double sz      = g_nbm_gold_london.open_size();
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
             double current = entry;
             const auto it = g_last_tick_bid.find("XAUUSD");
@@ -6805,14 +5493,6 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
-    g_open_positions.register_source("VWAPReversionSP",
-        _make_vwap_source("VWAPReversionSP",     "US500.F", &g_vwap_rev_sp));
-    g_open_positions.register_source("VWAPReversionNQ",
-        _make_vwap_source("VWAPReversionNQ",     "USTEC.F", &g_vwap_rev_nq));
-    g_open_positions.register_source("VWAPReversionGER40",
-        _make_vwap_source("VWAPReversionGER40",  "GER40",   &g_vwap_rev_ger40));
-    g_open_positions.register_source("VWAPReversionEURUSD",
-        _make_vwap_source("VWAPReversionEURUSD", "EURUSD",  &g_vwap_rev_eurusd));
 
     // TrendPullback x 2 instances (gold + nq, the LIVE pair per part-F).
     // CrossPosition pos_ is private; use the public accessors already
@@ -6842,10 +5522,6 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
-    g_open_positions.register_source("TrendPullbackGold",
-        _make_tpb_source("TrendPullbackGold", "XAUUSD",  &g_trend_pb_gold));
-    g_open_positions.register_source("TrendPullbackNQ",
-        _make_tpb_source("TrendPullbackNQ",   "USTEC.F", &g_trend_pb_nq));
 
     // ── S66-followup-2 (2026-05-14 part L): IndexFlowEngine x4 GUI sources.
     //   Uses the new IndexFlowEngine::pos() const accessor (added in
@@ -7003,14 +5679,6 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
-    g_open_positions.register_source("C1RetunedDonchianH1",
-        _make_c1_donchian_source("C1RetunedDonchianH1",  &g_c1_retuned.donchian_h1_));
-    g_open_positions.register_source("C1RetunedBollingerH2",
-        _make_c1_bollinger_source("C1RetunedBollingerH2", &g_c1_retuned.bollinger_h2_));
-    g_open_positions.register_source("C1RetunedBollingerH4",
-        _make_c1_bollinger_source("C1RetunedBollingerH4", &g_c1_retuned.bollinger_h4_));
-    g_open_positions.register_source("C1RetunedBollingerH6",
-        _make_c1_bollinger_source("C1RetunedBollingerH6", &g_c1_retuned.bollinger_h6_));
 
     // ── S66 (2026-05-13): 6 more engines (EMACross, H4RegimeGold,
     //    MacroCrash, XauTrendFollow 2h/4h/D1). Mechanical follow-ups to S65.
@@ -7055,9 +5723,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("H4RegimeGold",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_h4_regime_gold.has_open_position()) return out;
-            const auto& p = g_h4_regime_gold.pos_;
-            const std::string sym = g_h4_regime_gold.symbol;
             const double mult = tick_value_multiplier(sym);
             double current = p.entry;
             const auto it = g_last_tick_bid.find(sym);
@@ -7082,8 +5747,6 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("MacroCrash",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_macro_crash.has_open_position()) return out;
-            const auto& p = g_macro_crash.pos;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
             double current = p.entry;
             const auto it = g_last_tick_bid.find("XAUUSD");
@@ -7159,8 +5822,6 @@ static void init_engines(const std::string& cfg_path)
     // Removed here; the earlier persist_save sources remain the single source.
     g_open_positions.register_source("OvernightDrift", [&,_nas_px]() {
         std::vector<omega::PositionSnapshot> out;
-        if (!g_overnight_nas.has_open_position()) return out;
-        const auto& p = g_overnight_nas.pos; const double mult = tick_value_multiplier(std::string("NAS100"));
         double cur=_nas_px(p.entry_px);
         omega::PositionSnapshot ps; ps.engine="OvernightDrift"; ps.symbol="NAS100";
         ps.side="LONG"; ps.size=p.size; ps.entry=p.entry_px; ps.current=cur;
@@ -7180,12 +5841,8 @@ static void init_engines(const std::string& cfg_path)
             ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.stop_px; ps.tp=0.0;
             ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
             out.push_back(ps); return out; }; };
-    g_open_positions.register_source("AdaptiveHullXAU", _hull_src("AdaptiveHullXAU", &g_adhull_xau, "XAUUSD"));
-    g_open_positions.register_source("AdaptiveHullGER", _hull_src("AdaptiveHullGER", &g_adhull_ger, "GER40"));
     g_open_positions.register_source("SupertrendGold", []() {
         std::vector<omega::PositionSnapshot> out;
-        if (!g_supertrend_gold.has_open_position()) return out;
-        const auto& p=g_supertrend_gold.pos; const double mult=tick_value_multiplier(std::string("XAUUSD"));
         double cur=p.entry_px; const auto it=g_last_tick_bid.find("XAUUSD");
         if (it!=g_last_tick_bid.end() && it->second>0.0) cur=it->second;
         omega::PositionSnapshot ps; ps.engine="SupertrendGold"; ps.symbol="XAUUSD"; ps.side="LONG";
@@ -7198,17 +5855,12 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("GoldSeasonal",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_gold_seasonal.has_open_position()) return out;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            const double entry = g_gold_seasonal.pos_entry();
             double current = entry;
             const auto it = g_last_tick_bid.find("XAUUSD");
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
             omega::PositionSnapshot ps;
             ps.symbol = "XAUUSD"; ps.side = "LONG";
-            ps.size = g_gold_seasonal.pos_lot(); ps.entry = entry; ps.current = current;
-            ps.unrealized_pnl = (current - entry) * g_gold_seasonal.pos_lot() * mult;
-            ps.tp = 0.0; ps.sl = 0.0; ps.entry_ts = g_gold_seasonal.pos_entry_ts_ms() / 1000;
             ps.engine = "GoldSeasonal";
             out.push_back(ps);
             return out;
@@ -7219,18 +5871,12 @@ static void init_engines(const std::string& cfg_path)
     g_open_positions.register_source("GoldOversoldBounce",
         []() -> std::vector<omega::PositionSnapshot> {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_gold_oversold.has_open_position()) return out;
             const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            const double entry = g_gold_oversold.pos_entry();
             double current = entry;
             const auto it = g_last_tick_bid.find("XAUUSD");
             if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
             omega::PositionSnapshot ps;
             ps.symbol = "XAUUSD"; ps.side = "LONG";
-            ps.size = g_gold_oversold.pos_lot(); ps.entry = entry; ps.current = current;
-            ps.unrealized_pnl = (current - entry) * g_gold_oversold.pos_lot() * mult;
-            ps.tp = 0.0; ps.sl = g_gold_oversold.pos_stop();
-            ps.entry_ts = g_gold_oversold.pos_entry_ts_ms() / 1000;
             ps.engine = "GoldOversoldBounce";
             out.push_back(ps);
             return out;
@@ -7313,10 +5959,6 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
-    g_open_positions.register_source("UstecTrendFollow5m",
-        _make_ustec_tf_source("UstecTrendFollow5m", &g_ustec_tf_5m));
-    g_open_positions.register_source("UstecTrendFollowHtf",
-        _make_ustec_tf_source("UstecTrendFollowHtf", &g_ustec_tf_htf));
 
     // FX BreakoutEngine x 5 (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDJPY).
     //   omega::BreakoutEngine inherits from BreakoutEngineBase<BreakoutEngine>
@@ -7380,15 +6022,11 @@ static void init_engines(const std::string& cfg_path)
         };
 
         // --- g_xau_tf_m15 : reuse the XauTf factory (XauTfPos1h field shape) ---
-        g_open_positions.register_source("XauTrendFollowM15",
-            _make_xau_tf_source("XauTrendFollowM15", &g_xau_tf_m15));
 
         // --- g_overnight_spx : OvernightDriftEngine, US500.F, long-only ---
         //   pos: {active, entry_px, size, entry_ms}; has_open_position(); no sl/tp.
         g_open_positions.register_source("OvernightDriftSPX", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_overnight_spx.has_open_position()) return out;
-            const auto& p = g_overnight_spx.pos; const double mult = tick_value_multiplier(std::string("US500.F"));
             double cur = _cur_px("US500.F", p.entry_px);
             omega::PositionSnapshot ps; ps.engine="OvernightDriftSPX"; ps.symbol="US500.F"; ps.side="LONG";
             ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=0.0; ps.tp=0.0;
@@ -7407,8 +6045,6 @@ static void init_engines(const std::string& cfg_path)
                 ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
                 ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
                 out.push_back(ps); return out; }; };
-        g_open_positions.register_source("FxTurtleH4_EURUSD", _turtle_src("FxTurtleH4_EURUSD", &g_eurusd_turtle_h4, "EURUSD"));
-        g_open_positions.register_source("FxTurtleH4_GBPUSD", _turtle_src("FxTurtleH4_GBPUSD", &g_gbpusd_turtle_h4, "GBPUSD"));
 
         // --- TrendLineBreakEngine FX x2 (GBPUSD, USDJPY), SHADOW ---
         //   pos_: {active, side(+1/-1 int), entry, sl, lot, entry_ts_ms, mfe};
@@ -7423,15 +6059,11 @@ static void init_engines(const std::string& cfg_path)
                 ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=0.0;
                 ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
                 out.push_back(ps); return out; }; };
-        g_open_positions.register_source("TrendLineBreakGBP", _tlb_src("TrendLineBreakGBP", &g_trendline_break_gbp, "GBPUSD"));
-        g_open_positions.register_source("TrendLineBreakJPY", _tlb_src("TrendLineBreakJPY", &g_trendline_break_jpy, "USDJPY"));
 
         // --- g_minimal_h4_ger40 : MinimalH4GER40Breakout, GER40 ---
         //   pos_: {active, is_long, entry, sl, tp, size, entry_ts_ms}; has_open_position().
         g_open_positions.register_source("MinimalH4GER40", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_minimal_h4_ger40.has_open_position()) return out;
-            const auto& p = g_minimal_h4_ger40.pos_; const double mult = tick_value_multiplier(std::string("GER40"));
             double cur=_cur_px("GER40", p.entry); const double dir=p.is_long?1.0:-1.0;
             omega::PositionSnapshot ps; ps.engine="MinimalH4GER40"; ps.symbol="GER40"; ps.side=p.is_long?"LONG":"SHORT";
             ps.size=p.size; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
@@ -7443,8 +6075,6 @@ static void init_engines(const std::string& cfg_path)
         //   entry_ts_ms}. Display the EUR leg entry; side from long_spread; no sl/tp.
         g_open_positions.register_source("EurGbpPairs", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_eur_gbp_pairs.has_open_position()) return out;
-            const auto& p = g_eur_gbp_pairs.pos_;
             double cur=_cur_px("EURGBP", p.eur_entry);
             omega::PositionSnapshot ps; ps.engine="EurGbpPairs"; ps.symbol="EURGBP";
             ps.side=p.long_spread?"LONG":"SHORT"; ps.size=p.lot; ps.entry=p.eur_entry; ps.current=cur;
@@ -7468,8 +6098,6 @@ static void init_engines(const std::string& cfg_path)
         //   pos: {active, is_long, entry_px, tp_px, sl_px, size, entry_ms, mfe, mae}.
         g_open_positions.register_source("Ger40LondonBrk", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_ger40_london_brk.has_open_position()) return out;
-            const auto& p = g_ger40_london_brk.pos; const double mult = tick_value_multiplier(std::string("GER40"));
             double cur=_cur_px("GER40", p.entry_px); const double dir=p.is_long?1.0:-1.0;
             omega::PositionSnapshot ps; ps.engine="Ger40LondonBrk"; ps.symbol="GER40"; ps.side=p.is_long?"LONG":"SHORT";
             ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
@@ -7500,16 +6128,11 @@ static void init_engines(const std::string& cfg_path)
                 ps.size=p.size; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=0.0;
                 ps.entry_ts=p.entry_ts; ps.unrealized_pnl=(cur-p.entry)*(p.is_long?1.0:-1.0)*p.size*mult;
                 out.push_back(ps); return out; }; };
-        g_open_positions.register_source("IndexIntradayDrift_SP",    _idd_src("IndexIntradayDrift_SP",    &g_idd_sp,    "US500.F"));
-        g_open_positions.register_source("IndexIntradayDrift_UK100", _idd_src("IndexIntradayDrift_UK100", &g_idd_uk100, "UK100"));
-        g_open_positions.register_source("IndexIntradayDrift_US30",  _idd_src("IndexIntradayDrift_US30",  &g_idd_us30,  "DJ30.F"));
 
         // --- g_orb_estx50_v2 : OrbBreakoutEngine, ESTX50 ---
         //   pos_: {active, side(+1/-1 int), entry, sl, tp, lot, entry_ts_ms}; has_open_position().
         g_open_positions.register_source("OrbEstx50", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_orb_estx50_v2.has_open_position()) return out;
-            const auto& p = g_orb_estx50_v2.pos_; const double mult = tick_value_multiplier(std::string("ESTX50"));
             double cur=_cur_px("ESTX50", p.entry); const double dir=(p.side>0)?1.0:-1.0;
             omega::PositionSnapshot ps; ps.engine="OrbEstx50"; ps.symbol="ESTX50"; ps.side=(p.side>0)?"LONG":"SHORT";
             ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
@@ -7520,23 +6143,12 @@ static void init_engines(const std::string& cfg_path)
         //   pos[]: {active, is_long, entry_px, sl_px, tp_px, entry_ts_ms, mfe_pts}; size from eng.lot.
         g_open_positions.register_source("Us30Ensemble", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("DJ30.F")); const double sz=g_us30_ensemble.lot;
-            for (const auto& p : g_us30_ensemble.pos) {
-                if (!p.active) continue;
-                double cur=_cur_px("DJ30.F", p.entry_px); const double dir=p.is_long?1.0:-1.0;
-                omega::PositionSnapshot ps; ps.engine="Us30Ensemble"; ps.symbol="DJ30.F"; ps.side=p.is_long?"LONG":"SHORT";
-                ps.size=sz; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
-                ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*dir*sz*mult;
-                out.push_back(ps);
-            }
             return out; });
 
         // --- g_xau_breakbounce : BreakBounceEngine, XAUUSD ---
         //   pos: {active, is_long, entry_px, stop_px, tp_px?, size, entry_ms}; has_open_position().
         g_open_positions.register_source("BreakBounce", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_xau_breakbounce.has_open_position()) return out;
-            const auto& p = g_xau_breakbounce.pos; const double mult = tick_value_multiplier(std::string("XAUUSD"));
             double cur=_cur_px("XAUUSD", p.entry_px); const double dir=p.is_long?1.0:-1.0;
             omega::PositionSnapshot ps; ps.engine="BreakBounce"; ps.symbol="XAUUSD"; ps.side=p.is_long?"LONG":"SHORT";
             ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
@@ -7548,27 +6160,18 @@ static void init_engines(const std::string& cfg_path)
         //   DojiRej + OutsideBar fire long only at entry; Turtle is long-only.
         g_open_positions.register_source("XauDojiRejD1", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_xau_doji_rej_d1.has_open_position()) return out;
-            const auto& p = g_xau_doji_rej_d1.pos_; const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            const double sz=g_xau_doji_rej_d1.p.lot; double cur=_cur_px("XAUUSD", p.entry);
             omega::PositionSnapshot ps; ps.engine="XauDojiRejD1"; ps.symbol="XAUUSD"; ps.side="LONG";
             ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
             ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*sz*mult;
             out.push_back(ps); return out; });
         g_open_positions.register_source("XauOutsideBarD1", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_xau_outside_bar_d1.has_open_position()) return out;
-            const auto& p = g_xau_outside_bar_d1.pos_; const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            const double sz=g_xau_outside_bar_d1.p.lot; double cur=_cur_px("XAUUSD", p.entry);
             omega::PositionSnapshot ps; ps.engine="XauOutsideBarD1"; ps.symbol="XAUUSD"; ps.side="LONG";
             ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
             ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*sz*mult;
             out.push_back(ps); return out; });
         g_open_positions.register_source("XauTurtleD1", [_cur_px]() {
             std::vector<omega::PositionSnapshot> out;
-            if (!g_xau_turtle_d1.has_open_position()) return out;
-            const auto& p = g_xau_turtle_d1.pos_; const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            const double sz=g_xau_turtle_d1.p.lot; double cur=_cur_px("XAUUSD", p.entry); const double dir=p.is_long?1.0:-1.0;
             omega::PositionSnapshot ps; ps.engine="XauTurtleD1"; ps.symbol="XAUUSD"; ps.side=p.is_long?"LONG":"SHORT";
             ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
             ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*sz*mult;
@@ -7587,7 +6190,6 @@ static void init_engines(const std::string& cfg_path)
                 ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*sz*mult;
                 out.push_back(ps); return out; }; };
         g_open_positions.register_source("XauSessNYpm",     _sess_src("XauSessNYpm",     &g_xau_sess_nypm));
-        g_open_positions.register_source("XauSessOvernight", _sess_src("XauSessOvernight", &g_xau_sess_overnight));
 
         // --- multi-cell portfolios: Donchian + EmaPullback (XAUUSD cells) ---
         //   DonchianCell / EpbCell public fields: {pos_active_, pos_entry_, pos_sl_,
@@ -7605,45 +6207,15 @@ static void init_engines(const std::string& cfg_path)
             out.push_back(ps); };
         g_open_positions.register_source("DonchianPortfolio", [_emit_donch_cell]() {
             std::vector<omega::PositionSnapshot> out;
-            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h2_long_);
-            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h4_long_);
-            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h4_short_);
-            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h6_long_);
-            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.h6_short_);
-            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.d1_long_);
-            _emit_donch_cell(out, "DonchianPortfolio", g_donchian.d1_short_);
             return out; });
         g_open_positions.register_source("EmaPullbackPortfolio", [_emit_donch_cell]() {
             std::vector<omega::PositionSnapshot> out;
-            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h1_long_);
-            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h2_long_);
-            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h4_long_);
-            _emit_donch_cell(out, "EmaPullbackPortfolio", g_ema_pullback.h6_long_);
             return out; });
 
         // --- g_tsmom_v2 : TsmomPortfolioV2 = CellPortfolio<TsmomStrategy> ---
         //   public cells_ vector; each Cell (CellBase) has positions_ (vector<Position>),
         //   direction(+1/-1), symbol, cell_id. Position: {entry, sl, tp, size, entry_ms,
         //   mfe, mae}. One snapshot per open position across all cells.
-        g_open_positions.register_source("TsmomPortfolioV2", []() {
-            std::vector<omega::PositionSnapshot> out;
-            for (const auto& c : g_tsmom_v2.cells_) {
-                if (c.positions_.empty()) continue;
-                const double mult = tick_value_multiplier(c.symbol);
-                const double dir = (c.direction > 0) ? 1.0 : -1.0;
-                double cur = c.positions_.front().entry;
-                const auto it = g_last_tick_bid.find(c.symbol);
-                if (it != g_last_tick_bid.end() && it->second > 0.0) cur = it->second;
-                for (const auto& p : c.positions_) {
-                    omega::PositionSnapshot ps;
-                    ps.engine = std::string("TsmomPortfolioV2#") + c.cell_id; ps.symbol = c.symbol;
-                    ps.side = (c.direction > 0) ? "LONG" : "SHORT";
-                    ps.size = p.size; ps.entry = p.entry; ps.current = cur; ps.sl = p.sl; ps.tp = p.tp;
-                    ps.entry_ts = p.entry_ms / 1000; ps.unrealized_pnl = (cur - p.entry) * dir * p.size * mult;
-                    out.push_back(ps);
-                }
-            }
-            return out; });
     } // end S-2026-06-09 visibility fix block
 
     // S-2026-06-09 round-2 visibility: register the 10 persisted-but-invisible
@@ -7657,15 +6229,11 @@ static void init_engines(const std::string& cfg_path)
                 if (eng->persist_save(tag, sym, ps)) v.push_back(ps);
                 return v; });
         };
-        _ps_src("FxTurtleH4_AUDUSD", "AUDUSD",  &g_audusd_turtle_h4);
-        _ps_src("FxTurtleH4_NZDUSD", "NZDUSD",  &g_nzdusd_turtle_h4);
-        _ps_src("FxTurtleH4_USDJPY", "USDJPY",  &g_usdjpy_turtle_h4);
         _ps_src("IndexSession_SP",     "US500.F", &g_idxsess_sp);
         _ps_src("IndexSession_NAS",    "NAS100",  &g_idxsess_nas);
         _ps_src("IndexSession_GER40",  "GER40",   &g_idxsess_ger40);
         _ps_src("IndexSession_UK100",  "UK100",   &g_idxsess_uk100);
         _ps_src("IndexSession_ESTX50", "ESTX50",  &g_idxsess_estx50);
-        _ps_src("ConnorsRSI2",         "NAS100",  &g_connors_nas);
         // S-2026-06-11 DEDUP: the "C1Retuned" persist_save_all GUI source is
         // REMOVED. Its cells are already published live (with current px) by the
         // per-cell sources C1RetunedDonchianH1/BollingerH2/H4/H6 (~L6297). This
@@ -7802,18 +6370,6 @@ static void init_engines(const std::string& cfg_path)
     {
         struct GateTarget { const char* name; bool* flag; };
         const GateTarget kGateTargets[] = {
-            { "Ger40TurtleH4",          &g_ger40_turtle_h4.enabled},
-            { "Ger40KeltnerH1",         &g_ger40_kelt.enabled     },
-            { "Ger40LondonBreakout",    &g_ger40_london_brk.enabled},
-            { "FxTurtleH4",             &g_eurusd_turtle_h4.enabled},
-            { "FxTurtleH4",             &g_gbpusd_turtle_h4.enabled},
-            { "Us30Ensemble",           &g_us30_ensemble.enabled  },
-            { "MinimalH4US30Breakout",  &g_minimal_h4_us30.enabled},
-            { "MinimalH4GER40Breakout", &g_minimal_h4_ger40.enabled},
-            { "BreakBounce",            &g_xau_breakbounce.enabled },
-            { "XauStraddleM30",         &g_xau_straddle_m30.enabled},
-            { "XauStraddleM15",         &g_xau_straddle_m15.enabled},
-            { "OrbEstx50",              &g_orb_estx50_v2.enabled   },
             { "IdxStraddleGER40_M30",   &g_idx_straddle_ger40_m30.enabled  },
             { "IdxStraddleGER40_M15",   &g_idx_straddle_ger40_m15.enabled  },
             { "IdxStraddleNAS100_M15",  &g_idx_straddle_nas_m15.enabled    },

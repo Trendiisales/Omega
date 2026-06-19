@@ -23,8 +23,6 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         g_edges.cvd.reset_all();  // clears prev_bid/prev_ask to prevent gap-spike CVD
         // Reset ORB range state -- partial ranges built before disconnect
         // would fire immediately on the first qualifying tick post-reconnect.
-        g_orb_us.reset_range();    g_orb_ger30.reset_range();
-        g_orb_uk100.reset_range(); g_orb_estx50.reset_range();
         g_md_subscribed.store(false);  // clear -- fresh session, not yet subscribed
         g_telemetry.UpdateFixStatus("CONNECTED", "CONNECTED", 0, 0);
         const std::string md = fix_build_md_subscribe_all(g_quote_seq++);

@@ -915,16 +915,6 @@ static double open_unrealised_pnl() {
         if (!has_pos || open_entry <= 0.0) return 0.0;
         return cp_pnl(true, open_long, open_entry, open_size, sym);
     };
-    total += ca_pnl(g_ca_esnq.has_open_position(),
-                    g_ca_esnq.open_entry(), g_ca_esnq.open_is_long(), g_ca_esnq.open_size(), "US500.F");
-    total += ca_pnl(g_ca_eia_fade.has_open_position(),
-                    g_ca_eia_fade.open_entry(), g_ca_eia_fade.open_is_long(), g_ca_eia_fade.open_size(), "USOIL.F");
-    total += ca_pnl(g_ca_brent_wti.has_open_position(),
-                    g_ca_brent_wti.open_entry(), g_ca_brent_wti.open_is_long(), g_ca_brent_wti.open_size(), "BRENT");
-    total += ca_pnl(g_ca_fx_cascade.has_open_position(),
-                    g_ca_fx_cascade.open_entry(), g_ca_fx_cascade.open_is_long(), g_ca_fx_cascade.open_size(), "GBPUSD");
-    total += ca_pnl(g_ca_carry_unwind.has_open_position(),
-                    g_ca_carry_unwind.open_entry(), g_ca_carry_unwind.open_is_long(), g_ca_carry_unwind.open_size(), "USDJPY");
 
     // (GoldFlow unrealised PnL contribution removed S19 Stage 1B — engine culled)
     return total;
@@ -1105,23 +1095,6 @@ static bool symbol_gate(
             static_cast<int>(g_bracket_audusd.pos.active) +
             static_cast<int>(g_bracket_nzdusd.pos.active) +
             static_cast<int>(g_bracket_usdjpy.pos.active) +
-            static_cast<int>(g_ca_esnq.has_open_position()) +
-            static_cast<int>(g_ca_eia_fade.has_open_position()) +
-            static_cast<int>(g_ca_brent_wti.has_open_position()) +
-            static_cast<int>(g_ca_fx_cascade.has_open_position()) +
-            static_cast<int>(g_ca_carry_unwind.has_open_position()) +
-            static_cast<int>(g_orb_us.has_open_position()) +
-            static_cast<int>(g_orb_ger30.has_open_position()) +
-            static_cast<int>(g_orb_uk100.has_open_position()) +
-            static_cast<int>(g_orb_estx50.has_open_position()) +
-            static_cast<int>(g_vwap_rev_sp.has_open_position()) +
-            static_cast<int>(g_vwap_rev_nq.has_open_position()) +
-            static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
-            static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
-            static_cast<int>(g_trend_pb_gold.has_open_position()) +
-            static_cast<int>(g_trend_pb_ger40.has_open_position()) +
-            static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
-            static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
             static_cast<int>(g_eng_eurusd.pos.active) +
             static_cast<int>(g_eng_gbpusd.pos.active) +
             static_cast<int>(g_eng_audusd.pos.active) +
@@ -1132,12 +1105,6 @@ static bool symbol_gate(
             // static_cast<int>(g_le_stack.has_open_position()) + -- REMOVED S13 Finding B 2026-04-24
             0 +
             // (GoldFlow + reload count removed S19 Stage 1B)
-            static_cast<int>(g_nbm_sp.has_open_position()) +
-            static_cast<int>(g_nbm_nq.has_open_position()) +
-            static_cast<int>(g_nbm_nas.has_open_position()) +
-            static_cast<int>(g_nbm_us30.has_open_position()) +
-            static_cast<int>(g_nbm_gold_london.has_open_position()) +
-            static_cast<int>(g_nbm_oil_london.has_open_position());
         // ?? Session-aware position cap ????????????????????????????????
         // Asia = max 2 (low liquidity, wide spreads, few signals worth taking)
         // Dead zone (05-07 UTC) = max 1 (preparation period, no fresh data)
@@ -1436,23 +1403,6 @@ static bool symbol_gate(
         static_cast<int>(g_bracket_audusd.pos.active) +
         static_cast<int>(g_bracket_nzdusd.pos.active) +
         static_cast<int>(g_bracket_usdjpy.pos.active) +
-        static_cast<int>(g_ca_esnq.has_open_position()) +
-        static_cast<int>(g_ca_eia_fade.has_open_position()) +
-        static_cast<int>(g_ca_brent_wti.has_open_position()) +
-        static_cast<int>(g_ca_fx_cascade.has_open_position()) +
-        static_cast<int>(g_ca_carry_unwind.has_open_position()) +
-        static_cast<int>(g_orb_us.has_open_position()) +
-        static_cast<int>(g_orb_ger30.has_open_position()) +
-        static_cast<int>(g_orb_uk100.has_open_position()) +
-        static_cast<int>(g_orb_estx50.has_open_position()) +
-        static_cast<int>(g_vwap_rev_sp.has_open_position()) +
-        static_cast<int>(g_vwap_rev_nq.has_open_position()) +
-        static_cast<int>(g_vwap_rev_ger40.has_open_position()) +
-        static_cast<int>(g_vwap_rev_eurusd.has_open_position()) +
-        static_cast<int>(g_trend_pb_gold.has_open_position()) +
-        static_cast<int>(g_trend_pb_ger40.has_open_position()) +
-        static_cast<int>(g_trend_pb_nq.has_open_position()) +    // TrendPB USTEC
-        static_cast<int>(g_trend_pb_sp.has_open_position()) +    // TrendPB US500
         static_cast<int>(g_eng_eurusd.pos.active) +
         static_cast<int>(g_eng_gbpusd.pos.active) +
         static_cast<int>(g_eng_audusd.pos.active) +
@@ -1463,12 +1413,6 @@ static bool symbol_gate(
         // static_cast<int>(g_le_stack.has_open_position()) + -- REMOVED S13 Finding B 2026-04-24
         0 +
         // (GoldFlow + reload count removed S19 Stage 1B)
-        static_cast<int>(g_nbm_sp.has_open_position()) +
-        static_cast<int>(g_nbm_nq.has_open_position()) +
-        static_cast<int>(g_nbm_nas.has_open_position()) +
-        static_cast<int>(g_nbm_us30.has_open_position()) +
-        static_cast<int>(g_nbm_gold_london.has_open_position()) +
-        static_cast<int>(g_nbm_oil_london.has_open_position());
     // Session-aware cap (mirrors independent_symbols path)
     int session_cap2 = g_cfg.max_open_positions;
     const int slot2 = g_macro_ctx.session_slot;
@@ -1918,8 +1862,7 @@ static double enter_directional(
         add_if("NZDUSD",   g_eng_nzdusd.pos.active);
         add_if("GER40",    g_eng_ger30.pos.active);
         add_if("UK100",    g_eng_uk100.pos.active);
-        add_if("XAUUSD",   g_gold_stack.has_open_position()
-                         || g_trend_pb_gold.has_open_position());
+        add_if("XAUUSD",   g_gold_stack.has_open_position());
         if (!g_corr_matrix.entry_allowed(std::string(esym), open_syms))
             return 0.0;
     }  // end corr-matrix gate
@@ -2143,8 +2086,7 @@ static double enter_directional(
         cov_add("NZDUSD",   g_eng_nzdusd.pos.active, g_eng_nzdusd.pos.is_long);
         cov_add("GER40",    g_eng_ger30.pos.active,  g_eng_ger30.pos.is_long);
         cov_add("UK100",    g_eng_uk100.pos.active,  g_eng_uk100.pos.is_long);
-        cov_add("XAUUSD",   g_gold_stack.has_open_position()
-                          || g_trend_pb_gold.has_open_position(),
+        cov_add("XAUUSD",   g_gold_stack.has_open_position(),
                             is_long);  // direction of this entry
         const double cov_mult = g_corr_matrix.covariance_sizing_mult(std::string(esym), cov_open);
         if (cov_mult < 0.99) {

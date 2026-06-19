@@ -41,12 +41,6 @@ static void on_tick_us500(
 
     // AtrMeanRevGrid US500 (shadow). H1 X=8 SL_Y=6 ATR_FROM_WAP, PF 1.75 sweep.
     // Engine aggregates H1 bars from tick mids internally.
-    if (g_amr_us500.enabled) {
-        const int64_t amr_ms = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        g_amr_us500.on_tick(bid, ask, amr_ms);
-    }
 
     // FIX-tick bar builder for US500.F M1/M5
     {
@@ -77,11 +71,7 @@ static void on_tick_us500(
     }
     const bool base_can_sp = symbol_gate("US500.F",
         g_eng_sp.pos.active          ||
-        g_bracket_sp.pos.active      ||
-        g_orb_us.has_open_position() ||
-        g_vwap_rev_sp.has_open_position()  ||
-        g_trend_pb_sp.has_open_position()  ||  // TrendPullback SP
-        g_nbm_sp.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)
+        g_bracket_sp.pos.active, "", tradeable, lat_ok, regime, bid, ask)
         // ?? Indices circuit breaker: block new entries for 30min after any US index FORCE_CLOSE
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     // Log when circuit breaker is blocking -- once every 60s so it's visible but not spammy
@@ -107,104 +97,18 @@ static void on_tick_us500(
     // enabled=false by default -- set esnq_enabled=true in [cross_asset] config once
     // shadow validates signal quality. on_tick() always drains open positions even
     // when disabled; new entries only fire when enabled=true and 3-tick confirmation passes.
-    {
-        const auto esnq = g_ca_esnq.on_tick(sym, bid, ask, g_macro_ctx.es_nq_div, ca_on_close);
-        if (esnq.valid && base_can_sp) {
-            g_telemetry.UpdateLastSignal(sym.c_str(), esnq.is_long?"LONG":"SHORT",
-                esnq.entry, esnq.reason, "ESNQ_DIV", regime.c_str(), "ESNQ_DIV",
-                esnq.tp, esnq.sl);
-            if (!enter_directional(sym.c_str(), esnq.is_long, esnq.entry, esnq.sl, esnq.tp, 0.01, false, bid, ask, sym, regime, "ESNQDivergence"))
-                g_ca_esnq.cancel();
-                else g_ca_esnq.patch_size(g_last_directional_lot);
-        }
-    }
     // ?? US500.F manage blocks -- ALWAYS run when position open (SL/trail fix) ??
-    if (g_orb_us.has_open_position())       { g_orb_us.on_tick(sym, bid, ask, ca_on_close); }
-    if (g_vwap_rev_sp.has_open_position())  {
-        auto vwap_sp_cb = [&](const omega::TradeRecord& tr) {
-            if (tr.exitReason == "TP_HIT") g_vwap_rev_sp.notify_tp_hit(tr.side == "LONG");
-            ca_on_close(tr);
-        };
-        g_vwap_rev_sp.on_tick(sym, bid, ask, 0.0, vwap_sp_cb);
-    }
-    if (g_nbm_sp.has_open_position())       { g_nbm_sp.on_tick(sym, bid, ask, ca_on_close); }
     // Seed TrendPB with real M1 bar EMAs from cTrader trendbar API
     if (g_bars_sp.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-        g_trend_pb_sp.seed_bar_emas(
-            g_bars_sp.m1.ind.ema9.load(std::memory_order_relaxed),
-            g_bars_sp.m1.ind.ema21.load(std::memory_order_relaxed),
-            g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed),
-            g_bars_sp.m1.ind.atr14.load(std::memory_order_relaxed));
         {   // FIX: M1 EMA crossover replaces M5 swing trend_state (15min lag)
             const double sp_s_e9  = g_bars_sp.m1.ind.ema9 .load(std::memory_order_relaxed);
             const double sp_s_e50 = g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed);
             const int sp_ema_trend = (sp_s_e9 > 0.0 && sp_s_e50 > 0.0)
                 ? (sp_s_e9 < sp_s_e50 ? -1 : +1) : 0;
-            g_trend_pb_sp.seed_m5_trend(sp_ema_trend);
         }
     }
-    if (g_trend_pb_sp.has_open_position())  { g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close); }
 
-    if (!g_orb_us.has_open_position() && !g_vwap_rev_sp.has_open_position() && base_can_sp) {
-        const auto orb = g_orb_us.on_tick(sym, bid, ask, ca_on_close);
-        if (orb.valid) {
-            g_telemetry.UpdateLastSignal("US500.F", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("US500.F", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime, "ORB"))
-                g_orb_us.cancel();
-                else g_orb_us.patch_size(g_last_directional_lot);
-        }
-    }
     // VWAP Reversion: enter when price reverses back toward daily VWAP after over-extension.
-    if (!g_vwap_rev_sp.has_open_position() && !g_orb_us.has_open_position() && base_can_sp) {
-        // ?? SP VWAP anchor: NY session open (13:30 UTC)
-        static double  s_sp_ny_open      = 0.0;
-        static int     s_sp_ny_open_day  = -1;
-        static bool    s_sp_ny_armed     = false;
-        {
-            const auto t_sp = std::chrono::system_clock::to_time_t(
-                std::chrono::system_clock::now());
-            struct tm ti_sp; gmtime_s(&ti_sp, &t_sp);
-            const int hm = ti_sp.tm_hour * 60 + ti_sp.tm_min;
-            const bool in_ny_open = (hm >= 13*60+30);
-            if (in_ny_open && ti_sp.tm_yday != s_sp_ny_open_day) {
-                s_sp_ny_open     = (bid + ask) * 0.5;
-                s_sp_ny_open_day = ti_sp.tm_yday;
-                s_sp_ny_armed    = true;
-                g_vwap_rev_sp.reset_ewm_vwap(s_sp_ny_open);
-            }
-        }
-        // NY open settle gate -- block VWAPRev for 30min after NY open
-        static int64_t s_sp_ny_armed_ts = 0;
-        if (s_sp_ny_armed && s_sp_ny_open > 0.0 && s_sp_ny_armed_ts == 0)
-            s_sp_ny_armed_ts = static_cast<int64_t>(std::time(nullptr));
-        const bool sp_ny_settled = (s_sp_ny_armed_ts > 0)
-            && (static_cast<int64_t>(std::time(nullptr)) - s_sp_ny_armed_ts >= 30 * 60);
-        if (s_sp_ny_armed && s_sp_ny_open > 0.0 && sp_ny_settled) {
-            static std::deque<double> s_vwap_sp_spread_hist;
-            {
-                s_vwap_sp_spread_hist.push_back(ask - bid);
-                if (s_vwap_sp_spread_hist.size() > 100) s_vwap_sp_spread_hist.pop_front();
-            }
-            double sp_spread_avg = 0.0;
-            for (double sv : s_vwap_sp_spread_hist) sp_spread_avg += sv;
-            if (!s_vwap_sp_spread_hist.empty()) sp_spread_avg /= s_vwap_sp_spread_hist.size();
-            const bool sp_spread_ok = (sp_spread_avg < 0.5)
-                                    || ((ask - bid) <= sp_spread_avg * 1.8);
-            if (sp_spread_ok) {
-            const auto vr = g_vwap_rev_sp.on_tick(sym, bid, ask, s_sp_ny_open, ca_on_close,
-                g_macro_ctx.vix, g_macro_ctx.sp_l2_imbalance);
-            if (vr.valid) {
-                g_telemetry.UpdateLastSignal("US500.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
-                                        (vr.confluence_score == 3) ? 2.0 :
-                                        (vr.confluence_score == 2) ? 1.5 : 1.0;
-                if (!enter_directional("US500.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime, "VWAPRev"))
-                    g_vwap_rev_sp.cancel();
-                else g_vwap_rev_sp.patch_size(g_last_directional_lot);
-            }
-            } // sp_spread_ok
-        }
-    }
     // NoiseBandMomentum
     {
         const bool sp_nbm_offhours = (g_macro_ctx.session_slot == 6 ||
@@ -216,17 +120,6 @@ static void on_tick_us500(
         const int  sp_nbm_m5_trend = (sp_nbm_ema9 > 0.0 && sp_nbm_ema50 > 0.0)
             ? (sp_nbm_ema9 < sp_nbm_ema50 ? -1 : +1) : 0;
         const bool sp_nbm_gate_ok  = !sp_nbm_offhours || (sp_nbm_bars_ok && sp_nbm_m5_trend != 0);
-        if (!g_nbm_sp.has_open_position() && !g_orb_us.has_open_position() &&
-            !g_vwap_rev_sp.has_open_position() && base_can_sp && sp_nbm_gate_ok) {
-            const auto nbm = g_nbm_sp.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("US500.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("US500.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
-                    g_nbm_sp.cancel();
-                else g_nbm_sp.patch_size(g_last_directional_lot);
-            }
-        }
     }
     // TrendPullback
     {
@@ -239,18 +132,6 @@ static void on_tick_us500(
             ? (sp_tpb_ema9 < sp_tpb_ema50 ? -1 : +1) : 0;
         const bool sp_trendpb_ok  = sp_ema_live
             && (!sp_in_offhours || (sp_bars_ready && sp_m5_trend != 0));
-        if (!g_trend_pb_sp.has_open_position() && !g_vwap_rev_sp.has_open_position()
-            && !g_nbm_sp.has_open_position() && base_can_sp && sp_trendpb_ok) {
-            const auto tp_sig = g_trend_pb_sp.on_tick(sym, bid, ask, ca_on_close);
-            if (tp_sig.valid) {
-                g_telemetry.UpdateLastSignal("US500.F", tp_sig.is_long?"LONG":"SHORT",
-                    tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
-                    tp_sig.tp, tp_sig.sl);
-                if (!enter_directional("US500.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime, "TrendPullback"))
-                    g_trend_pb_sp.cancel();
-            }
-        }
     }
 
     // ----------------------------------------------------------------------
@@ -271,10 +152,6 @@ static void on_tick_us500(
         } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
                    && base_can_sp
                    && !g_eng_sp.pos.active
-                   && !g_orb_us.has_open_position()
-                   && !g_vwap_rev_sp.has_open_position()
-                   && !g_trend_pb_sp.has_open_position()
-                   && !g_nbm_sp.has_open_position()
                    // S11 P3b: g_hybrid_sp gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
@@ -335,7 +212,6 @@ static void on_tick_us500(
         const int64_t now_ms_idd = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_idd_sp.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
     }
     // IndexSessionEngine US500/SPX (14-22 UTC LONG, flat overnight, risk-off gated).
     {
@@ -344,8 +220,6 @@ static void on_tick_us500(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_sp.set_risk_off(omega::index_risk_off());
         g_idxsess_sp.on_tick(bid, ask, now_ms_isp);
-        g_idx_bear_short_sp.on_tick(bid, ask, now_ms_isp); // 2026-06-12 risk-off SHORT breakdown (shadow); SPX2022 cross-validated; callback via on_close_cb
-        g_overnight_spx.on_tick(bid, ask, now_ms_isp);   // overnight drift US500 (trend>SMA50, shadow)
         g_engine_heartbeat.pulse("IndexSession_US500");
     }
 
@@ -401,10 +275,6 @@ static void on_tick_ustec(
                 tf5m.high  = s_nq5.high;
                 tf5m.low   = s_nq5.low;
                 tf5m.close = s_nq5.close;
-                g_ustec_tf_5m.on_5m_bar(
-                    tf5m, bid, ask,
-                    g_bars_nq.m5.ind.atr14.load(std::memory_order_relaxed),
-                    now_ms_n, ca_on_close);
             }
             s_nq5 = {b5/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq5_start = b5;
         }
@@ -427,10 +297,6 @@ static void on_tick_ustec(
                 tf15m.high  = s_nq15.high;
                 tf15m.low   = s_nq15.low;
                 tf15m.close = s_nq15.close;
-                g_ustec_tf_htf.on_15m_bar(
-                    tf15m, bid, ask,
-                    /*atr15m_external=*/0.0,
-                    now_ms_n, ca_on_close);
             }
             s_nq15 = {b15_n/60000LL,nq_mid,nq_mid,nq_mid,nq_mid}; s_nq15_start = b15_n;
         }
@@ -455,10 +321,7 @@ static void on_tick_ustec(
     }
     const bool base_can_nq = symbol_gate("USTEC.F",
         g_eng_nq.pos.active                  ||
-        g_bracket_nq.pos.active              ||
-        g_vwap_rev_nq.has_open_position()    ||
-        g_trend_pb_nq.has_open_position()    ||
-        g_nbm_nq.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)
+        g_bracket_nq.pos.active, "", tradeable, lat_ok, regime, bid, ask)
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     {
         const int64_t now_cb   = static_cast<int64_t>(std::time(nullptr));
@@ -479,37 +342,21 @@ static void on_tick_ustec(
     // if (sdec_nq.allow_bracket && !g_eng_nq.pos.active)
     //     dispatch_bracket(g_bracket_nq, ...);
     // ?? USTEC.F manage blocks -- ALWAYS run when position open ??
-    if (g_vwap_rev_nq.has_open_position()) {
-        auto vwap_nq_cb = [&](const omega::TradeRecord& tr) {
-            if (tr.exitReason == "TP_HIT") g_vwap_rev_nq.notify_tp_hit(tr.side == "LONG");
-            ca_on_close(tr);
-        };
-        g_vwap_rev_nq.on_tick(sym, bid, ask, 0.0, vwap_nq_cb);
-    }
     // Seed TrendPB NQ with real M1 bar EMAs
     if (g_bars_nq.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
-        g_trend_pb_nq.seed_bar_emas(
-            g_bars_nq.m1.ind.ema9.load(std::memory_order_relaxed),
-            g_bars_nq.m1.ind.ema21.load(std::memory_order_relaxed),
-            g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed),
-            g_bars_nq.m1.ind.atr14.load(std::memory_order_relaxed));
         {
             const double nq_s_e9  = g_bars_nq.m1.ind.ema9 .load(std::memory_order_relaxed);
             const double nq_s_e50 = g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed);
             const int nq_ema_trend = (nq_s_e9 > 0.0 && nq_s_e50 > 0.0)
                 ? (nq_s_e9 < nq_s_e50 ? -1 : +1) : 0;
-            g_trend_pb_nq.seed_m5_trend(nq_ema_trend);
         }
     }
-    if (g_trend_pb_nq.has_open_position()) { g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close); }
-    if (g_nbm_nq.has_open_position())      { g_nbm_nq.on_tick(sym, bid, ask, ca_on_close); }
     // UstecTrendFollow5mEngine -- Donchian N=20 trend-follow on 5m bars (S33d).
     // Shadow-only by default. Position management every tick.
     {
         const int64_t tf_now_ms = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_ustec_tf_5m.on_tick(bid, ask, tf_now_ms, ca_on_close);
     }
     // UstecTrendFollowHtfEngine -- 3-cell M15/H1/H2/H4 ensemble (S36-P4 2026-05-12).
     // Shadow-only by default. Intra-bar SL/TP/BE/trail management every tick.
@@ -517,57 +364,9 @@ static void on_tick_ustec(
         const int64_t tf_htf_now_ms = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_ustec_tf_htf.on_tick(bid, ask, tf_htf_now_ms, ca_on_close);
     }
 
     // VWAP Reversion NQ -- anchored to NY open (13:30 UTC)
-    if (!g_vwap_rev_nq.has_open_position() && base_can_nq) {
-        static double  s_nq_ny_open      = 0.0;
-        static int     s_nq_ny_open_day  = -1;
-        static bool    s_nq_ny_armed     = false;
-        {
-            const auto t_nq = std::chrono::system_clock::to_time_t(
-                std::chrono::system_clock::now());
-            struct tm ti_nq; gmtime_s(&ti_nq, &t_nq);
-            const int hm = ti_nq.tm_hour * 60 + ti_nq.tm_min;
-            if (hm >= 13*60+30 && ti_nq.tm_yday != s_nq_ny_open_day) {
-                s_nq_ny_open     = (bid + ask) * 0.5;
-                s_nq_ny_open_day = ti_nq.tm_yday;
-                s_nq_ny_armed    = true;
-                g_vwap_rev_nq.reset_ewm_vwap(s_nq_ny_open);
-            }
-        }
-        static int64_t s_nq_ny_armed_ts = 0;
-        if (s_nq_ny_armed && s_nq_ny_open > 0.0 && s_nq_ny_armed_ts == 0)
-            s_nq_ny_armed_ts = static_cast<int64_t>(std::time(nullptr));
-        const bool nq_ny_settled = (s_nq_ny_armed_ts > 0)
-            && (static_cast<int64_t>(std::time(nullptr)) - s_nq_ny_armed_ts >= 30 * 60);
-        if (s_nq_ny_armed && s_nq_ny_open > 0.0 && nq_ny_settled) {
-            static std::deque<double> s_vwap_nq_spread_hist;
-            {
-                s_vwap_nq_spread_hist.push_back(ask - bid);
-                if (s_vwap_nq_spread_hist.size() > 100) s_vwap_nq_spread_hist.pop_front();
-            }
-            double nq_spread_avg = 0.0;
-            for (double sv : s_vwap_nq_spread_hist) nq_spread_avg += sv;
-            if (!s_vwap_nq_spread_hist.empty()) nq_spread_avg /= s_vwap_nq_spread_hist.size();
-            const bool nq_spread_ok = (nq_spread_avg < 0.5)
-                                    || ((ask - bid) <= nq_spread_avg * 1.8);
-            if (nq_spread_ok) {
-            const auto vr = g_vwap_rev_nq.on_tick(sym, bid, ask, s_nq_ny_open, ca_on_close,
-                g_macro_ctx.vix, g_macro_ctx.nq_l2_imbalance);
-            if (vr.valid) {
-                g_telemetry.UpdateLastSignal("USTEC.F", vr.is_long?"LONG":"SHORT", vr.entry, vr.reason, "VWAP_REV", regime.c_str(), "VWAP_REV", vr.tp, vr.sl);
-                const double conf_mult = (vr.confluence_score >= 4) ? 3.0 :
-                                        (vr.confluence_score == 3) ? 2.0 :
-                                        (vr.confluence_score == 2) ? 1.5 : 1.0;
-                if (!enter_directional("USTEC.F", vr.is_long, vr.entry, vr.sl, vr.tp, 0.01 * conf_mult, true, bid, ask, sym, regime, "VWAPRev"))
-                    g_vwap_rev_nq.cancel();
-                else g_vwap_rev_nq.patch_size(g_last_directional_lot);
-            }
-            } // nq_spread_ok
-        }
-    }
     // TrendPullback NQ
     {
         const int slot_nq = g_macro_ctx.session_slot;
@@ -580,18 +379,6 @@ static void on_tick_ustec(
             ? (nq_tpb_ema9 < nq_tpb_ema50 ? -1 : +1) : 0;
         const bool nq_trendpb_ok  = nq_ema_live
             && (!nq_in_offhours || (nq_bars_ready && nq_m5_trend != 0));
-        if (!g_trend_pb_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
-            && !g_nbm_nq.has_open_position() && base_can_nq && nq_trendpb_ok) {
-            const auto tp_sig = g_trend_pb_nq.on_tick(sym, bid, ask, ca_on_close);
-            if (tp_sig.valid) {
-                g_telemetry.UpdateLastSignal("USTEC.F", tp_sig.is_long?"LONG":"SHORT",
-                    tp_sig.entry, tp_sig.reason, "TREND_PB", regime.c_str(), "TREND_PB",
-                    tp_sig.tp, tp_sig.sl);
-                if (!enter_directional("USTEC.F", tp_sig.is_long, tp_sig.entry,
-                                       tp_sig.sl, tp_sig.tp, 0.01, true, bid, ask, sym, regime, "TrendPullback"))
-                    g_trend_pb_nq.cancel();
-            }
-        }
     }
     // NoiseBandMomentum NQ
     {
@@ -603,17 +390,6 @@ static void on_tick_ustec(
         const int  nq_m5_trend2    = (nq_nbm_ema9 > 0.0 && nq_nbm_ema50 > 0.0)
             ? (nq_nbm_ema9 < nq_nbm_ema50 ? -1 : +1) : 0;
         const bool nq_nbm_ok       = !nq_in_offhours2 || (nq_bars_ready2 && nq_m5_trend2 != 0);
-        if (!g_nbm_nq.has_open_position() && !g_vwap_rev_nq.has_open_position()
-            && base_can_nq && nq_nbm_ok) {
-            const auto nbm = g_nbm_nq.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("USTEC.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("USTEC.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
-                    g_nbm_nq.cancel();
-                else g_nbm_nq.patch_size(g_last_directional_lot);
-            }
-        }
     }
 
     // ----------------------------------------------------------------------
@@ -632,9 +408,6 @@ static void on_tick_ustec(
         } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
                    && base_can_nq
                    && !g_eng_nq.pos.active
-                   && !g_vwap_rev_nq.has_open_position()
-                   && !g_trend_pb_nq.has_open_position()
-                   && !g_nbm_nq.has_open_position()
                    // S11 P3b: g_hybrid_nq gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
@@ -708,8 +481,7 @@ static void on_tick_dj30(
 
     const bool base_can_us30 = symbol_gate("DJ30.F",
         g_eng_us30.pos.active      ||
-        g_bracket_us30.pos.active  ||
-        g_nbm_us30.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)
+        g_bracket_us30.pos.active, "", tradeable, lat_ok, regime, bid, ask)
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     {
         const int64_t now_cb   = static_cast<int64_t>(std::time(nullptr));
@@ -730,26 +502,14 @@ static void on_tick_dj30(
     //     dispatch_bracket(g_bracket_us30, ...);
     (void)sdec_us30;
     // ?? DJ30.F manage block -- ALWAYS run when position open ??
-    if (g_nbm_us30.has_open_position()) { g_nbm_us30.on_tick(sym, bid, ask, ca_on_close); }
 
     // 2026-05-23: ORB-Swing DJ30 (NY 13:30 UTC, 30-min range, ~0.55% TP,
     //   6h hold). See on_tick_nas100 comment for design rationale.
-    g_orb_dj30.on_tick(sym, bid, ask, ca_on_close);
 
     // NoiseBandMomentum DJ30
     {
         const int slot_us30 = g_macro_ctx.session_slot;
         const bool us30_session_ok = (slot_us30 >= 1 && slot_us30 <= 5);
-        if (!g_nbm_us30.has_open_position() && base_can_us30 && us30_session_ok) {
-            const auto nbm = g_nbm_us30.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("DJ30.F", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("DJ30.F", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
-                    g_nbm_us30.cancel();
-                else g_nbm_us30.patch_size(g_last_directional_lot);
-            }
-        }
     }
 
     // ----------------------------------------------------------------------
@@ -768,7 +528,6 @@ static void on_tick_dj30(
         } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
                    && base_can_us30
                    && !g_eng_us30.pos.active
-                   && !g_nbm_us30.has_open_position()
                    // S11 P3b: g_hybrid_us30 gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
@@ -808,22 +567,6 @@ static void on_tick_dj30(
     // engines because shadow_mode trades don't touch broker positions.
     // When promoted to live, add an enter_directional() call mirroring the
     // IFLOW pattern above, gated by base_can_us30 + position-mutex check.
-    {
-        const int64_t now_ms_m4 = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        const auto m4sig = g_minimal_h4_us30.on_tick(bid, ask, now_ms_m4, ca_on_close);
-        if (m4sig.valid) {
-            g_telemetry.UpdateLastSignal("DJ30.F",
-                m4sig.is_long ? "LONG" : "SHORT", m4sig.entry, m4sig.reason,
-                "MINIMAL_H4_US30", regime.c_str(), "MINIMAL_H4_US30",
-                m4sig.tp, m4sig.sl);
-        }
-        // Weekend close runs every tick (cheap idempotent check)
-        if (g_minimal_h4_us30.has_open_position()) {
-            g_minimal_h4_us30.check_weekend_close(bid, ask, now_ms_m4, ca_on_close);
-        }
-    }
 
     // ── S136 2026-05-24: Us303BarMomH1Engine ─────────────────────────────────
     // Build US30 H1 bars from ticks here (no shared g_bars_us30.h1 stream),
@@ -841,8 +584,6 @@ static void on_tick_dj30(
             s_us30h1_start = bh1_u;
         } else if (bh1_u != s_us30h1_start) {
             // bar closed at s_us30h1_start, new bar starting at bh1_u
-            g_us30_3bar_mom_h1.on_h1_bar(s_us30_h, s_us30_l, s_us30_c,
-                                          bid, ask, s_us30h1_start, ca_on_close);
             s_us30_o = s_us30_h = s_us30_l = s_us30_c = us30_mid;
             s_us30h1_start = bh1_u;
         } else {
@@ -850,7 +591,6 @@ static void on_tick_dj30(
             if (us30_mid < s_us30_l) s_us30_l = us30_mid;
             s_us30_c = us30_mid;
         }
-        g_us30_3bar_mom_h1.on_tick(bid, ask, now_ms_u, ca_on_close);
     }
 
     // ── S37 2026-05-26: Us30EnsembleEngine ────────────────────────────────────
@@ -871,9 +611,6 @@ static void on_tick_dj30(
             s_us30_15_start = b15_e;
         } else if (b15_e != s_us30_15_start) {
             // bar just closed at s_us30_15_start; dispatch then start fresh
-            g_us30_ensemble.on_15m_bar(s_us30_15, bid, ask,
-                                        /*atr15m_external=*/0.0,
-                                        now_ms_e, ca_on_close);
             s_us30_15.bar_start_ms = b15_e;
             s_us30_15.open = s_us30_15.high = s_us30_15.low = s_us30_15.close = us30_mid_e;
             s_us30_15_start = b15_e;
@@ -882,7 +619,6 @@ static void on_tick_dj30(
             if (us30_mid_e < s_us30_15.low)  s_us30_15.low  = us30_mid_e;
             s_us30_15.close = us30_mid_e;
         }
-        g_us30_ensemble.on_tick(bid, ask, now_ms_e, ca_on_close);
     }
 
     // -- IndexIntradayDriftEngine (S37-Z 2026-05-28) -------------------------
@@ -892,7 +628,6 @@ static void on_tick_dj30(
         const int64_t now_ms_idd = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_idd_us30.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
     }
 
     // DJ30 D1 turtle (2026-06-15) -- NasTurtleD1 chassis, Yahoo-daily xregime
@@ -935,32 +670,12 @@ static void on_tick_ger40(
     }
 
     // AtrMeanRevGrid GER40 (shadow). M15 X=14 SL_Y=6 ATR_FROM_WAP, PF 1.86 stage-4.
-    if (g_amr_ger40.enabled) {
-        const int64_t amr_ms = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        g_amr_ger40.on_tick(bid, ask, amr_ms);
-    }
 
     const bool base_can_ger = symbol_gate("GER40",
         g_eng_ger30.pos.active              ||
-        g_bracket_ger30.pos.active          ||
-        g_orb_ger30.has_open_position()     ||
-        g_vwap_rev_ger40.has_open_position() ||
-        g_trend_pb_ger40.has_open_position(), "", tradeable, lat_ok, regime, bid, ask);
+        g_bracket_ger30.pos.active, "", tradeable, lat_ok, regime, bid, ask);
     const auto sdec_ger = sup_decision(g_sup_ger30, g_eng_ger30, base_can_ger, sym, bid, ask);
     // ?? GER40 manage blocks -- ALWAYS run when position open ??
-    if (g_orb_ger30.has_open_position())      { g_orb_ger30.on_tick(sym, bid, ask, ca_on_close); }
-    if (g_vwap_rev_ger40.has_open_position()) {
-        const double ger_vwap_mgmt = (g_orb_ger30.range_high() + g_orb_ger30.range_low()) > 0.0
-            ? (g_orb_ger30.range_high() + g_orb_ger30.range_low()) * 0.5 : 0.0;
-        auto vwap_ger_cb = [&](const omega::TradeRecord& tr) {
-            if (tr.exitReason == "TP_HIT") g_vwap_rev_ger40.notify_tp_hit(tr.side == "LONG");
-            ca_on_close(tr);
-        };
-        g_vwap_rev_ger40.on_tick(sym, bid, ask, ger_vwap_mgmt, vwap_ger_cb);
-    }
-    if (g_trend_pb_ger40.has_open_position()) { g_trend_pb_ger40.on_tick(sym, bid, ask, ca_on_close); }
 
     // GER40 NEW ENTRIES DISABLED -- taken out of play (ORB/TrendPullback/breakout)
     //
@@ -986,7 +701,6 @@ static void on_tick_ger40(
         const int64_t now_ms_glb = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_ger40_london_brk.on_tick(bid, ask, now_ms_glb);
     }
     // IndexSessionEngine GER40 (09-20 UTC LONG, flat overnight, risk-off gated).
     {
@@ -995,46 +709,15 @@ static void on_tick_ger40(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_ger40.set_risk_off(omega::index_risk_off());
         g_idxsess_ger40.on_tick(bid, ask, now_ms_isg);
-        g_adhull_ger.on_tick(bid, ask, now_ms_isg);   // adaptive-Hull GER40 trend (shadow)
         g_engine_heartbeat.pulse("IndexSession_GER40");
     }
 
     // MinimalH4GER40Breakout -- pure H4 Donchian (shadow mode).
     // Self-contained: builds own H4 OHLC + ATR14 from tick stream.
     // Independent of other GER40 engines (shadow only, no broker orders).
-    {
-        const int64_t now_ms_m4 = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        const auto m4sig = g_minimal_h4_ger40.on_tick(bid, ask, now_ms_m4, ca_on_close);
-        if (m4sig.valid) {
-            g_telemetry.UpdateLastSignal("GER40",
-                m4sig.is_long ? "LONG" : "SHORT", m4sig.entry, m4sig.reason,
-                "MINIMAL_H4_GER40", regime.c_str(), "MINIMAL_H4_GER40",
-                m4sig.tp, m4sig.sl);
-        }
-        if (g_minimal_h4_ger40.has_open_position()) {
-            g_minimal_h4_ger40.check_weekend_close(bid, ask, now_ms_m4, ca_on_close);
-        }
-    }
     // Ger40TurtleH4Engine (2026-05-20) -- 20-bar Donchian breakout, shadow.
     // Self-contained: own H4 OHLC + ATR14 from ticks. Distinct lookback (20)
     // from MinimalH4GER40 (8) and longer hold (20 H4 bars). Independent pos.
-    {
-        const int64_t now_ms_gt = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        const auto gtsig = g_ger40_turtle_h4.on_tick(bid, ask, now_ms_gt, ca_on_close);
-        if (gtsig.valid) {
-            g_telemetry.UpdateLastSignal("GER40",
-                "LONG", gtsig.entry, gtsig.reason,
-                "GER40_TURTLE_H4", regime.c_str(), "GER40_TURTLE_H4",
-                gtsig.tp, gtsig.sl);
-        }
-        if (g_ger40_turtle_h4.has_open_position()) {
-            g_ger40_turtle_h4.check_weekend_close(bid, ask, now_ms_gt, ca_on_close);
-        }
-    }
     // Ger40KeltnerH1Engine (S41 2026-05-30) -- H1 Keltner EMA20 break, LB200
     // bull gate, shadow. Self-aggregates H1 from ticks via feed_tick() (no
     // g_bars_ger40 in the codebase, same as the turtle above). Independent pos.
@@ -1042,7 +725,6 @@ static void on_tick_ger40(
         const int64_t now_ms_gk = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_ger40_kelt.feed_tick(bid, ask, now_ms_gk, ca_on_close);
         // S42 fix: pulse the heartbeat (registered live_required in engine_init
         // as "Ger40KeltnerH1" but never pulsed -> false HEARTBEAT-MISS spam).
         g_engine_heartbeat.pulse("Ger40KeltnerH1");
@@ -1072,18 +754,8 @@ static void on_tick_uk100(
     // if (sdec_uk.allow_breakout && !g_bracket_uk100.pos.active)
     //     dispatch(g_eng_uk100, g_sup_uk100, base_can_uk, &sdec_uk);
     // ?? UK100 manage block -- ALWAYS run when position open ??
-    if (g_orb_uk100.has_open_position()) { g_orb_uk100.on_tick(sym, bid, ask, ca_on_close); }
 
     // Opening range breakout: LSE open 08:00 UTC, 15-min range window
-    if (!g_orb_uk100.has_open_position() && base_can_uk) {
-        const auto orb = g_orb_uk100.on_tick(sym, bid, ask, ca_on_close);
-        if (orb.valid) {
-            g_telemetry.UpdateLastSignal("UK100", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("UK100", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime, "ORB"))
-                g_orb_uk100.cancel();
-                else g_orb_uk100.patch_size(g_last_directional_lot);
-        }
-    }
     (void)sdec_uk;
 
     // -- IndexIntradayDriftEngine (S37-Z 2026-05-28) -------------------------
@@ -1093,7 +765,6 @@ static void on_tick_uk100(
         const int64_t now_ms_idd = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_idd_uk100.on_tick(bid, ask, now_ms_idd, handle_closed_trade);
     }
     // IndexSessionEngine UK100/FTSE (09-20 UTC LONG, dip-buy, risk-off gated).
     {
@@ -1120,18 +791,8 @@ static void on_tick_estx50(
     // if (sdec_estx.allow_breakout && !g_bracket_estx50.pos.active)
     //     dispatch(g_eng_estx50, g_sup_estx50, base_can_estx, &sdec_estx);
     // ?? ESTX50 manage block -- ALWAYS run when position open ??
-    if (g_orb_estx50.has_open_position()) { g_orb_estx50.on_tick(sym, bid, ask, ca_on_close); }
 
     // Opening range breakout: Euronext open 09:00 UTC, 15-min range window
-    if (!g_orb_estx50.has_open_position() && base_can_estx) {
-        const auto orb = g_orb_estx50.on_tick(sym, bid, ask, ca_on_close);
-        if (orb.valid) {
-            g_telemetry.UpdateLastSignal("ESTX50", orb.is_long?"LONG":"SHORT", orb.entry, orb.reason, "ORB", regime.c_str(), "ORB", orb.tp, orb.sl);
-            if (!enter_directional("ESTX50", orb.is_long, orb.entry, orb.sl, orb.tp, 0.01, false, bid, ask, sym, regime, "ORB"))
-                g_orb_estx50.cancel();
-                else g_orb_estx50.patch_size(g_last_directional_lot);
-        }
-    }
     (void)sdec_estx;
 
     // S-2026-06-02: faithful ESTX50 long-only ORB (g_orb_estx50_v2) -- the one
@@ -1142,7 +803,6 @@ static void on_tick_estx50(
         const int64_t now_ms_orb = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        g_orb_estx50_v2.on_tick(bid, ask, now_ms_orb, bracket_on_close);
         g_engine_heartbeat.pulse("OrbEstx50");
     }
 
@@ -1186,25 +846,14 @@ static void on_tick_nas100(
         // 2026-06-18 NqMomentumEngine (regime-gated momentum-continuation, NAS100/NQ).
         //   Self-aggregating 5m bars from this tick path; BigCapMomo exit chassis on a
         //   liquid single instrument. Shadow. Faithful BT: gated positive both regimes.
-        if (g_nq_momentum.enabled) {
-            g_nq_momentum.on_tick(bid, ask, now_ms_str, bracket_on_close);
-            g_engine_heartbeat.pulse("NqMomentum");
-        }
     }
     g_engine_heartbeat.pulse("NasBbRevLongH1");      // 2026-05-26 (Stage 4)
 
     // AtrMeanRevGrid NAS100 (shadow). M15 X=14 SL_Y=4 RSI_OR_MA, PF 1.55 sweep.
-    if (g_amr_nas100.enabled) {
-        const int64_t amr_ms = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count());
-        g_amr_nas100.on_tick(bid, ask, amr_ms);
-    }
 
     const bool base_can_nas = symbol_gate("NAS100",
         g_eng_nas100.pos.active      ||
-        g_bracket_nas100.pos.active  ||
-        g_nbm_nas.has_open_position(), "", tradeable, lat_ok, regime, bid, ask)
+        g_bracket_nas100.pos.active, "", tradeable, lat_ok, regime, bid, ask)
         && (static_cast<int64_t>(std::time(nullptr)) >= g_indices_disconnect_until.load());
     {
         const int64_t now_cb   = static_cast<int64_t>(std::time(nullptr));
@@ -1223,14 +872,12 @@ static void on_tick_nas100(
     //     dispatch(g_eng_nas100, g_sup_nas100, base_can_nas, &sdec_nas);
     (void)sdec_nas;
     // ?? NAS100 manage block -- ALWAYS run when position open ??
-    if (g_nbm_nas.has_open_position()) { g_nbm_nas.on_tick(sym, bid, ask, ca_on_close); }
 
     // 2026-05-23: ORB-Swing NAS100 (NY 13:30 UTC, 30-min range, ~0.50% TP,
     //   6h hold via CrossPosition trail). Manage when open; entry path
     //   short-circuits internally on session window + armed flag. Shadow
     //   only -- standard cross-asset enter_directional() pathway not used
     //   here since the engine writes pos_ directly inside on_tick().
-    g_orb_nas100.on_tick(sym, bid, ask, ca_on_close);
 
     // ── S136 2026-05-24: NasBbRevLongH1Engine per-tick management ─────────
     // Manages SL/TP/BE/trail on the engine's own open position. Engine entry
@@ -1271,16 +918,6 @@ static void on_tick_nas100(
         const int  nas_nbm_m5_trend = (nas_nbm_ema9 > 0.0 && nas_nbm_ema50 > 0.0)
             ? (nas_nbm_ema9 < nas_nbm_ema50 ? -1 : +1) : 0;
         const bool nas_nbm_gate_ok  = !nas_nbm_offhours || (nas_nbm_bars_ok && nas_nbm_m5_trend != 0);
-        if (!g_nbm_nas.has_open_position() && base_can_nas && nas_nbm_gate_ok) {
-            const auto nbm = g_nbm_nas.on_tick(sym, bid, ask, ca_on_close);
-            if (nbm.valid) {
-                g_telemetry.UpdateLastSignal("NAS100", nbm.is_long?"LONG":"SHORT", nbm.entry,
-                    nbm.reason, "NBM", regime.c_str(), "NoiseBandMomentum", nbm.tp, nbm.sl);
-                if (!enter_directional("NAS100", nbm.is_long, nbm.entry, nbm.sl, nbm.tp, 0.01, false, bid, ask, sym, regime, "NoiseBandMomentum"))
-                    g_nbm_nas.cancel();
-                else g_nbm_nas.patch_size(g_last_directional_lot);
-            }
-        }
     }
 
     // ----------------------------------------------------------------------
@@ -1300,7 +937,6 @@ static void on_tick_nas100(
         } else if (!g_disable_index_flow  // 2026-04-30 audit-disable
                    && base_can_nas
                    && !g_eng_nas100.pos.active
-                   && !g_nbm_nas.has_open_position()
                    // S11 P3b: g_hybrid_nas100 gate removed -- engine culled in P3a, dispatch dormant.
                    // Bug #3 (KNOWN_BUGS.md): cross-symbol concurrent block + post-close gap.
                    && !index_any_open()
@@ -1342,15 +978,8 @@ static void on_tick_nas100(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_nas.set_risk_off(omega::index_risk_off());
         g_idxsess_nas.on_tick(bid, ask, now_ms_isn);
-        g_fvgcont_nas.on_tick(bid, ask, now_ms_isn);     // FVG continuation 15m (shadow)
-        g_fvgcont_nas10.on_tick(bid, ask, now_ms_isn);   // FVG continuation 10m (shadow compare)
-        g_fvgcont_nas30.on_tick(bid, ask, now_ms_isn);   // FVG continuation 30m -- 2026-06-09 sweep BEST
-        g_peachy_orb_nas.on_tick(bid, ask, now_ms_isn);  // Peachy one-candle ORB-retest (shadow)
-        g_nas_orb_retrace.on_tick(bid, ask, now_ms_isn); // 2026-06-07 ORB retrace+RUNNER @US open (shadow); callback via on_trade_record
         g_idx_bear_short_nas.on_tick(bid, ask, now_ms_isn); // 2026-06-12 risk-off SHORT breakdown on bad days (shadow); callback via on_close_cb
         g_monday_nas.on_tick(bid, ask, now_ms_isn);      // 2026-06-07 Monday risk-on calendar (shadow)
-        g_overnight_nas.on_tick(bid, ask, now_ms_isn);   // overnight drift (shadow)
-        g_connors_nas.on_tick(bid, ask, now_ms_isn);     // RSI2 dip-buy (shadow)
         g_engine_heartbeat.pulse("IndexSession_NAS100");
     }
 }

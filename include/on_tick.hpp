@@ -221,15 +221,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         + static_cast<int>(g_bracket_sp.pos.active)
                         + static_cast<int>(g_bracket_nq.pos.active)
                         + static_cast<int>(g_bracket_us30.pos.active)
-                        + static_cast<int>(g_bracket_nas100.pos.active)
-                        + static_cast<int>(g_ca_esnq.has_open_position())
-                        + static_cast<int>(g_vwap_rev_sp.has_open_position())
-                        + static_cast<int>(g_vwap_rev_nq.has_open_position())
-                        + static_cast<int>(g_orb_us.has_open_position())
-                        + static_cast<int>(g_nbm_sp.has_open_position())
-                        + static_cast<int>(g_nbm_nq.has_open_position())
-                        + static_cast<int>(g_nbm_nas.has_open_position())
-                        + static_cast<int>(g_nbm_us30.has_open_position());
+                        + static_cast<int>(g_bracket_nas100.pos.active);
                         // NOTE: g_nbm_gold_london and g_nbm_oil_london are NOT US equity --
                         // they were incorrectly counted here, inflating us_eq heat and
                         // blocking legitimate US equity entries when gold/oil NBM was open.
@@ -240,30 +232,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                         + static_cast<int>(g_eng_estx50.pos.active)
                         + static_cast<int>(g_bracket_ger30.pos.active)
                         + static_cast<int>(g_bracket_uk100.pos.active)
-                        + static_cast<int>(g_bracket_estx50.pos.active)
-                        + static_cast<int>(g_vwap_rev_ger40.has_open_position())
-                        + static_cast<int>(g_orb_ger30.has_open_position())
-                        + static_cast<int>(g_orb_uk100.has_open_position())
-                        + static_cast<int>(g_orb_estx50.has_open_position());
+                        + static_cast<int>(g_bracket_estx50.pos.active);
         const int oil   = static_cast<int>(g_eng_cl.pos.active)
                         + static_cast<int>(g_eng_brent.pos.active)
-                        + static_cast<int>(g_bracket_brent.pos.active)
-                        + static_cast<int>(g_ca_eia_fade.has_open_position())
-                        + static_cast<int>(g_ca_brent_wti.has_open_position())
-                        + static_cast<int>(g_nbm_oil_london.has_open_position()); // was incorrectly in us_eq
+                        + static_cast<int>(g_bracket_brent.pos.active);
         const int metals = static_cast<int>(g_gold_stack.has_open_position())
-                         + static_cast<int>(g_bracket_gold.pos.active)
-                         + static_cast<int>(g_nbm_gold_london.has_open_position()); // was incorrectly in us_eq
+                         + static_cast<int>(g_bracket_gold.pos.active);
         const int jpy   = static_cast<int>(g_eng_usdjpy.pos.active)
                         + static_cast<int>(g_eng_audusd.pos.active)
-                        + static_cast<int>(g_eng_nzdusd.pos.active)
-                        + static_cast<int>(g_ca_carry_unwind.has_open_position());
+                        + static_cast<int>(g_eng_nzdusd.pos.active);
         const int eur_gbp = static_cast<int>(g_eng_eurusd.pos.active)
                           + static_cast<int>(g_eng_gbpusd.pos.active)
                           + static_cast<int>(g_bracket_eurusd.pos.active)
-                          + static_cast<int>(g_bracket_gbpusd.pos.active)
-                          + static_cast<int>(g_vwap_rev_eurusd.has_open_position())
-                          + static_cast<int>(g_ca_fx_cascade.has_open_gbpusd());
+                          + static_cast<int>(g_bracket_gbpusd.pos.active);
         g_adaptive_risk.update_cluster_counts(us_eq, eu_eq, oil, metals, jpy, eur_gbp);
 
         // Portfolio VaR: update dollar-risk estimates per cluster.
@@ -783,15 +764,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_bracket_gold.pos.is_long, g_bracket_gold.pos.entry,
                     g_bracket_gold.pos.tp,      g_bracket_gold.pos.sl,
                     g_bracket_gold.pos.size,    g_bracket_gold.pos.entry_ts);
-            if (g_trend_pb_gold.has_open_position())
-                push_live_trade("XAUUSD","TrendPB",
-                    g_trend_pb_gold.open_is_long(), g_trend_pb_gold.open_entry(),
-                    0.0, g_trend_pb_gold.open_sl(),
-                    g_trend_pb_gold.open_size(), (int64_t)std::time(nullptr));
-            if (g_nbm_gold_london.has_open_position())
-                push_live_trade("XAUUSD","NBM-London",
-                    g_nbm_gold_london.open_is_long(), g_nbm_gold_london.open_entry(),
-                    0.0, 0.0, g_nbm_gold_london.open_size(), (int64_t)std::time(nullptr));
             if (g_candle_flow.has_open_position())
                 push_live_trade("XAUUSD", "CandleFlow",
                     g_candle_flow.pos.is_long, g_candle_flow.pos.entry,
@@ -803,24 +775,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     g_h1_swing_gold.pos_.tp1,     g_h1_swing_gold.pos_.sl,
                     g_h1_swing_gold.pos_.size_remaining,
                     g_h1_swing_gold.pos_.entry_ts_ms / 1000);
-            if (g_h4_regime_gold.has_open_position())
-                push_live_trade("XAUUSD", "H4Regime",
-                    g_h4_regime_gold.pos_.is_long, g_h4_regime_gold.pos_.entry,
-                    g_h4_regime_gold.pos_.tp,      g_h4_regime_gold.pos_.sl,
-                    g_h4_regime_gold.pos_.size,
-                    g_h4_regime_gold.pos_.entry_ts_ms / 1000);
-            if (g_minimal_h4_gold.has_open_position())
-                push_live_trade("XAUUSD", "MinimalH4",
-                    g_minimal_h4_gold.pos_.is_long, g_minimal_h4_gold.pos_.entry,
-                    g_minimal_h4_gold.pos_.tp,      g_minimal_h4_gold.pos_.sl,
-                    g_minimal_h4_gold.pos_.size,
-                    g_minimal_h4_gold.pos_.entry_ts_ms / 1000);
-            if (g_minimal_h4_us30.has_open_position())
-                push_live_trade("DJ30.F", "MinimalH4_US30",
-                    g_minimal_h4_us30.pos_.is_long, g_minimal_h4_us30.pos_.entry,
-                    g_minimal_h4_us30.pos_.tp,      g_minimal_h4_us30.pos_.sl,
-                    g_minimal_h4_us30.pos_.size,
-                    g_minimal_h4_us30.pos_.entry_ts_ms / 1000);
             // ?? US indices ??????????????????????????????????????????????????
             if (g_eng_sp.pos.active)
                 push_live_trade("US500.F","BE", g_eng_sp.pos.is_long,
@@ -854,18 +808,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("NAS100","Bracket", g_bracket_nas100.pos.is_long,
                     g_bracket_nas100.pos.entry, g_bracket_nas100.pos.tp, g_bracket_nas100.pos.sl,
                     g_bracket_nas100.pos.size, g_bracket_nas100.pos.entry_ts);
-            if (g_nbm_sp.has_open_position())
-                push_live_trade("US500.F","NBM", g_nbm_sp.open_is_long(),
-                    g_nbm_sp.open_entry(), 0.0, 0.0, g_nbm_sp.open_size(), (int64_t)std::time(nullptr));
-            if (g_nbm_nq.has_open_position())
-                push_live_trade("USTEC.F","NBM", g_nbm_nq.open_is_long(),
-                    g_nbm_nq.open_entry(), 0.0, 0.0, g_nbm_nq.open_size(), (int64_t)std::time(nullptr));
-            if (g_nbm_nas.has_open_position())
-                push_live_trade("NAS100","NBM", g_nbm_nas.open_is_long(),
-                    g_nbm_nas.open_entry(), 0.0, 0.0, g_nbm_nas.open_size(), (int64_t)std::time(nullptr));
-            if (g_nbm_us30.has_open_position())
-                push_live_trade("DJ30.F","NBM", g_nbm_us30.open_is_long(),
-                    g_nbm_us30.open_entry(), 0.0, 0.0, g_nbm_us30.open_size(), (int64_t)std::time(nullptr));
             // ?? EU indices ??????????????????????????????????????????????????
             if (g_eng_ger30.pos.active)
                 push_live_trade("GER40","BE", g_eng_ger30.pos.is_long,
@@ -891,10 +833,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("ESTX50","Bracket", g_bracket_estx50.pos.is_long,
                     g_bracket_estx50.pos.entry, g_bracket_estx50.pos.tp, g_bracket_estx50.pos.sl,
                     g_bracket_estx50.pos.size, g_bracket_estx50.pos.entry_ts);
-            if (g_trend_pb_ger40.has_open_position())
-                push_live_trade("GER40","TrendPB", g_trend_pb_ger40.open_is_long(),
-                    g_trend_pb_ger40.open_entry(), 0.0, g_trend_pb_ger40.open_sl(),
-                    g_trend_pb_ger40.open_size(), (int64_t)std::time(nullptr));
             // ?? Oil/commodities ?????????????????????????????????????????????
             if (g_eng_cl.pos.active)
                 push_live_trade("USOIL.F","BE", g_eng_cl.pos.is_long,
@@ -908,9 +846,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("BRENT","Bracket", g_bracket_brent.pos.is_long,
                     g_bracket_brent.pos.entry, g_bracket_brent.pos.tp, g_bracket_brent.pos.sl,
                     g_bracket_brent.pos.size, g_bracket_brent.pos.entry_ts);
-            if (g_nbm_oil_london.has_open_position())
-                push_live_trade("USOIL.F","NBM-London", g_nbm_oil_london.open_is_long(),
-                    g_nbm_oil_london.open_entry(), 0.0, 0.0, g_nbm_oil_london.open_size(), (int64_t)std::time(nullptr));
             // ?? FX ??????????????????????????????????????????????????????????
             if (g_eng_eurusd.pos.active)
                 push_live_trade("EURUSD","BE", g_eng_eurusd.pos.is_long,
@@ -952,12 +887,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 push_live_trade("USDJPY","Bracket", g_bracket_usdjpy.pos.is_long,
                     g_bracket_usdjpy.pos.entry, g_bracket_usdjpy.pos.tp, g_bracket_usdjpy.pos.sl,
                     g_bracket_usdjpy.pos.size, g_bracket_usdjpy.pos.entry_ts);
-            if (g_ca_fx_cascade.has_open_position())
-                push_live_trade("GBPUSD","FxCascade", g_ca_fx_cascade.open_is_long(),
-                    g_ca_fx_cascade.open_entry(), 0.0, 0.0, g_ca_fx_cascade.open_size(), (int64_t)std::time(nullptr));
-            if (g_ca_carry_unwind.has_open_position())
-                push_live_trade("USDJPY","CarryUnw", g_ca_carry_unwind.open_is_long(),
-                    g_ca_carry_unwind.open_entry(), 0.0, 0.0, g_ca_carry_unwind.open_size(), (int64_t)std::time(nullptr));
             // (TickScalpEngine push_live_trade block REMOVED at Batch 5V §1.3 2026-04-20.
             //  See wiki tombstone wiki/entities/TickScalpEngine.md.)
 
@@ -1056,59 +985,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 //       hold_s=0 MFE=0 DOLLAR_STOP while shadow_mode=true).
                 //   (2) Add SL-breach guard (matches CFE pattern): only fire when
                 //       engine's own SL has been breached OR loss > 2x limit.
-                if (g_macro_crash.has_open_position()) {
-                    const double unr = xau_unr(g_macro_crash.pos.is_long,
-                                               g_macro_crash.pos.entry,
-                                               g_macro_crash.pos.size);
-                    const double mce_sl = g_macro_crash.pos.sl;
-                    const bool mce_sl_breached = (mce_sl > 0.0) && (g_macro_crash.pos.is_long
-                        ? (s_xau_bid <= mce_sl)
-                        : (s_xau_ask >= mce_sl));
-                    const bool mce_dollar_stop_ok = mce_sl_breached
-                        || (unr < -(ds_lim * 2.0));
-
-                    if (g_macro_crash.shadow_mode) {
-                        // SHADOW: never force_close from dollar stop -- engine SL handles.
-                        if (unr < -ds_lim) {
-                            static int64_t s_mce_shadow_log = 0;
-                            if (ds_now - s_mce_shadow_log >= 10) {
-                                s_mce_shadow_log = ds_now;
-                                char _msg[512];
-                                snprintf(_msg, sizeof(_msg),
-                                    "[DOLLAR-STOP-SHADOW] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- SKIPPING (shadow mode)\n",
-                                    g_macro_crash.pos.is_long?"LONG":"SHORT",
-                                    g_macro_crash.pos.entry, unr, ds_lim,
-                                    mce_sl, (int)mce_sl_breached);
-                                std::cout << _msg;
-                                std::cout.flush();
-                            }
-                        }
-                    } else if (unr < -ds_lim && mce_dollar_stop_ok) {
-                        {
-                            char _msg[512];
-                            snprintf(_msg, sizeof(_msg), "[DOLLAR-STOP] MacroCrash %s entry=%.2f unr=$%.2f limit=$%.0f sl=%.2f sl_breached=%d -- CLOSING\n",                                g_macro_crash.pos.is_long?"LONG":"SHORT",                                g_macro_crash.pos.entry, unr, ds_lim,                                mce_sl, (int)mce_sl_breached);
-                            std::cout << _msg;
-                            std::cout.flush();
-                        }
-                        // CRITICAL FIX: pass ds_now_ms (milliseconds) not ds_now (seconds).
-                        // ds_now in seconds caused cooldown to be set ~1700s in the past
-                        // (seconds treated as ms), allowing immediate re-entry loop.
-                        g_macro_crash.force_close(s_xau_bid, s_xau_ask, ds_now_ms);
-                    } else if (unr < -ds_lim) {
-                        // LIVE, dollar stop wanted to fire but SL not yet breached -- log only
-                        static int64_t s_mce_skip_log = 0;
-                        if (ds_now - s_mce_skip_log >= 10) {
-                            s_mce_skip_log = ds_now;
-                            char _msg[512];
-                            snprintf(_msg, sizeof(_msg),
-                                "[DOLLAR-STOP-SKIP] MacroCrash %s unr=$%.2f > limit=$%.0f but sl=%.2f not breached -- letting SL handle\n",
-                                g_macro_crash.pos.is_long?"LONG":"SHORT",
-                                unr, ds_lim, mce_sl);
-                            std::cout << _msg;
-                            std::cout.flush();
-                        }
-                    }
-                }
                 // GoldStack (MeanReversion / CompressionBreakout etc)
                 // DOLLAR-STOP-SHADOW-FIX 2026-04-21:
                 //   (1) Skip entirely when global g_cfg.mode != "LIVE" -- GoldStack
@@ -2047,11 +1923,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (s_sp_f) {
             const int has_pos_sp =
                 (g_eng_sp.pos.active          ||
-                 g_bracket_sp.pos.active      ||
-                 g_orb_us.has_open_position() ||
-                 g_vwap_rev_sp.has_open_position() ||
-                 g_trend_pb_sp.has_open_position() ||
-                 g_nbm_sp.has_open_position()) ? 1 : 0;
+                 g_bracket_sp.pos.active) ? 1 : 0;
             fprintf(s_sp_f,
                 "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
                 "%d,%d,%llu,"
@@ -2105,10 +1977,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if (s_nq_f) {
             const int has_pos_nq =
                 (g_eng_nq.pos.active               ||
-                 g_bracket_nq.pos.active           ||
-                 g_vwap_rev_nq.has_open_position() ||
-                 g_trend_pb_nq.has_open_position() ||
-                 g_nbm_nq.has_open_position()) ? 1 : 0;
+                 g_bracket_nq.pos.active) ? 1 : 0;
             fprintf(s_nq_f,
                 "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
                 "%d,%d,%llu,"
@@ -2167,8 +2036,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // S11 P3b: g_hybrid_nas100 dropped from has_pos_nas -- engine culled in P3a + P3b.
             const int has_pos_nas =
                 (g_eng_nas100.pos.active           ||
-                 g_iflow_nas.has_open_position()   ||
-                 g_nbm_nas.has_open_position()) ? 1 : 0;
+                 g_iflow_nas.has_open_position()) ? 1 : 0;
             fprintf(s_nas_f,
                 "%lld,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,"
                 "%d,%d,%llu,"
@@ -2337,11 +2205,9 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         // S-2026-06-03 GoldSeasonal (XAUUSD Mon+Tue long) -- shadow, UTC-day, same sink.
         //   Holds through the gold ~21:00 UTC daily break (acts only on day-flip;
         //   spread-guard blocks break/illiquid fills).
-        if (sym == "XAUUSD") g_gold_seasonal.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
 
         // S-2026-06-03 GoldOversoldBounce (XAUUSD daily RSI<30 long) -- shadow, same sink.
         //   Mean-reversion bounce; aggregates its own UTC-daily bar, ATR stop.
-        if (sym == "XAUUSD") g_gold_oversold.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
     }
 
     // ?? Routing -- every symbol goes through supervisor ????????????????????????
@@ -2421,10 +2287,6 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     //   FX_CASCADE ? 0 (armed state not visible here; signal fires fast)
     {
         // ORB instances
-        const double orb_us_mid    = (g_orb_us.range_high()    + g_orb_us.range_low())    > 0.0 ? (g_orb_us.range_high()    + g_orb_us.range_low())    * 0.5 : 0.0;
-        const double orb_ger_mid   = (g_orb_ger30.range_high() + g_orb_ger30.range_low())  > 0.0 ? (g_orb_ger30.range_high() + g_orb_ger30.range_low())  * 0.5 : 0.0;
-        const double orb_uk_mid    = (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  > 0.0 ? (g_orb_uk100.range_high()  + g_orb_uk100.range_low())  * 0.5 : 0.0;
-        const double orb_estx_mid  = (g_orb_estx50.range_high() + g_orb_estx50.range_low()) > 0.0 ? (g_orb_estx50.range_high() + g_orb_estx50.range_low()) * 0.5 : 0.0;
 
         auto ca = [&](const char* nm, const char* sym, bool act, bool lng,
                       double ent, double tp, double sl, double ref, int sigs) {
@@ -2432,28 +2294,15 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         };
 
         // ORB
-        ca("ORB_US",    "US500.F", g_orb_us.has_open_position(),    false, 0,0,0, orb_us_mid,   0);
-        ca("ORB_GER40", "GER40",   g_orb_ger30.has_open_position(),  false, 0,0,0, orb_ger_mid,  0);
-        ca("ORB_UK100", "UK100",   g_orb_uk100.has_open_position(),  false, 0,0,0, orb_uk_mid,   0);
-        ca("ORB_ESTX50","ESTX50",  g_orb_estx50.has_open_position(), false, 0,0,0, orb_estx_mid, 0);
 
         // VWAP Reversion -- capture VWAP proxy per instrument
         // SP/NQ share the US ORB range mid; GER40 uses Xetra ORB; EUR uses daily open static
-        ca("VWAP_SP",   "US500.F", g_vwap_rev_sp.has_open_position(),     false, 0,0,0, orb_us_mid,  0);
-        ca("VWAP_NQ",   "USTEC.F", g_vwap_rev_nq.has_open_position(),     false, 0,0,0, orb_us_mid,  0);
-        ca("VWAP_GER40","GER40",   g_vwap_rev_ger40.has_open_position(),  false, 0,0,0, orb_ger_mid, 0);
-        ca("VWAP_EUR",  "EURUSD",  g_vwap_rev_eurusd.has_open_position(), false, 0,0,0, 0.0,         0);
 
         // Trend Pullback -- ref_price = EMA50 (dynamic SL)
-        ca("TRENDPB_GOLD","XAUUSD", g_trend_pb_gold.has_open_position(),  false, 0,0,0, g_trend_pb_gold.ema50(),  0);
-        ca("TRENDPB_GER", "GER40",  g_trend_pb_ger40.has_open_position(), false, 0,0,0, g_trend_pb_ger40.ema50(), 0);
 
         // FX Cascade -- one entry covers all three legs; armed state not stored here
-        ca("FXCASC_GBP", "GBPUSD", g_ca_fx_cascade.has_open_position(), false, 0,0,0, 0.0, 0);
 
         // Other cross-asset (EsNq, OilFade, BrentWTI, CarryUnwind)
-        ca("ESNQ_DIV",   "US500.F", g_ca_esnq.has_open_position(),        false, 0,0,0, 0.0, 0);
-        ca("CARRY_UNW",  "USDJPY",  g_ca_carry_unwind.has_open_position(), false, 0,0,0, 0.0, 0);
     }
 
     // ?? Real-time cluster dollar exposure ?????????????????????????????????????????

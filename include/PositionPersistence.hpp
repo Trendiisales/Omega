@@ -201,12 +201,6 @@ inline void register_position_persistence() {
     // ---- CrossPosition / IdxOpenPosition archetype (14) ----
     // Globals + symbols + tag strings mirror the GUI register_source() labels in
     // engine_init.hpp exactly, so save/restore keys match the live position keys.
-    wire_cross(g_vwap_rev_sp,      "VWAPReversionSP",     "US500.F");
-    wire_cross(g_vwap_rev_nq,      "VWAPReversionNQ",     "USTEC.F");
-    wire_cross(g_vwap_rev_ger40,   "VWAPReversionGER40",  "GER40");
-    wire_cross(g_vwap_rev_eurusd,  "VWAPReversionEURUSD", "EURUSD");
-    wire_cross(g_trend_pb_gold,    "TrendPullbackGold",   "XAUUSD");
-    wire_cross(g_trend_pb_nq,      "TrendPullbackNQ",     "USTEC.F");
     wire_cross(g_iflow_sp,         "IndexFlowSP",         "US500.F");
     wire_cross(g_iflow_nq,         "IndexFlowNQ",         "USTEC.F");
     wire_cross(g_iflow_nas,        "IndexFlowNAS",        "NAS100");
@@ -218,39 +212,24 @@ inline void register_position_persistence() {
 
     // ---- batch 4: straddles (gold + index, shared XauStraddleM30Engine class)
     // + Ger40KeltnerH1 (the engines wiped on the 2026-06-03 MGC-deploy restart) ----
-    wire_cross(g_xau_straddle_m30,      "XauStraddleM30",      "XAUUSD");
-    wire_cross(g_xau_straddle_m15,      "XauStraddleM15",      "XAUUSD");
     wire_cross(g_idx_straddle_ger40_m30, "IdxStraddleGER40_M30", "GER40");
     wire_cross(g_idx_straddle_ger40_m15, "IdxStraddleGER40_M15", "GER40");
     wire_cross(g_idx_straddle_nas_m15,   "IdxStraddleNAS100_M15", "NAS100");
     wire_cross(g_idx_straddle_nas_m30,   "IdxStraddleNAS100_M30", "NAS100");
     wire_cross(g_idx_straddle_uk100_m30, "IdxStraddleUK100_M30",  "UK100");
     wire_cross(g_idx_straddle_uk100_m240,"IdxStraddleUK100_M240", "UK100");
-    wire_cross(g_ger40_kelt,             "Ger40KeltnerH1",        "GER40");
 
     // ---- batch 5: gold/index single-pos engines ----
     wire_cross(g_xauusd_fvg,       "XauusdFvg",        "XAUUSD");
-    wire_cross(g_pdhl_rev,         "PDHLReversion",    "XAUUSD");
-    wire_cross(g_rsi_reversal,     "RSIReversal",      "XAUUSD");
-    wire_cross(g_minimal_h4_gold,  "MinimalH4Gold",    "XAUUSD");
-    wire_cross(g_minimal_h4_us30,  "MinimalH4US30",    "DJ30.F");
-    wire_cross(g_minimal_h4_ger40, "MinimalH4GER40",   "GER40");
     wire_cross(g_xau_threebar_30m, "XauThreeBar30m",   "XAUUSD");
     wire_cross(g_ema_cross,        "EMACrossGold",     "XAUUSD");
-    wire_cross(g_ger40_turtle_h4,  "Ger40TurtleH4",    "GER40");
-    wire_cross(g_gold_seasonal,    "GoldSeasonal",     "XAUUSD");
-    wire_cross(g_gold_oversold,    "GoldOversoldBounce","XAUUSD");
     wire_cross(g_h1_swing_gold,    "H1SwingGold",      "XAUUSD");
-    wire_cross(g_h4_regime_gold,   "H4RegimeGold",     "XAUUSD");
 
     // ---- batch 5: multi-cell ensembles (per-cell, tag = base#idx/cellid) ----
     wire_multicell(g_xau_tf_1h,    "XauTrendFollow1h",  "XAUUSD");
     wire_multicell(g_xau_tf_2h,    "XauTrendFollow2h",  "XAUUSD");
     wire_multicell(g_xau_tf_4h,    "XauTrendFollow4h",  "XAUUSD");
     wire_multicell(g_xau_tf_d1,    "XauTrendFollowD1",  "XAUUSD");
-    wire_multicell(g_ustec_tf_5m,  "UstecTrendFollow5m","USTEC.F");
-    wire_multicell(g_ustec_tf_htf, "UstecTrendFollowHtf","USTEC.F");
-    wire_multicell(g_c1_retuned,   "C1Retuned",         "XAUUSD");
 
     // ---- batch 6: tail — Breakout FX, NBM, FX turtles/scalp, pyramided (base) ----
     wire_cross(g_eng_eurusd,  "BreakoutEURUSD", "EURUSD");
@@ -258,30 +237,9 @@ inline void register_position_persistence() {
     wire_cross(g_eng_audusd,  "BreakoutAUDUSD", "AUDUSD");
     wire_cross(g_eng_nzdusd,  "BreakoutNZDUSD", "NZDUSD");
     wire_cross(g_eng_usdjpy,  "BreakoutUSDJPY", "USDJPY");
-    wire_cross(g_nbm_gold_london, "NoiseBandMomentumGoldLdn", "XAUUSD");
-    wire_cross(g_gold_scalp_pyramid, "GoldScalpPyramid", "XAUUSD");
-    wire_cross(g_gold_regime_daily,  "GoldRegimeDaily",  "XAUUSD");
-    wire_cross(g_macro_crash,        "MacroCrash",       "XAUUSD");
-    wire_cross(g_eurusd_turtle_h4, "FxTurtleH4_EURUSD", "EURUSD");
-    wire_cross(g_gbpusd_turtle_h4, "FxTurtleH4_GBPUSD", "GBPUSD");
-    wire_cross(g_audusd_turtle_h4, "FxTurtleH4_AUDUSD", "AUDUSD");
-    wire_cross(g_nzdusd_turtle_h4, "FxTurtleH4_NZDUSD", "NZDUSD");
-    wire_cross(g_usdjpy_turtle_h4, "FxTurtleH4_USDJPY", "USDJPY");
-    wire_cross(g_fx_scalp_eurusd, "FxScalpPyramid_EURUSD", "EURUSD");
-    wire_cross(g_fx_scalp_usdjpy, "FxScalpPyramid_USDJPY", "USDJPY");
-    wire_cross(g_fx_scalp_gbpusd, "FxScalpPyramid_GBPUSD", "GBPUSD");
-    wire_cross(g_fx_scalp_usdcad, "FxScalpPyramid_USDCAD", "USDCAD");
-    wire_cross(g_fx_scalp_audusd, "FxScalpPyramid_AUDUSD", "AUDUSD");
     // ---- IndexSession (intraday cash-session long, 5 indices) ----
     wire_cross(g_idxsess_sp,     "IndexSession_SP",     "US500.F");
     wire_cross(g_idxsess_nas,    "IndexSession_NAS",    "NAS100");
-    wire_cross(g_fvgcont_nas,    "FvgContinuation",     "NAS100");   // FVG continuation 15m (long+short)
-    wire_cross(g_fvgcont_nas10,  "FvgCont10m",          "NAS100");   // FVG continuation 10m (long+short)
-    wire_cross(g_overnight_nas,  "OvernightDrift",      "NAS100");   // overnight drift (long-only)
-    wire_cross(g_connors_nas,    "ConnorsRSI2",         "NAS100");   // RSI2 dip-buy (long-only)
-    wire_cross(g_adhull_xau,     "AdaptiveHullXAU",     "XAUUSD");   // adaptive-Hull trend (long-only)
-    wire_cross(g_adhull_ger,     "AdaptiveHullGER",     "GER40");    // adaptive-Hull trend (long-only)
-    wire_cross(g_supertrend_gold,"SupertrendGold",      "XAUUSD");   // Supertrend gold (long-only)
     wire_cross(g_idxsess_ger40,  "IndexSession_GER40",  "GER40");
     wire_cross(g_idxsess_uk100,  "IndexSession_UK100",  "UK100");
     wire_cross(g_idxsess_estx50, "IndexSession_ESTX50", "ESTX50");

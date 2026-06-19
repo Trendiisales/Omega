@@ -45,7 +45,6 @@ static void on_tick_gold(
     g_engine_heartbeat.pulse("RSIExtreme");
     g_engine_heartbeat.pulse("h1_swing_gold");
     g_engine_heartbeat.pulse("h4_regime_gold");
-    if (g_macro_crash.enabled) g_engine_heartbeat.pulse("MacroCrash");
     g_engine_heartbeat.pulse("NbmGoldLondon");
     g_engine_heartbeat.pulse("Tsmom_H1_long");
     g_engine_heartbeat.pulse("Tsmom_H2_long");
@@ -115,25 +114,11 @@ static void on_tick_gold(
     const bool gs_winning = gs_open && g_gold_stack.has_profitable_trail();
     const bool gold_any_open =
         (gs_open && !gs_winning)                ||  // GoldStack blocks unless profitable trail
-        // g_le_stack.has_open_position() REMOVED at S13 Finding B 2026-04-24 — engine culled.
         g_bracket_gold.has_open_position()      ||
-        g_trend_pb_gold.has_open_position()     ||
-        g_nbm_gold_london.has_open_position()   ||  // London NBM also blocks other gold engines
-        g_h1_swing_gold.has_open_position() ||      // H1 swing open blocks all other gold entries
-        g_h4_regime_gold.has_open_position()    ||  // H4 regime open blocks all other gold entries
-        g_candle_flow.has_open_position()       ||  // AUDIT 2026-04-29: CFE open blocks other gold engines (re-enabled)
-        // (g_pullback_cont/prem has_open_position gates removed S49 X5 — engine culled)
+        g_h1_swing_gold.has_open_position()     ||  // H1 swing open blocks all other gold entries
+        g_candle_flow.has_open_position()       ||  // CFE open blocks other gold engines
         g_ema_cross.has_open_position()         ||  // ECE open blocks other gold engines
-        // 2026-05-02: XauusdFvgEngine -- per design doc §7.3 + open Q §11.6.
-        // FVG respects gold one-at-a-time AND adds itself to the gate so the
-        // other gold engines will not enter while FVG holds a position.
-        g_xauusd_fvg.has_open_position()             ||
-        // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + trail.
-        g_gold_scalp_pyramid.has_open_position()          ||
-        // 2026-05-18 (part B): BBandScalp -- M1 BB + RSI mean-reversion scalper.
-        g_bband_scalp.has_open_position()                 ||
-        // 2026-05-19 S110: GoldRegimeDaily -- H4 EMA-cross trend-follow.
-        g_gold_regime_daily.has_open_position()           ;
+        g_xauusd_fvg.has_open_position();
 
     // ?? Trend day detection ???????????????????????????????????????????????
     const double gold_ewm_drift_now = g_gold_stack.ewm_drift();
@@ -822,11 +807,7 @@ static void on_tick_gold(
                 bar15.high  = s_cur15.high;
                 bar15.low   = s_cur15.low;
                 bar15.close = s_cur15.close;
-                g_xau_tf_m15.on_h1_bar(bar15, bid, ask, /*atr14_external=*/0.0,
-                                       now_ms_g, bracket_on_close);
                 // OCO straddle on M15 (same engine, fed M15 bars)
-                g_xau_straddle_m15.on_m30_bar(s_cur15.high, s_cur15.low, s_cur15.close,
-                                              bid, ask, now_ms_g, bracket_on_close);
             }
             s_cur15 = {b15/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar15_ms = b15;
         }
@@ -854,11 +835,7 @@ static void on_tick_gold(
                     now_ms_g, bracket_on_close);
             }
             // -- XauDonchian55GatedM30Engine 30m-close dispatch (S136 2026-05-24) --
-            g_xau_d55_gated_m30.on_m30_bar(s_cur30.high, s_cur30.low, s_cur30.close,
-                                            bid, ask, now_ms_g, bracket_on_close);
             // -- XauStraddleM30Engine 30m-close: roll box + re-arm OCO straddle --
-            g_xau_straddle_m30.on_m30_bar(s_cur30.high, s_cur30.low, s_cur30.close,
-                                          bid, ask, now_ms_g, bracket_on_close);
             // -- GoldVolBreakoutM30Engine 30m-close: entry/trail (S-2026-06-03) --
             // Long-only vol-breakout runner; trend gate set on H1 close above.
             g_gold_volbrk_m30.on_m30_bar(s_cur30.high, s_cur30.low, s_cur30.close,
@@ -890,8 +867,6 @@ static void on_tick_gold(
                     g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
                     g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),  // crash-day gate
                     g_macro_ctx.session_slot, now_ms_g, ca_on_close);
-            } else if (!gold_any_open && !g_h4_regime_gold.has_open_position()
-                       && g_bars_gold.h1.ind.m1_ready.load(std::memory_order_relaxed)) {
                 const auto h1sig = g_h1_swing_gold.on_h1_bar(
                     xau_mid, bid, ask,
                     g_bars_gold.h1.ind.ema9  .load(std::memory_order_relaxed),
@@ -927,10 +902,6 @@ static void on_tick_gold(
                 c1_h1.high  = s_cur_h1.high;
                 c1_h1.low   = s_cur_h1.low;
                 c1_h1.close = s_cur_h1.close;
-                g_c1_retuned.on_h1_bar(
-                    c1_h1, bid, ask,
-                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
             }
             // S118 2026-05-19: XauTrendFollow1hEngine H1 dispatch.
             // Long-only 2-cell ensemble (EmaCross_20_80 + Donchian_N40).
@@ -963,11 +934,6 @@ static void on_tick_gold(
                 ts_h1.high  = s_cur_h1.high;
                 ts_h1.low   = s_cur_h1.low;
                 ts_h1.close = s_cur_h1.close;
-                g_tsmom.set_macro_regime(g_macroDetector.regime());
-                g_tsmom.on_h1_bar(
-                    ts_h1, bid, ask,
-                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
             }
             // TsmomPortfolioV2 H1 dispatch -- Phase 2a CellEngine-refactor shadow.
             // Same H1 bar / bid / ask / atr / now_ms as g_tsmom above so the
@@ -982,12 +948,6 @@ static void on_tick_gold(
                 v2_h1.high  = s_cur_h1.high;
                 v2_h1.low   = s_cur_h1.low;
                 v2_h1.close = s_cur_h1.close;
-                g_tsmom_v2.set_macro_regime(g_macroDetector.regime());
-                g_tsmom_v2.on_h1_bar(
-                    v2_h1, bid, ask,
-                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
-                    now_ms_g,
-                    omega::cell::shadow::tsmom_writer().bind());
             }
             // DonchianPortfolio H1 dispatch -- Tier-2 ship 2026-04-30. Drives
             // 7 cells (H2 long, H4/H6/D1 long+short). H1 atr14 is unused (cells
@@ -1001,11 +961,6 @@ static void on_tick_gold(
                 dn_h1.high  = s_cur_h1.high;
                 dn_h1.low   = s_cur_h1.low;
                 dn_h1.close = s_cur_h1.close;
-                g_donchian.set_macro_regime(g_macroDetector.regime());
-                g_donchian.on_h1_bar(
-                    dn_h1, bid, ask,
-                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
             }
             // ── XauTrendFollow2hEngine H1 dispatch (S33k 2026-05-11) ──────────
             // 4-cell 2h trend-follow ensemble. Takes H1 bars; aggregates into
@@ -1029,11 +984,6 @@ static void on_tick_gold(
                 epb_h1.high  = s_cur_h1.high;
                 epb_h1.low   = s_cur_h1.low;
                 epb_h1.close = s_cur_h1.close;
-                g_ema_pullback.set_macro_regime(g_macroDetector.regime());
-                g_ema_pullback.on_h1_bar(
-                    epb_h1, bid, ask,
-                    g_bars_gold.h1.ind.atr14.load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
             }
             // TrendRiderPortfolio H1 dispatch -- Tier-4 ship 2026-04-30.
             // 6 trend-rider cells (H2 L+S, H4 L+S, H6 L, D1 L) with 40-bar
@@ -1060,79 +1010,6 @@ static void on_tick_gold(
         if (s_bar_h4_ms == 0) { s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4; }
         else if (bh4 != s_bar_h4_ms) {
             g_bars_gold.h4.add_bar(s_cur_h4);
-            // H4 bar close dispatch
-            if (g_h4_regime_gold.has_open_position()) {
-                g_h4_regime_gold.on_h4_bar(
-                    s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                    xau_mid, bid, ask,
-                    g_bars_gold.h4.ind.ema9  .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.ema50 .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.rsi14 .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
-                    g_bars_gold.m15.ind.atr_expanding.load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
-            } else if (!gold_any_open && !g_h1_swing_gold.has_open_position()
-                       && g_bars_gold.h4.ind.m1_ready.load(std::memory_order_relaxed)) {
-                const auto h4sig = g_h4_regime_gold.on_h4_bar(
-                    s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                    xau_mid, bid, ask,
-                    g_bars_gold.h4.ind.ema9  .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.ema50 .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.atr14 .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.rsi14 .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.adx14 .load(std::memory_order_relaxed),
-                    g_bars_gold.m15.ind.atr_expanding.load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
-                if (h4sig.valid) {
-                    const double h4_lot = enter_directional("XAUUSD", h4sig.is_long,
-                        h4sig.entry, h4sig.sl, h4sig.tp, 0.01, true, bid, ask, sym, regime, "H4RegimeGold");
-                    if (!h4_lot) { g_h4_regime_gold.cancel(); }
-                    else {
-                        g_h4_regime_gold.patch_size(h4_lot);
-                        g_telemetry.UpdateLastSignal("XAUUSD",
-                            h4sig.is_long ? "LONG" : "SHORT", h4sig.entry, h4sig.reason,
-                            "H4_REGIME", regime.c_str(), "H4_REGIME", h4sig.tp, h4sig.sl);
-                    }
-                }
-            }
-
-            // MinimalH4Breakout dispatch -- runs PARALLEL to H4RegimeEngine.
-            // Independent of gold_any_open / H1 swing blocks (shadow only).
-            // Entry is local-only in shadow mode: no enter_directional call, no
-            // broker orders. The engine manages TP/SL internally via on_tick()
-            // below and reports closed trades through ca_on_close -> handle_closed_trade
-            // which feeds telemetry. When the engine is promoted to LIVE, add
-            // an enter_directional call here mirroring the H4RegimeEngine pattern.
-            {
-                const auto m4sig = g_minimal_h4_gold.on_h4_bar(
-                    s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                    bid, ask,
-                    g_bars_gold.h4.ind.atr14.load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
-                if (m4sig.valid) {
-                    g_telemetry.UpdateLastSignal("XAUUSD",
-                        m4sig.is_long ? "LONG" : "SHORT", m4sig.entry, m4sig.reason,
-                        "MINIMAL_H4", regime.c_str(), "MINIMAL_H4", m4sig.tp, m4sig.sl);
-                }
-            }
-            // C1RetunedPortfolio H4 dispatch -- drives Bollinger H4 cell only.
-            // BB + ATR14 come from g_bars_gold.h4.ind.* (already updated by add_bar above).
-            {
-                omega::C1Bar c1_h4{};
-                c1_h4.bar_start_ms = s_bar_h4_ms;
-                c1_h4.open  = s_cur_h4.open;
-                c1_h4.high  = s_cur_h4.high;
-                c1_h4.low   = s_cur_h4.low;
-                c1_h4.close = s_cur_h4.close;
-                g_c1_retuned.on_h4_bar(
-                    c1_h4, bid, ask,
-                    g_bars_gold.h4.ind.bb_upper.load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.bb_mid  .load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.bb_lower.load(std::memory_order_relaxed),
-                    g_bars_gold.h4.ind.atr14   .load(std::memory_order_relaxed),
-                    now_ms_g, ca_on_close);
-            }
             // ── XauTrendFollow4hEngine (S33d 2026-05-11; extended to 5 cells S33e) ──
             // 5-cell trend-follow ensemble (Donchian N=20, InsideBar, ER0.20,
             // Keltner K=2, ADX_Mom adx>25). Shadow-only by default. Driven by
@@ -1167,42 +1044,16 @@ static void on_tick_gold(
             // ── XauTsmomFastD1Engine (2026-05-20) ──────────────────────────────
             // Short-lookback D1 momentum (lb=5 sl=1.0 tp=5.0 hold=20). Uses
             // same H4-close stream to synthesise D1 bars internally.
-            g_xau_tsmom_fast_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                          bid, ask, now_ms_g, bracket_on_close);
             // ── XauTurtleD1Engine (2026-05-20) -- 40d Donchian long break
-            g_xau_turtle_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                       bid, ask, now_ms_g, bracket_on_close);
             // ── XauStopRunD1Engine (2026-05-20) -- 5d stop-run rejection rally
-            g_xau_stop_run_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                         bid, ask, now_ms_g, bracket_on_close);
             // ── XauPullbackContH4Engine (2026-05-20) -- pullback to fast EMA
-            g_xau_pullback_cont_h4.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                              bid, ask, now_ms_g, bracket_on_close);
             // ── XauNbmD1Engine (2026-05-20) -- Noise Band Momentum break
-            g_xau_nbm_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                    bid, ask, now_ms_g, bracket_on_close);
             // ── XauEmaCrossH4Engine (2026-05-20) -- 20/100 golden cross
-            g_xau_ema_cross_h4.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                          bid, ask, now_ms_g, bracket_on_close);
             // ── 2026-05-20 mega-sweep batch: PullbackContD1 / BBScalpD1 / SwingBreakD1
-            g_xau_pullback_cont_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                              bid, ask, now_ms_g, bracket_on_close);
-            g_xau_bb_scalp_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                         bid, ask, now_ms_g, bracket_on_close);
             // ── S136 2026-05-24: Xau3BarMomGatedH4Engine ──────────────────────
-            g_xau_3bar_mom_h4.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                         bid, ask, now_ms_g, bracket_on_close);
             g_xau_swing_break_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
                                             bid, ask, now_ms_g, bracket_on_close);
             // ── 2026-05-20 mega-sweep2 candle patterns: DojiRej, OutsideBar, InsideBar
-            g_xau_doji_rej_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                         bid, ask, now_ms_g, bracket_on_close);
-            g_xau_outside_bar_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                            bid, ask, now_ms_g, bracket_on_close);
-            g_xau_inside_bar_d1.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                           bid, ask, now_ms_g, bracket_on_close);
-            g_trendline_break.on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close,
-                                        bid, ask, now_ms_g, bracket_on_close);
             // ── 2026-05-21 GoldD1TrendState update -- regime gate for shorts
             omega::gold_d1_trend().on_h4_bar(s_cur_h4.high, s_cur_h4.low, s_cur_h4.close, now_ms_g);
             s_cur_h4 = {bh4/60000LL, xau_mid, xau_mid, xau_mid, xau_mid}; s_bar_h4_ms = bh4;
@@ -1773,368 +1624,16 @@ static void on_tick_gold(
     // RSIReversalEngine.on_tick() is gated (rsi_rev_can_enter), so when the gate
     // is closed (e.g. hybrid_gold has position) indicators go stale and MacroCrash
     // reads a stale RSI value. update_indicators() is ungated -- always live.
-    g_rsi_reversal.update_indicators(bid, ask);
     // RSIExtremeTurnEngine indicator warmup -- UNCONDITIONAL, every tick
     // Must run so tick_rsi / tick_atr are always current regardless of position state.
-    g_rsi_extreme.update_indicators(bid, ask);
     // Inject M1 bar RSI for entry signal -- bar RSI is smooth (60s) and matches chart
     if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
         const double rsi_bar_mid = (bid + ask) * 0.5;
-        g_rsi_reversal.set_bar_rsi(
-            g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed),
-            rsi_bar_mid);
         // RSIExtremeTurnEngine bar RSI injection -- tracks sustained extreme bars
-        g_rsi_extreme.set_bar_rsi(
-            g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed));
-        g_rsi_reversal.set_bar_context(
-            g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed),
-            g_bars_gold.m1.ind.atr_expanding.load(std::memory_order_relaxed),
-            g_bars_gold.m1.ind.bb_squeeze.load(std::memory_order_relaxed),
-            g_bars_gold.m1.ind.adx_trending.load(std::memory_order_relaxed));
     }
 
-    // ?? MacroCrashEngine -- always-on macro event capture ????????????????
-    // Fires on: ATR + vol_ratio + drift thresholds (session-aware: lower in Asia).
-    // DOM primer: book_slope / vacuum / microprice_bias lower drift threshold 40%
-    //   when the DOM is confirming direction before EWM drift catches up.
-    // RSI confirmation: RSI extreme aligning with drift substitutes for expansion_regime
-    //   in Asia (supervisor lags by CONFIRM_TICKS; RSI is live price-based).
-    // Both directions: is_long = (ewm_drift > 0) -- LONG on spikes up, SHORT on crashes.
-    {
-        const bool expansion_regime = (gold_sdec.regime == omega::Regime::EXPANSION_BREAKOUT
-                                    || gold_sdec.regime == omega::Regime::TREND_CONTINUATION);
-        // (live candle-based) with vol_range fallback and a 2.0pt absolute floor.
-        const double mce_m1_atr   = g_bars_gold.m1.ind.atr14.load(std::memory_order_relaxed);
-        const double mce_vol_rng  = g_gold_stack.vol_range();
-        const double mce_atr      = std::max({2.0, mce_m1_atr, mce_vol_rng * 0.5});
-        const double mce_vol_ratio = (g_gold_stack.recent_vol_pct() > 0.0
-                                   && g_gold_stack.base_vol_pct() > 0.0)
-                                     ? g_gold_stack.recent_vol_pct() / g_gold_stack.base_vol_pct()
-                                     : 1.0;
-        // DOM signals -- live from g_macro_ctx (updated every cold-path tick from L2 book)
-        const double mce_book_slope     = g_macro_ctx.gold_slope;
-        const bool   mce_vacuum_ask     = g_macro_ctx.gold_vacuum_ask;
-        const bool   mce_vacuum_bid     = g_macro_ctx.gold_vacuum_bid;
-        const double mce_microprice     = g_macro_ctx.gold_microprice_bias;
 
-        // RSI: tick RSI primary (always live, updated every tick, never 0 after warmup).
-        // Bar RSI (g_bars_gold.m1.ind.rsi14) initialises to 0.0 and only updates every 60s.
-        // When bar RSI = 0.0, the rsi14 > 0.0 guard in MacroCrashEngine kills the RSI bypass
-        // so eff_expansion stays false during the entire crash. Use tick RSI from
-        // RSIReversalEngine which computes from the same mid price every tick.
-        const double mce_bar_rsi  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-        const double mce_tick_rsi = g_rsi_reversal.tick_rsi();
-        const double mce_rsi      = (mce_tick_rsi > 0.0) ? mce_tick_rsi : mce_bar_rsi;
 
-        // VOL_RATIO macro bypass: EWM baseline stays elevated after prior large sessions.
-        // After a big prior day base_vol_pct is high, keeping mce_vol_ratio < 2.5 even
-        // during a genuine crash. When |drift| >= 8pt the move is unambiguously real --
-        // pass 99.0 to clear the vol_ratio gate unconditionally.
-        const double mce_ewm_drift     = g_gold_stack.ewm_drift();
-        const double mce_vol_ratio_eff = (std::fabs(mce_ewm_drift) >= 6.0)
-                                         ? 99.0   // drift >= 6pt bypasses vol gate
-                                         : mce_vol_ratio;
-
-        // Block MacroCrash entry when HybridBracketGold has an opposing position.
-        // MacroCrash SHORT into a bracket LONG = engines fighting each other.
-        // If bracket is active and MacroCrash has no position, check direction conflict.
-        //
-        // OPEN-LOG FIX 2026-04-21: capture "was open before on_tick" so we can
-        // detect a fresh MCE entry transition after on_tick returns and emit
-        // write_trade_open_log -- parity with the other engines already
-        // TrendBracket). MCE was silently opening positions with no row in
-        // the open-trades CSV.
-        const bool mce_was_open_before_tick = g_macro_crash.has_open_position();
-        // S11 P3b: g_hybrid_gold culled in P3a, removed in P3b. The original
-        //   guard blocked MCE entry if HBG had an opposing position. With HBG
-        //   gone the conflict is unreachable -- pinned to false. The else-if
-        //   branch below is now dead code preserved as a tombstone (cheap to
-        //   leave, easy to repurpose if a future bracket engine wants the same
-        //   anti-stack guard).
-        const bool mce_bracket_conflict = false;
-        // FIX 2026-04-22: HTF hard-block for MacroCrash entry.
-        // MCE enters LONG on spikes up, SHORT on crashes (direction = sign of ewm_drift).
-        // bias() returns BULLISH/BEARISH only when daily+intraday agree (2/2 rule);
-        // NEUTRAL chop days bypass this block.
-        // Only block NEW entries -- management of existing MCE position is
-        // handled below in the else branch via mce_was_open_before_tick.
-        const bool mce_htf_long_intent = (mce_ewm_drift > 0.0);
-        const bool mce_htf_blocked = !g_macro_crash.has_open_position()
-            && g_htf_filter.bias_opposes("XAUUSD", mce_htf_long_intent);
-        if (mce_htf_blocked) {
-            static thread_local int64_t s_mce_htf_log = 0;
-            if (now_ms_g - s_mce_htf_log > 30000) {
-                s_mce_htf_log = now_ms_g;
-                char _msg[512];
-                snprintf(_msg, sizeof(_msg),
-                    "[HTF-BLOCK] XAUUSD MCE %s skipped -- HTF bias=%s opposes\n",
-                    mce_htf_long_intent ? "LONG" : "SHORT",
-                    g_htf_filter.bias_name("XAUUSD"));
-                std::cout << _msg; std::cout.flush();
-            }
-        }
-        // Dispatch order:
-        //   entry-allowed          -> dispatch (entry or manage)
-        //   HTF blocks entry       -> manage open position only; log handled above
-        //   bracket-conflict blocks-> manage open position only; log [MCE-BLOCK]
-        if (!mce_bracket_conflict && !mce_htf_blocked) {
-            g_macro_crash.on_tick(bid, ask,
-                mce_atr, mce_vol_ratio_eff,
-                mce_ewm_drift,
-                expansion_regime,
-                now_ms_g,
-                mce_book_slope,
-                mce_vacuum_ask,
-                mce_vacuum_bid,
-                mce_microprice,
-                mce_rsi,
-                g_macro_ctx.session_slot);
-        } else if (mce_bracket_conflict) {
-            // S11 P3b: dead branch -- mce_bracket_conflict is pinned to false
-            //   above (HBG was the only producer of this conflict signal and
-            //   has been culled). Kept as tombstone for any future bracket
-            //   engine that wants to reuse the same MCE-conflict pattern.
-            static int64_t s_mce_conflict_log = 0;
-            if (now_ms_g - s_mce_conflict_log > 10000) {
-                s_mce_conflict_log = now_ms_g;
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[MCE-BLOCK] MacroCrash entry blocked -- opposing bracket active\n");
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            }
-            // Still call on_tick to manage any existing MacroCrash position
-            if (g_macro_crash.has_open_position()) {
-                g_macro_crash.on_tick(bid, ask,
-                    mce_atr, mce_vol_ratio_eff,
-                    mce_ewm_drift,
-                    expansion_regime,
-                    now_ms_g,
-                    mce_book_slope,
-                    mce_vacuum_ask,
-                    mce_vacuum_bid,
-                    mce_microprice,
-                    mce_rsi,
-                    g_macro_ctx.session_slot);
-            }
-        }
-        // Note: mce_htf_blocked branch needs no else-if body -- [HTF-BLOCK] was
-        // already logged above, and the block itself requires !has_open_position(),
-        // so there is no open position to manage here.
-
-        // OPEN-LOG FIX 2026-04-21: detect MCE fresh-entry transition and log.
-        // Fires exactly once per MCE entry (the tick where pos.active flipped
-        // false->true). Same shape as the 10 other engines' open-log calls.
-        // MCE's tp field = bracket_tp (the floor limit price); 0.0 when bracket
-        // is not armed. reason = "MACRO_EXPANSION" (the gate that MCE uses).
-        if (!mce_was_open_before_tick && g_macro_crash.has_open_position()) {
-            write_trade_open_log("XAUUSD", "MacroCrash",
-                g_macro_crash.pos.is_long ? "LONG" : "SHORT",
-                g_macro_crash.pos.entry,
-                g_macro_crash.pos.bracket_tp,  // 0.0 if bracket not armed
-                g_macro_crash.pos.sl,
-                g_macro_crash.pos.full_size,
-                ask - bid, regime, "MACRO_EXPANSION");
-        }
-    }
-
-    // ?? RSIReversalEngine -- tick-level RSI entries, no bar dependency ????????
-    // Computes its own RSI(14) from mid price on every tick.
-    // No bars_ready gate, no bar RSI, fires as soon as tick RSI reaches extreme.
-    // Entry: RSI<42=LONG, RSI>58=SHORT (catches 5pt moves, not just 20pt+ crashes)
-    {
-        // Position management -- always runs when open (no gate)
-        if (g_rsi_reversal.has_open_position()) {
-            g_rsi_reversal.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g,
-                g_macro_ctx.gold_l2_imbalance,
-                g_macro_ctx.gold_wall_above,
-                g_macro_ctx.gold_wall_below,
-                g_macro_ctx.gold_vacuum_ask,
-                g_macro_ctx.gold_vacuum_bid,
-                g_macro_ctx.gold_l2_real,
-                bracket_on_close,
-                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
-        }
-
-        // Entry gate: no other XAUUSD position open + tradeable + not dead zone
-        // Blocked only when those engines are losing/flat (risk management).
-        const bool rsi_rev_can_enter =
-            !g_rsi_reversal.has_open_position()
-            && tradeable
-            && !in_ny_close_noise
-            && !g_bracket_gold.has_open_position()
-            && !(g_gold_stack.has_open_position() && !gs_winning)
-            && !g_trend_pb_gold.has_open_position()
-            // S11 P3b: g_hybrid_gold gate removed -- engine culled in P3a + P3b.
-            && !g_nbm_gold_london.has_open_position();
-
-        if (rsi_rev_can_enter) {
-
-            g_rsi_reversal.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g,
-                g_macro_ctx.gold_l2_imbalance,
-                g_macro_ctx.gold_wall_above,
-                g_macro_ctx.gold_wall_below,
-                g_macro_ctx.gold_vacuum_ask,
-                g_macro_ctx.gold_vacuum_bid,
-                g_macro_ctx.gold_l2_real,
-                bracket_on_close,
-                g_gold_stack.ewm_drift());  // drift: counter-trend block inside engine
-
-            if (g_rsi_reversal.has_open_position()) {
-                // FIX 2026-04-22 P1a: HTF post-dispatch hard-block for RSIReversal.
-                // RSIReversal is a mean-reverter: direction is determined inside
-                // on_tick() based on RSI extremes, so pre-dispatch drift gating
-                // does not work (engine intentionally enters opposite to drift).
-                // Post-dispatch pattern: if HTF bias opposes the just-opened
-                // position, force-close immediately before any broker order
-                // (send_live_order) is issued. No broker reversal needed because
-                // the entry order has not yet been sent from this block.
-                // Log marker: [HTF-BLOCK-POST] -- distinct from pre-dispatch [HTF-BLOCK].
-                if (g_htf_filter.bias_opposes("XAUUSD", g_rsi_reversal.pos.is_long)) {
-                    static thread_local int64_t s_rrv_htf_post_log = 0;
-                    if (now_ms_g - s_rrv_htf_post_log > 30000) {
-                        s_rrv_htf_post_log = now_ms_g;
-                        char _msg[512];
-                        snprintf(_msg, sizeof(_msg),
-                            "[HTF-BLOCK-POST] XAUUSD RSIReversal %s forced-close -- HTF bias=%s opposes\n",
-                            g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
-                            g_htf_filter.bias_name("XAUUSD"));
-                        std::cout << _msg; std::cout.flush();
-                    }
-                    g_rsi_reversal.force_close(bid, ask, now_ms_g, handle_closed_trade);
-                } else {
-                    const double rsi_sl_dist = std::fabs(g_rsi_reversal.pos.entry - g_rsi_reversal.pos.sl);
-                    const double rsi_lot     = (rsi_sl_dist > 0.0)
-                        ? std::max(0.01, std::min(g_cfg.max_lot_gold,
-                            g_cfg.risk_per_trade_usd / (rsi_sl_dist * 100.0)))
-                        : 0.05;  // fixed fallback 0.05 lots
-                    g_rsi_reversal.patch_size(rsi_lot);
-
-                    // Log and telemetry always fire (shadow or live) -- GUI shows signal
-                    // OPEN-LOG FIX 2026-04-22: RSIReversal (arg9 regime slot)
-                    write_trade_open_log("XAUUSD", "RSIReversal",
-                        g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
-                        g_rsi_reversal.pos.entry, 0.0, g_rsi_reversal.pos.sl,
-                        g_rsi_reversal.pos.size, ask - bid, regime, "RSI_EXTREME");
-                    g_telemetry.UpdateLastSignal("XAUUSD",
-                        g_rsi_reversal.pos.is_long ? "LONG" : "SHORT",
-                        g_rsi_reversal.pos.entry, "RSI_EXTREME",
-                        "RSI_REVERSAL", regime.c_str(), "RSI_REVERSAL",
-                        0.0, g_rsi_reversal.pos.sl);
-                    if (!g_rsi_reversal.shadow_mode) {
-                        send_live_order("XAUUSD",
-                            g_rsi_reversal.pos.is_long,
-                            g_rsi_reversal.pos.size,
-                            g_rsi_reversal.pos.entry);
-                        g_telemetry.UpdateLastEntryTs();
-                    }
-                }
-            }
-        }
-    }
-
-    // ?? RSIExtremeTurnEngine -- RSI extreme + sustained turn (no DOM) ???????????
-    // Entry: bar RSI fell below 20 for 3+ bars (LONG) or above 70 (SHORT), then turns.
-    // Exit:  bar RSI recovers to 55 (LONG) or 45 (SHORT). SL=0.5xATR. No DOM.
-    // Runs standalone: not blocked by other gold engines except its own open position.
-    // Exclusion: blocked when any gold position is open (one-at-a-time).
-    {
-        // Position management -- always runs when open (no gate)
-        if (g_rsi_extreme.has_open_position()) {
-            g_rsi_extreme.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g,
-                [&](const omega::TradeRecord& tr) {
-                    handle_closed_trade(tr);
-                    if (!g_rsi_extreme.shadow_mode) {
-                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-                        g_telemetry.UpdateLastEntryTs();
-                    }
-                });
-        }
-
-        // Entry gate: no other gold position open + bars ready + tradeable + not NY close noise
-        // Bar RSI required (set_bar_rsi injected above when m1_ready=true).
-        // DOM deliberately NOT gated here -- backtest proved DOM adds noise not signal.
-        const bool rsi_ext_bars_ready = g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed);
-        const bool rsi_ext_can_enter =
-            !g_rsi_extreme.has_open_position()
-            && rsi_ext_bars_ready
-            && tradeable
-            && !in_ny_close_noise
-            && !g_bracket_gold.has_open_position()
-            && !g_gold_stack.has_open_position()
-            && !g_trend_pb_gold.has_open_position()
-            && !g_rsi_reversal.has_open_position()
-            // S11 P3b: g_hybrid_gold gate removed -- engine culled in P3a + P3b.
-            && !g_nbm_gold_london.has_open_position();
-
-        if (rsi_ext_can_enter) {
-            g_rsi_extreme.on_tick(bid, ask,
-                g_macro_ctx.session_slot, now_ms_g,
-                [&](const omega::TradeRecord& tr) {
-                    handle_closed_trade(tr);
-                    if (!g_rsi_extreme.shadow_mode) {
-                        send_live_order("XAUUSD", tr.side == "SHORT", tr.size, tr.exitPrice);
-                        g_telemetry.UpdateLastEntryTs();
-                    }
-                });
-
-            if (g_rsi_extreme.has_open_position()) {
-                // FIX 2026-04-22 P1a: HTF post-dispatch hard-block for RSIExtremeTurn.
-                // RSIExtremeTurn is a mean-reverter: direction determined inside
-                // on_tick() from sustained bar-RSI extremes. Pre-dispatch drift
-                // gating cannot be used (engine enters counter to prevailing
-                // drift by design). Post-dispatch pattern identical to RSIReversal:
-                // if HTF bias opposes the just-opened position, force-close
-                // before any broker order is sent.
-                if (g_htf_filter.bias_opposes("XAUUSD", g_rsi_extreme.pos.is_long)) {
-                    static thread_local int64_t s_rext_htf_post_log = 0;
-                    if (now_ms_g - s_rext_htf_post_log > 30000) {
-                        s_rext_htf_post_log = now_ms_g;
-                        char _msg[512];
-                        snprintf(_msg, sizeof(_msg),
-                            "[HTF-BLOCK-POST] XAUUSD RSIExtremeTurn %s forced-close -- HTF bias=%s opposes\n",
-                            g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
-                            g_htf_filter.bias_name("XAUUSD"));
-                        std::cout << _msg; std::cout.flush();
-                    }
-                    g_rsi_extreme.force_close(bid, ask, now_ms_g, handle_closed_trade);
-                } else {
-                    // Size using standard risk engine
-                    const double rsi_ext_sl_dist = std::fabs(
-                        g_rsi_extreme.pos.entry - g_rsi_extreme.pos.sl);
-                    const double rsi_ext_lot = (rsi_ext_sl_dist > 0.0)
-                        ? std::max(0.01, std::min(g_cfg.max_lot_gold,
-                            g_cfg.risk_per_trade_usd / (rsi_ext_sl_dist * 100.0)))
-                        : 0.02;  // fixed fallback
-                    g_rsi_extreme.patch_size(rsi_ext_lot);
-
-                    // Log and telemetry
-                    // OPEN-LOG FIX 2026-04-22: RSIExtremeTurn (arg9 regime slot)
-                    write_trade_open_log("XAUUSD", "RSIExtremeTurn",
-                        g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
-                        g_rsi_extreme.pos.entry, 0.0, g_rsi_extreme.pos.sl,
-                        g_rsi_extreme.pos.size, ask - bid,
-                        regime, "RSI_EXTREME_TURN");
-                    g_telemetry.UpdateLastSignal("XAUUSD",
-                        g_rsi_extreme.pos.is_long ? "LONG" : "SHORT",
-                        g_rsi_extreme.pos.entry, "RSI_EXTREME_TURN",
-                        "RSI_EXTREME", regime.c_str(), "RSI_EXTREME",
-                        0.0, g_rsi_extreme.pos.sl);
-                    if (!g_rsi_extreme.shadow_mode) {
-                        send_live_order("XAUUSD",
-                            g_rsi_extreme.pos.is_long,
-                            g_rsi_extreme.pos.size,
-                            g_rsi_extreme.pos.entry);
-                        g_telemetry.UpdateLastEntryTs();
-                    }
-                }
-            }
-        }
-    }
 
     //  Real-tick backtest: 4320 trades / 2yr, -$3.8k. Momentum = negative EV.
 
@@ -2155,35 +1654,24 @@ static void on_tick_gold(
     // EMA9/21/50 half-lives of 47min/109min/260min are correct for the timeframe.
     // m1_ready=true after 14 M15 bars (3.5hr cold) or immediately on warm restart.
     if (g_bars_gold.m15.ind.m1_ready.load(std::memory_order_relaxed)) {
-        g_trend_pb_gold.seed_bar_emas(
-            g_bars_gold.m15.ind.ema9.load(std::memory_order_relaxed),
-            g_bars_gold.m15.ind.ema21.load(std::memory_order_relaxed),
-            g_bars_gold.m15.ind.ema50.load(std::memory_order_relaxed),
-            g_bars_gold.m15.ind.atr14.load(std::memory_order_relaxed));
         // FIX 2026-04-02: seed M5 trend from M1 EMA crossover, not M5 swing pivot (15+ min lag)
         {
             const double tpb_ema9  = g_bars_gold.m1.ind.ema9 .load(std::memory_order_relaxed);
             const double tpb_ema50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
             const int tpb_trend = (tpb_ema9 > 0.0 && tpb_ema50 > 0.0)
                 ? (tpb_ema9 < tpb_ema50 ? -1 : +1) : 0;
-            g_trend_pb_gold.seed_m5_trend(tpb_trend);
         }
     }
     // H4 trend gate -- feeds HTF direction into TrendPullback gold entry filter.
     if (g_bars_gold.h4.ind.m1_ready.load(std::memory_order_relaxed)) {
-        g_trend_pb_gold.seed_h4_trend(
-            g_bars_gold.h4.ind.trend_state.load(std::memory_order_relaxed));
     }
     // H1/H4 engine status -> telemetry snap (every tick, lock-free)
     {
         auto* snap = g_telemetry.snap();
         if (snap) {
             snap->h1_swing_open      = g_h1_swing_gold.has_open_position() ? 1 : 0;
-            snap->h4_regime_open     = g_h4_regime_gold.has_open_position() ? 1 : 0;
             snap->h1_swing_daily_pnl = static_cast<float>(g_h1_swing_gold.daily_pnl_);
-            snap->h4_regime_daily_pnl= static_cast<float>(g_h4_regime_gold.daily_pnl_);
             snap->h1_swing_shadow    = g_h1_swing_gold.shadow_mode ? 1 : 0;
-            snap->h4_regime_shadow   = g_h4_regime_gold.shadow_mode ? 1 : 0;
             snap->h1_adx = static_cast<float>(
                 g_bars_gold.h1.ind.adx14.load(std::memory_order_relaxed));
             snap->h4_adx = static_cast<float>(
@@ -2191,72 +1679,40 @@ static void on_tick_gold(
             snap->h4_trend_state = g_bars_gold.h4.ind.trend_state.load(
                 std::memory_order_relaxed);
             // MinimalH4Breakout mirror fields
-            snap->minimal_h4_open       = g_minimal_h4_gold.has_open_position() ? 1 : 0;
-            snap->minimal_h4_daily_pnl  = static_cast<float>(g_minimal_h4_gold.daily_pnl_);
-            snap->minimal_h4_shadow     = g_minimal_h4_gold.shadow_mode ? 1 : 0;
         }
     }
     // H1/H4 engine tick-level management -- on_tick() handles SL/TP/partial/trail.
     // on_h1_bar() / on_h4_bar() handle bar-level exits (EMA cross, ADX collapse, timeout).
     if (g_h1_swing_gold.has_open_position())
         g_h1_swing_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
-    if (g_h4_regime_gold.has_open_position()) {
-        g_h4_regime_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
-        g_h4_regime_gold.check_weekend_close(bid, ask, now_ms_g, ca_on_close);
-    }
     // MinimalH4Breakout tick management -- runs parallel to H4Regime, independent.
-    if (g_minimal_h4_gold.has_open_position()) {
-        g_minimal_h4_gold.on_tick(bid, ask, now_ms_g, ca_on_close);
-        g_minimal_h4_gold.check_weekend_close(bid, ask, now_ms_g, ca_on_close);
-    }
     // C1RetunedPortfolio tick management -- 4 cells, all independent of the rest.
-    g_c1_retuned.on_tick(bid, ask, now_ms_g, ca_on_close);
     // TsmomPortfolio tick management -- 5 long cells (H1/H2/H4/H6/D1).
     // Tier-1 shipped 2026-04-30; runs alongside C1Retuned, no shared state.
-    g_tsmom.on_tick(bid, ask, now_ms_g, ca_on_close);
     // TsmomPortfolioV2 tick management -- Phase 2a refactor shadow.
     // Trades go to logs/shadow/tsmom_v2.csv only (NOT g_omegaLedger).
-    g_tsmom_v2.on_tick(bid, ask, now_ms_g,
-                       omega::cell::shadow::tsmom_writer().bind());
     // DonchianPortfolio tick management -- 7 cells (H2 long, H4/H6/D1 long+short).
     // Tier-2 shipped 2026-04-30. Bidirectional. No shared state with other engines.
-    g_donchian.on_tick(bid, ask, now_ms_g, ca_on_close);
     // XauTrendFollow4hEngine tick management -- 5 cells (Donchian, InsideBar,
     // ER0.20, Keltner, ADX_Mom). S33d shipped 2026-05-11; extended to 5 cells
     // in S33e. Single-position per cell, 5 max concurrent. Shadow-default.
     g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // S118 2026-05-19: H1 long-only ensemble tick management.
     g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_tf_m15.on_tick(bid, ask, now_ms_g, bracket_on_close);  // S-2026-06-02 M15 Donchian-40
     // S42 2026-05-31: SessionMomentum x2 -- clock-based session-window long.
     // feed_tick() self-aggregates H1 + manages the open position (time exit).
     g_xau_sess_nypm.feed_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_sess_overnight.feed_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTrendFollowD1Engine tick management -- 3 daily-timeframe cells
     // (Momentum, Keltner, ADX_Mom). S33e shipped 2026-05-11. Daily bars are
     // built internally from H4 stream. Single-position per cell, 3 max
     // concurrent. Shadow-default.
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_adhull_xau.on_tick(bid, ask, now_ms_g);   // adaptive-Hull XAU trend (shadow)
-    g_supertrend_gold.on_tick(bid, ask, now_ms_g);   // Supertrend gold trend (shadow)
     // XauTsmomFastD1Engine tick management (SL/TP per tick).
-    g_xau_tsmom_fast_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTurtleD1Engine + XauStopRunD1Engine tick management.
-    g_xau_turtle_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_stop_run_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // 2026-05-20 batch: PullbackContH4 / NbmD1 / EmaCrossH4 tick mgmt
-    g_xau_pullback_cont_h4.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_nbm_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_ema_cross_h4.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // 2026-05-20 mega-sweep batch tick mgmt
-    g_xau_pullback_cont_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_bb_scalp_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     g_xau_swing_break_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // 2026-05-20 mega-sweep2 candle patterns tick mgmt
-    g_xau_doji_rej_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_outside_bar_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_inside_bar_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_trendline_break.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // XauTrendFollow2hEngine tick management -- 4 2h-timeframe cells
     // (Keltner, Donchian20, Donchian50, InsideBar). S33k shipped 2026-05-11.
     // 2h bars built internally from H1 stream. Single-position per cell, 4
@@ -2266,27 +1722,17 @@ static void on_tick_gold(
     // Shadow-only by default. Intra-bar SL/TP/BE/trail management every tick.
     g_xau_threebar_30m.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // ── S136 2026-05-24: new engines per-tick management ────────────────────
-    g_xau_d55_gated_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);
-    g_xau_straddle_m30.obi_dir = g_macro_ctx.gold_obi_dir;             // OBI overlay (shadow measurement)
-    g_xau_straddle_m15.obi_dir = g_macro_ctx.gold_obi_dir;
-    g_xau_straddle_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);  // S-2026-06-02 OCO straddle fill+manage
     g_gold_orb_retrace.on_tick(bid, ask, now_ms_g);                    // 2026-06-06 ORB 50%-retrace + structural RUNNER (shadow); callback via on_trade_record
-    g_gold_panic_bounce.on_tick(bid, ask, now_ms_g);                   // 2026-06-12 "big reversal day" V-bounce (shadow); H1 drawdown monitor + chandelier-trail; callback via on_close_cb
     g_gold_volbrk_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);   // S-2026-06-03 vol-breakout SL/trail per-tick
-    g_xau_straddle_m15.on_tick(bid, ask, now_ms_g, bracket_on_close);  // M15 sibling
-    g_xau_3bar_mom_h4.on_tick  (bid, ask, now_ms_g, bracket_on_close);
     // GoldUltimateEngine tick dispatch -- standalone v12 OOS-validated trend
     // engine. Self-contained 1-min bar aggregation + 7-factor entry filter +
     // edge-hour/ATR gates. S91 shipped 2026-05-15.
-    g_gold_ultimate_engine.on_tick(bid, ask, now_ms_g, ca_on_close);
     // EmaPullbackPortfolio tick management -- 4 long cells (H1/H2/H4/H6).
     // Tier-3 shipped 2026-04-30. Long-only. No shared state.
-    g_ema_pullback.on_tick(bid, ask, now_ms_g, ca_on_close);
     // TrendRiderPortfolio tick management -- 6 cells (H2 L+S, H4 L+S, H6 L, D1 L).
     // Tier-4 shipped 2026-04-30. Stage trail (no TP, no time exit).
     g_trend_rider.on_tick(bid, ask, now_ms_g, ca_on_close);
     // -- Improvement 5: CVD confirmation gate ------------------------------
-    g_trend_pb_gold.seed_cvd(g_macro_ctx.gold_cvd_dir);
 
     // -- Improvement 1: Volatility regime scaling --------------------------
     // Feed rolling 20-bar ATR average so engine can detect vol regime.
@@ -2298,106 +1744,6 @@ static void on_tick_gold(
         if (cur_atr > 0.0) {
             s_atr_avg = (s_atr_avg <= 0.0) ? cur_atr
                        : s_atr_avg + (2.0/21.0) * (cur_atr - s_atr_avg);
-            g_trend_pb_gold.seed_vol_atr_avg(s_atr_avg);
-        }
-    }
-    // -- Improvement 7: News proximity -------------------------------------
-    g_trend_pb_gold.seed_news_secs(
-        g_news_blackout.secs_until_next(static_cast<int64_t>(std::time(nullptr))));
-    // TrendPullback gold position management -- always runs when position open
-    if (g_trend_pb_gold.has_open_position()) {
-        g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
-    }
-
-    // Trend Pullback: EMA9/21/50 -- only when no other XAUUSD position is open.
-    // TrendPullback: M15 swing trades (1-3hr hold, 20-50pt targets).
-    // different position sizes, independent SL/TP levels, no conflict.
-    // Still blocked by bracket (was also LatencyEdge — culled S13 Finding B 2026-04-24)
-    // that would directly conflict with a swing position at the same level).
-    // GoldStack (tick-pattern engine) also blocked -- shares exact same entry zone.
-    // TrendPullback gold -- re-enabled with tick-EMA-correct TP (ATR-based, not EMA9)
-    // and widened pullback band (0.15% not 0.05%).
-    // Does NOT require bar data -- runs on tick EMAs with proper time-equivalent alphas.
-    // TrendPullback gold: 24h entry gate -- trend is a trend regardless of session.
-    // Uses symbol_gate (risk/max_positions, tradeable, lat_ok, regime, bid, ask) but NOT session slot gate.
-    // Only hard blocks: dead-zone spread spike window (05:00-06:30 UTC) and NY close noise.
-    // TrendPullback session gate: London + NY only (slots 1,2,3,4,5).
-    // Asia (slot 6) and dead-zone (slot 0): spreads wide, price ranges, no trend.
-    // All trades in Asia were TIME_STOPs with gross=$0 -- no edge in that session.
-    const bool tpb_gold_session_ok = !in_ny_close_noise
-        && (g_macro_ctx.session_slot >= 1 && g_macro_ctx.session_slot <= 5);
-    const bool tpb_gold_can_enter = tpb_gold_session_ok
-                                 && symbol_gate("XAUUSD", gold_any_open, "", tradeable, lat_ok, regime, bid, ask)
-                                 && !gold_post_impulse_block;
-
-    // ?? CRASH CONTINUATION OVERRIDE ????????????????????????????????????????
-    // When gold is crashing hard (>30pt in the last ~15min window), the
-    // TrendPullback cooldown is bypassed if no position is open.
-    // This catches second and third legs of crash moves that the 60s cooldown
-    // (previously 900s) would still block.
-    // Condition: gold has moved >30pt from recent high (60-tick window),
-    //            RSI < 30 (oversold confirms direction), no open position,
-    //            and we are not in the 10-min direction block.
-    // Implementation: temporarily reset cooldown if conditions met.
-    {
-        const double rsi_now  = g_bars_gold.m1.ind.rsi14.load(std::memory_order_relaxed);
-        // Use gold stack EWM drift as crash proxy: drift < -5 = strong downtrend
-        const double drift_now = g_gold_stack.ewm_drift();
-        // FIX 2026-04-02: raised RSI thresholds 35->38, 65->62 -- consistent with full chain.
-        const bool crash_mode = (drift_now < -5.0 && rsi_now < 38.0 && rsi_now > 0.0)
-                             || (drift_now >  5.0 && rsi_now > 62.0);
-        if (crash_mode
-            && tpb_gold_can_enter
-            && !g_trend_pb_gold.has_open_position()
-            && !g_bracket_gold.has_open_position()
-            && !g_gold_stack.has_open_position()) {
-            // Force cooldown to expire so on_tick() can generate a signal
-            g_trend_pb_gold.force_cooldown_expire();
-            static int64_t s_crash_log = 0;
-            if (nowSec() - s_crash_log > 30) {
-                s_crash_log = nowSec();
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[CRASH-OVERRIDE] drift=%.2f RSI=%.1f -- TrendPB cooldown bypassed\n",                        drift_now, rsi_now);
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            }
-        }
-    }
-
-    if (tpb_gold_can_enter
-        && !g_bracket_gold.has_open_position()
-        && !g_gold_stack.has_open_position()
-        // && !g_le_stack.has_open_position()  -- REMOVED S13 Finding B 2026-04-24
-        && !g_trend_pb_gold.has_open_position()) {
-        const auto tpb = g_trend_pb_gold.on_tick("XAUUSD", bid, ask, ca_on_close);
-        if (tpb.valid) {
-            const double gold_drift = g_gold_stack.ewm_drift();
-            const bool drift_ok = (tpb.is_long  && gold_drift >= -1.0) ||
-                                  (!tpb.is_long && gold_drift <=  1.0);
-            if (!drift_ok) {
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[TRENDPB-GOLD] %s suppressed -- EWM drift=%.2f opposes direction\n",                        tpb.is_long ? "LONG" : "SHORT", gold_drift);
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-                g_trend_pb_gold.cancel();
-            } else {
-                const double tpb_lot = enter_directional("XAUUSD", tpb.is_long, tpb.entry, tpb.sl, tpb.tp, 0.01, true, bid, ask, sym, regime, "TrendPullbackGold");
-                if (!tpb_lot) {
-                    g_trend_pb_gold.cancel();
-                } else {
-                    // Patch pos_.size with actual risk-computed lot so shadow PnL is correct
-                    // Without this: pos_.size=0.01 but PnL computed against internal size -> 100x inflation
-                    g_trend_pb_gold.patch_size(tpb_lot);
-                    g_telemetry.UpdateLastSignal("XAUUSD",
-                        tpb.is_long ? "LONG" : "SHORT", tpb.entry, tpb.reason,
-                        "TREND_PB", regime.c_str(), "TREND_PB",
-                        tpb.tp, tpb.sl);
-                }
-            }
         }
     }
 
@@ -2405,45 +1751,6 @@ static void on_tick_gold(
     // When TrendPullback is live, check for second pullback directly from EMA state.
     // NEVER call on_tick() again while position is open -- that runs double management.
     // Instead: read EMA50 and check the same pullback+bounce condition manually.
-    if (g_trend_pb_gold.PYRAMID_ENABLED
-        && g_trend_pb_gold.has_open_position()
-        && g_trend_pb_gold.pyramid_adds_ < g_trend_pb_gold.PYRAMID_MAX_ADDS
-        && g_trend_pb_gold.daily_pnl() > -g_trend_pb_gold.DAILY_LOSS_CAP * 0.5
-        && tpb_gold_can_enter) {
-        const double pyr_mid    = (bid + ask) * 0.5;
-        const double pyr_ema50  = g_trend_pb_gold.ema50();
-        const double pyr_band   = pyr_mid * g_trend_pb_gold.PULLBACK_BAND_PCT / 100.0;
-        const bool   pyr_long   = g_trend_pb_gold.open_is_long();
-        const bool   at_ema50   = std::fabs(pyr_mid - pyr_ema50) < pyr_band;
-        // Only add when: at EMA50, price bouncing in trade direction, already profitable (BE locked)
-        const double open_entry = g_trend_pb_gold.open_entry();
-        const bool   in_profit  = pyr_long ? (bid > open_entry) : (ask < open_entry);
-        const bool   bouncing   = pyr_long ? (pyr_mid > pyr_ema50) : (pyr_mid < pyr_ema50);
-        if (at_ema50 && bouncing && in_profit) {
-            const double pyr_atr     = g_trend_pb_gold.current_atr();
-            const double pyr_sl_dist = std::max(pyr_atr * g_trend_pb_gold.ATR_SL_MULT, 3.0);
-            const double pyr_sl      = pyr_long ? (pyr_mid - pyr_sl_dist) : (pyr_mid + pyr_sl_dist);
-            const double pyr_tp_dist = std::max(pyr_atr * 2.5, pyr_sl_dist * 2.0);
-            const double pyr_tp      = pyr_long ? (pyr_mid + pyr_tp_dist) : (pyr_mid - pyr_tp_dist);
-            // Fix: use open_size() (the actual patched lot sent to broker) as the base
-            // for pyramid sizing. Hardcoded 0.01 caused add-ons to be sized independently
-            // of the base trade -- if base was 0.08 lots, pyramid was calculated as if
-            // base was 0.01, producing an inflated or mismatched add-on lot.
-            const double base_open_lot = std::max(0.01, g_trend_pb_gold.open_size());
-            const double add_lot     = std::max(0.005,
-                compute_size("XAUUSD", pyr_sl_dist, ask - bid, base_open_lot)
-                * g_trend_pb_gold.PYRAMID_SIZE_MULT);
-            if (enter_directional("XAUUSD", pyr_long, pyr_mid, pyr_sl, pyr_tp, add_lot, true, bid, ask, sym, regime, "TrendPullbackGoldPyramid")) {
-                ++g_trend_pb_gold.pyramid_adds_;
-                {
-                    char _msg[512];
-                    snprintf(_msg, sizeof(_msg), "[TRENDPB-GOLD] PYRAMID ADD #%d lot=%.4f sl=%.3f tp=%.3f\n",                        g_trend_pb_gold.pyramid_adds_, add_lot, pyr_sl, pyr_tp);
-                    std::cout << _msg;
-                    std::cout.flush();
-                }
-            }
-        }
-    }
 
     // ----------------------------------------------------------------------
     // HBG fully retired S12 P3c (2026-05-07): GoldHybridBracketEngine.
@@ -2759,16 +2066,6 @@ static void on_tick_gold(
     // Close callback wired in engine_init.hpp -> handle_closed_trade.
     // L2 fields from MacroContext: imbalance, slope, vacuum, wall, liveness.
     // When gold_l2_real=false, engine degrades all L2 filters to neutral.
-    g_gold_scalp_pyramid.on_tick(bid, ask, now_ms_g,
-                                 gold_can_enter,
-                                 g_macro_ctx.gold_l2_imbalance,
-                                 g_macro_ctx.gold_book_slope,
-                                 g_macro_ctx.gold_vacuum_ask,
-                                 g_macro_ctx.gold_vacuum_bid,
-                                 g_macro_ctx.gold_wall_above,
-                                 g_macro_ctx.gold_wall_below,
-                                 g_macro_ctx.gold_l2_real,
-                                 nullptr);
 
     // ?? GoldRegimeDaily (2026-05-19 S110) ?????????????????????????????????????
     // H4 EMA-cross trend-follow. Fed every tick for H4 bar accumulation +
@@ -2776,13 +2073,6 @@ static void on_tick_gold(
     // vs EMA21 cross-back). L2 fields ignored by this engine (signature
     // arg slots filled with neutral values).
     // Close callback wired in engine_init.hpp -> handle_closed_trade.
-    g_gold_regime_daily.on_tick(bid, ask, now_ms_g,
-                                gold_can_enter,
-                                /*l2_imbalance=*/0.5, /*book_slope=*/0.0,
-                                /*vacuum_ask=*/false, /*vacuum_bid=*/false,
-                                /*wall_above=*/false, /*wall_below=*/false,
-                                /*l2_real=*/false,
-                                nullptr);
 
     // ?? BBandScalpEngine (2026-05-18 part B) ?????????????????????????????????
     // M1 Bollinger + RSI mean-reversion scalper. Indicator inputs are pulled
@@ -2795,23 +2085,11 @@ static void on_tick_gold(
     // L2 not required: engine accepts l2_imbalance / l2_real but does NOT
     // block entry on stale L2. This lets the engine validate on price-only
     // historical tape and run unmodified in live regardless of DOM freshness.
-    g_bband_scalp.on_tick(bid, ask, now_ms_g,
-                          gold_can_enter,
-                          g_bars_gold.m1.ind.bb_upper.load(std::memory_order_relaxed),
-                          g_bars_gold.m1.ind.bb_mid  .load(std::memory_order_relaxed),
-                          g_bars_gold.m1.ind.bb_lower.load(std::memory_order_relaxed),
-                          g_bars_gold.m1.ind.rsi14   .load(std::memory_order_relaxed),
-                          g_bars_gold.m1.ind.atr14   .load(std::memory_order_relaxed),
-                          g_macro_ctx.gold_l2_imbalance,
-                          g_macro_ctx.gold_l2_real);
 
     // ?? NBM London position management -- ALWAYS runs when position open ??
     // entry guard, so _manage_position() (SL/VWAP trail) was never reached once a
     // position was open. Fix: call on_tick unconditionally when position is open.
     // on_tick returns {} immediately after _manage_position() when pos_.active.
-    if (g_nbm_gold_london.has_open_position()) {
-        g_nbm_gold_london.on_tick(sym, bid, ask, ca_on_close);
-    }
 
     // ?? NBM London session (07:00-13:30 UTC) on XAUUSD ???????????????????
     // Runs independently of the gold stack/flow/bracket -- pure momentum
@@ -2838,22 +2116,6 @@ static void on_tick_gold(
         const int64_t pdhl_ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         auto pdhl_cb = [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); };
-        g_pdhl_rev.on_tick(
-            bid, ask, pdhl_ts_ms,
-            g_macro_ctx.pdh,
-            g_macro_ctx.pdl,
-            gf_atr_gate,
-            g_macro_ctx.gold_l2_imbalance,
-            // S13 cTrader cull 2026-05-08: AtomicL2::{raw_bid,raw_ask} removed.
-            // Pass literal 0,0 -- PDHLReversionEngine treats these as auxiliary
-            // signals; live signal is gold_l2_imbalance (FIX-fed since S8).
-            // Engine signature cleanup (drop these two args entirely) deferred.
-            0, 0,
-            g_macro_ctx.gold_l2_real,
-            static_cast<double>(g_gold_stack.ewm_drift()),
-            g_macro_ctx.session_slot,
-            pdhl_cb
-        );
     }
 
     // 11-day / 3.4M tick full-L2 sweep: T=285 WR=24.6% PnL=-$1171.82 MaxDD=$1679.
@@ -3007,10 +2269,6 @@ static void on_tick_gold(
     // D1 bias / H1 break / M20 retest. on_trade_record -> handle_closed_trade
     // (wired in engine_init). Push the live L2 imbalance every tick so the
     // (off-by-default) L2 profit-protect has fresh book flow when enabled.
-    g_xau_breakbounce.set_l2(g_l2_gold.imbalance.load(),
-                             g_l2_gold.microprice_bias.load(),
-                             g_l2_gold.has_data.load() && g_l2_gold.fresh(now_ms_g));
-    g_xau_breakbounce.on_tick(bid, ask, now_ms_g);
     g_engine_heartbeat.pulse("BreakBounce");
 
 }

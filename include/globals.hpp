@@ -103,57 +103,23 @@ static omega::gold::GoldEngineStack g_gold_stack;
 // accessor singleton omega::gold_wt() in GoldWaveTrend.hpp (fed gold M1 closes
 // in tick_gold.hpp; gates gold TREND engine entries via confirms()).
 // Cross-asset engines
-static omega::cross::EsNqDivergenceEngine  g_ca_esnq;
-static omega::cross::OilEventFadeEngine    g_ca_eia_fade;
-static omega::cross::BrentWtiSpreadEngine  g_ca_brent_wti;
-static omega::cross::FxCascadeEngine       g_ca_fx_cascade;
-static omega::cross::CarryUnwindEngine     g_ca_carry_unwind;
-static omega::cross::OpeningRangeEngine    g_orb_us;     // US equity 13:30 UTC
 // 2026-05-23: NY-open ORB-swing instances for big-swing capture on US futures.
 //   Same OpeningRangeEngine class; per-instance params set in engine_init.hpp
 //   give them wider TP/SL + multi-hour hold so the existing CrossPosition
 //   BE-lock + trail + TP-extend continuation logic actually has room to ride.
-static omega::cross::OpeningRangeEngine    g_orb_nas100; // NAS100 NY 13:30 UTC (swing geometry)
-static omega::cross::OpeningRangeEngine    g_orb_dj30;   // DJ30   NY 13:30 UTC (swing geometry)
-static omega::cross::OpeningRangeEngine    g_orb_ger30;  // Xetra 08:00 UTC
-static omega::cross::OpeningRangeEngine    g_orb_uk100;  // LSE 08:00 UTC, 15-min window
 
 // GER40 London Breakout Short (2026-05-17): Asian range break below at London open.
 // Validated: PF=1.42, WR=50.5%, 20/25 param combos profitable, 2.3yr tick data.
-#include "Ger40LondonBreakoutEngine.hpp"
-static omega::Ger40LondonBreakoutEngine g_ger40_london_brk;
-static omega::cross::OpeningRangeEngine    g_orb_estx50; // Euronext 09:00 UTC, 15-min window
 
 // BreakBounceEngine (2026-05-31): MT5 break-and-retest EA ported to Omega.
 // XAUUSD D1 bias / H1 break / M20 retest. Validated 2yr IS/OOS: OOS PF 1.54,
 // WR 55%, DD 46pts (all long, gold-bull only -- not bear-validated). L2
 // profit-protect available (off by default). Shadow.
-#include "BreakBounceEngine.hpp"
-static omega::BreakBounceEngine g_xau_breakbounce;
 
 // IndexSessionEngine (2026-06-01): intraday cash-session LONG, flat overnight.
 // Per-symbol instance. Edge = hold into US close; long-only; risk-off gated.
 // SPX OOS Sharpe 0.67, GER40 0.60, NAS 0.34. Shadow.
-#include "IndexSessionEngine.hpp"
-#include "FvgContinuationEngine.hpp"
-#include "OvernightDriftEngine.hpp"
-#include "ConnorsRSI2Engine.hpp"
-#include "AdaptiveHullEngine.hpp"
-static omega::AdaptiveHullEngine g_adhull_xau;       // XAUUSD adaptive-Hull trend (60m all-session) -- 2026-06-05, shadow
-static omega::AdaptiveHullEngine g_adhull_ger;       // GER40 adaptive-Hull trend (60m EU-session) -- 2026-06-05, shadow
-#include "SupertrendGoldEngine.hpp"
-static omega::SupertrendGoldEngine g_supertrend_gold; // XAUUSD Supertrend(10,3) 60m long-only +EMA -- 2026-06-05, shadow (PF2.0)
-static omega::OvernightDriftEngine g_overnight_nas;  // NAS100 overnight drift (trend>SMA20) -- 2nd index edge, shadow
-static omega::OvernightDriftEngine g_overnight_spx;  // US500 overnight drift (trend>SMA50) -- 2026-06-09, full-2022-bear-validated, shadow
-static omega::ConnorsRSI2Engine    g_connors_nas;    // NAS100 RSI2 dip-buy (mean-rev) -- 3rd index edge, shadow
-static omega::FvgContinuationEngine g_fvgcont_nas;   // NAS100 FVG continuation 15m (NY killzone) -- 2026-06-04 edge, shadow
-static omega::FvgContinuationEngine g_fvgcont_nas10; // NAS100 FVG continuation 10m -- best HTF (PF2.37 Sh2.0), shadow compare vs 15m
-static omega::FvgContinuationEngine g_fvgcont_nas30; // NAS100 FVG continuation 30m -- 2026-06-09 sweep BEST (PF1.98, 3x-robust 1.91, both-halves ~2.0, ret/DD5.12), shadow
-#include "PeachyOrbEngine.hpp"
-static omega::PeachyOrbEngine g_peachy_orb_nas;      // NAS100 one-candle ORB-retest (risk-cap selectivity) -- 2026-06-05 edge, BULL+BEAR robust, shadow
 // g_peachy_orb_ger40 REMOVED 2026-06-10 — failed held-out OOS (net-negative every cost), overfit to discovery window.
-#include "PumpScalpManager.hpp"
-static omega::PumpScalpManager g_pump_manager;       // micro-cap pump scalp (dynamic universe, 3m-only since S-2026-06-11). Fed by PumpFeedConsumer when OMEGA_PUMP_BRIDGE=1. Shadow.
 static std::atomic<bool>       g_pump_stop{false};   // PumpFeedConsumer thread stop flag
 // 2026-06-12 BigCapMomo: same PumpScalpManager engine, BIG-CAP config (NAS/SPX day-
 //   movers, not pennies). Backtest bigcap_scalp_sweep.py (5m, ~2-3mo, 508 NAS/SPX):
@@ -172,13 +138,9 @@ static std::atomic<bool>       g_bigcap_feed_ok{false};
 #include "PumpFeedConsumer.hpp"                       // TCP client thread (winsock already set up by IbkrDomConsumer above)
 #include "GoldOrbRetraceEngine.hpp"
 static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
-static omega::GoldOrbRetraceEngine g_nas_orb_retrace;  // NAS100 ORB retrace+RUNNER @US open -- 2026-06-07 (PF1.87 all-3yr+, 3x-robust); 2nd NAS edge vs PeachyOrb retest, shadow
-#include "GoldPanicBounceEngine.hpp"
-static omega::GoldPanicBounceEngine g_gold_panic_bounce; // XAUUSD "big reversal day" V-bounce: deep-drawdown(>=8ATR)+turn -> long, chandelier-trail no-TP -- 2026-06-12 (PF1.97 both-halves+, 2022-bear PF1.08+), shadow
 #include "RegimeState.hpp"   // 2026-06-12: shared price-based bull/bear regime brain (gold_regime()), fed in tick_gold.hpp, queried by long-only gold engines
 #include "IndexBearShortEngine.hpp"
 static omega::IndexBearShortEngine g_idx_bear_short_nas; // NAS100 risk-off SHORT: sustained-bear gate + Donchian breakdown + fixed 2R TP -- 2026-06-12 (NAS2022 PF1.60 both-halves+, bull-gated +702), shadow
-static omega::IndexBearShortEngine g_idx_bear_short_sp;  // US500 risk-off SHORT (same class) -- 2026-06-12 cross-validated SPX2022 PF1.84 both-halves+ (2.60/1.32), shadow
 #include "MondayRiskOnEngine.hpp"
 static omega::MondayRiskOnEngine g_monday_nas;   // Monday risk-on calendar anomaly (NAS100) -- 2026-06-07 (t2.59 WR67% SMA50-gated), shadow
 static omega::MondayRiskOnEngine g_monday_gbp;   // Monday risk-on (GBPUSD) t2.04 WR71%
@@ -191,26 +153,16 @@ static omega::IndexSessionEngine g_idxsess_estx50; // ESTX50   (Euro Stoxx 50) -
 
 // Engine 7: VWAP Reversion -- enter on reversal tick back toward daily VWAP
 // Wired to: US500.F, USTEC.F, GER40, EURUSD
-static omega::cross::VWAPReversionEngine   g_vwap_rev_sp;     // US500.F
-static omega::cross::VWAPReversionEngine   g_vwap_rev_nq;     // USTEC.F
-static omega::cross::VWAPReversionEngine   g_vwap_rev_ger40;  // GER40
-static omega::cross::VWAPReversionEngine   g_vwap_rev_eurusd; // EURUSD
 
 // Engine 9: Noise Band Momentum -- Zarattini/Aziz/Maroy research (Sharpe 3.0-5.9)
 // Rolling ATR noise band since session open. Entry on band breakout.
 // VWAP crossing is primary stop. One instance per instrument.
 // Wired to: US500.F, USTEC.F, NAS100, DJ30.F
-static omega::cross::NoiseBandMomentumEngine g_nbm_sp;    // US500.F -- NY 13:30-21:30 UTC
-static omega::cross::NoiseBandMomentumEngine g_nbm_nq;    // USTEC.F -- NY 13:30-21:30 UTC
-static omega::cross::NoiseBandMomentumEngine g_nbm_nas;   // NAS100  -- NY 13:30-21:30 UTC
-static omega::cross::NoiseBandMomentumEngine g_nbm_us30;  // DJ30.F  -- NY 13:30-21:30 UTC
 
 // NBM London session engines (07:00-13:30 UTC) -- covers the gap before NY open.
 // XAUUSD and USOIL.F are the most liquid instruments in the London window.
 // Session anchor = London open (07:00 UTC). Same ATR/band logic as NY engines.
 // These are additional instances -- the gold stack and oil engines remain primary.
-static omega::cross::NoiseBandMomentumEngine g_nbm_gold_london;  // XAUUSD  -- London 07:00-13:30 UTC
-static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F -- London 07:00-13:30 UTC
 
 //  both stripped. XAGUSD hard-blocked at on_tick.hpp routing layer. See
 
@@ -218,17 +170,12 @@ static omega::cross::NoiseBandMomentumEngine g_nbm_oil_london;   // USOIL.F -- L
 // Wired to: XAUUSD (gated -- no other gold position), GER40, USTEC.F, US500.F
 // TrendPullback handles slow grind trades that VWAPReversion times out on.
 // Enters on EMA50 pullback, trails ATR behind MFE, no timeout.
-static omega::cross::TrendPullbackEngine   g_trend_pb_gold;   // XAUUSD
-static omega::cross::TrendPullbackEngine   g_trend_pb_ger40;  // GER40
-static omega::cross::TrendPullbackEngine   g_trend_pb_nq;     // USTEC.F
-static omega::cross::TrendPullbackEngine   g_trend_pb_sp;     // US500.F
 
 // HTF swing engines -- H1 trend + H4 regime breakout for XAUUSD
 // H1SwingEngine:  ADX-filtered EMA pullback, 4-16hr hold, $15 risk, shadow_mode=true
 // H4RegimeEngine: Donchian channel breakout, 1-3 day hold, $10 risk, shadow_mode=true
 // Both start in shadow_mode. Never set shadow_mode=false without live validation.
 static omega::H1SwingEngine  g_h1_swing_gold;   // XAUUSD H1 EMA+ADX trend
-static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
 
 // MinimalH4Breakout -- pure H4 Donchian breakout, no filters. Validated via
 // 2yr tick sweep (27/27 configs profitable), walk-forward PF 1.35 OOS,
@@ -236,8 +183,6 @@ static omega::H4RegimeEngine g_h4_regime_gold;  // XAUUSD H4 Donchian breakout
 // Runs PARALLEL to H4RegimeEngine in shadow mode (independent, not mutex).
 // See backtest/htf_bt_minimal.cpp + htf_bt_walkforward.cpp + htf_bt_costs.cpp.
 // Created 2026-04-24 Session 11 Stage 1.
-#include "MinimalH4Breakout.hpp"
-static omega::MinimalH4Breakout g_minimal_h4_gold;  // XAUUSD pure H4 Donchian breakout
 
 // MinimalH4US30Breakout -- DJ30.F sister of MinimalH4Breakout. Self-contained:
 // builds its own H4 OHLC bars and ATR14 internally from tick stream (no
@@ -247,16 +192,12 @@ static omega::MinimalH4Breakout g_minimal_h4_gold;  // XAUUSD pure H4 Donchian b
 // See backtest/htf_bt_US30_results.txt + htf_bt_multi.cpp.
 // Runs in shadow mode with cold-start warmup of ~40hrs (10 H4 bars).
 // Created 2026-04-25.
-#include "MinimalH4US30Breakout.hpp"
-static omega::MinimalH4US30Breakout g_minimal_h4_us30;  // DJ30.F pure H4 Donchian breakout
 
 // MinimalH4GER40Breakout -- GER40 sister of MinimalH4Breakout. Self-contained:
 //   Validated via 2yr Tickstory tick sweep on GER40: 27/27 configs profitable.
 //   2026-05-20 multi-symbol C++ sweep tuned to don=6 sl=2.0 tp=3.0 to=48 long_only=true.
 //   n=50 Sh=3.67 PnL=$8.40 WR=58% MaxDD=$2.94.
 //   Shadow-mode until n>=10 live trades validate backtest expectation.
-#include "MinimalH4GER40Breakout.hpp"
-static omega::MinimalH4GER40Breakout g_minimal_h4_ger40;  // GER40 pure H4 Donchian breakout
 
 // EurGbpPairsEngine -- spread mean-reversion on EURUSD/GBPUSD H1 z-score.
 //   2026-05-20 C++ engine sweep + 6-mode rigor harness:
@@ -267,8 +208,6 @@ static omega::MinimalH4GER40Breakout g_minimal_h4_ger40;  // GER40 pure H4 Donch
 //   Real EURGBP single-instrument FAILS (15bps microstructure drowns synthetic edge).
 //   2-leg execution (EURUSD + GBPUSD) is the correct path.
 //   Shadow-mode until n>=30 live trades validate.
-#include "EurGbpPairsEngine.hpp"
-static omega::EurGbpPairsEngine g_eur_gbp_pairs;  // EURUSD/GBPUSD spread mean-rev
 
 // C1RetunedPortfolio -- Python-side Phase 2 winner ported to C++ for live shadow.
 // Verdict source: phase2/donchian_postregime/CHOSEN.md.
@@ -276,8 +215,6 @@ static omega::EurGbpPairsEngine g_eur_gbp_pairs;  // EURUSD/GBPUSD spread mean-r
 // Walk-forward TRAIN/VALIDATE/TEST all PASS. Post-regime PF 1.334 -> 1.630.
 // Long-only, XAUUSD only, max_concurrent=4, 0.5% risk, shadow_mode=true default.
 // Added 2026-04-29 Session "switch on viable system".
-#include "C1RetunedPortfolio.hpp"
-static omega::C1RetunedPortfolio g_c1_retuned;  // Donchian H1 + Bollinger H2/H4/H6 long
 
 // TsmomPortfolio -- Tier-1 ship of 5 long tsmom cells (H1/H2/H4/H6/D1)
 // from phase1/signal_discovery/POST_CUT_FULL_REPORT.md.
@@ -287,8 +224,6 @@ static omega::C1RetunedPortfolio g_c1_retuned;  // Donchian H1 + Bollinger H2/H4
 // phase1/signal_discovery/tsmom_warmup_H1.csv (6,156 H1 bars) so every cell
 // is READY when the first live H1 bar arrives -- no cold-start window.
 // Added 2026-04-30 Session "Tier-1 tsmom shipdown to Omega shadow".
-#include "TsmomEngine.hpp"
-static omega::TsmomPortfolio g_tsmom;  // 5 long cells: H1, H2, H4, H6, D1
 
 // TsmomPortfolioV2 -- CellEngine refactor Phase 2a shadow alongside g_tsmom.
 //
@@ -308,25 +243,17 @@ static omega::TsmomPortfolio g_tsmom;  // 5 long cells: H1, H2, H4, H6, D1
 //
 // Phase 2b: flip max=10 once Phase 2a parity holds for the agreed window.
 // Added 2026-05-01 Session "Phase 2a live shadow".
-#include "CellEngine.hpp"
-#include "TsmomStrategy.hpp"
-#include "CellShadowLedger.hpp"
-static omega::cell::TsmomPortfolioV2 g_tsmom_v2;  // 5 long cells (H1/H2/H4/H6/D1)
 
 // DonchianPortfolio -- Tier-2 ship of 7 donchian cells (H2 long; H4/H6/D1
 // long+short). Bidirectional, would have profited during the 2026-03-18
 // BEAR cluster that long-only C1Retuned lost on. Note: H1 long is NOT in
 // this engine -- it's the retuned cell already live in C1RetunedPortfolio.
 // Added 2026-04-30 Session "Tier-1+2 ship".
-#include "DonchianEngine.hpp"
-static omega::DonchianPortfolio g_donchian;  // 7 cells: H2L, H4L+S, H6L+S, D1L+S
 
 // EmaPullbackPortfolio -- Tier-3 ship of 4 ema_pullback long cells
 // (H1/H2/H4/H6 long). 9/21 EMA pullback-and-recover pattern.
 // Long-only Tier-3 -- per master_summary post-cut, only longs are profitable.
 // Added 2026-04-30 Session "Tier-1+2+3 ship".
-#include "EmaPullbackEngine.hpp"
-static omega::EpbPortfolio g_ema_pullback;  // 4 cells: H1/H2/H4/H6 long
 
 // TrendRiderPortfolio -- Tier-4 ship of 6 trend-rider cells (H2/H4 long+short,
 // H6/D1 long). 40-bar Donchian breakout entry + stage trail (no TP, no time
@@ -461,10 +388,6 @@ static omega::idx::IndexMacroCrashEngine g_imacro_us30("DJ30.F");
 // on all 3. See include/IndexIntradayDriftEngine.hpp header block for the
 // audit table. NSXUSD and GER40 audited as marginal -- skip until WF fixes.
 // =============================================================================
-#include "IndexIntradayDriftEngine.hpp"
-static omega::IndexIntradayDriftEngine   g_idd_sp;       // US500.F
-static omega::IndexIntradayDriftEngine   g_idd_us30;     // DJ30.F  (USA30 corpus)
-static omega::IndexIntradayDriftEngine   g_idd_uk100;    // UK100   (GBRIDXGBP corpus)
 
 // Bug #3 (KNOWN_BUGS.md) cross-engine state. Two-part block: index_any_open()
 // (defined later, after engine declarations) catches concurrent overlap;
@@ -570,7 +493,6 @@ static omega::XauTrendFollow1hEngine g_xau_tf_1h;
 // diversification, not redundant). Donchian40 cell ONLY (mask 0x02); the engine
 // is timeframe-agnostic (computes its own ATR/EMA/Donchian from fed bars), so
 // feeding it M15 bars makes it an M15 engine. Shadow until the ledger gate.
-static omega::XauTrendFollow1hEngine g_xau_tf_m15;
 
 // S42 (2026-05-31): SessionMomentumEngine -- clock-based session-window long,
 //   the first NON-trend-breakout edge (new signal axis: time-of-day). Two XAU
@@ -581,14 +503,11 @@ static omega::XauTrendFollow1hEngine g_xau_tf_m15;
 //   16h confirmed mean ~1.1bp p90 3.1bp << the 5bp death line. HARD shadow.
 #include "SessionMomentumEngine.hpp"
 static omega::SessionMomentumEngine g_xau_sess_nypm;
-static omega::SessionMomentumEngine g_xau_sess_overnight;
 
 // 2026-05-11 S33d: UstecTrendFollow5mEngine -- Donchian N=20 at 5m bars
 //   on USTEC. Convergent edge across 4 unrelated signal families on the
 //   15-day L2 sample. Shadow-only; KEEP shadow until 6+ months of USTEC
 //   L2 capture confirm the 2-month finding.
-#include "UstecTrendFollow5mEngine.hpp"
-static omega::UstecTrendFollow5mEngine g_ustec_tf_5m;
 
 // 2026-05-11 S33e: XauTrendFollowD1Engine -- daily-timeframe trend-follow
 //   ensemble for XAU. 3 cells (Momentum lb=20, Keltner K=2.0, ADX_Mom adx>25),
@@ -603,8 +522,6 @@ static omega::XauTrendFollowD1Engine g_xau_tf_d1;
 //   tp=5.0, hold=20). Distinct from XauTrendFollowD1Engine's lb=20 cell.
 //   Backtest 2yr daily XAU: IS Sh 6.69 / OOS Sh 7.65 / FUL Sh 7.57 at 1bps cost,
 //   holds to FUL Sh 6.69 at 20bps. n=48 over 670 days. Shadow-default.
-#include "XauTsmomFastD1Engine.hpp"
-static omega::XauTsmomFastD1Engine g_xau_tsmom_fast_d1;
 
 // 2026-05-20: XauTurtleD1Engine -- 40-day Donchian break (long-only).
 //   Resurrection of TurtleTick signal archetype (retired S50 X1 Apr 27 2026).
@@ -613,8 +530,6 @@ static omega::XauTsmomFastD1Engine g_xau_tsmom_fast_d1;
 //                50bps FUL=10.51. WR=70%, n=20 over 670 days (sparse).
 //   CAVEAT: low n, high variance in Sharpe estimate. Shadow only until
 //           n>=5 live shadow trades validate.
-#include "XauTurtleD1Engine.hpp"
-static omega::XauTurtleD1Engine g_xau_turtle_d1;
 
 // 2026-05-20: XauStopRunD1Engine -- stop-hunt rejection rally (long-only).
 //   Resurrection of StopRunReversal archetype (retired S50 X2 Apr 27 2026).
@@ -623,44 +538,32 @@ static omega::XauTurtleD1Engine g_xau_turtle_d1;
 //   Cost stress: 1bps IS Sh=7.76/OOS=6.55/FUL=6.84, 10bps FUL=6.34,
 //                50bps FUL=4.12. WR=65.5%, n=29 over 670 days.
 //   Shadow only until n>=5 live shadow trades.
-#include "XauStopRunD1Engine.hpp"
-static omega::XauStopRunD1Engine g_xau_stop_run_d1;
 
 // 2026-05-20: XauPullbackContH4Engine -- EMA10>EMA50 trend, pullback to EMA10.
 //   Resurrection of PullbackCont archetype (retired S49 X5 Apr 26 2026).
 //   Backtest 2yr H4 XAU: IS Sh=3.97, OOS Sh=4.06, FUL Sh=3.96, n=97, PnL=53.5%.
 //   Densest of the resurrection batch (~50 trades/year on H4).
-#include "XauPullbackContH4Engine.hpp"
-static omega::XauPullbackContH4Engine g_xau_pullback_cont_h4;
 
 // 2026-05-20: XauNbmD1Engine -- Noise Band Momentum on daily.
 //   Signal pattern from main's disabled g_nbm_* (all set enabled=false).
 //   Tested on XAU D1: IS Sh=9.60, OOS Sh=7.30, FUL Sh=8.01, n=25, PnL=35.6%.
 //   Break ABOVE EMA20 + 2.0*ATR + 0.3*ATR momentum.
-#include "XauNbmD1Engine.hpp"
-static omega::XauNbmD1Engine g_xau_nbm_d1;
 
 // 2026-05-20: XauEmaCrossH4Engine -- 20/100 golden cross H4 long.
 //   Main has EMACrossEngine; this is a XAU-specific H4 cell.
 //   Backtest 2yr XAU H4: IS Sh=4.45, OOS Sh=9.19, FUL Sh=7.15, n=20, PnL=12.2%.
 //   OOS > IS (low overfit risk).
-#include "XauEmaCrossH4Engine.hpp"
-static omega::XauEmaCrossH4Engine g_xau_ema_cross_h4;
 
 // 2026-05-20 mega-sweep batch (top 4 by cost-stressed Sharpe):
 //
 // XauPullbackContD1Engine -- D1 variant of PullbackContH4 with longer EMA.
 //   Cost stress: 1bp Sh=8.73, 10bp Sh=8.38, 30bp Sh=7.61, 50bp Sh=6.83.
 //   IS Sh=15.73 OOS Sh=6.90 n=33 PnL=71.6% WR=66.7%.
-#include "XauPullbackContD1Engine.hpp"
-static omega::XauPullbackContD1Engine g_xau_pullback_cont_d1;
 
 // XauBBScalpD1Engine -- Bollinger Band fade D1 (close < BB lower).
 //   Resurrection of g_bband_scalp archetype (main has enabled=false).
 //   Cost stress: 1bp Sh=6.47, 10bp Sh=5.90, 30bp Sh=4.63, 50bp Sh=3.37.
 //   IS Sh=10.07 OOS Sh=3.88 n=20 WR=68.4%.
-#include "XauBBScalpD1Engine.hpp"
-static omega::XauBBScalpD1Engine g_xau_bb_scalp_d1;
 
 // XauSwingBreakD1Engine -- HH+HL pattern + 10-day high break.
 //   Cost stress: 1bp Sh=5.49, 10bp Sh=5.08, 30bp Sh=4.17, 50bp Sh=3.25.
@@ -671,8 +574,6 @@ static omega::XauSwingBreakD1Engine g_xau_swing_break_d1;
 // Ger40TurtleH4Engine -- 20-bar Donchian breakout on GER40 H4.
 //   Turtle archetype applied to DAX H4. IS Sh=5.06 OOS Sh=4.60 FUL Sh=5.00
 //   n=33 PnL=9.4% WR=63.6% mdd=2.0%.
-#include "Ger40TurtleH4Engine.hpp"
-static omega::Ger40TurtleH4Engine g_ger40_turtle_h4;
 
 // NasTurtleD1Engine (2026-06-14): 20-day Donchian breakout on NAS100 D1,
 // long-only, shadow. Seykota/Donchian D1 archetype; NAS validated as one of
@@ -692,8 +593,6 @@ static omega::NasTurtleD1Engine g_spx_turtle_d1;
 // full param-plateau + cost-stress 1x/2x/3x (edge_validate_s41.cpp); engine-
 // driven BT PF 2.34. Self-aggregates H1 from the GER40 tick stream (no
 // g_bars_ger40 exists) via feed_tick(), like Ger40TurtleH4Engine.
-#include "Ger40KeltnerH1Engine.hpp"
-static omega::Ger40KeltnerH1Engine g_ger40_kelt;
 
 // S-2026-06-03: GoldVolBreakoutM30Engine -- XAU M30 long-only vol-breakout
 // runner. From the XauVolBreakout audit + full lever sweep (/tmp/xauvb,
@@ -713,42 +612,26 @@ static omega::GoldVolBreakoutM30Engine g_gold_volbrk_m30;
 //   H4 pattern that earned Ger40TurtleH4 PF 4.60 OOS and EURUSD long-only
 //   walk-forward PF 1.14-1.30 across all 3 OOS folds. One generic class
 //   instantiated per pair with pair-specific pip math.
-#include "FxTurtleH4Engine.hpp"
-static omega::FxTurtleH4Engine g_eurusd_turtle_h4;
-static omega::FxTurtleH4Engine g_gbpusd_turtle_h4;
-static omega::FxTurtleH4Engine g_audusd_turtle_h4;
-static omega::FxTurtleH4Engine g_nzdusd_turtle_h4;
-static omega::FxTurtleH4Engine g_usdjpy_turtle_h4;
 
 // 2026-05-20 mega_sweep2 candle-pattern batch (XAU D1, cost-stressed):
 //
 // XauDojiRejD1Engine -- prev=doji + current breaks prev high.
 //   Cost 1bp Sh=9.87, 10bp Sh=9.43, 50bp Sh=7.48 (most robust mega2 winner).
 //   IS Sh=6.97 / OOS Sh=11.20 n=23 PnL=44.6% WR=65.2%.
-#include "XauDojiRejD1Engine.hpp"
-static omega::XauDojiRejD1Engine g_xau_doji_rej_d1;
 
 // XauOutsideBarD1Engine -- outside-bar engulf + bullish close.
 //   Cost 1bp Sh=6.47, 10bp Sh=5.88, 50bp Sh=3.27.
 //   IS Sh=3.72 / OOS Sh=8.39 n=34 PnL=43.0% WR=64.7%.
-#include "XauOutsideBarD1Engine.hpp"
-static omega::XauOutsideBarD1Engine g_xau_outside_bar_d1;
 
 // XauInsideBarD1Engine -- inside bar consolidation + breakout.
 //   Cost 1bp Sh=5.05, 10bp Sh=4.39, 50bp Sh=1.42 (less cost-robust).
 //   IS Sh=4.29 / OOS Sh=3.96 n=49 (highest density), WR=71.4%.
-#include "XauInsideBarD1Engine.hpp"
-static omega::XauInsideBarD1Engine g_xau_inside_bar_d1;
 
 // TrendLineBreakEngine -- non-intersecting trend-line break, safety-line trail.
 //   2026-06-09: validated hull-break (trendline_fan_v2). Gold PF~1.24 (2-touch,
 //   R-mult, ~2-3yr). Break-only; bounce/mean-reversion variants were negative.
-#include "TrendLineBreakEngine.hpp"
-static omega::TrendLineBreakEngine g_trendline_break;
 // 2026-06-09: FX instances carry the real edge (GBPUSD PF1.53, USDJPY PF1.37);
 //   gold (PF1.24) stays disabled. SHADOW. H4-bar driven from tick_fx.hpp.
-static omega::TrendLineBreakEngine g_trendline_break_gbp;
-static omega::TrendLineBreakEngine g_trendline_break_jpy;
 
 // 2026-05-21: GoldD1TrendState -- D1 EMA200 regime gate for bidirectional engines.
 //   After 2026-05-20 InsideBar SHORT lost -$52 in gold uptrend, added regime
@@ -775,8 +658,6 @@ static omega::XauTrendFollow2hEngine g_xau_tf_2h;
 //   ATR floor 2.5. SL=2ATR, TP=5ATR, trail at 3ATR MFE / 2ATR distance.
 //   26-month backtest: PF=1.36, WR=41.8%, 311 trades, OOS PF=1.39 (265 trades).
 //   Shadow mode for initial live validation.
-#include "GoldUltimateEngine.hpp"
-static omega::GoldUltimateEngine g_gold_ultimate_engine;
 
 // 2026-05-11/12 S34 + S35-P3 + S35-P4: XauThreeBar30mEngine -- XAU M30
 //   three-bar continuation. Engine added in S34 (b1932d2), retrofitted
@@ -801,27 +682,20 @@ static omega::XauThreeBar30mEngine g_xau_threebar_30m;
 //   OOS PF 1.67 +$1556 / L2 forward PF 3.03 +$773 DD -$200 / 48 trades.
 //   Walk-forward 4 anchored folds: every fold positive.
 //   First XAU engine validated on L2 forward window (2026-04-09 → 2026-05-19).
-#include "XauDonchian55GatedM30Engine.hpp"
-static omega::XauDonchian55GatedM30Engine g_xau_d55_gated_m30;
 
 // S-2026-06-02: single-shot OCO breakout straddle (Quantum Dark Gold entry,
 // minus the M5 grid). M30 boxN15 stop3*ATR TP=1R symmetric. OOS PF 1.64-1.90
 // Sharpe 4-6, 3x-cost-robust (straddle_breakout_sweep.cpp). Shadow until gate.
-#include "XauStraddleM30Engine.hpp"
-static omega::XauStraddleM30Engine g_xau_straddle_m30;
 // S-2026-06-02: M15 sibling (same engine, fed M15 bars). TP=1R lifts the higher
 // frequency over the cost line -> validated BETTER than M30: OOS PF 1.72-1.78
 // Sharpe 6.6-7.3, MDD lower, 3x-cost-robust (PF 1.44). M5-detector early-exit
 // tested + REJECTED (cuts winners, reintroduces the thousand-cuts).
-static omega::XauStraddleM30Engine g_xau_straddle_m15;
 
 // S-2026-06-02: faithful Opening-Range-Breakout. ESTX50 long-only was the ONE
 // OOS-robust survivor of the multi-symbol ORB sweep (orb_multi_sweep.cpp):
 // OR 07:00-08:00 UTC, range-SL, TP=2R, flat 15:30. OOS@cost2.0 PF 1.28 Sh 1.41.
 // Self-aggregating m5 SHADOW cell, distinct from the %-based g_orb_estx50
 // (OpeningRangeEngine) which stays disabled. Shadow until the gate's 30-trade verdict.
-#include "OrbBreakoutEngine.hpp"
-static omega::OrbBreakoutEngine g_orb_estx50_v2;
 
 // S-2026-06-02: INDEX STRADDLE cells. The gold straddle archetype (rolling box +
 // 1R TP, symmetric) generalizes to indices (straddle_breakout_sweep.cpp, OOS 0.33
@@ -841,16 +715,12 @@ static omega::XauStraddleM30Engine g_idx_straddle_uk100_m240;
 //   BT (backtest/nq_momentum_faithful.cpp): GATED positive BOTH regimes, both WF
 //   halves+ (bull PF2.34 +1395; bear PF1.26 +426). Gate LOAD-BEARING (ungated bear
 //   PF0.99). Fed from the NAS100 index tick path. Shadow until the gate's verdict.
-#include "NqMomentumEngine.hpp"
-static omega::NqMomentumEngine g_nq_momentum;
 
 // 2026-05-24 S136: Xau3BarMomGatedH4Engine -- XAU H4 three-bar momentum symmetric
 //   with MFE-lock trail (arm=1.0R, lock=90%).
 //   /Users/jo/edge_research validation: 27mo backtest IS PF 1.11 +$983 /
 //   OOS PF 1.07 +$272 / L2 forward PF 1.53 +$365 DD -$257.
 //   Walk-forward 4 folds aggregate OOS +$2931 (no trail).
-#include "Xau3BarMomGatedH4Engine.hpp"
-static omega::Xau3BarMomGatedH4Engine g_xau_3bar_mom_h4;
 
 // 2026-05-24 S136: NasBbRevLongH1Engine -- NAS100 H1 Bollinger-band mean-revert
 //   LONG. BE-then-trail at 1.5×ATR (arm=1R, switch=2R).
@@ -867,8 +737,6 @@ static omega::NasBbRevLongH1Engine g_nas_bbrev_long_h1;
 //   Walk-forward 4 folds ALL positive, aggregate OOS +$10,943 / 160 trades.
 //   Symmetric variant added to defend against regime change (cf. XAU L2 failure
 //   of LONG-only).
-#include "Us303BarMomH1Engine.hpp"
-static omega::Us303BarMomH1Engine g_us30_3bar_mom_h1;
 
 // 2026-05-26 S37: Us30EnsembleEngine -- DJ30.F 4-cell ensemble.
 //   Cells: atr_exp H1 sl=2tp=3, inside_brk H1 sl=3tp=5, atr_exp M30 sl=3tp=2,
@@ -880,8 +748,6 @@ static omega::Us303BarMomH1Engine g_us30_3bar_mom_h1;
 //   BE+trail DEFAULTS OFF in header (sim showed they clip atr_exp winners).
 //   Cells independent (up to 4 concurrent DJ30.F positions at engine lot).
 //   3bar_mom_H1 NOT in this ensemble -- lives in g_us30_3bar_mom_h1 separately.
-#include "Us30EnsembleEngine.hpp"
-static omega::Us30EnsembleEngine g_us30_ensemble;
 
 // 2026-05-12 S35-P6: UstecTrendFollowHtfEngine -- multi-timeframe trend-follow
 //   ensemble for USTEC.F. 5 cells across M15/H1/H2/H4 (InsideBar2h, Stoch1h
@@ -900,8 +766,6 @@ static omega::Us30EnsembleEngine g_us30_ensemble;
 //   (Donchian -$2761/-$2420/-$621 across H1/H2/26). The existing M5 engine
 //   has been left untouched per operator instruction; this HTF engine is a
 //   companion, not a replacement.
-#include "UstecTrendFollowHtfEngine.hpp"
-static omega::UstecTrendFollowHtfEngine g_ustec_tf_htf;
 
 // 2026-05-08 S20+: RiskMonitor -- per-engine logging-only risk surveillance.
 //   Watches WR break-even, fire rate over/under, and spread-at-entry drift
@@ -1010,13 +874,7 @@ static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
 // 2026-05-25 AtrMeanRevGrid -- forex mean-reversion grid (CRTP, see AtrMeanRevGridEngine.hpp).
 // Ported from the AtrMeanRevGrid.mq5 MT5 EA. shadow_mode=true until backtest validates.
 // Each instance: own indicator buffers + grid state. Seed via H1 CSV in engine_init.hpp.
-#include "AtrMeanRevGridEngine.hpp"
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_EURUSD> g_amr_eurusd;
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_GBPUSD> g_amr_gbpusd;
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_AUDUSD> g_amr_audusd;
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_NZDUSD> g_amr_nzdusd;
 // 2026-05-26 S37f -- EURGBP H1 X=5 SL=3 (validated: OOS PF 1.68, RF 1.39)
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_EURGBP> g_amr_eurgbp;
 
 // 2026-05-26 S37g -- FxEnsembleEngine: 5 cross-family FX cells validated via
 // deep edge hunt (fx_deep_hunt.py). Each instance enables one cell tuned to
@@ -1035,13 +893,8 @@ static omega::FxEnsembleEngine g_fx_ens_usdjpy("USDJPY");
 static omega::FxEnsembleEngine g_fx_ens_nzdusd("NZDUSD");  // S37h london_momo H2 SHORT
 // 2026-05-26: Index AMR instances. Configs picked from deep eval sweep on
 // real tick CSVs (SPXUSD/NSXUSD/GER40). See AtrMeanRevGridEngine.hpp traits.
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_US500>  g_amr_us500;
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_NAS100> g_amr_nas100;
-static omega::AtrMeanRevGridEngine<omega::AmrTraits_GER40>  g_amr_ger40;
 static omega::XauusdFvgEngine                 g_xauusd_fvg;
 // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + aggressive trail
-#include "GoldScalpPyramidEngine.hpp"
-static omega::GoldScalpPyramidEngine          g_gold_scalp_pyramid;
 // 2026-05-26 S38d: FxScalpPyramid -- 5 profitable FX pairs, shadow-mode.
 //   Clone of GoldScalpPyramidEngine adapted for per-pair FX constants.
 //   13-month standalone harness PnL @ 0.01 lot:
@@ -1049,12 +902,6 @@ static omega::GoldScalpPyramidEngine          g_gold_scalp_pyramid;
 //     USDCAD +$506 PF 1.23,  AUDUSD +$410 PF 1.23.
 //   Skipped: NZDUSD (PF 1.07), EURGBP (PF 0.93).
 //   All shadow_mode=true pending 14-day live shadow validation.
-#include "FxScalpPyramidEngine.hpp"
-static omega::FxScalpPyramidEngine            g_fx_scalp_eurusd;
-static omega::FxScalpPyramidEngine            g_fx_scalp_usdjpy;
-static omega::FxScalpPyramidEngine            g_fx_scalp_gbpusd;
-static omega::FxScalpPyramidEngine            g_fx_scalp_usdcad;
-static omega::FxScalpPyramidEngine            g_fx_scalp_audusd;
 // 2026-05-31 S43: FX CARRY + CROSS-REVERSION -- first VALIDATED FX edges.
 //   Carry (rate-diff premium, Dukascopy D1 2019-2026): full-11 carry-only
 //   Sharpe 0.52, +12-14k bp, 5/6 blocks, cost-3x-proof. JPY crosses = 76-105%
@@ -1099,14 +946,10 @@ static omega::IndexSeasonalEngine g_idx_seas_estx50("ESTX50");
 //   21:00 break), win 61%, +ve every year 2024/25/26, both WF halves+, cost-robust
 //   to 5x, DSR-survives (GOLD_SEASONALITY_FINDING.md). Calendar axis -> survives
 //   where every price/book signal died.
-#include "GoldSeasonalEngine.hpp"
-static omega::GoldSeasonalEngine g_gold_seasonal;
 // S-2026-06-03: GoldOversoldBounce -- XAUUSD daily RSI<30 capitulation bounce.
 //   18yr GC=F (incl 2013 bear): t2.76 PF2.17 win73%, 14/19yr+, POSITIVE in bear
 //   windows where naive below-50ma dip-buy DIES. Mean-reversion (buys weakness)
 //   -> uncorrelated with the trend/breakout book + GoldSeasonal. ATR stop.
-#include "GoldOversoldBounceEngine.hpp"
-static omega::GoldOversoldBounceEngine g_gold_oversold;
 // S44: IndexFomc -- pre-FOMC drift, US indices (decayed but alive, +11.8bp/event 2023-26).
 #include "IndexFomcEngine.hpp"
 static omega::IndexFomcEngine g_idx_fomc_us500("US500.F");
@@ -1119,14 +962,10 @@ static omega::IndexFomcEngine g_idx_fomc_dj30("DJ30.F");
 //   (BE-lock only) + trend-flip exit (EMA9 crosses back).
 //   RISK_DOLLARS=$1200 (scaled 24x from default $50), LOT_MAX=2.50.
 //   shadow_mode=true, enabled=false until operator approval.
-#include "GoldRegimeDailyEngine.hpp"
-static omega::GoldRegimeDailyEngine           g_gold_regime_daily;
 // 2026-05-18 (part B): BBandScalp -- M1 Bollinger + RSI mean-reversion scalper
 //   Structural-signal entry (BB extreme touch + RSI extreme) replacing the
 //   tick-velocity entry that proved counter-predictive in QuickScalp.
 //   shadow_mode=true by default. See engine class header for full design.
-#include "BBandScalpEngine.hpp"
-static omega::BBandScalpEngine                g_bband_scalp;
 // S11 P3b: g_hybrid_sp / g_hybrid_nq / g_hybrid_us30 / g_hybrid_nas100 static
 //   decls removed (engines culled in P3a + P3b).
 // S12 P3c (2026-05-07): IndexHybridBracketEngine.hpp file DELETED + #include
@@ -1140,11 +979,9 @@ static inline bool index_any_open() noexcept {
     return  g_iflow_sp.has_open_position()      ||
             g_iflow_nq.has_open_position()      ||
             g_iflow_nas.has_open_position()     ||
-            g_iflow_us30.has_open_position()    ||
-            g_minimal_h4_us30.has_open_position();
+            g_iflow_us30.has_open_position();
 }
 
-static omega::MacroCrashEngine    g_macro_crash;
 // (g_pullback_cont and g_pullback_prem removed S49 X5 — engine culled, see commit message of branch s49-x5-pullback-cull)
 
 // CandleFlowEngine RESTORED 2026-04-29 with audit-tightened gates ----------
@@ -1192,18 +1029,12 @@ static omega::EMACrossEngine g_ema_cross;
 // London-only, with MaxDD > PnL — not a validated edge.
 // See backtest/bb_tuned_sweep_v2.cpp for the validation sweep that killed it.
 
-#include "PDHLReversionEngine.hpp"
-static omega::PDHLReversionEngine g_pdhl_rev;     // mean reversion inside daily range
 
-#include "RSIReversalEngine.hpp"
-static omega::RSIReversalEngine   g_rsi_reversal;
 
 // RSIExtremeTurnEngine -- backtest-validated RSI extreme + sustained turn
 // Entry: RSI <20 after 3 bars sustained fall (LONG), >70 after 3 bars rise (SHORT)
 // Exit:  RSI crosses back to 55 (LONG) or 45 (SHORT). SL=0.5xATR. No DOM.
 // shadow_mode=true until live validation
-#include "RSIExtremeTurnEngine.hpp"
-static omega::RSIExtremeTurnEngine g_rsi_extreme;  // RSI extreme + sustained turn engine
 
 // Real-tick backtest result: 4320 trades / 2 years, -$3.8k -- momentum = negative EV.
 // Walk-forward sweep (96 cells, 14 days of L2 data, T=116 on production params)

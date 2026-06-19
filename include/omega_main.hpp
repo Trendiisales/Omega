@@ -299,8 +299,6 @@ int main(int argc, char* argv[])
             // RSIReversalEngine: seed bar_rsi + bar_rsi_prev from disk
             // Eliminates the "need 2 bar closes" block on every restart
             if (seed_rsi > 0.0 && seed_rsi < 100.0) {
-                g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);
-                g_rsi_reversal.set_bar_rsi(seed_rsi, seed_mid);  // second call sets prev
                 std::cout << "[WARMUP-SEED] RSIReversal bar_rsi=" << seed_rsi
                           << " (both current+prev seeded from disk)\n";
                 std::cout.flush();
@@ -308,7 +306,6 @@ int main(int argc, char* argv[])
 
             // RSIExtremeTurnEngine: seed bar_rsi
             if (seed_rsi > 0.0 && seed_rsi < 100.0) {
-                g_rsi_extreme.set_bar_rsi(seed_rsi);
                 std::cout << "[WARMUP-SEED] RSIExtreme bar_rsi=" << seed_rsi << "\n";
                 std::cout.flush();
             }
@@ -629,22 +626,6 @@ int main(int argc, char* argv[])
         }).detach();
     }
 
-    // ── PumpScalp feed consumer (2026-06-10) ────────────────────────────────
-    // Opt-in: enabled when env OMEGA_PUMP_BRIDGE=1. Reads B/S/P/C lines from
-    // pump/pump_feed_bridge.py (server mode) over TCP localhost and drives
-    // g_pump_manager (which is registered with g_open_positions -> trades show
-    // in the live_trades GUI panel + bell). Off => dormant, no effect.
-    if (const char* en = std::getenv("OMEGA_PUMP_BRIDGE"); en && std::string(en) == "1") {
-        const char* port_env = std::getenv("OMEGA_PUMP_BRIDGE_PORT");
-        const uint16_t pport = port_env ? static_cast<uint16_t>(std::atoi(port_env)) : 7782;
-        const char* host_env = std::getenv("OMEGA_PUMP_BRIDGE_HOST");
-        static std::string s_pump_host = host_env ? host_env : "127.0.0.1";
-        std::cout << "[PUMP-CONSUMER] starting; " << s_pump_host << ":" << pport << "\n";
-        std::cout.flush();
-        std::thread([pport]{
-            omega::pump_feed::run(g_pump_manager, g_pump_stop, s_pump_host.c_str(), pport);
-        }).detach();
-    }
 
     // ── BigCapMomo feed consumer (2026-06-12) ───────────────────────────────
     // Opt-in: OMEGA_BIGCAP_BRIDGE=1. Same B/S/P/C protocol, separate port (default
@@ -849,7 +830,6 @@ int main(int argc, char* argv[])
             {
                 const int64_t now_ms_wd = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
-                g_pump_manager.on_heartbeat(now_ms_wd);
                 g_bigcap_momo.on_heartbeat(now_ms_wd);
             }
             static int64_t s_last_bar_save_s = 0;
@@ -865,14 +845,10 @@ int main(int argc, char* argv[])
                 g_bars_sp.m1   .save_indicators(bs + "/bars_sp_m1.dat");
                 g_bars_nq.m1   .save_indicators(bs + "/bars_nq_m1.dat");
                 // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
-                g_minimal_h4_us30.save_state(bs + "/bars_us30_h4.dat");
                 // AtrMeanRevGrid bar-deque persistence (S37e 2026-05-26):
                 // eliminates per-restart warmup. State files survive reboot ->
                 // engine boots warm + immediately ready for signals.
                 const std::string sr = state_root_dir();
-                g_amr_eurusd.save_state(sr + "/amr_eurusd.dat");
-                g_amr_gbpusd.save_state(sr + "/amr_gbpusd.dat");
-                g_amr_eurgbp.save_state(sr + "/amr_eurgbp.dat");
                 // S37g 2026-05-26 FxEnsembleEngine state-persist
                 g_fx_ens_eurusd.save_state(sr + "/fxens_eurusd.dat");
                 g_fx_ens_gbpusd.save_state(sr + "/fxens_gbpusd.dat");
@@ -880,9 +856,6 @@ int main(int argc, char* argv[])
                 g_fx_ens_usdcad.save_state(sr + "/fxens_usdcad.dat");
                 g_fx_ens_usdjpy.save_state(sr + "/fxens_usdjpy.dat");
                 g_fx_ens_nzdusd.save_state(sr + "/fxens_nzdusd.dat");
-                g_amr_us500.save_state (sr + "/amr_us500.dat");
-                g_amr_nas100.save_state(sr + "/amr_nas100.dat");
-                g_amr_ger40.save_state (sr + "/amr_ger40.dat");
                 // S-2026-06-03: persist open positions so a restart/deploy
                 // resumes in-flight trades (worst-case loss = positions opened
                 // in the <600s before a HARD crash; graceful stop saves too).
@@ -975,7 +948,6 @@ int main(int argc, char* argv[])
     // trades survive process restart without re-warming for 15+ trades.
     g_adaptive_risk.save_perf(state_root_dir() + "/kelly");
     g_gold_stack.save_atr_state(state_root_dir() + "/gold_stack_state.dat");
-    g_trend_pb_gold.save_state(state_root_dir()  + "/trend_pb_gold.dat");
 
     // Save bar indicator state -- instant warm restart, no 15-min cold start
     // load_indicators() at startup reads these files and sets m1_ready=true immediately
@@ -989,12 +961,8 @@ int main(int argc, char* argv[])
     g_bars_sp.m1   .save_indicators(base_save + "/bars_sp_m1.dat");
     g_bars_nq.m1   .save_indicators(base_save + "/bars_nq_m1.dat");
     // MinimalH4US30Breakout warm-restart state (S26 2026-04-25)
-    g_minimal_h4_us30.save_state(base_save + "/bars_us30_h4.dat");
     printf("[SHUTDOWN] Bar indicator state saved -- next restart will be instant warm\n");
     fflush(stdout);
-    g_trend_pb_ger40.save_state(state_root_dir() + "/trend_pb_ger40.dat");
-    g_trend_pb_nq.save_state(state_root_dir()    + "/trend_pb_nq.dat");
-    g_trend_pb_sp.save_state(state_root_dir()    + "/trend_pb_sp.dat");
     // S-2026-06-03: final open-position snapshot on graceful shutdown (SIGTERM /
     // console-close / service stop all route here via g_running=false ->
     // quote_loop exit). Restart adopts these back.

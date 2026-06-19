@@ -164,10 +164,6 @@ static void quote_loop() {
                 // Save ATR state every 60s so restarts always have a fresh, valid value
                 // (GoldFlow save_atr_state calls removed S19 Stage 1B — engine culled)
                 g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
-                g_trend_pb_gold.save_state(log_root_dir()  + "/trend_pb_gold.dat");
-                g_trend_pb_ger40.save_state(log_root_dir() + "/trend_pb_ger40.dat");
-                g_trend_pb_nq.save_state(log_root_dir()    + "/trend_pb_nq.dat");
-                g_trend_pb_sp.save_state(log_root_dir()    + "/trend_pb_sp.dat");
                 // Save bar indicator state every 60s -- ensures warm restart on crash/kill.
                 // Previously saved only at daily rollover and clean shutdown.
                 // If process is killed (OOM, watchdog, manual stop), .dat files were stale
@@ -222,21 +218,8 @@ static void quote_loop() {
                     // (HybridBracketGold OPEN-POS block removed S11 P3b -- engine culled
                     //  in P3a + globals/init removed in P3b)
                     // RSIReversal
-                    if (g_rsi_reversal.has_open_position()) {
-                        const auto& p = g_rsi_reversal.pos;
-                        printf("[OPEN-POS] RSIReversal %s entry=%.2f sl=%.2f mfe=%.2f be=%d\n",
-                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe, (int)p.be_locked);
-                        any_open = true;
-                    }
                     // (MicroMomentum [OPEN-POS] block REMOVED at Batch 5V §1.2.)
                     // MacroCrash
-                    if (g_macro_crash.has_open_position()) {
-                        const auto& p = g_macro_crash.pos;
-                        printf("[OPEN-POS] MacroCrash %s entry=%.2f sl=%.2f mfe=%.2f be=%d banked=%.2f\n",
-                               p.is_long?"LONG":"SHORT", p.entry, p.sl, p.mfe,
-                               (int)p.be_locked, p.banked_usd);
-                        any_open = true;
-                    }
                     // GoldStack
                     if (g_gold_stack.has_open_position()) {
                         printf("[OPEN-POS] GoldStack ACTIVE (see GOLD-BRK-DIAG for details)\n");
@@ -623,9 +606,6 @@ static void quote_loop() {
 
             // -- Gold engines (original) --
             if (xb_rc > 0 && xa_rc > 0) {
-                if (g_trend_pb_gold.has_open_position() && is_stale(g_trend_pb_gold.open_entry_ts()))
-                    { g_trend_pb_gold.force_close(xb_rc, xa_rc, stale_cb, "STALE_PRIOR_DAY");
-                      std::cout << "[STALE-CLOSE] Purged prior-day TrendPullback-Gold\n"; }
                 // (GoldFlow stale-close blocks removed S19 Stage 1B — engine culled)
                 if (g_gold_stack.has_open_position() && is_stale(g_gold_stack.live_entry_ts()))
                     { g_gold_stack.force_close(xb_rc, xa_rc, g_rtt_last, stale_cb);
@@ -665,39 +645,9 @@ static void quote_loop() {
             stale_bracket(g_bracket_usdjpy, "USDJPY");
             stale_bracket(g_bracket_brent,  "BRENT");
             // -- NBM / ORB / VWAP / TrendPB / CrossAsset --
-            stale_ca(g_nbm_sp,          "US500.F");
-            stale_ca(g_nbm_nq,          "USTEC.F");
-            stale_ca(g_nbm_nas,         "NAS100");
-            stale_ca(g_nbm_us30,        "DJ30.F");
-            stale_ca(g_nbm_gold_london, "XAUUSD");
-            stale_ca(g_nbm_oil_london,  "USOIL.F");
-            stale_ca(g_orb_us,          "US500.F");
-            stale_ca(g_orb_ger30,       "GER40");
-            stale_ca(g_orb_uk100,       "UK100");
-            stale_ca(g_orb_estx50,      "ESTX50");
-            stale_ca(g_vwap_rev_sp,     "US500.F");
-            stale_ca(g_vwap_rev_nq,     "USTEC.F");
-            stale_ca(g_vwap_rev_ger40,  "GER40");
-            stale_ca(g_vwap_rev_eurusd, "EURUSD");
             // TrendPullback engines: all expose open_entry_ts() -- use explicit is_stale()
             // guard so we handle them exactly like g_trend_pb_gold (not always-close).
             // stale_ca() now also checks is_stale() but keeping these explicit is clearer.
-            if (g_trend_pb_sp.has_open_position() && is_stale(g_trend_pb_sp.open_entry_ts())) {
-                double b=0,a=0; stale_px("US500.F",b,a);
-                if (b>0) { g_trend_pb_sp.force_close(b,a,stale_cb,"STALE_PRIOR_DAY");
-                           printf("[STALE-CLOSE] Purged prior-day TrendPullback-SP\n"); fflush(stdout); } }
-            if (g_trend_pb_nq.has_open_position() && is_stale(g_trend_pb_nq.open_entry_ts())) {
-                double b=0,a=0; stale_px("USTEC.F",b,a);
-                if (b>0) { g_trend_pb_nq.force_close(b,a,stale_cb,"STALE_PRIOR_DAY");
-                           printf("[STALE-CLOSE] Purged prior-day TrendPullback-NQ\n"); fflush(stdout); } }
-            if (g_trend_pb_ger40.has_open_position() && is_stale(g_trend_pb_ger40.open_entry_ts())) {
-                double b=0,a=0; stale_px("GER40",b,a);
-                if (b>0) { g_trend_pb_ger40.force_close(b,a,stale_cb,"STALE_PRIOR_DAY");
-                           printf("[STALE-CLOSE] Purged prior-day TrendPullback-GER40\n"); fflush(stdout); } }
-            stale_ca(g_ca_esnq,         "US500.F");
-            stale_ca(g_ca_eia_fade,     "USOIL.F");
-            stale_ca(g_ca_brent_wti,    "USOIL.F");
-            stale_ca(g_ca_carry_unwind, "USDJPY");
             // g_ca_fx_cascade: legs (GBP/AUD/NZD) are private -- entry_ts inaccessible.
             // FX cascade positions are short-lived scalps (max hold ~5min) so prior-day
             // carry is impossible in practice. Omitted intentionally.
@@ -814,23 +764,8 @@ static void quote_loop() {
 
         // Cross-asset engines (VWAP, TrendPB, ORB, Carry, etc.)
         { double b=0,a=0;
-          snap_px("US500.F",b,a); if(b>0&&a>0){g_ca_esnq.force_close(b,a,shutdown_cb,"SHUTDOWN");g_orb_us.force_close(b,a,shutdown_cb,"SHUTDOWN");g_vwap_rev_sp.force_close(b,a,shutdown_cb,"SHUTDOWN");g_nbm_sp.force_close(b,a,shutdown_cb,"SHUTDOWN");g_trend_pb_sp.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("USTEC.F",b,a); if(b>0&&a>0){g_vwap_rev_nq.force_close(b,a,shutdown_cb,"SHUTDOWN");g_nbm_nq.force_close(b,a,shutdown_cb,"SHUTDOWN");g_trend_pb_nq.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("NAS100",b,a);  if(b>0&&a>0){g_nbm_nas.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("DJ30.F",b,a);  if(b>0&&a>0){g_nbm_us30.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("EURUSD",b,a);  if(b>0&&a>0){g_vwap_rev_eurusd.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("GER40",b,a);   if(b>0&&a>0){g_orb_ger30.force_close(b,a,shutdown_cb,"SHUTDOWN");g_vwap_rev_ger40.force_close(b,a,shutdown_cb,"SHUTDOWN");g_trend_pb_ger40.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("XAUUSD",b,a);  if(b>0&&a>0){g_trend_pb_gold.force_close(b,a,shutdown_cb,"SHUTDOWN");g_nbm_gold_london.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_nbm_oil_london.force_close(b,a,shutdown_cb,"SHUTDOWN");}  // London NBM oil
-          snap_px("UK100",b,a);   if(b>0&&a>0){g_orb_uk100.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("ESTX50",b,a);  if(b>0&&a>0){g_orb_estx50.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("USOIL.F",b,a); if(b>0&&a>0){g_ca_eia_fade.force_close(b,a,shutdown_cb,"SHUTDOWN");g_ca_brent_wti.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-          snap_px("USDJPY",b,a);  if(b>0&&a>0){g_ca_carry_unwind.force_close(b,a,shutdown_cb,"SHUTDOWN");}
           { double ab=0,aa=0,nb=0,na=0;
-            snap_px("GBPUSD",b,a); snap_px("AUDUSD",ab,aa); snap_px("NZDUSD",nb,na);
-            if(b>0&&a>0){g_ca_fx_cascade.force_close(b,a,shutdown_cb,"SHUTDOWN");}
-            if(ab>0&&aa>0){g_ca_fx_cascade.force_close_audusd(ab,aa,shutdown_cb,"SHUTDOWN");}
-            if(nb>0&&na>0){g_ca_fx_cascade.force_close_nzdusd(nb,na,shutdown_cb,"SHUTDOWN");} }
+          }
         }
         std::cout << "[OMEGA-SHUTDOWN] All positions closed\n";
         } // end do_reconnect_close (LIVE mode only)
@@ -913,23 +848,8 @@ static void quote_loop() {
 
             // Cross-asset: VWAP, TrendPB, ORB, Carry, FxCascade
             { double b,a;
-              get_px("US500.F",b,a);  g_ca_esnq.force_close(b,a,scb,"SHUTDOWN"); g_orb_us.force_close(b,a,scb,"SHUTDOWN"); g_vwap_rev_sp.force_close(b,a,scb,"SHUTDOWN"); g_nbm_sp.force_close(b,a,scb,"SHUTDOWN");
-              get_px("USTEC.F",b,a);  g_vwap_rev_nq.force_close(b,a,scb,"SHUTDOWN"); g_nbm_nq.force_close(b,a,scb,"SHUTDOWN");
-              get_px("NAS100",b,a);   g_nbm_nas.force_close(b,a,scb,"SHUTDOWN");
-              get_px("DJ30.F",b,a);   g_nbm_us30.force_close(b,a,scb,"SHUTDOWN");
-              get_px("EURUSD",b,a);   g_vwap_rev_eurusd.force_close(b,a,scb,"SHUTDOWN");
-              get_px("GER40",b,a);    g_orb_ger30.force_close(b,a,scb,"SHUTDOWN"); g_vwap_rev_ger40.force_close(b,a,scb,"SHUTDOWN"); g_trend_pb_ger40.force_close(b,a,scb,"SHUTDOWN");
-              get_px("XAUUSD",b,a);   g_trend_pb_gold.force_close(b,a,scb,"SHUTDOWN"); g_nbm_gold_london.force_close(b,a,scb,"SHUTDOWN");
-              get_px("USOIL.F",b,a);  g_nbm_oil_london.force_close(b,a,scb,"SHUTDOWN");  // London NBM oil
-              get_px("UK100",b,a);    g_orb_uk100.force_close(b,a,scb,"SHUTDOWN");
-              get_px("ESTX50",b,a);   g_orb_estx50.force_close(b,a,scb,"SHUTDOWN");
-              get_px("USOIL.F",b,a);  g_ca_eia_fade.force_close(b,a,scb,"SHUTDOWN"); g_ca_brent_wti.force_close(b,a,scb,"SHUTDOWN");
-              get_px("USDJPY",b,a);   g_ca_carry_unwind.force_close(b,a,scb,"SHUTDOWN");
               double gb,ga,ab,aa,nb,na;
               get_px("GBPUSD",gb,ga); get_px("AUDUSD",ab,aa); get_px("NZDUSD",nb,na);
-              g_ca_fx_cascade.force_close(gb,ga,scb,"SHUTDOWN");
-              g_ca_fx_cascade.force_close_audusd(ab,aa,scb,"SHUTDOWN");
-              g_ca_fx_cascade.force_close_nzdusd(nb,na,scb,"SHUTDOWN");
             }
             std::cout << "[OMEGA-SHUTDOWN] All positions closed before disconnect\n";
         } // end LIVE mode position close
@@ -1059,41 +979,22 @@ static void quote_loop() {
             };
             double ca_b = 0.0, ca_a = 0.0;
             ca_get_px("US500.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_esnq.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); g_orb_us.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("USOIL.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_eia_fade.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); g_ca_brent_wti.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("GBPUSD", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_fx_cascade.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             // FxCascade AUD/NZD legs -- force-close with each pair's own price
             { double aud_b = 0.0, aud_a = 0.0; ca_get_px("AUDUSD", aud_b, aud_a);
-              if (aud_b > 0.0 && aud_a > 0.0) g_ca_fx_cascade.force_close_audusd(aud_b, aud_a, ca_cb, "RECONNECT_CLOSE"); }
-            { double nzd_b = 0.0, nzd_a = 0.0; ca_get_px("NZDUSD", nzd_b, nzd_a);
-              if (nzd_b > 0.0 && nzd_a > 0.0) g_ca_fx_cascade.force_close_nzdusd(nzd_b, nzd_a, ca_cb, "RECONNECT_CLOSE"); }
-            ca_get_px("USDJPY", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_ca_carry_unwind.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
-            ca_get_px("GER40", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) {
-                g_orb_ger30.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE");
-                g_vwap_rev_ger40.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE");
-                g_trend_pb_ger40.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE");
             }
             ca_get_px("UK100", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_uk100.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("ESTX50", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_orb_estx50.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("US500.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_sp.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("USTEC.F", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_nq.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             ca_get_px("EURUSD", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_vwap_rev_eurusd.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
             // FxCascade: force_close() closes all three legs (GBPUSD/AUDUSD/NZDUSD).
             // Each leg uses the GBPUSD price as approximation -- acceptable for emergency
             // disconnect close since the pairs are highly correlated and positions are 0.01 lot.
             // The individual on_tick_audusd/nzdusd calls above already handle manage() on each tick.
             // XAUUSD TrendPullback
             ca_get_px("XAUUSD", ca_b, ca_a);
-            if (ca_b > 0.0 && ca_a > 0.0) { g_trend_pb_gold.force_close(ca_b, ca_a, ca_cb, "RECONNECT_CLOSE"); }
         }
         // Force-close GoldEngineStack
         {
