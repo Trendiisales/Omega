@@ -1335,15 +1335,16 @@ static bool symbol_gate(
         // ?? Per-symbol daily cap -- 2R (S-2026-06-19 Phase 1) ??????????????
         // A single symbol's daily net loss is capped at per_symbol_loss_limit
         // (2R) so one instrument can't eat the whole 3R daily budget alone.
-        // Reads g_perf[symbol].daily_pnl (negative = loss), same source the
-        // sizing throttle uses (on_tick.hpp:1411).
+        // Reads g_sym_risk[symbol].daily_pnl (SymbolRiskState; negative = loss),
+        // the SAME source the sizing throttle uses at on_tick.hpp:1411. (PerfStats
+        // in g_perf has no daily_pnl member -- that was the original wrong source.)
         if (g_cfg.per_symbol_loss_limit > 0.0) {
             double sym_pnl = 0.0;
             bool   have = false;
             {
-                std::lock_guard<std::mutex> lk(g_perf_mtx);
-                auto it = g_perf.find(symbol);
-                if (it != g_perf.end()) { sym_pnl = it->second.daily_pnl; have = true; }
+                std::lock_guard<std::mutex> lk(g_sym_risk_mtx);
+                auto it = g_sym_risk.find(symbol);
+                if (it != g_sym_risk.end()) { sym_pnl = it->second.daily_pnl; have = true; }
             }
             if (have && sym_pnl <= -g_cfg.per_symbol_loss_limit) {
                 static std::unordered_map<std::string,int64_t> s_sym_cap_log;
