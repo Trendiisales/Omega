@@ -97,6 +97,15 @@ param(
     # safe path (wipe-on-crash always still fires) is the DEFAULT when -Fast is off.
     [switch]$Fast,
 
+    # -Clean: force a from-scratch rebuild (wipe .obj + force-touch all sources).
+    # S-2026-06-20: deploys now default to INCREMENTAL (only changed TUs recompile;
+    # the 26 vendored TWS .obj never change -> never rebuilt). The old default
+    # recompiled all 33 TUs every deploy (~161s). Staleness is covered by the
+    # build-time git-hash regen + the post-deploy "hash confirmed in log" verify.
+    # Use -Clean on a CMakeLists/toolchain change or any doubt. A prior crashed
+    # build (unsuccessfulbuild stamp) STILL force-wipes regardless of -Clean.
+    [switch]$Clean,
+
     # -ColdStop: legacy deploy ordering -- stop the service BEFORE pull+build,
     # leaving Omega down for the entire UI+C++ build (6-10 min observed).
     # DEFAULT (off) is HOT-SWAP: the service keeps running on the previous
@@ -833,8 +842,26 @@ function Invoke-Restart {
 
     if (-not $SkipVerify -and (Test-Path "$OmegaDir\VERIFY_STARTUP.ps1")) {
         Write-Host ""
-        Write-Host "  Waiting 60s then running VERIFY_STARTUP..." -ForegroundColor Cyan
-        Start-Sleep -Seconds 60
+        # S-2026-06-20: poll for the boot git-hash marker (NEW hash) instead of flat 60s.
+        Write-Host "  Waiting for boot marker (git-hash, max 60s) then VERIFY_STARTUP..." -ForegroundColor Cyan
+        $latestLog    = "$OmegaDir\logs\latest.log"
+        $bootStart    = Get-Date
+        $bootDeadline = $bootStart.AddSeconds(60)
+        $bootPat      = "Git hash.*" + [regex]::Escape($displayHash)
+        $booted       = $false
+        while ((Get-Date) -lt $bootDeadline) {
+            Start-Sleep -Seconds 2
+            if (Test-Path $latestLog) {
+                try {
+                    if ((Get-Content $latestLog -Tail 60 -ErrorAction SilentlyContinue) -match $bootPat) { $booted = $true; break }
+                } catch { }
+            }
+        }
+        if ($booted) {
+            Write-Host ("  [OK] boot marker ({0}) seen in {1:N0}s" -f $displayHash, ((Get-Date) - $bootStart).TotalSeconds) -ForegroundColor Green
+        } else {
+            Write-Host "  [WARN] no boot marker in 60s -- running VERIFY_STARTUP anyway" -ForegroundColor Yellow
+        }
         & "$OmegaDir\VERIFY_STARTUP.ps1" -OmegaDir $OmegaDir
     }
     Write-Host ""
@@ -1075,8 +1102,8 @@ function Invoke-Deploy {
             } else {
                 Write-Host "  [PARTIAL] build/ not fully wiped; configure will surface any breakage." -ForegroundColor Yellow
             }
-        } elseif ($Fast) {
-            Write-Host "  [fast] incremental build -- preserving .obj/.pch (only changed TUs recompile)" -ForegroundColor Cyan
+        } elseif (-not $Clean) {
+            Write-Host "  [incremental] preserving .obj/.pch -- only changed TUs recompile (-Clean forces full)" -ForegroundColor Cyan
         } else {
             $artifacts = @(Get-ChildItem -Path $BuildDir -Include "*.obj","*.pch","*.pdb","*.iobj","*.ipdb" -Recurse -ErrorAction SilentlyContinue)
             $totalArtifacts = $artifacts.Count
@@ -1121,7 +1148,7 @@ function Invoke-Deploy {
     # whole OmegaDir (backtest/, phase1/, vendored headers) took ~12s > the 10s
     # guard below and tripped a false "[FATAL] Source touch failed" abort
     # (2026-06-03). src+include touches in <1s.
-    if (-not $Fast) {
+    if ($Clean) {
     $touchTime = Get-Date
     @("$OmegaDir\src", "$OmegaDir\include") | ForEach-Object {
         if (Test-Path $_) {
@@ -1146,7 +1173,7 @@ function Invoke-Deploy {
         Write-Host "  [WARN] Cannot verify touch -- main.cpp not found" -ForegroundColor Yellow
     }
     } else {
-        Write-Host "  [fast] skipping force-touch -- MSBuild dependency tracking decides rebuilds" -ForegroundColor Cyan
+        Write-Host "  [incremental] skipping force-touch -- MSBuild dependency tracking decides rebuilds (-Clean to force full)" -ForegroundColor Cyan
     }
     Write-Host ""
 
@@ -1531,8 +1558,27 @@ function Invoke-Deploy {
 
     if (-not $SkipVerify -and (Test-Path "$OmegaDir\VERIFY_STARTUP.ps1")) {
         Write-Host ""
-        Write-Host "  Waiting 60s then running VERIFY_STARTUP..." -ForegroundColor Cyan
-        Start-Sleep -Seconds 60
+        # S-2026-06-20: poll for the boot git-hash marker (the NEW hash, so a stale
+        # pre-rotation line can't match) instead of a flat 60s wait. ~8-10s typical.
+        Write-Host "  Waiting for boot marker (git-hash, max 60s) then VERIFY_STARTUP..." -ForegroundColor Cyan
+        $latestLog    = "$OmegaDir\logs\latest.log"
+        $bootStart    = Get-Date
+        $bootDeadline = $bootStart.AddSeconds(60)
+        $bootPat      = "Git hash.*" + [regex]::Escape($sourceHashShort)
+        $booted       = $false
+        while ((Get-Date) -lt $bootDeadline) {
+            Start-Sleep -Seconds 2
+            if (Test-Path $latestLog) {
+                try {
+                    if ((Get-Content $latestLog -Tail 60 -ErrorAction SilentlyContinue) -match $bootPat) { $booted = $true; break }
+                } catch { }
+            }
+        }
+        if ($booted) {
+            Write-Host ("  [OK] boot marker ({0}) seen in {1:N0}s" -f $sourceHashShort, ((Get-Date) - $bootStart).TotalSeconds) -ForegroundColor Green
+        } else {
+            Write-Host "  [WARN] no boot marker in 60s -- running VERIFY_STARTUP anyway" -ForegroundColor Yellow
+        }
         & "$OmegaDir\VERIFY_STARTUP.ps1" -OmegaDir $OmegaDir
     }
 
