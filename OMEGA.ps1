@@ -1207,6 +1207,19 @@ function Invoke-Deploy {
     Write-Host "[6/12] CMake configure + build..." -ForegroundColor Yellow
     Write-Host "  (streaming cmake output -- errors in red, compiling files in gray)" -ForegroundColor DarkCyan
 
+    # S-2026-06-19 STALE-BINARY FIX. Root cause of chronic "deploy hasn't changed":
+    # incremental builds (CMakeCache preserved) silently did NOT recompile main.cpp
+    # when only HEADERS changed (e.g. tick_fx.hpp), so a deploy could ship the OLD
+    # code + OLD baked git-hash while reporting OK. Force-regenerate the version
+    # header from current HEAD AND force main.cpp to recompile so the deployed
+    # binary's code + baked OMEGA_GIT_HASH ALWAYS equal the checked-out source.
+    Remove-Item -LiteralPath "$OmegaDir\include\version_generated.hpp" -Force -ErrorAction SilentlyContinue
+    $mainCppForce = "$OmegaDir\src\main.cpp"
+    if (Test-Path $mainCppForce) {
+        (Get-Item $mainCppForce).LastWriteTime = Get-Date
+        Write-Host "  [stale-fix] forced main.cpp recompile + version_generated.hpp regen (git-hash truth)" -ForegroundColor DarkGreen
+    }
+
     # Dot-source cmake-discover.ps1 -- defines $cmakeExe.
     $cmakeDiscover = Join-Path $PSScriptRoot "cmake-discover.ps1"
     if (-not (Test-Path $cmakeDiscover)) {
