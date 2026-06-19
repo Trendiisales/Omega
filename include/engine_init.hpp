@@ -3702,18 +3702,6 @@ static void init_engines(const std::string& cfg_path)
         //   any-config = PF1.05; maxDD 28-41R). The discretionary edge does NOT mechanize cross-regime.
         //   CULL CONFIRMED. Tools: /tmp/peachy_sweep (backtest/peachy_orb_nas.cpp), /tmp/nas_fullspan.csv.
         // 2026-06-08: publish open position so it shows on the live dashboard (was invisible).
-        g_open_positions.register_source("PeachyOrb", []() {
-            std::vector<omega::PositionSnapshot> v;
-            if (p.active) {
-                omega::PositionSnapshot s;
-                s.symbol = "NAS100"; s.engine = "PeachyOrb";
-                s.side = p.side > 0 ? "LONG" : "SHORT"; s.size = p.lot;
-                s.entry = p.entry; s.sl = p.sl; s.tp = p.tp;
-                s.entry_ts = p.entry_ts_ms / 1000LL;
-                v.push_back(s);
-            }
-            return v;
-        });
         printf("[OMEGA-INIT] PeachyOrb NAS100: shadow=true OR15(13:30-13:45 UTC) "
                "body0.6 retr0.3 maxStop1.0ATR EMA100 2.5R 1-shot long-only\n");
 
@@ -3961,18 +3949,6 @@ static void init_engines(const std::string& cfg_path)
         // MAEp90 $5781 = catastrophic adverse excursion -- falling-knife long that
         // catches dips that keep falling. n=4 thin but the structural flaw is clear
         // + it's the book's top bleeder. Disabled; needs an entry filter not an exit.
-        g_open_positions.register_source("GoldPanicBounce", []() {
-            std::vector<omega::PositionSnapshot> v;
-            if (p.active) {
-                omega::PositionSnapshot s;
-                s.symbol = "XAUUSD"; s.engine = "GoldPanicBounce";
-                s.side = "LONG"; s.size = p.size;
-                s.entry = p.entry; s.sl = p.init_stop; s.tp = 0.0;
-                s.entry_ts = p.entry_ts / 1000LL;
-                v.push_back(s);
-            }
-            return v;
-        });
         printf("[OMEGA-INIT] GoldPanicBounce XAUUSD: shadow=true drop>=8ATR(lb250) "
                "TURN-entry chandelier-trail(4.5xATR) NO-TP long-only\n");
 
@@ -4017,18 +3993,6 @@ static void init_engines(const std::string& cfg_path)
         // (PF 1.84 net +532pt both-halves+ 2.60/1.32 on the real -25% SPX bear)
         // -> two independent index bears now agree (NAS2022 1.60 + SPX2022 1.84),
         // GER40-artifact/single-feed caveat cleared. Still SHADOW.
-        g_open_positions.register_source("IndexBearShortSP", []() {
-            std::vector<omega::PositionSnapshot> v;
-            if (p.active) {
-                omega::PositionSnapshot s;
-                s.symbol = "US500.F"; s.engine = "IndexBearShort";
-                s.side = "SHORT"; s.size = p.size;
-                s.entry = p.entry; s.sl = p.stop; s.tp = p.tp;
-                s.entry_ts = p.entry_ts / 1000LL;
-                v.push_back(s);
-            }
-            return v;
-        });
         printf("[OMEGA-INIT] IndexBearShort US500: shadow=true sustained-bear-gate "
                "Donchian48-breakdown FIXED-2R-TP SHORT-only (SPX2022 cross-validated)\n");
 
@@ -4039,18 +4003,6 @@ static void init_engines(const std::string& cfg_path)
         // (2024 1.96 / 2025 1.84 / 2026 1.62), 3x-cost-robust (1.31), ret/DD 4.91.
         // A SECOND, complementary NAS edge (retrace+runner) vs PeachyOrb (retest).
         // Same engine class, NAS config: ORB 09:30-10:00 ET, retr0.382, runner.
-        g_open_positions.register_source("NasOrbRetrace", []() {
-            std::vector<omega::PositionSnapshot> v;
-            if (p.active) {
-                omega::PositionSnapshot s;
-                s.symbol = "NAS100"; s.engine = "NasOrbRetrace";
-                s.side = p.side > 0 ? "LONG" : "SHORT"; s.size = p.lot;
-                s.entry = p.entry; s.sl = p.sl; s.tp = 0.0;
-                s.entry_ts = p.entry_ts_ms / 1000LL;
-                v.push_back(s);
-            }
-            return v;
-        });
         printf("[OMEGA-INIT] NasOrbRetrace NAS100: shadow=true ORB30(09:30-10:00 ET) "
                "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided (2nd NAS edge)\n");
 
@@ -5098,36 +5050,6 @@ static void init_engines(const std::string& cfg_path)
             return out;
         });
     // 2026-05-18: GoldScalpPyramid position source.
-    g_open_positions.register_source("GoldScalpPyramid",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-
-            double current = p.base_entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) {
-                current = it->second;
-            }
-
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double entry = p.weighted_entry();
-            const double size  = p.total_size();
-            const double unrl  = (current - entry) * dir * size * mult;
-
-            omega::PositionSnapshot ps;
-            ps.symbol         = "XAUUSD";
-            ps.side           = p.is_long ? "LONG" : "SHORT";
-            ps.size           = size;
-            ps.entry          = entry;
-            ps.current        = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe            = p.mfe_peak * size * mult;
-            ps.mae            = p.mae * size * mult;
-            ps.engine         = "GoldScalpPyramid";
-            out.push_back(ps);
-            return out;
-        });
     // S38d 2026-05-26: FxScalpPyramid x5 position sources.
     //   Same shape as GoldScalpPyramid template above, parameterised over
     //   (engine_ref, symbol). Registered separately so each shows in the
@@ -5171,34 +5093,6 @@ static void init_engines(const std::string& cfg_path)
         };
     }
     // 2026-05-19 S110: GoldRegimeDaily position source.
-    g_open_positions.register_source("GoldRegimeDaily",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) {
-                current = it->second;
-            }
-
-            const double dir = p.is_long ? 1.0 : -1.0;
-            const double unrl = (current - p.entry) * dir * p.size * mult;
-
-            omega::PositionSnapshot ps;
-            ps.symbol         = "XAUUSD";
-            ps.side           = p.is_long ? "LONG" : "SHORT";
-            ps.size           = p.size;
-            ps.entry          = p.entry;
-            ps.current        = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe            = p.mfe_peak * p.size * mult;
-            ps.mae            = p.mae * p.size * mult;
-            ps.engine         = "GoldRegimeDaily";
-            out.push_back(ps);
-            return out;
-        });
     // ====================================================================
     // S65 2026-05-13 GUI position-source expansion
     // --------------------------------------------------------------------
@@ -5229,90 +5123,12 @@ static void init_engines(const std::string& cfg_path)
     // ====================================================================
 
     // PDHLReversion (XAU). pos has full {active, is_long, entry, size, mfe, mae}.
-    g_open_positions.register_source("PDHLReversion",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = p.mae * p.size * mult;
-            ps.engine = "PDHLReversion";
-            out.push_back(ps);
-            return out;
-        });
 
     // RSIReversal (XAU). pos has {active, is_long, entry, size, mfe}; no mae.
-    g_open_positions.register_source("RSIReversal",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = 0.0;  // RSIReversal pos struct has no .mae field
-            ps.engine = "RSIReversal";
-            out.push_back(ps);
-            return out;
-        });
 
     // MinimalH4Breakout (XAU). pos_ has {active, is_long, entry, size}; no mfe/mae.
-    g_open_positions.register_source("MinimalH4Gold",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            if (!p.active) return out;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = 0.0;  // not tracked on MinimalH4 pos_
-            ps.mae = 0.0;
-            ps.engine = "MinimalH4Gold";
-            out.push_back(ps);
-            return out;
-        });
 
     // MinimalH4US30Breakout (DJ30.F). Same shape as MinimalH4Gold.
-    g_open_positions.register_source("MinimalH4US30",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            if (!p.active) return out;
-            const double mult = tick_value_multiplier(std::string("DJ30.F"));
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("DJ30.F");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = "DJ30.F"; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = 0.0;
-            ps.mae = 0.0;
-            ps.engine = "MinimalH4US30";
-            out.push_back(ps);
-            return out;
-        });
 
     // XauThreeBar30m (XAU). pos has {active, is_long, entry_px, mfe_pts, mae_pts}.
     // NOTE: XauThreeBar30mPos has no `size` member -- the engine's lot size
@@ -5379,41 +5195,9 @@ static void init_engines(const std::string& cfg_path)
 
     // Ger40TurtleH4 (S-2026-06-02): pos_ has no direction field — derive from
     // sl vs entry (sl below entry => long). tp/sl/entry_ts available.
-    g_open_positions.register_source("Ger40TurtleH4",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const bool is_long = (p.sl < p.entry);
-            const double mult = tick_value_multiplier(std::string("GER40"));
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("GER40");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir = is_long ? 1.0 : -1.0;
-            omega::PositionSnapshot ps;
-            ps.symbol = "GER40"; ps.side = is_long ? "LONG" : "SHORT";
-            ps.size = p.lot; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = (current - p.entry) * dir * p.lot * mult;
-            ps.tp = p.tp; ps.sl = p.sl; ps.entry_ts = p.entry_ts_ms / 1000;
-            ps.engine = "Ger40TurtleH4";
-            out.push_back(ps);
-            return out;
-        });
 
     // Ger40KeltnerH1 (S-2026-06-02): long-only (short side tombstoned). No tp
     // field (trail-managed) → tp=0.
-    g_open_positions.register_source("Ger40KeltnerH1",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("GER40"));
-            double current = p.entry_px;
-            const auto it = g_last_tick_bid.find("GER40");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            omega::PositionSnapshot ps;
-            ps.symbol = "GER40"; ps.side = "LONG";
-            ps.tp = 0.0; ps.sl = p.sl_px; ps.entry_ts = p.entry_ts_ms / 1000;
-            ps.engine = "Ger40KeltnerH1";
-            out.push_back(ps);
-            return out;
-        });
 
     // SurvivorPortfolio (S-2026-06-02): 13-cell GER/XAU/USTEC/USDJPY book. One
     // source returns every open cell (cfg.tag as engine label).
@@ -5720,49 +5504,11 @@ static void init_engines(const std::string& cfg_path)
 
     // H4RegimeGold (XAUUSD). H4RegimeEngine is a struct (public by default)
     //   with pos_.{active, is_long, entry, sl, tp, size, mfe, h4_atr, ...}.
-    g_open_positions.register_source("H4RegimeGold",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(sym);
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find(sym);
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = 0.0;  // H4RegimeEngine.pos_ doesn't track mae
-            ps.engine = "H4RegimeGold";
-            out.push_back(ps);
-            return out;
-        });
 
     // MacroCrash (XAUUSD). MacroCrashEngine.pos is public struct Position
     //   with {active, is_long, entry, sl, full_size, size, mfe, mae, ...}.
     //   Reports the BASE position only (size, not full_size). Pyramid adds
     //   ride alongside but are tracked separately in pyramid_adds[].
-    g_open_positions.register_source("MacroCrash",
-        []() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            const double mult = tick_value_multiplier(std::string("XAUUSD"));
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find("XAUUSD");
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir   = p.is_long ? 1.0 : -1.0;
-            const double unrl  = (current - p.entry) * dir * p.size * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = "XAUUSD"; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = p.mae * p.size * mult;  // MacroCrash tracks mae
-            ps.engine = "MacroCrash";
-            out.push_back(ps);
-            return out;
-        });
 
     // XauTrendFollow x 3 (2h, 4h, D1). All three are multi-cell engines:
     //   pos is std::array<XauTf{2h,,D1}Pos, kXauTf{2h,,D1}NumCells>. Each
@@ -5820,14 +5566,6 @@ static void init_engines(const std::string& cfg_path)
     // the on_tick symbol+engine dedup). These 2026-06-04 direct-field duplicates
     // double-published into snapshot_all() (a double row on /api/v1/omega/positions).
     // Removed here; the earlier persist_save sources remain the single source.
-    g_open_positions.register_source("OvernightDrift", [&,_nas_px]() {
-        std::vector<omega::PositionSnapshot> out;
-        double cur=_nas_px(p.entry_px);
-        omega::PositionSnapshot ps; ps.engine="OvernightDrift"; ps.symbol="NAS100";
-        ps.side="LONG"; ps.size=p.size; ps.entry=p.entry_px; ps.current=cur;
-        ps.sl=0.0; ps.tp=0.0; ps.entry_ts=p.entry_ms/1000;
-        ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
-        out.push_back(ps); return out; });
 
     // AdaptiveHull live-display sources (long-only; current px per symbol)
     auto _hull_src = [](const char* label, omega::AdaptiveHullEngine* e, const char* sym) {
@@ -5841,14 +5579,6 @@ static void init_engines(const std::string& cfg_path)
             ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.stop_px; ps.tp=0.0;
             ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
             out.push_back(ps); return out; }; };
-    g_open_positions.register_source("SupertrendGold", []() {
-        std::vector<omega::PositionSnapshot> out;
-        double cur=p.entry_px; const auto it=g_last_tick_bid.find("XAUUSD");
-        if (it!=g_last_tick_bid.end() && it->second>0.0) cur=it->second;
-        omega::PositionSnapshot ps; ps.engine="SupertrendGold"; ps.symbol="XAUUSD"; ps.side="LONG";
-        ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.stop_px; ps.tp=0.0;
-        ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
-        out.push_back(ps); return out; });
 
     // S-2026-06-03: GoldSeasonal (XAUUSD Mon+Tue long). Long-only, no TP/SL
     //   (exits on UTC day-flip) → tp=sl=0.
@@ -6025,13 +5755,6 @@ static void init_engines(const std::string& cfg_path)
 
         // --- g_overnight_spx : OvernightDriftEngine, US500.F, long-only ---
         //   pos: {active, entry_px, size, entry_ms}; has_open_position(); no sl/tp.
-        g_open_positions.register_source("OvernightDriftSPX", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            double cur = _cur_px("US500.F", p.entry_px);
-            omega::PositionSnapshot ps; ps.engine="OvernightDriftSPX"; ps.symbol="US500.F"; ps.side="LONG";
-            ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=0.0; ps.tp=0.0;
-            ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
-            out.push_back(ps); return out; });
 
         // --- FxTurtleH4Engine x2 (EURUSD, GBPUSD) ---
         //   pos_: {active, is_long, entry, sl, tp, lot, entry_ts_ms}; has_open_position().
@@ -6062,24 +5785,10 @@ static void init_engines(const std::string& cfg_path)
 
         // --- g_minimal_h4_ger40 : MinimalH4GER40Breakout, GER40 ---
         //   pos_: {active, is_long, entry, sl, tp, size, entry_ts_ms}; has_open_position().
-        g_open_positions.register_source("MinimalH4GER40", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            double cur=_cur_px("GER40", p.entry); const double dir=p.is_long?1.0:-1.0;
-            omega::PositionSnapshot ps; ps.engine="MinimalH4GER40"; ps.symbol="GER40"; ps.side=p.is_long?"LONG":"SHORT";
-            ps.size=p.size; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
-            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.size*mult;
-            out.push_back(ps); return out; });
 
         // --- g_eur_gbp_pairs : EurGbpPairsEngine, EURGBP spread pair ---
         //   pos_: {active, long_spread, eur_entry, gbp_entry, entry_spread, lot,
         //   entry_ts_ms}. Display the EUR leg entry; side from long_spread; no sl/tp.
-        g_open_positions.register_source("EurGbpPairs", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            double cur=_cur_px("EURGBP", p.eur_entry);
-            omega::PositionSnapshot ps; ps.engine="EurGbpPairs"; ps.symbol="EURGBP";
-            ps.side=p.long_spread?"LONG":"SHORT"; ps.size=p.lot; ps.entry=p.eur_entry; ps.current=cur;
-            ps.sl=0.0; ps.tp=0.0; ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=0.0;
-            out.push_back(ps); return out; });
 
         // --- g_fx_xrev_eurgbp : FxCrossRevEngine, EURGBP (pos_ private; read via
         //   S-2026-06-09 accessors pos_is_long/pos_entry/pos_lot/pos_entry_ts(ms)) ---
@@ -6096,13 +5805,6 @@ static void init_engines(const std::string& cfg_path)
 
         // --- g_ger40_london_brk : Ger40LondonBreakoutEngine, GER40 (short-only) ---
         //   pos: {active, is_long, entry_px, tp_px, sl_px, size, entry_ms, mfe, mae}.
-        g_open_positions.register_source("Ger40LondonBrk", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            double cur=_cur_px("GER40", p.entry_px); const double dir=p.is_long?1.0:-1.0;
-            omega::PositionSnapshot ps; ps.engine="Ger40LondonBrk"; ps.symbol="GER40"; ps.side=p.is_long?"LONG":"SHORT";
-            ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
-            ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*dir*p.size*mult;
-            out.push_back(ps); return out; });
 
         // --- g_gold_volbrk_m30 : GoldVolBreakoutM30Engine, XAUUSD (long-only) ---
         //   pos: {active, entry_px, sl_px, entry_ts_ms}; size from eng.lot; any_open(); no tp.
@@ -6131,13 +5833,6 @@ static void init_engines(const std::string& cfg_path)
 
         // --- g_orb_estx50_v2 : OrbBreakoutEngine, ESTX50 ---
         //   pos_: {active, side(+1/-1 int), entry, sl, tp, lot, entry_ts_ms}; has_open_position().
-        g_open_positions.register_source("OrbEstx50", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            double cur=_cur_px("ESTX50", p.entry); const double dir=(p.side>0)?1.0:-1.0;
-            omega::PositionSnapshot ps; ps.engine="OrbEstx50"; ps.symbol="ESTX50"; ps.side=(p.side>0)?"LONG":"SHORT";
-            ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
-            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
-            out.push_back(ps); return out; });
 
         // --- g_us30_ensemble : Us30EnsembleEngine, DJ30.F (multi-cell array pos[]) ---
         //   pos[]: {active, is_long, entry_px, sl_px, tp_px, entry_ts_ms, mfe_pts}; size from eng.lot.
@@ -6147,35 +5842,10 @@ static void init_engines(const std::string& cfg_path)
 
         // --- g_xau_breakbounce : BreakBounceEngine, XAUUSD ---
         //   pos: {active, is_long, entry_px, stop_px, tp_px?, size, entry_ms}; has_open_position().
-        g_open_positions.register_source("BreakBounce", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            double cur=_cur_px("XAUUSD", p.entry_px); const double dir=p.is_long?1.0:-1.0;
-            omega::PositionSnapshot ps; ps.engine="BreakBounce"; ps.symbol="XAUUSD"; ps.side=p.is_long?"LONG":"SHORT";
-            ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=p.tp_px;
-            ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*dir*p.size*mult;
-            out.push_back(ps); return out; });
 
         // --- XAU D1 engines x3 (DojiRej, OutsideBar, Turtle) ---
         //   pos_: {active, [is_long], entry, sl, tp, entry_ts_ms}; lot from p.lot; has_open_position().
         //   DojiRej + OutsideBar fire long only at entry; Turtle is long-only.
-        g_open_positions.register_source("XauDojiRejD1", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            omega::PositionSnapshot ps; ps.engine="XauDojiRejD1"; ps.symbol="XAUUSD"; ps.side="LONG";
-            ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
-            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*sz*mult;
-            out.push_back(ps); return out; });
-        g_open_positions.register_source("XauOutsideBarD1", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            omega::PositionSnapshot ps; ps.engine="XauOutsideBarD1"; ps.symbol="XAUUSD"; ps.side="LONG";
-            ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
-            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*sz*mult;
-            out.push_back(ps); return out; });
-        g_open_positions.register_source("XauTurtleD1", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            omega::PositionSnapshot ps; ps.engine="XauTurtleD1"; ps.symbol="XAUUSD"; ps.side=p.is_long?"LONG":"SHORT";
-            ps.size=sz; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
-            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*sz*mult;
-            out.push_back(ps); return out; });
 
         // --- SessionMomentumEngine x2 (XAU NYpm + overnight), long-only ---
         //   pos: {active, entry_px, sl_px(0=none), entry_ts_ms}; size from eng.lot; any_open(); no tp.

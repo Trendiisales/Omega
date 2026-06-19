@@ -1034,8 +1034,7 @@ static inline bool index_any_open() noexcept {
     return  g_iflow_sp.has_open_position()      ||
             g_iflow_nq.has_open_position()      ||
             g_iflow_nas.has_open_position()     ||
-            g_iflow_us30.has_open_position()    ||
-            g_minimal_h4_us30.has_open_position();
+            g_iflow_us30.has_open_position();
 }
 
 // (g_pullback_cont and g_pullback_prem removed S49 X5 — engine culled, see commit message of branch s49-x5-pullback-cull)
