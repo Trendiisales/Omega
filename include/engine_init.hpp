@@ -3925,8 +3925,9 @@ static void init_engines(const std::string& cfg_path)
             bc.lb           = 6;       // ignition lookback (6*5m = 30min)
             bc.maxhold      = 96;      // 96*5m = 8h backstop (losers only; in-profit rides past it)
             bc.px_min       = 10.0;    // not a penny stock
-            bc.market_cap_above_musd = 2000.0;  // S-2026-06-19: REAL $2B cap floor (millions unit;
-                                                // micro-caps = slippage death). px_min alone didn't enforce it.
+            bc.market_cap_above_musd = 100.0;   // S-2026-06-20 (operator): $2B->$100M. $2B scanner
+                                                // universe too tight -> near-zero rows -> zero fires.
+                                                // $100M + px_min>=$10 still bars true micro-caps. millions unit.
             bc.regime_gate  = true;    // SPY price>SMA200 AND SMA200 rising
             bc.notional_usd = 1000.0;
             bc.paper_only   = true;    // SHADOW: log trades, route NO live orders

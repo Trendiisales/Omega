@@ -58,7 +58,8 @@ struct Config {
     // MILLIONS of USD -- 2000 = $2B (50 rows); the raw 2e9 = the documented 0-rows
     // bug. Big-cap momo is the validated edge (small-cap = slippage death), so this
     // tightens risk WITHOUT touching the edge. 0 = disable.
-    double market_cap_above_musd = 2000.0;  // $2B floor, in MILLIONS (IBKR unit)
+    double market_cap_above_musd = 100.0;   // $100M floor, in MILLIONS (IBKR unit); S-2026-06-20
+                                             // lowered from 2000 ($2B too tight -> near-zero scan rows)
     int    lb               = 6;      // ignition lookback (6*5m = 30min)
     int    maxhold          = 48;     // 48*5m = 4h backstop
     bool   regime_gate      = true;   // SPY price>SMA200 AND SMA200 rising
