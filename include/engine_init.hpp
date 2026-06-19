@@ -4127,16 +4127,32 @@ static void init_engines(const std::string& cfg_path)
         // shrink the $ so one bad gap can't erase weeks of the gold book.
         printf("[OMEGA-INIT] OvernightDrift US500: shadow=true long@close->flat@open if close>SMA50\n");
 
-        // ConnorsRSI2 — 3rd index edge (daily mean-reversion dip-buy). Buy@close
-        // if close>SMA200 AND RSI(2)<10, exit next close. Backtest: NDX cash
-        // Sharpe 2.46, IBKR CFD 2.33, NQ future 2.71 (SMA50), all both-halves+,
-        // cost-incl. Orthogonal to FVGcont/Overnight. SMA filter = bear-safe.
-        // 2026-06-04: DROPPED from the index allocation. Combination backtest
-        // (backtest/combine.py): the index book = FVGcont + OvernightDrift
-        // (vol-parity Sharpe 2.00, maxDD 5%, corr ~0.05). Adding Connors does
-        // NOTHING (All-3 Sharpe 1.99 ~= pair 2.00) -- too weak/low-freq (Sharpe
-        // ~0.75, fat-tail-fragile). Disabled; re-enable only with new evidence.
-        printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=true dip-buy close>SMA200 & RSI2<10, exit next close\n");
+        // ConnorsRSI2 NAS100 — daily mean-reversion dip-buy, ENHANCED close>SMA5 exit.
+        // S-2026-06-19 WIRED + RE-ENABLED (shadow). Was class-only/never instantiated;
+        // shelved 2026-06-04 ONLY for portfolio redundancy with FVGcont+OvernightDrift —
+        // BOTH since DEAD (FvgCont = bar-replay artifact; OvernightDrift tombstoned), so
+        // the index book now has ZERO mean-reversion and the redundancy reason is void.
+        // NEW EVIDENCE (the engine_init "re-enable only with new evidence" bar): faithful
+        // 10yr-daily revalidation (connors_opt.cpp, enhanced exit, cost-incl) — NDX PF1.90
+        // both-halves+, 3x(8pt)-cost-robust, bear-safe (SMA200 sat out 2022: 4 trades -454).
+        // The fixed-1-day-hold inline "Sharpe 2.46" was optimistic; the enhanced close>SMA5
+        // exit is what makes it robust (PF1.33->1.90). GER40 also revives (PF1.39, 2022 +290)
+        // -> v2 (needs session param); scale-in -> v2 (PF2.27 but 2x size + dip risk).
+        g_connors_nas.symbol      = "NAS100";
+        g_connors_nas.engine_name = "ConnorsRSI2";
+        g_connors_nas.TREND_SMA   = 200;
+        g_connors_nas.RSI_IN      = 10.0;
+        g_connors_nas.SHORT_SMA   = 5;      // enhanced exit: close back above SMA5 = MR complete
+        g_connors_nas.MAXHOLD     = 10;     // safety cap (days)
+        g_connors_nas.lot         = 0.3;    // dollar-normalized shadow size (index convention)
+        g_connors_nas.shadow_mode = true;
+        g_connors_nas.enabled     = true;   // SHADOW
+        g_connors_nas.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+        g_connors_nas.init();
+        g_connors_nas.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
+        g_engine_heartbeat.register_engine("ConnorsRSI2", g_connors_nas.enabled, 3600, 0, 24);
+        printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=%d enabled=%d dip-buy close>SMA200 & RSI2<10, exit close>SMA5/maxhold10\n",
+               (int)g_connors_nas.shadow_mode, (int)g_connors_nas.enabled);
         fflush(stdout);
     }
 

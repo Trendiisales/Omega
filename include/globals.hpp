@@ -125,6 +125,11 @@ static omega::gold::GoldEngineStack g_gold_stack;
 #include "FvgContinuationEngine.hpp"
 #include "OvernightDriftEngine.hpp"
 #include "ConnorsRSI2Engine.hpp"
+// S-2026-06-19: ConnorsRSI2 NAS100 daily mean-reversion — WIRED + enabled (shadow).
+// Faithful 10yr-daily revalidation (enhanced close>SMA5 exit): NDX PF1.90 both-halves+,
+// 3x(8pt)-cost-robust, bear-safe (SMA200 sits out 2022). Was class-only/never instantiated;
+// shelved 2026-06-04 for portfolio redundancy w/ FVGcont+OvernightDrift, both since DEAD.
+static omega::ConnorsRSI2Engine g_connors_nas;
 #include "AdaptiveHullEngine.hpp"
 #include "SupertrendGoldEngine.hpp"
 #include "PeachyOrbEngine.hpp"

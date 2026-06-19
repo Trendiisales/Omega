@@ -33,7 +33,20 @@ public:
     int    TREND_SMA   = 200;    // uptrend filter (cash: 200; future-style: 50)
     int    RSI_LEN     = 2;
     double RSI_IN      = 10.0;   // canonical Connors deep-oversold threshold
-    int    HOLD_DAYS   = 1;      // exit at the close HOLD_DAYS later
+    int    HOLD_DAYS   = 1;      // fallback exit (used only if SHORT_SMA<=0)
+    // S-2026-06-19 ENHANCED EXIT (faithful 10yr-daily sweep, connors_opt.cpp): exit when
+    // today's close climbs back above SMA(SHORT_SMA) — the mean-reversion has completed —
+    // OR a MAXHOLD safety cap. This beats the fixed 1-day hold massively: NDX PF 1.33->1.90
+    // both-halves+ 3x(8pt)-robust; also REVIVES GER40 (PF1.39 both+, 2022 +290). SHORT_SMA<=0
+    // reverts to the legacy HOLD_DAYS exit.
+    int    SHORT_SMA   = 5;      // exit when close > SMA(SHORT_SMA)
+    int    MAXHOLD     = 10;     // safety cap on hold (days)
+    // ADVERSE-PROTECTION: (S-2026-06-19, backtested verdict) NONE needed / by-design exempt.
+    // Long-only daily MEAN-REVERSION gated by close>SMA(TREND_SMA) — the trend filter IS the
+    // adverse protection (no dip-buying below the 200d SMA = sits out bears; faithful 2022:
+    // 4 trades −454, SMA200 sat out the bear). A cold loss-cut on a mean-reverter would cut
+    // exactly the dip it is paid to buy (the rejected-protection class). Exit is the SMA(SHORT)
+    // bounce + MAXHOLD cap. Verdict = "trend-filter-gated, no cold cut — backtested".
     double lot         = 1.0;
     bool   enabled     = true;
     bool   shadow_mode = true;
@@ -86,10 +99,20 @@ public:
             m_in_session=false;
             if (!m_have_day || m_day_close<=0) return;
             const double close=m_day_close;
-            // 1) manage open: exit at the close HOLD_DAYS later
-            if (pos.active) { pos.held += 1; if (pos.held >= HOLD_DAYS) _close(bid>0?bid:close, now_ms, "RSI2_EXIT"); }
-            // 2) push today's close to the series
+            // 1) push today's close FIRST so the SMA(SHORT_SMA) exit sees it
             m_closes.push_back(close); if ((int)m_closes.size()>TREND_SMA+5) m_closes.pop_front();
+            // 2) manage open: ENHANCED exit — close back above SMA(SHORT_SMA) (MR complete)
+            //    OR MAXHOLD cap. SHORT_SMA<=0 -> legacy HOLD_DAYS exit.
+            if (pos.active) {
+                pos.held += 1;
+                bool do_exit;
+                if (SHORT_SMA > 0) {
+                    const int N=(int)m_closes.size(); const int kk = N<SHORT_SMA?N:SHORT_SMA;
+                    double ss=0; for (int i=N-kk;i<N;++i) ss+=m_closes[i]; ss/=kk;
+                    do_exit = (close > ss) || (pos.held >= MAXHOLD);
+                } else do_exit = (pos.held >= HOLD_DAYS);
+                if (do_exit) _close(bid>0?bid:close, now_ms, "RSI2_EXIT");
+            }
             // 3) entry: uptrend + deep-oversold + flat
             if (!pos.active && (int)m_closes.size()>=TREND_SMA && !m_done_today) {
                 const int N=(int)m_closes.size();

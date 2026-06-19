@@ -845,6 +845,10 @@ static void on_tick_nas100(
     g_engine_heartbeat.pulse("IMacroNAS");
     g_engine_heartbeat.pulse("AmrNas100");           // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("OrbNas100");           // 2026-05-26 (Stage 4)
+    // S-2026-06-19: ConnorsRSI2 NAS100 daily mean-reversion (shadow). Self-detects the
+    // cash-close transition (ET RTH) internally; just feed every NAS100 tick.
+    g_engine_heartbeat.pulse("ConnorsRSI2");
+    g_connors_nas.on_tick(bid, ask, static_cast<int64_t>(std::time(nullptr)) * 1000);
 
     // 2026-06-12: feed the market-bear PROXY (NAS = bellwether). IndexRiskGate uses
     //   it as a price-based FALLBACK when the macro VIX/credit/dollar feed is dead,
