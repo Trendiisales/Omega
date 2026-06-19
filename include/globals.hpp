@@ -541,6 +541,11 @@ static omega::SessionMomentumEngine g_xau_sess_nypm;
 //   trades/month combined) but biggest per-trade edges in the project ($36-60).
 #include "XauTrendFollowD1Engine.hpp"
 static omega::XauTrendFollowD1Engine g_xau_tf_d1;
+// S-2026-06-19: TrendRider bank-and-reload companions (shadow). Ride the 4h+D1
+// hosts' open cells, bank +N*ATR + reload. Validated D1+4h only (2h/1h not wired).
+#include "XauTrendRiderEngine.hpp"
+static omega::XauTrendRiderEngine g_rider_4h;
+static omega::XauTrendRiderEngine g_rider_d1;
 
 // 2026-05-20: XauTsmomFastD1Engine -- short-lookback D1 momentum (lb=5, sl=1.0,
 //   tp=5.0, hold=20). Distinct from XauTrendFollowD1Engine's lb=20 cell.

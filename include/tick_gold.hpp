@@ -1699,6 +1699,9 @@ static void on_tick_gold(
     // ER0.20, Keltner, ADX_Mom). S33d shipped 2026-05-11; extended to 5 cells
     // in S33e. Single-position per cell, 5 max concurrent. Shadow-default.
     g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // S-2026-06-19: TrendRider companion -- banks +N*ATR per host cell + reloads
+    // while the 4h cell stays open (shadow). Validated D1+4h only.
+    g_rider_4h.on_host(g_xau_tf_4h.pos, bid, ask, now_ms_g, bracket_on_close);
     // S118 2026-05-19: H1 long-only ensemble tick management.
     g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // S42 2026-05-31: SessionMomentum x2 -- clock-based session-window long.
@@ -1709,6 +1712,8 @@ static void on_tick_gold(
     // built internally from H4 stream. Single-position per cell, 3 max
     // concurrent. Shadow-default.
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // S-2026-06-19: TrendRider companion on the D1 host (shadow).
+    g_rider_d1.on_host(g_xau_tf_d1.pos, bid, ask, now_ms_g, bracket_on_close);
     // XauTsmomFastD1Engine tick management (SL/TP per tick).
     // XauTurtleD1Engine + XauStopRunD1Engine tick management.
     // 2026-05-20 batch: PullbackContH4 / NbmD1 / EmaCrossH4 tick mgmt

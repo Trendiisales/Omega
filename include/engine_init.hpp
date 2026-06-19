@@ -1426,6 +1426,19 @@ static void init_engines(const std::string& cfg_path)
                (int)g_xau_tf_d1.shadow_mode, (int)g_xau_tf_d1.enabled, g_xau_tf_d1.lot);
         fflush(stdout);
 
+        // S-2026-06-19: TrendRider bank-and-reload companions on the 4h + D1 hosts.
+        // SHADOW. Banks +N*ATR per host cell + reloads while the cell stays open
+        // (validated D1+4h both-halves both regimes; 2h marginal/1h hurts -> not wired).
+        g_rider_4h.enabled = true; g_rider_4h.shadow_mode = true;
+        g_rider_4h.N = 2.5; g_rider_4h.lot = 0.01; g_rider_4h.tag = "XauTrendRider4h";
+        g_rider_4h.init(omega::kXauTfNumCells);
+        g_rider_d1.enabled = true; g_rider_d1.shadow_mode = true;
+        g_rider_d1.N = 2.5; g_rider_d1.lot = 0.01; g_rider_d1.tag = "XauTrendRiderD1";
+        g_rider_d1.init(omega::kXauTfD1NumCells);
+        printf("[OMEGA-INIT] TrendRider companions: 4h(cells=%d) + D1(cells=%d) N=2.5 shadow=1\n",
+               omega::kXauTfNumCells, omega::kXauTfD1NumCells);
+        fflush(stdout);
+
         // ── Gold WaveTrend momentum-confirm gate (S-2026-06-03) ──────────────
         // Gold-validated X1 filter now gates XauTrendFollow 1h/4h/D1 entries:
         // skip a trend entry unless a confirming WaveTrend momentum tag fired in
