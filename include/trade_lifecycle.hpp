@@ -423,6 +423,14 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         while (!g_hourly_pnl_records.empty() && g_hourly_pnl_records.front().ts_sec < cutoff)
             g_hourly_pnl_records.pop_front();
     }
+    // S-2026-06-19 Phase 1: feed the parallel 7-day buffer for the weekly halt.
+    {
+        std::lock_guard<std::mutex> lk(g_weekly_pnl_mtx);
+        g_weekly_pnl_records.push_back({nowSec(), tr.net_pnl});
+        const int64_t cutoff = nowSec() - WEEKLY_WINDOW_SEC;
+        while (!g_weekly_pnl_records.empty() && g_weekly_pnl_records.front().ts_sec < cutoff)
+            g_weekly_pnl_records.pop_front();
+    }
 
     // ?? Time-of-day gate -- record outcome per 30-min bucket ??????????????????
     g_edges.tod.record(tr.symbol, tr.engine, tr.entryTs, tr.net_pnl);
@@ -1250,6 +1258,71 @@ static bool symbol_gate(
                     s_last_hourly_log = nowSec();
                     printf("[OMEGA-RISK] 2h rolling loss $%.2f exceeds limit $%.0f -- throttling entries\n",
                            rolling_pnl, g_cfg.hourly_loss_limit);
+                }
+                return false;
+            }
+        }
+        // ?? Account daily HARD halt -- 3R (S-2026-06-19 Phase 1) ????????????
+        // The flat-$ ladder had NO absolute daily floor. The watermark above
+        // only fires when peak_pnl > 0 (a day that opens straight into losses
+        // never builds a positive peak -> watermark silent), so a red-from-open
+        // day could bleed unbounded until per-engine daily_capped tripped one
+        // engine at a time. This is the hard portfolio halt the handoff wants:
+        // once realised daily P&L breaches -daily_loss_limit (3R), NO symbol
+        // takes a new entry for the rest of the day.
+        if (g_cfg.daily_loss_limit > 0.0) {
+            const double daily_pnl = g_omegaLedger.dailyPnl();
+            if (daily_pnl <= -g_cfg.daily_loss_limit) {
+                static int64_t s_last_daily_log = 0;
+                if (nowSec() - s_last_daily_log > 60) {
+                    s_last_daily_log = nowSec();
+                    printf("[OMEGA-RISK] Daily HARD halt: P&L=$%.2f <= -$%.0f (3R) -- no new entries today\n",
+                           daily_pnl, g_cfg.daily_loss_limit);
+                }
+                return false;
+            }
+        }
+        // ?? Weekly loss halt -- 7R (S-2026-06-19 Phase 1) ??????????????????
+        // Rolling 7-day net loss cap. Fed by g_weekly_pnl_records (parallel to
+        // the hourly buffer; OmegaTradeLedger is core and has no weeklyPnl()).
+        // Caps a string of within-limit losing days before they compound.
+        if (g_cfg.weekly_loss_limit > 0.0) {
+            double weekly_pnl = 0.0;
+            {
+                std::lock_guard<std::mutex> lk(g_weekly_pnl_mtx);
+                const int64_t cutoff = nowSec() - WEEKLY_WINDOW_SEC;
+                for (const auto& r : g_weekly_pnl_records)
+                    if (r.ts_sec >= cutoff) weekly_pnl += r.net_pnl;
+            }
+            if (weekly_pnl <= -g_cfg.weekly_loss_limit) {
+                static int64_t s_last_weekly_log = 0;
+                if (nowSec() - s_last_weekly_log > 300) {
+                    s_last_weekly_log = nowSec();
+                    printf("[OMEGA-RISK] Weekly halt: 7d P&L=$%.2f <= -$%.0f (7R) -- no new entries\n",
+                           weekly_pnl, g_cfg.weekly_loss_limit);
+                }
+                return false;
+            }
+        }
+        // ?? Per-symbol daily cap -- 2R (S-2026-06-19 Phase 1) ??????????????
+        // A single symbol's daily net loss is capped at per_symbol_loss_limit
+        // (2R) so one instrument can't eat the whole 3R daily budget alone.
+        // Reads g_perf[symbol].daily_pnl (negative = loss), same source the
+        // sizing throttle uses (on_tick.hpp:1411).
+        if (g_cfg.per_symbol_loss_limit > 0.0) {
+            double sym_pnl = 0.0;
+            bool   have = false;
+            {
+                std::lock_guard<std::mutex> lk(g_perf_mtx);
+                auto it = g_perf.find(symbol);
+                if (it != g_perf.end()) { sym_pnl = it->second.daily_pnl; have = true; }
+            }
+            if (have && sym_pnl <= -g_cfg.per_symbol_loss_limit) {
+                static std::unordered_map<std::string,int64_t> s_sym_cap_log;
+                if (nowSec() - s_sym_cap_log[symbol] > 120) {
+                    s_sym_cap_log[symbol] = nowSec();
+                    printf("[OMEGA-RISK] %s daily cap: P&L=$%.2f <= -$%.0f (2R) -- no new entries on this symbol\n",
+                           symbol.c_str(), sym_pnl, g_cfg.per_symbol_loss_limit);
                 }
                 return false;
             }

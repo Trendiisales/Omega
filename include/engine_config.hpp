@@ -312,6 +312,8 @@ static void load_config(const std::string& path) {
             if (k=="max_portfolio_sl_risk_usd") g_cfg.max_portfolio_sl_risk_usd = safe_stod(v, k);
             if (k=="session_watermark_pct")  g_cfg.session_watermark_pct  = safe_stod(v, k);
             if (k=="hourly_loss_limit")    g_cfg.hourly_loss_limit   = safe_stod(v, k);
+            if (k=="weekly_loss_limit")    g_cfg.weekly_loss_limit   = safe_stod(v, k);       // S-2026-06-19 Phase 1 (7R)
+            if (k=="per_symbol_loss_limit") g_cfg.per_symbol_loss_limit = safe_stod(v, k);    // S-2026-06-19 Phase 1 (2R)
             if (k=="max_consec_losses")    g_cfg.max_consec_losses = safe_stoi(v, k);
             if (k=="loss_pause_sec")       g_cfg.loss_pause_sec    = safe_stoi(v, k);
             if (k=="independent_symbols")  g_cfg.independent_symbols = (v == "true" || v == "1");

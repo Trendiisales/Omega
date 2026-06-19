@@ -26,6 +26,8 @@ static void sanitize_config() noexcept {
     g_cfg.max_portfolio_sl_risk_usd  = clampd(g_cfg.max_portfolio_sl_risk_usd,  0.0, 100000.0, 0.0);
     g_cfg.session_watermark_pct  = clampd(g_cfg.session_watermark_pct,  0.0, 1.0,        0.0);
     g_cfg.hourly_loss_limit      = clampd(g_cfg.hourly_loss_limit,      0.0, 1000000.0, 0.0);
+    g_cfg.weekly_loss_limit      = clampd(g_cfg.weekly_loss_limit,      0.0, 1000000.0, 0.0);  // S-2026-06-19 Phase 1
+    g_cfg.per_symbol_loss_limit  = clampd(g_cfg.per_symbol_loss_limit,  0.0, 1000000.0, 0.0);  // S-2026-06-19 Phase 1
     g_cfg.momentum_thresh_pct = clampd(g_cfg.momentum_thresh_pct, 0.0, 10.0, 0.05);
     g_cfg.min_breakout_pct    = clampd(g_cfg.min_breakout_pct, 0.0, 10.0, 0.25);
     g_cfg.ustec_pilot_size    = clampd(g_cfg.ustec_pilot_size, 0.05, 2.0, 0.35);

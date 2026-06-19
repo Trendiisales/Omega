@@ -46,6 +46,16 @@ struct HourlyPnlRecord { int64_t ts_sec; double net_pnl; };
 static std::mutex                    g_hourly_pnl_mtx;
 static std::deque<HourlyPnlRecord>   g_hourly_pnl_records;
 static constexpr int64_t HOURLY_WINDOW_SEC = 7200; // 2-hour rolling window
+
+// ?? Weekly P&L ring buffer -- rolling 7-day loss halt (S-2026-06-19 Phase 1) ??
+// Mirrors the hourly buffer (HourlyPnlRecord reused) but with a 7-day window.
+// Separate deque because the hourly buffer is pruned to 2h and cannot serve a
+// weekly sum. Fed alongside the hourly buffer on every closed trade. Summed in
+// symbol_gate to enforce weekly_loss_limit (7R) -- the account-level weekly halt
+// the flat-$ ladder lacked. Kept out of OmegaTradeLedger (core, no weeklyPnl()).
+static std::mutex                    g_weekly_pnl_mtx;
+static std::deque<HourlyPnlRecord>   g_weekly_pnl_records;
+static constexpr int64_t WEEKLY_WINDOW_SEC = 604800; // 7-day rolling window
 static std::unordered_map<std::string, ShadowQualityState> g_shadow_quality;
 
 // Latency governor -- blocks trades when FIX RTT exceeds configured hard cap
