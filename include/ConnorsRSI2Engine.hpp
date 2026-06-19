@@ -56,6 +56,17 @@ public:
     int    SESS_CLOSE_HM  = 1600;
     int    TZ_STD_OFF_MIN = -300;   // ET
     bool   TZ_EU_DST      = false;  // US rules
+    // S-2026-06-19 v3 ENTRY_MODE — the oversold-dip-in-uptrend FAMILY (mr_hunt.cpp, 10yr daily,
+    // all 8pt-cost-robust both-halves+). 0=RSI2(<RSI_IN) 1=IBS(<IBS_IN) 2=STREAK(>=STREAK_N down
+    // closes) 3=PCTB(%b<PCTB_IN) 4=RSI3(<RSI3_IN) 5=DOUBLE(IBS<DBL_IBS & RSI2<DBL_RSI).
+    // NDX: %b PF5.46 / streak 3.53 (2022+) / double 3.14 / IBS 3.64; SPX: streak 2.23 / double 2.19.
+    // Family is CORRELATED (overlapping dip days) — ship the distinct ones (streak+double+IBS).
+    int    ENTRY_MODE  = 0;
+    double IBS_IN      = 0.10;
+    int    STREAK_N    = 3;
+    double PCTB_IN     = 0.0;
+    int    RSI3_LEN    = 3;   double RSI3_IN = 15.0;
+    double DBL_IBS     = 0.20; double DBL_RSI = 15.0;
     // ADVERSE-PROTECTION: (S-2026-06-19, backtested verdict) NONE needed / by-design exempt.
     // Long-only daily MEAN-REVERSION gated by close>SMA(TREND_SMA) — the trend filter IS the
     // adverse protection (no dip-buying below the 200d SMA = sits out bears; faithful 2022:
@@ -86,7 +97,7 @@ public:
     double pos_lot()   const { return pos.size; }
     int64_t pos_entry_ts_ms() const { return pos.entry_ms; }
 
-    void init() { m_closes.clear(); m_in_session=false; m_done_today=false; pos=Position{}; }
+    void init() { m_closes.clear(); m_highs.clear(); m_lows.clear(); m_in_session=false; m_done_today=false; pos=Position{}; }
 
     size_t seed_from_d1_csv(const std::string& path) {
         std::ifstream f(path);
@@ -95,7 +106,8 @@ public:
         size_t n=0; long long ts; double o,h,l,c;
         while (std::getline(f, line))
             if (std::sscanf(line.c_str(), "%lld,%lf,%lf,%lf,%lf", &ts,&o,&h,&l,&c)==5 && c>0) {
-                m_closes.push_back(c); if ((int)m_closes.size()>TREND_SMA+5) m_closes.pop_front(); ++n; }
+                m_closes.push_back(c); m_highs.push_back(h>0?h:c); m_lows.push_back(l>0?l:c);
+                if ((int)m_closes.size()>TREND_SMA+5) { m_closes.pop_front(); m_highs.pop_front(); m_lows.pop_front(); } ++n; }
         printf("[SEED] %s (%s): %zu daily closes -- ready=%d\n", engine_name.c_str(), symbol.c_str(),
                n, (int)((int)m_closes.size()>=TREND_SMA)); fflush(stdout); return n;
     }
@@ -107,15 +119,20 @@ public:
         const int et=_local_hm(now_ms/1000, TZ_STD_OFF_MIN, TZ_EU_DST);
         const bool in_rth=(et>=SESS_OPEN_HM && et<SESS_CLOSE_HM);
 
-        if (in_rth) { m_day_close=mid; m_have_day=true; if(!m_in_session){m_in_session=true; m_done_today=false;} }
+        if (in_rth) {
+            m_day_close=mid; m_have_day=true;
+            if(!m_in_session){ m_in_session=true; m_done_today=false; m_day_high=mid; m_day_low=mid; }
+            else { if(mid>m_day_high)m_day_high=mid; if(mid<m_day_low)m_day_low=mid; }
+        }
 
         // act once per day, at the cash close transition
         if (!in_rth && m_in_session) {
             m_in_session=false;
             if (!m_have_day || m_day_close<=0) return;
             const double close=m_day_close;
-            // 1) push today's close FIRST so the SMA(SHORT_SMA) exit sees it
-            m_closes.push_back(close); if ((int)m_closes.size()>TREND_SMA+5) m_closes.pop_front();
+            // 1) push today's OHLC FIRST so SMA/IBS see it (highs/lows parallel to closes)
+            m_closes.push_back(close); m_highs.push_back(m_day_high); m_lows.push_back(m_day_low);
+            if ((int)m_closes.size()>TREND_SMA+5) { m_closes.pop_front(); m_highs.pop_front(); m_lows.pop_front(); }
             // 2) manage open: ENHANCED exit — close back above SMA(SHORT_SMA) (MR complete)
             //    OR MAXHOLD cap. SHORT_SMA<=0 -> legacy HOLD_DAYS exit.
             if (pos.active) {
@@ -131,22 +148,21 @@ public:
                     // still oversold inside the uptrend -> average a unit in (Connors cumulative)
                     const int N=(int)m_closes.size();
                     double sma=0; for (int i=N-TREND_SMA;i<N;++i) sma+=m_closes[i]; sma/=TREND_SMA;
-                    const double r=_rsi(RSI_LEN);
-                    if (close>sma && r<RSI_IN) {
+                    if (close>sma && _signal()) {
                         const double px=ask>0?ask:close;
                         pos.entry_px=(pos.entry_px*pos.units + px)/(pos.units+1);
                         pos.units+=1; pos.size=pos.units*lot;
-                        if (verbose) printf("[%s] %s SCALE-IN unit%d avg=%.2f rsi2=%.1f\n",
-                            engine_name.c_str(), symbol.c_str(), pos.units, pos.entry_px, r);
+                        if (verbose) printf("[%s] %s SCALE-IN unit%d avg=%.2f\n",
+                            engine_name.c_str(), symbol.c_str(), pos.units, pos.entry_px);
                     }
                 }
             }
-            // 3) entry: uptrend + deep-oversold + flat
+            // 3) entry: uptrend + oversold-signal (ENTRY_MODE) + flat
             if (!pos.active && (int)m_closes.size()>=TREND_SMA && !m_done_today) {
                 const int N=(int)m_closes.size();
                 double sma=0; for (int i=N-TREND_SMA;i<N;++i) sma+=m_closes[i]; sma/=TREND_SMA;
                 const double r=_rsi(RSI_LEN);
-                if (close>sma && r<RSI_IN) {
+                if (close>sma && _signal()) {
                     pos=Position{}; pos.active=true; pos.entry_px=ask>0?ask:close; pos.size=lot; pos.units=1; pos.entry_ms=now_ms; pos.held=0;
                     m_done_today=true;
                     if (verbose) printf("[%s] %s DIP-BUY entry=%.2f rsi2=%.1f close=%.2f sma%d=%.2f%s\n",
@@ -164,6 +180,32 @@ private:
         const int N=(int)m_closes.size(); if (N<n+1) return 50.0;
         double g=0,l=0; for (int k=N-n;k<N;++k){ double ch=m_closes[k]-m_closes[k-1]; if(ch>0)g+=ch; else l+=-ch; }
         return l==0?100.0:100.0-100.0/(1.0+g/l);
+    }
+    double _ibs() const {   // today's internal bar strength = (c-l)/(h-l)
+        const int N=(int)m_closes.size(); if (N<1) return 0.5;
+        const double h=m_highs.back(), l=m_lows.back(), c=m_closes.back();
+        return (h<=l)?0.5:(c-l)/(h-l);
+    }
+    int _downstreak() const {   // consecutive down closes ending today
+        const int N=(int)m_closes.size(); int s=0;
+        for (int k=N-1;k>0 && m_closes[k]<m_closes[k-1];--k) ++s; return s;
+    }
+    double _pctb(int n) const { // %b on close Bollinger(n,2)
+        const int N=(int)m_closes.size(); if (N<n) return 0.5;
+        double m=0; for(int k=N-n;k<N;++k) m+=m_closes[k]; m/=n;
+        double sd=0; for(int k=N-n;k<N;++k){double d=m_closes[k]-m; sd+=d*d;} sd=std::sqrt(sd/n);
+        const double lo=m-2*sd, hi=m+2*sd; return (hi<=lo)?0.5:(m_closes.back()-lo)/(hi-lo);
+    }
+    // ENTRY_MODE dispatcher — the oversold-dip-in-uptrend family (mr_hunt.cpp).
+    bool _signal() const {
+        switch (ENTRY_MODE) {
+            case 1:  return _ibs() < IBS_IN;                              // IBS
+            case 2:  return _downstreak() >= STREAK_N;                    // STREAK
+            case 3:  return _pctb(20) < PCTB_IN;                          // %b
+            case 4:  return _rsi(RSI3_LEN) < RSI3_IN;                     // RSI3
+            case 5:  return _ibs() < DBL_IBS && _rsi(RSI_LEN) < DBL_RSI;  // DOUBLE
+            default: return _rsi(RSI_LEN) < RSI_IN;                       // 0 = RSI2
+        }
     }
     void _close(double exit_px, int64_t now_ms, const char* reason) {
         if (!pos.active) return;
@@ -200,8 +242,9 @@ private:
         int lm=((g.tm_hour*60+g.tm_min)+std_off_min+(dst?60:0)); lm=((lm%1440)+1440)%1440;
         return (lm/60)*100+lm%60;
     }
-    std::deque<double> m_closes;
-    double m_day_close=0; bool m_have_day=false, m_in_session=false, m_done_today=false;
+    std::deque<double> m_closes, m_highs, m_lows;
+    double m_day_close=0, m_day_high=0, m_day_low=0;
+    bool m_have_day=false, m_in_session=false, m_done_today=false;
 };
 
 }  // namespace omega

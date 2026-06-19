@@ -132,6 +132,14 @@ static omega::gold::GoldEngineStack g_gold_stack;
 static omega::ConnorsRSI2Engine g_connors_nas;
 // S-2026-06-19 v2: GER40 instance (CET session) — enhanced exit revives it (PF1.39 both+, 2022 +290).
 static omega::ConnorsRSI2Engine g_connors_ger;
+// S-2026-06-19 v3: oversold-dip MR FAMILY via ENTRY_MODE (mr_hunt.cpp 10yr, 8pt-robust both+).
+// NDX: IBS(PF3.64) + STREAK(3.53, 2022+) + DOUBLE(3.14); SPX: STREAK(2.23) + DOUBLE(2.19).
+// Correlated family (overlapping dip days) -> shadow + observe live-ledger correlation before size.
+static omega::ConnorsRSI2Engine g_ibs_nas;     // ENTRY_MODE=1 IBS, NAS100
+static omega::ConnorsRSI2Engine g_streak_nas;  // ENTRY_MODE=2 STREAK, NAS100
+static omega::ConnorsRSI2Engine g_dbl_nas;     // ENTRY_MODE=5 DOUBLE, NAS100
+static omega::ConnorsRSI2Engine g_streak_spx;  // ENTRY_MODE=2 STREAK, US500.F
+static omega::ConnorsRSI2Engine g_dbl_spx;     // ENTRY_MODE=5 DOUBLE, US500.F
 #include "AdaptiveHullEngine.hpp"
 #include "SupertrendGoldEngine.hpp"
 #include "PeachyOrbEngine.hpp"

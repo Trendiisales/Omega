@@ -38,6 +38,12 @@ static void on_tick_us500(
     g_engine_heartbeat.pulse("IMacroSP");
     g_engine_heartbeat.pulse("TrendPullbackSP");
     g_engine_heartbeat.pulse("AmrUs500");  // 2026-05-26 (Stage 4)
+    // S-2026-06-19 v3 MR family (US500): STREAK / DOUBLE dip-buy (shadow).
+    {
+        const int64_t conn_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_streak_spx.on_tick(bid, ask, conn_ms); g_engine_heartbeat.pulse("ConnorsStreak_SPX");
+        g_dbl_spx.on_tick(bid, ask, conn_ms);    g_engine_heartbeat.pulse("ConnorsDouble_SPX");
+    }
 
     // AtrMeanRevGrid US500 (shadow). H1 X=8 SL_Y=6 ATR_FROM_WAP, PF 1.75 sweep.
     // Engine aggregates H1 bars from tick mids internally.
@@ -851,7 +857,14 @@ static void on_tick_nas100(
     // S-2026-06-19: ConnorsRSI2 NAS100 daily mean-reversion (shadow). Self-detects the
     // cash-close transition (ET RTH) internally; just feed every NAS100 tick.
     g_engine_heartbeat.pulse("ConnorsRSI2");
-    g_connors_nas.on_tick(bid, ask, static_cast<int64_t>(std::time(nullptr)) * 1000);
+    {
+        const int64_t conn_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_connors_nas.on_tick(bid, ask, conn_ms);
+        // S-2026-06-19 v3 MR family (NAS100): IBS / STREAK / DOUBLE (shadow).
+        g_ibs_nas.on_tick(bid, ask, conn_ms);    g_engine_heartbeat.pulse("ConnorsIBS_NAS");
+        g_streak_nas.on_tick(bid, ask, conn_ms); g_engine_heartbeat.pulse("ConnorsStreak_NAS");
+        g_dbl_nas.on_tick(bid, ask, conn_ms);    g_engine_heartbeat.pulse("ConnorsDouble_NAS");
+    }
 
     // 2026-06-12: feed the market-bear PROXY (NAS = bellwether). IndexRiskGate uses
     //   it as a price-based FALLBACK when the macro VIX/credit/dollar feed is dead,

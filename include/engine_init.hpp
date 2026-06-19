@@ -4181,6 +4181,28 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] ConnorsRSI2 GER40: shadow=%d enabled=%d CET 09:00-17:30 dip-buy close>SMA200 & RSI2<10\n",
                (int)g_connors_ger.shadow_mode, (int)g_connors_ger.enabled);
         fflush(stdout);
+
+        // S-2026-06-19 v3: oversold-dip MR FAMILY (ENTRY_MODE), all shadow. mr_hunt.cpp 10yr,
+        // 8pt-cost-robust both-halves+. Distinct family members on NDX (IBS/STREAK/DOUBLE) +
+        // SPX (STREAK/DOUBLE). Correlated -> observe live-ledger correlation before sizing.
+        auto cfg_mr = [&](omega::ConnorsRSI2Engine& e, const char* sym, const char* nm,
+                          int mode, const char* warmup, int sess_open, int sess_close){
+            e.symbol=sym; e.engine_name=nm; e.ENTRY_MODE=mode;
+            e.TREND_SMA=200; e.SHORT_SMA=5; e.MAXHOLD=10;
+            e.IBS_IN=0.10; e.STREAK_N=3; e.DBL_IBS=0.20; e.DBL_RSI=15.0;
+            e.SESS_OPEN_HM=sess_open; e.SESS_CLOSE_HM=sess_close; e.TZ_STD_OFF_MIN=-300; e.TZ_EU_DST=false;
+            e.lot=0.3; e.shadow_mode=true; e.enabled=true;
+            e.on_trade_record=[](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
+            e.init(); e.seed_from_d1_csv(warmup);
+            g_engine_heartbeat.register_engine(nm, e.enabled, 3600, 0, 24);
+        };
+        cfg_mr(g_ibs_nas,    "NAS100",  "ConnorsIBS_NAS",    1, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
+        cfg_mr(g_streak_nas, "NAS100",  "ConnorsStreak_NAS", 2, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
+        cfg_mr(g_dbl_nas,    "NAS100",  "ConnorsDouble_NAS", 5, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
+        cfg_mr(g_streak_spx, "US500.F", "ConnorsStreak_SPX", 2, "phase1/signal_discovery/warmup_US500_D1.csv", 930, 1600);
+        cfg_mr(g_dbl_spx,    "US500.F", "ConnorsDouble_SPX", 5, "phase1/signal_discovery/warmup_US500_D1.csv", 930, 1600);
+        printf("[OMEGA-INIT] Connors MR family: IBS/STREAK/DOUBLE on NAS100 + STREAK/DOUBLE on US500 (shadow)\n");
+        fflush(stdout);
     }
 
     // ── AdaptiveHullEngine (Ehlers cycle -> adaptive HMA trend, long-only) ──────
@@ -6009,7 +6031,9 @@ static void init_engines(const std::string& cfg_path)
             "FxScalpPyramid_GBPUSD", "FxScalpPyramid_USDCAD", "FxScalpPyramid_AUDUSD",
             // IndexSession + S118 batch
             "IndexSession_SP", "IndexSession_NAS", "FvgContinuation", "FvgCont10m", "OvernightDrift",
-            "ConnorsRSI2", "ConnorsRSI2_GER", "AdaptiveHullXAU", "AdaptiveHullGER", "SupertrendGold",
+            "ConnorsRSI2", "ConnorsRSI2_GER",
+            "ConnorsIBS_NAS", "ConnorsStreak_NAS", "ConnorsDouble_NAS", "ConnorsStreak_SPX", "ConnorsDouble_SPX",
+            "AdaptiveHullXAU", "AdaptiveHullGER", "SupertrendGold",
             "IndexSession_GER40", "IndexSession_UK100", "IndexSession_ESTX50",
             // S-2026-06-09 visibility fix: never-persisted strays now registered.
             // Asserted here so a future drop of any registration trips [VIS-AUDIT].
