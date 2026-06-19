@@ -1629,6 +1629,7 @@ static void on_tick_gold(
     // Inject M1 bar RSI for entry signal -- bar RSI is smooth (60s) and matches chart
     if (g_bars_gold.m1.ind.m1_ready.load(std::memory_order_relaxed)) {
         const double rsi_bar_mid = (bid + ask) * 0.5;
+        (void)rsi_bar_mid;
         // RSIExtremeTurnEngine bar RSI injection -- tracks sustained extreme bars
     }
 
@@ -1660,6 +1661,7 @@ static void on_tick_gold(
             const double tpb_ema50 = g_bars_gold.m1.ind.ema50.load(std::memory_order_relaxed);
             const int tpb_trend = (tpb_ema9 > 0.0 && tpb_ema50 > 0.0)
                 ? (tpb_ema9 < tpb_ema50 ? -1 : +1) : 0;
+            (void)tpb_trend;
         }
     }
     // H4 trend gate -- feeds HTF direction into TrendPullback gold entry filter.
@@ -2115,7 +2117,9 @@ static void on_tick_gold(
     {
         const int64_t pdhl_ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
+        (void)pdhl_ts_ms;
         auto pdhl_cb = [](const omega::TradeRecord& tr){ g_omegaLedger.record(tr); };
+        (void)pdhl_cb;
     }
 
     // 11-day / 3.4M tick full-L2 sweep: T=285 WR=24.6% PnL=-$1171.82 MaxDD=$1679.

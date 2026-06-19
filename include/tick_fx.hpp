@@ -326,6 +326,7 @@ static void on_tick_gbpusd(
     // EurGbpPairsEngine -- GBP leg (see on_tick_eurusd for EUR leg).
     {
         auto ca_on_close = [](const omega::TradeRecord& tr){ (void)tr; };
+        (void)ca_on_close;
     }
 
     (void)sym; (void)regime; (void)dispatch;

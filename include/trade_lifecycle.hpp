@@ -915,6 +915,7 @@ static double open_unrealised_pnl() {
         if (!has_pos || open_entry <= 0.0) return 0.0;
         return cp_pnl(true, open_long, open_entry, open_size, sym);
     };
+    (void)ca_pnl;
 
     // (GoldFlow unrealised PnL contribution removed S19 Stage 1B — engine culled)
     return total;

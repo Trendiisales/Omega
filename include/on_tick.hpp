@@ -964,6 +964,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 const int64_t ds_now     = static_cast<int64_t>(std::time(nullptr));
                 const int64_t ds_now_ms  = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
+                (void)ds_now_ms;
 
                 // Compute unrealised USD P&L: pts * size * 100 (XAUUSD = $100/pt/lot)
                 auto xau_unr = [&](bool is_long, double entry, double size) -> double {
@@ -1774,6 +1775,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             ++trades_this_min;
         }
     };
+    (void)dispatch_bracket;
 
     // ?? cost_ok() -- mandatory gate for ALL direct send_live_order calls ???????
     // Every engine signal that bypasses dispatch()/dispatch_bracket() must call
@@ -2292,6 +2294,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                       double ent, double tp, double sl, double ref, int sigs) {
             g_telemetry.UpdateCrossAsset(nm, sym, act?1:0, lng?1:0, ent, tp, sl, ref, sigs);
         };
+        (void)ca;
 
         // ORB
 
@@ -2319,6 +2322,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (phase != 3) return 0.0;
             return lot * tick_mult * (is_long_hint >= 0 ? 1.0 : -1.0);
         };
+        (void)eng_exposure;
 
         double exp_us = 0.0, exp_eu = 0.0, exp_oil = 0.0;
         double exp_metals = 0.0, exp_jpy = 0.0, exp_egbp = 0.0;

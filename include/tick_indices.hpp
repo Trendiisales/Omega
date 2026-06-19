@@ -87,6 +87,7 @@ static void on_tick_us500(
         }
     }
     const auto sdec_sp = sup_decision(g_sup_sp, g_eng_sp, base_can_sp, sym, bid, ask);
+    (void)sdec_sp;
     // SIM: SP breakout WR 31.6% -$105. No edge on US500 compression breakout. Disabled.
     // if (sdec_sp.allow_breakout && !g_bracket_sp.pos.active)
     //     dispatch(g_eng_sp, g_sup_sp, base_can_sp, &sdec_sp);
@@ -105,6 +106,7 @@ static void on_tick_us500(
             const double sp_s_e50 = g_bars_sp.m1.ind.ema50.load(std::memory_order_relaxed);
             const int sp_ema_trend = (sp_s_e9 > 0.0 && sp_s_e50 > 0.0)
                 ? (sp_s_e9 < sp_s_e50 ? -1 : +1) : 0;
+            (void)sp_ema_trend;
         }
     }
 
@@ -120,6 +122,7 @@ static void on_tick_us500(
         const int  sp_nbm_m5_trend = (sp_nbm_ema9 > 0.0 && sp_nbm_ema50 > 0.0)
             ? (sp_nbm_ema9 < sp_nbm_ema50 ? -1 : +1) : 0;
         const bool sp_nbm_gate_ok  = !sp_nbm_offhours || (sp_nbm_bars_ok && sp_nbm_m5_trend != 0);
+        (void)sp_nbm_gate_ok;
     }
     // TrendPullback
     {
@@ -132,6 +135,7 @@ static void on_tick_us500(
             ? (sp_tpb_ema9 < sp_tpb_ema50 ? -1 : +1) : 0;
         const bool sp_trendpb_ok  = sp_ema_live
             && (!sp_in_offhours || (sp_bars_ready && sp_m5_trend != 0));
+        (void)sp_trendpb_ok;
     }
 
     // ----------------------------------------------------------------------
@@ -335,6 +339,7 @@ static void on_tick_ustec(
         }
     }
     const auto sdec_nq = sup_decision(g_sup_nq, g_eng_nq, base_can_nq, sym, bid, ask);
+    (void)sdec_nq;
     // SIM: NQ breakout WR 26.1% -$1167. Disabled.
     // if (sdec_nq.allow_breakout && !g_bracket_nq.pos.active)
     //     dispatch(g_eng_nq, g_sup_nq, base_can_nq, &sdec_nq);
@@ -349,6 +354,7 @@ static void on_tick_ustec(
             const double nq_s_e50 = g_bars_nq.m1.ind.ema50.load(std::memory_order_relaxed);
             const int nq_ema_trend = (nq_s_e9 > 0.0 && nq_s_e50 > 0.0)
                 ? (nq_s_e9 < nq_s_e50 ? -1 : +1) : 0;
+            (void)nq_ema_trend;
         }
     }
     // UstecTrendFollow5mEngine -- Donchian N=20 trend-follow on 5m bars (S33d).
@@ -357,6 +363,7 @@ static void on_tick_ustec(
         const int64_t tf_now_ms = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)tf_now_ms;
     }
     // UstecTrendFollowHtfEngine -- 3-cell M15/H1/H2/H4 ensemble (S36-P4 2026-05-12).
     // Shadow-only by default. Intra-bar SL/TP/BE/trail management every tick.
@@ -364,6 +371,7 @@ static void on_tick_ustec(
         const int64_t tf_htf_now_ms = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)tf_htf_now_ms;
     }
 
     // VWAP Reversion NQ -- anchored to NY open (13:30 UTC)
@@ -379,6 +387,7 @@ static void on_tick_ustec(
             ? (nq_tpb_ema9 < nq_tpb_ema50 ? -1 : +1) : 0;
         const bool nq_trendpb_ok  = nq_ema_live
             && (!nq_in_offhours || (nq_bars_ready && nq_m5_trend != 0));
+        (void)nq_trendpb_ok;
     }
     // NoiseBandMomentum NQ
     {
@@ -390,6 +399,7 @@ static void on_tick_ustec(
         const int  nq_m5_trend2    = (nq_nbm_ema9 > 0.0 && nq_nbm_ema50 > 0.0)
             ? (nq_nbm_ema9 < nq_nbm_ema50 ? -1 : +1) : 0;
         const bool nq_nbm_ok       = !nq_in_offhours2 || (nq_bars_ready2 && nq_m5_trend2 != 0);
+        (void)nq_nbm_ok;
     }
 
     // ----------------------------------------------------------------------
@@ -510,6 +520,7 @@ static void on_tick_dj30(
     {
         const int slot_us30 = g_macro_ctx.session_slot;
         const bool us30_session_ok = (slot_us30 >= 1 && slot_us30 <= 5);
+        (void)us30_session_ok;
     }
 
     // ----------------------------------------------------------------------
@@ -701,6 +712,7 @@ static void on_tick_ger40(
         const int64_t now_ms_glb = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)now_ms_glb;
     }
     // IndexSessionEngine GER40 (09-20 UTC LONG, flat overnight, risk-off gated).
     {
@@ -725,6 +737,7 @@ static void on_tick_ger40(
         const int64_t now_ms_gk = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)now_ms_gk;
         // S42 fix: pulse the heartbeat (registered live_required in engine_init
         // as "Ger40KeltnerH1" but never pulsed -> false HEARTBEAT-MISS spam).
         g_engine_heartbeat.pulse("Ger40KeltnerH1");
@@ -803,6 +816,7 @@ static void on_tick_estx50(
         const int64_t now_ms_orb = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        (void)now_ms_orb;
         g_engine_heartbeat.pulse("OrbEstx50");
     }
 
@@ -918,6 +932,7 @@ static void on_tick_nas100(
         const int  nas_nbm_m5_trend = (nas_nbm_ema9 > 0.0 && nas_nbm_ema50 > 0.0)
             ? (nas_nbm_ema9 < nas_nbm_ema50 ? -1 : +1) : 0;
         const bool nas_nbm_gate_ok  = !nas_nbm_offhours || (nas_nbm_bars_ok && nas_nbm_m5_trend != 0);
+        (void)nas_nbm_gate_ok;
     }
 
     // ----------------------------------------------------------------------

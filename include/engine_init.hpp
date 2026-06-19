@@ -581,6 +581,7 @@ static void init_engines(const std::string& cfg_path)
             e.RANGE_EXP_MULT  = 0.0;     // off by default
             e.on_close_cb     = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         };
+        (void)config_fx_scalp;
 
         // xxxUSD majors (5 decimal places, ATR 30-500 pips, spread cap 50p)
         // USDJPY (3 decimals, JPY pip math: USD_PER_PT_LOT ~633 at 1USD=158JPY)
@@ -1838,6 +1839,7 @@ static void init_engines(const std::string& cfg_path)
                     eng.seed_from_h1_csv(csv_path);
                 }
             };
+            (void)amr_boot;
 
             // S-2026-06-14: AMR real-class audit COMPLETE (S47 purge was
             // "pending real-class audit"). Independent cost-inclusive walk-forward
@@ -2637,8 +2639,11 @@ static void init_engines(const std::string& cfg_path)
         // AND fills the Donchian buffer from the same source.
         if (m5_ok) {
             const double m5_ema9  = g_bars_gold.m5.ind.ema9 .load(std::memory_order_relaxed);
+            (void)m5_ema9;
             const double m5_ema21 = g_bars_gold.m5.ind.ema21.load(std::memory_order_relaxed);
+            (void)m5_ema21;
             const double m5_atr14 = g_bars_gold.m5.ind.atr14.load(std::memory_order_relaxed);
+            (void)m5_atr14;
             // Best-effort approximation for ATR prev_close: M5 EMA9 is the
             // tightest persisted reference to recent close. Drift bounded
             // by (live_first_close - EMA9) which converges in 1 bar.
@@ -3662,6 +3667,7 @@ static void init_engines(const std::string& cfg_path)
         {
             auto fvg_family_flat = []() {
             };
+            (void)fvg_family_flat;
             printf("[OMEGA-INIT] FVG family dedup: 1 position across 10m/15m/30m (first-to-fire)\n");
         }
 
@@ -5091,6 +5097,7 @@ static void init_engines(const std::string& cfg_path)
                     return out;
                 });
         };
+        (void)register_fx_scalp;
     }
     // 2026-05-19 S110: GoldRegimeDaily position source.
     // ====================================================================
@@ -5258,6 +5265,7 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
+    (void)_make_vwap_source;
 
     // TrendPullback x 2 instances (gold + nq, the LIVE pair per part-F).
     // CrossPosition pos_ is private; use the public accessors already
@@ -5287,6 +5295,7 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
+    (void)_make_tpb_source;
 
     // ── S66-followup-2 (2026-05-14 part L): IndexFlowEngine x4 GUI sources.
     //   Uses the new IndexFlowEngine::pos() const accessor (added in
@@ -5419,6 +5428,7 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
+    (void)_make_c1_donchian_source;
     auto _make_c1_bollinger_source =
         [](const char* engine_name, omega::C1BollingerLongCell* cell) {
         return [engine_name, cell]() -> std::vector<omega::PositionSnapshot> {
@@ -5444,6 +5454,7 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
+    (void)_make_c1_bollinger_source;
 
     // ── S66 (2026-05-13): 6 more engines (EMACross, H4RegimeGold,
     //    MacroCrash, XauTrendFollow 2h/4h/D1). Mechanical follow-ups to S65.
@@ -5542,6 +5553,7 @@ static void init_engines(const std::string& cfg_path)
     auto _nas_px = [](double entry)->double {
         const auto it = g_last_tick_bid.find("NAS100");
         return (it!=g_last_tick_bid.end() && it->second>0.0) ? it->second : entry; };
+    (void)_nas_px;
     // S-2026-06-09 dedup: FvgContinuation + FvgCont10m are ALSO registered earlier
     // (the persist_save-based sources at ~L4287/4313, added 2026-06-08, which win
     // the on_tick symbol+engine dedup). These 2026-06-04 direct-field duplicates
@@ -5560,6 +5572,7 @@ static void init_engines(const std::string& cfg_path)
             ps.size=p.size; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.stop_px; ps.tp=0.0;
             ps.entry_ts=p.entry_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*p.size*mult;
             out.push_back(ps); return out; }; };
+    (void)_hull_src;
 
     // S-2026-06-03: GoldSeasonal (XAUUSD Mon+Tue long). Long-only, no TP/SL
     //   (exits on UTC day-flip) → tp=sl=0.
@@ -5644,6 +5657,7 @@ static void init_engines(const std::string& cfg_path)
             return out;
         };
     };
+    (void)_make_ustec_tf_source;
 
     // FX BreakoutEngine x 5 (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDJPY).
     //   omega::BreakoutEngine inherits from BreakoutEngineBase<BreakoutEngine>
@@ -5723,6 +5737,7 @@ static void init_engines(const std::string& cfg_path)
                 ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
                 ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
                 out.push_back(ps); return out; }; };
+        (void)_turtle_src;
 
         // --- TrendLineBreakEngine FX x2 (GBPUSD, USDJPY), SHADOW ---
         //   pos_: {active, side(+1/-1 int), entry, sl, lot, entry_ts_ms, mfe};
@@ -5737,6 +5752,7 @@ static void init_engines(const std::string& cfg_path)
                 ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=0.0;
                 ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
                 out.push_back(ps); return out; }; };
+        (void)_tlb_src;
 
         // --- g_minimal_h4_ger40 : MinimalH4GER40Breakout, GER40 ---
         //   pos_: {active, is_long, entry, sl, tp, size, entry_ts_ms}; has_open_position().
@@ -5785,6 +5801,7 @@ static void init_engines(const std::string& cfg_path)
                 ps.size=p.size; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=0.0;
                 ps.entry_ts=p.entry_ts; ps.unrealized_pnl=(cur-p.entry)*(p.is_long?1.0:-1.0)*p.size*mult;
                 out.push_back(ps); return out; }; };
+        (void)_idd_src;
 
         // --- g_orb_estx50_v2 : OrbBreakoutEngine, ESTX50 ---
         //   pos_: {active, side(+1/-1 int), entry, sl, tp, lot, entry_ts_ms}; has_open_position().

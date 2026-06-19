@@ -603,6 +603,7 @@ static void quote_loop() {
                 eng.force_close(b, a, stale_cb, "STALE_PRIOR_DAY");
                 printf("[STALE-CLOSE] Purged prior-day CA/NBM/ORB/VWAP %s\n", sym); fflush(stdout);
             };
+            (void)stale_ca;
 
             // -- Gold engines (original) --
             if (xb_rc > 0 && xa_rc > 0) {
