@@ -3217,8 +3217,12 @@ static void init_engines(const std::string& cfg_path)
         // the whole system is SHADOW (order_exec hard-gates on mode==LIVE), so
         // this just adds TrendRider to the forward shadow ledger for observation.
         // PROMOTION TO LIVE-SIZE IS GATED on a fresh 2022-current walk-forward
-        // (BACKTEST_TRUTH) — not yet run. Do NOT flip shadow_mode=false until it
-        // passes both-halves cross-regime.
+        // (BACKTEST_TRUTH). WF RUN 2026-06-19 (backtest/trendrider_faithful.cpp,
+        // class-driven on XAUUSD H1): 2022-2023 PF 0.75 / net -$838 / both halves
+        // NEGATIVE (2022 alone -$581); 2024-2026 bull PF 1.33 / +$2086 both+.
+        // => BULL-BETA, FAILS the gate. And bar-replay OVERSTATES trail engines
+        // ~0.5-0.7 PF, so true edge is worse. DO NOT flip shadow_mode=false —
+        // shadow-observe only (forward-confirms the bull-beta thesis).
         g_trend_rider.enabled           = true;   // SHADOW observation (was false, S91 solo test — stale)
         g_trend_rider.max_concurrent    = 6;
         // risk_pct 0.040 (4%) -> 0.0025 (0.25%). The 4% was "8x tsmom ~1/8 Kelly"
