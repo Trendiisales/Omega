@@ -357,8 +357,36 @@ std::vector<PositionSnapshot> collect_positions(){
     return eng().collect_positions();
 }
 
+// S-2026-06-21: paper/live port-vs-routing guard. Idea lifted from the
+// retail IBKR-bot walkthrough (its one genuinely useful safety assert): catch
+// the config-error class where the routing intent (paper_only) and the gateway
+// port class disagree, BEFORE any order can fire. IBKR ports: 7496/4001 = LIVE,
+// 7497/4002 = PAPER. Pure defence -- a correct config passes silently except
+// for one explicit ARM banner when real routing is on.
+static bool paper_port_guard(const Config& c){
+    const bool live_port  = (c.port==7496 || c.port==4001);
+    const bool paper_port = (c.port==7497 || c.port==4002);
+    if(!c.paper_only){                                 // armed to route REAL orders
+        if(paper_port){
+            printf("[BigCapMomo] ABORT: paper_only=false (LIVE order routing armed) but "
+                   "port %d is a PAPER gateway -- inconsistent config. Refusing to start. "
+                   "Set port to a live gateway (4001/7496) or paper_only=true.\n",
+                   c.port); fflush(stdout);
+            return false;
+        }
+        printf("[BigCapMomo] *** LIVE ORDER ROUTING ARMED *** paper_only=false on %s:%d -- "
+               "REAL orders WILL be sent. Intentional only if you flipped paper_only off "
+               "on purpose.\n", c.host.c_str(), c.port); fflush(stdout);
+    } else if(live_port){
+        printf("[BigCapMomo] shadow OK: paper_only=true on live gateway %d -- logging only, "
+               "NO orders routed.\n", c.port); fflush(stdout);
+    }
+    return true;
+}
+
 bool start(){
     if(!g_enabled.load()) return false;
+    if(!paper_port_guard(g_cfg)){ g_running.store(false); return false; }  // P0 config-safety gate
     if(g_running.exchange(true)) return true;          // already running -> no-op
     eng().set_config(g_cfg);
     // Connect with HANDSHAKE CONFIRMATION + clientId rotation. connect() returns true
