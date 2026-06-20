@@ -67,6 +67,13 @@ public:
     double PCTB_IN     = 0.0;
     int    RSI3_LEN    = 3;   double RSI3_IN = 15.0;
     double DBL_IBS     = 0.20; double DBL_RSI = 15.0;
+    // S-2026-06-20 asym sustained-bear veto regime gate (faithful-confirmed 6/6 index×host,
+    // next-open fills + 2x cost: beats close>SMA200 on net AND 2022 bucket — SMA200 amputates
+    // the winning bear dip-bounces, flipping 2022 from -3..-6% to +1.3..+12.9%). REGIME_GATE=1
+    // buys shallow/temporary sub-SMA dips and vetoes ONLY genuine sustained bear.
+    int    REGIME_GATE = 0;   // 0 = close>SMA(TREND_SMA) (current); 1 = asym sustained-bear veto
+    int    BEAR_VETO_K = 20;  // consec bars (close<SMA AND SMA falling) before a dip-buy is vetoed
+    int    m_bear_below = 0;  // runtime: consecutive sustained-falling-bear bars (REGIME_GATE=1)
     // ADVERSE-PROTECTION: (S-2026-06-19, backtested verdict) NONE needed / by-design exempt.
     // Long-only daily MEAN-REVERSION gated by close>SMA(TREND_SMA) — the trend filter IS the
     // adverse protection (no dip-buying below the 200d SMA = sits out bears; faithful 2022:
@@ -97,7 +104,7 @@ public:
     double pos_lot()   const { return pos.size; }
     int64_t pos_entry_ts_ms() const { return pos.entry_ms; }
 
-    void init() { m_closes.clear(); m_highs.clear(); m_lows.clear(); m_in_session=false; m_done_today=false; pos=Position{}; }
+    void init() { m_closes.clear(); m_highs.clear(); m_lows.clear(); m_in_session=false; m_done_today=false; m_bear_below=0; pos=Position{}; }
 
     size_t seed_from_d1_csv(const std::string& path) {
         std::ifstream f(path);
@@ -133,6 +140,16 @@ public:
             // 1) push today's OHLC FIRST so SMA/IBS see it (highs/lows parallel to closes)
             m_closes.push_back(close); m_highs.push_back(m_day_high); m_lows.push_back(m_day_low);
             if ((int)m_closes.size()>TREND_SMA+5) { m_closes.pop_front(); m_highs.pop_front(); m_lows.pop_front(); }
+            // 1b) REGIME_GATE state — count consecutive sustained-bear bars (close<SMA AND SMA falling).
+            //     Runs once per day at the close transition so it advances even on no-signal days.
+            {
+                const int N=(int)m_closes.size();
+                if (N>=TREND_SMA+5) {
+                    double sma=0;  for (int i=N-TREND_SMA;   i<N;   ++i) sma  += m_closes[i]; sma  /= TREND_SMA;
+                    double sma5=0; for (int i=N-5-TREND_SMA; i<N-5; ++i) sma5 += m_closes[i]; sma5 /= TREND_SMA;
+                    if (close < sma && sma < sma5) m_bear_below += 1; else m_bear_below = 0;
+                } else m_bear_below = 0;
+            }
             // 2) manage open: ENHANCED exit — close back above SMA(SHORT_SMA) (MR complete)
             //    OR MAXHOLD cap. SHORT_SMA<=0 -> legacy HOLD_DAYS exit.
             if (pos.active) {
@@ -148,7 +165,8 @@ public:
                     // still oversold inside the uptrend -> average a unit in (Connors cumulative)
                     const int N=(int)m_closes.size();
                     double sma=0; for (int i=N-TREND_SMA;i<N;++i) sma+=m_closes[i]; sma/=TREND_SMA;
-                    if (close>sma && _signal()) {
+                    const bool regime_ok = (REGIME_GATE==1) ? (m_bear_below < BEAR_VETO_K) : (close>sma);
+                    if (regime_ok && _signal()) {
                         const double px=ask>0?ask:close;
                         pos.entry_px=(pos.entry_px*pos.units + px)/(pos.units+1);
                         pos.units+=1; pos.size=pos.units*lot;
@@ -162,7 +180,8 @@ public:
                 const int N=(int)m_closes.size();
                 double sma=0; for (int i=N-TREND_SMA;i<N;++i) sma+=m_closes[i]; sma/=TREND_SMA;
                 const double r=_rsi(RSI_LEN);
-                if (close>sma && _signal()) {
+                const bool regime_ok = (REGIME_GATE==1) ? (m_bear_below < BEAR_VETO_K) : (close>sma);
+                if (regime_ok && _signal()) {
                     pos=Position{}; pos.active=true; pos.entry_px=ask>0?ask:close; pos.size=lot; pos.units=1; pos.entry_ms=now_ms; pos.held=0;
                     m_done_today=true;
                     if (verbose) printf("[%s] %s DIP-BUY entry=%.2f rsi2=%.1f close=%.2f sma%d=%.2f%s\n",

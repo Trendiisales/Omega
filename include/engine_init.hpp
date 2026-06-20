@@ -4150,6 +4150,7 @@ static void init_engines(const std::string& cfg_path)
         g_connors_nas.lot         = 0.3;    // dollar-normalized shadow size (index convention)
         g_connors_nas.shadow_mode = true;
         g_connors_nas.enabled     = true;   // SHADOW
+        g_connors_nas.REGIME_GATE  = 1;     // S-2026-06-20: asym sustained-bear veto > SMA200 (faithful 6/6) — SHADOW
         g_connors_nas.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
         g_connors_nas.init();
         g_connors_nas.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
@@ -4198,6 +4199,7 @@ static void init_engines(const std::string& cfg_path)
             g_engine_heartbeat.register_engine(nm, e.enabled, 3600, 0, 24);
         };
         cfg_mr(g_ibs_nas,    "NAS100",  "ConnorsIBS_NAS",    1, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
+        g_ibs_nas.REGIME_GATE = 1;          // S-2026-06-20: asym sustained-bear veto > SMA200 (faithful biggest win) — SHADOW
         cfg_mr(g_streak_nas, "NAS100",  "ConnorsStreak_NAS", 2, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
         cfg_mr(g_dbl_nas,    "NAS100",  "ConnorsDouble_NAS", 5, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
         cfg_mr(g_streak_spx, "US500.F", "ConnorsStreak_SPX", 2, "phase1/signal_discovery/warmup_US500_D1.csv", 930, 1600);
