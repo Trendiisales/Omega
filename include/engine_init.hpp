@@ -3911,7 +3911,15 @@ static void init_engines(const std::string& cfg_path)
             // + OMEGA_BIGCAP_IBKR=1 to start logging REAL paper fills + real slippage. KEEP the
             // big-cap liquidity floor tight (px_min + scanner cap>=$2B) so micro-caps can't leak in.
             omega::bigcap_momo_ibkr::Config bc;
-            bc.gate_pct     = 4.0;     // == g_bigcap_momo.day_gate_pct
+            bc.gate_pct     = 1.5;     // S-2026-06-20b (operator): 4.0->1.5 AGGRESSIVE frequency. Day-gate
+                                       // is only the "name in play" prefilter; entry still must clear the
+                                       // 3 chop guards below (regime + ignition + impulse). Backtest
+                                       // (/tmp/bigcap_freq.py, 10 mega-cap 2yr 15m): gate1.5 + impulse1.0
+                                       // = PF3.51 WR66% DD6.5% ~6.5 trades/wk on 10 names (x full live
+                                       // universe) vs gate4 PF6.83 1.34tw. ~5x the trades, PF still >3.
+            bc.min_impulse_atr = 1.0;  // CHOP GUARD (explicit, do NOT lower): entry bar must thrust
+                                       // >=1 ATR. /tmp/bigcap_chop.py @gate1.5: OFF=PF1.48 DD18.9%,
+                                       // ON=PF3.51 DD6.5% -- discards 61% of entries = the chop trades.
             bc.trail_pct    = 0.0;     // %-trail OFF; ATR-trail replaces it (matches deployed g_bigcap_momo)
             bc.atr_len      = 30;      // ATR-trail (validated)
             bc.atr_mult     = 4.0;
@@ -3942,8 +3950,8 @@ static void init_engines(const std::string& cfg_path)
                 [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
             g_open_positions.register_source("BigCapMomoIbkr",
                 []() { return omega::bigcap_momo_ibkr::collect_positions(); });
-            printf("[OMEGA-INIT] BigCapMomo IN-PROCESS IBKR engine wired (gate4%% trail5%% volx-off "
-                   "regime-gate $1000 shadow); activate with OMEGA_BIGCAP_IBKR=1\n");
+            printf("[OMEGA-INIT] BigCapMomo IN-PROCESS IBKR engine wired (gate1.5%% impulse1.0ATR "
+                   "regime-gate ig3%% $1000 shadow); activate with OMEGA_BIGCAP_IBKR=1\n");
         }
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
