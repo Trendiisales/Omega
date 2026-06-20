@@ -70,6 +70,11 @@ struct GoldOrbRetraceEngine {
     double buf_atr     = 0.10;    // tight-stop + trail buffer (fraction of ATR)
     double max_spread  = 1.5;     // pts -- skip fill if spread too wide (gold)
     double lot         = 1.0;
+    // S-2026-06-20 daily BullGate (orb-widen study): also require the bias to agree with
+    // the DAILY EMA50 trend. Near-free DD insurance — halves maxDD on every leg, ~92%
+    // profit kept (COMEX gated PF 2.38->2.83, DD 18.4->14.9). Default OFF.
+    bool   daily_gate    = false;
+    int    daily_ema_len = 50;
 
     std::string symbol      = "XAUUSD";
     std::string engine_name = "GoldOrbRetrace";
@@ -87,6 +92,7 @@ struct GoldOrbRetraceEngine {
     std::deque<double> trq_;
     double atr_ = 0.0, prev_close_ = 0.0;
     double ema_ = 0.0; bool ema_init_ = false;
+    double d_ema_ = 0.0; bool d_init_ = false;    // daily EMA for the daily_gate (BullGate)
     std::deque<double> lows_, highs_;             // last bars' L/H for the structural trail
 
     // ---- per-day ORB / state ----
@@ -146,6 +152,10 @@ struct GoldOrbRetraceEngine {
         const int64_t day = et_day_of(bar_start_ms);
         const int     mod = et_minute_of_day(bar_start_ms);
         if (day != cur_day_) {
+            if (prev_close_ > 0.0) {              // prior day's close -> daily EMA (BullGate)
+                if (!d_init_) { d_ema_=prev_close_; d_init_=true; }
+                else { const double dk=2.0/(daily_ema_len+1); d_ema_+=dk*(prev_close_-d_ema_); }
+            }
             cur_day_ = day; or_high_=0.0; or_low_=1e18; or_done_=false; traded_=false; bias_=0;
         }
         // ATR = SMA of TR
@@ -182,6 +192,8 @@ struct GoldOrbRetraceEngine {
             else return;
             // trend filter ("larger POV"): bias must agree with EMA50 side
             if ((bias_>0 && !(c > ema_)) || (bias_<0 && !(c < ema_))) { bias_ = 0; return; }
+            // S-2026-06-20 daily BullGate: also align with the daily EMA50 (DD insurance)
+            if (daily_gate && d_init_ && ((bias_>0 && !(c > d_ema_)) || (bias_<0 && !(c < d_ema_)))) { bias_ = 0; return; }
             entry_lvl_ = bias_>0 ? (or_high_ - retr*range) : (or_low_ + retr*range);
             if (verbose) std::printf("[%s] BREAKOUT %s or[%.2f,%.2f] lvl=%.2f ema=%.2f\n", tag.c_str(),
                                      bias_>0?"UP":"DN", or_low_, or_high_, entry_lvl_, ema_);

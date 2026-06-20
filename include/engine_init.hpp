@@ -3983,6 +3983,38 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] GoldOrbRetrace XAUUSD: shadow=true ORB30(08:20-08:50 ET) "
                "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided\n");
 
+        // ── GoldOrbRetrace LONDON open (S-2026-06-20 orb-widen 2nd session) ────────
+        // Additive 2nd gold ORB session (03:00 ET London open) — co-fires with COMEX only
+        // 28% of days (real diversification). +daily BullGate (DD insurance), PF1.99 gated.
+        g_gold_orb_london.symbol      = "XAUUSD";
+        g_gold_orb_london.engine_name = "GoldOrbRetraceLDN";
+        g_gold_orb_london.tag         = "GOLDORB-LDN";
+        g_gold_orb_london.or_start_et = 180;   // 03:00 ET London open
+        g_gold_orb_london.or_end_et   = 210;   // 03:30 ET first 30 min (exclusive)
+        g_gold_orb_london.daily_gate  = true;  // BullGate DD-insurance
+        g_gold_orb_london.shadow_mode = true;
+        g_gold_orb_london.enabled     = true;
+        g_gold_orb_london.verbose     = true;
+        g_gold_orb_london.lot         = 0.01;
+        if (g_gold_orb_london.lot > 0.05) { g_gold_orb_london.lot = 0.01; }
+        g_gold_orb_london.seed_from_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_M5.csv"));
+        g_gold_orb_london.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_open_positions.register_source("GoldOrbRetraceLDN", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_gold_orb_london.pos_;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "XAUUSD"; s.engine = "GoldOrbRetraceLDN";
+                s.side = p.side > 0 ? "LONG" : "SHORT"; s.size = p.lot;
+                s.entry = p.entry; s.sl = p.sl; s.tp = 0.0;
+                s.entry_ts = p.entry_ts_ms / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] GoldOrbRetrace LONDON XAUUSD: shadow ORB30(03:00-03:30 ET) +BullGate (orb-widen 2nd session)\n");
+
         // ── GoldPanicBounce (XAUUSD "big reversal day" V-bounce) ───────────────
         // 2026-06-12 deep-dive (backtest/panic_bounce_bt.cpp, H1, cost-incl 0.37):
         //   long-only capitulation bounce -- ALWAYS-ON monitor recomputes rolling

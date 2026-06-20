@@ -171,6 +171,7 @@ static std::atomic<bool>       g_bigcap_feed_ok{false};
 #include "PumpFeedConsumer.hpp"                       // TCP client thread (winsock already set up by IbkrDomConsumer above)
 #include "GoldOrbRetraceEngine.hpp"
 static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
+static omega::GoldOrbRetraceEngine g_gold_orb_london;  // S-2026-06-20 ORB-widen: XAUUSD LONDON open (03:00 ET) 2nd session, +BullGate -- additive (co-fires w/ COMEX 28% of days, PF1.99 gated), shadow
 #include "GoldPanicBounceEngine.hpp"
 #include "RegimeState.hpp"   // 2026-06-12: shared price-based bull/bear regime brain (gold_regime()), fed in tick_gold.hpp, queried by long-only gold engines
 #include "IndexBearShortEngine.hpp"
