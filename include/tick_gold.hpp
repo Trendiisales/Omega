@@ -1712,6 +1712,8 @@ static void on_tick_gold(
     // built internally from H4 stream. Single-position per cell, 3 max
     // concurrent. Shadow-default.
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
+    // S-2026-06-21b CalendarTom on gold (turn-of-month, shadow) -- gcf_daily 2010-26 PF1.63 both-regime.
+    g_tom_xau.on_tick(bid, ask, now_ms_g, handle_closed_trade);
     // S-2026-06-19: TrendRider companion on the D1 host (shadow).
     g_rider_d1.on_host(g_xau_tf_d1.pos, bid, ask, now_ms_g, bracket_on_close);
     // XauTsmomFastD1Engine tick management (SL/TP per tick).

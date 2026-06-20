@@ -1031,6 +1031,7 @@ static omega::CalendarTomEngine g_tom_ustec("USTEC.F");
 static omega::CalendarTomEngine g_tom_ger40("GER40");
 static omega::CalendarTomEngine g_tom_dj30("DJ30.F");
 static omega::CalendarTomEngine g_tom_uk100("UK100");
+static omega::CalendarTomEngine g_tom_xau("XAUUSD");   // S-2026-06-21b: gold TOM (gcf_daily 2010-26: PF1.63 both-halves+ bull1.61/BEAR1.92)
 // S-2026-06-03: GoldSeasonal -- XAUUSD early-week long seasonality (Mon+Tue).
 //   +24%/yr Sharpe 1.84 (daily sim) / +24.5% Sharpe 1.88 (M5 engine-driven, real
 //   21:00 break), win 61%, +ve every year 2024/25/26, both WF halves+, cost-robust

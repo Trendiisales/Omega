@@ -2064,7 +2064,10 @@ static void init_engines(const std::string& cfg_path)
                         tom_boot(g_tom_ger40, 25.0, "phase1/signal_discovery/warmup_GER40_D1_idx.csv");
                         tom_boot(g_tom_dj30,   5.0, "phase1/signal_discovery/warmup_DJ30_D1.csv");
                         tom_boot(g_tom_uk100, 10.0, "phase1/signal_discovery/warmup_UK100_D1.csv");
-                        std::printf("[OMEGA-INIT] CalendarTom x5 (turn-of-month long) -- shadow, warm-seeded\n");
+                        // S-2026-06-21b GOLD TOM: gcf_daily 2010-2026 PF1.63 both-WF-halves+ (1.24/2.23),
+                        // BULL1.61/BEAR1.92 -- TOM extends to gold (we trade it heavily). usd_per_pt=100 (XAU).
+                        tom_boot(g_tom_xau,  100.0, "phase1/signal_discovery/warmup_XAUUSD_D1.csv");
+                        std::printf("[OMEGA-INIT] CalendarTom x6 (turn-of-month long, +XAU) -- shadow, warm-seeded\n");
                     }
 
                     // S-2026-06-03: GoldSeasonal (XAUUSD early-week long, Mon+Tue). The one
