@@ -124,4 +124,16 @@ struct BullGate {
     }
 };
 
+// ---- shared singletons (RegimeState pattern) — feed daily bars, query is_bull() ----
+//   In a gold engine:  omega::bull_gate_gold().on_daily_bar(o,h,l,c);
+//                      if (!omega::bull_gate_gold().is_bull()) return;   // flat in chop/bear
+inline BullGate& bull_gate_gold() noexcept {
+    static BullGate g = []{ BullGate b; b.is_index=false; b.name="XAU"; return b; }();
+    return g;
+}
+inline BullGate& bull_gate_index() noexcept {
+    static BullGate g = []{ BullGate b; b.is_index=true; b.name="IDX"; return b; }();
+    return g;
+}
+
 } // namespace omega
