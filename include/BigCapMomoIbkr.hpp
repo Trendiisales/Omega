@@ -49,6 +49,12 @@ struct Config {
     double be_floor_pct     = 0.02;   // floor stop at entry +2% (net-breakeven)
     bool   maxhold_skip_if_profit = true;  // don't clock-cut a position still in profit
     double ig_pct           = 3.0;    // ignition: +IG% over LB 5m bars
+    // S-2026-06-20 IMPULSE FILTER (the big validated upgrade): the ENTRY bar itself must
+    // thrust >= min_impulse_atr * ATR ((bar high - prior close) >= mult*ATR). Filters the
+    // weak/stalling breakouts (the +gate% names whose entry bar has no thrust) — on real
+    // big-cap 15m data this lifted PF 2.4->5.8, WR 61->73%, maxDD 10.4->6.6% (entry
+    // selectivity, NOT exit tinkering). 0 = disable.
+    double min_impulse_atr  = 1.0;
     double volx             = 3.0;    // volume surge vs 20-bar avg (0 = disable, bridge-delta caveat)
     double px_min           = 10.0;   // big-cap / deep-liquidity floor (price only)
     // S-2026-06-19 universe risk fix: enforce a real market-cap floor in the IBKR
