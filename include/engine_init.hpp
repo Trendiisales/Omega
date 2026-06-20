@@ -3820,7 +3820,7 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.enabled      = true;     // shadow
         g_bigcap_momo.shadow_mode  = true;
         g_bigcap_momo.tf_sec       = 300;      // 5m entry bars (validated TF)
-        g_bigcap_momo.label        = "BigCapMomoBridge";  // S-2026-06-20b: distinct ledger tag so the
+        g_bigcap_momo.label        = "BigCapMomoCons";  // S-2026-06-20b: distinct ledger tag so the
                                                // bridge (conservative gate4.0) is separable from the
                                                // in-process IBKR engine (aggressive gate1.5, tag
                                                // "BigCapMomo") when BOTH run (operator A/B). Same scanner
@@ -3868,7 +3868,7 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.price_min    = 10.0;     // not a penny stock
         g_bigcap_momo.verbose      = true;
         g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
-        g_open_positions.register_source("BigCapMomoBridge", []() { return g_bigcap_momo.collect_positions(); });
+        g_open_positions.register_source("BigCapMomoCons", []() { return g_bigcap_momo.collect_positions(); });
         printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% ATR-trail(30x4) BE-ratchet(arm3/floor2) "
                "ride-in-profit 8h-backstop NO-volx NO-dvol-gate $1000-notional p>=10 slip0.15%%/side shadow "
                "(gain-protect exit S-2026-06-18; liq via scanner; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
