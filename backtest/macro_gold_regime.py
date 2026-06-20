@@ -190,6 +190,16 @@ def s_pricegate(t):  # what the live gold book ALREADY does: trend long blocked 
 def s_pricegate_macro(t):  # macro-hostile as a FURTHER tightening ON TOP of the price gate
     if price_bear(t) or macro_score(t) <= -2: return 0.0
     return s_trend(t)
+# --- BULL-side mirror of BearProtect (operator Q 2026-06-21): boost size 1.5x ONLY when
+#     macro clearly FRIENDLY (real yields falling hard, score>=+2). Mirror of the score<=-2 cut.
+def s_boost(t):
+    base = s_trend(t)
+    return 1.5 * base if macro_score(t) >= 2 else base
+def s_protect_boost(t):  # asymmetric BOTH sides: 0 when hostile<=-2, 1.5x when friendly>=+2
+    base = s_trend(t)
+    if macro_score(t) <= -2: return 0.0
+    if macro_score(t) >= 2:  return 1.5 * base
+    return base
 
 VARIANTS = [
     ("Buy&Hold (beta)", s_buyhold),
@@ -199,6 +209,8 @@ VARIANTS = [
     ("Trend+MacroTilt", s_tilt),
     ("Tilt+COTfade",    s_tilt_cot),
     ("Trend+BearProtect", s_protect),
+    ("Trend+BullBoost (mirror)", s_boost),
+    ("Boost+Protect (both sides)", s_protect_boost),
     ("Protect+BearShort", s_protect_short),
     ("Trend+PriceGate (LIVE today)", s_pricegate),
     ("PriceGate+MacroTighten", s_pricegate_macro),
