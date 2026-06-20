@@ -2199,6 +2199,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "UK100")   g_idx_seas_uk100.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "ESTX50")  g_idx_seas_estx50.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
 
+        // S-2026-06-21 CalendarTom (turn-of-month long, US/EU indices) -- shadow, D1, same sink.
+        if      (sym == "US500.F") g_tom_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "USTEC.F") g_tom_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "GER40")   g_tom_ger40.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "DJ30.F")  g_tom_dj30.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        else if (sym == "UK100")   g_tom_uk100.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+
         // S44 IndexFomc (pre-FOMC drift, US indices) -- shadow, D1, same sink.
         if      (sym == "US500.F") g_idx_fomc_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "USTEC.F") g_idx_fomc_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);

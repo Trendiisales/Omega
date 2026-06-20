@@ -1021,6 +1021,16 @@ static omega::IndexSeasonalEngine g_idx_seas_ger40("GER40");
 static omega::IndexSeasonalEngine g_idx_seas_dj30("DJ30.F");
 static omega::IndexSeasonalEngine g_idx_seas_uk100("UK100");
 static omega::IndexSeasonalEngine g_idx_seas_estx50("ESTX50");
+// S-2026-06-21: CalendarTom -- TURN-OF-MONTH index seasonality (last3+first3 trading days, long).
+//   Faithful (tom_backtest.py + tom_engine_validate.cpp, 2016-2026): all 5 indices PASS both-WF-
+//   halves + both-regimes; book PF~1.4, STRONGER in 2022 bear (PF1.8-2.1) = real flows/calendar
+//   effect NOT beta. Fills the book's bear-positive gap. 5 instances (ESTX50 not validated -> omit).
+#include "CalendarTomEngine.hpp"
+static omega::CalendarTomEngine g_tom_us500("US500.F");
+static omega::CalendarTomEngine g_tom_ustec("USTEC.F");
+static omega::CalendarTomEngine g_tom_ger40("GER40");
+static omega::CalendarTomEngine g_tom_dj30("DJ30.F");
+static omega::CalendarTomEngine g_tom_uk100("UK100");
 // S-2026-06-03: GoldSeasonal -- XAUUSD early-week long seasonality (Mon+Tue).
 //   +24%/yr Sharpe 1.84 (daily sim) / +24.5% Sharpe 1.88 (M5 engine-driven, real
 //   21:00 break), win 61%, +ve every year 2024/25/26, both WF halves+, cost-robust

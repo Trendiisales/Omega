@@ -2047,6 +2047,26 @@ static void init_engines(const std::string& cfg_path)
                     idx_seas_boot(g_idx_seas_estx50, 10.0, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
                     std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long) -- shadow, warm-seeded\n");
 
+                    // S-2026-06-21: CalendarTom (TURN-OF-MONTH, last3+first3 trading days, long).
+                    //   Faithful (tom_engine_validate.cpp, real engine, 2016-2026): all 5 PASS both-
+                    //   WF-halves + both-regimes; book PF~1.4, STRONGER in 2022 bear (PF1.8-2.1) = a
+                    //   real flows/calendar effect NOT beta (in-mkt ~24%, +ve through the 2022 selloff).
+                    //   Fills the book's bear-positive gap; orthogonal to trend/MR (calendar-timed).
+                    //   Reuses the IndexSeasonal warmup CSVs. ESTX50 omitted (not validated).
+                    {
+                        auto tom_boot = [](omega::CalendarTomEngine& e, double upp, const char* warm){
+                            e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0;
+                            e.p.usd_per_pt=upp; e.p.last_n=3; e.p.first_n=3;
+                            e.seed_from_d1_csv(warm);
+                        };
+                        tom_boot(g_tom_us500, 50.0, "phase1/signal_discovery/warmup_US500_D1.csv");
+                        tom_boot(g_tom_ustec, 20.0, "phase1/signal_discovery/warmup_USTEC_D1.csv");
+                        tom_boot(g_tom_ger40, 25.0, "phase1/signal_discovery/warmup_GER40_D1_idx.csv");
+                        tom_boot(g_tom_dj30,   5.0, "phase1/signal_discovery/warmup_DJ30_D1.csv");
+                        tom_boot(g_tom_uk100, 10.0, "phase1/signal_discovery/warmup_UK100_D1.csv");
+                        std::printf("[OMEGA-INIT] CalendarTom x5 (turn-of-month long) -- shadow, warm-seeded\n");
+                    }
+
                     // S-2026-06-03: GoldSeasonal (XAUUSD early-week long, Mon+Tue). The one
                     //   new gold edge found after exhausting price/book signals — calendar
                     //   axis. +24.5%/yr Sharpe 1.88 engine-driven on M5 (real 21:00 daily
