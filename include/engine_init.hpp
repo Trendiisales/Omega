@@ -4204,7 +4204,21 @@ static void init_engines(const std::string& cfg_path)
         cfg_mr(g_dbl_nas,    "NAS100",  "ConnorsDouble_NAS", 5, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
         cfg_mr(g_streak_spx, "US500.F", "ConnorsStreak_SPX", 2, "phase1/signal_discovery/warmup_US500_D1.csv", 930, 1600);
         cfg_mr(g_dbl_spx,    "US500.F", "ConnorsDouble_SPX", 5, "phase1/signal_discovery/warmup_US500_D1.csv", 930, 1600);
-        printf("[OMEGA-INIT] Connors MR family: IBS/STREAK/DOUBLE on NAS100 + STREAK/DOUBLE on US500 (shadow)\n");
+        // ── S-2026-06-20 MR-breadth-book expansion (freq/DD frontier) ───────────────
+        // Diversified daily-MR book: NDX+SPX+DJ30 across entry-modes. Diversification of
+        // the ~uncorrelated legs cuts portfolio maxDD ~58% while ~12x'ing frequency.
+        // Gate per the recheck: NAS=asym-veto (better net+DD), SPX/DJ30=close>SMA200.
+        cfg_mr(g_rsi3_nas,  "NAS100",  "ConnorsRSI3_NAS",   4, "phase1/signal_discovery/warmup_NAS100_D1.csv", 930, 1600);
+        g_rsi3_nas.REGIME_GATE = 1;   // NAS asym-veto (recheck: net+DD both better on NDX)
+        cfg_mr(g_ibs_spx,   "US500.F", "ConnorsIBS_SPX",    1, "phase1/signal_discovery/warmup_US500_D1.csv", 930, 1600);
+        cfg_mr(g_rsi2_spx,  "US500.F", "ConnorsRSI2_SPX",   0, "phase1/signal_discovery/warmup_US500_D1.csv", 930, 1600);
+        cfg_mr(g_ibs_dj,    "DJ30.F",  "ConnorsIBS_DJ",     1, "phase1/signal_discovery/warmup_DJ30_D1.csv",  930, 1600);
+        cfg_mr(g_rsi2_dj,   "DJ30.F",  "ConnorsRSI2_DJ",    0, "phase1/signal_discovery/warmup_DJ30_D1.csv",  930, 1600);
+        cfg_mr(g_dbl_dj,    "DJ30.F",  "ConnorsDouble_DJ",  5, "phase1/signal_discovery/warmup_DJ30_D1.csv",  930, 1600);
+        // SPX/DJ30 keep REGIME_GATE=0 (close>SMA200) — recheck: asym raises DD there.
+        // Book-level concurrent-position cap = the freq/DD-frontier DD lever (cap=3 -> ~2.4% maxDD).
+        omega::ConnorsRSI2Engine::BOOK_CAP = 3;
+        printf("[OMEGA-INIT] Connors MR breadth book: NAS{RSI2,IBS,STREAK,DOUBLE,RSI3} + SPX{STREAK,DOUBLE,IBS,RSI2} + DJ30{IBS,RSI2,DOUBLE} (shadow); NAS=asym-veto, SPX/DJ30=SMA200, BOOK_CAP=3\n");
         fflush(stdout);
     }
 

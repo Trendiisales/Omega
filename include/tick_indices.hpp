@@ -43,6 +43,8 @@ static void on_tick_us500(
         const int64_t conn_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
         g_streak_spx.on_tick(bid, ask, conn_ms); g_engine_heartbeat.pulse("ConnorsStreak_SPX");
         g_dbl_spx.on_tick(bid, ask, conn_ms);    g_engine_heartbeat.pulse("ConnorsDouble_SPX");
+        g_ibs_spx.on_tick(bid, ask, conn_ms);    g_engine_heartbeat.pulse("ConnorsIBS_SPX");   // S-2026-06-20 breadth
+        g_rsi2_spx.on_tick(bid, ask, conn_ms);   g_engine_heartbeat.pulse("ConnorsRSI2_SPX");  // S-2026-06-20 breadth
     }
 
     // AtrMeanRevGrid US500 (shadow). H1 X=8 SL_Y=6 ATR_FROM_WAP, PF 1.75 sweep.
@@ -492,6 +494,13 @@ static void on_tick_dj30(
     g_engine_heartbeat.pulse("IFlowUS30");
     g_engine_heartbeat.pulse("IMacroUS30");
     g_engine_heartbeat.pulse("MinimalH4US30");
+    // S-2026-06-20 Connors MR breadth book on DJ30 (IBS/RSI2/DOUBLE, close>SMA200, shadow).
+    {
+        const int64_t conn_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_ibs_dj.on_tick(bid, ask, conn_ms);   g_engine_heartbeat.pulse("ConnorsIBS_DJ");
+        g_rsi2_dj.on_tick(bid, ask, conn_ms);  g_engine_heartbeat.pulse("ConnorsRSI2_DJ");
+        g_dbl_dj.on_tick(bid, ask, conn_ms);   g_engine_heartbeat.pulse("ConnorsDouble_DJ");
+    }
     g_engine_heartbeat.pulse("Us30Ensemble");        // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("Us30_3BarMomH1");      // 2026-05-26 (Stage 4)
     g_engine_heartbeat.pulse("OrbDj30");             // 2026-05-26 (Stage 4)
@@ -864,6 +873,7 @@ static void on_tick_nas100(
         g_ibs_nas.on_tick(bid, ask, conn_ms);    g_engine_heartbeat.pulse("ConnorsIBS_NAS");
         g_streak_nas.on_tick(bid, ask, conn_ms); g_engine_heartbeat.pulse("ConnorsStreak_NAS");
         g_dbl_nas.on_tick(bid, ask, conn_ms);    g_engine_heartbeat.pulse("ConnorsDouble_NAS");
+        g_rsi3_nas.on_tick(bid, ask, conn_ms);   g_engine_heartbeat.pulse("ConnorsRSI3_NAS");  // S-2026-06-20 breadth
     }
 
     // 2026-06-12: feed the market-bear PROXY (NAS = bellwether). IndexRiskGate uses

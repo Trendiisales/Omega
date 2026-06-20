@@ -74,6 +74,11 @@ public:
     int    REGIME_GATE = 0;   // 0 = close>SMA(TREND_SMA) (current); 1 = asym sustained-bear veto
     int    BEAR_VETO_K = 20;  // consec bars (close<SMA AND SMA falling) before a dip-buy is vetoed
     int    m_bear_below = 0;  // runtime: consecutive sustained-falling-bear bars (REGIME_GATE=1)
+    // S-2026-06-20 book-level concurrent-position cap (the freq/DD-frontier DD lever):
+    // shared across ALL ConnorsRSI2 instances so the correlated MR family can't stack on
+    // one risk-off dip. cap=3 -> ~2.4% portfolio maxDD; cap=2 -> ~1.75%; 0 = uncapped.
+    static inline int s_book_open = 0;   // shared open-position count across the family
+    static inline int BOOK_CAP    = 0;   // 0 = no cap; >0 = max concurrent family positions
     // ADVERSE-PROTECTION: (S-2026-06-19, backtested verdict) NONE needed / by-design exempt.
     // Long-only daily MEAN-REVERSION gated by close>SMA(TREND_SMA) — the trend filter IS the
     // adverse protection (no dip-buying below the 200d SMA = sits out bears; faithful 2022:
@@ -97,7 +102,7 @@ public:
     }
     bool persist_restore(const omega::PositionSnapshot& ps) {   // fixed-lot: re-assert config lot
         pos = Position{}; pos.active=true; pos.entry_px=ps.entry; pos.size=lot;
-        pos.entry_ms=ps.entry_ts*1000; return true;
+        pos.entry_ms=ps.entry_ts*1000; ++s_book_open; return true;
     }
     bool has_open_position() const { return pos.active; }
     double pos_entry() const { return pos.entry_px; }
@@ -181,9 +186,10 @@ public:
                 double sma=0; for (int i=N-TREND_SMA;i<N;++i) sma+=m_closes[i]; sma/=TREND_SMA;
                 const double r=_rsi(RSI_LEN);
                 const bool regime_ok = (REGIME_GATE==1) ? (m_bear_below < BEAR_VETO_K) : (close>sma);
-                if (regime_ok && _signal()) {
+                const bool cap_ok = (BOOK_CAP <= 0 || s_book_open < BOOK_CAP);
+                if (regime_ok && cap_ok && _signal()) {
                     pos=Position{}; pos.active=true; pos.entry_px=ask>0?ask:close; pos.size=lot; pos.units=1; pos.entry_ms=now_ms; pos.held=0;
-                    m_done_today=true;
+                    m_done_today=true; ++s_book_open;
                     if (verbose) printf("[%s] %s DIP-BUY entry=%.2f rsi2=%.1f close=%.2f sma%d=%.2f%s\n",
                         engine_name.c_str(), symbol.c_str(), pos.entry_px, r, close, TREND_SMA, sma, shadow_mode?" [SHADOW]":"");
                 }
@@ -228,6 +234,7 @@ private:
     }
     void _close(double exit_px, int64_t now_ms, const char* reason) {
         if (!pos.active) return;
+        if (s_book_open > 0) --s_book_open;   // release the book-cap slot
         const double pnl=(exit_px-pos.entry_px)*pos.size;
         omega::TradeRecord tr{};
         tr.symbol=symbol; tr.engine=engine_name; tr.side="LONG";

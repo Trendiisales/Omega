@@ -140,6 +140,14 @@ static omega::ConnorsRSI2Engine g_streak_nas;  // ENTRY_MODE=2 STREAK, NAS100
 static omega::ConnorsRSI2Engine g_dbl_nas;     // ENTRY_MODE=5 DOUBLE, NAS100
 static omega::ConnorsRSI2Engine g_streak_spx;  // ENTRY_MODE=2 STREAK, US500.F
 static omega::ConnorsRSI2Engine g_dbl_spx;     // ENTRY_MODE=5 DOUBLE, US500.F
+// S-2026-06-20 MR-breadth-book expansion (freq/DD frontier): + RSI3 NAS, SPX{IBS,RSI2},
+// DJ30{IBS,RSI2,DOUBLE}. NAS=asym-veto (recheck-confirmed better net+DD); SPX/DJ30=close>SMA200.
+static omega::ConnorsRSI2Engine g_rsi3_nas;    // ENTRY_MODE=4 RSI3, NAS100
+static omega::ConnorsRSI2Engine g_ibs_spx;     // ENTRY_MODE=1 IBS, US500.F
+static omega::ConnorsRSI2Engine g_rsi2_spx;    // ENTRY_MODE=0 RSI2, US500.F
+static omega::ConnorsRSI2Engine g_ibs_dj;      // ENTRY_MODE=1 IBS, DJ30.F
+static omega::ConnorsRSI2Engine g_rsi2_dj;     // ENTRY_MODE=0 RSI2, DJ30.F
+static omega::ConnorsRSI2Engine g_dbl_dj;      // ENTRY_MODE=5 DOUBLE, DJ30.F
 #include "AdaptiveHullEngine.hpp"
 #include "SupertrendGoldEngine.hpp"
 #include "PeachyOrbEngine.hpp"
