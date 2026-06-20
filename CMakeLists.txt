@@ -474,6 +474,42 @@ add_custom_command(TARGET OmegaBacktest POST_BUILD
 )
 
 # =============================================================================
+# BatchEngineRunner -- generalized engine-zoo batch BT: array of (engine x config)
+# cells driven in ONE tick pass, per-cell PF/net split both-halves. Models on
+# OmegaBacktest (no FIX/curl/winsock). Build: cmake --build build --target BatchEngineRunner
+# =============================================================================
+add_executable(BatchEngineRunner
+    backtest/batch_engine_runner.cpp
+    src/SymbolConfig.cpp
+)
+target_include_directories(BatchEngineRunner PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/backtest
+)
+if(MSVC)
+    target_compile_options(BatchEngineRunner PRIVATE
+        /O2 /std:c++20 /W3
+        /wd4005 /wd4100 /wd4505 /wd4324 /wd4244
+        /FI "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(BatchEngineRunner PRIVATE
+        _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS OMEGA_BACKTEST
+    )
+    target_link_libraries(BatchEngineRunner PRIVATE ws2_32)
+else()
+    target_compile_options(BatchEngineRunner PRIVATE
+        -O3 -std=c++20 -Wall -Wextra
+        -Wno-unused-parameter -Wno-unused-function -Wno-reorder
+        -include "${CMAKE_SOURCE_DIR}/backtest/OmegaTimeShim.hpp"
+    )
+    target_compile_definitions(BatchEngineRunner PRIVATE OMEGA_BACKTEST)
+    target_link_libraries(BatchEngineRunner PRIVATE pthread)
+endif()
+
+# =============================================================================
 # IndexBacktest -- NAS100 cross-engine backtest exercising the index engines
 # (IndexFlow + IndexHybridBracket + IndexMacroCrash) and the Bug #3 cross-
 # engine gate from include/tick_indices.hpp / include/globals.hpp.
