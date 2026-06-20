@@ -38,7 +38,11 @@ IB_PORT = int(os.environ.get("OMEGA_IBKR_PORT", "4001"))  # 4001 LIVE gateway (2
 IB_CID  = 34                                              # clientId distinct from pump(33)
 SERVE_PORT    = int(os.environ.get("OMEGA_BIGCAP_BRIDGE_PORT", "7784"))
 PREFILTER_PCT = 3.0          # subscribe names already >=3% up (engine gates at 5%)
-MARKETCAP_MIN = 2000.0       # big/mid-cap only -- UNITS = MILLIONS USD (TWS scanner
+MARKETCAP_MIN = 500000.0     # S-2026-06-20c RE-VALIDATION: $2B surfaced mid-caps (ROKU/SMCI/COIN)
+                             # below the validated edge tier. bigcap_revalidate.py (30 names): edge is
+                             # mega-cap-only -- >=$500B PF1.57 both-halves+, <$150B no edge. $500B = correct
+                             # universe (matches the IBKR engine bc.market_cap_above_musd). $500B=500000 musd.
+                             # big/mid-cap only -- UNITS = MILLIONS USD (TWS scanner
                              # convention). 2000 = $2B. BUG 2026-06-13: was 2.0e9 =
                              # "$2 quadrillion" -> scanner returned 0 rows since ship.
 PRICE_MIN     = 10.0         # not a penny stock

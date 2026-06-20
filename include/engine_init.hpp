@@ -1798,7 +1798,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_sess_nypm.ema_period       = 200;
         g_xau_sess_nypm.sl_atr           = 0.0;     // pure time exit (validated)
         g_xau_sess_nypm.skip_dow_mask    = (1 << 5); // skip Friday (weekend de-risk;
-                                                     // Fri NYpm PF0.79 vs PF1.80 w/o)
+                                                     // Fri NYpm 0.79 vs 1.80 w/o, ratio)
         g_xau_sess_nypm.shadow_mode      = true;
         g_xau_sess_nypm.enabled          = true;
         g_xau_sess_nypm.lot              = 0.01;
@@ -3939,9 +3939,17 @@ static void init_engines(const std::string& cfg_path)
             bc.lb           = 6;       // ignition lookback (6*5m = 30min)
             bc.maxhold      = 96;      // 96*5m = 8h backstop (losers only; in-profit rides past it)
             bc.px_min       = 10.0;    // not a penny stock
-            bc.market_cap_above_musd = 100.0;   // S-2026-06-20 (operator): $2B->$100M. $2B scanner
-                                                // universe too tight -> near-zero rows -> zero fires.
-                                                // $100M + px_min>=$10 still bars true micro-caps. millions unit.
+            bc.market_cap_above_musd = 500000.0; // S-2026-06-20c RE-VALIDATION: $100M floor traded
+                                                // small-cap gappers (AEHR/PBLS/SHAZ) = live PF0.89 LOSING
+                                                // (universe != the validated mega-cap set). Per-name +
+                                                // cap-tier faithful re-test (bigcap_revalidate.py, 30 names
+                                                // 2024-26): edge is monotonic in mcap -- >=$500B PF1.57
+                                                // both-halves+ (NVDA/ORCL/PLTR/CRWD); $150-300B decays to
+                                                // ~1.0; <$150B no edge. $500B = the correct universe.
+                                                // TRADEOFF: low freq (~2/wk, megas rarely gap) -- inherent,
+                                                // no floor gives edge+high-freq. millions unit ($500B=500000).
+                                                // bull-span only (no bear test). Revert toward $300B for
+                                                // slightly more names if scanner returns too few rows.
             bc.regime_gate  = true;    // SPY price>SMA200 AND SMA200 rising
             bc.notional_usd = 1000.0;
             bc.paper_only   = true;    // SHADOW: log trades, route NO live orders

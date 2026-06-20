@@ -12,3 +12,17 @@ NasOrbRetrace	1.88	2026-06-16	faithful	EDGE	retuned retr0.5; both halves
 SurvivorPortfolio	1.26	2026-06-18	survivor_faithful_revalidate.cpp	SHADOW-CANDIDATE	book PF1.26 both-halves+ cost-robust 2yr; but +10.6k/14.1k is USTEC_RSI_N7 H2-concentrated (H1 -279), no 2022 bear; XAU_DonchN20 robust anchor; MA_10_30 fat-tail noise
 survivor	1.26	2026-06-18	survivor_faithful_revalidate.cpp	SHADOW-CANDIDATE	alias of SurvivorPortfolio (g_survivor)
 XauThreeBar30m	1.29	2026-06-18	threebar30m_xau_S35P3_backtest.cpp	SHADOW-CANDIDATE	resurrected from polluted 06-15 cull; production engine M30 2024-26 PF1.29 n365 all-years+; BEAR-TEST PASSED 2026-06-18: 2022 PF1.01 (survives gold selloff) + 2023 PF1.32; positive-or-flat all years 2022-2026, NOT bull-beta. Cross-regime-confirmed.
+GoldVolbrkM30	1.94	2026-06-16	gold_volbrk_m30_revalidate.cpp	SHADOW-CANDIDATE	faithful 1.94 (NOT bar-replay 2.41); 3x-cost 1.85; both-halves+; fat-tail top3=83pct, 43 trades, 2024-26 bull-only, BEAR-UNTESTED -> shadow
+XauTf4h	1.58	2026-06-19	xau_tf faithful class-driven audit	EDGE	bull 1.58 / bear 1.13 cross-regime, NOT bull-beta; trail-only (deep-BE cuts profit); M15 cell disabled (bear 0.75)
+XauTfD1	2.53	2026-06-19	faithful engine sweep	SHADOW-CANDIDATE	both-regime+ both-halves+ but cost not fully stated -> treat shadow until cost-confirmed
+FxXrevEurgbp	2.01	2026-06	real Dukascopy D1 2019-2026	EDGE	EURGBP PF2.01 +2663bp WR69 H1/H2 1.86/2.29; AUDNZD sibling 3.09
+IdxBearShortNas	1.60	2026-06	NAS2022 faithful bear	EDGE	NAS 2022 bear PF1.60 both-halves+ bull-gated +702; SPX leg DISABLED (validation file missing)
+GoldOrbLondon	2.38	2026-06-16	faithful (gold_xregime_recheck)	EDGE	alias of GoldOrbRetrace (g_gold_orb_london); 2yr retr0.382/tight/1-shot both-halves+ 3x-cost
+XauSessNypm	1.57	2026-06	2yr XAU H1 cost-incl	SHADOW-CANDIDATE	SessionMomentum NYpm 1.57 / overnight 1.56 @1bp -> 1.22/1.26 @5bp; 6/6 blocks+; Fri skipped (0.79)
+ConnorsNas	2.13	2026-06-20	freq_dd_frontier.py (next-open daily 2bp)	EDGE	ConnorsRSI2 NDX close>SMA200 gate; n206 WR72; SPX sibling 1.85 (cost-fragile); both-halves+ per mr-breadth
+ConnorsGer	1.36	2026-06-20	freq_dd_frontier.py (next-open daily 2bp)	MARGINAL	GER40 ConnorsRSI2 1.36 marginal-positive; weaker than NDX; size small / shadow
+XauTf1h	2.13	2026-06-20	xau_tf1h_cell_sweep.cpp (real engine)	EDGE	bull 2.13 / 2022-23 bear 1.33 BOTH-REGIME+; n268; low-WR fat-tail trend runner. Upgraded from marginal-shadow.
+XauTf2h	1.80	2026-06-20	bracketed (no standalone 2h harness)	SHADOW-CANDIDATE	no real-engine 2h sweep exists; bracketed by XauTf1h EDGE(2.13/1.33) + XauTf4h EDGE(1.58); presumed positive, owes a 2h sweep
+TrendRider	1.43	2026-06-20	trendrider_faithful.cpp (real engine, BULL-GATED)	SHADOW-CANDIDATE	GATED 2026-06-20: self-fed BullGate (gold) + gold_regime() bear-veto in can_open() -> trades ONLY in confirmed bull. Gated bull PF1.43 both-halves+ DD-569 (was 1.33/-828 ungated; gate removed chop). Flat in chop/bear by construction. Shadow until live ledger confirms.
+Rider4h	1.99	2026-06-20	rider_overlay_generic.py (real host trades)	SHADOW-CANDIDATE	MIRROR overlay on XauTrendFollow4h host -- banks favorable excursions, no leg stop = additive. Vault xau_tf_rider_overlay: D1+4h both-halves+ both regimes. 1h-host proxy nearly tripled net both-halves+.
+RiderD1	1.99	2026-06-20	rider_overlay_generic.py (real host trades)	SHADOW-CANDIDATE	MIRROR overlay on XauTrendFollowD1 host; additive both-halves+ both regimes (vault). Overlay = incremental-over-host, not standalone PF.

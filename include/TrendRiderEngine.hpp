@@ -91,6 +91,8 @@
 #include <string>
 #include "OmegaTradeLedger.hpp"
 #include "CellPrimitives.hpp"   // Phase 1 of CellEngine refactor; layout sanity asserts below
+#include "RegimeState.hpp"      // 2026-06-20: live-fed sustained-bear veto (gold_regime().long_blocked())
+#include "BullGate.hpp"         // 2026-06-20: self-fed BULL/CHOP/BEAR gate -- trade bull only, flat chop/bear
 
 namespace omega {
 
@@ -541,6 +543,35 @@ struct TrendRiderPortfolio {
     std::string macro_regime_      = "NEUTRAL";
     void set_macro_regime(const std::string& r) noexcept { macro_regime_ = r; }
 
+    // 2026-06-20 BULL-ONLY GATE (operator: bull engines must NOT trade chop/bear).
+    // Self-fed gold BullGate -- aggregates THIS engine's own H1 stream into daily
+    // bars and runs the validated ADX+vol BULL/CHOP/BEAR classifier. No dependence
+    // on the live tick-path feed (which is absent), so it works identically in the
+    // faithful harness and live. can_open() blocks ALL cell entries unless is_bull().
+    // Graceful: until warm (EMA200+slope of daily bars) it does NOT block.
+    BullGate bg_gold_{};
+    bool     bg_init_ = false; int64_t bg_day_ = 0;
+    double   bg_o_ = 0, bg_h_ = 0, bg_l_ = 0, bg_c_ = 0;
+    void feed_bull_gate_(const TrBar& h1) noexcept {
+        bg_gold_.is_index = false;                       // gold trends at low ADX -> drop ADX gate
+        const int64_t day = (h1.bar_start_ms / 86400000LL) * 86400000LL;
+        if (!bg_init_) { bg_init_ = true; bg_day_ = day;
+            bg_o_ = h1.open; bg_h_ = h1.high; bg_l_ = h1.low; bg_c_ = h1.close; return; }
+        if (day != bg_day_) {
+            bg_gold_.on_daily_bar(bg_o_, bg_h_, bg_l_, bg_c_);   // finalise prior day
+            bg_day_ = day; bg_o_ = h1.open; bg_h_ = h1.high; bg_l_ = h1.low; bg_c_ = h1.close;
+        } else {
+            if (h1.high > bg_h_) bg_h_ = h1.high;
+            if (h1.low  < bg_l_) bg_l_ = h1.low;
+            bg_c_ = h1.close;
+        }
+    }
+    bool bull_ok_() const noexcept {
+        if (omega::gold_regime().long_blocked())          return false; // live-fed sustained-bear veto
+        if (bg_gold_.warm() && !bg_gold_.is_bull())       return false; // self-fed chop/bear kill
+        return true;                                                    // cold -> allow (graceful)
+    }
+
     void init() noexcept {
         auto stamp = [](TrendRiderCell& c, const char* tf, int dir, const char* id) {
             c.symbol     = "XAUUSD";
@@ -606,6 +637,7 @@ struct TrendRiderPortfolio {
         if (!enabled)                 return false;
         if (equity_ < margin_call)    return false;
         if (block_on_risk_off && macro_regime_ == "RISK_OFF") return false;
+        if (!bull_ok_())              return false;   // 2026-06-20: trade only in confirmed bull (flat chop/bear)
         return open_count_ < max_concurrent;
     }
 
@@ -655,6 +687,7 @@ struct TrendRiderPortfolio {
                    double /*h1_atr14_unused*/,
                    int64_t now_ms, OnCloseCb runtime_cb) noexcept {
         if (!enabled) return;
+        feed_bull_gate_(h1);   // 2026-06-20: self-feed the bull/chop/bear gate from our own bars
 
         synth_h2_.on_h1_bar(h1, [&](const TrBar& b) {
             atr_h2_.on_bar(b);
