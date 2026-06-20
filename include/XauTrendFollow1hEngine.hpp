@@ -190,6 +190,12 @@ public:
     bool   use_vol_band_gate = false;
     double vol_band_low_pct  = 0.30;
     double vol_band_high_pct = 0.85;
+    // S-2026-06-20 IMPULSE FILTER: breakout cells (Donchian/Keltner/EmaCross — NOT the
+    // Pullback dip-buy) require the entry bar to thrust >= min_impulse_atr*ATR
+    // ((bar.high - prior close) >= mult*ATR14). Filters weak/stalling breakouts. XAU H1
+    // confirmed: DonchN20+BullGate PF 1.60->2.00, maxDD 292->155 (~halved); bear unaffected.
+    // 0 = OFF. Activated to 1.0 on g_xau_tf_1h in engine_init.
+    double min_impulse_atr   = 0.0;
     bool   use_adx_gate      = false;
     double adx_min           = 25.0;
     std::deque<double> atr_vol_window_;
@@ -372,6 +378,13 @@ public:
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side <= 0) continue;     // long-only: never short
+            // S-2026-06-20 IMPULSE FILTER on breakout cells (NOT the Pullback dip-buy):
+            // the entry bar must thrust >= min_impulse_atr*ATR (XAU H1: PF up, maxDD ~halved).
+            if (min_impulse_atr > 0.0 && kXauTf1hCells[ci].family != XauTf1hFamily::PullbackEma20
+                && atr14_ > 0.0 && (int)bars_.size() >= 2) {
+                const double prev_close = bars_[bars_.size()-2].close;
+                if ((bar.high - prev_close) < min_impulse_atr * atr14_) continue;  // weak breakout
+            }
             // S88-followup vol-band
             if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {
                 int below = 0;

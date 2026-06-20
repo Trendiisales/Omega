@@ -1263,6 +1263,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_1h.cell_enable_mask = 0x0F;  // S40: all 4 ensemble cells (EmaCross+Donchian+Pullback+Keltner)
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
+        g_xau_tf_1h.min_impulse_atr = 1.0;    // S-2026-06-20 impulse filter on breakout cells (XAU H1: PF up, maxDD ~halved)
         // ── S39 vol-target + pyramiding on the Donchian40 cell (OFF by default).
         // Validated edge (gold_regime_edges.cpp, 2yr WF + 6-block + 3x-cost):
         // vol-target N40 Donchian PF~3 robust; pyramid K2 lifts avg-win ~3x at
