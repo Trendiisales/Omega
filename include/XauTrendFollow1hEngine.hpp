@@ -200,6 +200,15 @@ public:
     double adx_min           = 25.0;
     std::deque<double> atr_vol_window_;
 
+    // S-2026-06-21 ER TREND/CHOP GATE (defaults OFF). Kaufman efficiency ratio over
+    // er_gate_n bars; breakout cells (NOT Pullback dip-buy) skip entry when ER <
+    // er_gate_min (low ER = choppy/non-directional = whipsaw). Harness er_gate_trend_bt:
+    // gold H1 trend PF 1.05->1.13, edge density 2.4x, maxDD down at ER~0.40 in TREND tape.
+    // NOT a bear fix (gate filters chop, not direction) -- relies on existing macro/vol
+    // gates for the 2022-class bleed. 0 = OFF (byte-identical). Set 0.40 in engine_init.
+    double er_gate_min = 0.0;
+    int    er_gate_n   = 20;
+
     // S63-pattern in-flight protection (defaults disabled).
     double LOSS_CUT_PCT  = 0.0;
     double BE_ARM_PCT    = 0.0;
@@ -330,6 +339,17 @@ public:
     }
 
     // ============================================================
+    // Kaufman efficiency ratio over the last n bar-closes (directional travel /
+    // total path). >=0..1; higher = more trending. -1 if insufficient history.
+    double _kaufman_er(int n) const noexcept {
+        const int sz = (int)bars_.size();
+        if (sz < n + 1) return -1.0;
+        const double dir = std::fabs(bars_[sz-1].close - bars_[sz-1-n].close);
+        double path = 0.0;
+        for (int i = sz-n; i < sz; ++i) path += std::fabs(bars_[i].close - bars_[i-1].close);
+        return path > 0.0 ? dir / path : 0.0;
+    }
+
     //  on_h1_bar -- called by tick_gold.hpp when an H1 bar closes
     // ============================================================
     void on_h1_bar(const XauTfBar1h& bar,
@@ -384,6 +404,12 @@ public:
                 && atr14_ > 0.0 && (int)bars_.size() >= 2) {
                 const double prev_close = bars_[bars_.size()-2].close;
                 if ((bar.high - prev_close) < min_impulse_atr * atr14_) continue;  // weak breakout
+            }
+            // S-2026-06-21 ER trend/chop gate on breakout cells (NOT Pullback dip-buy):
+            // skip when Kaufman efficiency ratio < er_gate_min (low ER = chop whipsaw).
+            if (er_gate_min > 0.0 && kXauTf1hCells[ci].family != XauTf1hFamily::PullbackEma20) {
+                const double er = _kaufman_er(er_gate_n);
+                if (er >= 0.0 && er < er_gate_min) continue;
             }
             // S88-followup vol-band
             if (use_vol_band_gate && (int)atr_vol_window_.size() >= 200) {

@@ -1264,6 +1264,12 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
         g_xau_tf_1h.min_impulse_atr = 1.0;    // S-2026-06-20 impulse filter on breakout cells (XAU H1: PF up, maxDD ~halved)
+        // S-2026-06-21 ER trend/chop gate (shadow A/B vs prior ungated record). Harness
+        // er_gate_trend_bt: gold H1 trend PF 1.05->1.13, edge density 2.4x, maxDD down at
+        // ER~0.40 in trend tape (skip-only filter, never adds trades). Bear bleed handled
+        // by existing macro/vol gates, not this. breakout cells only (Pullback exempt).
+        g_xau_tf_1h.er_gate_min = 0.40;
+        g_xau_tf_1h.er_gate_n   = 20;
         // ── S39 vol-target + pyramiding on the Donchian40 cell (OFF by default).
         // Validated edge (gold_regime_edges.cpp, 2yr WF + 6-block + 3x-cost):
         // vol-target N40 Donchian PF~3 robust; pyramid K2 lifts avg-win ~3x at
