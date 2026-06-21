@@ -23,6 +23,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
 #include "OpenPositionRegistry.hpp"
+#include "RegimeState.hpp"       // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 
 namespace omega {
 
@@ -118,6 +119,8 @@ private:
             if (flipDn) { _close(c, close_ms, "ST_FLIP"); return; } }
         // entry: flip-up + uptrend regime (close>EMA). enabled-guard for seed.
         if (enabled && !pos.active && flipUp && c>m_ema) {
+            // 2026-06-21: macro-hostile long-block (LONG-ONLY engine). Fail-safe false.
+            if (omega::gold_regime().long_blocked()) return;
             // cost gate: no-TP runner -> use ST-line stop distance as gross proxy
             if (c-m_st_line<=0 || !ExecutionCostGuard::is_viable(symbol.c_str(), m_spread, c-m_st_line, lot, 1.5)) return;
             pos=Position{}; pos.active=true; pos.entry_px=c; pos.stop_px=m_st_line; pos.size=lot; pos.entry_ms=close_ms;

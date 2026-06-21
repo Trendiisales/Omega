@@ -36,6 +36,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
 #include "ClusterGate.hpp"   // cross-engine same-direction cluster cap (S-2026-06-11)
+#include "RegimeState.hpp"   // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 
 namespace omega {
 
@@ -203,6 +204,8 @@ struct GoldOrbRetraceEngine {
         // armed: first retrace bar that touches the level = enter (tight stop = this bar extreme)
         const bool touch = bias_>0 ? (l <= entry_lvl_) : (h >= entry_lvl_);
         if (!touch) return;
+        // 2026-06-21: macro-hostile long-block (long side only; bidirectional ORB). Fail-safe false.
+        if (bias_ > 0 && omega::gold_regime().long_blocked()) { traded_=true; return; }
         const double sl = bias_>0 ? (l - buf_atr*atr_) : (h + buf_atr*atr_);
         const double risk = bias_>0 ? (entry_lvl_ - sl) : (sl - entry_lvl_);
         if (risk <= 0.05*atr_) { traded_=true; return; }

@@ -39,6 +39,7 @@
 #include <string>
 #include "OmegaCostGuard.hpp"
 #include "OmegaTradeLedger.hpp"
+#include "RegimeState.hpp"       // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 
 namespace omega {
 
@@ -147,6 +148,8 @@ public:
         if (!can_enter) return;
         if (now_ms < m_cooldown_until) return;
         if (spread > SPREAD_CAP) return;
+        // 2026-06-21: macro-hostile long-block (long side only; bidirectional engine). Fail-safe false.
+        if (m_signal_long && omega::gold_regime().long_blocked()) return;
 
         const double tp_dist = m_signal_atr * TP_ATR_MULT;
         if (!::ExecutionCostGuard::is_viable("XAUUSD", spread, tp_dist, LOT_MIN, 1.5)) return;
