@@ -2031,21 +2031,28 @@ static void init_engines(const std::string& cfg_path)
                 //   VIX-level gate tested WORSE -- ungated core is the edge. usd_per_pt is
                 //   a rough CFD per-point value (shadow-PnL scaling only).
                 {
-                    auto idx_seas_boot = [](omega::IndexSeasonalEngine& e, double upp, const char* warm){
+                    // tt = Turnaround-Tuesday gate: Tue leg only after a down prior session
+                    // (Mon close < Fri close). Fri->Mon leg unaffected. Validated
+                    // turnaround_tuesday_bt.cpp: gated Tue BEATS unconditional (survives 2x cost
+                    // where uncond goes negative bull/half1; both-regime+ incl bear PF1.29; ~halves
+                    // maxDD). Roster US500+USTEC+DJ30+UK100=ON; GER40 FAILS the gate (bull -1225bp)
+                    // and ESTX50 was not in the tested set -> both stay unconditional (tt=false).
+                    auto idx_seas_boot = [](omega::IndexSeasonalEngine& e, double upp, bool tt, const char* warm){
                         e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=60.0; e.p.usd_per_pt=upp;
+                        e.tue_require_down=tt;
                         // VIX term-structure gate at 1.05 (Sharpe 0.69->0.80, maxDD halved). Reads
                         // data/vix_term_ratio.txt ("epoch_sec,ratio") refreshed daily by an external
                         // fetcher (tools/fetch_vix_ratio.py). Missing/stale file -> ungated (proven edge).
                         e.gate_by_vix=true; e.vix_gate_ratio=1.05; e.vix_ratio_path="data/vix_term_ratio.txt";
                         e.seed_from_d1_csv(warm);
                     };
-                    idx_seas_boot(g_idx_seas_us500,  50.0, "phase1/signal_discovery/warmup_US500_D1.csv");
-                    idx_seas_boot(g_idx_seas_ustec,  20.0, "phase1/signal_discovery/warmup_USTEC_D1.csv");
-                    idx_seas_boot(g_idx_seas_ger40,  25.0, "phase1/signal_discovery/warmup_GER40_D1_idx.csv");
-                    idx_seas_boot(g_idx_seas_dj30,    5.0, "phase1/signal_discovery/warmup_DJ30_D1.csv");
-                    idx_seas_boot(g_idx_seas_uk100,  10.0, "phase1/signal_discovery/warmup_UK100_D1.csv");
-                    idx_seas_boot(g_idx_seas_estx50, 10.0, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
-                    std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long) -- shadow, warm-seeded\n");
+                    idx_seas_boot(g_idx_seas_us500,  50.0, true,  "phase1/signal_discovery/warmup_US500_D1.csv");
+                    idx_seas_boot(g_idx_seas_ustec,  20.0, true,  "phase1/signal_discovery/warmup_USTEC_D1.csv");
+                    idx_seas_boot(g_idx_seas_ger40,  25.0, false, "phase1/signal_discovery/warmup_GER40_D1_idx.csv");
+                    idx_seas_boot(g_idx_seas_dj30,    5.0, true,  "phase1/signal_discovery/warmup_DJ30_D1.csv");
+                    idx_seas_boot(g_idx_seas_uk100,  10.0, true,  "phase1/signal_discovery/warmup_UK100_D1.csv");
+                    idx_seas_boot(g_idx_seas_estx50, 10.0, false, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
+                    std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long; Turnaround-Tue gate on US500/USTEC/DJ30/UK100) -- shadow, warm-seeded\n");
 
                     // S-2026-06-21: CalendarTom (TURN-OF-MONTH, last3+first3 trading days, long).
                     //   Faithful (tom_engine_validate.cpp, real engine, 2016-2026): all 5 PASS both-

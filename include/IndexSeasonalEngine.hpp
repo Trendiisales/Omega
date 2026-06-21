@@ -15,6 +15,20 @@
 //  Direct analog of FxSeasonalEngine (Friday-long FX). Long-only (no viable
 //  short: Thursday is the only weak session, -2.5bp, below round-trip cost).
 //
+//  TURNAROUND-TUESDAY GATE (tue_require_down, default OFF): take the Tuesday
+//  leg ONLY after a DOWN prior session (Monday close < Friday close). The
+//  Fri->Mon leg is unaffected. Validated turnaround_tuesday_bt.cpp (5 idx D1
+//  2016-26, cost-stressed): the gated Tue leg BEATS the unconditional sleeve --
+//  @2x cost (10bp r/t) gated basket net +11549bp PF1.21 (bull PF1.17 / BEAR
+//  PF1.29, both-halves+, maxDD ~halved) where the UNCONDITIONAL Tue sleeve goes
+//  NEGATIVE in bull (-817bp) and half1 (-209bp). ~3x edge density (1.4->9.9
+//  bp/trade) on 43% of Tuesdays. Robust roster SPX+NDX+DJ30+UK100; GER40 FAILS
+//  the gate (bull -1225bp) -> leave tue_require_down=false on GER40.
+//  ADVERSE-PROTECTION: fixed 1-bar hold + exit-at-close (no in-flight leg);
+//  mean-reversion calendar effect -- backtested, a cold loss-cut does not apply
+//  (single D1 close-to-close hold, ref turnaround_tuesday_bt.cpp / memory
+//  omega-turnaround-tuesday-edge).
+//
 //  OPTIONAL VIX TERM-STRUCTURE GATE (default OFF): index_vix_gate.cpp showed a
 //  contango gate (VIX/VIX3M < 1.00 at entry) lifts Sharpe 0.69->0.72 and cuts
 //  maxDD -36% (3608->2297) -- but the live engine only has VIX.F LEVEL, not
@@ -59,6 +73,10 @@ public:
     // fed from a file (broker has no VIX3M); if the file is missing/stale the gate
     // degrades GRACEFULLY to ungated (the proven 0.69 edge) -- never blocks on bad data.
     bool              gate_by_vix    = false;
+    // Turnaround-Tuesday gate: when true, the Tuesday leg fires only after a
+    // DOWN prior session (Monday close < Friday close). Friday->Mon leg
+    // unaffected. Default false = original unconditional S44 behaviour.
+    bool              tue_require_down = false;
     double            vix_gate_ratio = 1.05;   // skip entry when ratio >= this (backwardation)
     std::string       vix_ratio_path;          // file "epoch_sec,ratio" refreshed daily by external fetcher
     int               vix_max_age_days = 4;     // ignore (trade ungated) if ratio older than this
@@ -107,8 +125,19 @@ public:
         // risk-off (VIX+credit+dollar). Combo validated: seasonal Sharpe 1.13->1.27.
         const bool vix_block = (gate_by_vix && cur_vix_ratio_ >= 0.0 && cur_vix_ratio_ >= vix_gate_ratio)
                             || omega::index_risk_off();
-        if (enabled && !pos_.active && atr_ > 0.0 && day_count_ >= p.atr_period && entry_day && !vix_block)
+        // Turnaround-Tuesday: gate ONLY the Tuesday leg on a down prior session
+        // (Monday close < Friday close). d1_close_1_=prev bar close (Monday for a
+        // Tue bar), d1_close_2_=bar before that (Friday). Fri leg never gated.
+        bool tt_block = false;
+        if (tue_require_down && wd == p.tue_wday) {
+            const bool have_hist = (d1_close_1_ > 0.0 && d1_close_2_ > 0.0);
+            tt_block = !have_hist || (d1_close_1_ >= d1_close_2_);   // require Monday DOWN
+        }
+        if (enabled && !pos_.active && atr_ > 0.0 && day_count_ >= p.atr_period && entry_day && !vix_block && !tt_block)
             open_position(c, bid, ask, day_ms, wd);
+
+        // Roll the last-two completed D1 closes (used by the Turnaround-Tuesday gate).
+        d1_close_2_ = d1_close_1_; d1_close_1_ = c;
     }
 
     void force_close(int64_t day_ms, OnCloseFn cb) noexcept {
@@ -194,6 +223,7 @@ private:
     bool acc_open_=false; int64_t acc_day_=0; double acc_h_=0,acc_l_=0,acc_c_=0,last_bid_=0,last_ask_=0;
     double atr_=0,atr_sum_=0; int atr_warm_=0; double prev_close_=0; int day_count_=0;
     double cur_vix_ratio_=-1.0;
+    double d1_close_1_=0.0, d1_close_2_=0.0;   // last-two completed D1 closes (Turnaround-Tuesday gate)
 };
 
 } // namespace omega
