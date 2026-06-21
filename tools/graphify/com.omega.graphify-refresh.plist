@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Never-stale safety net: reindex+test+stamp the Omega graph on a timer, catching
+     changes made without a commit. Idempotent (refresh.sh is fast when nothing changed). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.omega.graphify-refresh</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jo/Omega/tools/graphify/refresh.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/jo/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>OLLAMA_BASE_URL</key>
+    <string>http://localhost:11434/v1</string>
+    <key>OLLAMA_API_KEY</key>
+    <string>local</string>
+    <key>OLLAMA_MODEL</key>
+    <string>qwen2.5-coder:7b</string>
+    <key>PYTHONHASHSEED</key>
+    <string>0</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>7200</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/jo/.cache/graphify-rebuild.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jo/.cache/graphify-rebuild.log</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+</dict>
+</plist>

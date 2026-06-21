@@ -271,3 +271,6 @@ utf5m_trades.csv
 download/
 .dukascopy-cache/
 cot/
+
+# graphify knowledge-graph build artifacts
+graphify-out/
