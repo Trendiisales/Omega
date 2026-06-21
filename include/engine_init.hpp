@@ -2080,6 +2080,19 @@ static void init_engines(const std::string& cfg_path)
                         std::printf("[OMEGA-INIT] CrossSectionalIndex x3 (MOM_LONG/MOM_LS/MR_LS, 5-idx rank) -- shadow, warm-seeded\n");
                     }
 
+                    // S-2026-06-21: AdaptiveTfGoldEngine -- dynamic-timeframe XAUUSD (regime
+                    //   classifier selects TREND 1h-4h / RANGE 5-15m / CHOP flat). Cost-gated;
+                    //   the TREND leg is where gold's edge lives, RANGE leg is cost-gated against
+                    //   the spot-CFD wall. SHADOW exploratory -- live shadow ledger reveals which
+                    //   states pay; faithful BT of the switching owed before any live-size.
+                    {
+                        g_adaptive_tf_gold.shadow_mode=true; g_adaptive_tf_gold.use_cost_guard=true;
+                        g_adaptive_tf_gold.lot=0.01;
+                        g_adaptive_tf_gold.seed_from_bar_csv("phase1/signal_discovery/warmup_XAUUSD_M15.csv");
+                        g_adaptive_tf_gold.enabled=true;   // shadow-only
+                        std::printf("[OMEGA-INIT] AdaptiveTfGold (dynamic TF: TREND/RANGE/CHOP) -- shadow, warm-seeded\n");
+                    }
+
                     // S-2026-06-21: CalendarTom (TURN-OF-MONTH, last3+first3 trading days, long).
                     //   Faithful (tom_engine_validate.cpp, real engine, 2016-2026): all 5 PASS both-
                     //   WF-halves + both-regimes; book PF~1.4, STRONGER in 2022 bear (PF1.8-2.1) = a

@@ -1032,6 +1032,12 @@ static omega::CrossSectionalIndexEngine g_xs_mom_long(omega::XsMode::MOM_LONG, k
 static omega::CrossSectionalIndexEngine g_xs_mom_ls  (omega::XsMode::MOM_LS,   kXsSyms, kXsUpp);
 static omega::CrossSectionalIndexEngine g_xs_mr_ls   (omega::XsMode::MR_LS,    kXsSyms, kXsUpp);
 
+// S-2026-06-21: AdaptiveTfGoldEngine -- dynamic-timeframe XAUUSD engine. One regime
+// classifier (Kaufman ER + ATR-ratio + tick-count) selects TREND (1h-4h Donchian ride),
+// RANGE (5-15m band fade) or CHOP (flat). Cost-gated every entry. Shadow.
+#include "AdaptiveTfGoldEngine.hpp"
+static omega::AdaptiveTfGoldEngine g_adaptive_tf_gold("XAUUSD");
+
 // S-2026-06-21: CalendarTom -- TURN-OF-MONTH index seasonality (last3+first3 trading days, long).
 //   Faithful (tom_backtest.py + tom_engine_validate.cpp, 2016-2026): all 5 indices PASS both-WF-
 //   halves + both-regimes; book PF~1.4, STRONGER in 2022 bear (PF1.8-2.1) = real flows/calendar

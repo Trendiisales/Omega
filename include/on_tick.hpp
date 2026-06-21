@@ -2219,6 +2219,11 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             }
         }
 
+        // S-2026-06-21 AdaptiveTfGold (dynamic-timeframe XAUUSD: TREND 1h-4h / RANGE 5-15m
+        //   / CHOP flat) -- shadow, self-aggregates 5m base bars, cost-gated. Non-invasive:
+        //   observes the XAUUSD tick stream alongside the gold stack (on_tick_gold).
+        if (sym == "XAUUSD") g_adaptive_tf_gold.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+
         // S44 IndexFomc (pre-FOMC drift, US indices) -- shadow, D1, same sink.
         if      (sym == "US500.F") g_idx_fomc_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "USTEC.F") g_idx_fomc_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
