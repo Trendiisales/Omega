@@ -107,6 +107,7 @@
 #include "OmegaCostGuard.hpp"
 #include "GoldWaveTrend.hpp"   // S-2026-06-03 momentum-confirm gate (omega::gold_wt())
 #include "GoldD1TrendState.hpp"  // D1 regime gate (added 2026-05-21)
+#include "RegimeState.hpp"       // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
 #include <vector>
 #include <cstdlib>
@@ -595,6 +596,9 @@ private:
         // 2026-05-21: D1 EMA200 regime gate (chokepoint for all D1 cells).
         if (side > 0 && !omega::gold_d1_trend().long_allowed())  return;
         if (side < 0 && !omega::gold_d1_trend().short_allowed()) return;
+        // 2026-06-21: macro-hostile long-block (BearProtect coverage; sibling 1h/4h
+        // already wired). Fail-safe false when MacroGoldGate feed missing/stale.
+        if (side > 0 && omega::gold_regime().long_blocked()) return;
         const auto& cfg = kXauTfD1Cells[ci];
         double entry = (side > 0) ? ask : bid;
         if (entry <= 0.0 || atr14_ <= 0.0) return;

@@ -48,6 +48,7 @@
 #include <string>
 #include "OmegaCostGuard.hpp"
 #include "OmegaTradeLedger.hpp"
+#include "RegimeState.hpp"       // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 
 namespace omega {
 
@@ -172,6 +173,11 @@ private:
         // cooldown
         if (bar_seq_ - last_exit_seq_ < COOLDOWN_BARS) return;
         if (!can_enter || spread > SPREAD_CAP) return;
+
+        // 2026-06-21: macro-hostile de-risk. Long-only capitulation buyer -> flat
+        // when real-yields-rip macro is hostile (MacroGoldGate). Fail-safe (false)
+        // when the gate feed is missing/stale, so this can only ADD protection.
+        if (omega::gold_regime().long_blocked()) return;
 
         // ---- MONITOR: rolling drawdown depth in ATR ----
         double peakH = 0.0;
