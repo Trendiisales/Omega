@@ -2088,9 +2088,14 @@ static void init_engines(const std::string& cfg_path)
                     {
                         g_adaptive_tf_gold.shadow_mode=true; g_adaptive_tf_gold.use_cost_guard=true;
                         g_adaptive_tf_gold.lot=0.01;
-                        g_adaptive_tf_gold.seed_from_bar_csv("phase1/signal_discovery/warmup_XAUUSD_M15.csv");
-                        g_adaptive_tf_gold.enabled=true;   // shadow-only
-                        std::printf("[OMEGA-INIT] AdaptiveTfGold (dynamic TF: TREND/RANGE/CHOP) -- shadow, warm-seeded\n");
+                        // DISABLED 2026-06-21: faithful BT (adaptive_tf_gold_bt.cpp, real engine on
+                        // gold ticks) LOSES every state/regime -- 2022 bear ALL PF0.61 (TREND0.49/
+                        // RANGE0.71), 2024-26 bull ALL PF0.77 (TREND0.80/RANGE0.75). Dynamic-TF
+                        // wrapper does not beat the spot-CFD gold-intraday cost wall; TREND edge
+                        // already lives in XauTrendFollow1h. Code kept (revive w/ futures data or
+                        // real-H1 sub-strategy). See memory omega-adaptive-tf-gold.
+                        g_adaptive_tf_gold.enabled=false;
+                        std::printf("[OMEGA-INIT] AdaptiveTfGold -- DISABLED (BT loses all states/regimes)\n");
                     }
 
                     // S-2026-06-21: CalendarTom (TURN-OF-MONTH, last3+first3 trading days, long).
