@@ -42,6 +42,25 @@ case "$OLLAMA_BASE_URL" in
   *) die "OLLAMA_BASE_URL=$OLLAMA_BASE_URL is not localhost — refusing (would egress Omega docs)";;
 esac
 
+# ---- single-flight lock — hook + 2h timer + manual runs must never overlap ----
+# (concurrent extracts race on graphify-out/ and can corrupt graph.json). --check
+# is read-only and skips the lock. macOS has no flock, so use an atomic mkdir lock.
+LOCK="$OUT/.graphify_refresh.lock"
+if [ "$MODE" != "--check" ]; then
+  STALE=1800
+  if ! mkdir "$LOCK" 2>/dev/null; then
+    started=$(cat "$LOCK/epoch" 2>/dev/null || echo 0)
+    now=$(date +%s); age=$((now - started))
+    if [ "$started" -gt 0 ] && [ "$age" -lt "$STALE" ]; then
+      say "${YEL}[graphify] another reindex running (lock held ${age}s) — skipping.${NC}"; exit 0
+    fi
+    say "${YEL}[graphify] stale lock (${age}s) — reclaiming.${NC}"
+    rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { say "${YEL}[graphify] lock race — skipping.${NC}"; exit 0; }
+  fi
+  date +%s > "$LOCK/epoch"; echo $$ > "$LOCK/pid"
+  trap 'rm -rf "$LOCK"' EXIT INT TERM
+fi
+
 node_count(){ "$PY" -c "import json;print(len(json.load(open('$OUT/graph.json'))['nodes']))" 2>/dev/null || echo 0; }
 BEFORE="$(node_count)"
 

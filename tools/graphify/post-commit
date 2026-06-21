@@ -22,7 +22,11 @@ REPO=$(git rev-parse --show-toplevel 2>/dev/null)
 LOG="${HOME}/.cache/graphify-rebuild.log"
 mkdir -p "$(dirname "$LOG")"
 echo "[graphify hook] $(date) detached reindex+test+stamp (log: $LOG)"
-# detach so the commit returns immediately; refresh.sh re-extracts, tests, stamps
-( setsid "$REPO/tools/graphify/refresh.sh" >>"$LOG" 2>&1 & ) 2>/dev/null \
-  || ( nohup "$REPO/tools/graphify/refresh.sh" >>"$LOG" 2>&1 & )
+# detach so the commit returns immediately; refresh.sh re-extracts, tests, stamps.
+# setsid exists on Linux/VPS but NOT macOS — fall back to nohup there.
+if command -v setsid >/dev/null 2>&1; then
+  setsid "$REPO/tools/graphify/refresh.sh" >>"$LOG" 2>&1 &
+else
+  nohup "$REPO/tools/graphify/refresh.sh" >>"$LOG" 2>&1 &
+fi
 exit 0
