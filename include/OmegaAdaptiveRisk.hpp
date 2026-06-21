@@ -791,6 +791,75 @@ struct VolatilityRegimeScaler {
 };
 
 // ?????????????????????????????????????????????????????????????????????????????
+// 5b. PortfolioVolScaler -- Moreira-Muir (2017) PORTFOLIO-level vol management.
+//   The per-symbol VolatilityRegimeScaler (#5) scales each symbol by ITS OWN vol.
+//   It cannot see the cross-asset / correlation-spike regime where the WHOLE book
+//   de-risks together (corr -> 1 in a bear). This scales total book size by the
+//   trailing realized vol of aggregate daily book PnL: when recent book turbulence
+//   exceeds its long-run average, de-risk. DE-RISK ONLY (mult in [floor,1.0]) per
+//   the "adaptive risk is defensive only" rule. Self-contained: fed daily PnL from
+//   record_trade, rolls at UTC-day change -- no rollover-path edits.
+//   SHADOW by default (enabled=false): logs the multiplier it WOULD apply without
+//   touching live lots, so it can be validated on the live book ledger before any
+//   live enable (BACKTEST_TRUTH -- a Python-proxy backtest is not enough to size on).
+//   Discovery basis: /Users/jo/Tick/edge_screen_2026-06-21/overlays.py (book proxy
+//   Sharpe 0.73 -> 0.80, modest; marginal benefit OVER the existing 3 per-symbol
+//   vol layers is unmeasured -> shadow-first is mandatory).
+// ?????????????????????????????????????????????????????????????????????????????
+struct PortfolioVolScaler {
+    int    N          = 20;     // trailing window of daily book-PnL observations
+    int    recent_n   = 5;      // recent sub-window for turbulence detection
+    int    min_obs    = 12;     // warmup gate -> returns 1.0 until this many days seen
+    double floor_mult = 0.50;   // never de-risk below half
+    bool   enabled    = false;  // LIVE apply (DEFAULT OFF -> shadow-log only)
+    bool   shadow     = true;   // when !enabled, log the would-be multiplier
+
+    mutable std::mutex mtx_;
+    std::deque<double> daily_pnls_;
+    double cur_day_pnl_ = 0.0;
+    int    cur_day_     = -1;
+
+    // Feed each closed-trade net PnL; rolls the day bucket at UTC-day change.
+    void note_trade_pnl(double net_pnl) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const int64_t now_s = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const int day = static_cast<int>(now_s / 86400);
+        if (cur_day_ < 0) cur_day_ = day;
+        if (day != cur_day_) {
+            daily_pnls_.push_back(cur_day_pnl_);
+            while (static_cast<int>(daily_pnls_.size()) > N) daily_pnls_.pop_front();
+            cur_day_pnl_ = 0.0;
+            cur_day_     = day;
+        }
+        cur_day_pnl_ += net_pnl;
+    }
+
+    // De-risk-only multiplier in [floor_mult, 1.0]; 1.0 until warmed.
+    // Optional out-params expose long-run vs recent realized vol for logging.
+    double size_multiplier(double* out_long = nullptr, double* out_recent = nullptr) const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const int n = static_cast<int>(daily_pnls_.size());
+        if (n < min_obs) return 1.0;
+        double m = 0.0; for (double x : daily_pnls_) m += x; m /= n;
+        double v = 0.0; for (double x : daily_pnls_) { const double d = x - m; v += d * d; }
+        const double long_vol = std::sqrt(v / n);
+        const int rn = std::min(recent_n, n);
+        double rm = 0.0; for (int i = n - rn; i < n; ++i) rm += daily_pnls_[i]; rm /= rn;
+        double rv = 0.0; for (int i = n - rn; i < n; ++i) { const double d = daily_pnls_[i] - rm; rv += d * d; }
+        const double recent_vol = std::sqrt(rv / rn);
+        if (out_long)   *out_long   = long_vol;
+        if (out_recent) *out_recent = recent_vol;
+        if (recent_vol <= 0.0 || long_vol <= 0.0) return 1.0;
+        double mult = long_vol / recent_vol;   // recent turbulence > long-run => < 1.0
+        if (mult > 1.0)        mult = 1.0;      // DE-RISK ONLY -- never boost
+        if (mult < floor_mult) mult = floor_mult;
+        return mult;
+    }
+};
+
+// ?????????????????????????????????????????????????????????????????????????????
 // AdaptiveRiskManager -- unified facade used by main.cpp
 // ?????????????????????????????????????????????????????????????????????????????
 class AdaptiveRiskManager {
@@ -817,6 +886,7 @@ public:
     MultiDayDrawdownThrottle    multiday;
     CorrelationHeatGuard        corr_heat;
     VolatilityRegimeScaler      vol_scaler;
+    PortfolioVolScaler          portfolio_vol;   // 5b -- book-level Moreira-Muir (shadow default)
 
     // Non-owning pointer to OmegaEdges::FillQualityTracker set by main.cpp at startup.
     // Declared as void* to avoid circular include; cast on use via a template accessor.
@@ -830,6 +900,7 @@ public:
     // ?? Record a closed trade ?????????????????????????????????????????????????
     void record_trade(const std::string& symbol, double net_pnl, double hold_sec) {
         perf[symbol].record(net_pnl, hold_sec);
+        portfolio_vol.note_trade_pnl(net_pnl);   // 5b -- feed book-level daily PnL
     }
 
     // ?? Update volatility state (call each tick per symbol with |price_delta|) ?
@@ -1040,6 +1111,38 @@ public:
                                 wfo_s >= 0.75 ? "DEGRADED" : "FAILING");
                 }
                 lot *= wfo_s;
+            }
+        }
+
+        // 11b. Portfolio-level realized-vol scaler (Moreira-Muir, DE-RISK ONLY).
+        //   ADVERSE-PROTECTION: de-risk-only (mult in [floor,1.0]); a cold cut in a
+        //   high-book-turbulence regime IS the design intent -- it never boosts.
+        //   Default SHADOW (enabled=false): logs the would-be multiplier, applies
+        //   nothing, so it can be validated on the live book ledger before enable
+        //   per BACKTEST_TRUTH. See PortfolioVolScaler header for discovery basis.
+        {
+            double pv_long = 0.0, pv_recent = 0.0;
+            const double pv = portfolio_vol.size_multiplier(&pv_long, &pv_recent);
+            if (pv < 1.0) {
+                static thread_local int64_t s_pv_log = 0;
+                const int64_t now_pv = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                const bool do_log = (now_pv - s_pv_log > 300);
+                if (portfolio_vol.enabled) {
+                    if (do_log) {
+                        s_pv_log = now_pv;
+                        std::printf("[ADAPTIVE-RISK] %s portfolio_vol_scale=%.2f "
+                                    "(recent_vol=$%.0f long_vol=$%.0f)\n",
+                                    symbol.c_str(), pv, pv_recent, pv_long);
+                    }
+                    lot *= pv;
+                } else if (portfolio_vol.shadow && do_log) {
+                    s_pv_log = now_pv;
+                    std::printf("[ADAPTIVE-RISK] %s portfolio_vol_scale_SHADOW=%.2f "
+                                "(recent_vol=$%.0f long_vol=$%.0f) -- would de-risk, NOT applied\n",
+                                symbol.c_str(), pv, pv_recent, pv_long);
+                }
             }
         }
 
