@@ -2206,6 +2206,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "DJ30.F")  g_tom_dj30.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "UK100")   g_tom_uk100.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
 
+        // S-2026-06-21 CrossSectionalIndex (relative-value rank of the 5-idx basket) -- shadow, D1.
+        //   Every index tick feeds all 3 modes by symbol INDEX (US500.F=0..UK100=4). The engine
+        //   self-aggregates D1 + only acts at the UTC-day roll; cross-section needs every leg fed.
+        {
+            int xi = (sym=="US500.F")?0 : (sym=="USTEC.F")?1 : (sym=="DJ30.F")?2
+                   : (sym=="GER40")?3   : (sym=="UK100")?4 : -1;
+            if (xi >= 0) {
+                g_xs_mom_long.on_tick(xi, bid, ask, fx_now_ms, handle_closed_trade);
+                g_xs_mom_ls  .on_tick(xi, bid, ask, fx_now_ms, handle_closed_trade);
+                g_xs_mr_ls   .on_tick(xi, bid, ask, fx_now_ms, handle_closed_trade);
+            }
+        }
+
         // S44 IndexFomc (pre-FOMC drift, US indices) -- shadow, D1, same sink.
         if      (sym == "US500.F") g_idx_fomc_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "USTEC.F") g_idx_fomc_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);

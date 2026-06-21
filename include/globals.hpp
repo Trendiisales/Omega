@@ -1021,6 +1021,17 @@ static omega::IndexSeasonalEngine g_idx_seas_ger40("GER40");
 static omega::IndexSeasonalEngine g_idx_seas_dj30("DJ30.F");
 static omega::IndexSeasonalEngine g_idx_seas_uk100("UK100");
 static omega::IndexSeasonalEngine g_idx_seas_estx50("ESTX50");
+
+// S-2026-06-21: CrossSectionalIndexEngine -- relative-value RANKING across the index
+// basket (orthogonal to the per-symbol directional book). 3 modes, one instance each,
+// shared roster. Roster order = engine symbol index (US500.F=0 .. UK100=4).
+#include "CrossSectionalIndexEngine.hpp"
+static const std::vector<std::string> kXsSyms = {"US500.F","USTEC.F","DJ30.F","GER40","UK100"};
+static const std::vector<double>      kXsUpp  = {50.0, 20.0, 5.0, 1.10, 1.33};   // CFD pt values
+static omega::CrossSectionalIndexEngine g_xs_mom_long(omega::XsMode::MOM_LONG, kXsSyms, kXsUpp);
+static omega::CrossSectionalIndexEngine g_xs_mom_ls  (omega::XsMode::MOM_LS,   kXsSyms, kXsUpp);
+static omega::CrossSectionalIndexEngine g_xs_mr_ls   (omega::XsMode::MR_LS,    kXsSyms, kXsUpp);
+
 // S-2026-06-21: CalendarTom -- TURN-OF-MONTH index seasonality (last3+first3 trading days, long).
 //   Faithful (tom_backtest.py + tom_engine_validate.cpp, 2016-2026): all 5 indices PASS both-WF-
 //   halves + both-regimes; book PF~1.4, STRONGER in 2022 bear (PF1.8-2.1) = real flows/calendar

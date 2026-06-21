@@ -2054,6 +2054,32 @@ static void init_engines(const std::string& cfg_path)
                     idx_seas_boot(g_idx_seas_estx50, 10.0, false, "phase1/signal_discovery/warmup_ESTX50_D1.csv");
                     std::printf("[OMEGA-INIT] IndexSeasonal x6 (Tue+Fri long; Turnaround-Tue gate on US500/USTEC/DJ30/UK100) -- shadow, warm-seeded\n");
 
+                    // S-2026-06-21: CrossSectionalIndexEngine x3 (relative-value RANKING of the
+                    //   index basket -- ORTHOGONAL to the per-symbol directional book). Faithful
+                    //   (cross_sectional_relval.py + xs_engine_validate.cpp, 2016-2026, 5-idx panel,
+                    //   signal close[t]->fill open[t+1], 2bp/leg): MOM_LONG bull-gated PF~1.56,
+                    //   MOM_LS market-neutral PF~2.03 (BEAR-positive), MR_LS bear+chop PF~1.52.
+                    //   Each mode regime-gated flat in the wrong regime (asymmetric: mom skips chop,
+                    //   MR skips bull). Bear coverage = market-neutral L/S, never outright shorts.
+                    //   Warm-seed every symbol's D1 closes (MOM_LS needs >=471/sym): long ~10yr CSVs
+                    //   (GER40 uses the long _idx variant; US500 rebuilt to 10yr). Boot MUST show 15
+                    //   [SEED][XsIndex_*-<sym>] lines.
+                    {
+                        const char* xs_fn[5] = {
+                            "phase1/signal_discovery/warmup_US500_D1.csv",
+                            "phase1/signal_discovery/warmup_USTEC_D1.csv",
+                            "phase1/signal_discovery/warmup_DJ30_D1.csv",
+                            "phase1/signal_discovery/warmup_GER40_D1_idx.csv",
+                            "phase1/signal_discovery/warmup_UK100_D1.csv"};
+                        auto seed_xs = [&](omega::CrossSectionalIndexEngine& e){
+                            e.shadow_mode=true; e.use_cost_guard=true; e.lot=0.01;
+                            for (int i=0;i<5;++i) e.seed_from_d1_csv(i, xs_fn[i]);
+                            e.enabled=true;   // shadow-only; live flip gated on >=30 shadow trades + EngineGate
+                        };
+                        seed_xs(g_xs_mom_long); seed_xs(g_xs_mom_ls); seed_xs(g_xs_mr_ls);
+                        std::printf("[OMEGA-INIT] CrossSectionalIndex x3 (MOM_LONG/MOM_LS/MR_LS, 5-idx rank) -- shadow, warm-seeded\n");
+                    }
+
                     // S-2026-06-21: CalendarTom (TURN-OF-MONTH, last3+first3 trading days, long).
                     //   Faithful (tom_engine_validate.cpp, real engine, 2016-2026): all 5 PASS both-
                     //   WF-halves + both-regimes; book PF~1.4, STRONGER in 2022 bear (PF1.8-2.1) = a
