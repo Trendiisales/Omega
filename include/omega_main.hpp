@@ -140,9 +140,17 @@ int main(int argc, char* argv[])
         const int64_t now_ms_h = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        const int h_m1 = g_bars_gold.m1 .hydrate_from_csv(bs, "XAUUSD",    60000LL, now_ms_h, 2);
-        const int h_m5 = g_bars_gold.m5 .hydrate_from_csv(bs, "XAUUSD",   300000LL, now_ms_h, 10);
-        const int h_m15= g_bars_gold.m15.hydrate_from_csv(bs, "XAUUSD",   900000LL, now_ms_h, 30);
+        // 2026-06-22: intraday hydrate lookbacks deepened so the PredictiveRanges
+        //   desk chart (pr_compute keeps the last 160 bars) is FULLY WARM on a
+        //   (re)start instead of showing a flat/blank seed for hours. The chart
+        //   needs >=160 bars PAST the ATR(len) warmup; the old m5=10h / m15=30h
+        //   only yielded ~120 bars so the recurrence's warmup region filled the
+        //   visible left edge (operator-reported "3h to populate"). 160 m5 bars =
+        //   13.3h, 160 m15 = 40h -> hydrate 20h / 60h (+ warmup margin). m1 6h
+        //   feeds the m5-from-m1 GUI fallback. h1/h4 unchanged (already warm).
+        const int h_m1 = g_bars_gold.m1 .hydrate_from_csv(bs, "XAUUSD",    60000LL, now_ms_h, 6);
+        const int h_m5 = g_bars_gold.m5 .hydrate_from_csv(bs, "XAUUSD",   300000LL, now_ms_h, 20);
+        const int h_m15= g_bars_gold.m15.hydrate_from_csv(bs, "XAUUSD",   900000LL, now_ms_h, 60);
         const int h_h1 = g_bars_gold.h1 .hydrate_from_csv(bs, "XAUUSD",  3600000LL, now_ms_h, 60);
         const int h_h4 = g_bars_gold.h4 .hydrate_from_csv(bs, "XAUUSD", 14400000LL, now_ms_h, 240);
         // 2026-05-29: extended index hydrate to cover m5/m15/h1/h4 timeframes.
@@ -152,14 +160,14 @@ int main(int argc, char* argv[])
         // stale .dat files. Indices L2 tick CSVs are logged daily on VPS
         // (US500 287 MB / 34 days, USTEC 700 MB / 34 days), so this is a
         // pure wiring fix -- the data was already there.
-        const int h_sp_m1  = g_bars_sp.m1 .hydrate_from_csv(bs, "US500",     60000LL, now_ms_h, 2);
-        const int h_sp_m5  = g_bars_sp.m5 .hydrate_from_csv(bs, "US500",    300000LL, now_ms_h, 10);
-        const int h_sp_m15 = g_bars_sp.m15.hydrate_from_csv(bs, "US500",    900000LL, now_ms_h, 30);
+        const int h_sp_m1  = g_bars_sp.m1 .hydrate_from_csv(bs, "US500",     60000LL, now_ms_h, 6);
+        const int h_sp_m5  = g_bars_sp.m5 .hydrate_from_csv(bs, "US500",    300000LL, now_ms_h, 20);
+        const int h_sp_m15 = g_bars_sp.m15.hydrate_from_csv(bs, "US500",    900000LL, now_ms_h, 60);
         const int h_sp_h1  = g_bars_sp.h1 .hydrate_from_csv(bs, "US500",   3600000LL, now_ms_h, 60);
         const int h_sp_h4  = g_bars_sp.h4 .hydrate_from_csv(bs, "US500",  14400000LL, now_ms_h, 240);
-        const int h_nq_m1  = g_bars_nq.m1 .hydrate_from_csv(bs, "USTEC",     60000LL, now_ms_h, 2);
-        const int h_nq_m5  = g_bars_nq.m5 .hydrate_from_csv(bs, "USTEC",    300000LL, now_ms_h, 10);
-        const int h_nq_m15 = g_bars_nq.m15.hydrate_from_csv(bs, "USTEC",    900000LL, now_ms_h, 30);
+        const int h_nq_m1  = g_bars_nq.m1 .hydrate_from_csv(bs, "USTEC",     60000LL, now_ms_h, 6);
+        const int h_nq_m5  = g_bars_nq.m5 .hydrate_from_csv(bs, "USTEC",    300000LL, now_ms_h, 20);
+        const int h_nq_m15 = g_bars_nq.m15.hydrate_from_csv(bs, "USTEC",    900000LL, now_ms_h, 60);
         const int h_nq_h1  = g_bars_nq.h1 .hydrate_from_csv(bs, "USTEC",   3600000LL, now_ms_h, 60);
         const int h_nq_h4  = g_bars_nq.h4 .hydrate_from_csv(bs, "USTEC",  14400000LL, now_ms_h, 240);
         const int h_sp = h_sp_m1, h_nq = h_nq_m1; // legacy names used downstream + invariant check
