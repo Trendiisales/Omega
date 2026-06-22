@@ -25,6 +25,7 @@
 // RUN:    ./backtest/xau_tf_1h_bt /Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv
 // =============================================================================
 #include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cmath>
 #include <string>
@@ -94,7 +95,11 @@ static Stat run_engine(const std::vector<BarCSV>& bars, const RunCfg& cfg,
     eng.pyramid_step_atr = cfg.pyramid_step_atr;
     eng.pyramid_sl_atr   = cfg.pyramid_sl_atr;
     eng.pullback_pb_atr  = cfg.pullback_pb_atr;
+    // 2026-06-22 A/B: ER-gate vs impulse-filter redundancy sweep (env-controlled).
+    if (const char* v = getenv("IMP")) eng.min_impulse_atr = atof(v);
+    if (const char* v = getenv("ERG")) eng.er_gate_min     = atof(v);
     eng.init();
+    fprintf(stderr, "[CFG] IMP=%.2f ERG=%.2f\n", eng.min_impulse_atr, eng.er_gate_min);
 
     Stat g;
     auto cb = [&](const omega::TradeRecord& tr){

@@ -1264,11 +1264,21 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
         g_xau_tf_1h.min_impulse_atr = 1.0;    // S-2026-06-20 impulse filter on breakout cells (XAU H1: PF up, maxDD ~halved)
-        // S-2026-06-21 ER trend/chop gate (shadow A/B vs prior ungated record). Harness
-        // er_gate_trend_bt: gold H1 trend PF 1.05->1.13, edge density 2.4x, maxDD down at
-        // ER~0.40 in trend tape (skip-only filter, never adds trades). Bear bleed handled
-        // by existing macro/vol gates, not this. breakout cells only (Pullback exempt).
-        g_xau_tf_1h.er_gate_min = 0.40;
+        // S-2026-06-22 FLEET-AUDIT FIX: the ER gate + impulse filter are REDUNDANT
+        // (both trend/chop filters on the breakout cells) and STACKING them is the
+        // WORST config in both regimes. Real-engine sweep (backtest/XauTrendFollow1hBacktest.cpp,
+        // baseline 4-cell, env IMP/ERG), ALL_4_CELLS ensemble:
+        //              BULL (2yr)            BEAR (2022-23)
+        //   both:      PF 1.91 $4586 DD1835  PF 1.21 $407 DD793   <- live, WORST
+        //   IMP only:  PF 2.46 $6978 DD1438  PF 1.36 $710 DD711   <- BEST both regimes
+        //   ER only:   PF 2.20 $5590         PF 1.20 $361
+        //   neither:   PF 2.26 $6501         PF 1.36 $711
+        // Impulse ALONE helps (neither 2.26->2.46); impulse ON TOP of ER hurts
+        // (ER 2.20 -> both 1.91). Keep impulse, drop ER gate.
+        // (Prior S-2026-06-21 rationale: er_gate_trend_bt showed PF 1.05->1.13 in
+        // isolation -- true, but it was never A/B'd against the impulse filter it
+        // duplicates; the real-engine joint sweep above supersedes it.)
+        g_xau_tf_1h.er_gate_min = 0.0;   // DISABLED (was 0.40) -- redundant w/ impulse, stacking hurts
         g_xau_tf_1h.er_gate_n   = 20;
         // ── S39 vol-target + pyramiding on the Donchian40 cell (OFF by default).
         // Validated edge (gold_regime_edges.cpp, 2yr WF + 6-block + 3x-cost):
@@ -1442,13 +1452,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_d1.use_vol_band_gate = true;
         g_xau_tf_d1.vol_band_low_pct  = 0.20;
         g_xau_tf_d1.vol_band_high_pct = 0.90;
-        // S-2026-06-22 IMPULSE FILTER (fleet-audit, REPRODUCED in main tree this
-        // session via backtest/XauTrendFollowD1Backtest.cpp on real engine):
-        //   IMP=0.5  BULL PF 1.55->1.60 maxDD $2203->$1846 (-16%)  all blk 5/6 ROBUST
-        //            BEAR PF 1.38->1.52 maxDD $480->$436   H2 PF 1.25->1.51  WF+
-        //   IMP=1.0 over-filters (BULL 1.41 / BEAR 1.33 -- rejected). 0=OFF.
-        // Signal-day bar must thrust >=0.5*ATR14. Shadow only (low cadence ~2t/mo/cell).
-        g_xau_tf_d1.min_impulse_atr   = 0.5;
+        // (min_impulse_atr=0.5 set above at the enabled= line — single source of truth.)
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
