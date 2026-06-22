@@ -68,7 +68,7 @@
 
   <div class="secn">Full ranking <span class="hint">· all names, model's view today</span></div>
   <p class="hint">Confidence = model's cross-sectional percentile (100 = strongest predicted next-day outperformer). BUY = in today's top basket. 5d / 20d = the name's actual recent return (context, not a prediction).</p>
-  <table id="tbl"><thead><tr><th>#</th><th>name</th><th>action</th><th class="r">confidence</th><th class="r">5d</th><th class="r">20d</th></tr></thead><tbody></tbody></table>
+  <table id="tbl"><thead><tr><th>#</th><th>name</th><th class="r">price</th><th>action</th><th class="r">confidence</th><th class="r">5d</th><th class="r">20d</th></tr></thead><tbody></tbody></table>
 
   <details><summary>What is "score"? (raw model output)</summary>
     <p class="hint" style="margin-top:8px">The model outputs a z-scored relative-strength number per name each day. Its absolute value is meaningless — only the <em>ranking</em> matters. The top few names become the buy basket. "Confidence" above is just that ranking expressed as an easy-to-read percentile.</p></details>
@@ -121,7 +121,7 @@ async function load(){
   document.getElementById('bkmeta').textContent=`· ${sig.date} · top ${sig.buy_count} of ${sig.universe_size}, equal weight, rebalance ${sig.rebalance}`;
   document.getElementById('bkexpl').textContent='These are the names the model ranks highest for the next session. Equal-weight them; re-rank and rebalance each day.';
   document.getElementById('basket').innerHTML=bk.filter(b=>b.action==='BUY').map(b=>`
-    <div class="bk"><div class="nm">${b.instrument}</div><div class="cf">confidence ${b.percentile} / 100</div>
+    <div class="bk"><div class="nm">${b.instrument}${b.price!=null?` <span class="mono" style="font-weight:400;color:var(--mut)">$${b.price}</span>`:''}</div><div class="cf">confidence ${b.percentile} / 100</div>
     <div class="rr"><span>5d <span class="${cls(b.ret_5d)}">${rr(b.ret_5d)}</span></span><span>20d <span class="${cls(b.ret_20d)}">${rr(b.ret_20d)}</span></span></div></div>`).join('');
 
   const fc=document.getElementById('factors');
@@ -133,6 +133,7 @@ async function load(){
 
   const tb=document.querySelector('#tbl tbody');
   tb.innerHTML=bk.map(b=>`<tr><td>${b.rank}</td><td class="mono">${b.instrument}</td>
+    <td class="r mono">${b.price!=null?'$'+b.price:'—'}</td>
     <td><span class="tag ${b.action==='BUY'?'buy':''}">${b.action==='BUY'?'BUY':'—'}</span></td>
     <td class="r">${b.percentile}</td><td class="r ${cls(b.ret_5d)}">${rr(b.ret_5d)}</td><td class="r ${cls(b.ret_20d)}">${rr(b.ret_20d)}</td></tr>`).join('');
 }

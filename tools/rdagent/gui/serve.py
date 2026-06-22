@@ -22,6 +22,36 @@ from pathlib import Path
 GUI_DIR = Path(__file__).resolve().parent
 TOOLS = GUI_DIR.parent
 QLIB_PY = "/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python"
+DATA_DIR = Path.home() / "Omega" / "data" / "rdagent"
+CLOSE_CANDIDATES = [DATA_DIR / "sp500_long_close.csv", DATA_DIR / "sp500_close.csv"]  # long first -> matches execute_basket.py so shown price == filled price
+
+_PRICE_CACHE: dict[str, float] = {}
+_PRICE_TS = 0.0
+
+
+def latest_closes() -> dict[str, float]:
+    """Last non-empty close per instrument, cached 30 min. Fail-safe -> {} on error."""
+    global _PRICE_CACHE, _PRICE_TS
+    import csv as _csv, time as _time
+    if _PRICE_CACHE and (_time.time() - _PRICE_TS) < 1800:
+        return _PRICE_CACHE
+    path = next((p for p in CLOSE_CANDIDATES if p.exists()), None)
+    if not path:
+        return _PRICE_CACHE
+    closes: dict[str, float] = {}
+    try:
+        with open(path, newline="") as fh:
+            r = _csv.reader(fh)
+            syms = next(r)[1:]
+            for row in r:
+                for i, sym in enumerate(syms, start=1):
+                    if i < len(row) and row[i] not in ("", "nan", "NaN"):
+                        try: closes[sym] = float(row[i])
+                        except ValueError: pass
+        _PRICE_CACHE, _PRICE_TS = closes, _time.time()
+    except Exception:  # noqa: BLE001
+        return _PRICE_CACHE
+    return _PRICE_CACHE
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -33,7 +63,17 @@ class Handler(SimpleHTTPRequestHandler):
             if not p.exists():
                 self.send_error(404, "no latest.json — run export_signals.py first")
                 return
-            body = p.read_bytes()
+            try:
+                meta = json.loads(p.read_text())
+                closes = latest_closes()
+                if closes:
+                    for item in meta.get("signal", {}).get("basket", []):
+                        px = closes.get(item.get("instrument"))
+                        if px is not None:
+                            item["price"] = round(px, 2)
+                body = json.dumps(meta).encode()
+            except Exception:  # noqa: BLE001 -- never break the panel over enrichment
+                body = p.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "no-store")
