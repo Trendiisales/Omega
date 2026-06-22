@@ -1264,21 +1264,24 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
         g_xau_tf_1h.min_impulse_atr = 1.0;    // S-2026-06-20 impulse filter on breakout cells (XAU H1: PF up, maxDD ~halved)
-        // S-2026-06-22 FLEET-AUDIT FIX: the ER gate + impulse filter are REDUNDANT
-        // (both trend/chop filters on the breakout cells) and STACKING them is the
-        // WORST config in both regimes. Real-engine sweep (backtest/XauTrendFollow1hBacktest.cpp,
-        // baseline 4-cell, env IMP/ERG), ALL_4_CELLS ensemble:
-        //              BULL (2yr)            BEAR (2022-23)
-        //   both:      PF 1.91 $4586 DD1835  PF 1.21 $407 DD793   <- live, WORST
-        //   IMP only:  PF 2.46 $6978 DD1438  PF 1.36 $710 DD711   <- BEST both regimes
-        //   ER only:   PF 2.20 $5590         PF 1.20 $361
-        //   neither:   PF 2.26 $6501         PF 1.36 $711
-        // Impulse ALONE helps (neither 2.26->2.46); impulse ON TOP of ER hurts
-        // (ER 2.20 -> both 1.91). Keep impulse, drop ER gate.
-        // (Prior S-2026-06-21 rationale: er_gate_trend_bt showed PF 1.05->1.13 in
-        // isolation -- true, but it was never A/B'd against the impulse filter it
-        // duplicates; the real-engine joint sweep above supersedes it.)
-        g_xau_tf_1h.er_gate_min = 0.0;   // DISABLED (was 0.40) -- redundant w/ impulse, stacking hurts
+        // S-2026-06-21 ER trend/chop gate (shadow A/B vs prior ungated record). Harness
+        // er_gate_trend_bt: gold H1 trend PF 1.05->1.13, edge density 2.4x, maxDD down at
+        // ER~0.40 in trend tape (skip-only filter, never adds trades). Bear bleed handled
+        // by existing macro/vol gates, not this. breakout cells only (Pullback exempt).
+        //
+        // S-2026-06-22 INVESTIGATE STATUS = UNRESOLVED (offline). The fleet-audit asked to
+        // drop EITHER the ER gate OR the impulse (they are redundant trend/chop filters).
+        // An offline real-class A/B (backtest/XauTrendFollow1hBacktest.cpp) CANNOT pick:
+        // the harness drives the engine WITHOUT the live stack (use_vol_target / pyramidK2 /
+        // LOSS_CUT) AND without the live gates that define regime behaviour -- gold_wt()
+        // WaveTrend (L589), reg_slope_size (L184), D1-EMA200/macro -- which all fail-open
+        // standalone. Baseline sweep showed bear ALL-POSITIVE (PF 1.20-1.36) while the LIVE
+        // shadow record is bear-NEG (0.66-0.87): different engine, conclusion does not
+        // transfer; bear per-trade edge (~$2-3/t, n~210) is within noise. Resolution must
+        // come from a LIVE-SHADOW A/B on the VPS ledger (the faithful instrument for a
+        // deployed engine), or regime-scope each filter once that data exists. Until then
+        // KEEP BOTH (live status quo). Do NOT drop either off an offline run.
+        g_xau_tf_1h.er_gate_min = 0.40;
         g_xau_tf_1h.er_gate_n   = 20;
         // ── S39 vol-target + pyramiding on the Donchian40 cell (OFF by default).
         // Validated edge (gold_regime_edges.cpp, 2yr WF + 6-block + 3x-cost):
