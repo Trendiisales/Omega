@@ -33,6 +33,11 @@ d.to_csv('$CLOSE'); print(f'  refreshed {d.shape[1]} names through {d.index.max(
 # 3. regenerate today's long/short book + rebalance diff
 conda run -n rdagent4qlib python "$TOOLS/reversal_sleeve.py" --close-csv "$CLOSE"
 
-# 4. update the paper-trade ledger (mark prior book to market)
-conda run -n rdagent4qlib python "$TOOLS/paper_track.py" --close-csv "$CLOSE" --cost-bps 3 | tail -3
-echo "[$TS] done — book $DATA/reversal_sleeve.json · ledger $DATA/paper_ledger.csv"
+# 4. APPEND to the forward shadow ledger (immutable; the real treat-as-live proof).
+#    Holds the book, marks forward, rebalances weekly — appends only NEW trading days.
+conda run -n rdagent4qlib python "$TOOLS/shadow_ledger.py" --close-csv "$CLOSE" --cost-bps 3 | tail -4
+
+# 5. LIVE-IN-SHADOW execution: emit the exact sized orders that would hit IBKR today.
+#    --mode shadow logs them; flip to --mode live --i-confirm (+ IB gateway) to send for real.
+conda run -n rdagent4qlib python "$TOOLS/execute.py" --capital "${RDA_CAPITAL:-100000}" --mode shadow | tail -4
+echo "[$TS] done — book + shadow ledger + shadow orders ($DATA/shadow_orders.csv)"
