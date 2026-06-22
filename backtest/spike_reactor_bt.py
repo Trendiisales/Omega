@@ -27,9 +27,12 @@
 import sys, os, glob, csv
 from collections import defaultdict
 
-ENTRY_SLIP_BPS = 3.0    # adverse fill chasing the spike
-EXIT_SLIP_BPS  = 2.0
-COMMISSION_BPS = 1.0    # per side
+# Cost in bps -- env-overridable so the same harness tests EQUITY (~7bps RT) vs
+# MNQ/MES FUTURES (~0.3-0.5bps RT, ~20x tighter). MNQ: $2/pt, ~30500 idx =>
+# ~$61k notional, 1-tick spread (0.25pt=$0.50)=0.08bps, comm ~$0.4/side=0.06bps.
+ENTRY_SLIP_BPS = float(os.environ.get("ENTRY_SLIP_BPS", 3.0))   # adverse fill chasing the spike
+EXIT_SLIP_BPS  = float(os.environ.get("EXIT_SLIP_BPS", 2.0))
+COMMISSION_BPS = float(os.environ.get("COMMISSION_BPS", 1.0))   # per side
 COST_RT_BPS    = ENTRY_SLIP_BPS + EXIT_SLIP_BPS + 2 * COMMISSION_BPS  # ~7 bps round trip
 TRAIL_ATR      = 3.0    # wide trail (BigCapMomo lesson: ride)
 STOP_ATR       = 2.0    # hard adverse stop
