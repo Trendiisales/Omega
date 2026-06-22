@@ -32,4 +32,7 @@ d.to_csv('$CLOSE'); print(f'  refreshed {d.shape[1]} names through {d.index.max(
 
 # 3. regenerate today's long/short book + rebalance diff
 conda run -n rdagent4qlib python "$TOOLS/reversal_sleeve.py" --close-csv "$CLOSE"
-echo "[$TS] done — book at $DATA/reversal_sleeve.json"
+
+# 4. update the paper-trade ledger (mark prior book to market)
+conda run -n rdagent4qlib python "$TOOLS/paper_track.py" --close-csv "$CLOSE" --cost-bps 3 | tail -3
+echo "[$TS] done — book $DATA/reversal_sleeve.json · ledger $DATA/paper_ledger.csv"
