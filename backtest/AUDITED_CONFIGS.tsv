@@ -16,7 +16,8 @@ GoldVolbrkM30	1.94	2026-06-16	gold_volbrk_m30_revalidate.cpp	SHADOW-CANDIDATE	fa
 XauTf4h	1.58	2026-06-19	xau_tf faithful class-driven audit	EDGE	bull 1.58 / bear 1.13 cross-regime, NOT bull-beta; trail-only (deep-BE cuts profit); M15 cell disabled (bear 0.75)
 XauTfD1	2.53	2026-06-19	faithful engine sweep	SHADOW-CANDIDATE	both-regime+ both-halves+ but cost not fully stated -> treat shadow until cost-confirmed
 FxXrevEurgbp	2.01	2026-06	real Dukascopy D1 2019-2026	EDGE	EURGBP PF2.01 +2663bp WR69 H1/H2 1.86/2.29; AUDNZD sibling 3.09
-IdxBearShortNas	1.60	2026-06	NAS2022 faithful bear	EDGE	NAS 2022 bear PF1.60 both-halves+ bull-gated +702; SPX leg DISABLED (validation file missing)
+IdxBearShortNas	1.26	2026-06-22	NSXUSD2022+2024-26 real-engine (ibs_real_engine.cpp)	EDGE	DON24 all-weather: 2022 bear PF1.26 +1061 both-halves+, 2024-26 bull PF1.07 +514 (DON48->24 bull-bleed fix; DON48 was 2022 PF1.70/+1970 but bull -977). Real engine, not a port.
+IdxBearShortSP	1.59	2026-06-22	SPXUSD2022 real-engine (ibs_real_engine.cpp)	EDGE	US500 2022 bear PF1.59 +591 both-halves+ (H1 1.99/H2 1.20) on real HISTDATA ticks. DON48. Bull-regime untested (no SPX intraday 2024-26 data) -> shadow, ledger-gated.
 GoldOrbLondon	2.38	2026-06-16	faithful (gold_xregime_recheck)	EDGE	alias of GoldOrbRetrace (g_gold_orb_london); 2yr retr0.382/tight/1-shot both-halves+ 3x-cost
 XauSessNypm	1.57	2026-06	2yr XAU H1 cost-incl	SHADOW-CANDIDATE	SessionMomentum NYpm 1.57 / overnight 1.56 @1bp -> 1.22/1.26 @5bp; 6/6 blocks+; Fri skipped (0.79)
 ConnorsNas	2.13	2026-06-20	freq_dd_frontier.py (next-open daily 2bp)	EDGE	ConnorsRSI2 NDX close>SMA200 gate; n206 WR72; SPX sibling 1.85 (cost-fragile); both-halves+ per mr-breadth
