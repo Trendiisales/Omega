@@ -4171,7 +4171,7 @@ static void init_engines(const std::string& cfg_path)
             return v;
         });
         printf("[OMEGA-INIT] IndexBearShort NAS100: shadow=true sustained-bear-gate "
-               "Donchian48-breakdown FIXED-2R-TP SHORT-only (bad-day engine)\n");
+               "Donchian24-breakdown FIXED-2R-TP SHORT-only (bad-day engine)\n");
 
         // ── IndexBearShort (US500 instance — same class) ──────────────────────
         // 2026-06-22 ADDED + WIRED. The prior 2026-06-12 instance was removed (only a

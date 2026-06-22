@@ -221,23 +221,29 @@ if ($Command -ne '' -and $Command -ne 'help') {
 # audits are reported as warnings (non-blocking). Python-tolerant: if python is
 # absent, warn and continue (never break the Windows build over a missing tool).
 # ==============================================================================
-if ($Command -eq 'deploy') {
+# S-2026-06-22: the drift guard MOVED into Invoke-Deploy, AFTER the git reset
+# ([2a/12]), so it checks the FRESHLY-PULLED tree -- not the stale working tree.
+# Old placement here ran pre-pull => a guard-failing committed state could not be
+# fixed by deploying its fix (the deploy aborted before pulling it; on 2026-06-22
+# this forced a manual `git reset --hard origin/main` on the VPS). See Invoke-DriftGuard.
+function Invoke-DriftGuard {
     $py = Get-Command python -ErrorAction SilentlyContinue
     if (-not $py) { $py = Get-Command python3 -ErrorAction SilentlyContinue }
-    if ($py) {
-        Write-Host "[DRIFT-GUARD] checking config-drift (engine_init claims vs faithful audit)..." -ForegroundColor Cyan
-        & $py.Source "$OmegaDir\tools\config_drift_guard.py"
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "==========================================================" -ForegroundColor Red
-            Write-Host " CONFIG-DRIFT GUARD FAILED -- a deploy-line PF claim" -ForegroundColor Red
-            Write-Host " contradicts backtest/AUDITED_CONFIGS.tsv. Fix the comment" -ForegroundColor Red
-            Write-Host " or re-audit + update the manifest before deploying." -ForegroundColor Red
-            Write-Host "==========================================================" -ForegroundColor Red
-            exit 1
-        }
-    } else {
+    if (-not $py) {
         Write-Host "[DRIFT-GUARD] python not found -- skipping config-drift check (non-fatal)." -ForegroundColor Yellow
+        return $true
     }
+    Write-Host "[DRIFT-GUARD] checking config-drift (engine_init claims vs faithful audit)..." -ForegroundColor Cyan
+    & $py.Source "$OmegaDir\tools\config_drift_guard.py"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "==========================================================" -ForegroundColor Red
+        Write-Host " CONFIG-DRIFT GUARD FAILED -- a deploy-line PF claim" -ForegroundColor Red
+        Write-Host " contradicts backtest/AUDITED_CONFIGS.tsv. Fix the comment" -ForegroundColor Red
+        Write-Host " or re-audit + update the manifest before deploying." -ForegroundColor Red
+        Write-Host "==========================================================" -ForegroundColor Red
+        return $false
+    }
+    return $true
 }
 
 # ==============================================================================
@@ -996,6 +1002,19 @@ function Invoke-Deploy {
     }
     Write-Host "  [OK] Source at $ghSha7" -ForegroundColor Green
     Write-Host ""
+
+    # --------------------------------------------------------------------------
+    # [2a/12] Config-drift guard -- runs AFTER the git reset so it checks the
+    #         FRESHLY-PULLED tree. Blocks the build (service already stopped at
+    #         [1/12]) if a deploy-line PF claim contradicts the faithful manifest;
+    #         restarts the service with the prior binary on block (no downtime).
+    # --------------------------------------------------------------------------
+    Write-Host "[2a/12] Config-drift guard (post-pull)..." -ForegroundColor Yellow
+    if (-not (Invoke-DriftGuard)) {
+        Write-Host "  [ABORT] config-drift guard failed -- not building. Restarting prior binary." -ForegroundColor Red
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        return 1
+    }
 
     # --------------------------------------------------------------------------
     # [2b/12] Refresh engine warm-seed CSVs from captured l2_ticks (S-2026-06-01).
