@@ -31,6 +31,14 @@
 // ============================================================================
 #include <unordered_set>   // enforcement breach-tracking (Phase 2); std headers only
 #include <string>
+#include <fstream>         // S-2026-06-22 self-maintaining caps: ledger rebuild
+#include <sstream>
+#include <algorithm>
+#include <filesystem>
+#include <vector>          // self-sufficient for the standalone cap harness
+#include <unordered_map>
+#include <cstdio>
+#include <cstdint>
 
 namespace omega_acct {
 
@@ -43,10 +51,32 @@ namespace omega_acct {
 inline bool g_enforce = true;
 inline constexpr int64_t ACCT_CONFIRM_SEC = 5;
 
-// Per-engine runaway cap in USD = max(3 x median realized loss, $25).
-// Derived 2026-06-13 from the cleaned cumulative ledger (442 closes). Engines
-// not listed get DEFAULT_CAP -- pure catastrophe insurance.
-inline double cap_for(const std::string& eng) {
+// ── SELF-MAINTAINING CAPS (S-2026-06-22, operator mandate: "ensure the cap
+// table can never go stale, always viable + available"). ───────────────────
+// THREE-TIER, fail-safe by construction -- the change can only ever match-or-
+// beat the prior hardcoded behaviour, never regress:
+//   (1) DYNAMIC overlay (g_dyn_caps) -- rebuilt IN-PROCESS from the live cleaned
+//       ledger every ACCT_REBUILD_THROTTLE_SEC. No external scheduler to fail.
+//       An engine's dynamic cap is used ONLY when it has >= ACCT_CAP_MIN_N clean
+//       losses AND the build is fresher than ACCT_CAP_TTL_SEC. Stale dynamic is
+//       NEVER trusted -> auto-reverts to seed ("can never go stale").
+//   (2) SEED map -- the curated 2026-06-13 cleaned-ledger derivation. Compiled
+//       in, so it is ALWAYS available (cold start, thin data, file missing).
+//   (3) DEFAULT_CAP -- catastrophe insurance for any engine in neither.
+// cap_for() ALWAYS returns >= ACCT_CAP_FLOOR for any string ("always available").
+// The artifact filter + median + [FLOOR,CEIL] clamp + min-n bound the blast
+// radius of residual ledger pollution (see [[omega-tombstone-ledger-pollution]]).
+// Python audit twin: tools/derive_acct_caps.py (must match this on same input).
+inline constexpr double  ACCT_CAP_FLOOR = 25.0;
+inline constexpr double  ACCT_CAP_CEIL  = 800.0;
+inline constexpr double  ACCT_CAP_MULT  = 3.0;
+inline constexpr int     ACCT_CAP_MIN_N = 20;
+inline constexpr int64_t ACCT_CAP_TTL_SEC        = 14 * 86400;   // stale dynamic -> seed
+inline constexpr int64_t ACCT_REBUILD_THROTTLE_SEC = 6 * 3600;   // rebuild cadence
+
+inline double DEFAULT_CAP() { return 150.0; }
+
+inline double seed_cap_for(const std::string& eng) {
     static const std::unordered_map<std::string, double> caps = {
         {"XauStraddleM15",       91.0},
         {"XauStraddleM30",      108.0},
@@ -71,8 +101,111 @@ inline double cap_for(const std::string& eng) {
     };
     auto it = caps.find(eng);
     if (it != caps.end()) return it->second;
-    static const double DEFAULT_CAP = 150.0;
-    return DEFAULT_CAP;
+    return DEFAULT_CAP();
+}
+
+// Dynamic overlay state (rebuilt in-process; default empty -> pure seed behaviour).
+inline std::unordered_map<std::string, double> g_dyn_caps;
+inline int64_t     g_caps_built_s    = 0;
+inline std::string g_ledger_dir      = "logs/trades";  // cwd-relative; = C:\Omega\logs\trades on VPS
+
+// Quote-aware single-line CSV split (engine/symbol fields are csv_quoted).
+inline std::vector<std::string> acct_split_csv(const std::string& line) {
+    std::vector<std::string> out; std::string cur; bool q = false;
+    for (char c : line) {
+        if (c == '"') q = !q;
+        else if (c == ',' && !q) { out.push_back(cur); cur.clear(); }
+        else cur += c;
+    }
+    out.push_back(cur);
+    return out;
+}
+
+// Rebuild g_dyn_caps from the cleaned cumulative close ledger. Fail-safe: on ANY
+// problem the prior g_dyn_caps is left untouched (cap_for stays on seed). Mirrors
+// tools/derive_acct_caps.py + the ledger_analytics.py:73-89 artifact filter.
+inline void rebuild_caps_now(int64_t now_s) {
+    namespace fs = std::filesystem;
+    std::unordered_map<std::string, std::vector<double>> losses;
+    bool read_any = false;
+    std::error_code ec;
+    if (!fs::exists(g_ledger_dir, ec) || ec) return;          // dir gone -> keep prior
+    for (const auto& de : fs::directory_iterator(g_ledger_dir, ec)) {
+        if (ec) return;
+        const std::string fn = de.path().filename().string();
+        if (fn.rfind("omega_trade_closes", 0) != 0) continue;  // must start with prefix
+        if (fn.size() < 4 || fn.substr(fn.size() - 4) != ".csv") continue;
+        if (fn.find(".bak") != std::string::npos)     continue;
+        if (fn.find(".cleared") != std::string::npos) continue;
+        std::ifstream f(de.path());
+        if (!f.is_open()) continue;
+        std::string line;
+        if (!std::getline(f, line)) continue;                  // header
+        const auto hdr = acct_split_csv(line);
+        int ci_eng = -1, ci_net = -1, ci_sym = -1, ci_sz = -1, ci_hold = -1;
+        for (int i = 0; i < (int)hdr.size(); ++i) {
+            const std::string& h = hdr[i];
+            if (h == "engine")   ci_eng = i;
+            else if (h == "net_pnl")  ci_net = i;
+            else if (h == "symbol")   ci_sym = i;
+            else if (h == "size")     ci_sz = i;
+            else if (h == "hold_sec") ci_hold = i;
+        }
+        if (ci_eng < 0 || ci_net < 0) continue;                // schema unknown -> skip file
+        read_any = true;
+        const int need = std::max({ci_eng, ci_net, ci_sym, ci_sz, ci_hold});
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            const auto col = acct_split_csv(line);
+            if ((int)col.size() <= need) continue;
+            auto num = [&](int i) -> double {
+                if (i < 0 || i >= (int)col.size()) return 0.0;
+                try { return std::stod(col[i]); } catch (...) { return 0.0; }
+            };
+            // --- artifact filter (verbatim from ledger_analytics.py:87-88) ---
+            if (ci_hold >= 0 && num(ci_hold) > 7.0 * 86400.0) continue;  // phantom hold
+            const std::string sym = (ci_sym >= 0 && ci_sym < (int)col.size()) ? col[ci_sym] : "";
+            if ((sym == "XAUUSD" || sym == "XAGUSD") && ci_sz >= 0 && num(ci_sz) > 0.05) continue; // 100x lot bug
+            const double net = num(ci_net);
+            if (net < 0.0) losses[col[ci_eng]].push_back(-net);          // store |loss|
+        }
+    }
+    if (!read_any) return;                                     // nothing parsed -> keep prior
+    std::unordered_map<std::string, double> fresh;
+    for (auto& kv : losses) {
+        auto& v = kv.second;
+        if ((int)v.size() < ACCT_CAP_MIN_N) continue;          // thin -> engine keeps seed
+        std::sort(v.begin(), v.end());
+        const double med = v[v.size() / 2];                    // median |loss|
+        double cap = ACCT_CAP_MULT * med;
+        if (cap < ACCT_CAP_FLOOR) cap = ACCT_CAP_FLOOR;
+        if (cap > ACCT_CAP_CEIL)  cap = ACCT_CAP_CEIL;
+        fresh[kv.first] = cap;
+    }
+    g_dyn_caps.swap(fresh);
+    g_caps_built_s = now_s;
+    std::printf("[ACCT-GUARD] caps rebuilt: %zu dynamic, %d-loss min, ledger=%s\n",
+                g_dyn_caps.size(), ACCT_CAP_MIN_N, g_ledger_dir.c_str());
+    std::fflush(stdout);
+}
+
+// Throttled rebuild trigger -- safe to call every tick; does real work at most
+// once per ACCT_REBUILD_THROTTLE_SEC (and once on first call / cold start).
+inline void maybe_rebuild_caps(int64_t now_s) {
+    static int64_t s_last = 0;
+    if (s_last != 0 && (now_s - s_last) < ACCT_REBUILD_THROTTLE_SEC) return;
+    s_last = now_s;
+    rebuild_caps_now(now_s);
+}
+
+// Per-engine runaway cap. Dynamic if fresh + present, else compiled seed, else
+// DEFAULT -- ALWAYS returns a sane value >= ACCT_CAP_FLOOR.
+inline double cap_for(const std::string& eng, int64_t now_s) {
+    if (g_caps_built_s > 0 && (now_s - g_caps_built_s) <= ACCT_CAP_TTL_SEC) {
+        auto it = g_dyn_caps.find(eng);
+        if (it != g_dyn_caps.end()) return it->second;
+    }
+    return seed_cap_for(eng);                                  // never stale: TTL falls through to seed
 }
 
 // Estimate unrealised USD for a snapshot. Prefer the source-provided value;
@@ -92,11 +225,12 @@ inline int check(const std::vector<omega::PositionSnapshot>& open, int64_t now_s
     static std::unordered_map<std::string, int64_t> s_breach_since; // key -> first-seen breach ts
     static std::unordered_set<std::string>          s_seen_this;    // keys breaching this pass
     s_seen_this.clear();
+    maybe_rebuild_caps(now_s);   // S-2026-06-22: keep caps fresh in-process (throttled 6h)
     int breaches = 0;
     for (const auto& ps : open) {
         const double unr = unrealised_usd(ps);
         if (unr >= 0.0) continue;
-        const double cap = cap_for(ps.engine);
+        const double cap = cap_for(ps.engine, now_s);
         if (-unr < cap) continue;
         ++breaches;
         // position identity includes entry_ts so a NEW trade in the same engine
