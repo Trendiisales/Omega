@@ -744,15 +744,21 @@ if (-not (Test-Path $l2CsvFile_NQ)) {
 # Bar State Load check below (bars still used by RSI/HybridBracket/TrendPB).
 
 # ==============================================================================
-# CHECK: RSI Reversal Engine enabled
-# RSI-REV configured is a startup-once line written before VERIFY_STARTUP starts tailing.
-# Must search the FULL log from byte 0, not just capturedLines (new lines only).
+# CHECK: RSI Reversal Engine
+# RSIReversalEngine was TOMBSTONED / disabled 2026-05-01 (negative-EV: real-tick
+# backtest 4320 trades / 2yr = -$3,800; g_rsi_reversal.enabled=false in
+# engine_init.hpp ~L805-836). A disabled engine never logs an "RSI-REV configured"
+# startup line, so the absence of that line is EXPECTED, not a failure. Emitting a
+# hard FAIL here made every deploy report "1 FAILURE(S)" and trained operators to
+# ignore the failure count -- masking real startup failures. Demoted to INFO
+# 2026-06-22. The SHADOW/PASS branches are kept so that IF the engine is ever
+# re-enabled, this check resumes reporting its live/shadow state correctly.
 # ==============================================================================
 $rsiConfigLine = Get-Content $LogPath -ErrorAction SilentlyContinue |
     Where-Object { $_ -match "RSI-REV.*configured" } | Select-Object -Last 1
 if (!$rsiConfigLine) {
-    Add-Result "RSI Reversal Active" "FAIL" "No RSI-REV configured line in log" `
-        "RSIReversalEngine never logged startup -- binary stale or engine disabled. Run QUICK_RESTART.ps1"
+    Add-Result "RSI Reversal Active" "INFO" "RSIReversal intentionally tombstoned (disabled 2026-05-01, negative-EV)" `
+        "Not an error -- engine deliberately disabled (enabled=false), never logs a startup line. Re-enabling would flip this to PASS/WARN."
 } elseif ($rsiConfigLine -match "shadow_mode=true") {
     Add-Result "RSI Reversal Active" "WARN" "RSI Reversal in SHADOW mode" `
         "Engine active but shadow_mode=true -- trades logged only, no real orders fired."
