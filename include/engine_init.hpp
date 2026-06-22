@@ -4149,7 +4149,7 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_nas.symbol      = "NAS100";
         g_idx_bear_short_nas.engine_name = "IndexBearShort";
         g_idx_bear_short_nas.shadow_mode = true;     // prove on shadow + cross-instrument before any live size
-        g_idx_bear_short_nas.enabled     = true;   // RE-INSTATED S-2026-06-15 (cross-regime VINDICATION): full 2022 (incl H2 crash)+2024-26 retest US500 +$14.7k / NAS +$788 net. Bear hedge; the 6mo-bull cull + Jan-Jun-2022-only retest both MISSED its home regime.
+        g_idx_bear_short_nas.enabled     = false;  // DISABLED S-2026-06-22 (BACKTEST_TRUTH kill — short-bear << cash). Faithful triangulation: (1) D1 cross-regime port 2019-26 all 6 idx = PF0.56 net -19,720pt, NAS PF0.52 -4410pt NEG-EVERY-YEAR-INCL-2022, fails both-halves WF on every instrument (backtest/index_bear_short_d1.cpp); (2) exact-param H1 engine on REAL SPX 2022 ticks (HISTDATA) = n=2 +19pt = noise, no edge — the S-06-15 "PF1.84" is unsupported by real data; (3) NAS H1 2022 claim UNREPRODUCIBLE (no NAS intraday pre-2024 anywhere); (4) BlendBook proxy short-bear -0.21 Sharpe vs cash 0.93. Same rationale as the already-off SPX leg: cannot verify -> off. Re-enable only on a faithful both-regime+both-halves PASS on real NAS H1 bear data. Code/seed kept.
         g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
         g_idx_bear_short_nas.lot         = 1.0;
         g_idx_bear_short_nas.USE_RISKOFF_GATE = false;  // price-structure gate is the validated one; flip on once VIX/credit feed trusted
