@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Daily blend book (shadow). Weekdays 09:00. Proposes only.
+     cp com.omega.blend-book.plist ~/Library/LaunchAgents/ ; launchctl load ~/Library/LaunchAgents/com.omega.blend-book.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.omega.blend-book</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>/Users/jo/Omega/tools/rdagent/blend_daily.sh</string></array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>/tmp/rda-blend.log</string>
+  <key>StandardErrorPath</key><string>/tmp/rda-blend.err</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
