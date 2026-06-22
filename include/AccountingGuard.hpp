@@ -262,6 +262,14 @@ inline int check(const std::vector<omega::PositionSnapshot>& open, int64_t now_s
                         ps.engine.c_str(), ps.symbol.c_str(),
                         closed ? "runaway cut" : "position left open -- needs a closer");
             std::fflush(stdout);
+            // S-2026-06-22 (operator-requested): surface the activation + reason in
+            // the GUI. g_telemetry writes the shared-memory health_alert[64] banner
+            // the Omega dashboard reads ([SYSTEM-ALERT] surface). closed=CUT (runaway
+            // killed); !closed=RUNAWAY! (cut needed but no closer wired -- louder).
+            char acct_alert[64];
+            std::snprintf(acct_alert, sizeof acct_alert, "ACCT-GUARD %s %s loss $%.0f cap $%.0f",
+                          closed ? "CUT" : "RUNAWAY!", ps.engine.c_str(), -unr, cap);
+            g_telemetry.SetHealthAlert(acct_alert);
             s_breach_since[key] = now_s + 3600;  // suppress re-fire on this identity for 1h
         }
     }
