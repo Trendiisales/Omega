@@ -190,6 +190,12 @@ public:
     // S88-followup (2026-05-27): ATR-percentile vol-band gate (see
     // XauThreeBar30m results: PF 1.55 -> 2.23 on 6mo PKL). Default OFF.
     bool   use_vol_band_gate = false;
+    // S-2026-06-22 IMPULSE FILTER (fleet-audit): signal-day bar must thrust
+    // >= min_impulse_atr*ATR14 (|close-open|). 0.5 improves BOTH regimes on the
+    // D1 ensemble (bull 1.55->1.60, bear 1.38->1.52, maxDD -16%); 1.0 over-filters
+    // (cuts Keltner/Donchian winners — rejected). 0 = OFF (byte-identical).
+    // Activated to 0.5 on g_xau_tf_d1 in engine_init. Mirrors the 1h engine filter.
+    double min_impulse_atr   = 0.0;
     double vol_band_low_pct  = 0.30;
     double vol_band_high_pct = 0.85;
     std::deque<double> atr_vol_window_;
@@ -454,6 +460,13 @@ private:
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
+            // S-2026-06-22 IMPULSE FILTER (fleet-audit): the signal-day bar must
+            // thrust >= min_impulse_atr*ATR14 (|close-open|). 0=OFF. Applies to all
+            // D1 cells (all are breakout/momentum; no dip-buy family here).
+            if (min_impulse_atr > 0.0 && atr14_ > 0.0 && !daily_.empty()) {
+                const auto& sd = daily_.back();
+                if (std::fabs(sd.close - sd.open) < min_impulse_atr * atr14_) continue;
+            }
             // S88-followup vol-band gate (per-cell mask)
             if (use_vol_band_gate && (cell_vol_band_mask & (1u << ci))
                 && (int)atr_vol_window_.size() >= 200) {

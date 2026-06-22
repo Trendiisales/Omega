@@ -16,6 +16,7 @@
 // RUN:   ./backtest/xau_tf_d1_bt /Users/jo/Tick/2yr_XAUUSD_tick_fresh.h4.csv
 // =============================================================================
 #include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cmath>
 #include <string>
@@ -74,6 +75,7 @@ int main(int argc,char**argv){
     omega::XauTrendFollowD1Engine eng;
     eng.shadow_mode=true; eng.enabled=true; eng.lot=0.01; eng.max_spread=1.0;
     eng.use_vol_band_gate=false;   // raw cell behaviour for attribution
+    if (const char* imp = getenv("IMP")) eng.min_impulse_atr = atof(imp);  // 2026-06-22 impulse-filter sweep
     eng.init();
 
     // NOTE: rec() receives the trade entry timestamp in SECONDS (tr.entryTs),

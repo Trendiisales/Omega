@@ -1411,6 +1411,7 @@ static void init_engines(const std::string& cfg_path)
         // gate; 60+ days HARD shadow before considering enabled=live.
         g_xau_tf_d1.shadow_mode = true;
         g_xau_tf_d1.enabled     = true;   // S88: revived w/ vol-band gate, HARD shadow
+        g_xau_tf_d1.min_impulse_atr = 0.5;  // UPGRADE S-2026-06-22 (fleet-audit, real engine reproduced in main tree, backtest/XauTrendFollowD1Backtest.cpp IMP=0.5): signal-day |close-open|>=0.5*ATR14 gate. Ensemble bull PF1.60, bear PF1.52, both-WF-halves+ both regimes, maxDD -16%. Per-cell + IMP=1.0-rejected detail in manifest XauTfD1 row + fleet-audit log.
         // S-2026-06-17 cold-loss protection. Daily backtest (losscut_batch_b.py):
         // LC=1.0% -> net flat, maxDD -68% (-341->-110), worst -174->-53.
         g_xau_tf_d1.LOSS_CUT_PCT = 1.0;
@@ -1441,6 +1442,13 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_d1.use_vol_band_gate = true;
         g_xau_tf_d1.vol_band_low_pct  = 0.20;
         g_xau_tf_d1.vol_band_high_pct = 0.90;
+        // S-2026-06-22 IMPULSE FILTER (fleet-audit, REPRODUCED in main tree this
+        // session via backtest/XauTrendFollowD1Backtest.cpp on real engine):
+        //   IMP=0.5  BULL PF 1.55->1.60 maxDD $2203->$1846 (-16%)  all blk 5/6 ROBUST
+        //            BEAR PF 1.38->1.52 maxDD $480->$436   H2 PF 1.25->1.51  WF+
+        //   IMP=1.0 over-filters (BULL 1.41 / BEAR 1.33 -- rejected). 0=OFF.
+        // Signal-day bar must thrust >=0.5*ATR14. Shadow only (low cadence ~2t/mo/cell).
+        g_xau_tf_d1.min_impulse_atr   = 0.5;
         g_xau_tf_d1.lot         = 0.01;
         g_xau_tf_d1.max_spread  = 1.0;
         g_xau_tf_d1.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
@@ -4211,15 +4219,14 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] IndexBearShort US500: shadow=true DON48 (SPX2022 real-engine "
                "PF1.59 +591pt both-halves+); bull-regime untested -- ledger-gated\n");
 
-        // ── NasOrbRetrace (NAS100, same ORB retrace+RUNNER, US cash open) ──────
-        // 2026-06-07 deep-dive: the gold ORB mechanic transfers to NAS at the US
-        // cash open (the per-symbol lever = session-open; everything else holds).
-        // backtest/orb_gold_retrace.cpp OR_START=930: PF 1.87, all 3 years +
-        // (2024 1.96 / 2025 1.84 / 2026 1.62), 3x-cost-robust (1.31), ret/DD 4.91.
-        // A SECOND, complementary NAS edge (retrace+runner) vs PeachyOrb (retest).
-        // Same engine class, NAS config: ORB 09:30-10:00 ET, retr0.382, runner.
-        printf("[OMEGA-INIT] NasOrbRetrace NAS100: shadow=true ORB30(09:30-10:00 ET) "
-               "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided (2nd NAS edge)\n");
+        // ── NasOrbRetrace — TOMBSTONED 2026-06-22 (fleet-audit, DEAD) ─────────
+        // The 2026-06-07 "PF 1.87 transfers to NAS" was a BAR-REPLAY PORT ARTIFACT
+        // (orb_gold_retrace.cpp idealized fills, no spread/cost gate). The 23-agent
+        // fleet audit drove the REAL GoldOrbRetraceEngine class on NAS data =
+        // PF 0.45-0.59, net-NEGATIVE every regime + both WF halves. No live instance
+        // ever existed (this was a printf only) -> nothing to disable, just removed
+        // the misleading boot line. Manifest AUDITED_CONFIGS.tsv: NasOrbRetrace DEAD.
+        // Do NOT re-wire without a REAL-engine both-regime pass on faithful NAS data.
 
         // ── MondayRiskOn (NAS100/GBPUSD/AUDUSD) -- weekend-risk-reset calendar edge ──
         // 2026-06-07 data-mining find (anomaly_scan + monday_test + monday_gated).
