@@ -1,0 +1,35 @@
+{
+  "_purpose": "Authoritative index of market data + vendor-name aliases. CONSULT THIS before claiming 'no data exists'. Built 2026-06-22 after a session wrongly declared 'no NAS intraday data' (it was under the HISTDATA vendor name NSXUSD). See memory feedback-drive-real-engine-not-port.",
+  "vendor_aliases": {
+    "NSXUSD": "NASDAQ 100 (NAS100 / USTEC)",
+    "SPXUSD": "S&P 500 (US500 / SPX)",
+    "UDXUSD": "US Dollar Index (DXY)",
+    "UKXGBP": "UK 100 (FTSE / UK100)",
+    "GRXEUR": "Germany 40 (GER40 / DAX)",
+    "DEUIDXEUR": "Germany 40 (GER40 / DAX) daily",
+    "USATECHIDXUSD": "NASDAQ 100 daily",
+    "USA500IDXUSD": "S&P 500 daily",
+    "USA30IDXUSD": "Dow 30 (DJ30) daily",
+    "EUSIDXEUR": "Euro Stoxx 50 (ESTX50) daily",
+    "GBRIDXGBP": "UK 100 (FTSE) daily"
+  },
+  "datasets": [
+    {"asset": "NAS100/USTEC", "tf": "tick", "path": "/Tick/HISTDATA_COM_ASCII_NSXUSD_T2022*.zip", "span": "2022-01..2022-12 (APRIL MISSING)", "tz": "EST -> +5h UTC", "fmt": "YYYYMMDD HHMMSSmmm,bid,ask,vol", "notes": "the data the 06-22 session wrongly said didn't exist"},
+    {"asset": "S&P500/US500", "tf": "tick", "path": "/Tick/HISTDATA_COM_ASCII_SPXUSD_T2022*.zip", "span": "2022-01..2022-12", "tz": "EST -> +5h UTC", "fmt": "YYYYMMDD HHMMSSmmm,bid,ask,vol"},
+    {"asset": "DXY", "tf": "tick", "path": "/Tick/HISTDATA_COM_ASCII_UDXUSD_T2022*.zip", "span": "2022", "tz": "EST -> +5h UTC"},
+    {"asset": "FTSE/UK100", "tf": "tick", "path": "/Tick/HISTDATA_COM_ASCII_UKXGBP_T2022*.zip", "span": "2022", "tz": "EST -> +5h UTC"},
+    {"asset": "GER40/DAX", "tf": "tick+m5+h1+h4", "path": "/Tick/DAX2022_merged.csv (+ .m5/.h1/.h4)", "span": "2022", "tz": "check header"},
+    {"asset": "SPX/NDX/DJ30/GER40/UK100", "tf": "daily", "path": "/Tick/{SPX,NDX,DJ30,GER40,UK100}_daily_2016_2026.csv", "span": "2016-2026", "fmt": "ts_sec,o,h,l,c"},
+    {"asset": "index daily (6)", "tf": "daily", "path": "/Users/jo/Omega/download/{usatechidxusd,usa500idxusd,usa30idxusd,deuidxeur,eusidxeur,gbridxgbp}-d1-bid-2019-01-01-2026-05-31.csv", "span": "2019-2026", "fmt": "ts_ms,o,h,l,c"},
+    {"asset": "NAS100 H1 warmup", "tf": "h1", "path": "/Users/jo/Omega/phase1/signal_discovery/warmup_NAS100_H1.csv", "span": "2024-01..2026-04 (NO 2022/2020 BEAR)", "fmt": "ts_sec,o,h,l,c"},
+    {"asset": "FX majors", "tf": "m1+daily", "path": "/Users/jo/Omega/download/{eurusd,gbpusd,audusd,nzdusd,audnzd,eurgbp,...}-m1-{bid,ask}-2019-01-01-2026-05-31.csv", "span": "2019-2026"},
+    {"asset": "XAU/XAG/FX/index CFD", "tf": "tick L2", "path": "VPS C:/Omega/logs/l2_ticks_<SYM>_<date>.csv + ibkr_l2/", "span": "rolling daily, recording-vital", "notes": "scp omega-vps; ssh to enumerate"},
+    {"asset": "bigcap equity 15m / gappers / IBKR NAS CFD 15m / NQ+MGC futures / NDX 5m+15m", "tf": "intraday", "path": "VPS C:/Omega/data/", "span": "mostly mid-2024+", "notes": "ssh omega-vps 'dir C:\\Omega\\data'"}
+  ],
+  "rules": [
+    "Search by VENDOR NAME, not the trading symbol (NSXUSD != grep 'NAS').",
+    "HISTDATA tick zips are EST: add 5h for UTC.",
+    "Before any 'no data' claim: grep /Tick + /Omega/download + ssh VPS C:/Omega/data.",
+    "To judge an engine, drive the REAL class on this data (backtest/ibs_real_engine.cpp), never a re-implemented port."
+  ]
+}
