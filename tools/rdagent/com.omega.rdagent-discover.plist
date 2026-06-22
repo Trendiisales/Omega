@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly RD-Agent factor discovery. Runs Sunday 18:00.
+  Requires `claude` logged in for the user this LaunchAgent runs as.
+  Install (only after `bash discover.sh` works by hand):
+    cp com.omega.rdagent-discover.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.omega.rdagent-discover.plist
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.omega.rdagent-discover.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.omega.rdagent-discover</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jo/Omega/tools/rdagent/discover.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/tmp/rda-discover.log</string>
+  <key>StandardErrorPath</key><string>/tmp/rda-discover.err</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>

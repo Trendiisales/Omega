@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Omega · RD-Agent Research</title>
+<style>
+  :root{--bg:#0e0f12;--surf:#16181d;--surf2:#1d2026;--line:#2a2e36;--tx:#e7e9ee;--mut:#9aa0ac;--hint:#6b7280;
+        --warn-bg:#3a2c12;--warn-tx:#e6b35a;--bad:#e07a7a;--good:#5dcaa5;--accent:#7fb0ff;--mono:ui-monospace,Menlo,monospace}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:24px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  h1{font-size:18px;font-weight:500;margin:0;display:flex;gap:10px;align-items:center}
+  .sub{color:var(--mut);font-size:13px;margin:4px 0 0}
+  .pill{font-size:12px;padding:3px 10px;border-radius:8px;background:var(--surf2);color:var(--mut)}
+  .pill.warn{background:var(--warn-bg);color:var(--warn-tx)} .pill.good{background:#10342b;color:var(--good)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0}
+  .card{background:var(--surf);border-radius:10px;padding:14px}
+  .card .l{font-size:12px;color:var(--mut)} .card .v{font-size:24px;font-weight:500;margin-top:2px}
+  .card .d{font-size:11.5px;color:var(--hint);margin-top:4px;line-height:1.45}
+  .banner{background:var(--warn-bg);color:var(--warn-tx);border-radius:10px;padding:11px 14px;font-size:13px;margin:6px 0 18px}
+  .panel{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:16px;margin:14px 0}
+  .secn{font-size:15px;font-weight:500;margin:22px 0 4px}
+  .basket{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+  .bk{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .bk .nm{font-weight:500;font-size:15px} .bk .cf{font-size:11.5px;color:var(--mut);margin:2px 0 8px}
+  .bk .rr{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}
+  pre{font-family:var(--mono);font-size:12px;background:var(--surf2);border-radius:8px;padding:10px 12px;overflow-x:auto;margin:8px 0 0}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px} th{font-weight:400;color:var(--mut);text-align:left;padding:6px 6px}
+  td{padding:6px 6px;border-top:1px solid var(--line)} .mono{font-family:var(--mono)} .r{text-align:right}
+  .tag{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--surf2);color:var(--mut)}
+  .tag.buy{background:#10342b;color:var(--good)}
+  .hint{color:var(--hint);font-size:12px;line-height:1.6} .pos{color:var(--good)} .neg{color:var(--bad)}
+  button{background:transparent;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer}
+  button:hover{background:var(--surf2)} button:disabled{opacity:.5;cursor:wait}
+  details{margin-top:8px} summary{cursor:pointer;color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <div><h1>Research · RD-Agent <span id="status" class="pill">loading…</span></h1>
+      <p class="sub" id="desc"></p></div>
+    <span id="prov" class="pill"></span>
+  </div>
+
+  <div id="cards" class="cards"></div>
+  <div id="banner" class="banner" style="display:none"></div>
+
+  <div class="secn">Today — trade or sit out?</div>
+  <div id="regime"></div>
+  <div class="secn">Strategy</div>
+  <div id="strategy"></div>
+
+  <div class="secn">Today's buy basket <span id="bkmeta" class="hint"></span></div>
+  <p class="hint" id="bkexpl"></p>
+  <div id="basket" class="basket"></div>
+
+  <div class="secn">Discovered factors</div>
+  <div id="factors"></div>
+
+  <div class="secn">Full ranking <span class="hint">· all names, model's view today</span></div>
+  <p class="hint">Confidence = model's cross-sectional percentile (100 = strongest predicted next-day outperformer). BUY = in today's top basket. 5d / 20d = the name's actual recent return (context, not a prediction).</p>
+  <table id="tbl"><thead><tr><th>#</th><th>name</th><th>action</th><th class="r">confidence</th><th class="r">5d</th><th class="r">20d</th></tr></thead><tbody></tbody></table>
+
+  <details><summary>What is "score"? (raw model output)</summary>
+    <p class="hint" style="margin-top:8px">The model outputs a z-scored relative-strength number per name each day. Its absolute value is meaningless — only the <em>ranking</em> matters. The top few names become the buy basket. "Confidence" above is just that ranking expressed as an easy-to-read percentile.</p></details>
+</div>
+<script>
+const pct=x=>x==null?'—':(x*100).toFixed(0)+'%', s1=x=>x==null?'—':(+x).toFixed(2), rr=x=>x==null?'—':(x>=0?'+':'')+(x*100).toFixed(1)+'%';
+const cls=x=>x==null?'':(x>=0?'pos':'neg');
+async function load(){
+  let d; try{ d=await (await fetch('latest.json?_='+Date.now())).json(); }
+  catch(e){ document.getElementById('status').textContent='no data — run the exporter'; return; }
+  const t=d.source.tradeable_in_omega, p=d.portfolio||{}, net=p.net||{};
+  document.getElementById('status').textContent=(d.generated_at||'').slice(0,16).replace('T',' ');
+  document.getElementById('desc').textContent=d.source.description||'';
+  const prov=document.getElementById('prov');
+  prov.textContent='source: '+d.source.universe+' · '+d.source.provenance; prov.className='pill '+(t?'good':'warn');
+
+  document.getElementById('cards').innerHTML=[
+    ['Net Sharpe', s1(net.sharpe), `after ${p.cost_bps_roundtrip||'?'}bps cost · risk-adj return, >1 is decent`],
+    ['Net return', pct(net.ann_return), `annualized, top-${p.topk} basket, daily rebalance`],
+    ['Max drawdown', net.max_drawdown==null?'—':pct(Math.abs(net.max_drawdown)), 'worst peak-to-trough on the basket'],
+    ['Hit rate', net.hit_rate==null?'—':pct(net.hit_rate), `share of up days · IC ${d.model&&d.model.ic!=null?d.model.ic:'—'} (rank skill)`]
+  ].map(([l,v,dd])=>`<div class="card"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`).join('');
+
+  const bn=document.getElementById('banner');
+  if(!t){ bn.style.display='block'; bn.textContent='⚠ '+d.source.universe+' is not the Omega trading universe — informational only.'; }
+  else if((d.model&&d.model.ic!=null&&d.model.ic<0)){ bn.style.display='block';
+    bn.textContent='⚠ Health check: model IC is negative ('+d.model.ic+') yet the long-only basket is positive → this is BULL BETA, not alpha (single up-period, no short side). Treat as a pipeline demo, not a tradeable edge. Validate market-neutral + both-regime in Omega faithful BT first.'; }
+  else bn.style.display='none';
+
+  const st=d.strategy;
+  if(st){
+    const a=(st.today&&st.today.action)||'LONG';
+    const col=a==='LONG'?'var(--good)':(a==='SHORT'?'var(--bad)':'var(--warn-tx)');
+    const blurb=a==='LONG'?'Calm bull — run the long flat-by-close basket, flatten before the close.'
+      :(a==='SHORT'?'Fast drop / violent bear — the BEAR ENGINE arms: short the index intraday, flat by close.'
+      :'Soft-bear or high-vol chop — sit in CASH. Long engine gated, no crash to short.');
+    document.getElementById('regime').innerHTML=`<div class="panel" style="border-color:${col}">
+      <div><span style="font-size:26px;font-weight:500;color:${col}">${a}</span>
+      <span class="hint" style="margin-left:10px">${st.today.label} · vol pctile ${st.today.vol_percentile} · ${st.today.below_sma50?'below':'above'} 50d SMA${st.today.crash?' · CRASH':''}</span></div>
+      <p class="hint" style="margin-top:6px">${blurb} <span style="color:var(--mut)">→ ${st.today.engine}</span></p></div>`;
+    const be=st.bear_engine||{};
+    document.getElementById('strategy').innerHTML=`<div class="panel">
+      <div class="row"><strong style="font-weight:500">${st.name}</strong><span class="pill good">Sharpe ${st.backtest.sharpe} · vs ${st.backtest.vs_ungated_sharpe} ungated</span></div>
+      <ul class="hint" style="margin:8px 0 0;padding-left:18px;line-height:1.7">${st.rules.map(r=>`<li>${r}</li>`).join('')}</ul>
+      <p class="hint" style="margin-top:8px">backtest ${st.backtest.window} · ${st.backtest.caveat}</p></div>
+      <div class="panel"><div class="row"><strong style="font-weight:500">Bear engine · ${be.name||''}</strong><span class="pill warn">Sharpe ${be.sharpe} · DD ${(be.max_drawdown*100).toFixed(0)}%</span></div>
+      <p class="hint" style="margin-top:6px">arms on ${be.arms_on} · +${be.armed_day_bps}bps on armed days · ${be.caveat}</p></div>`;
+  }
+  const sig=d.signal||{}, bk=(sig.basket||[]);
+  document.getElementById('bkmeta').textContent=`· ${sig.date} · top ${sig.buy_count} of ${sig.universe_size}, equal weight, rebalance ${sig.rebalance}`;
+  document.getElementById('bkexpl').textContent='These are the names the model ranks highest for the next session. Equal-weight them; re-rank and rebalance each day.';
+  document.getElementById('basket').innerHTML=bk.filter(b=>b.action==='BUY').map(b=>`
+    <div class="bk"><div class="nm">${b.instrument}</div><div class="cf">confidence ${b.percentile} / 100</div>
+    <div class="rr"><span>5d <span class="${cls(b.ret_5d)}">${rr(b.ret_5d)}</span></span><span>20d <span class="${cls(b.ret_20d)}">${rr(b.ret_20d)}</span></span></div></div>`).join('');
+
+  const fc=document.getElementById('factors');
+  fc.innerHTML=(d.factors&&d.factors.length)? d.factors.slice(0,3).map(f=>`
+    <div class="panel"><div class="row"><strong style="font-weight:500">${f.name}</strong><span class="pill good">grade: ${d.source.provenance}</span></div>
+    <pre>${(f.source||f.expression||'').slice(0,700).replace(/</g,'&lt;')}</pre>
+    <div style="margin-top:10px"><button id="promoteBtn" onclick="promote()">Run cost-gate BT</button><span id="verdict" class="hint" style="margin-left:10px"></span></div></div>`).join('')
+    : `<div class="panel hint">No factor file exported. Run <span class="mono">rdagent fin_factor</span>, then export with <span class="mono">--factors</span>.</div>`;
+
+  const tb=document.querySelector('#tbl tbody');
+  tb.innerHTML=bk.map(b=>`<tr><td>${b.rank}</td><td class="mono">${b.instrument}</td>
+    <td><span class="tag ${b.action==='BUY'?'buy':''}">${b.action==='BUY'?'BUY':'—'}</span></td>
+    <td class="r">${b.percentile}</td><td class="r ${cls(b.ret_5d)}">${rr(b.ret_5d)}</td><td class="r ${cls(b.ret_20d)}">${rr(b.ret_20d)}</td></tr>`).join('');
+}
+async function promote(){
+  const b=document.getElementById('promoteBtn'), v=document.getElementById('verdict');
+  b.disabled=true; v.style.color='var(--mut)'; v.textContent='running cost-gate BT…';
+  try{ const r=await (await fetch('/promote',{method:'POST'})).json();
+    if(r.verdict==='PASS'||r.verdict==='FAIL'){ v.style.color=r.verdict==='PASS'?'var(--good)':'var(--bad)';
+      v.textContent=`${r.verdict} · net Sharpe ${r.net.sharpe} · net ann ${(r.net.ann_return*100).toFixed(0)}% · ${r.cost_bps_roundtrip}bps`; }
+    else { v.style.color='var(--bad)'; v.textContent='error: '+(r.note||'failed'); }
+  }catch(e){ v.style.color='var(--bad)'; v.textContent='error: '+e; }
+  b.disabled=false;
+}
+load(); setInterval(load, 20000);
+</script>
+</body>
+</html>

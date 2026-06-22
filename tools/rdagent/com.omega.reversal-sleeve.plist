@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily market-neutral reversal sleeve. Runs weekdays 09:00 (pre-open).
+  Refreshes S&P500 data + regenerates today's long/short book. Proposes only.
+  Install (after a manual `bash reversal_daily.sh` works):
+    cp com.omega.reversal-sleeve.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.omega.reversal-sleeve.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.omega.reversal-sleeve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jo/Omega/tools/rdagent/reversal_daily.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>/tmp/rda-reversal.log</string>
+  <key>StandardErrorPath</key><string>/tmp/rda-reversal.err</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
