@@ -176,6 +176,7 @@ static omega::GoldOrbRetraceEngine g_gold_orb_london;  // S-2026-06-20 ORB-widen
 #include "RegimeState.hpp"   // 2026-06-12: shared price-based bull/bear regime brain (gold_regime()), fed in tick_gold.hpp, queried by long-only gold engines
 #include "IndexBearShortEngine.hpp"
 static omega::IndexBearShortEngine g_idx_bear_short_nas; // NAS100 risk-off SHORT: sustained-bear gate + Donchian breakdown + fixed 2R TP -- 2026-06-12 (NAS2022 PF1.60 both-halves+, bull-gated +702), shadow
+static omega::IndexBearShortEngine g_idx_bear_short_sp;  // US500 risk-off SHORT (same class) -- 2026-06-22 ADDED after real-engine SPX2022 vindication PF1.59 +591pt both-halves+ (b0644750 line); shadow
 #include "MondayRiskOnEngine.hpp"
 static omega::MondayRiskOnEngine g_monday_nas;   // Monday risk-on calendar anomaly (NAS100) -- 2026-06-07 (t2.59 WR67% SMA50-gated), shadow
 static omega::MondayRiskOnEngine g_monday_gbp;   // Monday risk-on (GBPUSD) t2.04 WR71%

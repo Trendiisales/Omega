@@ -4153,6 +4153,7 @@ static void init_engines(const std::string& cfg_path)
         g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
         g_idx_bear_short_nas.lot         = 1.0;
         g_idx_bear_short_nas.USE_RISKOFF_GATE = false;  // price-structure gate is the validated one; flip on once VIX/credit feed trusted
+        g_idx_bear_short_nas.DON = 24;  // BULL-BLEED FIX S-2026-06-22 (real-engine sweep, backtest/ibs_real_engine.cpp): DON 48->24 (shallower breakdown) flips 2024-26 bull PF0.84 -977pt -> PF1.07 +514pt AND keeps 2022 bear PF1.26 +1061pt both-halves+ = POSITIVE BOTH REGIMES (net cycle +1575 vs +993 at DON48). DON48 bled -977 in bull; TP_R=3.0 fixed bull but KILLED 2022 (H2 PF0.54) = rejected.
         g_idx_bear_short_nas.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_idx_bear_short_nas.seed_from_h1_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_NAS100_H1.csv"));
@@ -4172,13 +4173,43 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT] IndexBearShort NAS100: shadow=true sustained-bear-gate "
                "Donchian48-breakdown FIXED-2R-TP SHORT-only (bad-day engine)\n");
 
-        // ── IndexBearShort (US500 instance — cross-validated SPX 2022) ─────────
-        // 2026-06-12: same class, US500 symbol. SPX 2022 cross-validation PASSED
-        // (PF 1.84 net +532pt both-halves+ 2.60/1.32 on the real -25% SPX bear)
-        // -> two independent index bears now agree (NAS2022 1.60 + SPX2022 1.84),
-        // GER40-artifact/single-feed caveat cleared. Still SHADOW.
-        printf("[OMEGA-INIT] IndexBearShort US500: shadow=true sustained-bear-gate "
-               "Donchian48-breakdown FIXED-2R-TP SHORT-only (SPX2022 cross-validated)\n");
+        // ── IndexBearShort (US500 instance — same class) ──────────────────────
+        // 2026-06-22 ADDED + WIRED. The prior 2026-06-12 instance was removed (only a
+        // vestigial printf survived) and the SPX leg was audit-disabled because its
+        // validation FILE (SPX2022_bear_h1.csv) did not exist = unreproducible.
+        // NOW reproduced on REAL HISTDATA SPXUSD 2022 ticks via the ACTUAL engine class
+        // (backtest/ibs_real_engine.cpp --ticks /tmp/spx22 --symbol US500 --cost 0.6):
+        // 2022 bear n=28 WR43% PF1.59 net +591pt, BOTH HALVES POSITIVE (H1 1.99 / H2 1.20).
+        // Ships at the VALIDATED config DON=48 (NOT the NAS DON=24 bull-bleed fix — that
+        // was validated on NAS only; no SPX intraday 2024-26 data exists to test the SPX
+        // bull regime, so SPX bull behaviour is UNTESTED). Shadow; live-size gated on a
+        // forward shadow-ledger read of bull-regime behaviour.
+        g_idx_bear_short_sp.symbol      = "US500";
+        g_idx_bear_short_sp.engine_name = "IndexBearShort";
+        g_idx_bear_short_sp.shadow_mode = true;
+        g_idx_bear_short_sp.enabled     = true;
+        g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts (real-engine SPX2022 cost)
+        g_idx_bear_short_sp.lot         = 1.0;
+        g_idx_bear_short_sp.USE_RISKOFF_GATE = false;
+        // DON stays at class default 48 (the SPX-validated config; do NOT copy NAS DON=24).
+        g_idx_bear_short_sp.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_idx_bear_short_sp.seed_from_h1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_US500_H1.csv"));
+        g_open_positions.register_source("IndexBearShortSP", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_idx_bear_short_sp.m_pos;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "US500"; s.engine = "IndexBearShort";
+                s.side = "SHORT"; s.size = p.size;
+                s.entry = p.entry; s.sl = p.stop; s.tp = p.tp;
+                s.entry_ts = p.entry_ts / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] IndexBearShort US500: shadow=true DON48 (SPX2022 real-engine "
+               "PF1.59 +591pt both-halves+); bull-regime untested -- ledger-gated\n");
 
         // ── NasOrbRetrace (NAS100, same ORB retrace+RUNNER, US cash open) ──────
         // 2026-06-07 deep-dive: the gold ORB mechanic transfers to NAS at the US

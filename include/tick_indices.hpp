@@ -233,6 +233,7 @@ static void on_tick_us500(
                 std::chrono::system_clock::now().time_since_epoch()).count());
         g_idxsess_sp.set_risk_off(omega::index_risk_off());
         g_idxsess_sp.on_tick(bid, ask, now_ms_isp);
+        g_idx_bear_short_sp.on_tick(bid, ask, now_ms_isp); // 2026-06-22 SPX risk-off SHORT breakdown (shadow); real-engine SPX2022 PF1.59 both-halves+
         g_engine_heartbeat.pulse("IndexSession_US500");
     }
 
