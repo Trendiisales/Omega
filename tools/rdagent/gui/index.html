@@ -57,6 +57,11 @@
   <div class="secn">Today's buy basket <span id="bkmeta" class="hint"></span></div>
   <p class="hint" id="bkexpl"></p>
   <div id="basket" class="basket"></div>
+  <div style="margin-top:12px">
+    <button id="tradeBtn" onclick="tradeBasket()">Paper-trade this basket</button>
+    <span id="tradeRes" class="hint" style="margin-left:10px"></span>
+    <p class="hint" style="margin-top:6px">Long-only, equal-weight, $100k, shadow (paper) fill at last close. Real money is gated off (faithful BT + manual confirm).</p>
+  </div>
 
   <div class="secn">Discovered factors</div>
   <div id="factors"></div>
@@ -138,6 +143,17 @@ async function promote(){
     if(r.verdict==='PASS'||r.verdict==='FAIL'){ v.style.color=r.verdict==='PASS'?'var(--good)':'var(--bad)';
       v.textContent=`${r.verdict} · net Sharpe ${r.net.sharpe} · net ann ${(r.net.ann_return*100).toFixed(0)}% · ${r.cost_bps_roundtrip}bps`; }
     else { v.style.color='var(--bad)'; v.textContent='error: '+(r.note||'failed'); }
+  }catch(e){ v.style.color='var(--bad)'; v.textContent='error: '+e; }
+  b.disabled=false;
+}
+async function tradeBasket(){
+  const b=document.getElementById('tradeBtn'), v=document.getElementById('tradeRes');
+  b.disabled=true; v.style.color='var(--mut)'; v.textContent='placing paper orders…';
+  try{ const r=await (await fetch('/trade-basket',{method:'POST'})).json();
+    if(r.error){ v.style.color='var(--bad)'; v.textContent='error: '+r.error; }
+    else{ v.style.color='var(--good)';
+      const fills=(r.orders||[]).map(o=>`${o.sym}×${o.shares>0?o.shares:o.shares}`).join(', ')||'no change (already on book)';
+      v.textContent=`paper-filled ${r.n_names} names · $${Math.round(r.deployed_usd).toLocaleString()} deployed · ${fills}`; }
   }catch(e){ v.style.color='var(--bad)'; v.textContent='error: '+e; }
   b.disabled=false;
 }

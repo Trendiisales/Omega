@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -43,7 +44,11 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):  # noqa: N802
-        if self.path.split("?")[0] != "/promote":
+        route = self.path.split("?")[0]
+        if route == "/trade-basket":
+            self._trade_basket()
+            return
+        if route != "/promote":
             self.send_error(404)
             return
         # Run the cost-aware promote gate on whichever run the panel currently shows.
@@ -68,6 +73,27 @@ class Handler(SimpleHTTPRequestHandler):
             ).encode()
         except Exception as e:  # noqa: BLE001
             body = json.dumps({"verdict": "ERROR", "note": str(e)}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _trade_basket(self):
+        # Paper-trade today's BUY basket (top-5, long-only, equal-weight, shadow).
+        # Real money is NOT reachable from here -- execute_basket.py --mode live is
+        # gated behind --i-confirm + IB gateway and is never invoked by this route.
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(TOOLS / "execute_basket.py"),
+                 "--topk", "5", "--capital", "100000", "--mode", "shadow"],
+                capture_output=True, text=True, timeout=60,
+            )
+            out = proc.stdout.strip().splitlines()
+            body = (out[-1] if out and out[-1].startswith("{") else json.dumps(
+                {"error": proc.stderr.strip()[-400:] or "executor failed"})).encode()
+        except Exception as e:  # noqa: BLE001
+            body = json.dumps({"error": str(e)}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
