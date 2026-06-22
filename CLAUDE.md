@@ -10,6 +10,22 @@ core code without instruction) with project-specific safeguards.
 > status). It exists so sessions stop re-deriving where data lives / how engines
 > wire / what costs are. Backtest specifics: `backtest/ENGINE_BACKTEST_REGISTRY.md`.
 
+## MANDATORY: update the vault on EVERY deploy (operator rule, 2026-06-21)
+
+A deploy (`OMEGA.ps1 deploy` / VPS rebuild+restart) is **NOT complete** until the Memory-Omega
+vault (`/Users/jo/Memory-Omega`) reflects what shipped. The vault update is part of the deploy
+checklist, not optional cleanup. After verifying the running VPS hash, BEFORE declaring the deploy
+done, you MUST:
+1. **Entity page** — create/update `wiki/entities/<Engine>.md` (YAML frontmatter + `[[wikilinks]]`):
+   what changed, faithful/live figures, status, **commit hash** (tied to the verified running hash).
+2. **index.md** — add/update the one-line pointer.
+3. **log.md** — append `## [DD-MM-YYYY HH.MM] <op> | <target>` (NZ time:
+   `TZ='Pacific/Auckland' date '+%d-%m-%Y %H.%M'`) naming the commit + what deployed.
+
+Why: the vault is the system of record and went 1106 commits stale once (separate cwd-gated session);
+deploys are exactly when drift creeps in. Tying vault-update to deploy keeps it current by construction.
+See memory `feedback-vault-update-on-deploy` + the SessionStart memory-wiki mandate.
+
 ## Edit Discipline
 
 **Commits permitted.** Relaxed by operator instruction 2026-05-14a.
