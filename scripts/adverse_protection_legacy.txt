@@ -11,7 +11,6 @@ EurGbpPairsEngine
 EurusdLondonOpenEngine
 FvgContinuationEngine
 FxCarryEngine
-FxCrossRevEngine
 FxScalpPyramidEngine
 FxSeasonalEngine
 FxTurtleH4Engine
@@ -35,9 +34,7 @@ GoldScalpPyramidEngine
 GoldSeasonalEngine
 GoldSessionBreakoutEngine
 GoldUltimateEngine
-GoldVolBreakoutM30Engine
 GoldVolExpansionEngine
-IndexBearShortEngine
 IndexFlowEngine
 IndexFomcEngine
 IndexIntradayDriftEngine
@@ -46,17 +43,14 @@ IndexSessionEngine
 MacroCrashEngine
 MondayRiskOnEngine
 NasBbRevLongH1Engine
-NasTurtleD1Engine
 NzdusdAsianOpenEngine
 OrbBreakoutEngine
 OvernightDriftEngine
 PDHLReversionEngine
 PeachyOrbEngine
-PumpScalpEngine
 QuickScalpEngine
 RSIExtremeTurnEngine
 RSIReversalEngine
-SessionMomentumEngine
 SqueezeSlingshotEngine
 SupertrendGoldEngine
 TrendLineBreakEngine

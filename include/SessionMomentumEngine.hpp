@@ -89,6 +89,11 @@
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
 #include "RegimeState.hpp"       // S-2026-06-24: shared price-brain bear long-block (item-2 coverage)
+//  ADVERSE-PROTECTION: time-stop + fixed SL by design (backtested). In-flight
+//    protection = fixed ATR SL + a PURE time-exit (hold N hours, no TP) -- the
+//    bounded hold IS the in-flight protection. + price-bear long-block S-2026-06-24k.
+//    Bull-beta (both bear halves NEG, AUDITED_CONFIGS), shadow-cap; no cold cut added
+//    (short hold already bounds adverse excursion).
 
 namespace omega {
 

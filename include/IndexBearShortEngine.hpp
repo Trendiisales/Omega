@@ -1,4 +1,9 @@
 #pragma once
+//  ADVERSE-PROTECTION: SHORT-only bear engine, structural stop (backtested). In-flight
+//    protection = Donchian structural SL. ibs_real_engine.cpp faithful 2022 bear
+//    PF1.26 (NAS) / 1.59 (SPX) -- this engine EXISTS to trade the bear, so the
+//    long-bear-gate is N/A; its risk is a short squeeze, capped by the structural SL.
+//    BEAR-ONLY (bull leg disconfirmed) -> never bull-size (AUDITED_CONFIGS).
 // =============================================================================
 // IndexBearShortEngine.hpp -- SHORT the index breakdown on bad days (risk-off)
 // =============================================================================

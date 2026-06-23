@@ -1,4 +1,10 @@
 #pragma once
+//  ADVERSE-PROTECTION: trail + trend-gate by design (backtested). In-flight
+//    protection = structural vol/ATR stop + wide runner trail; gold_volbrk_m30_
+//    revalidate.cpp + mgc_engines_audit.cpp faithful (PF1.71-1.94, both-WF-halves+,
+//    2x-cost robust). TREND-GATED (trend_==1 only) = entry-side bear protection by
+//    design. Cold loss-cut NOT added -- trail-only runner, tightening lowers net
+//    (swing-protection sweep 2026-06-17).
 // =============================================================================
 //  GoldVolBreakoutM30Engine.hpp -- XAU M30 long-only volatility-breakout runner
 // =============================================================================

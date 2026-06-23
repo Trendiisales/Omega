@@ -1,4 +1,9 @@
 #pragma once
+//  ADVERSE-PROTECTION: mean-reversion / fixed bracket (backtested). In-flight
+//    protection = fixed SL/TP bracket -- the SL IS the protection. A cold loss-cut is
+//    NOT added: tightening inverts the buy-weakness thesis on MR engines (cf the
+//    impulse-filter finding, omega-impulse-filter-entry-quality). Faithful EURGBP
+//    real-engine PF1.91 bull / 3.60 bear, both-regime + both-halves (EDGE).
 // =============================================================================
 //  FxCrossRevEngine.hpp -- FX cross-pair D1 mean-reversion (S43, 2nd FX edge)
 //

@@ -23,6 +23,12 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: trail-only by design (backtested). Turtle D1 breakout =
+//    structural Donchian-exit stop + trend trail; index_turtle_d1_audit.cpp faithful
+//    (SPX 1.69 / DJ30 1.40 EDGE, both WF halves + 2022 bear+). A cold loss-cut is NOT
+//    added -- swing-protection sweep 2026-06-17 (omega-engine-swing-protection-sweep)
+//    showed tightening LOWERS net on trend/trail engines. NasTurtleD1 instance
+//    tombstoned (TOMBSTONES.tsv, bull-beta); SPX/DJ30 carry the real edge.
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

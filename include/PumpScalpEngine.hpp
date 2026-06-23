@@ -1,4 +1,10 @@
 #pragma once
+//  ADVERSE-PROTECTION: trail-by-design (backtested). In-flight protection = HARD
+//    trailing stop (HARD_PCT / ATR-trail ATR_LEN*ATR_MULT) + MAXHOLD time-stop +
+//    feed-independent watchdog. bigcap_exit_compare.cpp / bigcap_sweep.cpp showed a
+//    WIDER ATR-trail beats a tighter cut (PF2.30->4.72, rides winners) -> a cold
+//    loss-cut LOWERS net, deliberately NOT added (cf omega-bigcap-exit-givesback).
+//    + equity-mkt price-bear long-block S-2026-06-24k (index_market_regime).
 // ─────────────────────────────────────────────────────────────────────────────
 // PumpScalpEngine — micro-cap "big-jump" momentum scalp, backtest-found.
 //
