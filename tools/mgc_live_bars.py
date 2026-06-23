@@ -5,6 +5,11 @@
 # (prior-day POC+HVN). The Omega engine polls these two files. Distinct
 # client-id (88) from the DOM bridge (99).
 # Run as a scheduled/loop service:  python tools/mgc_live_bars.py [port] [period_s]
+#
+# S-2026-06-23 robustness fix: the connect() was OUTSIDE the loop with no reconnect,
+# so any IB drop / failed initial connect crashed the script -> non-zero task result
+# (0x800710E0, hidden by pythonw). Now self-healing: retry connect, detect drops and
+# reconnect inside the loop, exit 0 on clean shutdown.
 import sys, json, time, os
 from collections import defaultdict
 from ib_async import IB, ContFuture
@@ -40,25 +45,59 @@ def write_hvn(bars):
     json.dump({"poc": round(poc,2), "hvn": hvn, "basis": 0.0,
                "day": str(days[-2])}, open(HVN, "w"))
 
-ib = IB(); ib.connect("127.0.0.1", PORT, clientId=88, timeout=20)
-c = ContFuture("MGC", "COMEX", "USD"); ib.qualifyContracts(c)
-if not os.path.exists(CSV):
-    open(CSV, "w").write("ts,o,h,l,c,v\n")
-print(f"[mgc-live] producing {CSV} + {HVN} every {PERIOD}s", flush=True)
-while True:
+def connect():
+    ib = IB()
+    for attempt in range(1, 9):
+        try:
+            ib.connect("127.0.0.1", PORT, clientId=88, timeout=20)
+            c = ContFuture("MGC", "COMEX", "USD"); ib.qualifyContracts(c)
+            print(f"[mgc-live] connected port={PORT} (attempt {attempt})", flush=True)
+            return ib, c
+        except Exception as e:
+            print(f"[mgc-live] connect attempt {attempt} failed: {e}", flush=True)
+            try: ib.disconnect()
+            except Exception: pass
+            time.sleep(min(60, 5*attempt))
+    return None, None
+
+def main():
+    if not os.path.exists(CSV):
+        open(CSV, "w").write("ts,o,h,l,c,v\n")
+    ib, c = connect()
+    if ib is None:
+        print("[mgc-live] FATAL: could not connect after retries -- exiting cleanly for task retry", flush=True)
+        return 0   # clean exit; the 5-min task trigger retries
+    print(f"[mgc-live] producing {CSV} + {HVN} every {PERIOD}s", flush=True)
+    while True:
+        try:
+            if not ib.isConnected():
+                print("[mgc-live] connection lost -- reconnecting", flush=True)
+                try: ib.disconnect()
+                except Exception: pass
+                ib, c = connect()
+                if ib is None: return 0
+            bars = ib.reqHistoricalData(c, "", barSizeSetting="30 mins",
+                                        durationStr="2 D", whatToShow="TRADES",
+                                        useRTH=False, timeout=60)
+            if bars:
+                lt = last_ts(); appended = 0
+                with open(CSV, "a") as f:
+                    for b in bars[:-1]:               # exclude the still-forming bar
+                        ts = int(b.date.timestamp())
+                        if ts > lt:
+                            f.write(f"{ts},{b.open},{b.high},{b.low},{b.close},{b.volume or 0}\n"); appended += 1
+                write_hvn(bars)
+                if appended: print(f"[mgc-live] +{appended} closed bars, last close {bars[-2].close}", flush=True)
+        except Exception as e:
+            print(f"[mgc-live] err: {e}", flush=True)
+        ib.sleep(PERIOD)
+
+if __name__ == "__main__":
     try:
-        bars = ib.reqHistoricalData(c, "", barSizeSetting="30 mins",
-                                    durationStr="2 D", whatToShow="TRADES",
-                                    useRTH=False, timeout=60)
-        if bars:
-            lt = last_ts(); appended = 0
-            with open(CSV, "a") as f:
-                for b in bars[:-1]:               # exclude the still-forming bar
-                    ts = int(b.date.timestamp())
-                    if ts > lt:
-                        f.write(f"{ts},{b.open},{b.high},{b.low},{b.close},{b.volume or 0}\n"); appended += 1
-            write_hvn(bars)
-            if appended: print(f"[mgc-live] +{appended} closed bars, last close {bars[-2].close}", flush=True)
+        sys.exit(main() or 0)
+    except (KeyboardInterrupt, SystemExit):
+        print("[mgc-live] shutdown (clean exit 0)", flush=True)
+        sys.exit(0)
     except Exception as e:
-        print(f"[mgc-live] err: {e}", flush=True)
-    ib.sleep(PERIOD)
+        print(f"[mgc-live] FATAL unhandled: {e} -- exit 0 for task retry", flush=True)
+        sys.exit(0)   # never leave a non-zero task result; the trigger restarts us
