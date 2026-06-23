@@ -88,14 +88,15 @@ def agg_h4_from_h1(h1_bars, out_path):
     return len(rows)
 try:
     mgc = ContFuture("MGC", "COMEX", "USD"); ib.qualifyContracts(mgc)
-    h1_gold = None
+    h1_gold = None; m30_gold = None
     for tf in GOLD_TFS:
         try:
             bars = pull(ib, mgc, tf)
             if bars and len(bars) > 10:
                 n = write_csv(f"{SEED_DIR}/warmup_XAUUSD_{tf}.csv", bars, ms=True)
                 ok.append(f"XAUUSD_{tf}({n})")
-                if tf == "H1": h1_gold = bars
+                if tf == "H1":  h1_gold  = bars
+                if tf == "M30": m30_gold = bars
             elif tf == "H4" and h1_gold:
                 n = agg_h4_from_h1(h1_gold, f"{SEED_DIR}/warmup_XAUUSD_H4.csv")  # MGC 4h pull empty -> aggregate
                 ok.append(f"XAUUSD_H4(agg<-H1,{n})")
@@ -109,6 +110,22 @@ try:
             n = agg_h4_from_h1(h1_gold, f"{SEED_DIR}/warmup_XAUUSD_H4.csv"); ok.append(f"XAUUSD_H4(agg<-H1,{n})")
         except Exception as e:
             fail.append(f"XAUUSD_H4-agg({e})")
+    # S-2026-06-24: also regenerate g_mgc_volbrk's seed data files (data/mgc_{h1,30m}_hist.csv).
+    # These are SEPARATE from the XAUUSD_* warmups (MgcVolBreakout reads them via seed_*_from_csv)
+    # and were the last 2 stale seeds the deploy refresh didn't cover. Format = the engine's:
+    # "ts,o,h,l,c,v" with ts in SECONDS (NOT ms). MGC M30+H1 bars are already pulled above.
+    def write_mgc_hist(path, bars):
+        with open(path, "w") as f:
+            f.write("ts,o,h,l,c,v\n")
+            for b in bars:
+                f.write(f"{int(b.date.timestamp())},{b.open},{b.high},{b.low},{b.close},{getattr(b,'volume',0) or 0}\n")
+        return len(bars)
+    if h1_gold:
+        try:    ok.append(f"mgc_h1_hist({write_mgc_hist('data/mgc_h1_hist.csv', h1_gold)})")
+        except Exception as e: fail.append(f"mgc_h1_hist({e})")
+    if m30_gold:
+        try:    ok.append(f"mgc_30m_hist({write_mgc_hist('data/mgc_30m_hist.csv', m30_gold)})")
+        except Exception as e: fail.append(f"mgc_30m_hist({e})")
 except Exception as e:
     fail.append(f"MGC-qualify({e})")
 
