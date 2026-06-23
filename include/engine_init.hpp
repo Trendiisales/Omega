@@ -4028,7 +4028,10 @@ static void init_engines(const std::string& cfg_path)
                                        // (/tmp/bigcap_freq.py, 10 mega-cap 2yr 15m): gate1.5 + impulse1.0
                                        // = PF3.51 WR66% DD6.5% ~6.5 trades/wk on 10 names (x full live
                                        // universe) vs gate4 PF6.83 1.34tw. ~5x the trades, PF still >3.
-            bc.min_impulse_atr = 1.0;  // CHOP GUARD (explicit, do NOT lower): entry bar must thrust
+            bc.min_impulse_atr = 0.0;  // S-2026-06-23 1.0->0: faithful sweep (bigcap_momo_faithful.cpp,
+                                       // breadth=2) shows impulse is IMMATERIAL once breadth gates chop
+                                       // (the breadth>=2 gate IS the chop guard now). Aligns to validated.
+                                       // (prior chop-guard rationale below was pre-breadth) -- thrust
                                        // >=1 ATR. /tmp/bigcap_chop.py @gate1.5: OFF=PF1.48 DD18.9%,
                                        // ON=PF3.51 DD6.5% -- discards 61% of entries = the chop trades.
             bc.trail_pct    = 0.0;     // %-trail OFF; ATR-trail replaces it (matches deployed g_bigcap_momo)
@@ -4042,7 +4045,9 @@ static void init_engines(const std::string& cfg_path)
                                        // (master enable in omega_main) AND OMEGA_BIGCAP_BRIDGE off (xor).
             bc.volx         = 0.0;     // OFF live (realtime-bar volume = deltas, not surge-comparable)
             bc.ig_pct       = 3.0;
-            bc.lb           = 6;       // ignition lookback (6*5m = 30min)
+            bc.lb           = 3;       // S-2026-06-23 6->3: align to validated config (the only MATERIAL
+                                       // entry lever per the faithful sweep -- strength/VWAP-filter immaterial).
+                                       // LB3 = higher PF + 90% WR (LB6 = 2.4x trades, lower PF). 3*5m=15min.
             bc.maxhold      = 96;      // 96*5m = 8h backstop (losers only; in-profit rides past it)
             bc.px_min       = 10.0;    // not a penny stock
             bc.market_cap_above_musd = 20000.0;  // S-2026-06-23 $500B->$20B: align to validated bridge floor;

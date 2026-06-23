@@ -196,6 +196,10 @@ private:
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;
         e.on_trade_record = on_trade_record;
+        { const char* v;   // S-2026-06-23 research toggles (BT-only; unset = live defaults)
+          if((v=getenv("BC_LB")))       e.LB=atoi(v);
+          if((v=getenv("BC_STRENGTH"))) e.STRENGTH=atof(v);
+          if((v=getenv("BC_VOLREG")))   e.VOL_REG_FILTER=(atoi(v)!=0); }
         if (min_breadth > 1) {
             e.breadth_register = [this](int64_t day, const std::string& s){
                 auto& set = m_day_ignis[day]; set.insert(s);

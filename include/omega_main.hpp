@@ -876,6 +876,20 @@ int main(int argc, char* argv[])
                             std::cout.flush();
                             g_telemetry.SetHealthAlert("BIGCAP STALE");
                         }
+                        // S-2026-06-23 AUTO-RECONNECT supervisor: a stale/down engine self-heals
+                        // instead of sitting dead till the next deploy. Bounce (stop+start, which
+                        // rotates clientId 86->88) at most every 300s while stale during RTH.
+                        static int64_t s_last_reconnect_s = 0;
+                        if (stale && (static_cast<int64_t>(tnow) - s_last_reconnect_s >= 300)) {
+                            s_last_reconnect_s = static_cast<int64_t>(tnow);
+                            std::cout << "[BIGCAP-IBKR] auto-reconnect: bouncing stale/down engine (stop+start)\n";
+                            std::cout.flush();
+                            omega::bigcap_momo_ibkr::stop();
+                            const bool rok = omega::bigcap_momo_ibkr::start();
+                            std::cout << "[BIGCAP-IBKR] auto-reconnect " << (rok ? "OK -- live again"
+                                         : "FAILED -- retry in 300s") << "\n";
+                            std::cout.flush();
+                        }
                     }
                 }
             }
