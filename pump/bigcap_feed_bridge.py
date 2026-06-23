@@ -278,6 +278,16 @@ def subscribe_symbol(ib, subs, sym, min_move):
 def main():
     threading.Thread(target=_serve_thread, args=(SERVE_PORT,), daemon=True).start()
     threading.Thread(target=_http_thread, args=(SCANNER_HTTP_PORT,), daemon=True).start()
+    # S-2026-06-23: suppress the BENIGN "Error 162 ... scanner subscription cancelled" spam.
+    # reqScannerData (every 30s) subscribes-then-cancels by design -> Error 162 each pass =
+    # ~36MB/day of log noise (the scan still works). Drop ONLY that line; keep all real errors.
+    import logging as _lg
+    class _DropScanCancel(_lg.Filter):
+        def filter(self, r):
+            m=r.getMessage()
+            return not ("162" in m and "scanner subscription cancelled" in m.lower())
+    _lg.getLogger("ib_async").addFilter(_DropScanCancel())
+    _lg.getLogger("ib_async.wrapper").addFilter(_DropScanCancel())
     ib=IB(); ib.connect(IB_HOST, IB_PORT, clientId=IB_CID, timeout=15)
     try: ib.reqMarketDataType(MKT_DATA_TYPE)   # 3=delayed(paper) 1=live(entitled)
     except Exception: pass
