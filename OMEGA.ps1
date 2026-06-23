@@ -1042,6 +1042,23 @@ function Invoke-Deploy {
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [WARN] refresh_warmup_seeds exit=$LASTEXITCODE -- keeping prior seeds" -ForegroundColor Yellow
         }
+        # S-2026-06-24: the refresh above is fail-soft (needs IBKR 4001 live; if it no-ops, seeds
+        # stay stale SILENTLY -- exactly how 25 stale seeds survived "all the fixes"). Gate it: run
+        # the freshness audit and if any ENABLED-engine seed is still stale, make it IMPOSSIBLE to
+        # miss (red P0 banner + SEED_ALERT.txt). Non-fatal (don't brick a deploy when the data feed
+        # is down on a weekend) but LOUD -- no more silent stale.
+        py tools\seed_freshness_audit.py --repo "$OmegaDir" 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) {
+            $alert = "[P0-SEED] enabled-engine warm-seed(s) STILL STALE after refresh -- engine/gate booting on a price view detached from reality. Refresh needs IBKR 4001 live; re-run: py tools\refresh_warmup_seeds.py 4001"
+            Write-Host ""
+            Write-Host "  ============================================================" -ForegroundColor Red
+            Write-Host "  $alert" -ForegroundColor Red
+            Write-Host "  ============================================================" -ForegroundColor Red
+            $alert | Out-File -FilePath (Join-Path $OmegaDir "logs\SEED_ALERT.txt") -Encoding utf8
+        } else {
+            Write-Host "  [OK] seed-freshness audit clean (enabled engines)" -ForegroundColor Green
+            Remove-Item -Path (Join-Path $OmegaDir "logs\SEED_ALERT.txt") -ErrorAction SilentlyContinue
+        }
     } catch {
         Write-Host "  [WARN] rebuild_warmups failed: $_ -- keeping git snapshot" -ForegroundColor Yellow
     } finally {
