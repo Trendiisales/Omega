@@ -168,6 +168,7 @@ static void quote_loop() {
                 // live-accurate EMA state instead of resetting to a (possibly stale) warm-seed.
                 // Defeats the stale-seed-blinds-the-bear-gate incident. Restored in engine_init.
                 omega::gold_regime().save_state(log_root_dir() + "/gold_regime_state.dat");
+                omega::gold_d1_trend().save_state(log_root_dir() + "/gold_d1_trend_state.dat");
                 // Save bar indicator state every 60s -- ensures warm restart on crash/kill.
                 // Previously saved only at daily rollover and clean shutdown.
                 // If process is killed (OOM, watchdog, manual stop), .dat files were stale

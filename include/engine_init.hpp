@@ -2322,7 +2322,15 @@ static void init_engines(const std::string& cfg_path)
         //   Seeded from XAU H4 CSV. Updated on every H4 close in tick_gold.hpp.
         //   Queried by bidirectional engines (XauTrendFollow2h InsideBar,
         //   DonchianBreakout short path) before firing direction-dependent entries.
-        omega::gold_d1_trend().seed_from_h4_csv("phase1/signal_discovery/warmup_XAUUSD_H4.csv");
+        // 2026-06-23 stale-seed fix (mirrors gold_regime): restore live-accurate D1-trend state
+        // across restarts first; only warm-seed from the (stale-prone) H4 CSV on a true cold start.
+        // start_recording() so it self-captures live H4 going forward.
+        {
+            omega::gold_d1_trend().set_live_dump(log_root_dir() + "/gold_d1_trend_h4.csv");
+            if (!omega::gold_d1_trend().load_state(log_root_dir() + "/gold_d1_trend_state.dat"))
+                omega::gold_d1_trend().seed_from_h4_csv("phase1/signal_discovery/warmup_XAUUSD_H4.csv");
+            omega::gold_d1_trend().start_recording();
+        }
         fflush(stdout);
 
         // ── WARM SEED ALL 2026-05-20 NEW ENGINES FROM H4 CSV ────────────────

@@ -34,9 +34,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <deque>
 #include <fstream>
 #include <string>
+#include <vector>
 #include <algorithm>
 #include "SeedGuard.hpp"
 
@@ -88,6 +92,7 @@ struct GoldD1TrendState {
     void on_h4_bar(double h4_high, double h4_low, double h4_close,
                     int64_t h4_close_ms) noexcept
     {
+        append_live_h4_(h4_close_ms, h4_high, h4_low, h4_close);   // self-fresh seed (no-op until recording_)
         const int64_t day_utc = h4_close_ms / 86400000LL;
         if (!d1_active_) {
             d1_active_ = true; d1_day_utc_ = day_utc;
@@ -154,6 +159,73 @@ struct GoldD1TrendState {
                n, ema_, current_slope_, regime_name(), actual.c_str());
         fflush(stdout);
         return n;
+    }
+
+    // ---- persistence + self-fresh seed (2026-06-23 stale-seed fix; mirrors RegimeState) ----
+    //   This gate (consulted by GoldEngineStack + XauTrendFollow 2h/D1/4h) was seeding from a
+    //   60-day-stale H4 CSV and reset every restart -> EMA200-slope detached from reality ->
+    //   long_allowed()/short_allowed() wrong -> gold engines traded the wrong direction. Now it
+    //   persists state (60s) + self-records live H4 bars so it can never silently go stale.
+    std::string dump_path_; bool recording_ = false;
+    void set_live_dump(const std::string& p) noexcept { dump_path_ = p; }
+    void start_recording() noexcept { recording_ = true; }
+    void reset() noexcept {
+        ema_ = 0.0; ema_count_ = 0; ema_history_.clear(); bar_count_ = 0;
+        d1_active_ = false; current_regime_ = Regime::UNKNOWN; current_slope_ = 0.0;
+    }
+    bool save_state(const std::string& path) const noexcept {
+        std::ofstream f(path, std::ios::trunc);
+        if (!f.is_open()) return false;
+        f << "saved_ts="  << (long long)std::time(nullptr) << "\n"
+          << "ema="        << ema_        << "\n"
+          << "ema_count="  << ema_count_  << "\n"
+          << "bar_count="  << bar_count_  << "\n"
+          << "regime="     << (int)current_regime_ << "\n"
+          << "slope="      << current_slope_       << "\n"
+          << "hist_n="     << ema_history_.size()  << "\n";
+        for (double v : ema_history_) f << v << "\n";
+        return true;
+    }
+    bool load_state(const std::string& path, int max_age_s = 48 * 3600) noexcept {
+        std::ifstream f(path);
+        if (!f.is_open()) return false;
+        int64_t saved_ts = 0; double e = 0, slope = 0; int ec = 0, bc = 0, reg = 0;
+        std::vector<double> hist; std::string line;
+        auto kv = [](const char* k, const std::string& s, double& out) -> bool {
+            const size_t L = std::strlen(k);
+            if (s.size() > L && s.compare(0, L, k) == 0 && s[L] == '=') { out = std::atof(s.c_str() + L + 1); return true; }
+            return false;
+        };
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            double d;
+            if      (line.compare(0, 9, "saved_ts=") == 0) saved_ts = (int64_t)std::atoll(line.c_str() + 9);
+            else if (kv("ema_count", line, d)) ec = (int)d;
+            else if (kv("ema", line, d))       e = d;
+            else if (kv("bar_count", line, d)) bc = (int)d;
+            else if (kv("regime", line, d))    reg = (int)d;
+            else if (kv("slope", line, d))     slope = d;
+            else if (line.compare(0, 7, "hist_n=") == 0) { /* implicit */ }
+            else if (line[0] == '-' || line[0] == '.' || (line[0] >= '0' && line[0] <= '9')) hist.push_back(std::atof(line.c_str()));
+        }
+        const int64_t age = (int64_t)std::time(nullptr) - saved_ts;
+        if (saved_ts <= 0 || age < 0 || age > max_age_s || ec < ema_period || e <= 0.0) {
+            printf("[GoldD1Trend][LOAD] reject (age=%llds stale/invalid) -> will warm-seed\n", (long long)age);
+            return false;
+        }
+        ema_ = e; ema_count_ = ec; bar_count_ = bc; current_slope_ = slope;
+        current_regime_ = (Regime)reg;
+        ema_history_.assign(hist.begin(), hist.end());
+        while ((int)ema_history_.size() > slope_lookback + 1) ema_history_.pop_front();
+        printf("[GoldD1Trend][LOAD] restored EMA200=%.2f slope=%.4f regime=%s age=%llds\n",
+               ema_, current_slope_, regime_name(), (long long)age);
+        fflush(stdout);
+        return true;
+    }
+    void append_live_h4_(int64_t ts_ms, double h, double l, double c) const noexcept {
+        if (dump_path_.empty() || !recording_ || c <= 0.0) return;
+        std::ofstream f(dump_path_, std::ios::app);
+        if (f.is_open()) f << ts_ms << ',' << c << ',' << h << ',' << l << ',' << c << "\n";  // o,h,l,c (o=c placeholder)
     }
 };
 
