@@ -20,6 +20,8 @@
 #include <unordered_map>
 #include <memory>
 #include <string>
+#include <map>
+#include <set>
 
 namespace omega {
 
@@ -31,6 +33,12 @@ public:
     int    tf_sec       = 180;     // entry bar timeframe (180=3m micro, 300=5m big-cap)
     std::string label   = "PumpScalp_3m";   // engine_name on emitted trades
     double day_gate_pct = 100.0;   // extreme-mover gate (see engine: durable edge lives here)
+    double hard_pct     = 6.0;     // hard stop from entry (engine HARD_PCT). 2026-06-23: exposed tunable
+                                   // for the chop-bleed sweep (tighter = cuts chop losers faster).
+    int    min_breadth  = 1;       // S-2026-06-23 cross-sectional BREADTH gate: require >= this many
+                                   // DISTINCT names igniting same session-day before any entry fires.
+                                   // 1 = off (live). 2 = skip isolated single-name chop false-breakouts
+                                   // AND sit out bear (few broad-ignition days). The chop/bear protection.
     double trail_pct    = 2.0;     // hard trailing stop. 3->2 2026-06-11 (pump_exit_bt.py:
                                    // BE2T2 wins every basket day at 1% AND 2% slip)
     double be_arm_pct   = 2.0;     // BE-lock arm (engine BE_ARM_PCT); 0 = off
@@ -170,6 +178,7 @@ private:
         e.engine_name  = label;
         e.TF_SEC       = tf_sec;
         e.DAY_GATE_PCT = day_gate_pct;
+        e.HARD_PCT     = hard_pct;
         e.TRAIL_PCT    = trail_pct;
         e.BE_ARM_PCT   = be_arm_pct;
         e.BE_FLOOR_PCT = be_floor_pct;
@@ -187,6 +196,12 @@ private:
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;
         e.on_trade_record = on_trade_record;
+        if (min_breadth > 1) {
+            e.breadth_register = [this](int64_t day, const std::string& s){
+                auto& set = m_day_ignis[day]; set.insert(s);
+                return (int)set.size() >= min_breadth;
+            };
+        }
         e.init();
     }
 
@@ -218,6 +233,7 @@ private:
 
     std::unordered_map<std::string, std::unique_ptr<Cell>> m_book;
     std::unordered_map<std::string, Candidate> m_cands;   // scanner candidates (for the GUI panel)
+    std::map<int64_t, std::set<std::string>> m_day_ignis;  // S-2026-06-23 breadth: distinct igniters per session-day
     int64_t m_now = 0;   // max event ts seen (eviction clock; seed ts are historical)
 };
 

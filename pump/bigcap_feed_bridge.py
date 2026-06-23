@@ -38,10 +38,14 @@ IB_PORT = int(os.environ.get("OMEGA_IBKR_PORT", "4001"))  # 4001 LIVE gateway (2
 IB_CID  = 34                                              # clientId distinct from pump(33)
 SERVE_PORT    = int(os.environ.get("OMEGA_BIGCAP_BRIDGE_PORT", "7784"))
 PREFILTER_PCT = 3.0          # subscribe names already >=3% up (engine gates at 5%)
-MARKETCAP_MIN = 500000.0     # S-2026-06-20c RE-VALIDATION: $2B surfaced mid-caps (ROKU/SMCI/COIN)
-                             # below the validated edge tier. bigcap_revalidate.py (30 names): edge is
-                             # mega-cap-only -- >=$500B PF1.57 both-halves+, <$150B no edge. $500B = correct
-                             # universe (matches the IBKR engine bc.market_cap_above_musd). $500B=500000 musd.
+MARKETCAP_MIN = 20000.0      # S-2026-06-23 $500B->$20B (=20000 musd) for BigCapMomoCons (bridge engine):
+                             # deep faithful sweep (bigcap_momo_faithful.cpp, 5m 60d, 509-name) — the $500B
+                             # floor was near-dormant (megas too calm to clear gate); the $20-50B band carries
+                             # the momentum (2026 semis AMD/INTC/LRCX/AMAT now >=$500B + the $20-300B movers).
+                             # Robust plateau $20-100B both-halves+ & survives +30bps. The breadth>=2 gate
+                             # (g_bigcap_momo.min_breadth) handles the chop/bear the wider universe admits.
+                             # NOTE: only the BRIDGE engine; the IBKR engine keeps bc.market_cap_above_musd=$500B.
+                             # S-2026-06-20c (prior): $500B mega-cap-only (now superseded for the bridge).
                              # big/mid-cap only -- UNITS = MILLIONS USD (TWS scanner
                              # convention). 2000 = $2B. BUG 2026-06-13: was 2.0e9 =
                              # "$2 quadrillion" -> scanner returned 0 rows since ship.

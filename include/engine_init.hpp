@@ -3921,7 +3921,10 @@ static void init_engines(const std::string& cfg_path)
                                                // "BigCapMomo") when BOTH run (operator A/B). Same scanner
                                                // universe -> bridge trades ~= subset of IBKR; this is an
                                                // aggressive-vs-conservative A/B, NOT 2x unique trades.
-        g_bigcap_momo.day_gate_pct = 4.0;      // S-2026-06-12b 5->4 (operator-approved): extended
+        g_bigcap_momo.day_gate_pct = 2.5;      // S-2026-06-23 4->2.5: deep faithful sweep (bigcap_momo_faithful.cpp,
+                                               // real engine, 5m 60d, $20B floor) — gate2.5 ~2x trades; the new
+                                               // breadth>=2 gate below skips the isolated single-name chop the
+                                               // looser gate would otherwise admit. Prior: S-2026-06-12b 5->4.
                                                // sweep+stress (bigcap_sweep_ext/stress_ext, cached
                                                // 508-name 5m): gate4 n84 vs gate5 n51 (+65% trades)
                                                // AND higher PF at every slip tier (see trail note).
@@ -3945,11 +3948,16 @@ static void init_engines(const std::string& cfg_path)
         // +3% + ride-in-profit lets winners run past the time backstop. SHADOW; 60d/1-regime ->
         // gather live fills before any live-size. Manifest: BigCapMomo SHADOW-CANDIDATE.
         g_bigcap_momo.atr_len      = 30;       // ATR-trail length (best robust exit)
-        g_bigcap_momo.atr_mult     = 4.0;      // trail = peak - 4*ATR
-        g_bigcap_momo.be_arm_pct   = 3.0;      // lock gains: arm BE-floor once +3% in profit
-        g_bigcap_momo.be_floor_pct = 2.0;      // floor stop at entry +2% (net-BE after slip)
+        g_bigcap_momo.atr_mult     = 5.0;      // S-2026-06-23 4->5: sweep — wider trail rides winners further (5>4>3).
+        g_bigcap_momo.be_arm_pct   = 2.0;      // S-2026-06-23 3->2: tighter gain-lock lifts WR (arm BE-floor at +2%).
+        g_bigcap_momo.be_floor_pct = 1.0;      // S-2026-06-23 2->1: floor at entry +1% (net-BE after slip).
         g_bigcap_momo.maxhold_skip_if_profit = true;  // ride winners past the clock (don't cut QURE mid-run)
         g_bigcap_momo.maxhold_bars = 96;       // 96 x 5m = 8h backstop (losers only; in-profit rides)
+        g_bigcap_momo.min_breadth  = 2;        // S-2026-06-23 CHOP/BEAR GATE: require >=2 distinct names igniting
+                                               // same session-day before any entry. Faithful BT (bigcap_momo_faithful.cpp
+                                               // merged-timeline): chop third -12%->-2% (83% of bleed removed), cost-robust
+                                               // (PF11.8 @+30bps), maxDD$177->$66; bears have few broad-ignition days -> sits
+                                               // out = structural bear protection. SHADOW; magnitudes bull-inflated (60d/1-regime).
         g_bigcap_momo.pyr_adds     = 0;
         g_bigcap_momo.max_entries_per_day = 2;
         g_bigcap_momo.notional_usd = 1000.0;

@@ -57,38 +57,53 @@ static std::vector<SymData> load_bin(const char* path) {
 }
 
 // ── collected closed trades for stats ────────────────────────────────────────
-struct Closed { double net_ret; double notional; int64_t entryTs; double pnl_raw; double size; double entry, exit; };
+struct Closed { double net_ret; double notional; int64_t entryTs; double pnl_raw; double size; double entry, exit; std::string sym; int64_t exitTs; };
 static std::vector<Closed> g_trades;
 static double g_extra_comm_bps = 0.0;   // per-side commission stress
+static int g_tf_sec = 300;              // bar TF fed to engine (300=5m live, 900=15m breadth)
+static int g_maxhold_bars = 96;         // 96=8h@5m live; 32=8h@15m
+static double g_gate_override = -1.0;   // <0 = use live 4.0
 
 static void on_close(const omega::TradeRecord& tr) {
     // engine pnl already includes SLIP_PCT both sides. Add extra commission stress.
     double extra = (tr.entryPrice + tr.exitPrice) * (g_extra_comm_bps/1e4) * tr.size;
     double net = tr.pnl - extra;
     double notional = tr.entryPrice * tr.size;
-    g_trades.push_back({net/ (notional>0?notional:1.0), notional, tr.entryTs, tr.pnl, tr.size, tr.entryPrice, tr.exitPrice});
+    g_trades.push_back({net/ (notional>0?notional:1.0), notional, tr.entryTs, tr.pnl, tr.size, tr.entryPrice, tr.exitPrice, tr.symbol, tr.exitTs});
 }
 
 static void configure_prod(omega::PumpScalpManager& m) {
     // EXACT engine_init.hpp production config (lines 4737-4771).
+    // EXACT engine_init.hpp g_bigcap_momo LIVE config (lines 3915-3963, S-2026-06-18
+    // gain-protection exit). Synced 2026-06-23 — the old block was STALE (trail_pct=5,
+    // maxhold=48, no ATR/BE) i.e. pre-06-18. tf_sec + maxhold_bars overridable via argv
+    // so one binary runs the 5m live-TF check and the 15m breadth run.
     m.enabled      = true;
     m.shadow_mode  = true;
-    m.tf_sec       = 300;
-    m.label        = "BigCapMomo";
-    m.day_gate_pct = 4.0;     // S-2026-06-12b
-    m.trail_pct    = 5.0;     // S-2026-06-12b
-    m.volx         = 0.0;     // S-2026-06-13k OFF (LIVE config)
-    m.be_arm_pct   = 0.0;
-    m.be_floor_pct = 0.0;
-    m.maxhold_bars = 48;
+    m.tf_sec       = g_tf_sec;          // live 300 (5m); 900 for the 15m breadth run
+    m.label        = "BigCapMomoCons";
+    // env-var lever overrides for the deep sweep (fall back to LIVE defaults)
+    auto envf=[](const char*k,double d){ const char*v=getenv(k); return v?atof(v):d; };
+    auto envi=[](const char*k,int d){ const char*v=getenv(k); return v?atoi(v):d; };
+    m.day_gate_pct = (g_gate_override>0? g_gate_override : envf("BC_GATE",4.0));
+    m.hard_pct     = envf("BC_HARD",6.0);   // hard stop %; tighten to cut chop losers
+    m.trail_pct    = envf("BC_TRAILPCT",0.0);   // S-2026-06-18: %-trail OFF (ATR replaces)
+    m.volx         = envf("BC_VOLX",0.0);       // OFF live
+    m.atr_len      = envi("BC_ATRLEN",30);      // ATR-trail length
+    m.atr_mult     = envf("BC_ATRMULT",4.0);    // trail = peak - mult*ATR
+    m.be_arm_pct   = envf("BC_BEARM",3.0);      // arm BE-floor once +arm% in profit (0=off)
+    m.be_floor_pct = envf("BC_BEFLOOR",2.0);    // floor stop at entry +floor%
+    m.maxhold_skip_if_profit = envi("BC_RIDE",1)!=0;  // ride winners past the clock
+    m.maxhold_bars = envi("BC_MAXHOLD", g_maxhold_bars);
     m.pyr_adds     = 0;
-    m.max_entries_per_day = 2;
+    m.max_entries_per_day = envi("BC_MAXENT",2);
     m.notional_usd = 1000.0;
-    m.slip_pct     = 0.15;    // big-cap realistic, %/side baked into pnl
-    m.min_dvol_usd = 0.0;
-    m.price_min    = 10.0;
+    m.slip_pct     = 0.15;              // big-cap realistic, %/side baked into pnl
+    m.min_dvol_usd = 0.0;               // liquidity enforced upstream by scanner ($2B cap)
+    m.price_min    = 10.0;              // not a penny stock
     m.verbose      = false;
-    m.max_symbols  = 100000;  // never evict in BT (single-sym replay anyway)
+    m.max_symbols  = 100000;            // never evict in BT (all symbols coexist for breadth)
+    m.min_breadth  = envi("BC_BREADTH",1);  // cross-sectional breadth gate (1=off)
     m.on_trade_record = on_close;
 }
 
@@ -96,39 +111,43 @@ int main(int argc, char** argv) {
     const char* binpath = argc>1 ? argv[1] : "/tmp/bigcap_5m.bin";
     g_extra_comm_bps = argc>2 ? atof(argv[2]) : 0.0;
     int path_order   = argc>3 ? atoi(argv[3]) : 0;  // 0=adverse-first (default)
+    g_tf_sec         = argc>4 ? atoi(argv[4]) : 300;     // 300=5m, 900=15m
+    g_maxhold_bars   = argc>5 ? atoi(argv[5]) : 96;      // 96=8h@5m, 32=8h@15m
+    g_gate_override  = argc>6 ? atof(argv[6]) : -1.0;    // gate diagnostic
 
     auto syms = load_bin(binpath);
     fprintf(stderr, "# loaded %zu syms\n", syms.size());
 
-    // Feed each symbol through its OWN fresh manager so cross-symbol eviction
-    // and shared day-state never interfere — faithful to one cell per symbol.
+    // MERGED TIMELINE (S-2026-06-23): ONE shared manager fed every symbol's bars in
+    // global ts order, so the cross-sectional breadth counter is causal (it sees only
+    // ignitions that happened earlier in wall-clock time). With min_breadth=1 this is
+    // equivalent to the old per-symbol replay (cells are independent; no eviction).
+    struct Ev { int64_t ts; int s; size_t i; };
+    std::vector<Ev> evs;
+    for (int s=0;s<(int)syms.size();++s)
+        for (size_t i=0;i<syms[s].bars.size();++i)
+            evs.push_back({syms[s].bars[i].ts, s, i});
+    std::sort(evs.begin(), evs.end(), [](const Ev&a,const Ev&b){ return a.ts<b.ts; });
+
+    omega::PumpScalpManager m;
+    configure_prod(m);
     int total_bars=0;
-    for (auto& sd : syms) {
-        omega::PumpScalpManager m;
-        configure_prod(m);
+    for (const Ev& e : evs) {
+        const SymData& sd = syms[e.s];
+        const BarRow& b = sd.bars[e.i];
         const std::string& sym = sd.name;
-        for (size_t i=0;i<sd.bars.size();++i) {
-            const BarRow& b = sd.bars[i];
-            int64_t ts_ms = b.ts*1000;
-            // 1) feed the CLOSED bar for entry evaluation (engine state/EMA/gate)
-            m.on_bar(sym, 300, b.o, b.h, b.l, b.c, b.v, ts_ms, /*is_seed=*/false);
-            // 2) replay an intra-bar price PATH for exit management (on_price).
-            //    Spread ticks across the 5m window so MAXHOLD time-stop sees real ts.
-            double seq[4];
-            if (path_order==1) { seq[0]=b.o; seq[1]=b.h; seq[2]=b.l; seq[3]=b.c; }
-            else               { seq[0]=b.o; seq[1]=b.l; seq[2]=b.h; seq[3]=b.c; }
-            for (int k=0;k<4;++k) {
-                int64_t pts = ts_ms + (int64_t)(k * (300000/4));
-                m.on_price(sym, seq[k], pts);
-            }
-            total_bars++;
+        int64_t ts_ms = b.ts*1000;
+        m.on_bar(sym, g_tf_sec, b.o, b.h, b.l, b.c, b.v, ts_ms, /*is_seed=*/false);
+        double seq[4];
+        if (path_order==1) { seq[0]=b.o; seq[1]=b.h; seq[2]=b.l; seq[3]=b.c; }
+        else               { seq[0]=b.o; seq[1]=b.l; seq[2]=b.h; seq[3]=b.c; }
+        for (int k=0;k<4;++k) {
+            int64_t pts = ts_ms + (int64_t)(k * ((int64_t)g_tf_sec*1000/4));
+            m.on_price(sym, seq[k], pts);
         }
-        // flush any still-open position at last price (avoid phantom open carry)
-        if (!sd.bars.empty()) {
-            // nothing to force; engine has no public force at mgr level — leave open
-        }
+        total_bars++;
     }
-    fprintf(stderr, "# fed %d bars, %zu closed trades\n", total_bars, g_trades.size());
+    fprintf(stderr, "# fed %d bars (merged timeline), %zu closed trades\n", total_bars, g_trades.size());
 
     // ── stats: overall + walk-forward halves (by entry ts) + fat-tail top3 ──
     auto report = [&](const char* tag, std::vector<Closed>& v){
@@ -163,5 +182,24 @@ int main(int argc, char** argv) {
     double dollar_net=0; for (auto&t:g_trades) dollar_net += t.net_ret * t.notional;
     printf("dollar_net = $%.0f  (extra_comm=%.0fbps/side, path_order=%s)\n",
            dollar_net, g_extra_comm_bps, path_order==1?"fav-first(optimistic)":"adverse-first(conservative)");
+
+    // avg win/loss + expectancy
+    double sw=0,sl=0; int nw=0,nl=0;
+    for (auto&t:g_trades){ if(t.net_ret>0){sw+=t.net_ret;++nw;} else {sl+=t.net_ret;++nl;} }
+    printf("avg_win=%.4f  avg_loss=%.4f  expectancy=%.4f (per-trade ret)\n",
+           nw?sw/nw:0.0, nl?sl/nl:0.0, g_trades.size()?(sw+sl)/g_trades.size():0.0);
+    // max drawdown on cumulative $ curve (trades already sorted by entryTs)
+    double eq=0,peak=0,mdd=0;
+    for (auto&t:g_trades){ eq+=t.net_ret*t.notional; if(eq>peak)peak=eq; double dd=peak-eq; if(dd>mdd)mdd=dd; }
+    printf("maxDD=$%.0f on cum $ curve\n", mdd);
+    // per-trade dump
+    printf("\n# date        sym     entry     exit    ret%%   exit_type\n");
+    for (auto&t:g_trades){
+        time_t et=(time_t)t.entryTs; if(et<1e9) et=(time_t)(t.entryTs/1000);
+        struct tm* tmv=gmtime(&et); char d[20]; strftime(d,sizeof d,"%Y-%m-%d",tmv);
+        double r=t.net_ret*100.0;
+        const char* xt = (r>1.5 && r<1.9) ? "BE-floor" : (r>=3.0 ? "ATR-trail-ride" : (r<0 ? "stop/trail-loss":"trail"));
+        printf("%-11s %lld %-6s %8.2f %8.2f %+6.2f  %s\n", d, (long long)t.entryTs, t.sym.c_str(), t.entry, t.exit, r, xt);
+    }
     return 0;
 }

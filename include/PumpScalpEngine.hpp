@@ -175,6 +175,14 @@ public:
     // sibling TF engine already holds this symbol -> entry suppressed.
     std::function<bool()> entry_permit;
 
+    // ── cross-sectional BREADTH gate (S-2026-06-23): called when THIS symbol meets
+    // the gate+ignition entry condition. Registers the ignition with the manager's
+    // shared per-day counter and returns true iff >= min_breadth DISTINCT symbols
+    // have ignited today (causal: only same-day prior info). Null = no gate (live).
+    // Fixes the chop-bleed (isolated single-name false breakouts are skipped) and
+    // is self-protecting in a bear (few broad-ignition days -> engine sits out).
+    std::function<bool(int64_t /*session_day*/, const std::string& /*sym*/)> breadth_register;
+
     // ── Position: a stack of units sharing ONE trailing exit ─────────────────
     struct Position { bool active=false; int dir=0; double size_each=0;
                       std::vector<double> units;          // entry px per unit (1 base + adds)
@@ -349,7 +357,10 @@ public:
         const double c_lb = m_bars[(int)m_bars.size()-1-LB].c;
         const bool strong = (h>l) ? (c >= l + STRENGTH*(h-l)) : true;
         const bool not_extended = (ENTRY_MAX_EXT_PCT<=0) || (vwap<=0) || ((c/vwap - 1.0)*100.0 <= ENTRY_MAX_EXT_PCT);
-        if (long_ok && not_extended && (c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) { _open(+1, c, ts_ms); return; }
+        if (long_ok && not_extended && (c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) {
+            if (breadth_register && !breadth_register(_session_day(ts_ms), symbol)) return;  // chop/bear gate: need >=min_breadth names igniting today
+            _open(+1, c, ts_ms); return;
+        }
 
         // EXHAUSTION short (strict top-fade only)
         const double runup = (c/m_day_open - 1.0)*100.0;
