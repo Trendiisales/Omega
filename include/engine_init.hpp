@@ -1780,7 +1780,11 @@ static void init_engines(const std::string& cfg_path)
         // are hot on first tick. >=5 live shadow trades before any LIVE thought.
         g_nas_turtle_d1.p           = omega::make_nas_turtle_d1_params();
         g_nas_turtle_d1.shadow_mode = true;
-        g_nas_turtle_d1.enabled     = true;   // SHADOW. CONFIG-DRIFT CORRECTED 2026-06-18: an earlier
+        g_nas_turtle_d1.enabled     = false;  // S-2026-06-24 DISABLED (operator cull of MARGINAL): fleet-audit
+                                              // 2026-06-22 = bull-beta, 2022 NEG (n=5, -$8 = noise, no bear edge).
+                                              // SPX + DJ30 turtles (EDGE) carry the real cross-regime turtle edge,
+                                              // so NAS adds only bull-beta shadow noise. Not good enough -> off.
+                                              // SHADOW. CONFIG-DRIFT CORRECTED 2026-06-18: an earlier
         // comment claimed a high PF for a Donch20+ema100 variant that is NOT the deployed config (this
         // engine has NO ema100 filter by default). The faithful 10yr-daily class-driven audit
         // (backtest/index_turtle_d1_audit.cpp) of the ACTUAL shipped config (Donch20, no-ema100,
@@ -4515,7 +4519,9 @@ static void init_engines(const std::string& cfg_path)
         g_connors_ger.TZ_EU_DST      = true;   // EU last-Sunday DST rules
         g_connors_ger.lot         = 0.3;
         g_connors_ger.shadow_mode = true;
-        g_connors_ger.enabled     = true;   // SHADOW
+        g_connors_ger.enabled     = false;  // S-2026-06-24 DISABLED (operator cull of MARGINAL): fleet-audit
+                                            // 2026-06-22 = bear-positivity rests on n=4 (by-design avoidance) =
+                                            // too thin to trust as a real bear edge. Not good enough -> off.
         g_connors_ger.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
         g_connors_ger.init();
         g_connors_ger.seed_from_d1_csv("phase1/signal_discovery/warmup_GER40_D1.csv");
