@@ -32,15 +32,20 @@ TF = {
     "M15": ("15 mins", "20 D"),
     "M30": ("30 mins", "40 D"),
     "H1":  ("1 hour",  "90 D"),
-    "H4":  ("4 hours", "730 D"),
+    "M240":("4 hours", "300 D"),  # IB caps 4h-bar duration; >~1Y returns nothing
+    "H4":  ("4 hours", "300 D"),
     "D1":  ("1 day",   "5 Y"),
 }
 GOLD_TFS  = ["M5", "M15", "M30", "H1", "H4", "D1"]   # XAUUSD_* warmups (from MGC proxy)
-INDEX = {   # engine warmup symbol -> (CFD symbol candidates), TFs
-    "NAS100": (["IBUS-TECH-100","IBUST100","NDX"],        ["H1","M30","M15","M5"]),
-    "US500":  (["IBUS-500","SPX","IBUS500"],              ["H1","D1"]),
-    "GER40":  (["IBDE-40","DAX","IBDE40"],                ["H1","H4","M30","M15","D1"]),
-    "UK100":  (["IBGB-100","UKX","IBGB100"],              ["M30","M240","D1"]),
+# Index FUTURES (ContFuture) -- reliable like NQ/MGC, basis negligible for trend/EMA seeds.
+# (exchange, ib_symbol). engine warmup symbol -> contract + the TFs its engines seed.
+INDEX = {
+    "NAS100": (("CME","NQ"),     ["H1","M30","M15","M5"]),
+    "US500":  (("CME","ES"),     ["H1","D1"]),
+    "GER40":  (("EUREX","DAX"),  ["H1","H4","M30","M15","D1"]),
+    "UK100":  (("ICEEU","Z"),    ["M30","M240","D1"]),
+    "DJ30":   (("CBOT","YM"),    ["D1"]),
+    "ESTX50": (("EUREX","ESTX50"),["D1","M5"]),
 }
 
 def write_csv(path, bars, ms=True):
@@ -67,19 +72,43 @@ except Exception as e:
 ok, fail = [], []
 
 # ---- GOLD (XAUUSD_*) from MGC COMEX future ----
+def agg_h4_from_h1(h1_bars, out_path):
+    # group H1 into 4h buckets (UTC 0/4/8/.. boundaries); o=first h=max l=min c=last
+    buckets = {}
+    for b in h1_bars:
+        ep = int(b.date.timestamp())
+        k = (ep // 14400) * 14400
+        if k not in buckets: buckets[k] = [b.open, b.high, b.low, b.close]
+        else:
+            buckets[k][1] = max(buckets[k][1], b.high); buckets[k][2] = min(buckets[k][2], b.low); buckets[k][3] = b.close
+    rows = sorted(buckets.items())
+    with open(out_path, "w") as f:
+        f.write("ts,o,h,l,c\n")
+        for k, (o,h,l,c) in rows: f.write(f"{k*1000},{o},{h},{l},{c}\n")
+    return len(rows)
 try:
     mgc = ContFuture("MGC", "COMEX", "USD"); ib.qualifyContracts(mgc)
+    h1_gold = None
     for tf in GOLD_TFS:
         try:
             bars = pull(ib, mgc, tf)
             if bars and len(bars) > 10:
-                # H4 uses ms ts (engine_seed_helpers/GoldD1TrendState); others ms too (RegimeState handles both)
                 n = write_csv(f"{SEED_DIR}/warmup_XAUUSD_{tf}.csv", bars, ms=True)
                 ok.append(f"XAUUSD_{tf}({n})")
+                if tf == "H1": h1_gold = bars
+            elif tf == "H4" and h1_gold:
+                n = agg_h4_from_h1(h1_gold, f"{SEED_DIR}/warmup_XAUUSD_H4.csv")  # MGC 4h pull empty -> aggregate
+                ok.append(f"XAUUSD_H4(agg<-H1,{n})")
             else:
                 fail.append(f"XAUUSD_{tf}(no bars)")
         except Exception as e:
             fail.append(f"XAUUSD_{tf}({e})")
+    # ensure H4 exists even if it errored above
+    if h1_gold and not any(s.startswith("XAUUSD_H4") for s in ok):
+        try:
+            n = agg_h4_from_h1(h1_gold, f"{SEED_DIR}/warmup_XAUUSD_H4.csv"); ok.append(f"XAUUSD_H4(agg<-H1,{n})")
+        except Exception as e:
+            fail.append(f"XAUUSD_H4-agg({e})")
 except Exception as e:
     fail.append(f"MGC-qualify({e})")
 
@@ -91,17 +120,16 @@ try:
 except Exception as e:
     fail.append(f"tsmom_copy({e})")
 
-# ---- INDICES (best-effort CFD) ----
-for sym, (cands, tfs) in INDEX.items():
+# ---- INDICES (index futures -- reliable like NQ/MGC) ----
+for sym, ((exch, ibsym), tfs) in INDEX.items():
     con = None
-    for cs in cands:
-        try:
-            c = Contract(secType="CFD", symbol=cs, exchange="SMART", currency="USD")
-            d = ib.reqContractDetails(c)
-            if d: con = d[0].contract; break
-        except Exception: continue
+    try:
+        c = ContFuture(ibsym, exch); ib.qualifyContracts(c)
+        if getattr(c, "conId", 0): con = c
+    except Exception as e:
+        fail.append(f"{sym}(qualify {e})"); continue
     if con is None:
-        fail.append(f"{sym}(no CFD qualified)"); continue
+        fail.append(f"{sym}(no future {exch}:{ibsym})"); continue
     for tf in tfs:
         try:
             bars = pull(ib, con, tf)
