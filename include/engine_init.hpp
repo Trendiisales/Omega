@@ -3026,7 +3026,12 @@ static void init_engines(const std::string& cfg_path)
     // entries during seed because seed_from_csv sets enabled=false during replay).
     g_survivor.init_default_cells();
     g_survivor.seed_all("phase1/signal_discovery");
-    g_survivor.enabled = true;
+    g_survivor.enabled = false;  // S-2026-06-24 DISABLED (bear-protection hardening): SurvivorPortfolio is
+                                 // bull-only (fleet-audit bear 0.81, SHADOW-CANDIDATE PF1.26) AND has ZERO
+                                 // bear/regime gate AND self-enters (bypasses the enter_directional price-bear
+                                 // hard-gate) -> the one fully-unprotected bull-beta engine. Can't be gate-
+                                 // hardened without engine surgery; it's marginal + not in the validated book,
+                                 // so disable. Re-enable only with a wired bear gate + a both-regime audit pass.
     // S-2026-06-17: BLANKET dedup (mode 1) -- operator policy override. NEVER run
     // two cells on the same symbol+side at once (the XAU DonchN20+N100 double-short
     // that prompted this). Supersedes the S-2026-06-16 regime-gated mode 2 (which

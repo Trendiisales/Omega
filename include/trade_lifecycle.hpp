@@ -1734,6 +1734,29 @@ static double enter_directional(
         }
     }
 
+    // ── UNIVERSAL PRICE-BEAR HARD-GATE (S-2026-06-24) ───────────────────────
+    // In a CONFIRMED price-bear, HARD-BLOCK long entries for any engine NOT
+    // validated as a both-regime EDGE (the livebook allowlist). The cross-regime
+    // engines (SPX/DJ30 turtles, TOM, EURGBP, XauTf4h) are cleared -- they earned
+    // a bear; everything else (bull-beta / research / unaudited) is blocked, not
+    // merely size-scaled. Gold/silver gate on gold_regime() price-bear; all else
+    // on the equity-market regime (index_market_regime, NAS-MKT). FAIL-TOWARD-BLOCK:
+    // unknown/unmatched engine -> not validated -> blocked in bear. FAIL-OPEN only
+    // while the regime brain is cold (is_bear()=false until warm -> never wrong-blocks
+    // on missing data). This is the systematic bear protection the per-engine gates
+    // left leaky (fleet-audit showed bull-beta engines went 2022-NEG through them).
+    if (is_long && !omega::livebook_is_validated(engine_name ? std::string(engine_name) : std::string())) {
+        const bool sym_gold = (sym.find("XAU") != std::string::npos || sym.find("XAG") != std::string::npos);
+        const bool price_bear = sym_gold ? omega::gold_regime().is_bear()
+                                         : omega::index_market_regime().is_bear();
+        if (price_bear) {
+            printf("[BEAR-GATE] %s LONG BLOCKED (engine=%s) -- %s price-bear + engine not both-regime-validated\n",
+                   esym, engine_name ? engine_name : "?", sym_gold ? "gold" : "equity-mkt");
+            fflush(stdout);
+            return 0.0;
+        }
+    }
+
     const double sl_abs_raw = std::fabs(entry - sl);
     // ATR-normalised SL floor -- same logic as breakout dispatch
     const double sl_abs  = g_adaptive_risk.vol_scaler.atr_sl_floor(

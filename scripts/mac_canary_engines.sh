@@ -99,4 +99,12 @@ bash "$(dirname "$0")/adverse_protection_audit.sh" || {
   echo "[mac-canary-engines] adverse-protection audit FAILED -- fix before commit."
   exit 1
 }
+
+# STANDING REGISTRY (added 2026-06-24): regenerate ENGINE_REGISTRY.md = every
+# enabled engine -> verdict + in-book + price-bear status. Informational (does
+# NOT block on the known UNAUDITED set yet) -- surfaces enabled-but-unaudited.
+echo ""
+echo "[mac-canary-engines] regenerating engine registry..."
+python3 "$(dirname "$0")/../tools/engine_registry.py" --repo "$(dirname "$0")/.." >/dev/null 2>&1
+echo "  -> ENGINE_REGISTRY.md ($(grep -c '^| g_' "$(dirname "$0")/../ENGINE_REGISTRY.md" 2>/dev/null) engines, $(grep -cE '\| UNAUDITED \|' "$(dirname "$0")/../ENGINE_REGISTRY.md" 2>/dev/null) unaudited)"
 exit 0
