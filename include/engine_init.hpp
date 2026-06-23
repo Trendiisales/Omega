@@ -4367,7 +4367,7 @@ static void init_engines(const std::string& cfg_path)
         // (scale-invariant; edge unchanged). SPX overnight gap at 1.0 lot risked
         // ~$1/pt of a ~60pt overnight = comparable tail to the culled NAS sibling;
         // shrink the $ so one bad gap can't erase weeks of the gold book.
-        printf("[OMEGA-INIT] OvernightDrift US500 -- class type-only, NOT loaded (2022 retest -27%; KEEP claim overridden)\n");
+        printf("[OMEGA-INIT] OvernightDrift US500 -- class type-only, NOT loaded (2022 retest -27pct; KEEP claim overridden)\n");
 
         // ConnorsRSI2 NAS100 — daily mean-reversion dip-buy, ENHANCED close>SMA5 exit.
         // S-2026-06-19 WIRED + RE-ENABLED (shadow). Was class-only/never instantiated;
