@@ -90,6 +90,18 @@ int main(int argc, char* argv[])
     g_mgc_fastdon.lot         = 0.01;
     g_mgc_fastdon.Nin = 40; g_mgc_fastdon.Nout = 20; g_mgc_fastdon.Kov = 1.5;  // S-2026-06-23: 20/10 -> 40/20 (faithful-best PF1.74 vs 1.54, 2x-cost-robust)
     g_mgc_fastdon.use_hvn_skip = true;
+    // S-2026-06-23 MGC BOOK 2nd engine: GoldVolBreakoutM30 on the same MGC feed
+    // (orthogonal signal -- EMA200-gated Donchian vol-breakout runner). Faithful
+    // BT on MGC 30m: PF2.10 n37 mdd0.78. Warm-seed from MGC 30m hist (M30 Donchian/
+    // ATR) + aggregated H1 (EMA200 trend). SHADOW; shares the starved-until-
+    // entitlement MGC feed with g_mgc_fastdon. Driven inside poll_mgc_feed.
+    g_mgc_volbrk.enabled     = true;
+    g_mgc_volbrk.shadow_mode = true;
+    g_mgc_volbrk.lot         = 0.01;
+    g_mgc_volbrk.max_spread  = 1.50;   // MGC futures pts (looser than spot gold $)
+    g_mgc_volbrk.init();
+    g_mgc_volbrk.seed_h1_from_csv ("data/mgc_h1_hist.csv");
+    g_mgc_volbrk.seed_m30_from_csv("data/mgc_30m_hist.csv");
     std::thread([](){
         std::this_thread::sleep_for(std::chrono::seconds(45));
         while (g_running.load()) {

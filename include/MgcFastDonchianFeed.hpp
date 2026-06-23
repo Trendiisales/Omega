@@ -9,13 +9,20 @@
 //  Owns the engine instance here to avoid bundling with WIP in globals.hpp.
 // =============================================================================
 #include "MgcFastDonchian30mEngine.hpp"
+#include "GoldVolBreakoutM30Engine.hpp"
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 static omega::MgcFastDonchian30mEngine g_mgc_fastdon;   // single definition (this TU)
+// S-2026-06-23 MGC BOOK: 2nd engine on the same MGC feed -- GoldVolBreakoutM30
+// (EMA200-gated Donchian vol-breakout runner). Faithful BT on MGC 30m: PF2.10
+// n37 mdd0.78 (selective, orthogonal to the Donchian-runner above). H1 trend is
+// aggregated from 30m buckets inside poll_mgc_feed.
+static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;
 
 // crude but dependency-free JSON scrape for {"poc":x,"hvn":[a,b,...]}
 inline bool _mgc_read_hvn(const std::string& path, double& poc, std::vector<double>& hvn) {
@@ -58,5 +65,18 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
         g_mgc_fastdon.on_30m_bar(std::atof(k[1].c_str()), std::atof(k[2].c_str()),
                                  std::atof(k[3].c_str()), std::atof(k[4].c_str()),
                                  std::atof(k[5].c_str()), ts, cb);
+
+        // --- 2nd MGC engine: GoldVolBreakoutM30 (EMA200-gated Donchian runner) ---
+        // Drive on_m30_bar(high,low,close,bid,ask,now_ms,cb) each bar; aggregate H1
+        // from 30m buckets and emit on_h1_close on each H1 boundary (the EMA200
+        // trend gate). bid=ask=close (MGC shadow; real fills captured live in ledger).
+        if (g_mgc_volbrk.enabled) {
+            static int64_t vb_h1_bucket = 0; static double vb_h1_close = 0.0;
+            const double hi = std::atof(k[2].c_str()), lo = std::atof(k[3].c_str()), cl = std::atof(k[4].c_str());
+            const int64_t h1b = (ts / 3600) * 3600;
+            if (vb_h1_bucket != 0 && h1b != vb_h1_bucket) g_mgc_volbrk.on_h1_close(vb_h1_close);
+            vb_h1_bucket = h1b; vb_h1_close = cl;
+            g_mgc_volbrk.on_m30_bar(hi, lo, cl, cl, cl, ts, cb);
+        }
     }
 }
