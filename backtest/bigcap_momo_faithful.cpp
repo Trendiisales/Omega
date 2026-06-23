@@ -127,7 +127,9 @@ int main(int argc, char** argv) {
     for (int s=0;s<(int)syms.size();++s)
         for (size_t i=0;i<syms[s].bars.size();++i)
             evs.push_back({syms[s].bars[i].ts, s, i});
-    std::sort(evs.begin(), evs.end(), [](const Ev&a,const Ev&b){ return a.ts<b.ts; });
+    // deterministic: tie-break same-ts bars by symbol index so the breadth "first igniter
+    // of the day" + which trades fire are reproducible run-to-run (was non-deterministic).
+    std::sort(evs.begin(), evs.end(), [](const Ev&a,const Ev&b){ return a.ts<b.ts || (a.ts==b.ts && a.s<b.s); });
 
     omega::PumpScalpManager m;
     configure_prod(m);
