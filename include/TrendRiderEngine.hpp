@@ -683,6 +683,27 @@ struct TrendRiderPortfolio {
         if (opened) ++open_count_;
     }
 
+    // 2026-06-23: warm-seed the self-fed BullGate so its chop/bear-kill is ACTIVE on boot.
+    // Without this bg_gold_ cold-warms (~220 daily bars) AND resets every restart -> warm()
+    // is never true -> the gate at bull_ok_() stays OFF -> TrendRider trades in ANY regime
+    // (incl the gold downtrend). warmup_or_die replays the emit-overload of on_h1_bar which
+    // does NOT feed_bull_gate_, so seed it explicitly here from the (daily-refreshed) H1 CSV.
+    void seed_bull_gate_from_h1_csv(const std::string& path) noexcept {
+        std::ifstream f(path);
+        if (!f.is_open()) { std::printf("[TrendRider][BG-SEED] MISS %s (chop/bear-kill stays cold)\n", path.c_str()); std::fflush(stdout); return; }
+        std::string line; std::getline(f, line); size_t n = 0;
+        while (std::getline(f, line)) {
+            double ts=0,o=0,h=0,l=0,c=0;
+            if (std::sscanf(line.c_str(), "%lf,%lf,%lf,%lf,%lf", &ts,&o,&h,&l,&c) != 5 || c <= 0) continue;
+            TrBar b; b.bar_start_ms = (ts > 1e11) ? (int64_t)ts : (int64_t)(ts * 1000.0);
+            b.open=o; b.high=h; b.low=l; b.close=c;
+            feed_bull_gate_(b); ++n;
+        }
+        std::printf("[TrendRider][BG-SEED] %zu H1 bars -> BullGate warm=%d bull=%d\n",
+                    n, (int)bg_gold_.warm(), (int)bg_gold_.is_bull());
+        std::fflush(stdout);
+    }
+
     void on_h1_bar(const TrBar& h1, double bid, double ask,
                    double /*h1_atr14_unused*/,
                    int64_t now_ms, OnCloseCb runtime_cb) noexcept {

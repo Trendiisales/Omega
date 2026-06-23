@@ -1560,7 +1560,13 @@ static void init_engines(const std::string& cfg_path)
 
         // Market-bear PROXY (NAS bellwether) -- IndexRiskGate's price-based dead-feed
         //   fallback so index longs stay protected in a bear even with no macro feed.
-        omega::index_market_regime().seed_from_h1_csv("phase1/signal_discovery/warmup_NAS100_H1.csv");
+        // 2026-06-23 stale-seed fix (same class as gold_regime): persist + self-fresh so the
+        // index risk-off gate doesn't reset to a stale seed every restart.
+        {
+            omega::index_market_regime().set_live_dump(log_root_dir() + "/index_mkt_regime_h1.csv");
+            if (!omega::index_market_regime().load_state(log_root_dir() + "/index_mkt_regime_state.dat"))
+                omega::index_market_regime().seed_from_h1_csv("phase1/signal_discovery/warmup_NAS100_H1.csv");
+        }
         printf("[OMEGA-INIT] index_market_regime() proxy: regime=%s warm=%d (IndexRiskGate dead-feed fallback)\n",
                omega::index_market_regime().regime_name(), (int)omega::index_market_regime().warm());
         fflush(stdout);
@@ -2741,6 +2747,9 @@ static void init_engines(const std::string& cfg_path)
         g_trend_rider.warmup_csv_path   = "phase1/signal_discovery/tsmom_warmup_H1.csv";
         g_trend_rider.init();
         omega::warmup_or_die(g_trend_rider, "TrendRider");
+        // 2026-06-23: warm-seed the BullGate so its chop/bear-kill is ACTIVE on boot (warmup_or_die
+        // doesn't feed it). Otherwise TrendRider's regime kill stays cold -> trades any regime.
+        g_trend_rider.seed_bull_gate_from_h1_csv("phase1/signal_discovery/tsmom_warmup_H1.csv");
         fflush(stdout);
     }
 
