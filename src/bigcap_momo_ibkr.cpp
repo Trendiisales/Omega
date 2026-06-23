@@ -36,6 +36,7 @@
 #include <ctime>
 #include <deque>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -71,6 +72,7 @@ class Engine : public DefaultEWrapper {
     Config cfg_;
     OrderId nextId_=0;
     std::map<int,Sym> subs_;                      // reqId -> Sym (real-time-bar stream id)
+    std::map<long,std::set<std::string>> day_ignis_;  // S-2026-06-23 breadth: distinct igniters per session-day
     int next_rt_=20000; bool scanDone_=false;
     RiskManager risk_{50000.0};
     std::mutex book_mu_;                          // guards subs_ vs collect_positions thread
@@ -277,6 +279,18 @@ public:
                 bool impulse_ok = (cfg_.min_impulse_atr<=0.0) || (s.atr<=0.0)
                                   || ((h - s.closes.back()) >= cfg_.min_impulse_atr * s.atr);
                 if(vol_ok && impulse_ok && base>0 && (c/base-1)*100>=cfg_.ig_pct) fire=true;
+            }
+        }
+        if(fire && cfg_.min_breadth > 1){
+            // S-2026-06-23 cross-sectional BREADTH gate (chop/bear protection, ported from the
+            // faithfully-BT'd bridge): register this ignition, require >= min_breadth DISTINCT names
+            // igniting the same session-day (8:00 UTC roll) before any entry. Causal: same-day prior only.
+            long sd = (t - 8*3600)/86400;
+            auto& set = day_ignis_[sd]; set.insert(s.c.symbol);
+            if((int)set.size() < cfg_.min_breadth){
+                printf("[BigCapMomo] %s breadth-gate hold (%zu/%d igniters today, day_up=%.0f%%)\n",
+                    s.c.symbol.c_str(), set.size(), cfg_.min_breadth, (c/s.day_open-1)*100); fflush(stdout);
+                fire=false;
             }
         }
         if(fire){

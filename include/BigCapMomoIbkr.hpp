@@ -69,6 +69,11 @@ struct Config {
     int    lb               = 6;      // ignition lookback (6*5m = 30min)
     int    maxhold          = 48;     // 48*5m = 4h backstop
     bool   regime_gate      = true;   // SPY price>SMA200 AND SMA200 rising
+    int    min_breadth      = 1;      // S-2026-06-23 cross-sectional BREADTH gate: require >= this many
+                                      // DISTINCT names igniting same session-day before any entry fires.
+                                      // 1 = off. 2 = skip isolated single-name chop false-breakouts AND sit
+                                      // out bear (few broad-ignition days). Ported from the faithfully-BT'd
+                                      // bridge engine (PumpScalpManager.min_breadth): chop third -12%->-2%.
     double notional_usd     = 1000.0; // per-entry notional (shadow sizing)
     std::string engine_tag  = "BigCapMomo";  // ledger + GUI source label
 };

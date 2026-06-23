@@ -4019,7 +4019,10 @@ static void init_engines(const std::string& cfg_path)
             // + OMEGA_BIGCAP_IBKR=1 to start logging REAL paper fills + real slippage. KEEP the
             // big-cap liquidity floor tight (px_min + scanner cap>=$2B) so micro-caps can't leak in.
             omega::bigcap_momo_ibkr::Config bc;
-            bc.gate_pct     = 1.5;     // S-2026-06-20b (operator): 4.0->1.5 AGGRESSIVE frequency. Day-gate
+            bc.min_breadth  = 2;       // S-2026-06-23 CHOP/BEAR GATE (ported from validated bridge): require
+                                       // >=2 distinct names igniting same session-day. Faithful bridge BT:
+                                       // chop third -12%->-2%, maxDD halved, bear = sits out low-breadth days.
+            bc.gate_pct     = 2.5;     // S-2026-06-23 1.5->2.5: align to the validated bridge config. Day-gate
                                        // is only the "name in play" prefilter; entry still must clear the
                                        // 3 chop guards below (regime + ignition + impulse). Backtest
                                        // (/tmp/bigcap_freq.py, 10 mega-cap 2yr 15m): gate1.5 + impulse1.0
@@ -4030,9 +4033,9 @@ static void init_engines(const std::string& cfg_path)
                                        // ON=PF3.51 DD6.5% -- discards 61% of entries = the chop trades.
             bc.trail_pct    = 0.0;     // %-trail OFF; ATR-trail replaces it (matches deployed g_bigcap_momo)
             bc.atr_len      = 30;      // ATR-trail (validated)
-            bc.atr_mult     = 4.0;
-            bc.be_arm_pct   = 0.03;    // lock gains once +3%
-            bc.be_floor_pct = 0.02;
+            bc.atr_mult     = 5.0;     // S-2026-06-23 4->5: wider trail rides winners (validated sweep)
+            bc.be_arm_pct   = 0.02;    // S-2026-06-23 0.03->0.02: tighter gain-lock lifts WR
+            bc.be_floor_pct = 0.01;    // S-2026-06-23 0.02->0.01: floor at entry +1%
             bc.maxhold_skip_if_profit = true;  // ride winners past the clock
             bc.paper_only   = false;   // 4001 = PAPER account -> route paper orders = REAL fills + real
                                        // slippage, ZERO capital risk. Still dormant until OMEGA_BIGCAP_IBKR=1
@@ -4042,7 +4045,11 @@ static void init_engines(const std::string& cfg_path)
             bc.lb           = 6;       // ignition lookback (6*5m = 30min)
             bc.maxhold      = 96;      // 96*5m = 8h backstop (losers only; in-profit rides past it)
             bc.px_min       = 10.0;    // not a penny stock
-            bc.market_cap_above_musd = 500000.0; // S-2026-06-20c RE-VALIDATION: $100M floor traded
+            bc.market_cap_above_musd = 20000.0;  // S-2026-06-23 $500B->$20B: align to validated bridge floor;
+                                                // the $20-100B band carries the momentum (2026 semis), breadth>=2
+                                                // handles the chop/bear the wider universe admits. (musd unit.)
+                                                // S-2026-06-20c (prior, superseded): $500B mega-only. Note re old
+                                                // small-cap caveat -- $100M floor traded
                                                 // small-cap gappers (AEHR/PBLS/SHAZ) = live PF0.89 LOSING
                                                 // (universe != the validated mega-cap set). Per-name +
                                                 // cap-tier faithful re-test (bigcap_revalidate.py, 30 names
