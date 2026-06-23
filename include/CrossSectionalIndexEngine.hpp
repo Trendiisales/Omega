@@ -15,7 +15,9 @@
 //    MOM_LS   : market-NEUTRAL long-short -- long strongest, short weakest.
 //               skip CHOP. lb250 hold20.           (faithful PF 2.06, BEAR 2.14)
 //    MR_LS    : NON-BULL (bear+chop) long-short -- long the WEAKEST (loser),
-//               short the STRONGEST (winner). lb5 hold20. (faithful PF 2.47 bear)
+//               short the STRONGEST (winner). lb5 hold3 (S-2026-06-23 was hold20=
+//               BROKEN, BEAR PF0.61 -8.9% -- gives back the fast reversion). hold3 =
+//               BEAR PF1.25 +14.4% AND HELD recent OOS bear 2025-26 PF4.11 +11.3%.
 //
 //  TIMEFRAME LAW (xs_timeframe_matrix.py): momentum = SLOW lookback (120-250d);
 //  mean-reversion = FAST lookback (3-10d); both hold ~20 D1 bars. lb~=20 is the
@@ -94,7 +96,7 @@ public:
         switch (mode) {                                   // timeframe-law defaults
             case XsMode::MOM_LONG: p.lookback=120; p.hold_bars=20; break;
             case XsMode::MOM_LS:   p.lookback=250; p.hold_bars=20; break;
-            case XsMode::MR_LS:    p.lookback=5;   p.hold_bars=20; break;
+            case XsMode::MR_LS:    p.lookback=5;   p.hold_bars=3;  break;  // S-2026-06-23 hold 20->3:
         }
         const char* mn = mode==XsMode::MOM_LONG?"MomLong":mode==XsMode::MOM_LS?"MomLS":"MrLS";
         engine_name_ = std::string("XsIndex_") + mn;
