@@ -2064,6 +2064,27 @@ static void init_engines(const std::string& cfg_path)
                 seas_boot(g_fx_seas_eurjpy,"EURJPY");
                 std::printf("[OMEGA-INIT] FxSeasonal x8 (Friday-long; USDCHF dropped: no warmup CSV) -- shadow, warm-seeded\n");
 
+                // ============================================================
+                // S-2026-06-23: FX SHADOW BOOK DISABLED (operator: "we have no FX").
+                // We do not trade FX -> the FX shadow sleeves are pure clutter and threw
+                // false [STARTUP-SELFTEST] silent alarms (low-liq crosses don't tick in the
+                // 69s window). Disable firing on all FX engines; boot/seed/warm code left
+                // intact (harmless) for trivial reversal. Because the daily-book heartbeat
+                // regs use live_required=<inst>.enabled, disabling here AUTO-clears the
+                // FxSeasonal silent alarms (live_required becomes false). The FX
+                // AtrMeanRevGrid was already culled (S-2026-06-17). Re-enable a sleeve by
+                // flipping its enabled=true (or delete this block).
+                g_fx_ens_eurusd.enabled = g_fx_ens_gbpusd.enabled = g_fx_ens_audusd.enabled =
+                    g_fx_ens_usdcad.enabled = g_fx_ens_usdjpy.enabled = g_fx_ens_nzdusd.enabled = false;
+                g_fx_carry_eurusd.enabled = g_fx_carry_gbpusd.enabled = g_fx_carry_usdjpy.enabled =
+                    g_fx_carry_audusd.enabled = g_fx_carry_nzdusd.enabled = g_fx_carry_usdcad.enabled =
+                    g_fx_carry_eurjpy.enabled = g_fx_carry_gbpjpy.enabled = false;
+                g_fx_xrev_eurgbp.enabled = false;
+                g_fx_seas_eurusd.enabled = g_fx_seas_gbpusd.enabled = g_fx_seas_usdjpy.enabled =
+                    g_fx_seas_audusd.enabled = g_fx_seas_nzdusd.enabled = g_fx_seas_usdcad.enabled =
+                    g_fx_seas_eurgbp.enabled = g_fx_seas_eurjpy.enabled = false;
+                std::printf("[OMEGA-INIT] FX SHADOW BOOK DISABLED (operator: no FX) -- FxEnsemble x6 + FxCarry x8 + FxCrossRev + FxSeasonal x8 off\n");
+
                 // S44 2026-05-31: IndexSeasonal (day-of-week, Tue+Fri long) -- validated
                 //   equity-index edge (index_seasonal_sharpe.cpp, 6 indices, 7.4yr incl.
                 //   2020 crash + 2022 bear). best-2 sleeve Sharpe 0.69 vs 0.36 buy&hold,
