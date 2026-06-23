@@ -58,6 +58,15 @@ struct MgcFastDonchian30mEngine {
 
     bool    pos_active_ = false; double entry_ = 0.0; int64_t entry_ts_ = 0; double mfe_ = 0.0, mae_ = 0.0;
 
+    // S-2026-06-23 L2 confirmation gate (forward-validating refinement). Live MGC
+    // L2 imbalance pushed in via set_l2_imb each poll; block a long breakout when
+    // the book is strongly ask-heavy (l2_imb_ < l2_gate_). l2_gate_=0 -> OFF.
+    // Backtests never call set_l2_imb -> l2_imb_ stays 0.5 -> gate inert (PF1.74
+    // reproduces exactly). The OBI is real-but-sub-cost standalone; as a filter on
+    // this already-positive engine it should only cut the worst book-adverse entries.
+    double  l2_imb_ = 0.5; double l2_gate_ = 0.0;
+    void    set_l2_imb(double x) noexcept { l2_imb_ = x; }
+
     bool has_open_position() const { return pos_active_; }
 
     // LIVE injection of prior-day HVN levels (spot-adjusted if needed by caller).
@@ -137,6 +146,8 @@ struct MgcFastDonchian30mEngine {
                 bool skip = false;
                 if (use_hvn_skip && prior_ok_)
                     for (double hv : prior_hvn_) if (hv > c && hv <= c + Kov * atr14_) { skip = true; break; }
+                if (l2_gate_ > 0.0 && l2_imb_ < l2_gate_) { skip = true;
+                    std::printf("[MGC-L2-GATE] MgcFastDon LONG skipped (l2_imb=%.2f < %.2f)\n", l2_imb_, l2_gate_); std::fflush(stdout); }
                 if (!skip) { pos_active_ = true; entry_ = c; entry_ts_ = ts_sec; mfe_ = 0.0; mae_ = 0.0; }
             }
         }

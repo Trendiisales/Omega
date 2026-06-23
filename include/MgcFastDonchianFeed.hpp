@@ -12,7 +12,10 @@
 #include "GoldVolBreakoutM30Engine.hpp"
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
+#include <ctime>
 #include <fstream>
+#include <ios>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -42,6 +45,33 @@ inline bool _mgc_read_hvn(const std::string& path, double& poc, std::vector<doub
     return true;
 }
 
+// Latest live MGC L2 imbalance (book bid-share, 0..1; >0.5 bid-heavy). Reads the
+// last row of today's logs/ibkr_l2/ibkr_l2_MGC_<UTCdate>.csv (col4=l2_imb, written
+// by the L2 recorder). Fail-OPEN (0.5 = neutral) on any error so a missing/stale
+// L2 file never blocks entries. Cheap: seeks the file tail, not a full read.
+inline double _mgc_latest_l2_imb() {
+    std::time_t now = std::time(nullptr); std::tm g{};
+#ifdef _WIN32
+    gmtime_s(&g, &now);
+#else
+    gmtime_r(&now, &g);
+#endif
+    char path[256];
+    std::snprintf(path, sizeof(path), "logs/ibkr_l2/ibkr_l2_MGC_%04d-%02d-%02d.csv",
+                  g.tm_year + 1900, g.tm_mon + 1, g.tm_mday);
+    std::ifstream f(path, std::ios::binary); if (!f) return 0.5;
+    f.seekg(0, std::ios::end); std::streamoff sz = f.tellg();
+    if (sz <= 2) return 0.5;
+    std::streamoff back = sz > 3000 ? 3000 : sz; f.seekg(-back, std::ios::end);
+    std::string chunk((size_t)back, '\0'); f.read(&chunk[0], back);
+    std::size_t e = chunk.find_last_not_of("\r\n"); if (e == std::string::npos) return 0.5;
+    std::size_t s = chunk.find_last_of('\n', e);
+    std::string line = chunk.substr(s == std::string::npos ? 0 : s + 1);
+    int comma = 0; const char* p = line.c_str();
+    for (; *p; ++p) if (*p == ',' && ++comma == 4) { double v = std::atof(p + 1); return (v > 0.0 && v < 1.0) ? v : 0.5; }
+    return 0.5;
+}
+
 // Poll new closed bars + latest HVN, drive the engine. Tracks last-seen ts in a
 // static so repeated calls only feed fresh bars. cb routes closed trades (ledger).
 inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_json,
@@ -50,6 +80,10 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
     // refresh prior-day HVN (injected; engine won't rebuild from DOM)
     double poc = 0; std::vector<double> hvn;
     if (_mgc_read_hvn(hvn_json, poc, hvn) && !hvn.empty()) g_mgc_fastdon.set_prior_hvn(hvn, poc);
+    // push the live MGC L2 imbalance to both engines (their L2 confirmation gate).
+    double mgc_imb = _mgc_latest_l2_imb();
+    g_mgc_fastdon.set_l2_imb(mgc_imb);
+    g_mgc_volbrk.set_l2_imb(mgc_imb);
 
     static int64_t last_ts = 0; static long s_poll = 0; int s_fed = 0; ++s_poll;
     std::ifstream f(bars_csv);

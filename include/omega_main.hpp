@@ -97,6 +97,7 @@ int main(int argc, char* argv[])
     g_mgc_fastdon.lot         = 0.01;
     g_mgc_fastdon.Nin = 40; g_mgc_fastdon.Nout = 20; g_mgc_fastdon.Kov = 1.5;  // S-2026-06-23: 20/10 -> 40/20 (faithful-best PF1.74 vs 1.54, 2x-cost-robust)
     g_mgc_fastdon.use_hvn_skip = true;
+    g_mgc_fastdon.l2_gate_ = 0.30;  // S-2026-06-23 L2 CONFIRMATION GATE (active, conservative): block a long breakout only when the live MGC book is strongly ask-heavy (bid-share<0.30). OBI showed ask-heavy -> -0.031pt fwd, so this cuts the worst book-against entries. SHADOW -> forward-validates on the ledger; set 0.0 to disable. Inert in backtest (set_l2_imb never called).
     // S-2026-06-23 MGC BOOK 2nd engine: GoldVolBreakoutM30 on the same MGC feed
     // (orthogonal signal -- EMA200-gated Donchian vol-breakout runner). Faithful
     // BT on MGC 30m: PF2.10 n37 mdd0.78. Warm-seed from MGC 30m hist (M30 Donchian/
@@ -107,6 +108,7 @@ int main(int argc, char* argv[])
     g_mgc_volbrk.lot         = 0.01;
     g_mgc_volbrk.max_spread  = 1.50;   // MGC futures pts (looser than spot gold $)
     g_mgc_volbrk.init();
+    g_mgc_volbrk.l2_gate_ = 0.30;  // S-2026-06-23 L2 confirmation gate (active, conservative; same as fastdon). Inert in backtest.
     g_mgc_volbrk.seed_h1_from_csv ("data/mgc_h1_hist.csv");
     g_mgc_volbrk.seed_m30_from_csv("data/mgc_30m_hist.csv");
     std::thread([](){

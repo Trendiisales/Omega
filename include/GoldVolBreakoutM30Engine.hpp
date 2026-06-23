@@ -150,6 +150,13 @@ public:
 
     bool any_open() const noexcept { return pos.active; }
 
+    // S-2026-06-23 L2 confirmation gate (forward-validating). Live MGC L2 imbalance
+    // pushed in via set_l2_imb each poll; block a long entry when the book is
+    // strongly ask-heavy (l2_imb_ < l2_gate_). l2_gate_=0 -> OFF. Backtests never
+    // call set_l2_imb -> l2_imb_ stays 0.5 -> gate inert (PF2.10 reproduces).
+    double l2_imb_ = 0.5; double l2_gate_ = 0.0;
+    void   set_l2_imb(double x) noexcept { l2_imb_ = x; }
+
     // -------- H1 close: update EMA200 + slope-confirmed long trend --------
     void on_h1_close(double h1_close) noexcept {
         if (h1_close <= 0.0) return;
@@ -266,6 +273,12 @@ private:
         // AuroraGate: MGC-tape order-flow gate (long-only breakout). Fail-open.
         if (!omega::aurora_allow("XAUUSD", true, now_ms)) {
             std::printf("[AURORA-GATE] XAUUSD LONG BLOCKED -- GoldVolBreakoutM30\n");
+            return;
+        }
+        // S-2026-06-23 L2 confirmation gate: skip the long when the live MGC book is
+        // strongly ask-heavy. Inert in backtest (l2_gate_=0 / l2_imb_=0.5 default).
+        if (l2_gate_ > 0.0 && l2_imb_ < l2_gate_) {
+            std::printf("[MGC-L2-GATE] GoldVolBrkM30 LONG skipped (l2_imb=%.2f < %.2f)\n", l2_imb_, l2_gate_); std::fflush(stdout);
             return;
         }
         pos.active = true;
