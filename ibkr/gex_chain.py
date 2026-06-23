@@ -107,7 +107,14 @@ def main():
                per_strike={str(k): round(v, 1) for k, v in sorted(per_strike.items())})
     print(json.dumps({k: v for k, v in out.items() if k != "per_strike"}, indent=2), flush=True)
     print(f"[gex] CALL WALL {call_wall}  PUT WALL {put_wall}  FLIP {flip}  spot {spot}", flush=True)
-    if a.append:
+    if a.append and net == 0:
+        # 2026-06-24: skip dead rows. A closed session (weekend / Fri-evening / holiday)
+        # returns no model-greeks on the delayed feed -> per-strike gamma all 0 -> net=0,
+        # and the spot is the stale last-close. Appending these poisoned the predicate
+        # study (net=0 defaults to "negative(momentum)" + frozen spot = fake low-vol
+        # neg-gamma). No real GEX -> don't record it.
+        print("[gex] net_gex==0 (no greeks; market likely closed) -> skip append", flush=True)
+    elif a.append:
         newf = not os.path.exists(a.append) or os.path.getsize(a.append) == 0
         with open(a.append, "a") as fh:
             if newf: fh.write("ts_utc,index,spot,net_gex,regime,flip,call_wall,put_wall,dealer_sign\n")
