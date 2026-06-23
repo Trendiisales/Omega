@@ -4134,8 +4134,9 @@ static void init_engines(const std::string& cfg_path)
             }
             return v;
         });
-        printf("[OMEGA-INIT] GoldOrbRetrace XAUUSD: shadow=true ORB30(08:20-08:50 ET) "
-               "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided\n");
+        printf("[OMEGA-INIT] GoldOrbRetrace XAUUSD: shadow=true enabled=%d ORB30(08:20-08:50 ET) "
+               "retr0.382 tightSL trendEMA50 RUNNER-trail(3) 1-shot two-sided\n",
+               (int)g_gold_orb_retrace.enabled);
 
         // ── GoldOrbRetrace LONDON open (S-2026-06-20 orb-widen 2nd session) ────────
         // Additive 2nd gold ORB session (03:00 ET London open) — co-fires with COMEX only
@@ -4167,7 +4168,8 @@ static void init_engines(const std::string& cfg_path)
             }
             return v;
         });
-        printf("[OMEGA-INIT] GoldOrbRetrace LONDON XAUUSD: shadow ORB30(03:00-03:30 ET) +BullGate (orb-widen 2nd session)\n");
+        printf("[OMEGA-INIT] GoldOrbRetrace LONDON XAUUSD: shadow enabled=%d ORB30(03:00-03:30 ET) +BullGate (orb-widen 2nd session)\n",
+               (int)g_gold_orb_london.enabled);
 
         // ── GoldPanicBounce (XAUUSD "big reversal day" V-bounce) ───────────────
         // 2026-06-12 deep-dive (backtest/panic_bounce_bt.cpp, H1, cost-incl 0.37):
@@ -4222,8 +4224,9 @@ static void init_engines(const std::string& cfg_path)
             }
             return v;
         });
-        printf("[OMEGA-INIT] IndexBearShort NAS100: shadow=true sustained-bear-gate "
-               "Donchian24-breakdown FIXED-2R-TP SHORT-only (bad-day engine)\n");
+        printf("[OMEGA-INIT] IndexBearShort NAS100: shadow=true enabled=%d sustained-bear-gate "
+               "Donchian24-breakdown FIXED-2R-TP SHORT-only (bad-day engine)\n",
+               (int)g_idx_bear_short_nas.enabled);
 
         // ── IndexBearShort (US500 instance — same class) ──────────────────────
         // 2026-06-22 ADDED + WIRED. The prior 2026-06-12 instance was removed (only a
@@ -4260,8 +4263,9 @@ static void init_engines(const std::string& cfg_path)
             }
             return v;
         });
-        printf("[OMEGA-INIT] IndexBearShort US500: shadow=true DON48 (SPX2022 real-engine "
-               "PF1.59 +591pt both-halves+); bull-regime untested -- ledger-gated\n");
+        printf("[OMEGA-INIT] IndexBearShort US500: shadow=true enabled=%d DON48 (SPX2022 real-engine "
+               "PF1.59 +591pt both-halves+); bull-regime untested -- ledger-gated\n",
+               (int)g_idx_bear_short_sp.enabled);
 
         // ── NasOrbRetrace — TOMBSTONED 2026-06-22 (fleet-audit, DEAD) ─────────
         // The 2026-06-07 "PF 1.87 transfers to NAS" was a BAR-REPLAY PORT ARTIFACT
