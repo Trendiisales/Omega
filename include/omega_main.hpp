@@ -74,12 +74,21 @@ int main(int argc, char* argv[])
     // S-2026-06-03: MgcFastDonchian30m — fast intraday gold breakout + prior-day
     // volume-profile overhead-supply gate, fed by tools/mgc_live_bars.py
     // (MGC 30m TRADES bars + HVN files). SHADOW (paper) until validated live.
-    // Backtest PF 1.54 / rDD 5.07 / both-halves+. Self-contained file-poll feed;
-    // no engine_init/globals wiring. Inert until the producer writes the files.
+    // ── THE GOLD-FUTURES UNLOCK ── intraday gold is DEAD on spot CFD (cost wall,
+    // see [[omega-intraday-spot-cfd-cost-wall]]) but WORKS on MGC futures (tighter
+    // cost). S-2026-06-23 faithful re-BT (backtest/MgcFastDonchianBacktest.cpp drives
+    // the REAL engine on data/mgc_30m_hist.csv, 23.6k 30m bars 2024-06..2026-06):
+    //   Nin=40 Nout=20 HVN-skip @0.4pt: PF1.74 n186 both-halves+ (854/901) rDD6.40
+    //   @0.8pt (2x-cost STRESS): PF1.70 both-halves+ -> ROBUST to 2x cost.
+    //   (old Nin=20 cfg = PF1.54; bumped 20->40 to the validated-best below.)
+    // CAVEATS: bull-window (2024-26, no 2022 bear) + single-source -> the LIVE MGC
+    // shadow ledger is the forward/cross-source truth. BLOCKER: the live feed
+    // (data/mgc_30m_live.csv) is STARVED until MGC RT TRADES entitlement is enabled
+    // on IB Gateway (CME, port 4001) -- engine is enabled but receives no live bars.
     g_mgc_fastdon.enabled     = true;
     g_mgc_fastdon.shadow_mode = true;
     g_mgc_fastdon.lot         = 0.01;
-    g_mgc_fastdon.Nin = 20; g_mgc_fastdon.Nout = 10; g_mgc_fastdon.Kov = 1.5;
+    g_mgc_fastdon.Nin = 40; g_mgc_fastdon.Nout = 20; g_mgc_fastdon.Kov = 1.5;  // S-2026-06-23: 20/10 -> 40/20 (faithful-best PF1.74 vs 1.54, 2x-cost-robust)
     g_mgc_fastdon.use_hvn_skip = true;
     std::thread([](){
         std::this_thread::sleep_for(std::chrono::seconds(45));
