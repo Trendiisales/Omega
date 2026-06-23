@@ -354,6 +354,23 @@ static void init_engines(const std::string& cfg_path)
     //   and call `g_nbm_gold_london.set_shadow_mode(true);` here.
     // g_nbm_gold_london.shadow_mode = true;  // intentionally NOT compiled --
     //                                          field does not exist on NBM.
+    // ════════════════════════════════════════════════════════════════════════
+    // [S99-DISABLED — STALE WIRING, 2026-06-23 audit] The 5 session-open
+    // compression-bracket engines wired below (Eurusd/Gbpusd/UsdjpyAsian/
+    // AudusdSydney/NzdusdAsian Open) were KILLED by S99 (2026-05-23) for
+    // negative expectancy (cost-to-target 5-15% on 8-20pip TPs vs 0.5-1.4pip
+    // spread; live edge collapsed) and REPLACED by FxTurtleH4Engine — see
+    // FxTurtleH4Engine.hpp PROVENANCE. The S99 kill is enforced at the DISPATCH
+    // level: tick_fx.hpp on_tick_{eurusd L140 / gbpusd L272 / usdjpy L404 /
+    // audusd L490 / nzdusd L576} early-`return` BEFORE the engine's `.on_tick()`,
+    // so all 5 open ZERO positions. The shadow_mode/cancel_fn lines below are
+    // therefore INERT (the engines are configured + heartbeat-registered but
+    // never ticked). Kept as no-ops; not flipped to enabled=false because these
+    // classes carry no `enabled` field (the dispatch early-return IS the off
+    // switch). DO NOT mistake these for active shadow engines — they are dead.
+    // The 2026-06-23 census subagent mislabeled them "SHADOW active" by reading
+    // shadow_mode without checking the dispatch kill; this banner prevents recurrence.
+    // ════════════════════════════════════════════════════════════════════════
     // 2026-05-02: EurusdLondonOpenEngine -- pinned shadow-only on first
     //   deployment regardless of g_cfg.mode. First FX engine since the
     //   2026-04-06 global FX disable; new engine model (compression-breakout
@@ -4096,7 +4113,7 @@ static void init_engines(const std::string& cfg_path)
         g_gold_orb_retrace.symbol      = "XAUUSD";
         g_gold_orb_retrace.engine_name = "GoldOrbRetrace";
         g_gold_orb_retrace.shadow_mode = true;     // prove on shadow before any live size
-        g_gold_orb_retrace.enabled     = true;      // UN-TOMBSTONED 2026-06-16: the 06-15 cull ("-$276 6mo shadow BT") was WRONG. Fresh 2yr backtest at the engine's REAL config (retr0.382, runner-trail, tight, 1-shot, COST0.37) reproduces PF 2.38 (both halves 2.56/2.18, robust EMAN/TRWIN, 3x-cost). The -$784 ledger = pre-fix lot=1.0 (100x) + 53-day-phantom artifact, NOT real perf. Shadow.
+        g_gold_orb_retrace.enabled     = false;     // RE-TOMBSTONED 2026-06-23 (operator rule: 7 definitive live results -> dies). Live shadow ledger now has exactly 7 distinct closed GoldOrbRetrace results, 0 wins / 7, net -$808 (all TRAIL_STOP). Even discounting the 2 pre-06-09 lot=1.0 (100x) artifacts, the 5 clean post-fix results are ALSO all losses (0/5, net -$24, every exit a tiny sub-spread TRAIL_STOP) -- textbook intraday-spot-CFD cost wall (move never clears spread). The 06-16 UN-TOMBSTONE rested on a bar-replay PF2.38; faithful live shadow has now FALSIFIED it 7/7. See SystemAudit-2026-06-23 + [[intraday-spot-cfd-cost-wall]]. enabled=false (no dispatch/fire/GUI).
         g_gold_orb_retrace.verbose     = true;
         g_gold_orb_retrace.lot         = 0.01;   // 2026-06-09 FIX: was 1.0 (index default) -> 100x oversized on XAU (USD_PER_PT_LOT=100). All gold engines use 0.01.
         // SIZING GUARD: XAU engines MUST be <=0.05 lot (x100 multiplier). Clamp + loud-warn if a gold engine slips through oversized.
@@ -4130,7 +4147,7 @@ static void init_engines(const std::string& cfg_path)
         g_gold_orb_london.or_end_et   = 210;   // 03:30 ET first 30 min (exclusive)
         g_gold_orb_london.daily_gate  = true;  // BullGate DD-insurance
         g_gold_orb_london.shadow_mode = true;
-        g_gold_orb_london.enabled     = true;
+        g_gold_orb_london.enabled     = false;    // RE-TOMBSTONED 2026-06-23 alongside GoldOrbRetrace: same dead intraday-gold-ORB class (cost wall). Live shadow result 0 wins / 1, net -$4.44 (TRAIL_STOP). Parent GoldOrbRetrace died at 7/7; killing the parent while leaving the identical London sibling firing the same dead pattern is incoherent. See SystemAudit-2026-06-23.
         g_gold_orb_london.verbose     = true;
         g_gold_orb_london.lot         = 0.01;
         if (g_gold_orb_london.lot > 0.05) { g_gold_orb_london.lot = 0.01; }
