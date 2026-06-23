@@ -11,7 +11,7 @@ enabled entry-engines: 20  |  in-book (validated EDGE): 4  |  UNAUDITED: 0  |  D
 | g_gold_volbrk_m30 | SHADOW-CANDIDATE | 1.94 | no | BLOCKED-in-bear |
 | g_idx_bear_short_nas | SHADOW-CANDIDATE | 1.26 | no | BLOCKED-in-bear |
 | g_idx_bear_short_sp | SHADOW-CANDIDATE | 1.59 | no | BLOCKED-in-bear |
-| g_mgc_fastdon | SHADOW-CANDIDATE | 1.55 | no | BLOCKED-in-bear |
+| g_mgc_fastdon | MARGINAL | 1.78 | no | BLOCKED-in-bear |
 | g_mgc_volbrk | SHADOW-CANDIDATE | 1.71 | no | BLOCKED-in-bear |
 | g_rider_4h | SHADOW-CANDIDATE | 1.99 | no | BLOCKED-in-bear |
 | g_rider_d1 | SHADOW-CANDIDATE | 1.99 | no | BLOCKED-in-bear |

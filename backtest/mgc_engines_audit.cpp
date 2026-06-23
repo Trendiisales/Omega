@@ -66,12 +66,14 @@ int main(int argc, char** argv) {
     // ---- g_mgc_fastdon : MgcFastDonchian30mEngine ----
     {
         omega::MgcFastDonchian30mEngine eng; eng.enabled=true; eng.lot=0.01;
+        if (const char* tf = std::getenv("MGC_TREND")) eng.use_trend_filter = (std::atoi(tf) != 0);
+        const char* tlbl = eng.use_trend_filter ? "FastDon+trend" : "FastDon-NOtrend";
         std::vector<Trade> trades; double cur_entry=0; bool open=false;
         auto cb=[&](const omega::TradeRecord& t){ trades.push_back({t.entryPrice, t.exitPrice}); open=false; };
         for (auto& b: bars) eng.on_30m_bar(b.o,b.h,b.l,b.c,b.v,b.ts,cb);
         (void)cur_entry;(void)open;
-        report("MgcFastDon", trades, cost);
-        report("MgcFastDon", trades, cost*2.0);   // 2x cost stress
+        report(tlbl, trades, cost);
+        report(tlbl, trades, cost*2.0);   // 2x cost stress
     }
     // ---- g_mgc_volbrk : GoldVolBreakoutM30Engine (MGC instance) ----
     // needs h1 trend (on_h1_close sets trend_; m30 entry gated by trend_==1). Feed h1+m30

@@ -39,6 +39,13 @@ struct MgcFastDonchian30mEngine {
     bool   use_hvn_skip  = true;    // the edge
     int    profile_bins  = 30;
     double hvn_frac      = 0.60;    // bins >= frac*max volume = HVN
+    // ---- trend filter (S-2026-06-24): only take long breakouts in a confirmed uptrend.
+    // close > EMA(EmaTrend) AND close > close[SlopeLB] (EMA-rising proxy, mirrors the
+    // GoldVolBreakout trend_ gate). This is the bear protection MGC's 2024-26 data could
+    // not test -- validated against XAU-spot 2022 bear (mgc_engines_audit, --bear). ----
+    bool   use_trend_filter = true;
+    int    EmaTrend         = 100;  // EMA period on 30m closes (~2 trading days)
+    int    SlopeLB          = 20;   // rising proxy: close now > close SlopeLB bars ago
 
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
@@ -46,6 +53,7 @@ struct MgcFastDonchian30mEngine {
     struct Bar { double o,h,l,c,v; int day; };
     std::deque<Bar> bars_;               // recent bars for Donchian channels
     double  atr14_ = 0.0; double prev_close_ = 0.0; bool atr_init_ = false;
+    double  ema_t_ = 0.0; bool ema_t_init_ = false;   // EMA trend filter state
 
     int     cur_day_ = -1;
     std::vector<std::pair<double,double>> day_cv_;   // (close,vol) for current day
@@ -138,6 +146,9 @@ struct MgcFastDonchian30mEngine {
                          atr14_ += (tr - atr14_) / 14.0; }
         else           { atr14_ = h - l; atr_init_ = true; }
         prev_close_ = c;
+        // EMA trend filter update (on close)
+        if (!ema_t_init_) { ema_t_ = c; ema_t_init_ = true; }
+        else { const double a = 2.0 / (EmaTrend + 1); ema_t_ = a * c + (1.0 - a) * ema_t_; }
 
         if (pos_active_) {
             { double fav=h-entry_; if(fav>mfe_)mfe_=fav; double adv=entry_-l; if(adv>mae_)mae_=adv; }  // LONG excursion
@@ -151,6 +162,12 @@ struct MgcFastDonchian30mEngine {
                 // PF1.55 both-halves+ on MGC 2024-26 bull window, but that window has NO 2022
                 // bear -> this gate is the bear protection the data couldn't test.
                 if (omega::gold_regime().long_blocked()) skip = true;
+                // TREND FILTER: only long in a confirmed uptrend (close>EMA + rising).
+                if (use_trend_filter) {
+                    const bool above_ema = ema_t_init_ && c > ema_t_;
+                    const bool rising    = (int)bars_.size() >= SlopeLB && c > bars_[bars_.size() - SlopeLB].c;
+                    if (!(above_ema && rising)) skip = true;
+                }
                 if (use_hvn_skip && prior_ok_)
                     for (double hv : prior_hvn_) if (hv > c && hv <= c + Kov * atr14_) { skip = true; break; }
                 if (l2_gate_ > 0.0 && l2_imb_ < l2_gate_) { skip = true;
