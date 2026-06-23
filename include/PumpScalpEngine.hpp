@@ -62,6 +62,7 @@
 
 #include "OmegaTradeLedger.hpp"
 #include "OpenPositionRegistry.hpp"
+#include "RegimeState.hpp"   // S-2026-06-24: equity-mkt bear long-block (item-2 coverage)
 
 namespace omega {
 
@@ -353,11 +354,20 @@ public:
         for (int i=(int)m_bars.size()-2; i>=0 && n<20; --i,++n) avgv += m_bars[i].v;
         avgv = n>0 ? avgv/n : 1.0; if (avgv<=0) avgv=1.0;
 
+        // S-2026-06-24 universal price-bear long-block (item-2 bear coverage).
+        // BigCapMomo is a bull-beta equity-momentum engine that self-enters (its own
+        // scanner/bridge path, NOT enter_directional) -- so it needs its own bear
+        // gate. Block NEW longs in a confirmed EQUITY-market bear/macro-hostile regime
+        // (index_market_regime = NAS-MKT price-brain, same regime the universal
+        // enter_directional gate uses for non-gold). Manage/exit (on_price/watchdog)
+        // and the short side below are untouched. Fail-open while the brain is cold.
+        const bool equity_bear_block = omega::index_market_regime().long_blocked();
+
         // IGNITION long
         const double c_lb = m_bars[(int)m_bars.size()-1-LB].c;
         const bool strong = (h>l) ? (c >= l + STRENGTH*(h-l)) : true;
         const bool not_extended = (ENTRY_MAX_EXT_PCT<=0) || (vwap<=0) || ((c/vwap - 1.0)*100.0 <= ENTRY_MAX_EXT_PCT);
-        if (long_ok && not_extended && (c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) {
+        if (!equity_bear_block && long_ok && not_extended && (c/c_lb - 1.0)*100.0 >= IG_PCT && v >= VOLX*avgv && strong) {
             if (breadth_register && !breadth_register(_session_day(ts_ms), symbol)) return;  // chop/bear gate: need >=min_breadth names igniting today
             _open(+1, c, ts_ms); return;
         }

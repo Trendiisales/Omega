@@ -88,6 +88,7 @@
 
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "RegimeState.hpp"       // S-2026-06-24: shared price-brain bear long-block (item-2 coverage)
 
 namespace omega {
 
@@ -279,6 +280,21 @@ private:
         if (warmup_active_) return;
         const double entry = ask;   // long on ask
         if (entry <= 0.0 || atr14_ <= 0.0) return;
+
+        // S-2026-06-24 universal price-bear long-block (item-2 bear coverage).
+        // SessionMomentum is a long-only bull-beta gold engine (audit: both bear
+        // halves NEG) and self-enters -- it bypasses the enter_directional
+        // chokepoint, so it needs its OWN bear gate, the same shared price-brain
+        // idiom the 4 sibling gold engines use (XauTf 1h/2h/D1 + ThreeBar). Blocks
+        // NEW longs in a confirmed gold price-bear OR macro-hostile regime; manage/
+        // exit paths (_manage_open) are untouched. Fail-open while the brain is
+        // cold (long_blocked()=false until warm). gold_regime() because this is the
+        // XAU session engine (g_xau_sess_nypm is the only instance).
+        if (omega::gold_regime().long_blocked()) {
+            std::printf("[BEAR-GATE] %s LONG BLOCKED -- SessionMomentum price-bear/macro-hostile\n",
+                        symbol.c_str());
+            return;
+        }
 
         const double sl_dist = (sl_atr > 0.0) ? sl_atr * atr14_ : 0.0;
         const double sl_px   = (sl_atr > 0.0) ? entry - sl_dist : 0.0;

@@ -98,12 +98,18 @@ GATE_PATH = {
     "g_rider_d1":         "overlay: host-gated (xau_tf)",
     "g_idx_bear_short_nas": "SHORT (trades bear)",
     "g_idx_bear_short_sp":  "SHORT (trades bear)",
-    "g_xau_tf_1h":        "LEAKY: D1-EMA200 macro gate (bear-NEG)",
-    "g_xau_tf_2h":        "LEAKY: D1-EMA200 macro gate (bear-NEG)",
-    "g_xau_tf_d1":        "LEAKY: D1-EMA200 macro gate (bear-NEG)",
-    "g_xau_threebar_30m": "LEAKY: own gate, bull-biased (bear-NEG)",
-    "g_xau_sess_nypm":    "LEAKY: session gate (both bear halves NEG)",
-    "g_bigcap_momo":      "LEAKY: equity, no hard index-bear gate",
+    # S-2026-06-24k item-2 protection: all 6 former-LEAKY self-enterers now carry a
+    # price-bear long-block via the shared RegimeState price-brain. The 4 XAU trend/
+    # 3bar engines already had gold_regime().long_blocked() (verified in code:
+    # XauTrendFollow1h:568 / 2h:555 / D1:614 / ThreeBar:592). SessionMomentum +
+    # BigCapMomo had NONE -> gates added this commit. No engine self-enters a
+    # confirmed price-bear long unguarded anymore.
+    "g_xau_tf_1h":        "self-gate: gold_regime.long_blocked (price-bear+macro)",
+    "g_xau_tf_2h":        "self-gate: gold_regime.long_blocked (price-bear+macro)",
+    "g_xau_tf_d1":        "self-gate: gold_regime.long_blocked (price-bear+macro)",
+    "g_xau_threebar_30m": "self-gate: gold_regime.long_blocked (price-bear+macro)",
+    "g_xau_sess_nypm":    "self-gate: gold_regime.long_blocked (added S-2026-06-24k)",
+    "g_bigcap_momo":      "self-gate: index_market_regime.long_blocked (added S-2026-06-24k)",
 }
 
 rows, unaudited, dead, leaky = [], [], [], []
