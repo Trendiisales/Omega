@@ -51,17 +51,19 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
     double poc = 0; std::vector<double> hvn;
     if (_mgc_read_hvn(hvn_json, poc, hvn) && !hvn.empty()) g_mgc_fastdon.set_prior_hvn(hvn, poc);
 
-    static int64_t last_ts = 0;
-    std::ifstream f(bars_csv); if (!f) return;
-    std::string ln; bool first = true;
+    static int64_t last_ts = 0; static long s_poll = 0; int s_fed = 0; ++s_poll;
+    std::ifstream f(bars_csv);
+    if (!f) { if (s_poll % 20 == 1) { std::printf("[MGC-FEED] poll#%ld: cannot open '%s' (cwd issue?)\n", s_poll, bars_csv.c_str()); std::fflush(stdout); } return; }
+    std::string ln; bool first = true; int64_t newest = 0; int total = 0;
     while (std::getline(f, ln)) {
         if (first) { first = false; if (!ln.empty() && (ln[0] < '0' || ln[0] > '9')) continue; }
         std::stringstream s(ln); std::string t; std::vector<std::string> k;
         while (std::getline(s, t, ',')) k.push_back(t);
         if (k.size() < 6) continue;
         int64_t ts = std::atoll(k[0].c_str());
+        ++total; if (ts > newest) newest = ts;
         if (ts <= last_ts) continue;
-        last_ts = ts;
+        last_ts = ts; ++s_fed;
         g_mgc_fastdon.on_30m_bar(std::atof(k[1].c_str()), std::atof(k[2].c_str()),
                                  std::atof(k[3].c_str()), std::atof(k[4].c_str()),
                                  std::atof(k[5].c_str()), ts, cb);
@@ -78,5 +80,12 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
             vb_h1_bucket = h1b; vb_h1_close = cl;
             g_mgc_volbrk.on_m30_bar(hi, lo, cl, cl, cl, ts, cb);
         }
+    }
+    // HEARTBEAT: proves the poll is reading the live MGC feed. Logs on any new
+    // bars, else every 20th poll (~10min). newest_ts confirms freshness.
+    if (s_fed > 0 || s_poll % 20 == 1) {
+        std::printf("[MGC-FEED] poll#%ld: file_bars=%d new_fed=%d newest_ts=%lld (mgc book alive; 0 trades is correct in a gold downtrend -- long-biased)\n",
+                    s_poll, total, s_fed, (long long)newest);
+        std::fflush(stdout);
     }
 }

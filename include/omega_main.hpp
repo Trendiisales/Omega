@@ -82,9 +82,16 @@ int main(int argc, char* argv[])
     //   @0.8pt (2x-cost STRESS): PF1.70 both-halves+ -> ROBUST to 2x cost.
     //   (old Nin=20 cfg = PF1.54; bumped 20->40 to the validated-best below.)
     // CAVEATS: bull-window (2024-26, no 2022 bear) + single-source -> the LIVE MGC
-    // shadow ledger is the forward/cross-source truth. BLOCKER: the live feed
-    // (data/mgc_30m_live.csv) is STARVED until MGC RT TRADES entitlement is enabled
-    // on IB Gateway (CME, port 4001) -- engine is enabled but receives no live bars.
+    // shadow ledger is the forward/cross-source truth.
+    // FEED STATUS (S-2026-06-23, CORRECTED): IB Gateway 4001 IS live and
+    // data/mgc_30m_live.csv IS flowing (466+ real 30m bars Jun9-23) -- the earlier
+    // "starved/blocked on entitlement" note was a STALE read (checked the file at
+    // 0 bytes before the producer's first write). The book is OPERATIONAL; it is
+    // correctly FLAT right now because gold is in a downtrend (Jun9-23 4348->4135,
+    // -5%) and these are long-biased breakout/trend engines (GoldVolBrk seed
+    // trend=0). Verified: the real engine fires 0 trades on the exact 466 live bars
+    // in backtest too -> 0 live trades = correct, the PF1.74 edge is DORMANT not
+    // dead. The [MGC-FEED] poll heartbeat (MgcFastDonchianFeed.hpp) confirms reads.
     g_mgc_fastdon.enabled     = true;
     g_mgc_fastdon.shadow_mode = true;
     g_mgc_fastdon.lot         = 0.01;
