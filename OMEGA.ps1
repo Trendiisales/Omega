@@ -1032,6 +1032,16 @@ function Invoke-Deploy {
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [WARN] rebuild_warmups exit=$LASTEXITCODE -- keeping git snapshot" -ForegroundColor Yellow
         }
+        # S-2026-06-23: comprehensive seed refresh from CURRENT IBKR data (gold via MGC, indices
+        # via index futures, H4 aggregated from H1). The git reset above restored the COMMITTED
+        # (months-stale) warmup snapshot; this regenerates the full corpus so the binary boots
+        # from fresh seeds, not stale -- closes the deploy-reverts-seeds gap that blinded the
+        # gold gates. NON-FATAL (the trade-direction gates also self-fresh/persist regardless);
+        # any miss just leaves the prior seeds + is flagged by VERIFY_STARTUP CHECK 18.
+        py tools\refresh_warmup_seeds.py 4001 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  [WARN] refresh_warmup_seeds exit=$LASTEXITCODE -- keeping prior seeds" -ForegroundColor Yellow
+        }
     } catch {
         Write-Host "  [WARN] rebuild_warmups failed: $_ -- keeping git snapshot" -ForegroundColor Yellow
     } finally {
