@@ -6490,7 +6490,7 @@ static void init_engines(const std::string& cfg_path)
             if (g_engine_gate.is_demoted(t.name) && *t.flag) {
                 *t.flag = false;
                 std::printf("[ENGINE-GATE] AUTO-DISABLED %s "
-                            "(>=30 trades, net-negative, WR<35%%)\n", t.name);
+                            "(>=20 trades, net-negative)\n", t.name);
             }
         }
         std::fflush(stdout);

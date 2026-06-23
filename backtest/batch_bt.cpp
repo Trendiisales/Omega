@@ -28,6 +28,12 @@
 #include <algorithm>
 
 static const double COMM_PER_SIDE = 0.50; // $/oz; ~1.5bps + buffer. Spread paid via bid/ask fills.
+// 2026-06-24: STOP/market-exit slippage. The old "faithful" harness filled stops AT
+// the touch (bid for a long stop) -- optimistic: a real stop is a market order that
+// slips THROUGH the level (gaps, thin books). TP exits are limits and do NOT get this
+// haircut. Without it the harness over-reports edge on stop-heavy strategies. $0.30/oz
+// (~1bp at $3000 gold) is a conservative gold-stop slip on top of the spread already paid.
+static const double STOP_SLIP     = 0.30; // $/oz adverse on stop + maxhold (market) exits
 static const int    BAR_SEC       = 1800; // M30
 static const int    ATR_N         = 14;
 static const int    EMA_N         = 20;
@@ -164,13 +170,13 @@ int main(int argc, char** argv){
                 if(c.st.pos==0) continue;
                 double exit_px=0; bool out=false;
                 if(c.st.pos==+1){
-                    if(bid<=c.st.stop){ exit_px=bid; out=true; }            // stop first (conservative)
-                    else if(bid>=c.st.tp){ exit_px=c.st.tp; out=true; }     // limit fills at tp
-                    else if(c.st.bars_held>=MAXHOLD_BARS){ exit_px=bid; out=true; }
+                    if(bid<=c.st.stop){ exit_px=bid-STOP_SLIP; out=true; }          // stop first (conservative): market sell slips through
+                    else if(bid>=c.st.tp){ exit_px=c.st.tp; out=true; }             // limit fills at tp (no slip)
+                    else if(c.st.bars_held>=MAXHOLD_BARS){ exit_px=bid-STOP_SLIP; out=true; }  // market exit slips
                 } else {
-                    if(ask>=c.st.stop){ exit_px=ask; out=true; }
-                    else if(ask<=c.st.tp){ exit_px=c.st.tp; out=true; }
-                    else if(c.st.bars_held>=MAXHOLD_BARS){ exit_px=ask; out=true; }
+                    if(ask>=c.st.stop){ exit_px=ask+STOP_SLIP; out=true; }          // market buy-to-cover slips through
+                    else if(ask<=c.st.tp){ exit_px=c.st.tp; out=true; }             // limit fills at tp (no slip)
+                    else if(c.st.bars_held>=MAXHOLD_BARS){ exit_px=ask+STOP_SLIP; out=true; }
                 }
                 if(out){
                     double gross = (c.st.pos==+1)?(exit_px-c.st.entry):(c.st.entry-exit_px);
@@ -200,7 +206,7 @@ int main(int argc, char** argv){
                    c.cfg.name, pf(0),a.net[0],a.n[0], pf(1),a.net[1],a.n[1], pfall,netall,nall);
         }
     }
-    printf("\nNOTE: faithful tick fills (bid/ask spread + intrabar stop-before-tp) + $%.2f/side comm.\n", COMM_PER_SIDE);
+    printf("\nNOTE: faithful tick fills (bid/ask spread + intrabar stop-before-tp + $%.2f/oz stop-slip) + $%.2f/side comm.\n", STOP_SLIP, COMM_PER_SIDE);
     printf("PF/net are per-regime; require + in BOTH regimes AND both halves to survive.\n");
     return 0;
 }

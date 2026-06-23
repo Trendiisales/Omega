@@ -4,8 +4,22 @@
 //
 // Accumulates PERSISTENT per-engine lifetime trade stats (n, wins, net) across
 // restarts, and auto-disables any engine that proves unprofitable over a
-// meaningful sample. Threshold mirrors the CLAUDE.md promotion gate:
-//   demote when  n >= 30  AND  net < 0  AND  win_rate < 35%.
+// meaningful sample.
+//
+// 2026-06-24 HARDENED (operator directive: "remove all negative engines"). The
+// old threshold (n>=30 AND net<0 AND WR<35%) almost NEVER fired at live trade
+// frequency -- with ~40 closes/week spread over dozens of engines, no single
+// engine reached n=30, so marginal/negative engines persisted indefinitely and
+// diluted the book. New rule:
+//   demote when  n >= 20  AND  net < 0.
+// The WR condition is dropped: an engine that is net-negative over a 20-trade
+// sample is not earning, whatever its hit-rate. n>=20 still protects a validated
+// trend engine from a short drawdown (a real edge is net-positive over 20 fills).
+// Disable-only + revivable (clear the engine's CSV row to give it another shot).
+// NOTE: phantom single-trade fat-tails (n<20) are untouched -- below the floor,
+// the gate is a no-op. They DO inflate the book's headline sum; that masking is a
+// REPORTING problem handled by the validated-allowlist view (tools/livebook_pnl.py),
+// not by this per-engine demotion gate.
 //
 // Flow:
 //   - record_close(engine, net_pnl) is called from the UNIVERSAL trade-close
@@ -38,8 +52,7 @@ struct EngineGateStat { long n = 0; long wins = 0; double net = 0.0; };
 
 class EngineGate {
 public:
-    static constexpr long   MIN_TRADES = 30;     // sample floor before any cut
-    static constexpr double MIN_WR     = 0.35;   // win-rate floor
+    static constexpr long   MIN_TRADES = 20;     // sample floor before any cut (was 30; see header)
 
     void set_path(const std::string& p) { std::lock_guard<std::mutex> lk(mtx_); path_ = p; }
 
@@ -82,9 +95,9 @@ public:
                  k.compare(0, name.size(), name) == 0 && k[name.size()] == '_');
             if (match) { n += kv.second.n; w += kv.second.wins; net += kv.second.net; }
         }
-        if (n < MIN_TRADES) return false;
-        if (net >= 0.0)     return false;
-        return (static_cast<double>(w) / static_cast<double>(n)) < MIN_WR;
+        (void)w;
+        if (n < MIN_TRADES) return false;   // insufficient sample -> never cut
+        return net < 0.0;                    // net-negative over a fair sample -> demote
     }
 
     // Startup diagnostic: log every engine that has reached the sample floor.
@@ -94,7 +107,7 @@ public:
             const auto& s = kv.second;
             if (s.n < MIN_TRADES) continue;
             const double wr = s.n ? static_cast<double>(s.wins) / s.n : 0.0;
-            const bool demote = (s.net < 0.0 && wr < MIN_WR);
+            const bool demote = (s.net < 0.0);
             std::printf("[ENGINE-GATE] %-44s n=%ld WR=%.0f%% net=%.2f -> %s\n",
                         kv.first.c_str(), s.n, wr * 100.0, s.net,
                         demote ? "DEMOTE" : "keep");
