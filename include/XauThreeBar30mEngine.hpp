@@ -9,9 +9,12 @@
 //  (BE_ARM_PCT=0.03, BE_BUFFER_PCT=0.012) + optional daily cap -- full S35-P3
 //  protection suite present. Backtested FAITHFUL (threebar30m_xau_S35P3_backtest
 //  .cpp drives the REAL engine on M30 ticks): PF 1.29-1.37, ALL available years
-//  positive (2024 1.09-1.15 / 2025 1.37-1.38 / 2026 1.28-1.55). CAVEAT: bull-only
-//  window -- no 2022 M30 data locally -> BEAR-UNTESTED. Verdict: protections
-//  backtested-present; keep shadow, no live size until bear-tested. (S-2026-06-23 audit.)
+//  positive (2024 1.09-1.15 / 2025 1.37-1.38 / 2026 1.28-1.55). BEAR-TESTED
+//  2026-06-23 (Jun-Sep 2022 M15 from /Tick/xau_2022bear_tick.csv): RAW signal is
+//  bull-beta (PF0.55 -$164 n73); the production TUNED config (EMA200+ADX25+volband)
+//  neutralizes the bear to ~breakeven (PF1.06-1.25, thin n9-122). Verdict: bull
+//  engine, filters prevent bear-bleed but there is NO bear EDGE; protections
+//  backtested-present; keep shadow, no live size. (S-2026-06-23 audit.)
 //
 //  PROVENANCE
 //
