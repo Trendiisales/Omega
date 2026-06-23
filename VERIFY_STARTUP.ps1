@@ -966,6 +966,28 @@ if ($barSave.Count -gt 0) {
         "Normal if startup < 10min ago."
 }
 
+# --- CHECK 18: Seed freshness (2026-06-23) -----------------------------------
+#   A stale warm-seed = an engine/gate boots with a price view detached from
+#   reality (the gold_regime() bear-gate silently went 83 days blind this way,
+#   buying gold into a downtrend). This check runs the seed-freshness audit so a
+#   stale seed can never again rot undetected -- it surfaces in startup_report.txt.
+try {
+    $sfaOut   = & python "C:\Omega\tools\seed_freshness_audit.py" --repo "C:\Omega" 2>&1
+    $sfaCount = ($sfaOut | Select-String "active seed CSVs found").Line
+    $sfaStale = ($sfaOut | Select-String "STALE SEED\(S\)").Line
+    if ($sfaStale) {
+        $n = [regex]::Match($sfaStale, '(\d+) STALE').Groups[1].Value
+        Add-Result "Seed Freshness" "WARN" "$n stale warm-seed(s) -- engine/gate boots blind to current price" `
+            "Refresh the CSVs (or self-fresh the gate): python tools\seed_freshness_audit.py --repo C:\Omega"
+    } elseif ($sfaCount) {
+        Add-Result "Seed Freshness" "PASS" "all active warm-seeds fresh" "$sfaCount"
+    } else {
+        Add-Result "Seed Freshness" "INFO" "audit produced no summary" "check python + tools\seed_freshness_audit.py"
+    }
+} catch {
+    Add-Result "Seed Freshness" "INFO" "audit not run ($_)" "ensure python + tools\seed_freshness_audit.py present on the VPS"
+}
+
 # ------------------------------------------------------------------------------
 # Render results to console + report file
 # ------------------------------------------------------------------------------
