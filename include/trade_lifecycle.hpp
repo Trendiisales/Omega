@@ -9,6 +9,7 @@
 #include <sstream>  // S17: ostringstream for atomic SHADOW-CLOSE + TRADE-COST emission (prevents stdout interleaving)
 #include "RegimeState.hpp"  // 2026-06-12: bear-event lockout for choppy-bear instruments (symbol_gate)
 #include "PortfolioGovernor.hpp"  // S-2026-06-19 Phase 1 item 2: correlation-aware cross-symbol campaign cap (symbol_gate)
+#include "LiveBook.hpp"  // 2026-06-24: validated allowlist + shadow cost-floor + clean live-book ledger
 
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
@@ -319,8 +320,22 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
                 s == "XAUUSD")
                 comm_per_side = 3.0;  // $3/side = $6 round-trip per lot
         }
+        // 2026-06-24 COST FLOOR: apply_realistic_costs derives all slippage from
+        // tr.spreadAtEntry; engines that don't populate it (turtles, equities) got
+        // ZERO cost -> optimistic shadow P&L (the live ledger showed gross==net,
+        // slip=0, comm=0 for every BigCapMomo equity trade). Floor it with a realistic
+        // per-class bid/ask spread so every shadow fill carries true execution cost.
+        // Only fills when the engine left it 0 -> no double-charge for engines that
+        // already measure spread (gold/index bracket engines).
+        if (tr.spreadAtEntry <= 0.0)
+            tr.spreadAtEntry = omega::shadow_spread_floor(tr.symbol, tr.entryPrice);
         omega::apply_realistic_costs(tr, comm_per_side, mult);
     }
+
+    // 2026-06-24 LIVE BOOK: record validated-EDGE-engine closes (now cost-adjusted)
+    // to the clean, separate live-book ledger. Research engines are a no-op here --
+    // they still flow to the full journal below, just not into "the book".
+    omega::livebook_record(tr, log_root_dir() + "/trades");
 
     // Step 3: Log -- all values are now in USD.
     //

@@ -343,12 +343,18 @@ struct NasTurtleD1Engine {
         fflush(stdout);
 
         TradeRecord tr{};
-        tr.symbol="NAS100"; tr.side="LONG";
+        // 2026-06-24: tag per-symbol instead of the hardcoded "NAS100"/"NasTurtleD1".
+        // All three instances (g_spx_turtle_d1=US500.F, g_dj30_turtle_d1=DJ30.F,
+        // g_nas_turtle_d1=NAS100) share this class AND shared one literal tag -> the
+        // AUDITED_CONFIGS-EDGE SpxTurtleD1/Dj30TurtleD1 were indistinguishable in the
+        // ledger from the MARGINAL NasTurtleD1, so the live-book allowlist could not
+        // select them. Use the configured `symbol` member.
+        tr.symbol=symbol; tr.side="LONG";
         tr.entryPrice=pos_.entry; tr.exitPrice=exit_px;
         tr.tp=pos_.tp; tr.sl=pos_.sl; tr.size=pos_.lot;
         tr.pnl=pnl_dollars; tr.mfe=pos_.mfe; tr.mae=pos_.mae;
         tr.entryTs=pos_.entry_ts_ms/1000; tr.exitTs=now_ms/1000;
-        tr.exitReason=reason; tr.engine="NasTurtleD1";
+        tr.exitReason=reason; tr.engine=std::string("NasTurtleD1_")+symbol;
         if (on_close) on_close(tr);
         pos_ = OpenPos{};
     }
