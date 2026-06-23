@@ -5,6 +5,14 @@
 //                               2026-05-12)
 // =============================================================================
 //
+//  ADVERSE-PROTECTION: cold-loss cut (LOSS_CUT_PCT=0.05) + BE ratchet
+//  (BE_ARM_PCT=0.03, BE_BUFFER_PCT=0.012) + optional daily cap -- full S35-P3
+//  protection suite present. Backtested FAITHFUL (threebar30m_xau_S35P3_backtest
+//  .cpp drives the REAL engine on M30 ticks): PF 1.29-1.37, ALL available years
+//  positive (2024 1.09-1.15 / 2025 1.37-1.38 / 2026 1.28-1.55). CAVEAT: bull-only
+//  window -- no 2022 M30 data locally -> BEAR-UNTESTED. Verdict: protections
+//  backtested-present; keep shadow, no live size until bear-tested. (S-2026-06-23 audit.)
+//
 //  PROVENANCE
 //
 //  Implements the "ThreeBar" cell that showed positive in S33 Pass-8 but

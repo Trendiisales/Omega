@@ -1854,11 +1854,12 @@ static void init_engines(const std::string& cfg_path)
         fflush(stdout);
 
         // ── FxTurtleH4 cohort (2026-05-23) ──────────────────────────────────
-        // Post-S99 FX rebuild: long-only Donchian H4 (Turtle archetype) on
-        // FX majors. EUR/GBP have proven walk-forward edge in repo
-        // (walkforward_b_long_EURUSD_picks.csv, all 3 OOS folds PF 1.14-1.30).
-        // AUD/NZD/JPY enabled=false until their warmup CSVs are sourced;
-        // seed-guard skips disabled engines so boot stays clean.
+        // Post-S99 FX rebuild: long-only Donchian H4 (Turtle archetype) on FX
+        // majors. [SUPERSEDED -- see TOMBSTONE 2026-06-16 immediately below.] The
+        // earlier "EUR/GBP proven OOS PF1.14-1.30" claim (walkforward_b_long_EURUSD_
+        // picks.csv) did NOT survive a cross-regime recheck: the GBP sibling on
+        // 2022-bear+2025-26 came in PF0.88 both-halves NEG, marking the EUR figure
+        // as single-regime luck. Whole cohort culled; 0 instances instantiated.
         //
         // Warm-seed pattern: H1 CSV aggregated to H4 inline by
         // FxTurtleH4Engine::warmup_from_csv() (no offline resample needed).
@@ -2219,17 +2220,22 @@ static void init_engines(const std::string& cfg_path)
             std::printf("[OMEGA-INIT] AtrMeanRevGrid INDEX: US500(H1,X=8)+NAS100(M15,X=14)+GER40(M15,X=14) enabled (shadow)\n");
         }
 
-        // AUD/NZD/JPY: structure in place, awaiting H1 warmup CSVs.
-        // Set enabled=true + add warmup_csv_path once
-        //   phase1/signal_discovery/warmup_AUDUSD_H1.csv
-        //   phase1/signal_discovery/warmup_NZDUSD_H1.csv
-        //   phase1/signal_discovery/warmup_USDJPY_H1.csv
-        // are committed. Until then warmup_or_die() skips them (engine
-        // disabled = explicit opt-out, not rule violation).
+        // [STALE-CORRECTED 2026-06-23 audit] AUD/NZD/JPY do NOT trade -- and the
+        // reason is NOT "awaiting CSVs". The warmup CSVs (warmup_{AUDUSD,NZDUSD,
+        // USDJPY}_H1.csv, ~347/347/330 days) ALREADY EXIST in phase1/signal_discovery/.
+        // The real reason: the ENTIRE FxTurtleH4 cohort was TOMBSTONED 2026-06-16
+        // (see L1866-1874) -- GBPUSD cross-regime (2022 bear + 2025-26) PF0.88
+        // both-halves NEG; EURUSD PF1.31 judged single-regime luck. The cohort's
+        // tick_fx dispatch is gutted to a no-op stub and NO FxTurtleH4 global is
+        // instantiated. So EUR/GBP are NOT active either -- "EUR+GBP active" below
+        // was stale. Do NOT enable AUD/NZD/JPY: it would resurrect a dead strategy
+        // on a pair where the validated sibling already failed cross-regime.
+        // FX majors currently have NO viable engine (consistent with the FX dead-end:
+        // session-open=neg-exp/S99, AMR grid=culled, scalp=retired, turtle=tombstoned).
 
 
 
-        printf("[OMEGA-INIT] FxTurtleH4 cohort: EUR+GBP active; AUD/NZD/JPY awaiting warmup CSVs\n");
+        printf("[OMEGA-INIT] FxTurtleH4 cohort: TOMBSTONED 2026-06-16 (GBP x-regime PF0.88) -- 0 instances live; AUD/NZD/JPY stay off (dead strategy, not missing CSVs)\n");
 
         // 2026-05-20 mega_sweep2 candle batch (3 D1 patterns)
         // CULL S-2026-06-17 (retest campaign): xau_d1_zoo_audit real-class

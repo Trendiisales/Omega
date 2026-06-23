@@ -75,7 +75,6 @@ XauPullbackContH4Engine
 XauStopRunD1Engine
 XauStraddleM30Engine
 XauSwingBreakD1Engine
-XauThreeBar30mEngine
 XauTsmomFastD1Engine
 XauTurtleD1Engine
 XauusdFvgEngine

@@ -48,7 +48,7 @@ namespace omega {
 struct MacroGoldGate {
     bool        enabled_      = true;
     std::string path_         = "logs/macro/macro_gold_gate.tsv";
-    int64_t     max_stale_ms_ = 3LL * 24 * 60 * 60 * 1000;  // 3 days -> fail safe
+    int64_t     max_stale_ms_ = 36LL * 60 * 60 * 1000;  // 36h -> fail safe (S-2026-06-23 audit: tightened from 3 days. The macro_gold_gate.py cron writes daily; 36h = "missed a full day + jitter margin" so a dead cron reverts to price-core next day instead of holding a 3-day-stale macro verdict. Fails SAFE either way: stale -> not hostile -> price core protects.)
     int64_t     reload_ms_    = 60000;                       // re-read at most every 60s
 
     bool     hostile_   = false;
