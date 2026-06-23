@@ -972,15 +972,19 @@ if ($barSave.Count -gt 0) {
 #   buying gold into a downtrend). This check runs the seed-freshness audit so a
 #   stale seed can never again rot undetected -- it surfaces in startup_report.txt.
 try {
-    $sfaOut   = & python "C:\Omega\tools\seed_freshness_audit.py" --repo "C:\Omega" 2>&1
-    $sfaCount = ($sfaOut | Select-String "active seed CSVs found").Line
-    $sfaStale = ($sfaOut | Select-String "STALE SEED\(S\)").Line
-    if ($sfaStale) {
-        $n = [regex]::Match($sfaStale, '(\d+) STALE').Groups[1].Value
-        Add-Result "Seed Freshness" "WARN" "$n stale warm-seed(s) -- engine/gate boots blind to current price" `
-            "Refresh the CSVs (or self-fresh the gate): python tools\seed_freshness_audit.py --repo C:\Omega"
-    } elseif ($sfaCount) {
-        Add-Result "Seed Freshness" "PASS" "all active warm-seeds fresh" "$sfaCount"
+    # 2026-06-24: gate on the audit's EXIT CODE (0=clean, 1=stale-on-enabled) -- robust to the
+    # de-noised output. Guard .Line for null (Select-String returns nothing when a pattern misses
+    # -> ".Line on null" was the prior 'property Line cannot be found' crash).
+    $sfaOut = & python "C:\Omega\tools\seed_freshness_audit.py" --repo "C:\Omega" 2>&1
+    $rc = $LASTEXITCODE
+    $sumHit = ($sfaOut | Select-String "active seed CSVs found" | Select-Object -First 1)
+    $sumLine = if ($sumHit) { $sumHit.Line } else { "" }
+    $staleN = if ($sumLine -match 'STALE\(enabled\):\s*(\d+)') { $Matches[1] } else { "?" }
+    if ($rc -eq 1) {
+        Add-Result "Seed Freshness" "WARN" "$staleN stale ENABLED-engine warm-seed(s) -- gate boots blind to current price" `
+            "Refresh: python tools\refresh_warmup_seeds.py 4001 (needs IBKR 4001 live)"
+    } elseif ($sumLine) {
+        Add-Result "Seed Freshness" "PASS" "all enabled-engine warm-seeds fresh" "$sumLine"
     } else {
         Add-Result "Seed Freshness" "INFO" "audit produced no summary" "check python + tools\seed_freshness_audit.py"
     }

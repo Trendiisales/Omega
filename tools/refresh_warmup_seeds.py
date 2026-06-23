@@ -60,8 +60,11 @@ def write_csv(path, bars, ms=True):
 
 def pull(ib, con, tf):
     bs, dur = TF[tf]
+    # timeout 120->45 (S-2026-06-24): a stalled/empty IBKR pull was costing up to 2min EACH and
+    # the refresh runs every deploy (committed warmups are re-staled by git reset). 45s is ample
+    # for a normal hist pull; a pull that can't return in 45s is skipped (seed kept) not waited on.
     return ib.reqHistoricalData(con, "", durationStr=dur, barSizeSetting=bs,
-                                whatToShow="TRADES", useRTH=False, timeout=120)
+                                whatToShow="TRADES", useRTH=False, timeout=45)
 
 ib = IB()
 try:
