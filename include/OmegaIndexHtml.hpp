@@ -89,6 +89,7 @@ a{color:var(--blu);text-decoration:none}
   <div style="display:flex;justify-content:space-between" class="lbl"><span>00 Asia</span><span>05 pre-Ldn</span><span>07 London</span><span>13:30 NY-KZ</span><span>15 NY</span><span>20 late</span><span>22 Asia</span></div>
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px">
     <span id="sesstrade" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
+    <span id="healthBadge" class="chip" title="system health (click to (un)mute audible alert)" style="background:var(--pan2);color:var(--t2);cursor:pointer">HEALTH …</span>
     <span id="phases" style="display:flex;gap:6px;flex-wrap:wrap"></span>
     <span class="lbl" style="margin-left:auto">REGIME</span>
     <span id="macro" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
@@ -268,6 +269,35 @@ function tickClk(){var d=new Date();el('clk').textContent=
  String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+':'+String(d.getUTCSeconds()).padStart(2,'0')+' UTC';
  var mk=el('sessmk');if(mk)mk.style.left=(((d.getUTCHours()+d.getUTCMinutes()/60)/24)*100)+'%';}
 setInterval(tickClk,1000);
+/* ---- HEALTH MONITOR (ported from legacy GUI 2026-06-24; dropped in the 06-12 rewrite).
+   Polls /api/health (status.json from healthcheck.ps1). Badge green/amber/red.
+   Audible beep + desktop notification ON TRANSITION into FAIL (not first-load, so the
+   daily-restart feed-down window doesn't beep on every page open). Click badge to mute. */
+var __lastHealth=null, __healthMute=false;
+function __healthBeep(){ if(__healthMute) return; try{
+  var c=new (window.AudioContext||window.webkitAudioContext)();
+  var o=c.createOscillator(),g=c.createGain(); o.type='sine'; g.gain.value=0.25;
+  o.connect(g);g.connect(c.destination);o.start();
+  o.frequency.setValueAtTime(880,c.currentTime); o.frequency.setValueAtTime(660,c.currentTime+0.18); o.frequency.setValueAtTime(880,c.currentTime+0.36);
+  setTimeout(function(){o.stop();c.close();},700);
+}catch(e){} }
+function __healthNotify(t,b){ if(!('Notification' in window)) return;
+  if(Notification.permission==='granted') new Notification(t,{body:b});
+  else if(Notification.permission!=='denied') Notification.requestPermission(); }
+document.addEventListener('click',function(){ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); },{once:true});
+(function(){ var hb=document.getElementById('healthBadge'); if(hb) hb.addEventListener('click',function(){ __healthMute=!__healthMute; hb.style.opacity=__healthMute?'0.45':'1'; }); })();
+async function pollHealth(){
+  var b=document.getElementById('healthBadge'); if(!b) return;
+  var h; try{ h=await fetch('/api/health',{cache:'no-store'}).then(function(r){return r.json();}); }
+  catch(e){ h={overall:'FAIL',fail_count:1,warn_count:0}; }
+  var o=(h.overall||'FAIL').toUpperCase(), fc=h.fail_count||0, wc=h.warn_count||0;
+  if(o==='OK'){ b.style.color='var(--grn)'; b.textContent='HEALTH OK'; }
+  else if(o==='WARN'){ b.style.color='var(--ambB)'; b.textContent='HEALTH '+wc+'W'; }
+  else { b.style.color='var(--red)'; b.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); }
+  if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ __healthBeep(); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
+  __lastHealth=o;
+}
+setInterval(pollHealth,15000); pollHealth();
 
 /* ── sounds ── */
 var SND=localStorage.getItem('omega_snd')==='1',ACTX=null;
