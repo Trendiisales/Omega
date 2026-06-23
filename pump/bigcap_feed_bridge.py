@@ -76,7 +76,7 @@ DVOL_MIN  = float(os.environ.get("OMEGA_BIGCAP_DVOL_MIN", "0"))
 # market-data type: 1=live (needs a funded IBKR real-time US-equity subscription),
 # 3=delayed (paper default). Delayed = laggy prices + unreliable volume; flip to 1
 # once your IBKR account's market-data entitlement is active. (2026-06-14)
-MKT_DATA_TYPE = int(os.environ.get("OMEGA_BIGCAP_MKTDATA", "3"))
+MKT_DATA_TYPE = int(os.environ.get("OMEGA_BIGCAP_MKTDATA", "1"))  # S-2026-06-23 3->1: IBKR US-equity RT data sub now ACTIVE (NASDAQ+NYSE+Network B); delayed(3) no longer needed
 _candidates = {}             # sym -> dict(sym,name,px,day_open,up,dvol,ts)
 _names = {}                  # sym -> company longName (IBKR contractDetails)
 
