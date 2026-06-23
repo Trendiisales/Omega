@@ -1,0 +1,38 @@
+# TOMBSTONES.tsv -- the ENFORCED resurrection-blocklist (S-2026-06-24L).
+#
+# WHY: engines kept getting un-tombstoned. GoldOrbRetrace was resurrected THREE times
+# -- each time someone added a fresh "EDGE"/PF row and the registry's DEAD/UNAUDITED
+# check went green, so a live-falsified engine traded again. cull_audit.py logs culls
+# but NEVER blocks (exit 0 always). engine_registry blocks UNAUDITED/DEAD-but-enabled
+# but a new AUDITED_CONFIGS row silences it. Nothing made a tombstone STICK.
+#
+# WHAT: this file is the hard blocklist. tools/tombstone_guard.py (wired into the mac
+# canary) scans engine_init.hpp for `g_X.enabled = true` and FAILS the build if any
+# tombstoned global here is enabled -- and it OVERRIDES AUDITED_CONFIGS, so adding a
+# fresh EDGE row CANNOT resurrect a FORBIDDEN engine. The ONLY way to re-enable is to
+# edit THIS file (a deliberate, reviewed, git-logged act) -- which is the friction.
+#
+# policy:
+#   FORBIDDEN            -- dead at source / live-falsified. Do NOT re-enable. Ever.
+#                           To revisit: remove the row here (logged) AND attach a FRESH
+#                           faithful-TICK PF (not bar-replay, not a slice) in the commit.
+#   FAITHFUL-BT-REQUIRED -- disabled bull-beta / marginal / un-gated. Re-enable ONLY with
+#                           a faithful-tick BT row in AUDITED_CONFIGS + downgrade this row.
+#
+# Re-enabling ANY row below = canary FAIL. That is intentional. Resurrection must be loud.
+#
+# columns: global <TAB> engine <TAB> tombstone_date <TAB> basis <TAB> policy <TAB> reason
+g_gold_orb_retrace	GoldOrbRetrace	2026-06-23	LIVE-FALSIFIED	FORBIDDEN	live ledger 7/7 losses net -$808 (all sub-spread TRAIL_STOP) = intraday-spot-cfd cost wall. UN-TOMBSTONED 3x already (15/16-06, 23-06). Faithful 1.86 was bull-only + bear-untestable. Commit a96d8e02. DO NOT un-tombstone a 4th time without a faithful-TICK edge.
+g_gold_orb_london	GoldOrbLondon	2026-06-23	LIVE-FALSIFIED	FORBIDDEN	alias of GoldOrbRetrace (London session instance). Same cost-wall death. Commit a96d8e02.
+g_adaptive_tf_gold	AdaptiveTfGold	2026-06-21	FAITHFUL	FORBIDDEN	real engine driven on gold ticks LOSES every state/regime (2022 bear all PF0.61; 2024-26 bull all PF0.77; TREND 0.49-0.80, RANGE 0.71-0.75). Dynamic-TF wrapper does not beat the spot-CFD cost floor -- timeframe was never the problem. Commit 3290af5d. Code kept for futures-data revival ONLY.
+g_iswing_sp	IndexSwingSP	2026-06-02	LEDGER	FORBIDDEN	live shadow ledger net-negative (CULL_LEDGER 2026-06-02). Clock-based index swing, no edge.
+g_iswing_nq	IndexSwingNQ	2026-06-02	LEDGER	FORBIDDEN	live shadow ledger net-negative (CULL_LEDGER 2026-06-02). Sibling of IndexSwingSP.
+g_survivor	SurvivorPortfolio	2026-06-24	FAITHFUL	FAITHFUL-BT-REQUIRED	bull-only (faithful bear PF0.81; USTEC_RSI_N7 = bull-driver/bear-loss) AND was fully un-gated (self-enters, bypassed the bear chokepoint). Disabled commit 317baf00. Re-enable only with a both-regime faithful PF + a wired bear gate.
+g_connors_ger	ConnorsGer	2026-06-24	FAITHFUL	FAITHFUL-BT-REQUIRED	bear-positivity rests on n=4 (by-design avoidance), not a real bear edge. Disabled commit e32e8bf2. Re-enable only with a faithful both-regime PF on adequate n.
+g_nas_turtle_d1	NasTurtleD1	2026-06-24	FAITHFUL	FAITHFUL-BT-REQUIRED	bull-beta, 2022 bear NEG (n=5 -$8); ema100+BE_ARM fail to rescue. SPX/DJ30 turtles carry the real edge. Disabled commit e32e8bf2.
+g_vwap_rev_nq	VwapRevNQ	2026-05-14	LEDGER	FAITHFUL-BT-REQUIRED	stop-bleed cull (S82). VWAP-reversion NQ negative live. Re-enable only with a faithful both-regime PF.
+g_nas_bbrev_long_h1	NasBbRevLongH1	2026-06-10	UNVERIFIED	FAITHFUL-BT-REQUIRED	disabled in the ungated-engine audit (no cost gate / no adverse protection). Needs a gate + faithful BT before any re-enable.
+g_xau_swing_break_d1	XauSwingBreakD1	2026-06-10	UNVERIFIED	FAITHFUL-BT-REQUIRED	disabled D1-zoo engine; inline Sharpe inflated. Needs faithful BT before re-enable.
+g_h1_swing_gold	H1SwingGold	2026-06-10	UNVERIFIED	FAITHFUL-BT-REQUIRED	disabled HTF swing; no faithful verdict. Needs faithful BT before re-enable.
+# --- printf-only / code-deleted tombstones (no enable line -> not guard-catchable, logged for the record) ---
+# NasOrbRetrace	NasOrbRetrace	2026-06-22	FAITHFUL	FORBIDDEN	PORT artifact (manifest 1.88 idealized fills); real engine PF0.45-0.59 net-NEG every regime. printf-only, no live global -> unwireable. If ever given a g_ global, add an enable-line row here.

@@ -107,4 +107,17 @@ echo ""
 echo "[mac-canary-engines] regenerating engine registry..."
 python3 "$(dirname "$0")/../tools/engine_registry.py" --repo "$(dirname "$0")/.." >/dev/null 2>&1
 echo "  -> ENGINE_REGISTRY.md ($(grep -c '^| g_' "$(dirname "$0")/../ENGINE_REGISTRY.md" 2>/dev/null) engines, $(grep -cE '\| UNAUDITED \|' "$(dirname "$0")/../ENGINE_REGISTRY.md" 2>/dev/null) unaudited)"
+
+# TOMBSTONE GUARD (added 2026-06-24L): HARD-BLOCK resurrection of a tombstoned
+# engine. Overrides AUDITED_CONFIGS -- a fresh EDGE row cannot un-tombstone a
+# FORBIDDEN engine. This is the gate that makes a tombstone STICK (GoldOrb was
+# un-tombstoned 3x before this existed). FAILS the canary if any blocklisted
+# global in backtest/TOMBSTONES.tsv is enabled=true.
+echo ""
+echo "[mac-canary-engines] tombstone guard (anti-resurrection)..."
+python3 "$(dirname "$0")/../tools/tombstone_guard.py" --repo "$(dirname "$0")/.." || {
+  echo "[mac-canary-engines] FAIL: a tombstoned engine is enabled -- see backtest/TOMBSTONES.tsv"
+  exit 1
+}
+
 exit 0
