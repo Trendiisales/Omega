@@ -1538,7 +1538,22 @@ static void init_engines(const std::string& cfg_path)
         //   tick_gold.hpp; queried by long-only gold engines to skip longs in a
         //   sustained bear. Validated: gold_regime_gate_bt.cpp (XAU H1 2020-23) --
         //   H1-sustained-bear gate beat D1-slope (which HURT) and D1-sustained-bear.
-        omega::gold_regime().seed_from_h1_csv("phase1/signal_discovery/tsmom_warmup_H1.csv");
+        // 2026-06-23 stale-seed fix: restore the LIVE-accurate regime state across restarts
+        // first (saved every 60s by quote_loop). Only fall back to the warm-seed CSV when no
+        // fresh persisted state exists (true cold start). The CSV alone was 83 days stale
+        // (April-1, gold 4692 vs live 4120) and reset every restart -> regime stuck NEUTRAL ->
+        // long-only gold engines bought into the downtrend unprotected.
+        {
+            const std::string gr_dump = log_root_dir() + "/gold_regime_h1.csv";
+            omega::gold_regime().set_live_dump(gr_dump);   // record live H1 from now on
+            if (!omega::gold_regime().load_state(log_root_dir() + "/gold_regime_state.dat")) {
+                // No fresh .dat (cold start / >12h down). Prefer the self-recorded live H1 once it's
+                // warm-capable (>=300 bars ~13d); else fall back to the static tsmom CSV (stale-prone).
+                size_t n = omega::gold_regime().seed_from_h1_csv(gr_dump);
+                if (n < 300) { omega::gold_regime().reset();
+                               omega::gold_regime().seed_from_h1_csv("phase1/signal_discovery/tsmom_warmup_H1.csv"); }
+            }
+        }
         printf("[OMEGA-INIT] gold_regime() brain: regime=%s warm=%d (long-only gold engines gate on long_blocked())\n",
                omega::gold_regime().regime_name(), (int)omega::gold_regime().warm());
         fflush(stdout);

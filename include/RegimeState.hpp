@@ -39,9 +39,13 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <deque>
 #include <fstream>
 #include <string>
+#include <vector>
 #include "SeedGuard.hpp"   // resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -115,7 +119,7 @@ struct RegimeState {
         const int64_t bar = now_ms/1000/BAR_SECS;
         if (a_n_ == 0) { a_c_ = mid; acc_bar_ = bar; a_n_ = 1; }
         else if (bar == acc_bar_) { a_c_ = mid; ++a_n_; }
-        else { on_h1_bar(0,0,0,a_c_); a_c_ = mid; acc_bar_ = bar; a_n_ = 1; }
+        else { append_live_bar_(acc_bar_ * BAR_SECS, a_c_); on_h1_bar(0,0,0,a_c_); a_c_ = mid; acc_bar_ = bar; a_n_ = 1; }
     }
 
     // ---- warm-seed from H1 CSV (ts,o,h,l,c; ts in sec or ms) ----
@@ -135,6 +139,93 @@ struct RegimeState {
                     name.c_str(), n, emaS_, emaF_, regime_name(), (int)warm());
         std::fflush(stdout);
         return n;
+    }
+
+    // ---- persist LIVE regime state across restarts (mirrors the bar-indicator auto-save) ----
+    //   WHY (2026-06-23 stale-seed incident): without this the regime resets to the warm-seed
+    //   CSV on every restart. With a stale seed (was April-1, gold 4692, while live=4120) +
+    //   frequent restarts it never accumulates the ~13d of live H1 ticks needed to re-converge,
+    //   so long_blocked() stays NEUTRAL through a real downtrend and long-only gold engines buy
+    //   into it unprotected. save_state() runs every 60s from quote_loop; load_state() at boot
+    //   restores the live-accurate EMAs (overriding the seed) so protection survives restarts.
+    bool save_state(const std::string& path) const noexcept {
+        std::ofstream f(path, std::ios::trunc);
+        if (!f.is_open()) return false;
+        f << "saved_ts="   << (long long)std::time(nullptr) << "\n"
+          << "emaS="       << emaS_       << "\n"
+          << "emaF="       << emaF_       << "\n"
+          << "bars="       << bars_       << "\n"
+          << "last_close=" << last_close_ << "\n"
+          << "have_ema="   << (have_ema_ ? 1 : 0) << "\n"
+          << "hist_n="     << emaS_hist_.size() << "\n";
+        for (double v : emaS_hist_) f << v << "\n";
+        return true;
+    }
+    // Restore a FRESH (<= max_age_s) valid state. Returns false on missing/stale/corrupt so the
+    // caller falls back to seed_from_h1_csv(). Default 12h: H1 EMAs tolerate a modest gap and
+    // live ticks refill it; older than that, re-seed.
+    bool load_state(const std::string& path, int max_age_s = 12 * 3600) noexcept {
+        std::ifstream f(path);
+        if (!f.is_open()) return false;
+        int64_t saved_ts = 0; double eS = 0, eF = 0, lc = 0; int bn = 0, he = 0;
+        std::vector<double> hist; std::string line;
+        auto kv = [](const char* k, const std::string& s, double& out) -> bool {
+            const size_t L = std::strlen(k);
+            if (s.size() > L && s.compare(0, L, k) == 0 && s[L] == '=') { out = std::atof(s.c_str() + L + 1); return true; }
+            return false;
+        };
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            double d;
+            if      (line.compare(0, 9, "saved_ts=") == 0) saved_ts = (int64_t)std::atoll(line.c_str() + 9);
+            else if (kv("emaS", line, d))       eS = d;
+            else if (kv("emaF", line, d))       eF = d;
+            else if (kv("bars", line, d))       bn = (int)d;
+            else if (kv("last_close", line, d)) lc = d;
+            else if (kv("have_ema", line, d))   he = (int)d;
+            else if (line.compare(0, 7, "hist_n=") == 0) { /* count implicit */ }
+            else if (line[0] == '-' || line[0] == '.' || std::isdigit((unsigned char)line[0])) hist.push_back(std::atof(line.c_str()));
+        }
+        const int64_t now_ts = (int64_t)std::time(nullptr);
+        const int64_t age = now_ts - saved_ts;
+        if (saved_ts <= 0 || age < 0 || age > max_age_s || eS <= 0.0 || eF <= 0.0 || bn < EMA_SLOW) {
+            std::printf("[REGIME:%s][LOAD] reject (age=%llds stale/invalid) -> will warm-seed\n", name.c_str(), (long long)age);
+            return false;
+        }
+        emaS_ = eS; emaF_ = eF; bars_ = bn; last_close_ = lc; have_ema_ = (he != 0);
+        emaS_hist_.assign(hist.begin(), hist.end());
+        while ((int)emaS_hist_.size() > PERSIST + 1) emaS_hist_.pop_front();
+        // re-classify from the restored state (same rule as on_h1_bar)
+        bear_ = bull_ = false;
+        if (warm() && (int)emaS_hist_.size() >= PERSIST + 1) {
+            const double emaS_old = emaS_hist_.front();
+            if (last_close_ < emaS_ && emaS_ < emaS_old && emaF_ < emaS_) bear_ = true;
+            else if (last_close_ > emaS_ && emaS_ > emaS_old && emaF_ > emaS_) bull_ = true;
+        }
+        std::printf("[REGIME:%s][LOAD] restored emaS=%.2f emaF=%.2f bars=%d regime=%s age=%llds\n",
+                    name.c_str(), emaS_, emaF_, bars_, regime_name(), (long long)age);
+        std::fflush(stdout);
+        return true;
+    }
+
+    // reset to cold (for re-seeding from a different source after a rejected/short seed).
+    void reset() noexcept {
+        emaS_hist_.clear(); emaS_ = emaF_ = 0.0; have_ema_ = false;
+        bars_ = 0; last_close_ = 0.0; bear_ = bull_ = false;
+    }
+
+    // ---- self-recorded LIVE H1 seed (A+C: keep the warm-seed permanently fresh with NO external
+    //   data pipeline). on_tick appends each COMPLETED live H1 bar (ts,o,h,l,c -- o=h=l=c=close,
+    //   the regime only uses close). On boot we PREFER this over the static tsmom CSV once it holds
+    //   >= EMA_SLOW+PERSIST bars, so the gate never re-blinds on a stale CSV after the dump fills
+    //   (~13 days). Append-only; tiny (~one line/hour). Only LIVE bars are recorded (seed replay
+    //   does NOT call this), so the dump is pure live history. ----
+    std::string live_dump_path_;
+    void set_live_dump(const std::string& p) noexcept { live_dump_path_ = p; }
+    void append_live_bar_(int64_t ts_sec, double c) const noexcept {
+        if (live_dump_path_.empty() || c <= 0.0) return;
+        std::ofstream f(live_dump_path_, std::ios::app);
+        if (f.is_open()) f << ts_sec << ',' << c << ',' << c << ',' << c << ',' << c << "\n";
     }
 };
 

@@ -164,6 +164,10 @@ static void quote_loop() {
                 // Save ATR state every 60s so restarts always have a fresh, valid value
                 // (GoldFlow save_atr_state calls removed S19 Stage 1B — engine culled)
                 g_gold_stack.save_atr_state(log_root_dir() + "/gold_stack_state.dat");
+                // 2026-06-23: persist the gold REGIME brain every 60s so restarts restore the
+                // live-accurate EMA state instead of resetting to a (possibly stale) warm-seed.
+                // Defeats the stale-seed-blinds-the-bear-gate incident. Restored in engine_init.
+                omega::gold_regime().save_state(log_root_dir() + "/gold_regime_state.dat");
                 // Save bar indicator state every 60s -- ensures warm restart on crash/kill.
                 // Previously saved only at daily rollover and clean shutdown.
                 // If process is killed (OOM, watchdog, manual stop), .dat files were stale
