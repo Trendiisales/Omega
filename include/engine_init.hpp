@@ -4051,7 +4051,19 @@ static void init_engines(const std::string& cfg_path)
                                                // (PF11.8 @+30bps), maxDD$177->$66; bears have few broad-ignition days -> sits
                                                // out = structural bear protection. SHADOW; magnitudes bull-inflated (60d/1-regime).
         g_bigcap_momo.pyr_adds     = 0;
-        g_bigcap_momo.max_entries_per_day = 2;
+        g_bigcap_momo.max_entries_per_day = 1;   // S-2026-06-23b 2->1: kills re-entry-into-the-top (operator saw
+                                                 // IONQ #1 scratch +$7 then #2 @HOD -> -$58). FAITHFUL on the FULL
+                                                 // LIVE UNIVERSE (514 names, 60d, 5m, bigcap_momo_faithful):
+                                                 // cap2 n62 PF2.51 +$957 -> cap1 n55 PF2.86 +$996, both-halves+
+                                                 // (H1 2.21/H2 3.88), top3=28.8% of win (not fat-tail), cost-robust
+                                                 // (+15bps/side PF2.36 +$830). Best net AND best PF. (Prior
+                                                 // reentry_cap_bt cap2 was a thin bull-continuation sample.)
+        g_bigcap_momo.entry_max_ext_pct = 0.0;   // S-2026-06-23b TESTED, LEFT OFF. Anti-chase ext-cap looked good
+                                                 // on the 30-name mega-cap bin (n10) but on the FULL live universe
+                                                 // it CUTS net: ext4 +$707 / ext3 +$644 < ext0 +$996. The extended
+                                                 // ignition longs are net-POSITIVE in aggregate (running pumps pay
+                                                 // for the fades) -- filtering them removes winners too. Plumbing
+                                                 // kept (BC_EXT lever) but off. Don't re-enable without full-universe BT.
         g_bigcap_momo.notional_usd = 1000.0;
         g_bigcap_momo.slip_pct     = 0.15;     // big-cap realistic (vs micro 1.0%)
         g_bigcap_momo.min_dvol_usd = 0.0;      // S-2026-06-13k ZERO-TRADES ROOT CAUSE: $100M per
@@ -4064,9 +4076,9 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.verbose      = true;
         g_bigcap_momo.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_open_positions.register_source("BigCapMomoCons", []() { return g_bigcap_momo.collect_positions(); });
-        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate4%% ATR-trail(30x4) BE-ratchet(arm3/floor2) "
-               "ride-in-profit 8h-backstop NO-volx NO-dvol-gate $1000-notional p>=10 slip0.15%%/side shadow "
-               "(gain-protect exit S-2026-06-18; liq via scanner; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
+        printf("[OMEGA-INIT] BigCapMomo manager: 5m gate2.5%% breadth>=2 ATR-trail(30x5) BE-ratchet(arm2/floor1) "
+               "MAXENT1 ride-in-profit 8h-backstop NO-volx NO-dvol-gate $1000-notional p>=10 "
+               "slip0.15%%/side shadow (single-entry S-2026-06-23b, full-universe BT PF2.86; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
 
         // ── NqMomentumEngine (S-2026-06-18) ──────────────────────────────────
         // Regime-gated intraday momentum-continuation on NAS100/NQ. Same exit

@@ -97,6 +97,7 @@ static void configure_prod(omega::PumpScalpManager& m) {
     m.maxhold_bars = envi("BC_MAXHOLD", g_maxhold_bars);
     m.pyr_adds     = 0;
     m.max_entries_per_day = envi("BC_MAXENT",2);
+    m.entry_max_ext_pct   = envf("BC_EXT",0.0);
     m.notional_usd = 1000.0;
     m.slip_pct     = 0.15;              // big-cap realistic, %/side baked into pnl
     m.min_dvol_usd = 0.0;               // liquidity enforced upstream by scanner ($2B cap)

@@ -63,6 +63,7 @@ struct Sym {
     double  trough=0;                             // min price since entry (for MAE)
     long    size=0;                               // share size at entry
     int64_t entry_ts=0;                           // epoch seconds of entry
+    long    last_entry_sd=-1;                      // S-2026-06-23b session-day of last entry (1 entry/name/day cap)
 };
 
 class Engine : public DefaultEWrapper {
@@ -293,13 +294,19 @@ public:
                 fire=false;
             }
         }
+        // S-2026-06-23b SINGLE-ENTRY-PER-NAME-PER-DAY (re-entry-into-the-top guard). The manager
+        // variant re-entered IONQ's 2nd pump near HOD -> -$58; full-universe faithful BT (bridge,
+        // same VERBATIM strategy) shows cap1 > cap2 (PF 2.86 vs 2.51, +$996 vs +$957). NOTE: this
+        // IBKR engine has no own harness + cannot compile on the Mac canary (TWS API) -- verified by
+        // the VPS MSVC build. Conclusion transfers from the bridge BT.
+        if(fire){ long sd=(t-8*3600)/86400; if(s.last_entry_sd==sd) fire=false; }
         if(fire){
             double notional=risk_.allow_entry(s.c.symbol,c,c*(1-cfg_.trail_pct));
             if(cfg_.notional_usd>0 && notional>cfg_.notional_usd) notional=cfg_.notional_usd;
             if(notional>0){
                 long sz=(long)std::max(1.0,notional/c); risk_.on_open(s.c.symbol,notional);
                 s.inpos=true; s.entry=c; s.peak=h; s.trough=l; s.hold=0; s.notional=notional;
-                s.size=sz; s.entry_ts=(int64_t)std::time(nullptr); s.last=c;
+                s.size=sz; s.entry_ts=(int64_t)std::time(nullptr); s.last=c; s.last_entry_sd=(t-8*3600)/86400;
                 printf("[BigCapMomo] %s LONG %s c=%.2f day_up=%.0f%% sz=%ld notional=$%.0f [conc=%d]\n",
                     cfg_.paper_only?"PAPER":"LIVE",s.c.symbol.c_str(),c,(c/s.day_open-1)*100,sz,notional,risk_.open_count());
                 fflush(stdout);

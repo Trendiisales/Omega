@@ -77,6 +77,9 @@ public:
                                    // reentry_cap_bt.py (16-day basket): cap2 keeps 84% of
                                    // net + best PF (42) vs unlimited chop (PF18) or cap1
                                    // (kills edge, $1.7k). 0 = unlimited (old behaviour).
+    double entry_max_ext_pct = 0.0; // 2026-06-23 ANTI-CHASE: skip an ignition LONG whose close is
+                                   // already > this% above VWAP (buying the extended top that fades).
+                                   // 0 = off. Forwarded to PumpScalpEngine::ENTRY_MAX_EXT_PCT.
     bool   verbose      = false;
     bool   enabled      = true;    // 2026-06-12 KILL-SWITCH: false => ignore all feed, no
                                    // new pump entries arm (stop-bleed). Open sim positions
@@ -193,6 +196,7 @@ private:
         e.MAXHOLD_SEC  = maxhold_bars * tf_sec;   // time-stop; trail exits on the turn first
         e.MAXHOLD_SKIP_IF_PROFIT = maxhold_skip_if_profit;   // ride winners past the clock
         e.MAX_ENTRIES_PER_DAY = max_entries_per_day;   // re-entry cap (chop-bleed guard)
+        e.ENTRY_MAX_EXT_PCT   = entry_max_ext_pct;     // anti-chase: skip longs already extended above VWAP
         e.shadow_mode  = shadow_mode;
         e.verbose      = verbose;
         e.on_trade_record = on_trade_record;
