@@ -22,7 +22,7 @@ TOL = 0.30  # claimed-vs-faithful PF relative tolerance
 
 def load_manifest():
     m = {}
-    for ln in MANIFEST.read_text().splitlines():
+    for ln in MANIFEST.read_text(encoding="utf-8").splitlines():
         if not ln.strip() or ln.startswith("#"):
             continue
         p = ln.split("\t")
@@ -33,7 +33,7 @@ def load_manifest():
     return m
 
 def main():
-    init = INIT.read_text().splitlines()
+    init = INIT.read_text(encoding="utf-8").splitlines()  # source is UTF-8; Windows default cp1252 chokes on box-draw/✓ bytes (S-2026-06-23 deploy abort)
     man = load_manifest()
     drift, drift_warn, risky, unaudited = [], [], [], []
 

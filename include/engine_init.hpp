@@ -354,8 +354,8 @@ static void init_engines(const std::string& cfg_path)
     //   and call `g_nbm_gold_london.set_shadow_mode(true);` here.
     // g_nbm_gold_london.shadow_mode = true;  // intentionally NOT compiled --
     //                                          field does not exist on NBM.
-    // ════════════════════════════════════════════════════════════════════════
-    // [S99-DISABLED — STALE WIRING, 2026-06-23 audit] The 5 session-open
+    // ========================================================================
+    // [S99-DISABLED -- STALE WIRING, 2026-06-23 audit] The 5 session-open
     // compression-bracket engines wired below (Eurusd/Gbpusd/UsdjpyAsian/
     // AudusdSydney/NzdusdAsian Open) were KILLED by S99 (2026-05-23) for
     // negative expectancy (cost-to-target 5-15% on 8-20pip TPs vs 0.5-1.4pip
@@ -370,7 +370,7 @@ static void init_engines(const std::string& cfg_path)
     // switch). DO NOT mistake these for active shadow engines — they are dead.
     // The 2026-06-23 census subagent mislabeled them "SHADOW active" by reading
     // shadow_mode without checking the dispatch kill; this banner prevents recurrence.
-    // ════════════════════════════════════════════════════════════════════════
+    // ========================================================================
     // 2026-05-02: EurusdLondonOpenEngine -- pinned shadow-only on first
     //   deployment regardless of g_cfg.mode. First FX engine since the
     //   2026-04-06 global FX disable; new engine model (compression-breakout
