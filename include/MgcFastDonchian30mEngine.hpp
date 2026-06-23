@@ -18,6 +18,7 @@
 //  Omega (separate integration) + a shadow period.
 // =============================================================================
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "RegimeState.hpp"        // 2026-06-24: gold_regime() price-bear gate (long-only engine)
 #include <cstdint>
 #include <cmath>
 #include <deque>
@@ -144,6 +145,12 @@ struct MgcFastDonchian30mEngine {
         } else {
             if (c > _chan_high(Nin)) {
                 bool skip = false;
+                // S-2026-06-24 PRICE-BEAR GATE: long-only Donchian breakout has no trend
+                // filter -> would bleed in a gold bear. Block longs when gold_regime() is a
+                // confirmed price-bear (fail-open until the regime brain is warm). Audit:
+                // PF1.55 both-halves+ on MGC 2024-26 bull window, but that window has NO 2022
+                // bear -> this gate is the bear protection the data couldn't test.
+                if (omega::gold_regime().long_blocked()) skip = true;
                 if (use_hvn_skip && prior_ok_)
                     for (double hv : prior_hvn_) if (hv > c && hv <= c + Kov * atr14_) { skip = true; break; }
                 if (l2_gate_ > 0.0 && l2_imb_ < l2_gate_) { skip = true;
