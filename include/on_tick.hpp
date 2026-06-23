@@ -2216,6 +2216,10 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                 g_xs_mom_long.on_tick(xi, bid, ask, fx_now_ms, handle_closed_trade);
                 g_xs_mom_ls  .on_tick(xi, bid, ask, fx_now_ms, handle_closed_trade);
                 g_xs_mr_ls   .on_tick(xi, bid, ask, fx_now_ms, handle_closed_trade);
+                // heartbeat liveness (S-2026-06-23): mark the XS book alive on any index tick
+                g_engine_heartbeat.pulse("XsIndex_MomLong");
+                g_engine_heartbeat.pulse("XsIndex_MomLS");
+                g_engine_heartbeat.pulse("XsIndex_MrLS");
             }
         }
 
@@ -2228,6 +2232,14 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         if      (sym == "US500.F") g_idx_fomc_us500.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "USTEC.F") g_idx_fomc_ustec.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
         else if (sym == "DJ30.F")  g_idx_fomc_dj30.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+
+        // Heartbeat liveness for the daily index/fx book (S-2026-06-23). pulse() no-ops on an
+        // unregistered name, so a non-index/fx sym is a cheap miss. Names MUST match the
+        // register_engine() calls in engine_init.hpp. Makes [STARTUP-SELFTEST] cover this book.
+        g_engine_heartbeat.pulse("IndexSeasonal_" + sym);
+        g_engine_heartbeat.pulse("CalendarTom_"   + sym);
+        g_engine_heartbeat.pulse("IndexFomc_"     + sym);
+        g_engine_heartbeat.pulse("FxSeasonal_"    + sym);
 
         // S-2026-06-03 GoldSeasonal (XAUUSD Mon+Tue long) -- shadow, UTC-day, same sink.
         //   Holds through the gold ~21:00 UTC daily break (acts only on day-flip;

@@ -61,6 +61,7 @@
 #include <vector>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "IndexBookBudget.hpp"   // global concurrent-exposure cap for the D1 index book
 
 namespace omega {
 
@@ -133,10 +134,17 @@ public:
     }
 
     void force_close_all(int64_t day_ms, OnCloseFn cb) noexcept {
-        for (auto& lg : legs_) emit_close(lg, day_ms, "FORCE_CLOSE", cb);
+        for (auto& lg : legs_) emit_close(lg, day_ms, "FORCE_CLOSE", cb);   // releases each
+        // pend_exit_ legs were reserved at open but not emitted here -> release them.
+        for (auto& lg : pend_exit_) IndexBookBudget::g().release(lg.dir>0?IdxDir::LONG:IdxDir::SHORT);
         legs_.clear(); pend_exit_.clear(); pend_entry_.clear();
     }
-    void cancel() noexcept { legs_.clear(); pend_exit_.clear(); pend_entry_.clear(); }
+    void cancel() noexcept {
+        // release every reserved leg (legs_ + pend_exit_); pend_entry_ was never reserved.
+        for (auto& lg : legs_)      IndexBookBudget::g().release(lg.dir>0?IdxDir::LONG:IdxDir::SHORT);
+        for (auto& lg : pend_exit_) IndexBookBudget::g().release(lg.dir>0?IdxDir::LONG:IdxDir::SHORT);
+        legs_.clear(); pend_exit_.clear(); pend_entry_.clear();
+    }
 
     // warm-seed one symbol's D1 close history (header: ts,o,h,l,c).
     size_t seed_from_d1_csv(int si, const std::string& path) noexcept {
@@ -292,6 +300,9 @@ private:
         const double bid=s.last_bid, ask=s.last_ask; if(bid<=0.0||ask<=0.0) return false;
         const double L=sized_lot(si, s.cur_close);
         if (use_cost_guard && s.atr>0.0 && !ExecutionCostGuard::is_viable(syms_[(size_t)si].c_str(), ask-bid, s.atr, L, 1.5)) return false;
+        // D1 index-book concurrent-exposure cap (per-leg dir; L/S nets ~0 -> neutral legs unthrottled).
+        const IdxDir d_ = dir>0 ? IdxDir::LONG : IdxDir::SHORT;
+        if (!IndexBookBudget::g().reserve(d_, engine_name_.c_str(), syms_[(size_t)si].c_str())) return false;
         Leg lg; lg.si=si; lg.dir=dir; lg.lot=L; lg.entry_ts=day_ms;
         lg.entry_px = dir>0?ask:bid;                      // long fills ask, short fills bid
         legs_.push_back(lg);
@@ -301,6 +312,7 @@ private:
     }
 
     void emit_close(Leg& lg, int64_t day_ms, const char* why, OnCloseFn cb) noexcept {
+        IndexBookBudget::g().release(lg.dir>0 ? IdxDir::LONG : IdxDir::SHORT);   // pair with reserve() in open_leg
         Sym& s=S_[(size_t)lg.si];
         const double bid=(s.last_bid>0.0)?s.last_bid:s.cur_close, ask=(s.last_ask>0.0)?s.last_ask:s.cur_close;
         const double exit_px = lg.dir>0?bid:ask;          // long exits bid, short exits ask

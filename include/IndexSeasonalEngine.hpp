@@ -49,6 +49,7 @@
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
 #include "IndexRiskGate.hpp"     // S44 shared macro risk-off (VIX+credit+dollar)
+#include "IndexBookBudget.hpp"   // global concurrent-exposure cap for the D1 index book
 
 namespace omega {
 
@@ -145,7 +146,7 @@ public:
         const double bid = (last_bid_>0.0)?last_bid_:prev_close_, ask=(last_ask_>0.0)?last_ask_:prev_close_;
         close_position(bid, ask, day_ms, "FORCE_CLOSE", cb);
     }
-    void cancel() noexcept { pos_ = Pos{}; }
+    void cancel() noexcept { if (pos_.active) IndexBookBudget::g().release(IdxDir::LONG); pos_ = Pos{}; }
 
     size_t seed_from_d1_csv(const std::string& path) noexcept {
         std::ifstream f(path);
@@ -200,6 +201,8 @@ private:
         const double L=sized_lot(close_px);
         // cost gate: 1-ATR expected move proxy (1-day seasonal hold)
         if (atr_>0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask-bid, atr_, L, 1.5)) return;
+        // D1 index-book concurrent-exposure cap (LONG-only sleeve). observe_only in shadow.
+        if (!IndexBookBudget::g().reserve(IdxDir::LONG, engine_name_.c_str(), symbol_.c_str())) return;
         pos_=Pos{}; pos_.active=true; pos_.entry_px=ask; pos_.lot=L; pos_.entry_ts=day_ms; pos_.wday=wd;
         std::printf("[IndexSeasonal-%s] ENTRY LONG (%s) px=%.2f lot=%.3f%s\n",symbol_.c_str(),
                     wd==p.tue_wday?"Tue":"Fri",ask,pos_.lot,shadow_mode?" [SHADOW]":"");
@@ -207,6 +210,7 @@ private:
     }
     void close_position(double bid,double ask,int64_t day_ms,const char* why,OnCloseFn cb) noexcept {
         (void)ask; if(!pos_.active)return;
+        IndexBookBudget::g().release(IdxDir::LONG);   // pair with reserve() in open_position
         const double exit_px=bid;                                  // long exits at bid
         const double price_bp=(exit_px-pos_.entry_px)/pos_.entry_px*10000.0;
         const double notional=pos_.lot*p.usd_per_pt, pnl=price_bp/10000.0*notional;

@@ -2057,9 +2057,12 @@ static void init_engines(const std::string& cfg_path)
                 seas_boot(g_fx_seas_eurusd,"EURUSD"); seas_boot(g_fx_seas_gbpusd,"GBPUSD");
                 seas_boot(g_fx_seas_usdjpy,"USDJPY"); seas_boot(g_fx_seas_audusd,"AUDUSD");
                 seas_boot(g_fx_seas_nzdusd,"NZDUSD"); seas_boot(g_fx_seas_usdcad,"USDCAD");
-                seas_boot(g_fx_seas_usdchf,"USDCHF"); seas_boot(g_fx_seas_eurgbp,"EURGBP");
+                // USDCHF DROPPED 2026-06-23: no warmup_USDCHF_D1.csv exists (no source data) ->
+                // seas_boot would SEED-FATAL + cold-start silent. Left enabled=false (dormant).
+                // Re-add the seas_boot call once a warmup_USDCHF_D1.csv is produced.
+                seas_boot(g_fx_seas_eurgbp,"EURGBP");
                 seas_boot(g_fx_seas_eurjpy,"EURJPY");
-                std::printf("[OMEGA-INIT] FxSeasonal x9 (Friday-long) -- shadow, warm-seeded\n");
+                std::printf("[OMEGA-INIT] FxSeasonal x8 (Friday-long; USDCHF dropped: no warmup CSV) -- shadow, warm-seeded\n");
 
                 // S44 2026-05-31: IndexSeasonal (day-of-week, Tue+Fri long) -- validated
                 //   equity-index edge (index_seasonal_sharpe.cpp, 6 indices, 7.4yr incl.
@@ -2070,6 +2073,19 @@ static void init_engines(const std::string& cfg_path)
                 //   VIX-level gate tested WORSE -- ungated core is the edge. usd_per_pt is
                 //   a rough CFD per-point value (shadow-PnL scaling only).
                 {
+                    // D1 INDEX-BOOK EXPOSURE CAP (IndexBookBudget) -- global concurrent-leg
+                    // cap shared by IndexSeasonal + CalendarTom + CrossSectional (they bypass
+                    // PortfolioGovernor, which guards only the gold/bracket zoo). observe_only=true
+                    // = SHADOW: logs [IDX-BUDGET] would-block but NEVER blocks, so the >=30-trade
+                    // G2 promotion gate accumulates on the true uncapped book while we measure what
+                    // the cap WOULD throttle. Flip observe_only=false in the SAME change that sets
+                    // the index book shadow_mode=false (live promotion) -> caps net-long concurrent
+                    // legs (the correlated long cluster: TOM window x5 + Tue/Fri seasonal) to bound
+                    // book drawdown. Sized to the freq/DD frontier (omega-freq-dd-frontier).
+                    omega::IndexBookBudget::g().observe_only        = true;
+                    omega::IndexBookBudget::g().max_net_long_legs   = 6;
+                    omega::IndexBookBudget::g().max_concurrent_legs = 12;
+
                     // tt = Turnaround-Tuesday gate: Tue leg only after a down prior session
                     // (Mon close < Fri close). Fri->Mon leg unaffected. Validated
                     // turnaround_tuesday_bt.cpp: gated Tue BEATS unconditional (survives 2x cost
@@ -2172,7 +2188,7 @@ static void init_engines(const std::string& cfg_path)
                         // n=17 NEG-EXPECTANCY + COST-FRAGILE (58% of gross eaten by
                         // cost, expR -0.00). Calendar churn with no edge net of
                         // spread; flagged repeatedly in memory. Disabled.
-                        std::printf("[OMEGA-INIT] GoldSeasonal (XAUUSD Mon+Tue long) -- shadow, warm-seeded\n");
+                        std::printf("[OMEGA-INIT] GoldSeasonal -- CULLED 2026-06-17 (neg-expectancy, cost-fragile); class type-only, NOT loaded\n");
                     }
 
                     // S-2026-06-03: GoldOversoldBounce (XAUUSD daily RSI<30 capitulation
@@ -2182,7 +2198,7 @@ static void init_engines(const std::string& cfg_path)
                     //   the naive below-50ma dip-buy dies (falling-knife). Uncorrelated with
                     //   the trend/breakout book + GoldSeasonal. Long-only. usd_per_pt=100.
                     {
-                        std::printf("[OMEGA-INIT] GoldOversoldBounce (XAUUSD RSI<30 long) -- shadow, warm-seeded\n");
+                        std::printf("[OMEGA-INIT] GoldOversoldBounce -- class type-only, NOT loaded (RE-CHECK candidate, TOMBSTONE_AUDIT)\n");
                     }
 
                     // S44: IndexFomc (pre-FOMC drift, US indices). Long the trading day
@@ -4193,8 +4209,7 @@ static void init_engines(const std::string& cfg_path)
         // MAEp90 $5781 = catastrophic adverse excursion -- falling-knife long that
         // catches dips that keep falling. n=4 thin but the structural flaw is clear
         // + it's the book's top bleeder. Disabled; needs an entry filter not an exit.
-        printf("[OMEGA-INIT] GoldPanicBounce XAUUSD: shadow=true drop>=8ATR(lb250) "
-               "TURN-entry chandelier-trail(4.5xATR) NO-TP long-only\n");
+        printf("[OMEGA-INIT] GoldPanicBounce -- CULLED 2026-06-17 (net -$205, catastrophic MAE); class type-only, NOT loaded\n");
 
         // ── IndexBearShort (NAS100 risk-off SHORT for bad days) ────────────────
         // 2026-06-12 deep-dive (backtest/index_bear_short_bt.cpp, H1, cost-incl):
@@ -4336,7 +4351,7 @@ static void init_engines(const std::string& cfg_path)
         // Per-trade tail incompatible with a $1-50/trade book. (SPX sibling below
         // STAYS ENABLED -- it IS 2022-bear-validated, gated PF1.29, now lot 0.3.)
         // RE-ENABLE BAR: reproduced NAS backtest with a tight cap (<=$40/trade).
-        printf("[OMEGA-INIT] OvernightDrift NAS100: shadow=true long@close->flat@open if close>SMA20\n");
+        printf("[OMEGA-INIT] OvernightDrift NAS100 -- TOMBSTONED 2026-06-13 (operator cull); class type-only, NOT loaded\n");
 
         // OvernightDrift US500 (S&P) — 2026-06-09. Same night-effect edge, SMA50
         // gate. PROPER backtest incl freshly-pulled FULL-YEAR 2022 bear (dukascopy
@@ -4352,7 +4367,7 @@ static void init_engines(const std::string& cfg_path)
         // (scale-invariant; edge unchanged). SPX overnight gap at 1.0 lot risked
         // ~$1/pt of a ~60pt overnight = comparable tail to the culled NAS sibling;
         // shrink the $ so one bad gap can't erase weeks of the gold book.
-        printf("[OMEGA-INIT] OvernightDrift US500: shadow=true long@close->flat@open if close>SMA50\n");
+        printf("[OMEGA-INIT] OvernightDrift US500 -- class type-only, NOT loaded (2022 retest -27%; KEEP claim overridden)\n");
 
         // ConnorsRSI2 NAS100 — daily mean-reversion dip-buy, ENHANCED close>SMA5 exit.
         // S-2026-06-19 WIRED + RE-ENABLED (shadow). Was class-only/never instantiated;
@@ -4383,6 +4398,40 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("ConnorsRSI2", g_connors_nas.enabled, 3600, 0, 24);
         printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=%d enabled=%d dip-buy close>SMA200 & RSI2<10, exit close>SMA5/maxhold10 scalein=%d\n",
                (int)g_connors_nas.shadow_mode, (int)g_connors_nas.enabled, (int)g_connors_nas.SCALEIN);
+        fflush(stdout);
+
+        // S-2026-06-23: register the DAILY INDEX/FX BOOK with the liveness heartbeat. These
+        // engines aggregate every tick of their symbol; [STARTUP-SELFTEST] + the miss-detector
+        // now COVER them (previously 0 registrations -> invisible: a severed dispatch looked
+        // identical to "waiting"). Names MUST match the pulse() calls in on_tick.hpp. cadence
+        // 7200s + session 0-24 is generous (index/fx CFDs tick ~all day; off-hours/weekend
+        // silence is expected, not an alert). live_required tracks each instance's .enabled.
+        g_engine_heartbeat.register_engine("IndexSeasonal_US500.F", g_idx_seas_us500.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexSeasonal_USTEC.F", g_idx_seas_ustec.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexSeasonal_GER40",   g_idx_seas_ger40.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexSeasonal_DJ30.F",  g_idx_seas_dj30.enabled,  7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexSeasonal_UK100",   g_idx_seas_uk100.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexSeasonal_ESTX50",  g_idx_seas_estx50.enabled,7200, 0, 24);
+        g_engine_heartbeat.register_engine("CalendarTom_US500.F",   g_tom_us500.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("CalendarTom_USTEC.F",   g_tom_ustec.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("CalendarTom_GER40",     g_tom_ger40.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("CalendarTom_DJ30.F",    g_tom_dj30.enabled,  7200, 0, 24);
+        g_engine_heartbeat.register_engine("CalendarTom_UK100",     g_tom_uk100.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("CalendarTom_XAUUSD",    g_tom_xau.enabled,   7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexFomc_US500.F",     g_idx_fomc_us500.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexFomc_USTEC.F",     g_idx_fomc_ustec.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("IndexFomc_DJ30.F",      g_idx_fomc_dj30.enabled,  7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_EURUSD", g_fx_seas_eurusd.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_GBPUSD", g_fx_seas_gbpusd.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_USDJPY", g_fx_seas_usdjpy.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_AUDUSD", g_fx_seas_audusd.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_NZDUSD", g_fx_seas_nzdusd.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_USDCAD", g_fx_seas_usdcad.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_EURGBP", g_fx_seas_eurgbp.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("FxSeasonal_EURJPY", g_fx_seas_eurjpy.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("XsIndex_MomLong", g_xs_mom_long.enabled, 7200, 0, 24);
+        g_engine_heartbeat.register_engine("XsIndex_MomLS",   g_xs_mom_ls.enabled,   7200, 0, 24);
+        g_engine_heartbeat.register_engine("XsIndex_MrLS",    g_xs_mr_ls.enabled,    7200, 0, 24);
         fflush(stdout);
 
         // S-2026-06-19 v2: ConnorsRSI2 GER40 (DAX) — the enhanced close>SMA5 exit REVIVES
