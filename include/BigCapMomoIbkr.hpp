@@ -39,12 +39,12 @@ struct Config {
     int    client_id        = 86;     // matches the standalone engine's clientId
     bool   paper_only       = true;   // shadow: log trades, route NO live orders
     int    market_data_type = 1;      // IBKR mkt-data type: 1=live 2=frozen 3=delayed 4=delayed-frozen
-    double gate_pct         = 3.0;    // day-expansion gate: only trade names already +GATE% on session
+    double gate_pct         = 2.5;    // S-2026-06-24p: align to faithful-validated config (was 3.0). bigcap_momo_faithful full-universe n39 PF6.95 used gate2.5.
     double trail_pct        = 0.04;   // %-trail off peak (0 = off; ATR-trail below replaces it)
     // S-2026-06-18 gain-protect exit — ported from PumpScalpEngine (+52% / PF2.30->4.72,
     // bigcap_exit_compare.cpp). ATR-trail rides + BE-ratchet locks gains + ride-in-profit.
     int    atr_len          = 30;     // ATR-trail length in 5m bars (0 = off)
-    double atr_mult         = 4.0;    // trailing stop = peak - atr_mult * ATR ($)
+    double atr_mult         = 5.0;    // S-2026-06-24p: align to faithful-validated config (was 4.0; sweep 5>4>3, wider trail rides winners). trailing stop = peak - atr_mult * ATR ($)
     double be_arm_pct       = 0.03;   // arm BE-floor once +3% in profit (fraction)
     double be_floor_pct     = 0.02;   // floor stop at entry +2% (net-breakeven)
     bool   maxhold_skip_if_profit = true;  // don't clock-cut a position still in profit
@@ -69,7 +69,7 @@ struct Config {
     int    lb               = 6;      // ignition lookback (6*5m = 30min)
     int    maxhold          = 48;     // 48*5m = 4h backstop
     bool   regime_gate      = true;   // SPY price>SMA200 AND SMA200 rising
-    int    min_breadth      = 1;      // S-2026-06-23 cross-sectional BREADTH gate: require >= this many
+    int    min_breadth      = 2;      // S-2026-06-24p: align to faithful-validated config (was 1). breadth>=2 = the chop/bear gate the full-universe BT used. cross-sectional BREADTH gate: require >= this many
                                       // DISTINCT names igniting same session-day before any entry fires.
                                       // 1 = off. 2 = skip isolated single-name chop false-breakouts AND sit
                                       // out bear (few broad-ignition days). Ported from the faithfully-BT'd

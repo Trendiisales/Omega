@@ -908,6 +908,12 @@ function Invoke-Deploy {
     # --------------------------------------------------------------------------
     # [0/12] Pre-flight zombie cleanup
     # --------------------------------------------------------------------------
+    # S-2026-06-24p: per-step deploy timing. $swDeploy = total elapsed; Lap prints the
+    # cumulative t+Ns at a phase boundary, so the DELTA between two laps = that phase's
+    # cost (answers "why does a deploy take ~8min" with hard numbers: refresh vs build
+    # vs restart). Laps at the 3 heavy boundaries + a final total.
+    $script:swDeploy = [System.Diagnostics.Stopwatch]::StartNew()
+    function Lap($what) { Write-Host ("  [timing] {0}: t+{1}s" -f $what, [int]$script:swDeploy.Elapsed.TotalSeconds) -ForegroundColor DarkGray }
     Write-Host "[0/12] Pre-flight zombie cleanup..." -ForegroundColor DarkCyan
     $zombies = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -in $zombieNames }
     if ($zombies) {
@@ -1025,6 +1031,7 @@ function Invoke-Deploy {
     #         0-second fills (see the gap/arm guards in XauStraddleM30Engine).
     #         NON-FATAL: any failure/skip just leaves the git snapshot in place.
     # --------------------------------------------------------------------------
+    Lap "before [2b] seed-refresh"
     Write-Host "[2b/12] Refreshing warm-seed CSVs from l2_ticks..." -ForegroundColor Yellow
     Push-Location $OmegaDir
     try {
@@ -1292,6 +1299,7 @@ function Invoke-Deploy {
     # --------------------------------------------------------------------------
     # [6/12] CMake configure + build (Release, target Omega)
     # --------------------------------------------------------------------------
+    Lap "before [6] cmake build (delta from [2b] = seed-refresh cost)"
     Write-Host "[6/12] CMake configure + build..." -ForegroundColor Yellow
     Write-Host "  (streaming cmake output -- errors in red, compiling files in gray)" -ForegroundColor DarkCyan
 
@@ -1620,9 +1628,11 @@ function Invoke-Deploy {
     # --------------------------------------------------------------------------
     # [12/12] Start service + post-start stale-binary checks
     # --------------------------------------------------------------------------
+    Lap "before [12] service start (delta from [6] = build+copy+stamp cost)"
     Write-Host "[12/12] Starting Omega service..." -ForegroundColor Yellow
     if (Test-Path $DeployFlag) { Remove-Item $DeployFlag -Force -ErrorAction SilentlyContinue }
     if (-not (Start-OmegaService)) { return 1 }
+    Lap "deploy COMPLETE (delta from [12] = restart+verify cost)"
     if (-not (Test-StaleBinaryAfterStart -ExpectedShortHash $sourceHashShort)) { return 1 }
 
     if (-not $SkipVerify -and (Test-Path "$OmegaDir\VERIFY_STARTUP.ps1")) {

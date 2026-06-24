@@ -858,11 +858,28 @@ if ($firstSignal) {
 # $ghToken is pre-initialized to $null after param() block and optionally
 # populated by STEP 0 from C:\Omega\.github_token. Safe under StrictMode
 # regardless of token file presence.
-$verFile2 = "$OmegaDir\include\version_generated.hpp"
 $runningHash = "unknown"
-if (Test-Path $verFile2) {
-    $vl = Select-String -Path $verFile2 -Pattern 'OMEGA_GIT_HASH' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($vl -and $vl.Line -match '"([a-f0-9]{7,})"') { $runningHash = $Matches[1] }
+# AUTHORITATIVE: the RUNNING binary emits "[Omega] Git hash: <sha7>" to its service
+# log at boot (omega_main.cpp). That is the only true running-binary hash -- read it
+# FIRST. version_generated.hpp is a SOURCE file that is NOT shipped to the VPS runtime
+# (OMEGA.ps1 deletes it pre-build), so the old file-only read always WARNed "unknown".
+# (S-2026-06-24p: bug fix -- #4a startup hash-check.)
+$hashLogs = @("$OmegaDir\logs\omega_service_stderr.log",
+              "$OmegaDir\logs\omega_service_stdout.log") +
+            @(Get-ChildItem "$OmegaDir\logs\omega_*.log" -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime -Descending | ForEach-Object { $_.FullName })
+foreach ($lf in $hashLogs) {
+    if (-not (Test-Path $lf)) { continue }
+    $hl = Select-String -Path $lf -Pattern 'Git hash:\s*([a-f0-9]{7,})' -ErrorAction SilentlyContinue | Select-Object -Last 1
+    if ($hl) { $runningHash = $hl.Matches[0].Groups[1].Value.Substring(0,7); break }
+}
+# Fallback: the build-time source stamp, only if no service log carried the boot hash.
+if ($runningHash -eq "unknown") {
+    $verFile2 = "$OmegaDir\include\version_generated.hpp"
+    if (Test-Path $verFile2) {
+        $vl = Select-String -Path $verFile2 -Pattern 'OMEGA_GIT_HASH' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($vl -and $vl.Line -match '"([a-f0-9]{7,})"') { $runningHash = $Matches[1] }
+    }
 }
 $gitHead7 = "unknown"
 if ($ghToken -and $ghToken -ne "") {
@@ -878,7 +895,7 @@ if ($ghToken -and $ghToken -ne "") {
     }
 }
 if ($runningHash -eq "unknown") {
-    Add-Result "Hash vs HEAD" "WARN" "running=$runningHash" "version_generated.hpp not found or OMEGA_GIT_HASH not in it."
+    Add-Result "Hash vs HEAD" "WARN" "running=$runningHash" "no '[Omega] Git hash:' line in any service log AND version_generated.hpp absent -- did the binary boot + log?"
 } elseif ($gitHead7 -eq "unknown" -or $gitHead7 -eq "api_error") {
     # Can still confirm hash is present even if API unavailable
     Add-Result "Hash vs HEAD" "INFO" "running=$runningHash github_head=unavailable" "Binary hash confirmed ($runningHash). GitHub API unreachable -- cannot compare to HEAD."
