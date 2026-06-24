@@ -878,6 +878,9 @@ int main(int argc, char* argv[])
                 g_bigcap_momo.on_heartbeat(now_ms_wd);
                 if (std::getenv("OMEGA_BIGCAP_AB")) g_bigcap_momo_b.on_heartbeat(now_ms_wd);  // A/B twin
             }
+            // ── CRYPTO LEDGER INBOUND (S-2026-06-24): route IBKRCrypto shadow-book closes
+            //   into the Omega ledger (P&L total + GUI by engine tag). Opt-in. ──────────
+            if (std::getenv("OMEGA_CRYPTO_INBOUND")) omega::ingest_crypto_inbound(g_omegaLedger);
             // ── BIGCAP-IBKR LIVENESS WATCHDOG (2026-06-20) ──────────────────────────
             //   The 06-19 silent-death guard. The in-process IBKR engine can connect
             //   yet receive ZERO scanner/bar data during RTH and trade nothing, with no

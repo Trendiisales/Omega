@@ -10,6 +10,7 @@
 #include "PortfolioGuard.hpp"
 #include "IbkrExec.hpp"   // thin TWS-free IBKR execution interface
 #include "BigCapMomoIbkr.hpp"   // thin TWS-free interface to the in-process BigCapMomo engine
+#include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 
 static void init_engines(const std::string& cfg_path)
 {
