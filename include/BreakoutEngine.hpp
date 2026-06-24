@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS in-flight cut -- SCRATCH cold-cut (adverse>0.20% idx / 0.25% oil within 120s) + fixed SL/TP bracket + SL-relative multi-tier trail + REGIME_FLIP exit + MAX_HOLD_SEC time-stop (profit-suppressed); compression-breakout config record = DEAD (CULL_LEDGER CompBreakout PF0.72 n85 2026-05-01, cull correct) and FX instances pinned shadow_mode=true / signal-dead, so live protection moot; no faithful backtest on record for the protection step itself -- verdict owed before re-enable (backfill S-2026-06-24n)
 // ==============================================================================
 // BreakoutEngine -- CRTP policy-based compression breakout engine
 // One instance per primary symbol (MES, MNQ, MCL).

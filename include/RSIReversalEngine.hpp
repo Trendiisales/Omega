@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: has LOSS_CUT_PCT=0.05 + BE_LOCK at 0.4xATR + 0.4xATR trail (L99/L611-635); but TOMBSTONED/DISABLED enabled=false (S52 2026-05-01, real-tick BT 4320 trades/2yr -$3.8k neg-EV) + CULL_LEDGER LEAVE-DEAD; faithful BT re-check 2026-06-18 IMPOSSIBLE (tick-ATR gate never clears on historical tape) -- protection moot while dead, verdict owed before re-enable (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 // =============================================================================

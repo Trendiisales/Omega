@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false, S99b) -- in-flight protection is fixed SL/TP bracket (SL=2.0*ATR, TP=5.0*ATR) + ATR trail (trigger 3.0*ATR MFE, dist 2.0*ATR); NO LOSS_CUT/BE ratchet/time-stop; no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldUltimateEngine.hpp -- Standalone XAUUSD trend engine (v12 OOS-validated)
 // =============================================================================

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS in-flight protection -- hard SL 1.5*ATR + BE-arm at COST_COVER_PTS 0.5 (SL->entry+0.10) + tight 1.5pt trail post-BE + 24-bar time-stop + trend-flip exit; but NOT wired live (no g_ instance in engine_init.hpp, on legacy backfill-owed list) and no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldVolExpansionEngine.hpp -- M30 EMA-cross entry, trend-flip primary exit
 // =============================================================================

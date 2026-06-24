@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS S64 LOSS_CUT_PCT=0.03 cold-loss cut + 2-consec-loss circuit breaker + S55 BE-lock@6pips + trail + fixed SL/TP bracket (all wired in manage()); engine is shadow-only (shadow_mode=true) and on the adverse-protection legacy backfill list -- no faithful backtest on record for the protection step -- verdict owed before re-enable (live promotion). (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"

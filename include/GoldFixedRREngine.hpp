@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL/TP bracket (hard SL at sl_dist=ATR*SL_ATR_MULT, hard TP at SL*RR_RATIO) + MAX_HOLD_BARS=24 time-stop -- the hard SL IS the in-flight protection by design (no trail/no BE), but no faithful backtest on record -- verdict owed before re-enable (not in engine_init, no AUDITED/CULL/TOMBSTONE entry) (backfill S-2026-06-24n)
 // =============================================================================
 // GoldFixedRREngine.hpp -- M5 entry, hard SL + hard TP, no trail/no reversal
 // =============================================================================

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: S63 VWR-pattern in-flight protection HAS it -- LOSS_CUT_PCT=0.04 + BE_ARM_PCT=0.025/BE_BUFFER_PCT=0.01 ratchet (declared L71-73, fired every tick in _manage L242-263 ahead of SL/TP/MAX_HOLD); but engine is DISABLED per faithful backtest (engine_init.hpp:4954-4961: 2yr Duka XAU drift-fade-proxy n=13,976 WR=10.8% net=-$8,587 PF~0.48, no vol-band tuning rescues it) -- protection moot while off; re-evaluate after 30+ days of fresh l2_real captures before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // PDHLReversionEngine.hpp -- PDH/PDL Mean Reversion Engine for XAUUSD
 //

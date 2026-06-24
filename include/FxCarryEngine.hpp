@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: carry-only, state-driven exits (CARRY_FLIP on dir change / FORCE_CLOSE) -- NO LOSS_CUT/BE/fixed-TP by design; a cold cut inverts the carry-hold thesis. Header cites only fx_carry_momentum.cpp D1 bar-replay (Sharpe 0.52-0.54); no faithful backtest on record for the protection step -- verdict owed before re-enable. Currently disabled (enabled=false, S-2026-06-23 FX book off; engine_init L2104-06), protection moot while dormant. (backfill S-2026-06-24n)
 // =============================================================================
 //  FxCarryEngine.hpp -- FX carry-only single-pair engine (S43, FX-native edge)
 //

@@ -16,6 +16,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (not wired in engine_init.hpp; listed under DISABLED in the ungated-engine audit) -- in-flight protection is a fixed SL/TP bracket (sl_atr=1.5/tp_atr=3.0) + TIMEOUT time-stop (hold_max_days=5) + weekend-close, no LOSS_CUT/BE ratchet; header Sharpes are mega_sweep2 bar-replay, no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

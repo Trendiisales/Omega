@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: in-flight protection is a same-day time-stop only (FLAT at Monday close via _close MON_CLOSE) -- no LOSS_CUT/BE/trail/SL-TP bracket; entry has SMA50 risk-on gate (partial bear protection) + cost gate, but no cold-loss cut; shadow-only (engine_init g_monday_*.enabled=true, shadow_mode=true), basis is a 2024-26 m5 data-mining find (anomaly_scan/monday_test/monday_gated) -- no faithful backtest on record -- verdict owed before re-enable (live-size) (backfill S-2026-06-24n)
 // =============================================================================
 // MondayRiskOnEngine.hpp -- cross-asset MONDAY risk-on calendar anomaly.
 // Self-contained (aggregates daily closes from ticks), m-tick driven. SHADOW cell.

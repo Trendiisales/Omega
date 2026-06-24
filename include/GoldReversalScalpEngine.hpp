@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: in-flight stack present in code (hard SL=2.0xATR + cost-cover BE arm @0.50pt -> trail 0.30pt + tick-imbalance REVERSAL_EXIT + 12-bar TIME_STOP), but no faithful backtest on record -- verdict owed before re-enable; engine is shadow_mode=true and NOT wired into engine_init.hpp (harness-only by design), no AUDITED_CONFIGS/CULL/TOMBSTONE entry. (backfill S-2026-06-24n)
 // =============================================================================
 // GoldReversalScalpEngine.hpp -- M5 Gold Scalp with cost-cover BE + tight trail
 //                                + tick-imbalance reversal-detect exit

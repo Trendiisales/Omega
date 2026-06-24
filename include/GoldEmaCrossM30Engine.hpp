@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: in-flight protection IS present (BE-arm at MFE>=0.50pt COST_COVER_PTS, post-BE tight trail TRAIL_DIST=1.5, hard SL 1.5*ATR, hard TP 4*ATR, 24-bar MAX_HOLD time-stop) -- but moot: dead at source per faithful gold-tick sweep backtest/gold_ema_cross_m30_bt.cpp (S105 2025/6 subset, handoff 2026-05-19d): EMA-cross family net-neg every freq (M5 PF0.44 w/trail, M15 PF0.50), no signal carries edge after cost; never wired in engine_init.hpp (not live), grandfathered in adverse_protection_legacy.txt -- protection moot, re-enable blocked (backfill S-2026-06-24n)
 // =============================================================================
 // GoldEmaCrossM30Engine.hpp -- M30 EMA-cross entry, trend-flip primary exit
 // =============================================================================

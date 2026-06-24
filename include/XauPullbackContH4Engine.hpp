@@ -40,6 +40,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (CLAUDE.md standing-audit DISABLED list) -- in-flight protection is the fixed SL/TP bracket (sl_atr=2.0, tp_atr=5.0) + hold_max_h4 timeout + weekend-close; the only trail variant (stage_trail_enabled, default false) is TOMBSTONED (file header S37-H, harness xau_d1_zoo_audit 2026-05-27b: Sharpe -42%, gross -36%, maxDD WORSE 18%); no LOSS_CUT/BE-ratchet and no standalone faithful adverse-protection backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

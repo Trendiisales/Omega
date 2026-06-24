@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false, shadow) -- no LOSS_CUT/BE/trail; protection is the fixed 1-bar time-stop (hold_bars=1, Fri->Mon SEASONAL_EXIT) + ExecutionCostGuard entry gate; no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 //  FxSeasonalEngine.hpp -- FX Friday-seasonality (S43, combined-sleeve component)
 //

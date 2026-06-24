@@ -50,6 +50,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: mean-reversion -- in-flight cut is the z_stop=3.5sigma hard-stop blowout exit + state-driven z_out=0.5 profit-take + 24-H1-bar hold timeout (no LOSS_CUT_PCT/BE ratchet; trail REJECTED S37 Phase H 2026-05-27b on structural grounds -- a trail SL would fire before reversion); engine is DISABLED (g_eur_gbp_pairs CULL S-2026-06-17, faithful pairs_rigor_cpp Sh-2.04 both halves, all-9-neg) -- protection moot while off, verdict owed before re-enable. (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

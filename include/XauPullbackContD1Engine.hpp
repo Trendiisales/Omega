@@ -27,6 +27,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL/TP bracket (sl=1.5*ATR, tp=5.0*ATR, checked per-tick) + 20-day time-stop + profit-only weekend close; NO loss-cut/BE/trail by design -- trail tombstoned-by-analogy S37 Phase H (predicted -36% Sharpe vs XauPullbackContH4, never empirically tested) and engine is not wired live (no global instance; XauPullbackContD1 on CLAUDE.md DISABLED-must-gate list) -- no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

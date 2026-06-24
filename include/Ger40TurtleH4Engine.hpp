@@ -16,6 +16,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: in-flight = ATR fixed SL/TP bracket (sl_atr_mult=1.5, tp_atr_mult=5.0) + hold_max_h4=20 TIMEOUT time-stop + weekend-close gate; no LOSS_CUT_PCT/BE ratchet (header PnL is 2yr bar-replay Sharpe, not faithful tick) -- no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: decommissioned (#if 0 tick_gold.hpp 2026-05-12, registration REMOVED engine_init.hpp S-2026-06-02; no `enabled` member, not live) -- has full in-flight stack (S63 LOSS_CUT_PCT=0.05, S53 BE lock BE_TRIGGER_PTS=3.0 + S54 BE_OFFSET_PTS=2.5, MFE trail) but no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"

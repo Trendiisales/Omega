@@ -20,6 +20,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (no g_ instance in engine_init.hpp; named in CLAUDE.md DISABLED list) -- mean-reversion lower-BB fade whose in-flight protection is the fixed SL/TP ATR bracket (sl_atr_mult=tp_atr_mult=1.5) + hold_max_days=20 time-stop + weekend close; a cold loss-cut would invert the buy-weakness thesis. Header cites only bar-replay Sharpe, no AUDITED_CONFIGS/CULL/TOMBSTONE entry -- no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

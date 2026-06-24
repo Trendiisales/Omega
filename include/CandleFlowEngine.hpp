@@ -45,6 +45,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: DEAD / culled (CULL_LEDGER.tsv 2026-05-01 PF0.13 n362; engine_init.hpp 411n WR47% PF0.69 -$1077 -> DISABLE, shadow-only since 2026-04-29) -- code HAS protection (LOSS_CUT_PCT=0.05 cold-cut + hard SL at ATR*CFE_DFE_SL_MULT=0.5 + 30s/60s early-fail cuts + 3-consec-SL kill) but not live for real money, protection moot, re-enable blocked (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <functional>

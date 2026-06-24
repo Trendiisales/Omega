@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: trail/runner trend engine -- in-flight protection is the fixed entry-3.0*ATR14 stop (kSlAtr, enforced in _manage_open SL_HIT) plus the EMA20 channel-mid exit; long-only, no LOSS_CUT/BE ratchet (a cold cut inverts a trend-runner -- swing-protection sweep 2026-06-17 showed tightening lowers net on trail engines). No faithful backtest on record for the adverse-protection step (only edge_validate_s41 param/cost sweep; no AUDITED_CONFIGS/CULL/TOMBSTONE entry, no g_ger40_kelt enabled= in engine_init -- not live) -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 //  Ger40KeltnerH1Engine.hpp -- GER40 H1 long-only Keltner trend engine (S41)
 // =============================================================================

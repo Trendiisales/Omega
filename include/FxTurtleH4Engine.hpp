@@ -34,6 +34,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: DEAD / tombstoned (engine_init.hpp L2288/L2300: FxTurtleH4 cohort TOMBSTONED 2026-06-16, GBPUSD x-regime PF0.88 both-halves NEG, 0 instances live) -- in-flight protection is a fixed ATR SL/TP bracket (sl_atr=1.5/tp_atr=4.0) + 20-bar TIMEOUT + weekend-close gate; not live, protection moot, re-enable blocked (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

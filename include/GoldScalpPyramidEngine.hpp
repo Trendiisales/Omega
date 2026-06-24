@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: DISABLED (S45 2026-05-27, engine_init.hpp) -- HAS S63 in-flight cut wired+firing in _manage_position (LOSS_CUT_PCT=0.05 cold-loss cut L829-842 + BE_ARM_PCT=0.03/BE_BUFFER_PCT=0.012 ratchet L844-858); real-class audit gsp_s63_audit_bt.cpp drove the REAL engine S63-ON over 26mo XAUUSD tape = PF 0.59 / -$152 (S63-OFF PF 0.63), the "+$33.5k/+$15k PF1.45" was a standalone-reimpl/bar-level phantom -- no validated edge, protection present but moot, re-enable blocked until harness-class agreement within 10% (backfill S-2026-06-24n)
 // =============================================================================
 // GoldScalpPyramidEngine.hpp -- M5 Gold Scalp with Pyramid + Aggressive Trail
 // =============================================================================

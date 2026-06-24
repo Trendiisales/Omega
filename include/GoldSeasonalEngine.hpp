@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: CULLED 2026-06-17 (CULL_LEDGER / engine_init enabled=false) -- neg-expectancy + cost-fragile (n=17, 58% of gross eaten by cost, expR -0.00); long-only, no SL/TP, weekday-flip exit is the only in-flight protection; not live, protection moot, re-enable blocked (backfill S-2026-06-24n)
 // ============================================================================
 // GoldSeasonalEngine.hpp -- early-week long seasonality on XAUUSD (S-2026-06-03)
 // ----------------------------------------------------------------------------

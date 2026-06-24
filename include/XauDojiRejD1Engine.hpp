@@ -22,6 +22,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled/purged (in 2026-06-19 disabled-engine purge, inline g_xau_doji_rej_d1 enabled=false removed from engine_init.hpp); protection = fixed SL/TP bracket (sl_atr 1.5 / tp_atr 5.0) + 10-day TIMEOUT + WEEKEND_CLOSE, trail STAYS OFF by S37 tombstone-by-analogy (-36% Sharpe on reversal play), no LOSS_CUT/BE; no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

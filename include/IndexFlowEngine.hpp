@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: has LOSS_CUT_PCT=0.07 (live via pos_.manage L654) + staircase BE-lock@1xATR -- but CULLED DEAD 2026-05-01 (CULL_LEDGER: PF0.08 n17), protection moot, re-enable blocked (backfill S-2026-06-24n)
 // =============================================================================
 // IndexFlowEngine.hpp
 // =============================================================================

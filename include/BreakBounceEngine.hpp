@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: full in-flight stack -- fixed ATR stop+RR bracket (STOP_ATR 1.2/RR 1.5), R-based BE (BE_ARM_R 1.0/BE_LOCK_R 0.10), ATR chandelier trail (TRAIL_START_R 1.5/TRAIL_ATR 2.0), and price give-back profit-lock (USE_PROFIT_LOCK=true, 0.5*ATR, validated Sharpe 1.89->1.92 edge-safe); enabled=true SHADOW, 2026-05-31 IS/OOS sweep OOS PF 1.54 bull-only (not bear-validated, no AUDITED_CONFIGS/CULL/TOMBSTONE record) (backfill S-2026-06-24n)
 // =============================================================================
 //  BreakBounceEngine.hpp -- Break-and-Retest trend engine (2026-05-31)
 // =============================================================================

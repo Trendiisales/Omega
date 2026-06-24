@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: disabled (engine_init.hpp S45 2026-05-27 sets e.enabled=false on all 5 FX instances) -- code HAS S63 in-flight protection (LOSS_CUT_PCT=0.05 + BE_ARM/BE_BUFFER ratchet + 4-phase trail + MAX_HOLD_BARS=12 time-stop, all in _manage_position); +$5712 13mo PF1.23-1.56 was a non-faithful inline reimpl not the real class, so no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // FxScalpPyramidEngine.hpp -- M5 FX Scalp with Pyramid + Aggressive Trail
 // =============================================================================

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: has full in-flight protection in code -- BE arm at COST_COVER_PTS=0.5pt + tight trail (TRAIL_DIST=1.5pt), hard SL 1.5*ATR, hard TP 4*ATR, trend-flip exit, 24-bar time-stop; but no faithful backtest on record for this class (CULL_LEDGER "EmaPullback DEAD" is the older Donchian portfolio cell, not this engine) and class is unwired in engine_init -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldEmaPullbackEngine.hpp -- M30 EMA-cross entry, trend-flip primary exit
 // =============================================================================

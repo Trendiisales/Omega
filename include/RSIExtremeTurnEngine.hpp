@@ -36,6 +36,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: HAS full in-flight protection (SL=0.80xATR, BE-lock 0.40xATR + BE_OFFSET 2.5pt, 0.40xATR trail, MAX_HOLD 300s) but engine is CULLED DEAD (CULL_LEDGER.tsv g_rsi_extreme 2026-05-01, FAITHFUL re-check 2026-06-18 rsi_extreme_faithful.cpp real engine 2yr XAU tick = PF0.34 n23 net-NEG both WF halves) -- not live, protection moot, re-enable blocked (verdict owed before re-enable) (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include <cstdint>

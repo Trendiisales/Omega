@@ -25,6 +25,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: tombstoned (TOMBSTONES.tsv 2026-06-10 g_nas_bbrev_long_h1, UNVERIFIED/FAITHFUL-BT-REQUIRED) + disabled (enabled=false, engine_init.hpp:1752 S47 scalp/mean-rev purge); has a fixed 2.0xATR SL / 3R TP bracket + BE-arm@1R then 1.5xATR trail + 96-bar TIMEOUT, but no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

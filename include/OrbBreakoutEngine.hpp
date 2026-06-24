@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL/TP bracket -- range-SL (opposite OR edge) + 2R TP + FLAT_EOD time-stop is the protection; disabled (enabled=false) + CULLED S-2026-06-17 (orb_estx50_revalidate.cpp real-class tick BT: PF0.97 NEG @ zero cost, both halves neg 0.75/0.98, -251pt @2pt, n=109) -- protection moot until a faithful-tick edge re-enables. (backfill S-2026-06-24n)
 // =============================================================================
 // OrbBreakoutEngine.hpp -- faithful Opening-Range-Breakout, m5-native, self-
 // contained (aggregates its own m5 bars from ticks; no external bar feed).

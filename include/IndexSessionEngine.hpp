@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: disabled (all 5 legs enabled=false in engine_init, 2026-06-04) -- has intraday 2*session-ATR stop + FLAT-OVERNIGHT SESSION_CLOSE exit; the MAX_LOSS_PCT catastrophe cap is backtested OFF (index_session_cap_test 2026-06-03: a 1.0% cap HURT net on GER40/NAS/US30, cuts dip-then-recover sessions). The 2-ATR stop never fires -> uncapped session-close bleed (US500.F -$1859, GER40 -$97) was the disable basis. No faithful backtest on record for a working stop -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 //  IndexSessionEngine.hpp -- intraday cash-session LONG for equity indices
 // =============================================================================

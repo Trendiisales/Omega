@@ -21,6 +21,7 @@
 //    emits omega::TradeRecord via CloseCallback ; ExecutionCostGuard-gated.
 // =============================================================================
 #pragma once
+//  ADVERSE-PROTECTION: trail-only by design -- safety = opposing convex-hull line trailed on each H4 close (SAFETY_BREAK) + max_hold_bars=160 TIMEOUT; no LOSS_CUT/BE ratchet; shadow only (GBP enabled, JPY disabled 2026-06-11), header PFs are bar-replay -- no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

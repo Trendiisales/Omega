@@ -32,6 +32,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: HAS full bracket -- hard SL 1.5xATR + 5R TP + 48-bar time-stop + MFE-lock trail (arm 0.7R, lock 80%); but engine is DISABLED (enabled=false) per engine_init.hpp S50 2026-05-27 real-class audit xau_donchian55_m30_audit (Sharpe -1.47 / -$14 / 585 trades / 22:1 SL:TP, L2-forward "PF 3.03" was inline-reimpl inflation) -- protection moot while off, verdict owed before re-enable (backfill S-2026-06-24n)
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

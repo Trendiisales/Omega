@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: DEAD / culled (CULL_LEDGER.tsv 2026-06-16 FvgContinuation(nas/10/30) FAITHFUL DEAD, fvg_engine_bt.cpp net-neg all regimes PF0.76-1.04; live shadow n=11 net -$266 PF0.65) -- code header marks it TOMBSTONED; in-flight protection (structural-stop+DOL fixed bracket + REV_EXIT MACD cut; TRAIL_EXIT falsified default-OFF) is moot, re-enable blocked pending cross-regime proof (backfill S-2026-06-24n)
 // ─────────────────────────────────────────────────────────────────────────────
 // FvgContinuationEngine — ICT "continuation model", mechanized + backtest-found.
 //

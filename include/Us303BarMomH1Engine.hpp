@@ -31,6 +31,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false, engine_init.hpp S136 shadow-only); has fixed 3xATR SL + 3R TP bracket, 96-bar time-stop, and MFE-lock trail (arm 1.0R, lock 90%) -- but only bar-replay WF on record (header), no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

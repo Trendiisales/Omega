@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: in-flight protection = fixed ATR stop/target bracket (ATR_STOP_MULT=2.0 / ATR_TARGET_MULT=4.0) + momo-rollover SIGNAL_EXIT + optional MAX_HOLD time-stop (default 0=off); no LOSS_CUT/BE ratchet. DEAD / culled -- CULL_LEDGER.tsv 2026-06-18 FAITHFUL (squeeze_xregime_nas.cpp real engine: all variants bear-neg, no gate edge); not wired in engine_init -- not live, protection moot, re-enable blocked. (backfill S-2026-06-24n)
 // SqueezeSlingshotEngine.hpp -- CRTP wrapper around SqueezeSlingshotCore.
 //
 // Mirrors the AtrMeanRevGridEngine CRTP shape: template<class Traits>, per-symbol

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: trail-only by design -- the Supertrend(10,3) line IS the trailing stop (pos.stop_px=m_st_line; exits ST_FLIP/ST_STOP), NO BE/TP/time-stop (swing-protection sweep 2026-06-17 showed a cold cut lowers net on trend/trail engines); only a bar-replay header PF (adaptive_hull.cpp 2026-06-05), no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // ─────────────────────────────────────────────────────────────────────────────
 // SupertrendGoldEngine — Supertrend(10,3) trend follower on XAUUSD 60m, LONG-ONLY,
 // gated by an EMA-regime filter. The Supertrend line IS the trailing stop; exit

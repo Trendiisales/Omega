@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: fixed structural SL/TP bracket (SL=entry+asian_range*0.50, TP=entry-asian_range*0.75) + 4h MAX_HOLD timeout + weekend force-close is the in-flight protection; LOSS_CUT_PCT=0.0 and BE ratchet disabled by design -- but no faithful backtest on record (only bar/WF ger40_london_breakout_wf.py PF=1.42, absent from AUDITED_CONFIGS/CULL_LEDGER/TOMBSTONES; shadow_mode=true, never live-sized) -- verdict owed before re-enable. (backfill S-2026-06-24n)
 // =============================================================================
 //  Ger40LondonBreakoutEngine.hpp -- GER40 Asian Range Breakout Short (2026-05-17)
 // =============================================================================

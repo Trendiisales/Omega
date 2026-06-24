@@ -17,6 +17,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (listed under DISABLED in CLAUDE.md audit, not instantiated in engine_init.hpp) -- fixed ATR SL/TP bracket (sl_atr=1.5/tp_atr=3.0) + time-stop (hold_max_h4=20) + weekend-close gate are the in-flight protection; no LOSS_CUT_PCT cold cut or BE ratchet. The header IS/OOS Sharpe figures are bar-replay not faithful; no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

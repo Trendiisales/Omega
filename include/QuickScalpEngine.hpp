@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: code carries full in-flight protection -- initial SL (SL_PTS=0.60), BE arm+ratchet (BE_ARM_PTS=0.30, monotonic via std::max/min in _manage), tight trail (TRAIL_TIGHT_PTS=0.15) and time-stop (MAX_HOLD_SEC=60); but engine is UNWIRED (not in engine_init.hpp, not instantiated, shadow_mode=true) and no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // QuickScalpEngine.hpp -- Tick-driven RSI + L2 scalper with hard BE lock
 // =============================================================================

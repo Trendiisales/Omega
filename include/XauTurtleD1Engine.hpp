@@ -37,6 +37,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL-TP bracket (sl=1.5*ATR, tp=3.0*ATR) + 10-day TIMEOUT + bull-regime gate is the in-flight protection -- the SL IS the cut for this breakout bracket; no faithful backtest on record for the protection step -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

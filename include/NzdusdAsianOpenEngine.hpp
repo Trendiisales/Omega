@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS S64 LOSS_CUT_PCT=0.03 cold-loss cut + consec-loss circuit breaker (2 losses -> 14400s block) + S55 BE-lock at 6 pips MFE + S20 trail; shadow-only (shadow_mode=true), no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"

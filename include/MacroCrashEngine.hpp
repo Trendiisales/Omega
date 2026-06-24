@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: has LOSS_CUT_PCT=0.15 + BE/SL/velocity-trail + consec-SL kill, but CULL_LEDGER marks MacroCrash DEAD (PF0.01 n79, genuine loser) and it runs shadow_mode=true only; LOSS_CUT sweep still queued = no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "BracketTrendState.hpp"  // Session 6 P1: bracket_trend_bias accessor for entry gate

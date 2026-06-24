@@ -28,6 +28,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false, S53 DD-ratio fail; CULL_LEDGER UNVERIFIED/FAITHFUL-BT-REQUIRED) -- has fixed SL/TP ATR bracket (sl 1.5x, tp 5.0x) + TIMEOUT time-stop (hold_max_days=10) + weekend-close gate; trail STAYS OFF (tombstone-by-analogy, header); no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

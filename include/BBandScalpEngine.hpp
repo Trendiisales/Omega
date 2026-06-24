@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false in engine_init.hpp) -- engine HAS full in-flight machinery (hard SL_PTS=0.40 + BE arm BE_ARM_PTS=0.30 ratchet to entry+/-BE_BUFFER_PTS=0.05 + TRAIL_TIGHT_PTS=0.15 + MAX_HOLD_SEC=600 time-stop); protection moot while disabled -- the entry edge is dead, not the exit: 27-cfg/154M-tick sweep PF0.07-0.09 WR7-8% (BB-extreme touches are continuation not reversal on gold M1), CULL_LEDGER 2026-06-01 mean-rev book; verdict owed before re-enable (needs entry-filter redesign + new sweep) (backfill S-2026-06-24n)
 // =============================================================================
 // BBandScalpEngine.hpp -- M1 Bollinger-band + RSI mean-reversion scalper
 // =============================================================================

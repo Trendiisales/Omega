@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: has bracket SL/TP (SL_ATR_MULT 1.5 / TP 3.0) + cost-cover BE ratchet (COST_COVER_PTS 0.50 arms BE+0.10 buffer) + wide trail (TRAIL_DIST 0.50) + M1-close REVERSAL_EXIT + MAX_HOLD_BARS 12 time-stop; not wired in engine_init.hpp (not live) and no faithful backtest on record (only sweep harness backtest/gold_reversal_scalp_m15_bt.cpp, no AUDITED/CULL/TOMBSTONE entry) -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldReversalScalpM15Engine.hpp -- M15 entry + M1-close reversal-detect exit
 // =============================================================================

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: has S64 in-flight LOSS_CUT_PCT=0.03 cold-cut + CONSEC_LOSS circuit-breaker + S55 BE-lock@6pip + S58 trail, but shadow-pinned (engine_init.hpp:392 shadow_mode=true, never live) and no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"

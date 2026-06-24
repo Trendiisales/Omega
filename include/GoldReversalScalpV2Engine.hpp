@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: rich in-flight stack -- cost-cover BE ratchet (COST_COVER_PTS=0.50 arms BE+BE_BUFFER_PTS=0.10), 0.30 trail, fixed SL/TP bracket (SL_ATR_MULT=2.0/TP_ATR_MULT=3.0), MAX_HOLD_BARS=12 time-stop, plus the M1-close REVERSAL_EXIT cut; NOT wired in engine_init.hpp (no g_ instance = not deployed, shadow-only) and only a sweep harness (backtest/gold_reversal_scalp_v2_bt.cpp) exists -- no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldReversalScalpV2Engine.hpp -- M5 entry + M1-close reversal-detect exit
 // =============================================================================

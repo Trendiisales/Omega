@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS S63 LOSS_CUT_PCT=0.05 + BE_RATCHET (BE_ARM 0.03/BUFFER 0.012) firing in manage_position() per tick -- but DEAD/CULLED (CULL_LEDGER.tsv 2026-06-16: faithful net-neg all regimes, slice artifact) and disabled (g_disable_xauusd_fvg=true + shadow_mode forced, tombstone S-2026-06-15b); protection moot, re-enable blocked. (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"

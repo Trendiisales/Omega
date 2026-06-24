@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS in-flight cut (S64 LOSS_CUT_PCT=0.03 immediate cold-loss cut + 2-consec-loss 4h circuit breaker + S55 BE-lock 6pip + trail) but config is PRE-SWEEP USDJPY-inherited and engine is shadow_mode=true (engine_init.hpp:414); no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: DEAD / tombstoned (TOMBSTONES.tsv g_gold_orb_retrace 2026-06-23 LIVE-FALSIFIED/FORBIDDEN; CULL/AUDITED_CONFIGS verdict=DEAD) -- engine is a trail-only RUNNER (structural prior trail_win-bar low/high trail + FLAT_EOD, no LOSS_CUT/BE), but live ledger falsified it 7/7 (net -$808, all sub-spread TRAIL_STOP) = intraday-spot-cfd cost wall; enabled=false (engine_init.hpp), not live, protection moot, re-enable blocked (do NOT un-tombstone a 4th time without a faithful-TICK edge) (backfill S-2026-06-24n)
 // =============================================================================
 // GoldOrbRetraceEngine.hpp -- Peachy GOLD ORB 50%-retrace CONTINUATION with a
 // structural RUNNER exit. m5-native, self-contained (aggregates its own m5 bars

@@ -37,6 +37,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL/TP bracket (sl_atr_mult=1.0, tp_atr_mult=5.0, checked per-tick in on_tick) + MAX_HOLD timeout (hold_max_days=20) -- the SL is the protection; engine is DISABLED in engine_init.hpp (S57 2026-05-27: MID-regime Sharpe -0.86); no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

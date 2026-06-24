@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: in-flight protection = cost-cover BE ratchet (COST_COVER_PTS=5.0 arms SL to entry+BE_BUFFER) + post-BE tight trail (TRAIL_DIST) + hard 2.0xATR SL backstop + hard TP + 100-bar time-stop; NO cold LOSS_CUT (pre-BE risk = hard SL only); shadow engine per engine_init S110 (shadow_mode=true, enabled=false owed, operator-approval gated); cited PnL/PF are sweep-harness not faithful tick -- no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldRegimeDailyEngine.hpp -- M30 EMA-cross entry, trend-flip primary exit
 // =============================================================================

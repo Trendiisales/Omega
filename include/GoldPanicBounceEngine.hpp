@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: CULLED 2026-06-17 (engine_init.hpp: not loaded, class type-only) -- in-flight protection is chandelier ATR-trail + structural selloff-low initial stop + MAX_HOLD_BARS time-stop, NO cold LOSS_CUT; live ledger net -$205 with MAEp90 $5781 (catastrophic falling-knife adverse excursion) is the cull basis -- protection moot while not live, re-enable blocked pending an entry filter not an exit fix (backfill S-2026-06-24n)
 // =============================================================================
 // GoldPanicBounceEngine.hpp -- "big reversal day" V-bounce catcher for XAUUSD
 // =============================================================================

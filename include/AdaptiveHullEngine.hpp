@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: trail-only by design (3x ATR initial stop KATR=3.0 + HMA-line trailing stop, no LOSS_CUT/BE ratchet); faithful BT on record (backtest/adaptive_hull.cpp 2026-06-05: XAU 60m PF1.52 Sh1.61, GER40 60m PF2.03, both halves +, cost-robust 3x) -- per swing-protection sweep 2026-06-17 a cold cut lowers net on trend/trail engines; verdict = keep trail-only (backfill S-2026-06-24n)
 // ─────────────────────────────────────────────────────────────────────────────
 // AdaptiveHullEngine — Ehlers Phase-Accumulation dominant cycle -> adaptive Hull
 // MA -> slope-flip trend follower (the "PA Adaptive Hull Parabolic" idea),

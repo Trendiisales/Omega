@@ -1,5 +1,5 @@
 #pragma once
-// =============================================================================
+//  ADVERSE-PROTECTION: 2.5% SAFETY_SL_PCT black-swan tail cut + deterministic EOD/rollover time-stop (one round-trip/day) -- no LOSS_CUT/BE/trail; the time-stop IS the in-flight protection for this daily-hold drift capture; no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // IndexIntradayDriftEngine.hpp -- BUY at session open / SELL at session close.
 //
 // Built 2026-05-28 (S37-Z) after a basket viability audit on 5 indices over

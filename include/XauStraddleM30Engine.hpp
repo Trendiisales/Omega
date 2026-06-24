@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL-TP OCO bracket -- the hard SL (entry -/+ stop_atr*ATR, set at fill, checked every tick in on_tick) IS the in-flight protection, plus WEEKEND_CLOSE + hold_max_bars TIMEOUT; gold M30 instance CULLED 2026-06-17 (engine_init.hpp: ledger_analytics n=8 NEG-expectancy net -$123 expR -0.51, bar-replay PF1.6-1.9 overstatement, enabled=false) and M15 sibling DEAD (CULL_LEDGER.tsv 2026-06-15) -- not live, protection moot, re-enable blocked (backfill S-2026-06-24n)
 // =============================================================================
 // XauStraddleM30Engine.hpp -- single-shot OCO breakout straddle on XAUUSD M30.
 //

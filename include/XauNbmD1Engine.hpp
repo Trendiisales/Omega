@@ -21,6 +21,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false, engine_init.hpp S53 2026-05-27 -- DD/gross=111%, equity buries deeper than recovers); has fixed SL/TP bracket (sl_atr 1.5 / tp_atr 3.0) + TIMEOUT time-stop (hold_max_days=10) + weekend-close, but no faithful backtest on record for a cold-cut/BE step -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

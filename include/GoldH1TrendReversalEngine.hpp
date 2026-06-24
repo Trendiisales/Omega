@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: in-flight protection present in code (hard SL/TP bracket SL_ATR_MULT=1.5/TP_ATR_MULT=3.0 + COST_COVER_PTS=0.50 BE ratchet w/ BE_BUFFER_PTS + TRAIL_DIST=2.0 wide trail + TREND_FLIP_EXIT + MAX_HOLD_BARS=6 time-stop), but no faithful backtest on record -- not in AUDITED_CONFIGS/CULL_LEDGER/TOMBSTONES, not wired in engine_init (no g_ instance) -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldH1TrendReversalEngine.hpp -- M5 entry + M1-close reversal-detect exit
 // =============================================================================

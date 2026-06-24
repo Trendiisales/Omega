@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: in-flight protection = fixed SL/TP bracket (sl=impulse-candle low, tp=2.5R) + maxStop=1.0ATR risk-cap (rejects wide-stop setups) + FLAT_EOD time-stop @ flat_min(16:00 UTC); no LOSS_CUT_PCT/BE ratchet. Moot: enabled=false (struct default) and CULL-CONFIRMED dead -- full-span 2022-bear+2024-26 NAS every config PF<1.1 (documented winner PF0.93), live shadow ledger -$253/4 closes 0% WR (engine_init.hpp ~L3947, memory omega-peachy-onecandle-orb-deadend); re-enable blocked pending cross-regime walk-forward proof. (backfill S-2026-06-24n)
 // =============================================================================
 // PeachyOrbEngine.hpp -- "one-candle confirmation" ORB-retest, m5-native, self-
 // contained (aggregates its own m5 bars from ticks; no external bar feed).

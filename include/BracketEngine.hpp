@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS LOSS_CUT_PCT=0.10 (S63 cold-loss cut, on_tick LIVE) + continuous MFE trail/BE-ratchet (S19) + MAX_HOLD_SEC timeout (S20) + CONFIRM_PTS/SECS post-fill gate (S21) + structural SL@bracket-boundary + OCO; but DEAD/culled (CULL_LEDGER XAUUSD_BRACKET 2026-05-01 PF0.22 n56) and disabled/shadow-pinned (g_disable_bracket_gold, all instances shadow_mode=true in engine_init.hpp) -- protection moot while not live; verdict owed (faithful BT of the protection step) before re-enable (backfill S-2026-06-24n)
 // ==============================================================================
 // BracketEngine -- CRTP true-bracket breakout engine
 //

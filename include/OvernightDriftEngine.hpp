@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: TOMBSTONED 2026-06-13 (operator cull, engine_init.hpp L4428 -- class type-only, NOT loaded; US500 variant failed 2022 retest -27pct) -- not live, protection moot, re-enable blocked. Mechanism if revived = optional wide overnight tail-cap stop_pct (default 0.0=off) + structural flat-at-cash-open time-exit; the stop_pct cap has no faithful backtest on record (code: "NEEDS re-backtest to confirm it doesn't cut the night-effect edge") -- verdict owed before re-enable (backfill S-2026-06-24n)
 // ─────────────────────────────────────────────────────────────────────────────
 // OvernightDriftEngine — the index "night effect", trend-gated.
 //

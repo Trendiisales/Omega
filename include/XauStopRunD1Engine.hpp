@@ -37,6 +37,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL/TP bracket (sl_atr_mult=1.5, tp_atr_mult=2.0) + hold_max_days=20 time-stop + weekend-close gate -- the SL is the protection; engine DISABLED (enabled=false, S57 2026-05-27: regime-split LOW-vol Sharpe -3.68, clear negative); no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: time-stop only -- exits at FOMC-day close after hold_bars=1 D1 bar (FOMC_EXIT), no LOSS_CUT/BE/trail/SL; entry only via ExecutionCostGuard; no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 //  IndexFomcEngine.hpp -- pre-FOMC drift on US index CFDs (S44)
 //

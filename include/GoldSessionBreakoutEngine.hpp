@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false, not wired in engine_init.hpp) -- HAS S63 in-flight protection (LOSS_CUT_PCT=0.05 + BE ratchet BE_ARM_PCT=0.03/BE_BUFFER_PCT=0.012 + 4-phase trail + 60min MAX_HOLD time-stop), but no faithful backtest on record (no AUDITED_CONFIGS/CULL/TOMBSTONE entry; harness backtest/gold_session_breakout_bt.cpp exists but unrun) -- verdict owed before re-enable (backfill S-2026-06-24n)
 // =============================================================================
 // GoldSessionBreakoutEngine.hpp -- M5 Donchian breakout, NY-focused, H4-gated
 // =============================================================================

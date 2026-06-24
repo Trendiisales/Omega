@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: HAS S64 LOSS_CUT_PCT=0.03 (~4 pips immediate cold-loss cut) + consec-loss circuit breaker (2/day -> 4h lockout) + S55 BE-lock@6pips + S20/S52 MFE trail; engine is shadow_mode=true (engine_init.hpp:403, not live) and no faithful backtest on record (absent from AUDITED_CONFIGS/CULL_LEDGER/TOMBSTONES) -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <iomanip>
 #include <iostream>
 #include "SpreadRegimeGate.hpp"

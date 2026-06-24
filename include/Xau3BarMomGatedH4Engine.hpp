@@ -25,6 +25,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: disabled (enabled=false) -- has fixed ATR SL/TP bracket (1.0xATR SL, 5R TP) + MFE-lock trail (arm 1.0R, lock 90%) + 96-bar time-stop, no LOSS_CUT/BE field; engine_init S50 2026-05-27 real-class audit (xau_d1_zoo_audit) Sharpe -1.81 / -$30 / 384 trades = bleeds, re-enable blocked; verdict owed before re-enable (backfill S-2026-06-24n)
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

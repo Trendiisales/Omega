@@ -1,4 +1,5 @@
 #pragma once
+//  ADVERSE-PROTECTION: mean-reversion w/ hard -2.5*ATR stop_px + RSI-recover/20d max-hold exit (the SL IS the protection -- a cold cut inverts the buy-weakness thesis); moot -- CULLED DEAD (CULL_LEDGER 2026-06-16, FAITHFUL: +419/-455/+45 x-regime, bull-beta dip-buyer dies in crash, gate-incompatible) and not loaded (engine_init: class type-only, NOT loaded); protection moot, re-enable blocked (backfill S-2026-06-24n)
 // ============================================================================
 // GoldOversoldBounceEngine.hpp -- XAUUSD short-term capitulation bounce (S-2026-06-03)
 // ----------------------------------------------------------------------------

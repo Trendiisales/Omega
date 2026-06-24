@@ -81,6 +81,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: HAS fixed SL/TP bracket (SL=1.5*ATR, TP=1:1 RR) + cost-covering BE ratchet (arms at 50% MFE, buffer covers spread+commission) + 3min TIMEOUT + 3-consec-SL kill (30min block); but DEAD/soft-culled -- ECE_CULLED=true forces shadow_mode + blocks all new entries (S18 2026-04-24), CULL_LEDGER PF0.85 n83 -$74/10d -- not live, protection moot, re-enable blocked (set ECE_CULLED=false + faithful BT before re-enable) (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

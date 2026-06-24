@@ -21,6 +21,7 @@
 // =============================================================================
 
 #pragma once
+//  ADVERSE-PROTECTION: fixed SL/TP bracket (sl_atr_mult=1.5, tp_atr_mult=3.0) + TIMEOUT time-stop (hold_max_days=10) + WEEKEND_CLOSE -- the SL is the in-flight protection; a stage-trail was tombstoned-by-analogy (S37 Phase H, NOT empirically tested, predicted -40 to -60%); no faithful backtest on record for a cold loss-cut -- verdict owed before re-enable (backfill S-2026-06-24n)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
