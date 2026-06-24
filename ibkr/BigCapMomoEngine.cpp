@@ -1,3 +1,23 @@
+// ┌───────────────────────────────────────────────────────────────────────────┐
+// │ TOMBSTONE — CULLED 2026-06-24 (S-2026-06-24). DO NOT RUN. DO NOT REVIVE     │
+// │ without first porting the protections below.                               │
+// │                                                                            │
+// │ This standalone exe is the ORPHAN impl of the BigCapMomo thesis. It has    │
+// │ ONLY the regime gate + the OLD wide-trail + a hard 4h MAXHOLD time-cut.    │
+// │ It LACKS every protection the two LIVE impls gained after 2026-06-16:      │
+// │   • gain-protect exit (ATR-trail + BE-ratchet + ride-in-profit) — without  │
+// │     it, the exit-giveback bug cuts winners flat on the clock               │
+// │     (omega-bigcap-exit-givesback).                                         │
+// │   • breadth>=2 chop/bear gate.                                             │
+// │   • single-entry-per-name-per-day (the IONQ re-entry-at-HOD -$58 loser).   │
+// │ => if launched it trades the EXACT broken way the operator flagged.        │
+// │                                                                            │
+// │ SUPERSEDED BY (both inside Omega.exe, both fully protected):               │
+// │   • bridge   g_bigcap_momo  (PumpScalpManager, OMEGA_BIGCAP_BRIDGE=1)       │
+// │   • in-proc  BigCapMomoIbkr (src/bigcap_momo_ibkr.cpp, OMEGA_BIGCAP_IBKR=1) │
+// │ CMake target removed; main() hard-aborts. Source kept for reference only.  │
+// └───────────────────────────────────────────────────────────────────────────┘
+//
 // BigCapMomoEngine.cpp -- long big-cap momentum continuation, C++ on the IBKR TWS API.
 // Long mirror of GapShortEngine. NOT BlackBull/FIX -- additive, isolated.
 //
@@ -25,6 +45,7 @@
 #include "Contract.h"
 #include "Order.h"
 #include <cstdio>
+#include <cstdlib>   // getenv / system (cull-guard + data dir)
 #include <cstring>
 #include <string>
 #include <map>
@@ -191,6 +212,18 @@ public:
 };
 
 int main(int argc,char**argv){
+    // CULLED 2026-06-24: hard-abort. This orphan lacks gain-protect / breadth /
+    // single-entry (see file-top tombstone) and would trade the broken way. Use the
+    // in-process BigCapMomoIbkr (OMEGA_BIGCAP_IBKR=1) or bridge (OMEGA_BIGCAP_BRIDGE=1).
+    if(!std::getenv("OMEGA_RUN_DEAD_BIGCAP_EXE")){
+        fprintf(stderr,
+            "[BigCapMomoEngine] CULLED 2026-06-24 — refusing to run.\n"
+            "  This standalone exe lacks the live protections (gain-protect exit,\n"
+            "  breadth>=2 gate, single-entry/name/day) and would give back winners\n"
+            "  + trade chop/bear. Use the in-process BigCapMomoIbkr or the bridge.\n"
+            "  Override (NOT recommended): OMEGA_RUN_DEAD_BIGCAP_EXE=1\n");
+        return 2;
+    }
     int port=4002; double gate=3.0, trail=0.04; bool live=false;
     for(int i=1;i<argc;i++){ if(!strcmp(argv[i],"--live"))live=true;
         else if(!strcmp(argv[i],"--gate")&&i+1<argc)gate=atof(argv[++i]);

@@ -1371,22 +1371,22 @@ endif()
 message(STATUS "GapShortEngine:         IBKR gap-short C++ subsystem (paper)")
 
 # =============================================================================
-# BigCapMomoEngine -- LONG big-cap momentum continuation (long mirror of GapShort).
-# Validated 2026-06-16 (pump/bigcap_scalp_*): day-expansion gate3% + wide trail4.0%,
-# PF 1.63, walk-forward-stable, fat-tail-resilient, slip-robust. PAPER_ONLY default.
-# Isolated C++ subsystem (TWS API + winsock). NOT part of Omega.exe / no FIX.
+# BigCapMomoEngine -- CULLED 2026-06-24 (S-2026-06-24). Build target REMOVED.
+# WHY: this standalone exe is the ORPHAN impl of the BigCapMomo thesis. It carries
+# ONLY the regime gate + old wide-trail + hard 4h MAXHOLD time-cut. It LACKS every
+# post-2026-06-16 protection the two LIVE impls have:
+#   - NO gain-protect exit (ATR-trail + BE-ratchet + ride-in-profit) -> the exit-
+#     giveback bug (omega-bigcap-exit-givesback): cuts winners flat on the clock.
+#   - NO breadth>=2 chop/bear gate.
+#   - NO single-entry-per-name-per-day (the IONQ re-entry-at-HOD -$58 loser).
+# i.e. if launched it trades the EXACT broken way the operator flagged. It is in NO
+# scheduled task, but a buildable exe is a latent footgun. Superseded by the two
+# protected impls inside Omega.exe: the bridge g_bigcap_momo (PumpScalpManager) and
+# the in-process BigCapMomoIbkr (src/bigcap_momo_ibkr.cpp). Source kept + tombstoned
+# + hard-aborts in main(); to ever revive, PORT the protections first.
+# (was: add_executable(BigCapMomoEngine ibkr/BigCapMomoEngine.cpp ibkr/bid64_integer.cpp ${TWS_SOURCES}) + deps)
+message(STATUS "BigCapMomoEngine:       CULLED 2026-06-24 (unprotected orphan; use in-process BigCapMomoIbkr)")
 # =============================================================================
-add_executable(BigCapMomoEngine ibkr/BigCapMomoEngine.cpp ibkr/bid64_integer.cpp ${TWS_SOURCES})
-target_include_directories(BigCapMomoEngine PRIVATE ${CMAKE_SOURCE_DIR}/third_party/twsapi/client)
-if(MSVC)
-    target_compile_options(BigCapMomoEngine PRIVATE /std:c++17 /EHsc /W0)
-    target_compile_definitions(BigCapMomoEngine PRIVATE _CRT_SECURE_NO_WARNINGS _WIN32_WINNT=0x0601 NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(BigCapMomoEngine PRIVATE ws2_32)
-else()
-    target_compile_options(BigCapMomoEngine PRIVATE -std=c++17 -w)
-    target_link_libraries(BigCapMomoEngine PRIVATE pthread)
-endif()
-message(STATUS "BigCapMomoEngine:       IBKR long-momentum C++ subsystem (paper)")
 
 # GapShortDaily -- production daily-loop (enter->monitor->cover, kill switch, locate gate)
 add_executable(GapShortDaily ibkr/GapShortDaily.cpp ibkr/bid64_integer.cpp ${TWS_SOURCES})
