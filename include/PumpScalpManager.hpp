@@ -56,6 +56,8 @@ public:
     double giveback_close_frac = 0.0; // same but on CLOSE only (noise-proof; the A/B give-back lever)
     int    struct_lb       = 0;    // exit on close below swing-low of last N bars (0=off)
     bool   rollover_ema    = false;// exit on close below EMA9 (momentum-decay, long)
+    double cold_cut_sec       = 0.0;  // cut never-green trade after N sec (0=off); shrinks ride-down losers
+    double cold_cut_green_pct = 0.5;  // "green" = peak favourable >= this % of entry
     // ride winners past the wall-clock while still net-profitable (engine MAXHOLD_SKIP_IF_PROFIT).
     // 2026-06-18: the 240-min cap was clocking out QURE/NTLA/PRAX mid-run. true = ride to trail turn.
     bool   maxhold_skip_if_profit = false;
@@ -207,6 +209,8 @@ private:
         e.GIVEBACK_CLOSE_FRAC = giveback_close_frac;
         e.STRUCT_LB       = struct_lb;
         e.ROLLOVER_EMA    = rollover_ema;
+        e.COLD_CUT_SEC       = cold_cut_sec;
+        e.COLD_CUT_GREEN_PCT = cold_cut_green_pct;
         e.MAXHOLD_SEC  = maxhold_bars * tf_sec;   // time-stop; trail exits on the turn first
         e.MAXHOLD_SKIP_IF_PROFIT = maxhold_skip_if_profit;   // ride winners past the clock
         e.MAX_ENTRIES_PER_DAY = max_entries_per_day;   // re-entry cap (chop-bleed guard)

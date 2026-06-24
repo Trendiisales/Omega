@@ -176,6 +176,16 @@ public:
     //     a runner once the bar CLOSES this far retraced from the peak gain. 0 = off. This is
     //     the "bank the reversal without exiting on every down price" lever for the A/B.
     double GIVEBACK_CLOSE_FRAC = 0.0;
+    //   • COLD-CUT (S-2026-06-24): cut a trade that has NEVER gone meaningfully green
+    //     (peak favourable < COLD_CUT_GREEN_PCT) after COLD_CUT_SEC seconds. Targets the
+    //     "bought it, went straight adverse, rode the wide stop down for hours" losers
+    //     (IONQ -$58/160m, HUN -$43/240m, NOK -$29/210m never green) WITHOUT touching
+    //     winners (they go green -> peak exceeds the threshold -> exempt). A BLUNT loss-
+    //     cut (tighter HARD/MAXHOLD) lowers net + RAISES maxDD (dip-then-recover trades
+    //     become realised losses); this gates on never-green so it can't do that.
+    //     0 = off (live behavior). Evaluated on a CLOSED bar (noise-proof).
+    double COLD_CUT_SEC       = 0.0;   // cut after this many seconds if still never-green
+    double COLD_CUT_GREEN_PCT = 0.5;   // "green" = peak favourable >= this % of entry
 
     // ── ENTRY-RESEARCH lever (2026-06-18, default-OFF). Anti-late-chase: skip an
     //   ignition long whose close is already > this % above VWAP (we'd be buying
@@ -367,6 +377,10 @@ public:
                 const double gain= pos.dir>0 ? (pk-bse) : (bse-pk);
                 const double retr= pos.dir>0 ? (pk-c)   : (c-pk);
                 if (gain>0 && retr >= GIVEBACK_CLOSE_FRAC*gain) { ex=true; r="GB_CLOSE"; }
+            }
+            if (!ex && COLD_CUT_SEC > 0 && (ts_ms - pos.entry_ms) >= (int64_t)(COLD_CUT_SEC*1000)) {
+                const double bse = pos.units.front();          // cold-cut: never-green loser, cut small
+                if (pos.mfe < bse * COLD_CUT_GREEN_PCT/100.0) { ex=true; r="COLD_CUT"; }
             }
             if (ex) { _close(c, ts_ms, r); return; }
         }

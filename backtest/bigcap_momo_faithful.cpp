@@ -97,6 +97,8 @@ static void configure_prod(omega::PumpScalpManager& m) {
     m.giveback_close_frac = envf("BC_GIVEBACKCLOSE",0.0);  // CLOSE-based give-back (noise-proof A/B lever)
     m.struct_lb       = envi("BC_STRUCT",0);       // exit on close < swing-low(N) bars
     m.rollover_ema    = envi("BC_ROLLEMA",0)!=0;   // exit on close < EMA9 (momentum-decay)
+    m.cold_cut_sec       = envf("BC_COLDSEC",0.0);    // cold-cut: cut never-green trade after N sec
+    m.cold_cut_green_pct = envf("BC_COLDGREEN",0.5);  //   "green" threshold (% of entry)
     m.be_arm_pct   = envf("BC_BEARM",3.0);      // arm BE-floor once +arm% in profit (0=off)
     m.be_floor_pct = envf("BC_BEFLOOR",2.0);    // floor stop at entry +floor%
     m.maxhold_skip_if_profit = envi("BC_RIDE",1)!=0;  // ride winners past the clock
