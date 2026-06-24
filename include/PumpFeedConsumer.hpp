@@ -68,27 +68,38 @@ inline socket_t connect_localhost(const char* host, uint16_t port) noexcept {
 }
 
 // Parse + dispatch one feed line into the manager. Tolerant: bad lines dropped.
-inline void dispatch_line(PumpScalpManager& mgr, const char* ln) {
+// mgr_b (optional, default null): A/B twin fed the SAME lines so it gets IDENTICAL
+// entries (S-2026-06-24). When null, byte-identical to the single-manager path.
+inline void dispatch_line(PumpScalpManager& mgr, const char* ln, PumpScalpManager* mgr_b=nullptr) {
     if (!ln[0]) return;
     char sym[64]; double o,h,l,c,v,px,dopen,up; int tf; long long ts;
     if (ln[0]=='B' || ln[0]=='S') {
-        if (std::sscanf(ln+1, ",%63[^,],%d,%lf,%lf,%lf,%lf,%lf,%lld", sym,&tf,&o,&h,&l,&c,&v,&ts)==8)
+        if (std::sscanf(ln+1, ",%63[^,],%d,%lf,%lf,%lf,%lf,%lf,%lld", sym,&tf,&o,&h,&l,&c,&v,&ts)==8) {
             mgr.on_bar(sym, tf, o,h,l,c,v, (int64_t)ts, ln[0]=='S');
+            if (mgr_b) mgr_b->on_bar(sym, tf, o,h,l,c,v, (int64_t)ts, ln[0]=='S');
+        }
     } else if (ln[0]=='P') {
-        if (std::sscanf(ln+1, ",%63[^,],%lf,%lld", sym,&px,&ts)==3)
+        if (std::sscanf(ln+1, ",%63[^,],%lf,%lld", sym,&px,&ts)==3) {
             mgr.on_price(sym, px, (int64_t)ts);
+            if (mgr_b) mgr_b->on_price(sym, px, (int64_t)ts);
+        }
     } else if (ln[0]=='C') {
-        if (std::sscanf(ln+1, ",%63[^,],%lf,%lf,%lf,%lld", sym,&px,&dopen,&up,&ts)==5)
+        if (std::sscanf(ln+1, ",%63[^,],%lf,%lf,%lf,%lld", sym,&px,&dopen,&up,&ts)==5) {
             mgr.set_candidate(sym, px, dopen, up, (int64_t)ts);
+            if (mgr_b) mgr_b->set_candidate(sym, px, dopen, up, (int64_t)ts);
+        }
     } else if (ln[0]=='R') {
-        if (std::sscanf(ln+1, ",%63[^,\n]", sym)==1)
+        if (std::sscanf(ln+1, ",%63[^,\n]", sym)==1) {
             mgr.reset_symbol(sym);       // clean re-warm before a seed replay
+            if (mgr_b) mgr_b->reset_symbol(sym);
+        }
     }
 }
 
 // Thread body: connect -> read lines -> dispatch -> reconnect on drop.
+// mgr_b (optional): A/B twin driven off the SAME feed lines (default null = unchanged).
 inline void run(PumpScalpManager& mgr, std::atomic<bool>& stop,
-                const char* host, uint16_t port) {
+                const char* host, uint16_t port, PumpScalpManager* mgr_b=nullptr) {
     std::string buf; char tmp[8192];
     while (!stop.load(std::memory_order_relaxed)) {
         socket_t s = connect_localhost(host, port);
@@ -103,7 +114,7 @@ inline void run(PumpScalpManager& mgr, std::atomic<bool>& stop,
             while ((nl = buf.find('\n')) != std::string::npos) {
                 std::string line = buf.substr(0, nl);
                 buf.erase(0, nl + 1);
-                if (!line.empty() && line[0] != '#') dispatch_line(mgr, line.c_str());
+                if (!line.empty() && line[0] != '#') dispatch_line(mgr, line.c_str(), mgr_b);
             }
             if (buf.size() > 1u<<20) buf.clear();      // runaway guard
         }

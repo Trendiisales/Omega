@@ -170,6 +170,12 @@ public:
     //   • Give-back exit: close once price retraces GIVEBACK_FRAC of the peak gain
     //     (MFE) back from the peak. 0 = off. Locks more of a runner on the turn.
     double GIVEBACK_FRAC = 0.0;
+    //   • Give-back ON CLOSE (S-2026-06-24): same idea as GIVEBACK_FRAC but evaluated on a
+    //     CLOSED 5m bar (in on_entry_bar) instead of every tick — so a noise down-wick can't
+    //     trigger it (the tick-based GIVEBACK_FRAC fired on noise: WR2.5% in the sweep). Banks
+    //     a runner once the bar CLOSES this far retraced from the peak gain. 0 = off. This is
+    //     the "bank the reversal without exiting on every down price" lever for the A/B.
+    double GIVEBACK_CLOSE_FRAC = 0.0;
 
     // ── ENTRY-RESEARCH lever (2026-06-18, default-OFF). Anti-late-chase: skip an
     //   ignition long whose close is already > this % above VWAP (we'd be buying
@@ -354,6 +360,13 @@ public:
             else if (STRUCT_LB > 0) {
                 const double sw = _swing_extreme(STRUCT_LB, pos.dir>0);
                 if (sw>0 && (pos.dir>0 ? c < sw : c > sw)) { ex=true; r="STRUCT"; }
+            }
+            if (!ex && GIVEBACK_CLOSE_FRAC > 0) {            // close-based give-back (bank the reversal)
+                const double bse = pos.units.front();
+                const double pk  = pos.dir>0 ? pos.peak : pos.trough;
+                const double gain= pos.dir>0 ? (pk-bse) : (bse-pk);
+                const double retr= pos.dir>0 ? (pk-c)   : (c-pk);
+                if (gain>0 && retr >= GIVEBACK_CLOSE_FRAC*gain) { ex=true; r="GB_CLOSE"; }
             }
             if (ex) { _close(c, ts_ms, r); return; }
         }

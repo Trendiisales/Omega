@@ -52,7 +52,8 @@ public:
     // => live behavior unchanged. Swept via bigcap_momo_faithful BC_* env knobs.
     double atr_mult_tight  = 0.0;  // trail mult once gain>=pscale_full_pct (profit-scaled; 0=flat)
     double pscale_full_pct = 0.0;  // gain% at which trail reaches atr_mult_tight
-    double giveback_frac   = 0.0;  // exit on retrace of this frac of peak gain (0=off)
+    double giveback_frac   = 0.0;  // exit on retrace of this frac of peak gain, EVERY TICK (0=off)
+    double giveback_close_frac = 0.0; // same but on CLOSE only (noise-proof; the A/B give-back lever)
     int    struct_lb       = 0;    // exit on close below swing-low of last N bars (0=off)
     bool   rollover_ema    = false;// exit on close below EMA9 (momentum-decay, long)
     // ride winners past the wall-clock while still net-profitable (engine MAXHOLD_SKIP_IF_PROFIT).
@@ -203,6 +204,7 @@ private:
         e.ATR_MULT_TIGHT  = atr_mult_tight;        // S-2026-06-24 profit-scaled trail + close exits
         e.PSCALE_FULL_PCT = pscale_full_pct;
         e.GIVEBACK_FRAC   = giveback_frac;
+        e.GIVEBACK_CLOSE_FRAC = giveback_close_frac;
         e.STRUCT_LB       = struct_lb;
         e.ROLLOVER_EMA    = rollover_ema;
         e.MAXHOLD_SEC  = maxhold_bars * tf_sec;   // time-stop; trail exits on the turn first

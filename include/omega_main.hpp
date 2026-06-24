@@ -675,10 +675,16 @@ int main(int argc, char* argv[])
         const uint16_t bport = port_env ? static_cast<uint16_t>(std::atoi(port_env)) : 7784;
         const char* host_env = std::getenv("OMEGA_BIGCAP_BRIDGE_HOST");
         static std::string s_bigcap_host = host_env ? host_env : "127.0.0.1";
-        std::cout << "[BIGCAP-CONSUMER] starting; " << s_bigcap_host << ":" << bport << "\n";
+        // S-2026-06-24: OMEGA_BIGCAP_AB=1 tees the feed to the A/B twin g_bigcap_momo_b
+        // (identical entries, close-based give-back exit; configured in engine_init). Off
+        // => nullptr => single-manager path unchanged.
+        static const bool s_bigcap_ab = std::getenv("OMEGA_BIGCAP_AB") != nullptr;
+        std::cout << "[BIGCAP-CONSUMER] starting; " << s_bigcap_host << ":" << bport
+                  << (s_bigcap_ab ? "  (A/B twin BigCapMomoGB ON)" : "") << "\n";
         std::cout.flush();
         std::thread([bport]{
-            omega::pump_feed::run(g_bigcap_momo, g_bigcap_stop, s_bigcap_host.c_str(), bport);
+            omega::pump_feed::run(g_bigcap_momo, g_bigcap_stop, s_bigcap_host.c_str(), bport,
+                                  s_bigcap_ab ? &g_bigcap_momo_b : nullptr);
         }).detach();
         g_bigcap_feed_ok = true;   // bridge feed path configured (consumer-drop covered by bridge-side consumer=N alert)
     }
@@ -870,6 +876,7 @@ int main(int argc, char* argv[])
                 const int64_t now_ms_wd = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
                 g_bigcap_momo.on_heartbeat(now_ms_wd);
+                if (std::getenv("OMEGA_BIGCAP_AB")) g_bigcap_momo_b.on_heartbeat(now_ms_wd);  // A/B twin
             }
             // ── BIGCAP-IBKR LIVENESS WATCHDOG (2026-06-20) ──────────────────────────
             //   The 06-19 silent-death guard. The in-process IBKR engine can connect

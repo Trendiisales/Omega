@@ -161,6 +161,10 @@ static std::atomic<bool>       g_pump_stop{false};   // PumpFeedConsumer thread 
 //   (OMEGA_BIGCAP_BRIDGE=1) so it doesn't share the micro-cap feed. Shadow.
 static omega::PumpScalpManager g_bigcap_momo;
 static std::atomic<bool>       g_bigcap_stop{false};
+// S-2026-06-24 A/B twin: identical-entry shadow instance with a CLOSE-based give-back
+// exit (vs g_bigcap_momo's wide trail). Configured + fed ONLY when OMEGA_BIGCAP_AB=1
+// (engine_init + omega_main bridge consumer). Off => inert. Tag "BigCapMomoGB".
+static omega::PumpScalpManager g_bigcap_momo_b;
 // S-2026-06-17: feed-liveness flag for the health watchdog. Set true ONLY by the
 //   bigcap path that actually starts (IBKR start()==true, or bridge env selected).
 //   Stays false when the selected path is a no-op stub / connect-fail / unconfigured.

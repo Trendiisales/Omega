@@ -4089,6 +4089,36 @@ static void init_engines(const std::string& cfg_path)
                "MAXENT1 ride-in-profit 8h-backstop NO-volx NO-dvol-gate $1000-notional p>=10 "
                "slip0.15%%/side shadow (single-entry S-2026-06-23b, full-universe BT PF2.86; feed via OMEGA_BIGCAP_BRIDGE=1)\n");
 
+        // ── A/B EXIT TWIN (S-2026-06-24, OMEGA_BIGCAP_AB=1, default OFF) ──────────
+        // g_bigcap_momo_b = IDENTICAL config to g_bigcap_momo (copied field-by-field
+        // from it below, so entries CANNOT diverge) + ONE change: a CLOSE-based give-
+        // back exit (bank a runner once a 5m CLOSE retraces 35% of the peak gain).
+        // Both shadow; same bridge feed (tee'd in omega_main); distinct ledger tag
+        // "BigCapMomoGB". Tests "bank the reversal vs ride the wide trail" on IDENTICAL
+        // entries -- the live-shadow answer the offline data (wrong universe) can't give.
+        // Off by default: when OMEGA_BIGCAP_AB is unset, this block + the feed are skipped
+        // -> production (g_bigcap_momo) is byte-identical.
+        if (std::getenv("OMEGA_BIGCAP_AB")) {
+            auto& a = g_bigcap_momo; auto& b = g_bigcap_momo_b;
+            b.enabled=a.enabled; b.shadow_mode=true; b.tf_sec=a.tf_sec;
+            b.day_gate_pct=a.day_gate_pct; b.hard_pct=a.hard_pct; b.min_breadth=a.min_breadth;
+            b.trail_pct=a.trail_pct; b.be_arm_pct=a.be_arm_pct; b.be_floor_pct=a.be_floor_pct;
+            b.atr_len=a.atr_len; b.atr_mult=a.atr_mult; b.atr_mult_tight=a.atr_mult_tight;
+            b.pscale_full_pct=a.pscale_full_pct; b.giveback_frac=a.giveback_frac;
+            b.struct_lb=a.struct_lb; b.rollover_ema=a.rollover_ema;
+            b.maxhold_skip_if_profit=a.maxhold_skip_if_profit; b.volx=a.volx; b.pyr_adds=a.pyr_adds;
+            b.notional_usd=a.notional_usd; b.slip_pct=a.slip_pct; b.min_dvol_usd=a.min_dvol_usd;
+            b.price_min=a.price_min; b.maxhold_bars=a.maxhold_bars; b.max_symbols=a.max_symbols;
+            b.stale_sec=a.stale_sec; b.max_entries_per_day=a.max_entries_per_day;
+            b.entry_max_ext_pct=a.entry_max_ext_pct; b.verbose=a.verbose;
+            b.label="BigCapMomoGB";
+            b.giveback_close_frac=0.35;   // THE A/B difference: bank on a 35% close-retrace from peak
+            b.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+            g_open_positions.register_source("BigCapMomoGB", []() { return g_bigcap_momo_b.collect_positions(); });
+            printf("[OMEGA-INIT] BigCapMomo A/B TWIN 'BigCapMomoGB' ARMED: identical entries + close-based "
+                   "give-back 0.35 (vs wide trail). Fed when OMEGA_BIGCAP_AB=1.\n");
+        }
+
         // ── NqMomentumEngine (S-2026-06-18) ──────────────────────────────────
         // Regime-gated intraday momentum-continuation on NAS100/NQ. Same exit
         // chassis as BigCapMomo (ATR-trail + BE-ratchet + ride-in-profit) but a
