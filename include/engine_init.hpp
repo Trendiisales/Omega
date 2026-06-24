@@ -1280,7 +1280,7 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_1h.cell_enable_mask = 0x0F;  // S40: all 4 ensemble cells (EmaCross+Donchian+Pullback+Keltner)
         g_xau_tf_1h.lot         = 0.01;
         g_xau_tf_1h.max_spread  = 1.0;
-        g_xau_tf_1h.min_impulse_atr = 1.0;    // S-2026-06-20 impulse filter on breakout cells (XAU H1: PF up, maxDD ~halved)
+        g_xau_tf_1h.min_impulse_atr = 0.5;    // S-2026-06-24q RETUNE 1.0->0.5. The 1.0 came from an MGC-FUTURES bar-replay (memory omega-impulse-filter-entry-quality "PF1.96->2.45"); FAITHFUL re-confirm on the REAL XauTrendFollow1h engine WITH the live er_gate_min=0.40 (XauTrendFollow1hBacktest.cpp, XAU H1 bull 2yr + 2022-bear, cross-spread + SL-first) found ER-gate + impulse REDUNDANT and IMP=1.0 OVER-filters: bull PF 2.20->1.91 / total -18% / maxDD +30%, bear PF 1.19->1.13 / total -24%. IMP=0.5 ~= IMP=0 on bull (PF 2.18, DD same) + marginally BETTER on bear (PF 1.19->1.21). Net of 1.0->0.5: bull total +22% / DD -23%, bear total +40%. Basis FAITHFUL.
         // S-2026-06-21 ER trend/chop gate (shadow A/B vs prior ungated record). Harness
         // er_gate_trend_bt: gold H1 trend PF 1.05->1.13, edge density 2.4x, maxDD down at
         // ER~0.40 in trend tape (skip-only filter, never adds trades). Bear bleed handled
