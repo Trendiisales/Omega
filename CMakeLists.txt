@@ -229,11 +229,22 @@ if(MSVC)
 endif()
 add_executable(Omega ${SOURCES} ${IBKR_OMEGA_SOURCES} ${TWS_SOURCES_OMEGA})
 
-# Precompiled Header -- cuts recompile time 40-60% on MSVC /O2.
-# omega_pch.hpp contains all stable Windows/OpenSSL/STL includes.
-# Omega .hpp engine headers are NOT in the PCH -- they change often and would
-# invalidate it constantly. Only rebuild PCH when omega_pch.hpp itself changes.
-# target_precompile_headers(Omega PRIVATE include/omega_pch.hpp)  # disabled: LNK1181 cmake_pch.obj path mismatch on clean MSVC builds
+# Precompiled Header -- cuts recompile time 40-60% on MSVC /O2 (the main.cpp monolith
+# re-parses all of Windows/OpenSSL/STL on EVERY engine-header change without it; that is
+# the bulk of deploy time + it grows as engines are added). omega_pch.hpp holds only the
+# stable Windows/OpenSSL/STL includes -- NO Omega engine .hpp (those change often).
+# S-2026-06-24 RE-ENABLED behind OMEGA_USE_PCH (default ON). The prior LNK1181
+# (cmake_pch.obj path mismatch) came from toggling PCH on a STALE CMakeCache -> the first
+# PCH build MUST be a clean reconfigure: run `OMEGA.ps1 deploy -Clean` ONCE to bed it in,
+# then incrementals are 40-60% faster. If it still LNK1181s, disable with -DOMEGA_USE_PCH=OFF
+# (the running binary is untouched by a failed build -- zero live risk).
+option(OMEGA_USE_PCH "Precompiled header for the Omega target (40-60% faster MSVC recompile)" ON)
+if(OMEGA_USE_PCH)
+    target_precompile_headers(Omega PRIVATE include/omega_pch.hpp)
+    message(STATUS "Omega PCH: ON (omega_pch.hpp) -- first build after toggling must be -Clean")
+else()
+    message(STATUS "Omega PCH: OFF (-DOMEGA_USE_PCH=OFF)")
+endif()
 
 target_include_directories(Omega PRIVATE
     ${CMAKE_SOURCE_DIR}
