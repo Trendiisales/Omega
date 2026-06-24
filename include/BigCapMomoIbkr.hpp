@@ -45,6 +45,10 @@ struct Config {
     // bigcap_exit_compare.cpp). ATR-trail rides + BE-ratchet locks gains + ride-in-profit.
     int    atr_len          = 30;     // ATR-trail length in 5m bars (0 = off)
     double atr_mult         = 5.0;    // S-2026-06-24p: align to faithful-validated config (was 4.0; sweep 5>4>3, wider trail rides winners). trailing stop = peak - atr_mult * ATR ($)
+    double giveback_close_frac = 0.0; // S-2026-06-24: bank a runner on a 5m CLOSE retraced this
+                                      // frac of peak gain (before the wide trail round-trips it).
+                                      // Validated on REAL live trades (coldcut_on_real_trades.py):
+                                      // book -$133 -> +$160 @0.33. engine_init sets 0.35 LIVE. 0=off.
     double be_arm_pct       = 0.03;   // arm BE-floor once +3% in profit (fraction)
     double be_floor_pct     = 0.02;   // floor stop at entry +2% (net-breakeven)
     bool   maxhold_skip_if_profit = true;  // don't clock-cut a position still in profit

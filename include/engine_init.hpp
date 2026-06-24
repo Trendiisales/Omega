@@ -4052,6 +4052,9 @@ static void init_engines(const std::string& cfg_path)
         g_bigcap_momo.atr_mult     = 5.0;      // S-2026-06-23 4->5: sweep — wider trail rides winners further (5>4>3).
         g_bigcap_momo.be_arm_pct   = 2.0;      // S-2026-06-23 3->2: tighter gain-lock lifts WR (arm BE-floor at +2%).
         g_bigcap_momo.be_floor_pct = 1.0;      // S-2026-06-23 2->1: floor at entry +1% (net-BE after slip).
+        g_bigcap_momo.giveback_close_frac = 0.35;  // S-2026-06-24 LIVE: bank a runner on a 5m close
+                                                   // retraced 35% of peak gain (real-trade replay: book
+                                                   // -$133 -> +$160). Same fix on the bridge instance.
         g_bigcap_momo.maxhold_skip_if_profit = true;  // ride winners past the clock (don't cut QURE mid-run)
         g_bigcap_momo.maxhold_bars = 96;       // 96 x 5m = 8h backstop (losers only; in-profit rides)
         g_bigcap_momo.min_breadth  = 2;        // S-2026-06-23 CHOP/BEAR GATE: require >=2 distinct names igniting
@@ -4193,6 +4196,11 @@ static void init_engines(const std::string& cfg_path)
                                        // LB3 = higher PF + 90% WR (LB6 = 2.4x trades, lower PF). 3*5m=15min.
             bc.maxhold      = 96;      // 96*5m = 8h backstop (losers only; in-profit rides past it)
             bc.px_min       = 10.0;    // not a penny stock
+            bc.giveback_close_frac = 0.35; // S-2026-06-24 LIVE: bank a runner on a 5m close retraced 35%
+                                           // of peak gain. Validated on the REAL live ledger trades
+                                           // (backtest/coldcut_on_real_trades.py): book -$133 -> +$160.
+                                           // Fixes the give-back losers (winner peaks then round-trips on
+                                           // the wide trail). Shadow; watch the live ledger vs prior.
             bc.market_cap_above_musd = 20000.0;  // S-2026-06-23 $500B->$20B: align to validated bridge floor;
                                                 // the $20-100B band carries the momentum (2026 semis), breadth>=2
                                                 // handles the chop/bear the wider universe admits. (musd unit.)

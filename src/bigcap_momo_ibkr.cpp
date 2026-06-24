@@ -269,6 +269,15 @@ public:
             if(cfg_.atr_len>0 && s.atr>0){ double a=s.peak - cfg_.atr_mult*s.atr; if(a>tstop) tstop=a; }  // ATR-trail
             if(cfg_.be_arm_pct>0 && s.peak >= s.entry*(1+cfg_.be_arm_pct)){              // BE-ratchet lock
                 double bf=s.entry*(1+cfg_.be_floor_pct); if(bf>tstop) tstop=bf; }
+            // S-2026-06-24 CLOSE-based give-back: bank a runner once this 5m bar CLOSES
+            // retraced giveback_close_frac of the peak gain -- banks the reversal before the
+            // wide trail round-trips it back. Validated on the REAL live trades
+            // (backtest/coldcut_on_real_trades.py): book -$133 -> +$160 at 0.33. Fires on
+            // the close (not the intrabar low) so a noise wick can't trigger it. 0 = off.
+            if(cfg_.giveback_close_frac>0.0 && s.peak>s.entry){
+                double gain=s.peak-s.entry;
+                if((s.peak-c) >= cfg_.giveback_close_frac*gain){ close_pos(s,c,"GB_CLOSE"); return; }
+            }
             if(tstop>0 && l<=tstop){ close_pos(s,tstop,"TRAIL"); return; }
             if(s.hold>=cfg_.maxhold){
                 bool in_profit = c > s.entry;   // ride a still-profitable winner past the clock
