@@ -107,9 +107,18 @@ class Engine : public DefaultEWrapper {
         double sma=0,smap=0;
         for(int k=0;k<MKT_SMA;k++){ sma+=mkt_closes_[n-1-k]; smap+=mkt_closes_[n-1-MKT_SLOPE_LB-k]; }
         sma/=MKT_SMA; smap/=MKT_SMA; double c=mkt_closes_[n-1];
-        bool was=market_ok_; market_ok_=(c>sma && sma>smap);
-        if(market_ok_!=was){ printf("[BigCapMomo] REGIME %s (SPY=%.2f sma200=%.2f rising=%d)\n",
-            market_ok_?"ON uptrend":"OFF grind/chop->FLAT",c,sma,(int)(sma>smap)); fflush(stdout); }
+        bool was=market_ok_;
+        // PRODUCTION (regime_relaxed=false): BULL-only -> trade only in a confirmed uptrend
+        //   (close>SMA200 AND SMA200 rising). RELAXED (regime_relaxed=true): not-BEAR -> block
+        //   ONLY a confirmed downtrend (close<SMA200 AND SMA200 falling); trade BULL+NEUTRAL.
+        // Tier-1 cross-regime daily proxy (backtest/bigcap_engine_protections.py, S-2026-06-24):
+        //   on a turtle trend-long, not-BEAR (+6.8%) > none (+4.6%) > BULL-only (-2.4%) — BULL-only
+        //   throws away profitable NEUTRAL/sideways days while not-BEAR keeps them and still blocks
+        //   the bear bleed. SHADOW A/B ENABLER ONLY, default OFF (production unchanged). Confirm
+        //   live shadow PF before flipping; bear protection is preserved either way.
+        market_ok_ = cfg_.regime_relaxed ? !(c<sma && sma<smap) : (c>sma && sma>smap);
+        if(market_ok_!=was){ printf("[BigCapMomo] REGIME %s (SPY=%.2f sma200=%.2f rising=%d relaxed=%d)\n",
+            market_ok_?"ON ok-to-trade":"OFF downtrend->FLAT",c,sma,(int)(sma>smap),(int)cfg_.regime_relaxed); fflush(stdout); }
     }
 
 public:

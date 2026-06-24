@@ -69,6 +69,11 @@ struct Config {
     int    lb               = 6;      // ignition lookback (6*5m = 30min)
     int    maxhold          = 48;     // 48*5m = 4h backstop
     bool   regime_gate      = true;   // SPY price>SMA200 AND SMA200 rising
+    bool   regime_relaxed   = false;  // S-2026-06-24: gate variant. false = BULL-only (production:
+                                      //   close>SMA200 AND rising). true = not-BEAR (block ONLY a
+                                      //   confirmed downtrend; trade BULL+NEUTRAL). Tier-1 daily proxy:
+                                      //   not-BEAR > none > BULL-only on a turtle trend-long. SHADOW
+                                      //   A/B ENABLER, default OFF. Env: OMEGA_BIGCAP_RELAXED_GATE=1.
     int    min_breadth      = 2;      // S-2026-06-24p: align to faithful-validated config (was 1). breadth>=2 = the chop/bear gate the full-universe BT used. cross-sectional BREADTH gate: require >= this many
                                       // DISTINCT names igniting same session-day before any entry fires.
                                       // 1 = off. 2 = skip isolated single-name chop false-breakouts AND sit

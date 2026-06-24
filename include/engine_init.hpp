@@ -4186,6 +4186,10 @@ static void init_engines(const std::string& cfg_path)
             if (const char* p = std::getenv("OMEGA_BIGCAP_IBKR_PORT"))   bc.port      = std::atoi(p);
             if (const char* c = std::getenv("OMEGA_BIGCAP_IBKR_CLIENT")) bc.client_id = std::atoi(c);
             if (const char* m = std::getenv("OMEGA_BIGCAP_IBKR_MDTYPE")) bc.market_data_type = std::atoi(m);
+            // S-2026-06-24 not-BEAR gate A/B (Tier-1: not-BEAR > none > BULL-only on trend-long).
+            // Default OFF = production BULL-only. OMEGA_BIGCAP_RELAXED_GATE=1 -> block only confirmed
+            // downtrend (trade BULL+NEUTRAL). Shadow A/B; bear protection preserved either way.
+            if (std::getenv("OMEGA_BIGCAP_RELAXED_GATE")) bc.regime_relaxed = true;
             omega::bigcap_momo_ibkr::configure(bc);
             omega::bigcap_momo_ibkr::set_on_trade_record(
                 [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
