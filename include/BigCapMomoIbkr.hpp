@@ -64,7 +64,13 @@ struct Config {
     // MILLIONS of USD -- 2000 = $2B (50 rows); the raw 2e9 = the documented 0-rows
     // bug. Big-cap momo is the validated edge (small-cap = slippage death), so this
     // tightens risk WITHOUT touching the edge. 0 = disable.
-    double market_cap_above_musd = 100.0;   // $100M floor, in MILLIONS (IBKR unit); S-2026-06-20
+    double market_cap_above_musd = 20000.0; // $20B floor, in MILLIONS (IBKR unit). S-2026-06-24:
+                                             // default raised $100M->$20B to MATCH the engine_init.hpp
+                                             // override + the validated bridge floor (MARKETCAP_MIN
+                                             // 20000). Config-drift hardening: the old $100M default
+                                             // let spiky small-caps (AEHR/SHAZ/PBLS, the give-back
+                                             // names) leak in if the engine_init override were ever
+                                             // dropped. Default-safe now. Runtime already $20B.
                                              // lowered from 2000 ($2B too tight -> near-zero scan rows)
     int    lb               = 6;      // ignition lookback (6*5m = 30min)
     int    maxhold          = 48;     // 48*5m = 4h backstop
