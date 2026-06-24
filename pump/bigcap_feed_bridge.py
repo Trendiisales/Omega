@@ -12,7 +12,7 @@ machinery as pump_feed_bridge.py, but a BIG-CAP universe + 5m bars:
 
 Validated edge (bigcap_scalp_sweep.py): scalp only names already up >= 5% on the
 session (engine day_gate_pct), ride continuation, 3% trail. This bridge surfaces
-the candidates; the engine applies the 5% gate + 3% trail + $100M liquidity floor.
+the candidates; the engine applies the 5% gate + 3% trail + $20B large/mega-cap floor.
 
 Run (on the VPS, IB Gateway/TWS up):  python3 pump/bigcap_feed_bridge.py --serve
 Dev without IBKR: use bigcap_feed_bridge_yahoo.py instead.
@@ -44,8 +44,12 @@ MARKETCAP_MIN = 20000.0      # S-2026-06-23 $500B->$20B (=20000 musd) for BigCap
                              # the momentum (2026 semis AMD/INTC/LRCX/AMAT now >=$500B + the $20-300B movers).
                              # Robust plateau $20-100B both-halves+ & survives +30bps. The breadth>=2 gate
                              # (g_bigcap_momo.min_breadth) handles the chop/bear the wider universe admits.
-                             # NOTE: only the BRIDGE engine; the IBKR engine keeps bc.market_cap_above_musd=$500B.
-                             # S-2026-06-20c (prior): $500B mega-cap-only (now superseded for the bridge).
+                             # NOTE (S-2026-06-24 corrected): the in-process IBKR engine is ALSO $20B now --
+                             # engine_init.hpp:4166 bc.market_cap_above_musd=20000 + BigCapMomoIbkr.hpp class
+                             # default=20000. Both engines aligned at $20B. (Old comment claimed the IBKR
+                             # engine "keeps $500B" -- stale/wrong; it was actually $100M default until the
+                             # 06-24 hardening, which is how the AEHR/SHAZ/PBLS small-caps leaked in pre-fix.)
+                             # S-2026-06-20c (prior): $500B mega-cap-only (now superseded -> $20B both engines).
                              # big/mid-cap only -- UNITS = MILLIONS USD (TWS scanner
                              # convention). 2000 = $2B. BUG 2026-06-13: was 2.0e9 =
                              # "$2 quadrillion" -> scanner returned 0 rows since ship.
