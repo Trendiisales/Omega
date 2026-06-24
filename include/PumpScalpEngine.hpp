@@ -153,6 +153,14 @@ public:
     //     Set ATR_LEN>0 to enable; pair with TRAIL_PCT=0 to test ATR-only.
     int    ATR_LEN       = 0;
     double ATR_MULT      = 0.0;
+    //   • Profit-scaled trail (S-2026-06-24, default-OFF): the ATR-trail multiplier
+    //     ramps from ATR_MULT (wide, gives the ignition room) DOWN to ATR_MULT_TIGHT
+    //     as the open gain grows from 0 to PSCALE_FULL_PCT. Rides small winners on a
+    //     wide trail, protects the fat part of a runner with a tighter one — banks
+    //     more on a reversal WITHOUT choking the normal post-breakout pullback.
+    //     Off when ATR_MULT_TIGHT<=0 or PSCALE_FULL_PCT<=0 (flat ATR_MULT, live behavior).
+    double ATR_MULT_TIGHT  = 0.0;   // trail mult once gain >= PSCALE_FULL_PCT (e.g. 2.5)
+    double PSCALE_FULL_PCT = 0.0;   // gain% at which the trail reaches ATR_MULT_TIGHT (e.g. 15)
     //   • Structure exit: close on a bar that closes through the extreme of the
     //     last STRUCT_LB closed bars (long: below the min low). 0 = off.
     int    STRUCT_LB     = 0;
@@ -247,6 +255,14 @@ public:
 
     // ── FAST path: every price update. Manages the open position so it exits
     //   IMMEDIATELY on the turn (all three TF engines share this behaviour). ──
+    // Profit-scaled ATR-trail multiplier: ramps ATR_MULT (wide) -> ATR_MULT_TIGHT as the
+    // open gain grows 0 -> PSCALE_FULL_PCT. Returns flat ATR_MULT when the scaling is off.
+    double _eff_atr_mult(double base, double extreme) const {
+        if (ATR_MULT_TIGHT <= 0.0 || PSCALE_FULL_PCT <= 0.0 || base <= 0.0) return ATR_MULT;
+        const double gain_pct = std::fabs(extreme - base) / base * 100.0;   // peak gain (long) / trough (short)
+        double f = gain_pct / PSCALE_FULL_PCT; if (f < 0) f = 0; if (f > 1) f = 1;
+        return ATR_MULT + (ATR_MULT_TIGHT - ATR_MULT) * f;                   // wide -> tight
+    }
     void on_price(double px, int64_t ts_ms) {
         if (px <= 0) return;
         m_last_px = px; m_last_px_ms = ts_ms;          // watchdog: last good tick (feed-stale force-close)
@@ -267,7 +283,7 @@ public:
             }
             double stop = base*(1-HARD_PCT/100);                                    // hard floor (always)
             if (TRAIL_PCT > 0)        stop = std::max(stop, pos.peak*(1-TRAIL_PCT/100));   // % trail
-            if (ATR_LEN > 0 && m_atr>0) stop = std::max(stop, pos.peak - ATR_MULT*m_atr);  // ATR trail (research)
+            if (ATR_LEN > 0 && m_atr>0) stop = std::max(stop, pos.peak - _eff_atr_mult(base, pos.peak)*m_atr);  // ATR trail (profit-scaled)
             if (BE_ARM_PCT > 0 && pos.peak >= base*(1+BE_ARM_PCT/100))
                 stop = std::max(stop, base*(1+BE_FLOOR_PCT/100));                   // BE-lock armed
             if (px <= stop) { _close(stop, ts_ms, "TRAIL"); return; }
@@ -280,7 +296,7 @@ public:
             }
             double stop = base*(1+HARD_PCT/100);                                    // hard ceiling (always)
             if (TRAIL_PCT > 0)        stop = std::min(stop, pos.trough*(1+TRAIL_PCT/100));
-            if (ATR_LEN > 0 && m_atr>0) stop = std::min(stop, pos.trough + ATR_MULT*m_atr);
+            if (ATR_LEN > 0 && m_atr>0) stop = std::min(stop, pos.trough + _eff_atr_mult(base, pos.trough)*m_atr);
             if (BE_ARM_PCT > 0 && pos.trough <= base*(1-BE_ARM_PCT/100))
                 stop = std::min(stop, base*(1-BE_FLOOR_PCT/100));                   // BE-lock armed
             if (px >= stop) { _close(stop, ts_ms, "TRAIL"); return; }

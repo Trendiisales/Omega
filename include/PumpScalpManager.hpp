@@ -48,6 +48,13 @@ public:
     // (len30 x4) is the best robust BigCap exit (PF4.05 vs %-trail 2.30). 0 = off.
     int    atr_len      = 0;
     double atr_mult     = 0.0;
+    // S-2026-06-24 profit-scaled trail + close-based reversal exits (engine fields). All 0/off
+    // => live behavior unchanged. Swept via bigcap_momo_faithful BC_* env knobs.
+    double atr_mult_tight  = 0.0;  // trail mult once gain>=pscale_full_pct (profit-scaled; 0=flat)
+    double pscale_full_pct = 0.0;  // gain% at which trail reaches atr_mult_tight
+    double giveback_frac   = 0.0;  // exit on retrace of this frac of peak gain (0=off)
+    int    struct_lb       = 0;    // exit on close below swing-low of last N bars (0=off)
+    bool   rollover_ema    = false;// exit on close below EMA9 (momentum-decay, long)
     // ride winners past the wall-clock while still net-profitable (engine MAXHOLD_SKIP_IF_PROFIT).
     // 2026-06-18: the 240-min cap was clocking out QURE/NTLA/PRAX mid-run. true = ride to trail turn.
     bool   maxhold_skip_if_profit = false;
@@ -193,6 +200,11 @@ private:
         e.PRICE_MIN    = price_min;
         e.ATR_LEN      = atr_len;                  // ATR-trail (0 = off)
         e.ATR_MULT     = atr_mult;
+        e.ATR_MULT_TIGHT  = atr_mult_tight;        // S-2026-06-24 profit-scaled trail + close exits
+        e.PSCALE_FULL_PCT = pscale_full_pct;
+        e.GIVEBACK_FRAC   = giveback_frac;
+        e.STRUCT_LB       = struct_lb;
+        e.ROLLOVER_EMA    = rollover_ema;
         e.MAXHOLD_SEC  = maxhold_bars * tf_sec;   // time-stop; trail exits on the turn first
         e.MAXHOLD_SKIP_IF_PROFIT = maxhold_skip_if_profit;   // ride winners past the clock
         e.MAX_ENTRIES_PER_DAY = max_entries_per_day;   // re-entry cap (chop-bleed guard)

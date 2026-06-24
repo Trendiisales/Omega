@@ -91,6 +91,11 @@ static void configure_prod(omega::PumpScalpManager& m) {
     m.volx         = envf("BC_VOLX",0.0);       // OFF live
     m.atr_len      = envi("BC_ATRLEN",30);      // ATR-trail length
     m.atr_mult     = envf("BC_ATRMULT",4.0);    // trail = peak - mult*ATR
+    m.atr_mult_tight  = envf("BC_ATRTIGHT",0.0);   // S-2026-06-24 profit-scaled trail (0=off)
+    m.pscale_full_pct = envf("BC_PSCALE",0.0);     //   ramps wide->tight as gain 0->this%
+    m.giveback_frac   = envf("BC_GIVEBACK",0.0);   // exit on retrace of frac of peak gain
+    m.struct_lb       = envi("BC_STRUCT",0);       // exit on close < swing-low(N) bars
+    m.rollover_ema    = envi("BC_ROLLEMA",0)!=0;   // exit on close < EMA9 (momentum-decay)
     m.be_arm_pct   = envf("BC_BEARM",3.0);      // arm BE-floor once +arm% in profit (0=off)
     m.be_floor_pct = envf("BC_BEFLOOR",2.0);    // floor stop at entry +floor%
     m.maxhold_skip_if_profit = envi("BC_RIDE",1)!=0;  // ride winners past the clock
