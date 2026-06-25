@@ -148,6 +148,25 @@ public:
         return v;
     }
 
+    // ── S-2026-06-26 PERSISTENCE (wire_multicell archetype): this manager showed positions but did NOT
+    //   persist -> BigCapMomo/PumpScalp fills vanished on every restart. The per-cell PumpScalpEngine
+    //   already has persist_save/persist_restore; these route per-symbol with tag "<base>#<symbol>".
+    void persist_save_all(const char* base, const char* /*sym*/, std::vector<omega::PositionSnapshot>& out) {
+        omega::PositionSnapshot s;
+        for (auto& kv : m_book) {
+            std::string tag = std::string(base) + "#" + kv.first;   // base#<symbol> -> restorer routes by base
+            if (kv.second->e3.persist_save(tag.c_str(), kv.first.c_str(), s)) out.push_back(s);
+        }
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        if (!enabled) return false;                                 // disabled -> no resurrect (phantom guard)
+        auto h = ps.engine.find('#');
+        std::string sym = (h == std::string::npos) ? ps.symbol : ps.engine.substr(h + 1);
+        if (sym.empty()) return false;
+        Cell& t = ensure(sym, ps.entry_ts ? ps.entry_ts * 1000 : 0);
+        return t.e3.persist_restore(ps);
+    }
+
     // ── Scanner visibility: current pump candidates the bridge is tracking
     //   (symbol, price, % up from open). Served to the GUI scanner panel. ───────
     struct Candidate { std::string sym; double px=0, day_open=0, up_pct=0; int64_t ts=0; };

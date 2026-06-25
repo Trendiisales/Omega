@@ -16,8 +16,7 @@ BigCapMomoIbkr"
 # DORMANT/tombstoned engines (enabled=false; cannot hold a live position). RE-ENABLING ONE WITHOUT
 # WIRING PERSISTENCE WILL FAIL THIS GATE -- that is the point. Keep this list short + justified.
 allow="FvgContinuation FvgCont10m FvgCont30m GoldOrbRetrace GoldOrbRetraceLDN GoldVolBreakoutM30 \
-NqFutMomo DonchianPortfolio EmaPullbackPortfolio Us30Ensemble XauSessNYpm FxCrossRevEURGBP \
-BigCapMomoCons BigCapMomoGB"
+NqFutMomo DonchianPortfolio EmaPullbackPortfolio Us30Ensemble XauSessNYpm FxCrossRevEURGBP"
 fail=0
 while read -r tag; do
   [ -z "$tag" ] && continue

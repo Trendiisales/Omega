@@ -245,6 +245,12 @@ inline void register_position_persistence() {
     wire_cross(g_idxsess_uk100,  "IndexSession_UK100",  "UK100");
     wire_cross(g_idxsess_estx50, "IndexSession_ESTX50", "ESTX50");
 
+    // ---- BigCapMomo / PumpScalp (multi-symbol cell managers: Cons + optional GB A/B) ----
+    // S-2026-06-26: enabled but unpersisted -> per-symbol fills vanished on restart. Now wired per-cell
+    // (tag "<base>#<symbol>"); restore_blocked_disabled gates the GB instance when OMEGA_BIGCAP_AB is off.
+    wire_multicell(g_bigcap_momo,   "BigCapMomoCons", "");
+    wire_multicell(g_bigcap_momo_b, "BigCapMomoGB",   "");
+
     // ---- IndexBearShort (risk-off SHORT, NAS100 + US500; real-engine PF1.59-1.60) ----
     // S-2026-06-26: showed positions but did NOT persist -> the 2 live SHORTs vanished with no ledger
     // close on restart (operator-reported). Now wired (persist_save/restore added to the engine).
