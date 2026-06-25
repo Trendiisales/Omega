@@ -4238,6 +4238,12 @@ static void init_engines(const std::string& cfg_path)
             bc.luke_adr_min  = 4.0;    // S-2026-06-26 6.0->4.0: ADR>=6 armed 0 setups in 17h live (too tight);
                                        // ADR>=4 ~5x more candidates (BT PF1.35 @adr4 vs 1.77 @adr6, but trades).
             if (const char* lk = std::getenv("OMEGA_BIGCAP_LUKE")) bc.luke_gate = (std::atoi(lk) != 0);
+            // S-2026-06-26 fixed high-ADR daily-swing watchlist (the gainer scan misses the QUIET
+            // names where A/C setups form -> 0 armed). These are evaluated for setups every day.
+            bc.luke_watchlist = {
+                "NVDA","AMD","MU","MRVL","SMCI","ARM","AVGO","COIN","MSTR","PLTR","SHOP","CRWD","SNOW",
+                "NOW","PANW","ORCL","INTC","DELL","UBER","NFLX","QCOM","ANET","STX","FTNT","KMX","DLTR",
+                "LRCX","KLAC","AMAT","MPWR","ON","MRNA","APP","CVNA","HOOD","CRDO" };
             bc.engine_tag   = bc.luke_gate ? "BigCapMomoLuke" : "BigCapMomo";
             if (const char* h = std::getenv("OMEGA_BIGCAP_IBKR_HOST"))   bc.host      = h;
             if (const char* p = std::getenv("OMEGA_BIGCAP_IBKR_PORT"))   bc.port      = std::atoi(p);

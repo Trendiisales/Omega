@@ -220,6 +220,18 @@ public:
             if(cfg_.market_cap_above_musd>0.0) iv.marketCapAbove=cfg_.market_cap_above_musd;
             cli_->reqScannerSubscription(9101,iv,TagValueListSPtr(),TagValueListSPtr());
         }
+        // S-2026-06-26 LUKE FIXED WATCHLIST: TOP_PERC_GAIN surfaces today's MOVERS, but Luke A/C
+        // setups form on QUIET names (inside-day/pullback) that are NOT moving today -> the gainer
+        // scan never feeds them, so 0 setups armed (live: scanned ARGX/CAT/URI vs setups on
+        // STX/FTNT/PANW). FIX: subscribe a STABLE high-ADR watchlist directly + evaluate setups on
+        // it DAILY, independent of the scan. This is the right universe for the daily-swing entry.
+        if(cfg_.luke_gate){
+            for(const auto& sym : cfg_.luke_watchlist){
+                Contract wc; wc.symbol=sym; wc.secType="STK"; wc.exchange="SMART"; wc.currency="USD";
+                subscribe_name(wc);
+            }
+            printf("[BigCapMomo] LUKE watchlist subscribed: %zu high-ADR names\n", cfg_.luke_watchlist.size()); fflush(stdout);
+        }
         if(cfg_.regime_gate) cli_->reqHistoricalData(MKT_REQ, spy(), "", "1 Y", "1 day", "TRADES", 1, 1, true, TagValueListSPtr());
         printf("[BigCapMomo] scan TOP_PERC_GAIN (gate>=%.0f%% trail=%.0f%% IG=%.0f%% volx=%.0f regime_gate=%d) %s\n",
                cfg_.gate_pct,cfg_.trail_pct*100,cfg_.ig_pct,cfg_.volx,(int)cfg_.regime_gate,cfg_.paper_only?"PAPER":"LIVE"); fflush(stdout);
@@ -286,29 +298,24 @@ public:
         s.hb_t=t; s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v;
     }
 
+    // Subscribe one name: 5m feed (keepUpToDate) + (luke) the 1Y daily req for ADR + A/C setup.
+    // Dedup via scanned_ so the two scan codes AND the Luke watchlist don't double-subscribe.
+    void subscribe_name(const Contract& c){
+        { std::lock_guard<std::mutex> lk(book_mu_);
+          if(!scanned_.insert(c.symbol).second) return; }
+        scan_hits_.fetch_add(1, std::memory_order_relaxed);
+        int rid=next_rt_++; Sym x; x.c=c;
+        { std::lock_guard<std::mutex> lk(book_mu_); subs_[rid]=x; }
+        cli_->reqHistoricalData(rid, x.c, "", "1 D", "5 mins", "TRADES", 1, 2, true, TagValueListSPtr());
+        if(cfg_.luke_gate){
+            int arid=ADR_BASE+rid; adr2sym_[arid]=rid;
+            cli_->reqHistoricalData(arid, x.c, "", "1 Y", "1 day", "TRADES", 1, 2, false, TagValueListSPtr());
+        }
+    }
     void scannerData(int,int rank,const ContractDetails& cd,const std::string&,const std::string&,const std::string&,const std::string&) override {
         if(rank>=20) return;                         // top-20 movers per scan
         last_activity_ms_.store(now_ms(), std::memory_order_relaxed);   // liveness: scanner alive
-        { std::lock_guard<std::mutex> lk(book_mu_);
-          if(!scanned_.insert(cd.contract.symbol).second) return; }     // already subscribed via the other scan
-        scan_hits_.fetch_add(1, std::memory_order_relaxed);
-        int rid=next_rt_++; Sym x; x.c=cd.contract;
-        { std::lock_guard<std::mutex> lk(book_mu_); subs_[rid]=x; }
-        // 5m bars via reqHistoricalData(keepUpToDate) -- works with the US-equity data
-        // entitlement (reqRealTimeBars is live-only and 420s even when the data is held).
-        // formatDate=2 -> bar.time is epoch seconds; useRTH=1; endDateTime="" required for keepUpToDate.
-        cli_->reqHistoricalData(rid, x.c, "", "1 D", "5 mins", "TRADES", 1, 2, true, TagValueListSPtr());
-        // S-2026-06-25 ADR PRE-FILTER + A/C setup: one-shot 1-year daily req -> 20-day ADR%. The scanner
-        // (TOP_PERC_GAIN) ranks by today's % move, NOT historical range; this drops names whose
-        // ADR < luke_adr_min so the live universe matches the validated high-ADR roster (BT
-        // reconstruction: rolling top-gainer watchlist + ADR>=4% -> PF 2.74->2.94, held).
-        // Behind luke_gate (default OFF). Resolves in historicalDataEnd -> sets Sym.adr_ok.
-        if(cfg_.luke_gate){
-            int arid=ADR_BASE+rid; adr2sym_[arid]=rid;
-            // 1 Y of daily bars: feeds BOTH the 20-day ADR pre-filter AND the A/C setup detector
-            // (omega::luke::evaluate needs >=55 daily bars for EMA50/ADR20).
-            cli_->reqHistoricalData(arid, x.c, "", "1 Y", "1 day", "TRADES", 1, 2, false, TagValueListSPtr());
-        }
+        subscribe_name(cd.contract);
     }
     void scannerDataEnd(int rid) override { cli_->cancelScannerSubscription(rid); scanDone_=true; }
 
