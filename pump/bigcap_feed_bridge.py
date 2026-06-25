@@ -84,6 +84,68 @@ MKT_DATA_TYPE = int(os.environ.get("OMEGA_BIGCAP_MKTDATA", "1"))  # S-2026-06-23
 _candidates = {}             # sym -> dict(sym,name,px,day_open,up,dvol,ts)
 _names = {}                  # sym -> company longName (IBKR contractDetails)
 
+# ── S-2026-06-25 STALE-DATA GUARDS (operator-mandated: the engine must NEVER act
+#    on stale/frozen/delayed/non-RTH prices). A name is emitted (P/C) ONLY when its
+#    tick is LIVE this pass; a non-live name is SUPPRESSED entirely so the consumer's
+#    120s watchdog flattens any open pos and no new candidate can fire. Root cause this
+#    closes: overnight the feed froze (tk.last stuck) yet the bridge kept emitting
+#    "tradeable=24 top=DHI +18.8%" off a stale day_open -> garbage candidates.
+STALE_TICK_MS = int(os.environ.get("OMEGA_BIGCAP_STALE_MS", "15000"))   # no IBKR tick update in >Xms = stale
+REQUIRE_RTH   = os.environ.get("OMEGA_BIGCAP_REQUIRE_RTH", "1") == "1"  # only emit during US regular session
+RTH_OPEN_MIN  = int(os.environ.get("OMEGA_BIGCAP_RTH_OPEN_MIN",  str(13*60+30)))  # 13:30 UTC = 09:30 ET
+RTH_CLOSE_MIN = int(os.environ.get("OMEGA_BIGCAP_RTH_CLOSE_MIN", str(20*60)))     # 20:00 UTC = 16:00 ET
+LOCK_PORT     = int(os.environ.get("OMEGA_BIGCAP_LOCK_PORT", "7785"))   # G1 singleton lock port
+HEALTH_FLAG   = os.path.join(os.environ.get("OMEGA_LOG_DIR", r"C:\Omega\logs"), "bigcap_feed_unhealthy.flag")
+_lock_sock = None
+
+def _in_rth(now_ms):
+    tm = time.gmtime(now_ms/1000.0)
+    if tm.tm_wday >= 5: return False                       # Sat/Sun: US equities closed
+    mins = tm.tm_hour*60 + tm.tm_min
+    return RTH_OPEN_MIN <= mins < RTH_CLOSE_MIN
+
+def _tick_live(tk, now_ms):
+    """True only if this ticker's data is live + fresh this pass. Returns (bool, reason)."""
+    mdt = getattr(tk, "marketDataType", None)
+    if mdt not in (None, 1):                               # 2=frozen 3=delayed 4=delayed-frozen
+        return False, "mdtype%s" % mdt
+    if REQUIRE_RTH and not _in_rth(now_ms):
+        return False, "non-RTH"
+    tkt = getattr(tk, "time", None)                        # ib_async: datetime of last update
+    if tkt is not None:
+        try:
+            age = now_ms - int(tkt.timestamp()*1000)
+            if age > STALE_TICK_MS:
+                return False, "age%dms" % age
+        except Exception:
+            pass
+    return True, "live"
+
+def _acquire_singleton_lock():
+    """G1: bind a lock port so a 2nd bridge instance can't fight over :7783/:7784.
+    Only the real interpreter runs main(); a venv-stub parent never reaches here."""
+    global _lock_sock
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", LOCK_PORT))                   # NO SO_REUSEADDR -> a 2nd bind fails
+        s.listen(1)
+        _lock_sock = s                                     # held for process lifetime
+        return True
+    except OSError as e:
+        print(f"[BIGCAP-FATAL] another bridge already holds lock :{LOCK_PORT} ({e}) "
+              f"-- exiting to avoid a double feed", flush=True)
+        return False
+
+def _set_health(unhealthy, reason=""):
+    try:
+        if unhealthy:
+            with open(HEALTH_FLAG, "w") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {reason}\n")
+        elif os.path.exists(HEALTH_FLAG):
+            os.remove(HEALTH_FLAG)
+    except Exception:
+        pass
+
 # ── TCP server -> in-Omega PumpFeedConsumer (one consumer) ───────────────────
 _conn=None; _lock=threading.Lock(); _need_reseed=False
 _starve_hb=0   # consecutive heartbeats with consumer=N while names tradeable (S-2026-06-17 alert)
@@ -222,6 +284,7 @@ class Sub:
         self.ticker=ticker; self.day_open=0.0; self.last_vol=None
         self.bars={tf:None for tf in TFS}
         self.last_bar_dvol=0.0   # close*vol of last COMPLETED 5m bar (engine liq gate unit)
+        self.stale_why=""        # S-2026-06-25: non-empty when this name was suppressed as stale this pass
     def roll(self, sym, px, vol, ts_ms):
         if px is None or px<=0 or px!=px: return
         emit(f"P,{sym},{px},{ts_ms}")
@@ -280,6 +343,8 @@ def subscribe_symbol(ib, subs, sym, min_move):
     return True
 
 def main():
+    if not _acquire_singleton_lock():       # G1: refuse to start a 2nd bridge (no :7783/:7784 port fight)
+        sys.exit(1)
     threading.Thread(target=_serve_thread, args=(SERVE_PORT,), daemon=True).start()
     threading.Thread(target=_http_thread, args=(SCANNER_HTTP_PORT,), daemon=True).start()
     # S-2026-06-23: suppress the BENIGN "Error 162 ... scanner subscription cancelled" spam.
@@ -336,8 +401,15 @@ def main():
             _top = max(_candidates.values(), key=lambda c: c["up"], default=None)
             _arm = sum(1 for c in _candidates.values()
                        if c["up"]>=GATE_PCT and c["px"]>=PRICE_MIN and c["dvol"]>=DVOL_MIN)
+            _stale = sum(1 for s in subs.values() if getattr(s,"stale_why",""))   # G2: names suppressed as stale
+            _rth   = _in_rth(int(now*1000))
+            # health flag for preflight/monitor (G4): UNHEALTHY only if, DURING RTH, names are
+            # subscribed but EVERY one is stale (= real feed death). Idle overnight is NOT unhealthy.
+            _unhealthy = bool(_rth and len(subs)>0 and _stale==len(subs))
+            _set_health(_unhealthy, f"RTH all-stale subs={len(subs)}")
             print(f"[HB {time.strftime('%H:%M:%S')}] subs={len(subs)} cand={len(_candidates)} "
-                  f"tradeable={_arm} consumer={'Y' if _conn else 'N'} mdtype={MKT_DATA_TYPE} "
+                  f"tradeable={_arm} stale={_stale} rth={'Y' if _rth else 'N'} "
+                  f"consumer={'Y' if _conn else 'N'} mdtype={MKT_DATA_TYPE} "
                   f"top={(_top['sym']+' +'+format(_top['up'],'.1f')+'%') if _top else '-'}",
                   flush=True)
             # S-2026-06-17: LOUD escalation — bridge streaming movers but NO Omega consumer
@@ -365,6 +437,12 @@ def main():
             tk=s.ticker
             px=tk.last or tk.marketPrice() or tk.close
             vol=getattr(tk,"volume",None)
+            live, why = _tick_live(tk, ts_ms)            # G2: only feed LIVE+fresh+RTH ticks
+            if not live:
+                s.stale_why = why
+                _candidates.pop(sym, None)               # stale -> drop candidate (no entry; consumer watchdog flattens)
+                continue
+            s.stale_why = ""
             try:
                 s.roll(sym, float(px) if px else None, float(vol) if vol else None, ts_ms)
                 if px and s.day_open:

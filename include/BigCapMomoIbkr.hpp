@@ -39,6 +39,9 @@ struct Config {
     int    client_id        = 86;     // matches the standalone engine's clientId
     bool   paper_only       = true;   // shadow: log trades, route NO live orders
     int    market_data_type = 1;      // IBKR mkt-data type: 1=live 2=frozen 3=delayed 4=delayed-frozen
+    long   max_bar_age_sec  = 600;    // S-2026-06-25 STALE-DATA GUARD: refuse entry if the just-closed
+                                      // 5m bar's start is older than this vs wall-clock (live completion
+                                      // ~= one TF; a bar hours-old = IBKR feed stalled/delayed). 0 = off.
     double gate_pct         = 2.5;    // S-2026-06-24p: align to faithful-validated config (was 3.0). bigcap_momo_faithful full-universe n39 PF6.95 used gate2.5.
     double trail_pct        = 0.04;   // %-trail off peak (0 = off; ATR-trail below replaces it)
     // S-2026-06-18 gain-protect exit — ported from PumpScalpEngine (+52% / PF2.30->4.72,

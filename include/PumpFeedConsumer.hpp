@@ -67,6 +67,19 @@ inline socket_t connect_localhost(const char* host, uint16_t port) noexcept {
     return s;
 }
 
+// S-2026-06-25 G3 STALE-DATA GUARD: the bridge stamps P (price) and C (candidate)
+// lines with the current wall clock, so a fresh line has age ~0. If the bridge ever
+// stalls or replays a buffered batch, those lines arrive with a large age -> DROP them
+// so the engine never enters/exits off a stale price. Belt-and-suspenders behind the
+// bridge-side freshness gate (which already suppresses stale names at the source).
+// NOT applied to B (5m bar close: ts is the bucket start, legitimately up to a TF old)
+// nor S (historical seed) nor R (metadata).
+inline int64_t feed_now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+static constexpr int64_t FEED_STALE_MS = 60000;   // drop now-stamped P/C lines older than 60s
+
 // Parse + dispatch one feed line into the manager. Tolerant: bad lines dropped.
 // mgr_b (optional, default null): A/B twin fed the SAME lines so it gets IDENTICAL
 // entries (S-2026-06-24). When null, byte-identical to the single-manager path.
@@ -80,11 +93,13 @@ inline void dispatch_line(PumpScalpManager& mgr, const char* ln, PumpScalpManage
         }
     } else if (ln[0]=='P') {
         if (std::sscanf(ln+1, ",%63[^,],%lf,%lld", sym,&px,&ts)==3) {
+            if (feed_now_ms() - (int64_t)ts > FEED_STALE_MS) return;   // G3: stale price -> drop
             mgr.on_price(sym, px, (int64_t)ts);
             if (mgr_b) mgr_b->on_price(sym, px, (int64_t)ts);
         }
     } else if (ln[0]=='C') {
         if (std::sscanf(ln+1, ",%63[^,],%lf,%lf,%lf,%lld", sym,&px,&dopen,&up,&ts)==5) {
+            if (feed_now_ms() - (int64_t)ts > FEED_STALE_MS) return;   // G3: stale candidate -> drop
             mgr.set_candidate(sym, px, dopen, up, (int64_t)ts);
             if (mgr_b) mgr_b->set_candidate(sym, px, dopen, up, (int64_t)ts);
         }

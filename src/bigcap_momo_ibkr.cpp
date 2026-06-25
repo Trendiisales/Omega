@@ -286,6 +286,20 @@ public:
             return;
         }
         // ── entry gates (mirror the validated backtest exactly) ──
+        // S-2026-06-25 STALE-DATA GUARD: never enter off a stale bar. `t` is the just-closed
+        // 5m bar's start (epoch sec); at live completion (now - t) ~= one TF. A bar older than
+        // max_bar_age_sec = IBKR feed stalled/replayed/silently delayed -> refuse the entry
+        // (exit-management above already ran). Closes the "market_ok=1 last_data=12313s" hole.
+        if(cfg_.max_bar_age_sec > 0){
+            long age = (long)(now_ms()/1000) - t;
+            if(age > cfg_.max_bar_age_sec){
+                static long s_stalelog=0; long nw=(long)(now_ms()/1000);
+                if(nw - s_stalelog > 30){ s_stalelog=nw;
+                    printf("[BigCapMomo] STALE-BAR %s age=%lds (>%lds) -- feed stale, entry blocked\n",
+                           s.c.symbol.c_str(), age, cfg_.max_bar_age_sec); fflush(stdout); }
+                return;
+            }
+        }
         bool fire=false;
         if(c>=cfg_.px_min && s.day_open>0 && (market_ok_ || !cfg_.regime_gate)){
             double day_up=(c/s.day_open-1)*100;
