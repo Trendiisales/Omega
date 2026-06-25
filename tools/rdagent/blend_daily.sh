@@ -8,17 +8,20 @@ TOOLS="$HOME/Omega/tools/rdagent"; DATA="$HOME/Omega/data/rdagent"
 TICKERS="$DATA/sp500_tickers.txt"; CLOSE="$DATA/sp500_long_close.csv"
 TS="$(date '+%Y-%m-%d %H:%M')"
 echo "[$TS] blend book — refreshing full S&P daily"
-conda run -n rdagent4qlib python -c "
-import yfinance as yf, pandas as pd
-tk=open('$TICKERS').read().split()
-d=yf.download(tk, period='2y', auto_adjust=True, progress=False)['Close'].dropna(axis=1,how='all')
-# extend, not replace: keep long history, append fresh tail
-import os
-if os.path.exists('$CLOSE'):
-    old=pd.read_csv('$CLOSE',index_col=0,parse_dates=True)
-    d=pd.concat([old[~old.index.isin(d.index)], d]).sort_index()
-d.to_csv('$CLOSE'); print(f'  refreshed -> {d.shape[1]} names through {d.index.max().date()}')" 2>/dev/null \
-  || echo "  refresh skipped (offline) — using cached $CLOSE"
+# S-2026-06-25b CLOSE REFRESH: the old single bulk yf.download returned ~75% of names under
+# throttle -> ~230 froze at the 2024 build (the GUI "-" / 2yr-stale-column bug). Now: IBKR-first
+# (reqHistoricalData, no throttle) when the gateway tunnel is up, else yfinance WITH
+# retry-the-stragglers. Both extend-not-replace + freshness/coverage-gated (never write stale/thin).
+if nc -z -G2 127.0.0.1 4001 2>/dev/null; then
+  echo "  [close] IBKR gateway up -> reliable refresh (bigcap fast; run --tickers full overnight)"
+  python3 "$TOOLS/refresh_close_ibkr.py" --tickers bigcap \
+    || conda run -n rdagent4qlib python "$TOOLS/refresh_close_yf.py" \
+    || echo "  refresh skipped — using cached $CLOSE"
+else
+  echo "  [close] no IBKR tunnel -> yfinance + retry-stragglers"
+  conda run -n rdagent4qlib python "$TOOLS/refresh_close_yf.py" \
+    || echo "  refresh skipped (stale/offline) — using cached $CLOSE"
+fi
 conda run -n rdagent4qlib python "$TOOLS/blend_book.py" --close-csv "$CLOSE" \
   --capital "${RDA_CAPITAL:-100000}" --w-core 0.4 --cost-bps 5 --mode shadow | tail -8
 echo "[$TS] done — blend_book.json + blend_ledger.csv"
