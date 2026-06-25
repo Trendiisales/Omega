@@ -10,6 +10,7 @@
 #include "PortfolioGuard.hpp"
 #include "IbkrExec.hpp"   // thin TWS-free IBKR execution interface
 #include "BigCapMomoIbkr.hpp"   // thin TWS-free interface to the in-process BigCapMomo engine
+#include "NqMomoIbkr.hpp"       // thin TWS-free interface to the in-process NQ/MNQ futures momentum engine
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 
 static void init_engines(const std::string& cfg_path)
@@ -4241,6 +4242,56 @@ static void init_engines(const std::string& cfg_path)
                 []() { return omega::bigcap_momo_ibkr::collect_positions(); });
             printf("[OMEGA-INIT] BigCapMomo IN-PROCESS IBKR engine wired (gate1.5%% impulse1.0ATR "
                    "regime-gate ig3%% $1000 shadow); activate with OMEGA_BIGCAP_IBKR=1\n");
+        }
+
+        // ── NqFutMomo IN-PROCESS IBKR engine (NQ/MNQ futures momentum, S-2026-06-25) ──
+        // The ONE genuinely-new validated edge of the session. Intraday momentum-continuation
+        // on a SINGLE liquid index future with the BigCapMomo exit chassis (fixed-ATR-at-entry
+        // trail + BE-ratchet + ride). Liquid futures => no micro-cap slippage AND a LOW cost
+        // floor (the spot-CFD cost-wall unlock). VALIDATED FAITHFULLY: backtest/momo_cont_nq.cpp
+        // on real NAS100 ticks (208M ticks -> 78.7M 5m bars) = PF 2.27 @2pt / 1.89 @4pt(2x),
+        // both WF-halves+ (H1 +515 / H2 +722). Config is the harness verbatim (do NOT retune
+        // without a faithful re-BT). Own IBKR 5m-bar data thread inside Omega.exe (in-process
+        // telemetry -> running + closed trades in the GUI). ACTIVATED by OMEGA_NQ_IBKR=1 in
+        // omega_main (set_enabled + start); off => dormant, collect_positions empty (no GUI rows).
+        // DISTINCT from the tombstoned NqMomentumEngine (g_nq_momentum, on_tick class path).
+        {
+            omega::nq_momo_ibkr::Config nc;
+            nc.symbol       = "MNQ";    // micro NQ ($2/pt) for small shadow size; "NQ" = $20/pt
+            nc.point_value  = 2.0;      // MNQ; set 20.0 for NQ
+            nc.contracts    = 1;
+            nc.ig_pct       = 0.4;      // validated momo_cont_nq.cpp config (verbatim)
+            nc.lb           = 6;        // 30min ignition lookback
+            nc.regime_gate  = true;     // close > SMA200 of own 5m closes (self-gate)
+            nc.regime_sma   = 200;
+            nc.atr_len      = 30;
+            nc.atr_mult     = 4.0;      // wide ATR-trail, ATR captured AT ENTRY (held fixed)
+            nc.be_arm_pct   = 0.03;     // BE-ratchet (adverse protection -- tight cut GUTS the trend edge)
+            nc.be_floor_pct = 0.02;
+            nc.maxhold      = 48;       // 4h backstop; rides a still-profitable winner past it
+            nc.maxhold_skip_if_profit = true;
+            nc.cost_pts     = 2.0;      // log-only (validated cost-robust to 4pt = $8/MNQ round trip)
+            nc.paper_only   = true;     // SHADOW: log trades, route NO live orders
+            nc.engine_tag   = "NqFutMomo";
+            // CONTFUT continuous-future data by default (never dead on a roll). Set a front
+            // month (OMEGA_NQ_IBKR_MONTH=202609) to pin a real FUT contract for live routing.
+            if (const char* sym = std::getenv("OMEGA_NQ_IBKR_SYMBOL")) {
+                nc.symbol = sym;
+                if (std::string(sym) == "NQ") nc.point_value = 20.0;
+            }
+            if (const char* pv = std::getenv("OMEGA_NQ_IBKR_POINTVAL")) nc.point_value = std::atof(pv);
+            if (const char* mo = std::getenv("OMEGA_NQ_IBKR_MONTH"))    nc.last_trade_month = mo;
+            if (const char* h  = std::getenv("OMEGA_NQ_IBKR_HOST"))     nc.host      = h;
+            if (const char* p  = std::getenv("OMEGA_NQ_IBKR_PORT"))     nc.port      = std::atoi(p);
+            if (const char* c  = std::getenv("OMEGA_NQ_IBKR_CLIENT"))   nc.client_id = std::atoi(c);
+            if (const char* m  = std::getenv("OMEGA_NQ_IBKR_MDTYPE"))   nc.market_data_type = std::atoi(m);
+            omega::nq_momo_ibkr::configure(nc);
+            omega::nq_momo_ibkr::set_on_trade_record(
+                [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
+            g_open_positions.register_source("NqFutMomo",
+                []() { return omega::nq_momo_ibkr::collect_positions(); });
+            printf("[OMEGA-INIT] NqFutMomo IN-PROCESS IBKR engine wired (MNQ 5m momo IG0.4%% LB6 "
+                   "SMA200 self-gate ATR30x4 BE arm3/floor2 maxhold48 shadow); activate with OMEGA_NQ_IBKR=1\n");
         }
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──

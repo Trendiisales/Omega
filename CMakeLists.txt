@@ -219,6 +219,10 @@ set(IBKR_OMEGA_SOURCES
     # scanner/data thread). Same TWS-isolation rule as ibkr_exec.cpp: only this
     # TU sees the TWS headers; the main TU includes only the thin BigCapMomoIbkr.hpp.
     ${CMAKE_SOURCE_DIR}/src/bigcap_momo_ibkr.cpp
+    # src/nq_momo_ibkr.cpp -- the in-process NQ/MNQ futures momentum engine (S-2026-06-25,
+    # the one validated new edge). Own IBKR 5m-bar data thread; same TWS-isolation rule.
+    # Main TU includes only the thin NqMomoIbkr.hpp.
+    ${CMAKE_SOURCE_DIR}/src/nq_momo_ibkr.cpp
     ${CMAKE_SOURCE_DIR}/ibkr/bid64_integer.cpp)
 if(MSVC)
     # Vendored TWS API + the TU that includes its headers emit warnings; Omega

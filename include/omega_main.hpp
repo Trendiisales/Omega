@@ -715,6 +715,25 @@ int main(int argc, char* argv[])
         }
     }
 
+    // ── NqFutMomo IN-PROCESS IBKR engine (NQ/MNQ futures momentum, 2026-06-25) ──
+    // Opt-in: OMEGA_NQ_IBKR=1. Activates the engine wired in engine_init (configure +
+    // sink + register_source done there). Owns its OWN IBKR 5m-bar data thread. Off =>
+    // dormant. Independent of OMEGA_BIGCAP_IBKR (distinct clientId 87) -- both can run.
+    // Connection knobs: OMEGA_NQ_IBKR_{HOST,PORT,CLIENT,MONTH,SYMBOL}.
+    if (const char* en = std::getenv("OMEGA_NQ_IBKR"); en && std::string(en) == "1") {
+        omega::nq_momo_ibkr::set_enabled(true);
+        std::cout << "[NQ-IBKR] activating in-process IBKR NqFutMomo (NQ/MNQ futures momentum) engine\n";
+        std::cout.flush();
+        const bool nq_ibkr_ok = omega::nq_momo_ibkr::start();
+        if (!nq_ibkr_ok) {
+            std::cout << "[SYSTEM-ALERT] NQ_IBKR_DOWN start() returned false (no OMEGA_WITH_IBKR build, "
+                         "or gateway connect refused) -- ZERO NqFutMomo trades possible. "
+                         "Rebuild with IBKR / check gateway login.\n";
+            std::cout.flush();
+            g_telemetry.SetHealthAlert("NQ IBKR DOWN");
+        }
+    }
+
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
     // =========================================================================
@@ -929,6 +948,33 @@ int main(int argc, char* argv[])
                             std::cout << "[BIGCAP-IBKR] auto-reconnect " << (rok ? "OK -- live again"
                                          : "FAILED -- retry in 300s") << "\n";
                             std::cout.flush();
+                        }
+                        // ── NqFutMomo in-process IBKR liveness (same RTH window) ──
+                        if (omega::nq_momo_ibkr::is_enabled()) {
+                            const long long nla = omega::nq_momo_ibkr::last_activity_ms();
+                            const bool nq_stale = (nla == 0) || (now_ms2 - nla > 300000);
+                            static int64_t s_nq_last_alert_s = 0;
+                            if (nq_stale && (static_cast<int64_t>(tnow) - s_nq_last_alert_s >= 120)) {
+                                s_nq_last_alert_s = static_cast<int64_t>(tnow);
+                                const long ago = nla > 0 ? static_cast<long>((now_ms2 - nla) / 1000) : -1;
+                                std::cout << "[SYSTEM-ALERT] NQ_STALE in-process IBKR NqFutMomo has no bar "
+                                             "data in RTH (last_data="
+                                          << (ago < 0 ? std::string("NEVER") : std::to_string(ago) + "s")
+                                          << ") -- enabled but trading NOTHING. Check gateway / contract month.\n";
+                                std::cout.flush();
+                                g_telemetry.SetHealthAlert("NQ STALE");
+                            }
+                            static int64_t s_nq_last_reconnect_s = 0;
+                            if (nq_stale && (static_cast<int64_t>(tnow) - s_nq_last_reconnect_s >= 300)) {
+                                s_nq_last_reconnect_s = static_cast<int64_t>(tnow);
+                                std::cout << "[NQ-IBKR] auto-reconnect: bouncing stale/down engine (stop+start)\n";
+                                std::cout.flush();
+                                omega::nq_momo_ibkr::stop();
+                                const bool nrok = omega::nq_momo_ibkr::start();
+                                std::cout << "[NQ-IBKR] auto-reconnect " << (nrok ? "OK -- live again"
+                                             : "FAILED -- retry in 300s") << "\n";
+                                std::cout.flush();
+                            }
                         }
                     }
                 }
