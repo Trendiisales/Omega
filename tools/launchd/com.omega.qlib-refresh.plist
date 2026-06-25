@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.omega.qlib-refresh</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>/Users/jo/Omega/tools/rdagent/qlib_refresh.sh</string></array>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>40</integer></dict>
+  <key>StandardOutPath</key><string>/tmp/omega-qlib-refresh.log</string>
+  <key>StandardErrorPath</key><string>/tmp/omega-qlib-refresh.err</string>
+</dict>
+</plist>
