@@ -41,12 +41,20 @@ int main(int argc,char**argv){
         double mid=0; int64_t s=0;
         if(probe<1){ histdata = (line.find(' ')!=std::string::npos && line.find('-')==std::string::npos); probe=1; }
         char* p=line.data();
-        if(histdata){ // YYYYMMDD HHMMSS...,bid,ask
-            long d=strtol(p,&p,10); while(*p==' ')++p; long t=strtol(p,&p,10); if(*p==',')++p;
+        if(histdata){ // YYYYMMDD HHMMSSmmm,bid,ask  (NB: 9-digit time field WITH milliseconds)
+            long d=strtol(p,&p,10); while(*p==' ')++p;
+            char* tp=p; long t=strtol(p,&p,10); int tdig=(int)(p-tp); if(*p==',')++p;
             double bid=strtod(p,&p); if(*p==',')++p; double ask=strtod(p,&p);
             if(bid<=0||ask<=0)continue;
+            // S-2026-06-25 PARSER-BUG FIX: this feed's time token is HHMMSSmmm (9 digits, ms).
+            // The original code read it as HHMMSS -> tm_hour=t/10000=18000 -> timegm rolled
+            // ~750 days + scrambled the intraday order -> 78.7M garbage "5m bars" (should be
+            // ~184k) and a bogus PF2.27. Branch on digit count. See momo_cont_nq_ls.cpp.
+            int hh,mm,ss;
+            if(tdig>=9){ hh=t/10000000; mm=(t/100000)%100; ss=(t/1000)%100; }   // HHMMSSmmm
+            else       { hh=t/10000;     mm=(t/100)%100;     ss=t%100; }          // HHMMSS
             struct tm g{}; g.tm_year=d/10000-1900; g.tm_mon=(d/100)%100-1; g.tm_mday=d%100;
-            g.tm_hour=t/10000; g.tm_min=(t/100)%100; g.tm_sec=t%100; s=timegm(&g);
+            g.tm_hour=hh; g.tm_min=mm; g.tm_sec=ss; s=timegm(&g);
             mid=(bid+ask)/2;
         } else { // ts,ask,bid
             long long ts=strtoll(p,&p,10); if(*p!=',')continue; ++p;

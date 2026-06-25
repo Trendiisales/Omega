@@ -7,18 +7,27 @@
 // vendored TWS client). Same isolation rule: keeps TWS C <stdlib.h> out of the giant
 // main Omega TU (the pollution that broke std::atoll on the first IBKR build).
 //
-// WHAT this is: the ONE genuinely-new validated edge of S-2026-06-25. Intraday
-// momentum-continuation on a SINGLE liquid index future (NQ/MNQ) with the BigCapMomo
-// exit chassis (fixed-ATR-at-entry trail + BE-ratchet + ride-past-maxhold). Liquid
-// futures => no micro-cap slippage AND a LOW cost floor (the spot-CFD cost-wall
-// unlock -- see memory omega-intraday-spot-cfd-cost-wall). VALIDATED FAITHFULLY in
-// backtest/momo_cont_nq.cpp on real NAS100 ticks (208M ticks -> 78.7M 5m bars):
-//   cost 2pt: PF 2.27 +911pt 84 trades WF both-halves+ (H1 +515 / H2 +722)
-//   cost 4pt (2x): PF 1.89 +743pt both-halves+  -- COST-ROBUST
-// config (verbatim from the harness): IG=0.4% ignition over LB=6 (30min), ATR_LEN=30
+// WHAT this is: intraday momentum-continuation on a SINGLE liquid index future
+// (NQ/MNQ) with the BigCapMomo exit chassis (fixed-ATR-at-entry trail + BE-ratchet +
+// ride-past-maxhold). LONG-only. Config: IG=0.4% ignition over LB=6 (30min), ATR_LEN=30
 // ATR_MULT=4.0, BE_ARM=0.03 BE_FLOOR=0.02, MAXHOLD=48, regime = close > SMA200 of the
-// instrument's OWN 5m closes (self-gate; NOT SPY). LONG-only (validated). Shorts are
-// future work -- NOT validated, must NOT ship before a faithful BT.
+// instrument's OWN 5m closes (self-gate; NOT SPY).
+//
+// !! STATUS: DORMANT -- NOT cost-robust, do NOT enable (leave OMEGA_NQ_IBKR unset). !!
+// The original "PF 2.27 @2pt / 1.89 @4pt both-WF-halves+" figures were a TIMESTAMP-PARSER
+// ARTIFACT: backtest/momo_cont_nq.cpp read the HHMMSSmmm (millisecond) time field as
+// HHMMSS -> tm_hour=t/10000=18000 -> timegm rolled ~750 days + scrambled the intraday
+// order -> 78.7M garbage "5m bars" (should be ~184k). SAME bug class that tombstoned the
+// old NqMomentumEngine. Re-run on a CORRECT parser (backtest/momo_cont_nq_ls.cpp, 184127
+// real 5m bars) = the truth:
+//   LONG  2pt: PF 1.34 +10012pt both-WF-halves+ both-regime+ (BEAR PF1.01 breakeven /
+//              BULL PF1.64) -- a real but WEAK, bull-skewed, 2024-concentrated edge.
+//   LONG  4pt (2x cost): PF 1.28, WF-H1 -459 (neg), BEAR -593 (neg) -> FAILS both-WF-
+//              halves+ AND both-regime+ = NOT cost-robust (the deploy bar).
+//   SHORT 2pt: PF 0.95 net-NEGATIVE, not both-halves, not both-regime -> DEAD.
+// The engine CODE is correct (consumes real IBKR 5m bars; the bug was offline-harness
+// only). Kept dormant for a future cost-robust futures edge; shorts will not ship
+// without a faithful BT that passes.
 //
 // DISTINCT from the tombstoned [[NqMomentumEngine]] (g_nq_momentum, on_tick class
 // path, DISABLED -- its PF2.34 was a downsample+parser artifact). This is a separate

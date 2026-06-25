@@ -6,8 +6,11 @@
 // the giant main Omega TU (the std::atoll-pollution rule). Compiled into Omega.exe
 // only (OMEGA_WITH_IBKR); degrades to safe no-ops elsewhere.
 //
-// The signal + exit logic is a VERBATIM port of backtest/momo_cont_nq.cpp (the
-// validated edge -- PF 2.27 @2pt / 1.89 @4pt, both WF-halves+). Differences from the
+// The signal + exit logic is a VERBATIM port of backtest/momo_cont_nq.cpp. NOTE: that
+// harness's "PF 2.27 @2pt / 1.89 @4pt" was a timestamp-parser ARTIFACT (ms field read as
+// HHMMSS -> garbage bars). Corrected re-BT (momo_cont_nq_ls.cpp): LONG PF1.34@2pt but
+// FAILS @4pt 2x-cost (H1+bear negative) -> NOT cost-robust; SHORT dead. Engine kept
+// DORMANT (do not set OMEGA_NQ_IBKR). See NqMomoIbkr.hpp header. Differences from the
 // equity BigCapMomoIbkr sibling: ONE contract (no scanner / breadth / market-cap),
 // self-regime gate (SMA200 of the instrument's OWN 5m closes, not SPY), and the trail
 // uses ATR captured AT ENTRY held FIXED (not a live-recomputed ATR). LONG-only.

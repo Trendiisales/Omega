@@ -4245,15 +4245,17 @@ static void init_engines(const std::string& cfg_path)
         }
 
         // ── NqFutMomo IN-PROCESS IBKR engine (NQ/MNQ futures momentum, S-2026-06-25) ──
-        // The ONE genuinely-new validated edge of the session. Intraday momentum-continuation
-        // on a SINGLE liquid index future with the BigCapMomo exit chassis (fixed-ATR-at-entry
-        // trail + BE-ratchet + ride). Liquid futures => no micro-cap slippage AND a LOW cost
-        // floor (the spot-CFD cost-wall unlock). VALIDATED FAITHFULLY: backtest/momo_cont_nq.cpp
-        // on real NAS100 ticks (208M ticks -> 78.7M 5m bars) = PF 2.27 @2pt / 1.89 @4pt(2x),
-        // both WF-halves+ (H1 +515 / H2 +722). Config is the harness verbatim (do NOT retune
-        // without a faithful re-BT). Own IBKR 5m-bar data thread inside Omega.exe (in-process
-        // telemetry -> running + closed trades in the GUI). ACTIVATED by OMEGA_NQ_IBKR=1 in
-        // omega_main (set_enabled + start); off => dormant, collect_positions empty (no GUI rows).
+        // !! DORMANT / NOT COST-ROBUST -- never enable (OMEGA_NQ_IBKR stays unset). !!
+        // Intraday momentum-continuation on a SINGLE liquid index future with the BigCapMomo
+        // exit chassis (fixed-ATR-at-entry trail + BE-ratchet + ride). The original "PF 2.27
+        // @2pt / 1.89 @4pt both-halves+" was a TIMESTAMP-PARSER ARTIFACT in momo_cont_nq.cpp
+        // (HHMMSSmmm read as HHMMSS -> 78.7M garbage "5m bars"; same bug that tombstoned the
+        // old NqMomentumEngine). CORRECTED re-BT (momo_cont_nq_ls.cpp, 184127 real bars):
+        // LONG PF1.34@2pt (bull-skewed, bear breakeven) but FAILS @4pt 2x-cost (WF-H1 -459,
+        // bear -593 = NOT both-halves, NOT both-regime); SHORT dead PF0.95. Engine CODE is
+        // correct (consumes real IBKR 5m bars; bug was offline-harness only) -- kept here
+        // dormant + wired for a future cost-robust futures edge, but it does NOT pass the
+        // deploy bar today. collect_positions stays empty unless OMEGA_NQ_IBKR=1 (do not set).
         // DISTINCT from the tombstoned NqMomentumEngine (g_nq_momentum, on_tick class path).
         {
             omega::nq_momo_ibkr::Config nc;
@@ -4290,8 +4292,8 @@ static void init_engines(const std::string& cfg_path)
                 [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
             g_open_positions.register_source("NqFutMomo",
                 []() { return omega::nq_momo_ibkr::collect_positions(); });
-            printf("[OMEGA-INIT] NqFutMomo IN-PROCESS IBKR engine wired (MNQ 5m momo IG0.4%% LB6 "
-                   "SMA200 self-gate ATR30x4 BE arm3/floor2 maxhold48 shadow); activate with OMEGA_NQ_IBKR=1\n");
+            printf("[OMEGA-INIT] NqFutMomo IN-PROCESS IBKR engine wired but DORMANT (corrected faithful BT "
+                   "= NOT cost-robust: LONG PF1.34@2pt FAILS @4pt; SHORT dead). Do NOT set OMEGA_NQ_IBKR.\n");
         }
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──
