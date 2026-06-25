@@ -1751,12 +1751,21 @@ function Test-SafeToRestart {
 }
 
 function Get-GitHubHead {
+    # S-2026-06-25: Trendiisales/Omega is PUBLIC, so the poll does NOT need a token. The
+    # old code returned $null when the token file was missing/expired -> GITHUB-POLL
+    # "failed to reach GitHub API" forever (the .github_token PAT had expired). Now: use
+    # the token if present+valid, else fall back to UNAUTHENTICATED (User-Agent header is
+    # mandatory for the GitHub API; 60 req/hr unauth is plenty at the 300s poll interval).
+    $uri = "https://api.github.com/repos/Trendiisales/Omega/commits/$Branch"
+    $token = try { if (Test-Path $TokenFile) { (Get-Content $TokenFile -Raw).Trim() } else { $null } } catch { $null }
+    if ($token) {
+        try {
+            $resp = Invoke-RestMethod -Uri $uri -Headers @{ Authorization="token $token"; "User-Agent"="OmegaWatchdog" } -TimeoutSec 10 -ErrorAction Stop
+            return $resp.sha.Substring(0,7)
+        } catch { }   # token likely expired -> fall through to unauthenticated
+    }
     try {
-        $token = if (Test-Path $TokenFile) { (Get-Content $TokenFile -Raw).Trim() } else { $null }
-        if (-not $token) { return $null }
-        $hdr = @{ Authorization="token $token"; "User-Agent"="OmegaWatchdog" }
-        $resp = Invoke-RestMethod -Uri "https://api.github.com/repos/Trendiisales/Omega/commits/$Branch" `
-                    -Headers $hdr -TimeoutSec 10 -ErrorAction Stop
+        $resp = Invoke-RestMethod -Uri $uri -Headers @{ "User-Agent"="OmegaWatchdog" } -TimeoutSec 10 -ErrorAction Stop
         return $resp.sha.Substring(0,7)
     } catch { return $null }
 }
