@@ -111,6 +111,8 @@ struct Config {
     double luke_max_stopw   = 0.06;   // tight-stop selectivity cap (validated sweet spot)
     double luke_adr_min     = 4.0;    // high-ADR floor (%), matches scanner intent
     double luke_risk_pct    = 0.005;  // risk fraction/trade for stop-based sizing (video uses 0.5%)
+    bool   luke_surge       = true;   // S-2026-06-26 also fire on a GENUINE surge (no armed setup needed):
+    double luke_surge_impulse = 1.0;  // entry bar must thrust >= this*ATR (the "genuine" filter). gate_pct+ig_pct still apply.
     // S-2026-06-26 fixed high-ADR watchlist the engine evaluates for A/C setups EVERY day (the
     // daily-swing universe). TOP_PERC_GAIN feeds today's MOVERS; Luke setups form on QUIET names,
     // so the gainer scan never surfaces them (0 setups armed live). Set in engine_init.

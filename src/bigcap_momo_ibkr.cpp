@@ -420,22 +420,32 @@ public:
                 return;
             }
         }
-        bool fire=false; long sd=(t-8*3600)/86400;
+        bool fire=false; bool via_surge=false; long sd=(t-8*3600)/86400;
         if(cfg_.luke_gate){
-            // S-2026-06-25 ARM-AND-WAIT (the validated daily-swing entry). The A/C setup detected on
-            // the daily bars (omega::luke::evaluate, historicalDataEnd) ARMS a breakout trigger
-            // (luke_trig) + tight structural stop (luke_stop). We ENTER when intraday price BREAKS that
-            // armed trigger. The setup forms on a PRIOR quiet bar (pullback/inside-day) and the break
-            // fires LATER -- exactly as the BT models it. This REPLACES ignition when luke_gate is on;
-            // a same-bar setup+ignition confluence suppressed everything (a breakout day is never itself
-            // a pullback/inside day -> 0/28 on June live trades). adr_ok+luke_setup come from the daily
-            // pre-filter/detector. v1: setup armed at connect / daily restart (intraday daily-refresh
-            // = follow-up). Entry/stop use luke_trig/luke_stop in the open block below.
+            // ARM-AND-WAIT (validated daily-swing): the A/C setup ARMS luke_trig + tight luke_stop;
+            // enter on the intraday BREAK of luke_trig (the setup forms on a prior quiet bar, the break
+            // fires later, as the BT models). Entry/stop use luke_trig/luke_stop in the open block.
             if(s.adr_ok && s.luke_setup!=0 && (market_ok_||!cfg_.regime_gate)
                && h>=s.luke_trig && l>s.luke_stop && s.last_entry_sd!=sd){
                 fire=true;
                 printf("[BigCapMomo] LUKE-BREAK %s setup=%c trig=%.2f stop=%.2f (h=%.2f)\n",
                        s.c.symbol.c_str(), s.luke_setup, s.luke_trig, s.luke_stop, h); fflush(stdout);
+            }
+            // S-2026-06-26 SURGE trigger (operator: a GENUINE surge meeting our targets should fire even
+            // without an armed setup). A high-ADR name (adr_ok) thrusting >= gate_pct on the day AND the
+            // entry bar thrusting >= luke_surge_impulse*ATR (the "genuine" filter -- ignition PF 2.4->5.8
+            // with impulse) AND ig_pct over the lookback. Fires at the surge price, tagged LUKE-SURGE.
+            if(!fire && cfg_.luke_surge && s.adr_ok && c>=cfg_.px_min && s.day_open>0
+               && (market_ok_||!cfg_.regime_gate) && s.last_entry_sd!=sd
+               && (int)s.closes.size()>=cfg_.lb && s.atr>0){
+                double day_up=(c/s.day_open-1)*100;
+                bool impulse_ok = (h - s.closes.back()) >= cfg_.luke_surge_impulse * s.atr;
+                double base=s.closes[s.closes.size()-cfg_.lb];
+                if(day_up>=cfg_.gate_pct && impulse_ok && base>0 && (c/base-1)*100>=cfg_.ig_pct){
+                    fire=true; via_surge=true;
+                    printf("[BigCapMomo] LUKE-SURGE %s day_up=%.1f%% impulse=%.1fxATR (genuine)\n",
+                           s.c.symbol.c_str(), day_up, (h-s.closes.back())/s.atr); fflush(stdout);
+                }
             }
         } else {
             if(c>=cfg_.px_min && s.day_open>0 && (market_ok_ || !cfg_.regime_gate)){
@@ -466,20 +476,23 @@ public:
             if(fire && s.last_entry_sd==sd) fire=false;
         }
         if(fire){
-            // luke arm-and-wait: fill at the armed breakout trigger (or the gap-up open) with the tight
-            // structural stop; ignition path keeps its close-fill + %-trail-derived stop.
-            double entry_px = cfg_.luke_gate ? std::max(s.luke_trig, o) : c;
-            double init_stop = cfg_.luke_gate ? s.luke_stop : c*(1-cfg_.trail_pct);
+            // luke arm-and-wait: fill at the armed trigger with the tight structural stop.
+            // luke SURGE / ignition: fill at the close with an ATR(2x) initial stop (no pre-set level).
+            bool luke_break = cfg_.luke_gate && !via_surge;
+            double entry_px = luke_break ? std::max(s.luke_trig, o) : c;
+            double init_stop = luke_break ? s.luke_stop
+                               : (s.atr>0 ? c - 2.0*s.atr : c*(1-cfg_.trail_pct>0?cfg_.trail_pct:0.03));
             double notional=risk_.allow_entry(s.c.symbol,entry_px,init_stop);
             if(cfg_.notional_usd>0 && notional>cfg_.notional_usd) notional=cfg_.notional_usd;
             if(notional>0){
                 long sz=(long)std::max(1.0,notional/entry_px); risk_.on_open(s.c.symbol,notional);
                 s.inpos=true; s.entry=entry_px; s.peak=h; s.trough=l; s.hold=0; s.notional=notional;
                 s.size=sz; s.entry_ts=(int64_t)std::time(nullptr); s.last=c; s.last_entry_sd=sd;
-                if(cfg_.luke_gate) s.luke_setup=0;   // consume the armed setup (1 fill per setup)
+                s.luke_stop = init_stop;             // manage hard-stop uses this for break AND surge
+                if(luke_break) s.luke_setup=0;       // consume the armed setup (surge doesn't use one)
+                const char* tag = via_surge ? "LUKE-SURGE" : (cfg_.luke_gate ? "LUKE-BREAK" : "IGNITION");
                 printf("[BigCapMomo] %s LONG %s entry=%.2f %s sz=%ld notional=$%.0f [conc=%d]\n",
-                    cfg_.paper_only?"PAPER":"LIVE",s.c.symbol.c_str(),entry_px,
-                    cfg_.luke_gate?"LUKE-BREAK":"IGNITION",sz,notional,risk_.open_count());
+                    cfg_.paper_only?"PAPER":"LIVE",s.c.symbol.c_str(),entry_px,tag,sz,notional,risk_.open_count());
                 fflush(stdout);
                 if(!cfg_.paper_only){ Order ord; ord.action="BUY"; ord.orderType="MKT";
                     ord.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz); cli_->placeOrder(nextId_++,s.c,ord); }
