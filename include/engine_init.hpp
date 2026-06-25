@@ -1824,7 +1824,12 @@ static void init_engines(const std::string& cfg_path)
         g_spx_turtle_d1.enabled          = true;
         g_spx_turtle_d1.symbol           = "US500.F";
         g_spx_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_US500_D1.csv");
-        printf("[OMEGA-INIT] DJ30+SPX D1 turtles: shadow=1 enabled=%d/%d (Yahoo-daily xregime PF2.09/2.49)\n",
+        // S-2026-06-26 accounting supervisor (validated daily-index ONLY: SPX PF 3.80->5.30, both-halves;
+        // DJ30 ~neutral -> shadow live-ledger confirms). Cuts STALL (held>=11 & MFE<2.2%) + REVERSAL
+        // (9<21 EMA after profit). NOT on gold/crypto (a wash/hurt there). Params baked in the guard.
+        g_dj30_turtle_d1.accounting_guard_.enabled = true;
+        g_spx_turtle_d1.accounting_guard_.enabled  = true;
+        printf("[OMEGA-INIT] DJ30+SPX D1 turtles: shadow=1 enabled=%d/%d acct_guard=ON (STALL/REVERSAL) (Yahoo-daily xregime PF2.09/2.49)\n",
                (int)g_dj30_turtle_d1.enabled, (int)g_spx_turtle_d1.enabled);
 
         // ── Ger40KeltnerH1Engine (S41 2026-05-30) ───────────────────────────

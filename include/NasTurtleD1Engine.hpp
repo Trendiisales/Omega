@@ -39,6 +39,7 @@
 #include <algorithm>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "TrendAccountingGuard.hpp"   // S-2026-06-26 selective STALL/REVERSAL supervisor (validated daily-index)
 #include "OpenPositionRegistry.hpp"
 #include "SeedGuard.hpp"
 #include "IndexRiskGate.hpp"
@@ -124,6 +125,11 @@ struct NasTurtleD1Engine {
         int64_t entry_ts_ms=0;
         int bars_held=0;
     } pos_;
+
+    // S-2026-06-26 accounting supervisor: cut STALL (dead money) / REVERSAL (momentum turn) on the
+    // SLOW index trend. Validated daily-index ONLY (PF 3.8->5.3 SPX, both-halves) -- NOT gold/crypto
+    // (a wash/hurt there). enabled set per-instance in engine_init for the index turtles; default OFF.
+    omega::TrendAccountingGuard accounting_guard_;
 
     int m_trade_id_=0;
     bool has_open_position() const noexcept { return pos_.active; }
@@ -244,7 +250,23 @@ struct NasTurtleD1Engine {
 
             if (pos_.active) {
                 ++pos_.bars_held;
-                if (pos_.bars_held >= p.hold_max_bars)
+                // S-2026-06-26 accounting supervisor (validated daily-index): cut a STALLED trade
+                // (held long, never moved -> dead money) or a REVERSAL (9<21 EMA cross after profit).
+                // Runs on daily-bar close. mfe is in pts -> /entry for the fraction the guard expects.
+                if (accounting_guard_.enabled && pos_.active && (int)d1_closes_.size() >= 21) {
+                    auto ema_of = [&](int span) {
+                        double a = 2.0 / (span + 1.0), e = d1_closes_.front();
+                        for (size_t i = 1; i < d1_closes_.size(); ++i) e = d1_closes_[i] * a + e * (1.0 - a);
+                        return e;
+                    };
+                    const double mfe_frac = pos_.entry > 0.0 ? pos_.mfe / pos_.entry : 0.0;
+                    const auto cut = accounting_guard_.decide(pos_.bars_held, mfe_frac, ema_of(9), ema_of(21));
+                    if (cut != omega::TrendAccountingGuard::Cut::NONE) {
+                        _close(bid, omega::TrendAccountingGuard::reason(cut), now_ms, on_close);
+                        return sig;
+                    }
+                }
+                if (pos_.active && pos_.bars_held >= p.hold_max_bars)
                     _close(bid, "TIMEOUT", now_ms, on_close);
             }
 
