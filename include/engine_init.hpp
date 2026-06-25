@@ -12,6 +12,7 @@
 #include "BigCapMomoIbkr.hpp"   // thin TWS-free interface to the in-process BigCapMomo engine
 #include "NqMomoIbkr.hpp"       // thin TWS-free interface to the in-process NQ/MNQ futures momentum engine
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
+#include "JoDisplayInbound.hpp"     // surface the Mac-side Jo paper engine's OPEN posns in the live_trades GUI (OMEGA_JO_INBOUND=1, display-only)
 
 static void init_engines(const std::string& cfg_path)
 {
@@ -6639,5 +6640,14 @@ static void init_engines(const std::string& cfg_path)
     // them before sizing up. See CatastrophicGuard.hpp.
     g_catastrophic_guard.per_trade_usd = g_cfg.dollar_stop_usd;
     g_catastrophic_guard.warn_if_live_unhooked(g_cfg.mode == "LIVE");
+
+    // S-2026-06-26: Jo paper engine (Mac, jo_engine.py) OPEN positions in the live_trades
+    // GUI panel. DISPLAY-ONLY external source -- reads jo_inbound_open.csv (scp'd from the
+    // Mac by jo_inbound_sync.py) and shows the legs as "Jo:<sym>". No execution/ledger/risk
+    // side effects (mirrors the crypto-inbound posture). Opt-in: OMEGA_JO_INBOUND=1.
+    if (std::getenv("OMEGA_JO_INBOUND")) {
+        g_open_positions.register_source("Jo", []() { return read_jo_inbound(); });
+        std::printf("[OMEGA-INIT] Jo display source registered (OMEGA_JO_INBOUND=1, reads jo_inbound_open.csv) -- display-only\n");
+    }
 }
 
