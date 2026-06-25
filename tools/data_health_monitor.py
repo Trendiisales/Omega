@@ -121,11 +121,23 @@ def check_ibkrcrypto():
     sp = f"{HOME}/IBKRCrypto/backtest/data/ibkrcrypto/state.json"
     try:
         d = json.load(open(sp)); dh = d.get("data_health", {})
-        ok = dh.get("all_fresh", False)
-        return dict(name="ibkrcrypto.book", ok=ok, age=None, limit=None, sev="MED",
-                    detail=f"stale_sources={dh.get('stale_sources', [])} [Chimera crypto]")
+        # S-2026-06-26: check the BOOK's 'updated' AGE, not just its self-reported all_fresh flag
+        # (the flag froze stale-True while the book hadn't refreshed in 23h -> NDX/QNDX price stale).
+        upd = d.get("updated", "")  # e.g. "2026-06-25 06:27 UTC"
+        age_h = None
+        try:
+            u = dt.datetime.strptime(upd.replace(" UTC", ""), "%Y-%m-%d %H:%M").replace(tzinfo=dt.timezone.utc)
+            age_h = (NOW - u.timestamp()) / 3600.0
+        except Exception:
+            pass
+        fresh_age = age_h is None or age_h <= 2.0   # book must have refreshed within 2h
+        ok = dh.get("all_fresh", False) and fresh_age
+        det = f"book updated {age_h:.1f}h ago" if age_h is not None else "no 'updated' ts"
+        return dict(name="ibkrcrypto.book", ok=ok, age=round(age_h,1) if age_h is not None else None,
+                    limit=2, sev="HIGH" if not fresh_age else "MED",
+                    detail=f"{det}, all_fresh={dh.get('all_fresh')}, stale={dh.get('stale_sources', [])} [Chimera crypto book/NDX]")
     except Exception as e:
-        return dict(name="ibkrcrypto.book", ok=False, age=None, limit=None, sev="MED", detail=f"state.json: {e}")
+        return dict(name="ibkrcrypto.book", ok=False, age=None, limit=2, sev="HIGH", detail=f"state.json: {e}")
 
 # ── run ───────────────────────────────────────────────────────────────────────
 checks = [check_feed(f) for f in FEEDS] + [check_ibkrcrypto()]
