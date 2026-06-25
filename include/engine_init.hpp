@@ -4225,8 +4225,19 @@ static void init_engines(const std::string& cfg_path)
                                                 // slightly more names if scanner returns too few rows.
             bc.regime_gate  = true;    // SPY price>SMA200 AND SMA200 rising
             bc.notional_usd = 1000.0;
-            bc.paper_only   = true;    // SHADOW: log trades, route NO live orders
-            bc.engine_tag   = "BigCapMomo";
+            bc.paper_only   = true;    // SHADOW: log trades, route NO live orders (paper fills)
+            // S-2026-06-26 ACTIVATE Luke ARM-AND-WAIT on this in-process instance (paper/shadow).
+            // The A/C daily setup ARMS a breakout trigger (luke_trig)+tight stop; entry = the intraday
+            // BREAK of it (validated PF1.77 Sharpe0.74, IBKR top-111 ADR>=6). REPLACES ignition here;
+            // the bridge instance (BigCapMomoCons) stays ignition -> live A/B on the shadow ledger.
+            // Regime gate preserved (bc.regime_gate). env OMEGA_BIGCAP_LUKE=0 disables (revert to ignition).
+            bc.luke_gate     = true;
+            bc.luke_mode_A   = true;
+            bc.luke_mode_C   = true;
+            bc.luke_max_stopw= 0.06;
+            bc.luke_adr_min  = 6.0;
+            if (const char* lk = std::getenv("OMEGA_BIGCAP_LUKE")) bc.luke_gate = (std::atoi(lk) != 0);
+            bc.engine_tag   = bc.luke_gate ? "BigCapMomoLuke" : "BigCapMomo";
             if (const char* h = std::getenv("OMEGA_BIGCAP_IBKR_HOST"))   bc.host      = h;
             if (const char* p = std::getenv("OMEGA_BIGCAP_IBKR_PORT"))   bc.port      = std::atoi(p);
             if (const char* c = std::getenv("OMEGA_BIGCAP_IBKR_CLIENT")) bc.client_id = std::atoi(c);
