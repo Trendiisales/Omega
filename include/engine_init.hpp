@@ -6646,7 +6646,7 @@ static void init_engines(const std::string& cfg_path)
     // Mac by jo_inbound_sync.py) and shows the legs as "Jo:<sym>". No execution/ledger/risk
     // side effects (mirrors the crypto-inbound posture). Opt-in: OMEGA_JO_INBOUND=1.
     if (std::getenv("OMEGA_JO_INBOUND")) {
-        g_open_positions.register_source("Jo", []() { return read_jo_inbound(); });
+        g_open_positions.register_source("Jo", []() -> std::vector<omega::PositionSnapshot> { return omega::read_jo_inbound(); });
         std::printf("[OMEGA-INIT] Jo display source registered (OMEGA_JO_INBOUND=1, reads jo_inbound_open.csv) -- display-only\n");
     }
 }
