@@ -121,3 +121,6 @@ python3 "$(dirname "$0")/../tools/tombstone_guard.py" --repo "$(dirname "$0")/..
 }
 
 exit 0
+
+# S-2026-06-26 PERSISTENCE ENFORCEMENT: fail if any display engine lacks a persist source
+bash "$(dirname "$0")/persistence_audit.sh" || exit 1

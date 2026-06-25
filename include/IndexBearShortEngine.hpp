@@ -46,6 +46,7 @@
 #include <functional>
 #include <fstream>
 #include <string>
+#include "OpenPositionRegistry.hpp"   // omega::PositionSnapshot (persist_save/restore)
 #include "OmegaCostGuard.hpp"
 #include "OmegaTradeLedger.hpp"
 #include "IndexRiskGate.hpp"
@@ -86,6 +87,22 @@ public:
         int64_t entry_ts = 0, entry_bar_seq = 0;
     } m_pos;
     bool has_open_position() const noexcept { return m_pos.active; }
+
+    // ---- S-2026-06-26 PERSISTENCE (wire_cross archetype): survive restart/deploy. This engine showed
+    // positions (register_source) but did NOT persist -> its SHORT vanished with no ledger close on every
+    // restart. persist_save emits full state; persist_restore re-adopts it. Short-only (risk-off SHORT).
+    bool persist_save(const char* tag, const char* sym, omega::PositionSnapshot& ps) const {
+        if (!m_pos.active) return false;
+        ps.engine = tag; ps.symbol = sym; ps.side = "SHORT";
+        ps.size = m_pos.size; ps.entry = m_pos.entry; ps.sl = m_pos.stop; ps.tp = m_pos.tp;
+        ps.entry_ts = m_pos.entry_ts; return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        m_pos = LivePos{};
+        m_pos.active = true; m_pos.entry = ps.entry; m_pos.stop = ps.sl; m_pos.tp = ps.tp;
+        m_pos.size = ps.size; m_pos.entry_ts = ps.entry_ts;
+        return true;
+    }
 
     // ---- warm seed (mandate, pattern 2): replay H1 CSV (ts,o,h,l,c) ----
     void seed_from_h1_csv(const std::string& path) {

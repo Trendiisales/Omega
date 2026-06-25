@@ -20,6 +20,7 @@
 // globals.hpp (line ~98) before this header (~111), so g_* are already visible.
 // ============================================================================
 #include "OpenPositionRegistry.hpp"
+#include "BigCapMomoIbkr.hpp"   // omega::bigcap_momo_ibkr::{is_enabled,collect_positions,restore_position} (pure-std)
 #include <string>
 #include <vector>
 #include <type_traits>
@@ -244,9 +245,29 @@ inline void register_position_persistence() {
     wire_cross(g_idxsess_uk100,  "IndexSession_UK100",  "UK100");
     wire_cross(g_idxsess_estx50, "IndexSession_ESTX50", "ESTX50");
 
+    // ---- IndexBearShort (risk-off SHORT, NAS100 + US500; real-engine PF1.59-1.60) ----
+    // S-2026-06-26: showed positions but did NOT persist -> the 2 live SHORTs vanished with no ledger
+    // close on restart (operator-reported). Now wired (persist_save/restore added to the engine).
+    wire_cross(g_idx_bear_short_nas, "IndexBearShort",   "NAS100");
+    wire_cross(g_idx_bear_short_sp,  "IndexBearShortSP", "US500.F");
+
+    // ---- BigCapMomoIbkr / Luke (in-process IBKR engine; own Sym book, not a g_* global) ----
+    // S-2026-06-26: this engine showed positions (register_source "BigCapMomoIbkr") but did NOT persist
+    // -> Luke/surge fills vanished with no ledger close on every restart/deploy. collect_positions()
+    // already carries full state (entry/sl/size); restore_position() re-adopts at boot. is_enabled()
+    // gates both so a disabled engine can't resurrect a stale slot.
+    g_open_positions.register_persist_source([]() {
+        return omega::bigcap_momo_ibkr::is_enabled() ? omega::bigcap_momo_ibkr::collect_positions()
+                                                      : std::vector<omega::PositionSnapshot>{};
+    });
+    g_open_positions.register_restorer([](const omega::PositionSnapshot& ps) -> bool {
+        return omega::bigcap_momo_ibkr::restore_position(ps);
+    });
+
     // Coverage now: every position-holding engine on the dashboard persists/resumes.
     // Mandate: any NEW engine MUST add persist_save/persist_restore + a wire here
     // (like the warm-seed mandate). Partial persistence = silent position loss.
+    // ENFORCED: scripts/persistence_audit.sh fails the build if a display source lacks a persist source.
 }
 
 } // namespace omega::persist

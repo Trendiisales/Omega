@@ -142,6 +142,11 @@ void set_on_trade_record(std::function<void(const TradeRecord&)> cb);
 // its book against the TWS reader thread).
 std::vector<PositionSnapshot> collect_positions();
 
+// S-2026-06-26 PERSISTENCE: re-adopt a saved open position at boot (PositionPersistence calls this
+// before the reader thread connects). Returns true if adopted (the snapshot's engine tag matches).
+// No-op returning false unless enabled + OMEGA_WITH_IBKR. The position resumes when its symbol subs.
+bool restore_position(const PositionSnapshot& ps);
+
 // Connect to the gateway + start the reader/pump thread (the IBKR scanner data
 // thread the handoff calls for). Idempotent: a second call while already running
 // is a no-op. Returns false if disabled, OMEGA_WITH_IBKR is undefined, or the

@@ -87,6 +87,8 @@ class Engine : public DefaultEWrapper {
     static const int ADR_BASE=800000;             // S-2026-06-25 ADR pre-filter daily-req rid offset (above all 5m rids)
     std::map<int,int> adr2sym_;                   // ADR-daily rid -> the symbol's 5m rid (subs_ key)
     std::set<std::string> scanned_;               // S-2026-06-25 dedup: union of the two scan codes (no double-subscribe)
+    std::map<std::string,PositionSnapshot> pending_restore_; // S-2026-06-26 symbol -> restored open position (applied on subscribe)
+    std::set<std::string> restore_syms_;          // symbols to (re)subscribe at connect so a restored position resumes
     RiskManager risk_{50000.0};
     std::mutex book_mu_;                          // guards subs_ vs collect_positions thread
     std::function<void(const TradeRecord&)> on_trade_record_;
@@ -201,6 +203,17 @@ public:
         return v;
     }
 
+    // S-2026-06-26 PERSISTENCE restore: stash a saved open position; subscribe_name applies it when the
+    // symbol's Sym is (re)created at connect. Returns true if adopted (ps belongs to THIS engine's tag).
+    bool restore_position(const PositionSnapshot& ps){
+        if(ps.engine != cfg_.engine_tag) return false;
+        std::lock_guard<std::mutex> lk(book_mu_);
+        pending_restore_[ps.symbol]=ps; restore_syms_.insert(ps.symbol);
+        printf("[BigCapMomo] RESTORE pending %s entry=%.2f stop=%.2f size=%.0f (from open_positions.dat)\n",
+               ps.symbol.c_str(), ps.entry, ps.sl, ps.size); fflush(stdout);
+        return true;
+    }
+
     void nextValidId(OrderId id) override { nextId_=id;
         handshake_done_.store(true, std::memory_order_relaxed);   // API session live (root-cause guard 06-20)
         cli_->reqMarketDataType(cfg_.market_data_type);   // 1=live 2=frozen 3=delayed 4=delayed-frozen
@@ -232,6 +245,13 @@ public:
             }
             printf("[BigCapMomo] LUKE watchlist subscribed: %zu high-ADR names\n", cfg_.luke_watchlist.size()); fflush(stdout);
         }
+        // S-2026-06-26 PERSISTENCE: (re)subscribe any symbol carrying a restored open position so it
+        // resumes management after restart/deploy (the position was stashed by restore_position() at boot;
+        // subscribe_name applies it when the Sym is created). Covers surge names not in the watchlist.
+        { std::set<std::string> rs; { std::lock_guard<std::mutex> lk(book_mu_); rs=restore_syms_; }
+          for(const auto& sym : rs){
+              Contract rc; rc.symbol=sym; rc.secType="STK"; rc.exchange="SMART"; rc.currency="USD";
+              subscribe_name(rc); } }
         if(cfg_.regime_gate) cli_->reqHistoricalData(MKT_REQ, spy(), "", "1 Y", "1 day", "TRADES", 1, 1, true, TagValueListSPtr());
         printf("[BigCapMomo] scan TOP_PERC_GAIN (gate>=%.0f%% trail=%.0f%% IG=%.0f%% volx=%.0f regime_gate=%d) %s\n",
                cfg_.gate_pct,cfg_.trail_pct*100,cfg_.ig_pct,cfg_.volx,(int)cfg_.regime_gate,cfg_.paper_only?"PAPER":"LIVE"); fflush(stdout);
@@ -309,7 +329,19 @@ public:
           if(!scanned_.insert(c.symbol).second) return; }
         scan_hits_.fetch_add(1, std::memory_order_relaxed);
         int rid=next_rt_++; Sym x; x.c=c;
-        { std::lock_guard<std::mutex> lk(book_mu_); subs_[rid]=x; }
+        { std::lock_guard<std::mutex> lk(book_mu_); subs_[rid]=x;
+          auto pr=pending_restore_.find(c.symbol);          // S-2026-06-26 resume a restored position
+          if(pr!=pending_restore_.end()){
+              Sym& s=subs_[rid]; const PositionSnapshot& ps=pr->second;
+              s.inpos=true; s.entry=ps.entry; s.peak=ps.entry; s.trough=ps.entry; s.last=ps.entry;
+              s.size=(long)ps.size; s.notional=ps.entry*ps.size; s.luke_stop=ps.sl; s.entry_ts=ps.entry_ts;
+              s.hold=0; s.last_entry_sd=(long)((ps.entry_ts-8*3600)/86400);
+              risk_.on_open(c.symbol, s.notional);
+              printf("[BigCapMomo] RESTORED %s @ %.2f stop %.2f size %ld (resumed across restart)\n",
+                     c.symbol.c_str(), s.entry, s.luke_stop, s.size); fflush(stdout);
+              pending_restore_.erase(pr);
+          }
+        }
         cli_->reqHistoricalData(rid, x.c, "", "1 D", "5 mins", "TRADES", 1, 2, true, TagValueListSPtr());
         if(cfg_.luke_gate){
             int arid=ADR_BASE+rid; adr2sym_[arid]=rid;
@@ -562,6 +594,13 @@ std::vector<PositionSnapshot> collect_positions(){
     return eng().collect_positions();
 }
 
+// S-2026-06-26 PERSISTENCE restore: called at boot by PositionPersistence BEFORE the thread connects.
+// Stashes the position; eng() applies it when the symbol subscribes. Disabled engine => no resurrect.
+bool restore_position(const PositionSnapshot& ps){
+    if(!g_enabled.load()) return false;
+    return eng().restore_position(ps);
+}
+
 // S-2026-06-21: paper/live port-vs-routing guard. Idea lifted from the
 // retail IBKR-bot walkthrough (its one genuinely useful safety assert): catch
 // the config-error class where the routing intent (paper_only) and the gateway
@@ -659,6 +698,7 @@ bool is_enabled() { return false; }
 long long last_activity_ms() { return 0; }
 void set_on_trade_record(std::function<void(const TradeRecord&)>) {}
 std::vector<PositionSnapshot> collect_positions() { return {}; }
+bool restore_position(const PositionSnapshot&) { return false; }
 bool start() { return false; }
 void stop() {}
 } // namespace bigcap_momo_ibkr
