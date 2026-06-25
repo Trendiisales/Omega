@@ -69,7 +69,8 @@ struct Sym {
     // S-2026-06-25 Luke ADR pre-filter: 20-day ADR% from a one-shot daily-bar req.
     // Default true = permissive until the filter resolves / when luke_gate is off.
     bool    adr_ok=true; std::deque<double> draw;  // recent daily ranges %
-    std::vector<omega::luke::Bar> dbars;           // S-2026-06-25 daily OHLC for the A/C setup detector
+    std::vector<omega::luke::Bar> dbars;           // S-2026-06-25 daily OHLC for the A/C setup detector (kept for daily-refresh)
+    double  day_high=0, day_low=0, day_close=0; long cur_sd=-1; // S-2026-06-26 v2: in-session daily OHLC + session-day for the daily-refresh
     char    luke_setup=0;                          // 'A'/'C' if a valid Luke daily setup is present, else 0
     double  luke_stop=0, luke_trig=0;              // the setup's structural stop / breakout trigger
 };
@@ -258,18 +259,11 @@ public:
             s.adr_ok = s.draw.empty() ? true : (adr >= cfg_.luke_adr_min);  // empty=permissive
             if(!s.adr_ok) printf("[BigCapMomo] ADR-PREFILTER drop %s adr=%.2f%% < %.2f%%\n",
                                  s.c.symbol.c_str(), adr, cfg_.luke_adr_min);
-            // --- A/C daily-setup detector: the validated entry-quality gate ---
-            // omega::luke::evaluate scans the daily bars for setup A (pullback-to-rising-9/21-EMA)
-            // or C (inside-day/micro-VCP breakout) with a tight (<=luke_max_stopw) structural stop.
-            // Variants wired via cfg_.luke_mode_A / luke_mode_C. Result gates the live entry below.
-            if(s.adr_ok && (int)s.dbars.size()>=56){
-                omega::luke::Knobs K; K.adr_min=cfg_.luke_adr_min; K.max_stopw=cfg_.luke_max_stopw;
-                auto sig=omega::luke::evaluate(s.dbars,(int)s.dbars.size()-1,K,cfg_.luke_mode_A,cfg_.luke_mode_C);
-                s.luke_setup=sig.setup; s.luke_trig=sig.trig; s.luke_stop=sig.stop;
-                if(sig.setup) printf("[BigCapMomo] LUKE-SETUP %s = %c (trig=%.2f stop=%.2f stopw=%.1f%%)\n",
-                                     s.c.symbol.c_str(), sig.setup, sig.trig, sig.stop, sig.stopw*100);
-            }
-            std::vector<omega::luke::Bar>().swap(s.dbars);   // free the daily-bar buffer
+            // A/C daily-setup detector (refresh_luke_setup). S-2026-06-26 v2: dbars is now KEPT
+            // (capped) so the daily-refresh in on_5m_bar can re-evaluate the setup as each new daily
+            // bar completes -- the v1 one-shot-at-connect left setups stale (0 armed in 17h live).
+            refresh_luke_setup(s);
+            if((int)s.dbars.size()>520) s.dbars.erase(s.dbars.begin(), s.dbars.begin()+((int)s.dbars.size()-520));
             fflush(stdout); return; }
         std::lock_guard<std::mutex> lk(book_mu_);
         auto it=subs_.find(rid); if(it!=subs_.end()) it->second.hist_done=true;   // live updates now eval entries
@@ -318,8 +312,33 @@ public:
     }
     void scannerDataEnd(int rid) override { cli_->cancelScannerSubscription(rid); scanDone_=true; }
 
+    // S-2026-06-26 evaluate the A/C daily setup on the kept daily bars -> arm luke_setup/trig/stop.
+    // Called at the one-shot daily-req end AND on every daily-bar rollover (the v2 daily-refresh).
+    void refresh_luke_setup(Sym& s){
+        if(!s.adr_ok || (int)s.dbars.size()<56){ s.luke_setup=0; return; }
+        omega::luke::Knobs K; K.adr_min=cfg_.luke_adr_min; K.max_stopw=cfg_.luke_max_stopw;
+        auto sig=omega::luke::evaluate(s.dbars,(int)s.dbars.size()-1,K,cfg_.luke_mode_A,cfg_.luke_mode_C);
+        s.luke_setup=sig.setup; s.luke_trig=sig.trig; s.luke_stop=sig.stop;
+        if(sig.setup) printf("[BigCapMomo] LUKE-SETUP %s = %c (trig=%.2f stop=%.2f stopw=%.1f%%)\n",
+                             s.c.symbol.c_str(), sig.setup, sig.trig, sig.stop, sig.stopw*100);
+    }
+
     // called with book_mu_ HELD (from historicalDataUpdate, on 5m bar completion)
     void on_5m_bar(Sym& s, double o, double h, double l, double c, double v, long t) {
+        // S-2026-06-26 v2 DAILY-REFRESH: aggregate 5m -> daily; on a new session-day (8:00 UTC roll)
+        // push the COMPLETED prior daily bar into dbars and re-evaluate the setup, so the engine
+        // re-arms A/C setups every day instead of the v1 one-shot-at-connect (which armed 0 in 17h).
+        { long sd=(t-8*3600)/86400;
+          if(s.cur_sd<0){ s.cur_sd=sd; s.day_open=o; s.day_high=h; s.day_low=l; s.day_close=c; }
+          else if(sd!=s.cur_sd){
+              if(s.day_open>0 && s.day_low>0 && !s.dbars.empty()){
+                  s.dbars.push_back({s.day_open,s.day_high,s.day_low,s.day_close}); // prior day's completed bar
+                  if((int)s.dbars.size()>520) s.dbars.erase(s.dbars.begin());
+                  refresh_luke_setup(s);
+              }
+              s.cur_sd=sd; s.day_open=o; s.day_high=h; s.day_low=l; s.day_close=c;
+          } else { if(h>s.day_high) s.day_high=h; if(l<s.day_low||s.day_low<=0) s.day_low=l; s.day_close=c; }
+        }
         if(s.day_open<=0) s.day_open=o;
         // ── Wilder ATR every bar (for ATR-trail), S-2026-06-18 ──
         { double tr=h-l; if(s.prev_c_atr>0){ double a=h-s.prev_c_atr; if(a<0)a=-a; double b=s.prev_c_atr-l; if(b<0)b=-b; if(a>tr)tr=a; if(b>tr)tr=b; }

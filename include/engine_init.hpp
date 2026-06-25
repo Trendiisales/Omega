@@ -4235,7 +4235,8 @@ static void init_engines(const std::string& cfg_path)
             bc.luke_mode_A   = true;
             bc.luke_mode_C   = true;
             bc.luke_max_stopw= 0.06;
-            bc.luke_adr_min  = 6.0;
+            bc.luke_adr_min  = 4.0;    // S-2026-06-26 6.0->4.0: ADR>=6 armed 0 setups in 17h live (too tight);
+                                       // ADR>=4 ~5x more candidates (BT PF1.35 @adr4 vs 1.77 @adr6, but trades).
             if (const char* lk = std::getenv("OMEGA_BIGCAP_LUKE")) bc.luke_gate = (std::atoi(lk) != 0);
             bc.engine_tag   = bc.luke_gate ? "BigCapMomoLuke" : "BigCapMomo";
             if (const char* h = std::getenv("OMEGA_BIGCAP_IBKR_HOST"))   bc.host      = h;
