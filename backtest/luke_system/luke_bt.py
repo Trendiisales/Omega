@@ -295,8 +295,14 @@ def metrics(trades, eq_curve, subset=None):
     wr=len(wins)/len(ts)*100
     eq=np.array([e[1] for e in eq_curve])
     peak=np.maximum.accumulate(eq); dd=((peak-eq)/peak).max()*100 if len(eq) else 0
+    # annualized Sharpe from daily portfolio returns
+    sharpe=0.0
+    if len(eq)>2:
+        rets=np.diff(eq)/eq[:-1]; sd=rets.std()
+        sharpe=round(rets.mean()/sd*np.sqrt(252),2) if sd>0 else 0.0
+    # expectancy per trade (avg R)
     return dict(n=len(ts),pf=round(pf,2),wr=round(wr,1),avgR=round(R.mean(),2),
-        net=round(pnl.sum(),0),maxDD=round(dd,1),
+        sharpe=sharpe, net=round(pnl.sum(),0),maxDD=round(dd,1),
         ret=round((eq[-1]/eq[0]-1)*100,1) if len(eq) else 0)
 
 if __name__=='__main__':

@@ -330,6 +330,9 @@ public:
         if(s.inpos){
             s.hold++;
             if(h>s.peak) s.peak=h;
+            // S-2026-06-25 luke tight structural stop (initial); the ATR-trail below takes over as the
+            // position moves up (peak rises). Whichever is higher/hit-first governs.
+            if(cfg_.luke_gate && s.luke_stop>0 && l<=s.luke_stop){ close_pos(s,s.luke_stop,"LUKE_STOP"); return; }
             double tstop = (cfg_.trail_pct>0.0) ? s.peak*(1-cfg_.trail_pct) : 0.0;        // %-trail (if on)
             if(cfg_.atr_len>0 && s.atr>0){ double a=s.peak - cfg_.atr_mult*s.atr; if(a>tstop) tstop=a; }  // ATR-trail
             if(cfg_.be_arm_pct>0 && s.peak >= s.entry*(1+cfg_.be_arm_pct)){              // BE-ratchet lock
@@ -351,15 +354,6 @@ public:
             return;
         }
         // ── entry gates (mirror the validated backtest exactly) ──
-        // S-2026-06-25 LUKE GATE: when on, the ignition entry only fires if the name ALSO
-        // (a) clears the high-ADR floor (pre-filter) AND (b) is in a valid A/C daily setup
-        // (pullback-to-rising-EMA or inside-day/VCP breakout, tight structural stop) resolved
-        // by omega::luke::evaluate in historicalDataEnd. This is the validated daily entry-QUALITY
-        // confluence layered on the proven 5m ignition chassis (variants via luke_mode_A/_C).
-        // Behind luke_gate (default OFF); adr_ok+luke_setup default permissive => no-op until enabled.
-        // SHADOW first: the live form is ignition+Luke-confluence -> judge on the shadow ledger
-        // before any live-size (BACKTEST_TRUTH: the daily-only BT motivates this, the ledger proves it).
-        if(cfg_.luke_gate && (!s.adr_ok || s.luke_setup==0)) return;
         // S-2026-06-25 STALE-DATA GUARD: never enter off a stale bar. `t` is the just-closed
         // 5m bar's start (epoch sec); at live completion (now - t) ~= one TF. A bar older than
         // max_bar_age_sec = IBKR feed stalled/replayed/silently delayed -> refuse the entry
@@ -374,47 +368,66 @@ public:
                 return;
             }
         }
-        bool fire=false;
-        if(c>=cfg_.px_min && s.day_open>0 && (market_ok_ || !cfg_.regime_gate)){
-            double day_up=(c/s.day_open-1)*100;
-            if(day_up>=cfg_.gate_pct && (int)s.vols.size()>=20 && (int)s.closes.size()>=cfg_.lb){
-                double avgv=0; for(int k=0;k<20;k++) avgv+=s.vols[s.vols.size()-1-k]; avgv/=20.0;
-                double base=s.closes[s.closes.size()-cfg_.lb];
-                bool vol_ok = (cfg_.volx<=0.0) || (avgv>0 && v>=cfg_.volx*avgv);
-                // S-2026-06-20 IMPULSE FILTER: the entry bar must thrust >= mult*ATR (filters
-                // weak/stalling breakouts; PF 2.4->5.8, DD 10.4->6.6% on real big-cap data).
-                bool impulse_ok = (cfg_.min_impulse_atr<=0.0) || (s.atr<=0.0)
-                                  || ((h - s.closes.back()) >= cfg_.min_impulse_atr * s.atr);
-                if(vol_ok && impulse_ok && base>0 && (c/base-1)*100>=cfg_.ig_pct) fire=true;
+        bool fire=false; long sd=(t-8*3600)/86400;
+        if(cfg_.luke_gate){
+            // S-2026-06-25 ARM-AND-WAIT (the validated daily-swing entry). The A/C setup detected on
+            // the daily bars (omega::luke::evaluate, historicalDataEnd) ARMS a breakout trigger
+            // (luke_trig) + tight structural stop (luke_stop). We ENTER when intraday price BREAKS that
+            // armed trigger. The setup forms on a PRIOR quiet bar (pullback/inside-day) and the break
+            // fires LATER -- exactly as the BT models it. This REPLACES ignition when luke_gate is on;
+            // a same-bar setup+ignition confluence suppressed everything (a breakout day is never itself
+            // a pullback/inside day -> 0/28 on June live trades). adr_ok+luke_setup come from the daily
+            // pre-filter/detector. v1: setup armed at connect / daily restart (intraday daily-refresh
+            // = follow-up). Entry/stop use luke_trig/luke_stop in the open block below.
+            if(s.adr_ok && s.luke_setup!=0 && (market_ok_||!cfg_.regime_gate)
+               && h>=s.luke_trig && l>s.luke_stop && s.last_entry_sd!=sd){
+                fire=true;
+                printf("[BigCapMomo] LUKE-BREAK %s setup=%c trig=%.2f stop=%.2f (h=%.2f)\n",
+                       s.c.symbol.c_str(), s.luke_setup, s.luke_trig, s.luke_stop, h); fflush(stdout);
             }
-        }
-        if(fire && cfg_.min_breadth > 1){
-            // S-2026-06-23 cross-sectional BREADTH gate (chop/bear protection, ported from the
-            // faithfully-BT'd bridge): register this ignition, require >= min_breadth DISTINCT names
-            // igniting the same session-day (8:00 UTC roll) before any entry. Causal: same-day prior only.
-            long sd = (t - 8*3600)/86400;
-            auto& set = day_ignis_[sd]; set.insert(s.c.symbol);
-            if((int)set.size() < cfg_.min_breadth){
-                printf("[BigCapMomo] %s breadth-gate hold (%zu/%d igniters today, day_up=%.0f%%)\n",
-                    s.c.symbol.c_str(), set.size(), cfg_.min_breadth, (c/s.day_open-1)*100); fflush(stdout);
-                fire=false;
+        } else {
+            if(c>=cfg_.px_min && s.day_open>0 && (market_ok_ || !cfg_.regime_gate)){
+                double day_up=(c/s.day_open-1)*100;
+                if(day_up>=cfg_.gate_pct && (int)s.vols.size()>=20 && (int)s.closes.size()>=cfg_.lb){
+                    double avgv=0; for(int k=0;k<20;k++) avgv+=s.vols[s.vols.size()-1-k]; avgv/=20.0;
+                    double base=s.closes[s.closes.size()-cfg_.lb];
+                    bool vol_ok = (cfg_.volx<=0.0) || (avgv>0 && v>=cfg_.volx*avgv);
+                    // S-2026-06-20 IMPULSE FILTER: the entry bar must thrust >= mult*ATR (filters
+                    // weak/stalling breakouts; PF 2.4->5.8, DD 10.4->6.6% on real big-cap data).
+                    bool impulse_ok = (cfg_.min_impulse_atr<=0.0) || (s.atr<=0.0)
+                                      || ((h - s.closes.back()) >= cfg_.min_impulse_atr * s.atr);
+                    if(vol_ok && impulse_ok && base>0 && (c/base-1)*100>=cfg_.ig_pct) fire=true;
+                }
             }
+            if(fire && cfg_.min_breadth > 1){
+                // S-2026-06-23 cross-sectional BREADTH gate (chop/bear protection, ported from the
+                // faithfully-BT'd bridge): register this ignition, require >= min_breadth DISTINCT names
+                // igniting the same session-day (8:00 UTC roll) before any entry. Causal: same-day prior only.
+                auto& set = day_ignis_[sd]; set.insert(s.c.symbol);
+                if((int)set.size() < cfg_.min_breadth){
+                    printf("[BigCapMomo] %s breadth-gate hold (%zu/%d igniters today, day_up=%.0f%%)\n",
+                        s.c.symbol.c_str(), set.size(), cfg_.min_breadth, (c/s.day_open-1)*100); fflush(stdout);
+                    fire=false;
+                }
+            }
+            // S-2026-06-23b SINGLE-ENTRY-PER-NAME-PER-DAY (re-entry-into-the-top guard).
+            if(fire && s.last_entry_sd==sd) fire=false;
         }
-        // S-2026-06-23b SINGLE-ENTRY-PER-NAME-PER-DAY (re-entry-into-the-top guard). The manager
-        // variant re-entered IONQ's 2nd pump near HOD -> -$58; full-universe faithful BT (bridge,
-        // same VERBATIM strategy) shows cap1 > cap2 (PF 2.86 vs 2.51, +$996 vs +$957). NOTE: this
-        // IBKR engine has no own harness + cannot compile on the Mac canary (TWS API) -- verified by
-        // the VPS MSVC build. Conclusion transfers from the bridge BT.
-        if(fire){ long sd=(t-8*3600)/86400; if(s.last_entry_sd==sd) fire=false; }
         if(fire){
-            double notional=risk_.allow_entry(s.c.symbol,c,c*(1-cfg_.trail_pct));
+            // luke arm-and-wait: fill at the armed breakout trigger (or the gap-up open) with the tight
+            // structural stop; ignition path keeps its close-fill + %-trail-derived stop.
+            double entry_px = cfg_.luke_gate ? std::max(s.luke_trig, o) : c;
+            double init_stop = cfg_.luke_gate ? s.luke_stop : c*(1-cfg_.trail_pct);
+            double notional=risk_.allow_entry(s.c.symbol,entry_px,init_stop);
             if(cfg_.notional_usd>0 && notional>cfg_.notional_usd) notional=cfg_.notional_usd;
             if(notional>0){
-                long sz=(long)std::max(1.0,notional/c); risk_.on_open(s.c.symbol,notional);
-                s.inpos=true; s.entry=c; s.peak=h; s.trough=l; s.hold=0; s.notional=notional;
-                s.size=sz; s.entry_ts=(int64_t)std::time(nullptr); s.last=c; s.last_entry_sd=(t-8*3600)/86400;
-                printf("[BigCapMomo] %s LONG %s c=%.2f day_up=%.0f%% sz=%ld notional=$%.0f [conc=%d]\n",
-                    cfg_.paper_only?"PAPER":"LIVE",s.c.symbol.c_str(),c,(c/s.day_open-1)*100,sz,notional,risk_.open_count());
+                long sz=(long)std::max(1.0,notional/entry_px); risk_.on_open(s.c.symbol,notional);
+                s.inpos=true; s.entry=entry_px; s.peak=h; s.trough=l; s.hold=0; s.notional=notional;
+                s.size=sz; s.entry_ts=(int64_t)std::time(nullptr); s.last=c; s.last_entry_sd=sd;
+                if(cfg_.luke_gate) s.luke_setup=0;   // consume the armed setup (1 fill per setup)
+                printf("[BigCapMomo] %s LONG %s entry=%.2f %s sz=%ld notional=$%.0f [conc=%d]\n",
+                    cfg_.paper_only?"PAPER":"LIVE",s.c.symbol.c_str(),entry_px,
+                    cfg_.luke_gate?"LUKE-BREAK":"IGNITION",sz,notional,risk_.open_count());
                 fflush(stdout);
                 if(!cfg_.paper_only){ Order ord; ord.action="BUY"; ord.orderType="MKT";
                     ord.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz); cli_->placeOrder(nextId_++,s.c,ord); }
