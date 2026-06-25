@@ -291,8 +291,12 @@ public:
         long t = atol(b.time.c_str());                    // epoch sec (formatDate=2)
         double v = DecimalFunctions::decimalToDouble(b.volume);
         s.last=b.close; if(s.inpos && (s.trough<=0 || b.low<s.trough)) s.trough=b.low;
-        if(s.hb_t<0){ s.hb_t=t; s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v; return; }
-        if(t==s.hb_t){ s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v; return; }
+        // S-2026-06-26 INTRA-BAR Luke break: check the armed trigger on EVERY forming-bar update
+        // (~5s) so a break fires within seconds, not up to 5min (on bar completion). luke-gate only.
+        if(s.hb_t<0){ s.hb_t=t; s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v;
+                      if(s.hist_done) try_luke_break(s, b.high, b.low, t); return; }
+        if(t==s.hb_t){ s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v;
+                       if(s.hist_done) try_luke_break(s, b.high, b.low, t); return; }
         // new timestamp -> previous 5m bar complete -> evaluate (entries only after warmup)
         if(s.hist_done) on_5m_bar(s, s.hb_o, s.hb_h, s.hb_l, s.hb_c, s.hb_v, s.hb_t);
         s.hb_t=t; s.hb_o=b.open; s.hb_h=b.high; s.hb_l=b.low; s.hb_c=b.close; s.hb_v=v;
@@ -328,6 +332,28 @@ public:
         s.luke_setup=sig.setup; s.luke_trig=sig.trig; s.luke_stop=sig.stop;
         if(sig.setup) printf("[BigCapMomo] LUKE-SETUP %s = %c (trig=%.2f stop=%.2f stopw=%.1f%%)\n",
                              s.c.symbol.c_str(), sig.setup, sig.trig, sig.stop, sig.stopw*100);
+    }
+
+    // S-2026-06-26 INTRA-BAR Luke entry: fire the moment the forming bar's high crosses the armed
+    // trigger (called on every keepUpToDate update ~5s) -> a break is caught within seconds. Mirrors
+    // the on_5m_bar open block. luke-gate + armed-setup + bull-regime + 1/name/day only.
+    void try_luke_break(Sym& s, double curhigh, double curlow, long t){
+        if(!cfg_.luke_gate || s.inpos || s.luke_setup==0 || !s.adr_ok) return;
+        if(!(market_ok_ || !cfg_.regime_gate)) return;
+        long sd=(t-8*3600)/86400; if(s.last_entry_sd==sd) return;
+        if(curhigh < s.luke_trig || curlow <= s.luke_stop) return;   // not broken / already blew stop
+        double entry_px=s.luke_trig;
+        double notional=risk_.allow_entry(s.c.symbol,entry_px,s.luke_stop);
+        if(cfg_.notional_usd>0 && notional>cfg_.notional_usd) notional=cfg_.notional_usd;
+        if(notional<=0) return;
+        long sz=(long)std::max(1.0,notional/entry_px); risk_.on_open(s.c.symbol,notional);
+        s.inpos=true; s.entry=entry_px; s.peak=curhigh; s.trough=curlow; s.hold=0; s.notional=notional;
+        s.size=sz; s.entry_ts=(int64_t)std::time(nullptr); s.last=entry_px; s.last_entry_sd=sd; s.luke_setup=0;
+        printf("[BigCapMomo] %s LONG %s entry=%.2f LUKE-BREAK(intrabar) sz=%ld notional=$%.0f [conc=%d]\n",
+            cfg_.paper_only?"PAPER":"LIVE",s.c.symbol.c_str(),entry_px,sz,notional,risk_.open_count());
+        fflush(stdout);
+        if(!cfg_.paper_only){ Order ord; ord.action="BUY"; ord.orderType="MKT";
+            ord.totalQuantity=DecimalFunctions::doubleToDecimal((double)sz); cli_->placeOrder(nextId_++,s.c,ord); }
     }
 
     // called with book_mu_ HELD (from historicalDataUpdate, on 5m bar completion)
