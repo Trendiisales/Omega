@@ -122,7 +122,7 @@ param(
     [int]   $CheckIntervalSec       = 15,
     [int]   $PostRestartWaitSec     = 30,
     [int]   $GitHubPollIntervalSec  = 300,
-    [string]$TelemetryUrl           = "http://localhost:7779/api/telemetry",
+    [string]$TelemetryUrl           = "http://localhost:7781/api/v1/omega/positions",  # S-2026-06-25: was :7779/api/telemetry (market prices, no open_positions field) -> telemetry_healthy always False + safe-to-restart blind. This route returns the live open-positions JSON array.
     [int]   $TelemetryTimeoutSec    = 5
 )
 
@@ -1687,10 +1687,26 @@ function Invoke-Deploy {
 function Get-OpenPositionCount {
     param([string]$Url, [int]$TimeoutSec)
     try {
-        $resp = Invoke-RestMethod -Uri $Url -TimeoutSec $TimeoutSec -ErrorAction Stop
-        if ($null -eq $resp) {
-            $script:TelemetryLastError = "telemetry returned null"
+        # S-2026-06-25: use Invoke-WebRequest so a 200 with an EMPTY array (flat book) is
+        # "healthy, 0 positions" -- NOT confused with "down". The /api/v1/omega/positions
+        # route returns a JSON ARRAY of open positions; an unreachable binary throws (down).
+        $web = Invoke-WebRequest -Uri $Url -TimeoutSec $TimeoutSec -UseBasicParsing -ErrorAction Stop
+        if ($web.StatusCode -ne 200) {
+            $script:TelemetryLastError = "telemetry HTTP $($web.StatusCode)"
             return $null
+        }
+        $resp = $null
+        try { $resp = $web.Content | ConvertFrom-Json -ErrorAction Stop } catch {
+            $script:TelemetryLastError = "telemetry non-JSON body"
+            return $null
+        }
+        $script:TelemetryLastError = $null
+        if ($resp -is [array])  { return $resp.Count }                       # positions array (0 = flat)
+        if ($null -eq $resp)    { return 0 }                                 # empty body / [] -> flat
+        if ($resp.PSObject.Properties.Name -contains 'symbol' -and `
+            $resp.PSObject.Properties.Name -notcontains 'open_positions' -and `
+            $resp.PSObject.Properties.Name -notcontains 'live_trades') {
+            return 1                                                          # a single position object
         }
         $liveTrades = $resp.live_trades
         $openPos    = $resp.open_positions
