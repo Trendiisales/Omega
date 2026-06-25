@@ -1462,8 +1462,13 @@ static void init_engines(const std::string& cfg_path)
         //   production-faithful number comes from the SHADOW LEDGER -- arbiter.
         //   Complementary to g_rider_d1 (BE-arm fires on round-trips; the rider
         //   has already banked its +N*ATR legs by then). small-n: D1 ~2 trades/mo.
-        g_xau_tf_d1.BE_ARM_PCT    = 3.0;
-        g_xau_tf_d1.BE_BUFFER_PCT = 0.0;
+        // S-2026-06-25 RE-SWEEP (xau_tf_d1_bearm_sweep, real engine, 2yr H4, bull+bear, WF):
+        //   arm5/buf1.0 BEAT arm3/buf0 on BOTH net AND maxDD -- PF1.58 +$4160 maxDD$1553
+        //   (vs arm3: PF1.53 +$3792 maxDD$1872), both-WF-halves+ (1.49/1.62). Within the
+        //   documented plateau arm3-5. arm1/2 still GUTS it (PF<1) -- early-arm tight-lock
+        //   refuted again. Buffer 1.0 = bank a small profit above entry, not a full round-trip.
+        g_xau_tf_d1.BE_ARM_PCT    = 5.0;
+        g_xau_tf_d1.BE_BUFFER_PCT = 1.0;
         // S88-followup post-sweep 2026-05-27: widen D1 band [0.30,0.85] ->
         // [0.20,0.90]. Sweep showed D1 entry-vol distribution sits inside the
         // band already; widening picks up 2 extra cell-Keltner trades (PF
