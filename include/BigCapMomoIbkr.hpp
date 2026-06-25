@@ -94,6 +94,23 @@ struct Config {
                                       // bridge engine (PumpScalpManager.min_breadth): chop third -12%->-2%.
     double notional_usd     = 1000.0; // per-entry notional (shadow sizing)
     std::string engine_tag  = "BigCapMomo";  // ledger + GUI source label
+
+    // ---- S-2026-06-25 Luke entry-quality gate (OPT-IN, SHADOW by default) ----
+    // Faithfully BT'd daily setups A (pullback-to-rising-9/21-EMA) + C (inside-day
+    // /micro-VCP breakout) + tight stop-width selectivity, layered as an entry
+    // QUALITY filter on the existing 5m ignition trigger. See LukeEntryQuality.hpp
+    // + Memory-Omega/wiki/concepts/luke-tight-stop-system.md. IMPL (operator MSVC
+    // build): on a candidate ignition, request that name's DAILY bars (same call as
+    // the SPY regime feed), call omega::luke::evaluate(); require a valid A/C setup
+    // whose structural stop-width <= luke_max_stopw before allowing the entry, and
+    // size shares = risk$/(fill-stop). DEFAULT OFF until revalidated at 5m fill
+    // resolution (the edge is daily-resolution; do NOT live-size off this alone).
+    bool   luke_gate        = false;  // master enable (env OMEGA_BIGCAP_LUKE=1)
+    bool   luke_mode_A      = true;   // pullback-to-rising-EMA
+    bool   luke_mode_C      = true;   // inside-day / micro-VCP breakout
+    double luke_max_stopw   = 0.06;   // tight-stop selectivity cap (validated sweet spot)
+    double luke_adr_min     = 4.0;    // high-ADR floor (%), matches scanner intent
+    double luke_risk_pct    = 0.005;  // risk fraction/trade for stop-based sizing (video uses 0.5%)
 };
 
 // Set config BEFORE start(). Safe to call repeatedly while stopped.
