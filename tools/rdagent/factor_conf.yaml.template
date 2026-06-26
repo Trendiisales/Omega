@@ -1,0 +1,34 @@
+qlib_init: {provider_uri: "~/.qlib/qlib_data/omega_data", region: us, kernels: 1}
+market: &market bigcap
+data_handler_config: &dhc
+    start_time: 2024-06-04
+    end_time: @@END@@
+    instruments: *market
+    infer_processors:
+        - {class: RobustZScoreNorm, kwargs: {fields_group: feature, clip_outlier: true, fit_start_time: 2024-06-04, fit_end_time: 2025-08-31}}
+        - {class: Fillna, kwargs: {fields_group: feature}}
+    learn_processors:
+        - {class: DropnaLabel}
+        - {class: CSZScoreNorm, kwargs: {fields_group: label}}
+    data_loader:
+        class: QlibDataLoader
+        kwargs:
+            config:
+                feature:
+                    - ["$close/Ref($close,20)-1","1-$close/Ref($close,5)","$close/Mean($close,20)-1","Std($close/Ref($close,1)-1,20)","Mean($volume,5)/Mean($volume,20)-1","$open/Ref($close,1)-1","($high-$low)/$close","Mean($close>Ref($close,1),14)"]
+                    - ["mom_20d","rev_5d","px_vs_ma20","vol_20d","vol_trend","gap","hl_range","up_days_14"]
+                label: [["Ref($close,-2)/Ref($close,-1)-1"], ["LABEL0"]]
+task:
+    model:
+        class: LGBModel
+        module_path: qlib.contrib.model.gbdt
+        kwargs: {loss: mse, learning_rate: 0.05, num_leaves: 31, max_depth: 6, num_threads: 4, early_stopping_rounds: 50, num_boost_round: 300}
+    dataset:
+        class: DatasetH
+        module_path: qlib.data.dataset
+        kwargs:
+            handler: {class: DataHandlerLP, module_path: qlib.data.dataset.handler, kwargs: *dhc}
+            segments: {train: [2024-06-04, 2025-08-31], valid: [2025-09-01, 2025-12-31], test: [2026-01-01, @@END@@]}
+    record:
+        - {class: SignalRecord, module_path: qlib.workflow.record_temp, kwargs: {model: <MODEL>, dataset: <DATASET>}}
+        - {class: SigAnaRecord, module_path: qlib.workflow.record_temp, kwargs: {ana_long_short: True, ann_scaler: 252}}

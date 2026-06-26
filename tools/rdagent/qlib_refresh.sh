@@ -7,7 +7,12 @@ set -uo pipefail
 PY=/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python
 IBPY=/opt/homebrew/bin/python3   # FIX 2026-06-26: has ibapi; bare python3 -> /usr/bin/python3 LACKS it -> silent thin-pull -> model froze at 06-18
 TOOLS="$HOME/Omega/tools/rdagent"; QD="$HOME/.qlib/qlib_data/omega_data"; TS="$(date '+%Y-%m-%d %H:%M')"
-if ! nc -z -G3 127.0.0.1 4001 2>/dev/null; then echo "[$TS] qlib_refresh: no IBKR tunnel — skip"; exit 0; fi
+# S-2026-06-26: log every outcome (skip/thin/success) so silent failures stop hiding -- this is why
+# the model froze at 06-18 undiagnosed for 8 days. data-health flags the staleness; this names the cause.
+LOG="$TOOLS/qlib_refresh.log"; exec > >(tee -a "$LOG") 2>&1
+trap 'echo "[$TS] qlib_refresh: EXIT status=$? (model now $(tail -1 "$QD/calendars/day.txt" 2>/dev/null))"' EXIT
+if ! nc -z -G3 127.0.0.1 4001 2>/dev/null; then echo "[$TS] qlib_refresh: no IBKR tunnel — SKIP (model stays stale, retry next run)"; exit 0; fi
+echo "[$TS] qlib_refresh: START — tunnel up, pulling bigcap"
 TMP=$(mktemp -d)
 "$IBPY" "$TOOLS/refresh_close_ibkr.py" --tickers bigcap >/dev/null 2>&1 || true   # also freshens close basket
 # pull OHLCV for the bigcap universe -> qlib
@@ -48,5 +53,6 @@ PYEOF
 if [ "$(ls $TMP/*.csv 2>/dev/null | wc -l)" -ge 20 ]; then
   $PY "$TOOLS/omega_to_qlib.py" --input "$TMP" --out "$QD" --universe BIGCAP && echo "[$TS] qlib re-dumped through $(tail -1 $QD/calendars/day.txt)"
   bash "$TOOLS/refresh_gui.sh" >/dev/null 2>&1 || true
+  bash "$TOOLS/retrain_qlib.sh" || echo "[$TS] qlib_refresh: RETRAIN step failed — model will go stale, check retrain_qlib.log"  # data fresh -> retrain pred.pkl so as_of advances
 else echo "[$TS] qlib_refresh: thin pull ($(ls $TMP/*.csv 2>/dev/null|wc -l)) — kept existing qlib"; fi
 rm -rf "$TMP"
