@@ -64,7 +64,11 @@ class IndexIntradayDriftEngine {
 public:
     // -- public config (per-instance override in engine_init.hpp) ------------
     std::string symbol;             // e.g. "US500.F", "DJ30.F", "UK100"
-    bool        enabled         = true;
+    // S-2026-06-26s fleet-sweep KILL (workflow wn6lralw2, verify held=True):
+    // bull PF1.04 / bear PF0.75 = no edge (bull-beta). Default OFF so no future
+    // instance silently defaults to on. (Currently un-instantiated: tick path is
+    // a no-op stub + no global g_idd_* + position-source helper void-cast.)
+    bool        enabled         = false;
     bool        shadow_mode     = true;
     double      ENTRY_SIZE      = 0.01;
     int         ENTRY_HOUR_UTC  = 0;    // open the position in the first H1 of UTC day

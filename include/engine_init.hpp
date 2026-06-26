@@ -1814,12 +1814,20 @@ static void init_engines(const std::string& cfg_path)
         // dollars_per_pt set per BlackBull CFD lot (DJ30 5, US500 50). HARD shadow.
         g_dj30_turtle_d1.p               = omega::make_nas_turtle_d1_params();
         g_dj30_turtle_d1.p.dollars_per_pt = 5.0;
+        // S-2026-06-26s fleet-sweep UPGRADE (workflow wn6lralw2, verify held=True):
+        // sl_atr_mult 1.5 -> 2.0. DJ30 PF1.77->2.12, maxDD HALVED (-78->-34),
+        // 2022 bear stays + (strongest cell). Both-regime+both-half. Per-instance
+        // override only -- NAS turtle keeps 1.5 (its sweep cell did not upgrade).
+        g_dj30_turtle_d1.p.sl_atr_mult    = 2.0;
         g_dj30_turtle_d1.shadow_mode     = true;
         g_dj30_turtle_d1.enabled         = true;
         g_dj30_turtle_d1.symbol          = "DJ30.F";
         g_dj30_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_DJ30_D1.csv");
         g_spx_turtle_d1.p                = omega::make_nas_turtle_d1_params();
         g_spx_turtle_d1.p.dollars_per_pt = 50.0;
+        // S-2026-06-26s fleet-sweep UPGRADE (workflow wn6lralw2, verify held=True):
+        // sl_atr_mult 1.5 -> 2.0. Both-regime+both-half+, cuts maxDD. Per-instance.
+        g_spx_turtle_d1.p.sl_atr_mult     = 2.0;
         g_spx_turtle_d1.shadow_mode      = true;
         g_spx_turtle_d1.enabled          = true;
         g_spx_turtle_d1.symbol           = "US500.F";
@@ -1875,7 +1883,11 @@ static void init_engines(const std::string& cfg_path)
         g_xau_sess_nypm.skip_dow_mask    = (1 << 5); // skip Friday (weekend de-risk;
                                                      // Fri NYpm 0.79 vs 1.80 w/o, ratio)
         g_xau_sess_nypm.shadow_mode      = true;
-        g_xau_sess_nypm.enabled          = true;
+        // S-2026-06-26s fleet-sweep KILL (workflow wn6lralw2, verify held=True):
+        // bull PF1.86 / BEAR PF0.85 = bull-beta, no cross-regime edge. ENABLED
+        // shadow engine bleeding the ledger -> disabled. Time-of-day axis dead on
+        // spot-CFD gold (cost wall). Code kept for futures-tape revival.
+        g_xau_sess_nypm.enabled          = false;
         g_xau_sess_nypm.lot              = 0.01;
         g_xau_sess_nypm.max_spread       = 2.0;     // XAU $ (≈4-5bp at $4700)
         g_xau_sess_nypm.warmup_csv_path  = "phase1/signal_discovery/warmup_XAUUSD_H1.csv";
@@ -4589,7 +4601,14 @@ static void init_engines(const std::string& cfg_path)
         g_connors_nas.MAXHOLD     = 10;     // safety cap (days)
         g_connors_nas.SCALEIN     = true;   // v2: Connors cumulative avg-in (faithful NDX PF1.90->2.27)
         g_connors_nas.MAX_UNITS   = 2;      // up to 2x size; SMA200 filter caps dip risk
-        g_connors_nas.lot         = 0.3;    // dollar-normalized shadow size (index convention)
+        // S-2026-06-26s SCALE 0.3 -> 3.0 (operator-approved, DD-budget-sized).
+        // REAL-engine validated REGIME_GATE=1 (asym-veto) NDX 8pt: ALL PF4.17
+        // +23965pt, BEAR2022 PF3.01 +1842 POSITIVE, both-halves+, 2x-cost robust.
+        // NAS100=$1/pt -> lot3 ~= $7k/yr, maxDD ~$4k. CAVEAT: LOW FREQ (13.5 tr/yr)
+        // = Sharpe/diversifier leg, freq (NOT lot) caps dollars. PF10.23 headline =
+        // bull cherry-pick; true headline PF4.17. Do NOT build a breadth book
+        // (sweep KILLED RSI2/IBS+breadth>=2 vs asym-veto -- see handoff 2026-06-26b).
+        g_connors_nas.lot         = 3.0;    // dollar-normalized shadow size (index convention)
         g_connors_nas.shadow_mode = true;
         g_connors_nas.enabled     = true;   // SHADOW
         g_connors_nas.REGIME_GATE  = 1;     // S-2026-06-20: asym sustained-bear veto > SMA200 (faithful 6/6) — SHADOW
