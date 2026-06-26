@@ -131,16 +131,67 @@ def check_ibkrcrypto():
         except Exception:
             pass
         fresh_age = age_h is None or age_h <= 2.0   # book must have refreshed within 2h
-        ok = dh.get("all_fresh", False) and fresh_age
+        # S-2026-06-26 NDX live-mark must be on the IBKR feed (aurora_NQ). If it fell back to the stale
+        # daily close (src != IBKR-NQ), the GUI NDX px is a day old -> FAIL (the "never stale NDX" guard).
+        ndx_src = d.get("ndx_mark_src", "")
+        ndx_live = (ndx_src == "IBKR-NQ")
+        ok = dh.get("all_fresh", False) and fresh_age and ndx_live
         det = f"book updated {age_h:.1f}h ago" if age_h is not None else "no 'updated' ts"
         return dict(name="ibkrcrypto.book", ok=ok, age=round(age_h,1) if age_h is not None else None,
-                    limit=2, sev="HIGH" if not fresh_age else "MED",
-                    detail=f"{det}, all_fresh={dh.get('all_fresh')}, stale={dh.get('stale_sources', [])} [Chimera crypto book/NDX]")
+                    limit=2, sev="HIGH" if (not fresh_age or not ndx_live) else "MED",
+                    detail=f"{det}, ndx_mark={ndx_src or 'NONE'}{'' if ndx_live else ' (STALE daily-close fallback!)'}, all_fresh={dh.get('all_fresh')}, stale={dh.get('stale_sources', [])} [Chimera crypto book/NDX]")
     except Exception as e:
         return dict(name="ibkrcrypto.book", ok=False, age=None, limit=2, sev="HIGH", detail=f"state.json: {e}")
 
+# ── VIX term-structure engine (deployed paper engine; launchd daily 09:00) ────
+# S-2026-06-26: deployed engine -> enrolled so a DEAD launchd job can't silently leave it dormant
+# (operator rule: never let a built+deployed engine go un-run/forgotten). last_run_date should be a
+# recent weekday; >4d stale (weekday + holiday slack) = the daily job stopped firing -> FAIL.
+def check_vix_engine():
+    sp = f"{HOME}/vix-engine/.state/state.json"
+    try:
+        d = json.load(open(sp))
+        lr = d.get("last_run_date")
+        age = (TODAY - dt.date.fromisoformat(lr)).days if lr else None
+        ok = age is not None and age <= 4
+        return dict(name="vix-term.engine", ok=ok, age=age, limit=4, sev="MED",
+                    detail=f"last_run {lr} ({age}d ago), open={len(d.get('open',[]))} closed={len(d.get('closed',[]))} [VIX-term paper engine, launchd daily]")
+    except Exception as e:
+        return dict(name="vix-term.engine", ok=False, age=None, limit=4, sev="MED", detail=f"state.json: {e} [VIX-term engine — launchd dead?]")
+
+# ── RD-Agent paper basket (auto-executed daily; operator: nothing manual, everything tracked) ──
+def check_rdagent_basket():
+    sp = f"{HOME}/Omega/data/rdagent/factor_basket_result.json"
+    try:
+        d = json.load(open(sp)); ts = d.get("ts","")
+        age = (NOW - dt.datetime.fromisoformat(ts).timestamp())/86400.0 if ts else None
+        # MODEL AGE: the basket EXECUTES daily, but the underlying model (as_of) can silently go
+        # stale -- a fresh exec on an 8-day-old model passed before (2026-06-26). Check BOTH now.
+        mdl = d.get("as_of","")
+        mage = (NOW - dt.datetime.strptime(mdl,"%Y-%m-%d").replace(tzinfo=dt.timezone.utc).timestamp())/86400.0 if mdl else None
+        exec_ok = age is not None and age <= 2
+        model_ok = mage is not None and mage <= 3
+        ok = exec_ok and model_ok
+        warn = "" if model_ok else f" *** MODEL STALE {mage:.0f}d -- qlib retrain owed ***"
+        return dict(name="rdagent.basket", ok=ok, age=round(age,1) if age is not None else None, limit=2, sev="MED",
+                    detail=f"exec {age:.1f}d ago, model {('%.0fd old'%mage) if mage is not None else '?'}{warn}, book={list((d.get('book') or {}).keys())} [RD-Agent paper basket]")
+    except Exception as e:
+        return dict(name="rdagent.basket", ok=False, age=None, limit=2, sev="MED", detail=f"result.json: {e} [basket executor not run?]")
+
+# ── Jo engine (tight-trail Luke companion; launchd daily; operator: everything tracked) ──
+def check_jo_engine():
+    sp = f"{HOME}/jo-engine/jo_state.json"
+    try:
+        d = json.load(open(sp)); upd = d.get("updated","")
+        age = (NOW - dt.datetime.strptime(upd.replace(" UTC",""), "%Y-%m-%d %H:%M").replace(tzinfo=dt.timezone.utc).timestamp())/86400.0 if upd else None
+        ok = age is not None and age <= 2
+        return dict(name="jo.engine", ok=ok, age=round(age,1) if age is not None else None, limit=2, sev="MED",
+                    detail=f"ran {age:.1f}d ago, open={d.get('n_open')} closed={d.get('n_closed')} WR={d.get('wr')}% pnl=${d.get('total_pnl')} [Jo tight-trail Luke companion, launchd daily]")
+    except Exception as e:
+        return dict(name="jo.engine", ok=False, age=None, limit=2, sev="MED", detail=f"jo_state.json: {e} [Jo engine not run?]")
+
 # ── run ───────────────────────────────────────────────────────────────────────
-checks = [check_feed(f) for f in FEEDS] + [check_ibkrcrypto()]
+checks = [check_feed(f) for f in FEEDS] + [check_ibkrcrypto(), check_vix_engine(), check_rdagent_basket()]
 
 # AUTO-REFRESH (--fix): for each stale feed with a refresh command, run it, then re-check that feed
 if FIX:
