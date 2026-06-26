@@ -5,12 +5,13 @@
 # need the rdagent inference pipeline (heavier, separate). Tunnel-gated: skips cleanly if IBKR down.
 set -uo pipefail
 PY=/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python
+IBPY=/opt/homebrew/bin/python3   # FIX 2026-06-26: has ibapi; bare python3 -> /usr/bin/python3 LACKS it -> silent thin-pull -> model froze at 06-18
 TOOLS="$HOME/Omega/tools/rdagent"; QD="$HOME/.qlib/qlib_data/omega_data"; TS="$(date '+%Y-%m-%d %H:%M')"
 if ! nc -z -G3 127.0.0.1 4001 2>/dev/null; then echo "[$TS] qlib_refresh: no IBKR tunnel — skip"; exit 0; fi
 TMP=$(mktemp -d)
-python3 "$TOOLS/refresh_close_ibkr.py" --tickers bigcap >/dev/null 2>&1 || true   # also freshens close basket
+"$IBPY" "$TOOLS/refresh_close_ibkr.py" --tickers bigcap >/dev/null 2>&1 || true   # also freshens close basket
 # pull OHLCV for the bigcap universe -> qlib
-python3 - "$QD" "$TMP" <<'PYEOF'
+"$IBPY" - "$QD" "$TMP" <<'PYEOF'
 import sys, os
 from ibapi.client import EClient; from ibapi.wrapper import EWrapper; from ibapi.contract import Contract
 import threading, time
