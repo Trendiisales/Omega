@@ -4272,7 +4272,12 @@ static void init_engines(const std::string& cfg_path)
                 "NVDA","AMD","MU","MRVL","SMCI","ARM","AVGO","COIN","MSTR","PLTR","SHOP","CRWD","SNOW",
                 "NOW","PANW","ORCL","INTC","DELL","UBER","NFLX","QCOM","ANET","STX","FTNT","KMX","DLTR",
                 "LRCX","KLAC","AMAT","MPWR","ON","MRNA","APP","CVNA","HOOD","CRDO" };
-            bc.engine_tag   = bc.luke_gate ? "BigCapMomoLuke" : "BigCapMomo";
+            // S-2026-06-26s NEVER-AGAIN GUARD: the bare "BigCapMomo" tag is the raft-
+            // of-bad-trades variant (old gate1.5/no-breadth IBKR run, 22 losers net
+            // -$72 purged from the ledger 2026-06-26). The aggressive config is GONE
+            // (now gate2.5/breadth>=2 above), but pin the tag so the bare "BigCapMomo"
+            // label can NEVER be written to the ledger/GUI again regardless of env.
+            bc.engine_tag   = bc.luke_gate ? "BigCapMomoLuke" : "BigCapMomoIbkr";
             if (const char* h = std::getenv("OMEGA_BIGCAP_IBKR_HOST"))   bc.host      = h;
             if (const char* p = std::getenv("OMEGA_BIGCAP_IBKR_PORT"))   bc.port      = std::atoi(p);
             if (const char* c = std::getenv("OMEGA_BIGCAP_IBKR_CLIENT")) bc.client_id = std::atoi(c);
