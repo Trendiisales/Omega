@@ -27,6 +27,7 @@ static double tick_value_multiplier(const std::string& symbol) noexcept {
     if (symbol == "USOIL.F")  return 1000.0;  // WTI CFD future: 1,000 barrels/lot ? verified
     if (symbol == "BRENT")  return 1000.0;  // Brent CFD future: 1,000 barrels/lot ? scraped
     if (symbol == "XAUUSD")   return 100.0;   // Gold spot CFD: 100 troy oz/lot ? confirmed
+    if (symbol == "MGC")      return 10.0;    // S-2026-06-26: COMEX Micro Gold future = 10 troy oz = $10/pt. Was missing -> MgcFastDon shadow $ mis-scaled; add so lot=1 = 1 micro contract.
     if (symbol == "XAGUSD")   return 5000.0;  // Silver spot CFD: 5,000 troy oz/lot ? scraped
     if (symbol == "EURUSD")   return 100000.0;// FX major: 100,000 units/lot ? standard
     if (symbol == "GBPUSD")   return 100000.0;// FX major: 100,000 units/lot

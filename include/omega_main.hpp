@@ -94,7 +94,7 @@ int main(int argc, char* argv[])
     // dead. The [MGC-FEED] poll heartbeat (MgcFastDonchianFeed.hpp) confirms reads.
     g_mgc_fastdon.enabled     = true;
     g_mgc_fastdon.shadow_mode = true;
-    g_mgc_fastdon.lot         = 0.01;
+    g_mgc_fastdon.lot         = 1.0;   // S-2026-06-26 operator: deploy at lot size 1 (= 1 MGC micro, $10/pt). SHADOW. Re-look + scale if the live ledger proves it (memory project-revisit-scale-mgcfastdon-bigcapmomo).
     g_mgc_fastdon.Nin = 40; g_mgc_fastdon.Nout = 20; g_mgc_fastdon.Kov = 1.5;  // S-2026-06-23: 20/10 -> 40/20 (faithful-best PF1.74 vs 1.54, 2x-cost-robust)
     g_mgc_fastdon.use_hvn_skip = true;
     g_mgc_fastdon.l2_gate_ = 0.30;  // S-2026-06-23 L2 CONFIRMATION GATE (active, conservative): block a long breakout only when the live MGC book is strongly ask-heavy (bid-share<0.30). OBI showed ask-heavy -> -0.031pt fwd, so this cuts the worst book-against entries. SHADOW -> forward-validates on the ledger; set 0.0 to disable. Inert in backtest (set_l2_imb never called).
