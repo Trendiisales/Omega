@@ -1187,6 +1187,7 @@ void OmegaTelemetryServer::run(int port)
             if (body.empty()) body = "{\"updated\":0,\"datasets\":{}}";
         }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
+        else if (strstr(buf, "GET /api/companion"))   { ct = "application/json"; body = loadFile("companion_state.json"); if (body.empty()) body = "{\"open_companions\":0,\"open_detail\":[]}"; }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
             // Clear in-memory ledger + rename today's CSV so it won't be re-read.
             //

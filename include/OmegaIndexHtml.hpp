@@ -461,11 +461,13 @@ function render(J){lastJ=J;
 R"OMEGAD2(  else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
   var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+  var cm=(window._comp||{})[(t.engine||'')+'|'+(t.symbol||'')];
+  var cr=cm?('<tr><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">↳ companion (stall-clip) · '+esc(cm.side)+' · MFE '+fmt2(cm.mfe_pct,2)+'% · stall '+cm.stall+' · '+fmt$(safe(cm.upnl))+' · '+(cm.eligible?'<span class="g">gate ✓</span>':'pre-gate (rides wide)')+'</td></tr>'):'';
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
-   +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>';}).join('');
+   +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>'+cr;}).join('');
   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
   el('ltpnl').textContent=fmt$(sum)+' unrealised';el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
@@ -479,6 +481,10 @@ function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)
  s.onerror=function(){wsOk=false;};}catch(e){wsOk=false;}})();
 function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r.json();}).then(function(j){render(j);setConn(true,'http');}).catch(function(){setConn(false);});}
 setInterval(poll,1000);poll();
+/* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
+   served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
+function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;}).catch(function(){});}
+setInterval(pollComp,5000);pollComp();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
