@@ -2091,8 +2091,16 @@ static void init_engines(const std::string& cfg_path)
 
                 g_fx_xrev_eurgbp.shadow_mode = true; g_fx_xrev_eurgbp.enabled = true;
                 g_fx_xrev_eurgbp.lot = 0.01;
-                g_fx_xrev_eurgbp.p.z_window = 60; g_fx_xrev_eurgbp.p.z_in = 2.0;
-                g_fx_xrev_eurgbp.p.z_out = 0.4;   g_fx_xrev_eurgbp.p.hold_timeout = 20;
+                // S-2026-06-26s fleet-sweep UPGRADE (workflow wn6lralw2, verify held=True):
+                // migrate cluster center w60/zout0.4/h20 -> w40/zin2.0/zout0.3/h40.
+                // Driven on the REAL FxCrossRevEngine over real Dukascopy EURGBP D1
+                // 2019-26: BULL PF2.44->3.61 (DD 26->16 HALVED), BEAR PF3.55 (n8),
+                // both-halves+ (H1 1.56/H2 2.67), 2x/3x-cost robust, 22/24 cluster
+                // cfgs both-regime+ (most robust pair in family). Bear n=6-8 small
+                // (low-freq ~10/yr Sharpe leg). NOTE: prior live baseline was h20/
+                // zout0.4 (sweep mislabeled it h40/0.5); best cfg is absolute, applied.
+                g_fx_xrev_eurgbp.p.z_window = 40; g_fx_xrev_eurgbp.p.z_in = 2.0;
+                g_fx_xrev_eurgbp.p.z_out = 0.3;   g_fx_xrev_eurgbp.p.hold_timeout = 40;
                 g_fx_xrev_eurgbp.p.require_hook = false;
                 g_fx_xrev_eurgbp.seed_from_d1_csv("phase1/signal_discovery/warmup_EURGBP_D1.csv");
                 std::printf("[OMEGA-INIT] FxCarry x8 (EUR/GBP/JPY-crosses) + FxCrossRev EURGBP -- shadow, warm-seeded\n");
@@ -6552,8 +6560,11 @@ static void init_engines(const std::string& cfg_path)
             // S-2026-06-09 visibility fix: never-persisted strays now registered.
             // Asserted here so a future drop of any registration trips [VIS-AUDIT].
             "XauTrendFollowM15", "OvernightDriftSPX", "EurGbpPairs", "FxCrossRevEURGBP",
-            "Ger40LondonBrk", "GoldVolBreakoutM30", "IndexIntradayDrift_SP",
-            "IndexIntradayDrift_UK100", "IndexIntradayDrift_US30", "OrbEstx50",
+            "Ger40LondonBrk", "GoldVolBreakoutM30", "OrbEstx50",
+            // S-2026-06-26s: IndexIntradayDrift_SP/UK100/US30 phantom tags REMOVED
+            // (fleet-sweep KILL, held=True). The engine is killed + un-instantiated
+            // (no g_idd_* globals, no register_source) -> these tags tripped a false
+            // [VIS-AUDIT] WARN every boot. Drop them with the engine.
             "Us30Ensemble", "BreakBounce", "XauDojiRejD1", "XauOutsideBarD1",
             "XauTurtleD1", "XauSessNYpm", "XauSessOvernight",
             "DonchianPortfolio", "EmaPullbackPortfolio", "TsmomPortfolioV2",
