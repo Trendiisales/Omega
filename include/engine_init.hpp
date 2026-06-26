@@ -4088,7 +4088,10 @@ static void init_engines(const std::string& cfg_path)
                                                  // ignition longs are net-POSITIVE in aggregate (running pumps pay
                                                  // for the fades) -- filtering them removes winners too. Plumbing
                                                  // kept (BC_EXT lever) but off. Don't re-enable without full-universe BT.
-        g_bigcap_momo.notional_usd = 1000.0;
+        g_bigcap_momo.notional_usd = 2000.0;   // S-2026-06-26 operator: DOUBLE the cons lot (1000->2000) on the
+        // selective config's numbers (PF5.44, 8/39 losers vs the looser mover's 23/49). SHADOW -> doubles the
+        // shadow $ + the peak deployed capital (17 concurrent => ~$34k peak); realized-DD still understates the
+        // correlated-selloff risk (see memory project-revisit-scale-mgcfastdon-bigcapmomo). Scale again only on a green live ledger.
         g_bigcap_momo.slip_pct     = 0.15;     // big-cap realistic (vs micro 1.0%)
         g_bigcap_momo.min_dvol_usd = 0.0;      // S-2026-06-13k ZERO-TRADES ROOT CAUSE: $100M per
                                                // 5-MINUTE bar = $12B/day turnover -- virtually no
