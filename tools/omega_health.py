@@ -139,17 +139,23 @@ def chk_rec_mgc():
     return (GREEN,"recording")
 
 def chk_dom_bridge():
-    return (GREEN,":9701 up") if _port(9701) else (RED,"DOM bridge :9701 down (gold/MGC/NAS L2)")
+    if _port(9701): return (GREEN,":9701 up")
+    if not _fx_open(): return (INFO,":9701 down -- fx/metals/futures closed (weekend), expected")
+    return (RED,"DOM bridge :9701 down (gold/MGC/NAS L2)")
 
 def chk_dashboard():
     return (GREEN,":7779 up") if _port(7779) else (AMBER,"main dashboard :7779 down")
 
 def chk_scanner():
-    return (GREEN,":7783 up") if _port(7783) else (AMBER,"bigcap scanner :7783 down")
+    if _port(7783): return (GREEN,":7783 up")
+    if not _us_rth(): return (INFO,":7783 down -- US mkt closed (weekend/after-hours), expected")
+    return (AMBER,"bigcap scanner :7783 down")
 
 def chk_l2():
     for ln in reversed(_tail(WATCHDOG,60)):
-        if "L2-CSV-STALE" in ln: return (AMBER,"L2 CSV stale (gold L2 degraded; gold still on FIX)")
+        if "L2-CSV-STALE" in ln:
+            if not _fx_open(): return (INFO,"gold L2 quiet -- fx/metals closed (weekend), expected")
+            return (AMBER,"L2 CSV stale (gold L2 degraded; gold still on FIX)")
         if "HEARTBEAT" in ln: break
     return (GREEN,"L2 ok")
 
@@ -211,7 +217,7 @@ def chk_xs_index():
         return (AMBER,f"loaded but only {seeded}/5 MrLS legs warm-seeded")
     return (GREEN,f"loaded, {seeded}/5 legs seeded (gated -- dormant in bull by design)")
 
-CRIT_TASKS=["OmegaBigCapBridge","OmegaIbkrBridge","OmegaMgcLiveBars","OmegaAuroraSnapshot","OmegaHealthMonitor"]
+CRIT_TASKS=["OmegaBigCapBridge","OmegaIbkrBridge","OmegaMgcLiveBars","OmegaHealthMonitor"]  # Aurora removed 2026-06-27 (tape-blocked, deliberately disabled)
 def chk_crit_tasks():
     st=_tasks(); bad=[t for t in CRIT_TASKS if st.get(t)!="Running"]
     if bad: return (RED,"NOT running: "+", ".join(f"{t}={st.get(t,'missing')}" for t in bad))
