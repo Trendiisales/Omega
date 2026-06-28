@@ -39,10 +39,9 @@ foreach($n in $tasks.Keys){
   if($ageMin -gt $max){ $out += "DARK|$n|last ran ${ageMin}min ago (>$max)" } else { $out += "OK|$n|${ageMin}min" }
 }
 if(-not (Get-Process Omega -EA SilentlyContinue)){ $out += "DARK|Omega.exe|process not running" } else { $out += "OK|Omega.exe|alive" }
-foreach($g in @(@("crypto-GUI-8090",8090), @("desk-GUI-7779",7779))){
-  try{ $r=Invoke-WebRequest -UseBasicParsing ("http://127.0.0.1:"+$g[1]+"/") -TimeoutSec 6; $out += "OK|"+$g[0]+"|HTTP "+$r.StatusCode }
-  catch{ $m=$_.Exception.Message; $out += "DARK|"+$g[0]+"|not responding ("+$m.Substring(0,[Math]::Min(40,$m.Length))+")" }
-}
+# desk GUI is the engine's in-process server (stays on VPS). crypto-GUI-8090 moved to the Mac (2026-06-28) -> probed Mac-side below.
+try{ $r=Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:7779/" -TimeoutSec 6; $out += "OK|desk-GUI-7779|HTTP "+$r.StatusCode }
+catch{ $m=$_.Exception.Message; $out += "DARK|desk-GUI-7779|not responding ("+$m.Substring(0,[Math]::Min(40,$m.Length))+")" }
 $hs="C:\Omega\logs\HEALTH_STATUS.json"
 if(Test-Path $hs){ $a=[int]((Get-Date)-(Get-Item $hs).LastWriteTime).TotalMinutes; if($a -gt 30){ $out += "DARK|VPS-health-alarm|HEALTH_STATUS ${a}min stale" } else { $out += "OK|VPS-health-alarm|${a}min" } } else { $out += "DARK|VPS-health-alarm|no HEALTH_STATUS.json" }
 $out -join "`n"
@@ -54,6 +53,14 @@ for name, path, maxage in MAC:
     a = age_min(path)
     if a is None: dark.append(f"{name}: MISSING ({path})")
     elif a > maxage: dark.append(f"{name}: stale {a:.0f}min (>{maxage})")
+
+# crypto GUI now runs ON THE MAC (:8090), offloaded from the 3GB VPS (2026-06-28).
+# HTTP heartbeat against the local instance (keepalive cron run_mac.sh every 2min).
+try:
+    import urllib.request
+    urllib.request.urlopen("http://127.0.0.1:8090/api/state", timeout=6).read(1)
+except Exception as e:
+    dark.append(f"crypto-GUI-8090 (Mac): not responding ({str(e)[:40]})")
 
 # VPS probes (one ssh). 2-STRIKE rule: a single slow probe on a paging-but-alive box should
 # NOT fire DARK -- only alarm after 2 consecutive failures (~30min) = a real outage, not lag.
