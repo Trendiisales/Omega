@@ -51,6 +51,18 @@ struct NasTurtleD1Params {
     int    hold_max_bars       = 20;
     double sl_atr_mult         = 1.5;
     double tp_atr_mult         = 5.0;
+    // S-2026-06-29 RIDE EXIT (validated /tmp/turtle_exit_recon.py + ride_guard.py, faithful
+    // daily 2016-26 next-open fill, 2bp RT, vs the fixed 5ATR-TP/20-timeout this replaces):
+    //   exit when bar_close < prior n_out-bar Donchian low (structural turtle ride) instead
+    //   of the 20-bar timeout that amputates the fat-tail winners.
+    //   RIDE+GUARD overall PF — NDX 1.92->2.97, SPX 2.28->3.60, DJ30 1.94 (ride alone 2.34).
+    //   The TrendAccountingGuard (already wired below) supplies the give-back/reversal cut
+    //   that makes the ride safe; ride_exit + guard is the validated pair.
+    //   BEAR caveat (n=4, 2022): RIDE leaves NDX bear mildly negative (guard trims -6.6->-4.4);
+    //   regime_bear_block below sits the longs out in a sustained bear to plug the residual.
+    bool   ride_exit           = false;  // opt-in per instance; live NAS set true in engine_init
+    int    n_out               = 10;     // Donchian exit-channel lookback (structural ride exit)
+    bool   regime_bear_block   = false;  // skip new longs when index_market_regime() == sustained bear
     // S-2026-06-19 giveback BE-ratchet (default OFF — KEEP OFF, documented-NEGATIVE).
     // Once mfe(pts) >= entry*BE_ARM_PCT/100, raise SL to entry+entry*BE_BUFFER_PCT/100.
     // FAITHFUL 10yr-daily audit (index_turtle_d1_audit.cpp argv9/10) on SPX/DJ30/NDX:
@@ -196,6 +208,14 @@ struct NasTurtleD1Engine {
                 for (int i = start+1; i < n_prior; ++i)
                     if (d1_highs_[i] > prior_high) prior_high = d1_highs_[i];
             }
+            // S-2026-06-29 structural ride exit: prior n_out-bar Donchian LOW (excl today).
+            double prior_low = 0.0;
+            if (n_prior >= p.n_out) {
+                int lstart = n_prior - p.n_out;
+                prior_low = d1_lows_[lstart];
+                for (int i = lstart+1; i < n_prior; ++i)
+                    if (d1_lows_[i] < prior_low) prior_low = d1_lows_[i];
+            }
 
             d1_highs_.push_back(bar_high);
             d1_lows_ .push_back(bar_low);
@@ -217,6 +237,7 @@ struct NasTurtleD1Engine {
                 && bar_close > prior_high
                 && ema100_ok                   // optional trend filter (drops counter-trend breaks)
                 && (ask - bid) <= p.max_spread
+                && !(p.regime_bear_block && omega::index_market_regime().long_blocked()) // S-2026-06-29: sit out sustained bear (plugs NDX ride bear hole)
                 && !omega::index_risk_off())   // S44 portfolio VIX risk-off: no new entry
             {
                 const double entry_px = ask;
@@ -266,8 +287,20 @@ struct NasTurtleD1Engine {
                         return sig;
                     }
                 }
-                if (pos_.active && pos_.bars_held >= p.hold_max_bars)
-                    _close(bid, "TIMEOUT", now_ms, on_close);
+                // S-2026-06-29 exit: RIDE (structural Donchian-n_out low) vs the legacy
+                // fixed 20-bar TIMEOUT. ride_exit lets winners run the fat tail (validated
+                // PF lift NDX 1.92->2.97 with the guard above); a wide safety cap (3x hold)
+                // still backstops a position that never trips the channel.
+                if (pos_.active) {
+                    if (p.ride_exit) {
+                        if (n_prior >= p.n_out && bar_close < prior_low)
+                            _close(bid, "DONCH_RIDE_EXIT", now_ms, on_close);
+                        else if (pos_.bars_held >= p.hold_max_bars * 3)
+                            _close(bid, "RIDE_SAFETY_CAP", now_ms, on_close);
+                    } else if (pos_.bars_held >= p.hold_max_bars) {
+                        _close(bid, "TIMEOUT", now_ms, on_close);
+                    }
+                }
             }
 
             d1_acc_.bucket_ms=bucket;
