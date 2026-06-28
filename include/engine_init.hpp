@@ -1832,12 +1832,14 @@ static void init_engines(const std::string& cfg_path)
         g_spx_turtle_d1.enabled          = true;
         g_spx_turtle_d1.symbol           = "US500.F";
         g_spx_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_US500_D1.csv");
-        // S-2026-06-26 accounting supervisor (validated daily-index ONLY: SPX PF 3.80->5.30, both-halves;
-        // DJ30 ~neutral -> shadow live-ledger confirms). Cuts STALL (held>=11 & MFE<2.2%) + REVERSAL
-        // (9<21 EMA after profit). NOT on gold/crypto (a wash/hurt there). Params baked in the guard.
-        g_dj30_turtle_d1.accounting_guard_.enabled = true;
-        g_spx_turtle_d1.accounting_guard_.enabled  = true;
-        printf("[OMEGA-INIT] DJ30+SPX D1 turtles: shadow=1 enabled=%d/%d acct_guard=ON (STALL/REVERSAL) (Yahoo-daily xregime PF2.09/2.49)\n",
+        // S-2026-06-28 acct-guard DISABLED (faithful re-BT KILL). The earlier "SPX PF 3.80->5.30"
+        // was bar-replay-INFLATED. Faithful next-open daily on 10yr /Tick data: the guard HURTS both
+        // turtles -- SPX PF 1.76->1.38, DJ30 1.76->1.53, ~2x maxDD; it cuts the runner-exits the turtle
+        // edge depends on. The sl_atr 1.5->2.0 change IS good and is KEPT (SPX/DJ30 PF->1.76, both-halves+,
+        // 2022-bear+). Override of the 06-26 bar-replay claim with faithful evidence.
+        g_dj30_turtle_d1.accounting_guard_.enabled = false;
+        g_spx_turtle_d1.accounting_guard_.enabled  = false;
+        printf("[OMEGA-INIT] DJ30+SPX D1 turtles: shadow=1 enabled=%d/%d acct_guard=OFF (faithful KILL S-2026-06-28; sl_atr=2.0 kept)\n",
                (int)g_dj30_turtle_d1.enabled, (int)g_spx_turtle_d1.enabled);
 
         // ── Ger40KeltnerH1Engine (S41 2026-05-30) ───────────────────────────
@@ -4045,7 +4047,11 @@ static void init_engines(const std::string& cfg_path)
         //   (n149). A TIGHT 1-1.5% trail LOSES (stopped on noise) -- big-cap intraday
         //   moves need room, so trail 3%. CAVEAT: 2-3mo / one regime / thin n / 8bps
         //   slip assumed -> SHADOW until live-shadow confirms fills + frequency.
-        g_bigcap_momo.enabled      = true;     // shadow
+        g_bigcap_momo.enabled      = false;    // S-2026-06-28 CULL (faithful retest). The only profitable
+                                               // config (PF1.98) is the UNCAPPED small-cap gapper universe the
+                                               // $500B cap-fix is meant to EXCLUDE; the mega-cap-capped config
+                                               // fires 2 trades/3mo (untradeable); data bull-only; live PF0.72.
+                                               // No lever/gate rescues it. Dead -> disabled.
         g_bigcap_momo.shadow_mode  = true;
         g_bigcap_momo.tf_sec       = 300;      // 5m entry bars (validated TF)
         g_bigcap_momo.label        = "BigCapMomoCons";  // S-2026-06-20b: distinct ledger tag so the
