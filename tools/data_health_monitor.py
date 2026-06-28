@@ -67,16 +67,31 @@ def _percolumn_stale(path, max_age_d):
     except Exception as e:
         return (0, 0, 1.0, [f"err:{e}"])
 
+# auto-heal command for the daily index+gold feeds (yfinance, Gateway-independent)
+DAILY_YF = ["/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python",
+            f"{HOME}/Omega/tools/refresh_daily_feeds.py"]
+
 # ── THE REGISTRY: every live-decision feed. kind: file | percol | json_book ────
 FEEDS = [
     # name, path, max_age_d, kind, severity, consumer, refresh_cmd (or None), extra
     ("rdagent.sp500_long_close", f"{HOME}/Omega/data/rdagent/sp500_long_close.csv", 5, "percol", "HIGH",
      "rdagent GUI + paper basket fills",
-     ["python3", f"{HOME}/Omega/tools/rdagent/refresh_close_ibkr.py", "--tickers", "bigcap"], {"max_stale_frac": 0.15}),
+     # FIX 2026-06-29: was refresh_close_ibkr.py (BROKEN — IBKR Gateway clientId/port fails) -> auto-heal
+     # never worked. Now the yfinance refresher (Gateway-independent, proven).
+     ["/opt/homebrew/Caskroom/miniforge/base/envs/rdagent4qlib/bin/python", f"{HOME}/Omega/tools/rdagent/refresh_close_yf.py"], {"max_stale_frac": 0.15}),
     ("rdagent.qlib_calendar", f"{HOME}/.qlib/qlib_data/omega_data/calendars/day.txt", 4, "file", "HIGH",
      "rdagent model rankings", None, {}),
+    # daily index+gold feeds -> auto-heal via the unified yfinance refresher (Gateway-independent).
     ("tick.NDX_daily", f"{HOME}/Tick/NDX_daily_2016_2026.csv", 4, "file", "MED",
-     "index research", None, {}),
+     "index research", DAILY_YF, {}),
+    ("tick.SPX_daily", f"{HOME}/Tick/SPX_daily_2016_2026.csv", 4, "file", "MED",
+     "index turtle + freq_dd_frontier backtest", DAILY_YF, {}),
+    ("tick.DJ30_daily", f"{HOME}/Tick/DJ30_daily_2016_2026.csv", 4, "file", "MED",
+     "index turtle + backtest", DAILY_YF, {}),
+    ("tick.GER40_daily", f"{HOME}/Tick/GER40_daily_2016_2026.csv", 4, "file", "MED",
+     "index backtest", DAILY_YF, {}),
+    ("tick.XAU_daily", f"{HOME}/Tick/2yr_XAUUSD_daily.csv", 4, "file", "MED",
+     "gold D1 trend seed + backtest", DAILY_YF, {}),
     # the LIVE C++ MacroGoldGate reads logs/macro/macro_gold_gate.tsv (last field = stamp_ms);
     # macro_gold_gate.py is the producer (fetches real-yield + dollar from source). Monitor the
     # ACTUAL gate input, auto-refresh by re-running the producer.
