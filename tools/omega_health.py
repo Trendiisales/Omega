@@ -208,9 +208,16 @@ def chk_xs_index():
     # trades, so silence in bull is CORRECT, not a fault). Can't verify bear-activity until a
     # regime turn. So check it LOADED + warm-seeded (catches the real failure: dropped from build
     # / didn't init). S-2026-06-23.
-    lines=_tail(STDOUT,5000)
-    booted=any("CrossSectionalIndex x3" in ln for ln in lines)
-    seeded=len({ln.split("XsIndex_MrLS-")[1].split("]")[0] for ln in lines if "[SEED][XsIndex_MrLS-" in ln})
+    # FIX 2026-06-27: the boot line + [SEED] lines print ONCE at startup. A blind tail scrolls them
+    # out on a long-running process -> false AMBER. Anchor to the LAST boot (RUNNING COMMIT); if the
+    # boot marker itself has scrolled out, the engine booted earlier and is fine (not a fault).
+    lines=_tail(STDOUT,30000)
+    boot_idx=[i for i,ln in enumerate(lines) if "RUNNING COMMIT" in ln]
+    if not boot_idx:
+        return (INFO,"boot block scrolled out of log -- booted earlier, cannot re-verify (not a fault)")
+    blk=lines[boot_idx[-1]:]
+    booted=any("CrossSectionalIndex x3" in ln for ln in blk)
+    seeded=len({ln.split("XsIndex_MrLS-")[1].split("]")[0] for ln in blk if "[SEED][XsIndex_MrLS-" in ln})
     if not booted:
         return (AMBER,"no CrossSectionalIndex boot line -- bear sleeve not loaded?")
     if seeded<3:
