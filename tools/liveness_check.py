@@ -55,22 +55,37 @@ for name, path, maxage in MAC:
     if a is None: dark.append(f"{name}: MISSING ({path})")
     elif a > maxage: dark.append(f"{name}: stale {a:.0f}min (>{maxage})")
 
-# VPS probes (one ssh; short timeout so we never hang)
+# VPS probes (one ssh). 2-STRIKE rule: a single slow probe on a paging-but-alive box should
+# NOT fire DARK -- only alarm after 2 consecutive failures (~30min) = a real outage, not lag.
+VPS_STRIKE_F = "/tmp/omega_liveness_vps_fails"
+def _vps_strikes():
+    try: return int(open(VPS_STRIKE_F).read().strip())
+    except Exception: return 0
+vps_ok = False
 try:
     enc = subprocess.run(["iconv", "-t", "UTF-16LE"], input=VPS_PROBE.encode(), capture_output=True).stdout
     import base64
     b64 = base64.b64encode(enc).decode()
-    r = subprocess.run(["ssh", "-o", "ConnectTimeout=12", "omega-vps",
+    r = subprocess.run(["ssh", "-o", "ConnectTimeout=20", "omega-vps",
                         f"powershell -NoProfile -EncodedCommand {b64}"],
-                       capture_output=True, timeout=30, text=True)
+                       capture_output=True, timeout=50, text=True)
     lines = [l for l in r.stdout.replace("\r", "").splitlines() if "|" in l]
-    if not lines:
-        dark.append("VPS: unreachable / no liveness response")
-    for l in lines:
-        st, name, detail = (l.split("|", 2) + ["", "", ""])[:3]
-        if st == "DARK": dark.append(f"VPS {name}: {detail}")
-except Exception as e:
-    dark.append(f"VPS: liveness probe failed ({e})")
+    if lines:
+        vps_ok = True
+        for l in lines:
+            st, name, detail = (l.split("|", 2) + ["", "", ""])[:3]
+            if st == "DARK": dark.append(f"VPS {name}: {detail}")
+except Exception:
+    pass
+if vps_ok:
+    try: open(VPS_STRIKE_F, "w").write("0")
+    except Exception: pass
+else:
+    n = _vps_strikes() + 1
+    try: open(VPS_STRIKE_F, "w").write(str(n))
+    except Exception: pass
+    if n >= 2:
+        dark.append(f"VPS: unreachable for {n} consecutive probes (~{n*15}min) -- box down or RAM-frozen")
 
 ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 MARKER = "/tmp/omega_liveness_DARK.txt"
