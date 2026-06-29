@@ -485,9 +485,21 @@ setInterval(poll,1000);poll();
 /* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
    served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
 function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
- var rt=safe(j.realized_total),be=document.getElementById('compbank');if(be){be.textContent=fmt$(rt);be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');var br=j.by_reason||{},tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)';Object.keys(br).forEach(function(k){tip+='\n'+k+': '+fmt$(safe(br[k]));});tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
- /* fold companion (paper) buckets into the headline totals -- operator wants it counted; paper portion stays visibly tagged so the real-broker number is never silently overstated */
- window._comptot={today:safe(j.realized_today),d7:safe(j.realized_7d),d30:safe(j.realized_30d),all:rt};
+ /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
+    total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
+ var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
+ var om=safe(ob.realized),cr=safe(cbk.realized),rt=safe(j.realized_total),be=document.getElementById('compbank');
+ if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
+  be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
+  var obr=ob.by_reason||{},cbr=cbk.by_reason||{};
+  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
+  Object.keys(obr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(obr[k]));});
+  tip+='\nCRYPTO '+fmt$(cr)+':';
+  Object.keys(cbr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(cbr[k]));});
+  tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
+ /* fold ONLY the OMEGA companion bucket into the Omega headline totals -- crypto paper must NOT
+    muddy the Omega real-broker number (operator rule: relevant Omega data only on the Omega GUI). */
+ window._comptot={today:safe(ob.realized_today),d7:safe(ob.realized_7d),d30:safe(ob.realized_30d),all:om};
  /* call unconditionally -- the companion (paper) bank must fold in even when there are
     zero shadow closes in the window, otherwise a no-trade day silently drops the paper bucket */
  if(typeof updDayPnl==='function')updDayPnl();
@@ -591,7 +603,8 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var netT=net+cw;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
-  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
+)OMEGAD2"
+R"OMEGAD3(  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
 function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
@@ -601,8 +614,7 @@ function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/OIL|BRENT|CL/i.test(sym))return 'OIL';return 'OTHER';}
 function drawHeat(){var rs=winRows();var by={};
  rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
-)OMEGAD2"
-R"OMEGAD3( var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
+ var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
  var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
  var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
@@ -785,7 +797,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
    return lo;}
   var vis=ROWS.filter(function(r){return sm(r.sym)&&r.ets&&r.epx&&!(r.ets>t1||r.ts<t0);});
   var nx=0,exVis=0;
-  vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
+)OMEGAD3"
+R"OMEGAD4(  vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
   window._prNewest=nx;
   if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;
@@ -796,8 +809,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
      +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
     ctx.font='10px IBM Plex Mono';
     var nw=ctx.measureText(note).width;
-)OMEGAD3"
-R"OMEGAD4(    ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
+    ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
     ctx.fillStyle='#6B7785';ctx.fillText(note,padL+pw-nw-7,padT+12);}
    return;}
   var pills=exVis<=14;   /* suppress $ labels when the window is crowded */
