@@ -226,7 +226,8 @@ a{color:var(--blu);text-decoration:none}
     <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
     <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px;margin-top:5px"></div>
     <div class="lbl" style="margin:6px 0 2px">SIGNAL TAPE</div>
-    <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
+)OMEGAD0"
+R"OMEGAD1(    <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -238,8 +239,7 @@ a{color:var(--blu);text-decoration:none}
 
 <div id="prtip"></div>
 
-)OMEGAD0"
-R"OMEGAD1(<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <script>
 'use strict';
 function safe(v,d){d=d===undefined?0:d;var n=Number(v);return isNaN(n)?d:n;}
@@ -421,7 +421,8 @@ function render(J){lastJ=J;
 
  var sig0=(J.signal_history||[])[0];
  if(sig0){var sk=sig0.symbol+'|'+sig0.engine+'|'+sig0.price;
-  if(window._lastSig===undefined)window._lastSig=sk;
+)OMEGAD1"
+R"OMEGAD2(  if(window._lastSig===undefined)window._lastSig=sk;
   else if(window._lastSig!==sk){window._lastSig=sk;sigTick();}}
  var sh=(J.signal_history||[]).slice(0,9).map(function(s){
   var c=s.side==='LONG'||s.side==='BUY'?'g':'r';
@@ -458,8 +459,7 @@ function render(J){lastJ=J;
    el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
    el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
    el('ltpnl').textContent='';}
-)OMEGAD1"
-R"OMEGAD2(  else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
+  else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
   var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
   var cm=(window._comp||{})[(t.engine||'')+'|'+(t.symbol||'')];
@@ -601,7 +601,8 @@ function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/OIL|BRENT|CL/i.test(sym))return 'OIL';return 'OTHER';}
 function drawHeat(){var rs=winRows();var by={};
  rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
- var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
+)OMEGAD2"
+R"OMEGAD3( var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
  var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
  var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
@@ -671,8 +672,7 @@ function drawPromo(){var by={};
 function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json();}).then(function(a){
  if(!a||!a.length){return;}
  a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
-)OMEGAD2"
-R"OMEGAD3( if(!a.length){return;}
+ if(!a.length){return;}
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
@@ -796,7 +796,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
      +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
     ctx.font='10px IBM Plex Mono';
     var nw=ctx.measureText(note).width;
-    ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
+)OMEGAD3"
+R"OMEGAD4(    ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
     ctx.fillStyle='#6B7785';ctx.fillText(note,padL+pw-nw-7,padT+12);}
    return;}
   var pills=exVis<=14;   /* suppress $ labels when the window is crowded */
@@ -875,8 +876,7 @@ loadPR();setInterval(loadPR,30000);
 /* ── PR chart interactivity: marker hover tooltip + crosshair + pulse loop ── */
 function prTip(m,cx,cy){var tip=el('prtip');
  if(!m){tip.style.display='none';return;}
-)OMEGAD3"
-R"OMEGAD4( var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
+ var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');

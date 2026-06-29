@@ -72,6 +72,7 @@ a{color:var(--blu);text-decoration:none}
   <span class="lbl" id="build"></span>
   <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">TODAY</span><span id="daypnl" class="num" style="font-size:18px;font-weight:600;color:var(--w)">…</span><span id="daypnln" class="lbl"></span></span>
   <span style="display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">ALL-TIME</span><span id="totpnl" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
+  <span id="compbankwrap" style="display:inline-flex;align-items:baseline;gap:6px" title="companion (stall-clip) realized bank — paper, accounting-only"><span class="lbl">COMP-BANK</span><span id="compbank" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <button id="snd">SND OFF</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
@@ -83,6 +84,7 @@ a{color:var(--blu);text-decoration:none}
   <div style="display:flex;justify-content:space-between" class="lbl"><span>00 Asia</span><span>05 pre-Ldn</span><span>07 London</span><span>13:30 NY-KZ</span><span>15 NY</span><span>20 late</span><span>22 Asia</span></div>
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px">
     <span id="sesstrade" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
+    <span id="healthBadge" class="chip" title="system health (click to (un)mute audible alert)" style="background:var(--pan2);color:var(--t2);cursor:pointer">HEALTH …</span>
     <span id="phases" style="display:flex;gap:6px;flex-wrap:wrap"></span>
     <span class="lbl" style="margin-left:auto">REGIME</span>
     <span id="macro" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
@@ -261,6 +263,35 @@ function tickClk(){var d=new Date();el('clk').textContent=
  String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+':'+String(d.getUTCSeconds()).padStart(2,'0')+' UTC';
  var mk=el('sessmk');if(mk)mk.style.left=(((d.getUTCHours()+d.getUTCMinutes()/60)/24)*100)+'%';}
 setInterval(tickClk,1000);
+/* ---- HEALTH MONITOR (ported from legacy GUI 2026-06-24; dropped in the 06-12 rewrite).
+   Polls /api/health (status.json from healthcheck.ps1). Badge green/amber/red.
+   Audible beep + desktop notification ON TRANSITION into FAIL (not first-load, so the
+   daily-restart feed-down window doesn't beep on every page open). Click badge to mute. */
+var __lastHealth=null, __healthMute=false;
+function __healthBeep(){ if(__healthMute) return; try{
+  var c=new (window.AudioContext||window.webkitAudioContext)();
+  var o=c.createOscillator(),g=c.createGain(); o.type='sine'; g.gain.value=0.25;
+  o.connect(g);g.connect(c.destination);o.start();
+  o.frequency.setValueAtTime(880,c.currentTime); o.frequency.setValueAtTime(660,c.currentTime+0.18); o.frequency.setValueAtTime(880,c.currentTime+0.36);
+  setTimeout(function(){o.stop();c.close();},700);
+}catch(e){} }
+function __healthNotify(t,b){ if(!('Notification' in window)) return;
+  if(Notification.permission==='granted') new Notification(t,{body:b});
+  else if(Notification.permission!=='denied') Notification.requestPermission(); }
+document.addEventListener('click',function(){ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); },{once:true});
+(function(){ var hb=document.getElementById('healthBadge'); if(hb) hb.addEventListener('click',function(){ __healthMute=!__healthMute; hb.style.opacity=__healthMute?'0.45':'1'; }); })();
+async function pollHealth(){
+  var b=document.getElementById('healthBadge'); if(!b) return;
+  var h; try{ h=await fetch('/api/health',{cache:'no-store'}).then(function(r){return r.json();}); }
+  catch(e){ h={overall:'FAIL',fail_count:1,warn_count:0}; }
+  var o=(h.overall||'FAIL').toUpperCase(), fc=h.fail_count||0, wc=h.warn_count||0;
+  if(o==='OK'){ b.style.color='var(--grn)'; b.textContent='HEALTH OK'; }
+  else if(o==='WARN'){ b.style.color='var(--ambB)'; b.textContent='HEALTH '+wc+'W'; }
+  else { b.style.color='var(--red)'; b.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); }
+  if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ __healthBeep(); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
+  __lastHealth=o;
+}
+setInterval(pollHealth,15000); pollHealth();
 
 /* ── sounds ── */
 var SND=localStorage.getItem('omega_snd')==='1',ACTX=null;
@@ -423,11 +454,13 @@ function render(J){lastJ=J;
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
   var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+  var cm=(window._comp||{})[(t.engine||'')+'|'+(t.symbol||'')];
+  var cr=cm?('<tr><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">↳ companion (stall-clip) · '+esc(cm.side)+' · MFE '+fmt2(cm.mfe_pct,2)+'% · stall '+cm.stall+' · '+fmt$(safe(cm.upnl))+' · '+(cm.eligible?'<span class="g">gate ✓</span>':'pre-gate (rides wide)')+'</td></tr>'):'';
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
-   +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>';}).join('');
+   +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>'+cr;}).join('');
   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
   el('ltpnl').textContent=fmt$(sum)+' unrealised';el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
@@ -441,6 +474,18 @@ function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)
  s.onerror=function(){wsOk=false;};}catch(e){wsOk=false;}})();
 function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r.json();}).then(function(j){render(j);setConn(true,'http');}).catch(function(){setConn(false);});}
 setInterval(poll,1000);poll();
+/* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
+   served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
+function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
+ var rt=safe(j.realized_total),be=document.getElementById('compbank');if(be){be.textContent=fmt$(rt);be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');var br=j.by_reason||{},tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)';Object.keys(br).forEach(function(k){tip+='\n'+k+': '+fmt$(safe(br[k]));});tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
+ /* fold companion (paper) buckets into the headline totals -- operator wants it counted; paper portion stays visibly tagged so the real-broker number is never silently overstated */
+ window._comptot={today:safe(j.realized_today),d7:safe(j.realized_7d),d30:safe(j.realized_30d),all:rt};
+ /* call unconditionally -- the companion (paper) bank must fold in even when there are
+    zero shadow closes in the window, otherwise a no-trade day silently drops the paper bucket */
+ if(typeof updDayPnl==='function')updDayPnl();
+ if(typeof drawEquity==='function')drawEquity();
+ }).catch(function(){});}
+setInterval(pollComp,5000);pollComp();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
@@ -479,9 +524,11 @@ function winRows(){if(WIN>=9999)return ROWS;
  return ROWS.filter(function(r){return r.ts>=cut;});}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
- tweenNum('daypnl',p,fmt$);el('daypnl').style.color=p>=0?'var(--grn)':'var(--red)';
- el('daypnln').textContent=n+' closes today (UTC)';
- tweenNum('totpnl',tot,fmt$);el('totpnl').style.color=tot>=0?'var(--grn)':'var(--red)';}
+ var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
+ var pT=p+cToday,totT=tot+cAll;
+ tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
+ el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
+ tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';}
 
 /* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
 function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent='';return;}
@@ -504,7 +551,10 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
 
 function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
- var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);_tw.eqtot=0;el('eqtot').textContent='$0';el('eqstats').innerHTML='';return;}
+ var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);
+  /* no shadow closes -> still fold the companion (paper) bank for the window so it never silently drops */
+  var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
+  tweenNum('eqtot',cw,fmt$);el('eqtot').style.color=cw>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cw?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
@@ -530,7 +580,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.beginPath();ctx.arc(ex,ey,6,0,6.3);ctx.strokeStyle='rgba(46,189,133,0.35)';ctx.lineWidth=1.5;ctx.stroke();
  var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
- var net=cum[cum.length-1];tweenNum('eqtot',net,fmt$);el('eqtot').style.color=net>=0?'var(--grn)':'var(--red)';
+ var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var netT=net+cw;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
