@@ -62,28 +62,33 @@ def check_real_not_shadow():
 
 # ---- [3] FIRES ON SYNTHETIC TRIGGER ------------------------------------------
 def check_fires_on_trigger():
+    # DETERMINISTIC: pre-seed an already-OPEN + ARMED companion (peak +8%), then feed a single state
+    # where it has given back to +1% -> one run MUST REVERSAL_CLIP. (Two-cycle live timing was flaky;
+    # pre-seeding removes the subprocess-timing race so a real break can't hide behind a flake.)
     sb = tempfile.mkdtemp(prefix="protselftest_")
     try:
         fake_crypto = os.path.join(sb, "fake_crypto.json")
-        def write_state(px):
-            json.dump({"slots":[{"key":"TEST|SelfTest|TESTSYM","sym":"TESTSYM","strat":"SelfTest",
-                                 "pos":1,"entry_px":100.0,"px":px,"unreal_usd":(px-100.0)*10}]},
-                      open(fake_crypto,"w"))
+        entry = 100.0
+        key = f"CRYPTO|SelfTest|TESTSYM|{round(entry,4)}"
+        now = int(time.time()); bar = now // (4*3600)
+        # pre-seeded open position: peaked at +8%, still open, armed
+        json.dump({key: {"book":"CRYPTO","eng":"SelfTest","sym":"TESTSYM","side":"LONG","entry":entry,
+                         "open_ts":now,"open_bar":bar,"mfe_pct":8.0,"ext_bar":bar,"last_upnl":80.0}},
+                  open(os.path.join(sb,"companion_positions.json"),"w"))
+        # live mark now +1% (<= peak 8 * (1-0.4)=4.8) -> reversal
+        json.dump({"slots":[{"key":"k","sym":"TESTSYM","strat":"SelfTest","pos":1,
+                             "entry_px":entry,"px":101.0,"unreal_usd":10.0}]}, open(fake_crypto,"w"))
         env = dict(os.environ, COMPANION_DIR=sb, CRYPTO_STATE=fake_crypto, SKIP_OMEGA="1",
                    STALL_GATE_PCT="2.0", REVERSAL_GIVEBACK="0.40")
-        # cycle 1: position +8% -> companion opens + arms (peak)
-        write_state(108.0); subprocess.run([sys.executable, COMPANION], env=env, capture_output=True, text=True)
-        # cycle 2: gives back to +1% (<= peak 8 * (1-0.4)=4.8) -> must REVERSAL_CLIP
-        write_state(101.0); r2 = subprocess.run([sys.executable, COMPANION], env=env, capture_output=True, text=True)
+        r = subprocess.run([sys.executable, COMPANION], env=env, capture_output=True, text=True)
         clipped = ""
         sb_closed = os.path.join(sb, "companion_closed.csv")
         if os.path.exists(sb_closed): clipped = open(sb_closed).read()
         fired = "REVERSAL_CLIP" in clipped or "STALL_CLIP" in clipped
-        ok = fired
-        detail = ("synthetic +8%->+1% giveback -> companion "
+        detail = ("pre-armed +8% peak -> +1% giveback -> companion "
                   + ("CLIPPED (fired correctly)" if fired else "DID NOT FIRE *** broken ***"))
-        if not fired and r2.stdout: detail += f" | last: {r2.stdout.strip().splitlines()[-1][:120]}"
-        record("[3] FIRES-ON-TRIGGER", ok, detail)
+        if not fired and r.stdout: detail += f" | last: {r.stdout.strip().splitlines()[-1][:120]}"
+        record("[3] FIRES-ON-TRIGGER", fired, detail)
     finally:
         shutil.rmtree(sb, ignore_errors=True)
 
