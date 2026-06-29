@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omega Cockpit</title>
+<style>
+  :root{
+    --bg:#0b0e13; --panel:#141922; --panel2:#1b212c; --line:#262d3a;
+    --fg:#e6e9ef; --mut:#8b93a4; --grn:#3fb950; --red:#f85149; --acc:#58a6ff; --amb:#d29922;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--line);
+    position:sticky;top:0;background:var(--bg);z-index:5}
+  header h1{font-size:16px;margin:0;letter-spacing:.5px}
+  header .dot{width:8px;height:8px;border-radius:50%;background:var(--mut);display:inline-block;margin-right:6px}
+  header .dot.ok{background:var(--grn)} header .dot.bad{background:var(--red)}
+  header .meta{color:var(--mut);font-size:12px;font-family:var(--mono)}
+  header .spacer{flex:1}
+  a.btn{color:var(--acc);text-decoration:none;font-size:12px;border:1px solid var(--line);
+    padding:4px 10px;border-radius:6px}
+  a.btn:hover{border-color:var(--acc)}
+  main{padding:18px 20px;max-width:1500px;margin:0 auto}
+  .grid{display:grid;gap:14px}
+  .cards{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card h3{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mut)}
+  .big{font-size:26px;font-family:var(--mono);font-weight:600}
+  .sub{font-size:12px;color:var(--mut);font-family:var(--mono);margin-top:4px}
+  .pos{color:var(--grn)} .neg{color:var(--red)}
+  .row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:14px;margin-bottom:18px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .panel .ph{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);
+    background:var(--panel2)}
+  .panel .ph h2{font-size:13px;margin:0;letter-spacing:.5px}
+  .panel .ph .r{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--mut)}
+  .panel .body{padding:6px 0}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+  th,td{text-align:right;padding:5px 14px}
+  th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  td:first-child,th:first-child{text-align:left}
+  tr{border-top:1px solid var(--line)} thead tr{border-top:none}
+  tbody tr:hover{background:var(--panel2)}
+  .tag{font-size:10.5px;color:var(--mut)}
+  .iframes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .iframes .panel{min-height:520px}
+  iframe{width:100%;height:520px;border:0;background:#fff}
+  .full{grid-column:1/-1}
+  .err{color:var(--amb);font-family:var(--mono);font-size:12px;padding:10px 14px}
+  details summary{cursor:pointer;color:var(--mut);font-size:12px;padding:4px 0}
+  @media(max-width:900px){.iframes{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>⬡ OMEGA COCKPIT</h1>
+  <span class="meta"><span id="health" class="dot"></span><span id="health-txt">…</span></span>
+  <span class="spacer"></span>
+  <span class="meta" id="clock"></span>
+  <a class="btn" href="http://127.0.0.1:8090" target="_blank">Crypto :8090</a>
+  <a class="btn" href="http://127.0.0.1:7799" target="_blank">RD-Agent :7799</a>
+  <a class="btn" href="http://185.167.119.59:7779" target="_blank">Omega desk :7779</a>
+</header>
+<main>
+  <div class="grid cards" id="cards"></div>
+
+  <div class="row2">
+    <div class="panel">
+      <div class="ph"><h2>Companion book — realized clips</h2><span class="r" id="comp-upd"></span></div>
+      <div class="body" id="comp-book"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>Open companions</h2><span class="r" id="comp-open-n"></span></div>
+      <div class="body" id="comp-open"></div>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="panel">
+      <div class="ph"><h2>Crypto slots (live)</h2><span class="r" id="cry-upd"></span></div>
+      <div class="body" id="cry-slots"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>RD-Agent basket</h2><span class="r" id="rd-upd"></span></div>
+      <div class="body" id="rd-basket"></div>
+    </div>
+  </div>
+
+  <details open>
+    <summary>Embedded full GUIs</summary>
+    <div class="iframes" style="margin-top:10px">
+      <div class="panel"><div class="ph"><h2>Crypto book GUI :8090</h2></div><iframe src="http://127.0.0.1:8090"></iframe></div>
+      <div class="panel"><div class="ph"><h2>RD-Agent panel :7799</h2></div><iframe src="http://127.0.0.1:7799"></iframe></div>
+      <div class="panel full"><div class="ph"><h2>Omega desk (VPS) :7779</h2></div><iframe src="http://185.167.119.59:7779"></iframe></div>
+    </div>
+  </details>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const usd = n => (n==null||isNaN(n)) ? "—" : (n<0?"-$":"$") + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => (n==null||isNaN(n)) ? "—" : (n>=0?"+":"") + n.toFixed(2) + "%";
+const cls = n => n>0?"pos":(n<0?"neg":"");
+const esc = s => String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+async function get(path){ try{ const r=await fetch(path,{cache:"no-store"}); return await r.json(); }catch(e){ return {error:String(e)}; } }
+
+function card(title,big,bigCls,sub){
+  return `<div class="card"><h3>${title}</h3><div class="big ${bigCls||''}">${big}</div><div class="sub">${sub||""}</div></div>`;
+}
+
+function render(comp,cry,rd){
+  // ---- summary cards ----
+  let c="";
+  const oBook = comp?.by_book?.OMEGA, cBook = comp?.by_book?.CRYPTO;
+  c += card("Companion realized (total)", usd(comp?.realized_total), cls(comp?.realized_total), "today "+usd(comp?.realized_today));
+  c += card("Omega book (clips)", usd(oBook?.realized), cls(oBook?.realized), "companion-banked");
+  c += card("Crypto book (clips)", usd(cBook?.realized), cls(cBook?.realized), "companion-banked");
+  c += card("Crypto live P&L", pct(cry?.total_pct), cls(cry?.total_pct), usd(cry?.total_usd)+" · "+(cry?.n_open||0)+" open");
+  c += card("Crypto unrealized", usd(cry?.open_unreal_usd), cls(cry?.open_unreal_usd), "pool "+usd(cry?.pool_usd));
+  c += card("RD-Agent model", "IC "+(rd?.model?.ic!=null?rd.model.ic.toFixed(4):"—"), cls(rd?.model?.ic), (rd?.source?.universe||"")+" · "+(rd?.source?.provenance||""));
+  $("#cards").innerHTML = c;
+
+  // ---- health ----
+  const fresh = cry?.data_health?.all_fresh;
+  $("#health").className = "dot " + (fresh===true?"ok":(fresh===false?"bad":""));
+  $("#health-txt").textContent = comp?.error?("companion: "+comp.error):("crypto data "+(fresh?"fresh":"STALE"));
+
+  // ---- companion by_reason + per_engine ----
+  if(comp?.error){ $("#comp-book").innerHTML=`<div class="err">${esc(comp.error)}</div>`; }
+  else{
+    $("#comp-upd").textContent = comp?.updated||"";
+    let rows = Object.entries(comp?.by_reason||{}).map(([k,v])=>
+      `<tr><td>${esc(k)}</td><td class="${cls(v)}">${usd(v)}</td></tr>`).join("");
+    let eng = Object.entries(comp?.per_engine||{}).map(([k,v])=>
+      `<tr><td>${esc(k)}</td><td class="${cls(v.realized)}">${usd(v.realized)}</td><td class="tag">${v.open}o/${v.closed}c</td></tr>`).join("");
+    $("#comp-book").innerHTML =
+      `<table><thead><tr><th>By reason</th><th>Realized</th></tr></thead><tbody>${rows||'<tr><td class="tag">none</td><td>—</td></tr>'}</tbody></table>`+
+      `<table style="margin-top:6px"><thead><tr><th>By engine</th><th>Realized</th><th>Open/Closed</th></tr></thead><tbody>${eng}</tbody></table>`;
+  }
+
+  // ---- open companions ----
+  const open = comp?.open_detail||[];
+  $("#comp-open-n").textContent = open.length+" open";
+  $("#comp-open").innerHTML = open.length
+    ? `<table><thead><tr><th>Book/Engine</th><th>Sym</th><th>Side</th><th>Entry</th><th>uPnL</th><th>MFE%</th></tr></thead><tbody>`+
+      open.map(o=>`<tr><td>${esc(o.book)} · <span class="tag">${esc(o.eng)}</span></td><td>${esc(o.sym)}</td><td>${esc(o.side)}</td><td>${o.entry}</td><td class="${cls(o.upnl)}">${usd(o.upnl)}</td><td class="${cls(o.mfe_pct)}">${o.mfe_pct!=null?(o.mfe_pct*100).toFixed(2)+"%":"—"}</td></tr>`).join("")+
+      `</tbody></table>`
+    : `<div class="err" style="color:var(--mut)">no open companions</div>`;
+
+  // ---- crypto slots ----
+  if(cry?.error){ $("#cry-slots").innerHTML=`<div class="err">${esc(cry.error)}</div>`; }
+  else{
+    $("#cry-upd").textContent = cry?.updated||"";
+    const slots = cry?.slots||[];
+    $("#cry-slots").innerHTML = slots.length
+      ? `<table><thead><tr><th>Sym</th><th>Strat</th><th>Pos</th><th>Notional</th><th>Corr</th></tr></thead><tbody>`+
+        slots.map(s=>`<tr><td>${esc(s.sym)}</td><td class="tag">${esc(s.strat)}</td><td class="${s.pos<0?'neg':'pos'}">${s.pos<0?'SHORT':'LONG'} ${s.contracts??''}</td><td>${s.notional!=null?usd(s.notional):'—'}</td><td>${s.corr??'—'}</td></tr>`).join("")+
+        `</tbody></table>`
+      : `<div class="err" style="color:var(--mut)">no open slots</div>`;
+  }
+
+  // ---- rdagent basket ----
+  if(rd?.error){ $("#rd-basket").innerHTML=`<div class="err">${esc(rd.error)}</div>`; }
+  else{
+    $("#rd-upd").textContent = rd?.generated_at||"";
+    const b = rd?.signal?.basket||[];
+    $("#rd-basket").innerHTML = b.length
+      ? `<table><thead><tr><th>Instrument</th><th>Score</th><th>Price</th></tr></thead><tbody>`+
+        b.map(x=>`<tr><td>${esc(x.instrument)}</td><td class="${cls(x.score)}">${x.score!=null?x.score.toFixed(4):'—'}</td><td>${x.price!=null?'$'+x.price:'—'}</td></tr>`).join("")+
+        `</tbody></table>`
+      : `<div class="err" style="color:var(--mut)">no basket — run export_signals.py</div>`;
+  }
+}
+
+async function tick(){
+  $("#clock").textContent = new Date().toLocaleTimeString();
+  const [comp,cry,rd] = await Promise.all([get("/api/companion"),get("/api/crypto"),get("/api/rdagent")]);
+  render(comp,cry,rd);
+}
+tick(); setInterval(tick,15000);
+</script>
+</body>
+</html>
