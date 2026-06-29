@@ -1202,6 +1202,15 @@ static void init_engines(const std::string& cfg_path)
         // (2022-23) 1.06->1.16 maxDD lower; spread-robust (0.30/0.45). Breakout-only
         // (4h has no dip-buy family). Harness backtest/xau_tf_4h2h_bt IMP env.
         g_xau_tf_4h.min_impulse_atr = 1.0;
+        // S-2026-06-30 ADX CHOP-GATE: block ALL cell entries when Wilder ADX14 < 15
+        // (= ranging). Kills the EMA-cross/breakout whipsaw-into-a-range losers (the
+        // operator-flagged 4k-chop trade). Faithful 4h2h BT, production cfg
+        // (mask 0xC9 + vol-band + IMP=1.0), CORRECT IBKR cost: bull net FLAT
+        // (+4041->+4021), PF 1.69->1.79, maxDD -38% ($1806->$1119), both-WF-halves+
+        // stronger; bear (2022-23) net flat, no new bleed. 15 = robust plateau
+        // SHOULDER (16 is a 1-point in-sample PEAK; 17 cliffs to PF 1.70) -> 15 keeps
+        // margin vs forward ADX drift. Spread-robust @0.40. Harness xau_tf_4h2h_bt ADX env.
+        g_xau_tf_4h.min_adx_entry = 15.0;
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
         omega::warmup_or_die(g_xau_tf_4h, "XauTrendFollow4h");

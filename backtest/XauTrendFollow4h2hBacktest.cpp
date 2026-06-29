@@ -35,6 +35,9 @@
 
 static double SPREAD = 0.20;          // env SPREAD override (IBKR XAU measured ~0.22-0.50/oz)
 static double IMP     = 0.0;          // env IMP: min_impulse_atr on the 4h engine (0=off)
+static double ADXF    = 0.0;          // env ADX: min_adx_entry chop-gate on the 4h engine (0=off)
+static long   MASK4   = -1;           // env MASK: cell_enable_mask on the 4h engine (-1=engine default)
+static int    VB      = 0;            // env VB=1: mirror production vol-band gate (mask 0x8, 0.30-0.85)
 // IBKR XAU commission: 1.5bps/side, price-proportional. At 0.01 lot (1 oz),
 // RT comm in USD = 2*0.00015*entryPrice. Applied per closed trade in cb.
 static inline double ibkr_comm_usd(double entry_px){ return 2.0 * 0.00015 * entry_px; }
@@ -67,7 +70,8 @@ struct Stat {
 template<class Eng, bool IS_4H>
 static void run(const std::vector<BarCSV>& bars, const char* label){
     Eng eng; eng.shadow_mode=true; eng.enabled=true; eng.lot=0.01; eng.max_spread=1.0;
-    if constexpr (IS_4H) eng.min_impulse_atr = IMP;   // 4h-only field
+    if constexpr (IS_4H) { eng.min_impulse_atr = IMP; eng.min_adx_entry = ADXF; if(MASK4>=0) eng.cell_enable_mask=(uint32_t)MASK4;
+        if(VB){ eng.use_vol_band_gate=true; eng.vol_band_low_pct=0.30; eng.vol_band_high_pct=0.85; eng.cell_vol_band_mask=0x8; } }   // 4h-only fields
     eng.init();
     Stat full, h1half, h2half; int wins=0; const int N=(int)bars.size(); const int mid=N/2;
     int idx=0;
@@ -103,8 +107,11 @@ int main(int argc, char** argv){
     if(argc<3){ std::fprintf(stderr,"usage: %s <H4_csv> <H1_csv>\n",argv[0]); return 1; }
     if(getenv("SPREAD")) SPREAD=atof(getenv("SPREAD"));
     if(getenv("IMP"))    IMP=atof(getenv("IMP"));
+    if(getenv("ADX"))    ADXF=atof(getenv("ADX"));
+    if(getenv("MASK"))   MASK4=strtol(getenv("MASK"),nullptr,0);
+    if(getenv("VB"))     VB=atoi(getenv("VB"));
     auto h4=load_csv(argv[1]); auto h1=load_csv(argv[2]);
-    std::printf("[XTF4h2h-BT] real-class  H4 bars=%zu  H1 bars=%zu  spread=%.2f  IMP(4h)=%.2f  +IBKR_comm(1.5bps/side)\n", h4.size(), h1.size(), SPREAD, IMP);
+    std::printf("[XTF4h2h-BT] real-class  H4 bars=%zu  H1 bars=%zu  spread=%.2f  IMP(4h)=%.2f  ADX(4h)=%.1f  +IBKR_comm(1.5bps/side)\n", h4.size(), h1.size(), SPREAD, IMP, ADXF);
     std::printf("===== 4h engine (on_h4_bar, 6-cell mask 0x3F) =====\n");
     if((int)h4.size()>60) run<omega::XauTrendFollow4hEngine,true>(h4, "XauTrendFollow4h");
     else std::printf("  (insufficient H4 bars)\n");

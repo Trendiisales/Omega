@@ -286,6 +286,11 @@ public:
     // Filters weak/stalling breakouts. 4h has no dip-buy family so it applies to all
     // cells (mirrors D1 "applies to all"). 0 = OFF (byte-identical to pre-change).
     double min_impulse_atr   = 0.0;
+    // S-2026-06-30 ADX CHOP-GATE (study): block ALL cell entries when the
+    // engine's own Wilder ADX14 is below this floor (= ranging/chop). Targets
+    // the EMA-cross/breakout whipsaw-into-a-range failure. 0 = OFF (byte-
+    // identical to pre-change). Applies on top of each cell's own gates.
+    double min_adx_entry     = 0.0;
     // S88-followup post-sweep 2026-05-27: per-cell gate mask (default
     // all-ones = regression-safe). Operator can target specific cells
     // when their preferred gate differs (see 2h Donch50 ADX-hurts pattern).
@@ -522,6 +527,11 @@ public:
             if (min_impulse_atr > 0.0 && atr14_ > 0.0 && (int)bars_.size() >= 2) {
                 const double prev_close = bars_[bars_.size()-2].close;
                 if ((bar.high - prev_close) < min_impulse_atr * atr14_) continue;  // weak breakout
+            }
+            // S-2026-06-30 ADX CHOP-GATE (study): skip entries when ADX14 < floor (ranging).
+            if (min_adx_entry > 0.0) {
+                if (adx_dx_count_ < kAdxPeriod) continue;     // ADX not warm -> no entry
+                if (adx14_ < min_adx_entry) continue;         // chop -> skip
             }
             // 2026-06-12 regime gate: no new longs in sustained gold bear.
             if (use_regime_long_gate && side > 0
