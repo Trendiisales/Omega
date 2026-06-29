@@ -1068,34 +1068,24 @@ function Invoke-Deploy {
     Write-Host "[2b/12] Refreshing warm-seed CSVs from l2_ticks..." -ForegroundColor Yellow
     Push-Location $OmegaDir
     try {
-        if (-not (Invoke-PyStepWithTimeout "scripts\rebuild_warmups.py" 90 "rebuild_warmups" $OmegaDir)) {
-            Write-Host "  [WARN] rebuild_warmups failed/timed out -- keeping git snapshot" -ForegroundColor Yellow
-        }
-        # S-2026-06-23: comprehensive seed refresh from CURRENT IBKR data (gold via MGC, indices
-        # via index futures, H4 aggregated from H1). The git reset above restored the COMMITTED
-        # (months-stale) warmup snapshot; this regenerates the full corpus so the binary boots
-        # from fresh seeds, not stale -- closes the deploy-reverts-seeds gap that blinded the
-        # gold gates. NON-FATAL (the trade-direction gates also self-fresh/persist regardless);
-        # any miss just leaves the prior seeds + is flagged by VERIFY_STARTUP CHECK 18.
-        if (-not (Invoke-PyStepWithTimeout "tools\refresh_warmup_seeds.py 4001" 150 "refresh_warmup_seeds" $OmegaDir)) {
-            Write-Host "  [WARN] refresh_warmup_seeds failed/timed out -- keeping prior seeds" -ForegroundColor Yellow
-        }
-        # S-2026-06-24: the refresh above is fail-soft (needs IBKR 4001 live; if it no-ops, seeds
-        # stay stale SILENTLY -- exactly how 25 stale seeds survived "all the fixes"). Gate it: run
-        # the freshness audit and if any ENABLED-engine seed is still stale, make it IMPOSSIBLE to
-        # miss (red P0 banner + SEED_ALERT.txt). Non-fatal (don't brick a deploy when the data feed
-        # is down on a weekend) but LOUD -- no more silent stale.
-        py tools\seed_freshness_audit.py --repo "$OmegaDir" 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
-        if ($LASTEXITCODE -ne 0) {
-            $alert = "[P0-SEED] enabled-engine warm-seed(s) STILL STALE after refresh -- engine/gate booting on a price view detached from reality. Refresh needs IBKR 4001 live; re-run: py tools\refresh_warmup_seeds.py 4001"
+        # S-2026-06-29: FOLDED rebuild_warmups + refresh_warmup_seeds + seed_freshness_audit into ONE
+        # script (tools/seed_refresh.py). It runs all three phases in order: [1] rebuild from l2_ticks,
+        # [2] IBKR refresh (connect-times-out + SKIPS gracefully when the gateway/data-farms are down
+        # -> NO MORE deploy hang, the root cause of 11min+ stalls), [3] freshness audit which SETS the
+        # exit code (0=all enabled seeds fresh, nonzero=stale-or-timed-out). Invoke-PyStepWithTimeout
+        # returns $true only on exit 0, so it maps straight to the clean/alert branches below. Outer
+        # 300s timeout is a belt+braces backstop (the script's internal connect/per-pull timeouts are
+        # the primary guard).
+        if (Invoke-PyStepWithTimeout "tools\seed_refresh.py --port 4001 --repo $OmegaDir" 300 "seed_refresh" $OmegaDir) {
+            Write-Host "  [OK] seed_refresh: rebuild + IBKR-refresh + audit clean (enabled engines fresh)" -ForegroundColor Green
+            Remove-Item -Path (Join-Path $OmegaDir "logs\SEED_ALERT.txt") -ErrorAction SilentlyContinue
+        } else {
+            $alert = "[P0-SEED] seed_refresh: enabled-engine warm-seed(s) STILL STALE (or refresh timed out) -- engine/gate booting on a price view detached from reality. Needs IBKR 4001 live; re-run: py tools\seed_refresh.py --port 4001"
             Write-Host ""
             Write-Host "  ============================================================" -ForegroundColor Red
             Write-Host "  $alert" -ForegroundColor Red
             Write-Host "  ============================================================" -ForegroundColor Red
             $alert | Out-File -FilePath (Join-Path $OmegaDir "logs\SEED_ALERT.txt") -Encoding utf8
-        } else {
-            Write-Host "  [OK] seed-freshness audit clean (enabled engines)" -ForegroundColor Green
-            Remove-Item -Path (Join-Path $OmegaDir "logs\SEED_ALERT.txt") -ErrorAction SilentlyContinue
         }
     } catch {
         Write-Host "  [WARN] rebuild_warmups failed: $_ -- keeping git snapshot" -ForegroundColor Yellow
