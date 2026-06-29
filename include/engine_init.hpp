@@ -6043,51 +6043,11 @@ static void init_engines(const std::string& cfg_path)
     };
     (void)_make_ustec_tf_source;
 
-    // FX BreakoutEngine x 5 (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDJPY).
-    //   omega::BreakoutEngine inherits from BreakoutEngineBase<BreakoutEngine>
-    //   which exposes `OpenPos pos` and `const char* symbol` as public
-    //   members. OpenPos fields used here: {active, is_long, entry, size,
-    //   mfe, mae}. Pyramid add-on legs ride alongside in pos.pyramid_addons[]
-    //   but are tracked separately and not surfaced here (the GUI shows the
-    //   base position only -- consistent with the MacroCrash convention).
-    //   No has_open_position() method on BreakoutEngine; the codebase
-    //   convention (see trade_lifecycle.hpp, on_tick.hpp) is to check
-    //   `eng->pos.active` directly. tick_value_multiplier covers all five
-    //   FX symbols; USDJPY uses live g_usdjpy_mid for the JPY->USD conv.
-    auto _make_breakout_source = [](const char* engine_name,
-                                    omega::BreakoutEngine* eng) {
-        return [engine_name, eng]() -> std::vector<omega::PositionSnapshot> {
-            std::vector<omega::PositionSnapshot> out;
-            if (!eng->pos.active) return out;
-            const auto& p = eng->pos;
-            const std::string sym = eng->symbol;
-            const double mult = tick_value_multiplier(sym);
-            double current = p.entry;
-            const auto it = g_last_tick_bid.find(sym);
-            if (it != g_last_tick_bid.end() && it->second > 0.0) current = it->second;
-            const double dir  = p.is_long ? 1.0 : -1.0;
-            const double unrl = (current - p.entry) * dir * p.size * mult;
-            omega::PositionSnapshot ps;
-            ps.symbol = sym; ps.side = p.is_long ? "LONG" : "SHORT";
-            ps.size = p.size; ps.entry = p.entry; ps.current = current;
-            ps.unrealized_pnl = unrl;
-            ps.mfe = p.mfe * p.size * mult;
-            ps.mae = p.mae * p.size * mult;
-            ps.engine = engine_name;
-            out.push_back(ps);
-            return out;
-        };
-    };
-    g_open_positions.register_source("BreakoutEURUSD",
-        _make_breakout_source("BreakoutEURUSD", &g_eng_eurusd));
-    g_open_positions.register_source("BreakoutGBPUSD",
-        _make_breakout_source("BreakoutGBPUSD", &g_eng_gbpusd));
-    g_open_positions.register_source("BreakoutAUDUSD",
-        _make_breakout_source("BreakoutAUDUSD", &g_eng_audusd));
-    g_open_positions.register_source("BreakoutNZDUSD",
-        _make_breakout_source("BreakoutNZDUSD", &g_eng_nzdusd));
-    g_open_positions.register_source("BreakoutUSDJPY",
-        _make_breakout_source("BreakoutUSDJPY", &g_eng_usdjpy));
+    // S-2026-06-29 FULL FX REMOVAL ("no FX"): the 5 FX BreakoutEngine GUI
+    //   position-sources (BreakoutEURUSD/GBPUSD/AUDUSD/NZDUSD/USDJPY) are
+    //   REMOVED. The engines were dead behind the S99 kill-switch and never
+    //   traded; their display registrations are dropped with the FX cohort.
+    //   Their VIS-AUDIT tags are removed below.
 
     // ====================================================================
     // S-2026-06-09 visibility fix: register engines that were active-but-invisible
@@ -6109,41 +6069,14 @@ static void init_engines(const std::string& cfg_path)
         // --- g_overnight_spx : OvernightDriftEngine, US500.F, long-only ---
         //   pos: {active, entry_px, size, entry_ms}; has_open_position(); no sl/tp.
 
-        // --- FxTurtleH4Engine x2 (EURUSD, GBPUSD) ---
-        //   pos_: {active, is_long, entry, sl, tp, lot, entry_ts_ms}; has_open_position().
-        auto _turtle_src = [_cur_px](const char* label, omega::FxTurtleH4Engine* e, const char* sym) {
-            return [label,e,sym,_cur_px]() {
-                std::vector<omega::PositionSnapshot> out;
-                if (!e->has_open_position()) return out;
-                const auto& p = e->pos_; const double mult = tick_value_multiplier(std::string(sym));
-                double cur=_cur_px(sym, p.entry); const double dir=p.is_long?1.0:-1.0;
-                omega::PositionSnapshot ps; ps.engine=label; ps.symbol=sym; ps.side=p.is_long?"LONG":"SHORT";
-                ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=p.tp;
-                ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
-                out.push_back(ps); return out; }; };
-        (void)_turtle_src;
-
-        // --- TrendLineBreakEngine FX x2 (GBPUSD, USDJPY), SHADOW ---
-        //   pos_: {active, side(+1/-1 int), entry, sl, lot, entry_ts_ms, mfe};
-        //   has_open_position(); tp=0 (trails the opposing hull safety line).
-        auto _tlb_src = [_cur_px](const char* label, omega::TrendLineBreakEngine* e, const char* sym) {
-            return [label,e,sym,_cur_px]() {
-                std::vector<omega::PositionSnapshot> out;
-                if (!e->has_open_position()) return out;
-                const auto& p = e->pos_; const double mult = tick_value_multiplier(std::string(sym));
-                double cur=_cur_px(sym, p.entry); const double dir=(p.side>0)?1.0:-1.0;
-                omega::PositionSnapshot ps; ps.engine=label; ps.symbol=sym; ps.side=(p.side>0)?"LONG":"SHORT";
-                ps.size=p.lot; ps.entry=p.entry; ps.current=cur; ps.sl=p.sl; ps.tp=0.0;
-                ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry)*dir*p.lot*mult;
-                out.push_back(ps); return out; }; };
-        (void)_tlb_src;
+        // S-2026-06-29 ("no FX"): FxTurtleH4 / TrendLineBreakEngine / EurGbpPairs
+        //   GUI position-source lambdas REMOVED. All FX engines are non-trading
+        //   (FxTurtle tombstoned 2026-06-16; TrendLineBreak + EurGbpPairs dispatch
+        //   neutralized in tick_fx.hpp), so no FX engine holds positions to display.
+        //   Their VIS-AUDIT tags are dropped below to stop phantom boot WARNs.
 
         // --- g_minimal_h4_ger40 : MinimalH4GER40Breakout, GER40 ---
         //   pos_: {active, is_long, entry, sl, tp, size, entry_ts_ms}; has_open_position().
-
-        // --- g_eur_gbp_pairs : EurGbpPairsEngine, EURGBP spread pair ---
-        //   pos_: {active, long_spread, eur_entry, gbp_entry, entry_spread, lot,
-        //   entry_ts_ms}. Display the EUR leg entry; side from long_spread; no sl/tp.
 
         // --- g_ger40_london_brk : Ger40LondonBreakoutEngine, GER40 (short-only) ---
         //   pos: {active, is_long, entry_px, tp_px, sl_px, size, entry_ms, mfe, mae}.
@@ -6286,11 +6219,12 @@ static void init_engines(const std::string& cfg_path)
             // displayed by the per-cell C1Retuned* sources; the base-tag GUI
             // source was a double-display (see dedup note above).
             "UstecTrendFollow5m", "UstecTrendFollowHtf",
-            // batch 6: Breakout FX, NBM, FX turtles/scalp, pyramided
-            "BreakoutEURUSD", "BreakoutGBPUSD", "BreakoutAUDUSD", "BreakoutNZDUSD", "BreakoutUSDJPY",
+            // batch 6: NBM, pyramided (FX Breakout/turtle/scalp tags removed -- "no FX")
+            // S-2026-06-29 FULL FX REMOVAL: BreakoutEURUSD/GBPUSD/AUDUSD/NZDUSD/USDJPY
+            //   tags REMOVED with their register_source (engines dead, never traded).
             "NoiseBandMomentumGoldLdn", "GoldScalpPyramid", "GoldRegimeDaily", "MacroCrash",
-            "FxTurtleH4_EURUSD", "FxTurtleH4_GBPUSD", "FxTurtleH4_AUDUSD", "FxTurtleH4_NZDUSD",
-            "FxTurtleH4_USDJPY",
+            // S-2026-06-29 ("no FX"): FxTurtleH4_* x5 tags REMOVED -- cohort tombstoned
+            //   2026-06-16, no register_source -> phantom [VIS-AUDIT] WARNs.
             // S-2026-06-29: FxScalpPyramid x5 tags REMOVED -- engine retired (no
             //   g_fx_scalp_* globals, no register_source) -> phantom [VIS-AUDIT] WARNs.
             // IndexSession + S118 batch
@@ -6301,7 +6235,9 @@ static void init_engines(const std::string& cfg_path)
             "IndexSession_GER40", "IndexSession_UK100", "IndexSession_ESTX50",
             // S-2026-06-09 visibility fix: never-persisted strays now registered.
             // Asserted here so a future drop of any registration trips [VIS-AUDIT].
-            "XauTrendFollowM15", "OvernightDriftSPX", "EurGbpPairs",
+            "XauTrendFollowM15", "OvernightDriftSPX",
+            // S-2026-06-29 ("no FX"): EurGbpPairs tag REMOVED -- dispatch neutralized,
+            //   no register_source -> phantom [VIS-AUDIT] WARN.
             // S-2026-06-29: FxCrossRevEURGBP tag REMOVED -- source un-registered with
             //   the FX shadow-book removal -> would trip a phantom [VIS-AUDIT] WARN.
             "Ger40LondonBrk", "GoldVolBreakoutM30", "OrbEstx50",
@@ -6312,8 +6248,8 @@ static void init_engines(const std::string& cfg_path)
             "Us30Ensemble", "BreakBounce", "XauDojiRejD1", "XauOutsideBarD1",
             "XauTurtleD1", "XauSessNYpm", "XauSessOvernight",
             "DonchianPortfolio", "EmaPullbackPortfolio", "TsmomPortfolioV2",
-            // 2026-06-09: TrendLineBreak FX shadow instances (GBP/JPY).
-            "TrendLineBreakGBP", "TrendLineBreakJPY",
+            // S-2026-06-29 ("no FX"): TrendLineBreakGBP/JPY tags REMOVED -- dispatch
+            //   neutralized in tick_fx.hpp, no register_source -> phantom [VIS-AUDIT] WARNs.
         };
         const std::vector<std::string> registered = g_open_positions.source_labels();
         auto _is_registered = [&registered](const char* tag) -> bool {
