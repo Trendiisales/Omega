@@ -2154,36 +2154,19 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         g_survivor.on_tick(sym, bid, ask, surv_now_ms, handle_closed_trade);
     }
 
-    // ── S43 FX CARRY + CROSS-REVERSION dispatch (shadow, D1) ────────────────
-    //   First validated FX edges (Dukascopy D1 2019-2026, both fidelity-passed).
-    //   Same pattern as g_survivor: receives every tick, each engine aggregates
-    //   its own D1 bar + is internally gated by enabled/shadow_mode. Routes the
-    //   passive-subscribed crosses (EURGBP/EURJPY/GBPJPY) which have no trading
-    //   handler in the else-if chain below. handle_closed_trade routes shadow
-    //   records to the audit ledger (tr.shadow stamped by the engine).
+    // ── Index daily-shadow dispatch scope (VIX gate + IndexSeasonal/Tom/XS) ─────
+    //   (was the S43 FX carry/xrev/seasonal block -- FX removed S-2026-06-29.)
+    //   fx_now_ms is the shared "now" feeding the VIX refresh + the index D1
+    //   engines below; each engine aggregates its own bar, gated internally by
+    //   enabled/shadow_mode. handle_closed_trade routes shadow records to the
+    //   audit ledger.
     {
         const int64_t fx_now_ms = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
-        if      (sym == "EURUSD") g_fx_carry_eurusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "GBPUSD") g_fx_carry_gbpusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "USDJPY") g_fx_carry_usdjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "AUDUSD") g_fx_carry_audusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "NZDUSD") g_fx_carry_nzdusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "USDCAD") g_fx_carry_usdcad.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "EURJPY") g_fx_carry_eurjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "GBPJPY") g_fx_carry_gbpjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "EURGBP") g_fx_xrev_eurgbp.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        // S43f FxSeasonal (Friday-long) -- runs alongside carry/xrev, same sink.
-        if      (sym == "EURUSD") g_fx_seas_eurusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "GBPUSD") g_fx_seas_gbpusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "USDJPY") g_fx_seas_usdjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "AUDUSD") g_fx_seas_audusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "NZDUSD") g_fx_seas_nzdusd.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "USDCAD") g_fx_seas_usdcad.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "USDCHF") g_fx_seas_usdchf.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "EURGBP") g_fx_seas_eurgbp.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
-        else if (sym == "EURJPY") g_fx_seas_eurjpy.on_tick(bid, ask, fx_now_ms, handle_closed_trade);
+        // FX REMOVED (S-2026-06-29): carry/xrev/seasonal dispatch deleted -- "we have
+        //   no FX" (all FX engines force-disabled S-2026-06-23). fx_now_ms kept: the
+        //   VIX refresh + IndexSeasonal/CalendarTom/CrossSectional dispatch below reuse it.
 
         // S44 portfolio VIX risk-off gate: refresh shared VIX/VIX3M ratio (once/hr,
         // throttled internally). All index engines consult omega::index_risk_off()

@@ -549,63 +549,9 @@ static void init_engines(const std::string& cfg_path)
     // beyond 0.01 lot (DD reduction matters more). Recommended 1.2x.
     // Backtest: 1.2x -> -15% PnL but -32% DD + 8% PF on 2yr.
 
-    // ---- FxScalpPyramid x5 (S38d 2026-05-26) --------------------------------
-    // 5 profitable FX pairs from 13-month standalone harness backtest
-    // (backtest/fx_scalp_pyramid_bt.cpp). All shadow-mode pending 14-day
-    // live validation. Per-pair constants below match the harness PRESET
-    // switch (~line 1110). All five share: ADX 10 chop filter, ER disabled
-    // (S38b), pyramid on, SL=1.5xATR, TP=3.0xATR, Trail=0.12.
-    //
-    // Skipped from harness winners: NZDUSD (PF 1.07 marginal),
-    //   EURGBP (PF 0.93 loser).
-    //
-    // 13mo standalone harness PnL @ 0.01 lot:
-    //   EURUSD +$1808 PF 1.56 (best)
-    //   USDJPY +$1688 PF 1.51
-    //   GBPUSD +$1207 PF 1.32
-    //   USDCAD +$506  PF 1.23
-    //   AUDUSD +$410  PF 1.23
-    //   Total: +$5712 / 13mo
-    {
-        auto config_fx_scalp = [](omega::FxScalpPyramidEngine& e,
-                                  const std::string& sym,
-                                  double cost, double half_spread,
-                                  double usd_per_pt, double atr_floor,
-                                  double atr_cap, double spread_cap,
-                                  int decimals) {
-            e.set_pair_config(sym, cost, half_spread, usd_per_pt,
-                              atr_floor, atr_cap, spread_cap, decimals);
-            // S45 2026-05-27: DISABLED — same harness-class disagreement as
-            // GoldScalpPyramid (see comment block at L405-407 above). The
-            // 13mo +$5712 standalone-harness profit was an inline-reimpl
-            // result, not the real FxScalpPyramidEngine class. Today's
-            // chop-day session bled 8 FX scalp LOSS_CUTs across the cohort.
-            // No backtest of the real class with live S63 config has shown
-            // positive edge. Disable pending re-tune + harness-class
-            // agreement validation.
-            e.enabled         = false;
-            e.shadow_mode     = true;
-            e.LOOKBACK        = 8;
-            e.SL_ATR_MULT     = 1.5;
-            e.TP_ATR_MULT     = 3.0;
-            e.TRAIL_TIGHT     = 0.12;
-            e.PYRAMID_ON      = true;
-            e.LOSS_CUT_PCT    = 0.05;
-            e.BE_ARM_PCT      = 0.03;
-            e.BE_BUFFER_PCT   = 0.015;
-            e.BE_ARM_COST_MULT = 2.0;
-            e.CHOP_ER_MIN     = 0.0;     // S38b: ER disabled
-            e.CHOP_ADX_MIN    = 10.0;    // S38c: ADX 10 default
-            e.CHOP_ADX_PERIOD = 14;
-            e.RANGE_EXP_MULT  = 0.0;     // off by default
-            e.on_close_cb     = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
-        };
-        (void)config_fx_scalp;
-
-        // xxxUSD majors (5 decimal places, ATR 30-500 pips, spread cap 50p)
-        // USDJPY (3 decimals, JPY pip math: USD_PER_PT_LOT ~633 at 1USD=158JPY)
-        // USDCAD (5 decimals, USD_PER_PT_LOT ~74000 at 1USD=1.35CAD)
-    }
+    // ---- FxScalpPyramid REMOVED (S-2026-06-29) -- dead FX config: the
+    //   config_fx_scalp lambda was never invoked ((void)-cast) and all FX is
+    //   force-disabled ("we have no FX", S-2026-06-23). Deleted with the FX book.
 
     // ---- GoldRegimeDaily (2026-05-19 S110) ----------------------------------
     // H4 EMA-cross trend-follow engine. FIRST gold engine to clear the full
@@ -1944,212 +1890,14 @@ static void init_engines(const std::string& cfg_path)
         //   - Backtest harness backtest/amr_bt/AmrBacktest.cpp (port pattern
         //     from backtest/eurusd_bt/EurusdLondonOpenBacktest.cpp).
         {
-            const char* warmup_eur_h4 = "phase1/signal_discovery/warmup_EURUSD_H4.csv"; // EURUSD trait is H4 -> H4-cadence seed
-            (void)warmup_eur_h4;
-            const char* warmup_gbp    = "phase1/signal_discovery/warmup_GBPUSD_H1.csv";
-            (void)warmup_gbp;
-
-            // 2026-05-26 multi-TF tick-replay sweep (5 pairs x 4 TFs x X={10,14}):
-            //   EURUSD best = M15 X=14 -> 21 trd, WR 52%, PF 1.80, +$9.04, DD $4.31, Sharpe-ann 1.04
-            //   GBPUSD best = H1  X=10 -> 13 trd, WR 54%, PF 2.11, +$17.35, DD $6.95, Sharpe-ann 1.01
-            //   AUDUSD best = H1  X=10 -> 20 trd, WR 35%, PF 1.34, +$6.82,  DD $17.61 (marginal)
-            //   NZDUSD best = M30 X=10 -> 53 trd, WR 32%, PF 1.31, +$5.91,  DD $10.92 (marginal)
-            //   USDCAD best = H1  X=10 -> 22 trd, WR 41%, PF 1.25, +$1.65,  DD $10.85 (marginal)
-            // Portfolio Sharpe-ann 1.24 / PF 1.42 / Recovery 1.64 (0.01 lot, 1.2yr avg).
-            // EURUSD trait uses BAR_INTERVAL_MS=14400000 (H4) + X=3 SL=7 (see AtrMeanRevGridEngine.hpp; M15 X=14 replaced 2026-05-26).
-            // 2026-05-26 S37e: state-first persistence. Try .dat first
-            // (zero-warmup), fall back to CSV seed if .dat missing/stale.
-            const std::string state_dir = state_root_dir();
-            auto amr_boot = [&](auto& eng, const std::string& sym_tag,
-                                const std::string& csv_path) {
-                eng.shadow_mode = true;
-                eng.on_close_cb = write_shadow_csv;
-                const std::string state_path = state_dir + "/amr_" + sym_tag + ".dat";
-                if (!eng.load_state(state_path)) {
-                    eng.seed_from_h1_csv(csv_path);
-                }
-            };
-            (void)amr_boot;
-
-            // S-2026-06-14: AMR real-class audit COMPLETE (S47 purge was
-            // "pending real-class audit"). Independent cost-inclusive walk-forward
-            // on HistData ticks->bars (engine pays spread via bid/ask):
-            //   GBPUSD H1 X=10 : PF 1.90, WR 69%, both halves + (1.39/2.52),
-            //                    holds 1.83 @ 3x cost. The video's hero pair.
-            //   EURUSD H4 X=3  : PF 1.39, WR 71%, both halves + (1.77/1.17) AFTER
-            //                    the SL_ATR_BUFFER_Y typo fix (ran SL=4 not 7).
-            // Regime split (EMA200 slope): edge concentrated in down-trends;
-            // grid stays DORMANT (<=2 levels, rare) so no martingale blow-up;
-            // both-directional so the short side hedges dip-buys; US500 survived
-            // the real Apr-2025 -19% S&P crash positive. NAS100 (PF0.27) +
-            // US500 (3x-fragile) + GER40 (no data) + AUD/NZD (marginal) stay purged.
-            // Re-enabled in SHADOW (shadow_mode=true) to gather forward data;
-            // thin n (13/14) -> NOT live-size yet. EURUSD seeds from H4-cadence
-            // warmup (was H1 -> EMA200/ATR cadence mismatch, fixed this session).
-            // CULL S-2026-06-17 (marginal-engine retest campaign): faithful
-            // real-class amr_grid_bt on EURUSD H1 = PF0.75 WR41% BOTH HALVES NEG
-            // (H1 0.72/H2 0.77), net-. No edge -> disabled. GBPUSD disabled by
-            // sibling-inference (same dead mean-rev grid family; its own bar data
-            // not yet assembled for a direct run). Reversible: shadow, lot 0.01.
-
-
-            // S37g 2026-05-26: FxEnsembleEngine -- 5 cross-family validated cells.
-            // Each instance is a different pair; enable_cell() flips on the
-            // one cell that survived 4-gate validation for that pair.
-            auto fx_ens_boot = [&](auto& eng, const std::string& sym_tag,
-                                    const std::string& csv_path,
-                                    double max_spread, double atr_floor) {
-                eng.shadow_mode = true;
-                eng.enabled     = true;
-                eng.lot         = 0.01;
-                eng.max_spread_price = max_spread;
-                eng.min_atr_floor    = atr_floor;
-                eng.init();
-                const std::string sp = state_root_dir() + "/fxens_" + sym_tag + ".dat";
-                eng.load_or_seed_from_h1_csv(sp, csv_path);
-            };
-            // EURUSD: 3 cells -- donchian_55 H1 LONG + keltner H1 LONG + asian_break H4 LONG
-            g_fx_ens_eurusd.enable_cell(omega::FxCellId::DONCHIAN_55_H1_LONG, 3.0, 1.0, 24);
-            g_fx_ens_eurusd.enable_cell(omega::FxCellId::KELTNER_H1_LONG,     3.0, 1.67, 24); // S37h PF 2.33
-            g_fx_ens_eurusd.enable_cell(omega::FxCellId::ASIAN_BREAK_H4_LONG, 1.0, 1.0, 24);  // S37h PF 1.78
-            fx_ens_boot(g_fx_ens_eurusd, "eurusd",
-                        "phase1/signal_discovery/warmup_EURUSD_H1.csv",
-                        0.00030, 0.00010);
-            // GBPUSD: 2 cells -- bb_rev_20 H2 LONG + london_momo H4 LONG
-            g_fx_ens_gbpusd.enable_cell(omega::FxCellId::BB_REV_20_H2_LONG, 3.0, 1.67, 96);
-            g_fx_ens_gbpusd.enable_cell(omega::FxCellId::LONDON_MOMO_H4_LONG, 1.0, 1.5, 48);  // S37h PF 2.31 RF 7.47
-            fx_ens_boot(g_fx_ens_gbpusd, "gbpusd",
-                        "phase1/signal_discovery/warmup_GBPUSD_H1.csv",
-                        0.00035, 0.00012);
-            // AUDUSD: 1 cell -- bb_rev_20 H4 LONG (thin n=5, shadow only)
-            g_fx_ens_audusd.enable_cell(omega::FxCellId::BB_REV_20_H4_LONG, 3.0, 0.67, 24);
-            fx_ens_boot(g_fx_ens_audusd, "audusd",
-                        "phase1/signal_discovery/warmup_AUDUSD_H1.csv",
-                        0.00035, 0.00012);
-            // USDCAD: 4 cells -- 3bar_mom S + london_momo L + keltner S + kumo_break S
-            g_fx_ens_usdcad.enable_cell(omega::FxCellId::THREE_BAR_MOM_H4_SHORT, 1.5, 3.33, 24);
-            g_fx_ens_usdcad.enable_cell(omega::FxCellId::LONDON_MOMO_H4_LONG, 1.0, 2.0, 96);  // S37h PF 2.31
-            g_fx_ens_usdcad.enable_cell(omega::FxCellId::KELTNER_H2_SHORT, 2.0, 0.75, 96);    // S37h PF 2.21 Sh 1.96
-            g_fx_ens_usdcad.enable_cell(omega::FxCellId::KUMO_BREAK_H2_SHORT, 3.0, 0.5, 24);  // S37h PF 2.20
-            fx_ens_boot(g_fx_ens_usdcad, "usdcad",
-                        "phase1/signal_discovery/warmup_USDCAD_H1.csv",
-                        0.00040, 0.00015);
-            // USDJPY: 2 cells -- donchian_20 H2 LONG + engulfing D1-approx LONG
-            g_fx_ens_usdjpy.enable_cell(omega::FxCellId::DONCHIAN_20_H2_LONG, 1.5, 3.33, 96);
-            g_fx_ens_usdjpy.enable_cell(omega::FxCellId::ENGULFING_D1_LONG, 1.0, 1.0, 48);    // S37h PF 2.10
-            fx_ens_boot(g_fx_ens_usdjpy, "usdjpy",
-                        "phase1/signal_discovery/warmup_USDJPY_H1.csv",
-                        0.050, 0.01);
-            // NZDUSD: 1 cell -- london_momo H2 SHORT (NEW S37h)
-            g_fx_ens_nzdusd.enable_cell(omega::FxCellId::LONDON_MOMO_H2_SHORT, 1.5, 1.0, 24); // S37h PF 1.76
-            fx_ens_boot(g_fx_ens_nzdusd, "nzdusd",
-                        "phase1/signal_discovery/warmup_NZDUSD_H1.csv",
-                        0.00040, 0.00015);
-            std::printf("[OMEGA-INIT] FxEnsembleEngine: 5 pairs enabled (shadow) -- "
-                       "EUR(Donch55H1L) GBP(BBrev20H2L) AUD(BBrev20H4L) "
-                       "CAD(3barH4S) JPY(Donch20H2L)\n");
-
-            // S37f 2026-05-26: EURGBP H1 X=5 SL=3 -- new pair, validated.
-            //   Full validation pipeline: IS PF 1.80 / OOS PF 1.68 / WR 60% /
-            //   RF 1.39 / pf_ratio 0.93 (clean -- not curve-fit).
-            //   3-period intersect: each period +ve, min PF 1.33.
-            //   WF 4 folds: 3/4 positive.
-            const char* warmup_eurgbp = "phase1/signal_discovery/warmup_EURGBP_H1.csv";
-            (void)warmup_eurgbp;
-            // S37 audit (2026-05-27): EURGBP is NOT a subscribed FIX feed
-            // symbol in Omega. There is no on_tick_eurgbp handler and no
-            // tick path reaches this engine. The booting code below
-            // initialises state but the engine receives zero ticks.
-            // Disabled until either (a) EURGBP is added to the FIX
-            // subscription list + an on_tick_eurgbp handler is added in
-            // tick_fx.hpp, or (b) the engine is repurposed to read EURGBP
-            // synthetically from EURUSD/GBPUSD cross. Validation cited
-            // above (IS PF 1.80 / OOS PF 1.68) used research-fed ticks
-            // outside the live feed loop and is still load-bearing once
-            // the dispatch lands.
-
-
-
-            std::printf("[OMEGA-INIT] AtrMeanRevGrid FX: EURUSD(M15,X=14)+GBPUSD(H1,X=10) enabled (shadow), AUDUSD+NZDUSD parked\n");
-
-            // ----------------------------------------------------------------
-            // 2026-05-31 S43: FX CARRY + CROSS-REVERSION -- first validated FX
-            //   edges (Dukascopy D1 2019-2026). Carry-only (momentum gate proven
-            //   to HURT in A/B): dir=sign(rate_diff) when |diff|>=floor, vol-target,
-            //   weekly rebal. Carry on 8 fed pairs (JPY crosses = bulk of edge).
-            //   Cross-RV: EURGBP z-MR D1 (PF2.0 robust cluster). All shadow_mode.
-            //   Both engines fidelity-passed vs backtest. Warm-seed D1 CSVs per mandate.
-            // ----------------------------------------------------------------
+            // S-2026-06-29: FX REMOVED (operator: "we have no FX"). FxEnsemble x6 +
+            // AtrMeanRevGrid boot/seed deleted -- engines were already force-disabled.
+            // Globals remain inert (default enabled=false, unticked). git history < this
+            // commit restores them.
             {
-                auto carry_boot = [](omega::FxCarryEngine& e, const char* sym){
-                    e.shadow_mode = true; e.enabled = true; e.lot = 0.01;
-                    e.p.carry_floor_pct = 0.75; e.p.rebal_days = 5; e.p.target_vol_bps = 50.0;
-                    char path[128];
-                    std::snprintf(path, sizeof path, "phase1/signal_discovery/warmup_%s_D1.csv", sym);
-                    e.seed_from_d1_csv(path);
-                };
-                carry_boot(g_fx_carry_eurusd, "EURUSD");
-                carry_boot(g_fx_carry_gbpusd, "GBPUSD");
-                carry_boot(g_fx_carry_usdjpy, "USDJPY");
-                carry_boot(g_fx_carry_audusd, "AUDUSD");
-                carry_boot(g_fx_carry_nzdusd, "NZDUSD");
-                carry_boot(g_fx_carry_usdcad, "USDCAD");
-                carry_boot(g_fx_carry_eurjpy, "EURJPY");
-                carry_boot(g_fx_carry_gbpjpy, "GBPJPY");
-
-                g_fx_xrev_eurgbp.shadow_mode = true; g_fx_xrev_eurgbp.enabled = true;
-                g_fx_xrev_eurgbp.lot = 0.01;
-                // S-2026-06-26s fleet-sweep UPGRADE (workflow wn6lralw2, verify held=True):
-                // migrate cluster center w60/zout0.4/h20 -> w40/zin2.0/zout0.3/h40.
-                // Driven on the REAL FxCrossRevEngine over real Dukascopy EURGBP D1
-                // 2019-26: BULL PF2.44->3.61 (DD 26->16 HALVED), BEAR PF3.55 (n8),
-                // both-halves+ (H1 1.56/H2 2.67), 2x/3x-cost robust, 22/24 cluster
-                // cfgs both-regime+ (most robust pair in family). Bear n=6-8 small
-                // (low-freq ~10/yr Sharpe leg). NOTE: prior live baseline was h20/
-                // zout0.4 (sweep mislabeled it h40/0.5); best cfg is absolute, applied.
-                g_fx_xrev_eurgbp.p.z_window = 40; g_fx_xrev_eurgbp.p.z_in = 2.0;
-                g_fx_xrev_eurgbp.p.z_out = 0.3;   g_fx_xrev_eurgbp.p.hold_timeout = 40;
-                g_fx_xrev_eurgbp.p.require_hook = false;
-                g_fx_xrev_eurgbp.seed_from_d1_csv("phase1/signal_discovery/warmup_EURGBP_D1.csv");
-                std::printf("[OMEGA-INIT] FxCarry x8 (EUR/GBP/JPY-crosses) + FxCrossRev EURGBP -- shadow, warm-seeded\n");
-
-                // S43f: FxSeasonal (Friday-long) -- combined thin-edge sleeve component.
-                auto seas_boot = [](omega::FxSeasonalEngine& e, const char* sym){
-                    e.shadow_mode=true; e.enabled=true; e.lot=0.01; e.p.target_vol_bps=50.0;
-                    char path[128]; std::snprintf(path,sizeof path,"phase1/signal_discovery/warmup_%s_D1.csv",sym);
-                    e.seed_from_d1_csv(path);
-                };
-                seas_boot(g_fx_seas_eurusd,"EURUSD"); seas_boot(g_fx_seas_gbpusd,"GBPUSD");
-                seas_boot(g_fx_seas_usdjpy,"USDJPY"); seas_boot(g_fx_seas_audusd,"AUDUSD");
-                seas_boot(g_fx_seas_nzdusd,"NZDUSD"); seas_boot(g_fx_seas_usdcad,"USDCAD");
-                // USDCHF DROPPED 2026-06-23: no warmup_USDCHF_D1.csv exists (no source data) ->
-                // seas_boot would SEED-FATAL + cold-start silent. Left enabled=false (dormant).
-                // Re-add the seas_boot call once a warmup_USDCHF_D1.csv is produced.
-                seas_boot(g_fx_seas_eurgbp,"EURGBP");
-                seas_boot(g_fx_seas_eurjpy,"EURJPY");
-                std::printf("[OMEGA-INIT] FxSeasonal x8 (Friday-long; USDCHF dropped: no warmup CSV) -- shadow, warm-seeded\n");
-
-                // ============================================================
-                // S-2026-06-23: FX SHADOW BOOK DISABLED (operator: "we have no FX").
-                // We do not trade FX -> the FX shadow sleeves are pure clutter and threw
-                // false [STARTUP-SELFTEST] silent alarms (low-liq crosses don't tick in the
-                // 69s window). Disable firing on all FX engines; boot/seed/warm code left
-                // intact (harmless) for trivial reversal. Because the daily-book heartbeat
-                // regs use live_required=<inst>.enabled, disabling here AUTO-clears the
-                // FxSeasonal silent alarms (live_required becomes false). The FX
-                // AtrMeanRevGrid was already culled (S-2026-06-17). Re-enable a sleeve by
-                // flipping its enabled=true (or delete this block).
-                g_fx_ens_eurusd.enabled = g_fx_ens_gbpusd.enabled = g_fx_ens_audusd.enabled =
-                    g_fx_ens_usdcad.enabled = g_fx_ens_usdjpy.enabled = g_fx_ens_nzdusd.enabled = false;
-                g_fx_carry_eurusd.enabled = g_fx_carry_gbpusd.enabled = g_fx_carry_usdjpy.enabled =
-                    g_fx_carry_audusd.enabled = g_fx_carry_nzdusd.enabled = g_fx_carry_usdcad.enabled =
-                    g_fx_carry_eurjpy.enabled = g_fx_carry_gbpjpy.enabled = false;
-                g_fx_xrev_eurgbp.enabled = false;
-                g_fx_seas_eurusd.enabled = g_fx_seas_gbpusd.enabled = g_fx_seas_usdjpy.enabled =
-                    g_fx_seas_audusd.enabled = g_fx_seas_nzdusd.enabled = g_fx_seas_usdcad.enabled =
-                    g_fx_seas_eurgbp.enabled = g_fx_seas_eurjpy.enabled = false;
-                std::printf("[OMEGA-INIT] FX SHADOW BOOK DISABLED (operator: no FX) -- FxEnsemble x6 + FxCarry x8 + FxCrossRev + FxSeasonal x8 off\n");
-
+                // S-2026-06-29: FX SHADOW BOOK REMOVED (FxCarry x8 + FxCrossRev EURGBP +
+                // FxSeasonal x8). Boot/seed/disable code deleted; globals inert. The
+                // EURGBP_D1 / FX warm-seed literals are gone -> no longer in the seed audit.
                 // S44 2026-05-31: IndexSeasonal (day-of-week, Tue+Fri long) -- validated
                 //   equity-index edge (index_seasonal_sharpe.cpp, 6 indices, 7.4yr incl.
                 //   2020 crash + 2022 bear). best-2 sleeve Sharpe 0.69 vs 0.36 buy&hold,
@@ -2920,13 +2668,8 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // S38d 2026-05-26 TODO: FxScalpPyramid x5 warm-seed.
-        //   No FX M5 bar source currently exists in this binary (no
-        //   g_bars_fx / g_bars_eurusd / etc.). Engines cold-start in ~50min
-        //   on live ticks once EMA21 + ATR14 + Donchian8 prime from fresh
-        //   bars. Acceptable for shadow-mode launch.
-        //   When a shared FX M5 bar source is added (mirror of g_bars_gold.m5),
-        //   wire prime_from_atomics + prime_from_history per engine here.
+        // FxScalpPyramid x5 warm-seed TODO REMOVED (S-2026-06-29): engine retired,
+        //   "no FX". Nothing to seed.
 
         // 2026-05-18 (part B): BBandScalp diagnostic prime.
         // Engine has no internal indicator state -- bb_upper/mid/lower, rsi14,
@@ -4710,14 +4453,6 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("IndexFomc_US500.F",     g_idx_fomc_us500.enabled, 7200, 0, 24);
         g_engine_heartbeat.register_engine("IndexFomc_USTEC.F",     g_idx_fomc_ustec.enabled, 7200, 0, 24);
         g_engine_heartbeat.register_engine("IndexFomc_DJ30.F",      g_idx_fomc_dj30.enabled,  7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_EURUSD", g_fx_seas_eurusd.enabled, 7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_GBPUSD", g_fx_seas_gbpusd.enabled, 7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_USDJPY", g_fx_seas_usdjpy.enabled, 7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_AUDUSD", g_fx_seas_audusd.enabled, 7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_NZDUSD", g_fx_seas_nzdusd.enabled, 7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_USDCAD", g_fx_seas_usdcad.enabled, 7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_EURGBP", g_fx_seas_eurgbp.enabled, 7200, 0, 24);
-        g_engine_heartbeat.register_engine("FxSeasonal_EURJPY", g_fx_seas_eurjpy.enabled, 7200, 0, 24);
         g_engine_heartbeat.register_engine("XsIndex_MomLong", g_xs_mom_long.enabled, 7200, 0, 24);
         g_engine_heartbeat.register_engine("XsIndex_MomLS",   g_xs_mom_ls.enabled,   7200, 0, 24);
         g_engine_heartbeat.register_engine("XsIndex_MrLS",    g_xs_mr_ls.enabled,    7200, 0, 24);
@@ -5292,7 +5027,6 @@ static void init_engines(const std::string& cfg_path)
                           g_xauusd_fvg.shadow_mode,
                           {"XauusdFvg"}); });
     // 2026-05-18: GoldScalpPyramid engine registration.
-    // S38d 2026-05-26: FxScalpPyramid x5 engine registrations.
     // 2026-05-19 S110: GoldRegimeDaily engine registration.
     // S11 P3b: HybridSP / HybridNQ / HybridUS30 / HybridNAS100 register_engine
     //   blocks removed (engines culled in P3a + P3b).
@@ -5399,7 +5133,6 @@ static void init_engines(const std::string& cfg_path)
         g_engine_heartbeat.register_engine("CandleFlow",         true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("EMACross",           true, 3600,  0, 24);
         g_engine_heartbeat.register_engine("XauusdFvg",          true, 3600,  0, 24);
-        // S38d 2026-05-26: FxScalpPyramid heartbeats. 07-21 UTC session.
         g_engine_heartbeat.register_engine("h1_swing_gold",      g_h1_swing_gold.enabled, 3600,  0, 24);
         g_engine_heartbeat.register_engine("NbmGoldLondon",      true,  900,  7, 14);
 
@@ -5747,49 +5480,9 @@ static void init_engines(const std::string& cfg_path)
             return out;
         });
     // 2026-05-18: GoldScalpPyramid position source.
-    // S38d 2026-05-26: FxScalpPyramid x5 position sources.
-    //   Same shape as GoldScalpPyramid template above, parameterised over
-    //   (engine_ref, symbol). Registered separately so each shows in the
-    //   /api/v1/omega/positions endpoint with its own engine label.
-    {
-        auto register_fx_scalp = [](const std::string& sym,
-                                    omega::FxScalpPyramidEngine& eng,
-                                    const std::string& engine_label) {
-            g_open_positions.register_source(engine_label,
-                [&eng, sym, engine_label]() -> std::vector<omega::PositionSnapshot> {
-                    std::vector<omega::PositionSnapshot> out;
-                    if (!eng.has_open_position()) return out;
-
-                    const auto& p = eng.m_pos;
-                    const double mult = tick_value_multiplier(sym);
-
-                    double current = p.base_entry;
-                    const auto it = g_last_tick_bid.find(sym);
-                    if (it != g_last_tick_bid.end() && it->second > 0.0) {
-                        current = it->second;
-                    }
-
-                    const double dir   = p.is_long ? 1.0 : -1.0;
-                    const double entry = p.weighted_entry();
-                    const double size  = p.total_size();
-                    const double unrl  = (current - entry) * dir * size * mult;
-
-                    omega::PositionSnapshot ps;
-                    ps.symbol         = sym;
-                    ps.side           = p.is_long ? "LONG" : "SHORT";
-                    ps.size           = size;
-                    ps.entry          = entry;
-                    ps.current        = current;
-                    ps.unrealized_pnl = unrl;
-                    ps.mfe            = p.mfe_peak * size * mult;
-                    ps.mae            = p.mae * size * mult;
-                    ps.engine         = engine_label;
-                    out.push_back(ps);
-                    return out;
-                });
-        };
-        (void)register_fx_scalp;
-    }
+    // FxScalpPyramid x5 position-source registration REMOVED (S-2026-06-29):
+    //   dead -- the register_fx_scalp lambda was (void)-cast/never invoked and
+    //   the g_fx_scalp_* globals are retired (retired_micro_engines.hpp). "No FX".
     // 2026-05-19 S110: GoldRegimeDaily position source.
     // ====================================================================
     // S65 2026-05-13 GUI position-source expansion
@@ -6452,19 +6145,6 @@ static void init_engines(const std::string& cfg_path)
         //   pos_: {active, long_spread, eur_entry, gbp_entry, entry_spread, lot,
         //   entry_ts_ms}. Display the EUR leg entry; side from long_spread; no sl/tp.
 
-        // --- g_fx_xrev_eurgbp : FxCrossRevEngine, EURGBP (pos_ private; read via
-        //   S-2026-06-09 accessors pos_is_long/pos_entry/pos_lot/pos_entry_ts(ms)) ---
-        g_open_positions.register_source("FxCrossRevEURGBP", [_cur_px]() {
-            std::vector<omega::PositionSnapshot> out;
-            if (!g_fx_xrev_eurgbp.has_open_position()) return out;
-            const double mult = tick_value_multiplier(std::string("EURGBP"));
-            const double entry=g_fx_xrev_eurgbp.pos_entry(); const bool is_long=g_fx_xrev_eurgbp.pos_is_long();
-            const double sz=g_fx_xrev_eurgbp.pos_lot(); double cur=_cur_px("EURGBP", entry); const double dir=is_long?1.0:-1.0;
-            omega::PositionSnapshot ps; ps.engine="FxCrossRevEURGBP"; ps.symbol="EURGBP"; ps.side=is_long?"LONG":"SHORT";
-            ps.size=sz; ps.entry=entry; ps.current=cur; ps.sl=0.0; ps.tp=0.0;
-            ps.entry_ts=g_fx_xrev_eurgbp.pos_entry_ts()/1000; ps.unrealized_pnl=(cur-entry)*dir*sz*mult;
-            out.push_back(ps); return out; });
-
         // --- g_ger40_london_brk : Ger40LondonBreakoutEngine, GER40 (short-only) ---
         //   pos: {active, is_long, entry_px, tp_px, sl_px, size, entry_ms, mfe, mae}.
 
@@ -6610,8 +6290,9 @@ static void init_engines(const std::string& cfg_path)
             "BreakoutEURUSD", "BreakoutGBPUSD", "BreakoutAUDUSD", "BreakoutNZDUSD", "BreakoutUSDJPY",
             "NoiseBandMomentumGoldLdn", "GoldScalpPyramid", "GoldRegimeDaily", "MacroCrash",
             "FxTurtleH4_EURUSD", "FxTurtleH4_GBPUSD", "FxTurtleH4_AUDUSD", "FxTurtleH4_NZDUSD",
-            "FxTurtleH4_USDJPY", "FxScalpPyramid_EURUSD", "FxScalpPyramid_USDJPY",
-            "FxScalpPyramid_GBPUSD", "FxScalpPyramid_USDCAD", "FxScalpPyramid_AUDUSD",
+            "FxTurtleH4_USDJPY",
+            // S-2026-06-29: FxScalpPyramid x5 tags REMOVED -- engine retired (no
+            //   g_fx_scalp_* globals, no register_source) -> phantom [VIS-AUDIT] WARNs.
             // IndexSession + S118 batch
             "IndexSession_SP", "IndexSession_NAS", "FvgContinuation", "FvgCont10m", "OvernightDrift",
             "ConnorsRSI2", "ConnorsRSI2_GER",
@@ -6620,7 +6301,9 @@ static void init_engines(const std::string& cfg_path)
             "IndexSession_GER40", "IndexSession_UK100", "IndexSession_ESTX50",
             // S-2026-06-09 visibility fix: never-persisted strays now registered.
             // Asserted here so a future drop of any registration trips [VIS-AUDIT].
-            "XauTrendFollowM15", "OvernightDriftSPX", "EurGbpPairs", "FxCrossRevEURGBP",
+            "XauTrendFollowM15", "OvernightDriftSPX", "EurGbpPairs",
+            // S-2026-06-29: FxCrossRevEURGBP tag REMOVED -- source un-registered with
+            //   the FX shadow-book removal -> would trip a phantom [VIS-AUDIT] WARN.
             "Ger40LondonBrk", "GoldVolBreakoutM30", "OrbEstx50",
             // S-2026-06-26s: IndexIntradayDrift_SP/UK100/US30 phantom tags REMOVED
             // (fleet-sweep KILL, held=True). The engine is killed + un-instantiated

@@ -343,7 +343,10 @@ struct AmrTraits_SWEEP_NSXUSD : AmrBaseParams {
 //   g_amr_eurusd.on_h1_bar(o, h, l, c, ts_ms);
 //
 // Warm-seed (CLAUDE.md mandate) before live:
-//   omega::seed_h1_amr(g_amr_eurusd, "phase1/signal_discovery/warmup_EURUSD_H1.csv");
+//   omega::seed_h1_amr(g_amr_eurusd, <phase1/signal_discovery warm-seed H1 path>);
+//   (S-2026-06-29: example path de-quoted -- the FX (EURUSD) variant is gone; the
+//    live AtrMeanRevGrid is the INDEX book. A quoted .csv literal in this comment
+//    was picked up by tools/seed_freshness_audit.py as a phantom seed.)
 // =============================================================================
 template<class Traits>
 class AtrMeanRevGridEngine {

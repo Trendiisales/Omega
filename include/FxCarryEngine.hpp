@@ -39,7 +39,9 @@
 //    g_fx_carry_usdjpy.shadow_mode = true;
 //    g_fx_carry_usdjpy.p.carry_floor_pct = 0.75;
 //    g_fx_carry_usdjpy.enabled = true;
-//    g_fx_carry_usdjpy.seed_from_d1_csv("phase1/signal_discovery/warmup_USDJPY_D1.csv");
+//    g_fx_carry_usdjpy.seed_from_d1_csv(<phase1/signal_discovery warm-seed D1 path>);
+//    (S-2026-06-29: example path de-quoted -- FX removed, "no FX"; a quoted .csv
+//     literal here was picked up by tools/seed_freshness_audit.py as a phantom seed.)
 //    // tick path
 //    g_fx_carry_usdjpy.on_tick(bid, ask, now_ms, ca_on_close);
 // =============================================================================

@@ -34,7 +34,9 @@
 //    static omega::FxCrossRevEngine g_fx_xrev_eurgbp("EURGBP");
 //    g_fx_xrev_eurgbp.shadow_mode = true; g_fx_xrev_eurgbp.enabled = true;
 //    g_fx_xrev_eurgbp.p.z_window = 60; g_fx_xrev_eurgbp.p.z_in = 2.0;
-//    g_fx_xrev_eurgbp.seed_from_d1_csv("phase1/signal_discovery/warmup_EURGBP_D1.csv");
+//    g_fx_xrev_eurgbp.seed_from_d1_csv(<phase1/signal_discovery warm-seed D1 path>);
+//    (S-2026-06-29: example path de-quoted -- FX removed, "no FX"; a quoted .csv
+//     literal here was picked up by tools/seed_freshness_audit.py as a phantom seed.)
 //    g_fx_xrev_eurgbp.on_tick(bid, ask, now_ms, ca_on_close);
 // =============================================================================
 #include <cmath>
