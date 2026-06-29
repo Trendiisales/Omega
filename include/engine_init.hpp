@@ -4635,6 +4635,19 @@ static void init_engines(const std::string& cfg_path)
         g_connors_nas.init();
         g_connors_nas.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
         g_engine_heartbeat.register_engine("ConnorsRSI2", g_connors_nas.enabled, 3600, 0, 24);
+        // S-2026-06-29: register the 9 enabled-but-no-pulse engines surfaced by
+        //   tools/engine_contract_check.py (ENABLED+NO_PULSE). Names MUST match
+        //   the pulse() calls just added in tick_gold.hpp / tick_indices.hpp.
+        //   cadence 3600s + session 0-24 mirrors the ConnorsRSI2/calendar pattern.
+        g_engine_heartbeat.register_engine("TrendRider",      g_trend_rider.enabled,        3600, 0, 24);
+        g_engine_heartbeat.register_engine("Rider4H",         g_rider_4h.enabled,           3600, 0, 24);
+        g_engine_heartbeat.register_engine("RiderD1",         g_rider_d1.enabled,           3600, 0, 24);
+        g_engine_heartbeat.register_engine("SpxTurtleD1",     g_spx_turtle_d1.enabled,      3600, 0, 24);
+        g_engine_heartbeat.register_engine("Dj30TurtleD1",    g_dj30_turtle_d1.enabled,     3600, 0, 24);
+        g_engine_heartbeat.register_engine("ConnorsNas",      g_connors_nas.enabled,        3600, 0, 24);
+        g_engine_heartbeat.register_engine("GoldVolbrkM30",   g_gold_volbrk_m30.enabled,    3600, 0, 24);
+        g_engine_heartbeat.register_engine("IdxBearShortNas", g_idx_bear_short_nas.enabled, 3600, 0, 24);
+        g_engine_heartbeat.register_engine("IdxBearShortSp",  g_idx_bear_short_sp.enabled,  3600, 0, 24);
         printf("[OMEGA-INIT] ConnorsRSI2 NAS100: shadow=%d enabled=%d dip-buy close>SMA200 & RSI2<10, exit close>SMA5/maxhold10 scalein=%d\n",
                (int)g_connors_nas.shadow_mode, (int)g_connors_nas.enabled, (int)g_connors_nas.SCALEIN);
         fflush(stdout);
