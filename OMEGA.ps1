@@ -877,6 +877,39 @@ function Invoke-Restart {
     return 0
 }
 
+# S-2026-06-29: run a python step with a HARD timeout so a dead IBKR connection (data farms
+# OFF on weekends / gateway down) cannot hang the whole deploy at [2b]. ROOT CAUSE of the
+# 11min+ "down" reports: rebuild_warmups.py / refresh_warmup_seeds.py connect to IB Gateway and
+# block forever when the farms are off, stalling the deploy BEFORE the build. On timeout we kill
+# the py process TREE (py.exe launcher spawns python.exe child) and return $false so the caller
+# falls back to the committed git-snapshot seeds -- the intended NON-FATAL behavior.
+function Invoke-PyStepWithTimeout {
+    param([string]$ScriptAndArgs, [int]$TimeoutSec, [string]$Label, [string]$WorkDir)
+    $out = [System.IO.Path]::GetTempFileName()
+    $err = "$out.err"
+    $proc = $null
+    try {
+        $proc = Start-Process -FilePath "py" -ArgumentList $ScriptAndArgs -WorkingDirectory $WorkDir `
+                  -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err -ErrorAction Stop
+    } catch {
+        Write-Host "  [WARN] $Label could not start: $_ -- keeping prior seeds" -ForegroundColor Yellow
+        Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+    if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
+        Write-Host "  [WARN] $Label exceeded ${TimeoutSec}s (IBKR 4001 / data farms down?) -- killing, keeping git-snapshot seeds" -ForegroundColor Yellow
+        & taskkill /T /F /PID $proc.Id 2>&1 | Out-Null
+        Start-Sleep -Milliseconds 300
+        Get-Content $out, $err -ErrorAction SilentlyContinue | Select-Object -Last 4 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+    Get-Content $out, $err -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    $code = $proc.ExitCode
+    Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
+    return ($code -eq 0)
+}
+
 # ==============================================================================
 # Subcommand: deploy  (full pipeline -- 12 steps)
 # ==============================================================================
@@ -1035,9 +1068,8 @@ function Invoke-Deploy {
     Write-Host "[2b/12] Refreshing warm-seed CSVs from l2_ticks..." -ForegroundColor Yellow
     Push-Location $OmegaDir
     try {
-        py scripts\rebuild_warmups.py 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  [WARN] rebuild_warmups exit=$LASTEXITCODE -- keeping git snapshot" -ForegroundColor Yellow
+        if (-not (Invoke-PyStepWithTimeout "scripts\rebuild_warmups.py" 90 "rebuild_warmups" $OmegaDir)) {
+            Write-Host "  [WARN] rebuild_warmups failed/timed out -- keeping git snapshot" -ForegroundColor Yellow
         }
         # S-2026-06-23: comprehensive seed refresh from CURRENT IBKR data (gold via MGC, indices
         # via index futures, H4 aggregated from H1). The git reset above restored the COMMITTED
@@ -1045,9 +1077,8 @@ function Invoke-Deploy {
         # from fresh seeds, not stale -- closes the deploy-reverts-seeds gap that blinded the
         # gold gates. NON-FATAL (the trade-direction gates also self-fresh/persist regardless);
         # any miss just leaves the prior seeds + is flagged by VERIFY_STARTUP CHECK 18.
-        py tools\refresh_warmup_seeds.py 4001 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  [WARN] refresh_warmup_seeds exit=$LASTEXITCODE -- keeping prior seeds" -ForegroundColor Yellow
+        if (-not (Invoke-PyStepWithTimeout "tools\refresh_warmup_seeds.py 4001" 150 "refresh_warmup_seeds" $OmegaDir)) {
+            Write-Host "  [WARN] refresh_warmup_seeds failed/timed out -- keeping prior seeds" -ForegroundColor Yellow
         }
         # S-2026-06-24: the refresh above is fail-soft (needs IBKR 4001 live; if it no-ops, seeds
         # stay stale SILENTLY -- exactly how 25 stale seeds survived "all the fixes"). Gate it: run
