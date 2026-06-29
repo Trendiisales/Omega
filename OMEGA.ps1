@@ -909,6 +909,12 @@ function Invoke-PyStepWithTimeout {
     try {
         $proc = Start-Process -FilePath "py" -ArgumentList $ScriptAndArgs -WorkingDirectory $WorkDir `
                   -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err -ErrorAction Stop
+        # CRITICAL (2026-06-29): cache the process Handle IMMEDIATELY. A Start-Process -PassThru
+        # object does NOT populate .ExitCode after WaitForExit() unless its Handle was read while
+        # the process was alive -- it comes back $null, so ($code -eq 0) was ALWAYS $false. That
+        # silently made this function ALWAYS return $false: the [2b] audit-skip never fired (every
+        # deploy paid the ~300s reseed) and the [2c] fail-closed gate ALWAYS aborted. Proven on VPS.
+        $null = $proc.Handle
     } catch {
         Write-Host "  [WARN] $Label could not start: $_ -- keeping prior seeds" -ForegroundColor Yellow
         Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
