@@ -66,6 +66,18 @@ public:
     int    MAX_HOLD_BARS= 240;    // time stop (~10 trading days)
     int    COOLDOWN_BARS= 24;     // bars to wait after an exit
 
+    // --- EMA200-slope regime gate (S-2026-06-30, sweepable, default OFF) ---
+    // A capitulation dip-buyer fires BELOW a rising EMA, so volbrk's "price >
+    // EMA200" gate would zero every entry. Instead gate on the EMA200 SLOPE:
+    // permit dip-buys while the long trend is flat/rising (bull/chop), block
+    // them when EMA200 is falling (confirmed bear) -> kills falling-knife bleed
+    // without neutering the V-reversal edge. TREND_GATE=false reproduces the
+    // pre-gate deploy exactly (no behaviour change until a sweep proves it).
+    bool   TREND_GATE     = false;
+    int    TREND_EMA_N    = 200;   // EMA period (H1 bars)
+    int    TREND_SLOPE_LB = 200;   // bars back to measure the slope
+    double TREND_SLOPE_MIN= 0.0;   // block if (ema_now-ema_lb)/ema_lb < this
+
     double COST_COVER_PTS = 0.40; // RT cost cover (IBKR gold ~0.37)
     static constexpr double USD_PER_PT_LOT = 100.0;
     static constexpr double RISK_DOLLARS   = 50.0;
@@ -152,6 +164,12 @@ private:
         // true range vs prior close
         double tr = h - l;
         if (!c_.empty()) tr = std::max(tr, std::max(std::fabs(h-c_.back()), std::fabs(l-c_.back())));
+        // EMA200 (regime-slope gate input). Maintained always; only consulted
+        // when TREND_GATE is on. Seeded by warm-restart replay like the bars.
+        if (!ema_t_init_) { ema_t_ = c; ema_t_init_ = true; }
+        else { const double a = 2.0 / (TREND_EMA_N + 1); ema_t_ = a * c + (1.0 - a) * ema_t_; }
+        ema_hist_.push_back(ema_t_);
+        while ((int)ema_hist_.size() > TREND_SLOPE_LB + 8) ema_hist_.pop_front();
         o_.push_back(o); h_.push_back(h); l_.push_back(l); c_.push_back(c); ts_.push_back(ts);
         // rolling-mean ATR
         tr_.push_back(tr); tr_sum_ += tr;
@@ -162,6 +180,8 @@ private:
         ++bar_seq_;
     }
     std::deque<double> tr_; double tr_sum_ = 0.0;
+    double ema_t_ = 0.0; bool ema_t_init_ = false;
+    std::deque<double> ema_hist_;
 
     void _on_bar_close(double spread, bool can_enter, const CloseCallback* ext_close) {
         const int N = (int)c_.size();
@@ -179,6 +199,16 @@ private:
         // when real-yields-rip macro is hostile (MacroGoldGate). Fail-safe (false)
         // when the gate feed is missing/stale, so this can only ADD protection.
         if (omega::gold_regime().long_blocked()) return;
+
+        // EMA200-slope regime gate (default OFF). Block the dip-buy when the
+        // long trend is falling (confirmed bear) -- backtest-driven bear
+        // protection that, unlike a price-position gate, still permits the
+        // V-reversal in bull/chop. See param block above.
+        if (TREND_GATE && (int)ema_hist_.size() > TREND_SLOPE_LB) {
+            const double e_now = ema_t_;
+            const double e_lb  = ema_hist_[ema_hist_.size() - 1 - TREND_SLOPE_LB];
+            if (e_lb > 0.0 && (e_now - e_lb) / e_lb < TREND_SLOPE_MIN) return;
+        }
 
         // ---- MONITOR: rolling drawdown depth in ATR ----
         double peakH = 0.0;

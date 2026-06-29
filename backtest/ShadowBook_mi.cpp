@@ -347,6 +347,10 @@ static void init_all() {
     // ---- GoldPanicBounce (engine_init ~4711) ----
     g_gold_panic_bounce.shadow_mode=false; g_gold_panic_bounce.enabled=true;
     g_gold_panic_bounce.DROP_K=8.0; g_gold_panic_bounce.DD_LOOKBACK=250; g_gold_panic_bounce.TRAIL_ATR=4.5;
+    // EMA200-slope regime-gate sweep hooks (default OFF => baseline reproduces)
+    if (const char* g = std::getenv("GPB_TREND_GATE"))  g_gold_panic_bounce.TREND_GATE     = (std::atoi(g)!=0);
+    if (const char* s = std::getenv("GPB_SLOPE_LB"))    g_gold_panic_bounce.TREND_SLOPE_LB = std::atoi(s);
+    if (const char* m = std::getenv("GPB_SLOPE_MIN"))   g_gold_panic_bounce.TREND_SLOPE_MIN= std::atof(m);
     g_gold_panic_bounce.on_close_cb = tagCB("GoldPanicBounce");
     g_gold_panic_bounce.seed_from_h1_csv(SEED("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
 

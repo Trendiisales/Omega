@@ -4204,6 +4204,14 @@ static void init_engines(const std::string& cfg_path)
         // is the edge; a velocity/cut gate HURTS gold per the 2026-06-12 sweep).
         g_gold_panic_bounce.shadow_mode = true;
         g_gold_panic_bounce.enabled     = true;
+        // S-2026-06-30 EMA200-slope regime gate (faithful BT, both regimes):
+        // block the dip-buy while EMA200 is falling (confirmed bear). gate_lb200
+        // won the sweep outright -- bear 2022 bleed -6.14->-0.69 (-89%), bull 6mo
+        // PF 2.49->4.44 keeping 95% of profit (cuts 9 losing pullback dips). A
+        // slope gate, not a price-position gate, so it preserves the V-reversal.
+        g_gold_panic_bounce.TREND_GATE      = true;
+        g_gold_panic_bounce.TREND_SLOPE_LB  = 200;
+        g_gold_panic_bounce.TREND_SLOPE_MIN = 0.0;
         g_gold_panic_bounce.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
         g_gold_panic_bounce.seed_from_h1_csv(
             omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
