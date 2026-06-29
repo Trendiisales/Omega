@@ -116,6 +116,20 @@ param(
     # Added S-2026-06-12e after operator flagged 6-7 min deploy downtime.
     [switch]$ColdStop,
 
+    # -SkipSeed / -ForceSeed / -SeedMaxAgeHours (S-2026-06-29 DEPLOY-SPEED):
+    # the [2b] warm-seed refresh (rebuild from l2_ticks + IBKR refresh + audit)
+    # runs EVERY deploy and can block up to 300s reaching IBKR 4001 -- pure dead
+    # time for a code-only deploy (GUI/engine logic that doesn't touch seeds).
+    # New default: AUTO-SKIP unless a reseed is actually needed. "Needed" =
+    #   (a) the pulled diff touches seed inputs (phase1/signal_discovery/warmup_*,
+    #       engine_seed_helpers.hpp, *Engine.hpp), OR
+    #   (b) logs/SEED_ALERT.txt exists (a prior deploy flagged stale seeds), OR
+    #   (c) the last successful seed-refresh stamp is older than -SeedMaxAgeHours.
+    # -ForceSeed always reseeds; -SkipSeed never reseeds (override the auto-check).
+    [switch]$ForceSeed,
+    [switch]$SkipSeed,
+    [int]   $SeedMaxAgeHours = 12,
+
     # ----- watchdog subcommand parameters -----
     [int]   $StaleThresholdSec      = 60,
     [int]   $L2StaleThresholdSec    = 120,
@@ -1065,30 +1079,67 @@ function Invoke-Deploy {
     #         NON-FATAL: any failure/skip just leaves the git snapshot in place.
     # --------------------------------------------------------------------------
     Lap "before [2b] seed-refresh"
-    Write-Host "[2b/12] Refreshing warm-seed CSVs from l2_ticks..." -ForegroundColor Yellow
+    Write-Host "[2b/12] Warm-seed refresh (auto-gated)..." -ForegroundColor Yellow
     Push-Location $OmegaDir
     try {
-        # S-2026-06-29: FOLDED rebuild_warmups + refresh_warmup_seeds + seed_freshness_audit into ONE
-        # script (tools/seed_refresh.py). It runs all three phases in order: [1] rebuild from l2_ticks,
-        # [2] IBKR refresh (connect-times-out + SKIPS gracefully when the gateway/data-farms are down
-        # -> NO MORE deploy hang, the root cause of 11min+ stalls), [3] freshness audit which SETS the
-        # exit code (0=all enabled seeds fresh, nonzero=stale-or-timed-out). Invoke-PyStepWithTimeout
-        # returns $true only on exit 0, so it maps straight to the clean/alert branches below. Outer
-        # 300s timeout is a belt+braces backstop (the script's internal connect/per-pull timeouts are
-        # the primary guard).
-        if (Invoke-PyStepWithTimeout "tools\seed_refresh.py --port 4001 --repo $OmegaDir" 300 "seed_refresh" $OmegaDir) {
-            Write-Host "  [OK] seed_refresh: rebuild + IBKR-refresh + audit clean (enabled engines fresh)" -ForegroundColor Green
-            Remove-Item -Path (Join-Path $OmegaDir "logs\SEED_ALERT.txt") -ErrorAction SilentlyContinue
+        # S-2026-06-29 DEPLOY-SPEED: decide whether a reseed is actually needed before
+        # paying the up-to-300s [2b] cost. See the -SkipSeed/-ForceSeed/-SeedMaxAgeHours
+        # param block. Reseed when: diff touches seed inputs, OR a prior SEED_ALERT exists,
+        # OR the last-successful-seed stamp is older than -SeedMaxAgeHours. -ForceSeed/-SkipSeed
+        # override the auto-check. Skipping leaves the git-restored committed warmup CSVs in place.
+        $seedStamp   = Join-Path $OmegaDir "logs\last_seed_refresh.stamp"
+        $seedAlert   = Join-Path $OmegaDir "logs\SEED_ALERT.txt"
+        $doReseed    = $false
+        $reseedWhy   = ""
+        if ($SkipSeed) {
+            $reseedWhy = "-SkipSeed set -- never reseed"
+        } elseif ($ForceSeed) {
+            $doReseed = $true; $reseedWhy = "-ForceSeed set"
         } else {
-            $alert = "[P0-SEED] seed_refresh: enabled-engine warm-seed(s) STILL STALE (or refresh timed out) -- engine/gate booting on a price view detached from reality. Needs IBKR 4001 live; re-run: py tools\seed_refresh.py --port 4001"
-            Write-Host ""
-            Write-Host "  ============================================================" -ForegroundColor Red
-            Write-Host "  $alert" -ForegroundColor Red
-            Write-Host "  ============================================================" -ForegroundColor Red
-            $alert | Out-File -FilePath (Join-Path $OmegaDir "logs\SEED_ALERT.txt") -Encoding utf8
+            # (a) diff touches seed inputs
+            $seedDiff = @()
+            if ($prevHead) {
+                $seedDiff = @(git diff --name-only $prevHead HEAD 2>$null |
+                    Where-Object { $_ -match '^phase1/signal_discovery/|engine_seed_helpers\.hpp|Engine\.hpp$|warmup_.*\.csv$' })
+            }
+            if ($seedDiff.Count -gt 0) {
+                $doReseed = $true; $reseedWhy = "diff touches $($seedDiff.Count) seed-input file(s)"
+            } elseif (Test-Path $seedAlert) {
+                $doReseed = $true; $reseedWhy = "prior SEED_ALERT.txt present (last deploy flagged stale)"
+            } elseif (-not (Test-Path $seedStamp)) {
+                $doReseed = $true; $reseedWhy = "no last-seed stamp (never seeded / first deploy)"
+            } else {
+                $ageH = ((Get-Date) - (Get-Item $seedStamp).LastWriteTime).TotalHours
+                if ($ageH -ge $SeedMaxAgeHours) {
+                    $doReseed = $true; $reseedWhy = ("last seed {0:N1}h ago >= {1}h" -f $ageH, $SeedMaxAgeHours)
+                } else {
+                    $reseedWhy = ("last seed {0:N1}h ago < {1}h -- fresh" -f $ageH, $SeedMaxAgeHours)
+                }
+            }
+        }
+
+        if (-not $doReseed) {
+            Write-Host "  [skip] seed-refresh skipped ($reseedWhy) -- saves up to ~300s. -ForceSeed to override." -ForegroundColor Cyan
+        } else {
+            Write-Host "  [reseed] $reseedWhy" -ForegroundColor Cyan
+            # tools/seed_refresh.py runs: [1] rebuild from l2_ticks, [2] IBKR refresh (connect-times-out +
+            # SKIPS gracefully when the gateway is down -> no hang), [3] freshness audit (sets exit code).
+            # Invoke-PyStepWithTimeout returns $true only on exit 0. Outer 300s is a belt+braces backstop.
+            if (Invoke-PyStepWithTimeout "tools\seed_refresh.py --port 4001 --repo $OmegaDir" 300 "seed_refresh" $OmegaDir) {
+                Write-Host "  [OK] seed_refresh: rebuild + IBKR-refresh + audit clean (enabled engines fresh)" -ForegroundColor Green
+                Remove-Item -Path $seedAlert -ErrorAction SilentlyContinue
+                (Get-Date).ToString("o") | Out-File -FilePath $seedStamp -Encoding utf8  # stamp success -> next deploy can auto-skip
+            } else {
+                $alert = "[P0-SEED] seed_refresh: enabled-engine warm-seed(s) STILL STALE (or refresh timed out) -- engine/gate booting on a price view detached from reality. Needs IBKR 4001 live; re-run: py tools\seed_refresh.py --port 4001"
+                Write-Host ""
+                Write-Host "  ============================================================" -ForegroundColor Red
+                Write-Host "  $alert" -ForegroundColor Red
+                Write-Host "  ============================================================" -ForegroundColor Red
+                $alert | Out-File -FilePath $seedAlert -Encoding utf8
+            }
         }
     } catch {
-        Write-Host "  [WARN] rebuild_warmups failed: $_ -- keeping git snapshot" -ForegroundColor Yellow
+        Write-Host "  [WARN] seed-refresh gate failed: $_ -- keeping git snapshot" -ForegroundColor Yellow
     } finally {
         Pop-Location
     }

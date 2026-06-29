@@ -7,11 +7,19 @@
 # binary. This wrapper launches the deploy DETACHED on the VPS (survives
 # disconnect), then polls + verifies the running git hash == origin/main.
 #
+# S-2026-06-29 DEPLOY-SPEED: added a LOUD no-op assertion. A prior silent failure
+# (detached Start-Process launched a PID that died instantly, no log written) was
+# only discovered after the 12-min poll timed out with stale hashes. The launch
+# now returns the real PID + log path; we assert within ~10s that the log exists
+# and the deploy is actually progressing, and ABORT LOUDLY otherwise instead of
+# polling for nothing. The single source of truth for the log filename is the
+# powershell-side Get-Date (one call), echoed back to us -- no bash/ps timestamp
+# split that could print a name that never matches the real file.
+#
 # Usage:  bash tools/omega_deploy.sh         # push current main, then deploy
 #         bash tools/omega_deploy.sh --no-push
 set -euo pipefail
 HOST=omega-vps
-LOG="C:/Omega/logs/deploy_$(date +%Y%m%d_%H%M%S).log"
 
 if [[ "${1:-}" != "--no-push" ]]; then
   echo "[deploy] pushing origin/main..."
@@ -24,7 +32,37 @@ echo "[deploy] launching DETACHED deploy on $HOST (survives disconnect)..."
 # NOTE: log path + redirect MUST be powershell-side with single backslashes.
 # A bash-interpolated forward-slash path (C:/Omega/...) mangles through
 # cmd->powershell->Start-Process and the detached deploy silently no-ops.
-ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$lg='C:\\Omega\\logs\\deploy_'+(Get-Date -Format yyyyMMdd_HHmmss)+'.log'; \$p=Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',('cd C:\\Omega; .\\OMEGA.ps1 deploy *> '+\$lg) -WindowStyle Hidden -PassThru; Write-Output ('DEPLOY_PID='+\$p.Id+' log='+\$lg)\""
+# The child's stdout/stderr are redirected (*>) into the log so a crash in
+# OMEGA.ps1 itself is captured, not lost to the hidden window.
+LAUNCH=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$lg='C:\\Omega\\logs\\deploy_'+(Get-Date -Format yyyyMMdd_HHmmss)+'.log'; \$p=Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',('cd C:\\Omega; .\\OMEGA.ps1 deploy *> '+\$lg) -WindowStyle Hidden -PassThru; Write-Output ('DEPLOY_PID='+\$p.Id+' log='+\$lg)\"")
+echo "  $LAUNCH"
+PID=$(echo "$LAUNCH" | sed -n 's/.*DEPLOY_PID=\([0-9]*\).*/\1/p')
+LOG=$(echo "$LAUNCH" | sed -n 's/.* log=\(.*[Ll]og\).*/\1/p')
+if [[ -z "$PID" || -z "$LOG" ]]; then
+  echo "[deploy][FATAL] detached launch returned no PID/log -- the deploy did NOT start." >&2
+  echo "                raw launch output: $LAUNCH" >&2
+  exit 1
+fi
+
+# LOUD no-op assertion: within ~10s the child must (a) still be alive AND
+# (b) have written its log. A dead PID with an empty/absent log = the deploy
+# died on launch -> abort now with whatever the log captured, don't poll 12 min.
+echo "[deploy] asserting deploy actually started (PID=$PID)..."
+sleep 10
+LOGWIN="${LOG//\\//}"   # C:\Omega\... -> C:/Omega/... for display only
+ALIVE=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$p=Get-Process -Id $PID -ErrorAction SilentlyContinue; \$exists=Test-Path '$LOG'; \$len=if(\$exists){(Get-Item '$LOG').Length}else{0}; Write-Output ('ALIVE='+([bool]\$p)+' LOGEXISTS='+\$exists+' LOGLEN='+\$len)\"")
+echo "  $ALIVE"
+if echo "$ALIVE" | grep -q 'ALIVE=False'; then
+  if echo "$ALIVE" | grep -q 'LOGLEN=0'; then
+    echo "[deploy][FATAL] PID $PID is gone AND log is empty -- deploy died on launch (silent no-op)." >&2
+    echo "                inspect: $LOGWIN" >&2
+    ssh "$HOST" "powershell -NoProfile -Command \"if(Test-Path '$LOG'){Get-Content '$LOG' -Tail 40}else{Write-Output '(no log file)'}\"" >&2 || true
+    exit 1
+  fi
+  # PID gone but log has content -> deploy may have finished very fast (skip-seed +
+  # no-op build). Fall through to hash verify, which is the real arbiter.
+  echo "  [note] PID exited but log has content -- treating as fast-finish; verifying hashes."
+fi
 
 echo "[deploy] polling for service Running + new binary (up to ~12 min)..."
 ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$d=(Get-Date).AddSeconds(700); while((Get-Date) -lt \$d){ \$svc=(Get-Service Omega -ErrorAction SilentlyContinue).Status; \$hash=(git -C C:\\Omega rev-parse --short HEAD); if(\$svc -eq 'Running' -and \$hash -eq '$WANT'){ break }; Start-Sleep 20 }\""
