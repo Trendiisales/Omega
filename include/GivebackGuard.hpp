@@ -20,10 +20,12 @@
 // Wire: once per 250ms in on_tick, call g_giveback_guard.check(now_s) alongside the catastrophe net.
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
 #include "OpenPositionRegistry.hpp"
+#include "RegimeState.hpp"
 
 namespace omega {
 
@@ -65,6 +67,51 @@ public:
                    pk, unr, pk - unr, closed ? "CLIPPED (closed)" : "NO-CLOSER (engine has no registered closer)");
             fflush(stdout);
             if (closed) { ++hit; peak_.erase(key); peak_ts_.erase(key); last_log_.erase(key); }
+        }
+        return hit;
+    }
+
+    // ---- CONFIRMED-REVERSAL safe-stop (the ONE sanctioned real-engine close) ----------------------
+    // EDGE-SAFE BY WHEN IT FIRES, not by independence: it closes a position ONLY when the trend it
+    // rode is CONFIRMED DEAD -> the edge is already gone, so closing forfeits nothing. 2-of-2:
+    //   (1) trade WAS armed (peak >= gate_usd) and has REVERSED THROUGH to a loss (unr <= reversal_loss_usd)
+    //   (2) RegimeState confirms SUSTAINED against the position (long_blocked for longs / short_blocked
+    //       for shorts) -- a slow high-conviction brain that a pullback does NOT trip.
+    // A normal pullback trips NEITHER. DEFAULT OFF + per-engine opt-in: arm an engine ONLY after a
+    // backtest shows net >= ride-wide for it. Backtest (tools reversal_stop_bt) showed the turtle
+    // engines already exit-on-turn -> reversal-stop is redundant/slightly-negative -> armed NOWHERE
+    // by default. reversal_armed_engines stays empty until a ride-forever engine backtests positive.
+    bool   reversal_enabled    = false;            // master switch
+    double reversal_loss_usd   = -10.0;            // "reversed through to a loss" threshold
+    std::unordered_set<std::string> reversal_armed_engines;   // per-engine opt-in (backtest-approved only)
+
+    int reversal_stop_check(int64_t now_s) {
+        if (!reversal_enabled || reversal_armed_engines.empty()) return 0;
+        int hit = 0;
+        for (const auto& p : g_open_positions.snapshot_all()) {
+            if (p.size <= 0.0) continue;
+            if (reversal_armed_engines.find(p.engine) == reversal_armed_engines.end()) continue;  // only armed engines
+            const double pk = std::max(p.mfe, p.unrealized_pnl);
+            const bool was_armed = pk >= gate_usd;                    // trade WAS winning
+            const bool reversed  = p.unrealized_pnl <= reversal_loss_usd;  // now reversed through to a loss
+            if (!(was_armed && reversed)) continue;
+            const bool is_long = (p.side == "LONG");
+            omega::RegimeState& rs =
+                (p.symbol.find("XAU") != std::string::npos || p.symbol.find("GOLD") != std::string::npos)
+                ? omega::gold_regime() : omega::index_market_regime();
+            if (!rs.warm()) continue;                                 // regime brain not ready -> no action
+            const bool regime_against = is_long ? rs.long_blocked() : rs.short_blocked();
+            if (!regime_against) continue;                            // 2-of-2 not met -> ride on
+            const std::string key = p.symbol + "|" + p.engine;
+            int64_t& last = last_log_[key];
+            if ((now_s - last) < log_every_s) continue;
+            last = now_s;
+            const bool closed = g_open_positions.close_matching(p, "REVERSAL_STOP");
+            printf("[REVERSAL-STOP] %s/%s %s CONFIRMED-REVERSAL (peak=$%.0f unr=$%.0f + regime-against) -> %s\n",
+                   p.symbol.c_str(), p.engine.c_str(), p.side.c_str(), pk, p.unrealized_pnl,
+                   closed ? "CLOSED" : "NO-CLOSER");
+            fflush(stdout);
+            if (closed) { ++hit; peak_.erase(key); peak_ts_.erase(key); }
         }
         return hit;
     }

@@ -107,11 +107,56 @@ def check_effect_reconcile():
               if ok else f"*** {len(misses)} UNCLIPPED GIVEBACK(S): " + "; ".join(misses[:4]) + " ***")
     record("[4] EFFECT-RECONCILE", ok, detail)
 
+# ---- [5] IN-BINARY CLOSE-PATH WIRED (guards CAN actually close) ---------------
+def check_binary_close_path():
+    # In-binary guards (AccountingGuard runaway-net, GivebackGuard reversal-stop) can only CLOSE a
+    # position if a closer is REGISTERED for it. 0 registered = guards detect but log NO-CLOSER (the
+    # catastrophe-net gap). Verify the close path is wired: register_closer/wire_livepos/wire_cross
+    # calls exist AND the guards use close_matching. (Config-level: the companion checks 1-4 are the
+    # runtime/effect layer; this asserts the binary's close PLUMBING is present.)
+    repo = "/Users/jo/Omega"
+    def grep_count(path, pat):
+        try: return open(path).read().count(pat)
+        except Exception: return 0
+    pp = repo + "/include/PositionPersistence.hpp"
+    closers = grep_count(pp, "register_closer")
+    uses_close = grep_count(repo + "/include/GivebackGuard.hpp", "close_matching") > 0 and \
+                 grep_count(repo + "/include/AccountingGuard.hpp", "close_matching") > 0
+    ok = closers > 0 and uses_close
+    detail = f"register_closer call-sites={closers}; guards use close_matching={uses_close}"
+    if closers == 0: detail += "  *** NO closers wired -- guards can detect but NOT close ***"
+    record("[5] BINARY-CLOSE-PATH", ok, detail)
+
+# ---- [6] COMPANION INPUT FRESHNESS (no stale-feed blind spot) -----------------
+def check_input_freshness():
+    # The companion can be ALIVE (check 1) yet fed STALE input -> tracks a wrong/old peak. That is
+    # EXACTLY how the $222 gold peak was missed (VPS telemetry unreachable). Assert its inputs are
+    # fresh: crypto state.json recent AND the companion's last cycles weren't telemetry-skips.
+    probs = []
+    crypto = os.path.join(HOME, "IBKRCrypto/backtest/data/ibkrcrypto/state.json")
+    if os.path.exists(crypto):
+        age = (time.time() - os.path.getmtime(crypto)) / 60.0
+        if age > 30: probs.append(f"crypto state {age:.0f}min stale")
+    else:
+        probs.append("crypto state missing")
+    log = "/tmp/giveback_saver.log"
+    if os.path.exists(log):
+        try:
+            tail = subprocess.run(["tail","-15",log], capture_output=True, text=True).stdout
+            if "telemetry unreachable" in tail or "telemetry quiet" in tail:
+                probs.append("omega telemetry unreachable in recent companion runs (stale-input -> peaks missed)")
+        except Exception: pass
+    ok = (len(probs) == 0)
+    detail = "companion inputs fresh (crypto + omega telemetry)" if ok else "*** " + "; ".join(probs) + " ***"
+    record("[6] INPUT-FRESHNESS", ok, detail)
+
 def main():
     check_scheduled_alive()
     check_real_not_shadow()
     check_fires_on_trigger()
     check_effect_reconcile()
+    check_binary_close_path()
+    check_input_freshness()
     overall = all(ok for _,ok,_ in results)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"PROTECTION SELF-TEST {'GREEN -- all protection FUNCTIONAL' if overall else 'RED -- PROTECTION NOT WORKING'}  ({ts})"]
