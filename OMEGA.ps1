@@ -1047,13 +1047,34 @@ function Invoke-Deploy {
         # omega-terminal didn't change in this pull.
         $prevHead = (git rev-parse HEAD 2>$null)
 
+        # DEPLOY-SPEED (S-2026-06-29): the daily OmegaSeedRefresh task keeps the WORKING-TREE
+        # warmup CSVs fresh, but `git reset --hard` below reverts them to the static (often-stale)
+        # COMMITTED corpus -> [2b] would then ALWAYS reseed (~300s) on EVERY deploy (the skip never
+        # fires). Back the working-tree seeds up now; after the reset, tools/preserve_fresh_seeds.py
+        # copies back any whose LAST BAR is newer than the committed file. A real committed seed
+        # update (the newer one) is left untouched. [2c] re-audits afterward, so this can only ever
+        # make seeds FRESHER, never ship stale. Backup lives under logs\ (no-space path for py args).
+        $seedBackup = Join-Path $OmegaDir ("logs\_seedbak_" + [Guid]::NewGuid().ToString("N"))
+        try {
+            New-Item -ItemType Directory -Force -Path (Join-Path $seedBackup "phase1\signal_discovery"), (Join-Path $seedBackup "data") | Out-Null
+            Copy-Item "phase1\signal_discovery\*.csv" (Join-Path $seedBackup "phase1\signal_discovery") -ErrorAction SilentlyContinue
+            Copy-Item "data\mgc_h1_hist.csv","data\mgc_30m_hist.csv" (Join-Path $seedBackup "data") -ErrorAction SilentlyContinue
+        } catch { Write-Host "  [WARN] seed backup before reset failed: $_" -ForegroundColor Yellow }
+
         git reset --hard "origin/$Branch" 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [FATAL] git reset --hard failed (exit=$LASTEXITCODE)" -ForegroundColor Red
+            Remove-Item -Recurse -Force $seedBackup -ErrorAction SilentlyContinue
             Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
             Pop-Location
             return 1
         }
+
+        # restore working-tree seeds fresher than the just-reset committed corpus -> [2b] can SKIP
+        try {
+            Invoke-PyStepWithTimeout "tools\preserve_fresh_seeds.py --repo $OmegaDir --backup $seedBackup" 60 "preserve_fresh_seeds" $OmegaDir | Out-Null
+        } catch { Write-Host "  [WARN] preserve_fresh_seeds failed: $_ -- [2b] will reseed if stale" -ForegroundColor Yellow }
+        Remove-Item -Recurse -Force $seedBackup -ErrorAction SilentlyContinue
     } finally {
         Pop-Location
     }
@@ -1190,7 +1211,15 @@ function Invoke-Deploy {
             $shortHash = $Matches[1]
             $fullHash  = (git rev-parse $shortHash 2>$null).Trim()
             $filesChanged = (git show --name-only --format="" $fullHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
-            $nonLogFiles  = $filesChanged | Where-Object { -not $_.StartsWith("logs/") }
+            # Treat seed-data-only commits like log-only commits: they don't change the binary's
+            # CODE, so they must NOT bump SOURCE_HASH (which gates the rebuild + is compared against
+            # HEAD in the drift check). A future auto-committed seed refresh would otherwise look
+            # like a source change. Excludes logs/, the warmup corpus, and the mgc_*_hist seeds.
+            $nonLogFiles  = $filesChanged | Where-Object {
+                (-not $_.StartsWith("logs/")) -and
+                (-not ($_ -match '^phase1/signal_discovery/.*\.csv$')) -and
+                (-not ($_ -match '^data/mgc_(h1|30m)_hist\.csv$'))
+            }
             if ($nonLogFiles) {
                 $sourceHash      = $fullHash
                 $sourceHashShort = $shortHash
