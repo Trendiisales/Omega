@@ -488,8 +488,10 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  var rt=safe(j.realized_total),be=document.getElementById('compbank');if(be){be.textContent=fmt$(rt);be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');var br=j.by_reason||{},tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)';Object.keys(br).forEach(function(k){tip+='\n'+k+': '+fmt$(safe(br[k]));});tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
  /* fold companion (paper) buckets into the headline totals -- operator wants it counted; paper portion stays visibly tagged so the real-broker number is never silently overstated */
  window._comptot={today:safe(j.realized_today),d7:safe(j.realized_7d),d30:safe(j.realized_30d),all:rt};
- if(typeof updDayPnl==='function'&&ROWS&&ROWS.length)updDayPnl();
- if(typeof drawEquity==='function'&&ROWS&&ROWS.length)drawEquity();
+ /* call unconditionally -- the companion (paper) bank must fold in even when there are
+    zero shadow closes in the window, otherwise a no-trade day silently drops the paper bucket */
+ if(typeof updDayPnl==='function')updDayPnl();
+ if(typeof drawEquity==='function')drawEquity();
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
 
@@ -557,7 +559,10 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
 
 function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
- var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);_tw.eqtot=0;el('eqtot').textContent='$0';el('eqstats').innerHTML='';return;}
+ var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);
+  /* no shadow closes -> still fold the companion (paper) bank for the window so it never silently drops */
+  var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
+  tweenNum('eqtot',cw,fmt$);el('eqtot').style.color=cw>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cw?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
