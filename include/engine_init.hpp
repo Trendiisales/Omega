@@ -6691,10 +6691,15 @@ static void init_engines(const std::string& cfg_path)
     // side. Uses g_open_positions.mfe + close_matching() (proven). Params = the operator's validated
     // companion settings (20% giveback / 1h stall). Closes via registered closers; an engine without
     // one logs [GIVEBACK] NO-CLOSER (same gap the catastrophe net surfaces -> register closers).
-    g_giveback_guard.enabled   = true;
-    g_giveback_guard.gate_usd  = 40.0;     // arm once a leg's peak favorable >= +$40 (skip noise)
-    g_giveback_guard.trail     = 0.20;     // close when it gives back >= 20% of peak
-    g_giveback_guard.stall_sec = 3600.0;   // OR no new peak for 1h while armed
+    // DISABLED 2026-06-29 (operator design correction): routine giveback/stall must NOT close the
+    // REAL position (that touches the engine + can clip its fat-tail edge). The COMPANION engine
+    // (stall_accountant.py) handles giveback/stall/fail on its OWN mirrored book -> real engine rides
+    // wide, edge intact. This guard's REAL-position close is RESERVED for the one sanctioned case:
+    // a CONFIRMED REVERSAL safe-stop (trigger to be built + backtested). Until then: OFF.
+    g_giveback_guard.enabled   = false;
+    g_giveback_guard.gate_usd  = 40.0;
+    g_giveback_guard.trail     = 0.20;
+    g_giveback_guard.stall_sec = 3600.0;
     printf("[OMEGA-INIT] GivebackGuard ARMED: gate=$%.0f trail=%.0f%% stall=%.0fmin (independent clipper, closes via registry)\n",
            g_giveback_guard.gate_usd, g_giveback_guard.trail*100.0, g_giveback_guard.stall_sec/60.0);
 }
