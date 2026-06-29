@@ -234,6 +234,7 @@ static void on_tick_us500(
         g_idxsess_sp.set_risk_off(omega::index_risk_off());
         g_idxsess_sp.on_tick(bid, ask, now_ms_isp);
         g_idx_bear_short_sp.on_tick(bid, ask, now_ms_isp); // 2026-06-22 SPX risk-off SHORT breakdown (shadow); real-engine SPX2022 PF1.59 both-halves+
+        g_engine_heartbeat.pulse("IdxBearShortSp");  // S-2026-06-29 ENABLED+NO_PULSE fix
         g_engine_heartbeat.pulse("IndexSession_US500");
     }
 
@@ -243,6 +244,7 @@ static void on_tick_us500(
         const int64_t now_ms_st = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        g_engine_heartbeat.pulse("SpxTurtleD1");  // S-2026-06-29 ENABLED+NO_PULSE fix
         const auto stsig = g_spx_turtle_d1.on_tick(bid, ask, now_ms_st, ca_on_close);
         if (stsig.valid) {
             g_telemetry.UpdateLastSignal("US500.F", "LONG", stsig.entry, stsig.reason,
@@ -665,6 +667,7 @@ static void on_tick_dj30(
         const int64_t now_ms_dt = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count());
+        g_engine_heartbeat.pulse("Dj30TurtleD1");  // S-2026-06-29 ENABLED+NO_PULSE fix
         const auto dtsig = g_dj30_turtle_d1.on_tick(bid, ask, now_ms_dt, ca_on_close);
         if (dtsig.valid) {
             g_telemetry.UpdateLastSignal("DJ30.F", "LONG", dtsig.entry, dtsig.reason,
@@ -867,6 +870,7 @@ static void on_tick_nas100(
     // S-2026-06-19: ConnorsRSI2 NAS100 daily mean-reversion (shadow). Self-detects the
     // cash-close transition (ET RTH) internally; just feed every NAS100 tick.
     g_engine_heartbeat.pulse("ConnorsRSI2");
+    g_engine_heartbeat.pulse("ConnorsNas");   // S-2026-06-29 ENABLED+NO_PULSE fix (handle-name match for contract check)
     {
         const int64_t conn_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
         g_connors_nas.on_tick(bid, ask, conn_ms);
@@ -1028,6 +1032,7 @@ static void on_tick_nas100(
         g_idxsess_nas.set_risk_off(omega::index_risk_off());
         g_idxsess_nas.on_tick(bid, ask, now_ms_isn);
         g_idx_bear_short_nas.on_tick(bid, ask, now_ms_isn); // 2026-06-12 risk-off SHORT breakdown on bad days (shadow); callback via on_close_cb
+        g_engine_heartbeat.pulse("IdxBearShortNas");  // S-2026-06-29 ENABLED+NO_PULSE fix
         g_monday_nas.on_tick(bid, ask, now_ms_isn);      // 2026-06-07 Monday risk-on calendar (shadow)
         g_engine_heartbeat.pulse("IndexSession_NAS100");
     }

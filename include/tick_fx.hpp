@@ -124,12 +124,10 @@ static void on_tick_eurusd(
         (void)on_close_cb;
     }
 
-    // 2026-06-07 MondayRiskOn calendar (GBPUSD/AUDUSD) -- shadow; callback via on_trade_record.
-    {
-        const int64_t now_ms_mon = static_cast<int64_t>(std::time(nullptr)) * 1000;
-        if      (sym == "GBPUSD") g_monday_gbp.on_tick(bid, ask, now_ms_mon);
-        else if (sym == "AUDUSD") g_monday_aud.on_tick(bid, ask, now_ms_mon);
-    }
+    // S-2026-06-29: MondayRiskOn GBPUSD/AUDUSD dispatch MOVED to on_tick_gbpusd /
+    //   on_tick_audusd. Previously called from here gated by `sym ==` -- but this
+    //   handler only sees EURUSD ticks, so the GBP/AUD branches never fired.
+    //   Caught by scripts/audit_dispatch_miswire.py (suf=gbp/aud inside on_tick_eurusd).
 
     // S38d 2026-05-26: FxScalpPyramid_EURUSD dispatch (shadow-mode).
     //   M5 Donchian + EMA + ADX scalper. Engine internally gated by enabled.
@@ -236,6 +234,13 @@ static void on_tick_gbpusd(
         (void)now_ms_fx;
         auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
         (void)on_close_cb;
+    }
+
+    // 2026-06-07 MondayRiskOn GBPUSD (shadow). MOVED here from on_tick_eurusd S-2026-06-29
+    //   -- the EUR handler never saw GBPUSD ticks so the engine was silently dead.
+    {
+        const int64_t now_ms_mon = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_monday_gbp.on_tick(bid, ask, now_ms_mon);
     }
 
     // 2026-06-09: TrendLineBreakGBP (SHADOW) -- H4 hull-break, GBPUSD PF1.53.
@@ -480,6 +485,13 @@ static void on_tick_audusd(
             (void)now_ms_fx;
             auto on_close_cb = [](const omega::TradeRecord& tr){ (void)tr; };
             (void)on_close_cb;
+        }
+
+        // 2026-06-07 MondayRiskOn AUDUSD (shadow). MOVED here from on_tick_eurusd S-2026-06-29
+        //   -- the EUR handler never saw AUDUSD ticks so the engine was silently dead.
+        {
+            const int64_t now_ms_mon = static_cast<int64_t>(std::time(nullptr)) * 1000;
+            g_monday_aud.on_tick(bid, ask, now_ms_mon);
         }
 
         // S38d 2026-05-26: FxScalpPyramid_AUDUSD dispatch (shadow-mode).

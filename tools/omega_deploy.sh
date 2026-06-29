@@ -21,7 +21,10 @@ WANT=$(git rev-parse --short origin/main)
 echo "[deploy] target hash = $WANT"
 
 echo "[deploy] launching DETACHED deploy on $HOST (survives disconnect)..."
-ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','cd C:\\Omega; .\\OMEGA.ps1 deploy *> $LOG' -WindowStyle Hidden\""
+# NOTE: log path + redirect MUST be powershell-side with single backslashes.
+# A bash-interpolated forward-slash path (C:/Omega/...) mangles through
+# cmd->powershell->Start-Process and the detached deploy silently no-ops.
+ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$lg='C:\\Omega\\logs\\deploy_'+(Get-Date -Format yyyyMMdd_HHmmss)+'.log'; \$p=Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',('cd C:\\Omega; .\\OMEGA.ps1 deploy *> '+\$lg) -WindowStyle Hidden -PassThru; Write-Output ('DEPLOY_PID='+\$p.Id+' log='+\$lg)\""
 
 echo "[deploy] polling for service Running + new binary (up to ~12 min)..."
 ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$d=(Get-Date).AddSeconds(700); while((Get-Date) -lt \$d){ \$svc=(Get-Service Omega -ErrorAction SilentlyContinue).Status; \$hash=(git -C C:\\Omega rev-parse --short HEAD); if(\$svc -eq 'Running' -and \$hash -eq '$WANT'){ break }; Start-Sleep 20 }\""

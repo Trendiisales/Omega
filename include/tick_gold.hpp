@@ -1702,6 +1702,7 @@ static void on_tick_gold(
     // S-2026-06-19: TrendRider companion -- banks +N*ATR per host cell + reloads
     // while the 4h cell stays open (shadow). Validated D1+4h only.
     g_rider_4h.on_host(g_xau_tf_4h.pos, bid, ask, now_ms_g, bracket_on_close);
+    g_engine_heartbeat.pulse("Rider4H");  // S-2026-06-29 ENABLED+NO_PULSE fix
     // S118 2026-05-19: H1 long-only ensemble tick management.
     g_xau_tf_1h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // S42 2026-05-31: SessionMomentum x2 -- clock-based session-window long.
@@ -1716,6 +1717,7 @@ static void on_tick_gold(
     g_tom_xau.on_tick(bid, ask, now_ms_g, handle_closed_trade);
     // S-2026-06-19: TrendRider companion on the D1 host (shadow).
     g_rider_d1.on_host(g_xau_tf_d1.pos, bid, ask, now_ms_g, bracket_on_close);
+    g_engine_heartbeat.pulse("RiderD1");  // S-2026-06-29 ENABLED+NO_PULSE fix
     // XauTsmomFastD1Engine tick management (SL/TP per tick).
     // XauTurtleD1Engine + XauStopRunD1Engine tick management.
     // 2026-05-20 batch: PullbackContH4 / NbmD1 / EmaCrossH4 tick mgmt
@@ -1734,6 +1736,7 @@ static void on_tick_gold(
     g_gold_orb_retrace.on_tick(bid, ask, now_ms_g);                    // 2026-06-06 ORB 50%-retrace + structural RUNNER (shadow); callback via on_trade_record
     g_gold_orb_london.on_tick(bid, ask, now_ms_g);                     // S-2026-06-20 orb-widen: LONDON-open 2nd session +BullGate (shadow)
     g_gold_volbrk_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);   // S-2026-06-03 vol-breakout SL/trail per-tick
+    g_engine_heartbeat.pulse("GoldVolbrkM30");  // S-2026-06-29 ENABLED+NO_PULSE fix
     // GoldUltimateEngine tick dispatch -- standalone v12 OOS-validated trend
     // engine. Self-contained 1-min bar aggregation + 7-factor entry filter +
     // edge-hour/ATR gates. S91 shipped 2026-05-15.
@@ -1742,6 +1745,7 @@ static void on_tick_gold(
     // TrendRiderPortfolio tick management -- 6 cells (H2 L+S, H4 L+S, H6 L, D1 L).
     // Tier-4 shipped 2026-04-30. Stage trail (no TP, no time exit).
     g_trend_rider.on_tick(bid, ask, now_ms_g, ca_on_close);
+    g_engine_heartbeat.pulse("TrendRider");  // S-2026-06-29 ENABLED+NO_PULSE fix
     // -- Improvement 5: CVD confirmation gate ------------------------------
 
     // -- Improvement 1: Volatility regime scaling --------------------------
