@@ -64,6 +64,8 @@ std::unordered_set<int64_t> g_restored_entry_ts;
 // per-trade dollar-stop. Shadow-safe (logs only). Wired in on_tick 250ms block.
 #include "CatastrophicGuard.hpp"
 omega::CatastrophicGuard g_catastrophic_guard;
+#include "GivebackGuard.hpp"
+omega::GivebackGuard g_giveback_guard;   // S-2026-06-29: independent profit-giveback clipper (twin of AccountingGuard)
 
 // ?? Per-symbol config manager -- loaded from symbols.ini at startup ????????????
 static SymbolConfigManager g_sym_cfg;

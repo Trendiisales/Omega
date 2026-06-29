@@ -1060,6 +1060,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_catastrophic_guard.live          = (g_cfg.mode == "LIVE");
             g_catastrophic_guard.per_trade_usd = g_cfg.dollar_stop_usd;
             g_catastrophic_guard.check(static_cast<int64_t>(std::time(nullptr)));
+            g_giveback_guard.check(static_cast<int64_t>(std::time(nullptr)));  // S-2026-06-29: independent profit-giveback clipper
         }
     }
 
