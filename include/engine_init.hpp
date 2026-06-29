@@ -4318,10 +4318,10 @@ static void init_engines(const std::string& cfg_path)
         // CAVEAT: bull tape; own-SMA gate = partial bear cover -> macro gate before live-size.
         {
             struct MonCfg { omega::MondayRiskOnEngine* e; const char* sym; const char* d1; };
+            // S-2026-06-29: GBPUSD + AUDUSD legs REMOVED ("no FX"). NAS100 (index)
+            //   kept. g_monday_gbp/aud globals now inert (default enabled=false).
             const MonCfg mons[] = {
                 { &g_monday_nas, "NAS100", "phase1/signal_discovery/warmup_NAS100_D1.csv" },
-                { &g_monday_gbp, "GBPUSD", "phase1/signal_discovery/warmup_GBPUSD_D1.csv" },
-                { &g_monday_aud, "AUDUSD", "phase1/signal_discovery/warmup_AUDUSD_D1.csv" },
             };
             for (const auto& m : mons) {
                 m.e->symbol      = m.sym;
@@ -4347,7 +4347,7 @@ static void init_engines(const std::string& cfg_path)
                     return v;
                 });
             }
-            printf("[OMEGA-INIT] MondayRiskOn NAS100/GBPUSD/AUDUSD: shadow=true Mon-long SMA50-gate\n");
+            printf("[OMEGA-INIT] MondayRiskOn NAS100 (FX legs removed): shadow=true Mon-long SMA50-gate\n");
         }
 
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.
