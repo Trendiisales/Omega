@@ -1735,6 +1735,7 @@ static void on_tick_gold(
     // ── S136 2026-05-24: new engines per-tick management ────────────────────
     g_gold_orb_retrace.on_tick(bid, ask, now_ms_g);                    // 2026-06-06 ORB 50%-retrace + structural RUNNER (shadow); callback via on_trade_record
     g_gold_orb_london.on_tick(bid, ask, now_ms_g);                     // S-2026-06-20 orb-widen: LONDON-open 2nd session +BullGate (shadow)
+    g_gold_panic_bounce.on_tick(bid, ask, now_ms_g);                   // S-2026-06-29 REACTIVATED (shadow): V-bounce; macro long-block entry filter (post-cull) + IBKR-cost re-judge bull PF~1.80
     g_gold_volbrk_m30.on_tick(bid, ask, now_ms_g, bracket_on_close);   // S-2026-06-03 vol-breakout SL/trail per-tick
     g_engine_heartbeat.pulse("GoldVolbrkM30");  // S-2026-06-29 ENABLED+NO_PULSE fix
     // GoldUltimateEngine tick dispatch -- standalone v12 OOS-validated trend

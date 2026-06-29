@@ -22,6 +22,7 @@
 //         buckets from H1 internally.)
 // =============================================================================
 #include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cctype>
 #include <string>
@@ -32,7 +33,11 @@
 #include "XauTrendFollow4hEngine.hpp"
 #include "XauTrendFollow2hEngine.hpp"
 
-static const double SPREAD = 0.20;
+static double SPREAD = 0.20;          // env SPREAD override (IBKR XAU measured ~0.22-0.50/oz)
+static double IMP     = 0.0;          // env IMP: min_impulse_atr on the 4h engine (0=off)
+// IBKR XAU commission: 1.5bps/side, price-proportional. At 0.01 lot (1 oz),
+// RT comm in USD = 2*0.00015*entryPrice. Applied per closed trade in cb.
+static inline double ibkr_comm_usd(double entry_px){ return 2.0 * 0.00015 * entry_px; }
 
 struct BarCSV { int64_t ts; double o,h,l,c; };
 
@@ -62,11 +67,12 @@ struct Stat {
 template<class Eng, bool IS_4H>
 static void run(const std::vector<BarCSV>& bars, const char* label){
     Eng eng; eng.shadow_mode=true; eng.enabled=true; eng.lot=0.01; eng.max_spread=1.0;
+    if constexpr (IS_4H) eng.min_impulse_atr = IMP;   // 4h-only field
     eng.init();
     Stat full, h1half, h2half; int wins=0; const int N=(int)bars.size(); const int mid=N/2;
     int idx=0;
     auto cb=[&](const omega::TradeRecord& tr){
-        double usd = tr.pnl * 100.0;
+        double usd = tr.pnl * 100.0 - ibkr_comm_usd(tr.entryPrice);  // IBKR price-proportional comm
         full.rec(usd); if(usd>=0) wins++;
         if(idx < mid) h1half.rec(usd); else h2half.rec(usd);
     };
@@ -95,8 +101,10 @@ static void run(const std::vector<BarCSV>& bars, const char* label){
 
 int main(int argc, char** argv){
     if(argc<3){ std::fprintf(stderr,"usage: %s <H4_csv> <H1_csv>\n",argv[0]); return 1; }
+    if(getenv("SPREAD")) SPREAD=atof(getenv("SPREAD"));
+    if(getenv("IMP"))    IMP=atof(getenv("IMP"));
     auto h4=load_csv(argv[1]); auto h1=load_csv(argv[2]);
-    std::printf("[XTF4h2h-BT] real-class  H4 bars=%zu  H1 bars=%zu  spread=%.2f\n", h4.size(), h1.size(), SPREAD);
+    std::printf("[XTF4h2h-BT] real-class  H4 bars=%zu  H1 bars=%zu  spread=%.2f  IMP(4h)=%.2f  +IBKR_comm(1.5bps/side)\n", h4.size(), h1.size(), SPREAD, IMP);
     std::printf("===== 4h engine (on_h4_bar, 6-cell mask 0x3F) =====\n");
     if((int)h4.size()>60) run<omega::XauTrendFollow4hEngine,true>(h4, "XauTrendFollow4h");
     else std::printf("  (insufficient H4 bars)\n");

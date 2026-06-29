@@ -1250,6 +1250,12 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.cell_vol_band_mask = 0x8;
         // For D1: all 3 cells benefit from vol_band -- mask stays 0xFFFFFFFF
         // (default all enabled). Bits 0,1,2 = Momentum20, Keltner, ADX_Mom.
+        // S-2026-06-29 IMPULSE FILTER (ported from 1h/D1; faithful 4h2h BT at
+        // CORRECT IBKR cost = 2*0.00015*price + spread). IMP=1.0 sweet spot for 4h
+        // (NOT 0.5 like D1): bull PF 1.25->1.48 maxDD -24% both-WF-halves+; bear
+        // (2022-23) 1.06->1.16 maxDD lower; spread-robust (0.30/0.45). Breakout-only
+        // (4h has no dip-buy family). Harness backtest/xau_tf_4h2h_bt IMP env.
+        g_xau_tf_4h.min_impulse_atr = 1.0;
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
         omega::warmup_or_die(g_xau_tf_4h, "XauTrendFollow4h");
@@ -4441,7 +4447,38 @@ static void init_engines(const std::string& cfg_path)
         // MAEp90 $5781 = catastrophic adverse excursion -- falling-knife long that
         // catches dips that keep falling. n=4 thin but the structural flaw is clear
         // + it's the book's top bleeder. Disabled; needs an entry filter not an exit.
-        printf("[OMEGA-INIT] GoldPanicBounce -- CULLED 2026-06-17 (net -$205, catastrophic MAE); class type-only, NOT loaded\n");
+        // S-2026-06-29 REACTIVATED (SHADOW): the cull demanded "an entry filter not an
+        // exit". That filter NOW EXISTS -- the macro-hostile gold_regime().long_blocked()
+        // gate (GoldPanicBounceEngine.hpp L181) was added 2026-06-21, AFTER the cull, so
+        // the engine that bled is NOT the engine running now. Re-judged at CORRECT IBKR
+        // cost (2*0.00015*price + spread, not the 0.37 BlackBull legacy the cull implicitly
+        // assumed): faithful BT (backtest/panic_bounce_bt.cpp) bull/normal PF~1.80 +850pt
+        // n=113 BOTH-WF-halves+ (1.82/2.01), 2022-bear breakeven (PF 0.97-1.02). SHADOW
+        // only -- this re-opens a tombstone, so observe a FRESH shadow MAE distribution
+        // (the cull basis was MAE, not PnL) before ANY live size. Adverse-protection:
+        // chandelier ATR-trail + structural selloff-low stop + 240-bar time-stop + the
+        // macro long-block entry filter (NO cold loss-cut by design -- depth, not speed,
+        // is the edge; a velocity/cut gate HURTS gold per the 2026-06-12 sweep).
+        g_gold_panic_bounce.shadow_mode = true;
+        g_gold_panic_bounce.enabled     = true;
+        g_gold_panic_bounce.on_close_cb = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+        g_gold_panic_bounce.seed_from_h1_csv(
+            omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
+        g_open_positions.register_source("GoldPanicBounce", []() {
+            std::vector<omega::PositionSnapshot> v;
+            const auto& p = g_gold_panic_bounce.m_pos;
+            if (p.active) {
+                omega::PositionSnapshot s;
+                s.symbol = "XAUUSD"; s.engine = "GoldPanicBounce";
+                s.side = "LONG"; s.size = p.size;
+                s.entry = p.entry; s.sl = p.init_stop; s.tp = 0.0;
+                s.entry_ts = p.entry_ts / 1000LL;
+                v.push_back(s);
+            }
+            return v;
+        });
+        printf("[OMEGA-INIT] GoldPanicBounce XAUUSD: shadow=true enabled=%d REACTIVATED (macro long-block entry filter post-cull; bull PF~1.80 IBKR-cost; observe MAE before live)\n",
+               (int)g_gold_panic_bounce.enabled);
 
         // ── IndexBearShort (NAS100 risk-off SHORT for bad days) ────────────────
         // 2026-06-12 deep-dive (backtest/index_bear_short_bt.cpp, H1, cost-incl):

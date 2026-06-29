@@ -108,6 +108,7 @@ GATE_PATH = {
     "g_xau_tf_2h":        "self-gate: gold_regime.long_blocked (price-bear+macro)",
     "g_xau_tf_d1":        "self-gate: gold_regime.long_blocked (price-bear+macro)",
     "g_xau_threebar_30m": "self-gate: gold_regime.long_blocked (price-bear+macro)",
+    "g_gold_panic_bounce":"self-gate: gold_regime.long_blocked (macro entry filter, post-cull S-2026-06-29)",
     "g_xau_sess_nypm":    "self-gate: gold_regime.long_blocked (added S-2026-06-24k)",
     "g_bigcap_momo":      "self-gate: index_market_regime.long_blocked (added S-2026-06-24k)",
 }

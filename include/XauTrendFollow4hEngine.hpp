@@ -281,6 +281,11 @@ public:
     double vol_band_low_pct  = 0.30;
     double vol_band_high_pct = 0.85;
     std::deque<double> atr_vol_window_;
+    // S-2026-06-29 IMPULSE FILTER (ported from XauTrendFollow1h/D1): the entry bar
+    // must thrust >= min_impulse_atr*ATR14 ((bar.high - prior close) >= mult*ATR).
+    // Filters weak/stalling breakouts. 4h has no dip-buy family so it applies to all
+    // cells (mirrors D1 "applies to all"). 0 = OFF (byte-identical to pre-change).
+    double min_impulse_atr   = 0.0;
     // S88-followup post-sweep 2026-05-27: per-cell gate mask (default
     // all-ones = regression-safe). Operator can target specific cells
     // when their preferred gate differs (see 2h Donch50 ADX-hurts pattern).
@@ -513,6 +518,11 @@ public:
             if (pos[ci].cooldown_bars > 0) continue;
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
+            // S-2026-06-29 IMPULSE FILTER: entry bar must thrust >= min_impulse_atr*ATR14.
+            if (min_impulse_atr > 0.0 && atr14_ > 0.0 && (int)bars_.size() >= 2) {
+                const double prev_close = bars_[bars_.size()-2].close;
+                if ((bar.high - prev_close) < min_impulse_atr * atr14_) continue;  // weak breakout
+            }
             // 2026-06-12 regime gate: no new longs in sustained gold bear.
             if (use_regime_long_gate && side > 0
                 && omega::gold_regime().long_blocked()) continue;

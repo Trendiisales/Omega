@@ -179,6 +179,11 @@ static std::atomic<bool>       g_bigcap_feed_ok{false};
 static omega::GoldOrbRetraceEngine g_gold_orb_retrace; // XAUUSD ORB 50%-retrace + structural RUNNER -- 2026-06-06 edge (PF2.38 @0.37, 3x-robust, bull+bear), shadow
 static omega::GoldOrbRetraceEngine g_gold_orb_london;  // S-2026-06-20 ORB-widen: XAUUSD LONDON open (03:00 ET) 2nd session, +BullGate -- additive (co-fires w/ COMEX 28% of days, PF1.99 gated), shadow
 #include "GoldPanicBounceEngine.hpp"
+// S-2026-06-29 REACTIVATED (shadow): culled 2026-06-17 for catastrophic falling-knife MAE ("needs an entry filter not an exit").
+// New basis: (1) the macro-hostile gold_regime().long_blocked() entry gate was added 2026-06-21 -- AFTER the cull -- which IS that
+// entry filter; (2) faithful BT at CORRECT IBKR cost (2*0.00015*price+spread, not the 0.37 BlackBull legacy) = bull PF~1.80
+// +850pt n=113 both-WF-halves+, 2022-bear breakeven (PF 0.97-1.02). SHADOW-only; observe fresh MAE before any live size.
+static omega::GoldPanicBounceEngine g_gold_panic_bounce;
 #include "RegimeState.hpp"   // 2026-06-12: shared price-based bull/bear regime brain (gold_regime()), fed in tick_gold.hpp, queried by long-only gold engines
 #include "IndexBearShortEngine.hpp"
 static omega::IndexBearShortEngine g_idx_bear_short_nas; // NAS100 risk-off SHORT: sustained-bear gate + Donchian breakdown + fixed 2R TP -- 2026-06-12 (NAS2022 PF1.60 both-halves+, bull-gated +702), shadow

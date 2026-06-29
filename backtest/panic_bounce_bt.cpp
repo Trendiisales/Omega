@@ -57,7 +57,8 @@ struct Params {
     double trail_atr = 3.0;  // chandelier trail width (ATR)
     int    arm_bars = 0;     // bars before trail arms (0 = immediate)
     int    max_hold = 240;   // time stop (H1 bars ~ 10 days)
-    double cost_pts = 0.6;   // round-trip cost in points (instrument-specific)
+    double cost_pts = 0.6;   // round-trip FIXED cost in points (spread component; instrument-specific)
+    double comm_frac_side = 0.0;  // IBKR commission as fraction of notional PER SIDE (gold: 0.00015 = 1.5bps); 0 = none
     int    cooldown = 24;    // bars to wait after an exit before re-arming
     // capitulation-velocity gate: the drop must be SHARP & RECENT, not a slow grind
     bool   use_vel = false;
@@ -139,7 +140,9 @@ static void run(const std::vector<Bar>& B, const Params& P, Stats& st, int lo, i
         if(B[i].l <= eff){ exit_px=eff; why = (eff>init_stop?"TRAIL":"STOP"); }
         else if(i-entry_i >= P.max_hold){ exit_px=B[i].c; why="TIME"; }
         if(why){
-            double pnl = (exit_px - entry) - P.cost_pts;
+            // IBKR cost: price-proportional commission (2 sides) + fixed spread, per oz
+            double cost_rt = P.cost_pts + P.comm_frac_side * 2.0 * entry;
+            double pnl = (exit_px - entry) - cost_rt;
             st.n++; st.net+=pnl;
             if(pnl>0){st.wins++; st.gw+=pnl;} else {st.losses++; st.gl+=-pnl;}
             if(why[0]=='T'&&why[1]=='R')st.trail++; else if(why[0]=='S')st.stopn++; else st.timen++;
@@ -150,11 +153,11 @@ static void run(const std::vector<Bar>& B, const Params& P, Stats& st, int lo, i
     }
 }
 
-struct Series { const char* name; const char* path; double cost; };
+struct Series { const char* name; const char* path; double cost; double comm_side=0.0; };
 
 static Stats run_series(const Series& s, const Params& base, int half /*0=all,1=H1,2=H2*/){
     auto B=load(s.path); Stats st; if(B.size()<200) return st;
-    Params P=base; P.cost_pts=s.cost;
+    Params P=base; P.cost_pts=s.cost; P.comm_frac_side=s.comm_side;
     int n=(int)B.size();
     int lo=0,hi=n;
     if(half==1){lo=0;hi=n/2;} else if(half==2){lo=n/2;hi=n;}
@@ -209,11 +212,15 @@ int main(int argc,char**argv){
     std::vector<Series> idx_bear = {
         {"NAS2022bear","/Users/jo/Tick/NAS2022_bear_h1.csv",2.0},
     };
+    // IBKR XAUUSD spot: commission 1.5bps/side (comm_side=0.00015, price-proportional)
+    // + measured spread/oz (env GSPR override; default 0.30 ~ measured mean). NOT the
+    // old flat 0.37 (that was BlackBull/under-cost; ~4x too low at $4700 gold).
+    double gspr = getenv("GSPR")? atof(getenv("GSPR")) : 0.30;
     std::vector<Series> gold = {
-        {"XAU(24-26)","/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv",0.37},
+        {"XAU(24-26)","/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv",gspr,0.00015},
     };
     std::vector<Series> gold_bear = {
-        {"XAU2022bear","/Users/jo/Tick/XAU2022_bear_h1.csv",0.37},
+        {"XAU2022bear","/Users/jo/Tick/XAU2022_bear_h1.csv",gspr,0.00015},
     };
 
     std::vector<Series>& main_set   = (mode=="gold")? gold : idx;
