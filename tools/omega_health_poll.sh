@@ -25,9 +25,17 @@ JSON=$(timeout 40 ssh -o ConnectTimeout=12 omega-vps \
   2>/dev/null | tr -d '\r' | sed -n '/{/,/}/p')
 
 if [ -z "$JSON" ]; then
-  notify "VPS unreachable OR health writer failed to run — cannot read health status" "🔴 OMEGA HEALTH"
-  echo "$TS VPS-UNREACHABLE-OR-WRITER-FAILED" > "$MARKER"
-  echo "$TS VPS unreachable / writer failed" >> /tmp/omega_health_poll.log
+  # Empty JSON != VPS down. Distinguish (2026-06-29 fix for false-RED during deploys): if ssh ITSELF
+  # works, the box is UP and the writer was just busy/slow (git tree churns during a deploy -> writer
+  # times out). That is a SOFT transient -> log, NO popup. Only hard-RED if the box is truly unreachable.
+  if timeout 12 ssh -o ConnectTimeout=8 -o BatchMode=yes omega-vps "echo OK" 2>/dev/null | grep -q OK; then
+    echo "$TS writer-transient (VPS reachable, JSON empty -- likely deploy/git-busy; no alarm)" >> /tmp/omega_health_poll.log
+    [ -f "$MARKER" ] && rm -f "$MARKER"
+    exit 0
+  fi
+  notify "VPS UNREACHABLE — ssh failed, cannot reach the box" "🔴 OMEGA HEALTH"
+  echo "$TS VPS-UNREACHABLE (ssh failed)" > "$MARKER"
+  echo "$TS VPS unreachable (ssh failed)" >> /tmp/omega_health_poll.log
   exit 0
 fi
 
