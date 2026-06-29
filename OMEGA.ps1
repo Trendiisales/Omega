@@ -116,19 +116,18 @@ param(
     # Added S-2026-06-12e after operator flagged 6-7 min deploy downtime.
     [switch]$ColdStop,
 
-    # -SkipSeed / -ForceSeed / -SeedMaxAgeHours (S-2026-06-29 DEPLOY-SPEED):
+    # -SkipSeed / -ForceSeed (S-2026-06-29 DEPLOY-SPEED):
     # the [2b] warm-seed refresh (rebuild from l2_ticks + IBKR refresh + audit)
     # runs EVERY deploy and can block up to 300s reaching IBKR 4001 -- pure dead
-    # time for a code-only deploy (GUI/engine logic that doesn't touch seeds).
-    # New default: AUTO-SKIP unless a reseed is actually needed. "Needed" =
-    #   (a) the pulled diff touches seed inputs (phase1/signal_discovery/warmup_*,
-    #       engine_seed_helpers.hpp, *Engine.hpp), OR
-    #   (b) logs/SEED_ALERT.txt exists (a prior deploy flagged stale seeds), OR
-    #   (c) the last successful seed-refresh stamp is older than -SeedMaxAgeHours.
-    # -ForceSeed always reseeds; -SkipSeed never reseeds (override the auto-check).
+    # time when the on-disk seeds are already fresh. New default: AUTO-SKIP when the
+    # cheap freshness audit (tools/seed_freshness_audit.py, reads last-bar age, no
+    # IBKR) reports every ENABLED-engine seed fresh on disk AFTER the git reset.
+    # Audit stale -> reseed. -ForceSeed always reseeds; -SkipSeed never reseeds.
+    # (Stamp-based gating was removed: the deploy's git reset --hard reverts the
+    # committed warmup CSVs, so a "recently seeded" stamp does NOT mean the on-disk
+    # seeds are fresh -- it caused a 17-stale boot. Measure the files, not a proxy.)
     [switch]$ForceSeed,
     [switch]$SkipSeed,
-    [int]   $SeedMaxAgeHours = 12,
 
     # ----- watchdog subcommand parameters -----
     [int]   $StaleThresholdSec      = 60,
@@ -1082,39 +1081,28 @@ function Invoke-Deploy {
     Write-Host "[2b/12] Warm-seed refresh (auto-gated)..." -ForegroundColor Yellow
     Push-Location $OmegaDir
     try {
-        # S-2026-06-29 DEPLOY-SPEED: decide whether a reseed is actually needed before
-        # paying the up-to-300s [2b] cost. See the -SkipSeed/-ForceSeed/-SeedMaxAgeHours
-        # param block. Reseed when: diff touches seed inputs, OR a prior SEED_ALERT exists,
-        # OR the last-successful-seed stamp is older than -SeedMaxAgeHours. -ForceSeed/-SkipSeed
-        # override the auto-check. Skipping leaves the git-restored committed warmup CSVs in place.
-        $seedStamp   = Join-Path $OmegaDir "logs\last_seed_refresh.stamp"
+        # S-2026-06-29 DEPLOY-SPEED (corrected after the stamp-gate caused a 17-stale boot):
+        # the deploy's [2/12] `git reset --hard` REVERTS the committed warmup CSVs (which are a
+        # static, often-stale corpus) -- and [2b] is the ONLY step that regenerates them fresh.
+        # So the skip decision MUST measure the ACTUAL post-reset on-disk seed freshness, NOT a
+        # time stamp: a stamp is a proxy whose freshly-written CSVs git just discarded on reset,
+        # so a "fresh stamp" skip booted 17 enabled engines on the stale committed snapshot.
+        # Gate instead on the CHEAP tools/seed_freshness_audit.py (reads each enabled seed's
+        # last-bar age, no IBKR, ~seconds; exits 1 if ANY enabled seed is stale): audit clean
+        # -> SKIP the up-to-300s refresh; audit stale -> RESEED. -ForceSeed/-SkipSeed override.
         $seedAlert   = Join-Path $OmegaDir "logs\SEED_ALERT.txt"
         $doReseed    = $false
         $reseedWhy   = ""
         if ($SkipSeed) {
-            $reseedWhy = "-SkipSeed set -- never reseed"
+            $reseedWhy = "-SkipSeed set -- never reseed (operator override; may boot stale)"
         } elseif ($ForceSeed) {
             $doReseed = $true; $reseedWhy = "-ForceSeed set"
         } else {
-            # (a) diff touches seed inputs
-            $seedDiff = @()
-            if ($prevHead) {
-                $seedDiff = @(git diff --name-only $prevHead HEAD 2>$null |
-                    Where-Object { $_ -match '^phase1/signal_discovery/|engine_seed_helpers\.hpp|Engine\.hpp$|warmup_.*\.csv$' })
-            }
-            if ($seedDiff.Count -gt 0) {
-                $doReseed = $true; $reseedWhy = "diff touches $($seedDiff.Count) seed-input file(s)"
-            } elseif (Test-Path $seedAlert) {
-                $doReseed = $true; $reseedWhy = "prior SEED_ALERT.txt present (last deploy flagged stale)"
-            } elseif (-not (Test-Path $seedStamp)) {
-                $doReseed = $true; $reseedWhy = "no last-seed stamp (never seeded / first deploy)"
+            # cheap freshness audit on the post-reset working tree (no IBKR; exit 1 = stale enabled seed)
+            if (Invoke-PyStepWithTimeout "tools\seed_freshness_audit.py" 60 "seed_freshness_audit" $OmegaDir) {
+                $reseedWhy = "freshness audit clean -- committed seeds already fresh on disk"
             } else {
-                $ageH = ((Get-Date) - (Get-Item $seedStamp).LastWriteTime).TotalHours
-                if ($ageH -ge $SeedMaxAgeHours) {
-                    $doReseed = $true; $reseedWhy = ("last seed {0:N1}h ago >= {1}h" -f $ageH, $SeedMaxAgeHours)
-                } else {
-                    $reseedWhy = ("last seed {0:N1}h ago < {1}h -- fresh" -f $ageH, $SeedMaxAgeHours)
-                }
+                $doReseed = $true; $reseedWhy = "freshness audit reports stale enabled-engine seed(s)"
             }
         }
 
@@ -1128,7 +1116,6 @@ function Invoke-Deploy {
             if (Invoke-PyStepWithTimeout "tools\seed_refresh.py --port 4001 --repo $OmegaDir" 300 "seed_refresh" $OmegaDir) {
                 Write-Host "  [OK] seed_refresh: rebuild + IBKR-refresh + audit clean (enabled engines fresh)" -ForegroundColor Green
                 Remove-Item -Path $seedAlert -ErrorAction SilentlyContinue
-                (Get-Date).ToString("o") | Out-File -FilePath $seedStamp -Encoding utf8  # stamp success -> next deploy can auto-skip
             } else {
                 $alert = "[P0-SEED] seed_refresh: enabled-engine warm-seed(s) STILL STALE (or refresh timed out) -- engine/gate booting on a price view detached from reality. Needs IBKR 4001 live; re-run: py tools\seed_refresh.py --port 4001"
                 Write-Host ""
