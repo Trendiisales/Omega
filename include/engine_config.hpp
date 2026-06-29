@@ -287,6 +287,11 @@ static void load_config(const std::string& path) {
             if (k=="connection_warmup_sec") g_cfg.connection_warmup_sec = safe_stoi(v, k);
         }
         if (section == "mode"     && k=="mode")         g_cfg.mode           = v;
+        // S-2026-06-29: execution venue settable from the ini (was env-only via
+        // OMEGA_EXECUTION_BROKER -> a LIVE flip in the config alone couldn't change the
+        // broker). IBKR | BLACKBULL_FIX. Default is IBKR (omega_types.hpp). Env override
+        // (engine_init.hpp:5126) still wins over the ini if both are set.
+        if (section == "mode"     && k=="execution_broker") g_cfg.execution_broker = v;
         if (section == "breakout") {
             if (k=="vol_thresh_pct")        g_cfg.vol_thresh_pct        = safe_stod(v, k);
             if (k=="tp_pct")                g_cfg.tp_pct                = safe_stod(v, k);

@@ -23,7 +23,15 @@ struct OmegaConfig {
     std::string mode       = "SHADOW";
     // Execution venue (2026-06-16 IBKR migration). BLACKBULL_FIX = legacy FIX path
     // (OmegaFIX, unchanged). IBKR = route orders via the native C++ IbkrExecutionEngine.
-    std::string execution_broker = "BLACKBULL_FIX";  // BLACKBULL_FIX | IBKR
+    // S-2026-06-29: DEFAULT FLIPPED BLACKBULL_FIX -> IBKR. The operator is no longer
+    // on BlackBull for execution; the migration to IBKR is done (order_exec.hpp:140).
+    // Leaving the default at BLACKBULL_FIX meant a mode=LIVE flip WITHOUT
+    // OMEGA_EXECUTION_BROKER=IBKR (or the new ini key) would have silently routed REAL
+    // orders to BlackBull. Strictly safer: IBKR exec is paper_only by default + refuses
+    // on a live port, and send_live_order's hard SHADOW gate still blocks everything
+    // while mode=SHADOW. The BlackBull cTrader FIX session itself stays -- it is now the
+    // L2 MARKET-DATA feed only (FIX 264=0 full book), NOT the order path.
+    std::string execution_broker = "IBKR";  // BLACKBULL_FIX | IBKR
 
     // Breakout params
     double vol_thresh_pct        = 0.050;
