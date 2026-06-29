@@ -486,6 +486,10 @@ setInterval(poll,1000);poll();
    served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
 function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
  var rt=safe(j.realized_total),be=document.getElementById('compbank');if(be){be.textContent=fmt$(rt);be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');var br=j.by_reason||{},tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)';Object.keys(br).forEach(function(k){tip+='\n'+k+': '+fmt$(safe(br[k]));});tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
+ /* fold companion (paper) buckets into the headline totals -- operator wants it counted; paper portion stays visibly tagged so the real-broker number is never silently overstated */
+ window._comptot={today:safe(j.realized_today),d7:safe(j.realized_7d),d30:safe(j.realized_30d),all:rt};
+ if(typeof updDayPnl==='function'&&ROWS&&ROWS.length)updDayPnl();
+ if(typeof drawEquity==='function'&&ROWS&&ROWS.length)drawEquity();
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
 
@@ -526,9 +530,11 @@ function winRows(){if(WIN>=9999)return ROWS;
  return ROWS.filter(function(r){return r.ts>=cut;});}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
- tweenNum('daypnl',p,fmt$);el('daypnl').style.color=p>=0?'var(--grn)':'var(--red)';
- el('daypnln').textContent=n+' closes today (UTC)';
- tweenNum('totpnl',tot,fmt$);el('totpnl').style.color=tot>=0?'var(--grn)':'var(--red)';}
+ var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
+ var pT=p+cToday,totT=tot+cAll;
+ tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
+ el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
+ tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';}
 
 /* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
 function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent='';return;}
@@ -577,7 +583,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.beginPath();ctx.arc(ex,ey,6,0,6.3);ctx.strokeStyle='rgba(46,189,133,0.35)';ctx.lineWidth=1.5;ctx.stroke();
  var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
- var net=cum[cum.length-1];tweenNum('eqtot',net,fmt$);el('eqtot').style.color=net>=0?'var(--grn)':'var(--red)';
+ var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var netT=net+cw;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
