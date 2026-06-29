@@ -126,8 +126,13 @@ param(
     # (Stamp-based gating was removed: the deploy's git reset --hard reverts the
     # committed warmup CSVs, so a "recently seeded" stamp does NOT mean the on-disk
     # seeds are fresh -- it caused a 17-stale boot. Measure the files, not a proxy.)
+    # -AllowStaleSeed: override the [2c] FAIL-CLOSED gate. By default a deploy ABORTS
+    # (keeps the prior live binary via hot-swap) if seeds are still stale after [2b] --
+    # so a blind binary can never silently ship. Set this ONLY to deliberately ship
+    # code while IBKR 4001 is down (gateway maintenance) and you accept stale seeds.
     [switch]$ForceSeed,
     [switch]$SkipSeed,
+    [switch]$AllowStaleSeed,
 
     # ----- watchdog subcommand parameters -----
     [int]   $StaleThresholdSec      = 60,
@@ -1129,6 +1134,42 @@ function Invoke-Deploy {
         Write-Host "  [WARN] seed-refresh gate failed: $_ -- keeping git snapshot" -ForegroundColor Yellow
     } finally {
         Pop-Location
+    }
+    Write-Host ""
+
+    # --------------------------------------------------------------------------
+    # [2c/12] FAIL-CLOSED seed gate (S-2026-06-29). A binary must NEVER go live
+    #         with stale enabled-engine seeds. [2b] RESEEDS when stale, but a
+    #         reseed can FAIL silently (IBKR 4001 down / timeout) and the old
+    #         behaviour just CONTINUED -> shipped a blind binary booting on a
+    #         frozen, off-market price view. That is the root cause of the
+    #         recurring-staleness incidents. So re-run the cheap audit AFTER [2b]
+    #         and, if ANY enabled seed is STILL stale, ABORT the deploy. HOT-SWAP
+    #         means the prior binary is still LIVE here -> abort = zero downtime
+    #         AND no stale ship. -AllowStaleSeed is the only override (use it only
+    #         to deliberately ship while 4001 is down and you accept stale seeds).
+    # --------------------------------------------------------------------------
+    Write-Host "[2c/12] Fail-closed seed gate (post-reseed re-audit)..." -ForegroundColor Yellow
+    if ($AllowStaleSeed) {
+        Write-Host "  [override] -AllowStaleSeed set -- shipping even if seeds are stale (operator accepts blind boot)." -ForegroundColor Yellow
+    } else {
+        $seedsFresh = $false
+        Push-Location $OmegaDir
+        try {
+            $seedsFresh = Invoke-PyStepWithTimeout "tools\seed_freshness_audit.py" 60 "seed_freshness_recheck" $OmegaDir
+        } finally {
+            Pop-Location
+        }
+        if (-not $seedsFresh) {
+            Write-Host "  ============================================================" -ForegroundColor Red
+            Write-Host "  [ABORT] enabled-engine seed(s) STILL STALE after [2b] -- refusing to ship a blind binary." -ForegroundColor Red
+            Write-Host "          Prior binary stays LIVE (hot-swap -> no downtime). Bring IBKR 4001 up and re-deploy," -ForegroundColor Red
+            Write-Host "          or pass -AllowStaleSeed to ship stale on purpose." -ForegroundColor Red
+            Write-Host "  ============================================================" -ForegroundColor Red
+            Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            return 1
+        }
+        Write-Host "  [OK] all enabled-engine seeds fresh -- safe to build + ship." -ForegroundColor Green
     }
     Write-Host ""
 
