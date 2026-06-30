@@ -86,7 +86,8 @@ FEEDS = [
     ("qlib omega_data",     "research", 2, qlib_cal_last),
     ("rdagent basket",      "research", 2, lambda: json_field_date(RDA / "latest.json", "signal", "date")),
     ("sp500_long_close",    "research", 4, lambda: csv_last_date(RDA / "sp500_long_close.csv")),
-    ("sp500_close",         "research", 4, lambda: csv_last_date(RDA / "sp500_close.csv")),
+    # NB: sp500_close.csv is a dead fallback — serve.py:26 reads sp500_long_close first and never
+    # reaches it. Not fed by any refresher, so tracking it = false AMBER. Excluded deliberately.
 ]
 
 
