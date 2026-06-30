@@ -120,7 +120,9 @@ async function load(){
   }
   const sig=d.signal||{}, bk=(sig.basket||[]);
   // STALE-DATA GUARD: never present old data as "today". Compare basket date to the
-  // last expected trading day (weekend-aware). >0 days behind => loud red banner.
+  // last expected trading day (weekend-aware). >=2 trading-days behind => loud red banner.
+  // age==1 is NOT stale: intraday before today's EOD pull lands, yesterday's basket IS
+  // the freshest valid one (today's bar not closed). Matches feeds_selftest max_age=2.
   (function(){
     const sb=document.getElementById('stale'); if(!sb) return;
     const sd=sig.date; if(!sd){ sb.style.display='none'; return; }
@@ -129,7 +131,7 @@ async function load(){
     const exp=ltd.toISOString().slice(0,10);
     const age=Math.round((new Date(exp)-new Date(sd))/86400000);
     const missing=bk.filter(b=>b.price==null).length;
-    if(age>0){
+    if(age>1){
       sb.style.display='';
       sb.innerHTML=`&#9888; STALE DATA — basket is from <b>${sd}</b>, ${age} trading-day(s) behind <b>${exp}</b>. `+
         `The qlib data pull is frozen (IBKR tunnel down or refresher not running). This is NOT today's basket — do not act on it.`+
