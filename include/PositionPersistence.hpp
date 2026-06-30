@@ -25,6 +25,7 @@
 #include <vector>
 #include <type_traits>
 #include <utility>
+#include <ctime>   // time() for the Survivor cell closer (S-2026-06-30)
 
 namespace omega::persist {
 
@@ -189,6 +190,21 @@ inline void register_position_persistence() {
     });
     g_open_positions.register_restorer(
         [](const omega::PositionSnapshot& ps) -> bool { return g_survivor.adopt(ps); });
+    // Closer (S-2026-06-30): Survivor cells had a persist-source + restorer but NO
+    // closer -> close_matching() (and thus the KILL ALL panic flatten) could not
+    // flatten a cell, so a cell position (e.g. XAU_4h_DonchN20) "sat there" with no
+    // manual close path. Match ps.engine -> cell.cfg.tag, book the close at the live
+    // mid via the cell's own exit path (emits a TradeRecord + clears the slot).
+    g_open_positions.register_closer(
+        [](const omega::PositionSnapshot& ps, const char* reason) -> bool {
+            for (auto& c : g_survivor.cells) {
+                if (!c.st.pos_active || ps.engine != c.cfg.tag) continue;
+                double b, a; if (!acct_book_px(c.cfg.symbol, b, a)) return false;
+                c.force_close_dup(b, a, (int64_t)time(nullptr), acct_book_cb, reason);
+                return true;
+            }
+            return false;
+        });
 
     // ---- LivePos archetype: scalpers + FX session-open engines (7) ----
     wire_livepos(g_gold_midscalper,     "MidScalperGold",   "XAUUSD");

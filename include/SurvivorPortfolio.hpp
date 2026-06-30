@@ -259,7 +259,8 @@ public:
     // blanket dedup gates new ENTRIES; this clears legacy / same-bar dup OPENS
     // (e.g. XAU DonchN20 + DonchN100 firing on one breakout) that the entry gate
     // can't undo. Reason "DEDUP_CLOSE" so it is distinguishable in the ledger.
-    void force_close_dup(double bid, double ask, int64_t now_s, CloseCb cb) noexcept {
+    void force_close_dup(double bid, double ask, int64_t now_s, CloseCb cb,
+                         const char* reason = "DEDUP_CLOSE") noexcept {
         if (!st.pos_active) return;
         const double mid = 0.5 * (bid + ask);
         // Sanity guard: refuse to book a close at an implausible price (bad/cross-
@@ -289,7 +290,7 @@ public:
         tr.mfe        = st.pos_mfe;
         tr.entryTs    = st.pos_entry_ts;
         tr.exitTs     = now_s;
-        tr.exitReason = "DEDUP_CLOSE";
+        tr.exitReason = reason;
         tr.regime     = "SURV";
         tr.shadow     = st.shadow_mode;
         ++st.n_trades;
