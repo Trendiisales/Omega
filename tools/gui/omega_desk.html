@@ -74,6 +74,7 @@ a{color:var(--blu);text-decoration:none}
   <span style="display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">ALL-TIME</span><span id="totpnl" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <span id="compbankwrap" style="display:inline-flex;align-items:baseline;gap:6px" title="companion (stall-clip) realized bank — paper, accounting-only"><span class="lbl">COMP-BANK</span><span id="compbank" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <button id="snd">SND OFF</button>
+  <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
 </div>
@@ -301,6 +302,20 @@ function ensureCtx(){if(!ACTX){try{ACTX=new (window.AudioContext||window.webkitA
 el('snd').onclick=function(){SND=!SND;localStorage.setItem('omega_snd',SND?'1':'0');sndBtn();
  if(SND){ensureCtx();chime([[0,880,0.5],[0.12,1320,0.4]]);}};
 sndBtn();
+// ── PANIC KILL-ALL: market-close every open position in THIS book (live opposing MKT) ──
+var __killArmed=false,__killT=null;
+function killAll(b){
+  if(!__killArmed){
+    __killArmed=true;b.textContent='CONFIRM?';b.style.background='#ff5a5a';b.style.color='#0a0a0a';
+    __killT=setTimeout(function(){__killArmed=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},4000);
+    return;
+  }
+  clearTimeout(__killT);__killArmed=false;b.disabled=true;b.textContent='FLATTENING…';
+  fetch('/api/flatten',{method:'POST'}).then(function(r){return r.json();}).then(function(j){
+    b.textContent=j&&j.ok?'SENT':'ERR';
+    setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);
+  }).catch(function(){b.textContent='ERR';setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);});
+}
 function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.currentTime;
  notes.forEach(function(n){var o=ACTX.createOscillator(),g=ACTX.createGain();
   o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];

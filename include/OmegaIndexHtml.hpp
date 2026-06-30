@@ -80,6 +80,7 @@ a{color:var(--blu);text-decoration:none}
   <span style="display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">ALL-TIME</span><span id="totpnl" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <span id="compbankwrap" style="display:inline-flex;align-items:baseline;gap:6px" title="companion (stall-clip) realized bank — paper, accounting-only"><span class="lbl">COMP-BANK</span><span id="compbank" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <button id="snd">SND OFF</button>
+  <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
   <span class="num" id="clk" style="color:var(--w)">--:--:-- UTC</span>
   <span class="lbl"><span class="dot" id="conn" style="background:var(--t3)"></span><span id="connlbl">connecting</span></span>
 </div>
@@ -223,11 +224,11 @@ a{color:var(--blu);text-decoration:none}
   </div>
   <div class="pan">
     <div class="lbl" style="margin-bottom:4px">MICROSTRUCTURE · BROKER · SIGNALS</div>
-    <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
+)OMEGAD0"
+R"OMEGAD1(    <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
     <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px;margin-top:5px"></div>
     <div class="lbl" style="margin:6px 0 2px">SIGNAL TAPE</div>
-)OMEGAD0"
-R"OMEGAD1(    <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
+    <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -308,6 +309,20 @@ function ensureCtx(){if(!ACTX){try{ACTX=new (window.AudioContext||window.webkitA
 el('snd').onclick=function(){SND=!SND;localStorage.setItem('omega_snd',SND?'1':'0');sndBtn();
  if(SND){ensureCtx();chime([[0,880,0.5],[0.12,1320,0.4]]);}};
 sndBtn();
+// ── PANIC KILL-ALL: market-close every open position in THIS book (live opposing MKT) ──
+var __killArmed=false,__killT=null;
+function killAll(b){
+  if(!__killArmed){
+    __killArmed=true;b.textContent='CONFIRM?';b.style.background='#ff5a5a';b.style.color='#0a0a0a';
+    __killT=setTimeout(function(){__killArmed=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},4000);
+    return;
+  }
+  clearTimeout(__killT);__killArmed=false;b.disabled=true;b.textContent='FLATTENING…';
+  fetch('/api/flatten',{method:'POST'}).then(function(r){return r.json();}).then(function(j){
+    b.textContent=j&&j.ok?'SENT':'ERR';
+    setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);
+  }).catch(function(){b.textContent='ERR';setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);});
+}
 function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.currentTime;
  notes.forEach(function(n){var o=ACTX.createOscillator(),g=ACTX.createGain();
   o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
@@ -406,7 +421,8 @@ function render(J){lastJ=J;
   dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
    +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
  dh+='</div>';el('dom').innerHTML=(bids.length||asks.length)?dh:'<span class="d">no depth (L2 quiet)</span>';
- var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
+)OMEGAD1"
+R"OMEGAD2( var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
  var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
  ob.style.background=dev>=0?'var(--grn)':'var(--red)';
 
@@ -421,8 +437,7 @@ function render(J){lastJ=J;
 
  var sig0=(J.signal_history||[])[0];
  if(sig0){var sk=sig0.symbol+'|'+sig0.engine+'|'+sig0.price;
-)OMEGAD1"
-R"OMEGAD2(  if(window._lastSig===undefined)window._lastSig=sk;
+  if(window._lastSig===undefined)window._lastSig=sk;
   else if(window._lastSig!==sk){window._lastSig=sk;sigTick();}}
  var sh=(J.signal_history||[]).slice(0,9).map(function(s){
   var c=s.side==='LONG'||s.side==='BUY'?'g':'r';
@@ -591,7 +606,8 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var gr=ctx.createLinearGradient(0,Y(hi),0,Y(Math.min(0,lo)));
  gr.addColorStop(0,'rgba(46,189,133,0.22)');gr.addColorStop(1,'rgba(46,189,133,0.02)');
  ctx.fillStyle=gr;ctx.fill();
- /* glowing equity line + live endpoint dot */
+)OMEGAD2"
+R"OMEGAD3( /* glowing equity line + live endpoint dot */
  ctx.save();ctx.shadowColor='#2EBD85';ctx.shadowBlur=6;
  ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.strokeStyle='#2EBD85';ctx.lineWidth=1.6;ctx.lineJoin='round';ctx.stroke();ctx.restore();
@@ -603,8 +619,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var netT=net+cw;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
-)OMEGAD2"
-R"OMEGAD3(  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
+  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
 function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
@@ -778,7 +793,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   defs.forEach(function(d){var v=lb[d[0]];if(v<=0)return;var y=Y(v);if(y<padT||y>padT+ph)return;
    var tx=padL+pw+2,txt=d[1]+' '+v.toFixed(dp);
    ctx.fillStyle='rgba(11,15,20,0.85)';ctx.fillRect(tx,y-6,54,11);
-   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
+)OMEGAD3"
+R"OMEGAD4(   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
   ctx.textAlign='start';})();
  for(var i=0;i<n;i++){var sg=bars[i][11];if(!sg)continue;var x=X(i),y;
   ctx.beginPath();
@@ -797,8 +813,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
    return lo;}
   var vis=ROWS.filter(function(r){return sm(r.sym)&&r.ets&&r.epx&&!(r.ets>t1||r.ts<t0);});
   var nx=0,exVis=0;
-)OMEGAD3"
-R"OMEGAD4(  vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
+  vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
   window._prNewest=nx;
   if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;

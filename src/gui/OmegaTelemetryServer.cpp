@@ -9,6 +9,7 @@
 #include "OmegaIndexHtml.hpp"   // HTML embedded at build time
 #include "OmegaIndexHtmlLegacy.hpp"  // pre-2026-06-12 GUI, served at /legacy
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"  // g_flatten_all_request (manual KILL-ALL panic flatten)
 #include <unordered_map>
 #include <ctime>
 #include <cstdio>
@@ -1235,6 +1236,24 @@ void OmegaTelemetryServer::run(int port)
             printf("[LEDGER-CLEAR] Session ledger cleared via API (csvs_renamed=%d)\n",
                    n_cleared);
             fflush(stdout);
+        }
+        else if (strstr(buf, "POST /api/flatten")) {
+            // ── MANUAL KILL-ALL panic flatten (S-2026-06-30) ──────────────
+            // Operator-triggered "close ALL open positions NOW" from the desk
+            // panic button. POST-only (never GET) so a crawler / prefetch can
+            // never fire it. We DO NOT close here -- sending broker orders from
+            // this HTTP thread would race the trading thread mid-tick. Instead
+            // we raise an atomic flag that on_tick consumes exactly once on the
+            // trading thread (real opposing MKT order per position via
+            // send_live_order, itself hard SHADOW-gated, + close_matching to
+            // clear the engine slot). Per-book by construction: this process
+            // only holds the Omega book.
+            ct = "application/json";
+            g_flatten_all_request.store(true);
+            printf("[KILL-ALL] panic flatten REQUESTED via desk button -- "
+                   "trading thread will flatten all open positions on next tick\n");
+            fflush(stdout);
+            body = "{\"ok\":true,\"msg\":\"flatten queued -- closing all open positions\"}";
         }
         else if (strstr(buf, "GET /api/shadow_csv"))  {
             // Serve the full shadow CSV for remote analysis -- tries all known paths

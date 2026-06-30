@@ -9,6 +9,31 @@
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
 static void on_tick(const std::string& sym, double bid, double ask) {
+    // ── MANUAL KILL-ALL panic flatten (S-2026-06-30) ───────────────────────
+    // Consumed once on THIS (trading) thread the moment the desk panic button
+    // POSTs /api/flatten -> g_flatten_all_request. Runs FIRST, before the spike
+    // filter's bad-quote return, so a single bad quote on `sym` can never delay
+    // a flatten. Independent of this tick's bid/ask -- each position is closed
+    // at its OWN current price. Every open position gets a real opposing MKT
+    // order (send_live_order is hard SHADOW-gated -> a safe no-op in shadow,
+    // where there is no broker position) AND close_matching() to clear the
+    // engine's internal slot + book the close. exchange(false) => fire once.
+    // This is the ONLY generic broker-flatten path in the system; the
+    // CatastrophicGuard net has zero registered flatten hooks (detection-only).
+    if (g_flatten_all_request.exchange(false)) {
+        int n_flat = 0;
+        for (const auto& ps : g_open_positions.snapshot_all()) {
+            if (ps.size <= 0.0) continue;
+            const bool buy_to_close = (ps.side == "SHORT");   // close SHORT => BUY
+            send_live_order(ps.symbol, buy_to_close, ps.size, ps.current, "KILLALL");
+            g_open_positions.close_matching(ps, "MANUAL_KILL_ALL");
+            ++n_flat;
+        }
+        printf("[KILL-ALL] manual panic flatten on trading thread -- %d position(s) "
+               "flattened (opposing MKT) + engine slots cleared\n", n_flat);
+        fflush(stdout);
+    }
+
     // ?? Tick spike filter ???????????????????????????????????????????????
     // Reject ticks where mid moves > 5x slow ATR in a single step.
     // Broker bad ticks (gold at 46420 instead of 4642) distort ATR, VWAP,

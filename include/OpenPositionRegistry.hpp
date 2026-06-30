@@ -39,6 +39,7 @@
 //   the registry shape.
 // ==============================================================================
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -285,3 +286,13 @@ private:
 // resolves to the same instance at link time. Engines self-register their
 // snapshotter in init_engines() (include/engine_init.hpp).
 extern omega::OpenPositionRegistry g_open_positions;
+
+// ── Manual KILL-ALL panic flatten (S-2026-06-30) ──────────────────────────
+// Set true by the GUI panic button (POST /api/flatten, OmegaTelemetryServer).
+// Consumed exactly once on the TRADING thread in on_tick (next to the
+// catastrophe net) -- NEVER acted on from the HTTP thread, which would race
+// engine state mid-tick. On consume, every open position is flattened with a
+// real opposing MKT order (send_live_order, itself hard SHADOW-gated) plus
+// close_matching() to clear the engine's internal slot and book the close.
+// inline => one definition shared across every TU that includes this header.
+inline std::atomic<bool> g_flatten_all_request{false};
