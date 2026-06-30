@@ -11,7 +11,12 @@ TOOLS="$HOME/Omega/tools/rdagent"; QD="$HOME/.qlib/qlib_data/omega_data"; TS="$(
 # the model froze at 06-18 undiagnosed for 8 days. data-health flags the staleness; this names the cause.
 LOG="$TOOLS/qlib_refresh.log"; exec > >(tee -a "$LOG") 2>&1
 trap 'echo "[$TS] qlib_refresh: EXIT status=$? (model now $(tail -1 "$QD/calendars/day.txt" 2>/dev/null))"' EXIT
-if ! nc -z -G3 127.0.0.1 4001 2>/dev/null; then echo "[$TS] qlib_refresh: no IBKR tunnel — SKIP (model stays stale, retry next run)"; exit 0; fi
+if ! nc -z -G3 127.0.0.1 4001 2>/dev/null; then
+  echo "[$TS] qlib_refresh: tunnel down — self-healing Mac:4001 -> VPS Gateway:4001"
+  ssh -fN -o ConnectTimeout=8 -o ExitOnForwardFailure=yes -L 4001:127.0.0.1:4001 -p 2222 trader@185.167.119.59 2>/dev/null || true
+  sleep 2
+fi
+if ! nc -z -G3 127.0.0.1 4001 2>/dev/null; then echo "[$TS] qlib_refresh: tunnel STILL down after heal — SKIP (feeds_selftest will alarm RED)"; exit 3; fi
 echo "[$TS] qlib_refresh: START — tunnel up, pulling bigcap"
 TMP=$(mktemp -d)
 "$IBPY" "$TOOLS/refresh_close_ibkr.py" --tickers bigcap >/dev/null 2>&1 || true   # also freshens close basket

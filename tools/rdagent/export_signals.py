@@ -103,6 +103,14 @@ def _portfolio_and_basket(artifacts: str, provider: str, region: str, topk: int,
     today = wide.loc[last].dropna().sort_values(ascending=False)
     n = len(today)
     ret = lambda inst, k: (float(px[inst].iloc[-1] / px[inst].iloc[-1 - k] - 1) if px[inst].notna().sum() > k else None)  # noqa: E731
+    # Price from the SAME qlib provider the model ranked on -> always present for every
+    # ranked name + date-consistent with the basket (no sp500 CSV column-gap "—").
+    def _px(inst):
+        try:
+            s = px[inst].dropna()
+            return round(float(s.iloc[-1]), 2) if len(s) else None
+        except Exception:  # noqa: BLE001
+            return None
     basket = []
     for i, (inst, sc) in enumerate(today.items()):
         basket.append({
@@ -110,6 +118,7 @@ def _portfolio_and_basket(artifacts: str, provider: str, region: str, topk: int,
             "instrument": str(inst),
             "score": round(float(sc), 4),
             "percentile": round(100 * (n - i) / n),  # 100 = strongest
+            "price": _px(inst),
             "ret_5d": ret(inst, 5),
             "ret_20d": ret(inst, 20),
             "action": "BUY" if i < topk else "—",
