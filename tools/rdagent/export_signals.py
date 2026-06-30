@@ -49,36 +49,123 @@ def _ic(artifacts: str) -> dict:
     return out
 
 
-def _portfolio_and_basket(artifacts: str, provider: str, region: str, topk: int, cost_bps: float):
-    """Cost-aware daily top-K backtest + today's basket with per-name context."""
+# Gold-companion lock-in params (faithful port of stall_accountant.py, regime-validated
+# 2026-06-30 daymover_lockin_sweep.py): only ARM after capturing GOLD_GATE; then clip on
+# STALL (no new high for GOLD_STALL days) or REVERSAL (give back GOLD_REVGB of MFE peak).
+# Best bear-sleeve lock: gate 2% / giveback 10% / stall 2 -> PF 1.53, DD -69% (vs wide -183%).
+GOLD_GATE, GOLD_REVGB, GOLD_STALL = 0.02, 0.10, 2
+
+
+def _mark_and_exit(c, st, gate_giveback, atr_mult, max_hold, t):
+    """Update peak/stall then SWITCH exit: WIDE trail for bull-entry positions,
+    GOLD-companion clip for bear-entry positions. Returns True if exit."""
+    if c > st["peak"]:
+        st["peak"] = c
+        st["since_high"] = 0
+    else:
+        st["since_high"] += 1
+    held_days = t - st["entry_t"]
+    if not st.get("bull", True):
+        # bear-entry: gold-companion clip (qualified signal, ride only once protected)
+        fav = st["peak"] / st["entry_px"] - 1.0
+        armed = fav >= GOLD_GATE
+        clip = armed and (st["since_high"] >= GOLD_STALL or c <= st["peak"] * (1 - GOLD_REVGB))
+        return bool(clip or held_days >= max_hold)
+    # bull-entry: wide trail (let the runner run)
+    gb = c <= st["peak"] * (1 - gate_giveback)
+    tr = c <= st["peak"] - atr_mult * st["entry_atr"]
+    return bool(gb or tr or held_days >= max_hold)
+
+
+def _portfolio_and_basket(artifacts: str, provider: str, region: str, topk: int,
+                          cost_bps: float, gate: float, contin_k: int):
+    """Day-mover + continuation selection (replaces the neg-IC qlib model rank).
+
+    The :7799 basket trades BIG DAY MOVERS that are also at a new contin_k-day high
+    (the validated BigCapMomo entry: impulse + continuation). Exit is REGIME-SWITCHED
+    (daymover_goldlogic_bt.py / daymover_lockin_sweep.py, faithful 7yr/multi-regime):
+      - BULL entry (basket > 200d SMA): ride a WIDE trail (20% giveback / 4xATR / 20d).
+        Wide beats clipping in bull -- a few runners carry the PF (bull-entry PF 4.21).
+      - BEAR entry: same GOLD-companion logic we run on gold (stall_accountant.py) --
+        arm after +2% captured, clip on 2-day stall or 10% give-back of MFE peak.
+        Bear entries are QUALIFIED (they met 5%+new-high) and net-positive, but the
+        clip cuts the bear drawdown 3.4x (-183% -> -69%) without excluding them.
+    SWITCH whole-book: PF 3.45, tot +2750%, maxDD -254% (vs no-companion 2.91 / -439%).
+    The qlib model score is still surfaced as context but no longer drives the BUY."""
     import qlib
     from qlib.data import D
 
     pred = pd.read_pickle(os.path.join(artifacts, "pred.pkl"))
     col = pred.columns[0]
-    wide = pred[col].unstack("instrument")  # date x instrument
+    wide = pred[col].unstack("instrument")  # date x instrument (model score, context only)
     qlib.init(provider_uri=str(Path(provider).expanduser()), region=region, kernels=1)
     names = list(wide.columns)
     px = D.features(names, ["$close"], freq="day")["$close"].unstack("instrument")
-    fwd = px.shift(-1) / px - 1.0
 
-    # ----- backtest -----
-    dates = [d for d in wide.index if d in fwd.index]
-    prev: set = set()
-    rets, turns = [], []
-    for d in dates:
-        row = wide.loc[d].dropna()
-        if row.empty:
-            continue
-        picks = list(row.sort_values(ascending=False).head(topk).index)
-        r = fwd.loc[d, picks].mean()
-        if pd.isna(r):
-            continue
-        turns.append(len(set(picks) ^ prev) / max(len(picks), 1))
-        rets.append(float(r))
-        prev = set(picks)
-    rets, turns = np.array(rets), np.array(turns)
-    net = rets - turns * (cost_bps / 1e4)
+    # ATR proxy per name = rolling mean |dClose| (same as the validated sweep)
+    closes = {nm: px[nm].to_numpy(dtype=float) for nm in names}
+    atr = {}
+    for nm in names:
+        c = closes[nm]
+        dabs = np.abs(np.diff(c, prepend=c[0]))
+        atr[nm] = pd.Series(dabs).rolling(14).mean().to_numpy()
+    dates = list(px.index)
+
+    # market regime: equal-weight basket close vs its own 200d SMA (bear-exclusion gate
+    # used across the Omega book). bull -> ride wide; bear -> gold-clip the qualified entry.
+    pxmat = px[names].to_numpy(dtype=float)
+    base = pxmat / pxmat[0]
+    basket = np.nanmean(base, axis=1)
+    bsma = pd.Series(basket).rolling(200, min_periods=200).mean().to_numpy()
+    bull_regime = basket > bsma   # bool per date row; NaN-warmup -> False
+
+    # ----- backtest: day-mover entry + SWITCH exit, daily mark-to-market -----
+    GIVEBACK, ATR_MULT, MAX_HOLD = 0.20, 4.0, 20
+    held: dict = {}     # name -> {entry_px, peak, entry_t, entry_atr}
+    gross_d, net_d, turns = [], [], []
+    for t in range(contin_k + 1, len(dates)):
+        # 1) mark held positions over day t, then check exits
+        day_rs, exits = [], []
+        for nm, st in held.items():
+            c, cp = closes[nm][t], closes[nm][t - 1]
+            if np.isfinite(c) and np.isfinite(cp) and cp > 0:
+                day_rs.append(c / cp - 1.0)
+            if np.isfinite(c) and _mark_and_exit(c, st, GIVEBACK, ATR_MULT, MAX_HOLD, t):
+                exits.append(nm)
+        for nm in exits:
+            held.pop(nm, None)
+        port_r = float(np.mean(day_rs)) if day_rs else 0.0
+        # 2) new entries: biggest movers >= gate AND at a new contin_k-day high
+        entries = 0
+        if len(held) < topk:
+            cand = []
+            for nm in names:
+                if nm in held:
+                    continue
+                c = closes[nm]
+                if not (np.isfinite(c[t]) and np.isfinite(c[t - 1]) and c[t - 1] > 0):
+                    continue
+                dr = c[t] / c[t - 1] - 1.0
+                hi = c[t] >= np.nanmax(c[t - contin_k:t + 1])
+                if dr >= gate and hi:
+                    cand.append((dr, nm))
+            cand.sort(reverse=True)
+            for _, nm in cand:
+                if len(held) >= topk:
+                    break
+                a = atr[nm][t]
+                held[nm] = {"entry_px": closes[nm][t], "peak": closes[nm][t],
+                            "entry_t": t, "since_high": 0,
+                            "bull": bool(bull_regime[t]),
+                            "entry_atr": a if np.isfinite(a) else closes[nm][t] * 0.02}
+                entries += 1
+        # 3) cost: one side per fill (entry or exit), cost_bps is round-trip
+        sides = entries + len(exits)
+        cost = sides / max(topk, 1) * (cost_bps / 2 / 1e4)
+        gross_d.append(port_r)
+        net_d.append(port_r - cost)
+        turns.append(entries / max(topk, 1))
+    gross_d, net_d, turns = np.array(gross_d), np.array(net_d), np.array(turns)
 
     def _m(x):
         if len(x) < 5 or x.std() == 0:
@@ -93,38 +180,61 @@ def _portfolio_and_basket(artifacts: str, provider: str, region: str, topk: int,
         }
 
     portfolio = {
-        "topk": topk, "cost_bps_roundtrip": cost_bps, "n_days": int(len(net)),
+        "topk": topk, "cost_bps_roundtrip": cost_bps, "n_days": int(len(net_d)),
+        "selection": f"day-mover>={gate:.0%} + new {contin_k}d-high, wide trail (gb20/atr4/h20)",
         "avg_daily_turnover": round(float(turns.mean()), 3) if len(turns) else None,
-        "gross": _m(rets), "net": _m(net),
+        "gross": _m(gross_d), "net": _m(net_d),
     }
 
-    # ----- today's basket with context -----
-    last = wide.index.max()
-    today = wide.loc[last].dropna().sort_values(ascending=False)
-    n = len(today)
+    # ----- today's basket: day-movers first, model score kept as context -----
+    last = dates[-1]
+    n = len(names)
     ret = lambda inst, k: (float(px[inst].iloc[-1] / px[inst].iloc[-1 - k] - 1) if px[inst].notna().sum() > k else None)  # noqa: E731
-    # Price from the SAME qlib provider the model ranked on -> always present for every
-    # ranked name + date-consistent with the basket (no sp500 CSV column-gap "—").
+
     def _px(inst):
         try:
             s = px[inst].dropna()
             return round(float(s.iloc[-1]), 2) if len(s) else None
         except Exception:  # noqa: BLE001
             return None
+
+    def _today_move(inst):
+        s = px[inst].dropna()
+        if len(s) < contin_k + 2:
+            return None, False
+        dr = float(s.iloc[-1] / s.iloc[-2] - 1.0)
+        hi = bool(float(s.iloc[-1]) >= float(s.iloc[-(contin_k + 1):].max()))
+        return dr, hi
+
+    scores = wide.loc[last].to_dict() if last in wide.index else {}
+    rows = []
+    for inst in names:
+        dr, hi = _today_move(inst)
+        qualifies = dr is not None and dr >= gate and hi
+        rows.append({"instrument": str(inst), "day_ret": dr, "new_high": hi,
+                     "qualifies": qualifies, "score": scores.get(inst)})
+    # BUY = qualifying day-movers, biggest move first, capped at topk; rest sorted by move
+    rows.sort(key=lambda r: (r["qualifies"], r["day_ret"] if r["day_ret"] is not None else -9),
+              reverse=True)
+    buys = [r["instrument"] for r in rows if r["qualifies"]][:topk]
     basket = []
-    for i, (inst, sc) in enumerate(today.items()):
+    for i, r in enumerate(rows):
+        inst = r["instrument"]
         basket.append({
             "rank": i + 1,
-            "instrument": str(inst),
-            "score": round(float(sc), 4),
-            "percentile": round(100 * (n - i) / n),  # 100 = strongest
+            "instrument": inst,
+            "day_ret": round(r["day_ret"], 4) if r["day_ret"] is not None else None,
+            "new_high": r["new_high"],
+            "score": round(float(r["score"]), 4) if r["score"] is not None and pd.notna(r["score"]) else None,
+            "percentile": round(100 * (n - i) / n),
             "price": _px(inst),
             "ret_5d": ret(inst, 5),
             "ret_20d": ret(inst, 20),
-            "action": "BUY" if i < topk else "—",
+            "action": "BUY" if inst in buys else "—",
         })
     signal = {"date": str(pd.Timestamp(last).date()), "rebalance": "daily close",
-              "universe_size": n, "buy_count": topk, "basket": basket}
+              "selection": f"day-mover>={gate:.0%} + new {contin_k}d-high",
+              "universe_size": n, "buy_count": len(buys), "basket": basket}
     return portfolio, signal
 
 
@@ -205,13 +315,16 @@ def main():
     ap.add_argument("--universe", default="BIGCAP")
     ap.add_argument("--topk", type=int, default=5)
     ap.add_argument("--cost-bps", type=float, default=10.0)
+    ap.add_argument("--gate", type=float, default=0.05, help="min day-return to qualify as a mover")
+    ap.add_argument("--contin-k", type=int, default=20, help="new K-day-high continuation lookback")
     ap.add_argument("--factors", default=None)
     ap.add_argument("--provenance", default="bar-replay")
     ap.add_argument("--out", default=str(Path.home() / "Omega" / "data" / "rdagent" / "latest.json"))
     a = ap.parse_args()
 
     artifacts = _latest_run(a.mlruns)
-    portfolio, signal = _portfolio_and_basket(artifacts, a.provider, a.region, a.topk, a.cost_bps)
+    portfolio, signal = _portfolio_and_basket(artifacts, a.provider, a.region, a.topk,
+                                              a.cost_bps, a.gate, a.contin_k)
     doc = {
         "generated_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "source": {
@@ -230,9 +343,10 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, indent=2))
     n = portfolio["net"]
+    buys = [b["instrument"] for b in signal["basket"] if b["action"] == "BUY"]
     print(f"wrote {out}")
     print(f"  net Sharpe={n['sharpe']} annRet={n['ann_return']} maxDD={n['max_drawdown']} "
-          f"hit={n['hit_rate']} | buy: {[b['instrument'] for b in signal['basket'][:a.topk]]}")
+          f"hit={n['hit_rate']} | {signal['selection']} | buy: {buys}")
 
 
 if __name__ == "__main__":
