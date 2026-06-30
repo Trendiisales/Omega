@@ -224,7 +224,33 @@ def chk_xs_index():
         return (AMBER,f"loaded but only {seeded}/5 MrLS legs warm-seeded")
     return (GREEN,f"loaded, {seeded}/5 legs seeded (gated -- dormant in bull by design)")
 
-CRIT_TASKS=["OmegaBigCapBridge","OmegaIbkrBridge","OmegaMgcLiveBars","OmegaHealthMonitor"]  # Aurora removed 2026-06-27 (tape-blocked, deliberately disabled)
+AURORA=LOGS/"aurora"/"aurora_NQ.json"
+def chk_aurora():
+    # Aurora order-flow snapshot freshness. aurora_NQ.json feeds TWO LIVE trading
+    # consumers -- AuroraGate.hpp (gold ORB + index entry gate, NQ proxies
+    # NAS100/US500) and the Crypto NDX live mark (shadow_refresh.cpp read_live_nq).
+    # OmegaAuroraSnapshot rewrites it every 60s (--once periodic). If it stalls
+    # during US RTH the gate goes fail-open AND the crypto NDX mark silently falls
+    # back to the stale daily close.
+    # History (S-2026-06-30): the task was disabled 2026-06-28 to stop a 257MB
+    # duplicate-loop leak and ran stale ~4 days with NO alarm -- because this exact
+    # check had been removed at the same time. Re-added + leak root-caused (task now
+    # runs --once periodically, cannot orphan/pileup). mtime tracks "is the
+    # snapshotter alive" independent of the separate NQ depth-freeze issue.
+    a=_age(AURORA)
+    if a is None:
+        if not _us_rth(): return (INFO,"aurora_NQ.json missing (mkt closed)")
+        return (RED,"aurora_NQ.json MISSING -- AuroraGate blind + crypto NDX on daily-close")
+    if not _us_rth(): return (INFO,f"aurora {a/60:.0f}min old (mkt closed -- NQ tape quiet)")
+    if a>600: return (RED,f"aurora STALE {a/60:.0f}min -- snapshotter dead; gate fail-open + NDX daily-close fallback")
+    if a>240: return (AMBER,f"aurora {a/60:.0f}min old -- snapshotter lagging")
+    return (GREEN,f"aurora fresh {a:.0f}s")
+
+# Aurora is NOT in CRIT_TASKS: as a periodic --once task its State is "Ready"
+# between runs (not "Running"), so a task-state check would false-RED. Its OUTPUT
+# freshness (chk_aurora) is the correct liveness signal and catches a dead/disabled
+# task during RTH. Do not re-add it here without making it a resident task again.
+CRIT_TASKS=["OmegaBigCapBridge","OmegaIbkrBridge","OmegaMgcLiveBars","OmegaHealthMonitor"]
 def chk_crit_tasks():
     st=_tasks(); bad=[t for t in CRIT_TASKS if st.get(t)!="Running"]
     if bad: return (RED,"NOT running: "+", ".join(f"{t}={st.get(t,'missing')}" for t in bad))
@@ -235,7 +261,7 @@ CHECKS=[
     ("ibkr_gateway",chk_gateway), ("fix_feed",chk_fix_feed),
     ("bigcap_data",chk_bigcap_data), ("ibkr_engine",chk_ibkr_engine), ("xs_index",chk_xs_index), ("rec_xau",chk_rec_xau), ("rec_mgc",chk_rec_mgc),
     ("dom_bridge",chk_dom_bridge), ("dashboard",chk_dashboard), ("scanner",chk_scanner),
-    ("l2_feed",chk_l2), ("telemetry",chk_telemetry),
+    ("l2_feed",chk_l2), ("aurora",chk_aurora), ("telemetry",chk_telemetry),
     ("disk",chk_disk), ("log_bloat",chk_log_bloat), ("crit_tasks",chk_crit_tasks),
 ]
 
