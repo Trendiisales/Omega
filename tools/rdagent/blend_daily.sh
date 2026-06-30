@@ -12,7 +12,7 @@ echo "[$TS] blend book — refreshing full S&P daily"
 # throttle -> ~230 froze at the 2024 build (the GUI "-" / 2yr-stale-column bug). Now: IBKR-first
 # (reqHistoricalData, no throttle) when the gateway tunnel is up, else yfinance WITH
 # retry-the-stragglers. Both extend-not-replace + freshness/coverage-gated (never write stale/thin).
-if nc -z -G2 127.0.0.1 4001 2>/dev/null; then
+if nc -z -G2 127.0.0.1 4002 2>/dev/null; then
   echo "  [close] IBKR gateway up -> reliable refresh (bigcap fast; run --tickers full overnight)"
   python3 "$TOOLS/refresh_close_ibkr.py" --tickers bigcap \
     || conda run -n rdagent4qlib python "$TOOLS/refresh_close_yf.py" \
