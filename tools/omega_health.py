@@ -46,6 +46,23 @@ def _fx_open() -> bool:
     if wd==4 and h>=21: return False            # Fri after close
     return True
 
+def _nq_globex_open() -> bool:
+    # NQ/MGC futures (CME Globex) tape -- the source aurora_NQ.json is built from.
+    # Trades ~23h/day Sun->Fri with a daily ~1h maintenance break, NOT just NYSE
+    # RTH. aurora's two live consumers (AuroraGate, crypto NDX mark) want a fresh
+    # mark whenever this tape is live; gating freshness on _us_rth() blinds the
+    # monitor for the ~17h/day the futures trade outside RTH -- the exact
+    # silent-stale failure mode of 2026-06-28. Daily maintenance break ~21:00-22:00
+    # UTC (5-6pm ET); weekend closed Fri 21:00 UTC -> Sun 22:00 UTC. (Fixed UTC
+    # offsets, EDT-anchored like _fx_open; +/-1h slop at the break edge in winter
+    # is acceptable -- it errs toward alarming, never toward a silent stale.)
+    n=_now(); wd=n.weekday(); h=n.hour
+    if wd==5: return False                      # Sat closed
+    if wd==4 and h>=21: return False            # Fri after 21:00 UTC close
+    if wd==6 and h<22: return False             # Sun before 22:00 UTC open
+    if 21<=h<22: return False                   # daily maintenance break
+    return True
+
 def _tasks() -> dict:
     out=subprocess.run('schtasks /query /fo CSV /nh', capture_output=True, text=True, shell=True).stdout
     st={}
@@ -230,8 +247,11 @@ def chk_aurora():
     # consumers -- AuroraGate.hpp (gold ORB + index entry gate, NQ proxies
     # NAS100/US500) and the Crypto NDX live mark (shadow_refresh.cpp read_live_nq).
     # OmegaAuroraSnapshot rewrites it every 60s (--once periodic). If it stalls
-    # during US RTH the gate goes fail-open AND the crypto NDX mark silently falls
-    # back to the stale daily close.
+    # while the NQ Globex tape is live (~23h/day, not just US RTH) the gate goes
+    # fail-open AND the crypto NDX mark silently falls back to the stale daily
+    # close. Gate on _nq_globex_open() not _us_rth() -- the snapshotter is meant
+    # to run whenever the futures tape ticks; an RTH-only gate was the blind spot
+    # that let it run stale ~4 days outside RTH with no alarm (2026-06-28 leak).
     # History (S-2026-06-30): the task was disabled 2026-06-28 to stop a 257MB
     # duplicate-loop leak and ran stale ~4 days with NO alarm -- because this exact
     # check had been removed at the same time. Re-added + leak root-caused (task now
@@ -239,9 +259,9 @@ def chk_aurora():
     # snapshotter alive" independent of the separate NQ depth-freeze issue.
     a=_age(AURORA)
     if a is None:
-        if not _us_rth(): return (INFO,"aurora_NQ.json missing (mkt closed)")
+        if not _nq_globex_open(): return (INFO,"aurora_NQ.json missing (NQ tape closed/maintenance break)")
         return (RED,"aurora_NQ.json MISSING -- AuroraGate blind + crypto NDX on daily-close")
-    if not _us_rth(): return (INFO,f"aurora {a/60:.0f}min old (mkt closed -- NQ tape quiet)")
+    if not _nq_globex_open(): return (INFO,f"aurora {a/60:.0f}min old (NQ tape closed/maintenance break)")
     if a>600: return (RED,f"aurora STALE {a/60:.0f}min -- snapshotter dead; gate fail-open + NDX daily-close fallback")
     if a>240: return (AMBER,f"aurora {a/60:.0f}min old -- snapshotter lagging")
     return (GREEN,f"aurora fresh {a:.0f}s")
