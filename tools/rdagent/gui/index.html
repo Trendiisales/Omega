@@ -61,7 +61,7 @@
   <div style="margin-top:12px">
     <button id="tradeBtn" onclick="tradeBasket()">Paper-trade this basket</button>
     <span id="tradeRes" class="hint" style="margin-left:10px"></span>
-    <p class="hint" style="margin-top:6px">Long-only, equal-weight, $100k, shadow (paper) fill at last close. Real money is gated off (faithful BT + manual confirm).</p>
+    <p class="hint" style="margin-top:6px">Long-only, equal-weight, $10k, shadow (paper) fill at last close net of real IBKR costs. Real money is gated off (faithful BT + manual confirm).</p>
   </div>
 
   <div class="secn">Discovered factors</div>
@@ -177,7 +177,10 @@ async function tradeBasket(){
     if(r.error){ v.style.color='var(--bad)'; v.textContent='error: '+r.error; }
     else{ v.style.color='var(--good)';
       const fills=(r.orders||[]).map(o=>`${o.sym}×${o.shares>0?o.shares:o.shares}`).join(', ')||'no change (already on book)';
-      v.textContent=`paper-filled ${r.n_names} names · $${Math.round(r.deployed_usd).toLocaleString()} deployed · ${fills}`; }
+      const eq=r.equity_usd!=null?` · equity $${Math.round(r.equity_usd).toLocaleString()}`:'';
+      const pnl=r.pnl_usd!=null?` (P&L $${Math.round(r.pnl_usd).toLocaleString()})`:'';
+      const cost=r.cost_today_usd!=null?` · cost $${r.cost_today_usd} (cum $${r.cost_cum_usd})`:'';
+      v.textContent=`paper-filled ${r.n_names} names · $${Math.round(r.deployed_usd).toLocaleString()} deployed${eq}${pnl}${cost} · ${fills}`; }
   }catch(e){ v.style.color='var(--bad)'; v.textContent='error: '+e; }
   b.disabled=false;
 }

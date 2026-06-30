@@ -29,25 +29,53 @@ _PRICE_CACHE: dict[str, float] = {}
 _PRICE_TS = 0.0
 
 
+# S-2026-06-25 STALE-PRICE GUARD: a close is only shown if its date is within
+# STALE_DAYS of the file's NEWEST date. Without this, latest_closes() returned the
+# last non-empty cell per column ignoring date -> dead columns (INTC/NFLX/ADBE/DELL/
+# AAPL stopped populating mid-2024) surfaced TWO-YEAR-OLD prices as "live", and the
+# paper-trade button would fill at them. Stale names are dropped -> GUI shows "—".
+STALE_DAYS = 5  # allow a long weekend; > this behind the newest date = drop, never show
+
+
 def latest_closes() -> dict[str, float]:
-    """Last non-empty close per instrument, cached 30 min. Fail-safe -> {} on error."""
+    """Most-recent close per instrument (freshness-gated), cached 30 min. Fail-safe -> {} on error."""
     global _PRICE_CACHE, _PRICE_TS
-    import csv as _csv, time as _time
+    import csv as _csv, time as _time, datetime as _dt
     if _PRICE_CACHE and (_time.time() - _PRICE_TS) < 1800:
         return _PRICE_CACHE
     path = next((p for p in CLOSE_CANDIDATES if p.exists()), None)
     if not path:
         return _PRICE_CACHE
-    closes: dict[str, float] = {}
     try:
+        last_date: dict[str, str] = {}   # sym -> Date of its last non-empty cell
+        last_val: dict[str, float] = {}  # sym -> that value
+        newest = ""                      # newest Date in the file (ISO sorts lexically)
         with open(path, newline="") as fh:
             r = _csv.reader(fh)
             syms = next(r)[1:]
             for row in r:
+                if not row:
+                    continue
+                d = row[0]
+                if d > newest:
+                    newest = d
                 for i, sym in enumerate(syms, start=1):
                     if i < len(row) and row[i] not in ("", "nan", "NaN"):
-                        try: closes[sym] = float(row[i])
+                        try: last_val[sym] = float(row[i]); last_date[sym] = d
                         except ValueError: pass
+        try: newest_d = _dt.date.fromisoformat(newest)
+        except ValueError: newest_d = None
+        closes: dict[str, float] = {}
+        dropped = 0
+        for sym, v in last_val.items():
+            fresh = True
+            if newest_d is not None:
+                try: fresh = (newest_d - _dt.date.fromisoformat(last_date[sym])).days <= STALE_DAYS
+                except ValueError: fresh = True
+            if fresh: closes[sym] = v
+            else: dropped += 1
+        if dropped:
+            print(f"[stale-price-guard] dropped {dropped} names with closes >{STALE_DAYS}d behind {newest}", flush=True)
         _PRICE_CACHE, _PRICE_TS = closes, _time.time()
     except Exception:  # noqa: BLE001
         return _PRICE_CACHE
@@ -126,7 +154,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             proc = subprocess.run(
                 [sys.executable, str(TOOLS / "execute_basket.py"),
-                 "--topk", "5", "--capital", "100000", "--mode", "shadow"],
+                 "--topk", "5", "--capital", "10000", "--mode", "shadow"],
                 capture_output=True, text=True, timeout=60,
             )
             out = proc.stdout.strip().splitlines()

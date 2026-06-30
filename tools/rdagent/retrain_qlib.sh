@@ -28,6 +28,6 @@ echo "[$TS] retrain: qrun done — fresh pred.pkl"
 # re-export latest.json from the freshest run, then re-fill the paper basket off the new model
 "$PY" "$TOOLS/export_signals.py" --mlruns "$WORK/mlruns" --provider "$QD" --region us \
     --universe BIGCAP --topk 5 --cost-bps 5 >/dev/null 2>&1 && echo "[$TS] retrain: latest.json re-exported" || echo "[$TS] retrain: export_signals FAILED"
-"$PY" "$TOOLS/execute_basket.py" --topk 5 --capital 100000 --mode shadow >/tmp/rda_basket.json 2>&1 \
+"$PY" "$TOOLS/execute_basket.py" --topk 5 --capital 10000 --mode shadow >/tmp/rda_basket.json 2>&1 \
   && echo "[$TS] retrain: basket re-filled -> as_of $($PY -c "import json;print(json.load(open('$HOME/Omega/data/rdagent/factor_basket_result.json')).get('as_of'))" 2>/dev/null)" \
   || echo "[$TS] retrain: execute_basket FAILED"

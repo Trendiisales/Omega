@@ -8,14 +8,24 @@ Reads ~/Omega/data/rdagent/latest.json (signal.basket, the model's BUY names),
 equal-weights the top-K long-only, diffs against the current paper book, and emits
 the BUY/SELL orders + an updated book + a ledger + a one-line result the GUI shows.
 
+REAL-COST CAPTURE (S-2026-06-30): the paper book is run "as if live" so the ledger
+reflects real trading costs. Every fill is charged:
+  - IBKR Pro Fixed equity commission: $0.005/share, min $1.00/order, max 1% notional.
+  - Slippage: 5 bps of notional per fill (close-marked fills cross the spread).
+A cash account (starts at --capital) is debited/credited per fill net of cost, and
+the ledger records cash, mark-to-market equity, this-rebalance cost, and cumulative
+cost. equity - capital = total paper P&L NET of real costs. Cost params are tunable
+via --commission-per-share / --commission-min / --commission-max-pct / --slippage-bps.
+
   --mode shadow (DEFAULT): logs the orders it WOULD place, marks them against the
-        latest close. NO broker connection. This IS the paper test -- treat as real.
+        latest close, charges real costs to the paper cash book. NO broker connection.
+        This IS the paper test -- treat as real.
   --mode live: connects to IBKR via ib_insync and places them. Requires --i-confirm,
         a running IB gateway, and is gated OFF by default. Nothing trades without it.
         (Real money also requires the factors to clear Omega faithful tick BT first --
         these are bar-replay grade; --mode live is a hard manual step, never scheduled.)
 
-  python execute_basket.py --topk 5 --capital 100000 --mode shadow
+  python execute_basket.py --topk 5 --capital 10000 --mode shadow
 """
 from __future__ import annotations
 import argparse, csv, json, sys
@@ -26,32 +36,101 @@ DATA = Path.home() / "Omega" / "data" / "rdagent"
 LATEST = DATA / "latest.json"
 CLOSE_CANDIDATES = [DATA / "sp500_long_close.csv", DATA / "sp500_close.csv"]
 POS = DATA / "factor_basket_positions.json"   # {sym: shares} long-only
+STATE = DATA / "factor_basket_state.json"     # {cash_usd, cost_cum_usd} paper cash book
 ORDERS = DATA / "factor_basket_orders.csv"
 LEDGER = DATA / "factor_basket_ledger.csv"
 RESULT = DATA / "factor_basket_result.json"    # one-line summary the GUI reads
 
+ORDERS_HEADER = ["ts", "as_of", "instrument", "side", "shares", "price", "notional", "cost"]
+LEDGER_HEADER = ["ts", "as_of", "n_names", "deployed_usd", "names",
+                 "cash_usd", "equity_usd", "cost_usd", "cost_cum_usd"]
+
+STALE_DAYS = 5  # S-2026-06-25: a close > this many days behind the file's NEWEST date is DROPPED.
+
 
 def latest_closes(path: Path) -> dict[str, float]:
-    """Last non-empty close per instrument from a wide date,SYM,SYM,... csv."""
-    closes: dict[str, float] = {}
+    """Most-recent close per instrument, FRESHNESS-GATED.
+
+    S-2026-06-25 STALE-PRICE GUARD: previously this took the last non-empty cell per
+    column ignoring date, so dead columns (INTC/NFLX/ADBE/DELL/AAPL stopped populating
+    mid-2024) returned 2-YEAR-OLD prices -- and main() would FILL the paper basket at
+    them. Now a close is only returned if it is within STALE_DAYS of the file's newest
+    date; stale names fall out of the dict -> main() skips them (the `skipped` list)
+    rather than booking a fill at a ghost price.
+    """
+    last_date: dict[str, str] = {}
+    last_val: dict[str, float] = {}
+    newest = ""
     with open(path, newline="") as fh:
         r = csv.reader(fh)
-        hdr = next(r)
-        syms = hdr[1:]
+        syms = next(r)[1:]
         for row in r:
+            if not row:
+                continue
+            d = row[0]
+            if d > newest:
+                newest = d
             for i, sym in enumerate(syms, start=1):
                 if i < len(row) and row[i] not in ("", "nan", "NaN"):
-                    try: closes[sym] = float(row[i])
+                    try: last_val[sym] = float(row[i]); last_date[sym] = d
                     except ValueError: pass
+    try: newest_d = dt.date.fromisoformat(newest)
+    except ValueError: newest_d = None
+    closes: dict[str, float] = {}
+    for sym, v in last_val.items():
+        fresh = True
+        if newest_d is not None:
+            try: fresh = (newest_d - dt.date.fromisoformat(last_date[sym])).days <= STALE_DAYS
+            except ValueError: fresh = True
+        if fresh: closes[sym] = v
     return closes
+
+
+def fill_cost(shares: int, notional: float, per_share: float, comm_min: float,
+              comm_max_pct: float, slippage_bps: float) -> float:
+    """Real per-fill cost: IBKR Pro Fixed commission + slippage. shares/notional are
+    absolute magnitudes for one order leg."""
+    if notional <= 0:
+        return 0.0
+    comm = per_share * abs(shares)
+    comm = max(comm, comm_min)
+    comm = min(comm, comm_max_pct * notional)   # IBKR caps fixed commission at 1% of trade value
+    slip = notional * slippage_bps / 1e4
+    return round(comm + slip, 2)
+
+
+def migrate_csv(path: Path, new_header: list[str]) -> None:
+    """One-time schema upgrade: if an existing file's header predates the cost columns,
+    rewrite it with the new header and pad historical rows with trailing blanks (the
+    new columns are appended at the end, so old data stays aligned)."""
+    if not path.exists():
+        return
+    rows = list(csv.reader(open(path, newline="")))
+    if not rows or rows[0] == new_header:
+        return
+    body = rows[1:]
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(new_header)
+        for r in body:
+            w.writerow(r + [""] * (new_header_pad(new_header, r)))
+
+
+def new_header_pad(new_header: list[str], row: list[str]) -> int:
+    return max(0, len(new_header) - len(row))
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--topk", type=int, default=5)
-    ap.add_argument("--capital", type=float, default=100000.0)
+    ap.add_argument("--capital", type=float, default=10000.0)
     ap.add_argument("--mode", choices=["shadow", "live"], default="shadow")
     ap.add_argument("--i-confirm", action="store_true", help="required for --mode live")
+    # real-cost knobs (IBKR Pro Fixed equity + slippage); defaults are the operator-chosen model
+    ap.add_argument("--commission-per-share", type=float, default=0.005)
+    ap.add_argument("--commission-min", type=float, default=1.00)
+    ap.add_argument("--commission-max-pct", type=float, default=0.01)
+    ap.add_argument("--slippage-bps", type=float, default=5.0)
     a = ap.parse_args()
 
     if not LATEST.exists():
@@ -80,35 +159,71 @@ def main() -> int:
     syms = sorted(set(cur) | set(target))
     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     asof = meta.get("signal", {}).get("date", "")
+
+    # paper cash book -- init from current state, or seed so equity == capital at first run
+    if STATE.exists():
+        st = json.loads(STATE.read_text())
+        cash = float(st.get("cash_usd", a.capital))
+        cost_cum = float(st.get("cost_cum_usd", 0.0))
+    else:
+        cur_mv = sum(int(cur.get(s, 0)) * closes.get(s, 0.0) for s in cur)
+        cash = a.capital - cur_mv          # so cash + current market value == capital
+        cost_cum = 0.0
+
     orders = []
+    cost_today = 0.0
     for sym in syms:
         delta = target.get(sym, 0) - int(cur.get(sym, 0))
         if delta == 0: continue
         px = closes.get(sym, 0.0)
         side = "BUY" if delta > 0 else "SELL"
-        orders.append((now, asof, sym, side, delta, round(px, 2), round(abs(delta) * px, 0)))
+        notional = abs(delta) * px
+        cost = fill_cost(delta, notional, a.commission_per_share, a.commission_min,
+                         a.commission_max_pct, a.slippage_bps)
+        cost_today += cost
+        if delta > 0:   # BUY: pay notional + cost
+            cash -= (notional + cost)
+        else:           # SELL: receive notional - cost
+            cash += (notional - cost)
+        orders.append((now, asof, sym, side, delta, round(px, 2), round(notional, 0), round(cost, 2)))
+
+    cost_cum += cost_today
 
     if a.mode == "live":
         if not a.i_confirm:
             print(json.dumps({"error": "--mode live requires --i-confirm + IB gateway (gated off)"})); return 2
         print(json.dumps({"error": "live broker path not wired here -- use the audited Omega live path"})); return 2
 
-    # ---- shadow: persist book + orders + ledger + GUI result ----
+    # ---- shadow: persist book + cash + orders + ledger + GUI result ----
+    deployed = sum(t * closes.get(s, 0) for s, t in target.items())
+    equity = cash + deployed
     POS.write_text(json.dumps(target, indent=0))
+    STATE.write_text(json.dumps({"cash_usd": round(cash, 2), "cost_cum_usd": round(cost_cum, 2),
+                                 "capital": a.capital, "updated": now}, indent=0))
+
+    migrate_csv(ORDERS, ORDERS_HEADER)
     new_orders = not ORDERS.exists()
     with open(ORDERS, "a", newline="") as fh:
         w = csv.writer(fh)
-        if new_orders: w.writerow(["ts", "as_of", "instrument", "side", "shares", "price", "notional"])
+        if new_orders: w.writerow(ORDERS_HEADER)
         for o in orders: w.writerow(o)
-    deployed = sum(t * closes.get(s, 0) for s, t in target.items())
+
+    migrate_csv(LEDGER, LEDGER_HEADER)
+    new_ledger = not LEDGER.exists()
     with open(LEDGER, "a", newline="") as fh:
         w = csv.writer(fh)
-        if fh.tell() == 0: w.writerow(["ts", "as_of", "n_names", "deployed_usd", "names"])
-        w.writerow([now, asof, len(target), round(deployed, 0), "|".join(target)])
+        if new_ledger or fh.tell() == 0: w.writerow(LEDGER_HEADER)
+        w.writerow([now, asof, len(target), round(deployed, 0), "|".join(target),
+                    round(cash, 0), round(equity, 0), round(cost_today, 2), round(cost_cum, 2)])
+
     result = {
         "ts": now, "as_of": asof, "mode": "shadow", "capital": a.capital,
         "n_names": len(target), "deployed_usd": round(deployed, 0),
-        "orders": [{"sym": o[2], "side": o[3], "shares": o[4], "price": o[5], "notional": o[6]} for o in orders],
+        "cash_usd": round(cash, 0), "equity_usd": round(equity, 0),
+        "pnl_usd": round(equity - a.capital, 0),
+        "cost_today_usd": round(cost_today, 2), "cost_cum_usd": round(cost_cum, 2),
+        "orders": [{"sym": o[2], "side": o[3], "shares": o[4], "price": o[5],
+                    "notional": o[6], "cost": o[7]} for o in orders],
         "book": target, "skipped_no_price": skipped,
     }
     RESULT.write_text(json.dumps(result, indent=2))
