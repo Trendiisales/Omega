@@ -9,7 +9,7 @@ class App(EWrapper, EClient):
     def nextValidId(self,oid): self.ready=True
     def scannerData(self,reqId,rank,cd,*a): self.rows.append((cd.contract.symbol,cd.contract.secType))
     def scannerDataEnd(self,reqId): self.done=True
-app=App(); app.connect('127.0.0.1',4001,clientId=1378)
+app=App(); app.connect('127.0.0.1',4002,clientId=1378)
 threading.Thread(target=app.run,daemon=True).start()
 t0=time.time()
 while not app.ready and time.time()-t0<15: time.sleep(0.1)

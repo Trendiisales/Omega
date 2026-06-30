@@ -14,14 +14,14 @@
 #     (not fatal) -- the freshness audit then still flags them so nothing is silently missed.
 # Each pull is independent + wrapped in try/except: one failure never aborts the rest.
 #
-# Run:  python tools/refresh_warmup_seeds.py [port]   (default 4001)
+# Run:  python tools/refresh_warmup_seeds.py [port]   (default 4002)
 import sys, os, datetime
 try:
     from ib_insync import IB, ContFuture, Contract
 except Exception as e:
     print(f"[refresh] ib_insync import failed: {e}"); sys.exit(2)
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 4001
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 4002
 SEED_DIR = "phase1/signal_discovery"
 os.makedirs(SEED_DIR, exist_ok=True)
 

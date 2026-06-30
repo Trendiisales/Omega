@@ -62,11 +62,11 @@ $TaskName = 'OmegaIbkrBridge'
 $Py       = 'C:\Omega\bracket-bot\.venv\Scripts\pythonw.exe'  # 'w' suffix = no console window (else cmd pops every 5min task tick)
 $Script   = 'C:\Omega\tools\ibkr_dom_bridge.py'
 $OutDir   = 'C:\Omega\logs\ibkr_l2'
-$Port     = 4001        # IB Gateway LIVE (4001). 2026-06-17: was 4002 (paper) ->
-                        # paper gateway carries NO CME Real-Time(NP,L2) tape, so
-                        # reqTickByTickData(AllLast) returned ~0 trades/day and the
-                        # MGC footprint feed was starved. Confirmed on 4001: usfuture
-                        # data-farm ON, AllLast streams. Live gateway must be logged in.
+$Port     = 4002        # IB Gateway API port. 2026-06-30: operator moved the gateway
+                        # 4001->4002. SAME live login (U-account), so CME Real-Time
+                        # (NP,L2)/AllLast entitlements are intact -- this is a PORT change,
+                        # not a paper-account switch. (The 2026-06-17 starvation was a
+                        # paper-LOGIN regression, not a port issue; do NOT revert to 4001.)
 $ClientId = 99
 $TcpPort  = 9701        # Omega.exe consumer connects here.
 $MaxLvl   = 5

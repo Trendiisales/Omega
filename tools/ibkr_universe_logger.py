@@ -16,7 +16,7 @@ from ibapi.wrapper import EWrapper
 from ibapi.scanner import ScannerSubscription
 
 OUT = os.environ.get('UNIVERSE_LOG', '/Users/jo/Omega/data/universe_log.csv')
-HOST = os.environ.get('IB_HOST', '127.0.0.1'); PORT = int(os.environ.get('IB_PORT', '4001'))
+HOST = os.environ.get('IB_HOST', '127.0.0.1'); PORT = int(os.environ.get('IB_PORT', '4002'))
 CID  = int(os.environ.get('IB_CID', '1390'))
 CODES = ['TOP_PERC_GAIN','TOP_PERC_LOSE','MOST_ACTIVE','HOT_BY_VOLUME',
          'HIGH_OPT_IMP_VOLAT','HIGH_OPT_IMP_VOLAT_OVER_HIST','TOP_TRADE_COUNT']

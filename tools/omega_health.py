@@ -89,10 +89,10 @@ def chk_log_fresh():
     return (GREEN,f"fresh {a:.0f}s")
 
 def chk_gateway():
-    up=_proc("ibgateway.exe"); listen=_port(4001)
-    if up and listen: return (GREEN,"ibgateway up, :4001 listening")
+    up=_proc("ibgateway.exe"); listen=_port(4002)
+    if up and listen: return (GREEN,"ibgateway up, :4002 listening")
     if not up: return (RED,"ibgateway.exe DOWN -- all IBKR feeds blind")
-    return (RED,":4001 not listening -- gateway not accepting API")
+    return (RED,":4002 not listening -- gateway not accepting API")
 
 def chk_fix_feed():
     last=None

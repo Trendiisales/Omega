@@ -5,7 +5,7 @@
 # Scheduled: OmegaGapperRecorder (weekdays 22:00 server-local). 2026-06-16.
 import sys, os, csv, datetime as dt
 from ib_async import IB, Stock, ScannerSubscription
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 4001
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 4002
 GAP='C:/Omega/tools/recent_gappers.csv'; MIN='C:/Omega/data/gapper_minute.csv'
 today = dt.date.today().isoformat()
 def keys(path):

@@ -16,7 +16,7 @@ class App(EWrapper, EClient):
     def nextValidId(self,oid): self.ready=True
     def historicalData(self,reqId,bar): self.bars.append(bar)
     def historicalDataEnd(self,reqId,s,e): self.done=True
-app=App(); app.connect('127.0.0.1',4001,clientId=1379)
+app=App(); app.connect('127.0.0.1',4002,clientId=1379)
 threading.Thread(target=app.run,daemon=True).start()
 t0=time.time()
 while not app.ready and time.time()-t0<15: time.sleep(0.1)

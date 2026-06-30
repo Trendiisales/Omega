@@ -114,7 +114,7 @@ def main():
     except ImportError:
         raise SystemExit("ib_insync not installed. `pip install ib_insync` + start IB Gateway, then retry.")
     ib = IB()
-    ib.connect("127.0.0.1", 4001, clientId=17)      # IBKR gateway; operator must have it up
+    ib.connect("127.0.0.1", 4002, clientId=17)      # IBKR gateway; operator must have it up
     for o in orders:
         contract = Stock(o["symbol"], "SMART", "USD")
         order = MarketOrder("BUY" if o["shares"] > 0 else "SELL", abs(o["shares"]))

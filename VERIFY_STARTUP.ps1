@@ -999,7 +999,7 @@ try {
     $staleN = if ($sumLine -match 'STALE\(enabled\):\s*(\d+)') { $Matches[1] } else { "?" }
     if ($rc -eq 1) {
         Add-Result "Seed Freshness" "WARN" "$staleN stale ENABLED-engine warm-seed(s) -- gate boots blind to current price" `
-            "Refresh: python tools\refresh_warmup_seeds.py 4001 (needs IBKR 4001 live)"
+            "Refresh: python tools\refresh_warmup_seeds.py 4002 (needs IBKR gateway 4002 live)"
     } elseif ($sumLine) {
         Add-Result "Seed Freshness" "PASS" "all enabled-engine warm-seeds fresh" "$sumLine"
     } else {

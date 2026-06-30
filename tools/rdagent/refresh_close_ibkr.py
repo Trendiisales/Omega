@@ -5,7 +5,7 @@ Root cause it fixes: the yfinance pull in blend_daily.sh is chronically throttle
 so ~230 of 536 names never refresh and their columns froze at the 2024 build -> the GUI showed
 "-" (stale guard) and the basket lost half its prices. IBKR (reqHistoricalData) has no such throttle.
 
-Usage (tunnel to the gateway must be up: ssh -f -N -L 4001:127.0.0.1:4001 omega-vps):
+Usage (tunnel to the gateway must be up: ssh -f -N -L 4002:127.0.0.1:4002 omega-vps):
     python3 refresh_close_ibkr.py --tickers bigcap   # ~40 traded names, fast (~7min)
     python3 refresh_close_ibkr.py --tickers full     # full S&P 536, overnight (~90min, IBKR pacing)
 Merges (extend, not replace) into sp500_long_close.csv. READ-ONLY on IBKR (no orders).
@@ -43,7 +43,7 @@ def pull(app, sym, dur):
     return out
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--tickers',default='bigcap'); ap.add_argument('--port',type=int,default=4001)
+    ap=argparse.ArgumentParser(); ap.add_argument('--tickers',default='bigcap'); ap.add_argument('--port',type=int,default=4002)
     ap.add_argument('--cid',type=int,default=1402); ap.add_argument('--dur',default='1 Y'); a=ap.parse_args()
     if a.tickers=='full' and os.path.exists(f"{DATA}/sp500_tickers.txt"):
         syms=open(f"{DATA}/sp500_tickers.txt").read().split()

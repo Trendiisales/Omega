@@ -186,7 +186,7 @@ if (Test-Path $btData) {
 }
 
 # ---------- 6. IB Gateway ports ----------
-foreach ($port in @(4001, 4002)) {
+foreach ($port in @(4002)) {
     try {
         $r = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -WarningAction SilentlyContinue
         if ($r.TcpTestSucceeded) {

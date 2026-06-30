@@ -1145,11 +1145,11 @@ function Invoke-Deploy {
             # tools/seed_refresh.py runs: [1] rebuild from l2_ticks, [2] IBKR refresh (connect-times-out +
             # SKIPS gracefully when the gateway is down -> no hang), [3] freshness audit (sets exit code).
             # Invoke-PyStepWithTimeout returns $true only on exit 0. Outer 300s is a belt+braces backstop.
-            if (Invoke-PyStepWithTimeout "tools\seed_refresh.py --port 4001 --repo $OmegaDir" 300 "seed_refresh" $OmegaDir) {
+            if (Invoke-PyStepWithTimeout "tools\seed_refresh.py --port 4002 --repo $OmegaDir" 300 "seed_refresh" $OmegaDir) {
                 Write-Host "  [OK] seed_refresh: rebuild + IBKR-refresh + audit clean (enabled engines fresh)" -ForegroundColor Green
                 Remove-Item -Path $seedAlert -ErrorAction SilentlyContinue
             } else {
-                $alert = "[P0-SEED] seed_refresh: enabled-engine warm-seed(s) STILL STALE (or refresh timed out) -- engine/gate booting on a price view detached from reality. Needs IBKR 4001 live; re-run: py tools\seed_refresh.py --port 4001"
+                $alert = "[P0-SEED] seed_refresh: enabled-engine warm-seed(s) STILL STALE (or refresh timed out) -- engine/gate booting on a price view detached from reality. Needs IBKR gateway (4002) live; re-run: py tools\seed_refresh.py --port 4002"
                 Write-Host ""
                 Write-Host "  ============================================================" -ForegroundColor Red
                 Write-Host "  $alert" -ForegroundColor Red
