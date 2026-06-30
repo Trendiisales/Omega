@@ -34,7 +34,7 @@ from ib_async import IB, Stock, ScannerSubscription
 
 # ── config (big-cap) ─────────────────────────────────────────────────────────
 IB_HOST = "127.0.0.1"
-IB_PORT = int(os.environ.get("OMEGA_IBKR_PORT", "4001"))  # 4001 LIVE gateway (2026-06-16 cutover); 4002=paper. env-overridable.
+IB_PORT = int(os.environ.get("OMEGA_IBKR_PORT", "4002"))  # 4002 gateway (2026-06-30 operator port move; do NOT revert to 4001). env-overridable.
 IB_CID  = 34                                              # clientId distinct from pump(33)
 SERVE_PORT    = int(os.environ.get("OMEGA_BIGCAP_BRIDGE_PORT", "7784"))
 PREFILTER_PCT = 3.0          # subscribe names already >=3% up (engine gates at 5%)
