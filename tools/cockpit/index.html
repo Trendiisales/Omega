@@ -31,6 +31,7 @@
   .big{font-size:26px;font-family:var(--mono);font-weight:600}
   .sub{font-size:12px;color:var(--mut);font-family:var(--mono);margin-top:4px}
   .pos{color:var(--grn)} .neg{color:var(--red)}
+  td.r,th.r{text-align:right}
   .row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:14px;margin-bottom:18px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   .panel .ph{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);
@@ -45,12 +46,17 @@
   tr{border-top:1px solid var(--line)} thead tr{border-top:none}
   tbody tr:hover{background:var(--panel2)}
   .tag{font-size:10.5px;color:var(--mut)}
+  .buy{font-size:10.5px;font-weight:600;color:var(--grn)}
   .iframes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .iframes .panel{min-height:520px}
   iframe{width:100%;height:520px;border:0;background:#fff}
   .full{grid-column:1/-1}
   .err{color:var(--amb);font-family:var(--mono);font-size:12px;padding:10px 14px}
   details summary{cursor:pointer;color:var(--mut);font-size:12px;padding:4px 0}
+  button.kill{margin-left:auto;background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;
+    font-weight:700;letter-spacing:.5px;font-size:11px;padding:3px 9px;border-radius:6px;cursor:pointer}
+  button.kill:disabled{opacity:.4;cursor:not-allowed;border-color:var(--line);color:var(--mut);background:var(--panel2)}
+  button.kill.armed{background:#ff5a5a;color:#1a0606}
   @media(max-width:900px){.iframes{grid-template-columns:1fr}}
 </style>
 </head>
@@ -80,12 +86,25 @@
 
   <div class="row2">
     <div class="panel">
-      <div class="ph"><h2>Crypto slots (live)</h2><span class="r" id="cry-upd"></span></div>
+      <div class="ph"><h2>Crypto slots (live)</h2>
+        <button class="kill" disabled title="Crypto live book is the C++ ibkrcrypto_engine — no flatten command surface yet. Wire engine-side before enabling (would be false comfort otherwise).">KILL ALL — n/a</button>
+        <span class="r" id="cry-upd"></span></div>
       <div class="body" id="cry-slots"></div>
     </div>
     <div class="panel">
-      <div class="ph"><h2>RD-Agent basket</h2><span class="r" id="rd-upd"></span></div>
+      <div class="ph"><h2>RD-Agent basket</h2>
+        <button class="kill" title="PANIC: flatten the RD-Agent paper basket book to cash (:7799)" onclick="killBook(this,'rdagent')">KILL ALL</button>
+        <span class="r" id="rd-upd"></span></div>
       <div class="body" id="rd-basket"></div>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="panel">
+      <div class="ph"><h2>Omega desk (VPS) — own book</h2>
+        <button class="kill" title="PANIC: market-close every open position in the Omega desk book (:7779, live opposing MKT, shadow-gated)" onclick="killBook(this,'omega')">KILL ALL</button>
+        <span class="r" id="omega-kill-res"></span></div>
+      <div class="body" style="padding:10px 14px;color:var(--mut);font-size:12px">Per-book panic flatten. Routes to the Omega desk's own <code>/api/flatten</code> (the same atomic close path as the desk button). Full desk embedded below.</div>
     </div>
   </div>
 
@@ -169,11 +188,29 @@ function render(comp,cry,rd){
     $("#rd-upd").textContent = rd?.generated_at||"";
     const b = rd?.signal?.basket||[];
     $("#rd-basket").innerHTML = b.length
-      ? `<table><thead><tr><th>Instrument</th><th>Score</th><th>Price</th></tr></thead><tbody>`+
-        b.map(x=>`<tr><td>${esc(x.instrument)}</td><td class="${cls(x.score)}">${x.score!=null?x.score.toFixed(4):'—'}</td><td>${x.price!=null?'$'+x.price:'—'}</td></tr>`).join("")+
+      ? `<table><thead><tr><th>Name</th><th>Action</th><th class="r">Conf</th><th class="r">Price</th></tr></thead><tbody>`+
+        b.map(x=>`<tr><td>${esc(x.instrument)}</td><td>${x.action==='BUY'?'<span class="buy">BUY</span>':'<span class="tag">—</span>'}</td><td class="r">${x.percentile!=null?x.percentile+'%':'—'}</td><td class="r">${x.price!=null?'$'+x.price:'—'}</td></tr>`).join("")+
         `</tbody></table>`
       : `<div class="err" style="color:var(--mut)">no basket — run export_signals.py</div>`;
   }
+}
+
+// ── PER-BOOK PANIC KILL-ALL: 2-click arm, then POST same-origin -> cockpit forwards to the book ──
+const __armed = {};
+async function killBook(b, book){
+  if(!__armed[book]){ __armed[book]=true; b.classList.add('armed'); b.textContent='CONFIRM KILL';
+    setTimeout(()=>{ __armed[book]=false; b.classList.remove('armed'); b.textContent='KILL ALL'; }, 4000); return; }
+  __armed[book]=false; b.classList.remove('armed'); b.disabled=true; b.textContent='FLATTENING…';
+  let msg='';
+  try{ const r = await (await fetch('/flatten/'+book,{method:'POST'})).json();
+    msg = r.error ? ('error: '+r.error) : (book==='rdagent'
+      ? ('FLATTENED · '+((r.orders||[]).filter(o=>o.side==='SELL').map(o=>o.sym).join(', ')||'nothing open'))
+      : ('FLATTEN sent · '+(r.flattened!=null?r.flattened+' closed':JSON.stringify(r).slice(0,80))));
+  }catch(e){ msg='error: '+e; }
+  const res = book==='omega' ? $("#omega-kill-res") : null;
+  if(res){ res.textContent = msg; res.style.color = msg.startsWith('error')?'var(--red)':'var(--grn)'; }
+  b.disabled=false; b.textContent='KILL ALL';
+  tick();
 }
 
 async function tick(){

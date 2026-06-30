@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -47,6 +48,19 @@ ROUTES = {
     "/api/companion": COMPANION,
     "/api/crypto": CRYPTO,
     "/api/rdagent": RDAGENT,
+}
+
+# PANIC KILL-ALL fan-out (per-book isolation, operator's choice). The cockpit is a
+# different origin from each book's GUI, so the browser POSTs same-origin to the
+# cockpit and the cockpit forwards to the book's real flatten endpoint -- no CORS,
+# and the cockpit never holds a close path of its own (each book closes its OWN book).
+# Crypto is intentionally ABSENT: its live :8090 book is the C++ ibkrcrypto_engine,
+# which has no flatten command surface yet -- a button here would be false comfort.
+OMEGA_DESK = os.environ.get("OMEGA_DESK_URL", "http://185.167.119.59:7779").rstrip("/")
+RDAGENT_URL = os.environ.get("RDAGENT_URL", "http://127.0.0.1:7799").rstrip("/")
+FLATTEN_TARGETS = {
+    "omega": OMEGA_DESK + "/api/flatten",
+    "rdagent": RDAGENT_URL + "/flatten-all",
 }
 
 
@@ -78,6 +92,27 @@ class Handler(SimpleHTTPRequestHandler):
             })
             return
         return super().do_GET()
+
+    def do_POST(self):  # noqa: N802
+        route = self.path.split("?")[0]
+        if route.startswith("/flatten/"):
+            book = route[len("/flatten/"):]
+            target = FLATTEN_TARGETS.get(book)
+            if not target:
+                self._json({"error": f"unknown book: {book}"}, 200)
+                return
+            try:
+                req = urllib.request.Request(target, data=b"", method="POST")
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    body = r.read()
+                try:
+                    self._json(json.loads(body))
+                except Exception:  # noqa: BLE001 -- pass through non-JSON downstream replies
+                    self._json({"ok": True, "raw": body.decode(errors="replace")[:400]})
+            except Exception as e:  # noqa: BLE001 -- downstream down/unreachable
+                self._json({"error": f"{book} flatten failed: {e}", "target": target}, 200)
+            return
+        self._json({"error": "not found"}, 404)
 
     def log_message(self, *a):  # quieter logs
         pass
