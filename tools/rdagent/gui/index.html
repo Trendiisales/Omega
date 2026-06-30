@@ -60,8 +60,9 @@
   <div id="basket" class="basket"></div>
   <div style="margin-top:12px">
     <button id="tradeBtn" onclick="tradeBasket()">Paper-trade this basket</button>
+    <button id="killBtn" title="PANIC: liquidate EVERY open position in THIS book (the day-mover paper basket) to cash" style="margin-left:8px;background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
     <span id="tradeRes" class="hint" style="margin-left:10px"></span>
-    <p class="hint" style="margin-top:6px">Long-only, equal-weight, $10k, shadow (paper) fill at last close net of real IBKR costs. Real money is gated off (faithful BT + manual confirm).</p>
+    <p class="hint" style="margin-top:6px">Long-only, equal-weight, $10k, shadow (paper) fill at last close net of real IBKR costs. Real money is gated off (faithful BT + manual confirm). KILL ALL flattens the paper book (live path gated identically).</p>
   </div>
 
   <div class="secn">Discovered factors</div>
@@ -183,6 +184,23 @@ async function tradeBasket(){
       v.textContent=`paper-filled ${r.n_names} names · $${Math.round(r.deployed_usd).toLocaleString()} deployed${eq}${pnl}${cost} · ${fills}`; }
   }catch(e){ v.style.color='var(--bad)'; v.textContent='error: '+e; }
   b.disabled=false;
+}
+// ── PANIC KILL-ALL: liquidate every open position in THIS book to cash (2-click arm) ──
+let __killArmed=false, __killT=null;
+async function killAll(b){
+  if(!__killArmed){ __killArmed=true; b.textContent='CONFIRM KILL'; b.style.background='#ff5a5a'; b.style.color='#1a0606';
+    __killT=setTimeout(()=>{__killArmed=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},4000); return; }
+  clearTimeout(__killT); __killArmed=false; b.disabled=true; b.textContent='FLATTENING…';
+  const v=document.getElementById('tradeRes');
+  try{ const r=await (await fetch('/flatten-all',{method:'POST'})).json();
+    if(r.error){ v.style.color='var(--bad)'; v.textContent='flatten error: '+r.error; }
+    else{ v.style.color='var(--good)';
+      const sold=(r.orders||[]).filter(o=>o.side==='SELL').map(o=>o.sym).join(', ')||'nothing open';
+      const eq=r.equity_usd!=null?` · equity $${Math.round(r.equity_usd).toLocaleString()}`:'';
+      v.textContent=`FLATTENED · sold ${sold}${eq} · book now empty`; }
+  }catch(e){ v.style.color='var(--bad)'; v.textContent='flatten error: '+e; }
+  b.disabled=false; b.textContent='KILL ALL'; b.style.background='#3a0d0d'; b.style.color='#ff5a5a';
+  load();
 }
 load(); setInterval(load, 20000);
 </script>

@@ -126,6 +126,9 @@ def main() -> int:
     ap.add_argument("--capital", type=float, default=10000.0)
     ap.add_argument("--mode", choices=["shadow", "live"], default="shadow")
     ap.add_argument("--i-confirm", action="store_true", help="required for --mode live")
+    ap.add_argument("--flatten", action="store_true",
+                    help="PANIC KILL-ALL: liquidate every open position to cash (target book = empty). "
+                         "Ignores today's basket. Same shadow/live gating as a normal run.")
     # real-cost knobs (IBKR Pro Fixed equity + slippage); defaults are the operator-chosen model
     ap.add_argument("--commission-per-share", type=float, default=0.005)
     ap.add_argument("--commission-min", type=float, default=1.00)
@@ -133,27 +136,33 @@ def main() -> int:
     ap.add_argument("--slippage-bps", type=float, default=5.0)
     a = ap.parse_args()
 
-    if not LATEST.exists():
-        print(json.dumps({"error": "no latest.json -- run export_signals.py first"})); return 1
-    meta = json.loads(LATEST.read_text())
-    basket = meta.get("signal", {}).get("basket", [])
-    buys = [b for b in basket if b.get("action") == "BUY" and b.get("instrument")]
-    buys = sorted(buys, key=lambda b: b.get("rank", 1e9))[: a.topk]
-    if not buys:
-        print(json.dumps({"error": "no BUY names in today's basket"})); return 1
+    # PANIC KILL-ALL: liquidate to an empty book, ignore today's basket. Still
+    # needs close prices to value the SELLs; latest.json is NOT required.
+    if a.flatten:
+        meta = json.loads(LATEST.read_text()) if LATEST.exists() else {}
+    else:
+        if not LATEST.exists():
+            print(json.dumps({"error": "no latest.json -- run export_signals.py first"})); return 1
+        meta = json.loads(LATEST.read_text())
+        basket = meta.get("signal", {}).get("basket", [])
+        buys = [b for b in basket if b.get("action") == "BUY" and b.get("instrument")]
+        buys = sorted(buys, key=lambda b: b.get("rank", 1e9))[: a.topk]
+        if not buys:
+            print(json.dumps({"error": "no BUY names in today's basket"})); return 1
 
     close_path = next((p for p in CLOSE_CANDIDATES if p.exists()), None)
     if not close_path:
         print(json.dumps({"error": "no close csv found"})); return 1
     closes = latest_closes(close_path)
 
-    leg = a.capital / len(buys)                       # equal-weight dollar per name
     target: dict[str, int] = {}
     skipped = []
-    for b in buys:
-        sym = b["instrument"]; px = closes.get(sym)
-        if not px or px <= 0: skipped.append(sym); continue
-        target[sym] = int(leg // px)                  # whole shares, long-only
+    if not a.flatten:
+        leg = a.capital / len(buys)                   # equal-weight dollar per name
+        for b in buys:
+            sym = b["instrument"]; px = closes.get(sym)
+            if not px or px <= 0: skipped.append(sym); continue
+            target[sym] = int(leg // px)              # whole shares, long-only
 
     cur = json.loads(POS.read_text()) if POS.exists() else {}
     syms = sorted(set(cur) | set(target))
@@ -176,6 +185,8 @@ def main() -> int:
         delta = target.get(sym, 0) - int(cur.get(sym, 0))
         if delta == 0: continue
         px = closes.get(sym, 0.0)
+        if px <= 0:                       # no fresh price -> never sell/buy at $0; keep the slot
+            target[sym] = int(cur.get(sym, 0)); skipped.append(sym); continue
         side = "BUY" if delta > 0 else "SELL"
         notional = abs(delta) * px
         cost = fill_cost(delta, notional, a.commission_per_share, a.commission_min,
@@ -217,7 +228,7 @@ def main() -> int:
                     round(cash, 0), round(equity, 0), round(cost_today, 2), round(cost_cum, 2)])
 
     result = {
-        "ts": now, "as_of": asof, "mode": "shadow", "capital": a.capital,
+        "ts": now, "as_of": asof, "mode": "shadow", "flatten": a.flatten, "capital": a.capital,
         "n_names": len(target), "deployed_usd": round(deployed, 0),
         "cash_usd": round(cash, 0), "equity_usd": round(equity, 0),
         "pnl_usd": round(equity - a.capital, 0),

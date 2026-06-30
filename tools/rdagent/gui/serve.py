@@ -116,6 +116,9 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "/trade-basket":
             self._trade_basket()
             return
+        if route in ("/flatten-all", "/api/flatten"):
+            self._flatten_all()
+            return
         if route != "/promote":
             self.send_error(404)
             return
@@ -141,6 +144,27 @@ class Handler(SimpleHTTPRequestHandler):
             ).encode()
         except Exception as e:  # noqa: BLE001
             body = json.dumps({"verdict": "ERROR", "note": str(e)}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _flatten_all(self):
+        # PANIC KILL-ALL for THIS book (the day-mover paper basket): liquidate every
+        # open position to cash via execute_basket.py --flatten. Paper/shadow only --
+        # real money is NOT reachable here (live path stays gated behind --i-confirm +
+        # the audited Omega live executor), same as _trade_basket.
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(TOOLS / "execute_basket.py"), "--flatten", "--mode", "shadow"],
+                capture_output=True, text=True, timeout=60,
+            )
+            out = proc.stdout.strip().splitlines()
+            body = (out[-1] if out and out[-1].startswith("{") else json.dumps(
+                {"error": proc.stderr.strip()[-400:] or "flatten failed"})).encode()
+        except Exception as e:  # noqa: BLE001
+            body = json.dumps({"error": str(e)}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
