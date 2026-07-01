@@ -39,9 +39,6 @@ HEADERS=(
   include/TrendLineBreakEngine.hpp
   include/IndexSessionEngine.hpp
   include/SessionMomentumEngine.hpp
-  include/FxCarryEngine.hpp
-  include/FxCrossRevEngine.hpp
-  include/FxSeasonalEngine.hpp
   include/IndexSeasonalEngine.hpp
   include/GoldSeasonalEngine.hpp
   include/GoldOversoldBounceEngine.hpp

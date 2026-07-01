@@ -681,13 +681,8 @@ static omega::NasTurtleD1Engine g_spx_turtle_d1;
 #include "GoldVolBreakoutM30Engine.hpp"
 static omega::GoldVolBreakoutM30Engine g_gold_volbrk_m30;
 
-// FxTurtleH4Engine -- 20-bar Donchian breakout on FX majors, long-only.
-//   Built 2026-05-23 as the post-mortem-driven replacement for the S99-
-//   killed FX session-open compression cohort. Same long-only Donchian
-//   H4 pattern that earned Ger40TurtleH4 PF 4.60 OOS and EURUSD long-only
-//   walk-forward PF 1.14-1.30 across all 3 OOS folds. One generic class
-//   instantiated per pair with pair-specific pip math.
-#include "FxTurtleH4Engine.hpp"
+// FxTurtleH4Engine REMOVED (S-2026-07-01 "no FX"): cohort tombstoned 2026-06-16,
+//   tick_fx dispatch gutted, 0 instances live. Header deleted.
 
 // 2026-05-20 mega_sweep2 candle-pattern batch (XAU D1, cost-stressed):
 //
@@ -966,64 +961,18 @@ static omega::NzdusdAsianOpenEngine           g_nzdusd_asian_open;
 #include "AtrMeanRevGridEngine.hpp"
 // 2026-05-26 S37f -- EURGBP H1 X=5 SL=3 (validated: OOS PF 1.68, RF 1.39)
 
-// 2026-05-26 S37g -- FxEnsembleEngine: 5 cross-family FX cells validated via
-// deep edge hunt (fx_deep_hunt.py). Each instance enables one cell tuned to
-// the pair's best edge per OOS validation. State-persistence inherited.
-//   EURUSD H1 donchian_55 LONG SL=3 TP=3 MB=24  OOS PF 2.80 (Sharpe 1.75)
-//   GBPUSD H2 bb_rev_20   LONG SL=3 TP=5 MB=96  OOS PF 3.24 (Sharpe 1.41)
-//   AUDUSD H4 bb_rev_20   LONG SL=3 TP=2 MB=24  OOS PF inf  (thin n=5)
-//   USDCAD H4 3bar_mom    SHORT SL=1.5 TP=5 MB=24 OOS PF 2.39 (Sharpe 1.76)
-//   USDJPY H2 donchian_20 LONG SL=1.5 TP=5 MB=96 OOS PF 1.67 (Sharpe 0.88)
-#include "FxEnsembleEngine.hpp"
-static omega::FxEnsembleEngine g_fx_ens_eurusd("EURUSD");
-static omega::FxEnsembleEngine g_fx_ens_gbpusd("GBPUSD");
-static omega::FxEnsembleEngine g_fx_ens_audusd("AUDUSD");
-static omega::FxEnsembleEngine g_fx_ens_usdcad("USDCAD");
-static omega::FxEnsembleEngine g_fx_ens_usdjpy("USDJPY");
-static omega::FxEnsembleEngine g_fx_ens_nzdusd("NZDUSD");  // S37h london_momo H2 SHORT
+// FxEnsembleEngine x6 REMOVED (S-2026-07-01 "no FX"): header deleted, instances
+//   and save_state (omega_main.hpp) removed.
 // 2026-05-26: Index AMR instances. Configs picked from deep eval sweep on
 // real tick CSVs (SPXUSD/NSXUSD/GER40). See AtrMeanRevGridEngine.hpp traits.
 static omega::XauusdFvgEngine                 g_xauusd_fvg;
 // 2026-05-18: GoldScalpPyramid -- M5 scalper with pyramid + aggressive trail
 #include "GoldScalpPyramidEngine.hpp"
-// 2026-05-26 S38d: FxScalpPyramid -- 5 profitable FX pairs, shadow-mode.
-//   Clone of GoldScalpPyramidEngine adapted for per-pair FX constants.
-//   13-month standalone harness PnL @ 0.01 lot:
-//     EURUSD +$1808 PF 1.56, USDJPY +$1688 PF 1.51, GBPUSD +$1207 PF 1.32,
-//     USDCAD +$506 PF 1.23,  AUDUSD +$410 PF 1.23.
-//   Skipped: NZDUSD (PF 1.07), EURGBP (PF 0.93).
-//   All shadow_mode=true pending 14-day live shadow validation.
-#include "FxScalpPyramidEngine.hpp"
-// 2026-05-31 S43: FX CARRY + CROSS-REVERSION -- first VALIDATED FX edges.
-//   Carry (rate-diff premium, Dukascopy D1 2019-2026): full-11 carry-only
-//   Sharpe 0.52, +12-14k bp, 5/6 blocks, cost-3x-proof. JPY crosses = 76-105%
-//   of edge. Cross-RV D1: EURGBP PF 2.0, robust cluster. Both fidelity-passed
-//   (backtest/fx_carry_engine_fidelity.cpp, fx_xrev_engine_fidelity.cpp).
-//   shadow_mode=true. carry on 8 fed pairs (6 routed + EURJPY/GBPJPY); x-rev EURGBP.
-#include "FxCarryEngine.hpp"
-static omega::FxCarryEngine g_fx_carry_eurusd("EURUSD");
-static omega::FxCarryEngine g_fx_carry_gbpusd("GBPUSD");
-static omega::FxCarryEngine g_fx_carry_usdjpy("USDJPY");
-static omega::FxCarryEngine g_fx_carry_audusd("AUDUSD");
-static omega::FxCarryEngine g_fx_carry_nzdusd("NZDUSD");
-static omega::FxCarryEngine g_fx_carry_usdcad("USDCAD");
-static omega::FxCarryEngine g_fx_carry_eurjpy("EURJPY");
-static omega::FxCarryEngine g_fx_carry_gbpjpy("GBPJPY");
-#include "FxCrossRevEngine.hpp"
-static omega::FxCrossRevEngine g_fx_xrev_eurgbp("EURGBP");
-// 2026-05-31 S43f: FxSeasonal (Friday-long) -- component of the validated combined
-//   thin-edge sleeve (Friday+COT+session, combined Sharpe 0.81, uncorrelated). Friday
-//   leg weekly Sh 1.50 5/6 blocks. Cost-sensitive -> shadow. 9 pairs.
-#include "FxSeasonalEngine.hpp"
-static omega::FxSeasonalEngine g_fx_seas_eurusd("EURUSD");
-static omega::FxSeasonalEngine g_fx_seas_gbpusd("GBPUSD");
-static omega::FxSeasonalEngine g_fx_seas_usdjpy("USDJPY");
-static omega::FxSeasonalEngine g_fx_seas_audusd("AUDUSD");
-static omega::FxSeasonalEngine g_fx_seas_nzdusd("NZDUSD");
-static omega::FxSeasonalEngine g_fx_seas_usdcad("USDCAD");
-static omega::FxSeasonalEngine g_fx_seas_usdchf("USDCHF");
-static omega::FxSeasonalEngine g_fx_seas_eurgbp("EURGBP");
-static omega::FxSeasonalEngine g_fx_seas_eurjpy("EURJPY");
+// FxScalpPyramidEngine x5 REMOVED (S-2026-07-01 "no FX"): engine retired, header deleted.
+// FxCarryEngine x8 + FxCrossRevEngine(EURGBP) + FxSeasonalEngine x9 REMOVED
+//   (S-2026-07-01 "no FX"): boot/seed/register already gutted (2ba1b2f6); headers
+//   + FxRateTable.hpp deleted, globals removed. FxXRev_EURGBP kEdge tag dropped
+//   from LiveBook.hpp.
 // S44 2026-05-31: IndexSeasonal -- equity-index day-of-week seasonality (Tue+Fri long).
 //   best-2 sleeve Sharpe 0.69 vs 0.36 buy&hold, regime-robust, blk 5/6 (index_seasonal_sharpe.cpp).
 #include "IndexSeasonalEngine.hpp"

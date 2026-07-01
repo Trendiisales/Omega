@@ -23,7 +23,6 @@
 //
 // TAGS are the EXACT TradeRecord.engine strings the engines emit (verified in code):
 //   XauTrendFollow4h_<cell>  (XauTrendFollow4hEngine)
-//   FxXRev_EURGBP            (FxCrossRevEngine("EURGBP"))
 //   CalendarTom_<sym>        (CalendarTomEngine)
 //   NasTurtleD1_<sym>        (NasTurtleD1Engine; per-symbol tag added 2026-06-24)
 // Keep this list tied to AUDITED_CONFIGS verdict=EDGE + cross-regime. Bull-only /
@@ -46,7 +45,7 @@ inline bool livebook_tag_match(const std::string& tag, const std::string& base) 
 inline bool livebook_is_validated(const std::string& tag) {
     static const char* kEdge[] = {
         "XauTrendFollow4h",     // XauTf4h      EDGE bull1.58/bear1.13 cross-regime, NOT bull-beta
-        "FxXRev_EURGBP",        // FxXrevEurgbp EDGE both-regime+both-halves, survives 2x spread
+        // FxXRev_EURGBP tag REMOVED (S-2026-07-01 "no FX"): FxCrossRevEngine deleted.
         "CalendarTom",          // CalendarTom  EDGE turn-of-month, STRONGER in 2022 bear (index+XAU)
         "NasTurtleD1_US500.F",  // SpxTurtleD1  EDGE 10yr daily, 2022 bear +92, both WF halves+
         "NasTurtleD1_DJ30.F",   // Dj30TurtleD1 EDGE 10yr daily, 2022 bear +63, both WF halves+

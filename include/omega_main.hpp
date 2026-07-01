@@ -996,13 +996,7 @@ int main(int argc, char* argv[])
                 // eliminates per-restart warmup. State files survive reboot ->
                 // engine boots warm + immediately ready for signals.
                 const std::string sr = state_root_dir();
-                // S37g 2026-05-26 FxEnsembleEngine state-persist
-                g_fx_ens_eurusd.save_state(sr + "/fxens_eurusd.dat");
-                g_fx_ens_gbpusd.save_state(sr + "/fxens_gbpusd.dat");
-                g_fx_ens_audusd.save_state(sr + "/fxens_audusd.dat");
-                g_fx_ens_usdcad.save_state(sr + "/fxens_usdcad.dat");
-                g_fx_ens_usdjpy.save_state(sr + "/fxens_usdjpy.dat");
-                g_fx_ens_nzdusd.save_state(sr + "/fxens_nzdusd.dat");
+                // FxEnsembleEngine state-persist REMOVED (S-2026-07-01 "no FX").
                 // S-2026-06-03: persist open positions so a restart/deploy
                 // resumes in-flight trades (worst-case loss = positions opened
                 // in the <600s before a HARD crash; graceful stop saves too).
