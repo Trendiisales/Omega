@@ -24,7 +24,11 @@ OVERRIDES = [
 ]
 # NOT real read-at-boot seeds -- engine OUTPUT sinks + printf-template scan artifacts.
 # (e.g. logs/shadow/tsmom_v2.csv is where tsmom_v2 WRITES trades; warmup_%s_D1.csv is a format string.)
-EXCLUDE = re.compile(r"logs[/\\]shadow[/\\]|tsmom_v2|[%<>*]|\.\.\.", re.I)
+# risk_monitor_thresholds.csv is a RiskMonitor threshold CONFIG (engine,symbol,tp_pts,... — no ts
+# column, not a price warm-seed); load_thresholds() tolerates its absence (RiskMonitor.hpp:252,
+# warns + returns 0). It is gitignored (a generated calibration artifact) so it isn't on the VPS ->
+# the warm-seed audit was false-flagging it [SEED-MISSING] every boot. Exclude it here.
+EXCLUDE = re.compile(r"logs[/\\]shadow[/\\]|tsmom_v2|risk_monitor_thresholds|[%<>*]|\.\.\.", re.I)
 # Seeds owned by DISABLED engines -- a stale seed they never read is harmless. Reported as
 # [skipped-disabled], NOT counted as stale, does NOT fail the audit. KEEP IN SYNC with engine_init.hpp:
 #   FX shadow book disabled 2026-06-23 ("we have no FX") -> all FX warmups inert.
@@ -71,10 +75,21 @@ def last_ts(path):
 
 now = time.time()
 stale, ok, missing, skipped = [], [], [], []
+def resolve(rel):
+    for cand in (os.path.join(REPO, rel), rel):
+        if os.path.exists(cand): return cand
+    # Concatenation fragment: code does seed_from_csv(base_dir + "/warmup_X.csv"), so the
+    # capture is the leading-slash literal "/warmup_X.csv". os.path.join(REPO, "/...") drops
+    # REPO (2nd arg absolute) -> false MISSING. Fall back to basename under the seed dirs.
+    base = os.path.basename(rel)
+    for d in ("phase1/signal_discovery", "data"):
+        hits = glob.glob(os.path.join(REPO, d, base))
+        if hits: return hits[0]
+    return None
+
 for rel in sorted(seed_paths):
-    cand = os.path.join(REPO, rel)
-    if not os.path.exists(cand): cand = rel
-    if not os.path.exists(cand): missing.append(rel); continue
+    cand = resolve(rel)
+    if cand is None: missing.append(rel); continue
     ts = last_ts(cand)
     if ts is None: missing.append(rel); continue
     age_d = (now - ts) / 86400.0
