@@ -1155,7 +1155,7 @@ static void init_engines(const std::string& cfg_path)
         //   cell_enable_mask = bits 0,3 = 0x09 (Donchian PF=1.15 + Keltner PF=1.03)
         //   S-NEXT 2026-05-17: RangeExpand (bit 5) removed — PF=0.82 on fresh tape,
         //   negative all 3 WF folds. Was 0x29, now 0x09.
-        g_xau_tf_4h.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
+        g_xau_tf_4h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (FIX-cutover shadow reason moot on IBKR)
         g_xau_tf_4h.enabled     = true;
         // S-2026-06-17: in-flight cold-loss protection (was 0.0/OFF by default).
         // Faithful per-TF backtest (backtest/losscut_xau_faithful.py, 2yr XAU
@@ -1234,7 +1234,7 @@ static void init_engines(const std::string& cfg_path)
         // the new cells are auditable against the S115 backtest CSV from
         // day one.  Service-level mode=SHADOW (config.ini) is the outer
         // safety net while we validate fill rates.
-        g_xau_tf_1h.shadow_mode = true;  // 2026-05-29: forced shadow (demo->live FIX cutover)
+        g_xau_tf_1h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (FIX-cutover shadow reason moot on IBKR)
         g_xau_tf_1h.enabled     = true;
         // S-2026-06-17 cold-loss protection. Faithful M30->H1 backtest: LC=0.5%
         // -> net +337, maxDD -44% (-602->-339), worst -191->-27. Tighter than H4
@@ -1402,7 +1402,7 @@ static void init_engines(const std::string& cfg_path)
         // ADX_Mom 1.45->2.18 (+50%). MaxDD cut nearly in half.
         // The DD profile that drove the S52 disable may improve with the
         // gate; 60+ days HARD shadow before considering enabled=live.
-        g_xau_tf_d1.shadow_mode = true;
+        g_xau_tf_d1.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_xau_tf_d1.enabled     = true;   // S88: revived w/ vol-band gate, HARD shadow
         g_xau_tf_d1.min_impulse_atr = 0.5;  // UPGRADE S-2026-06-22 (fleet-audit, real engine reproduced in main tree, backtest/XauTrendFollowD1Backtest.cpp IMP=0.5): signal-day |close-open|>=0.5*ATR14 gate. Ensemble bull PF1.60, bear PF1.52, both-WF-halves+ both regimes, maxDD -16%. Per-cell + IMP=1.0-rejected detail in manifest XauTfD1 row + fleet-audit log.
         // S-2026-06-17 cold-loss protection. Daily backtest (losscut_batch_b.py):
@@ -1454,10 +1454,10 @@ static void init_engines(const std::string& cfg_path)
         // S-2026-06-19: TrendRider bank-and-reload companions on the 4h + D1 hosts.
         // SHADOW. Banks +N*ATR per host cell + reloads while the cell stays open
         // (validated D1+4h both-halves both regimes; 2h marginal/1h hurts -> not wired).
-        g_rider_4h.enabled = true; g_rider_4h.shadow_mode = true;
+        g_rider_4h.enabled = true; g_rider_4h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_rider_4h.N = 2.5; g_rider_4h.lot = 0.01; g_rider_4h.tag = "XauTrendRider4h";
         g_rider_4h.init(omega::kXauTfNumCells);
-        g_rider_d1.enabled = true; g_rider_d1.shadow_mode = true;
+        g_rider_d1.enabled = true; g_rider_d1.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_rider_d1.N = 2.5; g_rider_d1.lot = 0.01; g_rider_d1.tag = "XauTrendRiderD1";
         g_rider_d1.init(omega::kXauTfD1NumCells);
         printf("[OMEGA-INIT] TrendRider companions: 4h(cells=%d) + D1(cells=%d) N=2.5 shadow=1\n",
@@ -1780,7 +1780,7 @@ static void init_engines(const std::string& cfg_path)
         // 2022 bear stays + (strongest cell). Both-regime+both-half. Per-instance
         // override only -- NAS turtle keeps 1.5 (its sweep cell did not upgrade).
         g_dj30_turtle_d1.p.sl_atr_mult    = 2.0;
-        g_dj30_turtle_d1.shadow_mode     = true;
+        g_dj30_turtle_d1.shadow_mode     = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (validated EDGE)
         g_dj30_turtle_d1.enabled         = true;
         g_dj30_turtle_d1.symbol          = "DJ30.F";
         g_dj30_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_DJ30_D1.csv");
@@ -1789,7 +1789,7 @@ static void init_engines(const std::string& cfg_path)
         // S-2026-06-26s fleet-sweep UPGRADE (workflow wn6lralw2, verify held=True):
         // sl_atr_mult 1.5 -> 2.0. Both-regime+both-half+, cuts maxDD. Per-instance.
         g_spx_turtle_d1.p.sl_atr_mult     = 2.0;
-        g_spx_turtle_d1.shadow_mode      = true;
+        g_spx_turtle_d1.shadow_mode      = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (validated EDGE)
         g_spx_turtle_d1.enabled          = true;
         g_spx_turtle_d1.symbol           = "US500.F";
         g_spx_turtle_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_US500_D1.csv");
@@ -1816,7 +1816,7 @@ static void init_engines(const std::string& cfg_path)
         // HARD shadow: novel edge, fat-tail dependent, bull-only sample. Forward-
         // log only; do NOT flip to live until the shadow ledger + a bear-inclusive
         // dataset confirm. Reuses the existing bundled H1 + M30 warmup CSVs.
-        g_gold_volbrk_m30.shadow_mode = true;   // HARD shadow regardless of kShadowDefault
+        g_gold_volbrk_m30.shadow_mode = false;   // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover overrides HARD-shadow pin)
         g_gold_volbrk_m30.enabled     = true;
         g_gold_volbrk_m30.lot         = 0.01;
         g_gold_volbrk_m30.max_spread  = 0.80;   // gold $ (~80 pts)
@@ -2194,7 +2194,7 @@ static void init_engines(const std::string& cfg_path)
         //   InsideBar (bit 3): baseline PF 1.25 -> +ADX25 1.45 -> ADX
         // Apply ADX to bits {0,1,3} = 0xB; vol_band to bit {2} = 0x4.
         // Stacked vol+ADX hurt (tested separately); per-cell exclusive is right.
-        g_xau_tf_2h.shadow_mode = true;
+        g_xau_tf_2h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_xau_tf_2h.enabled     = true;
         // S-2026-06-17 cold-loss protection. Faithful M30->H2 backtest: LC=0.5%
         // -> net +189, maxDD -66% (-802->-269), worst -238->-27 (strongest DD cut
@@ -2284,7 +2284,7 @@ static void init_engines(const std::string& cfg_path)
         // (gap-through-SL) regimes; SLOPE12 removes counter-trend 3-bar
         // fires. Both orthogonal, ANDed when stacked. Shadow A/B 60+ days
         // before flipping enabled=true.
-        g_xau_threebar_30m.shadow_mode        = true;
+        g_xau_threebar_30m.shadow_mode        = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_xau_threebar_30m.enabled            = true;   // RESURRECTED-SHADOW 2026-06-18 (cull-audit): the 2026-06-15 "-$371 6mo shadow-book" cull was POLLUTED basis (same batch as wrongly-killed GoldOrb). Faithful re-check (backtest/threebar30m_xau_S35P3_backtest.cpp, production engine M30, 2024-26): PF1.29 n365, ALL YEARS POSITIVE — NOT a net loser. CAVEAT: bull-only window (no 2022 bear) + 2025-concentrated + long-only -> SHADOW-CANDIDATE, bear-test owed before any live size. shadow_mode=true above. See AUDITED_CONFIGS.tsv + CULL_LEDGER.tsv.
         g_xau_threebar_30m.long_only          = true;   // S96: short side no edge
         g_xau_threebar_30m.lot                = 0.01;
@@ -2521,7 +2521,7 @@ static void init_engines(const std::string& cfg_path)
         //   >= 30 trades, expectancy beats Tsmom, AND a deliberate human
         //   decision to flip back to kShadowDefault. Promotion gate per
         //   NEXT_SESSION.md S9 priority 3.
-        g_trend_rider.shadow_mode       = true;
+        g_trend_rider.shadow_mode       = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         // S-2026-06-19 Phase 1 item 3: re-enabled to SHADOW only. The S91 "solo
         // test" disable is stale — GoldUltimateEngine is itself enabled=false
         // (S99b) and the book runs many shadow engines. shadow_mode stays true;
@@ -4211,7 +4211,7 @@ static void init_engines(const std::string& cfg_path)
         // chandelier ATR-trail + structural selloff-low stop + 240-bar time-stop + the
         // macro long-block entry filter (NO cold loss-cut by design -- depth, not speed,
         // is the edge; a velocity/cut gate HURTS gold per the 2026-06-12 sweep).
-        g_gold_panic_bounce.shadow_mode = true;
+        g_gold_panic_bounce.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_gold_panic_bounce.enabled     = true;
         // S-2026-06-30 EMA200-slope regime gate (faithful BT, both regimes):
         // block the dip-buy while EMA200 is falling (confirmed bear). gate_lb200
@@ -4252,7 +4252,7 @@ static void init_engines(const std::string& cfg_path)
         //   2022 cross-validation PENDING -> SHADOW only, NAS100 instance first.
         g_idx_bear_short_nas.symbol      = "NAS100";
         g_idx_bear_short_nas.engine_name = "IndexBearShort";
-        g_idx_bear_short_nas.shadow_mode = true;     // prove on shadow + cross-instrument before any live size
+        g_idx_bear_short_nas.shadow_mode = false;     // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover overrides prove-on-shadow note)
         g_idx_bear_short_nas.enabled     = true;   // SHIPPING DON24 all-weather (real engine): 2022 bear PF1.26 +1061 both-halves+, 2024-26 bull PF1.07 +514. Shadow. Manifest IdxBearShortNas. Full history (DON48 vindication, the within-session disable/revert, the DON48->24 bull-bleed fix, all figures) on the DON line below + memory feedback-drive-real-engine-not-port.
         g_idx_bear_short_nas.COST_PTS    = 2.0;      // NAS100 RT pts
         g_idx_bear_short_nas.lot         = 1.0;
@@ -4291,7 +4291,7 @@ static void init_engines(const std::string& cfg_path)
         // forward shadow-ledger read of bull-regime behaviour.
         g_idx_bear_short_sp.symbol      = "US500";
         g_idx_bear_short_sp.engine_name = "IndexBearShort";
-        g_idx_bear_short_sp.shadow_mode = true;
+        g_idx_bear_short_sp.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_idx_bear_short_sp.enabled     = true;
         g_idx_bear_short_sp.COST_PTS    = 0.6;       // US500 RT pts (real-engine SPX2022 cost)
         g_idx_bear_short_sp.lot         = 1.0;
@@ -4425,7 +4425,7 @@ static void init_engines(const std::string& cfg_path)
         // bull cherry-pick; true headline PF4.17. Do NOT build a breadth book
         // (sweep KILLED RSI2/IBS+breadth>=2 vs asym-veto -- see handoff 2026-06-26b).
         g_connors_nas.lot         = 3.0;    // dollar-normalized shadow size (index convention)
-        g_connors_nas.shadow_mode = true;
+        g_connors_nas.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (validated EDGE)
         g_connors_nas.enabled     = true;   // SHADOW
         g_connors_nas.REGIME_GATE  = 1;     // S-2026-06-20: asym sustained-bear veto > SMA200 (faithful 6/6) — SHADOW
         g_connors_nas.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };

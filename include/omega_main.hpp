@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
     // in backtest too -> 0 live trades = correct, the PF1.74 edge is DORMANT not
     // dead. The [MGC-FEED] poll heartbeat (MgcFastDonchianFeed.hpp) confirms reads.
     g_mgc_fastdon.enabled     = true;
-    g_mgc_fastdon.shadow_mode = true;
+    g_mgc_fastdon.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
     g_mgc_fastdon.lot         = 1.0;   // S-2026-06-26 operator: deploy at lot size 1 (= 1 MGC micro, $10/pt). SHADOW. Re-look + scale if the live ledger proves it (memory project-revisit-scale-mgcfastdon-bigcapmomo).
     g_mgc_fastdon.Nin = 40; g_mgc_fastdon.Nout = 20; g_mgc_fastdon.Kov = 1.5;  // S-2026-06-23: 20/10 -> 40/20 (faithful-best PF1.74 vs 1.54, 2x-cost-robust)
     g_mgc_fastdon.use_hvn_skip = true;
@@ -104,7 +104,7 @@ int main(int argc, char* argv[])
     // ATR) + aggregated H1 (EMA200 trend). SHADOW; shares the starved-until-
     // entitlement MGC feed with g_mgc_fastdon. Driven inside poll_mgc_feed.
     g_mgc_volbrk.enabled     = true;
-    g_mgc_volbrk.shadow_mode = true;
+    g_mgc_volbrk.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
     g_mgc_volbrk.lot         = 0.01;
     g_mgc_volbrk.max_spread  = 1.50;   // MGC futures pts (looser than spot gold $)
     g_mgc_volbrk.init();
