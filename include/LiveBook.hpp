@@ -50,6 +50,7 @@ inline bool livebook_is_validated(const std::string& tag) {
         "CalendarTom",          // CalendarTom  EDGE turn-of-month, STRONGER in 2022 bear (index+XAU)
         "NasTurtleD1_US500.F",  // SpxTurtleD1  EDGE 10yr daily, 2022 bear +92, both WF halves+
         "NasTurtleD1_DJ30.F",   // Dj30TurtleD1 EDGE 10yr daily, 2022 bear +63, both WF halves+
+        "ConnorsRSI2",          // ConnorsNas   EDGE PF4.17 (REGIME_GATE=1 asym bear-veto), 2022 bear PF3.01 +1842 n8 POSITIVE, both WF halves+ (2.91/5.09), 2x-cost robust; SMA200 self-gate sits out bears
     };
     for (auto e : kEdge) if (livebook_tag_match(tag, e)) return true;
     return false;
