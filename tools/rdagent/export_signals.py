@@ -55,15 +55,21 @@ def _ic(artifacts: str) -> dict:
 # Best bear-sleeve lock: gate 2% / giveback 10% / stall 2 -> PF 1.53, DD -69% (vs wide -183%).
 GOLD_GATE, GOLD_REVGB, GOLD_STALL = 0.02, 0.10, 2
 
-# COLD-LOSS CUT (S-2026-07-01): ungated adverse stop from ENTRY. The STALL and
-# REVERSAL clips below are BOTH AND-armed (armed = fav >= GOLD_GATE), and the
-# bull-entry trail is anchored at `peak` (= entry while the trade never runs), so
-# a trade that goes cold without ever arming has NO tight exit and rides to
-# max_hold (the live SOL companion sat at -$6.40 / MFE 0% / stall 1 exactly this
-# way). GOLD_COLDCUT bounds that cold loser. It fires only while `not armed`, so
-# runners -- which arm by definition -- are exempt and still ride wide. 0.0 = OFF;
-# set a swept value from `daymover_goldlogic_bt.py --sweep-coldcut` before enabling.
-GOLD_COLDCUT = 0.0
+# CATASTROPHE COLD-CUT (S-2026-07-01): direction-aware adverse floor for the cold
+# loser that the AND-armed STALL/REVERSAL clips can never reach (a trade that goes
+# red and NEVER goes green rides to max_hold unprotected -- the live SOL companion
+# sat at -$6.40 / MFE 0% / stall 1 exactly this way). This is NOT the rejected v1
+# arm-gated cut (`not armed`, fav < 2%): that was too broad and scalped dip-then-
+# recover WINNERS -> tot% + PF down every value (see COLD_CUT_stall_accountant.patch.md).
+# v2 fires ONLY when the trade (a) never went green (peak fav <= MFE_EPS), AND
+# (b) is not a 1-bar wick (held >= MINHOLD), AND (c) adverse <= -GOLD_COLDCUT. Any
+# strength first -> EXEMPT, so runners keep riding wide. `daymover_goldlogic_bt.py
+# --sweep-smartcut`: whole book PF 1.76->1.85, tot 838->882, worst -45->-41,
+# maxDD -282->-235, fires ~15x/7yr; passes the Adverse-Protection gate at ~20%
+# (self-harm below ~18%). CRYPTO gets NO cut (trend flip bounds worst at -31%).
+GOLD_COLDCUT = 0.20
+GOLD_COLDCUT_MFE_EPS = 0.003
+GOLD_COLDCUT_MINHOLD = 3
 
 
 def _mark_and_exit(c, st, gate_giveback, atr_mult, max_hold, t):
@@ -77,9 +83,11 @@ def _mark_and_exit(c, st, gate_giveback, atr_mult, max_hold, t):
     held_days = t - st["entry_t"]
     fav = st["peak"] / st["entry_px"] - 1.0
     armed = fav >= GOLD_GATE
-    # COLD-LOSS CUT: ungated by the arm; bites only never-armed trades. LONG
-    # day-movers -> adverse = c/entry - 1 (invert for shorts).
-    if GOLD_COLDCUT > 0.0 and not armed and (c / st["entry_px"] - 1.0) <= -GOLD_COLDCUT:
+    # CATASTROPHE COLD-CUT: never-green + not-a-wick + deep adverse. LONG day-movers
+    # -> adverse = c/entry - 1 (invert for shorts). Any strength first -> exempt.
+    if (GOLD_COLDCUT > 0.0 and fav <= GOLD_COLDCUT_MFE_EPS
+            and held_days >= GOLD_COLDCUT_MINHOLD
+            and (c / st["entry_px"] - 1.0) <= -GOLD_COLDCUT):
         return True
     if not st.get("bull", True):
         # bear-entry: gold-companion clip (qualified signal, ride only once protected)

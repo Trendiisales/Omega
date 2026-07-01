@@ -35,16 +35,35 @@ N_STALL  = 2
 REV_GB   = 0.05
 
 # --- COLD-LOSS CUT (S-2026-07-01) -------------------------------------------
-# The STALL and REVERSAL clips are BOTH AND-armed (armed = fav >= GATE_PCT), so a
-# trade that goes adverse and never captures GATE_PCT never arms -> neither clip
-# can fire -> it rides to MAX_HOLD unprotected (the live SOL companion sat at
-# -$6.40 / MFE 0% / "stall 1" exactly this way). COLD_CUT is an INDEPENDENT
-# adverse stop measured from ENTRY, ungated by the profit-arm. It only bites
-# never-armed trades (fav < GATE_PCT), so runners -- which arm by definition --
-# are exempt and still ride wide; it cannot scalp the runners that carry PF.
-# 0.0 = OFF (no behaviour change). Sweep with --sweep-coldcut, then ship the
-# value only if net-positive (per the CLAUDE.md Adverse-Protection mandate).
-COLD_CUT = 0.0            # e.g. 0.015 once the sweep confirms a viable level
+# THE COMPANION IS A SEPARATE ENGINE. This cut bounds the COMPANION's OWN loser;
+# it never touches the real engine (which has no clip -> WIDE). Judge it STANDALONE
+# on the companion book, not by whole-book tot%.
+#
+# v1 (arm-gated, REJECTED): `not armed AND adverse <= -cut` fired on ANY trade still
+# under GATE_PCT -- including trades that ran to +1.4%, dipped, then recovered. It
+# converted dip-then-recover WINNERS into losers (WR 67->38, GOLD net 838->302).
+# Too broad: "not armed yet" != "cold loser".
+#
+# v2 (MFE + time gated, this): target the SPECIFIC failure the operator named --
+# a companion position that NEVER WORKED (opened, went red, never went green: the
+# live SOL case MFE 0% / stall 1) or a bad re-open. Cut fires ONLY when:
+#   (a) peak favourable excursion so far <= CUT_MFE_EPS  (never went green), AND
+#   (b) held >= CUT_MINHOLD bars                         (genuinely stalled, not a
+#                                                          1-bar noise spike), AND
+#   (c) adverse from entry <= -CUT_ADV                   (direction-aware).
+# A trade that showed ANY strength first (peak > eps) is EXEMPT -> the cut cannot
+# scalp dip-then-recover winners; it only bounds the never-worked cold loser.
+# CUT_ADV = 0.0 -> OFF. Sweep with --sweep-smartcut and read the GOLD (companion)
+# book standalone: ship only if the companion book stays net-positive with
+# worst%/maxDD improved (operator allocates on the risk/return, not vs WIDE).
+CUT_MFE_EPS  = 0.003      # <=0.3% peak = "never went green"
+CUT_MINHOLD  = 3          # bars held before the cut may fire
+CUT_ADV      = 0.20       # catastrophe floor; VIABLE @0.20 (whole book PF 1.76->1.85,
+                          # tot 838->882, worst -45->-41, maxDD -282->-235, ~15 fires/7yr).
+                          # Self-harm below ~0.18 (starts scalping dip-then-recover winners).
+CUT_ADV_GRID = [0.0, 0.080, 0.120, 0.160, 0.180, 0.200, 0.250, 0.300]
+# legacy v1 knobs kept so --sweep-coldcut still reproduces the REJECTED result
+COLD_CUT = 0.0
 COLD_CUT_GRID = [0.0, 0.010, 0.015, 0.020, 0.030]
 
 GATE     = 0.05      # day-mover entry: >= 5% day
@@ -72,14 +91,16 @@ def regime_flags(df):
     return bull  # bool Series indexed by date; NaN-SMA warmup -> False
 
 
-def simulate(closes, dates, bull, mode, cold_cut=0.0):
+def simulate(closes, dates, bull, mode, cold_cut=0.0,
+             cut_adv=0.0, cut_mfe_eps=CUT_MFE_EPS, cut_minhold=CUT_MINHOLD):
     """
     mode: 'wide'  = ride to max_hold (real-engine proxy, no clip)
           'gold'  = gold companion: profit-GATE then STALL/REVERSAL clip
-    cold_cut: ungated adverse stop from ENTRY (0.0 = off). Bites only never-armed
-              trades (fav < GATE_PCT), independent of mode -- see COLD_CUT note.
-    bear_gate is applied at ENTRY by caller via the `allow` mask in dates.
-    Returns list of (entry_date, exit_date, pnl_pct, was_bull_entry).
+    cold_cut: v1 arm-gated adverse stop (REJECTED, kept for reproducibility).
+    cut_adv:  v2 MFE+time-gated cold cut (0.0 = off). Fires ONLY on a never-worked
+              loser: peak MFE so far <= cut_mfe_eps AND held >= cut_minhold AND
+              adverse <= -cut_adv. Exempts anything that showed strength first.
+    Returns list of (entry_date, exit_date, pnl_pct, was_bull_entry, exit_tag).
     """
     n = len(closes)
     ret = np.empty(n); ret[0] = 0.0
@@ -93,7 +114,7 @@ def simulate(closes, dates, bull, mode, cold_cut=0.0):
             i += 1; continue
         entry_px = closes[i]
         bull_entry = bool(bull.iloc[i]) if i < len(bull) else False
-        peak = entry_px; since_high = 0; exit_i = None
+        peak = entry_px; since_high = 0; exit_i = None; tag = "max_hold"
         for k in range(i + 1, min(i + 1 + MAX_HOLD, n)):
             c = closes[k]
             if not np.isfinite(c):
@@ -104,16 +125,23 @@ def simulate(closes, dates, bull, mode, cold_cut=0.0):
                 since_high += 1
             fav = peak / entry_px - 1.0              # MFE% captured so far
             armed = fav >= GATE_PCT                  # PROFIT-GATE (the missing ingredient)
-            # COLD-LOSS CUT: ungated by the arm; only never-armed trades. LONG
-            # day-movers -> adverse = c/entry - 1 (invert for shorts). Bounds the
-            # cold loser the AND-armed STALL/REVERSAL clips can never reach.
-            if cold_cut > 0.0 and not armed and (c / entry_px - 1.0) <= -cold_cut:
-                exit_i = k; break
+            held = k - i
+            adverse = c / entry_px - 1.0             # LONG day-movers (invert for shorts live)
+            # v1 (REJECTED): arm-gated -- fired on dip-then-recover winners too.
+            if cold_cut > 0.0 and not armed and adverse <= -cold_cut:
+                exit_i = k; tag = "cold_cut_v1"; break
+            # v2 COLD CUT: never-worked loser only. peak<=eps (never went green)
+            # + held>=minhold (not a 1-bar spike) + adverse past threshold. This
+            # is the SOL "MFE 0% / stall 1 / pre-gate" case exactly. A trade that
+            # showed ANY strength (fav>eps) is exempt -> cannot scalp recoverers.
+            if (cut_adv > 0.0 and fav <= cut_mfe_eps and held >= cut_minhold
+                    and adverse <= -cut_adv):
+                exit_i = k; tag = "cold_cut"; break
             if mode == "gold":
                 if armed and since_high >= N_STALL:                 # STALL_CLIP
-                    exit_i = k; break
+                    exit_i = k; tag = "stall_clip"; break
                 if armed and c <= peak * (1.0 - REV_GB):            # REVERSAL_CLIP
-                    exit_i = k; break
+                    exit_i = k; tag = "reversal_clip"; break
         if exit_i is None:
             exit_i = min(i + MAX_HOLD, n - 1)
         ex_px = closes[exit_i]
@@ -125,9 +153,84 @@ def simulate(closes, dates, bull, mode, cold_cut=0.0):
         if not np.isfinite(ex_px) or ex_px <= 0:
             i = exit_i + 1; continue
         pnl = ex_px / entry_px - 1.0 - COST_RT
-        trades.append((dates[i], dates[exit_i], pnl, bull_entry))
+        trades.append((dates[i], dates[exit_i], pnl, bull_entry, tag))
         i = exit_i + 1
     return trades
+
+
+def _exit_for_entry(closes, n, i, mode, cut_adv, cut_mfe_eps, cut_minhold):
+    """Compute exit for a SINGLE entry at index i (exogenous, parent-driven).
+    Returns (exit_i, pnl, tag). Does NOT advance the entry scanner -- used by the
+    paired evaluation so the cut changes only the exit, never entry timing (the
+    live companion opens when the parent opens; cutting never spawns a new open)."""
+    entry_px = closes[i]
+    peak = entry_px; since_high = 0; exit_i = None; tag = "max_hold"
+    for k in range(i + 1, min(i + 1 + MAX_HOLD, n)):
+        c = closes[k]
+        if not np.isfinite(c):
+            continue
+        if c > peak:
+            peak = c; since_high = 0
+        else:
+            since_high += 1
+        fav = peak / entry_px - 1.0
+        armed = fav >= GATE_PCT
+        held = k - i
+        adverse = c / entry_px - 1.0
+        if (cut_adv > 0.0 and fav <= cut_mfe_eps and held >= cut_minhold
+                and adverse <= -cut_adv):
+            exit_i = k; tag = "cold_cut"; break
+        if mode == "gold":
+            if armed and since_high >= N_STALL:
+                exit_i = k; tag = "stall_clip"; break
+            if armed and c <= peak * (1.0 - REV_GB):
+                exit_i = k; tag = "reversal_clip"; break
+    if exit_i is None:
+        exit_i = min(i + MAX_HOLD, n - 1)
+    ex_px = closes[exit_i]
+    if not np.isfinite(ex_px):
+        j = exit_i
+        while j > i and not np.isfinite(closes[j]):
+            j -= 1
+        ex_px = closes[j]; exit_i = j
+    if not np.isfinite(ex_px) or ex_px <= 0:
+        return None
+    return exit_i, ex_px / entry_px - 1.0 - COST_RT, tag
+
+
+def entry_indices(closes, n):
+    """The exogenous companion-entry indices (day>=5% + new-20d-high), independent
+    of any exit rule -- these are the positions the parent hands the companion."""
+    ret = np.empty(n); ret[0] = 0.0
+    ret[1:] = closes[1:] / closes[:-1] - 1.0
+    out = []; i = ATR_WIN + 1
+    while i < n - 1:
+        if not (ret[i] >= GATE and np.isfinite(closes[i])):
+            i += 1; continue
+        if closes[i] < np.nanmax(closes[max(0, i - CONTIN_K):i + 1]):
+            i += 1; continue
+        out.append(i)
+        # advance past a nominal (cut=off) exit so entries don't overlap, matching
+        # baseline entry cadence; exit rule is applied later, entries stay FIXED.
+        r = _exit_for_entry(closes, n, i, "gold", 0.0, CUT_MFE_EPS, CUT_MINHOLD)
+        i = (r[0] if r else i) + 1
+    return out
+
+
+def run_paired(df, bull, cut_adv):
+    """Companion (gold) book on a FIXED exogenous entry set: only the EXIT changes
+    with the cut, entries never move. This is the faithful standalone test -- the
+    live companion opens on the parent, so a cut can't create new opens."""
+    dates = df.index.to_numpy()
+    allt = []
+    for col in df.columns:
+        closes = df[col].to_numpy(float); n = len(closes)
+        for i in entry_indices(closes, n):
+            r = _exit_for_entry(closes, n, i, "gold", cut_adv, CUT_MFE_EPS, CUT_MINHOLD)
+            if r:
+                bull_entry = bool(bull.iloc[i]) if i < len(bull) else False
+                allt.append((dates[i], dates[r[0]], r[1], bull_entry, r[2]))
+    return allt
 
 
 def metrics(trades, label):
@@ -150,12 +253,13 @@ def metrics(trades, label):
             "h1": _pf(h1), "h2": _pf(h2), "tot": pnl.sum() * 100}
 
 
-def run(df, bull, mode, entry_filter, cold_cut=0.0):
+def run(df, bull, mode, entry_filter, cold_cut=0.0, cut_adv=0.0):
     """entry_filter: 'all' | 'bull' (drop bear-entry trades = exclude-bear)."""
     dates = df.index.to_numpy()
     allt = []
     for col in df.columns:
-        allt += simulate(df[col].to_numpy(float), dates, bull, mode, cold_cut)
+        allt += simulate(df[col].to_numpy(float), dates, bull, mode,
+                         cold_cut=cold_cut, cut_adv=cut_adv)
     if entry_filter == "bull":
         allt = [t for t in allt if t[3]]
     return allt
@@ -238,9 +342,51 @@ def sweep_coldcut():
         line(metrics(wb + gr, f"SWITCH cut={_lbl(cc)}"))
 
 
+def sweep_smartcut():
+    """v2 MFE+time-gated cold cut, judged STANDALONE on the companion (gold) book.
+
+    The companion is a SEPARATE engine -- this asks only: is the companion's OWN
+    book better protected with the cut? Ship a non-zero CUT_ADV if the companion
+    book stays net-positive with worst%/maxDD improved (operator allocates on
+    risk/return; NOT compared to WIDE). WIDE is shown once only as context."""
+    df = load()
+    large = df[[c for c in dict.fromkeys(LARGECAP) if c in df.columns]]
+    bull = regime_flags(large).reset_index(drop=True)
+    print(f"largecap={large.shape[1]} rows={len(df)} ({100*bull.mean():.0f}% bull) | "
+          f"GATE_PCT={GATE_PCT:.3f} | v2 cut: MFE_EPS={CUT_MFE_EPS} MINHOLD={CUT_MINHOLD} "
+          f"grid={CUT_ADV_GRID}")
+
+    def _lbl(cc):
+        return "off" if cc == 0 else f"{cc*100:.1f}%"
+
+    def _cutstats(trades):
+        cut = [t for t in trades if t[4] == "cold_cut"]
+        if not cut:
+            return "cuts=0"
+        cp = np.array([t[2] for t in cut])
+        return f"cuts={len(cut)} avg={cp.mean()*100:+.1f}% worst={cp.min()*100:+.1f}%"
+
+    print("PAIRED: fixed exogenous entry set, only the EXIT changes with the cut "
+          "(n is constant -> no re-entry confound).")
+    hdr("=== v2 SMART-CUT · COMPANION (gold), ALL regimes [PAIRED STANDALONE] ===")
+    for cc in CUT_ADV_GRID:
+        t = run_paired(large, bull, cc)
+        line(metrics(t, f"GOLD  cut={_lbl(cc)}")); print(f"        {_cutstats(t)}")
+    hdr("=== v2 SMART-CUT · COMPANION (gold), BEAR-entry only [qualified sleeve] ===")
+    for cc in CUT_ADV_GRID:
+        _, gr = split(run_paired(large, bull, cc))
+        line(metrics(gr, f"GOLD-bear cut={_lbl(cc)}")); print(f"        {_cutstats(gr)}")
+    hdr("=== v2 SMART-CUT · COMPANION (gold), BULL-entry only ===")
+    for cc in CUT_ADV_GRID:
+        gb, _ = split(run_paired(large, bull, cc))
+        line(metrics(gb, f"GOLD-bull cut={_lbl(cc)}")); print(f"        {_cutstats(gb)}")
+
+
 if __name__ == "__main__":
     import sys
     if "--sweep-coldcut" in sys.argv:
         sweep_coldcut()
+    elif "--sweep-smartcut" in sys.argv:
+        sweep_smartcut()
     else:
         main()
