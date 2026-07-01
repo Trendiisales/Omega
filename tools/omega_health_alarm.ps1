@@ -72,8 +72,69 @@ if (-not $gwUp) {
     if ($gwProc) { $reasons += "[RED] IB GATEWAY LOGGED OUT -- ibgateway alive (pid $($gwProc.Id)) but NO API listener on ${gwPort}; RE-LOGIN needed (orders dead)" }
     else         { $reasons += "[RED] IB GATEWAY DOWN -- ibgateway process not running, no API listener on ${gwPort}; restart+login (orders dead)" }
 }
+# --- ACTIVITY / TRADE-RATE (operator-mandated 2026-07-02: "a live process that never orders passes
+# every alarm -- where is the redundancy"). The dimension that was UNMONITORED: the book can be
+# alive, warm-seeded, routing to 4002, feeds fresh -- and post ZERO order intents for days. Every
+# liveness/health check stays GREEN while it silently never trades ("built != running != working").
+# This block keys on the one counter that proves trading actually happens: ENG-DISPATCH-STATS
+# posted_exec. HARD (RED): the current-UTC-date log is missing (logger dead / date-rollover -- the
+# exact confusion that masked this) OR its dispatch stats are stale (dispatch loop frozen while the
+# process is technically alive). SOFT (AMBER->RED): posted_exec has not advanced for a long
+# market-open window. The 17 live entry engines are slow D1/H4/M30 (fastest ~weekly, several
+# regime-gated), so the window is HOURS and generous by design -- a quiet compression stretch is
+# legit and must NOT cry wolf. Self-tracks exec transitions in a state file so it survives reboots
+# (posted_exec resets to 0 on boot). Rides the existing Mac off-box poll (omega_health_poll.sh) via
+# HEALTH_STATUS.json -> the popup path that already fires on RED, now covers trade-rate too.
+$actWinH     = if ($env:OMEGA_ACTIVITY_WINDOW_H) { [double]$env:OMEGA_ACTIVITY_WINDOW_H } else { 72 }
+$actRedH     = if ($env:OMEGA_ACTIVITY_RED_H)    { [double]$env:OMEGA_ACTIVITY_RED_H }    else { 168 }
+$actStaleMin = 20
+$actToday = [DateTime]::UtcNow.ToString('yyyy-MM-dd')
+$actLog   = "C:\Omega\logs\omega_$actToday.log"
+$postedExec = $null; $statAgeMin = $null; $quietH = $null
+if (-not (Test-Path $actLog)) {
+    $overall = 'RED'
+    $reasons += "[RED] ACTIVITY: current-UTC-date log missing ($actLog) -- logger dead or date-rollover unhandled (orders unobservable)"
+} else {
+    $lastStat = Get-Content $actLog -Tail 400 | Select-String 'ENG-DISPATCH-STATS' | Select-Object -Last 1
+    if ($lastStat) {
+        if ($lastStat.Line -match 'posted_exec=(\d+)') { $postedExec = [int]$matches[1] }
+        if ($lastStat.Line -match '(\d{2}):(\d{2}):(\d{2})') {
+            $lt = [DateTime]::UtcNow.Date.AddHours([int]$matches[1]).AddMinutes([int]$matches[2]).AddSeconds([int]$matches[3])
+            $statAgeMin = [int]((([DateTime]::UtcNow) - $lt).TotalMinutes)
+            if ($statAgeMin -lt -60) { $statAgeMin += 1440 }   # last line was just before UTC midnight
+        }
+    }
+    if ($null -eq $postedExec -or ($null -ne $statAgeMin -and $statAgeMin -ge $actStaleMin)) {
+        $overall = 'RED'
+        $reasons += "[RED] ACTIVITY: dispatch stats stale (${statAgeMin}min old) -- ENG-DISPATCH loop frozen while process alive"
+    }
+}
+if ($null -ne $postedExec) {
+    $stFile = 'C:\Omega\logs\activity_state.json'
+    $st = $null; if (Test-Path $stFile) { try { $st = Get-Content $stFile -Raw | ConvertFrom-Json } catch {} }
+    $nowU = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $lastExecTs = $nowU
+    if ($st) {
+        $lastExecTs = [long]$st.last_exec_ts; $prevVal = [int]$st.last_val
+        if ($postedExec -ne $prevVal) { $lastExecTs = $nowU }   # advanced (traded) OR reset (reboot) -> rebaseline
+    }
+    ([ordered]@{ last_exec_ts=$lastExecTs; last_val=$postedExec; updated=$nowU } | ConvertTo-Json) | Out-File -Encoding utf8 $stFile
+    # market-open hours since last exec (skip whole weekend days, UTC)
+    $sinceH = 0.0; $cur = [DateTimeOffset]::FromUnixTimeSeconds($lastExecTs).UtcDateTime; $endT = [DateTime]::UtcNow
+    while ($cur -lt $endT) {
+        $nxt = $cur.AddHours(1); if ($nxt -gt $endT) { $nxt = $endT }
+        if ($cur.DayOfWeek -ne 'Saturday' -and $cur.DayOfWeek -ne 'Sunday') { $sinceH += ($nxt - $cur).TotalHours }
+        $cur = $nxt
+    }
+    $quietH = [int]$sinceH
+    $isWeekend = ([DateTime]::UtcNow.DayOfWeek -eq 'Saturday' -or [DateTime]::UtcNow.DayOfWeek -eq 'Sunday')
+    if (-not $isWeekend) {
+        if ($sinceH -ge $actRedH) { $overall = 'RED'; $reasons += "[RED] ACTIVITY: posted_exec has not advanced in ${quietH}h market-open (>= ${actRedH}h) -- book not trading; verify route+engines" }
+        elseif ($sinceH -ge $actWinH) { if ($overall -eq 'GREEN') { $overall = 'AMBER' }; $reasons += "[AMBER] ACTIVITY: no order intent in ${quietH}h market-open (>= ${actWinH}h); posted_exec=$postedExec -- may be legit (compression); verify intended" }
+    }
+}
 $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB; gateway_up=$gwUp; gateway_port=$gwPort }
+$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB; gateway_up=$gwUp; gateway_port=$gwPort; posted_exec=$postedExec; dispatch_age_min=$statAgeMin; activity_quiet_h=$quietH }
 ($obj | ConvertTo-Json -Depth 4) | Out-File -Encoding utf8 C:\Omega\logs\HEALTH_STATUS.json
 "$ts overall=$overall " + ($reasons -join ' | ') | Out-File -Append C:\Omega\logs\health_alarm.log
 $flag = 'C:\Omega\logs\HEALTH_ALARM.flag'
