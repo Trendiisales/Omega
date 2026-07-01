@@ -58,8 +58,22 @@ foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' or Nam
     if ($p.CommandLine -and $p.CommandLine -match '([\w\-]+\.(py|ps1))') { $s = $matches[1]; $byScript[$s] = 1 + [int]$byScript[$s] }
 }
 foreach ($s in $byScript.Keys) { if ($byScript[$s] -gt 2) { $overall = 'RED'; $reasons += "[RED] PROCESS-LEAK: $($byScript[$s]) copies of $s running (>2)" } }
+# --- IB GATEWAY API LISTENER (operator-mandated 2026-07-01 after 2nd manual re-login) ---
+# The gateway PROCESS can be alive but NOT logged in (IBC nightly restart lands it at the login
+# screen) -> zero API listener on 4002 -> EVERY engine's order path is silently dead while data
+# feeds still look fresh (the "built != running != working" trap). Alarm on the LISTENER, not the
+# process. Verified 2026-07-01: logged-out gateway = proc up, blank window, no 4002 socket anywhere.
+$gwPort = 4002
+$gwListen = Get-NetTCPConnection -State Listen -LocalPort $gwPort -ErrorAction SilentlyContinue
+$gwProc = Get-Process ibgateway -ErrorAction SilentlyContinue
+$gwUp = [bool]$gwListen
+if (-not $gwUp) {
+    $overall = 'RED'
+    if ($gwProc) { $reasons += "[RED] IB GATEWAY LOGGED OUT -- ibgateway alive (pid $($gwProc.Id)) but NO API listener on ${gwPort}; RE-LOGIN needed (orders dead)" }
+    else         { $reasons += "[RED] IB GATEWAY DOWN -- ibgateway process not running, no API listener on ${gwPort}; restart+login (orders dead)" }
+}
 $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB }
+$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB; gateway_up=$gwUp; gateway_port=$gwPort }
 ($obj | ConvertTo-Json -Depth 4) | Out-File -Encoding utf8 C:\Omega\logs\HEALTH_STATUS.json
 "$ts overall=$overall " + ($reasons -join ' | ') | Out-File -Append C:\Omega\logs\health_alarm.log
 $flag = 'C:\Omega\logs\HEALTH_ALARM.flag'
@@ -67,3 +81,4 @@ if ($overall -ne 'GREEN') {
     ($overall + " " + $ts + "`n" + ($reasons -join "`n")) | Out-File -Encoding utf8 $flag
 } elseif (Test-Path $flag) { Remove-Item $flag -Force }
 Write-Output ("overall=$overall " + ($reasons -join ' | '))
+

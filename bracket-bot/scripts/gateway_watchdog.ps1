@@ -39,36 +39,32 @@ if ($running) {
     exit 0
 }
 
-# --- Launch newest install --------------------------------------------------
-if (-not (Test-Path $Root)) {
-    Log "ERROR: Gateway root $Root missing -- Gateway not installed?"
+# --- Launch via IBC (unattended autologin) ----------------------------------
+# CHANGED 2026-07-01: was launching RAW ibgateway.exe -> GUI login screen, no
+# credential typing -> the gateway sat logged-out until a human logged in (twice).
+# Now launch IBC's StartGateway.bat, which reads C:\IBC\config.ini (IbLoginId +
+# IbPassword set, TradingMode=paper) and TYPES the credentials, so the API socket
+# comes up unattended. TWS_MAJOR_VRSN=1047 is set inside the bat. The bat requires
+# /INLINE when run from Task Scheduler.
+$ibcBat = 'C:\IBC\StartGateway.bat'
+if (-not (Test-Path $ibcBat)) {
+    Log "ERROR: IBC launcher $ibcBat missing -- cannot autologin (would sit at login screen)"
     exit 2
 }
-
-$newest = Get-ChildItem -Path $Root -Directory -ErrorAction SilentlyContinue |
-    Where-Object { Test-Path (Join-Path $_.FullName 'ibgateway.exe') } |
-    Sort-Object { [int]($_.Name -replace '\D','') } -Descending |
-    Select-Object -First 1
-
-if (-not $newest) {
-    Log "ERROR: no ibgateway.exe under $Root\<version>\"
-    exit 2
-}
-
-$exe = Join-Path $newest.FullName 'ibgateway.exe'
-Log "launching $exe (port $Port was not listening, no ibgateway.exe process)"
+Log "launching IBC ($ibcBat /INLINE) for unattended autologin (port $Port was not listening)"
 
 try {
-    Start-Process -FilePath $exe -WorkingDirectory $newest.FullName -WindowStyle Minimized
-    Log "launched OK; checking listen in 60s"
+    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', ('"' + $ibcBat + '"'), '/INLINE' -WindowStyle Hidden
+    Log "IBC launched OK; checking listen (up to 120s for login)"
 } catch {
-    Log "ERROR: launch failed: $_"
+    Log "ERROR: IBC launch failed: $_"
     exit 3
 }
 
-# Wait up to 60s for the API socket to come up
+# Wait up to 120s for the API socket to come up (IBC login + cred typing is slower
+# than a raw start; a paper account has no 2FA so 120s is ample).
 $ok = $false
-for ($i = 0; $i -lt 12; $i++) {
+for ($i = 0; $i -lt 24; $i++) {
     Start-Sleep -Seconds 5
     if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) {
         $ok = $true; break
@@ -76,9 +72,10 @@ for ($i = 0; $i -lt 12; $i++) {
 }
 
 if ($ok) {
-    Log "port $Port LISTENING -- Gateway healthy"
+    Log "port $Port LISTENING -- Gateway healthy (IBC autologin succeeded)"
     exit 0
 } else {
-    Log "WARN: launched but port $Port still not listening after 60s (login screen? saved creds missing?)"
+    Log "WARN: IBC launched but port $Port still not listening after 120s -- check C:\IBC\Logs (2FA? bad creds? version mismatch?)"
     exit 1
 }
+
