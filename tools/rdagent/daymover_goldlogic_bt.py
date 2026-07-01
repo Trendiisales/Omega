@@ -34,6 +34,19 @@ GATE_PCT = 0.015
 N_STALL  = 2
 REV_GB   = 0.05
 
+# --- COLD-LOSS CUT (S-2026-07-01) -------------------------------------------
+# The STALL and REVERSAL clips are BOTH AND-armed (armed = fav >= GATE_PCT), so a
+# trade that goes adverse and never captures GATE_PCT never arms -> neither clip
+# can fire -> it rides to MAX_HOLD unprotected (the live SOL companion sat at
+# -$6.40 / MFE 0% / "stall 1" exactly this way). COLD_CUT is an INDEPENDENT
+# adverse stop measured from ENTRY, ungated by the profit-arm. It only bites
+# never-armed trades (fav < GATE_PCT), so runners -- which arm by definition --
+# are exempt and still ride wide; it cannot scalp the runners that carry PF.
+# 0.0 = OFF (no behaviour change). Sweep with --sweep-coldcut, then ship the
+# value only if net-positive (per the CLAUDE.md Adverse-Protection mandate).
+COLD_CUT = 0.0            # e.g. 0.015 once the sweep confirms a viable level
+COLD_CUT_GRID = [0.0, 0.010, 0.015, 0.020, 0.030]
+
 GATE     = 0.05      # day-mover entry: >= 5% day
 CONTIN_K = 20        # + new 20-day high
 MAX_HOLD = 60        # ride wide; clip is what exits early when armed
@@ -59,10 +72,12 @@ def regime_flags(df):
     return bull  # bool Series indexed by date; NaN-SMA warmup -> False
 
 
-def simulate(closes, dates, bull, mode):
+def simulate(closes, dates, bull, mode, cold_cut=0.0):
     """
     mode: 'wide'  = ride to max_hold (real-engine proxy, no clip)
           'gold'  = gold companion: profit-GATE then STALL/REVERSAL clip
+    cold_cut: ungated adverse stop from ENTRY (0.0 = off). Bites only never-armed
+              trades (fav < GATE_PCT), independent of mode -- see COLD_CUT note.
     bear_gate is applied at ENTRY by caller via the `allow` mask in dates.
     Returns list of (entry_date, exit_date, pnl_pct, was_bull_entry).
     """
@@ -87,9 +102,14 @@ def simulate(closes, dates, bull, mode):
                 peak = c; since_high = 0
             else:
                 since_high += 1
+            fav = peak / entry_px - 1.0              # MFE% captured so far
+            armed = fav >= GATE_PCT                  # PROFIT-GATE (the missing ingredient)
+            # COLD-LOSS CUT: ungated by the arm; only never-armed trades. LONG
+            # day-movers -> adverse = c/entry - 1 (invert for shorts). Bounds the
+            # cold loser the AND-armed STALL/REVERSAL clips can never reach.
+            if cold_cut > 0.0 and not armed and (c / entry_px - 1.0) <= -cold_cut:
+                exit_i = k; break
             if mode == "gold":
-                fav = peak / entry_px - 1.0          # MFE% captured
-                armed = fav >= GATE_PCT              # PROFIT-GATE (the missing ingredient)
                 if armed and since_high >= N_STALL:                 # STALL_CLIP
                     exit_i = k; break
                 if armed and c <= peak * (1.0 - REV_GB):            # REVERSAL_CLIP
@@ -130,12 +150,12 @@ def metrics(trades, label):
             "h1": _pf(h1), "h2": _pf(h2), "tot": pnl.sum() * 100}
 
 
-def run(df, bull, mode, entry_filter):
+def run(df, bull, mode, entry_filter, cold_cut=0.0):
     """entry_filter: 'all' | 'bull' (drop bear-entry trades = exclude-bear)."""
     dates = df.index.to_numpy()
     allt = []
     for col in df.columns:
-        allt += simulate(df[col].to_numpy(float), dates, bull, mode)
+        allt += simulate(df[col].to_numpy(float), dates, bull, mode, cold_cut)
     if entry_filter == "bull":
         allt = [t for t in allt if t[3]]
     return allt
@@ -190,5 +210,37 @@ def main():
     line(metrics(switch, "SWITCH| WIDE-bull + GOLD-clip-bear"))
 
 
+def sweep_coldcut():
+    """Sweep the ungated COLD-LOSS CUT against the un-cut baseline (cold_cut=0).
+
+    Ship a non-zero COLD_CUT into export_signals._mark_and_exit / stall_accountant
+    ONLY if it is net-positive here: total% up (or flat) with worst%/maxDD improved.
+    The cut only touches never-armed trades, so PF should hold; verify it does."""
+    df = load()
+    large = df[[c for c in dict.fromkeys(LARGECAP) if c in df.columns]]
+    bull = regime_flags(large).reset_index(drop=True)
+    print(f"largecap={large.shape[1]} rows={len(df)} "
+          f"({100*bull.mean():.0f}% bull) | GATE_PCT={GATE_PCT:.3f} grid={COLD_CUT_GRID}")
+
+    def _lbl(cc):
+        return "off" if cc == 0 else f"{cc*100:.1f}%"
+
+    hdr("=== COLD-CUT sweep · GOLD (all regimes) ===")
+    for cc in COLD_CUT_GRID:
+        line(metrics(run(large, bull, "gold", "all", cc), f"GOLD  cut={_lbl(cc)}"))
+    hdr("=== COLD-CUT sweep · WIDE (all regimes) ===")
+    for cc in COLD_CUT_GRID:
+        line(metrics(run(large, bull, "wide", "all", cc), f"WIDE  cut={_lbl(cc)}"))
+    hdr("=== COLD-CUT sweep · SWITCH (WIDE-bull + GOLD-clip-bear) ===")
+    for cc in COLD_CUT_GRID:
+        wb, _ = split(run(large, bull, "wide", "all", cc))
+        _, gr = split(run(large, bull, "gold", "all", cc))
+        line(metrics(wb + gr, f"SWITCH cut={_lbl(cc)}"))
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--sweep-coldcut" in sys.argv:
+        sweep_coldcut()
+    else:
+        main()

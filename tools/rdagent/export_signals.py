@@ -55,6 +55,16 @@ def _ic(artifacts: str) -> dict:
 # Best bear-sleeve lock: gate 2% / giveback 10% / stall 2 -> PF 1.53, DD -69% (vs wide -183%).
 GOLD_GATE, GOLD_REVGB, GOLD_STALL = 0.02, 0.10, 2
 
+# COLD-LOSS CUT (S-2026-07-01): ungated adverse stop from ENTRY. The STALL and
+# REVERSAL clips below are BOTH AND-armed (armed = fav >= GOLD_GATE), and the
+# bull-entry trail is anchored at `peak` (= entry while the trade never runs), so
+# a trade that goes cold without ever arming has NO tight exit and rides to
+# max_hold (the live SOL companion sat at -$6.40 / MFE 0% / stall 1 exactly this
+# way). GOLD_COLDCUT bounds that cold loser. It fires only while `not armed`, so
+# runners -- which arm by definition -- are exempt and still ride wide. 0.0 = OFF;
+# set a swept value from `daymover_goldlogic_bt.py --sweep-coldcut` before enabling.
+GOLD_COLDCUT = 0.0
+
 
 def _mark_and_exit(c, st, gate_giveback, atr_mult, max_hold, t):
     """Update peak/stall then SWITCH exit: WIDE trail for bull-entry positions,
@@ -65,10 +75,14 @@ def _mark_and_exit(c, st, gate_giveback, atr_mult, max_hold, t):
     else:
         st["since_high"] += 1
     held_days = t - st["entry_t"]
+    fav = st["peak"] / st["entry_px"] - 1.0
+    armed = fav >= GOLD_GATE
+    # COLD-LOSS CUT: ungated by the arm; bites only never-armed trades. LONG
+    # day-movers -> adverse = c/entry - 1 (invert for shorts).
+    if GOLD_COLDCUT > 0.0 and not armed and (c / st["entry_px"] - 1.0) <= -GOLD_COLDCUT:
+        return True
     if not st.get("bull", True):
         # bear-entry: gold-companion clip (qualified signal, ride only once protected)
-        fav = st["peak"] / st["entry_px"] - 1.0
-        armed = fav >= GOLD_GATE
         clip = armed and (st["since_high"] >= GOLD_STALL or c <= st["peak"] * (1 - GOLD_REVGB))
         return bool(clip or held_days >= max_hold)
     # bull-entry: wide trail (let the runner run)
