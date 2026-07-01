@@ -16,7 +16,7 @@ FOUR CHECKS (each pass/fail independently; overall RED if any fail):
 
 Exit 0 = all green. Exit 1 = one or more RED. Writes a status file the SessionStart hook surfaces.
 """
-import os, sys, json, subprocess, tempfile, shutil, time
+import os, sys, json, subprocess, tempfile, shutil, time, datetime
 
 HOME = os.path.expanduser("~")
 COMPANION = os.path.join(HOME, "stall-accountant", "stall_accountant.py")
@@ -138,10 +138,33 @@ def check_input_freshness():
     # EXACTLY how the $222 gold peak was missed (VPS telemetry unreachable). Assert its inputs are
     # fresh: crypto state.json recent AND the companion's last cycles weren't telemetry-skips.
     probs = []
-    crypto = os.path.join(HOME, "IBKRCrypto/backtest/data/ibkrcrypto/state.json")
+    # Live crypto state moved to ~/Crypto on the 2026-07-01 IBKRCrypto->Crypto consolidation.
+    # Heartbeat = max(updated, live_mark_ts) parsed from the JSON, NOT file-mtime: refresh_shadow
+    # momentarily drops live_mark_ts while `updated` stays fresh, and mtime alone false-alarms
+    # (the naive check GUIStalenessGuard already proved wrong).
+    crypto = os.path.join(HOME, "Crypto/backtest/data/ibkrcrypto/state.json")
+    if not os.path.exists(crypto):
+        crypto = os.path.join(HOME, "IBKRCrypto/backtest/data/ibkrcrypto/state.json")  # pre-cutover fallback
     if os.path.exists(crypto):
-        age = (time.time() - os.path.getmtime(crypto)) / 60.0
-        if age > 30: probs.append(f"crypto state {age:.0f}min stale")
+        try:
+            d = json.load(open(crypto))
+            dh = d.get("data_health", {})
+            if dh and dh.get("all_fresh") is False:
+                probs.append("crypto data_health.all_fresh=False (" + ",".join(dh.get("stale_sources", [])) + ")")
+            else:
+                def _age_min(v):
+                    if not v: return None
+                    try:
+                        dt = datetime.datetime.strptime(v.replace(" UTC", ""), "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
+                        return (datetime.datetime.now(datetime.timezone.utc) - dt).total_seconds() / 60.0
+                    except Exception:
+                        return None
+                ages = [a for a in (_age_min(d.get("updated")), _age_min(d.get("live_mark_ts"))) if a is not None]
+                if ages:
+                    age = min(ages)  # freshest heartbeat wins (max timestamp = min age)
+                    if age > 30: probs.append(f"crypto state {age:.0f}min stale")
+        except Exception as e:
+            probs.append(f"crypto state unreadable ({e})")
     else:
         probs.append("crypto state missing")
     log = "/tmp/giveback_saver.log"
