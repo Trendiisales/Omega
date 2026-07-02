@@ -1,116 +1,317 @@
 {
-  "_doc": "Omega Instrument Master — canonical instrument registry + alias map. Build 1 from the 'Being a Quant' video (security matching). Solves the recurring 'NSXUSD=NASDAQ / no data' problem: every vendor/broker/data alias resolves to ONE canonical instrument with specs, drivers, sessions, execution route. Consult resolver.resolve(x) BEFORE concluding 'no data'.",
+  "_doc": "Omega Instrument Master \u2014 canonical instrument registry + alias map. Build 1 from the 'Being a Quant' video (security matching). Solves the recurring 'NSXUSD=NASDAQ / no data' problem: every vendor/broker/data alias resolves to ONE canonical instrument with specs, drivers, sessions, execution route. Consult resolver.resolve(x) BEFORE concluding 'no data'.",
   "instruments": {
     "XAUUSD": {
       "name": "Gold spot",
       "asset_class": "metal",
-      "aliases": ["XAUUSD", "XAUUSD.f", "XAUUSDm", "GOLD", "XAU/USD", "XAU", "GC", "GC=F"],
+      "aliases": [
+        "XAUUSD",
+        "XAUUSD.f",
+        "XAUUSDm",
+        "GOLD",
+        "XAU/USD",
+        "XAU",
+        "GC",
+        "GC=F"
+      ],
       "futures_proxy": "MGC",
       "tick_size": 0.01,
       "point_value_usd_per_lot": 100.0,
-      "sessions": ["London", "NY"],
+      "sessions": [
+        "London",
+        "NY"
+      ],
       "weekend_close": "Fri ~21:00 UTC -> Sun ~22:00 UTC",
-      "drivers": ["DXY", "US10Y", "SPX", "NAS", "USOIL", "VIX"],
+      "drivers": [
+        "DXY",
+        "US10Y",
+        "SPX",
+        "NAS",
+        "USOIL",
+        "VIX"
+      ],
       "exec_route": "IBKR",
       "data_quality": "tick corpus /Tick + IBKR L2"
     },
     "MGC": {
       "name": "Micro Gold futures (CME)",
       "asset_class": "futures",
-      "aliases": ["MGC", "MGC=F", "MGC1!", "micro_gold"],
+      "aliases": [
+        "MGC",
+        "MGC=F",
+        "MGC1!",
+        "micro_gold"
+      ],
       "spot_proxy": "XAUUSD",
-      "tick_size": 0.10,
+      "tick_size": 0.1,
       "point_value_usd_per_lot": 10.0,
-      "sessions": ["CME nearly 24h"],
-      "drivers": ["XAUUSD", "DXY", "US10Y"],
+      "sessions": [
+        "CME nearly 24h"
+      ],
+      "drivers": [
+        "XAUUSD",
+        "DXY",
+        "US10Y"
+      ],
       "exec_route": "IBKR",
       "data_quality": "ibkr_l2 MGC + mgc_30m bars"
     },
     "NAS100": {
       "name": "Nasdaq-100 index",
       "asset_class": "index",
-      "aliases": ["NAS100", "US100", "USTEC", "NSXUSD", "NQ", "NQ=F", "NDX", "Nasdaq100", "USTEC.f", "US100.f"],
+      "aliases": [
+        "NAS100",
+        "US100",
+        "USTEC",
+        "NSXUSD",
+        "NQ",
+        "NQ=F",
+        "NDX",
+        "Nasdaq100",
+        "USTEC.f",
+        "US100.f"
+      ],
       "futures_proxy": "NQ",
       "tick_size": 0.25,
       "point_value_usd_per_lot": 20.0,
-      "sessions": ["NY"],
-      "drivers": ["QQQ", "SPX", "VIX", "DXY", "US10Y"],
+      "sessions": [
+        "NY"
+      ],
+      "drivers": [
+        "QQQ",
+        "SPX",
+        "VIX",
+        "DXY",
+        "US10Y"
+      ],
       "exec_route": "IBKR",
       "data_quality": "NAS100_full tick + ibkr_trades_NQ",
-      "note": "NSXUSD = NASDAQ vendor alias — search this BEFORE 'no data'"
+      "note": "NSXUSD = NASDAQ vendor alias \u2014 search this BEFORE 'no data'"
     },
     "US500": {
       "name": "S&P 500 index",
       "asset_class": "index",
-      "aliases": ["US500", "SPX500", "SPX", "SPXUSD", "ES", "ES=F", "SPY", "US500.f", "US30...no"],
+      "aliases": [
+        "US500",
+        "SPX500",
+        "SPX",
+        "SPXUSD",
+        "ES",
+        "ES=F",
+        "SPY",
+        "US500.f",
+        "US30...no"
+      ],
       "futures_proxy": "ES",
       "tick_size": 0.25,
       "point_value_usd_per_lot": 50.0,
-      "sessions": ["NY"],
-      "drivers": ["VIX", "DXY", "US10Y", "NAS"],
+      "sessions": [
+        "NY"
+      ],
+      "drivers": [
+        "VIX",
+        "DXY",
+        "US10Y",
+        "NAS"
+      ],
       "exec_route": "IBKR",
       "data_quality": "US500_full tick"
     },
     "DJ30": {
       "name": "Dow Jones 30",
       "asset_class": "index",
-      "aliases": ["DJ30", "US30", "DJIA", "YM", "YM=F", "WS30", "US30.f"],
-      "sessions": ["NY"],
-      "drivers": ["SPX", "VIX", "DXY"],
+      "aliases": [
+        "DJ30",
+        "US30",
+        "DJIA",
+        "YM",
+        "YM=F",
+        "WS30",
+        "US30.f"
+      ],
+      "sessions": [
+        "NY"
+      ],
+      "drivers": [
+        "SPX",
+        "VIX",
+        "DXY"
+      ],
       "exec_route": "IBKR"
     },
     "GER40": {
       "name": "DAX 40",
       "asset_class": "index",
-      "aliases": ["GER40", "DAX", "DAX40", "DE40", "GER30", "FDAX"],
-      "sessions": ["Frankfurt", "London"],
-      "drivers": ["SPX", "EURUSD", "VIX"],
+      "aliases": [
+        "GER40",
+        "DAX",
+        "DAX40",
+        "DE40",
+        "GER30",
+        "FDAX"
+      ],
+      "sessions": [
+        "Frankfurt",
+        "London"
+      ],
+      "drivers": [
+        "SPX",
+        "EURUSD",
+        "VIX"
+      ],
       "exec_route": "IBKR"
     },
     "UK100": {
       "name": "FTSE 100",
       "asset_class": "index",
-      "aliases": ["UK100", "FTSE", "FTSE100", "UKX", "Z"],
-      "sessions": ["London"],
-      "drivers": ["GBPUSD", "SPX", "USOIL"],
+      "aliases": [
+        "UK100",
+        "FTSE",
+        "FTSE100",
+        "UKX",
+        "Z"
+      ],
+      "sessions": [
+        "London"
+      ],
+      "drivers": [
+        "GBPUSD",
+        "SPX",
+        "USOIL"
+      ],
       "exec_route": "IBKR"
     },
     "EURGBP": {
       "name": "EUR/GBP",
       "asset_class": "fx",
-      "aliases": ["EURGBP", "EUR/GBP", "EURGBP.f"],
-      "tick_size": 0.00001,
-      "sessions": ["London"],
-      "drivers": ["EURUSD", "GBPUSD"],
+      "aliases": [
+        "EURGBP",
+        "EUR/GBP",
+        "EURGBP.f"
+      ],
+      "tick_size": 1e-05,
+      "sessions": [
+        "London"
+      ],
+      "drivers": [
+        "EURUSD",
+        "GBPUSD"
+      ],
       "exec_route": "IBKR",
-      "note": "the ONLY clean FX edge (D1 cross-RV) — see vault"
+      "note": "the ONLY clean FX edge (D1 cross-RV) \u2014 see vault"
     },
     "BTCUSD": {
       "name": "Bitcoin",
       "asset_class": "crypto",
-      "aliases": ["BTCUSD", "BTCUSDT", "BTC", "XBTUSD", "BTC/USD", "BTC Spot-Quoted (QTF)"],
+      "aliases": [
+        "BTCUSD",
+        "BTCUSDT",
+        "BTC",
+        "XBTUSD",
+        "BTC/USD",
+        "BTC Spot-Quoted (QTF)"
+      ],
       "binance_symbol": "BTCUSDT",
-      "sessions": ["24/7"],
-      "drivers": ["NAS", "DXY"],
-      "exec_route": "IBKR/Binance"
+      "sessions": [
+        "24/7"
+      ],
+      "drivers": [
+        "NAS",
+        "DXY"
+      ],
+      "exec_route": "IBKR MBT futures (primary; 2-8bps measured) / PAXOS spot cashQty-sized / Binance data",
+      "futures_proxy": "MBT"
     },
     "ETHUSD": {
       "name": "Ethereum",
       "asset_class": "crypto",
-      "aliases": ["ETHUSD", "ETHUSDT", "ETH", "ETH/USD", "ETH Spot-Quoted (QEF)"],
+      "aliases": [
+        "ETHUSD",
+        "ETHUSDT",
+        "ETH",
+        "ETH/USD",
+        "ETH Spot-Quoted (QEF)"
+      ],
       "binance_symbol": "ETHUSDT",
-      "sessions": ["24/7"],
-      "drivers": ["BTC", "NAS"],
-      "exec_route": "IBKR/Binance"
+      "sessions": [
+        "24/7"
+      ],
+      "drivers": [
+        "BTC",
+        "NAS"
+      ],
+      "exec_route": "IBKR MET futures (primary; 2-8bps measured) / PAXOS spot cashQty-sized / Binance data",
+      "futures_proxy": "MET"
     },
     "SOLUSD": {
       "name": "Solana",
       "asset_class": "crypto",
-      "aliases": ["SOLUSD", "SOLUSDT", "SOL", "SOL/USD", "SOL (fut, SQF pending)"],
+      "aliases": [
+        "SOLUSD",
+        "SOLUSDT",
+        "SOL",
+        "SOL/USD",
+        "SOL (fut, SQF pending)"
+      ],
       "binance_symbol": "SOLUSDT",
-      "sessions": ["24/7"],
-      "drivers": ["BTC", "ETH"],
-      "exec_route": "IBKR/Binance"
+      "sessions": [
+        "24/7"
+      ],
+      "drivers": [
+        "BTC",
+        "ETH"
+      ],
+      "exec_route": "IBKR: CME SOL fut = 500 SOL (~$37k notional, TOO BIG for book; probe 2026-07-02, no micro listed) -> PAXOS spot cashQty-sized is the sized route / Binance data"
+    },
+    "MBT": {
+      "name": "Micro Bitcoin futures (CME)",
+      "asset_class": "crypto_futures",
+      "aliases": [
+        "MBT",
+        "MBT=F",
+        "MBT1!",
+        "micro_bitcoin",
+        "BTC micro fut"
+      ],
+      "spot_proxy": "BTCUSD",
+      "contract_unit": "0.1 BTC",
+      "multiplier": 0.1,
+      "sessions": [
+        "CME nearly 24h, CLOSED weekends"
+      ],
+      "drivers": [
+        "BTCUSD",
+        "NAS100",
+        "DXY"
+      ],
+      "exec_route": "IBKR (verified tradeable on paper DUO485909, probe 2026-07-02)",
+      "roll": "quarterly+monthly listings; resolve front month via ContFuture",
+      "data_quality": "IBKR gateway; book uses Coinbase WS spot as price feed"
+    },
+    "MET": {
+      "name": "Micro Ether futures (CME)",
+      "asset_class": "crypto_futures",
+      "aliases": [
+        "MET",
+        "MET=F",
+        "MET1!",
+        "micro_ether",
+        "ETH micro fut"
+      ],
+      "spot_proxy": "ETHUSD",
+      "contract_unit": "0.1 ETH",
+      "multiplier": 0.1,
+      "sessions": [
+        "CME nearly 24h, CLOSED weekends"
+      ],
+      "drivers": [
+        "ETHUSD",
+        "BTCUSD",
+        "NAS100"
+      ],
+      "exec_route": "IBKR (verified tradeable on paper DUO485909, probe 2026-07-02)",
+      "roll": "quarterly+monthly listings; resolve front month via ContFuture",
+      "data_quality": "IBKR gateway; book uses Coinbase WS spot as price feed"
     }
   }
 }
