@@ -245,6 +245,14 @@ class DomRecorder:
         self.events = 0
         self.last_log = 0.0
         self.ticker = None
+        # Roll-break watchdog (2026-07-03): monotonic timestamp of the last
+        # written depth event. A futures contract that has ROLLED keeps the IB
+        # session connected but goes silent (the expiring/expired month stops
+        # quoting). The supervise loop only re-resolves on DISCONNECT, so a roll
+        # left the bridge pinned to a dead contract -- MGC went header-only for a
+        # full day (07-02). check_rolls() below uses this to detect the silence.
+        self.last_event_mono = time.monotonic()
+        self.is_fut = (getattr(contract, "secType", "") or "") == "FUT"
 
     def _open_for_date(self, date_str):
         path = os.path.join(self.out_dir,
@@ -297,6 +305,7 @@ class DomRecorder:
             self._open_for_date(d)
 
     def start(self):
+        self.last_event_mono = time.monotonic()
         self.ticker = self.ib.reqMktDepth(
             self.contract, numRows=self.max_levels, isSmartDepth=True
         )
@@ -339,6 +348,7 @@ class DomRecorder:
             return
         mid = (bid_px + ask_px) / 2.0
         self.events += 1
+        self.last_event_mono = time.monotonic()
         ts = now_ms()
         self.w.writerow([
             ts,
@@ -452,6 +462,46 @@ class TradesRecorder:
         except Exception:
             pass
 
+# Roll-break watchdog threshold: a live futures contract emits depth events
+# near-continuously during market hours; sustained silence means the contract
+# has expired/rolled. We only ACT on the silence if re-resolving the front month
+# now returns a DIFFERENT conId -- so genuine quiet windows (CME daily halt,
+# weekend close) never trigger a needless resubscribe; only an actual roll does.
+FUT_ROLL_STALE_SEC = 30 * 60
+
+
+def check_rolls(ib, recorders):
+    """Return True if any FUT recorder has gone silent past the threshold AND
+    the current front month now resolves to a different contract (a real roll),
+    signalling the caller to tear down and resubscribe (which re-resolves)."""
+    now = time.monotonic()
+    for r in recorders:
+        if not getattr(r, "is_fut", False):
+            continue
+        if now - getattr(r, "last_event_mono", now) < FUT_ROLL_STALE_SEC:
+            continue
+        try:
+            fresh = resolve_front_month(ib, make_contract(r.sym))
+            cur_id = getattr(r.contract, "conId", 0)
+            new_id = getattr(fresh, "conId", 0)
+            if new_id and new_id != cur_id:
+                print(
+                    f"[roll-watchdog] {r.sym} silent "
+                    f"{int(now - r.last_event_mono)}s and front month rolled "
+                    f"{cur_id} -> {new_id} ({getattr(fresh,'localSymbol','?')}) "
+                    f"-- forcing resubscribe",
+                    flush=True,
+                )
+                return True
+            # Same contract, just quiet: reset baseline so we don't re-resolve
+            # every pump tick during a legitimate halt/weekend.
+            r.last_event_mono = now
+        except Exception as e:
+            print(f"[roll-watchdog] {r.sym} re-resolve failed: {e}",
+                  file=sys.stderr)
+    return False
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
@@ -563,12 +613,18 @@ def main():
                 continue
 
             print("recording... Ctrl-C to stop", flush=True)
-            # pump the event loop until the session drops, stop, or deadline
+            # pump the event loop until the session drops, stop, deadline, OR a
+            # futures roll is detected (check_rolls breaks out -> resubscribe).
+            next_roll_check = time.monotonic() + 60.0
             while not stop["now"] and ib.isConnected():
                 ib.sleep(0.5)
                 if deadline is not None and time.monotonic() >= deadline:
                     stop["now"] = True
                     break
+                if time.monotonic() >= next_roll_check:
+                    next_roll_check = time.monotonic() + 60.0
+                    if check_rolls(ib, recorders):
+                        break  # tear down + resubscribe re-resolves front month
 
             for r in recorders:
                 # DomRecorder has .events, TradesRecorder has .n -- fall back so
