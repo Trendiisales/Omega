@@ -115,6 +115,10 @@ def main():
         p = pos[0]
         side = "SELL" if p.position > 0 else "BUY"
         o = MarketOrder(side, abs(p.position)); o.tif = "DAY"
+        # ib.positions() returns contracts WITHOUT exchange set -> IBKR rejects the
+        # close with Warning 321 "Missing order exchange" (hit live 2026-07-02 on the
+        # first MBT flatten). Route on the held contract but with the exchange filled.
+        p.contract.exchange = p.contract.exchange or c.exchange or "CME"
         tr = ib.placeOrder(p.contract, o)
         while not tr.isDone(): ib.sleep(0.25)
         print("[FLATTEN]", json.dumps(trade_result(tr))); ib.disconnect(); return
