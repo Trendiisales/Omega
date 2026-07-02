@@ -170,9 +170,20 @@ def check_input_freshness():
     log = "/tmp/giveback_saver.log"
     if os.path.exists(log):
         try:
-            tail = subprocess.run(["tail","-15",log], capture_output=True, text=True).stdout
-            if "telemetry unreachable" in tail or "telemetry quiet" in tail:
-                probs.append("omega telemetry unreachable in recent companion runs (stale-input -> peaks missed)")
+            # Only the MOST RECENT cycle matters. A reboot/VPS blip logs a transient
+            # "telemetry unreachable", then healthy cycles resume once the box returns.
+            # The old check flagged ANY unreachable line in the last 15 -> a guaranteed
+            # false RED after every reboot even after full recovery (2026-07-02). Scan
+            # newest->oldest and flag ONLY if the current state is still unreachable/quiet
+            # (an unreachable line reached before any healthy cycle line). This still
+            # catches a genuinely-CURRENT telemetry outage, just not a recovered blip.
+            tail = subprocess.run(["tail","-30",log], capture_output=True, text=True).stdout.splitlines()
+            for ln in reversed(tail):
+                if "telemetry unreachable" in ln or "telemetry quiet" in ln:
+                    probs.append("omega telemetry unreachable in recent companion runs (stale-input -> peaks missed)")
+                    break
+                if ("omega telemetry empty" in ln) or ("banked-now" in ln) or ("harvest" in ln):
+                    break  # most recent cycle is healthy -> recovered blip, not a problem
         except Exception: pass
     ok = (len(probs) == 0)
     detail = "companion inputs fresh (crypto + omega telemetry)" if ok else "*** " + "; ".join(probs) + " ***"
