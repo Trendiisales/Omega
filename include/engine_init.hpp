@@ -1196,12 +1196,19 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.cell_vol_band_mask = 0x8;
         // For D1: all 3 cells benefit from vol_band -- mask stays 0xFFFFFFFF
         // (default all enabled). Bits 0,1,2 = Momentum20, Keltner, ADX_Mom.
-        // S-2026-06-29 IMPULSE FILTER (ported from 1h/D1; faithful 4h2h BT at
-        // CORRECT IBKR cost = 2*0.00015*price + spread). IMP=1.0 sweet spot for 4h
-        // (NOT 0.5 like D1): bull PF 1.25->1.48 maxDD -24% both-WF-halves+; bear
-        // (2022-23) 1.06->1.16 maxDD lower; spread-robust (0.30/0.45). Breakout-only
-        // (4h has no dip-buy family). Harness backtest/xau_tf_4h2h_bt IMP env.
-        g_xau_tf_4h.min_impulse_atr = 1.0;
+        // S-2026-07-02 RETUNE 1.0->0.5. The prior 1.0 (S-2026-06-29) was set on a
+        // faithful 4h2h BT run BEFORE the S-2026-07-02 direction-aware thrust fix --
+        // i.e. with the long-biased bug that vetoed every SHORT, so the "1.0 sweet
+        // spot bull PF1.25->1.48" was a bull-only artifact (shorts weren't firing).
+        // Re-ran the FAITHFUL real-engine harness (XauTrendFollow4h2hBacktest, prod
+        // cfg mask=0xC9 + ADX15 + vol-band, CORRECT IBKR cost) WITH the fix across
+        // IMP {0,0.5,1.0}: IMP=1.0 is WORST both files (2yr net +4346/PF1.64,
+        // 2022-23 +186/PF1.07). IMP=0.5 wins the robust WF-passing 2yr sample
+        // (net +5523/PF1.74/maxDD 832 vs IMP0 +5322/1.70/951 -- higher PF+net,
+        // LOWER DD, both-WF-halves+ both regimes). On bear-heavy 2022-23 IMP0 edges
+        // 0.5 by ~$130 but that sample fails WF both-halves either way. 0.5 also
+        // matches the 1h + D1 fleet (same faithful basis). Direction-aware code kept.
+        g_xau_tf_4h.min_impulse_atr = 0.5;
         // S-2026-06-30 ADX CHOP-GATE: block ALL cell entries when Wilder ADX14 < 15
         // (= ranging). Kills the EMA-cross/breakout whipsaw-into-a-range losers (the
         // operator-flagged 4k-chop trade). Faithful 4h2h BT, production cfg
