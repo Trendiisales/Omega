@@ -171,8 +171,13 @@ def check_input_freshness():
     if os.path.exists(log):
         try:
             tail = subprocess.run(["tail","-15",log], capture_output=True, text=True).stdout
-            if "telemetry unreachable" in tail or "telemetry quiet" in tail:
-                probs.append("omega telemetry unreachable in recent companion runs (stale-input -> peaks missed)")
+            # >=2 in the last 15 lines: a single ssh-timeout self-heals next cycle (poll_omega now
+            # retries once too); the DANGEROUS case (the $222 gold peak miss) is SUSTAINED
+            # unreachability. One transient trip must not flip protection RED. S-2026-07-02.
+            fails = sum(("telemetry unreachable" in ln or "telemetry quiet" in ln)
+                        for ln in tail.splitlines())
+            if fails >= 2:
+                probs.append(f"omega telemetry unreachable {fails}x in last 15 companion cycles (SUSTAINED -> peaks missed)")
         except Exception: pass
     ok = (len(probs) == 0)
     detail = "companion inputs fresh (crypto + omega telemetry)" if ok else "*** " + "; ".join(probs) + " ***"
