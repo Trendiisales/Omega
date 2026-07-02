@@ -214,6 +214,13 @@ int main(int argc, char* argv[]) {
     bool   use_er_gate  = false;
     double er_min       = 0.25;
     int    er_win       = 20;
+    // S-2026-07-02: direction-aware IMPULSE filter, mirroring the LIVE engine
+    // (XauTrendFollow4hEngine min_impulse_atr, engine_init=1.0). The harness
+    // previously had NO impulse gate -> it could not validate the engine's
+    // short-impulse bug fix. Entry bar must thrust >= impulse_mult*ATR in the
+    // TRADE direction: long = high-prev_close, short = prev_close-low. 0 = off
+    // (baseline reproduces exactly). Run off-vs-on to size the short-side effect.
+    double impulse_mult = 0.0;
     unsigned cell_er_mask = 0xFFFFFFFFu;
     // S45 pyramiding (additive lever). Add a unit each time price advances
     // pyr_step*ATR(entry) beyond the last add, up to pyr_max adds, trailing the
@@ -246,6 +253,7 @@ int main(int argc, char* argv[]) {
         else if(a=="--cell-vol-mask" && i+1<argc) cell_vol_mask = std::stoul(argv[++i], nullptr, 0);
         else if(a=="--er-gate") use_er_gate=true;
         else if(a=="--er-min" && i+1<argc) er_min = std::stod(argv[++i]);
+        else if(a=="--impulse" && i+1<argc) impulse_mult = std::stod(argv[++i]);
         else if(a=="--er-win" && i+1<argc) er_win = std::stoi(argv[++i]);
         else if(a=="--cell-er-mask" && i+1<argc) cell_er_mask = std::stoul(argv[++i], nullptr, 0);
         else if(a=="--pyramid" && i+1<argc) pyr_max = std::stoi(argv[++i]);
@@ -262,6 +270,8 @@ int main(int argc, char* argv[]) {
                 use_vol_band?"ON":"OFF", vb_low, vb_high, cell_vol_mask,
                 use_adx?"ON":"OFF", adx_min, cell_adx_mask,
                 use_er_gate?"ON":"OFF", er_min, er_win, cell_er_mask);
+    std::printf("[TF-BT] impulse: %s (>= %.2f x ATR, direction-aware)\n",
+                impulse_mult>0.0?"ON":"OFF", impulse_mult);
     std::printf("[TF-BT] pyramid: %s (max=%d step=%.2fATR sl=%.2fATR no_tp=%s)  price[%.0f,%.0f] swap_ba=%s win=[%lld,%lld]\n",
                 pyr_max>0?"ON":"OFF", pyr_max, pyr_step, pyr_sl, pyr_no_tp?"Y":"N",
                 pmin, pmax, swap_ba?"Y":"N", (long long)win_start_ms, (long long)win_end_ms);
@@ -337,6 +347,15 @@ int main(int argc, char* argv[]) {
         // block; guard on size so warmup doesn't suppress every early entry).
         if (use_er_gate && (cell_er_mask & bit) && barptr &&
             (int)barptr->size() >= er_win + 1 && ker(*barptr, er_win) < er_min) return;
+        // S-2026-07-02 direction-aware impulse filter (mirrors live engine fix).
+        // barptr->back() is the just-closed entry bar; [size-2] is prior. Long
+        // measures up-thrust (high-prev_close), short the down-thrust (prev_close-low).
+        if (impulse_mult > 0.0 && barptr && barptr->size() >= 2 && atr > 0.0) {
+            const double prev_close = (*barptr)[barptr->size()-2].close;
+            const double thrust = il ? (barptr->back().high - prev_close)
+                                     : (prev_close - barptr->back().low);
+            if (thrust < impulse_mult * atr) return;   // weak breakout
+        }
         if(trades[ci].active)return; auto& t=trades[ci];
         t.active=true;t.is_long=il;t.entry_px=il?a:b;
         t.sl_px=il?t.entry_px-cells[ci].sl_mult*atr:t.entry_px+cells[ci].sl_mult*atr;
