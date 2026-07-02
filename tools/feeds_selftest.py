@@ -18,6 +18,7 @@ TICK = HOME / "Tick"
 RDA  = HOME / "Omega" / "data" / "rdagent"
 QLIB = HOME / ".qlib" / "qlib_data" / "omega_data"
 STALL = HOME / "stall-accountant"
+CRYPTO_BOOK = HOME / "Crypto" / "backtest" / "data" / "ibkrcrypto" / "state.json"
 
 
 def last_trading_day(today: dt.date) -> dt.date:
@@ -68,6 +69,16 @@ def json_field_date(path: Path, *keys) -> dt.date | None:
         return None
 
 
+def crypto_book_heartbeat() -> dt.date | None:
+    # Chimera/Crypto book refreshes every 5min; track the FRESHER of updated /
+    # live_mark_ts. NEVER file mtime — the file is rewritten by other writers while
+    # the heartbeat fields stay frozen (the exact silent-stale trap that let the book
+    # go 1.5d stale after the 07-01 IBKRCrypto->Crypto move with every banner green).
+    ds = [x for x in (json_field_date(CRYPTO_BOOK, "updated"),
+                      json_field_date(CRYPTO_BOOK, "live_mark_ts")) if x]
+    return max(ds) if ds else None
+
+
 def mtime_date(path: Path) -> dt.date | None:
     try:
         return dt.datetime.fromtimestamp(path.stat().st_mtime).date()
@@ -83,6 +94,7 @@ FEEDS = [
     ("tick NDX daily",      "live", 2, lambda: csv_last_date(TICK / "NDX_daily_2016_2026.csv")),
     ("tick GER40 daily",    "live", 4, lambda: csv_last_date(TICK / "GER40_daily_2016_2026.csv")),
     ("companion telemetry", "live", 1, lambda: mtime_date(STALL / "companion_state.json")),
+    ("crypto book heartbeat","live", 1, crypto_book_heartbeat),
     ("qlib omega_data",     "research", 2, qlib_cal_last),
     ("rdagent basket",      "research", 2, lambda: json_field_date(RDA / "latest.json", "signal", "date")),
     ("sp500_long_close",    "research", 4, lambda: csv_last_date(RDA / "sp500_long_close.csv")),

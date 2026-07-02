@@ -31,8 +31,10 @@ try:
                        .replace(tzinfo=dt.timezone.utc).timestamp())
     except Exception:
         pass
-    try:
-        hb = max(hb, float(d.get("live_mark_ts") or 0))
+    lm = (d.get("live_mark_ts", "") or "").replace(" UTC", "")
+    try:  # live_mark_ts is a "YYYY-MM-DD HH:MM UTC" string, not an epoch float
+        hb = max(hb, dt.datetime.strptime(lm, "%Y-%m-%d %H:%M")
+                       .replace(tzinfo=dt.timezone.utc).timestamp())
     except Exception:
         pass
     now = dt.datetime.now(dt.timezone.utc).timestamp()

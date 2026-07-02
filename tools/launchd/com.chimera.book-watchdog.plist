@@ -10,7 +10,7 @@
          cp tools/launchd/com.chimera.book-watchdog.plist ~/Library/LaunchAgents/
          launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chimera.book-watchdog.plist -->
   <key>ProgramArguments</key>
-  <array><string>/bin/zsh</string><string>/Users/jo/omega/tools/crypto_book_watchdog.sh</string></array>
+  <array><string>/bin/zsh</string><string>/Users/jo/Omega/tools/crypto_book_watchdog.sh</string></array>
   <key>StartInterval</key><integer>600</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>/tmp/chimera-book-watchdog.log</string>
