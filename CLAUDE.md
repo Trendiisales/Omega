@@ -99,7 +99,8 @@ necessary-not-sufficient check on individual headers. The sufficient
 check is the Mac canary build (operator-side):
 
 ```bash
-cd ~/omega_repo
+cd ~/Omega    # the ONE working tree/build dir (operator 2026-07-02: there is
+              # no separate ~/omega_repo -- only ~/Omega. mac fs is case-insensitive.)
 cmake --build build --target OmegaBacktest -j
 bash scripts/mac_canary_engines.sh
 ```
