@@ -3461,6 +3461,14 @@ static void init_engines(const std::string& cfg_path)
 
     // GoldEngineStack config -- applies all [gold_stack] ini values.
     // Must be called AFTER load_config(). Defaults are safe (match prior constexpr).
+    // MIN_TRADE_GATE cost basis: the gold PRICE feed is BlackBull spot (wide
+    // ~$1.2/oz spread that snap.spread carries), but ORDERS route to IBKR GC
+    // futures (~8x cheaper). When execution_broker==IBKR, rebase the gate's
+    // spread-derived cost hurdle onto the execution venue via a conservative
+    // 0.5 floor (verified real IBKR RT ~1/8 of BlackBull -- 0.5 under-claims).
+    // execution_broker is finalized from default/config here; the late env
+    // override (OMEGA_EXECUTION_BROKER) is an operator-forced edge case.
+    g_cfg.gs_cfg.cost_basis_factor = (g_cfg.execution_broker == "IBKR") ? 0.5 : 1.0;
     g_gold_stack.configure(g_cfg.gs_cfg);
 
     // ?? GoldStack sub-engine audit-disables (2026-04-30, loser audit Wave 2) ??

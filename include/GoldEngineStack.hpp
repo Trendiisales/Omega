@@ -3920,6 +3920,16 @@ struct GoldStackCfg {
     double  same_level_reentry_band     = 1.50; // $-band for same-level detection
     double  min_vwap_dislocation        = 1.20; // min $-distance from VWAP to enter
     double  max_entry_spread            = 2.50;  // max spread at entry (absolute $) -- matches GoldEngineStack runtime default
+    // MIN_TRADE_GATE cost basis. The live gold price feed is BlackBull spot,
+    // whose bid-ask spread (~$1.2/oz) is what snap.spread carries. Execution,
+    // however, routes to IBKR GC COMEX futures (execution_broker==IBKR), whose
+    // all-in RT cost is ~$0.15/oz (comm ~$5.30/100oz + 1 tick slip) -- ~8x
+    // cheaper. This factor scales the spread-derived cost hurdle in the
+    // MIN_TRADE_GATE so it charges the *execution* venue, not the feed venue.
+    // 1.0 = BlackBull spot (feed spread is the real cost); 0.5 = IBKR
+    // conservative floor (real ~1/8; 0.5 under-claims edge on purpose). Set
+    // from engine_init per g_cfg.execution_broker.
+    double  cost_basis_factor           = 1.0;
     int64_t min_entry_gap_sec           = 90;   // min gap between any two entries
     // ?? Position manager ????????????????????????????????????????????????????
     int     max_hold_sec                = 1800; // position timeout -- raised 600?1800: 10min killed valid slow trend entries
@@ -3997,6 +4007,7 @@ public:
         SAME_LEVEL_REENTRY_BAND     = c.same_level_reentry_band;
         MIN_VWAP_DISLOCATION        = c.min_vwap_dislocation;
         MAX_ENTRY_SPREAD            = c.max_entry_spread;
+        COST_BASIS_FACTOR           = c.cost_basis_factor;
         MIN_ENTRY_GAP_SEC           = c.min_entry_gap_sec;
 
         // Position manager
@@ -4509,6 +4520,7 @@ private:
     double  SAME_LEVEL_REENTRY_BAND     = 1.50;// raised 0.80?1.50: $0.80 band was too tight
     double  MIN_VWAP_DISLOCATION        = 1.20;// raised 0.80?1.20: entries within $1.20 of VWAP are noise territory
     double  MAX_ENTRY_SPREAD            = 2.50;  // raised 1.60?2.50: matches gold spread reality in London ($1.50-$2.50)
+    double  COST_BASIS_FACTOR           = 1.0;   // MIN_TRADE_GATE cost multiplier (1.0=BlackBull spot, 0.5=IBKR); set from cfg
     double  GENERAL_MIN_SCORE           = 1.20;
     int64_t MIN_ENTRY_GAP_SEC           = 90;  // raised 30?90: CB was re-firing 2-3x per compression box
 
@@ -4586,12 +4598,16 @@ private:
         // slip    = spread ? 1.5 (one-way; ?2 round-trip factored into the 1.5 gate)
         if (s.tp > 0.0 && snap.spread > 0.0) {
             const double tp_usd       = s.tp * 0.10;       // TP in USD at base 0.01 lot
-            const double slippage_est = snap.spread * 1.5; // estimated one-way cost
+            // snap.spread is the BlackBull-spot feed spread; execution routes to
+            // IBKR GC futures at a fraction of that cost. COST_BASIS_FACTOR
+            // rebases the hurdle onto the execution venue (0.5 = IBKR floor).
+            const double slippage_est = snap.spread * 1.5 * COST_BASIS_FACTOR; // one-way exec-venue cost
             if (tp_usd < slippage_est * 1.5) {
                 std::cout << "[GOLD-QUALITY] MIN_TRADE_GATE blocked:"
                           << " engine=" << (s.engine[0] ? s.engine : "?")
                           << " tp_usd=" << tp_usd
                           << " slip_est=" << slippage_est
+                          << " cost_factor=" << COST_BASIS_FACTOR
                           << " spread=" << snap.spread << "\n";
                 std::cout.flush();
                 return false;
