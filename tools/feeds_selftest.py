@@ -183,6 +183,59 @@ def vps_live_dump_ages(manifest: list[tuple[str, int, str]]) -> dict[str, float]
     return ages if ages else None
 
 
+def vps_ibkr_exec_status() -> tuple[str, str]:
+    """ONE `ssh omega-vps` call. Confirms the live binary's IBKR EXECUTION path is
+    ACTIVE. Gold now routes to IBKR GC futures (execution_broker==IBKR) and its
+    MIN_TRADE_GATE cost basis is rebased onto IBKR (0.5x BlackBull-spot spread).
+    If the exec path silently reverts to BLACKBULL_FIX or hits CONNECT FAILED,
+    gold orders are rejected AND the cheaper cost gate is mispriced against the
+    wrong venue -- a double failure that looks like the strategy died. Scans the
+    3 most-recent runtime logs (robust across the UTC date-roll, since the
+    [IBKR-EXEC] status prints only at boot) for the latest status line.
+    Returns (status, detail). ssh command MUST start literally `ssh omega-vps`."""
+    # No `|` pipes: ssh->remote cmd.exe would intercept them before PowerShell sees
+    # the string (same trap the vps_live_dump_ages helper avoids). Emit each match as
+    # "<mtime_ticks>[char]9<line>" and pick the newest file's match in Python -- avoids
+    # a pipe-based Sort-Object entirely.
+    ps = (
+        r"$ls=Get-ChildItem 'C:\Omega\logs\omega_*.log';"
+        r"foreach($f in $ls){"
+        r"$m=Select-String -Path $f.FullName -Pattern '\[IBKR-EXEC\] execution_broker';"
+        r"if($m){Write-Output ($f.LastWriteTime.Ticks.ToString()+[char]9+$m[-1].Line.Trim())}}"
+    )
+    try:
+        r = subprocess.run(
+            ["ssh", "omega-vps", "powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=45,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ("RED", "ssh omega-vps failed -- IBKR exec path UNVERIFIABLE")
+    if r.returncode != 0:
+        return ("RED", f"ssh rc={r.returncode} -- IBKR exec path UNVERIFIABLE")
+    # Pick the [IBKR-EXEC] line from the newest-modified log (max mtime ticks).
+    best_ticks, line = -1, ""
+    for ln in r.stdout.splitlines():
+        parts = ln.strip().split("\t", 1)
+        if len(parts) != 2:
+            continue
+        try:
+            ticks = int(parts[0])
+        except ValueError:
+            continue
+        if ticks > best_ticks:
+            best_ticks, line = ticks, parts[1].strip()
+    if not line:
+        return ("RED", "no [IBKR-EXEC] line in any C:\\Omega\\logs\\omega_*.log")
+    if "ACTIVE" in line:
+        return ("PASS", line)
+    if "CONNECT FAILED" in line:
+        return ("RED", f"IBKR exec CONNECT FAILED -- gold orders rejected: {line}")
+    if "BLACKBULL_FIX" in line:
+        return ("RED", f"execution_broker=BLACKBULL_FIX -- gold NOT on IBKR, "
+                       f"cost gate mispriced vs venue: {line}")
+    return ("RED", f"no [IBKR-EXEC] ACTIVE line in last 3 logs: {line or 'empty'}")
+
+
 # (label, kind, max_age_trading_days, getter)  kind: "live" critical | "research" paper
 FEEDS = [
     ("tick XAUUSD daily",   "live", 2, lambda: csv_last_date(TICK / "2yr_XAUUSD_daily.csv")),
@@ -248,6 +301,15 @@ def main() -> int:
                     else:
                         vps_rows.append((path, "PASS", f"age={age_min:.0f}min (max {max_age_min}min) {desc}"))
 
+    # ── VPS IBKR execution-path status (gold routes to IBKR GC; cost gate rebased) ──
+    # Skip on weekend (market closed -> gold not trading, exec path irrelevant).
+    exec_row: tuple[str, str] | None = None
+    if not market_closed_weekend(now_utc):
+        ex_status, ex_detail = vps_ibkr_exec_status()
+        exec_row = (ex_status, ex_detail)
+        if ex_status != "PASS":
+            live_red += 1
+
     if not quiet:
         verdict = "RED — LIVE FEED STALE" if live_red else ("AMBER — research stale" if res_red else "GREEN — all feeds fresh")
         mark = {"GREEN": "GREEN", "AMBER": "AMBER", "RED": "RED"}
@@ -261,6 +323,8 @@ def main() -> int:
             print("  -- VPS operational dumps (C:\\Omega\\logs, polled skew-free via ssh omega-vps) --")
             for path, status, detail in vps_rows:
                 print(f"  {status:7} [vps-live] {path:24} {detail}")
+        if exec_row:
+            print(f"  {exec_row[0]:7} [vps-exec] {'ibkr_exec_status':24} {exec_row[1]}")
         if live_red:
             print("  -> A LIVE feed is stale: fix the feeder BEFORE trusting any signal/telemetry.")
         elif res_red:
