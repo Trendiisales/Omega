@@ -87,6 +87,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -384,7 +385,13 @@ public:
 
         if ((int)bars_.size() < kEmaSlow + 4) return;  // need EMA80 + slow-rise lookback
         if (atr14_ <= 0.0) return;
-        if (ask - bid > max_spread) return;
+        if (ask - bid > max_spread) {
+            // S-2026-07-02 observability: this silently zeroed ALL entries for the
+            // bar (zero-trades post-mortem rule: every total-veto must log).
+            std::printf("[XTF1H-BLOCK] spread %.2f > max %.2f -- whole-bar entry skip\n",
+                        ask - bid, max_spread);
+            return;
+        }
 
         // S88-followup: rolling ATR for vol-band.
         if (use_vol_band_gate && atr14_ > 0.0) {
@@ -565,7 +572,13 @@ private:
         if (warmup_active_) return;
         // 2026-06-12 regime gate: long-only engine -> skip ALL entries in a sustained
         //   gold bear (shared price brain, gold_regime_gate_bt-validated). Inert in bull.
-        if (omega::gold_regime().long_blocked()) return;
+        // S-2026-07-02: this veto ran SILENT for weeks while regime=BEAR suppressed the
+        // entire long-only gold book (zero-trades post-mortem). Every block now logs.
+        if (omega::gold_regime().long_blocked()) {
+            std::printf("[XTF1H-BLOCK] cell=%d regime long_blocked (%s) -- long entry vetoed\n",
+                        ci, omega::gold_regime().regime_name());
+            return;
+        }
         const auto& cfg = kXauTf1hCells[ci];
         double entry = ask;  // long-only
         if (entry <= 0.0 || atr14_ <= 0.0) return;

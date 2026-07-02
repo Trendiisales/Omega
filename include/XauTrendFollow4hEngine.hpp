@@ -115,6 +115,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -509,7 +510,13 @@ public:
         // within the bar). The bar-close is only for new-entry decisions.
         if ((int)bars_.size() < 32) return;  // warmup
         if (atr14_ <= 0.0) return;
-        if (ask - bid > max_spread) return;
+        if (ask - bid > max_spread) {
+            // S-2026-07-02 observability: silently zeroed ALL entries for the bar
+            // (zero-trades post-mortem rule: every total-veto must log).
+            std::printf("[XTF4H-BLOCK] spread %.2f > max %.2f -- whole-bar entry skip\n",
+                        ask - bid, max_spread);
+            return;
+        }
 
         // S88-followup: maintain rolling ATR window for vol-band gate.
         if (use_vol_band_gate && atr14_ > 0.0) {
@@ -524,14 +531,34 @@ public:
             int side = _evaluate_signal(ci);
             if (side == 0) continue;
             // S-2026-06-29 IMPULSE FILTER: entry bar must thrust >= min_impulse_atr*ATR14.
+            // S-2026-07-02 BUG FIX (zero-trades post-mortem): the original formula
+            // measured (bar.high - prev_close) for BOTH sides -- upward thrust only.
+            // A short-breakout bar has high ~= prev_close -> thrust ~= 0 -> EVERY
+            // short signal was vetoed since 2026-06-29. With longs blocked by the D1
+            // bear gate, that left the engine dead in both directions. Thrust is now
+            // direction-aware: longs measure the up-thrust, shorts the down-thrust.
             if (min_impulse_atr > 0.0 && atr14_ > 0.0 && (int)bars_.size() >= 2) {
                 const double prev_close = bars_[bars_.size()-2].close;
-                if ((bar.high - prev_close) < min_impulse_atr * atr14_) continue;  // weak breakout
+                const double thrust = (side > 0) ? (bar.high - prev_close)
+                                                 : (prev_close - bar.low);
+                if (thrust < min_impulse_atr * atr14_) {
+                    std::printf("[XTF4H-BLOCK] cell=%d side=%d impulse %.2f < %.2f (%.1fxATR) -- weak breakout\n",
+                                ci, side, thrust, min_impulse_atr * atr14_, min_impulse_atr);
+                    continue;
+                }
             }
             // S-2026-06-30 ADX CHOP-GATE (study): skip entries when ADX14 < floor (ranging).
             if (min_adx_entry > 0.0) {
-                if (adx_dx_count_ < kAdxPeriod) continue;     // ADX not warm -> no entry
-                if (adx14_ < min_adx_entry) continue;         // chop -> skip
+                if (adx_dx_count_ < kAdxPeriod) {             // ADX not warm -> no entry
+                    std::printf("[XTF4H-BLOCK] cell=%d ADX cold (%d/%d DX) -- no entry until warm\n",
+                                ci, adx_dx_count_, kAdxPeriod);
+                    continue;
+                }
+                if (adx14_ < min_adx_entry) {                 // chop -> skip
+                    std::printf("[XTF4H-BLOCK] cell=%d ADX %.1f < %.1f -- chop skip\n",
+                                ci, adx14_, min_adx_entry);
+                    continue;
+                }
             }
             // 2026-06-12 regime gate: no new longs in sustained gold bear.
             if (use_regime_long_gate && side > 0
@@ -822,15 +849,27 @@ private:
         // S102: block entries during warmup — warmup primes indicators only.
         if (warmup_active_) return;
         // 2026-05-21: D1 EMA200 regime gate (chokepoint for all 4h cells).
-        if (side > 0 && !omega::gold_d1_trend().long_allowed())  return;
-        if (side < 0 && !omega::gold_d1_trend().short_allowed()) return;
+        // S-2026-07-02: vetoes now LOG (zero-trades post-mortem: silent chokepoints
+        // suppressed the whole gold book for weeks with no way to see which gate).
+        if (side > 0 && !omega::gold_d1_trend().long_allowed()) {
+            std::printf("[XTF4H-BLOCK] cell=%d D1-EMA200 gate: long not allowed -- vetoed\n", ci);
+            return;
+        }
+        if (side < 0 && !omega::gold_d1_trend().short_allowed()) {
+            std::printf("[XTF4H-BLOCK] cell=%d D1-EMA200 gate: short not allowed -- vetoed\n", ci);
+            return;
+        }
         // 2026-06-13: ALSO gate shorts on the price-based sustained-bull regime
         // (gold_regime().short_blocked() = is_bull). The laggy D1 EMA200 gate let
         // SHORT cells fill into the gold bull (XAU_4h_DonchN20/N100 SHORT 4196 ->
         // stopped 4203 over the weekend). RegimeState releases the moment price
         // loses EMA200, so it never blocks a genuine bear short. Strictly
         // subtractive: can only reject shorts during a confirmed uptrend.
-        if (side < 0 && omega::gold_regime().short_blocked()) return;
+        if (side < 0 && omega::gold_regime().short_blocked()) {
+            std::printf("[XTF4H-BLOCK] cell=%d regime short_blocked (%s) -- short vetoed\n",
+                        ci, omega::gold_regime().regime_name());
+            return;
+        }
         const auto& cfg = kXauTfCells[ci];
         double entry = (side > 0) ? ask : bid;
         if (entry <= 0.0 || atr14_ <= 0.0) return;

@@ -1188,6 +1188,15 @@ static bool symbol_gate(
                 return false;
             }
         }
+        // ?? S-2026-06-19 hard halts -- LIVE ONLY (S-2026-07-02 guard fix) ??
+        // SHADOW MODE: skip all PnL-based gates, same rule as the legacy block
+        // further down ("Testing must never be blocked"). This newer block
+        // shipped WITHOUT the !shadow_mode guard while shadow closes DO feed
+        // g_omegaLedger + the rolling hourly/weekly buffers unconditionally --
+        // so cumulative SHADOW P&L breaching the R-based limits ($124 daily /
+        // $62 hourly / $289 weekly / $82 per-symbol) would silently suppress
+        // new PAPER entries and corrupt promotion evidence.
+        if (!shadow_mode) {
         // ?? Daily profit target ???????????????????????????????????????????
         // Stop new entries once daily P&L hits the target -- lock in the day.
         if (g_cfg.daily_profit_target > 0.0) {
@@ -1339,6 +1348,7 @@ static bool symbol_gate(
                 return false;
             }
         }
+        } // end !shadow_mode -- S-2026-06-19 hard halts (LIVE only)
         // ?? Stale quote watchdog ??????????????????????????????????????????
         // Block entries if no tick received in last STALE_QUOTE_SEC seconds.
         // A frozen feed with open positions is the most dangerous possible state --
