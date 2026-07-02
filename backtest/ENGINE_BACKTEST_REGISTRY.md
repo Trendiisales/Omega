@@ -75,3 +75,16 @@ this first. If you discover a new engine quirk, ADD IT HERE.**
 - `backtest/OmegaBacktest.cpp` — older gold-family (its runner list ≠ engine_init; stale).
 - `backtest/data_integrity_gate.py` — the pre-flight gate.
 - Aggregation: `/tmp/agg_full.py` (per-instrument mult + cost).
+
+## 5. Crypto (BTC/ETH, long-only) — separate harness
+
+The crypto book is Python (~/Crypto, not the C++ engine stack). Its backtest
+lives in `backtest/crypto_bear_bounce/` — **read `FINDINGS.md` there before any
+crypto-long backtest**. Key standing results (S-2026-07-03, Coinbase 1h
+2017-2026, 3 full bears): (a) KNIFE-PHASE LAW — below the 200D SMA and not
+above a rising 50D SMA, NO long-only entry family survives costs (7 families
+tested; any new knife-long proposal must beat that study first); (b) the
+deployable engine is **BearRecovery** (recovery sub-regime EMA9-reclaim,
+BE-and-ride floor arm 2%, no giveback clips — they are proven harmful on
+crypto); signals: `tools/crypto_bear_recovery.py`. Bull regime belongs to the
+Luke system (`backtest/luke_system/MATRIX_FINDINGS.md`).

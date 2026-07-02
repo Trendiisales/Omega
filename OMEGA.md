@@ -99,6 +99,16 @@ cross-regime (2022 bear) before tombstoning.
 
 **GER40/UK100 — DROPPED 2026-06-15 (operator: not viable, not pursuing).** GER40 H4 turtle FAILED both-halves (H2 neg); UK100 H4 marginal/thin; live GER40 engines were losing. Culled (kelt/london/minimal_h4 off; UK100 idd off). NOT worth chasing 2022-2023 intraday for marginal edges. Do not re-chase without a strong new hypothesis. Index trend edge lives in DJ30/SPX/NAS daily turtles (built, live-shadow) — not the EU indices intraday.
 
+**CRYPTO long-only regime ladder (2026-07-03, Coinbase 1h 2017-2026, 3 full bears):**
+NZ regulation = long-only. Ladder: **KNIFE** (<SMA200, not above rising SMA50) =
+FLAT — 7 long entry families backtested, ALL lose after costs in 2018/2022/2025-26
+knives ("dips keep dipping" holds; do NOT propose knife longs without beating
+`backtest/crypto_bear_bounce/FINDINGS.md`); **RECOVERY** (<SMA200 but > rising SMA50)
+= **BearRecovery** engine (EMA9-reclaim, BE-and-ride floor arm 2%, PF 7.2 @2% risk,
+worst −4.8%, both WF halves +, ~2 sig/yr — aggression via size not frequency;
+giveback clips proven harmful on crypto); **BULL** (>SMA200) = Luke daily system.
+Signals: `tools/crypto_bear_recovery.py` (emits JSON for the ~/Crypto book). SHADOW first.
+
 
 ---
 
