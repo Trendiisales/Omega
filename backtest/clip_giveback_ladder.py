@@ -15,7 +15,7 @@ scl = importlib.util.module_from_spec(spec); spec.loader.exec_module(scl)
 
 def run(csvf, label, arm_gate):
     trades = scl.load_paths(csvf)
-    ladder = [0.20, 0.30, 0.50, 0.60, 0.80]
+    ladder = [0.20, 0.30, 0.50, 0.60, 0.70, 0.80, 0.90]
     print(f"\n=== {label}  ({len(trades)} trades)  arm_gate={arm_gate*100:.2f}% ===")
     print(f"  {'giveback':>9s} {'net%':>8s} {'PF':>5s} {'maxDD%':>8s} {'MAR':>6s} "
           f"{'WF-H1':>7s} {'WF-H2':>7s} {'bull':>7s} {'bear':>7s}  n  verdict")
