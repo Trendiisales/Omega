@@ -113,6 +113,12 @@ Engine: `include/CryptoBearRecoveryEngine.hpp` (C++, warm-seeded via
 `backtest/crypto_bear_bounce/faithful_bear_recovery_bt.cpp` (drives the real
 engine class; reproduces the study trade-for-trade). SHADOW first.
 
+**QNDX → Omega migration (2026-07-03):** the Mac ~/Crypto book's Nasdaq TSMom50
+leg moved onto Omega as `include/NasdaqTsmom50Engine.hpp` (NAS100 feed, ENABLED
+shadow; rule confirmed vs the live book to the cent; 30y ^NDX PF 1.94 both-WF+,
+flip exit + 8% disaster stop, shorts DEAD). Mac-side removal steps + Luke
+compatibility report: `tools/rdagent/QNDX_MOVE_TO_OMEGA.patch.md`.
+
 
 ---
 

@@ -26,6 +26,8 @@ WARN="-Wall -Wextra -Wno-unused-variable -Wno-unused-but-set-variable -Wno-c++20
 HEADERS=(
   include/L2Globals.hpp
   include/L2LeverageState.hpp
+  include/NasdaqTsmom50Engine.hpp
+  include/CryptoBearRecoveryEngine.hpp
   include/SurvivorPortfolio.hpp
   include/PumpScalpManager.hpp
   include/NqMomentumEngine.hpp

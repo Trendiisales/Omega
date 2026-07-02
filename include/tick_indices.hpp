@@ -959,6 +959,23 @@ static void on_tick_nas100(
         }
     }
 
+    // NasdaqTsmom50Engine (S-2026-07-03) -- TSMom50 daily trend on NAS100,
+    // long-only, flip exit + 8% disaster stop. Migrated from the Mac ~/Crypto
+    // book's QNDX leg (rule confirmed vs the live book to the cent). Holds
+    // ~50-day trends: NO weekend close (multi-week position by design).
+    {
+        const int64_t now_ms_tm = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        const auto tmsig = g_nasdaq_tsmom50.on_tick(bid, ask, now_ms_tm, ca_on_close);
+        if (tmsig.valid) {
+            g_telemetry.UpdateLastSignal("NAS100",
+                "LONG", tmsig.entry, tmsig.reason,
+                "NAS_TSMOM50", regime.c_str(), "NAS_TSMOM50",
+                0.0, tmsig.sl);
+        }
+    }
+
     // NoiseBandMomentum NAS100
     {
         const bool nas_nbm_offhours = (g_macro_ctx.session_slot == 6 ||

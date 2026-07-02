@@ -655,6 +655,12 @@ static omega::XauSwingBreakD1Engine g_xau_swing_break_d1;
 // long-only MAR 0.44 PF 2.10). Self-aggregates D1 from ticks; warm-seeded.
 #include "NasTurtleD1Engine.hpp"
 static omega::NasTurtleD1Engine g_nas_turtle_d1;
+// NasdaqTsmom50Engine (S-2026-07-03): TSMom50 daily trend on NAS100, long-only,
+// flip exit + 8% disaster stop. MIGRATED from the Mac ~/Crypto book's QNDX leg
+// (operator: Nasdaq does not belong on the crypto book). Rule confirmed vs the
+// live book to the cent; 30y ^NDX faithful daily PF 1.94 both-WF-halves+.
+#include "NasdaqTsmom50Engine.hpp"
+static omega::NasdaqTsmom50Engine g_nasdaq_tsmom50;
 // DJ30 + SPX D1 turtles (2026-06-15): same NasTurtleD1 chassis, cross-regime
 // validated on Yahoo daily 2016-2026 incl 2022 bear, cost-inclusive both-halves
 // (DJ30 PF2.09 +13173 H1+H2+; SPX PF2.49 +2435 H1+H2+). Self-aggregate D1 from
