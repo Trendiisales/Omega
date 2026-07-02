@@ -24,18 +24,32 @@ OVERRIDES = [
 ]
 # NOT real read-at-boot seeds -- engine OUTPUT sinks + printf-template scan artifacts.
 # (e.g. logs/shadow/tsmom_v2.csv is where tsmom_v2 WRITES trades; warmup_%s_D1.csv is a format string.)
-# risk_monitor_thresholds.csv is a RiskMonitor threshold CONFIG (engine,symbol,tp_pts,... — no ts
-# column, not a price warm-seed); load_thresholds() tolerates its absence (RiskMonitor.hpp:252,
-# warns + returns 0). It is gitignored (a generated calibration artifact) so it isn't on the VPS ->
-# the warm-seed audit was false-flagging it [SEED-MISSING] every boot. Exclude it here.
-EXCLUDE = re.compile(r"logs[/\\]shadow[/\\]|tsmom_v2|risk_monitor_thresholds|[%<>*]|\.\.\.", re.I)
+EXCLUDE = re.compile(r"logs[/\\]shadow[/\\]|tsmom_v2|[%<>*]|\.\.\.", re.I)
 # Seeds owned by DISABLED engines -- a stale seed they never read is harmless. Reported as
 # [skipped-disabled], NOT counted as stale, does NOT fail the audit. KEEP IN SYNC with engine_init.hpp:
 #   FX shadow book disabled 2026-06-23 ("we have no FX") -> all FX warmups inert.
-DISABLED = re.compile(r"(EURUSD|GBPUSD|USDJPY|AUDUSD|NZDUSD|USDCAD|EURGBP)", re.I)
+#   SPXUSD added 2026-07-02: warmup_SPXUSD_H4.csv's SOLE consumer is SurvivorPortfolio
+#   (g_survivor.enabled=false, S-2026-06-24). Now that resolve() finds the file, it gets
+#   freshness-checked -- without this entry a stale SPX seed would false-abort deploys.
+#   Remove from this regex if Survivor is re-enabled.
+DISABLED = re.compile(r"(EURUSD|GBPUSD|USDJPY|AUDUSD|NZDUSD|USDCAD|EURGBP|SPXUSD)", re.I)
+# REQUIRED-GENERATED (2026-07-02, operator decision): on-box generated, GITIGNORED files a
+# SAFETY LAYER depends on. NOT bar-series seeds (no last-bar freshness applies); required =
+# exists + >=1 data row. Missing => exit 2 so the OMEGA.ps1 [2c] fail-closed gate ABORTS the
+# ship (override: --allow-missing-generated, which OMEGA.ps1 [2b] passes because a reseed
+# cannot fix these). This REPLACES the earlier EXCLUDE-silencing of risk_monitor_thresholds:
+# absence is NOT harmless -- load_thresholds() loads 0 rows => on_fire() early-returns for
+# EVERY engine => the RiskMonitor auto-demote-to-shadow surveillance layer is silently OFF.
+# "Tolerates absence" (no crash) is not the same as "safe to run without". Regenerate:
+#   clang++ -std=c++17 -O3 -DNDEBUG -I include backtest/calibrate_risk_thresholds.cpp \
+#           -o backtest/calibrate_risk_thresholds   (MSVC: cl /O2 /std:c++17 /Iinclude ...)
+#   ./backtest/calibrate_risk_thresholds            (writes data/risk_monitor_thresholds.csv)
+REQUIRED_GENERATED = ["data/risk_monitor_thresholds.csv"]
+ALLOW_MISSING_GENERATED = False
 for i,a in enumerate(sys.argv):
     if a == "--repo" and i+1 < len(sys.argv): REPO = sys.argv[i+1]
     if a == "--max-age-days" and i+1 < len(sys.argv): MAX_AGE_DAYS = int(sys.argv[i+1])
+    if a == "--allow-missing-generated": ALLOW_MISSING_GENERATED = True
 
 def threshold_for(path):
     for rx, d in OVERRIDES:
@@ -88,25 +102,43 @@ def resolve(rel):
     return None
 
 for rel in sorted(seed_paths):
+    if rel.replace("\\", "/") in REQUIRED_GENERATED:  # not a bar-series seed; checked separately below
+        continue
     cand = resolve(rel)
     if cand is None: missing.append(rel); continue
     ts = last_ts(cand)
     if ts is None: missing.append(rel); continue
     age_d = (now - ts) / 86400.0
     thr = threshold_for(rel)
-    rec = (rel, age_d, thr, datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d"))
+    rec = (rel, age_d, thr, datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d"))
     if age_d > thr and DISABLED.search(rel):        # stale but owned by a disabled engine -> harmless
         skipped.append(rec); continue
     (stale if age_d > thr else ok).append(rec)
 
+# REQUIRED-GENERATED check: exists + at least one data row beyond the header.
+req_missing = []
+for rel in REQUIRED_GENERATED:
+    p = os.path.join(REPO, rel)
+    rows = 0
+    try:
+        rows = sum(1 for ln in open(p, errors="ignore") if ln.strip())
+    except Exception:
+        pass
+    if rows < 2: req_missing.append((rel, rows))
+
 print("===== SEED-FRESHNESS AUDIT =====")
-print(f"active seed CSVs found: {len(seed_paths)}  ok: {len(ok)}  STALE(enabled): {len(stale)}  skipped(disabled-engine): {len(skipped)}  missing/unreadable: {len(missing)}\n")
+print(f"active seed CSVs found: {len(seed_paths)}  ok: {len(ok)}  STALE(enabled): {len(stale)}  skipped(disabled-engine): {len(skipped)}  missing/unreadable: {len(missing)}  missing-REQUIRED(generated): {len(req_missing)}\n")
 for rel, age, thr, d in sorted(stale, key=lambda r:-r[1]):
     print(f"  [SEED-STALE] {rel}  last bar {d}  = {age:.0f}d old (> {thr}d)  -> ENGINE BOOTS BLIND, gate may misfire")
 for rel, age, thr, d in sorted(skipped, key=lambda r:-r[1]):
-    print(f"  [skipped-disabled] {rel}  {age:.0f}d old -- engine disabled (FX), seed unread, harmless")
+    print(f"  [skipped-disabled] {rel}  {age:.0f}d old -- engine disabled, seed unread, harmless")
 for rel in missing:
     print(f"  [SEED-MISSING] {rel}  (referenced in code, not found / unreadable)")
+for rel, rows in req_missing:
+    print(f"  [P1-MISSING-REQUIRED] {rel}  (generated file, {rows} row(s) on disk) -- RiskMonitor surveillance layer is OFF:")
+    print( "                        load_thresholds()=0 rows -> on_fire() early-returns for EVERY engine ->")
+    print( "                        no auto-demote-to-shadow protection. Regenerate (see header of this script")
+    print( "                        or backtest/calibrate_risk_thresholds.cpp), then re-run this audit.")
 for rel, age, thr, d in sorted(ok, key=lambda r:-r[1])[:8]:
     print(f"  [ok] {rel}  {age:.0f}d (<= {thr}d)")
 if len(ok) > 8: print(f"  ... +{len(ok)-8} more fresh")
@@ -114,5 +146,10 @@ if len(ok) > 8: print(f"  ... +{len(ok)-8} more fresh")
 if stale:
     print(f"\n*** {len(stale)} STALE SEED(S) on ENABLED engines -- a gate is operating on a price view detached from reality. FIX. ***")
     sys.exit(1)
+if req_missing and not ALLOW_MISSING_GENERATED:
+    print(f"\n*** {len(req_missing)} REQUIRED generated file(s) MISSING -- a safety layer is silently disarmed. FIX. ***")
+    sys.exit(2)
+if req_missing:
+    print(f"\n[override] {len(req_missing)} required generated file(s) missing but --allow-missing-generated set.")
 print(f"\nAll enabled-engine seeds fresh. ({len(skipped)} disabled-engine seed(s) ignored.)")
 sys.exit(0)

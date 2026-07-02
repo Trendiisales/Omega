@@ -1130,8 +1130,11 @@ function Invoke-Deploy {
         } elseif ($ForceSeed) {
             $doReseed = $true; $reseedWhy = "-ForceSeed set"
         } else {
-            # cheap freshness audit on the post-reset working tree (no IBKR; exit 1 = stale enabled seed)
-            if (Invoke-PyStepWithTimeout "tools\seed_freshness_audit.py" 60 "seed_freshness_audit" $OmegaDir) {
+            # cheap freshness audit on the post-reset working tree (no IBKR; exit 1 = stale enabled seed).
+            # --allow-missing-generated (S-2026-07-01): the RESEED decision must not be polluted by a
+            # missing risk_monitor_thresholds.csv -- a reseed cannot fix that. The STRICT [2c] gate
+            # (no flag -> audit exit 2 on missing-required) is what fail-closes the ship on it.
+            if (Invoke-PyStepWithTimeout "tools\seed_freshness_audit.py --allow-missing-generated" 60 "seed_freshness_audit" $OmegaDir) {
                 $reseedWhy = "freshness audit clean -- committed seeds already fresh on disk"
             } else {
                 $doReseed = $true; $reseedWhy = "freshness audit reports stale enabled-engine seed(s)"
@@ -1175,7 +1178,36 @@ function Invoke-Deploy {
     #         means the prior binary is still LIVE here -> abort = zero downtime
     #         AND no stale ship. -AllowStaleSeed is the only override (use it only
     #         to deliberately ship while 4001 is down and you accept stale seeds).
+    #         S-2026-07-01: the strict audit now ALSO exits 2 when a REQUIRED
+    #         generated file is missing (data\risk_monitor_thresholds.csv --
+    #         without it the RiskMonitor auto-demote surveillance layer is
+    #         silently OFF). Same abort path; [2c-pre] below tries to regenerate
+    #         it first when the calibrator binary is present.
     # --------------------------------------------------------------------------
+    # [2c-pre] Risk-monitor thresholds regen (best-effort). File is generated
+    #          on-box + gitignored, so a fresh clone / wiped data\ loses it.
+    $riskThr = Join-Path $OmegaDir "data\risk_monitor_thresholds.csv"
+    if (-not (Test-Path $riskThr)) {
+        $calBin = Get-ChildItem -Path (Join-Path $OmegaDir "backtest") -File -ErrorAction SilentlyContinue |
+                  Where-Object { $_.BaseName -eq "calibrate_risk_thresholds" -and @("", ".exe") -contains $_.Extension } |
+                  Select-Object -First 1
+        if ($calBin) {
+            Write-Host "  [2c-pre] risk_monitor_thresholds.csv missing -- regenerating via backtest\$($calBin.Name) (240s cap)..." -ForegroundColor Yellow
+            $calJob = Start-Job -ScriptBlock { param($exe, $wd) Set-Location $wd; & $exe 2>&1 } `
+                                -ArgumentList $calBin.FullName, $OmegaDir
+            if (Wait-Job $calJob -Timeout 240) {
+                Receive-Job $calJob | Select-Object -Last 3 | ForEach-Object { Write-Host "           $_" }
+            } else {
+                Stop-Job $calJob
+                Write-Host "  [WARN] calibrator exceeded 240s -- killed; strict gate below decides." -ForegroundColor Yellow
+            }
+            Remove-Job $calJob -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Host "  [2c-pre] risk_monitor_thresholds.csv MISSING and no calibrator binary -- strict gate below will fail-closed." -ForegroundColor Red
+            Write-Host "           Build: cl /O2 /std:c++17 /Iinclude backtest\calibrate_risk_thresholds.cpp  (clang++ on Mac)" -ForegroundColor Red
+            Write-Host "           Run from repo root -> writes data\risk_monitor_thresholds.csv. Or -AllowStaleSeed to ship without surveillance." -ForegroundColor Red
+        }
+    }
     Write-Host "[2c/12] Fail-closed seed gate (post-reseed re-audit)..." -ForegroundColor Yellow
     if ($AllowStaleSeed) {
         Write-Host "  [override] -AllowStaleSeed set -- shipping even if seeds are stale (operator accepts blind boot)." -ForegroundColor Yellow
@@ -1189,9 +1221,11 @@ function Invoke-Deploy {
         }
         if (-not $seedsFresh) {
             Write-Host "  ============================================================" -ForegroundColor Red
-            Write-Host "  [ABORT] enabled-engine seed(s) STILL STALE after [2b] -- refusing to ship a blind binary." -ForegroundColor Red
-            Write-Host "          Prior binary stays LIVE (hot-swap -> no downtime). Bring IBKR 4001 up and re-deploy," -ForegroundColor Red
-            Write-Host "          or pass -AllowStaleSeed to ship stale on purpose." -ForegroundColor Red
+            Write-Host "  [ABORT] seed gate failed after [2b] -- refusing to ship a blind/unguarded binary." -ForegroundColor Red
+            Write-Host "          Either enabled-engine seed(s) are STILL STALE (bring IBKR 4001 up, re-deploy)" -ForegroundColor Red
+            Write-Host "          or data\risk_monitor_thresholds.csv is MISSING (RiskMonitor surveillance OFF --" -ForegroundColor Red
+            Write-Host "          build+run backtest\calibrate_risk_thresholds, see [2c-pre] above)." -ForegroundColor Red
+            Write-Host "          Prior binary stays LIVE (hot-swap -> no downtime). -AllowStaleSeed overrides both." -ForegroundColor Red
             Write-Host "  ============================================================" -ForegroundColor Red
             Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
             return 1
