@@ -40,7 +40,11 @@ BIND = os.environ.get("OMEGA_COCKPIT_BIND", "127.0.0.1")
 HOME = Path.home()
 # Source files (env-overridable; defaults match the live layout 2026-06-30).
 COMPANION = Path(os.environ.get("COMPANION_STATE", HOME / "stall-accountant" / "companion_state.json"))
-CRYPTO = Path(os.environ.get("IBKRCRYPTO_STATE", HOME / "IBKRCrypto" / "backtest" / "data" / "ibkrcrypto" / "state.json"))
+# S-2026-07-02: ~/Crypto after the 2026-07-01 IBKRCrypto->Crypto consolidation
+# (env override wins; old path kept as fallback for a not-yet-moved box).
+_crypto_new = HOME / "Crypto" / "backtest" / "data" / "ibkrcrypto" / "state.json"
+_crypto_old = HOME / "IBKRCrypto" / "backtest" / "data" / "ibkrcrypto" / "state.json"
+CRYPTO = Path(os.environ.get("IBKRCRYPTO_STATE", _crypto_new if _crypto_new.exists() else _crypto_old))
 RDAGENT = Path(os.environ.get("RDAGENT_LATEST", HOME / "Omega" / "data" / "rdagent" / "latest.json"))
 
 # /api/<key> -> source file

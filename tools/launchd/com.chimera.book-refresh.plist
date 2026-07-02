@@ -3,8 +3,16 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.chimera.book-refresh</string>
+  <!-- S-2026-07-02: path fixed after the 2026-07-01 IBKRCrypto->Crypto consolidation.
+       The old /Users/jo/IBKRCrypto path went dead on the move, the job silently ran
+       against nothing, and the book staled within a day. Pair this job with
+       com.chimera.book-watchdog.plist (kickstart -k on heartbeat stale) so a hung or
+       dead refresher can never again stale the book silently.
+       Reload after editing:
+         launchctl bootout  gui/$(id -u)/com.chimera.book-refresh 2>/dev/null
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chimera.book-refresh.plist -->
   <key>ProgramArguments</key>
-  <array><string>/opt/homebrew/bin/python3</string><string>/Users/jo/IBKRCrypto/backtest/refresh_shadow.py</string></array>
+  <array><string>/opt/homebrew/bin/python3</string><string>/Users/jo/Crypto/backtest/refresh_shadow.py</string></array>
   <key>StartInterval</key><integer>300</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>/tmp/chimera-book-refresh.log</string>

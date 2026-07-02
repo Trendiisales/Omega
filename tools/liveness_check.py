@@ -17,7 +17,10 @@ def age_min(path):
 # --- THE REGISTRY: name, probe-path (heartbeat/output that must be fresh), max_age_min ---
 # Mac-side files/logs (each cron/agent writes one of these every run):
 MAC = [
-    ("crypto-book (refresh_shadow)",   os.path.expanduser("~/IBKRCrypto/backtest/data/ibkrcrypto/state.json"), 90),
+    # S-2026-07-02: ~/Crypto after the 2026-07-01 consolidation (old path kept as runtime fallback below)
+    ("crypto-book (refresh_shadow)",   os.path.expanduser("~/Crypto/backtest/data/ibkrcrypto/state.json")
+        if os.path.exists(os.path.expanduser("~/Crypto/backtest/data/ibkrcrypto/state.json"))
+        else os.path.expanduser("~/IBKRCrypto/backtest/data/ibkrcrypto/state.json"),               90),
     ("live-mark cron (intraday px)",   "/tmp/live_mark.log",                                                    20),
     ("giveback-saver cron",            "/tmp/giveback_saver.log",                                               20),
     ("crypto staleness-alarm cron",    "/tmp/crypto_staleness_alarm.log",                                       90),

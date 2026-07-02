@@ -133,7 +133,12 @@ def check_feed(f):
 
 # ── ibkrcrypto book (its own data_health block) ───────────────────────────────
 def check_ibkrcrypto():
-    sp = f"{HOME}/IBKRCrypto/backtest/data/ibkrcrypto/state.json"
+    # S-2026-07-02: live crypto state moved to ~/Crypto on the 2026-07-01
+    # IBKRCrypto->Crypto consolidation; this monitor kept reading the OLD path's
+    # frozen state.json -> stale warnings against a book that had moved.
+    sp = f"{HOME}/Crypto/backtest/data/ibkrcrypto/state.json"
+    if not os.path.exists(sp):
+        sp = f"{HOME}/IBKRCrypto/backtest/data/ibkrcrypto/state.json"  # pre-cutover fallback
     try:
         d = json.load(open(sp)); dh = d.get("data_health", {})
         # S-2026-06-26: check the BOOK's 'updated' AGE, not just its self-reported all_fresh flag

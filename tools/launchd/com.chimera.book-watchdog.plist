@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chimera.book-watchdog</string>
+  <!-- S-2026-07-02: self-heal for com.chimera.book-refresh. Checks the crypto book
+       heartbeat every 10 min; if stale >30 min it kickstart -k's the refresh job
+       (kills a hung instance + restarts). Install:
+         cp tools/crypto_book_watchdog.sh ~/Crypto/tools/ (or keep repo path below)
+         cp tools/launchd/com.chimera.book-watchdog.plist ~/Library/LaunchAgents/
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chimera.book-watchdog.plist -->
+  <key>ProgramArguments</key>
+  <array><string>/bin/zsh</string><string>/Users/jo/omega/tools/crypto_book_watchdog.sh</string></array>
+  <key>StartInterval</key><integer>600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/chimera-book-watchdog.log</string>
+  <key>StandardErrorPath</key><string>/tmp/chimera-book-watchdog.err</string>
+</dict>
+</plist>
