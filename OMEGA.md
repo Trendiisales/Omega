@@ -107,7 +107,11 @@ knives ("dips keep dipping" holds; do NOT propose knife longs without beating
 = **BearRecovery** engine (EMA9-reclaim, BE-and-ride floor arm 2%, PF 7.2 @2% risk,
 worst −4.8%, both WF halves +, ~2 sig/yr — aggression via size not frequency;
 giveback clips proven harmful on crypto); **BULL** (>SMA200) = Luke daily system.
-Signals: `tools/crypto_bear_recovery.py` (emits JSON for the ~/Crypto book). SHADOW first.
+Engine: `include/CryptoBearRecoveryEngine.hpp` (C++, warm-seeded via
+`phase1/signal_discovery/warmup_{BTC,ETH}USD_D1.csv`); signals CLI:
+`tools/crypto_bear_recovery.cpp` (JSON for the ~/Crypto book); faithful arbiter:
+`backtest/crypto_bear_bounce/faithful_bear_recovery_bt.cpp` (drives the real
+engine class; reproduces the study trade-for-trade). SHADOW first.
 
 
 ---

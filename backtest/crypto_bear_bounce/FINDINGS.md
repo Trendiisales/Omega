@@ -148,7 +148,7 @@ rising-SMA50 reclaim; Luke takes over above SMA200).
 - Search breadth disclosed: 7 entry families × protection grids were examined
   to establish the knife law; the champion was selected from that search →
   treat live shadow as the true out-of-sample. **SHADOW first**, per standing
-  rule; wire into the ~/Crypto book (`tools/crypto_bear_recovery.py` emits the
+  rule; wire into the ~/Crypto book (`tools/crypto_bear_recovery.cpp` emits the
   signals) and judge on the shadow ledger.
 - Spot prices; MBT/MET execution adds roll + weekend-gap nuances (CME closed
   weekends — crypto isn't; a weekend flip exits Monday). PAXOS spot avoids
@@ -156,12 +156,41 @@ rising-SMA50 reclaim; Luke takes over above SMA200).
 - SOL and the alt book were not tested (data pulled for BTC/ETH only); the
   law is asserted for the majors only.
 
+## 9. C++ port (S-2026-07-03, operator: "no python in Omega")
+
+The deployable engine is **C++**: `include/CryptoBearRecoveryEngine.hpp`
+(self-contained; internal UTC daily aggregation from `on_price()`, intrabar
+stop/BE-floor marks, `seed_from_daily_csv()` warm-seed with `[SEED]` boot line,
+ADVERSE-PROTECTION annotation, `state()` ladder accessor). Signal CLI:
+`tools/crypto_bear_recovery.cpp` (pipe Coinbase daily-candle JSON or a
+ts,o,h,l,c CSV on stdin → one JSON state/signal line; zero deps beyond curl).
+Warm-seeds: `phase1/signal_discovery/warmup_{BTC,ETH}USD_D1.csv` (500 days).
+
+**Port verification** — `faithful_bear_recovery_bt.cpp` drives the REAL engine
+class over the same hourly corpus: n=20 (Python 20), same entry dates, PF 9.06
+vs 8.85 @1% risk, worst −6.0% vs −4.8%. One trade diverges (ETH 2019-03-28)
+because the C++ engine fills at the daily open, one hour earlier than the
+Python harness's next-hour fill — the C++ timing is the live-correct one (the
+book acts right after the UTC daily close). Audits: adverse-protection PASS,
+ungated-engine audit clean, `g++ -fsyntax-only` clean.
+
+Note the study harness (`bear_bounce_bt.py`) and data puller stay Python — they
+are research tooling like the rest of `backtest/*.py`, not shipping Omega code.
+
 ## Repro
 
 ```
-python3 pull_coinbase.py /tmp/crypto_bear_bounce          # ~6 min
+python3 pull_coinbase.py /tmp/crypto_bear_bounce          # ~6 min (data pull)
 python3 bear_bounce_bt.py --data /tmp/crypto_bear_bounce --phase entries   # candidate families
 python3 bear_bounce_bt.py --data /tmp/crypto_bear_bounce --phase c5|c6|c7|subgate|recovery
 python3 bear_bounce_bt.py --data /tmp/crypto_bear_bounce --phase protect   # protection sweeps
 python3 bear_bounce_bt.py --data /tmp/crypto_bear_bounce --phase final     # champion + WF + trade list
+
+# C++ faithful arbiter (drives the real engine class):
+g++ -O2 -std=c++17 -I../../include -o /tmp/cbr_bt faithful_bear_recovery_bt.cpp
+/tmp/cbr_bt /tmp/crypto_bear_bounce 0.01
+
+# live signal (from repo root):
+g++ -O2 -std=c++17 -Iinclude -o /tmp/cbr tools/crypto_bear_recovery.cpp
+curl -s "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=86400" | /tmp/cbr BTC-USD
 ```
