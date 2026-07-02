@@ -1,0 +1,19 @@
+# live_dump_manifest.tsv — VPS operational-CSV staleness manifest (S-2026-07-02)
+#
+# The live VPS binary writes load-bearing operational CSVs to C:\Omega\logs via
+# set_live_dump(). NONE are pulled to the Mac, and the Mac-side feeds self-test
+# structurally cannot see them — so a VPS writer can die and every Mac freshness
+# banner stays GREEN. This manifest is the single source of truth for WHICH live
+# dumps are cadence-monitorable and their max age; tools/feeds_selftest.py polls
+# the VPS (one `ssh omega-vps` batched call) against it, and the build-gate
+# tools/live_dump_freshness_audit.sh fails if a NEW set_live_dump() path is not
+# listed here (so an unmonitored live dump cannot be committed).
+#
+# ONLY deterministic-cadence dumps belong here. Event-driven files
+# (omega_trade_closes.csv / tod / fill / day_results) have NO fixed cadence and
+# are therefore NOT cadence-monitorable — excluded BY DESIGN.
+#
+# Columns (tab-separated):  path_under_logs  max_age_min  description
+gold_regime_h1.csv	120	hourly gold long-only regime gate
+gold_d1_trend_h4.csv	300	4h gold direction gate + fire-on-boot seed
+index_mkt_regime_h1.csv	120	hourly index risk-off gate

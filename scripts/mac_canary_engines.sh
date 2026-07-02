@@ -117,6 +117,18 @@ python3 "$(dirname "$0")/../tools/tombstone_guard.py" --repo "$(dirname "$0")/..
   exit 1
 }
 
+# STANDING GATE — live-dump staleness monitor (added S-2026-07-02). Every CSV the
+# VPS binary writes via set_live_dump() must be listed in tools/live_dump_manifest.tsv
+# so tools/feeds_selftest.py can poll its VPS freshness. Closes the blind spot where a
+# VPS writer dies but every Mac banner stays GREEN. WARN-only (mirrors informational
+# gates); set STRICT=1 to hard-fail on an unmonitored dump.
+echo ""
+echo "[mac-canary-engines] live-dump freshness audit..."
+bash "$(dirname "$0")/../tools/live_dump_freshness_audit.sh" || {
+  echo "[mac-canary-engines] live-dump freshness audit FAILED -- a live dump is unmonitored."
+  exit 1
+}
+
 exit 0
 
 # S-2026-06-26 PERSISTENCE ENFORCEMENT: fail if any display engine lacks a persist source
