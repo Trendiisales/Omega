@@ -41,6 +41,16 @@ $MinBytes = 200        # header alone is ~80-120 bytes; any data writes > 200
 $AlertLog = 'C:\Omega\logs\ibkr_l2_alerts.log'
 $TaskName = 'OmegaIbkrBridge'
 
+# EMPTY-only (header-only CSV) backoff. A header-only file is an UPSTREAM
+# subscription / entitlement / IBKR-session problem that a bridge restart cannot
+# fix (proven 2026-07-02: MGC sat header-only through a full day of 2-min restarts
+# while an IBKR "different IP" session held the market-data line). Restarting on it
+# just churns the bridge -- which also serves the healthy symbols (XAUUSD) -- every
+# 2 min. So throttle restarts triggered ONLY by EMPTY to once per this many seconds.
+# STALE / MISSING (bridge or connection actually died) still restart every run.
+$EmptyBackoffSec = 1800
+$EmptyStateFile  = 'C:\Omega\logs\ibkr_l2_empty_restart.state'
+
 # ---- guard: skip outside market hours ---------------------------------------
 # IBKR L2 dries up overnight + on weekends. Don't alarm during known-quiet
 # windows (would page-fatigue the operator).
@@ -64,11 +74,14 @@ if ($isWeekendQuiet) {
 # ---- per-symbol check loop ---------------------------------------------------
 $today    = $nowUtc.ToString("yyyy-MM-dd")
 $problems = @()
+$hasRestartFixable = $false   # STALE or MISSING -> the bridge/connection died, restart IS the fix
+$hasEmpty          = $false   # header-only -> upstream subscription/session issue, restart won't help
 
 foreach ($s in $Symbols) {
     $path = Join-Path $Dir ("ibkr_l2_" + $s + "_" + $today + ".csv")
     if (-not (Test-Path $path)) {
         $problems += "MISSING $s : $path does not exist"
+        $hasRestartFixable = $true
         continue
     }
     $f      = Get-Item $path
@@ -76,14 +89,19 @@ foreach ($s in $Symbols) {
     if ($f.Length -lt $MinBytes) {
         $problems += ("EMPTY   $s : size=$($f.Length)B age=${ageSec}s "  +
                       "(header only or no events)")
+        $hasEmpty = $true
     } elseif ($ageSec -gt $StaleSec) {
         $problems += ("STALE   $s : age=${ageSec}s > ${StaleSec}s "      +
                       "(size=$($f.Length)B)")
+        $hasRestartFixable = $true
     }
 }
 
 # ---- happy path: nothing to alarm on ----------------------------------------
 if ($problems.Count -eq 0) {
+    # Clear the EMPTY backoff timer so a fresh header-only failure later gets an
+    # immediate first restart attempt rather than inheriting a stale timestamp.
+    if (Test-Path $EmptyStateFile) { Remove-Item $EmptyStateFile -Force -EA SilentlyContinue }
     exit 0
 }
 
@@ -91,6 +109,31 @@ if ($problems.Count -eq 0) {
 $msg = "[$nowUtc UTC] L2 ALARM`n  " + ($problems -join "`n  ")
 Add-Content -Path $AlertLog -Value $msg
 Write-Host $msg -ForegroundColor Red
+
+# ---- restart decision: back off on EMPTY-only ------------------------------
+# STALE/MISSING => bridge or its connection died => restart is the correct fix
+# (aggressive, every run). EMPTY-only (header-only) => upstream subscription /
+# entitlement / IBKR-session problem a restart CANNOT fix; throttle to once per
+# $EmptyBackoffSec so we don't churn the bridge (and its healthy symbols) every
+# 2 min. The alarm above is logged EVERY run regardless, so visibility is kept.
+$shouldRestart = $true
+if ($hasEmpty -and -not $hasRestartFixable) {
+    $last = 0
+    if (Test-Path $EmptyStateFile) {
+        try { $last = [int64]((Get-Content $EmptyStateFile -Raw).Trim()) } catch { $last = 0 }
+    }
+    $nowEpoch  = [int64][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $sinceLast = $nowEpoch - $last
+    if ($sinceLast -lt $EmptyBackoffSec) {
+        Add-Content -Path $AlertLog -Value ("  EMPTY-only: bridge restart SUPPRESSED " +
+            "(backoff ${sinceLast}s < ${EmptyBackoffSec}s) -- header-only is an upstream " +
+            "subscription/session issue a restart can't fix; not churning the bridge")
+        exit 1
+    }
+    $nowEpoch | Out-File -Encoding ascii $EmptyStateFile
+    Add-Content -Path $AlertLog -Value ("  EMPTY-only: backoff window elapsed (${sinceLast}s) " +
+        "-- one restart attempt, then back off ${EmptyBackoffSec}s")
+}
 
 # Kill any python process that looks like the bridge so the relaunch is clean.
 # Uses WMI to inspect command-lines (Get-Process doesn't expose them by default).
