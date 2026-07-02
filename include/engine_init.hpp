@@ -1221,6 +1221,14 @@ static void init_engines(const std::string& cfg_path)
         g_xau_tf_4h.warmup_csv_path = "phase1/signal_discovery/warmup_XAUUSD_H4.csv";
         g_xau_tf_4h.init();
         omega::warmup_or_die(g_xau_tf_4h, "XauTrendFollow4h");
+        // S-2026-07-02 KILL-THE-4H-WAIT (operator): the bundled warm-seed CSV ends
+        // ~60d stale, so after a restart bars_ held only stale-price bars and the
+        // engine could not evaluate a new entry until the NEXT live H4 close (up to
+        // 4h idle). Append the fresh live H4 dump (gold_d1_trend_h4.csv, written on
+        // every H4 close) so indicators/price are current, and arm a guarded
+        // fire-on-boot (evaluated on the first live tick in tick_gold.hpp). Reuses
+        // the H4 dump gold_d1_trend already maintains ("taken care of by our logs").
+        g_xau_tf_4h.append_fresh_h4(log_root_dir() + "/gold_d1_trend_h4.csv");
         printf("[OMEGA-INIT] XauTrendFollow4hEngine initialised: shadow=%d enabled=%d lot=%.2f cells=7 mask=0x%X"
                " (Donchian,InsideBar_RR4to1,ER0.20_RR4to1,Keltner,ADX_Mom,RangeExpand,EmaCross8_21_S116)\n",
                (int)g_xau_tf_4h.shadow_mode, (int)g_xau_tf_4h.enabled, g_xau_tf_4h.lot,

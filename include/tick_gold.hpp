@@ -1698,6 +1698,11 @@ static void on_tick_gold(
     // XauTrendFollow4hEngine tick management -- 5 cells (Donchian, InsideBar,
     // ER0.20, Keltner, ADX_Mom). S33d shipped 2026-05-11; extended to 5 cells
     // in S33e. Single-position per cell, 5 max concurrent. Shadow-default.
+    // S-2026-07-02 KILL-THE-4H-WAIT: on the first live tick after a restart, evaluate
+    // the last CLOSED live H4 bar (stashed by append_fresh_h4) for entry so a valid
+    // signal is taken immediately instead of idling up to 4h for the next H4 close.
+    // Guarded + one-shot inside the engine (self-disarms after the first call).
+    g_xau_tf_4h.try_boot_fire(bid, ask, now_ms_g, bracket_on_close);
     g_xau_tf_4h.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // S-2026-06-19: TrendRider companion -- banks +N*ATR per host cell + reloads
     // while the 4h cell stays open (shadow). Validated D1+4h only.

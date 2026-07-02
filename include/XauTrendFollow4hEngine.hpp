@@ -385,6 +385,16 @@ public:
     // S102 comment for the full root-cause write-up.
     bool warmup_active_ = false;
 
+    // S-2026-07-02 KILL-THE-4H-WAIT (operator): after a restart the engine could
+    // only evaluate a new entry at the NEXT live H4 close (up to 4h idle), because
+    // the bundled warm-seed CSV ends ~60d stale and nothing replays recent bars.
+    // append_fresh_h4() primes indicators from the live H4 dump and stashes the last
+    // CLOSED bar here; try_boot_fire() (first live tick) evaluates it for entry so a
+    // valid signal is taken on boot. Guarded so a stale bar isn't filled at a moved price.
+    bool     boot_fire_armed_ = false;
+    bool     has_boot_last_   = false;
+    XauTfBar boot_last_bar_{};
+
     void init() noexcept {
         bars_.clear();
         atr14_ = 0.0;
@@ -401,6 +411,9 @@ public:
         adx_warmup_count_ = 0;
         adx_dx_count_ = 0;
         warmup_active_ = false;
+        boot_fire_armed_ = false;
+        has_boot_last_ = false;
+        boot_last_bar_ = {};
         for (auto& p : pos) p = {};
     }
 
@@ -1096,6 +1109,79 @@ public:
                fed, atr14_, (int)bars_.size(), path.c_str());
         fflush(stdout);
         return fed;
+    }
+
+    // S-2026-07-02 KILL-THE-4H-WAIT: append fresh live H4 bars on top of the bundled
+    // seed so indicators/price reflect NOW (the bundled CSV ends ~60d stale). Feeds
+    // all-but-last with entries blocked (indicator prime only) and stashes the last
+    // CLOSED bar for a guarded live evaluation on the first tick (try_boot_fire()).
+    // Called from init_engines() -- pos[] is still empty here (restore runs later), so
+    // replaying historical bars cannot spuriously touch a resumed position.
+    int append_fresh_h4(const std::string& path) noexcept {
+        std::ifstream f(path);
+        if (!f.is_open()) {
+            printf("[XauTF4h-FRESH] no live dump '%s' -- bundled seed only (fire-on-boot disarmed)\n", path.c_str());
+            fflush(stdout); return 0;
+        }
+        std::vector<XauTfBar> v;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#' || line[0] == 'b') continue;
+            char* p1; long long ms = std::strtoll(line.c_str(), &p1, 10); if (!p1 || *p1 != ',') continue;
+            char* p2; double o = std::strtod(p1+1, &p2); if (!p2 || *p2 != ',') continue;
+            char* p3; double h = std::strtod(p2+1, &p3); if (!p3 || *p3 != ',') continue;
+            char* p4; double l = std::strtod(p3+1, &p4); if (!p4 || *p4 != ',') continue;
+            char* p5; double c = std::strtod(p4+1, &p5);
+            if (!std::isfinite(o) || !std::isfinite(h) || !std::isfinite(l) || !std::isfinite(c)) continue;
+            XauTfBar b; b.bar_start_ms = ms; b.open = o; b.high = h; b.low = l; b.close = c;
+            v.push_back(b);
+        }
+        if (v.empty()) {
+            printf("[XauTF4h-FRESH] live dump '%s' empty -- bundled seed only\n", path.c_str());
+            fflush(stdout); return 0;
+        }
+        warmup_active_ = true;                       // indicator-prime only, no entries
+        for (size_t i = 0; i + 1 < v.size(); ++i)
+            on_h4_bar(v[i], v[i].close, v[i].close, 0.0, v[i].bar_start_ms + 14400LL*1000, OnCloseFn{});
+        warmup_active_ = false;
+        boot_last_bar_   = v.back();
+        has_boot_last_   = true;
+        boot_fire_armed_ = true;
+        printf("[XauTF4h-FRESH] appended %d fresh H4 bars (last_close=%.2f atr=%.2f bars_size=%d) -- fire-on-boot armed\n",
+               (int)v.size(), boot_last_bar_.close, atr14_, (int)bars_.size());
+        fflush(stdout);
+        return (int)v.size();
+    }
+
+    // S-2026-07-02 KILL-THE-4H-WAIT: first-tick guarded fire-on-boot. Evaluates the last
+    // CLOSED live H4 bar for entry so a restart doesn't skip a valid signal and idle up to
+    // 4h for the next close. One-shot (self-disarms). GUARD: only fire if the live mid is
+    // within tol_atr*ATR of that bar's close -- if gold moved sharply since the close the
+    // edge is stale, so seed the bar for indicator completeness but do NOT enter.
+    void try_boot_fire(double bid, double ask, int64_t now_ms, OnCloseFn cb,
+                       double tol_atr = 0.5) noexcept {
+        if (!boot_fire_armed_) return;
+        boot_fire_armed_ = false;                    // one-shot, whatever the outcome
+        if (!has_boot_last_ || atr14_ <= 0.0 || bid <= 0.0 || ask <= 0.0) return;
+        const double live_mid = 0.5 * (bid + ask);
+        const double gap      = std::fabs(live_mid - boot_last_bar_.close);
+        if (gap > tol_atr * atr14_) {
+            warmup_active_ = true;                    // seed-only: complete indicators, no entry
+            on_h4_bar(boot_last_bar_, boot_last_bar_.close, boot_last_bar_.close, 0.0,
+                      boot_last_bar_.bar_start_ms + 14400LL*1000, OnCloseFn{});
+            warmup_active_ = false;
+            printf("[XTF4H-BOOT] fire-on-boot SKIP: live %.2f vs last_close %.2f gap %.2f > %.2f (%.1fxATR) -- wait next H4 close\n",
+                   live_mid, boot_last_bar_.close, gap, tol_atr * atr14_, tol_atr);
+            fflush(stdout);
+            return;
+        }
+        // Guard passed -> evaluate the last closed bar live (entries enabled, live
+        // bid/ask + cost gate). Cells already holding a resumed position self-skip.
+        on_h4_bar(boot_last_bar_, bid, ask, 0.0, now_ms, cb);
+        printf("[XTF4H-BOOT] fire-on-boot: live %.2f within %.2f (%.1fxATR) of last_close %.2f -- last bar evaluated for entry\n",
+               live_mid, tol_atr * atr14_, tol_atr, boot_last_bar_.close);
+        fflush(stdout);
     }
 };
 
