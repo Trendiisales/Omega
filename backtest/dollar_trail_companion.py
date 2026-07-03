@@ -117,6 +117,45 @@ def run(csvf, label):
         print("\n  NO single $-trail config passes all-6.")
     return trades, passing
 
+def aggr_trail(t, arm_usd, trail_usd, stag_ms):
+    """AGGRESSIVE TF-INDEPENDENT trailer (S-2026-07-03 operator ask): arm fast, TIGHT tick-trail
+    (reversal exit) on EVERY path point, PLUS wall-clock stagnation — exit if no NEW favourable
+    peak within stag_ms. No bar-close / parent-TF dependence: pure tick trail + clock timeout.
+    Runs live on the UNCHANGED executor via STALL_TF_HOURS=1 + STALL_BARS=hours (bar=now//TF_SEC
+    is pure wall-clock; the 'TF' is the companion's own poll clock, not the parent engine's)."""
+    d, ent, cost = t["dir"], t["ent"], t["cost"] * t["ent"]
+    peak = None; peak_ms = None; last = t["path"][-1]
+    for seq, ms, px in t["path"]:
+        if seq == 0: continue
+        fav = d * (px - ent)
+        if peak is None:
+            if fav >= arm_usd: peak = fav; peak_ms = ms
+            continue
+        if fav > peak: peak = fav; peak_ms = ms            # new extreme -> reset stagnation clock
+        elif ms - peak_ms >= stag_ms: return ms, fav - cost # STAGNATION (wall clock) -> exit
+        if fav <= peak - trail_usd: return ms, fav - cost   # REVERSAL (tight trail) -> exit
+    return last[1], d * (last[2] - ent) - cost
+
+def run_aggr(csvf, label, arms=(5,10,15), trails=(3,5,8,10), stag_hours=(2,4,8,12,24)):
+    """Sweep the aggressive TF-independent trailer (arm x tight-trail x wall-clock stagnation)."""
+    trades = scl.load_paths(csvf)
+    print(f"\n######### AGGRESSIVE TF-INDEP TRAILER — {label} ({len(trades)} trades) #########")
+    print(f"  {'arm$':>4} {'trl$':>4} {'stagH':>5} {'net$':>7} {'PF':>4} {'DD$':>7} {'MAR':>5} {'bull$':>6} {'bear$':>6}  V")
+    passing = []
+    for a in arms:
+        for tr in trails:
+            for sh in stag_hours:
+                reg = [(*aggr_trail(t, a, tr, sh*3600*1000), t["bull"]) for t in trades]
+                m,m1,m2,bl,br,ok = verdict(reg)
+                if ok: passing.append((a,tr,sh,m,bl,br))
+                print(f"  {a:4} {tr:4} {sh:5} {m['net']:7.0f} {m['pf']:4.2f} {m['dd']:7.0f} "
+                      f"{m['mar']:5.2f} {bl['net']:6.0f} {br['net']:6.0f}  {'P' if ok else '.'}")
+    passing.sort(key=lambda r:(-r[3]["mar"], -r[5]["net"]))
+    print(f"  -> {len(passing)} pass all-6. TOP-4 (rank MAR, bear$):")
+    for a,tr,sh,m,bl,br in passing[:4]:
+        print(f"     arm${a} trail${tr} stag{sh}h: net${m['net']:.0f} PF{m['pf']:.2f} MAR{m['mar']:.2f} bear${br['net']:.0f}")
+    return trades, passing
+
 def ladder(trades, rungs, label):
     """Sum N independent companions (each its own arm$/trail$) into one additive book."""
     print(f"\nLADDER (multiple companions summed) — {label}: {rungs}")
@@ -131,7 +170,10 @@ def ladder(trades, rungs, label):
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("usage: dollar_trail_companion.py <path_csv> <LABEL>"); sys.exit(1)
-    trades, passing = run(sys.argv[1], sys.argv[2])
-    if len(passing) >= 3:
-        ladder(trades, [(p[0],p[1]) for p in passing[:3]], sys.argv[2]+" top-3 ladder")
+        print("usage: dollar_trail_companion.py <path_csv> <LABEL> [aggr]"); sys.exit(1)
+    if len(sys.argv) > 3 and sys.argv[3] == "aggr":
+        run_aggr(sys.argv[1], sys.argv[2])                 # aggressive TF-independent trailer sweep
+    else:
+        trades, passing = run(sys.argv[1], sys.argv[2])
+        if len(passing) >= 3:
+            ladder(trades, [(p[0],p[1]) for p in passing[:3]], sys.argv[2]+" top-3 ladder")
