@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-box push of the crypto companion live-state json:
+    chimera-direct:/home/jo/ChimeraCrypto/data/crypto_companion_state.json
+      -> omega-vps:C:\Omega\crypto_companion_state.json
+  The Omega desk :7779 GET /api/crypto_companion serves it (CRYPTO COMPANIONS panel).
+  Native emit is ~hourly (H1 bar close) + startup; 120s push keeps the VPS copy fresh
+  and self-heals after either box restarts. Light (~1-2s scp, no compute).
+  Install:
+    cp com.omega.crypto-companion-push.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.omega.crypto-companion-push.plist
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.omega.crypto-companion-push.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.omega.crypto-companion-push</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jo/Omega/tools/gui/refresh_crypto_companion.sh</string>
+  </array>
+  <key>StartInterval</key><integer>120</integer>
+  <key>StandardOutPath</key><string>/tmp/crypto-companion-push.log</string>
+  <key>StandardErrorPath</key><string>/tmp/crypto-companion-push.err</string>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>

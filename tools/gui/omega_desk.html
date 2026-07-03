@@ -191,22 +191,7 @@ a{color:var(--blu);text-decoration:none}
   <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
-<!-- ═══ MAE/MFE + TOD ═══ -->
-<div class="grid g2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
-  <div class="pan">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-      <span class="lbl">MAE / MFE — exit audit (pts)</span>
-      <select id="mmsym" style="margin-left:auto"></select>
-    </div>
-    <canvas id="mmc" height="190"></canvas>
-    <div class="lbl" style="margin-top:4px">green = win, red = loss · high-MFE losses → trail/BE too tight</div>
-  </div>
-  <div class="pan">
-    <div class="lbl" style="margin-bottom:6px">TIME-OF-DAY EDGE — WR% hour × weekday (all shadow)</div>
-    <div id="tod"></div>
-    <div class="lbl" style="margin-top:4px">hover cell for n / WR / pnl · dark red = hour-kill candidate</div>
-  </div>
-</div>
+<!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
 
 <!-- ═══ OPS STRIP — risk / cluster / DOM / micro / signals (compact) ═══ -->
 <div class="grid g3 ops" style="grid-template-columns:minmax(0,1.1fr) minmax(0,0.9fr) minmax(0,1.2fr)">
@@ -696,10 +681,10 @@ function drawHeat(){var rs=winRows();var by={};
 
 function fillSymSel(){var by={};ROWS.forEach(function(r){by[r.sym]=(by[r.sym]||0)+1;});
  var syms=Object.keys(by).sort(function(a,b){return by[b]-by[a];}).slice(0,8);
- var s=el('mmsym');var cur=s.value;
+ var s=el('mmsym');if(!s)return;var cur=s.value;
  s.innerHTML=syms.map(function(x){return '<option>'+esc(x)+'</option>';}).join('');
  if(syms.indexOf(cur)>=0)s.value=cur;}
-function drawMM(){var cv=el('mmc'),H=190,ctx=prep(cv,H);
+function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
  var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
  if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no trades for '+sym,10,20);return;}
@@ -714,7 +699,7 @@ function drawMM(){var cv=el('mmc'),H=190,ctx=prep(cv,H);
   ctx.beginPath();ctx.arc(X(r.mae),Y(r.mfe),2.2,0,6.3);ctx.fill();});}
 
 var DAYS=['Su','Mo','Tu','We','Th','Fr','Sa'];
-function drawTOD(){var rs=ROWS;var grid={};
+function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
  rs.forEach(function(r){var d=new Date(r.ts*1000);var k=d.getUTCDay()+'_'+d.getUTCHours();
   if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
  var h='<div style="display:grid;grid-template-columns:24px repeat(24,1fr);gap:1px">';
@@ -986,7 +971,7 @@ drawBlot();setInterval(drawBlot,20000);
 
 [['w1',1],['w7',7],['w30',30],['wall',9999]].forEach(function(b){el(b[0]).onclick=function(){WIN=b[1];
  ['w1','w7','w30','wall'].forEach(function(x){el(x).className=x===b[0]?'on':'';});redrawAll();};});
-el('mmsym').onchange=drawMM;
+var _mm=el('mmsym');if(_mm)_mm.onchange=drawMM;
 window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>

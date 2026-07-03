@@ -197,22 +197,7 @@ a{color:var(--blu);text-decoration:none}
   <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
-<!-- ═══ MAE/MFE + TOD ═══ -->
-<div class="grid g2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
-  <div class="pan">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-      <span class="lbl">MAE / MFE — exit audit (pts)</span>
-      <select id="mmsym" style="margin-left:auto"></select>
-    </div>
-    <canvas id="mmc" height="190"></canvas>
-    <div class="lbl" style="margin-top:4px">green = win, red = loss · high-MFE losses → trail/BE too tight</div>
-  </div>
-  <div class="pan">
-    <div class="lbl" style="margin-bottom:6px">TIME-OF-DAY EDGE — WR% hour × weekday (all shadow)</div>
-    <div id="tod"></div>
-    <div class="lbl" style="margin-top:4px">hover cell for n / WR / pnl · dark red = hour-kill candidate</div>
-  </div>
-</div>
+<!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
 
 <!-- ═══ OPS STRIP — risk / cluster / DOM / micro / signals (compact) ═══ -->
 <div class="grid g3 ops" style="grid-template-columns:minmax(0,1.1fr) minmax(0,0.9fr) minmax(0,1.2fr)">
@@ -223,8 +208,7 @@ a{color:var(--blu);text-decoration:none}
     <div id="expo" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
     <div id="cooldowns" style="margin-top:5px"></div>
   </div>
-)OMEGAD0"
-R"OMEGAD1(  <div class="pan">
+  <div class="pan">
     <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
     <div id="dom" class="num"></div>
     <div style="margin-top:5px">
@@ -235,7 +219,8 @@ R"OMEGAD1(  <div class="pan">
   <div class="pan">
     <div class="lbl" style="margin-bottom:4px">MICROSTRUCTURE · BROKER · SIGNALS</div>
     <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
-    <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px;margin-top:5px"></div>
+)OMEGAD0"
+R"OMEGAD1(    <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px;margin-top:5px"></div>
     <div class="lbl" style="margin:6px 0 2px">SIGNAL TAPE</div>
     <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
   </div>
@@ -427,12 +412,12 @@ function render(J){lastJ=J;
  var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
  dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
  for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
-)OMEGAD1"
-R"OMEGAD2(  dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
+  dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
    +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
  dh+='</div>';el('dom').innerHTML=(bids.length||asks.length)?dh:'<span class="d">no depth (L2 quiet)</span>';
  var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
- var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
+)OMEGAD1"
+R"OMEGAD2( var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
  ob.style.background=dev>=0?'var(--grn)':'var(--red)';
 
  el('micro').innerHTML=[['Quote msg/s',safe(J.quote_msg_rate),'w'],['Seq gaps',safe(J.sequence_gaps),safe(J.sequence_gaps)>0?'r':'g'],
@@ -613,8 +598,7 @@ function parseShadow(txt){
 function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
  return ROWS.filter(function(r){return r.ts>=cut;});}
-)OMEGAD2"
-R"OMEGAD3(function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
+function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
  var pT=p+cToday,totT=tot+cAll;
@@ -622,7 +606,8 @@ R"OMEGAD3(function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';}
 
-/* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
+)OMEGAD2"
+R"OMEGAD3(/* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
 function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent='';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
@@ -705,10 +690,10 @@ function drawHeat(){var rs=winRows();var by={};
 
 function fillSymSel(){var by={};ROWS.forEach(function(r){by[r.sym]=(by[r.sym]||0)+1;});
  var syms=Object.keys(by).sort(function(a,b){return by[b]-by[a];}).slice(0,8);
- var s=el('mmsym');var cur=s.value;
+ var s=el('mmsym');if(!s)return;var cur=s.value;
  s.innerHTML=syms.map(function(x){return '<option>'+esc(x)+'</option>';}).join('');
  if(syms.indexOf(cur)>=0)s.value=cur;}
-function drawMM(){var cv=el('mmc'),H=190,ctx=prep(cv,H);
+function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
  var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
  if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no trades for '+sym,10,20);return;}
@@ -723,7 +708,7 @@ function drawMM(){var cv=el('mmc'),H=190,ctx=prep(cv,H);
   ctx.beginPath();ctx.arc(X(r.mae),Y(r.mfe),2.2,0,6.3);ctx.fill();});}
 
 var DAYS=['Su','Mo','Tu','We','Th','Fr','Sa'];
-function drawTOD(){var rs=ROWS;var grid={};
+function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
  rs.forEach(function(r){var d=new Date(r.ts*1000);var k=d.getUTCDay()+'_'+d.getUTCHours();
   if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
  var h='<div style="display:grid;grid-template-columns:24px repeat(24,1fr);gap:1px">';
@@ -797,15 +782,15 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  if(!ds||!ds.bars||ds.bars.length<10){ctx.fillStyle='#6B7785';
   ctx.fillText('no range data yet — waiting for '+PRSYM+' '+PRTF+' bars (written every 60s by the engine)',10,20);
   el('prinfo').textContent='';el('prlast').textContent='';el('prtrend').textContent='';return;}
-)OMEGAD3"
-R"OMEGAD4( var bars=ds.bars.slice(-Math.max(60,Math.min(ds.bars.length,Math.floor((W-70)/5))));
+ var bars=ds.bars.slice(-Math.max(60,Math.min(ds.bars.length,Math.floor((W-70)/5))));
  var n=bars.length,padR=58,padB=18,padT=8,padL=4,pw=W-padL-padR,ph=H-padT-padB;
  var lo=1e18,hi=-1e18;
  // range from candles always; include r2/s2 ONLY when warmed (>0) so an unwarmed
  // 0-level bar can't collapse lo to 0 and squash the whole chart (was hiding bands).
  bars.forEach(function(b){lo=Math.min(lo,b[3]);hi=Math.max(hi,b[2]);
   if(b[9]>0)lo=Math.min(lo,b[9]); if(b[7]>0)hi=Math.max(hi,b[7]);});
- var pad=(hi-lo)*0.06||1;lo-=pad;hi+=pad;
+)OMEGAD3"
+R"OMEGAD4( var pad=(hi-lo)*0.06||1;lo-=pad;hi+=pad;
  var dp=hi<100?3:hi<1000?2:1;
  function X(i){return padL+pw*i/Math.max(1,n-1);}
  function Y(v){return padT+ph*(1-(v-lo)/(hi-lo));}
@@ -996,7 +981,7 @@ drawBlot();setInterval(drawBlot,20000);
 
 [['w1',1],['w7',7],['w30',30],['wall',9999]].forEach(function(b){el(b[0]).onclick=function(){WIN=b[1];
  ['w1','w7','w30','wall'].forEach(function(x){el(x).className=x===b[0]?'on':'';});redrawAll();};});
-el('mmsym').onchange=drawMM;
+var _mm=el('mmsym');if(_mm)_mm.onchange=drawMM;
 window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
