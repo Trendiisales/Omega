@@ -43,6 +43,11 @@ void set_on_fill(std::function<void(const IbkrFill&)> cb);
 bool connect();
 void disconnect();
 
+// Start the reconnect watchdog: retries connect() while enabled && disconnected,
+// so a boot-race (gateway not up yet) or a mid-session socket drop self-recovers
+// without a full Omega restart. Idempotent -- safe to call once after connect().
+void start_watchdog();
+
 // Route an order. type: "MKT"|"LMT"|"STP". Returns IBKR orderId, or -1 if rejected
 // (disabled / not connected / unresolved contract / paper_only-on-live-port).
 long place_order(const std::string& omega_sym, bool is_long, double qty,

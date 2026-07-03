@@ -39,6 +39,7 @@
 #include "IbkrExec.hpp"   // omega::IbkrFill (shared, TWS-free)
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
@@ -84,6 +85,17 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     std::atomic<bool>             connected_{false};
     std::atomic<long>             next_id_{0};
 
+    // ---- reconnect watchdog (2026-07-03) ----
+    // The exec socket previously had NO self-heal: connect() was called once at
+    // boot and, if the gateway wasn't up yet (boot-race, IBC auto-login ~110s) OR
+    // the socket dropped mid-session (err 509 / connectionClosed), the engine
+    // stayed dead for the whole process life and every order was BLOCKED. This
+    // thread retries connect() while enabled && !connected_ so a boot-race or a
+    // mid-session drop self-recovers without a full Omega restart.
+    std::atomic<bool>             wd_run_{false};
+    std::thread                   wd_thread_;
+    int                           reconnect_secs_ = 15;   // (re)connect cadence
+
     std::mutex                            mtx_;
     std::map<std::string, IbkrContractSpec> spec_;      // omega sym -> spec
     std::map<std::string, Contract>         resolved_;  // omega sym -> qualified front-month contract
@@ -94,7 +106,7 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         client_ = std::make_unique<EClientSocket>(this, &signal_);
         init_specs();
     }
-    ~IbkrExecutionEngine() { stop(); }
+    ~IbkrExecutionEngine() { stop_watchdog(); stop(); }
 
     void init_specs() {
         // FULL-SIZE contracts (operator decision 2026-06-16).
@@ -128,7 +140,13 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
     }
 
     // ---- lifecycle ----
+    // Self-guarding: a no-op if already fully connected; otherwise tears down any
+    // half-open prior session first so a re-connect never move-assigns onto a
+    // joinable pump_thread_ (which would std::terminate). Safe to call from the
+    // boot path and from the watchdog thread.
     bool connect() {
+        if (client_ && client_->isConnected() && connected_.load()) return true;
+        if (pump_thread_.joinable() || (client_ && client_->isConnected())) stop();
         if (!client_->eConnect(host.c_str(), port, client_id, false)) {
             std::printf("[IBKR-EXEC] connect FAILED %s:%d cid=%d\n", host.c_str(), port, client_id);
             std::fflush(stdout);
@@ -146,8 +164,40 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
 
     void stop() {
         run_ = false;
-        if (pump_thread_.joinable()) pump_thread_.join();
+        // Disconnect BEFORE joining: eDisconnect closes the socket, the EReader
+        // hits EOF and issues the signal, waking a pump parked in waitForSignal.
+        // issueSignal() is belt-and-braces in case the socket was already gone.
+        // (The old order -- join first -- could hang forever on an idle socket.)
         if (client_ && client_->isConnected()) client_->eDisconnect();
+        signal_.issueSignal();
+        if (pump_thread_.joinable()) pump_thread_.join();
+        connected_ = false;
+    }
+
+    // ---- reconnect watchdog ----
+    void ensure_watchdog() {
+        bool expected = false;
+        if (!wd_run_.compare_exchange_strong(expected, true)) return;  // already running
+        wd_thread_ = std::thread([this] { watchdog_loop(); });
+        std::printf("[IBKR-EXEC] reconnect watchdog started (cadence=%ds)\n", reconnect_secs_);
+        std::fflush(stdout);
+    }
+
+    void stop_watchdog() {
+        wd_run_ = false;
+        if (wd_thread_.joinable()) wd_thread_.join();
+    }
+
+    void watchdog_loop() {
+        while (wd_run_.load()) {
+            for (int i = 0; i < reconnect_secs_ && wd_run_.load(); ++i)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (!wd_run_.load()) break;
+            if (!enabled.load() || connected_.load()) continue;
+            std::printf("[IBKR-EXEC] watchdog: exec disconnected -- attempting (re)connect\n");
+            std::fflush(stdout);
+            connect();  // self-guards teardown of any half-open session
+        }
     }
 
     void pump_loop() {
@@ -283,7 +333,22 @@ struct IbkrExecutionEngine : public DefaultEWrapper {
         if (on_fill) on_fill(f);
     }
 
+    // Socket is gone -- flip connected_ so place_order BLOCKS (was a latent bug:
+    // connected_ never went false on drop, so orders fired onto a dead socket)
+    // and the watchdog re-establishes.
+    void connectionClosed() override {
+        connected_ = false;
+        std::printf("[IBKR-EXEC] connectionClosed -- socket down, watchdog will reconnect\n");
+        std::fflush(stdout);
+    }
+
     void error(int /*id*/, int code, const std::string& msg, const std::string& /*adv*/) override {
+        // Hard socket-level failures mean the connection is dead: mark it so
+        // place_order blocks and the watchdog reconnects. (1100 = upstream IB
+        // link only, socket still alive -- deliberately NOT treated as a drop.)
+        if (code == 504 || code == 509 || code == 1300 || code == 502) {
+            connected_ = false;
+        }
         // Suppress benign farm-status codes (same set the ibkr/ engines ignore).
         if (code != 2104 && code != 2106 && code != 2158 && code != 2150 &&
             code != 162  && code != 200) {

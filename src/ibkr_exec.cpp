@@ -30,7 +30,8 @@ void set_enabled(bool on)  { eng().enabled.store(on); }
 bool is_enabled()          { return eng().enabled.load(); }
 void set_on_fill(std::function<void(const IbkrFill&)> cb) { eng().on_fill = std::move(cb); }
 bool connect()             { return eng().connect(); }
-void disconnect()          { eng().stop(); }
+void disconnect()          { eng().stop_watchdog(); eng().stop(); }
+void start_watchdog()      { eng().ensure_watchdog(); }
 
 long place_order(const std::string& omega_sym, bool is_long, double qty,
                  const std::string& type, double px) {
@@ -50,6 +51,7 @@ bool is_enabled() { return false; }
 void set_on_fill(std::function<void(const IbkrFill&)>) {}
 bool connect() { return false; }
 void disconnect() {}
+void start_watchdog() {}
 long place_order(const std::string&, bool, double, const std::string&, double) { return -1; }
 } // namespace ibkr_exec
 } // namespace omega

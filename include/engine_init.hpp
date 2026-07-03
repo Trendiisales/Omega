@@ -4916,7 +4916,11 @@ static void init_engines(const std::string& cfg_path)
                     std::cout << "[IBKR-EXEC] execution_broker=IBKR ACTIVE port=" << ib_port
                               << " paper_only=" << (int)ib_paper << "\n";
                 else
-                    std::cout << "[IBKR-EXEC] execution_broker=IBKR but CONNECT FAILED -- orders rejected\n";
+                    std::cout << "[IBKR-EXEC] execution_broker=IBKR but CONNECT FAILED -- watchdog will retry\n";
+                // Keep the exec socket alive: retry on boot-race (gateway up ~110s
+                // after boot) and reconnect on a mid-session drop, without a full
+                // Omega restart. Runs whether the boot connect above succeeded or not.
+                omega::ibkr_exec::start_watchdog();
             } else {
                 std::cout << "[IBKR-EXEC] execution_broker=BLACKBULL_FIX (IBKR path idle)\n";
             }
