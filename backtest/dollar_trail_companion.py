@@ -31,8 +31,13 @@ scl_spec = importlib.util.spec_from_file_location("scl",
     os.path.expanduser("~/IBKRCrypto/backtest/standalone_clip_overlay.py"))
 scl = importlib.util.module_from_spec(scl_spec); scl_spec.loader.exec_module(scl)
 
-ARM_GRID   = [5, 10, 15, 20, 30, 40, 50]     # $ favourable move to start riding
-TRAIL_GRID = [5, 10, 15, 20, 30]             # $ hard trailing give-back to exit-on-turn
+# Gold defaults ($/oz). Index instances scale by price level via env (ARM_GRID/TRAIL_GRID
+# as comma-lists) so a fixed-$ gauge matches gold's passing %-band at the index's price.
+def _grid(env, default):
+    v = os.environ.get(env)
+    return [float(x) for x in v.split(",")] if v else default
+ARM_GRID   = _grid("ARM_GRID",   [5, 10, 15, 20, 30, 40, 50])  # $ favourable move to start riding
+TRAIL_GRID = _grid("TRAIL_GRID", [5, 10, 15, 20, 30])          # $ hard trailing give-back to exit-on-turn
 
 def metrics(rows):
     """$-NATIVE metrics (S-2026-07-03). scl.metrics() multiplies net/dd by 100 (it was written for
@@ -105,7 +110,7 @@ def run(csvf, label):
             m,m1,m2,bl,br,ok = verdict(reg)
             narm = sum(1 for p in peaks if p>=a)
             if ok: passing.append((a,tr,m,bl,br,narm))
-            print(f"  {a:5d} {tr:5d} {m['net']:8.1f} {m['pf']:5.2f} {m['dd']:8.1f} {m['mar']:6.2f} "
+            print(f"  {a:5.0f} {tr:5.0f} {m['net']:8.1f} {m['pf']:5.2f} {m['dd']:8.1f} {m['mar']:6.2f} "
                   f"{m1['net']:7.1f} {m2['net']:7.1f} {bl['net']:7.1f} {br['net']:7.1f} {narm:5d}  {'P' if ok else '.'}")
     if passing:
         passing.sort(key=lambda r:(-r[2]["mar"], -r[4]["net"], -r[2]["net"]))

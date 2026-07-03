@@ -58,6 +58,7 @@ int main(int argc,char**argv){
 
     omega::NasTurtleD1Engine eng; eng.shadow_mode=true; eng.enabled=true;
     eng.symbol=label; eng.p=omega::make_nas_turtle_d1_params(); eng.p.dollars_per_pt=1.0;
+    eng.p.sl_atr_mult=2.0;  // match LIVE DJ30/SPX turtle (engine_init.hpp:1798,1807) — default 1.5 is unfaithful
 
     std::vector<Trade> trades;
     auto cb=[&](const omega::TradeRecord& tr){
