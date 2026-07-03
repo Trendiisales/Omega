@@ -223,6 +223,11 @@ set(IBKR_OMEGA_SOURCES
     # the one validated new edge). Own IBKR 5m-bar data thread; same TWS-isolation rule.
     # Main TU includes only the thin NqMomoIbkr.hpp.
     ${CMAKE_SOURCE_DIR}/src/nq_momo_ibkr.cpp
+    # src/qndx_sqf_ibkr.cpp -- the in-process QNDX (Nasdaq-100 SQF) book folded from the
+    # ex-IBKRCrypto executor (account crypto-INELIGIBLE 2026-07-03 -> QNDX the only tradeable
+    # leg). Own IBKR daily-bar data thread; same TWS-isolation rule. Main TU includes only
+    # the thin QndxSqfIbkr.hpp.
+    ${CMAKE_SOURCE_DIR}/src/qndx_sqf_ibkr.cpp
     ${CMAKE_SOURCE_DIR}/ibkr/bid64_integer.cpp)
 if(MSVC)
     # Vendored TWS API + the TU that includes its headers emit warnings; Omega

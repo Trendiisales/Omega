@@ -734,6 +734,26 @@ int main(int argc, char* argv[])
         }
     }
 
+    // ── QndxSqf IN-PROCESS IBKR book (QNDX = Nasdaq-100 SQF, folded from ex-IBKRCrypto) ──
+    // Opt-in: OMEGA_QNDX_IBKR=1. Activates the book wired in engine_init (configure + sink +
+    // register_source done there). Owns its OWN IBKR daily-bar data thread; warms legs from a
+    // daily CSV. Off => dormant. clientId 88 is REUSED from the retired Crypto executor -- that
+    // executor MUST be stopped first (strict cutover order) or the connect rotates clientId.
+    // Connection knobs: OMEGA_QNDX_IBKR_{HOST,PORT,CLIENT,MONTH,CSV}.
+    if (const char* en = std::getenv("OMEGA_QNDX_IBKR"); en && std::string(en) == "1") {
+        omega::qndx_sqf_ibkr::set_enabled(true);
+        std::cout << "[QNDX-IBKR] activating in-process IBKR QndxSqf (Nasdaq-100 SQF daily book)\n";
+        std::cout.flush();
+        const bool qndx_ibkr_ok = omega::qndx_sqf_ibkr::start();
+        if (!qndx_ibkr_ok) {
+            std::cout << "[SYSTEM-ALERT] QNDX_IBKR_DOWN start() returned false (no OMEGA_WITH_IBKR build, "
+                         "or gateway connect refused) -- ZERO QndxSqf trades possible. "
+                         "Rebuild with IBKR / check gateway login / free clientId 88.\n";
+            std::cout.flush();
+            g_telemetry.SetHealthAlert("QNDX IBKR DOWN");
+        }
+    }
+
     std::cout << "[OMEGA] FIX loop starting -- " << g_cfg.mode << " mode\n";
 
     // =========================================================================

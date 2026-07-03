@@ -11,6 +11,7 @@
 #include "IbkrExec.hpp"   // thin TWS-free IBKR execution interface
 #include "BigCapMomoIbkr.hpp"   // thin TWS-free interface to the in-process BigCapMomo engine
 #include "NqMomoIbkr.hpp"       // thin TWS-free interface to the in-process NQ/MNQ futures momentum engine
+#include "QndxSqfIbkr.hpp"      // thin TWS-free interface to the in-process QNDX (Nasdaq-100 SQF) book
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 
 static void init_engines(const std::string& cfg_path)
@@ -4132,6 +4133,35 @@ static void init_engines(const std::string& cfg_path)
                 []() { return omega::nq_momo_ibkr::collect_positions(); });
             printf("[OMEGA-INIT] NqFutMomo IN-PROCESS IBKR engine wired but DORMANT (corrected faithful BT "
                    "= NOT cost-robust: LONG PF1.34@2pt FAILS @4pt; SHORT dead). Do NOT set OMEGA_NQ_IBKR.\n");
+        }
+
+        // ── QndxSqf IN-PROCESS IBKR book (QNDX = Nasdaq-100 SQF, folded from ex-IBKRCrypto) ──
+        // The IBKR AU account U23757894 is crypto-INELIGIBLE (2026-07-03): every crypto secType
+        // (spot Paxos + QTF/QEF SQF) is err201 closing-only, leaving QNDX -- an index FUT, not
+        // crypto -- as the ONLY tradeable leg. The standalone Crypto/build/ibkrcrypto_engine +
+        // :8090 GUI book is folded here as an in-process sibling of NqFutMomo/BigCapMomo so it
+        // surfaces in the Omega GUI + shadow ledger. TWO validated orthogonal DAILY legs:
+        // TSMom50 trend + RSIrev mean-rev (verbatim QndxStrat, WF-locked 2026-06-24), vol-target
+        // sized, long+short, EXIT-ON-TURN (no per-trade stop -- the backtested adverse-protection
+        // verdict; a stop guts the trend edge). clientId 88 REUSED from the retired Crypto
+        // executor (retire it FIRST -- strict cutover order). PAPER-only until a paper fill is
+        // proven, then 4001. Activate with OMEGA_QNDX_IBKR=1. Connection knobs:
+        // OMEGA_QNDX_IBKR_{HOST,PORT,CLIENT,MONTH}.
+        {
+            omega::qndx_sqf_ibkr::Config qc;   // defaults: QNDX FUT/CME, clientId 88, port 4002, paper_only, daily CSV
+            if (const char* mo = std::getenv("OMEGA_QNDX_IBKR_MONTH"))  qc.last_trade_month = mo;
+            if (const char* h  = std::getenv("OMEGA_QNDX_IBKR_HOST"))   qc.host      = h;
+            if (const char* p  = std::getenv("OMEGA_QNDX_IBKR_PORT"))   qc.port      = std::atoi(p);
+            if (const char* c  = std::getenv("OMEGA_QNDX_IBKR_CLIENT")) qc.client_id = std::atoi(c);
+            if (const char* m  = std::getenv("OMEGA_QNDX_IBKR_MDTYPE")) qc.market_data_type = std::atoi(m);
+            if (const char* cs = std::getenv("OMEGA_QNDX_IBKR_CSV"))    qc.daily_csv = cs;
+            omega::qndx_sqf_ibkr::configure(qc);
+            omega::qndx_sqf_ibkr::set_on_trade_record(
+                [](const omega::TradeRecord& tr) { handle_closed_trade(tr); });
+            g_open_positions.register_source("QndxSqf",
+                []() { return omega::qndx_sqf_ibkr::collect_positions(); });
+            printf("[OMEGA-INIT] QndxSqf IN-PROCESS IBKR book wired (QNDX daily TSMom50+RSIrev, "
+                   "vol-target, exit-on-turn, PAPER, clientId 88); activate with OMEGA_QNDX_IBKR=1\n");
         }
 
         // ── GoldOrbRetraceEngine (XAUUSD, ORB 50%-retrace + structural RUNNER) ──

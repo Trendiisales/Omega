@@ -49,6 +49,8 @@ HEADERS=(
   include/Ger40TurtleH4Engine.hpp
   include/NasTurtleD1Engine.hpp
   include/PeachyOrbEngine.hpp
+  include/QndxStrat.hpp
+  include/QndxSqfIbkr.hpp
 )
 
 fails=0
