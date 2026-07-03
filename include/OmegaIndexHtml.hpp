@@ -188,6 +188,15 @@ a{color:var(--blu);text-decoration:none}
   <div id="heat"></div>
 </div>
 
+<!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
+<div class="pan" style="margin-top:8px">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">CRYPTO COMPANIONS — up-jump stall-clip books (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
+    <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
 <!-- ═══ MAE/MFE + TOD ═══ -->
 <div class="grid g2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
   <div class="pan">
@@ -214,7 +223,8 @@ a{color:var(--blu);text-decoration:none}
     <div id="expo" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
     <div id="cooldowns" style="margin-top:5px"></div>
   </div>
-  <div class="pan">
+)OMEGAD0"
+R"OMEGAD1(  <div class="pan">
     <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
     <div id="dom" class="num"></div>
     <div style="margin-top:5px">
@@ -224,8 +234,7 @@ a{color:var(--blu);text-decoration:none}
   </div>
   <div class="pan">
     <div class="lbl" style="margin-bottom:4px">MICROSTRUCTURE · BROKER · SIGNALS</div>
-)OMEGAD0"
-R"OMEGAD1(    <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
+    <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
     <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px;margin-top:5px"></div>
     <div class="lbl" style="margin:6px 0 2px">SIGNAL TAPE</div>
     <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
@@ -418,11 +427,11 @@ function render(J){lastJ=J;
  var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
  dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
  for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
-  dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
+)OMEGAD1"
+R"OMEGAD2(  dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
    +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
  dh+='</div>';el('dom').innerHTML=(bids.length||asks.length)?dh:'<span class="d">no depth (L2 quiet)</span>';
-)OMEGAD1"
-R"OMEGAD2( var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
+ var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
  var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
  ob.style.background=dev>=0?'var(--grn)':'var(--red)';
 
@@ -522,6 +531,53 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
 
+/* ── crypto companions (up-jump stall-clip, shadow · josgp1) ──
+   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
+   always renders the config even before any live push. Live state (armed / peak mfe% /
+   bars-since-high / clips / bank_bp) overlaid per-symbol from /api/crypto_companion
+   (crypto_companion_state.json, pushed from josgp1) when present. STANDALONE book —
+   never compared to riding WIDE (operator rule: additive, judged on its own merit). */
+var CC_ROSTER=[
+ {sym:'BTC', arm:8,stall:6,rev:0.30,reclip:0.05,mode:''},
+ {sym:'ETH', arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'SOL', arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'DOGE',arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'BNB', arm:8,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'ADA', arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'TRX', arm:8,stall:6,rev:null,reclip:0.05,mode:'stall-only'},
+ {sym:'NEAR',arm:8,stall:8,rev:null,reclip:0.05,mode:'stall-only'},
+ {sym:'AAVE',arm:3,stall:6,rev:null,reclip:0,   mode:'inverse single-clip'},
+ {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
+];
+function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
+function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
+ var h='<tr><td class="l lbl">symbol</td><td class="l lbl">companion</td><td class="l lbl">state</td>'
+      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
+      +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
+      +'<td class="lbl">clips</td><td class="lbl">bank(bp)</td></tr>';
+ var narm=0,ntot=0;
+ CC_ROSTER.forEach(function(r){
+  if(r.mode==='parent-only'){
+   h+='<tr style="opacity:.5"><td class="l">'+r.sym+'</td><td class="l d" colspan="10">parent-only — no companion</td></tr>';return;}
+  ntot++;var s=live[r.sym]||{};var armed=!!s.armed;if(armed)narm++;
+  var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
+  var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
+  var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
+  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
+  var bk =s.bank_bp===undefined?'<span class="d">—</span>':fmt2(s.bank_bp,1);
+  var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
+  h+='<tr><td class="l">'+r.sym+mtag+'</td><td class="l d">clip</td><td class="l">'+st+'</td>'
+    +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num">'+r.arm+'</td>'
+    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
+    +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
+ });
+ el('cctab').innerHTML=h;
+ el('ccinfo').textContent=ntot+' companions · '+narm+' armed'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+}
+function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
+ var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
+setInterval(pollCC,15000);pollCC();
+
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
 function parseShadow(txt){
@@ -557,7 +613,8 @@ function parseShadow(txt){
 function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
  return ROWS.filter(function(r){return r.ts>=cut;});}
-function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
+)OMEGAD2"
+R"OMEGAD3(function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
  var pT=p+cToday,totT=tot+cAll;
@@ -606,8 +663,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var gr=ctx.createLinearGradient(0,Y(hi),0,Y(Math.min(0,lo)));
  gr.addColorStop(0,'rgba(46,189,133,0.22)');gr.addColorStop(1,'rgba(46,189,133,0.02)');
  ctx.fillStyle=gr;ctx.fill();
-)OMEGAD2"
-R"OMEGAD3( /* glowing equity line + live endpoint dot */
+ /* glowing equity line + live endpoint dot */
  ctx.save();ctx.shadowColor='#2EBD85';ctx.shadowBlur=6;
  ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.strokeStyle='#2EBD85';ctx.lineWidth=1.6;ctx.lineJoin='round';ctx.stroke();ctx.restore();
@@ -741,7 +797,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  if(!ds||!ds.bars||ds.bars.length<10){ctx.fillStyle='#6B7785';
   ctx.fillText('no range data yet — waiting for '+PRSYM+' '+PRTF+' bars (written every 60s by the engine)',10,20);
   el('prinfo').textContent='';el('prlast').textContent='';el('prtrend').textContent='';return;}
- var bars=ds.bars.slice(-Math.max(60,Math.min(ds.bars.length,Math.floor((W-70)/5))));
+)OMEGAD3"
+R"OMEGAD4( var bars=ds.bars.slice(-Math.max(60,Math.min(ds.bars.length,Math.floor((W-70)/5))));
  var n=bars.length,padR=58,padB=18,padT=8,padL=4,pw=W-padL-padR,ph=H-padT-padB;
  var lo=1e18,hi=-1e18;
  // range from candles always; include r2/s2 ONLY when warmed (>0) so an unwarmed
@@ -793,8 +850,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   defs.forEach(function(d){var v=lb[d[0]];if(v<=0)return;var y=Y(v);if(y<padT||y>padT+ph)return;
    var tx=padL+pw+2,txt=d[1]+' '+v.toFixed(dp);
    ctx.fillStyle='rgba(11,15,20,0.85)';ctx.fillRect(tx,y-6,54,11);
-)OMEGAD3"
-R"OMEGAD4(   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
+   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
   ctx.textAlign='start';})();
  for(var i=0;i<n;i++){var sg=bars[i][11];if(!sg)continue;var x=X(i),y;
   ctx.beginPath();

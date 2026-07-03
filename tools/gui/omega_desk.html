@@ -182,6 +182,15 @@ a{color:var(--blu);text-decoration:none}
   <div id="heat"></div>
 </div>
 
+<!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
+<div class="pan" style="margin-top:8px">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">CRYPTO COMPANIONS — up-jump stall-clip books (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
+    <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
 <!-- ═══ MAE/MFE + TOD ═══ -->
 <div class="grid g2" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
   <div class="pan">
@@ -513,6 +522,53 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(typeof drawEquity==='function')drawEquity();
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
+
+/* ── crypto companions (up-jump stall-clip, shadow · josgp1) ──
+   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
+   always renders the config even before any live push. Live state (armed / peak mfe% /
+   bars-since-high / clips / bank_bp) overlaid per-symbol from /api/crypto_companion
+   (crypto_companion_state.json, pushed from josgp1) when present. STANDALONE book —
+   never compared to riding WIDE (operator rule: additive, judged on its own merit). */
+var CC_ROSTER=[
+ {sym:'BTC', arm:8,stall:6,rev:0.30,reclip:0.05,mode:''},
+ {sym:'ETH', arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'SOL', arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'DOGE',arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'BNB', arm:8,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'ADA', arm:5,stall:6,rev:0.50,reclip:0.05,mode:''},
+ {sym:'TRX', arm:8,stall:6,rev:null,reclip:0.05,mode:'stall-only'},
+ {sym:'NEAR',arm:8,stall:8,rev:null,reclip:0.05,mode:'stall-only'},
+ {sym:'AAVE',arm:3,stall:6,rev:null,reclip:0,   mode:'inverse single-clip'},
+ {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
+];
+function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
+function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
+ var h='<tr><td class="l lbl">symbol</td><td class="l lbl">companion</td><td class="l lbl">state</td>'
+      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
+      +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
+      +'<td class="lbl">clips</td><td class="lbl">bank(bp)</td></tr>';
+ var narm=0,ntot=0;
+ CC_ROSTER.forEach(function(r){
+  if(r.mode==='parent-only'){
+   h+='<tr style="opacity:.5"><td class="l">'+r.sym+'</td><td class="l d" colspan="10">parent-only — no companion</td></tr>';return;}
+  ntot++;var s=live[r.sym]||{};var armed=!!s.armed;if(armed)narm++;
+  var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
+  var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
+  var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
+  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
+  var bk =s.bank_bp===undefined?'<span class="d">—</span>':fmt2(s.bank_bp,1);
+  var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
+  h+='<tr><td class="l">'+r.sym+mtag+'</td><td class="l d">clip</td><td class="l">'+st+'</td>'
+    +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num">'+r.arm+'</td>'
+    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
+    +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
+ });
+ el('cctab').innerHTML=h;
+ el('ccinfo').textContent=ntot+' companions · '+narm+' armed'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+}
+function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
+ var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
+setInterval(pollCC,15000);pollCC();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
