@@ -218,13 +218,13 @@ a{color:var(--blu);text-decoration:none}
       <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
     </div>
   </div>
-)OMEGAD0"
-R"OMEGAD1(</div>
+</div>
 
 <div style="display:flex;gap:14px;align-items:center;margin-top:8px" class="lbl">
   <a href="/legacy">legacy GUI</a>
   <span id="csvinfo"></span>
-  <button style="margin-left:auto" onclick="if(confirm('Clear ledger?'))fetch('/api/clear_ledger',{method:'POST'})">clear ledger</button>
+)OMEGAD0"
+R"OMEGAD1(  <button style="margin-left:auto" onclick="if(confirm('Clear ledger?'))fetch('/api/clear_ledger',{method:'POST'})">clear ledger</button>
 </div>
 
 <div id="prtip"></div>
@@ -420,10 +420,10 @@ function render(J){lastJ=J;
     r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}}});
 
  /* RISK&GOVERNOR + CLUSTER EXPOSURE + SL COOLDOWNS populators removed 2026-07-04 (panels deleted). */
-)OMEGAD1"
-R"OMEGAD2(
 
- var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
+
+)OMEGAD1"
+R"OMEGAD2( var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
  el('phases').innerHTML=ph.map(function(p){var v=safe(J[p[1]+'_phase']);
   var t=v===3?'TRADE':v===2?'BRK':v===1?'COMP':'FLAT';
   var bg=v===3?'var(--grnD)':v===2?'#7a5a14':v===1?'#143042':'var(--pan2)';
@@ -572,8 +572,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
-)OMEGAD2"
-R"OMEGAD3(  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
+  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bk =s.bank_bp===undefined?'<span class="d">—</span>':fmt2(s.bank_bp,1);
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
   h+='<tr><td class="l">'+r.sym+mtag+'</td><td class="l d">clip</td><td class="l">'+st+'</td>'
@@ -599,7 +598,8 @@ function drawGC(){var pe=window._gcPer||{},od=window._gcOpen||{};
  var keys=GC_ROSTER.slice();
  Object.keys(pe).forEach(function(k){if(isGoldEng(k)&&keys.indexOf(k)<0)keys.push(k);});
  var h='<tr><td class="l lbl">engine</td><td class="l lbl">state</td><td class="lbl">peak MFE%</td>'
-      +'<td class="lbl">stall</td><td class="lbl">open</td><td class="lbl">companion trades</td><td class="lbl">bank($)</td></tr>';
+)OMEGAD2"
+R"OMEGAD3(      +'<td class="lbl">stall</td><td class="lbl">open</td><td class="lbl">companion trades</td><td class="lbl">bank($)</td></tr>';
  var ntot=0,narm=0,ntr=0;
  keys.forEach(function(k){
   var e=pe[k]||{open:0,closed:0,realized:0};ntot++;
@@ -795,9 +795,9 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  if(!a||!a.length){return;}
  a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
  if(!a.length){return;}
- var newest=safe(a[a.length-1].exitTs);
 )OMEGAD3"
-R"OMEGAD4( if(window._lastClose===undefined)window._lastClose=newest;
+R"OMEGAD4( var newest=safe(a[a.length-1].exitTs);
+ if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
   var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
