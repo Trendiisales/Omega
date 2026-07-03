@@ -197,6 +197,15 @@ a{color:var(--blu);text-decoration:none}
   <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
+<!-- ═══ GOLD COMPANIONS — trend stall-clip books (OMEGA book · shadow, additive) ═══ -->
+<div class="pan" style="margin-top:8px">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">GOLD COMPANIONS — trend stall-clip books (paper · additive · judged STANDALONE, never vs-WIDE)</span>
+    <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
 <!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
 
 <!-- ═══ OPS STRIP — DOM only. RISK&GOVERNOR + CLUSTER EXPOSURE + MICROSTRUCTURE·BROKER·SIGNALS panels removed 2026-07-04 (operator: irrelevant) ═══ -->
@@ -521,6 +530,13 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     zero shadow closes in the window, otherwise a no-trade day silently drops the paper bucket */
  if(typeof updDayPnl==='function')updDayPnl();
  if(typeof drawEquity==='function')drawEquity();
+ /* GOLD COMPANIONS panel feed: per-engine rollup + open detail (OMEGA book, gold engines only),
+    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
+    per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
+ window._gcPer=j.per_engine||{};
+ var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
+ window._gcOpen=gm;
+ if(typeof drawGC==='function')drawGC();
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
 
@@ -571,6 +587,36 @@ R"OMEGAD3(  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.cl
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
 setInterval(pollCC,15000);pollCC();
+
+/* ── GOLD COMPANIONS (trend stall-clip · OMEGA book · additive, judged STANDALONE) ──
+   Fed by pollComp off the SAME /api/companion frame that drives COMP-BANK: per_engine
+   gives each gold trend engine's banked companion-trade count + paper bank, open_detail
+   gives the live armed/peak/stall of any currently-open companion. Always-on so the count
+   ticks in real time even on a flat book. NEVER compared to riding WIDE (operator rule). */
+var GC_ROSTER=['XauTrendRider4h','XauTrendFollow4h','LondonFixMomentum'];
+function isGoldEng(e){return /xau|gold|london|mgc/i.test(e||'');}
+function drawGC(){var pe=window._gcPer||{},od=window._gcOpen||{};
+ var keys=GC_ROSTER.slice();
+ Object.keys(pe).forEach(function(k){if(isGoldEng(k)&&keys.indexOf(k)<0)keys.push(k);});
+ var h='<tr><td class="l lbl">engine</td><td class="l lbl">state</td><td class="lbl">peak MFE%</td>'
+      +'<td class="lbl">stall</td><td class="lbl">open</td><td class="lbl">companion trades</td><td class="lbl">bank($)</td></tr>';
+ var ntot=0,narm=0,ntr=0;
+ keys.forEach(function(k){
+  var e=pe[k]||{open:0,closed:0,realized:0};ntot++;
+  var op=od[k];var armed=!!(op&&op.eligible);if(armed)narm++;ntr+=(e.closed||0);
+  var st=op?(armed?'<span class="g">ARMED</span>':'<span class="d">tracking</span>'):'<span class="d">—</span>';
+  var pk=op?fmt2(op.mfe_pct,2):'<span class="d">—</span>';
+  var stc=op?String(op.stall):'<span class="d">—</span>';
+  var bank=safe(e.realized);
+  h+='<tr><td class="l">'+k+'</td><td class="l">'+st+'</td><td class="num">'+pk+'</td>'
+    +'<td class="num">'+stc+'</td><td class="num">'+(e.open||0)+'</td>'
+    +'<td class="num" style="font-weight:600">'+(e.closed||0)+'</td>'
+    +'<td class="num" style="color:'+(bank>0?'var(--grn)':(bank<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bank)+'</td></tr>';
+ });
+ el('gctab').innerHTML=h;
+ el('gcinfo').textContent=ntot+' engines · '+narm+' armed · '+ntr+' companion trades banked';
+}
+drawGC();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
