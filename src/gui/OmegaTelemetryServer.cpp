@@ -62,6 +62,43 @@ static std::string loadFile(const std::string& p)
     return "";
 }
 
+// S-2026-07-04: /api/companion torn-read guard (the REAL root of the desk
+// TODAY 178<->120 flicker; client guard 61464b4 was symptom-only).
+// companion_state.json is overwritten IN PLACE by the Mac stall-accountant push
+// (scp = truncate + stream), so ~6% of reads (measured 16/250) land mid-write and
+// return a valid PREFIX of the JSON -- structurally incomplete, missing the tail
+// (by_book/open_detail). Folding that partial frame dropped ~$58 paper from the
+// headline. Fix: only serve a STRUCTURALLY COMPLETE frame; on a torn read, replay
+// the last complete one. Completeness = balanced braces/brackets outside strings
+// (no reliance on key order or an OMEGA sentinel -- a truncated prefix always
+// leaves depth>0 or an unterminated string). Single-threaded HTTP run loop
+// (one accept() loop on thread_) -> plain static cache, no lock needed.
+static bool jsonStructurallyComplete(const std::string& b)
+{
+    int depth = 0; bool inStr = false, esc = false, sawOpen = false;
+    for (char ch : b) {
+        if (inStr) {
+            if (esc)             esc = false;
+            else if (ch == '\\') esc = true;
+            else if (ch == '"')  inStr = false;
+            continue;
+        }
+        if (ch == '"')                    inStr = true;
+        else if (ch == '{' || ch == '[') { ++depth; sawOpen = true; }
+        else if (ch == '}' || ch == ']') { if (--depth < 0) return false; }
+    }
+    return sawOpen && depth == 0 && !inStr;
+}
+
+static std::string loadCompanionStateAtomic()
+{
+    std::string raw = loadFile("companion_state.json");
+    static std::string s_lastGood;
+    if (jsonStructurallyComplete(raw)) { s_lastGood = raw; return raw; }
+    if (!s_lastGood.empty()) return s_lastGood;   // torn read -> replay last complete frame
+    return raw;                                    // no complete frame seen yet -> passthrough
+}
+
 static std::string base64Encode(const unsigned char* data, size_t len)
 {
     BIO* b64 = BIO_new(BIO_f_base64());
@@ -1188,7 +1225,7 @@ void OmegaTelemetryServer::run(int port)
             if (body.empty()) body = "{\"updated\":0,\"datasets\":{}}";
         }
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
-        else if (strstr(buf, "GET /api/companion"))   { ct = "application/json"; body = loadFile("companion_state.json"); if (body.empty()) body = "{\"open_companions\":0,\"open_detail\":[]}"; }
+        else if (strstr(buf, "GET /api/companion"))   { ct = "application/json"; body = loadCompanionStateAtomic(); if (body.empty()) body = "{\"open_companions\":0,\"open_detail\":[]}"; }
         else if (strstr(buf, "GET /api/crypto_companion")) { ct = "application/json"; body = loadFile("crypto_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"legs\":[]}"; }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
             // Clear in-memory ledger + rename today's CSV so it won't be re-read.
