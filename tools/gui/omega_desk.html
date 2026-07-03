@@ -350,22 +350,30 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
   +'<div class="bar" style="height:4px;margin-top:3px"><i id="ctkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>'
   +'</div>';});
  el('ticker').innerHTML=h;})();
-/* poll Binance 24hr ticker for the crypto strip (client-side, read-only, no auth) */
-function pollCryptoTicker(){
- var syms=CTKS.map(function(t){return '"'+t[1]+'"';}).join(',');
- fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=%5B'+encodeURIComponent(syms)+'%5D')
+/* crypto strip (client-side, read-only, no auth): fast light price poll + slow 24hr context poll.
+   Binance public REST is CORS-open. /ticker/price = weight ~4 → poll 3s for snappy last-price;
+   /ticker/24hr = weight 40 → poll 20s for slow-moving day-change % + low/high range bar. */
+var _CSYMS='%5B'+encodeURIComponent(CTKS.map(function(t){return '"'+t[1]+'"';}).join(','))+'%5D';
+var _cchg={},_crng={};
+function pollCryptoPrice(){
+ fetch('https://api.binance.com/api/v3/ticker/price?symbols='+_CSYMS)
   .then(function(r){return r.json();})
   .then(function(arr){var by={};(arr||[]).forEach(function(d){by[d.symbol]=d;});
-   CTKS.forEach(function(t){var d=by[t[1]];if(!d)return;
-    var px=safe(d.lastPrice),bid=safe(d.bidPrice),ask=safe(d.askPrice),
-        lo=safe(d.lowPrice),hi=safe(d.highPrice),chg=safe(d.priceChangePercent);
+   CTKS.forEach(function(t){var d=by[t[1]];if(!d)return;var px=safe(d.price);
     el('ctk_'+t[0]).textContent=px>0?px.toLocaleString(undefined,{maximumFractionDigits:px>100?1:px>1?3:5}):'—';
-    var pe=el('ctkp_'+t[0]);pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';
-    pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';
-    if(hi>lo&&px>0){var p=Math.max(0,Math.min(1,(px-lo)/(hi-lo)));var r=el('ctkr_'+t[0]);
-     r.style.width=(p*100)+'%';r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}});})
+    var rg=_crng[t[1]];if(rg&&rg.hi>rg.lo&&px>0){var p=Math.max(0,Math.min(1,(px-rg.lo)/(rg.hi-rg.lo)));
+     var r=el('ctkr_'+t[0]);r.style.width=(p*100)+'%';r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}});})
   .catch(function(){});}
-setInterval(pollCryptoTicker,15000);pollCryptoTicker();
+function pollCrypto24h(){
+ fetch('https://api.binance.com/api/v3/ticker/24hr?symbols='+_CSYMS)
+  .then(function(r){return r.json();})
+  .then(function(arr){(arr||[]).forEach(function(d){
+   _crng[d.symbol]={lo:safe(d.lowPrice),hi:safe(d.highPrice)};
+   var t=CTKS.find(function(x){return x[1]===d.symbol;});if(!t)return;
+   var chg=safe(d.priceChangePercent),pe=el('ctkp_'+t[0]);
+   pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';});})
+  .catch(function(){});}
+setInterval(pollCryptoPrice,3000);setInterval(pollCrypto24h,20000);pollCrypto24h();pollCryptoPrice();
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];

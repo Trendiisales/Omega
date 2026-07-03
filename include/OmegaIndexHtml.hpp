@@ -357,22 +357,30 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
   +'<div class="bar" style="height:4px;margin-top:3px"><i id="ctkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>'
   +'</div>';});
  el('ticker').innerHTML=h;})();
-/* poll Binance 24hr ticker for the crypto strip (client-side, read-only, no auth) */
-function pollCryptoTicker(){
- var syms=CTKS.map(function(t){return '"'+t[1]+'"';}).join(',');
- fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=%5B'+encodeURIComponent(syms)+'%5D')
+/* crypto strip (client-side, read-only, no auth): fast light price poll + slow 24hr context poll.
+   Binance public REST is CORS-open. /ticker/price = weight ~4 → poll 3s for snappy last-price;
+   /ticker/24hr = weight 40 → poll 20s for slow-moving day-change % + low/high range bar. */
+var _CSYMS='%5B'+encodeURIComponent(CTKS.map(function(t){return '"'+t[1]+'"';}).join(','))+'%5D';
+var _cchg={},_crng={};
+function pollCryptoPrice(){
+ fetch('https://api.binance.com/api/v3/ticker/price?symbols='+_CSYMS)
   .then(function(r){return r.json();})
   .then(function(arr){var by={};(arr||[]).forEach(function(d){by[d.symbol]=d;});
-   CTKS.forEach(function(t){var d=by[t[1]];if(!d)return;
-    var px=safe(d.lastPrice),bid=safe(d.bidPrice),ask=safe(d.askPrice),
-        lo=safe(d.lowPrice),hi=safe(d.highPrice),chg=safe(d.priceChangePercent);
+   CTKS.forEach(function(t){var d=by[t[1]];if(!d)return;var px=safe(d.price);
     el('ctk_'+t[0]).textContent=px>0?px.toLocaleString(undefined,{maximumFractionDigits:px>100?1:px>1?3:5}):'—';
-    var pe=el('ctkp_'+t[0]);pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';
-    pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';
-    if(hi>lo&&px>0){var p=Math.max(0,Math.min(1,(px-lo)/(hi-lo)));var r=el('ctkr_'+t[0]);
-     r.style.width=(p*100)+'%';r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}});})
+    var rg=_crng[t[1]];if(rg&&rg.hi>rg.lo&&px>0){var p=Math.max(0,Math.min(1,(px-rg.lo)/(rg.hi-rg.lo)));
+     var r=el('ctkr_'+t[0]);r.style.width=(p*100)+'%';r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}});})
   .catch(function(){});}
-setInterval(pollCryptoTicker,15000);pollCryptoTicker();
+function pollCrypto24h(){
+ fetch('https://api.binance.com/api/v3/ticker/24hr?symbols='+_CSYMS)
+  .then(function(r){return r.json();})
+  .then(function(arr){(arr||[]).forEach(function(d){
+   _crng[d.symbol]={lo:safe(d.lowPrice),hi:safe(d.highPrice)};
+   var t=CTKS.find(function(x){return x[1]===d.symbol;});if(!t)return;
+   var chg=safe(d.priceChangePercent),pe=el('ctkp_'+t[0]);
+   pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';});})
+  .catch(function(){});}
+setInterval(pollCryptoPrice,3000);setInterval(pollCrypto24h,20000);pollCrypto24h();pollCryptoPrice();
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];
@@ -417,14 +425,14 @@ function render(J){lastJ=J;
   +(safe(J.multiday_throttle_active)?'<span class="r">Multiday throttle</span><span class="r">×'+fmt2(J.multiday_scale)+'</span>':'');
  var ex=[['US equity',J.exposure_us_equity],['EU equity',J.exposure_eu_equity],['Oil',J.exposure_oil],
   ['Metals',J.exposure_metals],['JPY risk',J.exposure_jpy_risk],['EUR/GBP',J.exposure_eur_gbp],['TOTAL',J.exposure_total]];
- el('expo').innerHTML=ex.map(function(r){var v=safe(r[1]);
+)OMEGAD1"
+R"OMEGAD2( el('expo').innerHTML=ex.map(function(r){var v=safe(r[1]);
   return '<span'+(r[0]==='TOTAL'?' class="w"':'')+'>'+r[0]+'</span><span class="'+(v>0?'w':'d')+'">$'+Math.round(v)+'</span>';}).join('');
  var cd=(J.sl_cooldowns||[]).map(function(c){return '<span class="chip" style="background:var(--redD);color:var(--redB)">'+esc(c.symbol)+' '+c.secs_remaining+'s</span>';}).join(' ');
  el('cooldowns').innerHTML=cd?'<div class="lbl" style="margin-bottom:3px">SL COOLDOWNS</div>'+cd:'';
 
  var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
-)OMEGAD1"
-R"OMEGAD2( el('phases').innerHTML=ph.map(function(p){var v=safe(J[p[1]+'_phase']);
+ el('phases').innerHTML=ph.map(function(p){var v=safe(J[p[1]+'_phase']);
   var t=v===3?'TRADE':v===2?'BRK':v===1?'COMP':'FLAT';
   var bg=v===3?'var(--grnD)':v===2?'#7a5a14':v===1?'#143042':'var(--pan2)';
   var fg=v===3?'var(--grnB)':v===2?'var(--ambB)':v===1?'var(--blu)':'var(--t2)';
@@ -592,7 +600,8 @@ setInterval(pollCC,15000);pollCC();
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
 function parseShadow(txt){
- /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
+)OMEGAD2"
+R"OMEGAD3( /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
     12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
     analytics showed "$0 / no shadow closes". Map columns by header name. */
@@ -601,8 +610,7 @@ function parseShadow(txt){
  for(var h=0;h<hdr.length;h++)ix[hdr[h].trim()]=h;
  function need(n){return ix[n]!==undefined;}
  if(!need('exit_ts_unix')||!need('symbol')||!need('engine')||!need('net_pnl'))return out;
-)OMEGAD2"
-R"OMEGAD3( function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
+ function unq(v){v=(v||'').trim();return v[0]==='"'?v.slice(1,-1):v;}
  for(var i=1;i<ls.length;i++){var L=ls[i];if(!L)continue;var f=L.split(',');
   if(f.length<hdr.length-2)continue;
   var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
@@ -784,15 +792,15 @@ function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class
   return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
    +'<td class="num d">'+lots(r.size)+'</td>'
-   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
+)OMEGAD3"
+R"OMEGAD4(   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
    +'<td class="num '+(r.pnl>=0?'g':'r')+'">'+fmt$(r.pnl)+'</td>'
    +'<td class="num d">'+hold+'</td><td class="l d">'+esc(r.reason||'')+'</td></tr>';}).join('');
  h.innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>lots</th><th>entry</th><th>exit</th><th>pnl</th><th>held</th><th class="l">exit</th></tr>'+rows;
  el('histn').textContent=ROWS.length+' trades';}
 
 /* ── predictive ranges ── */
-)OMEGAD3"
-R"OMEGAD4(var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
+var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
 var PRSYMS=['XAUUSD','US500','USTEC'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
@@ -985,7 +993,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
  tip.style.top=(cy-th2-12<0?cy+18:cy-th2-12)+'px';}
 (function(){var cvp=el('prc');
  cvp.addEventListener('mousemove',function(e){var rc=cvp.getBoundingClientRect();
-  PRMOUSE={x:e.clientX-rc.left,y:e.clientY-rc.top};
+)OMEGAD4"
+R"OMEGAD5(  PRMOUSE={x:e.clientX-rc.left,y:e.clientY-rc.top};
   var hit=null,best=160;
   PRMK.forEach(function(m){var dx=m.x-PRMOUSE.x,dy=m.y-PRMOUSE.y,d2=dx*dx+dy*dy;
    if(d2<best){best=d2;hit=m;}});
@@ -994,8 +1003,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
 /* ~30fps redraw only while hovering, or while the newest exit (<10 min) pulses;
    paused when the tab is hidden. Static otherwise — zero idle cost. */
 (function prAnim(){requestAnimationFrame(prAnim);
-)OMEGAD4"
-R"OMEGAD5( if(document.hidden)return;
+ if(document.hidden)return;
  if(performance.now()-(window._prDrawT||0)<33)return;
  if(PRMOUSE||(window._prNewest&&(Date.now()/1000-window._prNewest)<600))drawPR();})();
 
