@@ -199,15 +199,8 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
 
-<!-- ═══ OPS STRIP — risk / cluster / DOM / micro / signals (compact) ═══ -->
-<div class="grid g3 ops" style="grid-template-columns:minmax(0,1.1fr) minmax(0,0.9fr) minmax(0,1.2fr)">
-  <div class="pan">
-    <div class="lbl" style="margin-bottom:4px">RISK &amp; GOVERNOR — blocks this session</div>
-    <div id="gov" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
-    <div class="lbl" style="margin:6px 0 3px">CLUSTER EXPOSURE $</div>
-    <div id="expo" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
-    <div id="cooldowns" style="margin-top:5px"></div>
-  </div>
+<!-- ═══ OPS STRIP — DOM only. RISK&GOVERNOR + CLUSTER EXPOSURE + MICROSTRUCTURE·BROKER·SIGNALS panels removed 2026-07-04 (operator: irrelevant) ═══ -->
+<div class="grid ops" style="grid-template-columns:minmax(0,1fr)">
   <div class="pan">
     <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
     <div id="dom" class="num"></div>
@@ -216,15 +209,8 @@ a{color:var(--blu);text-decoration:none}
       <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
     </div>
   </div>
-  <div class="pan">
-    <div class="lbl" style="margin-bottom:4px">MICROSTRUCTURE · BROKER · SIGNALS</div>
-    <div id="micro" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px"></div>
 )OMEGAD0"
-R"OMEGAD1(    <div id="broker" class="num" style="display:grid;grid-template-columns:1fr auto;row-gap:1px;margin-top:5px"></div>
-    <div class="lbl" style="margin:6px 0 2px">SIGNAL TAPE</div>
-    <div id="sigs" style="font-size:10px;line-height:1.55;max-height:84px;overflow-y:auto"></div>
-  </div>
-</div>
+R"OMEGAD1(</div>
 
 <div style="display:flex;gap:14px;align-items:center;margin-top:8px" class="lbl">
   <a href="/legacy">legacy GUI</a>
@@ -410,26 +396,23 @@ function render(J){lastJ=J;
 
  TKS.forEach(function(t){var b=safe(J[t[0]+'_bid']),a=safe(J[t[0]+'_ask']);
   if(t[0]==='vix'){b=safe(J.vix_level)||b;}
-  el('tk_'+t[0]).textContent=b>0?b.toLocaleString(undefined,{maximumFractionDigits:b>100?1:4}):'—';
+  /* Show last-seen price when the live feed is quiet (weekend / market closed) instead
+     of '—'. Cache each symbol's last non-zero bid in localStorage; on a stale tick fall
+     back to it, dimmed, so a number always shows (operator 2026-07-04). */
+  var tke=el('tk_'+t[0]);
+  if(b>0){try{localStorage.setItem('tklast_'+t[0],String(b));}catch(_){}
+   tke.textContent=b.toLocaleString(undefined,{maximumFractionDigits:b>100?1:4});tke.style.color='var(--w)';}
+  else{var lv=parseFloat((function(){try{return localStorage.getItem('tklast_'+t[0]);}catch(_){return '';}})());
+   if(lv>0){tke.textContent=lv.toLocaleString(undefined,{maximumFractionDigits:lv>100?1:4});tke.style.color='var(--t2)';}
+   else{tke.textContent='—';tke.style.color='var(--w)';}}
   if(b>0&&a>0&&t[0]!=='vix')el('tks_'+t[0]).textContent='s '+fmt2(a-b,a-b<0.01?5:2);
   if(t[2]){var lo=safe(J[t[2]+'_curl']),hi=safe(J[t[2]+'_curh']);
    if(hi>lo&&b>0){var p=Math.max(0,Math.min(1,(b-lo)/(hi-lo)));var r=el('tkr_'+t[0]);r.style.width=(p*100)+'%';
     r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}}});
 
- var govRows=[['Spread gate',J.gov_spread],['Latency gate',J.gov_latency],['PnL governor',J.gov_pnl],
-  ['Position cap',J.gov_positions],['Consec-loss',J.gov_consec_loss],
-  ['Cost guard blocked',J.cost_guard_blocked],['Cost guard passed',J.cost_guard_passed]];
- el('gov').innerHTML=govRows.map(function(r){var v=safe(r[1]);
+ /* RISK&GOVERNOR + CLUSTER EXPOSURE + SL COOLDOWNS populators removed 2026-07-04 (panels deleted). */
 )OMEGAD1"
-R"OMEGAD2(  var c=r[0].indexOf('passed')>=0?'g':(v>0?'a':'d');
-  return '<span>'+r[0]+'</span><span class="'+c+'">'+v+'</span>';}).join('')
-  +(safe(J.multiday_throttle_active)?'<span class="r">Multiday throttle</span><span class="r">×'+fmt2(J.multiday_scale)+'</span>':'');
- var ex=[['US equity',J.exposure_us_equity],['EU equity',J.exposure_eu_equity],['Oil',J.exposure_oil],
-  ['Metals',J.exposure_metals],['JPY risk',J.exposure_jpy_risk],['EUR/GBP',J.exposure_eur_gbp],['TOTAL',J.exposure_total]];
- el('expo').innerHTML=ex.map(function(r){var v=safe(r[1]);
-  return '<span'+(r[0]==='TOTAL'?' class="w"':'')+'>'+r[0]+'</span><span class="'+(v>0?'w':'d')+'">$'+Math.round(v)+'</span>';}).join('');
- var cd=(J.sl_cooldowns||[]).map(function(c){return '<span class="chip" style="background:var(--redD);color:var(--redB)">'+esc(c.symbol)+' '+c.secs_remaining+'s</span>';}).join(' ');
- el('cooldowns').innerHTML=cd?'<div class="lbl" style="margin-bottom:3px">SL COOLDOWNS</div>'+cd:'';
+R"OMEGAD2(
 
  var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
  el('phases').innerHTML=ph.map(function(p){var v=safe(J[p[1]+'_phase']);
@@ -454,24 +437,7 @@ R"OMEGAD2(  var c=r[0].indexOf('passed')>=0?'g':(v>0?'a':'d');
  var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
  ob.style.background=dev>=0?'var(--grn)':'var(--red)';
 
- el('micro').innerHTML=[['Quote msg/s',safe(J.quote_msg_rate),'w'],['Seq gaps',safe(J.sequence_gaps),safe(J.sequence_gaps)>0?'r':'g'],
-  ['RTT last ms',fmt2(J.fix_rtt_last,1),'w'],['RTT p50',fmt2(J.fix_rtt_p50,1),'w'],['RTT p95',fmt2(J.fix_rtt_p95,1),safe(J.fix_rtt_p95)>120?'a':'w'],
-  ['L2 books live',safe(J.l2_active),'w']].map(function(r){return '<span>'+r[0]+'</span><span class="'+r[2]+'">'+r[1]+'</span>';}).join('');
- var bk=J.broker||{};
- el('broker').innerHTML=[['Engine PnL',fmt$(safe(bk.engine_pnl)),'w'],['Broker realised',fmt$(safe(bk.realised_pnl)),'w'],
-  ['Disparity',fmt$(safe(bk.disparity)),Math.abs(safe(bk.disparity))>50?'r':'g'],
-  ['Orphans',safe(bk.orphan_count),safe(bk.orphan_count)>0?'r':'d'],['Rejects',safe(bk.reject_count),safe(bk.reject_count)>0?'a':'d'],
-  ['Confirmed',safe(bk.confirmed_count),'d']].map(function(r){return '<span>'+r[0]+'</span><span class="'+r[2]+'">'+r[1]+'</span>';}).join('');
-
- var sig0=(J.signal_history||[])[0];
- if(sig0){var sk=sig0.symbol+'|'+sig0.engine+'|'+sig0.price;
-  if(window._lastSig===undefined)window._lastSig=sk;
-  else if(window._lastSig!==sk){window._lastSig=sk;sigTick();}}
- var sh=(J.signal_history||[]).slice(0,9).map(function(s){
-  var c=s.side==='LONG'||s.side==='BUY'?'g':'r';
-  return '<div><span class="'+c+'">'+esc(s.side||'')+'</span> <span class="w">'+esc(s.symbol||'')+'</span> '
-   +'<span class="num">'+fmt2(s.price,2)+'</span> <span class="d">'+esc(s.engine||'')+'</span> <span class="d">'+esc(s.reason||'').slice(0,28)+'</span></div>';}).join('');
- el('sigs').innerHTML=sh||'<span class="d">no signals yet this session</span>';
+ /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 
  var lts=J.live_trades||[];
  /* entry bell -- identity-based (engine|symbol|side|entry), NOT count-based.
