@@ -357,30 +357,30 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
   +'<div class="bar" style="height:4px;margin-top:3px"><i id="ctkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>'
   +'</div>';});
  el('ticker').innerHTML=h;})();
-/* crypto strip (client-side, read-only, no auth): fast light price poll + slow 24hr context poll.
-   Binance public REST is CORS-open. /ticker/price = weight ~4 → poll 3s for snappy last-price;
-   /ticker/24hr = weight 40 → poll 20s for slow-moving day-change % + low/high range bar. */
+/* crypto strip: LIVE via Binance combined WebSocket (S-2026-07-03). Operator: 1s REST polling still
+   felt laggy. @ticker pushes the full 24hr ticker (c=last, P=change%, h/l=range) in REAL TIME per
+   update -- no request latency, no polling gap. One socket for all legs. Falls back to REST polling
+   only if the WS can't connect (corporate proxy / geoblock). Read-only, no auth. Page is HTTP so wss
+   is fine. */
 var _CSYMS='%5B'+encodeURIComponent(CTKS.map(function(t){return '"'+t[1]+'"';}).join(','))+'%5D';
-var _cchg={},_crng={};
-function pollCryptoPrice(){
- fetch('https://api.binance.com/api/v3/ticker/price?symbols='+_CSYMS)
-  .then(function(r){return r.json();})
-  .then(function(arr){var by={};(arr||[]).forEach(function(d){by[d.symbol]=d;});
-   CTKS.forEach(function(t){var d=by[t[1]];if(!d)return;var px=safe(d.price);
-    el('ctk_'+t[0]).textContent=px>0?px.toLocaleString(undefined,{maximumFractionDigits:px>100?1:px>1?3:5}):'—';
-    var rg=_crng[t[1]];if(rg&&rg.hi>rg.lo&&px>0){var p=Math.max(0,Math.min(1,(px-rg.lo)/(rg.hi-rg.lo)));
-     var r=el('ctkr_'+t[0]);r.style.width=(p*100)+'%';r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}});})
-  .catch(function(){});}
-function pollCrypto24h(){
- fetch('https://api.binance.com/api/v3/ticker/24hr?symbols='+_CSYMS)
-  .then(function(r){return r.json();})
-  .then(function(arr){(arr||[]).forEach(function(d){
-   _crng[d.symbol]={lo:safe(d.lowPrice),hi:safe(d.highPrice)};
-   var t=CTKS.find(function(x){return x[1]===d.symbol;});if(!t)return;
-   var chg=safe(d.priceChangePercent),pe=el('ctkp_'+t[0]);
-   pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';});})
-  .catch(function(){});}
-setInterval(pollCryptoPrice,1000);setInterval(pollCrypto24h,20000);pollCrypto24h();pollCryptoPrice();
+function cxApply(sym,px,chg,hi,lo){var t=CTKS.find(function(x){return x[1]===sym;});if(!t)return;
+ if(px>0)el('ctk_'+t[0]).textContent=px.toLocaleString(undefined,{maximumFractionDigits:px>100?1:px>1?3:5});
+ if(chg!==null){var pe=el('ctkp_'+t[0]);pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';}
+ if(hi>lo&&px>0){var p=Math.max(0,Math.min(1,(px-lo)/(hi-lo)));var r=el('ctkr_'+t[0]);r.style.width=(p*100)+'%';r.style.background=p>0.85||p<0.15?'var(--amb)':'var(--blu)';}}
+var _cwsOk=false,_cwsRest=null;
+function cxRestPoll(){if(_cwsOk)return;
+ fetch('https://api.binance.com/api/v3/ticker/24hr?symbols='+_CSYMS).then(function(r){return r.json();})
+  .then(function(arr){(arr||[]).forEach(function(d){cxApply(d.symbol,safe(d.lastPrice),safe(d.priceChangePercent),safe(d.highPrice),safe(d.lowPrice));});}).catch(function(){});}
+function cxFallback(){if(!_cwsRest){cxRestPoll();_cwsRest=setInterval(cxRestPoll,2000);}}
+function cxWsUp(){if(_cwsRest){clearInterval(_cwsRest);_cwsRest=null;}}
+(function cws(){var streams=CTKS.map(function(t){return t[1].toLowerCase()+'@ticker';}).join('/');
+ try{var s=new WebSocket('wss://stream.binance.com:9443/stream?streams='+streams);
+  s.onopen=function(){_cwsOk=true;cxWsUp();};
+  s.onmessage=function(e){try{var m=JSON.parse(e.data),d=m&&m.data;if(d&&d.s){_cwsOk=true;cxApply(d.s,safe(d.c),safe(d.P),safe(d.h),safe(d.l));}}catch(x){}};
+  s.onclose=function(){_cwsOk=false;cxFallback();setTimeout(cws,3000);};
+  s.onerror=function(){_cwsOk=false;};
+ }catch(e){_cwsOk=false;cxFallback();}})();
+cxRestPoll(); /* instant first paint while the socket connects */
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];
@@ -420,13 +420,13 @@ function render(J){lastJ=J;
   ['Position cap',J.gov_positions],['Consec-loss',J.gov_consec_loss],
   ['Cost guard blocked',J.cost_guard_blocked],['Cost guard passed',J.cost_guard_passed]];
  el('gov').innerHTML=govRows.map(function(r){var v=safe(r[1]);
-  var c=r[0].indexOf('passed')>=0?'g':(v>0?'a':'d');
+)OMEGAD1"
+R"OMEGAD2(  var c=r[0].indexOf('passed')>=0?'g':(v>0?'a':'d');
   return '<span>'+r[0]+'</span><span class="'+c+'">'+v+'</span>';}).join('')
   +(safe(J.multiday_throttle_active)?'<span class="r">Multiday throttle</span><span class="r">×'+fmt2(J.multiday_scale)+'</span>':'');
  var ex=[['US equity',J.exposure_us_equity],['EU equity',J.exposure_eu_equity],['Oil',J.exposure_oil],
   ['Metals',J.exposure_metals],['JPY risk',J.exposure_jpy_risk],['EUR/GBP',J.exposure_eur_gbp],['TOTAL',J.exposure_total]];
-)OMEGAD1"
-R"OMEGAD2( el('expo').innerHTML=ex.map(function(r){var v=safe(r[1]);
+ el('expo').innerHTML=ex.map(function(r){var v=safe(r[1]);
   return '<span'+(r[0]==='TOTAL'?' class="w"':'')+'>'+r[0]+'</span><span class="'+(v>0?'w':'d')+'">$'+Math.round(v)+'</span>';}).join('');
  var cd=(J.sl_cooldowns||[]).map(function(c){return '<span class="chip" style="background:var(--redD);color:var(--redB)">'+esc(c.symbol)+' '+c.secs_remaining+'s</span>';}).join(' ');
  el('cooldowns').innerHTML=cd?'<div class="lbl" style="margin-bottom:3px">SL COOLDOWNS</div>'+cd:'';
@@ -590,13 +590,13 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
-  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
+)OMEGAD2"
+R"OMEGAD3(  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bk =s.bank_bp===undefined?'<span class="d">—</span>':fmt2(s.bank_bp,1);
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
   h+='<tr><td class="l">'+r.sym+mtag+'</td><td class="l d">clip</td><td class="l">'+st+'</td>'
     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num">'+r.arm+'</td>'
-)OMEGAD2"
-R"OMEGAD3(    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
+    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
@@ -784,15 +784,15 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
  if(!a.length){return;}
  var newest=safe(a[a.length-1].exitTs);
- if(window._lastClose===undefined)window._lastClose=newest;
+)OMEGAD3"
+R"OMEGAD4( if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
   var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
 }).catch(function(){});}
-)OMEGAD3"
-R"OMEGAD4(function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
+function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
  var rows=ROWS.slice().reverse().map(function(r){
   var d=new Date(r.ts*1000);
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
@@ -987,12 +987,12 @@ loadPR();setInterval(loadPR,30000);
 function prTip(m,cx,cy){var tip=el('prtip');
  if(!m){tip.style.display='none';return;}
  var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
- var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
+)OMEGAD4"
+R"OMEGAD5( var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
-)OMEGAD4"
-R"OMEGAD5(  +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
+  +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
   +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
