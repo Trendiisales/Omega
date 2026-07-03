@@ -380,7 +380,7 @@ function pollCrypto24h(){
    var chg=safe(d.priceChangePercent),pe=el('ctkp_'+t[0]);
    pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';});})
   .catch(function(){});}
-setInterval(pollCryptoPrice,3000);setInterval(pollCrypto24h,20000);pollCrypto24h();pollCryptoPrice();
+setInterval(pollCryptoPrice,1000);setInterval(pollCrypto24h,20000);pollCrypto24h();pollCryptoPrice();
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];
@@ -527,7 +527,15 @@ function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r
 setInterval(poll,1000);poll();
 /* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
    served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
-function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
+function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){
+ /* GUARD (S-2026-07-03): /api/companion transiently returns a PARTIAL aggregation with no OMEGA book
+    (~6% of polls, realized_total empty/partial) while the many cron companion books rewrite their state
+    files. Folding that empty frame zeroed the paper bucket -> headline flickered TODAY 178<->120,
+    COMP-BANK 54<->29, ALL-TIME 169<->115 roughly every ~80s. Ignore any frame missing the OMEGA book;
+    keep the last-good companion totals. Real root: make the companion state read atomic in
+    OmegaTelemetryServer (tracked separately). */
+ if(!(j&&j.by_book&&j.by_book.OMEGA)){return;}
+ var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
  /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
@@ -587,7 +595,8 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
   h+='<tr><td class="l">'+r.sym+mtag+'</td><td class="l d">clip</td><td class="l">'+st+'</td>'
     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num">'+r.arm+'</td>'
-    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
+)OMEGAD2"
+R"OMEGAD3(    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
@@ -600,8 +609,7 @@ setInterval(pollCC,15000);pollCC();
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
 function parseShadow(txt){
-)OMEGAD2"
-R"OMEGAD3( /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
+ /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
     12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
     analytics showed "$0 / no shadow closes". Map columns by header name. */
@@ -783,7 +791,8 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
 }).catch(function(){});}
-function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
+)OMEGAD3"
+R"OMEGAD4(function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
  var rows=ROWS.slice().reverse().map(function(r){
   var d=new Date(r.ts*1000);
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
@@ -792,8 +801,7 @@ function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class
   return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
    +'<td class="num d">'+lots(r.size)+'</td>'
-)OMEGAD3"
-R"OMEGAD4(   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
+   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
    +'<td class="num '+(r.pnl>=0?'g':'r')+'">'+fmt$(r.pnl)+'</td>'
    +'<td class="num d">'+hold+'</td><td class="l d">'+esc(r.reason||'')+'</td></tr>';}).join('');
  h.innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>lots</th><th>entry</th><th>exit</th><th>pnl</th><th>held</th><th class="l">exit</th></tr>'+rows;
@@ -983,7 +991,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
-  +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
+)OMEGAD4"
+R"OMEGAD5(  +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
   +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
@@ -993,8 +1002,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
  tip.style.top=(cy-th2-12<0?cy+18:cy-th2-12)+'px';}
 (function(){var cvp=el('prc');
  cvp.addEventListener('mousemove',function(e){var rc=cvp.getBoundingClientRect();
-)OMEGAD4"
-R"OMEGAD5(  PRMOUSE={x:e.clientX-rc.left,y:e.clientY-rc.top};
+  PRMOUSE={x:e.clientX-rc.left,y:e.clientY-rc.top};
   var hit=null,best=160;
   PRMK.forEach(function(m){var dx=m.x-PRMOUSE.x,dy=m.y-PRMOUSE.y,d2=dx*dx+dy*dy;
    if(d2<best){best=d2;hit=m;}});

@@ -373,7 +373,7 @@ function pollCrypto24h(){
    var chg=safe(d.priceChangePercent),pe=el('ctkp_'+t[0]);
    pe.textContent=(chg>=0?'+':'')+fmt2(chg,2)+'%';pe.style.color=chg>=0?'var(--grnB)':'var(--redB)';});})
   .catch(function(){});}
-setInterval(pollCryptoPrice,3000);setInterval(pollCrypto24h,20000);pollCrypto24h();pollCryptoPrice();
+setInterval(pollCryptoPrice,1000);setInterval(pollCrypto24h,20000);pollCrypto24h();pollCryptoPrice();
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];
@@ -519,7 +519,15 @@ function poll(){if(wsOk)return;fetch('/api/telemetry').then(function(r){return r
 setInterval(poll,1000);poll();
 /* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
    served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
-function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
+function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){
+ /* GUARD (S-2026-07-03): /api/companion transiently returns a PARTIAL aggregation with no OMEGA book
+    (~6% of polls, realized_total empty/partial) while the many cron companion books rewrite their state
+    files. Folding that empty frame zeroed the paper bucket -> headline flickered TODAY 178<->120,
+    COMP-BANK 54<->29, ALL-TIME 169<->115 roughly every ~80s. Ignore any frame missing the OMEGA book;
+    keep the last-good companion totals. Real root: make the companion state read atomic in
+    OmegaTelemetryServer (tracked separately). */
+ if(!(j&&j.by_book&&j.by_book.OMEGA)){return;}
+ var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
  /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
