@@ -120,16 +120,39 @@ int main(int argc, char** argv) {
         else if (yr < 2022) pre22.record(tr); else post22.record(tr);
     };
 
+    // BULL_GATE=1 -> faithful proxy for regime_bear_block: block NEW entries while the
+    // index sits below its own 200DMA (bear regime). Management still runs (enabled only
+    // guards entry, not the manage block), so open trades exit normally. 200DMA uses only
+    // past closes -> no lookahead. Mirrors what omega::index_market_regime().long_blocked()
+    // does live (a risk-off/bear gate), using the index's own trend as the standalone proxy.
+    const bool bull_gate = std::getenv("BULL_GATE") && std::atoi(std::getenv("BULL_GATE")) != 0;
+    const int SMA_N = 200;
+    double sma_sum = 0.0; std::vector<double> closes_hist; closes_hist.reserve(bars.size());
+    int64_t gated_out = 0;
     for (size_t i = 0; i < bars.size(); ++i) {
         const auto& b = bars[i];
         const int64_t ms = b.ts_sec * 1000LL;
+        if (bull_gate) {
+            bool bull = true;
+            if ((int)closes_hist.size() >= SMA_N) {
+                const double sma = sma_sum / SMA_N;
+                bull = b.c > sma;               // regime read on the FORMING bar's close (past 200 closes only)
+            }
+            if (!eng.enabled && bull) eng.enabled = true;
+            if (eng.enabled && !bull) { eng.enabled = false; ++gated_out; }
+        }
         // open first (rolls prior bucket -> eval -> possible entry at this ask),
         // then low (adverse for long), then high, then close.
         eng.on_tick(b.o - hs, b.o + hs, ms, cb);
         eng.on_tick(b.l - hs, b.l + hs, ms, cb);
         eng.on_tick(b.h - hs, b.h + hs, ms, cb);
         eng.on_tick(b.c - hs, b.c + hs, ms, cb);
+        // advance the 200DMA window with this now-closed bar
+        closes_hist.push_back(b.c); sma_sum += b.c;
+        if ((int)closes_hist.size() > SMA_N) sma_sum -= closes_hist[closes_hist.size() - 1 - SMA_N];
     }
+    if (bull_gate) std::fprintf(stderr, "[%s] BULL_GATE on: %lld bear-bars blocked new entries\n",
+                                label.c_str(), (long long)gated_out);
 
     // WF halves by trade order
     for (size_t i = 0; i < all.pnl.size(); ++i)

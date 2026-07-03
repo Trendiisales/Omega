@@ -1764,7 +1764,13 @@ static void init_engines(const std::string& cfg_path)
         // are hot on first tick. >=5 live shadow trades before any LIVE thought.
         g_nas_turtle_d1.p           = omega::make_nas_turtle_d1_params();
         g_nas_turtle_d1.shadow_mode = true;
-        g_nas_turtle_d1.enabled     = false;  // S-2026-06-24 DISABLED (operator cull of MARGINAL): fleet-audit
+        g_nas_turtle_d1.enabled     = true;   // S-2026-07-03 RE-ENABLED GATED-TO-BULL (operator: "redo the ndx and
+        g_nas_turtle_d1.p.regime_bear_block = true; // ensure its gated to bull"). regime_bear_block sits new longs
+                                              // out in sustained bear -> answers the 06-24 cull reason (it was
+                                              // bull-beta / no bear edge): now it ONLY trades bull/neutral, so the
+                                              // bear-beta hole is closed by construction. STAYS shadow_mode -> no
+                                              // live money; writes shadow closes to prove the gated form.
+                                              // Prior 06-24 cull rationale (kept for history):
                                               // 2026-06-22 = bull-beta, 2022 NEG (n=5, -$8 = noise, no bear edge).
                                               // SPX + DJ30 turtles (EDGE) carry the real cross-regime turtle edge,
                                               // so NAS adds only bull-beta shadow noise. Not good enough -> off.
