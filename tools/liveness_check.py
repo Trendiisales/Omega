@@ -42,7 +42,7 @@ foreach($n in $tasks.Keys){
   if($ageMin -gt $max){ $out += "DARK|$n|last ran ${ageMin}min ago (>$max)" } else { $out += "OK|$n|${ageMin}min" }
 }
 if(-not (Get-Process Omega -EA SilentlyContinue)){ $out += "DARK|Omega.exe|process not running" } else { $out += "OK|Omega.exe|alive" }
-# desk GUI is the engine's in-process server (stays on VPS). crypto-GUI-8090 moved to the Mac (2026-06-28) -> probed Mac-side below.
+# desk GUI is the engine's in-process server (stays on VPS). crypto-GUI-8090 RETIRED S-2026-07-03 (crypto book now in omega-terminal; book liveness = Mac state.json probe above).
 try{ $r=Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:7779/" -TimeoutSec 6; $out += "OK|desk-GUI-7779|HTTP "+$r.StatusCode }
 catch{ $m=$_.Exception.Message; $out += "DARK|desk-GUI-7779|not responding ("+$m.Substring(0,[Math]::Min(40,$m.Length))+")" }
 $hs="C:\Omega\logs\HEALTH_STATUS.json"
@@ -57,13 +57,11 @@ for name, path, maxage in MAC:
     if a is None: dark.append(f"{name}: MISSING ({path})")
     elif a > maxage: dark.append(f"{name}: stale {a:.0f}min (>{maxage})")
 
-# crypto GUI now runs ON THE MAC (:8090), offloaded from the 3GB VPS (2026-06-28).
-# HTTP heartbeat against the local instance (keepalive cron run_mac.sh every 2min).
-try:
-    import urllib.request
-    urllib.request.urlopen("http://127.0.0.1:8090/api/state", timeout=6).read(1)
-except Exception as e:
-    dark.append(f"crypto-GUI-8090 (Mac): not responding ({str(e)[:40]})")
+# crypto GUI :8090 RETIRED S-2026-07-03 (standalone Mac window killed; crypto book now viewed in
+# omega-terminal + VPS state push). The book's LIVENESS is still covered above by the MAC
+# "crypto-book (refresh_shadow)" state.json freshness probe -- the data producers (fetch/shadow_refresh/
+# live_mark crons) all still run. No HTTP GUI probe here anymore (it produced a false DARK once the
+# keepalive cron was removed). Re-add only if the standalone GUI is deliberately brought back.
 
 # VPS probes (one ssh). 2-STRIKE rule: a single slow probe on a paging-but-alive box should
 # NOT fire DARK -- only alarm after 2 consecutive failures (~30min) = a real outage, not lag.
