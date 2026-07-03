@@ -128,7 +128,8 @@ struct L2Bus {
         if (std::strcmp(sym, "US500")   == 0 || std::strcmp(sym, "US500.F")  == 0) return &us500;
         if (std::strcmp(sym, "NAS100")  == 0
          || std::strcmp(sym, "USTEC")   == 0 || std::strcmp(sym, "USTEC.F")  == 0) return &nas100;
-        if (std::strcmp(sym, "DJ30")    == 0 || std::strcmp(sym, "DJ30.F")   == 0) return &dj30;
+        if (std::strcmp(sym, "DJ30")    == 0 || std::strcmp(sym, "DJ30.F")   == 0
+         || std::strcmp(sym, "YM")      == 0) return &dj30;  // bridge emits contract.symbol "YM" for the DJ30 key (CBOT front-month)
         if (std::strcmp(sym, "GER40")   == 0) return &ger40;
         if (std::strcmp(sym, "UK100")   == 0) return &uk100;
         if (std::strcmp(sym, "ESTX50")  == 0) return &estx50;

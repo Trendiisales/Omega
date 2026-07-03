@@ -666,10 +666,12 @@ int main(int argc, char* argv[])
         // a synthetic tick into the single-writer dispatch queue so those engines
         // finally get a tick source. FILTER to DJ30 ONLY: XAUUSD/NAS100 already
         // receive native FIX ticks; posting for them would double-feed their
-        // engines. Bridge emits sym "DJ30" (the --symbols key); on_tick expects
-        // "DJ30.F", so remap here.
+        // engines. Bridge emits contract.symbol "YM" for the DJ30 --symbols key
+        // (CBOT front-month, e.g. YMU6); on_tick expects "DJ30.F", so accept the
+        // "YM"/"DJ30" aliases and remap here.
         omega::ibkr::BookUpdateCb on_book = [](const char* sym, double bid, double ask) {
-            if (std::strcmp(sym, "DJ30") == 0 || std::strcmp(sym, "DJ30.F") == 0)
+            if (std::strcmp(sym, "YM") == 0
+             || std::strcmp(sym, "DJ30") == 0 || std::strcmp(sym, "DJ30.F") == 0)
                 engine_dispatch_post_tick("DJ30.F", bid, ask);
         };
         std::thread([port, on_book = std::move(on_book)]{
