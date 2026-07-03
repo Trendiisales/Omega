@@ -659,9 +659,23 @@ int main(int argc, char* argv[])
         static std::string s_ibkr_host = host_env ? host_env : "127.0.0.1";
         std::cout << "[IBKR-CONSUMER] starting; " << s_ibkr_host << ":" << port << "\n";
         std::cout.flush();
-        std::thread([port]{
+        // DJ30 synthetic-tick pump (2026-07-03): BlackBull FIX streams ZERO DJ30
+        // ticks, so on_tick_dj30 -- and the whole live-configured DJ30.F family
+        // (g_dj30_turtle_d1, IndexFlow, Connors book, ...) -- never fired. The
+        // bridge now carries DJ30 (YM/CBOT depth). On each DJ30 book update, post
+        // a synthetic tick into the single-writer dispatch queue so those engines
+        // finally get a tick source. FILTER to DJ30 ONLY: XAUUSD/NAS100 already
+        // receive native FIX ticks; posting for them would double-feed their
+        // engines. Bridge emits sym "DJ30" (the --symbols key); on_tick expects
+        // "DJ30.F", so remap here.
+        omega::ibkr::BookUpdateCb on_book = [](const char* sym, double bid, double ask) {
+            if (std::strcmp(sym, "DJ30") == 0 || std::strcmp(sym, "DJ30.F") == 0)
+                engine_dispatch_post_tick("DJ30.F", bid, ask);
+        };
+        std::thread([port, on_book = std::move(on_book)]{
             omega::ibkr::run_consumer(g_ibkr_l2, g_ibkr_l2_stats,
-                                      g_ibkr_l2_stop, s_ibkr_host.c_str(), port);
+                                      g_ibkr_l2_stop, s_ibkr_host.c_str(), port,
+                                      on_book);
         }).detach();
     }
 

@@ -74,23 +74,35 @@ $MaxLvl   = 5
 # IBKR caps concurrent reqMktDepth at 3 streams on this account tier.
 #
 # 2026-06-04: RECORDING IS VITAL (operator, non-optional). Gold is the
-# focus + MGC (COMEX micro gold future) is a PAID Real-Time(NP,L2) sub,
-# so record both gold instruments: XAUUSD spot depth (CMDTY/SMART) and
-# MGC futures depth (COMEX). The previous NAS100/US500 streams produced
-# empty CSVs (101 bytes -- no CME index-depth subscription on this tier),
-# so they were dead weight; dropped to free depth slots for MGC.
-# 2 streams used, 1 free under the 3-stream cap. Append more later in
-# priority order ONLY once their depth sub is confirmed non-empty:
-#   GER40, UK100, DJ30, EURUSD, GBPUSD, USOIL, ...
+# focus + MGC (COMEX micro gold future) is a PAID Real-Time(NP,L2) sub.
+# 2026-07-03: MGC DROPPED to free the 3rd depth slot for DJ30 (operator-
+# approved swap). DJ30 (E-mini Dow YM/CBOT) is bundled INTO the owned CME
+# Real-Time(NP,L2) entitlement -- no separate CBOT line, no purchase (if the
+# entitlement were missing the bridge logs error 354 for YM). The DJ30 D1
+# turtle (g_dj30_turtle_d1) + the whole DJ30.F engine family were LIVE-config
+# but STARVED: BlackBull FIX streams ZERO DJ30 ticks, so on_tick_dj30 never
+# fired. This slot gives DJ30 real depth AND (via IbkrDomConsumer's on_book
+# callback in omega_main) a synthetic on_tick("DJ30.F") from the YM mid -- the
+# tick source that was the actual wiring gap.
+#
+# TRADEOFF (surfaced to operator): dropping MGC starves the MGC gold engines
+# (g_mgc_fastdon, g_mgc_volbrk) of COMEX depth. XAUUSD spot depth is unaffected
+# (separate slot). If the MGC engines need MGC depth, prefer a stream-tier
+# upgrade over this swap; operator chose the swap.
+#
+# 3 streams used, 0 free under the 3-stream cap. To add more (GER40, UK100,
+# EURUSD, ...) a slot must be freed OR the concurrent-depth tier raised.
 $Symbols = @(
-    'XAUUSD','MGC','NAS100'
+    'XAUUSD','DJ30','NAS100'
 ) -join ','
-# 2026-06-17: +NAS100 (E-mini Nasdaq future, CME) for the Aurora index footprint.
+# 2026-06-17: NAS100 (E-mini Nasdaq future, CME) for the Aurora index footprint.
 # Use the symbol-MAP KEY 'NAS100' (make_contract maps it -> Future symbol 'NQ' on
 # CME) -- 'NQ' is NOT a key and fails with "Unknown symbol mapping: NQ". The
 # recorder still writes ibkr_trades_NQ_*.csv (contract.symbol='NQ'), which Aurora
 # reads. NQ futures have a real tape under the active CME Real-Time(NP,L2) sub.
-# XAUUSD,MGC,NAS100 = 3 depth streams = AT the 3-stream cap. ES needs a freed slot.
+# 2026-07-03: DJ30 maps -> YM/CBOT (INDEX_FUTURES in ibkr_dom_bridge.py); bundled
+# into CME Real-Time(NP,L2). Writes ibkr_l2_DJ30_*.csv + ibkr_trades_YM_*.csv.
+# XAUUSD,DJ30,NAS100 = 3 depth streams = AT the 3-stream cap.
 
 if (-not (Test-Path $Py))     { Write-Error "Python venv not at $Py";   exit 1 }
 if (-not (Test-Path $Script)) { Write-Error "bridge not at $Script";    exit 1 }

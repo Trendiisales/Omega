@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -267,10 +268,20 @@ inline ibkr_sock::socket_t connect_localhost(const char* host, uint16_t port) no
     return s;
 }
 
+// Per-book-update callback. Fires AFTER a slot is updated, with the bridge
+// symbol string + best bid/ask. Used to synthesize a tick for symbols that
+// have NO native FIX quote feed (DJ30 -- BlackBull streams zero DJ30 ticks),
+// so the on_tick() engine family for that symbol actually runs. Empty by
+// default -> pure depth-only consumer (unchanged legacy behavior). The
+// callback MUST filter to only the symbols it wants to drive; feeding a
+// symbol that ALSO has a FIX tick would double-feed its engines.
+using BookUpdateCb = std::function<void(const char* sym, double bid, double ask)>;
+
 // Long-running thread body. Stops when stop_flag goes true.
 inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
                         std::atomic<bool>& stop_flag,
-                        const char* host, uint16_t port) noexcept
+                        const char* host, uint16_t port,
+                        BookUpdateCb on_book = {}) noexcept
 {
     using namespace std::chrono;
     std::string buf;
@@ -355,6 +366,11 @@ inline void run_consumer(L2Bus& bus, ConsumerStats& stats,
                 }
                 slot->last_ms.store(ts, std::memory_order_release);
                 stats.msgs_total.fetch_add(1, std::memory_order_relaxed);
+
+                // Synthetic-tick hook. Fires for symbols with no native FIX
+                // quote feed (see BookUpdateCb). Filtering is the callback's
+                // job -- pass every update through.
+                if (on_book) on_book(sym, bid, ask);
             }
         }
         ibkr_sock::close_sock(sock);
