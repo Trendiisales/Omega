@@ -179,6 +179,8 @@ export function AuroraPanel({ args }: Props) {
     if (!data?.snaps) return [];
     const syms = data.symbols?.length ? data.symbols : Object.keys(data.snaps);
     return syms
+      // S-2026-07-04 (operator): drop MGC gold from AURORA -- NQ nasdaq only.
+      .filter((s) => s.toUpperCase() !== 'MGC')
       .filter((s) => !filter || s === filter)
       .map((s) => data.snaps[s])
       .filter((s): s is AuroraSnap => Boolean(s));
@@ -189,7 +191,7 @@ export function AuroraPanel({ args }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <span className="text-base font-semibold">AURORA · Order-Flow Liquidity</span>
-          <span className="ml-2 text-xs text-neutral-500">MGC gold · NQ nasdaq (real CME tape)</span>
+          <span className="ml-2 text-xs text-neutral-500">NQ nasdaq (real CME tape)</span>
         </div>
         <div className="flex items-center gap-3 text-xs text-neutral-500">
           {data?.stale && <span className="text-amber-400">⚠ waiting for tape</span>}
