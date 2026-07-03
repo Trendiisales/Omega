@@ -331,6 +331,12 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
 /* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing */
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
  ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['NEAR','NEARUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
+/* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
+   Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
+   last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
+   server that booted post-Friday-close, so the cache was never warmed). Live weekday ticks override
+   via localStorage. Re-bake on each desk rebuild. USOIL/XAGUSD/VIX omitted — no current daily file. */
+var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger30:25779.31,uk100:10477.22};
 (function(){var h='';TKS.forEach(function(t){
  h+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
   +'<div class="lbl">'+t[1]+'</div><div class="num" id="tk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
@@ -378,6 +384,25 @@ function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positio
  .catch(function(){});}
 setInterval(pollReg,30000);pollReg();
 
+/* companion (stall-clip) sub-row for a live trade: the REAL amount CAUGHT (banked $ for this
+   engine) + the live open clip's MFE$/state. Rendered UNDER each open trade in BOTH the
+   live-feed and weekend-registry paths (operator 2026-07-04 — was previously only nested in the
+   live path, so it went invisible on the weekend registry fallback). Additive standalone book —
+   never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
+   open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
+function compSub(engine,symbol,colspan){
+ var comp=window._comp||{},per=window._gcPer||{};
+ var e=(engine||'').replace(/Engine$/,'');
+ var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
+ var pe=per[engine||'']||per[e];
+ if(!cm&&!pe)return '';
+ var parts=[];
+ if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
+  parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
+ if(pe){var bk=safe(pe.realized);
+  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s'));}
+ return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
+}
 /* ── telemetry render ── */
 var lastJ=null;
 function render(J){lastJ=J;
@@ -405,6 +430,7 @@ function render(J){lastJ=J;
   if(b>0){try{localStorage.setItem('tklast_'+t[0],String(b));}catch(_){}
    tke.textContent=b.toLocaleString(undefined,{maximumFractionDigits:b>100?1:4});tke.style.color='var(--w)';}
   else{var lv=parseFloat((function(){try{return localStorage.getItem('tklast_'+t[0]);}catch(_){return '';}})());
+   if(!(lv>0)&&SEED_LAST[t[0]])lv=SEED_LAST[t[0]];
    if(lv>0){tke.textContent=lv.toLocaleString(undefined,{maximumFractionDigits:lv>100?1:4});tke.style.color='var(--t2)';}
    else{tke.textContent='—';tke.style.color='var(--w)';}}
   if(b>0&&a>0&&t[0]!=='vix')el('tks_'+t[0]).textContent='s '+fmt2(a-b,a-b<0.01?5:2);
@@ -461,26 +487,29 @@ function render(J){lastJ=J;
   /* tick-driven publisher goes quiet when the market is closed -- positions can
      still be OPEN (held over the weekend). Fall back to the position REGISTRY
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
-  if(REGPOS.length){var sum2=0;var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
+  if(REGPOS.length){var sum2=0;var shown2={};var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
+   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown2[ck]?'':compSub(t.engine,t.symbol,6);shown2[ck]=1;
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
-    +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>';}).join('');
+    +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>'+cr;}).join('');
    el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
    el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
-   el('ltpnl').textContent='';}
+   var cbank2=safe((window._comptot||{}).all);
+   el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
-  var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var cm=(window._comp||{})[(t.engine||'')+'|'+(t.symbol||'')];
-  var cr=cm?('<tr><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">↳ companion (stall-clip) · '+esc(cm.side)+' · MFE '+fmt2(cm.mfe_pct,2)+'% · stall '+cm.stall+' · '+fmt$(safe(cm.upnl))+' · '+(cm.eligible?'<span class="g">gate ✓</span>':'pre-gate (rides wide)')+'</td></tr>'):'';
+  var sum=0;var shown={};var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown[ck]?'':compSub(t.engine,t.symbol,9);shown[ck]=1;
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>'+cr;}).join('');
   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
-  el('ltpnl').textContent=fmt$(sum)+' unrealised';el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
+  var cbank=safe((window._comptot||{}).all);
+  el('ltpnl').innerHTML=fmt$(sum)+' unreal <span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank)+' companion (paper, additive)</span>';
+  el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
 
 /* ── ws + poll ── */
@@ -556,11 +585,12 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
       +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
       +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
       +'<td class="lbl">clips</td><td class="lbl">bank(bp)</td></tr>';
- var narm=0,ntot=0;
+ var narm=0,ntot=0,totclips=0,totbank=0;
  CC_ROSTER.forEach(function(r){
   if(r.mode==='parent-only'){
    h+='<tr style="opacity:.5"><td class="l">'+r.sym+'</td><td class="l d" colspan="10">parent-only — no companion</td></tr>';return;}
   ntot++;var s=live[r.sym]||{};var armed=!!s.armed;if(armed)narm++;
+  totclips+=safe(s.clips);totbank+=safe(s.bank_bp);
   var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
@@ -573,7 +603,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
- el('ccinfo').textContent=ntot+' companions · '+narm+' armed'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').textContent=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank '+fmt2(totbank,1)+' bp'+(hasLive?'':' · roster only (awaiting josgp1 push)');
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}

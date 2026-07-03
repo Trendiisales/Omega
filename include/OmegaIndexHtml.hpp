@@ -338,6 +338,12 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
 /* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing */
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
  ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['NEAR','NEARUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
+/* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
+   Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
+   last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
+   server that booted post-Friday-close, so the cache was never warmed). Live weekday ticks override
+   via localStorage. Re-bake on each desk rebuild. USOIL/XAGUSD/VIX omitted — no current daily file. */
+var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger30:25779.31,uk100:10477.22};
 (function(){var h='';TKS.forEach(function(t){
  h+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
   +'<div class="lbl">'+t[1]+'</div><div class="num" id="tk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
@@ -385,6 +391,25 @@ function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positio
  .catch(function(){});}
 setInterval(pollReg,30000);pollReg();
 
+/* companion (stall-clip) sub-row for a live trade: the REAL amount CAUGHT (banked $ for this
+   engine) + the live open clip's MFE$/state. Rendered UNDER each open trade in BOTH the
+   live-feed and weekend-registry paths (operator 2026-07-04 — was previously only nested in the
+   live path, so it went invisible on the weekend registry fallback). Additive standalone book —
+   never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
+   open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
+function compSub(engine,symbol,colspan){
+ var comp=window._comp||{},per=window._gcPer||{};
+ var e=(engine||'').replace(/Engine$/,'');
+ var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
+ var pe=per[engine||'']||per[e];
+ if(!cm&&!pe)return '';
+ var parts=[];
+ if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
+  parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
+ if(pe){var bk=safe(pe.realized);
+  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s'));}
+ return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
+}
 /* ── telemetry render ── */
 var lastJ=null;
 function render(J){lastJ=J;
@@ -393,7 +418,8 @@ function render(J){lastJ=J;
  m.style.background=shadowMode?'var(--ambD)':'var(--grnD)';m.style.color=shadowMode?'var(--ambB)':'var(--grnB)';
  function dot(id,ok){el(id).style.background=ok?'var(--grn)':'var(--red)';}
  dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
- dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
+)OMEGAD1"
+R"OMEGAD2( dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
  dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
  el('build').textContent=(J.build_version||'').slice(0,12);
@@ -412,6 +438,7 @@ function render(J){lastJ=J;
   if(b>0){try{localStorage.setItem('tklast_'+t[0],String(b));}catch(_){}
    tke.textContent=b.toLocaleString(undefined,{maximumFractionDigits:b>100?1:4});tke.style.color='var(--w)';}
   else{var lv=parseFloat((function(){try{return localStorage.getItem('tklast_'+t[0]);}catch(_){return '';}})());
+   if(!(lv>0)&&SEED_LAST[t[0]])lv=SEED_LAST[t[0]];
    if(lv>0){tke.textContent=lv.toLocaleString(undefined,{maximumFractionDigits:lv>100?1:4});tke.style.color='var(--t2)';}
    else{tke.textContent='—';tke.style.color='var(--w)';}}
   if(b>0&&a>0&&t[0]!=='vix')el('tks_'+t[0]).textContent='s '+fmt2(a-b,a-b<0.01?5:2);
@@ -422,8 +449,7 @@ function render(J){lastJ=J;
  /* RISK&GOVERNOR + CLUSTER EXPOSURE + SL COOLDOWNS populators removed 2026-07-04 (panels deleted). */
 
 
-)OMEGAD1"
-R"OMEGAD2( var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
+ var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xag'],['BRENT','brent']];
  el('phases').innerHTML=ph.map(function(p){var v=safe(J[p[1]+'_phase']);
   var t=v===3?'TRADE':v===2?'BRK':v===1?'COMP':'FLAT';
   var bg=v===3?'var(--grnD)':v===2?'#7a5a14':v===1?'#143042':'var(--pan2)';
@@ -469,26 +495,29 @@ R"OMEGAD2( var ph=[['XAU','xau'],['SP','sp'],['NQ','nq'],['OIL','cl'],['XAG','xa
   /* tick-driven publisher goes quiet when the market is closed -- positions can
      still be OPEN (held over the weekend). Fall back to the position REGISTRY
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
-  if(REGPOS.length){var sum2=0;var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
+  if(REGPOS.length){var sum2=0;var shown2={};var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
+   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown2[ck]?'':compSub(t.engine,t.symbol,6);shown2[ck]=1;
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
-    +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>';}).join('');
+    +'<td class="num '+(safe(t.unrealized_pnl)>=0?'g':'r')+'">'+fmt$(safe(t.unrealized_pnl))+'</td></tr>'+cr;}).join('');
    el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>last</th><th>unreal</th></tr>'+rows2;
    el('ltcount').textContent=REGPOS.length+' open · from registry (feed quiet — prices stale)';
-   el('ltpnl').textContent='';}
+   var cbank2=safe((window._comptot||{}).all);
+   el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
-  var sum=0;var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var cm=(window._comp||{})[(t.engine||'')+'|'+(t.symbol||'')];
-  var cr=cm?('<tr><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">↳ companion (stall-clip) · '+esc(cm.side)+' · MFE '+fmt2(cm.mfe_pct,2)+'% · stall '+cm.stall+' · '+fmt$(safe(cm.upnl))+' · '+(cm.eligible?'<span class="g">gate ✓</span>':'pre-gate (rides wide)')+'</td></tr>'):'';
+  var sum=0;var shown={};var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown[ck]?'':compSub(t.engine,t.symbol,9);shown[ck]=1;
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>'+cr;}).join('');
   el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
-  el('ltpnl').textContent=fmt$(sum)+' unrealised';el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
+  var cbank=safe((window._comptot||{}).all);
+  el('ltpnl').innerHTML=fmt$(sum)+' unreal <span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank)+' companion (paper, additive)</span>';
+  el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
 
 /* ── ws + poll ── */
@@ -564,11 +593,13 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
       +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
       +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
       +'<td class="lbl">clips</td><td class="lbl">bank(bp)</td></tr>';
- var narm=0,ntot=0;
+ var narm=0,ntot=0,totclips=0,totbank=0;
  CC_ROSTER.forEach(function(r){
   if(r.mode==='parent-only'){
    h+='<tr style="opacity:.5"><td class="l">'+r.sym+'</td><td class="l d" colspan="10">parent-only — no companion</td></tr>';return;}
   ntot++;var s=live[r.sym]||{};var armed=!!s.armed;if(armed)narm++;
+)OMEGAD2"
+R"OMEGAD3(  totclips+=safe(s.clips);totbank+=safe(s.bank_bp);
   var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
@@ -581,7 +612,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
- el('ccinfo').textContent=ntot+' companions · '+narm+' armed'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').textContent=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank '+fmt2(totbank,1)+' bp'+(hasLive?'':' · roster only (awaiting josgp1 push)');
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
@@ -598,8 +629,7 @@ function drawGC(){var pe=window._gcPer||{},od=window._gcOpen||{};
  var keys=GC_ROSTER.slice();
  Object.keys(pe).forEach(function(k){if(isGoldEng(k)&&keys.indexOf(k)<0)keys.push(k);});
  var h='<tr><td class="l lbl">engine</td><td class="l lbl">state</td><td class="lbl">peak MFE%</td>'
-)OMEGAD2"
-R"OMEGAD3(      +'<td class="lbl">stall</td><td class="lbl">open</td><td class="lbl">companion trades</td><td class="lbl">bank($)</td></tr>';
+      +'<td class="lbl">stall</td><td class="lbl">open</td><td class="lbl">companion trades</td><td class="lbl">bank($)</td></tr>';
  var ntot=0,narm=0,ntr=0;
  keys.forEach(function(k){
   var e=pe[k]||{open:0,closed:0,realized:0};ntot++;
@@ -764,7 +794,8 @@ function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
 var DAYS=['Su','Mo','Tu','We','Th','Fr','Sa'];
 function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
  rs.forEach(function(r){var d=new Date(r.ts*1000);var k=d.getUTCDay()+'_'+d.getUTCHours();
-  if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
+)OMEGAD3"
+R"OMEGAD4(  if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
  var h='<div style="display:grid;grid-template-columns:24px repeat(24,1fr);gap:1px">';
  h+='<span></span>';for(var c=0;c<24;c++)h+='<span class="lbl" style="font-size:8px;text-align:center">'+(c%4===0?c:'')+'</span>';
  [1,2,3,4,5,0].forEach(function(d){h+='<span class="lbl" style="font-size:9px">'+DAYS[d]+'</span>';
@@ -795,8 +826,7 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  if(!a||!a.length){return;}
  a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
  if(!a.length){return;}
-)OMEGAD3"
-R"OMEGAD4( var newest=safe(a[a.length-1].exitTs);
+ var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
   var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
@@ -966,7 +996,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  if(PRMOUSE&&PRMOUSE.x>=padL&&PRMOUSE.x<=padL+pw&&PRMOUSE.y>=padT&&PRMOUSE.y<=padT+ph){
   var mi=Math.max(0,Math.min(n-1,Math.round((PRMOUSE.x-padL)/pw*(n-1))));
   var mb=bars[mi],mx2=X(mi);
-  ctx.strokeStyle='rgba(230,237,243,0.22)';ctx.setLineDash([3,3]);ctx.lineWidth=1;
+)OMEGAD4"
+R"OMEGAD5(  ctx.strokeStyle='rgba(230,237,243,0.22)';ctx.setLineDash([3,3]);ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(mx2,padT);ctx.lineTo(mx2,padT+ph);ctx.stroke();
   ctx.beginPath();ctx.moveTo(padL,PRMOUSE.y);ctx.lineTo(padL+pw,PRMOUSE.y);ctx.stroke();ctx.setLineDash([]);
   var pv=hi-(PRMOUSE.y-padT)/ph*(hi-lo);
@@ -999,8 +1030,7 @@ loadPR();setInterval(loadPR,30000);
 function prTip(m,cx,cy){var tip=el('prtip');
  if(!m){tip.style.display='none';return;}
  var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
-)OMEGAD4"
-R"OMEGAD5( var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
+ var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)

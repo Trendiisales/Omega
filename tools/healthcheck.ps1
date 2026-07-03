@@ -217,7 +217,12 @@ try {
               Select-String -Pattern '\[TICK\]|\[GOLD-L2-LIVE\]|\[GOLD-VOL\]'
     $rate = if ($recent) { $recent.Count } else { 0 }
     if ($rate -lt 1) {
-        Add-Check "quote.recent_rate" "FAIL" "zero" "0 tick/quote lines in last 2000 log lines (feed dead?)"
+        # Off-hours (weekend / market closed) a zero quote rate is EXPECTED, not a failure --
+        # downgrade to WARN like the shadow-signals staleness check (operator 2026-07-04: weekend
+        # HEALTH was RED purely from this + supervisor, both market-driven).
+        $qsev = if ($isMarketHours) { 'FAIL' } else { 'WARN' }
+        $qdet = if ($isMarketHours) { "0 tick/quote lines in last 2000 log lines (feed dead?)" } else { "0 tick/quote lines (market closed -- expected)" }
+        Add-Check "quote.recent_rate" $qsev "zero" $qdet
     } elseif ($rate -lt 20) {
         Add-Check "quote.recent_rate" "WARN" "low" "$rate tick/quote lines in last 2000 log lines"
     } else {
@@ -235,7 +240,10 @@ try {
            Select-String -Pattern '\[SUPERVISOR-'
     $supn = if ($sup) { $sup.Count } else { 0 }
     if ($supn -lt 1) {
-        Add-Check "supervisor.recent_decisions" "FAIL" "zero" "No supervisor decisions in last 2000 log lines"
+        # Off-hours the supervisor has nothing to decide (no quotes) -- expected, downgrade to WARN.
+        $ssev = if ($isMarketHours) { 'FAIL' } else { 'WARN' }
+        $sdet = if ($isMarketHours) { "No supervisor decisions in last 2000 log lines" } else { "No supervisor decisions (market closed -- expected)" }
+        Add-Check "supervisor.recent_decisions" $ssev "zero" $sdet
     } elseif ($supn -lt 5) {
         Add-Check "supervisor.recent_decisions" "WARN" "low" "$supn supervisor decisions in last 2000 log lines"
     } else {
@@ -257,6 +265,8 @@ try {
         } else {
             Add-Check "gold_bracket.range_alive" "OK" "ok" "$nonZero of $($diag.Count) recent diags show non-zero range"
         }
+    } elseif (-not $isMarketHours) {
+        Add-Check "gold_bracket.range_alive" "OK" "off_hours" "No [GOLD-BRK-DIAG] lines (market closed -- expected)"
     } else {
         Add-Check "gold_bracket.range_alive" "WARN" "no_diag" "No [GOLD-BRK-DIAG] lines in last 2000 log lines"
     }
