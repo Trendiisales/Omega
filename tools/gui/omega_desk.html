@@ -409,6 +409,22 @@ setInterval(pollReg,30000);pollReg();
    live path, so it went invisible on the weekend registry fallback). Additive standalone book —
    never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
    open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
+/* Companion books get GLOBALLY-UNIQUE display names (operator 2026-07-04j: "if they
+   have 6 books each then show all 6, give them unique names"). Most books already carry a
+   descriptive prefix (xau_tf4h_clip, gvb_m30_usd_a). The offender is the bare name 'main',
+   which several engines emit (XauTrendFollow4h, LondonFixMomentum, QndxSqfTrend) — identical
+   + meaningless. Qualify it with the engine's book-prefix derived from a sibling book
+   (xau_tf4h_aggr -> xau_tf4h -> 'xau_tf4h_main'); if 'main' is the only book, slug the engine
+   name ('londonfixmomentum_main'). Every name is then unique across the whole desk. */
+function uniqBookName(raw,bks,engShort){
+ raw=raw||'';
+ if(raw!=='main')return raw;
+ var slug='';
+ for(var i=0;i<bks.length;i++){var nm=bks[i].book||'';
+  if(nm&&nm!=='main'){slug=nm.replace(/_(clip|usd_a|usd_b|usd|aggr_b|aggr)(_gv\d+)?$/,'');break;}}
+ if(!slug)slug=(engShort||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+ return slug+'_main';
+}
 function compSub(engine,symbol,colspan,nLegs){
  var comp=window._comp||{},per=window._gcPer||{},pbooks=window._gcPerBooks||{};
  var e=(engine||'').replace(/Engine$/,'');
@@ -428,20 +444,20 @@ function compSub(engine,symbol,colspan,nLegs){
  if(pe){var bk=safe(pe.realized);
   parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
  var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
- /* per-BOOK breakdown: EVERY companion book listed by NAME with its OWN pnl + gauge params
-    (operator 2026-07-04 "i want each one displayed with the correct pnl number for that
-    engine and companion"). Active books (clipped/open/banked) get a full line; never-fired
-    0-bank idle books are named on one collapsed line so noise stays bounded but names show. */
- var idle=[];
+ /* per-BOOK breakdown: EVERY companion book listed on its OWN row by UNIQUE name with its
+    OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
+    collapse — every book of the engine renders as a distinct line so all N are visible. Each
+    book is a SEPARATE additive standalone engine ([[CompanionDominanceError]]); its $ is its
+    own, never a multiple of a shared number. */
  bks.forEach(function(b){
+   var nm=uniqBookName(b.book||'',bks,e);
    var bk=safe(b.realized),clips=b.closed||0;
    var gz=(b.gauge==='USD')?('$'+fmt2(b.arm_usd,0)+'/'+fmt2(b.trail_usd,0)):'PCT';
-   if(b.idle&&!clips&&!b.open&&!bk){idle.push((b.book||'?')+' ('+gz+')');return;}
    var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
+   var op=b.idle?'.6':'.9';
    var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
-   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.9">&#8627; <b>'+esc(b.book||'')+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
+   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:'+op+'">&#8627; <b>'+esc(nm)+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
  });
- if(idle.length)html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.55">&#8627; +'+idle.length+' idle · $0: '+esc(idle.join(', '))+'</td></tr>';
  return html;
 }
 /* ── telemetry render ── */

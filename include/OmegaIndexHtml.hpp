@@ -416,12 +416,28 @@ setInterval(pollReg,30000);pollReg();
    live path, so it went invisible on the weekend registry fallback). Additive standalone book —
    never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
    open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
+/* Companion books get GLOBALLY-UNIQUE display names (operator 2026-07-04j: "if they
+   have 6 books each then show all 6, give them unique names"). Most books already carry a
+   descriptive prefix (xau_tf4h_clip, gvb_m30_usd_a). The offender is the bare name 'main',
+)OMEGAD1"
+R"OMEGAD2(   which several engines emit (XauTrendFollow4h, LondonFixMomentum, QndxSqfTrend) — identical
+   + meaningless. Qualify it with the engine's book-prefix derived from a sibling book
+   (xau_tf4h_aggr -> xau_tf4h -> 'xau_tf4h_main'); if 'main' is the only book, slug the engine
+   name ('londonfixmomentum_main'). Every name is then unique across the whole desk. */
+function uniqBookName(raw,bks,engShort){
+ raw=raw||'';
+ if(raw!=='main')return raw;
+ var slug='';
+ for(var i=0;i<bks.length;i++){var nm=bks[i].book||'';
+  if(nm&&nm!=='main'){slug=nm.replace(/_(clip|usd_a|usd_b|usd|aggr_b|aggr)(_gv\d+)?$/,'');break;}}
+ if(!slug)slug=(engShort||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+ return slug+'_main';
+}
 function compSub(engine,symbol,colspan,nLegs){
  var comp=window._comp||{},per=window._gcPer||{},pbooks=window._gcPerBooks||{};
  var e=(engine||'').replace(/Engine$/,'');
  var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
-)OMEGAD1"
-R"OMEGAD2( var pe=per[engine||'']||per[e];
+ var pe=per[engine||'']||per[e];
  var bks=pbooks[engine||'']||pbooks[e]||[];
  if(!cm&&!pe&&!bks.length)return '';
  /* An engine can run SEVERAL companion books (gold = 2+ per engine, operator 2026-07-04).
@@ -436,20 +452,20 @@ R"OMEGAD2( var pe=per[engine||'']||per[e];
  if(pe){var bk=safe(pe.realized);
   parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
  var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
- /* per-BOOK breakdown: EVERY companion book listed by NAME with its OWN pnl + gauge params
-    (operator 2026-07-04 "i want each one displayed with the correct pnl number for that
-    engine and companion"). Active books (clipped/open/banked) get a full line; never-fired
-    0-bank idle books are named on one collapsed line so noise stays bounded but names show. */
- var idle=[];
+ /* per-BOOK breakdown: EVERY companion book listed on its OWN row by UNIQUE name with its
+    OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
+    collapse — every book of the engine renders as a distinct line so all N are visible. Each
+    book is a SEPARATE additive standalone engine ([[CompanionDominanceError]]); its $ is its
+    own, never a multiple of a shared number. */
  bks.forEach(function(b){
+   var nm=uniqBookName(b.book||'',bks,e);
    var bk=safe(b.realized),clips=b.closed||0;
    var gz=(b.gauge==='USD')?('$'+fmt2(b.arm_usd,0)+'/'+fmt2(b.trail_usd,0)):'PCT';
-   if(b.idle&&!clips&&!b.open&&!bk){idle.push((b.book||'?')+' ('+gz+')');return;}
    var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
+   var op=b.idle?'.6':'.9';
    var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
-   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.9">&#8627; <b>'+esc(b.book||'')+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
+   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:'+op+'">&#8627; <b>'+esc(nm)+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
  });
- if(idle.length)html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.55">&#8627; +'+idle.length+' idle · $0: '+esc(idle.join(', '))+'</td></tr>';
  return html;
 }
 /* ── telemetry render ── */
@@ -582,7 +598,8 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     keep the last-good companion totals. Real root: make the companion state read atomic in
     OmegaTelemetryServer (tracked separately). */
  if(!(j&&j.by_book&&j.by_book.OMEGA)){return;}
- var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
+)OMEGAD2"
+R"OMEGAD3( var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
  /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
@@ -590,8 +607,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
   be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
   var obr=ob.by_reason||{},cbr=cbk.by_reason||{};
-)OMEGAD2"
-R"OMEGAD3(  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
+  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
   Object.keys(obr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(obr[k]));});
   tip+='\nCRYPTO '+fmt$(cr)+':';
   Object.keys(cbr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(cbr[k]));});
@@ -778,7 +794,8 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
 function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent='';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
-  var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
+)OMEGAD3"
+R"OMEGAD4(  var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
  var ks=Object.keys(by).sort(function(a,b){return by[b].pnl-by[a].pnl;});
  var mx=1;ks.forEach(function(k){mx=Math.max(mx,Math.abs(by[k].pnl));});
  var seenComp={};
@@ -788,8 +805,7 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
    +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
-)OMEGAD3"
-R"OMEGAD4(   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
+   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>'
    +ledgerCompRow(k,seenComp);}).join('');
  t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
@@ -965,7 +981,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  function Y(v){return padT+ph*(1-(v-lo)/(hi-lo));}
  ctx.fillStyle='#6B7785';
  for(var g=0;g<=5;g++){var gy=padT+ph*g/5,gv=hi-(hi-lo)*g/5;
-  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+pw,gy);ctx.stroke();
+)OMEGAD4"
+R"OMEGAD5(  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+pw,gy);ctx.stroke();
   ctx.fillText(gv.toFixed(dp),padL+pw+6,gy+3);}
  for(var t=0;t<=4;t++){var ii=Math.round((n-1)*t/4),d=new Date(bars[ii][0]*1000);
   var lb=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
@@ -974,8 +991,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   ctx.fillText(lb,Math.min(X(ii),W-padR-62),H-4);}
  /* step points; emit null as a gap when a level is unwarmed (<=0) so the line
     never drops to Y(0)/off-chart (that was hiding resistance). */
-)OMEGAD4"
-R"OMEGAD5( function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
+ function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
   if(v<=0){p.push(null);continue;}
   if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
   p.push([X(i),Y(v)]);}return p;}
