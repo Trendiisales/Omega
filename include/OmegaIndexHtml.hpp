@@ -110,7 +110,7 @@ a{color:var(--blu);text-decoration:none}
     <span id="ltcount" class="lbl"></span>
     <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
   </div>
-  <div style="max-height:132px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
+  <div style="max-height:340px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
 </div>
 
 <!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
@@ -430,14 +430,18 @@ R"OMEGAD2( var bks=pbooks[engine||'']||pbooks[e]||[];
  if(pe){var bk=safe(pe.realized);
   parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' books');}
  var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
- /* per-BOOK breakdown: EACH companion book displayed with its own clips + banked $
-    (operator 2026-07-04 — was one merged line, now every book shown individually). */
+ /* per-BOOK breakdown: surface only ACTIVE books (clipped / open / has-bank) individually;
+    idle 0-clip books collapse to a single "+N idle" one-liner so a parent w/ 6 nested books
+    doesn't drown the row in noise (operator 2026-07-04 — was every book on its own line). */
+ var idle=0;
  bks.forEach(function(b){
    var bk=safe(b.realized),clips=b.closed||0;
+   if(b.idle&&!clips&&!b.open&&!bk){idle++;return;}
    var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
    var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
    html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; '+(b.book||'')+' · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
  });
+ if(idle)html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.6">&#8627; +'+idle+' idle book'+(idle===1?'':'s')+' · 0 clips</td></tr>';
  return html;
 }
 /* ── telemetry render ── */
@@ -589,14 +593,14 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(typeof updDayPnl==='function')updDayPnl();
  if(typeof drawEquity==='function')drawEquity();
  /* GOLD COMPANIONS panel feed: per-engine rollup + open detail (OMEGA book, gold engines only),
-    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
+)OMEGAD2"
+R"OMEGAD3(    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
     per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
  window._gcPer=j.per_engine||{};
  window._gcPerBooks=j.per_engine_books||{};
  var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
  window._gcOpen=gm;
-)OMEGAD2"
-R"OMEGAD3( if(typeof drawGC==='function')drawGC();
+ if(typeof drawGC==='function')drawGC();
  /* refresh the ENGINE LEDGER too so the companion sub-row under each engine picks up
     fresh per_engine banked totals (operator: companion shown under the engine it mimics). */
  if(typeof drawLedger==='function'&&ROWS.length)drawLedger();
@@ -746,7 +750,11 @@ function gcMatch(k){var per=window._gcPer||{};var kb=(k||'').replace(/Engine$/,'
  for(var ck in per){var cb=ck.replace(/Engine$/,'');
   if(kb===cb||kb.indexOf(cb)===0||cb.indexOf(kb)===0)return {key:ck,e:per[ck]};}
  return null;}
-function ledgerCompRow(k){var m=gcMatch(k);if(!m)return '';
+function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
+ /* one family companion book (per_engine keyed by FAMILY) can match MULTIPLE ledger variant
+    rows (XauTrendFollow4h_Donchian… + _Keltner… both strip to XauTrendFollow4h). Render the
+    book ONCE — under the first (highest-pnl) matching variant — else phantom double-count. */
+ if(seen){if(seen[m.key])return '';seen[m.key]=1;}
  var e=m.e||{},od=(window._gcOpen||{})[m.key];
  var closed=e.closed||0,openn=e.open||0,bank=safe(e.realized);
  if(!closed&&!openn&&!bank)return '';
@@ -763,6 +771,7 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
   var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
  var ks=Object.keys(by).sort(function(a,b){return by[b].pnl-by[a].pnl;});
  var mx=1;ks.forEach(function(k){mx=Math.max(mx,Math.abs(by[k].pnl));});
+ var seenComp={};
  var rows=ks.map(function(k){var e=by[k],c=e.pnl>=0?'g':'r';
   var w=Math.max(2,Math.abs(e.pnl)/mx*100);
   return '<tr><td class="l" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</td>'
@@ -771,7 +780,7 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
    +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>'
-   +ledgerCompRow(k);}).join('');
+   +ledgerCompRow(k,seenComp);}).join('');
  t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
  el('ledgern').textContent=ks.length+' engines · net '+fmt$(net);}
@@ -782,7 +791,8 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
   /* no shadow closes -> still fold the companion (paper) bank for the window so it never silently drops */
   var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
   tweenNum('eqtot',cw,fmt$);el('eqtot').style.color=cw>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cw?'<span style="color:var(--t3)">paper only</span>':'';return;}
- var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
+)OMEGAD3"
+R"OMEGAD4( var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
  var lo=Math.min(0,mdd,Math.min.apply(null,cum)),hi=Math.max.apply(null,cum.concat([1]));
@@ -794,8 +804,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.fillText(fmt$(hi),2,Y(hi)+9);ctx.fillText('$0',2,Y(0)-3);
  /* gradient area fill under the curve */
  ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
-)OMEGAD3"
-R"OMEGAD4( ctx.lineTo(X(cum.length-1),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();
+ ctx.lineTo(X(cum.length-1),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();
  var gr=ctx.createLinearGradient(0,Y(hi),0,Y(Math.min(0,lo)));
  gr.addColorStop(0,'rgba(46,189,133,0.22)');gr.addColorStop(1,'rgba(46,189,133,0.02)');
  ctx.fillStyle=gr;ctx.fill();
@@ -970,7 +979,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  cloud(7,6,'rgba(226,72,77,0.10)');cloud(8,9,'rgba(46,189,133,0.10)');cloud(6,8,'rgba(133,183,235,0.04)');
  strokeSteps(spts(7),'#FF5A5F',2.0);strokeSteps(spts(9),'#2EBD85',2.0);                 /* R2 / S2 solid, brighter+thicker */
  strokeSteps(spts(6),'rgba(255,90,95,0.85)',1.4,[5,4]);strokeSteps(spts(8),'rgba(46,189,133,0.85)',1.4,[5,4]); /* R1 / S1 dashed */
- var bw=Math.max(1,Math.min(7,pw/n*0.62));
+)OMEGAD4"
+R"OMEGAD5( var bw=Math.max(1,Math.min(7,pw/n*0.62));
  for(var i=0;i<n;i++){var b=bars[i],up=b[4]>=b[1],c=up?'#2EBD85':'#E2484D',x=X(i);
   ctx.strokeStyle=c;ctx.globalAlpha=0.85;ctx.lineWidth=bw>3?1:0.7;
   ctx.beginPath();ctx.moveTo(x,Y(b[2]));ctx.lineTo(x,Y(b[3]));ctx.stroke();ctx.globalAlpha=1;
@@ -980,8 +990,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  ctx.save();ctx.shadowColor='#85B7EB';ctx.shadowBlur=7;strokeSteps(ap,'rgba(133,183,235,0.45)',3.5);ctx.restore();
  strokeSteps(ap,'#85B7EB',1.8);
  /* current-level labels on the right edge (R2/R1/PR/S1/S2) -- clarity */
-)OMEGAD4"
-R"OMEGAD5( (function(){var lb=bars[n-1],defs=[[7,'R2','#FF5A5F'],[6,'R1','#FF8A8E'],[5,'PR','#85B7EB'],[8,'S1','#7FD9B0'],[9,'S2','#2EBD85']];
+ (function(){var lb=bars[n-1],defs=[[7,'R2','#FF5A5F'],[6,'R1','#FF8A8E'],[5,'PR','#85B7EB'],[8,'S1','#7FD9B0'],[9,'S2','#2EBD85']];
   ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
   defs.forEach(function(d){var v=lb[d[0]];if(v<=0)return;var y=Y(v);if(y<padT||y>padT+ph)return;
    var tx=padL+pw+2,txt=d[1]+' '+v.toFixed(dp);
