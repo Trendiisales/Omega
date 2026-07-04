@@ -468,6 +468,34 @@ function compSub(engine,symbol,colspan,nLegs){
  });
  return html;
 }
+/* PER-LEG companion (operator 2026-07-04 "true per-leg accounting"): show EACH real leg's own
+   companion bank, matched by entry price, instead of one engine-family number repeated under every
+   leg. Reads window._gcPerLeg (aggregate per_leg, keyed "engine|entry"). The companion producer
+   keys positions by (engine, entry) -- so two real legs opened at the SAME price are ONE companion
+   position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
+   the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
+function findLeg(engine,entry){
+ var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
+ Object.keys(pl).forEach(function(k){var v=pl[k];var keng=(v.engine||'').replace(/Engine$/,'');
+  if(keng!==e&&keng!==(engine||''))return;
+  if(Math.abs(safe(v.entry)-eNum)<0.01)best=v;});
+ return best;
+}
+function compSubLeg(engine,symbol,entry,colspan,dup){
+ var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
+ if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
+ var m=findLeg(engine,entry);
+ if(!m)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.5;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">no clip on this leg</span></td></tr>';
+ var bk=safe(m.realized);var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
+ var head='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn);font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span style="color:'+col+'">'+fmt$(bk)+'</span> banked · '+(m.closed||0)+' clip'+((m.closed||0)===1?'':'s')+(m.open?' · <span class="g">'+m.open+' open</span>':'')+' <span class="d">(this leg only · additive)</span></td></tr>';
+ var sub='';(m.books||[]).forEach(function(b){
+   var rb=safe(b.realized);var c2=(rb>0?'var(--grn)':(rb<0?'var(--red)':'var(--t2)'));
+   var nm=(b.book==='main')?(e.toLowerCase().replace(/[^a-z0-9]+/g,'')+'_main'):b.book;
+   var state=b.open?'<span class="g">open</span>':(b.closed?'<span class="d">clipped</span>':'<span class="d">flat</span>');
+   sub+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; <b>'+esc(nm)+'</b> · '+state+' · '+(b.closed||0)+' clip'+((b.closed||0)===1?'':'s')+' · <span style="color:'+c2+'">'+fmt$(rb)+'</span></td></tr>';
+ });
+ return head+sub;
+}
 /* ── telemetry render ── */
 var lastJ=null;
 function render(J){lastJ=J;
@@ -552,9 +580,10 @@ function render(J){lastJ=J;
   /* tick-driven publisher goes quiet when the market is closed -- positions can
      still be OPEN (held over the weekend). Fall back to the position REGISTRY
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
-  if(REGPOS.length){var sum2=0;var shown2={};var ckN2={};REGPOS.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN2[c]=(ckN2[c]||0)+1;});
+  if(REGPOS.length){var sum2=0;var seenLeg2={};
    var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
-   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=compSub(t.engine,t.symbol,6,ckN2[ck]);shown2[ck]=1;
+   var lk=(t.engine||'')+'|'+fmt2(t.entry,2);var dup=!!seenLeg2[lk];seenLeg2[lk]=1;
+   var cr=compSubLeg(t.engine,t.symbol,t.entry,6,dup);
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
@@ -565,10 +594,12 @@ function render(J){lastJ=J;
    el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
-  var sum=0;var shown={};var ckN={};lts.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN[c]=(ckN[c]||0)+1;});
+  var sum=0;var seenLeg={};
   var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=compSub(t.engine,t.symbol,9,ckN[ck]);shown[ck]=1;
-  return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
+  var lk=(t.engine||'')+'|'+fmt2(t.entry,2);var dup=!!seenLeg[lk];seenLeg[lk]=1;
+  var cr=compSubLeg(t.engine,t.symbol,t.entry,9,dup);
+)OMEGAD2"
+R"OMEGAD3(  return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
@@ -598,8 +629,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     keep the last-good companion totals. Real root: make the companion state read atomic in
     OmegaTelemetryServer (tracked separately). */
  if(!(j&&j.by_book&&j.by_book.OMEGA)){return;}
-)OMEGAD2"
-R"OMEGAD3( var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
+ var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
  /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
@@ -624,6 +654,7 @@ R"OMEGAD3( var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='O
     per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
  window._gcPer=j.per_engine||{};
  window._gcPerBooks=j.per_engine_books||{};
+ window._gcPerLeg=j.per_leg||{};
  var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
  window._gcOpen=gm;
  if(typeof drawGC==='function')drawGC();
@@ -652,6 +683,11 @@ var CC_ROSTER=[
  {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
 ];
 function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
+/* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
+   pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
+   pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
+var CRYPTO_POOL_USD=10000;
+function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
 /* Operator 2026-07-04b: "same as gold for crypto — companion engines under their respective lines."
    Each crypto leg renders as a PARENT line (the trend engine that rides WIDE to flip) with its
    companion (up-jump clip) nested as an indented `↳` sub-row directly beneath it — mirroring the
@@ -660,7 +696,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
  var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
       +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
       +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
-      +'<td class="lbl">clips</td><td class="lbl">bank(bp)</td></tr>';
+      +'<td class="lbl">clips</td><td class="lbl">bank(bp · $)</td></tr>';
  var narm=0,ntot=0,totclips=0,totbank=0;
  CC_ROSTER.forEach(function(r){
   /* PARENT engine line (the crypto trend leg it mimics) */
@@ -675,7 +711,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bkv=safe(s.bank_bp);
-  var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+'</span>';
+  var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+' bp <span class="d">$'+fmt2(bpUsd(s.bank_bp),2)+'</span></span>';
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
   /* nested companion (clip) sub-row */
   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion (up-jump clip)'+mtag+'</td><td class="l">'+st+'</td>'
@@ -684,7 +720,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
- el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
@@ -754,7 +790,8 @@ function parseShadow(txt){
  out.sort(function(a,b){return a.ts-b.ts;});return out;}
 function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
- return ROWS.filter(function(r){return r.ts>=cut;});}
+)OMEGAD3"
+R"OMEGAD4( return ROWS.filter(function(r){return r.ts>=cut;});}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
@@ -794,8 +831,7 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
 function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent='';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
-)OMEGAD3"
-R"OMEGAD4(  var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
+  var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
  var ks=Object.keys(by).sort(function(a,b){return by[b].pnl-by[a].pnl;});
  var mx=1;ks.forEach(function(k){mx=Math.max(mx,Math.abs(by[k].pnl));});
  var seenComp={};
@@ -941,7 +977,8 @@ function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
    +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
-  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
+)OMEGAD4"
+R"OMEGAD5(  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
    +'<td class="num d">'+lots(r.size)+'</td>'
    +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
@@ -981,8 +1018,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  function Y(v){return padT+ph*(1-(v-lo)/(hi-lo));}
  ctx.fillStyle='#6B7785';
  for(var g=0;g<=5;g++){var gy=padT+ph*g/5,gv=hi-(hi-lo)*g/5;
-)OMEGAD4"
-R"OMEGAD5(  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+pw,gy);ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+pw,gy);ctx.stroke();
   ctx.fillText(gv.toFixed(dp),padL+pw+6,gy+3);}
  for(var t=0;t<=4;t++){var ii=Math.round((n-1)*t/4),d=new Date(bars[ii][0]*1000);
   var lb=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
@@ -1140,7 +1176,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
   +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
  tip.style.display='block';
- var tw2=tip.offsetWidth,th2=tip.offsetHeight;
+)OMEGAD5"
+R"OMEGAD6( var tw2=tip.offsetWidth,th2=tip.offsetHeight;
  tip.style.left=Math.min(window.innerWidth-tw2-8,cx+14)+'px';
  tip.style.top=(cy-th2-12<0?cy+18:cy-th2-12)+'px';}
 (function(){var cvp=el('prc');
@@ -1172,6 +1209,6 @@ window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
 </body>
 </html>
-)OMEGAD5"
+)OMEGAD6"
 ;
 } // namespace omega_gui

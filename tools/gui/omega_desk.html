@@ -460,6 +460,34 @@ function compSub(engine,symbol,colspan,nLegs){
  });
  return html;
 }
+/* PER-LEG companion (operator 2026-07-04 "true per-leg accounting"): show EACH real leg's own
+   companion bank, matched by entry price, instead of one engine-family number repeated under every
+   leg. Reads window._gcPerLeg (aggregate per_leg, keyed "engine|entry"). The companion producer
+   keys positions by (engine, entry) -- so two real legs opened at the SAME price are ONE companion
+   position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
+   the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
+function findLeg(engine,entry){
+ var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
+ Object.keys(pl).forEach(function(k){var v=pl[k];var keng=(v.engine||'').replace(/Engine$/,'');
+  if(keng!==e&&keng!==(engine||''))return;
+  if(Math.abs(safe(v.entry)-eNum)<0.01)best=v;});
+ return best;
+}
+function compSubLeg(engine,symbol,entry,colspan,dup){
+ var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
+ if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
+ var m=findLeg(engine,entry);
+ if(!m)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.5;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">no clip on this leg</span></td></tr>';
+ var bk=safe(m.realized);var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
+ var head='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn);font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span style="color:'+col+'">'+fmt$(bk)+'</span> banked · '+(m.closed||0)+' clip'+((m.closed||0)===1?'':'s')+(m.open?' · <span class="g">'+m.open+' open</span>':'')+' <span class="d">(this leg only · additive)</span></td></tr>';
+ var sub='';(m.books||[]).forEach(function(b){
+   var rb=safe(b.realized);var c2=(rb>0?'var(--grn)':(rb<0?'var(--red)':'var(--t2)'));
+   var nm=(b.book==='main')?(e.toLowerCase().replace(/[^a-z0-9]+/g,'')+'_main'):b.book;
+   var state=b.open?'<span class="g">open</span>':(b.closed?'<span class="d">clipped</span>':'<span class="d">flat</span>');
+   sub+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; <b>'+esc(nm)+'</b> · '+state+' · '+(b.closed||0)+' clip'+((b.closed||0)===1?'':'s')+' · <span style="color:'+c2+'">'+fmt$(rb)+'</span></td></tr>';
+ });
+ return head+sub;
+}
 /* ── telemetry render ── */
 var lastJ=null;
 function render(J){lastJ=J;
@@ -544,9 +572,10 @@ function render(J){lastJ=J;
   /* tick-driven publisher goes quiet when the market is closed -- positions can
      still be OPEN (held over the weekend). Fall back to the position REGISTRY
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
-  if(REGPOS.length){var sum2=0;var shown2={};var ckN2={};REGPOS.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN2[c]=(ckN2[c]||0)+1;});
+  if(REGPOS.length){var sum2=0;var seenLeg2={};
    var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
-   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=compSub(t.engine,t.symbol,6,ckN2[ck]);shown2[ck]=1;
+   var lk=(t.engine||'')+'|'+fmt2(t.entry,2);var dup=!!seenLeg2[lk];seenLeg2[lk]=1;
+   var cr=compSubLeg(t.engine,t.symbol,t.entry,6,dup);
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
@@ -557,9 +586,10 @@ function render(J){lastJ=J;
    el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
-  var sum=0;var shown={};var ckN={};lts.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN[c]=(ckN[c]||0)+1;});
+  var sum=0;var seenLeg={};
   var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=compSub(t.engine,t.symbol,9,ckN[ck]);shown[ck]=1;
+  var lk=(t.engine||'')+'|'+fmt2(t.entry,2);var dup=!!seenLeg[lk];seenLeg[lk]=1;
+  var cr=compSubLeg(t.engine,t.symbol,t.entry,9,dup);
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
@@ -615,6 +645,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
  window._gcPer=j.per_engine||{};
  window._gcPerBooks=j.per_engine_books||{};
+ window._gcPerLeg=j.per_leg||{};
  var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
  window._gcOpen=gm;
  if(typeof drawGC==='function')drawGC();
@@ -643,6 +674,11 @@ var CC_ROSTER=[
  {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
 ];
 function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
+/* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
+   pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
+   pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
+var CRYPTO_POOL_USD=10000;
+function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
 /* Operator 2026-07-04b: "same as gold for crypto — companion engines under their respective lines."
    Each crypto leg renders as a PARENT line (the trend engine that rides WIDE to flip) with its
    companion (up-jump clip) nested as an indented `↳` sub-row directly beneath it — mirroring the
@@ -651,7 +687,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
  var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
       +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
       +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
-      +'<td class="lbl">clips</td><td class="lbl">bank(bp)</td></tr>';
+      +'<td class="lbl">clips</td><td class="lbl">bank(bp · $)</td></tr>';
  var narm=0,ntot=0,totclips=0,totbank=0;
  CC_ROSTER.forEach(function(r){
   /* PARENT engine line (the crypto trend leg it mimics) */
@@ -666,7 +702,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bkv=safe(s.bank_bp);
-  var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+'</span>';
+  var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+' bp <span class="d">$'+fmt2(bpUsd(s.bank_bp),2)+'</span></span>';
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
   /* nested companion (clip) sub-row */
   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion (up-jump clip)'+mtag+'</td><td class="l">'+st+'</td>'
@@ -675,7 +711,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
- el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
