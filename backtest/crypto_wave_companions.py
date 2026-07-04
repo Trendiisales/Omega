@@ -36,6 +36,10 @@ def load_1h(sym):
         for r in csv.DictReader(f):
             rows.append((int(r["open_time_ms"]), float(r["close"])))
     rows.sort()
+    wd = os.environ.get("WINDOW_DAYS")  # recent-regime: trade only last N days (DMA still full-history)
+    if wd:
+        cutoff = rows[-1][0] - int(float(wd)) * 86400_000
+        rows = [r for r in rows if r[0] >= cutoff]
     return rows
 
 
@@ -84,7 +88,12 @@ def waves(sym, step, stag_ms, rev):
         if px < ref:
             ref = px
         if px >= ref * (1 + step):
-            if not bull_asof(day_ms, dma, ms, cby):       # bull-gate
+            gate = os.environ.get("BULL_GATE", "1")        # BULL_GATE=0 -> trade below 200DMA too
+            #  =bear -> ONLY trade below 200DMA (isolate the bear-spike regime)
+            bull = bull_asof(day_ms, dma, ms, cby)
+            if gate == "1" and not bull:                   # bull-gate (default)
+                ref = px; i += 1; continue
+            if gate == "bear" and bull:                    # bear-only isolation
                 ref = px; i += 1; continue
             arms = [(ms, px)]                              # companion #1
             path = [(ms, px)]
