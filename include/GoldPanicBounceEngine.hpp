@@ -1,5 +1,6 @@
 #pragma once
 //  ADVERSE-PROTECTION: trail-only by design, backtested -- chandelier ATR-trail + structural selloff-low initial stop + MAX_HOLD_BARS(240) time-stop + macro-hostile gold_regime().long_blocked() ENTRY filter (added 2026-06-21); NO cold LOSS_CUT on purpose (2026-06-12 sweep: a velocity/cut gate HURTS gold -- depth, not speed, is the edge). S-2026-06-29 REACTIVATED to SHADOW: the 2026-06-17 cull basis was live ledger net -$205 / MAEp90 $5781 catastrophic falling-knife with "needs an entry filter not an exit" -- that entry filter (the macro long-block) now exists, and faithful BT at correct IBKR cost = bull PF~1.80 both-WF-halves+ / 2022-bear breakeven. Live-size BLOCKED pending a fresh shadow MAE distribution (cull was MAE, not PnL).
+//  CADENCE (S-2026-07-05 intrabar-cadence): the chandelier/init stop is now CHECKED per-tick (_manage_intrabar in on_tick), not only at H1 close. Was H1-close-only -> a mid-hour reversal gave back up to an hour (bar-close-blind, same class as the crypto UpJump fix). Faithful BT (backtest/goldpanic_intrabar_vs_h1.cpp, exit-cadence toggle only, real params): intra-bar net +30-44% bull (m5/m30 agree) / +11% bear (less loss), PF up both regimes, maxDD equal-or-better; only cost a ~$13-wider bull worst-trade from gap fills. Chandelier LEVEL (hh - TRAIL_ATR*ATR) still uses the H1 ATR; only the CHECK is per-tick. TIME_STOP + entry logic stay on the H1 boundary. Verdict of the 5-engine cadence audit (outputs/CADENCE_AUDIT_2026-07-05.md): this was the ONLY suspect where intra-bar beat bar-close.
 // =============================================================================
 // GoldPanicBounceEngine.hpp -- "big reversal day" V-bounce catcher for XAUUSD
 // =============================================================================
@@ -127,6 +128,14 @@ public:
         const double mid = (bid + ask) * 0.5;
         const double spread = ask - bid;
         _accumulate(mid, now_ms);
+
+        // S-2026-07-05 intra-bar exit: check the chandelier/init stop against the
+        // LIVE tick price EVERY tick, not just at H1 close. Ratchets hh with the
+        // live price and exits the instant the stop is touched intra-hour. Level
+        // (chandelier = hh - TRAIL_ATR*ATR) uses the last-closed-bar H1 ATR; only
+        // the CHECK is per-tick. TIME_STOP + entry decisions stay on the H1 bar
+        // boundary below. Faithful-BT-backed (see header CADENCE note).
+        if (m_pos.active) _manage_intrabar(mid);
 
         const int64_t bar = now_ms / 1000 / BAR_SECS;
         if (acc_.n > 0 && bar != acc_bar_) {
@@ -257,7 +266,31 @@ private:
         if (curL <= eff)                                     { exit_px = eff;  why = (eff>m_pos.init_stop?"TRAIL_HIT":"SL_HIT"); }
         else if (bar_seq_ - m_pos.entry_bar_seq >= MAX_HOLD_BARS) { exit_px = curC; why = "TIME_STOP"; }
         if (!why) return;
+        _emit_close(exit_px, why, ext_close);
+    }
 
+    // S-2026-07-05 (intrabar-cadence): per-tick chandelier/init-stop check. Runs
+    // from on_tick every tick while a position is open, so a mid-hour reversal
+    // exits the instant the stop is touched instead of at the next H1 close.
+    // ATR is the last completed-bar value (an H1 quantity, held constant intra-
+    // bar -- matches the faithful BT in backtest/goldpanic_intrabar_vs_h1.cpp).
+    // TIME_STOP stays on the bar boundary in _manage (a timeout, not a reversal).
+    void _manage_intrabar(double px) {
+        if (c_.empty()) return;
+        const double A = atr_.back() > 0 ? atr_.back() : m_pos.atr_at_entry;
+        if (A <= 0.0) return;
+        if (px > m_pos.hh) m_pos.hh = px;
+        const double adverse = m_pos.entry - px; if (adverse > m_pos.mae) m_pos.mae = adverse;
+        const double trail_stop = m_pos.hh - TRAIL_ATR * A;
+        const double eff = std::max(m_pos.init_stop, trail_stop);
+        if (px <= eff)
+            _emit_close(eff, (eff > m_pos.init_stop ? "TRAIL_HIT" : "SL_HIT"), nullptr);
+    }
+
+    // shared close-out: writes the TradeRecord + fires callbacks + clears pos.
+    // Called by both the bar-close _manage (TIME_STOP / backstop) and the
+    // per-tick _manage_intrabar (chandelier/init stop touched intra-hour).
+    void _emit_close(double exit_px, const char* why, const CloseCallback* ext_close) {
         const double pnl_pts = (exit_px - m_pos.entry) - COST_COVER_PTS;
         omega::TradeRecord tr{};
         tr.engine = "GoldPanicBounce"; tr.regime = "PANIC_BOUNCE"; tr.symbol = "XAUUSD";
