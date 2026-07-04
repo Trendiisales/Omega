@@ -613,7 +613,8 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
-  var bk =s.bank_bp===undefined?'<span class="d">—</span>':fmt2(s.bank_bp,1);
+  var bkv=safe(s.bank_bp);
+  var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+'</span>';
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
   /* nested companion (clip) sub-row */
   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion (up-jump clip)'+mtag+'</td><td class="l">'+st+'</td>'
@@ -622,7 +623,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
- el('ccinfo').textContent=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank '+fmt2(totbank,1)+' bp'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}

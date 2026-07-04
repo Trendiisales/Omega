@@ -622,7 +622,8 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
-  var bk =s.bank_bp===undefined?'<span class="d">—</span>':fmt2(s.bank_bp,1);
+  var bkv=safe(s.bank_bp);
+  var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+'</span>';
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
   /* nested companion (clip) sub-row */
   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion (up-jump clip)'+mtag+'</td><td class="l">'+st+'</td>'
@@ -631,7 +632,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
  });
  el('cctab').innerHTML=h;
- el('ccinfo').textContent=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank '+fmt2(totbank,1)+' bp'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
@@ -786,10 +787,10 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
  var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var netT=net+cw;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
- el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
-  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
 )OMEGAD3"
-R"OMEGAD4(  +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
+R"OMEGAD4( el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
+  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
+  +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
 function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/US500|USTEC|NAS|DJ30|GER|UK100|ESTX|US30/i.test(sym))return 'INDEX';
@@ -977,13 +978,13 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   var t0=bars[0][0],t1=bars[n-1][0]+ (bars[1]?bars[1][0]-bars[0][0]:300);
   function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
   function bx(ts){var lo=0,hi=n-1;
-   while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
+)OMEGAD4"
+R"OMEGAD5(   while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
    return lo;}
   var vis=ROWS.filter(function(r){return sm(r.sym)&&r.ets&&r.epx&&!(r.ets>t1||r.ts<t0);});
   var nx=0,exVis=0;
   vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
-)OMEGAD4"
-R"OMEGAD5(  window._prNewest=nx;
+  window._prNewest=nx;
   if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;
    ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
