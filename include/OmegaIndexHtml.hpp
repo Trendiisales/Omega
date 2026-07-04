@@ -58,7 +58,8 @@ a{color:var(--blu);text-decoration:none}
 .ops .lbl{font-size:9.5px}
 .ops .num{font-size:10.5px}
 .ops #dom{font-size:10px}
-@media(max-width:980px){.g2,.g3{grid-template-columns:1fr !important}}
+@media(max-width:1180px){.deskmain{grid-template-columns:1fr !important}}
+@media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}}
 </style>
 </head>
 <body>
@@ -112,8 +113,11 @@ a{color:var(--blu);text-decoration:none}
   <div style="max-height:132px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
 </div>
 
+<!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
+<div class="grid deskmain" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);align-items:start">
+
 <!-- ═══ PREDICTIVE RANGES ═══ -->
-<div class="pan" style="margin-top:8px">
+<div class="pan" style="margin-top:0">
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     <span class="lbl">PREDICTIVE RANGES</span>
     <span class="lbl" style="color:var(--t3)">stepped · non-repainting</span>
@@ -134,8 +138,8 @@ a{color:var(--blu);text-decoration:none}
   </div>
 </div>
 
-<!-- ═══ EQUITY + RISK ═══ -->
-<div class="grid g2" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
+<!-- ═══ MONEY RAIL (right of chart): equity + trade history stacked ═══ -->
+<div class="grid" style="grid-template-columns:1fr;margin-top:0;align-content:start">
   <div class="pan">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span class="lbl">SHADOW EQUITY (paper, all engines)</span>
@@ -152,11 +156,13 @@ a{color:var(--blu);text-decoration:none}
       <span class="lbl">TRADE HISTORY — all shadow closes (newest first)</span>
       <span id="histn" class="lbl"></span>
     </div>
-    <div style="max-height:300px;overflow-y:auto;flex:1">
+    <div style="max-height:360px;overflow-y:auto;flex:1">
       <table id="hist"><tr><td class="l d">loading…</td></tr></table>
     </div>
   </div>
 </div>
+
+</div><!-- /deskmain -->
 
 <!-- ═══ ENGINE LEDGER (running totals) + PROMOTION ═══ -->
 <div class="grid g2" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)">
@@ -188,8 +194,11 @@ a{color:var(--blu);text-decoration:none}
   <div id="heat"></div>
 </div>
 
+<!-- ═══ COMPANIONS ROW: crypto | gold side-by-side (was stacked → halves vertical space) ═══ -->
+<div class="grid g2" style="grid-template-columns:1fr 1fr;align-items:start">
+
 <!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
-<div class="pan" style="margin-top:8px">
+<div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">CRYPTO COMPANIONS — up-jump stall-clip books (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
     <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
@@ -198,7 +207,7 @@ a{color:var(--blu);text-decoration:none}
 </div>
 
 <!-- ═══ GOLD COMPANIONS — trend stall-clip books (OMEGA book · shadow, additive) ═══ -->
-<div class="pan" style="margin-top:8px">
+<div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">GOLD COMPANIONS — trend stall-clip books (paper · additive · judged STANDALONE, never vs-WIDE)</span>
     <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
@@ -206,12 +215,15 @@ a{color:var(--blu);text-decoration:none}
   <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
+</div><!-- /companions row -->
+
 <!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
 
 <!-- ═══ OPS STRIP — DOM only. RISK&GOVERNOR + CLUSTER EXPOSURE + MICROSTRUCTURE·BROKER·SIGNALS panels removed 2026-07-04 (operator: irrelevant) ═══ -->
 <div class="grid ops" style="grid-template-columns:minmax(0,1fr)">
   <div class="pan">
-    <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
+)OMEGAD0"
+R"OMEGAD1(    <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
     <div id="dom" class="num"></div>
     <div style="margin-top:5px">
       <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
@@ -223,8 +235,7 @@ a{color:var(--blu);text-decoration:none}
 <div style="display:flex;gap:14px;align-items:center;margin-top:8px" class="lbl">
   <a href="/legacy">legacy GUI</a>
   <span id="csvinfo"></span>
-)OMEGAD0"
-R"OMEGAD1(  <button style="margin-left:auto" onclick="if(confirm('Clear ledger?'))fetch('/api/clear_ledger',{method:'POST'})">clear ledger</button>
+  <button style="margin-left:auto" onclick="if(confirm('Clear ledger?'))fetch('/api/clear_ledger',{method:'POST'})">clear ledger</button>
 </div>
 
 <div id="prtip"></div>
@@ -410,14 +421,14 @@ function compSub(engine,symbol,colspan){
  var e=(engine||'').replace(/Engine$/,'');
  var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
  var pe=per[engine||'']||per[e];
- var bks=pbooks[engine||'']||pbooks[e]||[];
+)OMEGAD1"
+R"OMEGAD2( var bks=pbooks[engine||'']||pbooks[e]||[];
  if(!cm&&!pe&&!bks.length)return '';
  var parts=[];
  if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
   parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
  if(pe){var bk=safe(pe.realized);
-)OMEGAD1"
-R"OMEGAD2(  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' books');}
+  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' books');}
  var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
  /* per-BOOK breakdown: EACH companion book displayed with its own clips + banked $
     (operator 2026-07-04 — was one merged line, now every book shown individually). */
@@ -584,7 +595,8 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  window._gcPerBooks=j.per_engine_books||{};
  var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
  window._gcOpen=gm;
- if(typeof drawGC==='function')drawGC();
+)OMEGAD2"
+R"OMEGAD3( if(typeof drawGC==='function')drawGC();
  /* refresh the ENGINE LEDGER too so the companion sub-row under each engine picks up
     fresh per_engine banked totals (operator: companion shown under the engine it mimics). */
  if(typeof drawLedger==='function'&&ROWS.length)drawLedger();
@@ -592,8 +604,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
 setInterval(pollComp,5000);pollComp();
 
 /* ── crypto companions (up-jump stall-clip, shadow · josgp1) ──
-)OMEGAD2"
-R"OMEGAD3(   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
+   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
    always renders the config even before any live push. Live state (armed / peak mfe% /
    bars-since-high / clips / bank_bp) overlaid per-symbol from /api/crypto_companion
    (crypto_companion_state.json, pushed from josgp1) when present. STANDALONE book —
@@ -783,14 +794,14 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.fillText(fmt$(hi),2,Y(hi)+9);ctx.fillText('$0',2,Y(0)-3);
  /* gradient area fill under the curve */
  ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
- ctx.lineTo(X(cum.length-1),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();
+)OMEGAD3"
+R"OMEGAD4( ctx.lineTo(X(cum.length-1),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();
  var gr=ctx.createLinearGradient(0,Y(hi),0,Y(Math.min(0,lo)));
  gr.addColorStop(0,'rgba(46,189,133,0.22)');gr.addColorStop(1,'rgba(46,189,133,0.02)');
  ctx.fillStyle=gr;ctx.fill();
  /* glowing equity line + live endpoint dot */
  ctx.save();ctx.shadowColor='#2EBD85';ctx.shadowBlur=6;
-)OMEGAD3"
-R"OMEGAD4( ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
+ ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.strokeStyle='#2EBD85';ctx.lineWidth=1.6;ctx.lineJoin='round';ctx.stroke();ctx.restore();
  var ex=X(cum.length-1),ey=Y(cum[cum.length-1]);
  ctx.beginPath();ctx.arc(ex,ey,3,0,6.3);ctx.fillStyle='#2EBD85';ctx.fill();
@@ -969,13 +980,13 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  ctx.save();ctx.shadowColor='#85B7EB';ctx.shadowBlur=7;strokeSteps(ap,'rgba(133,183,235,0.45)',3.5);ctx.restore();
  strokeSteps(ap,'#85B7EB',1.8);
  /* current-level labels on the right edge (R2/R1/PR/S1/S2) -- clarity */
- (function(){var lb=bars[n-1],defs=[[7,'R2','#FF5A5F'],[6,'R1','#FF8A8E'],[5,'PR','#85B7EB'],[8,'S1','#7FD9B0'],[9,'S2','#2EBD85']];
+)OMEGAD4"
+R"OMEGAD5( (function(){var lb=bars[n-1],defs=[[7,'R2','#FF5A5F'],[6,'R1','#FF8A8E'],[5,'PR','#85B7EB'],[8,'S1','#7FD9B0'],[9,'S2','#2EBD85']];
   ctx.font='9px IBM Plex Mono';ctx.textAlign='left';
   defs.forEach(function(d){var v=lb[d[0]];if(v<=0)return;var y=Y(v);if(y<padT||y>padT+ph)return;
    var tx=padL+pw+2,txt=d[1]+' '+v.toFixed(dp);
    ctx.fillStyle='rgba(11,15,20,0.85)';ctx.fillRect(tx,y-6,54,11);
-)OMEGAD4"
-R"OMEGAD5(   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
+   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
   ctx.textAlign='start';})();
  for(var i=0;i<n;i++){var sg=bars[i][11];if(!sg)continue;var x=X(i),y;
   ctx.beginPath();
