@@ -600,15 +600,22 @@ R"OMEGAD3( {sym:'AAVE',arm:1,stall:6,rev:null,reclip:0,   mode:'inverse single-c
  {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
 ];
 function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
+/* Operator 2026-07-04b: "same as gold for crypto — companion engines under their respective lines."
+   Each crypto leg renders as a PARENT line (the trend engine that rides WIDE to flip) with its
+   companion (up-jump clip) nested as an indented `↳` sub-row directly beneath it — mirroring the
+   gold ENGINE LEDGER engine→companion nesting. Companion is STANDALONE additive, never vs-WIDE. */
 function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
- var h='<tr><td class="l lbl">symbol</td><td class="l lbl">companion</td><td class="l lbl">state</td>'
+ var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
       +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
       +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
       +'<td class="lbl">clips</td><td class="lbl">bank(bp)</td></tr>';
  var narm=0,ntot=0,totclips=0,totbank=0;
  CC_ROSTER.forEach(function(r){
+  /* PARENT engine line (the crypto trend leg it mimics) */
+  h+='<tr><td class="l" style="font-weight:600">'+r.sym+' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span></td>'
+    +'<td colspan="9"></td></tr>';
   if(r.mode==='parent-only'){
-   h+='<tr style="opacity:.5"><td class="l">'+r.sym+'</td><td class="l d" colspan="10">parent-only — no companion</td></tr>';return;}
+   h+='<tr style="opacity:.5"><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">&#8627; parent-only — no companion</td></tr>';return;}
   ntot++;var s=live[r.sym]||{};var armed=!!s.armed;if(armed)narm++;
   totclips+=safe(s.clips);totbank+=safe(s.bank_bp);
   var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
@@ -617,7 +624,8 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bk =s.bank_bp===undefined?'<span class="d">—</span>':fmt2(s.bank_bp,1);
   var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
-  h+='<tr><td class="l">'+r.sym+mtag+'</td><td class="l d">clip</td><td class="l">'+st+'</td>'
+  /* nested companion (clip) sub-row */
+  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion (up-jump clip)'+mtag+'</td><td class="l">'+st+'</td>'
     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num">'+r.arm+'</td>'
     +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
@@ -780,7 +788,8 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
-  +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
+)OMEGAD3"
+R"OMEGAD4(  +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
 function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/US500|USTEC|NAS|DJ30|GER|UK100|ESTX|US30/i.test(sym))return 'INDEX';
@@ -791,8 +800,7 @@ function drawHeat(){var rs=winRows();var by={};
  rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
  var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
  var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
-)OMEGAD3"
-R"OMEGAD4( var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
+ var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
  order.forEach(function(g){if(!groups[g])return;
   groups[g].sort(function(a,b){return by[b].pnl-by[a].pnl;});
@@ -974,7 +982,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   var vis=ROWS.filter(function(r){return sm(r.sym)&&r.ets&&r.epx&&!(r.ets>t1||r.ts<t0);});
   var nx=0,exVis=0;
   vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
-  window._prNewest=nx;
+)OMEGAD4"
+R"OMEGAD5(  window._prNewest=nx;
   if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;
    ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
@@ -987,8 +996,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
     ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
     ctx.fillStyle='#6B7785';ctx.fillText(note,padL+pw-nw-7,padT+12);}
    return;}
-)OMEGAD4"
-R"OMEGAD5(  var pills=exVis<=14;   /* suppress $ labels when the window is crowded */
+  var pills=exVis<=14;   /* suppress $ labels when the window is crowded */
   vis.forEach(function(r,vi){
    var win=r.pnl>=0,c=win?'#2EBD85':'#E2484D';
    var hov=PRHOVER&&PRHOVER.t===r;
