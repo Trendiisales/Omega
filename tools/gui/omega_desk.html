@@ -409,31 +409,39 @@ setInterval(pollReg,30000);pollReg();
    live path, so it went invisible on the weekend registry fallback). Additive standalone book —
    never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
    open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
-function compSub(engine,symbol,colspan){
+function compSub(engine,symbol,colspan,nLegs){
  var comp=window._comp||{},per=window._gcPer||{},pbooks=window._gcPerBooks||{};
  var e=(engine||'').replace(/Engine$/,'');
  var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
  var pe=per[engine||'']||per[e];
  var bks=pbooks[engine||'']||pbooks[e]||[];
  if(!cm&&!pe&&!bks.length)return '';
+ /* An engine can run SEVERAL companion books (gold = 2+ per engine, operator 2026-07-04).
+    Each book is a SEPARATE additive standalone engine with its OWN banked $ — NEVER a
+    multiple of one shared number ([[CompanionDominanceError]]). When N legs of the same
+    engine are open, the companion set is rendered ONCE at engine level (not ×N) and each
+    book is listed by name with its OWN pnl so no number is double-counted. */
+ var legNote=(nLegs>1)?(' <span class="d">· covers '+nLegs+' open legs</span>'):'';
  var parts=[];
  if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
   parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
  if(pe){var bk=safe(pe.realized);
-  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' books');}
- var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
- /* per-BOOK breakdown: surface only ACTIVE books (clipped / open / has-bank) individually;
-    idle 0-clip books collapse to a single "+N idle" one-liner so a parent w/ 6 nested books
-    doesn't drown the row in noise (operator 2026-07-04 — was every book on its own line). */
- var idle=0;
+  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
+ var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
+ /* per-BOOK breakdown: EVERY companion book listed by NAME with its OWN pnl + gauge params
+    (operator 2026-07-04 "i want each one displayed with the correct pnl number for that
+    engine and companion"). Active books (clipped/open/banked) get a full line; never-fired
+    0-bank idle books are named on one collapsed line so noise stays bounded but names show. */
+ var idle=[];
  bks.forEach(function(b){
    var bk=safe(b.realized),clips=b.closed||0;
-   if(b.idle&&!clips&&!b.open&&!bk){idle++;return;}
+   var gz=(b.gauge==='USD')?('$'+fmt2(b.arm_usd,0)+'/'+fmt2(b.trail_usd,0)):'PCT';
+   if(b.idle&&!clips&&!b.open&&!bk){idle.push((b.book||'?')+' ('+gz+')');return;}
    var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
    var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
-   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; '+(b.book||'')+' · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
+   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.9">&#8627; <b>'+esc(b.book||'')+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
  });
- if(idle)html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.6">&#8627; +'+idle+' idle book'+(idle===1?'':'s')+' · 0 clips</td></tr>';
+ if(idle.length)html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.55">&#8627; +'+idle.length+' idle · $0: '+esc(idle.join(', '))+'</td></tr>';
  return html;
 }
 /* ── telemetry render ── */
@@ -520,8 +528,9 @@ function render(J){lastJ=J;
   /* tick-driven publisher goes quiet when the market is closed -- positions can
      still be OPEN (held over the weekend). Fall back to the position REGISTRY
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
-  if(REGPOS.length){var sum2=0;var shown2={};var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
-   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown2[ck]?'':compSub(t.engine,t.symbol,6);shown2[ck]=1;
+  if(REGPOS.length){var sum2=0;var shown2={};var ckN2={};REGPOS.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN2[c]=(ckN2[c]||0)+1;});
+   var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
+   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown2[ck]?'':compSub(t.engine,t.symbol,6,ckN2[ck]);shown2[ck]=1;
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
@@ -532,8 +541,9 @@ function render(J){lastJ=J;
    el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
-  var sum=0;var shown={};var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown[ck]?'':compSub(t.engine,t.symbol,9);shown[ck]=1;
+  var sum=0;var shown={};var ckN={};lts.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN[c]=(ckN[c]||0)+1;});
+  var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown[ck]?'':compSub(t.engine,t.symbol,9,ckN[ck]);shown[ck]=1;
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'

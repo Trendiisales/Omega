@@ -416,32 +416,40 @@ setInterval(pollReg,30000);pollReg();
    live path, so it went invisible on the weekend registry fallback). Additive standalone book —
    never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
    open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
-function compSub(engine,symbol,colspan){
+function compSub(engine,symbol,colspan,nLegs){
  var comp=window._comp||{},per=window._gcPer||{},pbooks=window._gcPerBooks||{};
  var e=(engine||'').replace(/Engine$/,'');
  var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
- var pe=per[engine||'']||per[e];
 )OMEGAD1"
-R"OMEGAD2( var bks=pbooks[engine||'']||pbooks[e]||[];
+R"OMEGAD2( var pe=per[engine||'']||per[e];
+ var bks=pbooks[engine||'']||pbooks[e]||[];
  if(!cm&&!pe&&!bks.length)return '';
+ /* An engine can run SEVERAL companion books (gold = 2+ per engine, operator 2026-07-04).
+    Each book is a SEPARATE additive standalone engine with its OWN banked $ — NEVER a
+    multiple of one shared number ([[CompanionDominanceError]]). When N legs of the same
+    engine are open, the companion set is rendered ONCE at engine level (not ×N) and each
+    book is listed by name with its OWN pnl so no number is double-counted. */
+ var legNote=(nLegs>1)?(' <span class="d">· covers '+nLegs+' open legs</span>'):'';
  var parts=[];
  if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
   parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
  if(pe){var bk=safe(pe.realized);
-  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' books');}
- var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
- /* per-BOOK breakdown: surface only ACTIVE books (clipped / open / has-bank) individually;
-    idle 0-clip books collapse to a single "+N idle" one-liner so a parent w/ 6 nested books
-    doesn't drown the row in noise (operator 2026-07-04 — was every book on its own line). */
- var idle=0;
+  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
+ var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
+ /* per-BOOK breakdown: EVERY companion book listed by NAME with its OWN pnl + gauge params
+    (operator 2026-07-04 "i want each one displayed with the correct pnl number for that
+    engine and companion"). Active books (clipped/open/banked) get a full line; never-fired
+    0-bank idle books are named on one collapsed line so noise stays bounded but names show. */
+ var idle=[];
  bks.forEach(function(b){
    var bk=safe(b.realized),clips=b.closed||0;
-   if(b.idle&&!clips&&!b.open&&!bk){idle++;return;}
+   var gz=(b.gauge==='USD')?('$'+fmt2(b.arm_usd,0)+'/'+fmt2(b.trail_usd,0)):'PCT';
+   if(b.idle&&!clips&&!b.open&&!bk){idle.push((b.book||'?')+' ('+gz+')');return;}
    var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
    var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
-   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; '+(b.book||'')+' · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
+   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.9">&#8627; <b>'+esc(b.book||'')+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
  });
- if(idle)html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.6">&#8627; +'+idle+' idle book'+(idle===1?'':'s')+' · 0 clips</td></tr>';
+ if(idle.length)html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.55">&#8627; +'+idle.length+' idle · $0: '+esc(idle.join(', '))+'</td></tr>';
  return html;
 }
 /* ── telemetry render ── */
@@ -528,8 +536,9 @@ function render(J){lastJ=J;
   /* tick-driven publisher goes quiet when the market is closed -- positions can
      still be OPEN (held over the weekend). Fall back to the position REGISTRY
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
-  if(REGPOS.length){var sum2=0;var shown2={};var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
-   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown2[ck]?'':compSub(t.engine,t.symbol,6);shown2[ck]=1;
+  if(REGPOS.length){var sum2=0;var shown2={};var ckN2={};REGPOS.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN2[c]=(ckN2[c]||0)+1;});
+   var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
+   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown2[ck]?'':compSub(t.engine,t.symbol,6,ckN2[ck]);shown2[ck]=1;
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
@@ -540,8 +549,9 @@ function render(J){lastJ=J;
    el('ltpnl').innerHTML=cbank2?('<span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank2)+' companion (paper, additive)</span>'):'';}
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
-  var sum=0;var shown={};var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown[ck]?'':compSub(t.engine,t.symbol,9);shown[ck]=1;
+  var sum=0;var shown={};var ckN={};lts.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN[c]=(ckN[c]||0)+1;});
+  var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown[ck]?'':compSub(t.engine,t.symbol,9,ckN[ck]);shown[ck]=1;
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
@@ -580,7 +590,8 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
   be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
   var obr=ob.by_reason||{},cbr=cbk.by_reason||{};
-  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
+)OMEGAD2"
+R"OMEGAD3(  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
   Object.keys(obr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(obr[k]));});
   tip+='\nCRYPTO '+fmt$(cr)+':';
   Object.keys(cbr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(cbr[k]));});
@@ -593,8 +604,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(typeof updDayPnl==='function')updDayPnl();
  if(typeof drawEquity==='function')drawEquity();
  /* GOLD COMPANIONS panel feed: per-engine rollup + open detail (OMEGA book, gold engines only),
-)OMEGAD2"
-R"OMEGAD3(    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
+    so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
     per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
  window._gcPer=j.per_engine||{};
  window._gcPerBooks=j.per_engine_books||{};
@@ -778,7 +788,8 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
    +'<td class="l d">'+esc(e.sym)+'</td><td class="num d">'+e.n+'</td>'
    +'<td class="num d">'+Math.round(100*e.w/e.n)+'%</td>'
    +'<td class="num '+c+'">'+fmt$(e.pnl)+'</td>'
-   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
+)OMEGAD3"
+R"OMEGAD4(   +'<td style="width:90px"><span class="bar" style="display:block"><i style="width:'+w+'%;background:'+(e.pnl>=0?'var(--grn)':'var(--red)')+'"></i></span></td>'
    +'<td class="num '+(e.pnl>=0?'g':'r')+'">'+fmt$(e.pnl/e.n)+'/t</td></tr>'
    +ledgerCompRow(k,seenComp);}).join('');
  t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
@@ -791,8 +802,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
   /* no shadow closes -> still fold the companion (paper) bank for the window so it never silently drops */
   var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
   tweenNum('eqtot',cw,fmt$);el('eqtot').style.color=cw>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cw?'<span style="color:var(--t3)">paper only</span>':'';return;}
-)OMEGAD3"
-R"OMEGAD4( var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
+ var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
  var lo=Math.min(0,mdd,Math.min.apply(null,cum)),hi=Math.max.apply(null,cum.concat([1]));
@@ -964,7 +974,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   ctx.fillText(lb,Math.min(X(ii),W-padR-62),H-4);}
  /* step points; emit null as a gap when a level is unwarmed (<=0) so the line
     never drops to Y(0)/off-chart (that was hiding resistance). */
- function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
+)OMEGAD4"
+R"OMEGAD5( function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
   if(v<=0){p.push(null);continue;}
   if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
   p.push([X(i),Y(v)]);}return p;}
@@ -979,8 +990,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  cloud(7,6,'rgba(226,72,77,0.10)');cloud(8,9,'rgba(46,189,133,0.10)');cloud(6,8,'rgba(133,183,235,0.04)');
  strokeSteps(spts(7),'#FF5A5F',2.0);strokeSteps(spts(9),'#2EBD85',2.0);                 /* R2 / S2 solid, brighter+thicker */
  strokeSteps(spts(6),'rgba(255,90,95,0.85)',1.4,[5,4]);strokeSteps(spts(8),'rgba(46,189,133,0.85)',1.4,[5,4]); /* R1 / S1 dashed */
-)OMEGAD4"
-R"OMEGAD5( var bw=Math.max(1,Math.min(7,pw/n*0.62));
+ var bw=Math.max(1,Math.min(7,pw/n*0.62));
  for(var i=0;i<n;i++){var b=bars[i],up=b[4]>=b[1],c=up?'#2EBD85':'#E2484D',x=X(i);
   ctx.strokeStyle=c;ctx.globalAlpha=0.85;ctx.lineWidth=bw>3?1:0.7;
   ctx.beginPath();ctx.moveTo(x,Y(b[2]));ctx.lineTo(x,Y(b[3]));ctx.stroke();ctx.globalAlpha=1;
