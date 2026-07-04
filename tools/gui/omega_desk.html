@@ -399,17 +399,27 @@ setInterval(pollReg,30000);pollReg();
    never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
    open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
 function compSub(engine,symbol,colspan){
- var comp=window._comp||{},per=window._gcPer||{};
+ var comp=window._comp||{},per=window._gcPer||{},pbooks=window._gcPerBooks||{};
  var e=(engine||'').replace(/Engine$/,'');
  var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
  var pe=per[engine||'']||per[e];
- if(!cm&&!pe)return '';
+ var bks=pbooks[engine||'']||pbooks[e]||[];
+ if(!cm&&!pe&&!bks.length)return '';
  var parts=[];
  if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
   parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
  if(pe){var bk=safe(pe.realized);
-  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s'));}
- return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
+  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' books');}
+ var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
+ /* per-BOOK breakdown: EACH companion book displayed with its own clips + banked $
+    (operator 2026-07-04 — was one merged line, now every book shown individually). */
+ bks.forEach(function(b){
+   var bk=safe(b.realized),clips=b.closed||0;
+   var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
+   var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
+   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; '+(b.book||'')+' · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
+ });
+ return html;
 }
 /* ── telemetry render ── */
 var lastJ=null;
@@ -563,6 +573,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
     per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
  window._gcPer=j.per_engine||{};
+ window._gcPerBooks=j.per_engine_books||{};
  var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
  window._gcOpen=gm;
  if(typeof drawGC==='function')drawGC();

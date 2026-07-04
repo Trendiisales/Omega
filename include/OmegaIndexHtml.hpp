@@ -406,18 +406,28 @@ setInterval(pollReg,30000);pollReg();
    never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
    open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
 function compSub(engine,symbol,colspan){
- var comp=window._comp||{},per=window._gcPer||{};
+ var comp=window._comp||{},per=window._gcPer||{},pbooks=window._gcPerBooks||{};
  var e=(engine||'').replace(/Engine$/,'');
  var cm=comp[(engine||'')+'|'+(symbol||'')]||comp[e+'|'+(symbol||'')];
  var pe=per[engine||'']||per[e];
- if(!cm&&!pe)return '';
+ var bks=pbooks[engine||'']||pbooks[e]||[];
+ if(!cm&&!pe&&!bks.length)return '';
  var parts=[];
  if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
   parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
  if(pe){var bk=safe(pe.realized);
-  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s'));}
 )OMEGAD1"
-R"OMEGAD2( return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
+R"OMEGAD2(  parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' books');}
+ var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip) · '+parts.join(' · ')+'</td></tr>';
+ /* per-BOOK breakdown: EACH companion book displayed with its own clips + banked $
+    (operator 2026-07-04 — was one merged line, now every book shown individually). */
+ bks.forEach(function(b){
+   var bk=safe(b.realized),clips=b.closed||0;
+   var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
+   var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
+   html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:.85">&#8627; '+(b.book||'')+' · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
+ });
+ return html;
 }
 /* ── telemetry render ── */
 var lastJ=null;
@@ -571,6 +581,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     so each gold trend engine's live companion trade-count + paper bank render always-on (the nested
     per-trade overlay only shows while a position is OPEN -> invisible on a flat/weekend book). */
  window._gcPer=j.per_engine||{};
+ window._gcPerBooks=j.per_engine_books||{};
  var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
  window._gcOpen=gm;
  if(typeof drawGC==='function')drawGC();
@@ -581,7 +592,8 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
 setInterval(pollComp,5000);pollComp();
 
 /* ── crypto companions (up-jump stall-clip, shadow · josgp1) ──
-   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
+)OMEGAD2"
+R"OMEGAD3(   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
    always renders the config even before any live push. Live state (armed / peak mfe% /
    bars-since-high / clips / bank_bp) overlaid per-symbol from /api/crypto_companion
    (crypto_companion_state.json, pushed from josgp1) when present. STANDALONE book —
@@ -595,8 +607,7 @@ var CC_ROSTER=[
  {sym:'ADA', arm:2,stall:6,rev:0.50,reclip:0.05,mode:''},
  {sym:'TRX', arm:2,stall:6,rev:null,reclip:0.05,mode:'stall-only'},
  {sym:'NEAR',arm:3,stall:8,rev:null,reclip:0.05,mode:'stall-only'},
-)OMEGAD2"
-R"OMEGAD3( {sym:'AAVE',arm:1,stall:6,rev:null,reclip:0,   mode:'inverse single-clip'},
+ {sym:'AAVE',arm:1,stall:6,rev:null,reclip:0,   mode:'inverse single-clip'},
  {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
 ];
 function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
@@ -778,7 +789,8 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.fillStyle=gr;ctx.fill();
  /* glowing equity line + live endpoint dot */
  ctx.save();ctx.shadowColor='#2EBD85';ctx.shadowBlur=6;
- ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
+)OMEGAD3"
+R"OMEGAD4( ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.strokeStyle='#2EBD85';ctx.lineWidth=1.6;ctx.lineJoin='round';ctx.stroke();ctx.restore();
  var ex=X(cum.length-1),ey=Y(cum[cum.length-1]);
  ctx.beginPath();ctx.arc(ex,ey,3,0,6.3);ctx.fillStyle='#2EBD85';ctx.fill();
@@ -787,8 +799,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
  var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var netT=net+cw;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
-)OMEGAD3"
-R"OMEGAD4( el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
+ el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
@@ -963,7 +974,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   defs.forEach(function(d){var v=lb[d[0]];if(v<=0)return;var y=Y(v);if(y<padT||y>padT+ph)return;
    var tx=padL+pw+2,txt=d[1]+' '+v.toFixed(dp);
    ctx.fillStyle='rgba(11,15,20,0.85)';ctx.fillRect(tx,y-6,54,11);
-   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
+)OMEGAD4"
+R"OMEGAD5(   ctx.fillStyle=d[2];ctx.fillRect(tx,y-6,2,11);ctx.fillText(txt,tx+5,y+3);});
   ctx.textAlign='start';})();
  for(var i=0;i<n;i++){var sg=bars[i][11];if(!sg)continue;var x=X(i),y;
   ctx.beginPath();
@@ -978,8 +990,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   var t0=bars[0][0],t1=bars[n-1][0]+ (bars[1]?bars[1][0]-bars[0][0]:300);
   function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
   function bx(ts){var lo=0,hi=n-1;
-)OMEGAD4"
-R"OMEGAD5(   while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
+   while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
    return lo;}
   var vis=ROWS.filter(function(r){return sm(r.sym)&&r.ets&&r.epx&&!(r.ets>t1||r.ts<t0);});
   var nx=0,exVis=0;
