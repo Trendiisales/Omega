@@ -554,7 +554,7 @@ function render(J){lastJ=J;
      served by the read-API on :7781 so the desk never shows a phantom FLAT. */
   if(REGPOS.length){var sum2=0;var shown2={};var ckN2={};REGPOS.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN2[c]=(ckN2[c]||0)+1;});
    var rows2=REGPOS.map(function(t){sum2+=safe(t.unrealized_pnl);
-   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown2[ck]?'':compSub(t.engine,t.symbol,6,ckN2[ck]);shown2[ck]=1;
+   var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=compSub(t.engine,t.symbol,6,ckN2[ck]);shown2[ck]=1;
    return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc((t.engine||'').replace(/Engine$/,''))+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
     +'<td class="num d">'+lots(t.size)+'</td>'
     +'<td class="num">'+fmt2(t.entry)+'</td><td class="num d">'+fmt2(t.current)+'</td>'
@@ -567,7 +567,7 @@ function render(J){lastJ=J;
  else{el('ltcount').textContent=lts.length+' open';
   var sum=0;var shown={};var ckN={};lts.forEach(function(t){var c=(t.engine||'')+'|'+(t.symbol||'');ckN[c]=(ckN[c]||0)+1;});
   var rows=lts.map(function(t){sum+=safe(t.live_pnl);
-  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=shown[ck]?'':compSub(t.engine,t.symbol,9,ckN[ck]);shown[ck]=1;
+  var ck=(t.engine||'')+'|'+(t.symbol||'');var cr=compSub(t.engine,t.symbol,9,ckN[ck]);shown[ck]=1;
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
    +'<td class="num d">'+lots(t.size)+'</td>'
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
