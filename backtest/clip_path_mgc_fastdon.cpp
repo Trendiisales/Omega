@@ -45,9 +45,10 @@ static int idx_at(const std::vector<Bar>&B,int64_t ts){
     while(lo<=hi){int m=(lo+hi)/2; if(B[m].ts_sec<=ts){r=m;lo=m+1;}else hi=m-1;} return r;
 }
 
-int main(){
+int main(int argc,char**argv){
     const double half=0.15;
-    auto m30=load_csv("/Users/jo/Tick/2yr_XAUUSD_tick_fresh.m30.csv");
+    const char* m30path = argc>1?argv[1]:"/Users/jo/Tick/2yr_XAUUSD_tick_fresh.m30.csv";
+    auto m30=load_csv(m30path);
     fprintf(stderr,"loaded M30=%zu\n",m30.size());
     if(m30.empty()){ fprintf(stderr,"no m30\n"); return 1; }
 

@@ -80,8 +80,12 @@ static void emit(FILE* out,int& tid,const std::vector<Trade>&trades,const std::v
 int main(int argc,char**argv){
     const char* which = argc>1?argv[1]:"4h";
     const double half=0.15;
-    auto h4=load_csv("/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h4.csv");
-    auto h1=load_csv("/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv");
+    // optional data-path override (argv[2]=h4, argv[3]=h1) for a FAITHFUL bear-regime re-run
+    // (default = 2yr bull proxy). S-2026-07-04 both-regime companion re-check.
+    const char* h4path = argc>2?argv[2]:"/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h4.csv";
+    const char* h1path = argc>3?argv[3]:"/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv";
+    auto h4=load_csv(h4path);
+    auto h1=load_csv(h1path);
     fprintf(stderr,"loaded H4=%zu H1=%zu\n",h4.size(),h1.size());
     if(h4.empty()){ fprintf(stderr,"no h4\n"); return 1; }
 

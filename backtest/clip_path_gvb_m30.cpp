@@ -47,10 +47,11 @@ static int idx_at(const std::vector<Bar>&B,int64_t ts){
 }
 
 int main(int argc,char**argv){
-    (void)argc;(void)argv;
     const double half=0.15; // XAU M30 measured median spread ~0.30 -> half 0.15
-    auto m30=load_csv("/Users/jo/Tick/2yr_XAUUSD_tick_fresh.m30.csv");
-    auto h1 =load_csv("/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv");
+    const char* m30path = argc>1?argv[1]:"/Users/jo/Tick/2yr_XAUUSD_tick_fresh.m30.csv";
+    const char* h1path  = argc>2?argv[2]:"/Users/jo/Tick/2yr_XAUUSD_tick_fresh.h1.csv";
+    auto m30=load_csv(m30path);
+    auto h1 =load_csv(h1path);
     fprintf(stderr,"loaded M30=%zu H1=%zu\n",m30.size(),h1.size());
     if(m30.empty()){ fprintf(stderr,"no m30\n"); return 1; }
 
