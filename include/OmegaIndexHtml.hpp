@@ -675,11 +675,12 @@ var CC_ROSTER=[
  {sym:'BTC', w:4,thr:8, tight:'a3/s0/g50',wide:'a5/s0/g50',mode:''},
  {sym:'ETH', w:4,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
  {sym:'SOL', w:4,thr:12,tight:'a2/s0/g50',wide:'a8/s0/g50',mode:''},
- {sym:'DOGE',w:8,thr:5, tight:'a3/s3/g0', wide:'a8/s8/g40',mode:''},
+ {sym:'DOGE',w:8,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
  {sym:'BNB', w:4,thr:5, tight:'a3/s3/g30',wide:'a8/s0/g50',mode:''},
  {sym:'ADA', w:6,thr:5, tight:'a3/s4/g50',wide:'a5/s6/g0', mode:''},
  {sym:'TRX', w:8,thr:8, tight:'a3/s0/g30',wide:'a8/s6/g0', mode:''},
- {sym:'NEAR',w:6,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
+ {sym:'NEAR',w:6,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
+ {sym:'AAVE',w:4,thr:5, mode:'parent-only'},   /* companion DROPPED (cost-cover re-sweep PF1.04/H1~0 noise); parent-only */
  {sym:'OP',  mode:'parent-only'}
 ];
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
@@ -729,9 +730,21 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
  });
  el('cctab').innerHTML=h;
  el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
+    must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
+    Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both so it shows on push. */
+ window._cctot=totbank;
+ if(typeof drawLedger==='function')drawLedger();
+ if(typeof drawEquity==='function')drawEquity();
+ if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
- var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});window._cc=m;drawCC();}).catch(function(){drawCC();});}
+ var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});
+ /* STICKY: only replace the live overlay when the push actually has legs. A transient empty/
+    stale frame (file mid-write, momentary 0-leg push) must NOT wipe the last good bank -> that
+    was the "-141 disappears then reappears" flicker. Keep the last good frame until a real one lands. */
+ if(Object.keys(m).length)window._cc=m;
+ drawCC();}).catch(function(){drawCC();});}
 setInterval(pollCC,15000);pollCC();
 
 /* ── GOLD COMPANIONS (trend stall-clip · OMEGA book · additive, judged STANDALONE) ──
@@ -766,7 +779,8 @@ drawGC();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
-function parseShadow(txt){
+)OMEGAD3"
+R"OMEGAD4(function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
     12-column layout that never matched the real 41-column file (col 0 is
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
@@ -784,8 +798,7 @@ function parseShadow(txt){
   if(sym==='__BOOT__'||eng==='boot_writetest')continue;
   var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
   out.push({ts:ts,sym:sym,side:side,eng:eng,
-)OMEGAD3"
-R"OMEGAD4(   ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
+   ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
    xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
    pnl:parseFloat(f[ix.net_pnl])||0,
@@ -803,7 +816,11 @@ function winRows(){if(WIN>=9999)return ROWS;
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
- var pT=p+cToday,totT=tot+cAll;
+ /* FULL PnL (operator 2026-07-05d: "the Omega pnl should have the crypto profit added, that is
+    the actual full pnl") -- ALL-TIME folds engines + OMEGA stall-clip companion + crypto ladder
+    companion book. Overrides the earlier "crypto paper must not muddy the Omega number" stance. */
+ var ccAll=bpUsd(safe(window._cctot));/* crypto ladder companion all-time bank, $ (additive) */
+ var pT=p+cToday,totT=tot+cAll+ccAll;
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';}
@@ -836,7 +853,9 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
   +closed+' banked'+(openn?' · '+openn+' open':'')+(st?' · '+st:'')+'</td>'
   +'<td class="num" style="color:'+bc+'">'+fmt$(bank)+'</td><td colspan="2"></td></tr>';}
 /* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
-function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent='';return;}
+function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* crypto companion all-time bank, $ (additive) */
+ var omc=safe((window._comptot||{}).all);/* OMEGA (XAU stall-clip) companion all-time bank, $ (additive) -- same bucket the header ALL-TIME folds */
+ if(!ROWS.length){var z=omc+cc;t.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(cc?(omc?' · ':'')+'crypto '+fmt$(cc):'')+' · Σ '+fmt$(z)):'';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
   var e=by[k];e.n++;e.pnl+=r.pnl;if(r.pnl>0)e.w++;if(r.ts>e.last){e.last=r.ts;e.sym=r.sym;}});
@@ -854,14 +873,19 @@ function drawLedger(){var t=el('ledger');if(!ROWS.length){t.innerHTML='<tr><td c
    +ledgerCompRow(k,seenComp);}).join('');
  t.innerHTML='<tr><th class="l">engine</th><th class="l">sym</th><th>n</th><th>WR</th><th>net</th><th></th><th>avg</th></tr>'+rows;
  var net=0;ks.forEach(function(k){net+=by[k].pnl;});
- el('ledgern').textContent=ks.length+' engines · net '+fmt$(net);}
+ var tot=net+omc+cc;   /* fold BOTH independent companion books (OMEGA stall-clip + crypto ladder) into the all-time Omega total -- matches the header ALL-TIME which folds the OMEGA companion */
+ el('ledgern').textContent=ks.length+' engines · net '+fmt$(net)
+   +(omc?' · companion '+fmt$(omc):'')
+   +(cc?' · crypto '+fmt$(cc):'')
+   +((omc||cc)?' · Σ '+fmt$(tot):'');}
 
 function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
  var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);
   /* no shadow closes -> still fold the companion (paper) bank for the window so it never silently drops */
   var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
-  tweenNum('eqtot',cw,fmt$);el('eqtot').style.color=cw>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cw?'<span style="color:var(--t3)">paper only</span>':'';return;}
+  var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto bank is all-time -> only fold in 'all' window */
+  var cwT=cw+cc0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
@@ -887,7 +911,7 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
  ctx.beginPath();ctx.arc(ex,ey,6,0,6.3);ctx.strokeStyle='rgba(46,189,133,0.35)';ctx.lineWidth=1.5;ctx.stroke();
  var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
- var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var netT=net+cw;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
+ var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto companion (all-time) folds in 'all' window */var netT=net+cw+cc0;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
@@ -940,7 +964,8 @@ function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
 var DAYS=['Su','Mo','Tu','We','Th','Fr','Sa'];
 function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
  rs.forEach(function(r){var d=new Date(r.ts*1000);var k=d.getUTCDay()+'_'+d.getUTCHours();
-  if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
+)OMEGAD4"
+R"OMEGAD5(  if(!grid[k])grid[k]={n:0,w:0,pnl:0};grid[k].n++;if(r.pnl>0)grid[k].w++;grid[k].pnl+=r.pnl;});
  var h='<div style="display:grid;grid-template-columns:24px repeat(24,1fr);gap:1px">';
  h+='<span></span>';for(var c=0;c<24;c++)h+='<span class="lbl" style="font-size:8px;text-align:center">'+(c%4===0?c:'')+'</span>';
  [1,2,3,4,5,0].forEach(function(d){h+='<span class="lbl" style="font-size:9px">'+DAYS[d]+'</span>';
@@ -974,8 +999,7 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
-)OMEGAD4"
-R"OMEGAD5(  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
@@ -1142,7 +1166,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
  if(PRMOUSE&&PRMOUSE.x>=padL&&PRMOUSE.x<=padL+pw&&PRMOUSE.y>=padT&&PRMOUSE.y<=padT+ph){
   var mi=Math.max(0,Math.min(n-1,Math.round((PRMOUSE.x-padL)/pw*(n-1))));
   var mb=bars[mi],mx2=X(mi);
-  ctx.strokeStyle='rgba(230,237,243,0.22)';ctx.setLineDash([3,3]);ctx.lineWidth=1;
+)OMEGAD5"
+R"OMEGAD6(  ctx.strokeStyle='rgba(230,237,243,0.22)';ctx.setLineDash([3,3]);ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(mx2,padT);ctx.lineTo(mx2,padT+ph);ctx.stroke();
   ctx.beginPath();ctx.moveTo(padL,PRMOUSE.y);ctx.lineTo(padL+pw,PRMOUSE.y);ctx.stroke();ctx.setLineDash([]);
   var pv=hi-(PRMOUSE.y-padT)/ph*(hi-lo);
@@ -1177,8 +1202,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
-)OMEGAD5"
-R"OMEGAD6( var isPart=/^PARTIAL/.test(r.reason||'');
+ var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
   +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
