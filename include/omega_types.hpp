@@ -320,6 +320,15 @@ static SymBarState         g_bars_gold;   // XAUUSD M1/M5/H1/H4 bars + indicator
 static SymBarState         g_bars_sp;     // US500.F M1/M5/H1 bars + indicators
 static SymBarState         g_bars_nq;     // USTEC.F M1/M5/H1 bars + indicators
 static SymBarState         g_bars_ger;    // GER40   M1/M5 bars + indicators
+// FX bar-state (S-2026-07-06): feeds the desk price chart (/api/predictive_ranges) AND
+// the FX BE-floor companion's H1 close stream. FX is subscribed for macro context (see
+// tick_fx.hpp); these aggregate its ticks into M1/M5/M15/H1 bars. Chart display + companion
+// only -- no FX trading engine (the 2026-06-29 FX removal stands for execution).
+static SymBarState         g_bars_eurusd; // EURUSD  M1/M5/M15/H1 bars (chart + FX companion)
+static SymBarState         g_bars_gbpusd; // GBPUSD
+static SymBarState         g_bars_usdjpy; // USDJPY
+static SymBarState         g_bars_audusd; // AUDUSD
+static SymBarState         g_bars_nzdusd; // NZDUSD
 // IndexSwingEngine -- H1+H4 swing entries for US500.F and USTEC.F
 // shadow_mode=true always; configured in engine_init.hpp
 // sl_pts / min_ema_sep / pnl_scale per-symbol calibration:

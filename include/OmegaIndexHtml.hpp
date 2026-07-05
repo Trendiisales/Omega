@@ -215,6 +215,15 @@ a{color:var(--blu);text-decoration:none}
   <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
+<!-- ═══ FX COMPANIONS — per-pair Pos/Neg BE-floor books (shadow, additive) ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">FX COMPANIONS — per-pair Pos/Neg BE-floor books (native C++ · shadow · additive · neg=0 · judged STANDALONE, never vs-WIDE)</span>
+    <span id="fxinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="fxtab"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
 </div><!-- /companions row -->
 
 <!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
@@ -784,6 +793,50 @@ function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json(
  if(j&&(j.flavors||[]).length)window._gold=j;drawGold();}).catch(function(){drawGold();});}
 setInterval(pollGold,15000);pollGold();
 
+/* ── FX COMPANIONS (per-pair <PAIR>Pos/<PAIR>Neg BE-floor · native C++ · additive, STANDALONE) ──
+   Fed by pollFx() off /api/fx_companion (fx_companion_state.json, written in-binary by
+   omega::fx_befloor_book — faithful port of the validated backtest/fx_befloor_ls.py research).
+   Schema: {engine,shadow,ts,pairs:[{pair,bars,deploy_ts,pct,usd,flavors:[{name,dir,events,
+   book_pct,book_usd,companions:[{tier,gb_bp,clips,wins,pct,usd}]}]}]}. neg=0 by construction
+   (BE-floor: stop>=entry long / <=entry short). STANDALONE additive — NEVER compared vs WIDE. */
+function drawFx(){var j=window._fx||null;
+ var h='<tr><td class="l lbl">pair</td><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td>'
+      +'<td class="lbl">gb bp</td><td class="lbl">events</td><td class="lbl">clips</td>'
+      +'<td class="lbl">wins</td><td class="lbl">%</td><td class="lbl">book($)</td></tr>';
+ var pairs=(j&&j.pairs)||[];
+ if(!pairs.length){el('fxtab').innerHTML=h+'<tr><td class="l d" colspan="10">no book yet (deploy-forward · $0 until first forward clip)</td></tr>';
+  el('fxinfo').textContent='native C++ · shadow · neg=0';return;}
+ var desk=0;
+ pairs.forEach(function(p){
+  desk+=safe(p.usd);
+  var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.companions||[]).length||1;});
+  var firstPair=true;
+  fls.forEach(function(fl){
+   var comps=fl.companions||[];var rs=comps.length||1;var first=true;
+   var bcol=(fl.book_usd>0?'var(--grn)':(fl.book_usd<0?'var(--red)':'var(--t2)'));
+   comps.forEach(function(c){
+    h+='<tr>';
+    if(firstPair){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+p.pair+'</td>';firstPair=false;}
+    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+fl.name+'</td>'
+                +'<td class="l" rowspan="'+rs+'">'+fl.dir+'</td>';}
+    h+='<td class="l">'+c.tier+'</td><td class="num">'+c.gb_bp+'</td>';
+    if(first){h+='<td class="num" rowspan="'+rs+'">'+fl.events+'</td>';}
+    h+='<td class="num">'+c.clips+'</td><td class="num">'+c.wins+'</td>'
+      +'<td class="num">'+fmt2(safe(c.pct),3)+'%</td>';
+    if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(fl.book_usd))+'</td>';}
+    h+='</tr>';first=false;
+   });
+  });
+ });
+ el('fxtab').innerHTML=h;
+ var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
+ el('fxinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)
+   +'</span> · '+pairs.length+' pairs · deploy-forward · shadow';
+}
+function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();}).then(function(j){
+ if(j&&(j.pairs||[]).length)window._fx=j;drawFx();}).catch(function(){drawFx();});}
+setInterval(pollFx,15000);pollFx();
+
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
 )OMEGAD3"
@@ -937,7 +990,7 @@ function drawHeat(){var rs=winRows();var by={};
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
  order.forEach(function(g){if(!groups[g])return;
   groups[g].sort(function(a,b){return by[b].pnl-by[a].pnl;});
-  h+='<div class="lbl" style="margin:6px 0 3px">'+g+(g==='FX'?' — no proven edge':'')+' <span style="color:var(--t3)">'+groups[g].length+' active</span></div>'
+  h+='<div class="lbl" style="margin:6px 0 3px">'+g+(g==='FX'?' — BE-floor companion (shadow)':'')+' <span style="color:var(--t3)">'+groups[g].length+' active</span></div>'
    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:3px">';
   groups[g].forEach(function(k){var e=by[k],t=e.pnl/mxAbs;
    var bg='#1d2733',fg='#8B97A5';
@@ -1028,7 +1081,7 @@ function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
-var PRSYMS=['XAUUSD','US500','USTEC'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
+var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');

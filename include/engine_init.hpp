@@ -14,6 +14,7 @@
 #include "QndxSqfIbkr.hpp"      // thin TWS-free interface to the in-process QNDX (Nasdaq-100 SQF) book
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 #include "GoldBeFloorCompanion.hpp" // AUPOS/AUNEG gold BE-floor companion (native C++, /api/gold_companion)
+#include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
 static void init_engines(const std::string& cfg_path)
@@ -1567,6 +1568,36 @@ static void init_engines(const std::string& cfg_path)
         }
         printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) wired: deploy-forward, H1-sink live\n");
         fflush(stdout);
+
+        // ── FX per-pair Pos/Neg BE-floor companion (S-2026-07-06) ────────────
+        //   Native C++ port of the VALIDATED research backtest/fx_befloor_ls.py (per-pair
+        //   <PAIR>Pos/<PAIR>Neg, neg=0 by construction, both WF halves +). SEPARATE
+        //   INDEPENDENT observe-only shadow book (feedback-companion-independent-engine):
+        //   self-detects 2h +/-0.30% up/down windows from each pair's H1 close stream
+        //   (fed by the tick_fx.hpp bar builder), runs x2 BE-floor tiers/direction. Own
+        //   aggregate fx_companion_state.json -> /api/fx_companion -> desk FX COMPANIONS.
+        //   FX is subscribed for macro context only -- this opens NO position (the
+        //   2026-06-29 FX execution removal stands). Loss-protection = BE-floor (verdict
+        //   backtested: neg=0). Chart bars (g_bars_<pair>) live-warm from ticks.
+        {
+            auto& fxb = omega::fx_befloor_book();
+            static const char* FX_PAIRS[] = {"EURUSD","GBPUSD","USDJPY","AUDUSD","NZDUSD"};
+            for (const char* p : FX_PAIRS) {
+                omega::FxBeFloorPair::Config c;
+                c.pair = p; c.notional = 100000.0;   // std-lot notional; 1% ~ $1000/lot (approx for JPY-quote)
+                fxb.add(std::move(c));
+            }
+            // Warm-seed each pair from its bundled H1 CSV (ts,o,h,l,c) -- primes the 2h
+            // detector + book and stamps the persisted deploy_ts (forward book starts $0;
+            // the tick-fed H1 sink advances it). Bundled CSVs ship with every deploy.
+            size_t seeded = 0;
+            for (const char* p : FX_PAIRS)
+                seeded += fxb.seed_pair(p, std::string("phase1/signal_discovery/warmup_") + p + "_H1.csv");
+            fxb.finalize_all();
+            printf("[OMEGA-INIT][SEED] FX BE-floor companion wired: 5 pairs, %zu H1 bars seeded, deploy-forward, tick-fed H1\n",
+                   seeded);
+            fflush(stdout);
+        }
 
         // ── Stall/giveback-clip companion zoo (S-2026-07-06) ─────────────────
         //   Native C++ port of the retired Mac-cron stall_accountant.py (25 gold/index

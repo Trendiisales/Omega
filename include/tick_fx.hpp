@@ -25,6 +25,36 @@
 //   2026-05 re-enable experiments (session-open + Turtle + Ensemble) were
 //   swept to negative expectancy by S99 and retired pair-by-pair through June.
 
+#include <chrono>
+#include "FxBeFloorCompanion.hpp"   // omega::fx_befloor_book() (per-pair BE-floor companion)
+
+// ── FX chart + companion bar builder (S-2026-07-06) ─────────────────────────
+//   FX has no trading engine (2026-06-29 removal stands), but it is subscribed for
+//   macro context. Aggregate its tick mids into M1/M5/M15/H1 bars so (a) the desk
+//   price chart (/api/predictive_ranges) can show FX ranges, and (b) the FX BE-floor
+//   companion gets its H1 close stream. Mirrors the US500 builder in tick_indices.hpp.
+//   Observe-only: feeds a GUI chart + a shadow companion, sends no orders.
+struct FxBarAgg { OHLCBar m1{}, m5{}, m15{}, h1{}; int64_t s1=0, s5=0, s15=0, sh1=0; };
+static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair, double mid) {
+    if (mid <= 0.0) return;
+    const int64_t now_ms = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    auto roll = [&](OHLCBar& acc, int64_t& start, int64_t span, OHLCBarEngine& sink, bool drive) {
+        const int64_t b = (now_ms / span) * span;
+        if (start == 0) { acc = {b/60000LL, mid, mid, mid, mid, 0}; start = b; }
+        else if (b != start) {
+            sink.add_bar(acc);
+            if (drive) omega::fx_befloor_book().on_h1_bar(pair, start / 1000, acc.close);
+            acc = {b/60000LL, mid, mid, mid, mid, 0}; start = b;
+        } else { if (mid > acc.high) acc.high = mid; if (mid < acc.low) acc.low = mid; acc.close = mid; }
+    };
+    roll(a.m1,  a.s1,   60000LL, bars.m1,  false);
+    roll(a.m5,  a.s5,  300000LL, bars.m5,  false);
+    roll(a.m15, a.s15, 900000LL, bars.m15, false);
+    roll(a.h1,  a.sh1,3600000LL, bars.h1,  true);   // drive the companion on each H1 close
+}
+
 // ── EURUSD ──────────────────────────────────────────────────
 template<typename Dispatch>
 static void on_tick_eurusd(
@@ -34,6 +64,7 @@ static void on_tick_eurusd(
 {
     // Macro context price -- needed by gold correlation logic.
     g_macro_ctx.eur_mid_price = (bid + ask) * 0.5;
+    { static FxBarAgg agg; fx_feed_bars(agg, g_bars_eurusd, "EURUSD", (bid + ask) * 0.5); }
     (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
 }
 
@@ -46,6 +77,7 @@ static void on_tick_gbpusd(
 {
     // Macro context price -- GBP correlation + bracket trend bias (on_tick.hpp:1177).
     g_macro_ctx.gbp_mid_price = (bid + ask) * 0.5;
+    { static FxBarAgg agg; fx_feed_bars(agg, g_bars_gbpusd, "GBPUSD", (bid + ask) * 0.5); }
     (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
 }
 
@@ -58,6 +90,7 @@ static void on_tick_usdjpy(
 {
     // USDJPY mid for tick_value_multiplier (live JPY/USD conversion).
     g_usdjpy_mid.store((bid + ask) * 0.5, std::memory_order_relaxed);
+    { static FxBarAgg agg; fx_feed_bars(agg, g_bars_usdjpy, "USDJPY", (bid + ask) * 0.5); }
     (void)sym; (void)regime; (void)dispatch; (void)tradeable; (void)lat_ok;
 }
 
@@ -71,7 +104,10 @@ static void on_tick_audusd(
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
-    (void)sym; (void)bid; (void)ask; (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
+    const double mid = (bid + ask) * 0.5;
+    if      (sym == "AUDUSD") { static FxBarAgg agg; fx_feed_bars(agg, g_bars_audusd, "AUDUSD", mid); }
+    else if (sym == "NZDUSD") { static FxBarAgg agg; fx_feed_bars(agg, g_bars_nzdusd, "NZDUSD", mid); }
+    (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
 }
 
 // ── USDCAD ──────────────────────────────────────────────────

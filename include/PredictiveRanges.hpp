@@ -180,9 +180,16 @@ inline std::deque<OHLCBar> pr_aggregate(const std::deque<OHLCBar>& src, int64_t 
 inline void pr_write_snapshot(const std::string& path) {
     struct SymSet { const char* key; SymBarState* st; PrPreset ps; };
     static SymSet sets[] = {
-        {"XAUUSD", &g_bars_gold, {"XAUUSD", 20, 2.5, 2.0, 1}},
-        {"US500",  &g_bars_sp,   {"US500",  14, 2.0, 2.0, 0}},
-        {"USTEC",  &g_bars_nq,   {"USTEC",  14, 3.0, 2.0, 0}},
+        {"XAUUSD", &g_bars_gold,   {"XAUUSD", 20, 2.5, 2.0, 1}},
+        {"US500",  &g_bars_sp,     {"US500",  14, 2.0, 2.0, 0}},
+        {"USTEC",  &g_bars_nq,     {"USTEC",  14, 3.0, 2.0, 0}},
+        // FX (S-2026-07-06): live-warmed from tick_fx.hpp bar builder. ATR14 f2.0,
+        // hlc3 off (close). Empty until each pair's bars warm post-boot (~m5 in ~95min).
+        {"EURUSD", &g_bars_eurusd, {"EURUSD", 14, 2.0, 2.0, 0}},
+        {"GBPUSD", &g_bars_gbpusd, {"GBPUSD", 14, 2.0, 2.0, 0}},
+        {"USDJPY", &g_bars_usdjpy, {"USDJPY", 14, 2.0, 2.0, 0}},
+        {"AUDUSD", &g_bars_audusd, {"AUDUSD", 14, 2.0, 2.0, 0}},
+        {"NZDUSD", &g_bars_nzdusd, {"NZDUSD", 14, 2.0, 2.0, 0}},
     };
 
     std::ostringstream js;
