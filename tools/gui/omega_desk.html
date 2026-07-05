@@ -662,17 +662,22 @@ setInterval(pollComp,5000);pollComp();
    /api/crypto_companion (crypto_companion_state.json, pushed from josgp1): book aggregate
    (armed/peak/clips/bank) PLUS per-leg `sublegs` [{id:T1/T2/L1..,armed,peak_mfe_pct,
    bars_since_high}] rendered as doubly-nested rows. STANDALONE book — never vs-WIDE. */
+/* BE-FLOOR roster (operator S-2026-07-05e, LIVE josgp1 35266b6): all 10 coins are ACTIVE companions
+   on one uniform config — internal 2h/+1% self-detector trigger, BE-floor exit (leg flat until +20bp
+   cover-cost, opens there, stop >= entry always -> net_bp >= 0 EVERY clip), x2 tiers 20bp banker /
+   150bp runner, ladder cap 2, reclip from exit px. No per-coin trigger, no parent-only (superseded the
+   S-07-05d tiered/confirm25 roster). Byte-exact validated, neg=0 every coin/slice. */
 var CC_ROSTER=[
- {sym:'BTC', w:4,thr:8, tight:'a3/s0/g50',wide:'a5/s0/g50',mode:''},
- {sym:'ETH', w:4,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
- {sym:'SOL', w:4,thr:12,tight:'a2/s0/g50',wide:'a8/s0/g50',mode:''},
- {sym:'DOGE',w:8,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
- {sym:'BNB', w:4,thr:5, tight:'a3/s3/g30',wide:'a8/s0/g50',mode:''},
- {sym:'ADA', w:6,thr:5, tight:'a3/s4/g50',wide:'a5/s6/g0', mode:''},
- {sym:'TRX', w:8,thr:8, tight:'a3/s0/g30',wide:'a8/s6/g0', mode:''},
- {sym:'NEAR',w:6,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
- {sym:'AAVE',w:4,thr:5, mode:'parent-only'},   /* companion DROPPED (cost-cover re-sweep PF1.04/H1~0 noise); parent-only */
- {sym:'OP',  mode:'parent-only'}
+ {sym:'BTC', w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'ETH', w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'SOL', w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'DOGE',w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'BNB', w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'ADA', w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'TRX', w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'NEAR',w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'AAVE',w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''},
+ {sym:'OP',  w:2,thr:1, tight:'be20/T20',wide:'be20/W150',mode:''}
 ];
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
@@ -704,10 +709,10 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bkv=safe(s.bank_bp);
   var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+' bp <span class="d">$'+fmt2(bpUsd(s.bank_bp),2)+'</span></span>';
-  /* companion BOOK aggregate sub-row (2 base tiers + self-funding ladder cap5) */
-  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (tiered ladder)</td><td class="l">'+st+'</td>'
+  /* companion BOOK aggregate sub-row (BE-floor: x2 tiers 20/150bp, ladder cap2, net>=0 every clip) */
+  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (BE-floor)</td><td class="l">'+st+'</td>'
     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+r.tight+'</td>'
-    +'<td class="num d">'+r.wide+'</td><td class="num d">5</td><td class="num d">0.05</td>'
+    +'<td class="num d">'+r.wide+'</td><td class="num d">2</td><td class="num d">on</td>'
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
   /* per-leg sublegs (T1/T2 base + L1..Ln ladder) currently OPEN, live from josgp1 */
   (s.sublegs||[]).forEach(function(sl){
