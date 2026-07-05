@@ -9,7 +9,9 @@ while doing nothing. This test asserts FUNCTION, not existence. It is the single
 "is our profit/loss protection actually working" and runs at every session start.
 
 FOUR CHECKS (each pass/fail independently; overall RED if any fail):
-  [1] SCHEDULED + ALIVE   — the companion engine is in cron AND wrote its state in the last N min.
+  [1] ALIVE               — the REAL in-binary C++ StallCompanion on the VPS wrote its aggregate
+                            companion_state.json in the last N min (weekend-guarded). Re-pointed
+                            2026-07-06 off the retired Mac python file+crontab (false RED source).
   [2] REAL, NOT SHADOW    — the companion has a real EFFECT path (banks a clip), not log-only theatre.
   [3] FIRES ON TRIGGER    — inject a synthetic peak->giveback into a sandbox companion; assert it clips.
   [4] EFFECT RECONCILE    — no live armed position has given back past the trail while still UNCLIPPED.
@@ -28,24 +30,73 @@ ALIVE_MIN = 12          # companion runs every 1min; >12min stale = dead
 GATE_PCT  = float(os.environ.get("STALL_GATE_PCT", "2.0"))
 REV_GB    = float(os.environ.get("REVERSAL_GIVEBACK", "0.40"))
 
+# ── REAL protection = the in-binary C++ StallCompanion on the VPS (S-2026-07-06) ──
+# The Mac-cron python stall_accountant.py was RETIRED at the 2026-07-06 cutover; the
+# real protection is now StallCompanion inside Omega.exe, which writes the aggregate
+# C:\Omega\companion_state.json every 60s off the live tick snapshot (see
+# StallCompanion::maybe_drive). "Alive" therefore = that aggregate is FRESH on the VPS,
+# NOT that a Mac file exists or that a crontab line matches. Over a closed-market
+# weekend there are no ticks so the companion legitimately idles -> enforcement is
+# skipped Fri22:00->Sun22:00 UTC (mirrors tools/feeds_selftest.py). Every VPS call MUST
+# start literally `ssh omega-vps` (feedback-vps-ssh-command-form).
+VPS_COMPANION = r"C:\Omega\companion_state.json"
+VPS_ALIVE_MIN = 5.0     # 60s drive cadence; >5min while market open = writer stalled
+
 results = []  # (check_name, ok, detail)
 def record(name, ok, detail): results.append((name, ok, detail))
 
-# ---- [1] SCHEDULED + ALIVE ----------------------------------------------------
+# ---- [1] ALIVE (real VPS companion is driving) --------------------------------
+def _market_closed_weekend(now_utc):
+    """Gold/index markets closed ~Fri 22:00 UTC -> Sun 22:00 UTC. With no ticks the
+    in-binary companion legitimately stops writing, so skip freshness enforcement
+    (mirrors feeds_selftest.market_closed_weekend)."""
+    wd, hr = now_utc.weekday(), now_utc.hour   # Mon=0 .. Sun=6
+    if wd == 5:               return True       # Saturday
+    if wd == 4 and hr >= 22:  return True       # Friday from 22:00 UTC
+    if wd == 6 and hr < 22:   return True       # Sunday before 22:00 UTC
+    return False
+
+def _vps_companion_age_min():
+    """ONE `ssh omega-vps` call -> age (min) of C:\\Omega\\companion_state.json computed
+    ON the VPS (clock-skew-free). None if ssh fails entirely; 999999 if the file is
+    absent. ssh command MUST start literally `ssh omega-vps`."""
+    ps = (f"$p='{VPS_COMPANION}';"
+          f"if(Test-Path $p){{"
+          f"$a=((Get-Date)-(Get-Item $p).LastWriteTime).TotalMinutes;"
+          f"Write-Output ([math]::Round($a,1))}}else{{Write-Output 999999}}")
+    try:
+        r = subprocess.run(["ssh","omega-vps","powershell","-NoProfile","-Command",ps],
+                           capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    for ln in r.stdout.splitlines():
+        try: return float(ln.strip())
+        except ValueError: continue
+    return None
+
 def check_scheduled_alive():
-    try: cron = subprocess.run(["crontab","-l"], capture_output=True, text=True).stdout
-    except Exception as e: cron = ""
-    scheduled = "stall_accountant.py" in cron
-    age_min = None
-    if os.path.exists(STATE):
-        age_min = (time.time() - os.path.getmtime(STATE)) / 60.0
-    alive = (age_min is not None and age_min <= ALIVE_MIN)
-    ok = scheduled and alive
-    detail = (f"companion in cron={scheduled}; state age="
-              + (f"{age_min:.1f}min (<= {ALIVE_MIN})" if age_min is not None else "MISSING"))
-    if not scheduled: detail += "  *** NOT SCHEDULED -- protection is DEAD ***"
-    elif not alive:   detail += "  *** STALE -- companion not running ***"
-    record("[1] SCHEDULED+ALIVE", ok, detail)
+    # Re-pointed from the retired Mac file+crontab (always-stale orphan + false-match on
+    # the crypto cron comment) to the real in-binary VPS companion's freshness.
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    if _market_closed_weekend(now_utc):
+        record("[1] ALIVE (VPS companion)", True,
+               "weekend (market closed) -- companion idles with no ticks; freshness not enforced")
+        return
+    age = _vps_companion_age_min()
+    if age is None:
+        record("[1] ALIVE (VPS companion)", False,
+               "ssh omega-vps failed -- real C++ StallCompanion freshness UNVERIFIABLE")
+        return
+    if age >= 999999:
+        record("[1] ALIVE (VPS companion)", False,
+               f"{VPS_COMPANION} MISSING on VPS -- companion never wrote aggregate *** protection DEAD ***")
+        return
+    alive = age <= VPS_ALIVE_MIN
+    detail = f"VPS {VPS_COMPANION} age={age:.1f}min (<= {VPS_ALIVE_MIN})"
+    if not alive: detail += "  *** STALE -- in-binary companion not driving (writer stalled) ***"
+    record("[1] ALIVE (VPS companion)", alive, detail)
 
 # ---- [2] REAL, NOT SHADOW -----------------------------------------------------
 def check_real_not_shadow():
