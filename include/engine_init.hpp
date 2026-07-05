@@ -13,6 +13,7 @@
 #include "NqMomoIbkr.hpp"       // thin TWS-free interface to the in-process NQ/MNQ futures momentum engine
 #include "QndxSqfIbkr.hpp"      // thin TWS-free interface to the in-process QNDX (Nasdaq-100 SQF) book
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
+#include "GoldBeFloorCompanion.hpp" // AUPOS/AUNEG gold BE-floor companion (native C++, /api/gold_companion)
 
 static void init_engines(const std::string& cfg_path)
 {
@@ -1540,6 +1541,30 @@ static void init_engines(const std::string& cfg_path)
         }
         printf("[OMEGA-INIT] gold_regime() brain: regime=%s warm=%d (long-only gold engines gate on long_blocked())\n",
                omega::gold_regime().regime_name(), (int)omega::gold_regime().warm());
+        fflush(stdout);
+
+        // ── AUPOS/AUNEG gold BE-floor companion (S-2026-07-06) ───────────────
+        //   Native C++ port of the retired Mac-cron Python executor (validated byte-exact vs
+        //   backtest/gold_befloor_ls.py). SEPARATE INDEPENDENT observe-only shadow book
+        //   (feedback-companion-independent-engine): self-detects 2h/+/-1% up & down gold moves
+        //   from the SAME H1 close stream gold_regime() records, runs x2 BE-floor tiers/direction
+        //   (20bp banker / 150bp runner) => neg=0 by construction. Own state file
+        //   gold_companion_state.json -> /api/gold_companion -> desk GOLD COMPANIONS panel.
+        //   NEVER opens/moves/closes a real position; never read by any parent.
+        {
+            auto& gc = omega::gold_befloor_companion();
+            // Pre-deploy history: bundled warm-seed CSV + the persisted live dump so the 2h
+            // detector + book rebuild across restarts (deploy-forward: only clips after the
+            // stamped deploy_ts count -> the live forward book starts at $0).
+            gc.seed_from_h1_csv("phase1/signal_discovery/warmup_XAUUSD_H1.csv");
+            gc.seed_from_h1_csv(log_root_dir() + "/gold_regime_h1.csv");
+            gc.finalize_seed();
+            // Feed: RegimeState fires once per COMPLETED LIVE H1 bar (identical to gold_regime_h1.csv).
+            omega::gold_regime().set_h1_sink([](int64_t ts_sec, double close){
+                omega::gold_befloor_companion().on_h1_bar(ts_sec, close);
+            });
+        }
+        printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) wired: deploy-forward, H1-sink live\n");
         fflush(stdout);
 
         // Market-bear PROXY (NAS bellwether) -- IndexRiskGate's price-based dead-feed

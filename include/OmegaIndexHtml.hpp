@@ -209,7 +209,7 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ GOLD COMPANIONS — trend stall-clip books (OMEGA book · shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">GOLD COMPANIONS — trend stall-clip books (paper · additive · judged STANDALONE, never vs-WIDE)</span>
+    <span class="lbl">GOLD COMPANIONS — AUPOS/AUNEG BE-floor books (native C++ · shadow · additive · neg=0 · judged STANDALONE, never vs-WIDE)</span>
     <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -657,7 +657,8 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  window._gcPerLeg=j.per_leg||{};
  var gm={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA'&&/xau|gold|london|mgc/i.test(p.eng||''))gm[p.eng]=p;});
  window._gcOpen=gm;
- if(typeof drawGC==='function')drawGC();
+ /* GOLD COMPANIONS panel now driven by pollGold() off /api/gold_companion (native C++ AUPOS/AUNEG),
+    not this /api/companion python rollup. Left the _gc* sets above for the per-engine sub-rows only. */
  /* refresh the ENGINE LEDGER too so the companion sub-row under each engine picks up
     fresh per_engine banked totals (operator: companion shown under the engine it mimics). */
  if(typeof drawLedger==='function'&&ROWS.length)drawLedger();
@@ -747,35 +748,41 @@ function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json(
  drawCC();}).catch(function(){drawCC();});}
 setInterval(pollCC,15000);pollCC();
 
-/* ── GOLD COMPANIONS (trend stall-clip · OMEGA book · additive, judged STANDALONE) ──
-   Fed by pollComp off the SAME /api/companion frame that drives COMP-BANK: per_engine
-   gives each gold trend engine's banked companion-trade count + paper bank, open_detail
-   gives the live armed/peak/stall of any currently-open companion. Always-on so the count
-   ticks in real time even on a flat book. NEVER compared to riding WIDE (operator rule). */
-var GC_ROSTER=['XauTrendRider4h','XauTrendFollow4h','LondonFixMomentum'];
-function isGoldEng(e){return /xau|gold|london|mgc/i.test(e||'');}
-function drawGC(){var pe=window._gcPer||{},od=window._gcOpen||{};
- var keys=GC_ROSTER.slice();
- Object.keys(pe).forEach(function(k){if(isGoldEng(k)&&keys.indexOf(k)<0)keys.push(k);});
- var h='<tr><td class="l lbl">engine</td><td class="l lbl">state</td><td class="lbl">peak MFE%</td>'
-      +'<td class="lbl">stall</td><td class="lbl">open</td><td class="lbl">companion trades</td><td class="lbl">bank($)</td></tr>';
- var ntot=0,narm=0,ntr=0;
- keys.forEach(function(k){
-  var e=pe[k]||{open:0,closed:0,realized:0};ntot++;
-  var op=od[k];var armed=!!(op&&op.eligible);if(armed)narm++;ntr+=(e.closed||0);
-  var st=op?(armed?'<span class="g">ARMED</span>':'<span class="d">tracking</span>'):'<span class="d">—</span>';
-  var pk=op?fmt2(op.mfe_pct,2):'<span class="d">—</span>';
-  var stc=op?String(op.stall):'<span class="d">—</span>';
-  var bank=safe(e.realized);
-  h+='<tr><td class="l">'+k+'</td><td class="l">'+st+'</td><td class="num">'+pk+'</td>'
-    +'<td class="num">'+stc+'</td><td class="num">'+(e.open||0)+'</td>'
-    +'<td class="num" style="font-weight:600">'+(e.closed||0)+'</td>'
-    +'<td class="num" style="color:'+(bank>0?'var(--grn)':(bank<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bank)+'</td></tr>';
+/* ── GOLD COMPANIONS (AUPOS/AUNEG BE-floor · native C++ · additive, judged STANDALONE) ──
+   Fed by pollGold() off /api/gold_companion (gold_companion_state.json, written in-binary by
+   omega::gold_befloor_companion — the native C++ port of the retired Mac-cron python executor).
+   Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,flavors:[{name,dir,events,book_pts,
+   book_usd,companions:[{tier,gb_bp,clips,wins,pts,usd}]}]}. neg=0 by construction (BE-floor:
+   stop>=entry long / <=entry short). STANDALONE additive book — NEVER compared to riding WIDE. */
+function drawGold(){var j=window._gold||null;
+ var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td>'
+      +'<td class="lbl">gb bp</td><td class="lbl">events</td><td class="lbl">clips</td>'
+      +'<td class="lbl">wins</td><td class="lbl">pts</td><td class="lbl">book($)</td></tr>';
+ if(!j||!(j.flavors||[]).length){el('gctab').innerHTML=h+'<tr><td class="l d" colspan="9">no book yet (deploy-forward · $0 until first forward clip)</td></tr>';
+  el('gcinfo').textContent='native C++ · shadow · neg=0';return;}
+ (j.flavors||[]).forEach(function(fl){
+  var comps=fl.companions||[];var rs=comps.length||1;var first=true;
+  var bcol=(fl.book_usd>0?'var(--grn)':(fl.book_usd<0?'var(--red)':'var(--t2)'));
+  comps.forEach(function(c){
+   h+='<tr>';
+   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+fl.name+'</td>'
+                +'<td class="l" rowspan="'+rs+'">'+fl.dir+'</td>';}
+   h+='<td class="l">'+c.tier+'</td><td class="num">'+c.gb_bp+'</td>';
+   if(first){h+='<td class="num" rowspan="'+rs+'">'+fl.events+'</td>';}
+   h+='<td class="num">'+c.clips+'</td><td class="num">'+c.wins+'</td>'
+     +'<td class="num">'+fmt2(c.pts,2)+'</td>';
+   if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(fl.book_usd))+'</td>';}
+   h+='</tr>';first=false;
+  });
  });
  el('gctab').innerHTML=h;
- el('gcinfo').textContent=ntot+' engines · '+narm+' armed · '+ntr+' companion trades banked';
+ var dcol=(j.desk_usd>0?'var(--grn)':(j.desk_usd<0?'var(--red)':'var(--t2)'));
+ el('gcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(safe(j.desk_usd))
+   +'</span> · lot '+safe(j.lot)+' · '+safe(j.bars)+' H1 bars · deploy-forward · shadow';
 }
-drawGC();
+function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json();}).then(function(j){
+ if(j&&(j.flavors||[]).length)window._gold=j;drawGold();}).catch(function(){drawGold();});}
+setInterval(pollGold,15000);pollGold();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;

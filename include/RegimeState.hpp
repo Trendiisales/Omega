@@ -44,6 +44,7 @@
 #include <ctime>
 #include <deque>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <vector>
 #include "SeedGuard.hpp"   // resolve_seed_path (VPS cwd-robust warm-seed)
@@ -222,10 +223,19 @@ struct RegimeState {
     //   does NOT call this), so the dump is pure live history. ----
     std::string live_dump_path_;
     void set_live_dump(const std::string& p) noexcept { live_dump_path_ = p; }
+    // Optional H1-close sink: fires once per COMPLETED LIVE H1 bar with (ts_sec, close) —
+    // the SAME bars written to the live dump. Used to feed the GoldBeFloorCompanion so its
+    // book sees exactly gold_regime_h1.csv (no duplicate aggregation, no drift). Seed replay
+    // does NOT call append_live_bar_, so the sink only ever gets pure forward live bars.
+    std::function<void(int64_t, double)> h1_sink_;
+    void set_h1_sink(std::function<void(int64_t, double)> s) noexcept { h1_sink_ = std::move(s); }
     void append_live_bar_(int64_t ts_sec, double c) const noexcept {
-        if (live_dump_path_.empty() || c <= 0.0) return;
-        std::ofstream f(live_dump_path_, std::ios::app);
-        if (f.is_open()) f << ts_sec << ',' << c << ',' << c << ',' << c << ',' << c << "\n";
+        if (c <= 0.0) return;
+        if (!live_dump_path_.empty()) {
+            std::ofstream f(live_dump_path_, std::ios::app);
+            if (f.is_open()) f << ts_sec << ',' << c << ',' << c << ',' << c << ',' << c << "\n";
+        }
+        if (h1_sink_) h1_sink_(ts_sec, c);
     }
 };
 
