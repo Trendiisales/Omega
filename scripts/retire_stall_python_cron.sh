@@ -39,7 +39,11 @@ if [ "$REMOVED" -eq 0 ]; then
 fi
 
 echo "[retire] --- lines being removed: ---"
-diff <(grep -v '^[[:space:]]*#' "$BAK") <(grep -v '^[[:space:]]*#' "$NEW") | grep '^<' | sed 's/^< /  - /' | sed 's/\(.\{140\}\).*/\1 .../'
+# NOTE `|| true`: under `set -o pipefail`, `diff` returns 1 when the files differ
+# (which they always do here) and aborts the script BEFORE `crontab "$NEW"` installs —
+# leaving the crontab UNCHANGED while the removed-lines summary is already printed
+# (looks like it worked; didn't). The `|| true` neutralises diff's expected non-zero.
+{ diff <(grep -v '^[[:space:]]*#' "$BAK") <(grep -v '^[[:space:]]*#' "$NEW") || true; } | grep '^<' | sed 's/^< /  - /' | sed 's/\(.\{140\}\).*/\1 .../' || true
 
 # sanity: the 3 crypto SKIP_OMEGA lines MUST survive
 KEEP_CRYPTO=$(grep -c 'stall_accountant\.py' "$NEW" || true)
