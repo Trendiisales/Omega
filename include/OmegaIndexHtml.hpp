@@ -793,6 +793,8 @@ function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json(
  if(j&&(j.flavors||[]).length)window._gold=j;drawGold();}).catch(function(){drawGold();});}
 setInterval(pollGold,15000);pollGold();
 
+)OMEGAD3"
+R"OMEGAD3F(
 /* ── FX COMPANIONS (per-pair <PAIR>Pos/<PAIR>Neg BE-floor · native C++ · additive, STANDALONE) ──
    Fed by pollFx() off /api/fx_companion (fx_companion_state.json, written in-binary by
    omega::fx_befloor_book — faithful port of the validated backtest/fx_befloor_ls.py research).
@@ -839,7 +841,7 @@ setInterval(pollFx,15000);pollFx();
 
 /* ── shadow csv analytics ── */
 var ROWS=[],WIN=1;
-)OMEGAD3"
+)OMEGAD3F"
 R"OMEGAD4(function parseShadow(txt){
  /* HEADER-DRIVEN parse of omega_shadow.csv. The 06-12 rewrite hardcoded a
     12-column layout that never matched the real 41-column file (col 0 is
