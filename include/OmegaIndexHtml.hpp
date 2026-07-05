@@ -664,25 +664,24 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
 
-/* ── crypto companions (up-jump stall-clip, shadow · josgp1) ──
-   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
-   always renders the config even before any live push. Live state (armed / peak mfe% /
-   bars-since-high / clips / bank_bp) overlaid per-symbol from /api/crypto_companion
-   (crypto_companion_state.json, pushed from josgp1) when present. STANDALONE book —
-   never compared to riding WIDE (operator rule: additive, judged on its own merit). */
+/* ── crypto companions — TIERED-2 + SELF-FUNDING LADDER (shadow · josgp1 c6b97e5) ──
+   Each parent up-jump trade runs 2 base tiers (TIGHT+WIDE) + a self-funding ladder (each
+   cost-covered clip opens 1 more WIDE leg, cap 5). Roster baked (per-coin intraday W/thr +
+   tier knobs) so the panel renders before any live push. Live state overlaid per-symbol from
+   /api/crypto_companion (crypto_companion_state.json, pushed from josgp1): book aggregate
+   (armed/peak/clips/bank) PLUS per-leg `sublegs` [{id:T1/T2/L1..,armed,peak_mfe_pct,
+   bars_since_high}] rendered as doubly-nested rows. STANDALONE book — never vs-WIDE. */
 var CC_ROSTER=[
- {sym:'BTC', arm:1,stall:6,rev:0.30,reclip:0.05,mode:''},
- {sym:'ETH', arm:2,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'SOL', arm:3,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'DOGE',arm:3,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'BNB', arm:3,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'ADA', arm:2,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'TRX', arm:2,stall:6,rev:null,reclip:0.05,mode:'stall-only'},
- {sym:'NEAR',arm:3,stall:8,rev:null,reclip:0.05,mode:'stall-only'},
- {sym:'AAVE',arm:1,stall:6,rev:null,reclip:0,   mode:'inverse single-clip'},
- {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
+ {sym:'BTC', w:4,thr:8, tight:'a3/s0/g50',wide:'a5/s0/g50',mode:''},
+ {sym:'ETH', w:4,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
+ {sym:'SOL', w:4,thr:12,tight:'a2/s0/g50',wide:'a8/s0/g50',mode:''},
+ {sym:'DOGE',w:8,thr:5, tight:'a3/s3/g0', wide:'a8/s8/g40',mode:''},
+ {sym:'BNB', w:4,thr:5, tight:'a3/s3/g30',wide:'a8/s0/g50',mode:''},
+ {sym:'ADA', w:6,thr:5, tight:'a3/s4/g50',wide:'a5/s6/g0', mode:''},
+ {sym:'TRX', w:8,thr:8, tight:'a3/s0/g30',wide:'a8/s6/g0', mode:''},
+ {sym:'NEAR',w:6,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
+ {sym:'OP',  mode:'parent-only'}
 ];
-function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
    pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
@@ -694,13 +693,14 @@ function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
    gold ENGINE LEDGER engine→companion nesting. Companion is STANDALONE additive, never vs-WIDE. */
 function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
  var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
-      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
-      +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
+      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">TIGHT</td>'
+      +'<td class="lbl">WIDE</td><td class="lbl">cap</td><td class="lbl">reclip</td>'
       +'<td class="lbl">clips</td><td class="lbl">bank(bp · $)</td></tr>';
  var narm=0,ntot=0,totclips=0,totbank=0;
  CC_ROSTER.forEach(function(r){
   /* PARENT engine line (the crypto trend leg it mimics) */
-  h+='<tr><td class="l" style="font-weight:600">'+r.sym+' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span></td>'
+  var trig=r.w?' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'% · rides WIDE to flip (parent)</span>':' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span>';
+  h+='<tr><td class="l" style="font-weight:600">'+r.sym+trig+'</td>'
     +'<td colspan="9"></td></tr>';
   if(r.mode==='parent-only'){
    h+='<tr style="opacity:.5"><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">&#8627; parent-only — no companion</td></tr>';return;}
@@ -712,12 +712,20 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bkv=safe(s.bank_bp);
   var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+' bp <span class="d">$'+fmt2(bpUsd(s.bank_bp),2)+'</span></span>';
-  var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
-  /* nested companion (clip) sub-row */
-  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion (up-jump clip)'+mtag+'</td><td class="l">'+st+'</td>'
-    +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num">'+r.arm+'</td>'
-    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
+  /* companion BOOK aggregate sub-row (2 base tiers + self-funding ladder cap5) */
+  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (tiered ladder)</td><td class="l">'+st+'</td>'
+    +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+r.tight+'</td>'
+    +'<td class="num d">'+r.wide+'</td><td class="num d">5</td><td class="num d">0.05</td>'
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
+  /* per-leg sublegs (T1/T2 base + L1..Ln ladder) currently OPEN, live from josgp1 */
+  (s.sublegs||[]).forEach(function(sl){
+   var lst=sl.armed?'<span class="g">ARMED</span>':'<span class="d">tracking</span>';
+   var lpk=sl.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(sl.peak_mfe_pct,2);
+   var lstc=sl.bars_since_high===undefined?'<span class="d">—</span>':String(sl.bars_since_high);
+   var isL=(sl.id||'')[0]==='L';
+   h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:18px">&#8627; '+(sl.id||'?')+(isL?' <span class="d" style="font-size:9px">ladder</span>':'')+'</td><td class="l">'+lst+'</td>'
+     +'<td class="num">'+lpk+'</td><td class="num">'+lstc+'</td><td colspan="6"></td></tr>';
+  });
  });
  el('cctab').innerHTML=h;
  el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
@@ -776,7 +784,8 @@ function parseShadow(txt){
   if(sym==='__BOOT__'||eng==='boot_writetest')continue;
   var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
   out.push({ts:ts,sym:sym,side:side,eng:eng,
-   ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
+)OMEGAD3"
+R"OMEGAD4(   ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
    xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
    pnl:parseFloat(f[ix.net_pnl])||0,
@@ -790,8 +799,7 @@ function parseShadow(txt){
  out.sort(function(a,b){return a.ts-b.ts;});return out;}
 function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
-)OMEGAD3"
-R"OMEGAD4( return ROWS.filter(function(r){return r.ts>=cut;});}
+ return ROWS.filter(function(r){return r.ts>=cut;});}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
@@ -966,7 +974,8 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
-  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+)OMEGAD4"
+R"OMEGAD5(  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
@@ -977,8 +986,7 @@ function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
    +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
-)OMEGAD4"
-R"OMEGAD5(  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
+  return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
    +'<td class="num d">'+lots(r.size)+'</td>'
    +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
@@ -1169,15 +1177,15 @@ function prTip(m,cx,cy){var tip=el('prtip');
  var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
  var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
- var isPart=/^PARTIAL/.test(r.reason||'');
+)OMEGAD5"
+R"OMEGAD6( var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
   +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
   +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
  tip.style.display='block';
-)OMEGAD5"
-R"OMEGAD6( var tw2=tip.offsetWidth,th2=tip.offsetHeight;
+ var tw2=tip.offsetWidth,th2=tip.offsetHeight;
  tip.style.left=Math.min(window.innerWidth-tw2-8,cx+14)+'px';
  tip.style.top=(cy-th2-12<0?cy+18:cy-th2-12)+'px';}
 (function(){var cvp=el('prc');

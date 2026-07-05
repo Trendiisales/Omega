@@ -655,25 +655,24 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
 
-/* ── crypto companions (up-jump stall-clip, shadow · josgp1) ──
-   Roster = FINAL SOLVED ROSTER (arm% / stall bars / rev_gb / reclip), baked so the panel
-   always renders the config even before any live push. Live state (armed / peak mfe% /
-   bars-since-high / clips / bank_bp) overlaid per-symbol from /api/crypto_companion
-   (crypto_companion_state.json, pushed from josgp1) when present. STANDALONE book —
-   never compared to riding WIDE (operator rule: additive, judged on its own merit). */
+/* ── crypto companions — TIERED-2 + SELF-FUNDING LADDER (shadow · josgp1 c6b97e5) ──
+   Each parent up-jump trade runs 2 base tiers (TIGHT+WIDE) + a self-funding ladder (each
+   cost-covered clip opens 1 more WIDE leg, cap 5). Roster baked (per-coin intraday W/thr +
+   tier knobs) so the panel renders before any live push. Live state overlaid per-symbol from
+   /api/crypto_companion (crypto_companion_state.json, pushed from josgp1): book aggregate
+   (armed/peak/clips/bank) PLUS per-leg `sublegs` [{id:T1/T2/L1..,armed,peak_mfe_pct,
+   bars_since_high}] rendered as doubly-nested rows. STANDALONE book — never vs-WIDE. */
 var CC_ROSTER=[
- {sym:'BTC', arm:1,stall:6,rev:0.30,reclip:0.05,mode:''},
- {sym:'ETH', arm:2,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'SOL', arm:3,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'DOGE',arm:3,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'BNB', arm:3,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'ADA', arm:2,stall:6,rev:0.50,reclip:0.05,mode:''},
- {sym:'TRX', arm:2,stall:6,rev:null,reclip:0.05,mode:'stall-only'},
- {sym:'NEAR',arm:3,stall:8,rev:null,reclip:0.05,mode:'stall-only'},
- {sym:'AAVE',arm:1,stall:6,rev:null,reclip:0,   mode:'inverse single-clip'},
- {sym:'OP',  arm:null,stall:null,rev:null,reclip:null,mode:'parent-only'}
+ {sym:'BTC', w:4,thr:8, tight:'a3/s0/g50',wide:'a5/s0/g50',mode:''},
+ {sym:'ETH', w:4,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
+ {sym:'SOL', w:4,thr:12,tight:'a2/s0/g50',wide:'a8/s0/g50',mode:''},
+ {sym:'DOGE',w:8,thr:5, tight:'a3/s3/g0', wide:'a8/s8/g40',mode:''},
+ {sym:'BNB', w:4,thr:5, tight:'a3/s3/g30',wide:'a8/s0/g50',mode:''},
+ {sym:'ADA', w:6,thr:5, tight:'a3/s4/g50',wide:'a5/s6/g0', mode:''},
+ {sym:'TRX', w:8,thr:8, tight:'a3/s0/g30',wide:'a8/s6/g0', mode:''},
+ {sym:'NEAR',w:6,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
+ {sym:'OP',  mode:'parent-only'}
 ];
-function ccKnob(v){return v===null?'<span class="d">off</span>':String(v);}
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
    pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
@@ -685,13 +684,14 @@ function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
    gold ENGINE LEDGER engine→companion nesting. Companion is STANDALONE additive, never vs-WIDE. */
 function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
  var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
-      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">arm%</td>'
-      +'<td class="lbl">stall max</td><td class="lbl">rev_gb</td><td class="lbl">reclip</td>'
+      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">TIGHT</td>'
+      +'<td class="lbl">WIDE</td><td class="lbl">cap</td><td class="lbl">reclip</td>'
       +'<td class="lbl">clips</td><td class="lbl">bank(bp · $)</td></tr>';
  var narm=0,ntot=0,totclips=0,totbank=0;
  CC_ROSTER.forEach(function(r){
   /* PARENT engine line (the crypto trend leg it mimics) */
-  h+='<tr><td class="l" style="font-weight:600">'+r.sym+' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span></td>'
+  var trig=r.w?' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'% · rides WIDE to flip (parent)</span>':' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span>';
+  h+='<tr><td class="l" style="font-weight:600">'+r.sym+trig+'</td>'
     +'<td colspan="9"></td></tr>';
   if(r.mode==='parent-only'){
    h+='<tr style="opacity:.5"><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">&#8627; parent-only — no companion</td></tr>';return;}
@@ -703,12 +703,20 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bkv=safe(s.bank_bp);
   var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+' bp <span class="d">$'+fmt2(bpUsd(s.bank_bp),2)+'</span></span>';
-  var mtag=r.mode?' <span class="d" style="font-size:9px">'+r.mode+'</span>':'';
-  /* nested companion (clip) sub-row */
-  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion (up-jump clip)'+mtag+'</td><td class="l">'+st+'</td>'
-    +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num">'+r.arm+'</td>'
-    +'<td class="num">'+r.stall+'</td><td class="num">'+ccKnob(r.rev)+'</td><td class="num">'+ccKnob(r.reclip)+'</td>'
+  /* companion BOOK aggregate sub-row (2 base tiers + self-funding ladder cap5) */
+  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (tiered ladder)</td><td class="l">'+st+'</td>'
+    +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+r.tight+'</td>'
+    +'<td class="num d">'+r.wide+'</td><td class="num d">5</td><td class="num d">0.05</td>'
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
+  /* per-leg sublegs (T1/T2 base + L1..Ln ladder) currently OPEN, live from josgp1 */
+  (s.sublegs||[]).forEach(function(sl){
+   var lst=sl.armed?'<span class="g">ARMED</span>':'<span class="d">tracking</span>';
+   var lpk=sl.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(sl.peak_mfe_pct,2);
+   var lstc=sl.bars_since_high===undefined?'<span class="d">—</span>':String(sl.bars_since_high);
+   var isL=(sl.id||'')[0]==='L';
+   h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:18px">&#8627; '+(sl.id||'?')+(isL?' <span class="d" style="font-size:9px">ladder</span>':'')+'</td><td class="l">'+lst+'</td>'
+     +'<td class="num">'+lpk+'</td><td class="num">'+lstc+'</td><td colspan="6"></td></tr>';
+  });
  });
  el('cctab').innerHTML=h;
  el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
