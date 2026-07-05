@@ -80,7 +80,7 @@ public:
             double ts = 0, o = 0, h = 0, l = 0, c = 0;
             const int got = std::sscanf(line.c_str(), "%lf,%lf,%lf,%lf,%lf", &ts, &o, &h, &l, &c);
             double close = (got == 5) ? c : (got == 2 ? o : 0.0);   // ts,o,h,l,c  or  ts,c
-            if (got >= 2 && close > 0.0) { ingest_(static_cast<int64_t>(ts), close); ++n; }
+            if (got >= 2 && close > 0.0) { ingest_(norm_ts_(static_cast<int64_t>(ts)), close); ++n; }
         }
         std::printf("[AUGOLD][SEED] %zu H1 bars from %s (bars=%zu)\n", n, path.c_str(), ts_.size());
         std::fflush(stdout);
@@ -90,6 +90,8 @@ public:
     // Call ONCE after all pre-deploy seeding. Stamps + persists deploy_ts (= latest seeded bar)
     // on the first-ever boot so the live book counts ONLY clips closing forward from deploy.
     void finalize_seed() noexcept {
+        dedup_sort_();   // combined seed sources (warmup CSV may be ms + overlap the live dump);
+                         // match tools/gold_befloor_companion.py _write_hist: keep-last per ts, sort by ts
         if (!deploy_loaded_ && !ts_.empty()) {
             deploy_ts_ = ts_.back(); deploy_loaded_ = true;
             std::ofstream f(cfg_.deploy_path, std::ios::trunc);
@@ -107,6 +109,7 @@ public:
     // Registered as RegimeState's H1 sink so it sees exactly the bars gold_regime_h1.csv gets. ----
     void on_h1_bar(int64_t ts_sec, double close) noexcept {
         if (!enabled || close <= 0.0) return;
+        ts_sec = norm_ts_(ts_sec);
         if (!ts_.empty() && ts_sec <= ts_.back()) return;   // monotonic live append only
         ingest_(ts_sec, close);
         recompute_and_write();
@@ -132,6 +135,28 @@ private:
     bool    deploy_loaded_ = false;
 
     void ingest_(int64_t ts, double close) noexcept { ts_.push_back(ts); c_.push_back(close); }
+
+    // Normalise a bar ts to SECONDS. Some seed CSVs (e.g. warmup_XAUUSD_H1.csv) carry ms ts;
+    // the live dump + H1 sink are seconds. Mixed units break the deploy_ts gate + monotonicity.
+    static int64_t norm_ts_(int64_t ts) noexcept { return ts >= 100000000000LL ? ts / 1000 : ts; }
+
+    // Keep-last per ts, sort ascending — faithful to python _write_hist. Called once after all
+    // seed sources are appended (warmup CSV may overlap the live dump), before deploy stamping.
+    void dedup_sort_() noexcept {
+        const size_t n = ts_.size();
+        if (n < 2) return;
+        std::vector<size_t> idx(n);
+        for (size_t i = 0; i < n; ++i) idx[i] = i;
+        // stable sort by ts preserves original order among equal ts -> the LAST original wins on dedup.
+        std::stable_sort(idx.begin(), idx.end(), [this](size_t a, size_t b){ return ts_[a] < ts_[b]; });
+        std::vector<int64_t> nts; std::vector<double> nc; nts.reserve(n); nc.reserve(n);
+        for (size_t k = 0; k < n; ++k) {
+            const size_t i = idx[k];
+            if (k + 1 < n && ts_[idx[k + 1]] == ts_[i]) continue;   // skip: keep last of an equal-ts run
+            nts.push_back(ts_[i]); nc.push_back(c_[i]);
+        }
+        ts_.swap(nts); c_.swap(nc);
+    }
 
     struct Trade { int ei; int xi; };
     struct BookRes { double pts = 0.0; int clips = 0; int wins = 0; };
