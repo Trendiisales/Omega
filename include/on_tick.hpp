@@ -5,6 +5,7 @@
 #include <string>
 #include "PredictiveRanges.hpp"  // GUI predictive-range snapshot (parent-TU header; needs omega_types/omega_runtime first)
 #include "AccountingGuard.hpp"   // S-2026-06-13h independent runaway-position oversight (parent-TU header)
+#include "StallCompanion.hpp"    // giveback-clip companion zoo (native C++ port of stall_accountant.py)
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -966,6 +967,30 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             // close hooks after log review. See AccountingGuard.hpp.
             omega_acct::check(g_open_positions.snapshot_all(),
                               (int64_t)std::time(nullptr));
+
+            // ── Stall/giveback companion zoo (native C++ port of stall_accountant.py) ──
+            // Observe-only paper shadow: mirror each real leg in the freshly-rebuilt
+            // live_trades[] snapshot, bank each book's OWN giveback clip, NEVER touch a
+            // real position. Registry throttles internally to 60s (retired-cron cadence);
+            // due() gates the row-vector build so we don't allocate 240x/min for nothing.
+            {
+                const int64_t now_sc = (int64_t)std::time(nullptr);
+                if (omega::stall_companions().due(now_sc)) {
+                    std::vector<omega::StallLiveRow> lts;
+                    if (auto* sp = g_telemetry.snap()) {
+                        lts.reserve(sp->live_trade_count);
+                        for (int i = 0; i < sp->live_trade_count; ++i) {
+                            const auto& t = sp->live_trades[i];
+                            omega::StallLiveRow r;
+                            r.book = "OMEGA"; r.eng = t.engine; r.sym = t.symbol; r.side = t.side;
+                            r.entry = t.entry; r.current = t.current; r.upnl = t.live_pnl;
+                            lts.push_back(std::move(r));
+                        }
+                    }
+                    omega::stall_companions().maybe_drive(lts, now_sc,
+                        log_root_dir() + "/gold_d1_trend_h4.csv");
+                }
+            }
         }
 
         // ── DOLLAR STOP: emergency per-trade runtime cut ──────────────────

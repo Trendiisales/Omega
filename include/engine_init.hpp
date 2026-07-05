@@ -14,6 +14,7 @@
 #include "QndxSqfIbkr.hpp"      // thin TWS-free interface to the in-process QNDX (Nasdaq-100 SQF) book
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 #include "GoldBeFloorCompanion.hpp" // AUPOS/AUNEG gold BE-floor companion (native C++, /api/gold_companion)
+#include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
 static void init_engines(const std::string& cfg_path)
 {
@@ -1566,6 +1567,60 @@ static void init_engines(const std::string& cfg_path)
         }
         printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) wired: deploy-forward, H1-sink live\n");
         fflush(stdout);
+
+        // ── Stall/giveback-clip companion zoo (S-2026-07-06) ─────────────────
+        //   Native C++ port of the retired Mac-cron stall_accountant.py (25 gold/index
+        //   PROTECTION books) + companion_aggregate.py. PARENT-MIRROR streaming books:
+        //   each mirrors the real engine legs in the in-memory live_trades[] snapshot,
+        //   banks its OWN giveback-clip book, never touches a real position
+        //   (feedback-companion-independent-engine). Driven every 60s from on_tick off
+        //   the live snapshot; the merged aggregate is written to companion_state.json
+        //   -> /api/companion (the existing desk COMPANION panel, schema unchanged).
+        //   State lives under C:\Omega\stall\<book>\ ; the historical companion_closed.csv
+        //   ledgers are migrated from the Mac at cutover so each book's bank CONTINUES.
+        //   Configs are a 1:1 transcription of the retired cron lines (params in comment).
+        {
+            using SC = omega::StallBook::Config;
+            const std::vector<std::string> EXG =   // the shared "main" book's default engine exclude list
+                {"IBS","Mean-Rev","MeanRev","RSIrev","RSIRev","Regime","Connors","Seasonal",
+                 "Monday","Turnaround","TurnOfMonth","Turtle","TSMom50"};
+            auto& reg = omega::stall_companions();
+            auto B = [&](SC c){ c.dir = "stall/" + c.name; reg.add(std::move(c)); };
+            // helpers: PCT book / USD book (mirrors the two cron gauges)
+            // --- shared main book (default EXCLUDE, default gauge) ---
+            { SC c; c.name="main"; c.exclude=EXG; B(c); }
+            // --- index turtle D1 clips (PCT gauge, arm2, giveback variants) ---
+            { SC c; c.name="spx_turtle_clip";      c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="dj30_turtle_clip";     c.include={"DJ30"};  c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="spx_turtle_clip_gv40"; c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.40; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="spx_turtle_clip_gv60"; c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.60; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="spx_turtle_clip_gv80"; c.include={"US500"}; c.gate_pct=2; c.rev_gb=0.80; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
+            // --- gold vol/panic/mgc %-clips ---
+            { SC c; c.name="mgc_fastdon_clip";        c.include={"MgcFastDonchian30m"}; c.gate_pct=1; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0; c.tf_sec=1800;   B(c); }
+            { SC c; c.name="gold_panic_bounce_clip";  c.include={"GoldPanicBounce"};    c.gate_pct=1; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0; c.tf_sec=3600;   B(c); }
+            // --- XAU TrendFollow zoo reclip companions (PCT gauge) ---
+            { SC c; c.name="xau_tf4h_clip"; c.include={"XauTrendFollow4h"}; c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=4*3600; B(c); }
+            { SC c; c.name="xau_tf1h_clip"; c.include={"XauTrendFollow1h"}; c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=1*3600; B(c); }
+            { SC c; c.name="xau_tfd1_clip"; c.include={"XauTrendFollowD1"}; c.gate_pct=1; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
+            // --- XAU TrendFollow $-gauge clips (USD mode: arm_usd/trail_usd/retrig_usd) ---
+            { SC c; c.name="xau_tfd1_usd";   c.include={"XauTrendFollowD1"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=20; c.retrig_usd=20; c.stall_bars=9999; c.tf_sec=24*3600; B(c); }
+            { SC c; c.name="xau_tf4h_usd_a"; c.include={"XauTrendFollow4h"};                    c.arm_usd=30; c.trail_usd=15; c.retrig_usd=15; c.stall_bars=9999; c.tf_sec=4*3600;  B(c); }
+            { SC c; c.name="xau_tf4h_usd_b"; c.include={"XauTrendFollow4h"};                    c.arm_usd=30; c.trail_usd=15; c.retrig_usd=15; c.stall_bars=9999; c.tf_sec=4*3600;  B(c); }
+            { SC c; c.name="xau_tf1h_usd_a"; c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1*3600;  B(c); }
+            { SC c; c.name="xau_tf1h_usd_b"; c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1*3600;  B(c); }
+            { SC c; c.name="xau_tf4h_aggr";  c.include={"XauTrendFollow4h"};                    c.arm_usd=15; c.trail_usd=5;  c.retrig_usd=15; c.stall_bars=8;    c.tf_sec=1*3600;  B(c); }
+            { SC c; c.name="xau_tf1h_aggr";  c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=10; c.retrig_usd=15; c.stall_bars=12;   c.tf_sec=1*3600;  B(c); }
+            { SC c; c.name="xau_tf4h_aggr_b";c.include={"XauTrendFollow4h"};                    c.arm_usd=15; c.trail_usd=5;  c.retrig_usd=15; c.stall_bars=8;    c.tf_sec=1*3600;  B(c); }
+            { SC c; c.name="xau_tf1h_aggr_b";c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=10; c.retrig_usd=15; c.stall_bars=12;   c.tf_sec=1*3600;  B(c); }
+            { SC c; c.name="xau_tf2h_usd_a"; c.include={"XauTrendFollow2h"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=10; c.retrig_usd=10; c.stall_bars=9999; c.tf_sec=2*3600;  B(c); }
+            { SC c; c.name="xau_tf2h_usd_b"; c.include={"XauTrendFollow2h"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=10; c.retrig_usd=10; c.stall_bars=9999; c.tf_sec=2*3600;  B(c); }
+            { SC c; c.name="xau_tfd1_usd_b"; c.include={"XauTrendFollowD1"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=20; c.retrig_usd=20; c.stall_bars=9999; c.tf_sec=24*3600; B(c); }
+            // --- GoldVolBreakout M30 $-gauge clips (bull-gated) ---
+            { SC c; c.name="gvb_m30_usd_a"; c.include={"GoldVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
+            { SC c; c.name="gvb_m30_usd_b"; c.include={"GoldVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
+            printf("[OMEGA-INIT] stall-companion zoo wired: %zu books (native C++, /api/companion; python cron retired)\n", reg.size());
+            fflush(stdout);
+        }
 
         // Market-bear PROXY (NAS bellwether) -- IndexRiskGate's price-based dead-feed
         //   fallback so index longs stay protected in a bear even with no macro feed.
