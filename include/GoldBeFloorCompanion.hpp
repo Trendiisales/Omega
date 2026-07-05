@@ -120,10 +120,15 @@ public:
     void recompute_and_write() const noexcept {
         const std::string js = build_state_();
         const std::string tmp = cfg_.state_path + ".tmp";
-        std::ofstream f(tmp, std::ios::trunc);
-        if (!f.is_open()) return;
-        f << js;
-        f.close();
+        { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return; f << js; }
+        // WINDOWS gotcha: std::rename FAILS if the destination exists (EEXIST) -- the deploy box
+        // is Windows, so without this the tmp piles up and the live file stays stale (the exact bug
+        // that left the desk serving python's 3200-bar frame). Remove-then-rename replaces on both
+        // platforms (no <windows.h> / NOMINMAX needed); the sub-ms gap is covered by the endpoint's
+        // empty-state default and the hourly write cadence.
+#if defined(_WIN32)
+        std::remove(cfg_.state_path.c_str());
+#endif
         std::rename(tmp.c_str(), cfg_.state_path.c_str());
     }
 
