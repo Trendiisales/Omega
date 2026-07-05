@@ -33,11 +33,91 @@ LIVE_DUMP_MANIFEST = HOME / "Omega" / "tools" / "live_dump_manifest.tsv"
 VPS_LOG_ROOT = r"C:\Omega\logs"
 
 
+def _easter(year: int) -> dt.date:
+    # Anonymous Gregorian computus -> Easter Sunday. Needed for Good Friday (NYSE closed).
+    a = year % 19
+    b, c = divmod(year, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return dt.date(year, month, day)
+
+
+def _observed(d: dt.date) -> dt.date:
+    # NYSE observed-holiday shift: Sat -> prior Fri, Sun -> next Mon.
+    if d.weekday() == 5:
+        return d - dt.timedelta(days=1)
+    if d.weekday() == 6:
+        return d + dt.timedelta(days=1)
+    return d
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> dt.date:
+    # nth (1-based) `weekday` (Mon=0) of month; n<0 counts from the end.
+    if n > 0:
+        d = dt.date(year, month, 1)
+        d += dt.timedelta(days=(weekday - d.weekday()) % 7)
+        return d + dt.timedelta(weeks=n - 1)
+    d = dt.date(year, month, 1) + dt.timedelta(days=31)  # into next month
+    d = d.replace(day=1) - dt.timedelta(days=1)          # last day of month
+    d -= dt.timedelta(days=(d.weekday() - weekday) % 7)
+    return d
+
+
+def us_market_holidays(year: int) -> set[dt.date]:
+    """NYSE full-day closures for `year` (dates the US index/gold feeds legitimately
+    do NOT advance). Computed, not hardcoded, so it stays correct in future years.
+    Juneteenth included from 2022 (first NYSE observance)."""
+    h = {
+        _observed(dt.date(year, 1, 1)),                    # New Year's Day
+        _nth_weekday(year, 1, 0, 3),                        # MLK Day (3rd Mon Jan)
+        _nth_weekday(year, 2, 0, 3),                        # Washington's Birthday (3rd Mon Feb)
+        _easter(year) - dt.timedelta(days=2),              # Good Friday
+        _nth_weekday(year, 5, 0, -1),                       # Memorial Day (last Mon May)
+        _nth_weekday(year, 9, 0, 1),                        # Labor Day (1st Mon Sep)
+        _nth_weekday(year, 11, 3, 4),                       # Thanksgiving (4th Thu Nov)
+        _observed(dt.date(year, 7, 4)),                    # Independence Day
+        _observed(dt.date(year, 12, 25)),                  # Christmas
+    }
+    if year >= 2022:
+        h.add(_observed(dt.date(year, 6, 19)))             # Juneteenth
+    return h
+
+
+def is_trading_day(d: dt.date) -> bool:
+    return d.weekday() < 5 and d not in us_market_holidays(d.year)
+
+
 def last_trading_day(today: dt.date) -> dt.date:
+    # Back off weekends AND US market holidays so the freshness reference matches the
+    # true last session (else the day after a holiday false-REDs every US feed).
     d = today
-    while d.weekday() >= 5:  # Sat=5 Sun=6 -> back to Fri
+    while not is_trading_day(d):
         d -= dt.timedelta(days=1)
     return d
+
+
+def trading_days_between(d: dt.date, ltd: dt.date) -> int:
+    """Number of trading sessions AFTER `d` up to and including `ltd` — i.e. how many
+    sessions the feed is behind. 0 if the data is at/ahead of the reference. This is
+    the true 'max_age_trading_days' the FEEDS table always meant: counting calendar
+    days false-REDs every Monday (Fri->Mon = 3 calendar days) and every post-holiday
+    day. Skips weekends + US market holidays so a normal or post-holiday Monday with
+    Friday's (or the pre-holiday) bar reads age=1, not 3-4."""
+    if d >= ltd:
+        return 0
+    n, cur = 0, d + dt.timedelta(days=1)
+    while cur <= ltd:
+        if is_trading_day(cur):
+            n += 1
+        cur += dt.timedelta(days=1)
+    return n
 
 
 def epoch_or_iso(s: str) -> dt.date | None:
@@ -263,7 +343,7 @@ def main() -> int:
         if d is None:
             status, age = "MISSING", None
         else:
-            age = (ltd - d).days
+            age = trading_days_between(d, ltd)
             status = "FRESH" if age <= max_age else "STALE"
         if status != "FRESH":
             if kind == "live":
