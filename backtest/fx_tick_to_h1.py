@@ -10,8 +10,21 @@ import sys, os, glob, statistics, calendar
 
 TICK="/Users/jo/Tick"
 
-def agg(pair):
-    files=sorted(glob.glob(f"{TICK}/{pair}/DAT_ASCII_{pair}_T_*.csv"))
+import re
+def _month(fp):
+    m=re.search(r"_T_?(\d{6})", os.path.basename(fp))
+    return m.group(1) if m else fp
+
+def agg(pair, srcglob=None, outname=None):
+    # recursive: files may sit directly in {pair}/ OR nested one level in extracted
+    # HISTDATA subfolders (incl. dup '(1)'/'_x_' redownloads -> dedup by YYYYMM month).
+    pat = srcglob or f"{TICK}/{pair}/**/DAT_ASCII_{pair}_T_*.csv"
+    allf=sorted(glob.glob(pat, recursive=True)) + sorted(glob.glob(f"{TICK}/{pair}/DAT_ASCII_{pair}_T_*.csv"))
+    seen=set(); files=[]
+    for fp in sorted(allf):
+        mk=_month(fp)
+        if mk in seen: continue      # skip duplicate month (the (1)/_x_ copies)
+        seen.add(mk); files.append(fp)
     if not files:
         print(f"  {pair}: no tick files"); return None
     bars={}                # hour_ts -> [o,h,l,c]
@@ -47,7 +60,7 @@ def agg(pair):
                     b[3]=mid
     if not bars:
         print(f"  {pair}: 0 bars"); return None
-    out=f"{TICK}/{pair}_befloor_h1.csv"
+    out=f"{TICK}/{outname or pair}_befloor_h1.csv"
     with open(out,"w") as f:
         f.write("ts,o,h,l,c\n")
         for hts in sorted(bars):

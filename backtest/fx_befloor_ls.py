@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""FX AuPos/AuNeg BE-floor companion — VIABILITY RESEARCH (faithful port of the gold
+"""FX per-pair Pos/Neg BE-floor companion — VIABILITY RESEARCH (faithful port of the gold
 mechanism in backtest/gold_befloor_ls.py, adapted to forex).
 
+Flavors are named PER PAIR (GBPUSDPos/GBPUSDNeg, USDJPYPos/USDJPYNeg, …) — NOT the gold
+engine's AuPos/AuNeg, to avoid confusion with the live GoldBeFloorCompanion AUPOS/AUNEG book.
+
 Same STANDALONE additive companion (feedback-companion-independent-engine): a 2h (W=2 H1)
-jump detector arms an up-window (LONG/AuPos) or down-window (SHORT/AuNeg); inside the window
+jump detector arms an up-window (<PAIR>Pos/LONG) or down-window (<PAIR>Neg/SHORT); inside it
 a BE-floor leg stays FLAT until price clears +be_bp from ref (covers RT cost), opens THERE,
 stop sits at/above entry (long) or at/below entry (short) and trails only the favourable way
 => exit >= entry (long) / <= entry (short) ALWAYS => net_bp >= 0 on EVERY clip BY CONSTRUCTION.
@@ -94,7 +97,8 @@ def x2(bars,trades,be,tg,wg,is_long):
 
 # Real RT bid-ask cost per pair (median spread, bp) from fx_tick_to_h1.py — deducted
 # per clip: every clip is one open+close round trip => pays ~1 full spread. HONEST net.
-RT_COST = {"EURUSD":0.7, "AUDUSD":1.61, "NZDUSD":1.95, "USDCAD":0.90, "EURGBP":1.07}
+RT_COST = {"EURUSD":0.7, "AUDUSD":1.61, "NZDUSD":1.95, "USDCAD":0.90, "EURGBP":1.07,
+           "GBPUSD2022H2":0.76, "GBPUSD":0.74, "USDJPY":0.51}
 _COST = 0.0   # set per-file in run()
 
 def met(r):
@@ -114,15 +118,18 @@ def run(path):
         print(f"  SKIP {os.path.basename(path)} — only {N} bars"); return
     base=os.path.basename(path)
     _COST=next((v for k,v in RT_COST.items() if k in base), 1.5)   # per-pair real spread; 1.5 default
+    # per-pair flavor names (operator: NOT gold's AuPos/AuNeg -> GBPUSDPos/GBPUSDNeg etc.)
+    tag=base.replace("_befloor_h1.csv","").replace("_merged.h1.csv","").replace(".csv","").upper()
+    POS,NEG=f"{tag}Pos", f"{tag}Neg"
     half=(bars[0][0]+bars[0][-1])//2
     span_d=(bars[0][-1]-bars[0][0])/86400.0
     print(f"\n########## {base}  bars={N}  span={span_d:.0f}d  W={W}h  RT_cost={_COST:.2f}bp/clip")
     print(f"  net = GROSS minus real RT spread per clip. Report ONLY cost-adjusted net (both WF halves must be +).")
-    print(f"{'thr%':>5s} {'be':>3s} {'flav':>5s} {'BEST T/W':>9s} {'clips':>6s} {'neg':>4s} {'wins':>5s} "
+    print(f"{'thr%':>5s} {'be':>3s} {'flavor':>13s} {'BEST T/W':>9s} {'clips':>6s} {'neg':>4s} {'wins':>5s} "
           f"{'GROSS%':>8s} {'NET%':>8s} {'WF-H1%':>8s} {'WF-H2%':>8s} {'~$/lot':>8s}")
     for thr in THRS:
         tl=parent(bars,W,thr,True); tsr=parent(bars,W,thr,False)
-        for flav,trades,is_long in [("AuPos",tl,True),("AuNeg",tsr,False)]:
+        for flav,trades,is_long in [(POS,tl,True),(NEG,tsr,False)]:
             for be in BE_BPS:
                 best=None
                 for tg in TIGHT:
@@ -136,7 +143,7 @@ def run(path):
                 h1n=f"{h1['net']:+8.2f}" if h1 else "     n/a"
                 h2n=f"{h2['net']:+8.2f}" if h2 else "     n/a"
                 usd=m["net"]*1000.0/2.0   # net% * $1000/1%/lot, /2 because x2 stacks two tiers
-                print(f"{thr*100:5.2f} {be:3.0f} {flav:>5s} {tg:>4d}/{wg:<4d} {m['n']:6d} {m['neg']:4d} "
+                print(f"{thr*100:5.2f} {be:3.0f} {flav:>13s} {tg:>4d}/{wg:<4d} {m['n']:6d} {m['neg']:4d} "
                       f"{m['wins']:5d} {m['gross']:+8.2f} {m['net']:+8.2f} {h1n} {h2n} {usd:+8.0f}")
 
 
@@ -146,7 +153,7 @@ def main():
         cands=["/Users/jo/Tick/EURUSD_merged.h1.csv"]
         cands+=sorted(glob.glob("/Users/jo/Tick/*_befloor_h1.csv"))  # aggregated majors, if built
         args=[p for p in cands if os.path.exists(p)]
-    print("FX BE-FLOOR AuPos/AuNeg companion — STANDALONE additive, neg MUST=0 (BE-floor by construction).")
+    print("FX BE-FLOOR per-pair Pos/Neg companion — STANDALONE additive, neg MUST=0 (BE-floor by construction).")
     print("Net in % of notional (1% ~ $1000/std lot). Best T/W tier shown per (thr,be,flavor).")
     for p in args: run(p)
 
