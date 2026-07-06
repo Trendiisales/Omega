@@ -1704,75 +1704,24 @@ static void init_engines(const std::string& cfg_path)
         printf("[OMEGA-INIT][SEED] USOIL BE-floor companion (USOILPos/USOILNeg) wired: deploy-forward, on_tick H1-agg live, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
         fflush(stdout);
 
-        // ── FX per-pair Pos/Neg BE-floor companion (S-2026-07-06) ────────────
-        //   Native C++ port of the VALIDATED research backtest/fx_befloor_ls.py (per-pair
-        //   <PAIR>Pos/<PAIR>Neg, neg=0 by construction, both WF halves +). SEPARATE
-        //   INDEPENDENT observe-only shadow book (feedback-companion-independent-engine):
-        //   self-detects 2h +/-0.30% up/down windows from each pair's H1 close stream
-        //   (fed by the tick_fx.hpp bar builder), runs x2 BE-floor tiers/direction. Own
-        //   aggregate fx_companion_state.json -> /api/fx_companion -> desk FX COMPANIONS.
-        //   FX is subscribed for macro context only -- this opens NO position (the
-        //   2026-06-29 FX execution removal stands). Loss-protection = BE-floor (verdict
-        //   backtested: neg=0). Chart bars (g_bars_<pair>) live-warm from ticks.
+        // ── FX per-pair Pos/Neg BE-floor companion (S-2026-07-06; RETIRED S-2026-07-07) ──
+        //   REAL-FILL VERDICT (S-2026-07-07, backtest/index_befloor_intrabar_bt.cpp with bes=2,
+        //   certified histdata+duka ticks): the "VALIDATED neg=0" research (fx_befloor_ls.py)
+        //   is the same max(0,.) clamp as the index book. Real fills at the live 0.30%/be2:
+        //   EURUSD 13mo -$59k real (vs +$112k model), GBPUSD 16mo -$86k (vs +$125k) per 1-lot
+        //   book, and the salvage grid (thr 0.3-1.5% x be 2/6/10/20 x exec A/buf10/buf25) has
+        //   ZERO positive cells on either pair -- nothing to reconfigure to. ALL 5 PAIRS
+        //   RETIRED (the 2026-07-07 EURUSDNeg -$80x2 ledger rows were this mechanism).
+        //   Registry §5 MODEL-FILL TRAP. Empty pair list keeps the aggregate publishing an
+        //   empty state (panel honest); persisted book/closed CSVs on VPS remain as history.
         {
+            // NO pairs added (a zero-size init-list array is ill-formed; the add/seed/set_exec
+            // wiring was deleted with the retirement — see git history for the 5-pair block).
+            // finalize_all() still runs so the aggregate publishes an EMPTY pairs[] state and
+            // the FX COMPANIONS panel reads honest-empty instead of a stale -$160 book.
             auto& fxb = omega::fx_befloor_book();
-            // PER-PAIR REAL RT COST (bp of notional), from the OmegaCostGuard conservative floors
-            // (1.5-pip spread + table slippage + $6/lot commission) at 2026 price levels:
-            //   EURUSD ($15+$20+$6)/$108k ~ 3.8 -> 4.0   GBPUSD /$127k ~ 3.2 -> 3.5
-            //   USDJPY ($10+$13+$6)/$100k ~ 2.9 -> 3.0   AUDUSD /$66k  ~ 6.2 -> 6.0
-            //   NZDUSD /$61k ~ 6.7 -> 7.0
-            // Debited from every clip's pct_real + drives the tier-viability gate (min_gb_mult).
-            struct FxC { const char* pair; double rt_bp; };
-            static const FxC FX_PAIRS[] = {
-                {"EURUSD", 4.0}, {"GBPUSD", 3.5}, {"USDJPY", 3.0}, {"AUDUSD", 6.0}, {"NZDUSD", 7.0}
-            };
-            for (const auto& fp : FX_PAIRS) {
-                omega::FxBeFloorPair::Config c;
-                c.pair = fp.pair; c.notional = 100000.0;   // std-lot notional; 1% ~ $1000/lot (approx for JPY-quote)
-                c.rt_cost_bp = fp.rt_bp;
-                fxb.add(std::move(c));
-            }
-            // Warm-seed each pair from its bundled H1 CSV (ts,o,h,l,c) -- primes the 2h
-            // detector + book and stamps the persisted deploy_ts (forward book starts $0;
-            // the tick-fed H1 sink advances it). Bundled CSVs ship with every deploy.
-            size_t seeded = 0;
-            for (const auto& fp : FX_PAIRS)
-                seeded += fxb.seed_pair(fp.pair, std::string("phase1/signal_discovery/warmup_") + fp.pair + "_H1.csv");
-            // PERSISTENCE (S-2026-07-06b): reload each pair's persisted LIVE forward H1 bars
-            // (fx_companion_<pair>_h1.csv, appended by on_h1_bar) BEFORE finalize so the recompute
-            // replays them -> the FX book is NON-VOLATILE across restarts. Prior gap: the book was
-            // a pure in-memory replay of the static warmup CSV, so every restart reset it to $0 and
-            // wiped whatever it had banked live (the operator's screenshotted ~$1.2k). deploy_ts is
-            // still the warmup last bar (loaded from the persisted anchor), so all restored bars count.
-            size_t restored = fxb.seed_dumps_all();
-            // ── LIVE EXECUTION: <PAIR>Pos/<PAIR>Neg become REAL 2-runner engines (operator S-2026-07-06c).
-            //   Same order path + ledger contract as gold AUPOS/AUNEG (985f0623): SHADOW today
-            //   (send_live_order no-ops while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry
-            //   (FX $6/lot commission table in OmegaCostGuard), BE-floor neg=0, every close -> shadow
-            //   ledger -> ENGINE LEDGER + headline PnL. Was accounting-only; now a trading engine.
-            fxb.set_exec(
-                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
-                    return send_live_order(sym, is_long, lots, px);
-                },
-                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
-                    send_live_order(sym, !orig_is_long, lots, px, token);
-                },
-                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
-                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.00015, tp_dist_pts, lots, 1.5); // FX spread ~1.5pip
-                },
-                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
-                                double entry_px, double exit_px, double lots,
-                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
-                    omega::TradeRecord tr;
-                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
-                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
-                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
-                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
-                    handle_closed_trade(tr);
-                });
             fxb.finalize_all();
-            printf("[OMEGA-INIT][SEED] FX BE-floor companion wired: 5 pairs, %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
-                   seeded, restored);
+            printf("[OMEGA-INIT][SEED] FX BE-floor companion RETIRED S-2026-07-07 (real-fill negative, no surviving config; EURUSD -$59k/13mo GBPUSD -$86k/16mo per-lot vs + model) -- aggregate publishes empty state\n");
             fflush(stdout);
         }
 

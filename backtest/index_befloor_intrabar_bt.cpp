@@ -152,12 +152,19 @@ int main(int argc, char** argv) {
     const double rt_bp = std::atof(argv[1]);
     const double dpp   = std::atof(argv[2]);
     int argi = 3; const char* dump_path = nullptr;
-    if (argc > 4 && std::strncmp(argv[3], "dump=", 5) == 0) { dump_path = argv[3] + 5; argi = 4; }
+    std::vector<double> bes(BES, BES + sizeof(BES) / sizeof(BES[0]));
+    for (; argi < argc; ++argi) {
+        if (std::strncmp(argv[argi], "dump=", 5) == 0) { dump_path = argv[argi] + 5; }
+        else if (std::strncmp(argv[argi], "bes=", 4) == 0) {          // e.g. bes=2,6,10,20 (FX live be=2)
+            bes.clear();
+            for (const char* p = argv[argi] + 4; *p; ) { bes.push_back(std::atof(p)); while (*p && *p != ',') ++p; if (*p) ++p; }
+        } else break;
+    }
 
     // grid: thr x be x exec-mode. Exec: A(close-only, live status quo) + resting-stop buf 10/25 bp.
     const double BUFS[] = { -1.0, 10.0, 25.0 };
     std::vector<Engine> eng;
-    for (double t : THRS) for (double b : BES) for (double buf : BUFS) {
+    for (double t : THRS) for (double b : bes) for (double buf : BUFS) {
         Engine e; e.thr = t; e.be = b; e.buf_bp = buf; e.rt_bp = rt_bp; eng.push_back(e);
     }
 
