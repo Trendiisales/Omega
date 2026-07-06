@@ -118,9 +118,12 @@ def parse_file_into(path, buckets):
                 if len(p0) >= 17 and p0[:8].isdigit() and " " in p0: mode = "hist"
                 elif p0[:1].isdigit() or p0[:1] == "-":
                     if len(parts) >= 5:
+                        # bar (ts,o,h,l,c) vs 5-col duka (ts,ask,bid,vol,vol — DJ30 per OMEGA.md):
+                        # a true bar has h >= max(o,c) and l <= min(o,c); duka has bid < ask
+                        # and tiny volume cols. Shape-test, don't assume.
                         try:
-                            vals = [float(x) for x in parts[1:5]]
-                            mode = "bar" if (max(vals[1], vals[0]) >= min(vals[2], vals[3])) else "duka"
+                            v1, v2, v3, v4 = (float(x) for x in parts[1:5])
+                            mode = "bar" if (v2 >= max(v1, v4) - 1e-12 and v3 <= min(v1, v4) + 1e-12) else "duka"
                         except ValueError: continue
                     elif len(parts) >= 3: mode = "duka"
                     else: continue
