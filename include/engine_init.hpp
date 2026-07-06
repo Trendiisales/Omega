@@ -1623,9 +1623,16 @@ static void init_engines(const std::string& cfg_path)
             size_t seeded = 0;
             for (const char* p : FX_PAIRS)
                 seeded += fxb.seed_pair(p, std::string("phase1/signal_discovery/warmup_") + p + "_H1.csv");
+            // PERSISTENCE (S-2026-07-06b): reload each pair's persisted LIVE forward H1 bars
+            // (fx_companion_<pair>_h1.csv, appended by on_h1_bar) BEFORE finalize so the recompute
+            // replays them -> the FX book is NON-VOLATILE across restarts. Prior gap: the book was
+            // a pure in-memory replay of the static warmup CSV, so every restart reset it to $0 and
+            // wiped whatever it had banked live (the operator's screenshotted ~$1.2k). deploy_ts is
+            // still the warmup last bar (loaded from the persisted anchor), so all restored bars count.
+            size_t restored = fxb.seed_dumps_all();
             fxb.finalize_all();
-            printf("[OMEGA-INIT][SEED] FX BE-floor companion wired: 5 pairs, %zu H1 bars seeded, deploy-forward, tick-fed H1\n",
-                   seeded);
+            printf("[OMEGA-INIT][SEED] FX BE-floor companion wired: 5 pairs, %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1 (persisted)\n",
+                   seeded, restored);
             fflush(stdout);
         }
 

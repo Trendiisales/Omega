@@ -54,12 +54,15 @@ public:
         double notional     = 100000.0;   // std-lot notional -> 1% == $1000 (USD-quote major)
         double lot          = 1.0;
         std::string deploy_path;          // per-pair persisted deploy-forward anchor
+        std::string bars_path;            // per-pair persisted LIVE forward H1 bars (survives restart)
     };
     struct Tier { double gb_bp; const char* tag; };
 
     explicit FxBeFloorPair(Config c) : cfg_(std::move(c)) {
         if (cfg_.deploy_path.empty())
             cfg_.deploy_path = "fx_companion_" + lower_(cfg_.pair) + "_deploy_ts.txt";
+        if (cfg_.bars_path.empty())
+            cfg_.bars_path = "fx_companion_" + lower_(cfg_.pair) + "_h1.csv";
         std::ifstream f(cfg_.deploy_path);
         if (f.is_open()) { long long v = 0; if (f >> v) { deploy_ts_ = v; deploy_loaded_ = true; } }
     }
@@ -102,6 +105,25 @@ public:
         ts_sec = norm_ts_(ts_sec);
         if (!ts_.empty() && ts_sec <= ts_.back()) return;   // monotonic live append only
         ingest_(ts_sec, close);
+        append_dump_(ts_sec, close);   // PERSIST the forward bar so the book survives restart
+    }
+
+    // Reload persisted LIVE forward bars (written by on_h1_bar) from the cwd dump CSV.
+    // Direct-path read (NOT resolve_seed_path -- this file lives in the working dir, C:\Omega).
+    // Books nothing new by itself (deploy-forward gate); the recompute replays these forward
+    // bars so the FX book is NON-VOLATILE across restarts (mirrors gold's persisted forward book).
+    size_t seed_dump() noexcept {
+        std::ifstream f(cfg_.bars_path);
+        if (!f.is_open()) return 0;
+        std::string line; size_t n = 0;
+        while (std::getline(f, line)) {
+            if (line.empty() || !(std::isdigit((unsigned char)line[0]) || line[0]=='-')) continue;
+            double ts = 0, cl = 0;
+            if (std::sscanf(line.c_str(), "%lf,%lf", &ts, &cl) == 2 && cl > 0.0) {
+                ingest_(norm_ts_((int64_t)ts), cl); ++n;
+            }
+        }
+        return n;
     }
 
     // Emit this pair's desk JSON object: {"pair":..,"bars":..,"deploy_ts":..,"pct":..,"usd":..,"flavors":[..]}
@@ -158,6 +180,12 @@ private:
     struct BookRes { double pct = 0.0; int clips = 0; int wins = 0; };
 
     void ingest_(int64_t ts, double close) noexcept { ts_.push_back(ts); c_.push_back(close); }
+    // Append one live forward bar to the persist CSV (ts_sec,close). Append-only; reloaded
+    // by seed_dump() on the next boot. Best-effort -- a failed open silently no-ops (shadow book).
+    void append_dump_(int64_t ts_sec, double close) const noexcept {
+        std::ofstream f(cfg_.bars_path, std::ios::app);
+        if (f.is_open()) f << (long long)ts_sec << "," << close << "\n";
+    }
     static int64_t norm_ts_(int64_t ts) noexcept { return ts >= 100000000000LL ? ts / 1000 : ts; }
     static std::string lower_(std::string s) { for (auto& ch : s) ch = (char)std::tolower((unsigned char)ch); return s; }
 
@@ -261,6 +289,9 @@ public:
         if (auto* p = find(pair)) return p->seed_from_h1_csv(csv);
         return 0;
     }
+    // Reload every pair's persisted LIVE forward bars (call AFTER warmup seed, BEFORE finalize_all)
+    // so the book is restored across restarts. Returns total forward bars restored.
+    size_t seed_dumps_all() { size_t n = 0; for (auto& p : pairs_) n += p.seed_dump(); return n; }
     void finalize_all() { for (auto& p : pairs_) p.finalize_seed(); recompute_and_write(); }
 
     // LIVE: one closed H1 bar for `pair`. Rewrites the aggregate.
