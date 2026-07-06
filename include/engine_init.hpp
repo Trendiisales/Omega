@@ -1674,13 +1674,15 @@ static void init_engines(const std::string& cfg_path)
         {
             auto& ib = omega::index_befloor_book();
             // {tag, live_sym, dpp($/pt/lot from sizing.hpp), warmup CSV}. Tag = flavor+registry key;
-            // live_sym = the order-path symbol. NAS100 uses the gap-trimmed clean H1 (the raw warmup
-            // has a 64d coverage hole -> data_integrity_gate REJECTED; _clean is CERTIFIED CLEAN).
+            // live_sym = the order-path symbol. Warm-seed files are the SAME names tools/seed_refresh.py
+            // refreshes from IBKR at deploy (NQ/ES/YM/DAX H1) so they stay fresh & continuous (the seed
+            // gate is fail-closed on H1 staleness). Deploy-forward SHADOW book: the seed only primes the
+            // 2h detector; deploy_ts gates out all pre-deploy history so a stale/gappy seed cannot misbook.
             struct ICfg { const char* tag; const char* live; double dpp; const char* csv; };
             static const ICfg IDX[] = {
                 {"US500",  "US500.F", 50.0,  "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  1.0,   "phase1/signal_discovery/warmup_NAS100_H1_clean.csv"},
-                {"DJ30",   "DJ30.F",  5.0,   "phase1/signal_discovery/warmup_US30_H1.csv"},
+                {"NAS100", "NAS100",  1.0,   "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                {"DJ30",   "DJ30.F",  5.0,   "phase1/signal_discovery/warmup_DJ30_H1.csv"},
                 {"GER40",  "GER40",   1.10,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
             };
             for (const auto& ic : IDX) {
