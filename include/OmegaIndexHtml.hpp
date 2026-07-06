@@ -136,7 +136,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="250" style="margin-top:6px"></canvas>
+  <canvas id="prc" height="215" style="margin-top:6px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -191,7 +191,7 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ GOLD COMPANIONS — trend stall-clip books (OMEGA book · shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">GOLD COMPANIONS — AUPOS/AUNEG BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">GOLD COMPANIONS — AUPOS/AUNEG BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -202,7 +202,7 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ XAG (SILVER) COMPANIONS — XAGPos/XAGNeg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">XAG COMPANIONS — XAGPos/XAGNeg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">XAG COMPANIONS — XAGPos/XAGNeg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="xcinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="xctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -214,7 +214,7 @@ R"OMEGAD1(  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class=
 <!-- ═══ USOIL (WTI) COMPANIONS — USOILPos/USOILNeg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">USOIL COMPANIONS — USOILPos/USOILNeg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">USOIL COMPANIONS — USOILPos/USOILNeg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="ucinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="uctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -225,10 +225,10 @@ R"OMEGAD1(  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class=
 <!-- ═══ FX COMPANIONS — per-pair Pos/Neg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">FX COMPANIONS — per-pair Pos/Neg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">FX COMPANIONS — per-pair Pos/Neg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="fxinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
-  <div style="overflow-x:auto"><table id="fxtab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div style="overflow:auto;max-height:340px"><table id="fxtab"><tr><td class="l d">loading…</td></tr></table></div>
   <div id="fxopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="fxopen"></table></div></div>
   <div id="fxtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="fxtrades"></table></div></div>
 </div>
@@ -236,10 +236,10 @@ R"OMEGAD1(  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class=
 <!-- ═══ INDEX COMPANIONS — per-symbol Pos/Neg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">INDEX COMPANIONS — per-symbol Pos/Neg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">INDEX COMPANIONS — per-symbol Pos/Neg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="icinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
-  <div style="overflow-x:auto"><table id="ictab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div style="overflow:auto;max-height:340px"><table id="ictab"><tr><td class="l d">loading…</td></tr></table></div>
   <div id="icopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="icopen"></table></div></div>
   <div id="ictradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="ictrades"></table></div></div>
 </div>
@@ -247,10 +247,10 @@ R"OMEGAD1(  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class=
 <!-- ═══ STOCK MOVERS — per-name BIGCAP day-mover Pos/Neg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">STOCK MOVERS — 39 BIGCAP names · ±3% day arms Pos/Neg · 3 tiers/dir (r20+r150+r400) (native C++ · shadow · additive · neg=0 · DAILY-close grade · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">STOCK MOVERS — 39 BIGCAP names · ±3% day arms Pos/Neg · 5 tiers/dir (r20/r50/r100/r150/r400) (native C++ · shadow · additive · neg=0 · DAILY-close grade · REAL forward trades only · never vs-WIDE)</span>
     <span id="sminfo" class="lbl" style="margin-left:auto">…</span>
   </div>
-  <div style="overflow-x:auto"><table id="smtab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div style="overflow:auto;max-height:340px"><table id="smtab"><tr><td class="l d">loading…</td></tr></table></div>
   <div id="smopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="smopen"></table></div></div>
   <div id="smtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="smtrades"></table></div></div>
 </div>
@@ -1396,7 +1396,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
+function drawPR(){var cv=el("prc"),H=215,ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;

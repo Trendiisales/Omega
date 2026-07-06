@@ -183,8 +183,8 @@ private:
     //   neg=0 by construction (the operator's definitive test). The two runners differ only in trail
     //   giveback: r20 (tight, banks fast) + r150 (wide, rides). Each is its OWN independent position
     //   through the order path -> its OWN ledger row -> shows in PnL.
-    static constexpr int    NT_ = 3;                       // runners per flavor (r20 banker / r150 runner / r400 wide)
-    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0 };
+    static constexpr int    NT_ = 5;                       // runners per flavor (r20 banker / r150 runner / r400 wide / r50 / r100)
+    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0, 50.0, 100.0 };  // 50/100 APPENDED at end (persistence keys by index -> never reorder)
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
@@ -193,7 +193,7 @@ private:
     struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
     LiveLeg live_[2][NT_];   // [flavor 0=USOILPos/long, 1=USOILNeg/short][runner 0=r20, 1=r150]
     static std::string LEG_ENGINE_(int fi, int ti) {
-        return std::string(fi == 0 ? "UsoilBeFloorUSOILPos" : "UsoilBeFloorUSOILNeg") + (ti == 0 ? "_r20" : ti == 1 ? "_r150" : "_r400");
+        return std::string(fi == 0 ? "UsoilBeFloorUSOILPos" : "UsoilBeFloorUSOILNeg") + ("_r" + std::to_string((long)LIVE_GB_[ti]));
     }
 
     // ── REAL forward book: the desk headline. Accumulates ONLY the live-traded clips (forward of
@@ -475,7 +475,7 @@ private:
         const double dpp = cfg_.dpp_per_lot * cfg_.lot;
         struct Flavor { const char* name; const char* dir; bool is_long; };
         const Flavor flavors[2] = { {"USOILPos", "long", true}, {"USOILNeg", "short", false} };
-        const char* TIER_TAG[NT_] = { "banker", "runner", "wide" };
+        const char* TIER_TAG[NT_] = { "banker", "runner", "wide", "r50", "r100" };
         const double cur = c_.empty() ? 0.0 : c_.back();
 
         std::ostringstream o; o << std::fixed;

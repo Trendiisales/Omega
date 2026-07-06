@@ -158,7 +158,7 @@ public:
     // (forward-only). "open" = live legs open right now. "trades" = closed forward trades (recent first).
     std::string sym_json() const {
         const double dpp = cfg_.dpp_per_lot * cfg_.lot;   // price-point -> USD
-        const char* TIER_TAG[NT_] = { "banker", "runner", "wide" };
+        const char* TIER_TAG[NT_] = { "banker", "runner", "wide", "r50", "r100" };
         struct Flavor { const char* suffix; const char* dir; bool is_long; };
         const Flavor flavors[2] = { {"Pos", "long", true}, {"Neg", "short", false} };
         const double cur = c_.empty() ? 0.0 : c_.back();
@@ -246,8 +246,8 @@ private:
     //   (arm only once price covers cost be_bp; trail stop pinned >= entry long / <= entry short ->
     //   exit at stall/reversal keeping profit; neg=0 by construction). r20 tight + r150 wide. Each
     //   runner is its OWN position -> OWN ledger row -> shows in PnL, exactly like every main engine. ──
-    static constexpr int    NT_ = 3;   // r20 banker / r150 runner / r400 wide
-    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0 };
+    static constexpr int    NT_ = 5;   // r20 banker / r150 runner / r400 wide / r50 / r100
+    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0, 50.0, 100.0 };  // 50/100 APPENDED at end (persistence keys by index -> never reorder)
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
@@ -265,7 +265,7 @@ private:
     static constexpr size_t MAX_CLOSED_ = 60;
     std::deque<Closed> closed_;
     std::string leg_engine_(int fi, int ti) const {
-        return cfg_.sym + (fi == 0 ? "Pos" : "Neg") + (ti == 0 ? "_r20" : ti == 1 ? "_r150" : "_r400");
+        return cfg_.sym + (fi == 0 ? "Pos" : "Neg") + ("_r" + std::to_string((long)LIVE_GB_[ti]));
     }
 
     // Incremental live BE-floor state machine on the NEWEST bar (mirrors Gold/FxBeFloorCompanion).
