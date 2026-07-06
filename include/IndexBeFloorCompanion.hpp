@@ -295,8 +295,9 @@ public:
         o << "{\"sym\":\"" << cfg_.sym << "\",\"live_sym\":\"" << cfg_.live_sym << "\",\"bars\":" << ts_.size()
           << ",\"deploy_ts\":" << (long long)deploy_ts_ << ",\"ts\":" << (long long)last_ts << ",";
         o.precision(2); o << "\"dpp\":" << dpp << ",\"rt_cost_bp\":" << cfg_.rt_cost_bp
-                          << ",\"cap_bp\":" << cfg_.intrabar_cap_bp
-                          << ",\"thr\":" << cfg_.thr << ",\"be_bp\":" << cfg_.be_bp
+                          << ",\"cap_bp\":" << cfg_.intrabar_cap_bp;
+        o.precision(4); o << ",\"thr\":" << cfg_.thr;   // 0.015 must not render as 0.01 (2dp truncation)
+        o.precision(2); o << ",\"be_bp\":" << cfg_.be_bp
                           << ",\"pts\":" << sym_pts << ",\"pts_real\":" << sym_pts_real << ",";
         o.precision(0); o << "\"usd\":" << (sym_pts * dpp)
                           << ",\"usd_real\":" << (sym_pts_real * dpp) << ",";
