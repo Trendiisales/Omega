@@ -215,6 +215,21 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         }
         // Passive L2 routing disabled -- all symbols go through on_tick.
 
+        // ── FX venue routing (S-2026-07-06) ──────────────────────────────────
+        // BlackBull FIX delivers FX majors as ~30s-frozen snapshots. Operator
+        // directive: move FX quotes to the IBKR IDEALPRO L1 link. When that slot
+        // is FRESH, IBKR is the authoritative FX source -- drop the BlackBull FX
+        // quote entirely here (no book seed, no tick post) so a frozen snapshot
+        // never overwrites the live IBKR price. If the bridge is down the slot
+        // goes stale within 5s and BlackBull resumes as fallback -> no FX blackout.
+        // Non-FX symbols (XAUUSD/indices) are unaffected: XAU merges both feeds.
+        if (omega::ibkr::is_fx_major(sym.c_str())) {
+            const int64_t fx_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            const omega::ibkr::L2Slot* fxslot = g_ibkr_l2.lookup(sym.c_str());
+            if (fxslot && fxslot->fresh(fx_now_ms, 5000)) return;
+        }
+
         // Seed cache with whatever side(s) we just parsed -- must happen BEFORE
         // the fallback read below, otherwise first-ever X (single-sided) drops silently.
         {

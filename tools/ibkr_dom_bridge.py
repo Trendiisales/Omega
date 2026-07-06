@@ -462,6 +462,97 @@ class TradesRecorder:
         except Exception:
             pass
 
+class L1Recorder:
+    """Top-of-book (L1) recorder for FX majors -- S-2026-07-06.
+
+    FX on IDEALPRO needs only best bid/ask; reqMktData (L1) carries NO
+    depth-slot cost, so FX coexists with the 3-stream reqMktDepth cap that pins
+    the depth recorders at XAUUSD,DJ30,NAS100. Broadcasts newline-JSON in the
+    SAME schema IbkrDomConsumer.parse_line() reads (b/a top-of-book; bv/av/imb
+    synthetic 0.5 since L1 has no book depth). The broadcast symbol `s` is the
+    full 6-char pair (e.g. EURUSD), NOT contract.symbol ("EUR"), so the C++
+    consumer's lookup() resolves it to the right FX slot.
+    """
+    def __init__(self, ib: IB, contract: Contract, bcast_sym: str,
+                 out_dir: str, broadcaster: "TcpBroadcaster | None" = None):
+        self.ib = ib
+        self.contract = contract
+        self.sym = bcast_sym            # broadcast/CSV symbol = the pair (EURUSD)
+        self.out_dir = out_dir
+        self.broadcaster = broadcaster
+        self.cur_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.fh = None
+        self.w = None
+        self.events = 0
+        self.last_log = 0.0
+        self.last_bid = 0.0
+        self.last_ask = 0.0
+        self.last_event_mono = time.monotonic()
+        self.is_fut = False
+        self.ticker = None
+        self._open_for_date(self.cur_date)
+
+    def _open_for_date(self, date_str):
+        path = os.path.join(self.out_dir, f"ibkr_l1_{self.sym}_{date_str}.csv")
+        new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+        if self.fh is not None:
+            try: self.fh.close()
+            except Exception: pass
+        self.fh = open(path, "a", newline="", buffering=1)
+        self.w = csv.writer(self.fh)
+        if new_file:
+            self.w.writerow(["ts_ms", "bid", "ask"])
+
+    def _maybe_rotate(self):
+        d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if d != self.cur_date:
+            self.cur_date = d
+            self.events = 0
+            self._open_for_date(d)
+
+    def start(self):
+        self.last_event_mono = time.monotonic()
+        # snapshot=False -> streaming; regulatory/genericTicks empty = plain quote.
+        self.ticker = self.ib.reqMktData(self.contract, "", False, False)
+        self.ticker.updateEvent += self._on_update
+
+    def stop(self):
+        if self.ticker is not None:
+            try: self.ib.cancelMktData(self.contract)
+            except Exception: pass
+        try: self.fh.close()
+        except Exception: pass
+
+    def _on_update(self, _ticker):
+        self._maybe_rotate()
+        t = self.ticker
+        bid, ask = t.bid, t.ask
+        # ib_async uses NaN for absent sides; NaN != NaN filters them out.
+        if not (bid == bid and ask == ask):
+            return
+        if not bid or not ask or ask <= bid:
+            return
+        self.last_bid, self.last_ask = bid, ask
+        self.events += 1
+        self.last_event_mono = time.monotonic()
+        ts = now_ms()
+        self.w.writerow([ts, f"{bid:.5f}", f"{ask:.5f}"])
+        if self.broadcaster is not None:
+            # Synthetic depth fields (L1 has no book): bv/av/imb = balanced,
+            # bl/al = 1. No per-level arrays -> parse_line treats them optional.
+            msg = (
+                '{"ts":%d,"s":"%s","b":%.5f,"a":%.5f,'
+                '"bv":1.00,"av":1.00,"i":0.5000,"bl":1,"al":1}\n'
+                % (ts, self.sym, bid, ask)
+            )
+            self.broadcaster.send(msg.encode("ascii"))
+        now = time.monotonic()
+        if now - self.last_log >= 5.0:
+            self.last_log = now
+            print(f"[{self.sym}] L1 events={self.events} bid={bid} ask={ask}",
+                  flush=True)
+
+
 # Roll-break watchdog threshold: a live futures contract emits depth events
 # near-continuously during market hours; sustained silence means the contract
 # has expired/rolled. We only ACT on the silence if re-resolving the front month
@@ -546,6 +637,11 @@ def main():
 
     def subscribe_all():
         recs = []
+        # Live market data (type 1). FX L1 quotes need this; harmless for depth.
+        try:
+            ib.reqMarketDataType(1)
+        except Exception:
+            pass
         for sym in syms:
             try:
                 contract = make_contract(sym)
@@ -554,6 +650,16 @@ def main():
                 contract = resolve_front_month(ib, contract)
                 ib.qualifyContracts(contract)
                 today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                # FX majors (CASH/IDEALPRO) -> L1 (reqMktData). No depth-slot cost,
+                # so they coexist with the 3-stream reqMktDepth cap. S-2026-07-06.
+                if (getattr(contract, "secType", "") or "") == "CASH":
+                    l1 = L1Recorder(ib, contract, sym, args.out_dir,
+                                    broadcaster=broadcaster)
+                    l1.start()
+                    recs.append(l1)
+                    print(f"subscribed {sym} -> L1 (reqMktData IDEALPRO top-of-book)",
+                          flush=True)
+                    continue
                 out_path = os.path.join(args.out_dir, f"ibkr_l2_{sym}_{today}.csv")
                 rec = DomRecorder(ib, contract, out_path,
                                   max_levels=args.max_levels,

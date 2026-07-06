@@ -117,6 +117,16 @@ struct L2Bus {
     L2Slot ger40;   // GER40               (IBKR FDAX front-month EUREX)
     L2Slot uk100;   // UK100               (IBKR Z    front-month ICEEU)
     L2Slot estx50;  // ESTX50              (IBKR FESX front-month EUREX)
+    // FX majors (S-2026-07-06): IBKR IDEALPRO L1 (reqMktData top-of-book, NOT
+    // reqMktDepth -- L1 carries NO depth-slot cost so these coexist with the 3
+    // capped depth streams). Fed by the bridge L1Recorder; carries only bid/ask
+    // (no book levels -- bid_vol/ask_vol/imb are synthetic 0.5). Purpose: route
+    // FX quotes off frozen BlackBull FIX onto the live IBKR link.
+    L2Slot eurusd;  // EURUSD              (IBKR EUR.USD CASH/IDEALPRO L1)
+    L2Slot gbpusd;  // GBPUSD              (IBKR GBP.USD CASH/IDEALPRO L1)
+    L2Slot usdjpy;  // USDJPY              (IBKR USD.JPY CASH/IDEALPRO L1)
+    L2Slot audusd;  // AUDUSD              (IBKR AUD.USD CASH/IDEALPRO L1)
+    L2Slot nzdusd;  // NZDUSD              (IBKR NZD.USD CASH/IDEALPRO L1)
 
     // Map bridge-emitted symbol string to the slot it updates.
     // Bridge symbols come in either "US500.F"/"NAS100"/etc (Blackbull naming
@@ -133,9 +143,25 @@ struct L2Bus {
         if (std::strcmp(sym, "GER40")   == 0) return &ger40;
         if (std::strcmp(sym, "UK100")   == 0) return &uk100;
         if (std::strcmp(sym, "ESTX50")  == 0) return &estx50;
+        // FX majors (IBKR IDEALPRO L1). Bridge broadcasts the 6-char pair as "s".
+        if (std::strcmp(sym, "EURUSD")  == 0) return &eurusd;
+        if (std::strcmp(sym, "GBPUSD")  == 0) return &gbpusd;
+        if (std::strcmp(sym, "USDJPY")  == 0) return &usdjpy;
+        if (std::strcmp(sym, "AUDUSD")  == 0) return &audusd;
+        if (std::strcmp(sym, "NZDUSD")  == 0) return &nzdusd;
         return nullptr;
     }
 };
+
+// True for the FX majors the bridge carries on the IBKR IDEALPRO L1 line.
+// Used to (a) route FX book updates to on_tick in omega_main, and (b) gate the
+// frozen BlackBull FIX FX quotes out of the book WHEN the IBKR slot is fresh
+// (bridge down -> not fresh -> BlackBull remains the fallback, no FX blackout).
+inline bool is_fx_major(const char* s) noexcept {
+    return std::strcmp(s, "EURUSD") == 0 || std::strcmp(s, "GBPUSD") == 0
+        || std::strcmp(s, "USDJPY") == 0 || std::strcmp(s, "AUDUSD") == 0
+        || std::strcmp(s, "NZDUSD") == 0;
+}
 
 // Stats for /api/v1/omega health -- read by status endpoint if wired.
 struct ConsumerStats {

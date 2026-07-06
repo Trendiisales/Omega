@@ -671,8 +671,19 @@ int main(int argc, char* argv[])
         // "YM"/"DJ30" aliases and remap here.
         omega::ibkr::BookUpdateCb on_book = [](const char* sym, double bid, double ask) {
             if (std::strcmp(sym, "YM") == 0
-             || std::strcmp(sym, "DJ30") == 0 || std::strcmp(sym, "DJ30.F") == 0)
+             || std::strcmp(sym, "DJ30") == 0 || std::strcmp(sym, "DJ30.F") == 0) {
                 engine_dispatch_post_tick("DJ30.F", bid, ask);
+                return;
+            }
+            // FX majors (S-2026-07-06): FX quotes now come from the IBKR IDEALPRO
+            // L1 line, not BlackBull FIX (which delivered ~30s-frozen FX snapshots
+            // -- operator directive: move FX quotes to the IBKR link). Post the
+            // IBKR top-of-book as a tick; on_tick() writes g_bids/g_asks + pings
+            // the stale-watchdog, so FX engines + GUI use the live IBKR price.
+            // The matching BlackBull FX quote is gated out in fix_dispatch when
+            // this slot is fresh (bridge down -> BlackBull fallback, no blackout).
+            if (omega::ibkr::is_fx_major(sym))
+                engine_dispatch_post_tick(sym, bid, ask);
         };
         std::thread([port, on_book = std::move(on_book)]{
             omega::ibkr::run_consumer(g_ibkr_l2, g_ibkr_l2_stats,

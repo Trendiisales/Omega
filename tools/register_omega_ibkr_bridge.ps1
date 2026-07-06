@@ -90,10 +90,21 @@ $MaxLvl   = 5
 # (separate slot). If the MGC engines need MGC depth, prefer a stream-tier
 # upgrade over this swap; operator chose the swap.
 #
-# 3 streams used, 0 free under the 3-stream cap. To add more (GER40, UK100,
-# EURUSD, ...) a slot must be freed OR the concurrent-depth tier raised.
+# 3 DEPTH streams used, 0 free under the 3-stream cap. To add more DEPTH
+# (GER40, UK100, ...) a slot must be freed OR the concurrent-depth tier raised.
+#
+# 2026-07-06: FX MAJORS ADDED as L1 (reqMktData top-of-book), NOT depth. L1
+# carries NO depth-slot cost, so EURUSD/GBPUSD/USDJPY/AUDUSD/NZDUSD coexist with
+# the 3 depth streams above -- they do NOT touch the cap. The bridge routes any
+# CASH/IDEALPRO contract to L1Recorder (see ibkr_dom_bridge.py). Purpose: move FX
+# quotes off frozen BlackBull FIX onto the live IBKR IDEALPRO link. Omega.exe
+# consumes the L1 broadcast into g_ibkr_l2.{eur,gbp,usdjpy,aud,nzd}usd and
+# fix_dispatch gates the BlackBull FX quote out while the IBKR slot is fresh.
+# (This became possible only after the account-level IDEALPRO FX Error-10197
+# data-line block was cleared with IBKR on 2026-07-06.)
 $Symbols = @(
-    'XAUUSD','DJ30','NAS100'
+    'XAUUSD','DJ30','NAS100',
+    'EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD'
 ) -join ','
 # 2026-06-17: NAS100 (E-mini Nasdaq future, CME) for the Aurora index footprint.
 # Use the symbol-MAP KEY 'NAS100' (make_contract maps it -> Future symbol 'NQ' on
