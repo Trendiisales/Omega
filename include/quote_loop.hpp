@@ -77,9 +77,17 @@ static void quote_loop() {
                     bool any_stale = false;
                     const int64_t now_ms_sc = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
-                    // Check primary symbols only (the ones we always subscribe)
+                    // Check primary symbols only (the ones we always subscribe).
+                    // S-2026-07-06: FX majors added -- they were NEVER stale-watched, so when the
+                    // broker silently dropped an FX subscription (macro-only, not a primary trading
+                    // symbol) nothing ever forced a resub and FX stayed frozen indefinitely (operator:
+                    // "zero data on any forex" -- pre-existing, not deploy-caused). A full resub
+                    // (fix_build_md_subscribe_all) re-subscribes ALL symbols incl FX, and the trigger
+                    // is capped at one resub / 60s (first-stale breaks the loop), so adding FX cannot
+                    // increase resub churn. Now an FX drop self-heals within 60s like gold/indices.
                     static const char* primary_syms[] = {
-                        "XAUUSD","US500.F","USTEC.F","DJ30.F","NAS100","USOIL.F"
+                        "XAUUSD","US500.F","USTEC.F","DJ30.F","NAS100","USOIL.F",
+                        "EURUSD","GBPUSD","USDJPY","AUDUSD","NZDUSD"
                     };
                     for (const char* psym : primary_syms) {
                         std::lock_guard<std::mutex> lk(g_last_tick_mtx);
