@@ -210,15 +210,28 @@ def load_live_dump_manifest() -> list[tuple[str, int, str]]:
 
 
 def market_closed_weekend(now_utc: dt.datetime) -> bool:
-    """Gold/index markets closed roughly Fri 22:00 UTC -> Sun 22:00 UTC. Inside that
-    window the live dumps legitimately stop advancing, so skip enforcement (else it
-    false-REDs all weekend)."""
+    """Feeds legitimately stop advancing across the weekend -> skip enforcement (else it
+    false-REDs all weekend). The window is Fri 22:00 UTC -> the first post-reopen BAR CLOSE.
+
+    CRITICAL Sunday-side subtlety (fixed 2026-07-06): the monitored live dumps here are
+    BAR-driven, not tick-driven. Futures reopen ~22:00 UTC Sunday, but the first post-reopen
+    bar does not CLOSE (and thus the CSV does not refresh) until 23:00 UTC (H1) / 00:00 UTC
+    Monday (H4 = the slowest monitored feed, gold_d1_trend_h4.csv). Enforcing from 22:00 —
+    the old boundary — false-REDs that reopen-bar lag EVERY Sunday (~2h for H4). So the guard
+    now covers the WHOLE of Sunday UTC: enforcement resumes 00:00 UTC Monday, exactly when the
+    slowest feed's first reopen bar has closed. This removes the recurring false alarm WITHOUT
+    weakening the dangerous case (a feed dead for hours/days is still caught at 00:00 Mon and
+    every session after). NOTE: the tick-driven companion (protection_selftest) refreshes at
+    the first reopen tick ~22:00, so it correctly keeps the 22:00 boundary — do NOT blindly
+    sync the two guards; they differ because bar-close != tick-arrival."""
     wd, hr = now_utc.weekday(), now_utc.hour   # Mon=0 .. Sun=6
     if wd == 5:                       # Saturday: fully closed
         return True
-    if wd == 4 and hr >= 22:          # Friday from 22:00 UTC
+    if wd == 4 and hr >= 22:          # Friday from 22:00 UTC (close)
         return True
-    if wd == 6 and hr < 22:           # Sunday before 22:00 UTC
+    if wd == 6:                       # Sunday: closed ALL day UTC — reopen is ~22:00 but the
+                                      # first H1/H4 bars don't CLOSE until 23:00 / 00:00 Mon, so
+                                      # the CSVs can't be fresh until then (see docstring).
         return True
     return False
 

@@ -48,12 +48,18 @@ def record(name, ok, detail): results.append((name, ok, detail))
 # ---- [1] ALIVE (real VPS companion is driving) --------------------------------
 def _market_closed_weekend(now_utc):
     """Gold/index markets closed ~Fri 22:00 UTC -> Sun 22:00 UTC. With no ticks the
-    in-binary companion legitimately stops writing, so skip freshness enforcement
-    (mirrors feeds_selftest.market_closed_weekend)."""
+    in-binary companion legitimately stops writing, so skip freshness enforcement.
+
+    DELIBERATELY KEEPS the Sun 22:00 reopen boundary (do NOT sync to the all-Sunday guard in
+    feeds_selftest.market_closed_weekend). This companion is TICK-driven — it writes within 60s
+    of the FIRST reopen tick (~22:00 UTC), so it is legitimately fresh from 22:00 and a dead
+    companion after reopen SHOULD be caught from 22:00. The feeds live-dumps are BAR-driven
+    (first bar closes 23:00/00:00), which is why THEIR guard extends through Sunday — a different
+    reopen semantics, not an inconsistency. See feeds_selftest.market_closed_weekend docstring."""
     wd, hr = now_utc.weekday(), now_utc.hour   # Mon=0 .. Sun=6
     if wd == 5:               return True       # Saturday
     if wd == 4 and hr >= 22:  return True       # Friday from 22:00 UTC
-    if wd == 6 and hr < 22:   return True       # Sunday before 22:00 UTC
+    if wd == 6 and hr < 22:   return True       # Sunday before 22:00 UTC (tick-driven: fresh from reopen)
     return False
 
 def _vps_companion_age_min():
