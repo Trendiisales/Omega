@@ -273,8 +273,12 @@ private:
 
     std::string mkkey_(const std::string& book, const std::string& eng,
                        const std::string& sym, double entry) const {
-        char buf[32]; std::snprintf(buf, sizeof(buf), "%.4f", stall_detail::round4(entry));
-        return book + "|" + eng + "|" + sym + "|" + buf;
+        // Faithful to python `f"{book}|{eng}|{sym}|{round(entry,4)}"`: str(round(x,4)) STRIPS
+        // trailing zeros (73.43 -> "73.43", NOT "%.4f"->"73.4300"). The %.4f form orphaned
+        // seed-migrated python positions on the crypto cutover (key never matched the live
+        // harvest -> spurious ENGINE_EXIT + reopen); backported from the crypto copy. Old
+        // %.4f-keyed .tsv state migrates transparently: load_pos_ rebuilds keys from fields.
+        return book + "|" + eng + "|" + sym + "|" + stall_detail::pyfloat(stall_detail::round4(entry), 4);
     }
     static bool icontains_(const std::string& hay, const std::string& needle) {
         if (needle.empty()) return false;
@@ -353,14 +357,27 @@ private:
             p.ext_bar = std::atoll(t[7].c_str()); p.mfe_pct = std::atof(t[8].c_str());
             p.mfe_usd = std::atof(t[9].c_str()); p.stall = std::atoi(t[10].c_str());
             p.last_upnl = std::atof(t[11].c_str());
-            pos_[t[0]] = p;
+            // Rebuild the key from the row's own fields instead of trusting t[0]: migrates old
+            // "%.4f"-keyed rows to the pyfloat key format in place (no spurious ENGINE_EXIT/reopen
+            // churn on the first post-upgrade harvest).
+            pos_[mkkey_(p.book, p.eng, p.sym, p.entry)] = p;
         }
         std::ifstream g(clipped_path_);
         while (std::getline(g, line)) {
             std::vector<std::string> t = split_(line, '\t');
             if (t.size() < 2) continue;
-            clipped_[t[0]] = std::atof(t[1].c_str());
+            clipped_[normalize_key_(t[0])] = std::atof(t[1].c_str());
         }
+    }
+    // Reformat an old "%.4f"-entry key ("...|73.4300") to the pyfloat form ("...|73.43").
+    // Keys already in pyfloat form pass through unchanged.
+    std::string normalize_key_(const std::string& key) const {
+        const size_t bar = key.rfind('|');
+        if (bar == std::string::npos || bar + 1 >= key.size()) return key;
+        const std::string es = key.substr(bar + 1);
+        char* end = nullptr; const double entry = std::strtod(es.c_str(), &end);
+        if (end == es.c_str() || *end != '\0') return key;   // non-numeric tail -> leave untouched
+        return key.substr(0, bar + 1) + stall_detail::pyfloat(stall_detail::round4(entry), 4);
     }
     static std::vector<std::string> split_(const std::string& s, char d) {
         std::vector<std::string> out; std::string cur;

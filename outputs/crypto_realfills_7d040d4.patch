@@ -1,0 +1,636 @@
+diff -ruN a/include/crypto/StallCompanion.hpp b/include/crypto/StallCompanion.hpp
+--- a/include/crypto/StallCompanion.hpp	2026-07-06 12:38:48.938456632 +0000
++++ b/include/crypto/StallCompanion.hpp	2026-07-06 12:43:04.231742399 +0000
+@@ -359,15 +359,26 @@
+             p.ext_bar = std::atoll(t[7].c_str()); p.mfe_pct = std::atof(t[8].c_str());
+             p.mfe_usd = std::atof(t[9].c_str()); p.stall = std::atoi(t[10].c_str());
+             p.last_upnl = std::atof(t[11].c_str());
+-            pos_[t[0]] = p;
++            // Rebuild the key from the row's own fields: migrates any legacy "%.4f"-keyed rows
++            // to the pyfloat key format in place (no spurious ENGINE_EXIT/reopen churn).
++            pos_[mkkey_(p.book, p.eng, p.sym, p.entry)] = p;
+         }
+         std::ifstream g(clipped_path_);
+         while (std::getline(g, line)) {
+             std::vector<std::string> t = split_(line, '\t');
+             if (t.size() < 2) continue;
+-            clipped_[t[0]] = std::atof(t[1].c_str());
++            clipped_[normalize_key_(t[0])] = std::atof(t[1].c_str());
+         }
+     }
++    // Reformat a legacy "%.4f"-entry key ("...|73.4300") to the pyfloat form ("...|73.43").
++    std::string normalize_key_(const std::string& key) const {
++        const size_t bar = key.rfind('|');
++        if (bar == std::string::npos || bar + 1 >= key.size()) return key;
++        const std::string es = key.substr(bar + 1);
++        char* end = nullptr; const double entry = std::strtod(es.c_str(), &end);
++        if (end == es.c_str() || *end != '\0') return key;
++        return key.substr(0, bar + 1) + stall_detail::pyfloat(stall_detail::round4(entry), 4);
++    }
+     static std::vector<std::string> split_(const std::string& s, char d) {
+         std::vector<std::string> out; std::string cur;
+         for (char ch : s) { if (ch == d) { out.push_back(cur); cur.clear(); } else cur += ch; }
+diff -ruN a/src/ibkrcrypto_bt.cpp b/src/ibkrcrypto_bt.cpp
+--- a/src/ibkrcrypto_bt.cpp	2026-07-06 12:38:48.939408183 +0000
++++ b/src/ibkrcrypto_bt.cpp	2026-07-06 13:59:20.539764153 +0000
+@@ -281,6 +281,14 @@
+ // recent bar whose |W-bar jump| >= thr decides direction (mirrors the parent
+ // ride-to-symmetric-flip; DonchHold-style stateless hold). W=24 (24x1h) per parent.
+ struct UpJump : Strat<UpJump>{ double thr; int W; UpJump(double t,int w=24):thr(t),W(w){}
++    // name form "UpJump<pct>[x<Wbars>]": UpJump2 = 2%/24bars (legacy), UpJump4x48 = 4%/48bars
++    // (S-2026-07-07 walk-forward sweep verdict: majors ride the BIG slow jump, not the 2%/24h one).
++    static UpJump parse(const std::string& st){
++        double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05;
++        int w=24; size_t x=st.find('x');
++        if(x!=std::string::npos){ int v=atoi(st.c_str()+x+1); if(v>0)w=v; }
++        return UpJump(thr,w);
++    }
+     int sig(const Series& s,int i)const{ if(i<W)return 0;
+         for(int k=i;k>=W;--k){ double j=s.c[k]/s.c[k-W]-1.0;
+             if(j>= thr) return 1;      // most recent event = up-jump -> long
+@@ -489,7 +497,7 @@
+         std::string st=(i+1<argc)?argv[i+1]:"UpJump8";
+         Cfg e=cfg; e.vt_target=0.02;   // .vt sizing (timing identical to non-vt)
+         int64_t F0=1483228800000LL, T1=1799999999000LL;
+-        if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; run_bt(s,e,UpJump(thr),F0,T1); }
++        if(st.rfind("UpJump",0)==0){ run_bt(s,e,UpJump::parse(st),F0,T1); }
+         else if(st=="TSMom50") run_bt(s,e,TSMom(50),F0,T1);
+         return 0;
+     }
+@@ -505,7 +513,7 @@
+             if(st=="TSMom50") run_dollars(w,s,d,TSMom(50),mult,fee,a,b);
+             else if(st=="IBS") run_dollars(w,s,d,IBS(0.15,0.85),mult,fee,a,b);
+             else if(st=="Donch40") run_dollars(w,s,d,DonchHold(40),mult,fee,a,b);
+-            else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; run_dollars(w,s,d,UpJump(thr),mult,fee,a,b); }
++            else if(st.rfind("UpJump",0)==0){ run_dollars(w,s,d,UpJump::parse(st),mult,fee,a,b); }
+         };
+         go("LAST_6M",S6,T1); go("FULL_17-26",F0,T1);
+         return 0;
+@@ -551,7 +559,7 @@
+         else if(st=="Roc"){ Roc S(20,0.0); t=S.signal(s,N-1); ex=flip(S,t); }
+         else if(st=="TSMom20"){ TSMom S(20); t=S.signal(s,N-1); ex=flip(S,t); }
+         else if(st=="Donch20"){ DonchHold S(20); t=S.signal(s,N-1); ex=flip(S,t); }
+-        else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; UpJump S(thr); t=S.signal(s,N-1); ex=flip(S,t); }
++        else if(st.rfind("UpJump",0)==0){ UpJump S=UpJump::parse(st); t=S.signal(s,N-1); ex=flip(S,t); }
+         // REGIME GATE (S-2026-06-30): honour REGIME_MA in the live --signal path. run_bt
+         // already gates; --signal previously did NOT -> the live shadow legs ran ungated.
+         // Per-symbol close>SMA(regime_ma): long only above the MA, short only below. 0=off.
+@@ -587,7 +595,7 @@
+         else if(st=="Roc") dump_equity(s,e,Roc(20,0.0),T0,T1);
+         else if(st=="RSIrev") dump_equity(s,e,RSIrev(14,30,70),T0,T1);
+         else if(st=="Regime") dump_equity(s,e,Regime(20,0.40,0.25),T0,T1);
+-        else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; dump_equity(s,e,UpJump(thr),T0,T1); }
++        else if(st.rfind("UpJump",0)==0){ dump_equity(s,e,UpJump::parse(st),T0,T1); }
+         return 0;
+     }
+     // --postrace STRAT [FROM_MS TO_MS] : per-bar `ts,pos,cumret` (whole-month book reconstruction)
+@@ -608,7 +616,7 @@
+         else if(st=="Roc") dump_postrace(s,e,Roc(20,0.0),T0,T1);
+         else if(st=="RSIrev") dump_postrace(s,e,RSIrev(14,30,70),T0,T1);
+         else if(st=="Regime") dump_postrace(s,e,Regime(20,0.40,0.25),T0,T1);
+-        else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; dump_postrace(s,e,UpJump(thr),T0,T1); }
++        else if(st.rfind("UpJump",0)==0){ dump_postrace(s,e,UpJump::parse(st),T0,T1); }
+         return 0;
+     }
+     std::printf("--- price strategies (carry=%.0f%%/yr modelled as daily TFA, LONG-ONLY / shorts OFF) ---\n",100*cfg.annual_carry);
+diff -ruN a/src/live_mark.cpp b/src/live_mark.cpp
+--- a/src/live_mark.cpp	2026-07-06 12:38:48.940890256 +0000
++++ b/src/live_mark.cpp	2026-07-06 12:43:04.231492777 +0000
+@@ -14,6 +14,8 @@
+ #include "crypto/StateJson.hpp"  // round_n
+ #include <string>
+ #include <vector>
++#include <map>
++#include <algorithm>
+ #include <fstream>
+ #include <cstdio>
+ #include <cmath>
+@@ -49,6 +51,30 @@
+     curl_global_init(CURL_GLOBAL_DEFAULT);
+     const std::string STATE = data_dir() + "/state.json";
+ 
++    // PASS 1 (read-only): discover which venues have open legs, then fetch each live price
++    // ONCE. The doc is re-read FRESH after the (slow, ~seconds) HTTP fetches -- previously the
++    // whole stale document was rewritten, so a shadow_refresh completing during the fetch
++    // window was clobbered (its booked flip resurrected, realized lost).
++    std::vector<std::string> want;
++    {
++        std::ifstream sf(STATE);
++        if (!sf) { std::printf("live_mark: no state.json\n"); curl_global_cleanup(); return 0; }
++        json d0;
++        try { d0 = json::parse(sf); } catch (...) { std::printf("live_mark: no state.json\n"); curl_global_cleanup(); return 0; }
++        if (d0.contains("slots") && d0["slots"].is_array())
++            for (auto& s : d0["slots"]) {
++                if (jnum(s, "pos", 0.0) == 0.0) continue;
++                std::string key = s.value("key", std::string());
++                for (auto& c : key) c = (char)std::tolower((unsigned char)c);
++                for (auto& [pre, bs] : BINANCE)
++                    if (key.rfind(pre, 0) == 0 && std::find(want.begin(), want.end(), bs) == want.end())
++                        { want.push_back(bs); break; }
++            }
++    }
++    std::map<std::string, double> live;
++    for (const auto& bs : want) { double lp = live_price(bs); if (std::isfinite(lp)) live[bs] = lp; }
++
++    // PASS 2: re-read the CURRENT document and apply the marks to it.
+     std::ifstream sf(STATE);
+     if (!sf) { std::printf("live_mark: no state.json\n"); curl_global_cleanup(); return 0; }
+     json d;
+@@ -72,8 +98,9 @@
+             for (auto& [pre, bs] : BINANCE) if (key.rfind(pre, 0) == 0) { binsym = bs; break; }
+             double entry = jnum(s, "entry_px", 0.0);
+             if (!binsym.empty() && entry > 0) {
+-                double lp = live_price(binsym);
+-                if (std::isfinite(lp)) {
++                auto lit = live.find(binsym);
++                if (lit != live.end()) {
++                    double lp = lit->second;
+                     double old_pct = jnum(s, "unreal_pct", 0.0);
+                     double pos = jnum(s, "pos", 0.0);
+                     int side = pos > 0 ? 1 : -1;
+diff -ruN a/src/shadow_refresh.cpp b/src/shadow_refresh.cpp
+--- a/src/shadow_refresh.cpp	2026-07-06 12:38:48.940624931 +0000
++++ b/src/shadow_refresh.cpp	2026-07-06 12:42:31.984093331 +0000
+@@ -140,7 +140,11 @@
+         } else if (!integ) {
+             t = 0; sz = 1.0; px = 0.0; expx = 0.0;
+         } else {
+-            int rma = gated_strats().count(L.strat) ? regime_gate_ma() : 0;
++            // REGIME GATE: NDX (index) ONLY. Operator hard rule 2026-07-06
++            // (feedback-no-200dma-crypto): NO 200DMA anywhere in crypto -- the BTC/ETH/SOL
++            // trend legs run ungated, matching the intraday book + allocator + wave engine.
++            // The NDX TSMom50 gate (S-2026-06-30) is an index rule and stands.
++            int rma = (L.sym == "NDX" && gated_strats().count(L.strat)) ? regime_gate_ma() : 0;
+             // vol-target size dial: 0.015 on the crypto trend/Regime legs, 0 (pool-only) on IBS/NDX.
+             // See CryptoParentProtection audit -- the sole edge-preserving parent protection.
+             double vt = vt_target_for(L.sym, L.strat);
+@@ -193,6 +197,17 @@
+         double cum_usd = p.value("realized_usd", 0.0);
+         auto cm = cmap[L.key]; double corr = cm.first, scale = cm.second;
+         long qty = qty_for((t != 0 && epx > 0) ? epx : px, L.mult, scale, sz);
++        // CONTRACTS/VT FREEZE (honest-accounting, S-2026-07-07): a real position holds the
++        // contracts it OPENED with. Recomputing qty/vt each run (pool split, corr scale, and --
++        // on a close-to-flat -- today's px) booked realized P&L on a phantom time-varying
++        // quantity. While a position is held, carry the entry-frozen contracts + vt multiplier.
++        double sz_book = sz;
++        if (pos0 != 0) {
++            if (p.contains("contracts") && p["contracts"].is_number() && p["contracts"].get<double>() > 0)
++                qty = (long)p["contracts"].get<double>();
++            if (p.contains("vt") && p["vt"].is_number() && p["vt"].get<double>() > 0)
++                sz_book = p["vt"].get<double>();
++        }
+ 
+         double peak_usd = (p.contains("peak_usd") && p["peak_usd"].is_number()) ? p["peak_usd"].get<double>() : 0.0;
+         long   peak_ts  = (p.contains("peak_ts")  && p["peak_ts"].is_number())  ? p["peak_ts"].get<long>()    : 0;
+@@ -246,8 +261,8 @@
+ 
+         if (t != pos0) {                            // ---- TRADE (flip) ----
+             if (pos0 != 0 && epx > 0) {             // close old leg -> realized
+-                long q0 = qty;
+-                double r = (pos0 * (px - epx) / epx * sz - c * sz) * 100; cum += r; ntrades++;
++                long q0 = qty;                       // entry-frozen contracts (see freeze above)
++                double r = (pos0 * (px - epx) / epx * sz_book - c * sz_book) * 100; cum += r; ntrades++;
+                 double r_usd = pos0 * (px - epx) * L.mult * q0
+                                - (L.cost + 2) / 10000.0 * px * L.mult * q0; cum_usd += r_usd;
+                 json ce = {
+@@ -269,20 +284,21 @@
+             }
+             if (t != 0) {
+                 epx = px; ets = json(now); qty = qty_for(epx, L.mult, scale, sz);
++                sz_book = sz;                        // fresh open: freeze THIS vt for the trade's life
+                 peak_usd = 0.0; peak_ts = unix_from(now); be_peak = 0.0;
+                 led << now << "," << L.key << ",OPEN " << t << "," << t << ","
+                     << fmt(px, 4) << ",," << fmt(cum, 3) << "\n";
+                 ntrades++;
+             }
+         }
+-        double unreal = (t != 0 && epx > 0) ? t * (px - epx) / epx * sz * 100 : 0.0;
++        double unreal = (t != 0 && epx > 0) ? t * (px - epx) / epx * sz_book * 100 : 0.0;
+         double unreal_usd = (t != 0 && epx > 0) ? t * (px - epx) * L.mult * qty : 0.0;
+         if (t != 0) deployed += px * L.mult * qty;
+         tot_real += cum; tot_unreal += unreal; tot_real_usd += cum_usd; tot_unreal_usd += unreal_usd;
+ 
+         json slot = {
+             {"key", L.key}, {"sym", L.dsym}, {"strat", L.dstrat}, {"pos", t},
+-            {"contracts", t ? qty : 0}, {"vt", round_n(sz, 2)}, {"mult", L.mult}, {"pool", POOL},
++            {"contracts", t ? qty : 0}, {"vt", round_n(t ? sz_book : sz, 2)}, {"mult", L.mult}, {"pool", POOL},
+             {"corr", round_n(corr, 2)}, {"downsized", scale < 1.0 && t != 0},
+             {"notional", t ? round_n(px * L.mult * qty, 0) : 0},
+             {"px", round_n(px, 2)}, {"entry_px", round_n(epx, 2)}, {"entry_ts", ets},
+@@ -345,9 +361,10 @@
+         {"ndx_mark_src", have_live_ndx ? "IBKR-NQ" : "daily-close"},
+         {"clipped", clipped_json}, {"slots", slots}, {"closed", closed}
+     };
+-    std::ofstream sf(STATE);
+-    sf << out.dump(1);
+-    sf.close();
++    // ATOMIC write (tmp+rename): stall_companion / live_mark / the GUI read this file --
++    // a partial read parsed as "no slots" mass-ENGINE_EXITs every open companion.
++    { std::ofstream sf(STATE + ".tmp"); sf << out.dump(1); }
++    std::rename((STATE + ".tmp").c_str(), STATE.c_str());
+ 
+     std::printf("refresh: %d new trade-events, open unreal $%.2f (%.2f%%) realized $%.2f\n",
+                 ntrades, tot_unreal_usd, tot_unreal, tot_real_usd);
+diff -ruN a/src/shadow_refresh_intraday.cpp b/src/shadow_refresh_intraday.cpp
+--- a/src/shadow_refresh_intraday.cpp	2026-07-06 12:38:48.940392122 +0000
++++ b/src/shadow_refresh_intraday.cpp	2026-07-06 13:59:20.540482930 +0000
+@@ -97,12 +97,15 @@
+      {"sol_emax_1h","SOL",S1,H1, 2,"EMAx",   5.00,"SOL fut 1h (ladder ~2bps)","Trend EMAx 1h"},
+      {"sol_donch40_1h","SOL",S1,H1, 2,"Donch40",5.00,"SOL fut 1h (ladder ~2bps; QSOL pending)","Breakout Donch40 1h"},
+      // --- UPJUMP companion parents (S-2026-07-03, CryptoUpJumpCompanion) ---
+-     // UNIFORM 2% TRIGGER (S-2026-07-06, operator hard rule feedback-test-operator-spec-before-verdict):
+-     // ALL cryptos trade the SAME way -- a +2% up-jump (covers 0.20% RT cost) arms long + rides to
+-     // stall/reversal, ×2 companion. NO per-symbol 5/8/12% thresholds. Do NOT re-tier these per coin.
+-     {"btc_upjump","BTC",B1,H1,18,"UpJump2", 1.0,"BTC spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+-     {"eth_upjump","ETH",E1,H1,18,"UpJump2", 1.0,"ETH spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+-     {"sol_upjump","SOL",S1,H1,18,"UpJump2", 1.0,"SOL spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
++     // MAJORS RE-LOCKED S-2026-07-07 (backtest/rider_sweep_wf.py, walk-forward IS/OOS + plateau,
++     // real 23-25bp RT, run on BOTH the 9y Binance archive and the live 5.5y CSVs): the uniform
++     // 2%/24h trigger is NET NEGATIVE across the full history; the robust plateau is the BIG slow
++     // jump -- 48-bar window, BTC/ETH 4%, SOL 7% (per-coin thr reflects vol, mechanism identical).
++     // OOS nets: BTC +15.8k bp (9y) / +3.5-4k (5.5y), ETH +4.8-11.7k, SOL +1.6-2.3k. The alt legs
++     // below keep UpJump2 UNTESTED at the new definition -- re-sweep before promoting any of them.
++     {"btc_upjump","BTC",B1,H1,18,"UpJump4x48", 1.0,"BTC spot up-jump (companion parent, 0.20% RT)","UpJump 4%x48h 1h"},
++     {"eth_upjump","ETH",E1,H1,18,"UpJump4x48", 1.0,"ETH spot up-jump (companion parent, 0.20% RT)","UpJump 4%x48h 1h"},
++     {"sol_upjump","SOL",S1,H1,18,"UpJump7x48", 1.0,"SOL spot up-jump (companion parent, 0.20% RT)","UpJump 7%x48h 1h"},
+      {"doge_upjump","DOGE",D("DOGE","1h"),H1,18,"UpJump2",1.0,"DOGE spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+      {"ada_upjump","ADA",D("ADA","1h"),H1,18,"UpJump2", 1.0,"ADA spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+      {"trx_upjump","TRX",D("TRX","1h"),H1,18,"UpJump2", 1.0,"TRX spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+@@ -313,11 +316,20 @@
+         double cum_usd = p.value("realized_usd", 0.0);
+         auto cm = cmap[L.key]; double corr = cm.first, scale = cm.second;
+         long qty = qty_for((t != 0 && epx > 0) ? epx : px, L.mult, scale);
++        // CONTRACTS/VT FREEZE (honest-accounting, S-2026-07-07): a real position holds the
++        // contracts it OPENED with; recomputing each run booked P&L on a phantom quantity.
++        double sz_book = sz;
++        if (pos0 != 0) {
++            if (p.contains("contracts") && p["contracts"].is_number() && p["contracts"].get<double>() > 0)
++                qty = (long)p["contracts"].get<double>();
++            if (p.contains("vt") && p["vt"].is_number() && p["vt"].get<double>() > 0)
++                sz_book = p["vt"].get<double>();
++        }
+ 
+         if (t != pos0) {                            // ---- TRADE (flip) ----
+             if (pos0 != 0 && epx > 0) {             // close old leg -> realized
+-                long q0 = qty;
+-                double r = (pos0 * (px - epx) / epx * sz - c * sz) * 100; cum += r; ntrades++;
++                long q0 = qty;                       // entry-frozen contracts (see freeze above)
++                double r = (pos0 * (px - epx) / epx * sz_book - c * sz_book) * 100; cum += r; ntrades++;
+                 double r_usd = pos0 * (px - epx) * L.mult * q0
+                                - (L.cost + 2) / 10000.0 * px * L.mult * q0; cum_usd += r_usd;
+                 json ce = {
+@@ -339,19 +351,20 @@
+             }
+             if (t != 0) {
+                 epx = px; ets = json(now); qty = qty_for(epx, L.mult, scale);
++                sz_book = sz;                        // fresh open: freeze THIS vt for the trade's life
+                 led << now << "," << L.key << ",OPEN " << t << "," << t << ","
+                     << fmt(px, 4) << ",," << fmt(cum, 3) << "\n";
+                 ntrades++;
+             }
+         }
+-        double unreal = (t != 0 && epx > 0) ? t * (px - epx) / epx * sz * 100 : 0.0;
++        double unreal = (t != 0 && epx > 0) ? t * (px - epx) / epx * sz_book * 100 : 0.0;
+         double unreal_usd = (t != 0 && epx > 0) ? t * (px - epx) * L.mult * qty : 0.0;
+         if (t != 0) deployed += px * L.mult * qty;
+         tot_real += cum; tot_unreal += unreal; tot_real_usd += cum_usd; tot_unreal_usd += unreal_usd;
+ 
+         json slot = {
+             {"key", L.key}, {"sym", L.dsym}, {"strat", L.dstrat}, {"pos", t},
+-            {"contracts", t ? qty : 0L}, {"vt", round_n(sz, 2)}, {"mult", L.mult}, {"pool", POOL},
++            {"contracts", t ? qty : 0L}, {"vt", round_n(t ? sz_book : sz, 2)}, {"mult", L.mult}, {"pool", POOL},
+             {"tf_ms", L.tf_ms}, {"cost_bps", L.cost},
+             {"corr", round_n(corr, 2)}, {"downsized", scale < 1.0 && t != 0},
+             {"notional", t ? round_n(px * L.mult * qty, 0) : 0},
+@@ -406,9 +419,10 @@
+         {"n_open", n_open_state}, {"killed", KILLED},
+         {"slots", slots}, {"closed", closed}
+     };
+-    std::ofstream sf(STATE);
+-    sf << out.dump(1);
+-    sf.close();
++    // ATOMIC write (tmp+rename): stall_companion (crypto books) reads this file every cron
++    // cycle -- a partial read parsed as "no slots" mass-ENGINE_EXITs every open companion.
++    { std::ofstream sf(STATE + ".tmp"); sf << out.dump(1); }
++    std::rename((STATE + ".tmp").c_str(), STATE.c_str());
+ 
+     std::printf("refresh-intraday: %d new trade-events, %d open, unreal $%.2f (%.2f%%) realized $%.2f (%.2f%%)\n",
+                 ntrades, n_open_state, tot_unreal_usd, tot_unreal, tot_real_usd, tot_real);
+diff -ruN a/src/stall_companion.cpp b/src/stall_companion.cpp
+--- a/src/stall_companion.cpp	2026-07-06 12:38:48.940175558 +0000
++++ b/src/stall_companion.cpp	2026-07-06 12:42:31.984570518 +0000
+@@ -82,12 +82,17 @@
+ }
+ 
+ // ── read CRYPTO_STATE slots[] -> live rows (faithful to poll_crypto: skip pos==0) ──
+-static std::vector<StallLiveRow> poll_crypto_(const std::string& state_path) {
++// ok=false on unreadable/unparseable state: the caller MUST skip the harvest -- with
++// skip_empty_guard=true an empty row-set is otherwise indistinguishable from "all real trades
++// closed" and a single torn/mid-write read would mass-ENGINE_EXIT every open companion at
++// stale marks (then reopen next cycle with reset MFE peaks).
++static std::vector<StallLiveRow> poll_crypto_(const std::string& state_path, bool& ok) {
+     std::vector<StallLiveRow> rows;
++    ok = true;
+     std::ifstream f(state_path);
+-    if (!f.good()) { std::fprintf(stderr, "[stall-companion] CRYPTO_STATE unreadable: %s\n", state_path.c_str()); return rows; }
++    if (!f.good()) { ok = false; std::fprintf(stderr, "[stall-companion] CRYPTO_STATE unreadable: %s\n", state_path.c_str()); return rows; }
+     json d;
+-    try { d = json::parse(f); } catch (...) { std::fprintf(stderr, "[stall-companion] CRYPTO_STATE parse fail\n"); return rows; }
++    try { d = json::parse(f); } catch (...) { ok = false; std::fprintf(stderr, "[stall-companion] CRYPTO_STATE parse fail\n"); return rows; }
+     if (!d.contains("slots") || !d["slots"].is_array()) return rows;
+     for (const auto& s : d["slots"]) {
+         try {
+@@ -182,7 +187,13 @@
+ 
+     for (const auto& c : cfgs) migrate_seed_(c.dir);   // JSON->tsv once per dir before construction
+ 
+-    const auto rows = poll_crypto_(CS);
++    bool state_ok = true;
++    const auto rows = poll_crypto_(CS, state_ok);
++    if (!state_ok) {
++        // Do NOT run the harvest off a failed read: books stay untouched, next cron retries.
++        std::fprintf(stderr, "[stall-companion] SKIP harvest (state unreadable/parse-fail); books untouched\n");
++        return 0;
++    }
+ 
+     std::vector<StallBook> books;
+     books.reserve(cfgs.size());
+diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
+--- a/src/wave_companion.cpp	2026-07-06 12:38:48.939878062 +0000
++++ b/src/wave_companion.cpp	2026-07-06 12:59:29.186085809 +0000
+@@ -14,21 +14,27 @@
+ //   * REVERSAL  : price gives back REV% from the wave peak  -> close ALL companions.
+ //   * STAGNATION: no new wave high within STAG_H hours (PER-COIN) -> close ALL companions.
+ //   * COLD CUT  : per-companion, if its OWN price falls COLD% below its arm while the wave
+-//                 is still open, cut THAT companion early at its stop (independent book).
+-//                 Backtested S-2026-07-05: this cut is the ONLY per-trade reversal guard
+-//                 (REV/STAG close the whole stack, not a per-companion loss). Tighter=safer:
+-//                 4% DOMINATES 8% at the per-coin STAGs -- MORE net AND ~half the worst clip,
+-//                 all-6 pass, both halves + all thirds positive, smooth (non-overfit) gradient.
++//                 is still open, cut THAT companion early (independent book).
+ //
+ // Defaults (locked config S-2026-07-05): STEP 1% / STAG ETH 24h + BTC 48h / REV 15% / COLD 4%.
+-// Parity target — SUPERSEDED by the 2026-07-06 200DMA removal. The figures below were the
+-// bull-GATED backtest (5.5yr Binance 1h, raw price-unit net, COLD 4%):
+-//     ETH@24h ~ $64,911   BTC@48h ~ $683,010   (companions/wave mean ETH 4.9 / BTC 5.4; worst clip
+-//     ETH -$293  BTC -$5,165). REV 15% kept: tightening it hurts net + gives NO worst-clip gain.
+-// Un-gated (arms every regime) RE-SWEPT 2026-07-06 (Omega backtest/wave_ungated_all6_sweep.py):
+-// PASSES all-6 both coins -- BTC net $790,785 PF1.41, ETH net $81,130 PF1.53; the BEAR-regime book
+-// is NET POSITIVE (BTC +$384k / ETH +$20.6k), so the gate was never needed for all-6. Locked config
+-// = top net on both coins. worst clip BTC -$5,165 / ETH -$293.
++//
++// HONEST-ACCOUNTING FIX (S-2026-07-07) — three defects corrected:
++//   1. REAL FILLS. The model armed STACKED companions at geometric rung levels
++//      (last_arm*(1+STEP)) even when one bar crossed several rungs — booking long entries
++//      BELOW the close that triggered them (instant paper profit; live you fill at market).
++//      The COLD cut likewise "filled" exactly at the stop even when the close was through it.
++//      Now every companion books BOTH columns:
++//        *_model = legacy rung/stop fills (comparison only — matches the python backtest)
++//        *_real  = arm at the triggering bar's CLOSE, cold-cut fill at the WORSE of
++//                  (stop, close), minus COST_RT. The judgeable column.
++//   2. LEDGER DEDUP. Each run REPLAYS the full 1h history, but the ledger was opened in
++//      append mode -> every cron run re-appended the ENTIRE history of clips (stamped with
++//      the run wall-time, not the exit bar). Anyone summing ledger.csv saw compounding fake
++//      totals. The ledger is now REWRITTEN (truncate) each run — a pure function of the
++//      data, like the state — and exit_ts is the companion's exit BAR time (ms).
++//   3. FORWARD ANCHOR. state realized_usd is a 5.5-year replay total, not a live record.
++//      A persisted anchor_ms (stamped on first run) now splits the book: fwd_* fields count
++//      ONLY clips whose exit bar is after the anchor — the true forward record to judge.
+ //
+ // Faithful-by-construction: each run REPLAYS the full 1h history (a pure function of the
+ // data), so the book can never drift from the backtest. State = the emitted ledger.
+@@ -72,7 +78,11 @@
+     std::sort(v.begin(),v.end(),[](const Bar&a,const Bar&b){return a.ms<b.ms;});
+     return v;
+ }
+-struct Comp { long arm_ms; double arm_px, cold_stop; bool cold; long exit_ms; double exit_px; };
++// arm_px = MODEL arm (rung level, python parity); arm_px_real = the triggering bar's close
++// (the only tradable mark). exit_px_real diverges from exit_px only on a COLD cut whose
++// trigger close is through the stop.
++struct Comp { long arm_ms; double arm_px, arm_px_real, cold_stop; bool cold;
++              long exit_ms; double exit_px, exit_px_real; };
+ struct Wave { long start_ms; std::vector<Comp> comps; double peak; long peak_ms;
+               long exit_ms; double exit_px; bool open; };
+ 
+@@ -84,6 +94,10 @@
+     const double REV    = std::stod(env_or("REV",    "0.15"));
+     const double COLD   = std::stod(env_or("COLD",   "0.04"));   // 0 disables the per-companion cut
+     const double COST_RT= std::stod(env_or("COST_RT","0.002"));
++    // Binance REAL slippage on top of taker fees (roster slip table: BTC/ETH ~3bp RT, SOL 5bp).
++    // Model column keeps COST_RT alone (python parity); the REAL column pays COST_RT + SLIP_RT.
++    const double SLIP_RT= std::stod(env_or("SLIP_RT","0.0003"));
++    const double COST_REAL = COST_RT + SLIP_RT;
+     const double POOL   = std::stod(env_or("POOL_USD","10000"));
+     const double CUSD   = std::stod(env_or("COMPANION_USD","1000")); // $ notional per companion (shadow)
+     const std::string DATADIR = env_or("WAVECOMP_DATADIR",
+@@ -91,16 +105,27 @@
+     mkdir(DATADIR.c_str(),0755);
+     const std::string STATE = DATADIR + "/state.json";
+     const std::string LEDGER= DATADIR + "/ledger.csv";
++    const std::string ANCHOR= DATADIR + "/anchor_ms.txt";   // deploy-forward anchor (first-run stamp)
+     const std::string now = utc_now_min();
+     const std::vector<std::string> COINS = { "BTC", "ETH" };  // backtested/validated scope only
+ 
+-    bool newled = !file_exists(LEDGER);
+-    std::ofstream led(LEDGER, std::ios::app);
+-    if(newled) led << "exit_ts,coin,wave_start_ms,arm_ms,arm_px,exit_px,ret_frac,pnl_usd,exit_kind\n";
++    // LEDGER: rewritten (truncate) every run — the replay IS the full book, append duplicated it.
++    std::ofstream led(LEDGER, std::ios::trunc);
++    led << "exit_bar_ms,coin,wave_start_ms,arm_ms,arm_px_model,arm_px_real,exit_px_model,exit_px_real,"
++           "ret_model,ret_real,pnl_usd_model,pnl_usd_real,exit_kind\n";
++
++    // FORWARD ANCHOR: persisted on first run = newest bar across coins at that moment. Clips whose
++    // exit bar is AFTER the anchor are the true forward record (fwd_* fields); everything before
++    // is replay/validation display only.
++    long anchor_ms = 0;
++    { std::ifstream af(ANCHOR); long long v = 0; if (af >> v) anchor_ms = (long)v; }
+ 
+     json coins_json = json::array();
+-    double tot_real_usd=0, tot_open_usd=0, tot_raw_unit=0;  // raw_unit = price-unit net (parity check)
++    double tot_real_usd=0, tot_open_usd=0, tot_raw_unit=0;      // model columns (python parity)
++    double tot_real_usd_r=0, tot_open_usd_r=0;                  // REAL columns (close fills - cost)
++    double fwd_usd_model=0, fwd_usd_real=0; int fwd_clips=0;    // forward-of-anchor book
+     int tot_open_comp=0, tot_closed_comp=0;
++    long newest_ms_all = 0;
+ 
+     for(const auto& coin : COINS){
+         // per-coin stagnation window (global STAG_H override wins for parity sweeps)
+@@ -118,6 +143,7 @@
+             coins_json.push_back({{"coin",coin},{"skipped",true},{"integ",integ},{"fresh",fresh}});
+             continue;
+         }
++        if(bars.back().ms > newest_ms_all) newest_ms_all = bars.back().ms;
+ 
+         // ---- replay: reconstruct every wave + companion exactly as the backtest ----
+         std::vector<Wave> waves;
+@@ -130,7 +156,7 @@
+                 // NO 200DMA gate (operator hard rule 2026-07-06): arm on structure, any regime.
+                 Wave w; w.start_ms=ms; w.peak=px; w.peak_ms=ms; w.open=true;
+                 double last_arm=px;
+-                w.comps.push_back({ms,px,px*(1-COLD),false,0,0.0});    // companion #1
++                w.comps.push_back({ms,px,px,px*(1-COLD),false,0,0.0,0.0});    // companion #1 (real==model: arm at close)
+                 size_t j=i+1; w.exit_px=px; w.exit_ms=ms;
+                 for(; j<n; ++j){
+                     long mj=bars[j].ms; double pj=bars[j].c;
+@@ -138,20 +164,28 @@
+                         w.peak=pj; w.peak_ms=mj;
+                         while(pj >= last_arm*(1+STEP)){                // stack a new companion each +STEP%
+                             last_arm *= (1+STEP);
+-                            w.comps.push_back({mj,last_arm,last_arm*(1-COLD),false,0,0.0});
++                            // MODEL arms at the rung (python parity). REAL arms at pj — the close
++                            // that actually triggered; a rung fill below market is not achievable.
++                            w.comps.push_back({mj,last_arm,pj,last_arm*(1-COLD),false,0,0.0,0.0});
+                         }
+                     }
+                     if(pj <= w.peak*(1-REV)){ w.exit_px=pj; w.exit_ms=mj; break; }   // REVERSAL
+                     if(mj - w.peak_ms >= STAG_MS){ w.exit_px=pj; w.exit_ms=mj; break; } // STAGNATION
+                     w.exit_px=pj; w.exit_ms=mj;
+-                    // per-companion COLD cut — ONLY on non-exit bars (Python clips(): mj < wexit_ms),
+-                    // fill at the stop. Runs after the exit checks so the exit bar is excluded.
++                    // per-companion COLD cut — ONLY on non-exit bars (Python clips(): mj < wexit_ms).
++                    // MODEL fills at the stop; REAL fills at the trigger CLOSE (<= stop for a long:
++                    // the close is the only tradable mark, the gap-through is real).
+                     if(COLD>0) for(auto& cmp: w.comps)
+-                        if(cmp.exit_ms==0 && pj<=cmp.cold_stop){ cmp.cold=true; cmp.exit_ms=mj; cmp.exit_px=cmp.cold_stop; }
++                        if(cmp.exit_ms==0 && pj<=cmp.cold_stop){
++                            cmp.cold=true; cmp.exit_ms=mj;
++                            cmp.exit_px=cmp.cold_stop;
++                            cmp.exit_px_real=std::min(cmp.cold_stop,pj);
++                        }
+                 }
+                 w.open = (j>=n);                                       // still open only if we ran off the data
+-                // settle: any companion not cold-cut exits at the wave exit
+-                for(auto& cmp: w.comps) if(cmp.exit_ms==0){ cmp.exit_ms=w.exit_ms; cmp.exit_px=w.exit_px; }
++                // settle: any companion not cold-cut exits at the wave exit (an observed close ->
++                // real == model on REVERSAL/STAGNATION exits)
++                for(auto& cmp: w.comps) if(cmp.exit_ms==0){ cmp.exit_ms=w.exit_ms; cmp.exit_px=w.exit_px; cmp.exit_px_real=w.exit_px; }
+                 double exit_px_for_ref = w.exit_px;
+                 waves.push_back(std::move(w));
+                 ref = exit_px_for_ref;      // resume: a fresh +STEP advance above the exit re-arms
+@@ -160,32 +194,44 @@
+         }
+ 
+         // ---- book the clips ----
+-        double coin_real=0, coin_open=0, coin_raw=0; int nopen=0, nclosed=0;
++        double coin_real=0, coin_open=0, coin_raw=0;          // model
++        double coin_real_r=0, coin_open_r=0;                  // REAL
++        int nopen=0, nclosed=0;
+         std::vector<int> counts;
+         json open_comps = json::array();
+         double last_px = bars.back().c;
+         for(auto& w : waves){
+             counts.push_back((int)w.comps.size());
+             for(auto& cmp : w.comps){
+-                double ret = (cmp.exit_px - cmp.arm_px)/cmp.arm_px - COST_RT;
++                double ret   = (cmp.exit_px - cmp.arm_px)/cmp.arm_px - COST_RT;                  // MODEL
++                double ret_r = (cmp.exit_px_real - cmp.arm_px_real)/cmp.arm_px_real - COST_REAL; // REAL (fees+slip)
+                 double raw = (cmp.exit_px - cmp.arm_px) - COST_RT*cmp.arm_px;   // price-unit (parity)
+-                double usd = CUSD * ret;
++                double usd   = CUSD * ret;
++                double usd_r = CUSD * ret_r;
+                 coin_raw += raw;
+                 if(w.open){
+                     // live wave: companion still riding -> mark-to-market as OPEN (unreal)
+-                    double mret = (last_px - cmp.arm_px)/cmp.arm_px - COST_RT;
+-                    coin_open += CUSD*mret; ++nopen;
++                    double mret   = (last_px - cmp.arm_px)/cmp.arm_px - COST_RT;
++                    double mret_r = (last_px - cmp.arm_px_real)/cmp.arm_px_real - COST_REAL;
++                    coin_open += CUSD*mret; coin_open_r += CUSD*mret_r; ++nopen;
+                     open_comps.push_back({
+-                        {"arm_px",round_n(cmp.arm_px,4)},{"cold_stop",round_n(cmp.cold_stop,4)},
+-                        {"mret_frac",round_n(mret,5)},{"unreal_usd",round_n(CUSD*mret,2)}
++                        {"arm_px",round_n(cmp.arm_px,4)},{"arm_px_real",round_n(cmp.arm_px_real,4)},
++                        {"cold_stop",round_n(cmp.cold_stop,4)},
++                        {"mret_frac",round_n(mret,5)},{"mret_frac_real",round_n(mret_r,5)},
++                        {"unreal_usd",round_n(CUSD*mret,2)},{"unreal_usd_real",round_n(CUSD*mret_r,2)}
+                     });
+                 } else {
+-                    coin_real += usd; ++nclosed;
++                    coin_real += usd; coin_real_r += usd_r; ++nclosed;
++                    if(anchor_ms > 0 && cmp.exit_ms > anchor_ms){   // forward-of-anchor: the judgeable book
++                        fwd_usd_model += usd; fwd_usd_real += usd_r; ++fwd_clips;
++                    }
+                     std::string kind = cmp.cold ? "COLD" :
+                         (w.exit_px <= w.peak*(1-REV) ? "REVERSAL" : "STAGNATION");
+-                    led << now << "," << coin << "," << w.start_ms << "," << cmp.arm_ms << ","
+-                        << fmt(cmp.arm_px,4) << "," << fmt(cmp.exit_px,4) << "," << fmt(ret,6) << ","
+-                        << fmt(usd,2) << "," << kind << "\n";
++                    led << cmp.exit_ms << "," << coin << "," << w.start_ms << "," << cmp.arm_ms << ","
++                        << fmt(cmp.arm_px,4) << "," << fmt(cmp.arm_px_real,4) << ","
++                        << fmt(cmp.exit_px,4) << "," << fmt(cmp.exit_px_real,4) << ","
++                        << fmt(ret,6) << "," << fmt(ret_r,6) << ","
++                        << fmt(usd,2) << "," << fmt(usd_r,2) << "," << kind << "\n";
+                 }
+             }
+         }
+@@ -195,16 +241,18 @@
+         double meanc = counts.empty()?0: (double)std::accumulate(counts.begin(),counts.end(),0)/counts.size();
+ 
+         std::fprintf(stderr,"[wave-comp] %s: %zu waves, %d closed comps, raw-unit net $%.0f, "
+-                     "realized(pool) $%.2f, open %d, comps/wave mean %.1f max %d\n",
+-                     coin.c_str(), waves.size(), nclosed, coin_raw, coin_real, nopen,
++                     "realized model $%.2f REAL $%.2f, open %d, comps/wave mean %.1f max %d\n",
++                     coin.c_str(), waves.size(), nclosed, coin_raw, coin_real, coin_real_r, nopen,
+                      meanc, counts.empty()?0:counts.back());
+ 
+         tot_real_usd+=coin_real; tot_open_usd+=coin_open; tot_raw_unit+=coin_raw;
++        tot_real_usd_r+=coin_real_r; tot_open_usd_r+=coin_open_r;
+         tot_open_comp+=nopen; tot_closed_comp+=nclosed;
+         coins_json.push_back({
+             {"coin",coin},{"skipped",false},{"fresh",fresh},{"integ",integ},{"stag_h",stag_h},
+             {"waves",(int)waves.size()},{"closed_comps",nclosed},{"open_comps",nopen},
+-            {"realized_usd",round_n(coin_real,2)},{"open_unreal_usd",round_n(coin_open,2)},
++            {"realized_usd",round_n(coin_real,2)},{"realized_usd_real",round_n(coin_real_r,2)},
++            {"open_unreal_usd",round_n(coin_open,2)},{"open_unreal_usd_real",round_n(coin_open_r,2)},
+             {"raw_unit_net",round_n(coin_raw,0)},
+             {"comps_per_wave",{{"mean",round_n(meanc,1)},{"p50",qc(.5)},{"p90",qc(.9)},{"max",counts.empty()?0:counts.back()}}},
+             {"open",open_comps},
+@@ -213,21 +261,43 @@
+     }
+     led.close();
+ 
++    // first-ever run: stamp the anchor at the newest bar so the forward book starts NOW
++    // (replay history never counts as forward performance).
++    if(anchor_ms == 0 && newest_ms_all > 0){
++        anchor_ms = newest_ms_all;
++        std::ofstream af(ANCHOR, std::ios::trunc); af << anchor_ms << "\n";
++        std::fprintf(stderr,"[wave-comp] anchor stamped %ld (forward book starts here)\n", anchor_ms);
++    }
++
+     json out = {
+         {"engine","CryptoWaveCompanion"},{"mode","SHADOW"},{"updated",now+" UTC"},
+         {"config",{{"step",STEP},{"stag_per_coin","ETH 24h / BTC 48h"},
+                    {"stag_h_override",STAG_H_OVR},{"rev",REV},{"cold",COLD},
+-                   {"cost_rt",COST_RT},{"pool_usd",POOL},{"companion_usd",CUSD},
+-                   {"bull_gate","NONE (200DMA removed 2026-07-06)"},{"long_only",true}}},
++                   {"cost_rt",COST_RT},{"slip_rt",SLIP_RT},{"cost_real",COST_REAL},
++                   {"pool_usd",POOL},{"companion_usd",CUSD},
++                   {"bull_gate","NONE (200DMA removed 2026-07-06)"},{"long_only",true},
++                   {"fills","REAL: arm@trigger-close, cold@worse-of(stop,close); model kept for parity"}}},
++        // model columns (python-backtest parity; REPLAY totals, not forward performance)
+         {"realized_usd",round_n(tot_real_usd,2)},{"open_unreal_usd",round_n(tot_open_usd,2)},
+         {"total_usd",round_n(tot_real_usd+tot_open_usd,2)},
++        // REAL columns (close fills - cost) — the judgeable replay totals
++        {"realized_usd_real",round_n(tot_real_usd_r,2)},{"open_unreal_usd_real",round_n(tot_open_usd_r,2)},
++        {"total_usd_real",round_n(tot_real_usd_r+tot_open_usd_r,2)},
++        // FORWARD book (exit bar > anchor): the true live record to judge the engine on
++        {"anchor_ms",anchor_ms},
++        {"fwd_clips",fwd_clips},
++        {"fwd_realized_usd",round_n(fwd_usd_model,2)},{"fwd_realized_usd_real",round_n(fwd_usd_real,2)},
+         {"bank_bp",round_n((tot_real_usd+tot_open_usd)/POOL*10000.0,1)},
+         {"raw_unit_net",round_n(tot_raw_unit,0)},
+         {"open_comps",tot_open_comp},{"closed_comps",tot_closed_comp},
+         {"coins",coins_json}
+     };
+-    std::ofstream sf(STATE); sf << out.dump(1); sf.close();
+-    std::printf("wave-companion: %d coins, %d closed comps, %d open, realized(pool) $%.2f, raw-unit net $%.0f\n",
+-                (int)COINS.size(), tot_closed_comp, tot_open_comp, tot_real_usd, tot_raw_unit);
++    // atomic write: a concurrent reader (desk/stall books) must never see a partial state
++    { std::ofstream sf(STATE + ".tmp"); sf << out.dump(1); }
++    std::rename((STATE + ".tmp").c_str(), STATE.c_str());
++    std::printf("wave-companion: %d coins, %d closed comps, %d open, realized model $%.2f REAL $%.2f, "
++                "fwd(real) $%.2f over %d clips, raw-unit net $%.0f\n",
++                (int)COINS.size(), tot_closed_comp, tot_open_comp, tot_real_usd, tot_real_usd_r,
++                fwd_usd_real, fwd_clips, tot_raw_unit);
+     return 0;
+ }

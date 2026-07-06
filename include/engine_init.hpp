@@ -18,6 +18,7 @@
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
+#include "JumpRiderEngine.hpp"      // UpJump-pattern rider on metals/oil/FX/indices -> /api/jumprider
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (39 stocks) -> /api/stockmover_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
@@ -1571,6 +1572,7 @@ static void init_engines(const std::string& cfg_path)
             // Feed: RegimeState fires once per COMPLETED LIVE H1 bar (identical to gold_regime_h1.csv).
             omega::gold_regime().set_h1_sink([](int64_t ts_sec, double close){
                 omega::gold_befloor_companion().on_h1_bar(ts_sec, close);
+                omega::jump_rider_book().on_h1_bar("XAUUSD", ts_sec, close);   // UpJump rider, same feed
             });
             // ── LIVE EXECUTION (S-2026-07-06): AUPOS/AUNEG are REAL independent trading engines,
             //   not a spreadsheet. Each flavor runs its OWN position through the SAME order path as
@@ -1714,18 +1716,28 @@ static void init_engines(const std::string& cfg_path)
         //   backtested: neg=0). Chart bars (g_bars_<pair>) live-warm from ticks.
         {
             auto& fxb = omega::fx_befloor_book();
-            static const char* FX_PAIRS[] = {"EURUSD","GBPUSD","USDJPY","AUDUSD","NZDUSD"};
-            for (const char* p : FX_PAIRS) {
+            // PER-PAIR REAL RT COST (bp of notional), from the OmegaCostGuard conservative floors
+            // (1.5-pip spread + table slippage + $6/lot commission) at 2026 price levels:
+            //   EURUSD ($15+$20+$6)/$108k ~ 3.8 -> 4.0   GBPUSD /$127k ~ 3.2 -> 3.5
+            //   USDJPY ($10+$13+$6)/$100k ~ 2.9 -> 3.0   AUDUSD /$66k  ~ 6.2 -> 6.0
+            //   NZDUSD /$61k ~ 6.7 -> 7.0
+            // Debited from every clip's pct_real + drives the tier-viability gate (min_gb_mult).
+            struct FxC { const char* pair; double rt_bp; };
+            static const FxC FX_PAIRS[] = {
+                {"EURUSD", 4.0}, {"GBPUSD", 3.5}, {"USDJPY", 3.0}, {"AUDUSD", 6.0}, {"NZDUSD", 7.0}
+            };
+            for (const auto& fp : FX_PAIRS) {
                 omega::FxBeFloorPair::Config c;
-                c.pair = p; c.notional = 100000.0;   // std-lot notional; 1% ~ $1000/lot (approx for JPY-quote)
+                c.pair = fp.pair; c.notional = 100000.0;   // std-lot notional; 1% ~ $1000/lot (approx for JPY-quote)
+                c.rt_cost_bp = fp.rt_bp;
                 fxb.add(std::move(c));
             }
             // Warm-seed each pair from its bundled H1 CSV (ts,o,h,l,c) -- primes the 2h
             // detector + book and stamps the persisted deploy_ts (forward book starts $0;
             // the tick-fed H1 sink advances it). Bundled CSVs ship with every deploy.
             size_t seeded = 0;
-            for (const char* p : FX_PAIRS)
-                seeded += fxb.seed_pair(p, std::string("phase1/signal_discovery/warmup_") + p + "_H1.csv");
+            for (const auto& fp : FX_PAIRS)
+                seeded += fxb.seed_pair(fp.pair, std::string("phase1/signal_discovery/warmup_") + fp.pair + "_H1.csv");
             // PERSISTENCE (S-2026-07-06b): reload each pair's persisted LIVE forward H1 bars
             // (fx_companion_<pair>_h1.csv, appended by on_h1_bar) BEFORE finalize so the recompute
             // replays them -> the FX book is NON-VOLATILE across restarts. Prior gap: the book was
@@ -1780,16 +1792,22 @@ static void init_engines(const std::string& cfg_path)
             // refreshes from IBKR at deploy (NQ/ES/YM/DAX H1) so they stay fresh & continuous (the seed
             // gate is fail-closed on H1 staleness). Deploy-forward SHADOW book: the seed only primes the
             // 2h detector; deploy_ts gates out all pre-deploy history so a stale/gappy seed cannot misbook.
-            struct ICfg { const char* tag; const char* live; double dpp; const char* csv; };
+            // rt_bp = PER-SYMBOL REAL RT COST (bp of index level), from the OmegaCostGuard
+            // conservative floors (typical CFD spread + table slippage; no commission) at 2026
+            // levels: US500 (0.5+1.5pt)x$50/$315k ~ 3.2 -> 4.0; NAS100 (2+2.5pt)/$23k ~ 2.0 -> 3.0;
+            // DJ30 (3+3pt)x$5/$222k ~ 1.3 -> 2.0; GER40 (1.5+0.8pt)x$1.1/$26k ~ 1.0 -> 2.0.
+            // Debited from every clip's pts_real + drives the tier-viability gate (min_gb_mult).
+            struct ICfg { const char* tag; const char* live; double dpp; double rt_bp; const char* csv; };
             static const ICfg IDX[] = {
-                {"US500",  "US500.F", 50.0,  "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  1.0,   "phase1/signal_discovery/warmup_NAS100_H1.csv"},
-                {"DJ30",   "DJ30.F",  5.0,   "phase1/signal_discovery/warmup_DJ30_H1.csv"},
-                {"GER40",  "GER40",   1.10,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
+                {"US500",  "US500.F", 50.0,  4.0, "phase1/signal_discovery/warmup_US500_H1.csv"},
+                {"NAS100", "NAS100",  1.0,   3.0, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                {"DJ30",   "DJ30.F",  5.0,   2.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
+                {"GER40",  "GER40",   1.10,  2.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
             };
             for (const auto& ic : IDX) {
                 omega::IndexBeFloorSym::Config c;
                 c.sym = ic.tag; c.live_sym = ic.live; c.dpp_per_lot = ic.dpp;
+                c.rt_cost_bp = ic.rt_bp;
                 ib.add(std::move(c));
             }
             size_t iseeded = 0;
@@ -1824,6 +1842,101 @@ static void init_engines(const std::string& cfg_path)
             ib.finalize_all();
             printf("[OMEGA-INIT][SEED] index BE-floor companion wired: 4 syms (US500/NAS100/DJ30/GER40), %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
                    iseeded, irestored);
+            fflush(stdout);
+        }
+
+        // ── JumpRider — the crypto UpJump pattern on ALL non-crypto symbols (S-2026-07-07) ──
+        //   Operator ask: "if upjump IS the solution, implement it on all the symbols where we
+        //   are not using it". The RIDER layer: jump in (+thr over W bars) -> ride -> symmetric
+        //   jump out (flips short where allowed), BE-RATCHET floor once armed (NDX-validated) +
+        //   catastrophe HARD STOP pre-arm. Honest single-column accounting from day one (observed
+        //   closes only, per-symbol rt_cost_bp debited, deploy-forward $0 start). SHADOW; the
+        //   BE-floor companions harvest the same moves independently (never cross-read).
+        //   W/thr reuse each symbol's validated BE-floor detector; be_arm=thr/2, hard_stop=2xthr
+        //   are PROVISIONAL family defaults — per-symbol backtest on ~/Tick H1 OWED before LIVE.
+        {
+            auto& jr = omega::jump_rider_book();
+            // {tag, live_sym, W, thr, rt_cost_bp, be_arm_mult, warmup CSV}
+            //   rt = same real costs as the BE-floor books. Settings LOCKED from the S-2026-07-07
+            //   FULL-TICK walk-forward sweep (backtest/rider_sweep_wf.py, IS=first 60% / OOS=last
+            //   40%, per-row plateau on top-6; outputs/RIDER_SWEEP_TICK3_2026-07-07.txt supersedes
+            //   the earlier RIDER_SWEEP_WF run — full multiyear Tick wins over the Tick 2022-23 cut):
+            //   GO    : XAUUSD W2/1.00% FLIP (1573d: IS +2816bp n47 / OOS +1493bp n100,
+            //           plateau +540bp/ok — the ONLY plateau-ok row; higher-OOS BE10 was SPIKE)
+            //   WATCH : USDJPY W2/0.30% (tick2, OOS + on all exits; not rerun in tick3),
+            //           GER40 W2/0.30% BE10 (208d: OOS +466 but plateau SPIKE; the plateau-ok
+            //           neighbor TR33 needs a chandelier trail the live engine doesn't have),
+            //           DJ30 W4/0.50% BE10 (IS n33 / OOS +187 / plateau +189bp ok — passes gates
+            //           but only 179d of data; forward real column decides)
+            //   FAILED WF (kept SHADOW at family defaults for forward baseline only — do NOT
+            //   promote): XAGUSD, EURUSD, GBPUSD, AUDUSD, NZDUSD,
+            //           NAS100 (tick3 1559d: OOS negative across top-6 — demoted from WATCH),
+            //           US500 (tick3 1559d: every top-5 row plateau SPIKE — demoted from WATCH),
+            //           USOIL (tick2 row VOID: loader merged Brent BCOUSD ticks into WTI H1).
+            //   be_arm_mult: BE-ratchet arm = mult x thr (0.5 = BE05, 1.0 = BE10,
+            //   999 = never arms -> pure FLIP; the 2x-thr hard stop stays active regardless,
+            //   matching the sweep's catastrophe stop on every exit variant).
+            struct JCfg { const char* tag; const char* live; int W; double thr; double rt; double bam; const char* csv; };
+            static const JCfg JR[] = {
+                {"XAUUSD", "XAUUSD",  2, 0.010,  6.0, 999.0, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"},
+                {"XAGUSD", "XAGUSD",  2, 0.010,  6.0, 0.5, "phase1/signal_discovery/warmup_XAGUSD_H1.csv"},
+                {"USOIL",  "USOIL.F", 2, 0.010,  8.0, 0.5, "phase1/signal_discovery/warmup_USOIL_H1.csv"},
+                {"EURUSD", "EURUSD",  2, 0.003,  4.0, 0.5, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
+                {"GBPUSD", "GBPUSD",  2, 0.003,  3.5, 0.5, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
+                {"USDJPY", "USDJPY",  2, 0.003,  3.0, 0.5, "phase1/signal_discovery/warmup_USDJPY_H1.csv"},
+                {"AUDUSD", "AUDUSD",  2, 0.003,  6.0, 0.5, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
+                {"NZDUSD", "NZDUSD",  2, 0.003,  7.0, 0.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
+                {"US500",  "US500.F", 2, 0.0075, 4.0, 0.5, "phase1/signal_discovery/warmup_US500_H1.csv"},
+                {"NAS100", "NAS100",  4, 0.0075, 3.0, 0.5, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                {"DJ30",   "DJ30.F",  4, 0.005,  2.0, 1.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
+                {"GER40",  "GER40",   2, 0.003,  2.0, 1.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
+            };
+            for (const auto& j : JR) {
+                omega::JumpRiderSym::Config c;
+                c.sym = j.tag; c.live_sym = j.live; c.W = j.W; c.thr = j.thr;
+                c.rt_cost_bp = j.rt;
+                c.be_arm = j.thr * j.bam;    // BE-ratchet arm (0.5x = BE05 / 1.0x = BE10, per sweep)
+                c.hard_stop = j.thr * 2.0;   // catastrophe floor at two jumps adverse
+                jr.add(std::move(c));
+            }
+            size_t jseeded = 0;
+            for (const auto& j : JR) jseeded += jr.seed_sym(j.tag, j.csv);
+            // extra continuity sources shared with the BE-floor siblings (live dumps)
+            if (auto* s = jr.find("XAUUSD")) jseeded += s->seed_from_h1_csv(log_root_dir() + "/gold_regime_h1.csv");
+            if (auto* s = jr.find("XAGUSD")) jseeded += s->seed_from_h1_csv(log_root_dir() + "/xag_companion_h1.csv");
+            if (auto* s = jr.find("USOIL"))  jseeded += s->seed_from_h1_csv(log_root_dir() + "/usoil_companion_h1.csv");
+            size_t jrestored = jr.seed_dumps_all();   // own persisted forward bars (non-volatile restarts)
+            jr.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    // per-class typical spread for the cost gate (same values the BE-floor books use)
+                    double spread = 0.5;                                        // index CFDs ~0.5pt
+                    if (sym == "EURUSD" || sym == "GBPUSD" || sym == "AUDUSD" || sym == "NZDUSD")
+                        spread = 0.00015;                                       // FX ~1.5 pip
+                    else if (sym == "USDJPY")  spread = 0.015;                  // 1.5 pip (JPY quote)
+                    else if (sym == "XAUUSD")  spread = 0.30;
+                    else if (sym == "XAGUSD")  spread = 0.012;
+                    else if (sym == "USOIL.F") spread = 0.03;
+                    return ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist_pts, lots, 1.5);
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    handle_closed_trade(tr);
+                });
+            jr.finalize_all();
+            printf("[OMEGA-INIT][SEED] JumpRider wired: 12 syms (metals/oil/FX5/index4), %zu H1 bars seeded, %zu forward bars restored, UpJump ride + BE-ratchet + hard-stop, SHADOW real-column-only, deploy-forward\n",
+                   jseeded, jrestored);
             fflush(stdout);
         }
 

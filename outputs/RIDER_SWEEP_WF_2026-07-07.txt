@@ -1,0 +1,121 @@
+=== rider_sweep_wf.py (walk-forward entry x exit sweep) ===
+
+=== XAUUSD  bars=3000 span=186d  IS=first 60% / OOS=last 40%  cost=6.0bp  src=warmup_XAUUSD_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  1.00  FLIP |    +2732   34     613 |    +1557   33     775   42
+  #2    4  1.00  BE10 |    +2688   34     418 |    +1692   34     781   38
+  #3    4  0.75  FLIP |    +2595   63    1125 |     +109   62    1214   34
+  plateau: #1 thr-neighbors (same W/exit) avg IS +609bp (plateau ok)
+
+=== XAGUSD  bars=3000 span=188d  IS=first 60% / OOS=last 40%  cost=6.0bp  src=warmup_XAGUSD_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  2.00  TR50 |    +3788  103    2850 |    -2785   47    3038   64
+  #2    4  2.00  BE05 |    +3311   84    3067 |    -1596   38    1939   26
+  #3    4  2.00  BE10 |    +3034   79    3528 |    -2033   35    2385   26
+  plateau: #1 thr-neighbors (same W/exit) avg IS -2824bp (SPIKE — treat #1 as overfit)
+
+=== USOIL  bars=2988 span=185d  IS=first 60% / OOS=last 40%  cost=8.0bp  src=warmup_USOIL_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  1.50  BE10 |    +4176   93    1600 |    -1006   49    2822   35
+  #2    4  1.50  BE05 |    +3722   99    2414 |    -2295   55    4061   25
+  #3    2  1.00  TR50 |    +3223  163    1647 |     -815  103    1825   60
+  plateau: #1 thr-neighbors (same W/exit) avg IS -22bp (SPIKE — treat #1 as overfit)
+
+=== EURUSD  bars=6920 span=404d  IS=first 60% / OOS=last 40%  cost=4.0bp  src=warmup_EURUSD_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  0.50  BE10 |     +706   30     440 |      +15    9     216   33
+  #2    4  0.50  BE05 |     +255   39     329 |      +66    9     120   22
+  #3    2  0.30  FLIP |     +105   69     564 |     -180   23     446   35
+  plateau: #1 thr-neighbors (same W/exit) avg IS -325bp (SPIKE — treat #1 as overfit)
+
+=== GBPUSD  bars=7928 span=464d  IS=first 60% / OOS=last 40%  cost=3.5bp  src=warmup_GBPUSD_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  0.30  FLIP |     +589   96     457 |     -324   68     449   32
+  #2    8  0.50  FLIP |     +541   41     342 |     -443   23     638   30
+  #3    4  0.30  BE10 |     +522  100     489 |     -142   66     350   29
+  plateau: #1 thr-neighbors (same W/exit) avg IS +250bp (plateau ok)
+
+=== USDJPY  bars=7928 span=464d  IS=first 60% / OOS=last 40%  cost=3.0bp  src=warmup_USDJPY_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    2  0.30  TR50 |     +728  174     235 |     +261   58     219   72
+  #2    2  0.30  TR33 |     +575  195     295 |     +245   60     270   70
+  #3    2  0.30  FLIP |      +90  131     466 |     +305   43     264   42
+  plateau: #1 thr-neighbors (same W/exit) avg IS -302bp (SPIKE — treat #1 as overfit)
+
+=== AUDUSD  bars=8338 span=489d  IS=first 60% / OOS=last 40%  cost=6.0bp  src=warmup_AUDUSD_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  0.50  TR33 |     +276   97     367 |     -666   59     949   64
+  #2    4  0.50  TR50 |     +222   92     400 |     -668   55    1023   64
+  plateau: #1 thr-neighbors (same W/exit) avg IS -1222bp (SPIKE — treat #1 as overfit)
+
+=== NZDUSD  bars=8341 span=489d  IS=first 60% / OOS=last 40%  cost=7.0bp  src=warmup_NZDUSD_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    2  0.50  BE05 |     +583   42     370 |    -1426   30    1587    7
+  #2    4  0.50  TR50 |     +563   83     372 |     -842   53     921   68
+  #3    2  0.50  BE10 |     +545   38     593 |    -1319   28    1479   11
+  plateau: #1 thr-neighbors (same W/exit) avg IS -712bp (SPIKE — treat #1 as overfit)
+
+=== US500  bars=13389 span=830d  IS=first 60% / OOS=last 40%  cost=4.0bp  src=warmup_US500_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    2  1.00  FLIP |    +1950   46    1495 |     -468   20    1491   35
+  #2    2  0.75  FLIP |    +1944   92    1123 |     +332   38    1138   45
+  #3    4  0.50  BE05 |    +1758  232     835 |     -206  153    1005   26
+  plateau: #1 thr-neighbors (same W/exit) avg IS -717bp (SPIKE — treat #1 as overfit)
+
+=== NAS100  bars=11884 span=830d  IS=first 60% / OOS=last 40%  cost=3.0bp  src=warmup_NAS100_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  0.75  BE05 |    +3735  168    1045 |     +123  122    1583   27
+  #2    8  1.00  BE05 |    +3345  120    1111 |     -537   85    1331   28
+  #3    4  0.75  FLIP |    +3047  158    1132 |      -64  113    1353   42
+  plateau: #1 thr-neighbors (same W/exit) avg IS +598bp (plateau ok)
+
+=== DJ30  bars=11807 span=731d  IS=first 60% / OOS=last 40%  cost=2.0bp  src=warmup_DJ30_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    2  0.30  FLIP |    +1980  242    1040 |    -1203  245    1860   32
+  #2    4  0.30  FLIP |    +1774  236    1097 |     -625  261    2087   32
+  #3    2  0.30  BE10 |    +1763  240     883 |     -418  237    1200   27
+  plateau: #1 thr-neighbors (same W/exit) avg IS +712bp (plateau ok)
+
+=== GER40  bars=3000 span=184d  IS=first 60% / OOS=last 40%  cost=2.0bp  src=warmup_GER40_H1.csv ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1    4  0.50  BE10 |    +1409   33     135 |     +533   24     277   38
+  #2    4  0.50  BE05 |    +1247   40     161 |     +639   25     218   32
+  #3    4  0.50  TR50 |    +1188   49     164 |     +421   31     208   81
+  plateau: #1 thr-neighbors (same W/exit) avg IS -150bp (SPIKE — treat #1 as overfit)
+
+=== BTCUSDT  bars=77629 span=3240d  IS/OOS 60/40  cost=23.0bp ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1   48  3.00  BE05 |   +26979  330    7519 |    +9678  149    6476   26
+  #2   48  3.00  BE10 |   +25943  279    7497 |    +9436  126    6066   34
+  #3   48  4.00  FLIP |   +24148  203    9974 |   +15796   71    4291   48
+  plateau: #1 thr-neighbors avg IS +19641bp (plateau ok)
+
+=== ETHUSDT  bars=77629 span=3240d  IS/OOS 60/40  cost=23.0bp ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1   48  5.00  FLIP |   +50012  206    6609 |    +9393   84    6247   35
+  #2   48  4.00  BE05 |   +48189  340    6728 |   +11051  139    4988   21
+  #3   48  4.00  FLIP |   +45449  265   10213 |   +11671  113    6305   36
+  plateau: #1 thr-neighbors avg IS +37385bp (plateau ok)
+
+=== SOLUSDT  bars=51575 span=2150d  IS/OOS 60/40  cost=25.0bp ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%
+  #1   48  5.00  FLIP |   +49031  187    7648 |    +1710   93    6448   40
+  #2   48  4.00  FLIP |   +47823  235    8490 |     -983  117    9488   32
+  #3   12  7.00  FLIP |   +45235  172   12948 |    +6204   42   10108   36
+  plateau: #1 thr-neighbors avg IS +39968bp (plateau ok)
+
+=== daily_edge_scan.py (canonical daily strategies IS/OOS) ===
+net bp IS/OOS per strategy ('*' = positive BOTH windows). CFD rows = SHORT samples (Tick rerun owed).
+XAUUSD    ( 159d)  EMAx20/50:-957/+316   Kelt20x2:-240/-496   TSMom50:+0/-7   TSMom90:+0/-486   Donch40:+0/+0   IBS.15/.85:-1903/+586   RSI2:-2339/-294 
+XAGUSD    ( 158d)  EMAx20/50:-4183/-411   Kelt20x2:-3509/-1244   TSMom50:-619/-1957   TSMom90:+0/-337   Donch40:+0/+0   IBS.15/.85:-415/-724   RSI2:+2626/+715*
+USOIL     ( 159d)  EMAx20/50:-907/+6603   Kelt20x2:+1826/+97*  TSMom50:+0/+2144   TSMom90:+0/+480   Donch40:+0/+0   IBS.15/.85:+86/-812   RSI2:+3957/+325*
+EURUSD    ( 348d)  EMAx20/50:+988/-406   Kelt20x2:-464/-197   TSMom50:-351/-126   TSMom90:+2/-530   Donch40:+0/+0   IBS.15/.85:-303/-222   RSI2:+397/-588 
+GBPUSD    ( 399d)  EMAx20/50:+284/-39   Kelt20x2:-279/+29   TSMom50:-53/-284   TSMom90:-76/-667   Donch40:+0/+0   IBS.15/.85:-1045/-121   RSI2:+102/-345 
+USDJPY    ( 399d)  EMAx20/50:+348/-197   Kelt20x2:-363/-52   TSMom50:+373/+38*  TSMom90:-598/+669   Donch40:+0/+0   IBS.15/.85:+360/-329   RSI2:+394/-758 
+US500     ( 708d)  EMAx20/50:-770/+1875   Kelt20x2:-630/-261   TSMom50:-1711/+346   TSMom90:+1777/+128*  Donch40:+36/+0   IBS.15/.85:-662/-282   RSI2:-498/-189 
+NAS100    ( 628d)  EMAx20/50:-438/+1701   Kelt20x2:-758/-923   TSMom50:-1894/+240   TSMom90:-203/-836   Donch40:+0/+0   IBS.15/.85:+629/-498   RSI2:-78/+773 
+DJ30      ( 623d)  EMAx20/50:+1702/+1026*  Kelt20x2:+394/+29*  TSMom50:+92/-359   TSMom90:-283/+1735   Donch40:+0/+0   IBS.15/.85:-1527/+567   RSI2:-47/+455 
+GER40     ( 159d)  EMAx20/50:-1086/-877   Kelt20x2:-269/-224   TSMom50:-126/-1104   TSMom90:+0/-822   Donch40:+0/+0   IBS.15/.85:+139/+507*  RSI2:+943/-265 
+BTCUSDT   (3240d)  EMAx20/50:+55486/+14997*  Kelt20x2:+16018/+7470*  TSMom50:+60227/+13378*  TSMom90:+48072/+17016*  Donch40:+0/+0   IBS.15/.85:+5277/+282*  RSI2:+4193/-986 
+ETHUSDT   (3240d)  EMAx20/50:+75727/+10712*  Kelt20x2:+11276/+6575*  TSMom50:+45706/+13902*  TSMom90:+50043/+11541*  Donch40:+0/+0   IBS.15/.85:+2971/-441   RSI2:-786/+830 
+SOLUSDT   (2150d)  EMAx20/50:+135271/+48501*  Kelt20x2:+31991/-870   TSMom50:+163969/-7241   TSMom90:+86457/+40785*  Donch40:+6253/+0   IBS.15/.85:+11764/-1732   RSI2:+12314/-4243 

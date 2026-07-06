@@ -29,6 +29,7 @@
 
 #include <chrono>
 #include "IndexBeFloorCompanion.hpp"   // omega::index_befloor_book() (per-symbol index BE-floor companion)
+#include "JumpRiderEngine.hpp"         // omega::jump_rider_book() (UpJump rider, same H1 feed)
 
 // ── index BE-floor companion H1 feed (S-2026-07-06) ─────────────────────────
 //   Indices are traded live, and separately the index BE-floor companion needs each
@@ -46,6 +47,7 @@ static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double mid) {
     if (a.start == 0) { a.start = b; a.close = mid; }
     else if (b != a.start) {
         omega::index_befloor_book().on_h1_bar(tag, a.start / 1000, a.close);
+        omega::jump_rider_book().on_h1_bar(tag, a.start / 1000, a.close);   // UpJump rider, same feed
         a.start = b; a.close = mid;
     } else { a.close = mid; }
 }

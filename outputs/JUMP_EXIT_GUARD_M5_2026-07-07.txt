@@ -1,0 +1,84 @@
+=== JumpExitGuard M5 dominance bt  sym=XAUUSD  cost=6.0bp  SUB-HOUR trades only  (honest M5-close fills) ===
+  [data] /Users/jo/Tick/duka_ticks/XAUUSD_2026_04.csv -> 24 new M5 buckets
+  [data] /Users/jo/Tick/duka_ticks/XAUUSD_2026_05.csv -> 5730 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-05-27.csv -> 1 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-05-28.csv -> 6 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-05-29.csv -> 1 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-06-01.csv -> 73 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-06-02.csv -> 252 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-06-03.csv -> 259 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-06-04.csv -> 275 new M5 buckets
+  [data] /Users/jo/Tick/ibkr_l2_vps_june/ibkr_l2_XAUUSD_2026-06-08.csv -> 277 new M5 buckets
+  merged M5 buckets: 6898
+  sub-hour XAUUSD ledger trades: 81
+
+  W(M5) thr%  var |   n  skip fire |  actual   guarded    delta |  WF-H1d   WF-H2d | verdict
+   6   0.10  G0 |  36   45   11 |  -237.59  -172.98   +64.61 |  +66.36/31    -1.74/5   | FAIL
+   6   0.10  G1 |  36   45   10 |  -237.59  -170.64   +66.95 |  +68.70/31    -1.74/5   | FAIL
+   6   0.20  G0 |  36   45    8 |  -237.59  -175.13   +62.46 |  +62.46/31    +0.00/5   | PASS-both-halves
+   6   0.20  G1 |  36   45    7 |  -237.59  -172.79   +64.80 |  +64.80/31    +0.00/5   | PASS-both-halves
+   6   0.30  G0 |  36   45    5 |  -237.59  -191.34   +46.25 |  +46.25/31    +0.00/5   | PASS-both-halves
+   6   0.30  G1 |  36   45    5 |  -237.59  -191.34   +46.25 |  +46.25/31    +0.00/5   | PASS-both-halves
+   6   0.50  G0 |  36   45    3 |  -237.59  -216.29   +21.31 |  +21.31/31    +0.00/5   | PASS-both-halves
+   6   0.50  G1 |  36   45    3 |  -237.59  -216.29   +21.31 |  +21.31/31    +0.00/5   | PASS-both-halves
+  12   0.10  G0 |  36   45    8 |  -237.59  -188.64   +48.95 |  +53.67/31    -4.71/5   | FAIL
+  12   0.10  G1 |  36   45    8 |  -237.59  -188.64   +48.95 |  +53.67/31    -4.71/5   | FAIL
+  12   0.20  G0 |  36   45    4 |  -237.59  -186.41   +51.19 |  +54.16/31    -2.97/5   | FAIL
+  12   0.20  G1 |  36   45    4 |  -237.59  -186.41   +51.19 |  +54.16/31    -2.97/5   | FAIL
+  12   0.30  G0 |  36   45    4 |  -237.59  -194.88   +42.71 |  +45.68/31    -2.97/5   | FAIL
+  12   0.30  G1 |  36   45    3 |  -237.59  -191.91   +45.68 |  +45.68/31    +0.00/5   | PASS-both-halves
+  12   0.50  G0 |  36   45    3 |  -237.59  -209.18   +28.42 |  +31.39/31    -2.97/5   | FAIL
+  12   0.50  G1 |  36   45    2 |  -237.59  -206.21   +31.39 |  +31.39/31    +0.00/5   | PASS-both-halves
+  24   0.10  G0 |  36   45    9 |  -237.59  -168.56   +69.03 |  +72.00/31    -2.97/5   | FAIL
+  24   0.10  G1 |  36   45    7 |  -237.59  -164.49   +73.11 |  +76.08/31    -2.97/5   | FAIL
+  24   0.20  G0 |  36   45    7 |  -237.59  -186.49   +51.10 |  +54.07/31    -2.97/5   | FAIL
+  24   0.20  G1 |  36   45    5 |  -237.59  -182.42   +55.18 |  +58.15/31    -2.97/5   | FAIL
+  24   0.30  G0 |  36   45    5 |  -237.59  -190.72   +46.87 |  +49.84/31    -2.97/5   | FAIL
+  24   0.30  G1 |  36   45    2 |  -237.59  -183.68   +53.91 |  +53.91/31    +0.00/5   | PASS-both-halves
+  24   0.50  G0 |  36   45    4 |  -237.59  -217.26   +20.33 |  +23.30/31    -2.97/5   | FAIL
+  24   0.50  G1 |  36   45    2 |  -237.59  -211.95   +25.64 |  +25.64/31    +0.00/5   | PASS-both-halves
+
+  -- per-engine detail for WF-passing combos --
+  [W=6 thr=0.20% G1] total delta +64.80
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  2  act     +4.30  grd     +8.97  delta    +4.67  GUARD+
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=6 thr=0.20% G0] total delta +62.46
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  2  act     +4.30  grd     +8.97  delta    +4.67  GUARD+
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=24 thr=0.30% G1] total delta +53.91
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=6 thr=0.30% G0] total delta +46.25
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=6 thr=0.30% G1] total delta +46.25
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=12 thr=0.30% G1] total delta +45.68
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=12 thr=0.50% G1] total delta +31.39
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=24 thr=0.50% G1] total delta +25.64
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=6 thr=0.50% G0] total delta +21.31
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+  [W=6 thr=0.50% G1] total delta +21.31
+    LondonFixMomentum                              n=  6 fired=  0  act    -12.38  grd    -12.38  delta    +0.00  flat
+    XauStraddleM15                                 n=  6 fired=  0  act     +4.30  grd     +4.30  delta    +0.00  flat
+    XauThreeBar30m                                 n=  5 fired=  0  act    -19.78  grd    -19.78  delta    +0.00  flat
+
+VERDICT RULE: wire ONLY if delta >= 0 in BOTH WF halves and per-engine delta
+not negative (n>=5). Skipped trades = no sub-hour data (post Jun 8) — counted honestly.
