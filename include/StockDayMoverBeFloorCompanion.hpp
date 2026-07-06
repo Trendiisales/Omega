@@ -501,6 +501,10 @@ public:
     void start_poller(const std::string& rel, int poll_ms = 900000 /*15min*/) {
         csv_rel_ = rel; poll_ms_ = poll_ms;
         last_seen_ts_ = last_seed_ts_;   // resume forward from the last seeded date
+        // GUARD: if the boot seed found NO file (last_seed_ts_==0 -> deploy_ts never stamped),
+        // the FIRST poller load must run as a SEED (history only), not book years of history as
+        // fake forward PnL. Set the flag so poll_loop_ seeds+stamps once, then goes live.
+        seed_missed_ = (last_seed_ts_ == 0);
         running_.store(true);
         thread_ = std::thread([this]{ poll_loop_(); });
         std::printf("[AUSTK][POLL] watching %s (poll=%dms, resume-from=%lld)\n",
@@ -546,6 +550,7 @@ private:
     int              poll_ms_ = 900000;
     std::atomic<bool> running_{false};
     std::atomic<int64_t> last_seen_ts_{0};
+    bool             seed_missed_ = false;   // boot-seed found no CSV -> first poll load seeds, not books
     std::thread      thread_;
 
     // parse leading "YYYY-MM-DD" of a CSV line -> epoch seconds (UTC midnight). 0 on failure.
@@ -598,17 +603,26 @@ private:
             { std::stringstream hs(header); std::string tok; int ci = 0;
               while (std::getline(hs, tok, ',')) { auto it = col_.find(tok); if (it != col_.end()) colsym[ci] = it->second; ++ci; } }
             const int64_t seen = last_seen_ts_.load();
+            const bool as_seed = seed_missed_;   // first load after a missed boot-seed = SEED, not live
             int64_t newest = seen; int fresh = 0;
             std::string line;
             while (std::getline(f, line)) {
                 if (line.empty()) continue;
                 const int64_t ts = parse_date_ts_(line);
-                if (ts <= seen) continue;                 // already processed
-                dispatch_row_(line, colsym, ts, /*live=*/true);
+                if (!as_seed && ts <= seen) continue;     // live: already processed
+                dispatch_row_(line, colsym, ts, /*live=*/!as_seed);
                 if (ts > newest) newest = ts;
                 ++fresh;
             }
-            if (fresh > 0) {
+            if (fresh > 0 && as_seed) {
+                // seeded the history (booked nothing); stamp deploy_ts so only genuinely-new dates book.
+                for (auto& s : syms_) s.finalize_seed();
+                last_seen_ts_.store(newest); seed_missed_ = false;
+                recompute_and_write();
+                std::printf("[AUSTK][POLL] first-load SEED %d rows (boot-seed missed), stamped deploy=%lld\n",
+                            fresh, (long long)newest);
+                std::fflush(stdout);
+            } else if (fresh > 0) {
                 last_seen_ts_.store(newest);
                 recompute_and_write();
                 std::printf("[AUSTK][POLL] %d new daily row(s), newest=%lld\n", fresh, (long long)newest);

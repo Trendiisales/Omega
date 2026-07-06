@@ -21,12 +21,15 @@
 body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consolas,monospace;padding:8px}
 .num{font-variant-numeric:tabular-nums}
 .lbl{font-size:10.5px;color:var(--t2);letter-spacing:.05em}
-.pan{background:var(--pan);border:1px solid var(--bd);border-radius:6px;padding:9px 11px;min-width:0}
-.grid{display:grid;gap:8px;margin-top:8px}
+.pan{background:var(--pan);border:1px solid var(--bd);border-radius:6px;padding:6px 9px;min-width:0}
+.grid{display:grid;gap:6px;margin-top:6px}
 /* companions row: CSS multicol (masonry) so an odd panel count / uneven panel
-   heights never leave a massive grid row-coupling gap (XAG short vs FX tall). */
-.compcols{columns:2;column-gap:8px;margin-top:8px}
-.compcols>.pan{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 8px;display:inline-block;width:100%;vertical-align:top}
+   heights never leave a massive grid row-coupling gap (XAG short vs FX tall).
+   3-up on wide screens packs the 7 uneven companion panels far tighter than 2-up
+   (operator 2026-07-06: too much wasted space). */
+.compcols{columns:3;column-gap:6px;margin-top:6px}
+.compcols>.pan{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
+@media(max-width:1500px){.compcols{columns:2}}
 .chip{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:3px}
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
@@ -108,7 +111,7 @@ a{color:var(--blu);text-decoration:none}
     <span id="ltcount" class="lbl"></span>
     <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
   </div>
-  <div style="max-height:340px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
+  <div style="max-height:200px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
 </div>
 
 <!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
@@ -127,7 +130,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="430" style="margin-top:6px"></canvas>
+  <canvas id="prc" height="250" style="margin-top:6px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -148,7 +151,7 @@ a{color:var(--blu);text-decoration:none}
       <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
       <span id="ledgern" class="lbl" style="margin-left:auto"></span>
     </div>
-    <div style="max-height:280px;overflow-y:auto">
+    <div style="max-height:200px;overflow-y:auto">
       <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
     </div>
   </div>

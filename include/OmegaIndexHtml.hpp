@@ -27,12 +27,15 @@ R"OMEGAD0(<!DOCTYPE html>
 body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consolas,monospace;padding:8px}
 .num{font-variant-numeric:tabular-nums}
 .lbl{font-size:10.5px;color:var(--t2);letter-spacing:.05em}
-.pan{background:var(--pan);border:1px solid var(--bd);border-radius:6px;padding:9px 11px;min-width:0}
-.grid{display:grid;gap:8px;margin-top:8px}
+.pan{background:var(--pan);border:1px solid var(--bd);border-radius:6px;padding:6px 9px;min-width:0}
+.grid{display:grid;gap:6px;margin-top:6px}
 /* companions row: CSS multicol (masonry) so an odd panel count / uneven panel
-   heights never leave a massive grid row-coupling gap (XAG short vs FX tall). */
-.compcols{columns:2;column-gap:8px;margin-top:8px}
-.compcols>.pan{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 8px;display:inline-block;width:100%;vertical-align:top}
+   heights never leave a massive grid row-coupling gap (XAG short vs FX tall).
+   3-up on wide screens packs the 7 uneven companion panels far tighter than 2-up
+   (operator 2026-07-06: too much wasted space). */
+.compcols{columns:3;column-gap:6px;margin-top:6px}
+.compcols>.pan{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
+@media(max-width:1500px){.compcols{columns:2}}
 .chip{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:3px}
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
@@ -114,7 +117,7 @@ a{color:var(--blu);text-decoration:none}
     <span id="ltcount" class="lbl"></span>
     <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
   </div>
-  <div style="max-height:340px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
+  <div style="max-height:200px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
 </div>
 
 <!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
@@ -133,7 +136,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="430" style="margin-top:6px"></canvas>
+  <canvas id="prc" height="250" style="margin-top:6px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -154,7 +157,7 @@ a{color:var(--blu);text-decoration:none}
       <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
       <span id="ledgern" class="lbl" style="margin-left:auto"></span>
     </div>
-    <div style="max-height:280px;overflow-y:auto">
+    <div style="max-height:200px;overflow-y:auto">
       <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
     </div>
   </div>
@@ -203,9 +206,9 @@ a{color:var(--blu);text-decoration:none}
     <span id="xcinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="xctab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="xcopen"></table></div></div>
 )OMEGAD0"
-R"OMEGAD1(  <div id="xctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="xctrades"></table></div></div>
+R"OMEGAD1(  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="xcopen"></table></div></div>
+  <div id="xctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="xctrades"></table></div></div>
 </div>
 
 <!-- ═══ USOIL (WTI) COMPANIONS — USOILPos/USOILNeg BE-floor books (shadow, additive) ═══ -->
@@ -394,12 +397,12 @@ function pollFires(){var now=Date.now();
   if(pc!==undefined&&nc>pc&&!window._compBase)banked=true;
   window._compClosed[bk[0]]=nc;});
  for(var k in window._seenComp){if(now-window._seenComp[k]>600000)delete window._seenComp[k];}
- if(!window._compBase){if(anyOpen)entryBell();else if(banked)winBell();}
+)OMEGAD1"
+R"OMEGAD2( if(!window._compBase){if(anyOpen)entryBell();else if(banked)winBell();}
  window._compBase=false;}
 setInterval(pollFires,5000);
 /* browsers suspend AudioContext until a user gesture -- with SND persisted ON a
-)OMEGAD1"
-R"OMEGAD2(   reloaded page was SILENT until the user happened to click. Resume on first
+   reloaded page was SILENT until the user happened to click. Resume on first
    gesture so persisted-ON actually rings. */
 ['click','keydown','touchstart'].forEach(function(ev){
  document.addEventListener(ev,function(){if(SND)ensureCtx();},{once:true,capture:true});});
@@ -569,10 +572,10 @@ var lastJ=null;
 function render(J){lastJ=J;
  var shadowMode=(J.mode||'').toUpperCase()!=='LIVE';
  var m=el('mode');m.textContent=shadowMode?'SHADOW — 0 live engines':'LIVE';
- m.style.background=shadowMode?'var(--ambD)':'var(--grnD)';m.style.color=shadowMode?'var(--ambB)':'var(--grnB)';
- function dot(id,ok){el(id).style.background=ok?'var(--grn)':'var(--red)';}
 )OMEGAD2"
-R"OMEGAD3( dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
+R"OMEGAD3( m.style.background=shadowMode?'var(--ambD)':'var(--grnD)';m.style.color=shadowMode?'var(--ambB)':'var(--grnB)';
+ function dot(id,ok){el(id).style.background=ok?'var(--grn)':'var(--red)';}
+ dot('fixq',(J.fix_quote_status||'').indexOf('CONNECT')>=0||(J.fix_quote_status||'').indexOf('UP')>=0||J.quote_msg_rate>0);
  dot('fixt',(J.fix_trade_status||'').indexOf('CONNECT')>=0||(J.fix_trade_status||'').indexOf('UP')>=0);
  dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
@@ -746,11 +749,11 @@ setInterval(pollComp,5000);pollComp();
    (armed/peak/clips/bank) PLUS per-leg `sublegs` [{id:T1/T2/L1..,armed,peak_mfe_pct,
    bars_since_high}] rendered as doubly-nested rows. STANDALONE book — never vs-WIDE. */
 var CC_ROSTER=[
- {sym:'BTC', w:4,thr:8, tight:'a3/s0/g50',wide:'a5/s0/g50',mode:''},
+)OMEGAD3"
+R"OMEGAD4( {sym:'BTC', w:4,thr:8, tight:'a3/s0/g50',wide:'a5/s0/g50',mode:''},
  {sym:'ETH', w:4,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
  {sym:'SOL', w:4,thr:12,tight:'a2/s0/g50',wide:'a8/s0/g50',mode:''},
-)OMEGAD3"
-R"OMEGAD4( {sym:'DOGE',w:8,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
+ {sym:'DOGE',w:8,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
  {sym:'BNB', w:4,thr:5, tight:'a3/s3/g30',wide:'a8/s0/g50',mode:''},
  {sym:'ADA', w:6,thr:5, tight:'a3/s4/g50',wide:'a5/s6/g0', mode:''},
  {sym:'TRX', w:8,thr:8, tight:'a3/s0/g30',wide:'a8/s6/g0', mode:''},
@@ -925,10 +928,10 @@ function drawXag(){var j=window._xag||null;
  var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
  var open=(j.open||[]),trades=(j.trades||[]);
  var openTxt=open.length?(' · <span style="color:var(--grn)">'+open.length+' open now</span>'):'';
- el('xcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(tot)+'</span> forward · '
-   +trades.length+' closed trade'+(trades.length===1?'':'s')+openTxt+' · lot '+safe(j.lot)
 )OMEGAD4"
-R"OMEGAD5(   +' · '+safe(j.bars)+' H1 bars · shadow · additive';
+R"OMEGAD5( el('xcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(tot)+'</span> forward · '
+   +trades.length+' closed trade'+(trades.length===1?'':'s')+openTxt+' · lot '+safe(j.lot)
+   +' · '+safe(j.bars)+' H1 bars · shadow · additive';
  renderCompanionOpenTrades('xc',open,trades,2);
 }
 function pollXag(){fetch('/api/xag_companion').then(function(r){return r.json();}).then(function(j){
@@ -1117,11 +1120,11 @@ function drawStockMover(){var j=window._sm||null;
     +'<td class="num" style="font-weight:600;color:'+tcol+'">'+fmt$(tot)+'</td></tr>';
  });
  if(!nact)rows='<tr><td class="l d" colspan="6">all '+nidle+' names idle (deploy-forward · $0 until first forward clip closes)</td></tr>';
- else if(nidle)rows+='<tr><td class="l d" colspan="6" style="font-size:10px">+ '+nidle+' more names idle ($0, armed & waiting for a ±3% day)</td></tr>';
+)OMEGAD5"
+R"OMEGAD6( else if(nidle)rows+='<tr><td class="l d" colspan="6" style="font-size:10px">+ '+nidle+' more names idle ($0, armed & waiting for a ±3% day)</td></tr>';
  el('smtab').innerHTML=h+rows;
  var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
-)OMEGAD5"
-R"OMEGAD6( var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
+ var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
  el('sminfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
    +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+names.length+' names ('+nact+' active) · daily-close · shadow · additive';
  renderCompanionOpenTrades('sm',allOpen,allTrades,2);
@@ -1287,10 +1290,10 @@ function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/XAG|SILVER/i.test(sym))return 'SILVER';
  if(/OIL|BRENT|CL/i.test(sym))return 'OIL';return 'OTHER';}
 function drawHeat(){var rs=winRows();var by={};
- rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
- var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
 )OMEGAD6"
-R"OMEGAD7( var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
+R"OMEGAD7( rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
+ var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
+ var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
  var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
  order.forEach(function(g){if(!groups[g])return;
@@ -1476,12 +1479,12 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   window._prNewest=nx;
   if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;
-   ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
+)OMEGAD7"
+R"OMEGAD8(   ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
    if(lastR){var dd2=(Date.now()/1000-lastR.ts)/86400;
     var note='no '+PRSYM.replace('USD','')+' closes in window — last '
      +(dd2>=1?Math.round(dd2)+'d':Math.round(dd2*24)+'h')+' ago '+fmt$(lastR.pnl)
-)OMEGAD7"
-R"OMEGAD8(     +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
+     +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
     ctx.font='10px IBM Plex Mono';
     var nw=ctx.measureText(note).width;
     ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
