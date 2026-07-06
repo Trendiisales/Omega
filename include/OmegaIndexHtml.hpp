@@ -236,7 +236,7 @@ R"OMEGAD1(  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class=
 <!-- ═══ INDEX COMPANIONS — per-symbol Pos/Neg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">INDEX COMPANIONS — per-symbol Pos/Neg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">INDEX COMPANIONS — US500 Pos/Neg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) · thr 1.5%/be10/cap25bp real-fill reconfig S-07-07 (native C++ · shadow · additive · REAL-fill column · never vs-WIDE)</span>
     <span id="icinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="ictab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -865,7 +865,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    pts,usd}]}]}. neg=0 by construction. STANDALONE additive — NEVER compared to riding WIDE. */
 function drawGold(){var j=window._gold||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
-      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts</td><td class="lbl">forward($)</td></tr>';
+      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  if(!j||!(j.flavors||[]).length){el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
   el('gcinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
@@ -907,7 +907,7 @@ setInterval(pollGold,15000);pollGold();
    additive — NEVER compared to riding WIDE. */
 function drawXag(){var j=window._xag||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
-      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts</td><td class="lbl">forward($)</td></tr>';
+      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  if(!j||!(j.flavors||[]).length){el('xctab').innerHTML=h+'<tr><td class="l d" colspan="8">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
   el('xcinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('xc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
@@ -950,7 +950,7 @@ setInterval(pollXag,15000);pollXag();
    additive — NEVER compared to riding WIDE. */
 function drawUsoil(){var j=window._usoil||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
-      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts</td><td class="lbl">forward($)</td></tr>';
+      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  if(!j||!(j.flavors||[]).length){el('uctab').innerHTML=h+'<tr><td class="l d" colspan="8">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
   el('ucinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('uc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
@@ -1001,14 +1001,15 @@ function drawFx(){var j=window._fx||null;
   el('fxinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('fx',[],[],5);return;}
  var desk=0,allOpen=[],allTrades=[];
  pairs.forEach(function(p){
-  desk+=safe(p.usd);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);});
+  desk+=safe(p.usd_real);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);});
   (p.open||[]).forEach(function(o){allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
   var firstPair=true;
   fls.forEach(function(fl){
    var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-   var bcol=(fl.book_usd>0?'var(--grn)':(fl.book_usd<0?'var(--red)':'var(--t2)'));
+   var bu=(fl.book_usd_real!==undefined?fl.book_usd_real:fl.book_usd);
+   var bcol=(bu>0?'var(--grn)':(bu<0?'var(--red)':'var(--t2)'));
    runs.forEach(function(c){
     h+='<tr>';
     if(firstPair){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.pair)+'</td>';firstPair=false;}
@@ -1017,7 +1018,7 @@ function drawFx(){var j=window._fx||null;
     h+='<td class="l">'+esc(c.tier)+'</td><td class="num">'+safe(c.gb_bp)+'</td>'
       +'<td class="num">'+safe(c.clips)+'</td><td class="num">'+safe(c.wins)+'</td>'
       +'<td class="num">'+fmt2(safe(c.pct),3)+'%</td>';
-    if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(fl.book_usd))+'</td>';}
+    if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(bu))+'</td>';}
     h+='</tr>';first=false;
    });
   });
@@ -1042,25 +1043,29 @@ setInterval(pollFx,15000);pollFx();
    the real forward book, $0 until a live clip closes. Two runners/dir (banker r20 + runner r150).
    Books in PRICE POINTS -> USD via per-symbol point-value (US500.F $50/pt · NAS100 $1 · DJ30.F $5 ·
    GER40 ~$1.10). Schema: {engine,shadow,ts,syms:[{sym,live_sym,bars,deploy_ts,dpp,pts,usd,open:[..],
-   trades:[..],flavors:[{name,dir,clips,wins,book_pts,book_usd,runners:[{tier,gb_bp,clips,wins,pts,
-   usd}]}]}]}. neg=0 by construction. STANDALONE additive — NEVER compared vs riding WIDE. */
+   trades:[..],flavors:[{name,dir,clips,wins,book_pts,book_pts_real,book_usd,book_usd_real,runners:[
+   {tier,gb_bp,clips,wins,pts,pts_real,usd,usd_real}]}]}]}. Panel + headline fold the REAL column
+   (usd_real: worse-of fill or intrabar cap, minus rt cost — CAN be negative); the model usd column
+   is fiction (research clamps clips to max(0,.)). US500-only since the S-2026-07-07 real-fill
+   re-validation (thr 1.5% be10 cap25bp). STANDALONE additive — NEVER compared vs riding WIDE. */
 function drawIndex(){var j=window._idx||null;
  var h='<tr><td class="l lbl">sym</td><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td>'
       +'<td class="lbl">gb bp</td><td class="lbl">clips</td>'
-      +'<td class="lbl">wins</td><td class="lbl">pts</td><td class="lbl">forward($)</td></tr>';
+      +'<td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  var syms=(j&&j.syms)||[];
  if(!syms.length){el('ictab').innerHTML=h+'<tr><td class="l d" colspan="9">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
   el('icinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
  var desk=0,allOpen=[],allTrades=[];
  syms.forEach(function(p){
-  desk+=safe(p.usd);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);});
+  desk+=safe(p.usd_real);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);});
   (p.open||[]).forEach(function(o){allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
   var firstSym=true;
   fls.forEach(function(fl){
    var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-   var bcol=(fl.book_usd>0?'var(--grn)':(fl.book_usd<0?'var(--red)':'var(--t2)'));
+   var bu=(fl.book_usd_real!==undefined?fl.book_usd_real:fl.book_usd);
+   var bcol=(bu>0?'var(--grn)':(bu<0?'var(--red)':'var(--t2)'));
    runs.forEach(function(c){
     h+='<tr>';
     if(firstSym){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.sym)+'</td>';firstSym=false;}
@@ -1068,8 +1073,8 @@ function drawIndex(){var j=window._idx||null;
                 +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
     h+='<td class="l">'+esc(c.tier)+'</td><td class="num">'+safe(c.gb_bp)+'</td>'
       +'<td class="num">'+safe(c.clips)+'</td><td class="num">'+safe(c.wins)+'</td>'
-      +'<td class="num">'+fmt2(safe(c.pts),2)+'</td>';
-    if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(fl.book_usd))+'</td>';}
+      +'<td class="num">'+fmt2(safe(c.pts_real!==undefined?c.pts_real:c.pts),2)+'</td>';
+    if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(bu))+'</td>';}
     h+='</tr>';first=false;
    });
   });
@@ -1083,7 +1088,7 @@ function drawIndex(){var j=window._idx||null;
 }
 function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.syms||[]).length)window._idx=j;
- window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);/* per-sym realized + open uPnL (mark-to-market) -- additive to ALL-TIME (operator 2026-07-06) */
+ window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){var u=safe(p.usd_real);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);});return s+u;},0);/* REAL column only (S-2026-07-07): model usd is a max(0,.) clamp, never folds into ALL-TIME */
  drawIndex();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawIndex();});}
@@ -1114,14 +1119,14 @@ function drawStockMover(){var j=window._sm||null;
   nact++;
   var tcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
   var pcol=(pos>0?'var(--grn)':'var(--t2)'),ncol=(neg>0?'var(--grn)':'var(--t2)');
-  rows+='<tr><td class="l" style="font-weight:700">'+esc(p.sym)+(nopen?' <span style="color:var(--grn)">●</span>':'')+'</td>'
+)OMEGAD5"
+R"OMEGAD6(  rows+='<tr><td class="l" style="font-weight:700">'+esc(p.sym)+(nopen?' <span style="color:var(--grn)">●</span>':'')+'</td>'
     +'<td class="num" style="color:'+pcol+'">'+fmt$(pos)+'</td><td class="num">'+pc+'</td>'
     +'<td class="num" style="color:'+ncol+'">'+fmt$(neg)+'</td><td class="num">'+nc+'</td>'
     +'<td class="num" style="font-weight:600;color:'+tcol+'">'+fmt$(tot)+'</td></tr>';
  });
  if(!nact)rows='<tr><td class="l d" colspan="6">all '+nidle+' names idle (deploy-forward · $0 until first forward clip closes)</td></tr>';
-)OMEGAD5"
-R"OMEGAD6( else if(nidle)rows+='<tr><td class="l d" colspan="6" style="font-size:10px">+ '+nidle+' more names idle ($0, armed & waiting for a ±3% day)</td></tr>';
+ else if(nidle)rows+='<tr><td class="l d" colspan="6" style="font-size:10px">+ '+nidle+' more names idle ($0, armed & waiting for a ±3% day)</td></tr>';
  el('smtab').innerHTML=h+rows;
  var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
  var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
@@ -1281,7 +1286,8 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
  var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto companion (all-time) folds in 'all' window */var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)):0;/* FX + gold + xag + usoil + stockmover-befloor forward banks (all-time) fold in 'all' window */var netT=net+cw+cc0+fg0;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
-  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
+)OMEGAD6"
+R"OMEGAD7(  +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
   +'<span>avg <span class="w">'+fmt$(net/rs.length)+'</span></span>';}
 
 function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
@@ -1290,8 +1296,7 @@ function classOf(sym){if(/XAU|MGC|GOLD/i.test(sym))return 'GOLD';
  if(/XAG|SILVER/i.test(sym))return 'SILVER';
  if(/OIL|BRENT|CL/i.test(sym))return 'OIL';return 'OTHER';}
 function drawHeat(){var rs=winRows();var by={};
-)OMEGAD6"
-R"OMEGAD7( rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
+ rs.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,sym:r.sym};by[k].n++;by[k].pnl+=r.pnl;});
  var ks=Object.keys(by);if(!ks.length){el('heat').innerHTML='<span class="d">no engine activity in window</span>';return;}
  var groups={};ks.forEach(function(k){var g=classOf(by[k].sym);(groups[g]=groups[g]||[]).push(k);});
  var mxAbs=1;ks.forEach(function(k){mxAbs=Math.max(mxAbs,Math.abs(by[k].pnl));});
@@ -1469,7 +1474,8 @@ function drawPR(){var cv=el("prc"),H=215,ctx=prep(cv,H);
  (function(){
   if(typeof ROWS==='undefined'||!ROWS.length)return;
   var t0=bars[0][0],t1=bars[n-1][0]+ (bars[1]?bars[1][0]-bars[0][0]:300);
-  function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
+)OMEGAD7"
+R"OMEGAD8(  function sm(sym){return sym===PRSYM||sym===PRSYM+'.F'||(PRSYM==='US500'&&sym==='US500.F')||(PRSYM==='USTEC'&&sym==='USTEC.F');}
   function bx(ts){var lo=0,hi=n-1;
    while(lo<hi){var mid=(lo+hi)>>1;if(bars[mid][0]<ts)lo=mid+1;else hi=mid;}
    return lo;}
@@ -1479,8 +1485,7 @@ function drawPR(){var cv=el("prc"),H=215,ctx=prep(cv,H);
   window._prNewest=nx;
   if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;
-)OMEGAD7"
-R"OMEGAD8(   ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
+   ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
    if(lastR){var dd2=(Date.now()/1000-lastR.ts)/86400;
     var note='no '+PRSYM.replace('USD','')+' closes in window — last '
      +(dd2>=1?Math.round(dd2)+'d':Math.round(dd2*24)+'h')+' ago '+fmt$(lastR.pnl)

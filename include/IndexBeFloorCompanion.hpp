@@ -19,25 +19,33 @@
 // x3 BE-floor tiers per direction (20bp banker / 150bp runner / 400bp wide). Judge STANDALONE
 // (net>0, both WF halves) — NEVER vs a parent / vs riding WIDE.
 //
-// ADVERSE-PROTECTION: BE-FLOOR + REAL-FILL ACCOUNTING (honest-accounting fix, S-2026-07-07).
+// ADVERSE-PROTECTION: BE-FLOOR + INTRABAR CATASTROPHE CAP + REAL-FILL ACCOUNTING
+//   (honest-accounting S-2026-07-07 + real-fill re-validation same session).
 //   A leg stays FLAT until price clears +be_bp from its ref, opens THERE, and its trail
 //   floor sits at-or-above entry (long) / at-or-below entry (short), trailing favourably
-//   only. The floor is an ORDER TARGET, not a guaranteed fill: bars are H1 CLOSES, so a
-//   close can gap THROUGH the floor (news candle, session/weekend open). Booking is
-//   therefore dual-column:
+//   only. The floor is an ORDER TARGET, not a guaranteed fill: exits were H1-CLOSE-eval
+//   only, so a close through the floor booked the whole bar move (2026-07-06 US500
+//   -$273 x5). Protection now = on_tick() INTRABAR CAP: a resting stop intrabar_cap_bp
+//   BELOW the current floor, tick-checked, fills AT the level -> real loss per clip is
+//   bounded to ~(cap+rt_cost)bp of entry. Booking is dual-column:
 //     pts/usd            = MODEL (legacy fill-at-floor, zero cost; >=0 by algebra) —
-//                          comparison column only, NOT a performance claim.
-//     pts_real/usd_real  = REAL  (fill = worse-of(floor, observed close), minus
-//                          rt_cost_bp round-trip cost) — CAN BE NEGATIVE; this is the
-//                          column the engine is judged on, and the ledger records it.
-//   The old "neg=0 by construction" wording described the model column only. Backtest
-//   reference backtest/index_befloor_ls.py is model-fill: re-run with real fills + cost
-//   before any LIVE flip (feedback-engine-loss-protection-provision).
+//                          comparison column only, NOT a performance claim. The research
+//                          (backtest/index_befloor_ls.py) books max(0,clip): its
+//                          "neg=0 by construction" is a CLAMP, not execution truth.
+//     pts_real/usd_real  = REAL  (fill = worse-of(floor, observed close) or the cap
+//                          level, minus rt_cost_bp) — CAN BE NEGATIVE; the judged column,
+//                          and what the ledger records.
+//   REAL-FILL verdict (backtest/index_befloor_intrabar_bt.cpp, certified tick data):
+//   the original 0.30%/be6 config is structurally negative on real fills on every index
+//   tested (US500 3.4yr -$482k, DJ30 7mo -$100k, vs +$2.34M/+$341k model). Only US500 at
+//   thr=1.5%/be=10/cap=25bp passes (+$216k/3.4yr, both WF halves +, both flavors +, all
+//   tiers +, worst clip -21.6pt). NAS100/DJ30/GER40 retired from engine_init accordingly.
 // =============================================================================
 #include <cstdint>
 #include <cstdio>
 #include <cctype>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -61,6 +69,16 @@ public:
         double rt_cost_bp    = 6.0;       // REAL round-trip cost (spread+slip+comm, bp of entry) debited
                                           //   from every clip's pts_real. be_bp only DELAYS the arm; it is
                                           //   not a cost credit — a floor exit at entry is a real -rt_cost_bp.
+        double intrabar_cap_bp = 25.0; // INTRABAR CATASTROPHE CAP (S-2026-07-07 real-fill fix): a resting
+                                       //   stop this many bp BELOW the model floor (long; mirrored short),
+                                       //   checked on EVERY TICK, filled AT the resting level. Bounds any
+                                       //   clip's real loss to ~(cap+rt_cost)bp of entry instead of a full
+                                       //   H1 bar close-through (the 2026-07-06 US500 -$273x5 mechanism:
+                                       //   close-only eval books worse-of(floor,close), one -5pt hourly
+                                       //   close hit all 5 pre-progress tiers for the whole bar move).
+                                       //   0 disables. Do NOT set 0 buffer: entry is a close MID, bid sits
+                                       //   half-spread below it -> a stop AT the floor exits instantly at
+                                       //   -rt_cost every arm (tick-verified: wins collapse to ~0).
         double min_gb_mult= 3.0;      // TIER VIABILITY GATE: a tier arms only if its giveback
                                       //   LIVE_GB_[ti] >= min_gb_mult * rt_cost_bp -- a trail whose
                                       //   giveback is within a few multiples of the round-trip cost
@@ -138,6 +156,33 @@ public:
             std::ofstream f(cfg_.deploy_path, std::ios::trunc);
             if (f.is_open()) f << (long long)deploy_ts_ << "\n";
         }
+    }
+
+    // LIVE feed: raw tick (bid/ask) INSIDE the forming H1 bar. Only job: the intrabar
+    // catastrophe cap — a resting stop under each armed leg's CURRENT model floor
+    // (recomputed from persisted entry/wm, so it survives restarts with no new state).
+    // Entry/arm/trail decisions stay H1-close-based (research parity); this path can
+    // only ever CLOSE a leg, never open one.
+    bool on_tick(int64_t ts_sec, double bid, double ask) noexcept {   // returns true if any leg closed
+        if (!open_fn_ || cfg_.intrabar_cap_bp <= 0.0 || bid <= 0.0 || ask <= 0.0) return false;
+        ts_sec = norm_ts_(ts_sec);
+        const bool fwd = ts_sec > deploy_ts_;
+        bool any = false;
+        for (int fi = 0; fi < 2; ++fi) {
+            const bool up = (fi == 0);
+            for (int ti = 0; ti < NT_; ++ti) {
+                LiveLeg& L = live_[fi][ti];
+                if (!L.has_entry) continue;
+                const double gb = LIVE_GB_[ti];
+                const double floor_px = up ? std::max(L.entry, L.wm * (1.0 - gb / 1e4))
+                                           : std::min(L.entry, L.wm * (1.0 + gb / 1e4));
+                const double rest = up ? (floor_px - L.entry * (cfg_.intrabar_cap_bp / 1e4))
+                                       : (floor_px + L.entry * (cfg_.intrabar_cap_bp / 1e4));
+                const bool touch = up ? (bid <= rest) : (ask >= rest);
+                if (touch) { close_leg_(fi, ti, up, rest, rest, ts_sec, fwd, "INTRABAR_CAP"); L.ref = rest; any = true; }
+            }
+        }
+        return any;
     }
 
     // LIVE feed: one CLOSED H1 bar for this symbol (close = mid at H1 close).
@@ -225,7 +270,8 @@ public:
             op << "\"entry\":" << L.entry << ",\"wm\":" << L.wm << ",\"cur\":" << cur
                << ",\"upnl_pts\":" << u << ",\"upnl_pts_real\":" << ur << ",";
             op.precision(0);
-            op << "\"upnl_usd\":" << (u * dpp) << ",\"entry_ts\":" << (long long)L.entry_ts << "}";
+            op << "\"upnl_usd\":" << (u * dpp) << ",\"upnl_usd_real\":" << (ur * dpp)
+               << ",\"entry_ts\":" << (long long)L.entry_ts << "}";
         }
 
         // CLOSED forward trades log — most-recent first.
@@ -249,6 +295,8 @@ public:
         o << "{\"sym\":\"" << cfg_.sym << "\",\"live_sym\":\"" << cfg_.live_sym << "\",\"bars\":" << ts_.size()
           << ",\"deploy_ts\":" << (long long)deploy_ts_ << ",\"ts\":" << (long long)last_ts << ",";
         o.precision(2); o << "\"dpp\":" << dpp << ",\"rt_cost_bp\":" << cfg_.rt_cost_bp
+                          << ",\"cap_bp\":" << cfg_.intrabar_cap_bp
+                          << ",\"thr\":" << cfg_.thr << ",\"be_bp\":" << cfg_.be_bp
                           << ",\"pts\":" << sym_pts << ",\"pts_real\":" << sym_pts_real << ",";
         o.precision(0); o << "\"usd\":" << (sym_pts * dpp)
                           << ",\"usd_real\":" << (sym_pts_real * dpp) << ",";
@@ -460,6 +508,22 @@ private:
     void load_live_state_() noexcept {
         std::ifstream f(cfg_.live_path);
         if (!f.is_open()) return;
+        // CONFIG-STAMP GUARD (S-2026-07-07): arm-state persisted under a DIFFERENT detector
+        // config (thr/be/cap) must not resurrect — an old 0.30%-window flag loaded into the
+        // 1.5% reconfig would arm legs no current detector fired. First line must be a
+        // matching "cfg thr be cap"; a missing/mismatched stamp discards the whole file
+        // (deliberate reset on reconfig; the forward BOOK/closed history live elsewhere).
+        {
+            std::string kind; double t = 0, b = 0, cp = 0;
+            if (!(f >> kind) || kind != "cfg" || !(f >> t >> b >> cp) ||
+                std::abs(t - cfg_.thr) > 1e-9 || std::abs(b - cfg_.be_bp) > 1e-9 ||
+                std::abs(cp - cfg_.intrabar_cap_bp) > 1e-9) {
+                std::printf("[AUIDX] %s live arm-state DISCARDED (config stamp mismatch/absent -- reconfig reset)\n",
+                            cfg_.sym.c_str());
+                std::fflush(stdout);
+                return;
+            }
+        }
         std::string kind;
         while (f >> kind) {
             if (kind == "win") { int w0 = 0, w1 = 0; f >> w0 >> w1; win_[0] = (w0 != 0); win_[1] = (w1 != 0); }
@@ -478,6 +542,7 @@ private:
     void save_live_state_() const noexcept {
         const std::string tmp = cfg_.live_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          f << "cfg " << cfg_.thr << " " << cfg_.be_bp << " " << cfg_.intrabar_cap_bp << "\n";
           f << "win " << (win_[0] ? 1 : 0) << " " << (win_[1] ? 1 : 0) << "\n";
           f << "winp " << (win_pend_[0] ? 1 : 0) << " " << (win_pend_[1] ? 1 : 0) << "\n";
           for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) {
@@ -544,6 +609,12 @@ public:
     // LIVE: one closed H1 bar for `sym`. Rewrites the aggregate.
     void on_h1_bar(const std::string& sym, int64_t ts_sec, double close) {
         if (auto* s = find(sym)) { s->on_h1_bar(ts_sec, close); recompute_and_write(); }
+    }
+
+    // LIVE: raw tick inside the forming bar — intrabar catastrophe cap only.
+    // Rewrites the aggregate ONLY when a leg actually closed (not per tick).
+    void on_tick(const std::string& sym, int64_t ts_sec, double bid, double ask) {
+        if (auto* s = find(sym)) { if (s->on_tick(ts_sec, bid, ask)) recompute_and_write(); }
     }
 
     std::string state_json() const {

@@ -15,6 +15,10 @@ FOUR CHECKS (each pass/fail independently; overall RED if any fail):
   [2] REAL, NOT SHADOW    — the companion has a real EFFECT path (banks a clip), not log-only theatre.
   [3] FIRES ON TRIGGER    — inject a synthetic peak->giveback into a sandbox companion; assert it clips.
   [4] EFFECT RECONCILE    — no live armed position has given back past the trail while still UNCLIPPED.
+  [5] BINARY-CLOSE-PATH   — in-binary guards have a registered closer (can close, not just detect).
+  [6] INPUT-FRESHNESS     — the companion's inputs are fresh (stale feed = wrong peak = missed clip).
+  [7] BEFLOOR-REAL-HONESTY— index BE-floor REAL column within designed bounds (cap enforcing; no
+                            model-fiction bleed). Added S-2026-07-07 after -$273 x5 booked under GREEN.
 
 Exit 0 = all green. Exit 1 = one or more RED. Writes a status file the SessionStart hook surfaces.
 """
@@ -240,6 +244,57 @@ def check_input_freshness():
     detail = "companion inputs fresh (crypto + omega telemetry)" if ok else "*** " + "; ".join(probs) + " ***"
     record("[6] INPUT-FRESHNESS", ok, detail)
 
+# ---- [7] BEFLOOR REAL-COLUMN HONESTY (model-vs-real divergence) -----------------
+def check_befloor_real_honesty():
+    # S-2026-07-07 lesson: this selftest was GREEN while the index BE-floor companion booked
+    # -$273 x5 REAL on US500 under a model column that "cannot go negative" (the research clamps
+    # every clip to max(0,.)). The REAL column is the judged engine. Assert from the VPS aggregate:
+    #   (a) no OPEN leg's real uPnL sits below the engine's own designed bound -(cap+rt+slack)bp
+    #       of entry (the intrabar catastrophe cap must be doing its job), and
+    #   (b) no symbol's cumulative usd_real has bled past -$2500 while its model column is
+    #       positive (model-fiction bleed -> the engine's real economics have broken again).
+    # ONE ssh call (RAM reaper -- minimize VPS ssh). Value-based -> no weekend guard needed.
+    ps = (r"$p='C:\Omega\index_companion_state.json';"
+          r"if(Test-Path $p){Get-Content $p -Raw}else{Write-Output 'MISSING'}")
+    try:
+        r = subprocess.run(["ssh","omega-vps","powershell","-NoProfile","-Command",ps],
+                           capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        record("[7] BEFLOOR-REAL-HONESTY", False, "ssh omega-vps failed -- real column UNVERIFIABLE"); return
+    raw = (r.stdout or "").strip()
+    if r.returncode != 0 or not raw:
+        record("[7] BEFLOOR-REAL-HONESTY", False, "ssh omega-vps failed -- real column UNVERIFIABLE"); return
+    if raw.startswith("MISSING"):
+        record("[7] BEFLOOR-REAL-HONESTY", False, "index_companion_state.json MISSING on VPS"); return
+    try: d = json.loads(raw)
+    except Exception as e:
+        record("[7] BEFLOOR-REAL-HONESTY", False, f"state unparsable: {e}"); return
+    probs = []; nsym = 0; nopen = 0
+    for s in d.get("syms", []):
+        nsym += 1
+        rt  = float(s.get("rt_cost_bp", 4.0) or 4.0)
+        cap = float(s.get("cap_bp", 25.0) or 25.0)
+        dpp = float(s.get("dpp", 1.0) or 1.0)
+        for leg in s.get("open", []):
+            nopen += 1
+            entry = float(leg.get("entry", 0) or 0)
+            if entry <= 0: continue
+            upnl_real = float(leg.get("upnl_pts_real", 0) or 0)
+            bound = -entry * (cap + rt + 15.0) / 1e4   # cap + rt cost + 15bp slack
+            if upnl_real < bound:
+                probs.append(f"{s.get('sym')}/{leg.get('flavor')}/{leg.get('tier')} "
+                             f"upnl_real={upnl_real:.2f}pt < bound {bound:.2f}pt (cap NOT enforcing)")
+        usd_real = float(s.get("usd_real", 0) or 0)
+        usd_mdl  = float(s.get("usd", 0) or 0)
+        if usd_real <= -2500.0 and usd_mdl > 0:
+            probs.append(f"{s.get('sym')} book usd_real={usd_real:.0f} while model +{usd_mdl:.0f} "
+                         f"(model-fiction bleed)")
+        _ = dpp
+    ok = (len(probs) == 0)
+    detail = (f"{nsym} sym(s), {nopen} open leg(s): real column within designed bounds"
+              if ok else "*** " + "; ".join(probs[:4]) + " ***")
+    record("[7] BEFLOOR-REAL-HONESTY", ok, detail)
+
 def main():
     check_scheduled_alive()
     check_real_not_shadow()
@@ -247,6 +302,7 @@ def main():
     check_effect_reconcile()
     check_binary_close_path()
     check_input_freshness()
+    check_befloor_real_honesty()
     overall = all(ok for _,ok,_ in results)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"PROTECTION SELF-TEST {'GREEN -- all protection FUNCTIONAL' if overall else 'RED -- PROTECTION NOT WORKING'}  ({ts})"]

@@ -1776,38 +1776,40 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // ── Index per-symbol Pos/Neg BE-floor companion (S-2026-07-06) ───────
-        //   Native C++ port of the VALIDATED research backtest/index_befloor_ls.py (per-symbol
-        //   <SYM>Pos/<SYM>Neg, neg=0 by construction, both WF halves + on all 4). SEPARATE
-        //   INDEPENDENT observe-only shadow book (feedback-companion-independent-engine):
-        //   self-detects 2h +/-0.30% up/down windows from each symbol's live H1 close stream
-        //   (fed by the tick_indices.hpp bar builder), runs x2 BE-floor tiers/direction (r20/r150).
-        //   Own aggregate index_companion_state.json -> /api/index_companion -> desk INDEX
-        //   COMPANIONS. Books in PRICE POINTS -> USD via per-symbol point-value (sizing.hpp).
-        //   Loss-protection = BE-floor (verdict backtested: neg=0 every symbol/config, both halves).
+        // ── Index per-symbol Pos/Neg BE-floor companion (S-2026-07-06; REAL-FILL re-validation
+        //    S-2026-07-07) ───────
+        //   The original "VALIDATED" research (backtest/index_befloor_ls.py) books every clip
+        //   max(0, floor-fill) with 1.2-1.5bp cost — the "neg=0 by construction" claim is a code
+        //   CLAMP, not an execution property. Real fills (worse-of(floor, H1 close), real rt_bp)
+        //   on certified tick data (backtest/index_befloor_intrabar_bt.cpp) showed the live
+        //   0.30%/be6 config STRUCTURALLY NEGATIVE: US500 3.4yr -$482k real vs +$2.34M model;
+        //   DJ30 7mo -$100k real vs +$341k model (90% of exits pierced the floor at close —
+        //   the 2026-07-06 US500Pos -$273 x5 ledger rows were this mechanism, not a fluke).
+        //   REAL-FILL salvage grid (thr x be x exec, 45 cells/symbol):
+        //     US500  KEEP, reconfigured thr=1.5% be=10 + intrabar cap 25bp: +$216k/3.4yr,
+        //            BOTH WF halves + (+$45k/+$171k), BOTH flavors + (Pos +$160k/Neg +$56k),
+        //            all 5 tiers >= +, worst clip -21.6pt (vs -112.5pt close-only).
+        //     NAS100/DJ30/GER40 NOT WIRED: no config passed both WF halves on real fills
+        //     (DJ30 best +$32.6k had H2 -$5.5k; GER40 7mo survivors are +$377-noise-thin).
+        //   SEPARATE INDEPENDENT observe-only shadow book (feedback-companion-independent-engine),
+        //   judged STANDALONE on pts_real. Own aggregate index_companion_state.json ->
+        //   /api/index_companion -> desk INDEX COMPANIONS. PRICE POINTS -> USD via sizing.hpp.
         {
             auto& ib = omega::index_befloor_book();
-            // {tag, live_sym, dpp($/pt/lot from sizing.hpp), warmup CSV}. Tag = flavor+registry key;
-            // live_sym = the order-path symbol. Warm-seed files are the SAME names tools/seed_refresh.py
-            // refreshes from IBKR at deploy (NQ/ES/YM/DAX H1) so they stay fresh & continuous (the seed
-            // gate is fail-closed on H1 staleness). Deploy-forward SHADOW book: the seed only primes the
-            // 2h detector; deploy_ts gates out all pre-deploy history so a stale/gappy seed cannot misbook.
-            // rt_bp = PER-SYMBOL REAL RT COST (bp of index level), from the OmegaCostGuard
-            // conservative floors (typical CFD spread + table slippage; no commission) at 2026
-            // levels: US500 (0.5+1.5pt)x$50/$315k ~ 3.2 -> 4.0; NAS100 (2+2.5pt)/$23k ~ 2.0 -> 3.0;
-            // DJ30 (3+3pt)x$5/$222k ~ 1.3 -> 2.0; GER40 (1.5+0.8pt)x$1.1/$26k ~ 1.0 -> 2.0.
-            // Debited from every clip's pts_real + drives the tier-viability gate (min_gb_mult).
-            struct ICfg { const char* tag; const char* live; double dpp; double rt_bp; const char* csv; };
+            // {tag, live_sym, dpp($/pt/lot), rt_bp real RT cost, thr, be_bp, cap_bp, warmup CSV}.
+            // Warm-seed = the SAME filename tools/seed_refresh.py refreshes from IBKR at deploy.
+            struct ICfg { const char* tag; const char* live; double dpp; double rt_bp;
+                          double thr; double be; double cap; const char* csv; };
             static const ICfg IDX[] = {
-                {"US500",  "US500.F", 50.0,  4.0, "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  1.0,   3.0, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
-                {"DJ30",   "DJ30.F",  5.0,   2.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
-                {"GER40",  "GER40",   1.10,  2.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
+                {"US500",  "US500.F", 50.0,  4.0, 0.015, 10.0, 25.0, "phase1/signal_discovery/warmup_US500_H1.csv"},
+                // NAS100 / DJ30 / GER40 removed S-2026-07-07: real-fill negative (see header).
+                // Their persisted book/closed CSVs on the VPS are history; live/arm state ignored.
             };
             for (const auto& ic : IDX) {
                 omega::IndexBeFloorSym::Config c;
                 c.sym = ic.tag; c.live_sym = ic.live; c.dpp_per_lot = ic.dpp;
                 c.rt_cost_bp = ic.rt_bp;
+                c.thr = ic.thr; c.be_bp = ic.be; c.intrabar_cap_bp = ic.cap;
                 ib.add(std::move(c));
             }
             size_t iseeded = 0;
@@ -1815,10 +1817,11 @@ static void init_engines(const std::string& cfg_path)
             // Reload each symbol's persisted LIVE forward bars (index_companion_<sym>_h1.csv) BEFORE
             // finalize so the recompute replays them -> the book is NON-VOLATILE across restarts.
             size_t irestored = ib.seed_dumps_all();
-            // ── LIVE EXECUTION: <SYM>Pos/<SYM>Neg become REAL 2-runner engines. Same order path +
+            // ── LIVE EXECUTION: <SYM>Pos/<SYM>Neg become REAL runner engines. Same order path +
             //   ledger contract as gold AUPOS/AUNEG + FX (985f0623): SHADOW today (send_live_order
-            //   no-ops while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry, BE-floor
-            //   neg=0, every close -> shadow ledger -> ENGINE LEDGER + headline PnL.
+            //   no-ops while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry; ledger
+            //   records REAL fills (worse-of floor/close, or the intrabar cap level) -> ENGINE
+            //   LEDGER + headline PnL. pts_real is the judged column; the model column is fiction.
             ib.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -1840,7 +1843,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             ib.finalize_all();
-            printf("[OMEGA-INIT][SEED] index BE-floor companion wired: 4 syms (US500/NAS100/DJ30/GER40), %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
+            printf("[OMEGA-INIT][SEED] index BE-floor companion wired: US500 ONLY (real-fill reconfig thr=1.5%% be=10 cap=25bp; NAS100/DJ30/GER40 retired S-2026-07-07 real-fill negative), %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1+tick cap, LIVE-EXEC (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
                    iseeded, irestored);
             fflush(stdout);
         }

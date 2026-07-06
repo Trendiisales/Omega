@@ -75,3 +75,28 @@ this first. If you discover a new engine quirk, ADD IT HERE.**
 - `backtest/OmegaBacktest.cpp` — older gold-family (its runner list ≠ engine_init; stale).
 - `backtest/data_integrity_gate.py` — the pre-flight gate.
 - Aggregation: `/tmp/agg_full.py` (per-instrument mult + cost).
+
+## 5. BE-floor companions — MODEL-FILL TRAP (S-2026-07-07, load-bearing)
+
+The BE-floor research scripts (`index_befloor_ls.py`, `gold_befloor_ls.py`,
+`fx_befloor_ls.py`) book every clip `max(0, floor_fill)` with 1.2-1.5bp cost.
+"neg=0 by construction" is a CODE CLAMP, not an execution property: live exits
+evaluate at H1 CLOSE and the honest fill is worse-of(floor, close) — 90% of DJ30
+exits pierced the floor. Real-fill re-validation on certified tick data
+(`backtest/index_befloor_intrabar_bt.cpp` — the real-fill reference harness:
+H1-close detector parity, worse-of fills, per-symbol rt_bp, optional intrabar
+resting stop) showed the live 0.30%/be6 config STRUCTURALLY NEGATIVE everywhere:
+US500 3.4yr -$482k real vs +$2.34M model; DJ30 7mo -$100k vs +$341k.
+The 2026-07-06 `US500Pos_* -$273 x5` ledger rows were this mechanism.
+
+RULES:
+1. NEVER accept a BE-floor/companion viability verdict from the *_ls.py scripts
+   alone — they cannot see a loss. Re-run the real-fill harness on tick data.
+2. A resting stop AT the floor (0 buffer) self-triggers: entry is a close MID,
+   bid sits half-spread below → instant -cost exit every arm (verified: wins
+   collapse to ~0). Any intrabar floor needs a buffer (25bp validated on US500).
+3. Surviving config (both WF halves +, both flavors +, all tiers +):
+   US500 thr=1.5% be=10 cap=25bp only. NAS100/DJ30/GER40 retired 2026-07-07.
+   Evidence: outputs/INDEX_BEFLOOR_REALFILL_2026-07-07.txt.
+4. Gold/XAG/USOIL/FX/StockDayMover BeFloor books share the same research pattern —
+   real-fill re-validation OWED (audit debt; forward usd_real columns accruing).
