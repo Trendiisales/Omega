@@ -73,6 +73,19 @@
   <div class="grid cards" id="cards"></div>
 
   <div class="row2">
+    <div class="panel full">
+      <div class="ph"><h2>Trades log — all symbols</h2>
+        <span class="r" id="trades-note" style="max-width:60%;text-align:right;white-space:normal"></span></div>
+      <div class="body">
+        <div style="padding:4px 14px 2px;color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.5px">Current — open positions <span id="trades-open-n"></span></div>
+        <div id="trades-open"></div>
+        <div style="padding:10px 14px 2px;color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.5px">Past — closed clips <span id="trades-closed-n"></span></div>
+        <div id="trades-closed"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row2">
     <div class="panel">
       <div class="ph"><h2>Companion book — realized clips</h2><span class="r" id="comp-upd"></span></div>
       <div class="body" id="comp-book"></div>
@@ -211,10 +224,31 @@ async function killBook(b, book){
   tick();
 }
 
+const ago = ts => { if(!ts) return ""; const s=Math.floor(Date.now()/1000)-ts; if(s<0)return""; const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return d?`${d}d ${h}h`:(h?`${h}h ${m}m`:`${m}m`); };
+const dt  = ts => ts?new Date(ts*1000).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):"";
+
+function renderTrades(t){
+  $("#trades-note").textContent = t?.error ? ("error: "+t.error) : (t?.note||"");
+  const op = t?.open||[], cl = t?.closed||[];
+  $("#trades-open-n").textContent = "("+op.length+")";
+  $("#trades-closed-n").textContent = "("+cl.length+")";
+  $("#trades-open").innerHTML = op.length
+    ? `<table><thead><tr><th>Book</th><th>Engine</th><th>Sym</th><th>Side</th><th class="r">Entry</th><th class="r">uPnL</th><th class="r">MFE%</th><th class="r">Age</th></tr></thead><tbody>`+
+      op.map(o=>`<tr><td class="tag">${esc(o.src)}</td><td>${esc(o.engine)}</td><td>${esc(o.symbol)}</td><td class="${o.side==='SHORT'?'neg':'pos'}">${esc(o.side)}</td><td class="r">${o.entry??'—'}</td><td class="r ${cls(o.upnl)}">${o.upnl!=null?usd(o.upnl):'—'}</td><td class="r">${o.mfe_pct!=null?(o.mfe_pct*(Math.abs(o.mfe_pct)<1?100:1)).toFixed(2)+'%':'—'}</td><td class="r tag">${ago(o.open_ts)}</td></tr>`).join("")+
+      `</tbody></table>`
+    : `<div class="err" style="color:var(--mut)">no open positions</div>`;
+  $("#trades-closed").innerHTML = cl.length
+    ? `<table><thead><tr><th>When</th><th>Book</th><th>Sym</th><th>Side</th><th class="r">Entry</th><th class="r">Realized</th><th>Reason</th></tr></thead><tbody>`+
+      cl.map(c=>`<tr><td class="tag">${dt(c.ts)}</td><td class="tag">${esc(c.src)}</td><td>${esc(c.symbol)}</td><td class="${c.side==='SHORT'?'neg':'pos'}">${esc(c.side)}</td><td class="r">${c.entry??'—'}</td><td class="r ${cls(c.pnl)}">${c.pnl!=null?usd(c.pnl):'—'}</td><td class="tag">${esc(c.reason)}</td></tr>`).join("")+
+      `</tbody></table>`
+    : `<div class="err" style="color:var(--mut)">no closed clips</div>`;
+}
+
 async function tick(){
   $("#clock").textContent = new Date().toLocaleTimeString();
-  const [comp,cry,rd] = await Promise.all([get("/api/companion"),get("/api/crypto"),get("/api/rdagent")]);
+  const [comp,cry,rd,trades] = await Promise.all([get("/api/companion"),get("/api/crypto"),get("/api/rdagent"),get("/api/trades")]);
   render(comp,cry,rd);
+  renderTrades(trades);
 }
 tick(); setInterval(tick,15000);
 </script>

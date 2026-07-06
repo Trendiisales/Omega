@@ -26,6 +26,8 @@ the panel.
 """
 from __future__ import annotations
 
+import csv
+import glob
 import json
 import os
 import urllib.request
@@ -53,6 +55,84 @@ ROUTES = {
     "/api/crypto": CRYPTO,
     "/api/rdagent": RDAGENT,
 }
+
+# ── TRADES LOG: every closed clip + every open position across ALL symbols/engines ──
+# The operator asked for "current trade/s showing and past trades in a log, for all the
+# symbols". No single file has this -- each companion book writes its OWN companion_closed.csv
+# (past) + companion_positions.json (open). We glob them ALL, tag by source dir, and merge.
+# Read-only, fail-safe: any unreadable file is skipped, never a 500.
+STALL_ROOT = Path(os.environ.get("STALL_ACCT_DIR", HOME / "stall-accountant"))
+_CLOSED_COLS = ("ts", "book", "reason", "engine", "symbol", "side",
+                "entry", "realized_pnl", "mfe_peak_pct", "bars_held")
+
+
+def _src_label(path: Path) -> str:
+    # root companion_closed.csv == the main OMEGA stall book; a subdir == that book's name.
+    d = path.parent
+    return "OMEGA" if d == STALL_ROOT else d.name
+
+
+def _read_trades() -> dict:
+    closed, opened = [], []
+    # ---- past clips: every companion_closed.csv under the stall root ----
+    for fp in sorted(glob.glob(str(STALL_ROOT / "**" / "companion_closed.csv"), recursive=True)):
+        p = Path(fp)
+        src = _src_label(p)
+        try:
+            with p.open(newline="") as f:
+                for row in csv.DictReader(f):
+                    if not row.get("ts"):
+                        continue
+                    def _f(k):
+                        try:
+                            return float(row.get(k) or 0)
+                        except (TypeError, ValueError):
+                            return None
+                    closed.append({
+                        "src": src,
+                        "ts": int(_f("ts") or 0),
+                        "engine": row.get("engine", ""),
+                        "symbol": row.get("symbol", ""),
+                        "side": row.get("side", ""),
+                        "entry": _f("entry"),
+                        "pnl": _f("realized_pnl"),
+                        "reason": row.get("reason", ""),
+                        "mfe_pct": _f("mfe_peak_pct"),
+                        "bars": row.get("bars_held", ""),
+                        "book": row.get("book", src),
+                    })
+        except Exception:  # noqa: BLE001 -- skip a garbled book, never blank the log
+            continue
+    # ---- current positions: every companion_positions.json under the stall root ----
+    for fp in sorted(glob.glob(str(STALL_ROOT / "**" / "companion_positions.json"), recursive=True)):
+        p = Path(fp)
+        src = _src_label(p)
+        try:
+            d = json.loads(p.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        for _k, v in (d.items() if isinstance(d, dict) else []):
+            if not isinstance(v, dict):
+                continue
+            opened.append({
+                "src": src,
+                "engine": v.get("eng") or v.get("engine", ""),
+                "symbol": v.get("sym") or v.get("symbol", ""),
+                "side": v.get("side", ""),
+                "entry": v.get("entry"),
+                "upnl": v.get("last_upnl", v.get("mfe_usd")),
+                "mfe_pct": v.get("mfe_pct"),
+                "open_ts": v.get("open_ts"),
+                "book": v.get("book", src),
+            })
+    closed.sort(key=lambda r: r["ts"], reverse=True)
+    return {
+        "closed": closed,
+        "open": opened,
+        "n_closed": len(closed),
+        "n_open": len(opened),
+        "note": "forward live clips. BeFloor gold/FX desk $ are BACKTEST (bt), not forward -- $0 forward until a real move clips.",
+    }
 
 # PANIC KILL-ALL fan-out (per-book isolation, operator's choice). The cockpit is a
 # different origin from each book's GUI, so the browser POSTs same-origin to the
@@ -88,6 +168,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"error": f"missing: {p}"}, 200)
             except Exception as e:  # noqa: BLE001 -- never blank the panel
                 self._json({"error": str(e), "path": str(p)}, 200)
+            return
+        if route == "/api/trades":
+            try:
+                self._json(_read_trades())
+            except Exception as e:  # noqa: BLE001 -- never blank the panel
+                self._json({"error": str(e), "closed": [], "open": []}, 200)
             return
         if route in ("/api/health", "/healthz"):
             self._json({
