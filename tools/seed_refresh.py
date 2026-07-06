@@ -247,15 +247,35 @@ def _last_ts(path):
     try:
         with open(path, "rb") as fh:
             fh.seek(0, os.SEEK_END); size = fh.tell()
-            back = min(size, 4096); fh.seek(size - back); tail = fh.read().decode("latin-1")
-        for line in reversed(tail.splitlines()):
+            # 64KB tail: wide close CSVs (500+ cols) run ~10KB/row, so 4KB was < one
+            # row -> the window held a single mid-row fragment and c0 was a stray price.
+            back = min(size, 65536); fh.seek(size - back); tail = fh.read().decode("latin-1")
+        lines = tail.splitlines()
+        # if we didn't read from byte 0, the first line is a partial row fragment -> drop it
+        if size > back and len(lines) > 1: lines = lines[1:]
+        for line in reversed(lines):
             a = line.split(",")
             if not a or not a[0]: continue
-            try: ts = float(a[0])
-            except: continue
-            if ts <= 0: continue
-            if ts > 1e11: ts /= 1000.0
-            return ts
+            c0 = a[0].strip()
+            # numeric epoch first column (tick/bar CSVs)
+            try:
+                ts = float(c0)
+                if ts <= 0: continue
+                if ts > 1e11: ts /= 1000.0
+                return ts
+            except ValueError:
+                pass
+            # ISO date-string index (wide close CSVs: "Date,NVDA,..." / "2026-07-02,...")
+            # float() fails on these -> without this branch _last_ts falls through to a
+            # stray price fragment in the partial tail window and reports epoch~0 (1970),
+            # a false STALE that aborts the deploy on a perfectly fresh file.
+            m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", c0)
+            if m:
+                try:
+                    return datetime.datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                                             tzinfo=datetime.timezone.utc).timestamp()
+                except ValueError:
+                    continue
     except Exception:
         return None
     return None
