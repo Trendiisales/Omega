@@ -1858,17 +1858,27 @@ static void init_engines(const std::string& cfg_path)
             auto& jr = omega::jump_rider_book();
             // {tag, live_sym, W, thr, rt_cost_bp, be_arm_mult, warmup CSV}
             //   rt = same real costs as the BE-floor books. Settings LOCKED from the S-2026-07-07
-            //   walk-forward sweep (backtest/rider_sweep_wf.py, IS=first 60% / OOS=last 40%,
-            //   plateau-checked; Mac Tick run + 9y Binance run — outputs/RIDER_SWEEP_WF_2026-07-07.txt):
-            //   GO    : XAUUSD W2/0.75% BE05 (Tick 2022-23: IS +574bp / OOS +364bp, plateau ok)
-            //   WATCH : USDJPY W2/0.30% (OOS + on all exits), GER40 W4/0.50% BE10 (OOS + top-3,
-            //           184d only), NAS100 W4/0.75% BE05 (plateau ok, OOS +123), US500 W2/0.75%
+            //   FULL-TICK walk-forward sweep (backtest/rider_sweep_wf.py, IS=first 60% / OOS=last
+            //   40%, per-row plateau on top-6; outputs/RIDER_SWEEP_TICK3_2026-07-07.txt supersedes
+            //   the earlier RIDER_SWEEP_WF run — full multiyear Tick wins over the Tick 2022-23 cut):
+            //   GO    : XAUUSD W2/1.00% FLIP (1573d: IS +2816bp n47 / OOS +1493bp n100,
+            //           plateau +540bp/ok — the ONLY plateau-ok row; higher-OOS BE10 was SPIKE)
+            //   WATCH : USDJPY W2/0.30% (tick2, OOS + on all exits; not rerun in tick3),
+            //           GER40 W2/0.30% BE10 (208d: OOS +466 but plateau SPIKE; the plateau-ok
+            //           neighbor TR33 needs a chandelier trail the live engine doesn't have),
+            //           DJ30 W4/0.50% BE10 (IS n33 / OOS +187 / plateau +189bp ok — passes gates
+            //           but only 179d of data; forward real column decides)
             //   FAILED WF (kept SHADOW at family defaults for forward baseline only — do NOT
-            //   promote): XAGUSD, USOIL, EURUSD, GBPUSD, AUDUSD, NZDUSD, DJ30.
-            //   be_arm_mult: BE-ratchet arm = mult x thr (0.5 = BE05, 1.0 = BE10).
+            //   promote): XAGUSD, EURUSD, GBPUSD, AUDUSD, NZDUSD,
+            //           NAS100 (tick3 1559d: OOS negative across top-6 — demoted from WATCH),
+            //           US500 (tick3 1559d: every top-5 row plateau SPIKE — demoted from WATCH),
+            //           USOIL (tick2 row VOID: loader merged Brent BCOUSD ticks into WTI H1).
+            //   be_arm_mult: BE-ratchet arm = mult x thr (0.5 = BE05, 1.0 = BE10,
+            //   999 = never arms -> pure FLIP; the 2x-thr hard stop stays active regardless,
+            //   matching the sweep's catastrophe stop on every exit variant).
             struct JCfg { const char* tag; const char* live; int W; double thr; double rt; double bam; const char* csv; };
             static const JCfg JR[] = {
-                {"XAUUSD", "XAUUSD",  2, 0.0075, 6.0, 0.5, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"},
+                {"XAUUSD", "XAUUSD",  2, 0.010,  6.0, 999.0, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"},
                 {"XAGUSD", "XAGUSD",  2, 0.010,  6.0, 0.5, "phase1/signal_discovery/warmup_XAGUSD_H1.csv"},
                 {"USOIL",  "USOIL.F", 2, 0.010,  8.0, 0.5, "phase1/signal_discovery/warmup_USOIL_H1.csv"},
                 {"EURUSD", "EURUSD",  2, 0.003,  4.0, 0.5, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
@@ -1878,8 +1888,8 @@ static void init_engines(const std::string& cfg_path)
                 {"NZDUSD", "NZDUSD",  2, 0.003,  7.0, 0.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
                 {"US500",  "US500.F", 2, 0.0075, 4.0, 0.5, "phase1/signal_discovery/warmup_US500_H1.csv"},
                 {"NAS100", "NAS100",  4, 0.0075, 3.0, 0.5, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
-                {"DJ30",   "DJ30.F",  2, 0.003,  2.0, 0.5, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
-                {"GER40",  "GER40",   4, 0.005,  2.0, 1.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
+                {"DJ30",   "DJ30.F",  4, 0.005,  2.0, 1.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
+                {"GER40",  "GER40",   2, 0.003,  2.0, 1.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
             };
             for (const auto& j : JR) {
                 omega::JumpRiderSym::Config c;

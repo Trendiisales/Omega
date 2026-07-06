@@ -247,20 +247,19 @@ def sweep(sym, thrs, ws, cost, short):
               f"W={best_any[0]} thr={best_any[1]*100:.2f}% {best_any[2]} "
               f"IS {best_any[3]['net']:+.0f}bp (n={best_any[3]['n']}) OOS {best_any[4]['net']:+.0f}bp")
         return
-    print(f"  {'rank':4} {'W':>2} {'thr%':>5} {'exit':>5} | {'IS net':>8} {'n':>4} {'dd':>7} | {'OOS net':>8} {'n':>4} {'dd':>7} {'wr%':>4}")
+    print(f"  {'rank':4} {'W':>2} {'thr%':>5} {'exit':>5} | {'IS net':>8} {'n':>4} {'dd':>7} | {'OOS net':>8} {'n':>4} {'dd':>7} {'wr%':>4}  plateau")
     for k, (W, thr, ex, si, so) in enumerate(cand[:TOPN]):
+        # plateau PER ROW: thr-neighbors (same W/exit) must hold most of the edge
+        neigh = [r for r in rows if r[0] == W and r[2] == ex and r[1] != thr]
+        avg_is = sum(r[3]["net"] for r in neigh) / len(neigh) if neigh else 0.0
+        ptag = "SPIKE" if (neigh and avg_is <= 0 < si["net"]) else "ok"
         print(f"  #{k+1:<3} {W:>2} {thr*100:>5.2f} {ex:>5} | {si['net']:>+8.0f} {si['n']:>4} {si['dd']:>7.0f} "
-              f"| {so['net']:>+8.0f} {so['n']:>4} {so['dd']:>7.0f} {so['wr']:>4.0f}")
-    # plateau check on the #1: neighbors in thr must hold most of the edge
-    W0, t0, e0, _, _ = cand[0]
-    neigh = [r for r in rows if r[0] == W0 and r[2] == e0 and r[1] != t0]
-    if neigh:
-        avg_is = sum(r[3]["net"] for r in neigh) / len(neigh)
-        print(f"  plateau: #1 thr-neighbors (same W/exit) avg IS {avg_is:+.0f}bp "
-              f"{'(SPIKE — treat #1 as overfit)' if avg_is <= 0 < cand[0][3]['net'] else '(plateau ok)'}")
+              f"| {so['net']:>+8.0f} {so['n']:>4} {so['dd']:>7.0f} {so['wr']:>4.0f}  {avg_is:+.0f}bp/{ptag}")
 
 def main():
+    only = set(s for s in os.environ.get("SYMS_ONLY", "").split(",") if s)   # e.g. SYMS_ONLY=XAUUSD,GER40
     for sym, thrs, ws, cost, short in SYMS:
+        if only and sym not in only: continue
         try: sweep(sym, thrs, ws, cost, short)
         except FileNotFoundError: print(f"\n=== {sym}: no data file ===")
     if CDATA:

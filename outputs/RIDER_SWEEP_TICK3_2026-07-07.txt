@@ -1,0 +1,64 @@
+    [data] XAUUSD: XAUUSD_2022_2023.h1.csv -> 11067 rows
+    [data] XAUUSD: XAUUSD_2024-03_2026-04_combined.csv -> 154265439 rows
+    [data] XAUUSD: xau_6mo_corrected.csv -> 46465933 rows
+
+=== XAUUSD  bars=23755 span=1573d  IS=first 60% / OOS=last 40%  cost=6.0bp  src=3 file(s) merged ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%  plateau
+  #1    8  1.50  FLIP |    +3758   34    1093 |    +3144   77    1517   36  -425bp/SPIKE
+  #2    4  1.50  TR50 |    +3438   36     486 |    -1804   71    2815   66  -924bp/SPIKE
+  #3    8  1.50  BE10 |    +3409   38    1066 |    +4315   78    1287   35  -812bp/SPIKE
+  #4    2  1.00  FLIP |    +2816   47    1292 |    +1493  100    1352   35  +540bp/ok
+  #5    8  1.50  BE05 |    +2773   43     618 |    +1325   84    2808   27  -370bp/SPIKE
+  #6    4  1.50  TR33 |    +2730   40     471 |    -1208   75    2456   67  -981bp/SPIKE
+    [data] US500: usa500idxusd-tick-2022-01-01-2026-06-15T03-56.csv -> 14296680 rows
+    [data] US500: usa500idxusd-tick-2022-01-01-2026-06-15T04-42.csv -> 2541967 rows
+    [data] US500: usa500idxusd-tick-2022-01-01-2026-06-15T05-05.csv -> 637447 rows
+    [data] US500: US500_2426.csv -> 37188359 rows
+
+=== US500  bars=15449 span=1559d  IS=first 60% / OOS=last 40%  cost=4.0bp  src=4 file(s) merged ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%  plateau
+  #1    4  0.50  TR33 |    +1855  247    1639 |     -855  399    1940   64  -1977bp/SPIKE
+  #2    4  0.50  TR50 |    +1712  238    1572 |     -256  361    1547   63  -2225bp/SPIKE
+  #3    4  0.50  BE05 |    +1120  210    2076 |    +1361  322    1294   28  -1466bp/SPIKE
+  #4    4  0.50  BE10 |    +1007  200    2054 |     +494  301    1887   31  -2113bp/SPIKE
+  #5    4  0.50  FLIP |     +768  206    2247 |      -29  291    2152   37  -2021bp/SPIKE
+    [data] NAS100: NAS2022_bear_h1.csv -> 117 rows
+    [data] NAS100: usatechidxusd-tick-2022-01-01-2026-06-15T04-10.csv -> 9042165 rows
+    [data] NAS100: usatechidxusd-tick-2022-01-01-2026-06-15T04-25.csv -> 23157894 rows
+    [data] NAS100: NAS100_2426.csv -> 112080692 rows
+
+=== NAS100  bars=11820 span=1559d  IS=first 60% / OOS=last 40%  cost=3.0bp  src=4 file(s) merged ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%  plateau
+  #1    8  0.20  BE05 |    +1528  314     915 |    -1069  690    2790   16  -1420bp/SPIKE
+  #2    8  0.30  FLIP |    +1256  227     902 |    -1732  485    4283   29  -2005bp/SPIKE
+  #3    8  0.75  TR33 |     +840  160    1321 |     -411  304    1421   66  -800bp/SPIKE
+  #4    8  0.30  BE05 |     +832  256     791 |     +271  546    2277   20  -1246bp/SPIKE
+  #5    8  0.20  BE10 |     +799  302    1015 |     -915  638    2933   18  -1668bp/SPIKE
+  #6    8  0.20  FLIP |     +550  287    1131 |     -530  609    3530   26  -1829bp/SPIKE
+    [data] DJ30: DJ30_clean.csv -> 18674127 rows
+
+=== DJ30  bars=2871 span=179d  IS=first 60% / OOS=last 40%  cost=2.0bp  src=1 file(s) merged ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%  plateau
+  #1    8  0.20  FLIP |     +861   95     361 |     -416   85     784   28  +3bp/ok
+  #2    4  0.50  TR33 |     +792   47     250 |     +341   63     647   63  -11bp/SPIKE
+  #3    8  0.50  TR33 |     +705   55     166 |     -840   63    1108   59  +107bp/ok
+  #4    4  0.50  BE10 |     +667   33     190 |     +187   48     579   31  +189bp/ok
+  #5    8  0.50  TR50 |     +654   48     318 |     -913   60    1118   57  +342bp/ok
+  #6    4  0.50  TR50 |     +594   44     258 |     +256   57     584   67  -82bp/SPIKE
+    [data] GER40: GER40.csv -> 9455897 rows
+    [data] GER40: DAT_ASCII_GRXEUR_T_202511.csv -> 1246103 rows
+    [data] GER40: DAT_ASCII_GRXEUR_T_202512.csv -> 924452 rows
+    [data] GER40: DAT_ASCII_GRXEUR_T_202601.csv -> 1094739 rows
+    [data] GER40: DAT_ASCII_GRXEUR_T_202602.csv -> 1443994 rows
+    [data] GER40: DAT_ASCII_GRXEUR_T_202603.csv -> 2798922 rows
+    [data] GER40: DAT_ASCII_GRXEUR_T_202604.csv -> 1947687 rows
+    [data] GER40: DAT_ASCII_GRXEUR_T_202605.csv -> 1987705 rows
+
+=== GER40  bars=3358 span=208d  IS=first 60% / OOS=last 40%  cost=2.0bp  src=8 file(s) merged ===
+  rank  W  thr%  exit |   IS net    n      dd |  OOS net    n      dd  wr%  plateau
+  #1    2  0.30  BE10 |     +609  102     735 |     +466  123     810   31  -403bp/SPIKE
+  #2    2  0.30  TR33 |     +541  133     623 |     +419  153     357   61  +163bp/ok
+  #3    2  0.30  BE05 |     +499  107     692 |      -25  132     895   24  -176bp/SPIKE
+  #4    2  0.20  TR50 |     +383  210     950 |     -993  214    1041   49  -8bp/SPIKE
+  #5    8  0.30  FLIP |     +376   86     604 |     +315   83     918   34  -323bp/SPIKE
+  #6    4  0.50  BE05 |     +358   53     783 |    -1093   84    1641   23  -743bp/SPIKE
