@@ -99,6 +99,26 @@ cross-regime (2022 bear) before tombstoning.
 
 **GER40/UK100 — DROPPED 2026-06-15 (operator: not viable, not pursuing).** GER40 H4 turtle FAILED both-halves (H2 neg); UK100 H4 marginal/thin; live GER40 engines were losing. Culled (kelt/london/minimal_h4 off; UK100 idd off). NOT worth chasing 2022-2023 intraday for marginal edges. Do not re-chase without a strong new hypothesis. Index trend edge lives in DJ30/SPX/NAS daily turtles (built, live-shadow) — not the EU indices intraday.
 
+**CRYPTO long-only regime ladder (2026-07-03, Coinbase 1h 2017-2026, 3 full bears):**
+NZ regulation = long-only. Ladder: **KNIFE** (<SMA200, not above rising SMA50) =
+FLAT — 7 long entry families backtested, ALL lose after costs in 2018/2022/2025-26
+knives ("dips keep dipping" holds; do NOT propose knife longs without beating
+`backtest/crypto_bear_bounce/FINDINGS.md`); **RECOVERY** (<SMA200 but > rising SMA50)
+= **BearRecovery** engine (EMA9-reclaim, BE-and-ride floor arm 2%, PF 7.2 @2% risk,
+worst −4.8%, both WF halves +, ~2 sig/yr — aggression via size not frequency;
+giveback clips proven harmful on crypto); **BULL** (>SMA200) = Luke daily system.
+Engine: `include/CryptoBearRecoveryEngine.hpp` (C++, warm-seeded via
+`phase1/signal_discovery/warmup_{BTC,ETH}USD_D1.csv`); signals CLI:
+`tools/crypto_bear_recovery.cpp` (JSON for the ~/Crypto book); faithful arbiter:
+`backtest/crypto_bear_bounce/faithful_bear_recovery_bt.cpp` (drives the real
+engine class; reproduces the study trade-for-trade). SHADOW first.
+
+**QNDX → Omega migration (2026-07-03):** the Mac ~/Crypto book's Nasdaq TSMom50
+leg moved onto Omega as `include/NasdaqTsmom50Engine.hpp` (NAS100 feed, ENABLED
+shadow; rule confirmed vs the live book to the cent; 30y ^NDX PF 1.94 both-WF+,
+flip exit + 8% disaster stop, shorts DEAD). Mac-side removal steps + Luke
+compatibility report: `tools/rdagent/QNDX_MOVE_TO_OMEGA.patch.md`.
+
 
 ---
 

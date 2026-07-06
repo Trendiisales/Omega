@@ -48,10 +48,45 @@ if ($di -and $di.LastTaskResult -eq 267009) {   # 267009 = TASK is currently run
 $cl = Get-Process cl,MSBuild,cmake -ErrorAction SilentlyContinue | Where-Object { ((Get-Date) - $_.StartTime).TotalMinutes -gt 25 }
 if ($cl) { $overall = 'RED'; $reasons += "[RED] DEPLOY-HANG: build process older than 25min ($(($cl|%{$_.ProcessName}) -join ','))" }
 # --- RAM (3GB box -> low free = thrash/freeze, froze RDP 2026-06-27) ---
+# S-2026-07-03 LEAK-AWARE upgrade (operator: "fix the Omega alerts/warning/memory
+# issue"). The old check was static thresholds only: (a) chronic-low-but-STABLE
+# free is this 3GB box's NORMAL (Omega+Gateway+feeds resident) so "<500MB" AMBER
+# fired nearly every cycle = permanent warning noise = alert fatigue; (b) a real
+# 400-800MB/h leak only went RED at <250MB -- minutes before the freeze, and the
+# alert never said WHO was leaking even though mem_trace.csv had the answer.
+# Now: mem_trace.ps1 writes MEM_LEAK.json (free-RAM slope + named top climber);
+# this block warns on the DYNAMIC (falling free / projected freeze / named proc)
+# and stays quiet on the static. RED <250MB kept as the last line.
 $osm = Get-CimInstance Win32_OperatingSystem
 $freeMB = [int]($osm.FreePhysicalMemory / 1024)
-if ($freeMB -lt 250) { $overall = 'RED'; $reasons += "[RED] RAM ${freeMB}MB free (<250) -- thrash/freeze risk" }
-elseif ($freeMB -lt 500) { if ($overall -eq 'GREEN') { $overall = 'AMBER' }; $reasons += "[AMBER] RAM ${freeMB}MB free" }
+$leak = $null
+if (Test-Path C:\Omega\logs\MEM_LEAK.json) {
+    try { $leak = Get-Content C:\Omega\logs\MEM_LEAK.json -Raw | ConvertFrom-Json } catch {}
+}
+$ramSlope = $null; $ramEtaH = $null; $climber = ''
+if ($leak) {
+    if ($null -ne $leak.free_slope_mb_h) { $ramSlope = [double]$leak.free_slope_mb_h }
+    if ($null -ne $leak.eta_freeze_h)    { $ramEtaH  = [double]$leak.eta_freeze_h }
+    if ($leak.climbers -and @($leak.climbers).Count -gt 0) {
+        $c0 = @($leak.climbers)[0]
+        $climber = " -- top climber: $($c0.proc) +$($c0.slope_mb_h)MB/h"
+    }
+}
+if ($freeMB -lt 250) {
+    $overall = 'RED'; $reasons += "[RED] RAM ${freeMB}MB free (<250) -- thrash/freeze risk${climber}"
+} elseif ($null -ne $ramSlope -and $ramSlope -le -300 -and $null -ne $ramEtaH -and $ramEtaH -le 2) {
+    # pre-emptive: the leak is running NOW; fire 1-2h before the old check could
+    $overall = 'RED'
+    $reasons += "[RED] RAM LEAK: ${freeMB}MB free falling ${ramSlope}MB/h -> ~${ramEtaH}h to freeze threshold${climber}"
+} elseif ($freeMB -lt 500) {
+    if ($null -ne $ramSlope -and $ramSlope -le -50) {
+        if ($overall -eq 'GREEN') { $overall = 'AMBER' }
+        $reasons += "[AMBER] RAM ${freeMB}MB free AND falling ${ramSlope}MB/h${climber}"
+    } else {
+        # stable-low = this box's baseline; report, do NOT warn (kills the AMBER spam)
+        $reasons += "[INFO] RAM ${freeMB}MB free (stable -- no leak slope)"
+    }
+}
 # --- DUPLICATE-PROCESS LEAK (the Aurora 4-copy pile-up that exhausted RAM) ---
 $byScript = @{}
 foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' or Name='python.exe' or Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
@@ -134,9 +169,16 @@ if ($null -ne $postedExec) {
     }
 }
 $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB; gateway_up=$gwUp; gateway_port=$gwPort; posted_exec=$postedExec; dispatch_age_min=$statAgeMin; activity_quiet_h=$quietH }
+$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB; ram_slope_mb_h=$ramSlope; ram_eta_freeze_h=$ramEtaH; gateway_up=$gwUp; gateway_port=$gwPort; posted_exec=$postedExec; dispatch_age_min=$statAgeMin; activity_quiet_h=$quietH }
 ($obj | ConvertTo-Json -Depth 4) | Out-File -Encoding utf8 C:\Omega\logs\HEALTH_STATUS.json
-"$ts overall=$overall " + ($reasons -join ' | ') | Out-File -Append C:\Omega\logs\health_alarm.log
+# rotate the alarm log (S-2026-07-03): unbounded append on a disk-alarmed box
+$halog = 'C:\Omega\logs\health_alarm.log'
+try {
+    if ((Test-Path $halog) -and (@(Get-Content $halog).Count -gt 5000)) {
+        Get-Content $halog -Tail 4000 | Set-Content $halog
+    }
+} catch {}
+"$ts overall=$overall " + ($reasons -join ' | ') | Out-File -Append $halog
 $flag = 'C:\Omega\logs\HEALTH_ALARM.flag'
 if ($overall -ne 'GREEN') {
     ($overall + " " + $ts + "`n" + ($reasons -join "`n")) | Out-File -Encoding utf8 $flag

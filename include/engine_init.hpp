@@ -2202,6 +2202,29 @@ static void init_engines(const std::string& cfg_path)
                g_nas_turtle_d1.p.sl_atr_mult, g_nas_turtle_d1.p.tp_atr_mult,
                g_nas_turtle_d1.p.hold_max_bars);
 
+        // ── NasdaqTsmom50Engine (S-2026-07-03) ──────────────────────────────
+        // MIGRATED from the Mac ~/Crypto book's QNDX leg per operator
+        // instruction (Nasdaq trend does not belong on the crypto book; must be
+        // ACTIVATED and working on Omega). Rule reverse-confirmed vs the live
+        // book to the cent (flip level == close[50td ago]): LONG while daily
+        // close > close[t-50], flat otherwise; flip exit + 8% disaster stop
+        // (backtested upgrade over the book's no-stop design — see engine
+        // header ADVERSE-PROTECTION). 30y ^NDX faithful daily: PF 1.94, both
+        // WF halves + (1.63/2.09), cost-x3 PF 1.69, shorts tested DEAD (long-
+        // only shipped). Vol-target sizing matches the book's "0.96x" display.
+        // ENABLED, SHADOW (same posture as the QNDX book it replaces); flip
+        // shadow_mode after the shadow ledger confirms parity with the Mac leg.
+        g_nasdaq_tsmom50.p           = omega::make_nasdaq_tsmom50_params();
+        g_nasdaq_tsmom50.shadow_mode = true;
+        g_nasdaq_tsmom50.enabled     = true;
+        g_nasdaq_tsmom50.symbol      = "NAS100";
+        g_nasdaq_tsmom50.seed_from_d1_csv("phase1/signal_discovery/warmup_NAS100_D1.csv");
+        printf("[OMEGA-INIT] NasdaqTsmom50Engine: shadow=%d enabled=%d lb=%d stop=%.0f%% vt=%.0f%%\n",
+               (int)g_nasdaq_tsmom50.shadow_mode, (int)g_nasdaq_tsmom50.enabled,
+               g_nasdaq_tsmom50.p.lookback_bars,
+               g_nasdaq_tsmom50.p.stop_pct * 100.0,
+               g_nasdaq_tsmom50.p.vol_target * 100.0);
+
         // ── DJ30 + SPX D1 turtles (2026-06-15) ──────────────────────────────
         // Same NasTurtleD1 chassis. Cross-regime validated Yahoo daily 2016-2026
         // (incl 2022 bear), cost-inclusive both-halves: DJ30 PF2.09 (+13173, H1+/H2+),
