@@ -1714,18 +1714,28 @@ static void init_engines(const std::string& cfg_path)
         //   backtested: neg=0). Chart bars (g_bars_<pair>) live-warm from ticks.
         {
             auto& fxb = omega::fx_befloor_book();
-            static const char* FX_PAIRS[] = {"EURUSD","GBPUSD","USDJPY","AUDUSD","NZDUSD"};
-            for (const char* p : FX_PAIRS) {
+            // PER-PAIR REAL RT COST (bp of notional), from the OmegaCostGuard conservative floors
+            // (1.5-pip spread + table slippage + $6/lot commission) at 2026 price levels:
+            //   EURUSD ($15+$20+$6)/$108k ~ 3.8 -> 4.0   GBPUSD /$127k ~ 3.2 -> 3.5
+            //   USDJPY ($10+$13+$6)/$100k ~ 2.9 -> 3.0   AUDUSD /$66k  ~ 6.2 -> 6.0
+            //   NZDUSD /$61k ~ 6.7 -> 7.0
+            // Debited from every clip's pct_real + drives the tier-viability gate (min_gb_mult).
+            struct FxC { const char* pair; double rt_bp; };
+            static const FxC FX_PAIRS[] = {
+                {"EURUSD", 4.0}, {"GBPUSD", 3.5}, {"USDJPY", 3.0}, {"AUDUSD", 6.0}, {"NZDUSD", 7.0}
+            };
+            for (const auto& fp : FX_PAIRS) {
                 omega::FxBeFloorPair::Config c;
-                c.pair = p; c.notional = 100000.0;   // std-lot notional; 1% ~ $1000/lot (approx for JPY-quote)
+                c.pair = fp.pair; c.notional = 100000.0;   // std-lot notional; 1% ~ $1000/lot (approx for JPY-quote)
+                c.rt_cost_bp = fp.rt_bp;
                 fxb.add(std::move(c));
             }
             // Warm-seed each pair from its bundled H1 CSV (ts,o,h,l,c) -- primes the 2h
             // detector + book and stamps the persisted deploy_ts (forward book starts $0;
             // the tick-fed H1 sink advances it). Bundled CSVs ship with every deploy.
             size_t seeded = 0;
-            for (const char* p : FX_PAIRS)
-                seeded += fxb.seed_pair(p, std::string("phase1/signal_discovery/warmup_") + p + "_H1.csv");
+            for (const auto& fp : FX_PAIRS)
+                seeded += fxb.seed_pair(fp.pair, std::string("phase1/signal_discovery/warmup_") + fp.pair + "_H1.csv");
             // PERSISTENCE (S-2026-07-06b): reload each pair's persisted LIVE forward H1 bars
             // (fx_companion_<pair>_h1.csv, appended by on_h1_bar) BEFORE finalize so the recompute
             // replays them -> the FX book is NON-VOLATILE across restarts. Prior gap: the book was
@@ -1780,16 +1790,22 @@ static void init_engines(const std::string& cfg_path)
             // refreshes from IBKR at deploy (NQ/ES/YM/DAX H1) so they stay fresh & continuous (the seed
             // gate is fail-closed on H1 staleness). Deploy-forward SHADOW book: the seed only primes the
             // 2h detector; deploy_ts gates out all pre-deploy history so a stale/gappy seed cannot misbook.
-            struct ICfg { const char* tag; const char* live; double dpp; const char* csv; };
+            // rt_bp = PER-SYMBOL REAL RT COST (bp of index level), from the OmegaCostGuard
+            // conservative floors (typical CFD spread + table slippage; no commission) at 2026
+            // levels: US500 (0.5+1.5pt)x$50/$315k ~ 3.2 -> 4.0; NAS100 (2+2.5pt)/$23k ~ 2.0 -> 3.0;
+            // DJ30 (3+3pt)x$5/$222k ~ 1.3 -> 2.0; GER40 (1.5+0.8pt)x$1.1/$26k ~ 1.0 -> 2.0.
+            // Debited from every clip's pts_real + drives the tier-viability gate (min_gb_mult).
+            struct ICfg { const char* tag; const char* live; double dpp; double rt_bp; const char* csv; };
             static const ICfg IDX[] = {
-                {"US500",  "US500.F", 50.0,  "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  1.0,   "phase1/signal_discovery/warmup_NAS100_H1.csv"},
-                {"DJ30",   "DJ30.F",  5.0,   "phase1/signal_discovery/warmup_DJ30_H1.csv"},
-                {"GER40",  "GER40",   1.10,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
+                {"US500",  "US500.F", 50.0,  4.0, "phase1/signal_discovery/warmup_US500_H1.csv"},
+                {"NAS100", "NAS100",  1.0,   3.0, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                {"DJ30",   "DJ30.F",  5.0,   2.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
+                {"GER40",  "GER40",   1.10,  2.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
             };
             for (const auto& ic : IDX) {
                 omega::IndexBeFloorSym::Config c;
                 c.sym = ic.tag; c.live_sym = ic.live; c.dpp_per_lot = ic.dpp;
+                c.rt_cost_bp = ic.rt_bp;
                 ib.add(std::move(c));
             }
             size_t iseeded = 0;

@@ -61,6 +61,12 @@ public:
         double rt_cost_bp    = 6.0;       // REAL round-trip cost (spread+slip+comm, bp of entry) debited
                                           //   from every clip's pts_real. be_bp only DELAYS the arm; it is
                                           //   not a cost credit — a floor exit at entry is a real -rt_cost_bp.
+        double min_gb_mult= 3.0;      // TIER VIABILITY GATE: a tier arms only if its giveback
+                                      //   LIVE_GB_[ti] >= min_gb_mult * rt_cost_bp -- a trail whose
+                                      //   giveback is within a few multiples of the round-trip cost
+                                      //   cannot clear costs on its typical clip. Non-viable tiers
+                                      //   never open (open legs still managed to close); shown as
+                                      //   "viable":false in the state JSON. 0 disables the gate.
         double dpp_per_lot   = 50.0;      // $/point for 1.0 lot (per-symbol point-value)
         double lot           = 1.0;
         std::string deploy_path;          // per-symbol persisted deploy-forward anchor
@@ -186,6 +192,7 @@ public:
                 if (ti) runs << ",";
                 runs.precision(0); runs << std::fixed;
                 runs << "{\"tier\":\"" << TIER_TAG[ti] << "\",\"gb_bp\":" << (long)LIVE_GB_[ti]
+                     << ",\"viable\":" << (tier_viable_(ti) ? "true" : "false")
                      << ",\"clips\":" << b.clips << ",\"wins\":" << b.wins << ",";
                 runs.precision(2); runs << "\"pts\":" << b.pts << ",\"pts_real\":" << b.pts_real << ",";
                 runs.precision(0); runs << "\"usd\":" << (b.pts * dpp)
@@ -320,6 +327,7 @@ private:
                 LiveLeg& L = live_[fi][ti];
                 const double gb = LIVE_GB_[ti];
                 if (!L.has_entry) {
+                    if (!tier_viable_(ti)) continue;   // weeded out: giveback < min_gb_mult x real cost
                     const bool cond = up ? ((cur / L.ref - 1.0) * 1e4 >= be) : ((1.0 - cur / L.ref) * 1e4 >= be);
                     if (cond) {
                         const double tp_dist_pts = cur * (gb / 1e4);
@@ -351,6 +359,10 @@ private:
         save_live_state_();   // snapshot window+leg arm-state every live bar -> restart RESUMES, never re-zeroes
     }
 
+    // TIER VIABILITY: giveback must exceed the instrument's real RT cost by min_gb_mult.
+    bool tier_viable_(int ti) const noexcept {
+        return cfg_.min_gb_mult <= 0.0 || LIVE_GB_[ti] >= cfg_.min_gb_mult * cfg_.rt_cost_bp;
+    }
     // px_floor = model floor/stop level; px_obs = observed H1 close (the only tradable mark).
     // REAL booking: fill = worse-of(floor, observed) per side, cost = rt_cost_bp of entry.
     void close_leg_(int fi, int ti, bool up, double px_floor, double px_obs,

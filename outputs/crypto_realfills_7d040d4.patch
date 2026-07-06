@@ -272,7 +272,7 @@ diff -ruN a/src/stall_companion.cpp b/src/stall_companion.cpp
      books.reserve(cfgs.size());
 diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
 --- a/src/wave_companion.cpp	2026-07-06 12:38:48.939878062 +0000
-+++ b/src/wave_companion.cpp	2026-07-06 12:41:21.997224400 +0000
++++ b/src/wave_companion.cpp	2026-07-06 12:59:29.186085809 +0000
 @@ -14,21 +14,27 @@
  //   * REVERSAL  : price gives back REV% from the wave peak  -> close ALL companions.
  //   * STAGNATION: no new wave high within STAG_H hours (PER-COIN) -> close ALL companions.
@@ -327,7 +327,18 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
  struct Wave { long start_ms; std::vector<Comp> comps; double peak; long peak_ms;
                long exit_ms; double exit_px; bool open; };
  
-@@ -91,16 +101,27 @@
+@@ -84,6 +94,10 @@
+     const double REV    = std::stod(env_or("REV",    "0.15"));
+     const double COLD   = std::stod(env_or("COLD",   "0.04"));   // 0 disables the per-companion cut
+     const double COST_RT= std::stod(env_or("COST_RT","0.002"));
++    // Binance REAL slippage on top of taker fees (roster slip table: BTC/ETH ~3bp RT, SOL 5bp).
++    // Model column keeps COST_RT alone (python parity); the REAL column pays COST_RT + SLIP_RT.
++    const double SLIP_RT= std::stod(env_or("SLIP_RT","0.0003"));
++    const double COST_REAL = COST_RT + SLIP_RT;
+     const double POOL   = std::stod(env_or("POOL_USD","10000"));
+     const double CUSD   = std::stod(env_or("COMPANION_USD","1000")); // $ notional per companion (shadow)
+     const std::string DATADIR = env_or("WAVECOMP_DATADIR",
+@@ -91,16 +105,27 @@
      mkdir(DATADIR.c_str(),0755);
      const std::string STATE = DATADIR + "/state.json";
      const std::string LEDGER= DATADIR + "/ledger.csv";
@@ -359,7 +370,7 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
  
      for(const auto& coin : COINS){
          // per-coin stagnation window (global STAG_H override wins for parity sweeps)
-@@ -118,6 +139,7 @@
+@@ -118,6 +143,7 @@
              coins_json.push_back({{"coin",coin},{"skipped",true},{"integ",integ},{"fresh",fresh}});
              continue;
          }
@@ -367,7 +378,7 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
  
          // ---- replay: reconstruct every wave + companion exactly as the backtest ----
          std::vector<Wave> waves;
-@@ -130,7 +152,7 @@
+@@ -130,7 +156,7 @@
                  // NO 200DMA gate (operator hard rule 2026-07-06): arm on structure, any regime.
                  Wave w; w.start_ms=ms; w.peak=px; w.peak_ms=ms; w.open=true;
                  double last_arm=px;
@@ -376,7 +387,7 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
                  size_t j=i+1; w.exit_px=px; w.exit_ms=ms;
                  for(; j<n; ++j){
                      long mj=bars[j].ms; double pj=bars[j].c;
-@@ -138,20 +160,28 @@
+@@ -138,20 +164,28 @@
                          w.peak=pj; w.peak_ms=mj;
                          while(pj >= last_arm*(1+STEP)){                // stack a new companion each +STEP%
                              last_arm *= (1+STEP);
@@ -411,7 +422,7 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
                  double exit_px_for_ref = w.exit_px;
                  waves.push_back(std::move(w));
                  ref = exit_px_for_ref;      // resume: a fresh +STEP advance above the exit re-arms
-@@ -160,32 +190,44 @@
+@@ -160,32 +194,44 @@
          }
  
          // ---- book the clips ----
@@ -426,8 +437,8 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
              counts.push_back((int)w.comps.size());
              for(auto& cmp : w.comps){
 -                double ret = (cmp.exit_px - cmp.arm_px)/cmp.arm_px - COST_RT;
-+                double ret   = (cmp.exit_px - cmp.arm_px)/cmp.arm_px - COST_RT;                // MODEL
-+                double ret_r = (cmp.exit_px_real - cmp.arm_px_real)/cmp.arm_px_real - COST_RT; // REAL
++                double ret   = (cmp.exit_px - cmp.arm_px)/cmp.arm_px - COST_RT;                  // MODEL
++                double ret_r = (cmp.exit_px_real - cmp.arm_px_real)/cmp.arm_px_real - COST_REAL; // REAL (fees+slip)
                  double raw = (cmp.exit_px - cmp.arm_px) - COST_RT*cmp.arm_px;   // price-unit (parity)
 -                double usd = CUSD * ret;
 +                double usd   = CUSD * ret;
@@ -438,7 +449,7 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
 -                    double mret = (last_px - cmp.arm_px)/cmp.arm_px - COST_RT;
 -                    coin_open += CUSD*mret; ++nopen;
 +                    double mret   = (last_px - cmp.arm_px)/cmp.arm_px - COST_RT;
-+                    double mret_r = (last_px - cmp.arm_px_real)/cmp.arm_px_real - COST_RT;
++                    double mret_r = (last_px - cmp.arm_px_real)/cmp.arm_px_real - COST_REAL;
 +                    coin_open += CUSD*mret; coin_open_r += CUSD*mret_r; ++nopen;
                      open_comps.push_back({
 -                        {"arm_px",round_n(cmp.arm_px,4)},{"cold_stop",round_n(cmp.cold_stop,4)},
@@ -467,7 +478,7 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
                  }
              }
          }
-@@ -195,16 +237,18 @@
+@@ -195,16 +241,18 @@
          double meanc = counts.empty()?0: (double)std::accumulate(counts.begin(),counts.end(),0)/counts.size();
  
          std::fprintf(stderr,"[wave-comp] %s: %zu waves, %d closed comps, raw-unit net $%.0f, "
@@ -489,7 +500,7 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
              {"raw_unit_net",round_n(coin_raw,0)},
              {"comps_per_wave",{{"mean",round_n(meanc,1)},{"p50",qc(.5)},{"p90",qc(.9)},{"max",counts.empty()?0:counts.back()}}},
              {"open",open_comps},
-@@ -213,21 +257,42 @@
+@@ -213,21 +261,43 @@
      }
      led.close();
  
@@ -505,8 +516,10 @@ diff -ruN a/src/wave_companion.cpp b/src/wave_companion.cpp
          {"engine","CryptoWaveCompanion"},{"mode","SHADOW"},{"updated",now+" UTC"},
          {"config",{{"step",STEP},{"stag_per_coin","ETH 24h / BTC 48h"},
                     {"stag_h_override",STAG_H_OVR},{"rev",REV},{"cold",COLD},
-                    {"cost_rt",COST_RT},{"pool_usd",POOL},{"companion_usd",CUSD},
+-                   {"cost_rt",COST_RT},{"pool_usd",POOL},{"companion_usd",CUSD},
 -                   {"bull_gate","NONE (200DMA removed 2026-07-06)"},{"long_only",true}}},
++                   {"cost_rt",COST_RT},{"slip_rt",SLIP_RT},{"cost_real",COST_REAL},
++                   {"pool_usd",POOL},{"companion_usd",CUSD},
 +                   {"bull_gate","NONE (200DMA removed 2026-07-06)"},{"long_only",true},
 +                   {"fills","REAL: arm@trigger-close, cold@worse-of(stop,close); model kept for parity"}}},
 +        // model columns (python-backtest parity; REPLAY totals, not forward performance)
