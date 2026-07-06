@@ -112,7 +112,7 @@ a{color:var(--blu);text-decoration:none}
 </div>
 
 <!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
-<div class="grid deskmain" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);align-items:start">
+<div class="grid deskmain" style="grid-template-columns:1fr;align-items:start">
 
 <!-- ═══ PREDICTIVE RANGES ═══ -->
 <div class="pan" style="margin-top:0">
@@ -136,34 +136,13 @@ a{color:var(--blu);text-decoration:none}
   </div>
 </div>
 
-<!-- ═══ MONEY RAIL (right of chart): equity + trade history stacked ═══ -->
-<div class="grid" style="grid-template-columns:1fr;margin-top:0;align-content:start">
-  <div class="pan">
-    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span class="lbl">SHADOW EQUITY (paper, all engines)</span>
-      <span id="eqtot" class="num" style="font-size:16px;color:var(--grn)">…</span>
-      <span style="margin-left:auto;display:flex;gap:5px">
-        <button id="w1" class="on">1d</button><button id="w7">7d</button><button id="w30">30d</button><button id="wall">all</button>
-      </span>
-    </div>
-    <canvas id="eqc" height="110" style="margin-top:6px"></canvas>
-    <div id="eqstats" class="lbl num" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:5px"></div>
-  </div>
-  <div class="pan" style="padding:6px 0 4px;display:flex;flex-direction:column">
-    <div style="display:flex;align-items:baseline;gap:8px;padding:0 11px 4px">
-      <span class="lbl">TRADE HISTORY — all shadow closes (newest first)</span>
-      <span id="histn" class="lbl"></span>
-    </div>
-    <div style="max-height:360px;overflow-y:auto;flex:1">
-      <table id="hist"><tr><td class="l d">loading…</td></tr></table>
-    </div>
-  </div>
-</div>
+<!-- ═══ MONEY RAIL removed 2026-07-06 (operator: SHADOW EQUITY + TRADE HISTORY useless — paper diagnostics).
+     deskmain now single-column: the price chart spans full width. ═══ -->
 
 </div><!-- /deskmain -->
 
-<!-- ═══ ENGINE LEDGER (running totals) + PROMOTION ═══ -->
-<div class="grid g2" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)">
+<!-- ═══ ENGINE LEDGER (running totals). PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
+<div class="grid" style="grid-template-columns:1fr">
   <div class="pan">
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
       <span class="lbl">ENGINE LEDGER — running total, ALL TIME (what makes / loses money)</span>
@@ -172,10 +151,6 @@ a{color:var(--blu);text-decoration:none}
     <div style="max-height:280px;overflow-y:auto">
       <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
     </div>
-  </div>
-  <div class="pan">
-    <div class="lbl" style="margin-bottom:6px">PROMOTION TRACKER — shadow n vs gate (30) · expectancy</div>
-    <div id="promo" style="font-size:11px;max-height:280px;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -264,8 +239,9 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
 
 <!-- ═══ OPS STRIP — DOM only. RISK&GOVERNOR + CLUSTER EXPOSURE + MICROSTRUCTURE·BROKER·SIGNALS panels removed 2026-07-04 (operator: irrelevant) ═══ -->
+<!-- gold DOM halved 2026-07-06 (operator: full width was a waste of space) -->
 <div class="grid ops" style="grid-template-columns:minmax(0,1fr)">
-  <div class="pan">
+  <div class="pan" style="max-width:50%">
     <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
     <div id="dom" class="num"></div>
     <div style="margin-top:5px">
@@ -1168,7 +1144,7 @@ function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* cr
    +(uoc?' · usoil '+fmt$(uoc):'')
    +((omc||cc||fxc||gbc||ixc||xgc||uoc)?' · Σ '+fmt$(tot):'');}
 
-function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
+function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel removed 2026-07-06 (operator: useless) */var H=110,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
  var rs=winRows();if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no shadow closes in window',10,20);
   /* no shadow closes -> still fold the companion (paper) bank for the window so it never silently drops */
@@ -1266,7 +1242,7 @@ function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
    h+='<span title="'+ti+'" style="height:13px;background:'+bg+';border-radius:1px"></span>';}});
  h+='</div>';el('tod').innerHTML=h;}
 
-function drawPromo(){var by={};
+function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2026-07-06 (operator: useless) */var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0};by[k].n++;by[k].pnl+=r.pnl;if(r.pnl>0)by[k].w++;});
  var ks=Object.keys(by).sort(function(a,b){return by[b].n-by[a].n;}).slice(0,14);
  if(!ks.length){el('promo').innerHTML='<span class="d">no shadow history yet</span>';return;}
@@ -1293,7 +1269,7 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
 }).catch(function(){});}
-function drawHist(){var h=el('hist');if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
+function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
  var rows=ROWS.slice().reverse().map(function(r){
   var d=new Date(r.ts*1000);
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
@@ -1522,8 +1498,8 @@ function loadCsv(){fetch('/api/shadow_csv').then(function(r){return r.text();}).
 loadCsv();setInterval(loadCsv,120000);
 drawBlot();setInterval(drawBlot,20000);
 
-[['w1',1],['w7',7],['w30',30],['wall',9999]].forEach(function(b){el(b[0]).onclick=function(){WIN=b[1];
- ['w1','w7','w30','wall'].forEach(function(x){el(x).className=x===b[0]?'on':'';});redrawAll();};});
+[['w1',1],['w7',7],['w30',30],['wall',9999]].forEach(function(b){if(!el(b[0]))return;/* window buttons lived in removed SHADOW EQUITY panel */el(b[0]).onclick=function(){WIN=b[1];
+ ['w1','w7','w30','wall'].forEach(function(x){if(el(x))el(x).className=x===b[0]?'on':'';});redrawAll();};});
 var _mm=el('mmsym');if(_mm)_mm.onchange=drawMM;
 window.addEventListener('resize',function(){drawEquity();drawMM();drawPR();});
 </script>
