@@ -36,6 +36,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <functional>
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -48,6 +49,9 @@ public:
         double be_bp      = 6.0;      // GOLD_RT_BP: gross bp move to cover cost & open a leg
         double lot        = 1.0;      // 1.0 std XAUUSD lot = 100 oz
         double dpp_per_lot = 100.0;   // $/point for 1.0 lot
+        std::string sym    = "XAUUSD";// symbol the live legs trade (order path)
+        double live_gb_bp  = 150.0;   // live trail giveback = runner tier (the prescribed backtested exit;
+                                      //   banker 20bp is the tight variant — accounting panel still shows both).
         std::string state_path   = "gold_companion_state.json";       // served by /api/gold_companion
         std::string deploy_path  = "gold_companion_deploy_ts.txt";    // deploy-forward anchor (persisted)
     };
@@ -55,6 +59,25 @@ public:
     struct Tier { double gb_bp; const char* tag; };
 
     bool enabled = true;
+
+    // ── LIVE EXECUTION WIRING — makes AUPOS/AUNEG REAL independent trading engines ──
+    //   These are set ONLY in the live main TU (engine_init). Left null in the
+    //   OmegaBacktest TU  ->  live_step_ short-circuits  ->  pure accounting, byte-identical
+    //   to before (canary unaffected). When wired, each flavor runs its OWN position
+    //   through the SAME machinery as every main engine, so it is SHADOW today
+    //   (send_live_order no-ops while g_cfg.mode!="LIVE") and LIVE the instant mode flips —
+    //   zero code change at flip. Checks/balances carried: (1) cost-gate at entry (gate_fn_),
+    //   (2) BE-floor adverse-protection neg=0 by construction, (3) shadow-ledger record on
+    //   close (ledger_fn_ -> TRADE HISTORY + shadow equity), (4) order path on entry+exit.
+    using OpenFn   = std::function<std::string(const std::string& sym, bool is_long, double lots, double px)>; // -> broker token ("" in shadow)
+    using CloseFn  = std::function<void(const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token)>;
+    using GateFn   = std::function<bool(const std::string& sym, double tp_dist_pts, double lots)>;             // cost-gate entry filter
+    using LedgerFn = std::function<void(const std::string& engine, const std::string& sym, bool is_long,
+                                        double entry_px, double exit_px, double lots,
+                                        int64_t entry_ts, int64_t exit_ts, const char* reason)>;
+    void set_exec(OpenFn o, CloseFn c, GateFn g, LedgerFn l) noexcept {
+        open_fn_ = std::move(o); close_fn_ = std::move(c); gate_fn_ = std::move(g); ledger_fn_ = std::move(l);
+    }
 
     explicit GoldBeFloorCompanion(Config c) : cfg_(std::move(c)) {
         // persisted deploy-forward anchor: keep the forward book stable across restarts.
@@ -112,6 +135,7 @@ public:
         ts_sec = norm_ts_(ts_sec);
         if (!ts_.empty() && ts_sec <= ts_.back()) return;   // monotonic live append only
         ingest_(ts_sec, close);
+        live_step_(ts_sec);        // fire real (shadow/live-gated) orders on live BE-floor transitions
         recompute_and_write();
     }
 
@@ -138,6 +162,76 @@ private:
     std::vector<double>  c_;     // H1 close (== o=h=l=c live-dump convention)
     int64_t deploy_ts_ = 0;
     bool    deploy_loaded_ = false;
+
+    // ── live execution state (one open position per flavor; null callbacks => inert) ──
+    OpenFn   open_fn_;
+    CloseFn  close_fn_;
+    GateFn   gate_fn_;
+    LedgerFn ledger_fn_;
+    struct LiveLeg { bool win = false, has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
+    LiveLeg live_[2];   // [0] = AUPOS (long), [1] = AUNEG (short)
+    static constexpr const char* LEG_ENGINE_(int fi) noexcept { return fi == 0 ? "GoldBeFloorAUPOS" : "GoldBeFloorAUNEG"; }
+
+    // Incremental mirror of detect_()+book_() on the NEWEST live bar, but instead of only
+    // accumulating points it OPENS/CLOSES a real position via the order path. Fires ONLY when:
+    //   - callbacks are wired (live main TU; null in backtest TU), and
+    //   - the bar is forward of deploy_ts (never re-fires historical/seed arms on restart).
+    // The order path (send_live_order behind open_fn_/close_fn_) is itself mode-gated:
+    // no-op in SHADOW, real order in LIVE. So this is a shadow trade now, a live trade on flip.
+    void live_step_(int64_t ts_sec) noexcept {
+        if (!open_fn_) return;                                   // backtest TU: pure accounting, unchanged
+        const int N = (int)c_.size(); const int W = cfg_.W;
+        if (N <= W) return;
+        const bool   fwd = ts_sec > deploy_ts_;                  // never act on replay / seed-overlap bars
+        const double cur = c_[N - 1];
+        const double j   = c_[N - 1] / c_[N - 1 - W] - 1.0;
+        const double thr = cfg_.thr, be = cfg_.be_bp, gb = cfg_.live_gb_bp;
+        for (int fi = 0; fi < 2; ++fi) {
+            const bool up = (fi == 0);
+            LiveLeg& L = live_[fi];
+            const bool enter = up ? (j >=  thr) : (j <= -thr);
+            const bool exit  = up ? (j <= -thr) : (j >=  thr);
+            if (!L.win && enter) { L.win = true; L.has_entry = false; L.wm = 0; L.ref = cur; }
+            if (L.win && !L.has_entry) {
+                const bool cond = up ? ((cur / L.ref - 1.0) * 1e4 >= be) : ((1.0 - cur / L.ref) * 1e4 >= be);
+                if (cond) {
+                    // CHECK — cost gate (entry filter). tp_dist ~ the giveback the trail must clear.
+                    const double tp_dist_pts = cur * (gb / 1e4);
+                    const bool viable = !gate_fn_ || gate_fn_(cfg_.sym, tp_dist_pts, cfg_.lot);
+                    if (viable) {
+                        L.entry = cur; L.wm = cur; L.has_entry = true; L.entry_ts = ts_sec;
+                        if (fwd) {
+                            L.token = open_fn_(cfg_.sym, up, cfg_.lot, cur);
+                            std::printf("[AUGOLD][OPEN] %s %s @%.2f lot=%.2f tok=%s\n",
+                                        LEG_ENGINE_(fi), up ? "LONG" : "SHORT", cur, cfg_.lot, L.token.c_str());
+                            std::fflush(stdout);
+                        }
+                    }
+                }
+            } else if (L.win && L.has_entry) {
+                double stop; bool hit;
+                if (up) { if (cur > L.wm) L.wm = cur; stop = std::max(L.entry, L.wm * (1.0 - gb / 1e4)); hit = (cur <= stop); }
+                else    { if (cur < L.wm) L.wm = cur; stop = std::min(L.entry, L.wm * (1.0 + gb / 1e4)); hit = (cur >= stop); }
+                if (hit) { close_leg_(fi, up, stop, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
+            }
+            if (L.win && exit) {                                  // parent window ended -> flush any open leg
+                if (L.has_entry) close_leg_(fi, up, cur, ts_sec, fwd, "WINDOW_EXIT");
+                L.win = false;
+            }
+        }
+    }
+
+    void close_leg_(int fi, bool up, double px, int64_t ts_sec, bool fwd, const char* reason) noexcept {
+        LiveLeg& L = live_[fi];
+        if (fwd) {
+            if (!L.token.empty() && close_fn_) close_fn_(cfg_.sym, up, cfg_.lot, px, L.token);
+            if (ledger_fn_) ledger_fn_(LEG_ENGINE_(fi), cfg_.sym, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
+            std::printf("[AUGOLD][CLOSE] %s %s entry=%.2f exit=%.2f (%s)\n",
+                        LEG_ENGINE_(fi), up ? "LONG" : "SHORT", L.entry, px, reason);
+            std::fflush(stdout);
+        }
+        L.has_entry = false; L.wm = 0; L.token.clear(); L.entry_ts = 0;
+    }
 
     void ingest_(int64_t ts, double close) noexcept { ts_.push_back(ts); c_.push_back(close); }
 

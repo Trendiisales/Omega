@@ -1552,7 +1552,10 @@ static void init_engines(const std::string& cfg_path)
         //   from the SAME H1 close stream gold_regime() records, runs x2 BE-floor tiers/direction
         //   (20bp banker / 150bp runner) => neg=0 by construction. Own state file
         //   gold_companion_state.json -> /api/gold_companion -> desk GOLD COMPANIONS panel.
-        //   NEVER opens/moves/closes a real position; never read by any parent.
+        //   INDEPENDENT engine: it opens/closes its OWN position (runner-150bp) via the order
+        //   path below and NEVER touches/reads the parent it mimics (feedback-companion-
+        //   independent-engine). The accounting panel (replay book) stays for reference; the
+        //   REAL forward trades flow to the shadow ledger / TRADE HISTORY.
         {
             auto& gc = omega::gold_befloor_companion();
             // Pre-deploy history: bundled warm-seed CSV + the persisted live dump so the 2h
@@ -1565,8 +1568,35 @@ static void init_engines(const std::string& cfg_path)
             omega::gold_regime().set_h1_sink([](int64_t ts_sec, double close){
                 omega::gold_befloor_companion().on_h1_bar(ts_sec, close);
             });
+            // ── LIVE EXECUTION (S-2026-07-06): AUPOS/AUNEG are REAL independent trading engines,
+            //   not a spreadsheet. Each flavor runs its OWN position through the SAME order path as
+            //   every main engine -> SHADOW today (send_live_order no-ops while g_cfg.mode!="LIVE"),
+            //   LIVE the instant mode flips, zero code change at flip. Checks wired: (1) cost-gate at
+            //   entry, (2) BE-floor adverse-protection neg=0 by construction, (3) shadow-ledger record
+            //   on close -> TRADE HISTORY + shadow equity. One position per flavor, runner-150bp trail
+            //   = the prescribed backtested exit (gold_befloor_ls.py re-confirmed: neg=0, WF both halves).
+            gc.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);          // "" in shadow; broker token in live
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);     // opposite side closes; token=posId (hedging-safe)
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.30, tp_dist_pts, lots, 1.5); // XAU conservative spread
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; handle_closed_trade applies tick_value_multiplier
+                    handle_closed_trade(tr);                                   // -> ledger / shadow equity / TRADE HISTORY
+                });
         }
-        printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) wired: deploy-forward, H1-sink live\n");
+        printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) wired: deploy-forward, H1-sink live, LIVE-EXEC (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
         fflush(stdout);
 
         // ── FX per-pair Pos/Neg BE-floor companion (S-2026-07-06) ────────────
