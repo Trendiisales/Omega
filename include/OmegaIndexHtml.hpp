@@ -760,34 +760,36 @@ setInterval(pollCC,15000);pollCC();
 /* ── GOLD COMPANIONS (AUPOS/AUNEG BE-floor · native C++ · additive, judged STANDALONE) ──
    Fed by pollGold() off /api/gold_companion (gold_companion_state.json, written in-binary by
    omega::gold_befloor_companion — the native C++ port of the retired Mac-cron python executor).
-   Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,flavors:[{name,dir,events,book_pts,
-   book_usd,companions:[{tier,gb_bp,clips,wins,pts,usd}]}]}. neg=0 by construction (BE-floor:
-   stop>=entry long / <=entry short). STANDALONE additive book — NEVER compared to riding WIDE. */
+   HEADLINE = the REAL forward book (fwd_ live-traded clips only; $0 until the first live clip
+   closes forward of deploy). The per-tier replay accounting is under fl.backtest as a labeled
+   reference ONLY (it credits pre-deploy entries -> the fake-$6k artifact; NOT the forward record).
+   Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,bt_desk_pts,bt_desk_usd,flavors:[{name,dir,
+   events,clips,wins,book_pts,book_usd,backtest:{events,book_pts,book_usd,companions:[{tier,gb_bp,
+   clips,wins,pts,usd}]}}]}. neg=0 by construction (BE-floor: stop>=entry long / <=entry short).
+   STANDALONE additive book — NEVER compared to riding WIDE. */
 function drawGold(){var j=window._gold||null;
- var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td>'
-      +'<td class="lbl">gb bp</td><td class="lbl">events</td><td class="lbl">clips</td>'
-      +'<td class="lbl">wins</td><td class="lbl">pts</td><td class="lbl">book($)</td></tr>';
- if(!j||!(j.flavors||[]).length){el('gctab').innerHTML=h+'<tr><td class="l d" colspan="9">no book yet (deploy-forward · $0 until first forward clip)</td></tr>';
+ var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">clips</td>'
+      +'<td class="lbl">wins</td><td class="lbl">pts</td><td class="lbl">forward($)</td>'
+      +'<td class="lbl" title="deploy-forward replay edge — reference only, NOT the forward record">bt edge($)</td></tr>';
+ if(!j||!(j.flavors||[]).length){el('gctab').innerHTML=h+'<tr><td class="l d" colspan="7">no book yet (deploy-forward · $0 until first forward clip)</td></tr>';
   el('gcinfo').textContent='native C++ · shadow · neg=0';return;}
  (j.flavors||[]).forEach(function(fl){
-  var comps=fl.companions||[];var rs=comps.length||1;var first=true;
+  var bt=fl.backtest||{};
   var bcol=(fl.book_usd>0?'var(--grn)':(fl.book_usd<0?'var(--red)':'var(--t2)'));
-  comps.forEach(function(c){
-   h+='<tr>';
-   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+fl.name+'</td>'
-                +'<td class="l" rowspan="'+rs+'">'+fl.dir+'</td>';}
-   h+='<td class="l">'+c.tier+'</td><td class="num">'+c.gb_bp+'</td>';
-   if(first){h+='<td class="num" rowspan="'+rs+'">'+fl.events+'</td>';}
-   h+='<td class="num">'+c.clips+'</td><td class="num">'+c.wins+'</td>'
-     +'<td class="num">'+fmt2(c.pts,2)+'</td>';
-   if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(fl.book_usd))+'</td>';}
-   h+='</tr>';first=false;
-  });
+  h+='<tr><td class="l" style="font-weight:600">'+fl.name+'</td>'
+    +'<td class="l">'+fl.dir+'</td>'
+    +'<td class="num">'+safe(fl.clips)+'</td>'
+    +'<td class="num">'+safe(fl.wins)+'</td>'
+    +'<td class="num">'+fmt2(safe(fl.book_pts),2)+'</td>'
+    +'<td class="num" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(fl.book_usd))+'</td>'
+    +'<td class="num" style="color:var(--t2)" title="backtest replay edge (reference only)">'+fmt$(safe(bt.book_usd))+'</td>'
+    +'</tr>';
  });
  el('gctab').innerHTML=h;
  var dcol=(j.desk_usd>0?'var(--grn)':(j.desk_usd<0?'var(--red)':'var(--t2)'));
- el('gcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(safe(j.desk_usd))
-   +'</span> · lot '+safe(j.lot)+' · '+safe(j.bars)+' H1 bars · deploy-forward · shadow';
+ el('gcinfo').innerHTML='FWD DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(safe(j.desk_usd))
+   +'</span> <span style="color:var(--t2)">(bt edge '+fmt$(safe(j.bt_desk_usd))+')</span> · lot '+safe(j.lot)
+   +' · '+safe(j.bars)+' H1 bars · deploy-forward · shadow';
 }
 function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.flavors||[]).length)window._gold=j;drawGold();}).catch(function(){drawGold();});}

@@ -54,6 +54,7 @@ public:
                                       //   banker 20bp is the tight variant — accounting panel still shows both).
         std::string state_path   = "gold_companion_state.json";       // served by /api/gold_companion
         std::string deploy_path  = "gold_companion_deploy_ts.txt";    // deploy-forward anchor (persisted)
+        std::string book_path    = "gold_companion_book.txt";         // REAL forward book (persists across restarts)
     };
     // (giveback bp, tier label) — operator spec x2: 20 banker, 150 runner.
     struct Tier { double gb_bp; const char* tag; };
@@ -83,6 +84,7 @@ public:
         // persisted deploy-forward anchor: keep the forward book stable across restarts.
         std::ifstream f(cfg_.deploy_path);
         if (f.is_open()) { long long v = 0; if (f >> v) { deploy_ts_ = v; deploy_loaded_ = true; } }
+        load_fwd_book_();   // persisted REAL forward book (cumulative clips/pts per flavor)
     }
 
     const Config& config() const { return cfg_; }
@@ -172,6 +174,14 @@ private:
     LiveLeg live_[2];   // [0] = AUPOS (long), [1] = AUNEG (short)
     static constexpr const char* LEG_ENGINE_(int fi) noexcept { return fi == 0 ? "GoldBeFloorAUPOS" : "GoldBeFloorAUNEG"; }
 
+    // ── REAL forward book: the desk headline. Accumulates ONLY the live-traded clips (forward of
+    //   deploy_ts, one runner position per flavor), identical set to what ledger_fn_ books. This is
+    //   the TRUE forward record — it excludes the replay accounting artifact (a pre-deploy entry
+    //   whose run got credited to a post-deploy close, e.g. the fake $6k). Persisted so it accrues
+    //   across restarts/deploys (in-memory legs reset on restart; closed-clip history must not). ──
+    struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; };
+    FwdBook fwd_[2];
+
     // Incremental mirror of detect_()+book_() on the NEWEST live bar, but instead of only
     // accumulating points it OPENS/CLOSES a real position via the order path. Fires ONLY when:
     //   - callbacks are wired (live main TU; null in backtest TU), and
@@ -226,11 +236,44 @@ private:
         if (fwd) {
             if (!L.token.empty() && close_fn_) close_fn_(cfg_.sym, up, cfg_.lot, px, L.token);
             if (ledger_fn_) ledger_fn_(LEG_ENGINE_(fi), cfg_.sym, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
-            std::printf("[AUGOLD][CLOSE] %s %s entry=%.2f exit=%.2f (%s)\n",
-                        LEG_ENGINE_(fi), up ? "LONG" : "SHORT", L.entry, px, reason);
+            // REAL forward book: raw price-pts booked (same value the ledger records as tr.pnl/size).
+            // BE-floor guarantees p>=0 (trail stop>=entry long / <=entry short; window-flush only fires
+            // when cur is above stop, i.e. still favourable) -> neg=0 holds live, matching accounting.
+            const double p = up ? (px - L.entry) : (L.entry - px);
+            fwd_[fi].pts += p; fwd_[fi].clips += 1; fwd_[fi].wins += (p > 1e-6 ? 1 : 0);
+            save_fwd_book_();
+            std::printf("[AUGOLD][CLOSE] %s %s entry=%.2f exit=%.2f pts=%.2f (%s)\n",
+                        LEG_ENGINE_(fi), up ? "LONG" : "SHORT", L.entry, px, p, reason);
             std::fflush(stdout);
         }
         L.has_entry = false; L.wm = 0; L.token.clear(); L.entry_ts = 0;
+    }
+
+    // ── persist / restore the REAL forward book (sidecar; one line per flavor: "fi pts clips wins").
+    //   Written on every forward close (atomic tmp+rename), loaded once at construction. Keeps the
+    //   desk headline monotonic across restarts without parsing the full shadow ledger CSV (the
+    //   ledger remains the independent record to verify against; this matches it by construction). ──
+    void load_fwd_book_() noexcept {
+        std::ifstream f(cfg_.book_path);
+        if (!f.is_open()) return;
+        int fi = -1; double pts = 0; int clips = 0, wins = 0;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (std::sscanf(line.c_str(), "%d %lf %d %d", &fi, &pts, &clips, &wins) == 4
+                && fi >= 0 && fi < 2) {
+                fwd_[fi].pts = pts; fwd_[fi].clips = clips; fwd_[fi].wins = wins;
+            }
+        }
+    }
+    void save_fwd_book_() const noexcept {
+        const std::string tmp = cfg_.book_path + ".tmp";
+        { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          for (int fi = 0; fi < 2; ++fi)
+              f << fi << " " << fwd_[fi].pts << " " << fwd_[fi].clips << " " << fwd_[fi].wins << "\n"; }
+#if defined(_WIN32)
+        std::remove(cfg_.book_path.c_str());
+#endif
+        std::rename(tmp.c_str(), cfg_.book_path.c_str());
     }
 
     void ingest_(int64_t ts, double close) noexcept { ts_.push_back(ts); c_.push_back(close); }
@@ -331,7 +374,11 @@ private:
         o.precision(prec); o << std::fixed << "\"" << k << "\":" << v;
     }
 
-    // ── desk state JSON: mirror tools/gold_befloor_companion.py build_state schema ──
+    // ── desk state JSON. HEADLINE = the REAL forward book (fwd_[fi], the live-traded clips only);
+    //   the replay accounting book (detect_+book_, per-tier) is retained under "backtest" as a
+    //   labeled reference. This is the fix for the fake-$6k artifact: the panel's desk_usd is now
+    //   the true forward record ($0 until the first live clip closes), NOT the replay sum that
+    //   credited a pre-deploy entry's whole run to a post-deploy close. Verify vs the shadow ledger. ──
     std::string build_state_() const {
         const double dpp = cfg_.dpp_per_lot * cfg_.lot;
         const Tier tiers[2] = { {20.0, "banker"}, {150.0, "runner"} };
@@ -340,15 +387,19 @@ private:
 
         std::ostringstream o; o << std::fixed;
         const int64_t last_ts = ts_.empty() ? 0 : ts_.back();
-        double desk_pts = 0.0;
+        double desk_pts = 0.0, bt_desk_pts = 0.0;
         std::ostringstream fl;
         for (int fi = 0; fi < 2; ++fi) {
+            // REAL forward book (headline)
+            const double fwd_pts = fwd_[fi].pts;
+            desk_pts += fwd_pts;
+            // replay accounting book (backtest reference), per-tier
             const auto trades = detect_(flavors[fi].is_long);
-            double book_pts = 0.0;
+            double bt_pts = 0.0;
             std::ostringstream comps;
             for (int ti = 0; ti < 2; ++ti) {
                 const BookRes b = book_(trades, flavors[fi].is_long, tiers[ti].gb_bp);
-                book_pts += b.pts;
+                bt_pts += b.pts;
                 if (ti) comps << ",";
                 comps.precision(0); comps << std::fixed;
                 comps << "{\"tier\":\"" << tiers[ti].tag << "\",\"gb_bp\":" << tiers[ti].gb_bp
@@ -356,14 +407,19 @@ private:
                 comps.precision(2); comps << "\"pts\":" << b.pts << ",";
                 comps.precision(0); comps << "\"usd\":" << (b.pts * dpp) << "}";
             }
-            desk_pts += book_pts;
+            bt_desk_pts += bt_pts;
             if (fi) fl << ",";
             fl.precision(0); fl << std::fixed;
             fl << "{\"name\":\"" << flavors[fi].name << "\",\"dir\":\"" << flavors[fi].dir
-               << "\",\"events\":" << trades.size() << ",";
-            fl.precision(2); fl << "\"book_pts\":" << book_pts << ",";
-            fl.precision(0); fl << "\"book_usd\":" << (book_pts * dpp) << ",";
-            fl << "\"companions\":[" << comps.str() << "]}";
+               << "\",\"events\":" << fwd_[fi].clips << ",\"clips\":" << fwd_[fi].clips
+               << ",\"wins\":" << fwd_[fi].wins << ",";
+            fl.precision(2); fl << "\"book_pts\":" << fwd_pts << ",";
+            fl.precision(0); fl << "\"book_usd\":" << (fwd_pts * dpp) << ",";
+            // labeled backtest-view (the replay edge; NOT the forward record)
+            fl << "\"backtest\":{\"events\":" << trades.size() << ",";
+            fl.precision(2); fl << "\"book_pts\":" << bt_pts << ",";
+            fl.precision(0); fl << "\"book_usd\":" << (bt_pts * dpp)
+               << ",\"companions\":[" << comps.str() << "]}}";
         }
         o << "{\"ts\":" << (long long)last_ts << ",";
         o.precision(2); o << "\"lot\":" << cfg_.lot << ",\"dpp\":" << dpp << ",";
@@ -371,6 +427,8 @@ private:
           << "\"engine\":\"gold-befloor-AUPOS-AUNEG\",\"deploy_ts\":" << (long long)deploy_ts_ << ",";
         o.precision(2); o << "\"desk_pts\":" << desk_pts << ",";
         o.precision(0); o << "\"desk_usd\":" << (desk_pts * dpp) << ",";
+        o.precision(2); o << "\"bt_desk_pts\":" << bt_desk_pts << ",";
+        o.precision(0); o << "\"bt_desk_usd\":" << (bt_desk_pts * dpp) << ",";
         o << "\"flavors\":[" << fl.str() << "]}";
         return o.str();
     }
