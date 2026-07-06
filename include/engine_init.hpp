@@ -1856,29 +1856,37 @@ static void init_engines(const std::string& cfg_path)
         //   are PROVISIONAL family defaults — per-symbol backtest on ~/Tick H1 OWED before LIVE.
         {
             auto& jr = omega::jump_rider_book();
-            // {tag, live_sym, W, thr, rt_cost_bp, warmup CSV}  (rt = same real costs as the
-            // BE-floor books: gold/xag 6, usoil 8, FX per pair 4/3.5/3/6/7, index 4/3/2/2)
-            struct JCfg { const char* tag; const char* live; int W; double thr; double rt; const char* csv; };
+            // {tag, live_sym, W, thr, rt_cost_bp, be_arm_mult, warmup CSV}
+            //   rt = same real costs as the BE-floor books. Settings LOCKED from the S-2026-07-07
+            //   walk-forward sweep (backtest/rider_sweep_wf.py, IS=first 60% / OOS=last 40%,
+            //   plateau-checked; Mac Tick run + 9y Binance run — outputs/RIDER_SWEEP_WF_2026-07-07.txt):
+            //   GO    : XAUUSD W2/0.75% BE05 (Tick 2022-23: IS +574bp / OOS +364bp, plateau ok)
+            //   WATCH : USDJPY W2/0.30% (OOS + on all exits), GER40 W4/0.50% BE10 (OOS + top-3,
+            //           184d only), NAS100 W4/0.75% BE05 (plateau ok, OOS +123), US500 W2/0.75%
+            //   FAILED WF (kept SHADOW at family defaults for forward baseline only — do NOT
+            //   promote): XAGUSD, USOIL, EURUSD, GBPUSD, AUDUSD, NZDUSD, DJ30.
+            //   be_arm_mult: BE-ratchet arm = mult x thr (0.5 = BE05, 1.0 = BE10).
+            struct JCfg { const char* tag; const char* live; int W; double thr; double rt; double bam; const char* csv; };
             static const JCfg JR[] = {
-                {"XAUUSD", "XAUUSD",  2, 0.010, 6.0, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"},
-                {"XAGUSD", "XAGUSD",  2, 0.010, 6.0, "phase1/signal_discovery/warmup_XAGUSD_H1.csv"},
-                {"USOIL",  "USOIL.F", 2, 0.010, 8.0, "phase1/signal_discovery/warmup_USOIL_H1.csv"},
-                {"EURUSD", "EURUSD",  2, 0.003, 4.0, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
-                {"GBPUSD", "GBPUSD",  2, 0.003, 3.5, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
-                {"USDJPY", "USDJPY",  2, 0.003, 3.0, "phase1/signal_discovery/warmup_USDJPY_H1.csv"},
-                {"AUDUSD", "AUDUSD",  2, 0.003, 6.0, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
-                {"NZDUSD", "NZDUSD",  2, 0.003, 7.0, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
-                {"US500",  "US500.F", 2, 0.003, 4.0, "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  2, 0.003, 3.0, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
-                {"DJ30",   "DJ30.F",  2, 0.003, 2.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
-                {"GER40",  "GER40",   2, 0.003, 2.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
+                {"XAUUSD", "XAUUSD",  2, 0.0075, 6.0, 0.5, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"},
+                {"XAGUSD", "XAGUSD",  2, 0.010,  6.0, 0.5, "phase1/signal_discovery/warmup_XAGUSD_H1.csv"},
+                {"USOIL",  "USOIL.F", 2, 0.010,  8.0, 0.5, "phase1/signal_discovery/warmup_USOIL_H1.csv"},
+                {"EURUSD", "EURUSD",  2, 0.003,  4.0, 0.5, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
+                {"GBPUSD", "GBPUSD",  2, 0.003,  3.5, 0.5, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
+                {"USDJPY", "USDJPY",  2, 0.003,  3.0, 0.5, "phase1/signal_discovery/warmup_USDJPY_H1.csv"},
+                {"AUDUSD", "AUDUSD",  2, 0.003,  6.0, 0.5, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
+                {"NZDUSD", "NZDUSD",  2, 0.003,  7.0, 0.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
+                {"US500",  "US500.F", 2, 0.0075, 4.0, 0.5, "phase1/signal_discovery/warmup_US500_H1.csv"},
+                {"NAS100", "NAS100",  4, 0.0075, 3.0, 0.5, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                {"DJ30",   "DJ30.F",  2, 0.003,  2.0, 0.5, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
+                {"GER40",  "GER40",   4, 0.005,  2.0, 1.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
             };
             for (const auto& j : JR) {
                 omega::JumpRiderSym::Config c;
                 c.sym = j.tag; c.live_sym = j.live; c.W = j.W; c.thr = j.thr;
                 c.rt_cost_bp = j.rt;
-                c.be_arm = j.thr * 0.5;      // BE-ratchet arms at half a jump (provisional)
-                c.hard_stop = j.thr * 2.0;   // catastrophe floor at two jumps adverse (provisional)
+                c.be_arm = j.thr * j.bam;    // BE-ratchet arm (0.5x = BE05 / 1.0x = BE10, per sweep)
+                c.hard_stop = j.thr * 2.0;   // catastrophe floor at two jumps adverse
                 jr.add(std::move(c));
             }
             size_t jseeded = 0;

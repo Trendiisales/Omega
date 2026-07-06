@@ -30,6 +30,69 @@ diff -ruN a/include/crypto/StallCompanion.hpp b/include/crypto/StallCompanion.hp
      static std::vector<std::string> split_(const std::string& s, char d) {
          std::vector<std::string> out; std::string cur;
          for (char ch : s) { if (ch == d) { out.push_back(cur); cur.clear(); } else cur += ch; }
+diff -ruN a/src/ibkrcrypto_bt.cpp b/src/ibkrcrypto_bt.cpp
+--- a/src/ibkrcrypto_bt.cpp	2026-07-06 12:38:48.939408183 +0000
++++ b/src/ibkrcrypto_bt.cpp	2026-07-06 13:59:20.539764153 +0000
+@@ -281,6 +281,14 @@
+ // recent bar whose |W-bar jump| >= thr decides direction (mirrors the parent
+ // ride-to-symmetric-flip; DonchHold-style stateless hold). W=24 (24x1h) per parent.
+ struct UpJump : Strat<UpJump>{ double thr; int W; UpJump(double t,int w=24):thr(t),W(w){}
++    // name form "UpJump<pct>[x<Wbars>]": UpJump2 = 2%/24bars (legacy), UpJump4x48 = 4%/48bars
++    // (S-2026-07-07 walk-forward sweep verdict: majors ride the BIG slow jump, not the 2%/24h one).
++    static UpJump parse(const std::string& st){
++        double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05;
++        int w=24; size_t x=st.find('x');
++        if(x!=std::string::npos){ int v=atoi(st.c_str()+x+1); if(v>0)w=v; }
++        return UpJump(thr,w);
++    }
+     int sig(const Series& s,int i)const{ if(i<W)return 0;
+         for(int k=i;k>=W;--k){ double j=s.c[k]/s.c[k-W]-1.0;
+             if(j>= thr) return 1;      // most recent event = up-jump -> long
+@@ -489,7 +497,7 @@
+         std::string st=(i+1<argc)?argv[i+1]:"UpJump8";
+         Cfg e=cfg; e.vt_target=0.02;   // .vt sizing (timing identical to non-vt)
+         int64_t F0=1483228800000LL, T1=1799999999000LL;
+-        if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; run_bt(s,e,UpJump(thr),F0,T1); }
++        if(st.rfind("UpJump",0)==0){ run_bt(s,e,UpJump::parse(st),F0,T1); }
+         else if(st=="TSMom50") run_bt(s,e,TSMom(50),F0,T1);
+         return 0;
+     }
+@@ -505,7 +513,7 @@
+             if(st=="TSMom50") run_dollars(w,s,d,TSMom(50),mult,fee,a,b);
+             else if(st=="IBS") run_dollars(w,s,d,IBS(0.15,0.85),mult,fee,a,b);
+             else if(st=="Donch40") run_dollars(w,s,d,DonchHold(40),mult,fee,a,b);
+-            else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; run_dollars(w,s,d,UpJump(thr),mult,fee,a,b); }
++            else if(st.rfind("UpJump",0)==0){ run_dollars(w,s,d,UpJump::parse(st),mult,fee,a,b); }
+         };
+         go("LAST_6M",S6,T1); go("FULL_17-26",F0,T1);
+         return 0;
+@@ -551,7 +559,7 @@
+         else if(st=="Roc"){ Roc S(20,0.0); t=S.signal(s,N-1); ex=flip(S,t); }
+         else if(st=="TSMom20"){ TSMom S(20); t=S.signal(s,N-1); ex=flip(S,t); }
+         else if(st=="Donch20"){ DonchHold S(20); t=S.signal(s,N-1); ex=flip(S,t); }
+-        else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; UpJump S(thr); t=S.signal(s,N-1); ex=flip(S,t); }
++        else if(st.rfind("UpJump",0)==0){ UpJump S=UpJump::parse(st); t=S.signal(s,N-1); ex=flip(S,t); }
+         // REGIME GATE (S-2026-06-30): honour REGIME_MA in the live --signal path. run_bt
+         // already gates; --signal previously did NOT -> the live shadow legs ran ungated.
+         // Per-symbol close>SMA(regime_ma): long only above the MA, short only below. 0=off.
+@@ -587,7 +595,7 @@
+         else if(st=="Roc") dump_equity(s,e,Roc(20,0.0),T0,T1);
+         else if(st=="RSIrev") dump_equity(s,e,RSIrev(14,30,70),T0,T1);
+         else if(st=="Regime") dump_equity(s,e,Regime(20,0.40,0.25),T0,T1);
+-        else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; dump_equity(s,e,UpJump(thr),T0,T1); }
++        else if(st.rfind("UpJump",0)==0){ dump_equity(s,e,UpJump::parse(st),T0,T1); }
+         return 0;
+     }
+     // --postrace STRAT [FROM_MS TO_MS] : per-bar `ts,pos,cumret` (whole-month book reconstruction)
+@@ -608,7 +616,7 @@
+         else if(st=="Roc") dump_postrace(s,e,Roc(20,0.0),T0,T1);
+         else if(st=="RSIrev") dump_postrace(s,e,RSIrev(14,30,70),T0,T1);
+         else if(st=="Regime") dump_postrace(s,e,Regime(20,0.40,0.25),T0,T1);
+-        else if(st.rfind("UpJump",0)==0){ double thr=atof(st.c_str()+6)/100.0; if(thr<=0)thr=0.05; dump_postrace(s,e,UpJump(thr),T0,T1); }
++        else if(st.rfind("UpJump",0)==0){ dump_postrace(s,e,UpJump::parse(st),T0,T1); }
+         return 0;
+     }
+     std::printf("--- price strategies (carry=%.0f%%/yr modelled as daily TFA, LONG-ONLY / shorts OFF) ---\n",100*cfg.annual_carry);
 diff -ruN a/src/live_mark.cpp b/src/live_mark.cpp
 --- a/src/live_mark.cpp	2026-07-06 12:38:48.940890256 +0000
 +++ b/src/live_mark.cpp	2026-07-06 12:43:04.231492777 +0000
@@ -170,8 +233,30 @@ diff -ruN a/src/shadow_refresh.cpp b/src/shadow_refresh.cpp
                  ntrades, tot_unreal_usd, tot_unreal, tot_real_usd);
 diff -ruN a/src/shadow_refresh_intraday.cpp b/src/shadow_refresh_intraday.cpp
 --- a/src/shadow_refresh_intraday.cpp	2026-07-06 12:38:48.940392122 +0000
-+++ b/src/shadow_refresh_intraday.cpp	2026-07-06 12:42:31.984441787 +0000
-@@ -313,11 +313,20 @@
++++ b/src/shadow_refresh_intraday.cpp	2026-07-06 13:59:20.540482930 +0000
+@@ -97,12 +97,15 @@
+      {"sol_emax_1h","SOL",S1,H1, 2,"EMAx",   5.00,"SOL fut 1h (ladder ~2bps)","Trend EMAx 1h"},
+      {"sol_donch40_1h","SOL",S1,H1, 2,"Donch40",5.00,"SOL fut 1h (ladder ~2bps; QSOL pending)","Breakout Donch40 1h"},
+      // --- UPJUMP companion parents (S-2026-07-03, CryptoUpJumpCompanion) ---
+-     // UNIFORM 2% TRIGGER (S-2026-07-06, operator hard rule feedback-test-operator-spec-before-verdict):
+-     // ALL cryptos trade the SAME way -- a +2% up-jump (covers 0.20% RT cost) arms long + rides to
+-     // stall/reversal, ×2 companion. NO per-symbol 5/8/12% thresholds. Do NOT re-tier these per coin.
+-     {"btc_upjump","BTC",B1,H1,18,"UpJump2", 1.0,"BTC spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+-     {"eth_upjump","ETH",E1,H1,18,"UpJump2", 1.0,"ETH spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+-     {"sol_upjump","SOL",S1,H1,18,"UpJump2", 1.0,"SOL spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
++     // MAJORS RE-LOCKED S-2026-07-07 (backtest/rider_sweep_wf.py, walk-forward IS/OOS + plateau,
++     // real 23-25bp RT, run on BOTH the 9y Binance archive and the live 5.5y CSVs): the uniform
++     // 2%/24h trigger is NET NEGATIVE across the full history; the robust plateau is the BIG slow
++     // jump -- 48-bar window, BTC/ETH 4%, SOL 7% (per-coin thr reflects vol, mechanism identical).
++     // OOS nets: BTC +15.8k bp (9y) / +3.5-4k (5.5y), ETH +4.8-11.7k, SOL +1.6-2.3k. The alt legs
++     // below keep UpJump2 UNTESTED at the new definition -- re-sweep before promoting any of them.
++     {"btc_upjump","BTC",B1,H1,18,"UpJump4x48", 1.0,"BTC spot up-jump (companion parent, 0.20% RT)","UpJump 4%x48h 1h"},
++     {"eth_upjump","ETH",E1,H1,18,"UpJump4x48", 1.0,"ETH spot up-jump (companion parent, 0.20% RT)","UpJump 4%x48h 1h"},
++     {"sol_upjump","SOL",S1,H1,18,"UpJump7x48", 1.0,"SOL spot up-jump (companion parent, 0.20% RT)","UpJump 7%x48h 1h"},
+      {"doge_upjump","DOGE",D("DOGE","1h"),H1,18,"UpJump2",1.0,"DOGE spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+      {"ada_upjump","ADA",D("ADA","1h"),H1,18,"UpJump2", 1.0,"ADA spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+      {"trx_upjump","TRX",D("TRX","1h"),H1,18,"UpJump2", 1.0,"TRX spot up-jump (companion parent, 0.20% RT)","UpJump 2% 1h"},
+@@ -313,11 +316,20 @@
          double cum_usd = p.value("realized_usd", 0.0);
          auto cm = cmap[L.key]; double corr = cm.first, scale = cm.second;
          long qty = qty_for((t != 0 && epx > 0) ? epx : px, L.mult, scale);
@@ -194,7 +279,7 @@ diff -ruN a/src/shadow_refresh_intraday.cpp b/src/shadow_refresh_intraday.cpp
                  double r_usd = pos0 * (px - epx) * L.mult * q0
                                 - (L.cost + 2) / 10000.0 * px * L.mult * q0; cum_usd += r_usd;
                  json ce = {
-@@ -339,19 +348,20 @@
+@@ -339,19 +351,20 @@
              }
              if (t != 0) {
                  epx = px; ets = json(now); qty = qty_for(epx, L.mult, scale);
@@ -217,7 +302,7 @@ diff -ruN a/src/shadow_refresh_intraday.cpp b/src/shadow_refresh_intraday.cpp
              {"tf_ms", L.tf_ms}, {"cost_bps", L.cost},
              {"corr", round_n(corr, 2)}, {"downsized", scale < 1.0 && t != 0},
              {"notional", t ? round_n(px * L.mult * qty, 0) : 0},
-@@ -406,9 +416,10 @@
+@@ -406,9 +419,10 @@
          {"n_open", n_open_state}, {"killed", KILLED},
          {"slots", slots}, {"closed", closed}
      };
