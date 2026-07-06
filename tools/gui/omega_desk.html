@@ -764,8 +764,8 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
  var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
       +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">TIGHT</td>'
       +'<td class="lbl">WIDE</td><td class="lbl">cap</td><td class="lbl">reclip</td>'
-      +'<td class="lbl">clips</td><td class="lbl">bank(bp · $)</td></tr>';
- var narm=0,ntot=0,totclips=0,totbank=0;
+      +'<td class="lbl">clips</td><td class="lbl">bank REAL(bp · $)</td></tr>';
+ var narm=0,ntot=0,totclips=0,totbank=0,totmodel=0;
  CC_ROSTER.forEach(function(r){
   /* PARENT engine line (the crypto trend leg it mimics) */
   var trig=r.w?' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'% · rides WIDE to flip (parent)</span>':' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span>';
@@ -774,13 +774,20 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   if(r.mode==='parent-only'){
    h+='<tr style="opacity:.5"><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">&#8627; parent-only — no companion</td></tr>';return;}
   ntot++;var s=live[r.sym]||{};var armed=!!s.armed;if(armed)narm++;
-  totclips+=safe(s.clips);totbank+=safe(s.bank_bp);
+  /* S-2026-07-07f: fold the REAL column ONLY (bank_bp = MODEL-fill, proven fake by the
+     befloor-family real-fill audit — fill-at-floor + max(0,.) + zero cost). bank_bp_real is
+     the honest worse-of-fill column emitted by josgp1 after the dual-column fix; until that
+     ships/accrues, the honest fold is 0 (feedback-no-backtest-in-live-gui: $0 is the honest
+     number). Model bank stays visible as a dim reference, never in the PnL. */
+  totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);totmodel+=safe(s.bank_bp);
   var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
-  var bkv=safe(s.bank_bp);
-  var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+' bp <span class="d">$'+fmt2(bpUsd(s.bank_bp),2)+'</span></span>';
+  var bkv=safe(s.bank_bp_real);
+  var bk =(s.bank_bp_real===undefined&&s.bank_bp===undefined)?'<span class="d">—</span>'
+    :'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>'
+     +'<span class="d" style="font-size:9px"> · model '+fmt2(safe(s.bank_bp),1)+'</span>';
   /* companion BOOK aggregate sub-row (2 base tiers + self-funding ladder cap5) */
   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (tiered ladder)</td><td class="l">'+st+'</td>'
     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+r.tight+'</td>'
@@ -797,7 +804,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   });
  });
  el('cctab').innerHTML=h;
- el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank REAL <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span><span class="d" style="font-size:9px"> · model '+fmt2(totmodel,1)+' bp (not folded)</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
  /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
     Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both so it shows on push. */
