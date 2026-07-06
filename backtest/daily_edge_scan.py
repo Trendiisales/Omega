@@ -146,9 +146,13 @@ def main():
         except FileNotFoundError: print(f"{sym:9} no data")
     if CDATA:
         for sym, cost, short in CRYPTO:
+            files = sorted(glob.glob(os.path.join(CDATA, sym + "-1h-*.csv")))   # Binance Vision monthly
+            if not files:
+                files = sorted(glob.glob(os.path.join(CDATA, sym + "*1h*.csv")))  # live layout BTCUSDT_1h.csv
             rows = {}
-            for fp in sorted(glob.glob(os.path.join(CDATA, sym + "-1h-*.csv"))): load_csv(fp, rows)
+            for fp in files: load_csv(fp, rows)
             if rows: scan(sym, rows, cost, short)
+            else: print(f"{sym:9} no data under CDATA")
 
 if __name__ == "__main__":
     main()
