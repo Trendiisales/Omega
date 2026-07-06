@@ -39,6 +39,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <functional>
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -55,16 +56,35 @@ public:
         double lot          = 1.0;
         std::string deploy_path;          // per-pair persisted deploy-forward anchor
         std::string bars_path;            // per-pair persisted LIVE forward H1 bars (survives restart)
+        std::string book_path;            // per-pair persisted REAL forward book (2 runners x 2 dirs)
     };
     struct Tier { double gb_bp; const char* tag; };
+
+    // ── LIVE EXECUTION WIRING — makes <PAIR>Pos/<PAIR>Neg REAL trading engines (2 runners each).
+    //   Identical contract to GoldBeFloorCompanion: set ONLY in the live main TU; null in backtest
+    //   TU -> live_step_ short-circuits (pure accounting, canary unaffected). Each runner opens its
+    //   OWN position via the order path (SHADOW today: send_live_order no-ops while mode!=LIVE; LIVE
+    //   on flip) and records EACH close to the shadow ledger -> ENGINE LEDGER + headline PnL. ──
+    using OpenFn   = std::function<std::string(const std::string& sym, bool is_long, double lots, double px)>;
+    using CloseFn  = std::function<void(const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token)>;
+    using GateFn   = std::function<bool(const std::string& sym, double tp_dist_pts, double lots)>;
+    using LedgerFn = std::function<void(const std::string& engine, const std::string& sym, bool is_long,
+                                        double entry_px, double exit_px, double lots,
+                                        int64_t entry_ts, int64_t exit_ts, const char* reason)>;
+    void set_exec(OpenFn o, CloseFn c, GateFn g, LedgerFn l) noexcept {
+        open_fn_ = std::move(o); close_fn_ = std::move(c); gate_fn_ = std::move(g); ledger_fn_ = std::move(l);
+    }
 
     explicit FxBeFloorPair(Config c) : cfg_(std::move(c)) {
         if (cfg_.deploy_path.empty())
             cfg_.deploy_path = "fx_companion_" + lower_(cfg_.pair) + "_deploy_ts.txt";
         if (cfg_.bars_path.empty())
             cfg_.bars_path = "fx_companion_" + lower_(cfg_.pair) + "_h1.csv";
+        if (cfg_.book_path.empty())
+            cfg_.book_path = "fx_companion_" + lower_(cfg_.pair) + "_book.txt";
         std::ifstream f(cfg_.deploy_path);
         if (f.is_open()) { long long v = 0; if (f >> v) { deploy_ts_ = v; deploy_loaded_ = true; } }
+        load_fwd_book_();
     }
 
     const std::string& pair() const { return cfg_.pair; }
@@ -106,6 +126,7 @@ public:
         if (!ts_.empty() && ts_sec <= ts_.back()) return;   // monotonic live append only
         ingest_(ts_sec, close);
         append_dump_(ts_sec, close);   // PERSIST the forward bar so the book survives restart
+        live_step_(ts_sec);            // fire real (shadow/live-gated) orders on live BE-floor transitions
     }
 
     // Reload persisted LIVE forward bars (written by on_h1_bar) from the cwd dump CSV.
@@ -178,6 +199,112 @@ private:
 
     struct Trade { int ei; int xi; };
     struct BookRes { double pct = 0.0; int clips = 0; int wins = 0; };
+
+    // ── live execution — TWO runner legs per direction (operator spec: 2 runners), BE-floored
+    //   (arm only once price covers cost be_bp; trail stop pinned >= entry long / <= entry short ->
+    //   exit at stall/reversal keeping profit; neg=0 by construction). r20 tight + r150 wide. Each
+    //   runner is its OWN position -> OWN ledger row -> shows in PnL, exactly like every main engine. ──
+    static constexpr int    NT_ = 2;
+    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0 };
+    OpenFn   open_fn_;
+    CloseFn  close_fn_;
+    GateFn   gate_fn_;
+    LedgerFn ledger_fn_;
+    bool     win_[2] = { false, false };                 // parent 2h window per direction (0=Pos/long,1=Neg/short)
+    struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
+    LiveLeg live_[2][NT_];
+    struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; };
+    FwdBook  fwd_[2][NT_];
+    std::string leg_engine_(int fi, int ti) const {
+        return cfg_.pair + (fi == 0 ? "Pos" : "Neg") + (ti == 0 ? "_r20" : "_r150");
+    }
+
+    // Incremental live BE-floor state machine on the NEWEST bar (mirrors GoldBeFloorCompanion).
+    void live_step_(int64_t ts_sec) noexcept {
+        if (!open_fn_) return;                               // backtest TU / not wired: pure accounting
+        const int N = (int)c_.size(); const int W = cfg_.W;
+        if (N <= W) return;
+        const bool   fwd = ts_sec > deploy_ts_;
+        const double cur = c_[N - 1];
+        const double j   = c_[N - 1] / c_[N - 1 - W] - 1.0;
+        const double thr = cfg_.thr, be = cfg_.be_bp;
+        for (int fi = 0; fi < 2; ++fi) {
+            const bool up = (fi == 0);
+            const bool enter = up ? (j >=  thr) : (j <= -thr);
+            const bool exit  = up ? (j <= -thr) : (j >=  thr);
+            if (!win_[fi] && enter) {
+                win_[fi] = true;
+                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; L.has_entry = false; L.wm = 0; L.ref = cur; }
+            }
+            for (int ti = 0; ti < NT_ && win_[fi]; ++ti) {
+                LiveLeg& L = live_[fi][ti];
+                const double gb = LIVE_GB_[ti];
+                if (!L.has_entry) {
+                    const bool cond = up ? ((cur / L.ref - 1.0) * 1e4 >= be) : ((1.0 - cur / L.ref) * 1e4 >= be);
+                    if (cond) {
+                        const double tp_dist_pts = cur * (gb / 1e4);
+                        const bool viable = !gate_fn_ || gate_fn_(cfg_.pair, tp_dist_pts, cfg_.lot);
+                        if (viable) {
+                            L.entry = cur; L.wm = cur; L.has_entry = true; L.entry_ts = ts_sec;
+                            if (fwd) {
+                                L.token = open_fn_(cfg_.pair, up, cfg_.lot, cur);
+                                std::printf("[AUFX][OPEN] %s %s @%.5f lot=%.2f tok=%s\n",
+                                            leg_engine_(fi, ti).c_str(), up ? "LONG" : "SHORT", cur, cfg_.lot, L.token.c_str());
+                                std::fflush(stdout);
+                            }
+                        }
+                    }
+                } else {
+                    double stop; bool hit;
+                    if (up) { if (cur > L.wm) L.wm = cur; stop = std::max(L.entry, L.wm * (1.0 - gb / 1e4)); hit = (cur <= stop); }
+                    else    { if (cur < L.wm) L.wm = cur; stop = std::min(L.entry, L.wm * (1.0 + gb / 1e4)); hit = (cur >= stop); }
+                    if (hit) { close_leg_(fi, ti, up, stop, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
+                }
+            }
+            if (win_[fi] && exit) {
+                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; if (L.has_entry) close_leg_(fi, ti, up, cur, ts_sec, fwd, "WINDOW_EXIT"); }
+                win_[fi] = false;
+            }
+        }
+    }
+
+    void close_leg_(int fi, int ti, bool up, double px, int64_t ts_sec, bool fwd, const char* reason) noexcept {
+        LiveLeg& L = live_[fi][ti];
+        if (fwd) {
+            if (!L.token.empty() && close_fn_) close_fn_(cfg_.pair, up, cfg_.lot, px, L.token);
+            if (ledger_fn_) ledger_fn_(leg_engine_(fi, ti), cfg_.pair, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
+            const double p = up ? (px - L.entry) : (L.entry - px);   // raw price-pts; BE-floor -> p>=0 (neg=0)
+            fwd_[fi][ti].pts += p; fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (p > 1e-6 ? 1 : 0);
+            save_fwd_book_();
+            std::printf("[AUFX][CLOSE] %s %s entry=%.5f exit=%.5f pts=%.5f (%s)\n",
+                        leg_engine_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, px, p, reason);
+            std::fflush(stdout);
+        }
+        L.has_entry = false; L.wm = 0; L.token.clear(); L.entry_ts = 0;
+    }
+
+    void load_fwd_book_() noexcept {
+        std::ifstream f(cfg_.book_path);
+        if (!f.is_open()) return;
+        int fi = -1, ti = -1; double pts = 0; int clips = 0, wins = 0;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (std::sscanf(line.c_str(), "%d %d %lf %d %d", &fi, &ti, &pts, &clips, &wins) == 5
+                && fi >= 0 && fi < 2 && ti >= 0 && ti < NT_) {
+                fwd_[fi][ti].pts = pts; fwd_[fi][ti].clips = clips; fwd_[fi][ti].wins = wins;
+            }
+        }
+    }
+    void save_fwd_book_() const noexcept {
+        const std::string tmp = cfg_.book_path + ".tmp";
+        { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti)
+              f << fi << " " << ti << " " << fwd_[fi][ti].pts << " " << fwd_[fi][ti].clips << " " << fwd_[fi][ti].wins << "\n"; }
+#if defined(_WIN32)
+        std::remove(cfg_.book_path.c_str());
+#endif
+        std::rename(tmp.c_str(), cfg_.book_path.c_str());
+    }
 
     void ingest_(int64_t ts, double close) noexcept { ts_.push_back(ts); c_.push_back(close); }
     // Append one live forward bar to the persist CSV (ts_sec,close). Append-only; reloaded
@@ -292,6 +419,12 @@ public:
     // Reload every pair's persisted LIVE forward bars (call AFTER warmup seed, BEFORE finalize_all)
     // so the book is restored across restarts. Returns total forward bars restored.
     size_t seed_dumps_all() { size_t n = 0; for (auto& p : pairs_) n += p.seed_dump(); return n; }
+    // Wire the live order path into EVERY pair (call after add(), before live). Makes each
+    // <PAIR>Pos/<PAIR>Neg a real 2-runner engine -> trades flow to the shadow ledger + PnL.
+    void set_exec(FxBeFloorPair::OpenFn o, FxBeFloorPair::CloseFn c,
+                  FxBeFloorPair::GateFn g, FxBeFloorPair::LedgerFn l) {
+        for (auto& p : pairs_) p.set_exec(o, c, g, l);
+    }
     void finalize_all() { for (auto& p : pairs_) p.finalize_seed(); recompute_and_write(); }
 
     // LIVE: one closed H1 bar for `pair`. Rewrites the aggregate.

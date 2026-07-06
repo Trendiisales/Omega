@@ -165,22 +165,32 @@ private:
     int64_t deploy_ts_ = 0;
     bool    deploy_loaded_ = false;
 
-    // ── live execution state (one open position per flavor; null callbacks => inert) ──
+    // ── live execution state — TWO runner legs per flavor (operator spec: 2 runners, not 1) ──
+    //   Both legs are BE-floored: they arm ONLY once price covers cost (be_bp) and the trail stop is
+    //   pinned >= entry (long) / <= entry (short), so each exits at a stall/reversal keeping profit —
+    //   neg=0 by construction (the operator's definitive test: they cannot make a loss). The two
+    //   runners differ only in trail giveback: r20 (tight, banks fast) + r150 (wide, rides). Each is
+    //   its OWN independent position through the order path -> its OWN ledger row -> shows in PnL.
+    static constexpr int    NT_ = 2;                       // runners per flavor
+    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0 };
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
     LedgerFn ledger_fn_;
-    struct LiveLeg { bool win = false, has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
-    LiveLeg live_[2];   // [0] = AUPOS (long), [1] = AUNEG (short)
-    static constexpr const char* LEG_ENGINE_(int fi) noexcept { return fi == 0 ? "GoldBeFloorAUPOS" : "GoldBeFloorAUNEG"; }
+    bool     win_[2] = { false, false };                   // parent 2h window, per flavor (shared by both runners)
+    struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
+    LiveLeg live_[2][NT_];   // [flavor 0=AUPOS/long, 1=AUNEG/short][runner 0=r20, 1=r150]
+    static std::string LEG_ENGINE_(int fi, int ti) {
+        return std::string(fi == 0 ? "GoldBeFloorAUPOS" : "GoldBeFloorAUNEG") + (ti == 0 ? "_r20" : "_r150");
+    }
 
     // ── REAL forward book: the desk headline. Accumulates ONLY the live-traded clips (forward of
-    //   deploy_ts, one runner position per flavor), identical set to what ledger_fn_ books. This is
+    //   deploy_ts, the 2 runner positions per flavor), identical set to what ledger_fn_ books. This is
     //   the TRUE forward record — it excludes the replay accounting artifact (a pre-deploy entry
     //   whose run got credited to a post-deploy close, e.g. the fake $6k). Persisted so it accrues
     //   across restarts/deploys (in-memory legs reset on restart; closed-clip history must not). ──
     struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; };
-    FwdBook fwd_[2];
+    FwdBook fwd_[2][NT_];
 
     // Incremental mirror of detect_()+book_() on the NEWEST live bar, but instead of only
     // accumulating points it OPENS/CLOSES a real position via the order path. Fires ONLY when:
@@ -195,55 +205,61 @@ private:
         const bool   fwd = ts_sec > deploy_ts_;                  // never act on replay / seed-overlap bars
         const double cur = c_[N - 1];
         const double j   = c_[N - 1] / c_[N - 1 - W] - 1.0;
-        const double thr = cfg_.thr, be = cfg_.be_bp, gb = cfg_.live_gb_bp;
+        const double thr = cfg_.thr, be = cfg_.be_bp;
         for (int fi = 0; fi < 2; ++fi) {
             const bool up = (fi == 0);
-            LiveLeg& L = live_[fi];
             const bool enter = up ? (j >=  thr) : (j <= -thr);
             const bool exit  = up ? (j <= -thr) : (j >=  thr);
-            if (!L.win && enter) { L.win = true; L.has_entry = false; L.wm = 0; L.ref = cur; }
-            if (L.win && !L.has_entry) {
-                const bool cond = up ? ((cur / L.ref - 1.0) * 1e4 >= be) : ((1.0 - cur / L.ref) * 1e4 >= be);
-                if (cond) {
-                    // CHECK — cost gate (entry filter). tp_dist ~ the giveback the trail must clear.
-                    const double tp_dist_pts = cur * (gb / 1e4);
-                    const bool viable = !gate_fn_ || gate_fn_(cfg_.sym, tp_dist_pts, cfg_.lot);
-                    if (viable) {
-                        L.entry = cur; L.wm = cur; L.has_entry = true; L.entry_ts = ts_sec;
-                        if (fwd) {
-                            L.token = open_fn_(cfg_.sym, up, cfg_.lot, cur);
-                            std::printf("[AUGOLD][OPEN] %s %s @%.2f lot=%.2f tok=%s\n",
-                                        LEG_ENGINE_(fi), up ? "LONG" : "SHORT", cur, cfg_.lot, L.token.c_str());
-                            std::fflush(stdout);
+            if (!win_[fi] && enter) {                             // parent 2h window opens -> arm BOTH runners
+                win_[fi] = true;
+                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; L.has_entry = false; L.wm = 0; L.ref = cur; }
+            }
+            for (int ti = 0; ti < NT_ && win_[fi]; ++ti) {
+                LiveLeg& L = live_[fi][ti];
+                const double gb = LIVE_GB_[ti];                  // runner giveback (20bp tight / 150bp wide)
+                if (!L.has_entry) {
+                    // BE-FLOOR arm: open ONLY once price has covered cost (be_bp). Stop pinned >= entry.
+                    const bool cond = up ? ((cur / L.ref - 1.0) * 1e4 >= be) : ((1.0 - cur / L.ref) * 1e4 >= be);
+                    if (cond) {
+                        const double tp_dist_pts = cur * (gb / 1e4);        // cost gate: giveback the trail must clear
+                        const bool viable = !gate_fn_ || gate_fn_(cfg_.sym, tp_dist_pts, cfg_.lot);
+                        if (viable) {
+                            L.entry = cur; L.wm = cur; L.has_entry = true; L.entry_ts = ts_sec;
+                            if (fwd) {
+                                L.token = open_fn_(cfg_.sym, up, cfg_.lot, cur);
+                                std::printf("[AUGOLD][OPEN] %s %s @%.2f lot=%.2f tok=%s\n",
+                                            LEG_ENGINE_(fi, ti).c_str(), up ? "LONG" : "SHORT", cur, cfg_.lot, L.token.c_str());
+                                std::fflush(stdout);
+                            }
                         }
                     }
+                } else {
+                    double stop; bool hit;
+                    if (up) { if (cur > L.wm) L.wm = cur; stop = std::max(L.entry, L.wm * (1.0 - gb / 1e4)); hit = (cur <= stop); }
+                    else    { if (cur < L.wm) L.wm = cur; stop = std::min(L.entry, L.wm * (1.0 + gb / 1e4)); hit = (cur >= stop); }
+                    if (hit) { close_leg_(fi, ti, up, stop, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
                 }
-            } else if (L.win && L.has_entry) {
-                double stop; bool hit;
-                if (up) { if (cur > L.wm) L.wm = cur; stop = std::max(L.entry, L.wm * (1.0 - gb / 1e4)); hit = (cur <= stop); }
-                else    { if (cur < L.wm) L.wm = cur; stop = std::min(L.entry, L.wm * (1.0 + gb / 1e4)); hit = (cur >= stop); }
-                if (hit) { close_leg_(fi, up, stop, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
             }
-            if (L.win && exit) {                                  // parent window ended -> flush any open leg
-                if (L.has_entry) close_leg_(fi, up, cur, ts_sec, fwd, "WINDOW_EXIT");
-                L.win = false;
+            if (win_[fi] && exit) {                              // parent window ended -> flush any open runners
+                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; if (L.has_entry) close_leg_(fi, ti, up, cur, ts_sec, fwd, "WINDOW_EXIT"); }
+                win_[fi] = false;
             }
         }
     }
 
-    void close_leg_(int fi, bool up, double px, int64_t ts_sec, bool fwd, const char* reason) noexcept {
-        LiveLeg& L = live_[fi];
+    void close_leg_(int fi, int ti, bool up, double px, int64_t ts_sec, bool fwd, const char* reason) noexcept {
+        LiveLeg& L = live_[fi][ti];
         if (fwd) {
             if (!L.token.empty() && close_fn_) close_fn_(cfg_.sym, up, cfg_.lot, px, L.token);
-            if (ledger_fn_) ledger_fn_(LEG_ENGINE_(fi), cfg_.sym, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
+            if (ledger_fn_) ledger_fn_(LEG_ENGINE_(fi, ti), cfg_.sym, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
             // REAL forward book: raw price-pts booked (same value the ledger records as tr.pnl/size).
             // BE-floor guarantees p>=0 (trail stop>=entry long / <=entry short; window-flush only fires
             // when cur is above stop, i.e. still favourable) -> neg=0 holds live, matching accounting.
             const double p = up ? (px - L.entry) : (L.entry - px);
-            fwd_[fi].pts += p; fwd_[fi].clips += 1; fwd_[fi].wins += (p > 1e-6 ? 1 : 0);
+            fwd_[fi][ti].pts += p; fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (p > 1e-6 ? 1 : 0);
             save_fwd_book_();
             std::printf("[AUGOLD][CLOSE] %s %s entry=%.2f exit=%.2f pts=%.2f (%s)\n",
-                        LEG_ENGINE_(fi), up ? "LONG" : "SHORT", L.entry, px, p, reason);
+                        LEG_ENGINE_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, px, p, reason);
             std::fflush(stdout);
         }
         L.has_entry = false; L.wm = 0; L.token.clear(); L.entry_ts = 0;
@@ -256,20 +272,22 @@ private:
     void load_fwd_book_() noexcept {
         std::ifstream f(cfg_.book_path);
         if (!f.is_open()) return;
-        int fi = -1; double pts = 0; int clips = 0, wins = 0;
+        int fi = -1, ti = -1; double pts = 0; int clips = 0, wins = 0;
         std::string line;
         while (std::getline(f, line)) {
-            if (std::sscanf(line.c_str(), "%d %lf %d %d", &fi, &pts, &clips, &wins) == 4
-                && fi >= 0 && fi < 2) {
-                fwd_[fi].pts = pts; fwd_[fi].clips = clips; fwd_[fi].wins = wins;
+            // 5-field per-runner format "fi ti pts clips wins" (2-runner). Old 4-field single-runner
+            // rows simply don't parse -> that book (which was $0 anyway) resets clean. No neg risk.
+            if (std::sscanf(line.c_str(), "%d %d %lf %d %d", &fi, &ti, &pts, &clips, &wins) == 5
+                && fi >= 0 && fi < 2 && ti >= 0 && ti < NT_) {
+                fwd_[fi][ti].pts = pts; fwd_[fi][ti].clips = clips; fwd_[fi][ti].wins = wins;
             }
         }
     }
     void save_fwd_book_() const noexcept {
         const std::string tmp = cfg_.book_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
-          for (int fi = 0; fi < 2; ++fi)
-              f << fi << " " << fwd_[fi].pts << " " << fwd_[fi].clips << " " << fwd_[fi].wins << "\n"; }
+          for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti)
+              f << fi << " " << ti << " " << fwd_[fi][ti].pts << " " << fwd_[fi][ti].clips << " " << fwd_[fi][ti].wins << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg_.book_path.c_str());
 #endif
@@ -390,8 +408,9 @@ private:
         double desk_pts = 0.0, bt_desk_pts = 0.0;
         std::ostringstream fl;
         for (int fi = 0; fi < 2; ++fi) {
-            // REAL forward book (headline)
-            const double fwd_pts = fwd_[fi].pts;
+            // REAL forward book (headline) = sum of BOTH runners for this flavor
+            double fwd_pts = 0.0; int fwd_clips = 0, fwd_wins = 0;
+            for (int ti = 0; ti < NT_; ++ti) { fwd_pts += fwd_[fi][ti].pts; fwd_clips += fwd_[fi][ti].clips; fwd_wins += fwd_[fi][ti].wins; }
             desk_pts += fwd_pts;
             // replay accounting book (backtest reference), per-tier
             const auto trades = detect_(flavors[fi].is_long);
@@ -411,8 +430,8 @@ private:
             if (fi) fl << ",";
             fl.precision(0); fl << std::fixed;
             fl << "{\"name\":\"" << flavors[fi].name << "\",\"dir\":\"" << flavors[fi].dir
-               << "\",\"events\":" << fwd_[fi].clips << ",\"clips\":" << fwd_[fi].clips
-               << ",\"wins\":" << fwd_[fi].wins << ",";
+               << "\",\"events\":" << fwd_clips << ",\"clips\":" << fwd_clips
+               << ",\"wins\":" << fwd_wins << ",";
             fl.precision(2); fl << "\"book_pts\":" << fwd_pts << ",";
             fl.precision(0); fl << "\"book_usd\":" << (fwd_pts * dpp) << ",";
             // labeled backtest-view (the replay edge; NOT the forward record)

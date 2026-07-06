@@ -1630,8 +1630,33 @@ static void init_engines(const std::string& cfg_path)
             // wiped whatever it had banked live (the operator's screenshotted ~$1.2k). deploy_ts is
             // still the warmup last bar (loaded from the persisted anchor), so all restored bars count.
             size_t restored = fxb.seed_dumps_all();
+            // ── LIVE EXECUTION: <PAIR>Pos/<PAIR>Neg become REAL 2-runner engines (operator S-2026-07-06c).
+            //   Same order path + ledger contract as gold AUPOS/AUNEG (985f0623): SHADOW today
+            //   (send_live_order no-ops while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry
+            //   (FX $6/lot commission table in OmegaCostGuard), BE-floor neg=0, every close -> shadow
+            //   ledger -> ENGINE LEDGER + headline PnL. Was accounting-only; now a trading engine.
+            fxb.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.00015, tp_dist_pts, lots, 1.5); // FX spread ~1.5pip
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
+                    handle_closed_trade(tr);
+                });
             fxb.finalize_all();
-            printf("[OMEGA-INIT][SEED] FX BE-floor companion wired: 5 pairs, %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1 (persisted)\n",
+            printf("[OMEGA-INIT][SEED] FX BE-floor companion wired: 5 pairs, %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
                    seeded, restored);
             fflush(stdout);
         }
