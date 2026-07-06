@@ -75,15 +75,30 @@ def last_ts(path):
     try:
         with open(path, "rb") as fh:
             fh.seek(0, os.SEEK_END); size = fh.tell()
-            back = min(size, 4096); fh.seek(size - back); tail = fh.read().decode("latin-1")
-        for line in reversed(tail.splitlines()):
+            # 64KB: wide close CSVs (500+ cols) run ~10KB/row, so 4KB was < one row ->
+            # the window held one mid-row fragment and col0 was a stray price -> epoch~0.
+            back = min(size, 65536); fh.seek(size - back); tail = fh.read().decode("latin-1")
+        lines = tail.splitlines()
+        # dropped: partial leading row fragment when not reading from byte 0
+        if size > back and len(lines) > 1: lines = lines[1:]
+        for line in reversed(lines):
             a = line.split(",")
             if not a or not a[0]: continue
-            try: ts = float(a[0])
-            except: continue
-            if ts <= 0: continue
-            if ts > 1e11: ts /= 1000.0       # ms -> sec
-            return ts
+            c0 = a[0].strip()
+            try:                                 # numeric epoch first column (tick/bar CSVs)
+                ts = float(c0)
+                if ts <= 0: continue
+                if ts > 1e11: ts /= 1000.0       # ms -> sec
+                return ts
+            except ValueError:
+                pass
+            m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", c0)   # ISO date-index (wide close CSVs)
+            if m:
+                try:
+                    return datetime.datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                                             tzinfo=datetime.timezone.utc).timestamp()
+                except ValueError:
+                    continue
     except Exception: return None
     return None
 
