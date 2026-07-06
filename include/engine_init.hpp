@@ -15,6 +15,7 @@
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 #include "GoldBeFloorCompanion.hpp" // AUPOS/AUNEG gold BE-floor companion (native C++, /api/gold_companion)
 #include "XagBeFloorCompanion.hpp"  // XAGPos/XAGNeg SILVER BE-floor companion (native C++, /api/xag_companion)
+#include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
@@ -1651,6 +1652,53 @@ static void init_engines(const std::string& cfg_path)
                 });
         }
         printf("[OMEGA-INIT][SEED] XAG BE-floor companion (XAGPos/XAGNeg) wired: deploy-forward, on_tick H1-agg live, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
+        fflush(stdout);
+
+        // ── USOILPos/USOILNeg WTI CRUDE BE-floor companion (S-2026-07-06) ─────
+        //   Gold-twin of the AUPOS/AUNEG companion, WTI CRUDE params (LOCKED 2026-07-06):
+        //   W=2 (2h), thr=0.010 (+/-1%, family standard), be_bp=10.0 (covers real RT ~8bp:
+        //   ~5bp spread [IBKR WTI ~$0.03 at ~$60] + ~3bp slippage [0.02pt] + $0 comm), x2
+        //   tiers 20bp banker / 150bp runner, dpp=1000 $/pt/lot (WTI CL future = 1000 bbl).
+        //   SEPARATE INDEPENDENT observe-only shadow book (feedback-companion-independent-
+        //   engine): self-detects 2h +/-1% up/down WTI moves from the live USOIL H1 close
+        //   stream (fed by the on_tick.hpp USOIL H1 aggregator off the IBKR USOIL.F DOM mid),
+        //   runs x2 BE-floor tiers/direction => neg=0 by construction (calibrated on real
+        //   CL-continuous H1: neg=0, both WF halves strongly + at cost 6/8/10bp). Own state
+        //   file usoil_companion_state.json -> /api/usoil_companion -> desk USOIL COMPANIONS.
+        //   Distinct basis from the oil-directional engines (g_eng_cl / brackets) -- self-
+        //   detects its own jumps, never reads/touches them.
+        {
+            auto& uc = omega::usoil_befloor_companion();
+            // Pre-deploy history: bundled warm-seed CSV + the persisted live H1 dump so the 2h
+            // detector rebuilds across restarts (deploy-forward: only clips after the stamped
+            // deploy_ts count; forward book persisted in usoil_companion_book/closed/live sidecars).
+            uc.seed_from_h1_csv("phase1/signal_discovery/warmup_USOIL_H1.csv");
+            uc.seed_from_h1_csv(log_root_dir() + "/usoil_companion_h1.csv");   // persisted LIVE dump (self-written)
+            uc.finalize_seed();
+            // Feed: the on_tick.hpp USOIL H1 aggregator calls usoil_befloor_companion().on_h1_bar(ts,close)
+            //   on each completed H1 (off the USOIL.F DOM mid). Independent order path, mode-gated.
+            uc.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);          // "" in shadow; broker token in live
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);     // opposite side closes; token=posId (hedging-safe)
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.03, tp_dist_pts, lots, 1.5); // WTI real spread ~$0.03
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
+                    handle_closed_trade(tr);                                   // -> ledger / shadow equity / TRADE HISTORY
+                });
+        }
+        printf("[OMEGA-INIT][SEED] USOIL BE-floor companion (USOILPos/USOILNeg) wired: deploy-forward, on_tick H1-agg live, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
         fflush(stdout);
 
         // ── FX per-pair Pos/Neg BE-floor companion (S-2026-07-06) ────────────

@@ -7,6 +7,7 @@
 #include "AccountingGuard.hpp"   // S-2026-06-13h independent runaway-position oversight (parent-TU header)
 #include "StallCompanion.hpp"    // giveback-clip companion zoo (native C++ port of stall_accountant.py)
 #include "XagBeFloorCompanion.hpp"// XAGPos/XAGNeg SILVER BE-floor companion H1 feed (fed from XAGUSD DOM mid below)
+#include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI BE-floor companion H1 feed (fed from USOIL.F DOM mid below)
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -180,6 +181,27 @@ static void on_tick(const std::string& sym, double bid, double ask) {
         else if (sym == "BRENT")   g_eng_brent.seed(mid);
         else if (sym == "XAUUSD") {
             // (GoldFlow seed removed S19 Stage 1B — engine culled)
+        }
+    }
+
+    // ── USOILPos/USOILNeg WTI BE-floor companion H1 feed (S-2026-07-06) ──
+    //   Wall-clock H1 aggregator off the USOIL.F tick mid (mirrors the XAG DOM feed +
+    //   index_feed_h1): roll a 1h bucket and drive usoil_befloor_companion().on_h1_bar(
+    //   ts,close) on each H1 close. Observe-only; the companion's own order path is
+    //   mode-gated SHADOW->live-on-flip.
+    if (sym == "USOIL.F") {
+        const double oil_mid = (bid + ask) * 0.5;
+        if (oil_mid > 0.0) {
+            static int64_t s_oil_h1_start = 0;
+            static double  s_oil_h1_close = 0.0;
+            const int64_t onow_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            const int64_t ob = (onow_ms / 3600000LL) * 3600000LL;
+            if (s_oil_h1_start == 0) { s_oil_h1_start = ob; s_oil_h1_close = oil_mid; }
+            else if (ob != s_oil_h1_start) {
+                omega::usoil_befloor_companion().on_h1_bar(s_oil_h1_start / 1000, s_oil_h1_close);
+                s_oil_h1_start = ob; s_oil_h1_close = oil_mid;
+            } else { s_oil_h1_close = oil_mid; }
         }
     }
 
