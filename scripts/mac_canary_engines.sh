@@ -133,6 +133,17 @@ bash "$(dirname "$0")/../tools/live_dump_freshness_audit.sh" || {
   exit 1
 }
 
+# GUI DRIFT GATE (added S-2026-07-06): HARD-BLOCK a hand-edited OmegaIndexHtml.hpp.
+# include/OmegaIndexHtml.hpp MUST equal regen(tools/gui/omega_desk.html). Three GUI
+# commits drifted the .hpp from its .html source with only a prose "do not hand-edit"
+# comment guarding it. This is the gate that makes the generator contract STICK.
+echo ""
+echo "[mac-canary-engines] GUI drift gate (OmegaIndexHtml.hpp == regen(omega_desk.html))..."
+bash "$(dirname "$0")/../tools/gui/gui_drift_gate.sh" || {
+  echo "[mac-canary-engines] FAIL: GUI header drifted from its .html source -- see tools/gui/gui_drift_gate.sh"
+  exit 1
+}
+
 exit 0
 
 # S-2026-06-26 PERSISTENCE ENFORCEMENT: fail if any display engine lacks a persist source
