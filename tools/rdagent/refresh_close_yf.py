@@ -68,6 +68,14 @@ def main():
         full.update(dl(tk,'5d'))  # ensure newest cells win
     full.to_csv(CLOSE)
     print(f"[refresh_yf] wrote {full.shape[1]} names through {full.index.max().date()} ({fresh_cnt} fresh)")
+    # Daily Google-Drive archive of the full research CSV (operator: keep space free / durable
+    # off-box copy). Mac-side rclone->gdrive; best-effort, never fails the refresh.
+    try:
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        subprocess.run(["bash", f"{here}/archive_close_csv_gdrive.sh", CLOSE], timeout=180)
+    except Exception as e:
+        print(f"[refresh_yf] gdrive archive EXC {e}")
     return 0
 
 if __name__=='__main__':

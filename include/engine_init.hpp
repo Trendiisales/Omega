@@ -18,6 +18,7 @@
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
+#include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (39 stocks) -> /api/stockmover_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
 static void init_engines(const std::string& cfg_path)
@@ -1823,6 +1824,79 @@ static void init_engines(const std::string& cfg_path)
             ib.finalize_all();
             printf("[OMEGA-INIT][SEED] index BE-floor companion wired: 4 syms (US500/NAS100/DJ30/GER40), %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
                    iseeded, irestored);
+            fflush(stdout);
+        }
+
+        // ── Stock day-mover BE-floor companion (S-2026-07-06) ────────────────
+        //   Native C++ port of the VALIDATED research tools/rdagent/daymover_befloor_x3_v2.py +
+        //   daymover_pername_screen.py (per-name <SYM>Pos up-mover / <SYM>Neg down-mover; every
+        //   BIGCAP name net>0, gross-neg=0, both WF halves + on its OWN book; edge survives
+        //   de-survivorship 457/529). SEPARATE INDEPENDENT observe-only shadow book
+        //   (feedback-companion-independent-engine): self-detects +/-3% DAY moves per name from
+        //   the daily-close stream, runs x3 BE-floor tiers/direction (r20 banker / r150 runner /
+        //   r400 wide). Books in RETURN units -> USD via a fixed $/clip notional (name-agnostic,
+        //   equities have no fixed $/pt). Own aggregate stockmover_companion_state.json ->
+        //   /api/stockmover_companion -> desk STOCK MOVERS panel. Loss-protection = BE-floor
+        //   (verdict backtested: gross-neg=0 every name/tier, net>0 both halves; r20 DAILY-coarse,
+        //   r150/r400 > daily-noise robust).
+        //
+        //   FEED: NO single-stock intraday in /Users/jo/Tick -> DAILY-close grade. Live daily
+        //   closes come from the external RDAgent refresh (tools/rdagent/refresh_close_ibkr.py,
+        //   IBKR port 4002) appending to data/rdagent/sp500_long_close.csv. A background poller
+        //   re-reads that wide CSV and dispatches each NEW date to every name (deploy-forward:
+        //   the wide-csv seed only primes the detector; deploy_ts gates out all pre-deploy history).
+        {
+            auto& sb = omega::stockmover_befloor_book();
+            // the RDAgent BIGCAP universe (tools/rdagent/refresh_close_ibkr.py:21). Every name is
+            // net>0 gross-neg=0 both WF halves + on its own book (daymover_pername_screen.py).
+            static const char* BIGCAP[] = {
+                "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META","NFLX","CRWD",
+                "SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB","DELL","ORCL","QCOM","INTC",
+                "AMZN","GOOGL","MSFT","AAPL","CRM","ADBE","IONQ","RGTI","QBTS","ASTS","RKLB","NBIS",
+                "CRWV","ALAB","CRDO"
+            };
+            for (const char* nm : BIGCAP) {
+                omega::StockMoverSym::Config c;
+                c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
+                sb.add(std::move(c));
+            }
+            const std::string wide_csv = "data/rdagent/sp500_long_close.csv";
+            size_t sseeded = sb.seed_from_wide_csv(wide_csv);   // primes detector history (deploy-forward)
+            size_t srestored = sb.seed_dumps_all();             // replay persisted forward daily bars
+            // ── LIVE EXECUTION: <SYM>Pos/<SYM>Neg become REAL x3-tier engines. Same order path +
+            //   ledger contract as the index/gold/FX companions: SHADOW today (send_live_order
+            //   no-ops while mode!=LIVE), LIVE on flip. Cost-gated at entry, BE-floor neg=0, every
+            //   close -> shadow ledger -> ENGINE LEDGER + headline PnL.
+            sb.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& /*sym*/, double /*tp_dist_pts*/, double /*lots*/) -> bool {
+                    // Equity cost gate = the engine's OWN be_bp=10bp ARMING FLOOR (a leg won't open
+                    // until price clears +10bp from ref). ExecutionCostGuard has NO single-name cost
+                    // table -> unknown tickers default to tick_usd=1.0/comm=6.0, which mis-scales
+                    // equities and would wrongly BLOCK r20/r150 (gross<cost). The 10bp floor is the
+                    // validated cost gate: research net-of-10bp is >0/neg=0 all 39 names, and single-
+                    // name IBKR RT (~3-8bp) < 10bp. TODO: add a real equity cost row before LIVE sizing.
+                    return true;
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    handle_closed_trade(tr);
+                });
+            sb.finalize_all();
+            sb.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
+            printf("[OMEGA-INIT][SEED] stock day-mover BE-floor companion wired: 39 BIGCAP names, %zu seed rows, %zu forward bars restored, deploy-forward, daily-CSV-polled, LIVE-EXEC x3-tier (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
+                   sseeded, srestored);
             fflush(stdout);
         }
 
