@@ -18,20 +18,14 @@
 // tiers per direction (20bp banker / 150bp runner / 400bp wide). Judge STANDALONE (net>0, both
 // regimes) — NEVER vs a parent / vs riding WIDE.
 //
-// ADVERSE-PROTECTION: BE-FLOOR + REAL-FILL ACCOUNTING (honest-accounting fix, S-2026-07-07).
-//   A leg stays FLAT until price clears +be_bp from its ref, opens THERE, and its trail
-//   floor sits at-or-above entry (long) / at-or-below entry (short), trailing favourably
-//   only. The floor is an ORDER TARGET, not a guaranteed fill: bars are H1 CLOSES, so a
-//   close can gap THROUGH the floor (news candle, weekend open). Booking is therefore
-//   dual-column:
-//     pts/usd            = MODEL (legacy fill-at-floor, zero cost; >=0 by algebra) —
-//                          comparison column only, NOT a performance claim.
-//     pts_real/usd_real  = REAL  (fill = worse-of(floor, observed close), minus
-//                          rt_cost_bp round-trip cost) — CAN BE NEGATIVE; this is the
-//                          column the engine is judged on, and the ledger records it.
-//   The old "neg=0 by construction" wording described the model column only. Backtest
-//   reference backtest/gold_befloor_ls.py is model-fill: re-run with real fills + cost
-//   before any LIVE flip.
+// ADVERSE-PROTECTION: RETIRED S-2026-07-07e (real-fill re-validation). The BE-floor is honest
+//   dual-column accounting, but the EDGE is dead: no config in thr 0.3-3.0% x be 6/10/20 x
+//   exec {close-only, buf10, buf25} x {ungated, sustained-bull-gated} is net-positive on real
+//   fills in BOTH eras (2022-23 certified histdata ticks; 2024-26 m5-synth) with both WF halves
+//   and both flavors positive. Live 1.0%/be6: -$68.5k (22-23) / +$68k but H1+Pos negative
+//   (24-26). Bull-gate rule tested (feedback-companion-bull-gate-not-reject): rescues 22-23,
+//   fails 24-26 WF. enabled=false in engine_init; state serves real history only.
+//   Evidence outputs/BEFLOOR_FAMILY_REALFILL_2026-07-07.txt · registry §5.
 // =============================================================================
 #include <cstdint>
 #include <cstdio>
@@ -110,6 +104,15 @@ public:
     }
 
     const Config& config() const { return cfg_; }
+
+    // RETIREMENT helper (S-2026-07-07e): drop any persisted open window/leg arm-state so the
+    // published state shows no frozen "open" legs after the engine stops being fed. Shadow arms
+    // only (never a real position); closed-trade history and the real forward book are untouched.
+    void clear_open_arms() noexcept {
+        win_[0] = win_[1] = win_pend_[0] = win_pend_[1] = false;
+        for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) live_[fi][ti] = LiveLeg{};
+        save_live_state_();
+    }
 
     // ---- warm-seed / rebuild from an H1 CSV (ts,o,h,l,c OR ts,c). PRE-DEPLOY history:
     // primes the 2h detector and rebuilds the book on restart; books nothing new by itself

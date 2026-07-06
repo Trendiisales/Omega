@@ -248,14 +248,21 @@ def check_input_freshness():
 def check_befloor_real_honesty():
     # S-2026-07-07 lesson: this selftest was GREEN while the index BE-floor companion booked
     # -$273 x5 REAL on US500 under a model column that "cannot go negative" (the research clamps
-    # every clip to max(0,.)). The REAL column is the judged engine. Assert from the VPS aggregate:
+    # every clip to max(0,.)). The REAL column is the judged engine. Assert from the VPS states:
+    #   INDEX (live survivor US500):
     #   (a) no OPEN leg's real uPnL sits below the engine's own designed bound -(cap+rt+slack)bp
     #       of entry (the intrabar catastrophe cap must be doing its job), and
     #   (b) no symbol's cumulative usd_real has bled past -$2500 while its model column is
     #       positive (model-fiction bleed -> the engine's real economics have broken again).
+    #   RETIRED FAMILY (S-2026-07-07e: gold/xag/usoil + stockmover; fx already empty):
+    #   (c) retired twin states must show NO open legs (retirement cleared the arm-state;
+    #       an open leg reappearing = a stale binary is still arming a retired book), and
+    #   (d) stockmover aggregate must have an EMPTY names[] (empty book publishes empty state).
     # ONE ssh call (RAM reaper -- minimize VPS ssh). Value-based -> no weekend guard needed.
-    ps = (r"$p='C:\Omega\index_companion_state.json';"
-          r"if(Test-Path $p){Get-Content $p -Raw}else{Write-Output 'MISSING'}")
+    ps = (r"foreach($f in 'index_companion_state.json','gold_companion_state.json',"
+          r"'xag_companion_state.json','usoil_companion_state.json','stockmover_companion_state.json'){"
+          r"$p=Join-Path 'C:\Omega' $f;"
+          r"if(Test-Path $p){Write-Output ('===FILE '+$f);Get-Content $p -Raw}else{Write-Output ('===FILE '+$f);Write-Output 'MISSING'}}")
     try:
         r = subprocess.run(["ssh","omega-vps","powershell","-NoProfile","-Command",ps],
                            capture_output=True, text=True, timeout=45)
@@ -264,34 +271,63 @@ def check_befloor_real_honesty():
     raw = (r.stdout or "").strip()
     if r.returncode != 0 or not raw:
         record("[7] BEFLOOR-REAL-HONESTY", False, "ssh omega-vps failed -- real column UNVERIFIABLE"); return
-    if raw.startswith("MISSING"):
-        record("[7] BEFLOOR-REAL-HONESTY", False, "index_companion_state.json MISSING on VPS"); return
-    try: d = json.loads(raw)
-    except Exception as e:
-        record("[7] BEFLOOR-REAL-HONESTY", False, f"state unparsable: {e}"); return
+    blocks = {}
+    cur = None
+    for line in raw.splitlines():
+        if line.startswith("===FILE "):
+            cur = line[8:].strip(); blocks[cur] = []
+        elif cur is not None:
+            blocks[cur].append(line)
+    def parse(name):
+        body = "\n".join(blocks.get(name, [])).strip()
+        if not body or body.startswith("MISSING"): return None
+        try: return json.loads(body)
+        except Exception: return "BAD"
     probs = []; nsym = 0; nopen = 0
-    for s in d.get("syms", []):
-        nsym += 1
-        rt  = float(s.get("rt_cost_bp", 4.0) or 4.0)
-        cap = float(s.get("cap_bp", 25.0) or 25.0)
-        dpp = float(s.get("dpp", 1.0) or 1.0)
-        for leg in s.get("open", []):
-            nopen += 1
-            entry = float(leg.get("entry", 0) or 0)
-            if entry <= 0: continue
-            upnl_real = float(leg.get("upnl_pts_real", 0) or 0)
-            bound = -entry * (cap + rt + 15.0) / 1e4   # cap + rt cost + 15bp slack
-            if upnl_real < bound:
-                probs.append(f"{s.get('sym')}/{leg.get('flavor')}/{leg.get('tier')} "
-                             f"upnl_real={upnl_real:.2f}pt < bound {bound:.2f}pt (cap NOT enforcing)")
-        usd_real = float(s.get("usd_real", 0) or 0)
-        usd_mdl  = float(s.get("usd", 0) or 0)
-        if usd_real <= -2500.0 and usd_mdl > 0:
-            probs.append(f"{s.get('sym')} book usd_real={usd_real:.0f} while model +{usd_mdl:.0f} "
-                         f"(model-fiction bleed)")
-        _ = dpp
+    # -- INDEX (live) --
+    d = parse("index_companion_state.json")
+    if d is None: probs.append("index_companion_state.json MISSING on VPS")
+    elif d == "BAD": probs.append("index state unparsable")
+    else:
+        for s in d.get("syms", []):
+            nsym += 1
+            rt  = float(s.get("rt_cost_bp", 4.0) or 4.0)
+            cap = float(s.get("cap_bp", 25.0) or 25.0)
+            for leg in s.get("open", []):
+                nopen += 1
+                entry = float(leg.get("entry", 0) or 0)
+                if entry <= 0: continue
+                upnl_real = float(leg.get("upnl_pts_real", 0) or 0)
+                bound = -entry * (cap + rt + 15.0) / 1e4   # cap + rt cost + 15bp slack
+                if upnl_real < bound:
+                    probs.append(f"{s.get('sym')}/{leg.get('flavor')}/{leg.get('tier')} "
+                                 f"upnl_real={upnl_real:.2f}pt < bound {bound:.2f}pt (cap NOT enforcing)")
+            usd_real = float(s.get("usd_real", 0) or 0)
+            usd_mdl  = float(s.get("usd", 0) or 0)
+            if usd_real <= -2500.0 and usd_mdl > 0:
+                probs.append(f"{s.get('sym')} book usd_real={usd_real:.0f} while model +{usd_mdl:.0f} "
+                             f"(model-fiction bleed)")
+    # -- RETIRED twins: no open legs may exist --
+    nret = 0
+    for fname, tag in (("gold_companion_state.json", "gold"),
+                       ("xag_companion_state.json", "xag"),
+                       ("usoil_companion_state.json", "usoil")):
+        d = parse(fname)
+        if d in (None, "BAD"):   # absent is acceptable post-retirement (never written on a fresh box)
+            continue
+        nret += 1
+        legs = d.get("open", [])
+        if legs:
+            probs.append(f"{tag} RETIRED book has {len(legs)} open leg(s) -- stale binary still arming")
+    # -- RETIRED stockmover: aggregate must be empty --
+    d = parse("stockmover_companion_state.json")
+    if d not in (None, "BAD"):
+        nret += 1
+        if d.get("names", []):
+            probs.append(f"stockmover RETIRED aggregate has {len(d.get('names'))} name(s) -- stale binary")
     ok = (len(probs) == 0)
-    detail = (f"{nsym} sym(s), {nopen} open leg(s): real column within designed bounds"
+    detail = (f"{nsym} live sym(s), {nopen} open leg(s), {nret} retired state(s) clean: "
+              f"real column within designed bounds"
               if ok else "*** " + "; ".join(probs[:4]) + " ***")
     record("[7] BEFLOOR-REAL-HONESTY", ok, detail)
 

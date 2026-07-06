@@ -98,5 +98,26 @@ RULES:
 3. Surviving config (both WF halves +, both flavors +, all tiers +):
    US500 thr=1.5% be=10 cap=25bp only. NAS100/DJ30/GER40 retired 2026-07-07.
    Evidence: outputs/INDEX_BEFLOOR_REALFILL_2026-07-07.txt.
-4. Gold/XAG/USOIL/FX/StockDayMover BeFloor books share the same research pattern —
-   real-fill re-validation OWED (audit debt; forward usd_real columns accruing).
+4. FAMILY ROLLOUT COMPLETE (S-2026-07-07e) — the audit debt is PAID and the family
+   is DEAD everywhere except US500. Evidence outputs/BEFLOOR_FAMILY_REALFILL_2026-07-07.txt:
+   - GOLD (AUPOS/AUNEG): RETIRED. No config in thr 0.3-3.0% x be 6/10/20 x exec
+     A/buf10/buf25 x {ungated, EMA200/50-P100 sustained-bull-gated} positive in BOTH
+     eras (2022-23 histdata ticks / 2024-26 m5-synth) with halves+flavors +. Each
+     era's winner loses the other era. Bull-gate tested per operator rule — rescues
+     2022-23 (+$85k @1.0/6/buf25+BG) but fails 2024-26 (-$61.5k, H1 -$79k).
+   - XAG: RETIRED. Every cell negative INCLUDING the 2025-26 silver squeeze; best
+     1.5/6/A -$486k real vs +$5.8M model. (Gate note: XAGUSD_h1_clean gate FAIL is a
+     false positive — 3x-median heuristic vs real 5x squeeze; 0 jumps >10%/h.)
+   - USOIL: RETIRED. 2026-only grid sea of red; lone + cell (0.70/20/buf25 +$41k)
+     REFUTED on 16mo certified Brent BCOUSD real ticks (same cell -$138k, all cells
+     negative). Single positive cells on thin data = grid mining; always cross-check.
+   - STOCK DayMover (39 BIGCAP): RETIRED. Real -$110.7k vs +$1.57M model (7yr daily);
+     Neg flavor -$325k at every thr; Pos-only +$214k but 2019-2022 half (incl the
+     2020-21 bull) negative at every thr 3/4/5% — daily closes + overnight gaps.
+   - FX: RETIRED S-2026-07-07d (see rule 3 commit); JumpRider is a DIFFERENT honest
+     book (single real column, locked ea4a746f) — not part of this family.
+5. m5/H1-OHLC SYNTH-TICK TRICK (validated S-2026-07-07e): the harness's resting-stop
+   levels update ONLY at H1 close, so within the forming hour only breach-or-not
+   matters. Feeding o/h/l/c of finer bars as 4 synthetic ticks (c LAST) reproduces
+   every intrabar touch exactly at that bar's resolution and the H1 closes exactly —
+   usable when raw ticks don't exist (gold 2024-26 m5, XAG/USOIL H1).

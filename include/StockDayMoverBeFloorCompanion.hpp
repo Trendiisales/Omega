@@ -27,20 +27,12 @@
 // Observe-only, shadow: NEVER opens / moves / shrinks / closes a real position, NEVER read by
 // any parent. Judge STANDALONE (net>0, both WF halves) — NEVER vs a parent / vs riding WIDE.
 //
-// ADVERSE-PROTECTION: BE-FLOOR + REAL-FILL ACCOUNTING (honest-accounting fix, S-2026-07-07).
-//   A leg stays FLAT until price clears +be_bp from its ref, opens THERE, and its trail floor
-//   sits at-or-above entry (long) / at-or-below entry (short), trailing favourably only. The
-//   floor is an ORDER TARGET, not a guaranteed fill — and at DAILY-close grade on ±3% day-
-//   movers (earnings/guidance/FDA names), overnight gaps THROUGH the floor are the normal
-//   adverse outcome, not a tail. Booking is dual-column:
-//     ret/pct/usd             = MODEL (legacy fill-at-floor, zero cost; >=0 by algebra) —
-//                               comparison column only, NOT a performance claim.
-//     ret_real/pct_real/usd_real = REAL (fill = worse-of(floor, observed close), minus
-//                               rt_cost_bp) — CAN BE NEGATIVE; the judgeable column, and
-//                               what the ledger records.
-//   The old "neg=0 by construction" wording described the model column only. Research
-//   reference tools/rdagent/daymover_befloor_x3_v2.py + daymover_pername_screen.py is
-//   model-fill: re-run with real fills + cost before any LIVE flip.
+// ADVERSE-PROTECTION: RETIRED S-2026-07-07e (real-fill re-validation). Faithful daily-close
+//   replay over data/rdagent/sp500_long_close.csv 2019-06..2026-06 (rt=8bp, $10k notional):
+//   39-name book -$110.7k real vs +$1.57M model; Neg flavor -$325k at every thr 3/4/5%;
+//   Pos-only +$214k but its 2019-2022 half (contains the 2020-21 bull) is negative at every
+//   thr -- daily granularity + overnight gaps eat the trail. No names wired in engine_init
+//   (empty aggregate). Evidence outputs/BEFLOOR_FAMILY_REALFILL_2026-07-07.txt · registry §5.
 // =============================================================================
 #include <cstdint>
 #include <cstdio>

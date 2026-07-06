@@ -1550,158 +1550,69 @@ static void init_engines(const std::string& cfg_path)
                omega::gold_regime().regime_name(), (int)omega::gold_regime().warm());
         fflush(stdout);
 
-        // ── AUPOS/AUNEG gold BE-floor companion (S-2026-07-06) ───────────────
-        //   Native C++ port of the retired Mac-cron Python executor (validated byte-exact vs
-        //   backtest/gold_befloor_ls.py). SEPARATE INDEPENDENT observe-only shadow book
-        //   (feedback-companion-independent-engine): self-detects 2h/+/-1% up & down gold moves
-        //   from the SAME H1 close stream gold_regime() records, runs x2 BE-floor tiers/direction
-        //   (20bp banker / 150bp runner) => neg=0 by construction. Own state file
-        //   gold_companion_state.json -> /api/gold_companion -> desk GOLD COMPANIONS panel.
-        //   INDEPENDENT engine: it opens/closes its OWN position (runner-150bp) via the order
-        //   path below and NEVER touches/reads the parent it mimics (feedback-companion-
-        //   independent-engine). The accounting panel (replay book) stays for reference; the
-        //   REAL forward trades flow to the shadow ledger / TRADE HISTORY.
+        // ── AUPOS/AUNEG gold BE-floor companion (S-2026-07-06; RETIRED S-2026-07-07e) ──
+        //   REAL-FILL VERDICT (backtest/index_befloor_intrabar_bt.cpp + bull-gate variant, certified
+        //   histdata ticks 2022-23 + m5-synth 2024-26): the "neg=0, WF both halves" research
+        //   (gold_befloor_ls.py) is the same max(0,.) clamp as the index/FX books (registry §5).
+        //   Real fills at the live 1.0%/be6: 2022-23 -$68.5k, 2024-26 +$68k but H1 half AND Pos
+        //   flavor negative. NO cell in thr 0.3-3.0% x be 6/10/20 x exec A/buf10/buf25 x
+        //   {ungated, sustained-bull-gated} is positive in BOTH eras with both halves/flavors + —
+        //   each era's best config loses the other era. The bull-gate rule (feedback-companion-
+        //   bull-gate-not-reject) was TESTED, not skipped: 1.0/6/buf25+BG flips 2022-23 to +$85k
+        //   but loses -$61.5k on 2024-26 (H1 -$79k). Nothing to reconfigure to -> RETIRED.
+        //   Evidence outputs/BEFLOOR_FAMILY_REALFILL_2026-07-07.txt. Ledger history rows stand.
+        //   enabled=false + one state write keeps /api/gold_companion serving the honest real
+        //   forward history with no new arms; the jump-rider H1 feed (separate honest book) stays.
         {
             auto& gc = omega::gold_befloor_companion();
-            // Pre-deploy history: bundled warm-seed CSV + the persisted live dump so the 2h
-            // detector + book rebuild across restarts (deploy-forward: only clips after the
-            // stamped deploy_ts count -> the live forward book starts at $0).
-            gc.seed_from_h1_csv("phase1/signal_discovery/warmup_XAUUSD_H1.csv");
-            gc.seed_from_h1_csv(log_root_dir() + "/gold_regime_h1.csv");
-            gc.finalize_seed();
-            // Feed: RegimeState fires once per COMPLETED LIVE H1 bar (identical to gold_regime_h1.csv).
+            gc.enabled = false;            // on_h1_bar() short-circuits; no seeds, no exec wiring
+            gc.clear_open_arms();          // drop persisted shadow arm-state (no frozen "open" legs)
+            gc.recompute_and_write();      // publish once: persisted REAL forward history, no open arms
+            // Feed: RegimeState H1 sink now drives ONLY the JumpRider book (its own honest
+            // single-column engine, locked ea4a746f — do not confuse with the befloor books).
             omega::gold_regime().set_h1_sink([](int64_t ts_sec, double close){
-                omega::gold_befloor_companion().on_h1_bar(ts_sec, close);
-                omega::jump_rider_book().on_h1_bar("XAUUSD", ts_sec, close);   // UpJump rider, same feed
+                omega::jump_rider_book().on_h1_bar("XAUUSD", ts_sec, close);   // UpJump rider feed
             });
-            // ── LIVE EXECUTION (S-2026-07-06): AUPOS/AUNEG are REAL independent trading engines,
-            //   not a spreadsheet. Each flavor runs its OWN position through the SAME order path as
-            //   every main engine -> SHADOW today (send_live_order no-ops while g_cfg.mode!="LIVE"),
-            //   LIVE the instant mode flips, zero code change at flip. Checks wired: (1) cost-gate at
-            //   entry, (2) BE-floor adverse-protection neg=0 by construction, (3) shadow-ledger record
-            //   on close -> TRADE HISTORY + shadow equity. One position per flavor, runner-150bp trail
-            //   = the prescribed backtested exit (gold_befloor_ls.py re-confirmed: neg=0, WF both halves).
-            gc.set_exec(
-                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
-                    return send_live_order(sym, is_long, lots, px);          // "" in shadow; broker token in live
-                },
-                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
-                    send_live_order(sym, !orig_is_long, lots, px, token);     // opposite side closes; token=posId (hedging-safe)
-                },
-                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
-                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.30, tp_dist_pts, lots, 1.5); // XAU conservative spread
-                },
-                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
-                                double entry_px, double exit_px, double lots,
-                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
-                    omega::TradeRecord tr;
-                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
-                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
-                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
-                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; handle_closed_trade applies tick_value_multiplier
-                    handle_closed_trade(tr);                                   // -> ledger / shadow equity / TRADE HISTORY
-                });
         }
-        printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) wired: deploy-forward, H1-sink live, LIVE-EXEC (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
+        printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) RETIRED S-2026-07-07e (real-fill: no config survives both eras; bull-gate tested, fails 2024-26 WF) -- state serves real history, no new arms\n");
         fflush(stdout);
 
-        // ── XAGPos/XAGNeg SILVER BE-floor companion (S-2026-07-06) ───────────
-        //   Gold-twin of the AUPOS/AUNEG companion, SILVER params (LOCKED 2026-07-06 handoff):
-        //   W=2 (2h), thr=0.010 (+/-1%, operator-locked over 2%), be_bp=6.0 (real RT ~6bp:
-        //   2.88bp spread + 0.16bp comm + 2.6bp slippage), x2 tiers 20bp banker / 150bp runner,
-        //   dpp=5000 $/pt/lot (silver lot = 5000 oz). SEPARATE INDEPENDENT observe-only shadow
-        //   book (feedback-companion-independent-engine): self-detects 2h +/-1% up/down XAG moves
-        //   from the live XAG H1 close stream (fed by the on_tick.hpp XAG H1 aggregator off the
-        //   IBKR XAGUSD DOM mid), runs x2 BE-floor tiers/direction => neg=0 by construction
-        //   (calibrated: neg=0, both WF halves +, both flavors +). Own state file
-        //   xag_companion_state.json -> /api/xag_companion -> desk XAG COMPANIONS panel.
-        //   Silver DIRECTIONAL is a graveyard (SilverTurtle/GoldSilverLeadLag DEAD) -- this is the
-        //   befloor JUMP mechanism, a different valid basis; do NOT resurrect turtle/breakout.
+        // ── XAGPos/XAGNeg SILVER BE-floor companion (S-2026-07-06; RETIRED S-2026-07-07e) ──
+        //   REAL-FILL VERDICT (backtest/index_befloor_intrabar_bt.cpp, XAGUSD H1-OHLC synth
+        //   2024-01..2026-07 incl the silver squeeze 22->119->62): the "neg=0, both WF halves +"
+        //   calibration was the max(0,.) clamp (registry §5). Real fills: EVERY grid cell
+        //   (thr 0.3-1.5% x be 6/10/20 x exec A/buf10/buf25) NEGATIVE, both halves negative
+        //   everywhere — best cell 1.5/6/A -$486k real vs +$5.8M model per 1-lot book. The
+        //   squeeze half is WORSE, so no bull-gate salvage exists. Nothing to reconfigure to ->
+        //   RETIRED. Evidence outputs/BEFLOOR_FAMILY_REALFILL_2026-07-07.txt. Ledger rows stand.
+        //   Silver DIRECTIONAL remains a graveyard (SilverTurtle/GoldSilverLeadLag DEAD) — and the
+        //   befloor JUMP mechanism is now real-fill-dead on XAG too; do not resurrect either.
+        //   The on_tick.hpp XAG H1 aggregator still calls on_h1_bar(); enabled=false short-circuits.
         {
             auto& xc = omega::xag_befloor_companion();
-            // Pre-deploy history: bundled warm-seed CSV + the persisted live H1 dump so the 2h
-            // detector rebuilds across restarts (deploy-forward: only clips after the stamped
-            // deploy_ts count -> the live forward book starts at $0; the forward book itself is
-            // persisted in xag_companion_book.txt/closed.csv/live.txt sidecars).
-            xc.seed_from_h1_csv("phase1/signal_discovery/warmup_XAGUSD_H1.csv");
-            xc.seed_from_h1_csv(log_root_dir() + "/xag_companion_h1.csv");   // persisted LIVE dump (self-written)
-            xc.finalize_seed();
-            // Feed: the on_tick.hpp XAG H1 aggregator calls xag_befloor_companion().on_h1_bar(ts,close)
-            //   on each completed H1 (off the XAGUSD DOM mid). No gold_regime H1-sink -- XAG has its own.
-            // ── LIVE EXECUTION: XAGPos/XAGNeg are REAL independent 2-runner trading engines. Same
-            //   order path + ledger contract as gold AUPOS/AUNEG: SHADOW today (send_live_order no-ops
-            //   while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry (XAG spread ~0.05 =
-            //   ~6.6bp at $76, matches calibrated real cost), BE-floor neg=0, every close -> shadow
-            //   ledger -> ENGINE LEDGER + headline PnL.
-            xc.set_exec(
-                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
-                    return send_live_order(sym, is_long, lots, px);          // "" in shadow; broker token in live
-                },
-                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
-                    send_live_order(sym, !orig_is_long, lots, px, token);     // opposite side closes; token=posId (hedging-safe)
-                },
-                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
-                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.05, tp_dist_pts, lots, 1.5); // XAG real spread ~0.05
-                },
-                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
-                                double entry_px, double exit_px, double lots,
-                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
-                    omega::TradeRecord tr;
-                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
-                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
-                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
-                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
-                    handle_closed_trade(tr);                                   // -> ledger / shadow equity / TRADE HISTORY
-                });
+            xc.enabled = false;            // feed short-circuits; no seeds, no exec wiring
+            xc.clear_open_arms();          // drop persisted shadow arm-state (no frozen "open" legs)
+            xc.recompute_and_write();      // publish once: real forward history, no new arms
         }
-        printf("[OMEGA-INIT][SEED] XAG BE-floor companion (XAGPos/XAGNeg) wired: deploy-forward, on_tick H1-agg live, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
+        printf("[OMEGA-INIT][SEED] XAG BE-floor companion (XAGPos/XAGNeg) RETIRED S-2026-07-07e (real-fill: every cell negative incl squeeze era) -- state serves real history, no new arms\n");
         fflush(stdout);
 
         // ── USOILPos/USOILNeg WTI CRUDE BE-floor companion (S-2026-07-06) ─────
-        //   Gold-twin of the AUPOS/AUNEG companion, WTI CRUDE params (LOCKED 2026-07-06):
-        //   W=2 (2h), thr=0.010 (+/-1%, family standard), be_bp=10.0 (covers real RT ~8bp:
-        //   ~5bp spread [IBKR WTI ~$0.03 at ~$60] + ~3bp slippage [0.02pt] + $0 comm), x2
-        //   tiers 20bp banker / 150bp runner, dpp=1000 $/pt/lot (WTI CL future = 1000 bbl).
-        //   SEPARATE INDEPENDENT observe-only shadow book (feedback-companion-independent-
-        //   engine): self-detects 2h +/-1% up/down WTI moves from the live USOIL H1 close
-        //   stream (fed by the on_tick.hpp USOIL H1 aggregator off the IBKR USOIL.F DOM mid),
-        //   runs x2 BE-floor tiers/direction => neg=0 by construction (calibrated on real
-        //   CL-continuous H1: neg=0, both WF halves strongly + at cost 6/8/10bp). Own state
-        //   file usoil_companion_state.json -> /api/usoil_companion -> desk USOIL COMPANIONS.
-        //   Distinct basis from the oil-directional engines (g_eng_cl / brackets) -- self-
-        //   detects its own jumps, never reads/touches them.
+        //   RETIRED S-2026-07-07e. REAL-FILL VERDICT (backtest/index_befloor_intrabar_bt.cpp):
+        //   the "neg=0, both WF halves strongly +" calibration was the max(0,.) clamp (registry
+        //   §5). Real fills: USOIL 2026-only H1 = sea of red at every thr/be/exec; the single
+        //   positive cell (0.70/20/buf25 +$41k) does NOT replicate on 16mo of certified Brent
+        //   (BCOUSD) real ticks 2025-01..2026-04 — same cell -$138k, ALL Brent cells negative.
+        //   Nothing to reconfigure to -> RETIRED. Evidence outputs/BEFLOOR_FAMILY_REALFILL_
+        //   2026-07-07.txt. Ledger rows stand. The on_tick.hpp USOIL H1 aggregator still calls
+        //   on_h1_bar(); enabled=false short-circuits.
         {
             auto& uc = omega::usoil_befloor_companion();
-            // Pre-deploy history: bundled warm-seed CSV + the persisted live H1 dump so the 2h
-            // detector rebuilds across restarts (deploy-forward: only clips after the stamped
-            // deploy_ts count; forward book persisted in usoil_companion_book/closed/live sidecars).
-            uc.seed_from_h1_csv("phase1/signal_discovery/warmup_USOIL_H1.csv");
-            uc.seed_from_h1_csv(log_root_dir() + "/usoil_companion_h1.csv");   // persisted LIVE dump (self-written)
-            uc.finalize_seed();
-            // Feed: the on_tick.hpp USOIL H1 aggregator calls usoil_befloor_companion().on_h1_bar(ts,close)
-            //   on each completed H1 (off the USOIL.F DOM mid). Independent order path, mode-gated.
-            uc.set_exec(
-                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
-                    return send_live_order(sym, is_long, lots, px);          // "" in shadow; broker token in live
-                },
-                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
-                    send_live_order(sym, !orig_is_long, lots, px, token);     // opposite side closes; token=posId (hedging-safe)
-                },
-                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
-                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.03, tp_dist_pts, lots, 1.5); // WTI real spread ~$0.03
-                },
-                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
-                                double entry_px, double exit_px, double lots,
-                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
-                    omega::TradeRecord tr;
-                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
-                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
-                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
-                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
-                    handle_closed_trade(tr);                                   // -> ledger / shadow equity / TRADE HISTORY
-                });
+            uc.enabled = false;            // feed short-circuits; no seeds, no exec wiring
+            uc.clear_open_arms();          // drop persisted shadow arm-state (no frozen "open" legs)
+            uc.recompute_and_write();      // publish once: real forward history, no new arms
         }
-        printf("[OMEGA-INIT][SEED] USOIL BE-floor companion (USOILPos/USOILNeg) wired: deploy-forward, on_tick H1-agg live, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
+        printf("[OMEGA-INIT][SEED] USOIL BE-floor companion (USOILPos/USOILNeg) RETIRED S-2026-07-07e (real-fill: 2026 H1 sea of red; lone +cell refuted by 16mo Brent ticks) -- state serves real history, no new arms\n");
         fflush(stdout);
 
         // ── FX per-pair Pos/Neg BE-floor companion (S-2026-07-06; RETIRED S-2026-07-07) ──
@@ -1892,76 +1803,21 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // ── Stock day-mover BE-floor companion (S-2026-07-06) ────────────────
-        //   Native C++ port of the VALIDATED research tools/rdagent/daymover_befloor_x3_v2.py +
-        //   daymover_pername_screen.py (per-name <SYM>Pos up-mover / <SYM>Neg down-mover; every
-        //   BIGCAP name net>0, gross-neg=0, both WF halves + on its OWN book; edge survives
-        //   de-survivorship 457/529). SEPARATE INDEPENDENT observe-only shadow book
-        //   (feedback-companion-independent-engine): self-detects +/-3% DAY moves per name from
-        //   the daily-close stream, runs x3 BE-floor tiers/direction (r20 banker / r150 runner /
-        //   r400 wide). Books in RETURN units -> USD via a fixed $/clip notional (name-agnostic,
-        //   equities have no fixed $/pt). Own aggregate stockmover_companion_state.json ->
-        //   /api/stockmover_companion -> desk STOCK MOVERS panel. Loss-protection = BE-floor
-        //   (verdict backtested: gross-neg=0 every name/tier, net>0 both halves; r20 DAILY-coarse,
-        //   r150/r400 > daily-noise robust).
-        //
-        //   FEED: NO single-stock intraday in /Users/jo/Tick -> DAILY-close grade. Live daily
-        //   closes come from the external RDAgent refresh (tools/rdagent/refresh_close_ibkr.py,
-        //   IBKR port 4002) appending to data/rdagent/sp500_long_close.csv. A background poller
-        //   re-reads that wide CSV and dispatches each NEW date to every name (deploy-forward:
-        //   the wide-csv seed only primes the detector; deploy_ts gates out all pre-deploy history).
+        // ── Stock day-mover BE-floor companion (S-2026-07-06; RETIRED S-2026-07-07e) ──
+        //   REAL-FILL VERDICT (faithful daily-close port over data/rdagent/sp500_long_close.csv
+        //   2019-06..2026-06, rt=8bp, $10k notional): the "every BIGCAP name net>0, gross-neg=0,
+        //   both WF halves +" research (daymover_befloor_x3_v2.py / daymover_pername_screen.py)
+        //   was the max(0,.) clamp (registry §5). Real fills = worse-of(floor, DAILY close):
+        //   39-name book -$110.7k real vs +$1.57M model; Neg (down-mover) flavor -$325k at every
+        //   thr 3/4/5%; Pos-only +$214k total but its FIRST half (2019-2022, which CONTAINS the
+        //   2020-21 bull) is negative at every thr — daily granularity + overnight gaps eat the
+        //   trail. No robust config -> RETIRED (no names added; empty aggregate publishes so the
+        //   STOCK MOVERS panel reads honest-empty). Evidence outputs/BEFLOOR_FAMILY_REALFILL_
+        //   2026-07-07.txt. No poller started (nothing to feed). Ledger rows stand.
         {
             auto& sb = omega::stockmover_befloor_book();
-            // the RDAgent BIGCAP universe (tools/rdagent/refresh_close_ibkr.py:21). Every name is
-            // net>0 gross-neg=0 both WF halves + on its own book (daymover_pername_screen.py).
-            static const char* BIGCAP[] = {
-                "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META","NFLX","CRWD",
-                "SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB","DELL","ORCL","QCOM","INTC",
-                "AMZN","GOOGL","MSFT","AAPL","CRM","ADBE","IONQ","RGTI","QBTS","ASTS","RKLB","NBIS",
-                "CRWV","ALAB","CRDO"
-            };
-            for (const char* nm : BIGCAP) {
-                omega::StockMoverSym::Config c;
-                c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
-                sb.add(std::move(c));
-            }
-            const std::string wide_csv = "data/rdagent/sp500_long_close.csv";
-            size_t sseeded = sb.seed_from_wide_csv(wide_csv);   // primes detector history (deploy-forward)
-            size_t srestored = sb.seed_dumps_all();             // replay persisted forward daily bars
-            // ── LIVE EXECUTION: <SYM>Pos/<SYM>Neg become REAL x3-tier engines. Same order path +
-            //   ledger contract as the index/gold/FX companions: SHADOW today (send_live_order
-            //   no-ops while mode!=LIVE), LIVE on flip. Cost-gated at entry, BE-floor neg=0, every
-            //   close -> shadow ledger -> ENGINE LEDGER + headline PnL.
-            sb.set_exec(
-                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
-                    return send_live_order(sym, is_long, lots, px);
-                },
-                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
-                    send_live_order(sym, !orig_is_long, lots, px, token);
-                },
-                /* gate   */ [](const std::string& /*sym*/, double /*tp_dist_pts*/, double /*lots*/) -> bool {
-                    // Equity cost gate = the engine's OWN be_bp=10bp ARMING FLOOR (a leg won't open
-                    // until price clears +10bp from ref). ExecutionCostGuard has NO single-name cost
-                    // table -> unknown tickers default to tick_usd=1.0/comm=6.0, which mis-scales
-                    // equities and would wrongly BLOCK r20/r150 (gross<cost). The 10bp floor is the
-                    // validated cost gate: research net-of-10bp is >0/neg=0 all 39 names, and single-
-                    // name IBKR RT (~3-8bp) < 10bp. TODO: add a real equity cost row before LIVE sizing.
-                    return true;
-                },
-                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
-                                double entry_px, double exit_px, double lots,
-                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
-                    omega::TradeRecord tr;
-                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
-                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
-                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
-                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
-                    handle_closed_trade(tr);
-                });
-            sb.finalize_all();
-            sb.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
-            printf("[OMEGA-INIT][SEED] stock day-mover BE-floor companion wired: 39 BIGCAP names, %zu seed rows, %zu forward bars restored, deploy-forward, daily-CSV-polled, LIVE-EXEC x3-tier (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
-                   sseeded, srestored);
+            sb.finalize_all();   // EMPTY book -> publishes empty aggregate state (panel honest)
+            printf("[OMEGA-INIT][SEED] stock day-mover BE-floor companion RETIRED S-2026-07-07e (real-fill -$110.7k vs +$1.57M model over 7yr; Pos-only fails 2019-22 half) -- aggregate publishes empty state\n");
             fflush(stdout);
         }
 

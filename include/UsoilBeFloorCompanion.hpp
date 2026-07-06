@@ -25,16 +25,11 @@
 // SEPARATE valid basis from any oil-directional engine (g_eng_cl / brackets); this
 // self-detects its own jumps and does NOT read or touch them.
 //
-// ADVERSE-PROTECTION: BE-FLOOR + REAL-FILL ACCOUNTING (honest-accounting fix, S-2026-07-07).
-//   A leg stays FLAT until price clears +be_bp from ref, opens there, and its trail floor
-//   sits >= entry (long) / <= entry (short), trailing favourably only. The floor is an
-//   ORDER TARGET, not a guaranteed fill: bars are H1 CLOSES, so a close can gap THROUGH
-//   the floor. Booking is dual-column:
-//     pts/usd           = MODEL (legacy fill-at-floor, zero cost; >=0 by algebra) — comparison only.
-//     pts_real/usd_real = REAL  (fill = worse-of(floor, observed close), minus rt_cost_bp)
-//                         — CAN BE NEGATIVE; the judgeable column, and what the ledger records.
-//   The old "neg=0 by construction" claim described the model column only. Calibration
-//   harness usoil_befloor_ls.py is model-fill: re-run with real fills + cost before LIVE.
+// ADVERSE-PROTECTION: RETIRED S-2026-07-07e (real-fill re-validation). USOIL 2026-only H1 grid
+//   is a sea of red; the lone positive cell (0.70/20/buf25 +$41k) does NOT replicate on 16mo of
+//   certified Brent (BCOUSD) real ticks 2025-01..2026-04 (same cell -$138k; ALL cells negative)
+//   -> grid-mining artifact, nothing to reconfigure to. enabled=false in engine_init.
+//   Evidence outputs/BEFLOOR_FAMILY_REALFILL_2026-07-07.txt · registry §5.
 // =============================================================================
 #include <cstdint>
 #include <cstdio>
@@ -116,6 +111,15 @@ public:
     }
 
     const Config& config() const { return cfg_; }
+
+    // RETIREMENT helper (S-2026-07-07e): drop any persisted open window/leg arm-state so the
+    // published state shows no frozen "open" legs after the engine stops being fed. Shadow arms
+    // only (never a real position); closed-trade history and the real forward book are untouched.
+    void clear_open_arms() noexcept {
+        win_[0] = win_[1] = win_pend_[0] = win_pend_[1] = false;
+        for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) live_[fi][ti] = LiveLeg{};
+        save_live_state_();
+    }
 
     // ---- warm-seed / rebuild from an H1 CSV (ts,o,h,l,c OR ts,c). PRE-DEPLOY history:
     // primes the 2h detector and rebuilds the book on restart; books nothing new by itself

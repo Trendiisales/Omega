@@ -24,16 +24,11 @@
 // SilverTurtle / GoldSilverLeadLag are DEAD. The befloor JUMP mechanism is a
 // different, valid basis — do NOT resurrect silver turtle/breakout engines.)
 //
-// ADVERSE-PROTECTION: BE-FLOOR + REAL-FILL ACCOUNTING (honest-accounting fix, S-2026-07-07).
-//   A leg stays FLAT until price clears +be_bp from ref, opens there, and its trail floor
-//   sits >= entry (long) / <= entry (short), trailing favourably only. The floor is an
-//   ORDER TARGET, not a guaranteed fill: bars are H1 CLOSES, so a close can gap THROUGH
-//   the floor. Booking is dual-column:
-//     pts/usd           = MODEL (legacy fill-at-floor, zero cost; >=0 by algebra) — comparison only.
-//     pts_real/usd_real = REAL  (fill = worse-of(floor, observed close), minus rt_cost_bp)
-//                         — CAN BE NEGATIVE; the judgeable column, and what the ledger records.
-//   The old "neg=0 by construction" claim described the model column only. Calibration
-//   harness xag_befloor_ls.py is model-fill: re-run with real fills + cost before LIVE.
+// ADVERSE-PROTECTION: RETIRED S-2026-07-07e (real-fill re-validation). EVERY grid cell
+//   (thr 0.3-1.5% x be 6/10/20 x exec A/buf10/buf25) NEGATIVE on XAGUSD H1-OHLC 2024-01..2026-07
+//   including the silver squeeze (22->119->62): best cell 1.5/6/A -$486k real vs +$5.8M model
+//   per 1-lot book, both halves negative everywhere -> no bull-gate salvage. enabled=false in
+//   engine_init. Evidence outputs/BEFLOOR_FAMILY_REALFILL_2026-07-07.txt · registry §5.
 // =============================================================================
 #include <cstdint>
 #include <cstdio>
@@ -115,6 +110,15 @@ public:
     }
 
     const Config& config() const { return cfg_; }
+
+    // RETIREMENT helper (S-2026-07-07e): drop any persisted open window/leg arm-state so the
+    // published state shows no frozen "open" legs after the engine stops being fed. Shadow arms
+    // only (never a real position); closed-trade history and the real forward book are untouched.
+    void clear_open_arms() noexcept {
+        win_[0] = win_[1] = win_pend_[0] = win_pend_[1] = false;
+        for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) live_[fi][ti] = LiveLeg{};
+        save_live_state_();
+    }
 
     // ---- warm-seed / rebuild from an H1 CSV (ts,o,h,l,c OR ts,c). PRE-DEPLOY history:
     // primes the 2h detector and rebuilds the book on restart; books nothing new by itself
