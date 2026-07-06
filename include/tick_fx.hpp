@@ -27,6 +27,7 @@
 
 #include <chrono>
 #include "FxBeFloorCompanion.hpp"   // omega::fx_befloor_book() (per-pair BE-floor companion)
+#include "JumpRiderEngine.hpp"      // omega::jump_rider_book() (UpJump rider, same H1 feed)
 
 // ── FX chart + companion bar builder (S-2026-07-06) ─────────────────────────
 //   FX has no trading engine (2026-06-29 removal stands), but it is subscribed for
@@ -45,7 +46,10 @@ static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair
         if (start == 0) { acc = {b/60000LL, mid, mid, mid, mid, 0}; start = b; }
         else if (b != start) {
             sink.add_bar(acc);
-            if (drive) omega::fx_befloor_book().on_h1_bar(pair, start / 1000, acc.close);
+            if (drive) {
+                omega::fx_befloor_book().on_h1_bar(pair, start / 1000, acc.close);
+                omega::jump_rider_book().on_h1_bar(pair, start / 1000, acc.close);   // UpJump rider, same feed
+            }
             acc = {b/60000LL, mid, mid, mid, mid, 0}; start = b;
         } else { if (mid > acc.high) acc.high = mid; if (mid < acc.low) acc.low = mid; acc.close = mid; }
     };

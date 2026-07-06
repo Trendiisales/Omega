@@ -8,6 +8,7 @@
 #include "StallCompanion.hpp"    // giveback-clip companion zoo (native C++ port of stall_accountant.py)
 #include "XagBeFloorCompanion.hpp"// XAGPos/XAGNeg SILVER BE-floor companion H1 feed (fed from XAGUSD DOM mid below)
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI BE-floor companion H1 feed (fed from USOIL.F DOM mid below)
+#include "JumpRiderEngine.hpp"     // UpJump-pattern rider (fed from the same H1 sinks below)
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -200,6 +201,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             if (s_oil_h1_start == 0) { s_oil_h1_start = ob; s_oil_h1_close = oil_mid; }
             else if (ob != s_oil_h1_start) {
                 omega::usoil_befloor_companion().on_h1_bar(s_oil_h1_start / 1000, s_oil_h1_close);
+                omega::jump_rider_book().on_h1_bar("USOIL", s_oil_h1_start / 1000, s_oil_h1_close);
                 s_oil_h1_start = ob; s_oil_h1_close = oil_mid;
             } else { s_oil_h1_close = oil_mid; }
         }
@@ -667,6 +669,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     if (s_xag_h1_start == 0) { s_xag_h1_start = xb; s_xag_h1_close = xag_mid; }
                     else if (xb != s_xag_h1_start) {
                         omega::xag_befloor_companion().on_h1_bar(s_xag_h1_start / 1000, s_xag_h1_close);
+                        omega::jump_rider_book().on_h1_bar("XAGUSD", s_xag_h1_start / 1000, s_xag_h1_close);
                         s_xag_h1_start = xb; s_xag_h1_close = xag_mid;
                     } else { s_xag_h1_close = xag_mid; }
                 }
