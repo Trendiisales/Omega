@@ -1,0 +1,776 @@
+=== RUN A: FILL=close RIDER_BE=1 (engines as implemented today) ===
+
+=== XAUUSD  bars=3000  span=186d  thr=1.00%  rt_cost=6.0bp  fill=close  winP=34 winN=36 ===
+  TRAIL r20   ALL n=173   net=     -624bp wr=  29% worst=   -318bp maxDD=   1783bp   | Pos     -729bp  Neg     +105bp
+  TRAIL r50   ALL n=160   net=     +218bp wr=  27% worst=   -318bp maxDD=   1684bp   | Pos     -522bp  Neg     +740bp
+  TRAIL r100  ALL n=149   net=     +325bp wr=  18% worst=   -318bp maxDD=   2044bp   | Pos     -611bp  Neg     +936bp
+  TRAIL r150  ALL n=130   net=     +245bp wr=  16% worst=   -318bp maxDD=   1813bp   | Pos     -665bp  Neg     +910bp
+  TRAIL r400  ALL n=117   net=     +725bp wr=  15% worst=   -318bp maxDD=   1731bp   | Pos     -310bp  Neg    +1036bp
+  TRAIL5 BOOK      n=729   net=     +889bp wr=  22% worst=   -318bp maxDD=   2232bp
+  TP    r50   ALL n=320   net=    -4453bp wr=  28% worst=   -318bp maxDD=   4708bp   | Pos    -1890bp  Neg    -2563bp
+  TP    r100  ALL n=268   net=    -2805bp wr=  20% worst=   -318bp maxDD=   3177bp   | Pos    -1810bp  Neg     -995bp
+  TP    r150  ALL n=264   net=    -2345bp wr=  16% worst=   -318bp maxDD=   3119bp   | Pos    -1761bp  Neg     -584bp
+  TP    r200  ALL n=230   net=    -1226bp wr=  15% worst=   -318bp maxDD=   2555bp   | Pos     -466bp  Neg     -761bp
+  TP    r250  ALL n=215   net=     -411bp wr=  14% worst=   -318bp maxDD=   2277bp   | Pos     -439bp  Neg      +28bp
+  TP    r300  ALL n=201   net=     -636bp wr=  14% worst=   -435bp maxDD=   2306bp   | Pos    -1064bp  Neg     +428bp
+  TP    r400  ALL n=168   net=     +468bp wr=  15% worst=   -318bp maxDD=   2367bp   | Pos     +324bp  Neg     +144bp
+  TP7   BOOK       n=1666  net=   -11408bp wr=  18% worst=   -435bp maxDD=  13108bp
+  RIDER            n=77    net=     -567bp wr=  27% worst=   -391bp maxDD=   1492bp
+
+=== XAGUSD  bars=3000  span=188d  thr=1.00%  rt_cost=6.0bp  fill=close  winP=156 winN=156 ===
+  TRAIL r20   ALL n=403   net=    -3358bp wr=  29% worst=   -503bp maxDD=   4897bp   | Pos    -1349bp  Neg    -2009bp
+  TRAIL r50   ALL n=385   net=    -2156bp wr=  27% worst=   -503bp maxDD=   4437bp   | Pos     -299bp  Neg    -1857bp
+  TRAIL r100  ALL n=356   net=    -1337bp wr=  21% worst=   -503bp maxDD=   3534bp   | Pos       -3bp  Neg    -1335bp
+  TRAIL r150  ALL n=349   net=    -1919bp wr=  18% worst=   -503bp maxDD=   4370bp   | Pos     -407bp  Neg    -1512bp
+  TRAIL r400  ALL n=336   net=    -1824bp wr=  18% worst=   -355bp maxDD=   4239bp   | Pos     -707bp  Neg    -1117bp
+  TRAIL5 BOOK      n=1829  net=   -10594bp wr=  23% worst=   -503bp maxDD=  12161bp
+  TP    r50   ALL n=606   net=   -20073bp wr=  33% worst=   -516bp maxDD=  20249bp   | Pos    -8970bp  Neg   -11102bp
+  TP    r100  ALL n=552   net=   -16360bp wr=  25% worst=   -516bp maxDD=  16638bp   | Pos    -6829bp  Neg    -9530bp
+  TP    r150  ALL n=505   net=   -11603bp wr=  22% worst=   -516bp maxDD=  12816bp   | Pos    -4669bp  Neg    -6935bp
+  TP    r200  ALL n=479   net=   -10220bp wr=  19% worst=   -503bp maxDD=  11162bp   | Pos    -3326bp  Neg    -6894bp
+  TP    r250  ALL n=455   net=   -10856bp wr=  18% worst=   -516bp maxDD=  11444bp   | Pos    -4102bp  Neg    -6754bp
+  TP    r300  ALL n=435   net=    -8411bp wr=  18% worst=   -503bp maxDD=   9764bp   | Pos    -2474bp  Neg    -5937bp
+  TP    r400  ALL n=415   net=    -5754bp wr=  17% worst=   -503bp maxDD=   7612bp   | Pos    -1496bp  Neg    -4258bp
+  TP7   BOOK       n=3447  net=   -83276bp wr=  22% worst=   -516bp maxDD=  83728bp
+  RIDER            n=287   net=     -317bp wr=  33% worst=   -500bp maxDD=   4962bp
+
+=== USOIL  bars=2988  span=185d  thr=1.00%  rt_cost=8.0bp  fill=close  winP=118 winN=122 ===
+  TRAIL r20   ALL n=356   net=    -4122bp wr=  27% worst=  -1040bp maxDD=   5849bp   | Pos    -1337bp  Neg    -2785bp
+  TRAIL r50   ALL n=329   net=    -3233bp wr=  25% worst=  -1040bp maxDD=   5337bp   | Pos     -982bp  Neg    -2250bp
+  TRAIL r100  ALL n=317   net=    -4147bp wr=  17% worst=  -1040bp maxDD=   6654bp   | Pos    -1393bp  Neg    -2753bp
+  TRAIL r150  ALL n=297   net=    -3340bp wr=  15% worst=  -1040bp maxDD=   5981bp   | Pos    -1233bp  Neg    -2106bp
+  TRAIL r400  ALL n=290   net=    -3900bp wr=  14% worst=  -1040bp maxDD=   6662bp   | Pos    -1376bp  Neg    -2524bp
+  TRAIL5 BOOK      n=1589  net=   -18741bp wr=  20% worst=  -1040bp maxDD=  20698bp
+  TP    r50   ALL n=557   net=   -16704bp wr=  32% worst=  -1040bp maxDD=  16771bp   | Pos    -8017bp  Neg    -8687bp
+  TP    r100  ALL n=487   net=   -13960bp wr=  25% worst=  -1040bp maxDD=  14898bp   | Pos    -6557bp  Neg    -7403bp
+  TP    r150  ALL n=443   net=   -11017bp wr=  20% worst=  -1040bp maxDD=  11810bp   | Pos    -3810bp  Neg    -7207bp
+  TP    r200  ALL n=420   net=    -9959bp wr=  18% worst=  -1040bp maxDD=  12102bp   | Pos    -2976bp  Neg    -6982bp
+  TP    r250  ALL n=396   net=    -9470bp wr=  17% worst=  -1040bp maxDD=  11446bp   | Pos    -2860bp  Neg    -6611bp
+  TP    r300  ALL n=386   net=    -9440bp wr=  15% worst=  -1040bp maxDD=  11737bp   | Pos    -2555bp  Neg    -6885bp
+  TP    r400  ALL n=369   net=    -9877bp wr=  14% worst=  -1040bp maxDD=  12453bp   | Pos    -2988bp  Neg    -6889bp
+  TP7   BOOK       n=3058  net=   -80425bp wr=  21% worst=  -1040bp maxDD=  82086bp
+  RIDER            n=233   net=    -2647bp wr=  32% worst=  -1714bp maxDD=   5590bp
+
+=== EURUSD  bars=6920  span=404d  thr=0.30%  rt_cost=4.0bp  fill=close  winP=48 winN=47 ===
+  TRAIL r20   ALL n=312   net=    -1156bp wr=  17% worst=   -106bp maxDD=   1416bp   | Pos      -99bp  Neg    -1058bp
+  TRAIL r50   ALL n=261   net=     -978bp wr=  10% worst=    -87bp maxDD=   1254bp   | Pos     -157bp  Neg     -821bp
+  TRAIL r100  ALL n=250   net=     -966bp wr=   8% worst=    -87bp maxDD=   1211bp   | Pos     -140bp  Neg     -826bp
+  TRAIL r150  ALL n=250   net=     -966bp wr=   8% worst=    -87bp maxDD=   1211bp   | Pos     -140bp  Neg     -826bp
+  TRAIL r400  ALL n=250   net=     -966bp wr=   8% worst=    -87bp maxDD=   1211bp   | Pos     -140bp  Neg     -826bp
+  TRAIL5 BOOK      n=1323  net=    -5031bp wr=  11% worst=   -106bp maxDD=   5291bp
+  TP    r50   ALL n=433   net=    -2055bp wr=  11% worst=   -127bp maxDD=   2121bp   | Pos     -915bp  Neg    -1140bp
+  TP    r100  ALL n=360   net=    -1526bp wr=   8% worst=   -127bp maxDD=   1615bp   | Pos     -406bp  Neg    -1120bp
+  TP    r150  ALL n=338   net=    -1511bp wr=   8% worst=   -127bp maxDD=   1612bp   | Pos     -332bp  Neg    -1179bp
+  TP    r200  ALL n=332   net=    -1495bp wr=   8% worst=   -127bp maxDD=   1585bp   | Pos     -344bp  Neg    -1152bp
+  TP    r250  ALL n=324   net=    -1411bp wr=   8% worst=   -127bp maxDD=   1529bp   | Pos     -259bp  Neg    -1152bp
+  TP    r300  ALL n=324   net=    -1456bp wr=   8% worst=   -127bp maxDD=   1546bp   | Pos     -305bp  Neg    -1152bp
+  TP    r400  ALL n=324   net=    -1456bp wr=   8% worst=   -127bp maxDD=   1546bp   | Pos     -305bp  Neg    -1152bp
+  TP7   BOOK       n=2435  net=   -10911bp wr=   8% worst=   -127bp maxDD=  10977bp
+  RIDER            n=106   net=     -332bp wr=  25% worst=   -111bp maxDD=    625bp
+
+=== GBPUSD  bars=7928  span=464d  thr=0.30%  rt_cost=3.5bp  fill=close  winP=53 winN=52 ===
+  TRAIL r20   ALL n=366   net=    -1530bp wr=  16% worst=    -69bp maxDD=   1530bp   | Pos     -601bp  Neg     -928bp
+  TRAIL r50   ALL n=308   net=    -1255bp wr=   9% worst=    -51bp maxDD=   1346bp   | Pos     -518bp  Neg     -737bp
+  TRAIL r100  ALL n=280   net=    -1256bp wr=   8% worst=    -51bp maxDD=   1445bp   | Pos     -289bp  Neg     -967bp
+  TRAIL r150  ALL n=266   net=    -1227bp wr=   8% worst=    -51bp maxDD=   1435bp   | Pos     -287bp  Neg     -940bp
+  TRAIL r400  ALL n=266   net=    -1227bp wr=   8% worst=    -51bp maxDD=   1435bp   | Pos     -287bp  Neg     -940bp
+  TRAIL5 BOOK      n=1486  net=    -6494bp wr=  10% worst=    -69bp maxDD=   6559bp
+  TP    r50   ALL n=552   net=    -2973bp wr=  10% worst=   -100bp maxDD=   2973bp   | Pos    -1447bp  Neg    -1526bp
+  TP    r100  ALL n=455   net=    -1978bp wr=   7% worst=    -62bp maxDD=   1978bp   | Pos     -796bp  Neg    -1182bp
+  TP    r150  ALL n=416   net=    -1753bp wr=   6% worst=    -62bp maxDD=   2042bp   | Pos     -784bp  Neg     -969bp
+  TP    r200  ALL n=385   net=    -1561bp wr=   7% worst=    -62bp maxDD=   1800bp   | Pos     -510bp  Neg    -1051bp
+  TP    r250  ALL n=362   net=    -1729bp wr=   7% worst=    -62bp maxDD=   1911bp   | Pos     -624bp  Neg    -1104bp
+  TP    r300  ALL n=360   net=    -1728bp wr=   7% worst=    -62bp maxDD=   1910bp   | Pos     -624bp  Neg    -1104bp
+  TP    r400  ALL n=360   net=    -1728bp wr=   7% worst=    -62bp maxDD=   1910bp   | Pos     -624bp  Neg    -1104bp
+  TP7   BOOK       n=2890  net=   -13450bp wr=   8% worst=   -100bp maxDD=  13523bp
+  RIDER            n=125   net=    -1073bp wr=  24% worst=   -106bp maxDD=   1264bp
+
+=== USDJPY  bars=7928  span=464d  thr=0.30%  rt_cost=3.0bp  fill=close  winP=88 winN=90 ===
+  TRAIL r20   ALL n=485   net=    -1079bp wr=  19% worst=    -97bp maxDD=   1350bp   | Pos     -779bp  Neg     -300bp
+  TRAIL r50   ALL n=426   net=     -945bp wr=  14% worst=   -107bp maxDD=   1120bp   | Pos     -462bp  Neg     -483bp
+  TRAIL r100  ALL n=399   net=     -729bp wr=  12% worst=   -107bp maxDD=    945bp   | Pos     -468bp  Neg     -261bp
+  TRAIL r150  ALL n=399   net=     -741bp wr=  12% worst=   -107bp maxDD=    958bp   | Pos     -480bp  Neg     -261bp
+  TRAIL r400  ALL n=399   net=     -741bp wr=  12% worst=   -107bp maxDD=    958bp   | Pos     -480bp  Neg     -261bp
+  TRAIL5 BOOK      n=2108  net=    -4236bp wr=  14% worst=   -107bp maxDD=   4453bp
+  TP    r50   ALL n=741   net=    -2905bp wr=  13% worst=   -107bp maxDD=   2949bp   | Pos    -1485bp  Neg    -1419bp
+  TP    r100  ALL n=593   net=    -1503bp wr=  11% worst=   -107bp maxDD=   1503bp   | Pos     -751bp  Neg     -753bp
+  TP    r150  ALL n=527   net=     -887bp wr=  11% worst=   -107bp maxDD=    946bp   | Pos     -296bp  Neg     -591bp
+  TP    r200  ALL n=504   net=     -792bp wr=  11% worst=   -107bp maxDD=    825bp   | Pos     -271bp  Neg     -520bp
+  TP    r250  ALL n=493   net=     -818bp wr=  11% worst=   -107bp maxDD=    902bp   | Pos     -267bp  Neg     -551bp
+  TP    r300  ALL n=490   net=     -728bp wr=  11% worst=   -107bp maxDD=    876bp   | Pos     -145bp  Neg     -583bp
+  TP    r400  ALL n=489   net=     -743bp wr=  11% worst=   -107bp maxDD=    876bp   | Pos     -160bp  Neg     -583bp
+  TP7   BOOK       n=3837  net=    -8376bp wr=  11% worst=   -107bp maxDD=   8390bp
+  RIDER            n=182   net=     +625bp wr=  31% worst=   -104bp maxDD=    599bp
+
+=== AUDUSD  bars=8338  span=489d  thr=0.30%  rt_cost=6.0bp  fill=close  winP=111 winN=106 ===
+  TRAIL r20   ALL n=608   net=    -5035bp wr=  14% worst=   -100bp maxDD=   5035bp   | Pos    -2821bp  Neg    -2214bp
+  TRAIL r50   ALL n=478   net=    -3773bp wr=   9% worst=   -100bp maxDD=   3773bp   | Pos    -1785bp  Neg    -1989bp
+  TRAIL r100  ALL n=458   net=    -3849bp wr=   8% worst=   -100bp maxDD=   3849bp   | Pos    -1947bp  Neg    -1903bp
+  TRAIL r150  ALL n=455   net=    -3785bp wr=   8% worst=   -100bp maxDD=   3785bp   | Pos    -1882bp  Neg    -1903bp
+  TRAIL r400  ALL n=455   net=    -3785bp wr=   8% worst=   -100bp maxDD=   3785bp   | Pos    -1882bp  Neg    -1903bp
+  TRAIL5 BOOK      n=2454  net=   -20228bp wr=  10% worst=   -100bp maxDD=  20228bp
+  TP    r50   ALL n=805   net=    -6793bp wr=  12% worst=   -100bp maxDD=   6793bp   | Pos    -3686bp  Neg    -3107bp
+  TP    r100  ALL n=627   net=    -4906bp wr=  10% worst=   -100bp maxDD=   4906bp   | Pos    -2215bp  Neg    -2691bp
+  TP    r150  ALL n=587   net=    -4229bp wr=   9% worst=   -100bp maxDD=   4330bp   | Pos    -2018bp  Neg    -2212bp
+  TP    r200  ALL n=550   net=    -3980bp wr=  10% worst=   -100bp maxDD=   3980bp   | Pos    -1722bp  Neg    -2257bp
+  TP    r250  ALL n=542   net=    -4004bp wr=   9% worst=   -100bp maxDD=   4028bp   | Pos    -1728bp  Neg    -2276bp
+  TP    r300  ALL n=533   net=    -3869bp wr=   9% worst=   -100bp maxDD=   3869bp   | Pos    -1644bp  Neg    -2226bp
+  TP    r400  ALL n=527   net=    -3733bp wr=   9% worst=   -100bp maxDD=   3733bp   | Pos    -1575bp  Neg    -2158bp
+  TP7   BOOK       n=4171  net=   -31514bp wr=  10% worst=   -100bp maxDD=  31514bp
+  RIDER            n=230   net=    -1613bp wr=  24% worst=   -123bp maxDD=   2302bp
+
+=== NZDUSD  bars=8341  span=489d  thr=0.30%  rt_cost=7.0bp  fill=close  winP=121 winN=118 ===
+  TRAIL r20   ALL n=607   net=    -5431bp wr=  12% worst=   -164bp maxDD=   5468bp   | Pos    -2800bp  Neg    -2631bp
+  TRAIL r50   ALL n=519   net=    -4877bp wr=   9% worst=   -164bp maxDD=   4878bp   | Pos    -2705bp  Neg    -2172bp
+  TRAIL r100  ALL n=492   net=    -4952bp wr=   8% worst=   -164bp maxDD=   4952bp   | Pos    -2671bp  Neg    -2281bp
+  TRAIL r150  ALL n=491   net=    -4978bp wr=   8% worst=   -164bp maxDD=   4978bp   | Pos    -2671bp  Neg    -2307bp
+  TRAIL r400  ALL n=491   net=    -4978bp wr=   8% worst=   -164bp maxDD=   4978bp   | Pos    -2671bp  Neg    -2307bp
+  TRAIL5 BOOK      n=2600  net=   -25217bp wr=   9% worst=   -164bp maxDD=  25217bp
+  TP    r50   ALL n=890   net=    -8590bp wr=  10% worst=    -92bp maxDD=   8623bp   | Pos    -4600bp  Neg    -3990bp
+  TP    r100  ALL n=726   net=    -6824bp wr=   9% worst=    -92bp maxDD=   6860bp   | Pos    -3720bp  Neg    -3105bp
+  TP    r150  ALL n=660   net=    -6018bp wr=   8% worst=    -92bp maxDD=   6053bp   | Pos    -3234bp  Neg    -2784bp
+  TP    r200  ALL n=640   net=    -6121bp wr=   8% worst=    -92bp maxDD=   6157bp   | Pos    -3505bp  Neg    -2616bp
+  TP    r250  ALL n=626   net=    -5931bp wr=   8% worst=    -92bp maxDD=   5966bp   | Pos    -3379bp  Neg    -2552bp
+  TP    r300  ALL n=625   net=    -6055bp wr=   8% worst=    -92bp maxDD=   6090bp   | Pos    -3455bp  Neg    -2599bp
+  TP    r400  ALL n=624   net=    -5977bp wr=   8% worst=    -92bp maxDD=   6012bp   | Pos    -3458bp  Neg    -2519bp
+  TP7   BOOK       n=4791  net=   -45517bp wr=   8% worst=    -92bp maxDD=  45539bp
+  RIDER            n=243   net=    -2230bp wr=  23% worst=   -164bp maxDD=   2331bp
+
+=== US500  bars=13389  span=830d  thr=0.30%  rt_cost=4.0bp  fill=close  winP=366 winN=361 ===
+  TRAIL r20   ALL n=954   net=    -2642bp wr=  21% worst=   -135bp maxDD=   3140bp   | Pos    -1063bp  Neg    -1579bp
+  TRAIL r50   ALL n=854   net=    -3134bp wr=  15% worst=   -167bp maxDD=   3649bp   | Pos    -1319bp  Neg    -1815bp
+  TRAIL r100  ALL n=821   net=    -2886bp wr=  15% worst=   -167bp maxDD=   3361bp   | Pos    -1045bp  Neg    -1841bp
+  TRAIL r150  ALL n=821   net=    -2886bp wr=  15% worst=   -167bp maxDD=   3361bp   | Pos    -1045bp  Neg    -1841bp
+  TRAIL r400  ALL n=821   net=    -2886bp wr=  15% worst=   -167bp maxDD=   3361bp   | Pos    -1045bp  Neg    -1841bp
+  TRAIL5 BOOK      n=4271  net=   -14434bp wr=  17% worst=   -167bp maxDD=  14941bp
+  TP    r50   ALL n=1297  net=    -8102bp wr=  18% worst=   -135bp maxDD=   8289bp   | Pos    -3397bp  Neg    -4705bp
+  TP    r100  ALL n=1077  net=    -6013bp wr=  16% worst=   -167bp maxDD=   6272bp   | Pos    -2294bp  Neg    -3719bp
+  TP    r150  ALL n=998   net=    -4407bp wr=  15% worst=   -167bp maxDD=   4937bp   | Pos    -1559bp  Neg    -2848bp
+  TP    r200  ALL n=962   net=    -3769bp wr=  15% worst=   -167bp maxDD=   4192bp   | Pos    -1398bp  Neg    -2370bp
+  TP    r250  ALL n=943   net=    -3669bp wr=  15% worst=   -167bp maxDD=   4093bp   | Pos    -1176bp  Neg    -2493bp
+  TP    r300  ALL n=919   net=    -3359bp wr=  15% worst=   -167bp maxDD=   3786bp   | Pos    -1019bp  Neg    -2340bp
+  TP    r400  ALL n=916   net=    -3203bp wr=  15% worst=   -167bp maxDD=   3648bp   | Pos    -1001bp  Neg    -2202bp
+  TP7   BOOK       n=7112  net=   -32523bp wr=  16% worst=   -167bp maxDD=  32722bp
+  RIDER            n=661   net=    -2573bp wr=  31% worst=   -397bp maxDD=   2993bp
+
+=== NAS100  bars=11884  span=830d  thr=0.30%  rt_cost=3.0bp  fill=close  winP=462 winN=464 ===
+  TRAIL r20   ALL n=1108  net=    -2820bp wr=  21% worst=   -206bp maxDD=   3513bp   | Pos    -1004bp  Neg    -1816bp
+  TRAIL r50   ALL n=996   net=    -3571bp wr=  16% worst=   -206bp maxDD=   4044bp   | Pos     -923bp  Neg    -2648bp
+  TRAIL r100  ALL n=981   net=    -3448bp wr=  15% worst=   -206bp maxDD=   3951bp   | Pos     -893bp  Neg    -2555bp
+  TRAIL r150  ALL n=981   net=    -3448bp wr=  15% worst=   -206bp maxDD=   3951bp   | Pos     -893bp  Neg    -2555bp
+  TRAIL r400  ALL n=981   net=    -3528bp wr=  15% worst=   -206bp maxDD=   4032bp   | Pos     -973bp  Neg    -2555bp
+  TRAIL5 BOOK      n=5047  net=   -16815bp wr=  17% worst=   -206bp maxDD=  17452bp
+  TP    r50   ALL n=1448  net=    -9781bp wr=  21% worst=   -206bp maxDD=  10050bp   | Pos    -4448bp  Neg    -5333bp
+  TP    r100  ALL n=1258  net=    -7430bp wr=  16% worst=   -206bp maxDD=   7882bp   | Pos    -3049bp  Neg    -4381bp
+  TP    r150  ALL n=1180  net=    -4945bp wr=  16% worst=   -206bp maxDD=   5419bp   | Pos    -1605bp  Neg    -3340bp
+  TP    r200  ALL n=1116  net=    -4097bp wr=  16% worst=   -206bp maxDD=   4587bp   | Pos    -1153bp  Neg    -2943bp
+  TP    r250  ALL n=1108  net=    -3831bp wr=  15% worst=   -206bp maxDD=   4437bp   | Pos    -1084bp  Neg    -2748bp
+  TP    r300  ALL n=1089  net=    -3433bp wr=  16% worst=   -206bp maxDD=   3946bp   | Pos    -1212bp  Neg    -2221bp
+  TP    r400  ALL n=1082  net=    -3365bp wr=  16% worst=   -206bp maxDD=   3969bp   | Pos    -1072bp  Neg    -2293bp
+  TP7   BOOK       n=8281  net=   -36882bp wr=  17% worst=   -206bp maxDD=  37198bp
+  RIDER            n=823   net=    -2789bp wr=  33% worst=   -508bp maxDD=   3315bp
+
+=== DJ30  bars=11807  span=731d  thr=0.30%  rt_cost=2.0bp  fill=close  winP=258 winN=254 ===
+  TRAIL r20   ALL n=784   net=    -1532bp wr=  19% worst=   -116bp maxDD=   1900bp   | Pos     -781bp  Neg     -752bp
+  TRAIL r50   ALL n=682   net=     -920bp wr=  14% worst=   -116bp maxDD=   1696bp   | Pos     -494bp  Neg     -426bp
+  TRAIL r100  ALL n=654   net=     -521bp wr=  15% worst=   -116bp maxDD=   1629bp   | Pos     -349bp  Neg     -171bp
+  TRAIL r150  ALL n=652   net=     -487bp wr=  14% worst=   -116bp maxDD=   1595bp   | Pos     -316bp  Neg     -171bp
+  TRAIL r400  ALL n=652   net=     -487bp wr=  14% worst=   -116bp maxDD=   1595bp   | Pos     -316bp  Neg     -171bp
+  TRAIL5 BOOK      n=3424  net=    -3947bp wr=  15% worst=   -116bp maxDD=   4415bp
+  TP    r50   ALL n=1043  net=    -5028bp wr=  17% worst=   -130bp maxDD=   5233bp   | Pos    -2504bp  Neg    -2524bp
+  TP    r100  ALL n=894   net=    -2804bp wr=  14% worst=   -130bp maxDD=   3263bp   | Pos    -1465bp  Neg    -1339bp
+  TP    r150  ALL n=798   net=    -1359bp wr=  15% worst=   -130bp maxDD=   2137bp   | Pos     -401bp  Neg     -957bp
+  TP    r200  ALL n=770   net=     -987bp wr=  14% worst=   -130bp maxDD=   1816bp   | Pos     -427bp  Neg     -560bp
+  TP    r250  ALL n=752   net=     -643bp wr=  14% worst=   -130bp maxDD=   1567bp   | Pos     -333bp  Neg     -310bp
+  TP    r300  ALL n=748   net=     -425bp wr=  14% worst=   -130bp maxDD=   1505bp   | Pos     -256bp  Neg     -169bp
+  TP    r400  ALL n=738   net=     -157bp wr=  14% worst=   -130bp maxDD=   1493bp   | Pos     -249bp  Neg      +92bp
+  TP7   BOOK       n=5743  net=   -11402bp wr=  15% worst=   -130bp maxDD=  12030bp
+  RIDER            n=478   net=    +1398bp wr=  32% worst=   -278bp maxDD=   1322bp
+
+=== GER40  bars=3000  span=184d  thr=0.30%  rt_cost=2.0bp  fill=close  winP=69 winN=70 ===
+  TRAIL r20   ALL n=237   net=     -206bp wr=  19% worst=    -58bp maxDD=    506bp   | Pos     -310bp  Neg     +104bp
+  TRAIL r50   ALL n=216   net=     -669bp wr=  15% worst=    -82bp maxDD=    724bp   | Pos     -423bp  Neg     -246bp
+  TRAIL r100  ALL n=214   net=     -698bp wr=  14% worst=    -82bp maxDD=    753bp   | Pos     -384bp  Neg     -314bp
+  TRAIL r150  ALL n=214   net=     -698bp wr=  14% worst=    -82bp maxDD=    753bp   | Pos     -384bp  Neg     -314bp
+  TRAIL r400  ALL n=214   net=     -698bp wr=  14% worst=    -82bp maxDD=    753bp   | Pos     -384bp  Neg     -314bp
+  TRAIL5 BOOK      n=1095  net=    -2968bp wr=  16% worst=    -82bp maxDD=   3063bp
+  TP    r50   ALL n=319   net=    -1418bp wr=  15% worst=    -82bp maxDD=   1457bp   | Pos     -870bp  Neg     -548bp
+  TP    r100  ALL n=270   net=     -647bp wr=  14% worst=    -82bp maxDD=    959bp   | Pos     -404bp  Neg     -243bp
+  TP    r150  ALL n=248   net=     -632bp wr=  15% worst=    -82bp maxDD=    846bp   | Pos     -344bp  Neg     -288bp
+  TP    r200  ALL n=252   net=     -728bp wr=  14% worst=    -82bp maxDD=    960bp   | Pos     -361bp  Neg     -367bp
+  TP    r250  ALL n=244   net=     -511bp wr=  14% worst=    -82bp maxDD=    729bp   | Pos     -260bp  Neg     -250bp
+  TP    r300  ALL n=242   net=     -474bp wr=  14% worst=    -82bp maxDD=    680bp   | Pos     -305bp  Neg     -169bp
+  TP    r400  ALL n=241   net=     -555bp wr=  15% worst=    -82bp maxDD=    760bp   | Pos     -305bp  Neg     -249bp
+  TP7   BOOK       n=1816  net=    -4964bp wr=  14% worst=    -82bp maxDD=   5121bp
+  RIDER            n=135   net=     +477bp wr=  32% worst=   -145bp maxDD=    450bp
+
+=== BTCUSDT  bars=39407  span=1642d  thr=2.00%  rt_cost=23.0bp  fill=close  winP=302 winN=0 ===
+  TRAIL r20   ALL n=915   net=   -21506bp wr=  21% worst=   -440bp maxDD=  21506bp   | Pos   -21506bp  Neg       +0bp
+  TRAIL r50   ALL n=884   net=   -17402bp wr=  19% worst=   -440bp maxDD=  17402bp   | Pos   -17402bp  Neg       +0bp
+  TRAIL r100  ALL n=856   net=   -14834bp wr=  14% worst=   -440bp maxDD=  14834bp   | Pos   -14834bp  Neg       +0bp
+  TRAIL r150  ALL n=801   net=   -13385bp wr=  11% worst=   -483bp maxDD=  13385bp   | Pos   -13385bp  Neg       +0bp
+  TRAIL r400  ALL n=664   net=    -9950bp wr=   8% worst=   -440bp maxDD=   9950bp   | Pos    -9950bp  Neg       +0bp
+  TRAIL5 BOOK      n=4120  net=   -77076bp wr=  15% worst=   -483bp maxDD=  77076bp
+  TP    r50   ALL n=1582  net=   -61175bp wr=  26% worst=   -440bp maxDD=  61175bp   | Pos   -61175bp  Neg       +0bp
+  TP    r100  ALL n=1489  net=   -53991bp wr=  19% worst=   -483bp maxDD=  53991bp   | Pos   -53991bp  Neg       +0bp
+  TP    r150  ALL n=1409  net=   -47483bp wr=  15% worst=   -483bp maxDD=  47483bp   | Pos   -47483bp  Neg       +0bp
+  TP    r200  ALL n=1340  net=   -41554bp wr=  13% worst=   -483bp maxDD=  41554bp   | Pos   -41554bp  Neg       +0bp
+  TP    r250  ALL n=1253  net=   -37287bp wr=  11% worst=   -483bp maxDD=  37287bp   | Pos   -37287bp  Neg       +0bp
+  TP    r300  ALL n=1216  net=   -36532bp wr=  10% worst=   -483bp maxDD=  36532bp   | Pos   -36532bp  Neg       +0bp
+  TP    r400  ALL n=1149  net=   -34020bp wr=   8% worst=   -483bp maxDD=  34020bp   | Pos   -34020bp  Neg       +0bp
+  TP7   BOOK       n=9438  net=  -312041bp wr=  15% worst=   -483bp maxDD= 312041bp
+  RIDER            n=346   net=    -5665bp wr=  25% worst=   -683bp maxDD=   8068bp
+  RIDER by year (net bp): {2022: -7212, 2023: 3258, 2024: 3882, 2025: -3166, 2026: -2426}
+
+=== ETHUSDT  bars=39407  span=1642d  thr=2.00%  rt_cost=23.0bp  fill=close  winP=402 winN=0 ===
+  TRAIL r20   ALL n=1124  net=   -22987bp wr=  23% worst=   -409bp maxDD=  23449bp   | Pos   -22987bp  Neg       +0bp
+  TRAIL r50   ALL n=1090  net=   -17742bp wr=  21% worst=   -409bp maxDD=  18072bp   | Pos   -17742bp  Neg       +0bp
+  TRAIL r100  ALL n=1047  net=   -15156bp wr=  17% worst=   -409bp maxDD=  15660bp   | Pos   -15156bp  Neg       +0bp
+  TRAIL r150  ALL n=982   net=   -13495bp wr=  14% worst=   -409bp maxDD=  13896bp   | Pos   -13495bp  Neg       +0bp
+  TRAIL r400  ALL n=845   net=   -11542bp wr=   9% worst=   -444bp maxDD=  11943bp   | Pos   -11542bp  Neg       +0bp
+  TRAIL5 BOOK      n=5088  net=   -80922bp wr=  17% worst=   -444bp maxDD=  81282bp
+  TP    r50   ALL n=1846  net=   -70347bp wr=  30% worst=   -461bp maxDD=  70347bp   | Pos   -70347bp  Neg       +0bp
+  TP    r100  ALL n=1714  net=   -54877bp wr=  23% worst=   -461bp maxDD=  54877bp   | Pos   -54877bp  Neg       +0bp
+  TP    r150  ALL n=1649  net=   -51454bp wr=  18% worst=   -461bp maxDD=  51469bp   | Pos   -51454bp  Neg       +0bp
+  TP    r200  ALL n=1580  net=   -47588bp wr=  15% worst=   -461bp maxDD=  47696bp   | Pos   -47588bp  Neg       +0bp
+  TP    r250  ALL n=1535  net=   -44257bp wr=  13% worst=   -409bp maxDD=  44465bp   | Pos   -44257bp  Neg       +0bp
+  TP    r300  ALL n=1481  net=   -41732bp wr=  11% worst=   -409bp maxDD=  42024bp   | Pos   -41732bp  Neg       +0bp
+  TP    r400  ALL n=1384  net=   -37814bp wr=  10% worst=   -409bp maxDD=  38145bp   | Pos   -37814bp  Neg       +0bp
+  TP7   BOOK       n=11189 net=  -348070bp wr=  18% worst=   -461bp maxDD= 348070bp
+  RIDER            n=470   net=   -12626bp wr=  25% worst=  -1095bp maxDD=  13245bp
+  RIDER by year (net bp): {2022: -6820, 2023: 25, 2024: 947, 2025: -4133, 2026: -2646}
+
+=== BOOK SUMMARY (net bp real, per symbol; fill=close rider_be=1) ===
+sym          TRAIL5        TP7      RIDER    TRAIL5 dd     TP7 dd   RIDER dd
+XAUUSD         +889     -11408       -567         2232      13108       1492
+XAGUSD       -10594     -83276       -317        12161      83728       4962
+USOIL        -18741     -80425      -2647        20698      82086       5590
+EURUSD        -5031     -10911       -332         5291      10977        625
+GBPUSD        -6494     -13450      -1073         6559      13523       1264
+USDJPY        -4236      -8376       +625         4453       8390        599
+AUDUSD       -20228     -31514      -1613        20228      31514       2302
+NZDUSD       -25217     -45517      -2230        25217      45539       2331
+US500        -14434     -32523      -2573        14941      32722       2993
+NAS100       -16815     -36882      -2789        17452      37198       3315
+DJ30          -3947     -11402      +1398         4415      12030       1322
+GER40         -2968      -4964       +477         3063       5121        450
+BTCUSDT      -77076    -312041      -5665        77076     312041       8068
+ETHUSDT      -80922    -348070     -12626        81282     348070      13245
+
+=== RUN B: FILL=resting RIDER_BE=1 (resting broker orders) ===
+
+=== XAUUSD  bars=3000  span=186d  thr=1.00%  rt_cost=6.0bp  fill=resting  winP=34 winN=36 ===
+  TRAIL r20   ALL n=279   net=    -1731bp wr=   1% worst=   -159bp maxDD=   1731bp   | Pos    -1132bp  Neg     -598bp
+  TRAIL r50   ALL n=277   net=    -1754bp wr=   1% worst=   -159bp maxDD=   1754bp   | Pos    -1156bp  Neg     -598bp
+  TRAIL r100  ALL n=276   net=    -1724bp wr=   1% worst=   -159bp maxDD=   1724bp   | Pos    -1126bp  Neg     -598bp
+  TRAIL r150  ALL n=274   net=    -1723bp wr=   1% worst=   -159bp maxDD=   1723bp   | Pos    -1125bp  Neg     -598bp
+  TRAIL r400  ALL n=269   net=    -1801bp wr=   0% worst=   -159bp maxDD=   1801bp   | Pos    -1203bp  Neg     -598bp
+  TRAIL5 BOOK      n=1375  net=    -8734bp wr=   1% worst=   -159bp maxDD=   8734bp
+  TP    r50   ALL n=282   net=    -1858bp wr=   1% worst=   -159bp maxDD=   1858bp   | Pos    -1254bp  Neg     -604bp
+  TP    r100  ALL n=279   net=    -1740bp wr=   1% worst=   -159bp maxDD=   1740bp   | Pos    -1136bp  Neg     -604bp
+  TP    r150  ALL n=277   net=    -1628bp wr=   1% worst=   -159bp maxDD=   1628bp   | Pos    -1024bp  Neg     -604bp
+  TP    r200  ALL n=275   net=    -1516bp wr=   1% worst=   -159bp maxDD=   1516bp   | Pos     -912bp  Neg     -604bp
+  TP    r250  ALL n=273   net=    -1404bp wr=   1% worst=   -159bp maxDD=   1404bp   | Pos     -800bp  Neg     -604bp
+  TP    r300  ALL n=270   net=    -1285bp wr=   1% worst=   -159bp maxDD=   1285bp   | Pos     -681bp  Neg     -604bp
+  TP    r400  ALL n=270   net=    -1807bp wr=   0% worst=   -159bp maxDD=   1807bp   | Pos    -1203bp  Neg     -604bp
+  TP7   BOOK       n=1926  net=   -11240bp wr=   1% worst=   -159bp maxDD=  11240bp
+  RIDER            n=78    net=      -82bp wr=  22% worst=   -206bp maxDD=   1266bp
+
+=== XAGUSD  bars=3000  span=188d  thr=1.00%  rt_cost=6.0bp  fill=resting  winP=156 winN=156 ===
+  TRAIL r20   ALL n=599   net=    -6468bp wr=   0% worst=   -783bp maxDD=   6468bp   | Pos    -4756bp  Neg    -1711bp
+  TRAIL r50   ALL n=598   net=    -6447bp wr=   0% worst=   -783bp maxDD=   6447bp   | Pos    -4736bp  Neg    -1711bp
+  TRAIL r100  ALL n=595   net=    -6356bp wr=   0% worst=   -783bp maxDD=   6356bp   | Pos    -4644bp  Neg    -1711bp
+  TRAIL r150  ALL n=596   net=    -6414bp wr=   0% worst=   -783bp maxDD=   6414bp   | Pos    -4703bp  Neg    -1711bp
+  TRAIL r400  ALL n=593   net=    -6445bp wr=   0% worst=   -783bp maxDD=   6445bp   | Pos    -4734bp  Neg    -1711bp
+  TRAIL5 BOOK      n=2981  net=   -32129bp wr=   0% worst=   -783bp maxDD=  32129bp
+  TP    r50   ALL n=601   net=    -6691bp wr=   0% worst=   -783bp maxDD=   6691bp   | Pos    -4980bp  Neg    -1711bp
+  TP    r100  ALL n=601   net=    -6641bp wr=   0% worst=   -783bp maxDD=   6641bp   | Pos    -4930bp  Neg    -1711bp
+  TP    r150  ALL n=601   net=    -6591bp wr=   0% worst=   -783bp maxDD=   6591bp   | Pos    -4880bp  Neg    -1711bp
+  TP    r200  ALL n=601   net=    -6541bp wr=   0% worst=   -783bp maxDD=   6541bp   | Pos    -4830bp  Neg    -1711bp
+  TP    r250  ALL n=601   net=    -6491bp wr=   0% worst=   -783bp maxDD=   6491bp   | Pos    -4780bp  Neg    -1711bp
+  TP    r300  ALL n=601   net=    -6441bp wr=   0% worst=   -783bp maxDD=   6441bp   | Pos    -4730bp  Neg    -1711bp
+  TP    r400  ALL n=596   net=    -6311bp wr=   0% worst=   -783bp maxDD=   6311bp   | Pos    -4600bp  Neg    -1711bp
+  TP7   BOOK       n=4202  net=   -45707bp wr=   0% worst=   -783bp maxDD=  45707bp
+  RIDER            n=301   net=    -3854bp wr=  24% worst=   -825bp maxDD=   6388bp
+
+=== USOIL  bars=2988  span=185d  thr=1.00%  rt_cost=8.0bp  fill=resting  winP=118 winN=122 ===
+  TRAIL r20   ALL n=505   net=    -3652bp wr=   1% worst=   -675bp maxDD=   3783bp   | Pos    -1479bp  Neg    -2173bp
+  TRAIL r50   ALL n=503   net=    -3642bp wr=   1% worst=   -675bp maxDD=   3770bp   | Pos    -1511bp  Neg    -2131bp
+  TRAIL r100  ALL n=505   net=    -3908bp wr=   1% worst=   -675bp maxDD=   3971bp   | Pos    -1662bp  Neg    -2245bp
+  TRAIL r150  ALL n=506   net=    -4188bp wr=   1% worst=   -675bp maxDD=   4197bp   | Pos    -1868bp  Neg    -2320bp
+  TRAIL r400  ALL n=496   net=    -3646bp wr=   1% worst=   -675bp maxDD=   4266bp   | Pos    -1936bp  Neg    -1710bp
+  TRAIL5 BOOK      n=2515  net=   -19037bp wr=   1% worst=   -675bp maxDD=  19656bp
+  TP    r50   ALL n=513   net=    -4822bp wr=   1% worst=   -675bp maxDD=   4822bp   | Pos    -2234bp  Neg    -2588bp
+  TP    r100  ALL n=512   net=    -4514bp wr=   1% worst=   -675bp maxDD=   4514bp   | Pos    -2026bp  Neg    -2488bp
+  TP    r150  ALL n=511   net=    -4205bp wr=   1% worst=   -675bp maxDD=   4205bp   | Pos    -1825bp  Neg    -2380bp
+  TP    r200  ALL n=509   net=    -4031bp wr=   1% worst=   -675bp maxDD=   4031bp   | Pos    -1751bp  Neg    -2280bp
+  TP    r250  ALL n=508   net=    -4023bp wr=   1% worst=   -675bp maxDD=   4023bp   | Pos    -1593bp  Neg    -2430bp
+  TP    r300  ALL n=508   net=    -3823bp wr=   1% worst=   -675bp maxDD=   3823bp   | Pos    -1443bp  Neg    -2380bp
+  TP    r400  ALL n=507   net=    -4151bp wr=   1% worst=   -675bp maxDD=   4228bp   | Pos    -1879bp  Neg    -2272bp
+  TP7   BOOK       n=3568  net=   -29569bp wr=   1% worst=   -675bp maxDD=  29646bp
+  RIDER            n=241   net=     +636bp wr=  24% worst=   -418bp maxDD=   2214bp
+
+=== EURUSD  bars=6920  span=404d  thr=0.30%  rt_cost=4.0bp  fill=resting  winP=48 winN=47 ===
+  TRAIL r20   ALL n=483   net=    -1964bp wr=   0% worst=    -19bp maxDD=   1964bp   | Pos    -1058bp  Neg     -906bp
+  TRAIL r50   ALL n=476   net=    -1837bp wr=   0% worst=    -19bp maxDD=   1837bp   | Pos     -931bp  Neg     -906bp
+  TRAIL r100  ALL n=480   net=    -1906bp wr=   0% worst=    -19bp maxDD=   1906bp   | Pos    -1000bp  Neg     -906bp
+  TRAIL r150  ALL n=475   net=    -1875bp wr=   0% worst=    -19bp maxDD=   1875bp   | Pos     -969bp  Neg     -906bp
+  TRAIL r400  ALL n=475   net=    -1875bp wr=   0% worst=    -19bp maxDD=   1875bp   | Pos     -969bp  Neg     -906bp
+  TRAIL5 BOOK      n=2389  net=    -9457bp wr=   0% worst=    -19bp maxDD=   9457bp
+  TP    r50   ALL n=486   net=    -1957bp wr=   0% worst=    -19bp maxDD=   1957bp   | Pos    -1034bp  Neg     -923bp
+  TP    r100  ALL n=484   net=    -1899bp wr=   0% worst=    -19bp maxDD=   1899bp   | Pos     -976bp  Neg     -923bp
+  TP    r150  ALL n=481   net=    -1836bp wr=   0% worst=    -19bp maxDD=   1836bp   | Pos     -914bp  Neg     -923bp
+  TP    r200  ALL n=480   net=    -1782bp wr=   0% worst=    -19bp maxDD=   1782bp   | Pos     -860bp  Neg     -923bp
+  TP    r250  ALL n=480   net=    -1896bp wr=   0% worst=    -19bp maxDD=   1896bp   | Pos     -973bp  Neg     -923bp
+  TP    r300  ALL n=480   net=    -1896bp wr=   0% worst=    -19bp maxDD=   1896bp   | Pos     -973bp  Neg     -923bp
+  TP    r400  ALL n=480   net=    -1896bp wr=   0% worst=    -19bp maxDD=   1896bp   | Pos     -973bp  Neg     -923bp
+  TP7   BOOK       n=3371  net=   -13163bp wr=   0% worst=    -19bp maxDD=  13163bp
+  RIDER            n=113   net=     -204bp wr=  19% worst=    -64bp maxDD=    654bp
+
+=== GBPUSD  bars=7928  span=464d  thr=0.30%  rt_cost=3.5bp  fill=resting  winP=53 winN=52 ===
+  TRAIL r20   ALL n=576   net=    -1880bp wr=   1% worst=     -5bp maxDD=   1880bp   | Pos    -1109bp  Neg     -771bp
+  TRAIL r50   ALL n=571   net=    -1854bp wr=   1% worst=    -11bp maxDD=   1854bp   | Pos    -1062bp  Neg     -792bp
+  TRAIL r100  ALL n=563   net=    -1913bp wr=   0% worst=     -5bp maxDD=   1913bp   | Pos    -1061bp  Neg     -852bp
+  TRAIL r150  ALL n=563   net=    -1936bp wr=   0% worst=     -5bp maxDD=   1936bp   | Pos    -1083bp  Neg     -852bp
+  TRAIL r400  ALL n=563   net=    -1936bp wr=   0% worst=     -5bp maxDD=   1936bp   | Pos    -1083bp  Neg     -852bp
+  TRAIL5 BOOK      n=2836  net=    -9519bp wr=   0% worst=    -11bp maxDD=   9519bp
+  TP    r50   ALL n=572   net=    -1831bp wr=   1% worst=     -5bp maxDD=   1831bp   | Pos    -1055bp  Neg     -776bp
+  TP    r100  ALL n=572   net=    -1832bp wr=   0% worst=     -5bp maxDD=   1832bp   | Pos    -1044bp  Neg     -788bp
+  TP    r150  ALL n=566   net=    -1836bp wr=   0% worst=     -5bp maxDD=   1836bp   | Pos     -980bp  Neg     -856bp
+  TP    r200  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP    r250  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP    r300  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP    r400  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP7   BOOK       n=3966  net=   -13255bp wr=   0% worst=     -5bp maxDD=  13255bp
+  RIDER            n=131   net=    -1120bp wr=  15% worst=    -64bp maxDD=   1238bp
+
+=== USDJPY  bars=7928  span=464d  thr=0.30%  rt_cost=3.0bp  fill=resting  winP=88 winN=90 ===
+  TRAIL r20   ALL n=792   net=    -2245bp wr=   1% worst=    -61bp maxDD=   2245bp   | Pos    -1324bp  Neg     -921bp
+  TRAIL r50   ALL n=782   net=    -2139bp wr=   1% worst=    -61bp maxDD=   2139bp   | Pos    -1278bp  Neg     -862bp
+  TRAIL r100  ALL n=779   net=    -2107bp wr=   1% worst=    -61bp maxDD=   2107bp   | Pos    -1317bp  Neg     -789bp
+  TRAIL r150  ALL n=779   net=    -2107bp wr=   1% worst=    -61bp maxDD=   2107bp   | Pos    -1317bp  Neg     -789bp
+  TRAIL r400  ALL n=779   net=    -2107bp wr=   1% worst=    -61bp maxDD=   2107bp   | Pos    -1317bp  Neg     -789bp
+  TRAIL5 BOOK      n=3911  net=   -10704bp wr=   1% worst=    -61bp maxDD=  10704bp
+  TP    r50   ALL n=797   net=    -2208bp wr=   1% worst=    -61bp maxDD=   2208bp   | Pos    -1329bp  Neg     -879bp
+  TP    r100  ALL n=789   net=    -2134bp wr=   1% worst=    -61bp maxDD=   2134bp   | Pos    -1314bp  Neg     -821bp
+  TP    r150  ALL n=783   net=    -2070bp wr=   1% worst=    -61bp maxDD=   2090bp   | Pos    -1321bp  Neg     -749bp
+  TP    r200  ALL n=781   net=    -2065bp wr=   1% worst=    -61bp maxDD=   2065bp   | Pos    -1321bp  Neg     -744bp
+  TP    r250  ALL n=781   net=    -2113bp wr=   1% worst=    -61bp maxDD=   2113bp   | Pos    -1321bp  Neg     -792bp
+  TP    r300  ALL n=781   net=    -2113bp wr=   1% worst=    -61bp maxDD=   2113bp   | Pos    -1321bp  Neg     -792bp
+  TP    r400  ALL n=781   net=    -2113bp wr=   1% worst=    -61bp maxDD=   2113bp   | Pos    -1321bp  Neg     -792bp
+  TP7   BOOK       n=5493  net=   -14816bp wr=   1% worst=    -61bp maxDD=  14816bp
+  RIDER            n=198   net=     +275bp wr=  23% worst=    -63bp maxDD=    693bp
+
+=== AUDUSD  bars=8338  span=489d  thr=0.30%  rt_cost=6.0bp  fill=resting  winP=111 winN=106 ===
+  TRAIL r20   ALL n=932   net=    -5388bp wr=   1% worst=    -26bp maxDD=   5388bp   | Pos    -3217bp  Neg    -2170bp
+  TRAIL r50   ALL n=895   net=    -4928bp wr=   1% worst=    -26bp maxDD=   4928bp   | Pos    -2781bp  Neg    -2146bp
+  TRAIL r100  ALL n=879   net=    -4797bp wr=   1% worst=    -26bp maxDD=   4797bp   | Pos    -2651bp  Neg    -2146bp
+  TRAIL r150  ALL n=879   net=    -4797bp wr=   1% worst=    -26bp maxDD=   4797bp   | Pos    -2651bp  Neg    -2146bp
+  TRAIL r400  ALL n=879   net=    -4797bp wr=   1% worst=    -26bp maxDD=   4797bp   | Pos    -2651bp  Neg    -2146bp
+  TRAIL5 BOOK      n=4464  net=   -24706bp wr=   1% worst=    -26bp maxDD=  24706bp
+  TP    r50   ALL n=939   net=    -5520bp wr=   1% worst=    -26bp maxDD=   5520bp   | Pos    -3250bp  Neg    -2270bp
+  TP    r100  ALL n=920   net=    -5136bp wr=   1% worst=    -26bp maxDD=   5136bp   | Pos    -2997bp  Neg    -2139bp
+  TP    r150  ALL n=903   net=    -4992bp wr=   1% worst=    -26bp maxDD=   4992bp   | Pos    -2825bp  Neg    -2167bp
+  TP    r200  ALL n=892   net=    -4878bp wr=   1% worst=    -26bp maxDD=   4878bp   | Pos    -2726bp  Neg    -2153bp
+  TP    r250  ALL n=888   net=    -4804bp wr=   1% worst=    -26bp maxDD=   4804bp   | Pos    -2651bp  Neg    -2153bp
+  TP    r300  ALL n=887   net=    -4851bp wr=   1% worst=    -26bp maxDD=   4851bp   | Pos    -2699bp  Neg    -2153bp
+  TP    r400  ALL n=887   net=    -4851bp wr=   1% worst=    -26bp maxDD=   4851bp   | Pos    -2699bp  Neg    -2153bp
+  TP7   BOOK       n=6316  net=   -35033bp wr=   1% worst=    -26bp maxDD=  35033bp
+  RIDER            n=240   net=    -1301bp wr=  19% worst=   -128bp maxDD=   1784bp
+
+=== NZDUSD  bars=8341  span=489d  thr=0.30%  rt_cost=7.0bp  fill=resting  winP=121 winN=118 ===
+  TRAIL r20   ALL n=966   net=    -6852bp wr=   1% worst=    -62bp maxDD=   6852bp   | Pos    -3436bp  Neg    -3416bp
+  TRAIL r50   ALL n=964   net=    -6894bp wr=   0% worst=    -62bp maxDD=   6894bp   | Pos    -3494bp  Neg    -3399bp
+  TRAIL r100  ALL n=954   net=    -6827bp wr=   0% worst=    -62bp maxDD=   6827bp   | Pos    -3398bp  Neg    -3428bp
+  TRAIL r150  ALL n=954   net=    -6824bp wr=   0% worst=    -62bp maxDD=   6824bp   | Pos    -3395bp  Neg    -3428bp
+  TRAIL r400  ALL n=954   net=    -6824bp wr=   0% worst=    -62bp maxDD=   6824bp   | Pos    -3395bp  Neg    -3428bp
+  TRAIL5 BOOK      n=4792  net=   -34220bp wr=   0% worst=    -62bp maxDD=  34220bp
+  TP    r50   ALL n=969   net=    -6829bp wr=   0% worst=    -62bp maxDD=   6829bp   | Pos    -3428bp  Neg    -3400bp
+  TP    r100  ALL n=965   net=    -6857bp wr=   0% worst=    -62bp maxDD=   6857bp   | Pos    -3407bp  Neg    -3450bp
+  TP    r150  ALL n=962   net=    -6785bp wr=   0% worst=    -62bp maxDD=   6785bp   | Pos    -3335bp  Neg    -3450bp
+  TP    r200  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP    r250  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP    r300  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP    r400  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP7   BOOK       n=6744  net=   -47999bp wr=   0% worst=    -62bp maxDD=  47999bp
+  RIDER            n=272   net=    -2600bp wr=  17% worst=   -111bp maxDD=   2831bp
+
+=== US500  bars=13389  span=830d  thr=0.30%  rt_cost=4.0bp  fill=resting  winP=366 winN=361 ===
+  TRAIL r20   ALL n=1650  net=    -6338bp wr=   1% worst=    -78bp maxDD=   6338bp   | Pos    -4157bp  Neg    -2181bp
+  TRAIL r50   ALL n=1628  net=    -6397bp wr=   1% worst=    -78bp maxDD=   6397bp   | Pos    -4053bp  Neg    -2344bp
+  TRAIL r100  ALL n=1625  net=    -6569bp wr=   1% worst=    -78bp maxDD=   6569bp   | Pos    -4066bp  Neg    -2503bp
+  TRAIL r150  ALL n=1625  net=    -6569bp wr=   1% worst=    -78bp maxDD=   6569bp   | Pos    -4066bp  Neg    -2503bp
+  TRAIL r400  ALL n=1625  net=    -6569bp wr=   1% worst=    -78bp maxDD=   6569bp   | Pos    -4066bp  Neg    -2503bp
+  TRAIL5 BOOK      n=8153  net=   -32442bp wr=   1% worst=    -78bp maxDD=  32442bp
+  TP    r50   ALL n=1667  net=    -6592bp wr=   1% worst=    -78bp maxDD=   6592bp   | Pos    -4087bp  Neg    -2505bp
+  TP    r100  ALL n=1653  net=    -6545bp wr=   1% worst=    -78bp maxDD=   6545bp   | Pos    -4019bp  Neg    -2526bp
+  TP    r150  ALL n=1644  net=    -6690bp wr=   1% worst=    -78bp maxDD=   6690bp   | Pos    -4029bp  Neg    -2661bp
+  TP    r200  ALL n=1643  net=    -6740bp wr=   1% worst=    -78bp maxDD=   6740bp   | Pos    -4052bp  Neg    -2688bp
+  TP    r250  ALL n=1643  net=    -6690bp wr=   1% worst=    -78bp maxDD=   6690bp   | Pos    -4052bp  Neg    -2638bp
+  TP    r300  ALL n=1643  net=    -6640bp wr=   1% worst=    -78bp maxDD=   6640bp   | Pos    -4052bp  Neg    -2588bp
+  TP    r400  ALL n=1642  net=    -6536bp wr=   1% worst=    -78bp maxDD=   6536bp   | Pos    -4052bp  Neg    -2483bp
+  TP7   BOOK       n=11535 net=   -46434bp wr=   1% worst=    -78bp maxDD=  46434bp
+  RIDER            n=689   net=    -1935bp wr=  24% worst=   -374bp maxDD=   2571bp
+
+=== NAS100  bars=11884  span=830d  thr=0.30%  rt_cost=3.0bp  fill=resting  winP=462 winN=464 ===
+  TRAIL r20   ALL n=1816  net=    -4687bp wr=   1% worst=    -83bp maxDD=   4687bp   | Pos    -3317bp  Neg    -1370bp
+  TRAIL r50   ALL n=1795  net=    -4910bp wr=   1% worst=    -83bp maxDD=   4910bp   | Pos    -3380bp  Neg    -1530bp
+  TRAIL r100  ALL n=1788  net=    -4926bp wr=   1% worst=    -83bp maxDD=   4926bp   | Pos    -3313bp  Neg    -1613bp
+  TRAIL r150  ALL n=1788  net=    -4954bp wr=   1% worst=    -83bp maxDD=   4954bp   | Pos    -3313bp  Neg    -1641bp
+  TRAIL r400  ALL n=1788  net=    -4954bp wr=   1% worst=    -83bp maxDD=   4954bp   | Pos    -3313bp  Neg    -1641bp
+  TRAIL5 BOOK      n=8975  net=   -24431bp wr=   1% worst=    -83bp maxDD=  24431bp
+  TP    r50   ALL n=1837  net=    -5322bp wr=   1% worst=    -83bp maxDD=   5322bp   | Pos    -3303bp  Neg    -2019bp
+  TP    r100  ALL n=1818  net=    -5127bp wr=   1% worst=    -83bp maxDD=   5127bp   | Pos    -3377bp  Neg    -1751bp
+  TP    r150  ALL n=1808  net=    -4961bp wr=   1% worst=    -83bp maxDD=   4961bp   | Pos    -3293bp  Neg    -1668bp
+  TP    r200  ALL n=1805  net=    -5041bp wr=   1% worst=    -83bp maxDD=   5041bp   | Pos    -3277bp  Neg    -1764bp
+  TP    r250  ALL n=1805  net=    -5190bp wr=   1% worst=    -83bp maxDD=   5190bp   | Pos    -3343bp  Neg    -1846bp
+  TP    r300  ALL n=1805  net=    -5140bp wr=   1% worst=    -83bp maxDD=   5140bp   | Pos    -3343bp  Neg    -1796bp
+  TP    r400  ALL n=1805  net=    -5040bp wr=   1% worst=    -83bp maxDD=   5040bp   | Pos    -3343bp  Neg    -1696bp
+  TP7   BOOK       n=12683 net=   -35820bp wr=   1% worst=    -83bp maxDD=  35820bp
+  RIDER            n=870   net=    -2028bp wr=  23% worst=   -507bp maxDD=   2464bp
+
+=== DJ30  bars=11807  span=731d  thr=0.30%  rt_cost=2.0bp  fill=resting  winP=258 winN=254 ===
+  TRAIL r20   ALL n=1271  net=    -2035bp wr=   2% worst=    -65bp maxDD=   2102bp   | Pos    -1316bp  Neg     -720bp
+  TRAIL r50   ALL n=1256  net=    -1935bp wr=   1% worst=    -65bp maxDD=   2000bp   | Pos    -1315bp  Neg     -620bp
+  TRAIL r100  ALL n=1244  net=    -1993bp wr=   1% worst=    -65bp maxDD=   1993bp   | Pos    -1319bp  Neg     -675bp
+  TRAIL r150  ALL n=1244  net=    -2003bp wr=   1% worst=    -65bp maxDD=   2003bp   | Pos    -1328bp  Neg     -675bp
+  TRAIL r400  ALL n=1244  net=    -2003bp wr=   1% worst=    -65bp maxDD=   2003bp   | Pos    -1328bp  Neg     -675bp
+  TRAIL5 BOOK      n=6259  net=    -9969bp wr=   1% worst=    -65bp maxDD=   9969bp
+  TP    r50   ALL n=1294  net=    -2365bp wr=   1% worst=    -65bp maxDD=   2365bp   | Pos    -1387bp  Neg     -978bp
+  TP    r100  ALL n=1272  net=    -2199bp wr=   1% worst=    -65bp maxDD=   2199bp   | Pos    -1261bp  Neg     -938bp
+  TP    r150  ALL n=1263  net=    -1864bp wr=   1% worst=    -65bp maxDD=   1864bp   | Pos    -1130bp  Neg     -735bp
+  TP    r200  ALL n=1260  net=    -2049bp wr=   1% worst=    -65bp maxDD=   2049bp   | Pos    -1337bp  Neg     -712bp
+  TP    r250  ALL n=1260  net=    -2079bp wr=   1% worst=    -65bp maxDD=   2079bp   | Pos    -1337bp  Neg     -742bp
+  TP    r300  ALL n=1260  net=    -2029bp wr=   1% worst=    -65bp maxDD=   2029bp   | Pos    -1337bp  Neg     -692bp
+  TP    r400  ALL n=1259  net=    -1925bp wr=   1% worst=    -65bp maxDD=   1994bp   | Pos    -1337bp  Neg     -588bp
+  TP7   BOOK       n=8868  net=   -14511bp wr=   1% worst=    -65bp maxDD=  14580bp
+  RIDER            n=519   net=     +253bp wr=  23% worst=   -239bp maxDD=   1394bp
+
+=== GER40  bars=3000  span=184d  thr=0.30%  rt_cost=2.0bp  fill=resting  winP=69 winN=70 ===
+  TRAIL r20   ALL n=375   net=     -730bp wr=   1% worst=    -17bp maxDD=    730bp   | Pos     -433bp  Neg     -297bp
+  TRAIL r50   ALL n=373   net=     -772bp wr=   1% worst=    -17bp maxDD=    772bp   | Pos     -463bp  Neg     -308bp
+  TRAIL r100  ALL n=373   net=     -848bp wr=   0% worst=    -17bp maxDD=    848bp   | Pos     -499bp  Neg     -348bp
+  TRAIL r150  ALL n=373   net=     -848bp wr=   0% worst=    -17bp maxDD=    848bp   | Pos     -499bp  Neg     -348bp
+  TRAIL r400  ALL n=373   net=     -848bp wr=   0% worst=    -17bp maxDD=    848bp   | Pos     -499bp  Neg     -348bp
+  TRAIL5 BOOK      n=1867  net=    -4044bp wr=   0% worst=    -17bp maxDD=   4044bp
+  TP    r50   ALL n=381   net=     -725bp wr=   1% worst=    -17bp maxDD=    725bp   | Pos     -461bp  Neg     -264bp
+  TP    r100  ALL n=376   net=     -655bp wr=   1% worst=    -17bp maxDD=    671bp   | Pos     -404bp  Neg     -251bp
+  TP    r150  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r200  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r250  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r300  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r400  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP7   BOOK       n=2637  net=    -5654bp wr=   0% worst=    -17bp maxDD=   5654bp
+  RIDER            n=142   net=     +469bp wr=  27% worst=    -64bp maxDD=    558bp
+
+=== BTCUSDT  bars=39407  span=1642d  thr=2.00%  rt_cost=23.0bp  fill=resting  winP=302 winN=0 ===
+  TRAIL r20   ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r50   ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r100  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r150  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r400  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL5 BOOK      n=6255  net=  -143989bp wr=   0% worst=    -25bp maxDD= 143989bp
+  TP    r50   ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r100  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r150  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r200  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r250  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r300  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r400  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP7   BOOK       n=8757  net=  -201585bp wr=   0% worst=    -25bp maxDD= 201585bp
+  RIDER            n=372   net=    -6393bp wr=  21% worst=   -423bp maxDD=   8093bp
+  RIDER by year (net bp): {2022: -5814, 2023: 1915, 2024: 2833, 2025: -3248, 2026: -2079}
+
+=== ETHUSDT  bars=39407  span=1642d  thr=2.00%  rt_cost=23.0bp  fill=resting  winP=402 winN=0 ===
+  TRAIL r20   ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r50   ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r100  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r150  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r400  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL5 BOOK      n=7775  net=  -178956bp wr=   0% worst=    -24bp maxDD= 178956bp
+  TP    r50   ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r100  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r150  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r200  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r250  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r300  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r400  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP7   BOOK       n=10885 net=  -250538bp wr=   0% worst=    -24bp maxDD= 250538bp
+  RIDER            n=510   net=   -10606bp wr=  20% worst=   -423bp maxDD=  10796bp
+  RIDER by year (net bp): {2022: -4646, 2023: 780, 2024: 531, 2025: -3872, 2026: -3399}
+
+=== BOOK SUMMARY (net bp real, per symbol; fill=resting rider_be=1) ===
+sym          TRAIL5        TP7      RIDER    TRAIL5 dd     TP7 dd   RIDER dd
+XAUUSD        -8734     -11240        -82         8734      11240       1266
+XAGUSD       -32129     -45707      -3854        32129      45707       6388
+USOIL        -19037     -29569       +636        19656      29646       2214
+EURUSD        -9457     -13163       -204         9457      13163        654
+GBPUSD        -9519     -13255      -1120         9519      13255       1238
+USDJPY       -10704     -14816       +275        10704      14816        693
+AUDUSD       -24706     -35033      -1301        24706      35033       1784
+NZDUSD       -34220     -47999      -2600        34220      47999       2831
+US500        -32442     -46434      -1935        32442      46434       2571
+NAS100       -24431     -35820      -2028        24431      35820       2464
+DJ30          -9969     -14511       +253         9969      14580       1394
+GER40         -4044      -5654       +469         4044       5654        558
+BTCUSDT     -143989    -201585      -6393       143989     201585       8093
+ETHUSDT     -178956    -250538     -10606       178956     250538      10796
+
+=== RUN C: FILL=resting RIDER_BE=0 (pure ride-to-flip) ===
+
+=== XAUUSD  bars=3000  span=186d  thr=1.00%  rt_cost=6.0bp  fill=resting  winP=34 winN=36 ===
+  TRAIL r20   ALL n=279   net=    -1731bp wr=   1% worst=   -159bp maxDD=   1731bp   | Pos    -1132bp  Neg     -598bp
+  TRAIL r50   ALL n=277   net=    -1754bp wr=   1% worst=   -159bp maxDD=   1754bp   | Pos    -1156bp  Neg     -598bp
+  TRAIL r100  ALL n=276   net=    -1724bp wr=   1% worst=   -159bp maxDD=   1724bp   | Pos    -1126bp  Neg     -598bp
+  TRAIL r150  ALL n=274   net=    -1723bp wr=   1% worst=   -159bp maxDD=   1723bp   | Pos    -1125bp  Neg     -598bp
+  TRAIL r400  ALL n=269   net=    -1801bp wr=   0% worst=   -159bp maxDD=   1801bp   | Pos    -1203bp  Neg     -598bp
+  TRAIL5 BOOK      n=1375  net=    -8734bp wr=   1% worst=   -159bp maxDD=   8734bp
+  TP    r50   ALL n=282   net=    -1858bp wr=   1% worst=   -159bp maxDD=   1858bp   | Pos    -1254bp  Neg     -604bp
+  TP    r100  ALL n=279   net=    -1740bp wr=   1% worst=   -159bp maxDD=   1740bp   | Pos    -1136bp  Neg     -604bp
+  TP    r150  ALL n=277   net=    -1628bp wr=   1% worst=   -159bp maxDD=   1628bp   | Pos    -1024bp  Neg     -604bp
+  TP    r200  ALL n=275   net=    -1516bp wr=   1% worst=   -159bp maxDD=   1516bp   | Pos     -912bp  Neg     -604bp
+  TP    r250  ALL n=273   net=    -1404bp wr=   1% worst=   -159bp maxDD=   1404bp   | Pos     -800bp  Neg     -604bp
+  TP    r300  ALL n=270   net=    -1285bp wr=   1% worst=   -159bp maxDD=   1285bp   | Pos     -681bp  Neg     -604bp
+  TP    r400  ALL n=270   net=    -1807bp wr=   0% worst=   -159bp maxDD=   1807bp   | Pos    -1203bp  Neg     -604bp
+  TP7   BOOK       n=1926  net=   -11240bp wr=   1% worst=   -159bp maxDD=  11240bp
+  RIDER            n=70    net=     +837bp wr=  40% worst=   -572bp maxDD=   2039bp
+
+=== XAGUSD  bars=3000  span=188d  thr=1.00%  rt_cost=6.0bp  fill=resting  winP=156 winN=156 ===
+  TRAIL r20   ALL n=599   net=    -6468bp wr=   0% worst=   -783bp maxDD=   6468bp   | Pos    -4756bp  Neg    -1711bp
+  TRAIL r50   ALL n=598   net=    -6447bp wr=   0% worst=   -783bp maxDD=   6447bp   | Pos    -4736bp  Neg    -1711bp
+  TRAIL r100  ALL n=595   net=    -6356bp wr=   0% worst=   -783bp maxDD=   6356bp   | Pos    -4644bp  Neg    -1711bp
+  TRAIL r150  ALL n=596   net=    -6414bp wr=   0% worst=   -783bp maxDD=   6414bp   | Pos    -4703bp  Neg    -1711bp
+  TRAIL r400  ALL n=593   net=    -6445bp wr=   0% worst=   -783bp maxDD=   6445bp   | Pos    -4734bp  Neg    -1711bp
+  TRAIL5 BOOK      n=2981  net=   -32129bp wr=   0% worst=   -783bp maxDD=  32129bp
+  TP    r50   ALL n=601   net=    -6691bp wr=   0% worst=   -783bp maxDD=   6691bp   | Pos    -4980bp  Neg    -1711bp
+  TP    r100  ALL n=601   net=    -6641bp wr=   0% worst=   -783bp maxDD=   6641bp   | Pos    -4930bp  Neg    -1711bp
+  TP    r150  ALL n=601   net=    -6591bp wr=   0% worst=   -783bp maxDD=   6591bp   | Pos    -4880bp  Neg    -1711bp
+  TP    r200  ALL n=601   net=    -6541bp wr=   0% worst=   -783bp maxDD=   6541bp   | Pos    -4830bp  Neg    -1711bp
+  TP    r250  ALL n=601   net=    -6491bp wr=   0% worst=   -783bp maxDD=   6491bp   | Pos    -4780bp  Neg    -1711bp
+  TP    r300  ALL n=601   net=    -6441bp wr=   0% worst=   -783bp maxDD=   6441bp   | Pos    -4730bp  Neg    -1711bp
+  TP    r400  ALL n=596   net=    -6311bp wr=   0% worst=   -783bp maxDD=   6311bp   | Pos    -4600bp  Neg    -1711bp
+  TP7   BOOK       n=4202  net=   -45707bp wr=   0% worst=   -783bp maxDD=  45707bp
+  RIDER            n=312   net=    -2058bp wr=  36% worst=   -772bp maxDD=   6088bp
+
+=== USOIL  bars=2988  span=185d  thr=1.00%  rt_cost=8.0bp  fill=resting  winP=118 winN=122 ===
+  TRAIL r20   ALL n=505   net=    -3652bp wr=   1% worst=   -675bp maxDD=   3783bp   | Pos    -1479bp  Neg    -2173bp
+  TRAIL r50   ALL n=503   net=    -3642bp wr=   1% worst=   -675bp maxDD=   3770bp   | Pos    -1511bp  Neg    -2131bp
+  TRAIL r100  ALL n=505   net=    -3908bp wr=   1% worst=   -675bp maxDD=   3971bp   | Pos    -1662bp  Neg    -2245bp
+  TRAIL r150  ALL n=506   net=    -4188bp wr=   1% worst=   -675bp maxDD=   4197bp   | Pos    -1868bp  Neg    -2320bp
+  TRAIL r400  ALL n=496   net=    -3646bp wr=   1% worst=   -675bp maxDD=   4266bp   | Pos    -1936bp  Neg    -1710bp
+  TRAIL5 BOOK      n=2515  net=   -19037bp wr=   1% worst=   -675bp maxDD=  19656bp
+  TP    r50   ALL n=513   net=    -4822bp wr=   1% worst=   -675bp maxDD=   4822bp   | Pos    -2234bp  Neg    -2588bp
+  TP    r100  ALL n=512   net=    -4514bp wr=   1% worst=   -675bp maxDD=   4514bp   | Pos    -2026bp  Neg    -2488bp
+  TP    r150  ALL n=511   net=    -4205bp wr=   1% worst=   -675bp maxDD=   4205bp   | Pos    -1825bp  Neg    -2380bp
+  TP    r200  ALL n=509   net=    -4031bp wr=   1% worst=   -675bp maxDD=   4031bp   | Pos    -1751bp  Neg    -2280bp
+  TP    r250  ALL n=508   net=    -4023bp wr=   1% worst=   -675bp maxDD=   4023bp   | Pos    -1593bp  Neg    -2430bp
+  TP    r300  ALL n=508   net=    -3823bp wr=   1% worst=   -675bp maxDD=   3823bp   | Pos    -1443bp  Neg    -2380bp
+  TP    r400  ALL n=507   net=    -4151bp wr=   1% worst=   -675bp maxDD=   4228bp   | Pos    -1879bp  Neg    -2272bp
+  TP7   BOOK       n=3568  net=   -29569bp wr=   1% worst=   -675bp maxDD=  29646bp
+  RIDER            n=240   net=    -1316bp wr=  38% worst=  -1714bp maxDD=   4300bp
+
+=== EURUSD  bars=6920  span=404d  thr=0.30%  rt_cost=4.0bp  fill=resting  winP=48 winN=47 ===
+  TRAIL r20   ALL n=483   net=    -1964bp wr=   0% worst=    -19bp maxDD=   1964bp   | Pos    -1058bp  Neg     -906bp
+  TRAIL r50   ALL n=476   net=    -1837bp wr=   0% worst=    -19bp maxDD=   1837bp   | Pos     -931bp  Neg     -906bp
+  TRAIL r100  ALL n=480   net=    -1906bp wr=   0% worst=    -19bp maxDD=   1906bp   | Pos    -1000bp  Neg     -906bp
+  TRAIL r150  ALL n=475   net=    -1875bp wr=   0% worst=    -19bp maxDD=   1875bp   | Pos     -969bp  Neg     -906bp
+  TRAIL r400  ALL n=475   net=    -1875bp wr=   0% worst=    -19bp maxDD=   1875bp   | Pos     -969bp  Neg     -906bp
+  TRAIL5 BOOK      n=2389  net=    -9457bp wr=   0% worst=    -19bp maxDD=   9457bp
+  TP    r50   ALL n=486   net=    -1957bp wr=   0% worst=    -19bp maxDD=   1957bp   | Pos    -1034bp  Neg     -923bp
+  TP    r100  ALL n=484   net=    -1899bp wr=   0% worst=    -19bp maxDD=   1899bp   | Pos     -976bp  Neg     -923bp
+  TP    r150  ALL n=481   net=    -1836bp wr=   0% worst=    -19bp maxDD=   1836bp   | Pos     -914bp  Neg     -923bp
+  TP    r200  ALL n=480   net=    -1782bp wr=   0% worst=    -19bp maxDD=   1782bp   | Pos     -860bp  Neg     -923bp
+  TP    r250  ALL n=480   net=    -1896bp wr=   0% worst=    -19bp maxDD=   1896bp   | Pos     -973bp  Neg     -923bp
+  TP    r300  ALL n=480   net=    -1896bp wr=   0% worst=    -19bp maxDD=   1896bp   | Pos     -973bp  Neg     -923bp
+  TP    r400  ALL n=480   net=    -1896bp wr=   0% worst=    -19bp maxDD=   1896bp   | Pos     -973bp  Neg     -923bp
+  TP7   BOOK       n=3371  net=   -13163bp wr=   0% worst=    -19bp maxDD=  13163bp
+  RIDER            n=95    net=       -4bp wr=  35% worst=   -109bp maxDD=    397bp
+
+=== GBPUSD  bars=7928  span=464d  thr=0.30%  rt_cost=3.5bp  fill=resting  winP=53 winN=52 ===
+  TRAIL r20   ALL n=576   net=    -1880bp wr=   1% worst=     -5bp maxDD=   1880bp   | Pos    -1109bp  Neg     -771bp
+  TRAIL r50   ALL n=571   net=    -1854bp wr=   1% worst=    -11bp maxDD=   1854bp   | Pos    -1062bp  Neg     -792bp
+  TRAIL r100  ALL n=563   net=    -1913bp wr=   0% worst=     -5bp maxDD=   1913bp   | Pos    -1061bp  Neg     -852bp
+  TRAIL r150  ALL n=563   net=    -1936bp wr=   0% worst=     -5bp maxDD=   1936bp   | Pos    -1083bp  Neg     -852bp
+  TRAIL r400  ALL n=563   net=    -1936bp wr=   0% worst=     -5bp maxDD=   1936bp   | Pos    -1083bp  Neg     -852bp
+  TRAIL5 BOOK      n=2836  net=    -9519bp wr=   0% worst=    -11bp maxDD=   9519bp
+  TP    r50   ALL n=572   net=    -1831bp wr=   1% worst=     -5bp maxDD=   1831bp   | Pos    -1055bp  Neg     -776bp
+  TP    r100  ALL n=572   net=    -1832bp wr=   0% worst=     -5bp maxDD=   1832bp   | Pos    -1044bp  Neg     -788bp
+  TP    r150  ALL n=566   net=    -1836bp wr=   0% worst=     -5bp maxDD=   1836bp   | Pos     -980bp  Neg     -856bp
+  TP    r200  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP    r250  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP    r300  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP    r400  ALL n=564   net=    -1939bp wr=   0% worst=     -5bp maxDD=   1939bp   | Pos    -1083bp  Neg     -856bp
+  TP7   BOOK       n=3966  net=   -13255bp wr=   0% worst=     -5bp maxDD=  13255bp
+  RIDER            n=105   net=     -598bp wr=  36% worst=   -173bp maxDD=   1027bp
+
+=== USDJPY  bars=7928  span=464d  thr=0.30%  rt_cost=3.0bp  fill=resting  winP=88 winN=90 ===
+  TRAIL r20   ALL n=792   net=    -2245bp wr=   1% worst=    -61bp maxDD=   2245bp   | Pos    -1324bp  Neg     -921bp
+  TRAIL r50   ALL n=782   net=    -2139bp wr=   1% worst=    -61bp maxDD=   2139bp   | Pos    -1278bp  Neg     -862bp
+  TRAIL r100  ALL n=779   net=    -2107bp wr=   1% worst=    -61bp maxDD=   2107bp   | Pos    -1317bp  Neg     -789bp
+  TRAIL r150  ALL n=779   net=    -2107bp wr=   1% worst=    -61bp maxDD=   2107bp   | Pos    -1317bp  Neg     -789bp
+  TRAIL r400  ALL n=779   net=    -2107bp wr=   1% worst=    -61bp maxDD=   2107bp   | Pos    -1317bp  Neg     -789bp
+  TRAIL5 BOOK      n=3911  net=   -10704bp wr=   1% worst=    -61bp maxDD=  10704bp
+  TP    r50   ALL n=797   net=    -2208bp wr=   1% worst=    -61bp maxDD=   2208bp   | Pos    -1329bp  Neg     -879bp
+  TP    r100  ALL n=789   net=    -2134bp wr=   1% worst=    -61bp maxDD=   2134bp   | Pos    -1314bp  Neg     -821bp
+  TP    r150  ALL n=783   net=    -2070bp wr=   1% worst=    -61bp maxDD=   2090bp   | Pos    -1321bp  Neg     -749bp
+  TP    r200  ALL n=781   net=    -2065bp wr=   1% worst=    -61bp maxDD=   2065bp   | Pos    -1321bp  Neg     -744bp
+  TP    r250  ALL n=781   net=    -2113bp wr=   1% worst=    -61bp maxDD=   2113bp   | Pos    -1321bp  Neg     -792bp
+  TP    r300  ALL n=781   net=    -2113bp wr=   1% worst=    -61bp maxDD=   2113bp   | Pos    -1321bp  Neg     -792bp
+  TP    r400  ALL n=781   net=    -2113bp wr=   1% worst=    -61bp maxDD=   2113bp   | Pos    -1321bp  Neg     -792bp
+  TP7   BOOK       n=5493  net=   -14816bp wr=   1% worst=    -61bp maxDD=  14816bp
+  RIDER            n=178   net=     +252bp wr=  39% worst=   -191bp maxDD=    691bp
+
+=== AUDUSD  bars=8338  span=489d  thr=0.30%  rt_cost=6.0bp  fill=resting  winP=111 winN=106 ===
+  TRAIL r20   ALL n=932   net=    -5388bp wr=   1% worst=    -26bp maxDD=   5388bp   | Pos    -3217bp  Neg    -2170bp
+  TRAIL r50   ALL n=895   net=    -4928bp wr=   1% worst=    -26bp maxDD=   4928bp   | Pos    -2781bp  Neg    -2146bp
+  TRAIL r100  ALL n=879   net=    -4797bp wr=   1% worst=    -26bp maxDD=   4797bp   | Pos    -2651bp  Neg    -2146bp
+  TRAIL r150  ALL n=879   net=    -4797bp wr=   1% worst=    -26bp maxDD=   4797bp   | Pos    -2651bp  Neg    -2146bp
+  TRAIL r400  ALL n=879   net=    -4797bp wr=   1% worst=    -26bp maxDD=   4797bp   | Pos    -2651bp  Neg    -2146bp
+  TRAIL5 BOOK      n=4464  net=   -24706bp wr=   1% worst=    -26bp maxDD=  24706bp
+  TP    r50   ALL n=939   net=    -5520bp wr=   1% worst=    -26bp maxDD=   5520bp   | Pos    -3250bp  Neg    -2270bp
+  TP    r100  ALL n=920   net=    -5136bp wr=   1% worst=    -26bp maxDD=   5136bp   | Pos    -2997bp  Neg    -2139bp
+  TP    r150  ALL n=903   net=    -4992bp wr=   1% worst=    -26bp maxDD=   4992bp   | Pos    -2825bp  Neg    -2167bp
+  TP    r200  ALL n=892   net=    -4878bp wr=   1% worst=    -26bp maxDD=   4878bp   | Pos    -2726bp  Neg    -2153bp
+  TP    r250  ALL n=888   net=    -4804bp wr=   1% worst=    -26bp maxDD=   4804bp   | Pos    -2651bp  Neg    -2153bp
+  TP    r300  ALL n=887   net=    -4851bp wr=   1% worst=    -26bp maxDD=   4851bp   | Pos    -2699bp  Neg    -2153bp
+  TP    r400  ALL n=887   net=    -4851bp wr=   1% worst=    -26bp maxDD=   4851bp   | Pos    -2699bp  Neg    -2153bp
+  TP7   BOOK       n=6316  net=   -35033bp wr=   1% worst=    -26bp maxDD=  35033bp
+  RIDER            n=217   net=     -730bp wr=  35% worst=   -123bp maxDD=   1706bp
+
+=== NZDUSD  bars=8341  span=489d  thr=0.30%  rt_cost=7.0bp  fill=resting  winP=121 winN=118 ===
+  TRAIL r20   ALL n=966   net=    -6852bp wr=   1% worst=    -62bp maxDD=   6852bp   | Pos    -3436bp  Neg    -3416bp
+  TRAIL r50   ALL n=964   net=    -6894bp wr=   0% worst=    -62bp maxDD=   6894bp   | Pos    -3494bp  Neg    -3399bp
+  TRAIL r100  ALL n=954   net=    -6827bp wr=   0% worst=    -62bp maxDD=   6827bp   | Pos    -3398bp  Neg    -3428bp
+  TRAIL r150  ALL n=954   net=    -6824bp wr=   0% worst=    -62bp maxDD=   6824bp   | Pos    -3395bp  Neg    -3428bp
+  TRAIL r400  ALL n=954   net=    -6824bp wr=   0% worst=    -62bp maxDD=   6824bp   | Pos    -3395bp  Neg    -3428bp
+  TRAIL5 BOOK      n=4792  net=   -34220bp wr=   0% worst=    -62bp maxDD=  34220bp
+  TP    r50   ALL n=969   net=    -6829bp wr=   0% worst=    -62bp maxDD=   6829bp   | Pos    -3428bp  Neg    -3400bp
+  TP    r100  ALL n=965   net=    -6857bp wr=   0% worst=    -62bp maxDD=   6857bp   | Pos    -3407bp  Neg    -3450bp
+  TP    r150  ALL n=962   net=    -6785bp wr=   0% worst=    -62bp maxDD=   6785bp   | Pos    -3335bp  Neg    -3450bp
+  TP    r200  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP    r250  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP    r300  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP    r400  ALL n=962   net=    -6882bp wr=   0% worst=    -62bp maxDD=   6882bp   | Pos    -3432bp  Neg    -3450bp
+  TP7   BOOK       n=6744  net=   -47999bp wr=   0% worst=    -62bp maxDD=  47999bp
+  RIDER            n=239   net=    -2743bp wr=  30% worst=   -142bp maxDD=   2894bp
+
+=== US500  bars=13389  span=830d  thr=0.30%  rt_cost=4.0bp  fill=resting  winP=366 winN=361 ===
+  TRAIL r20   ALL n=1650  net=    -6338bp wr=   1% worst=    -78bp maxDD=   6338bp   | Pos    -4157bp  Neg    -2181bp
+  TRAIL r50   ALL n=1628  net=    -6397bp wr=   1% worst=    -78bp maxDD=   6397bp   | Pos    -4053bp  Neg    -2344bp
+  TRAIL r100  ALL n=1625  net=    -6569bp wr=   1% worst=    -78bp maxDD=   6569bp   | Pos    -4066bp  Neg    -2503bp
+  TRAIL r150  ALL n=1625  net=    -6569bp wr=   1% worst=    -78bp maxDD=   6569bp   | Pos    -4066bp  Neg    -2503bp
+  TRAIL r400  ALL n=1625  net=    -6569bp wr=   1% worst=    -78bp maxDD=   6569bp   | Pos    -4066bp  Neg    -2503bp
+  TRAIL5 BOOK      n=8153  net=   -32442bp wr=   1% worst=    -78bp maxDD=  32442bp
+  TP    r50   ALL n=1667  net=    -6592bp wr=   1% worst=    -78bp maxDD=   6592bp   | Pos    -4087bp  Neg    -2505bp
+  TP    r100  ALL n=1653  net=    -6545bp wr=   1% worst=    -78bp maxDD=   6545bp   | Pos    -4019bp  Neg    -2526bp
+  TP    r150  ALL n=1644  net=    -6690bp wr=   1% worst=    -78bp maxDD=   6690bp   | Pos    -4029bp  Neg    -2661bp
+  TP    r200  ALL n=1643  net=    -6740bp wr=   1% worst=    -78bp maxDD=   6740bp   | Pos    -4052bp  Neg    -2688bp
+  TP    r250  ALL n=1643  net=    -6690bp wr=   1% worst=    -78bp maxDD=   6690bp   | Pos    -4052bp  Neg    -2638bp
+  TP    r300  ALL n=1643  net=    -6640bp wr=   1% worst=    -78bp maxDD=   6640bp   | Pos    -4052bp  Neg    -2588bp
+  TP    r400  ALL n=1642  net=    -6536bp wr=   1% worst=    -78bp maxDD=   6536bp   | Pos    -4052bp  Neg    -2483bp
+  TP7   BOOK       n=11535 net=   -46434bp wr=   1% worst=    -78bp maxDD=  46434bp
+  RIDER            n=727   net=    -3031bp wr=  34% worst=   -397bp maxDD=   3480bp
+
+=== NAS100  bars=11884  span=830d  thr=0.30%  rt_cost=3.0bp  fill=resting  winP=462 winN=464 ===
+  TRAIL r20   ALL n=1816  net=    -4687bp wr=   1% worst=    -83bp maxDD=   4687bp   | Pos    -3317bp  Neg    -1370bp
+  TRAIL r50   ALL n=1795  net=    -4910bp wr=   1% worst=    -83bp maxDD=   4910bp   | Pos    -3380bp  Neg    -1530bp
+  TRAIL r100  ALL n=1788  net=    -4926bp wr=   1% worst=    -83bp maxDD=   4926bp   | Pos    -3313bp  Neg    -1613bp
+  TRAIL r150  ALL n=1788  net=    -4954bp wr=   1% worst=    -83bp maxDD=   4954bp   | Pos    -3313bp  Neg    -1641bp
+  TRAIL r400  ALL n=1788  net=    -4954bp wr=   1% worst=    -83bp maxDD=   4954bp   | Pos    -3313bp  Neg    -1641bp
+  TRAIL5 BOOK      n=8975  net=   -24431bp wr=   1% worst=    -83bp maxDD=  24431bp
+  TP    r50   ALL n=1837  net=    -5322bp wr=   1% worst=    -83bp maxDD=   5322bp   | Pos    -3303bp  Neg    -2019bp
+  TP    r100  ALL n=1818  net=    -5127bp wr=   1% worst=    -83bp maxDD=   5127bp   | Pos    -3377bp  Neg    -1751bp
+  TP    r150  ALL n=1808  net=    -4961bp wr=   1% worst=    -83bp maxDD=   4961bp   | Pos    -3293bp  Neg    -1668bp
+  TP    r200  ALL n=1805  net=    -5041bp wr=   1% worst=    -83bp maxDD=   5041bp   | Pos    -3277bp  Neg    -1764bp
+  TP    r250  ALL n=1805  net=    -5190bp wr=   1% worst=    -83bp maxDD=   5190bp   | Pos    -3343bp  Neg    -1846bp
+  TP    r300  ALL n=1805  net=    -5140bp wr=   1% worst=    -83bp maxDD=   5140bp   | Pos    -3343bp  Neg    -1796bp
+  TP    r400  ALL n=1805  net=    -5040bp wr=   1% worst=    -83bp maxDD=   5040bp   | Pos    -3343bp  Neg    -1696bp
+  TP7   BOOK       n=12683 net=   -35820bp wr=   1% worst=    -83bp maxDD=  35820bp
+  RIDER            n=926   net=     -630bp wr=  38% worst=   -508bp maxDD=   2184bp
+
+=== DJ30  bars=11807  span=731d  thr=0.30%  rt_cost=2.0bp  fill=resting  winP=258 winN=254 ===
+  TRAIL r20   ALL n=1271  net=    -2035bp wr=   2% worst=    -65bp maxDD=   2102bp   | Pos    -1316bp  Neg     -720bp
+  TRAIL r50   ALL n=1256  net=    -1935bp wr=   1% worst=    -65bp maxDD=   2000bp   | Pos    -1315bp  Neg     -620bp
+  TRAIL r100  ALL n=1244  net=    -1993bp wr=   1% worst=    -65bp maxDD=   1993bp   | Pos    -1319bp  Neg     -675bp
+  TRAIL r150  ALL n=1244  net=    -2003bp wr=   1% worst=    -65bp maxDD=   2003bp   | Pos    -1328bp  Neg     -675bp
+  TRAIL r400  ALL n=1244  net=    -2003bp wr=   1% worst=    -65bp maxDD=   2003bp   | Pos    -1328bp  Neg     -675bp
+  TRAIL5 BOOK      n=6259  net=    -9969bp wr=   1% worst=    -65bp maxDD=   9969bp
+  TP    r50   ALL n=1294  net=    -2365bp wr=   1% worst=    -65bp maxDD=   2365bp   | Pos    -1387bp  Neg     -978bp
+  TP    r100  ALL n=1272  net=    -2199bp wr=   1% worst=    -65bp maxDD=   2199bp   | Pos    -1261bp  Neg     -938bp
+  TP    r150  ALL n=1263  net=    -1864bp wr=   1% worst=    -65bp maxDD=   1864bp   | Pos    -1130bp  Neg     -735bp
+  TP    r200  ALL n=1260  net=    -2049bp wr=   1% worst=    -65bp maxDD=   2049bp   | Pos    -1337bp  Neg     -712bp
+  TP    r250  ALL n=1260  net=    -2079bp wr=   1% worst=    -65bp maxDD=   2079bp   | Pos    -1337bp  Neg     -742bp
+  TP    r300  ALL n=1260  net=    -2029bp wr=   1% worst=    -65bp maxDD=   2029bp   | Pos    -1337bp  Neg     -692bp
+  TP    r400  ALL n=1259  net=    -1925bp wr=   1% worst=    -65bp maxDD=   1994bp   | Pos    -1337bp  Neg     -588bp
+  TP7   BOOK       n=8868  net=   -14511bp wr=   1% worst=    -65bp maxDD=  14580bp
+  RIDER            n=512   net=    +2270bp wr=  37% worst=   -278bp maxDD=   1433bp
+
+=== GER40  bars=3000  span=184d  thr=0.30%  rt_cost=2.0bp  fill=resting  winP=69 winN=70 ===
+  TRAIL r20   ALL n=375   net=     -730bp wr=   1% worst=    -17bp maxDD=    730bp   | Pos     -433bp  Neg     -297bp
+  TRAIL r50   ALL n=373   net=     -772bp wr=   1% worst=    -17bp maxDD=    772bp   | Pos     -463bp  Neg     -308bp
+  TRAIL r100  ALL n=373   net=     -848bp wr=   0% worst=    -17bp maxDD=    848bp   | Pos     -499bp  Neg     -348bp
+  TRAIL r150  ALL n=373   net=     -848bp wr=   0% worst=    -17bp maxDD=    848bp   | Pos     -499bp  Neg     -348bp
+  TRAIL r400  ALL n=373   net=     -848bp wr=   0% worst=    -17bp maxDD=    848bp   | Pos     -499bp  Neg     -348bp
+  TRAIL5 BOOK      n=1867  net=    -4044bp wr=   0% worst=    -17bp maxDD=   4044bp
+  TP    r50   ALL n=381   net=     -725bp wr=   1% worst=    -17bp maxDD=    725bp   | Pos     -461bp  Neg     -264bp
+  TP    r100  ALL n=376   net=     -655bp wr=   1% worst=    -17bp maxDD=    671bp   | Pos     -404bp  Neg     -251bp
+  TP    r150  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r200  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r250  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r300  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP    r400  ALL n=376   net=     -855bp wr=   0% worst=    -17bp maxDD=    855bp   | Pos     -504bp  Neg     -351bp
+  TP7   BOOK       n=2637  net=    -5654bp wr=   0% worst=    -17bp maxDD=   5654bp
+  RIDER            n=140   net=     +237bp wr=  39% worst=   -220bp maxDD=    892bp
+
+=== BTCUSDT  bars=39407  span=1642d  thr=2.00%  rt_cost=23.0bp  fill=resting  winP=302 winN=0 ===
+  TRAIL r20   ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r50   ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r100  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r150  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL r400  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TRAIL5 BOOK      n=6255  net=  -143989bp wr=   0% worst=    -25bp maxDD= 143989bp
+  TP    r50   ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r100  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r150  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r200  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r250  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r300  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP    r400  ALL n=1251  net=   -28798bp wr=   0% worst=    -25bp maxDD=  28798bp   | Pos   -28798bp  Neg       +0bp
+  TP7   BOOK       n=8757  net=  -201585bp wr=   0% worst=    -25bp maxDD= 201585bp
+  RIDER            n=302   net=    -6898bp wr=  31% worst=   -728bp maxDD=   8824bp
+  RIDER by year (net bp): {2022: -8406, 2023: 2261, 2024: 5289, 2025: -3747, 2026: -2295}
+
+=== ETHUSDT  bars=39407  span=1642d  thr=2.00%  rt_cost=23.0bp  fill=resting  winP=402 winN=0 ===
+  TRAIL r20   ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r50   ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r100  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r150  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL r400  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TRAIL5 BOOK      n=7775  net=  -178956bp wr=   0% worst=    -24bp maxDD= 178956bp
+  TP    r50   ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r100  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r150  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r200  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r250  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r300  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP    r400  ALL n=1555  net=   -35791bp wr=   0% worst=    -24bp maxDD=  35791bp   | Pos   -35791bp  Neg       +0bp
+  TP7   BOOK       n=10885 net=  -250538bp wr=   0% worst=    -24bp maxDD= 250538bp
+  RIDER            n=402   net=   -13157bp wr=  32% worst=  -1095bp maxDD=  14150bp
+  RIDER by year (net bp): {2022: -7161, 2023: 1507, 2024: 1183, 2025: -5967, 2026: -2719}
+
+=== BOOK SUMMARY (net bp real, per symbol; fill=resting rider_be=0) ===
+sym          TRAIL5        TP7      RIDER    TRAIL5 dd     TP7 dd   RIDER dd
+XAUUSD        -8734     -11240       +837         8734      11240       2039
+XAGUSD       -32129     -45707      -2058        32129      45707       6088
+USOIL        -19037     -29569      -1316        19656      29646       4300
+EURUSD        -9457     -13163         -4         9457      13163        397
+GBPUSD        -9519     -13255       -598         9519      13255       1027
+USDJPY       -10704     -14816       +252        10704      14816        691
+AUDUSD       -24706     -35033       -730        24706      35033       1706
+NZDUSD       -34220     -47999      -2743        34220      47999       2894
+US500        -32442     -46434      -3031        32442      46434       3480
+NAS100       -24431     -35820       -630        24431      35820       2184
+DJ30          -9969     -14511      +2270         9969      14580       1433
+GER40         -4044      -5654       +237         4044       5654        892
+BTCUSDT     -143989    -201585      -6898       143989     201585       8824
+ETHUSDT     -178956    -250538     -13157       178956     250538      14150
