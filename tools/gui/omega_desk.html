@@ -535,15 +535,20 @@ function render(J){lastJ=J;
 
  TKS.forEach(function(t){var b=safe(J[t[0]+'_bid']),a=safe(J[t[0]+'_ask']);
   if(t[0]==='vix'){b=safe(J.vix_level)||b;}
+  /* FX majors need 5dp (EUR/GBP/AUD/NZD trade sub-2.0 so the default b>100?1:4 gives
+     1-pip resolution -- masks sub-pip moves + collapses the spread to "s 0.00000").
+     USDJPY ~162 would hit the b>100?1 branch (1dp) so pin it to 3dp. S-2026-07-06. */
+  var _FXP={eurusd:5,gbpusd:5,audusd:5,nzdusd:5,usdjpy:3};
+  var _dig=(_FXP[t[0]]!==undefined)?_FXP[t[0]]:(b>100?1:4);
   /* Show last-seen price when the live feed is quiet (weekend / market closed) instead
      of '—'. Cache each symbol's last non-zero bid in localStorage; on a stale tick fall
      back to it, dimmed, so a number always shows (operator 2026-07-04). */
   var tke=el('tk_'+t[0]);
   if(b>0){try{localStorage.setItem('tklast_'+t[0],String(b));}catch(_){}
-   tke.textContent=b.toLocaleString(undefined,{maximumFractionDigits:b>100?1:4});tke.style.color='var(--w)';}
+   tke.textContent=b.toLocaleString(undefined,{maximumFractionDigits:_dig});tke.style.color='var(--w)';}
   else{var lv=parseFloat((function(){try{return localStorage.getItem('tklast_'+t[0]);}catch(_){return '';}})());
    if(!(lv>0)&&SEED_LAST[t[0]])lv=SEED_LAST[t[0]];
-   if(lv>0){tke.textContent=lv.toLocaleString(undefined,{maximumFractionDigits:lv>100?1:4});tke.style.color='var(--t2)';}
+   if(lv>0){tke.textContent=lv.toLocaleString(undefined,{maximumFractionDigits:(_FXP[t[0]]!==undefined)?_FXP[t[0]]:(lv>100?1:4)});tke.style.color='var(--t2)';}
    else{tke.textContent='—';tke.style.color='var(--w)';}}
   if(b>0&&a>0&&t[0]!=='vix')el('tks_'+t[0]).textContent='s '+fmt2(a-b,a-b<0.01?5:2);
   if(t[2]){var lo=safe(J[t[2]+'_curl']),hi=safe(J[t[2]+'_curh']);

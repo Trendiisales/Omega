@@ -156,11 +156,16 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"uk100_bid\":%.4f,\"uk100_ask\":%.4f,"
         "\"estx50_bid\":%.4f,\"estx50_ask\":%.4f,"
         "\"xag_bid\":%.4f,\"xag_ask\":%.4f,"
-        "\"eurusd_bid\":%.4f,\"eurusd_ask\":%.4f,"
-        "\"gbpusd_bid\":%.4f,\"gbpusd_ask\":%.4f,"
-        "\"audusd_bid\":%.4f,\"audusd_ask\":%.4f,"
-        "\"nzdusd_bid\":%.4f,\"nzdusd_ask\":%.4f,"
-        "\"usdjpy_bid\":%.4f,\"usdjpy_ask\":%.4f,"
+        // FX majors at %.5f (was %.4f): EUR/GBP/AUD/NZD trade ~1.1/1.3/0.69/0.57 so
+        // %.4f = 1-pip resolution -- an IDEALPRO sub-pip spread (0.00001-0.00002)
+        // collapses to bid==ask, rendering the desk header spread as "s 0.00000" and
+        // masking sub-pip price moves (looked "frozen" though the feed was live).
+        // 5dp shows the real bid/ask + spread. (S-2026-07-06 FX-venue follow-up.)
+        "\"eurusd_bid\":%.5f,\"eurusd_ask\":%.5f,"
+        "\"gbpusd_bid\":%.5f,\"gbpusd_ask\":%.5f,"
+        "\"audusd_bid\":%.5f,\"audusd_ask\":%.5f,"
+        "\"nzdusd_bid\":%.5f,\"nzdusd_ask\":%.5f,"
+        "\"usdjpy_bid\":%.5f,\"usdjpy_ask\":%.5f,"
         "\"brent_bid\":%.4f,\"brent_ask\":%.4f,"
         "\"daily_pnl\":%.2f,\"gross_daily_pnl\":%.2f,\"max_drawdown\":%.2f,"
         "\"closed_pnl\":%.2f,\"open_unrealised_pnl\":%.2f,"

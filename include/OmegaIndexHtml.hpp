@@ -543,15 +543,20 @@ function render(J){lastJ=J;
 
  TKS.forEach(function(t){var b=safe(J[t[0]+'_bid']),a=safe(J[t[0]+'_ask']);
   if(t[0]==='vix'){b=safe(J.vix_level)||b;}
+  /* FX majors need 5dp (EUR/GBP/AUD/NZD trade sub-2.0 so the default b>100?1:4 gives
+     1-pip resolution -- masks sub-pip moves + collapses the spread to "s 0.00000").
+     USDJPY ~162 would hit the b>100?1 branch (1dp) so pin it to 3dp. S-2026-07-06. */
+  var _FXP={eurusd:5,gbpusd:5,audusd:5,nzdusd:5,usdjpy:3};
+  var _dig=(_FXP[t[0]]!==undefined)?_FXP[t[0]]:(b>100?1:4);
   /* Show last-seen price when the live feed is quiet (weekend / market closed) instead
      of '—'. Cache each symbol's last non-zero bid in localStorage; on a stale tick fall
      back to it, dimmed, so a number always shows (operator 2026-07-04). */
   var tke=el('tk_'+t[0]);
   if(b>0){try{localStorage.setItem('tklast_'+t[0],String(b));}catch(_){}
-   tke.textContent=b.toLocaleString(undefined,{maximumFractionDigits:b>100?1:4});tke.style.color='var(--w)';}
+   tke.textContent=b.toLocaleString(undefined,{maximumFractionDigits:_dig});tke.style.color='var(--w)';}
   else{var lv=parseFloat((function(){try{return localStorage.getItem('tklast_'+t[0]);}catch(_){return '';}})());
    if(!(lv>0)&&SEED_LAST[t[0]])lv=SEED_LAST[t[0]];
-   if(lv>0){tke.textContent=lv.toLocaleString(undefined,{maximumFractionDigits:lv>100?1:4});tke.style.color='var(--t2)';}
+   if(lv>0){tke.textContent=lv.toLocaleString(undefined,{maximumFractionDigits:(_FXP[t[0]]!==undefined)?_FXP[t[0]]:(lv>100?1:4)});tke.style.color='var(--t2)';}
    else{tke.textContent='—';tke.style.color='var(--w)';}}
   if(b>0&&a>0&&t[0]!=='vix')el('tks_'+t[0]).textContent='s '+fmt2(a-b,a-b<0.01?5:2);
   if(t[2]){var lo=safe(J[t[2]+'_curl']),hi=safe(J[t[2]+'_curh']);
@@ -578,14 +583,14 @@ function render(J){lastJ=J;
  dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
  for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
   dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
-   +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
+)OMEGAD2"
+R"OMEGAD3(   +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
  dh+='</div>';el('dom').innerHTML=(bids.length||asks.length)?dh:'<span class="d">no depth (L2 quiet)</span>';
  var imb=safe(J.l2_gold,0.5);el('obiv').textContent=fmt2(imb,3);
  var ob=el('obib'),dev=imb-0.5;ob.style.left=dev>=0?'50%':(50+dev*100)+'%';ob.style.width=Math.abs(dev)*100+'%';
  ob.style.background=dev>=0?'var(--grn)':'var(--red)';
 
-)OMEGAD2"
-R"OMEGAD3( /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
+ /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 
  var lts=J.live_trades||[];
  /* entry bell -- identity-based (engine|symbol|side|entry), NOT count-based.
@@ -752,14 +757,14 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
    var lpk=sl.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(sl.peak_mfe_pct,2);
    var lstc=sl.bars_since_high===undefined?'<span class="d">—</span>':String(sl.bars_since_high);
    var isL=(sl.id||'')[0]==='L';
-   h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:18px">&#8627; '+(sl.id||'?')+(isL?' <span class="d" style="font-size:9px">ladder</span>':'')+'</td><td class="l">'+lst+'</td>'
+)OMEGAD3"
+R"OMEGAD4(   h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:18px">&#8627; '+(sl.id||'?')+(isL?' <span class="d" style="font-size:9px">ladder</span>':'')+'</td><td class="l">'+lst+'</td>'
      +'<td class="num">'+lpk+'</td><td class="num">'+lstc+'</td><td colspan="6"></td></tr>';
   });
  });
  el('cctab').innerHTML=h;
  el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
-)OMEGAD3"
-R"OMEGAD4( /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
+ /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
     Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both so it shows on push. */
  window._cctot=totbank;
@@ -950,7 +955,8 @@ function drawIndex(){var j=window._idx||null;
 function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.syms||[]).length)window._idx=j;
  window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* sum per-sym REAL forward $ -- additive to ALL-TIME */
- drawIndex();
+)OMEGAD4"
+R"OMEGAD5( drawIndex();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawIndex();});}
 setInterval(pollIndex,15000);pollIndex();
@@ -963,8 +969,7 @@ function parseShadow(txt){
     trade_id, not ts) -> parseInt('0') falsy -> EVERY row skipped -> all
     analytics showed "$0 / no shadow closes". Map columns by header name. */
  var out=[];var ls=txt.split('\n');if(ls.length<2)return out;
-)OMEGAD4"
-R"OMEGAD5( var hdr=ls[0].split(','),ix={};
+ var hdr=ls[0].split(','),ix={};
  for(var h=0;h<hdr.length;h++)ix[hdr[h].trim()]=h;
  function need(n){return ix[n]!==undefined;}
  if(!need('exit_ts_unix')||!need('symbol')||!need('engine')||!need('net_pnl'))return out;
@@ -1133,14 +1138,14 @@ function fillSymSel(){var by={};ROWS.forEach(function(r){by[r.sym]=(by[r.sym]||0
  if(syms.indexOf(cur)>=0)s.value=cur;}
 function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
- var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
+)OMEGAD5"
+R"OMEGAD6( var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
  if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no trades for '+sym,10,20);return;}
  var xs=rs.map(function(r){return r.mae;}),ys=rs.map(function(r){return r.mfe;});
  function pct(a,p){var b=a.slice().sort(function(x,y){return x-y;});return b[Math.min(b.length-1,Math.floor(p*b.length))];}
  var mx=Math.max(pct(xs,0.97),0.1),my=Math.max(pct(ys,0.97),0.1);
  function X(v){return 26+(W-34)*Math.min(1,v/mx);}function Y(v){return H-18-(H-30)*Math.min(1,v/my);}
-)OMEGAD5"
-R"OMEGAD6( ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.strokeRect(26,12,W-34,H-30);
+ ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.strokeRect(26,12,W-34,H-30);
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText('MAE '+fmt2(mx,1),W-60,H-4);ctx.fillText('MFE',2,14);ctx.fillText(fmt2(my,1),2,24);
  rs.forEach(function(r){ctx.fillStyle=r.pnl>0?'rgba(46,189,133,0.75)':'rgba(226,72,77,0.75)';
@@ -1330,7 +1335,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();ctx.arc(xx,yx,hov?5:4,0,6.3);
     ctx.fillStyle='#0B0F14';ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=1.8;ctx.stroke();ctx.restore();
-    ctx.beginPath();ctx.arc(xx,yx,1.5,0,6.3);ctx.fillStyle=c;ctx.fill();
+)OMEGAD6"
+R"OMEGAD7(    ctx.beginPath();ctx.arc(xx,yx,1.5,0,6.3);ctx.fillStyle=c;ctx.fill();
     if(r.ts===nx&&(Date.now()/1000-nx)<600){   /* pulse halo, anim loop redraws */
      var p=(performance.now()%1400)/1400;
      ctx.beginPath();ctx.arc(xx,yx,5+p*11,0,6.3);
@@ -1339,8 +1345,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
      var tw2=ctx.measureText(txt).width,bx2=Math.min(xx+7,W-padR-tw2-8),by2=yx+(vi%2?12:-22);
      by2=Math.max(padT+2,Math.min(by2,padT+ph-12));
      ctx.globalAlpha=hov?1:0.92;
-)OMEGAD6"
-R"OMEGAD7(     ctx.fillStyle='rgba(11,15,20,0.85)';ctx.beginPath();
+     ctx.fillStyle='rgba(11,15,20,0.85)';ctx.beginPath();
      if(ctx.roundRect)ctx.roundRect(bx2-4,by2,tw2+8,11,3);else ctx.rect(bx2-4,by2,tw2+8,11);
      ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=0.8;ctx.stroke();
      ctx.fillStyle=c;ctx.fillText(txt,bx2,by2+8.5);ctx.globalAlpha=1;ctx.font='10px IBM Plex Mono';}
