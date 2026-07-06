@@ -14,6 +14,7 @@
 #include "QndxSqfIbkr.hpp"      // thin TWS-free interface to the in-process QNDX (Nasdaq-100 SQF) book
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 #include "GoldBeFloorCompanion.hpp" // AUPOS/AUNEG gold BE-floor companion (native C++, /api/gold_companion)
+#include "XagBeFloorCompanion.hpp"  // XAGPos/XAGNeg SILVER BE-floor companion (native C++, /api/xag_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
@@ -1598,6 +1599,58 @@ static void init_engines(const std::string& cfg_path)
                 });
         }
         printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) wired: deploy-forward, H1-sink live, LIVE-EXEC (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
+        fflush(stdout);
+
+        // ── XAGPos/XAGNeg SILVER BE-floor companion (S-2026-07-06) ───────────
+        //   Gold-twin of the AUPOS/AUNEG companion, SILVER params (LOCKED 2026-07-06 handoff):
+        //   W=2 (2h), thr=0.010 (+/-1%, operator-locked over 2%), be_bp=6.0 (real RT ~6bp:
+        //   2.88bp spread + 0.16bp comm + 2.6bp slippage), x2 tiers 20bp banker / 150bp runner,
+        //   dpp=5000 $/pt/lot (silver lot = 5000 oz). SEPARATE INDEPENDENT observe-only shadow
+        //   book (feedback-companion-independent-engine): self-detects 2h +/-1% up/down XAG moves
+        //   from the live XAG H1 close stream (fed by the on_tick.hpp XAG H1 aggregator off the
+        //   IBKR XAGUSD DOM mid), runs x2 BE-floor tiers/direction => neg=0 by construction
+        //   (calibrated: neg=0, both WF halves +, both flavors +). Own state file
+        //   xag_companion_state.json -> /api/xag_companion -> desk XAG COMPANIONS panel.
+        //   Silver DIRECTIONAL is a graveyard (SilverTurtle/GoldSilverLeadLag DEAD) -- this is the
+        //   befloor JUMP mechanism, a different valid basis; do NOT resurrect turtle/breakout.
+        {
+            auto& xc = omega::xag_befloor_companion();
+            // Pre-deploy history: bundled warm-seed CSV + the persisted live H1 dump so the 2h
+            // detector rebuilds across restarts (deploy-forward: only clips after the stamped
+            // deploy_ts count -> the live forward book starts at $0; the forward book itself is
+            // persisted in xag_companion_book.txt/closed.csv/live.txt sidecars).
+            xc.seed_from_h1_csv("phase1/signal_discovery/warmup_XAGUSD_H1.csv");
+            xc.seed_from_h1_csv(log_root_dir() + "/xag_companion_h1.csv");   // persisted LIVE dump (self-written)
+            xc.finalize_seed();
+            // Feed: the on_tick.hpp XAG H1 aggregator calls xag_befloor_companion().on_h1_bar(ts,close)
+            //   on each completed H1 (off the XAGUSD DOM mid). No gold_regime H1-sink -- XAG has its own.
+            // ── LIVE EXECUTION: XAGPos/XAGNeg are REAL independent 2-runner trading engines. Same
+            //   order path + ledger contract as gold AUPOS/AUNEG: SHADOW today (send_live_order no-ops
+            //   while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry (XAG spread ~0.05 =
+            //   ~6.6bp at $76, matches calibrated real cost), BE-floor neg=0, every close -> shadow
+            //   ledger -> ENGINE LEDGER + headline PnL.
+            xc.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);          // "" in shadow; broker token in live
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);     // opposite side closes; token=posId (hedging-safe)
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.05, tp_dist_pts, lots, 1.5); // XAG real spread ~0.05
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
+                    handle_closed_trade(tr);                                   // -> ledger / shadow equity / TRADE HISTORY
+                });
+        }
+        printf("[OMEGA-INIT][SEED] XAG BE-floor companion (XAGPos/XAGNeg) wired: deploy-forward, on_tick H1-agg live, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n");
         fflush(stdout);
 
         // ── FX per-pair Pos/Neg BE-floor companion (S-2026-07-06) ────────────

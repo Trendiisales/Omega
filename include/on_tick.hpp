@@ -6,6 +6,7 @@
 #include "PredictiveRanges.hpp"  // GUI predictive-range snapshot (parent-TU header; needs omega_types/omega_runtime first)
 #include "AccountingGuard.hpp"   // S-2026-06-13h independent runaway-position oversight (parent-TU header)
 #include "StallCompanion.hpp"    // giveback-clip companion zoo (native C++ port of stall_accountant.py)
+#include "XagBeFloorCompanion.hpp"// XAGPos/XAGNeg SILVER BE-floor companion H1 feed (fed from XAGUSD DOM mid below)
 // on_tick.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 
@@ -628,6 +629,25 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             g_ibkr_l2.xag.snapshot_levels(bp, bs, nb, ap, as_, na);
             if (nb > 0 && na > 0) {
                 g_telemetry.UpdateL2Book("XAGUSD", bp, bs, nb, ap, as_, na);
+                // ── XAGPos/XAGNeg SILVER BE-floor companion H1 feed (S-2026-07-06) ──
+                //   Self-contained wall-clock H1 aggregator (mirrors index_feed_h1 in
+                //   tick_indices.hpp): roll a 1h bucket from the XAGUSD DOM mid and drive
+                //   xag_befloor_companion().on_h1_bar(ts,close) on each H1 close. Observe-only
+                //   (the companion's own order path is mode-gated SHADOW->live-on-flip).
+                const double xag_mid = (bp[0] + ap[0]) * 0.5;
+                if (xag_mid > 0.0) {
+                    static int64_t s_xag_h1_start = 0;
+                    static double  s_xag_h1_close = 0.0;
+                    const int64_t xnow_ms = static_cast<int64_t>(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count());
+                    const int64_t xb = (xnow_ms / 3600000LL) * 3600000LL;
+                    if (s_xag_h1_start == 0) { s_xag_h1_start = xb; s_xag_h1_close = xag_mid; }
+                    else if (xb != s_xag_h1_start) {
+                        omega::xag_befloor_companion().on_h1_bar(s_xag_h1_start / 1000, s_xag_h1_close);
+                        s_xag_h1_start = xb; s_xag_h1_close = xag_mid;
+                    } else { s_xag_h1_close = xag_mid; }
+                }
             }
         }
         if (const L2Book* b = getBook("US500.F")) {
