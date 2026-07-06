@@ -55,6 +55,7 @@ public:
         std::string state_path   = "gold_companion_state.json";       // served by /api/gold_companion
         std::string deploy_path  = "gold_companion_deploy_ts.txt";    // deploy-forward anchor (persisted)
         std::string book_path    = "gold_companion_book.txt";         // REAL forward book (persists across restarts)
+        std::string live_path    = "gold_companion_live.txt";         // OPEN window+leg arm-state (persists across restarts)
     };
     // (giveback bp, tier label) — operator spec x2: 20 banker, 150 runner.
     struct Tier { double gb_bp; const char* tag; };
@@ -84,7 +85,8 @@ public:
         // persisted deploy-forward anchor: keep the forward book stable across restarts.
         std::ifstream f(cfg_.deploy_path);
         if (f.is_open()) { long long v = 0; if (f >> v) { deploy_ts_ = v; deploy_loaded_ = true; } }
-        load_fwd_book_();   // persisted REAL forward book (cumulative clips/pts per flavor)
+        load_fwd_book_();    // persisted REAL forward book (cumulative clips/pts per flavor)
+        load_live_state_();  // persisted OPEN window+leg arm-state -> RESUME across restart (no "reset after every deploy")
     }
 
     const Config& config() const { return cfg_; }
@@ -245,6 +247,7 @@ private:
                 win_[fi] = false;
             }
         }
+        save_live_state_();   // snapshot window+leg arm-state every live bar -> restart RESUMES, never re-zeroes
     }
 
     void close_leg_(int fi, int ti, bool up, double px, int64_t ts_sec, bool fwd, const char* reason) noexcept {
@@ -292,6 +295,48 @@ private:
         std::remove(cfg_.book_path.c_str());
 #endif
         std::rename(tmp.c_str(), cfg_.book_path.c_str());
+    }
+
+    // ── persist / restore the OPEN arm-state (window flags + open runner legs). THIS is the fix for
+    //   "engine resets after every deploy": win_/live_ were RAM-only, so every VPS restart wiped any
+    //   in-progress 2h window + open legs -> the engine re-zeroed to idle and had to wait for a fresh
+    //   move to re-arm. On assets that actually move (crypto/FX) a multi-bar window rarely survived a
+    //   restart, so forward clips stayed ~0. Now the live state is snapshotted (atomic tmp+rename) on
+    //   every mutation and reloaded at construction, so a restart RESUMES the open window/legs.
+    //   Format: "win <w0> <w1>" then one "leg <fi> <ti> <has> <entry> <wm> <ref> <ets> <token|->" line
+    //   per leg. token '-' == none/shadow. Restored legs keep their broker token so a LIVE position that
+    //   outlived the process is managed to its trail stop instead of being orphaned. ──
+    void load_live_state_() noexcept {
+        std::ifstream f(cfg_.live_path);
+        if (!f.is_open()) return;
+        std::string kind;
+        while (f >> kind) {
+            if (kind == "win") { int w0 = 0, w1 = 0; f >> w0 >> w1; win_[0] = (w0 != 0); win_[1] = (w1 != 0); }
+            else if (kind == "leg") {
+                int fi = -1, ti = -1, has = 0; double entry = 0, wm = 0, ref = 0; long long ets = 0; std::string tok;
+                f >> fi >> ti >> has >> entry >> wm >> ref >> ets >> tok;
+                if (fi >= 0 && fi < 2 && ti >= 0 && ti < NT_) {
+                    LiveLeg& L = live_[fi][ti];
+                    L.has_entry = (has != 0); L.entry = entry; L.wm = wm; L.ref = ref; L.entry_ts = (int64_t)ets;
+                    L.token = (tok == "-") ? std::string() : tok;
+                }
+            } else { std::string rest; std::getline(f, rest); }   // tolerate unknown lines
+        }
+    }
+    void save_live_state_() const noexcept {
+        const std::string tmp = cfg_.live_path + ".tmp";
+        { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
+          f << "win " << (win_[0] ? 1 : 0) << " " << (win_[1] ? 1 : 0) << "\n";
+          for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) {
+              const LiveLeg& L = live_[fi][ti];
+              f << "leg " << fi << " " << ti << " " << (L.has_entry ? 1 : 0) << " "
+                << L.entry << " " << L.wm << " " << L.ref << " " << (long long)L.entry_ts << " "
+                << (L.token.empty() ? "-" : L.token) << "\n";
+          } }
+#if defined(_WIN32)
+        std::remove(cfg_.live_path.c_str());
+#endif
+        std::rename(tmp.c_str(), cfg_.live_path.c_str());
     }
 
     void ingest_(int64_t ts, double close) noexcept { ts_.push_back(ts); c_.push_back(close); }
