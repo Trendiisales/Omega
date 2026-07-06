@@ -37,6 +37,7 @@
 #include <sstream>
 #include <algorithm>
 #include <functional>
+#include <deque>
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -56,6 +57,7 @@ public:
         std::string deploy_path  = "gold_companion_deploy_ts.txt";    // deploy-forward anchor (persisted)
         std::string book_path    = "gold_companion_book.txt";         // REAL forward book (persists across restarts)
         std::string live_path    = "gold_companion_live.txt";         // OPEN window+leg arm-state (persists across restarts)
+        std::string closed_path  = "gold_companion_closed.csv";       // CLOSED forward trades list (persists; the "trades log")
     };
     // (giveback bp, tier label) — operator spec x2: 20 banker, 150 runner.
     struct Tier { double gb_bp; const char* tag; };
@@ -86,6 +88,7 @@ public:
         std::ifstream f(cfg_.deploy_path);
         if (f.is_open()) { long long v = 0; if (f >> v) { deploy_ts_ = v; deploy_loaded_ = true; } }
         load_fwd_book_();    // persisted REAL forward book (cumulative clips/pts per flavor)
+        load_closed_();      // persisted CLOSED forward trades (the desk "trades log") -> survives restart
         load_live_state_();  // persisted OPEN window+leg arm-state -> RESUME across restart (no "reset after every deploy")
     }
 
@@ -194,6 +197,15 @@ private:
     struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; };
     FwdBook fwd_[2][NT_];
 
+    // CLOSED forward trades — the operator's "list of trades". Each completed leg (real forward
+    // clip) is pushed here on close, then the engine leg is reset for the next trade. Persisted to
+    // closed_path (append one CSV line per close) + last N reloaded at construction so the desk's
+    // trades log survives restarts. RAM ring capped so the JSON stays bounded.
+    struct Closed { int fi = 0, ti = 0; double entry = 0, exit = 0, pts = 0, usd = 0;
+                    int64_t ets = 0, xts = 0; std::string reason; };
+    static constexpr size_t MAX_CLOSED_ = 60;
+    std::deque<Closed> closed_;
+
     // Incremental mirror of detect_()+book_() on the NEWEST live bar, but instead of only
     // accumulating points it OPENS/CLOSES a real position via the order path. Fires ONLY when:
     //   - callbacks are wired (live main TU; null in backtest TU), and
@@ -261,6 +273,12 @@ private:
             const double p = up ? (px - L.entry) : (L.entry - px);
             fwd_[fi][ti].pts += p; fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (p > 1e-6 ? 1 : 0);
             save_fwd_book_();
+            // completed trade -> push to the trades list (desk "trades log"), persist, then reset leg below.
+            const double dpp = cfg_.dpp_per_lot * cfg_.lot;
+            Closed rec{fi, ti, L.entry, px, p, p * dpp, L.entry_ts, ts_sec, reason};
+            closed_.push_back(rec);
+            while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
+            append_closed_(rec);
             std::printf("[AUGOLD][CLOSE] %s %s entry=%.2f exit=%.2f pts=%.2f (%s)\n",
                         LEG_ENGINE_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, px, p, reason);
             std::fflush(stdout);
@@ -295,6 +313,31 @@ private:
         std::remove(cfg_.book_path.c_str());
 #endif
         std::rename(tmp.c_str(), cfg_.book_path.c_str());
+    }
+
+    // ── CLOSED forward trades log: append one CSV row per completed clip; reload last N at ctor. ──
+    void append_closed_(const Closed& r) const noexcept {
+        std::ofstream f(cfg_.closed_path, std::ios::app);
+        if (!f.is_open()) return;
+        f << r.fi << "," << r.ti << "," << r.entry << "," << r.exit << "," << r.pts << ","
+          << r.usd << "," << (long long)r.ets << "," << (long long)r.xts << "," << r.reason << "\n";
+    }
+    void load_closed_() noexcept {
+        std::ifstream f(cfg_.closed_path);
+        if (!f.is_open()) return;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            Closed r; char reason[32] = {0};
+            if (std::sscanf(line.c_str(), "%d,%d,%lf,%lf,%lf,%lf,%lld,%lld,%31[^\n]",
+                            &r.fi, &r.ti, &r.entry, &r.exit, &r.pts, &r.usd,
+                            (long long*)&r.ets, (long long*)&r.xts, reason) >= 8
+                && r.fi >= 0 && r.fi < 2 && r.ti >= 0 && r.ti < NT_) {
+                r.reason = reason;
+                closed_.push_back(r);
+                while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
+            }
+        }
     }
 
     // ── persist / restore the OPEN arm-state (window flags + open runner legs). THIS is the fix for
@@ -437,62 +480,88 @@ private:
         o.precision(prec); o << std::fixed << "\"" << k << "\":" << v;
     }
 
-    // ── desk state JSON. HEADLINE = the REAL forward book (fwd_[fi], the live-traded clips only);
-    //   the replay accounting book (detect_+book_, per-tier) is retained under "backtest" as a
-    //   labeled reference. This is the fix for the fake-$6k artifact: the panel's desk_usd is now
-    //   the true forward record ($0 until the first live clip closes), NOT the replay sum that
-    //   credited a pre-deploy entry's whole run to a post-deploy close. Verify vs the shadow ledger. ──
+    // ── desk state JSON. REAL TRADES ONLY. There is NO backtest/replay number in here anymore —
+    //   the operator's rule: if it is not a real forward trade it does not belong in the live GUI.
+    //   Emits (1) desk_usd/desk_pts = the REAL forward book ($0 until the first live clip closes),
+    //   (2) per-flavor per-runner forward rows (both r20 banker + r150 runner -> 2 companions each),
+    //   (3) "open" = the live legs open RIGHT NOW (entry/wm/cur/uPnL), (4) "trades" = the closed-
+    //   forward-trades log (most-recent first). On close a leg is booked into (4) and reset for the
+    //   next trade. Verify vs the shadow ledger — this matches it by construction. ──
     std::string build_state_() const {
         const double dpp = cfg_.dpp_per_lot * cfg_.lot;
-        const Tier tiers[2] = { {20.0, "banker"}, {150.0, "runner"} };
         struct Flavor { const char* name; const char* dir; bool is_long; };
         const Flavor flavors[2] = { {"AUPOS", "long", true}, {"AUNEG", "short", false} };
+        const char* TIER_TAG[NT_] = { "banker", "runner" };
+        const double cur = c_.empty() ? 0.0 : c_.back();
 
         std::ostringstream o; o << std::fixed;
         const int64_t last_ts = ts_.empty() ? 0 : ts_.back();
-        double desk_pts = 0.0, bt_desk_pts = 0.0;
+        double desk_pts = 0.0;
         std::ostringstream fl;
         for (int fi = 0; fi < 2; ++fi) {
-            // REAL forward book (headline) = sum of BOTH runners for this flavor
             double fwd_pts = 0.0; int fwd_clips = 0, fwd_wins = 0;
-            for (int ti = 0; ti < NT_; ++ti) { fwd_pts += fwd_[fi][ti].pts; fwd_clips += fwd_[fi][ti].clips; fwd_wins += fwd_[fi][ti].wins; }
-            desk_pts += fwd_pts;
-            // replay accounting book (backtest reference), per-tier
-            const auto trades = detect_(flavors[fi].is_long);
-            double bt_pts = 0.0;
-            std::ostringstream comps;
-            for (int ti = 0; ti < 2; ++ti) {
-                const BookRes b = book_(trades, flavors[fi].is_long, tiers[ti].gb_bp);
-                bt_pts += b.pts;
-                if (ti) comps << ",";
-                comps.precision(0); comps << std::fixed;
-                comps << "{\"tier\":\"" << tiers[ti].tag << "\",\"gb_bp\":" << tiers[ti].gb_bp
-                      << ",\"clips\":" << b.clips << ",\"wins\":" << b.wins << ",";
-                comps.precision(2); comps << "\"pts\":" << b.pts << ",";
-                comps.precision(0); comps << "\"usd\":" << (b.pts * dpp) << "}";
+            std::ostringstream runs;
+            for (int ti = 0; ti < NT_; ++ti) {
+                const FwdBook& b = fwd_[fi][ti];
+                fwd_pts += b.pts; fwd_clips += b.clips; fwd_wins += b.wins;
+                if (ti) runs << ",";
+                runs.precision(0); runs << std::fixed;
+                runs << "{\"tier\":\"" << TIER_TAG[ti] << "\",\"gb_bp\":" << (long)LIVE_GB_[ti]
+                     << ",\"clips\":" << b.clips << ",\"wins\":" << b.wins << ",";
+                runs.precision(2); runs << "\"pts\":" << b.pts << ",";
+                runs.precision(0); runs << "\"usd\":" << (b.pts * dpp) << "}";
             }
-            bt_desk_pts += bt_pts;
+            desk_pts += fwd_pts;
             if (fi) fl << ",";
             fl.precision(0); fl << std::fixed;
             fl << "{\"name\":\"" << flavors[fi].name << "\",\"dir\":\"" << flavors[fi].dir
-               << "\",\"events\":" << fwd_clips << ",\"clips\":" << fwd_clips
-               << ",\"wins\":" << fwd_wins << ",";
+               << "\",\"clips\":" << fwd_clips << ",\"wins\":" << fwd_wins << ",";
             fl.precision(2); fl << "\"book_pts\":" << fwd_pts << ",";
-            fl.precision(0); fl << "\"book_usd\":" << (fwd_pts * dpp) << ",";
-            // labeled backtest-view (the replay edge; NOT the forward record)
-            fl << "\"backtest\":{\"events\":" << trades.size() << ",";
-            fl.precision(2); fl << "\"book_pts\":" << bt_pts << ",";
-            fl.precision(0); fl << "\"book_usd\":" << (bt_pts * dpp)
-               << ",\"companions\":[" << comps.str() << "]}}";
+            fl.precision(0); fl << "\"book_usd\":" << (fwd_pts * dpp)
+               << ",\"runners\":[" << runs.str() << "]}";
         }
+
+        // OPEN legs right now — the live position detail (empty array = engine idle/reset, nothing open).
+        std::ostringstream op; int nopen = 0;
+        for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) {
+            const LiveLeg& L = live_[fi][ti];
+            if (!L.has_entry) continue;
+            const bool up = (fi == 0);
+            const double u = up ? (cur - L.entry) : (L.entry - cur);
+            if (nopen++) op << ",";
+            op.precision(0); op << std::fixed;
+            op << "{\"flavor\":\"" << flavors[fi].name << "\",\"dir\":\"" << flavors[fi].dir
+               << "\",\"tier\":\"" << TIER_TAG[ti] << "\",";
+            op.precision(2);
+            op << "\"entry\":" << L.entry << ",\"wm\":" << L.wm << ",\"cur\":" << cur
+               << ",\"upnl_pts\":" << u << ",";
+            op.precision(0);
+            op << "\"upnl_usd\":" << (u * dpp) << ",\"entry_ts\":" << (long long)L.entry_ts << "}";
+        }
+
+        // CLOSED forward trades log — most-recent first.
+        std::ostringstream tr; int ntr = 0;
+        for (auto it = closed_.rbegin(); it != closed_.rend(); ++it) {
+            const Closed& c = *it;
+            const int cfi = (c.fi >= 0 && c.fi < 2) ? c.fi : 0;
+            if (ntr++) tr << ",";
+            tr.precision(0); tr << std::fixed;
+            tr << "{\"flavor\":\"" << flavors[cfi].name << "\",\"dir\":\"" << flavors[cfi].dir
+               << "\",\"tier\":\"" << TIER_TAG[(c.ti >= 0 && c.ti < NT_) ? c.ti : 0] << "\",";
+            tr.precision(2);
+            tr << "\"entry\":" << c.entry << ",\"exit\":" << c.exit << ",\"pts\":" << c.pts << ",";
+            tr.precision(0);
+            tr << "\"usd\":" << c.usd << ",\"reason\":\"" << c.reason << "\",\"entry_ts\":" << (long long)c.ets
+               << ",\"exit_ts\":" << (long long)c.xts << "}";
+        }
+
         o << "{\"ts\":" << (long long)last_ts << ",";
         o.precision(2); o << "\"lot\":" << cfg_.lot << ",\"dpp\":" << dpp << ",";
         o << "\"bars\":" << ts_.size() << ",\"shadow\":true,"
           << "\"engine\":\"gold-befloor-AUPOS-AUNEG\",\"deploy_ts\":" << (long long)deploy_ts_ << ",";
         o.precision(2); o << "\"desk_pts\":" << desk_pts << ",";
         o.precision(0); o << "\"desk_usd\":" << (desk_pts * dpp) << ",";
-        o.precision(2); o << "\"bt_desk_pts\":" << bt_desk_pts << ",";
-        o.precision(0); o << "\"bt_desk_usd\":" << (bt_desk_pts * dpp) << ",";
+        o << "\"open\":[" << op.str() << "],\"trades\":[" << tr.str() << "],";
         o << "\"flavors\":[" << fl.str() << "]}";
         return o.str();
     }

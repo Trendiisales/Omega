@@ -40,6 +40,7 @@
 #include <sstream>
 #include <algorithm>
 #include <functional>
+#include <deque>
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -58,6 +59,7 @@ public:
         std::string bars_path;            // per-pair persisted LIVE forward H1 bars (survives restart)
         std::string book_path;            // per-pair persisted REAL forward book (2 runners x 2 dirs)
         std::string live_path;            // per-pair persisted OPEN window+leg arm-state (survives restart)
+        std::string closed_path;          // per-pair persisted CLOSED forward trades log (the "trades log")
     };
     struct Tier { double gb_bp; const char* tag; };
 
@@ -85,9 +87,12 @@ public:
             cfg_.book_path = "fx_companion_" + lower_(cfg_.pair) + "_book.txt";
         if (cfg_.live_path.empty())
             cfg_.live_path = "fx_companion_" + lower_(cfg_.pair) + "_live.txt";
+        if (cfg_.closed_path.empty())
+            cfg_.closed_path = "fx_companion_" + lower_(cfg_.pair) + "_closed.csv";
         std::ifstream f(cfg_.deploy_path);
         if (f.is_open()) { long long v = 0; if (f >> v) { deploy_ts_ = v; deploy_loaded_ = true; } }
         load_fwd_book_();
+        load_closed_();       // CLOSED forward trades log -> survives restart
         load_live_state_();   // RESUME open window+legs across restart (fix "resets every deploy")
     }
 
@@ -151,45 +156,83 @@ public:
         return n;
     }
 
-    // Emit this pair's desk JSON object: {"pair":..,"bars":..,"deploy_ts":..,"pct":..,"usd":..,"flavors":[..]}
+    // Emit this pair's desk JSON object. REAL TRADES ONLY — no backtest/replay number (operator rule:
+    // if it is not a forward trade it does not belong in the live GUI). "usd"/"pct" = the REAL forward
+    // book ($0 until the first live clip closes). Per-flavor "runners" = both r20 banker + r150 runner
+    // (forward-only). "open" = live legs open right now. "trades" = closed forward trades (recent first).
     // Flavors named <PAIR>Pos / <PAIR>Neg (research convention, distinct from gold AUPOS/AUNEG).
     std::string pair_json() const {
         const double usd_per_pct = cfg_.notional / 100.0 * cfg_.lot;   // %-point -> USD
-        const Tier tiers[2] = { {20.0, "banker"}, {150.0, "runner"} };
+        const char* TIER_TAG[NT_] = { "banker", "runner" };
         struct Flavor { const char* suffix; const char* dir; bool is_long; };
         const Flavor flavors[2] = { {"Pos", "long", true}, {"Neg", "short", false} };
+        const double cur = c_.empty() ? 0.0 : c_.back();
 
         std::ostringstream o; o << std::fixed;
         const int64_t last_ts = ts_.empty() ? 0 : ts_.back();
         double pair_pct = 0.0;
         std::ostringstream fl;
         for (int fi = 0; fi < 2; ++fi) {
-            const auto trades = detect_(flavors[fi].is_long);
-            double book_pct = 0.0;
-            std::ostringstream comps;
-            for (int ti = 0; ti < 2; ++ti) {
-                const BookRes b = book_(trades, flavors[fi].is_long, tiers[ti].gb_bp);
-                book_pct += b.pct;
-                if (ti) comps << ",";
-                comps.precision(0); comps << std::fixed;
-                comps << "{\"tier\":\"" << tiers[ti].tag << "\",\"gb_bp\":" << tiers[ti].gb_bp
-                      << ",\"clips\":" << b.clips << ",\"wins\":" << b.wins << ",";
-                comps.precision(3); comps << "\"pct\":" << b.pct << ",";
-                comps.precision(0); comps << "\"usd\":" << (b.pct * usd_per_pct) << "}";
+            double book_pct = 0.0; int fwd_clips = 0, fwd_wins = 0;
+            std::ostringstream runs;
+            for (int ti = 0; ti < NT_; ++ti) {
+                const FwdBook& b = fwd_[fi][ti];   // .pts holds pct-return points (FX)
+                book_pct += b.pts; fwd_clips += b.clips; fwd_wins += b.wins;
+                if (ti) runs << ",";
+                runs.precision(0); runs << std::fixed;
+                runs << "{\"tier\":\"" << TIER_TAG[ti] << "\",\"gb_bp\":" << (long)LIVE_GB_[ti]
+                     << ",\"clips\":" << b.clips << ",\"wins\":" << b.wins << ",";
+                runs.precision(3); runs << "\"pct\":" << b.pts << ",";
+                runs.precision(0); runs << "\"usd\":" << (b.pts * usd_per_pct) << "}";
             }
             pair_pct += book_pct;
             if (fi) fl << ",";
             fl.precision(0); fl << std::fixed;
             fl << "{\"name\":\"" << cfg_.pair << flavors[fi].suffix << "\",\"dir\":\"" << flavors[fi].dir
-               << "\",\"events\":" << trades.size() << ",";
+               << "\",\"clips\":" << fwd_clips << ",\"wins\":" << fwd_wins << ",";
             fl.precision(3); fl << "\"book_pct\":" << book_pct << ",";
-            fl.precision(0); fl << "\"book_usd\":" << (book_pct * usd_per_pct) << ",";
-            fl << "\"companions\":[" << comps.str() << "]}";
+            fl.precision(0); fl << "\"book_usd\":" << (book_pct * usd_per_pct)
+               << ",\"runners\":[" << runs.str() << "]}";
         }
+
+        // OPEN legs right now (empty = idle/reset).
+        std::ostringstream op; int nopen = 0;
+        for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) {
+            const LiveLeg& L = live_[fi][ti];
+            if (!L.has_entry) continue;
+            const bool up = (fi == 0);
+            const double p = up ? (cur - L.entry) : (L.entry - cur);
+            const double upct = (L.entry != 0.0) ? (p / L.entry) * 100.0 : 0.0;
+            if (nopen++) op << ",";
+            op.precision(0); op << std::fixed;
+            op << "{\"flavor\":\"" << cfg_.pair << flavors[fi].suffix << "\",\"dir\":\"" << flavors[fi].dir
+               << "\",\"tier\":\"" << TIER_TAG[ti] << "\",";
+            op.precision(5); op << "\"entry\":" << L.entry << ",\"wm\":" << L.wm << ",\"cur\":" << cur << ",";
+            op.precision(3); op << "\"upnl_pct\":" << upct << ",";
+            op.precision(0); op << "\"upnl_usd\":" << (upct * usd_per_pct)
+               << ",\"entry_ts\":" << (long long)L.entry_ts << "}";
+        }
+
+        // CLOSED forward trades log — most-recent first.
+        std::ostringstream tr; int ntr = 0;
+        for (auto it = closed_.rbegin(); it != closed_.rend(); ++it) {
+            const Closed& c = *it;
+            const int cfi = (c.fi >= 0 && c.fi < 2) ? c.fi : 0;
+            if (ntr++) tr << ",";
+            tr.precision(0); tr << std::fixed;
+            tr << "{\"flavor\":\"" << cfg_.pair << flavors[cfi].suffix << "\",\"dir\":\""
+               << flavors[cfi].dir << "\",\"tier\":\"" << TIER_TAG[(c.ti >= 0 && c.ti < NT_) ? c.ti : 0] << "\",";
+            tr.precision(5); tr << "\"entry\":" << c.entry << ",\"exit\":" << c.exit << ",";
+            tr.precision(3); tr << "\"pct\":" << c.pct << ",";
+            tr.precision(0); tr << "\"usd\":" << c.usd << ",\"reason\":\"" << c.reason
+               << "\",\"entry_ts\":" << (long long)c.ets << ",\"exit_ts\":" << (long long)c.xts << "}";
+        }
+
         o << "{\"pair\":\"" << cfg_.pair << "\",\"bars\":" << ts_.size()
           << ",\"deploy_ts\":" << (long long)deploy_ts_ << ",\"ts\":" << (long long)last_ts << ",";
         o.precision(3); o << "\"pct\":" << pair_pct << ",";
         o.precision(0); o << "\"usd\":" << (pair_pct * usd_per_pct) << ",";
+        o << "\"open\":[" << op.str() << "],\"trades\":[" << tr.str() << "],";
         o << "\"flavors\":[" << fl.str() << "]}";
         return o.str();
     }
@@ -217,8 +260,15 @@ private:
     bool     win_[2] = { false, false };                 // parent 2h window per direction (0=Pos/long,1=Neg/short)
     struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
     LiveLeg live_[2][NT_];
-    struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; };
+    struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; };   // .pts holds pct-return points (FX)
     FwdBook  fwd_[2][NT_];
+
+    // CLOSED forward trades — the "trades log". Each completed leg pushed on close, leg reset for next.
+    // .pct = trade %-return (neg=0 by construction); .usd = pct * usd_per_pct at close time.
+    struct Closed { int fi = 0, ti = 0; double entry = 0, exit = 0, pct = 0, usd = 0;
+                    int64_t ets = 0, xts = 0; std::string reason; };
+    static constexpr size_t MAX_CLOSED_ = 60;
+    std::deque<Closed> closed_;
     std::string leg_engine_(int fi, int ti) const {
         return cfg_.pair + (fi == 0 ? "Pos" : "Neg") + (ti == 0 ? "_r20" : "_r150");
     }
@@ -279,10 +329,17 @@ private:
             if (!L.token.empty() && close_fn_) close_fn_(cfg_.pair, up, cfg_.lot, px, L.token);
             if (ledger_fn_) ledger_fn_(leg_engine_(fi, ti), cfg_.pair, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
             const double p = up ? (px - L.entry) : (L.entry - px);   // raw price-pts; BE-floor -> p>=0 (neg=0)
-            fwd_[fi][ti].pts += p; fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (p > 1e-6 ? 1 : 0);
+            const double pct = (L.entry != 0.0) ? (p / L.entry) * 100.0 : 0.0;   // %-return (USD-scalable)
+            fwd_[fi][ti].pts += pct; fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (pct > 1e-9 ? 1 : 0);
             save_fwd_book_();
-            std::printf("[AUFX][CLOSE] %s %s entry=%.5f exit=%.5f pts=%.5f (%s)\n",
-                        leg_engine_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, px, p, reason);
+            // completed trade -> push to the trades list, persist, then reset leg below.
+            const double usd_per_pct = cfg_.notional / 100.0 * cfg_.lot;
+            Closed rec{fi, ti, L.entry, px, pct, pct * usd_per_pct, L.entry_ts, ts_sec, reason};
+            closed_.push_back(rec);
+            while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
+            append_closed_(rec);
+            std::printf("[AUFX][CLOSE] %s %s entry=%.5f exit=%.5f pct=%.4f (%s)\n",
+                        leg_engine_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, px, pct, reason);
             std::fflush(stdout);
         }
         L.has_entry = false; L.wm = 0; L.token.clear(); L.entry_ts = 0;
@@ -309,6 +366,31 @@ private:
         std::remove(cfg_.book_path.c_str());
 #endif
         std::rename(tmp.c_str(), cfg_.book_path.c_str());
+    }
+
+    // ── CLOSED forward trades log: append one CSV row per completed clip; reload last N at ctor. ──
+    void append_closed_(const Closed& r) const noexcept {
+        std::ofstream f(cfg_.closed_path, std::ios::app);
+        if (!f.is_open()) return;
+        f << r.fi << "," << r.ti << "," << r.entry << "," << r.exit << "," << r.pct << ","
+          << r.usd << "," << (long long)r.ets << "," << (long long)r.xts << "," << r.reason << "\n";
+    }
+    void load_closed_() noexcept {
+        std::ifstream f(cfg_.closed_path);
+        if (!f.is_open()) return;
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            Closed r; char reason[32] = {0};
+            if (std::sscanf(line.c_str(), "%d,%d,%lf,%lf,%lf,%lf,%lld,%lld,%31[^\n]",
+                            &r.fi, &r.ti, &r.entry, &r.exit, &r.pct, &r.usd,
+                            (long long*)&r.ets, (long long*)&r.xts, reason) >= 8
+                && r.fi >= 0 && r.fi < 2 && r.ti >= 0 && r.ti < NT_) {
+                r.reason = reason;
+                closed_.push_back(r);
+                while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
+            }
+        }
     }
 
     // ── persist / restore OPEN arm-state (window flags + open legs) — same fix as GoldBeFloorCompanion:
