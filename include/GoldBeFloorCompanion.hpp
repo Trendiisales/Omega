@@ -18,13 +18,20 @@
 // tiers per direction (20bp banker / 150bp runner / 400bp wide). Judge STANDALONE (net>0, both
 // regimes) — NEVER vs a parent / vs riding WIDE.
 //
-// ADVERSE-PROTECTION: BE-FLOOR — a leg stays FLAT until price clears +be_bp from its
-//   ref (covers RT cost), opens THERE, and its stop sits at-or-above entry (long) /
-//   at-or-below entry (short) and only trails in the favourable direction. Therefore
-//   exit_px >= entry (long) / <= entry (short) ALWAYS => net_bp >= 0 on EVERY clip
-//   BY CONSTRUCTION. A cold-loss cut is structurally impossible and unnecessary.
-//   Backtested byte-exact vs backtest/gold_befloor_ls.py (neg=0, every slice, both
-//   regimes, WF both halves). Verdict = BE-floor (no cut), not skipped.
+// ADVERSE-PROTECTION: BE-FLOOR + REAL-FILL ACCOUNTING (honest-accounting fix, S-2026-07-07).
+//   A leg stays FLAT until price clears +be_bp from its ref, opens THERE, and its trail
+//   floor sits at-or-above entry (long) / at-or-below entry (short), trailing favourably
+//   only. The floor is an ORDER TARGET, not a guaranteed fill: bars are H1 CLOSES, so a
+//   close can gap THROUGH the floor (news candle, weekend open). Booking is therefore
+//   dual-column:
+//     pts/usd            = MODEL (legacy fill-at-floor, zero cost; >=0 by algebra) —
+//                          comparison column only, NOT a performance claim.
+//     pts_real/usd_real  = REAL  (fill = worse-of(floor, observed close), minus
+//                          rt_cost_bp round-trip cost) — CAN BE NEGATIVE; this is the
+//                          column the engine is judged on, and the ledger records it.
+//   The old "neg=0 by construction" wording described the model column only. Backtest
+//   reference backtest/gold_befloor_ls.py is model-fill: re-run with real fills + cost
+//   before any LIVE flip.
 // =============================================================================
 #include <cstdint>
 #include <cstdio>
@@ -48,6 +55,9 @@ public:
         int    W          = 2;        // detector window (H1 bars) -> "2h"
         double thr        = 0.01;     // detector threshold -> "+/-1%"
         double be_bp      = 6.0;      // GOLD_RT_BP: gross bp move to cover cost & open a leg
+        double rt_cost_bp = 6.0;      // REAL round-trip cost (spread+slip+comm, bp of entry) debited
+                                      //   from every clip's pts_real. be_bp only DELAYS the arm; it is
+                                      //   not a cost credit — a floor exit at entry is a real -rt_cost_bp.
         double lot        = 1.0;      // 1.0 std XAUUSD lot = 100 oz
         double dpp_per_lot = 100.0;   // $/point for 1.0 lot
         std::string sym    = "XAUUSD";// symbol the live legs trade (order path)
@@ -71,8 +81,9 @@ public:
     //   through the SAME machinery as every main engine, so it is SHADOW today
     //   (send_live_order no-ops while g_cfg.mode!="LIVE") and LIVE the instant mode flips —
     //   zero code change at flip. Checks/balances carried: (1) cost-gate at entry (gate_fn_),
-    //   (2) BE-floor adverse-protection neg=0 by construction, (3) shadow-ledger record on
-    //   close (ledger_fn_ -> TRADE HISTORY + shadow equity), (4) order path on entry+exit.
+    //   (2) BE-floor adverse protection (floor = order target; REAL booking can go negative on
+    //   a gap through the floor), (3) shadow-ledger record on close at the REAL fill
+    //   (ledger_fn_ -> TRADE HISTORY + shadow equity), (4) order path on entry+exit.
     using OpenFn   = std::function<std::string(const std::string& sym, bool is_long, double lots, double px)>; // -> broker token ("" in shadow)
     using CloseFn  = std::function<void(const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token)>;
     using GateFn   = std::function<bool(const std::string& sym, double tp_dist_pts, double lots)>;             // cost-gate entry filter
@@ -170,19 +181,21 @@ private:
     int64_t deploy_ts_ = 0;
     bool    deploy_loaded_ = false;
 
-    // ── live execution state — TWO runner legs per flavor (operator spec: 2 runners, not 1) ──
-    //   Both legs are BE-floored: they arm ONLY once price covers cost (be_bp) and the trail stop is
-    //   pinned >= entry (long) / <= entry (short), so each exits at a stall/reversal keeping profit —
-    //   neg=0 by construction (the operator's definitive test: they cannot make a loss). The two
-    //   runners differ only in trail giveback: r20 (tight, banks fast) + r150 (wide, rides). Each is
-    //   its OWN independent position through the order path -> its OWN ledger row -> shows in PnL.
+    // ── live execution state — runner legs per flavor ──
+    //   Legs are BE-floored: they arm ONLY once price covers be_bp and the trail floor is pinned
+    //   >= entry (long) / <= entry (short). The floor bounds the MODEL column only: real fills book
+    //   worse-of(floor, observed close) minus rt_cost_bp, so pts_real CAN be negative (gap-through,
+    //   or a floor exit that never covered the spread). The runners differ only in trail giveback.
+    //   Each is its OWN independent position through the order path -> its OWN ledger row.
     static constexpr int    NT_ = 5;                       // runners per flavor (r20 banker / r150 runner / r400 wide / r50 / r100)
     static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0, 50.0, 100.0 };  // 50/100 APPENDED at end (persistence keys by index -> never reorder)
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
     LedgerFn ledger_fn_;
-    bool     win_[2] = { false, false };                   // parent 2h window, per flavor (shared by both runners)
+    bool     win_[2]      = { false, false };              // parent 2h window, per flavor (shared by all runners)
+    bool     win_pend_[2] = { false, false };              // signal fired; ref anchors at the NEXT bar's close
+                                                           //   (parity with detect_: ei = i+1, ref = c[ei])
     struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
     LiveLeg live_[2][NT_];   // [flavor 0=AUPOS/long, 1=AUNEG/short][runner 0=r20, 1=r150]
     static std::string LEG_ENGINE_(int fi, int ti) {
@@ -194,15 +207,17 @@ private:
     //   the TRUE forward record — it excludes the replay accounting artifact (a pre-deploy entry
     //   whose run got credited to a post-deploy close, e.g. the fake $6k). Persisted so it accrues
     //   across restarts/deploys (in-memory legs reset on restart; closed-clip history must not). ──
-    struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; };
-    FwdBook fwd_[2][NT_];
+    struct FwdBook { double pts = 0.0; int clips = 0; int wins = 0; double pts_real = 0.0; };
+    FwdBook fwd_[2][NT_];   // pts = model (fill-at-floor, no cost); pts_real = observed fill - rt_cost_bp
+                            // wins counts REAL wins (pts_real > 0) since the honest-accounting fix
 
     // CLOSED forward trades — the operator's "list of trades". Each completed leg (real forward
     // clip) is pushed here on close, then the engine leg is reset for the next trade. Persisted to
     // closed_path (append one CSV line per close) + last N reloaded at construction so the desk's
     // trades log survives restarts. RAM ring capped so the JSON stays bounded.
     struct Closed { int fi = 0, ti = 0; double entry = 0, exit = 0, pts = 0, usd = 0;
-                    int64_t ets = 0, xts = 0; std::string reason; };
+                    int64_t ets = 0, xts = 0; std::string reason;
+                    double pts_real = 0, usd_real = 0; };   // REAL columns (observed fill - cost)
     static constexpr size_t MAX_CLOSED_ = 60;
     std::deque<Closed> closed_;
 
@@ -219,15 +234,23 @@ private:
         const bool   fwd = ts_sec > deploy_ts_;                  // never act on replay / seed-overlap bars
         const double cur = c_[N - 1];
         const double j   = c_[N - 1] / c_[N - 1 - W] - 1.0;
+        // GAP GUARD: the W-bar jump is index-based, so across a weekend/holiday/outage it spans days,
+        // arming into gap-spread regimes the calibration never contained. Block NEW windows on a
+        // non-contiguous span (2x slack for a single missing bar); exits stay honoured — flushing on
+        // a gap is protective, arming into one is not.
+        const bool contig = (ts_[N - 1] - ts_[N - 1 - W]) <= (int64_t)W * 3600 * 2;
         const double thr = cfg_.thr, be = cfg_.be_bp;
         for (int fi = 0; fi < 2; ++fi) {
             const bool up = (fi == 0);
-            const bool enter = up ? (j >=  thr) : (j <= -thr);
+            const bool enter = contig && (up ? (j >=  thr) : (j <= -thr));
             const bool exit  = up ? (j <= -thr) : (j >=  thr);
-            if (!win_[fi] && enter) {                             // parent 2h window opens -> arm BOTH runners
-                win_[fi] = true;
-                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; L.has_entry = false; L.wm = 0; L.ref = cur; }
+            if (win_pend_[fi]) {                                  // window opens the bar AFTER the signal:
+                win_pend_[fi] = false; win_[fi] = true;           // ref = c[ei] (parity with detect_/book_;
+                for (int ti = 0; ti < NT_; ++ti) {                //  live previously anchored one bar early)
+                    LiveLeg& L = live_[fi][ti]; L.has_entry = false; L.wm = 0; L.ref = cur;
+                }
             }
+            if (!win_[fi] && !win_pend_[fi] && enter) win_pend_[fi] = true;   // parent 2h window signal
             for (int ti = 0; ti < NT_ && win_[fi]; ++ti) {
                 LiveLeg& L = live_[fi][ti];
                 const double gb = LIVE_GB_[ti];                  // runner giveback (20bp tight / 150bp wide)
@@ -251,39 +274,49 @@ private:
                     double stop; bool hit;
                     if (up) { if (cur > L.wm) L.wm = cur; stop = std::max(L.entry, L.wm * (1.0 - gb / 1e4)); hit = (cur <= stop); }
                     else    { if (cur < L.wm) L.wm = cur; stop = std::min(L.entry, L.wm * (1.0 + gb / 1e4)); hit = (cur >= stop); }
-                    if (hit) { close_leg_(fi, ti, up, stop, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
+                    // REAL FILL: the floor is an order target; the observed close is the only tradable
+                    // mark. Book at the WORSE of the two (gap-through books the gap, not the wish).
+                    if (hit) { close_leg_(fi, ti, up, stop, cur, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
                 }
             }
             if (win_[fi] && exit) {                              // parent window ended -> flush any open runners
-                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; if (L.has_entry) close_leg_(fi, ti, up, cur, ts_sec, fwd, "WINDOW_EXIT"); }
+                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; if (L.has_entry) close_leg_(fi, ti, up, cur, cur, ts_sec, fwd, "WINDOW_EXIT"); }
                 win_[fi] = false;
             }
         }
         save_live_state_();   // snapshot window+leg arm-state every live bar -> restart RESUMES, never re-zeroes
     }
 
-    void close_leg_(int fi, int ti, bool up, double px, int64_t ts_sec, bool fwd, const char* reason) noexcept {
+    // px_floor = model floor/stop level; px_obs = observed H1 close (the only tradable mark).
+    // REAL booking: fill = worse-of(floor, observed) per side, cost = rt_cost_bp of entry.
+    void close_leg_(int fi, int ti, bool up, double px_floor, double px_obs,
+                    int64_t ts_sec, bool fwd, const char* reason) noexcept {
         LiveLeg& L = live_[fi][ti];
+        const double fill = up ? std::min(px_floor, px_obs) : std::max(px_floor, px_obs);
         if (fwd) {
-            if (!L.token.empty() && close_fn_) close_fn_(cfg_.sym, up, cfg_.lot, px, L.token);
-            if (ledger_fn_) ledger_fn_(LEG_ENGINE_(fi, ti), cfg_.sym, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
-            // REAL forward book: raw price-pts booked (same value the ledger records as tr.pnl/size).
-            // BE-floor guarantees p>=0 (trail stop>=entry long / <=entry short; window-flush only fires
-            // when cur is above stop, i.e. still favourable) -> neg=0 holds live, matching accounting.
-            const double p = up ? (px - L.entry) : (L.entry - px);
-            fwd_[fi][ti].pts += p; fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (p > 1e-6 ? 1 : 0);
+            if (!L.token.empty() && close_fn_) close_fn_(cfg_.sym, up, cfg_.lot, fill, L.token);
+            // Ledger records the REAL fill — the shadow ledger is the system of record and must be
+            // able to disagree with the model (it previously received the floor, a circular check).
+            if (ledger_fn_) ledger_fn_(LEG_ENGINE_(fi, ti), cfg_.sym, up, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
+            const double p      = up ? (px_floor - L.entry) : (L.entry - px_floor);   // MODEL (>=0 by algebra)
+            const double p_real = (up ? (fill - L.entry) : (L.entry - fill))
+                                  - L.entry * (cfg_.rt_cost_bp / 1e4);                // REAL (can be negative)
+            fwd_[fi][ti].pts += p; fwd_[fi][ti].pts_real += p_real;
+            fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (p_real > 1e-6 ? 1 : 0);
             save_fwd_book_();
             // completed trade -> push to the trades list (desk "trades log"), persist, then reset leg below.
             const double dpp = cfg_.dpp_per_lot * cfg_.lot;
-            Closed rec{fi, ti, L.entry, px, p, p * dpp, L.entry_ts, ts_sec, reason};
+            Closed rec{fi, ti, L.entry, fill, p, p * dpp, L.entry_ts, ts_sec, reason, p_real, p_real * dpp};
             closed_.push_back(rec);
             while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
             append_closed_(rec);
-            std::printf("[AUGOLD][CLOSE] %s %s entry=%.2f exit=%.2f pts=%.2f (%s)\n",
-                        LEG_ENGINE_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, px, p, reason);
+            std::printf("[AUGOLD][CLOSE] %s %s entry=%.2f fill=%.2f pts_model=%.2f pts_real=%.2f (%s)\n",
+                        LEG_ENGINE_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, fill, p, p_real, reason);
             std::fflush(stdout);
         }
         L.has_entry = false; L.wm = 0; L.token.clear(); L.entry_ts = 0;
+        save_live_state_();   // persist the leg reset NOW: a crash before the end-of-step snapshot must
+                              // not resurrect this leg on restart and double-book the clip (book+CSV+ledger).
     }
 
     // ── persist / restore the REAL forward book (sidecar; one line per flavor: "fi pts clips wins").
@@ -293,14 +326,16 @@ private:
     void load_fwd_book_() noexcept {
         std::ifstream f(cfg_.book_path);
         if (!f.is_open()) return;
-        int fi = -1, ti = -1; double pts = 0; int clips = 0, wins = 0;
+        int fi = -1, ti = -1; double pts = 0; int clips = 0, wins = 0; double preal = 0;
         std::string line;
         while (std::getline(f, line)) {
-            // 5-field per-runner format "fi ti pts clips wins" (2-runner). Old 4-field single-runner
-            // rows simply don't parse -> that book (which was $0 anyway) resets clean. No neg risk.
-            if (std::sscanf(line.c_str(), "%d %d %lf %d %d", &fi, &ti, &pts, &clips, &wins) == 5
-                && fi >= 0 && fi < 2 && ti >= 0 && ti < NT_) {
+            // 6-field "fi ti pts clips wins pts_real"; old 5-field rows load with pts_real=0
+            // (real accounting accrues from the honest-accounting deploy forward — we cannot
+            // reconstruct real fills for clips that were only ever booked at the model floor).
+            const int n = std::sscanf(line.c_str(), "%d %d %lf %d %d %lf", &fi, &ti, &pts, &clips, &wins, &preal);
+            if (n >= 5 && fi >= 0 && fi < 2 && ti >= 0 && ti < NT_) {
                 fwd_[fi][ti].pts = pts; fwd_[fi][ti].clips = clips; fwd_[fi][ti].wins = wins;
+                fwd_[fi][ti].pts_real = (n >= 6) ? preal : 0.0;
             }
         }
     }
@@ -308,7 +343,8 @@ private:
         const std::string tmp = cfg_.book_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
           for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti)
-              f << fi << " " << ti << " " << fwd_[fi][ti].pts << " " << fwd_[fi][ti].clips << " " << fwd_[fi][ti].wins << "\n"; }
+              f << fi << " " << ti << " " << fwd_[fi][ti].pts << " " << fwd_[fi][ti].clips << " "
+                << fwd_[fi][ti].wins << " " << fwd_[fi][ti].pts_real << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg_.book_path.c_str());
 #endif
@@ -320,7 +356,8 @@ private:
         std::ofstream f(cfg_.closed_path, std::ios::app);
         if (!f.is_open()) return;
         f << r.fi << "," << r.ti << "," << r.entry << "," << r.exit << "," << r.pts << ","
-          << r.usd << "," << (long long)r.ets << "," << (long long)r.xts << "," << r.reason << "\n";
+          << r.usd << "," << (long long)r.ets << "," << (long long)r.xts << "," << r.reason << ","
+          << r.pts_real << "," << r.usd_real << "\n";
     }
     void load_closed_() noexcept {
         std::ifstream f(cfg_.closed_path);
@@ -329,11 +366,16 @@ private:
         while (std::getline(f, line)) {
             if (line.empty()) continue;
             Closed r; char reason[32] = {0};
-            if (std::sscanf(line.c_str(), "%d,%d,%lf,%lf,%lf,%lf,%lld,%lld,%31[^\n]",
-                            &r.fi, &r.ti, &r.entry, &r.exit, &r.pts, &r.usd,
-                            (long long*)&r.ets, (long long*)&r.xts, reason) >= 8
-                && r.fi >= 0 && r.fi < 2 && r.ti >= 0 && r.ti < NT_) {
-                r.reason = reason;
+            long long ets = 0, xts = 0; double preal = 0, ureal = 0;   // no aliasing casts on int64_t
+            const int n = std::sscanf(line.c_str(), "%d,%d,%lf,%lf,%lf,%lf,%lld,%lld,%31[^,\n],%lf,%lf",
+                                      &r.fi, &r.ti, &r.entry, &r.exit, &r.pts, &r.usd,
+                                      &ets, &xts, reason, &preal, &ureal);
+            if (n >= 8 && r.fi >= 0 && r.fi < 2 && r.ti >= 0 && r.ti < NT_) {
+                r.ets = (int64_t)ets; r.xts = (int64_t)xts; r.reason = reason;
+                // pre-fix rows carry only the model figure; display it in both columns (marked by
+                // the row's position before the honest-accounting deploy; real accrual is forward-only).
+                r.pts_real = (n >= 11) ? preal : r.pts;
+                r.usd_real = (n >= 11) ? ureal : r.usd;
                 closed_.push_back(r);
                 while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
             }
@@ -355,6 +397,7 @@ private:
         std::string kind;
         while (f >> kind) {
             if (kind == "win") { int w0 = 0, w1 = 0; f >> w0 >> w1; win_[0] = (w0 != 0); win_[1] = (w1 != 0); }
+            else if (kind == "winp") { int p0 = 0, p1 = 0; f >> p0 >> p1; win_pend_[0] = (p0 != 0); win_pend_[1] = (p1 != 0); }
             else if (kind == "leg") {
                 int fi = -1, ti = -1, has = 0; double entry = 0, wm = 0, ref = 0; long long ets = 0; std::string tok;
                 f >> fi >> ti >> has >> entry >> wm >> ref >> ets >> tok;
@@ -370,6 +413,7 @@ private:
         const std::string tmp = cfg_.live_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
           f << "win " << (win_[0] ? 1 : 0) << " " << (win_[1] ? 1 : 0) << "\n";
+          f << "winp " << (win_pend_[0] ? 1 : 0) << " " << (win_pend_[1] ? 1 : 0) << "\n";
           for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) {
               const LiveLeg& L = live_[fi][ti];
               f << "leg " << fi << " " << ti << " " << (L.has_entry ? 1 : 0) << " "
@@ -496,28 +540,30 @@ private:
 
         std::ostringstream o; o << std::fixed;
         const int64_t last_ts = ts_.empty() ? 0 : ts_.back();
-        double desk_pts = 0.0;
+        double desk_pts = 0.0, desk_pts_real = 0.0;
         std::ostringstream fl;
         for (int fi = 0; fi < 2; ++fi) {
-            double fwd_pts = 0.0; int fwd_clips = 0, fwd_wins = 0;
+            double fwd_pts = 0.0, fwd_pts_real = 0.0; int fwd_clips = 0, fwd_wins = 0;
             std::ostringstream runs;
             for (int ti = 0; ti < NT_; ++ti) {
                 const FwdBook& b = fwd_[fi][ti];
-                fwd_pts += b.pts; fwd_clips += b.clips; fwd_wins += b.wins;
+                fwd_pts += b.pts; fwd_pts_real += b.pts_real; fwd_clips += b.clips; fwd_wins += b.wins;
                 if (ti) runs << ",";
                 runs.precision(0); runs << std::fixed;
                 runs << "{\"tier\":\"" << TIER_TAG[ti] << "\",\"gb_bp\":" << (long)LIVE_GB_[ti]
                      << ",\"clips\":" << b.clips << ",\"wins\":" << b.wins << ",";
-                runs.precision(2); runs << "\"pts\":" << b.pts << ",";
-                runs.precision(0); runs << "\"usd\":" << (b.pts * dpp) << "}";
+                runs.precision(2); runs << "\"pts\":" << b.pts << ",\"pts_real\":" << b.pts_real << ",";
+                runs.precision(0); runs << "\"usd\":" << (b.pts * dpp)
+                                        << ",\"usd_real\":" << (b.pts_real * dpp) << "}";
             }
-            desk_pts += fwd_pts;
+            desk_pts += fwd_pts; desk_pts_real += fwd_pts_real;
             if (fi) fl << ",";
             fl.precision(0); fl << std::fixed;
             fl << "{\"name\":\"" << flavors[fi].name << "\",\"dir\":\"" << flavors[fi].dir
                << "\",\"clips\":" << fwd_clips << ",\"wins\":" << fwd_wins << ",";
-            fl.precision(2); fl << "\"book_pts\":" << fwd_pts << ",";
+            fl.precision(2); fl << "\"book_pts\":" << fwd_pts << ",\"book_pts_real\":" << fwd_pts_real << ",";
             fl.precision(0); fl << "\"book_usd\":" << (fwd_pts * dpp)
+               << ",\"book_usd_real\":" << (fwd_pts_real * dpp)
                << ",\"runners\":[" << runs.str() << "]}";
         }
 
@@ -527,14 +573,15 @@ private:
             const LiveLeg& L = live_[fi][ti];
             if (!L.has_entry) continue;
             const bool up = (fi == 0);
-            const double u = up ? (cur - L.entry) : (L.entry - cur);
+            const double u  = up ? (cur - L.entry) : (L.entry - cur);
+            const double ur = u - L.entry * (cfg_.rt_cost_bp / 1e4);   // real uPnL (cost debited)
             if (nopen++) op << ",";
             op.precision(0); op << std::fixed;
             op << "{\"flavor\":\"" << flavors[fi].name << "\",\"dir\":\"" << flavors[fi].dir
                << "\",\"tier\":\"" << TIER_TAG[ti] << "\",";
             op.precision(2);
             op << "\"entry\":" << L.entry << ",\"wm\":" << L.wm << ",\"cur\":" << cur
-               << ",\"upnl_pts\":" << u << ",";
+               << ",\"upnl_pts\":" << u << ",\"upnl_pts_real\":" << ur << ",";
             op.precision(0);
             op << "\"upnl_usd\":" << (u * dpp) << ",\"entry_ts\":" << (long long)L.entry_ts << "}";
         }
@@ -549,18 +596,22 @@ private:
             tr << "{\"flavor\":\"" << flavors[cfi].name << "\",\"dir\":\"" << flavors[cfi].dir
                << "\",\"tier\":\"" << TIER_TAG[(c.ti >= 0 && c.ti < NT_) ? c.ti : 0] << "\",";
             tr.precision(2);
-            tr << "\"entry\":" << c.entry << ",\"exit\":" << c.exit << ",\"pts\":" << c.pts << ",";
+            tr << "\"entry\":" << c.entry << ",\"exit\":" << c.exit << ",\"pts\":" << c.pts
+               << ",\"pts_real\":" << c.pts_real << ",";
             tr.precision(0);
-            tr << "\"usd\":" << c.usd << ",\"reason\":\"" << c.reason << "\",\"entry_ts\":" << (long long)c.ets
+            tr << "\"usd\":" << c.usd << ",\"usd_real\":" << c.usd_real
+               << ",\"reason\":\"" << c.reason << "\",\"entry_ts\":" << (long long)c.ets
                << ",\"exit_ts\":" << (long long)c.xts << "}";
         }
 
         o << "{\"ts\":" << (long long)last_ts << ",";
-        o.precision(2); o << "\"lot\":" << cfg_.lot << ",\"dpp\":" << dpp << ",";
+        o.precision(2); o << "\"lot\":" << cfg_.lot << ",\"dpp\":" << dpp
+                          << ",\"rt_cost_bp\":" << cfg_.rt_cost_bp << ",";
         o << "\"bars\":" << ts_.size() << ",\"shadow\":true,"
           << "\"engine\":\"gold-befloor-AUPOS-AUNEG\",\"deploy_ts\":" << (long long)deploy_ts_ << ",";
-        o.precision(2); o << "\"desk_pts\":" << desk_pts << ",";
-        o.precision(0); o << "\"desk_usd\":" << (desk_pts * dpp) << ",";
+        o.precision(2); o << "\"desk_pts\":" << desk_pts << ",\"desk_pts_real\":" << desk_pts_real << ",";
+        o.precision(0); o << "\"desk_usd\":" << (desk_pts * dpp)
+                          << ",\"desk_usd_real\":" << (desk_pts_real * dpp) << ",";
         o << "\"open\":[" << op.str() << "],\"trades\":[" << tr.str() << "],";
         o << "\"flavors\":[" << fl.str() << "]}";
         return o.str();

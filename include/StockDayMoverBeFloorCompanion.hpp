@@ -27,14 +27,20 @@
 // Observe-only, shadow: NEVER opens / moves / shrinks / closes a real position, NEVER read by
 // any parent. Judge STANDALONE (net>0, both WF halves) — NEVER vs a parent / vs riding WIDE.
 //
-// ADVERSE-PROTECTION: BE-FLOOR — a leg stays FLAT until price clears +be_bp from its ref
-//   (covers RT cost), opens THERE, stop sits at-or-above entry (long) / at-or-below entry
-//   (short) and only trails favourably => exit >= entry (long) / <= entry (short) ALWAYS =>
-//   net_ret >= 0 on EVERY clip BY CONSTRUCTION. A cold-loss cut is structurally impossible
-//   and unnecessary. Backtested vs tools/rdagent/daymover_befloor_x3_v2.py: gross-neg=0 every
-//   name/tier, net>0 + both WF halves + on all 39 BIGCAP (thr=3% be=10 r20/r150/r400, DAILY-
-//   close grade). Verdict = BE-floor (no cut), not skipped (feedback-engine-loss-protection-
-//   provision).
+// ADVERSE-PROTECTION: BE-FLOOR + REAL-FILL ACCOUNTING (honest-accounting fix, S-2026-07-07).
+//   A leg stays FLAT until price clears +be_bp from its ref, opens THERE, and its trail floor
+//   sits at-or-above entry (long) / at-or-below entry (short), trailing favourably only. The
+//   floor is an ORDER TARGET, not a guaranteed fill — and at DAILY-close grade on ±3% day-
+//   movers (earnings/guidance/FDA names), overnight gaps THROUGH the floor are the normal
+//   adverse outcome, not a tail. Booking is dual-column:
+//     ret/pct/usd             = MODEL (legacy fill-at-floor, zero cost; >=0 by algebra) —
+//                               comparison column only, NOT a performance claim.
+//     ret_real/pct_real/usd_real = REAL (fill = worse-of(floor, observed close), minus
+//                               rt_cost_bp) — CAN BE NEGATIVE; the judgeable column, and
+//                               what the ledger records.
+//   The old "neg=0 by construction" wording described the model column only. Research
+//   reference tools/rdagent/daymover_befloor_x3_v2.py + daymover_pername_screen.py is
+//   model-fill: re-run with real fills + cost before any LIVE flip.
 // =============================================================================
 #include <cstdint>
 #include <cstdio>
@@ -52,6 +58,8 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <mutex>
+#include <cmath>
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -65,6 +73,9 @@ public:
         int    W             = 1;         // detector window (daily bars) -> "1-day move"
         double thr           = 0.03;      // day-mover arm threshold (3%; research best, both WF halves +)
         double be_bp         = 10.0;      // RT cost floor (bp) to open a leg (single-name IBKR ~3-8bp)
+        double rt_cost_bp    = 8.0;       // REAL round-trip cost (bp of entry) debited from every clip's
+                                          //   ret_real. be_bp only DELAYS the arm; it is not a cost credit —
+                                          //   a floor exit at entry is a real -rt_cost_bp.
         double notional      = 10000.0;   // $ per clip; USD = return * notional (name-agnostic sizing)
         double lot           = 1.0;       // order-path lot (shares/CFD units decided at flip)
         std::string deploy_path;          // per-name persisted deploy-forward anchor
@@ -105,10 +116,14 @@ public:
     const std::string& sym() const { return cfg_.sym; }
     size_t bars() const { return ts_.size(); }
     int64_t last_ts() const { return ts_.empty() ? 0 : ts_.back(); }
-    double  book_ret() const {   // total forward return summed across dirs+tiers (for headline fold)
+    double  book_ret() const {   // MODEL total forward return summed across dirs+tiers (headline fold)
         double r = 0.0; for (int fi=0; fi<2; ++fi) for (int ti=0; ti<NT_; ++ti) r += fwd_[fi][ti].ret; return r;
     }
     double  book_usd() const { return book_ret() * cfg_.notional; }
+    double  book_ret_real() const {   // REAL total (observed fills - cost) — the judgeable headline
+        double r = 0.0; for (int fi=0; fi<2; ++fi) for (int ti=0; ti<NT_; ++ti) r += fwd_[fi][ti].ret_real; return r;
+    }
+    double  book_usd_real() const { return book_ret_real() * cfg_.notional; }
 
     // seed one historical daily close (primes the detector history; books nothing — deploy-forward gate).
     void seed_bar(int64_t ts_sec, double close) noexcept {
@@ -131,6 +146,20 @@ public:
         if (close <= 0.0) return;
         ts_sec = norm_ts_(ts_sec);
         if (!ts_.empty() && ts_sec <= ts_.back()) return;   // monotonic live append only (idempotent re-poll)
+        // DATA-INTEGRITY GUARD (live path only): a torn read of the externally-written wide CSV
+        // ("45.67" truncated to "4.5") or an unadjusted split parses as a valid >0 close and would
+        // arm a phantom day-mover window PERMANENTLY (the corrected same-date row is then rejected
+        // as stale). Reject any single-day move > 50% and log loudly — a genuine >50% BIGCAP day
+        // is far rarer than a torn read/split, and integrity wins (CLAUDE.md x1000-glitch class).
+        if (!c_.empty()) {
+            const double jump = std::fabs(close / c_.back() - 1.0);
+            if (jump > 0.50) {
+                std::printf("[AUSTK][REJECT] %s daily close %.4f vs prev %.4f (%.0f%% jump) — torn read/split? bar dropped\n",
+                            cfg_.sym.c_str(), close, c_.back(), jump * 100.0);
+                std::fflush(stdout);
+                return;
+            }
+        }
         ingest_(ts_sec, close);
         append_dump_(ts_sec, close);
         live_step_(ts_sec);
@@ -163,28 +192,32 @@ public:
 
         std::ostringstream o; o << std::fixed;
         const int64_t last_ts = ts_.empty() ? 0 : ts_.back();
-        double sym_ret = 0.0;
+        double sym_ret = 0.0, sym_ret_real = 0.0;
         std::ostringstream fl;
         for (int fi = 0; fi < 2; ++fi) {
-            double book_ret = 0.0; int fwd_clips = 0, fwd_wins = 0;
+            double book_ret = 0.0, book_ret_real = 0.0; int fwd_clips = 0, fwd_wins = 0;
             std::ostringstream runs;
             for (int ti = 0; ti < NT_; ++ti) {
                 const FwdBook& b = fwd_[fi][ti];
-                book_ret += b.ret; fwd_clips += b.clips; fwd_wins += b.wins;
+                book_ret += b.ret; book_ret_real += b.ret_real; fwd_clips += b.clips; fwd_wins += b.wins;
                 if (ti) runs << ",";
                 runs.precision(0); runs << std::fixed;
                 runs << "{\"tier\":\"" << TIER_TAG[ti] << "\",\"gb_bp\":" << (long)LIVE_GB_[ti]
                      << ",\"clips\":" << b.clips << ",\"wins\":" << b.wins << ",";
-                runs.precision(3); runs << "\"pct\":" << (b.ret * 100.0) << ",";
-                runs.precision(0); runs << "\"usd\":" << (b.ret * notl) << "}";
+                runs.precision(3); runs << "\"pct\":" << (b.ret * 100.0)
+                                        << ",\"pct_real\":" << (b.ret_real * 100.0) << ",";
+                runs.precision(0); runs << "\"usd\":" << (b.ret * notl)
+                                        << ",\"usd_real\":" << (b.ret_real * notl) << "}";
             }
-            sym_ret += book_ret;
+            sym_ret += book_ret; sym_ret_real += book_ret_real;
             if (fi) fl << ",";
             fl.precision(0); fl << std::fixed;
             fl << "{\"name\":\"" << cfg_.sym << flavors[fi].suffix << "\",\"dir\":\"" << flavors[fi].dir
                << "\",\"clips\":" << fwd_clips << ",\"wins\":" << fwd_wins << ",";
-            fl.precision(3); fl << "\"book_pct\":" << (book_ret * 100.0) << ",";
+            fl.precision(3); fl << "\"book_pct\":" << (book_ret * 100.0)
+                                << ",\"book_pct_real\":" << (book_ret_real * 100.0) << ",";
             fl.precision(0); fl << "\"book_usd\":" << (book_ret * notl)
+               << ",\"book_usd_real\":" << (book_ret_real * notl)
                << ",\"runners\":[" << runs.str() << "]}";
         }
 
@@ -194,14 +227,17 @@ public:
             const LiveLeg& L = live_[fi][ti];
             if (!L.has_entry) continue;
             const bool up = (fi == 0);
-            const double u = up ? (cur / L.entry - 1.0) : (L.entry / cur - 1.0);
+            // short uPnL on the same notional basis as long: (entry-cur)/entry (NOT entry/cur-1).
+            const double u  = up ? (cur / L.entry - 1.0) : (L.entry - cur) / L.entry;
+            const double ur = u - cfg_.rt_cost_bp / 1e4;   // real uPnL (cost debited)
             if (nopen++) op << ",";
             op.precision(0); op << std::fixed;
             op << "{\"flavor\":\"" << cfg_.sym << flavors[fi].suffix << "\",\"dir\":\"" << flavors[fi].dir
                << "\",\"tier\":\"" << TIER_TAG[ti] << "\",";
             op.precision(2);
             op << "\"entry\":" << L.entry << ",\"wm\":" << L.wm << ",\"cur\":" << cur << ",";
-            op.precision(3); op << "\"upnl_pct\":" << (u * 100.0) << ",";
+            op.precision(3); op << "\"upnl_pct\":" << (u * 100.0)
+                                << ",\"upnl_pct_real\":" << (ur * 100.0) << ",";
             op.precision(0); op << "\"upnl_usd\":" << (u * notl) << ",\"entry_ts\":" << (long long)L.entry_ts << "}";
         }
 
@@ -216,17 +252,22 @@ public:
                << flavors[cfi].dir << "\",\"tier\":\"" << TIER_TAG[(c.ti >= 0 && c.ti < NT_) ? c.ti : 0] << "\",";
             tr.precision(2);
             tr << "\"entry\":" << c.entry << ",\"exit\":" << c.exit << ",";
-            tr.precision(3); tr << "\"pct\":" << (c.ret * 100.0) << ",";
+            tr.precision(3); tr << "\"pct\":" << (c.ret * 100.0)
+                                << ",\"pct_real\":" << (c.ret_real * 100.0) << ",";
             tr.precision(0);
-            tr << "\"usd\":" << c.usd << ",\"reason\":\"" << c.reason << "\",\"entry_ts\":" << (long long)c.ets
+            tr << "\"usd\":" << c.usd << ",\"usd_real\":" << c.usd_real
+               << ",\"reason\":\"" << c.reason << "\",\"entry_ts\":" << (long long)c.ets
                << ",\"exit_ts\":" << (long long)c.xts << "}";
         }
 
         o << "{\"sym\":\"" << cfg_.sym << "\",\"live_sym\":\"" << cfg_.live_sym << "\",\"bars\":" << ts_.size()
           << ",\"deploy_ts\":" << (long long)deploy_ts_ << ",\"ts\":" << (long long)last_ts << ",";
         o.precision(0); o << "\"notional\":" << notl << ",";
-        o.precision(3); o << "\"pct\":" << (sym_ret * 100.0) << ",";
-        o.precision(0); o << "\"usd\":" << (sym_ret * notl) << ",";
+        o.precision(1); o << "\"rt_cost_bp\":" << cfg_.rt_cost_bp << ",";
+        o.precision(3); o << "\"pct\":" << (sym_ret * 100.0)
+                          << ",\"pct_real\":" << (sym_ret_real * 100.0) << ",";
+        o.precision(0); o << "\"usd\":" << (sym_ret * notl)
+                          << ",\"usd_real\":" << (sym_ret_real * notl) << ",";
         o << "\"open\":[" << op.str() << "],\"trades\":[" << tr.str() << "],";
         o << "\"flavors\":[" << fl.str() << "]}";
         return o.str();
@@ -239,23 +280,29 @@ private:
     int64_t deploy_ts_ = 0;
     bool    deploy_loaded_ = false;
 
-    // ── live execution — THREE tiers per direction (r20/r150/r400), BE-floored (arm only once
-    //   price covers be_bp; trail stop pinned >= entry long / <= entry short -> exit at
-    //   stall/reversal keeping profit; return >= 0 by construction). ──
+    // ── live execution — tiers per direction, BE-floored (arm only once price covers be_bp;
+    //   trail floor pinned >= entry long / <= entry short). The floor bounds the MODEL column
+    //   only: real fills book worse-of(floor, observed close) minus rt_cost_bp, so ret_real
+    //   CAN be negative — at daily grade the overnight gap through the floor is the normal
+    //   adverse case for ±3% day-movers. ──
     static constexpr int    NT_ = 5;   // r20 banker / r150 runner / r400 wide / r50 / r100
     static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0, 50.0, 100.0 };  // 50/100 APPENDED at end (persistence keys by index -> never reorder)
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
     LedgerFn ledger_fn_;
-    bool     win_[2] = { false, false };
+    bool     win_[2]      = { false, false };
+    bool     win_pend_[2] = { false, false };   // signal fired; ref anchors at the NEXT bar's close
+                                                //   (parity with daymover_pername_screen.py ei = i+1)
     struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
     LiveLeg live_[2][NT_];
-    struct FwdBook { double ret = 0.0; int clips = 0; int wins = 0; };   // .ret = summed return fraction
-    FwdBook  fwd_[2][NT_];
+    struct FwdBook { double ret = 0.0; int clips = 0; int wins = 0; double ret_real = 0.0; };
+    FwdBook  fwd_[2][NT_];   // .ret = MODEL summed return fraction (fill-at-floor, no cost);
+                             // .ret_real = REAL (observed fill - rt_cost_bp). wins counts REAL wins.
 
     struct Closed { int fi = 0, ti = 0; double entry = 0, exit = 0, ret = 0, usd = 0;
-                    int64_t ets = 0, xts = 0; std::string reason; };
+                    int64_t ets = 0, xts = 0; std::string reason;
+                    double ret_real = 0, usd_real = 0; };   // REAL columns (observed fill - cost)
     static constexpr size_t MAX_CLOSED_ = 60;
     std::deque<Closed> closed_;
     std::string leg_engine_(int fi, int ti) const {
@@ -271,15 +318,22 @@ private:
         const bool   fwd = ts_sec > deploy_ts_;
         const double cur = c_[N - 1];
         const double j   = c_[N - 1] / c_[N - 1 - W] - 1.0;
+        // GAP GUARD: daily bars normally span weekends/holidays (in-calibration), but a multi-week
+        // data outage would make the "1-day move" a multi-week move — block NEW windows on a span
+        // over ~1 week; exits stay honoured.
+        const bool contig = (ts_[N - 1] - ts_[N - 1 - W]) <= (int64_t)W * 86400 * 7;
         const double thr = cfg_.thr, be = cfg_.be_bp;
         for (int fi = 0; fi < 2; ++fi) {
             const bool up = (fi == 0);
-            const bool enter = up ? (j >=  thr) : (j <= -thr);
+            const bool enter = contig && (up ? (j >=  thr) : (j <= -thr));
             const bool exit  = up ? (j <= -thr) : (j >=  thr);
-            if (!win_[fi] && enter) {
-                win_[fi] = true;
-                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; L.has_entry = false; L.wm = 0; L.ref = cur; }
+            if (win_pend_[fi]) {                              // window opens the bar AFTER the mover day:
+                win_pend_[fi] = false; win_[fi] = true;       // ref = c[ei] (parity with research ei = i+1)
+                for (int ti = 0; ti < NT_; ++ti) {
+                    LiveLeg& L = live_[fi][ti]; L.has_entry = false; L.wm = 0; L.ref = cur;
+                }
             }
+            if (!win_[fi] && !win_pend_[fi] && enter) win_pend_[fi] = true;   // day-mover window signal
             for (int ti = 0; ti < NT_ && win_[fi]; ++ti) {
                 LiveLeg& L = live_[fi][ti];
                 const double gb = LIVE_GB_[ti];
@@ -302,45 +356,64 @@ private:
                     double stop; bool hit;
                     if (up) { if (cur > L.wm) L.wm = cur; stop = std::max(L.entry, L.wm * (1.0 - gb / 1e4)); hit = (cur <= stop); }
                     else    { if (cur < L.wm) L.wm = cur; stop = std::min(L.entry, L.wm * (1.0 + gb / 1e4)); hit = (cur >= stop); }
-                    if (hit) { close_leg_(fi, ti, up, stop, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
+                    // REAL FILL: the floor is an order target; the daily close is the only tradable
+                    // mark. Book at the WORSE of the two (an overnight gap books the gap, not the wish).
+                    if (hit) { close_leg_(fi, ti, up, stop, cur, ts_sec, fwd, "TRAIL_STOP"); L.ref = stop; }
                 }
             }
             if (win_[fi] && exit) {
-                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; if (L.has_entry) close_leg_(fi, ti, up, cur, ts_sec, fwd, "WINDOW_EXIT"); }
+                for (int ti = 0; ti < NT_; ++ti) { LiveLeg& L = live_[fi][ti]; if (L.has_entry) close_leg_(fi, ti, up, cur, cur, ts_sec, fwd, "WINDOW_EXIT"); }
                 win_[fi] = false;
             }
         }
         save_live_state_();
     }
 
-    void close_leg_(int fi, int ti, bool up, double px, int64_t ts_sec, bool fwd, const char* reason) noexcept {
+    // px_floor = model floor/stop level; px_obs = observed daily close (the only tradable mark).
+    // REAL booking: fill = worse-of(floor, observed) per side, cost = rt_cost_bp of notional.
+    // NOTE short return is (entry - px) / entry — return on the SAME notional basis as the long
+    // side. The old entry/px - 1 convexly overstated short winners (a 100->50 cover booked +100%).
+    void close_leg_(int fi, int ti, bool up, double px_floor, double px_obs,
+                    int64_t ts_sec, bool fwd, const char* reason) noexcept {
         LiveLeg& L = live_[fi][ti];
+        const double fill = up ? std::min(px_floor, px_obs) : std::max(px_floor, px_obs);
         if (fwd) {
-            if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, up, cfg_.lot, px, L.token);
-            if (ledger_fn_) ledger_fn_(leg_engine_(fi, ti), cfg_.live_sym, up, L.entry, px, cfg_.lot, L.entry_ts, ts_sec, reason);
-            const double r = up ? (px / L.entry - 1.0) : (L.entry / px - 1.0);   // RETURN; BE-floor -> r>=0 (neg=0)
-            fwd_[fi][ti].ret += r; fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (r > 1e-9 ? 1 : 0);
+            if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, up, cfg_.lot, fill, L.token);
+            // Ledger records the REAL fill — the shadow ledger must be able to disagree with the model.
+            if (ledger_fn_) ledger_fn_(leg_engine_(fi, ti), cfg_.live_sym, up, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
+            const double r      = up ? (px_floor / L.entry - 1.0)
+                                     : (L.entry - px_floor) / L.entry;            // MODEL (>=0 by algebra)
+            const double r_real = (up ? (fill / L.entry - 1.0) : (L.entry - fill) / L.entry)
+                                  - cfg_.rt_cost_bp / 1e4;                        // REAL (can be negative)
+            fwd_[fi][ti].ret += r; fwd_[fi][ti].ret_real += r_real;
+            fwd_[fi][ti].clips += 1; fwd_[fi][ti].wins += (r_real > 1e-9 ? 1 : 0);
             save_fwd_book_();
-            Closed rec{fi, ti, L.entry, px, r, r * cfg_.notional, L.entry_ts, ts_sec, reason};
+            Closed rec{fi, ti, L.entry, fill, r, r * cfg_.notional, L.entry_ts, ts_sec, reason,
+                       r_real, r_real * cfg_.notional};
             closed_.push_back(rec);
             while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
             append_closed_(rec);
-            std::printf("[AUSTK][CLOSE] %s %s entry=%.2f exit=%.2f ret=%.4f (%s)\n",
-                        leg_engine_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, px, r, reason);
+            std::printf("[AUSTK][CLOSE] %s %s entry=%.2f fill=%.2f ret_model=%.4f ret_real=%.4f (%s)\n",
+                        leg_engine_(fi, ti).c_str(), up ? "LONG" : "SHORT", L.entry, fill, r, r_real, reason);
             std::fflush(stdout);
         }
         L.has_entry = false; L.wm = 0; L.token.clear(); L.entry_ts = 0;
+        save_live_state_();   // persist the leg reset NOW: a crash before the end-of-step snapshot must
+                              // not resurrect this leg on restart and double-book the clip (book+CSV+ledger).
     }
 
     void load_fwd_book_() noexcept {
         std::ifstream f(cfg_.book_path);
         if (!f.is_open()) return;
-        int fi = -1, ti = -1; double ret = 0; int clips = 0, wins = 0;
+        int fi = -1, ti = -1; double ret = 0; int clips = 0, wins = 0; double rreal = 0;
         std::string line;
         while (std::getline(f, line)) {
-            if (std::sscanf(line.c_str(), "%d %d %lf %d %d", &fi, &ti, &ret, &clips, &wins) == 5
-                && fi >= 0 && fi < 2 && ti >= 0 && ti < NT_) {
+            // 6-field "fi ti ret clips wins ret_real"; old 5-field rows load with ret_real=0
+            // (real accounting accrues forward from the honest-accounting deploy).
+            const int n = std::sscanf(line.c_str(), "%d %d %lf %d %d %lf", &fi, &ti, &ret, &clips, &wins, &rreal);
+            if (n >= 5 && fi >= 0 && fi < 2 && ti >= 0 && ti < NT_) {
                 fwd_[fi][ti].ret = ret; fwd_[fi][ti].clips = clips; fwd_[fi][ti].wins = wins;
+                fwd_[fi][ti].ret_real = (n >= 6) ? rreal : 0.0;
             }
         }
     }
@@ -348,7 +421,8 @@ private:
         const std::string tmp = cfg_.book_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
           for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti)
-              f << fi << " " << ti << " " << fwd_[fi][ti].ret << " " << fwd_[fi][ti].clips << " " << fwd_[fi][ti].wins << "\n"; }
+              f << fi << " " << ti << " " << fwd_[fi][ti].ret << " " << fwd_[fi][ti].clips << " "
+                << fwd_[fi][ti].wins << " " << fwd_[fi][ti].ret_real << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg_.book_path.c_str());
 #endif
@@ -359,7 +433,8 @@ private:
         std::ofstream f(cfg_.closed_path, std::ios::app);
         if (!f.is_open()) return;
         f << r.fi << "," << r.ti << "," << r.entry << "," << r.exit << "," << r.ret << ","
-          << r.usd << "," << (long long)r.ets << "," << (long long)r.xts << "," << r.reason << "\n";
+          << r.usd << "," << (long long)r.ets << "," << (long long)r.xts << "," << r.reason << ","
+          << r.ret_real << "," << r.usd_real << "\n";
     }
     void load_closed_() noexcept {
         std::ifstream f(cfg_.closed_path);
@@ -368,11 +443,14 @@ private:
         while (std::getline(f, line)) {
             if (line.empty()) continue;
             Closed r; char reason[32] = {0};
-            if (std::sscanf(line.c_str(), "%d,%d,%lf,%lf,%lf,%lf,%lld,%lld,%31[^\n]",
-                            &r.fi, &r.ti, &r.entry, &r.exit, &r.ret, &r.usd,
-                            (long long*)&r.ets, (long long*)&r.xts, reason) >= 8
-                && r.fi >= 0 && r.fi < 2 && r.ti >= 0 && r.ti < NT_) {
-                r.reason = reason;
+            long long ets = 0, xts = 0; double rreal = 0, ureal = 0;   // no aliasing casts on int64_t
+            const int n = std::sscanf(line.c_str(), "%d,%d,%lf,%lf,%lf,%lf,%lld,%lld,%31[^,\n],%lf,%lf",
+                                      &r.fi, &r.ti, &r.entry, &r.exit, &r.ret, &r.usd,
+                                      &ets, &xts, reason, &rreal, &ureal);
+            if (n >= 8 && r.fi >= 0 && r.fi < 2 && r.ti >= 0 && r.ti < NT_) {
+                r.ets = (int64_t)ets; r.xts = (int64_t)xts; r.reason = reason;
+                r.ret_real = (n >= 11) ? rreal : r.ret;   // pre-fix rows: model only (display fallback)
+                r.usd_real = (n >= 11) ? ureal : r.usd;
                 closed_.push_back(r);
                 while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
             }
@@ -385,6 +463,7 @@ private:
         std::string kind;
         while (f >> kind) {
             if (kind == "win") { int w0 = 0, w1 = 0; f >> w0 >> w1; win_[0] = (w0 != 0); win_[1] = (w1 != 0); }
+            else if (kind == "winp") { int p0 = 0, p1 = 0; f >> p0 >> p1; win_pend_[0] = (p0 != 0); win_pend_[1] = (p1 != 0); }
             else if (kind == "leg") {
                 int fi = -1, ti = -1, has = 0; double entry = 0, wm = 0, ref = 0; long long ets = 0; std::string tok;
                 f >> fi >> ti >> has >> entry >> wm >> ref >> ets >> tok;
@@ -400,6 +479,7 @@ private:
         const std::string tmp = cfg_.live_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
           f << "win " << (win_[0] ? 1 : 0) << " " << (win_[1] ? 1 : 0) << "\n";
+          f << "winp " << (win_pend_[0] ? 1 : 0) << " " << (win_pend_[1] ? 1 : 0) << "\n";
           for (int fi = 0; fi < 2; ++fi) for (int ti = 0; ti < NT_; ++ti) {
               const LiveLeg& L = live_[fi][ti];
               f << "leg " << fi << " " << ti << " " << (L.has_entry ? 1 : 0) << " "
@@ -492,7 +572,8 @@ public:
 
     // LIVE: one closed daily bar for `sym`. (Poller calls the row variant; this is for tests.)
     void on_daily_bar(const std::string& sym, int64_t ts_sec, double close) {
-        if (auto* s = find(sym)) { s->on_daily_bar(ts_sec, close); recompute_and_write(); }
+        std::lock_guard<std::mutex> lk(mu_);
+        if (auto* s = find(sym)) { s->on_daily_bar(ts_sec, close); recompute_unlocked_(); }
     }
 
     // ── background poller: re-read the wide CSV every poll_ms; dispatch every date newer than
@@ -516,19 +597,38 @@ public:
         if (thread_.joinable()) thread_.join();
     }
 
-    std::string state_json() const {
+    std::string state_json() const { std::lock_guard<std::mutex> lk(mu_); return state_json_unlocked_(); }
+    void recompute_and_write() const { std::lock_guard<std::mutex> lk(mu_); recompute_unlocked_(); }
+    double total_usd() const {
+        std::lock_guard<std::mutex> lk(mu_);
+        double t = 0.0; for (const auto& s : syms_) t += s.book_usd(); return t;
+    }
+    double total_usd_real() const {
+        std::lock_guard<std::mutex> lk(mu_);
+        double t = 0.0; for (const auto& s : syms_) t += s.book_usd_real(); return t;
+    }
+
+private:
+    // ── all mutation/read of syms_ after start_poller() goes through mu_: the poller thread
+    //   dispatches bars + rewrites state while the main thread may query totals/state. NOTE the
+    //   exec callbacks (open/close/gate/ledger) are invoked FROM the poller thread — before any
+    //   LIVE flip the wired functions must themselves be thread-safe (shadow no-ops are). ──
+    mutable std::mutex mu_;
+
+    std::string state_json_unlocked_() const {
         std::ostringstream o;
-        int64_t last_ts = 0; double tot_usd = 0.0;
-        for (const auto& s : syms_) { last_ts = std::max(last_ts, s.last_ts()); tot_usd += s.book_usd(); }
+        int64_t last_ts = 0; double tot_usd = 0.0, tot_usd_real = 0.0;
+        for (const auto& s : syms_) { last_ts = std::max(last_ts, s.last_ts()); tot_usd += s.book_usd(); tot_usd_real += s.book_usd_real(); }
         o << "{\"engine\":\"stockmover-befloor-pos-neg\",\"shadow\":true,\"grade\":\"daily-close\",";
-        o.precision(0); o << std::fixed << "\"total_usd\":" << tot_usd << ",\"names\":[";
+        o.precision(0); o << std::fixed << "\"total_usd\":" << tot_usd
+                          << ",\"total_usd_real\":" << tot_usd_real << ",\"names\":[";
         for (size_t i = 0; i < syms_.size(); ++i) { if (i) o << ","; o << syms_[i].sym_json(); }
         o << "],\"ts\":" << (long long)last_ts << "}";
         return o.str();
     }
 
-    void recompute_and_write() const {
-        const std::string js = state_json();
+    void recompute_unlocked_() const {
+        const std::string js = state_json_unlocked_();
         const std::string tmp = state_path_ + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return; f << js; }
 #if defined(_WIN32)
@@ -537,9 +637,6 @@ public:
         std::rename(tmp.c_str(), state_path_.c_str());
     }
 
-    double total_usd() const { double t = 0.0; for (const auto& s : syms_) t += s.book_usd(); return t; }
-
-private:
     std::vector<StockMoverSym> syms_;
     std::unordered_map<std::string, size_t> col_;     // name -> sym index
     std::string state_path_ = "stockmover_companion_state.json";
@@ -606,25 +703,31 @@ private:
             const bool as_seed = seed_missed_;   // first load after a missed boot-seed = SEED, not live
             int64_t newest = seen; int fresh = 0;
             std::string line;
-            while (std::getline(f, line)) {
-                if (line.empty()) continue;
-                const int64_t ts = parse_date_ts_(line);
-                if (!as_seed && ts <= seen) continue;     // live: already processed
-                dispatch_row_(line, colsym, ts, /*live=*/!as_seed);
-                if (ts > newest) newest = ts;
-                ++fresh;
+            {
+                std::lock_guard<std::mutex> lk(mu_);   // dispatch mutates syms_ from this thread
+                while (std::getline(f, line)) {
+                    if (line.empty()) continue;
+                    const int64_t ts = parse_date_ts_(line);
+                    if (!as_seed && ts <= seen) continue;     // live: already processed
+                    dispatch_row_(line, colsym, ts, /*live=*/!as_seed);
+                    if (ts > newest) newest = ts;
+                    ++fresh;
+                }
+                if (fresh > 0 && as_seed) {
+                    // seeded the history (booked nothing); stamp deploy_ts so only genuinely-new dates book.
+                    for (auto& s : syms_) s.finalize_seed();
+                    last_seen_ts_.store(newest); seed_missed_ = false;
+                    recompute_unlocked_();
+                } else if (fresh > 0) {
+                    last_seen_ts_.store(newest);
+                    recompute_unlocked_();
+                }
             }
             if (fresh > 0 && as_seed) {
-                // seeded the history (booked nothing); stamp deploy_ts so only genuinely-new dates book.
-                for (auto& s : syms_) s.finalize_seed();
-                last_seen_ts_.store(newest); seed_missed_ = false;
-                recompute_and_write();
                 std::printf("[AUSTK][POLL] first-load SEED %d rows (boot-seed missed), stamped deploy=%lld\n",
                             fresh, (long long)newest);
                 std::fflush(stdout);
             } else if (fresh > 0) {
-                last_seen_ts_.store(newest);
-                recompute_and_write();
                 std::printf("[AUSTK][POLL] %d new daily row(s), newest=%lld\n", fresh, (long long)newest);
                 std::fflush(stdout);
             }
