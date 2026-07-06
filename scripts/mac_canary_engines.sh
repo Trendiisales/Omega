@@ -25,6 +25,8 @@ WARN="-Wall -Wextra -Wno-unused-variable -Wno-unused-but-set-variable -Wno-c++20
 # Self-contained or only depend on L2Globals/CellPrimitives/TradeLedger:
 HEADERS=(
   include/GoldBeFloorCompanion.hpp
+  include/FxBeFloorCompanion.hpp
+  include/IndexBeFloorCompanion.hpp
   include/StallCompanion.hpp
   include/L2Globals.hpp
   include/L2LeverageState.hpp

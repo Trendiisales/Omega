@@ -15,6 +15,7 @@
 #include "CryptoLedgerInbound.hpp"  // route IBKRCrypto shadow closes into the Omega ledger (OMEGA_CRYPTO_INBOUND=1)
 #include "GoldBeFloorCompanion.hpp" // AUPOS/AUNEG gold BE-floor companion (native C++, /api/gold_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
+#include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
 static void init_engines(const std::string& cfg_path)
@@ -1658,6 +1659,67 @@ static void init_engines(const std::string& cfg_path)
             fxb.finalize_all();
             printf("[OMEGA-INIT][SEED] FX BE-floor companion wired: 5 pairs, %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
                    seeded, restored);
+            fflush(stdout);
+        }
+
+        // ── Index per-symbol Pos/Neg BE-floor companion (S-2026-07-06) ───────
+        //   Native C++ port of the VALIDATED research backtest/index_befloor_ls.py (per-symbol
+        //   <SYM>Pos/<SYM>Neg, neg=0 by construction, both WF halves + on all 4). SEPARATE
+        //   INDEPENDENT observe-only shadow book (feedback-companion-independent-engine):
+        //   self-detects 2h +/-0.30% up/down windows from each symbol's live H1 close stream
+        //   (fed by the tick_indices.hpp bar builder), runs x2 BE-floor tiers/direction (r20/r150).
+        //   Own aggregate index_companion_state.json -> /api/index_companion -> desk INDEX
+        //   COMPANIONS. Books in PRICE POINTS -> USD via per-symbol point-value (sizing.hpp).
+        //   Loss-protection = BE-floor (verdict backtested: neg=0 every symbol/config, both halves).
+        {
+            auto& ib = omega::index_befloor_book();
+            // {tag, live_sym, dpp($/pt/lot from sizing.hpp), warmup CSV}. Tag = flavor+registry key;
+            // live_sym = the order-path symbol. NAS100 uses the gap-trimmed clean H1 (the raw warmup
+            // has a 64d coverage hole -> data_integrity_gate REJECTED; _clean is CERTIFIED CLEAN).
+            struct ICfg { const char* tag; const char* live; double dpp; const char* csv; };
+            static const ICfg IDX[] = {
+                {"US500",  "US500.F", 50.0,  "phase1/signal_discovery/warmup_US500_H1.csv"},
+                {"NAS100", "NAS100",  1.0,   "phase1/signal_discovery/warmup_NAS100_H1_clean.csv"},
+                {"DJ30",   "DJ30.F",  5.0,   "phase1/signal_discovery/warmup_US30_H1.csv"},
+                {"GER40",  "GER40",   1.10,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
+            };
+            for (const auto& ic : IDX) {
+                omega::IndexBeFloorSym::Config c;
+                c.sym = ic.tag; c.live_sym = ic.live; c.dpp_per_lot = ic.dpp;
+                ib.add(std::move(c));
+            }
+            size_t iseeded = 0;
+            for (const auto& ic : IDX) iseeded += ib.seed_sym(ic.tag, ic.csv);
+            // Reload each symbol's persisted LIVE forward bars (index_companion_<sym>_h1.csv) BEFORE
+            // finalize so the recompute replays them -> the book is NON-VOLATILE across restarts.
+            size_t irestored = ib.seed_dumps_all();
+            // ── LIVE EXECUTION: <SYM>Pos/<SYM>Neg become REAL 2-runner engines. Same order path +
+            //   ledger contract as gold AUPOS/AUNEG + FX (985f0623): SHADOW today (send_live_order
+            //   no-ops while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry, BE-floor
+            //   neg=0, every close -> shadow ledger -> ENGINE LEDGER + headline PnL.
+            ib.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.5, tp_dist_pts, lots, 1.5); // index CFD ~0.5pt spread
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
+                    handle_closed_trade(tr);
+                });
+            ib.finalize_all();
+            printf("[OMEGA-INIT][SEED] index BE-floor companion wired: 4 syms (US500/NAS100/DJ30/GER40), %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1, LIVE-EXEC 2-runner (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
+                   iseeded, irestored);
             fflush(stdout);
         }
 

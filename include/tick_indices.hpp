@@ -27,11 +27,35 @@
 //      their disabled state (commented out dispatch calls). They are preserved
 //      for future re-evaluation but never fire live.
 
+#include <chrono>
+#include "IndexBeFloorCompanion.hpp"   // omega::index_befloor_book() (per-symbol index BE-floor companion)
+
+// ── index BE-floor companion H1 feed (S-2026-07-06) ─────────────────────────
+//   Indices are traded live, and separately the index BE-floor companion needs each
+//   symbol's H1 close stream (shadow, additive). Self-contained wall-clock H1 aggregator
+//   (mirrors fx_feed_bars in tick_fx.hpp): roll a 1h bucket from the tick mid and drive
+//   index_befloor_book().on_h1_bar(tag, ts, close) on each H1 close. Observe-only; sends
+//   no orders itself (the companion's own order path is mode-gated SHADOW->live-on-flip).
+struct IdxH1Agg { int64_t start = 0; double close = 0.0; };
+static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double mid) {
+    if (mid <= 0.0) return;
+    const int64_t now_ms = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    const int64_t b = (now_ms / 3600000LL) * 3600000LL;
+    if (a.start == 0) { a.start = b; a.close = mid; }
+    else if (b != a.start) {
+        omega::index_befloor_book().on_h1_bar(tag, a.start / 1000, a.close);
+        a.start = b; a.close = mid;
+    } else { a.close = mid; }
+}
+
 // ── US500.F ────────────────────────────────────────────────
 static void on_tick_us500(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    { static IdxH1Agg agg; index_feed_h1(agg, "US500", (bid + ask) * 0.5); }  // BE-floor companion H1 feed
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every US500-driven engine.
     // S11 P3b: HybridSP pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowSP");
@@ -492,6 +516,7 @@ static void on_tick_dj30(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    { static IdxH1Agg agg; index_feed_h1(agg, "DJ30", (bid + ask) * 0.5); }  // BE-floor companion H1 feed
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every DJ30-driven engine.
     // S11 P3b: HybridUS30 pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowUS30");
@@ -683,6 +708,7 @@ static void on_tick_ger40(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    { static IdxH1Agg agg; index_feed_h1(agg, "GER40", (bid + ask) * 0.5); }  // BE-floor companion H1 feed
     // 2026-05-05 (audit-fixes-40): heartbeat pulse for GER40-driven engines.
     g_engine_heartbeat.pulse("Ger40");
     g_engine_heartbeat.pulse("AmrGer40");            // 2026-05-26 (Stage 4)
@@ -861,6 +887,7 @@ static void on_tick_nas100(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    { static IdxH1Agg agg; index_feed_h1(agg, "NAS100", (bid + ask) * 0.5); }  // BE-floor companion H1 feed
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every NAS100-driven engine.
     // S11 P3b: HybridNAS100 pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowNAS100");
