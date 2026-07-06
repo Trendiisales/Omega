@@ -838,7 +838,7 @@ function drawGold(){var j=window._gold||null;
   });
  });
  el('gctab').innerHTML=h;
- var tot=safe(j.desk_usd);/* REAL forward book only — no backtest number folded in */
+ var tot=safe(j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd);},0);/* realized + open uPnL (mark-to-market); NO backtest number folded in (operator 2026-07-06) */
  var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
  var open=(j.open||[]),trades=(j.trades||[]);
  var openTxt=open.length?(' · <span style="color:var(--grn)">'+open.length+' open now</span>'):'';
@@ -849,7 +849,7 @@ function drawGold(){var j=window._gold||null;
 }
 function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.flavors||[]).length)window._gold=j;
- window._goldtot=safe((window._gold||{}).desk_usd);/* REAL forward book only ($0 until a real forward clip closes) -- additive to ALL-TIME. NO backtest number. */
+ window._goldtot=safe((window._gold||{}).desk_usd)+(((window._gold||{}).open)||[]).reduce(function(s,o){return s+safe(o.upnl_usd);},0);/* realized + open uPnL (mark-to-market) -- additive to ALL-TIME. NO backtest number. (operator 2026-07-06) */
  drawGold();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawGold();});}
@@ -872,7 +872,7 @@ function drawFx(){var j=window._fx||null;
   el('fxinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('fx',[],[],5);return;}
  var desk=0,allOpen=[],allTrades=[];
  pairs.forEach(function(p){
-  desk+=safe(p.usd);
+  desk+=safe(p.usd);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);});
   (p.open||[]).forEach(function(o){allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
@@ -902,7 +902,7 @@ function drawFx(){var j=window._fx||null;
 }
 function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.pairs||[]).length)window._fx=j;
- window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* sum per-pair REAL forward $ -- additive to ALL-TIME */
+ window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);/* per-pair realized + open uPnL (mark-to-market) -- additive to ALL-TIME (operator 2026-07-06) */
  drawFx();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawFx();});}
@@ -924,7 +924,7 @@ function drawIndex(){var j=window._idx||null;
   el('icinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
  var desk=0,allOpen=[],allTrades=[];
  syms.forEach(function(p){
-  desk+=safe(p.usd);
+  desk+=safe(p.usd);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);});
   (p.open||[]).forEach(function(o){allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
@@ -949,14 +949,14 @@ function drawIndex(){var j=window._idx||null;
  var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
  var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
  el('icinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
-   +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+syms.length+' syms · shadow · additive';
+)OMEGAD4"
+R"OMEGAD5(   +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+syms.length+' syms · shadow · additive';
  renderCompanionOpenTrades('ic',allOpen,allTrades,2);
 }
 function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.syms||[]).length)window._idx=j;
- window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* sum per-sym REAL forward $ -- additive to ALL-TIME */
-)OMEGAD4"
-R"OMEGAD5( drawIndex();
+ window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);/* per-sym realized + open uPnL (mark-to-market) -- additive to ALL-TIME (operator 2026-07-06) */
+ drawIndex();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawIndex();});}
 setInterval(pollIndex,15000);pollIndex();
@@ -1127,7 +1127,8 @@ function drawHeat(){var rs=winRows();var by={};
    else if(e.pnl<-1){bg=t<-0.4?'#A32D2D':'#5c1f1f';fg='#F7C1C1';}
    var nm=k.replace(/Engine$/,'');
    h+='<div class="tile" style="background:'+bg+'" title="'+esc(k)+' n='+e.n+' pnl='+fmt$(e.pnl)+'">'
-    +'<b style="color:'+fg+'">'+esc(nm)+'</b><span class="num" style="color:'+fg+'">'+fmt$(e.pnl)+' · '+e.n+'</span></div>';});
+)OMEGAD5"
+R"OMEGAD6(    +'<b style="color:'+fg+'">'+esc(nm)+'</b><span class="num" style="color:'+fg+'">'+fmt$(e.pnl)+' · '+e.n+'</span></div>';});
   h+='</div>';});
  el('heat').innerHTML=h;}
 
@@ -1138,8 +1139,7 @@ function fillSymSel(){var by={};ROWS.forEach(function(r){by[r.sym]=(by[r.sym]||0
  if(syms.indexOf(cur)>=0)s.value=cur;}
 function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);
-)OMEGAD5"
-R"OMEGAD6( var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
+ var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
  if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no trades for '+sym,10,20);return;}
  var xs=rs.map(function(r){return r.mae;}),ys=rs.map(function(r){return r.mfe;});
  function pct(a,p){var b=a.slice().sort(function(x,y){return x-y;});return b[Math.min(b.length-1,Math.floor(p*b.length))];}
@@ -1326,7 +1326,8 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
    if(r.ets>=t0){var s=hov?8:6;   /* entry: glow triangle, up=LONG / down=SHORT */
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();
-    if(r.side==='LONG'){ctx.moveTo(xe,ye-s);ctx.lineTo(xe-s*0.85,ye+s*0.6);ctx.lineTo(xe+s*0.85,ye+s*0.6);}
+)OMEGAD6"
+R"OMEGAD7(    if(r.side==='LONG'){ctx.moveTo(xe,ye-s);ctx.lineTo(xe-s*0.85,ye+s*0.6);ctx.lineTo(xe+s*0.85,ye+s*0.6);}
     else{ctx.moveTo(xe,ye+s);ctx.lineTo(xe-s*0.85,ye-s*0.6);ctx.lineTo(xe+s*0.85,ye-s*0.6);}
     ctx.closePath();ctx.fillStyle=c;ctx.fill();ctx.restore();
     ctx.strokeStyle='#0B0F14';ctx.lineWidth=1;ctx.stroke();
@@ -1335,8 +1336,7 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();ctx.arc(xx,yx,hov?5:4,0,6.3);
     ctx.fillStyle='#0B0F14';ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=1.8;ctx.stroke();ctx.restore();
-)OMEGAD6"
-R"OMEGAD7(    ctx.beginPath();ctx.arc(xx,yx,1.5,0,6.3);ctx.fillStyle=c;ctx.fill();
+    ctx.beginPath();ctx.arc(xx,yx,1.5,0,6.3);ctx.fillStyle=c;ctx.fill();
     if(r.ts===nx&&(Date.now()/1000-nx)<600){   /* pulse halo, anim loop redraws */
      var p=(performance.now()%1400)/1400;
      ctx.beginPath();ctx.arc(xx,yx,5+p*11,0,6.3);

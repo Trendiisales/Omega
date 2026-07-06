@@ -828,7 +828,7 @@ function drawGold(){var j=window._gold||null;
   });
  });
  el('gctab').innerHTML=h;
- var tot=safe(j.desk_usd);/* REAL forward book only — no backtest number folded in */
+ var tot=safe(j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd);},0);/* realized + open uPnL (mark-to-market); NO backtest number folded in (operator 2026-07-06) */
  var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
  var open=(j.open||[]),trades=(j.trades||[]);
  var openTxt=open.length?(' · <span style="color:var(--grn)">'+open.length+' open now</span>'):'';
@@ -839,7 +839,7 @@ function drawGold(){var j=window._gold||null;
 }
 function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.flavors||[]).length)window._gold=j;
- window._goldtot=safe((window._gold||{}).desk_usd);/* REAL forward book only ($0 until a real forward clip closes) -- additive to ALL-TIME. NO backtest number. */
+ window._goldtot=safe((window._gold||{}).desk_usd)+(((window._gold||{}).open)||[]).reduce(function(s,o){return s+safe(o.upnl_usd);},0);/* realized + open uPnL (mark-to-market) -- additive to ALL-TIME. NO backtest number. (operator 2026-07-06) */
  drawGold();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawGold();});}
@@ -862,7 +862,7 @@ function drawFx(){var j=window._fx||null;
   el('fxinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('fx',[],[],5);return;}
  var desk=0,allOpen=[],allTrades=[];
  pairs.forEach(function(p){
-  desk+=safe(p.usd);
+  desk+=safe(p.usd);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);});
   (p.open||[]).forEach(function(o){allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
@@ -892,7 +892,7 @@ function drawFx(){var j=window._fx||null;
 }
 function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.pairs||[]).length)window._fx=j;
- window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* sum per-pair REAL forward $ -- additive to ALL-TIME */
+ window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);/* per-pair realized + open uPnL (mark-to-market) -- additive to ALL-TIME (operator 2026-07-06) */
  drawFx();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawFx();});}
@@ -914,7 +914,7 @@ function drawIndex(){var j=window._idx||null;
   el('icinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
  var desk=0,allOpen=[],allTrades=[];
  syms.forEach(function(p){
-  desk+=safe(p.usd);
+  desk+=safe(p.usd);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);});
   (p.open||[]).forEach(function(o){allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
@@ -944,7 +944,7 @@ function drawIndex(){var j=window._idx||null;
 }
 function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.syms||[]).length)window._idx=j;
- window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* sum per-sym REAL forward $ -- additive to ALL-TIME */
+ window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);/* per-sym realized + open uPnL (mark-to-market) -- additive to ALL-TIME (operator 2026-07-06) */
  drawIndex();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawIndex();});}
