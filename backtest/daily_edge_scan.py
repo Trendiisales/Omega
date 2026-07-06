@@ -136,13 +136,12 @@ def scan(name, rows, cost, short):
 
 def main():
     print("net bp IS/OOS per strategy ('*' = positive BOTH windows). CFD rows = SHORT samples (Tick rerun owed).")
+    from rider_sweep_wf import find_data   # multi-format Tick loader (OMEGA.md inventory)
     for sym, cost, short in SYMS:
-        p = None
-        if TICKDIR:
-            cands = glob.glob(os.path.join(TICKDIR, f"{sym}*h1*.csv")) + glob.glob(os.path.join(TICKDIR, f"{sym}*H1*.csv"))
-            if cands: p = max(set(cands), key=os.path.getsize)
-        if not p: p = os.path.join(WARM, f"warmup_{sym}_H1.csv")
-        try: scan(sym, load_csv(p), cost, short)
+        try:
+            (ts, o, h, l, c), src = find_data(sym)
+            rows = {ts[i]: (o[i], h[i], l[i], c[i]) for i in range(len(ts))}
+            scan(sym, rows, cost, short)
         except FileNotFoundError: print(f"{sym:9} no data")
     if CDATA:
         for sym, cost, short in CRYPTO:

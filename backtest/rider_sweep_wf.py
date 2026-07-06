@@ -66,14 +66,105 @@ def to_series(rows):
     return (ts, [rows[t][0] for t in ts], [rows[t][1] for t in ts],
             [rows[t][2] for t in ts], [rows[t][3] for t in ts])
 
+# ── multi-format Tick loading (OMEGA.md §1 data inventory) ──────────────────
+# Formats sniffed PER FILE (never mixed in one pass, per the OMEGA.md rule):
+#   * bar CSV      : ts,o,h,l,c[,..]      (epoch s/ms/us)
+#   * duka ticks   : ts,ask,bid[,..]      (epoch ms; ASK FIRST — mid=(ask+bid)/2)
+#   * histdata     : "YYYYMMDD HHMMSSmmm,bid,ask" (',' or ';'; naive local ts — consistent offset)
+# Every file folds into hourly OHLC buckets; groups of files merge as BARS.
+TICK_SPECS = {   # glob groups per symbol, tried against TICKDIR (recursive); all matches merged
+    "XAUUSD": ["XAUUSD*h1*.csv", "duka_ticks/XAUUSD_*combined*.csv", "xau_6mo_corrected.csv"],
+    "XAGUSD": ["XAGUSD*h1*.csv", "XAGUSD*H1*.csv"],
+    "USOIL":  ["USOIL*h1*.csv", "BCOUSD/**/*.csv", "BCOUSD*.csv"],   # BCOUSD = Brent proxy (flagged)
+    "EURUSD": ["EURUSD*h1*.csv", "EURUSD/**/*.csv"],
+    "GBPUSD": ["GBPUSD*h1*.csv", "GBPUSD/**/*.csv"],
+    "USDJPY": ["USDJPY*h1*.csv", "USDJPY/**/*.csv"],
+    "AUDUSD": ["AUDUSD*h1*.csv", "AUDUSD/**/*.csv"],
+    "NZDUSD": ["NZDUSD*h1*.csv", "NZDUSD/**/*.csv"],
+    "US500":  ["US500*h1*.csv", "xregime/US500_2426.csv", "duka_multiyear/usa500idxusd*.csv"],
+    "NAS100": ["NAS100*h1*.csv", "xregime/NAS100_2426.csv", "NAS2022_bear_h1.csv", "duka_multiyear/usatechidxusd*.csv"],
+    "DJ30":   ["DJ30*h1*.csv", "book_combined/DJ30_clean.csv"],
+    "GER40":  ["GER40*h1*.csv", "book_combined/GER40*.csv", "histdata_book/GER40/**/*.csv"],
+}
+
+def _fold(buckets, ts, o, h, l, c):
+    b = (ts // 3600) * 3600
+    e = buckets.get(b)
+    if e is None: buckets[b] = [o, h, l, c]
+    else:
+        if h > e[1]: e[1] = h
+        if l < e[2]: e[2] = l
+        e[3] = c
+
+def _parse_hist_ts(tok):
+    # "YYYYMMDD HHMMSSmmm" -> epoch (naive; consistent offset is fine for jump windows)
+    import calendar, time as _t
+    d, t = tok.split(" ")
+    st = _t.struct_time((int(d[:4]), int(d[4:6]), int(d[6:8]),
+                         int(t[:2]), int(t[2:4]), int(t[4:6]), 0, 0, 0))
+    return calendar.timegm(st)
+
+def parse_file_into(path, buckets):
+    n = 0
+    with open(path, errors="replace") as f:
+        mode = None
+        for line in f:
+            line = line.strip()
+            if not line: continue
+            sep = ";" if (";" in line and "," not in line) else ","
+            parts = line.split(sep)
+            if mode is None:   # sniff on the first data-looking line
+                p0 = parts[0]
+                if len(p0) >= 17 and p0[:8].isdigit() and " " in p0: mode = "hist"
+                elif p0[:1].isdigit() or p0[:1] == "-":
+                    if len(parts) >= 5:
+                        try:
+                            vals = [float(x) for x in parts[1:5]]
+                            mode = "bar" if (max(vals[1], vals[0]) >= min(vals[2], vals[3])) else "duka"
+                        except ValueError: continue
+                    elif len(parts) >= 3: mode = "duka"
+                    else: continue
+                else: continue
+            try:
+                if mode == "hist":
+                    ts = _parse_hist_ts(parts[0])
+                    bid = float(parts[1]); ask = float(parts[2])
+                    m = (bid + ask) / 2.0
+                    if m > 0: _fold(buckets, ts, m, m, m, m); n += 1
+                elif mode == "duka":
+                    t = float(parts[0])
+                    while t > 4e10: t /= 1000.0
+                    ask = float(parts[1]); bid = float(parts[2])   # ASK FIRST (OMEGA.md trap)
+                    m = (bid + ask) / 2.0
+                    if m > 0: _fold(buckets, int(t), m, m, m, m); n += 1
+                else:      # bar csv ts,o,h,l,c
+                    t = float(parts[0])
+                    while t > 4e10: t /= 1000.0
+                    o_, h_, l_, c_ = (float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4]))
+                    if c_ > 0: _fold(buckets, int(t), o_, h_, l_, c_); n += 1
+            except (ValueError, IndexError):
+                continue
+    return n
+
+def buckets_to_series(buckets):
+    ks = sorted(buckets)
+    return (ks, [buckets[k][0] for k in ks], [buckets[k][1] for k in ks],
+            [buckets[k][2] for k in ks], [buckets[k][3] for k in ks])
+
 def find_data(sym):
     if TICKDIR:
-        cands = []
-        for pat in (f"{sym}*h1*.csv", f"{sym}*H1*.csv", f"{sym.lower()}*h1*.csv"):
-            cands += glob.glob(os.path.join(TICKDIR, pat)) + glob.glob(os.path.join(TICKDIR, "**", pat), recursive=True)
-        if cands:
-            best = max(set(cands), key=os.path.getsize)
-            return to_series(load_csv(best)), best
+        files = []
+        for pat in TICK_SPECS.get(sym, [f"{sym}*h1*.csv"]):
+            files += glob.glob(os.path.join(TICKDIR, pat))
+            files += glob.glob(os.path.join(TICKDIR, "**", pat), recursive=True)
+        files = sorted(set(f for f in files if os.path.isfile(f)))
+        if files:
+            buckets = {}
+            for fp in files:
+                n = parse_file_into(fp, buckets)
+                print(f"    [data] {sym}: {os.path.basename(fp)} -> {n} rows")
+            if buckets:
+                return buckets_to_series(buckets), f"{len(files)} file(s) merged"
     p = os.path.join(WARM, f"warmup_{sym}_H1.csv")
     return to_series(load_csv(p)), p
 
