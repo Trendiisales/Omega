@@ -1250,7 +1250,13 @@ function Invoke-Deploy {
             if ($commitLine -notmatch "^([a-f0-9]+)\s+") { continue }
             $shortHash = $Matches[1]
             $fullHash  = (git rev-parse $shortHash 2>$null).Trim()
-            $filesChanged = (git show --name-only --format="" $fullHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
+            # S-2026-07-07 MERGE-COMMIT FIX: plain `git show --name-only` lists NO files for a
+            # merge commit, so a PR merge at HEAD was skipped as "log-only" and SOURCE_HASH fell
+            # back to the branch-head commit -- while the build-time omega_version target bakes
+            # `git rev-parse HEAD` (the merge hash) into the binary. Stamp validation then failed
+            # with GUI hash MISMATCH and left the service STOPPED. diff-tree vs first parent
+            # lists the merged files, so a merge commit at HEAD now correctly becomes SOURCE_HASH.
+            $filesChanged = (git diff-tree --no-commit-id --name-only -r -m --first-parent $fullHash 2>$null) -split "`n" | Where-Object { $_.Trim() -ne "" }
             # Treat seed-data-only commits like log-only commits: they don't change the binary's
             # CODE, so they must NOT bump SOURCE_HASH (which gates the rebuild + is compared against
             # HEAD in the drift check). A future auto-committed seed refresh would otherwise look
