@@ -790,14 +790,15 @@ function drawGold(){var j=window._gold||null;
     +'</tr>';
  });
  el('gctab').innerHTML=h;
- var dcol=(j.desk_usd>0?'var(--grn)':(j.desk_usd<0?'var(--red)':'var(--t2)'));
- el('gcinfo').innerHTML='FWD DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(safe(j.desk_usd))
-   +'</span> <span style="color:var(--t2)">(bt edge '+fmt$(safe(j.bt_desk_usd))+')</span> · lot '+safe(j.lot)
-   +' · '+safe(j.bars)+' H1 bars · deploy-forward · shadow';
+ var tot=safe(j.desk_usd)+safe(j.bt_desk_usd);/* full captured book -- counted in PnL (operator) */
+ var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
+ el('gcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(tot)
+   +'</span> <span style="color:var(--t2)">(fwd '+fmt$(safe(j.desk_usd))+' + captured '+fmt$(safe(j.bt_desk_usd))+')</span> · lot '+safe(j.lot)
+   +' · '+safe(j.bars)+' H1 bars · in PnL · shadow';
 }
 function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.flavors||[]).length)window._gold=j;
- window._goldtot=safe((window._gold||{}).desk_usd);/* REAL forward book only (desk_usd, NOT bt_desk_usd) -- additive to ALL-TIME */
+ window._goldtot=safe((window._gold||{}).desk_usd)+safe((window._gold||{}).bt_desk_usd);/* full captured book: forward + the strategy's captured clips (operator: the $5,696 AUPOS runner clip IS a real trade -> count it in PnL) -- additive to ALL-TIME */
  drawGold();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawGold();});}
@@ -964,11 +965,11 @@ function drawEquity(){var cv=el("eqc"),H=110,ctx=prep(cv,H);
   var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
   var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto bank is all-time -> only fold in 'all' window */
   var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)):0;/* FX + gold-befloor forward banks are all-time -> only fold in 'all' window */
-  var cwT=cw+cc0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
+)OMEGAD4"
+R"OMEGAD5(  var cwT=cw+cc0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
-)OMEGAD4"
-R"OMEGAD5(  if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
+  if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
  var lo=Math.min(0,mdd,Math.min.apply(null,cum)),hi=Math.max.apply(null,cum.concat([1]));
  function X(i){return 4+(W-8)*i/Math.max(1,cum.length-1);}
  function Y(v){return 8+(H-26)*(1-(v-lo)/(hi-lo||1));}
@@ -1147,12 +1148,12 @@ function drawPR(){var cv=el("prc"),H=430,ctx=prep(cv,H);
   ctx.strokeStyle=col;ctx.lineWidth=wd;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);}
  function cloud(fa,fb,col){var A=spts(fa).filter(Boolean),B=spts(fb).filter(Boolean);
   if(A.length<2||B.length<2)return;ctx.beginPath();
-  A.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
+)OMEGAD5"
+R"OMEGAD6(  A.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
   for(var i=B.length-1;i>=0;i--)ctx.lineTo(B[i][0],B[i][1]);
   ctx.closePath();ctx.fillStyle=col;ctx.fill();}
  cloud(7,6,'rgba(226,72,77,0.10)');cloud(8,9,'rgba(46,189,133,0.10)');cloud(6,8,'rgba(133,183,235,0.04)');
-)OMEGAD5"
-R"OMEGAD6( strokeSteps(spts(7),'#FF5A5F',2.0);strokeSteps(spts(9),'#2EBD85',2.0);                 /* R2 / S2 solid, brighter+thicker */
+ strokeSteps(spts(7),'#FF5A5F',2.0);strokeSteps(spts(9),'#2EBD85',2.0);                 /* R2 / S2 solid, brighter+thicker */
  strokeSteps(spts(6),'rgba(255,90,95,0.85)',1.4,[5,4]);strokeSteps(spts(8),'rgba(46,189,133,0.85)',1.4,[5,4]); /* R1 / S1 dashed */
  var bw=Math.max(1,Math.min(7,pw/n*0.62));
  for(var i=0;i<n;i++){var b=bars[i],up=b[4]>=b[1],c=up?'#2EBD85':'#E2484D',x=X(i);

@@ -780,14 +780,15 @@ function drawGold(){var j=window._gold||null;
     +'</tr>';
  });
  el('gctab').innerHTML=h;
- var dcol=(j.desk_usd>0?'var(--grn)':(j.desk_usd<0?'var(--red)':'var(--t2)'));
- el('gcinfo').innerHTML='FWD DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(safe(j.desk_usd))
-   +'</span> <span style="color:var(--t2)">(bt edge '+fmt$(safe(j.bt_desk_usd))+')</span> · lot '+safe(j.lot)
-   +' · '+safe(j.bars)+' H1 bars · deploy-forward · shadow';
+ var tot=safe(j.desk_usd)+safe(j.bt_desk_usd);/* full captured book -- counted in PnL (operator) */
+ var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
+ el('gcinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(tot)
+   +'</span> <span style="color:var(--t2)">(fwd '+fmt$(safe(j.desk_usd))+' + captured '+fmt$(safe(j.bt_desk_usd))+')</span> · lot '+safe(j.lot)
+   +' · '+safe(j.bars)+' H1 bars · in PnL · shadow';
 }
 function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.flavors||[]).length)window._gold=j;
- window._goldtot=safe((window._gold||{}).desk_usd);/* REAL forward book only (desk_usd, NOT bt_desk_usd) -- additive to ALL-TIME */
+ window._goldtot=safe((window._gold||{}).desk_usd)+safe((window._gold||{}).bt_desk_usd);/* full captured book: forward + the strategy's captured clips (operator: the $5,696 AUPOS runner clip IS a real trade -> count it in PnL) -- additive to ALL-TIME */
  drawGold();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawGold();});}
