@@ -188,7 +188,7 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ GOLD COMPANIONS — trend stall-clip books (OMEGA book · shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">GOLD COMPANIONS — AUPOS/AUNEG BE-floor · 2 runners/dir (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">GOLD COMPANIONS — AUPOS/AUNEG BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -199,7 +199,7 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ XAG (SILVER) COMPANIONS — XAGPos/XAGNeg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">XAG COMPANIONS — XAGPos/XAGNeg BE-floor · 2 runners/dir (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">XAG COMPANIONS — XAGPos/XAGNeg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="xcinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="xctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -211,7 +211,7 @@ R"OMEGAD1(  <div id="xctradeswrap" style="display:none;margin-top:6px"><div clas
 <!-- ═══ USOIL (WTI) COMPANIONS — USOILPos/USOILNeg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">USOIL COMPANIONS — USOILPos/USOILNeg BE-floor · 2 runners/dir (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">USOIL COMPANIONS — USOILPos/USOILNeg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="ucinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="uctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -222,7 +222,7 @@ R"OMEGAD1(  <div id="xctradeswrap" style="display:none;margin-top:6px"><div clas
 <!-- ═══ FX COMPANIONS — per-pair Pos/Neg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">FX COMPANIONS — per-pair Pos/Neg BE-floor · 2 runners/dir (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">FX COMPANIONS — per-pair Pos/Neg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="fxinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="fxtab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -233,7 +233,7 @@ R"OMEGAD1(  <div id="xctradeswrap" style="display:none;margin-top:6px"><div clas
 <!-- ═══ INDEX COMPANIONS — per-symbol Pos/Neg BE-floor books (shadow, additive) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">INDEX COMPANIONS — per-symbol Pos/Neg BE-floor · 2 runners/dir (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
+    <span class="lbl">INDEX COMPANIONS — per-symbol Pos/Neg BE-floor · 3 runners/dir (r20 banker+r150 runner+r400 wide) (native C++ · shadow · additive · neg=0 · REAL forward trades only · never vs-WIDE)</span>
     <span id="icinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow-x:auto"><table id="ictab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -396,10 +396,10 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
  h+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
   +'<div class="lbl">'+t[1]+'</div><div class="num" id="tk_'+t[0]+'" style="font-size:13px;color:'+(_sl>0?'var(--t2)':'var(--w)')+'">'+_si+'</div>'
   +'<div class="lbl num" id="tks_'+t[0]+'"></div>'
-  +(t[2]?'<div class="bar" style="height:4px;margin-top:3px"><i id="tkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>':'')
-  +'</div>';});
 )OMEGAD1"
-R"OMEGAD2( h+='<div style="padding:6px 10px;border-right:1px solid var(--bd);display:flex;align-items:center;color:var(--amb);font-size:11px;font-weight:600;min-width:34px">₿</div>';
+R"OMEGAD2(  +(t[2]?'<div class="bar" style="height:4px;margin-top:3px"><i id="tkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>':'')
+  +'</div>';});
+ h+='<div style="padding:6px 10px;border-right:1px solid var(--bd);display:flex;align-items:center;color:var(--amb);font-size:11px;font-weight:600;min-width:34px">₿</div>';
  CTKS.forEach(function(t){
  h+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
   +'<div class="lbl">'+t[0]+'</div><div class="num" id="ctk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
@@ -577,10 +577,10 @@ function render(J){lastJ=J;
 
  var bids=J.gold_bids||[],asks=J.gold_asks||[];
  var mx=1;bids.concat(asks).forEach(function(l){if(l.s>mx)mx=l.s;});
- var dh='<div style="display:grid;grid-template-columns:1fr 70px 1fr;gap:1px;font-size:11px">';
- for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
 )OMEGAD2"
-R"OMEGAD3(  dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
+R"OMEGAD3( var dh='<div style="display:grid;grid-template-columns:1fr 70px 1fr;gap:1px;font-size:11px">';
+ for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
+  dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
    +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
  var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
  dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
@@ -748,9 +748,9 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
   var bkv=safe(s.bank_bp);
   var bk =s.bank_bp===undefined?'<span class="d">—</span>':'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(s.bank_bp,1)+' bp <span class="d">$'+fmt2(bpUsd(s.bank_bp),2)+'</span></span>';
-  /* companion BOOK aggregate sub-row (2 base tiers + self-funding ladder cap5) */
 )OMEGAD3"
-R"OMEGAD4(  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (tiered ladder)</td><td class="l">'+st+'</td>'
+R"OMEGAD4(  /* companion BOOK aggregate sub-row (2 base tiers + self-funding ladder cap5) */
+  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (tiered ladder)</td><td class="l">'+st+'</td>'
     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+r.tight+'</td>'
     +'<td class="num d">'+r.wide+'</td><td class="num d">5</td><td class="num d">0.05</td>'
     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
@@ -934,9 +934,9 @@ function drawUsoil(){var j=window._usoil||null;
  renderCompanionOpenTrades('uc',open,trades,2);
 }
 function pollUsoil(){fetch('/api/usoil_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.flavors||[]).length)window._usoil=j;
 )OMEGAD4"
-R"OMEGAD5( window._usoiltot=safe((window._usoil||{}).desk_usd)+(((window._usoil||{}).open)||[]).reduce(function(s,o){return s+safe(o.upnl_usd);},0);/* realized + open uPnL (mark-to-market) -- additive to ALL-TIME. NO backtest number. */
+R"OMEGAD5( if(j&&(j.flavors||[]).length)window._usoil=j;
+ window._usoiltot=safe((window._usoil||{}).desk_usd)+(((window._usoil||{}).open)||[]).reduce(function(s,o){return s+safe(o.upnl_usd);},0);/* realized + open uPnL (mark-to-market) -- additive to ALL-TIME. NO backtest number. */
  drawUsoil();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawUsoil();});}

@@ -12,7 +12,7 @@
 // engine). Observe-only, shadow: NEVER opens / moves / shrinks / closes a real
 // position, NEVER read by any parent. Each pair self-detects its OWN 2h up/down move
 // windows (W=2 H1, +/-thr) from that pair's H1 close stream, and runs x2 BE-floor
-// tiers per direction (20bp banker / 150bp runner). Judge STANDALONE (net>0, both WF
+// tiers per direction (20bp banker / 150bp runner / 400bp wide). Judge STANDALONE (net>0, both WF
 // halves) — NEVER vs a parent / vs riding WIDE.
 //
 // ADVERSE-PROTECTION: BE-FLOOR — a leg stays FLAT until price clears +be_bp from its
@@ -163,7 +163,7 @@ public:
     // Flavors named <PAIR>Pos / <PAIR>Neg (research convention, distinct from gold AUPOS/AUNEG).
     std::string pair_json() const {
         const double usd_per_pct = cfg_.notional / 100.0 * cfg_.lot;   // %-point -> USD
-        const char* TIER_TAG[NT_] = { "banker", "runner" };
+        const char* TIER_TAG[NT_] = { "banker", "runner", "wide" };
         struct Flavor { const char* suffix; const char* dir; bool is_long; };
         const Flavor flavors[2] = { {"Pos", "long", true}, {"Neg", "short", false} };
         const double cur = c_.empty() ? 0.0 : c_.back();
@@ -251,8 +251,8 @@ private:
     //   (arm only once price covers cost be_bp; trail stop pinned >= entry long / <= entry short ->
     //   exit at stall/reversal keeping profit; neg=0 by construction). r20 tight + r150 wide. Each
     //   runner is its OWN position -> OWN ledger row -> shows in PnL, exactly like every main engine. ──
-    static constexpr int    NT_ = 2;
-    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0 };
+    static constexpr int    NT_ = 3;   // r20 banker / r150 runner / r400 wide
+    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0 };
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
@@ -270,7 +270,7 @@ private:
     static constexpr size_t MAX_CLOSED_ = 60;
     std::deque<Closed> closed_;
     std::string leg_engine_(int fi, int ti) const {
-        return cfg_.pair + (fi == 0 ? "Pos" : "Neg") + (ti == 0 ? "_r20" : "_r150");
+        return cfg_.pair + (fi == 0 ? "Pos" : "Neg") + (ti == 0 ? "_r20" : ti == 1 ? "_r150" : "_r400");
     }
 
     // Incremental live BE-floor state machine on the NEWEST bar (mirrors GoldBeFloorCompanion).

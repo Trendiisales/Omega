@@ -15,7 +15,7 @@
 // engine). Observe-only, shadow: it NEVER opens / moves / shrinks / closes a real
 // position and is NEVER read by any parent. It self-detects its OWN up/down move
 // windows (2h / +/-1%) from the gold H1 close stream it is fed, and runs x2 BE-floor
-// tiers per direction (20bp banker / 150bp runner). Judge STANDALONE (net>0, both
+// tiers per direction (20bp banker / 150bp runner / 400bp wide). Judge STANDALONE (net>0, both
 // regimes) — NEVER vs a parent / vs riding WIDE.
 //
 // ADVERSE-PROTECTION: BE-FLOOR — a leg stays FLAT until price clears +be_bp from its
@@ -176,8 +176,8 @@ private:
     //   neg=0 by construction (the operator's definitive test: they cannot make a loss). The two
     //   runners differ only in trail giveback: r20 (tight, banks fast) + r150 (wide, rides). Each is
     //   its OWN independent position through the order path -> its OWN ledger row -> shows in PnL.
-    static constexpr int    NT_ = 2;                       // runners per flavor
-    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0 };
+    static constexpr int    NT_ = 3;                       // runners per flavor (r20 banker / r150 runner / r400 wide)
+    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0 };
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
@@ -186,7 +186,7 @@ private:
     struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
     LiveLeg live_[2][NT_];   // [flavor 0=AUPOS/long, 1=AUNEG/short][runner 0=r20, 1=r150]
     static std::string LEG_ENGINE_(int fi, int ti) {
-        return std::string(fi == 0 ? "GoldBeFloorAUPOS" : "GoldBeFloorAUNEG") + (ti == 0 ? "_r20" : "_r150");
+        return std::string(fi == 0 ? "GoldBeFloorAUPOS" : "GoldBeFloorAUNEG") + (ti == 0 ? "_r20" : ti == 1 ? "_r150" : "_r400");
     }
 
     // ── REAL forward book: the desk headline. Accumulates ONLY the live-traded clips (forward of
@@ -491,7 +491,7 @@ private:
         const double dpp = cfg_.dpp_per_lot * cfg_.lot;
         struct Flavor { const char* name; const char* dir; bool is_long; };
         const Flavor flavors[2] = { {"AUPOS", "long", true}, {"AUNEG", "short", false} };
-        const char* TIER_TAG[NT_] = { "banker", "runner" };
+        const char* TIER_TAG[NT_] = { "banker", "runner", "wide" };
         const double cur = c_.empty() ? 0.0 : c_.back();
 
         std::ostringstream o; o << std::fixed;

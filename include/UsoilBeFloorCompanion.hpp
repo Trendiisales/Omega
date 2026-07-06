@@ -8,7 +8,7 @@
 // companions" scope. Calibrated + LOCKED 2026-07-06 (usoil-build):
 //   W=2 (2h), thr=0.010 (+/-1%, family standard), be_bp=10.0 (covers real RT cost
 //   ~8bp: ~5bp spread [IBKR WTI ~$0.03 at ~$60] + ~3bp slippage [0.02pt] + $0 comm),
-//   tiers 20bp banker / 150bp runner, dpp=1000 $/pt/lot (WTI CL future = 1000 bbl/lot;
+//   tiers 20bp banker / 150bp runner / 400bp wide, dpp=1000 $/pt/lot (WTI CL future = 1000 bbl/lot;
 //   USOIL.F tick_value=1000, OmegaCostGuard.hpp:114 + sizing.hpp:27).
 //   Calibration harness: usoil_befloor_ls.py on real IBKR CL-continuous H1 (2988 bars,
 //   Jan-Jul 2026) -- at cost 6/8/10bp, thr=1%: neg=0, both WF halves strongly + (USOILPos
@@ -20,7 +20,7 @@
 // engine). Observe-only, shadow: it NEVER opens / moves / shrinks / closes a real
 // position and is NEVER read by any parent. It self-detects its OWN up/down move
 // windows (2h / +/-1%) from the USOIL H1 close stream it is fed, and runs x2 BE-floor
-// tiers per direction (20bp banker / 150bp runner). Judge STANDALONE (net>0, both
+// tiers per direction (20bp banker / 150bp runner / 400bp wide). Judge STANDALONE (net>0, both
 // regimes) — NEVER vs a parent / vs riding WIDE. The befloor JUMP mechanism is a
 // SEPARATE valid basis from any oil-directional engine (g_eng_cl / brackets); this
 // self-detects its own jumps and does NOT read or touch them.
@@ -183,8 +183,8 @@ private:
     //   neg=0 by construction (the operator's definitive test). The two runners differ only in trail
     //   giveback: r20 (tight, banks fast) + r150 (wide, rides). Each is its OWN independent position
     //   through the order path -> its OWN ledger row -> shows in PnL.
-    static constexpr int    NT_ = 2;                       // runners per flavor
-    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0 };
+    static constexpr int    NT_ = 3;                       // runners per flavor (r20 banker / r150 runner / r400 wide)
+    static constexpr double LIVE_GB_[NT_] = { 20.0, 150.0, 400.0 };
     OpenFn   open_fn_;
     CloseFn  close_fn_;
     GateFn   gate_fn_;
@@ -193,7 +193,7 @@ private:
     struct LiveLeg { bool has_entry = false; double entry = 0, wm = 0, ref = 0; int64_t entry_ts = 0; std::string token; };
     LiveLeg live_[2][NT_];   // [flavor 0=USOILPos/long, 1=USOILNeg/short][runner 0=r20, 1=r150]
     static std::string LEG_ENGINE_(int fi, int ti) {
-        return std::string(fi == 0 ? "UsoilBeFloorUSOILPos" : "UsoilBeFloorUSOILNeg") + (ti == 0 ? "_r20" : "_r150");
+        return std::string(fi == 0 ? "UsoilBeFloorUSOILPos" : "UsoilBeFloorUSOILNeg") + (ti == 0 ? "_r20" : ti == 1 ? "_r150" : "_r400");
     }
 
     // ── REAL forward book: the desk headline. Accumulates ONLY the live-traded clips (forward of
@@ -475,7 +475,7 @@ private:
         const double dpp = cfg_.dpp_per_lot * cfg_.lot;
         struct Flavor { const char* name; const char* dir; bool is_long; };
         const Flavor flavors[2] = { {"USOILPos", "long", true}, {"USOILNeg", "short", false} };
-        const char* TIER_TAG[NT_] = { "banker", "runner" };
+        const char* TIER_TAG[NT_] = { "banker", "runner", "wide" };
         const double cur = c_.empty() ? 0.0 : c_.back();
 
         std::ostringstream o; o << std::fixed;
