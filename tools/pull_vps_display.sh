@@ -35,7 +35,7 @@ pull () {  # pull <remote-path> <local-dir>   (non-fatal on miss/timeout)
 # ledger (shadow trades) + health + open positions — the display/analysis inputs
 pull 'C:/Omega/logs/trades/*.csv'            "$MIRROR/logs/trades/"
 pull 'C:/Omega/logs/health/status.json'      "$MIRROR/logs/health/"
-pull 'C:/Omega/HEALTH_STATUS.json'           "$MIRROR/"
+pull 'C:/Omega/logs/HEALTH_STATUS.json'      "$MIRROR/"  # path fixed 2026-07-08: file lives under logs\ (was C:/Omega/, perpetual MISS)
 pull 'C:/Omega/state/open_positions.dat'     "$MIRROR/state/"
 pull 'C:/Omega/bracket-bot/data/trades.ndjson' "$MIRROR/"
 # companion telemetry mirror: the python stall_accountant cron that wrote this was retired
