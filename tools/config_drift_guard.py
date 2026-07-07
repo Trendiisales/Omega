@@ -28,7 +28,11 @@ def load_manifest():
         p = ln.split("\t")
         if len(p) < 5:
             continue
-        m[p[0].strip()] = {"pf": float(p[1]), "date": p[2], "harness": p[3],
+        try:
+            pf = float(p[1])
+        except ValueError:
+            pf = None  # verdict-only rows (e.g. pf column = "FAIL") carry no faithful PF number
+        m[p[0].strip()] = {"pf": pf, "date": p[2], "harness": p[3],
                            "verdict": p[4].strip().upper(), "note": p[5] if len(p) > 5 else ""}
     return m
 
@@ -64,7 +68,7 @@ def main():
                     drift_warn.append((j + 1, f"{g} enabled w/ PF{claim} claim but NO faithful manifest entry"))
                 else:
                     fpf = man[k]["pf"]
-                    if abs(claim - fpf) / max(fpf, 1e-9) > TOL:
+                    if fpf is not None and abs(claim - fpf) / max(fpf, 1e-9) > TOL:
                         # claim CONTRADICTS a known faithful number → HARD FAIL (a lie in the code)
                         drift.append((j + 1, f"{g} enable-claim PF{claim} vs faithful {k} PF{fpf} ({man[k]['date']}) — DRIFT >{int(TOL*100)}%"))
 
