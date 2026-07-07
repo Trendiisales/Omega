@@ -31,8 +31,15 @@ Password: operator's password manager. **Never in this repo.**
 
 ## External parties that see the new IP
 
-- **BlackBull FIX**: confirm whether the FIX session is IP-whitelisted; if so
-  add `45.85.3.79` BEFORE cutover or the engine connects to nothing.
+- **BlackBull FIX**: RESOLVED 2026-07-07 — no whitelist action needed. The new
+  box's FIX session already connects and streams from 45.85.3.79
+  (`[L2-STATUS] l2_live=1 gold_real=1 gold_age_ms=63`); BlackBull does not
+  IP-restrict the session (or the new IP already passes). FIX is market-data
+  transport only (CFD ticks + 264=0 gold book + FX fallback) — execution and
+  L2 DOM depth are IBKR (`include/IbkrDomConsumer.hpp`; IBKR also cheaper
+  costs on every symbol — the reason for the venue move). The IBKR L2 bridge stays dead on the new box until the
+  Gateway is enabled at cutover; the `OmegaIbkrBridge` restart-loop alarms
+  until then are expected, not a fault.
 - **IBKR**: first Gateway login from the new IP triggers a security prompt;
   have the operator's 2FA device at hand.
 
