@@ -155,18 +155,58 @@ doesn't repeatedly fight the old box's live session. At cutover:
 stop Gateway on old box → `schtasks /change /tn IbkrGateway /enable` +
 `/run` on new box → verify `Test-NetConnection 127.0.0.1 -Port 4002`.
 
-## 8. Still owed (tracked in RUNBOOK + handoff)
+## 8. Toolchain + on-box deploy PROVEN (2026-07-07, S-2026-07-07m)
 
-- `git checkout -f -B main origin/main` once the fetch finishes; then the
-  Deploy Hygiene three-way hash check.
-- IB Gateway install (`docs/IBC_GATEWAY_AUTOSTART.md`) — IBKR creds go in the
-  IBC config on the box, never in this repo; expect the new-location 2FA
-  challenge on the operator's device.
-- BlackBull FIX whitelist of 45.85.3.79 (operator).
-- Rotate the `trader` Windows password (transited chat during setup);
-  disable sshd PasswordAuthentication after.
-- Retune `tools/omega_health_alarm.ps1` RAM thresholds for the 6 GB box.
-- Remove `C:\git-installer.exe`, `C:\vc_redist.x64.exe`,
-  `C:\omega_migration.zip`, `C:\omega_migration_unpacked` after verified
-  deploy.
-- MSVC/CMake toolchain for on-box deploys.
+Full `OMEGA.ps1 deploy -SkipSeed -AllowStaleSeed` succeeded end-to-end on the
+new box (4m27s): source pulled to `3c5fa30e`, cmake configure + MSVC build
+green, hot-swap restart, startup report `running=3c5fa30 == HEAD=3c5fa30`
+PASS, GUI :7779 HTTP 200. Components:
+
+- VS Build Tools 2022 17.14 (MSVC 14.44.35207) + bundled CMake 3.31 — same
+  path as old box, cmake-discover glob hits.
+- Node v20.11.1 MSI (matches old box).
+- OpenSSL 830MB tree copied old→new box-to-box to
+  `C:\Program Files\OpenSSL-Win64`.
+- vcpkg `installed/` tree (159MB) copied to `C:\vcpkg\vcpkg\installed`.
+  The vcpkg *toolchain* (`scripts/buildsystems/vcpkg.cmake`) was NOT copied
+  — not needed: CMakeLists' manual curl probe finds
+  `C:/vcpkg/vcpkg/installed/x64-windows` directly. The cmake
+  "vcpkg: NOT FOUND" status line is harmless.
+
+**TRAP — `OPENSSL_ROOT_DIR` is a MACHINE ENV VAR, not autodiscovery.**
+Two deploy runs failed at `find_package(OpenSSL REQUIRED)` with the full
+OpenSSL tree on disk. The old box resolves OpenSSL via machine-scope
+`OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64` (was undocumented);
+FindOpenSSL did NOT find the Program Files path on its own here. Fixed on
+the new box with
+`[Environment]::SetEnvironmentVariable('OPENSSL_ROOT_DIR','C:\Program Files\OpenSSL-Win64','Machine')`.
+Note: Task Scheduler's svchost snapshots machine env at service start —
+a task registered before the var was set won't see it until reboot; set it
+inline in the task action (`$env:OPENSSL_ROOT_DIR=...`) if needed sooner.
+Any future box rebuild must set this var.
+
+Second trap (cost run 2): stage large dep transfers takes minutes — the
+first "deps staged" deploy ran while the OpenSSL tar was still extracting
+and configure failed in 0.5s. Verify `include\openssl\ssl.h` +
+`lib\libcrypto.lib` exist before launching a build. Also delete
+`C:\Omega\build\CMakeCache.txt` after a failed configure — the curl probe
+docs warn a cached `NOTFOUND` poisons the reconfigure.
+
+Deploy-test scheduled task (`OmegaDeployTestToolchain`) deleted after
+success; all installers removed (`vs_buildtools.exe`, `node-*.msi`,
+`git-installer.exe`, `vc_redist.x64.exe`, `omega_migration.zip` + unpacked).
+Disk after cleanup: 115.6 GB free.
+
+The test shipped with `-SkipSeed -AllowStaleSeed` (IBKR 4001/4002 parked →
+seed refresh would fail-closed). **The real cutover deploy must run with
+`-ForceSeed` once the Gateway is up.**
+
+## 9. Still owed (tracked in RUNBOOK + handoff)
+
+- Cutover sequence (operator-called): stop old Gateway → enable+run
+  `IbkrGateway` task on new box → 4002 True → BlackBull FIX whitelist of
+  45.85.3.79 (operator, BEFORE) → `3_NEW_VPS_RESTORE_VERIFY.ps1` all-PASS →
+  decommission gates.
+- At cutover: real deploy WITH seeds (`-ForceSeed`, gateway up).
+- Rotate the `trader` Windows password (transited chat during setup) and the
+  IBKR password (burned); disable sshd PasswordAuthentication after.
