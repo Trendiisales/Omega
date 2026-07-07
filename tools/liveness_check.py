@@ -22,7 +22,9 @@ MAC = [
         if os.path.exists(os.path.expanduser("~/Crypto/backtest/data/ibkrcrypto/state.json"))
         else os.path.expanduser("~/IBKRCrypto/backtest/data/ibkrcrypto/state.json"),               90),
     ("live-mark cron (intraday px)",   "/tmp/live_mark.log",                                                    20),
-    ("giveback-saver cron",            "/tmp/giveback_saver.log",                                               20),
+    # giveback-saver python cron RETIRED S-2026-07-06/07: stall_accountant.py ported to native C++
+    # StallBook (25 books in Omega.exe, boot line "stall-companion zoo wired"). Its liveness is now
+    # the VPS companion_state.json freshness probe below — do NOT resurrect the Mac cron probe.
     ("crypto staleness-alarm cron",    "/tmp/crypto_staleness_alarm.log",                                       90),
     ("omega health-poll cron",         "/tmp/omega_health_poll.log",                                            45),
     ("omega data-health cron",         "/tmp/data_health.log",                                                  45),
@@ -47,6 +49,8 @@ try{ $r=Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:7779/" -TimeoutSec 
 catch{ $m=$_.Exception.Message; $out += "DARK|desk-GUI-7779|not responding ("+$m.Substring(0,[Math]::Min(40,$m.Length))+")" }
 $hs="C:\Omega\logs\HEALTH_STATUS.json"
 if(Test-Path $hs){ $a=[int]((Get-Date)-(Get-Item $hs).LastWriteTime).TotalMinutes; if($a -gt 30){ $out += "DARK|VPS-health-alarm|HEALTH_STATUS ${a}min stale" } else { $out += "OK|VPS-health-alarm|${a}min" } } else { $out += "DARK|VPS-health-alarm|no HEALTH_STATUS.json" }
+$cs="C:\Omega\companion_state.json"
+if(Test-Path $cs){ $a=[int]((Get-Date)-(Get-Item $cs).LastWriteTime).TotalMinutes; if($a -gt 30){ $out += "DARK|stall-companion (C++ StallBook)|companion_state ${a}min stale" } else { $out += "OK|stall-companion|${a}min" } } else { $out += "DARK|stall-companion (C++ StallBook)|no companion_state.json" }
 $out -join "`n"
 '''
 
@@ -74,7 +78,10 @@ try:
     enc = subprocess.run(["iconv", "-t", "UTF-16LE"], input=VPS_PROBE.encode(), capture_output=True).stdout
     import base64
     b64 = base64.b64encode(enc).decode()
-    r = subprocess.run(["ssh", "-o", "ConnectTimeout=20", "omega-vps",
+    # S-2026-07-07r: repointed omega-vps -> omega-new (live box) post-cutover; old box tasks are
+    # decommission-disabled by design and were firing permanent false DARKs (same class of bug as
+    # the feeds_selftest repoint in 270f2b4c).
+    r = subprocess.run(["ssh", "-o", "ConnectTimeout=20", "omega-new",
                         f"powershell -NoProfile -EncodedCommand {b64}"],
                        capture_output=True, timeout=50, text=True)
     lines = [l for l in r.stdout.replace("\r", "").splitlines() if "|" in l]
