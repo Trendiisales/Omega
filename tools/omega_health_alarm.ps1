@@ -23,7 +23,11 @@ if ($builtFull -and $head) {
         $codeBehind = ($files | Where-Object { $_ -match '\.(cpp|h|hpp|c|cc|cmake)$|CMakeLists' } | Measure-Object).Count
     }
 }
-if ($behind -gt 0) {
+# EXEC_RETIRED.flag (S-2026-07-07o): box retired from execution post-cutover (shadow reference
+# only, pending decommission). Suppresses by-design alarms (gateway down, deploy-stale) that
+# otherwise spam the operator; disk/RAM/process/Omega.exe checks stay live (shadow still runs).
+$execRetired = Test-Path C:\Omega\EXEC_RETIRED.flag
+if ($behind -gt 0 -and -not $execRetired) {
     $sev = if ($codeBehind -gt 0) { 'RED' } else { 'AMBER' }
     if ($sev -eq 'RED') { $overall = 'RED' } elseif ($overall -eq 'GREEN') { $overall = 'AMBER' }
     $reasons += "[$sev] DEPLOY-STALE: binary=$built behind origin/main=$head by $behind commit(s); code-touching=$codeBehind"
@@ -73,7 +77,7 @@ $gwPort = 4002
 $gwListen = Get-NetTCPConnection -State Listen -LocalPort $gwPort -ErrorAction SilentlyContinue
 $gwProc = Get-Process ibgateway -ErrorAction SilentlyContinue
 $gwUp = [bool]$gwListen
-if (-not $gwUp) {
+if (-not $gwUp -and -not $execRetired) {
     $overall = 'RED'
     if ($gwProc) { $reasons += "[RED] IB GATEWAY LOGGED OUT -- ibgateway alive (pid $($gwProc.Id)) but NO API listener on ${gwPort}; RE-LOGIN needed (orders dead)" }
     else         { $reasons += "[RED] IB GATEWAY DOWN -- ibgateway process not running, no API listener on ${gwPort}; restart+login (orders dead)" }
@@ -134,13 +138,13 @@ if ($null -ne $postedExec) {
     }
     $quietH = [int]$sinceH
     $isWeekend = ([DateTime]::UtcNow.DayOfWeek -eq 'Saturday' -or [DateTime]::UtcNow.DayOfWeek -eq 'Sunday')
-    if (-not $isWeekend) {
+    if (-not $isWeekend -and -not $execRetired) {
         if ($sinceH -ge $actRedH) { $overall = 'RED'; $reasons += "[RED] ACTIVITY: posted_exec has not advanced in ${quietH}h market-open (>= ${actRedH}h) -- book not trading; verify route+engines" }
         elseif ($sinceH -ge $actWinH) { if ($overall -eq 'GREEN') { $overall = 'AMBER' }; $reasons += "[AMBER] ACTIVITY: no order intent in ${quietH}h market-open (>= ${actWinH}h); posted_exec=$postedExec -- may be legit (compression); verify intended" }
     }
 }
 $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB; gateway_up=$gwUp; gateway_port=$gwPort; posted_exec=$postedExec; dispatch_age_min=$statAgeMin; activity_quiet_h=$quietH }
+$obj = [ordered]@{ ts=$ts; overall=$overall; reasons=$reasons; binary_hash=$built; head_hash=$head; behind=$behind; code_behind=$codeBehind; disk_free_pct=$pct; ram_free_mb=$freeMB; gateway_up=$gwUp; gateway_port=$gwPort; posted_exec=$postedExec; dispatch_age_min=$statAgeMin; activity_quiet_h=$quietH; exec_retired=$execRetired }
 ($obj | ConvertTo-Json -Depth 4) | Out-File -Encoding utf8 C:\Omega\logs\HEALTH_STATUS.json
 "$ts overall=$overall " + ($reasons -join ' | ') | Out-File -Append C:\Omega\logs\health_alarm.log
 $flag = 'C:\Omega\logs\HEALTH_ALARM.flag'
