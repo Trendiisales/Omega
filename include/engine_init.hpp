@@ -18,6 +18,8 @@
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "FxUpJumpLadderCompanion.hpp" // per-pair FX upjump LADDER companion (EUR/GBP/NZD/AUD) -> /api/fxladder_companion
+                                       //   + index_upjump_ladder_book() (US500/NAS100/GER40) -> /api/idxladder_companion
+#include "IndexRiskGate.hpp"           // omega::index_risk_off() (GER40 ladder bull-gate)
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
 #include "JumpRiderEngine.hpp"      // UpJump-pattern rider on metals/oil/FX/indices -> /api/jumprider
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
@@ -1868,6 +1870,71 @@ static void init_engines(const std::string& cfg_path)
             fl.finalize_all();
             printf("[OMEGA-INIT][SEED] FX upjump LADDER wired: EURUSD(W48/0.5) GBPUSD(W48/1.0) NZDUSD(W24/1.5) AUDUSD(W96/1.0 thin), %zu H1 bars seeded, %zu forward bars restored, parity-exact, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
                    flseeded, flrestored);
+            fflush(stdout);
+        }
+
+        // ── INDEX up-jump LADDER companion (S-2026-07-07x resume, operator: "more NAS100/
+        //    most-lucrative-index companion/upjump trades with protections") ──
+        //   Same validated ladder class/mechanism as the FX book above (parity-exact port).
+        //   Research: backtest/index_upjump_ladder_sweep.py over freshly-built H1 from the
+        //   /Users/jo/Tick tick corpus (backtest/histdata_tick_to_h1.cpp), evidence
+        //   outputs/INDEX_UPJUMP_LADDER_2026-07-07.txt:
+        //     US500  W24 thr2.0: +123.2% PF1.34 n854 WF+ 2x+89 RANDOM -24 (pure detector
+        //            edge; SPXUSD_2022_2026.h1.csv CERTIFIED CLEAN; thr2 plateau W12/24/96 WF+)
+        //     NAS100 W24 thr1.5: +242.9% PF1.23 n2129 WF+ 2x+179 RANDOM -5 (the most
+        //            lucrative index; W24 thr1.5-3.0 pocket beats random massively while the
+        //            rest of the NAS grid is bull-beta. DATA CAVEAT: source missing 7 months
+        //            (2022-04, 2024-04/07/08/09/11/12) — sweep gap-masked, live guard blocks
+        //            windows across gaps; forward record decides promotion)
+        //     GER40  W12 thr1.5 BULL-GATED: bull file +72.4% PF3.51 WF+ vs random -6.5, but
+        //            bear file 24/24 cells NEGATIVE -> new windows ONLY when
+        //            !omega::index_risk_off() (feedback-companion-bull-gate-not-reject)
+        //   ADVERSE-PROTECTION: in-mechanism LOSS_CUT 5*thr pre-arm + trail + window flush
+        //   (same backtested verdict as the FX book). SEPARATE INDEPENDENT observe-only
+        //   SHADOW book, judged STANDALONE, deploy-forward, per-clip RT cost debited.
+        {
+            auto& il = omega::index_upjump_ladder_book();
+            struct ILCfg { const char* tag; const char* live; int W; double thr; double rt;
+                           bool bull_gate; const char* csv; };
+            static const ILCfg IL[] = {
+                {"US500",  "US500.F", 24, 2.0, 4.0, false, "phase1/signal_discovery/warmup_US500_H1.csv"},
+                {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                {"GER40",  "GER40",   12, 1.5, 2.0, true,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
+            };
+            for (const auto& ic : IL) {
+                omega::FxLadderPair::Config c;
+                c.pair = ic.tag; c.live_sym = ic.live;
+                c.W = ic.W; c.thr = ic.thr; c.rt_cost_bp = ic.rt;
+                c.file_prefix = "idxladder_companion_";
+                if (ic.bull_gate) c.block_new_windows_fn = [] { return omega::index_risk_off(); };
+                il.add(std::move(c));
+            }
+            size_t ilseeded = 0;
+            for (const auto& ic : IL) ilseeded += il.seed_pair(ic.tag, ic.csv);
+            size_t ilrestored = il.seed_dumps_all();
+            il.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.5, tp_dist_pts, lots, 1.5); // index CFD ~0.5pt
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    handle_closed_trade(tr);
+                });
+            il.finalize_all();
+            printf("[OMEGA-INIT][SEED] INDEX upjump LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED), %zu H1 bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+                   ilseeded, ilrestored);
             fflush(stdout);
         }
 

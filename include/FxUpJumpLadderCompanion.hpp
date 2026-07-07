@@ -71,6 +71,11 @@ public:
         double notional      = 10000.0;   // $ per clip; USD = pct/100 * notional
         double lot           = 1.0;       // order-path lot (units decided at LIVE flip)
         int    cap           = 5;         // max clip batches per window (1 base + 4 reclips)
+        std::string file_prefix = "fxladder_companion_";   // persistence-file family (index book overrides)
+        // Optional REGIME BLOCK for NEW windows (GER40 bull-gate: bear file 24/24 cells
+        // negative -> wire ONLY behind the index risk-off gate, feedback-companion-bull-
+        // gate-not-reject). Open legs still manage/flush; only new triggers are blocked.
+        std::function<bool()> block_new_windows_fn;
         std::string deploy_path;          // per-pair persisted deploy-forward anchor
         std::string bars_path;            // per-pair persisted LIVE forward H1 bars (ts,h,l,c)
         std::string book_path;            // per-pair persisted REAL forward book (4 tiers)
@@ -101,11 +106,11 @@ public:
 
     explicit FxLadderPair(Config c) : cfg_(std::move(c)) {
         const std::string s = lower_(cfg_.pair);
-        if (cfg_.deploy_path.empty()) cfg_.deploy_path = "fxladder_companion_" + s + "_deploy_ts.txt";
-        if (cfg_.bars_path.empty())   cfg_.bars_path   = "fxladder_companion_" + s + "_h1.csv";
-        if (cfg_.book_path.empty())   cfg_.book_path   = "fxladder_companion_" + s + "_book.txt";
-        if (cfg_.live_path.empty())   cfg_.live_path   = "fxladder_companion_" + s + "_live.txt";
-        if (cfg_.closed_path.empty()) cfg_.closed_path = "fxladder_companion_" + s + "_closed.csv";
+        if (cfg_.deploy_path.empty()) cfg_.deploy_path = cfg_.file_prefix + s + "_deploy_ts.txt";
+        if (cfg_.bars_path.empty())   cfg_.bars_path   = cfg_.file_prefix + s + "_h1.csv";
+        if (cfg_.book_path.empty())   cfg_.book_path   = cfg_.file_prefix + s + "_book.txt";
+        if (cfg_.live_path.empty())   cfg_.live_path   = cfg_.file_prefix + s + "_live.txt";
+        if (cfg_.closed_path.empty()) cfg_.closed_path = cfg_.file_prefix + s + "_closed.csv";
         std::ifstream f(cfg_.deploy_path);
         if (f.is_open()) { long long v = 0; if (f >> v) { deploy_ts_ = v; deploy_loaded_ = true; } }
         load_fwd_book_();
@@ -376,7 +381,7 @@ private:
         //    GAP GUARD (live-only deviation, documented): block NEW windows when the W-bar
         //    span exceeds W hours + 4 days (weekend/holiday slack) — a multi-day feed outage
         //    makes the "W-bar move" span weeks, outside calibration. Exits stay honoured.
-        if (!win_) {
+        if (!win_ && !(cfg_.block_new_windows_fn && cfg_.block_new_windows_fn())) {
             double wl = l_[N-1-W];
             for (int i = N - W; i <= N - 2; ++i) if (l_[i] < wl) wl = l_[i];
             const bool contig = (ts_[N-1] - ts_[N-1-W]) <= (int64_t)W * 3600 + 4 * 86400;
@@ -535,11 +540,16 @@ public:
         if (auto* p = find(pair)) { p->on_h1_bar(ts_sec, h, l, c); recompute_and_write(); }
     }
 
+    // Index book publishes under its own engine name + state file (same class/mechanism).
+    void set_identity(std::string engine_name, std::string state_path) {
+        engine_name_ = std::move(engine_name); state_path_ = std::move(state_path);
+    }
+
     std::string state_json() const {
         std::ostringstream o;
         int64_t last_ts = 0; double tot_usd = 0.0;
         for (const auto& p : pairs_) { last_ts = std::max(last_ts, p.last_ts()); tot_usd += p.book_usd(); }
-        o << "{\"engine\":\"fx-upjump-ladder\",\"shadow\":true,\"grade\":\"h1-intrabar\",";
+        o << "{\"engine\":\"" << engine_name_ << "\",\"shadow\":true,\"grade\":\"h1-intrabar\",";
         o.precision(0); o << std::fixed << "\"total_usd\":" << tot_usd << ",\"pairs\":[";
         for (size_t i = 0; i < pairs_.size(); ++i) { if (i) o << ","; o << pairs_[i].pair_json(); }
         o << "],\"ts\":" << (long long)last_ts << "}";
@@ -558,12 +568,26 @@ public:
 
 private:
     std::vector<FxLadderPair> pairs_;
+    std::string engine_name_ = "fx-upjump-ladder";
     std::string state_path_ = "fxladder_companion_state.json";   // cwd = C:\Omega
 };
 
 // Singleton — accessor mirrors omega::stockmover_ladder_book().
 inline FxLadderBook& fx_upjump_ladder_book() noexcept {
     static FxLadderBook inst;
+    return inst;
+}
+
+// INDEX instance of the same validated ladder mechanism (US500/NAS100/GER40-bull-gated;
+// research backtest/index_upjump_ladder_sweep.py, outputs/INDEX_UPJUMP_LADDER_2026-07-07.txt).
+// Own persistence prefix + state file + /api/idxladder_companion.
+inline FxLadderBook& index_upjump_ladder_book() noexcept {
+    static FxLadderBook inst;
+    static bool once = [] {
+        inst.set_identity("index-upjump-ladder", "idxladder_companion_state.json");
+        return true;
+    }();
+    (void)once;
     return inst;
 }
 

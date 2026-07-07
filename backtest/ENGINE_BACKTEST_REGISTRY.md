@@ -205,3 +205,29 @@ Traps:
   no such gaps.
 - USDJPY/USDCAD: DEAD (9/9 negative cells) — do not resurrect without new basis.
   XAU = bull-beta (random captures it); GER40 = bull-only (index axis wire).
+
+## 9. INDEX upjump LADDER companion (S-2026-07-07x resume — the index member of §8's family)
+
+Same class (`FxLadderPair` via `omega::index_upjump_ladder_book()`, prefix
+`idxladder_companion_`), feed = tick_indices.hpp IdxH1Agg (extended to track h/l).
+Research: `backtest/index_upjump_ladder_sweep.py` over H1 built fresh from the tick
+corpus by `backtest/histdata_tick_to_h1.cpp` (evidence `outputs/INDEX_UPJUMP_LADDER_
+2026-07-07.txt`). Wired cells (WF halves + 2x-cost + gap-masked 5-seed random control):
+US500 W24/2.0 +123.2% PF1.34 n854 (random -24) · NAS100 W24/1.5 +242.9% PF1.23 n2129
+(random -5; most lucrative index) · GER40 W12/1.5 +72.4% PF3.51 bull file, bear 24/24
+negative -> BULL-GATED behind `omega::index_risk_off()`.
+
+Traps:
+- **NAS100 source data has 7 missing months** (2022-04, 2024-04, 2024-07/08/09,
+  2024-11/12 — histdata dirs hold .txt stubs only, csv never downloaded).
+  `NSXUSD_2022_2026.h1.csv` gate-REJECTED for coverage holes; the sweep gap-masks
+  triggers (span <= W*3600+4d, same as the live engine guard). US500
+  (`SPXUSD_2022_2026.h1.csv`) is CERTIFIED CLEAN. Re-download those months before
+  trusting any NAS100 re-test that spans them.
+- Most of the NAS100 grid is BULL-BETA (random control +90..+170): only the
+  W24 thr1.5-3.0 pocket beats random. Do not promote other NAS cells off net% alone.
+- The old merged `NSXUSD_2022_2026.csv` tick file predates the newer monthly
+  downloads AND /Tick has duplicate months across two roots (incl. a "(2)" dir with a
+  space) — rebuild H1 via the python month-dedupe in this session's log, never a bare
+  `$var` glob (zsh no-word-split).
+- GER40: never un-gate — bear file universally negative at every cell.
