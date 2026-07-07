@@ -64,18 +64,20 @@ def main():
     if not cols: print("nothing pulled"); return 1
     new=pd.DataFrame(cols); new.index=pd.to_datetime(new.index); new=new.sort_index()
     if os.path.exists(CLOSE):
-        old=pd.read_csv(CLOSE, index_col=0, parse_dates=True)
-        # update overlapping cells + add fresh rows; IBKR cols overwrite stale yfinance cols
-        merged=old.copy()
+        old=pd.read_csv(CLOSE, index_col=0)
+        old.index=pd.to_datetime(old.index)
+        # BUG FIX S-2026-07-07: the previous merge assigned new[c] into a frame
+        # still on OLD's index -- pandas reindexes the series on assignment, so
+        # dates newer than the file NEVER entered and the CSV froze at its last
+        # row (06-29) while every pull "succeeded". Union the indices FIRST,
+        # then let fresh IBKR values win on overlap.
+        merged=old.reindex(old.index.union(new.index)).sort_index()
         for c in new.columns:
             merged[c]=new[c].combine_first(merged[c]) if c in merged.columns else new[c]
-        merged=pd.concat([merged[~merged.index.isin(new.index)], merged[merged.index.isin(new.index)]]).sort_index()
-        # ensure the fresh IBKR values win on overlapping dates
-        merged.update(new)
         out=merged
     else:
         out=new
-    out.to_csv(CLOSE)
+    out.to_csv(CLOSE, date_format="%Y-%m-%d")
     print(f"refreshed {ok}/{len(syms)} names from IBKR -> {CLOSE} (through {out.index.max().date()})")
     return 0
 

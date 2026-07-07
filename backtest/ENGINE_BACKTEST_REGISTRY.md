@@ -147,3 +147,33 @@ Traps:
   8bp RT debit inside the engine (2x=16bp still PASS). Real cost row owed before LIVE.
 - Feed = RDAgent wide CSV (refresh_close_ibkr.py, IBKR 4002); stale since 2026-06-29
   (IBKR sub lapse). Engine seeds+arms; books resume when the feed does.
+
+## 7. MGC venue port of the XauTrendFollow4h/2h family (S-2026-07-07w)
+
+Production spot config re-instanced on MGC futures (10oz micro, $10/pt, tick 0.10,
+comm ~$1.04/side -> ~0.31pt RT vs spot ~1.4pt at 4000). Two-layer validation:
+
+1. **Faithful harness**: `backtest/XauTrendFollow4h2hBacktest.cpp` gained `MGC=1`
+   (fixed $0.208/oz RT comm; pair with `SPREAD=0.10`). Real MGC H4/H1 bars from
+   `backtest/mgc_30m_to_h1_h4.py` over `/Users/jo/Tick/mgc_30m_hist.csv`
+   (2024-06..2026-06, integrity-gated). Prod cfg (MASK=0xC9 IMP=0.5 ADX=15 VB=1):
+   4h PF1.54 +$4404 DD$1331 both-halves+; 2h PF1.21 +$4281 both-halves+;
+   2x-cost PASS both. 2022-23 bear at MGC cost: 4h +$650 PF1.22 (H1-half -$162,
+   halves FAIL -- structural bear-flat, same as spot), 2h flat.
+2. **Feed-path parity** (registry §6 mandate): `backtest/mgc_tf_feed_parity.cpp`
+   drives the PRODUCTION MgcFastDonchianFeed poll path (30m rows -> on_tick l/h/c
+   + H1/H4 bucket aggregation) over the same 30m file. LC4=1.5/LC2=0:
+   4h n291 PF1.50 +$4209 DD$1064 (harness n285 PF1.54) / 2h n596 PF1.23 +$3533
+   DD$2390 (harness n801 PF1.21) -- granularity-level deviation, PASS.
+
+Traps:
+- **Spot LOSS_CUT 0.5% KILLS the MGC 2h** (parity: PF0.86 -$2095 vs PF1.23 +$3533
+  at LC=0): 0.5% of ~4400 = ~22pt inside the 2x-ATR SL; the 30m intrabar path
+  trips it constantly. MGC 2h wired LC=0 (engine 2xATR SL = the protection).
+  4h keeps LC=1.5 (net -8% for DD -20%, consistent with the spot verdict).
+- MGC history has NO 2022 bear -- the bear axis runs on SPOT bars + MGC costs.
+- CONTFUT reqHistoricalData: end-date paging NOT allowed (err 10339) and
+  useRTH=1 starves bars -- pull with useRTH=0, single request, no end date.
+- Warmup: `data/mgc_h1_hist.csv` (H1, ts-sec) + `data/mgc_h4_hist.csv` (H4, ms) --
+  regenerate via the scratch IBKR pull before deploy so the live-CSV replay floor
+  (g_mgc_tf_floor_ts) covers the gap. Ledger tags MgcTF4h_/MgcTF2h_<cell>.
