@@ -47,11 +47,17 @@ if ($di -and $di.LastTaskResult -eq 267009) {   # 267009 = TASK is currently run
 # also catch a build that left compiler procs running absurdly long with no task (orphan build)
 $cl = Get-Process cl,MSBuild,cmake -ErrorAction SilentlyContinue | Where-Object { ((Get-Date) - $_.StartTime).TotalMinutes -gt 25 }
 if ($cl) { $overall = 'RED'; $reasons += "[RED] DEPLOY-HANG: build process older than 25min ($(($cl|%{$_.ProcessName}) -join ','))" }
-# --- RAM (3GB box -> low free = thrash/freeze, froze RDP 2026-06-27) ---
+# --- RAM (low free = thrash/freeze, froze RDP 2026-06-27 on the 3GB box) ---
+# Thresholds scale with box size so ONE script is correct on both the 3GB (old) and 6GB
+# (ForexVPS Edge) boxes during migration: RED < 8% of total, AMBER < 16% -- reproduces the
+# proven 250/500MB lines on 3GB and lands ~490/980MB on 6GB. Floors keep small boxes safe.
 $osm = Get-CimInstance Win32_OperatingSystem
+$totalMB = [int]($osm.TotalVisibleMemorySize / 1024)
 $freeMB = [int]($osm.FreePhysicalMemory / 1024)
-if ($freeMB -lt 250) { $overall = 'RED'; $reasons += "[RED] RAM ${freeMB}MB free (<250) -- thrash/freeze risk" }
-elseif ($freeMB -lt 500) { if ($overall -eq 'GREEN') { $overall = 'AMBER' }; $reasons += "[AMBER] RAM ${freeMB}MB free" }
+$ramRedMB = [math]::Max(250, [int]($totalMB * 0.08))
+$ramAmbMB = [math]::Max(500, [int]($totalMB * 0.16))
+if ($freeMB -lt $ramRedMB) { $overall = 'RED'; $reasons += "[RED] RAM ${freeMB}MB free (<${ramRedMB}) -- thrash/freeze risk" }
+elseif ($freeMB -lt $ramAmbMB) { if ($overall -eq 'GREEN') { $overall = 'AMBER' }; $reasons += "[AMBER] RAM ${freeMB}MB free (<${ramAmbMB})" }
 # --- DUPLICATE-PROCESS LEAK (the Aurora 4-copy pile-up that exhausted RAM) ---
 $byScript = @{}
 foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' or Name='python.exe' or Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
