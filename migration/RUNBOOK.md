@@ -11,6 +11,11 @@ Password: operator's password manager. **Never in this repo.**
 > operational script now points at 45.85.3.79. This runbook is the
 > server-side half.
 
+> **`4_NEW_VPS_APPLIED_SETTINGS.md`** records what was ACTUALLY applied to
+> the new box on 2026-07-07 incl. fixes not in these scripts (vc_redist
+> 14.44 crash fix, scheduled-task SID/hostname rewrite, firewall rules,
+> git-history restore, ForexVPS provider facts). Read it before rebuilding.
+
 ## Order of operations
 
 | # | Where | What |
