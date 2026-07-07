@@ -123,7 +123,39 @@ be closed. `ssh omega-vps` remains the OLD box until decommission.
   box lives under a separate BlackBull-sponsored account.
 - RDP to the new box uses provider port **45.85.3.79:42014**.
 
-## 7. Still owed (tracked in RUNBOOK + handoff)
+## 7. IB Gateway + IBC (installed 2026-07-07, PROVEN, parked until cutover)
+
+Neither `C:\IBC` nor `C:\Jts` was in the migration zip, and the old box's
+install4j-bundled JRE lives OUTSIDE both. Three pieces were copied old→new
+(tar over ssh — old box's `trader` pubkey added to new box authorized_keys
+for direct box-to-box scp):
+
+1. `C:\IBC` (config.ini carries IBKR creds — **never in repo**) +
+   `C:\Jts` (Gateway **1047** standalone) — tarred with
+   `--exclude IBC/logs --exclude Jts/<jxbrowser-profile-dir>` (live Gateway
+   holds locks on those).
+2. `C:\Program Files\Common Files\i4j_jres\Oda-jK0QgTEmVssfllLP` (zulu
+   17.0.16 JRE). **Without this IBC dies: "Can't find suitable Java
+   installation"** — the Gateway launcher's install4j metadata pins that
+   exact path. Any future box rebuild must carry `i4j_jres` too.
+
+Launch path = the restored `IbkrGateway` scheduled task →
+`C:\Omega\bracket-bot\scripts\gateway_watchdog.ps1` (logon + time triggers,
+Interactive as trader).
+
+**Login validation result (03:30 box time):** IBC set username/password,
+clicked Paper Log In, reached `Authenticating...` — credentials ACCEPTED, no
+2FA challenge (paper mode). Blocked only by `Existing session detected`: the
+OLD box's Gateway holds the same paper account and is primary → new box
+yielded (exit 1100) and old box's Gateway verified unharmed (java alive,
+old 4002 still bound).
+
+**The `IbkrGateway` task on the new box is DISABLED** so its time trigger
+doesn't repeatedly fight the old box's live session. At cutover:
+stop Gateway on old box → `schtasks /change /tn IbkrGateway /enable` +
+`/run` on new box → verify `Test-NetConnection 127.0.0.1 -Port 4002`.
+
+## 8. Still owed (tracked in RUNBOOK + handoff)
 
 - `git checkout -f -B main origin/main` once the fetch finishes; then the
   Deploy Hygiene three-way hash check.
