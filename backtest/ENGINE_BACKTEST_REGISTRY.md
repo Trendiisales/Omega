@@ -217,15 +217,20 @@ US500 W24/2.0 +123.2% PF1.34 n854 (random -24) · NAS100 W24/1.5 +242.9% PF1.23 
 (random -5; most lucrative index) · GER40 W12/1.5 +72.4% PF3.51 bull file, bear 24/24
 negative -> BULL-GATED behind `omega::index_risk_off()`.
 
+NAS refill (2026-07-08): the 7 missing months (2022-04, 2024-04/07/08/09/11/12) were
+fetched straight from histdata.com (`get.php` POST with the per-page `tk` token — the
+old dirs held only the status-report .txt; the site has the csv), H1 rebuilt from all
+52 months (301M ticks, `histdata_tick_to_h1.cpp`) → `NSXUSD_2022_2026.h1.csv` 24,407
+bars **CERTIFIED CLEAN** (gap-masked predecessor backed up as `.gapmasked_20260708`).
+Wired cell RE-VERIFIED on full data: W24/1.5 n2442 +245.7% PF1.20 WF+ 2x-cost +172.4 —
+holds; random control rose -5 → +59.6 (full-data bull-beta), so quote the edge as
+**~+186% over random**, not raw net. US500 W24/2.0 unchanged (same data) = harness
+sanity pass. Evidence `outputs/INDEX_UPJUMP_LADDER_NASREFILL_2026-07-08.txt`.
+
 Traps:
-- **NAS100 source data has 7 missing months** (2022-04, 2024-04, 2024-07/08/09,
-  2024-11/12 — histdata dirs hold .txt stubs only, csv never downloaded).
-  `NSXUSD_2022_2026.h1.csv` gate-REJECTED for coverage holes; the sweep gap-masks
-  triggers (span <= W*3600+4d, same as the live engine guard). US500
-  (`SPXUSD_2022_2026.h1.csv`) is CERTIFIED CLEAN. Re-download those months before
-  trusting any NAS100 re-test that spans them.
-- Most of the NAS100 grid is BULL-BETA (random control +90..+170): only the
-  W24 thr1.5-3.0 pocket beats random. Do not promote other NAS cells off net% alone.
+- Most of the NAS100 grid is BULL-BETA (random control +40..+100 on full data): only
+  the W24 thr1.5-3.0 pocket meaningfully beats random. Do not promote other NAS cells
+  off net% alone; always quote net-over-random.
 - The old merged `NSXUSD_2022_2026.csv` tick file predates the newer monthly
   downloads AND /Tick has duplicate months across two roots (incl. a "(2)" dir with a
   space) — rebuild H1 via the python month-dedupe in this session's log, never a bare
