@@ -37,7 +37,7 @@ This file exists because testing settings were left active.
 - Only change to LIVE when all items above pass
 
 ### 6. Account equity matches expected
-- GUI: http://185.167.119.59:7779
+- GUI: http://45.85.3.79:7779
 - Verify equity matches cTrader account balance
 
 ---

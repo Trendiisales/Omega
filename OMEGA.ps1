@@ -1795,8 +1795,8 @@ function Invoke-Deploy {
     Write-Host "  COMMIT : $sourceHashShort" -ForegroundColor Yellow
     Write-Host "  BUILT  : $builtAt" -ForegroundColor Yellow
     Write-Host "  MODE   : $($cfg.Mode)" -ForegroundColor $modeColor
-    Write-Host "  GUI    : http://185.167.119.59:7779" -ForegroundColor Yellow
-    Write-Host "  UI     : http://185.167.119.59:7781  (omega-terminal)" -ForegroundColor Yellow
+    Write-Host "  GUI    : http://45.85.3.79:7779" -ForegroundColor Yellow
+    Write-Host "  UI     : http://45.85.3.79:7781  (omega-terminal)" -ForegroundColor Yellow
     Write-Host "########################################################" -ForegroundColor Yellow
     Write-Host ""
 

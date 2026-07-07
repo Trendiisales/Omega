@@ -14,7 +14,7 @@ Surfaces, in one page:
                         by_book CRYPTO/OMEGA, by_reason, per_engine, open_detail)
   * Crypto book     -- IBKRCrypto state.json (also the full GUI on :8090)
   * RD-Agent        -- ~/Omega/data/rdagent/latest.json (full GUI on :7799)
-  * Omega desk      -- VPS GUI http://185.167.119.59:7779 (companion + shadow + telemetry)
+  * Omega desk      -- VPS GUI http://45.85.3.79:7779 (companion + shadow + telemetry)
 
 Read-only. Serves its own index.html + small JSON proxy routes so the
 page can fetch local files without CORS pain. Every route is fail-safe:
@@ -140,7 +140,7 @@ def _read_trades() -> dict:
 # and the cockpit never holds a close path of its own (each book closes its OWN book).
 # Crypto is intentionally ABSENT: its live :8090 book is the C++ ibkrcrypto_engine,
 # which has no flatten command surface yet -- a button here would be false comfort.
-OMEGA_DESK = os.environ.get("OMEGA_DESK_URL", "http://185.167.119.59:7779").rstrip("/")
+OMEGA_DESK = os.environ.get("OMEGA_DESK_URL", "http://45.85.3.79:7779").rstrip("/")
 RDAGENT_URL = os.environ.get("RDAGENT_URL", "http://127.0.0.1:7799").rstrip("/")
 FLATTEN_TARGETS = {
     "omega": OMEGA_DESK + "/api/flatten",

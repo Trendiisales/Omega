@@ -67,7 +67,7 @@ The `name_alias` map in `src/main.cpp` translates broker cTrader names ? interna
 If broker sends `US500` ? routes as `US500.F` internally.  
 If broker sends `DAX` ? routes as `GER40` internally.  
 
-**To verify live:** `curl http://185.167.119.59:7779/api/symbols` (after rebuild)  
+**To verify live:** `curl http://45.85.3.79:7779/api/symbols` (after rebuild)  
 **To audit at startup:** look for `[CTRADER-AUDIT]` lines in `C:\Omega\logs\omega_YYYY-MM-DD.log`  
 
 ---

@@ -13,7 +13,7 @@ LOG="$TOOLS/qlib_refresh.log"; exec > >(tee -a "$LOG") 2>&1
 trap 'echo "[$TS] qlib_refresh: EXIT status=$? (model now $(tail -1 "$QD/calendars/day.txt" 2>/dev/null))"' EXIT
 if ! nc -z -G3 127.0.0.1 4002 2>/dev/null; then
   echo "[$TS] qlib_refresh: tunnel down — self-healing Mac:4002 -> VPS Gateway:4002"
-  ssh -fN -o ConnectTimeout=8 -o ExitOnForwardFailure=yes -L 4002:127.0.0.1:4002 -p 2222 trader@185.167.119.59 2>/dev/null || true
+  ssh -fN -o ConnectTimeout=8 -o ExitOnForwardFailure=yes -L 4002:127.0.0.1:4002 -p 2222 trader@45.85.3.79 2>/dev/null || true
   sleep 2
 fi
 if ! nc -z -G3 127.0.0.1 4002 2>/dev/null; then echo "[$TS] qlib_refresh: tunnel STILL down after heal — SKIP (feeds_selftest will alarm RED)"; exit 3; fi
