@@ -113,11 +113,25 @@ int main(int argc, char** argv) {
 
     Stats all, y2022, pre22, post22;
     std::vector<double> first_half, second_half;
+    // TURTLE_DUMP=<path>: append each closed trade in ShadowBook-column format
+    // (mirror dump-check S-2026-07-07t; consumed by backtest/mirror_parents_bt.py)
+    FILE* dumpf = nullptr;
+    if (const char* dp = std::getenv("TURTLE_DUMP")) {
+        const bool fresh = !std::ifstream(dp).good();
+        dumpf = std::fopen(dp, "a");
+        if (dumpf && fresh)
+            std::fprintf(dumpf, "entryTs,symbol,side,engine,entryPrice,exitPrice,pnl,mfe,mae,hold_sec,exitReason\n");
+    }
     auto cb = [&](const omega::TradeRecord& tr) {
         all.record(tr);
         int yr = year_of(tr.exitTs);
         if (yr == 2022) y2022.record(tr);
         else if (yr < 2022) pre22.record(tr); else post22.record(tr);
+        if (dumpf)
+            std::fprintf(dumpf, "%lld,%s,%s,%s,%.5f,%.5f,%.4f,0,0,%lld,%s\n",
+                (long long)tr.entryTs, label.c_str(), tr.side.c_str(), label.c_str(),
+                tr.entryPrice, tr.exitPrice, tr.pnl,
+                (long long)(tr.exitTs - tr.entryTs), tr.exitReason.c_str());
     };
 
     // BULL_GATE=1 -> faithful proxy for regime_bear_block: block NEW entries while the
@@ -176,5 +190,6 @@ int main(int argc, char** argv) {
     std::printf("  --- WF halves (net $) ---\n");
     std::printf("    H1: %+.0f   H2: %+.0f   %s\n", sum(first_half), sum(second_half),
                 (sum(first_half) > 0 && sum(second_half) > 0) ? "BOTH+ " : "NOT both+");
+    if (dumpf) std::fclose(dumpf);
     return 0;
 }

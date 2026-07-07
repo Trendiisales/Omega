@@ -83,8 +83,8 @@ omega::OpenPositionRegistry g_open_positions;
 #include "../include/MinimalH4GER40Breakout.hpp"
 #include "../include/OrbBreakoutEngine.hpp"
 #include "../include/AtrMeanRevGridEngine.hpp"
-#include "../include/FxTurtleH4Engine.hpp"
-#include "../include/FxCrossRevEngine.hpp"
+// FxTurtleH4Engine purged from main (S-2026-07-07t patch: engine retired)
+// FxCrossRevEngine purged from main (S-2026-07-07t patch)
 #include "../include/SurvivorPortfolio.hpp"
 #include "../include/PeachyOrbEngine.hpp"
 #include "../include/EurGbpPairsEngine.hpp"
@@ -299,9 +299,8 @@ static omega::Ger40KeltnerH1Engine      g_ger40_kelt;
 static omega::Ger40LondonBreakoutEngine g_ger40_london_brk;
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_EURUSD> g_amr_eurusd;
 static omega::AtrMeanRevGridEngine<omega::AmrTraits_GBPUSD> g_amr_gbpusd;
-static omega::FxTurtleH4Engine          g_eurusd_turtle_h4;
-static omega::FxTurtleH4Engine          g_gbpusd_turtle_h4;
-static omega::FxCrossRevEngine          g_fx_xrev_eurgbp{"EURGBP"};
+// FxTurtleH4 instances removed (engine purged)
+// FxCrossRev instance removed (engine purged)
 static omega::survivor::Portfolio        g_survivor;   // S38 walk-forward survivor cells (XAU/GER40/USTEC)
 static omega::PeachyOrbEngine          g_peachy_orb_nas;   // NAS100 one-candle ORB-retest (cross-regime retest)
 
@@ -614,14 +613,7 @@ static void init_nonxau() {
     g_amr_gbpusd.shadow_mode=false; g_amr_gbpusd.enabled=true;
     g_amr_gbpusd.on_close_cb=tagCB("AmrGBPUSD");
 
-    g_eurusd_turtle_h4.p=omega::make_eurusd_turtle_h4_params(); g_eurusd_turtle_h4.symbol="EURUSD";
-    g_eurusd_turtle_h4.shadow_mode=false; g_eurusd_turtle_h4.enabled=true;
-    g_gbpusd_turtle_h4.p=omega::make_gbpusd_turtle_h4_params(); g_gbpusd_turtle_h4.symbol="GBPUSD";
-    g_gbpusd_turtle_h4.shadow_mode=false; g_gbpusd_turtle_h4.enabled=true;
 
-    g_fx_xrev_eurgbp.p.z_window=60; g_fx_xrev_eurgbp.p.z_in=2.0; g_fx_xrev_eurgbp.p.z_out=0.4;
-    g_fx_xrev_eurgbp.p.hold_timeout=20; g_fx_xrev_eurgbp.p.require_hook=false;
-    g_fx_xrev_eurgbp.shadow_mode=false; g_fx_xrev_eurgbp.enabled=true;
 }
 
 static inline void dispatch_nonxau(double bid, double ask, int64_t now_ms) {
@@ -647,12 +639,9 @@ static inline void dispatch_nonxau(double bid, double ask, int64_t now_ms) {
         g_idd_uk100.on_tick(bid, ask, now_ms, tagCB("IddUK100"));
     } else if (g_inst=="EURUSD") {
         g_amr_eurusd.on_tick(bid, ask, now_ms);
-        g_eurusd_turtle_h4.on_tick(bid, ask, now_ms, tagCB("EurusdTurtleH4"));
     } else if (g_inst=="GBPUSD") {
         g_amr_gbpusd.on_tick(bid, ask, now_ms);
-        g_gbpusd_turtle_h4.on_tick(bid, ask, now_ms, tagCB("GbpusdTurtleH4"));
     } else if (g_inst=="EURGBP") {
-        g_fx_xrev_eurgbp.on_tick(bid, ask, now_ms, tagCB("FxXrevEURGBP"));
     }
 }
 
