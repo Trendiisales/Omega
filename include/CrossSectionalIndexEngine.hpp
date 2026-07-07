@@ -53,6 +53,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <deque>
 #include <fstream>
 #include <functional>
@@ -61,6 +62,7 @@
 #include <vector>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "OpenPositionRegistry.hpp"   // omega::PositionSnapshot (persist_save_all/persist_restore)
 #include "IndexBookBudget.hpp"   // global concurrent-exposure cap for the D1 index book
 
 namespace omega {
@@ -146,6 +148,45 @@ public:
         legs_.clear(); pend_exit_.clear(); pend_entry_.clear();
     }
 
+    // ---- restart persistence (S-2026-07-08). Same orphan class as CalendarTom:
+    // legs hold 3-20 D1 bars across near-daily restarts. One snapshot per open
+    // leg (queued exits included -- they still hold exposure), tag
+    // "<base>#<SYM>:<L|S>" for the wire_multicell router. bars_held is
+    // LOAD-BEARING (hold_bars horizon) -> re-derived from entry_ts, so an
+    // overdue restored leg queues its exit at the next finalize_day.
+    void persist_save_all(const char* base, const char* /*sym*/,
+                          std::vector<omega::PositionSnapshot>& out) const {
+        auto emit = [&](const Leg& lg) {
+            omega::PositionSnapshot ps;
+            ps.engine   = std::string(base) + "#" + syms_[(size_t)lg.si] + (lg.dir>0?":L":":S");
+            ps.symbol   = syms_[(size_t)lg.si];
+            ps.side     = lg.dir>0 ? "LONG" : "SHORT";
+            ps.size     = lg.lot;
+            ps.entry    = lg.entry_px;
+            ps.sl       = 0.0; ps.tp = 0.0;
+            ps.entry_ts = lg.entry_ts/1000;
+            ps.mfe      = lg.mfe; ps.mae = lg.mae;
+            out.push_back(ps);
+        };
+        for (const auto& lg : legs_)      emit(lg);
+        for (const auto& lg : pend_exit_) emit(lg);
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        const int si = symbol_index(ps.symbol); if (si < 0) return false;
+        const int dir = (ps.side == "LONG") ? +1 : -1;
+        for (const auto& lg : legs_)                          // adopt won't double a slot
+            if (lg.si == si && lg.dir == dir) return false;
+        // re-take the budget slot so emit_close's release() stays paired
+        // (observe_only in shadow -> never blocks; return deliberately unchecked).
+        IndexBookBudget::g().reserve(dir>0?IdxDir::LONG:IdxDir::SHORT,
+                                     engine_name_.c_str(), ps.symbol.c_str());
+        Leg lg; lg.si=si; lg.dir=dir; lg.entry_px=ps.entry; lg.lot=ps.size;
+        lg.entry_ts=ps.entry_ts*1000; lg.mfe=ps.mfe; lg.mae=ps.mae;
+        lg.bars_held=weekdays_between(lg.entry_ts, (int64_t)time(nullptr)*1000LL);
+        legs_.push_back(lg);
+        return true;
+    }
+
     // warm-seed one symbol's D1 close history (header: ts,o,h,l,c).
     size_t seed_from_d1_csv(int si, const std::string& path) noexcept {
         if (si<0 || si>=(int)syms_.size()) return 0;
@@ -175,6 +216,14 @@ private:
         double entry_px=0, lot=0; int64_t entry_ts=0; int bars_held=0; double mfe=0,mae=0;
     };
     struct PendEntry { int si=0; int dir=0; };
+
+    // completed weekday D1 bars strictly between the entry day and `to` day
+    static int weekdays_between(int64_t from_ms, int64_t to_ms) noexcept {
+        const int64_t a = from_ms/86400000LL, b = to_ms/86400000LL;
+        int n = 0;
+        for (int64_t z = a+1; z < b; ++z) { int w=(int)(((z%7)+4+7)%7); if (w>=1 && w<=5) ++n; }
+        return n;
+    }
 
     void push_close(Sym& s, double c) noexcept {
         // ATR (for vol-target sizing only)

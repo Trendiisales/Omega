@@ -45,6 +45,8 @@ HEADERS=(
   include/IndexSessionEngine.hpp
   include/SessionMomentumEngine.hpp
   include/IndexSeasonalEngine.hpp
+  include/CalendarTomEngine.hpp
+  include/CrossSectionalIndexEngine.hpp
   include/GoldSeasonalEngine.hpp
   include/GoldOversoldBounceEngine.hpp
   include/IndexFomcEngine.hpp

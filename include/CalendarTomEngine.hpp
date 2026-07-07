@@ -32,11 +32,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <functional>
 #include <string>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "OpenPositionRegistry.hpp"   // omega::PositionSnapshot (persist_save/restore)
 #include "IndexBookBudget.hpp"   // global concurrent-exposure cap for the D1 index book
 
 namespace omega {
@@ -105,7 +107,35 @@ public:
         const double bid = (last_bid_>0.0)?last_bid_:prev_close_, ask=(last_ask_>0.0)?last_ask_:prev_close_;
         close_position(bid, ask, day_ms, "FORCE_CLOSE", cb);
     }
+    // book-price form used by the PositionPersistence generic closer (acct_try_close)
+    void force_close(double bid, double ask, int64_t now_ms, OnCloseFn cb) noexcept {
+        if (!pos_.active) return;
+        close_position(bid, ask, now_ms, "FORCE_CLOSE", cb);
+    }
     void cancel() noexcept { if (pos_.active) IndexBookBudget::g().release(IdxDir::LONG); pos_ = Pos{}; }
+
+    // ---- restart persistence (S-2026-07-08). TOM holds ~6 trading days across
+    // near-daily restarts; unpersisted, every restart orphaned the leg and the
+    // window exit fired on nothing -> ZERO TOM round-trips ledgered since the
+    // 06-21 ship. bars_held is re-derived from entry_ts (cosmetic here: the exit
+    // is window-driven, not bar-counted).
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const noexcept {
+        if (!pos_.active) return false;
+        o.engine=eng; o.symbol=sym; o.side="LONG"; o.size=pos_.lot; o.entry=pos_.entry_px;
+        o.sl=0.0; o.tp=0.0; o.entry_ts=pos_.entry_ts/1000; o.mfe=pos_.mfe; o.mae=pos_.mae;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) noexcept {
+        if (pos_.active) return false;                       // adopt won't double an open slot
+        // re-take the budget slot so the eventual close's release() stays paired
+        // (observe_only in shadow -> never blocks; a genuinely open leg must be
+        // restored regardless, so the return value is deliberately not checked).
+        IndexBookBudget::g().reserve(IdxDir::LONG, engine_name_.c_str(), symbol_.c_str());
+        pos_=Pos{}; pos_.active=true; pos_.entry_px=ps.entry; pos_.lot=ps.size;
+        pos_.entry_ts=ps.entry_ts*1000; pos_.mfe=ps.mfe; pos_.mae=ps.mae;
+        pos_.bars_held=weekdays_between(pos_.entry_ts, (int64_t)time(nullptr)*1000LL);
+        return true;
+    }
 
     size_t seed_from_d1_csv(const std::string& path) noexcept {
         std::ifstream f(path);
@@ -143,6 +173,11 @@ private:
     }
     static int weekday_of(int64_t z) noexcept { return (int)(((z % 7) + 4 + 7) % 7); } // 0=Sun..6=Sat
     static bool is_weekday_z(int64_t z) noexcept { int w = weekday_of(z); return w >= 1 && w <= 5; }
+    // completed weekday D1 bars strictly between the entry day and `to` day
+    static int weekdays_between(int64_t from_ms, int64_t to_ms) noexcept {
+        const int64_t a = from_ms/86400000LL, b = to_ms/86400000LL;
+        int n = 0; for (int64_t z = a+1; z < b; ++z) if (is_weekday_z(z)) ++n; return n;
+    }
     static int days_in_month(int y, int m) noexcept {
         static const int dm[] = {31,28,31,30,31,30,31,31,30,31,30,31};
         if (m == 2) { bool leap = (y%4==0 && y%100!=0) || (y%400==0); return leap ? 29 : 28; }

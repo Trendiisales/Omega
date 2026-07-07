@@ -24,6 +24,7 @@
 #include <string>
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
+#include "OpenPositionRegistry.hpp"   // omega::PositionSnapshot (persist_save/restore)
 #include "IndexRiskGate.hpp"
 
 namespace omega {
@@ -90,7 +91,30 @@ public:
         const double bid = (last_bid_>0.0)?last_bid_:prev_close_, ask=(last_ask_>0.0)?last_ask_:prev_close_;
         close_position(bid, ask, day_ms, "FORCE_CLOSE", cb);
     }
+    // book-price form used by the PositionPersistence generic closer (acct_try_close)
+    void force_close(double bid, double ask, int64_t now_ms, OnCloseFn cb) noexcept {
+        if (!pos_.active) return;
+        close_position(bid, ask, now_ms, "FORCE_CLOSE", cb);
+    }
     void cancel() noexcept { pos_ = Pos{}; }
+
+    // ---- restart persistence (S-2026-07-08). Same orphan class as CalendarTom:
+    // the 1-bar hold spans an overnight restart. bars_held is LOAD-BEARING
+    // (hold_bars exit) -> re-derived from entry_ts so a restored leg exits on the
+    // next D1 close instead of restarting its hold clock.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const noexcept {
+        if (!pos_.active) return false;
+        o.engine=eng; o.symbol=sym; o.side="LONG"; o.size=pos_.lot; o.entry=pos_.entry_px;
+        o.sl=0.0; o.tp=0.0; o.entry_ts=pos_.entry_ts/1000; o.mfe=pos_.mfe; o.mae=pos_.mae;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) noexcept {
+        if (pos_.active) return false;                       // adopt won't double an open slot
+        pos_=Pos{}; pos_.active=true; pos_.entry_px=ps.entry; pos_.lot=ps.size;
+        pos_.entry_ts=ps.entry_ts*1000; pos_.mfe=ps.mfe; pos_.mae=ps.mae;
+        pos_.bars_held=weekdays_between(pos_.entry_ts, (int64_t)time(nullptr)*1000LL);
+        return true;
+    }
 
     size_t seed_from_d1_csv(const std::string& path) noexcept {
         std::ifstream f(path);
@@ -112,6 +136,13 @@ public:
     }
 
 private:
+    // completed weekday D1 bars strictly between the entry day and `to` day
+    static int weekdays_between(int64_t from_ms, int64_t to_ms) noexcept {
+        const int64_t a = from_ms/86400000LL, b = to_ms/86400000LL;
+        int n = 0;
+        for (int64_t z = a+1; z < b; ++z) { int w=(int)(((z%7)+4+7)%7); if (w>=1 && w<=5) ++n; }
+        return n;
+    }
     struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; double mfe=0,mae=0; } pos_;
 
     // YYYYMMDD for a UTC day_ms, via portable civil-from-days (Howard Hinnant).

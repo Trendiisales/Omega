@@ -267,6 +267,32 @@ inline void register_position_persistence() {
     wire_multicell(g_bigcap_momo,   "BigCapMomoCons", "");
     wire_multicell(g_bigcap_momo_b, "BigCapMomoGB",   "");
 
+    // ---- D1 calendar/seasonal index book (S-2026-07-08): CalendarTom x6 +
+    // IndexSeasonal x6 + IndexFomc x3 + CrossSectional x3. None persisted since
+    // their 06-21 ship while restarts ran near-daily -> every restart orphaned
+    // the open leg and the calendar/hold exit fired on nothing. CalendarTom
+    // (~6-trading-day TOM hold) ledgered ZERO round-trips as a result; seasonal
+    // (1 bar + weekend), FOMC (1 bar overnight) and XS (3-20 bar legs) are the
+    // same class. Tags = the engines' ledger names.
+    wire_cross(g_tom_us500,  "CalendarTom_US500.F", "US500.F");
+    wire_cross(g_tom_ustec,  "CalendarTom_USTEC.F", "USTEC.F");
+    wire_cross(g_tom_ger40,  "CalendarTom_GER40",   "GER40");
+    wire_cross(g_tom_dj30,   "CalendarTom_DJ30.F",  "DJ30.F");
+    wire_cross(g_tom_uk100,  "CalendarTom_UK100",   "UK100");
+    wire_cross(g_tom_xau,    "CalendarTom_XAUUSD",  "XAUUSD");
+    wire_cross(g_idx_seas_us500,  "IndexSeasonal_US500.F", "US500.F");
+    wire_cross(g_idx_seas_ustec,  "IndexSeasonal_USTEC.F", "USTEC.F");
+    wire_cross(g_idx_seas_ger40,  "IndexSeasonal_GER40",   "GER40");
+    wire_cross(g_idx_seas_dj30,   "IndexSeasonal_DJ30.F",  "DJ30.F");
+    wire_cross(g_idx_seas_uk100,  "IndexSeasonal_UK100",   "UK100");
+    wire_cross(g_idx_seas_estx50, "IndexSeasonal_ESTX50",  "ESTX50");
+    wire_cross(g_idx_fomc_us500,  "IndexFomc_US500.F", "US500.F");
+    wire_cross(g_idx_fomc_ustec,  "IndexFomc_USTEC.F", "USTEC.F");
+    wire_cross(g_idx_fomc_dj30,   "IndexFomc_DJ30.F",  "DJ30.F");
+    wire_multicell(g_xs_mom_long, "XsIndex_MomLong", "");
+    wire_multicell(g_xs_mom_ls,   "XsIndex_MomLS",   "");
+    wire_multicell(g_xs_mr_ls,    "XsIndex_MrLS",    "");
+
     // ---- IndexBearShort (risk-off SHORT, NAS100 + US500; real-engine PF1.59-1.60) ----
     // S-2026-06-26: showed positions but did NOT persist -> the 2 live SHORTs vanished with no ledger
     // close on restart (operator-reported). Now wired (persist_save/restore added to the engine).
