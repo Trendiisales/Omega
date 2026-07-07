@@ -508,6 +508,9 @@ public:
         double size_mult  = 2.0;                 // mirror size = mult x parent size
         double rt_bp      = 3.0;                 // round-trip cost, bp of mirror entry px
         int    tf_sec     = 3600;                // close-eval timeframe (H1)
+        bool   long_only  = false;               // skip SHORT parents (mirror sweep's SHORT sim
+                                                 // is invalid — negation breaks % thresholds; only
+                                                 // LONG-side mirrors are validated for XauTF fams)
         std::string dir;                         // working dir, e.g. "stall/connors_mirror_x2"
     };
 
@@ -535,6 +538,8 @@ public:
             std::map<std::string, const StallLiveRow*> live;
             for (const auto& r : rows_all) {
                 if (!leg_match_(r.eng, r.sym)) continue;
+                if (cfg_.long_only && (r.side.empty() || r.side[0] == 'S' || r.side[0] == 's'))
+                    continue;                                       // unvalidated SHORT parent
                 if (r.current <= 0.0 || r.entry <= 0.0) continue;   // no live mark yet
                 const std::string key = r.book + "|" + r.eng + "|" + r.sym + "|"
                                       + pyfloat(round4(r.entry), 4);

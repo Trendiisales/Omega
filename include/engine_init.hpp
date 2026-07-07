@@ -1892,6 +1892,57 @@ static void init_engines(const std::string& cfg_path)
                 printf("[OMEGA-INIT][SEED] ConnorsMirror x2 wired (SHADOW, arm2.0/gb0.75/retrig2/x2 H1-close): restored %zu watch, %d open mirror(s) from stall/connors_mirror_x2\n",
                        mb.watching(), mb.open_mirrors());
             }
+            // ── Mirror sweep x2 add-ons (S-2026-07-07v, SHADOW) ──────────────
+            //   Operator order 2026-07-07: wire the 3 PASSes from the all-books
+            //   mirror sweep ([[MirrorSweep20260707]], AUDITED_CONFIGS rows
+            //   SpxTurtleD1Mirror/XauTF2hMirror_LONG/XauTF4hMirror_LONG, evidence
+            //   outputs/MIRROR_SWEEP_2026-07-07.txt). Same validated cell as
+            //   connors (arm2.0/gb0.75/retrig2/x2, H1-close, worse-of fills):
+            //     SpxTurtleD1  n12  +94.0 PF1.73 bothH YES bear22 YES (thin -> SHADOW)
+            //     XauTF2h LONG n59 +283.6 PF1.53 bothH YES bear22 YES
+            //     XauTF4h LONG n119 +519.2 PF1.40 bothH YES bear22 YES
+            //   XauTF fams LONG-ONLY (cfg.long_only): the sweep's SHORT sim is
+            //   invalid (negation breaks % thresholds) -> shorts unvalidated.
+            //   rt_bp: US500 4.0, XAU 3.4 (faithful sweep costs). Promote n>=30.
+            //   Legs match the telemetry live_trades tags VERIFIED this session
+            //   (plain "XauTrendFollow2h/4h|XAUUSD"; "SpxTurtleD1|US500.F" via the
+            //   new dashboard source below at ~L6370). Judged STANDALONE
+            //   (feedback-companion-independent-engine).
+            {
+                omega::MirrorBook::Config m;
+                m.name = "spx_turtle_mirror_x2";
+                m.legs = {"SpxTurtleD1|US500.F"};
+                m.arm_pct = 2.0; m.gb_pct = 0.75; m.retrig_pct = 2.0;
+                m.size_mult = 2.0; m.rt_bp = 4.0; m.tf_sec = 3600;
+                m.dir = "stall/" + m.name;
+                auto& mb = reg.add_mirror(std::move(m));
+                printf("[OMEGA-INIT][SEED] SpxTurtleMirror x2 wired (SHADOW, arm2.0/gb0.75/retrig2/x2 H1-close rt4bp): restored %zu watch, %d open mirror(s)\n",
+                       mb.watching(), mb.open_mirrors());
+            }
+            {
+                omega::MirrorBook::Config m;
+                m.name = "xautf2h_mirror_x2";
+                m.legs = {"XauTrendFollow2h|XAUUSD"};
+                m.arm_pct = 2.0; m.gb_pct = 0.75; m.retrig_pct = 2.0;
+                m.size_mult = 2.0; m.rt_bp = 3.4; m.tf_sec = 3600;
+                m.long_only = true;
+                m.dir = "stall/" + m.name;
+                auto& mb = reg.add_mirror(std::move(m));
+                printf("[OMEGA-INIT][SEED] XauTF2hMirror x2 wired (SHADOW LONG-only, arm2.0/gb0.75/retrig2/x2 H1-close rt3.4bp): restored %zu watch, %d open mirror(s)\n",
+                       mb.watching(), mb.open_mirrors());
+            }
+            {
+                omega::MirrorBook::Config m;
+                m.name = "xautf4h_mirror_x2";
+                m.legs = {"XauTrendFollow4h|XAUUSD"};
+                m.arm_pct = 2.0; m.gb_pct = 0.75; m.retrig_pct = 2.0;
+                m.size_mult = 2.0; m.rt_bp = 3.4; m.tf_sec = 3600;
+                m.long_only = true;
+                m.dir = "stall/" + m.name;
+                auto& mb = reg.add_mirror(std::move(m));
+                printf("[OMEGA-INIT][SEED] XauTF4hMirror x2 wired (SHADOW LONG-only, arm2.0/gb0.75/retrig2/x2 H1-close rt3.4bp): restored %zu watch, %d open mirror(s)\n",
+                       mb.watching(), mb.open_mirrors());
+            }
             printf("[OMEGA-INIT] stall-companion zoo wired: %zu books + %zu mirror (native C++, /api/companion; python cron retired)\n", reg.size(), reg.mirror_count());
             fflush(stdout);
         }
@@ -6365,6 +6416,44 @@ static void init_engines(const std::string& cfg_path)
     // (active, is_long, entry_px, mfe, mae, etc).
     g_open_positions.register_source("XauTrendFollow1h",
         _make_xau_tf_source("XauTrendFollow1h", &g_xau_tf_1h));
+
+    // ── S-2026-07-07v: SpxTurtleD1 + ConnorsRSI2(NAS) dashboard sources ────────
+    // Both engines persisted but had NO GUI source ([VIS-AUDIT] WARN class) →
+    // their open positions never reached live_trades. That made the shipped
+    // connors_mirror_x2 MirrorBook BLIND to its parent (watching a feed that
+    // could never contain it), and would have done the same to the new
+    // spx_turtle_mirror_x2. current px from g_last_tick_bid (straddle pattern)
+    // so MirrorBook's `current<=0` guard passes and usd_per_pt can scale.
+    g_open_positions.register_source("SpxTurtleD1", []() {
+        std::vector<omega::PositionSnapshot> v;
+        if (!g_spx_turtle_d1.has_open_position()) return v;
+        const auto& p = g_spx_turtle_d1.pos_;
+        double cur = p.entry;
+        const auto it = g_last_tick_bid.find("US500.F");
+        if (it != g_last_tick_bid.end() && it->second > 0.0) cur = it->second;
+        omega::PositionSnapshot ps;
+        ps.symbol = "US500.F"; ps.engine = "SpxTurtleD1"; ps.side = "LONG";
+        ps.size = p.lot; ps.entry = p.entry; ps.current = cur;
+        ps.tp = p.tp; ps.sl = p.sl; ps.entry_ts = p.entry_ts_ms / 1000;
+        ps.unrealized_pnl = (cur - p.entry) * p.lot * g_spx_turtle_d1.p.dollars_per_pt;
+        v.push_back(ps);
+        return v;
+    });
+    g_open_positions.register_source("ConnorsRSI2", []() {
+        std::vector<omega::PositionSnapshot> v;
+        if (!g_connors_nas.pos.active) return v;
+        const auto& p = g_connors_nas.pos;
+        double cur = p.entry_px;
+        const auto it = g_last_tick_bid.find("NAS100");
+        if (it != g_last_tick_bid.end() && it->second > 0.0) cur = it->second;
+        omega::PositionSnapshot ps;
+        ps.symbol = "NAS100"; ps.engine = "ConnorsRSI2"; ps.side = "LONG";
+        ps.size = p.size; ps.entry = p.entry_px; ps.current = cur;
+        ps.entry_ts = p.entry_ms / 1000;
+        ps.unrealized_pnl = (cur - p.entry_px) * p.size;   // engine pnl = pts * size (see _close)
+        v.push_back(ps);
+        return v;
+    });
 
     // 2026-06-04: LIVE-DISPLAY sources for the new index engines. wire_cross only
     // registers the PERSIST source (.dat restore); the dashboard RUNNING TRADES
