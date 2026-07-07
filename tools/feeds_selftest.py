@@ -31,6 +31,9 @@ CRYPTO_BOOK = HOME / "Crypto" / "backtest" / "data" / "ibkrcrypto" / "state.json
 # VPS operational-dump manifest + the C:\Omega\logs root the live binary writes to.
 LIVE_DUMP_MANIFEST = HOME / "Omega" / "tools" / "live_dump_manifest.tsv"
 VPS_LOG_ROOT = r"C:\Omega\logs"
+# Which box runs the LIVE binary (S-2026-07-07 cutover: omega-new is live; omega-vps is
+# the retired shadow box pending decommission). All live-path checks poll THIS host.
+VPS_HOST = "omega-new"
 
 
 def _easter(year: int) -> dt.date:
@@ -257,7 +260,7 @@ def vps_live_dump_ages(manifest: list[tuple[str, int, str]]) -> dict[str, float]
     )
     try:
         r = subprocess.run(
-            ["ssh", "omega-vps", "powershell", "-NoProfile", "-Command", ps],
+            ["ssh", VPS_HOST, "powershell", "-NoProfile", "-Command", ps],
             capture_output=True, text=True, timeout=45,
         )
     except (OSError, subprocess.SubprocessError):
@@ -298,11 +301,11 @@ def vps_ibkr_exec_status() -> tuple[str, str]:
     )
     try:
         r = subprocess.run(
-            ["ssh", "omega-vps", "powershell", "-NoProfile", "-Command", ps],
+            ["ssh", VPS_HOST, "powershell", "-NoProfile", "-Command", ps],
             capture_output=True, text=True, timeout=45,
         )
     except (OSError, subprocess.SubprocessError):
-        return ("RED", "ssh omega-vps failed -- IBKR exec path UNVERIFIABLE")
+        return ("RED", f"ssh {VPS_HOST} failed -- IBKR exec path UNVERIFIABLE")
     if r.returncode != 0:
         return ("RED", f"ssh rc={r.returncode} -- IBKR exec path UNVERIFIABLE")
     # Pick the [IBKR-EXEC] line from the newest-modified log (max mtime ticks).
@@ -381,7 +384,7 @@ def main() -> int:
                 # live feed -> treat as RED (each manifested LIVE dump is unverifiable).
                 live_red += len(manifest)
                 for path, max_age_min, desc in manifest:
-                    vps_rows.append((path, "RED", f"VPS UNREACHABLE (ssh omega-vps failed) -- feed unverifiable (max {max_age_min}min)"))
+                    vps_rows.append((path, "RED", f"VPS UNREACHABLE (ssh {VPS_HOST} failed) -- feed unverifiable (max {max_age_min}min)"))
             else:
                 for path, max_age_min, desc in manifest:
                     age_min = ages.get(path)
@@ -413,7 +416,7 @@ def main() -> int:
             ds = d.isoformat() if d else "—"
             print(f"  {flag:7} [{kind:8}] {label:22} last={ds} age={age if age is not None else '?'}d (max {max_age}d)")
         if vps_rows:
-            print("  -- VPS operational dumps (C:\\Omega\\logs, polled skew-free via ssh omega-vps) --")
+            print(f"  -- VPS operational dumps (C:\\Omega\\logs, polled skew-free via ssh {VPS_HOST}) --")
             for path, status, detail in vps_rows:
                 print(f"  {status:7} [vps-live] {path:24} {detail}")
         if exec_row:
