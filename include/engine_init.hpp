@@ -17,6 +17,7 @@
 #include "XagBeFloorCompanion.hpp"  // XAGPos/XAGNeg SILVER BE-floor companion (native C++, /api/xag_companion)
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
+#include "FxUpJumpLadderCompanion.hpp" // per-pair FX upjump LADDER companion (EUR/GBP/NZD/AUD) -> /api/fxladder_companion
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
 #include "JumpRiderEngine.hpp"      // UpJump-pattern rider on metals/oil/FX/indices -> /api/jumprider
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
@@ -1801,6 +1802,72 @@ static void init_engines(const std::string& cfg_path)
             jr.finalize_all();
             printf("[OMEGA-INIT][SEED] JumpRider wired: 12 syms (metals/oil/FX5/index4), %zu H1 bars seeded, %zu forward bars restored, UpJump ride + BE-ratchet + hard-stop, SHADOW real-column-only, deploy-forward\n",
                    jseeded, jrestored);
+            fflush(stdout);
+        }
+
+        // ── FX UP-JUMP LADDER companion (S-2026-07-07x, operator order 3 + resume order) ──
+        //   The FX member of the no-floor ladder family (BIGCAP daily sibling above). Native
+        //   C++ port of backtest/omega_upjump_ladder_bt.py, PARITY-EXACT vs python (backtest/
+        //   fx_upjump_parity.cpp: EURUSD +39.7 vs +39.7, GBPUSD +37.4 vs +37.4, NZDUSD +41.2
+        //   vs +41.2 — registry §6). Detector: close >= thr% off the W-bar min low -> W-bar
+        //   window; legs TIGHT a0.17thr/trail0.67thr + WIDE a2.7thr/g50 + STACKED
+        //   {0.67,1.33,2.0}thr g50 + reclip WIDE on +1.67thr (cap 5); LOSS_CUT 5thr pre-arm
+        //   (ADVERSE-PROTECTION verdict: free insurance — never binds at the locked cells,
+        //   AUDUSD LC3 marginally better; backtested in the expanded sweep). Costs: per-clip
+        //   RT bp debited, single honest column, 2x-cost PASS on all wired cells.
+        //   Cells (Tick H1 multiyear, WF both halves + random-window control PASS; expanded
+        //   entry/exit sweep outputs/FX_UPJUMP_SWEEP2_2026-07-07.txt confirms plateaus):
+        //     EURUSD W48 thr0.5  +39.7% PF1.47 n507 (all-9 plateau)
+        //     GBPUSD W48 thr1.0  +37.4% PF2.20 n240 (random ZERO -> pure detector edge)
+        //     NZDUSD W24 thr1.5  +41.2% PF4.35 n100 (thr1.5 plateau)
+        //     AUDUSD W96 thr1.0  +30.9% PF1.51 n220 (PASS-thin: W72-96 x thr0.75-1.0 pocket
+        //            all WF+; wired SHADOW, forward real column decides promotion)
+        //   USDJPY/USDCAD dead (9/9 negative) — excluded. XAU bull-beta / GER40 bull-only —
+        //   index axis, separate wire. SEPARATE INDEPENDENT observe-only SHADOW book
+        //   (feedback-companion-independent-engine), judged STANDALONE, deploy-forward.
+        //   FEED: tick_fx.hpp H1 roll (h/l/c — manage is intrabar l->h->c, in-calibration).
+        {
+            auto& fl = omega::fx_upjump_ladder_book();
+            // {pair, W, thr%, rt_cost_bp, warmup CSV (ts,o,h,l,c H1)}
+            struct FLCfg { const char* pair; int W; double thr; double rt; const char* csv; };
+            static const FLCfg FL[] = {
+                {"EURUSD", 48, 0.5, 2.0, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
+                {"GBPUSD", 48, 1.0, 2.0, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
+                {"NZDUSD", 24, 1.5, 2.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
+                {"AUDUSD", 96, 1.0, 2.0, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
+            };
+            for (const auto& fc : FL) {
+                omega::FxLadderPair::Config c;
+                c.pair = fc.pair; c.live_sym = fc.pair;
+                c.W = fc.W; c.thr = fc.thr; c.rt_cost_bp = fc.rt;
+                fl.add(std::move(c));
+            }
+            size_t flseeded = 0;
+            for (const auto& fc : FL) flseeded += fl.seed_pair(fc.pair, fc.csv);
+            size_t flrestored = fl.seed_dumps_all();   // own persisted forward h/l/c bars
+            fl.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.00015, tp_dist_pts, lots, 1.5); // FX ~1.5 pip
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    handle_closed_trade(tr);
+                });
+            fl.finalize_all();
+            printf("[OMEGA-INIT][SEED] FX upjump LADDER wired: EURUSD(W48/0.5) GBPUSD(W48/1.0) NZDUSD(W24/1.5) AUDUSD(W96/1.0 thin), %zu H1 bars seeded, %zu forward bars restored, parity-exact, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+                   flseeded, flrestored);
             fflush(stdout);
         }
 

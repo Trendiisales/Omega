@@ -1240,6 +1240,7 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/stockmover_companion")){ ct = "application/json"; body = loadFile("stockmover_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-befloor-pos-neg\",\"names\":[]}"; }
         else if (strstr(buf, "GET /api/stockladder_companion")){ ct = "application/json"; body = loadFile("stockladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-upjump-ladder\",\"names\":[]}"; }
         else if (strstr(buf, "GET /api/jumprider")){ ct = "application/json"; body = loadFile("jumprider_state.json"); if (body.empty()) body = "{\"engine\":\"jump-rider\",\"symbols\":[]}"; }
+        else if (strstr(buf, "GET /api/fxladder_companion")){ ct = "application/json"; body = loadFile("fxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"fx-upjump-ladder\",\"pairs\":[]}"; }
         else if (strstr(buf, "POST /api/clear_ledger") || strstr(buf, "GET /api/clear_ledger")) {
             // Clear in-memory ledger + rename today's CSV so it won't be re-read.
             //

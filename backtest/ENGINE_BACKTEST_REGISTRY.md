@@ -177,3 +177,31 @@ Traps:
 - Warmup: `data/mgc_h1_hist.csv` (H1, ts-sec) + `data/mgc_h4_hist.csv` (H4, ms) --
   regenerate via the scratch IBKR pull before deploy so the live-CSV replay floor
   (g_mgc_tf_floor_ts) covers the gap. Ledger tags MgcTF4h_/MgcTF2h_<cell>.
+
+## 8. FX upjump LADDER companion (S-2026-07-07x resume — the FX member of §6's family)
+
+`include/FxUpJumpLadderCompanion.hpp` (LONG-only, wired SHADOW in engine_init; feed =
+tick_fx.hpp H1 roll h/l/c). Research: `backtest/omega_upjump_ladder_bt.py` +
+expanded entry/exit sweep `backtest/fx_upjump_ladder_sweep2.py`
+(`outputs/FX_UPJUMP_SWEEP2_2026-07-07.txt`). Cells (Tick H1 multiyear, WF halves +
+2x-cost + 5-seed random-window control PASS):
+EURUSD W48/0.5 +39.7% PF1.47 n507 · GBPUSD W48/1.0 +37.4% PF2.20 n240 (random ZERO)
+· NZDUSD W24/1.5 +41.2% PF4.35 n100 · AUDUSD W96/1.0 +30.9% PF1.51 n220 (PASS-thin).
+Exits insensitive on plateau (g35-65, LC 3/5/8/off, Ttrail, reclip, cap all within
+noise) -> mechanism locked at research ratios; LOSS_CUT 5thr kept as free insurance.
+
+PARITY (per §6 mandate): `backtest/fx_upjump_parity.cpp` drives the header standalone,
+no-op exec fns, deploy_ts=0 — EXACT: booked+open_mtm == python net to 0.1% on all 3
+survivors; clip-count delta == end-of-data open legs only.
+
+Traps:
+- Manage is INTRABAR l->h->c inside the H1 bar (SL-first). Do NOT re-test close-only —
+  trail/LC exits book AT the stop level (resting-stop convention, in-calibration).
+- Detector needs W bars of LOWS: warmup CSVs are ts,o,h,l,c; the engine's own forward
+  dump is ts,h,l,c (4-col). Close-only seeds (2-col) degrade the detector — acceptable
+  for continuity only.
+- Live gap guard (deviation, documented in header): NEW windows blocked when the W-bar
+  span exceeds W hours + 4 days (multi-day outage), exits honoured. Harness data had
+  no such gaps.
+- USDJPY/USDCAD: DEAD (9/9 negative cells) — do not resurrect without new basis.
+  XAU = bull-beta (random captures it); GER40 = bull-only (index axis wire).
