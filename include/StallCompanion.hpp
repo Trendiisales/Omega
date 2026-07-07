@@ -72,6 +72,14 @@ struct StallOpenDet {
     int    stall = 0;
     bool   eligible = false;
 };
+// A single banked clip row (from companion_closed.csv) surfaced to the desk so a
+// COMP-BANK increase is always explained by visible rows (operator 2026-07-08:
+// "something traded and increased the total but not displaying why").
+struct StallClosedDet {
+    int64_t     ts = 0;
+    std::string book, reason, eng, sym, side;
+    double      entry = 0.0, pnl = 0.0;
+};
 struct StallRollUp {
     std::string name, gauge, updated;
     double arm_usd = 0.0, trail_usd = 0.0, retrig_usd = 0.0, gate_pct = 0.0, rev_gb = 0.0;
@@ -83,6 +91,7 @@ struct StallRollUp {
     std::map<std::string, StallEngAgg> per_engine;
     std::map<std::string, StallLegAgg> per_leg;
     std::vector<StallOpenDet>          open_detail;
+    std::vector<StallClosedDet>        closed_detail;   // tail of companion_closed.csv (newest last)
 };
 
 namespace stall_detail {
@@ -418,7 +427,14 @@ private:
             if (ts >= cut_today)        R.realized_today += pnl;
             if (ts >= now - 7  * 86400) R.realized_7d    += pnl;
             if (ts >= now - 30 * 86400) R.realized_30d   += pnl;
+            StallClosedDet cd;
+            cd.ts = ts; cd.book = book; cd.reason = reason; cd.eng = engine;
+            cd.sym = c[4]; cd.side = c[5];
+            cd.entry = std::strtod(entry.c_str(), nullptr); cd.pnl = round2(pnl);
+            R.closed_detail.push_back(cd);
         }
+        if (R.closed_detail.size() > 30)
+            R.closed_detail.erase(R.closed_detail.begin(), R.closed_detail.end() - 30);
         for (auto& kv : R.per_engine) kv.second.realized = round2(kv.second.realized);
         R.realized_total = round2(R.realized_total);
         R.realized_today = round2(R.realized_today);
@@ -730,7 +746,14 @@ private:
             if (ts >= cut_today)        R.realized_today += pnl;
             if (ts >= now - 7  * 86400) R.realized_7d    += pnl;
             if (ts >= now - 30 * 86400) R.realized_30d   += pnl;
+            StallClosedDet cd;
+            cd.ts = ts; cd.book = book; cd.reason = reason; cd.eng = "MirrorX2:" + engine;
+            cd.sym = c[4]; cd.side = c[5];
+            cd.entry = std::strtod(entry.c_str(), nullptr); cd.pnl = round2(pnl);
+            R.closed_detail.push_back(cd);
         }
+        if (R.closed_detail.size() > 30)
+            R.closed_detail.erase(R.closed_detail.begin(), R.closed_detail.end() - 30);
         for (auto& kv : R.per_engine) kv.second.realized = round2(kv.second.realized);
         R.realized_total = round2(R.realized_total);
         R.realized_today = round2(R.realized_today);
@@ -847,6 +870,7 @@ private:
         std::map<std::string, StallLegAgg> per_leg;
         std::map<std::string, double> by_reason;
         std::vector<const StallOpenDet*> open_detail;
+        std::vector<const StallClosedDet*> closed_detail;
         int open_total = 0;
         double rt = 0, rtd = 0, r7 = 0, r30 = 0, crypto_r = 0;
         std::map<std::string, double> crypto_by_reason;
@@ -868,6 +892,7 @@ private:
             }
             for (const auto& kv : R.by_reason) by_reason[kv.first] = round2(by_reason[kv.first] + kv.second);
             for (const auto& d : R.open_detail) if (d.book.empty() || d.book == "OMEGA") open_detail.push_back(&d);
+            for (const auto& d : R.closed_detail) closed_detail.push_back(&d);
             open_total += R.open_companions;
             rt += R.realized_total; rtd += R.realized_today; r7 += R.realized_7d; r30 += R.realized_30d;
             crypto_r += R.crypto_realized;
@@ -891,7 +916,13 @@ private:
         { bool fr = true; for (auto& kv : crypto_by_reason) { if (!fr) o << ','; fr = false; jstr(o, kv.first); o << ':' << kv.second; } } o << "}}}";
         o << ",\"per_engine\":{"; { bool fe = true; for (auto& kv : per_engine) { if (!fe) o << ','; fe = false; jstr(o, kv.first); o << ":{\"open\":" << kv.second.open << ",\"closed\":" << kv.second.closed << ",\"realized\":" << kv.second.realized << "}"; } } o << "}";
         o << ",\"per_leg\":{"; { bool fl = true; for (auto& kv : per_leg) { if (!fl) o << ','; fl = false; jstr(o, kv.first); o << ":{\"engine\":"; jstr(o, kv.second.engine); o << ",\"entry\":"; jstr(o, kv.second.entry); o << ",\"book\":"; jstr(o, kv.second.book); o << ",\"open\":" << kv.second.open << ",\"closed\":" << kv.second.closed << ",\"realized\":" << kv.second.realized << "}"; } } o << "}";
-        o << ",\"open_detail\":["; { bool fo = true; for (const auto* d : open_detail) { if (!fo) o << ','; fo = false; o << "{\"book\":"; jstr(o, d->book); o << ",\"eng\":"; jstr(o, d->eng); o << ",\"sym\":"; jstr(o, d->sym); o << ",\"side\":"; jstr(o, d->side); o << ",\"entry\":" << d->entry << ",\"mfe_pct\":" << d->mfe_pct << ",\"mfe_usd\":" << d->mfe_usd << ",\"stall\":" << d->stall << ",\"upnl\":" << d->upnl << ",\"eligible\":" << (d->eligible ? "true" : "false") << "}"; } } o << "]}";
+        o << ",\"open_detail\":["; { bool fo = true; for (const auto* d : open_detail) { if (!fo) o << ','; fo = false; o << "{\"book\":"; jstr(o, d->book); o << ",\"eng\":"; jstr(o, d->eng); o << ",\"sym\":"; jstr(o, d->sym); o << ",\"side\":"; jstr(o, d->side); o << ",\"entry\":" << d->entry << ",\"mfe_pct\":" << d->mfe_pct << ",\"mfe_usd\":" << d->mfe_usd << ",\"stall\":" << d->stall << ",\"upnl\":" << d->upnl << ",\"eligible\":" << (d->eligible ? "true" : "false") << "}"; } } o << "]";
+        // Recent banked clips, newest first, capped 30 — the desk renders these under the
+        // ENGINE LEDGER so a COMP-BANK / ALL-TIME increase is always explained by rows.
+        std::sort(closed_detail.begin(), closed_detail.end(),
+                  [](const StallClosedDet* a, const StallClosedDet* b) { return a->ts > b->ts; });
+        if (closed_detail.size() > 30) closed_detail.resize(30);
+        o << ",\"closed_detail\":["; { bool fc = true; for (const auto* d : closed_detail) { if (!fc) o << ','; fc = false; o << "{\"ts\":" << d->ts << ",\"book\":"; jstr(o, d->book); o << ",\"reason\":"; jstr(o, d->reason); o << ",\"eng\":"; jstr(o, d->eng); o << ",\"sym\":"; jstr(o, d->sym); o << ",\"side\":"; jstr(o, d->side); o << ",\"entry\":" << d->entry << ",\"pnl\":" << d->pnl << "}"; } } o << "]}";
 
         const std::string js = o.str();
         const std::string dest = "companion_state.json";   // served by /api/companion (cwd = C:\Omega)
