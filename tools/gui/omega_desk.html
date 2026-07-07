@@ -417,9 +417,12 @@ function pollFires(){var now=Date.now();
 setInterval(pollFires,5000);
 /* browsers suspend AudioContext until a user gesture -- with SND persisted ON a
    reloaded page was SILENT until the user happened to click. Resume on first
-   gesture so persisted-ON actually rings. */
+   gesture so persisted-ON actually rings, and play a startup chime (operator GO
+   2026-07-08) as audible proof sound is live for the session. One-shot guard:
+   three once-listeners share it, so only the first gesture rings. */
 ['click','keydown','touchstart'].forEach(function(ev){
- document.addEventListener(ev,function(){if(SND)ensureCtx();},{once:true,capture:true});});
+ document.addEventListener(ev,function(){if(SND){ensureCtx();
+  if(!window._bootChimed){window._bootChimed=true;chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);}}},{once:true,capture:true});});
 
 /* ── session strip ── */
 (function(){var z=[[0,5,'#1d2733'],[5,7,'#143042'],[7,13,'#155446'],[13,13.5,'#0F6E56'],[13.5,15,'#7a5a14'],[15,20,'#155446'],[20,22,'#143042'],[22,24,'#1d2733']];

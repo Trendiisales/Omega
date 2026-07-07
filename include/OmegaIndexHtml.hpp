@@ -425,9 +425,12 @@ function pollFires(){var now=Date.now();
 setInterval(pollFires,5000);
 /* browsers suspend AudioContext until a user gesture -- with SND persisted ON a
    reloaded page was SILENT until the user happened to click. Resume on first
-   gesture so persisted-ON actually rings. */
+   gesture so persisted-ON actually rings, and play a startup chime (operator GO
+   2026-07-08) as audible proof sound is live for the session. One-shot guard:
+   three once-listeners share it, so only the first gesture rings. */
 ['click','keydown','touchstart'].forEach(function(ev){
- document.addEventListener(ev,function(){if(SND)ensureCtx();},{once:true,capture:true});});
+ document.addEventListener(ev,function(){if(SND){ensureCtx();
+  if(!window._bootChimed){window._bootChimed=true;chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);}}},{once:true,capture:true});});
 
 /* ── session strip ── */
 (function(){var z=[[0,5,'#1d2733'],[5,7,'#143042'],[7,13,'#155446'],[13,13.5,'#0F6E56'],[13.5,15,'#7a5a14'],[15,20,'#155446'],[20,22,'#143042'],[22,24,'#1d2733']];
@@ -574,10 +577,10 @@ function findLeg(engine,entry){
   if(Math.abs(safe(v.entry)-eNum)<0.01)best=v;});
  return best;
 }
-function compSubLeg(engine,symbol,entry,colspan,dup){
- var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
 )OMEGAD2"
-R"OMEGAD3( if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
+R"OMEGAD3(function compSubLeg(engine,symbol,entry,colspan,dup){
+ var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
+ if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
  var m=findLeg(engine,entry);
  if(!m)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.5;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">no clip on this leg</span></td></tr>';
  var bk=safe(m.realized);var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
@@ -744,9 +747,9 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
   Object.keys(cbr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(cbr[k]));});
   tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
  /* fold ONLY the OMEGA companion bucket into the Omega headline totals -- crypto paper must NOT
-    muddy the Omega real-broker number (operator rule: relevant Omega data only on the Omega GUI). */
 )OMEGAD3"
-R"OMEGAD4( window._comptot={today:safe(ob.realized_today),d7:safe(ob.realized_7d),d30:safe(ob.realized_30d),all:om};
+R"OMEGAD4(    muddy the Omega real-broker number (operator rule: relevant Omega data only on the Omega GUI). */
+ window._comptot={today:safe(ob.realized_today),d7:safe(ob.realized_7d),d30:safe(ob.realized_30d),all:om};
  /* call unconditionally -- the companion (paper) bank must fold in even when there are
     zero shadow closes in the window, otherwise a no-trade day silently drops the paper bucket */
  if(typeof updDayPnl==='function')updDayPnl();
