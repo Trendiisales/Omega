@@ -720,6 +720,12 @@ public:
             char* p4; double l = std::strtod(p3+1, &p4); if (!p4 || *p4 != ',') continue;
             char* p5; double c = std::strtod(p4+1, &p5);
             if (!std::isfinite(o) || !std::isfinite(h) || !std::isfinite(l) || !std::isfinite(c)) continue;
+            // ts may be seconds or milliseconds depending on which writer last touched
+            // the CSV (repo ships ms; the VPS seed_refresh write_mgc_hist regenerates in
+            // SECONDS + volume col and clobbers it). Seconds ts fed raw collapses every
+            // bar into one 2h bucket (atr=0, bars_2h=1) -- the 2026-07-07 poisoned-warmup
+            // deploy. Normalise here so both formats are safe.
+            if (ms > 0 && ms < 100000000000LL) ms *= 1000LL;
 
             XauTf2hBar bar; bar.bar_start_ms = ms; bar.open = o; bar.high = h; bar.low = l; bar.close = c;
             on_h1_bar(bar, c, c, ms + 3600LL*1000, OnCloseFn{});

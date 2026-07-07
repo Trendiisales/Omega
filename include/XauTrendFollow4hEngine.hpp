@@ -1105,6 +1105,9 @@ public:
             char* p4; double l = std::strtod(p3+1, &p4); if (!p4 || *p4 != ',') continue;
             char* p5; double c = std::strtod(p4+1, &p5);
             if (!std::isfinite(o) || !std::isfinite(h) || !std::isfinite(l) || !std::isfinite(c)) continue;
+            // Seconds-vs-milliseconds guard (see XauTrendFollow2hEngine warmup: VPS
+            // seed_refresh can regenerate warmup CSVs in seconds). Normalise to ms.
+            if (ms > 0 && ms < 100000000000LL) ms *= 1000LL;
 
             XauTfBar bar; bar.bar_start_ms = ms; bar.open = o; bar.high = h; bar.low = l; bar.close = c;
             on_h4_bar(bar, c, c, 0.0, ms + 14400LL*1000, OnCloseFn{});
