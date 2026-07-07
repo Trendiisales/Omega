@@ -111,6 +111,70 @@ int main(int argc, char* argv[])
     g_mgc_volbrk.l2_gate_ = 0.30;  // S-2026-06-23 L2 confirmation gate (active, conservative; same as fastdon). Inert in backtest.
     g_mgc_volbrk.seed_h1_from_csv ("data/mgc_h1_hist.csv");
     g_mgc_volbrk.seed_m30_from_csv("data/mgc_30m_hist.csv");
+
+    // ── S-2026-07-07 MGC VENUE PORT: XauTrendFollow4h/2h instances on the MGC
+    //    feed, production spot config mirrored 1:1 (mask 0xC9 + IMP0.5 + ADX15
+    //    + vol-band / 4-cell + ADX25 + Donch50 vol-band). Faithful venue BT
+    //    (XauTrendFollow4h2hBacktest MGC=1, real MGC H4/H1 2024-06..2026-06,
+    //    spread 0.10 + $0.208/oz RT): 4h PF1.54 +$4404 DD$1331 both-halves+,
+    //    2h PF1.21 +$4281 both-halves+, both 2x-cost PASS; 2022-23 bear at MGC
+    //    cost bull-positive-bear-flat (4h +$650 PF1.22), same profile as spot.
+    //    SHADOW (no live size until the shadow ledger proves the venue).
+    //    ADVERSE-PROTECTION: inherited spot verdicts -- 4h trail-only +
+    //    LOSS_CUT 1.5% / 2h LOSS_CUT 0.5% (S-2026-06-17 faithful sweeps).
+    //    Cost gate: engine-internal is_viable("XAUUSD") stays -- spot CFD cost
+    //    >= MGC futures cost at every price, so the gate is conservative here.
+    g_mgc_tf_4h.enabled      = true;
+    g_mgc_tf_4h.shadow_mode  = true;
+    g_mgc_tf_4h.lot          = 1.0;    // 1 MGC micro = 10 oz = $10/pt (tick_value_multiplier("MGC"))
+    g_mgc_tf_4h.max_spread   = 1.50;   // MGC futures pts (matches volbrk/fastdon)
+    g_mgc_tf_4h.LOSS_CUT_PCT = 1.5;
+    g_mgc_tf_4h.cell_enable_mask   = 0xC9;
+    g_mgc_tf_4h.use_vol_band_gate  = true;
+    g_mgc_tf_4h.vol_band_low_pct   = 0.30;
+    g_mgc_tf_4h.vol_band_high_pct  = 0.85;
+    g_mgc_tf_4h.cell_vol_band_mask = 0x8;
+    g_mgc_tf_4h.min_impulse_atr    = 0.5;
+    g_mgc_tf_4h.min_adx_entry      = 15.0;
+    g_mgc_tf_4h.ledger_prefix      = "MgcTF4h_";
+    g_mgc_tf_4h.ledger_symbol      = "MGC";
+    g_mgc_tf_4h.warmup_csv_path    = "data/mgc_h4_hist.csv";
+    g_mgc_tf_4h.init();
+    omega::warmup_or_die(g_mgc_tf_4h, "MgcTF4h");
+    g_mgc_tf_2h.enabled      = true;
+    g_mgc_tf_2h.shadow_mode  = true;
+    g_mgc_tf_2h.lot          = 1.0;
+    g_mgc_tf_2h.max_spread   = 1.50;
+    // LOSS-CUT OFF on the MGC 2h -- NOT the spot 0.5%. Parity harness
+    // (backtest/mgc_tf_feed_parity.cpp, production feed path over MGC 30m
+    // 2024-06..2026-06): LC2=0.5 flips the book NEGATIVE (PF0.86 -$2095) vs
+    // LC2=0 PF1.23 +$3533 DD$2390 -- 0.5% of ~4400 = ~22pt sits inside the
+    // 2x-ATR SL and the 30m intrabar path trips it constantly. Engine's own
+    // 2xATR SL remains the adverse protection (backtested verdict, mandate).
+    g_mgc_tf_2h.LOSS_CUT_PCT = 0.0;
+    g_mgc_tf_2h.use_adx_gate      = true;
+    g_mgc_tf_2h.adx_min           = 25.0;
+    g_mgc_tf_2h.cell_adx_mask     = 0xB;
+    g_mgc_tf_2h.use_vol_band_gate = true;
+    g_mgc_tf_2h.vol_band_low_pct  = 0.30;
+    g_mgc_tf_2h.vol_band_high_pct = 0.85;
+    g_mgc_tf_2h.cell_vol_band_mask = 0x4;
+    g_mgc_tf_2h.ledger_prefix     = "MgcTF2h_";
+    g_mgc_tf_2h.ledger_symbol     = "MGC";
+    g_mgc_tf_2h.warmup_csv_path   = "data/mgc_h1_hist.csv";
+    g_mgc_tf_2h.init();
+    omega::warmup_or_die(g_mgc_tf_2h, "MgcTF2h");
+    // Live-CSV replay floor = last warmup H1 bar ts: rows at/below it are
+    // already in the engines via warmup; feeding them again would double-count.
+    {
+        std::ifstream wf("data/mgc_h1_hist.csv"); std::string wl, wlast;
+        while (std::getline(wf, wl)) if (!wl.empty() && wl[0] >= '0' && wl[0] <= '9') wlast = wl;
+        g_mgc_tf_floor_ts = wlast.empty() ? 0 : std::atoll(wlast.c_str());
+        std::printf("[SEED] MgcTF4h/MgcTF2h warm (replay floor ts=%lld)\n",
+                    (long long)g_mgc_tf_floor_ts);
+        std::fflush(stdout);
+    }
+
     std::thread([](){
         std::this_thread::sleep_for(std::chrono::seconds(45));
         while (g_running.load()) {

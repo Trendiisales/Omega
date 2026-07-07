@@ -1039,10 +1039,10 @@ private:
         // Build TradeRecord.  Caller's on_close (e.g. bracket_on_close)
         // handles ledger ingest + PnL math.
         omega::TradeRecord tr;
-        tr.symbol     = "XAUUSD";
+        tr.symbol     = ledger_symbol;
         // S34 P1 fix #3: per-cell engine string so ledger queries grouping
         // by engine can distinguish cells. Cell name is unique per row.
-        tr.engine     = std::string("XauTrendFollow4h_") + kXauTfCells[ci].name;
+        tr.engine     = ledger_prefix + kXauTfCells[ci].name;
         // S34 P1 fix #4: ledger convention is LONG/SHORT, not BUY/SELL.
         tr.side       = p.is_long ? "LONG" : "SHORT";
         tr.entryPrice = p.entry_px;
@@ -1079,6 +1079,12 @@ public:
     //   so ATR, Donchian lookback, ADX, EMA are all primed before first
     //   live tick arrives. CSV format: bar_start_ms,open,high,low,close
     std::string warmup_csv_path;
+
+    // S-2026-07-07 MGC venue port: a second instance of this class runs on the
+    // MGC futures feed (MgcFastDonchianFeed.hpp). These give that instance a
+    // distinct ledger tag + symbol; defaults keep the spot instance byte-identical.
+    std::string ledger_prefix = "XauTrendFollow4h_";
+    std::string ledger_symbol = "XAUUSD";
 
     int warmup_from_csv(const std::string& path) noexcept {
         if (!enabled) { printf("[XauTF4h-WARMUP] skipped -- disabled\n"); fflush(stdout); return 0; }

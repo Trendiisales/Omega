@@ -661,9 +661,9 @@ private:
                                           : (p.entry_px - exit_px);
 
         omega::TradeRecord tr;
-        tr.symbol     = "XAUUSD";
+        tr.symbol     = ledger_symbol;
         // S34 P1 fix #3: per-cell engine string.
-        tr.engine     = std::string("XauTrendFollow2h_") + kXauTf2hCells[ci].name;
+        tr.engine     = ledger_prefix + kXauTf2hCells[ci].name;
         // S34 P1 fix #4: LONG/SHORT, not BUY/SELL.
         tr.side       = p.is_long ? "LONG" : "SHORT";
         tr.entryPrice = p.entry_px;
@@ -694,6 +694,12 @@ public:
     // S101: warmup from pre-built H1 bar CSV. Engine synthesizes 2h bars
     //   internally from H1 input so we feed H1 bars, same as live path.
     std::string warmup_csv_path;
+
+    // S-2026-07-07 MGC venue port: a second instance of this class runs on the
+    // MGC futures feed (MgcFastDonchianFeed.hpp). These give that instance a
+    // distinct ledger tag + symbol; defaults keep the spot instance byte-identical.
+    std::string ledger_prefix = "XauTrendFollow2h_";
+    std::string ledger_symbol = "XAUUSD";
 
     int warmup_from_csv(const std::string& path) noexcept {
         if (!enabled) { printf("[XauTF2h-WARMUP] skipped -- disabled\n"); fflush(stdout); return 0; }

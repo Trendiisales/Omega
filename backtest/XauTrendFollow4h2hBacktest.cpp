@@ -40,7 +40,13 @@ static long   MASK4   = -1;           // env MASK: cell_enable_mask on the 4h en
 static int    VB      = 0;            // env VB=1: mirror production vol-band gate (mask 0x8, 0.30-0.85)
 // IBKR XAU commission: 1.5bps/side, price-proportional. At 0.01 lot (1 oz),
 // RT comm in USD = 2*0.00015*entryPrice. Applied per closed trade in cb.
-static inline double ibkr_comm_usd(double entry_px){ return 2.0 * 0.00015 * entry_px; }
+// MGC=1 (env): MGC micro-future cost model instead — comm ~$1.04/side per 10oz
+// contract -> $0.208/oz RT, fixed not price-proportional (pair with SPREAD=0.10,
+// one exchange tick). Total ~0.31pt RT vs spot ~1.4pt at 4000.
+static int MGC = 0;
+static inline double ibkr_comm_usd(double entry_px){
+    return MGC ? 0.208 : 2.0 * 0.00015 * entry_px;
+}
 
 struct BarCSV { int64_t ts; double o,h,l,c; };
 
@@ -110,6 +116,7 @@ int main(int argc, char** argv){
     if(getenv("ADX"))    ADXF=atof(getenv("ADX"));
     if(getenv("MASK"))   MASK4=strtol(getenv("MASK"),nullptr,0);
     if(getenv("VB"))     VB=atoi(getenv("VB"));
+    if(getenv("MGC"))    MGC=atoi(getenv("MGC"));
     auto h4=load_csv(argv[1]); auto h1=load_csv(argv[2]);
     std::printf("[XTF4h2h-BT] real-class  H4 bars=%zu  H1 bars=%zu  spread=%.2f  IMP(4h)=%.2f  ADX(4h)=%.1f  +IBKR_comm(1.5bps/side)\n", h4.size(), h1.size(), SPREAD, IMP, ADXF);
     std::printf("===== 4h engine (on_h4_bar, 6-cell mask 0x3F) =====\n");
