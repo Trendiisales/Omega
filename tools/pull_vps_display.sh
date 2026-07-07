@@ -38,6 +38,10 @@ pull 'C:/Omega/logs/health/status.json'      "$MIRROR/logs/health/"
 pull 'C:/Omega/HEALTH_STATUS.json'           "$MIRROR/"
 pull 'C:/Omega/state/open_positions.dat'     "$MIRROR/state/"
 pull 'C:/Omega/bracket-bot/data/trades.ndjson' "$MIRROR/"
+# companion telemetry mirror: the python stall_accountant cron that wrote this was retired
+# 2026-07-06 (C++ StallCompanion in Omega.exe now owns C:/Omega/companion_state.json); cockpit
+# + feeds_selftest still read the Mac copy, so keep it fresh from the VPS truth (2026-07-08).
+pull 'C:/Omega/companion_state.json'         "$HOME/stall-accountant/"
 
 # tear down the shared connection
 ssh -O exit "${CM[@]}" omega-vps 2>/dev/null || true
