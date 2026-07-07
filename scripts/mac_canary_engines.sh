@@ -24,6 +24,7 @@ WARN="-Wall -Wextra -Wno-unused-variable -Wno-unused-but-set-variable -Wno-c++20
 # Headers to canary-check (target = file containing the issue class we missed)
 # Self-contained or only depend on L2Globals/CellPrimitives/TradeLedger:
 HEADERS=(
+  include/StockDayMoverLadderCompanion.hpp
   include/GoldBeFloorCompanion.hpp
   include/FxBeFloorCompanion.hpp
   include/IndexBeFloorCompanion.hpp

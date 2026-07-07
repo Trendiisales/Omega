@@ -121,3 +121,29 @@ RULES:
    matters. Feeding o/h/l/c of finer bars as 4 synthetic ticks (c LAST) reproduces
    every intrabar touch exactly at that bar's resolution and the H1 closes exactly —
    usable when raw ticks don't exist (gold 2024-26 m5, XAG/USOIL H1).
+
+## 6. BIGCAP upjump LADDER companion (S-2026-07-07w — the no-floor successor to §5's stock retiree)
+
+`include/StockDayMoverLadderCompanion.hpp` (LONG-only, wired SHADOW in engine_init).
+Research: `backtest/bigcap_upjump_ladder_bt.py` over `data/rdagent/sp500_long_close.csv`
+(2019-06..2026-06 daily closes). Survivor TIGHT a0.5/s2/g0 + WIDE a8/s0/g50 + ladder
+cap5 reclip5% + LOSS_CUT 15, RT 8bp: n=4,981 net +7,044% of clip notional PF 1.58,
+all-6 + 2x-cost + ex-semis + full-565 controls PASS. Evidence
+`outputs/BIGCAP_UPJUMP_LADDER_2026-07-07.md`, vault `BigCapUpJumpLadder`.
+
+Faithful-port PARITY TEST (do this for every research->C++ port): drive the engine
+header standalone over the same wide CSV with no-op exec fns and deploy_ts=0 (books
+everything) and compare net/clips/per-name vs the python harness. This wire:
+C++ +6,994%/5,201 clips vs py +7,044%/4,981 (LOSS_CUT variant +7,057) — deviations
+are the engine's own guards (below) + end-of-data flush. Same per-name ranking.
+
+Traps:
+- Backtests at DAILY-CLOSE grade only — do NOT re-test it on ticks/H1 you don't have;
+  the live engine trails at daily closes by design (in-calibration).
+- The >50%-jump reject guard is SELF-HEALING (3 consecutive rejects = split/vendor
+  seam -> accept level, VOID open window unbooked). The parity test caught the sticky
+  version bricking CRWD forever at its 492->124 seam. Never book clips across a seam.
+- ExecutionCostGuard has no single-name equity rows; the validated cost gate is the
+  8bp RT debit inside the engine (2x=16bp still PASS). Real cost row owed before LIVE.
+- Feed = RDAgent wide CSV (refresh_close_ibkr.py, IBKR 4002); stale since 2026-06-29
+  (IBKR sub lapse). Engine seeds+arms; books resume when the feed does.

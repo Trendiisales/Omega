@@ -19,7 +19,8 @@
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
 #include "JumpRiderEngine.hpp"      // UpJump-pattern rider on metals/oil/FX/indices -> /api/jumprider
-#include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (39 stocks) -> /api/stockmover_companion
+#include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
+#include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover UP-JUMP LADDER companion (39 stocks) -> /api/stockladder_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
 static void init_engines(const std::string& cfg_path)
@@ -1818,6 +1819,71 @@ static void init_engines(const std::string& cfg_path)
             auto& sb = omega::stockmover_befloor_book();
             sb.finalize_all();   // EMPTY book -> publishes empty aggregate state (panel honest)
             printf("[OMEGA-INIT][SEED] stock day-mover BE-floor companion RETIRED S-2026-07-07e (real-fill -$110.7k vs +$1.57M model over 7yr; Pos-only fails 2019-22 half) -- aggregate publishes empty state\n");
+            fflush(stdout);
+        }
+
+        // ── Stock day-mover UP-JUMP LADDER companion (S-2026-07-07w, operator item 4) ──
+        //   The NO-FLOOR successor to the retired BE-floor above. Native C++ port of the
+        //   VALIDATED backtest/bigcap_upjump_ladder_bt.py (evidence outputs/BIGCAP_UPJUMP_
+        //   LADDER_2026-07-07.md, vault BigCapUpJumpLadder): parent +3% day -> enter NEXT
+        //   close, exit -3% day (flush next close); legs TIGHT a0.5/s2 (stall banker) +
+        //   WIDE a8/g50 (giveback runner) + self-funding ladder cap5, reclip 5%, LOSS_CUT 15
+        //   (ADVERSE-PROTECTION verdict: FREE, worst clip -32.6% -> -28.1%), RT 8bp/clip.
+        //   39-name pooled book: n=4,981 net +7,044% of clip notional PF1.58, all-6 PASS,
+        //   2x-cost PASS, ex-semis PASS, full-565-universe PASS. LONG-ONLY (Neg flavor died
+        //   with befloor). SEPARATE INDEPENDENT observe-only SHADOW book (feedback-companion-
+        //   independent-engine), judged STANDALONE, deploy-forward ($0 until first live clip).
+        //   COST GATE: harness-validated 8bp RT debited per clip (ExecutionCostGuard has no
+        //   single-name equity rows — the befloor lesson); real cost row owed before LIVE sizing.
+        //   FEED: same wide daily-close CSV as befloor (RDAgent refresh_close_ibkr.py, IBKR 4002).
+        //   NOTE: sp500_long_close.csv stale since 2026-06-29 (IBKR sub lapse — operator item);
+        //   engine seeds+arms now, books resume the day the feed does.
+        {
+            auto& sl = omega::stockmover_ladder_book();
+            // the RDAgent BIGCAP universe (tools/rdagent/refresh_close_ibkr.py) — the exact
+            // 39-name list the PASS was measured on (bigcap_upjump_ladder_bt.py BIGCAP).
+            static const char* BIGCAP_LAD[] = {
+                "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META","NFLX","CRWD",
+                "SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB","DELL","ORCL","QCOM","INTC",
+                "AMZN","GOOGL","MSFT","AAPL","CRM","ADBE","IONQ","RGTI","QBTS","ASTS","RKLB","NBIS",
+                "CRWV","ALAB","CRDO"
+            };
+            for (const char* nm : BIGCAP_LAD) {
+                omega::StockLadderSym::Config c;
+                c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
+                sl.add(std::move(c));
+            }
+            const std::string wide_csv = "data/rdagent/sp500_long_close.csv";
+            size_t lseeded = sl.seed_from_wide_csv(wide_csv);   // primes detector history (deploy-forward)
+            size_t lrestored = sl.seed_dumps_all();             // replay persisted forward daily bars
+            sl.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& /*sym*/, double /*tp_dist_pts*/, double /*lots*/) -> bool {
+                    // Equity cost gate = the harness's OWN 8bp RT debit (PASS is net-of-8bp and
+                    // survives 2x=16bp; single-name IBKR RT ~3-8bp). ExecutionCostGuard has NO
+                    // single-name cost table -> unknown tickers default to CFD-scaled values that
+                    // mis-price stocks (befloor lesson). TODO: real equity cost row before LIVE sizing.
+                    return true;
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    handle_closed_trade(tr);
+                });
+            sl.finalize_all();
+            sl.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
+            printf("[OMEGA-INIT][SEED] BIGCAP upjump LADDER companion wired: 39 names, %zu seed rows, %zu forward bars restored, TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 reclip5%%, LOSS_CUT 15, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+                   lseeded, lrestored);
             fflush(stdout);
         }
 
