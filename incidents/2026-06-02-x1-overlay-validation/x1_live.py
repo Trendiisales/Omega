@@ -36,12 +36,12 @@ Read-only. Never sends orders. Touches no core/engine code.
 Usage
 -----
   # LIVE GRAPHICAL DASHBOARD (auto-refreshing chart + interpretation in browser):
-  python3 x1_live.py --serve --gui-url http://185.167.119.59:7779
+  python3 x1_live.py --serve --gui-url http://45.85.3.79:7779
   #   -> opens http://localhost:8089, chart + WaveTrend + tags + read, redraws each poll
   #   history builds from the feed into a local cache; NO Dukascopy required.
   #   first-ever run warms ~55 min; to skip it once: add --seed-dukascopy
 
-  python3 x1_live.py --loop --gui-url http://185.167.119.59:7779   # text console, real-time
+  python3 x1_live.py --loop --gui-url http://45.85.3.79:7779   # text console, real-time
 """
 
 import argparse

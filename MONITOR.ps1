@@ -59,7 +59,7 @@ Write-Host "=======================================================" -Foreground
 Write-Host "   OMEGA MONITOR  |  Ctrl+C to stop" -ForegroundColor Cyan
 Write-Host "   Log: $LogFile" -ForegroundColor DarkGray
 Write-Host "   HASH: $RunHash  |  BUILT: $RunTime" -ForegroundColor White
-Write-Host "   MODE: $RunMode  |  GUI: http://185.167.119.59:7779" -ForegroundColor $modeColor
+Write-Host "   MODE: $RunMode  |  GUI: http://45.85.3.79:7779" -ForegroundColor $modeColor
 if ($Filter) { Write-Host "   Filter: $Filter" -ForegroundColor Yellow }
 
 # ── HASH vs HEAD CHECK -- catches stale binary immediately ───────────────────

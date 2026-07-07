@@ -147,5 +147,5 @@ foreach ($dir in @("C:\Omega\logs\trades","C:\Omega\logs\gold")) {
 
 Write-Host ""
 Write-Host "=== DONE ===" -ForegroundColor Cyan
-Write-Host "GUI: http://185.167.119.59:7779" -ForegroundColor Green
+Write-Host "GUI: http://45.85.3.79:7779" -ForegroundColor Green
 Write-Host "Trade history is PRESERVED across restarts." -ForegroundColor Green

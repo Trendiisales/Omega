@@ -67,7 +67,10 @@ DJ30 2.09, GER40 1.47, EURGBP 1pip.
 
 ## 4. LIVE SYSTEM
 
-- **VPS:** London, `trader@185.167.119.59:2222`, `C:\Omega\`. NSSM service "Omega".
+- **VPS:** ForexVPS "Edge" package, `VM16893535923733529.forexvps.net`, IP `45.85.3.79`, `C:\Omega\`. NSSM service "Omega".
+  Migrated 2026-07-07 from the old 4GB box at 185.167.119.59 (memory pressure — the 2026-06-27 RDP freeze was RAM thrash; new box has more RAM + extra CPUs).
+  - **RDP:** `45.85.3.79:42014` (provider-assigned port — must be included when connecting), user `trader`. Password in the operator's password manager — NEVER in this repo.
+  - **SSH (from Mac):** `ssh -p 2222 trader@45.85.3.79`. Port 2222 is OUR convention, not the provider's: OpenSSH for Windows must be installed on the new box, listening on 2222, firewall opened — rerun `FIX_SSH.ps1` for key auth. Until that's done, all Mac-side ssh/scp tooling (deploy, rdagent pulls, L2 fetches) is dead.
 - **Deploy:** `ssh ... "cd C:\Omega && powershell -File OMEGA.ps1 deploy [-Fast]"` (branch-guarded, auto-recovery). Verify: stderr `Git hash:` == `git rev-parse origin/main`.
 - **Shadow ledger (real engine performance, logged):** `C:\Omega\logs\trades\omega_trade_closes.csv` (+ daily, + `shadow\omega_shadow.csv`). Clean slate: `GET /api/clear_ledger`.
 - **GUI:** embedded `include/OmegaIndexHtml.hpp` (regen from `tools/gui/omega_desk.html` via `tools/gui/gen_index_html.py`). PR chart + LIVE OPEN TRADES + shadow equity.

@@ -271,7 +271,7 @@ Write-Section "Done. Test from your Mac"
 Write-Host @"
 On the Mac, run:
 
-    ssh -p 2222 trader@185.167.119.59 exit
+    ssh -p 2222 trader@45.85.3.79 exit
 
 If it returns to the prompt without asking for a password, key auth is working.
 

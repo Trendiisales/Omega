@@ -37,7 +37,7 @@ def main():
     if not l2_files:
         print(f"No L2 files found in {args.l2dir}")
         print("Copy from VPS first:")
-        print("  scp trader@185.167.119.59:\"C:/Omega/logs/l2_ticks_*.csv\" ~/Tick/l2_data/")
+        print("  scp trader@45.85.3.79:\"C:/Omega/logs/l2_ticks_*.csv\" ~/Tick/l2_data/")
         sys.exit(1)
 
     # L2 data: list of (ts_ms, imb, bid_lvls, ask_lvls, ewm_drift)

@@ -16,7 +16,7 @@ echo "[$TS] regime book — refreshing intraday data + classifying regime"
 tb=$(command -v gtimeout || command -v timeout || true)
 if [ -n "$tb" ]; then
   $tb 90 scp -o BatchMode=yes -o ConnectTimeout=12 -P 2222 \
-    "trader@185.167.119.59:C:/Omega/data/stocks/*_15m.csv" "$M15/" 2>/dev/null \
+    "trader@45.85.3.79:C:/Omega/data/stocks/*_15m.csv" "$M15/" 2>/dev/null \
     && echo "  refreshed 15m bars from VPS" || echo "  VPS refresh skipped (offline) — using cached $M15"
 fi
 

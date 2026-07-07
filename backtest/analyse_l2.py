@@ -33,7 +33,7 @@ class Stat:
 files = sorted(glob.glob(os.path.join(L2_DIR, 'l2_ticks_*.csv')))
 if not files:
     print(f"No L2 files in {L2_DIR}")
-    print("Run: scp trader@185.167.119.59:\"C:/Omega/logs/l2_ticks_*.csv\" ~/Tick/l2_data/")
+    print("Run: scp trader@45.85.3.79:\"C:/Omega/logs/l2_ticks_*.csv\" ~/Tick/l2_data/")
     sys.exit(1)
 
 print(f"Loading {len(files)} L2 files...")
