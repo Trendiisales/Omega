@@ -102,10 +102,36 @@ else:
     if n >= 2:
         dark.append(f"VPS: unreachable for {n} consecutive probes (~{n*15}min) -- box down or RAM-frozen")
 
+# S-2026-07-08: per-COMPONENT 2-strike (operator: recurring one-shot DARK notifications).
+# The VPS "continuous" tasks (MgcLiveBars/IbkrBridge) are watchdog-scheduled: script dies
+# (e.g. IB Gateway nightly restart drops the client), schtasks re-fires within 5 min. A
+# probe landing in that gap saw state=Ready and alarmed on a self-healing transient.
+# A component now only alarms on 2 CONSECUTIVE failed probes (~30min = real outage);
+# the box-level unreachable 2-strike above already followed the same logic.
+COMP_STRIKE_F = "/tmp/omega_liveness_component_strikes.json"
+def _load_comp_strikes():
+    try:
+        with open(COMP_STRIKE_F) as f: return json.load(f)
+    except Exception: return {}
+_prev_strikes = _load_comp_strikes()
+_cur_strikes = {}
+_confirmed = []
+for d in dark:
+    key = d.split(":", 1)[0].strip()
+    n = _prev_strikes.get(key, 0) + 1
+    _cur_strikes[key] = n
+    if n >= 2: _confirmed.append(d)
+    # first strike: log-only (the log line below still records the raw probe)
+try:
+    with open(COMP_STRIKE_F, "w") as f: json.dump(_cur_strikes, f)
+except Exception: pass
+raw_dark, dark = dark, _confirmed
+
 ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 MARKER = "/tmp/omega_liveness_DARK.txt"
 with open("/tmp/liveness_check.log", "a") as f:
-    f.write(f"{ts} dark={len(dark)} {('; '.join(dark)) if dark else 'ALL-ALIVE'}\n")
+    extra = "" if len(raw_dark) == len(dark) else f" (1st-strike suppressed: {'; '.join(x for x in raw_dark if x not in dark)})"
+    f.write(f"{ts} dark={len(dark)}{extra} {('; '.join(dark)) if dark else 'ALL-ALIVE'}\n")
 
 if dark:
     summary = "; ".join(dark)
