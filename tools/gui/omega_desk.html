@@ -29,6 +29,9 @@ body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consola
    (operator 2026-07-06: too much wasted space). */
 .compcols{columns:3;column-gap:6px;margin-top:6px}
 .compcols>.pan{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
+.compcols>.cstack{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
+.cstack>.pan{margin:0 0 6px;display:block;width:100%}
+.cstack>.pan:last-child{margin-bottom:0}
 @media(max-width:1500px){.compcols{columns:2}}
 .chip{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:3px}
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
@@ -45,9 +48,10 @@ button.on{border-color:var(--grn);color:var(--grnB)}
 select{background:var(--pan2);color:var(--t);border:1px solid var(--bd2);border-radius:3px;font:11px 'IBM Plex Mono',monospace;padding:2px 6px}
 a{color:var(--blu);text-decoration:none}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:0}
-.tile{border-radius:3px;height:34px;display:flex;flex-direction:column;justify-content:center;padding:2px 6px;overflow:hidden}
-.tile b{font-size:9.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile span{font-size:9px;opacity:.9}
+/* heat tiles halved 2026-07-08 (operator: panel unnecessary at full size) — one-line row tile */
+.tile{border-radius:3px;height:17px;display:flex;flex-direction:row;align-items:center;gap:5px;padding:1px 5px;overflow:hidden}
+.tile b{font-size:8.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{font-size:8px;opacity:.9;white-space:nowrap}
 .bar{position:relative;height:8px;background:#1d2733;border-radius:2px;overflow:hidden}
 .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
 .pan{transition:border-color .25s ease}
@@ -55,10 +59,6 @@ a{color:var(--blu);text-decoration:none}
 .flashg{animation:flashG 1.4s ease-out}
 #prtip{position:fixed;display:none;z-index:50;pointer-events:none;background:rgba(14,20,27,.96);border:1px solid var(--bd2);border-radius:5px;padding:6px 9px;font-size:11px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.55)}
 #prc{cursor:crosshair}
-.ops .pan{padding:6px 9px}
-.ops .lbl{font-size:9.5px}
-.ops .num{font-size:10.5px}
-.ops #dom{font-size:10px}
 @media(max-width:1180px){.deskmain{grid-template-columns:1fr !important}}
 @media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}.compcols{columns:1}}
 </style>
@@ -196,7 +196,9 @@ a{color:var(--blu);text-decoration:none}
   <div id="ictradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="ictrades"></table></div></div>
 </div>
 
-<!-- ═══ STOCK MOVERS — BIGCAP day-mover UP-JUMP LADDER books (no-floor · shadow, additive) ═══ -->
+<!-- ═══ STOCK MOVERS — BIGCAP day-mover UP-JUMP LADDER books (no-floor · shadow, additive)
+     + stacked underneath (2026-07-08, operator): 4 retired BE-floor banners + DOM L2 ═══ -->
+<div class="cstack">
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">STOCK MOVERS — BIGCAP upjump LADDER (no-floor) · +3% day → next-close entry · TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 · LOSS_CUT 15 · BT +7,044% PF1.58 all-6 (native C++ · shadow · REAL fills · never vs-WIDE)</span>
@@ -206,6 +208,51 @@ a{color:var(--blu);text-decoration:none}
   <div id="smopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="smopen"></table></div></div>
   <div id="smtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="smtrades"></table></div></div>
 </div>
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+    <span class="lbl">GOLD BE-floor · RETIRED S-07-07e (real-fill negative both eras)</span>
+    <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div id="gcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="gcopen"></table></div></div>
+  <div id="gctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="gctrades"></table></div></div>
+</div>
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+    <span class="lbl">XAG BE-floor · RETIRED S-07-07e (every cell negative)</span>
+    <span id="xcinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="xctab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="xcopen"></table></div></div>
+  <div id="xctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="xctrades"></table></div></div>
+</div>
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+    <span class="lbl">USOIL BE-floor · RETIRED S-07-07e (Brent refutes lone + cell)</span>
+    <span id="ucinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="uctab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div id="ucopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="ucopen"></table></div></div>
+  <div id="uctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="uctrades"></table></div></div>
+</div>
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+    <span class="lbl">FX BE-floor · RETIRED S-07-07d (all 5 pairs negative)</span>
+    <span id="fxinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow-x:auto"><table id="fxtab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div id="fxopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="fxopen"></table></div></div>
+  <div id="fxtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="fxtrades"></table></div></div>
+</div>
+<div class="pan">
+  <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
+  <div id="dom" class="num" style="font-size:10px"></div>
+  <div style="margin-top:5px">
+    <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
+    <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
+  </div>
+</div>
+</div><!-- /cstack -->
 
 <!-- ═══ FX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x cacd890a) ═══ -->
 <div class="pan">
@@ -231,62 +278,10 @@ a{color:var(--blu);text-decoration:none}
 
 </div><!-- /companions row -->
 
-<!-- ═══ RETIRED COMPANIONS — compact history strip (S-2026-07-07w: actives above, retired banners
-     tucked here in one thin row; each was a full pan wasting a column slot) ═══ -->
-<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-<div class="pan" style="flex:1 1 300px;min-width:0">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">GOLD BE-floor · RETIRED S-07-07e (real-fill negative both eras)</span>
-    <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="gcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="gcopen"></table></div></div>
-  <div id="gctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="gctrades"></table></div></div>
-</div>
-<div class="pan" style="flex:1 1 300px;min-width:0">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">XAG BE-floor · RETIRED S-07-07e (every cell negative)</span>
-    <span id="xcinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="xctab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="xcopen"></table></div></div>
-  <div id="xctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="xctrades"></table></div></div>
-</div>
-<div class="pan" style="flex:1 1 300px;min-width:0">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">USOIL BE-floor · RETIRED S-07-07e (Brent refutes lone + cell)</span>
-    <span id="ucinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="uctab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="ucopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="ucopen"></table></div></div>
-  <div id="uctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="uctrades"></table></div></div>
-</div>
-<div class="pan" style="flex:1 1 300px;min-width:0">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">FX BE-floor · RETIRED S-07-07d (all 5 pairs negative)</span>
-    <span id="fxinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="fxtab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="fxopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="fxopen"></table></div></div>
-  <div id="fxtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="fxtrades"></table></div></div>
-</div>
-</div><!-- /retired strip -->
+<!-- ═══ RETIRED COMPANIONS strip + OPS STRIP (DOM) removed 2026-07-08 (operator): the 4 retired
+     BE-floor banners + DOM — XAUUSD L2 moved into the stock-movers cstack above. ═══ -->
 
 <!-- ═══ MAE/MFE + TOD row removed 2026-07-03 (operator: reclaim space for crypto) ═══ -->
-
-<!-- ═══ OPS STRIP — DOM only. RISK&GOVERNOR + CLUSTER EXPOSURE + MICROSTRUCTURE·BROKER·SIGNALS panels removed 2026-07-04 (operator: irrelevant) ═══ -->
-<!-- gold DOM halved 2026-07-06; gap-fix 2026-07-06: was max-width:50% inside a full-width grid
-     which reserved a dead right half. Now a natural ~460px flex panel, no empty column. -->
-<div class="ops" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-  <div class="pan" style="flex:0 1 460px;min-width:0">
-    <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
-    <div id="dom" class="num"></div>
-    <div style="margin-top:5px">
-      <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
-      <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
-    </div>
-  </div>
-</div>
 
 <div style="display:flex;gap:14px;align-items:center;margin-top:8px" class="lbl">
   <a href="/legacy">legacy GUI</a>
