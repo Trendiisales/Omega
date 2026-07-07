@@ -1871,7 +1871,28 @@ static void init_engines(const std::string& cfg_path)
             // --- GoldVolBreakout M30 $-gauge clips (bull-gated) ---
             { SC c; c.name="gvb_m30_usd_a"; c.include={"GoldVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
             { SC c; c.name="gvb_m30_usd_b"; c.include={"GoldVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
-            printf("[OMEGA-INIT] stall-companion zoo wired: %zu books (native C++, /api/companion; python cron retired)\n", reg.size());
+            // ── ConnorsMirror x2 add-on mirror (S-2026-07-07t, SHADOW) ────────
+            //   VALIDATED-thin (AUDITED ConnorsMirror_NAS100, commit 059918cd): REAL
+            //   ConnorsRSI2 NAS100 parents, real-fill H1 close-eval sim — arm at parent
+            //   gain >=2.0%, x2 size, trail gb 0.75%, retrig 2%, flat-on-parent-close:
+            //   n15/4.3yr +897pt PF2.66 WR67 both-halves+ bear22 +410 2x-cost +809
+            //   worst -155 ex-best +496. arm<=1.0% ALL NEG (snapback spent). ~3.5 t/yr
+            //   THIN -> SHADOW, promote at n>=30 banked mirrors. DIFFERENT mechanism
+            //   from the giveback-clip books above (add-on mirror from arm price); the
+            //   main book's Connors EXCLUDE stays — no overlap. Separate independent
+            //   book per operator rule; judged STANDALONE. NAS100 rt_bp=3.
+            {
+                omega::MirrorBook::Config m;
+                m.name = "connors_mirror_x2";
+                m.legs = {"ConnorsRSI2|NAS100"};
+                m.arm_pct = 2.0; m.gb_pct = 0.75; m.retrig_pct = 2.0;
+                m.size_mult = 2.0; m.rt_bp = 3.0; m.tf_sec = 3600;
+                m.dir = "stall/" + m.name;
+                auto& mb = reg.add_mirror(std::move(m));
+                printf("[OMEGA-INIT][SEED] ConnorsMirror x2 wired (SHADOW, arm2.0/gb0.75/retrig2/x2 H1-close): restored %zu watch, %d open mirror(s) from stall/connors_mirror_x2\n",
+                       mb.watching(), mb.open_mirrors());
+            }
+            printf("[OMEGA-INIT] stall-companion zoo wired: %zu books + %zu mirror (native C++, /api/companion; python cron retired)\n", reg.size(), reg.mirror_count());
             fflush(stdout);
         }
 

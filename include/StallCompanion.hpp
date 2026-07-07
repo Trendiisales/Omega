@@ -472,17 +472,321 @@ private:
     }
 };
 
+// ── MirrorBook — x2 add-on mirror companion (S-2026-07-07s ConnorsMirror) ─────
+// DIFFERENT mechanism from StallBook: not a giveback clip of the parent's own
+// gain. While a parent leg is live, watch H1 CLOSES; when price gains >= arm_pct
+// over the PARENT entry, open an x2-size mirror AT THAT CLOSE (its own entry),
+// trail it with a tight gb_pct giveback from its own peak (H1-close eval,
+// worse-of fills), re-arm only on +retrig_pct above the prior clip peak, and
+// force-flat when the parent closes. SEPARATE INDEPENDENT book (operator rule
+// feedback-companion-independent-engine): never touches the parent, judged
+// STANDALONE. Faithful port of backtest/connors_mirror_bt.py sim(mode="close")
+// — the validated config (AUDITED ConnorsMirror_NAS100, commit 059918cd):
+// arm 2.0% / gb 0.75% / retrig 2% / x2: n=15/4.3yr +897pt PF2.66 WR67
+// both-halves+ bear22 +410 2x-cost +809 ex-best +496. SHADOW, promote n>=30.
+//
+// ADVERSE-PROTECTION: TRAIL_FROM_ENTRY — the trail is live from the mirror's
+//   own entry (peak starts at entry), so max adverse ≈ gb_pct of entry before
+//   the clip fires; backtested worst trade −155pt (evidence
+//   outputs/CONNORS_MIRROR_REALFILL_2026-07-07.txt). No separate cold cut —
+//   adding one deviates from the validated config.
+//
+// Live-vs-sim deviations (documented, conservative):
+//   * sim armed only from the day AFTER parent entry (anti-lookahead device for
+//     D1-close parents); live arms from the real entry moment — honest, no
+//     lookahead exists live.
+//   * H1 "close" = last 60s-drive mark seen inside the hour (<=60s before the
+//     boundary); a weekend/multi-bar gap evaluates once with that stored mark.
+class MirrorBook {
+public:
+    struct Config {
+        std::string name;                        // book dir basename
+        std::vector<std::string> legs;           // exact "ENGINE|SYMBOL" parent legs
+        double arm_pct    = 2.0;                 // arm at parent gain >= this % over parent entry
+        double gb_pct     = 0.75;                // trail giveback % from mirror peak (close-eval)
+        double retrig_pct = 2.0;                 // re-arm needs close beyond clip peak by this %
+        double size_mult  = 2.0;                 // mirror size = mult x parent size
+        double rt_bp      = 3.0;                 // round-trip cost, bp of mirror entry px
+        int    tf_sec     = 3600;                // close-eval timeframe (H1)
+        std::string dir;                         // working dir, e.g. "stall/connors_mirror_x2"
+    };
+
+    explicit MirrorBook(Config c) : cfg_(std::move(c)) {
+        { std::error_code ec; std::filesystem::create_directories(cfg_.dir, ec); }
+        closed_path_ = cfg_.dir + "/companion_closed.csv";
+        state_path_  = cfg_.dir + "/companion_state.json";
+        pos_path_    = cfg_.dir + "/mirror_watch.tsv";
+        load_();
+    }
+
+    const Config& config() const { return cfg_; }
+    const std::string& name() const { return cfg_.name; }
+    const StallRollUp& rollup() const { return roll_; }
+    int open_mirrors() const {
+        int n = 0; for (const auto& kv : watch_) if (kv.second.active) ++n; return n;
+    }
+    size_t watching() const { return watch_.size(); }
+
+    void step(const std::vector<StallLiveRow>& rows_all, int64_t now) {
+        using namespace stall_detail;
+        const bool omega_empty = rows_all.empty();   // restart-blip guard (same as StallBook)
+        if (!omega_empty) {
+            const int64_t bar = now / cfg_.tf_sec;
+            std::map<std::string, const StallLiveRow*> live;
+            for (const auto& r : rows_all) {
+                if (!leg_match_(r.eng, r.sym)) continue;
+                if (r.current <= 0.0 || r.entry <= 0.0) continue;   // no live mark yet
+                const std::string key = r.book + "|" + r.eng + "|" + r.sym + "|"
+                                      + pyfloat(round4(r.entry), 4);
+                live[key] = &r;
+                auto it = watch_.find(key);
+                if (it == watch_.end()) {
+                    Watch w;
+                    w.book = r.book; w.eng = r.eng; w.sym = r.sym; w.side = r.side;
+                    w.p_entry = round4(r.entry);
+                    w.cur_bar = bar; w.last_close = r.current;
+                    it = watch_.emplace(key, std::move(w)).first;
+                }
+                Watch& w = it->second;
+                const int dir = (!r.side.empty() && (r.side[0] == 'S' || r.side[0] == 's')) ? -1 : 1;
+                // $-per-point from the parent row (upnl / favorable points): scales the
+                // mirror book into honest USD at size_mult x parent size.
+                {
+                    const double fpts = (r.current - r.entry) * dir;
+                    if (std::fabs(fpts) > r.entry * 1e-5 && r.upnl != 0.0)
+                        w.usd_per_pt = std::fabs(r.upnl / fpts);
+                }
+                if (bar > w.cur_bar) {
+                    // H1 boundary crossed -> w.last_close is the finished bar's close
+                    eval_close_(key, w, dir, w.last_close, bar);
+                    w.cur_bar = bar;
+                }
+                w.last_close = r.current;
+            }
+            // parent closed -> force-flat any open mirror at the last seen mark
+            std::vector<std::string> gone;
+            for (const auto& kv : watch_) if (live.find(kv.first) == live.end()) gone.push_back(kv.first);
+            for (const auto& key : gone) {
+                Watch& w = watch_[key];
+                if (w.active) {
+                    const int dir = (!w.side.empty() && (w.side[0] == 'S' || w.side[0] == 's')) ? -1 : 1;
+                    bank_(key, w, dir, w.last_close, "PARENT_EXIT", bar);
+                }
+                watch_.erase(key);
+            }
+        }
+        save_();
+        roll_ = compute_rollup_(now);
+        write_state_();
+    }
+
+private:
+    struct Watch {
+        std::string book, eng, sym, side;
+        double  p_entry = 0.0;                   // parent entry px
+        int64_t cur_bar = 0;
+        double  last_close = 0.0;                // last mark seen in current bar
+        double  usd_per_pt = 0.0;
+        bool    active = false;                  // mirror open?
+        double  m_entry = 0.0, m_peak = 0.0;     // mirror entry / favorable extreme px
+        int64_t m_bar = 0;                       // mirror entry bar
+        bool    clipped = false;                 // banked once, awaiting retrig
+        double  clip_ref = 0.0;                  // peak px at clip (retrig reference)
+    };
+
+    Config cfg_;
+    std::string closed_path_, state_path_, pos_path_;
+    std::unordered_map<std::string, Watch> watch_;
+    StallRollUp roll_;
+
+    bool leg_match_(const std::string& eng, const std::string& sym) const {
+        const std::string leg = eng + "|" + sym;
+        for (const auto& l : cfg_.legs) if (l == leg) return true;
+        return false;
+    }
+
+    // one finished-bar close: sim(mode="close") state machine, worse-of fills
+    void eval_close_(const std::string& key, Watch& w, int dir, double close, int64_t bar) {
+        if (close <= 0.0) return;
+        if (w.active) {
+            const double stop = w.m_peak * (1.0 - dir * cfg_.gb_pct / 100.0);
+            const bool hit = dir > 0 ? (close <= stop) : (close >= stop);
+            if (hit) {
+                const double fill = dir > 0 ? std::min(close, stop) : std::max(close, stop);
+                w.clip_ref = w.m_peak;
+                bank_(key, w, dir, fill, "TRAIL_CLIP", bar);
+                w.clipped = true;
+                return;
+            }
+            if (dir > 0 ? (close > w.m_peak) : (close < w.m_peak)) w.m_peak = close;
+            return;
+        }
+        double trig;
+        if (w.clipped) {
+            if (cfg_.retrig_pct <= 0.0 || w.clip_ref <= 0.0) return;   // one mirror per parent trade
+            trig = w.clip_ref * (1.0 + dir * cfg_.retrig_pct / 100.0);
+        } else {
+            trig = w.p_entry * (1.0 + dir * cfg_.arm_pct / 100.0);
+        }
+        if (dir > 0 ? (close >= trig) : (close <= trig)) {
+            w.active = true; w.m_entry = close; w.m_peak = close; w.m_bar = bar;
+            if (w.clipped) { w.clipped = false; w.clip_ref = 0.0; }
+        }
+    }
+
+    void bank_(const std::string& key, Watch& w, int dir, double fill, const char* reason, int64_t bar) {
+        using namespace stall_detail;
+        (void)key;
+        const double upp  = w.usd_per_pt > 0.0 ? w.usd_per_pt : 1.0;
+        const double pts  = (fill - w.m_entry) * dir;
+        const double cost = w.m_entry * cfg_.rt_bp * 1e-4;
+        const double usd  = (pts - cost) * upp * cfg_.size_mult;
+        const double peak_pct = w.m_entry > 0.0 ? ((w.m_peak - w.m_entry) * dir / w.m_entry) * 100.0 : 0.0;
+        const bool need_header = !file_nonempty_(closed_path_);
+        std::ofstream f(closed_path_, std::ios::app);
+        if (f.is_open()) {
+            if (need_header) f << "ts,book,reason,engine,symbol,side,entry,realized_pnl,mfe_peak_pct,bars_held\n";
+            f << (long long)std::time(nullptr) << ',' << w.book << ',' << reason << ','
+              << csvq_("MirrorX2:" + w.eng) << ',' << csvq_(w.sym) << ',' << w.side << ','
+              << fmtnum(w.m_entry) << ',' << pyfloat(round2(usd), 2) << ','
+              << pyfloat(round2(peak_pct), 2) << ',' << (bar - w.m_bar) << '\n';
+        }
+        w.active = false; w.m_entry = 0.0; w.m_peak = 0.0; w.m_bar = 0;
+    }
+
+    static bool file_nonempty_(const std::string& path) {
+        std::ifstream f(path, std::ios::binary | std::ios::ate);
+        return f.is_open() && f.tellg() > 0;
+    }
+    static std::string csvq_(const std::string& s) {
+        if (s.find_first_of(",\"\n\r") == std::string::npos) return s;
+        std::string out = "\"";
+        for (char ch : s) { if (ch == '"') out += '"'; out += ch; }
+        out += '"';
+        return out;
+    }
+
+    void save_() const {
+        std::ofstream f(pos_path_, std::ios::trunc);
+        if (!f.is_open()) return;
+        for (const auto& kv : watch_) {
+            const Watch& w = kv.second;
+            f << kv.first << '\t' << w.book << '\t' << w.eng << '\t' << w.sym << '\t' << w.side
+              << '\t' << w.p_entry << '\t' << w.cur_bar << '\t' << w.last_close << '\t' << w.usd_per_pt
+              << '\t' << (w.active ? 1 : 0) << '\t' << w.m_entry << '\t' << w.m_peak << '\t' << w.m_bar
+              << '\t' << (w.clipped ? 1 : 0) << '\t' << w.clip_ref << '\n';
+        }
+    }
+    void load_() {
+        std::ifstream f(pos_path_);
+        std::string line;
+        while (std::getline(f, line)) {
+            std::vector<std::string> t;
+            { std::string cur; for (char ch : line) { if (ch == '\t') { t.push_back(cur); cur.clear(); } else cur += ch; } t.push_back(cur); }
+            if (t.size() < 15) continue;
+            Watch w;
+            w.book = t[1]; w.eng = t[2]; w.sym = t[3]; w.side = t[4];
+            w.p_entry = std::atof(t[5].c_str()); w.cur_bar = std::atoll(t[6].c_str());
+            w.last_close = std::atof(t[7].c_str()); w.usd_per_pt = std::atof(t[8].c_str());
+            w.active = std::atoi(t[9].c_str()) != 0;
+            w.m_entry = std::atof(t[10].c_str()); w.m_peak = std::atof(t[11].c_str());
+            w.m_bar = std::atoll(t[12].c_str());
+            w.clipped = std::atoi(t[13].c_str()) != 0; w.clip_ref = std::atof(t[14].c_str());
+            watch_[t[0]] = std::move(w);
+        }
+    }
+
+    StallRollUp compute_rollup_(int64_t now) const {
+        using namespace stall_detail;
+        StallRollUp R;
+        R.name = cfg_.name; R.gauge = "MIRROR";
+        R.gate_pct = cfg_.arm_pct; R.rev_gb = cfg_.gb_pct; R.stall_bars = 0;
+        R.updated = updated_utc(now);
+        R.open_companions = open_mirrors();
+
+        const int64_t cut_today = (now / 86400) * 86400;
+        std::ifstream f(closed_path_);
+        std::string line; bool first = true;
+        while (std::getline(f, line)) {
+            if (first) { first = false; continue; }
+            if (line.empty()) continue;
+            std::vector<std::string> c = csvparse(line);
+            if (c.size() < 10) continue;
+            const std::string& book = c[1]; const std::string& reason = c[2]; const std::string& engine = c[3];
+            const std::string& entry = c[6];
+            const std::string& pnls = c[c.size() - 3];
+            char* e = nullptr; double pnl = std::strtod(pnls.c_str(), &e);
+            if (e == pnls.c_str()) continue;
+            StallEngAgg& ea = R.per_engine[engine]; ea.closed++; ea.realized += pnl; R.realized_total += pnl;
+            StallLegAgg& la = R.per_leg[engine + "|" + entry];
+            la.engine = engine; la.entry = entry; la.book = book; la.closed++; la.realized = round2(la.realized + pnl);
+            R.by_reason[reason] = round2(R.by_reason[reason] + pnl);
+            const int64_t ts = std::atoll(c[0].c_str());
+            if (ts >= cut_today)        R.realized_today += pnl;
+            if (ts >= now - 7  * 86400) R.realized_7d    += pnl;
+            if (ts >= now - 30 * 86400) R.realized_30d   += pnl;
+        }
+        for (auto& kv : R.per_engine) kv.second.realized = round2(kv.second.realized);
+        R.realized_total = round2(R.realized_total);
+        R.realized_today = round2(R.realized_today);
+        R.realized_7d    = round2(R.realized_7d);
+        R.realized_30d   = round2(R.realized_30d);
+        for (const auto& kv : watch_) {
+            const Watch& w = kv.second;
+            if (!w.active) continue;
+            const std::string tag = "MirrorX2:" + w.eng;
+            R.per_engine[tag].open++;
+            StallLegAgg& la = R.per_leg[tag + "|" + fmtnum(w.m_entry)];
+            if (la.engine.empty()) { la.engine = tag; la.entry = fmtnum(w.m_entry); la.book = w.book; }
+            la.open++;
+            const int dir = (!w.side.empty() && (w.side[0] == 'S' || w.side[0] == 's')) ? -1 : 1;
+            StallOpenDet od;
+            od.book = w.book; od.eng = tag; od.sym = w.sym; od.side = w.side; od.entry = w.m_entry;
+            od.mfe_pct = w.m_entry > 0.0 ? round2(((w.m_peak - w.m_entry) * dir / w.m_entry) * 100.0) : 0.0;
+            od.mfe_usd = round2((w.m_peak - w.m_entry) * dir * (w.usd_per_pt > 0.0 ? w.usd_per_pt : 1.0) * cfg_.size_mult);
+            od.stall = 0;
+            od.upnl = round2((w.last_close - w.m_entry) * dir * (w.usd_per_pt > 0.0 ? w.usd_per_pt : 1.0) * cfg_.size_mult);
+            od.eligible = true;
+            R.open_detail.push_back(od);
+        }
+        return R;
+    }
+
+    void write_state_() const {
+        using namespace stall_detail;
+        const StallRollUp& R = roll_;
+        std::ostringstream o; o << std::fixed << std::setprecision(2);
+        o << "{\"updated\":"; jstr(o, R.updated);
+        o << ",\"gauge\":\"MIRROR\",\"arm_pct\":" << cfg_.arm_pct << ",\"gb_pct\":" << cfg_.gb_pct
+          << ",\"retrig_pct\":" << cfg_.retrig_pct << ",\"size_mult\":" << cfg_.size_mult
+          << ",\"open_companions\":" << R.open_companions
+          << ",\"realized_total\":" << R.realized_total << ",\"realized_today\":" << R.realized_today
+          << ",\"realized_7d\":" << R.realized_7d << ",\"realized_30d\":" << R.realized_30d;
+        o << ",\"by_reason\":{"; { bool fr = true; for (auto& kv : R.by_reason) { if (!fr) o << ','; fr = false; jstr(o, kv.first); o << ':' << kv.second; } } o << "}}";
+        const std::string js = o.str();
+        const std::string tmp = state_path_ + ".tmp";
+        { std::ofstream sf(tmp, std::ios::trunc); if (!sf.is_open()) return; sf << js; }
+#if defined(_WIN32)
+        std::remove(state_path_.c_str());
+#endif
+        std::rename(tmp.c_str(), state_path_.c_str());
+    }
+};
+
 // ── registry: all book instances + 60s throttle + gold-bull compute + aggregate ──
 class StallCompanionRegistry {
 public:
     bool enabled = true;
 
     StallBook& add(StallBook::Config c) { books_.emplace_back(std::move(c)); return books_.back(); }
+    MirrorBook& add_mirror(MirrorBook::Config c) { mirrors_.emplace_back(std::move(c)); return mirrors_.back(); }
     size_t size() const { return books_.size(); }
+    size_t mirror_count() const { return mirrors_.size(); }
+    const std::vector<MirrorBook>& mirrors() const { return mirrors_; }
 
     // Cheap pre-check so the caller can skip building the live-row vector 240x/min:
     // true only when the 60s harvest is actually due (maybe_drive re-checks authoritatively).
-    bool due(int64_t now) const { return enabled && !books_.empty() && (now - last_drive_ >= 60); }
+    bool due(int64_t now) const { return enabled && (!books_.empty() || !mirrors_.empty()) && (now - last_drive_ >= 60); }
 
     // Drive all books off the current live_trades snapshot. Throttled to 60s to match
     // the retired cron cadence (the snapshot rebuilds every 250ms; we only harvest 1/min).
@@ -490,16 +794,18 @@ public:
     // aggregate companion_state.json (served by /api/companion).
     void maybe_drive(const std::vector<StallLiveRow>& rows_all, int64_t now,
                      const std::string& gold_trend_h4_csv) {
-        if (!enabled || books_.empty()) return;
+        if (!enabled || (books_.empty() && mirrors_.empty())) return;
         if (now - last_drive_ < 60) return;
         last_drive_ = now;
         const int gold_bull = gold_4h_bull_(gold_trend_h4_csv);
         for (auto& b : books_) b.step(rows_all, gold_bull, now);
+        for (auto& m : mirrors_) m.step(rows_all, now);
         write_aggregate_(now);
     }
 
 private:
     std::vector<StallBook> books_;
+    std::vector<MirrorBook> mirrors_;
     int64_t last_drive_ = 0;
 
     // Gold 4h trend from gold_d1_trend_h4.csv (ts_ms,o,h,l,c) tail 60. Fast SMA(10) vs
@@ -540,8 +846,12 @@ private:
         double rt = 0, rtd = 0, r7 = 0, r30 = 0, crypto_r = 0;
         std::map<std::string, double> crypto_by_reason;
 
-        for (const auto& b : books_) {
-            const StallRollUp& R = b.rollup();
+        std::vector<const StallRollUp*> rolls;
+        rolls.reserve(books_.size() + mirrors_.size());
+        for (const auto& b : books_)   rolls.push_back(&b.rollup());
+        for (const auto& m : mirrors_) rolls.push_back(&m.rollup());
+        for (const auto* rp : rolls) {
+            const StallRollUp& R = *rp;
             for (const auto& kv : R.per_engine) {
                 StallEngAgg& a = per_engine[kv.first];
                 a.open += kv.second.open; a.closed += kv.second.closed; a.realized += kv.second.realized;
@@ -563,7 +873,7 @@ private:
 
         std::ostringstream o; o << std::fixed << std::setprecision(2);
         o << "{\"updated\":"; jstr(o, updated_utc(now));
-        o << ",\"source\":\"stall_companion_cpp\",\"n_books\":" << books_.size()
+        o << ",\"source\":\"stall_companion_cpp\",\"n_books\":" << (books_.size() + mirrors_.size())
           << ",\"open_companions\":" << open_total
           << ",\"realized_total\":" << rt << ",\"realized_today\":" << rtd
           << ",\"realized_7d\":" << r7 << ",\"realized_30d\":" << r30;
