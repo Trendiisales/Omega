@@ -166,10 +166,15 @@ int main(int argc, char* argv[])
     omega::warmup_or_die(g_mgc_tf_2h, "MgcTF2h");
     // Live-CSV replay floor = last warmup H1 bar ts: rows at/below it are
     // already in the engines via warmup; feeding them again would double-count.
+    // The warmup file carries ts in MILLISECONDS (the XauTF2h warmup parser
+    // takes bar_start_ms raw -- a seconds file collapses its 2h buckets and
+    // poisons ATR; caught on the first deploy, fed=garbage atr=0); the live
+    // 30m feed rows are SECONDS, so normalise the floor to seconds here.
     {
         std::ifstream wf("data/mgc_h1_hist.csv"); std::string wl, wlast;
         while (std::getline(wf, wl)) if (!wl.empty() && wl[0] >= '0' && wl[0] <= '9') wlast = wl;
         g_mgc_tf_floor_ts = wlast.empty() ? 0 : std::atoll(wlast.c_str());
+        if (g_mgc_tf_floor_ts > 4000000000LL) g_mgc_tf_floor_ts /= 1000;  // ms -> s
         std::printf("[SEED] MgcTF4h/MgcTF2h warm (replay floor ts=%lld)\n",
                     (long long)g_mgc_tf_floor_ts);
         std::fflush(stdout);
