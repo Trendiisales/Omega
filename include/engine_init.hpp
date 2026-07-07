@@ -2876,20 +2876,22 @@ static void init_engines(const std::string& cfg_path)
         //   >= 30 trades, expectancy beats Tsmom, AND a deliberate human
         //   decision to flip back to kShadowDefault. Promotion gate per
         //   NEXT_SESSION.md S9 priority 3.
-        g_trend_rider.shadow_mode       = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-        // S-2026-06-19 Phase 1 item 3: re-enabled to SHADOW only. The S91 "solo
-        // test" disable is stale — GoldUltimateEngine is itself enabled=false
-        // (S99b) and the book runs many shadow engines. shadow_mode stays true;
-        // the whole system is SHADOW (order_exec hard-gates on mode==LIVE), so
-        // this just adds TrendRider to the forward shadow ledger for observation.
-        // PROMOTION TO LIVE-SIZE IS GATED on a fresh 2022-current walk-forward
-        // (BACKTEST_TRUTH). WF RUN 2026-06-19 (backtest/trendrider_faithful.cpp,
-        // class-driven on XAUUSD H1): 2022-2023 PF 0.75 / net -$838 / both halves
-        // NEGATIVE (2022 alone -$581); 2024-2026 bull PF 1.33 / +$2086 both+.
-        // => BULL-BETA, FAILS the gate. And bar-replay OVERSTATES trail engines
-        // ~0.5-0.7 PF, so true edge is worse. DO NOT flip shadow_mode=false —
-        // shadow-observe only (forward-confirms the bull-beta thesis).
-        g_trend_rider.enabled           = true;   // SHADOW observation (was false, S91 solo test — stale)
+        // ================= TOMBSTONE — TrendRider (S-2026-07-07q) =================
+        // CULLED on operator order 2026-07-07 ("backtest these engines, if they
+        // fail cull them with a tombstone notice — I don't want to redo any of
+        // this"). Faithful WF verdict already on record — NO further backtest owed:
+        // WF RUN 2026-06-19 (backtest/trendrider_faithful.cpp, class-driven on
+        // XAUUSD H1): 2022-2023 PF 0.75 / net -$838 / BOTH halves NEGATIVE
+        // (2022 alone -$581); 2024-2026 bull PF 1.33 / +$2086.
+        // => BULL-BETA, FAILS the WF gate. Bar-replay overstates trail engines
+        // ~0.5-0.7 PF, so true edge is worse. The vault page (TrendRiderEngine.md)
+        // said "shadow_mode must NOT flip to false"; the S-2026-07-01 blanket
+        // all-engines cutover flipped it anyway — that discrepancy is what
+        // triggered this cull. DO NOT re-enable, re-test, or re-derive. The gold
+        // trend exposure it duplicated is already covered by the validated
+        // XauTrendFollow 1h/2h/4h/D1 stack + riders.
+        g_trend_rider.shadow_mode       = true;   // tombstone: restored to shadow (never valid live)
+        g_trend_rider.enabled           = false;  // TOMBSTONED S-2026-07-07q — WF FAIL PF0.75 both halves NEG
         g_trend_rider.max_concurrent    = 6;
         // risk_pct 0.040 (4%) -> 0.0025 (0.25%). The 4% was "8x tsmom ~1/8 Kelly"
         // and is far hotter than the Phase-1 0.25-0.50% R band; 0.25% = the
