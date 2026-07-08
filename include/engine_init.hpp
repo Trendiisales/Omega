@@ -1834,7 +1834,8 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             jr.finalize_all();
-            printf("[OMEGA-INIT][SEED] JumpRider wired: 12 syms (metals/oil/FX5/index4), %zu H1 bars seeded, %zu forward bars restored, UpJump ride + BE-ratchet + hard-stop, SHADOW real-column-only, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] JumpRider wired: %d syms (USOIL/US500 rows killed S-2026-07-08d), %zu H1 bars seeded, %zu forward bars restored, UpJump ride + BE-ratchet + hard-stop, SHADOW real-column-only, deploy-forward\n",
+                   (int)(sizeof(JR)/sizeof(JR[0])),
                    jseeded, jrestored);
             fflush(stdout);
         }
@@ -2253,8 +2254,11 @@ static void init_engines(const std::string& cfg_path)
             { SC c; c.name="xau_tf1h_aggr";  c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=10; c.retrig_usd=15; c.stall_bars=12;   c.tf_sec=1*3600;  B(c); }
             { SC c; c.name="xau_tf4h_aggr_b";c.include={"XauTrendFollow4h"};                    c.arm_usd=15; c.trail_usd=5;  c.retrig_usd=15; c.stall_bars=8;    c.tf_sec=1*3600;  B(c); }
             { SC c; c.name="xau_tf1h_aggr_b";c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=10; c.retrig_usd=15; c.stall_bars=12;   c.tf_sec=1*3600;  B(c); }
-            { SC c; c.name="xau_tf2h_usd_a"; c.include={"XauTrendFollow2h"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=10; c.retrig_usd=10; c.stall_bars=9999; c.tf_sec=2*3600;  B(c); }
-            { SC c; c.name="xau_tf2h_usd_b"; c.include={"XauTrendFollow2h"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=10; c.retrig_usd=10; c.stall_bars=9999; c.tf_sec=2*3600;  B(c); }
+            // S-2026-07-08d DISABLED (loss-bound study flag): the 2h gold USD companion books
+            // are econ-marginal (PF1.15 at live config, below the PF>=1.3 companion standard).
+            // Their parent XauTF2h stack is unaffected; the 4h/1h/D1 USD books stay live.
+            // { SC c; c.name="xau_tf2h_usd_a"; c.include={"XauTrendFollow2h"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=10; c.retrig_usd=10; c.stall_bars=9999; c.tf_sec=2*3600;  B(c); }
+            // { SC c; c.name="xau_tf2h_usd_b"; c.include={"XauTrendFollow2h"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=10; c.retrig_usd=10; c.stall_bars=9999; c.tf_sec=2*3600;  B(c); }
             { SC c; c.name="xau_tfd1_usd_b"; c.include={"XauTrendFollowD1"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=20; c.retrig_usd=20; c.stall_bars=9999; c.tf_sec=24*3600; B(c); }
             // --- GoldVolBreakout M30 $-gauge clips (bull-gated) ---
             { SC c; c.name="gvb_m30_usd_a"; c.include={"GoldVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
