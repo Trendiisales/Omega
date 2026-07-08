@@ -76,11 +76,16 @@ def _resample(pd, df, tf_min):
     s = pd.Series(df["mid"].values, index=idx)
     bars = s.resample(f"{tf_min}min").agg(["first", "max", "min", "last"]).dropna()
     bars.columns = ["open", "high", "low", "close"]
-    # astype(int64) unit-safe: pandas 2.x resample can yield a datetime64[ms] index
-    # (not [ns]); a bare astype(int64)//1e6 then emits epoch-KILOSECONDS (ts=1783467
-    # class), which the seed-freshness audit reads as 1970 -> false P0-SEED deploy
-    # abort (2026-07-08). Normalize to ns first, then ns -> ms.
-    bars["bar_start_ms"] = (bars.index.astype("datetime64[ns]").astype("int64") // 1_000_000)
+    # Epoch-ms extraction, unit- AND tz-safe. History (2026-07-08, two failed forms):
+    #   .astype(int64)//1e6            -- assumes [ns]; pandas 2.x resample yields [ms]
+    #                                     here -> emitted epoch-KILOSECONDS (ts=1783467)
+    #   .astype('datetime64[ns]')      -- raises on this tz-AWARE index (utc=True above)
+    # as_unit('ms').asi8 = int64 epoch-ms regardless of index unit; asi8 is UTC-based
+    # so tz-awareness is fine. pandas <2 fallback: index is always [ns].
+    try:
+        bars["bar_start_ms"] = bars.index.as_unit("ms").asi8
+    except AttributeError:
+        bars["bar_start_ms"] = bars.index.asi8 // 1_000_000
     return bars[["bar_start_ms", "open", "high", "low", "close"]]
 
 def phase_rebuild(logs, out, days):
