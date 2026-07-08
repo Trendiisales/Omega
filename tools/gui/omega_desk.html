@@ -351,7 +351,9 @@ function killAll(b){
     setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);
   }).catch(function(){b.textContent='ERR';setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);});
 }
-function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.currentTime;
+function chime(notes,_r){if(!SND)return;ensureCtx();if(!ACTX)return;
+ if(ACTX.state==='suspended'&&!_r){ACTX.resume().then(function(){chime(notes,1);}).catch(function(){});return;}
+ var t=ACTX.currentTime;
  notes.forEach(function(n){var o=ACTX.createOscillator(),g=ACTX.createGain();
   o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
   var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
@@ -387,11 +389,32 @@ function pollFires(){var now=Date.now();
  if(!window._compBase){if(anyOpen)entryBell();else if(banked)winBell();}
  window._compBase=false;}
 setInterval(pollFires,5000);
+/* S-2026-07-08c close-bells (operator: sound on open+close, bell on win): every NEW
+   closed row rings -- win -> winBell (rising), loss -> lossBell (falling). Open sounds
+   already ring via entryBell (engine + companion watchers above). Identity-based with
+   silent first-pass baseline so reloads/restarts never ring history. */
+function pollCloseBells(){var now=Date.now();
+ if(window._seenCl===undefined){window._seenCl={};window._clBase=true;}
+ var win=false,loss=false;
+ var cl=(window._compClosed&&window._compClosed.length)?window._compClosed:[];
+ cl.slice(0,12).forEach(function(d){var k=(d.ts||'')+'|'+(d.engine||d.eng||'')+'|'+(d.pnl!==undefined?d.pnl:'');
+  if(!(k in window._seenCl)){window._seenCl[k]=now;
+   if(!window._clBase){if(safe(d.pnl)>=0)win=true;else loss=true;}}});
+ for(var k in window._seenCl){if(now-window._seenCl[k]>3600000)delete window._seenCl[k];}
+ if(!window._clBase){if(win)winBell();else if(loss)lossBell();}
+ window._clBase=false;}
+setInterval(pollCloseBells,5000);
 /* browsers suspend AudioContext until a user gesture -- with SND persisted ON a
    reloaded page was SILENT until the user happened to click. Resume on first
    gesture so persisted-ON actually rings, and play a startup chime (operator GO
    2026-07-08) as audible proof sound is live for the session. One-shot guard:
    three once-listeners share it, so only the first gesture rings. */
+/* S-2026-07-08c: attempt TRUE autoplay at load -- works when the operator allowlists
+   the site (Chrome > Site settings > Sound > Allow). Blocked contexts reject resume()
+   and the first-gesture listeners below remain the fallback. */
+(function(){if(!SND)return;ensureCtx();if(!ACTX)return;
+ var boot=function(){if(!window._bootChimed){window._bootChimed=true;chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);}};
+ if(ACTX.state==='suspended'){ACTX.resume().then(boot).catch(function(){});} else boot();})();
 ['click','keydown','touchstart'].forEach(function(ev){
  document.addEventListener(ev,function(){if(SND){ensureCtx();
   if(!window._bootChimed){window._bootChimed=true;chime([[0,660,0.35],[0.14,880,0.3],[0.28,1320,0.3]]);}}},{once:true,capture:true});});
