@@ -39,6 +39,7 @@
 struct FxBarAgg { OHLCBar m1{}, m5{}, m15{}, h1{}; int64_t s1=0, s5=0, s15=0, sh1=0; };
 static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair, double mid) {
     if (mid <= 0.0) return;
+    omega::fx_upjump_ladder_book().set_disp_mid(pair, mid);   // S-2026-07-08d live display mark
     const int64_t now_ms = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());

@@ -1151,7 +1151,10 @@ function drawLadder(pfx,j,label){
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   if(act||nopen||clips)nact++;
   var tcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
-  var wtxt=act?('<span style="color:var(--grn)">bar '+safe(w.age)+'/'+safe(p.W)+(w.nclips?' · '+w.nclips+' clips':'')+'</span>'):'—';
+  /* S-2026-07-08d: 'nclips' is ARM-BATCHES (open legs), NOT banked clips -- showing it as
+     'clips' made an open window read as a booked clip. Show arms honestly; banked clips
+     come from p.clips (tiers-summed closed). */
+  var wtxt=act?('<span style="color:var(--grn)">bar '+safe(w.age)+'/'+safe(p.W)+(w.arms?' · '+w.arms+' arm'+(w.arms>1?'s':''):'')+(safe(p.clips)>0?' · '+safe(p.clips)+' clip'+(safe(p.clips)>1?'s':'')+' banked':'')+'</span>'):'—';
   rows+='<tr><td class="l" style="font-weight:700">'+esc(p.pair)+(nopen?' <span style="color:var(--grn)">●</span>':'')+'</td>'
     +'<td class="num">'+wtxt+'</td><td class="num">'+nopen+'</td>'
     +'<td class="num">'+clips+'</td><td class="num">'+wins+'</td>'

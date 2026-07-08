@@ -1163,7 +1163,10 @@ function drawLadder(pfx,j,label){
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   if(act||nopen||clips)nact++;
   var tcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
-  var wtxt=act?('<span style="color:var(--grn)">bar '+safe(w.age)+'/'+safe(p.W)+(w.nclips?' · '+w.nclips+' clips':'')+'</span>'):'—';
+  /* S-2026-07-08d: 'nclips' is ARM-BATCHES (open legs), NOT banked clips -- showing it as
+     'clips' made an open window read as a booked clip. Show arms honestly; banked clips
+     come from p.clips (tiers-summed closed). */
+  var wtxt=act?('<span style="color:var(--grn)">bar '+safe(w.age)+'/'+safe(p.W)+(w.arms?' · '+w.arms+' arm'+(w.arms>1?'s':''):'')+(safe(p.clips)>0?' · '+safe(p.clips)+' clip'+(safe(p.clips)>1?'s':'')+' banked':'')+'</span>'):'—';
   rows+='<tr><td class="l" style="font-weight:700">'+esc(p.pair)+(nopen?' <span style="color:var(--grn)">●</span>':'')+'</td>'
     +'<td class="num">'+wtxt+'</td><td class="num">'+nopen+'</td>'
     +'<td class="num">'+clips+'</td><td class="num">'+wins+'</td>'
@@ -1276,10 +1279,10 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
   var t=d.ts?new Date(d.ts*1000).toISOString().slice(5,16).replace('T',' '):'';
   return '<tr><td class="l d" style="font-size:10px;border-left:2px solid var(--grn)">&#8627; '+esc(t)+'</td>'
    +'<td class="l d" style="font-size:10px">'+esc((d.sym||''))+'</td>'
-   +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
-   +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
 )OMEGAD6"
-R"OMEGAD7( return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
+R"OMEGAD7(   +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
+   +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
+ return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
 function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* crypto companion all-time bank, $ (additive) */
  var omc=safe((window._comptot||{}).all);/* OMEGA (XAU stall-clip) companion all-time bank, $ (additive) -- same bucket the header ALL-TIME folds */
  var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
@@ -1440,12 +1443,12 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
 }).catch(function(){});}
-function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
+)OMEGAD7"
+R"OMEGAD8(function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
  var rows=ROWS.slice().reverse().map(function(r){
   var d=new Date(r.ts*1000);
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
-)OMEGAD7"
-R"OMEGAD8(   +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+   +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
   return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
@@ -1637,15 +1640,15 @@ function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
  el('prinfo').innerHTML='ATR'+ds.len+' ×'+ds.factor+' · rng×'+ds.rmult+' · '+ds.source
    +(barAge>=0?' · bar '+(barAge<120?barAge+'s':Math.round(barAge/60)+'m')+(stale?' <span class="a">STALE</span>':''):'')
    +(age>=0?' · poll '+age+'s':'');}
-function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
+)OMEGAD8"
+R"OMEGAD9(function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
 loadPR();setInterval(loadPR,30000);
 
 /* ── PR chart interactivity: marker hover tooltip + crosshair + pulse loop ── */
 function prTip(m,cx,cy){var tip=el('prtip');
  if(!m){tip.style.display='none';return;}
  var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
-)OMEGAD8"
-R"OMEGAD9( var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
+ var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)

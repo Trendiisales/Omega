@@ -42,6 +42,7 @@ struct IdxH1Agg { int64_t start = 0; double close = 0.0; double high = 0.0, low 
 static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, double ask) {
     const double mid = (bid + ask) * 0.5;
     if (mid <= 0.0) return;
+    omega::index_upjump_ladder_book().set_disp_mid(tag, mid);   // S-2026-07-08d live display mark
     const int64_t now_ms = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());

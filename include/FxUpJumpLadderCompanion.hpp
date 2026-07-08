@@ -215,6 +215,13 @@ public:
         }
     }
 
+    // S-2026-07-08d: live display mark (per-tick), so the desk shows the CURRENT
+    // price between H1 closes instead of the last H1 close (which, right after a
+    // mid-hour restart, is the warmup file's final bar on a different feed-scale
+    // than the live quote -- the 29391-vs-29210 gap the operator saw). Display
+    // only: clip/arm logic stays H1-close-cadence.
+    void set_disp_mid(double mid) noexcept { if (mid > 0.0) disp_mid_ = mid; }
+
     // LIVE feed: one CLOSED H1 bar (from the tick_fx.hpp aggregator).
     void on_h1_bar(int64_t ts_sec, double h, double l, double c) noexcept {
         if (c <= 0.0 || h <= 0.0 || l <= 0.0 || h < l) return;
@@ -228,7 +235,9 @@ public:
     // Emit this pair's desk JSON object. REAL FORWARD CLIPS ONLY ($0 until first live clip).
     std::string pair_json() const {
         const double notl = cfg_.notional;
-        const double cur = c_.empty() ? 0.0 : c_.back();
+        // S-2026-07-08d: display against the LIVE mid when we have one (tracks between
+        // H1 closes + heals the post-restart warmup-scale seam); fall back to last H1 close.
+        const double cur = disp_mid_ > 0.0 ? disp_mid_ : (c_.empty() ? 0.0 : c_.back());
         std::ostringstream o; o << std::fixed;
         const int64_t lts = ts_.empty() ? 0 : ts_.back();
 
@@ -281,7 +290,8 @@ public:
         o.precision(2); o << "\"thr\":" << cfg_.thr << ",\"rt_cost_bp\":" << cfg_.rt_cost_bp << ",";
         o.precision(0); o << "\"notional\":" << notl << ",";
         o << "\"win\":{\"active\":" << (win_ ? "true" : "false")
-          << ",\"age\":" << age_ << ",\"nclips\":" << nclips_ << "},";
+          << ",\"age\":" << age_ << ",\"arms\":" << nclips_
+          << ",\"nclips\":" << nclips_ << "},";   // S-2026-07-08d: 'arms'=batches (honest); 'nclips' kept for back-compat, GUI now reads clips from tiers/trades
         o << "\"clips\":" << sclips << ",\"wins\":" << swins << ",";
         o.precision(3); o << "\"pct\":" << spct << ",";
         o.precision(0); o << "\"usd\":" << (spct / 100.0 * notl) << ",";
@@ -311,7 +321,8 @@ private:
     // ── parent window + legs (harness run(), incremental on H1 bars) ──
     bool   win_        = false;   // window active
     int    age_        = 0;       // bars since trigger (flush when age_ >= W)
-    int    nclips_     = 0;       // clip batches spawned this window (base 1, cap cfg_.cap)
+    int    nclips_     = 0;       // ARM-BATCHES spawned this window (base 1, cap cfg_.cap) -- NOT banked clips
+    double disp_mid_   = 0.0;    // S-2026-07-08d live tick mid for display marking
     double last_reclip_px_ = 0.0; // reclip reference close
 
     struct Leg {
@@ -597,6 +608,10 @@ public:
     // LIVE: one closed H1 bar for `pair` (no-op when the pair isn't wired).
     void on_h1_bar(const std::string& pair, int64_t ts_sec, double h, double l, double c) {
         if (auto* p = find(pair)) { p->on_h1_bar(ts_sec, h, l, c); recompute_and_write(); }
+    }
+    // S-2026-07-08d: per-tick live display mark (display only, no trading side effect).
+    void set_disp_mid(const std::string& pair, double mid) {
+        if (auto* p = find(pair)) p->set_disp_mid(mid);
     }
 
     // Index book publishes under its own engine name + state file (same class/mechanism).
