@@ -1990,11 +1990,45 @@ static void init_engines(const std::string& cfg_path)
                 "AMZN","GOOGL","MSFT","AAPL","CRM","ADBE","IONQ","RGTI","QBTS","ASTS","RKLB","NBIS",
                 "CRWV","ALAB","CRDO"
             };
+            // S-2026-07-08c AGGRESSIVE MULTIPLIER (operator: "wire the aggressive
+            // multiplier"). Per-name validated-cell ranking 2019-2026 (evidence
+            // outputs/BIGCAP_AGGRESSIVE_RANKING_2026-07-08.md; bar = n>=30, PF>=1.3,
+            // both-WF-halves+, ex-best+):
+            //   x2 notional ELITE  : MU 2.32 / NVDA 2.33 / AVGO 2.70 / DELL 2.72 /
+            //                        CRDO 3.27 / PANW 6.23
+            //   x1 baseline        : every other net-positive name (incl the 10
+            //                        passers AMD/INTC/AAPL/CRM/ALAB/MRVL/MSFT/ASTS/
+            //                        SMCI/ARM and the positive-but-fragile middles)
+            //   RANKED-OUT (no new windows): per-name NET-NEGATIVE at the validated
+            //                        cell -- TSLA PF0.56, COIN, PLTR, MSTR, UBER,
+            //                        CRWV, SHOP, META, IONQ, QBTS. Detector history
+            //                        still maintained; re-rank can re-enable warm.
+            // Auto-retirement (-$600 scaled with notional) stays the safety net on
+            // everything left on. Shadow book; re-rank when the 744-name refresh
+            // extends the universe.
+            auto agg_mult_for = [](const std::string& n) -> double {
+                static const char* ELITE[] = {"MU","NVDA","AVGO","DELL","CRDO","PANW"};
+                static const char* OUT[]   = {"TSLA","COIN","PLTR","MSTR","UBER",
+                                              "CRWV","SHOP","META","IONQ","QBTS"};
+                for (const char* e : ELITE) if (n == e) return 2.0;
+                for (const char* o : OUT)   if (n == o) return 0.0;
+                return 1.0;
+            };
+            int n_elite = 0, n_out = 0;
             for (const char* nm : BIGCAP_LAD) {
                 omega::StockLadderSym::Config c;
                 c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
+                const double am = agg_mult_for(nm);
+                if (am <= 0.0) { c.ranked_out = true; ++n_out; }
+                else if (am > 1.0) {
+                    c.notional  *= am;         // elite x2 clip notional
+                    c.retire_usd *= am;        // retirement bar scales with size
+                    ++n_elite;
+                }
                 sl.add(std::move(c));
             }
+            printf("[OMEGA-INIT] BIGCAP ladder aggressive ranking: %d elite x2, %d ranked-out, %d baseline\n",
+                   n_elite, n_out, (int)(sizeof(BIGCAP_LAD)/sizeof(BIGCAP_LAD[0])) - n_elite - n_out);
             const std::string wide_csv = "data/rdagent/sp500_long_close.csv";
             size_t lseeded = sl.seed_from_wide_csv(wide_csv);   // primes detector history (deploy-forward)
             size_t lrestored = sl.seed_dumps_all();             // replay persisted forward daily bars

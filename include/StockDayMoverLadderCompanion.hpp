@@ -96,6 +96,14 @@ public:
         // fractional leg, BIGCAP_UPJUMP_LADDER_2026-07-07.md). 0 = disabled.
         // Un-retire = operator deletes the book file / raises the limit (loud act).
         double retire_usd    = -600.0;
+        // S-2026-07-08c AGGRESSIVE RANKING (operator order; evidence
+        // outputs/BIGCAP_AGGRESSIVE_RANKING_2026-07-08.md, validated cell per name
+        // 2019-2026): notional is scaled at wiring (elite x2); ranked_out=true =
+        // per-name book NET-NEGATIVE at the validated cell (TSLA PF0.56, COIN,
+        // PLTR, MSTR, UBER, CRWV, SHOP, META, IONQ, QBTS) -> NO new windows arm
+        // (existing legs manage/flush; detector history still maintained so a
+        // future re-rank can re-enable with a warm detector).
+        bool   ranked_out    = false;
         // TIGHT banker: arm 0.5% MFE, clip on 2-bar stall, no giveback leg
         double t_arm         = 0.5;       // % MFE to arm
         int    t_stall       = 2;         // daily bars without a new MFE high -> clip
@@ -480,7 +488,9 @@ private:
             // stops arming NEW windows (existing legs above still managed/flushed).
             double net_real_usd = 0.0;
             for (int ti = 0; ti < NT_; ++ti) net_real_usd += fwd_[ti].ret_real * cfg_.notional;
-            if (cfg_.retire_usd < 0.0 && net_real_usd <= cfg_.retire_usd) {
+            if (cfg_.ranked_out) {
+                // ranked-out names never arm (quiet by policy, not by fault)
+            } else if (cfg_.retire_usd < 0.0 && net_real_usd <= cfg_.retire_usd) {
                 if (!retired_logged_) {
                     retired_logged_ = true;
                     std::printf("[AULAD][RETIRED] %s forward net_real $%.0f <= $%.0f -- no new windows (auto-retirement, S-2026-07-08c)\n",
