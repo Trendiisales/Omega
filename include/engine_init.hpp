@@ -2037,8 +2037,12 @@ static void init_engines(const std::string& cfg_path)
             printf("[OMEGA-INIT] BIGCAP ladder aggressive ranking: %d elite x2, %d ranked-out, %d baseline\n",
                    n_elite, n_out, (int)(sizeof(BIGCAP_LAD)/sizeof(BIGCAP_LAD[0])) - n_elite - n_out);
             const std::string wide_csv = "data/rdagent/sp500_long_close.csv";
-            size_t lseeded = sl.seed_from_wide_csv(wide_csv);   // primes detector history (deploy-forward)
-            size_t lrestored = sl.seed_dumps_all();             // replay persisted forward daily bars
+            // S-2026-07-08c ORDER FIX (cutover-#9 no-op catch-up): set_exec MUST run
+            // BEFORE seeding -- live_step_ hard-returns when open_fn_ is unset, so a
+            // boot catch-up row dispatched pre-set_exec was consumed as a no-op (the
+            // 07-07 row replay converted nothing). Seed rows are live=false and fire
+            // no orders regardless; catch-up rows suppress broker calls via
+            // g_aulad_catchup -- wiring exec first is side-effect-free for both.
             sl.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -2063,6 +2067,8 @@ static void init_engines(const std::string& cfg_path)
                     tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
                     handle_closed_trade(tr);
                 });
+            size_t lseeded = sl.seed_from_wide_csv(wide_csv);   // primes detector history (deploy-forward) + live catch-up
+            size_t lrestored = sl.seed_dumps_all();             // replay persisted forward daily bars
             sl.finalize_all();
             sl.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
             printf("[OMEGA-INIT][SEED] BIGCAP upjump LADDER companion wired: 39 names, %zu seed rows, %zu forward bars restored, TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 reclip5%%, LOSS_CUT 15, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
