@@ -1959,6 +1959,16 @@ static void on_tick(const std::string& sym, double bid, double ask) {
             sym == "EURUSD"  || sym == "GBPUSD"  ||
             sym == "USDJPY"  || sym == "AUDUSD"  ||
             sym == "NZDUSD"  ||
+            // USDCAD (S-2026-07-08d): re-activated S-2026-07-08c as a BAR
+            //   SOURCE for the down-jump ladder (tick_fx.hpp on_tick_usdcad
+            //   -> fx_feed_bars H1 -> fx_upjump_ladder_book). This gate was
+            //   not updated then, so USDCAD ticks (IBKR IDEALPRO L1 via
+            //   on_book -> engine_dispatch) died HERE before the symbol
+            //   dispatch at the router below -- telemetry usdcad_bid still
+            //   updated (UpdatePrice runs above this gate at ~L239), which
+            //   masked the drop. Same root-cause class as the 2026-05-05
+            //   FX-cohort incident documented above.
+            sym == "USDCAD"  ||
             // Cross-asset cohort -- engines wired in tick_brent.hpp /
             //   tick_indices.hpp; gates open at on_tick.hpp:1929 dispatch.
             sym == "BRENT"   ||
