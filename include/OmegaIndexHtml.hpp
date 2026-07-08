@@ -141,7 +141,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="108" style="margin-top:4px"></canvas>
+  <canvas id="prc" height="150" style="margin-top:4px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -1466,7 +1466,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el("prc"),H=108,ctx=prep(cv,H);
+function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
