@@ -65,7 +65,7 @@ def sim_live(parents, H1, arm, gb, rt_bp, retrig, floor="-"):
                 continue
             if floor == "beT" and k > i and l[k] <= en:
                 # intrabar BE-floor touch: fill at entry -> pnl = -cost
-                trades.append((ent_ts, -en * rt_bp * 1e-4))
+                trades.append((ent_ts, -abs(en) * rt_bp * 1e-4))
                 armed = False; last_clip_peak = peak; done = True
                 continue
             stop = peak * (1.0 - gb)
@@ -73,13 +73,13 @@ def sim_live(parents, H1, arm, gb, rt_bp, retrig, floor="-"):
                 stop = max(stop, en)
             if c[k] <= stop:
                 fill = min(c[k], stop)
-                trades.append((ent_ts, (fill - en) - en * rt_bp * 1e-4))
+                trades.append((ent_ts, (fill - en) - abs(en) * rt_bp * 1e-4))
                 armed = False; last_clip_peak = peak; done = True
                 continue
             if c[k] > peak: peak = c[k]
         if armed:
             fill = c[j - 1]
-            trades.append((ent_ts, (fill - en) - en * rt_bp * 1e-4))
+            trades.append((ent_ts, (fill - en) - abs(en) * rt_bp * 1e-4))
     return trades
 
 FAMILY = [  # collapse ShadowBook per-cell tags -> live engine family (mirror keys on the family)
@@ -128,6 +128,9 @@ def load_shadowbook(path):
             out.setdefault((eng, sym, side), []).append((ets, xts, epx, xpx, sz))
     return out
 
+# S-2026-07-08c FIX: cost must use abs(entry). Sign-flipped SHORT parents have
+# negative prices, so `- en*rt_bp` ADDED cost as a subsidy on every short clip
+# (symptom: net@2x > net, impossible). LONG rows unaffected (en>0).
 def flip(H1):
     ts, o, h, l, c = H1
     return (ts, [-x for x in o], [-x for x in l], [-x for x in h], [-x for x in c])

@@ -39,11 +39,16 @@ static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;
 // H1/H4 buckets are aggregated from the 30m feed inside poll_mgc_feed;
 // warm-seed = engine warmup_csv_path (data/mgc_h1_hist.csv / mgc_h4_hist.csv),
 // configured in omega_main.hpp next to the volbrk block.
+// S-2026-07-08c: g_mgc_tf_4h / g_mgc_tf_2h / g_mgc_tf_floor_ts declarations MOVED
+// to globals.hpp (before PositionPersistence.hpp in main.cpp include order) so the
+// MGC TF instances are persistence-registered. This header only DRIVES them.
+// Standalone harnesses (backtest/mgc_tf_feed_parity.cpp) that include this header
+// WITHOUT globals.hpp define MGC_FEED_STANDALONE to get local instances:
+#ifdef MGC_FEED_STANDALONE
 static omega::XauTrendFollow4hEngine g_mgc_tf_4h;
 static omega::XauTrendFollow2hEngine g_mgc_tf_2h;
-// Bars at/below this ts (seconds) are warmup-covered -> not re-fed to the TF
-// instances. Set by omega_main after warmup to the warmup CSV's last bucket.
 static int64_t g_mgc_tf_floor_ts = 0;
+#endif
 
 // crude but dependency-free JSON scrape for {"poc":x,"hvn":[a,b,...]}
 inline bool _mgc_read_hvn(const std::string& path, double& poc, std::vector<double>& hvn) {
@@ -104,6 +109,18 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
     g_mgc_volbrk.set_l2_imb(mgc_imb);
 
     static int64_t last_ts = 0; static long s_poll = 0; int s_fed = 0; ++s_poll;
+    // S-2026-07-08c BOOT-REPLAY GUARD: the FIRST poll after a restart re-reads the
+    // whole live 30m CSV (last_ts starts 0). Bars above g_mgc_tf_floor_ts replay
+    // into the TF engines -- load-bearing for indicator continuity (the warmup CSVs
+    // only cover <= floor), but WITHOUT this guard the replay also re-fired entries,
+    // re-booking round-trips already in the shadow ledger from before the restart.
+    // warmup_active_ = the engines' own S102 seed flag: indicators + position
+    // management run, _fire_entry is blocked. Open legs come back via
+    // PositionPersistence (MgcTF4h/2h registered same commit) and get managed
+    // through the replayed bars at their historical prices. Cleared after the
+    // first poll completes -> live bars behave exactly as before.
+    const bool tf_boot_replay = (s_poll == 1);
+    if (tf_boot_replay) { g_mgc_tf_4h.warmup_active_ = true; g_mgc_tf_2h.warmup_active_ = true; }
     std::ifstream f(bars_csv);
     if (!f) { if (s_poll % 20 == 1) { std::printf("[MGC-FEED] poll#%ld: cannot open '%s' (cwd issue?)\n", s_poll, bars_csv.c_str()); std::fflush(stdout); } return; }
     std::string ln; bool first = true; int64_t newest = 0; int total = 0;
@@ -174,6 +191,12 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
             if (h4b != tf_h4_b) { tf_h4_b = h4b; h4o = op; h4h = hi; h4l = lo; h4c = cl; }
             else { if (hi > h4h) h4h = hi; if (lo < h4l) h4l = lo; h4c = cl; }
         }
+    }
+    // S-2026-07-08c: boot replay done -> re-arm live entries (see guard above).
+    if (tf_boot_replay) {
+        g_mgc_tf_4h.warmup_active_ = false; g_mgc_tf_2h.warmup_active_ = false;
+        std::printf("[MGC-FEED] boot replay complete: %d bar(s) re-fed entry-blocked; live entries armed\n", s_fed);
+        std::fflush(stdout);
     }
     // HEARTBEAT: proves the poll is reading the live MGC feed. Logs on any new
     // bars, else every 20th poll (~10min). newest_ts confirms freshness.

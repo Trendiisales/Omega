@@ -15,11 +15,23 @@
 
 #include <string>
 #include <cstdio>
+#include <algorithm>
 
 struct ExecutionCostGuard {
     // Conservative (high-end) cost floors per lot, in instrument price points.
     // Indices and oil have no per-lot commission (included in spread by broker).
     // FX/metals carry $6/lot round-trip commission.
+
+    // S-2026-07-08c: US-equity ticker heuristic for the stock-ladder cost row.
+    // 1-5 uppercase letters, no '.'/digits (all CFD symbols are matched explicitly
+    // BEFORE this fallback, so only unmatched plain tickers land here). An unknown
+    // future CFD hitting this branch gets a CONSERVATIVE (higher) cost estimate --
+    // strictly safer than the old fallback (tick_usd=1.0, zero commission).
+    static bool is_us_equity_ticker(const std::string& s) noexcept {
+        if (s.empty() || s.size() > 5) return false;
+        for (char c : s) if (c < 'A' || c > 'Z') return false;
+        return true;
+    }
 
     // Returns total estimated cost in USD for the given instrument and lot size.
     // spread_pts: current live bid-ask spread in price points (ask - bid).
@@ -87,6 +99,16 @@ struct ExecutionCostGuard {
             commission_per_lot = 0.0;
             slippage_pts       = 0.02;
             tick_usd_per_lot   = 1000.0;
+        } else if (is_us_equity_ticker(s)) {
+            // S-2026-07-08c stock-ladder equity cost row (queue: "real equity cost row
+            // before LIVE sizing", BIGCAP_UPJUMP_LADDER_2026-07-07.md). IBKR US stocks:
+            // $0.005/share/side (MIN $1.00/side) + ~1-2c slippage on bigcap names;
+            // live spread fed via spread_pts. lot = SHARES for equities;
+            // 1 share moves $1 per price point.
+            const double shares     = lot;
+            const double comm_rt    = 2.0 * std::max(1.0, 0.005 * shares);
+            const double slip_pts_e = 0.02;
+            return spread_pts * shares + slip_pts_e * shares + comm_rt;
         }
 
         const double spread_cost = spread_pts * tick_usd_per_lot * lot;

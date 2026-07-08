@@ -728,6 +728,17 @@ static omega::GoldVolBreakoutM30Engine g_gold_volbrk_m30;
 #include "XauTrendFollow2hEngine.hpp"
 static omega::XauTrendFollow2hEngine g_xau_tf_2h;
 
+// S-2026-07-08c: MGC-venue XauTF instances MOVED here from MgcFastDonchianFeed.hpp
+// so PositionPersistence.hpp (included BEFORE the feed in main.cpp) can register
+// them -- the include-order trap that left MgcTF4h/2h unpersisted (a restart
+// dropped the open leg AND the boot replay re-booked closed round-trips).
+// Config lives in omega_main.hpp; the feed drives them; persistence wires them.
+static omega::XauTrendFollow4hEngine g_mgc_tf_4h;
+static omega::XauTrendFollow2hEngine g_mgc_tf_2h;
+// Bars at/below this ts (seconds) are warmup-covered -> not re-fed to the TF
+// instances. Set by omega_main after warmup to the warmup CSV's last bucket.
+static int64_t g_mgc_tf_floor_ts = 0;
+
 // 2026-05-15 S91: GoldUltimateEngine -- standalone v12 OOS-validated XAUUSD
 //   trend engine. 7-factor entry filter + edge-hour gate (01/05/23 UTC) +
 //   ATR floor 2.5. SL=2ATR, TP=5ATR, trail at 3ATR MFE / 2ATR distance.

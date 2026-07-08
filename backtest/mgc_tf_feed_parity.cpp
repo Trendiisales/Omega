@@ -18,6 +18,7 @@
 #include <atomic>
 
 #include "OmegaTradeLedger.hpp"
+#define MGC_FEED_STANDALONE   // S-2026-07-08c: TF globals moved to globals.hpp; harness keeps local instances
 #include "MgcFastDonchianFeed.hpp"
 
 int main(int argc, char** argv){

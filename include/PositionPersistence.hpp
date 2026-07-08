@@ -247,6 +247,11 @@ inline void register_position_persistence() {
     wire_multicell(g_xau_tf_2h,    "XauTrendFollow2h",  "XAUUSD");
     wire_multicell(g_xau_tf_4h,    "XauTrendFollow4h",  "XAUUSD");
     wire_multicell(g_xau_tf_d1,    "XauTrendFollowD1",  "XAUUSD");
+    // S-2026-07-08c: MGC-venue XauTF instances (pre-live requirement). Decls moved
+    // to globals.hpp to beat this header in main.cpp include order; without this a
+    // restart dropped the open MGC leg + the boot replay re-booked closed trades.
+    wire_multicell(g_mgc_tf_4h,    "MgcTF4h",           "MGC");
+    wire_multicell(g_mgc_tf_2h,    "MgcTF2h",           "MGC");
 
     // ---- batch 6: tail — Breakout FX, NBM, FX turtles/scalp, pyramided (base) ----
     wire_cross(g_eng_eurusd,  "BreakoutEURUSD", "EURUSD");
