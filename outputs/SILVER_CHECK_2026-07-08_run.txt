@@ -1,0 +1,47 @@
+=== (a) XauTF trend clone on XAG (engine dumps, spread-embedded fills + commission) ===
+  XAG 4h mask0xC9 1x: n=734 net=+61.76 PF=1.14 WF[-17.53/+79.29] 2022[-9.41 n=165] exBest=+20.95
+  XAG 4h mask0xC9 2x: n=734 net=+27.09 PF=1.06 WF[-32.69/+59.78] 2022[-16.15 n=165] exBest=-13.64
+  XAG 2h defaults 1x: n=1679 net=+10.36 PF=1.01 WF[-15.17/+25.53] 2022[-12.39 n=397] exBest=-10.26
+  XAG 2h defaults 2x: n=1679 net=-68.27 PF=0.92 WF[-49.79/-18.48] 2022[-28.58 n=397] exBest=-88.80
+
+=== (a-control) GOLD-signal vs OWN-signal on silver (close-fill mapped, overlap 2022-01..2026-04) ===
+  4h GOLD-signal on silver  (n_windows=776): n=776 net=+392.68 PF=3.09 WF[+71.16/+321.52] 2022[+26.69 n=167] exBest=+345.51
+  4h OWN-signal  on silver  (n_windows=705): n=705 net=+468.63 PF=4.81 WF[+84.04/+384.60] 2022[+42.22 n=165] exBest=+427.21
+  2h GOLD-signal on silver  (n_windows=1712): n=1712 net=-20.18 PF=0.97 WF[-25.48/+5.31] 2022[-10.71 n=381] exBest=-36.16
+  2h OWN-signal  on silver  (n_windows=1610): n=1610 net=+9.10 PF=1.01 WF[-8.27/+17.37] 2022[-7.07 n=397] exBest=-9.36
+
+=== (b) Donchian breakout LONG (MGC-style), spot-silver costs ===
+  M30 2022-24 CERT Nin=20 gated 1x: n=402 net=-12.67 PF=0.71 WF[-5.02/-7.65] 2022[-5.72 n=204] exBest=-14.11
+  M30 2022-24 CERT Nin=20 gated 2x: n=402 net=-29.31 PF=0.48 WF[-13.26/-16.05] 2022[-14.09 n=204] exBest=-30.71
+  M30 2022-24 CERT Nin=20 ungated 1x: n=566 net=-26.07 PF=0.59 WF[-11.14/-14.93] 2022[-11.37 n=277] exBest=-27.51
+  M30 2022-24 CERT Nin=40 gated 1x: n=229 net=-7.43 PF=0.77 WF[-2.78/-4.65] 2022[-3.75 n=117] exBest=-9.44
+  M30 2022-24 CERT Nin=40 gated 2x: n=229 net=-16.91 PF=0.57 WF[-7.45/-9.46] 2022[-8.55 n=117] exBest=-18.88
+  M30 2022-24 CERT Nin=40 ungated 1x: n=282 net=-13.83 PF=0.67 WF[-6.18/-7.65] 2022[-6.80 n=143] exBest=-15.84
+  H1 2022-26 Nin=20 gated 1x: n=448 net=+25.49 PF=1.24 WF[-8.23/+33.72] 2022[-1.04 n=95] exBest=+12.46
+  H1 2022-26 Nin=20 gated 2x: n=448 net=+4.41 PF=1.04 WF[-17.55/+21.97] 2022[-4.94 n=95] exBest=-8.53
+  H1 2022-26 Nin=20 ungated 1x: n=614 net=-8.37 PF=0.95 WF[-17.74/+9.37] 2022[-5.64 n=135] exBest=-21.39
+  H1 2022-26 Nin=40 gated 1x: n=257 net=+25.30 PF=1.31 WF[-5.67/+30.96] 2022[-1.84 n=58] exBest=+16.43
+  H1 2022-26 Nin=40 gated 2x: n=257 net=+13.25 PF=1.15 WF[-10.98/+24.23] 2022[-4.22 n=58] exBest=+4.46
+  H1 2022-26 Nin=40 ungated 1x: n=313 net=+5.45 PF=1.05 WF[-11.68/+17.13] 2022[-3.54 n=71] exBest=-3.45
+
+=== (c) TSMOM D1 SI=F 2015-2026, vol-target 10%ann, both directions (net % of notional) ===
+  SI=F TSMOM 42d 1x(4bpRT): n=2747 net=-9.58 PF=0.99 WF[-3.09/-6.49] 2022[+3.07 n=251] exBest=-15.23
+  SI=F TSMOM 42d 2x(8bpRT): n=2747 net=-13.65 PF=0.98 WF[-5.64/-8.01] 2022[+2.87 n=251] exBest=-19.29
+  SI=F TSMOM 63d 1x(4bpRT): n=2726 net=-80.11 PF=0.89 WF[-50.42/-29.69] 2022[-7.25 n=251] exBest=-85.75
+  SI=F TSMOM 63d 2x(8bpRT): n=2726 net=-84.24 PF=0.88 WF[-52.68/-31.56] 2022[-7.55 n=251] exBest=-89.89
+  SI=F TSMOM 84d 1x(4bpRT): n=2705 net=-54.60 PF=0.92 WF[-39.24/-15.36] 2022[+0.33 n=251] exBest=-60.25
+  SI=F TSMOM 84d 2x(8bpRT): n=2705 net=-58.63 PF=0.92 WF[-41.47/-17.16] 2022[+0.10 n=251] exBest=-64.28
+
+=== (d) Up-jump ladder on XAG H1 (rt = spread+comm in bp of px) ===
+
+  -- upjump ladder XAG H1 2022-26 (rt=16.0bp; W x thr sweep, rand ctrl 5 seeds) --
+    W  thr |     n     net%    PF  WF |     2x net/PF |     rand
+   24  1.0 |  5037   -232.8  0.93   n | -1038.7/0.71 |   -159.9
+   24  2.0 |  3113   -100.7  0.96   n |  -598.8/0.79 |    -79.4
+   24  3.0 |  1788    -13.9  0.99   n |  -300.0/0.84 |    -41.0
+   48  1.0 |  2932   -206.3  0.91   n |  -675.4/0.74 |    -11.9
+   48  2.0 |  2205   +293.6  1.15   n |   -59.2/0.97 |    +70.2
+   48  3.0 |  1589     -9.0  1.00   n |  -263.2/0.87 |    +62.7
+   96  1.0 |  1634   +244.6  1.17   n |   -16.9/0.99 |   +120.0
+   96  2.0 |  1337   +420.1  1.29   Y |  +206.2/1.13 |   +255.8
+   96  3.0 |  1141   +223.2  1.15   n |   +40.6/1.03 |   +267.2
