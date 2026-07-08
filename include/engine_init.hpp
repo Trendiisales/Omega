@@ -24,6 +24,7 @@
 #include "JumpRiderEngine.hpp"      // UpJump-pattern rider on metals/oil/FX/indices -> /api/jumprider
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
 #include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover UP-JUMP LADDER companion (39 stocks) -> /api/stockladder_companion
+#include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
 static void init_engines(const std::string& cfg_path)
@@ -2081,6 +2082,85 @@ static void init_engines(const std::string& cfg_path)
             sl.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
             printf("[OMEGA-INIT][SEED] BIGCAP upjump LADDER companion wired: 39 names, %zu seed rows, %zu forward bars restored, TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 reclip5%%, LOSS_CUT 15, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
                    lseeded, lrestored);
+            fflush(stdout);
+        }
+
+        // ── StockDip + StockTurtle per-name daily-close books (S-2026-07-08c) ──
+        //   TWO validated LONG-only single-stock families in ONE registry
+        //   (include/StockDipTurtleEngine.hpp), AUDITED_CONFIGS rows
+        //   StockConnorsDip_RESEARCH PF1.60 + StockTurtleD1_RESEARCH PF2.13
+        //   (evidence outputs/STOCK_OTHER_ENGINES_2026-07-08.txt):
+        //   * StockDip (ConnorsRSI2 archetype): close>SMA200 & RSI2<10 at the daily
+        //     close -> LONG; exit first close>SMA5 or 10 trading days. Wired = the
+        //     11 individual all-6 passers of the audited per-name split.
+        //   * StockTurtle (Donchian 20/10): close > max(prior 20 closes) -> LONG;
+        //     exit close < min(prior 10 closes). Wired = the 11 all-6 passers
+        //     (n>=30, net>0, PF>=1.3, both time-halves>0, ex-best>0) of the
+        //     S-2026-07-08c per-name rerun outputs/STOCK_TURTLE_PERNAME_2026-07-08.txt
+        //     (rule-faithful rerun: PF 2.13 / bear22 -93.3 / best-trade +167% match
+        //     the audited pooled row exactly; MU/WDC/INTC fail on a negative H1,
+        //     CRM on PF, DELL/CRDO/PANW on n).
+        //   ADVERSE-PROTECTION verdicts + auto-retirement basis live in the engine
+        //   header. $10k notional/position, 8bp RT debit (the validated gate) +
+        //   ExecutionCostGuard::is_viable US-equity row on entry. SHADOW, judged
+        //   STANDALONE, deploy-forward ($0 until the first live close), boot
+        //   catch-up watermark, own 15-min poller on the same wide daily CSV.
+        {
+            auto& sdt = omega::stock_dipturtle_book();
+            // (MSVC C2760 lesson: plain arrays + loops, no lambdas w/ static locals)
+            const char* DIP_NAMES[] = { "MU","NVDA","AVGO","DELL","CRDO","STX",
+                                        "INTC","AMD","AAPL","TPR","MSFT" };
+            const char* TUR_NAMES[] = { "NVDA","AVGO","STX","DD","AMD","AAPL",
+                                        "TPR","BMY","SWKS","MSFT","QCOM" };
+            int n_dip = 0, n_tur = 0;
+            for (const char* nm : DIP_NAMES) {
+                omega::StockDipTurtleSym::Config c;
+                c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::DIP;
+                // AUTO-RETIREMENT: -$9,500 = ~2x the worst BT per-name banked-curve
+                // DD episode (MU -47.6% of $10k = -$4,756; engine header).
+                c.retire_usd = -9500.0;
+                sdt.add(std::move(c)); ++n_dip;
+            }
+            for (const char* nm : TUR_NAMES) {
+                omega::StockDipTurtleSym::Config c;
+                c.sym = nm; c.live_sym = nm; c.family = omega::StockDipTurtleSym::TURTLE;
+                // AUTO-RETIREMENT: -$8,500 = ~2x the worst BT per-name banked-curve
+                // DD episode (TPR -41.3% of $10k = -$4,130; engine header).
+                c.retire_usd = -8500.0;
+                sdt.add(std::move(c)); ++n_tur;
+            }
+            // exec wiring BEFORE seeding (cutover-#9: live logic hard-returns when
+            // open_fn unset -- a catch-up row dispatched pre-set_exec is a no-op).
+            sdt.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
+                    // S-2026-07-08c US-equity cost row (lots = SHARES; spread ~2c bigcap).
+                    // The validated book-level gate stays the 8bp RT debit in ret_real.
+                    return omega::ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots);
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    tr.shadow = true;   // SHADOW book: audit-only ledger row
+                    handle_closed_trade(tr);
+                });
+            const std::string sdt_csv = "data/rdagent/sp500_long_close.csv";
+            size_t sdt_seeded   = sdt.seed_from_wide_csv(sdt_csv);   // indicators + boot catch-up
+            size_t sdt_restored = sdt.seed_dumps_all();              // persisted forward daily bars
+            sdt.finalize_all();
+            sdt.start_poller(sdt_csv, 900000);   // own 15-min poller
+            printf("[OMEGA-INIT][SEED] StockDip/StockTurtle books wired: %d dip + %d turtle names, %zu seed rows, %zu forward bars restored, $10k notional, rt 8bp, retire dip -$9.5k / turtle -$8.5k, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+                   n_dip, n_tur, sdt_seeded, sdt_restored);
             fflush(stdout);
         }
 

@@ -1,0 +1,39 @@
+Donchian20/10 turtle POOLED n= 636 net=  +2236.3% PF= 2.13 H1= +442.8 H2=+1793.5 bear22=  -93.3 exb=+2069.3 PASS
+
+per-name Donchian20/10 turtle (all-6: n>=30, net>0, PF>=1.3, H1>0, H2>0, ex-best>0):
+  MU                       n=  50 net=   +171.6% PF= 1.70 H1=  -66.6 H2= +238.2 bear22=  -48.2 exb=  +62.2 -
+  NVDA                     n=  38 net=   +331.9% PF= 4.37 H1= +160.4 H2= +171.4 bear22=   +3.4 exb= +243.7 PASS
+  AVGO                     n=  45 net=   +125.0% PF= 2.02 H1=  +14.1 H2= +110.9 bear22=   +8.8 exb=  +69.9 PASS
+  DELL                     n=  10 net=   +159.7% PF= 4.89 H1=   +0.0 H2= +159.7 bear22=   +0.0 exb=   -7.4 -
+  CRDO                     n=   7 net=    +33.3% PF= 1.97 H1=   +0.0 H2=  +33.3 bear22=   +0.0 exb=  -10.6 -
+  PANW                     n=   4 net=   +101.1% PF=14.88 H1=   +0.0 H2= +101.1 bear22=   +0.0 exb=   +2.8 -
+  WDC                      n=  44 net=   +140.8% PF= 1.64 H1=  -46.9 H2= +187.7 bear22=   -3.9 exb=  -17.9 -
+  STX                      n=  46 net=   +136.5% PF= 1.83 H1=  +20.8 H2= +115.7 bear22=  -16.2 exb=  +74.0 PASS
+  DD                       n=  44 net=    +43.2% PF= 1.38 H1=  +30.0 H2=  +13.1 bear22=   +3.0 exb=  +10.0 PASS
+  INTC                     n=  45 net=    +89.3% PF= 1.58 H1=  -48.7 H2= +138.1 bear22=  -16.5 exb=  -35.3 -
+  AMD                      n=  37 net=   +322.4% PF= 3.48 H1= +115.3 H2= +207.1 bear22=   -2.3 exb= +218.2 PASS
+  AAPL                     n=  39 net=   +131.8% PF= 2.87 H1=  +80.0 H2=  +51.8 bear22=   +9.6 exb= +102.1 PASS
+  CRM                      n=  38 net=    +30.3% PF= 1.29 H1=  +13.8 H2=  +16.5 bear22=  -30.9 exb=   +9.5 -
+  TPR                      n=  36 net=   +169.1% PF= 2.73 H1=  +30.8 H2= +138.3 bear22=   -8.3 exb= +107.3 PASS
+  BMY                      n=  38 net=    +38.8% PF= 1.59 H1=  +27.5 H2=  +11.2 bear22=  +16.9 exb=  +15.0 PASS
+  SWKS                     n=  39 net=    +49.6% PF= 1.38 H1=  +48.4 H2=   +1.2 bear22=   -2.9 exb=  +18.8 PASS
+  MSFT                     n=  40 net=    +77.4% PF= 2.04 H1=  +36.2 H2=  +41.2 bear22=  -16.2 exb=  +44.5 PASS
+  QCOM                     n=  36 net=    +84.5% PF= 1.81 H1=  +27.7 H2=  +56.8 bear22=  +10.2 exb=  +29.4 PASS
+
+NOTES (S-2026-07-08c):
+- Rule (verbatim, == the shipped C++ StockDipTurtleEngine logic): enter LONG at the daily
+  close when close > max(prior 20 closes); exit at the first close < min(prior 10 closes);
+  one position per name; 8bp RT debited per trade; open position end-flushed MTM.
+  Data: data/rdagent/sp500_long_close.csv (2019-06-03..2026-07-07), 18-name candidate
+  universe = the STOCK_OTHER_ENGINES_2026-07-08.txt per-name dip list.
+- vs the AUDITED pooled row (StockTurtleD1_RESEARCH n=566 net=+2041.6% PF=2.13
+  H1=+416.1 H2=+1625.4 bear22=-93.3 exb=+1874.5): PF (2.13), bear22 (-93.3) and the best
+  trade (+167%) match EXACTLY; n/net differ ~11% (636 vs 566) from unrecoverable plumbing
+  conventions in the original scratchpad generator (session-scoped, gone). This rerun is
+  the FAITHFUL split for wiring because it implements exactly what the engine ships.
+- All-6 gate (n>=30, net>0, PF>=1.3, H1>0, H2>0, ex-best>0) PASSERS -> WIRED (11):
+  NVDA, AVGO, STX, DD, AMD, AAPL, TPR, BMY, SWKS, MSFT, QCOM
+  Failers: MU (H1 -66.6), DELL (n=10), CRDO (n=7), PANW (n=4), WDC (H1 neg, exb neg),
+  INTC (H1 neg, exb neg), CRM (PF 1.29).
+- Adverse-protection basis: worst trade -19.5% (STX); worst per-name banked-curve DD
+  episode -41.3% (TPR) = -$4,130 on $10k notional -> retire_usd -$8,500 (~2x).
