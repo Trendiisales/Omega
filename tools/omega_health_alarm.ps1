@@ -106,6 +106,16 @@ if (-not (Test-Path $actLog)) {
     $reasons += "[RED] ACTIVITY: current-UTC-date log missing ($actLog) -- logger dead or date-rollover unhandled (orders unobservable)"
 } else {
     $lastStat = Get-Content $actLog -Tail 400 | Select-String 'ENG-DISPATCH-STATS' | Select-Object -Last 1
+    if (-not $lastStat) {
+        # S-2026-07-08: UTC-midnight rollover false-RED. A poll landing right after 00:00 UTC
+        # reads the brand-new day's log before the first ENG-DISPATCH-STATS line lands ->
+        # $statAgeMin stays null -> "dispatch stats stale (min old)" RED while the loop is fine.
+        # Fall back to the prior day's log tail; the (-lt -60 -> +1440) wrap below dates it right.
+        $prevLog = "C:\Omega\logs\omega_$([DateTime]::UtcNow.AddDays(-1).ToString('yyyy-MM-dd')).log"
+        if (Test-Path $prevLog) {
+            $lastStat = Get-Content $prevLog -Tail 400 | Select-String 'ENG-DISPATCH-STATS' | Select-Object -Last 1
+        }
+    }
     if ($lastStat) {
         if ($lastStat.Line -match 'posted_exec=(\d+)') { $postedExec = [int]$matches[1] }
         if ($lastStat.Line -match '(\d{2}):(\d{2}):(\d{2})') {
