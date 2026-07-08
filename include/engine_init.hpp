@@ -1756,13 +1756,19 @@ static void init_engines(const std::string& cfg_path)
             static const JCfg JR[] = {
                 {"XAUUSD", "XAUUSD",  2, 0.010,  6.0, 999.0, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"},
                 {"XAGUSD", "XAGUSD",  2, 0.010,  6.0, 0.5, "phase1/signal_discovery/warmup_XAGUSD_H1.csv"},
-                {"USOIL",  "USOIL.F", 2, 0.010,  8.0, 0.5, "phase1/signal_discovery/warmup_USOIL_H1.csv"},
+                // USOIL ROW DISABLED S-2026-07-08d (live -$1,239 SINGLE trade: SHORT 74.08->75.31,
+                // 1.0 lot x $1000/pt = un-normalized dollar risk on an UNVALIDATED provisional row --
+                // same audit-owed class as the killed NAS100 rider, same close-eval BE mechanism.
+                // Do NOT re-add without the owed faithful backtest AND normalized sizing.
+                // {"USOIL",  "USOIL.F", 2, 0.010,  8.0, 0.5, "phase1/signal_discovery/warmup_USOIL_H1.csv"},
                 {"EURUSD", "EURUSD",  2, 0.003,  4.0, 0.5, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
                 {"GBPUSD", "GBPUSD",  2, 0.003,  3.5, 0.5, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
                 {"USDJPY", "USDJPY",  2, 0.003,  3.0, 0.5, "phase1/signal_discovery/warmup_USDJPY_H1.csv"},
                 {"AUDUSD", "AUDUSD",  2, 0.003,  6.0, 0.5, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
                 {"NZDUSD", "NZDUSD",  2, 0.003,  7.0, 0.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
-                {"US500",  "US500.F", 2, 0.0075, 4.0, 0.5, "phase1/signal_discovery/warmup_US500_H1.csv"},
+                // US500 ROW DISABLED S-2026-07-08d alongside USOIL: audit still owed + $50/pt
+                // un-normalized. Re-add only with a passing faithful BT + sized lot.
+                // {"US500",  "US500.F", 2, 0.0075, 4.0, 0.5, "phase1/signal_discovery/warmup_US500_H1.csv"},
                 // NAS100 ROW DISABLED S-2026-07-08c (operator: "-$71 BE_RATCHET loss, fix this").
                 // The owed per-symbol backtest RAN (faithful sim, NSXUSD H1 2022-2026 certified,
                 // 24,407 bars): W4/0.75/BE05 = net -300bp PF0.99 H1 -3,914 = DEAD both-halves;
@@ -1780,6 +1786,16 @@ static void init_engines(const std::string& cfg_path)
                 c.rt_cost_bp = j.rt;
                 c.be_arm = j.thr * j.bam;    // BE-ratchet arm (0.5x = BE05 / 1.0x = BE10, per sweep)
                 c.hard_stop = j.thr * 2.0;   // catastrophe floor at two jumps adverse
+                // S-2026-07-08d DOLLAR-RISK NORMALIZATION (USOIL -$1,239 lesson: lot=1.0
+                // default let native $/pt run wild -- oil $1000/pt vs NAS $1/pt). Cap each
+                // ride's hard-stop dollar risk at ~$25: lot chosen per symbol so
+                // thr*2 (hard stop) x $/pt x lot ~= $25. Plain if-chain (MSVC-safe).
+                if      (!strcmp(j.tag, "XAUUSD")) c.lot = 0.01;   // 2% of ~4070 = 81pt x $100 x .01 = $81 hard-stop... FLIP-exit row, keep micro
+                else if (!strcmp(j.tag, "XAGUSD")) c.lot = 0.01;   // $5000/pt-lot silver -> micro
+                else if (!strcmp(j.tag, "USDJPY")) c.lot = 0.02;   // 0.6% of 162 = ~1pt x $667 x .02 = ~$13
+                else if (!strcmp(j.tag, "DJ30"))   c.lot = 0.02;   // 1% of 52600 = 526pt x $5 x .02 = ~$53 -> half again
+                else if (!strcmp(j.tag, "GER40"))  c.lot = 0.30;   // 0.6% of 25000 = 150pt x $1.1 x .3 = ~$50
+                else                                c.lot = 0.01;   // FX majors $100k/pt-lot -> 0.01 = ~$6/thr
                 jr.add(std::move(c));
             }
             size_t jseeded = 0;
