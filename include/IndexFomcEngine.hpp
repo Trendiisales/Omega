@@ -1,5 +1,5 @@
 #pragma once
-//  ADVERSE-PROTECTION: time-stop only -- exits at FOMC-day close after hold_bars=1 D1 bar (FOMC_EXIT), no LOSS_CUT/BE/trail/SL; entry only via ExecutionCostGuard; no faithful backtest on record -- verdict owed before re-enable (backfill S-2026-06-24n)
+//  ADVERSE-PROTECTION: (S-2026-07-08c, BACKTESTED VERDICT -- debt cleared) 0.5xATR14(entry) intraday cold stop (p.stop_atr_mult, tick-path STOP_ATR) + hold_bars=1 FOMC-day-close time exit + index_risk_off() entry gate + ExecutionCostGuard. Verdict basis backtest/index_fomc_protection_bt.cpp (REAL class, 180 trades 2019-2026 x US500/USTEC/DJ30 certified dailies, adverse-first stop fills): stop lifts net +1204->+3032bp @3bp rt (PF1.13->1.48), worst trade -633->-294bp, 6/8 years improved, 2024 flipped positive; robust at 6bp (2x). DECAY FLAG (honest): H2 (late-22..2026) negative even stopped at 6bp; 2026 n=12 PF0.10-0.15 -- edge is decayed-recent; engine stays SHADOW lot 0.01, review after 2026 H2 meetings before any size talk.
 // =============================================================================
 //  IndexFomcEngine.hpp -- pre-FOMC drift on US index CFDs (S44)
 //
@@ -46,6 +46,11 @@ struct IndexFomcParams {
     double max_lot        = 0.50;
     int    atr_period     = 14;
     double usd_per_pt     = 1.0;
+    // S-2026-07-08c backtested cold stop (index_fomc_protection_bt.cpp, 180 trades
+    // 2019-2026 x 3 US indices, adverse-first fills): 0.5xATR14(entry) intraday stop
+    // lifts net +1204->+3032bp @3bp rt (PF 1.13->1.48), halves worst trade
+    // (-633->-294bp), improves 6 of 8 years, flips 2024 positive. 0.0 = disabled.
+    double stop_atr_mult  = 0.5;
 };
 
 class IndexFomcEngine {
@@ -71,6 +76,13 @@ public:
             on_d1_bar(acc_h_, acc_l_, acc_c_, bid, ask, acc_day_, cb);
             acc_day_ = day; acc_h_ = acc_l_ = acc_c_ = mid;
         } else { if (mid > acc_h_) acc_h_ = mid; if (mid < acc_l_) acc_l_ = mid; acc_c_ = mid; }
+        // S-2026-07-08c intraday cold stop (backtested, see IndexFomcParams::stop_atr_mult):
+        // long-only 1-day event hold -> cut at entry - X*ATR14(entry) on the live tick path.
+        // The BT modeled this exact resting-stop semantic (fires whenever the day's low
+        // breaches, fill at stop level; live fill = current bid, slippage borne here).
+        if (pos_.active && p.stop_atr_mult > 0.0 && pos_.atr_at_entry > 0.0
+            && mid <= pos_.entry_px - p.stop_atr_mult * pos_.atr_at_entry)
+            close_position(bid, ask, now_ms, "STOP_ATR", cb);
     }
 
     void on_d1_bar(double h, double l, double c, double bid, double ask,
@@ -105,7 +117,10 @@ public:
     bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const noexcept {
         if (!pos_.active) return false;
         o.engine=eng; o.symbol=sym; o.side="LONG"; o.size=pos_.lot; o.entry=pos_.entry_px;
-        o.sl=0.0; o.tp=0.0; o.entry_ts=pos_.entry_ts/1000; o.mfe=pos_.mfe; o.mae=pos_.mae;
+        // S-2026-07-08c: persist the stop LEVEL so the intraday stop survives a restart
+        o.sl=(p.stop_atr_mult>0.0 && pos_.atr_at_entry>0.0)
+                ? pos_.entry_px - p.stop_atr_mult*pos_.atr_at_entry : 0.0;
+        o.tp=0.0; o.entry_ts=pos_.entry_ts/1000; o.mfe=pos_.mfe; o.mae=pos_.mae;
         return true;
     }
     bool persist_restore(const omega::PositionSnapshot& ps) noexcept {
@@ -113,6 +128,10 @@ public:
         pos_=Pos{}; pos_.active=true; pos_.entry_px=ps.entry; pos_.lot=ps.size;
         pos_.entry_ts=ps.entry_ts*1000; pos_.mfe=ps.mfe; pos_.mae=ps.mae;
         pos_.bars_held=weekdays_between(pos_.entry_ts, (int64_t)time(nullptr)*1000LL);
+        // S-2026-07-08c: rehydrate the stop from the persisted level (sl=0 legacy
+        // snapshot -> atr_at_entry stays 0 -> stop disarms, falls back to time-exit)
+        if (ps.sl > 0.0 && p.stop_atr_mult > 0.0 && ps.entry > ps.sl)
+            pos_.atr_at_entry = (ps.entry - ps.sl) / p.stop_atr_mult;
         return true;
     }
 
@@ -143,7 +162,7 @@ private:
         for (int64_t z = a+1; z < b; ++z) { int w=(int)(((z%7)+4+7)%7); if (w>=1 && w<=5) ++n; }
         return n;
     }
-    struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; double mfe=0,mae=0; } pos_;
+    struct Pos { bool active=false; double entry_px=0,lot=0; int64_t entry_ts=0; int bars_held=0; double mfe=0,mae=0; double atr_at_entry=0; } pos_;
 
     // YYYYMMDD for a UTC day_ms, via portable civil-from-days (Howard Hinnant).
     static int ymd_from_days(int64_t z) {
@@ -179,6 +198,7 @@ private:
         // cost gate: 1-ATR expected move proxy (1-day FOMC hold)
         if (atr_>0.0 && !ExecutionCostGuard::is_viable(symbol_.c_str(), ask-bid, atr_, L, 1.5)) return;
         pos_=Pos{}; pos_.active=true; pos_.entry_px=ask; pos_.lot=L; pos_.entry_ts=day_ms;
+        pos_.atr_at_entry=atr_;   // S-2026-07-08c: freeze ATR for the intraday stop level
         std::printf("[IndexFomc-%s] ENTRY LONG (pre-FOMC) px=%.2f lot=%.3f%s\n",symbol_.c_str(),ask,pos_.lot,shadow_mode?" [SHADOW]":"");
         std::fflush(stdout);
     }
