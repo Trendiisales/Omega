@@ -148,6 +148,28 @@ namespace stall_detail {
 }
 
 // ── one cron instance (one companion book) ───────────────────────────────────
+// S-2026-07-08c AUTO-RETIREMENT (operator order): a companion book whose banked
+// forward net proves <= retire_usd stops ARMING new companions/mirrors (open ones
+// still manage/bank normally; state files keep publishing). Symmetric to the
+// n>=30 promote gate -- a proven-negative book retires itself instead of waiting
+// for a manual cull. Un-retire = operator raises the limit / clears the closed
+// csv (loud, deliberate). Banked net restored at boot by summing the book's own
+// companion_closed.csv (realized_pnl column, 3rd-from-last -- same parser as the
+// registry rollup).
+inline double stall_closed_net_(const std::string& closed_csv) {
+    std::ifstream f(closed_csv);
+    if (!f.is_open()) return 0.0;
+    std::string ln; double net = 0.0; bool first = true;
+    while (std::getline(f, ln)) {
+        if (first) { first = false; continue; }
+        std::vector<std::string> c; std::stringstream ss(ln); std::string t;
+        while (std::getline(ss, t, ',')) c.push_back(t);
+        if (c.size() < 4) continue;
+        net += std::atof(c[c.size() - 3].c_str());
+    }
+    return net;
+}
+
 class StallBook {
 public:
     struct Config {
@@ -164,6 +186,9 @@ public:
         double trail_usd    = 0.0;                 // TRAIL_USD
         double retrig_usd   = 0.0;                 // COMPANION_RETRIG_USD
         bool   bull_only    = false;               // COMPANION_BULL_ONLY
+        double retire_usd   = -300.0;              // S-2026-07-08c auto-retirement: banked net <= this
+                                                   //   => no NEW companions (0 = disabled; ~2x a worst
+                                                   //   validated clip-book drawdown leg)
         double cold_loss_omega  = -50.0;           // COLD_LOSS_USD_OMEGA
         double cold_loss_crypto = -15.0;           // COLD_LOSS_USD_CRYPTO
         std::string dir;                           // working dir (relative, e.g. "stall/xau_tf4h_usd_a")
@@ -173,6 +198,7 @@ public:
         usd_mode_ = cfg_.arm_usd > 0.0;
         { std::error_code ec; std::filesystem::create_directories(cfg_.dir, ec); }   // never silent-die on a missing state dir
         closed_path_  = cfg_.dir + "/companion_closed.csv";
+        banked_net_   = stall_closed_net_(closed_path_);   // S-2026-07-08c retirement watermark
         state_path_   = cfg_.dir + "/companion_state.json";
         pos_path_     = cfg_.dir + "/companion_positions.tsv";     // C++-owned persistence (not python JSON)
         clipped_path_ = cfg_.dir + "/companion_clipped.tsv";
@@ -222,6 +248,13 @@ public:
                     // BULL-REGIME GATE: only OPEN a new gold companion while the 4h trend is up.
                     // Never blocks an already-open companion. FAIL-SAFE: unknown regime -> skip open.
                     if (cfg_.bull_only && is_gold_(r.sym) && gold_bull != 1) continue;
+                    // S-2026-07-08c auto-retirement: proven-negative book arms nothing new.
+                    if (cfg_.retire_usd < 0.0 && banked_net_ <= cfg_.retire_usd) {
+                        if (!retired_logged_) { retired_logged_ = true;
+                            std::printf("[STALL][RETIRED] book=%s banked_net=$%.0f <= $%.0f -- no new companions (auto-retirement)\n",
+                                        cfg_.name.c_str(), banked_net_, cfg_.retire_usd); std::fflush(stdout); }
+                        continue;
+                    }
                     Pos p;
                     p.book = r.book; p.eng = r.eng; p.sym = r.sym; p.side = r.side;
                     p.entry = round4(r.entry);
@@ -275,6 +308,8 @@ private:
 
     Config cfg_;
     bool usd_mode_ = false;
+    double banked_net_ = 0.0;          // S-2026-07-08c auto-retirement running net
+    bool   retired_logged_ = false;
     std::string closed_path_, state_path_, pos_path_, clipped_path_;
     std::unordered_map<std::string, Pos>    pos_;
     std::unordered_map<std::string, double> clipped_;
@@ -327,6 +362,7 @@ private:
               << ',' << pyfloat(round2(pnl), 2) << ',' << pyfloat(round2(p.mfe_pct), 2) << ','
               << (bar - p.open_bar) << '\n';
         }
+        banked_net_ += pnl;   // S-2026-07-08c retirement watermark
         pos_.erase(it);
     }
     static bool file_nonempty_(const std::string& path) {
@@ -524,6 +560,9 @@ public:
         double size_mult  = 2.0;                 // mirror size = mult x parent size
         double rt_bp      = 3.0;                 // round-trip cost, bp of mirror entry px
         int    tf_sec     = 3600;                // close-eval timeframe (H1)
+        double retire_usd = -300.0;              // S-2026-07-08c auto-retirement: banked net <= this
+                                                 //   => no NEW mirror arms (0 = disabled; ~2x the worst
+                                                 //   validated mirror trade, e.g. Connors -155pt)
         bool   long_only  = false;               // skip SHORT parents (mirror sweep's SHORT sim
                                                  // is invalid — negation breaks % thresholds; only
                                                  // LONG-side mirrors are validated for XauTF fams)
@@ -533,6 +572,7 @@ public:
     explicit MirrorBook(Config c) : cfg_(std::move(c)) {
         { std::error_code ec; std::filesystem::create_directories(cfg_.dir, ec); }
         closed_path_ = cfg_.dir + "/companion_closed.csv";
+        banked_net_  = stall_closed_net_(closed_path_);   // S-2026-07-08c retirement watermark
         state_path_  = cfg_.dir + "/companion_state.json";
         pos_path_    = cfg_.dir + "/mirror_watch.tsv";
         load_();
@@ -618,6 +658,8 @@ private:
     Config cfg_;
     std::string closed_path_, state_path_, pos_path_;
     std::unordered_map<std::string, Watch> watch_;
+    double banked_net_ = 0.0;          // S-2026-07-08c auto-retirement running net
+    bool   retired_logged_ = false;
     StallRollUp roll_;
 
     bool leg_match_(const std::string& eng, const std::string& sym) const {
@@ -650,6 +692,13 @@ private:
             trig = w.p_entry * (1.0 + dir * cfg_.arm_pct / 100.0);
         }
         if (dir > 0 ? (close >= trig) : (close <= trig)) {
+            // S-2026-07-08c auto-retirement: proven-negative mirror book arms nothing new.
+            if (cfg_.retire_usd < 0.0 && banked_net_ <= cfg_.retire_usd) {
+                if (!retired_logged_) { retired_logged_ = true;
+                    std::printf("[MIRROR][RETIRED] book=%s banked_net=$%.0f <= $%.0f -- no new mirrors (auto-retirement)\n",
+                                cfg_.name.c_str(), banked_net_, cfg_.retire_usd); std::fflush(stdout); }
+                return;
+            }
             w.active = true; w.m_entry = close; w.m_peak = close; w.m_bar = bar;
             if (w.clipped) { w.clipped = false; w.clip_ref = 0.0; }
         }
@@ -672,6 +721,7 @@ private:
               << fmtnum(w.m_entry) << ',' << pyfloat(round2(usd), 2) << ','
               << pyfloat(round2(peak_pct), 2) << ',' << (bar - w.m_bar) << '\n';
         }
+        banked_net_ += usd;   // S-2026-07-08c retirement watermark
         w.active = false; w.m_entry = 0.0; w.m_peak = 0.0; w.m_bar = 0;
     }
 

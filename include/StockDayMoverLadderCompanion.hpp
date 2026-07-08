@@ -70,6 +70,16 @@
 
 namespace omega {
 
+// S-2026-07-08c BOOT CATCH-UP order suppression: rows that arrived while the
+// process was DOWN are replayed through the LIVE window logic at boot (so
+// pending->active conversions and flushes scheduled for "the next close" are
+// never silently eaten by a restart -- the bug that left AMD/TSLA/CRDO pendings
+// latched over 07-07). During that replay broker orders + central-ledger writes
+// are suppressed (fills at stale closes must not hit the live order path, and
+// handle_closed_trade would PHANTOM-DROP pre-boot entries anyway); the book's
+// own fwd_ totals + closed_ deque still record, so book accounting stays exact.
+static std::atomic<bool> g_aulad_catchup{false};
+
 // ── one stock name's long-only upjump-ladder book (returns-based) ────────────
 class StockLadderSym {
 public:
@@ -77,6 +87,15 @@ public:
         std::string sym      = "NVDA";    // ticker -> book name <sym>Lad + persist paths
         std::string live_sym = "NVDA";    // symbol the live legs trade (order path)
         double thr           = 0.03;      // parent day-mover threshold (+3% arm / -3% exit)
+        // S-2026-07-08c AUTO-RETIREMENT (operator order): once this name's FORWARD
+        // net-real book falls to <= retire_usd, NO new windows arm (existing legs
+        // manage/flush normally, state stays visible with retired=1). Symmetric to
+        // the n>=30 promote gate: a book that proves negative stops digging by
+        // itself instead of waiting for a manual cull. Default -$600 = ~2x the
+        // worst backtested clip (BIGCAP BT worst leg -28.1% of a $10k-notional
+        // fractional leg, BIGCAP_UPJUMP_LADDER_2026-07-07.md). 0 = disabled.
+        // Un-retire = operator deletes the book file / raises the limit (loud act).
+        double retire_usd    = -600.0;
         // TIGHT banker: arm 0.5% MFE, clip on 2-bar stall, no giveback leg
         double t_arm         = 0.5;       // % MFE to arm
         int    t_stall       = 2;         // daily bars without a new MFE high -> clip
@@ -289,6 +308,7 @@ private:
     int64_t deploy_ts_ = 0;
     bool    deploy_loaded_ = false;
     int     rej_streak_ = 0;   // consecutive >50%-jump rejects (3 = real level shift -> resync)
+    bool    retired_logged_ = false;   // S-2026-07-08c: one-shot auto-retirement log
 
     static constexpr int NT_ = 3;   // 0 tight banker / 1 wide runner / 2 ladder spawn (wide params)
     static constexpr const char* TIER_TAG_[NT_] = { "tight", "wide", "ladder" };
@@ -342,7 +362,8 @@ private:
         const double r_real = r - cfg_.rt_cost_bp / 1e4;
         if (fwd) {
             if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, true, cfg_.lot, fill, L.token);
-            if (ledger_fn_) ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, true, L.le, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
+            if (ledger_fn_ && !g_aulad_catchup.load(std::memory_order_relaxed))
+                ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, true, L.le, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
             fwd_[L.ti].ret += r; fwd_[L.ti].ret_real += r_real;
             fwd_[L.ti].clips += 1; fwd_[L.ti].wins += (r_real > 1e-9 ? 1 : 0);
             save_fwd_book_();
@@ -364,7 +385,7 @@ private:
         if (ti == 0) { L.arm = cfg_.t_arm; L.sb = cfg_.t_stall; L.gb = 0.0; }
         else         { L.arm = cfg_.w_arm; L.sb = 0;            L.gb = cfg_.w_gb; }
         L.open = true; L.mfe = 0.0; L.ext = bar_; L.entry_ts = ts_sec;
-        if (fwd && open_fn_) {
+        if (fwd && open_fn_ && !g_aulad_catchup.load(std::memory_order_relaxed)) {
             const double tp_dist_pts = px * (L.arm / 100.0);
             if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
                 L.token = open_fn_(cfg_.live_sym, true, cfg_.lot, px);
@@ -416,7 +437,7 @@ private:
                 if (L.clipped) {   // reclip on trend resume
                     if (cfg_.reclip > 0 && L.pk > 0 && fav > L.pk * (1.0 + cfg_.reclip)) {
                         L.clipped = false; L.le = cur; L.entry_ts = ts_sec;
-                        if (fwd && open_fn_) {
+                        if (fwd && open_fn_ && !g_aulad_catchup.load(std::memory_order_relaxed)) {
                             L.token = open_fn_(cfg_.live_sym, true, cfg_.lot, cur);
                             std::printf("[AULAD][RECLIP] %s LONG @%.2f\n", leg_engine_(L.ti).c_str(), cur);
                             std::fflush(stdout);
@@ -455,7 +476,20 @@ private:
         if (win_ && j <= -cfg_.thr) {
             exit_pend_ = true;                              // flush at the NEXT close
         } else if (!win_ && !win_pend_ && contig && j >= cfg_.thr) {
-            win_pend_ = true;                               // legs enter at the NEXT close
+            // S-2026-07-08c AUTO-RETIREMENT gate: a proven-negative forward book
+            // stops arming NEW windows (existing legs above still managed/flushed).
+            double net_real_usd = 0.0;
+            for (int ti = 0; ti < NT_; ++ti) net_real_usd += fwd_[ti].ret_real * cfg_.notional;
+            if (cfg_.retire_usd < 0.0 && net_real_usd <= cfg_.retire_usd) {
+                if (!retired_logged_) {
+                    retired_logged_ = true;
+                    std::printf("[AULAD][RETIRED] %s forward net_real $%.0f <= $%.0f -- no new windows (auto-retirement, S-2026-07-08c)\n",
+                                cfg_.sym.c_str(), net_real_usd, cfg_.retire_usd);
+                    std::fflush(stdout);
+                }
+            } else {
+                win_pend_ = true;                           // legs enter at the NEXT close
+            }
         }
         save_live_state_();
     }
@@ -603,19 +637,41 @@ public:
         std::unordered_map<int, size_t> colsym;
         { std::stringstream hs(header); std::string tok; int ci = 0;
           while (std::getline(hs, tok, ',')) { auto it = col_.find(tok); if (it != col_.end()) colsym[ci] = it->second; ++ci; } }
-        std::string line; size_t rows = 0;
+        // S-2026-07-08c BOOT CATCH-UP: rows the LIVE path already processed before the
+        // last shutdown (persisted watermark) are history -> seed (no window logic).
+        // Rows NEWER than the watermark arrived while we were DOWN -> replay them
+        // through the LIVE window logic (orders/ledger suppressed via g_aulad_catchup)
+        // so pending->active conversions and flushes land on their correct closes
+        // instead of latching. First-ever deploy (no watermark file) seeds everything
+        // (deploy-forward semantics unchanged).
+        int64_t watermark = 0;
+        { std::ifstream wf(lastseen_path_); long long v = 0; if (wf.is_open() && (wf >> v)) watermark = v; }
+        std::string line; size_t rows = 0, caught_up = 0;
+        if (watermark > 0) g_aulad_catchup.store(true, std::memory_order_relaxed);
         while (std::getline(f, line)) {
             if (line.empty()) continue;
             const int64_t ts = parse_date_ts_(line);
             if (ts <= 0) continue;
-            dispatch_row_(line, colsym, ts, /*live=*/false);
+            const bool live_replay = (watermark > 0 && ts > watermark);
+            dispatch_row_(line, colsym, ts, /*live=*/live_replay);
+            if (live_replay) ++caught_up;
             if (ts > last_seed_ts_) last_seed_ts_ = ts;
             ++rows;
         }
-        std::printf("[AULAD][SEED] wide-csv %s: %zu rows, %zu/%zu names mapped, last=%lld\n",
-                    path.c_str(), rows, colsym.size(), syms_.size(), (long long)last_seed_ts_);
+        g_aulad_catchup.store(false, std::memory_order_relaxed);
+        save_lastseen_(last_seed_ts_);
+        std::printf("[AULAD][SEED] wide-csv %s: %zu rows (%zu caught-up live, watermark=%lld), %zu/%zu names mapped, last=%lld\n",
+                    path.c_str(), rows, caught_up, (long long)watermark,
+                    colsym.size(), syms_.size(), (long long)last_seed_ts_);
         std::fflush(stdout);
         return rows;
+    }
+
+    // S-2026-07-08c: persisted live watermark (last ts processed through LIVE logic).
+    void save_lastseen_(int64_t ts) const noexcept {
+        if (ts <= 0) return;
+        std::ofstream wf(lastseen_path_, std::ios::trunc);
+        if (wf.is_open()) wf << (long long)ts << "\n";
     }
 
     size_t seed_dumps_all() { size_t n = 0; for (auto& s : syms_) n += s.seed_dump(); return n; }
@@ -687,6 +743,9 @@ private:
     std::unordered_map<std::string, size_t> col_;     // name -> sym index
     std::string state_path_ = "stockladder_companion_state.json";
     int64_t last_seed_ts_ = 0;
+    // S-2026-07-08c: live watermark file (cwd C:\Omega, same convention as the
+    // per-name deploy/book/live files).
+    std::string lastseen_path_ = "stockladder_companion_lastseen.txt";
 
     // poller
     std::string      csv_rel_;
@@ -759,9 +818,11 @@ private:
                 if (fresh > 0 && as_seed) {
                     for (auto& s : syms_) s.finalize_seed();
                     last_seen_ts_.store(newest); seed_missed_ = false;
+                    save_lastseen_(newest);      // S-2026-07-08c: advance the watermark
                     recompute_unlocked_();
                 } else if (fresh > 0) {
                     last_seen_ts_.store(newest);
+                    save_lastseen_(newest);      // S-2026-07-08c: advance the watermark
                     recompute_unlocked_();
                 }
             }
