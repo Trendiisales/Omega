@@ -59,7 +59,7 @@ a{color:var(--blu);text-decoration:none}
 .flashg{animation:flashG 1.4s ease-out}
 #prtip{position:fixed;display:none;z-index:50;pointer-events:none;background:rgba(14,20,27,.96);border:1px solid var(--bd2);border-radius:5px;padding:6px 9px;font-size:11px;line-height:1.55;box-shadow:0 8px 24px rgba(0,0,0,.55)}
 #prc{cursor:crosshair}
-@media(max-width:1180px){.deskmain{grid-template-columns:1fr !important}}
+@media(max-width:1180px){.deskmain,.topgrid{grid-template-columns:1fr !important}}
 @media(max-width:980px){.g2,.g3,.deskmain{grid-template-columns:1fr !important}.compcols{columns:1}}
 </style>
 </head>
@@ -105,7 +105,12 @@ a{color:var(--blu);text-decoration:none}
 <div id="ticker" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:8px;overflow-x:auto;background:var(--pan)"></div>
 
 <!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
-<div class="pan" id="ltpan" style="margin-top:8px">
+<!-- S-2026-07-08c operator resize: the four top strips at HALF WIDTH, two columns:
+     [live trades + predictive ranges] | [engine ledger + engine heat]. Collapses to
+     one column under 1180px. -->
+<div class="topgrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;margin-top:8px">
+<div class="tcol" style="min-width:0">
+<div class="pan" id="ltpan">
   <div style="display:flex;align-items:baseline;gap:10px">
     <span class="lbl">LIVE OPEN TRADES</span>
     <span id="ltcount" class="lbl"></span>
@@ -143,6 +148,8 @@ a{color:var(--blu);text-decoration:none}
      deskmain now single-column: the price chart spans full width. ═══ -->
 
 </div><!-- /deskmain -->
+</div><!-- /tcol left -->
+<div class="tcol" style="min-width:0">
 
 <!-- ═══ ENGINE LEDGER (running totals). PROMOTION TRACKER removed 2026-07-06 (operator: useless). ═══ -->
 <div class="grid" style="grid-template-columns:1fr">
@@ -169,6 +176,8 @@ a{color:var(--blu);text-decoration:none}
   </div>
   <div id="heat"></div>
 </div>
+</div><!-- /tcol right -->
+</div><!-- /topgrid -->
 
 <!-- ═══ COMPANIONS ROW: crypto | gold side-by-side (was stacked → halves vertical space) ═══ -->
 <div class="compcols">
