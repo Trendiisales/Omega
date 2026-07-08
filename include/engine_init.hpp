@@ -1995,7 +1995,10 @@ static void init_engines(const std::string& cfg_path)
                 "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META","NFLX","CRWD",
                 "SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB","DELL","ORCL","QCOM","INTC",
                 "AMZN","GOOGL","MSFT","AAPL","CRM","ADBE","IONQ","RGTI","QBTS","ASTS","RKLB","NBIS",
-                "CRWV","ALAB","CRDO"
+                "CRWV","ALAB","CRDO",
+                // S-2026-07-08c FULL-UNIVERSE ADDS (operator go; outputs/FULL_UNIVERSE_RANK_2026-07-08.txt,
+                // all-6 pass + net-over-random >= +17k% on 533-name IBKR-refreshed data):
+                "WDC","STX","DD","TPR","BMY","SWKS"
             };
             // S-2026-07-08c AGGRESSIVE MULTIPLIER (operator: "wire the aggressive
             // multiplier"). Per-name validated-cell ranking 2019-2026 (evidence
@@ -2016,7 +2019,11 @@ static void init_engines(const std::string& cfg_path)
             // (MSVC note, cutover-#8 build fail C2760/C3536: the original lambda with
             // static local arrays breaks MSVC in this nested init scope; plain arrays
             // + inline loops compile everywhere.)
-            const char* AGG_ELITE[] = {"MU","NVDA","AVGO","DELL","CRDO","PANW"};
+            const char* AGG_ELITE[] = {"MU","NVDA","AVGO","DELL","CRDO","PANW",
+                                       // S-2026-07-08c full-universe re-rank promotions:
+                                       // WDC over-random +78.9k%/PF2.57, STX +57.8k/2.67,
+                                       // DD +73.9k/4.36, INTC +32.6k/1.78 (was baseline)
+                                       "WDC","STX","DD","INTC"};
             const char* AGG_OUT[]   = {"TSLA","COIN","PLTR","MSTR","UBER",
                                        "CRWV","SHOP","META","IONQ","QBTS"};
             int n_elite = 0, n_out = 0;
@@ -2026,6 +2033,7 @@ static void init_engines(const std::string& cfg_path)
                 bool is_elite = false, is_out = false;
                 for (const char* e : AGG_ELITE) if (c.sym == e) { is_elite = true; break; }
                 for (const char* o : AGG_OUT)   if (c.sym == o) { is_out   = true; break; }
+                c.cap = 6;   // S-2026-07-08c: +1 for the MIRROR base leg (ladder capacity unchanged)
                 if (is_out) { c.ranked_out = true; ++n_out; }
                 else if (is_elite) {
                     c.notional   *= 2.0;       // elite x2 clip notional

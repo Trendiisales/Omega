@@ -110,6 +110,13 @@ public:
         // WIDE runner: arm 8% MFE, clip on 50% giveback from peak
         double w_arm         = 8.0;       // % MFE to arm
         double w_gb          = 0.50;      // giveback fraction of MFE
+        // S-2026-07-08c MIRROR tier (operator "obligatory mirrors"; standalone BT on the
+        // active-book parents, 8bp: whole grid PF1.74-1.99 plateau; wired cell arm2/gb0.75
+        // = n2034 +4660% bothH+ exbest+4425 2x-cost robust). Third BASE leg between
+        // TIGHT and WIDE; cap is raised by 1 at wiring so ladder capacity is unchanged.
+        bool   mirror_leg    = true;
+        double m_arm         = 2.0;       // % MFE to arm the mirror
+        double m_gb          = 0.75;      // giveback fraction of MFE
         double reclip        = 0.05;      // re-enter when fav > peak*(1+reclip)
         int    cap           = 5;         // max legs spawned per parent window (incl 2 base)
         double loss_cut_pct  = 15.0;      // ADVERSE-PROTECTION: cut an open leg at -15% fav (FREE, backtested)
@@ -434,6 +441,11 @@ private:
             legs_.clear();
             legs_.push_back(make_leg_(0, cur, ts_sec, fwd));   // TIGHT banker
             legs_.push_back(make_leg_(1, cur, ts_sec, fwd));   // WIDE runner
+            if (cfg_.mirror_leg) {                             // S-2026-07-08c MIRROR tier
+                Leg M = make_leg_(2, cur, ts_sec, fwd);        // books into the ladder bucket
+                M.arm = cfg_.m_arm; M.gb = cfg_.m_gb; M.sb = 0;
+                legs_.push_back(std::move(M)); spawned_ += 1;
+            }
         }
         // 3) step legs on this close (activation close included, fav=0 — harness range(ei, xi)).
         else if (win_) {
