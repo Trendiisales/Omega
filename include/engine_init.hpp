@@ -2013,23 +2013,23 @@ static void init_engines(const std::string& cfg_path)
             // Auto-retirement (-$600 scaled with notional) stays the safety net on
             // everything left on. Shadow book; re-rank when the 744-name refresh
             // extends the universe.
-            auto agg_mult_for = [](const std::string& n) -> double {
-                static const char* ELITE[] = {"MU","NVDA","AVGO","DELL","CRDO","PANW"};
-                static const char* OUT[]   = {"TSLA","COIN","PLTR","MSTR","UBER",
-                                              "CRWV","SHOP","META","IONQ","QBTS"};
-                for (const char* e : ELITE) if (n == e) return 2.0;
-                for (const char* o : OUT)   if (n == o) return 0.0;
-                return 1.0;
-            };
+            // (MSVC note, cutover-#8 build fail C2760/C3536: the original lambda with
+            // static local arrays breaks MSVC in this nested init scope; plain arrays
+            // + inline loops compile everywhere.)
+            const char* AGG_ELITE[] = {"MU","NVDA","AVGO","DELL","CRDO","PANW"};
+            const char* AGG_OUT[]   = {"TSLA","COIN","PLTR","MSTR","UBER",
+                                       "CRWV","SHOP","META","IONQ","QBTS"};
             int n_elite = 0, n_out = 0;
             for (const char* nm : BIGCAP_LAD) {
                 omega::StockLadderSym::Config c;
                 c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
-                const double am = agg_mult_for(nm);
-                if (am <= 0.0) { c.ranked_out = true; ++n_out; }
-                else if (am > 1.0) {
-                    c.notional  *= am;         // elite x2 clip notional
-                    c.retire_usd *= am;        // retirement bar scales with size
+                bool is_elite = false, is_out = false;
+                for (const char* e : AGG_ELITE) if (c.sym == e) { is_elite = true; break; }
+                for (const char* o : AGG_OUT)   if (c.sym == o) { is_out   = true; break; }
+                if (is_out) { c.ranked_out = true; ++n_out; }
+                else if (is_elite) {
+                    c.notional   *= 2.0;       // elite x2 clip notional
+                    c.retire_usd *= 2.0;       // retirement bar scales with size
                     ++n_elite;
                 }
                 sl.add(std::move(c));
