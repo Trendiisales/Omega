@@ -10,6 +10,7 @@
 #include "RegimeState.hpp"  // 2026-06-12: bear-event lockout for choppy-bear instruments (symbol_gate)
 #include "PortfolioGovernor.hpp"  // S-2026-06-19 Phase 1 item 2: correlation-aware cross-symbol campaign cap (symbol_gate)
 #include "LiveBook.hpp"  // 2026-06-24: validated allowlist + shadow cost-floor + clean live-book ledger
+#include "PortfolioGuard.hpp"  // S-2026-07-08c: daily-loss hard halt feed (register_realized_pnl)
 
 static void handle_closed_trade(const omega::TradeRecord& tr_in) {
     omega::TradeRecord tr = tr_in;
@@ -638,6 +639,12 @@ static void handle_closed_trade(const omega::TradeRecord& tr_in) {
         }
         // Drawdown velocity always tracked -- forced closes are real losses
         g_adaptive_risk.dd_velocity.record_trade(nowSec(), tr.net_pnl);
+        // S-2026-07-08c DAILY-LOSS HARD HALT feed: every REAL (non-shadow) realized
+        // close accrues to the UTC-day accumulator; breach of pg cfg
+        // daily_loss_halt_usd blocks ALL new entries (ExecutionCostGuard +
+        // can_open_new_position) until midnight. Shadow closes ignored inside.
+        omega::pg::register_realized_pnl(
+            tr.net_pnl != 0.0 ? tr.net_pnl : tr.pnl, tr.shadow, nowSec() * 1000LL);
     }
 
     // ?? Reset partial exit state when broker closes position ?????????????????

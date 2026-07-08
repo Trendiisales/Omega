@@ -62,6 +62,17 @@ struct Config {
     bool        kill_file_enabled = true;
     const char* kill_file_path    = "C:/Omega/KILL_SWITCH.lock";
     int         kill_file_recheck_sec = 30;
+
+    // S-2026-07-08c runtime DAILY-LOSS HARD HALT (operator order, offered in the
+    // ddvel study, built on direct ask). When REAL (non-shadow) realized PnL for
+    // the current UTC day reaches -daily_loss_halt_usd, ALL new entries are
+    // blocked for the REST of that UTC day (enforced at ExecutionCostGuard::
+    // is_viable — the universal entry filter — and at can_open_new_position).
+    // Existing positions continue to manage to exit. Auto-resets at UTC midnight;
+    // the KILL_SWITCH.lock file remains the separate MANUAL full-stop layer.
+    // 0 = disabled. Complements DrawdownVelocityGuard (velocity trip) with a
+    // cumulative-level trip.
+    double daily_loss_halt_usd = 150.0;
 };
 
 static Config g_pg_cfg;  // mutate from engine_init.hpp
@@ -73,9 +84,16 @@ struct State {
     std::atomic<bool> kill_switch_active{false};
     std::atomic<int64_t> last_kill_check_ms{0};
 
+    // Daily-loss hard halt (S-2026-07-08c). PnL tracked in integer cents so the
+    // accumulator stays a lock-free atomic.
+    std::atomic<long long> day_real_pnl_cents{0};
+    std::atomic<int64_t>   pnl_day{0};              // UTC day number the accumulator belongs to
+    std::atomic<bool>      daily_halt_active{false};
+
     // For diagnostics:
     std::atomic<int64_t> n_blocked_concurrency{0};
     std::atomic<int64_t> n_blocked_kill_file{0};
+    std::atomic<int64_t> n_blocked_daily_halt{0};
     std::atomic<int64_t> n_size_scaled_up{0};
     std::atomic<int64_t> n_size_scaled_down{0};
 };
@@ -106,8 +124,54 @@ inline void refresh_kill_switch(int64_t now_ms) noexcept {
     }
 }
 
+// ---- Daily-loss hard halt (S-2026-07-08c) -----------------------------------
+
+// Roll the UTC-day accumulator; clears the halt at midnight. Cheap, callable
+// from any thread.
+inline void _daily_roll(int64_t now_ms) noexcept {
+    const int64_t day = (now_ms / 1000) / 86400;
+    int64_t cur = g_pg_state.pnl_day.load(std::memory_order_relaxed);
+    if (cur == day) return;
+    if (g_pg_state.pnl_day.compare_exchange_strong(cur, day)) {
+        g_pg_state.day_real_pnl_cents.store(0, std::memory_order_relaxed);
+        if (g_pg_state.daily_halt_active.exchange(false)) {
+            std::printf("[PG] DAILY-LOSS HALT cleared (UTC day rolled)\n");
+            std::fflush(stdout);
+        }
+    }
+}
+
+// Feed every REAL (non-shadow) realized close here (wired in handle_closed_trade).
+inline void register_realized_pnl(double pnl_usd, bool shadow, int64_t now_ms) noexcept {
+    if (shadow || g_pg_cfg.daily_loss_halt_usd <= 0.0) return;
+    _daily_roll(now_ms);
+    const long long cents =
+        g_pg_state.day_real_pnl_cents.fetch_add((long long)(pnl_usd * 100.0),
+                                                std::memory_order_relaxed)
+        + (long long)(pnl_usd * 100.0);
+    if (cents <= -(long long)(g_pg_cfg.daily_loss_halt_usd * 100.0)
+        && !g_pg_state.daily_halt_active.exchange(true)) {
+        std::printf("[PG] *** DAILY-LOSS HARD HALT ENGAGED *** real day PnL $%.2f <= -$%.2f "
+                    "-- ALL new entries blocked until UTC midnight (open positions manage to exit; "
+                    "KILL_SWITCH.lock remains the manual layer)\n",
+                    cents / 100.0, g_pg_cfg.daily_loss_halt_usd);
+        std::fflush(stdout);
+    }
+}
+
+inline bool daily_halted(int64_t now_ms) noexcept {
+    if (!g_pg_state.daily_halt_active.load(std::memory_order_relaxed)) return false;
+    _daily_roll(now_ms);   // clears at midnight
+    if (g_pg_state.daily_halt_active.load(std::memory_order_relaxed)) {
+        g_pg_state.n_blocked_daily_halt.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    return false;
+}
+
 // Returns true if a new position may open right now. Side-effect free.
 inline bool can_open_new_position() noexcept {
+    if (daily_halted(_pg_now_ms())) return false;
     if (g_pg_state.kill_switch_active.load(std::memory_order_relaxed)) {
         g_pg_state.n_blocked_kill_file.fetch_add(1, std::memory_order_relaxed);
         return false;
@@ -163,14 +227,19 @@ inline double htf_size_scalar(int htf_bias, bool trade_is_long) noexcept {
 // Diagnostic print — call from quote_loop stats block every 60s or so.
 inline void print_stats() noexcept {
     std::printf("[PG-STATS] concurrent=%d/%d  blocked_conc=%lld  blocked_kill=%lld"
-                "  scaled_up=%lld  scaled_down=%lld  kill_active=%d\n",
+                "  scaled_up=%lld  scaled_down=%lld  kill_active=%d"
+                "  day_real_pnl=$%.2f/-$%.0f  daily_halt=%d  blocked_daily=%lld\n",
                 g_pg_state.concurrent_positions.load(),
                 g_pg_cfg.max_concurrent_positions,
                 (long long)g_pg_state.n_blocked_concurrency.load(),
                 (long long)g_pg_state.n_blocked_kill_file.load(),
                 (long long)g_pg_state.n_size_scaled_up.load(),
                 (long long)g_pg_state.n_size_scaled_down.load(),
-                (int)g_pg_state.kill_switch_active.load());
+                (int)g_pg_state.kill_switch_active.load(),
+                g_pg_state.day_real_pnl_cents.load() / 100.0,
+                g_pg_cfg.daily_loss_halt_usd,
+                (int)g_pg_state.daily_halt_active.load(),
+                (long long)g_pg_state.n_blocked_daily_halt.load());
     std::fflush(stdout);
 }
 

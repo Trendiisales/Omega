@@ -16,6 +16,7 @@
 #include <string>
 #include <cstdio>
 #include <algorithm>
+#include "PortfolioGuard.hpp"   // S-2026-07-08c: daily-loss hard halt (self-contained header)
 
 struct ExecutionCostGuard {
     // Conservative (high-end) cost floors per lot, in instrument price points.
@@ -140,6 +141,20 @@ struct ExecutionCostGuard {
     // Gate: returns true if the trade is viable (expected gross > total cost ? ratio).
     static bool is_viable(const char* sym, double spread_pts, double tp_dist_pts,
                            double lot, double cost_ratio_min = 1.5) noexcept {
+        // S-2026-07-08c DAILY-LOSS HARD HALT (operator order): once the REAL book's
+        // realized loss for the UTC day breaches pg cfg daily_loss_halt_usd, every
+        // entry funnelled through this universal filter is refused until midnight.
+        // Rate-limited log (first block per minute) to avoid spamming the tape.
+        if (omega::pg::daily_halted(omega::pg::_pg_now_ms())) {
+            static int64_t last_log_min = 0;
+            const int64_t m = omega::pg::_pg_now_ms() / 60000;
+            if (m != last_log_min) {
+                last_log_min = m;
+                printf("[COST-GUARD] BLOCKED %s -- DAILY-LOSS HARD HALT active (resets UTC midnight)\n", sym);
+                fflush(stdout);
+            }
+            return false;
+        }
         const double cost  = estimated_cost_usd(sym, spread_pts, lot);
         const double gross = expected_gross_usd(sym, tp_dist_pts, lot);
         if (gross < cost * cost_ratio_min) {
