@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""FEED-PATH SELFTEST — silent-fallback detector (S-2026-07-08c, operator order).
+
+WHY THIS EXISTS: the 2026-07-07 VPS migration silently dropped the Omega service's
+AppEnvironmentExtra (OMEGA_IBKR_BRIDGE=1). The IBKR consumer thread never started on
+the new box; five FX pairs degraded invisibly to the BlackBull fallback and the only
+symptom was USDCAD (IBKR-only) never printing a bar. A fallback that works is exactly
+what makes a dead primary invisible — so this test asserts the PRIMARY path end-to-end
+and screams when anything rides a fallback.
+
+CHECKS (all must pass in market hours):
+  [1] SERVICE-ENV   registry AppEnvironmentExtra carries every required env
+                    (OMEGA_IBKR_BRIDGE=1 — extend REQUIRED_ENVS when new ones ship).
+  [2] CONSUMER-UP   current boot stdout has an [IBKR-CONSUMER] line AND port 9701
+                    shows an ESTABLISHED pair (listener alone = consumer dead).
+  [3] BRIDGE-FRESH  today's bridge L1 csv for an IBKR-ONLY canary (USDCAD) is
+                    growing (mtime <= 20 min in FX hours). IBKR-only symbols are the
+                    canaries precisely because no fallback can mask them.
+  [4] DOWNSTREAM    /api/fxladder_companion USDCAD ts advances (<= 26 trading-hours
+                    lag) — proves bridge -> consumer -> dispatch -> H1 roll -> book.
+  [5] NO-FALLBACK   if [3] fresh but [2] fails => "PRIMARY DOWN — RUNNING ON
+                    FALLBACK" (the exact silent state this test exists to kill).
+
+Exit 0 GREEN / 2 RED. Run from SessionStart hook + Mac cron (30 min, notification
+on RED via install_feedpath_cron.sh). FX weekend (Sat/Sun UTC + Fri>=22 UTC) skips
+freshness checks honestly (reports SKIP, not PASS).
+"""
+import datetime
+import json
+import subprocess
+import sys
+import urllib.request
+
+VPS = "omega-new"
+DESK = "http://45.85.3.79:7779"
+REQUIRED_ENVS = ["OMEGA_IBKR_BRIDGE=1"]
+CANARY_L1 = "USDCAD"          # IBKR-only: no fallback can mask a dead primary
+LADDER_PAIR = "USDCAD"
+
+def ssh(cmd, timeout=25):
+    try:
+        r = subprocess.run(["ssh", VPS, cmd], capture_output=True, text=True, timeout=timeout)
+        return r.stdout
+    except Exception as e:
+        return f"__SSH_ERR__ {e}"
+
+def fx_market_open(now=None):
+    now = now or datetime.datetime.now(datetime.UTC)
+    wd, hr = now.weekday(), now.hour
+    if wd == 5: return False                      # Sat
+    if wd == 6 and hr < 21: return False          # Sun pre-open
+    if wd == 4 and hr >= 22: return False         # Fri post-close
+    return True
+
+def main():
+    checks, red = [], False
+    def rec(tag, ok, msg, skip=False):
+        nonlocal red
+        state = "SKIP" if skip else ("PASS" if ok else "FAIL")
+        if not ok and not skip: red = True
+        checks.append(f"  {state:4s} [{tag}] {msg}")
+
+    open_now = fx_market_open()
+
+    # [1] service env
+    reg = ssh(r'reg query "HKLM\SYSTEM\CurrentControlSet\Services\Omega\Parameters" /v AppEnvironmentExtra 2>nul')
+    missing = [e for e in REQUIRED_ENVS if e not in reg]
+    rec("SERVICE-ENV", not missing,
+        f"AppEnvironmentExtra carries {REQUIRED_ENVS}" if not missing
+        else f"MISSING {missing} — consumer thread will NOT start (the 07-07 migration failure class)")
+
+    # [2] consumer up: boot line + established pair
+    con_line = ssh(r'findstr /C:"IBKR-CONSUMER" C:\Omega\logs\omega_service_stdout.log')
+    est = ssh("netstat -ano | findstr :9701 | findstr ESTABLISHED")
+    consumer_ok = ("IBKR-CONSUMER" in con_line) and ("ESTABLISHED" in est)
+    rec("CONSUMER-UP", consumer_ok,
+        "consumer boot line + 9701 ESTABLISHED" if consumer_ok
+        else f"boot-line={'y' if 'IBKR-CONSUMER' in con_line else 'NO'} established={'y' if 'ESTABLISHED' in est else 'NO'}")
+
+    # [3] bridge freshness on the IBKR-only canary
+    today = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    # dir-based (quoting-proof over ssh; powershell nested quotes mangle)
+    din = ssh(r"dir C:\Omega\logs\ibkr_l2\ibkr_l1_" + CANARY_L1 + "_" + today + r".csv 2>nul")
+    mt = ""
+    for ln in din.splitlines():
+        parts = ln.split()
+        if len(parts) >= 4 and parts[-1].endswith(".csv"):
+            # e.g. "07/08/2026  08:22 AM       500123 ibkr_l1_USDCAD_2026-07-08.csv" (VPS local=UTC)
+            try:
+                ampm = parts[2] if parts[2] in ("AM", "PM") else ""
+                tstr = parts[1] + ((" " + ampm) if ampm else "")
+                fmt = "%m/%d/%Y %I:%M %p" if ampm else "%m/%d/%Y %H:%M"
+                mt = datetime.datetime.strptime(parts[0] + " " + tstr, fmt).strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                mt = ""
+            break
+    if not open_now:
+        rec("BRIDGE-FRESH", True, "FX closed (weekend window) — freshness not assessable", skip=True)
+        bridge_fresh = None
+    else:
+        try:
+            age_min = (datetime.datetime.now(datetime.UTC)
+                       - datetime.datetime.strptime(mt, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.UTC)
+                       ).total_seconds() / 60.0
+            bridge_fresh = age_min <= 20
+            rec("BRIDGE-FRESH", bridge_fresh, f"{CANARY_L1} L1 csv age {age_min:.0f}min (<=20)")
+        except Exception:
+            bridge_fresh = False
+            rec("BRIDGE-FRESH", False, f"{CANARY_L1} L1 csv missing for {today} — bridge not subscribed/running")
+
+    # [4] downstream book advance
+    try:
+        with urllib.request.urlopen(f"{DESK}/api/fxladder_companion", timeout=10) as r:
+            j = json.load(r)
+        ts = next((p.get("ts", 0) for p in j.get("pairs", []) if p.get("pair") == LADDER_PAIR), 0)
+        lag_h = (datetime.datetime.now(datetime.UTC).timestamp() - ts) / 3600.0
+        if not open_now:
+            rec("DOWNSTREAM", True, f"{LADDER_PAIR} ladder ts lag {lag_h:.0f}h (weekend) ", skip=True)
+        else:
+            ok = lag_h <= 26
+            rec("DOWNSTREAM", ok, f"{LADDER_PAIR} ladder last-bar lag {lag_h:.1f}h (<=26h) — full chain bridge->consumer->H1->book")
+    except Exception as e:
+        rec("DOWNSTREAM", False, f"ladder api unreachable: {e}")
+
+    # [5] the silent-fallback state itself
+    if open_now and bridge_fresh and not consumer_ok:
+        rec("NO-FALLBACK", False,
+            "PRIMARY DOWN — bridge records but binary not connected: FX is RIDING THE BLACKBULL FALLBACK silently")
+    else:
+        rec("NO-FALLBACK", True, "no silent-fallback state detected")
+
+    hdr = "FEED-PATH SELFTEST " + ("RED — PRIMARY FEED PATH BROKEN, fix before trusting any FX/MGC signal"
+                                    if red else "GREEN — primary IBKR path live end-to-end")
+    print(hdr)
+    print("\n".join(checks))
+    print("-> A working fallback is what makes a dead primary invisible; this test watches the primary.")
+    sys.exit(2 if red else 0)
+
+if __name__ == "__main__":
+    main()
