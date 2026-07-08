@@ -49,6 +49,7 @@ INDEX_FUTURES = {
     # USOIL = WTI light sweet (CL), UKBRENT = Brent (COIL on ICEEUSOFT).
     "USOIL":   dict(symbol="CL",     exchange="NYMEX",     currency="USD"),
     "UKBRENT": dict(symbol="COIL",   exchange="IPE",       currency="USD"),
+    "BRENT":   dict(symbol="COIL",   exchange="IPE",       currency="USD"),  # alias of UKBRENT (BlackBull ext symbol is "BRENT")
     "NGAS":    dict(symbol="NG",     exchange="NYMEX",     currency="USD"),
     # Vol + Dollar -- CFE / ICE-US.
     "VIX":     dict(symbol="VX",     exchange="CFE",       currency="USD"),
@@ -60,6 +61,17 @@ INDEX_FUTURES = {
     # until then. Once subscribed: --symbols XAUUSD,MGC.
     "MGC":     dict(symbol="MGC",    exchange="COMEX",     currency="USD"),
 }
+
+
+# S-2026-07-09 FEED MIGRATION: the ONLY symbols that use the capped reqMktDepth
+# path (IBKR limits concurrent reqMktDepth to 3 streams on this account tier).
+# EVERY other non-CASH symbol on --symbols routes to L1 (reqMktData top-of-book),
+# which carries NO depth-slot cost -- the same rationale that lets the FX majors
+# coexist with the 3 depth streams. This is what moves US500/GER40/UK100/ESTX50/
+# USOIL/XAGUSD/VIX/DX/NGAS/UKBRENT off BlackBull FIX onto IBKR without freeing a
+# depth slot. MGC is kept here so a future re-add lands on the depth path (the
+# Aurora footprint feed needs its book), not on L1.
+DEPTH_SYMBOLS = {"XAUUSD", "DJ30", "NAS100", "MGC"}
 
 
 def resolve_front_month(ib, contract):
@@ -659,6 +671,23 @@ def main():
                     recs.append(l1)
                     print(f"subscribed {sym} -> L1 (reqMktData IDEALPRO top-of-book)",
                           flush=True)
+                    continue
+                # S-2026-07-09 FEED MIGRATION: any non-CASH symbol that is NOT one of
+                # the 3 capped depth streams (DEPTH_SYMBOLS) rides L1 (reqMktData top-
+                # of-book), NOT reqMktDepth -- no depth-slot cost, so it never touches
+                # the 3-stream cap. Broadcast symbol = contract.symbol (ES/DAX/Z/CL/VX/
+                # DX/NG/COIL/XAGUSD/ESTX50); IbkrDomConsumer.lookup() aliases each to its
+                # Omega slot and omega_main on_book remaps it to the engine tick symbol.
+                norm = sym.upper()
+                if norm.endswith(".F"):
+                    norm = norm[:-2]
+                if norm not in DEPTH_SYMBOLS:
+                    l1 = L1Recorder(ib, contract, contract.symbol, args.out_dir,
+                                    broadcaster=broadcaster)
+                    l1.start()
+                    recs.append(l1)
+                    print(f"subscribed {sym} -> L1 (reqMktData {contract.symbol}; "
+                          f"index/commodity, no depth-slot cost)", flush=True)
                     continue
                 out_path = os.path.join(args.out_dir, f"ibkr_l2_{sym}_{today}.csv")
                 rec = DomRecorder(ib, contract, out_path,

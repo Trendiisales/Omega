@@ -114,9 +114,17 @@ struct L2Bus {
     L2Slot us500;   // US500.F / US500     (IBKR ES   front-month CME)
     L2Slot nas100;  // NAS100 / USTEC.F    (IBKR NQ   front-month CME; USTEC aliases NAS100)
     L2Slot dj30;    // DJ30.F  / DJ30      (IBKR YM   front-month CBOT)
-    L2Slot ger40;   // GER40               (IBKR FDAX front-month EUREX)
+    L2Slot ger40;   // GER40               (IBKR DAX  front-month EUREX)
     L2Slot uk100;   // UK100               (IBKR Z    front-month ICEEU)
-    L2Slot estx50;  // ESTX50              (IBKR FESX front-month EUREX)
+    L2Slot estx50;  // ESTX50              (IBKR ESTX50 front-month EUREX)
+    // S-2026-07-09 COMPLETE FEED MIGRATION: the remaining BlackBull-fed symbols
+    // now ride the IBKR bridge as L1 (reqMktData top-of-book, NO depth-slot cost),
+    // broadcast under contract.symbol (aliased below to these slots).
+    L2Slot usoil;   // USOIL.F             (IBKR CL   front-month NYMEX; contract.symbol "CL")
+    L2Slot vix;     // VIX.F               (IBKR VX   front-month CFE;   contract.symbol "VX")
+    L2Slot dxy;     // DX.F                (IBKR DX   front-month NYBOT; contract.symbol "DX")
+    L2Slot ngas;    // NGAS.F              (IBKR NG   front-month NYMEX; contract.symbol "NG")
+    L2Slot brent;   // BRENT / UKBRENT     (IBKR COIL front-month IPE;   contract.symbol "COIL")
     // FX majors (S-2026-07-06): IBKR IDEALPRO L1 (reqMktData top-of-book, NOT
     // reqMktDepth -- L1 carries NO depth-slot cost so these coexist with the 3
     // capped depth streams). Fed by the bridge L1Recorder; carries only bid/ask
@@ -137,15 +145,28 @@ struct L2Bus {
         if (std::strcmp(sym, "XAUUSD")  == 0) return &xau;
         if (std::strcmp(sym, "XAGUSD")  == 0) return &xag;
         if (std::strcmp(sym, "US500")   == 0 || std::strcmp(sym, "US500.F")  == 0
-         || std::strcmp(sym, "ES")      == 0) return &us500;  // bridge emits contract.symbol "ES" (CME front-month) -- NOT on the default --symbols today, slot unfed until ES added (see FEED_AUDIT 2026-07-09)
+         || std::strcmp(sym, "ES")      == 0) return &us500;  // S-2026-07-09: US500 now on --symbols as L1; bridge broadcasts contract.symbol "ES" (CME front-month)
         if (std::strcmp(sym, "NAS100")  == 0
          || std::strcmp(sym, "USTEC")   == 0 || std::strcmp(sym, "USTEC.F")  == 0
          || std::strcmp(sym, "NQ")      == 0) return &nas100;  // S-2026-07-09: bridge DomRecorder broadcasts contract.symbol "NQ" (CME front-month) for the NAS100 --symbols key; without this alias the nas100 slot was NEVER fed (mirrors the "YM"->dj30 case)
         if (std::strcmp(sym, "DJ30")    == 0 || std::strcmp(sym, "DJ30.F")   == 0
          || std::strcmp(sym, "YM")      == 0) return &dj30;  // bridge emits contract.symbol "YM" for the DJ30 key (CBOT front-month)
-        if (std::strcmp(sym, "GER40")   == 0) return &ger40;
-        if (std::strcmp(sym, "UK100")   == 0) return &uk100;
-        if (std::strcmp(sym, "ESTX50")  == 0) return &estx50;
+        if (std::strcmp(sym, "GER40")   == 0 || std::strcmp(sym, "DAX")      == 0) return &ger40;  // bridge L1 broadcasts contract.symbol "DAX" (EUREX front-month)
+        if (std::strcmp(sym, "UK100")   == 0 || std::strcmp(sym, "Z")        == 0) return &uk100;  // bridge L1 broadcasts contract.symbol "Z" (ICEEU FTSE front-month)
+        if (std::strcmp(sym, "ESTX50")  == 0 || std::strcmp(sym, "SX5E")     == 0) return &estx50; // bridge L1 broadcasts contract.symbol "ESTX50"; "SX5E" defensive alias
+        // S-2026-07-09 COMPLETE FEED MIGRATION: index/commodity L1 symbols. Accept
+        // BOTH the BlackBull FIX name (US500.F/USOIL.F/VIX.F/DX.F/NGAS.F/BRENT --
+        // used by the fix_dispatch gate) AND the IBKR contract.symbol the bridge
+        // broadcasts (CL/VX/DX/NG/COIL -- used by the consumer feed path).
+        if (std::strcmp(sym, "USOIL")   == 0 || std::strcmp(sym, "USOIL.F")  == 0
+         || std::strcmp(sym, "CL")      == 0) return &usoil;
+        if (std::strcmp(sym, "VIX")     == 0 || std::strcmp(sym, "VIX.F")    == 0
+         || std::strcmp(sym, "VX")      == 0) return &vix;
+        if (std::strcmp(sym, "DX")      == 0 || std::strcmp(sym, "DX.F")     == 0) return &dxy;  // FIX "DX.F"; IBKR contract.symbol "DX" -- both here
+        if (std::strcmp(sym, "NGAS")    == 0 || std::strcmp(sym, "NGAS.F")   == 0
+         || std::strcmp(sym, "NG")      == 0) return &ngas;
+        if (std::strcmp(sym, "BRENT")   == 0 || std::strcmp(sym, "UKBRENT")  == 0
+         || std::strcmp(sym, "COIL")    == 0) return &brent;
         // FX majors (IBKR IDEALPRO L1). Bridge broadcasts the 6-char pair as "s".
         if (std::strcmp(sym, "EURUSD")  == 0) return &eurusd;
         if (std::strcmp(sym, "GBPUSD")  == 0) return &gbpusd;
@@ -169,22 +190,38 @@ inline bool is_fx_major(const char* s) noexcept {
 }
 
 // True for the NON-FX symbols that now ride the IBKR bridge as their PRIMARY
-// price feed (S-2026-07-09 feed migration). Argument is the BlackBull FIX symbol
-// name (as seen in fix_dispatch). Same gate mechanics as is_fx_major: when the
-// IBKR slot is fresh, the BlackBull FIX quote for this symbol is dropped so the
-// live IBKR price drives on_tick; bridge down -> slot stale >5s -> BlackBull
-// resumes as fallback (no blackout). Only symbols with an actual depth stream on
-// the bridge --symbols list qualify:
-//   XAUUSD -> IBKR XAUUSD CMDTY/SMART SPOT  (same scale as the BlackBull spot;
-//             negligible price shift on cutover).
-//   NAS100 -> IBKR NQ CME FUTURES           (~0.75%/~220pt basis ABOVE the
-//             BlackBull NAS100 CFD; the whole NAS100 engine family + the index
-//             up-jump ladder mark on this futures scale after cutover).
-// DELIBERATELY EXCLUDED (no IBKR stream on the bridge --symbols -> nothing to gate
-// against, would blackout the symbol): US500 (ES not on bridge), GER40, UK100,
-// XAGUSD, ESTX50. These STAY on BlackBull FIX -- see outputs/FEED_AUDIT_2026-07-09.md.
+// price feed. Argument is the BlackBull FIX symbol name (as seen in fix_dispatch).
+// Same gate mechanics as is_fx_major: when the IBKR slot is fresh, the BlackBull
+// FIX quote for this symbol is dropped so the live IBKR price drives on_tick;
+// bridge down / no market-data entitlement (Error 354) -> slot stale >5s ->
+// BlackBull resumes as the automatic fallback (no blackout for any symbol).
+//
+// S-2026-07-09 COMPLETE FEED MIGRATION (operator: "nothing on BlackBull, IBKR is
+// cheaper"). EVERY remaining BlackBull-fed symbol is now here -- the depth pair
+// (XAUUSD spot, NAS100 NQ) plus the L1-migrated index/commodity/vol set:
+//   XAUUSD  -> IBKR XAUUSD CMDTY/SMART SPOT   (same scale as BlackBull spot; nil shift)
+//   NAS100  -> IBKR NQ  CME  FUTURES (depth)  (~0.75%/~220pt basis ABOVE the CFD)
+//   USTEC.F -> IBKR NQ  (== NAS100; on_book posts BOTH; gated off the nas100 slot)
+//   US500.F -> IBKR ES  CME  FUTURES (L1)     (basis ABOVE the CFD; ladder re-seeded)
+//   GER40   -> IBKR DAX EUREX FUTURES (L1)    (basis ABOVE the CFD; ladder re-seeded)
+//   UK100   -> IBKR Z   ICEEU FTSE FUT (L1)
+//   ESTX50  -> IBKR ESTX50 EUREX FUT (L1)
+//   USOIL.F -> IBKR CL  NYMEX FUTURES (L1)
+//   XAGUSD  -> IBKR XAGUSD CMDTY/SMART SPOT (L1)
+//   VIX.F   -> IBKR VX  CFE  FUTURES (L1)
+//   DX.F    -> IBKR DX  NYBOT FUTURES (L1)
+//   NGAS.F  -> IBKR NG  NYMEX FUTURES (L1)
+//   BRENT   -> IBKR COIL IPE FUTURES (L1)
+// The futures-vs-CFD basis is a cosmetic level shift on a SHADOW/paper book (only
+// 1 MGC micro is real, on a separate COMEX feed). See outputs/FEED_AUDIT_2026-07-09.md.
 inline bool is_ibkr_primary_index(const char* s) noexcept {
-    return std::strcmp(s, "XAUUSD") == 0 || std::strcmp(s, "NAS100") == 0;
+    return std::strcmp(s, "XAUUSD")  == 0 || std::strcmp(s, "NAS100")  == 0
+        || std::strcmp(s, "USTEC.F") == 0 || std::strcmp(s, "US500.F") == 0
+        || std::strcmp(s, "GER40")   == 0 || std::strcmp(s, "UK100")   == 0
+        || std::strcmp(s, "ESTX50")  == 0 || std::strcmp(s, "USOIL.F") == 0
+        || std::strcmp(s, "XAGUSD")  == 0 || std::strcmp(s, "VIX.F")   == 0
+        || std::strcmp(s, "DX.F")    == 0 || std::strcmp(s, "NGAS.F")  == 0
+        || std::strcmp(s, "BRENT")   == 0;
 }
 
 // Stats for /api/v1/omega health -- read by status endpoint if wired.

@@ -224,13 +224,16 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         // live IBKR price. Bridge down -> slot goes stale within 5s -> BlackBull
         // resumes as fallback (no blackout for any gated symbol).
         //   FX majors (is_fx_major)        -> IBKR IDEALPRO L1.
-        //   XAUUSD / NAS100 (is_ibkr_primary_index) -> IBKR XAUUSD-spot / NQ-futures
-        //     depth streams (posted to on_tick from the bridge on_book callback in
-        //     omega_main). This gate sits AFTER the L2-book parse/store above, so
-        //     the BlackBull XAU/NAS100 AtomicL2 depth is still cached (imbalance /
-        //     microprice stay populated); only the price TICK source is switched.
-        // NOT gated (no bridge stream -> stay BlackBull): US500, GER40, UK100,
-        // XAGUSD, ESTX50. See outputs/FEED_AUDIT_2026-07-09.md.
+        //   is_ibkr_primary_index -> the COMPLETE-migration set (S-2026-07-09):
+        //     XAUUSD/NAS100 (depth) + US500.F/USTEC.F/GER40/UK100/ESTX50/USOIL.F/
+        //     XAGUSD/VIX.F/DX.F/NGAS.F/BRENT (L1). Each is posted to on_tick from the
+        //     bridge on_book callback in omega_main. This gate sits AFTER the L2-book
+        //     parse/store above, so the BlackBull AtomicL2 depth is still cached
+        //     (imbalance / microprice stay populated); only the price TICK source is
+        //     switched. Bridge down or missing IBKR entitlement (Error 354) -> slot
+        //     stale >5s -> BlackBull automatically resumes as fallback (no blackout).
+        // After this migration NO symbol is BlackBull-primary while its IBKR slot is
+        // fresh -- the zero-BlackBull goal. See outputs/FEED_AUDIT_2026-07-09.md.
         if (omega::ibkr::is_fx_major(sym.c_str())
          || omega::ibkr::is_ibkr_primary_index(sym.c_str())) {
             const int64_t ib_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -258,14 +261,14 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         if (bid > 0.0 && ask > 0.0) {
             // Post to the engine dispatch queue (single-writer pattern: only the
             // dispatch worker ever enters on_tick()). See engine_dispatch.hpp.
-            // NOTE (S-2026-07-09): BlackBull FIX is NO LONGER the canonical price
-            // source for every symbol. For the IBKR-migrated symbols (FX majors +
-            // XAUUSD + NAS100) this line is reached ONLY when the IBKR slot is
-            // stale (the fresh-slot gate above returned early) -- i.e. BlackBull is
-            // now the FALLBACK for those, and IBKR (posted via the bridge on_book
-            // callback) is canonical. For the still-BlackBull symbols (US500,
-            // GER40, UK100, XAGUSD, ESTX50, USOIL, ... -- no bridge stream) FIX
-            // remains the sole/canonical source. See outputs/FEED_AUDIT_2026-07-09.md.
+            // NOTE (S-2026-07-09 COMPLETE migration): BlackBull FIX is no longer the
+            // canonical price source for ANY migrated symbol. For every symbol in
+            // is_fx_major + is_ibkr_primary_index (now the whole traded book) this
+            // line is reached ONLY when the IBKR slot is stale (the fresh-slot gate
+            // above returned early) -- i.e. BlackBull is purely the FALLBACK, and
+            // IBKR (posted via the bridge on_book callback) is canonical. A symbol
+            // falls back to FIX here only when its IBKR slot is stale (bridge down or
+            // no market-data entitlement). See outputs/FEED_AUDIT_2026-07-09.md.
             engine_dispatch_post_tick(sym, bid, ask);
         }
         return;

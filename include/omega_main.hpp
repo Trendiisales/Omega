@@ -773,6 +773,12 @@ int main(int argc, char* argv[])
             if (std::strcmp(sym, "NQ") == 0
              || std::strcmp(sym, "NAS100") == 0 || std::strcmp(sym, "USTEC") == 0) {
                 engine_dispatch_post_tick("NAS100", bid, ask);
+                // USTEC.F is the SAME underlying (Nasdaq-100) priced off NQ. The
+                // operator's zero-BlackBull directive covers USTEC.F too; it is not
+                // separately subscribed on the bridge (== NAS100 conId), so drive it
+                // off the same NQ tick. BlackBull USTEC.F is gated out in fix_dispatch
+                // (is_ibkr_primary_index) while the nas100 slot is fresh.
+                engine_dispatch_post_tick("USTEC.F", bid, ask);
                 return;
             }
             // ── XAUUSD (S-2026-07-09 feed migration) ─────────────────────────
@@ -785,9 +791,36 @@ int main(int argc, char* argv[])
                 engine_dispatch_post_tick("XAUUSD", bid, ask);
                 return;
             }
-            // US500 is intentionally NOT handled here: ES is not on the bridge
-            // --symbols, so no IBKR NAS-style feed exists to post. It stays on
-            // BlackBull FIX. See outputs/FEED_AUDIT_2026-07-09.md.
+            // ── COMPLETE FEED MIGRATION (S-2026-07-09) ───────────────────────
+            // Every remaining BlackBull-fed index/commodity/vol symbol now rides
+            // the IBKR bridge as L1 (reqMktData). The bridge broadcasts the IBKR
+            // contract.symbol (ES/DAX/Z/CL/VX/DX/NG/COIL, and XAGUSD/ESTX50 which
+            // already match); remap each to the ENGINE tick symbol (the BlackBull
+            // FIX name the on_tick family already handles) and post it. The matching
+            // BlackBull FIX quote is gated out in fix_dispatch (is_ibkr_primary_index)
+            // while this slot is fresh; bridge down / no entitlement -> BlackBull
+            // fallback. Note: ES/DAX are FUTURES scale (basis over the CFD) -- the
+            // index up-jump ladder US500/GER40 seeds are re-synced to futures scale
+            // in engine_init (SHADOW book, cosmetic). See outputs/FEED_AUDIT_2026-07-09.md.
+            struct IdxMap { const char* wire; const char* tick; };
+            static const IdxMap kIdxMap[] = {
+                {"ES",     "US500.F"},
+                {"DAX",    "GER40"},
+                {"Z",      "UK100"},
+                {"ESTX50", "ESTX50"},
+                {"CL",     "USOIL.F"},
+                {"XAGUSD", "XAGUSD"},
+                {"VX",     "VIX.F"},
+                {"DX",     "DX.F"},
+                {"NG",     "NGAS.F"},
+                {"COIL",   "BRENT"},
+            };
+            for (const auto& m : kIdxMap) {
+                if (std::strcmp(sym, m.wire) == 0) {
+                    engine_dispatch_post_tick(m.tick, bid, ask);
+                    return;
+                }
+            }
             // FX majors (S-2026-07-06): FX quotes now come from the IBKR IDEALPRO
             // L1 line, not BlackBull FIX (which delivered ~30s-frozen FX snapshots
             // -- operator directive: move FX quotes to the IBKR link). Post the

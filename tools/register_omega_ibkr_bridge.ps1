@@ -16,19 +16,23 @@
 # Run in ADMINISTRATOR PowerShell:
 #   powershell -ExecutionPolicy Bypass -File C:\Omega\tools\register_omega_ibkr_bridge.ps1
 #
-# Default symbol list covers every instrument in omega_config.ini:
-#   FX  (IDEALPRO): EURUSD GBPUSD AUDUSD USDJPY NZDUSD USDCAD
-#   CMD (SMART)  : XAUUSD XAGUSD
-#   IDX (CME)    : ES NQ YM
-#   IDX (EUREX)  : DAX ESTX50
-#   IDX (ICEEU)  : Z (FTSE)
-#   ENG (NYMEX)  : CL NG    BRENT (IPE: COIL)
-#   VOL (CFE)    : VX
-#   DXY (NYBOT)  : DX
+# Default symbol list (S-2026-07-09) covers EVERY BlackBull-fed instrument so
+# IBKR is the primary feed for all of them (zero-BlackBull directive):
+#   DEPTH (reqMktDepth, 3-stream cap): XAUUSD  NAS100(NQ)  DJ30(YM)
+#   FX  L1 (IDEALPRO): EURUSD GBPUSD AUDUSD USDJPY NZDUSD USDCAD
+#   IDX L1 (CME)   : US500(ES)
+#   IDX L1 (EUREX) : GER40(DAX) ESTX50
+#   IDX L1 (ICEEU) : UK100(Z / FTSE)
+#   CMD L1 (SMART) : XAGUSD
+#   ENG L1 (NYMEX) : USOIL(CL) NGAS(NG)   UKBRENT(IPE: COIL)
+#   VOL L1 (CFE)   : VIX(VX)
+#   DXY L1 (NYBOT) : DX
+# All non-depth symbols use L1 (reqMktData) -- no depth-slot cost, so they never
+# touch the 3-stream cap (routed by DEPTH_SYMBOLS in ibkr_dom_bridge.py).
 #
-# USTEC and NAS100 both map to NQ on IBKR; only NAS100 is in the default
-# list to avoid double-subscribing the same conId. Omega.exe dispatches
-# USTEC.F off the NAS100 feed downstream.
+# USTEC and NAS100 both map to NQ on IBKR; only NAS100 is listed to avoid
+# double-subscribing the same conId. Omega.exe dispatches USTEC.F off the
+# NAS100/NQ feed downstream (omega_main on_book posts BOTH NAS100 + USTEC.F).
 #
 # Some symbols will fail until the IBKR account has the matching market-data
 # subscription (e.g. CFE for VIX, ICEEUSOFT for COIL). The bridge logs each
@@ -104,9 +108,22 @@ $MaxLvl   = 5
 # fix_dispatch gates the BlackBull FX quote out while the IBKR slot is fresh.
 # (This became possible only after the account-level IDEALPRO FX Error-10197
 # data-line block was cleared with IBKR on 2026-07-06.)
+# 2026-07-09 COMPLETE FEED MIGRATION (operator: "there should be nothing on
+# BlackBull, IBKR is cheaper"). Every remaining BlackBull-fed symbol is added
+# here so IBKR becomes its PRIMARY feed. The 3 DEPTH streams stay XAUUSD/DJ30/
+# NAS100; ALL new index/commodity symbols ride L1 (reqMktData, no depth-slot cost
+# -- routed by DEPTH_SYMBOLS in ibkr_dom_bridge.py), exactly like the FX majors.
+# USTEC is NOT listed: it prices off NQ (== NAS100); Omega dispatches USTEC.F off
+# the NAS100/NQ feed downstream (double-subscribing the same conId is wasteful).
+# Symbols whose IBKR market-data sub is not on the account log a one-time
+# error 354 and their slot simply never goes fresh -> fix_dispatch keeps that
+# symbol on BlackBull as the automatic fallback (graceful, no blackout). See
+# outputs/FEED_AUDIT_2026-07-09.md + the entitlement checklist.
 $Symbols = @(
-    'XAUUSD','DJ30','NAS100',
-    'EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD',
+    'XAUUSD','DJ30','NAS100',                              # depth (reqMktDepth, 3-stream cap)
+    'US500','GER40','UK100','ESTX50','USOIL','XAGUSD',     # index/commodity L1 (S-2026-07-09)
+    'VIX','DX','NGAS','UKBRENT',                           # vol / dollar / energy L1 (S-2026-07-09)
+    'EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD',          # FX majors L1
     'USDCAD'   # S-2026-07-08c: DOWN-JUMP SHORT ladder companion feed (L1, no depth-slot cost)
 ) -join ','
 # 2026-06-17: NAS100 (E-mini Nasdaq future, CME) for the Aurora index footprint.
