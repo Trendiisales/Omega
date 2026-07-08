@@ -1762,7 +1762,14 @@ static void init_engines(const std::string& cfg_path)
                 {"AUDUSD", "AUDUSD",  2, 0.003,  6.0, 0.5, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
                 {"NZDUSD", "NZDUSD",  2, 0.003,  7.0, 0.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
                 {"US500",  "US500.F", 2, 0.0075, 4.0, 0.5, "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  4, 0.0075, 3.0, 0.5, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                // NAS100 ROW DISABLED S-2026-07-08c (operator: "-$71 BE_RATCHET loss, fix this").
+                // The owed per-symbol backtest RAN (faithful sim, NSXUSD H1 2022-2026 certified,
+                // 24,407 bars): W4/0.75/BE05 = net -300bp PF0.99 H1 -3,914 = DEAD both-halves;
+                // ALL 164 BE_RATCHET exits negative (H1-close-eval BE always slips red -- the
+                // observed -$71 is the mechanism, not noise). BE-lock grid +5..+25bp improves
+                // monotonically but tops out PF1.07 with H1 still -2,810 -> not rescuable.
+                // AUDITED row JumpRiderNAS100. Do NOT re-add without a config that passes all-6.
+                // {"NAS100", "NAS100",  4, 0.0075, 3.0, 0.5, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
                 {"DJ30",   "DJ30.F",  4, 0.005,  2.0, 1.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
                 {"GER40",  "GER40",   2, 0.003,  2.0, 1.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
             };
