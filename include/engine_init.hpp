@@ -1948,11 +1948,11 @@ static void init_engines(const std::string& cfg_path)
         {
             auto& il = omega::index_upjump_ladder_book();
             struct ILCfg { const char* tag; const char* live; int W; double thr; double rt;
-                           bool bull_gate; const char* csv; };
+                           bool bull_gate; };
             static const ILCfg IL[] = {
-                {"US500",  "US500.F", 24, 2.0, 4.0, false, "phase1/signal_discovery/warmup_US500_H1.csv"},
-                {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
-                {"GER40",  "GER40",   12, 1.5, 2.0, true,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
+                {"US500",  "US500.F", 24, 2.0, 4.0, false},
+                {"NAS100", "NAS100",  24, 1.5, 3.0, false},
+                {"GER40",  "GER40",   12, 1.5, 2.0, true },
             };
             for (const auto& ic : IL) {
                 omega::FxLadderPair::Config c;
@@ -1962,9 +1962,25 @@ static void init_engines(const std::string& cfg_path)
                 if (ic.bull_gate) c.block_new_windows_fn = [] { return omega::index_risk_off(); };
                 il.add(std::move(c));
             }
-            size_t ilseeded = 0;
-            for (const auto& ic : IL) ilseeded += il.seed_pair(ic.tag, ic.csv);
-            size_t ilrestored = il.seed_dumps_all();
+            // S-2026-07-08d TWO-FEED SEAM FIX — do NOT warm-seed the index ladder from
+            //   phase1/signal_discovery/warmup_<SYM>_H1.csv. On the VPS those files are
+            //   rebuilt by tools/seed_refresh.py phase-2 from CME/EUREX INDEX FUTURES
+            //   (NQ / ES / DAX via IB Gateway) -> a FUTURES-BASIS series (~29433 NAS100),
+            //   ~220pt / 0.75% ABOVE the BlackBull index CFD (~29214) that on_tick_nas100 /
+            //   index_feed_h1 actually feed on_h1_bar() + set_disp_mid() with (and that the
+            //   desk NAS100 tile shows as nas_bid). Seeding the futures scale into the same
+            //   price deque the live CFD bars append to created a scale SEAM: the detector,
+            //   leg entries, peaks, trail stops and the displayed cur all straddled two
+            //   feeds -> wrong uPnL + a leg mark that disagreed with the desk tile by ~220pt.
+            //   (It also let a futures bar with a ts AHEAD of live wall-clock trip on_h1_bar's
+            //   monotonic guard and silently drop live CFD bars.) FIX: single-feed by
+            //   construction -- seed ONLY from this book's OWN persisted live CFD dump
+            //   (idxladder_companion_<sym>_h1.csv, written by append_dump_ from on_h1_bar,
+            //   pure CFD scale). Fresh box with no dump -> cold-warm in W H1 bars (12-24h),
+            //   which is correct-scale, vs an instantly-wrong futures seed. Other consumers
+            //   of warmup_<SYM>_H1.csv (index_market_regime, nas_bbrev) are unchanged.
+            size_t ilseeded = 0;   // warmup H1 CSV intentionally NOT seeded (futures-scale seam)
+            size_t ilrestored = il.seed_dumps_all();   // own live CFD-scale forward bars only
             il.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -1986,7 +2002,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             il.finalize_all();
-            printf("[OMEGA-INIT][SEED] INDEX upjump LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED), %zu H1 bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] INDEX upjump LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED), single-feed CFD (warmup futures-seed dropped, seam fix S-2026-07-08d), %zu H1 bars seeded, %zu forward CFD bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
                    ilseeded, ilrestored);
             fflush(stdout);
         }
