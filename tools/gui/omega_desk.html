@@ -246,8 +246,10 @@ a{color:var(--blu);text-decoration:none}
 </div>
 </div><!-- /cstack -->
 
-<!-- ═══ LADDER column-stack (2026-07-08, operator): DOM — XAUUSD L2 + FX LADDER moved to
-     UNDER the INDEX LADDER (GER40) table — one .cstack keeps the three in a single column. ═══ -->
+<!-- ═══ LADDER column-stack (2026-07-08, operator): FX LADDER under the INDEX LADDER (GER40)
+     table. DOM — XAUUSD L2 moved OUT again same day (operator x2): standalone last pan of
+     .compcols so masonry flows it into the empty right-column gap beside the ladder stacks
+     (was: pinned under the FX LADDER AUDUSD row). ═══ -->
 <div class="cstack">
 <!-- ═══ INDEX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x 676e89aa) ═══ -->
 <div class="pan">
@@ -270,7 +272,10 @@ a{color:var(--blu);text-decoration:none}
   <div id="fxladopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="fxladopen"></table></div></div>
   <div id="fxladtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips)</div><div style="overflow-x:auto"><table id="fxladtrades"></table></div></div>
 </div>
+</div><!-- /ladder cstack -->
 
+<!-- ═══ DOM — XAUUSD L2 (2026-07-08 operator x2): standalone LAST pan of .compcols — masonry
+     places it in the right-column gap next to the stock-mover/ladder stacks. ═══ -->
 <div class="pan">
   <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
   <div id="dom" class="num" style="font-size:10px"></div>
@@ -279,7 +284,6 @@ a{color:var(--blu);text-decoration:none}
     <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
   </div>
 </div>
-</div><!-- /ladder cstack -->
 
 </div><!-- /companions row -->
 
@@ -598,6 +602,16 @@ function render(J){lastJ=J;
  dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
  el('build').textContent=(J.build_version||'').slice(0,12);
+ /* S-2026-07-08c sound-on-restart (operator: "ensure we have sound on when Omega restarts"):
+    a persisted mute must NOT silently survive an Omega service restart. Boot marker =
+    server boot epoch (now - uptime), 60s-rounded vs poll jitter, kept in localStorage.
+    Marker moved >120s => a fresh Omega boot since this browser last saw one -> force SND
+    back ON (clear the '0' mute). The existing first-gesture boot chime then gives audible
+    proof. A mid-session mute stays respected until the NEXT restart. */
+ (function(){var boot=Math.round((Date.now()/1000-up)/60)*60,
+  seen=parseInt(localStorage.getItem('omega_boot_seen')||'0',10);
+  if(Math.abs(boot-seen)>120){localStorage.setItem('omega_boot_seen',String(boot));
+   if(!SND){SND=true;localStorage.setItem('omega_snd','1');sndBtn();}}})();
  var st=el('sesstrade');st.textContent=(J.session_name||'?')+(safe(J.session_tradeable)?' · tradeable':' · blocked');
  st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
  el('macro').textContent=J.macro_regime||'?';

@@ -253,8 +253,10 @@ R"OMEGAD1(<div class="pan">
 </div>
 </div><!-- /cstack -->
 
-<!-- ═══ LADDER column-stack (2026-07-08, operator): DOM — XAUUSD L2 + FX LADDER moved to
-     UNDER the INDEX LADDER (GER40) table — one .cstack keeps the three in a single column. ═══ -->
+<!-- ═══ LADDER column-stack (2026-07-08, operator): FX LADDER under the INDEX LADDER (GER40)
+     table. DOM — XAUUSD L2 moved OUT again same day (operator x2): standalone last pan of
+     .compcols so masonry flows it into the empty right-column gap beside the ladder stacks
+     (was: pinned under the FX LADDER AUDUSD row). ═══ -->
 <div class="cstack">
 <!-- ═══ INDEX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x 676e89aa) ═══ -->
 <div class="pan">
@@ -277,7 +279,10 @@ R"OMEGAD1(<div class="pan">
   <div id="fxladopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="fxladopen"></table></div></div>
   <div id="fxladtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips)</div><div style="overflow-x:auto"><table id="fxladtrades"></table></div></div>
 </div>
+</div><!-- /ladder cstack -->
 
+<!-- ═══ DOM — XAUUSD L2 (2026-07-08 operator x2): standalone LAST pan of .compcols — masonry
+     places it in the right-column gap next to the stock-mover/ladder stacks. ═══ -->
 <div class="pan">
   <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
   <div id="dom" class="num" style="font-size:10px"></div>
@@ -286,7 +291,6 @@ R"OMEGAD1(<div class="pan">
     <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
   </div>
 </div>
-</div><!-- /ladder cstack -->
 
 </div><!-- /companions row -->
 
@@ -393,12 +397,12 @@ function chime(notes){if(!SND)return;ensureCtx();if(!ACTX)return;var t=ACTX.curr
   g.gain.exponentialRampToValueAtTime(0.001,st+0.5);o.start(st);o.stop(st+0.55);});}
 function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
-function sigTick(){chime([[0,660,0.25]]);}
+)OMEGAD1"
+R"OMEGAD2(function sigTick(){chime([[0,660,0.25]]);}
 function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
 /* ── COMPANION fire-watcher (2026-07-06): engine fires ring via live_trades; the 6 companion
    books (gold/index/fx/xag/usoil/stockmover) open in their OWN state JSONs, so their fires rang
-)OMEGAD1"
-R"OMEGAD2(   NOTHING (operator: "no sound when companions fire"). Poll all companion window vars, ring
+   NOTHING (operator: "no sound when companions fire"). Poll all companion window vars, ring
    entryBell on a NEW open leg + winBell on a NEW banked clip. Identity-based (kind|leg-id) with
    the same guards as the engine bell: first pass baselines silently; a key re-appearing within
    90s does not re-ring; stale keys expire. Closed-clip count tracked per book -> ring on rise. */
@@ -573,12 +577,12 @@ function compSub(engine,symbol,colspan,nLegs){
    position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
    the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
 function findLeg(engine,entry){
- var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
+)OMEGAD2"
+R"OMEGAD3( var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
  Object.keys(pl).forEach(function(k){var v=pl[k];var keng=(v.engine||'').replace(/Engine$/,'');
   if(keng!==e&&keng!==(engine||''))return;
   if(Math.abs(safe(v.entry)-eNum)<0.01)best=v;});
-)OMEGAD2"
-R"OMEGAD3( return best;
+ return best;
 }
 function compSubLeg(engine,symbol,entry,colspan,dup){
  var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
@@ -607,6 +611,16 @@ function render(J){lastJ=J;
  dot('l2d',safe(J.ctrader_l2_live)>0);dot('domd',safe(J.gold_l2_real)>0);
  var up=safe(J.uptime_sec);el('uptime').textContent='up '+Math.floor(up/86400)+'d'+Math.floor(up%86400/3600)+'h'+Math.floor(up%3600/60)+'m';
  el('build').textContent=(J.build_version||'').slice(0,12);
+ /* S-2026-07-08c sound-on-restart (operator: "ensure we have sound on when Omega restarts"):
+    a persisted mute must NOT silently survive an Omega service restart. Boot marker =
+    server boot epoch (now - uptime), 60s-rounded vs poll jitter, kept in localStorage.
+    Marker moved >120s => a fresh Omega boot since this browser last saw one -> force SND
+    back ON (clear the '0' mute). The existing first-gesture boot chime then gives audible
+    proof. A mid-session mute stays respected until the NEXT restart. */
+ (function(){var boot=Math.round((Date.now()/1000-up)/60)*60,
+  seen=parseInt(localStorage.getItem('omega_boot_seen')||'0',10);
+  if(Math.abs(boot-seen)>120){localStorage.setItem('omega_boot_seen',String(boot));
+   if(!SND){SND=true;localStorage.setItem('omega_snd','1');sndBtn();}}})();
  var st=el('sesstrade');st.textContent=(J.session_name||'?')+(safe(J.session_tradeable)?' · tradeable':' · blocked');
  st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
  el('macro').textContent=J.macro_regime||'?';
@@ -736,7 +750,8 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  /* recent banked clips (2026-07-08): the rows that EXPLAIN a COMP-BANK / ALL-TIME increase.
     Keep last-good when a frame omits them (older binary / partial write). */
  if(j.closed_detail&&j.closed_detail.length)window._compClosed=j.closed_detail;
- /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
+)OMEGAD3"
+R"OMEGAD4( /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
  var om=safe(ob.realized),cr=safe(cbk.realized),rt=safe(j.realized_total),be=document.getElementById('compbank');
@@ -748,8 +763,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
   tip+='\nCRYPTO '+fmt$(cr)+':';
   Object.keys(cbr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(cbr[k]));});
   tip+='\nopen: '+(j.open_companions||0);var w=document.getElementById('compbankwrap');if(w)w.title=tip;}
-)OMEGAD3"
-R"OMEGAD4( /* fold ONLY the OMEGA companion bucket into the Omega headline totals -- crypto paper must NOT
+ /* fold ONLY the OMEGA companion bucket into the Omega headline totals -- crypto paper must NOT
     muddy the Omega real-broker number (operator rule: relevant Omega data only on the Omega GUI). */
  window._comptot={today:safe(ob.realized_today),d7:safe(ob.realized_7d),d30:safe(ob.realized_30d),all:om};
  /* call unconditionally -- the companion (paper) bank must fold in even when there are
@@ -906,7 +920,8 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
 function drawGold(){var j=window._gold||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
       +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
- if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
+)OMEGAD4"
+R"OMEGAD5( if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
   el('gcinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
@@ -921,8 +936,7 @@ function drawGold(){var j=window._gold||null;
    first=false;
   });
  });
-)OMEGAD4"
-R"OMEGAD5( el('gctab').innerHTML=h;
+ el('gctab').innerHTML=h;
  var tot=safe(j.desk_usd_real!==undefined?j.desk_usd_real:j.desk_usd)+(j.open||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);/* REAL column only (S-2026-07-07e); NO backtest number folded in (operator 2026-07-06) */
  var dcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
  var open=(j.open||[]),trades=(j.trades||[]);
@@ -1074,7 +1088,8 @@ function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();})
  if(j&&(j.pairs||[]).length)window._fx=j;
  window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);/* per-pair realized + open uPnL (mark-to-market) -- additive to ALL-TIME (operator 2026-07-06) */
  drawFx();
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
+)OMEGAD5"
+R"OMEGAD6( if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawFx();});}
 setInterval(pollFx,15000);pollFx();
 
@@ -1090,8 +1105,7 @@ setInterval(pollFx,15000);pollFx();
    re-validation (thr 1.5% be10 cap25bp). STANDALONE additive — NEVER compared vs riding WIDE. */
 function drawIndex(){var j=window._idx||null;
  var h='<tr><td class="l lbl">sym</td><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td>'
-)OMEGAD5"
-R"OMEGAD6(      +'<td class="lbl">gb bp</td><td class="lbl">clips</td>'
+      +'<td class="lbl">gb bp</td><td class="lbl">clips</td>'
       +'<td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  var syms=(j&&j.syms)||[];
  if(!syms.length){el('ictab').innerHTML=h+'<tr><td class="l d" colspan="9">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
@@ -1262,7 +1276,8 @@ function parseShadow(txt){
    spread:ix.spread_at_entry!==undefined?(parseFloat(f[ix.spread_at_entry])||0):0,
    lat:ix.latency_ms!==undefined?(parseFloat(f[ix.latency_ms])||0):0});}
  out.sort(function(a,b){return a.ts-b.ts;});return out;}
-function winRows(){if(WIN>=9999)return ROWS;
+)OMEGAD6"
+R"OMEGAD7(function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
  return ROWS.filter(function(r){return r.ts>=cut;});}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
@@ -1274,8 +1289,7 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  var ccAll=bpUsd(safe(window._cctot));/* crypto ladder companion all-time bank, $ (additive) */
  var fxAll=safe(window._fxtot),gbAll=safe(window._goldtot),ixAll=safe(window._idxtot),xgAll=safe(window._xagtot),uoAll=safe(window._usoiltot),smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time; forward-only banks -> fold into ALL-TIME, not today) */
  var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll;
-)OMEGAD6"
-R"OMEGAD7( tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
+ tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';}
 
@@ -1418,7 +1432,8 @@ function drawHeat(){var rs=winRows();var by={};
  el('heat').innerHTML=h;}
 
 function fillSymSel(){var by={};ROWS.forEach(function(r){by[r.sym]=(by[r.sym]||0)+1;});
- var syms=Object.keys(by).sort(function(a,b){return by[b]-by[a];}).slice(0,8);
+)OMEGAD7"
+R"OMEGAD8( var syms=Object.keys(by).sort(function(a,b){return by[b]-by[a];}).slice(0,8);
  var s=el('mmsym');if(!s)return;var cur=s.value;
  s.innerHTML=syms.map(function(x){return '<option>'+esc(x)+'</option>';}).join('');
  if(syms.indexOf(cur)>=0)s.value=cur;}
@@ -1434,8 +1449,7 @@ function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText('MAE '+fmt2(mx,1),W-60,H-4);ctx.fillText('MFE',2,14);ctx.fillText(fmt2(my,1),2,24);
  rs.forEach(function(r){ctx.fillStyle=r.pnl>0?'rgba(46,189,133,0.75)':'rgba(226,72,77,0.75)';
-)OMEGAD7"
-R"OMEGAD8(  ctx.beginPath();ctx.arc(X(r.mae),Y(r.mfe),2.2,0,6.3);ctx.fill();});}
+  ctx.beginPath();ctx.arc(X(r.mae),Y(r.mfe),2.2,0,6.3);ctx.fill();});}
 
 var DAYS=['Su','Mo','Tu','We','Th','Fr','Sa'];
 function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
@@ -1612,7 +1626,8 @@ function drawPR(){var cv=el("prc"),H=215,ctx=prep(cv,H);
    if(r.ets>=t0){var s=hov?8:6;   /* entry: glow triangle, up=LONG / down=SHORT */
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();
-    if(r.side==='LONG'){ctx.moveTo(xe,ye-s);ctx.lineTo(xe-s*0.85,ye+s*0.6);ctx.lineTo(xe+s*0.85,ye+s*0.6);}
+)OMEGAD8"
+R"OMEGAD9(    if(r.side==='LONG'){ctx.moveTo(xe,ye-s);ctx.lineTo(xe-s*0.85,ye+s*0.6);ctx.lineTo(xe+s*0.85,ye+s*0.6);}
     else{ctx.moveTo(xe,ye+s);ctx.lineTo(xe-s*0.85,ye-s*0.6);ctx.lineTo(xe+s*0.85,ye-s*0.6);}
     ctx.closePath();ctx.fillStyle=c;ctx.fill();ctx.restore();
     ctx.strokeStyle='#0B0F14';ctx.lineWidth=1;ctx.stroke();
@@ -1632,8 +1647,7 @@ function drawPR(){var cv=el("prc"),H=215,ctx=prep(cv,H);
      ctx.globalAlpha=hov?1:0.92;
      ctx.fillStyle='rgba(11,15,20,0.85)';ctx.beginPath();
      if(ctx.roundRect)ctx.roundRect(bx2-4,by2,tw2+8,11,3);else ctx.rect(bx2-4,by2,tw2+8,11);
-)OMEGAD8"
-R"OMEGAD9(     ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=0.8;ctx.stroke();
+     ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=0.8;ctx.stroke();
      ctx.fillStyle=c;ctx.fillText(txt,bx2,by2+8.5);ctx.globalAlpha=1;ctx.font='10px IBM Plex Mono';}
     PRMK.push({x:xx,y:yx,t:r});}
   });
