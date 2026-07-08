@@ -34,7 +34,11 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
-ENTRY_RE='pos_?\.active *= *true|pos_?\.open\(|\.open\(sig'
+# S-2026-07-08: pattern widened -- 'pos_active_ = true' (member WITHOUT the dot,
+# MgcFastDonchian30m) and multi-leg 'legs_.push_back' (CrossSectional) evaded the
+# original dot-anchored regex, so a LIVE engine shipped un-audited. Any new
+# position-representation idiom MUST be added here.
+ENTRY_RE='pos_?\.active *= *true|pos_active_? *= *true|pos_?\.open\(|\.open\(sig|legs_\.push_back'
 TAG='ADVERSE-PROTECTION:'
 LEGACY_FILE='scripts/adverse_protection_legacy.txt'
 

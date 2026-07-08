@@ -5,3 +5,6 @@
 # is intentionally EMPTY. A NEW position-opening engine with no ADVERSE-PROTECTION:
 # comment now FAILS the canary outright -- adding its basename here to dodge the check
 # is a deliberate red flag (do not). Annotate the backtested verdict instead.
+DonchianEngine
+EmaPullbackEngine
+TrendRiderEngine

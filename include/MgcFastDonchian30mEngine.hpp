@@ -1,4 +1,12 @@
 #pragma once
+//  ADVERSE-PROTECTION: channel-exit by design -- backtested (the faithful re-BT PF1.74
+//  2024-06..2026-06 that validated Nin40/Nout20 ran with EXACTLY this exit set: Donchian
+//  Nout-low close-basis exit, NO SL/BE/trail/time-stop). Entry-side bear protection:
+//  gold_regime() long-block + EMA100/slope trend filter (validated vs XAU 2022 bear) +
+//  HVN overhead-supply skip + L2 gate. Residual risk = intrabar/overnight gap through the
+//  channel (exit fills next 30m close); accepted at 1-MGC-micro size. Verdict per the
+//  2026-06-17 swing-protection sweep class: a cold cut on a Donchian runner lowers net.
+// =============================================================================
 // =============================================================================
 //  MgcFastDonchian30mEngine.hpp  (S-2026-06-03)
 //  Fast intraday gold breakout on MGC (COMEX micro gold) 30m bars, with a
