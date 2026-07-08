@@ -244,15 +244,21 @@ a{color:var(--blu);text-decoration:none}
   <div id="fxopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="fxopen"></table></div></div>
   <div id="fxtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="fxtrades"></table></div></div>
 </div>
-<div class="pan">
-  <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
-  <div id="dom" class="num" style="font-size:10px"></div>
-  <div style="margin-top:5px">
-    <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
-    <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
-  </div>
-</div>
 </div><!-- /cstack -->
+
+<!-- ═══ LADDER column-stack (2026-07-08, operator): DOM — XAUUSD L2 + FX LADDER moved to
+     UNDER the INDEX LADDER (GER40) table — one .cstack keeps the three in a single column. ═══ -->
+<div class="cstack">
+<!-- ═══ INDEX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x 676e89aa) ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">INDEX LADDER — H1 upjump LADDER (no-floor) · US500 W24/2.0 · NAS100 W24/1.5 · GER40 W12/1.5 BULL-GATED (index_risk_off) · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr (native C++ · shadow · never vs-WIDE)</span>
+    <span id="ixladinfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow:auto;max-height:340px"><table id="ixladtab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div id="ixladopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="ixladopen"></table></div></div>
+  <div id="ixladtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips)</div><div style="overflow-x:auto"><table id="ixladtrades"></table></div></div>
+</div>
 
 <!-- ═══ FX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x cacd890a) ═══ -->
 <div class="pan">
@@ -265,16 +271,15 @@ a{color:var(--blu);text-decoration:none}
   <div id="fxladtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips)</div><div style="overflow-x:auto"><table id="fxladtrades"></table></div></div>
 </div>
 
-<!-- ═══ INDEX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x 676e89aa) ═══ -->
 <div class="pan">
-  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">INDEX LADDER — H1 upjump LADDER (no-floor) · US500 W24/2.0 · NAS100 W24/1.5 · GER40 W12/1.5 BULL-GATED (index_risk_off) · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr (native C++ · shadow · never vs-WIDE)</span>
-    <span id="ixladinfo" class="lbl" style="margin-left:auto">…</span>
+  <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
+  <div id="dom" class="num" style="font-size:10px"></div>
+  <div style="margin-top:5px">
+    <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
+    <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
   </div>
-  <div style="overflow:auto;max-height:340px"><table id="ixladtab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="ixladopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="ixladopen"></table></div></div>
-  <div id="ixladtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips)</div><div style="overflow-x:auto"><table id="ixladtrades"></table></div></div>
 </div>
+</div><!-- /ladder cstack -->
 
 </div><!-- /companions row -->
 
@@ -427,9 +432,11 @@ setInterval(pollFires,5000);
 /* ── ticker defs ── */
 var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas','NAS100','nas'],['dj','DJ30','dj'],
  ['ger30','GER40','ger40'],['uk100','UK100','uk100'],['cl','USOIL','cl'],['xag','XAGUSD','xag'],['vix','VIX',null],
- /* FX — 5 pairs of the FxBeFloorCompanion book; live price via telemetry <pair>_bid/_ask
-    (OmegaTelemetryServer.cpp emits eurusd/gbpusd/audusd/nzdusd/usdjpy). No _curh/_curl -> t[2]=null (no range bar). */
- ['eurusd','EURUSD',null],['gbpusd','GBPUSD',null],['usdjpy','USDJPY',null],['audusd','AUDUSD',null],['nzdusd','NZDUSD',null]];
+ /* FX — 5 pairs of the FxBeFloorCompanion book; live price via telemetry <pair>_bid/_ask.
+    S-2026-07-08: t[2] wired — OmegaTelemetryServer DOES emit <pair>_curh/_curl (verified live
+    on :7779), the old "no curh" comment was stale -> FX tiles now get the day-range bottom bar.
+    VIX stays null (no vix_curh in the emit list). */
+ ['eurusd','EURUSD','eurusd'],['gbpusd','GBPUSD','gbpusd'],['usdjpy','USDJPY','usdjpy'],['audusd','AUDUSD','audusd'],['nzdusd','NZDUSD','nzdusd']];
 /* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing */
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
  ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['NEAR','NEARUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
