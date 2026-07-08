@@ -17,7 +17,7 @@
 #   powershell -ExecutionPolicy Bypass -File C:\Omega\tools\register_omega_ibkr_bridge.ps1
 #
 # Default symbol list covers every instrument in omega_config.ini:
-#   FX  (IDEALPRO): EURUSD GBPUSD AUDUSD USDJPY NZDUSD
+#   FX  (IDEALPRO): EURUSD GBPUSD AUDUSD USDJPY NZDUSD USDCAD
 #   CMD (SMART)  : XAUUSD XAGUSD
 #   IDX (CME)    : ES NQ YM
 #   IDX (EUREX)  : DAX ESTX50
@@ -95,7 +95,9 @@ $MaxLvl   = 5
 #
 # 2026-07-06: FX MAJORS ADDED as L1 (reqMktData top-of-book), NOT depth. L1
 # carries NO depth-slot cost, so EURUSD/GBPUSD/USDJPY/AUDUSD/NZDUSD coexist with
-# the 3 depth streams above -- they do NOT touch the cap. The bridge routes any
+# the 3 depth streams above -- they do NOT touch the cap. 2026-07-08c: USDCAD
+# added the same way (L1) for the DOWN-JUMP SHORT ladder companion
+# (FX_BOTHWAYS_SWEEP_2026-07-08). The bridge routes any
 # CASH/IDEALPRO contract to L1Recorder (see ibkr_dom_bridge.py). Purpose: move FX
 # quotes off frozen BlackBull FIX onto the live IBKR IDEALPRO link. Omega.exe
 # consumes the L1 broadcast into g_ibkr_l2.{eur,gbp,usdjpy,aud,nzd}usd and
@@ -104,7 +106,8 @@ $MaxLvl   = 5
 # data-line block was cleared with IBKR on 2026-07-06.)
 $Symbols = @(
     'XAUUSD','DJ30','NAS100',
-    'EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD'
+    'EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD',
+    'USDCAD'   # S-2026-07-08c: DOWN-JUMP SHORT ladder companion feed (L1, no depth-slot cost)
 ) -join ','
 # 2026-06-17: NAS100 (E-mini Nasdaq future, CME) for the Aurora index footprint.
 # Use the symbol-MAP KEY 'NAS100' (make_contract maps it -> Future symbol 'NQ' on

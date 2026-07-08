@@ -17,7 +17,7 @@
 #include "XagBeFloorCompanion.hpp"  // XAGPos/XAGNeg SILVER BE-floor companion (native C++, /api/xag_companion)
 #include "UsoilBeFloorCompanion.hpp"// USOILPos/USOILNeg WTI CRUDE BE-floor companion (native C++, /api/usoil_companion)
 #include "FxBeFloorCompanion.hpp"   // per-pair FX BE-floor companion (EUR/GBP/JPY/AUD/NZD) -> /api/fx_companion
-#include "FxUpJumpLadderCompanion.hpp" // per-pair FX upjump LADDER companion (EUR/GBP/NZD/AUD) -> /api/fxladder_companion
+#include "FxUpJumpLadderCompanion.hpp" // per-pair FX jump LADDER companion (long EUR/GBP/NZD/AUD + short USDCAD) -> /api/fxladder_companion
                                        //   + index_upjump_ladder_book() (US500/NAS100/GER40) -> /api/idxladder_companion
 #include "IndexRiskGate.hpp"           // omega::index_risk_off() (GER40 ladder bull-gate)
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
@@ -1823,41 +1823,61 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // ── FX UP-JUMP LADDER companion (S-2026-07-07x, operator order 3 + resume order) ──
+        // ── FX JUMP LADDER companion (S-2026-07-07x wire; S-2026-07-08c both-ways update) ──
         //   The FX member of the no-floor ladder family (BIGCAP daily sibling above). Native
         //   C++ port of backtest/omega_upjump_ladder_bt.py, PARITY-EXACT vs python (backtest/
         //   fx_upjump_parity.cpp: EURUSD +39.7 vs +39.7, GBPUSD +37.4 vs +37.4, NZDUSD +41.2
         //   vs +41.2 — registry §6). Detector: close >= thr% off the W-bar min low -> W-bar
         //   window; legs TIGHT a0.17thr/trail0.67thr + WIDE a2.7thr/g50 + STACKED
         //   {0.67,1.33,2.0}thr g50 + reclip WIDE on +1.67thr (cap 5); LOSS_CUT 5thr pre-arm
-        //   (ADVERSE-PROTECTION verdict: free insurance — never binds at the locked cells,
-        //   AUDUSD LC3 marginally better; backtested in the expanded sweep). Costs: per-clip
-        //   RT bp debited, single honest column, 2x-cost PASS on all wired cells.
-        //   Cells (Tick H1 multiyear, WF both halves + random-window control PASS; expanded
-        //   entry/exit sweep outputs/FX_UPJUMP_SWEEP2_2026-07-07.txt confirms plateaus):
-        //     EURUSD W48 thr0.5  +39.7% PF1.47 n507 (all-9 plateau)
-        //     GBPUSD W48 thr1.0  +37.4% PF2.20 n240 (random ZERO -> pure detector edge)
-        //     NZDUSD W24 thr1.5  +41.2% PF4.35 n100 (thr1.5 plateau)
-        //     AUDUSD W96 thr1.0  +30.9% PF1.51 n220 (PASS-thin: W72-96 x thr0.75-1.0 pocket
-        //            all WF+; wired SHADOW, forward real column decides promotion)
-        //   USDJPY/USDCAD dead (9/9 negative) — excluded. XAU bull-beta / GER40 bull-only —
-        //   index axis, separate wire. SEPARATE INDEPENDENT observe-only SHADOW book
-        //   (feedback-companion-independent-engine), judged STANDALONE, deploy-forward.
-        //   FEED: tick_fx.hpp H1 roll (h/l/c — manage is intrabar l->h->c, in-calibration).
+        //   (ADVERSE-PROTECTION verdict: free insurance — never binds at the locked cells;
+        //   backtested in the expanded sweep). Costs: per-clip RT bp debited, single honest
+        //   column, 2x-cost PASS on all wired cells.
+        //   Cells — ALL RE-VALIDATED by the 2026-07-08 both-directions sweep
+        //   (outputs/FX_BOTHWAYS_SWEEP_2026-07-08.md, anchors reproduced EXACT to the bp,
+        //   data gate-certified; raw grid outputs/FX_BOTHWAYS_SWEEP_2026-07-08.txt):
+        //     EURUSD W48 thr0.5  L +3972bp PF1.47 n507 (all gates, plateau ok; short side
+        //            WEED: all 28 DNJUMP cells negative)
+        //     GBPUSD W48 thr1.0  L +3738bp PF2.20 n240 (the ONLY cross-regime PASS:
+        //            2022H2 dollar-rally+Truss +1368bp PF1.17, 2x-cost +980)
+        //     NZDUSD W24 thr1.5  L +3686bp PF4.02 n90 — RE-PROVEN on gate-clean REBUILT
+        //            2025 H1 (Tick/fx_bothways_deriv/NZDUSD_2025_h1.csv from monthly ticks;
+        //            the old Tick/NZDUSD_befloor_h1.csv is integrity-REJECTED, 90d hole
+        //            Jan-Mar 2026. Live warmup warmup_NZDUSD_H1.csv is a separate continuous
+        //            capture — gap-checked clean this session, NOT the rejected file.)
+        //     AUDUSD W72 thr0.75 L +3729bp PF1.48 n335 — S-2026-07-08c CELL UPGRADE from
+        //            the thin W96/1.0 anchor (+3092, still passes): sweep found W72/0.75
+        //            passes STRONGER (WF +2639/+1091, ex-best +3285, 2x-cost +3059,
+        //            over-random +3712, plateau ok).
+        //     USDCAD W96 thr0.5  S — NEW S-2026-07-08c: first genuine FX short-side ladder
+        //            pass. DOWN-JUMP mirror (short_downjump=true): +2241bp PF1.58 n230,
+        //            WF +1493/+748, ex-best +2007, 2x-cost +1781, over-random +2137,
+        //            broad W-plateau. SINGLE-REGIME caveat (2025 = CAD-strength year, no
+        //            2022 data) -> HALF notional ($5k vs $10k standard) + auto-retirement
+        //            retire_usd -$580 = 2x worst BT drawdown (maxDD -581bp @$5k = -$291).
+        //            USDCAD LONG stays WEED (all 30 cells negative — perfect mirror).
+        //   USDJPY WATCH only (nothing cross-regime clean) — not wired. EURGBP/USDCHF WEED/
+        //   no-data. XAU bull-beta / GER40 bull-only — index axis, separate wire.
+        //   SEPARATE INDEPENDENT observe-only SHADOW book (feedback-companion-independent-
+        //   engine), judged STANDALONE, deploy-forward.
+        //   FEED: tick_fx.hpp H1 roll (h/l/c — manage is intrabar adverse-first, in-calibration).
         {
             auto& fl = omega::fx_upjump_ladder_book();
-            // {pair, W, thr%, rt_cost_bp, warmup CSV (ts,o,h,l,c H1)}
-            struct FLCfg { const char* pair; int W; double thr; double rt; const char* csv; };
+            // {pair, W, thr%, rt_cost_bp, short_downjump, notional$, retire_usd, warmup CSV (ts,o,h,l,c H1)}
+            struct FLCfg { const char* pair; int W; double thr; double rt;
+                           bool short_dj; double notional; double retire; const char* csv; };
             static const FLCfg FL[] = {
-                {"EURUSD", 48, 0.5, 2.0, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
-                {"GBPUSD", 48, 1.0, 2.0, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
-                {"NZDUSD", 24, 1.5, 2.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
-                {"AUDUSD", 96, 1.0, 2.0, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
+                {"EURUSD", 48, 0.5,  2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
+                {"GBPUSD", 48, 1.0,  2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
+                {"NZDUSD", 24, 1.5,  2.5, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
+                {"AUDUSD", 72, 0.75, 2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
+                {"USDCAD", 96, 0.5,  2.0, true,   5000.0, -580.0, "phase1/signal_discovery/warmup_USDCAD_H1.csv"},
             };
             for (const auto& fc : FL) {
                 omega::FxLadderPair::Config c;
                 c.pair = fc.pair; c.live_sym = fc.pair;
                 c.W = fc.W; c.thr = fc.thr; c.rt_cost_bp = fc.rt;
+                c.short_downjump = fc.short_dj; c.notional = fc.notional; c.retire_usd = fc.retire;
                 fl.add(std::move(c));
             }
             size_t flseeded = 0;
@@ -1884,7 +1904,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             fl.finalize_all();
-            printf("[OMEGA-INIT][SEED] FX upjump LADDER wired: EURUSD(W48/0.5) GBPUSD(W48/1.0) NZDUSD(W24/1.5) AUDUSD(W96/1.0 thin), %zu H1 bars seeded, %zu forward bars restored, parity-exact, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] FX jump LADDER wired: EURUSD(W48/0.5 L) GBPUSD(W48/1.0 L) NZDUSD(W24/1.5 L) AUDUSD(W72/0.75 L upgraded) USDCAD(W96/0.5 SHORT half-size retire@-580), %zu H1 bars seeded, %zu forward bars restored, both-ways sweep 2026-07-08 re-validated, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
                    flseeded, flrestored);
             fflush(stdout);
         }

@@ -1,9 +1,11 @@
 #pragma once
 // =============================================================================
-// FxUpJumpLadderCompanion — per-pair FX H1 UP-JUMP LADDER (long-only) companion
-// books for EURUSD / GBPUSD / NZDUSD. The FX member of the no-floor ladder
-// family (BIGCAP daily = StockDayMoverLadderCompanion; this is the H1 port the
-// S-2026-07-07x instrument sweep validated).
+// FxUpJumpLadderCompanion — per-pair FX H1 JUMP LADDER companion books
+// (long UP-JUMP: EURUSD / GBPUSD / NZDUSD / AUDUSD; short DOWN-JUMP mirror:
+// USDCAD, S-2026-07-08c). The FX member of the no-floor ladder family (BIGCAP
+// daily = StockDayMoverLadderCompanion; this is the H1 port the S-2026-07-07x
+// instrument sweep validated; the short mirror is the S-2026-07-08 both-ways
+// sweep's first genuine FX short-side pass).
 //
 // C++ in-binary engine, faithful port of the VALIDATED research:
 //   math   : backtest/omega_upjump_ladder_bt.py run() (S-2026-07-07x, operator
@@ -22,12 +24,35 @@
 //            pass); USDJPY/USDCAD dead; XAU bull-beta (random captures it);
 //            GER40 bull-only (index axis, separate wire). Evidence
 //            outputs/OMEGA_UPJUMP_LADDER_2026-07-07.md · vault FxUpJumpLadder.
+//   short  : SIGN-MIRROR of the same mechanics (cfg.short_downjump=true), the
+//            exact dir=-1 parameterization of backtest/fx_bothways_sweep.py
+//            ladder(): window arms when close <= -thr% UNDER the max HIGH of
+//            the last W H1 bars; legs SHORT at the trigger close; arms/trails
+//            measured from the trough (favorable extreme), clip on bounce-back
+//            (abs trail or 50%-of-MFE giveback above the trough); LOSS_CUT 5thr
+//            adverse RALLY pre-arm; reclip on a further -1.67thr extension;
+//            window end flushes at the close. Intrabar order mirrored h->l->c
+//            (adverse extreme first). Validated: USDCAD DNJUMP W96/thr0.5
+//            +2241bp PF1.58 n230, WF +1493/+748, ex-best +2007, 2x-cost +1781,
+//            over-random +2137, plateau ok (neigh +541; W96/0.75, W72/0.75,
+//            W24/0.5, W48/0.5 also pass) — outputs/FX_BOTHWAYS_SWEEP_2026-07-08.md
+//            row 5. SINGLE-REGIME caveat (2025 = CAD-strength year, no 2022
+//            data) -> wired at HALF the standard notional.
 //
 // ADVERSE-PROTECTION: backtested verdict (mandate + feedback-engine-loss-
 //   protection-provision) — LOSS_CUT at 5*thr adverse per leg PRE-ARM is part
 //   of the validated mechanism (the PASS figures are net of its cuts), armed
 //   legs are trail-stopped (abs or 50%-of-MFE giveback), and the window exit
-//   flushes everything at the close (no leg is ever abandoned).
+//   flushes everything at the close (no leg is ever abandoned). SHORT side
+//   (S-2026-07-08c): identical protections sign-mirrored — LOSS_CUT 5*thr fires
+//   on an adverse RALLY pre-arm, trails clip on bounce-back off the trough,
+//   window flush unchanged; the USDCAD +2241bp PF1.58 verdict is net of these
+//   cuts (FX_BOTHWAYS_SWEEP_2026-07-08.md; single-regime caveat -> half size).
+//   AUTO-RETIREMENT (StockDayMoverLadderCompanion retire_usd latch, same
+//   S-2026-07-08c pattern): once a pair's FORWARD real book falls to
+//   <= cfg.retire_usd (<0 = enabled), NO new windows arm; open legs still
+//   manage/flush. USDCAD short wired at -$580 = 2x worst BT drawdown (maxDD
+//   -581bp on the W96/0.5 equity curve, $5k notional -> -$291; 2x ~ -$580).
 //
 // FILL CONVENTION (in-calibration): trail/LC exits book AT the stop level when
 //   an H1 low pierces it (resting-stop convention, same as the research); the
@@ -71,6 +96,13 @@ public:
         double notional      = 10000.0;   // $ per clip; USD = pct/100 * notional
         double lot           = 1.0;       // order-path lot (units decided at LIVE flip)
         int    cap           = 5;         // max clip batches per window (1 base + 4 reclips)
+        // S-2026-07-08c DIRECTION flag: false = long UP-JUMP (original mechanics);
+        // true = short DOWN-JUMP sign-mirror (USDCAD; fx_bothways_sweep.py dir=-1).
+        bool   short_downjump = false;
+        // S-2026-07-08c AUTO-RETIREMENT latch (StockDayMoverLadderCompanion pattern):
+        // forward real book <= retire_usd (<0 = enabled) -> no NEW windows arm
+        // (open legs manage/flush normally). 0 = disabled.
+        double retire_usd     = 0.0;
         std::string file_prefix = "fxladder_companion_";   // persistence-file family (index book overrides)
         // Optional REGIME BLOCK for NEW windows (GER40 bull-gate: bear file 24/24 cells
         // negative -> wire ONLY behind the index risk-off gate, feedback-companion-bull-
@@ -105,6 +137,7 @@ public:
     }
 
     explicit FxLadderPair(Config c) : cfg_(std::move(c)) {
+        d_ = cfg_.short_downjump ? -1.0 : 1.0;
         const std::string s = lower_(cfg_.pair);
         if (cfg_.deploy_path.empty()) cfg_.deploy_path = cfg_.file_prefix + s + "_deploy_ts.txt";
         if (cfg_.bars_path.empty())   cfg_.bars_path   = cfg_.file_prefix + s + "_h1.csv";
@@ -130,7 +163,7 @@ public:
         if (c_.empty()) return 0.0;
         const double cur = c_.back(); double r = 0.0;
         for (const Leg& L : legs_)
-            r += (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0;
+            r += d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0;
         return r;
     }
     int total_clips() const { int n = 0; for (int ti = 0; ti < NT_; ++ti) n += fwd_[ti].clips; return n; }
@@ -211,13 +244,14 @@ public:
             runs.precision(0); runs << "\"usd\":" << (b.pct / 100.0 * notl) << "}";
         }
 
+        const char* dstr = cfg_.short_downjump ? "short" : "long";
         std::ostringstream op; int nopen = 0;
         for (const Leg& L : legs_) {
             const double u = (cur > 0 && L.entry > 0)
-                             ? (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
+                             ? d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
             if (nopen++) op << ",";
             op.precision(0); op << std::fixed;
-            op << "{\"flavor\":\"" << cfg_.pair << "Lad\",\"dir\":\"long\",\"tier\":\"" << TIER_TAG_[L.ti] << "\",";
+            op << "{\"flavor\":\"" << cfg_.pair << "Lad\",\"dir\":\"" << dstr << "\",\"tier\":\"" << TIER_TAG_[L.ti] << "\",";
             op.precision(5); op << "\"entry\":" << L.entry << ",\"peak\":" << L.peak << ",\"cur\":" << cur << ",";
             op << "\"armed\":" << (L.armed ? "true" : "false") << ",";
             op.precision(3); op << "\"upnl_pct\":" << u << ",";
@@ -230,7 +264,7 @@ public:
             const Closed& c2 = *it;
             if (ntr++) tr << ",";
             tr.precision(0); tr << std::fixed;
-            tr << "{\"flavor\":\"" << cfg_.pair << "Lad\",\"dir\":\"long\",\"tier\":\""
+            tr << "{\"flavor\":\"" << cfg_.pair << "Lad\",\"dir\":\"" << dstr << "\",\"tier\":\""
                << TIER_TAG_[(c2.ti >= 0 && c2.ti < NT_) ? c2.ti : 0] << "\",";
             tr.precision(5); tr << "\"entry\":" << c2.entry << ",\"exit\":" << c2.exit << ",";
             tr.precision(3); tr << "\"pct\":" << c2.pct << ",";
@@ -239,7 +273,9 @@ public:
                << ",\"exit_ts\":" << (long long)c2.xts << "}";
         }
 
-        o << "{\"pair\":\"" << cfg_.pair << "\",\"live_sym\":\"" << cfg_.live_sym << "\",\"bars\":" << ts_.size()
+        o << "{\"pair\":\"" << cfg_.pair << "\",\"live_sym\":\"" << cfg_.live_sym
+          << "\",\"dir\":\"" << dstr << "\",\"retired\":" << (retired_ ? "true" : "false")
+          << ",\"bars\":" << ts_.size()
           << ",\"deploy_ts\":" << (long long)deploy_ts_ << ",\"ts\":" << (long long)lts << ",";
         o << "\"W\":" << cfg_.W << ",";
         o.precision(2); o << "\"thr\":" << cfg_.thr << ",\"rt_cost_bp\":" << cfg_.rt_cost_bp << ",";
@@ -256,6 +292,9 @@ public:
 
 private:
     Config cfg_;
+    double d_ = 1.0;                  // direction multiplier: +1 long upjump, -1 short downjump
+    bool   retired_ = false;          // S-2026-07-08c auto-retirement latch state (new windows blocked)
+    bool   retired_logged_ = false;   // one-shot retirement log
     std::vector<int64_t> ts_;
     std::vector<double>  h_, l_, c_;
     int64_t deploy_ts_ = 0;
@@ -278,7 +317,7 @@ private:
     struct Leg {
         int    ti = 0;              // tier class (0 tight / 1 wide / 2 stacked / 3 ladder)
         double entry = 0;           // entry close
-        double peak  = 0;           // best px seen since entry (MFE reference)
+        double peak  = 0;           // favorable extreme since entry (peak long / trough short; MFE reference)
         double arm_px = 0;          // arm level (px)
         double trail_abs = 0;       // abs trail distance in px (TIGHT; 0 = g50 trail)
         bool   armed = false;
@@ -303,10 +342,10 @@ private:
     // with the research; observed close for window flush). pct is net of rt_cost_bp.
     void book_clip_(const Leg& L, double fill, int64_t ts_sec, bool fwd, const char* reason) noexcept {
         const double pct = (L.entry > 0)
-                           ? (fill / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
+                           ? d_ * (fill / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
         if (!fwd) return;
-        if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, true, cfg_.lot, fill, L.token);
-        if (ledger_fn_) ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, true, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
+        if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, d_ > 0, cfg_.lot, fill, L.token);
+        if (ledger_fn_) ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, d_ > 0, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
         fwd_[L.ti].pct += pct; fwd_[L.ti].clips += 1; fwd_[L.ti].wins += (pct > 1e-9 ? 1 : 0);
         save_fwd_book_();
         Closed rec{L.ti, L.entry, fill, pct, pct / 100.0 * cfg_.notional, L.entry_ts, ts_sec, reason};
@@ -320,15 +359,16 @@ private:
 
     Leg make_leg_(int ti, double arm_mult, double trail_abs_mult, double px, int64_t ts_sec, bool fwd) noexcept {
         Leg L; L.ti = ti; L.entry = px; L.peak = px;
-        L.arm_px = px * (1.0 + arm_mult * cfg_.thr / 100.0);
+        L.arm_px = px * (1.0 + d_ * arm_mult * cfg_.thr / 100.0);   // arm level in the favorable direction
         L.trail_abs = (trail_abs_mult > 0.0) ? px * (trail_abs_mult * cfg_.thr / 100.0) : 0.0;
         L.armed = false; L.entry_ts = ts_sec;
         if (fwd && open_fn_) {
-            const double tp_dist_pts = L.arm_px - px;
+            const double tp_dist_pts = std::fabs(L.arm_px - px);
             if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
-                L.token = open_fn_(cfg_.live_sym, true, cfg_.lot, px);
-                std::printf("[FXLAD][OPEN] %s LONG @%.5f lot=%.2f tok=%s\n",
-                            leg_engine_(ti).c_str(), px, cfg_.lot, L.token.c_str());
+                L.token = open_fn_(cfg_.live_sym, d_ > 0, cfg_.lot, px);
+                std::printf("[FXLAD][OPEN] %s %s @%.5f lot=%.2f tok=%s\n",
+                            leg_engine_(ti).c_str(), d_ > 0 ? "LONG" : "SHORT",
+                            px, cfg_.lot, L.token.c_str());
                 std::fflush(stdout);
             }
         }
@@ -336,34 +376,36 @@ private:
     }
 
     // Incremental ladder state machine on the NEWEST H1 bar. Faithful harness bar order:
-    // (1) manage open legs intrabar l->h->c; (2) window-end flush at close; (3) detector on
-    // the W bars BEFORE this one; (4) base-batch entry at the trigger close / reclip.
+    // (1) manage open legs intrabar, ADVERSE extreme first (long: l->h->c, short: h->l->c);
+    // (2) window-end flush at close; (3) detector on the W bars BEFORE this one;
+    // (4) base-batch entry at the trigger close / reclip. Direction-parameterized via d_
+    // (sign-mirror, exactly fx_bothways_sweep.py ladder() dir=+-1, S-2026-07-08c).
     void live_step_(int64_t ts_sec) noexcept {
         if (!open_fn_) return;                               // backtest TU / not wired
         const int N = (int)c_.size(); const int W = cfg_.W;
         if (N < W + 1) return;
         const bool   fwd = ts_sec > deploy_ts_;
         const double hh = h_[N-1], ll = l_[N-1], cc = c_[N-1];
-        const double lc_lvl_mult = 1.0 - LC_M * cfg_.thr / 100.0;
+        const double lc_lvl_mult = 1.0 - d_ * LC_M * cfg_.thr / 100.0;
 
-        // 1) manage open legs intrabar: l first (SL-first), then h, then c.
+        // 1) manage open legs intrabar: adverse extreme first (SL-first), then favorable, then c.
         {
-            const double seq[3] = { ll, hh, cc };
+            const double seq[3] = { d_ > 0 ? ll : hh, d_ > 0 ? hh : ll, cc };
             std::vector<Leg> still; still.reserve(legs_.size());
             for (Leg& L : legs_) {
                 bool closed = false;
                 for (int k = 0; k < 3 && !closed; ++k) {
                     const double px = seq[k];
                     if (!L.armed) {
-                        const double cut = L.entry * lc_lvl_mult;
-                        if (px <= cut) { book_clip_(L, cut, ts_sec, fwd, "LOSS_CUT"); closed = true; break; }
-                        if (px >= L.arm_px) { L.armed = true; if (px > L.peak) L.peak = px; }
+                        const double cut = L.entry * lc_lvl_mult;   // long: below entry; short: rally above
+                        if (d_ * (px - cut) <= 0) { book_clip_(L, cut, ts_sec, fwd, "LOSS_CUT"); closed = true; break; }
+                        if (d_ * (px - L.arm_px) >= 0) { L.armed = true; if (d_ * (px - L.peak) > 0) L.peak = px; }
                     } else {
-                        if (px > L.peak) L.peak = px;
+                        if (d_ * (px - L.peak) > 0) L.peak = px;    // favorable extreme (peak/trough)
                         const double stop = (L.trail_abs > 0.0)
-                                            ? (L.peak - L.trail_abs)
-                                            : (L.entry + 0.5 * (L.peak - L.entry));   // g50
-                        if (px <= stop) { book_clip_(L, stop, ts_sec, fwd, "TRAIL_STOP"); closed = true; break; }
+                                            ? (L.peak - d_ * L.trail_abs)
+                                            : (L.entry + 0.5 * (L.peak - L.entry));   // g50 (sign-neutral)
+                        if (d_ * (px - stop) <= 0) { book_clip_(L, stop, ts_sec, fwd, "TRAIL_STOP"); closed = true; break; }
                     }
                 }
                 if (!closed) still.push_back(std::move(L));
@@ -377,20 +419,37 @@ private:
             legs_.clear(); win_ = false; age_ = 0; nclips_ = 0; last_reclip_px_ = 0.0;
         }
 
-        // 3) detector: close >= thr% above the min LOW of the W bars BEFORE this one.
+        // 3) detector — long: close >= thr% above the min LOW of the W bars BEFORE this one;
+        //    short: close <= -thr% under the max HIGH of the W bars BEFORE this one.
         //    GAP GUARD (live-only deviation, documented): block NEW windows when the W-bar
         //    span exceeds W hours + 4 days (weekend/holiday slack) — a multi-day feed outage
         //    makes the "W-bar move" span weeks, outside calibration. Exits stay honoured.
         if (!win_ && !(cfg_.block_new_windows_fn && cfg_.block_new_windows_fn())) {
-            double wl = l_[N-1-W];
-            for (int i = N - W; i <= N - 2; ++i) if (l_[i] < wl) wl = l_[i];
+            double ref = (d_ > 0) ? l_[N-1-W] : h_[N-1-W];
+            if (d_ > 0) { for (int i = N - W; i <= N - 2; ++i) if (l_[i] < ref) ref = l_[i]; }
+            else        { for (int i = N - W; i <= N - 2; ++i) if (h_[i] > ref) ref = h_[i]; }
             const bool contig = (ts_[N-1] - ts_[N-1-W]) <= (int64_t)W * 3600 + 4 * 86400;
-            if (wl > 0 && contig && (cc - wl) / wl * 100.0 >= cfg_.thr) {
-                win_ = true; age_ = 0; nclips_ = 0; last_reclip_px_ = cc;
+            const double jump = (ref > 0) ? d_ * (cc - ref) / ref * 100.0 : 0.0;
+            if (ref > 0 && contig && jump >= cfg_.thr) {
+                // S-2026-07-08c AUTO-RETIREMENT gate: a proven-negative forward book stops
+                // arming NEW windows by itself (open legs above still managed/flushed).
+                if (cfg_.retire_usd < 0.0 && book_usd() <= cfg_.retire_usd) {
+                    retired_ = true;
+                    if (!retired_logged_) {
+                        retired_logged_ = true;
+                        std::printf("[FXLAD][RETIRED] %s forward book $%.0f <= $%.0f -- no new windows (auto-retirement, S-2026-07-08c)\n",
+                                    cfg_.pair.c_str(), book_usd(), cfg_.retire_usd);
+                        std::fflush(stdout);
+                    }
+                } else {
+                    retired_ = false;   // book recovered above the latch (legs can still flush green)
+                    win_ = true; age_ = 0; nclips_ = 0; last_reclip_px_ = cc;
+                }
             }
         }
 
-        // 4) entries: base batch at the trigger close; reclip a WIDE leg on +1.67thr extension.
+        // 4) entries: base batch at the trigger close; reclip a WIDE leg on a further
+        //    +1.67thr favorable extension (short: -1.67thr).
         if (win_ && nclips_ < cfg_.cap) {
             if (nclips_ == 0) {
                 legs_.push_back(make_leg_(0, T_ARM_M, T_TRAIL_M, cc, ts_sec, fwd));   // TIGHT
@@ -398,7 +457,7 @@ private:
                 for (int k = 0; k < 3; ++k)
                     legs_.push_back(make_leg_(2, S_ARM_M[k], 0.0, cc, ts_sec, fwd));  // STACKED g50
                 nclips_ = 1; last_reclip_px_ = cc;
-            } else if (cc >= last_reclip_px_ * (1.0 + RECLIP_M * cfg_.thr / 100.0)) {
+            } else if (d_ * (cc - last_reclip_px_ * (1.0 + d_ * RECLIP_M * cfg_.thr / 100.0)) >= 0) {
                 legs_.push_back(make_leg_(3, W_ARM_M, 0.0, cc, ts_sec, fwd));         // LADDER (wide params)
                 nclips_ += 1; last_reclip_px_ = cc;
             }

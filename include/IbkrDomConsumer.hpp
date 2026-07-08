@@ -127,6 +127,7 @@ struct L2Bus {
     L2Slot usdjpy;  // USDJPY              (IBKR USD.JPY CASH/IDEALPRO L1)
     L2Slot audusd;  // AUDUSD              (IBKR AUD.USD CASH/IDEALPRO L1)
     L2Slot nzdusd;  // NZDUSD              (IBKR NZD.USD CASH/IDEALPRO L1)
+    L2Slot usdcad;  // USDCAD              (IBKR USD.CAD CASH/IDEALPRO L1; S-2026-07-08c short-ladder feed)
 
     // Map bridge-emitted symbol string to the slot it updates.
     // Bridge symbols come in either "US500.F"/"NAS100"/etc (Blackbull naming
@@ -149,6 +150,7 @@ struct L2Bus {
         if (std::strcmp(sym, "USDJPY")  == 0) return &usdjpy;
         if (std::strcmp(sym, "AUDUSD")  == 0) return &audusd;
         if (std::strcmp(sym, "NZDUSD")  == 0) return &nzdusd;
+        if (std::strcmp(sym, "USDCAD")  == 0) return &usdcad;
         return nullptr;
     }
 };
@@ -160,7 +162,8 @@ struct L2Bus {
 inline bool is_fx_major(const char* s) noexcept {
     return std::strcmp(s, "EURUSD") == 0 || std::strcmp(s, "GBPUSD") == 0
         || std::strcmp(s, "USDJPY") == 0 || std::strcmp(s, "AUDUSD") == 0
-        || std::strcmp(s, "NZDUSD") == 0;
+        || std::strcmp(s, "NZDUSD") == 0
+        || std::strcmp(s, "USDCAD") == 0;  // S-2026-07-08c: short-ladder pair (IBKR-only; no BlackBull feed to gate)
 }
 
 // Stats for /api/v1/omega health -- read by status endpoint if wired.

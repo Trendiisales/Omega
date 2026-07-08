@@ -190,6 +190,7 @@ inline void pr_write_snapshot(const std::string& path) {
         {"USDJPY", &g_bars_usdjpy, {"USDJPY", 14, 2.0, 2.0, 0}},
         {"AUDUSD", &g_bars_audusd, {"AUDUSD", 14, 2.0, 2.0, 0}},
         {"NZDUSD", &g_bars_nzdusd, {"NZDUSD", 14, 2.0, 2.0, 0}},
+        {"USDCAD", &g_bars_usdcad, {"USDCAD", 14, 2.0, 2.0, 0}},   // S-2026-07-08c short-ladder pair
     };
 
     std::ostringstream js;

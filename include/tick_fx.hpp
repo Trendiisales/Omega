@@ -118,11 +118,19 @@ static void on_tick_audusd(
 }
 
 // ── USDCAD ──────────────────────────────────────────────────
+// S-2026-07-08c: USDCAD re-activated as a BAR SOURCE ONLY for the DOWN-JUMP
+// SHORT ladder companion (FxUpJumpLadderCompanion short_downjump=true; sweep
+// outputs/FX_BOTHWAYS_SWEEP_2026-07-08.md row 5, W96/0.5 +2241bp PF1.58).
+// Quotes arrive via the IBKR IDEALPRO L1 bridge (same path as the other 5
+// pairs; USDCAD is NOT on the BlackBull ext-symbol list, IBKR is its only
+// source). Observe-only: feeds bars to a shadow companion, sends no orders —
+// the 2026-06-29 FX execution removal stands.
 template<typename Dispatch>
 static void on_tick_usdcad(
     const std::string& sym, double bid, double ask,
     bool tradeable, bool lat_ok, const std::string& regime,
     Dispatch& dispatch)
 {
-    (void)sym; (void)bid; (void)ask; (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
+    { static FxBarAgg agg; fx_feed_bars(agg, g_bars_usdcad, "USDCAD", (bid + ask) * 0.5); }
+    (void)sym; (void)tradeable; (void)lat_ok; (void)regime; (void)dispatch;
 }

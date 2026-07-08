@@ -329,6 +329,7 @@ static SymBarState         g_bars_gbpusd; // GBPUSD
 static SymBarState         g_bars_usdjpy; // USDJPY
 static SymBarState         g_bars_audusd; // AUDUSD
 static SymBarState         g_bars_nzdusd; // NZDUSD
+static SymBarState         g_bars_usdcad; // USDCAD (S-2026-07-08c: DOWN-JUMP SHORT ladder companion feed)
 // IndexSwingEngine -- H1+H4 swing entries for US500.F and USTEC.F
 // shadow_mode=true always; configured in engine_init.hpp
 // sl_pts / min_ema_sep / pnl_scale per-symbol calibration:
