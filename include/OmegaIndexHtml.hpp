@@ -24,10 +24,10 @@ R"OMEGAD0(<!DOCTYPE html>
   --blu:#85B7EB;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consolas,monospace;padding:8px}
+body{background:var(--bg);color:var(--t);font:11px 'IBM Plex Mono',Menlo,Consolas,monospace;padding:8px}
 .num{font-variant-numeric:tabular-nums}
 .lbl{font-size:10.5px;color:var(--t2);letter-spacing:.05em}
-.pan{background:var(--pan);border:1px solid var(--bd);border-radius:6px;padding:6px 9px;min-width:0}
+.pan{background:var(--pan);border:1px solid var(--bd);border-radius:6px;padding:4px 7px;min-width:0}
 .grid{display:grid;gap:6px;margin-top:6px}
 /* companions row: CSS multicol (masonry) so an odd panel count / uneven panel
    heights never leave a massive grid row-coupling gap (XAG short vs FX tall).
@@ -42,7 +42,7 @@ body{background:var(--bg);color:var(--t);font:12px 'IBM Plex Mono',Menlo,Consola
 .chip{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:3px}
 .g{color:var(--grn)}.r{color:var(--red)}.a{color:var(--ambB)}.d{color:var(--t2)}.w{color:var(--w)}
 table{width:100%;border-collapse:collapse}
-td,th{padding:2px 7px;text-align:right;font-size:11.5px;white-space:nowrap}
+td,th{padding:1px 6px;text-align:right;font-size:10px;line-height:1.35;white-space:nowrap}
 #lt td,#lt th{padding:0 6px;font-size:9.5px;line-height:1.45}  /* compact live-open-trades to free vertical space (capped + scroll) */
 td:first-child,th:first-child,td.l,th.l{text-align:left}
 th{color:var(--t2);font-weight:400}
@@ -55,7 +55,7 @@ select{background:var(--pan2);color:var(--t);border:1px solid var(--bd2);border-
 a{color:var(--blu);text-decoration:none}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:0}
 /* heat tiles halved 2026-07-08 (operator: panel unnecessary at full size) — one-line row tile */
-.tile{border-radius:3px;height:17px;display:flex;flex-direction:row;align-items:center;gap:5px;padding:1px 5px;overflow:hidden}
+.tile{border-radius:3px;height:13px;display:flex;flex-direction:row;align-items:center;gap:5px;padding:1px 5px;overflow:hidden}
 .tile b{font-size:8.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile span{font-size:8px;opacity:.9;white-space:nowrap}
 .bar{position:relative;height:8px;background:#1d2733;border-radius:2px;overflow:hidden}
@@ -117,7 +117,7 @@ a{color:var(--blu);text-decoration:none}
     <span id="ltcount" class="lbl"></span>
     <span id="ltpnl" class="num" style="margin-left:auto;font-size:13px"></span>
   </div>
-  <div style="max-height:200px;overflow-y:auto;margin-top:4px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
+  <div style="max-height:110px;overflow-y:auto;margin-top:3px"><table id="lt"><tr><td class="l d">FLAT — no open positions</td></tr></table></div>
 </div>
 
 <!-- ═══ MAIN DASHBOARD ROW: chart (left) + money rail (right) — packs wide screens, cuts scroll ═══ -->
@@ -136,7 +136,7 @@ a{color:var(--blu);text-decoration:none}
       <span id="prtfs" style="display:flex;gap:4px"></span>
     </span>
   </div>
-  <canvas id="prc" height="215" style="margin-top:6px"></canvas>
+  <canvas id="prc" height="108" style="margin-top:4px"></canvas>
   <div class="lbl" style="margin-top:4px">
     <span style="color:var(--blu)">━ PR average</span> ·
     <span style="color:var(--redB)">━ R2  /  ┄ R1 resistance</span> ·
@@ -204,9 +204,9 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ STOCK MOVERS — BIGCAP day-mover UP-JUMP LADDER books (no-floor · shadow, additive)
      + stacked underneath (2026-07-08, operator): 4 retired BE-floor banners + DOM L2 ═══ -->
-<div class="cstack">
 )OMEGAD0"
-R"OMEGAD1(<div class="pan">
+R"OMEGAD1(<div class="cstack">
+<div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">STOCK MOVERS — BIGCAP upjump LADDER (no-floor) · +3% day → next-close entry · TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 · LOSS_CUT 15 · BT +7,044% PF1.58 all-6 (native C++ · shadow · REAL fills · never vs-WIDE)</span>
     <span id="sminfo" class="lbl" style="margin-left:auto">…</span>
@@ -1263,7 +1263,7 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
    COMP-BANK / ALL-TIME totals are always explained by visible rows. window._compClosed is fed
    by pollComp from /api/companion closed_detail (StallCompanion aggregate, newest first). */
 function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
- var rows=cl.slice(0,8).map(function(d){var p=safe(d.pnl),c=p>=0?'g':'r';
+ var rows=cl.slice(0,6).map(function(d){var p=safe(d.pnl),c=p>=0?'g':'r';
   var t=d.ts?new Date(d.ts*1000).toISOString().slice(5,16).replace('T',' '):'';
   return '<tr><td class="l d" style="font-size:10px;border-left:2px solid var(--grn)">&#8627; '+esc(t)+'</td>'
    +'<td class="l d" style="font-size:10px">'+esc((d.sym||''))+'</td>'
@@ -1457,7 +1457,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el("prc"),H=215,ctx=prep(cv,H);
+function drawPR(){var cv=el("prc"),H=108,ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
@@ -1619,7 +1619,15 @@ function drawPR(){var cv=el("prc"),H=215,ctx=prep(cv,H);
  pt.style.color=trend>0?'var(--grnB)':trend<0?'var(--redB)':'var(--t2)';
  pt.style.background=trend>0?'var(--grnD)':trend<0?'var(--redD)':'var(--pan2)';
  var age=PRD.updated?Math.max(0,Math.round(Date.now()/1000-PRD.updated)):-1;
- el('prinfo').textContent='ATR'+ds.len+' ×'+ds.factor+' · rng×'+ds.rmult+' · '+ds.source+(age>=0?' · '+age+'s ago':'');}
+ /* S-2026-07-08c: show BAR age of the ACTIVE timeframe, not just poll age — a restart
+    gap froze the 15m series at pre-drop levels while '72s ago' implied fresh. Amber
+    when the last bar is older than 2x the timeframe. */
+ var tfsec={'m5':300,'m15':900,'h1':3600}[PRTF]||900;
+ var barAge=(ds.bars&&ds.bars.length)?Math.max(0,Math.round(Date.now()/1000-ds.bars[ds.bars.length-1][0])):-1;
+ var stale=barAge>=0&&barAge>2*tfsec;
+ el('prinfo').innerHTML='ATR'+ds.len+' ×'+ds.factor+' · rng×'+ds.rmult+' · '+ds.source
+   +(barAge>=0?' · bar '+(barAge<120?barAge+'s':Math.round(barAge/60)+'m')+(stale?' <span class="a">STALE</span>':''):'')
+   +(age>=0?' · poll '+age+'s':'');}
 function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
 loadPR();setInterval(loadPR,30000);
 
@@ -1634,7 +1642,8 @@ function prTip(m,cx,cy){var tip=el('prtip');
   +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
   +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
-  +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
+)OMEGAD8"
+R"OMEGAD9(  +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
  tip.style.display='block';
  var tw2=tip.offsetWidth,th2=tip.offsetHeight;
  tip.style.left=Math.min(window.innerWidth-tw2-8,cx+14)+'px';
@@ -1646,8 +1655,7 @@ function prTip(m,cx,cy){var tip=el('prtip');
   PRMK.forEach(function(m){var dx=m.x-PRMOUSE.x,dy=m.y-PRMOUSE.y,d2=dx*dx+dy*dy;
    if(d2<best){best=d2;hit=m;}});
   PRHOVER=hit;prTip(hit,e.clientX,e.clientY);});
-)OMEGAD8"
-R"OMEGAD9( cvp.addEventListener('mouseleave',function(){PRMOUSE=null;PRHOVER=null;prTip(null);drawPR();});})();
+ cvp.addEventListener('mouseleave',function(){PRMOUSE=null;PRHOVER=null;prTip(null);drawPR();});})();
 /* ~30fps redraw only while hovering, or while the newest exit (<10 min) pulses;
    paused when the tab is hidden. Static otherwise — zero idle cost. */
 (function prAnim(){requestAnimationFrame(prAnim);
