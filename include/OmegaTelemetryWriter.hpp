@@ -42,6 +42,7 @@ struct OmegaTelemetrySnapshot
     double gbpusd_bid; double gbpusd_ask;
     double audusd_bid; double audusd_ask;
     double nzdusd_bid; double nzdusd_ask;
+    double usdcad_bid; double usdcad_ask;   // S-2026-07-08d: short-ladder pair tile
     double usdjpy_bid; double usdjpy_ask;
     double brent_bid;  double brent_ask;
 
@@ -257,6 +258,7 @@ struct OmegaTelemetrySnapshot
     double gbpusd_curh = 0.0, gbpusd_curl = 0.0;
     double audusd_curh = 0.0, audusd_curl = 0.0;
     double nzdusd_curh = 0.0, nzdusd_curl = 0.0;
+    double usdcad_curh = 0.0, usdcad_curl = 0.0;
     double usdjpy_curh = 0.0, usdjpy_curl = 0.0;
 
     // --- Regime indicators ---
@@ -522,6 +524,7 @@ public:
         else if (!strcmp(sym,"GBPUSD"))  { lv_gbpusd_bid=bid; lv_gbpusd_ask=ask; m_snap->gbpusd_bid=bid; m_snap->gbpusd_ask=ask; }
         else if (!strcmp(sym,"AUDUSD"))  { lv_audusd_bid=bid; lv_audusd_ask=ask; m_snap->audusd_bid=bid; m_snap->audusd_ask=ask; }
         else if (!strcmp(sym,"NZDUSD"))  { lv_nzdusd_bid=bid; lv_nzdusd_ask=ask; m_snap->nzdusd_bid=bid; m_snap->nzdusd_ask=ask; }
+        else if (!strcmp(sym,"USDCAD"))  { m_snap->usdcad_bid=bid; m_snap->usdcad_ask=ask; }
         else if (!strcmp(sym,"USDJPY"))  { lv_usdjpy_bid=bid; lv_usdjpy_ask=ask; m_snap->usdjpy_bid=bid; m_snap->usdjpy_ask=ask; }
         else if (!strcmp(sym,"BRENT")) { lv_brent_bid=bid;  lv_brent_ask=ask;  m_snap->brent_bid=bid;  m_snap->brent_ask=ask; }
         m_snap->sequence.store(seq + 1, std::memory_order_release);
@@ -617,6 +620,7 @@ public:
         else if (!strcmp(sym,"GBPUSD"))   { m_snap->gbpusd_curh = curh; m_snap->gbpusd_curl = curl; }
         else if (!strcmp(sym,"AUDUSD"))   { m_snap->audusd_curh = curh; m_snap->audusd_curl = curl; }
         else if (!strcmp(sym,"NZDUSD"))   { m_snap->nzdusd_curh = curh; m_snap->nzdusd_curl = curl; }
+        else if (!strcmp(sym,"USDCAD"))   { m_snap->usdcad_curh = curh; m_snap->usdcad_curl = curl; }
         else if (!strcmp(sym,"USDJPY"))   { m_snap->usdjpy_curh = curh; m_snap->usdjpy_curl = curl; }
     }
 

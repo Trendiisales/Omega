@@ -165,6 +165,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"gbpusd_bid\":%.5f,\"gbpusd_ask\":%.5f,"
         "\"audusd_bid\":%.5f,\"audusd_ask\":%.5f,"
         "\"nzdusd_bid\":%.5f,\"nzdusd_ask\":%.5f,"
+        "\"usdcad_bid\":%.5f,\"usdcad_ask\":%.5f,"
         "\"usdjpy_bid\":%.5f,\"usdjpy_ask\":%.5f,"
         "\"brent_bid\":%.4f,\"brent_ask\":%.4f,"
         "\"daily_pnl\":%.2f,\"gross_daily_pnl\":%.2f,\"max_drawdown\":%.2f,"
@@ -225,7 +226,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"estx50_curh\":%.4f,\"estx50_curl\":%.4f,\"brent_curh\":%.4f,\"brent_curl\":%.4f,"
         "\"xag_curh\":%.4f,\"xag_curl\":%.4f,\"eurusd_curh\":%.4f,\"eurusd_curl\":%.4f,"
         "\"gbpusd_curh\":%.4f,\"gbpusd_curl\":%.4f,\"audusd_curh\":%.4f,\"audusd_curl\":%.4f,"
-        "\"nzdusd_curh\":%.4f,\"nzdusd_curl\":%.4f,\"usdjpy_curh\":%.4f,\"usdjpy_curl\":%.4f",
+        "\"nzdusd_curh\":%.4f,\"nzdusd_curl\":%.4f,\"usdjpy_curh\":%.4f,\"usdjpy_curl\":%.4f,"
+        "\"usdcad_curh\":%.4f,\"usdcad_curl\":%.4f",
         s->sp_bid,     s->sp_ask,     s->nq_bid,  s->nq_ask,
         s->cl_bid,     s->cl_ask,     s->vix_bid, s->vix_ask,
         s->dx_bid,     s->dx_ask,     s->dj_bid,  s->dj_ask,
@@ -237,6 +239,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->eurusd_bid, s->eurusd_ask,
         s->gbpusd_bid, s->gbpusd_ask,
         s->audusd_bid, s->audusd_ask, s->nzdusd_bid, s->nzdusd_ask,
+        s->usdcad_bid, s->usdcad_ask,
         s->usdjpy_bid, s->usdjpy_ask, s->brent_bid,  s->brent_ask,
         s->daily_pnl, s->gross_daily_pnl, s->max_drawdown,
         s->closed_pnl, s->open_unrealised_pnl,
@@ -296,7 +299,8 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->estx50_curh, s->estx50_curl, s->brent_curh, s->brent_curl,
         s->xag_curh, s->xag_curl, s->eurusd_curh, s->eurusd_curl,
         s->gbpusd_curh, s->gbpusd_curl, s->audusd_curh, s->audusd_curl,
-        s->nzdusd_curh, s->nzdusd_curl, s->usdjpy_curh, s->usdjpy_curl
+        s->nzdusd_curh, s->nzdusd_curl, s->usdjpy_curh, s->usdjpy_curl,
+        s->usdcad_curh, s->usdcad_curl
     );
 
     // Append signal_history ring buffer as JSON array (newest first)
@@ -1404,6 +1408,4 @@ void OmegaTelemetryServer::run(int port)
 }
 
 } // namespace omega
-
-
 

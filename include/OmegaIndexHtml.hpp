@@ -448,7 +448,7 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
     S-2026-07-08: t[2] wired — OmegaTelemetryServer DOES emit <pair>_curh/_curl (verified live
     on :7779), the old "no curh" comment was stale -> FX tiles now get the day-range bottom bar.
     VIX stays null (no vix_curh in the emit list). */
- ['eurusd','EURUSD','eurusd'],['gbpusd','GBPUSD','gbpusd'],['usdjpy','USDJPY','usdjpy'],['audusd','AUDUSD','audusd'],['nzdusd','NZDUSD','nzdusd']];
+ ['eurusd','EURUSD','eurusd'],['gbpusd','GBPUSD','gbpusd'],['usdjpy','USDJPY','usdjpy'],['audusd','AUDUSD','audusd'],['nzdusd','NZDUSD','nzdusd'],['usdcad','USDCAD','usdcad']];
 /* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing */
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
  ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['NEAR','NEARUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
@@ -585,9 +585,9 @@ function findLeg(engine,entry){
 }
 function compSubLeg(engine,symbol,entry,colspan,dup){
  var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
- if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
 )OMEGAD2"
-R"OMEGAD3( var m=findLeg(engine,entry);
+R"OMEGAD3( if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
+ var m=findLeg(engine,entry);
  if(!m)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.5;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">no clip on this leg</span></td></tr>';
  var bk=safe(m.realized);var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
  var head='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn);font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span style="color:'+col+'">'+fmt$(bk)+'</span> banked · '+(m.closed||0)+' clip'+((m.closed||0)===1?'':'s')+(m.open?' · <span class="g">'+m.open+' open</span>':'')+' <span class="d">(this leg only · additive)</span></td></tr>';
@@ -754,11 +754,11 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
  var om=safe(ob.realized),cr=safe(cbk.realized),rt=safe(j.realized_total),be=document.getElementById('compbank');
- if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
+)OMEGAD3"
+R"OMEGAD4( if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
   be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
   var obr=ob.by_reason||{},cbr=cbk.by_reason||{};
-)OMEGAD3"
-R"OMEGAD4(  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
+  var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
   Object.keys(obr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(obr[k]));});
   tip+='\nCRYPTO '+fmt$(cr)+':';
   Object.keys(cbr).forEach(function(k){tip+='\n  '+k+': '+fmt$(safe(cbr[k]));});
@@ -924,12 +924,12 @@ function drawGold(){var j=window._gold||null;
   el('gcinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-  runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
+)OMEGAD4"
+R"OMEGAD5(  runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
    h+='<tr>';
    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
                +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
-)OMEGAD4"
-R"OMEGAD5(   h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
+   h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
      +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
      +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
@@ -1101,12 +1101,12 @@ setInterval(pollIndex,15000);pollIndex();
    registry §5) to the LADDER successor /api/stockladder_companion (stockladder_companion_state.json) — the
    validated no-floor giveback ladder (bigcap_upjump_ladder_bt.py: +7,044% of clip notional PF1.58 all-6).
    REAL FORWARD TRADES ONLY — $0 until a live clip closes (deploy-forward). +3% day -> legs enter NEXT close;
-   TIGHT a0.5/s2 stall banker + WIDE a8/g50 giveback runner + self-funding ladder cap5; LOSS_CUT 15; RT 8bp.
+)OMEGAD5"
+R"OMEGAD6(   TIGHT a0.5/s2 stall banker + WIDE a8/g50 giveback runner + self-funding ladder cap5; LOSS_CUT 15; RT 8bp.
    Schema: {engine,shadow,grade,total_usd_real,ts,names:[{sym,bars,notional,clips,wins,pct_real,usd_real,
    win:{active,pending,exit_pending,spawned,bar},open:[..],trades:[..],tiers:[{tier,clips,wins,..}]}]}. */
 function drawStockMover(){var j=window._sm||null;
-)OMEGAD5"
-R"OMEGAD6( var h='<tr><td class="l lbl">name</td><td class="lbl">win</td><td class="lbl">legs</td>'
+ var h='<tr><td class="l lbl">name</td><td class="lbl">win</td><td class="lbl">legs</td>'
       +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">book $ real</td></tr>';
  var names=(j&&j.names)||[];
  if(!names.length){el('smtab').innerHTML=h+'<tr><td class="l d" colspan="6">wired · waiting for first state write (39 names, deploy-forward · $0 until first forward clip closes)</td></tr>';
@@ -1278,11 +1278,11 @@ function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
    +'<td class="l d" style="font-size:10px">'+esc((d.sym||''))+'</td>'
    +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
    +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
- return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
+)OMEGAD6"
+R"OMEGAD7( return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
 function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* crypto companion all-time bank, $ (additive) */
  var omc=safe((window._comptot||{}).all);/* OMEGA (XAU stall-clip) companion all-time bank, $ (additive) -- same bucket the header ALL-TIME folds */
-)OMEGAD6"
-R"OMEGAD7( var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
+ var fxc=safe(window._fxtot),gbc=safe(window._goldtot),ixc=safe(window._idxtot),xgc=safe(window._xagtot),uoc=safe(window._usoiltot),smc=safe(window._smtot),flc=safe(window._fxladtot),ilc=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time) */
  if(!ROWS.length){var z=omc+cc+fxc+gbc+ixc+xgc+uoc+smc+flc+ilc;t.innerHTML='<tr><td class="l d" colspan="7">no closes in ledger</td></tr>'+compClipRows();el('ledgern').textContent=z?((omc?'companion '+fmt$(omc):'')+(cc?(omc?' · ':'')+'crypto '+fmt$(cc):'')+(fxc?' · fx '+fmt$(fxc):'')+(gbc?' · gold '+fmt$(gbc):'')+(ixc?' · idx '+fmt$(ixc):'')+(xgc?' · xag '+fmt$(xgc):'')+(uoc?' · usoil '+fmt$(uoc):'')+(smc?' · stk '+fmt$(smc):'')+(flc?' · fxlad '+fmt$(flc):'')+(ilc?' · ixlad '+fmt$(ilc):'')+' · Σ '+fmt$(z)):'';return;}
  var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0,sym:r.sym,last:0};
@@ -1444,13 +1444,13 @@ function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed
  var rows=ROWS.slice().reverse().map(function(r){
   var d=new Date(r.ts*1000);
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
-   +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+)OMEGAD7"
+R"OMEGAD8(   +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
   var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
   return '<tr><td class="l num d">'+dd+'</td><td class="l">'+esc((r.eng||'').replace(/Engine$/,''))+'</td><td class="l">'+esc(r.sym)+'</td>'
    +'<td class="'+(r.side==='LONG'?'g':'r')+'">'+(r.side==='LONG'?'L':'S')+'</td>'
    +'<td class="num d">'+lots(r.size)+'</td>'
-)OMEGAD7"
-R"OMEGAD8(   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
+   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">'+fmt2(r.xpx,r.xpx<10?4:2)+'</td>'
    +'<td class="num '+(r.pnl>=0?'g':'r')+'">'+fmt$(r.pnl)+'</td>'
    +'<td class="num d">'+hold+'</td><td class="l d">'+esc(r.reason||'')+'</td></tr>';}).join('');
  h.innerHTML='<tr><th class="l">utc</th><th class="l">engine</th><th class="l">sym</th><th>side</th><th>lots</th><th>entry</th><th>exit</th><th>pnl</th><th>held</th><th class="l">exit</th></tr>'+rows;
@@ -1458,7 +1458,7 @@ R"OMEGAD8(   +'<td class="num">'+fmt2(r.epx,r.epx<10?4:2)+'</td><td class="num">
 
 /* ── predictive ranges ── */
 var PRD=null,PRSYM=localStorage.getItem('omega_prsym')||'XAUUSD',PRTF=localStorage.getItem('omega_prtf')||'m15';
-var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
+var PRSYMS=['XAUUSD','US500','USTEC','EURUSD','GBPUSD','USDJPY','AUDUSD','NZDUSD','USDCAD'],PRTFS=[['m5','5m'],['m15','15m'],['h1','1H']];
 function prBtns(){
  el('prsyms').innerHTML=PRSYMS.map(function(x){return '<button class="'+(x===PRSYM?'on':'')+'" data-s="'+x+'">'+x.replace('USD','')+'</button>';}).join('');
  el('prtfs').innerHTML=PRTFS.map(function(t){return '<button class="'+(t[0]===PRTF?'on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>';}).join('');
@@ -1644,13 +1644,13 @@ loadPR();setInterval(loadPR,30000);
 function prTip(m,cx,cy){var tip=el('prtip');
  if(!m){tip.style.display='none';return;}
  var r=m.t,c=r.pnl>=0?'var(--grn)':'var(--red)';
- var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
+)OMEGAD8"
+R"OMEGAD9( var hold=r.hold>=3600?Math.floor(r.hold/3600)+'h'+Math.floor(r.hold%3600/60)+'m':Math.floor(r.hold/60)+'m';
  var dpp=r.epx<10?4:2;
  var isPart=/^PARTIAL/.test(r.reason||'');
  tip.innerHTML='<span class="w">'+esc((r.eng||'').replace(/Engine$/,''))+'</span> · <span class="'+(r.side==='LONG'?'g':'r')+'">'+esc(r.side)+'</span> '+esc(r.sym)
   +(isPart?' <span class="chip" style="background:var(--ambD);color:var(--ambB)">PARTIAL</span>':'')
-)OMEGAD8"
-R"OMEGAD9(  +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
+  +'<br>in <span class="num w">'+fmt2(r.epx,dpp)+'</span> → out <span class="num w">'+fmt2(r.xpx,dpp)+'</span> · <span class="num w">'+lots(r.size)+'</span> lots'
   +'<br><span class="num" style="color:'+c+';font-weight:600">'+fmt$(r.pnl)+'</span> · '+hold+' · <span class="d">'+esc(r.reason||'')+'</span>'
   +(isPart?'<br><span class="d">partial bank — rest of position closed separately / may still be open</span>':'');
  tip.style.display='block';
