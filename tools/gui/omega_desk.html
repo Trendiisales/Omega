@@ -208,42 +208,10 @@ a{color:var(--blu);text-decoration:none}
   <div id="smopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="smopen"></table></div></div>
   <div id="smtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="smtrades"></table></div></div>
 </div>
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">GOLD BE-floor · RETIRED S-07-07e (real-fill negative both eras)</span>
-    <span id="gcinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="gctab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="gcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="gcopen"></table></div></div>
-  <div id="gctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="gctrades"></table></div></div>
-</div>
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">XAG BE-floor · RETIRED S-07-07e (every cell negative)</span>
-    <span id="xcinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="xctab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="xcopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="xcopen"></table></div></div>
-  <div id="xctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="xctrades"></table></div></div>
-</div>
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">USOIL BE-floor · RETIRED S-07-07e (Brent refutes lone + cell)</span>
-    <span id="ucinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="uctab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="ucopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="ucopen"></table></div></div>
-  <div id="uctradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="uctrades"></table></div></div>
-</div>
-<div class="pan">
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-    <span class="lbl">FX BE-floor · RETIRED S-07-07d (all 5 pairs negative)</span>
-    <span id="fxinfo" class="lbl" style="margin-left:auto">…</span>
-  </div>
-  <div style="overflow-x:auto"><table id="fxtab"><tr><td class="l d">loading…</td></tr></table></div>
-  <div id="fxopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="fxopen"></table></div></div>
-  <div id="fxtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG</div><div style="overflow-x:auto"><table id="fxtrades"></table></div></div>
-</div>
+
+
+
+
 </div><!-- /cstack -->
 
 <!-- ═══ LADDER column-stack (2026-07-08, operator): FX LADDER under the INDEX LADDER (GER40)
@@ -935,13 +903,8 @@ function drawGold(){var j=window._gold||null;
    +' · '+safe(j.bars)+' H1 bars · shadow · RETIRED S-2026-07-07e (real-fill negative; history only, no new arms)';
  renderCompanionOpenTrades('gc',open,trades,2);
 }
-function pollGold(){fetch('/api/gold_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.flavors||[]).length)window._gold=j;
- window._goldtot=(function(g){var d=safe(g.desk_usd_real!==undefined?g.desk_usd_real:g.desk_usd);return d+((g.open)||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);})(window._gold||{});/* REAL column only (S-2026-07-07e) *//* realized + open uPnL (mark-to-market) -- additive to ALL-TIME. NO backtest number. (operator 2026-07-06) */
- drawGold();
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
- }).catch(function(){drawGold();});}
-setInterval(pollGold,15000);pollGold();
+/* pollGold removed S-2026-07-08c: RETIRED BE-floor panels deleted (operator: unused = remove) */
+
 
 /* ── XAG (SILVER) COMPANIONS (XAGPos/XAGNeg BE-floor · native C++ · additive, judged STANDALONE) ──
    Gold-twin of the AUPOS/AUNEG panel, SILVER. Fed by pollXag() off /api/xag_companion
@@ -977,13 +940,8 @@ function drawXag(){var j=window._xag||null;
    +' · '+safe(j.bars)+' H1 bars · shadow · RETIRED S-2026-07-07e (real-fill negative; history only, no new arms)';
  renderCompanionOpenTrades('xc',open,trades,2);
 }
-function pollXag(){fetch('/api/xag_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.flavors||[]).length)window._xag=j;
- window._xagtot=(function(g){var d=safe(g.desk_usd_real!==undefined?g.desk_usd_real:g.desk_usd);return d+((g.open)||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);})(window._xag||{});/* REAL column only (S-2026-07-07e) *//* realized + open uPnL (mark-to-market) -- additive to ALL-TIME. NO backtest number. */
- drawXag();
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
- }).catch(function(){drawXag();});}
-setInterval(pollXag,15000);pollXag();
+/* pollXag removed S-2026-07-08c: RETIRED BE-floor panels deleted (operator: unused = remove) */
+
 
 /* ── USOIL (WTI) COMPANIONS (USOILPos/USOILNeg BE-floor · native C++ · additive, STANDALONE) ──
    Gold-twin of the AUPOS/AUNEG panel, WTI CRUDE. Fed by pollUsoil() off /api/usoil_companion
@@ -1019,13 +977,8 @@ function drawUsoil(){var j=window._usoil||null;
    +' · '+safe(j.bars)+' H1 bars · shadow · RETIRED S-2026-07-07e (real-fill negative; history only, no new arms)';
  renderCompanionOpenTrades('uc',open,trades,2);
 }
-function pollUsoil(){fetch('/api/usoil_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.flavors||[]).length)window._usoil=j;
- window._usoiltot=(function(g){var d=safe(g.desk_usd_real!==undefined?g.desk_usd_real:g.desk_usd);return d+((g.open)||[]).reduce(function(s,o){return s+safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);},0);})(window._usoil||{});/* REAL column only (S-2026-07-07e) *//* realized + open uPnL (mark-to-market) -- additive to ALL-TIME. NO backtest number. */
- drawUsoil();
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
- }).catch(function(){drawUsoil();});}
-setInterval(pollUsoil,15000);pollUsoil();
+/* pollUsoil removed S-2026-07-08c: RETIRED BE-floor panels deleted (operator: unused = remove) */
+
 
 
 /* ── FX COMPANIONS (per-pair <PAIR>Pos/<PAIR>Neg BE-floor · native C++ · additive, STANDALONE) ──
@@ -1035,44 +988,7 @@ setInterval(pollUsoil,15000);pollUsoil();
    Schema: {engine,shadow,ts,pairs:[{pair,bars,deploy_ts,pct,usd,open:[..],trades:[..],flavors:[
    {name,dir,clips,wins,book_pct,book_usd,runners:[{tier,gb_bp,clips,wins,pct,usd}]}]}]}. ("neg=0" was the
    max(0,.) research clamp — registry §5.) STANDALONE additive — NEVER compared vs riding WIDE. */
-function drawFx(){var j=window._fx||null;
- var h='<tr><td class="l lbl">pair</td><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td>'
-      +'<td class="lbl">gb bp</td><td class="lbl">clips</td>'
-      +'<td class="lbl">wins</td><td class="lbl">%</td><td class="lbl">forward($)</td></tr>';
- var pairs=(j&&j.pairs)||[];
- if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('fxtab').innerHTML=h+'<tr><td class="l d" colspan="9">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
-  el('fxinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('fx',[],[],5);return;}
- var desk=0,allOpen=[],allTrades=[];
- pairs.forEach(function(p){
-  desk+=safe(p.usd_real);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);});
-  (p.open||[]).forEach(function(o){allOpen.push(o);});
-  (p.trades||[]).forEach(function(t){allTrades.push(t);});
-  var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
-  var firstPair=true;
-  fls.forEach(function(fl){
-   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-   var bu=(fl.book_usd_real!==undefined?fl.book_usd_real:fl.book_usd);
-   var bcol=(bu>0?'var(--grn)':(bu<0?'var(--red)':'var(--t2)'));
-   runs.forEach(function(c){
-    h+='<tr>';
-    if(firstPair){h+='<td class="l" rowspan="'+prows+'" style="font-weight:700">'+esc(p.pair)+'</td>';firstPair=false;}
-    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
-                +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
-    h+='<td class="l">'+esc(c.tier)+'</td><td class="num">'+safe(c.gb_bp)+'</td>'
-      +'<td class="num">'+safe(c.clips)+'</td><td class="num">'+safe(c.wins)+'</td>'
-      +'<td class="num">'+fmt2(safe(c.pct),3)+'%</td>';
-    if(first){h+='<td class="num" rowspan="'+rs+'" style="font-weight:600;color:'+bcol+'">'+fmt$(safe(bu))+'</td>';}
-    h+='</tr>';first=false;
-   });
-  });
- });
- el('fxtab').innerHTML=h;
- var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
- var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
- el('fxinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
-   +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' pairs · shadow · additive';
- renderCompanionOpenTrades('fx',allOpen,allTrades,5);
-}
+/* drawFx removed S-2026-07-08c: RETIRED FX BE-floor panel deleted */
 function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.pairs||[]).length)window._fx=j;
  window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);/* per-pair realized + open uPnL (mark-to-market) -- additive to ALL-TIME (operator 2026-07-06) */
