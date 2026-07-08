@@ -2141,7 +2141,7 @@ static void init_engines(const std::string& cfg_path)
                 /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
                     // S-2026-07-08c US-equity cost row (lots = SHARES; spread ~2c bigcap).
                     // The validated book-level gate stays the 8bp RT debit in ret_real.
-                    return omega::ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots);
+                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.02, tp_dist_pts, lots);  // global-scope struct (MSVC C3083 fix)
                 },
                 /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
                                 double entry_px, double exit_px, double lots,
