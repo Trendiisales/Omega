@@ -1948,11 +1948,13 @@ static void init_engines(const std::string& cfg_path)
         {
             auto& il = omega::index_upjump_ladder_book();
             struct ILCfg { const char* tag; const char* live; int W; double thr; double rt;
-                           bool bull_gate; };
+                           bool bull_gate; const char* csv; };
             static const ILCfg IL[] = {
-                {"US500",  "US500.F", 24, 2.0, 4.0, false},
-                {"NAS100", "NAS100",  24, 1.5, 3.0, false},
-                {"GER40",  "GER40",   12, 1.5, 2.0, true },
+                // csv != nullptr -> warm-seed from the phase-2 FUTURES-scale warmup CSV.
+                // ONLY correct when the LIVE feed for that symbol is ALSO IBKR futures.
+                {"US500",  "US500.F", 24, 2.0, 4.0, false, nullptr},
+                {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
+                {"GER40",  "GER40",   12, 1.5, 2.0, true,  nullptr},
             };
             for (const auto& ic : IL) {
                 omega::FxLadderPair::Config c;
@@ -1962,25 +1964,27 @@ static void init_engines(const std::string& cfg_path)
                 if (ic.bull_gate) c.block_new_windows_fn = [] { return omega::index_risk_off(); };
                 il.add(std::move(c));
             }
-            // S-2026-07-08d TWO-FEED SEAM FIX — do NOT warm-seed the index ladder from
-            //   phase1/signal_discovery/warmup_<SYM>_H1.csv. On the VPS those files are
-            //   rebuilt by tools/seed_refresh.py phase-2 from CME/EUREX INDEX FUTURES
-            //   (NQ / ES / DAX via IB Gateway) -> a FUTURES-BASIS series (~29433 NAS100),
-            //   ~220pt / 0.75% ABOVE the BlackBull index CFD (~29214) that on_tick_nas100 /
-            //   index_feed_h1 actually feed on_h1_bar() + set_disp_mid() with (and that the
-            //   desk NAS100 tile shows as nas_bid). Seeding the futures scale into the same
-            //   price deque the live CFD bars append to created a scale SEAM: the detector,
-            //   leg entries, peaks, trail stops and the displayed cur all straddled two
-            //   feeds -> wrong uPnL + a leg mark that disagreed with the desk tile by ~220pt.
-            //   (It also let a futures bar with a ts AHEAD of live wall-clock trip on_h1_bar's
-            //   monotonic guard and silently drop live CFD bars.) FIX: single-feed by
-            //   construction -- seed ONLY from this book's OWN persisted live CFD dump
-            //   (idxladder_companion_<sym>_h1.csv, written by append_dump_ from on_h1_bar,
-            //   pure CFD scale). Fresh box with no dump -> cold-warm in W H1 bars (12-24h),
-            //   which is correct-scale, vs an instantly-wrong futures seed. Other consumers
-            //   of warmup_<SYM>_H1.csv (index_market_regime, nas_bbrev) are unchanged.
-            size_t ilseeded = 0;   // warmup H1 CSV intentionally NOT seeded (futures-scale seam)
-            size_t ilrestored = il.seed_dumps_all();   // own live CFD-scale forward bars only
+            // S-2026-07-09 FEED-MIGRATION — PARTIAL revert of the S-2026-07-08d seam fix.
+            //   Background: c1a83306 dropped the phase-2 warmup seed for ALL 3 index-ladder
+            //   symbols because the seed is FUTURES-scale (seed_refresh.py phase-2 pulls
+            //   NQ/ES/DAX via IB Gateway, ~29433 NAS100) while the LIVE feed was the
+            //   BlackBull CFD (~29214) -- a two-feed scale SEAM in one price deque.
+            //   Now (S-2026-07-09) the NAS100 LIVE feed itself moves to IBKR NQ futures
+            //   (fix_dispatch is_ibkr_primary_index gate + omega_main on_book posts the
+            //   bridge NQ tick as "NAS100"). So for NAS100 the futures warmup seed is once
+            //   again the CORRECT, CONSISTENT scale -> RESTORE it: seed + live + disp_mid +
+            //   the desk nas_bid tile all agree on the IBKR-futures scale, no seam.
+            //   US500 and GER40 STAY seedless: ES / DAX are NOT on the bridge --symbols,
+            //   so their live feed REMAINS the BlackBull CFD. Re-seeding their futures
+            //   warmup would RE-CREATE exactly the seam c1a83306 removed. They cold-warm in
+            //   W H1 CFD bars (12-24h). See outputs/FEED_AUDIT_2026-07-09.md.
+            //   Cutover note: a pre-existing idxladder_companion_nas100_h1.csv dump holds
+            //   OLD CFD-scale forward bars; on the NAS100 cutover the operator should
+            //   remove that dump so the ladder warms cleanly on futures scale (else a
+            //   one-window transient until W=24 futures bars dominate ~24h).
+            size_t ilseeded = 0;
+            for (const auto& ic : IL) if (ic.csv) ilseeded += il.seed_pair(ic.tag, ic.csv);
+            size_t ilrestored = il.seed_dumps_all();   // own persisted forward bars (per-symbol scale)
             il.set_exec(
                 /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
                     return send_live_order(sym, is_long, lots, px);
@@ -2002,7 +2006,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             il.finalize_all();
-            printf("[OMEGA-INIT][SEED] INDEX upjump LADDER wired: US500(W24/2.0) NAS100(W24/1.5) GER40(W12/1.5 BULL-GATED), single-feed CFD (warmup futures-seed dropped, seam fix S-2026-07-08d), %zu H1 bars seeded, %zu forward CFD bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] INDEX upjump LADDER wired: US500(W24/2.0 CFD-live/seedless) NAS100(W24/1.5 IBKR-futures seed+live S-2026-07-09) GER40(W12/1.5 BULL-GATED CFD-live/seedless), %zu H1 warmup bars seeded (NAS100 only), %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
                    ilseeded, ilrestored);
             fflush(stdout);
         }

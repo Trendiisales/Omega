@@ -136,9 +136,11 @@ struct L2Bus {
     L2Slot* lookup(const char* sym) noexcept {
         if (std::strcmp(sym, "XAUUSD")  == 0) return &xau;
         if (std::strcmp(sym, "XAGUSD")  == 0) return &xag;
-        if (std::strcmp(sym, "US500")   == 0 || std::strcmp(sym, "US500.F")  == 0) return &us500;
+        if (std::strcmp(sym, "US500")   == 0 || std::strcmp(sym, "US500.F")  == 0
+         || std::strcmp(sym, "ES")      == 0) return &us500;  // bridge emits contract.symbol "ES" (CME front-month) -- NOT on the default --symbols today, slot unfed until ES added (see FEED_AUDIT 2026-07-09)
         if (std::strcmp(sym, "NAS100")  == 0
-         || std::strcmp(sym, "USTEC")   == 0 || std::strcmp(sym, "USTEC.F")  == 0) return &nas100;
+         || std::strcmp(sym, "USTEC")   == 0 || std::strcmp(sym, "USTEC.F")  == 0
+         || std::strcmp(sym, "NQ")      == 0) return &nas100;  // S-2026-07-09: bridge DomRecorder broadcasts contract.symbol "NQ" (CME front-month) for the NAS100 --symbols key; without this alias the nas100 slot was NEVER fed (mirrors the "YM"->dj30 case)
         if (std::strcmp(sym, "DJ30")    == 0 || std::strcmp(sym, "DJ30.F")   == 0
          || std::strcmp(sym, "YM")      == 0) return &dj30;  // bridge emits contract.symbol "YM" for the DJ30 key (CBOT front-month)
         if (std::strcmp(sym, "GER40")   == 0) return &ger40;
@@ -164,6 +166,25 @@ inline bool is_fx_major(const char* s) noexcept {
         || std::strcmp(s, "USDJPY") == 0 || std::strcmp(s, "AUDUSD") == 0
         || std::strcmp(s, "NZDUSD") == 0
         || std::strcmp(s, "USDCAD") == 0;  // S-2026-07-08c: short-ladder pair (IBKR-only; no BlackBull feed to gate)
+}
+
+// True for the NON-FX symbols that now ride the IBKR bridge as their PRIMARY
+// price feed (S-2026-07-09 feed migration). Argument is the BlackBull FIX symbol
+// name (as seen in fix_dispatch). Same gate mechanics as is_fx_major: when the
+// IBKR slot is fresh, the BlackBull FIX quote for this symbol is dropped so the
+// live IBKR price drives on_tick; bridge down -> slot stale >5s -> BlackBull
+// resumes as fallback (no blackout). Only symbols with an actual depth stream on
+// the bridge --symbols list qualify:
+//   XAUUSD -> IBKR XAUUSD CMDTY/SMART SPOT  (same scale as the BlackBull spot;
+//             negligible price shift on cutover).
+//   NAS100 -> IBKR NQ CME FUTURES           (~0.75%/~220pt basis ABOVE the
+//             BlackBull NAS100 CFD; the whole NAS100 engine family + the index
+//             up-jump ladder mark on this futures scale after cutover).
+// DELIBERATELY EXCLUDED (no IBKR stream on the bridge --symbols -> nothing to gate
+// against, would blackout the symbol): US500 (ES not on bridge), GER40, UK100,
+// XAGUSD, ESTX50. These STAY on BlackBull FIX -- see outputs/FEED_AUDIT_2026-07-09.md.
+inline bool is_ibkr_primary_index(const char* s) noexcept {
+    return std::strcmp(s, "XAUUSD") == 0 || std::strcmp(s, "NAS100") == 0;
 }
 
 // Stats for /api/v1/omega health -- read by status endpoint if wired.

@@ -752,17 +752,42 @@ int main(int argc, char* argv[])
         // (g_dj30_turtle_d1, IndexFlow, Connors book, ...) -- never fired. The
         // bridge now carries DJ30 (YM/CBOT depth). On each DJ30 book update, post
         // a synthetic tick into the single-writer dispatch queue so those engines
-        // finally get a tick source. FILTER to DJ30 ONLY: XAUUSD/NAS100 already
-        // receive native FIX ticks; posting for them would double-feed their
-        // engines. Bridge emits contract.symbol "YM" for the DJ30 --symbols key
-        // (CBOT front-month, e.g. YMU6); on_tick expects "DJ30.F", so accept the
-        // "YM"/"DJ30" aliases and remap here.
+        // finally get a tick source. Bridge emits contract.symbol "YM" for the
+        // DJ30 --symbols key (CBOT front-month, e.g. YMU6); on_tick expects
+        // "DJ30.F", so accept the "YM"/"DJ30" aliases and remap here.
         omega::ibkr::BookUpdateCb on_book = [](const char* sym, double bid, double ask) {
             if (std::strcmp(sym, "YM") == 0
              || std::strcmp(sym, "DJ30") == 0 || std::strcmp(sym, "DJ30.F") == 0) {
                 engine_dispatch_post_tick("DJ30.F", bid, ask);
                 return;
             }
+            // ── NAS100 (S-2026-07-09 feed migration) ─────────────────────────
+            // Operator directive: move NAS100 off BlackBull FIX onto IBKR. The
+            // bridge DomRecorder broadcasts contract.symbol "NQ" for the NAS100
+            // --symbols key (CME front-month FUTURES ~29433, ~0.75% above the
+            // BlackBull NAS100 CFD). Post it as a "NAS100" tick so on_tick_nas100
+            // -- and index_feed_h1 -> the index up-jump ladder + set_disp_mid --
+            // run on the live IBKR futures scale. The BlackBull NAS100 FIX quote is
+            // gated out in fix_dispatch (is_ibkr_primary_index) while this slot is
+            // fresh, so no double-feed; bridge down -> BlackBull CFD fallback.
+            if (std::strcmp(sym, "NQ") == 0
+             || std::strcmp(sym, "NAS100") == 0 || std::strcmp(sym, "USTEC") == 0) {
+                engine_dispatch_post_tick("NAS100", bid, ask);
+                return;
+            }
+            // ── XAUUSD (S-2026-07-09 feed migration) ─────────────────────────
+            // Move XAUUSD off BlackBull FIX onto the IBKR XAUUSD CMDTY/SMART SPOT
+            // depth stream (same spot scale as BlackBull -- negligible price shift).
+            // Post as an "XAUUSD" tick -> on_tick_gold runs off the IBKR price AND
+            // (already) the IBKR xau L2 slot. BlackBull XAU FIX quote gated out
+            // while fresh; its L2 book is still cached (gate sits after L2 store).
+            if (std::strcmp(sym, "XAUUSD") == 0) {
+                engine_dispatch_post_tick("XAUUSD", bid, ask);
+                return;
+            }
+            // US500 is intentionally NOT handled here: ES is not on the bridge
+            // --symbols, so no IBKR NAS-style feed exists to post. It stays on
+            // BlackBull FIX. See outputs/FEED_AUDIT_2026-07-09.md.
             // FX majors (S-2026-07-06): FX quotes now come from the IBKR IDEALPRO
             // L1 line, not BlackBull FIX (which delivered ~30s-frozen FX snapshots
             // -- operator directive: move FX quotes to the IBKR link). Post the

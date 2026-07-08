@@ -215,19 +215,28 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         }
         // Passive L2 routing disabled -- all symbols go through on_tick.
 
-        // ── FX venue routing (S-2026-07-06) ──────────────────────────────────
-        // BlackBull FIX delivers FX majors as ~30s-frozen snapshots. Operator
-        // directive: move FX quotes to the IBKR IDEALPRO L1 link. When that slot
-        // is FRESH, IBKR is the authoritative FX source -- drop the BlackBull FX
-        // quote entirely here (no book seed, no tick post) so a frozen snapshot
-        // never overwrites the live IBKR price. If the bridge is down the slot
-        // goes stale within 5s and BlackBull resumes as fallback -> no FX blackout.
-        // Non-FX symbols (XAUUSD/indices) are unaffected: XAU merges both feeds.
-        if (omega::ibkr::is_fx_major(sym.c_str())) {
-            const int64_t fx_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        // ── IBKR venue routing (S-2026-07-06 FX; S-2026-07-09 XAUUSD/NAS100) ──
+        // BlackBull FIX delivers FX majors as ~30s-frozen snapshots and, per the
+        // 2026-07-09 feed-migration directive, the whole book is moving off
+        // BlackBull onto IBKR wherever an IBKR contract exists on the bridge. When
+        // the matching IBKR slot is FRESH, IBKR is the authoritative source -- drop
+        // the BlackBull quote here so a stale/CFD-scale price never overwrites the
+        // live IBKR price. Bridge down -> slot goes stale within 5s -> BlackBull
+        // resumes as fallback (no blackout for any gated symbol).
+        //   FX majors (is_fx_major)        -> IBKR IDEALPRO L1.
+        //   XAUUSD / NAS100 (is_ibkr_primary_index) -> IBKR XAUUSD-spot / NQ-futures
+        //     depth streams (posted to on_tick from the bridge on_book callback in
+        //     omega_main). This gate sits AFTER the L2-book parse/store above, so
+        //     the BlackBull XAU/NAS100 AtomicL2 depth is still cached (imbalance /
+        //     microprice stay populated); only the price TICK source is switched.
+        // NOT gated (no bridge stream -> stay BlackBull): US500, GER40, UK100,
+        // XAGUSD, ESTX50. See outputs/FEED_AUDIT_2026-07-09.md.
+        if (omega::ibkr::is_fx_major(sym.c_str())
+         || omega::ibkr::is_ibkr_primary_index(sym.c_str())) {
+            const int64_t ib_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-            const omega::ibkr::L2Slot* fxslot = g_ibkr_l2.lookup(sym.c_str());
-            if (fxslot && fxslot->fresh(fx_now_ms, 5000)) return;
+            const omega::ibkr::L2Slot* ibslot = g_ibkr_l2.lookup(sym.c_str());
+            if (ibslot && ibslot->fresh(ib_now_ms, 5000)) return;
         }
 
         // Seed cache with whatever side(s) we just parsed -- must happen BEFORE
@@ -247,9 +256,16 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
             if (ask <= 0.0) { const auto it = g_asks.find(sym); if (it != g_asks.end()) ask = it->second; }
         }
         if (bid > 0.0 && ask > 0.0) {
-            // FIX is the canonical price source for engine signals. Post to
-            // engine dispatch queue (single-writer pattern: only the dispatch
-            // worker ever enters on_tick()). See engine_dispatch.hpp.
+            // Post to the engine dispatch queue (single-writer pattern: only the
+            // dispatch worker ever enters on_tick()). See engine_dispatch.hpp.
+            // NOTE (S-2026-07-09): BlackBull FIX is NO LONGER the canonical price
+            // source for every symbol. For the IBKR-migrated symbols (FX majors +
+            // XAUUSD + NAS100) this line is reached ONLY when the IBKR slot is
+            // stale (the fresh-slot gate above returned early) -- i.e. BlackBull is
+            // now the FALLBACK for those, and IBKR (posted via the bridge on_book
+            // callback) is canonical. For the still-BlackBull symbols (US500,
+            // GER40, UK100, XAGUSD, ESTX50, USOIL, ... -- no bridge stream) FIX
+            // remains the sole/canonical source. See outputs/FEED_AUDIT_2026-07-09.md.
             engine_dispatch_post_tick(sym, bid, ask);
         }
         return;
