@@ -48,7 +48,13 @@ static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;
 static omega::XauTrendFollow4hEngine g_mgc_tf_4h;
 static omega::XauTrendFollow2hEngine g_mgc_tf_2h;
 static int64_t g_mgc_tf_floor_ts = 0;
+#include "MgcSlowDonchian30mEngine.hpp"
+static omega::MgcSlowDonchian30mEngine g_mgc_slowdon;
 #endif
+// S-2026-07-08c: 5th engine on the same MGC feed -- MgcSlowDonchian30m (deep-dive
+// candidate #1, Nin40/Nout20 slow sibling, next-bar-open + 3xATR adverse-first
+// stop, dedup vs g_mgc_fastdon). Instance lives in globals.hpp (persistence
+// include-order); config in omega_main.hpp. This header only DRIVES it.
 
 // crude but dependency-free JSON scrape for {"poc":x,"hvn":[a,b,...]}
 inline bool _mgc_read_hvn(const std::string& path, double& poc, std::vector<double>& hvn) {
@@ -120,7 +126,8 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
     // through the replayed bars at their historical prices. Cleared after the
     // first poll completes -> live bars behave exactly as before.
     const bool tf_boot_replay = (s_poll == 1);
-    if (tf_boot_replay) { g_mgc_tf_4h.warmup_active_ = true; g_mgc_tf_2h.warmup_active_ = true; }
+    if (tf_boot_replay) { g_mgc_tf_4h.warmup_active_ = true; g_mgc_tf_2h.warmup_active_ = true;
+                          g_mgc_slowdon.warmup_active_ = true; }   // S-2026-07-08c: same guard (entries blocked, restored pos managed)
     std::ifstream f(bars_csv);
     if (!f) { if (s_poll % 20 == 1) { std::printf("[MGC-FEED] poll#%ld: cannot open '%s' (cwd issue?)\n", s_poll, bars_csv.c_str()); std::fflush(stdout); } return; }
     std::string ln; bool first = true; int64_t newest = 0; int total = 0;
@@ -136,6 +143,15 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
         g_mgc_fastdon.on_30m_bar(std::atof(k[1].c_str()), std::atof(k[2].c_str()),
                                  std::atof(k[3].c_str()), std::atof(k[4].c_str()),
                                  std::atof(k[5].c_str()), ts, cb);
+
+        // --- 5th MGC engine: MgcSlowDonchian30m (S-2026-07-08c, deep-dive #1) ---
+        // Internal ts-dedup skips rows already covered by its data/mgc_30m_hist.csv
+        // warm-seed; warmup_active_ (set on the first poll above) blocks boot-replay
+        // entries while restored positions are managed through the replayed bars.
+        if (g_mgc_slowdon.enabled)
+            g_mgc_slowdon.on_30m_bar(std::atof(k[1].c_str()), std::atof(k[2].c_str()),
+                                     std::atof(k[3].c_str()), std::atof(k[4].c_str()),
+                                     ts, cb);
 
         // --- 2nd MGC engine: GoldVolBreakoutM30 (EMA200-gated Donchian runner) ---
         // Drive on_m30_bar(high,low,close,bid,ask,now_ms,cb) each bar; aggregate H1
@@ -195,9 +211,14 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
     // S-2026-07-08c: boot replay done -> re-arm live entries (see guard above).
     if (tf_boot_replay) {
         g_mgc_tf_4h.warmup_active_ = false; g_mgc_tf_2h.warmup_active_ = false;
+        g_mgc_slowdon.warmup_active_ = false;
         std::printf("[MGC-FEED] boot replay complete: %d bar(s) re-fed entry-blocked; live entries armed\n", s_fed);
         std::fflush(stdout);
     }
+#ifndef MGC_FEED_STANDALONE
+    // Liveness pulse for the slow Donchian book (registered in omega_main).
+    g_engine_heartbeat.pulse("MgcSlowDonchian30m");
+#endif
     // HEARTBEAT: proves the poll is reading the live MGC feed. Logs on any new
     // bars, else every 20th poll (~10min). newest_ts confirms freshness.
     if (s_fed > 0 || s_poll % 20 == 1) {

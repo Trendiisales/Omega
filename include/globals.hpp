@@ -739,6 +739,18 @@ static omega::XauTrendFollow2hEngine g_mgc_tf_2h;
 // instances. Set by omega_main after warmup to the warmup CSV's last bucket.
 static int64_t g_mgc_tf_floor_ts = 0;
 
+// S-2026-07-08c: MgcSlowDonchian30m -- gold deep-dive candidate #1 (Study 7,
+// outputs/GOLD_DEEP_DIVE_2026-07-08.md, evidence commit 4bca1036). Donchian
+// Nin40/Nout20 LONG on the same MGC 30m feed as MgcFastDon, next-bar-open entry,
+// 3xATR14 adverse-first hard stop, gold_regime() long-block, dedup vs the fast
+// sibling. Faithful cell: PF1.83 n204 +2006pt 2x-cost PF1.79 over-random +1329.
+// Declared HERE (not in the feed header) so PositionPersistence.hpp -- included
+// BEFORE MgcFastDonchianFeed.hpp in main.cpp -- can register it (the include-
+// order trap that left MgcTF4h/2h unpersisted). Config in omega_main.hpp; the
+// MGC feed poll drives it.
+#include "MgcSlowDonchian30mEngine.hpp"
+static omega::MgcSlowDonchian30mEngine g_mgc_slowdon;
+
 // 2026-05-15 S91: GoldUltimateEngine -- standalone v12 OOS-validated XAUUSD
 //   trend engine. 7-factor entry filter + edge-hour gate (01/05/23 UTC) +
 //   ATR floor 2.5. SL=2ATR, TP=5ATR, trail at 3ATR MFE / 2ATR distance.
@@ -1021,6 +1033,17 @@ static omega::CalendarTomEngine g_tom_ger40("GER40");
 static omega::CalendarTomEngine g_tom_dj30("DJ30.F");
 static omega::CalendarTomEngine g_tom_uk100("UK100");
 static omega::CalendarTomEngine g_tom_xau("XAUUSD");   // S-2026-06-21b: gold TOM (gcf_daily 2010-26: PF1.63 both-halves+ bull1.61/BEAR1.92)
+
+// S-2026-07-08c: GoldTsmomD1V2 -- gold deep-dive candidate #2 (Study 4,
+// outputs/GOLD_DEEP_DIVE_2026-07-08.md, evidence commit 4bca1036). D1 TSMOM
+// composite {42,63,84}d, vol-targeted (min(2, 15%/realized20d)), BOTH directions
+// (the one gold structure net-short-profitable through 2022: +129pt), monthly
+// rebalance. Validated cell PF2.26 +2915pt n120 2x-immune; wired calendar-month
+// rule PF2.09 +2689 same harness/data; engine==python parity EXACT (+2604.1
+// n129 PF1.98 on the full warm window). Tick-driven (internal UTC-D1 agg,
+// CalendarTom pattern) from tick_gold.hpp; config + seed in engine_init.hpp.
+#include "GoldTsmomD1V2Engine.hpp"
+static omega::GoldTsmomD1V2Engine g_gold_tsmom_d1;
 // S-2026-06-03: GoldSeasonal -- XAUUSD early-week long seasonality (Mon+Tue).
 //   +24%/yr Sharpe 1.84 (daily sim) / +24.5% Sharpe 1.88 (M5 engine-driven, real
 //   21:00 break), win 61%, +ve every year 2024/25/26, both WF halves+, cost-robust

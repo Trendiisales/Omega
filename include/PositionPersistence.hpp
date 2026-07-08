@@ -285,6 +285,13 @@ inline void register_position_persistence() {
     wire_cross(g_tom_dj30,   "CalendarTom_DJ30.F",  "DJ30.F");
     wire_cross(g_tom_uk100,  "CalendarTom_UK100",   "UK100");
     wire_cross(g_tom_xau,    "CalendarTom_XAUUSD",  "XAUUSD");
+    // S-2026-07-08c gold deep-dive engines. GoldTsmomD1V2 carries a signed WEIGHT
+    // across ~monthly periods (snapshot: side+size=|w|*lot, entry=period anchor);
+    // unpersisted, every restart would orphan the weight and the period close
+    // would phantom-drop. MgcSlowDon holds multi-day Donchian rides on the MGC
+    // feed (decl in globals.hpp to beat this header in include order).
+    wire_cross(g_gold_tsmom_d1, "GoldTsmomD1V2",      "XAUUSD");
+    wire_cross(g_mgc_slowdon,   "MgcSlowDonchian30m", "MGC");
     wire_cross(g_idx_seas_us500,  "IndexSeasonal_US500.F", "US500.F");
     wire_cross(g_idx_seas_ustec,  "IndexSeasonal_USTEC.F", "USTEC.F");
     wire_cross(g_idx_seas_ger40,  "IndexSeasonal_GER40",   "GER40");

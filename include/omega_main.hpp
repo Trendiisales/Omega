@@ -98,6 +98,25 @@ int main(int argc, char* argv[])
     g_mgc_fastdon.Nin = 40; g_mgc_fastdon.Nout = 20; g_mgc_fastdon.Kov = 1.5;  // S-2026-06-23: 20/10 -> 40/20 (faithful-best PF1.74 vs 1.54, 2x-cost-robust)
     g_mgc_fastdon.use_hvn_skip = true;
     g_mgc_fastdon.l2_gate_ = 0.30;  // S-2026-06-23 L2 CONFIRMATION GATE (active, conservative): block a long breakout only when the live MGC book is strongly ask-heavy (bid-share<0.30). OBI showed ask-heavy -> -0.031pt fwd, so this cuts the worst book-against entries. SHADOW -> forward-validates on the ledger; set 0.0 to disable. Inert in backtest (set_l2_imb never called).
+
+    // ── S-2026-07-08c MgcSlowDonchian30m: gold deep-dive candidate #1 (Study 7,
+    //    outputs/GOLD_DEEP_DIVE_2026-07-08.md, evidence commit 4bca1036).
+    //    Donchian Nin40/Nout20 LONG, next-bar-open entry, 3xATR14 adverse-first
+    //    hard stop, on the same MGC 30m feed. Faithful cell (gdd_mgc_volband_
+    //    breakout.py, certified MGC 30m 2024-06..2026-06, 0.31pt RT): PF1.83
+    //    n204 +2006pt maxDD -188pt both-halves+ (+753/+1254) 2x-cost PF1.79
+    //    over-random +1329pt; plateau N30-65 x sl2.5-3.5 all PF>=1.65.
+    //    gold_regime() long-block MANDATORY (naked 2022-bear proxy PF0.38).
+    //    DEDUP vs MgcFastDon per the deep-dive overlap disclosure (books
+    //    correlate): no new entry while the fast sibling holds. SHADOW, 1 micro.
+    //    Auto-retirement latch -400pt (2x the -188pt worst BT DD episode).
+    g_mgc_slowdon.enabled     = true;
+    g_mgc_slowdon.shadow_mode = true;   // shadow until the live ledger proves it
+    g_mgc_slowdon.lot         = 1.0;    // 1 MGC micro = 10oz = $10/pt (smallest unit)
+    // Nin=40 Nout=20 sl_atr_mult=3.0 cost 0.31 retire -400pt = header defaults (the validated cell)
+    g_mgc_slowdon.peer_holds_pos = []() { return g_mgc_fastdon.has_open_position(); };
+    g_mgc_slowdon.seed_from_30m_csv("data/mgc_30m_hist.csv");   // prints the [SEED] line
+    g_engine_heartbeat.register_engine("MgcSlowDonchian30m", g_mgc_slowdon.enabled, 3600, 0, 24);
     // S-2026-06-23 MGC BOOK 2nd engine: GoldVolBreakoutM30 on the same MGC feed
     // (orthogonal signal -- EMA200-gated Donchian vol-breakout runner). Faithful
     // BT on MGC 30m: PF2.10 n37 mdd0.78. Warm-seed from MGC 30m hist (M30 Donchian/

@@ -2809,6 +2809,28 @@ static void init_engines(const std::string& cfg_path)
                         std::printf("[OMEGA-INIT] CalendarTom x6 (turn-of-month long, +XAU) -- shadow, warm-seeded\n");
                     }
 
+                    // S-2026-07-08c: GoldTsmomD1V2 -- gold deep-dive candidate #2 (Study 4,
+                    //   outputs/GOLD_DEEP_DIVE_2026-07-08.md, evidence commit 4bca1036). D1 TSMOM
+                    //   composite {42,63,84}d, vol-targeted min(2, 15%/realized20d), BOTH directions
+                    //   (the one gold structure NET SHORT PROFITABLY through 2022: +129pt validated /
+                    //   +117pt wired rule -- do NOT long-gate the shorts), monthly rebalance.
+                    //   Validated cell (gdd_tsmom_cot.py chassis, GC=F daily 2015-2026, 0.31pt/
+                    //   turnover): PF2.26 +2915pt n120 maxDD -413 2x-cost PF2.25. WIRED rule =
+                    //   calendar-month rebalance (restart-proof), re-run same harness/data: PF2.09
+                    //   +2689 n121 both-halves+ 2022 +117 2x PF2.08 maxDD -491; engine==python
+                    //   parity EXACT (n129 +2604.1pt PF1.98 full warm window). 12m lookback is the
+                    //   WORST cell (PF1.27, 2022 -540) -- the {42,63,84} band is load-bearing.
+                    //   Allocation book: n(stat unit)=rebalance periods, ~10 adjustments/yr.
+                    //   Auto-retirement latch -1000pt (2x worst wired-rule DD). SHADOW, 0.01 lot.
+                    {
+                        g_gold_tsmom_d1.enabled     = true;
+                        g_gold_tsmom_d1.shadow_mode = true;
+                        g_gold_tsmom_d1.lot         = 0.01;   // 0.01 XAU lot per weight-unit ($1/pt at |w|=1)
+                        g_gold_tsmom_d1.seed_from_d1_csv("phase1/signal_discovery/warmup_XAUUSD_D1.csv");  // prints the [SEED] line
+                        g_engine_heartbeat.register_engine("GoldTsmomD1V2", g_gold_tsmom_d1.enabled, 3600, 0, 24);
+                        std::printf("[OMEGA-INIT] GoldTsmomD1V2 (D1 TSMOM {42,63,84} vol-targeted, both directions) -- shadow, warm-seeded\n");
+                    }
+
                     // S-2026-06-03: GoldSeasonal (XAUUSD early-week long, Mon+Tue). The one
                     //   new gold edge found after exhausting price/book signals — calendar
                     //   axis. +24.5%/yr Sharpe 1.88 engine-driven on M5 (real 21:00 daily

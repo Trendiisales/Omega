@@ -1720,6 +1720,10 @@ static void on_tick_gold(
     g_xau_tf_d1.on_tick(bid, ask, now_ms_g, bracket_on_close);
     // S-2026-06-21b CalendarTom on gold (turn-of-month, shadow) -- gcf_daily 2010-26 PF1.63 both-regime.
     g_tom_xau.on_tick(bid, ask, now_ms_g, handle_closed_trade);
+    // S-2026-07-08c GoldTsmomD1V2 (deep-dive #2): D1 TSMOM {42,63,84} vol-targeted, BOTH
+    // directions, monthly rebalance. Internal UTC-D1 aggregation (CalendarTom pattern).
+    g_gold_tsmom_d1.on_tick(bid, ask, now_ms_g, handle_closed_trade);
+    g_engine_heartbeat.pulse("GoldTsmomD1V2");
     // S-2026-06-19: TrendRider companion on the D1 host (shadow).
     g_rider_d1.on_host(g_xau_tf_d1.pos, bid, ask, now_ms_g, bracket_on_close);
     g_engine_heartbeat.pulse("RiderD1");  // S-2026-06-29 ENABLED+NO_PULSE fix

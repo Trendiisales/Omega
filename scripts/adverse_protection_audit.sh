@@ -38,7 +38,9 @@ cd "$(dirname "$0")/.." || exit 2
 # MgcFastDonchian30m) and multi-leg 'legs_.push_back' (CrossSectional) evaded the
 # original dot-anchored regex, so a LIVE engine shipped un-audited. Any new
 # position-representation idiom MUST be added here.
-ENTRY_RE='pos_?\.active *= *true|pos_active_? *= *true|pos_?\.open\(|\.open\(sig|legs_\.push_back'
+# S-2026-07-08c: + 'w_ = want' -- the weight-book idiom (GoldTsmomD1V2 rebalance
+# allocation book holds a signed weight, no pos struct).
+ENTRY_RE='pos_?\.active *= *true|pos_active_? *= *true|pos_?\.open\(|\.open\(sig|legs_\.push_back|w_ *= *want'
 TAG='ADVERSE-PROTECTION:'
 LEGACY_FILE='scripts/adverse_protection_legacy.txt'
 
