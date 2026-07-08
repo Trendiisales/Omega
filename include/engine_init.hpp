@@ -2219,11 +2219,20 @@ static void init_engines(const std::string& cfg_path)
             { SC c; c.name="xau_tf1h_clip"; c.include={"XauTrendFollow1h"}; c.gate_pct=2; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0.02; c.tf_sec=1*3600; B(c); }
             { SC c; c.name="xau_tfd1_clip"; c.include={"XauTrendFollowD1"}; c.gate_pct=1; c.rev_gb=0.50; c.stall_bars=9999; c.retrig_pct=0;    c.tf_sec=24*3600; B(c); }
             // --- XAU TrendFollow $-gauge clips (USD mode: arm_usd/trail_usd/retrig_usd) ---
+            //   cold_loss_bear=-35 on 4h+1h (S-2026-07-08 loss-bound study, operator ask after the
+            //   2x -$51 tf4h LOSS_CUTs in the 60pt/30min drop): tighter cold cut ONLY while gold is
+            //   price-bear (gold_regime().is_bear() core; NOT long_blocked -- macro-hostile is the
+            //   trend engines' best cohort per GOLD_DEEP_DIVE_2026-07-08). Evidence
+            //   backtest/companion_lossbound_sweep.py on certified XAUUSD_2022_2026 H1 (intrabar
+            //   adverse-first, econ per-cycle accounting): 4h keeps 96% econ / 98.5% ledger net,
+            //   worst leg -71->-52; 1h keeps 96%; all-6 PASS both; smooth plateau -35/-25/-20/-15.
+            //   FLAT tightening REJECTED (4h: -35 keeps 66%, -15 fails all-6). Velocity-freeze
+            //   REJECTED (no-op on 4h/1h). 2h/d1/gvb NOT wired (2h: no benefit; d1/gvb: untested).
             { SC c; c.name="xau_tfd1_usd";   c.include={"XauTrendFollowD1"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=20; c.retrig_usd=20; c.stall_bars=9999; c.tf_sec=24*3600; B(c); }
-            { SC c; c.name="xau_tf4h_usd_a"; c.include={"XauTrendFollow4h"};                    c.arm_usd=30; c.trail_usd=15; c.retrig_usd=15; c.stall_bars=9999; c.tf_sec=4*3600;  B(c); }
-            { SC c; c.name="xau_tf4h_usd_b"; c.include={"XauTrendFollow4h"};                    c.arm_usd=30; c.trail_usd=15; c.retrig_usd=15; c.stall_bars=9999; c.tf_sec=4*3600;  B(c); }
-            { SC c; c.name="xau_tf1h_usd_a"; c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1*3600;  B(c); }
-            { SC c; c.name="xau_tf1h_usd_b"; c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1*3600;  B(c); }
+            { SC c; c.name="xau_tf4h_usd_a"; c.include={"XauTrendFollow4h"};                    c.arm_usd=30; c.trail_usd=15; c.retrig_usd=15; c.stall_bars=9999; c.tf_sec=4*3600;  c.cold_loss_bear=-35; B(c); }
+            { SC c; c.name="xau_tf4h_usd_b"; c.include={"XauTrendFollow4h"};                    c.arm_usd=30; c.trail_usd=15; c.retrig_usd=15; c.stall_bars=9999; c.tf_sec=4*3600;  c.cold_loss_bear=-35; B(c); }
+            { SC c; c.name="xau_tf1h_usd_a"; c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1*3600;  c.cold_loss_bear=-35; B(c); }
+            { SC c; c.name="xau_tf1h_usd_b"; c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1*3600;  c.cold_loss_bear=-35; B(c); }
             { SC c; c.name="xau_tf4h_aggr";  c.include={"XauTrendFollow4h"};                    c.arm_usd=15; c.trail_usd=5;  c.retrig_usd=15; c.stall_bars=8;    c.tf_sec=1*3600;  B(c); }
             { SC c; c.name="xau_tf1h_aggr";  c.include={"XauTrendFollow1h"};                    c.arm_usd=15; c.trail_usd=10; c.retrig_usd=15; c.stall_bars=12;   c.tf_sec=1*3600;  B(c); }
             { SC c; c.name="xau_tf4h_aggr_b";c.include={"XauTrendFollow4h"};                    c.arm_usd=15; c.trail_usd=5;  c.retrig_usd=15; c.stall_bars=8;    c.tf_sec=1*3600;  B(c); }

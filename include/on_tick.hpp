@@ -1032,8 +1032,13 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                             lts.push_back(std::move(r));
                         }
                     }
+                    // gold_price_bear: RegimeState PRICE core only (is_bear, not long_blocked --
+                    // macro-hostile windows are the trend engines' BEST cohort per the 2026-07-08
+                    // gold deep-dive; the bear-cold evidence was run on the price core). -1 until warm.
+                    const int gold_price_bear = omega::gold_regime().warm()
+                        ? (omega::gold_regime().is_bear() ? 1 : 0) : -1;
                     omega::stall_companions().maybe_drive(lts, now_sc,
-                        log_root_dir() + "/gold_d1_trend_h4.csv");
+                        log_root_dir() + "/gold_d1_trend_h4.csv", gold_price_bear);
                 }
             }
         }

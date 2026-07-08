@@ -191,6 +191,15 @@ public:
                                                    //   validated clip-book drawdown leg)
         double cold_loss_omega  = -50.0;           // COLD_LOSS_USD_OMEGA
         double cold_loss_crypto = -15.0;           // COLD_LOSS_USD_CRYPTO
+        double cold_loss_bear   = 0.0;             // S-2026-07-08 loss-bound study: <0 => TIGHTER cold
+                                                   //   LOSS_CUT for GOLD legs while gold is PRICE-BEAR
+                                                   //   (gold_regime().is_bear() core, passed per drive).
+                                                   //   0 = disabled. Evidence (companion_lossbound_sweep.py,
+                                                   //   2022-2026 certified H1, intrabar adverse-first):
+                                                   //   flat tightening fails (-35 keeps 66% of 4h econ net);
+                                                   //   bear-only -35 keeps 96% econ / 98.5% ledger net,
+                                                   //   worst leg -71 -> -52, all-6 PASS, smooth plateau.
+                                                   //   Fail-safe: unknown regime (-1) => baseline cut.
         std::string dir;                           // working dir (relative, e.g. "stall/xau_tf4h_usd_a")
     };
 
@@ -211,8 +220,9 @@ public:
 
     // ── one cycle. rows_all = ALL live_trades (unfiltered), for the omega_empty guard;
     //    filtering is done inside. gold_bull: 1 up / 0 down / -1 unknown (computed once
-    //    per drive cycle by the registry). now = epoch seconds. ──
-    void step(const std::vector<StallLiveRow>& rows_all, int gold_bull, int64_t now) {
+    //    per drive cycle by the registry). gold_bear: 1 price-bear / 0 not / -1 unknown
+    //    (gold_regime().is_bear() core, for cold_loss_bear). now = epoch seconds. ──
+    void step(const std::vector<StallLiveRow>& rows_all, int gold_bull, int gold_bear, int64_t now) {
         using namespace stall_detail;
         // EMPTY-OMEGA GUARD (faithful to python): a totally flat VPS book (0 live trades)
         // is indistinguishable from a restart blip — SKIP the harvest entirely (no bank,
@@ -279,7 +289,11 @@ public:
                     if (armed && fav <= p.mfe_pct * (1.0 - cfg_.rev_gb))                     { close_(key, "REVERSAL_CLIP", r.upnl, bar); clipped_[key] = peak_store; continue; }
                     if (armed && cfg_.rev_gb_pts > 0.0 && fav <= p.mfe_pct - cfg_.rev_gb_pts) { close_(key, "REVERSAL_CLIP", r.upnl, bar); clipped_[key] = peak_store; continue; }
                 }
-                const double cold = (r.book == "CRYPTO") ? cfg_.cold_loss_crypto : cfg_.cold_loss_omega;
+                double cold = (r.book == "CRYPTO") ? cfg_.cold_loss_crypto : cfg_.cold_loss_omega;
+                // S-2026-07-08 loss-bound: tighter cut on GOLD legs while gold is price-bear only.
+                // Guarded so a misconfig can never LOOSEN the baseline floor; -1 (unknown) = baseline.
+                if (cfg_.cold_loss_bear < 0.0 && gold_bear == 1 && r.book != "CRYPTO"
+                    && is_gold_(r.sym) && cfg_.cold_loss_bear > cold) cold = cfg_.cold_loss_bear;
                 if (r.upnl <= cold) { close_(key, "LOSS_CUT_CLIP", r.upnl, bar); clipped_[key] = peak_store; continue; }
             }
             // real trade closed first -> ENGINE_EXIT any open companion whose key left `live`
@@ -871,12 +885,12 @@ public:
     // rows_all = ALL live_trades (unfiltered). Writes each book's state + the merged
     // aggregate companion_state.json (served by /api/companion).
     void maybe_drive(const std::vector<StallLiveRow>& rows_all, int64_t now,
-                     const std::string& gold_trend_h4_csv) {
+                     const std::string& gold_trend_h4_csv, int gold_price_bear = -1) {
         if (!enabled || (books_.empty() && mirrors_.empty())) return;
         if (now - last_drive_ < 60) return;
         last_drive_ = now;
         const int gold_bull = gold_4h_bull_(gold_trend_h4_csv);
-        for (auto& b : books_) b.step(rows_all, gold_bull, now);
+        for (auto& b : books_) b.step(rows_all, gold_bull, gold_price_bear, now);
         for (auto& m : mirrors_) m.step(rows_all, now);
         write_aggregate_(now);
     }
