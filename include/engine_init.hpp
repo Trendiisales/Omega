@@ -1075,6 +1075,14 @@ static void init_engines(const std::string& cfg_path)
         // both bollinger_H4 SLs). Same BBand-long-XAU family the 2026-06-01
         // mean-rev audit culled elsewhere. Do NOT re-enable without a bear-tape
         // backtest + trend gate.
+        // S-2026-07-08c: that bear-tape backtest + trend gate WAS RUN
+        // (backtest/c1_retuned_gated_bt.cpp, REAL class, 2022-2026 XAU H1 certified,
+        // gate = live gold_regime price core + macro-hostile overlay): FAILS every
+        // variant — naked PF0.59 −$811, price-gated PF0.57, full-gated PF0.54; the
+        // −7.5% DD halt trips inside the 2022 bear in all three. Dip-buys fire on the
+        // way INTO bear classification, exactly the GoldOversoldBounce
+        // "gate-incompatible" pattern. Tombstone question CLOSED: permanently dead —
+        // no gate variant left to try on spot data.
         // S99f 2026-05-18: prime_from_shared_h1_bars call REVERTED.
         // I mistakenly added the method to CellEngine.hpp (omega::cell::CellPortfolio)
         // but g_c1_retuned is type omega::C1RetunedPortfolio (separate class in
@@ -2668,7 +2676,11 @@ static void init_engines(const std::string& cfg_path)
                     //   the naive below-50ma dip-buy dies (falling-knife). Uncorrelated with
                     //   the trend/breakout book + GoldSeasonal. Long-only. usd_per_pt=100.
                     {
-                        std::printf("[OMEGA-INIT] GoldOversoldBounce -- class type-only, NOT loaded (RE-CHECK candidate, TOMBSTONE_AUDIT)\n");
+                        // S-2026-07-08c: printf de-staled -- said "RE-CHECK candidate" but CULL_LEDGER
+                        // 2026-06-16 already holds the faithful x-regime verdict (+419/-455/+45,
+                        // bull-beta dip-buyer dies in crash, gate-incompatible). C1Retuned's 2026-07-08
+                        // bear-tape BT (PF0.54-0.59 gated, halt trip) re-confirmed the same family verdict.
+                        std::printf("[OMEGA-INIT] GoldOversoldBounce -- class type-only, NOT loaded (CULLED 2026-06-16 faithful x-regime; gate-incompatible dip-buyer)\n");
                     }
 
                     // S44: IndexFomc (pre-FOMC drift, US indices). Long the trading day
@@ -3447,12 +3459,36 @@ static void init_engines(const std::string& cfg_path)
     // entries during seed because seed_from_csv sets enabled=false during replay).
     g_survivor.init_default_cells();
     g_survivor.seed_all("phase1/signal_discovery");
-    g_survivor.enabled = false;  // S-2026-06-24 DISABLED (bear-protection hardening): SurvivorPortfolio is
-                                 // bull-only (fleet-audit bear 0.81, SHADOW-CANDIDATE PF1.26) AND has ZERO
-                                 // bear/regime gate AND self-enters (bypasses the enter_directional price-bear
-                                 // hard-gate) -> the one fully-unprotected bull-beta engine. Can't be gate-
-                                 // hardened without engine surgery; it's marginal + not in the validated book,
-                                 // so disable. Re-enable only with a wired bear gate + a both-regime audit pass.
+    // [history] S-2026-06-24 DISABLED (bear-protection hardening): bull-only (fleet-audit
+    // bear 0.81) AND ZERO bear/regime gate AND self-enters (bypassed the bear chokepoint).
+    // "Re-enable only with a wired bear gate + a both-regime audit pass." -> BOTH now done:
+    g_survivor.enabled = true;   // S-2026-07-08c RE-ENABLED GATED (operator: "reinstate all winners,
+                                 // correctly gated"). (1) Bear gate WIRED: Portfolio::entry_veto below
+                                 // routes USTEC longs through index_market_regime().long_blocked() and
+                                 // XAU longs through gold_regime().long_blocked() -- entries blocked in
+                                 // sustained bear, management/exits unaffected. (2) Both-regime audit
+                                 // PASS: backtest/survivor_gated_bt.cpp (REAL Portfolio, 2022-2026
+                                 // XAU+USTEC H4 CERTIFIED tapes, veto seeded from NDX daily 2016+):
+                                 // veto + USTEC_RSI_N7 culled = PF1.70 +$11,065 n=445, BULL PF1.89,
+                                 // BEAR-2022 PF1.90 POSITIVE, both-WF-halves+, 2x-cost PF1.66 holds,
+                                 // top3=38%. (3) Kill-reason cell USTEC_4h_RSI_N7 disabled below --
+                                 // net-NEG even gated (-$1,022/4.3yr) AND its dedup lock starved the
+                                 // profitable ZMR sibling (ZMR n 36->84 +$9,352 once freed). SHADOW
+                                 // only; AUDITED row SurvivorGated; TOMBSTONES.tsv downgraded same commit.
+    // S-2026-07-08c kill-reason cell cull (see re-enable note above): entries off,
+    // cell object kept so persistence/dedup semantics match the audited BT exactly.
+    for (auto& c : g_survivor.cells)
+        if (std::strcmp(c.cfg.tag, "USTEC_4h_RSI_N7") == 0) c.st.enabled = false;
+    // S-2026-07-08c bear chokepoint (the gate the 06-24 cull demanded); replicated
+    // 1:1 by the audit harness via the same Portfolio::entry_veto hook.
+    g_survivor.entry_veto = [](const char* sym, int side) -> bool {
+        if (side <= 0) return false;                    // longs only; shorts never blocked
+        if (std::strcmp(sym, "USTEC.F") == 0 || std::strcmp(sym, "USTEC") == 0)
+            return omega::index_market_regime().long_blocked();
+        if (std::strcmp(sym, "XAUUSD") == 0)
+            return omega::gold_regime().long_blocked();
+        return false;
+    };
     // S-2026-06-17: BLANKET dedup (mode 1) -- operator policy override. NEVER run
     // two cells on the same symbol+side at once (the XAU DonchN20+N100 double-short
     // that prompted this). Supersedes the S-2026-06-16 regime-gated mode 2 (which
@@ -5157,9 +5193,18 @@ static void init_engines(const std::string& cfg_path)
         g_connors_ger.TZ_EU_DST      = true;   // EU last-Sunday DST rules
         g_connors_ger.lot         = 0.3;
         g_connors_ger.shadow_mode = true;
-        g_connors_ger.enabled     = false;  // S-2026-06-24 DISABLED (operator cull of MARGINAL): fleet-audit
-                                            // 2026-06-22 = bear-positivity rests on n=4 (by-design avoidance) =
-                                            // too thin to trust as a real bear edge. Not good enough -> off.
+        g_connors_ger.enabled     = true;   // S-2026-07-08c RE-ENABLED GATED (operator: "reinstate all winners,
+                                            // correctly gated"). The 06-24 cull rested on the freq_dd_frontier
+                                            // next-open PROXY ("bear n=4 too thin"); the REAL class had never been
+                                            // driven on GER40 (ConnorsNas-retraction precedent). Faithful real-class
+                                            // audit backtest/connors_ger_gate_audit.cpp (GER40 daily 2016-26, CERTIFIED):
+                                            // deployed config (close>SMA200 gate) PF1.38@3pt n=225 both-WF-halves+,
+                                            // 2x-cost PF1.33 holds, 2022 bear = +285pt on n=4 with ZERO bear drawdown
+                                            // -- the n=4 IS the gate sitting out the bear (by design, per operator
+                                            // bull-gate-not-reject rule). REGIME_GATE=1 asym-veto tested and REJECTED
+                                            // here (fails both-halves at 2x-cost; H1 -255) -> SMA200 gate stays.
+                                            // SHADOW only; AUDITED_CONFIGS row ConnorsGerReal; TOMBSTONES.tsv row
+                                            // downgraded same commit. Prior cull note kept for history above.
         g_connors_ger.on_trade_record = [](const omega::TradeRecord& tr){ handle_closed_trade(tr); };
         g_connors_ger.init();
         g_connors_ger.seed_from_d1_csv("phase1/signal_discovery/warmup_GER40_D1.csv");

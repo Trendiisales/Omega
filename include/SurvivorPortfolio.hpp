@@ -1,3 +1,11 @@
+//  ADVERSE-PROTECTION: (S-2026-07-08c, backtested verdict) per-cell hard ATR SL bracket
+//  (sl_mult 1.0-1.5 x ATR, intrabar SL_HIT enforced) + tp_mult TP + max_hold_bars (30) bar-count
+//  timeout + reclaim_exit on the Donchian cell + blanket per-(symbol,side) dedup cap + the
+//  S-2026-07-08 entry_veto bear chokepoint (USTEC longs -> index_market_regime().long_blocked(),
+//  XAU longs -> gold_regime().long_blocked(); entries only, exits unaffected). Backtest
+//  backtest/survivor_gated_bt.cpp (2022-2026 both-regime, REAL class): gated book maxDD bounded,
+//  BEAR-2022 POSITIVE PF1.90; no cold loss-cut beyond the SL bracket -- the ATR SL IS the
+//  in-flight protection (mean-rev + breakout cells, bracket-native design).
 // =============================================================================
 // SurvivorPortfolio.hpp -- 13 cells from S38 discovery walk-forward survivors
 // -----------------------------------------------------------------------------
@@ -671,6 +679,14 @@ public:
     //   without the blanket cap's -29% trend cost.
     using CloseCb = std::function<void(const omega::TradeRecord&)>;
 
+    // S-2026-07-08 bear-chokepoint hook (tombstone valid-use re-enable): optional
+    // per-(symbol,side) entry veto composed IN FRONT of the dedup side_taken gate.
+    // Return true = block the NEW entry (exits/management unaffected). Wired from
+    // engine_init to the central regime gates (index_market_regime long-block for
+    // USTEC cells); replicated identically by the gated backtest harness. This
+    // closes the 2026-06-24 cull reason "self-enters, bypassed the bear chokepoint".
+    std::function<bool(const char*, int)> entry_veto = {};
+
     // S-2026-06-03: adopt a persisted position into the matching cell (by tag).
     // Returns true if a cell claimed it. Wired to g_open_positions restorer.
     bool adopt(const omega::PositionSnapshot& ps) {
@@ -786,8 +802,13 @@ public:
         // always run (the cap gates entry only, inside evaluate_signal).
         const int eff_mode = dedup_mode != 0 ? dedup_mode : (dedup_enabled ? 1 : 0);
         std::function<bool(const char*, int)> side_taken = {};
-        if (eff_mode != 0) {
+        if (eff_mode != 0 || entry_veto) {
             side_taken = [this, eff_mode](const char* csym, int side) -> bool {
+                // S-2026-07-08: regime chokepoint first — vetoed entries never
+                // reach the dedup scan. Exits are unaffected (gate lives inside
+                // evaluate_signal's entry path only).
+                if (entry_veto && entry_veto(csym, side)) return true;
+                if (eff_mode == 0) return false;   // veto-only mode (no dedup cap)
                 // mode 2 (regime-gated): cap only in CHOP; in a trend let same-side
                 // cells stack (the proven edge). Chop = per-symbol Kaufman ER low.
                 if (eff_mode == 2) {
