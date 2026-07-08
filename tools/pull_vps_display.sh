@@ -42,6 +42,10 @@ pull 'C:/Omega/bracket-bot/data/trades.ndjson' "$MIRROR/"
 # 2026-07-06 (C++ StallCompanion in Omega.exe now owns C:/Omega/companion_state.json); cockpit
 # + feeds_selftest still read the Mac copy, so keep it fresh from the VPS truth (2026-07-08).
 pull 'C:/Omega/companion_state.json'         "$HOME/stall-accountant/"
+# S-2026-07-08c cockpit-staleness fix: the per-BOOK stall dirs (companion_positions.json +
+# companion_closed.csv) power the cockpit trades panel; the retired Mac python leftovers
+# were frozen at Jul-6 and showed phantom 5-day-old XAU opens. Mirror the LIVE VPS tree.
+scp -q -r "${CM[@]}" "omega-vps:C:/Omega/stall" "$HOME/stall-accountant/vps_mirror/" 2>/dev/null || true
 
 # tear down the shared connection
 ssh -O exit "${CM[@]}" omega-vps 2>/dev/null || true

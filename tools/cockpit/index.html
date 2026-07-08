@@ -177,7 +177,7 @@ function render(comp,cry,rd){
   $("#comp-open-n").textContent = open.length+" open";
   $("#comp-open").innerHTML = open.length
     ? `<table><thead><tr><th>Book/Engine</th><th>Sym</th><th>Side</th><th>Entry</th><th>uPnL</th><th>MFE%</th></tr></thead><tbody>`+
-      open.map(o=>`<tr><td>${esc(o.book)} · <span class="tag">${esc(o.eng)}</span></td><td>${esc(o.sym)}</td><td>${esc(o.side)}</td><td>${o.entry}</td><td class="${cls(o.upnl)}">${usd(o.upnl)}</td><td class="${cls(o.mfe_pct)}">${o.mfe_pct!=null?(o.mfe_pct*100).toFixed(2)+"%":"—"}</td></tr>`).join("")+
+      open.map(o=>`<tr><td>${esc(o.book)} · <span class="tag">${esc(o.eng)}</span></td><td>${esc(o.sym)}</td><td>${esc(o.side)}</td><td>${o.entry}</td><td class="${cls(o.upnl)}">${usd(o.upnl)}</td><td class="${cls(o.mfe_pct)}">${o.mfe_pct!=null?(+o.mfe_pct).toFixed(2)+"%":"—"}</td></tr>`).join("")+
       `</tbody></table>`
     : `<div class="err" style="color:var(--mut)">no open companions</div>`;
 
@@ -234,7 +234,7 @@ function renderTrades(t){
   $("#trades-closed-n").textContent = "("+cl.length+")";
   $("#trades-open").innerHTML = op.length
     ? `<table><thead><tr><th>Book</th><th>Engine</th><th>Sym</th><th>Side</th><th class="r">Entry</th><th class="r">uPnL</th><th class="r">MFE%</th><th class="r">Age</th></tr></thead><tbody>`+
-      op.map(o=>`<tr><td class="tag">${esc(o.src)}</td><td>${esc(o.engine)}</td><td>${esc(o.symbol)}</td><td class="${o.side==='SHORT'?'neg':'pos'}">${esc(o.side)}</td><td class="r">${o.entry??'—'}</td><td class="r ${cls(o.upnl)}">${o.upnl!=null?usd(o.upnl):'—'}</td><td class="r">${o.mfe_pct!=null?(o.mfe_pct*(Math.abs(o.mfe_pct)<1?100:1)).toFixed(2)+'%':'—'}</td><td class="r tag">${ago(o.open_ts)}</td></tr>`).join("")+
+      op.map(o=>`<tr><td class="tag">${esc(o.src)}</td><td>${esc(o.engine)}</td><td>${esc(o.symbol)}</td><td class="${o.side==='SHORT'?'neg':'pos'}">${esc(o.side)}</td><td class="r">${o.entry??'—'}</td><td class="r ${cls(o.upnl)}">${o.upnl!=null?usd(o.upnl):'—'}</td><td class="r">${o.mfe_pct!=null?(+o.mfe_pct).toFixed(2)+'%':'—'}</td><td class="r tag">${ago(o.open_ts)}</td></tr>`).join("")+
       `</tbody></table>`
     : `<div class="err" style="color:var(--mut)">no open positions</div>`;
   $("#trades-closed").innerHTML = cl.length

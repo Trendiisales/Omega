@@ -125,6 +125,31 @@ def _read_trades() -> dict:
                 "open_ts": v.get("open_ts"),
                 "book": v.get("book", src),
             })
+    # ---- S-2026-07-08c: the native VPS C++ books persist OPEN positions as
+    # companion_positions.tsv (no header: key book eng sym side entry open_bar
+    # ext_bar mfe_pct mfe_usd bars last_upnl) -- mirror-pulled from the VPS.
+    for fp in sorted(glob.glob(str(STALL_ROOT / "**" / "companion_positions.tsv"), recursive=True)):
+        p2 = Path(fp)
+        src = _src_label(p2)
+        try:
+            for ln in p2.read_text().splitlines():
+                t = ln.split("\t")
+                if len(t) < 12 or not t[5]:
+                    continue
+                def _tf(x):
+                    try: return float(x)
+                    except (TypeError, ValueError): return None
+                opened.append({
+                    "src": src,
+                    "engine": t[2], "symbol": t[3], "side": t[4],
+                    "entry": _tf(t[5]),
+                    "upnl": _tf(t[11]),
+                    "mfe_pct": _tf(t[8]),
+                    "open_ts": None,
+                    "book": t[1] or src,
+                })
+        except Exception:  # noqa: BLE001
+            continue
     closed.sort(key=lambda r: r["ts"], reverse=True)
     return {
         "closed": closed,
