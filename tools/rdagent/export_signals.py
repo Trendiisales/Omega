@@ -315,6 +315,121 @@ def _regime_strategy(provider: str, region: str, topk: int):
     }
 
 
+def _impulse_ride_book(gate: float = 0.02, contin_k: int = 20):
+    """SECOND, INDEPENDENT book (S-2026-07-10): the 2%-impulse WIDE loose-ride.
+
+    A SEPARATE, ADDITIVE shadow book that reproduces the backtested engine 1:1 —
+    it does NOT touch the existing day-mover/regime portfolio above and is judged
+    STANDALONE (CompanionDominanceError: never netted vs the other book / a parent /
+    buy-hold). Reference stats come from the FAITHFUL backtest by calling its exact
+    functions on the exact same data (data/rdagent/sp500_long_close.csv), so the
+    numbers here ARE the backtest, not a re-derivation.
+
+      ENTRY : a stock's daily close rises >= 2% in a day AND makes a new 20-day
+              closing high (impulse + continuation). LONG-only. UNGATED — fires in
+              EVERY regime (no bull/bear, no 200d-SMA gate): "trade whenever the 2%
+              trigger is met, regardless of market sentiment."
+      EXIT  : ONE WIDE loose ride — ride to max_hold (60-day time cap), no tight leg.
+              NO tight loss-cut, NO BE-floor. The backtest proved both AMPUTATE this
+              impulse signal (loss-cut PF 1.80->1.25; BE inert). Protection is
+              STRUCTURAL (diversification + small equal-weight sizing + strength-only
+              entry + the loose trail / time-cap), NOT a per-trade stop. A loose
+              give-back trail (gb 70/80/90% of peak) is the equivalent looser form and
+              is surfaced as a ladder — all all-6-passing.
+
+    Faithful driver: tools/rdagent/daymover_2pct_mimic_bt.py (RECONCILE pure-ride) +
+    daymover_solution_bt.py. 1785 rows 2019-06..2026-07 (2020 crash / 2022 bear /
+    2023-26 bull), 20bp round-trip cost. DAILY-CLOSE grade (honest provenance).
+    Returns None on any failure so the panel is never broken by this add-on."""
+    try:
+        import daymover_solution_bt as base  # noqa: F401  (shared load/metrics/ride)
+        # force the backtested entry gate/lookback (entry_indices reads base.GATE/CONTIN_K)
+        base.GATE = gate
+        base.CONTIN_K = contin_k
+        import daymover_2pct_mimic_bt as mimic  # loose-trail give-back builder
+
+        df = base.load()
+        bull = base.regime_flags(df)
+        years = (df.index.max() - df.index.min()).days / 365.25
+
+        def _pack(trades, form):
+            m = base.metrics(trades, "")
+            bb, br = base.split(trades)
+            mb, mr = base.metrics(bb, ""), base.metrics(br, "")
+            ok = (m["tot"] > 0 and m["pf"] >= 1.30 and m["h1"] > 1.0 and m["h2"] > 1.0
+                  and mb["tot"] > 0 and mr["tot"] > 0)
+            nfire = sum(1 for x in trades if x[4] in ("loss_cut", "init_stop"))
+            return {
+                "form": form, "n": m["n"], "fires_per_yr": round(m["n"] / years, 1) if years else None,
+                "pf": round(m["pf"], 2), "net_pct": round(m["tot"], 1),
+                "bull_pct": round(mb["tot"], 1), "bear_pct": round(mr["tot"], 1),
+                "bull_n": mb["n"], "bear_n": mr["n"],
+                "wf_h1": round(m["h1"], 2), "wf_h2": round(m["h2"], 2),
+                "maxdd_pct": round(m["dd"], 1), "worst_pct": round(m["worst"], 1),
+                "cut_fires": nfire, "all6_pass": bool(ok),
+            }
+
+        CATA_CUT = 0.15   # WIDE catastrophe hard adverse floor (matches live StockDayMoverLadderCompanion LOSS_CUT 15)
+        SHIP_GB = 0.90    # loosest give-back trail (near ride-wide) = the "ONE WIDE loose ride"
+
+        # SHIPPED book = loosest give-back trail (gb90) + a WIDE catastrophe floor at -15%.
+        # A tight cut amputates the dip-then-recover winners (3-8% FAIL all-6); a wide -15%
+        # floor bounds the straight-reverser tail and STILL passes all-6 on the loose trail.
+        primary = _pack(mimic.build(df, bull, SHIP_GB, loss_cut=CATA_CUT),
+                        f"loose-trail gb{int(SHIP_GB*100)}% + catastrophe floor -{int(CATA_CUT*100)}% (SHIPPED)")
+        # CEILING (context only, no floor): pure-ride to the 60d time cap = best raw PF, but
+        # a catastrophe cut turns its BEAR leg negative -> pure-ride can NOT carry a floor.
+        ceiling = _pack(base.build_book(df, bull, "wide"), "pure-ride (max_hold 60d, no floor) — CEILING, no cut possible")
+        # LADDER = loose give-back trails, no-cut vs -15% catastrophe floor (the trade-off).
+        ladder = []
+        for gb in (0.70, 0.80, 0.90):
+            ladder.append(_pack(mimic.build(df, bull, gb), f"loose-trail gb{int(gb*100)}% no-cut"))
+            ladder.append(_pack(mimic.build(df, bull, gb, loss_cut=CATA_CUT),
+                                f"loose-trail gb{int(gb*100)}% + cut -{int(CATA_CUT*100)}%"))
+
+        # ----- TODAY's live entries: which names fire the 2% + new-20d-high trigger now -----
+        fired = []
+        for col in df.columns:
+            s = df[col].dropna()
+            if len(s) < contin_k + 2:
+                continue
+            dr = float(s.iloc[-1] / s.iloc[-2] - 1.0)
+            hi = bool(float(s.iloc[-1]) >= float(s.iloc[-(contin_k + 1):].max()))
+            if dr >= gate and hi:
+                fired.append({"instrument": str(col), "day_ret": round(dr, 4),
+                              "new_high": hi, "price": round(float(s.iloc[-1]), 2)})
+        fired.sort(key=lambda r: r["day_ret"], reverse=True)
+
+        return {
+            "name": "2%-impulse WIDE loose-ride (UNGATED, long-only)",
+            "kind": "independent shadow book — additive, judged STANDALONE (never vs the other book / a parent / buy-hold)",
+            "entry": f"daily close >= +{gate:.0%} AND new {contin_k}d closing high, LONG-only, ALL regimes (no bull/bear / no 200d-SMA gate)",
+            "exit": (f"ONE WIDE loose ride — loose give-back trail (give back {int(SHIP_GB*100)}% of peak, "
+                     f"near ride-wide, 60d time cap), NO tight leg, NO BE-floor; PLUS a WIDE "
+                     f"catastrophe hard floor at -{int(CATA_CUT*100)}% so a straight reverser is bounded"),
+            "catastrophe_cut_pct": CATA_CUT,
+            "adverse_protection": ("loose-ride only. TIGHT cuts (3/5/8%) and a BE-floor AMPUTATE this impulse "
+                                   "signal (backtested daymover_2pct_mimic_bt.py — tight-cut FAILS all-6, BE inert). "
+                                   "The straight-reverser is bounded by a WIDE catastrophe floor at -15% (matches the "
+                                   "live StockDayMoverLadderCompanion LOSS_CUT 15): widest cut that still passes all-6 "
+                                   "on the loose trail (keeps bear +, bounds maxDD). A -15% floor on the PURE ride turns "
+                                   "its bear leg negative -> pure-ride cannot carry a floor. Structural protection "
+                                   "otherwise = diversification + strength-only entry + the loose trail/time-cap."),
+            "cost_bps_roundtrip": 20,
+            "provenance": "daily-close backtest, 1785 rows 2019-06..2026-07, faithful (calls daymover_2pct_mimic_bt.py on data/rdagent/sp500_long_close.csv)",
+            "universe_size": int(df.shape[1]),
+            "years": round(years, 2),
+            "reference_backtest": {"primary": primary, "ceiling": ceiling, "ladder": ladder},
+            "today": {
+                "date": str(pd.Timestamp(df.index[-1]).date()),
+                "gate": gate, "contin_k": contin_k,
+                "n_fired": len(fired), "qualifies": fired,
+            },
+        }
+    except Exception as e:  # noqa: BLE001 -- never break the panel over this add-on book
+        return {"name": "2%-impulse WIDE loose-ride", "error": str(e)[:300]}
+
+
 def _factors(spec):
     if not spec:
         return []
@@ -360,6 +475,9 @@ def main():
         "strategy": _regime_strategy(a.provider, a.region, a.topk),
         "factors": _factors(a.factors),
         "signal": signal,
+        # SECOND, INDEPENDENT shadow book (S-2026-07-10): 2%-impulse WIDE loose-ride,
+        # UNGATED, long-only. Additive to the day-mover/regime book above; judged STANDALONE.
+        "impulse_book": _impulse_ride_book(),
     }
     out = Path(a.out).expanduser()
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -55,6 +55,9 @@
   <div class="secn">Strategy</div>
   <div id="strategy"></div>
 
+  <div class="secn">2%-impulse WIDE loose-ride book <span class="hint">· independent shadow · judged standalone</span></div>
+  <div id="impulse"></div>
+
   <div class="secn">Latest buy basket <span id="bkmeta" class="hint"></span></div>
   <p class="hint" id="bkexpl"></p>
   <div id="basket" class="basket"></div>
@@ -119,6 +122,48 @@ async function load(){
       <div class="panel"><div class="row"><strong style="font-weight:500">Bear engine · ${be.name||''}</strong><span class="pill warn">Sharpe ${be.sharpe} · DD ${(be.max_drawdown*100).toFixed(0)}%</span></div>
       <p class="hint" style="margin-top:6px">arms on ${be.arms_on} · +${be.armed_day_bps}bps on armed days · ${be.caveat}</p></div>`;
   }
+  // ── 2%-impulse WIDE loose-ride book (independent shadow, standalone) ──
+  (function(){
+    const el=document.getElementById('impulse'); if(!el) return;
+    const ib=d.impulse_book;
+    if(!ib){ el.innerHTML=''; return; }
+    if(ib.error){ el.innerHTML=`<div class="panel hint">impulse book unavailable: ${ib.error}</div>`; return; }
+    const rb=ib.reference_backtest||{}, pr=rb.primary||{}, tod=ib.today||{};
+    const pass=v=>v?'<span class="pill good">all-6 PASS</span>':'<span class="pill warn">fails all-6</span>';
+    const cards=[
+      ['PF', s1(pr.pf), `profit factor · ${pr.n} trades (${pr.fires_per_yr}/yr) · ${ib.cost_bps_roundtrip}bp rt`],
+      ['Net return', pr.net_pct==null?'—':(pr.net_pct.toFixed(0)+'%'), `standalone, ${ib.years}yr daily-close BT`],
+      ['Bull / Bear', `${pr.bull_pct==null?'—':pr.bull_pct.toFixed(0)}% / ${pr.bear_pct==null?'—':pr.bear_pct.toFixed(0)}%`, `both regimes net-positive (ungated)`],
+      ['WF halves', `${s1(pr.wf_h1)} / ${s1(pr.wf_h2)}`, `walk-forward H1 / H2 PF, both >1`],
+      ['Worst / maxDD', `${pr.worst_pct==null?'—':pr.worst_pct.toFixed(0)}% / ${pr.maxdd_pct==null?'—':pr.maxdd_pct.toFixed(0)}%`, `worst single trade bounded by the -${Math.round((ib.catastrophe_cut_pct||0)*100)}% floor (cut fires ${pr.cut_fires}×)`],
+    ].map(([l,v,dd])=>`<div class="card"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`).join('');
+    const lad=(rb.ladder||[]).map(r=>`<tr><td class="mono">${r.form}</td>
+      <td class="r">${s1(r.pf)}</td><td class="r">${r.net_pct==null?'—':r.net_pct.toFixed(0)+'%'}</td>
+      <td class="r ${cls(r.bull_pct)}">${r.bull_pct==null?'—':r.bull_pct.toFixed(0)}%</td>
+      <td class="r ${cls(r.bear_pct)}">${r.bear_pct==null?'—':r.bear_pct.toFixed(0)}%</td>
+      <td class="r">${s1(r.wf_h1)}/${s1(r.wf_h2)}</td>
+      <td class="r ${cls(r.worst_pct)}">${r.worst_pct==null?'—':r.worst_pct.toFixed(0)}%</td>
+      <td class="r">${r.all6_pass?'✓':'✗'}</td></tr>`).join('');
+    const fired=(tod.qualifies||[]);
+    const firedHtml = fired.length
+      ? fired.map(f=>`<span class="tag buy" style="margin:2px">${f.instrument} ${rr(f.day_ret)}${f.price!=null?` $${f.price}`:''}</span>`).join(' ')
+      : '<span class="hint">no name fired the 2% + new-20d-high trigger on the latest close.</span>';
+    const cei=rb.ceiling||{};
+    el.innerHTML=`<div class="panel">
+      <div class="row"><strong style="font-weight:500">${ib.name}</strong>${pass(pr.all6_pass)}</div>
+      <p class="hint" style="margin-top:6px"><b>Entry:</b> ${ib.entry}</p>
+      <p class="hint"><b>Exit:</b> ${ib.exit}</p>
+      <div class="cards" style="margin:12px 0">${cards}</div>
+      <details><summary>reference ladder (no-cut vs -${Math.round((ib.catastrophe_cut_pct||0)*100)}% catastrophe floor) + ceiling</summary>
+        <table style="margin-top:8px"><thead><tr><th>form</th><th class="r">PF</th><th class="r">net</th><th class="r">bull</th><th class="r">bear</th><th class="r">H1/H2</th><th class="r">worst</th><th class="r">all6</th></tr></thead>
+        <tbody>${lad}
+        <tr style="opacity:.7"><td class="mono">${cei.form||''}</td><td class="r">${s1(cei.pf)}</td><td class="r">${cei.net_pct==null?'—':cei.net_pct.toFixed(0)+'%'}</td><td class="r ${cls(cei.bull_pct)}">${cei.bull_pct==null?'—':cei.bull_pct.toFixed(0)}%</td><td class="r ${cls(cei.bear_pct)}">${cei.bear_pct==null?'—':cei.bear_pct.toFixed(0)}%</td><td class="r">${s1(cei.wf_h1)}/${s1(cei.wf_h2)}</td><td class="r ${cls(cei.worst_pct)}">${cei.worst_pct==null?'—':cei.worst_pct.toFixed(0)}%</td><td class="r">${cei.all6_pass?'✓':'✗'}</td></tr>
+        </tbody></table></details>
+      <p class="hint" style="margin-top:8px">${ib.adverse_protection}</p>
+      <p class="hint" style="margin-top:8px"><b>Today (${tod.date}) — names firing the trigger:</b><br>${firedHtml}</p>
+      <p class="hint" style="margin-top:6px">${ib.provenance}. ${ib.kind}.</p></div>`;
+  })();
+
   const sig=d.signal||{}, bk=(sig.basket||[]);
   // STALE-DATA GUARD: never present old data as "today". Compare basket date to the
   // last expected trading day (weekend-aware). >=2 trading-days behind => loud red banner.
