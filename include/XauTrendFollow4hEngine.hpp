@@ -131,6 +131,7 @@
 #include "L2LeverageState.hpp"   // 2026-05-30: L2 sizing + L2-trail flip helper
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
 #include "RegimeState.hpp"       // 2026-06-12 Tier-2 re-opt: gold_regime() long-gate
+#include "GoldTrendMimicLadder.hpp" // one-way mimic trigger (fire-and-forget on open)
 #include <cstdlib>
 
 namespace omega {
@@ -467,6 +468,8 @@ public:
         p.mfe           = 0.0;
         p.mae           = 0.0;
         p.size_mult     = 1.0;       // preserve regression-sizing field at full size
+        // one-way mimic notify (fire-and-forget; never reads/touches this position)
+        omega::gold_trend_mimic().on_trend_open("XauTf4h", p.is_long ? 1 : -1, p.entry_px, ps.entry_ts);
         return true;
     }
 

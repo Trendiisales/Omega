@@ -27,6 +27,7 @@
 // =============================================================================
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
 #include "RegimeState.hpp"        // 2026-06-24: gold_regime() price-bear gate (long-only engine)
+#include "GoldTrendMimicLadder.hpp" // one-way mimic trigger (fire-and-forget on open)
 #include <cstdint>
 #include <cmath>
 #include <deque>
@@ -180,7 +181,9 @@ struct MgcFastDonchian30mEngine {
                     for (double hv : prior_hvn_) if (hv > c && hv <= c + Kov * atr14_) { skip = true; break; }
                 if (l2_gate_ > 0.0 && l2_imb_ < l2_gate_) { skip = true;
                     std::printf("[MGC-L2-GATE] MgcFastDon LONG skipped (l2_imb=%.2f < %.2f)\n", l2_imb_, l2_gate_); std::fflush(stdout); }
-                if (!skip) { pos_active_ = true; entry_ = c; entry_ts_ = ts_sec; mfe_ = 0.0; mae_ = 0.0; }
+                if (!skip) { pos_active_ = true; entry_ = c; entry_ts_ = ts_sec; mfe_ = 0.0; mae_ = 0.0;
+                    // one-way mimic notify (fire-and-forget; never reads/touches this position)
+                    omega::gold_trend_mimic().on_trend_open("MgcFastDon", +1, c, ts_sec); }
             }
         }
         bars_.push_back({o,h,l,c,v,day});

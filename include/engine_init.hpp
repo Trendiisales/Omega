@@ -1585,10 +1585,45 @@ static void init_engines(const std::string& cfg_path)
             // single-column engine, locked ea4a746f — do not confuse with the befloor books).
             omega::gold_regime().set_h1_sink([](int64_t ts_sec, double close){
                 omega::jump_rider_book().on_h1_bar("XAUUSD", ts_sec, close);   // UpJump rider feed
+                // GoldTrendMimicLadder: drive the independent mimic legs on the XAU H1 close
+                // (close-grade, matching its close-grade backtest; h=l=c=close). bull unused
+                // (books are bull_only=false; the trend engines own their regime gating).
+                omega::gold_trend_mimic().on_h1_bar(close, close, close, ts_sec, true);
             });
         }
         printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) RETIRED S-2026-07-07e (real-fill: no config survives both eras; bull-gate tested, fails 2024-26 WF) -- state serves real history, no new arms\n");
         fflush(stdout);
+
+        // ── GoldTrendMimicLadder: INDEPENDENT SHADOW mimic ladders off gold trend engines
+        //    (S-2026-07-09, operator). A trend engine opens -> one-way on_trend_open -> this
+        //    engine spawns its OWN legs at that entry, managed on the XAU H1 close (deploy-
+        //    forward: armed AFTER seeding, at the end of init_engines). Validated standalone
+        //    (backtest/clip_path_*.cpp real-engine entries, independent window exit, cost-debited):
+        //    XauTf4h 4-leg +110/leg, MgcFastDon 2-leg +34/leg, XauTfD1 2-leg +24/leg -- all WF
+        //    both halves +, both regimes +. SHADOW (send_live_order no-op until flip), judged
+        //    STANDALONE (feedback-companion-independent-engine).
+        {
+            auto& gm = omega::gold_trend_mimic();
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTf4h"; c.live_sym="XAUUSD";
+                c.legs={{"T1",0.08},{"T2",0.10},{"W1",0.20},{"W2",0.25}};
+                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; gm.add(std::move(c)); }
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcFastDon"; c.live_sym="XAUUSD";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; gm.add(std::move(c)); }
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTfD1"; c.live_sym="XAUUSD";
+                c.legs={{"T",0.08},{"W",0.20}};
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; gm.add(std::move(c)); }
+            gm.set_exec(
+                [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
+                [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){ send_live_order(sym, !orig_is_long, lots, px, token); },
+                [](const std::string& sym, double tp_dist_pts, double lots)->bool { return ExecutionCostGuard::is_viable(sym.c_str(), 0.30, tp_dist_pts, lots, 2.0); },
+                [](const std::string& engine, const std::string& sym, bool is_long, double entry_px, double exit_px, double lots, int64_t entry_ts, int64_t exit_ts, const char* reason){
+                    omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
+                    tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
+                    tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 3 trigger books (XauTf4h 4-leg, MgcFastDon 2-leg, XauTfD1 2-leg), SHADOW, deploy-forward\n");
+            fflush(stdout);
+        }
 
         // ── XAGPos/XAGNeg SILVER BE-floor companion (S-2026-07-06; RETIRED S-2026-07-07e) ──
         //   REAL-FILL VERDICT (backtest/index_befloor_intrabar_bt.cpp, XAGUSD H1-OHLC synth
@@ -7323,6 +7358,13 @@ static void init_engines(const std::string& cfg_path)
                             "(>=20 trades, net-negative)\n", t.name);
             }
         }
+
+        // GoldTrendMimicLadder: ARM now -- every trend engine has finished warm-seeding, so a
+        // historical open replayed during seed can no longer spawn phantom mimic legs. Live trend
+        // opens (post-boot) spawn the independent mimic legs. deploy-forward ($0 until first clip).
+        omega::gold_trend_mimic().arm();
+        std::printf("[OMEGA-INIT] GoldTrendMimicLadder ARMED (post-seed) -- live trend opens now spawn mimic legs\n");
+        std::fflush(stdout);
         std::fflush(stdout);
     }
 

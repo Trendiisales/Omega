@@ -109,6 +109,7 @@
 #include "GoldD1TrendState.hpp"  // D1 regime gate (added 2026-05-21)
 #include "RegimeState.hpp"       // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
+#include "GoldTrendMimicLadder.hpp" // one-way mimic trigger (fire-and-forget on open)
 #include <vector>
 #include <cstdlib>
 
@@ -327,6 +328,8 @@ public:
         p.mfe           = 0.0;
         p.mae           = 0.0;
         p.size_mult     = 1.0;
+        // one-way mimic notify (fire-and-forget; never reads/touches this position)
+        omega::gold_trend_mimic().on_trend_open("XauTfD1", p.is_long ? 1 : -1, p.entry_px, ps.entry_ts);
         return true;
     }
 
