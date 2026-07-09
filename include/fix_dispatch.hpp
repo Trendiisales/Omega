@@ -234,6 +234,23 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
         //     stale >5s -> BlackBull automatically resumes as fallback (no blackout).
         // After this migration NO symbol is BlackBull-primary while its IBKR slot is
         // fresh -- the zero-BlackBull goal. See outputs/FEED_AUDIT_2026-07-09.md.
+        // S-2026-07-09b HARD-DROP set (operator: "STOP BLACKBULL NOW"): symbols where
+        // IBKR is entitled + actively flowing NEVER take a BlackBull tick. Root cause of
+        // the NAS100 spike-war: the depth-slot freshness check was unreliable, so BlackBull
+        // (CFD, ~200pt off the IBKR future) leaked in alongside the IBKR NQ feed -> every
+        // other tick looked like a 200pt spike -> spike filter rejected them -> the mark
+        // froze/flickered between two scales. Unconditional drop kills the dual feed. These
+        // symbols go QUIET (not BlackBull) if IBKR ever dies -- accepted per the zero-BlackBull
+        // directive; a dark tile is loud/honest vs a silently wrong CFD price.
+        auto is_ibkr_hard = [](const char* s) noexcept {
+            return std::strcmp(s,"XAUUSD")==0 || std::strcmp(s,"NAS100")==0
+                || std::strcmp(s,"USTEC.F")==0 || std::strcmp(s,"US500.F")==0
+                || std::strcmp(s,"XAGUSD")==0 || std::strcmp(s,"GER40")==0
+                || std::strcmp(s,"ESTX50")==0;
+        };
+        if (is_ibkr_hard(sym.c_str())) return;   // never BlackBull, no freshness dependency
+        // The rest (FX majors + the UNENTITLED index/energy set UK100/USOIL/VIX/DX/NGAS/BRENT)
+        // keep the freshness fallback so they aren't dark when IBKR has no data for them.
         if (omega::ibkr::is_fx_major(sym.c_str())
          || omega::ibkr::is_ibkr_primary_index(sym.c_str())) {
             const int64_t ib_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
