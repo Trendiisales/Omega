@@ -42,6 +42,34 @@ function Add-Check {
     })
 }
 
+# ---------- PER-MARKET SESSION BLOCKS (2026-07-10) ----------
+# Operator: "ensure we have the blocks for each session so we dont get [false warnings]."
+# The old single global FX-24x5 window flagged EVERY feed/book stale until Fri 22:00 UTC,
+# so an equity/index shadow book quiet OVERNIGHT (US cash + EUREX both closed) tripped a
+# WARN at e.g. 22:31 UTC Thu even though the writer was alive (boot heartbeat present) and
+# there were simply no trades. Each market now has its OWN session so a stale feed/book is
+# only judged when THAT market is actually open. All times UTC; DST-agnostic (uses the wider
+# summer envelope -- a ~1h edge slop is harmless for a staleness gate).
+function Test-MarketOpen {
+    param([string]$Market, [datetime]$Utc = $now.ToUniversalTime())
+    $d = [int]$Utc.DayOfWeek          # 0=Sun .. 6=Sat
+    $h = $Utc.Hour + $Utc.Minute/60.0
+    switch ($Market) {
+        # US cash equities (NYSE/NASDAQ) 09:30-16:00 ET = 13:30-20:00 UTC, Mon-Fri.
+        'US_EQUITY' { return ($d -ge 1 -and $d -le 5 -and $h -ge 13.5 -and $h -lt 20.0) }
+        # EUREX index futures (FDAX/FESX) main+late ~07:00-20:00 UTC, Mon-Fri.
+        'EUREX'     { return ($d -ge 1 -and $d -le 5 -and $h -ge 7.0  -and $h -lt 20.0) }
+        # CME/COMEX futures (ES/NQ/YM/M2K/XAU) ~23h: Sun 22:00 -> Fri 21:00 UTC, daily 21-22 break.
+        'CME'       { return -not (($d -eq 6) -or ($d -eq 0 -and $h -lt 22) -or ($d -eq 5 -and $h -ge 21) -or ($h -ge 21 -and $h -lt 22)) }
+        # FX 24x5: Sun 22:00 -> Fri 22:00 UTC.
+        'FX'        { return -not (($d -eq 6) -or ($d -eq 0 -and $h -lt 22) -or ($d -eq 5 -and $h -ge 22)) }
+        # CORE = the window the SHADOW BOOK is meaningfully active (US equity + EUREX index +
+        # the US-futures session overlap). Outside it the book is quiet -> staleness expected.
+        'CORE'      { return ($d -ge 1 -and $d -le 5 -and $h -ge 13.0 -and $h -lt 21.0) }
+        default     { return $true }
+    }
+}
+
 # ---------- 1. Service running ----------
 $svc = Get-Service Omega -ErrorAction SilentlyContinue
 if (-not $svc) {
@@ -82,7 +110,29 @@ function Check-File-Fresh {
 }
 
 Check-File-Fresh "$Root\logs\latest.log"  5   "log.latest_fresh"
-Check-File-Fresh "$Root\logs\watchdog.log" 10 "log.watchdog_fresh" "WARN"
+# RUNNING-BINARY HASH == HEAD (2026-07-10) -- absorbs the retired python watchdog.
+# The old watchdog (tools/omega_health.py -> logs/watchdog.log) verified running==github but
+# DIED 2026-07-07 with NO scheduled task = no restart/backup -> silently stale for 3 days
+# (operator: "watchdogs supposed to be watchdogs, how can they fail with no fix/backup?"). Its
+# job is now folded into THIS check. The healthcheck is a robust 2-min + AtStartup Task Scheduler
+# job, so the SCHEDULER is the backup -- it cannot silently die the way a lone python loop did.
+# Reads the running binary's embedded Git hash from stderr; compares to HEAD ($head from step 2).
+$stderrLog = Join-Path $Root 'logs\omega_service_stderr.log'
+if ((Test-Path $stderrLog) -and $head) {
+    $hline = Select-String -Path $stderrLog -Pattern 'Git hash:\s*([0-9a-f]{7,})' | Select-Object -Last 1
+    if ($hline) {
+        $runHash = ([regex]::Match($hline.Line, 'Git hash:\s*([0-9a-f]{7,})')).Groups[1].Value
+        if ($head.StartsWith($runHash)) {
+            Add-Check "binary.hash_matches_head" "OK" "aligned" "running=$runHash == HEAD"
+        } else {
+            Add-Check "binary.hash_matches_head" "WARN" "drift" ("running binary={0} != HEAD={1} (rebuild/redeploy owed)" -f $runHash, $head.Substring(0,7))
+        }
+    } else {
+        Add-Check "binary.hash_matches_head" "WARN" "no_hash" "no 'Git hash:' line in stderr log"
+    }
+} else {
+    Add-Check "binary.hash_matches_head" "WARN" "no_stderr" "stderr log or HEAD unavailable"
+}
 
 # Today's per-day log must exist and be non-empty
 $today = $now.ToString('yyyy-MM-dd')
@@ -116,10 +166,14 @@ $isMarketHours = -not (
     ($dayOfWeek -eq 0 -and $hourUtc -lt 22) -or   # Sun before 22 UTC
     ($dayOfWeek -eq 5 -and $hourUtc -ge 22)       # Fri after 22 UTC
 )
-# Off-hours (weekend / market closed) a stale shadow CSV is EXPECTED (no trades to write) ->
-# OK, not WARN, so overall HEALTH stays green on weekends (operator 2026-07-04: "no weekend-nonsense
-# warnings"). Market-hours staleness is still FAIL. Mirrors the gold_bracket off_hours idiom below.
-$staleSeverity = if ($isMarketHours) { 'FAIL' } else { 'OK' }
+# Off-hours a stale shadow CSV is EXPECTED (no trades to write) -> OK, not WARN.
+# 2026-07-10 FIX (operator: "why did these fire when the NY session is not current"): the
+# shadow book is equity/index-dominated, so its staleness must be judged against the CORE
+# trading session (US equity + EUREX + US-futures overlap, weekdays 13:00-21:00 UTC), NOT the
+# 24x5 FX window. Overnight (e.g. 22:31 UTC Thu) the writer is alive (boot heartbeat) but there
+# are simply no trades -> stale is EXPECTED, must not warn. Use CORE, not $isMarketHours.
+$shadowActive  = Test-MarketOpen 'CORE'
+$staleSeverity = if ($shadowActive) { 'FAIL' } else { 'OK' }
 
 $shadowFiles = @{
     'shadow.omega_shadow_csv'          = 'logs\shadow\omega_shadow.csv'
@@ -132,16 +186,16 @@ foreach ($kv in $shadowFiles.GetEnumerator()) {
     } else {
         $f = Get-Item $p
         $ageMin = ($now - $f.LastWriteTime).TotalMinutes
-        $staleStatus = if ($isMarketHours) { "stale" } else { "off_hours" }
+        $staleStatus = if ($shadowActive) { "stale" } else { "off_session" }
         if ($f.Length -eq 0) {
             Add-Check $kv.Key "FAIL" "empty" "$p is 0 bytes"
         } elseif ($ageMin -gt 120) {
-            # 2h+ stale: FAIL during market hours, OK otherwise (weekend = no writes expected).
-            Add-Check $kv.Key $staleSeverity $staleStatus ("{0:N0}m since last write (market_hours={1})" -f $ageMin, $isMarketHours)
+            # 2h+ stale: FAIL only during the CORE session; off-session = OK (quiet, no trades).
+            Add-Check $kv.Key $staleSeverity $staleStatus ("{0:N0}m since last write (core_session={1})" -f $ageMin, $shadowActive)
         } elseif ($ageMin -gt 60) {
-            # 1-2h stale: WARN in-session, OK off-hours (no trades to write on a closed market).
-            $sev60 = if ($isMarketHours) { "WARN" } else { "OK" }
-            Add-Check $kv.Key $sev60 $staleStatus ("{0:N0}m since last write (market_hours={1})" -f $ageMin, $isMarketHours)
+            # 1-2h stale: WARN in the CORE session, OK off-session.
+            $sev60 = if ($shadowActive) { "WARN" } else { "OK" }
+            Add-Check $kv.Key $sev60 $staleStatus ("{0:N0}m since last write (core_session={1})" -f $ageMin, $shadowActive)
         } else {
             Add-Check $kv.Key "OK" "ok" ("{0} bytes, {1:N1}m old" -f $f.Length, $ageMin)
         }
