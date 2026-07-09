@@ -1968,6 +1968,14 @@ static void init_engines(const std::string& cfg_path)
                 {"US500",  "US500.F", 24, 2.0, 4.0, false, "phase1/signal_discovery/warmup_US500_H1.csv"},
                 {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
                 {"GER40",  "GER40",   12, 1.5, 2.0, true,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
+                // S-2026-07-09: M2K micro E-mini Russell 2000 (CME), IBKR-only L1 feed.
+                // Validated up-jump ladder W24/thr1.5 + BE-ENTRY0.08 (inherited below) =
+                // +76.5% WF both halves (H1 +35.9 / H2 +40.6). rt=4.0 conservative (micro
+                // Russell < ES/NQ liquidity). BULL-GATED: the 2yr IBKR continuous sample
+                // has NO 2022 bear and Russell is high-beta -> gate new windows in risk-off
+                // (same treatment as GER40; flip to false for the ungated backtested config
+                // if bear-regime evidence lands). SHADOW book, deploy-forward, cost-debited.
+                {"M2K",    "M2K",     24, 1.5, 4.0, true,  "phase1/signal_discovery/warmup_M2K_H1.csv"},
             };
             for (const auto& ic : IL) {
                 omega::FxLadderPair::Config c;

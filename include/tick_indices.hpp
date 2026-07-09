@@ -62,6 +62,22 @@ static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, doubl
     omega::index_befloor_book().on_tick(tag, now_ms / 1000, bid, ask);
 }
 
+// ── M2K (micro E-mini Russell 2000, CME) ───────────────────
+// 2026-07-09: NEW underlying (not covered by US500/NAS100/DJ30). IBKR-only L1 feed
+// via the bridge (M2K->M2K). MINIMAL handler by design -- M2K drives ONLY the index
+// up-jump ladder SHADOW book (validated W24/thr1.5 + BE-entry0.08 = +76.5% WF both
+// halves). index_feed_h1 aggregates ticks -> H1 -> index_upjump_ladder_book().on_h1_bar.
+// The BE-floor book is culled (family retired) so its on_h1_bar/on_tick calls there are
+// cheap no-ops for M2K (no leg ever opens). No other engine family runs on M2K.
+static void on_tick_m2k(
+    const std::string& sym, double bid, double ask,
+        bool tradeable, bool lat_ok, const std::string& regime)
+{
+    (void)sym; (void)tradeable; (void)lat_ok; (void)regime;
+    { static IdxH1Agg agg; index_feed_h1(agg, "M2K", bid, ask); }  // index up-jump ladder H1 feed
+    g_engine_heartbeat.pulse("M2KUpJumpLadder");
+}
+
 // ── US500.F ────────────────────────────────────────────────
 static void on_tick_us500(
     const std::string& sym, double bid, double ask,

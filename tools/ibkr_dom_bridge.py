@@ -60,6 +60,12 @@ INDEX_FUTURES = {
     # market data permissions for MGC" -- do NOT include MGC in --symbols
     # until then. Once subscribed: --symbols XAUUSD,MGC.
     "MGC":     dict(symbol="MGC",    exchange="COMEX",     currency="USD"),
+    # 2026-07-09: M2K micro E-mini Russell 2000 (CME). L1-only (not in DEPTH_SYMBOLS),
+    # no depth-slot cost -- feeds the index up-jump ladder SHADOW book (M2K validated
+    # W24/thr1.5 + BE-entry0.08 = +76.5% WF both halves; live-wire this session). CME
+    # bundle already entitled (same as ES/NQ); if not, resolve fails 354 -> book stays
+    # quiet (safe, shadow). Only add M2K to --symbols after confirming the CME sub.
+    "M2K":     dict(symbol="M2K",    exchange="CME",       currency="USD"),
 }
 
 

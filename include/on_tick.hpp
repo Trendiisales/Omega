@@ -85,6 +85,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
                     (sym == "USTEC.F" || sym == "NAS100") ? 20.0  :  // NQ: 20pt floor
                     (sym == "GER40"   || sym == "UK100"  ||
                      sym == "ESTX50")                     ? 10.0  :  // EU indices: 10pt floor
+                    (sym == "M2K")                        ? 10.0  :  // micro Russell (~2200): 10pt floor
                     (sym == "USOIL.F" || sym == "BRENT")  ? 0.5   :  // oil: 0.5pt floor
                     (sym == "USDJPY")                     ? 0.20  :  // JPY pair: 20 pip floor (pip=0.01)
                                                             0.002;   // FX majors: 20 pip floor (pip=0.0001)
@@ -2364,6 +2365,7 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     else if (sym == "USDCAD")                           on_tick_usdcad(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "BRENT")                            on_tick_brent(sym, bid, ask, tradeable, lat_ok, regime, dispatch);
     else if (sym == "NAS100")                           on_tick_nas100(sym, bid, ask, tradeable, lat_ok, regime);
+    else if (sym == "M2K")                              on_tick_m2k(sym, bid, ask, tradeable, lat_ok, regime);
     else if (sym == "XAUUSD")                           on_tick_gold(sym, bid, ask, tradeable, lat_ok, regime, rtt_check);
     else {
         // Confirmation-only symbol (VIX, ES, NAS100, DX etc) -- no engine dispatch

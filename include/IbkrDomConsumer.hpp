@@ -221,7 +221,8 @@ inline bool is_ibkr_primary_index(const char* s) noexcept {
         || std::strcmp(s, "ESTX50")  == 0 || std::strcmp(s, "USOIL.F") == 0
         || std::strcmp(s, "XAGUSD")  == 0 || std::strcmp(s, "VIX.F")   == 0
         || std::strcmp(s, "DX.F")    == 0 || std::strcmp(s, "NGAS.F")  == 0
-        || std::strcmp(s, "BRENT")   == 0;
+        || std::strcmp(s, "BRENT")   == 0
+        || std::strcmp(s, "M2K")     == 0;  // 2026-07-09 micro Russell (CME), IBKR-only L1
 }
 
 // Stats for /api/v1/omega health -- read by status endpoint if wired.

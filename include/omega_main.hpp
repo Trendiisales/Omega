@@ -814,6 +814,7 @@ int main(int argc, char* argv[])
                 {"DX",     "DX.F"},
                 {"NG",     "NGAS.F"},
                 {"COIL",   "BRENT"},
+                {"M2K",    "M2K"},      // 2026-07-09 micro Russell -> index up-jump ladder SHADOW
             };
             for (const auto& m : kIdxMap) {
                 if (std::strcmp(sym, m.wire) == 0) {
