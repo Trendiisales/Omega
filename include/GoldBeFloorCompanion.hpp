@@ -148,6 +148,29 @@ public:
             if (f.is_open()) f << (long long)deploy_ts_ << "\n";
             std::printf("[AUGOLD][DEPLOY] deploy_ts stamped = %lld (forward-only book)\n",
                         (long long)deploy_ts_);
+            // S-2026-07-09 CARRY-FORWARD PENDING ARM (rationale: StockDayMoverLadderCompanion).
+            // Deploy-forward seeds history with the detector SUPPRESSED, so a first-ever deploy
+            // landing right after a +/-thr W-bar move absorbs that signal and never arms the
+            // next-bar window. Mirror live_step_'s arm EXACTLY on the final seed bar so the
+            // window opens on the FIRST live bar (parity with the harness ei=i+1 entry). Books
+            // nothing (deploy_ts stamped at this same bar => the pending conversion fills
+            // fwd=true). First-boot only; on restart the pending is restored from live_path,
+            // never re-armed. W>1 usually self-heals on the next live bar; this closes the seam.
+            {
+                const int Nsa = (int)c_.size(); const int Wsa = cfg_.W;
+                if (Nsa > Wsa) {
+                    const double jsa = c_[Nsa - 1] / c_[Nsa - 1 - Wsa] - 1.0;
+                    const bool   csa = (ts_[Nsa - 1] - ts_[Nsa - 1 - Wsa]) <= (int64_t)Wsa * 3600 * 2;
+                    if (csa && jsa >=  cfg_.thr) win_pend_[0] = true;   // Pos window opens next live bar
+                    if (csa && jsa <= -cfg_.thr) win_pend_[1] = true;   // Neg window opens next live bar
+                    if (win_pend_[0] || win_pend_[1]) {
+                        save_live_state_();
+                        std::printf("[AUGOLD][SEED-ARM] %s last seed bar %+.3f%% -> pending %s carried; next live bar opens window\n",
+                                    cfg_.sym.c_str(), jsa * 100.0, win_pend_[0] ? "POS" : "NEG");
+                        std::fflush(stdout);
+                    }
+                }
+            }
         } else {
             std::printf("[AUGOLD][DEPLOY] deploy_ts loaded = %lld (persisted)\n", (long long)deploy_ts_);
         }
