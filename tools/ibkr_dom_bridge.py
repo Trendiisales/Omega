@@ -628,14 +628,23 @@ def main():
     # another bridge already owns the feed -> EXIT NOW, before connecting to Gateway with a
     # colliding client-id. Self-healing: a crashed prior bridge frees the port so a fresh launch
     # wins. (The real TcpBroadcaster re-binds the port a few lines below.)
-    _guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # HELD lock socket on a dedicated per-client-id port. bind() is atomic, so of TWO bridges
+    # launched in the same instant (the venv-launcher double-spawn we hit) exactly ONE wins the
+    # bind; the other gets EADDRINUSE -> exits BEFORE touching Gateway. The winner HOLDS the
+    # socket for its whole lifetime (never closed), so no close-race window. Self-healing: a dead
+    # bridge's lock frees so a fresh launch wins. Per-client-id (19000+cid) so bridges with
+    # different client-ids can still coexist.
+    _lock_port = 19000 + int(args.client_id)
+    _lock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    _lock_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)   # do NOT allow a 2nd bind
     try:
-        _guard.bind(("127.0.0.1", args.tcp_port))
-        _guard.close()
+        _lock_sock.bind(("127.0.0.1", _lock_port))
+        _lock_sock.listen(1)
     except OSError:
-        print(f"[GUARD] tcp-port {args.tcp_port} already bound -- another ibkr_dom_bridge is "
-              f"running; exiting to avoid a client-id {args.client_id} collision", file=sys.stderr)
+        print(f"[GUARD] single-instance lock :{_lock_port} held -- another ibkr_dom_bridge "
+              f"(client-id {args.client_id}) is already running; exiting", file=sys.stderr)
         sys.exit(0)
+    globals()["_SINGLETON_LOCK"] = _lock_sock   # keep a ref so it is never GC'd/closed while alive
 
     os.makedirs(args.out_dir, exist_ok=True)
     syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
