@@ -337,7 +337,7 @@ def main():
     ap.add_argument("--universe", default="BIGCAP")
     ap.add_argument("--topk", type=int, default=5)
     ap.add_argument("--cost-bps", type=float, default=10.0)
-    ap.add_argument("--gate", type=float, default=0.04, help="min day-return to qualify as a mover (5%->4% S-2026-07-10: gate sweep on 7.1yr, 4% = +58% more fires 105->167/yr, PF up 3.50->3.66, all-6 holds incl bear+110; 3% and below fail all-6 bear-negative)")
+    ap.add_argument("--gate", type=float, default=0.05, help="min day-return to qualify as a mover")
     ap.add_argument("--contin-k", type=int, default=20, help="new K-day-high continuation lookback")
     ap.add_argument("--factors", default=None)
     ap.add_argument("--provenance", default="bar-replay")
