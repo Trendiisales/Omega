@@ -1890,12 +1890,40 @@ static void init_engines(const std::string& cfg_path)
             // {pair, W, thr%, rt_cost_bp, short_downjump, notional$, retire_usd, warmup CSV (ts,o,h,l,c H1)}
             struct FLCfg { const char* pair; int W; double thr; double rt;
                            bool short_dj; double notional; double retire; const char* csv; };
+            // S-2026-07-09c IBKR-FEED REVALIDATION (operator: pull the REAL IBKR
+            //   IDEALPRO feed and re-validate on it — the prior cells were validated on
+            //   histdata merged/befloor files that covered short FAVORABLE slices).
+            //   Faithful sweep drove THIS engine class over 3Y IBKR H1 MIDPOINT (2023-07..
+            //   2026-07, 18,618 bars/pair, all 5 CERTIFIED CLEAN by data_integrity_gate).
+            //   Puller backtest/ibkr_fx_h1_pull.py ; sweep backtest/fx_ibkr_ladder_sweep.cpp
+            //   + fx_ibkr_ladder_orchestrate.py (each cell in a fresh mktemp cwd -> det.).
+            //   All-6 STANDALONE verdict (net>0, PF>=1.3, WF both halves>0, bull>0, bear>0;
+            //   bull/bear = pair trend at entry vs SMA480 H1). Results (current exits):
+            //     GBPUSD W48/thr0.75  PASS  net +40.5% PF1.44 n526 WF +21.0/+19.5
+            //                         bull+18.2 bear+22.3; 2x-cost +30.0% PF1.31 (holds),
+            //                         robust across the whole wide_arm x be_entry exit grid
+            //                         (every be>=0.08 cell PASSES). The ONE genuine edge on
+            //                         the real feed. LIVE cell was W48/thr1.0 (+5.9% FAIL);
+            //                         edge lives at thr0.75 -> retuned here.
+            //     EURUSD/NZDUSD/AUDUSD/USDCAD  FAIL all-6 on IBKR data (edgeless on the real
+            //                         feed — matches the 2026-06-29 "FX edgeless" caution).
+            //                         Best IBKR cells: EURUSD none (live W48/0.5 = -4.6%);
+            //                         NZDUSD live W24/1.5 = +16.9% but WF-H1 -2.2 & bear +0.5
+            //                         (fails); AUDUSD live W72/0.75 = -12.5%; USDCAD only
+            //                         "pass" W24/1.5 is a 20-clip fluke (PF21.85, all other
+            //                         cells negative). DISABLED pending a genuine cell — do
+            //                         NOT force a pass (operator rule; standalone-negative).
+            //   Evidence: the 3 research artifacts above (ibkr_fx_h1_pull.py +
+            //   fx_ibkr_ladder_sweep.cpp + fx_ibkr_ladder_orchestrate.py) reproduce these
+            //   numbers; parity: the same driver reproduces the histdata research exactly
+            //   (EURUSD_merged W48/0.5 = +39.7% == research). Vault: FxUpJumpLadder page.
             static const FLCfg FL[] = {
-                {"EURUSD", 48, 0.5,  2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
-                {"GBPUSD", 48, 1.0,  2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
-                {"NZDUSD", 24, 1.5,  2.5, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
-                {"AUDUSD", 72, 0.75, 2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
-                {"USDCAD", 96, 0.5,  2.0, true,   5000.0, -580.0, "phase1/signal_discovery/warmup_USDCAD_H1.csv"},
+                {"GBPUSD", 48, 0.75, 2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
+                // -- DISABLED S-2026-07-09c: FAIL all-6 STANDALONE on 3Y IBKR feed (above). --
+                // {"EURUSD", 48, 0.5,  2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
+                // {"NZDUSD", 24, 1.5,  2.5, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
+                // {"AUDUSD", 72, 0.75, 2.0, false, 10000.0,    0.0, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
+                // {"USDCAD", 96, 0.5,  2.0, true,   5000.0, -580.0, "phase1/signal_discovery/warmup_USDCAD_H1.csv"},
             };
             for (const auto& fc : FL) {
                 omega::FxLadderPair::Config c;
@@ -1931,7 +1959,7 @@ static void init_engines(const std::string& cfg_path)
                     handle_closed_trade(tr);
                 });
             fl.finalize_all();
-            printf("[OMEGA-INIT][SEED] FX jump LADDER wired: EURUSD(W48/0.5 L) GBPUSD(W48/1.0 L) NZDUSD(W24/1.5 L) AUDUSD(W72/0.75 L upgraded) USDCAD(W96/0.5 SHORT half-size retire@-580), %zu H1 bars seeded, %zu forward bars restored, both-ways sweep 2026-07-08 re-validated, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
+            printf("[OMEGA-INIT][SEED] FX jump LADDER wired: GBPUSD(W48/0.75 L) only -- S-2026-07-09c IBKR-feed revalidation: GBPUSD PASS all-6 (+40.5%% PF1.44 n526, 2x-cost holds); EURUSD/NZDUSD/AUDUSD/USDCAD DISABLED (fail all-6 standalone on 3Y IBKR data). %zu H1 bars seeded, %zu forward bars restored, LC5thr+trail+window-flush, SHADOW, deploy-forward\n",
                    flseeded, flrestored);
             fflush(stdout);
         }
