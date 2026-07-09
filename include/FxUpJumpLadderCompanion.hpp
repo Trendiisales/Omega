@@ -83,6 +83,8 @@
 #include <functional>
 #include <deque>
 #include <cmath>
+#include <atomic>
+#include <chrono>
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -640,8 +642,22 @@ public:
         if (auto* p = find(pair)) { p->on_h1_bar(ts_sec, h, l, c); recompute_and_write(); }
     }
     // S-2026-07-08d: per-tick live display mark (display only, no trading side effect).
+    // S-2026-07-09b: recompute_and_write() otherwise only fires on_h1_bar (hourly), so the
+    // served /api JSON froze between H1 bars -- the live disp_mid never reached the desk
+    // (operator: "price in the index ladder is not updating in real time"). Throttle a
+    // display refresh to ~1Hz here so the served leg cur/uPnL tracks the live mark without
+    // hammering file I/O. Trading logic still H1-close-cadence; this only republishes.
     void set_disp_mid(const std::string& pair, double mid) {
-        if (auto* p = find(pair)) p->set_disp_mid(mid);
+        auto* p = find(pair);
+        if (!p) return;
+        p->set_disp_mid(mid);
+        const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        int64_t last = last_disp_write_ms_.load(std::memory_order_relaxed);
+        if (now_ms - last >= 1000 &&
+            last_disp_write_ms_.compare_exchange_strong(last, now_ms, std::memory_order_relaxed)) {
+            recompute_and_write();
+        }
     }
 
     // Index book publishes under its own engine name + state file (same class/mechanism).
@@ -674,6 +690,7 @@ private:
     std::vector<FxLadderPair> pairs_;
     std::string engine_name_ = "fx-upjump-ladder";
     std::string state_path_ = "fxladder_companion_state.json";   // cwd = C:\Omega
+    mutable std::atomic<int64_t> last_disp_write_ms_{0};   // S-2026-07-09b 1Hz display-refresh throttle
 };
 
 // Singleton — accessor mirrors omega::stockmover_ladder_book().
