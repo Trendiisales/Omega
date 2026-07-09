@@ -334,11 +334,18 @@ document.addEventListener('click',function(){ if('Notification' in window && Not
 (function(){ var hb=document.getElementById('healthBadge'); if(hb) hb.addEventListener('click',function(){ __healthMute=!__healthMute; hb.style.opacity=__healthMute?'0.45':'1'; }); })();
 async function pollHealth(){
   var b=document.getElementById('healthBadge'); if(!b) return;
+  // S-2026-07-09: a health-fetch TIMEOUT/error is NOT a FAIL -- treat it as UNKNOWN so a busy
+  // VPS / slow /api/health does NOT beep. The "random sounds, nothing alarming" was this: a
+  // transient timeout hit catch -> overall='FAIL' -> transition-into-FAIL -> beep, then the next
+  // poll recovered. Only a REAL API-returned FAIL beeps now. UNKNOWN shows a dim badge, does not
+  // beep, and does NOT overwrite __lastHealth (so a genuine FAIL after a blip still transitions).
   var h; try{ h=await fetch('/api/health',{cache:'no-store'}).then(function(r){return r.json();}); }
-  catch(e){ h={overall:'FAIL',fail_count:1,warn_count:0}; }
-  var o=(h.overall||'FAIL').toUpperCase(), fc=h.fail_count||0, wc=h.warn_count||0;
+  catch(e){ h=null; }
+  if(!h){ b.style.color='var(--dim,#888)'; b.textContent='HEALTH ?'; return; }   // fetch failed -> no beep
+  var o=(h.overall||'UNKNOWN').toUpperCase(), fc=h.fail_count||0, wc=h.warn_count||0;
   if(o==='OK'){ b.style.color='var(--grn)'; b.textContent='HEALTH OK'; }
   else if(o==='WARN'){ b.style.color='var(--ambB)'; b.textContent='HEALTH '+wc+'W'; }
+  else if(o==='UNKNOWN'){ b.style.color='var(--dim,#888)'; b.textContent='HEALTH ?'; return; }
   else { b.style.color='var(--red)'; b.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); }
   if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ __healthBeep(); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
   __lastHealth=o;
@@ -396,7 +403,8 @@ function pollFires(){var now=Date.now();
  var anyOpen=false,banked=false;
  __compBooks.forEach(function(bk){var j=window[bk[1]];if(!j)return;
   __compOpens(j).forEach(function(o){var k=bk[0]+'|'+(o.flavor||o.name||'')+'|'+(o.tier||'')+'|'+(o.entry_ts||o.entry||'');
-   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)anyOpen=true;}
+)OMEGAD1"
+R"OMEGAD2(   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)anyOpen=true;}
    window._seenComp[k]=now;});
   var nc=__compClosed(j),pc=window._compClosed[bk[0]];
   if(pc!==undefined&&nc>pc&&!window._compBase)banked=true;
@@ -407,8 +415,7 @@ function pollFires(){var now=Date.now();
 setInterval(pollFires,5000);
 /* S-2026-07-08c close-bells (operator: sound on open+close, bell on win): every NEW
    closed row rings -- win -> winBell (rising), loss -> lossBell (falling). Open sounds
-)OMEGAD1"
-R"OMEGAD2(   already ring via entryBell (engine + companion watchers above). Identity-based with
+   already ring via entryBell (engine + companion watchers above). Identity-based with
    silent first-pass baseline so reloads/restarts never ring history. */
 function pollCloseBells(){var now=Date.now();
  if(window._seenCl===undefined){window._seenCl={};window._clBase=true;}
@@ -577,7 +584,8 @@ function compSub(engine,symbol,colspan,nLegs){
    position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
    the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
 function findLeg(engine,entry){
- var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
+)OMEGAD2"
+R"OMEGAD3( var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
  Object.keys(pl).forEach(function(k){var v=pl[k];var keng=(v.engine||'').replace(/Engine$/,'');
   if(keng!==e&&keng!==(engine||''))return;
   if(Math.abs(safe(v.entry)-eNum)<0.01)best=v;});
@@ -585,8 +593,7 @@ function findLeg(engine,entry){
 }
 function compSubLeg(engine,symbol,entry,colspan,dup){
  var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);
-)OMEGAD2"
-R"OMEGAD3( if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
+ if(dup)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.45;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">shares entry with leg above (one price-keyed companion)</span></td></tr>';
  var m=findLeg(engine,entry);
  if(!m)return '<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);opacity:.5;font-size:10px">&#8627; '+esc(e)+' companion @ '+fmt2(eNum,2)+' · <span class="d">no clip on this leg</span></td></tr>';
  var bk=safe(m.realized);var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
@@ -750,12 +757,12 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  /* recent banked clips (2026-07-08): the rows that EXPLAIN a COMP-BANK / ALL-TIME increase.
     Keep last-good when a frame omits them (older binary / partial write). */
  if(j.closed_detail&&j.closed_detail.length)window._compClosed=j.closed_detail;
- /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
+)OMEGAD3"
+R"OMEGAD4( /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
  var om=safe(ob.realized),cr=safe(cbk.realized),rt=safe(j.realized_total),be=document.getElementById('compbank');
-)OMEGAD3"
-R"OMEGAD4( if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
+ if(be){be.innerHTML=fmt$(rt)+' <span style="font-size:10px;color:var(--t3)">(&#937; '+fmt$(om)+' &middot; &#8383; '+fmt$(cr)+')</span>';
   be.style.color=rt>0?'var(--grn)':(rt<0?'var(--red)':'var(--t2)');
   var obr=ob.by_reason||{},cbr=cbk.by_reason||{};
   var tip='COMP-BANK '+fmt$(rt)+' (paper, accounting-only)\nOMEGA '+fmt$(om)+':';
@@ -920,12 +927,12 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
 function drawGold(){var j=window._gold||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
       +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
- if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
+)OMEGAD4"
+R"OMEGAD5( if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
   el('gcinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
-)OMEGAD4"
-R"OMEGAD5(  runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
+  runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
    h+='<tr>';
    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
                +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
@@ -1097,12 +1104,12 @@ function pollIndex(){fetch('/api/index_companion').then(function(r){return r.jso
 setInterval(pollIndex,15000);pollIndex();
 
 /* ── STOCK MOVERS (per-name BIGCAP upjump LADDER · long-only · no-floor · native C++ · additive, STANDALONE) ──
-   S-2026-07-07w: panel repointed from the RETIRED BE-floor (/api/stockmover_companion, real-fill -$110.7k,
+)OMEGAD5"
+R"OMEGAD6(   S-2026-07-07w: panel repointed from the RETIRED BE-floor (/api/stockmover_companion, real-fill -$110.7k,
    registry §5) to the LADDER successor /api/stockladder_companion (stockladder_companion_state.json) — the
    validated no-floor giveback ladder (bigcap_upjump_ladder_bt.py: +7,044% of clip notional PF1.58 all-6).
    REAL FORWARD TRADES ONLY — $0 until a live clip closes (deploy-forward). +3% day -> legs enter NEXT close;
-)OMEGAD5"
-R"OMEGAD6(   TIGHT a0.5/s2 stall banker + WIDE a8/g50 giveback runner + self-funding ladder cap5; LOSS_CUT 15; RT 8bp.
+   TIGHT a0.5/s2 stall banker + WIDE a8/g50 giveback runner + self-funding ladder cap5; LOSS_CUT 15; RT 8bp.
    Schema: {engine,shadow,grade,total_usd_real,ts,names:[{sym,bars,notional,clips,wins,pct_real,usd_real,
    win:{active,pending,exit_pending,spawned,bar},open:[..],trades:[..],tiers:[{tier,clips,wins,..}]}]}. */
 function drawStockMover(){var j=window._sm||null;
@@ -1276,11 +1283,11 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
    by pollComp from /api/companion closed_detail (StallCompanion aggregate, newest first). */
 function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
  var rows=cl.slice(0,6).map(function(d){var p=safe(d.pnl),c=p>=0?'g':'r';
-  var t=d.ts?new Date(d.ts*1000).toISOString().slice(5,16).replace('T',' '):'';
+)OMEGAD6"
+R"OMEGAD7(  var t=d.ts?new Date(d.ts*1000).toISOString().slice(5,16).replace('T',' '):'';
   return '<tr><td class="l d" style="font-size:10px;border-left:2px solid var(--grn)">&#8627; '+esc(t)+'</td>'
    +'<td class="l d" style="font-size:10px">'+esc((d.sym||''))+'</td>'
-)OMEGAD6"
-R"OMEGAD7(   +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
+   +'<td class="l d" colspan="2" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px" title="'+esc((d.eng||'')+' '+(d.side||'')+' @ '+(d.entry||''))+'">'+esc((d.eng||'').replace(/Engine$/,''))+' · '+esc(d.reason||'')+'</td>'
    +'<td class="num '+c+'" style="font-size:10px">'+fmt$(p)+'</td><td colspan="2" class="l d" style="font-size:10px">'+esc(d.book||'')+'</td></tr>';}).join('');
  return '<tr><td class="l d" colspan="7" style="padding-top:6px">companion clips — recent closes (paper, additive; why COMP-BANK moved)</td></tr>'+rows;}
 function drawLedger(){var t=el('ledger');var cc=bpUsd(safe(window._cctot));/* crypto companion all-time bank, $ (additive) */
@@ -1438,13 +1445,13 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  var newest=safe(a[a.length-1].exitTs);
  if(window._lastClose===undefined)window._lastClose=newest;
  else if(newest>window._lastClose){
-  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
+)OMEGAD7"
+R"OMEGAD8(  var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
   if(net>=0)winBell();else lossBell();}
 }).catch(function(){});}
-)OMEGAD7"
-R"OMEGAD8(function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
+function drawHist(){var h=el('hist');if(!h)return;/* TRADE HISTORY panel removed 2026-07-06 (operator: useless) */if(!ROWS.length){h.innerHTML='<tr><td class="l d">no closes in ledger</td></tr>';el('histn').textContent='';return;}
  var rows=ROWS.slice().reverse().map(function(r){
   var d=new Date(r.ts*1000);
   var dd=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
@@ -1638,10 +1645,10 @@ function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
  var barAge=(ds.bars&&ds.bars.length)?Math.max(0,Math.round(Date.now()/1000-ds.bars[ds.bars.length-1][0])):-1;
  var stale=barAge>=0&&barAge>2*tfsec;
  el('prinfo').innerHTML='ATR'+ds.len+' ×'+ds.factor+' · rng×'+ds.rmult+' · '+ds.source
-   +(barAge>=0?' · bar '+(barAge<120?barAge+'s':Math.round(barAge/60)+'m')+(stale?' <span class="a">STALE</span>':''):'')
-   +(age>=0?' · poll '+age+'s':'');}
 )OMEGAD8"
-R"OMEGAD9(function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
+R"OMEGAD9(   +(barAge>=0?' · bar '+(barAge<120?barAge+'s':Math.round(barAge/60)+'m')+(stale?' <span class="a">STALE</span>':''):'')
+   +(age>=0?' · poll '+age+'s':'');}
+function loadPR(){fetch('/api/predictive_ranges').then(function(r){return r.json();}).then(function(j){PRD=j;requestAnimationFrame(drawPR);}).catch(function(){});}
 loadPR();setInterval(loadPR,30000);
 
 /* ── PR chart interactivity: marker hover tooltip + crosshair + pulse loop ── */

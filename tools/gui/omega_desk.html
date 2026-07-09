@@ -327,11 +327,18 @@ document.addEventListener('click',function(){ if('Notification' in window && Not
 (function(){ var hb=document.getElementById('healthBadge'); if(hb) hb.addEventListener('click',function(){ __healthMute=!__healthMute; hb.style.opacity=__healthMute?'0.45':'1'; }); })();
 async function pollHealth(){
   var b=document.getElementById('healthBadge'); if(!b) return;
+  // S-2026-07-09: a health-fetch TIMEOUT/error is NOT a FAIL -- treat it as UNKNOWN so a busy
+  // VPS / slow /api/health does NOT beep. The "random sounds, nothing alarming" was this: a
+  // transient timeout hit catch -> overall='FAIL' -> transition-into-FAIL -> beep, then the next
+  // poll recovered. Only a REAL API-returned FAIL beeps now. UNKNOWN shows a dim badge, does not
+  // beep, and does NOT overwrite __lastHealth (so a genuine FAIL after a blip still transitions).
   var h; try{ h=await fetch('/api/health',{cache:'no-store'}).then(function(r){return r.json();}); }
-  catch(e){ h={overall:'FAIL',fail_count:1,warn_count:0}; }
-  var o=(h.overall||'FAIL').toUpperCase(), fc=h.fail_count||0, wc=h.warn_count||0;
+  catch(e){ h=null; }
+  if(!h){ b.style.color='var(--dim,#888)'; b.textContent='HEALTH ?'; return; }   // fetch failed -> no beep
+  var o=(h.overall||'UNKNOWN').toUpperCase(), fc=h.fail_count||0, wc=h.warn_count||0;
   if(o==='OK'){ b.style.color='var(--grn)'; b.textContent='HEALTH OK'; }
   else if(o==='WARN'){ b.style.color='var(--ambB)'; b.textContent='HEALTH '+wc+'W'; }
+  else if(o==='UNKNOWN'){ b.style.color='var(--dim,#888)'; b.textContent='HEALTH ?'; return; }
   else { b.style.color='var(--red)'; b.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); }
   if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ __healthBeep(); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
   __lastHealth=o;
