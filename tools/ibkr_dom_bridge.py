@@ -653,11 +653,28 @@ def main():
         broadcaster = TcpBroadcaster(args.tcp_host, args.tcp_port)
 
     stop = {"now": False}
+    dup = {"hit": False}
 
     def _sigint(_sig, _frm):
         stop["now"] = True
 
     signal.signal(signal.SIGINT, _sigint)
+
+    # DUPLICATE-EXIT (S-2026-07-09b): IBKR Gateway allows one socket per clientId. If a second
+    # ibkr_dom_bridge with the same --client-id starts (task double-fire / venv launcher / stale
+    # respawn), Gateway sends error 326 ("client id is already in use"). Without this the loser
+    # just reconnect-loops forever and both flap, starving USDCAD L1. Exit cleanly on 326 so the
+    # FIRST bridge keeps the feed uncontested -- topology-independent, complements the port guard.
+    def _on_ib_err(reqId, code, msg, contract=None):
+        if code == 326 or "already in use" in (str(msg) or "").lower():
+            dup["hit"] = True
+            stop["now"] = True
+            print(f"[GUARD] IBKR error {code} (client id {args.client_id} already in use) -- "
+                  f"another bridge owns the feed; exiting", file=sys.stderr)
+    try:
+        ib.errorEvent += _on_ib_err
+    except Exception:
+        pass
     signal.signal(signal.SIGTERM, _sigint)
 
     deadline = time.monotonic() + args.duration_sec if args.duration_sec > 0 else None
