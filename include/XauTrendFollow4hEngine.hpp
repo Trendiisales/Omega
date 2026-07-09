@@ -487,6 +487,11 @@ public:
         bars_.push_back(bar);
         while ((int)bars_.size() > kBarHistory) bars_.pop_front();
 
+        // SPECIFIC FEED: drive this engine's mimic book's leg management on the H4 bar (the
+        // cadence GoldTrendMimicLadder backtested XauTf4h on). One-way; no-op if the book/tag
+        // is not registered or has no open legs.
+        omega::gold_trend_mimic().on_bar("XauTf4h", bar.high, bar.low, bar.close, now_ms / 1000);
+
         // Use external ATR if provided (preferred -- matches the rest of
         // the stack); otherwise compute locally.
         if (atr14_external > 0.0) {

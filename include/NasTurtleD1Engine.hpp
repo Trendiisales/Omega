@@ -43,6 +43,7 @@
 #include "OpenPositionRegistry.hpp"
 #include "SeedGuard.hpp"
 #include "IndexRiskGate.hpp"
+#include "GoldTrendMimicLadder.hpp" // one-way mimic trigger + specific D1 feed
 
 namespace omega {
 
@@ -230,6 +231,11 @@ struct NasTurtleD1Engine {
             _update_atr_on_bar_close(bar_high, bar_low, bar_close);
             ++bar_count_;
 
+            // SPECIFIC FEED: drive this instance's mimic book (tag <symbol>Turtle) on the D1 bar
+            // close -- the cadence the index-turtle mimic was backtested on. One-way; no-op if
+            // the book is unregistered / has no open legs.
+            omega::gold_trend_mimic().on_bar(symbol + "Turtle", bar_high, bar_low, bar_close, now_ms / 1000);
+
             const bool ema100_ok = !p.use_ema100_filter
                 || (ema100_count_ >= p.ema100_period && bar_close > ema100_);
             if (!pos_.active && enabled
@@ -256,6 +262,8 @@ struct NasTurtleD1Engine {
                 pos_.entry=entry_px; pos_.sl=sl_px; pos_.tp=tp_px;
                 pos_.lot=size; pos_.mfe=pos_.mae=0;
                 pos_.entry_ts_ms=now_ms; pos_.bars_held=0;
+                // one-way mimic notify (fire-and-forget; long-only turtle -> dir +1)
+                omega::gold_trend_mimic().on_trend_open(symbol + "Turtle", +1, entry_px, now_ms / 1000);
                 ++m_trade_id_;
 
                 printf("[NAS_TURTLE_D1] ENTRY LONG @ %.2f sl=%.2f tp=%.2f lot=%.3f"

@@ -342,6 +342,9 @@ public:
                    int64_t now_ms,
                    OnCloseFn on_close) noexcept {
         if (!enabled) return;
+        // SPECIFIC FEED: drive this engine's mimic book on the H4 bar (the cadence the XauTfD1
+        // mimic was backtested on -- clip_path d1 emits the H4 path). One-way; no-op if unregistered.
+        omega::gold_trend_mimic().on_bar("XauTfD1", bar.high, bar.low, bar.close, now_ms / 1000);
         long long date_id = _date_id_from_ms(bar.bar_start_ms);
 
         if (!cur_day_open_) {

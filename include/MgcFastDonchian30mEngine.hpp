@@ -188,6 +188,8 @@ struct MgcFastDonchian30mEngine {
         }
         bars_.push_back({o,h,l,c,v,day});
         while ((int)bars_.size() > 256) bars_.pop_front();
+        // SPECIFIC FEED: drive this engine's mimic book on the M30 bar (its backtested cadence).
+        omega::gold_trend_mimic().on_bar("MgcFastDon", h, l, c, ts_sec);
     }
 };
 

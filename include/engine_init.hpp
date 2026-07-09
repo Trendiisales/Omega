@@ -1585,10 +1585,9 @@ static void init_engines(const std::string& cfg_path)
             // single-column engine, locked ea4a746f — do not confuse with the befloor books).
             omega::gold_regime().set_h1_sink([](int64_t ts_sec, double close){
                 omega::jump_rider_book().on_h1_bar("XAUUSD", ts_sec, close);   // UpJump rider feed
-                // GoldTrendMimicLadder: drive the independent mimic legs on the XAU H1 close
-                // (close-grade, matching its close-grade backtest; h=l=c=close). bull unused
-                // (books are bull_only=false; the trend engines own their regime gating).
-                omega::gold_trend_mimic().on_h1_bar(close, close, close, ts_sec, true);
+                // (GoldTrendMimicLadder is NOT fed here -- each trigger engine feeds its own book
+                //  on its NATIVE bar via gold_trend_mimic().on_bar(tag,...), so leg management
+                //  matches the cadence it was backtested on. See the engine open/bar hooks.)
             });
         }
         printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) RETIRED S-2026-07-07e (real-fill: no config survives both eras; bull-gate tested, fails 2024-26 WF) -- state serves real history, no new arms\n");
@@ -1613,6 +1612,17 @@ static void init_engines(const std::string& cfg_path)
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTfD1"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.20}};
                 c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; gm.add(std::move(c)); }
+            // Index D1 turtle mimics (S-2026-07-09b, operator "all symbols"): 2 legs each (tight+wide),
+            // fed on the D1 bar (turtle cadence). Validated STANDALONE (clip_path_idx_turtle real
+            // entries, independent D1 window exit): NAS100 T+80.9/W+79.5 80%win; US500 +45.8/+47.2
+            // 75%win; DJ30 +62.3/+57.9 81%win -- all WF both halves +, both regimes +.
+            for (const char* isym : { "NAS100", "US500", "DJ30" }) {
+                omega::GoldTrendMimicBook::Config c;
+                c.trigger_tag = std::string(isym) + "Turtle"; c.live_sym = isym;
+                c.legs = {{"T",0.08},{"W",0.20}};
+                c.arm_pct = 0.5; c.lc_pct = 3.0; c.cap_bars = 10; c.rt_cost_bp = 4.0;
+                gm.add(std::move(c));
+            }
             gm.set_exec(
                 [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
                 [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){ send_live_order(sym, !orig_is_long, lots, px, token); },
@@ -1621,7 +1631,7 @@ static void init_engines(const std::string& cfg_path)
                     omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                     tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
                     tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 3 trigger books (XauTf4h 4-leg, MgcFastDon 2-leg, XauTfD1 2-leg), SHADOW, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 6 trigger books (XauTf4h 4-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg), specific native feeds, SHADOW, deploy-forward\n");
             fflush(stdout);
         }
 

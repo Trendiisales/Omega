@@ -78,6 +78,7 @@ public:
     }
 
     const std::string& tag() const { return cfg_.trigger_tag; }
+    const std::string& live_sym() const { return cfg_.live_sym; }
     double book_usd_real() const { double r = 0; for (auto& b : books_) r += b.ret_real; return r * cfg_.notional; }
 
     // ── the ONE-WAY trigger: the trend engine opened -> spawn our own independent legs.
@@ -254,10 +255,14 @@ public:
         auto it = idx_.find(tag); if (it == idx_.end()) return;
         books_[it->second].on_trend_open(dir, px, ts_sec);
     }
-    // XAUUSD H1 bar drives ALL books' open-leg management (bull = close>SMA200 regime proxy).
-    void on_h1_bar(double h, double l, double c, int64_t ts_sec, bool bull) {
+    // SPECIFIC FEED: the trigger engine feeds its OWN book on its NATIVE bar (turtle=D1,
+    // XauTF=H4, MgcFast=M30) so leg management matches the cadence it was backtested on --
+    // NOT a shared H1 stream (which would clip on intraday noise + mis-time the window cap).
+    // Keyed by tag: each engine calls on_bar(its_tag, h,l,c,ts) once per native bar.
+    void on_bar(const std::string& tag, double h, double l, double c, int64_t ts_sec) {
         std::lock_guard<std::mutex> lk(mu_);
-        for (auto& b : books_) b.on_h1_bar(h, l, c, ts_sec, bull);
+        auto it = idx_.find(tag); if (it == idx_.end()) return;
+        books_[it->second].on_h1_bar(h, l, c, ts_sec, true);
     }
     std::string state_json() const {
         std::lock_guard<std::mutex> lk(mu_);
