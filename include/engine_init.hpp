@@ -1904,7 +1904,7 @@ static void init_engines(const std::string& cfg_path)
                 c.short_downjump = fc.short_dj; c.notional = fc.notional; c.retire_usd = fc.retire;
                 // S-2026-07-09 WIDE peak-profit trail: keep ~90% of the peak gain, engage at +1% MFE
                 // (LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md — NZD +5.6% / GBP +5.4%, arm0 hurts FX).
-                c.wide_gb_frac = 0.10; c.wide_arm_pct = 1.0;
+                c.wide_gb_frac = 0.10; c.wide_arm_pct = 1.0; c.be_entry_pct = 0.08; c.pend_bars = 4;
                 fl.add(std::move(c));
             }
             size_t flseeded = 0;
@@ -1986,6 +1986,7 @@ static void init_engines(const std::string& cfg_path)
                 // SPX+155/GER+131 -> catches small pops, keeps ~all trend capture. US500's smooth
                 // trends slightly prefer a higher arm; per-symbol tuning available if wanted.
                 c.wide_arm_pct = 0.5;
+                c.be_entry_pct = 0.08; c.pend_bars = 4;   // BE-ENTRY: open only once cost covered (WF+ both halves, both regimes; no open-into-loss)
                 // NAS100 upside opt-in: arm0 (engage the 10% trail FROM ENTRY) = NAS100 +34.4%
                 // (robust: WF+ both halves, bear -12.4->+0.4). Flip below for the max NAS catch.
                 // if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;

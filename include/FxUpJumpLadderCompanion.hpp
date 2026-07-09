@@ -118,6 +118,12 @@ public:
         //                    STACKED keeps its staggered arm; only its giveback shares wide_gb_frac.
         double wide_gb_frac  = 0.0;       // 0 = legacy g50 (0.50)
         double wide_arm_pct  = -1.0;      // <0 = legacy 2.7*thr engage
+        // BE-ENTRY (operator S-2026-07-09b): base/spawn legs stay PENDING at the trigger and open
+        // only once price clears +be_entry_pct in favor (cost/break-even covered), then enter THERE.
+        // A breakout that fades before covering cost never opens -> no open-into-loss. Cancel a
+        // pending leg if BE is not made within pend_bars. 0 = legacy enter-at-trigger.
+        double be_entry_pct  = 0.0;       // >0 = wait for +be% before opening
+        int    pend_bars     = 4;         // cancel a pending leg if BE not made within this many bars
         // S-2026-07-08c DIRECTION flag: false = long UP-JUMP (original mechanics);
         // true = short DOWN-JUMP sign-mirror (USDCAD; fx_bothways_sweep.py dir=-1).
         bool   short_downjump = false;
@@ -185,7 +191,8 @@ public:
         if (c_.empty()) return 0.0;
         const double cur = c_.back(); double r = 0.0;
         for (const Leg& L : legs_)
-            r += d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0;
+            if (!L.pending && L.entry > 0.0)
+                r += d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0;
         return r;
     }
     int total_clips() const { int n = 0; for (int ti = 0; ti < NT_; ++ti) n += fwd_[ti].clips; return n; }
@@ -278,6 +285,7 @@ public:
         const char* dstr = cfg_.short_downjump ? "short" : "long";
         std::ostringstream op; int nopen = 0;
         for (const Leg& L : legs_) {
+            if (L.pending) continue;   // BE-entry: not yet opened -> not shown as an open position
             const double u = (cur > 0 && L.entry > 0)
                              ? d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
             if (nopen++) op << ",";
@@ -356,6 +364,14 @@ private:
         bool   armed = false;
         int64_t entry_ts = 0;
         std::string token;
+        // BE-ENTRY (S-2026-07-09b): a leg stays PENDING at the trigger and opens only once price
+        // clears +be_entry_pct (cost covered). arm_off/trail_mult are stored so arm_px + trail_abs
+        // recompute off the DELAYED entry price. pending/trig/pbars drive the gate.
+        bool   pending = false;
+        double trig = 0;            // trigger close (BE measured off this)
+        int    pbars = 0;           // bars spent pending
+        double arm_off = 0;         // arm offset % (recompute arm_px = entry*(1+d*arm_off/100))
+        double trail_mult = 0;      // trail_abs_mult (recompute trail_abs = entry*trail_mult*thr/100)
     };
     std::vector<Leg> legs_;
 
@@ -392,14 +408,18 @@ private:
 
     Leg make_leg_(int ti, double arm_mult, double trail_abs_mult, double px, int64_t ts_sec, bool fwd,
                   double arm_abs = -1.0) noexcept {
-        Leg L; L.ti = ti; L.entry = px; L.peak = px;
+        Leg L; L.ti = ti; L.armed = false; L.entry_ts = ts_sec;
         // arm_abs >= 0 -> engage at an ABSOLUTE MFE% (S-2026-07-09 WIDE peak-profit trail);
         // arm_abs < 0  -> legacy thr-scaled engage (arm_mult * thr).
-        L.arm_px = (arm_abs >= 0.0)
-                   ? px * (1.0 + d_ * arm_abs / 100.0)
-                   : px * (1.0 + d_ * arm_mult * cfg_.thr / 100.0);   // arm level in the favorable direction
+        const double arm_off = (arm_abs >= 0.0) ? arm_abs : arm_mult * cfg_.thr;   // arm % offset from entry
+        L.arm_off = arm_off; L.trail_mult = trail_abs_mult;
+        if (cfg_.be_entry_pct > 0.0) {   // BE-ENTRY: stay PENDING at the trigger; open on BE (below)
+            L.pending = true; L.trig = px; L.entry = 0.0; L.peak = 0.0; L.pbars = 0;
+            return L;                    // no arm_px/trail/broker order yet -- set when BE is made
+        }
+        L.entry = px; L.peak = px;       // legacy: enter at the trigger close now
+        L.arm_px = px * (1.0 + d_ * arm_off / 100.0);   // arm level in the favorable direction
         L.trail_abs = (trail_abs_mult > 0.0) ? px * (trail_abs_mult * cfg_.thr / 100.0) : 0.0;
-        L.armed = false; L.entry_ts = ts_sec;
         if (fwd && open_fn_) {
             const double tp_dist_pts = std::fabs(L.arm_px - px);
             if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
@@ -431,6 +451,32 @@ private:
             const double seq[3] = { d_ > 0 ? ll : hh, d_ > 0 ? hh : ll, cc };
             std::vector<Leg> still; still.reserve(legs_.size());
             for (Leg& L : legs_) {
+                // BE-ENTRY gate: a PENDING leg opens only once price clears +be_entry_pct off the
+                // trigger (cost covered). A breakout that fades before covering cost never opens ->
+                // no open-into-loss (the GER40 faded-breakout the operator flagged). Cancel if BE
+                // is not made within pend_bars. arm_px + trail_abs recompute off the delayed entry.
+                if (L.pending) {
+                    L.pbars += 1;
+                    const double fav = d_ > 0 ? hh : ll;
+                    if (d_ * (fav / L.trig - 1.0) * 100.0 >= cfg_.be_entry_pct) {   // BE made -> ENTER
+                        const double e = L.trig * (1.0 + d_ * cfg_.be_entry_pct / 100.0);
+                        L.entry = e; L.peak = e; L.pending = false; L.entry_ts = ts_sec;
+                        L.arm_px = e * (1.0 + d_ * L.arm_off / 100.0);
+                        L.trail_abs = (L.trail_mult > 0.0) ? e * (L.trail_mult * cfg_.thr / 100.0) : 0.0;
+                        if (fwd && open_fn_) {
+                            const double tp_dist_pts = std::fabs(L.arm_px - e);
+                            if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
+                                L.token = open_fn_(cfg_.live_sym, d_ > 0, cfg_.lot, e);
+                                std::printf("[FXLAD][BE-ENTER] %s %s @%.5f (trig %.5f)\n",
+                                            leg_engine_(L.ti).c_str(), d_ > 0 ? "LONG" : "SHORT", e, L.trig);
+                                std::fflush(stdout);
+                            }
+                        }
+                        still.push_back(std::move(L)); continue;   // manage from the NEXT bar
+                    }
+                    if (L.pbars >= cfg_.pend_bars) continue;       // BE never made -> cancel, no book
+                    still.push_back(std::move(L)); continue;       // still pending
+                }
                 bool closed = false;
                 for (int k = 0; k < 3 && !closed; ++k) {
                     const double px = seq[k];
@@ -457,7 +503,7 @@ private:
 
         // 2) window end: flush remaining legs at this close.
         if (win_ && ++age_ >= W) {
-            for (Leg& L : legs_) book_clip_(L, cc, ts_sec, fwd, "WINDOW_EXIT");
+            for (Leg& L : legs_) if (!L.pending) book_clip_(L, cc, ts_sec, fwd, "WINDOW_EXIT");  // pending never opened -> drop, no book
             legs_.clear(); win_ = false; age_ = 0; nclips_ = 0; last_reclip_px_ = 0.0;
         }
 
@@ -564,12 +610,16 @@ private:
                 int a = 0; f >> a >> age_ >> nclips_ >> last_reclip_px_;
                 win_ = (a != 0);
             } else if (kind == "leg") {
-                Leg L; int armed = 0; long long ets = 0; std::string tok;
-                f >> L.ti >> L.entry >> L.peak >> L.arm_px >> L.trail_abs >> armed >> ets >> tok;
-                if (L.ti >= 0 && L.ti < NT_ && L.entry > 0) {
-                    L.armed = (armed != 0); L.entry_ts = (int64_t)ets;
-                    L.token = (tok == "-") ? std::string() : tok;
-                    legs_.push_back(std::move(L));
+                Leg L; int armed = 0, pend = 0; long long ets = 0; std::string tok;
+                // new format adds: pending trig pbars arm_off trail_mult (before token). Old-format
+                // state (pre-BE-entry) fails this parse -> the leg is skipped (one-time seam drop).
+                if (f >> L.ti >> L.entry >> L.peak >> L.arm_px >> L.trail_abs >> armed >> ets
+                      >> pend >> L.trig >> L.pbars >> L.arm_off >> L.trail_mult >> tok) {
+                    if (L.ti >= 0 && L.ti < NT_ && (L.entry > 0.0 || pend)) {
+                        L.armed = (armed != 0); L.pending = (pend != 0); L.entry_ts = (int64_t)ets;
+                        L.token = (tok == "-") ? std::string() : tok;
+                        legs_.push_back(std::move(L));
+                    }
                 }
             } else { std::string rest; std::getline(f, rest); }
         }
@@ -580,8 +630,10 @@ private:
           f << "win " << (win_ ? 1 : 0) << " " << age_ << " " << nclips_ << " " << last_reclip_px_ << "\n";
           for (const Leg& L : legs_)
               f << "leg " << L.ti << " " << L.entry << " " << L.peak << " " << L.arm_px << " "
-                << L.trail_abs << " " << (L.armed ? 1 : 0) << " "
-                << (long long)L.entry_ts << " " << (L.token.empty() ? "-" : L.token) << "\n"; }
+                << L.trail_abs << " " << (L.armed ? 1 : 0) << " " << (long long)L.entry_ts << " "
+                << (L.pending ? 1 : 0) << " " << L.trig << " " << L.pbars << " "
+                << L.arm_off << " " << L.trail_mult << " "
+                << (L.token.empty() ? "-" : L.token) << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg_.live_path.c_str());
 #endif
