@@ -49,7 +49,15 @@ public:
         std::vector<LegCfg> legs;              // e.g. {{"T1",0.08},{"T2",0.10},{"W1",0.20},{"W2",0.25}}
         double arm_pct     = 0.25;   // % MFE that ARMS a leg (then the peak-profit trail governs)
         double lc_pct      = 1.5;    // pre-arm LOSS_CUT: cut a leg at -lc_pct% before it arms
-        int    cap_bars    = 12;     // INDEPENDENT window: flush a leg after this many H1 bars
+        // BE-ENTRY (operator S-2026-07-09b): a leg does NOT open at the trigger. It stays PENDING
+        // until price clears +be_entry_pct in favor (costs covered / break-even made), then enters
+        // THERE. A move that fades before covering cost never opens a leg -> no open-into-loss.
+        // 0 = legacy enter-at-trigger. Wired to ~the round-trip cost so entry = the first bar the
+        // trade is genuinely in the black. Backtest: +2-3% win-rate, zero faded-breakout reds, at
+        // ~8-10% lower net (skips fades that would have recovered + gives up the first be of a move).
+        double be_entry_pct = 0.0;   // >0 = wait for +be% before entering; 0 = enter at trigger
+        int    pend_bars   = 6;      // cancel a PENDING leg if BE not made within this many bars
+        int    cap_bars    = 12;     // INDEPENDENT window: flush an ENTERED leg after this many bars
         double rt_cost_bp  = 15.0;   // real round-trip cost (bp of entry) debited per clip
         double notional    = 10000.0;// $ per clip; USD = ret * notional
         double lot         = 0.01;   // order-path lot (decided at LIVE flip)
@@ -85,17 +93,23 @@ public:
     void on_trend_open(int dir, double entry_px, int64_t ts_sec) noexcept {
         if (entry_px <= 0.0 || dir == 0) return;
         if (cfg_.bull_only && !bull_) return;   // bull-gate (SMA200) — quiet by policy, not fault
+        const bool be = (cfg_.be_entry_pct > 0.0);   // BE-ENTRY: legs stay pending until cost covered
         for (size_t i = 0; i < cfg_.legs.size(); ++i) {
-            Leg L; L.dir = dir; L.entry = entry_px; L.peak = 0.0; L.armed = false;
-            L.bars = 0; L.li = (int)i; L.entry_ts = ts_sec; L.open = true;
-            if (open_fn_ && gate_fn_) {
-                const double tp = entry_px * (cfg_.arm_pct / 100.0);
-                if (gate_fn_(cfg_.live_sym, tp, cfg_.lot)) L.token = open_fn_(cfg_.live_sym, dir > 0, cfg_.lot, entry_px);
+            Leg L; L.dir = dir; L.li = (int)i; L.entry_ts = ts_sec; L.peak = 0.0; L.armed = false;
+            L.bars = 0; L.trig = entry_px; L.open = true;
+            if (be) { L.pending = true; L.pbars = 0; }   // wait for +be_entry_pct before opening any order
+            else {                                        // legacy: enter at the trigger close now
+                L.pending = false; L.entry = entry_px;
+                if (open_fn_ && gate_fn_) {
+                    const double tp = entry_px * (cfg_.arm_pct / 100.0);
+                    if (gate_fn_(cfg_.live_sym, tp, cfg_.lot)) L.token = open_fn_(cfg_.live_sym, dir > 0, cfg_.lot, entry_px);
+                }
             }
             legs_.push_back(std::move(L));
         }
-        std::printf("[GMIMIC][%s] spawn %zu legs %s @%.2f\n", cfg_.trigger_tag.c_str(),
-                    cfg_.legs.size(), dir > 0 ? "LONG" : "SHORT", entry_px);
+        std::printf("[GMIMIC][%s] %s %zu legs %s @%.2f%s\n", cfg_.trigger_tag.c_str(),
+                    be ? "PENDING" : "spawn", cfg_.legs.size(), dir > 0 ? "LONG" : "SHORT", entry_px,
+                    be ? " (waits for BE)" : "");
         std::fflush(stdout);
         save_open_();
     }
@@ -107,6 +121,26 @@ public:
         std::vector<Leg> still; still.reserve(legs_.size());
         for (Leg& L : legs_) {
             if (!L.open) continue;
+            // ── BE-ENTRY gate: a PENDING leg opens only once price covers cost (+be_entry_pct
+            //    off the trigger). If BE is never made within pend_bars -> CANCEL (no book, no
+            //    open-into-loss). This is the operator's "only trade once BE has been made". ──
+            if (L.pending) {
+                L.pbars += 1;
+                const double fav  = L.dir > 0 ? h : l;                 // favorable extreme this bar
+                const double fret = L.dir * (fav / L.trig - 1.0) * 100.0;
+                if (fret >= cfg_.be_entry_pct) {                       // BE made -> ENTER at the BE level
+                    L.entry = L.trig * (1.0 + L.dir * cfg_.be_entry_pct / 100.0);
+                    L.pending = false; L.bars = 0; L.peak = 0.0; L.armed = false; L.entry_ts = ts_sec;
+                    if (open_fn_ && gate_fn_) { const double tp = L.entry * (cfg_.arm_pct / 100.0);
+                        if (gate_fn_(cfg_.live_sym, tp, cfg_.lot)) L.token = open_fn_(cfg_.live_sym, L.dir > 0, cfg_.lot, L.entry); }
+                    std::printf("[GMIMIC][%s] BE-ENTER %s @%.2f (trig %.2f)\n",
+                                cfg_.trigger_tag.c_str(), leg_engine_(L.li).c_str(), L.entry, L.trig);
+                    std::fflush(stdout);
+                    still.push_back(std::move(L)); continue;          // manage from the NEXT bar
+                }
+                if (L.pbars >= cfg_.pend_bars) { L.open = false; continue; }   // BE never made -> cancel
+                still.push_back(std::move(L)); continue;              // still pending, no position yet
+            }
             L.bars += 1;
             const double gb = cfg_.legs[(L.li >= 0 && L.li < (int)cfg_.legs.size()) ? L.li : 0].gb;
             const double seq[3] = { L.dir > 0 ? l : h, L.dir > 0 ? h : l, c };   // adverse extreme first
@@ -154,7 +188,8 @@ public:
 private:
     Config cfg_;
     bool   bull_ = true;
-    struct Leg { int dir = 0, li = 0, bars = 0; double entry = 0, peak = 0; bool armed = false, open = false;
+    struct Leg { int dir = 0, li = 0, bars = 0, pbars = 0; double entry = 0, peak = 0, trig = 0;
+                 bool armed = false, open = false, pending = false;
                  int64_t entry_ts = 0; std::string token; };
     std::vector<Leg> legs_;
     struct Book { double ret = 0, ret_real = 0; int clips = 0, wins = 0; };
@@ -208,9 +243,9 @@ private:
     void load_open_() {  // open legs persisted alongside the book (survive restart)
         std::ifstream f(cfg_.state_path + ".open"); if (!f.is_open()) return;
         std::string kind;
-        while (f >> kind) { if (kind == "leg") { Leg L; int op, ar; long long ets; std::string tok;
-            if (f >> L.dir >> L.li >> L.bars >> L.entry >> L.peak >> ar >> op >> ets >> tok) {
-                L.armed = ar; L.open = op; L.entry_ts = ets; L.token = (tok == "-") ? "" : tok;
+        while (f >> kind) { if (kind == "leg") { Leg L; int op, ar, pend; long long ets; std::string tok;
+            if (f >> L.dir >> L.li >> L.bars >> L.entry >> L.peak >> ar >> op >> ets >> pend >> L.trig >> L.pbars >> tok) {
+                L.armed = ar; L.open = op; L.pending = pend; L.entry_ts = ets; L.token = (tok == "-") ? "" : tok;
                 if (L.open) legs_.push_back(std::move(L)); } } }
     }
     void save_open_() const {
@@ -219,6 +254,7 @@ private:
           for (const Leg& L : legs_) if (L.open)
               f << "leg " << L.dir << " " << L.li << " " << L.bars << " " << L.entry << " " << L.peak
                 << " " << (L.armed ? 1 : 0) << " " << (L.open ? 1 : 0) << " " << (long long)L.entry_ts
+                << " " << (L.pending ? 1 : 0) << " " << L.trig << " " << L.pbars
                 << " " << (L.token.empty() ? "-" : L.token) << "\n"; }
         std::rename(tmp.c_str(), p.c_str());
     }

@@ -1605,13 +1605,13 @@ static void init_engines(const std::string& cfg_path)
             auto& gm = omega::gold_trend_mimic();
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTf4h"; c.live_sym="XAUUSD";
                 c.legs={{"T1",0.08},{"T2",0.10},{"W1",0.20},{"W2",0.25}};
-                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; gm.add(std::move(c)); }
+                c.arm_pct=0.25; c.lc_pct=1.5; c.cap_bars=12; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.pend_bars=6; gm.add(std::move(c)); }
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="MgcFastDon"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; gm.add(std::move(c)); }
+                c.arm_pct=0.15; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.10; c.pend_bars=12; gm.add(std::move(c)); }
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTfD1"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.20}};
-                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; gm.add(std::move(c)); }
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.pend_bars=4; gm.add(std::move(c)); }
             // Index D1 turtle mimics (S-2026-07-09b, operator "all symbols"): 2 legs each (tight+wide),
             // fed on the D1 bar (turtle cadence). Validated STANDALONE (clip_path_idx_turtle real
             // entries, independent D1 window exit): NAS100 T+80.9/W+79.5 80%win; US500 +45.8/+47.2
@@ -1620,7 +1620,7 @@ static void init_engines(const std::string& cfg_path)
                 omega::GoldTrendMimicBook::Config c;
                 c.trigger_tag = std::string(isym) + "Turtle"; c.live_sym = isym;
                 c.legs = {{"T",0.08},{"W",0.20}};
-                c.arm_pct = 0.5; c.lc_pct = 3.0; c.cap_bars = 10; c.rt_cost_bp = 4.0;
+                c.arm_pct = 0.5; c.lc_pct = 3.0; c.cap_bars = 10; c.rt_cost_bp = 4.0; c.be_entry_pct = 0.10; c.pend_bars = 5;
                 gm.add(std::move(c));
             }
             gm.set_exec(
