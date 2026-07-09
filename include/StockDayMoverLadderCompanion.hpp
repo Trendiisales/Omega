@@ -328,6 +328,15 @@ public:
         return cleared;
     }
 
+    // S-2026-07-10 IN-BINARY DAILY-CLOSE WRITER support: latest live L1 mid + its ms-timestamp for
+    // this name (from on_live_tick / the IBKR bridge). Returns false when the name has never ticked
+    // (ts<=0) or has no valid px. The writer additionally checks the ts falls on the current UTC day
+    // so a stale (bridge-down) quote is never snapshotted as "today's close".
+    bool last_live_px(double& px, int64_t& ts_ms) const noexcept {
+        if (lq_.ts_ms <= 0 || lq_.px <= 0.0) return false;
+        px = lq_.px; ts_ms = lq_.ts_ms; return true;
+    }
+
     // Reload persisted LIVE forward daily bars (written by on_daily_bar). Books nothing new
     // (deploy-forward gate); replay keeps the price history contiguous across restart.
     size_t seed_dump() noexcept {
@@ -820,6 +829,14 @@ public:
     // S-2026-07-10: arm the live-confirmation entry gate on every name (live TU only).
     void set_live_confirm(bool b) { for (auto& s : syms_) s.set_live_confirm(b); }
 
+    // S-2026-07-10: ENABLE the in-binary daily-close writer (live TU only; default OFF so no
+    // backtest/parity TU that instantiates this book ever appends to the research CSV). When on,
+    // the poll loop appends one WIDE-format daily-close row per US-cash-close (20:00 UTC weekday),
+    // sourcing each subscribed name's close from its last live IBKR L1 mid — this REPLACES the
+    // external yfinance producer (tools/rdagent/vps_stockmover_feed.py, task OmegaStockMoverFeed).
+    // min_cov = minimum fresh-name coverage required to write a row (bridge-down/thin day -> skip).
+    void enable_daily_close_writer(bool b, int min_cov = 10) noexcept { dc_writer_ = b; dc_min_cov_ = min_cov; }
+
     // LIVE L1 tick for `sym` (the ticker, from the IBKR bridge -> omega_main on_book). Routes to
     // that name's live quote store + confirmation gate. col_ is built once in add() (before the
     // poller starts) and never mutated after, so the membership check is lockless; the mutex is
@@ -980,6 +997,11 @@ private:
     bool             seed_missed_ = false;   // boot-seed found no CSV -> first poll load seeds, not books
     std::thread      thread_;
 
+    // S-2026-07-10 IN-BINARY DAILY-CLOSE WRITER state (replaces the yfinance producer).
+    bool        dc_writer_    = false;   // OFF unless engine_init enables it (live TU only)
+    int         dc_min_cov_   = 10;      // min fresh-name coverage to append a row
+    std::string dc_done_path_ = "stockladder_companion_dailyclose.done";   // persisted last-written YMD (idempotency)
+
     // parse leading "YYYY-MM-DD" of a CSV line -> epoch seconds (UTC midnight). 0 on failure.
     static int64_t parse_date_ts_(const std::string& line) noexcept {
         int y = 0, m = 0, d = 0;
@@ -1013,12 +1035,120 @@ private:
         }
     }
 
+    // ── IN-BINARY DAILY-CLOSE WRITER (S-2026-07-10) ─────────────────────────────────────────
+    // Format YYYY-MM-DD from a UTC day-index (Howard Hinnant civil_from_days, inverse of
+    // days_from_civil_ above).
+    static std::string ymd_from_day_(int64_t z) noexcept {
+        z += 719468;
+        const int64_t  era = (z >= 0 ? z : z - 146096) / 146097;
+        const unsigned doe = (unsigned)(z - era * 146097);
+        const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        const int64_t  y   = (int64_t)yoe + era * 400;
+        const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        const unsigned mp  = (5 * doy + 2) / 153;
+        const unsigned d   = doy - (153 * mp + 2) / 5 + 1;
+        const unsigned m   = mp + (mp < 10 ? 3 : (unsigned)-9);
+        char buf[16];
+        std::snprintf(buf, sizeof buf, "%04lld-%02u-%02u", (long long)(y + (m <= 2)), m, d);
+        return std::string(buf);
+    }
+    // Price -> string: %.4f with trailing zeros + dot trimmed (matches the file's "517.4"/"166.58"
+    // daily-close style while keeping sub-dollar precision, e.g. "0.0064").
+    static std::string fmt_px_(double v) noexcept {
+        char buf[32]; std::snprintf(buf, sizeof buf, "%.4f", v);
+        std::string s(buf);
+        const size_t dot = s.find('.');
+        if (dot != std::string::npos) {
+            size_t last = s.find_last_not_of('0');
+            if (last == dot) --last;                 // "5.0000" -> "5"
+            s.erase(last + 1);
+        }
+        return s;
+    }
+    void save_dc_done_(const std::string& d) const noexcept {
+        std::ofstream f(dc_done_path_, std::ios::trunc);
+        if (f.is_open()) f << d << "\n";
+    }
+
+    // Once per US-cash-close (>= 20:00 UTC on a weekday), snapshot each subscribed name's last live
+    // IBKR L1 mid and APPEND a new dated row to the WIDE daily-close CSV, byte-for-byte in the
+    // header's column order (blank for any header name that is not a ladder name or has no fresh
+    // tick today). Idempotent: guarded by both a persisted last-written YMD and the CSV's own last
+    // row date. Called at the top of each poll iteration; the SAME poll cycle then re-reads and
+    // dispatches the newly-written row through the live window logic.
+    void maybe_write_daily_close_(const std::string& path) {
+        if (!dc_writer_) return;
+        const int64_t now_ms = (int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        // TIME GATE: weekday, at/after the 20:00 UTC US cash close.
+        const std::time_t t = (std::time_t)(now_ms / 1000);
+        std::tm g{};
+#if defined(_WIN32)
+        gmtime_s(&g, &t);
+#else
+        gmtime_r(&t, &g);
+#endif
+        if (g.tm_wday == 0 || g.tm_wday == 6) return;   // Sun / Sat: US market closed
+        if (g.tm_hour < 20)                    return;   // before the 20:00 UTC cash close
+        const int64_t     today    = (now_ms / 1000) / 86400;   // UTC civil day index
+        const std::string date_str = ymd_from_day_(today);
+        // GUARD 1: already written today (persisted watermark).
+        { std::ifstream df(dc_done_path_); std::string d;
+          if (df.is_open() && (df >> d) && d == date_str) return; }
+        // Read the current header (column order) + the last row's date from the file.
+        std::ifstream f(path);
+        if (!f.is_open()) return;
+        std::string header;
+        if (!std::getline(f, header)) return;
+        { std::string line, last;
+          while (std::getline(f, line)) if (!line.empty()) last.swap(line);
+          int y = 0, m = 0, dd = 0;
+          if (!last.empty() && std::sscanf(last.c_str(), "%d-%d-%d", &y, &m, &dd) == 3) {
+              char lb[16]; std::snprintf(lb, sizeof lb, "%04d-%02d-%02d", y, m, dd);
+              if (date_str == lb) { save_dc_done_(date_str); return; }   // GUARD 2: row already present
+          } }
+        // Header tokens -> column order (token 0 = the date/index column, "").
+        std::vector<std::string> cols;
+        { std::stringstream hs(header); std::string tok; while (std::getline(hs, tok, ',')) cols.push_back(tok); }
+        const int nf = (int)cols.size();
+        // Snapshot each header column's value under the lock (blank unless a ladder name with a
+        // fresh live mid dated to TODAY).
+        std::vector<std::string> vals(nf);
+        int cov = 0;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            for (int ci = 1; ci < nf; ++ci) {
+                auto it = col_.find(cols[ci]);
+                if (it == col_.end()) continue;             // not a ladder name -> blank
+                double px = 0.0; int64_t tms = 0;
+                if (syms_[it->second].last_live_px(px, tms) && (tms / 1000) / 86400 == today) {
+                    vals[ci] = fmt_px_(px); ++cov;
+                }
+            }
+        }
+        if (cov < dc_min_cov_) {
+            std::printf("[AULAD][DCWRITE] %s SKIP -- only %d/%d names fresh (< min_cov %d); no row appended (bridge down/thin)\n",
+                        date_str.c_str(), cov, nf - 1, dc_min_cov_);
+            std::fflush(stdout);
+            return;
+        }
+        std::ostringstream row; row << date_str;
+        for (int ci = 1; ci < nf; ++ci) row << "," << vals[ci];
+        row << "\n";
+        { std::ofstream of(path, std::ios::app); if (!of.is_open()) return; of << row.str(); }
+        save_dc_done_(date_str);
+        std::printf("[AULAD][DCWRITE] %s appended daily-close row: %d/%d names from live IBKR L1 -> %s (in-binary writer; yfinance OmegaStockMoverFeed retired)\n",
+                    date_str.c_str(), cov, nf - 1, path.c_str());
+        std::fflush(stdout);
+    }
+
     void poll_loop_() {
         while (running_.load()) {
             for (int slept = 0; slept < poll_ms_ && running_.load(); slept += 200)
                 std::this_thread::sleep_for(std::chrono::milliseconds(200));
             if (!running_.load()) break;
             const std::string path = omega::resolve_seed_path(csv_rel_);
+            maybe_write_daily_close_(path);   // S-2026-07-10: append today's close (~20:00 UTC) BEFORE dispatch
             std::ifstream f(path);
             if (!f.is_open()) continue;
             std::string header;

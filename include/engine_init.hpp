@@ -2218,9 +2218,20 @@ static void init_engines(const std::string& cfg_path)
             // DELL/NBIS/CRDO opens). Sentinel-guarded -> runs once, then future live-confirmed legs
             // persist across restarts untouched.
             size_t lflushed = sl.flush_all_unconfirmed_once("live-confirm gate S-2026-07-10");
+            // S-2026-07-10 IN-BINARY DAILY-CLOSE WRITER (operator: "why yfinance when we have live
+            // IBKR data writing the CSV we hot-seed from"). The bigcap names are on the IBKR bridge
+            // as STK/SMART/USD L1 (on_book -> on_live_tick stores each name's live mid). The poll
+            // loop now snapshots those mids once/day at the 20:00 UTC US cash close and APPENDS a
+            // WIDE-format row to the same daily-close CSV — one IBKR source, replacing the yfinance
+            // producer (tools/rdagent/vps_stockmover_feed.py, task OmegaStockMoverFeed, to be DISABLED
+            // on the VPS once this ships). Idempotent (persisted YMD + last-row-date guard); min 10
+            // fresh names to write (bridge-down/thin day -> skip, last-good CSV untouched).
+            sl.enable_daily_close_writer(true, 10);
             sl.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
             printf("[OMEGA-INIT][SEED] BIGCAP upjump LADDER companion wired: 45 names, %zu seed rows, %zu forward bars restored, %zu unconfirmed legs flushed, LIVE-CONFIRM GATE ON (session+fresh<60s+rising), TIGHT a0.5/s2 + WIDE a1/g10 + MIRROR a2/g75 + ladder cap6 reclip5%%, LOSS_CUT 15, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
                    lseeded, lrestored, lflushed);
+            printf("[OMEGA-INIT][SEED] BIGCAP in-binary DAILY-CLOSE WRITER active: target=%s, fires once/day at 20:00 UTC (US cash close, weekday) appending a WIDE-format row from live IBKR L1 mids (min 10 fresh names), idempotent -- REPLACES yfinance OmegaStockMoverFeed\n",
+                   wide_csv.c_str());
             fflush(stdout);
         }
 
