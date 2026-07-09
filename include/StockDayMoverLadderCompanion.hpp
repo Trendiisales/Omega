@@ -182,6 +182,34 @@ public:
             deploy_ts_ = ts_.back(); deploy_loaded_ = true;
             std::ofstream f(cfg_.deploy_path, std::ios::trunc);
             if (f.is_open()) f << (long long)deploy_ts_ << "\n";
+            // S-2026-07-09 CARRY-FORWARD PENDING ARM. Deploy-forward suppresses booking on
+            // every historical seed row, but the validated harness rule is "+thr day close
+            // -> enter the NEXT close". If the LAST seed day is itself a +thr close-to-close
+            // move, the faithful next action is a live entry at the next close -- NOT silence
+            // until a fresh +thr prints. Without this, a first deploy landing AFTER a +thr
+            // close (NVDA/AVGO +3% on the 07-08 close, ladder first shipped that evening)
+            // absorbs the mover into history and stays blind to it across every restart
+            // (the S-2026-07-08c catch-up watermark only replays rows that arrived while
+            // DOWN, not the last seed row of the first-ever deploy). Books NOTHING now:
+            // deploy_ts is already stamped at this same last bar, so when the next LIVE close
+            // converts win_pend_ the entry ts > deploy_ts => fwd=true real fill. Restart-safe:
+            // this branch runs ONLY on the first-ever boot (deploy_loaded_ was false); on a
+            // restart the pending window is restored from live_path instead, never re-armed.
+            const int n = (int)c_.size();
+            if (n >= 2 && !cfg_.ranked_out) {
+                const double j      = c_[n - 1] / c_[n - 2] - 1.0;
+                const bool   contig = (ts_[n - 1] - ts_[n - 2]) <= (int64_t)86400 * 7;   // no arm across a data-gap
+                double net_real_usd = 0.0;
+                for (int ti = 0; ti < NT_; ++ti) net_real_usd += fwd_[ti].ret_real * cfg_.notional;
+                const bool retired = (cfg_.retire_usd < 0.0 && net_real_usd <= cfg_.retire_usd);
+                if (contig && !retired && j >= cfg_.thr) {
+                    win_pend_ = true;            // base legs enter at the NEXT live close
+                    save_live_state_();
+                    std::printf("[AULAD][SEED-ARM] %s last seed day %+.2f%% (>= thr %.2f%%) -> pending arm carried; next live close enters\n",
+                                cfg_.sym.c_str(), j * 100.0, cfg_.thr * 100.0);
+                    std::fflush(stdout);
+                }
+            }
         }
     }
 
