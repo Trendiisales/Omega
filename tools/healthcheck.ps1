@@ -66,6 +66,9 @@ function Test-MarketOpen {
         # CORE = the window the SHADOW BOOK is meaningfully active (US equity + EUREX index +
         # the US-futures session overlap). Outside it the book is quiet -> staleness expected.
         'CORE'      { return ($d -ge 1 -and $d -le 5 -and $h -ge 13.0 -and $h -lt 21.0) }
+        # GOLD_ACTIVE = London+NY gold session (~07:00-21:00 UTC weekdays) where the bracket range
+        # SHOULD be non-zero. Overnight/Asian-thin + the 21-22 UTC CME break, range=0.00 is normal.
+        'GOLD_ACTIVE' { return ($d -ge 1 -and $d -le 5 -and $h -ge 7.0 -and $h -lt 21.0) }
         default     { return $true }
     }
 }
@@ -336,7 +339,14 @@ try {
     if ($diag) {
         $nonZero = @($diag | Where-Object { $_.Line -match 'range=([0-9.]+)' -and [double]$matches[1] -gt 0 }).Count
         if ($nonZero -eq 0) {
-            Add-Check "gold_bracket.range_alive" "WARN" "idle" "Last $($diag.Count) GOLD-BRK-DIAG lines show range=0.00 (engine permanently IDLE; expected in QUIET_COMPRESSION, suspicious otherwise)"
+            # 2026-07-10: range=0.00 is EXPECTED overnight / in the 21-22 UTC CME break / QUIET_COMPRESSION.
+            # Only "suspicious" (WARN) during the ACTIVE gold session (London+NY); off-session it's a
+            # normal quiet tape -> OK, so the badge stops crying wolf at night (operator: build it properly).
+            if (Test-MarketOpen 'GOLD_ACTIVE') {
+                Add-Check "gold_bracket.range_alive" "WARN" "idle" "range=0.00 across last $($diag.Count) GOLD-BRK-DIAG lines DURING the active gold session -- investigate (config/feed)"
+            } else {
+                Add-Check "gold_bracket.range_alive" "OK" "quiet_off_session" "range=0.00 (last $($diag.Count) diags) -- expected: gold off-session / CME break / QUIET_COMPRESSION"
+            }
         } else {
             Add-Check "gold_bracket.range_alive" "OK" "ok" "$nonZero of $($diag.Count) recent diags show non-zero range"
         }
