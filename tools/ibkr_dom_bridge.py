@@ -621,6 +621,22 @@ def main():
     ap.add_argument("--tcp-host", default="127.0.0.1")
     args = ap.parse_args()
 
+    # SINGLE-INSTANCE GUARD (S-2026-07-09b): a DUPLICATE bridge started with the same --client-id
+    # fights the first over the IBKR Gateway connection (IBKR allows one socket per client-id) ->
+    # both flap "disconnected, reconnecting in 2s" and the consumer's L1 (USDCAD) goes stale. The
+    # feed tcp-port is the natural single-instance lock: pre-flight bind it; if it's already taken,
+    # another bridge already owns the feed -> EXIT NOW, before connecting to Gateway with a
+    # colliding client-id. Self-healing: a crashed prior bridge frees the port so a fresh launch
+    # wins. (The real TcpBroadcaster re-binds the port a few lines below.)
+    _guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        _guard.bind(("127.0.0.1", args.tcp_port))
+        _guard.close()
+    except OSError:
+        print(f"[GUARD] tcp-port {args.tcp_port} already bound -- another ibkr_dom_bridge is "
+              f"running; exiting to avoid a client-id {args.client_id} collision", file=sys.stderr)
+        sys.exit(0)
+
     os.makedirs(args.out_dir, exist_ok=True)
     syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     if not syms:
