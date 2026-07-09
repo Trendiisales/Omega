@@ -1934,10 +1934,15 @@ static void init_engines(const std::string& cfg_path)
                 // (LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md — US500 +24%, GER40 +4.9%, NAS100 +7.4% at
                 // arm1; NAS100 alone is +34.4% at arm0/engage-from-entry -> per-symbol opt-in below).
                 c.wide_gb_frac = 0.10;
-                c.wide_arm_pct = 1.0;
-                // NAS100 opt-in (operator can enable): arm0 = engage the 10% trail from entry ->
-                // NAS100 +34.4% (robust: WF+ both halves, bear -12.4->+0.4, 2x +257, exBest +321).
-                // Left at the robust uniform +1.0 default; flip to 0.0 for the NAS100 upside.
+                // S-2026-07-09 SURGICAL FIX (operator: NAS100 gave back a +0.6% pop because the
+                // WIDE runner armed at +1.0% and never engaged). LOWER the wide arm to +0.5% so it
+                // catches sub-1% pops, but KEEP it riding (10% giveback) so trends still run. Index
+                // H1 sweep (SPX/GER40/NASbear, real engine): arm1.0 SPX+161/GER+107, arm0.5
+                // SPX+155/GER+131 -> catches small pops, keeps ~all trend capture. US500's smooth
+                // trends slightly prefer a higher arm; per-symbol tuning available if wanted.
+                c.wide_arm_pct = 0.5;
+                // NAS100 upside opt-in: arm0 (engage the 10% trail FROM ENTRY) = NAS100 +34.4%
+                // (robust: WF+ both halves, bear -12.4->+0.4). Flip below for the max NAS catch.
                 // if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;
                 il.add(std::move(c));
             }
