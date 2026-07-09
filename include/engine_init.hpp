@@ -1895,6 +1895,9 @@ static void init_engines(const std::string& cfg_path)
                 c.pair = fc.pair; c.live_sym = fc.pair;
                 c.W = fc.W; c.thr = fc.thr; c.rt_cost_bp = fc.rt;
                 c.short_downjump = fc.short_dj; c.notional = fc.notional; c.retire_usd = fc.retire;
+                // S-2026-07-09 WIDE peak-profit trail: keep ~90% of the peak gain, engage at +1% MFE
+                // (LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md — NZD +5.6% / GBP +5.4%, arm0 hurts FX).
+                c.wide_gb_frac = 0.10; c.wide_arm_pct = 1.0;
                 fl.add(std::move(c));
             }
             size_t flseeded = 0;
@@ -1965,6 +1968,15 @@ static void init_engines(const std::string& cfg_path)
                 c.W = ic.W; c.thr = ic.thr; c.rt_cost_bp = ic.rt;
                 c.file_prefix = "idxladder_companion_";
                 if (ic.bull_gate) c.block_new_windows_fn = [] { return omega::index_risk_off(); };
+                // S-2026-07-09 WIDE peak-profit trail: keep ~90% of the peak gain, engage at +1% MFE
+                // (LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md — US500 +24%, GER40 +4.9%, NAS100 +7.4% at
+                // arm1; NAS100 alone is +34.4% at arm0/engage-from-entry -> per-symbol opt-in below).
+                c.wide_gb_frac = 0.10;
+                c.wide_arm_pct = 1.0;
+                // NAS100 opt-in (operator can enable): arm0 = engage the 10% trail from entry ->
+                // NAS100 +34.4% (robust: WF+ both halves, bear -12.4->+0.4, 2x +257, exBest +321).
+                // Left at the robust uniform +1.0 default; flip to 0.0 for the NAS100 upside.
+                // if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;
                 il.add(std::move(c));
             }
             // S-2026-07-09 COMPLETE FEED-MIGRATION — FULL revert of the c1a83306 seam fix.
@@ -2089,6 +2101,12 @@ static void init_engines(const std::string& cfg_path)
             for (const char* nm : BIGCAP_LAD) {
                 omega::StockLadderSym::Config c;
                 c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
+                // S-2026-07-09 WIDE peak-profit trail: replace the arm8/gb50 runner with arm1/gb10
+                // ("keep ~90% of the peak gain", exit on the turn). backtest/stockladder_wide_trail_
+                // tighten.py 39-name pooled: round-trip 12.0%->7.3%, all-6 gate still PASS, net
+                // -13.4% (operator accepts the protection cost; the stock ladder is where the real
+                // 12% "gave it all back" problem lives). LOSS_CUT 15% unchanged.
+                c.w_arm = 1.0; c.w_gb = 0.10;
                 bool is_elite = false, is_out = false;
                 for (const char* e : AGG_ELITE) if (c.sym == e) { is_elite = true; break; }
                 for (const char* o : AGG_OUT)   if (c.sym == o) { is_out   = true; break; }

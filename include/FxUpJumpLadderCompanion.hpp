@@ -42,7 +42,10 @@
 // ADVERSE-PROTECTION: backtested verdict (mandate + feedback-engine-loss-
 //   protection-provision) — LOSS_CUT at 5*thr adverse per leg PRE-ARM is part
 //   of the validated mechanism (the PASS figures are net of its cuts), armed
-//   legs are trail-stopped (abs or 50%-of-MFE giveback), and the window exit
+//   legs are trail-stopped (TIGHT abs; WIDE/STACKED/LADDER a peak-profit giveback
+//   trail — S-2026-07-09 tightened from 50%-of-MFE to a wire-configurable
+//   wide_gb_frac, wired 0.10 = "keep ~90% of the peak gain", engaged at
+//   wide_arm_pct MFE; LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md), and the window exit
 //   flushes everything at the close (no leg is ever abandoned). SHORT side
 //   (S-2026-07-08c): identical protections sign-mirrored — LOSS_CUT 5*thr fires
 //   on an adverse RALLY pre-arm, trails clip on bounce-back off the trough,
@@ -96,6 +99,23 @@ public:
         double notional      = 10000.0;   // $ per clip; USD = pct/100 * notional
         double lot           = 1.0;       // order-path lot (units decided at LIVE flip)
         int    cap           = 5;         // max clip batches per window (1 base + 4 reclips)
+        // S-2026-07-09 WIDE-runner PEAK-PROFIT TRAIL retune (operator: keep WIDE a runner but
+        //   replace the 50%-of-MFE giveback with a "keep ~90% of the peak gain" trail so a real
+        //   winner exits ON THE TURN instead of round-tripping / window-flushing at breakeven).
+        //   Applies to the RUNNER tiers WIDE(1)/STACKED(2)/LADDER(3); the TIGHT(0) abs-trail
+        //   banker is unchanged. Evidence outputs/LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md:
+        //   NAS100 arm1/gb10 +7.4% (arm0/gb10 +34.4%), US500 +24%, GER40 +4.9%, NZD +5.6%,
+        //   GBP +5.4% — all WF+ both halves, RT 0.20%->0.04%, runner-trail capture = 90.0%.
+        //     wide_gb_frac : giveback fraction of the gain -> stop = entry + (1-frac)*(peak-entry).
+        //                    <=0 = legacy g50 (0.50). Wired 0.10 (keep 90% of the peak gain).
+        //     wide_arm_pct : MFE %-of-entry that ENGAGES the WIDE/LADDER trail. <0 = legacy 2.7*thr.
+        //                    Wired +1.0 (confirmed low arm, net-positive every index+FX cell). The
+        //                    jump-gated ENTRY already pre-filters chop, so a low arm is safe; arm 0
+        //                    (engage-from-entry) is +34% on NAS100 but -5.5% GER40/-6..-13% FX, so
+        //                    +1.0 is the robust uniform default (per-symbol arm0 available for NAS).
+        //                    STACKED keeps its staggered arm; only its giveback shares wide_gb_frac.
+        double wide_gb_frac  = 0.0;       // 0 = legacy g50 (0.50)
+        double wide_arm_pct  = -1.0;      // <0 = legacy 2.7*thr engage
         // S-2026-07-08c DIRECTION flag: false = long UP-JUMP (original mechanics);
         // true = short DOWN-JUMP sign-mirror (USDCAD; fx_bothways_sweep.py dir=-1).
         bool   short_downjump = false;
@@ -368,9 +388,14 @@ private:
         std::fflush(stdout);
     }
 
-    Leg make_leg_(int ti, double arm_mult, double trail_abs_mult, double px, int64_t ts_sec, bool fwd) noexcept {
+    Leg make_leg_(int ti, double arm_mult, double trail_abs_mult, double px, int64_t ts_sec, bool fwd,
+                  double arm_abs = -1.0) noexcept {
         Leg L; L.ti = ti; L.entry = px; L.peak = px;
-        L.arm_px = px * (1.0 + d_ * arm_mult * cfg_.thr / 100.0);   // arm level in the favorable direction
+        // arm_abs >= 0 -> engage at an ABSOLUTE MFE% (S-2026-07-09 WIDE peak-profit trail);
+        // arm_abs < 0  -> legacy thr-scaled engage (arm_mult * thr).
+        L.arm_px = (arm_abs >= 0.0)
+                   ? px * (1.0 + d_ * arm_abs / 100.0)
+                   : px * (1.0 + d_ * arm_mult * cfg_.thr / 100.0);   // arm level in the favorable direction
         L.trail_abs = (trail_abs_mult > 0.0) ? px * (trail_abs_mult * cfg_.thr / 100.0) : 0.0;
         L.armed = false; L.entry_ts = ts_sec;
         if (fwd && open_fn_) {
@@ -413,9 +438,13 @@ private:
                         if (d_ * (px - L.arm_px) >= 0) { L.armed = true; if (d_ * (px - L.peak) > 0) L.peak = px; }
                     } else {
                         if (d_ * (px - L.peak) > 0) L.peak = px;    // favorable extreme (peak/trough)
+                        // RUNNER tiers WIDE(1)/STACKED(2)/LADDER(3) share the tightened peak-profit
+                        // giveback (wide_gb_frac); TIGHT(0) uses its abs trail. gbf 0.5 = legacy g50.
+                        const double gbf = ((L.ti == 1 || L.ti == 2 || L.ti == 3) && cfg_.wide_gb_frac > 0.0)
+                                           ? cfg_.wide_gb_frac : 0.5;
                         const double stop = (L.trail_abs > 0.0)
                                             ? (L.peak - d_ * L.trail_abs)
-                                            : (L.entry + 0.5 * (L.peak - L.entry));   // g50 (sign-neutral)
+                                            : (L.entry + (1.0 - gbf) * (L.peak - L.entry));   // peak-profit trail (sign-neutral)
                         if (d_ * (px - stop) <= 0) { book_clip_(L, stop, ts_sec, fwd, "TRAIL_STOP"); closed = true; break; }
                     }
                 }
@@ -462,14 +491,15 @@ private:
         // 4) entries: base batch at the trigger close; reclip a WIDE leg on a further
         //    +1.67thr favorable extension (short: -1.67thr).
         if (win_ && nclips_ < cfg_.cap) {
+            const double warm = cfg_.wide_arm_pct;   // >=0 absolute MFE% engage; <0 legacy 2.7*thr
             if (nclips_ == 0) {
-                legs_.push_back(make_leg_(0, T_ARM_M, T_TRAIL_M, cc, ts_sec, fwd));   // TIGHT
-                legs_.push_back(make_leg_(1, W_ARM_M, 0.0,       cc, ts_sec, fwd));   // WIDE g50
+                legs_.push_back(make_leg_(0, T_ARM_M, T_TRAIL_M, cc, ts_sec, fwd));         // TIGHT
+                legs_.push_back(make_leg_(1, W_ARM_M, 0.0,       cc, ts_sec, fwd, warm));   // WIDE peak-profit
                 for (int k = 0; k < 3; ++k)
-                    legs_.push_back(make_leg_(2, S_ARM_M[k], 0.0, cc, ts_sec, fwd));  // STACKED g50
+                    legs_.push_back(make_leg_(2, S_ARM_M[k], 0.0, cc, ts_sec, fwd));        // STACKED (staggered arm, shared gb)
                 nclips_ = 1; last_reclip_px_ = cc;
             } else if (d_ * (cc - last_reclip_px_ * (1.0 + d_ * RECLIP_M * cfg_.thr / 100.0)) >= 0) {
-                legs_.push_back(make_leg_(3, W_ARM_M, 0.0, cc, ts_sec, fwd));         // LADDER (wide params)
+                legs_.push_back(make_leg_(3, W_ARM_M, 0.0, cc, ts_sec, fwd, warm));         // LADDER (wide params)
                 nclips_ += 1; last_reclip_px_ = cc;
             }
         }
