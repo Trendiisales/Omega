@@ -1668,56 +1668,18 @@ static void init_engines(const std::string& cfg_path)
         //   judged STANDALONE on pts_real. Own aggregate index_companion_state.json ->
         //   /api/index_companion -> desk INDEX COMPANIONS. PRICE POINTS -> USD via sizing.hpp.
         {
+            // CULLED S-2026-07-09 (operator: "befloors must all be culled"). US500 was the LAST
+            // live-wired BE-floor (the one real-fill-passing cell, thr=1.5%/be=10/cap=25). It is
+            // now removed: NO symbols added, NO set_exec -> the book arms/trades nothing.
+            // finalize_all() still runs so the aggregate publishes an EMPTY pairs[] state (INDEX
+            // COMPANIONS panel reads honest-empty). Persisted book/closed CSVs on the VPS remain
+            // as history. NB: the wiring block is kept (not deleted) on purpose -- the singleton
+            // defaults enabled=true and the on_tick feed still calls on_h1_bar(); an empty book
+            // simply has no symbols to arm. Deleting the block would reconstruct a default
+            // enabled=true book and RESURRECT it. Do NOT re-add symbols here.
             auto& ib = omega::index_befloor_book();
-            // {tag, live_sym, dpp($/pt/lot), rt_bp real RT cost, thr, be_bp, cap_bp, warmup CSV}.
-            // Warm-seed = the SAME filename tools/seed_refresh.py refreshes from IBKR at deploy.
-            struct ICfg { const char* tag; const char* live; double dpp; double rt_bp;
-                          double thr; double be; double cap; const char* csv; };
-            static const ICfg IDX[] = {
-                {"US500",  "US500.F", 50.0,  4.0, 0.015, 10.0, 25.0, "phase1/signal_discovery/warmup_US500_H1.csv"},
-                // NAS100 / DJ30 / GER40 removed S-2026-07-07: real-fill negative (see header).
-                // Their persisted book/closed CSVs on the VPS are history; live/arm state ignored.
-            };
-            for (const auto& ic : IDX) {
-                omega::IndexBeFloorSym::Config c;
-                c.sym = ic.tag; c.live_sym = ic.live; c.dpp_per_lot = ic.dpp;
-                c.rt_cost_bp = ic.rt_bp;
-                c.thr = ic.thr; c.be_bp = ic.be; c.intrabar_cap_bp = ic.cap;
-                ib.add(std::move(c));
-            }
-            size_t iseeded = 0;
-            for (const auto& ic : IDX) iseeded += ib.seed_sym(ic.tag, ic.csv);
-            // Reload each symbol's persisted LIVE forward bars (index_companion_<sym>_h1.csv) BEFORE
-            // finalize so the recompute replays them -> the book is NON-VOLATILE across restarts.
-            size_t irestored = ib.seed_dumps_all();
-            // ── LIVE EXECUTION: <SYM>Pos/<SYM>Neg become REAL runner engines. Same order path +
-            //   ledger contract as gold AUPOS/AUNEG + FX (985f0623): SHADOW today (send_live_order
-            //   no-ops while mode!=LIVE), LIVE on flip. Each runner cost-gated at entry; ledger
-            //   records REAL fills (worse-of floor/close, or the intrabar cap level) -> ENGINE
-            //   LEDGER + headline PnL. pts_real is the judged column; the model column is fiction.
-            ib.set_exec(
-                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
-                    return send_live_order(sym, is_long, lots, px);
-                },
-                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
-                    send_live_order(sym, !orig_is_long, lots, px, token);
-                },
-                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
-                    return ExecutionCostGuard::is_viable(sym.c_str(), 0.5, tp_dist_pts, lots, 1.5); // index CFD ~0.5pt spread
-                },
-                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
-                                double entry_px, double exit_px, double lots,
-                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
-                    omega::TradeRecord tr;
-                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
-                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
-                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
-                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots; // raw pts*size; multiplier downstream
-                    handle_closed_trade(tr);
-                });
             ib.finalize_all();
-            printf("[OMEGA-INIT][SEED] index BE-floor companion wired: US500 ONLY (real-fill reconfig thr=1.5%% be=10 cap=25bp; NAS100/DJ30/GER40 retired S-2026-07-07 real-fill negative), %zu H1 bars seeded, %zu forward bars restored, deploy-forward, tick-fed H1+tick cap, LIVE-EXEC (shadow->live-on-flip, cost-gated, ledger-recorded)\n",
-                   iseeded, irestored);
+            printf("[OMEGA-INIT][SEED] index BE-floor companion CULLED S-2026-07-09 (US500 removed -- all befloors culled per operator) -- aggregate publishes empty state\n");
             fflush(stdout);
         }
 
