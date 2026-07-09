@@ -125,7 +125,19 @@ if ((Test-Path $stderrLog) -and $head) {
         if ($head.StartsWith($runHash)) {
             Add-Check "binary.hash_matches_head" "OK" "aligned" "running=$runHash == HEAD"
         } else {
-            Add-Check "binary.hash_matches_head" "WARN" "drift" ("running binary={0} != HEAD={1} (rebuild/redeploy owed)" -f $runHash, $head.Substring(0,7))
+            # Drift is only real if the commits since the running binary touch BINARY-affecting
+            # paths (include/ src/ CMakeLists / *.hpp / *.cpp). A tools/docs/.ps1-only advance
+            # does NOT need a rebuild -> not a warning (avoids a false "redeploy owed" after every
+            # ops commit -- 2026-07-10).
+            Push-Location $Root
+            $changed = @(git diff --name-only "$runHash..HEAD" 2>$null)
+            Pop-Location
+            $binChanged = $changed | Where-Object { $_ -match '^(include/|src/|CMakeLists|.*\.hpp|.*\.cpp)' }
+            if ($binChanged) {
+                Add-Check "binary.hash_matches_head" "WARN" "drift" ("running binary={0} != HEAD={1}; binary code changed since -> rebuild/redeploy owed" -f $runHash, $head.Substring(0,7))
+            } else {
+                Add-Check "binary.hash_matches_head" "OK" "aligned_nonbinary" ("running={0}; HEAD={1} advanced but only non-binary (tools/docs) -> no rebuild needed" -f $runHash, $head.Substring(0,7))
+            }
         }
     } else {
         Add-Check "binary.hash_matches_head" "WARN" "no_hash" "no 'Git hash:' line in stderr log"
