@@ -829,8 +829,23 @@ int main(int argc, char* argv[])
             // the stale-watchdog, so FX engines + GUI use the live IBKR price.
             // The matching BlackBull FX quote is gated out in fix_dispatch when
             // this slot is fresh (bridge down -> BlackBull fallback, no blackout).
-            if (omega::ibkr::is_fx_major(sym))
+            if (omega::ibkr::is_fx_major(sym)) {
                 engine_dispatch_post_tick(sym, bid, ask);
+                return;
+            }
+            // ── BIGCAP stock L1 (S-2026-07-10): the up-jump ladder companion's LIVE-
+            //    CONFIRMATION gate. The bridge broadcasts contract.symbol = the ticker
+            //    (STK/SMART/USD L1) for each bigcap name on --symbols. Feed the quote to
+            //    the ladder book: a PENDING +thr window opens only when this live tick
+            //    confirms session+fresh+rising (StockDayMoverLadderCompanion live_confirm).
+            //    Lockless no-op for any non-ladder symbol (SHADOW book, observe-only, no
+            //    order side). US-equity L1 entitlement verified live 2026-07-10.
+            {
+                const int64_t now_ms = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                omega::stockmover_ladder_book().on_live_tick(sym, bid, ask, now_ms);
+            }
         };
         std::thread([port, on_book = std::move(on_book)]{
             omega::ibkr::run_consumer(g_ibkr_l2, g_ibkr_l2_stats,

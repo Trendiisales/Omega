@@ -25,6 +25,10 @@
 //   (daily-close fills: a gap through -15% books the observed close, hence the
 //   worst clip can exceed the cut). Un-cut/un-armed legs flush MTM at parent exit
 //   (never abandoned). Same harness, same data, same costs as the PASS above.
+//   S-2026-07-10: the live-confirmation gate (Config.live_confirm) is an ENTRY filter only
+//   (session + fresh-tick + rising); it does NOT alter the in-flight adverse-protection verdict
+//   above (LOSS_CUT 15 + giveback trail unchanged). It strictly reduces exposure (fewer, live-
+//   confirmed opens), so the backtested protection verdict remains valid / conservative.
 //
 // Books in RETURN units (not price-points): equities have no fixed $/pt, and the
 // research measures each clip as a return on per-clip notional. USD = return *
@@ -66,6 +70,7 @@
 #include <chrono>
 #include <mutex>
 #include <cmath>
+#include <ctime>   // gmtime_r / std::tm — US-session gate (live-confirmation, S-2026-07-10)
 #include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
 
 namespace omega {
@@ -123,6 +128,19 @@ public:
         double rt_cost_bp    = 8.0;       // REAL round-trip cost (bp of entry) debited per clip (validated gate)
         double notional      = 10000.0;   // $ per clip; USD = return * notional (name-agnostic sizing)
         double lot           = 1.0;       // order-path lot (shares/CFD units decided at flip)
+        // S-2026-07-10 LIVE-CONFIRMATION GATE (operator: stop opening "fake" paper legs on
+        // stale daily-close signals — 18 blind legs opened on names not actually trading).
+        // When true, a pending +thr window does NOT open on the blind daily close; it opens
+        // ONLY when a live L1 tick (fed via on_live_tick from the IBKR bridge) confirms ALL of:
+        //   (1) US session open  — 13:30-20:00 UTC weekday (in_us_session_)
+        //   (2) live tick fresh  — quote age < live_stale_ms (actively trading)
+        //   (3) price rising     — live px > the daily-close entry reference (pend_ref_px_)
+        // Any fail -> the window STAYS PENDING (re-checked each tick + each daily poll). Set true
+        // ONLY in the live TU (engine_init). DEFAULT false keeps the backtest/parity path
+        // (blind daily-close entry) byte-for-byte unchanged — the registry-mandated parity test
+        // drives daily bars with no live ticks, so it MUST keep the daily-close conversion.
+        bool    live_confirm  = false;
+        int64_t live_stale_ms = 60000;    // a live quote older than this = not "actively trading"
         std::string deploy_path;          // per-name persisted deploy-forward anchor
         std::string bars_path;            // per-name persisted LIVE forward daily bars (survives restart)
         std::string book_path;            // per-name persisted REAL forward book (3 tier classes)
@@ -142,6 +160,8 @@ public:
     void set_exec(OpenFn o, CloseFn c, GateFn g, LedgerFn l) noexcept {
         open_fn_ = std::move(o); close_fn_ = std::move(c); gate_fn_ = std::move(g); ledger_fn_ = std::move(l);
     }
+    // S-2026-07-10: turn the live-confirmation entry gate ON (live TU only; default OFF).
+    void set_live_confirm(bool b) noexcept { cfg_.live_confirm = b; }
 
     explicit StockLadderSym(Config c) : cfg_(std::move(c)) {
         const std::string s = lower_(cfg_.sym);
@@ -203,7 +223,8 @@ public:
                 for (int ti = 0; ti < NT_; ++ti) net_real_usd += fwd_[ti].ret_real * cfg_.notional;
                 const bool retired = (cfg_.retire_usd < 0.0 && net_real_usd <= cfg_.retire_usd);
                 if (contig && !retired && j >= cfg_.thr) {
-                    win_pend_ = true;            // base legs enter at the NEXT live close
+                    win_pend_ = true;            // base legs enter at the NEXT live close (or live-confirm)
+                    pend_ref_px_ = c_[n - 1]; pend_ref_ts_ = ts_[n - 1];   // rising-test reference
                     save_live_state_();
                     std::printf("[AULAD][SEED-ARM] %s last seed day %+.2f%% (>= thr %.2f%%) -> pending arm carried; next live close enters\n",
                                 cfg_.sym.c_str(), j * 100.0, cfg_.thr * 100.0);
@@ -250,6 +271,61 @@ public:
         ingest_(ts_sec, close);
         append_dump_(ts_sec, close);
         live_step_(ts_sec);
+    }
+
+    // LIVE L1 tick for this name (from the IBKR bridge, via the book's on_live_tick).
+    // Stores the latest quote; when the live-confirmation gate is armed and a +thr window is
+    // PENDING, opens the base legs the instant the gate passes (session+fresh+rising). Returns
+    // true iff a window was opened this tick (book state changed -> caller re-publishes). Cheap
+    // no-op whenever the gate is off / not live-wired / nothing pending. NOT a backtest path.
+    bool on_live_tick(double bid, double ask, int64_t now_ms) noexcept {
+        if (!(bid > 0.0 && ask > 0.0 && ask >= bid)) return false;
+        lq_.bid = bid; lq_.ask = ask; lq_.px = 0.5 * (bid + ask); lq_.ts_ms = now_ms;
+        if (!cfg_.live_confirm || !open_fn_) return false;   // gate off / backtest TU -> just store
+        if (!win_pend_ || cfg_.ranked_out) return false;     // nothing to confirm
+        // retirement guard — mirror the daily-close arm gate so a proven-negative book never
+        // opens even a live-confirmed window.
+        if (cfg_.retire_usd < 0.0) {
+            double net = 0.0; for (int ti = 0; ti < NT_; ++ti) net += fwd_[ti].ret_real * cfg_.notional;
+            if (net <= cfg_.retire_usd) return false;
+        }
+        if (!live_confirm_ok_(now_ms)) return false;         // session + fresh + rising (all 3)
+        const int64_t ts_sec = now_ms / 1000;
+        const bool    fwd     = ts_sec > deploy_ts_;
+        const double  ref     = pend_ref_px_;
+        activate_window_(lq_.px, ts_sec, fwd);               // OPEN base legs at the live rising price
+        pend_ref_px_ = 0.0; pend_ref_ts_ = 0;
+        std::printf("[AULAD][LIVE-CONFIRM] %s pending +%.1f%% window CONFIRMED -> base legs OPEN @live %.2f (ref close %.2f; session+fresh+rising)\n",
+                    cfg_.sym.c_str(), cfg_.thr * 100.0, lq_.px, ref);
+        std::fflush(stdout);
+        save_live_state_();
+        return true;
+    }
+
+    // STEP 3 (S-2026-07-10): clear the currently-open UNCONFIRMED legs/window — the pre-gate
+    // blind daily-close opens that never met the live gate. No clip is booked (so nothing hits
+    // the closed ledger); any live token is flattened (SHADOW no-op today). Detector history +
+    // the closed forward book stay intact (deploy-forward safe: a real signal re-arms + must now
+    // pass the live gate). Returns the count of open legs cleared.
+    int flush_unconfirmed(const char* reason) noexcept {
+        int cleared = 0;
+        for (Leg& L : legs_) {
+            if (L.open && !L.dead) ++cleared;
+            if (!L.token.empty() && close_fn_)
+                close_fn_(cfg_.live_sym, true, cfg_.lot, (c_.empty() ? L.le : c_.back()), L.token);
+            L.token.clear();
+        }
+        const bool had_state = cleared || win_ || win_pend_ || exit_pend_ || !legs_.empty();
+        legs_.clear();
+        win_ = false; win_pend_ = false; exit_pend_ = false;
+        spawned_ = 0; bar_ = 0; win_entry_ = 0.0; pend_ref_px_ = 0.0; pend_ref_ts_ = 0;
+        if (had_state) {
+            save_live_state_();
+            std::printf("[AULAD][FLUSH] %s cleared %d unconfirmed open leg(s) + window (%s)\n",
+                        cfg_.sym.c_str(), cleared, reason);
+            std::fflush(stdout);
+        }
+        return cleared;
     }
 
     // Reload persisted LIVE forward daily bars (written by on_daily_bar). Books nothing new
@@ -369,6 +445,10 @@ private:
     int  spawned_   = 0;       // legs created this window (base 2, cap cfg_.cap)
     double win_entry_ = 0.0;   // activation close (base legs' epx)
     int64_t win_ets_  = 0;
+    // S-2026-07-10 LIVE-CONFIRMATION GATE state
+    double  pend_ref_px_ = 0.0;   // daily-close entry reference for the "rising" test (arming close)
+    int64_t pend_ref_ts_ = 0;     // ts (sec) of the arming close -> pending-expiry clock
+    struct LiveQ { double bid = 0, ask = 0, px = 0; int64_t ts_ms = 0; } lq_;   // latest live L1 quote
 
     struct Leg {
         int    ti = 0;            // tier class (0 tight / 1 wide / 2 ladder)
@@ -440,6 +520,47 @@ private:
         return L;
     }
 
+    // Open the base legs of a fresh window at `entry_px` (factored out so BOTH the daily-close
+    // path (backtest/parity) and the live-confirmation path (on_live_tick) build an identical
+    // window). TIGHT banker + WIDE runner + optional MIRROR; spawned_ counts base legs.
+    void activate_window_(double entry_px, int64_t ts_sec, bool fwd) noexcept {
+        win_pend_ = false; win_ = true; bar_ = 0; spawned_ = 2;
+        win_entry_ = entry_px; win_ets_ = ts_sec;
+        legs_.clear();
+        legs_.push_back(make_leg_(0, entry_px, ts_sec, fwd));   // TIGHT banker
+        legs_.push_back(make_leg_(1, entry_px, ts_sec, fwd));   // WIDE runner
+        if (cfg_.mirror_leg) {                                  // MIRROR tier -> ladder bucket
+            Leg M = make_leg_(2, entry_px, ts_sec, fwd);
+            M.arm = cfg_.m_arm; M.gb = cfg_.m_gb; M.sb = 0;
+            legs_.push_back(std::move(M)); spawned_ += 1;
+        }
+    }
+
+    // US cash session gate: 13:30-20:00 UTC on a weekday (operator spec; = 09:30-16:00 ET during
+    // US daylight time — the current DST offset. Standard time shifts this to 14:30-21:00 UTC; the
+    // operator fixed the window at 13:30-20:00, accepted for the DST-dominant trading calendar).
+    static bool in_us_session_(int64_t now_ms) noexcept {
+        const std::time_t t = (std::time_t)(now_ms / 1000);
+        std::tm g{};
+#if defined(_WIN32)
+        gmtime_s(&g, &t);
+#else
+        gmtime_r(&t, &g);
+#endif
+        if (g.tm_wday == 0 || g.tm_wday == 6) return false;        // Sun / Sat
+        const int mod = g.tm_hour * 60 + g.tm_min;                 // minute-of-day UTC
+        return mod >= (13 * 60 + 30) && mod < (20 * 60);           // 13:30-20:00 UTC
+    }
+
+    // The three-part live-confirmation predicate (STEP 2): session open + fresh tick + rising.
+    bool live_confirm_ok_(int64_t now_ms) const noexcept {
+        if (!in_us_session_(now_ms))                 return false; // (1) actively-trading session
+        if (lq_.ts_ms <= 0)                          return false; // no live quote ever
+        if (now_ms - lq_.ts_ms > cfg_.live_stale_ms) return false; // (2) fresh (actively trading)
+        if (pend_ref_px_ > 0.0 && lq_.px <= pend_ref_px_) return false; // (3) rising above the ref close
+        return true;
+    }
+
     // Incremental ladder state machine on the NEWEST daily close (harness run_trade order:
     // flush close never steps legs; activation close steps at fav=0; -thr detected AFTER the
     // day's stepping; a clip's spawn joins the leg list after the day's step loop).
@@ -462,17 +583,30 @@ private:
             legs_.clear(); win_ = false; exit_pend_ = false; spawned_ = 0; bar_ = 0; win_entry_ = 0;
         }
 
+        // 1b) LIVE-CONFIRM pending management (poll-side re-check — operator "re-checked each
+        //     tick/poll"). A pending window whose signal has REVERSED (gave back the whole +thr
+        //     move) or which has sat unconfirmed for > 5 days is DROPPED, so a stale daily-close
+        //     signal never latches forever waiting for a live confirm that isn't coming.
+        if (cfg_.live_confirm && win_pend_) {
+            const bool reversed = (pend_ref_px_ > 0.0 && cur <= pend_ref_px_ * (1.0 - cfg_.thr));
+            const bool expired  = (pend_ref_ts_ > 0 && (ts_[N - 1] - pend_ref_ts_) > (int64_t)86400 * 5);
+            if (reversed || expired) {
+                std::printf("[AULAD][PEND-DROP] %s pending +%.1f%% window dropped (%s) — never live-confirmed\n",
+                            cfg_.sym.c_str(), cfg_.thr * 100.0, reversed ? "reversed below arm" : "expired >5d");
+                std::fflush(stdout);
+                win_pend_ = false; pend_ref_px_ = 0.0; pend_ref_ts_ = 0;
+            }
+        }
+
         // 2) pending entry from yesterday's +thr day: base legs enter at THIS close.
         if (win_pend_) {
-            win_pend_ = false; win_ = true; bar_ = 0; spawned_ = 2;
-            win_entry_ = cur; win_ets_ = ts_sec;
-            legs_.clear();
-            legs_.push_back(make_leg_(0, cur, ts_sec, fwd));   // TIGHT banker
-            legs_.push_back(make_leg_(1, cur, ts_sec, fwd));   // WIDE runner
-            if (cfg_.mirror_leg) {                             // S-2026-07-08c MIRROR tier
-                Leg M = make_leg_(2, cur, ts_sec, fwd);        // books into the ladder bucket
-                M.arm = cfg_.m_arm; M.gb = cfg_.m_gb; M.sb = 0;
-                legs_.push_back(std::move(M)); spawned_ += 1;
+            if (cfg_.live_confirm) {
+                // LIVE-CONFIRMATION GATE (STEP 2): do NOT open on the blind daily close. The
+                // window stays pending; on_live_tick() opens it the instant a live tick confirms
+                // session+fresh+rising. (Backtest/parity keeps live_confirm=false -> daily-close
+                // entry below, byte-for-byte unchanged.)
+            } else {
+                activate_window_(cur, ts_sec, fwd);           // daily-close entry (backtest/parity)
             }
         }
         // 3) step legs on this close (activation close included, fav=0 — harness range(ei, xi)).
@@ -538,7 +672,8 @@ private:
                     std::fflush(stdout);
                 }
             } else {
-                win_pend_ = true;                           // legs enter at the NEXT close
+                win_pend_ = true;                           // legs enter at the NEXT close (or live-confirm)
+                pend_ref_px_ = cur; pend_ref_ts_ = ts_sec;  // daily-close entry reference for the rising test
             }
         }
         save_live_state_();
@@ -604,6 +739,8 @@ private:
                 int a = 0, p = 0, x = 0; long long ets = 0;
                 f >> a >> p >> x >> bar_ >> spawned_ >> win_entry_ >> ets;
                 win_ = (a != 0); win_pend_ = (p != 0); exit_pend_ = (x != 0); win_ets_ = (int64_t)ets;
+            } else if (kind == "pend") {
+                long long pts = 0; f >> pend_ref_px_ >> pts; pend_ref_ts_ = (int64_t)pts;
             } else if (kind == "leg") {
                 Leg L; int op = 0, cl = 0, dd = 0; long long ets = 0; std::string tok;
                 f >> L.ti >> op >> cl >> dd >> L.epx >> L.le >> L.arm >> L.gb >> L.sb
@@ -621,6 +758,9 @@ private:
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
           f << "win " << (win_ ? 1 : 0) << " " << (win_pend_ ? 1 : 0) << " " << (exit_pend_ ? 1 : 0)
             << " " << bar_ << " " << spawned_ << " " << win_entry_ << " " << (long long)win_ets_ << "\n";
+          // S-2026-07-10: live-confirmation pending reference (own record line -> backward-compatible;
+          // old state files simply lack it and pend_ref_ stays 0).
+          f << "pend " << pend_ref_px_ << " " << (long long)pend_ref_ts_ << "\n";
           for (const Leg& L : legs_)
               f << "leg " << L.ti << " " << (L.open ? 1 : 0) << " " << (L.clipped ? 1 : 0) << " "
                 << (L.dead ? 1 : 0) << " " << L.epx << " " << L.le << " " << L.arm << " " << L.gb << " "
@@ -675,6 +815,39 @@ public:
     void set_exec(StockLadderSym::OpenFn o, StockLadderSym::CloseFn c,
                   StockLadderSym::GateFn g, StockLadderSym::LedgerFn l) {
         for (auto& s : syms_) s.set_exec(o, c, g, l);
+    }
+
+    // S-2026-07-10: arm the live-confirmation entry gate on every name (live TU only).
+    void set_live_confirm(bool b) { for (auto& s : syms_) s.set_live_confirm(b); }
+
+    // LIVE L1 tick for `sym` (the ticker, from the IBKR bridge -> omega_main on_book). Routes to
+    // that name's live quote store + confirmation gate. col_ is built once in add() (before the
+    // poller starts) and never mutated after, so the membership check is lockless; the mutex is
+    // taken only for an actual ladder name. Re-publishes state ONLY when a window opened.
+    void on_live_tick(const std::string& sym, double bid, double ask, int64_t now_ms) {
+        auto it = col_.find(sym);
+        if (it == col_.end()) return;                 // not a ladder name -> ignore, no lock taken
+        std::lock_guard<std::mutex> lk(mu_);
+        if (syms_[it->second].on_live_tick(bid, ask, now_ms))
+            recompute_unlocked_();
+    }
+
+    // STEP 3 one-shot (S-2026-07-10): on the FIRST boot after the live-confirmation gate ships,
+    // clear every open UNCONFIRMED leg (the pre-gate blind daily-close opens — the 18 "fake"
+    // legs). Guarded by a sentinel file so a later restart NEVER nukes legitimately live-confirmed
+    // legs. cwd path (C:\Omega), same convention as the per-name state files.
+    size_t flush_all_unconfirmed_once(const char* reason) {
+        { std::ifstream sf(flush_sentinel_path_); if (sf.is_open()) return 0; }   // already migrated
+        std::lock_guard<std::mutex> lk(mu_);
+        size_t cleared = 0;
+        for (auto& s : syms_) cleared += (size_t)s.flush_unconfirmed(reason);
+        { std::ofstream sf(flush_sentinel_path_, std::ios::trunc);
+          if (sf.is_open()) sf << "flushed " << reason << "\n"; }
+        recompute_unlocked_();
+        std::printf("[AULAD][FLUSH] one-shot live-confirm migration: %zu open leg(s) cleared across %zu names (sentinel %s)\n",
+                    cleared, syms_.size(), flush_sentinel_path_.c_str());
+        std::fflush(stdout);
+        return cleared;
     }
 
     // warm-seed from the WIDE daily-close CSV (header ",NAME1,NAME2,...", rows "YYYY-MM-DD,c1,c2,...")
@@ -796,6 +969,8 @@ private:
     // S-2026-07-08c: live watermark file (cwd C:\Omega, same convention as the
     // per-name deploy/book/live files).
     std::string lastseen_path_ = "stockladder_companion_lastseen.txt";
+    // S-2026-07-10: one-shot live-confirmation flush sentinel (STEP 3).
+    std::string flush_sentinel_path_ = "stockladder_companion_liveconfirm_flush.done";
 
     // poller
     std::string      csv_rel_;

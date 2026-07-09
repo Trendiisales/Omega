@@ -25,6 +25,7 @@
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
 #include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover UP-JUMP LADDER companion (39 stocks) -> /api/stockladder_companion
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
+#include "BigCap2pctImpulseCompanion.hpp"  // per-name BIGCAP +2%-impulse / 20d-breakout LONG-only LOOSE-RIDE book (S-2026-07-09) -> /api/bigcap2pct_companion
 #include "StallCompanion.hpp"       // 25 gold/index giveback-clip books (native C++ port of stall_accountant.py) -> /api/companion
 
 static void init_engines(const std::string& cfg_path)
@@ -2201,12 +2202,104 @@ static void init_engines(const std::string& cfg_path)
                     tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
                     handle_closed_trade(tr);
                 });
+            // S-2026-07-10 LIVE-CONFIRMATION GATE (operator: stop opening "fake" paper legs on
+            // stale daily-close signals). Armed BEFORE seeding so the boot catch-up replay also
+            // defers to a live tick instead of blind-opening. A pending +thr window now opens ONLY
+            // when a live L1 tick (fed via on_book -> stockmover_ladder_book().on_live_tick) confirms
+            // US-session-open + fresh(<60s) + rising(px > arming close). Requires the bigcap tickers
+            // on the IBKR bridge --symbols (STK/SMART/USD L1). Bridge down / no tick -> stays PENDING
+            // (safe: no blind open). US-equity L1 entitlement VERIFIED live 2026-07-10 (NVDA/AVGO/
+            // SMCI/DELL real-time bid/ask, mdType=1, no err 354). See ENGINE_BACKTEST_REGISTRY §6.
+            sl.set_live_confirm(true);
             size_t lseeded = sl.seed_from_wide_csv(wide_csv);   // primes detector history (deploy-forward) + live catch-up
             size_t lrestored = sl.seed_dumps_all();             // replay persisted forward daily bars
             sl.finalize_all();
+            // STEP 3: one-shot flush of the pre-gate blind-open legs (the 18 fake NVDA/AVGO/SMCI/
+            // DELL/NBIS/CRDO opens). Sentinel-guarded -> runs once, then future live-confirmed legs
+            // persist across restarts untouched.
+            size_t lflushed = sl.flush_all_unconfirmed_once("live-confirm gate S-2026-07-10");
             sl.start_poller(wide_csv, 900000);   // 15-min poll of the wide daily-close CSV
-            printf("[OMEGA-INIT][SEED] BIGCAP upjump LADDER companion wired: 39 names, %zu seed rows, %zu forward bars restored, TIGHT a0.5/s2 + WIDE a8/g50 + ladder cap5 reclip5%%, LOSS_CUT 15, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
-                   lseeded, lrestored);
+            printf("[OMEGA-INIT][SEED] BIGCAP upjump LADDER companion wired: 45 names, %zu seed rows, %zu forward bars restored, %zu unconfirmed legs flushed, LIVE-CONFIRM GATE ON (session+fresh<60s+rising), TIGHT a0.5/s2 + WIDE a1/g10 + MIRROR a2/g75 + ladder cap6 reclip5%%, LOSS_CUT 15, rt 8bp, LONG-only, SHADOW, deploy-forward, daily-CSV-polled\n",
+                   lseeded, lrestored, lflushed);
+            fflush(stdout);
+        }
+
+        // ── BigCap2pctImpulse per-name +2%-impulse LOOSE-RIDE book (S-2026-07-09) ──
+        //   A SEPARATE INDEPENDENT engine from the up-jump ladder above. ONE LONG
+        //   position per name: entered when the daily close is >= +2% close-to-close
+        //   AND a NEW 20-day closing high (impulse + continuation), UNGATED (fires
+        //   every regime, no bull/bear/200d gate). Ridden with a DELIBERATELY LOOSE
+        //   3-layer exit: gb90 peak-profit give-back trail (keep 10% of the peak) +
+        //   60-day max-hold cap + -15% catastrophe hard floor. NO tight give-back leg,
+        //   NO tight (3-8%)+BE loss-cut — those AMPUTATE this impulse signal.
+        //   FAITHFUL C++ VALIDATION (backtest/clip_path_bigcap_impulse.cpp over
+        //   data/rdagent/sp500_long_close.csv 2019-07..2026-07, 45 names, 20bp RT):
+        //   n=932 clips, PF 2.18, net +2797.5% of clip notional, WF H1 +553% / H2
+        //   +2245%, worst clip -42.5% (daily-close gap through the floor). Regime by the
+        //   PRINCIPLED market label (equal-weight basket vs its own 200DMA): bull(>200DMA)
+        //   +2075% n=701 / bear(<200DMA) +722% n=231 — BOTH POSITIVE => ALL-6 PASS.
+        //   (A stricter calendar-2022-entry slice is -273%, a harsh stress cut that lumps
+        //   the sharpest 2022-decline entries into catastrophe floors — informational, not
+        //   the regime gate.) LONG-only. SEPARATE INDEPENDENT observe-only SHADOW book
+        //   (feedback-companion-independent-engine), judged STANDALONE, deploy-forward
+        //   ($0 until first live clip). COST GATE: 20bp RT debited per clip (the
+        //   validated gate; ExecutionCostGuard has no single-name equity rows — the
+        //   befloor lesson; real cost row owed before LIVE sizing). FEED: same wide
+        //   daily-close CSV as the ladder (stale since 2026-06-29, IBKR sub lapse).
+        {
+            auto& bi = omega::bigcap_impulse_book();
+            static const char* BC2_UNIV[] = {
+                "NVDA","AMD","AVGO","MU","MRVL","SMCI","ARM","PLTR","TSLA","META","NFLX","CRWD",
+                "SHOP","COIN","MSTR","SNOW","NOW","PANW","UBER","ABNB","DELL","ORCL","QCOM","INTC",
+                "AMZN","GOOGL","MSFT","AAPL","CRM","ADBE","IONQ","RGTI","QBTS","ASTS","RKLB","NBIS",
+                "CRWV","ALAB","CRDO","WDC","STX","DD","TPR","BMY","SWKS"
+            };
+            for (const char* nm : BC2_UNIV) {
+                omega::BigCapImpulseSym::Config c;
+                c.sym = nm; c.live_sym = nm;   // equities: live order symbol == ticker
+                // loose-ride cfg (validated): thr 2% / new-20d-high / gb90 / 60d cap /
+                // -15% catastrophe / 20bp RT / $10k notional. UNGATED, LONG-only.
+                c.thr = 0.02; c.hi_window = 20; c.gb = 0.90; c.max_hold = 60;
+                c.catastrophe = 15.0; c.rt_cost_bp = 20.0; c.notional = 10000.0;
+                bi.add(std::move(c));
+            }
+            const std::string bc2_csv = "data/rdagent/sp500_long_close.csv";
+            // set_exec BEFORE seeding (cutover-#9 lesson: a boot catch-up row dispatched
+            // pre-set_exec would fire no live order; seed rows are live=false regardless,
+            // catch-up rows suppress broker calls via g_bc2_catchup). Routes through the
+            // SAME send_live_order path (hard-gated on mode!=LIVE) as every companion —
+            // SHADOW today, LIVE on flip with ZERO code change.
+            bi.set_exec(
+                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
+                    return send_live_order(sym, is_long, lots, px);
+                },
+                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
+                    send_live_order(sym, !orig_is_long, lots, px, token);
+                },
+                /* gate   */ [](const std::string& /*sym*/, double /*tp_dist_pts*/, double /*lots*/) -> bool {
+                    // Equity cost gate = the book's OWN 20bp RT debit (PASS is net-of-20bp).
+                    // ExecutionCostGuard has NO single-name cost table -> unknown tickers
+                    // default to CFD-scaled values that mis-price stocks (befloor lesson).
+                    // TODO: real equity cost row before LIVE sizing.
+                    return true;
+                },
+                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
+                                double entry_px, double exit_px, double lots,
+                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
+                    omega::TradeRecord tr;
+                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
+                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
+                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
+                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
+                    tr.shadow = true;   // SHADOW book: audit-only ledger row
+                    handle_closed_trade(tr);
+                });
+            size_t bi_seeded   = bi.seed_from_wide_csv(bc2_csv);   // primes detector history (deploy-forward) + live catch-up
+            size_t bi_restored = bi.seed_dumps_all();              // replay persisted forward daily bars
+            bi.finalize_all();
+            bi.start_poller(bc2_csv, 900000);   // own 15-min poll of the wide daily-close CSV
+            printf("[OMEGA-INIT][SEED] BIGCAP 2%%-impulse LOOSE-RIDE book wired: %d names, %zu seed rows, %zu forward bars restored, thr2%%/new-20d-high/gb90/60d-cap/-15%%-catastrophe, rt 20bp, LONG-only, UNGATED, SHADOW, deploy-forward, daily-CSV-polled\n",
+                   (int)(sizeof(BC2_UNIV)/sizeof(BC2_UNIV[0])), bi_seeded, bi_restored);
             fflush(stdout);
         }
 

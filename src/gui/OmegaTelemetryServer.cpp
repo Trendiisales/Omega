@@ -1243,6 +1243,7 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/index_companion")){ ct = "application/json"; body = loadFile("index_companion_state.json"); if (body.empty()) body = "{\"engine\":\"index-befloor-pos-neg\",\"syms\":[]}"; }
         else if (strstr(buf, "GET /api/stockmover_companion")){ ct = "application/json"; body = loadFile("stockmover_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-befloor-pos-neg\",\"names\":[]}"; }
         else if (strstr(buf, "GET /api/stockladder_companion")){ ct = "application/json"; body = loadFile("stockladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"stockmover-upjump-ladder\",\"names\":[]}"; }
+        else if (strstr(buf, "GET /api/bigcap2pct_companion")){ ct = "application/json"; body = loadFile("bigcap2pct_companion_state.json"); if (body.empty()) body = "{\"engine\":\"bigcap-2pct-impulse\",\"names\":[]}"; }
         else if (strstr(buf, "GET /api/jumprider")){ ct = "application/json"; body = loadFile("jumprider_state.json"); if (body.empty()) body = "{\"engine\":\"jump-rider\",\"symbols\":[]}"; }
         else if (strstr(buf, "GET /api/fxladder_companion")){ ct = "application/json"; body = loadFile("fxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"fx-upjump-ladder\",\"pairs\":[]}"; }
         else if (strstr(buf, "GET /api/idxladder_companion")){ ct = "application/json"; body = loadFile("idxladder_companion_state.json"); if (body.empty()) body = "{\"engine\":\"index-upjump-ladder\",\"pairs\":[]}"; }

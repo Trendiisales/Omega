@@ -80,6 +80,27 @@ INDEX_FUTURES = {
 DEPTH_SYMBOLS = {"XAUUSD", "DJ30", "NAS100", "MGC"}
 
 
+# S-2026-07-10 BIGCAP STOCK L1: the up-jump ladder companion's LIVE-CONFIRMATION gate
+# (include/StockDayMoverLadderCompanion.hpp) needs a real-time top-of-book quote per bigcap
+# name to confirm "actively trading + rising" before it opens a pending +thr window. Each of
+# these tickers maps to a US-equity STK/SMART/USD contract subscribed as L1 (reqMktData, NOT
+# reqMktDepth) -> NO depth-slot cost, so they coexist with the 3-stream DEPTH cap exactly like
+# the FX/index L1 lines. US-equity real-time L1 entitlement was VERIFIED live on this account
+# 2026-07-10 (NVDA/AVGO/SMCI/DELL returned real-time bid/ask, mdType=1, no error 354).
+#
+# This is the CAPABILITY MAP (make_contract can resolve any of these). The bridge only actually
+# subscribes what is on --symbols. LINE-BUDGET CAUTION: ~45 extra L1 lines may exceed the IBKR
+# simultaneous-line budget on this tier -- add only the ACTIVE roster (names currently armed /
+# pending, e.g. NVDA,AVGO,SMCI,DELL,NBIS,CRDO plus the x2 elites) to --symbols, not all 45.
+# The full 45-name roster mirrors engine_init.hpp BIGCAP_LAD (39 + the S-2026-07-08c adds).
+STOCKS = {
+    "NVDA", "AMD", "AVGO", "MU", "MRVL", "SMCI", "ARM", "PLTR", "TSLA", "META", "NFLX", "CRWD",
+    "SHOP", "COIN", "MSTR", "SNOW", "NOW", "PANW", "UBER", "ABNB", "DELL", "ORCL", "QCOM", "INTC",
+    "AMZN", "GOOGL", "MSFT", "AAPL", "CRM", "ADBE", "IONQ", "RGTI", "QBTS", "ASTS", "RKLB", "NBIS",
+    "CRWV", "ALAB", "CRDO", "WDC", "STX", "DD", "TPR", "BMY", "SWKS",
+}
+
+
 def resolve_front_month(ib, contract):
     """For Future contracts without an explicit expiry, query all matching
     contract details, filter to the nearest non-expired expiry, and return
@@ -171,6 +192,13 @@ def make_contract(sym: str) -> Contract:
             currency=m["currency"],
             lastTradeDateOrContractMonth="",
         )
+    # S-2026-07-10 BIGCAP STOCK L1: US-equity top-of-book for the up-jump ladder live-
+    # confirmation gate. STK/SMART/USD -> resolve_front_month passes through (not FUT),
+    # subscribe_all routes it to L1Recorder (non-CASH, not in DEPTH_SYMBOLS) broadcasting
+    # contract.symbol == the ticker, which omega_main on_book forwards to on_live_tick.
+    # Checked BEFORE the FX branch so a 6-char alpha ticker never mis-parses as an FX pair.
+    if u in STOCKS:
+        return Contract(symbol=u, secType="STK", exchange="SMART", currency="USD")
     # FX pairs
     if len(u) == 6 and u.isalpha():
         base, quote = u[:3], u[3:]
