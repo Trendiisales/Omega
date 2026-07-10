@@ -31,7 +31,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "logs/macro/macro_gold_gate.tsv"
 CACHE = ROOT / "data/macro"
 SLOPE_LB = 20          # business-day slope lookback (matches the backtest)
-HOSTILE_THRESH = -2    # score <= this => hostile (real yields clearly rising)
+HOSTILE_THRESH = -2    # (legacy, score display only) — hostile now uses SPIKE_THRESH below
+SPIKE_THRESH = 0.35    # S-2026-07-10: hostile only when d20(real_yield) rises >= 0.35pp (a genuine
+                       # spike, e.g. 2013 taper tantrum). Recalibrated from sign-based (any-rise)
+                       # which over-blocked the post-2020 gold bull (gold decoupled from real yields).
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 def _get(url, timeout=30):
@@ -96,8 +99,17 @@ def main():
     except Exception as e:
         sys.stderr.write(f"[macro_gold_gate] FETCH FAILED ({e}) -- leaving last good file untouched\n")
         return 1
-    score = 2 * slope_sign(ry) + 1 * slope_sign(dx)
-    hostile = 1 if score <= HOSTILE_THRESH else 0
+    score = 2 * slope_sign(ry) + 1 * slope_sign(dx)   # kept for display context
+    # S-2026-07-10 RECALIBRATION (operator): hostile fires only on a genuine real-yield SPIKE,
+    # NOT any 20d uptick. The old sign-based score<=-2 fired on ANY rise -> OVER-BLOCKED the gold
+    # book: gold DECOUPLED from real yields ~2020 (central-bank buying / de-dollarization). Backtest
+    # (GLD + FRED DFII10, 2010-2026, 20-biz-day d): during old-"hostile" periods gold still ROSE
+    # +1.63%/20d in the 2023-26 bull (+0.44% full-sample) -> the gate was blocking profitable longs.
+    # New trigger d20(real_yield) >= SPIKE_THRESH (0.35pp): KEEPS 2013-crash protection (blocked days
+    # gold -3.0%/20d) while un-blocking ~95% of the current bull (blocks 5% vs 52% before). Dollar
+    # slope no longer gates (real-yield spike is the crash mechanism). See Memory-Omega MacroGoldGate.
+    d20_ry = ry[-1] - ry[-1 - SLOPE_LB]
+    hostile = 1 if d20_ry >= SPIKE_THRESH else 0
     stamp_ms = int(time.time() * 1000)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(
