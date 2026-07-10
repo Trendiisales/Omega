@@ -18,7 +18,13 @@ from ibapi.contract import Contract
 
 DATA = os.path.expanduser("~/Omega/data/rdagent")
 CLOSE = f"{DATA}/sp500_long_close.csv"
-BIGCAP = "NVDA AMD AVGO MU MRVL SMCI ARM PLTR TSLA META NFLX CRWD SHOP COIN MSTR SNOW NOW PANW UBER ABNB DELL ORCL QCOM INTC AMZN GOOGL MSFT AAPL CRM ADBE IONQ RGTI QBTS ASTS RKLB NBIS CRWV ALAB CRDO".split()
+# S-2026-07-10: 39 -> 45 to match the ladder universe (engine_init BIGCAP_LAD). The final
+# 6 (WDC STX DD TPR BMY SWKS) were added to the engine on 07-08c but never to this producer,
+# so they shipped with bars=0 and could never trade -- caught by the new content-based
+# stock guard (feeds_selftest.py vps_stock_book_health). This historical-pull producer
+# (IBKR reqHistoricalData, NOT streaming) has no market-data-line limit, so it can cover
+# all 45 where the live bridge (MAX_SYMBOLS=30) drops the tail.
+BIGCAP = "NVDA AMD AVGO MU MRVL SMCI ARM PLTR TSLA META NFLX CRWD SHOP COIN MSTR SNOW NOW PANW UBER ABNB DELL ORCL QCOM INTC AMZN GOOGL MSFT AAPL CRM ADBE IONQ RGTI QBTS ASTS RKLB NBIS CRWV ALAB CRDO WDC STX DD TPR BMY SWKS".split()
 
 class App(EWrapper, EClient):
     def __init__(self): EClient.__init__(self, self); self.ready=False; self.bars=[]; self.done=False; self.err=False
