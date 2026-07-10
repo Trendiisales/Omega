@@ -27,7 +27,7 @@ CM=(-o ConnectTimeout=8 -o BatchMode=yes -o ServerAliveInterval=10 -o ServerAliv
     -o ControlMaster=auto -o ControlPath=/tmp/ssh-omega-pull-%r@%h:%p -o ControlPersist=30)
 
 pull () {  # pull <remote-path> <local-dir>   (non-fatal on miss/timeout)
-  scp -q "${CM[@]}" "omega-vps:$1" "$2" 2>/dev/null \
+  scp -q "${CM[@]}" "omega-new:$1" "$2" 2>/dev/null \
     && echo "[$(date '+%F %T')] ok  $1" \
     || echo "[$(date '+%F %T')] MISS $1"
 }
@@ -45,7 +45,7 @@ pull 'C:/Omega/companion_state.json'         "$HOME/stall-accountant/"
 # S-2026-07-08c cockpit-staleness fix: the per-BOOK stall dirs (companion_positions.json +
 # companion_closed.csv) power the cockpit trades panel; the retired Mac python leftovers
 # were frozen at Jul-6 and showed phantom 5-day-old XAU opens. Mirror the LIVE VPS tree.
-scp -q -r "${CM[@]}" "omega-vps:C:/Omega/stall" "$HOME/stall-accountant/vps_mirror/" 2>/dev/null || true
+scp -q -r "${CM[@]}" "omega-new:C:/Omega/stall" "$HOME/stall-accountant/vps_mirror/" 2>/dev/null || true
 
 # tear down the shared connection
-ssh -O exit "${CM[@]}" omega-vps 2>/dev/null || true
+ssh -O exit "${CM[@]}" omega-new 2>/dev/null || true

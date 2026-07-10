@@ -47,7 +47,7 @@ HIST  = os.path.join(SDIR, "gold_h1_history.csv")           # persisted rolling 
 DEPLOYF = os.path.join(SDIR, "deploy_ts.txt")               # first-live-cycle ts (deploy-forward)
 STATE = os.path.join(REPO, "data", "gold_companion_state.json")
 VPS_SRC = "C:/Omega/logs/gold_regime_h1.csv"
-VPS_DST = "omega-vps:C:/Omega/gold_companion_state.json"
+VPS_DST = "omega-new:C:/Omega/gold_companion_state.json"
 WARMSEED = os.path.join(REPO, "phase1", "signal_discovery", "warmup_XAUUSD_H1.csv")
 # stall-accountant book file -> companion_aggregate.py folds per_engine AUPOS-GOLD/AUNEG-GOLD
 # into /api/companion, which the LIVE desk GOLD COMPANIONS (gctab) panel renders. No rebuild.
@@ -88,7 +88,7 @@ def fetch_live():
     """Pull the VPS H1 mark file (ts,o,h,l,c, no header) over ssh."""
     tmp = tempfile.mktemp(suffix=".csv")
     try:
-        subprocess.run(["scp","-q",f"omega-vps:{VPS_SRC}",tmp],check=True,timeout=30)
+        subprocess.run(["scp","-q",f"omega-new:{VPS_SRC}",tmp],check=True,timeout=30)
     except Exception as e:
         print(f"gold companion: live fetch failed ({e}) — using persisted history"); return []
     rows=_read_csv(tmp, False)

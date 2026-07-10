@@ -42,7 +42,7 @@ REV_GB    = float(os.environ.get("REVERSAL_GIVEBACK", "0.40"))
 # NOT that a Mac file exists or that a crontab line matches. Over a closed-market
 # weekend there are no ticks so the companion legitimately idles -> enforcement is
 # skipped Fri22:00->Sun22:00 UTC (mirrors tools/feeds_selftest.py). Every VPS call MUST
-# start literally `ssh omega-vps` (feedback-vps-ssh-command-form).
+# start literally `ssh omega-new` (feedback-vps-ssh-command-form).
 VPS_COMPANION = r"C:\Omega\companion_state.json"
 VPS_ALIVE_MIN = 5.0     # 60s drive cadence; >5min while market open = writer stalled
 
@@ -67,15 +67,15 @@ def _market_closed_weekend(now_utc):
     return False
 
 def _vps_companion_age_min():
-    """ONE `ssh omega-vps` call -> age (min) of C:\\Omega\\companion_state.json computed
+    """ONE `ssh omega-new` call -> age (min) of C:\\Omega\\companion_state.json computed
     ON the VPS (clock-skew-free). None if ssh fails entirely; 999999 if the file is
-    absent. ssh command MUST start literally `ssh omega-vps`."""
+    absent. ssh command MUST start literally `ssh omega-new`."""
     ps = (f"$p='{VPS_COMPANION}';"
           f"if(Test-Path $p){{"
           f"$a=((Get-Date)-(Get-Item $p).LastWriteTime).TotalMinutes;"
           f"Write-Output ([math]::Round($a,1))}}else{{Write-Output 999999}}")
     try:
-        r = subprocess.run(["ssh","omega-vps","powershell","-NoProfile","-Command",ps],
+        r = subprocess.run(["ssh","omega-new","powershell","-NoProfile","-Command",ps],
                            capture_output=True, text=True, timeout=45)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -97,7 +97,7 @@ def check_scheduled_alive():
     age = _vps_companion_age_min()
     if age is None:
         record("[1] ALIVE (VPS companion)", False,
-               "ssh omega-vps failed -- real C++ StallCompanion freshness UNVERIFIABLE")
+               "ssh omega-new failed -- real C++ StallCompanion freshness UNVERIFIABLE")
         return
     if age >= 999999:
         record("[1] ALIVE (VPS companion)", False,
@@ -264,13 +264,13 @@ def check_befloor_real_honesty():
           r"$p=Join-Path 'C:\Omega' $f;"
           r"if(Test-Path $p){Write-Output ('===FILE '+$f);Get-Content $p -Raw}else{Write-Output ('===FILE '+$f);Write-Output 'MISSING'}}")
     try:
-        r = subprocess.run(["ssh","omega-vps","powershell","-NoProfile","-Command",ps],
+        r = subprocess.run(["ssh","omega-new","powershell","-NoProfile","-Command",ps],
                            capture_output=True, text=True, timeout=45)
     except (OSError, subprocess.SubprocessError):
-        record("[7] BEFLOOR-REAL-HONESTY", False, "ssh omega-vps failed -- real column UNVERIFIABLE"); return
+        record("[7] BEFLOOR-REAL-HONESTY", False, "ssh omega-new failed -- real column UNVERIFIABLE"); return
     raw = (r.stdout or "").strip()
     if r.returncode != 0 or not raw:
-        record("[7] BEFLOOR-REAL-HONESTY", False, "ssh omega-vps failed -- real column UNVERIFIABLE"); return
+        record("[7] BEFLOOR-REAL-HONESTY", False, "ssh omega-new failed -- real column UNVERIFIABLE"); return
     blocks = {}
     cur = None
     for line in raw.splitlines():

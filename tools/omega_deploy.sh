@@ -19,7 +19,13 @@
 # Usage:  bash tools/omega_deploy.sh         # push current main, then deploy
 #         bash tools/omega_deploy.sh --no-push
 set -euo pipefail
-HOST=omega-vps
+# S-2026-07-10: repointed omega-vps(185, RETIRED old box) -> omega-new(45.85.3.79, LIVE box).
+# The 07-07 VPS migration cut production over to 45.85.3.79 but this deploy path was never
+# repointed (the fix sat in unmerged draft PR #4). Result: deploys silently landed on the dead
+# old box while the operator traded on the new one for days. omega-new IS the live desk
+# (feeds_selftest.py already uses VPS_HOST="omega-new"). Override with HOST=omega-vps only to
+# touch the retired box deliberately.
+HOST="${HOST:-omega-new}"
 
 if [[ "${1:-}" != "--no-push" ]]; then
   echo "[deploy] pushing origin/main..."

@@ -78,7 +78,7 @@ try:
     enc = subprocess.run(["iconv", "-t", "UTF-16LE"], input=VPS_PROBE.encode(), capture_output=True).stdout
     import base64
     b64 = base64.b64encode(enc).decode()
-    # S-2026-07-07r: repointed omega-vps -> omega-new (live box) post-cutover; old box tasks are
+    # S-2026-07-07r: repointed omega-new -> omega-new (live box) post-cutover; old box tasks are
     # decommission-disabled by design and were firing permanent false DARKs (same class of bug as
     # the feeds_selftest repoint in 270f2b4c).
     r = subprocess.run(["ssh", "-o", "ConnectTimeout=20", "omega-new",

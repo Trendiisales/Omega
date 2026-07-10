@@ -29,7 +29,7 @@ notify(){ osascript -e "display notification \"${1:0:200}\" with title \"$2\" so
 # NOTE: a `& { ... }` scriptblock does NOT parse over ssh->cmd->powershell ("Missing closing }")
 # and silently returns empty -> false "writer failed" alarm every cycle (the 2026-06-29 bug). Use the
 # brace-free two-statement form: run the writer via the call operator, then read the JSON. Verified.
-JSON=$(to 40 ssh -o ConnectTimeout=12 omega-vps \
+JSON=$(to 40 ssh -o ConnectTimeout=12 omega-new \
   "powershell -NoProfile -Command \"& 'C:\\Omega\\tools\\omega_health_alarm.ps1'; Get-Content 'C:\\Omega\\logs\\HEALTH_STATUS.json' -Raw\"" \
   2>/dev/null | tr -d '\r' | sed -n '/{/,/}/p')
 
@@ -37,7 +37,7 @@ if [ -z "$JSON" ]; then
   # Empty JSON != VPS down. Distinguish (2026-06-29 fix for false-RED during deploys): if ssh ITSELF
   # works, the box is UP and the writer was just busy/slow (git tree churns during a deploy -> writer
   # times out). That is a SOFT transient -> log, NO popup. Only hard-RED if the box is truly unreachable.
-  if to 12 ssh -o ConnectTimeout=8 -o BatchMode=yes omega-vps "echo OK" 2>/dev/null | grep -q OK; then
+  if to 12 ssh -o ConnectTimeout=8 -o BatchMode=yes omega-new "echo OK" 2>/dev/null | grep -q OK; then
     echo "$TS writer-transient (VPS reachable, JSON empty -- likely deploy/git-busy; no alarm)" >> /tmp/omega_health_poll.log
     [ -f "$MARKER" ] && rm -f "$MARKER"
     exit 0

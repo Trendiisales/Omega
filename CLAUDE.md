@@ -238,6 +238,27 @@ new engines (XauTurtleD1, XauDojiRejD1, EurGbpPairsEngine, etc.) all
 sat idle on deploy. Fixed by adding seed methods + bundled CSVs in
 commit 8f92cbf9. Pattern is mandatory for all future engines.
 
+## WHICH BOX IS LIVE (read before ANY deploy/ssh — added 2026-07-10)
+
+**The live production box is `omega-new` = `45.85.3.79`.** The `omega-vps` alias
+(`185.167.119.59`) is the **RETIRED old box** from the 2026-07-07 migration — it
+was left powered on and its Omega service kept running in live-mode, but it has NO
+broker connection and is NOT your desk. On 2026-07-10 a whole session's deploys
+(gold chip, /bigobj, FEEDPATH, JumpRider endpoint) + a vcpkg-recovery saga landed
+on 185 while the operator traded on 45.85.3.79 — because CLAUDE.md and the deploy
+tooling still said `omega-vps`. Hours wasted; the operator was (rightly) furious.
+
+- **Deploy / ssh / scp to `omega-new`, never `omega-vps`.** `tools/omega_deploy.sh`
+  now defaults `HOST=omega-new`; `feeds_selftest.py`/`protection_selftest.py`/the
+  monitors were repointed the same day. If you type `ssh omega-vps` you are on the
+  DEAD box — stop and switch.
+- The old box's Omega service was **Stopped + set to Manual** on 2026-07-10. If you
+  find it Running again, that's a regression — it should stay down until the box is
+  decommissioned. The migration repoint of remaining refs is draft PR #4.
+- Sanity before trusting any VPS check: `ssh omega-new "..git rev-parse --short HEAD"`
+  should match `origin/main`. If a check says "GREEN" but the operator's GUI hash
+  differs, you may be looking at the wrong box.
+
 ## Deploy Hygiene
 
 Added 2026-05-14 after a load-bearing discovery: VPS `git status`

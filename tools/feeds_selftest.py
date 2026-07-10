@@ -18,7 +18,7 @@ Exit codes:  0 = all fresh   1 = a LIVE feed stale (critical)   2 = only researc
 Run:  python3 tools/feeds_selftest.py   [--quiet]
 """
 from __future__ import annotations
-import csv, datetime as dt, json, os, subprocess, sys
+import base64, csv, datetime as dt, json, os, subprocess, sys
 from pathlib import Path
 
 HOME = Path.home()
@@ -332,6 +332,60 @@ def vps_ibkr_exec_status() -> tuple[str, str]:
     return ("RED", f"no [IBKR-EXEC] ACTIVE line in last 3 logs: {line or 'empty'}")
 
 
+def vps_stock_book_health() -> tuple[str, str]:
+    """ONE `ssh omega-new` call. CONTENT-based (not mtime) integrity of the stock
+    daily-close book. Catches the two silent failures the mtime manifest CANNOT and
+    that burned us on 2026-07-10:
+      (1) a feed whose file mtime is fresh but whose last DATA ROW is days old
+          (the writer touches/rewrites without appending a new dated close);
+      (2) ladder names registered in the engine but ABSENT from the feed columns
+          -> they seed with bars=0 and can never trade (the 39/45 mismatch).
+    RED if the feed's last data row is >1 trading day behind, or ANY ladder name
+    has bars=0. Returns (status, detail)."""
+    ps = (
+        r"$f='C:\Omega\data\rdagent\sp500_long_close.csv';"
+        r"if(Test-Path $f){$l=Get-Content $f;$last=$l[-1].Split(',')[0];$cols=($l[0].Split(',').Count-1)}else{$last='MISSING';$cols=0};"
+        r"$s='C:\Omega\stockladder_companion_state.json';"
+        r"if(Test-Path $s){$j=Get-Content $s -Raw|ConvertFrom-Json;$zero=@($j.names|Where-Object{[int]$_.bars -lt 1}).Count;$tot=@($j.names).Count;$znames=(@($j.names|Where-Object{[int]$_.bars -lt 1}|ForEach-Object{$_.sym}) -join ' ')}else{$zero=-1;$tot=0;$znames='NOSTATE'};"
+        r"Write-Output ($last+'|'+$cols+'|'+$zero+'|'+$tot+'|'+$znames)"
+    )
+    # -EncodedCommand (UTF-16LE base64): the probe uses {} | $_ pipes that ssh->cmd.exe
+    # ->powershell -Command mangles (that mangling was the rc=255 false-RED on first run).
+    # Base64 is immune to every quoting layer. Prefix stays `ssh <VPS_HOST> powershell`.
+    enc = base64.b64encode(ps.encode("utf-16-le")).decode()
+    try:
+        r = subprocess.run(["ssh", VPS_HOST, "powershell", "-NoProfile", "-EncodedCommand", enc],
+                           capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        return ("RED", f"ssh {VPS_HOST} failed -- stock feed/book UNVERIFIABLE")
+    if r.returncode != 0:
+        return ("RED", f"ssh rc={r.returncode} -- stock feed/book UNVERIFIABLE")
+    line = next((x for x in r.stdout.splitlines() if "|" in x), "")
+    parts = line.split("|")
+    if len(parts) != 5:
+        return ("RED", f"unparseable stock-book probe: {line!r}")
+    last, cols, zero, tot, znames = parts
+    try:
+        z, t = int(zero), int(tot)
+    except ValueError:
+        z, t = -1, 0
+    # (1) per-name coverage — ANY bars=0 name is a dead name (feed missing its column)
+    if z < 0:
+        return ("RED", "stockladder_companion_state.json missing/unreadable -- book UNVERIFIABLE")
+    if z > 0:
+        return ("RED", f"{z}/{t} ladder names have bars=0 (feed missing their columns; can't trade): {znames.strip()}")
+    # (2) content-date staleness — last DATA ROW vs last trading day
+    try:
+        d = dt.date.fromisoformat(last.strip())
+    except ValueError:
+        return ("RED", f"feed last-row date unparseable ('{last}') -- feed corrupt/empty")
+    ltd = last_trading_day(dt.datetime.now(dt.timezone.utc))
+    behind = trading_days_between(d, ltd)
+    if behind > 1:
+        return ("RED", f"feed last DATA ROW {d} is {behind} trading days behind {ltd} -- daily-close writer STALLED (mtime can lie; this reads content)")
+    return ("PASS", f"feed row {d} (<=1td behind {ltd}), {cols} name-cols, {t}/{t} names have bars>0")
+
+
 # (label, kind, max_age_trading_days, getter)  kind: "live" critical | "research" paper
 FEEDS = [
     ("tick XAUUSD daily",   "live", 2, lambda: csv_last_date(TICK / "2yr_XAUUSD_daily.csv")),
@@ -406,6 +460,15 @@ def main() -> int:
         if ex_status != "PASS":
             live_red += 1
 
+    # ── Stock daily-close book: CONTENT-date staleness + per-name bars=0 ──────────
+    # Runs every day (not weekend-gated): a bars=0 name is a config bug regardless of
+    # market hours, and the content-date check is trading-day aware. This is the guard
+    # that would have caught the 2026-07-10 "39/45 names, feed frozen" silent failure
+    # that the mtime manifest false-greened.
+    stock_row = vps_stock_book_health()
+    if stock_row[0] != "PASS":
+        live_red += 1
+
     if not quiet:
         verdict = "RED — LIVE FEED STALE" if live_red else ("AMBER — research stale" if res_red else "GREEN — all feeds fresh")
         mark = {"GREEN": "GREEN", "AMBER": "AMBER", "RED": "RED"}
@@ -421,6 +484,7 @@ def main() -> int:
                 print(f"  {status:7} [vps-live] {path:24} {detail}")
         if exec_row:
             print(f"  {exec_row[0]:7} [vps-exec] {'ibkr_exec_status':24} {exec_row[1]}")
+        print(f"  {stock_row[0]:7} [vps-stock] {'stock_daily_book':24} {stock_row[1]}")
         if live_red:
             print("  -> A LIVE feed is stale: fix the feeder BEFORE trusting any signal/telemetry.")
         elif res_red:
