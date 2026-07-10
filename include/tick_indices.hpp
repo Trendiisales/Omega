@@ -38,7 +38,7 @@
 //   (mirrors fx_feed_bars in tick_fx.hpp): roll a 1h bucket from the tick mid and drive
 //   index_befloor_book().on_h1_bar(tag, ts, close) on each H1 close. Observe-only; sends
 //   no orders itself (the companion's own order path is mode-gated SHADOW->live-on-flip).
-struct IdxH1Agg { int64_t start = 0; double close = 0.0; double high = 0.0, low = 0.0; };
+struct IdxH1Agg { int64_t start = 0; double close = 0.0; double high = 0.0, low = 0.0; double open = 0.0; };
 static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, double ask) {
     const double mid = (bid + ask) * 0.5;
     if (mid <= 0.0) return;
@@ -47,13 +47,13 @@ static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, doubl
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
     const int64_t b = (now_ms / 3600000LL) * 3600000LL;
-    if (a.start == 0) { a.start = b; a.close = mid; a.high = mid; a.low = mid; }
+    if (a.start == 0) { a.start = b; a.open = mid; a.close = mid; a.high = mid; a.low = mid; }
     else if (b != a.start) {
         omega::index_befloor_book().on_h1_bar(tag, a.start / 1000, a.close);
         // (JumpRider index feed REMOVED — engine culled/tombstoned S-2026-07-10)
         omega::index_upjump_ladder_book().on_h1_bar(tag, a.start / 1000,
-                                                    a.high, a.low, a.close); // ladder needs intrabar h/l
-        a.start = b; a.close = mid; a.high = mid; a.low = mid;
+                                                    a.high, a.low, a.close, a.open); // h/l intrabar; open for Layer-3 weekend gap
+        a.start = b; a.open = mid; a.close = mid; a.high = mid; a.low = mid;
     } else { a.close = mid; if (mid > a.high) a.high = mid; if (mid < a.low) a.low = mid; }
     // S-2026-07-07 real-fill fix: every tick also drives the BE-floor companion INTRABAR
     // catastrophe cap (resting stop under the model floor). Close-only exit eval booked

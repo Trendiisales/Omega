@@ -1842,6 +1842,17 @@ static void init_engines(const std::string& cfg_path)
                 // S-2026-07-09 WIDE peak-profit trail: keep ~90% of the peak gain, engage at +1% MFE
                 // (LADDER_WIDE_TRAIL_TIGHTEN_2026-07-09.md — NZD +5.6% / GBP +5.4%, arm0 hurts FX).
                 c.wide_gb_frac = 0.10; c.wide_arm_pct = 1.0; c.be_entry_pct = 0.08; c.pend_bars = 4;
+                // ── WEEKEND-GAP RISK GATE (S-2026-07-11, go-live) — WEEKEND_RISK_LAYERS_FINDINGS.md,
+                //   faithful port of backtest/weekend_risk_layers_bt.py (parity-checked). Flag-gated.
+                //   LAYER 2 (block_weekend_arms) = strict free improvement (GBPUSD +40.5%->+43.8%,
+                //     all-6 preserved): never arm a NEW window whose trigger closes in the weekend.
+                //   LAYER 3 (weekend_carry_frac=0.0, OPERATOR DECISION S-2026-07-11) = carry ZERO
+                //     size across the weekend gap -> ~$0 weekend-gap loss. Free on GBPUSD (net +40.5
+                //     ->+44.0 at f=0, all-6). GBPUSD empirical worst DOWN-gap = -0.67% (a $67 tail at
+                //     $10k) so the de-risk is essentially costless; f=0 chosen for a uniform zero-carry
+                //     book across all cells. SHADOW; nothing here is a real forward trade yet.
+                c.block_weekend_arms = true;
+                c.weekend_carry_frac = 0.0;
                 fl.add(std::move(c));
             }
             size_t flseeded = 0;
@@ -1947,6 +1958,21 @@ static void init_engines(const std::string& cfg_path)
                 // trends slightly prefer a higher arm; per-symbol tuning available if wanted.
                 c.wide_arm_pct = 0.5;
                 c.be_entry_pct = 0.08; c.pend_bars = 4;   // BE-ENTRY: open only once cost covered (WF+ both halves, both regimes; no open-into-loss)
+                // ── WEEKEND-GAP RISK GATE (S-2026-07-11, go-live) — WEEKEND_RISK_LAYERS_FINDINGS.md,
+                //   faithful port of backtest/weekend_risk_layers_bt.py (parity-checked). Flag-gated.
+                //   LAYER 2 (block_weekend_arms) = strict free improvement on every index cell
+                //     (US500 +0.2%, NAS100 +6.0%, GER40 +0.0%, M2K +8.7%; all-6 preserved): never
+                //     arm a NEW window whose trigger bar closes inside the weekend window.
+                //   LAYER 3 (weekend_carry_frac=0.0, OPERATOR DECISION S-2026-07-11) = carry ZERO
+                //     size across the weekend gap -> the index cells' correlated macro-Monday tail
+                //     (Apr-2025 tariff crash gapped GER40 -9.46% / NAS100 -4.85% / US500 -2.91% /
+                //     M2K -3.55% the SAME weekend, ~$2,077 portfolio at full $10k carry) is capped
+                //     at ~$0. f=0 passes all-6 on every cell: FREE-or-better on US500 (+204.9->+207.2),
+                //     NAS100 (+90.1->+108.7), GER40 (+123.7->+129.2); a small accepted cost on M2K
+                //     (+186.3->+163.8, WF-H2 +93.7->+63.5, STILL all-6). Empirical worst DOWN-gaps:
+                //     US500 -2.91%, NAS100 -4.85%, GER40 -9.46%, M2K -5.03%. SHADOW; deploy-forward.
+                c.block_weekend_arms = true;
+                c.weekend_carry_frac = 0.0;
                 // NAS100 upside opt-in: arm0 (engage the 10% trail FROM ENTRY) = NAS100 +34.4%
                 // (robust: WF+ both halves, bear -12.4->+0.4). Flip below for the max NAS catch.
                 // if (std::string(ic.tag) == "NAS100") c.wide_arm_pct = 0.0;

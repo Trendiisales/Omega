@@ -52,7 +52,7 @@ static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair
                 omega::fx_befloor_book().on_h1_bar(pair, start / 1000, acc.close);
                 // (JumpRider FX feed REMOVED — engine culled/tombstoned S-2026-07-10)
                 omega::fx_upjump_ladder_book().on_h1_bar(pair, start / 1000,
-                                                         acc.high, acc.low, acc.close); // ladder needs intrabar h/l
+                                                         acc.high, acc.low, acc.close, acc.open); // h/l intrabar; open for Layer-3 weekend gap
             }
             acc = {b/60000LL, mid, mid, mid, mid, 0}; start = b;
         } else { if (mid > acc.high) acc.high = mid; if (mid < acc.low) acc.low = mid; acc.close = mid; }

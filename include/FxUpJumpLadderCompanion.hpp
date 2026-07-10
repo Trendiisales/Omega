@@ -85,7 +85,8 @@
 #include <cmath>
 #include <atomic>
 #include <chrono>
-#include "SeedGuard.hpp"   // omega::resolve_seed_path (VPS cwd-robust warm-seed)
+#include "SeedGuard.hpp"    // omega::resolve_seed_path (VPS cwd-robust warm-seed)
+#include "SessionFlat.hpp"  // omega::is_weekend/utc_dow — WEEKEND-GAP risk caps (S-2026-07-11)
 
 namespace omega {
 
@@ -136,6 +137,24 @@ public:
         // negative -> wire ONLY behind the index risk-off gate, feedback-companion-bull-
         // gate-not-reject). Open legs still manage/flush; only new triggers are blocked.
         std::function<bool()> block_new_windows_fn;
+        // ── WEEKEND-GAP RISK CAPS (S-2026-07-11, WEEKEND_RISK_LAYERS_FINDINGS.md) ──
+        //   Faithful live port of backtest/weekend_risk_layers_bt.py Layer 2 + Layer 3.
+        //   Both are flag-gated (defaults OFF -> byte-identical baseline behavior) and
+        //   route through the book's EXISTING size/clip accounting (no parallel close
+        //   path, no leg flush -- the reverted blunt weekend-flat is NOT reintroduced).
+        // LAYER 2 -- block a NEW window/arm whose TRIGGER bar CLOSE instant (ts+3600) is
+        //   inside the Fri-21:00 -> Sun-22:00 UTC weekend window. Existing armed legs are
+        //   UNTOUCHED (keep managing/trailing/clipping). Proven a STRICT free improvement
+        //   on every cell (dnet 0..+8.7%, all-6 preserved). This is ALL Layer 2 does.
+        bool   block_weekend_arms = false;
+        // LAYER 3 -- carry only fraction f (0..1) of each OPEN leg's notional across the
+        //   weekend gap. The (1-f) share of the discrete Fri-close -> reopen-open gap move
+        //   each open leg lives through is forgone at book time (first-order additive
+        //   decomposition, exactly apply_layer3(): adj_pct = base_pct - (1-f)*dir*SUM(gap%
+        //   over weekends the leg spanned). Mechanism / arm / trail timing UNCHANGED; only
+        //   the realized P&L across the closed gap is scaled, then full size resumes at
+        //   reopen. Every cell passes all-6 at every f incl f=0. 1.0 = full carry (OFF).
+        double weekend_carry_frac = 1.0;
         std::string deploy_path;          // per-pair persisted deploy-forward anchor
         std::string bars_path;            // per-pair persisted LIVE forward H1 bars (ts,h,l,c)
         std::string book_path;            // per-pair persisted REAL forward book (4 tiers)
@@ -191,8 +210,11 @@ public:
         if (c_.empty()) return 0.0;
         const double cur = c_.back(); double r = 0.0;
         for (const Leg& L : legs_)
-            if (!L.pending && L.entry > 0.0)
-                r += d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0;
+            if (!L.pending && L.entry > 0.0) {
+                double u = d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0;
+                if (cfg_.weekend_carry_frac < 1.0) u -= (1.0 - cfg_.weekend_carry_frac) * L.wknd_gap_adj;
+                r += u;
+            }
         return r;
     }
     int total_clips() const { int n = 0; for (int ti = 0; ti < NT_; ++ti) n += fwd_[ti].clips; return n; }
@@ -251,14 +273,18 @@ public:
     // only: clip/arm logic stays H1-close-cadence.
     void set_disp_mid(double mid) noexcept { if (mid > 0.0) disp_mid_ = mid; }
 
-    // LIVE feed: one CLOSED H1 bar (from the tick_fx.hpp aggregator).
-    void on_h1_bar(int64_t ts_sec, double h, double l, double c) noexcept {
+    // LIVE feed: one CLOSED H1 bar (from the tick_fx.hpp aggregator). `o` (bar OPEN) is
+    // used ONLY by the Layer-3 weekend-gap capture (reopen-open vs Fri-close); it defaults
+    // to 0 for callers that don't have it -> Layer 3 then treats the gap as unknown (0),
+    // which is harmless when weekend_carry_frac==1 (feature OFF). Live feeds pass the real
+    // open so the weekend-gap risk cap matches backtest/weekend_risk_layers_bt.py.
+    void on_h1_bar(int64_t ts_sec, double h, double l, double c, double o = 0.0) noexcept {
         if (c <= 0.0 || h <= 0.0 || l <= 0.0 || h < l) return;
         ts_sec = norm_ts_(ts_sec);
         if (!ts_.empty() && ts_sec <= ts_.back()) return;   // monotonic live append only
         ingest_(ts_sec, h, l, c);
         append_dump_(ts_sec, h, l, c);
-        live_step_(ts_sec);
+        live_step_(ts_sec, o);
     }
 
     // Emit this pair's desk JSON object. REAL FORWARD CLIPS ONLY ($0 until first live clip).
@@ -286,8 +312,10 @@ public:
         std::ostringstream op; int nopen = 0;
         for (const Leg& L : legs_) {
             if (L.pending) continue;   // BE-entry: not yet opened -> not shown as an open position
-            const double u = (cur > 0 && L.entry > 0)
-                             ? d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
+            double u = (cur > 0 && L.entry > 0)
+                       ? d_ * (cur / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
+            if (cfg_.weekend_carry_frac < 1.0 && L.entry > 0.0)
+                u -= (1.0 - cfg_.weekend_carry_frac) * L.wknd_gap_adj;   // Layer-3 display consistency
             if (nopen++) op << ",";
             op.precision(0); op << std::fixed;
             op << "{\"flavor\":\"" << cfg_.pair << "Lad\",\"dir\":\"" << dstr << "\",\"tier\":\"" << TIER_TAG_[L.ti] << "\",";
@@ -372,6 +400,10 @@ private:
         int    pbars = 0;           // bars spent pending
         double arm_off = 0;         // arm offset % (recompute arm_px = entry*(1+d*arm_off/100))
         double trail_mult = 0;      // trail_abs_mult (recompute trail_abs = entry*trail_mult*thr/100)
+        // WEEKEND-GAP (Layer 3, S-2026-07-11): running SUM of dir*gap% for every weekend
+        // gap this OPEN leg has spanned since entry (ets < gap_ts <= xts). At book time
+        // the (1-weekend_carry_frac) share of this is subtracted -> size-scaled carry.
+        double wknd_gap_adj = 0.0;
     };
     std::vector<Leg> legs_;
 
@@ -390,8 +422,11 @@ private:
     // Book one clip at `fill` (stop level for trail/LC — resting-stop convention, in-calibration
     // with the research; observed close for window flush). pct is net of rt_cost_bp.
     void book_clip_(const Leg& L, double fill, int64_t ts_sec, bool fwd, const char* reason) noexcept {
-        const double pct = (L.entry > 0)
-                           ? d_ * (fill / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
+        double pct = (L.entry > 0)
+                     ? d_ * (fill / L.entry - 1.0) * 100.0 - cfg_.rt_cost_bp / 100.0 : 0.0;
+        // LAYER 3 (weekend carry-fraction): forgo the (1-f) share of the weekend gap move(s)
+        // this leg carried -> size-scaled carry across the closed gap (apply_layer3() math).
+        if (cfg_.weekend_carry_frac < 1.0) pct -= (1.0 - cfg_.weekend_carry_frac) * L.wknd_gap_adj;
         if (!fwd) return;
         if (!L.token.empty() && close_fn_) close_fn_(cfg_.live_sym, d_ > 0, cfg_.lot, fill, L.token);
         if (ledger_fn_) ledger_fn_(leg_engine_(L.ti), cfg_.live_sym, d_ > 0, L.entry, fill, cfg_.lot, L.entry_ts, ts_sec, reason);
@@ -438,7 +473,7 @@ private:
     // (2) window-end flush at close; (3) detector on the W bars BEFORE this one;
     // (4) base-batch entry at the trigger close / reclip. Direction-parameterized via d_
     // (sign-mirror, exactly fx_bothways_sweep.py ladder() dir=+-1, S-2026-07-08c).
-    void live_step_(int64_t ts_sec) noexcept {
+    void live_step_(int64_t ts_sec, double bar_open = 0.0) noexcept {
         if (!open_fn_) return;                               // backtest TU / not wired
         const int N = (int)c_.size(); const int W = cfg_.W;
         if (N < W + 1) return;
@@ -448,6 +483,30 @@ private:
         //   Backtested: maxDD -581bp on the W96/0.5 equity curve (header FILL CONVENTION);
         //   H1 bars -> finer than daily, cut bites cleanly (no daily gap-through). Exit L484.
         const double lc_lvl_mult = 1.0 - d_ * LC_M * cfg_.thr / 100.0;
+
+        // 0) LAYER 3 (S-2026-07-11) WEEKEND-GAP capture — EXACT mirror of weekend_risk_layers_
+        //    bt.py weekend_gaps(): this bar is a post-weekend REOPEN bar iff the interval from
+        //    the prior bar spans a Saturday and is 20<dh<=140h. Its gap% = (open/prev_close-1)*100.
+        //    Add dir*gap% to every leg OPEN BEFORE this bar (so ets < reopen_ts); pending legs and
+        //    legs entered on THIS bar (ets == reopen_ts) are excluded — exactly apply_layer3's
+        //    `ets < gap_ts <= xts`. Done BEFORE management so a leg that books on the reopen bar
+        //    still carries the gap. SIZE-ONLY: no leg is flushed/closed here (the reverted blunt
+        //    weekend-flat is NOT reintroduced); only realized P&L across the gap is later scaled.
+        if (cfg_.weekend_carry_frac < 1.0 && N >= 2 && bar_open > 0.0) {
+            const int64_t pt = ts_[N-2], ct = ts_[N-1];
+            const double  pc = c_[N-2];
+            const double  dh = (double)(ct - pt) / 3600.0;
+            if (dh > 20.0 && dh <= 140.0 && pc > 0.0) {
+                bool spans_sat = false;
+                for (int64_t t = pt + 3600; t < ct; t += 3600)
+                    if (omega::utc_dow(t) == 6) { spans_sat = true; break; }
+                if (spans_sat) {
+                    const double gap_pct = (bar_open / pc - 1.0) * 100.0;
+                    for (Leg& L : legs_)
+                        if (!L.pending && L.entry > 0.0) L.wknd_gap_adj += d_ * gap_pct;
+                }
+            }
+        }
 
         // 1) manage open legs intrabar: adverse extreme first (SL-first), then favorable, then c.
         {
@@ -521,7 +580,12 @@ private:
             else        { for (int i = N - W; i <= N - 2; ++i) if (h_[i] > ref) ref = h_[i]; }
             const bool contig = (ts_[N-1] - ts_[N-1-W]) <= (int64_t)W * 3600 + 4 * 86400;
             const double jump = (ref > 0) ? d_ * (cc - ref) / ref * 100.0 : 0.0;
-            if (ref > 0 && contig && jump >= cfg_.thr) {
+            // LAYER 2 (S-2026-07-11): do NOT arm a NEW window whose TRIGGER bar CLOSE instant
+            // (ts_sec+3600 — H1 bars stamp at open, fire on close) is in the weekend window.
+            // Armed legs (managed above) ride untouched. Mirrors weekend_risk_layers_bt.py's
+            // `block = layer2_no_weekend_arm and is_weekend(ts+3600)`.
+            const bool wknd_block = cfg_.block_weekend_arms && omega::is_weekend(ts_sec + 3600);
+            if (ref > 0 && contig && jump >= cfg_.thr && !wknd_block) {
                 // S-2026-07-08c AUTO-RETIREMENT gate: a proven-negative forward book stops
                 // arming NEW windows by itself (open legs above still managed/flushed).
                 if (cfg_.retire_usd < 0.0 && book_usd() <= cfg_.retire_usd) {
@@ -617,7 +681,8 @@ private:
                 // new format adds: pending trig pbars arm_off trail_mult (before token). Old-format
                 // state (pre-BE-entry) fails this parse -> the leg is skipped (one-time seam drop).
                 if (f >> L.ti >> L.entry >> L.peak >> L.arm_px >> L.trail_abs >> armed >> ets
-                      >> pend >> L.trig >> L.pbars >> L.arm_off >> L.trail_mult >> tok) {
+                      >> pend >> L.trig >> L.pbars >> L.arm_off >> L.trail_mult
+                      >> L.wknd_gap_adj >> tok) {   // wknd_gap_adj added S-2026-07-11 (one-time seam drop of pre-field state)
                     if (L.ti >= 0 && L.ti < NT_ && (L.entry > 0.0 || pend)) {
                         L.armed = (armed != 0); L.pending = (pend != 0); L.entry_ts = (int64_t)ets;
                         L.token = (tok == "-") ? std::string() : tok;
@@ -635,7 +700,7 @@ private:
               f << "leg " << L.ti << " " << L.entry << " " << L.peak << " " << L.arm_px << " "
                 << L.trail_abs << " " << (L.armed ? 1 : 0) << " " << (long long)L.entry_ts << " "
                 << (L.pending ? 1 : 0) << " " << L.trig << " " << L.pbars << " "
-                << L.arm_off << " " << L.trail_mult << " "
+                << L.arm_off << " " << L.trail_mult << " " << L.wknd_gap_adj << " "
                 << (L.token.empty() ? "-" : L.token) << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg_.live_path.c_str());
@@ -692,9 +757,10 @@ public:
     }
     void finalize_all() { for (auto& p : pairs_) p.finalize_seed(); recompute_and_write(); }
 
-    // LIVE: one closed H1 bar for `pair` (no-op when the pair isn't wired).
-    void on_h1_bar(const std::string& pair, int64_t ts_sec, double h, double l, double c) {
-        if (auto* p = find(pair)) { p->on_h1_bar(ts_sec, h, l, c); recompute_and_write(); }
+    // LIVE: one closed H1 bar for `pair` (no-op when the pair isn't wired). `o` = bar OPEN,
+    // forwarded for the Layer-3 weekend-gap capture (defaults 0 for callers that lack it).
+    void on_h1_bar(const std::string& pair, int64_t ts_sec, double h, double l, double c, double o = 0.0) {
+        if (auto* p = find(pair)) { p->on_h1_bar(ts_sec, h, l, c, o); recompute_and_write(); }
     }
     // S-2026-07-08d: per-tick live display mark (display only, no trading side effect).
     // S-2026-07-09b: recompute_and_write() otherwise only fires on_h1_bar (hourly), so the
