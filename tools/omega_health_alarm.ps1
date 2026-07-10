@@ -73,14 +73,26 @@ foreach ($s in $byScript.Keys) { if ($byScript[$s] -gt 2) { $overall = 'RED'; $r
 # screen) -> zero API listener on 4002 -> EVERY engine's order path is silently dead while data
 # feeds still look fresh (the "built != running != working" trap). Alarm on the LISTENER, not the
 # process. Verified 2026-07-01: logged-out gateway = proc up, blank window, no 4002 socket anywhere.
+# S-2026-07-11: market-closed window (Omega trades gold/FX/index/stock -- ALL shut Fri 21:00 UTC ->
+# Sun 22:00 UTC; crypto is a SEPARATE system). Inside it, broker gateway down + idle dispatch loop
+# are BY DESIGN, not faults (operator: "should not alarm on weekend, only crypto is running").
+# Matches SessionFlat.hpp is_weekend. Weekend-sensitive checks downgrade RED->AMBER (surfaced, no
+# alarm); infra faults (disk/RAM/process-down/leak/deploy-hang) stay RED any day.
+$nowU_ = [DateTime]::UtcNow; $dow_ = $nowU_.DayOfWeek; $h_ = $nowU_.Hour
+$marketClosed = ($dow_ -eq 'Saturday') -or ($dow_ -eq 'Friday' -and $h_ -ge 21) -or ($dow_ -eq 'Sunday' -and $h_ -lt 22)
 $gwPort = 4002
 $gwListen = Get-NetTCPConnection -State Listen -LocalPort $gwPort -ErrorAction SilentlyContinue
 $gwProc = Get-Process ibgateway -ErrorAction SilentlyContinue
 $gwUp = [bool]$gwListen
 if (-not $gwUp -and -not $execRetired) {
-    $overall = 'RED'
-    if ($gwProc) { $reasons += "[RED] IB GATEWAY LOGGED OUT -- ibgateway alive (pid $($gwProc.Id)) but NO API listener on ${gwPort}; RE-LOGIN needed (orders dead)" }
-    else         { $reasons += "[RED] IB GATEWAY DOWN -- ibgateway process not running, no API listener on ${gwPort}; restart+login (orders dead)" }
+    if ($marketClosed) {
+        if ($overall -eq 'GREEN') { $overall = 'AMBER' }
+        $reasons += "[AMBER] IB GATEWAY down -- EXPECTED, broker closed (weekend); only crypto (separate system) runs. RED resumes at market open."
+    } else {
+        $overall = 'RED'
+        if ($gwProc) { $reasons += "[RED] IB GATEWAY LOGGED OUT -- ibgateway alive (pid $($gwProc.Id)) but NO API listener on ${gwPort}; RE-LOGIN needed (orders dead)" }
+        else         { $reasons += "[RED] IB GATEWAY DOWN -- ibgateway process not running, no API listener on ${gwPort}; restart+login (orders dead)" }
+    }
 }
 # --- ACTIVITY / TRADE-RATE (operator-mandated 2026-07-02: "a live process that never orders passes
 # every alarm -- where is the redundancy"). The dimension that was UNMONITORED: the book can be
@@ -101,6 +113,8 @@ $actStaleMin = 20
 $actToday = [DateTime]::UtcNow.ToString('yyyy-MM-dd')
 $actLog   = "C:\Omega\logs\omega_$actToday.log"
 $postedExec = $null; $statAgeMin = $null; $quietH = $null
+# $marketClosed defined above (gateway block) -- weekend/market-shut => no ticks => dispatch idle
+# by design; the stale/absent-stats check below downgrades to AMBER in-window.
 if (-not (Test-Path $actLog)) {
     $overall = 'RED'
     $reasons += "[RED] ACTIVITY: current-UTC-date log missing ($actLog) -- logger dead or date-rollover unhandled (orders unobservable)"
@@ -125,8 +139,16 @@ if (-not (Test-Path $actLog)) {
         }
     }
     if ($null -eq $postedExec -or ($null -ne $statAgeMin -and $statAgeMin -ge $actStaleMin)) {
-        $overall = 'RED'
-        $reasons += "[RED] ACTIVITY: dispatch stats stale (${statAgeMin}min old) -- ENG-DISPATCH loop frozen while process alive"
+        if ($marketClosed) {
+            # Weekend / market shut: no ticks -> dispatch loop idle by design (operator: "should not
+            # alarm on weekend, only crypto is running"). AMBER = surfaced, NO alarm. RED resumes at
+            # market open (Sun 22:00 UTC) so a genuine weekday freeze still fires.
+            if ($overall -eq 'GREEN') { $overall = 'AMBER' }
+            $reasons += "[AMBER] ACTIVITY: no/stale dispatch stats (${statAgeMin}min) -- EXPECTED, Omega markets closed (weekend); only crypto (separate system) runs. RED resumes at market open."
+        } else {
+            $overall = 'RED'
+            $reasons += "[RED] ACTIVITY: dispatch stats stale (${statAgeMin}min old) -- ENG-DISPATCH loop frozen while process alive"
+        }
     }
 }
 if ($null -ne $postedExec) {
