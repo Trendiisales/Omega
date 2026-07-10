@@ -34,8 +34,13 @@ import urllib.request
 VPS = "omega-new"
 DESK = "http://45.85.3.79:7779"
 REQUIRED_ENVS = ["OMEGA_IBKR_BRIDGE=1"]
-CANARY_L1 = "USDCAD"          # IBKR-only: no fallback can mask a dead primary
-LADDER_PAIR = "USDCAD"
+CANARY_L1 = "USDCAD"          # IBKR-only: no fallback can mask a dead primary (bridge L1 freshness)
+# S-2026-07-10: DOWNSTREAM checks the ACTIVE ladder pair. USDCAD was disabled from the FX ladder
+# (S-2026-07-09c: FAIL all-6 on 3Y IBKR; only GBPUSD passes) -> its ladder ts never advances ->
+# the downstream check was PERMANENTLY RED (false alarm). GBPUSD is the only live FX ladder pair,
+# so its book-advance is what proves bridge->consumer->H1->book. (CANARY_L1 stays USDCAD: the raw
+# bridge L1 freshness is still the IBKR-only primary-death detector, independent of the ladder.)
+LADDER_PAIR = "GBPUSD"
 
 def ssh(cmd, timeout=25):
     try:
