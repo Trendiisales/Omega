@@ -1,5 +1,5 @@
 #!/bin/bash
-# Cross-box push: crypto companion live-state json  josgp1 (chimera-direct) -> omega-vps.
+# Cross-box push: crypto companion live-state json  josgp1 (chimera-direct) -> omega-new (live box; was omega-vps=retired, S-2026-07-10).
 #
 # The native UpJumpCompanionEngine emit (src/main.cpp emit_companion_state) writes
 #   chimera-direct:/home/jo/ChimeraCrypto/data/crypto_companion_state.json
@@ -17,7 +17,7 @@ set -uo pipefail
 TS="$(date '+%Y-%m-%d %H:%M:%S')"
 SRC="chimera-direct:/home/jo/ChimeraCrypto/data/crypto_companion_state.json"
 TMP="/tmp/crypto_companion_state.json"
-DST="omega-vps:C:/Omega/crypto_companion_state.json"
+DST="omega-new:C:/Omega/crypto_companion_state.json"
 
 # 1. pull from the crypto box
 if ! scp -q "$SRC" "$TMP" 2>/dev/null; then

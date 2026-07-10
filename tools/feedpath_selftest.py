@@ -32,7 +32,22 @@ import sys
 import urllib.request
 
 VPS = "omega-new"
-DESK = "http://45.85.3.79:7779"
+# S-2026-07-10 (G1, registry): derive the desk URL from the ssh alias's HostName so a VPS
+# re-IP or cutover is ONE edit (~/.ssh/config), not a hardcoded IP that silently rots. Falls
+# back to the last-known IP if ssh -G is unavailable. Override with OMEGA_DESK_URL.
+def _desk_url() -> str:
+    import os
+    if os.environ.get("OMEGA_DESK_URL"):
+        return os.environ["OMEGA_DESK_URL"]
+    try:
+        out = subprocess.run(["ssh", "-G", VPS], capture_output=True, text=True, timeout=5).stdout
+        for ln in out.splitlines():
+            if ln.startswith("hostname "):
+                return f"http://{ln.split()[1]}:7779"
+    except Exception:
+        pass
+    return "http://45.85.3.79:7779"
+DESK = _desk_url()
 REQUIRED_ENVS = ["OMEGA_IBKR_BRIDGE=1"]
 CANARY_L1 = "USDCAD"          # IBKR-only: no fallback can mask a dead primary (bridge L1 freshness)
 # S-2026-07-10: DOWNSTREAM checks the ACTIVE ladder pair. USDCAD was disabled from the FX ladder
