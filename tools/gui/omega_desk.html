@@ -1523,7 +1523,20 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el("prc"),H=320,ctx=prep(cv,H);/* S-2026-07-10: 150->320 so the chart fills the left topgrid column (right col is taller w/ ENGINE LEDGER+HEAT+DOM+OBI) -> no gap below the chart. prep() sets canvas height to H, so THIS is the real knob (the height attr is overridden). */
+function drawPR(){var cv=el("prc");
+ /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT+DOM+OBI,
+    whose height varies with DOM depth) and size the chart to fill the LEFT column so there is no gap
+    below it, regardless of DOM row count. Recomputed every draw. Fallback 300 if measurement fails. */
+ var H=300;
+ try{var tg=document.querySelector('.topgrid');
+   if(tg&&tg.children.length>1){
+     var rightH=tg.children[1].offsetHeight;
+     var lt=el('ltpan');var ltH=lt?lt.offsetHeight:0;
+     var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
+     var want=Math.round(rightH-ltH-nonCanvas-8);
+     if(want>160&&want<620)H=want;
+   }}catch(e){}
+ var ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;

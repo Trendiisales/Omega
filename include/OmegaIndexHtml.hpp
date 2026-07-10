@@ -1537,7 +1537,20 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el("prc"),H=320,ctx=prep(cv,H);/* S-2026-07-10: 150->320 so the chart fills the left topgrid column (right col is taller w/ ENGINE LEDGER+HEAT+DOM+OBI) -> no gap below the chart. prep() sets canvas height to H, so THIS is the real knob (the height attr is overridden). */
+function drawPR(){var cv=el("prc");
+ /* S-2026-07-10: DYNAMIC chart height — measure the RIGHT topgrid column (ENGINE LEDGER+HEAT+DOM+OBI,
+    whose height varies with DOM depth) and size the chart to fill the LEFT column so there is no gap
+    below it, regardless of DOM row count. Recomputed every draw. Fallback 300 if measurement fails. */
+ var H=300;
+ try{var tg=document.querySelector('.topgrid');
+   if(tg&&tg.children.length>1){
+     var rightH=tg.children[1].offsetHeight;
+     var lt=el('ltpan');var ltH=lt?lt.offsetHeight:0;
+     var pan=cv.parentElement;var nonCanvas=pan.offsetHeight-cv.offsetHeight;
+     var want=Math.round(rightH-ltH-nonCanvas-8);
+     if(want>160&&want<620)H=want;
+   }}catch(e){}
+ var ctx=prep(cv,H);
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
@@ -1618,7 +1631,8 @@ function drawPR(){var cv=el("prc"),H=320,ctx=prep(cv,H);/* S-2026-07-10: 150->32
   var nx=0,exVis=0;
   vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
   window._prNewest=nx;
-  if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
+)OMEGAD8"
+R"OMEGAD9(  if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;
    ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
    if(lastR){var dd2=(Date.now()/1000-lastR.ts)/86400;
@@ -1626,8 +1640,7 @@ function drawPR(){var cv=el("prc"),H=320,ctx=prep(cv,H);/* S-2026-07-10: 150->32
      +(dd2>=1?Math.round(dd2)+'d':Math.round(dd2*24)+'h')+' ago '+fmt$(lastR.pnl)
      +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
     ctx.font='10px IBM Plex Mono';
-)OMEGAD8"
-R"OMEGAD9(    var nw=ctx.measureText(note).width;
+    var nw=ctx.measureText(note).width;
     ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
     ctx.fillStyle='#6B7785';ctx.fillText(note,padL+pw-nw-7,padT+12);}
    return;}
