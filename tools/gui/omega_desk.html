@@ -1174,7 +1174,7 @@ function drawLadder(pfx,j,label){
    +allTrades.length+' closed clip'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' '+label+' ('+nact+' active) · H1 · shadow · ladder no-floor';
  renderCompanionOpenTrades(pfx,allOpen,allTrades,pfx==='fxlad'?5:1);
 }
-function ladTot(j){return ((j||{}).pairs||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);}
+function ladTot(j){return ((j||{}).pairs||[]).reduce(function(s,p){return s+safe(p.usd_real!==undefined?p.usd_real:p.usd);},0);}/* S-2026-07-10: index/FX LADDER totals fold REALIZED forward clips ONLY. Open-leg unrealized MTM removed -- the no-floor stacked ladder legs mark red between reclips (5 NAS100Lad -$37 each as NAS ticks down; 5 GBPUSDLad -$17) and dragged ALL-TIME DOWN in real time = the "dropping while I watch it" phantom. Per-panel DESK still shows uPnL. Same fix as _idxtot/_fxtot/_smtot (52a902d2) -- that missed ladTot, THIS is the ladder path. */
 function pollFxLad(){fetch('/api/fxladder_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.pairs||[]).length)window._fxlad=j;
  window._fxladtot=ladTot(window._fxlad);

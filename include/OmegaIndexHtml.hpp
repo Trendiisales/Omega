@@ -1186,7 +1186,7 @@ function drawLadder(pfx,j,label){
    +allTrades.length+' closed clip'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' '+label+' ('+nact+' active) · H1 · shadow · ladder no-floor';
  renderCompanionOpenTrades(pfx,allOpen,allTrades,pfx==='fxlad'?5:1);
 }
-function ladTot(j){return ((j||{}).pairs||[]).reduce(function(s,p){var u=safe(p.usd);(p.open||[]).forEach(function(o){u+=safe(o.upnl_usd);});return s+u;},0);}
+function ladTot(j){return ((j||{}).pairs||[]).reduce(function(s,p){return s+safe(p.usd_real!==undefined?p.usd_real:p.usd);},0);}/* S-2026-07-10: index/FX LADDER totals fold REALIZED forward clips ONLY. Open-leg unrealized MTM removed -- the no-floor stacked ladder legs mark red between reclips (5 NAS100Lad -$37 each as NAS ticks down; 5 GBPUSDLad -$17) and dragged ALL-TIME DOWN in real time = the "dropping while I watch it" phantom. Per-panel DESK still shows uPnL. Same fix as _idxtot/_fxtot/_smtot (52a902d2) -- that missed ladTot, THIS is the ladder path. */
 function pollFxLad(){fetch('/api/fxladder_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.pairs||[]).length)window._fxlad=j;
  window._fxladtot=ladTot(window._fxlad);
@@ -1269,13 +1269,13 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
     book ONCE — under the first (highest-pnl) matching variant — else phantom double-count. */
  if(seen){if(seen[m.key])return '';seen[m.key]=1;}
  var e=m.e||{},od=(window._gcOpen||{})[m.key];
- var closed=e.closed||0,openn=e.open||0,bank=safe(e.realized);
+)OMEGAD6"
+R"OMEGAD7( var closed=e.closed||0,openn=e.open||0,bank=safe(e.realized);
  if(!closed&&!openn&&!bank)return '';
  var armed=!!(od&&od.eligible);
  var st=od?(armed?'<span class="g">ARMED</span>'+(od.mfe_pct!=null?' '+fmt2(od.mfe_pct,2)+'% peak':''):'<span class="d">tracking</span>'):'';
  var bc=bank>0?'var(--grn)':(bank<0?'var(--red)':'var(--t2)');
-)OMEGAD6"
-R"OMEGAD7( return '<tr><td></td><td class="l d" colspan="3" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip · paper · additive) · '
+ return '<tr><td></td><td class="l d" colspan="3" style="border-left:2px solid var(--grn)">&#8627; companion (stall-clip · paper · additive) · '
   +closed+' banked'+(openn?' · '+openn+' open':'')+(st?' · '+st:'')+'</td>'
   +'<td class="num" style="color:'+bc+'">'+fmt$(bank)+'</td><td colspan="2"></td></tr>';}
 /* ── engine ledger: ALL-TIME running totals per engine (window-independent) ── */
@@ -1429,11 +1429,11 @@ function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2
  if(!ks.length){el('promo').innerHTML='<span class="d">no shadow history yet</span>';return;}
  var GATE=30,h='';
  ks.forEach(function(k){var e=by[k],avg=e.pnl/e.n,ok=e.n>=GATE;
-  var col=e.n<10?'var(--t2)':avg>0?(ok?'var(--grn)':'var(--ambB)'):'var(--red)';
+)OMEGAD7"
+R"OMEGAD8(  var col=e.n<10?'var(--t2)':avg>0?(ok?'var(--grn)':'var(--ambB)'):'var(--red)';
   var tag=e.n<10?'n small':avg>0?(ok?'judgeable +EV':'building'):(ok?'judgeable −EV':'building');
   h+='<div style="display:grid;grid-template-columns:minmax(90px,1.4fr) 2fr 46px 64px 80px;gap:7px;align-items:center;margin-bottom:4px">'
-)OMEGAD7"
-R"OMEGAD8(   +'<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</span>'
+   +'<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</span>'
    +'<span class="bar"><i style="width:'+Math.min(100,e.n/GATE*100)+'%;background:'+col+'"></i></span>'
    +'<span class="num d">'+e.n+'/'+GATE+'</span><span class="num" style="color:'+col+'">'+fmt$(avg)+'/t</span>'
    +'<span class="lbl" style="color:'+col+'">'+tag+'</span></div>';});
@@ -1629,13 +1629,13 @@ function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
  for(var i=n-1;i>=0;i--){if(bars[i][10]){trend=bars[i][10];break;}}
  var tc=trend>0?'#2EBD85':trend<0?'#E2484D':'#85B7EB';
  ctx.strokeStyle=tc;ctx.globalAlpha=0.5;ctx.setLineDash([2,4]);
- ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+)OMEGAD8"
+R"OMEGAD9( ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
  ctx.fillStyle=tc;ctx.fillRect(padL+pw+2,yl-8,padR-6,16);
  ctx.fillStyle='#0B0F14';ctx.fillText(lastC.toFixed(dp),padL+pw+6,yl+3.5);
  el('prlast').textContent=lastC.toFixed(dp);
  var pt=el('prtrend');
-)OMEGAD8"
-R"OMEGAD9( pt.textContent=trend>0?'▲ STEP UP':trend<0?'▼ STEP DOWN':'■ RANGING';
+ pt.textContent=trend>0?'▲ STEP UP':trend<0?'▼ STEP DOWN':'■ RANGING';
  pt.style.color=trend>0?'var(--grnB)':trend<0?'var(--redB)':'var(--t2)';
  pt.style.background=trend>0?'var(--grnD)':trend<0?'var(--redD)':'var(--pan2)';
  var age=PRD.updated?Math.max(0,Math.round(Date.now()/1000-PRD.updated)):-1;
