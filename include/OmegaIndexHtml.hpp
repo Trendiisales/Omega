@@ -249,7 +249,7 @@ R"OMEGAD1(  <div id="icopenwrap" style="display:none;margin-top:6px"><div class=
 <!-- ═══ FX LADDER — H1 upjump giveback LADDER books (no-floor · shadow, additive · S-2026-07-07x cacd890a) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">FX LADDER — H1 upjump LADDER (no-floor) · close ≥thr% off W-bar low → window · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr · EURUSD W48/0.5 · GBPUSD W48/1.0 · NZDUSD W24/1.5 · AUDUSD W96/1.0 thin (native C++ · shadow · parity-exact · never vs-WIDE)</span>
+    <span class="lbl">FX LADDER — H1 upjump LADDER (no-floor) · close ≥thr% off W-bar low → window · TIGHT+WIDE+STACKED + reclip cap5 · LC 5×thr · GBPUSD W48/0.75 ONLY — re-validated 3Y IBKR (S-2026-07-10): +40.5% PF1.44 all-6 clean; EUR/AUD/NZD/CAD FAIL the real feed (no config passes) (native C++ · shadow · never vs-WIDE)</span>
     <span id="fxladinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="fxladtab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -402,9 +402,9 @@ function pollFires(){var now=Date.now();
  if(window._seenComp===undefined){window._seenComp={};window._compBase=true;window._compClosed={};}
  var anyOpen=false,banked=false;
  __compBooks.forEach(function(bk){var j=window[bk[1]];if(!j)return;
-  __compOpens(j).forEach(function(o){var k=bk[0]+'|'+(o.flavor||o.name||'')+'|'+(o.tier||'')+'|'+(o.entry_ts||o.entry||'');
 )OMEGAD1"
-R"OMEGAD2(   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)anyOpen=true;}
+R"OMEGAD2(  __compOpens(j).forEach(function(o){var k=bk[0]+'|'+(o.flavor||o.name||'')+'|'+(o.tier||'')+'|'+(o.entry_ts||o.entry||'');
+   if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)anyOpen=true;}
    window._seenComp[k]=now;});
   var nc=__compClosed(j),pc=window._compClosed[bk[0]];
   if(pc!==undefined&&nc>pc&&!window._compBase)banked=true;
@@ -582,10 +582,10 @@ function compSub(engine,symbol,colspan,nLegs){
    leg. Reads window._gcPerLeg (aggregate per_leg, keyed "engine|entry"). The companion producer
    keys positions by (engine, entry) -- so two real legs opened at the SAME price are ONE companion
    position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
-   the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
-function findLeg(engine,entry){
 )OMEGAD2"
-R"OMEGAD3( var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
+R"OMEGAD3(   the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
+function findLeg(engine,entry){
+ var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
  Object.keys(pl).forEach(function(k){var v=pl[k];var keng=(v.engine||'').replace(/Engine$/,'');
   if(keng!==e&&keng!==(engine||''))return;
   if(Math.abs(safe(v.entry)-eNum)<0.01)best=v;});
@@ -755,10 +755,10 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(!(j&&j.by_book&&j.by_book.OMEGA)){return;}
  var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
  /* recent banked clips (2026-07-08): the rows that EXPLAIN a COMP-BANK / ALL-TIME increase.
-    Keep last-good when a frame omits them (older binary / partial write). */
- if(j.closed_detail&&j.closed_detail.length)window._compClosed=j.closed_detail;
 )OMEGAD3"
-R"OMEGAD4( /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
+R"OMEGAD4(    Keep last-good when a frame omits them (older binary / partial write). */
+ if(j.closed_detail&&j.closed_detail.length)window._compClosed=j.closed_detail;
+ /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
  var ob=(j.by_book&&j.by_book.OMEGA)||{},cbk=(j.by_book&&j.by_book.CRYPTO)||{};
  var om=safe(ob.realized),cr=safe(cbk.realized),rt=safe(j.realized_total),be=document.getElementById('compbank');
