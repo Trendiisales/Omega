@@ -1297,6 +1297,10 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/daily"))       { ct = "application/json"; body = buildDailySummaryJson(); }
         else if (strstr(buf, "GET /api/companion"))   { ct = "application/json"; body = loadCompanionStateAtomic(); if (body.empty()) body = "{\"open_companions\":0,\"open_detail\":[]}"; }
         else if (strstr(buf, "GET /api/crypto_companion")) { ct = "application/json"; body = loadFile("crypto_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"legs\":[]}"; }
+        // rdagent stock basket (S-2026-07-11): pushed from the Mac so the META-type picks show ON
+        // the desk instead of the Mac-only :7799 page. book = paper P&L/orders; rank = model ranking.
+        else if (strstr(buf, "GET /api/rdagent_book")) { ct = "application/json"; body = loadFile("data/rdagent/rda_basket.json"); if (body.empty()) body = "{\"mode\":\"none\",\"n_names\":0,\"orders\":[]}"; }
+        else if (strstr(buf, "GET /api/rdagent_rank")) { ct = "application/json"; body = loadFile("data/rdagent/latest.json"); if (body.empty()) body = "{\"signal\":{\"basket\":[]}}"; }
         else if (strstr(buf, "GET /api/gold_companion")) { ct = "application/json"; body = loadFile("gold_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"flavors\":[]}"; }
         else if (strstr(buf, "GET /api/xag_companion"))  { ct = "application/json"; body = loadFile("xag_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"flavors\":[]}"; }
         else if (strstr(buf, "GET /api/usoil_companion")){ ct = "application/json"; body = loadFile("usoil_companion_state.json"); if (body.empty()) body = "{\"ts\":0,\"flavors\":[]}"; }

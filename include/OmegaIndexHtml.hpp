@@ -256,6 +256,16 @@ R"OMEGAD1(<!-- LEFT column stack (S-2026-07-10 operator): CRYPTO + INDEX COMPANI
   <div id="smtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="smtrades"></table></div></div>
 </div>
 
+<!-- ═══ STOCK BASKET — rdagent day-mover model (S-2026-07-11 operator: unified onto the desk;
+     was stranded on the Mac-only :7799 page). Pushed via push_basket_to_desk.sh. ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">STOCK BASKET — rdagent day-mover model · shadow paper $10k · BUY = day-mover at new high (bull regime)</span>
+    <span id="rdainfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow:auto;max-height:300px;font-size:9.5px"><table id="rdatab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
 
 
 
@@ -396,7 +406,8 @@ function killAll(b){
   fetch('/api/flatten',{method:'POST'}).then(function(r){return r.json();}).then(function(j){
     b.textContent=j&&j.ok?'SENT':'ERR';
     setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);
-  }).catch(function(){b.textContent='ERR';setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);});
+)OMEGAD1"
+R"OMEGAD2(  }).catch(function(){b.textContent='ERR';setTimeout(function(){b.disabled=false;b.textContent='KILL ALL';b.style.background='#3a0d0d';b.style.color='#ff5a5a';},3000);});
 }
 function chime(notes,_r){if(!SND)return;ensureCtx();if(!ACTX)return;
  if(ACTX.state==='suspended'&&!_r){ACTX.resume().then(function(){chime(notes,1);}).catch(function(){});return;}
@@ -405,8 +416,7 @@ function chime(notes,_r){if(!SND)return;ensureCtx();if(!ACTX)return;
   o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
   var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
   g.gain.exponentialRampToValueAtTime(0.001,st+0.5);o.start(st);o.stop(st+0.55);});}
-)OMEGAD1"
-R"OMEGAD2(function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
+function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
 function sigTick(){chime([[0,660,0.25]]);}
 function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
@@ -581,13 +591,13 @@ function compSub(engine,symbol,colspan,nLegs){
  var legNote=(nLegs>1)?(' <span class="d">· covers '+nLegs+' open legs</span>'):'';
  var parts=[];
  if(cm){var arm=cm.eligible?'<span class="g">ARMED</span>':'<span class="d">tracking · pre-gate (rides wide)</span>';
-  parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
+)OMEGAD2"
+R"OMEGAD3(  parts.push(arm+' · peak MFE '+fmt2(cm.mfe_pct,2)+'% ('+fmt$(safe(cm.mfe_usd))+') · stall '+cm.stall+' · live '+fmt$(safe(cm.upnl)));}
  if(pe){var bk=safe(pe.realized);
   parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
  var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
  /* per-BOOK breakdown: EVERY companion book listed on its OWN row by UNIQUE name with its
-)OMEGAD2"
-R"OMEGAD3(    OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
+    OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
     collapse — every book of the engine renders as a distinct line so all N are visible. Each
     book is a SEPARATE additive standalone engine ([[CompanionDominanceError]]); its $ is its
     own, never a multiple of a shared number. */
@@ -752,7 +762,8 @@ function render(J){lastJ=J;
   else{el('lt').innerHTML='<tr><td class="l d">FLAT — no open positions</td></tr>';el('ltpnl').textContent='';el('ltcount').textContent='';}}
  else{el('ltcount').textContent=lts.length+' open';
   var sum=0;var seenLeg={};
-  var rows=lts.map(function(t){sum+=safe(t.live_pnl);
+)OMEGAD3"
+R"OMEGAD4(  var rows=lts.map(function(t){sum+=safe(t.live_pnl);
   var lk=(t.engine||'')+'|'+fmt2(t.entry,2);var dup=!!seenLeg[lk];seenLeg[lk]=1;
   var cr=compSubLeg(t.engine,t.symbol,t.entry,9,dup);
   return '<tr><td class="l">'+esc(t.symbol)+'</td><td class="l">'+esc(t.engine)+'</td><td class="'+(t.side==='LONG'?'g':'r')+'">'+esc(t.side)+'</td>'
@@ -760,8 +771,7 @@ function render(J){lastJ=J;
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>'+cr;}).join('');
-)OMEGAD3"
-R"OMEGAD4(  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
+  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
   var cbank=safe((window._comptot||{}).all);
   el('ltpnl').innerHTML=fmt$(sum)+' unreal <span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank)+' companion (paper, additive)</span>';
   el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
@@ -856,6 +866,37 @@ function pollTrades(){
 }
 setInterval(pollTrades,5000);pollTrades();
 
+/* ── STOCK BASKET — rdagent day-mover model, unified onto the desk (S-2026-07-11). book = paper
+   P&L; rank = the 23-name model ranking (BUY = day-mover at new high + bull regime). */
+function pollRdagent(){
+  Promise.all([
+    fetch('/api/rdagent_book').then(function(r){return r.json();}).catch(function(){return {};}),
+    fetch('/api/rdagent_rank').then(function(r){return r.json();}).catch(function(){return {};})
+  ]).then(function(res){
+    var book=res[0]||{}, rank=res[1]||{};
+    var inf=el('rdainfo'); if(inf){
+      var pnl=safe(book.pnl_usd), eq=safe(book.equity_usd), n=safe(book.n_names);
+      inf.innerHTML=(book.as_of?('as of '+esc(book.as_of)+' · '):'')+n+' held · equity $'+fmt2(eq,0)+
+        ' · P&L <span style="color:'+(pnl>0?'var(--grn)':(pnl<0?'var(--red)':'var(--t2)'))+'">'+(pnl>=0?'+':'')+'$'+fmt2(pnl,0)+'</span>';
+    }
+    var sig=rank.signal||{}, basket=sig.basket||[];
+    var el2=el('rdatab'); if(!el2)return;
+    if(!basket.length){ el2.innerHTML='<tr><td class="l d">no ranking yet</td></tr>'; return; }
+    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th>conf</th><th>5d</th><th>20d</th></tr>';
+    var rows=basket.slice(0,23).map(function(b){
+      var buy=b.action==='BUY';
+      var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
+      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
+      var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
+      return '<tr'+(buy?' style="background:rgba(40,160,90,0.12)"':'')+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
+        '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
+        '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td></tr>';
+    }).join('');
+    el2.innerHTML=hdr+rows;
+  }).catch(function(){});
+}
+setInterval(pollRdagent,5000);pollRdagent();
+
 /* ── crypto companions — TIERED-2 + SELF-FUNDING LADDER (shadow · josgp1 c6b97e5) ──
    Each parent up-jump trade runs 2 base tiers (TIGHT+WIDE) + a self-funding ladder (each
    cost-covered clip opens 1 more WIDE leg, cap 5). Roster baked (per-coin intraday W/thr +
@@ -903,7 +944,8 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
      the honest worse-of-fill column emitted by josgp1 after the dual-column fix; until that
      ships/accrues, the honest fold is 0 (feedback-no-backtest-in-live-gui: $0 is the honest
      number). Model bank stays visible as a dim reference, never in the PnL. */
-  totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);totmodel+=safe(s.bank_bp);
+)OMEGAD4"
+R"OMEGAD5(  totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);totmodel+=safe(s.bank_bp);
   var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
@@ -932,8 +974,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
  /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
     Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both so it shows on push. */
-)OMEGAD4"
-R"OMEGAD5( window._cctot=totbank;
+ window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
  if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
@@ -1070,7 +1111,8 @@ function drawUsoil(){var j=window._usoil||null;
   runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
    h+='<tr>';
    if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
-               +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
+)OMEGAD5"
+R"OMEGAD6(               +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
    h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
      +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
@@ -1104,8 +1146,7 @@ function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();})
  if(j&&(j.pairs||[]).length)window._fx=j;
  window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY. Open-leg unrealized MTM removed from the header total -- on shadow ladder books it bounced red/green each mark and read as a phantom "continuous drop" in ALL-TIME (operator: "artifacts showing up / fix the pnl"). Per-panel DESK below still shows live uPnL for monitoring. Supersedes the 2026-07-06 MTM-in-header choice. */
  drawFx();
-)OMEGAD5"
-R"OMEGAD6( if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
+ if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawFx();});}
 setInterval(pollFx,15000);pollFx();
 
@@ -1242,7 +1283,8 @@ function drawLadder(pfx,j,label){
  });
  el(pfx+'tab').innerHTML=h+rows;
  var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
- var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
+)OMEGAD6"
+R"OMEGAD7( var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
  el(pfx+'info').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
    +allTrades.length+' closed clip'+(allTrades.length===1?'':'s')+openTxt+' · '+pairs.length+' '+label+' ('+nact+' active) · H1 · shadow · ladder no-floor';
  renderCompanionOpenTrades(pfx,allOpen,allTrades,pfx==='fxlad'?5:1);
@@ -1281,8 +1323,7 @@ function parseShadow(txt){
   var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
   var sym=unq(f[ix.symbol]),eng=unq(f[ix.engine]);
   if(sym==='__BOOT__'||eng==='boot_writetest')continue;
-)OMEGAD6"
-R"OMEGAD7(  var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
+  var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
   out.push({ts:ts,sym:sym,side:side,eng:eng,
    ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
@@ -1407,7 +1448,8 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
  /* gradient area fill under the curve */
  ctx.beginPath();cum.forEach(function(v,i){i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
  ctx.lineTo(X(cum.length-1),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();
- var gr=ctx.createLinearGradient(0,Y(hi),0,Y(Math.min(0,lo)));
+)OMEGAD7"
+R"OMEGAD8( var gr=ctx.createLinearGradient(0,Y(hi),0,Y(Math.min(0,lo)));
  gr.addColorStop(0,'rgba(46,189,133,0.22)');gr.addColorStop(1,'rgba(46,189,133,0.02)');
  ctx.fillStyle=gr;ctx.fill();
  /* glowing equity line + live endpoint dot */
@@ -1438,8 +1480,7 @@ function drawHeat(){var rs=winRows();var by={};
  var order=['GOLD','INDEX','FX','SILVER','OIL','OTHER'],h='';
  order.forEach(function(g){if(!groups[g])return;
   groups[g].sort(function(a,b){return by[b].pnl-by[a].pnl;});
-)OMEGAD7"
-R"OMEGAD8(  h+='<div class="lbl" style="margin:6px 0 3px">'+g+(g==='FX'?' — BE-floor companion (shadow)':'')+' <span style="color:var(--t3)">'+groups[g].length+' active</span></div>'
+  h+='<div class="lbl" style="margin:6px 0 3px">'+g+(g==='FX'?' — BE-floor companion (shadow)':'')+' <span style="color:var(--t3)">'+groups[g].length+' active</span></div>'
    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:3px">';
   groups[g].forEach(function(k){var e=by[k],t=e.pnl/mxAbs;
    var bg='#1d2733',fg='#8B97A5';
@@ -1589,7 +1630,8 @@ function drawPR(){var cv=el("prc");
   ctx.strokeStyle=col;ctx.lineWidth=wd;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);}
  function cloud(fa,fb,col){var A=spts(fa).filter(Boolean),B=spts(fb).filter(Boolean);
   if(A.length<2||B.length<2)return;ctx.beginPath();
-  A.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
+)OMEGAD8"
+R"OMEGAD9(  A.forEach(function(q,i){i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});
   for(var i=B.length-1;i>=0;i--)ctx.lineTo(B[i][0],B[i][1]);
   ctx.closePath();ctx.fillStyle=col;ctx.fill();}
  cloud(7,6,'rgba(226,72,77,0.10)');cloud(8,9,'rgba(46,189,133,0.10)');cloud(6,8,'rgba(133,183,235,0.04)');
@@ -1631,8 +1673,7 @@ function drawPR(){var cv=el("prc");
   var nx=0,exVis=0;
   vis.forEach(function(r){if(r.ts<=t1){exVis++;if(r.ts>nx)nx=r.ts;}});
   window._prNewest=nx;
-)OMEGAD8"
-R"OMEGAD9(  if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
+  if(!vis.length){   /* no closes inside the visible bar window -- say when the last one was */
    var lastR=null;
    ROWS.forEach(function(r){if(sm(r.sym)&&(!lastR||r.ts>lastR.ts))lastR=r;});
    if(lastR){var dd2=(Date.now()/1000-lastR.ts)/86400;

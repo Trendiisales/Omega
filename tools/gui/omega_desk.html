@@ -249,6 +249,16 @@ a{color:var(--blu);text-decoration:none}
   <div id="smtradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="smtrades"></table></div></div>
 </div>
 
+<!-- ═══ STOCK BASKET — rdagent day-mover model (S-2026-07-11 operator: unified onto the desk;
+     was stranded on the Mac-only :7799 page). Pushed via push_basket_to_desk.sh. ═══ -->
+<div class="pan">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <span class="lbl">STOCK BASKET — rdagent day-mover model · shadow paper $10k · BUY = day-mover at new high (bull regime)</span>
+    <span id="rdainfo" class="lbl" style="margin-left:auto">…</span>
+  </div>
+  <div style="overflow:auto;max-height:300px;font-size:9.5px"><table id="rdatab" style="width:100%"><tr><td class="l d">loading…</td></tr></table></div>
+</div>
+
 
 
 
@@ -845,6 +855,37 @@ function pollTrades(){
   }).catch(function(){});
 }
 setInterval(pollTrades,5000);pollTrades();
+
+/* ── STOCK BASKET — rdagent day-mover model, unified onto the desk (S-2026-07-11). book = paper
+   P&L; rank = the 23-name model ranking (BUY = day-mover at new high + bull regime). */
+function pollRdagent(){
+  Promise.all([
+    fetch('/api/rdagent_book').then(function(r){return r.json();}).catch(function(){return {};}),
+    fetch('/api/rdagent_rank').then(function(r){return r.json();}).catch(function(){return {};})
+  ]).then(function(res){
+    var book=res[0]||{}, rank=res[1]||{};
+    var inf=el('rdainfo'); if(inf){
+      var pnl=safe(book.pnl_usd), eq=safe(book.equity_usd), n=safe(book.n_names);
+      inf.innerHTML=(book.as_of?('as of '+esc(book.as_of)+' · '):'')+n+' held · equity $'+fmt2(eq,0)+
+        ' · P&L <span style="color:'+(pnl>0?'var(--grn)':(pnl<0?'var(--red)':'var(--t2)'))+'">'+(pnl>=0?'+':'')+'$'+fmt2(pnl,0)+'</span>';
+    }
+    var sig=rank.signal||{}, basket=sig.basket||[];
+    var el2=el('rdatab'); if(!el2)return;
+    if(!basket.length){ el2.innerHTML='<tr><td class="l d">no ranking yet</td></tr>'; return; }
+    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th>conf</th><th>5d</th><th>20d</th></tr>';
+    var rows=basket.slice(0,23).map(function(b){
+      var buy=b.action==='BUY';
+      var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
+      var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
+      var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
+      return '<tr'+(buy?' style="background:rgba(40,160,90,0.12)"':'')+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
+        '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
+        '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td></tr>';
+    }).join('');
+    el2.innerHTML=hdr+rows;
+  }).catch(function(){});
+}
+setInterval(pollRdagent,5000);pollRdagent();
 
 /* ── crypto companions — TIERED-2 + SELF-FUNDING LADDER (shadow · josgp1 c6b97e5) ──
    Each parent up-jump trade runs 2 base tiers (TIGHT+WIDE) + a self-funding ladder (each
