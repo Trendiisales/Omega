@@ -42,7 +42,7 @@ foreach($n in $tasks.Keys){
   if(-not $t){ $out += "DARK|$n|task missing"; continue }
   $st=$t.State.ToString()
   $max=$tasks[$n]
-  if($max -eq 0){ if($st -ne "Running"){ $out += "DARK|$n|continuous task not Running (state=$st)" } else { $out += "OK|$n|Running" } ; continue }
+  if($max -eq 0){ if($st -ne "Running"){ if($marketClosed -and ($n -match 'Bridge|LiveBars')){ $out += "OK|$n|weekend-idle (state=$st, market shut -- feed bridge)" } else { $out += "DARK|$n|continuous task not Running (state=$st)" } } else { $out += "OK|$n|Running" } ; continue }
   $i=Get-ScheduledTaskInfo -TaskName $n -EA SilentlyContinue
   $ageMin = if($i.LastRunTime){ [int]((Get-Date)-$i.LastRunTime).TotalMinutes } else { 999999 }
   if($ageMin -gt $max){ $out += "DARK|$n|last ran ${ageMin}min ago (>$max)" } else { $out += "OK|$n|${ageMin}min" }
