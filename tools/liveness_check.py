@@ -32,6 +32,10 @@ MAC = [
 # VPS components pulled in one ssh round-trip (task LastRunTime / process / status freshness):
 VPS_PROBE = r'''
 $out=@()
+# S-2026-07-11: market-closed window (Omega StallBook mirrors GOLD/INDEX entries -- crypto stall is on
+# the separate josgp1 box). Gold/index shut Fri 21:00 -> Sun 22:00 UTC -> StallBook idle by design ->
+# companion_state legitimately stale. Weekend-guard the stall staleness (operator: no weekend alarm).
+$u=[DateTime]::UtcNow; $marketClosed = ($u.DayOfWeek -eq 'Saturday') -or ($u.DayOfWeek -eq 'Friday' -and $u.Hour -ge 21) -or ($u.DayOfWeek -eq 'Sunday' -and $u.Hour -lt 22)
 $tasks=@{ "OmegaHealthAlarm"=30; "OmegaIbkrBridge"=0; "OmegaMgcLiveBars"=0; "OmegaBigCapBridge"=0; "OmegaL2Prune"=1500; "OmegaDiskAlarm"=90; "IbkrGateway"=10 }
 foreach($n in $tasks.Keys){
   $t=Get-ScheduledTask -TaskName $n -EA SilentlyContinue
@@ -50,7 +54,7 @@ catch{ $m=$_.Exception.Message; $out += "DARK|desk-GUI-7779|not responding ("+$m
 $hs="C:\Omega\logs\HEALTH_STATUS.json"
 if(Test-Path $hs){ $a=[int]((Get-Date)-(Get-Item $hs).LastWriteTime).TotalMinutes; if($a -gt 30){ $out += "DARK|VPS-health-alarm|HEALTH_STATUS ${a}min stale" } else { $out += "OK|VPS-health-alarm|${a}min" } } else { $out += "DARK|VPS-health-alarm|no HEALTH_STATUS.json" }
 $cs="C:\Omega\companion_state.json"
-if(Test-Path $cs){ $a=[int]((Get-Date)-(Get-Item $cs).LastWriteTime).TotalMinutes; if($a -gt 30){ $out += "DARK|stall-companion (C++ StallBook)|companion_state ${a}min stale" } else { $out += "OK|stall-companion|${a}min" } } else { $out += "DARK|stall-companion (C++ StallBook)|no companion_state.json" }
+if(Test-Path $cs){ $a=[int]((Get-Date)-(Get-Item $cs).LastWriteTime).TotalMinutes; if($a -gt 30 -and -not $marketClosed){ $out += "DARK|stall-companion (C++ StallBook)|companion_state ${a}min stale" } elseif($a -gt 30){ $out += "OK|stall-companion|weekend-idle ${a}min (gold/index shut, StallBook has nothing to clip)" } else { $out += "OK|stall-companion|${a}min" } } else { $out += "DARK|stall-companion (C++ StallBook)|no companion_state.json" }
 $out -join "`n"
 '''
 
