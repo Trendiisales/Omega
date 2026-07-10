@@ -27,11 +27,13 @@ body{background:var(--bg);color:var(--t);font:11px 'IBM Plex Mono',Menlo,Consola
    heights never leave a massive grid row-coupling gap (XAG short vs FX tall).
    3-up on wide screens packs the 7 uneven companion panels far tighter than 2-up
    (operator 2026-07-06: too much wasted space). */
-.compcols{columns:2;column-gap:6px;margin-top:6px}  /* S-2026-07-10: 3->2. The DOM panel was the
-   masonry's 3rd-column filler; after it moved to the fixed right column, 3 columns left an empty
-   3rd column (wasted space). 2 columns pack the companion panels with no void. */
-.compcols>.pan{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
-.compcols>.cstack{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
+/* S-2026-07-11: CSS multicol (columns:2) could NOT balance the tall unsplittable cstacks -- it
+   dumped both into the left column and left the right column EMPTY (operator's wasted space).
+   Switched to FLEX: the direct children (the 2 .cstack column-groups) sit side by side as two
+   real columns -> no empty column is possible. */
+.compcols{display:flex;gap:6px;align-items:flex-start;margin-top:6px}
+.compcols>.pan{flex:1;min-width:0;margin:0}
+.compcols>.cstack{flex:1;min-width:0;margin:0}
 .cstack>.pan{margin:0 0 6px;display:block;width:100%}
 .cstack>.pan:last-child{margin-bottom:0}
 @media(max-width:1500px){.compcols{columns:2}}
