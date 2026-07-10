@@ -1826,6 +1826,13 @@ static void init_engines(const std::string& cfg_path)
                 // default let native $/pt run wild -- oil $1000/pt vs NAS $1/pt). Cap each
                 // ride's hard-stop dollar risk at ~$25: lot chosen per symbol so
                 // thr*2 (hard stop) x $/pt x lot ~= $25. Plain if-chain (MSVC-safe).
+                // S-2026-07-10 (operator): JumpRiderXAUUSD LONG-ONLY -- allow_short=false so a
+                // SYM_FLIP exits to FLAT instead of flipping short. Gold shorts get squeezed: live
+                // SYM_FLIP short 4056.91->4108.60 = -$5,215, and the exhaustive gold-short backtest
+                // (h1/daily/m30 x breakdown/fade/pullback x 2013/2015/2022 bears + 2024-26 bull,
+                // 6bps) found NO viable gold short at any TF/regime (safe-haven squeeze). Gold is
+                // long-only. See Memory-Omega GoldShort tombstone.
+                if (!strcmp(j.tag, "XAUUSD")) c.allow_short = false;
                 if      (!strcmp(j.tag, "XAUUSD")) c.lot = 0.01;   // 2% of ~4070 = 81pt x $100 x .01 = $81 hard-stop... FLIP-exit row, keep micro
                 else if (!strcmp(j.tag, "XAGUSD")) c.lot = 0.01;   // $5000/pt-lot silver -> micro
                 else if (!strcmp(j.tag, "USDJPY")) c.lot = 0.02;   // 0.6% of 162 = ~1pt x $667 x .02 = ~$13
