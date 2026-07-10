@@ -178,6 +178,17 @@ a{color:var(--blu);text-decoration:none}
   </div>
   <div id="heat"></div>
 </div>
+
+<!-- ═══ DOM — XAUUSD L2 (S-2026-07-10 operator: moved OUT of .compcols masonry into the fixed
+     right column below ENGINE HEAT, with a FIXED height so it never resizes/reflows). ═══ -->
+<div class="pan" style="margin-top:8px;height:250px;overflow:hidden;display:flex;flex-direction:column">
+  <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
+  <div id="dom" class="num" style="font-size:10px;flex:1;overflow:hidden"></div>
+  <div style="margin-top:5px">
+    <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
+    <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
+  </div>
+</div>
 </div><!-- /tcol right -->
 </div><!-- /topgrid -->
 
@@ -253,16 +264,9 @@ a{color:var(--blu);text-decoration:none}
 </div>
 </div><!-- /ladder cstack -->
 
-<!-- ═══ DOM — XAUUSD L2 (2026-07-08 operator x2): standalone LAST pan of .compcols — masonry
-     places it in the right-column gap next to the stock-mover/ladder stacks. ═══ -->
-<div class="pan">
-  <div class="lbl" style="margin-bottom:4px">DOM — XAUUSD L2</div>
-  <div id="dom" class="num" style="font-size:10px"></div>
-  <div style="margin-top:5px">
-    <div class="lbl">OBI top-5 <span id="obiv" class="num w"></span></div>
-    <div class="bar" style="margin-top:3px"><i id="obib" style="background:var(--grn);left:50%;width:0"></i></div>
-  </div>
-</div>
+<!-- DOM — XAUUSD L2 moved to the fixed right column (below ENGINE HEAT), S-2026-07-10 operator:
+     out of the .compcols masonry so it stops reflowing/resizing. -->
+
 
 </div><!-- /companions row -->
 
@@ -808,7 +812,7 @@ setInterval(pollComp,5000);pollComp();
 function fmtTs(t){ if(!t)return '—'; var d=new Date(t*1000); return d.toISOString().slice(0,16).replace('T',' ')+'Z'; }
 function pollTrades(){
   Promise.all([
-    fetch('/api/trades').then(function(r){return r.json();}).catch(function(){return [];}),
+    fetch('/api/history?all=1').then(function(r){return r.json();}).catch(function(){return [];}),
     fetch('/api/crypto_trades').then(function(r){return r.json();}).catch(function(){return [];})
   ]).then(function(res){
     var all=(res[0]||[]).concat(res[1]||[]);

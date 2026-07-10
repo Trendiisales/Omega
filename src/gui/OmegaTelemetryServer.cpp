@@ -843,7 +843,10 @@ static std::string buildCryptoTradesJson()
                 ex_ts, ut);
             out += row;
         }
-        break;   // first readable path wins
+        // NO break: read BOTH the daily and intraday crypto books and merge them (the intraday
+        // book holds the ETH/BTC trend wins the daily book doesn't). The GUI sorts the union by
+        // exitTs and takes the newest 15. (S-2026-07-10 operator: "last 2 wins didn't show" —
+        // they were in the intraday file that the old first-path-wins break skipped.)
     }
     out += ']';
     return out;
