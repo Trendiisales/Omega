@@ -1231,7 +1231,26 @@ static void init_engines(const std::string& cfg_path)
         // LOWER DD, both-WF-halves+ both regimes). On bear-heavy 2022-23 IMP0 edges
         // 0.5 by ~$130 but that sample fails WF both-halves either way. 0.5 also
         // matches the 1h + D1 fleet (same faithful basis). Direction-aware code kept.
-        g_xau_tf_4h.min_impulse_atr = 0.5;
+        //
+        // S-2026-07-10 RETUNE 0.5 -> 0.3 (faithful 4h2h BT, prod cfg mask 0xC9 +
+        // ADX15 + vol-band, correct IBKR cost, IMP-plateau sweep 0.1..1.0):
+        //   FINDING 1 -- impulse is NOT a cadence lever. n_trades is FLAT at 313 on
+        //   the bull file across IMP 0.1..0.5 (blocks 0/62/165 at 0.0/0.25/0.5) --
+        //   a blocked breakout bar simply re-enters the same cell a bar later, so the
+        //   live "[XTF4H-BLOCK] 133x" is per-cell/-bar log spam, NOT throttling. The
+        //   low gold-trend cadence is validated/structural (D1 EMA200 gate + setup
+        //   scarcity), not the impulse gate. Loosening buys ZERO extra trades.
+        //   FINDING 2 -- 0.5 sits just PAST a broad robust bull plateau (IMP 0.2..0.35
+        //   PF 1.77..1.82); 0.3 is the plateau centre. 0.3 vs 0.5 (2yr bull fresh):
+        //   PF 1.82 vs 1.74, net +5960 vs +5523 (+8%), maxDD 816 vs 832, both WF
+        //   halves STRONGER (H1 1.88 vs 1.62 / H2 1.80 vs 1.79), cadence unchanged
+        //   (n=313). Spread-robust @0.40 (net +5954, PF 1.82 -- unchanged). 2022-23
+        //   BEAR neutral (PF 1.13 net ~+$420 either way; WF both-halves FAIL at EVERY
+        //   IMP -- the documented bull-positive/bear-flat shadow profile, not caused
+        //   by this change). So 0.3 = free entry-QUALITY gain, bear-neutral, robust
+        //   shoulder (0.25/0.3/0.35 flat top, not an in-sample spike). NOT a cadence
+        //   change. Siblings (1h/2h/D1) left at 0.5 -- own harnesses, out of scope.
+        g_xau_tf_4h.min_impulse_atr = 0.3;
         // S-2026-06-30 ADX CHOP-GATE: block ALL cell entries when Wilder ADX14 < 15
         // (= ranging). Kills the EMA-cross/breakout whipsaw-into-a-range losers (the
         // operator-flagged 4k-chop trade). Faithful 4h2h BT, production cfg

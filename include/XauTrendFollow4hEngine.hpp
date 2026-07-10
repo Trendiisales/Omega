@@ -545,6 +545,13 @@ public:
             if ((int)atr_vol_window_.size() > 200) atr_vol_window_.pop_front();
         }
 
+        // S-2026-07-10 log de-spam: aggregate per-cell/-bar skip reasons into ONE
+        // summary line per bar (below), instead of a printf per skipped cell. A quiet
+        // engine could otherwise emit 6+ [XTF4H-BLOCK] lines every bar and dominate
+        // the log (the impulse gate alone logged ~165 times over a 2yr BT while the
+        // trade count was UNCHANGED -- those blocked cells re-enter later). Pure
+        // logging change, zero effect on entry logic.
+        int nskip_impulse = 0, nskip_adx_chop = 0, nskip_adx_cold = 0;
         for (int ci = 0; ci < kXauTfNumCells; ++ci) {
             if (!(cell_enable_mask & (1u << ci))) continue;  // S96: per-cell gate
             if (pos[ci].active) continue;
@@ -562,24 +569,12 @@ public:
                 const double prev_close = bars_[bars_.size()-2].close;
                 const double thrust = (side > 0) ? (bar.high - prev_close)
                                                  : (prev_close - bar.low);
-                if (thrust < min_impulse_atr * atr14_) {
-                    std::printf("[XTF4H-BLOCK] cell=%d side=%d impulse %.2f < %.2f (%.1fxATR) -- weak breakout\n",
-                                ci, side, thrust, min_impulse_atr * atr14_, min_impulse_atr);
-                    continue;
-                }
+                if (thrust < min_impulse_atr * atr14_) { ++nskip_impulse; continue; }
             }
             // S-2026-06-30 ADX CHOP-GATE (study): skip entries when ADX14 < floor (ranging).
             if (min_adx_entry > 0.0) {
-                if (adx_dx_count_ < kAdxPeriod) {             // ADX not warm -> no entry
-                    std::printf("[XTF4H-BLOCK] cell=%d ADX cold (%d/%d DX) -- no entry until warm\n",
-                                ci, adx_dx_count_, kAdxPeriod);
-                    continue;
-                }
-                if (adx14_ < min_adx_entry) {                 // chop -> skip
-                    std::printf("[XTF4H-BLOCK] cell=%d ADX %.1f < %.1f -- chop skip\n",
-                                ci, adx14_, min_adx_entry);
-                    continue;
-                }
+                if (adx_dx_count_ < kAdxPeriod) { ++nskip_adx_cold; continue; }  // ADX not warm
+                if (adx14_ < min_adx_entry)    { ++nskip_adx_chop; continue; }  // chop -> skip
             }
             // 2026-06-12 regime gate: no new longs in sustained gold bear.
             if (use_regime_long_gate && side > 0
@@ -596,6 +591,13 @@ public:
                 }
             }
             _fire_entry(ci, side, bid, ask, now_ms);
+        }
+        // S-2026-07-10 de-spammed: ONE aggregated skip line per bar (was a printf
+        // per skipped cell). impulse= weak-breakout skips, adx_chop= ADX<floor,
+        // adx_cold= ADX not warm. Prints only when at least one cell was skipped.
+        if (nskip_impulse | nskip_adx_chop | nskip_adx_cold) {
+            std::printf("[XTF4H-SKIP] cells skipped this bar: impulse=%d adx_chop=%d(<%.0f) adx_cold=%d\n",
+                        nskip_impulse, nskip_adx_chop, min_adx_entry, nskip_adx_cold);
         }
         (void)on_close; // signature parity; we only emit on exit (in on_tick)
     }
