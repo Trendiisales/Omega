@@ -864,6 +864,8 @@ function pollRdagent(){
     fetch('/api/rdagent_rank').then(function(r){return r.json();}).catch(function(){return {};})
   ]).then(function(res){
     var book=res[0]||{}, rank=res[1]||{};
+    window._rdatot=safe(book.pnl_usd);/* fold into the desk ALL-TIME total (updDayPnl) in real time */
+    if(typeof updDayPnl==='function')updDayPnl();
     var inf=el('rdainfo'); if(inf){
       var pnl=safe(book.pnl_usd), eq=safe(book.equity_usd), n=safe(book.n_names);
       inf.innerHTML=(book.as_of?('as of '+esc(book.as_of)+' · '):'')+n+' held · equity $'+fmt2(eq,0)+
@@ -1335,7 +1337,8 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
     companion book. Overrides the earlier "crypto paper must not muddy the Omega number" stance. */
  var ccAll=bpUsd(safe(window._cctot));/* crypto ladder companion all-time bank, $ (additive) */
  var fxAll=safe(window._fxtot),gbAll=safe(window._goldtot),ixAll=safe(window._idxtot),xgAll=safe(window._xagtot),uoAll=safe(window._usoiltot),smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time; forward-only banks -> fold into ALL-TIME, not today) */
- var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll;
+ var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (additive, all-time -- the META-type picks now fold into the desk headline like crypto) */
+ var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll;
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';}

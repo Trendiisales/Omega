@@ -149,8 +149,13 @@ if ($null -ne $postedExec) {
     $quietH = [int]$sinceH
     $isWeekend = ([DateTime]::UtcNow.DayOfWeek -eq 'Saturday' -or [DateTime]::UtcNow.DayOfWeek -eq 'Sunday')
     if (-not $isWeekend -and -not $execRetired) {
-        if ($sinceH -ge $actRedH) { $overall = 'RED'; $reasons += "[RED] ACTIVITY: posted_exec has not advanced in ${quietH}h market-open (>= ${actRedH}h) -- book not trading; verify route+engines" }
-        elseif ($sinceH -ge $actWinH) { if ($overall -eq 'GREEN') { $overall = 'AMBER' }; $reasons += "[AMBER] ACTIVITY: no order intent in ${quietH}h market-open (>= ${actWinH}h); posted_exec=$postedExec -- may be legit (compression); verify intended" }
+        # S-2026-07-11: posted_exec-stale is NO LONGER a RED. The live entry engines are slow D1/H4
+        # (fire ~weekly), gold is long-only + regime-gated (blocks the main real-exec candidate for
+        # days at a time), and the book is paper_only -- so a multi-day quiet is LEGITIMATE, not a
+        # fault. RED-alarming it every poll was crying wolf (operator: recurring false HEALTH RED).
+        # It now escalates only to AMBER (visible + surfaced, no alarm). A GENUINE fault -- frozen
+        # dispatch loop or dead logger -- still REDs via the checks above (log-missing / stats-stale).
+        if ($sinceH -ge $actWinH) { if ($overall -eq 'GREEN') { $overall = 'AMBER' }; $reasons += "[AMBER] ACTIVITY: no real order intent in ${quietH}h market-open (posted_exec=$postedExec) -- legit while gold is regime-gated + engines slow/paper; RED only if you EXPECT live orders (raise engines to live / unblock gold)" }
     }
 }
 $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
