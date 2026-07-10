@@ -2080,6 +2080,14 @@ static void init_engines(const std::string& cfg_path)
                 // -13.4% (operator accepts the protection cost; the stock ladder is where the real
                 // 12% "gave it all back" problem lives). LOSS_CUT 15% unchanged.
                 c.w_arm = 1.0; c.w_gb = 0.10;
+                // S-2026-07-11 operator "extra mimic x4": 4x the clip notional across the WHOLE
+                // stock book ($10k->$40k base). This is a MIMIC -> it never touches the real trade
+                // (CompanionDominanceError), so scaling it is purely additive and its own drawdown-
+                // cancel (loss_cut 15%, DRAWDOWN-CANCEL gate S-2026-07-11) is the free safety lever.
+                // Retirement bar scales with size so protection stays proportional (-$600->-$2400).
+                // Elite x2 tilt still applies ON TOP (elite -> $80k / -$4800).
+                c.notional   *= 4.0;
+                c.retire_usd *= 4.0;
                 bool is_elite = false, is_out = false;
                 for (const char* e : AGG_ELITE) if (c.sym == e) { is_elite = true; break; }
                 for (const char* o : AGG_OUT)   if (c.sym == o) { is_out   = true; break; }

@@ -377,6 +377,9 @@ private:
             const double fav = (cur / entry_px_ - 1.0) * 100.0;
             if (fav > mfe_ + 1e-9) mfe_ = fav;
             const char* reason = nullptr;
+            // DRAWDOWN-CANCEL: -15% catastrophe hard floor (mimic never touches real trade -> free cut).
+            //   Backtested lever; on daily bars a gap can leap past it (same coarse-fill caveat as
+            //   bigcap_mimic_lc_sweep S-2026-07-11). Paired with gb90 trail + 60d max-hold below.
             if (fav <= -cfg_.catastrophe) {                              // -15% catastrophe hard floor
                 reason = "CATASTROPHE_FLOOR";
             } else if (mfe_ > 1e-9 && fav <= mfe_ * (1.0 - cfg_.gb)) {   // gb90 peak-profit trail

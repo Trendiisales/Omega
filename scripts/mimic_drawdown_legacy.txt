@@ -1,0 +1,6 @@
+GoldBeFloorCompanion
+FxBeFloorCompanion
+IndexBeFloorCompanion
+UsoilBeFloorCompanion
+XagBeFloorCompanion
+StockDayMoverBeFloorCompanion

@@ -444,6 +444,9 @@ private:
         if (N < W + 1) return;
         const bool   fwd = ts_sec > deploy_ts_;
         const double hh = h_[N-1], ll = l_[N-1], cc = c_[N-1];
+        // DRAWDOWN-CANCEL: ATR/thr-scaled LC stop (mimic never touches real trade -> free cut).
+        //   Backtested: maxDD -581bp on the W96/0.5 equity curve (header FILL CONVENTION);
+        //   H1 bars -> finer than daily, cut bites cleanly (no daily gap-through). Exit L484.
         const double lc_lvl_mult = 1.0 - d_ * LC_M * cfg_.thr / 100.0;
 
         // 1) manage open legs intrabar: adverse extreme first (SL-first), then favorable, then c.

@@ -189,6 +189,9 @@ public:
         double retire_usd   = -300.0;              // S-2026-07-08c auto-retirement: banked net <= this
                                                    //   => no NEW companions (0 = disabled; ~2x a worst
                                                    //   validated clip-book drawdown leg)
+        // DRAWDOWN-CANCEL: USD cold-loss cut per book (mimic never touches real trade -> free).
+        //   Backtested clip-book drawdown leg; crypto/gold run intraday (fine bars -> clean cut,
+        //   no daily gap-through). Paired with retire_usd latch above.
         double cold_loss_omega  = -50.0;           // COLD_LOSS_USD_OMEGA
         double cold_loss_crypto = -15.0;           // COLD_LOSS_USD_CRYPTO
         double cold_loss_bear   = 0.0;             // S-2026-07-08 loss-bound study: <0 => TIGHTER cold

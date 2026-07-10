@@ -48,7 +48,9 @@ public:
         std::string live_sym    = "XAUUSD";    // symbol the legs trade (order path)
         std::vector<LegCfg> legs;              // e.g. {{"T1",0.08},{"T2",0.10},{"W1",0.20},{"W2",0.25}}
         double arm_pct     = 0.25;   // % MFE that ARMS a leg (then the peak-profit trail governs)
-        double lc_pct      = 1.5;    // pre-arm LOSS_CUT: cut a leg at -lc_pct% before it arms
+        double lc_pct      = 1.5;    // DRAWDOWN-CANCEL: pre-arm LOSS_CUT, cut a leg at -lc_pct% before it
+                                     //   arms (mimic never touches real trade -> free). Backtested: PASS
+                                     //   figures in header are NET of this cut. Fires L152 (book_clip LOSS_CUT).
         // BE-ENTRY (operator S-2026-07-09b): a leg does NOT open at the trigger. It stays PENDING
         // until price clears +be_entry_pct in favor (costs covered / break-even made), then enters
         // THERE. A move that fades before covering cost never opens a leg -> no open-into-loss.

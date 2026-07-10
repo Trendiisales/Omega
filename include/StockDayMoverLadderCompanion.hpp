@@ -124,7 +124,11 @@ public:
         double m_gb          = 0.75;      // giveback fraction of MFE
         double reclip        = 0.05;      // re-enter when fav > peak*(1+reclip)
         int    cap           = 5;         // max legs spawned per parent window (incl 2 base)
-        double loss_cut_pct  = 15.0;      // ADVERSE-PROTECTION: cut an open leg at -15% fav (FREE, backtested)
+        double loss_cut_pct  = 15.0;      // ADVERSE-PROTECTION / DRAWDOWN-CANCEL: cut an open leg at -15% fav.
+                                          // Mimic never touches the real trade -> cold cut is FREE. Sweep
+                                          // bigcap_mimic_lc_sweep.py (S-2026-07-11): near-inert on daily bars
+                                          // (losses gap-through, worst -33->-28%) but net flat/up + all-6 & 2x
+                                          // pass at lc 8-20; lc=15 = free Pareto floor. Fires L642 (L.dead).
         double rt_cost_bp    = 8.0;       // REAL round-trip cost (bp of entry) debited per clip (validated gate)
         double notional      = 10000.0;   // $ per clip; USD = return * notional (name-agnostic sizing)
         double lot           = 1.0;       // order-path lot (shares/CFD units decided at flip)

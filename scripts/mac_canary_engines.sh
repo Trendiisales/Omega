@@ -141,6 +141,17 @@ bash "$(dirname "$0")/../tools/live_dump_freshness_audit.sh" || {
   exit 1
 }
 
+# MIMIC DRAWDOWN-CANCEL GATE (added S-2026-07-11): every ACTIVE mimic/companion book
+# must carry a backtested DRAWDOWN-CANCEL verdict. A mimic never touches the real trade,
+# so a cold cut is FREE protection -> the lever is mandatory on ALL of them (operator
+# "enforce it"). Retired BE-floors grandfathered via scripts/mimic_drawdown_legacy.txt.
+echo ""
+echo "[mac-canary-engines] mimic drawdown-cancel gate (every active mimic carries an lc verdict)..."
+bash "$(dirname "$0")/mimic_drawdown_audit.sh" || {
+  echo "[mac-canary-engines] FAIL: an active mimic ships without a backtested drawdown-cancel verdict."
+  exit 1
+}
+
 # GUI DRIFT GATE (added S-2026-07-06): HARD-BLOCK a hand-edited OmegaIndexHtml.hpp.
 # include/OmegaIndexHtml.hpp MUST equal regen(tools/gui/omega_desk.html). Three GUI
 # commits drifted the .hpp from its .html source with only a prose "do not hand-edit"
