@@ -198,6 +198,11 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ COMPANIONS ROW: crypto | gold side-by-side (was stacked → halves vertical space) ═══ -->
 <div class="compcols">
 
+<!-- LEFT column stack (S-2026-07-10 operator): CRYPTO + INDEX COMPANIONS + LAST 15 TRADES kept
+     together so the trade log fills the void under INDEX COMPANIONS instead of stranding at the
+     bottom. -->
+<div class="cstack">
+
 <!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
@@ -220,6 +225,16 @@ a{color:var(--blu);text-decoration:none}
   <div id="icopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="icopen"></table></div></div>
   <div id="ictradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="ictrades"></table></div></div>
 </div>
+
+<!-- ═══ LAST 15 TRADES — moved here (under INDEX COMPANIONS, left column) S-2026-07-10 operator ═══ -->
+<div class="pan">
+  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto) · newest first · scroll for history</div>
+  <div style="max-height:200px;overflow-y:auto;margin-top:3px">
+    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
+  </div>
+</div>
+
+</div><!-- /left column cstack -->
 
 <!-- ═══ STOCK MOVERS — BIGCAP day-mover UP-JUMP LADDER books (no-floor · shadow, additive)
      + stacked underneath (2026-07-08, operator): 4 retired BE-floor banners + DOM L2 ═══ -->
@@ -272,14 +287,6 @@ a{color:var(--blu);text-decoration:none}
 
 
 </div><!-- /companions row -->
-
-<!-- ═══ LAST 15 TRADES — unified all-books scrollable log (S-2026-07-10 operator) ═══ -->
-<div class="pan" style="margin-top:8px">
-  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto) · newest first · scroll for history</div>
-  <div style="max-height:165px;overflow-y:auto;margin-top:3px">
-    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
-  </div>
-</div>
 
 <!-- ═══ RETIRED COMPANIONS strip + OPS STRIP (DOM) removed 2026-07-08 (operator): the 4 retired
      BE-floor banners + DOM — XAUUSD L2 moved into the stock-movers cstack above. ═══ -->

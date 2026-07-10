@@ -205,7 +205,12 @@ a{color:var(--blu);text-decoration:none}
 <div class="compcols">
 
 )OMEGAD0"
-R"OMEGAD1(<!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
+R"OMEGAD1(<!-- LEFT column stack (S-2026-07-10 operator): CRYPTO + INDEX COMPANIONS + LAST 15 TRADES kept
+     together so the trade log fills the void under INDEX COMPANIONS instead of stranding at the
+     bottom. -->
+<div class="cstack">
+
+<!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">CRYPTO COMPANIONS — up-jump stall-clip books (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
@@ -227,6 +232,16 @@ R"OMEGAD1(<!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow,
   <div id="icopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="icopen"></table></div></div>
   <div id="ictradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="ictrades"></table></div></div>
 </div>
+
+<!-- ═══ LAST 15 TRADES — moved here (under INDEX COMPANIONS, left column) S-2026-07-10 operator ═══ -->
+<div class="pan">
+  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto) · newest first · scroll for history</div>
+  <div style="max-height:200px;overflow-y:auto;margin-top:3px">
+    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
+  </div>
+</div>
+
+</div><!-- /left column cstack -->
 
 <!-- ═══ STOCK MOVERS — BIGCAP day-mover UP-JUMP LADDER books (no-floor · shadow, additive)
      + stacked underneath (2026-07-08, operator): 4 retired BE-floor banners + DOM L2 ═══ -->
@@ -279,14 +294,6 @@ R"OMEGAD1(<!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow,
 
 
 </div><!-- /companions row -->
-
-<!-- ═══ LAST 15 TRADES — unified all-books scrollable log (S-2026-07-10 operator) ═══ -->
-<div class="pan" style="margin-top:8px">
-  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto) · newest first · scroll for history</div>
-  <div style="max-height:165px;overflow-y:auto;margin-top:3px">
-    <table id="alltrades" style="width:100%"><tr><td class="l d">loading…</td></tr></table>
-  </div>
-</div>
 
 <!-- ═══ RETIRED COMPANIONS strip + OPS STRIP (DOM) removed 2026-07-08 (operator): the 4 retired
      BE-floor banners + DOM — XAUUSD L2 moved into the stock-movers cstack above. ═══ -->
@@ -398,12 +405,12 @@ function chime(notes,_r){if(!SND)return;ensureCtx();if(!ACTX)return;
   o.connect(g);g.connect(ACTX.destination);o.type='sine';o.frequency.value=n[1];
   var st=t+n[0];g.gain.setValueAtTime(0,st);g.gain.linearRampToValueAtTime(n[2],st+0.01);
   g.gain.exponentialRampToValueAtTime(0.001,st+0.5);o.start(st);o.stop(st+0.55);});}
-function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
+)OMEGAD1"
+R"OMEGAD2(function winBell(){chime([[0,880,0.6],[0.15,1100,0.5],[0.3,1320,0.5]]);}
 function lossBell(){chime([[0,440,0.6],[0.18,330,0.5],[0.36,262,0.5]]);}
 function sigTick(){chime([[0,660,0.25]]);}
 function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
-)OMEGAD1"
-R"OMEGAD2(/* ── COMPANION fire-watcher (2026-07-06): engine fires ring via live_trades; the 6 companion
+/* ── COMPANION fire-watcher (2026-07-06): engine fires ring via live_trades; the 6 companion
    books (gold/index/fx/xag/usoil/stockmover) open in their OWN state JSONs, so their fires rang
    NOTHING (operator: "no sound when companions fire"). Poll all companion window vars, ring
    entryBell on a NEW open leg + winBell on a NEW banked clip. Identity-based (kind|leg-id) with
@@ -579,10 +586,10 @@ function compSub(engine,symbol,colspan,nLegs){
   parts.push('caught <span style="color:'+(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'))+'">'+fmt$(bk)+'</span> banked (sum of books below) · '+(pe.closed||0)+' clip'+((pe.closed||0)===1?'':'s')+' · '+bks.length+' book'+(bks.length===1?'':'s'));}
  var html='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--grn)">&#8627; '+esc(e)+' companions'+legNote+' · '+parts.join(' · ')+'</td></tr>';
  /* per-BOOK breakdown: EVERY companion book listed on its OWN row by UNIQUE name with its
-    OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
-    collapse — every book of the engine renders as a distinct line so all N are visible. Each
 )OMEGAD2"
-R"OMEGAD3(    book is a SEPARATE additive standalone engine ([[CompanionDominanceError]]); its $ is its
+R"OMEGAD3(    OWN pnl + gauge params (operator 2026-07-04j "show all 6, give them unique names"). No
+    collapse — every book of the engine renders as a distinct line so all N are visible. Each
+    book is a SEPARATE additive standalone engine ([[CompanionDominanceError]]); its $ is its
     own, never a multiple of a shared number. */
  bks.forEach(function(b){
    var nm=uniqBookName(b.book||'',bks,e);
@@ -753,9 +760,9 @@ function render(J){lastJ=J;
    +'<td class="num">'+fmt2(t.entry)+'</td><td class="num">'+fmt2(t.current)+'</td>'
    +'<td class="num '+(t.live_pnl>=0?'g':'r')+'">'+fmt$(safe(t.live_pnl))+'</td>'
    +'<td class="num">'+Math.floor(safe(t.held_sec)/60)+'m</td><td class="num">'+fmt2(t.dist_sl,1)+'</td><td class="num">'+fmt2(t.dist_tp,1)+'</td></tr>'+cr;}).join('');
-  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
 )OMEGAD3"
-R"OMEGAD4(  var cbank=safe((window._comptot||{}).all);
+R"OMEGAD4(  el('lt').innerHTML='<tr><th class="l">sym</th><th class="l">engine</th><th>side</th><th>lots</th><th>entry</th><th>now</th><th>pnl</th><th>held</th><th>→SL</th><th>→TP</th></tr>'+rows;
+  var cbank=safe((window._comptot||{}).all);
   el('ltpnl').innerHTML=fmt$(sum)+' unreal <span style="font-size:11px;color:var(--t3)">+ '+fmt$(cbank)+' companion (paper, additive)</span>';
   el('ltpnl').style.color=sum>=0?'var(--grn)':'var(--red)';}
 }
@@ -925,11 +932,11 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
  /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
     Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both so it shows on push. */
- window._cctot=totbank;
+)OMEGAD4"
+R"OMEGAD5( window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
-)OMEGAD4"
-R"OMEGAD5( if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
+ if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});
@@ -1097,9 +1104,9 @@ function pollFx(){fetch('/api/fx_companion').then(function(r){return r.json();})
  if(j&&(j.pairs||[]).length)window._fx=j;
  window._fxtot=(((window._fx||{}).pairs)||[]).reduce(function(s,p){return s+safe(p.usd);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY. Open-leg unrealized MTM removed from the header total -- on shadow ladder books it bounced red/green each mark and read as a phantom "continuous drop" in ALL-TIME (operator: "artifacts showing up / fix the pnl"). Per-panel DESK below still shows live uPnL for monitoring. Supersedes the 2026-07-06 MTM-in-header choice. */
  drawFx();
- if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
 )OMEGAD5"
-R"OMEGAD6( }).catch(function(){drawFx();});}
+R"OMEGAD6( if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
+ }).catch(function(){drawFx();});}
 setInterval(pollFx,15000);pollFx();
 
 /* ── INDEX COMPANIONS (per-symbol <SYM>Pos/<SYM>Neg BE-floor · native C++ · additive, STANDALONE) ──
@@ -1274,9 +1281,9 @@ function parseShadow(txt){
   var ts=parseInt(f[ix.exit_ts_unix],10);if(!ts)continue;
   var sym=unq(f[ix.symbol]),eng=unq(f[ix.engine]);
   if(sym==='__BOOT__'||eng==='boot_writetest')continue;
-  var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
 )OMEGAD6"
-R"OMEGAD7(  out.push({ts:ts,sym:sym,side:side,eng:eng,
+R"OMEGAD7(  var side=unq(f[ix.side]);if(side==='BUY')side='LONG';if(side==='SELL')side='SHORT';
+  out.push({ts:ts,sym:sym,side:side,eng:eng,
    ets:ix.entry_ts_unix!==undefined?(parseInt(f[ix.entry_ts_unix],10)||0):0,
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
    xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
