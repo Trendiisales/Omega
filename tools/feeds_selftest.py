@@ -379,7 +379,7 @@ def vps_stock_book_health() -> tuple[str, str]:
         d = dt.date.fromisoformat(last.strip())
     except ValueError:
         return ("RED", f"feed last-row date unparseable ('{last}') -- feed corrupt/empty")
-    ltd = last_trading_day(dt.datetime.now(dt.timezone.utc))
+    ltd = last_trading_day(dt.datetime.now(dt.timezone.utc).date())
     behind = trading_days_between(d, ltd)
     if behind > 1:
         return ("RED", f"feed last DATA ROW {d} is {behind} trading days behind {ltd} -- daily-close writer STALLED (mtime can lie; this reads content)")
