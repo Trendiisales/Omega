@@ -152,6 +152,16 @@ bash "$(dirname "$0")/mimic_drawdown_audit.sh" || {
   exit 1
 }
 
+# PNL COMPLETENESS GATE (added S-2026-07-11): every money book must reach the ALL-TIME
+# headline. Blocks an orphaned endpoint (BigCap2pct: existed, never folded) or an assigned
+# total-global that updDayPnl never references. Operator "i have been looking at half the pnl".
+echo ""
+echo "[mac-canary-engines] pnl completeness gate (every money book folds into ALL-TIME)..."
+bash "$(dirname "$0")/mimic_pnl_completeness_gate.sh" || {
+  echo "[mac-canary-engines] FAIL: a money book does not reach the ALL-TIME headline."
+  exit 1
+}
+
 # GUI DRIFT GATE (added S-2026-07-06): HARD-BLOCK a hand-edited OmegaIndexHtml.hpp.
 # include/OmegaIndexHtml.hpp MUST equal regen(tools/gui/omega_desk.html). Three GUI
 # commits drifted the .hpp from its .html source with only a prose "do not hand-edit"
