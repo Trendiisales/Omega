@@ -89,7 +89,13 @@ if(MSVC)
     # D8016: "'/O2' and '/RTC1' command-line options are incompatible".
     # If you ever need /O2 on a non-Release config, add it via the per-config
     # flag set, not here.
-    add_compile_options(/W4 /WX /wd4100 /wd4505 /wd4324 /std:c++20)
+    # /bigobj: main.cpp is a monolithic TU that pulls in the entire engine zoo;
+    # as engines accreted it crossed MSVC's default 65,535-section object-file
+    # limit -> C1128 "number of sections exceeded object file format limit".
+    # /bigobj lifts the cap to 2^32 sections. Harmless on smaller TUs. (Added
+    # S-2026-07-10 after the deploy that had been silently failing since the
+    # 2026-07-06 binary -- first the missing vcpkg/curl masked it, then this.)
+    add_compile_options(/W4 /WX /wd4100 /wd4505 /wd4324 /std:c++20 /bigobj)
     add_definitions(-D_WIN32_WINNT=0x0601 -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS)
 
     # Defensive guard: strip /RTC1 from every configuration EXCEPT Debug.
