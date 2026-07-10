@@ -85,6 +85,14 @@ a{color:var(--blu);text-decoration:none}
   <span class="lbl" id="build"></span>
   <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">TODAY</span><span id="daypnl" class="num" style="font-size:18px;font-weight:600;color:var(--w)">…</span><span id="daypnln" class="lbl"></span></span>
   <span style="display:inline-flex;align-items:baseline;gap:6px"><span class="lbl">ALL-TIME</span><span id="totpnl" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
+  <!-- per-asset-class split of ALL-TIME (STOCK+CRYPTO+FX+GOLD == ALL-TIME; paper/forward books folded in by class). Wraps on a narrow bar. -->
+  <span id="clspnl" style="display:inline-flex;align-items:baseline;gap:9px;flex-wrap:wrap" title="per-asset-class breakdown of ALL-TIME — STOCK + CRYPTO + FX + GOLD sum to ALL-TIME (each class folds its ledger rows + forward/paper books). Additive, realized-only.">
+    <span style="display:inline-flex;align-items:baseline;gap:4px"><span class="lbl">STOCK</span><span id="pnl_stk" class="num" style="font-size:12px;font-weight:600;color:var(--t2)">…</span></span>
+    <span style="display:inline-flex;align-items:baseline;gap:4px"><span class="lbl">CRYPTO</span><span id="pnl_cry" class="num" style="font-size:12px;font-weight:600;color:var(--t2)">…</span></span>
+    <span style="display:inline-flex;align-items:baseline;gap:4px"><span class="lbl">FX</span><span id="pnl_fx" class="num" style="font-size:12px;font-weight:600;color:var(--t2)">…</span></span>
+    <span style="display:inline-flex;align-items:baseline;gap:4px"><span class="lbl">GOLD</span><span id="pnl_gld" class="num" style="font-size:12px;font-weight:600;color:var(--t2)">…</span></span>
+    <span id="pnl_rem" class="lbl" style="display:none;color:var(--ambB)" title="unclassified remainder: 4-class sum did not reconcile to ALL-TIME (see console.warn)"></span>
+  </span>
   <span id="compbankwrap" style="display:inline-flex;align-items:baseline;gap:6px" title="companion (stall-clip) realized bank — paper, accounting-only"><span class="lbl">COMP-BANK</span><span id="compbank" class="num" style="font-size:14px;font-weight:600;color:var(--t2)">…</span></span>
   <button id="snd">SND OFF</button>
   <button id="killall" title="PANIC: market-close ALL open positions in THIS book (sends live opposing MKT orders)" style="background:#3a0d0d;color:#ff5a5a;border:1px solid #ff5a5a;font-weight:700;letter-spacing:.5px" onclick="killAll(this)">KILL ALL</button>
@@ -1335,6 +1343,19 @@ function parseShadow(txt){
 function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
  return ROWS.filter(function(r){return r.ts>=cut;});}
+/* ── per-asset-class PnL split (operator 2026-07-11) ──
+   Assigns EVERY money source updDayPnl folds into ALL-TIME to exactly one of 4 classes
+   (STOCK/CRYPTO/FX/GOLD) so the 4 chips reconcile to ALL-TIME. classOf() classifies a ledger
+   row by its engine tag (+ symbol for single-name equities). The forward/paper book globals are
+   routed by fixed class (see updDayPnl). STOCK = equities incl. equity indices (operator's 4
+   buckets have no separate index); GOLD includes usoil/xag per the operator's class map. */
+var BIGCAP_STK=/^(NVDA|AMD|AVGO|MU|MRVL|SMCI|ARM|PLTR|TSLA|META|NFLX|CRWD|SHOP|COIN|MSTR|SNOW|NOW|PANW|UBER|ABNB|DELL|ORCL|QCOM|INTC|AMZN|GOOGL|MSFT|AAPL|CRM|ADBE|IONQ|RGTI|QBTS|ASTS|RKLB|NBIS|CRWV|ALAB|CRDO|WDC|STX|DD|TPR|BMY|SWKS)$/i;
+function classOf(eng,sym){var s=(eng||'')+'|'+(sym||'');
+ if(/btc|eth|sol|ada|doge|near|bnb|aave|xrp|trx|crypto/i.test(s))return 'crypto';
+ if(/xau|gold|mgc|xag|silver|usoil|london/i.test(s))return 'gold';/* usoil+xag land in GOLD per operator class map */
+ if(/eur|gbp|nzd|aud|usdcad|usdjpy|idealpro|_fx|fx_/i.test(s))return 'fx';
+ if(BIGCAP_STK.test((sym||'').trim())||/nas|ndx|nq|spx|us500|sp5|dj30|dow|ger40|dax|m2k|russell|turtle|dip/i.test(s))return 'stock';
+ return 'other';}
 function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,tot=0;
  ROWS.forEach(function(r){tot+=r.pnl;if(r.ts>=cut){n++;p+=r.pnl;}});
  var ct=window._comptot||{},cToday=safe(ct.today),cAll=safe(ct.all);
@@ -1348,7 +1369,38 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All;
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
- tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';}
+ tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
+ /* ── PER-ASSET-CLASS SPLIT of ALL-TIME (does NOT touch totT/daypnl above) ──
+    Same sources totT folds, routed to exactly one class. Reconciliation invariant:
+    stock+crypto+fx+gold (+ visible remainder) == totT. */
+ var cls={stock:0,crypto:0,fx:0,gold:0};
+ /* 1. central engine ledger rows — MIXED classes; classify each by engine tag (+ symbol) */
+ ROWS.forEach(function(r){var c=classOf(r.eng,r.sym);if(cls[c]!==undefined)cls[c]+=r.pnl;});
+ /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
+ cls.crypto+=ccAll;                       /* crypto ladder companion */
+ cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) */
+ cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
+ cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
+ /* 3. OMEGA stall-clip (cAll, gold+index only) — split per-engine via window._gcPer.
+       Route each engine's banked realized to its class; only gold/stock engines belong to the
+       OMEGA book (crypto/fx entries in _gcPer are other books, NOT folded into cAll -> skipped).
+       Fallback: no per-engine rollup -> assign the whole stall-clip to GOLD and warn. */
+ var per=window._gcPer||{},clipG=0,clipS=0,clipSeen=false;
+ for(var ek in per){if(!Object.prototype.hasOwnProperty.call(per,ek))continue;
+  var pc=classOf(ek,''),pv=safe((per[ek]||{}).realized);
+  if(pc==='gold'){clipG+=pv;clipSeen=true;}else if(pc==='stock'){clipS+=pv;clipSeen=true;}}
+ if(clipSeen){cls.gold+=clipG;cls.stock+=clipS;}
+ else{cls.gold+=cAll;if(cAll)console.warn('classPnl: window._gcPer unavailable — stall-clip '+fmt$(cAll)+' assigned wholly to GOLD');}
+ /* 4. reconciliation — remainder is DEFINED as totT minus the 4 class sums, so it captures any
+       unclassified ledger row ('other') or stall-clip reconciliation gap. Surface it, never hide it. */
+ var cls4=cls.stock+cls.crypto+cls.fx+cls.gold,rem=totT-cls4;
+ tweenNum('pnl_stk',cls.stock,fmt$);el('pnl_stk').style.color=cls.stock>=0?'var(--grn)':'var(--red)';
+ tweenNum('pnl_cry',cls.crypto,fmt$);el('pnl_cry').style.color=cls.crypto>=0?'var(--grn)':'var(--red)';
+ tweenNum('pnl_fx', cls.fx,   fmt$);el('pnl_fx').style.color=cls.fx>=0?'var(--grn)':'var(--red)';
+ tweenNum('pnl_gld',cls.gold, fmt$);el('pnl_gld').style.color=cls.gold>=0?'var(--grn)':'var(--red)';
+ var remEl=el('pnl_rem');if(remEl){if(Math.abs(rem)>0.5){remEl.style.display='';remEl.textContent='±'+fmt$(rem)+' unclassified';
+   console.warn('classPnl reconciliation: STOCK+CRYPTO+FX+GOLD='+fmt$(cls4)+' vs ALL-TIME='+fmt$(totT)+' -> remainder '+fmt$(rem));}
+  else remEl.style.display='none';}}
 
 /* ── companion→engine match + sub-row for the ENGINE LEDGER ──
    Operator 2026-07-04: "companion engines displayed underneath their respective engines they
