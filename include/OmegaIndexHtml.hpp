@@ -33,7 +33,9 @@ body{background:var(--bg);color:var(--t);font:11px 'IBM Plex Mono',Menlo,Consola
    heights never leave a massive grid row-coupling gap (XAG short vs FX tall).
    3-up on wide screens packs the 7 uneven companion panels far tighter than 2-up
    (operator 2026-07-06: too much wasted space). */
-.compcols{columns:3;column-gap:6px;margin-top:6px}
+.compcols{columns:2;column-gap:6px;margin-top:6px}  /* S-2026-07-10: 3->2. The DOM panel was the
+   masonry's 3rd-column filler; after it moved to the fixed right column, 3 columns left an empty
+   3rd column (wasted space). 2 columns pack the companion panels with no void. */
 .compcols>.pan{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
 .compcols>.cstack{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 6px;display:inline-block;width:100%;vertical-align:top}
 .cstack>.pan{margin:0 0 6px;display:block;width:100%}
@@ -204,11 +206,11 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">CRYPTO COMPANIONS — up-jump stall-clip books (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
+)OMEGAD0"
+R"OMEGAD1(    <span class="lbl">CRYPTO COMPANIONS — up-jump stall-clip books (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
     <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
-)OMEGAD0"
-R"OMEGAD1(  <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
 <!-- ═══ GOLD/XAG/USOIL/FX retired BE-floor banners moved to the compact RETIRED strip below
@@ -401,10 +403,10 @@ function sigTick(){chime([[0,660,0.25]]);}
 function entryBell(){chime([[0,740,0.5],[0.12,988,0.45]]);}
 /* ── COMPANION fire-watcher (2026-07-06): engine fires ring via live_trades; the 6 companion
    books (gold/index/fx/xag/usoil/stockmover) open in their OWN state JSONs, so their fires rang
-   NOTHING (operator: "no sound when companions fire"). Poll all companion window vars, ring
-   entryBell on a NEW open leg + winBell on a NEW banked clip. Identity-based (kind|leg-id) with
 )OMEGAD1"
-R"OMEGAD2(   the same guards as the engine bell: first pass baselines silently; a key re-appearing within
+R"OMEGAD2(   NOTHING (operator: "no sound when companions fire"). Poll all companion window vars, ring
+   entryBell on a NEW open leg + winBell on a NEW banked clip. Identity-based (kind|leg-id) with
+   the same guards as the engine bell: first pass baselines silently; a key re-appearing within
    90s does not re-ring; stale keys expire. Closed-clip count tracked per book -> ring on rise. */
 function __compOpens(j){var out=[];if(!j)return out;
  (j.open||[]).forEach(function(o){out.push(o);});
@@ -583,10 +585,10 @@ function compSub(engine,symbol,colspan,nLegs){
  bks.forEach(function(b){
    var nm=uniqBookName(b.book||'',bks,e);
    var bk=safe(b.realized),clips=b.closed||0;
-   var gz=(b.gauge==='USD')?('$'+fmt2(b.arm_usd,0)+'/'+fmt2(b.trail_usd,0)):'PCT';
-   var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
 )OMEGAD2"
-R"OMEGAD3(   var op=b.idle?'.6':'.9';
+R"OMEGAD3(   var gz=(b.gauge==='USD')?('$'+fmt2(b.arm_usd,0)+'/'+fmt2(b.trail_usd,0)):'PCT';
+   var state=b.idle?'<span class="d">idle</span>':(b.open?'<span class="g">open</span>':'<span class="d">flat</span>');
+   var op=b.idle?'.6':'.9';
    var col=(bk>0?'var(--grn)':(bk<0?'var(--red)':'var(--t2)'));
    html+='<tr><td></td><td class="l d" colspan="'+colspan+'" style="border-left:2px solid var(--t3);padding-left:26px;font-size:10px;opacity:'+op+'">&#8627; <b>'+esc(nm)+'</b> <span class="d">['+gz+']</span> · '+state+' · '+clips+' clip'+(clips===1?'':'s')+' · <span style="color:'+col+'">'+fmt$(bk)+'</span></td></tr>';
  });
@@ -757,10 +759,10 @@ function render(J){lastJ=J;
 }
 
 /* ── ws + poll ── */
-var wsOk=false;
-function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)';el('connlbl').textContent=ok?via:'offline';}
 )OMEGAD3"
-R"OMEGAD4((function ws(){try{var s=new WebSocket('ws://'+location.hostname+':7780');
+R"OMEGAD4(var wsOk=false;
+function setConn(ok,via){el('conn').style.background=ok?'var(--grn)':'var(--red)';el('connlbl').textContent=ok?via:'offline';}
+(function ws(){try{var s=new WebSocket('ws://'+location.hostname+':7780');
  s.onmessage=function(e){try{render(JSON.parse(e.data));wsOk=true;setConn(true,'ws');}catch(x){}};
  s.onclose=function(){wsOk=false;setConn(false);setTimeout(ws,3000);};
  s.onerror=function(){wsOk=false;};}catch(e){wsOk=false;}})();
@@ -929,10 +931,10 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
  var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});
- /* STICKY: only replace the live overlay when the push actually has legs. A transient empty/
-    stale frame (file mid-write, momentary 0-leg push) must NOT wipe the last good bank -> that
 )OMEGAD4"
-R"OMEGAD5(    was the "-141 disappears then reappears" flicker. Keep the last good frame until a real one lands. */
+R"OMEGAD5( /* STICKY: only replace the live overlay when the push actually has legs. A transient empty/
+    stale frame (file mid-write, momentary 0-leg push) must NOT wipe the last good bank -> that
+    was the "-141 disappears then reappears" flicker. Keep the last good frame until a real one lands. */
  if(Object.keys(m).length)window._cc=m;
  drawCC();}).catch(function(){drawCC();});}
 setInterval(pollCC,15000);pollCC();
@@ -1100,10 +1102,10 @@ setInterval(pollFx,15000);pollFx();
 
 /* ── INDEX COMPANIONS (per-symbol <SYM>Pos/<SYM>Neg BE-floor · native C++ · additive, STANDALONE) ──
    Fed by pollIndex() off /api/index_companion (index_companion_state.json). REAL FORWARD TRADES ONLY —
-   the real forward book, $0 until a live clip closes. Two runners/dir (banker r20 + runner r150).
-   Books in PRICE POINTS -> USD via per-symbol point-value (US500.F $50/pt · NAS100 $1 · DJ30.F $5 ·
 )OMEGAD5"
-R"OMEGAD6(   GER40 ~$1.10). Schema: {engine,shadow,ts,syms:[{sym,live_sym,bars,deploy_ts,dpp,pts,usd,open:[..],
+R"OMEGAD6(   the real forward book, $0 until a live clip closes. Two runners/dir (banker r20 + runner r150).
+   Books in PRICE POINTS -> USD via per-symbol point-value (US500.F $50/pt · NAS100 $1 · DJ30.F $5 ·
+   GER40 ~$1.10). Schema: {engine,shadow,ts,syms:[{sym,live_sym,bars,deploy_ts,dpp,pts,usd,open:[..],
    trades:[..],flavors:[{name,dir,clips,wins,book_pts,book_pts_real,book_usd,book_usd_real,runners:[
    {tier,gb_bp,clips,wins,pts,pts_real,usd,usd_real}]}]}]}. Panel + headline fold the REAL column
    (usd_real: worse-of fill or intrabar cap, minus rt cost — CAN be negative); the model usd column
@@ -1277,11 +1279,11 @@ function parseShadow(txt){
    epx:ix.entry_px!==undefined?(parseFloat(f[ix.entry_px])||0):0,
    xpx:ix.exit_px!==undefined?(parseFloat(f[ix.exit_px])||0):0,
    pnl:parseFloat(f[ix.net_pnl])||0,
-   size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
+)OMEGAD6"
+R"OMEGAD7(   size:ix.size!==undefined?(parseFloat(f[ix.size])||0):0,
    mfe:ix.mfe!==undefined?(parseFloat(f[ix.mfe])||0):0,
    mae:ix.mae!==undefined?(parseFloat(f[ix.mae])||0):0,
-)OMEGAD6"
-R"OMEGAD7(   hold:ix.hold_sec!==undefined?(parseInt(f[ix.hold_sec],10)||0):0,
+   hold:ix.hold_sec!==undefined?(parseInt(f[ix.hold_sec],10)||0):0,
    reason:ix.exit_reason!==undefined?unq(f[ix.exit_reason]):'',
    spread:ix.spread_at_entry!==undefined?(parseFloat(f[ix.spread_at_entry])||0):0,
    lat:ix.latency_ms!==undefined?(parseFloat(f[ix.latency_ms])||0):0});}
@@ -1432,11 +1434,11 @@ function drawHeat(){var rs=winRows();var by={};
    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:3px">';
   groups[g].forEach(function(k){var e=by[k],t=e.pnl/mxAbs;
    var bg='#1d2733',fg='#8B97A5';
-   if(e.pnl>1){bg=t>0.4?'#0F6E56':'#0a4434';fg='#9FE1CB';}
+)OMEGAD7"
+R"OMEGAD8(   if(e.pnl>1){bg=t>0.4?'#0F6E56':'#0a4434';fg='#9FE1CB';}
    else if(e.pnl<-1){bg=t<-0.4?'#A32D2D':'#5c1f1f';fg='#F7C1C1';}
    var nm=k.replace(/Engine$/,'');
-)OMEGAD7"
-R"OMEGAD8(   h+='<div class="tile" style="background:'+bg+'" title="'+esc(k)+' n='+e.n+' pnl='+fmt$(e.pnl)+'">'
+   h+='<div class="tile" style="background:'+bg+'" title="'+esc(k)+' n='+e.n+' pnl='+fmt$(e.pnl)+'">'
     +'<b style="color:'+fg+'">'+esc(nm)+'</b><span class="num" style="color:'+fg+'">'+fmt$(e.pnl)+' · '+e.n+'</span></div>';});
   h+='</div>';});
  el('heat').innerHTML=h;}
@@ -1628,10 +1630,10 @@ function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
    var xx=X(bx(r.ts)), yx=Y(r.xpx||r.epx);
    if(r.ets>=t0&&r.ts<=t1&&(Math.abs(xx-xe)>1||Math.abs(yx-ye)>1)){
     var gr2=ctx.createLinearGradient(xe,ye,xx,yx);
-    gr2.addColorStop(0,win?'rgba(46,189,133,0.18)':'rgba(226,72,77,0.18)');
-    gr2.addColorStop(1,win?'rgba(46,189,133,0.8)':'rgba(226,72,77,0.8)');
 )OMEGAD8"
-R"OMEGAD9(    ctx.strokeStyle=gr2;ctx.lineWidth=hov?2:1.3;ctx.setLineDash([5,3]);
+R"OMEGAD9(    gr2.addColorStop(0,win?'rgba(46,189,133,0.18)':'rgba(226,72,77,0.18)');
+    gr2.addColorStop(1,win?'rgba(46,189,133,0.8)':'rgba(226,72,77,0.8)');
+    ctx.strokeStyle=gr2;ctx.lineWidth=hov?2:1.3;ctx.setLineDash([5,3]);
     ctx.beginPath();ctx.moveTo(xe,ye);ctx.lineTo(xx,yx);ctx.stroke();ctx.setLineDash([]);}
    if(r.ets>=t0){var s=hov?8:6;   /* entry: glow triangle, up=LONG / down=SHORT */
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
