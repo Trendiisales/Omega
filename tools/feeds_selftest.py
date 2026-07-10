@@ -346,8 +346,13 @@ def vps_stock_book_health() -> tuple[str, str]:
         r"$f='C:\Omega\data\rdagent\sp500_long_close.csv';"
         r"if(Test-Path $f){$l=Get-Content $f;$last=$l[-1].Split(',')[0];$cols=($l[0].Split(',').Count-1)}else{$last='MISSING';$cols=0};"
         r"$s='C:\Omega\stockladder_companion_state.json';"
-        r"if(Test-Path $s){$j=Get-Content $s -Raw|ConvertFrom-Json;$zero=@($j.names|Where-Object{[int]$_.bars -lt 1}).Count;$tot=@($j.names).Count;$znames=(@($j.names|Where-Object{[int]$_.bars -lt 1}|ForEach-Object{$_.sym}) -join ' ')}else{$zero=-1;$tot=0;$znames='NOSTATE'};"
-        r"Write-Output ($last+'|'+$cols+'|'+$zero+'|'+$tot+'|'+$znames)"
+        r"if(Test-Path $s){$j=Get-Content $s -Raw|ConvertFrom-Json;$zero=@($j.names|Where-Object{[int]$_.bars -lt 1}).Count;$tot=@($j.names).Count;$znames=(@($j.names|Where-Object{[int]$_.bars -lt 1}|ForEach-Object{$_.sym}) -join ' ');"
+        # per-name FRESHNESS: newest bar-ts across names, and any name lagging it by >2 days is
+        # frozen (has bars but stopped updating) -- the false-green that bars>0 alone misses.
+        r"$mx=(@($j.names|ForEach-Object{[long]$_.ts})|Measure-Object -Maximum).Maximum;"
+        r"$lag=@($j.names|Where-Object{ ($mx-[long]$_.ts) -gt 129600 });$lagc=$lag.Count;$lagn=(@($lag|ForEach-Object{$_.sym}) -join ' ')"
+        r"}else{$zero=-1;$tot=0;$znames='NOSTATE';$lagc=-1;$lagn='NOSTATE'};"
+        r"Write-Output ($last+'|'+$cols+'|'+$zero+'|'+$tot+'|'+$znames+'|'+$lagc+'|'+$lagn)"
     )
     # -EncodedCommand (UTF-16LE base64): the probe uses {} | $_ pipes that ssh->cmd.exe
     # ->powershell -Command mangles (that mangling was the rc=255 false-RED on first run).
@@ -362,18 +367,22 @@ def vps_stock_book_health() -> tuple[str, str]:
         return ("RED", f"ssh rc={r.returncode} -- stock feed/book UNVERIFIABLE")
     line = next((x for x in r.stdout.splitlines() if "|" in x), "")
     parts = line.split("|")
-    if len(parts) != 5:
+    if len(parts) != 7:
         return ("RED", f"unparseable stock-book probe: {line!r}")
-    last, cols, zero, tot, znames = parts
+    last, cols, zero, tot, znames, lagc, lagn = parts
     try:
-        z, t = int(zero), int(tot)
+        z, t, lag = int(zero), int(tot), int(lagc)
     except ValueError:
-        z, t = -1, 0
+        z, t, lag = -1, 0, -1
     # (1) per-name coverage — ANY bars=0 name is a dead name (feed missing its column)
     if z < 0:
         return ("RED", "stockladder_companion_state.json missing/unreadable -- book UNVERIFIABLE")
     if z > 0:
         return ("RED", f"{z}/{t} ladder names have bars=0 (feed missing their columns; can't trade): {znames.strip()}")
+    # (1b) per-name FRESHNESS — a name with bars>0 but a stale latest-ts is FROZEN (bars>0 alone
+    # false-greens it). Caught the 6 backfilled names (WDC/STX/DD/TPR/BMY/SWKS) sitting 2 td behind.
+    if lag > 0:
+        return ("RED", f"{lag}/{t} ladder names FROZEN (bars>0 but latest bar >2d behind the rest; producer not feeding them): {lagn.strip()}")
     # (2) content-date staleness — last DATA ROW vs last trading day
     try:
         d = dt.date.fromisoformat(last.strip())
