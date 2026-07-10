@@ -1537,7 +1537,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
+function drawPR(){var cv=el("prc"),H=320,ctx=prep(cv,H);/* S-2026-07-10: 150->320 so the chart fills the left topgrid column (right col is taller w/ ENGINE LEDGER+HEAT+DOM+OBI) -> no gap below the chart. prep() sets canvas height to H, so THIS is the real knob (the height attr is overridden). */
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
@@ -1626,12 +1626,12 @@ function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
      +(dd2>=1?Math.round(dd2)+'d':Math.round(dd2*24)+'h')+' ago '+fmt$(lastR.pnl)
      +' ('+(lastR.eng||'').replace(/Engine$/,'')+')';
     ctx.font='10px IBM Plex Mono';
-    var nw=ctx.measureText(note).width;
+)OMEGAD8"
+R"OMEGAD9(    var nw=ctx.measureText(note).width;
     ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+pw-nw-12,padT+2,nw+10,14);
     ctx.fillStyle='#6B7785';ctx.fillText(note,padL+pw-nw-7,padT+12);}
    return;}
-)OMEGAD8"
-R"OMEGAD9(  var pills=exVis<=14;   /* suppress $ labels when the window is crowded */
+  var pills=exVis<=14;   /* suppress $ labels when the window is crowded */
   vis.forEach(function(r,vi){
    var win=r.pnl>=0,c=win?'#2EBD85':'#E2484D';
    var hov=PRHOVER&&PRHOVER.t===r;

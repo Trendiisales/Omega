@@ -1523,7 +1523,7 @@ function prBtns(){
  Array.prototype.forEach.call(el('prtfs').children,function(b){b.onclick=function(){PRTF=b.getAttribute('data-t');localStorage.setItem('omega_prtf',PRTF);prBtns();drawPR();};});}
 prBtns();
 var PRMK=[],PRMOUSE=null,PRHOVER=null;
-function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
+function drawPR(){var cv=el("prc"),H=320,ctx=prep(cv,H);/* S-2026-07-10: 150->320 so the chart fills the left topgrid column (right col is taller w/ ENGINE LEDGER+HEAT+DOM+OBI) -> no gap below the chart. prep() sets canvas height to H, so THIS is the real knob (the height attr is overridden). */
  window._prDrawT=performance.now();
  var W=cv.clientWidth;ctx.clearRect(0,0,W,H);ctx.font='10px IBM Plex Mono';
  PRMK=[];window._prNewest=0;
