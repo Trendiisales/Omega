@@ -99,6 +99,7 @@
 #include "RegimeState.hpp"       // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 #include "OmegaCostGuard.hpp"
 #include "OpenPositionRegistry.hpp"  // S-2026-06-03 PositionSnapshot persist/restore
+#include "GoldTrendMimicLadder.hpp"  // one-way mimic trigger (fire-and-forget on open)
 #include <vector>
 #include <cstdlib>
 
@@ -388,6 +389,10 @@ private:
         bars_.push_back(cur_2h_);
         while ((int)bars_.size() > kBarHistory) bars_.pop_front();
 
+        // Feed the GoldTrendMimicLadder legs on the NATIVE 2h close cadence (the cadence the
+        // mimic was backtested on). One-way; no-op if the "XauTf2h" book/tag isn't registered.
+        omega::gold_trend_mimic().on_bar("XauTf2h", cur_2h_.high, cur_2h_.low, cur_2h_.close, now_ms / 1000);
+
         _update_atr14();
         _update_ema20();
         _update_adx14();  // S88-followup
@@ -596,6 +601,12 @@ private:
         }
         p.broker_position_id.clear();
         p.entry_clOrdId.clear();
+        // GoldTrendMimicLadder (S-2026-07-10): one-way fire-and-forget — spawn INDEPENDENT
+        // mimic legs at this entry. No-op if the "XauTf2h" book/tag isn't registered. Never
+        // reads/moves/closes this position (additive, judged STANDALONE). Validated: legs
+        // T gb8 +76.9%/W gb30 +88.5% (arm0.25/lc1.0/cap24/be0.15), WF both halves + ,
+        // both REAL regimes + (bull+51.6/bear+25.2 T; bull+55.2/bear+33.3 W over 2022 bear + bull).
+        omega::gold_trend_mimic().on_trend_open("XauTf2h", p.is_long ? 1 : -1, p.entry_px, p.entry_ts_ms / 1000);
     }
 
     void _manage_open(int ci, double bid, double ask, int64_t now_ms,

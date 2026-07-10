@@ -1632,6 +1632,15 @@ static void init_engines(const std::string& cfg_path)
             {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTfD1"; c.live_sym="XAUUSD";
                 c.legs={{"T",0.08},{"W",0.20}};
                 c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=8; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.pend_bars=4; gm.add(std::move(c)); }
+            // XauTf2h (S-2026-07-10, mimic-extension sweep): 2 legs T gb8 + W gb30, fed on the
+            // native 2h close. Validated STANDALONE over the FULL grid incl REAL 2022 bear
+            // (backtest/clip_path_xau_tf.cpp 2h + mimic_ladder_overlay.cpp): TIGHT +76.9% PF1.39
+            // (bull+51.6/bear+25.2), WIDE +88.5% PF1.44 (bull+55.2/bear+33.3), both WF halves + ,
+            // both regimes + ; 8 tight / 12 wide passers across the sweep (robust plateau). The
+            // strongest NEW mimic candidate of the sweep (2h is a diverse addition to 4h/D1).
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XauTf2h"; c.live_sym="XAUUSD";
+                c.legs={{"T",0.08},{"W",0.30}};
+                c.arm_pct=0.25; c.lc_pct=1.0; c.cap_bars=24; c.rt_cost_bp=15.0; c.be_entry_pct=0.15; c.pend_bars=6; gm.add(std::move(c)); }
             // Index D1 turtle mimics (S-2026-07-09b, operator "all symbols"): 2 legs each (tight+wide),
             // fed on the D1 bar (turtle cadence). Validated STANDALONE (clip_path_idx_turtle real
             // entries, independent D1 window exit): NAS100 T+80.9/W+79.5 80%win; US500 +45.8/+47.2
@@ -1651,7 +1660,7 @@ static void init_engines(const std::string& cfg_path)
                     omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                     tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
                     tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 6 trigger books (XauTf4h 4-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg), specific native feeds, SHADOW, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 7 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg), specific native feeds, SHADOW, deploy-forward\n");
             fflush(stdout);
         }
 
@@ -2017,13 +2026,28 @@ static void init_engines(const std::string& cfg_path)
                 {"NAS100", "NAS100",  24, 1.5, 3.0, false, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
                 {"GER40",  "GER40",   12, 1.5, 2.0, true,  "phase1/signal_discovery/warmup_GER40_H1.csv"},
                 // S-2026-07-09: M2K micro E-mini Russell 2000 (CME), IBKR-only L1 feed.
-                // Validated up-jump ladder W24/thr1.5 + BE-ENTRY0.08 (inherited below) =
-                // +76.5% WF both halves (H1 +35.9 / H2 +40.6). rt=4.0 conservative (micro
-                // Russell < ES/NQ liquidity). BULL-GATED: the 2yr IBKR continuous sample
-                // has NO 2022 bear and Russell is high-beta -> gate new windows in risk-off
-                // (same treatment as GER40; flip to false for the ungated backtested config
-                // if bear-regime evidence lands). SHADOW book, deploy-forward, cost-debited.
-                {"M2K",    "M2K",     24, 1.5, 4.0, true,  "phase1/signal_discovery/warmup_M2K_H1.csv"},
+                // rt=4.0 conservative (micro Russell < ES/NQ liquidity). BULL-GATED: the 2yr
+                // IBKR continuous sample has NO 2022 bear and Russell is high-beta -> gate new
+                // windows in risk-off (same treatment as GER40; flip to false for the ungated
+                // backtested config if bear-regime evidence lands). SHADOW, deploy-forward, cost-debited.
+                // S-2026-07-10 CADENCE/EDGE RETUNE (operator: "why aren't the ladders firing"):
+                //   the W24/thr1.5 cell was NOT rare (61.6 windows/yr on the 2yr M2K_h1 sample)
+                //   but it was the WEAKEST M2K cell. Full W{12,24,48} x thr{0.75..2.0} sweep on
+                //   the REAL FxLadderPair over Tick/M2K_h1.csv (= the live warmup_M2K_H1 data,
+                //   backtest/index_upjump_ladder_cadence_sweep.cpp, LIVE params arm0.5/be0.08/
+                //   gb0.10): W24/thr1.0 STRICTLY DOMINATES W24/thr1.5 on EVERY axis --
+                //     thr1.0: fires 70.6/yr n675 net+186.3% PF1.54 H1+93.4 H2+92.9 bull+71.9
+                //             bear+64.3 ; 2x-cost(rt8) net+159.3 PF1.45 all-6 HOLD.
+                //     thr1.5: fires 61.6/yr n530 net +76.5% PF1.24 H1+44.8 H2+31.6 bull+33.5
+                //             bear+26.5 (= the S-07-09 wired figure; harness parity confirmed).
+                //   MORE fires + 2.4x net + higher PF + balanced halves/regimes, all-6 + 2x PASS
+                //   -> thr lowered 1.5->1.0. CAVEAT (registry ENGINE_BACKTEST_REGISTRY §9 index
+                //   trap): a net-over-random-window control (the python research gate) is OWED
+                //   before treating any lift as pure detector edge vs Russell bull-beta -- this
+                //   retune is all-6+2x-validated but the random control was not re-run (C++-only
+                //   session). W12/thr1.5 was rejected (bear -1.8, all-6 FAIL); W48 impossible
+                //   (RTH-only H1 + the 6-day contiguity guard blocks every 48-bar window -> 0 fires).
+                {"M2K",    "M2K",     24, 1.0, 4.0, true,  "phase1/signal_discovery/warmup_M2K_H1.csv"},
             };
             for (const auto& ic : IL) {
                 omega::FxLadderPair::Config c;
