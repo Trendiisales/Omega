@@ -27,7 +27,7 @@
 
 #include <chrono>
 #include "FxBeFloorCompanion.hpp"   // omega::fx_befloor_book() (per-pair BE-floor companion)
-#include "JumpRiderEngine.hpp"      // omega::jump_rider_book() (UpJump rider, same H1 feed)
+// (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
 #include "FxUpJumpLadderCompanion.hpp" // omega::fx_upjump_ladder_book() (upjump LADDER, needs H1 h/l/c)
 
 // ── FX chart + companion bar builder (S-2026-07-06) ─────────────────────────
@@ -50,7 +50,7 @@ static inline void fx_feed_bars(FxBarAgg& a, SymBarState& bars, const char* pair
             sink.add_bar(acc);
             if (drive) {
                 omega::fx_befloor_book().on_h1_bar(pair, start / 1000, acc.close);
-                omega::jump_rider_book().on_h1_bar(pair, start / 1000, acc.close);   // UpJump rider, same feed
+                // (JumpRider FX feed REMOVED — engine culled/tombstoned S-2026-07-10)
                 omega::fx_upjump_ladder_book().on_h1_bar(pair, start / 1000,
                                                          acc.high, acc.low, acc.close); // ladder needs intrabar h/l
             }

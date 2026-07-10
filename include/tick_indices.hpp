@@ -29,7 +29,7 @@
 
 #include <chrono>
 #include "IndexBeFloorCompanion.hpp"   // omega::index_befloor_book() (per-symbol index BE-floor companion)
-#include "JumpRiderEngine.hpp"         // omega::jump_rider_book() (UpJump rider, same H1 feed)
+// (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
 #include "FxUpJumpLadderCompanion.hpp" // omega::index_upjump_ladder_book() (upjump LADDER, needs H1 h/l)
 
 // ── index BE-floor companion H1 feed (S-2026-07-06) ─────────────────────────
@@ -50,7 +50,7 @@ static inline void index_feed_h1(IdxH1Agg& a, const char* tag, double bid, doubl
     if (a.start == 0) { a.start = b; a.close = mid; a.high = mid; a.low = mid; }
     else if (b != a.start) {
         omega::index_befloor_book().on_h1_bar(tag, a.start / 1000, a.close);
-        omega::jump_rider_book().on_h1_bar(tag, a.start / 1000, a.close);   // UpJump rider, same feed
+        // (JumpRider index feed REMOVED — engine culled/tombstoned S-2026-07-10)
         omega::index_upjump_ladder_book().on_h1_bar(tag, a.start / 1000,
                                                     a.high, a.low, a.close); // ladder needs intrabar h/l
         a.start = b; a.close = mid; a.high = mid; a.low = mid;
