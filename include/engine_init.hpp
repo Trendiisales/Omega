@@ -21,7 +21,7 @@
                                        //   + index_upjump_ladder_book() (US500/NAS100/GER40) -> /api/idxladder_companion
 #include "IndexRiskGate.hpp"           // omega::index_risk_off() (GER40 ladder bull-gate)
 #include "IndexBeFloorCompanion.hpp"// per-symbol index BE-floor companion (US500/NAS100/DJ30/GER40) -> /api/index_companion
-#include "JumpRiderEngine.hpp"      // UpJump-pattern rider on metals/oil/FX/indices -> /api/jumprider
+// (JumpRiderEngine.hpp include REMOVED — engine culled/tombstoned S-2026-07-10)
 #include "StockDayMoverBeFloorCompanion.hpp"// per-name BIGCAP day-mover BE-floor companion (RETIRED S-2026-07-07e) -> /api/stockmover_companion
 #include "StockDayMoverLadderCompanion.hpp" // per-name BIGCAP day-mover UP-JUMP LADDER companion (39 stocks) -> /api/stockladder_companion
 #include "StockDipTurtleEngine.hpp" // per-name US-stock StockDip (ConnorsRSI2 archetype) + StockTurtle (Donchian 20/10) daily-close books (S-2026-07-08c)
@@ -1601,14 +1601,7 @@ static void init_engines(const std::string& cfg_path)
             gc.enabled = false;            // on_h1_bar() short-circuits; no seeds, no exec wiring
             gc.clear_open_arms();          // drop persisted shadow arm-state (no frozen "open" legs)
             gc.recompute_and_write();      // publish once: persisted REAL forward history, no open arms
-            // Feed: RegimeState H1 sink now drives ONLY the JumpRider book (its own honest
-            // single-column engine, locked ea4a746f — do not confuse with the befloor books).
-            omega::gold_regime().set_h1_sink([](int64_t ts_sec, double close){
-                omega::jump_rider_book().on_h1_bar("XAUUSD", ts_sec, close);   // UpJump rider feed
-                // (GoldTrendMimicLadder is NOT fed here -- each trigger engine feeds its own book
-                //  on its NATIVE bar via gold_trend_mimic().on_bar(tag,...), so leg management
-                //  matches the cadence it was backtested on. See the engine open/bar hooks.)
-            });
+            // (JumpRider XAUUSD h1 sink REMOVED — engine culled S-2026-07-10)
         }
         printf("[OMEGA-INIT][SEED] gold BE-floor companion (AUPOS/AUNEG) RETIRED S-2026-07-07e (real-fill: no config survives both eras; bull-gate tested, fails 2024-26 WF) -- state serves real history, no new arms\n");
         fflush(stdout);
@@ -1757,131 +1750,11 @@ static void init_engines(const std::string& cfg_path)
             fflush(stdout);
         }
 
-        // ── JumpRider — the crypto UpJump pattern on ALL non-crypto symbols (S-2026-07-07) ──
-        //   Operator ask: "if upjump IS the solution, implement it on all the symbols where we
-        //   are not using it". The RIDER layer: jump in (+thr over W bars) -> ride -> symmetric
-        //   jump out (flips short where allowed), BE-RATCHET floor once armed (NDX-validated) +
-        //   catastrophe HARD STOP pre-arm. Honest single-column accounting from day one (observed
-        //   closes only, per-symbol rt_cost_bp debited, deploy-forward $0 start). SHADOW; the
-        //   BE-floor companions harvest the same moves independently (never cross-read).
-        //   W/thr reuse each symbol's validated BE-floor detector; be_arm=thr/2, hard_stop=2xthr
-        //   are PROVISIONAL family defaults — per-symbol backtest on ~/Tick H1 OWED before LIVE.
-        {
-            auto& jr = omega::jump_rider_book();
-            // {tag, live_sym, W, thr, rt_cost_bp, be_arm_mult, warmup CSV}
-            //   rt = same real costs as the BE-floor books. Settings LOCKED from the S-2026-07-07
-            //   FULL-TICK walk-forward sweep (backtest/rider_sweep_wf.py, IS=first 60% / OOS=last
-            //   40%, per-row plateau on top-6; outputs/RIDER_SWEEP_TICK3_2026-07-07.txt supersedes
-            //   the earlier RIDER_SWEEP_WF run — full multiyear Tick wins over the Tick 2022-23 cut):
-            //   GO    : XAUUSD W2/1.00% FLIP (1573d: IS +2816bp n47 / OOS +1493bp n100,
-            //           plateau +540bp/ok — the ONLY plateau-ok row; higher-OOS BE10 was SPIKE)
-            //   WATCH : USDJPY W2/0.30% (tick2, OOS + on all exits; not rerun in tick3),
-            //           GER40 W2/0.30% BE10 (208d: OOS +466 but plateau SPIKE; the plateau-ok
-            //           neighbor TR33 needs a chandelier trail the live engine doesn't have),
-            //           DJ30 W4/0.50% BE10 (IS n33 / OOS +187 / plateau +189bp ok — passes gates
-            //           but only 179d of data; forward real column decides)
-            //   FAILED WF (kept SHADOW at family defaults for forward baseline only — do NOT
-            //   promote): XAGUSD, EURUSD, GBPUSD, AUDUSD, NZDUSD,
-            //           NAS100 (tick3 1559d: OOS negative across top-6 — demoted from WATCH),
-            //           US500 (tick3 1559d: every top-5 row plateau SPIKE — demoted from WATCH),
-            //           USOIL (tick2 row VOID: loader merged Brent BCOUSD ticks into WTI H1).
-            //   be_arm_mult: BE-ratchet arm = mult x thr (0.5 = BE05, 1.0 = BE10,
-            //   999 = never arms -> pure FLIP; the 2x-thr hard stop stays active regardless,
-            //   matching the sweep's catastrophe stop on every exit variant).
-            struct JCfg { const char* tag; const char* live; int W; double thr; double rt; double bam; const char* csv; };
-            static const JCfg JR[] = {
-                {"XAUUSD", "XAUUSD",  2, 0.010,  6.0, 999.0, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"},
-                {"XAGUSD", "XAGUSD",  2, 0.010,  6.0, 0.5, "phase1/signal_discovery/warmup_XAGUSD_H1.csv"},
-                // USOIL ROW DISABLED S-2026-07-08d (live -$1,239 SINGLE trade: SHORT 74.08->75.31,
-                // 1.0 lot x $1000/pt = un-normalized dollar risk on an UNVALIDATED provisional row --
-                // same audit-owed class as the killed NAS100 rider, same close-eval BE mechanism.
-                // Do NOT re-add without the owed faithful backtest AND normalized sizing.
-                // {"USOIL",  "USOIL.F", 2, 0.010,  8.0, 0.5, "phase1/signal_discovery/warmup_USOIL_H1.csv"},
-                {"EURUSD", "EURUSD",  2, 0.003,  4.0, 0.5, "phase1/signal_discovery/warmup_EURUSD_H1.csv"},
-                {"GBPUSD", "GBPUSD",  2, 0.003,  3.5, 0.5, "phase1/signal_discovery/warmup_GBPUSD_H1.csv"},
-                {"USDJPY", "USDJPY",  2, 0.003,  3.0, 0.5, "phase1/signal_discovery/warmup_USDJPY_H1.csv"},
-                {"AUDUSD", "AUDUSD",  2, 0.003,  6.0, 0.5, "phase1/signal_discovery/warmup_AUDUSD_H1.csv"},
-                {"NZDUSD", "NZDUSD",  2, 0.003,  7.0, 0.5, "phase1/signal_discovery/warmup_NZDUSD_H1.csv"},
-                // US500 ROW DISABLED S-2026-07-08d alongside USOIL: audit still owed + $50/pt
-                // un-normalized. Re-add only with a passing faithful BT + sized lot.
-                // {"US500",  "US500.F", 2, 0.0075, 4.0, 0.5, "phase1/signal_discovery/warmup_US500_H1.csv"},
-                // NAS100 ROW DISABLED S-2026-07-08c (operator: "-$71 BE_RATCHET loss, fix this").
-                // The owed per-symbol backtest RAN (faithful sim, NSXUSD H1 2022-2026 certified,
-                // 24,407 bars): W4/0.75/BE05 = net -300bp PF0.99 H1 -3,914 = DEAD both-halves;
-                // ALL 164 BE_RATCHET exits negative (H1-close-eval BE always slips red -- the
-                // observed -$71 is the mechanism, not noise). BE-lock grid +5..+25bp improves
-                // monotonically but tops out PF1.07 with H1 still -2,810 -> not rescuable.
-                // AUDITED row JumpRiderNAS100. Do NOT re-add without a config that passes all-6.
-                // {"NAS100", "NAS100",  4, 0.0075, 3.0, 0.5, "phase1/signal_discovery/warmup_NAS100_H1.csv"},
-                {"DJ30",   "DJ30.F",  4, 0.005,  2.0, 1.0, "phase1/signal_discovery/warmup_DJ30_H1.csv"},
-                {"GER40",  "GER40",   2, 0.003,  2.0, 1.0, "phase1/signal_discovery/warmup_GER40_H1.csv"},
-            };
-            for (const auto& j : JR) {
-                omega::JumpRiderSym::Config c;
-                c.sym = j.tag; c.live_sym = j.live; c.W = j.W; c.thr = j.thr;
-                c.rt_cost_bp = j.rt;
-                c.be_arm = j.thr * j.bam;    // BE-ratchet arm (0.5x = BE05 / 1.0x = BE10, per sweep)
-                c.hard_stop = j.thr * 2.0;   // catastrophe floor at two jumps adverse
-                // S-2026-07-08d DOLLAR-RISK NORMALIZATION (USOIL -$1,239 lesson: lot=1.0
-                // default let native $/pt run wild -- oil $1000/pt vs NAS $1/pt). Cap each
-                // ride's hard-stop dollar risk at ~$25: lot chosen per symbol so
-                // thr*2 (hard stop) x $/pt x lot ~= $25. Plain if-chain (MSVC-safe).
-                // S-2026-07-10 (operator): JumpRiderXAUUSD LONG-ONLY -- allow_short=false so a
-                // SYM_FLIP exits to FLAT instead of flipping short. Gold shorts get squeezed: live
-                // SYM_FLIP short 4056.91->4108.60 = -$5,215, and the exhaustive gold-short backtest
-                // (h1/daily/m30 x breakdown/fade/pullback x 2013/2015/2022 bears + 2024-26 bull,
-                // 6bps) found NO viable gold short at any TF/regime (safe-haven squeeze). Gold is
-                // long-only. See Memory-Omega GoldShort tombstone.
-                if (!strcmp(j.tag, "XAUUSD")) c.allow_short = false;
-                if      (!strcmp(j.tag, "XAUUSD")) c.lot = 0.01;   // 2% of ~4070 = 81pt x $100 x .01 = $81 hard-stop... FLIP-exit row, keep micro
-                else if (!strcmp(j.tag, "XAGUSD")) c.lot = 0.01;   // $5000/pt-lot silver -> micro
-                else if (!strcmp(j.tag, "USDJPY")) c.lot = 0.02;   // 0.6% of 162 = ~1pt x $667 x .02 = ~$13
-                else if (!strcmp(j.tag, "DJ30"))   c.lot = 0.02;   // 1% of 52600 = 526pt x $5 x .02 = ~$53 -> half again
-                else if (!strcmp(j.tag, "GER40"))  c.lot = 0.30;   // 0.6% of 25000 = 150pt x $1.1 x .3 = ~$50
-                else                                c.lot = 0.01;   // FX majors $100k/pt-lot -> 0.01 = ~$6/thr
-                jr.add(std::move(c));
-            }
-            size_t jseeded = 0;
-            for (const auto& j : JR) jseeded += jr.seed_sym(j.tag, j.csv);
-            // extra continuity sources shared with the BE-floor siblings (live dumps)
-            if (auto* s = jr.find("XAUUSD")) jseeded += s->seed_from_h1_csv(log_root_dir() + "/gold_regime_h1.csv");
-            if (auto* s = jr.find("XAGUSD")) jseeded += s->seed_from_h1_csv(log_root_dir() + "/xag_companion_h1.csv");
-            if (auto* s = jr.find("USOIL"))  jseeded += s->seed_from_h1_csv(log_root_dir() + "/usoil_companion_h1.csv");
-            size_t jrestored = jr.seed_dumps_all();   // own persisted forward bars (non-volatile restarts)
-            jr.set_exec(
-                /* open   */ [](const std::string& sym, bool is_long, double lots, double px) -> std::string {
-                    return send_live_order(sym, is_long, lots, px);
-                },
-                /* close  */ [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token) {
-                    send_live_order(sym, !orig_is_long, lots, px, token);
-                },
-                /* gate   */ [](const std::string& sym, double tp_dist_pts, double lots) -> bool {
-                    // per-class typical spread for the cost gate (same values the BE-floor books use)
-                    double spread = 0.5;                                        // index CFDs ~0.5pt
-                    if (sym == "EURUSD" || sym == "GBPUSD" || sym == "AUDUSD" || sym == "NZDUSD")
-                        spread = 0.00015;                                       // FX ~1.5 pip
-                    else if (sym == "USDJPY")  spread = 0.015;                  // 1.5 pip (JPY quote)
-                    else if (sym == "XAUUSD")  spread = 0.30;
-                    else if (sym == "XAGUSD")  spread = 0.012;
-                    else if (sym == "USOIL.F") spread = 0.03;
-                    return ExecutionCostGuard::is_viable(sym.c_str(), spread, tp_dist_pts, lots, 1.5);
-                },
-                /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
-                                double entry_px, double exit_px, double lots,
-                                int64_t entry_ts, int64_t exit_ts, const char* reason) {
-                    omega::TradeRecord tr;
-                    tr.engine = engine; tr.symbol = sym; tr.side = is_long ? "LONG" : "SHORT";
-                    tr.entryPrice = entry_px; tr.exitPrice = exit_px; tr.size = lots;
-                    tr.entryTs = entry_ts; tr.exitTs = exit_ts; tr.exitReason = reason;
-                    tr.pnl = (is_long ? (exit_px - entry_px) : (entry_px - exit_px)) * lots;
-                    handle_closed_trade(tr);
-                });
-            jr.finalize_all();
-            printf("[OMEGA-INIT][SEED] JumpRider wired: %d syms (USOIL/US500 rows killed S-2026-07-08d), %zu H1 bars seeded, %zu forward bars restored, UpJump ride + BE-ratchet + hard-stop, SHADOW real-column-only, deploy-forward\n",
-                   (int)(sizeof(JR)/sizeof(JR[0])),
-                   jseeded, jrestored);
-            fflush(stdout);
-        }
+        // ── JumpRider ENGINE CULLED / TOMBSTONED (S-2026-07-10, operator) — removed completely.
+        //    Reason: shorted gold (JumpRiderXAUUSD SYM_FLIP -$5,215) into the safe-haven squeeze;
+        //    exhaustive gold-short backtest found NO viable gold short at any TF/regime. Whole
+        //    UpJump-on-non-crypto rider retired (header + wiring + feeds + /api/jumprider gone).
+        //    Memory-Omega GoldShort tombstone. Do NOT resurrect without a new all-6 basis.
 
         // ── FX JUMP LADDER companion (S-2026-07-07x wire; S-2026-07-08c both-ways update) ──
         //   The FX member of the no-floor ladder family (BIGCAP daily sibling above). Native
