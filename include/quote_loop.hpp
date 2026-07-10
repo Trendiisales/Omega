@@ -178,6 +178,10 @@ static void quote_loop() {
                 omega::gold_regime().save_state(log_root_dir() + "/gold_regime_state.dat");
                 omega::gold_d1_trend().save_state(log_root_dir() + "/gold_d1_trend_state.dat");
                 omega::index_market_regime().save_state(log_root_dir() + "/index_mkt_regime_state.dat");
+                // S-2026-07-10: persist the DISPLAY VIX so an off-hours restart doesn't blank the
+                // desk VIX to 0 until the next US open (spot VIX only streams during RTH). Load in
+                // engine_init; regime() still gates on m_vix_ts so a stale VIX can't drive risk-off.
+                g_macroDetector.save_vix(log_root_dir() + "/macro_vix_state.dat");
                 // Save bar indicator state every 60s -- ensures warm restart on crash/kill.
                 // Previously saved only at daily rollover and clean shutdown.
                 // If process is killed (OOM, watchdog, manual stop), .dat files were stale

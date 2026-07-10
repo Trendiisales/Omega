@@ -2467,6 +2467,14 @@ static void init_engines(const std::string& cfg_path)
                omega::index_market_regime().regime_name(), (int)omega::index_market_regime().warm());
         fflush(stdout);
 
+        // S-2026-07-10: restore the DISPLAY VIX across restarts (spot VIX only streams US RTH;
+        // an off-hours restart otherwise shows VIX 0 until 13:30 UTC). regime() still treats a
+        // restored-but-stale VIX as NEUTRAL via m_vix_ts, so this is display-only, never a signal.
+        g_macroDetector.load_vix(log_root_dir() + "/macro_vix_state.dat");
+        printf("[OMEGA-INIT] macro VIX restored: vix=%.2f (display-only; regime gates on freshness)\n",
+               g_macroDetector.vixLevel());
+        fflush(stdout);
+
         // ── XauStopRunD1Engine (2026-05-20) -- 5d stop-run reversal long
         //   Resurrection of S50 X2 retired StopRunReversal. Re-tested 2yr daily:
         //     FUL Sh=6.34 at 10bps (IS=7.06 OOS=6.14), n=29, WR=65.5%.

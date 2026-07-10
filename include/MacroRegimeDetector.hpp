@@ -3,6 +3,7 @@
 #include <chrono>
 #include <deque>
 #include <cmath>
+#include <fstream>
 
 namespace omega {
 
@@ -98,6 +99,22 @@ public:
     }
 
     double vixLevel() const { return m_vix; }
+
+    // --- persistence (S-2026-07-10): keep the DISPLAY VIX across restarts. The spot VIX
+    // index only streams during US RTH (13:30-20:00 UTC); an off-hours restart otherwise
+    // blanks the desk VIX to 0 until the next open. save_vix()/load_vix() carry the last
+    // value so the desk shows e.g. 17.48 instead of 0. IMPORTANT: regime() still gates on
+    // m_vix_ts (VIX_STALE_SEC=300) so a restored-but-stale VIX reads NEUTRAL and can NEVER
+    // mis-drive risk-off -- this restores the DISPLAY only, not the live signal.
+    void save_vix(const std::string& path) const noexcept {
+        std::ofstream f(path, std::ios::trunc);
+        if (f.is_open()) f << m_vix << ' ' << m_vix_ts << '\n';
+    }
+    void load_vix(const std::string& path) noexcept {
+        std::ifstream f(path);
+        double v = 0; long long ts = 0;
+        if (f.is_open() && (f >> v >> ts) && v > 0) { m_vix = v; m_vix_ts = (int64_t)ts; }
+    }
     // Returns the latest DX.F mid price (0.0 if no feed yet).
     // Used by DXYDivergenceEngine to populate GoldSnapshot.dx_mid.
     double dxyMid() const {

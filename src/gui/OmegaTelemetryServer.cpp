@@ -794,6 +794,61 @@ static std::string buildHistoryJson(bool all_time = false)
     return out;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// buildCryptoTradesJson (S-2026-07-10) -- reads the crypto book's closed trades
+// (crypto_inbound.csv, pushed from the Chimera box) and returns them in the same
+// shape as buildTradesJson (+ book:"crypto") so the unified "LAST TRADES" panel can
+// merge crypto with the Omega engine ledger. CSV: id,entry_ts,exit_ts,sym,strat,
+// side,entry_px,exit_px,pnl.
+// ─────────────────────────────────────────────────────────────────────────────
+static std::string buildCryptoTradesJson()
+{
+    static const char* PATHS[] = {
+        "C:\\Omega\\logs\\trades\\crypto_inbound.csv",
+        "logs/trades/crypto_inbound.csv",
+        "C:\\Omega\\logs\\trades\\crypto_intraday_inbound.csv",
+        nullptr
+    };
+    std::string out = "[";
+    bool first = true;
+    for (int pi = 0; PATHS[pi]; ++pi) {
+        FILE* f = fopen(PATHS[pi], "r");
+        if (!f) continue;
+        std::vector<std::string> rows;
+        char line[1024];
+        while (fgets(line, sizeof(line), f)) {
+            if (line[0]=='i' && line[1]=='d') continue;   // header
+            rows.push_back(line);
+        }
+        fclose(f);
+        // newest last in file -> emit last 20 reversed (newest first)
+        int start = (int)rows.size() > 20 ? (int)rows.size()-20 : 0;
+        for (int i = (int)rows.size()-1; i >= start; --i) {
+            char buf[1024]; strncpy(buf, rows[i].c_str(), sizeof(buf)-1); buf[sizeof(buf)-1]='\0';
+            size_t l = strlen(buf); while (l && (buf[l-1]=='\n'||buf[l-1]=='\r')) buf[--l]='\0';
+            char* fld[16]; int nf=0; char* p=buf;
+            while (nf<16 && *p) { fld[nf++]=p; while (*p && *p!=',') ++p; if (*p) *p++='\0'; }
+            if (nf < 9) continue;
+            long long ex_ts = atoll(fld[2]);
+            char ut[32]={}; time_t tt=(time_t)ex_ts; struct tm* g=gmtime(&tt);
+            if (g) strftime(ut, sizeof(ut), "%Y-%m-%d %H:%M", g);
+            if (!first) out += ',';
+            first = false;
+            char row[512];
+            snprintf(row, sizeof(row),
+                "{\"book\":\"crypto\",\"symbol\":\"%s\",\"engine\":\"%s\",\"side\":\"%s\","
+                "\"price\":%.4f,\"exitPrice\":%.4f,\"net_pnl\":%.2f,\"pnl\":%.2f,"
+                "\"exitTs\":%lld,\"exit_ts_utc\":\"%s UTC\",\"exitReason\":\"\"}",
+                fld[3], fld[4], fld[5], atof(fld[6]), atof(fld[7]), atof(fld[8]), atof(fld[8]),
+                ex_ts, ut);
+            out += row;
+        }
+        break;   // first readable path wins
+    }
+    out += ']';
+    return out;
+}
+
 // ?????????????????????????????????????????????????????????????????????????????
 // buildShadowTradesJson -- reads omega_shadow.csv and returns last 60 trades
 // as JSON (matching buildTradesJson shape with shadow:true flag added so the
@@ -1228,6 +1283,7 @@ void OmegaTelemetryServer::run(int port)
         else if (strstr(buf, "GET /api/trades"))      { ct = "application/json"; body = buildTradesJson(); }
         else if (strstr(buf, "GET /api/history"))     { ct = "application/json"; body = buildHistoryJson(strstr(buf, "all=1") != nullptr); }
         else if (strstr(buf, "GET /api/shadow_trades")) { ct = "application/json"; body = buildShadowTradesJson(); }
+        else if (strstr(buf, "GET /api/crypto_trades")) { ct = "application/json"; body = buildCryptoTradesJson(); }
         else if (strstr(buf, "GET /api/predictive_ranges")) {
             // S-2026-06-12c: stepped Predictive Ranges snapshot, written every 60s
             // by the on_tick [BAR-SAVE] block (logs/predictive_ranges.json).

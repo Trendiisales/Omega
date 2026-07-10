@@ -266,6 +266,14 @@ a{color:var(--blu);text-decoration:none}
 
 </div><!-- /companions row -->
 
+<!-- ═══ LAST 15 TRADES — unified all-books scrollable log (S-2026-07-10 operator) ═══ -->
+<div class="pan" style="margin-top:8px">
+  <div class="lbl">LAST 15 TRADES — all books (engine ledger + crypto) · newest first · scroll for history</div>
+  <div style="max-height:230px;overflow-y:auto;margin-top:3px">
+    <table id="alltrades" style="width:100%;font-size:9.5px"><tr><td class="l d">loading…</td></tr></table>
+  </div>
+</div>
+
 <!-- ═══ RETIRED COMPANIONS strip + OPS STRIP (DOM) removed 2026-07-08 (operator): the 4 retired
      BE-floor banners + DOM — XAUUSD L2 moved into the stock-movers cstack above. ═══ -->
 
@@ -794,6 +802,35 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){});}
 setInterval(pollComp,5000);pollComp();
+
+/* ── LAST 15 TRADES — merge engine ledger (/api/trades) + crypto (/api/crypto_trades),
+   newest-first, scrollable. S-2026-07-10 operator: "all engines with data, last 15, scrollable." */
+function fmtTs(t){ if(!t)return '—'; var d=new Date(t*1000); return d.toISOString().slice(0,16).replace('T',' ')+'Z'; }
+function pollTrades(){
+  Promise.all([
+    fetch('/api/trades').then(function(r){return r.json();}).catch(function(){return [];}),
+    fetch('/api/crypto_trades').then(function(r){return r.json();}).catch(function(){return [];})
+  ]).then(function(res){
+    var all=(res[0]||[]).concat(res[1]||[]);
+    all.forEach(function(t){ if(!t.exitTs && t.exit_ts_utc){ var d=Date.parse((t.exit_ts_utc||'').replace(' UTC','Z').replace(' ','T')); if(!isNaN(d))t.exitTs=d/1000; } });
+    all.sort(function(a,b){return (b.exitTs||0)-(a.exitTs||0);});
+    var top=all.slice(0,15);
+    var el=document.getElementById('alltrades'); if(!el)return;
+    if(!top.length){ el.innerHTML='<tr><td class="l d">no closed trades yet</td></tr>'; return; }
+    var hdr='<tr><th class="l">time (UTC)</th><th class="l">book/engine</th><th class="l">sym</th><th>side</th><th>entry</th><th>exit</th><th>pnl</th><th class="l">why</th></tr>';
+    var rows=top.map(function(t){
+      var p=safe(t.net_pnl!=null?t.net_pnl:t.pnl);
+      var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
+      var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
+      var bk=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> '+esc(t.engine||''):esc(t.engine||'');
+      return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
+        '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
+        '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
+    }).join('');
+    el.innerHTML=hdr+rows;
+  }).catch(function(){});
+}
+setInterval(pollTrades,5000);pollTrades();
 
 /* ── crypto companions — TIERED-2 + SELF-FUNDING LADDER (shadow · josgp1 c6b97e5) ──
    Each parent up-jump trade runs 2 base tiers (TIGHT+WIDE) + a self-funding ladder (each
