@@ -54,7 +54,12 @@ MARKETCAP_MIN = 20000.0      # S-2026-06-23 $500B->$20B (=20000 musd) for BigCap
                              # convention). 2000 = $2B. BUG 2026-06-13: was 2.0e9 =
                              # "$2 quadrillion" -> scanner returned 0 rows since ship.
 PRICE_MIN     = 10.0         # not a penny stock
-MAX_SYMBOLS   = 30
+MAX_SYMBOLS   = 45   # S-2026-07-10: 30->45 to cover the full ladder universe (BIGCAP_LAD). The
+                     # tail 15 (incl WDC/STX/DD/TPR/BMY/SWKS) were dropped at 30 -> the in-binary
+                     # daily-close writer never got their mids -> those columns froze. 45 IBKR L1
+                     # lines is well within a standard paper allocation, but VERIFY at the next US
+                     # open (13:30 UTC) that no IBKR line-limit error (Error 101/10197) appears in
+                     # bigcap_bridge.log; if it does, tier the subscription instead of a flat 45.
 TFS           = [300]        # 5m bars only (engine tf_sec=300)
 SCAN_EVERY    = 30           # seconds between scanner passes
 # tick/roll cadence = the EXIT-reaction clock. The engine's trailing/hard stop is
