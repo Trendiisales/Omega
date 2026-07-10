@@ -242,6 +242,12 @@ static void on_tick(const std::string& sym, double bid, double ask) {
     const std::string regime = g_macroDetector.regime();
     g_telemetry.UpdateMacroRegime(
         g_macroDetector.vixLevel(), regime.c_str(), g_macroDetector.esNqDivergence());
+    // Gold PRICE-regime -> telemetry: surface "engines ARMED but HELD by regime" explicitly
+    // (they warm-seed on boot; quiet == regime hold, never cold-warming).
+    g_telemetry.UpdateGoldRegime(
+        omega::gold_regime().regime_name(),
+        omega::gold_regime().long_blocked() ? 1 : 0,
+        omega::gold_regime().warm() ? 1 : 0);
 
     // Update shared MacroContext -- read by SP/NQ shouldTrade() overrides
     g_macro_ctx.regime     = regime;

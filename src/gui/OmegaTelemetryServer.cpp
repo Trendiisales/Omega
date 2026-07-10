@@ -185,6 +185,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         "\"cl_phase\":%d,\"cl_comp_high\":%.4f,\"cl_comp_low\":%.4f,"
         "\"cl_recent_vol_pct\":%.4f,\"cl_baseline_vol_pct\":%.4f,\"cl_signals\":%d,"
         "\"vix_level\":%.2f,\"macro_regime\":\"%s\",\"es_nq_divergence\":%.6f,"
+        "\"gold_regime\":\"%s\",\"gold_long_blocked\":%d,\"gold_warm\":%d,"
         "\"gov_spread\":%d,\"gov_latency\":%d,\"gov_pnl\":%d,"
         "\"gov_positions\":%d,\"gov_consec_loss\":%d,"
         "\"asia_fx_gate_open\":%d,"
@@ -258,6 +259,7 @@ static std::string buildTelemetryJson(const OmegaTelemetrySnapshot* s)
         s->cl_phase, s->cl_comp_high, s->cl_comp_low,
         s->cl_recent_vol_pct, s->cl_baseline_vol_pct, s->cl_signals,
         s->vix_level, s->macro_regime, s->es_nq_divergence,
+        s->gold_regime, s->gold_long_blocked, s->gold_warm,
         s->gov_spread, s->gov_latency, s->gov_pnl,
         s->gov_positions, s->gov_consec_loss,
         s->asia_fx_gate_open,

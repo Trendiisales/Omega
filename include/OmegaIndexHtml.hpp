@@ -103,6 +103,8 @@ a{color:var(--blu);text-decoration:none}
     <span id="phases" style="display:flex;gap:6px;flex-wrap:wrap"></span>
     <span class="lbl" style="margin-left:auto">REGIME</span>
     <span id="macro" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
+    <span class="lbl">GOLD</span>
+    <span id="goldreg" class="chip" title="gold PRICE-regime gate. Long-only gold engines warm-seed + ARM on boot; when quiet they are HELD by this regime (BEAR/MACRO-HOSTILE), never cold-warming. Flat gold => EMA200 not falling => NEUTRAL => longs auto-unblock." style="background:var(--pan2);color:var(--t2)">…</span>
     <span class="lbl">VIX <span id="vix" class="num w">…</span></span>
   </div>
 </div>
@@ -204,11 +206,11 @@ a{color:var(--blu);text-decoration:none}
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">INDEX COMPANIONS — US500 Pos/Neg BE-floor · 5 tiers/dir (r20/r50/r100/r150/r400) · thr 1.5%/be10/cap25bp real-fill reconfig S-07-07 (native C++ · shadow · additive · REAL-fill column · never vs-WIDE)</span>
-    <span id="icinfo" class="lbl" style="margin-left:auto">…</span>
+)OMEGAD0"
+R"OMEGAD1(    <span id="icinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:340px"><table id="ictab"><tr><td class="l d">loading…</td></tr></table></div>
-)OMEGAD0"
-R"OMEGAD1(  <div id="icopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="icopen"></table></div></div>
+  <div id="icopenwrap" style="display:none;margin-top:6px"><div class="lbl" style="color:var(--grn)">OPEN NOW (live legs)</div><div style="overflow-x:auto"><table id="icopen"></table></div></div>
   <div id="ictradeswrap" style="display:none;margin-top:6px"><div class="lbl">TRADES LOG (completed forward clips — engine reset after each)</div><div style="overflow-x:auto"><table id="ictrades"></table></div></div>
 </div>
 
@@ -400,10 +402,10 @@ function __compClosed(j){if(!j)return 0;var n=(j.trades||[]).length;
 var __compBooks=[['gold','_gold'],['idx','_idx'],['fx','_fx'],['xag','_xag'],['usoil','_usoil'],['stk','_sm']];
 function pollFires(){var now=Date.now();
  if(window._seenComp===undefined){window._seenComp={};window._compBase=true;window._compClosed={};}
- var anyOpen=false,banked=false;
- __compBooks.forEach(function(bk){var j=window[bk[1]];if(!j)return;
 )OMEGAD1"
-R"OMEGAD2(  __compOpens(j).forEach(function(o){var k=bk[0]+'|'+(o.flavor||o.name||'')+'|'+(o.tier||'')+'|'+(o.entry_ts||o.entry||'');
+R"OMEGAD2( var anyOpen=false,banked=false;
+ __compBooks.forEach(function(bk){var j=window[bk[1]];if(!j)return;
+  __compOpens(j).forEach(function(o){var k=bk[0]+'|'+(o.flavor||o.name||'')+'|'+(o.tier||'')+'|'+(o.entry_ts||o.entry||'');
    if(!(k in window._seenComp)||(now-window._seenComp[k])>90000){if(!window._compBase)anyOpen=true;}
    window._seenComp[k]=now;});
   var nc=__compClosed(j),pc=window._compClosed[bk[0]];
@@ -581,9 +583,9 @@ function compSub(engine,symbol,colspan,nLegs){
    companion bank, matched by entry price, instead of one engine-family number repeated under every
    leg. Reads window._gcPerLeg (aggregate per_leg, keyed "engine|entry"). The companion producer
    keys positions by (engine, entry) -- so two real legs opened at the SAME price are ONE companion
-   position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
 )OMEGAD2"
-R"OMEGAD3(   the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
+R"OMEGAD3(   position (price-keyed; the paper book gets no leg-id from telemetry). Dedup by entry handles that:
+   the shared companion is shown once, repeats note "shares entry". STANDALONE additive, never vs-WIDE. */
 function findLeg(engine,entry){
  var pl=window._gcPerLeg||{};var e=(engine||'').replace(/Engine$/,'');var eNum=safe(entry);var best=null;
  Object.keys(pl).forEach(function(k){var v=pl[k];var keng=(v.engine||'').replace(/Engine$/,'');
@@ -632,6 +634,14 @@ function render(J){lastJ=J;
  st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
  el('macro').textContent=J.macro_regime||'?';
  el('macro').style.color=(J.macro_regime||'')==='RISK_OFF'?'var(--redB)':'var(--grnB)';
+ (function(){var g=el('goldreg');if(!g)return;
+  var gr=(J.gold_regime||'?'),blk=safe(J.gold_long_blocked),wm=(J.gold_warm===undefined?1:safe(J.gold_warm));
+  // wm=0 => genuinely cold-warming (the ONLY fault state). Otherwise engines are seeded+ARMED;
+  // blk=1 => held by regime (normal protection), blk=0 => longs live.
+  if(!wm){g.textContent=gr+' · WARMING';g.style.color='var(--redB)';g.title='FAULT: gold regime brain not warm — engines cold. Should never happen post-seed; investigate seeding.';}
+  else if(blk){g.textContent=gr+' · long ARMED·held';g.style.color='#e0a020';}
+  else{g.textContent=gr+' · long ARMED';g.style.color='var(--grnB)';}
+ })();
  el('vix').textContent=fmt2(J.vix_level,1);
 
  TKS.forEach(function(t){var b=safe(J[t[0]+'_bid']),a=safe(J[t[0]+'_ask']);
@@ -746,7 +756,8 @@ setInterval(poll,1000);poll();
 /* companion (stall-clip) overlay -- pushed from the Mac stall-accountant to C:\Omega\companion_state.json,
    served at /api/companion. Nested as a sub-row under each live trade (OMEGA book). */
 function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).then(function(j){
- /* GUARD (S-2026-07-03): /api/companion transiently returns a PARTIAL aggregation with no OMEGA book
+)OMEGAD3"
+R"OMEGAD4( /* GUARD (S-2026-07-03): /api/companion transiently returns a PARTIAL aggregation with no OMEGA book
     (~6% of polls, realized_total empty/partial) while the many cron companion books rewrite their state
     files. Folding that empty frame zeroed the paper bucket -> headline flickered TODAY 178<->120,
     COMP-BANK 54<->29, ALL-TIME 169<->115 roughly every ~80s. Ignore any frame missing the OMEGA book;
@@ -755,8 +766,7 @@ function pollComp(){fetch('/api/companion').then(function(r){return r.json();}).
  if(!(j&&j.by_book&&j.by_book.OMEGA)){return;}
  var m={};(j.open_detail||[]).forEach(function(p){if((p.book||'')==='OMEGA')m[(p.eng||'')+'|'+(p.sym||'')]=p;});window._comp=m;
  /* recent banked clips (2026-07-08): the rows that EXPLAIN a COMP-BANK / ALL-TIME increase.
-)OMEGAD3"
-R"OMEGAD4(    Keep last-good when a frame omits them (older binary / partial write). */
+    Keep last-good when a frame omits them (older binary / partial write). */
  if(j.closed_detail&&j.closed_detail.length)window._compClosed=j.closed_detail;
  /* per-BOOK split (operator rule): Omega desk shows ONLY Omega data, EXCEPT this one comp-bank
     total where cross-book is allowed -- and even there Omega vs Crypto are differentiated. */
@@ -919,7 +929,8 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    omega::gold_befloor_companion). REAL FORWARD TRADES ONLY — the backtest/replay number is GONE
    (operator: if it is not a real trade it does not belong in the live GUI). desk_usd = the real
    forward book ($0 until the first live clip closes). Two runners/dir (banker r20 + runner r150).
-   Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,open:[{flavor,dir,tier,entry,wm,cur,
+)OMEGAD4"
+R"OMEGAD5(   Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,open:[{flavor,dir,tier,entry,wm,cur,
    upnl_pts,upnl_usd,entry_ts}],trades:[{flavor,dir,tier,entry,exit,pts,usd,reason,entry_ts,
    exit_ts}],flavors:[{name,dir,clips,wins,book_pts,book_usd,runners:[{tier,gb_bp,clips,wins,
    pts,usd}]}]}. RETIRED S-2026-07-07e (real-fill re-validation negative, registry §5) — panel folds the
@@ -927,8 +938,7 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
 function drawGold(){var j=window._gold||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
       +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
-)OMEGAD4"
-R"OMEGAD5( if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
+ if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
   el('gcinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
@@ -1091,14 +1101,14 @@ function drawIndex(){var j=window._idx||null;
  el('ictab').innerHTML=h;
  var dcol=(desk>0?'var(--grn)':(desk<0?'var(--red)':'var(--t2)'));
  var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
- el('icinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
+)OMEGAD5"
+R"OMEGAD6( el('icinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
    +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+syms.length+' syms · shadow · additive';
  renderCompanionOpenTrades('ic',allOpen,allTrades,2);
 }
 function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.syms||[]).length)window._idx=j;
-)OMEGAD5"
-R"OMEGAD6( window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- the index ladder's stacked no-floor legs mark red between reclips and dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. (model usd is a max(0,.) clamp, still never folds.) */
+ window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- the index ladder's stacked no-floor legs mark red between reclips and dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. (model usd is a max(0,.) clamp, still never folds.) */
  drawIndex();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawIndex();});}
@@ -1263,14 +1273,14 @@ function gcMatch(k){var per=window._gcPer||{};var kb=(k||'').replace(/Engine$/,'
  for(var ck in per){var cb=ck.replace(/Engine$/,'');
   if(kb===cb||kb.indexOf(cb)===0||cb.indexOf(kb)===0)return {key:ck,e:per[ck]};}
  return null;}
-function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
+)OMEGAD6"
+R"OMEGAD7(function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
  /* one family companion book (per_engine keyed by FAMILY) can match MULTIPLE ledger variant
     rows (XauTrendFollow4h_Donchian… + _Keltner… both strip to XauTrendFollow4h). Render the
     book ONCE — under the first (highest-pnl) matching variant — else phantom double-count. */
  if(seen){if(seen[m.key])return '';seen[m.key]=1;}
  var e=m.e||{},od=(window._gcOpen||{})[m.key];
-)OMEGAD6"
-R"OMEGAD7( var closed=e.closed||0,openn=e.open||0,bank=safe(e.realized);
+ var closed=e.closed||0,openn=e.open||0,bank=safe(e.realized);
  if(!closed&&!openn&&!bank)return '';
  var armed=!!(od&&od.eligible);
  var st=od?(armed?'<span class="g">ARMED</span>'+(od.mfe_pct!=null?' '+fmt2(od.mfe_pct,2)+'% peak':''):'<span class="d">tracking</span>'):'';
@@ -1423,14 +1433,14 @@ function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
    h+='<span title="'+ti+'" style="height:13px;background:'+bg+';border-radius:1px"></span>';}});
  h+='</div>';el('tod').innerHTML=h;}
 
-function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2026-07-06 (operator: useless) */var by={};
+)OMEGAD7"
+R"OMEGAD8(function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2026-07-06 (operator: useless) */var by={};
  ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0};by[k].n++;by[k].pnl+=r.pnl;if(r.pnl>0)by[k].w++;});
  var ks=Object.keys(by).sort(function(a,b){return by[b].n-by[a].n;}).slice(0,14);
  if(!ks.length){el('promo').innerHTML='<span class="d">no shadow history yet</span>';return;}
  var GATE=30,h='';
  ks.forEach(function(k){var e=by[k],avg=e.pnl/e.n,ok=e.n>=GATE;
-)OMEGAD7"
-R"OMEGAD8(  var col=e.n<10?'var(--t2)':avg>0?(ok?'var(--grn)':'var(--ambB)'):'var(--red)';
+  var col=e.n<10?'var(--t2)':avg>0?(ok?'var(--grn)':'var(--ambB)'):'var(--red)';
   var tag=e.n<10?'n small':avg>0?(ok?'judgeable +EV':'building'):(ok?'judgeable −EV':'building');
   h+='<div style="display:grid;grid-template-columns:minmax(90px,1.4fr) 2fr 46px 64px 80px;gap:7px;align-items:center;margin-bottom:4px">'
    +'<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(k)+'">'+esc(k.replace(/Engine$/,''))+'</span>'
@@ -1622,15 +1632,15 @@ function drawPR(){var cv=el("prc"),H=150,ctx=prep(cv,H);
   var md=new Date(mb[0]*1000);
   var ohlc='O '+mb[1].toFixed(dp)+'  H '+mb[2].toFixed(dp)+'  L '+mb[3].toFixed(dp)+'  C '+mb[4].toFixed(dp)
    +'   '+String(md.getUTCDate()).padStart(2,'0')+'.'+String(md.getUTCMonth()+1).padStart(2,'0')+' '
-   +String(md.getUTCHours()).padStart(2,'0')+':'+String(md.getUTCMinutes()).padStart(2,'0');
+)OMEGAD8"
+R"OMEGAD9(   +String(md.getUTCHours()).padStart(2,'0')+':'+String(md.getUTCMinutes()).padStart(2,'0');
   ctx.fillStyle='rgba(11,15,20,0.8)';ctx.fillRect(padL+4,padT+2,ctx.measureText(ohlc).width+10,14);
   ctx.fillStyle=mb[4]>=mb[1]?'#9FE1CB':'#F7C1C1';ctx.fillText(ohlc,padL+9,padT+12);}
  var lastC=bars[n-1][4],yl=Y(lastC),trend=0;
  for(var i=n-1;i>=0;i--){if(bars[i][10]){trend=bars[i][10];break;}}
  var tc=trend>0?'#2EBD85':trend<0?'#E2484D':'#85B7EB';
  ctx.strokeStyle=tc;ctx.globalAlpha=0.5;ctx.setLineDash([2,4]);
-)OMEGAD8"
-R"OMEGAD9( ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+ ctx.beginPath();ctx.moveTo(padL,yl);ctx.lineTo(padL+pw,yl);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
  ctx.fillStyle=tc;ctx.fillRect(padL+pw+2,yl-8,padR-6,16);
  ctx.fillStyle='#0B0F14';ctx.fillText(lastC.toFixed(dp),padL+pw+6,yl+3.5);
  el('prlast').textContent=lastC.toFixed(dp);

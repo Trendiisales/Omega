@@ -97,6 +97,8 @@ a{color:var(--blu);text-decoration:none}
     <span id="phases" style="display:flex;gap:6px;flex-wrap:wrap"></span>
     <span class="lbl" style="margin-left:auto">REGIME</span>
     <span id="macro" class="chip" style="background:var(--pan2);color:var(--t2)">…</span>
+    <span class="lbl">GOLD</span>
+    <span id="goldreg" class="chip" title="gold PRICE-regime gate. Long-only gold engines warm-seed + ARM on boot; when quiet they are HELD by this regime (BEAR/MACRO-HOSTILE), never cold-warming. Flat gold => EMA200 not falling => NEUTRAL => longs auto-unblock." style="background:var(--pan2);color:var(--t2)">…</span>
     <span class="lbl">VIX <span id="vix" class="num w">…</span></span>
   </div>
 </div>
@@ -623,6 +625,14 @@ function render(J){lastJ=J;
  st.style.color=safe(J.session_tradeable)?'var(--grnB)':'var(--redB)';
  el('macro').textContent=J.macro_regime||'?';
  el('macro').style.color=(J.macro_regime||'')==='RISK_OFF'?'var(--redB)':'var(--grnB)';
+ (function(){var g=el('goldreg');if(!g)return;
+  var gr=(J.gold_regime||'?'),blk=safe(J.gold_long_blocked),wm=(J.gold_warm===undefined?1:safe(J.gold_warm));
+  // wm=0 => genuinely cold-warming (the ONLY fault state). Otherwise engines are seeded+ARMED;
+  // blk=1 => held by regime (normal protection), blk=0 => longs live.
+  if(!wm){g.textContent=gr+' · WARMING';g.style.color='var(--redB)';g.title='FAULT: gold regime brain not warm — engines cold. Should never happen post-seed; investigate seeding.';}
+  else if(blk){g.textContent=gr+' · long ARMED·held';g.style.color='#e0a020';}
+  else{g.textContent=gr+' · long ARMED';g.style.color='var(--grnB)';}
+ })();
  el('vix').textContent=fmt2(J.vix_level,1);
 
  TKS.forEach(function(t){var b=safe(J[t[0]+'_bid']),a=safe(J[t[0]+'_ask']);

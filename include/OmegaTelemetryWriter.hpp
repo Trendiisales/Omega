@@ -266,6 +266,15 @@ struct OmegaTelemetrySnapshot
     char   macro_regime[32];    // "RISK_ON" / "RISK_OFF" / "NEUTRAL"
     double es_nq_divergence;    // ES vs NQ relative strength
 
+    // --- Gold PRICE-regime gate (RegimeState brain; gates long-only gold engines) ---
+    // Purpose: make it explicit in telemetry WHY the long-only gold stack is quiet.
+    // The engines are warm-seeded + ARMED on boot; when quiet it is because the price
+    // regime holds them (BEAR or MACRO-HOSTILE) -- NOT because they are cold-warming.
+    // A flat gold => EMA200 not falling => NEUTRAL => longs NOT blocked (auto-clears).
+    char   gold_regime[32];     // "BEAR"/"BULL"/"NEUTRAL"/"MACRO-HOSTILE"
+    int    gold_long_blocked;   // 1 = long-only gold engines ARMED but HELD by regime
+    int    gold_warm;           // 1 = regime brain warm (seeded); 0 = still cold-warming
+
     // --- Governor blocks ---
     int gov_spread;
     int gov_latency;
@@ -481,6 +490,9 @@ public:
             strcpy_s(m_snap->fix_trade_status, "DISCONNECTED");
             strcpy_s(m_snap->mode, "SHADOW");
             strcpy_s(m_snap->macro_regime, "NEUTRAL");
+            strcpy_s(m_snap->gold_regime, "NEUTRAL");
+            m_snap->gold_long_blocked = 0;
+            m_snap->gold_warm         = 0;
             m_snap->sig_head  = 0;
             m_snap->sig_count = 0;
             for (int i = 0; i < OmegaTelemetrySnapshot::MAX_SIGNAL_HISTORY; ++i) {
@@ -758,6 +770,15 @@ public:
         m_snap->vix_level       = vix;
         m_snap->es_nq_divergence = es_nq_div;
         strcpy_s(m_snap->macro_regime, regime);
+    }
+
+    // Gold PRICE-regime -> telemetry (makes the "armed but held by regime" state visible).
+    void UpdateGoldRegime(const char* regime, int long_blocked, int warm)
+    {
+        if (!m_snap) return;
+        strcpy_s(m_snap->gold_regime, (regime && *regime) ? regime : "NEUTRAL");
+        m_snap->gold_long_blocked = long_blocked;
+        m_snap->gold_warm         = warm;
     }
 
     void UpdateL2(double sp, double nq, double dj, double nas,
