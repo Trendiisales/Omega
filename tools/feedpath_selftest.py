@@ -65,7 +65,7 @@ def ssh(cmd, timeout=25):
         return f"__SSH_ERR__ {e}"
 
 def fx_market_open(now=None):
-    now = now or datetime.datetime.now(datetime.UTC)
+    now = now or datetime.datetime.now(datetime.timezone.utc)
     wd, hr = now.weekday(), now.hour
     if wd == 5: return False                      # Sat
     if wd == 6 and hr < 21: return False          # Sun pre-open
@@ -108,7 +108,7 @@ def main():
             else f"boot-line={'y' if boot_ok else 'NO'} established={'y' if est_ok else 'NO'}")
 
     # [3] bridge freshness on the IBKR-only canary
-    today = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     # dir-based (quoting-proof over ssh; powershell nested quotes mangle)
     din = ssh(r"dir C:\Omega\logs\ibkr_l2\ibkr_l1_" + CANARY_L1 + "_" + today + r".csv 2>nul")
     mt = ""
@@ -129,8 +129,8 @@ def main():
         bridge_fresh = None
     else:
         try:
-            age_min = (datetime.datetime.now(datetime.UTC)
-                       - datetime.datetime.strptime(mt, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.UTC)
+            age_min = (datetime.datetime.now(datetime.timezone.utc)
+                       - datetime.datetime.strptime(mt, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
                        ).total_seconds() / 60.0
             bridge_fresh = age_min <= 20
             rec("BRIDGE-FRESH", bridge_fresh, f"{CANARY_L1} L1 csv age {age_min:.0f}min (<=20)")
@@ -143,7 +143,7 @@ def main():
         with urllib.request.urlopen(f"{DESK}/api/fxladder_companion", timeout=10) as r:
             j = json.load(r)
         ts = next((p.get("ts", 0) for p in j.get("pairs", []) if p.get("pair") == LADDER_PAIR), 0)
-        lag_h = (datetime.datetime.now(datetime.UTC).timestamp() - ts) / 3600.0
+        lag_h = (datetime.datetime.now(datetime.timezone.utc).timestamp() - ts) / 3600.0
         if not open_now:
             rec("DOWNSTREAM", True, f"{LADDER_PAIR} ladder ts lag {lag_h:.0f}h (weekend) ", skip=True)
         else:
