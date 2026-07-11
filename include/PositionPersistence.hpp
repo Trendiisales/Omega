@@ -292,6 +292,24 @@ inline void register_position_persistence() {
     // feed (decl in globals.hpp to beat this header in include order).
     wire_cross(g_gold_tsmom_d1, "GoldTsmomD1V2",      "XAUUSD");
     wire_cross(g_mgc_slowdon,   "MgcSlowDonchian30m", "MGC");
+    // S-2026-07-11 GOLD PHASE 1b: BOTH GoldVolBreakoutM30 instances. The spot
+    // instance was LIVE (S-2026-07-01 cutover) yet still sat on the persistence
+    // audit's "dormant" allowlist -- a stale exemption hiding a real gap; the
+    // MGC instance (decl moved to globals.hpp) was the Phase-1 known residual.
+    // Runner holds span days (MAX_HOLD 72 x M30 = 36h) -- restart-orphan real.
+    wire_cross(g_gold_volbrk_m30, "GoldVolBreakoutM30", "XAUUSD");
+    wire_cross(g_mgc_volbrk,      "MgcVolBreakoutM30",  "MGC");
+    // S-2026-07-11 PHASE 1b: gaps found when the persistence audit was re-enabled
+    // (it had sat BEHIND an unreachable `exit 0` in mac_canary_engines.sh, so the
+    // "ENFORCED" claim below was dead code and these display engines accumulated
+    // unpersisted). ConnorsRSI2/SpxTurtleD1 already had persist_save/restore
+    // members (S-2026-07-07v added their displays believing the wire existed);
+    // GoldPanicBounce gained the pair this commit. QndxSqf is allowlisted in the
+    // audit instead (signal-state book: legs re-derive position from the daily
+    // CSV replay + on-connect adopt -- self-restoring by construction).
+    wire_cross(g_connors_nas,      "ConnorsRSI2",     "NAS100");
+    wire_cross(g_spx_turtle_d1,    "SpxTurtleD1",     "US500.F");
+    wire_cross(g_gold_panic_bounce,"GoldPanicBounce", "XAUUSD");
     wire_cross(g_idx_seas_us500,  "IndexSeasonal_US500.F", "US500.F");
     wire_cross(g_idx_seas_ustec,  "IndexSeasonal_USTEC.F", "USTEC.F");
     wire_cross(g_idx_seas_ger40,  "IndexSeasonal_GER40",   "GER40");

@@ -43,6 +43,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -50,6 +51,7 @@
 #include <string>
 #include "OmegaCostGuard.hpp"
 #include "OmegaTradeLedger.hpp"
+#include "OpenPositionRegistry.hpp"  // omega::PositionSnapshot (persist; S-2026-07-11)
 #include "RegimeState.hpp"       // 2026-06-21: macro-hostile long-block (BearProtect coverage)
 
 namespace omega {
@@ -99,6 +101,39 @@ public:
     } m_pos;
 
     bool has_open_position() const noexcept { return m_pos.active; }
+
+    // ---- restart persistence (wire_cross archetype, S-2026-07-11 PHASE 1b) ----
+    // Found by re-enabling the persistence audit (it sat behind an unreachable
+    // exit in the canary): this engine displayed positions but never persisted
+    // -- a restart orphaned the open V-bounce leg. Snapshot carries the
+    // chandelier high-water mark hh in the (unused) tp field; atr_at_entry is
+    // only the ATR fallback (atr_ rewarns from the H1 seed) and is
+    // reconstructed from the structural stop distance.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const noexcept {
+        if (!m_pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = "LONG"; o.size = m_pos.size;
+        o.entry = m_pos.entry; o.sl = m_pos.init_stop;
+        o.tp = m_pos.hh;                       // NOT a take-profit (engine has none)
+        o.entry_ts = m_pos.entry_ts / 1000;    // engine keeps ms; snapshot is seconds
+        o.mae = m_pos.mae;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) noexcept {
+        if (m_pos.active) return false;        // adopt won't double an open slot
+        m_pos = LivePos{};
+        m_pos.active = true;
+        m_pos.entry = ps.entry; m_pos.init_stop = ps.sl;
+        m_pos.hh = (ps.tp > 0.0) ? ps.tp : ps.entry;
+        m_pos.atr_at_entry = SL_ATR > 0.0 ? std::max(0.0, (ps.entry - ps.sl) / SL_ATR) : 0.0;
+        m_pos.size = ps.size; m_pos.mae = ps.mae;
+        m_pos.entry_ts = ps.entry_ts * 1000;   // snapshot seconds -> engine ms
+        // time-stop clock: reconstruct elapsed H1 bars from wall time so the
+        // 240-bar MAX_HOLD doesn't restart from zero on every reboot.
+        const int64_t elapsed = ps.entry_ts > 0
+            ? std::max<int64_t>((int64_t)0, ((int64_t)std::time(nullptr) - ps.entry_ts) / BAR_SECS) : 0;
+        m_pos.entry_bar_seq = bar_seq_ > elapsed ? bar_seq_ - elapsed : 0;
+        return true;
+    }
 
     // ---- public seed (warm-restart mandate, pattern 2) ----
     // Replay an H1 CSV (ts,o,h,l,c) to fill the bar buffers without firing.

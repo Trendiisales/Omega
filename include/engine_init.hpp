@@ -7229,6 +7229,21 @@ static void init_engines(const std::string& cfg_path)
             ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*sz*mult;
             out.push_back(ps); return out; });
 
+        // --- g_mgc_volbrk : GoldVolBreakoutM30Engine, MGC instance (S-2026-07-11
+        //   PHASE 1b): held real (paper-book) MGC legs with NO dashboard source
+        //   and NO persistence. Same shape as the spot source; symbol MGC
+        //   ($10/pt/contract via tick_value_multiplier). Persist wire_cross tag
+        //   matches this label ("MgcVolBreakoutM30", persistence audit contract).
+        g_open_positions.register_source("MgcVolBreakoutM30", [_cur_px]() {
+            std::vector<omega::PositionSnapshot> out;
+            if (!g_mgc_volbrk.any_open()) return out;
+            const auto& p = g_mgc_volbrk.pos; const double mult = tick_value_multiplier(std::string("MGC"));
+            double cur=_cur_px("MGC", p.entry_px); const double sz=g_mgc_volbrk.lot;
+            omega::PositionSnapshot ps; ps.engine="MgcVolBreakoutM30"; ps.symbol="MGC"; ps.side="LONG";
+            ps.size=sz; ps.entry=p.entry_px; ps.current=cur; ps.sl=p.sl_px; ps.tp=0.0;
+            ps.entry_ts=p.entry_ts_ms/1000; ps.unrealized_pnl=(cur-p.entry_px)*sz*mult;
+            out.push_back(ps); return out; });
+
         // --- IndexIntradayDriftEngine x3 (US500.F, UK100, DJ30.F), long-only ---
         //   pos: {active, is_long(=true), entry, sl, size, entry_ts(sec)}; has_open_position(); no tp.
         auto _idd_src = [_cur_px](const char* label, omega::IndexIntradayDriftEngine* e, const char* sym) {

@@ -173,7 +173,13 @@ bash "$(dirname "$0")/../tools/gui/gui_drift_gate.sh" || {
   exit 1
 }
 
-exit 0
-
-# S-2026-06-26 PERSISTENCE ENFORCEMENT: fail if any display engine lacks a persist source
+# S-2026-06-26 PERSISTENCE ENFORCEMENT: fail if any display engine lacks a persist source.
+# S-2026-07-11 PHASE 1b: this call had been left BELOW an `exit 0` (unreachable) when a
+# later gate was appended above it -- the audit never ran in the canary and 4 unpersisted
+# display engines accumulated (ConnorsRSI2, GoldPanicBounce, SpxTurtleD1, QndxSqf).
+# Moved back into the live path; the gaps were wired/justified the same commit.
+echo ""
+echo "[mac-canary-engines] persistence audit (every display engine persists)..."
 bash "$(dirname "$0")/persistence_audit.sh" || exit 1
+
+exit 0

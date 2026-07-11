@@ -15,8 +15,16 @@ Survivor
 BigCapMomoIbkr"
 # DORMANT/tombstoned engines (enabled=false; cannot hold a live position). RE-ENABLING ONE WITHOUT
 # WIRING PERSISTENCE WILL FAIL THIS GATE -- that is the point. Keep this list short + justified.
-allow="FvgContinuation FvgCont10m FvgCont30m GoldOrbRetrace GoldOrbRetraceLDN GoldVolBreakoutM30 \
+# S-2026-07-11 PHASE 1b: GoldVolBreakoutM30 REMOVED -- it had been LIVE since the
+# S-2026-07-01 cutover while still allowlisted as "dormant"; both instances (spot +
+# MGC) are now properly persisted via wire_cross.
+allow="FvgContinuation FvgCont10m FvgCont30m GoldOrbRetrace GoldOrbRetraceLDN \
 NqFutMomo DonchianPortfolio EmaPullbackPortfolio Us30Ensemble XauSessNYpm FxCrossRevEURGBP"
+# QndxSqf (S-2026-07-11): SELF-RESTORING by construction, not dormant -- its legs
+# re-derive target position from the daily-CSV replay + on-connect adopt
+# (qndx_sqf_ibkr.cpp warm_from_csv/ingest_daily_bar). A persist wire would fight
+# the signal-state reconcile. Allowed as designed-out, not as a gap.
+allow="$allow QndxSqf"
 fail=0
 while read -r tag; do
   [ -z "$tag" ] && continue

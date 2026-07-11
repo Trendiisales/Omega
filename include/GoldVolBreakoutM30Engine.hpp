@@ -90,9 +90,12 @@
 #include <functional>
 #include <string>
 
+#include <ctime>
+
 #include "OmegaTradeLedger.hpp"
 #include "OmegaCostGuard.hpp"
 #include "IndexRiskGate.hpp"
+#include "OpenPositionRegistry.hpp"   // omega::PositionSnapshot (persist; S-2026-07-11)
 
 namespace omega {
 
@@ -334,6 +337,42 @@ public:
                      OnCloseFn on_close, const char* reason) noexcept {
         if (!pos.active) return;
         _close(bid, reason ? reason : "FORCE_CLOSE", now_ms, on_close);
+    }
+    // S-2026-07-11 PHASE 1b: 4-arg form so PositionPersistence acct_try_close
+    // (the AccountingGuard/KILL-ALL closer) can flatten this engine.
+    void force_close(double bid, double ask, int64_t now_ms, OnCloseFn on_close) noexcept {
+        force_close(bid, ask, now_ms, on_close, "FORCE_CLOSE");
+    }
+
+    // ---- restart persistence (wire_cross archetype, S-2026-07-11 PHASE 1b) ----
+    // Phase-1 known residual: the MGC instance had no persistence -- a restart
+    // orphaned its open leg. Snapshot carries atr_at_entry in the (unused) tp
+    // field: the trail arm/step distances derive from it and it is not
+    // reconstructible from a trailed sl.
+    bool persist_save(const char* eng, const char* sym, omega::PositionSnapshot& o) const noexcept {
+        if (!pos.active) return false;
+        o.engine = eng; o.symbol = sym; o.side = "LONG"; o.size = lot;
+        o.entry = pos.entry_px; o.sl = pos.sl_px;
+        o.tp = pos.atr_at_entry;               // NOT a take-profit (engine has none)
+        o.entry_ts = pos.entry_ts_ms / 1000;
+        o.mfe = pos.mfe; o.mae = pos.mae;
+        return true;
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) noexcept {
+        if (pos.active) return false;          // adopt won't double an open slot
+        pos.active = true;
+        pos.entry_px = ps.entry;
+        pos.sl_px = ps.sl;
+        pos.atr_at_entry = (ps.tp > 0.0) ? ps.tp
+                          : (kStopAtr > 0.0 ? std::max(0.0, (ps.entry - ps.sl) / kStopAtr) : 0.0);
+        pos.entry_ts_ms = ps.entry_ts * 1000;
+        // max-hold clock resumes from wall time (bars_held itself isn't persisted)
+        pos.bars_held = ps.entry_ts > 0
+            ? (int)std::max<int64_t>(0, ((int64_t)std::time(nullptr) - ps.entry_ts) / 1800)
+            : 0;
+        pos.cooldown_bars = 0;
+        pos.mfe = ps.mfe; pos.mae = ps.mae;
+        return true;
     }
 
 private:
