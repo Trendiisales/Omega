@@ -40,7 +40,17 @@ echo "[deploy] launching DETACHED deploy on $HOST (survives disconnect)..."
 # cmd->powershell->Start-Process and the detached deploy silently no-ops.
 # The child's stdout/stderr are redirected (*>) into the log so a crash in
 # OMEGA.ps1 itself is captured, not lost to the hidden window.
-LAUNCH=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$lg='C:\\Omega\\logs\\deploy_'+(Get-Date -Format yyyyMMdd_HHmmss)+'.log'; \$p=Start-Process powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',('cd C:\\Omega; .\\OMEGA.ps1 deploy *> '+\$lg) -WindowStyle Hidden -PassThru; Write-Output ('DEPLOY_PID='+\$p.Id+' log='+\$lg)\"")
+#
+# S-2026-07-12 LAUNCH REGRESSION FIX: sshd on omega-new now KILLS Start-Process
+# children the moment the launching ssh session closes (verified: a hidden child
+# survived while the session was held open, died on close — 3 consecutive
+# "PID gone AND log empty" no-ops before diagnosis). The launch therefore goes
+# through Invoke-CimMethod Win32_Process Create: the child is parented to the
+# WMI provider host, OUTSIDE the ssh job object, and survives disconnect.
+# It runs tools/deploy_detached.ps1 (in-repo; scp'd here as a bootstrap in case
+# the box checkout predates the file — OMEGA.ps1 deploy pulls it into C:\Omega).
+scp -q "$(dirname "$0")/deploy_detached.ps1" "$HOST:C:/Omega/tools/deploy_detached.ps1"
+LAUNCH=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$lg='C:\\Omega\\logs\\deploy_'+(Get-Date -Format yyyyMMdd_HHmmss)+'.log'; \$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=('powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\Omega\\tools\\deploy_detached.ps1 -LogPath '+\$lg)}; Write-Output ('DEPLOY_PID='+\$r.ProcessId+' log='+\$lg)\"")
 echo "  $LAUNCH"
 PID=$(echo "$LAUNCH" | sed -n 's/.*DEPLOY_PID=\([0-9]*\).*/\1/p')
 LOG=$(echo "$LAUNCH" | sed -n 's/.* log=\(.*[Ll]og\).*/\1/p')
