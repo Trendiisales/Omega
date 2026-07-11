@@ -26,6 +26,7 @@
 //  Omega (separate integration) + a shadow period.
 // =============================================================================
 #include "OmegaTradeLedger.hpp"   // omega::TradeRecord
+#include "OmegaCostGuard.hpp"     // ::ExecutionCostGuard (GLOBAL scope) -- S-2026-07-11 PHASE 1b
 #include "RegimeState.hpp"        // 2026-06-24: gold_regime() price-bear gate (long-only engine)
 #include "GoldTrendMimicLadder.hpp" // one-way mimic trigger (fire-and-forget on open)
 #include <cstdint>
@@ -55,6 +56,7 @@ struct MgcFastDonchian30mEngine {
     bool   use_trend_filter = true;
     int    EmaTrend         = 100;  // EMA period on 30m closes (~2 trading days)
     int    SlopeLB          = 20;   // rising proxy: close now > close SlopeLB bars ago
+    double mgc_spread_pts   = 0.10; // 1 exchange tick (cost-guard input; same as MgcSlowDon)
 
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
@@ -181,6 +183,19 @@ struct MgcFastDonchian30mEngine {
                     for (double hv : prior_hvn_) if (hv > c && hv <= c + Kov * atr14_) { skip = true; break; }
                 if (l2_gate_ > 0.0 && l2_imb_ < l2_gate_) { skip = true;
                     std::printf("[MGC-L2-GATE] MgcFastDon LONG skipped (l2_imb=%.2f < %.2f)\n", l2_imb_, l2_gate_); std::fflush(stdout); }
+                // S-2026-07-11 GOLD PHASE 1b: ExecutionCostGuard on the explicit MGC
+                // row ($10/pt/contract, $2.08 RT comm, 1-tick slip) -- FastDon was the
+                // one MGC entry engine with NO cost gate (Phase-1 finding). Distance
+                // proxy = the structural exit distance (close - Nout channel low),
+                // the same role 3xATR plays for MgcSlowDon. Backtest-verified
+                // NEAR-INERT on honest MGC costs: block threshold 0.612pt vs channel
+                // widths >= ATR14 (min 8.4pt on certified 2024-26 data) -- 0 of 183
+                // faithful-BT entries blocked (fastdon_runner pre==post identical).
+                if (!skip) {
+                    const double exit_dist = c - _chan_low(Nout);
+                    if (!::ExecutionCostGuard::is_viable("MGC", mgc_spread_pts,
+                                                         exit_dist, lot, 1.5)) skip = true;
+                }
                 if (!skip) { pos_active_ = true; entry_ = c; entry_ts_ = ts_sec; mfe_ = 0.0; mae_ = 0.0;
                     // one-way mimic notify (fire-and-forget; never reads/touches this position)
                     omega::gold_trend_mimic().on_trend_open("MgcFastDon", +1, c, ts_sec); }

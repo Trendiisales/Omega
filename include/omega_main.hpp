@@ -113,7 +113,21 @@ int main(int argc, char* argv[])
     g_mgc_slowdon.enabled     = true;
     g_mgc_slowdon.shadow_mode = true;   // shadow until the live ledger proves it
     g_mgc_slowdon.lot         = 1.0;    // 1 MGC micro = 10oz = $10/pt (smallest unit)
-    // Nin=40 Nout=20 sl_atr_mult=3.0 cost 0.31 retire -400pt = header defaults (the validated cell)
+    // S-2026-07-11 GOLD PHASE 1b (roadmap deployment item 4): RE-CELLED 40/20 ->
+    // 55/27. Phase 1 confirmed the wired system ran BOTH Donchian siblings on the
+    // SAME 40/20 horizon (g_mgc_fastdon was bumped 20/10->40/20 on S-2026-06-23,
+    // duplicating this engine's cell). 55/27 = the true second horizon
+    // (gdd_mgc_volband_breakout.py Don55 all-band L sl3.0, certified MGC 30m
+    // 2024-06..2026-06, 0.31pt RT): n158 +1504.6pt PF1.78 both-halves+
+    // (+717.6/+786.9) maxDD -278.9 2x-cost PF1.74 ex-best +1265. REAL-engine
+    // parity EXACT (this engine driven standalone over the same file:
+    // n158 +1504.6 PF1.78). Daily-PnL corr vs the live FastDon 40/20 book drops
+    // 0.748 (dup) -> 0.690; the two SlowDon horizons correlate 0.586.
+    // sl_atr_mult=3.0 unchanged (plateau sl2.5-3.5 all PF>=1.65, deep-dive).
+    g_mgc_slowdon.Nin  = 55;
+    g_mgc_slowdon.Nout = 27;
+    // Retirement latch rescaled to the NEW cell: 2x its worst BT DD (-278.9pt).
+    g_mgc_slowdon.retire_net_pts = -560.0;
     g_mgc_slowdon.peer_holds_pos = []() { return g_mgc_fastdon.has_open_position(); };
     g_mgc_slowdon.seed_from_30m_csv("data/mgc_30m_hist.csv");   // prints the [SEED] line
     g_engine_heartbeat.register_engine("MgcSlowDonchian30m", g_mgc_slowdon.enabled, 3600, 0, 24);
@@ -139,6 +153,20 @@ int main(int argc, char* argv[])
     g_mgc_volbrk.min_qty     = 1.0;
     g_mgc_volbrk.qty_step    = 1.0;
     g_mgc_volbrk.max_spread  = 1.50;   // MGC futures pts (looser than spot gold $)
+    // S-2026-07-11 GOLD PHASE 1b (roadmap #6): stop DECISION TEST wired. The MGC
+    // instance is bar-fed, so its tick sl/trail was dead code (46/46 MAX_HOLD
+    // exits). 3-variant test on the REAL engine (backtest/mgc_volbrk_tickstop_
+    // decision.cpp, certified MGC 30m 2024-06..2026-06, 0.31pt RT + 2x stress):
+    //   ORIGINAL  (no stop, MAX_HOLD only) : n33 +266pt PF1.41 worst-82 maxDD197
+    //   PROTECTED (1.5ATR + 3ATR trail as a bar-path resting stop, gap-honest):
+    //               n37 +281pt PF2.07 worst-31 maxDD79, halves +90/+191, 2x PF2.00
+    //   CATASTROPHE 5/6/8 ATR              : PF1.36-1.47, worst -82..-99 (dominated)
+    // -> WINNER: PROTECTED. stop_mode=2 enforces the engine's own sl/trail
+    // adverse-first on each 30m bar (fill min(open,sl) on gaps). 2022-bear shadow
+    // n2-3 either way (trend gate sits it out) -- no bear objection. Spot instance
+    // stays stop_mode=1 (tick-driven, unchanged). Same commit: poll_mgc_feed now
+    // passes ts*1000 (was SECONDS -> garbage session-hour + 1970 ledger ts).
+    g_mgc_volbrk.stop_mode = 2;
     g_mgc_volbrk.init();
     g_mgc_volbrk.l2_gate_ = 0.30;  // S-2026-06-23 L2 confirmation gate (active, conservative; same as fastdon). Inert in backtest.
     g_mgc_volbrk.seed_h1_from_csv ("data/mgc_h1_hist.csv");

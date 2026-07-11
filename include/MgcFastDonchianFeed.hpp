@@ -27,7 +27,10 @@ static omega::MgcFastDonchian30mEngine g_mgc_fastdon;   // single definition (th
 // (EMA200-gated Donchian vol-breakout runner). Faithful BT on MGC 30m: PF2.10
 // n37 mdd0.78 (selective, orthogonal to the Donchian-runner above). H1 trend is
 // aggregated from 30m buckets inside poll_mgc_feed.
-static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;
+// S-2026-07-11 PHASE 1b: g_mgc_volbrk DECLARATION MOVED to globals.hpp (before
+// PositionPersistence.hpp in main.cpp include order) so its open MGC leg
+// persists across restart -- same include-order fix as MgcTF4h/2h + MgcSlowDon.
+// This header only DRIVES it. Standalone harnesses get a local instance below.
 // S-2026-07-07 MGC VENUE PORT: 3rd + 4th engines on the same MGC feed -- the
 // validated gold trend family (XauTrendFollow4h/2h classes, production spot
 // config) re-instanced on MGC futures prices + costs. Faithful venue BT
@@ -50,6 +53,7 @@ static omega::XauTrendFollow2hEngine g_mgc_tf_2h;
 static int64_t g_mgc_tf_floor_ts = 0;
 #include "MgcSlowDonchian30mEngine.hpp"
 static omega::MgcSlowDonchian30mEngine g_mgc_slowdon;
+static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;   // S-2026-07-11: moved to globals.hpp for persistence
 #endif
 // S-2026-07-08c: 5th engine on the same MGC feed -- MgcSlowDonchian30m (deep-dive
 // candidate #1, Nin40/Nout20 slow sibling, next-bar-open + 3xATR adverse-first
@@ -154,16 +158,24 @@ inline void poll_mgc_feed(const std::string& bars_csv, const std::string& hvn_js
                                      ts, cb);
 
         // --- 2nd MGC engine: GoldVolBreakoutM30 (EMA200-gated Donchian runner) ---
-        // Drive on_m30_bar(high,low,close,bid,ask,now_ms,cb) each bar; aggregate H1
-        // from 30m buckets and emit on_h1_close on each H1 boundary (the EMA200
+        // Drive on_m30_bar(high,low,close,bid,ask,now_ms,cb,open) each bar; aggregate
+        // H1 from 30m buckets and emit on_h1_close on each H1 boundary (the EMA200
         // trend gate). bid=ask=close (MGC shadow; real fills captured live in ledger).
+        // S-2026-07-11 PHASE 1b FIXES (roadmap #6):
+        //  * ts*1000 -- this call previously passed SECONDS into now_ms, so the
+        //    engine's London/NY session gate (load-bearing: sess-off PF 0.76)
+        //    computed a garbage hour that drifted through the day-cycle over
+        //    ~2.7 YEARS, and ledger entry/exit timestamps were 1970-scale.
+        //  * open passed -- feeds the gap-honest resting-stop fill (stop_mode=2,
+        //    the decision-test winner; see mgc_volbrk_tickstop_decision.cpp).
         if (g_mgc_volbrk.enabled) {
             static int64_t vb_h1_bucket = 0; static double vb_h1_close = 0.0;
-            const double hi = std::atof(k[2].c_str()), lo = std::atof(k[3].c_str()), cl = std::atof(k[4].c_str());
+            const double op = std::atof(k[1].c_str()), hi = std::atof(k[2].c_str()),
+                         lo = std::atof(k[3].c_str()), cl = std::atof(k[4].c_str());
             const int64_t h1b = (ts / 3600) * 3600;
             if (vb_h1_bucket != 0 && h1b != vb_h1_bucket) g_mgc_volbrk.on_h1_close(vb_h1_close);
             vb_h1_bucket = h1b; vb_h1_close = cl;
-            g_mgc_volbrk.on_m30_bar(hi, lo, cl, cl, cl, ts, cb);
+            g_mgc_volbrk.on_m30_bar(hi, lo, cl, cl, cl, ts * 1000LL, cb, op);
         }
 
         // --- 3rd/4th MGC engines: XauTrendFollow4h/2h venue instances

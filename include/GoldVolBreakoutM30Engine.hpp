@@ -5,6 +5,10 @@
 //    2x-cost robust). TREND-GATED (trend_==1 only) = entry-side bear protection by
 //    design. Cold loss-cut NOT added -- trail-only runner, tightening lowers net
 //    (swing-protection sweep 2026-06-17).
+//    S-2026-07-11 PHASE 1b: MGC (bar-fed) instance verdict -- stop_mode=2
+//    (sl+trail enforced as a bar-path resting stop): mgc_volbrk_tickstop_
+//    decision.cpp, certified MGC 30m 2024-26: PF2.07 +281pt worst-31 maxDD79
+//    vs no-stop PF1.41 worst-82 maxDD197; 2x-cost PF2.00; both halves +.
 // =============================================================================
 //  GoldVolBreakoutM30Engine.hpp -- XAU M30 long-only volatility-breakout runner
 // =============================================================================
@@ -126,6 +130,27 @@ public:
     double min_qty  = 0.0;   // futures: 1 (whole contracts). 0 = no snap (spot lots)
     double qty_step = 0.0;   // futures: 1. 0 = no snap
 
+    // S-2026-07-11 GOLD PHASE 1b (GOLD_BOOK_ROADMAP #6 decision test): stop
+    // enforcement style. The SPOT instance receives real ticks (tick_gold.hpp
+    // drives on_tick) -> STOP_TICK, unchanged behavior. The MGC instance is
+    // BAR-FED (poll_mgc_feed 30m rows; on_tick never runs), so its tick-style
+    // sl/trail was DEAD CODE that looked active: the cadence audit found 46/46
+    // exits via MAX_HOLD. Decision test on the REAL engine, all modes
+    // (backtest/mgc_volbrk_tickstop_decision.cpp, certified MGC 30m
+    // 2024-06..2026-06 + XAU-M30 2022-bear shadow at MGC cost): see harness
+    // output in outputs/GOLD_PHASE1B_2026-07-11.md. Modes:
+    //   STOP_NONE         0: honest no-stop -- pos.sl_px=0, NO trail bookkeeping;
+    //                        exits = MAX_HOLD only (what the MGC instance was
+    //                        ACTUALLY doing, minus the pretend sl/trail state).
+    //   STOP_TICK         1: on_tick enforces sl + trail (spot default).
+    //   STOP_BAR_INTRABAR 2: on_m30_bar enforces the SAME sl/trail as a resting
+    //                        stop, adverse-first, gap-honest fill min(open, sl).
+    //   STOP_CATASTROPHE  3: on_m30_bar enforces ONLY a wide emergency stop at
+    //                        entry - cat_atr_mult*ATR_entry (gap-honest); the
+    //                        1.5-ATR stop/trail are NOT enforced; MAX_HOLD keeps.
+    int    stop_mode    = 1;     // spot default: tick-driven (unchanged)
+    double cat_atr_mult = 6.0;   // STOP_CATASTROPHE distance (ATR at entry)
+
     // Validated "beoff" params (do NOT tune live; these ARE the deploy config)
     int    kDonch       = 20;    // Donchian lookback (M30 bars)
     int    kAtrP        = 14;    // ATR period (M30 bars)
@@ -212,9 +237,13 @@ public:
         if (c_now > ema_h1_ && c_now > c_lb) trend_ = 1;
     }
 
-    // -------- M30 close: manage trail/hold then evaluate entry --------
+    // -------- M30 close: manage stop/trail/hold then evaluate entry --------
+    // S-2026-07-11 PHASE 1b: trailing `open` param (0 = unknown) feeds the
+    // gap-honest resting-stop fill for STOP_BAR_INTRABAR / STOP_CATASTROPHE.
+    // Existing callers (tick_gold.hpp spot path) compile unchanged.
     void on_m30_bar(double high, double low, double close,
-                    double bid, double ask, int64_t now_ms, OnCloseFn on_close) noexcept {
+                    double bid, double ask, int64_t now_ms, OnCloseFn on_close,
+                    double open = 0.0) noexcept {
         if (!enabled) return;
 
         // Donchian high of the PRIOR kDonch bars (exclude the bar just closed).
@@ -241,13 +270,32 @@ public:
 
         if (pos.cooldown_bars > 0) --pos.cooldown_bars;
 
-        // ---- manage open: trail on bar close + max-hold ----
+        // ---- manage open: stop (mode 2/3) -> trail -> max-hold ----
         if (pos.active) {
             ++pos.bars_held;
-            const double R = kStopAtr * pos.atr_at_entry;
-            if (R > 0.0 && (close - pos.entry_px) >= kTrailAfterR * R) {
-                const double trail = close - kTrailAtr * pos.atr_at_entry;
-                if (trail > pos.sl_px) pos.sl_px = trail;
+            // bar-extreme excursion tracking (bar-fed instances get no on_tick)
+            { const double fav = high - pos.entry_px; if (fav > pos.mfe) pos.mfe = fav;
+              const double adv = pos.entry_px - low;  if (adv > pos.mae) pos.mae = adv; }
+            // S-2026-07-11 PHASE 1b: resting-stop enforcement for BAR-FED
+            // instances, ADVERSE-FIRST (checked against the stop level set on
+            // PRIOR bars, before this bar's trail update). Gap-honest fill:
+            // min(open, stop) when open is known, else the stop level.
+            if (stop_mode == 2 || stop_mode == 3) {
+                const double stop_px = pos.sl_px;   // mode 3 set sl_px = cat level at entry
+                if (stop_px > 0.0 && low <= stop_px) {
+                    const double fill = (open > 0.0) ? std::min(open, stop_px) : stop_px;
+                    _close(fill, stop_mode == 3 ? "CATASTROPHE_STOP" : "STOP_OR_TRAIL", now_ms, on_close);
+                    return;
+                }
+            }
+            // trail bookkeeping only where a stop is actually enforced (mode 1/2).
+            // mode 0 = honest no-stop (MAX_HOLD only); mode 3 = static emergency level.
+            if (stop_mode == 1 || stop_mode == 2) {
+                const double R = kStopAtr * pos.atr_at_entry;
+                if (R > 0.0 && (close - pos.entry_px) >= kTrailAfterR * R) {
+                    const double trail = close - kTrailAtr * pos.atr_at_entry;
+                    if (trail > pos.sl_px) pos.sl_px = trail;
+                }
             }
             if (pos.bars_held >= kMaxHold) { _close(close, "MAX_HOLD", now_ms, on_close); return; }
             return;   // never enter on a bar that holds a position
@@ -267,14 +315,18 @@ public:
         if (broke && not_late && impulse) _fire_entry(bid, ask, now_ms);
     }
 
-    // -------- every tick: SL management --------
+    // -------- every tick: SL management (STOP_TICK instances only) --------
     void on_tick(double bid, double ask, int64_t now_ms, OnCloseFn on_close) noexcept {
         if (!enabled || !pos.active) return;
         const double mid = (bid + ask) * 0.5;
         const double fav = mid - pos.entry_px;
         if (fav > pos.mfe) pos.mfe = fav;
         if (-fav > pos.mae) pos.mae = -fav;
-        if (bid <= pos.sl_px) _close(pos.sl_px, "STOP_OR_TRAIL", now_ms, on_close);
+        // S-2026-07-11 PHASE 1b: only mode 1 enforces the stop here. Bar-fed
+        // instances (mode 0/2/3) never receive ticks; if one ever does, the
+        // tick path must not double-enforce a differently-modelled stop.
+        if (stop_mode == 1 && pos.sl_px > 0.0 && bid <= pos.sl_px)
+            _close(pos.sl_px, "STOP_OR_TRAIL", now_ms, on_close);
         (void)ask;
     }
 
@@ -319,7 +371,12 @@ private:
         }
         pos.active = true;
         pos.entry_px = entry;
-        pos.sl_px = entry - sl_dist;
+        // S-2026-07-11 PHASE 1b: stop level per enforcement mode. Mode 0 sets
+        // NO stop (sl_px=0 -- nothing pretends protection that can't fire);
+        // mode 3 sets the wide emergency level; modes 1/2 keep the 1.5-ATR stop.
+        pos.sl_px = (stop_mode == 0) ? 0.0
+                  : (stop_mode == 3) ? entry - cat_atr_mult * atr_
+                                     : entry - sl_dist;
         pos.atr_at_entry = atr_;
         pos.entry_ts_ms = now_ms;
         pos.bars_held = 0;
@@ -391,8 +448,12 @@ public:
             char* p4; double l = std::strtod(p3 + 1, &p4); if (!p4 || *p4 != ',') continue;
             double c = std::strtod(p4 + 1, nullptr);
             if (!std::isfinite(o) || !std::isfinite(h) || !std::isfinite(l) || !std::isfinite(c)) continue;
-            on_m30_bar(h, l, c, c, c, ms + 1800LL * 1000, OnCloseFn{});
-            ++fed; (void)o;
+            // S-2026-07-11 PHASE 1b: ts-scale safety. The MGC instance seeds from
+            // data/mgc_30m_hist.csv whose ts is SECONDS (the spot warmup CSV is ms);
+            // feeding seconds as now_ms poisoned the session-hour bookkeeping.
+            if (ms < 4000000000LL) ms *= 1000;
+            on_m30_bar(h, l, c, c, c, ms + 1800LL * 1000, OnCloseFn{}, o);
+            ++fed;
         }
         warmup_active_ = false;
         printf("[GoldVolBrkM30-SEED] M30 fed=%d atr=%.4f bars=%d path='%s'\n", fed, atr_, (int)m30_.size(), path.c_str());

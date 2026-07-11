@@ -751,6 +751,14 @@ static int64_t g_mgc_tf_floor_ts = 0;
 #include "MgcSlowDonchian30mEngine.hpp"
 static omega::MgcSlowDonchian30mEngine g_mgc_slowdon;
 
+// S-2026-07-11 GOLD PHASE 1b: the MGC-fed GoldVolBreakoutM30 instance MOVED here
+// from MgcFastDonchianFeed.hpp for the SAME include-order reason as MgcTF4h/2h
+// and MgcSlowDon above -- PositionPersistence.hpp (included BEFORE the feed in
+// main.cpp) must see it to register persist/restore; unpersisted, a restart
+// orphaned its open MGC leg (Phase-1 known residual). Config in omega_main.hpp
+// (venue MGC, 1 micro, stop_mode=2); poll_mgc_feed drives it.
+static omega::GoldVolBreakoutM30Engine g_mgc_volbrk;
+
 // 2026-05-15 S91: GoldUltimateEngine -- standalone v12 OOS-validated XAUUSD
 //   trend engine. 7-factor entry filter + edge-hour gate (01/05/23 UTC) +
 //   ATR floor 2.5. SL=2ATR, TP=5ATR, trail at 3ATR MFE / 2ATR distance.

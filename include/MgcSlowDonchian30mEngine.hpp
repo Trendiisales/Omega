@@ -9,9 +9,14 @@
 //  spike. Entry-side bear protection: gold_regime().long_blocked() is MANDATORY
 //  (2022-bear shadow on XAU-30m proxy at MGC cost: naked PF0.38; gated, the
 //  2022 exposure is sat out -- same gate MgcFastDon carries). AUTO-RETIREMENT
-//  latch: banked net (BT cost basis 0.31pt RT) <= -400pt blocks new entries
-//  (~2x the -188pt worst BT drawdown episode). Evidence:
+//  latch: banked net (BT cost basis 0.31pt RT) <= retire_net_pts blocks new
+//  entries (wired ~2x the cell's worst BT drawdown episode). Evidence:
 //  outputs/GOLD_DEEP_DIVE_2026-07-08.md Study 7 (commit 4bca1036 harnesses).
+//  S-2026-07-11 PHASE 1b RE-CELL: wired 55/27 (omega_main), the TRUE second
+//  horizon -- 40/20 duplicated the live MgcFastDon channel. Faithful cell
+//  (same chassis, certified MGC 30m 2024-26, 0.31 RT): n158 +1504.6pt PF1.78
+//  both-halves+ maxDD -278.9 2x-cost PF1.74; real-engine parity EXACT; latch
+//  -560 (=2x new worst DD). Same 3xATR stop (plateau sl2.5-3.5 PF>=1.65).
 // =============================================================================
 //  MgcSlowDonchian30mEngine.hpp  (S-2026-07-08c)
 //  SLOW sibling of MgcFastDonchian30m on the same MGC (COMEX micro gold) 30m
