@@ -216,10 +216,10 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">CRYPTO COMPANIONS — up-jump stall-clip books (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
+    <span class="lbl">CRYPTO COMPANIONS — up-jump 32-CELL THRESHOLD GRID · 8 coins × thr{2,3,4,5}% BE-cascade mimics · ★=canonical cell/coin, rest shadow experiments (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
     <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
-  <div style="overflow-x:auto"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
+  <div style="overflow:auto;max-height:420px"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
 </div>
 
 <!-- ═══ GOLD/XAG/USOIL/FX retired BE-floor banners moved to the compact RETIRED strip below
@@ -895,24 +895,33 @@ function pollRdagent(){
 }
 setInterval(pollRdagent,5000);pollRdagent();
 
-/* ── crypto companions — TIERED-2 + SELF-FUNDING LADDER (shadow · josgp1 c6b97e5) ──
-   Each parent up-jump trade runs 2 base tiers (TIGHT+WIDE) + a self-funding ladder (each
-   cost-covered clip opens 1 more WIDE leg, cap 5). Roster baked (per-coin intraday W/thr +
-   tier knobs) so the panel renders before any live push. Live state overlaid per-symbol from
-   /api/crypto_companion (crypto_companion_state.json, pushed from josgp1): book aggregate
-   (armed/peak/clips/bank) PLUS per-leg `sublegs` [{id:T1/T2/L1..,armed,peak_mfe_pct,
-   bars_since_high}] rendered as doubly-nested rows. STANDALONE book — never vs-WIDE. */
-var CC_ROSTER=[
- {sym:'BTC', w:4,thr:8, tight:'a3/s0/g50',wide:'a5/s0/g50',mode:''},
- {sym:'ETH', w:4,thr:5, tight:'a3/s0/g50',wide:'a8/s0/g50',mode:''},
- {sym:'SOL', w:4,thr:12,tight:'a2/s0/g50',wide:'a8/s0/g50',mode:''},
- {sym:'DOGE',w:8,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
- {sym:'BNB', w:4,thr:5, tight:'a3/s3/g30',wide:'a8/s0/g50',mode:''},
- {sym:'ADA', w:6,thr:5, tight:'a3/s4/g50',wide:'a5/s6/g0', mode:''},
- {sym:'TRX', w:8,thr:8, tight:'a3/s0/g30',wide:'a8/s6/g0', mode:''},
- {sym:'NEAR',w:6,thr:5, mode:'parent-only'},   /* companion STOPPED (operator S-2026-07-05d) — confirm-fix too costly (-46% net); revisit when viable */
- {sym:'AAVE',w:4,thr:5, mode:'parent-only'},   /* companion DROPPED (cost-cover re-sweep PF1.04/H1~0 noise); parent-only */
- {sym:'OP',  mode:'parent-only'}
+/* ── crypto companions — 32-CELL THRESHOLD GRID (S-2026-07-12 · shadow · josgp1) ──
+   Jul-11 grid deploy (chimera 9f165c6+): per coin, 4 SEPARATE BE-cascade shadow companion
+   books at thr {2,3,4,5}% on the coin's tuned detect window — 8 coins x 4 = 32 cells. ONE
+   CANONICAL cell per coin (CRYPTO_SPOTLONG_PLAN.md: ETH-UJ2/BTC-UJ4/BNB-UJ3/SOL-UJ5/
+   DOGE-UJ4/ADA-UJ5/XRP-UJ4/TRX-UJ5 = det_thr == the tuned parent's thr); the other 3 are
+   shadow threshold EXPERIMENTS on the SAME event (never live-activate all 4 — multiplied
+   exposure, zero diversification). Roster baked so the panel renders pre-push; live state
+   overlaid PER-CELL by companion tag from /api/crypto_companion (crypto_companion_state.json,
+   josgp1 emit_companion_state — legs now carry tag/cell/det/canonical since the S-2026-07-12
+   grid-identity fix; the old emit collapsed all 4 cells to one sym key = the stale-roster
+   bug). Reclip OFF + cap=#tiers (<=1 un-BE'd leg cascade guarantee). NO 200DMA anywhere.
+   STANDALONE additive books — never vs-WIDE. */
+var CC_THRS=[2,3,4,5];
+var CC_ROSTER=[   /* live truth = chimera main.cpp _gcoins grid (Jul-11 deploy) */
+ {sym:'ETH', w:1,thr:2,canon:2,arms:'BE-cascade N6'},
+ {sym:'BTC', w:2,thr:4,canon:4,arms:'arm&ge;3 N6'},
+ {sym:'BNB', w:1,thr:3,canon:3,arms:'arm&ge;3 N8'},
+ {sym:'SOL', w:1,thr:5,canon:5,arms:'BE-cascade N8'},
+ {sym:'DOGE',w:4,thr:4,canon:4,arms:'BE-cascade N6'},
+ {sym:'ADA', w:1,thr:5,canon:5,arms:'BE-cascade N6'},
+ {sym:'XRP', w:1,thr:4,canon:4,arms:'BE-cascade N6'},
+ {sym:'TRX', w:1,thr:5,canon:5,arms:'BE-cascade N6'}
+];
+var CC_NOCOMP=[   /* no live up-jump leg on josgp1 (grid finalize S-2026-07-11) */
+ {sym:'NEAR',note:'CUT from the grid — no up-jump leg (coin trades via slot engines only)'},
+ {sym:'AAVE',note:'companion DROPPED at finalize — no up-jump leg (slot engines only)'},
+ {sym:'OP',  note:'companion DROPPED at finalize — no up-jump leg (slot engines only)'}
 ];
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
@@ -920,64 +929,77 @@ var CC_ROSTER=[
 var CRYPTO_POOL_USD=10000;
 function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
 /* Operator 2026-07-04b: "same as gold for crypto — companion engines under their respective lines."
-   Each crypto leg renders as a PARENT line (the trend engine that rides WIDE to flip) with its
-   companion (up-jump clip) nested as an indented `↳` sub-row directly beneath it — mirroring the
-   gold ENGINE LEDGER engine→companion nesting. Companion is STANDALONE additive, never vs-WIDE. */
+   Each coin renders as a PARENT line (the tuned up-jump leg that rides WIDE to flip) with its
+   4 grid CELLS nested as indented `↳` sub-rows (★ CANON = the one promoted cell; the rest are
+   shadow threshold experiments) — mirroring the gold ENGINE LEDGER engine→companion nesting.
+   Live cells keyed by companion tag ("ETH-UJ2-CLIP"); a coin's cells all fold. Companion books
+   are STANDALONE additive, never vs-WIDE. All banks 0 since the complete-zero (t0 2026-07-11
+   22:54 UTC) — correct, fresh forward state, not a data gap. */
 function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
- var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
-      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">TIGHT</td>'
-      +'<td class="lbl">WIDE</td><td class="lbl">cap</td><td class="lbl">reclip</td>'
+ var h='<tr><td class="l lbl">engine / cell</td><td class="l lbl">state</td>'
+      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">detector</td>'
+      +'<td class="lbl">cascade</td><td class="lbl">mult</td>'
       +'<td class="lbl">clips</td><td class="lbl">bank REAL(bp · $)</td></tr>';
- var narm=0,ntot=0,totclips=0,totbank=0,totmodel=0;
+ var narm=0,ncell=0,totclips=0,totbank=0,totmodel=0;
  CC_ROSTER.forEach(function(r){
-  /* PARENT engine line (the crypto trend leg it mimics) */
-  var trig=r.w?' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'% · rides WIDE to flip (parent)</span>':' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span>';
-  h+='<tr><td class="l" style="font-weight:600">'+r.sym+trig+'</td>'
-    +'<td colspan="9"></td></tr>';
-  if(r.mode==='parent-only'){
-   h+='<tr style="opacity:.5"><td></td><td class="l d" colspan="9" style="border-left:2px solid var(--grn)">&#8627; parent-only — no companion</td></tr>';return;}
-  ntot++;var s=live[r.sym]||{};var armed=!!s.armed;if(armed)narm++;
-  /* S-2026-07-07f: fold the REAL column ONLY (bank_bp = MODEL-fill, proven fake by the
-     befloor-family real-fill audit — fill-at-floor + max(0,.) + zero cost). bank_bp_real is
-     the honest worse-of-fill column emitted by josgp1 after the dual-column fix; until that
-     ships/accrues, the honest fold is 0 (feedback-no-backtest-in-live-gui: $0 is the honest
-     number). Model bank stays visible as a dim reference, never in the PnL. */
-  totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);totmodel+=safe(s.bank_bp);
-  var st=s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>');
-  var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
-  var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
-  var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
-  var bkv=safe(s.bank_bp_real);
-  var bk =(s.bank_bp_real===undefined&&s.bank_bp===undefined)?'<span class="d">—</span>'
-    :'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>'
-     +'<span class="d" style="font-size:9px"> · model '+fmt2(safe(s.bank_bp),1)+'</span>';
-  /* companion BOOK aggregate sub-row (2 base tiers + self-funding ladder cap5) */
-  h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; companion book (tiered ladder)</td><td class="l">'+st+'</td>'
-    +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+r.tight+'</td>'
-    +'<td class="num d">'+r.wide+'</td><td class="num d">5</td><td class="num d">0.05</td>'
-    +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
-  /* per-leg sublegs (T1/T2 base + L1..Ln ladder) currently OPEN, live from josgp1 */
-  (s.sublegs||[]).forEach(function(sl){
-   var lst=sl.armed?'<span class="g">ARMED</span>':'<span class="d">tracking</span>';
-   var lpk=sl.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(sl.peak_mfe_pct,2);
-   var lstc=sl.bars_since_high===undefined?'<span class="d">—</span>':String(sl.bars_since_high);
-   var isL=(sl.id||'')[0]==='L';
-   h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:18px">&#8627; '+(sl.id||'?')+(isL?' <span class="d" style="font-size:9px">ladder</span>':'')+'</td><td class="l">'+lst+'</td>'
-     +'<td class="num">'+lpk+'</td><td class="num">'+lstc+'</td><td colspan="6"></td></tr>';
+  /* PARENT engine line (the tuned up-jump leg — e.g. ETH-UPJUMP2-H1 1h/+2%) */
+  h+='<tr><td class="l" style="font-weight:600">'+r.sym
+    +' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'% · rides WIDE to flip (parent)</span></td>'
+    +'<td colspan="8"></td></tr>';
+  /* 4 grid CELLS per coin (thr 2/3/4/5%), live state overlaid per companion tag */
+  CC_THRS.forEach(function(t){
+   ncell++;var s=live[r.sym+'-UJ'+t+'-CLIP']||{};var armed=!!s.armed;if(armed)narm++;
+   /* S-2026-07-07f: fold the REAL column ONLY (bank_bp = MODEL-fill, proven fake by the
+      befloor-family real-fill audit). bank_bp_real is the honest worse-of-fill column;
+      $0 is the honest number until real clips accrue (feedback-no-backtest-in-live-gui).
+      Model bank stays visible as a dim reference, never in the PnL. */
+   totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);totmodel+=safe(s.bank_bp);
+   var isCan=s.canonical!==undefined?!!s.canonical:(t===r.canon);
+   var mark=isCan?' <span style="color:var(--grn);font-weight:600">&#9733; CANON</span>':' <span class="d" style="font-size:9px">exp</span>';
+   var st=s.retired?'<span class="r">RETIRED</span>':(s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>'));
+   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
+   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
+   var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
+   var det=(s.det_w!==undefined?s.det_w:r.w)+'h/+'+(s.det_thr_pct!==undefined?fmt2(s.det_thr_pct,0):t)+'%';
+   var mlt=s.mult===undefined?'x1':('x'+fmt2(s.mult,1).replace(/\.0$/,''));
+   var bkv=safe(s.bank_bp_real);
+   var bk =(s.bank_bp_real===undefined&&s.bank_bp===undefined)?'<span class="d">—</span>'
+     :'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>'
+      +'<span class="d" style="font-size:9px"> · model '+fmt2(safe(s.bank_bp),1)+'</span>';
+   h+='<tr'+(isCan?'':' style="opacity:.6"')+'><td class="l d" style="border-left:2px solid var(--grn)">&#8627; UJ'+t+mark+'</td><td class="l">'+st+'</td>'
+     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+det+'</td>'
+     +'<td class="num d">'+r.arms+'</td><td class="num d">'+mlt+'</td>'
+     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
+   /* per-leg sublegs (BE-cascade tiers currently OPEN in this cell), live from josgp1 */
+   (s.sublegs||[]).forEach(function(sl){
+    var lst=sl.armed?'<span class="g">ARMED</span>':'<span class="d">tracking</span>';
+    var lpk=sl.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(sl.peak_mfe_pct,2);
+    var lstc=sl.bars_since_high===undefined?'<span class="d">—</span>':String(sl.bars_since_high);
+    h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:18px">&#8627; '+(sl.id||'?')+'</td><td class="l">'+lst+'</td>'
+      +'<td class="num">'+lpk+'</td><td class="num">'+lstc+'</td><td colspan="5"></td></tr>';
+   });
   });
  });
+ /* coins with NO up-jump leg (grid finalize cuts) — honest dim rows, no fake companions */
+ CC_NOCOMP.forEach(function(r){
+  h+='<tr style="opacity:.45"><td class="l" style="font-weight:600">'+r.sym+'</td>'
+    +'<td class="l d" colspan="8">'+r.note+'</td></tr>';
+ });
  el('cctab').innerHTML=h;
- el('ccinfo').innerHTML=ntot+' companions · '+narm+' armed · '+totclips+' clips · Σ bank REAL <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span><span class="d" style="font-size:9px"> · model '+fmt2(totmodel,1)+' bp (not folded)</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').innerHTML=ncell+' cells (8 coins × 4 thr · 8 canonical) · '+narm+' armed · '+totclips+' clips · Σ bank REAL <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span><span class="d" style="font-size:9px"> · model '+fmt2(totmodel,1)+' bp (not folded)</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
  /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
-    Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both so it shows on push. */
+    _cctot = Σ bank_bp_real over ALL 32 grid cells (same field/shape as pre-grid: sum of legs'
+    bank_bp_real). Store the all-time bp here; drawLedger/drawEquity read it. Re-trigger both. */
  window._cctot=totbank;
  if(typeof drawLedger==='function')drawLedger();
  if(typeof drawEquity==='function')drawEquity();
  if(typeof updDayPnl==='function')updDayPnl();/* header ALL-TIME folds crypto too (full pnl) */
 }
 function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json();}).then(function(j){
- var m={};(j.legs||[]).forEach(function(p){if(p&&p.sym)m[p.sym]=p;});
+ /* key by companion TAG (grid cell identity, S-2026-07-12). Fallback to sym for a not-yet-
+    updated producer file (old shape keyed the 4 cells to one sym — the stale-roster bug). */
+ var m={};(j.legs||[]).forEach(function(p){if(p&&(p.tag||p.sym))m[p.tag||p.sym]=p;});
  /* STICKY: only replace the live overlay when the push actually has legs. A transient empty/
     stale frame (file mid-write, momentary 0-leg push) must NOT wipe the last good bank -> that
     was the "-141 disappears then reappears" flicker. Keep the last good frame until a real one lands. */
