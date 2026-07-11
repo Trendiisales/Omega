@@ -221,12 +221,20 @@ private:
         IndexBookBudget::g().release(IdxDir::LONG);   // pair with reserve() in open_position
         const double exit_px=bid;                                  // long exits at bid
         const double price_bp=(exit_px-pos_.entry_px)/pos_.entry_px*10000.0;
-        const double notional=pos_.lot*p.usd_per_pt, pnl=price_bp/10000.0*notional;
-        const double spread=std::fabs(ask-bid), cost=spread/pos_.entry_px*notional;
-        std::printf("[CalendarTom-%s] EXIT %s price_bp=%+.1f pnl=%.2f bars=%d%s\n",symbol_.c_str(),why,price_bp,pnl,pos_.bars_held,shadow_mode?" [SHADOW]":"");
+        // S-2026-07-11 GOLD PHASE 1 (GOLD_BOOK_ROADMAP bug 4, CONFIRMED): pnl was
+        // emitted as return-fraction x notional (price_bp/1e4 * lot * usd_per_pt),
+        // i.e. the correct USD pnl DIVIDED by the entry price (~4000x understated
+        // on XAU, ~120x on US500). The ledger contract (trade_lifecycle Step 1) is
+        // RAW price-points x lot; handle_closed_trade applies tick_value_multiplier
+        // and recomputes net_pnl from spreadAtEntry via apply_realistic_costs.
+        const double pnl_raw=(exit_px-pos_.entry_px)*pos_.lot;    // pts x lot (ledger scales to USD)
+        const double spread=std::fabs(ask-bid);
+        std::printf("[CalendarTom-%s] EXIT %s price_bp=%+.1f pnl_raw=%.4f (~$%.2f) bars=%d%s\n",
+                    symbol_.c_str(),why,price_bp,pnl_raw,pnl_raw*p.usd_per_pt,
+                    pos_.bars_held,shadow_mode?" [SHADOW]":"");
         std::fflush(stdout);
         omega::TradeRecord tr{}; tr.symbol=symbol_; tr.side="LONG"; tr.entryPrice=pos_.entry_px; tr.exitPrice=exit_px;
-        tr.size=pos_.lot; tr.pnl=pnl; tr.net_pnl=pnl-cost; tr.entryTs=pos_.entry_ts/1000; tr.exitTs=day_ms/1000;
+        tr.size=pos_.lot; tr.pnl=pnl_raw; tr.entryTs=pos_.entry_ts/1000; tr.exitTs=day_ms/1000;
         tr.engine=engine_name_; tr.exitReason=why; tr.spreadAtEntry=spread; tr.shadow=shadow_mode;
         tr.mfe=pos_.mfe; tr.mae=pos_.mae;
         if(cb) cb(tr); pos_=Pos{};

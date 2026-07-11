@@ -57,8 +57,19 @@ public:
     double lot            = 0.01;   // XAU spot lot per 1.0 weight-unit (0.01 lot = 1oz -> $1/pt)
     double target_vol     = 0.15;   // annualized vol target (validated 15%)
     double max_lev        = 2.0;    // leverage cap (validated)
-    double cost_rt_pts    = 0.31;   // per-turnover-unit cost, the BT basis
-    double retire_net_pts = -1000.0; // auto-retirement latch (2x worst wired-rule DD -491pt)
+    // S-2026-07-11 GOLD PHASE 1 (GOLD_BOOK_ROADMAP bug 3, CONFIRMED): the old
+    // cost_rt_pts=0.31 was the MGC FUTURES basis on what runs as an XAU SPOT
+    // book. Replaced with the honest spot round-trip in bp of price (6bp base
+    // + 2bp slip), charged price-proportionally per turnover unit at rebalance.
+    // Re-validated both ways (backtest/gold_tsmom_cost_basis_bt.py, GC_F daily
+    // 2015-2026, wired calendar-month rule; 0.31pt basis reproduces the
+    // documented parity n129 +2604.1pt PF1.98 exactly):
+    //   spot 7bp PF1.96 +2566.6 | 8bp PF1.96 +2559.5 (H1 +261.1/H2 +2298.4,
+    //   2022 +114.3, maxDD -497.7) | 10bp PF1.95 | 16bp 2x-stress PF1.92.
+    // Turnover is ~10 adjustments/yr -> cost basis moves net only ~1.7% over
+    // 11yr. SURVIVES SPOT AT TRUE COST -- no venue move required.
+    double cost_rt_bp     = 8.0;    // honest XAU-spot RT cost, bp of rebalance price
+    double retire_net_pts = -1000.0; // auto-retirement latch (2x worst wired-rule DD -491pt; 8bp-basis maxDD -497.7 keeps it valid)
 
     using OnCloseFn = std::function<void(const omega::TradeRecord&)>;
 
@@ -231,8 +242,10 @@ private:
         }
 
         if (px_anchor_ > 0.0 && (w_ != 0.0 || std::fabs(want - w_) > 1e-9)) {
-            // harness-faithful: ENDING period pnl, turnover cost charged here
-            book_period(c, std::fabs(want - w_) * cost_rt_pts * 0.5, day_ms, "REBALANCE", cb);
+            // harness-faithful: ENDING period pnl, turnover cost charged here.
+            // S-2026-07-11: honest spot cost = bp of the rebalance price (was the
+            // fixed 0.31pt MGC-basis constant on a spot book).
+            book_period(c, std::fabs(want - w_) * (c * cost_rt_bp * 1e-4) * 0.5, day_ms, "REBALANCE", cb);
         }
         if (!seeding_ && std::fabs(want - w_) > 1e-9) {
             std::printf("[GoldTsmomD1V2] REBALANCE comp=%+.2f rv=%.3f lev=%.2f w %+.2f -> %+.2f px=%.2f%s\n",
@@ -262,7 +275,13 @@ private:
         tr.entryPrice = px_anchor_;
         tr.exitPrice  = px;
         tr.size       = std::fabs(w_) * lot;
-        tr.pnl        = pnl_pts * lot * 100.0;    // XAU spot: 1.0 lot = 100oz -> $100/pt; 0.01 lot -> $1/pt
+        // S-2026-07-11: emit RAW pts x lot per the ledger contract (trade_lifecycle
+        // Step 1 multiplies by tick_value_multiplier("XAUUSD")=100). The old
+        // pre-multiplied `pnl_pts * lot * 100.0` either tripped the central
+        // PNL-DOUBLE-MULT backstop (P1 noise, mfe/mae zeroed) or -- when the
+        // cost-dominated ratio fell outside the [0.7x,1.4x] net -- booked 100x
+        // inflated USD.
+        tr.pnl        = pnl_pts * lot;
         tr.entryTs    = period_start_ts_ / 1000;
         tr.exitTs     = exit_ms / 1000;
         tr.shadow     = shadow_mode;
