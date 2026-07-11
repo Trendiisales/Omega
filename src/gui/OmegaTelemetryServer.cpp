@@ -795,24 +795,38 @@ static std::string buildHistoryJson(bool all_time = false)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// buildCryptoTradesJson (S-2026-07-10) -- reads the crypto book's closed trades
-// (crypto_inbound.csv, pushed from the Chimera box) and returns them in the same
-// shape as buildTradesJson (+ book:"crypto") so the unified "LAST TRADES" panel can
-// merge crypto with the Omega engine ledger. CSV: id,entry_ts,exit_ts,sym,strat,
-// side,entry_px,exit_px,pnl.
+// buildCryptoTradesJson (S-2026-07-10; +chimera S-2026-07-12) -- reads the
+// crypto books' closed trades and returns them in the same shape as
+// buildTradesJson (+ book tag) so the unified "LAST TRADES" panel can merge
+// them with the Omega engine ledger. Three sources (all REAL FORWARD trades,
+// never backtest rows), each with an absolute VPS path + a relative dev
+// fallback tried FIRST-OPEN-WINS per source (so the same file is never read
+// twice — the old flat list could double-read crypto_inbound.csv when cwd was
+// C:\Omega):
+//   crypto_inbound.csv          book="crypto"   Mac ibkrcrypto daily book
+//   crypto_intraday_inbound.csv book="crypto"   Mac ibkrcrypto intraday book
+//   chimera_inbound.csv         book="chimera"  josgp1 chimera SHADOW closes
+//     (slot engines/UPJUMP parents/companion clips/XSec rebalances; written by
+//     chimera export_desk_trade, relayed by tools/gui/refresh_crypto_companion.sh
+//     every 120s). DISPLAY-ONLY — never folded into ALL-TIME PnL (the fold
+//     path, CryptoLedgerInbound, reads crypto_inbound.csv only).
+// CSV: id,entry_ts,exit_ts,sym,strat,side,entry_px,exit_px,pnl[,reason]
+// (chimera rows carry the optional 10th reason column: SL/TRAIL/TIME/REBAL…)
+// All sources merge (no break): the GUI sorts the union by exitTs, newest 15.
 // ─────────────────────────────────────────────────────────────────────────────
 static std::string buildCryptoTradesJson()
 {
-    static const char* PATHS[] = {
-        "C:\\Omega\\logs\\trades\\crypto_inbound.csv",
-        "logs/trades/crypto_inbound.csv",
-        "C:\\Omega\\logs\\trades\\crypto_intraday_inbound.csv",
-        nullptr
+    struct CryptoSrc { const char* abs_path; const char* rel_path; const char* book; };
+    static const CryptoSrc SRCS[] = {
+        { "C:\\Omega\\logs\\trades\\crypto_inbound.csv",          "logs/trades/crypto_inbound.csv",          "crypto"  },
+        { "C:\\Omega\\logs\\trades\\crypto_intraday_inbound.csv", "logs/trades/crypto_intraday_inbound.csv", "crypto"  },
+        { "C:\\Omega\\logs\\trades\\chimera_inbound.csv",         "logs/trades/chimera_inbound.csv",         "chimera" },
     };
     std::string out = "[";
     bool first = true;
-    for (int pi = 0; PATHS[pi]; ++pi) {
-        FILE* f = fopen(PATHS[pi], "r");
+    for (const auto& src : SRCS) {
+        FILE* f = fopen(src.abs_path, "r");
+        if (!f) f = fopen(src.rel_path, "r");
         if (!f) continue;
         std::vector<std::string> rows;
         char line[1024];
@@ -836,17 +850,13 @@ static std::string buildCryptoTradesJson()
             first = false;
             char row[512];
             snprintf(row, sizeof(row),
-                "{\"book\":\"crypto\",\"symbol\":\"%s\",\"engine\":\"%s\",\"side\":\"%s\","
+                "{\"book\":\"%s\",\"symbol\":\"%s\",\"engine\":\"%s\",\"side\":\"%s\","
                 "\"price\":%.4f,\"exitPrice\":%.4f,\"net_pnl\":%.2f,\"pnl\":%.2f,"
-                "\"exitTs\":%lld,\"exit_ts_utc\":\"%s UTC\",\"exitReason\":\"\"}",
-                fld[3], fld[4], fld[5], atof(fld[6]), atof(fld[7]), atof(fld[8]), atof(fld[8]),
-                ex_ts, ut);
+                "\"exitTs\":%lld,\"exit_ts_utc\":\"%s UTC\",\"exitReason\":\"%s\"}",
+                src.book, fld[3], fld[4], fld[5], atof(fld[6]), atof(fld[7]), atof(fld[8]), atof(fld[8]),
+                ex_ts, ut, nf >= 10 ? fld[9] : "");
             out += row;
         }
-        // NO break: read BOTH the daily and intraday crypto books and merge them (the intraday
-        // book holds the ETH/BTC trend wins the daily book doesn't). The GUI sorts the union by
-        // exitTs and takes the newest 15. (S-2026-07-10 operator: "last 2 wins didn't show" —
-        // they were in the intraday file that the old first-path-wins break skipped.)
     }
     out += ']';
     return out;

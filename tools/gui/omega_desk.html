@@ -852,7 +852,7 @@ function pollTrades(){
       var p=safe(t.net_pnl!=null?t.net_pnl:t.pnl);
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
-      var bk=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> '+esc(t.engine||''):esc(t.engine||'');
+      var bk=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> '+esc(t.engine||''):(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> '+esc(t.engine||''):esc(t.engine||'')); /* chimera = josgp1 SHADOW closed trades (S-2026-07-12), display-only */
       return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
         '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
         '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';

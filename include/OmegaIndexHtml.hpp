@@ -862,7 +862,7 @@ function pollTrades(){
       var p=safe(t.net_pnl!=null?t.net_pnl:t.pnl);
       var col=p>0?'var(--grn)':(p<0?'var(--red)':'var(--t2)');
       var when=t.exit_ts_utc?String(t.exit_ts_utc).replace(' UTC',''):fmtTs(t.exitTs);
-      var bk=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> '+esc(t.engine||''):esc(t.engine||'');
+      var bk=t.book==='crypto'?'<span style="color:var(--w)">crypto</span> '+esc(t.engine||''):(t.book==='chimera'?'<span style="color:#c084fc">chimera</span> '+esc(t.engine||''):esc(t.engine||'')); /* chimera = josgp1 SHADOW closed trades (S-2026-07-12), display-only */
       return '<tr><td class="l">'+esc(when)+'</td><td class="l">'+bk+'</td><td class="l">'+esc(t.symbol||'')+'</td><td>'+esc(t.side||'')+
         '</td><td class="num">'+fmt2(safe(t.price),4)+'</td><td class="num">'+fmt2(safe(t.exitPrice),4)+
         '</td><td class="num" style="color:'+col+'">'+fmt2(p,2)+'</td><td class="l d">'+esc(t.exitReason||'')+'</td></tr>';
@@ -936,10 +936,10 @@ function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
 function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
  var h='<tr><td class="l lbl">engine / companion</td><td class="l lbl">state</td>'
       +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">TIGHT</td>'
-      +'<td class="lbl">WIDE</td><td class="lbl">cap</td><td class="lbl">reclip</td>'
-      +'<td class="lbl">clips</td><td class="lbl">bank REAL(bp · $)</td></tr>';
 )OMEGAD4"
-R"OMEGAD5( var narm=0,ntot=0,totclips=0,totbank=0,totmodel=0;
+R"OMEGAD5(      +'<td class="lbl">WIDE</td><td class="lbl">cap</td><td class="lbl">reclip</td>'
+      +'<td class="lbl">clips</td><td class="lbl">bank REAL(bp · $)</td></tr>';
+ var narm=0,ntot=0,totclips=0,totbank=0,totmodel=0;
  CC_ROSTER.forEach(function(r){
   /* PARENT engine line (the crypto trend leg it mimics) */
   var trig=r.w?' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'% · rides WIDE to flip (parent)</span>':' <span class="d" style="font-size:9px;font-weight:400">trend leg · rides WIDE to flip (parent)</span>';
@@ -1106,9 +1106,9 @@ function drawXag(){var j=window._xag||null;
 /* ── USOIL (WTI) COMPANIONS (USOILPos/USOILNeg BE-floor · native C++ · additive, STANDALONE) ──
    Gold-twin of the AUPOS/AUNEG panel, WTI CRUDE. Fed by pollUsoil() off /api/usoil_companion
    (usoil_companion_state.json, written in-binary by omega::usoil_befloor_companion). REAL FORWARD
-   TRADES ONLY. desk_usd = the real forward book. Same schema as gold. RETIRED S-2026-07-07e (real-fill:
 )OMEGAD5"
-R"OMEGAD6(   2026 grid sea of red; lone + cell refuted by 16mo Brent real ticks, registry §5) — panel folds the
+R"OMEGAD6(   TRADES ONLY. desk_usd = the real forward book. Same schema as gold. RETIRED S-2026-07-07e (real-fill:
+   2026 grid sea of red; lone + cell refuted by 16mo Brent real ticks, registry §5) — panel folds the
    REAL columns; no new arms. */
 function drawUsoil(){var j=window._usoil||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
@@ -1274,10 +1274,10 @@ function drawLadder(pfx,j,label){
   el(pfx+'info').textContent='native C++ · shadow · H1 intrabar · forward trades only';renderCompanionOpenTrades(pfx,[],[],5);return;}
  var desk=0,allOpen=[],allTrades=[],nact=0,rows='';
  pairs.forEach(function(p){
-  var tot=safe(p.usd),clips=safe(p.clips),wins=safe(p.wins);
-  var w=p.win||{},act=!!w.active,nopen=(p.open||[]).length;desk+=tot;
 )OMEGAD6"
-R"OMEGAD7(  (p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);o.wm=o.peak;allOpen.push(o);});
+R"OMEGAD7(  var tot=safe(p.usd),clips=safe(p.clips),wins=safe(p.wins);
+  var w=p.win||{},act=!!w.active,nopen=(p.open||[]).length;desk+=tot;
+  (p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd);o.wm=o.peak;allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
   if(act||nopen||clips)nact++;
   var tcol=(tot>0?'var(--grn)':(tot<0?'var(--red)':'var(--t2)'));
@@ -1446,9 +1446,9 @@ function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
 /* recent companion clip closes (paper, additive) — rendered under the ENGINE LEDGER so the
    COMP-BANK / ALL-TIME totals are always explained by visible rows. window._compClosed is fed
    by pollComp from /api/companion closed_detail (StallCompanion aggregate, newest first). */
-function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
 )OMEGAD7"
-R"OMEGAD8( var rows=cl.slice(0,6).map(function(d){var p=safe(d.pnl),c=p>=0?'g':'r';
+R"OMEGAD8(function compClipRows(){var cl=window._compClosed||[];if(!cl.length)return '';
+ var rows=cl.slice(0,6).map(function(d){var p=safe(d.pnl),c=p>=0?'g':'r';
   var t=d.ts?new Date(d.ts*1000).toISOString().slice(5,16).replace('T',' '):'';
   return '<tr><td class="l d" style="font-size:10px;border-left:2px solid var(--grn)">&#8627; '+esc(t)+'</td>'
    +'<td class="l d" style="font-size:10px">'+esc((d.sym||''))+'</td>'
@@ -1607,10 +1607,10 @@ function drawBlot(){fetch('/api/shadow_trades').then(function(r){return r.json()
  if(!a||!a.length){return;}
  a=a.filter(function(t){return t.symbol!=='__BOOT__'&&t.engine!=='boot_writetest';});
  if(!a.length){return;}
- var newest=safe(a[a.length-1].exitTs);
- if(window._lastClose===undefined)window._lastClose=newest;
 )OMEGAD8"
-R"OMEGAD9( else if(newest>window._lastClose){
+R"OMEGAD9( var newest=safe(a[a.length-1].exitTs);
+ if(window._lastClose===undefined)window._lastClose=newest;
+ else if(newest>window._lastClose){
   var fresh=a.filter(function(t){return safe(t.exitTs)>window._lastClose;});
   var net=fresh.reduce(function(s,t){return s+safe(t.pnl);},0);
   window._lastClose=newest;
@@ -1812,9 +1812,9 @@ function drawPR(){var cv=el("prc");
  ctx.fillStyle='#0B0F14';ctx.fillText(lastC.toFixed(dp),padL+pw+6,yl+3.5);
  el('prlast').textContent=lastC.toFixed(dp);
  var pt=el('prtrend');
- pt.textContent=trend>0?'▲ STEP UP':trend<0?'▼ STEP DOWN':'■ RANGING';
 )OMEGAD9"
-R"OMEGAD10( pt.style.color=trend>0?'var(--grnB)':trend<0?'var(--redB)':'var(--t2)';
+R"OMEGAD10( pt.textContent=trend>0?'▲ STEP UP':trend<0?'▼ STEP DOWN':'■ RANGING';
+ pt.style.color=trend>0?'var(--grnB)':trend<0?'var(--redB)':'var(--t2)';
  pt.style.background=trend>0?'var(--grnD)':trend<0?'var(--redD)':'var(--pan2)';
  var age=PRD.updated?Math.max(0,Math.round(Date.now()/1000-PRD.updated)):-1;
  /* S-2026-07-08c: show BAR age of the ACTIVE timeframe, not just poll age — a restart
