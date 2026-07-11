@@ -129,6 +129,18 @@ python3 "$(dirname "$0")/../tools/tombstone_guard.py" --repo "$(dirname "$0")/..
   exit 1
 }
 
+# FAIL-VERDICT GUARD (added S-2026-07-12, never-again audit): an engine with a recorded
+# true-cost FAIL backtest may NOT be enabled. The tombstone guard only covers TOMBSTONED
+# engines; on 2026-07-12 three true-cost-FAIL engines (XauTrendFollow2h, GoldPanicBounce,
+# XauTrendRiderD1 -- GOLD_PHASE1B) were live until the operator ordered a cull. FAILS the
+# canary if any global in backtest/FAIL_VERDICTS.tsv is enabled=true.
+echo ""
+echo "[mac-canary-engines] fail-verdict guard (true-cost-FAIL engines stay disabled)..."
+python3 "$(dirname "$0")/../tools/fail_verdict_guard.py" --repo "$(dirname "$0")/.." || {
+  echo "[mac-canary-engines] FAIL: an engine with a recorded true-cost FAIL is enabled -- see backtest/FAIL_VERDICTS.tsv"
+  exit 1
+}
+
 # STANDING GATE — live-dump staleness monitor (added S-2026-07-02). Every CSV the
 # VPS binary writes via set_live_dump() must be listed in tools/live_dump_manifest.tsv
 # so tools/feeds_selftest.py can poll its VPS freshness. Closes the blind spot where a
@@ -159,6 +171,19 @@ echo ""
 echo "[mac-canary-engines] pnl completeness gate (every money book folds into ALL-TIME)..."
 bash "$(dirname "$0")/mimic_pnl_completeness_gate.sh" || {
   echo "[mac-canary-engines] FAIL: a money book does not reach the ALL-TIME headline."
+  exit 1
+}
+
+# TRADE-VISIBILITY GATE (added S-2026-07-12, never-again audit class A): every trade-
+# producing book across ALL systems (omega-new engines/companions/ladders, Mac crypto
+# books, josgp1 chimera) must reach the desk or be explicitly research/retired/in-flight
+# in tools/trade_visibility_manifest.tsv. The pnl gate above covers endpoint<->fold; this
+# covers producer<->endpoint — the class where an entire system (chimera) traded invisibly
+# for weeks. STRANDED row or an unmanifested new endpoint/push = FAIL.
+echo ""
+echo "[mac-canary-engines] trade-visibility gate (every producer reaches the desk)..."
+bash "$(dirname "$0")/trade_visibility_gate.sh" || {
+  echo "[mac-canary-engines] FAIL: a trade-producing book is invisible to the desk (or manifest drift)."
   exit 1
 }
 

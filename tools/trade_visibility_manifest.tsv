@@ -1,0 +1,55 @@
+# trade_visibility_manifest.tsv — EVERY trade-producing book, producer -> desk (S-2026-07-12 never-again audit, class A).
+#
+# WHY: the chimera/josgp1 system produced shadow trades for WEEKS with no pipeline to the
+# operator's desk (closes died in journalctl; SUI-TSMOM-H4 +12.79bp on 11-07 never left the
+# box). scripts/mimic_pnl_completeness_gate.sh covers endpoint<->fold; NOTHING covered
+# producer<->endpoint — a book with NO endpoint at all was invisible. This manifest is the
+# closed-world record of every producer; scripts/trade_visibility_gate.sh (wired into the
+# mac canary) enforces it.
+#
+# RULES:
+#   * Every NEW trade-producing book (engine family, companion, ladder, python/C++ book,
+#     any writer of closed trades) MUST get a row here IN THE SAME COMMIT that ships it.
+#   * status semantics (gate behavior):
+#       WIRED          producer -> transport -> endpoint -> panel -> fold all live   (pass)
+#       WIRED-DISPLAY  reaches the desk display by design but does NOT fold ALL-TIME (pass)
+#       RETIRED-ok     book retired/disabled; produces nothing or $0 history          (pass)
+#       RESEARCH-ONLY  isolated research/ablation book, no desk claim BY DESIGN       (pass)
+#       OBSERVATION    observation-only book, no orders/ledger                        (pass)
+#       FIX-IN-FLIGHT  known gap, fix owned/in progress — LOUD WARN every canary run  (warn)
+#       STRANDED       produces money/trades the desk cannot see                      (FAIL)
+#   * chimera rows: FIX-IN-FLIGHT until the chimera->desk pipeline agent lands
+#     (export_desk_trade in josgp1 main.cpp S-2026-07-12 + Mac relay), then flip the one
+#     status field to WIRED.
+#   * Producer paths on other boxes are prefixed josgp1: (existence not checkable Mac-side).
+#
+# columns: book <TAB> system <TAB> producer <TAB> transport <TAB> endpoint <TAB> panel <TAB> fold <TAB> status <TAB> note
+omega_engine_ledger	omega-new	include/engine_init.hpp	VPS-local omega_shadow.csv+omega_trade_closes.csv	/api/shadow_csv	ENGINE LEDGER/HEAT/LAST-15	ALL-TIME base ROWS tot	WIRED	~16 enabled g_* engines via handle_closed_trade -> OmegaTradeLedger
+stockdip_turtle_books	omega-new	include/engine_init.hpp	stock_dipturtle_book ledger callback -> omega_shadow.csv	/api/shadow_csv	ENGINE LEDGER	folds with ROWS	WIRED	per-name StockDip/StockTurtle books ride the engine ledger
+omega_stall_clip_companion	omega-new	include/StallCompanion.hpp	companion_state.json (VPS)	/api/companion	COMP-BANK sub-rows	window._comptot	WIRED	25 gold/index giveback books, native port of stall_accountant
+bigcap_upjump_ladder	omega-new	include/StockDayMoverLadderCompanion.hpp	stockladder_companion_state.json (VPS)	/api/stockladder_companion	STOCK MOVERS pollSm	window._smtot	WIRED	45-name ladder, realized-only fold
+bigcap_2pct_impulse	omega-new	include/BigCap2pctImpulseCompanion.hpp	bigcap2pct_companion_state.json (VPS)	/api/bigcap2pct_companion	STOCK MOVERS pollBc2pct	window._bc2tot	WIRED	orphan fixed S-2026-07-11
+index_upjump_ladder	omega-new	include/engine_init.hpp	idxladder_companion_state.json (VPS)	/api/idxladder_companion	INDEX LADDER pollIxlad	window._ixladtot	WIRED
+fx_upjump_ladder	omega-new	include/engine_init.hpp	fxladder_companion_state.json (VPS)	/api/fxladder_companion	FX LADDER pollFxlad	window._fxladtot	WIRED	GBPUSD-only since S-2026-07-09c
+fx_befloor_companion	omega-new	include/FxBeFloorCompanion.hpp	fx_companion_state.json (VPS)	/api/fx_companion	pollFx	window._fxtot	RETIRED-ok	BeFloor family retired S-2026-07-07e; still polled, $0
+index_befloor_companion	omega-new	include/IndexBeFloorCompanion.hpp	index_companion_state.json (VPS)	/api/index_companion	pollIndex	window._idxtot	RETIRED-ok	retired family; still polled, $0
+gold_befloor_companion	omega-new	include/GoldBeFloorCompanion.hpp	gold_companion_state.json (VPS)	/api/gold_companion	NONE (pollGold removed S-2026-07-08c)	NONE	RETIRED-ok	endpoint serves history only; excluded in pnl gate
+xag_befloor_companion	omega-new	include/engine_init.hpp	xag_companion_state.json (VPS)	/api/xag_companion	NONE	NONE	RETIRED-ok	retired BE-floor
+usoil_befloor_companion	omega-new	include/engine_init.hpp	usoil_companion_state.json (VPS)	/api/usoil_companion	NONE	NONE	RETIRED-ok	retired BE-floor
+stockmover_befloor_companion	omega-new	include/StockDayMoverBeFloorCompanion.hpp	stockmover_companion_state.json (VPS)	/api/stockmover_companion	NONE (repointed to ladder S-2026-07-07w)	NONE	RETIRED-ok	real-fill negative; ladder successor is the live book
+pump_book	omega-new	include/PumpScalpManager.hpp	NONE	NONE	NONE	NONE	RETIRED-ok	DISABLED operator kill 2026-06-13; produces no trades
+rdagent_stock_basket	mac	tools/rdagent/push_basket_to_desk.sh	scp rda_basket.json -> omega-new	/api/rdagent_book	STOCK BASKET pollRdagent	window._rdatot	WIRED	paper $10k META model book
+crypto_daily_shadow	mac-crypto	/Users/jo/Crypto/src/shadow_refresh.cpp	scp crypto_inbound.csv+state.json -> omega-new	/api/crypto_trades	LAST 15 TRADES (book=crypto)	display-only by design; crypto folds via _cctot companion	WIRED-DISPLAY	hourly cron; realized book also in state.json marks
+crypto_intraday_shadow	mac-crypto	/Users/jo/Crypto/src/shadow_refresh_intraday.cpp	scp crypto_intraday_inbound.csv+state_intraday.json -> omega-new	/api/crypto_trades	LAST 15 TRADES (book=crypto)	display-only by design	WIRED-DISPLAY	cron 3 * * * *
+crypto_stall_companion_3books	mac-crypto	/Users/jo/Crypto/src/stall_companion.cpp	NONE (writes /Users/jo/Crypto/companion_intraday/companion_state.json; only reader was :8090 GUI, RETIRED S-2026-07-03)	NONE	NONE	NONE	FIX-IN-FLIGHT	FOUND STRANDED by never-again audit 2026-07-12: realized_total/today/7d/30d invisible to desk. Fix needs a desk endpoint (telemetry server owned by chimera-pipeline agent) OR operator retires the books. Flip to WIRED or RETIRED-ok — do NOT delete the row.
+wave_companion	mac-crypto	/Users/jo/Crypto/src/wave_companion.cpp	NONE (writes /Users/jo/Crypto/backtest/data/wave_companion/state.json; no scp, no reader but selftest)	NONE	NONE	NONE	FIX-IN-FLIGHT	FOUND STRANDED by never-again audit 2026-07-12: realized_usd (model+real) never reaches the desk. Same fix path as stall books. Flip to WIRED or RETIRED-ok — do NOT delete the row.
+ab_gate_200d_shadow	mac-crypto	/Users/jo/Crypto/tools/run_ab_gate_shadow.sh	NONE BY DESIGN (isolated datadir, "NO scp to the VPS" per script header)	NONE	NONE	NONE	RESEARCH-ONLY	forward A/B ablation vs live ungated book
+chimera_upjump_companion	josgp1	josgp1:/home/jo/ChimeraCrypto/src/main.cpp persist_companion_clip	crypto_companion_state.json -> Mac relay refresh_crypto_companion.sh -> omega-new	/api/crypto_companion	CRYPTO COMPANIONS pollCrypto	window._cctot	WIRED	UpJumpCompanionEngine ladder bank; the one chimera book already on the desk
+chimera_edge_slots	josgp1	josgp1:/home/jo/ChimeraCrypto/src/main.cpp g_slots	export_desk_trade -> chimera_inbound.csv -> Mac relay -> omega-new	/api/crypto_trades	LAST 15 TRADES (book=chimera)	display-only (shadow)	FIX-IN-FLIGHT	export hook coded S-2026-07-12, NOT in running Jul-11 binary; chimera_inbound.csv absent on box. Flip to WIRED when pipeline agent lands + a close visibly reaches the desk.
+chimera_upjump_parents	josgp1	josgp1:/home/jo/ChimeraCrypto/src/main.cpp UPJUMP slots	export_desk_trade -> chimera_inbound.csv (in-flight)	/api/crypto_trades	LAST 15 TRADES (book=chimera)	display-only (shadow)	FIX-IN-FLIGHT	same pipeline as edge slots
+chimera_xsec	josgp1	josgp1:include/core/CrossSectionalMomentumEngine.hpp	export_desk_trade tag XSEC (in-flight)	/api/crypto_trades	LAST 15 TRADES (book=chimera)	display-only (shadow)	FIX-IN-FLIGHT	XSEC-BTC/XSEC-BR + XSEC2 comparison book
+chimera_riprider	josgp1	josgp1:include/core/RipRiderEngine.hpp	export_desk_trade (in-flight)	/api/crypto_trades	LAST 15 TRADES (book=chimera)	display-only (shadow)	FIX-IN-FLIGHT	regime-gated next-open sleeve
+chimera_32grid	josgp1	josgp1:include/core/GridEngine.hpp	NONE	NONE	NONE	NONE	OBSERVATION	32-cell threshold-comparison grid; excluded from gateway fills by design
+chimera_p6_p7	josgp1	josgp1:/home/jo/ChimeraCrypto/src/main.cpp install6/P7-DERIV	NONE	NONE	NONE	NONE	OBSERVATION	observation books, no orders
+chimera_python_sleeves	josgp1	josgp1:/home/jo/ChimeraCrypto/sleeves/chimera_sleeves.py	NONE (local shadow_sleeves_ledger.csv + local GUI)	NONE	NONE	NONE	RESEARCH-ONLY	paper sleeve book (currently CASH); revisit if it ever carries a live claim
+chimera_upmove_shadow	josgp1	josgp1:/home/jo/ChimeraCrypto/sleeves/upmove_shadow.py	NONE (local log/positions)	NONE	NONE	NONE	RESEARCH-ONLY	hourly shadow executor, NO ORDERS

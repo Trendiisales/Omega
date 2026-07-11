@@ -1,0 +1,19 @@
+# FAIL_VERDICTS.tsv -- ENFORCED true-cost-FAIL disable list (S-2026-07-12, "never-again" audit).
+#
+# WHY: the tombstone guard blocks TOMBSTONED engines, but on 2026-07-12 three engines with
+# recorded true-cost FAIL backtests (GOLD_PHASE1B_2026-07-11.md) were still enabled=true and
+# live until the operator ordered a cull. Nothing enforced "a FAIL verdict means disabled".
+# This file closes that class: tools/fail_verdict_guard.py (wired into the mac canary) FAILS
+# the build if any global listed here is `enabled = true` in engine_init.hpp / omega_main.hpp.
+#
+# APPEND a row whenever a backtest returns a true-cost FAIL on a wired engine.
+# RE-ENABLING an engine listed here requires REMOVING its row IN THE SAME COMMIT as a NEW
+# PASSING backtest reference (faithful, true-cost, both WF halves + both regimes) -- state the
+# new ref in the commit message. Removing a row without a fresh passing ref is a violation.
+# (Tombstoned engines belong in backtest/TOMBSTONES.tsv, not here; this list is for engines
+#  with a FAIL verdict that are culled-but-not-tombstoned, so resurrection stays LOUD.)
+#
+# columns: global <TAB> engine <TAB> fail_date <TAB> verdict_ref <TAB> reason
+g_xau_tf_2h	XauTrendFollow2h	2026-07-12	outputs/GOLD_PHASE1B_2026-07-11.md	GOLD_PHASE1B true-cost re-run (6bp+slip tiers): prod config NET -$4,542; even best LC-off variant fails both-halves+2022. Revival path = route-to-MGC-2h (backtest first).
+g_gold_panic_bounce	GoldPanicBounce	2026-07-12	outputs/GOLD_PHASE1B_2026-07-11.md	GOLD_PHASE1B true-cost re-run: -$83 bull / -$608 bear; the S-2026-06-30 EMA200-slope gate itself forfeits the +$1,442 pre-gate bull edge. MGC port is the only revival path.
+g_rider_d1	XauTrendRiderD1	2026-07-12	outputs/GOLD_PHASE1B_2026-07-11.md	GOLD_PHASE1B: RiderD1 standalone -$593 at true cost (best-effort). Rider4H (+$3,127) stays live -- this row covers D1 only.
