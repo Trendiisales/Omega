@@ -564,10 +564,13 @@ private:
         double sl_dist = cfg.sl_mult * atr14_;
         double tp_dist = cfg.tp_mult * atr14_;
         // 2026-05-12 cost gate -- see outputs/PLAN_A_B_REPORT.md
+        // S-2026-07-11 GOLD PHASE 1: gate on ledger_symbol (spot instances =
+        // "XAUUSD" row, unchanged; MGC venue instances = the explicit MGC row
+        // instead of the ~10x-misscaled spot proxy).
         {
             const double spread_pts = ask - bid;
             if (!ExecutionCostGuard::is_viable(
-                    "XAUUSD", spread_pts, tp_dist, lot, 1.5))
+                    ledger_symbol.c_str(), spread_pts, tp_dist, lot, 1.5))
             {
                 return;
             }

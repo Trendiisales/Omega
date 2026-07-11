@@ -68,6 +68,26 @@ struct ExecutionCostGuard {
             commission_per_lot = 6.0;
             slippage_pts       = 0.02;
             tick_usd_per_lot   = 5000.0;
+        } else if (s == "MGC") {
+            // S-2026-07-11 GOLD PHASE 1 (operator-authorized): explicit COMEX
+            // Micro Gold row. 1 contract = 10 oz -> $10/pt (lot = CONTRACTS).
+            // MGC engines previously proxied through the XAUUSD row ($100/pt)
+            // -- a ~10x dollar mis-scale on BOTH cost and gross (GOLD_BOOK_
+            // ROADMAP bug 1). IBKR comm ~$1.04/side incl exchange+reg fees
+            // -> ~$2.08 RT; slippage ~1 exchange tick (0.10); live spread fed
+            // via spread_pts (typ 0.10). Matches the 0.31pt-RT basis every MGC
+            // backtest used (registry section 7).
+            commission_per_lot = 2.08;   // round-trip $ per contract
+            slippage_pts       = 0.10;
+            tick_usd_per_lot   = 10.0;
+        } else if (s == "GC") {
+            // S-2026-07-11 GOLD PHASE 1: COMEX full Gold future. 1 contract =
+            // 100 oz -> $100/pt. IBKR comm ~$2.37/side incl fees -> ~$4.74 RT;
+            // slippage ~1 tick (0.10). (The XAUUSD row keeps the spot-CFD
+            // semantics: lot = 100oz spot lots.)
+            commission_per_lot = 4.74;   // round-trip $ per contract
+            slippage_pts       = 0.10;
+            tick_usd_per_lot   = 100.0;
         } else if (s == "GER40") {
             commission_per_lot = 0.0;
             slippage_pts       = 0.80;
@@ -126,6 +146,8 @@ struct ExecutionCostGuard {
         if      (s == "EURUSD" || s == "GBPUSD" || s == "AUDUSD" || s == "NZDUSD") tick_usd_per_lot = 100000.0;
         else if (s == "USDJPY")    tick_usd_per_lot = 667.0;
         else if (s == "XAUUSD")    tick_usd_per_lot = 100.0;
+        else if (s == "MGC")       tick_usd_per_lot = 10.0;    // S-2026-07-11: micro gold future, $10/pt/contract
+        else if (s == "GC")        tick_usd_per_lot = 100.0;   // S-2026-07-11: full gold future, $100/pt/contract
         else if (s == "XAGUSD")    tick_usd_per_lot = 5000.0;
         else if (s == "GER40")     tick_usd_per_lot = 1.10;
         else if (s == "UK100")     tick_usd_per_lot = 1.27;

@@ -228,10 +228,12 @@ struct MgcSlowDonchian30mEngine {
             if (!skip && peer_holds_pos && peer_holds_pos()) skip = true;
             // AUTO-RETIREMENT latch.
             if (!skip && retired_) skip = true;
-            // ExecutionCostGuard (GLOBAL scope). MGC not in the CFD cost table ->
-            // XAUUSD proxy is CONSERVATIVE (spot cost >= MGC futures cost at every
-            // price; same convention as the MGC TF venue port).
-            if (!skip && !::ExecutionCostGuard::is_viable("XAUUSD", mgc_spread_pts,
+            // ExecutionCostGuard (GLOBAL scope). S-2026-07-11 GOLD PHASE 1: the
+            // explicit MGC row ($10/pt/contract, $2.08 RT comm, 1-tick slip)
+            // replaces the old XAUUSD spot proxy, which mis-scaled BOTH cost and
+            // gross by ~10x (ratio near-neutral, dollars wrong). Honest MGC
+            // block threshold: 3xATR*10 >= 1.5*(spread*10+0.10*10+2.08).
+            if (!skip && !::ExecutionCostGuard::is_viable("MGC", mgc_spread_pts,
                                                           sl_atr_mult * atr14_, lot, 1.5)) skip = true;
             if (!skip) { pend_entry_ = true; pend_stop_dist_ = sl_atr_mult * atr14_; }
         }

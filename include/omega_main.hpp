@@ -124,7 +124,20 @@ int main(int argc, char* argv[])
     // entitlement MGC feed with g_mgc_fastdon. Driven inside poll_mgc_feed.
     g_mgc_volbrk.enabled     = true;
     g_mgc_volbrk.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-    g_mgc_volbrk.lot         = 0.01;
+    // S-2026-07-11 GOLD PHASE 1 (GOLD_BOOK_ROADMAP bug 2, venue identity): this
+    // instance is MGC-fed but used to ledger tr.symbol="XAUUSD" lot=0.01 under the
+    // SAME tag as the spot instance -- wrong venue ($1/pt booked instead of
+    // $10/pt/contract), non-tradeable fractional futures size, mixed attribution.
+    // Now: symbol MGC, 1 micro contract (10oz, $10/pt -- same size convention as
+    // g_mgc_fastdon/g_mgc_slowdon), own tag MgcVolBreakoutM30_* (fresh ledger book;
+    // the gvb_m30 companion clips include both tags, see engine_init). Cost gate
+    // uses the explicit MGC row. NOTE: booked $/pt rises 10x vs the old mis-scaled
+    // emission -- that is the honest contract value, not a size-up decision.
+    g_mgc_volbrk.ledger_symbol = "MGC";
+    g_mgc_volbrk.engine_tag    = "MgcVolBreakoutM30_imp2.0_stop1.5_trail3.0_BEoff";
+    g_mgc_volbrk.lot         = 1.0;    // 1 MGC micro = 10oz = $10/pt (smallest tradeable unit)
+    g_mgc_volbrk.min_qty     = 1.0;
+    g_mgc_volbrk.qty_step    = 1.0;
     g_mgc_volbrk.max_spread  = 1.50;   // MGC futures pts (looser than spot gold $)
     g_mgc_volbrk.init();
     g_mgc_volbrk.l2_gate_ = 0.30;  // S-2026-06-23 L2 confirmation gate (active, conservative; same as fastdon). Inert in backtest.
@@ -141,8 +154,10 @@ int main(int argc, char* argv[])
     //    SHADOW (no live size until the shadow ledger proves the venue).
     //    ADVERSE-PROTECTION: inherited spot verdicts -- 4h trail-only +
     //    LOSS_CUT 1.5% / 2h LOSS_CUT 0.5% (S-2026-06-17 faithful sweeps).
-    //    Cost gate: engine-internal is_viable("XAUUSD") stays -- spot CFD cost
-    //    >= MGC futures cost at every price, so the gate is conservative here.
+    //    Cost gate: S-2026-07-11 GOLD PHASE 1 -- the engines now gate on
+    //    ledger_symbol ("MGC" here), i.e. the explicit MGC cost row
+    //    ($10/pt/contract, $2.08 RT comm) instead of the old XAUUSD spot proxy
+    //    that mis-scaled both cost and gross ~10x in dollars.
     g_mgc_tf_4h.enabled      = true;
     g_mgc_tf_4h.shadow_mode  = true;
     g_mgc_tf_4h.lot          = 1.0;    // 1 MGC micro = 10 oz = $10/pt (tick_value_multiplier("MGC"))

@@ -62,6 +62,7 @@ inline double shadow_spread_floor(const std::string& sym, double price) {
     double pct;  // full spread as % of price
     if (sym=="EURUSD"||sym=="GBPUSD"||sym=="AUDUSD"||sym=="NZDUSD"||
         sym=="USDJPY"||sym=="EURGBP"||sym=="AUDNZD")            pct = 0.003;  // FX major
+    else if (sym=="MGC"||sym=="GC") return 0.10;  // S-2026-07-11: COMEX gold futures, 1 exchange tick full spread (the old fallback hit the 0.050% equity branch = ~2.2pt at $4400, ~22x the real 0.10pt)
     else if (sym=="XAUUSD"||sym=="XAGUSD")                      pct = 0.010;  // gold/silver
     else if (sym=="USOIL.F"||sym=="UKBRENT"||sym=="BRENT")      pct = 0.012;  // oil
     else if (sym=="US500.F"||sym=="USTEC.F"||sym=="DJ30.F"||sym=="NAS100"||

@@ -112,6 +112,20 @@ public:
     double lot         = 0.01;
     double max_spread  = 0.80;   // gold $ (~80 pts) -- entries refused above
 
+    // S-2026-07-11 GOLD PHASE 1 (venue identity, GOLD_BOOK_ROADMAP bug 2): this
+    // class runs as TWO instances -- XAU spot (g_gold_volbrk_m30, tick_gold feed)
+    // and MGC futures (g_mgc_volbrk, poll_mgc_feed). The MGC instance used to
+    // report tr.symbol="XAUUSD" + lot=0.01 + the SAME engine tag as spot: wrong
+    // venue (ledger scaled $1/pt instead of $10/pt/contract), non-tradeable
+    // fractional futures size, and mixed spot/MGC ledger attribution under one
+    // tag. Parameterized: ledger/execution symbol (drives the downstream
+    // tick_value_multiplier AND the ExecutionCostGuard cost row), engine tag,
+    // and integer-contract min/step for futures instances.
+    std::string ledger_symbol = "XAUUSD";   // spot default; MGC instance sets "MGC"
+    std::string engine_tag    = "GoldVolBreakoutM30_imp2.0_stop1.5_trail3.0_BEoff_S-2026-06-03";
+    double min_qty  = 0.0;   // futures: 1 (whole contracts). 0 = no snap (spot lots)
+    double qty_step = 0.0;   // futures: 1. 0 = no snap
+
     // Validated "beoff" params (do NOT tune live; these ARE the deploy config)
     int    kDonch       = 20;    // Donchian lookback (M30 bars)
     int    kAtrP        = 14;    // ATR period (M30 bars)
@@ -152,6 +166,19 @@ public:
         h1_close_.clear(); ema_h1_ = 0.0; ema_h1_init_ = false; h1_count_ = 0; trend_ = 0;
         warmup_active_ = false;
         pos = {};
+        // S-2026-07-11: futures instances trade whole contracts -- snap lot to
+        // qty_step and enforce min_qty (spot instances leave both at 0 = no-op).
+        if (qty_step > 0.0) {
+            const double snapped = std::max(min_qty, std::floor(lot / qty_step + 0.5) * qty_step);
+            if (snapped != lot) {
+                std::printf("[GoldVolBrkM30] lot %.4f snapped to %.4f (%s min_qty=%.2f step=%.2f)\n",
+                            lot, snapped, ledger_symbol.c_str(), min_qty, qty_step);
+                std::fflush(stdout);
+            }
+            lot = snapped;
+        } else if (min_qty > 0.0 && lot < min_qty) {
+            lot = min_qty;
+        }
     }
 
     bool any_open() const noexcept { return pos.active; }
@@ -273,8 +300,11 @@ private:
         if (entry <= 0.0 || atr_ <= 0.0) return;
         const double sl_dist = kStopAtr * atr_;
         {
+            // S-2026-07-11 GOLD PHASE 1: gate on ledger_symbol -- spot instance
+            // keeps the XAUUSD row; the MGC instance uses the explicit MGC row
+            // ($10/pt/contract) instead of the ~10x-misscaled spot proxy.
             const double spread_pts = ask - bid;
-            if (!ExecutionCostGuard::is_viable("XAUUSD", spread_pts, sl_dist, lot, 1.5)) return;
+            if (!ExecutionCostGuard::is_viable(ledger_symbol.c_str(), spread_pts, sl_dist, lot, 1.5)) return;
         }
         // AuroraGate: MGC-tape order-flow gate (long-only breakout). Fail-open.
         if (!omega::aurora_allow("XAUUSD", true, now_ms)) {
@@ -301,8 +331,8 @@ private:
         if (!pos.active) return;
         const double pts_move = exit_px - pos.entry_px;   // long-only
         omega::TradeRecord tr;
-        tr.symbol     = "XAUUSD";
-        tr.engine     = "GoldVolBreakoutM30_imp2.0_stop1.5_trail3.0_BEoff_S-2026-06-03";
+        tr.symbol     = ledger_symbol;   // S-2026-07-11: venue-honest (spot XAUUSD / futures MGC)
+        tr.engine     = engine_tag;      // S-2026-07-11: per-instance attribution
         tr.side       = "LONG";
         tr.entryPrice = pos.entry_px;
         tr.exitPrice  = exit_px;

@@ -2410,8 +2410,11 @@ static void init_engines(const std::string& cfg_path)
             // { SC c; c.name="xau_tf2h_usd_b"; c.include={"XauTrendFollow2h"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=10; c.retrig_usd=10; c.stall_bars=9999; c.tf_sec=2*3600;  B(c); }
             { SC c; c.name="xau_tfd1_usd_b"; c.include={"XauTrendFollowD1"}; c.bull_only=true;  c.arm_usd=40; c.trail_usd=20; c.retrig_usd=20; c.stall_bars=9999; c.tf_sec=24*3600; B(c); }
             // --- GoldVolBreakout M30 $-gauge clips (bull-gated) ---
-            { SC c; c.name="gvb_m30_usd_a"; c.include={"GoldVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
-            { SC c; c.name="gvb_m30_usd_b"; c.include={"GoldVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
+            // S-2026-07-11 GOLD PHASE 1: the MGC instance got its own tag
+            // (MgcVolBreakoutM30_*, venue-identity fix); include BOTH tags so the
+            // clip trigger population is unchanged by the retag.
+            { SC c; c.name="gvb_m30_usd_a"; c.include={"GoldVolBreakoutM30","MgcVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
+            { SC c; c.name="gvb_m30_usd_b"; c.include={"GoldVolBreakoutM30","MgcVolBreakoutM30"}; c.bull_only=true; c.arm_usd=20; c.trail_usd=30; c.retrig_usd=30; c.stall_bars=9999; c.tf_sec=1800; B(c); }
             // ── ConnorsMirror x2 add-on mirror (S-2026-07-07t, SHADOW) ────────
             //   VALIDATED-thin (AUDITED ConnorsMirror_NAS100, commit 059918cd): REAL
             //   ConnorsRSI2 NAS100 parents, real-fill H1 close-eval sim — arm at parent
