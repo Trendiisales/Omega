@@ -1514,7 +1514,9 @@ static void init_engines(const std::string& cfg_path)
         g_rider_4h.enabled = true; g_rider_4h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
         g_rider_4h.N = 2.5; g_rider_4h.lot = 0.01; g_rider_4h.tag = "XauTrendRider4h";
         g_rider_4h.init(omega::kXauTfNumCells);
-        g_rider_d1.enabled = true; g_rider_d1.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
+        // S-2026-07-12 DISABLED (operator cull order). GOLD_PHASE1B: RiderD1 standalone
+        // -$593 at true cost (best-effort). Rider4H (+$3,127) stays live — this is D1 only.
+        g_rider_d1.enabled = false; g_rider_d1.shadow_mode = false;
         g_rider_d1.N = 2.5; g_rider_d1.lot = 0.01; g_rider_d1.tag = "XauTrendRiderD1";
         g_rider_d1.init(omega::kXauTfD1NumCells);
         printf("[OMEGA-INIT] TrendRider companions: 4h(cells=%d) + D1(cells=%d) N=2.5 shadow=1\n",
@@ -3199,8 +3201,12 @@ static void init_engines(const std::string& cfg_path)
         //   InsideBar (bit 3): baseline PF 1.25 -> +ADX25 1.45 -> ADX
         // Apply ADX to bits {0,1,3} = 0xB; vol_band to bit {2} = 0x4.
         // Stacked vol+ADX hurt (tested separately); per-cell exclusive is right.
-        g_xau_tf_2h.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-        g_xau_tf_2h.enabled     = true;
+        // S-2026-07-12 DISABLED (operator cull order: "known engines that fail — disable NOW").
+        // GOLD_PHASE1B true-cost re-run (6bp+slip tiers, outputs/GOLD_PHASE1B_2026-07-11.md):
+        // prod config NET -$4,542; killer = LOSS_CUT 0.5% on the H1-fed harness, but even the
+        // best LC-off variant fails both-halves+2022. Recommend route-to-MGC-2h (backtest first).
+        g_xau_tf_2h.shadow_mode = false;
+        g_xau_tf_2h.enabled     = false;
         // S-2026-06-17 cold-loss protection. Faithful M30->H2 backtest: LC=0.5%
         // -> net +189, maxDD -66% (-802->-269), worst -238->-27 (strongest DD cut
         // of the cluster). See backtest/losscut_xau_faithful.py.
@@ -5279,8 +5285,11 @@ static void init_engines(const std::string& cfg_path)
         // chandelier ATR-trail + structural selloff-low stop + 240-bar time-stop + the
         // macro long-block entry filter (NO cold loss-cut by design -- depth, not speed,
         // is the edge; a velocity/cut gate HURTS gold per the 2026-06-12 sweep).
-        g_gold_panic_bounce.shadow_mode = false;  // S-2026-07-01: LIVE on IBKR 4002 paper (operator all-engines cutover)
-        g_gold_panic_bounce.enabled     = true;
+        // S-2026-07-12 DISABLED (operator cull order). GOLD_PHASE1B true-cost re-run:
+        // -$83 bull / -$608 bear; the S-2026-06-30 EMA200-slope gate ITSELF forfeits the
+        // +$1,442 pre-gate bull edge. MGC port (roadmap) is the only revival path.
+        g_gold_panic_bounce.shadow_mode = false;
+        g_gold_panic_bounce.enabled     = false;
         // S-2026-06-30 EMA200-slope regime gate (faithful BT, both regimes):
         // block the dip-buy while EMA200 is falling (confirmed bear). gate_lb200
         // won the sweep outright -- bear 2022 bleed -6.14->-0.69 (-89%), bull 6mo
