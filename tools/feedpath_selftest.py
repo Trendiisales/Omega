@@ -92,10 +92,20 @@ def main():
     # [2] consumer up: boot line + established pair
     con_line = ssh(r'findstr /C:"IBKR-CONSUMER" C:\Omega\logs\omega_service_stdout.log')
     est = ssh("netstat -ano | findstr :9701 | findstr ESTABLISHED")
-    consumer_ok = ("IBKR-CONSUMER" in con_line) and ("ESTABLISHED" in est)
-    rec("CONSUMER-UP", consumer_ok,
-        "consumer boot line + 9701 ESTABLISHED" if consumer_ok
-        else f"boot-line={'y' if 'IBKR-CONSUMER' in con_line else 'NO'} established={'y' if 'ESTABLISHED' in est else 'NO'}")
+    boot_ok = "IBKR-CONSUMER" in con_line
+    est_ok  = "ESTABLISHED" in est
+    consumer_ok = boot_ok and est_ok
+    if not open_now:
+        # S-2026-07-11: FX closed (weekend) -> IBKR gateway/broker down -> the 9701 socket is legitimately
+        # NOT ESTABLISHED. Require only the consumer BOOT LINE (thread configured); it re-establishes at
+        # market open. Skipping the socket demand stops the weekend false-RED (operator: no weekend alarm).
+        rec("CONSUMER-UP", boot_ok,
+            "consumer boot line present; 9701 down (weekend, broker closed) — re-establishes at open" if boot_ok
+            else "consumer boot line MISSING — consumer thread never started", skip=boot_ok)
+    else:
+        rec("CONSUMER-UP", consumer_ok,
+            "consumer boot line + 9701 ESTABLISHED" if consumer_ok
+            else f"boot-line={'y' if boot_ok else 'NO'} established={'y' if est_ok else 'NO'}")
 
     # [3] bridge freshness on the IBKR-only canary
     today = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
