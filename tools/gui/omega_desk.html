@@ -986,7 +986,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
   /* SYMBOL line — always shown. Collapsed to just the coin + idle/trading badge + its total. */
   var badge=trading.length
     ? '<span class="g" style="font-weight:600">'+trading.length+' TRADING</span>'
-    : '<span class="d">idle · awaiting +'+r.thr+'% jump</span>';
+    : '<span class="d">idle · cells 0.5/2/3/4/5% · next: +0.5% jump</span>';/* S-2026-07-13 UJH: show the full cell roster so the low-thr family is visible while idle */
   var cb=coinbank,cbank=(cb!==0)
     ? '<span style="color:'+(cb>0?'var(--grn)':'var(--red)')+'">'+fmt2(cb,1)+' bp <span class="d">$'+fmt2(bpUsd(cb),2)+'</span></span>'
     : '<span class="d">$0.00</span>';
