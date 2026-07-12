@@ -413,10 +413,10 @@ It is now a **build gate**, not a rule:
   mandated pre-commit canary — so a non-compliant new engine cannot be
   committed.
 
-Backfill debt: 81 legacy entry-engines still owe an annotation (the first
-audit also revealed 33 with no loss-cut/BE field at all — the memory claim
-"LOSS_CUT_PCT exists on 28 engines" was never verified against code). Burn
-the list down opportunistically when touching each engine.
+Backfill debt: effectively closed — as of 2026-07-12 the canary reports
+86 engines annotated, 3 legacy backfill-owed, 0 violations (the original
+2026-06-19 figure was 81 owed; burned down since). Finish the last 3
+opportunistically when touching each engine.
 
 ## Session Handoffs
 

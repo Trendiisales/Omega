@@ -20,7 +20,7 @@
 set -uo pipefail
 
 MIRROR="$HOME/Omega-vps-mirror"
-mkdir -p "$MIRROR/logs/trades" "$MIRROR/logs/health" "$MIRROR/state"
+mkdir -p "$MIRROR/logs/trades" "$MIRROR/logs/health" "$MIRROR/state" "$MIRROR/data"
 
 # one shared, short-lived multiplexed connection for every scp below
 CM=(-o ConnectTimeout=8 -o BatchMode=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
@@ -38,6 +38,11 @@ pull 'C:/Omega/logs/health/status.json'      "$MIRROR/logs/health/"
 pull 'C:/Omega/logs/HEALTH_STATUS.json'      "$MIRROR/"  # path fixed 2026-07-08: file lives under logs\ (was C:/Omega/, perpetual MISS)
 pull 'C:/Omega/state/open_positions.dat'     "$MIRROR/state/"
 pull 'C:/Omega/bracket-bot/data/trades.ndjson' "$MIRROR/"
+# warm-seed freshness truth (2026-07-12, audit A3): OmegaSeedRefresh refreshes the BOX
+# seed nightly; the Mac repo copy never updates, so data_health_monitor watched a file
+# the engine never loads (false 17d-stale). Mirror the box seed; monitor reads this.
+pull 'C:/Omega/data/mgc_30m_hist.csv'        "$MIRROR/data/"
+pull 'C:/Omega/data/mgc_h1_hist.csv'         "$MIRROR/data/"
 # companion telemetry mirror: the python stall_accountant cron that wrote this was retired
 # 2026-07-06 (C++ StallCompanion in Omega.exe now owns C:/Omega/companion_state.json); cockpit
 # + feeds_selftest still read the Mac copy, so keep it fresh from the VPS truth (2026-07-08).

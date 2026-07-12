@@ -98,11 +98,15 @@ FEEDS = [
     ("macrogoldgate.tsv", f"{HOME}/Omega/logs/macro/macro_gold_gate.tsv", 2, "stamp_ms", "HIGH",
      "MacroGoldGate (LIVE gold gate input)",
      ["python3", f"{HOME}/Omega/tools/macro_gold_gate.py"], {}),
-    ("gold.mgc_h1_seed", f"{HOME}/Omega/data/mgc_h1_hist.csv", 7, "file", "MED",
-     "gold engine warm-seed",
+    # 2026-07-12 (audit A3): watch the MIRRORED BOX seed, not the Mac repo copy.
+    # OmegaSeedRefresh refreshes the box seed nightly (that's what the engine
+    # loads); the Mac repo copy never updates -> false 17d-stale alarms.
+    # pull_vps_display.sh mirrors the box files every 5min.
+    ("gold.mgc_h1_seed", f"{HOME}/Omega-vps-mirror/data/mgc_h1_hist.csv", 7, "file", "MED",
+     "gold engine warm-seed (box copy via mirror)",
      ["python3", f"{HOME}/Omega/tools/mgc_pull_history.py"], {}),
-    ("gold.mgc_30m_seed", f"{HOME}/Omega/data/mgc_30m_hist.csv", 7, "file", "MED",
-     "gold engine warm-seed",
+    ("gold.mgc_30m_seed", f"{HOME}/Omega-vps-mirror/data/mgc_30m_hist.csv", 7, "file", "MED",
+     "gold engine warm-seed (box copy via mirror)",
      ["python3", f"{HOME}/Omega/tools/mgc_pull_history.py"], {}),
 ]
 
