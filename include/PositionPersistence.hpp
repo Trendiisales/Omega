@@ -357,6 +357,10 @@ inline void register_position_persistence() {
     wire_multicell(g_brc_nq_h1,   "BrkCascade_USTEC_H1",   "USTEC.F");
     wire_multicell(g_brc_sp_h4,   "BrkCascade_US500_H4",   "US500.F");
     wire_multicell(g_brc_nq_h4,   "BrkCascade_USTEC_H4",   "USTEC.F");
+    wire_multicell(g_brc_m2k_a,   "BrkCascade_M2K_360_2",  "M2K");
+    wire_multicell(g_brc_m2k_b,   "BrkCascade_M2K_360_3",  "M2K");
+    wire_multicell(g_brc_m2k_c,   "BrkCascade_M2K_480_2",  "M2K");
+    wire_multicell(g_brc_m2k_d,   "BrkCascade_M2K_480_3",  "M2K");
     {
         struct BcCloser { const char* base; const char* sym; std::function<bool(double,double,const char*)> fc; };
         static const BcCloser bcs[] = {
@@ -375,6 +379,10 @@ inline void register_position_persistence() {
             { "BrkCascade_USTEC_H1", "USTEC.F", [](double b,double a,const char* r){ return g_brc_nq_h1.force_close_all_at(b,a,r); } },
             { "BrkCascade_US500_H4", "US500.F", [](double b,double a,const char* r){ return g_brc_sp_h4.force_close_all_at(b,a,r); } },
             { "BrkCascade_USTEC_H4", "USTEC.F", [](double b,double a,const char* r){ return g_brc_nq_h4.force_close_all_at(b,a,r); } },
+            { "BrkCascade_M2K_360_2", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_a.force_close_all_at(b,a,r); } },
+            { "BrkCascade_M2K_360_3", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_b.force_close_all_at(b,a,r); } },
+            { "BrkCascade_M2K_480_2", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_c.force_close_all_at(b,a,r); } },
+            { "BrkCascade_M2K_480_3", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_d.force_close_all_at(b,a,r); } },
         };
         for (const auto& bc : bcs) {
             g_open_positions.register_closer(

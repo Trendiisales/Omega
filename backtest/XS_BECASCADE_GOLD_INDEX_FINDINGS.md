@@ -196,3 +196,24 @@ plateau. Re-open only with a b-robustness fix + more seasons.
 
 Data: NDX bars aggregated from /Users/jo/Tick/NSXUSD_2022_2026.csv raw tick (271M rows) —
 scratch files; rebuild via the one-pass streaming agg in this session's log.
+
+## UPDATE S-2026-07-12h — M2K micro-Russell mini-grid WIRED (4 cells) + micro-market scan verdicts
+
+Operator: "can our engines add to the micros?" Tested all: **M2K PASS** (4 cells wired,
+crypto-grid pattern), MGC venue port WF-FAIL on own data (H1 halves −12/−37 — spot engines
+carry the gold signal; MGC = execution-venue question only), MCL crude DEAD (PF 0.2-0.6),
+MES/MNQ = already covered by US500/USTEC engines.
+
+M2K wired cells (H1, gated via g_regime_m2k EMA200/50 brain, b=0.3%, BE-N6):
+| cell | W | thr | net% | PF | 2x | halves |
+|---|---|---|---|---|---|---|
+| BrkCascade_M2K_360_2 | 360 | 2% | +90.9 | 5.34 | +88 | +52/+38 |
+| BrkCascade_M2K_360_3 | 360 | 3% | +72.9 | 4.13 | +71 | +64/+9 |
+| BrkCascade_M2K_480_2 | 480 | 2% | +90.6 | 3.78 | +89 | +48/+43 |
+| BrkCascade_M2K_480_3 | 480 | 3% | +95.0 | 4.24 | +93 | +56/+40 |
+
+Also pass but NOT wired (n too thin as primaries): W480 4% (n=8, PF 89) / 5% (n=13).
+W=240 fails hard (−47..−84) — Russell needs the 20-30d window. W=600 fails.
+**CAVEAT on record: 2024-07→2026-07 sample = NO bear year; n 12-19/cell. The bear gate is
+structurally identical to the validated gold/SPX/NDX brains but unproven on Russell — shadow
+forward record is the arbiter, and the gate can only block, never add risk.**

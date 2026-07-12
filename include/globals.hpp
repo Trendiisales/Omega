@@ -209,6 +209,14 @@ static omega::XauBracketCascadeEngine g_brc_nq_h4;   // USTEC.F H4 W=60 thr=3% (
 static omega::XauBracketCascadeEngine g_xau_brc_h4;  // XAUUSD H4 W=120 thr=2% (+134 PF1.77 2x+127, halves +46/+88; gold_regime gate), shadow
 static omega::RegimeState g_regime_spx;              // US500 price-regime brain (EMA200/50 H1) for the SPX bracket gates
 static omega::RegimeState g_regime_ndx;              // USTEC price-regime brain for the NQ bracket gates
+// S-2026-07-12h M2K micro-Russell cascade cells (operator: "2x mimic engines, maybe 4x") —
+// 4 passing cells wired as a mini-grid (crypto-grid pattern, live shadow picks the winner).
+// CAVEAT on record: 2024-07..2026-07 sample only (no bear year; n 12-19 windows/cell).
+static omega::XauBracketCascadeEngine g_brc_m2k_a;   // M2K H1 W=360 thr=2% (+91 PF5.34 2x+88, halves +52/+38), gated shadow
+static omega::XauBracketCascadeEngine g_brc_m2k_b;   // M2K H1 W=360 thr=3% (+73 PF4.13 2x+71, halves +64/+9), gated shadow
+static omega::XauBracketCascadeEngine g_brc_m2k_c;   // M2K H1 W=480 thr=2% (+91 PF3.78 2x+89, halves +48/+43), gated shadow
+static omega::XauBracketCascadeEngine g_brc_m2k_d;   // M2K H1 W=480 thr=3% (+95 PF4.24 2x+93, halves +56/+40), gated shadow
+static omega::RegimeState g_regime_m2k;              // M2K price-regime brain (bear gate for all 4 cells)
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

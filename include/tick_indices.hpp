@@ -76,6 +76,14 @@ static void on_tick_m2k(
     (void)sym; (void)tradeable; (void)lat_ok; (void)regime;
     { static IdxH1Agg agg; index_feed_h1(agg, "M2K", bid, ask); }  // index up-jump ladder H1 feed
     g_engine_heartbeat.pulse("M2KUpJumpLadder");
+    {   // S-2026-07-12h M2K bear-gated cascade mini-grid (shadow)
+        const int64_t bc_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_regime_m2k.on_tick(bid, ask, bc_ms);
+        g_brc_m2k_a.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_M2K_360_2");
+        g_brc_m2k_b.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_M2K_360_3");
+        g_brc_m2k_c.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_M2K_480_2");
+        g_brc_m2k_d.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_M2K_480_3");
+    }
 }
 
 // ── US500.F ────────────────────────────────────────────────

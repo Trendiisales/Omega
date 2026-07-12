@@ -5560,12 +5560,20 @@ static void init_engines(const std::string& cfg_path)
                     omega::XauBracketCascadeEngine* e; const char* name; const char* sym;
                     int tf; int W; double thr; const char* seed; int gate;   // gate: 0=gold 1=spx 2=ndx
                 };
+                g_regime_m2k.name = "REGIME-M2K";
+                g_regime_m2k.seed_from_h1_csv("phase1/signal_discovery/warmup_M2K_H1.csv");
                 const XCfg xts[] = {
                     { &g_brc_sp_h1,  "BrkCascade_US500_H1", "US500.F",  3600, 480, 0.03, "phase1/signal_discovery/warmup_US500_H1.csv",  1 },
                     { &g_brc_nq_h1,  "BrkCascade_USTEC_H1", "USTEC.F",  3600, 240, 0.03, "phase1/signal_discovery/warmup_NAS100_H1.csv", 2 },
                     { &g_brc_sp_h4,  "BrkCascade_US500_H4", "US500.F", 14400, 120, 0.02, "phase1/signal_discovery/warmup_US500_H4.csv",  1 },
                     { &g_brc_nq_h4,  "BrkCascade_USTEC_H4", "USTEC.F", 14400,  60, 0.03, "phase1/signal_discovery/warmup_NAS100_H4.csv", 2 },
                     { &g_xau_brc_h4, "XauBracketCascade_H4", "XAUUSD", 14400, 120, 0.02, "phase1/signal_discovery/warmup_XAUUSD_H4.csv", 0 },
+                    // S-2026-07-12h M2K mini-grid (4 passing cells; bear-gated via g_regime_m2k;
+                    // sample caveat: 2024-26 bull-only, n 12-19 — shadow builds the real record)
+                    { &g_brc_m2k_a, "BrkCascade_M2K_360_2", "M2K", 3600, 360, 0.02, "phase1/signal_discovery/warmup_M2K_H1.csv", 3 },
+                    { &g_brc_m2k_b, "BrkCascade_M2K_360_3", "M2K", 3600, 360, 0.03, "phase1/signal_discovery/warmup_M2K_H1.csv", 3 },
+                    { &g_brc_m2k_c, "BrkCascade_M2K_480_2", "M2K", 3600, 480, 0.02, "phase1/signal_discovery/warmup_M2K_H1.csv", 3 },
+                    { &g_brc_m2k_d, "BrkCascade_M2K_480_3", "M2K", 3600, 480, 0.03, "phase1/signal_discovery/warmup_M2K_H1.csv", 3 },
                 };
                 for (const auto& x : xts) {
                     x.e->symbol      = x.sym;
@@ -5581,7 +5589,8 @@ static void init_engines(const std::string& cfg_path)
                     x.e->lot         = 1.0;
                     if (x.gate == 0)      x.e->entry_blocked = []() { return omega::gold_regime().long_blocked(); };
                     else if (x.gate == 1) x.e->entry_blocked = []() { return g_regime_spx.long_blocked(); };
-                    else                  x.e->entry_blocked = []() { return g_regime_ndx.long_blocked(); };
+                    else if (x.gate == 2) x.e->entry_blocked = []() { return g_regime_ndx.long_blocked(); };
+                    else                  x.e->entry_blocked = []() { return g_regime_m2k.long_blocked(); };
                     x.e->seed_from_csv(omega::resolve_seed_path(x.seed));
                     auto* eng = x.e; const char* nm = x.name; const char* symc = x.sym;
                     eng->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
