@@ -946,58 +946,64 @@ R"OMEGAD5(   Each coin renders as a PARENT line (the tuned up-jump leg that ride
    Live cells keyed by companion tag ("ETH-UJ2-CLIP"); a coin's cells all fold. Companion books
    are STANDALONE additive, never vs-WIDE. All banks 0 since the complete-zero (t0 2026-07-11
    22:54 UTC) — correct, fresh forward state, not a data gap. */
+/* S-2026-07-12 OPERATOR REDESIGN: collapse to SYMBOL only; a coin's mimic cells appear
+   nested UNDER it ONLY while actively trading (armed or open cascade leg), showing which
+   mimic (1..4 = thr 2/3/4/5%) + its running total; they DISAPPEAR when the trade closes
+   and the coin returns to a single idle line awaiting the next jump. History lives in the
+   separate LAST-15 panel; Σ bank REAL folds into crypto PnL -> grand total (_cctot below). */
 function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0;
- var h='<tr><td class="l lbl">engine / cell</td><td class="l lbl">state</td>'
-      +'<td class="lbl">peak MFE%</td><td class="lbl">stall</td><td class="lbl">detector</td>'
-      +'<td class="lbl">cascade</td><td class="lbl">mult</td>'
+ var h='<tr><td class="l lbl">symbol / active mimic</td><td class="l lbl">state</td>'
+      +'<td class="lbl">peak MFE%</td><td class="lbl">detector</td>'
       +'<td class="lbl">clips</td><td class="lbl">bank REAL(bp · $)</td></tr>';
- var narm=0,ncell=0,totclips=0,totbank=0,totmodel=0;
+ var narm=0,ncell=0,totclips=0,totbank=0,totmodel=0,ntrading=0;
  CC_ROSTER.forEach(function(r){
-  /* PARENT engine line (the tuned up-jump leg — e.g. ETH-UPJUMP2-H1 1h/+2%) */
-  h+='<tr><td class="l" style="font-weight:600">'+r.sym
-    +' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'% · rides WIDE to flip (parent)</span></td>'
-    +'<td colspan="8"></td></tr>';
-  /* 4 grid CELLS per coin (thr 2/3/4/5%), live state overlaid per companion tag */
-  CC_THRS.forEach(function(t){
-   ncell++;var s=live[r.sym+'-UJ'+t+'-CLIP']||{};var armed=!!s.armed;if(armed)narm++;
-   /* S-2026-07-07f: fold the REAL column ONLY (bank_bp = MODEL-fill, proven fake by the
-      befloor-family real-fill audit). bank_bp_real is the honest worse-of-fill column;
-      $0 is the honest number until real clips accrue (feedback-no-backtest-in-live-gui).
-      Model bank stays visible as a dim reference, never in the PnL. */
+  /* gather this coin's 4 mimic cells; totals fold regardless of display */
+  var cells=[],coinbank=0;
+  CC_THRS.forEach(function(t,idx){
+   ncell++;var s=live[r.sym+'-UJ'+t+'-CLIP']||{};var armed=!!s.armed;
+   var open=!!(s.sublegs&&s.sublegs.length>0);
    totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);totmodel+=safe(s.bank_bp);
-   var isCan=s.canonical!==undefined?!!s.canonical:(t===r.canon);
-   var mark=isCan?' <span style="color:var(--grn);font-weight:600">&#9733; CANON</span>':' <span class="d" style="font-size:9px">exp</span>';
-   var st=s.retired?'<span class="r">RETIRED</span>':(s.armed===undefined?'<span class="d">—</span>':(armed?'<span class="g">ARMED</span>':'<span class="d">idle</span>'));
-   var pk =s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
-   var stc=s.bars_since_high===undefined?'<span class="d">—</span>':String(s.bars_since_high);
+   coinbank+=safe(s.bank_bp_real);if(armed)narm++;
+   cells.push({t:t,mimic:idx+1,s:s,active:(armed||open)});
+  });
+  var trading=cells.filter(function(c){return c.active;});
+  if(trading.length)ntrading++;
+  /* SYMBOL line — always shown. Collapsed to just the coin + idle/trading badge + its total. */
+  var badge=trading.length
+    ? '<span class="g" style="font-weight:600">'+trading.length+' TRADING</span>'
+    : '<span class="d">idle · awaiting +'+r.thr+'% jump</span>';
+  var cb=coinbank,cbank=(cb!==0)
+    ? '<span style="color:'+(cb>0?'var(--grn)':'var(--red)')+'">'+fmt2(cb,1)+' bp <span class="d">$'+fmt2(bpUsd(cb),2)+'</span></span>'
+    : '<span class="d">$0.00</span>';
+  h+='<tr><td class="l" style="font-weight:600">'+r.sym
+    +' <span class="d" style="font-size:9px;font-weight:400">'+r.w+'h/+'+r.thr+'%</span></td>'
+    +'<td class="l">'+badge+'</td><td colspan="3"></td><td class="num">'+cbank+'</td></tr>';
+  /* ACTIVE mimic cells ONLY — nested under the symbol, vanish when the trade is over */
+  trading.forEach(function(c){var s=c.s;
+   var pk=s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
+   var det=(s.det_w!==undefined?s.det_w:r.w)+'h/+'+(s.det_thr_pct!==undefined?fmt2(s.det_thr_pct,0):c.t)+'%';
    var clp=s.clips===undefined?'<span class="d">—</span>':String(s.clips);
-   var det=(s.det_w!==undefined?s.det_w:r.w)+'h/+'+(s.det_thr_pct!==undefined?fmt2(s.det_thr_pct,0):t)+'%';
-   var mlt=s.mult===undefined?'x1':('x'+fmt2(s.mult,1).replace(/\.0$/,''));
    var bkv=safe(s.bank_bp_real);
-   var bk =(s.bank_bp_real===undefined&&s.bank_bp===undefined)?'<span class="d">—</span>'
-     :'<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>'
-      +'<span class="d" style="font-size:9px"> · model '+fmt2(safe(s.bank_bp),1)+'</span>';
-   h+='<tr'+(isCan?'':' style="opacity:.6"')+'><td class="l d" style="border-left:2px solid var(--grn)">&#8627; UJ'+t+mark+'</td><td class="l">'+st+'</td>'
-     +'<td class="num">'+pk+'</td><td class="num">'+stc+'</td><td class="num d">'+det+'</td>'
-     +'<td class="num d">'+r.arms+'</td><td class="num d">'+mlt+'</td>'
-     +'<td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
-   /* per-leg sublegs (BE-cascade tiers currently OPEN in this cell), live from josgp1 */
+   var bk='<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>';
+   var isCan=s.canonical!==undefined?!!s.canonical:(c.t===r.canon);
+   var cm=isCan?' <span style="color:var(--grn);font-size:9px">&#9733;</span>':'';
+   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; Mimic '+c.mimic+' <span class="d" style="font-size:9px">(+'+c.t+'%)</span>'+cm+'</td>'
+     +'<td class="l"><span class="g">ARMED</span></td><td class="num">'+pk+'</td>'
+     +'<td class="num d">'+det+'</td><td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
    (s.sublegs||[]).forEach(function(sl){
-    var lst=sl.armed?'<span class="g">ARMED</span>':'<span class="d">tracking</span>';
     var lpk=sl.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(sl.peak_mfe_pct,2);
-    var lstc=sl.bars_since_high===undefined?'<span class="d">—</span>':String(sl.bars_since_high);
-    h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:18px">&#8627; '+(sl.id||'?')+'</td><td class="l">'+lst+'</td>'
-      +'<td class="num">'+lpk+'</td><td class="num">'+lstc+'</td><td colspan="5"></td></tr>';
+    h+='<tr style="opacity:.85"><td class="l d" style="border-left:2px solid var(--grn);padding-left:22px">&#8627; '+(sl.id||'?')+'</td>'
+      +'<td class="l"><span class="g">ARMED</span></td><td class="num">'+lpk+'</td><td colspan="3"></td></tr>';
    });
   });
  });
- /* coins with NO up-jump leg (grid finalize cuts) — honest dim rows, no fake companions */
+ /* coins with NO up-jump leg (grid finalize cuts) — honest dim rows */
  CC_NOCOMP.forEach(function(r){
-  h+='<tr style="opacity:.45"><td class="l" style="font-weight:600">'+r.sym+'</td>'
-    +'<td class="l d" colspan="8">'+r.note+'</td></tr>';
+  h+='<tr style="opacity:.4"><td class="l" style="font-weight:600">'+r.sym+'</td>'
+    +'<td class="l d" colspan="5">'+r.note+'</td></tr>';
  });
  el('cctab').innerHTML=h;
- el('ccinfo').innerHTML=ncell+' cells (8 coins × 4 thr · 8 canonical) · '+narm+' armed · '+totclips+' clips · Σ bank REAL <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span><span class="d" style="font-size:9px"> · model '+fmt2(totmodel,1)+' bp (not folded)</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
+ el('ccinfo').innerHTML=ntrading+' of 8 symbols trading · '+narm+' mimic(s) armed · '+totclips+' clips · Σ bank REAL <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span> <span class="d" style="font-size:9px">(folds into crypto PnL → total)</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
  /* crypto companion book is a SEPARATE INDEPENDENT ADDITIVE engine — its all-time realized bank
     must FOLD into the Omega totals (operator S-2026-07-05d: "why is this not in the Omega total").
     _cctot = Σ bank_bp_real over ALL 32 grid cells (same field/shape as pre-grid: sum of legs'
