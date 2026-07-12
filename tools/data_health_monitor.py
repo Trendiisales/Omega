@@ -155,15 +155,28 @@ def check_ibkrcrypto():
         except Exception:
             pass
         fresh_age = age_h is None or age_h <= 2.0   # book must have refreshed within 2h
-        # S-2026-06-26 NDX live-mark must be on the IBKR feed (aurora_NQ). If it fell back to the stale
-        # daily close (src != IBKR-NQ), the GUI NDX px is a day old -> FAIL (the "never stale NDX" guard).
+        # NDX mark: S-2026-07-12 corrected check. shadow_refresh.cpp was REDESIGNED to
+        # daily-close-ONLY (the old live ssh-NQ mark was removed -> src is NEVER "IBKR-NQ"
+        # anymore). The prior check required IBKR-NQ -> it false-FAILed HIGH on EVERY run =
+        # permanent alarm-fatigue that hid real failures. Correct semantics: daily-close is
+        # the DESIGN; only stale if the NDX DAILY FEED itself is stale. So check the daily
+        # CSV's last-bar age (weekend-aware: NDX trades weekdays, allow 4d).
         ndx_src = d.get("ndx_mark_src", "")
-        ndx_live = (ndx_src == "IBKR-NQ")
-        ok = dh.get("all_fresh", False) and fresh_age and ndx_live
+        ndx_ok, ndx_det = True, ndx_src or "NONE"
+        if ndx_src != "IBKR-NQ":  # daily-close mark -> validate the daily feed's freshness
+            try:
+                ncsv = f"{HOME}/Tick/NDX_daily_2016_2026.csv"
+                last_ts = int(open(ncsv).read().rstrip().rsplit("\n",1)[-1].split(",")[0])
+                nage_d = (NOW - last_ts) / 86400.0
+                ndx_ok = nage_d <= 4.0   # 4d covers a Fri->Mon weekend gap
+                ndx_det = f"daily-close feed {nage_d:.1f}d old" + ("" if ndx_ok else " STALE!")
+            except Exception as e:
+                ndx_ok, ndx_det = False, f"daily-close feed unreadable: {e}"
+        ok = dh.get("all_fresh", False) and fresh_age and ndx_ok
         det = f"book updated {age_h:.1f}h ago" if age_h is not None else "no 'updated' ts"
         return dict(name="ibkrcrypto.book", ok=ok, age=round(age_h,1) if age_h is not None else None,
-                    limit=2, sev="HIGH" if (not fresh_age or not ndx_live) else "MED",
-                    detail=f"{det}, ndx_mark={ndx_src or 'NONE'}{'' if ndx_live else ' (STALE daily-close fallback!)'}, all_fresh={dh.get('all_fresh')}, stale={dh.get('stale_sources', [])} [Chimera crypto book/NDX]")
+                    limit=2, sev="HIGH" if (not fresh_age or not ndx_ok) else "MED",
+                    detail=f"{det}, ndx_mark={ndx_det}, all_fresh={dh.get('all_fresh')}, stale={dh.get('stale_sources', [])} [Chimera crypto book/NDX]")
     except Exception as e:
         return dict(name="ibkrcrypto.book", ok=False, age=None, limit=2, sev="HIGH", detail=f"state.json: {e}")
 
