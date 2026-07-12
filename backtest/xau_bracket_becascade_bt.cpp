@@ -76,7 +76,7 @@ struct P {
     int ttl = 48;           // bracket pending TTL (bars)
     double be_bp = 20;      // BE-coverage that spawns the next mimic (bp)
     double gb = 0.50;       // per-mimic giveback of peak (g50)
-    double rt_bp = 5.0;     // round-trip cost per leg
+    double rt_bp = getenv("XB_RT") ? atof(getenv("XB_RT")) : 5.0;  // round-trip cost per leg (env override)
     bool long_only = false; // control mode: prior methodology, no bracket/shorts
     bool dirstop = false;   // variant: movement DIRECTION picks the side; single
                             // stop at +-b in that direction confirms (no OCO)

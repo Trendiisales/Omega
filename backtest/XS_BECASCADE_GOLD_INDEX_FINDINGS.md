@@ -217,3 +217,22 @@ W=240 fails hard (−47..−84) — Russell needs the 20-30d window. W=600 fails
 **CAVEAT on record: 2024-07→2026-07 sample = NO bear year; n 12-19/cell. The bear gate is
 structurally identical to the validated gold/SPX/NDX brains but unproven on Russell — shadow
 forward record is the arbiter, and the gate can only block, never add risk.**
+
+## UPDATE S-2026-07-13b — threshold-floor studies: crypto 0.5% WIRED (UJH), gold/index port FAILS
+
+**Crypto (Crypto repo `thrfloor` mode, live header, 20bp RT):** all 8 grid coins PASS every
+gate down to thr=0.5% — net grows, PF 2.4-3.2 holds, maxDD SHRINKS vs the 2% cells, and
+y2022 (bear) is POSITIVE on all 8. Chop protection is structural (fast −thr reversal exit +
+spawn-only-on-BE + g50). BRACKET-CONFIRM (+0.3%/12 bars) tested: REJECTED — skips 25-30% of
+triggers that were net-positive (net −30..−50%). WIRED josgp1 as the separate UJH tag family
+(8 cells, BE-N6, det_w per coin) so the 2-5% grid stays untouched for comparison.
+
+**Gold port of the same low-thr long cascade (5bp IBKR cost, gated): FAILS.**
+Bull 22-26 works (best W=4/1%: +250 PF 2.50), but 2013 bear NEGATIVE at every cell (−15..−56
+even regime-gated), 2022 negative at 0.5%. Bracket at low thr also fails (W=8/0.5%: 2x −25).
+Cost is NOT the binder — gold bear-grind fades below BE before the cascade stacks; crypto's
+24/7 bounce-vol is the actual edge. Gold's small-move floor remains the DEPLOYED
+M5/M10/M15 family (0.5% over a 12-HOUR window, bear-flat) — shorter windows break bear safety.
+
+**Indices (3bp): FAILS** — PF 0.9-1.2 at 0.5-1%, WF fails (SPX W4/1% +135 PF 1.99 but H1 −40).
+Do NOT re-mine low-thr cascade on gold/indices without a new structural basis.
