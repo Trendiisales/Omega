@@ -923,10 +923,22 @@ var CC_ROSTER=[   /* live truth = chimera main.cpp _gcoins grid (Jul-11 deploy) 
  {sym:'XRP', w:1,thr:4,canon:4,arms:'BE-cascade N6'},
  {sym:'TRX', w:1,thr:5,canon:5,arms:'BE-cascade N6'}
 ];
-var CC_NOCOMP=[   /* no live up-jump leg on josgp1 (grid finalize S-2026-07-11) */
- {sym:'NEAR',note:'CUT from the grid — no up-jump leg (coin trades via slot engines only)'},
- {sym:'AAVE',note:'companion DROPPED at finalize — no up-jump leg (slot engines only)'},
- {sym:'OP',  note:'companion DROPPED at finalize — no up-jump leg (slot engines only)'}
+/* S-2026-07-12: DAILY/EDGE crypto engines added this session (backtested long-only spot,
+   2x-cost robust, 2022 omitted; shadow on josgp1). These trade OUTSIDE the up-jump grid
+   (Kelt-breakout / Regime / daily-up-jump parents) — the "other crypto" beyond the 8 grid coins. */
+var CC_NOCOMP=[
+ {sym:'XLM', note:'KELT-D1 · OOS PF 11.3 — universe-scan strongest'},
+ {sym:'XRP', note:'KELT-D1 · OOS PF 5.8'},
+ {sym:'ADA', note:'KELT-D1 (4.60) + REGIME-D1 (1.67)'},
+ {sym:'NEAR',note:'UPJUMP8-D1 · OOS PF 3.70'},
+ {sym:'AVAX',note:'UPJUMP5-D1 · OOS PF 3.51'},
+ {sym:'GRT', note:'KELT-D1 · OOS PF 2.93'},
+ {sym:'LINK',note:'UPJUMP8-D1 · OOS PF 2.65'},
+ {sym:'BCH', note:'UPJUMP4X48-D1 · OOS PF 2.54'},
+ {sym:'UNI', note:'UPJUMP8-D1 · OOS PF 2.32'},
+ {sym:'AAVE',note:'KELT-D1 · OOS PF 1.56'},
+ {sym:'LDO', note:'UPJUMP3-D1 · OOS PF 1.58'},
+ {sym:'OP',  note:'UPJUMP3-H4 · OOS PF 1.34'}
 ];
 /* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
@@ -1516,8 +1528,9 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
   /* no shadow closes -> still fold the companion (paper) bank for the window so it never silently drops */
   var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);
   var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto bank is all-time -> only fold in 'all' window */
+  var chim0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._chimtot):0;/* + chimera EDGE realized (all-time, $) into the grand total */
   var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks are all-time -> only fold in 'all' window */
-  var cwT=cw+cc0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
+  var cwT=cw+cc0+chim0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
  var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
@@ -1543,7 +1556,7 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
  ctx.beginPath();ctx.arc(ex,ey,6,0,6.3);ctx.strokeStyle='rgba(46,189,133,0.35)';ctx.lineWidth=1.5;ctx.stroke();
  var p2=0;ctx.beginPath();cum.forEach(function(v,i){p2=Math.max(p2,v);var d=v-p2;i?ctx.lineTo(X(i),Y(d)):ctx.moveTo(X(0),Y(d));});
  ctx.strokeStyle='#E2484D';ctx.setLineDash([4,3]);ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
- var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto companion (all-time) folds in 'all' window */var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks (all-time) fold in 'all' window */var netT=net+cw+cc0+fg0;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
+ var net=cum[cum.length-1];var ct=window._comptot||{};var cw=WIN===1?safe(ct.today):WIN===7?safe(ct.d7):WIN===30?safe(ct.d30):safe(ct.all);var cc0=(WIN!==1&&WIN!==7&&WIN!==30)?bpUsd(safe(window._cctot)):0;/* crypto companion (all-time) folds in 'all' window */var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks (all-time) fold in 'all' window */var chim0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._chimtot):0;/* + chimera EDGE realized (all-time) */var netT=net+cw+cc0+chim0+fg0;tweenNum('eqtot',netT,fmt$);el('eqtot').style.color=netT>=0?'var(--grn)':'var(--red)';
  var pf=gl>0?gp/gl:0,wr=100*wins/rs.length;
  el('eqstats').innerHTML='<span>n <span class="w">'+rs.length+'</span></span><span>PF <span class="w">'+fmt2(pf)+'</span></span>'
   +'<span>WR <span class="w">'+fmt2(wr,1)+'%</span></span><span>maxDD <span class="r">'+fmt$(mdd)+'</span></span>'
