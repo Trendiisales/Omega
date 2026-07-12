@@ -488,9 +488,13 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
     on :7779), the old "no curh" comment was stale -> FX tiles now get the day-range bottom bar.
     VIX stays null (no vix_curh in the emit list). */
  ['eurusd','EURUSD','eurusd'],['gbpusd','GBPUSD','gbpusd'],['usdjpy','USDJPY','usdjpy'],['audusd','AUDUSD','audusd'],['nzdusd','NZDUSD','nzdusd'],['usdcad','USDCAD','usdcad']];
-/* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing */
+/* crypto legs (live from Binance public REST, CORS-open) — book roster, same strip as existing.
+   S-2026-07-12c: +XRP/XLM/GRT/AVAX/LINK/BCH/UNI/LDO — the consolidation/universe-scan engines'
+   symbols (operator asked twice; they traded on josgp1 with no top-bar tile). */
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
- ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['NEAR','NEARUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
+ ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['XRP','XRPUSDT'],['XLM','XLMUSDT'],['NEAR','NEARUSDT'],
+ ['AVAX','AVAXUSDT'],['LINK','LINKUSDT'],['BCH','BCHUSDT'],['UNI','UNIUSDT'],['GRT','GRTUSDT'],
+ ['LDO','LDOUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
@@ -1003,10 +1007,14 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
    });
   });
  });
- /* coins with NO up-jump leg (grid finalize cuts) — honest dim rows */
+ /* EDGE engines OUTSIDE the mimic grid (D1 Kelt/UpJump/Regime cells on josgp1) — they have no
+    companion legs so nothing here ever arms; dimmed = "not a mimic book", NOT disabled. Their
+    closes arrive as purple chimera rows in LAST-15 and fold via _chimtot. (operator asked why
+    greyed S-2026-07-12c: raised opacity + explicit SHADOW badge so dim != dead.) */
  CC_NOCOMP.forEach(function(r){
-  h+='<tr style="opacity:.4"><td class="l" style="font-weight:600">'+r.sym+'</td>'
-    +'<td class="l d" colspan="5">'+r.note+'</td></tr>';
+  h+='<tr style="opacity:.7"><td class="l" style="font-weight:600">'+r.sym+'</td>'
+    +'<td class="l"><span class="d">SHADOW · edge engine (no mimic)</span></td>'
+    +'<td class="l d" colspan="4">'+r.note+' · trades &rarr; LAST-15</td></tr>';
  });
  el('cctab').innerHTML=h;
  el('ccinfo').innerHTML=ntrading+' of 8 symbols trading · '+narm+' mimic(s) armed · '+totclips+' clips · Σ bank REAL <span style="color:'+(totbank>0?'var(--grn)':(totbank<0?'var(--red)':'var(--t2)'))+'">'+fmt2(totbank,1)+' bp ($'+fmt2(bpUsd(totbank),2)+')</span> <span class="d" style="font-size:9px">(folds into crypto PnL → total)</span>'+(hasLive?'':' · roster only (awaiting josgp1 push)');
