@@ -818,8 +818,10 @@ static std::string buildCryptoTradesJson()
 {
     struct CryptoSrc { const char* abs_path; const char* rel_path; const char* book; };
     static const CryptoSrc SRCS[] = {
-        { "C:\\Omega\\logs\\trades\\crypto_inbound.csv",          "logs/trades/crypto_inbound.csv",          "crypto"  },
-        { "C:\\Omega\\logs\\trades\\crypto_intraday_inbound.csv", "logs/trades/crypto_intraday_inbound.csv", "crypto"  },
+        // S-2026-07-12 CONSOLIDATION: the Mac ibkrcrypto book was folded onto the ONE
+        // Chimera system (josgp1) and its crons retired -> crypto_inbound.csv +
+        // crypto_intraday_inbound.csv are FROZEN. Dropped from the desk so LAST-15 shows
+        // only the live Chimera book. (Re-add if the Mac book is ever revived.)
         { "C:\\Omega\\logs\\trades\\chimera_inbound.csv",         "logs/trades/chimera_inbound.csv",         "chimera" },
     };
     std::string out = "[";
