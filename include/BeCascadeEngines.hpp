@@ -82,6 +82,10 @@ struct XsBeCascadeEngine {
     double thr     = 0.02;    // jump / reversal threshold
     double be_bp   = 20.0;    // BE coverage that spawns the next mimic
     double gb      = 0.50;    // per-leg giveback of peak
+    double loss_cut_bp = 0.0; // HARD REVERSAL STOP (S-2026-07-13, operator): cut ANY open leg at
+                               // loss_cut_bp below its entry, PER-TICK — same fix proven on the crypto
+                               // book (worst clip -1800->-70bp, net preserved, PF 2.5->4.5). Long-only:
+                               // below entry the up-move is over. 0 = off.
     std::vector<double> arms = {0.2, 2, 3, 4, 6, 8};
     double lot     = 1.0;
 
@@ -118,6 +122,21 @@ struct XsBeCascadeEngine {
     void _close_all(double px, const char* reason, int64_t now_ms) noexcept {
         for (auto& lg : book_.legs) if (lg.open) { lg.open = false; _record(lg, px, reason, now_ms); }
         book_.reset();
+    }
+
+    // HARD REVERSAL STOP (S-2026-07-13, operator): per-TICK — the moment ANY open leg is
+    // loss_cut_bp below its entry, cut the WHOLE book (parent + every mimic) at that leg's stop.
+    // Long-only: below entry the up-move is over. Bounds every loss (no -146/-1402 tail) and is
+    // edge-neutral (a leg still above entry never trips it — winners exit via giveback/reversal).
+    void _intrabar_stop(double mid, int64_t now_ms) noexcept {
+        if (!book_.active || loss_cut_bp <= 0.0 || mid <= 0.0) return;
+        for (const auto& lg : book_.legs) {
+            if (!lg.open || lg.entry <= 0.0) continue;
+            if ((mid / lg.entry - 1.0) * 1e4 <= -loss_cut_bp) {   // long-only: below entry by cut
+                _close_all(mid, "REVERSAL_CUT", now_ms);
+                return;
+            }
+        }
     }
 
     // cascade management on a FINALIZED daily close; executions at `mid` (new-day open)
@@ -169,6 +188,7 @@ struct XsBeCascadeEngine {
                         tag.c_str(), symbol.c_str(), k, mid);
             std::fflush(stdout);
         }
+        _intrabar_stop(mid, now_ms);   // S-2026-07-13: per-tick hard reversal stop (before aggregation)
         const int64_t day = utc_day(now_ms);
         if (cur_day_ < 0) { cur_day_ = day; day_close_ = mid; return; }
         if (day != cur_day_) {
@@ -277,6 +297,8 @@ struct XauBracketCascadeEngine {
     std::function<bool()> entry_blocked;
     double be_bp   = 20.0;
     double gb      = 0.50;
+    double loss_cut_bp = 0.0; // HARD REVERSAL STOP (S-2026-07-13, operator): per-tick cut at
+                               // loss_cut_bp below a leg's entry (bracket long OR short side). 0=off.
     std::vector<double> arms = {0.2, 2, 3, 4, 6, 8};
     double lot     = 1.0;
 
@@ -319,6 +341,22 @@ struct XauBracketCascadeEngine {
     void _close_all(double px, const char* reason, int64_t now_ms) noexcept {
         for (auto& lg : book_.legs) if (lg.open) { lg.open = false; _record(lg, px, reason, now_ms); }
         book_.reset();
+    }
+
+    // HARD REVERSAL STOP (S-2026-07-13, operator): per-TICK. Two-sided — favour is measured in
+    // the ACTIVATED direction (book_.dir). The moment any open leg is loss_cut_bp adverse, cut the
+    // whole book (parent + mimics) at that stop. Bounds every loss; edge-neutral (a leg still in
+    // profit vs entry never trips it).
+    void _intrabar_stop(double mid, int64_t now_ms) noexcept {
+        if (!book_.active || loss_cut_bp <= 0.0 || mid <= 0.0) return;
+        const int d = book_.dir;
+        for (const auto& lg : book_.legs) {
+            if (!lg.open || lg.entry <= 0.0) continue;
+            if (d * (mid / lg.entry - 1.0) * 1e4 <= -loss_cut_bp) {
+                _close_all(mid, "REVERSAL_CUT", now_ms);
+                return;
+            }
+        }
     }
 
     void _manage_on_close(double fin_close, double mid, int64_t now_ms) noexcept {
@@ -367,6 +405,7 @@ struct XauBracketCascadeEngine {
                         tag.c_str(), symbol.c_str(), k, mid);
             std::fflush(stdout);
         }
+        _intrabar_stop(mid, now_ms);   // S-2026-07-13: per-tick hard reversal stop
         const int64_t hr = bar_of(now_ms);
         if (cur_hour_ < 0) { cur_hour_ = hr; hour_close_ = mid; return; }
 

@@ -236,3 +236,24 @@ M5/M10/M15 family (0.5% over a 12-HOUR window, bear-flat) — shorter windows br
 
 **Indices (3bp): FAILS** — PF 0.9-1.2 at 0.5-1%, WF fails (SPX W4/1% +135 PF 1.99 but H1 −40).
 Do NOT re-mine low-thr cascade on gold/indices without a new structural basis.
+
+## UPDATE S-2026-07-13 — hard reversal stop: CRYPTO-ONLY (gold/index whipsaw)
+
+After the crypto UNI-UJH -146bp loss, added a per-tick hard reversal stop (cut any open leg
+loss_cut_bp below entry). On CRYPTO (1-4h up-jump windows) it caps the tail (-1800->-70bp), net
+preserved, PF 2.5->4.5 — DEPLOYED to josgp1. Ported the same lever to the Omega cascade engines
+(BeCascadeEngines.hpp loss_cut_bp field + _intrabar_stop) and BACKTESTED:
+
+| engine / window | no stop | 50bp stop | verdict |
+|---|---|---|---|
+| Gold H1 bracket (W=240=10d) | +140 PF1.53 | **-217 PF0.41**, nwin 112->653 | WHIPSAW — destroys |
+| Gold M5 intraday (W=144=12h) | +272 PF1.5 | **-288** (30bp) / -91 (50bp) | WHIPSAW at every level |
+| Gold @800bp+ | +140 | +140 (never fires) | wide stop = no-op |
+
+**Verdict: the tight stop is CRYPTO-ONLY.** Crypto up-jumps are sharp momentum spikes — a reversal
+doesn't recover, so a 50bp stop catches it cleanly. Gold/index GRIND and mean-revert — a 50bp dip
+is normal noise that recovers, so the stop cuts winners prematurely (whipsaw at every timeframe).
+The Omega cascade engines' correct protection is their existing **g50 giveback + reversal exit**
+over the window (already in place); a tight hard stop is WRONG for the instrument. loss_cut_bp
+kept in the header but **default 0 (OFF)** on all Omega instances. These engines already implement
+the mimic model (parent + BE-cascade mimics + reversal exit) — no be_floor anywhere.

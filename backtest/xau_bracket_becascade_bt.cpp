@@ -78,6 +78,7 @@ struct P {
     double gb = 0.50;       // per-mimic giveback of peak (g50)
     double rt_bp = getenv("XB_RT") ? atof(getenv("XB_RT")) : 5.0;  // round-trip cost per leg (env override)
     bool long_only = false; // control mode: prior methodology, no bracket/shorts
+    double loss_cut_bp = getenv("XB_LC") ? atof(getenv("XB_LC")) : 0.0;  // HARD REVERSAL STOP (0=off)
     bool dirstop = false;   // variant: movement DIRECTION picks the side; single
                             // stop at +-b in that direction confirms (no OCO)
     bool bear_short = false;// candidate (S-2026-07-12g): BEAR-MIRROR — SHORT parent+cascade on
@@ -185,7 +186,27 @@ static Res run(const Bars& b, const P& p) {
         r.nwin++; if (dir > 0) r.nlong++; else r.nshort++;
         std::vector<Leg> legs; size_t next_arm = 0; double par_mfe = 0;
         int x = ei;
+        bool hard_cut = false;
         for (x = ei; x < b.N - 1; x++) {
+            // HARD REVERSAL STOP (S-2026-07-13): intra-bar — the adverse extreme of the bar
+            // (LOW for a long, HIGH for a short) tests each open leg; if any is loss_cut_bp
+            // below entry, cut the WHOLE book at the stop price. Per-tick live; bar extreme here.
+            if (p.loss_cut_bp > 0.0) {
+                double adv = (dir > 0) ? b.l[x] : b.h[x];        // adverse extreme this bar
+                for (auto& lg : legs) {
+                    if (!lg.open) continue;
+                    if (dir * (adv / lg.epx - 1.0) * 1e4 <= -p.loss_cut_bp) {
+                        // cut every open leg at its stop (~ -loss_cut_bp)
+                        for (auto& l2 : legs) if (l2.open) {
+                            l2.open = false;
+                            double net = -p.loss_cut_bp / 100.0 - p.rt_bp / 100.0;
+                            book(net); if (dir > 0) r.mim_long += net; else r.mim_short += net;
+                        }
+                        hard_cut = true; break;
+                    }
+                }
+            }
+            if (hard_cut) { x++; break; }
             double fav_par = dir * (b.c[x] / epx - 1.0) * 1e4;   // bp
             par_mfe = std::max(par_mfe, fav_par);
             // spawn: parent covers BE -> mimic 1; mimic k covers BE -> mimic k+1
