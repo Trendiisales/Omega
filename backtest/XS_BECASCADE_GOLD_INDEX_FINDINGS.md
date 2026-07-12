@@ -70,6 +70,34 @@ Random-entry control: same episode count+durations, random placement in the SAME
    (project-revisit-lot-sizes).
 3. XAU history only 2022+ (h1-derived); indices 2016+.
 
+## UPDATE S-2026-07-12c — gold TWO-SIDED BRACKET variant (operator spec) + WIRED
+
+Operator answer to the gold beta caveat: **OCO bracket entry** — movement trigger
+(|10d move| ≥ 2%) places buy-stop +0.3% / sell-stop −0.3%; first fill wins, other side
+cancelled; filled side = parent (rides to reversal); same BE-cascade mimic stack on the
+activated direction (shorts too); exit-all on opposite reversal.
+BT `backtest/xau_bracket_becascade_bt.cpp` (H1, W=240≈10d, cost 5bp RT/leg):
+
+| dataset | bracket mimic net% | PF | 2×cost | long-only control |
+|---------|-----------------|------|--------|-------------------|
+| 2022-26 (bull) | **+140.3** | 1.53 | +127.9 | +194.4 (PF 2.21) |
+| 2013 bear | **+39.5** | 1.59 | +36.1 | **−18.5** |
+| 2015 bear | **+28.7** | 1.53 | +25.7 | **−18.7** |
+| 2022 chop | −1.5 (b=0.5%: +6.5) | 0.98 | −4.6 | −4.7 |
+
+- Bears: short side turns long-only bleed into profit — the protection the operator asked for.
+- Cost of the insurance: bull-year shorts bleed (−56%), bull net +140 vs +194 long-only.
+- 2022-style chop ≈ breakeven (protected, not profitable). Ambiguous both-side bars: 2/112 (skipped).
+- W-sensitivity: W=240 anchor; W=120 collapses (chop whipsaw), W=360 degrades. thr=2% robust, 3% fragile.
+- dirstop variant (movement direction picks side) tested — NOT better; OCO kept.
+- SimBook replica (live long-only crypto header can't drive shorts); parity treatment owed if live-sized.
+
+**WIRED (this session): all four SHADOW** — `include/BeCascadeEngines.hpp`:
+`XsBeCascade_USTEC.F/US500.F/DJ30.F` (D1 long, thr 2/3/4%) + `XauBracketCascade` (H1 OCO
+bracket 2%/0.3%). Warm-seeded (index D1 fresh; gold H1 from MGC to 2026-06-03, REBASE-on-first-tick
+kills the venue offset, honest after 240 live H1 bars). Persistence wired (multicell + whole-book
+closer). Cost-gated. Judged on the shadow ledger forward record.
+
 ## Proposed engine spec (if operator wants to wire — SHADOW first)
 
 - New Omega engine `XsUpJumpBeCascadeEngine` (or per-symbol instances): parent detect

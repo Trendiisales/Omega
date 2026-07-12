@@ -342,6 +342,31 @@ inline void register_position_persistence() {
         return omega::bigcap_momo_ibkr::restore_position(ps);
     });
 
+    // ---- BeCascade ports (S-2026-07-12b/c): multi-leg cascade books ----
+    // One snapshot per open leg ("<base>#<k>", k=0 parent); sl/tp transport mfe/arm.
+    // Closer: whole-book flatten via the engine's own _close_all (books TradeRecords).
+    wire_multicell(g_xsbec_ustec, "XsBeCascade_USTEC.F", "USTEC.F");
+    wire_multicell(g_xsbec_us500, "XsBeCascade_US500.F", "US500.F");
+    wire_multicell(g_xsbec_dj30,  "XsBeCascade_DJ30.F",  "DJ30.F");
+    wire_multicell(g_xau_brc,     "XauBracketCascade",   "XAUUSD");
+    {
+        struct BcCloser { const char* base; const char* sym; std::function<bool(double,double,const char*)> fc; };
+        static const BcCloser bcs[] = {
+            { "XsBeCascade_USTEC.F", "USTEC.F", [](double b,double a,const char* r){ return g_xsbec_ustec.force_close_all_at(b,a,r); } },
+            { "XsBeCascade_US500.F", "US500.F", [](double b,double a,const char* r){ return g_xsbec_us500.force_close_all_at(b,a,r); } },
+            { "XsBeCascade_DJ30.F",  "DJ30.F",  [](double b,double a,const char* r){ return g_xsbec_dj30.force_close_all_at(b,a,r); } },
+            { "XauBracketCascade",   "XAUUSD",  [](double b,double a,const char* r){ return g_xau_brc.force_close_all_at(b,a,r); } },
+        };
+        for (const auto& bc : bcs) {
+            g_open_positions.register_closer(
+                [&bc](const omega::PositionSnapshot& ps, const char* reason) -> bool {
+                    if (ps.engine.rfind(bc.base, 0) != 0) return false;   // base or base#k
+                    double b, a; if (!acct_book_px(bc.sym, b, a)) return false;
+                    return bc.fc(b, a, reason);
+                });
+        }
+    }
+
     // Coverage now: every position-holding engine on the dashboard persists/resumes.
     // Mandate: any NEW engine MUST add persist_save/persist_restore + a wire here
     // (like the warm-seed mandate). Partial persistence = silent position loss.

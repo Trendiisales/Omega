@@ -236,3 +236,25 @@ Traps:
   space) — rebuild H1 via the python month-dedupe in this session's log, never a bare
   `$var` glob (zsh no-word-split).
 - GER40: never un-gate — bear file universally negative at every cell.
+
+## 10. BE-CASCADE ports — indices D1 long + gold H1 OCO bracket (S-2026-07-12b/c)
+
+Crypto up-jump BE-cascade mimic (UpJumpLadderCompanion mechanism) ported to Omega
+instruments. Engines: `include/BeCascadeEngines.hpp` — `XsBeCascade_{USTEC.F,US500.F,DJ30.F}`
+(D1 long-only, W=10d, thr 2/3/4%) + `XauBracketCascade` (gold H1, two-sided OCO bracket
+2%/±0.3%, W=240). All SHADOW. Findings: `backtest/XS_BECASCADE_GOLD_INDEX_FINDINGS.md`.
+
+- **Index harness** = `Crypto/backtest/upjump_earlyarm_bt.cpp` modes `xsgrid`/`xsrandom`
+  (drives the REAL crypto header; data `Crypto/backtest/data/{XAU,SPX,DJ30,NDX}USDT_1d.csv`).
+  Run: `cd /Users/jo/Crypto/backtest && UJW_TF=1d ./upjump_earlyarm_bt xsgrid`.
+  Random-entry beta control is MANDATORY here — gold long-only passed every gate on pure
+  bull beta (z=1.1); indices are real (z 2.3–3.2).
+- **Gold bracket harness** = `backtest/xau_bracket_becascade_bt.cpp` (H1 OHLC, self-contained,
+  plain g++). Bear files: XAU2013/2015/2022_bear_h1.csv. Long-only control built in.
+  TRAPS: (a) thr=3% kills 2015/2022 — 2% is the anchor; (b) W=120 collapses in chop;
+  (c) both-side-touch H1 bars are AMBIGUOUS — cancel + count, never coin-flip;
+  (d) costs are per-LEG RT (XAU 5bp, idx 3bp) — crypto's 20bp strawman-kills.
+- **Live fidelity notes**: signals/cascade on FINALIZED bar closes, executions at live mid
+  (next-open convention); gold bracket fills are tick-level. Warm-seed REBASES to first live
+  mid (cash-index seed vs .F feed; MGC seed vs spot) — without it the venue offset fakes a
+  jump through the W-window. Gold seed lags (MGC to 2026-06-03): honest after 240 live H1.

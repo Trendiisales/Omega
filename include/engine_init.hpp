@@ -5444,6 +5444,66 @@ static void init_engines(const std::string& cfg_path)
             printf("[OMEGA-INIT] MondayRiskOn NAS100 (FX legs removed): shadow=true Mon-long SMA50-gate\n");
         }
 
+        // ── BE-CASCADE ports (S-2026-07-12b/c) — crypto up-jump BE-cascade mimic on
+        // indices (long-only D1) + gold two-sided OCO bracket variant (H1). SHADOW.
+        // Indices: backtest/XS_BECASCADE_GOLD_INDEX_FINDINGS.md — all 48 cells PASS
+        // OOS-2023 gate, 2x-cost robust, random-entry control z 2.3-3.2 (real timing
+        // edge; gold long-only was z=1.1 beta -> hence the bracket variant below).
+        // Gold: backtest/xau_bracket_becascade_bt.cpp — bracket turns 2013/2015 bear
+        // bleed (-18/-19) into +39/+29; 2022 chop ~flat; bull +140 PF1.53; W=240 anchor.
+        // Protection: per-leg g50 giveback + whole-book reversal exit (header verdict).
+        {
+            struct XsCfg { omega::XsBeCascadeEngine* e; const char* sym; double thr; const char* d1; };
+            const XsCfg xs[] = {
+                { &g_xsbec_ustec, "USTEC.F", 0.02, "phase1/signal_discovery/warmup_USTEC_D1.csv" },
+                { &g_xsbec_us500, "US500.F", 0.03, "phase1/signal_discovery/warmup_US500_D1.csv" },
+                { &g_xsbec_dj30,  "DJ30.F",  0.04, "phase1/signal_discovery/warmup_DJ30_D1.csv"  },
+            };
+            for (const auto& x : xs) {
+                x.e->symbol      = x.sym;
+                x.e->engine_name = std::string("XsBeCascade_") + x.sym;
+                x.e->thr         = x.thr;
+                x.e->W           = 10;
+                x.e->shadow_mode = true;
+                x.e->enabled     = true;
+                x.e->lot         = 1.0;
+                x.e->seed_from_csv(omega::resolve_seed_path(x.d1));
+                auto* eng = x.e; const char* symc = x.sym;
+                eng->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                g_open_positions.register_source(eng->engine_name, [eng, symc]() {
+                    std::vector<omega::PositionSnapshot> v;
+                    if (eng->book_.active) for (const auto& lg : eng->book_.legs) if (lg.open) {
+                        omega::PositionSnapshot s;
+                        s.symbol = symc; s.engine = eng->engine_name;
+                        s.side = "LONG"; s.size = eng->lot; s.entry = lg.entry;
+                        s.sl = 0.0; s.tp = 0.0; s.entry_ts = lg.entry_ts / 1000LL;
+                        v.push_back(s);
+                    }
+                    return v;
+                });
+            }
+            g_xau_brc.symbol      = "XAUUSD";
+            g_xau_brc.engine_name = "XauBracketCascade";
+            g_xau_brc.shadow_mode = true;
+            g_xau_brc.enabled     = true;
+            g_xau_brc.lot         = 1.0;
+            g_xau_brc.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1_BRC.csv"));
+            g_xau_brc.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+            g_open_positions.register_source("XauBracketCascade", []() {
+                std::vector<omega::PositionSnapshot> v;
+                if (g_xau_brc.book_.active) for (const auto& lg : g_xau_brc.book_.legs) if (lg.open) {
+                    omega::PositionSnapshot s;
+                    s.symbol = "XAUUSD"; s.engine = "XauBracketCascade";
+                    s.side = g_xau_brc.book_.dir > 0 ? "LONG" : "SHORT";
+                    s.size = g_xau_brc.lot; s.entry = lg.entry;
+                    s.sl = 0.0; s.tp = 0.0; s.entry_ts = lg.entry_ts / 1000LL;
+                    v.push_back(s);
+                }
+                return v;
+            });
+            printf("[OMEGA-INIT] BeCascade ports: USTEC/US500/DJ30 D1 long (thr 2/3/4%%) + XAUUSD H1 bracket (2%%/0.3%%), all shadow\n");
+        }
+
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.
         // Long at cash close -> flat at open, only if close>SMA20. Backtest:
         // NDX cash Sharpe 1.62, NQ future 1.0 (no financing), both halves +,

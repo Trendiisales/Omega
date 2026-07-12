@@ -84,6 +84,10 @@ static void on_tick_us500(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     { static IdxH1Agg agg; index_feed_h1(agg, "US500", bid, ask); }  // BE-floor companion H1 feed
+    {   // S-2026-07-12b BE-cascade port (shadow)
+        const int64_t bc_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_xsbec_us500.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XsBeCascade_US500.F");
+    }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every US500-driven engine.
     // S11 P3b: HybridSP pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowSP");
@@ -312,6 +316,10 @@ static void on_tick_ustec(
     const std::string& sym, double bid, double ask,
         bool tradeable, bool lat_ok, const std::string& regime)
 {
+    {   // S-2026-07-12b BE-cascade port (shadow)
+        const int64_t bc_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_xsbec_ustec.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XsBeCascade_USTEC.F");
+    }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every USTEC-driven engine.
     // S11 P3b: HybridNQ pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowNQ");
@@ -545,6 +553,10 @@ static void on_tick_dj30(
         bool tradeable, bool lat_ok, const std::string& regime)
 {
     { static IdxH1Agg agg; index_feed_h1(agg, "DJ30", bid, ask); }  // BE-floor companion H1 feed
+    {   // S-2026-07-12b BE-cascade port (shadow)
+        const int64_t bc_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
+        g_xsbec_dj30.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XsBeCascade_DJ30.F");
+    }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every DJ30-driven engine.
     // S11 P3b: HybridUS30 pulse removed (engine culled in P3a + globals/init removed in P3b).
     g_engine_heartbeat.pulse("IFlowUS30");

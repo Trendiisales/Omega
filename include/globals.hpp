@@ -192,6 +192,11 @@ static omega::IndexBearShortEngine g_idx_bear_short_sp;  // US500 risk-off SHORT
 static omega::MondayRiskOnEngine g_monday_nas;   // Monday risk-on calendar anomaly (NAS100) -- 2026-06-07 (t2.59 WR67% SMA50-gated), shadow
 static omega::MondayRiskOnEngine g_monday_gbp;   // Monday risk-on (GBPUSD) t2.04 WR71%
 static omega::MondayRiskOnEngine g_monday_aud;   // Monday risk-on (AUDUSD) t2.45 WR65%
+#include "BeCascadeEngines.hpp"
+static omega::XsBeCascadeEngine g_xsbec_ustec;      // S-2026-07-12b crypto BE-cascade port, USTEC.F D1 W=10 thr=2% (OOS +553%/PF7.7 rand-z3.2), shadow
+static omega::XsBeCascadeEngine g_xsbec_us500;      // S-2026-07-12b US500.F D1 W=10 thr=3% (OOS +329%/PF16.5 rand-z2.8), shadow
+static omega::XsBeCascadeEngine g_xsbec_dj30;       // S-2026-07-12b DJ30.F D1 W=10 thr=4% (OOS +220%/PF5.5 rand-z2.3), shadow
+static omega::XauBracketCascadeEngine g_xau_brc;    // S-2026-07-12c gold two-sided OCO bracket + BE-cascade, H1 W=240 thr=2% b=0.3% (bear 2013/2015 +39/+29 vs long-only bleed), shadow
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)
