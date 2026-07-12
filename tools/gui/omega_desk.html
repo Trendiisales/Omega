@@ -1012,13 +1012,39 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
    });
   });
  });
- /* EDGE engines OUTSIDE the mimic grid (D1 Kelt/UpJump/Regime cells on josgp1) — they have no
-    companion legs so nothing here ever arms; dimmed = "not a mimic book", NOT disabled. Their
-    closes arrive as purple chimera rows in LAST-15 and fold via _chimtot. (operator asked why
-    greyed S-2026-07-12c: raised opacity + explicit SHADOW badge so dim != dead.) */
+ /* S-2026-07-13: symbols with LIVE mimic legs OUTSIDE the 8-coin grid roster (the daily
+    up-jump BE-cascade overlays, eafb30c) — previously dumped into the hardcoded "(no mimic)"
+    bucket while 60 legs were being served (operator: "makes no sense"). Render them like
+    roster coins, dynamic from the feed; their banks fold into the same Σ. */
+ var seenSym={};CC_ROSTER.forEach(function(r){seenSym[r.sym]=1;});
+ var extraSym={};
+ Object.keys(live).forEach(function(tag){var p=live[tag];var sy=p&&p.sym;if(!sy||seenSym[sy])return;(extraSym[sy]=extraSym[sy]||[]).push(p);});
+ Object.keys(extraSym).sort().forEach(function(sy){
+  var cells=extraSym[sy],act=[],bank=0;
+  cells.forEach(function(s){ncell++;totclips+=safe(s.clips);totbank+=safe(s.bank_bp_real);totmodel+=safe(s.bank_bp);bank+=safe(s.bank_bp_real);
+   if(s.armed||(s.sublegs&&s.sublegs.length>0)){act.push(s);if(s.armed)narm++;}});
+  if(act.length)ntrading++;
+  var badge=act.length?'<span class="g" style="font-weight:600">'+act.length+' TRADING</span>'
+                      :'<span class="d">idle · daily up-jump mimic x'+cells.length+'</span>';
+  var cb=(bank!==0)?'<span style="color:'+(bank>0?'var(--grn)':'var(--red)')+'">'+fmt2(bank,1)+' bp <span class="d">$'+fmt2(bpUsd(bank),2)+'</span></span>':'<span class="d">$0.00</span>';
+  h+='<tr><td class="l" style="font-weight:600">'+sy+' <span class="d" style="font-size:9px;font-weight:400">D1 cascade</span></td>'
+    +'<td class="l">'+badge+'</td><td colspan="3"></td><td class="num">'+cb+'</td></tr>';
+  act.forEach(function(s){
+   var pk=s.peak_mfe_pct===undefined?'<span class="d">—</span>':fmt2(s.peak_mfe_pct,2);
+   var det=(s.det_w!==undefined?s.det_w:'?')+'/+'+(s.det_thr_pct!==undefined?fmt2(s.det_thr_pct,0):'?')+'%';
+   var bkv=safe(s.bank_bp_real);
+   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; '+(s.tag||'leg')+'</td>'
+     +'<td class="l"><span class="g">ARMED</span></td><td class="num">'+pk+'</td>'
+     +'<td class="num d">'+det+'</td><td class="num">'+(s.clips===undefined?'—':s.clips)+'</td>'
+     +'<td class="num">'+fmt2(bkv,1)+' bp</td></tr>';
+  });
+ });
+ /* EDGE engines with genuinely NO mimic companion (Keltner/regime cells) — info rows only.
+    Their closes arrive as purple chimera rows in LAST-15 and fold via _chimtot. */
  CC_NOCOMP.forEach(function(r){
+  if(extraSym[r.sym]||seenSym[r.sym])return;   // has live mimic legs -> rendered above, skip note
   h+='<tr style="opacity:.7"><td class="l" style="font-weight:600">'+r.sym+'</td>'
-    +'<td class="l"><span class="d">SHADOW · edge engine (no mimic)</span></td>'
+    +'<td class="l"><span class="d">SHADOW · Keltner edge engine (no mimic by design)</span></td>'
     +'<td class="l d" colspan="4">'+r.note+' · trades &rarr; LAST-15</td></tr>';
  });
  el('cctab').innerHTML=h;
