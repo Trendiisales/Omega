@@ -133,3 +133,22 @@ Best cells (all at ~12h window, thr 0.5%, b 0.1%):
 VERDICT: intraday bracket-cascade = bull-harvest only, fails the operator's bear-protection
 requirement → NOT wired. The deployed H1 W=240 XauBracketCascade remains the protected form.
 Re-open only with a regime gate (changes the thesis — operator decision).
+
+## UPDATE S-2026-07-12e — intraday M5/M10/M15 WIRED with gold_regime bull gate (M30 dropped)
+
+Operator: "wire this in for a bull move — when gold goes long we MUST trade" + drop M30
+(PF 1.24 / 2x +31 too thin). Gate = `gold_regime().long_blocked()` on bracket PLACE and FILL,
+replicated exactly in BT (H1 EMA200/50, persist-100 falling check; macro layer omitted = live
+strictly more protective). Gated results (thr 0.5%, b 0.1%, 12h window):
+
+| engine | W | bull 24-26 | PF | 2x | 2022 bear gated (ungated) |
+|---|---|---|---|---|---|
+| XauBracketCascade_M5  | 144 | +203.3 | 1.56 | +146.5 | −1.7 (−15.3) |
+| XauBracketCascade_M10 | 72  | +173.3 | 1.50 | +121.4 | −2.5 (−12.0) |
+| XauBracketCascade_M15 | 48  | +163.6 | 1.50 | +115.1 | −1.2 (−14.8) |
+
+Cascade = tested BE-N6 (6 tiers max, spawn-on-BE — averages ~1.6 legs/window intraday).
+Engine gains `tf_secs` + `entry_blocked` hook; H1 flagship stays ungated (its 10-day window
+IS the protection). Seeds: auto-refreshed warmup_XAUUSD_M5/M10/M15 (M10 added to
+seed_refresh._GOLD_TFS). Persistence: multicell + closers (M-instances BEFORE the bare
+XauBracketCascade prefix in the closer table). All shadow.

@@ -5505,7 +5505,48 @@ static void init_engines(const std::string& cfg_path)
                 }
                 return v;
             });
-            printf("[OMEGA-INIT] BeCascade ports: USTEC/US500/DJ30 D1 long (thr 2/3/4%%) + XAUUSD H1 bracket (2%%/0.3%%), all shadow\n");
+            // ── S-2026-07-12d intraday bull-gated instances (operator: "when gold goes long
+            // we MUST trade"; M30 tested PF1.24/2x+31 = dropped by operator). Gate =
+            // gold_regime().long_blocked() on bracket PLACE + FILL — backtested exact rule:
+            // 2022 bear -12..-15% -> flat (-2.5..-1.2), bull +164..+203 PF 1.50-1.56, 2x+.
+            {
+                struct BrcCfg { omega::XauBracketCascadeEngine* e; const char* name; int tf; int W; const char* seed; };
+                const BrcCfg brcs[] = {
+                    { &g_xau_brc_m5,  "XauBracketCascade_M5",  300, 144, "phase1/signal_discovery/warmup_XAUUSD_M5.csv"  },
+                    { &g_xau_brc_m10, "XauBracketCascade_M10", 600,  72, "phase1/signal_discovery/warmup_XAUUSD_M10.csv" },
+                    { &g_xau_brc_m15, "XauBracketCascade_M15", 900,  48, "phase1/signal_discovery/warmup_XAUUSD_M15.csv" },
+                };
+                for (const auto& bc : brcs) {
+                    bc.e->symbol      = "XAUUSD";
+                    bc.e->engine_name = bc.name;
+                    bc.e->tag         = std::string("XBRC-M") + std::to_string(bc.tf / 60);
+                    bc.e->tf_secs     = bc.tf;
+                    bc.e->W           = bc.W;
+                    bc.e->thr         = 0.005;
+                    bc.e->boff        = 0.001;
+                    bc.e->ttl         = 48;
+                    bc.e->shadow_mode = true;
+                    bc.e->enabled     = true;
+                    bc.e->lot         = 1.0;
+                    bc.e->entry_blocked = []() { return omega::gold_regime().long_blocked(); };
+                    bc.e->seed_from_csv(omega::resolve_seed_path(bc.seed));
+                    auto* eng = bc.e; const char* nm = bc.name;
+                    eng->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                    g_open_positions.register_source(nm, [eng, nm]() {
+                        std::vector<omega::PositionSnapshot> v;
+                        if (eng->book_.active) for (const auto& lg : eng->book_.legs) if (lg.open) {
+                            omega::PositionSnapshot s;
+                            s.symbol = "XAUUSD"; s.engine = nm;
+                            s.side = eng->book_.dir > 0 ? "LONG" : "SHORT";
+                            s.size = eng->lot; s.entry = lg.entry;
+                            s.sl = 0.0; s.tp = 0.0; s.entry_ts = lg.entry_ts / 1000LL;
+                            v.push_back(s);
+                        }
+                        return v;
+                    });
+                }
+            }
+            printf("[OMEGA-INIT] BeCascade ports: USTEC/US500/DJ30 D1 long (thr 2/3/4%%) + XAUUSD H1 bracket (2%%/0.3%%) + M5/M10/M15 bull-gated brackets (0.5%%/0.1%%), all shadow\n");
         }
 
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.

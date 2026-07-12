@@ -28,6 +28,10 @@ static void on_tick_gold(
     {   // S-2026-07-12c two-sided OCO bracket + BE-cascade (shadow)
         g_xau_brc.on_tick(bid, ask, omega::pg::_pg_now_ms());
         g_engine_heartbeat.pulse("XauBracketCascade");
+        // S-2026-07-12d bull-gated intraday instances (M30 dropped by operator)
+        g_xau_brc_m5.on_tick(bid, ask, omega::pg::_pg_now_ms());  g_engine_heartbeat.pulse("XauBracketCascade_M5");
+        g_xau_brc_m10.on_tick(bid, ask, omega::pg::_pg_now_ms()); g_engine_heartbeat.pulse("XauBracketCascade_M10");
+        g_xau_brc_m15.on_tick(bid, ask, omega::pg::_pg_now_ms()); g_engine_heartbeat.pulse("XauBracketCascade_M15");
     }
     // 2026-06-17: macro-hostile tightening ON TOP of the price core. Fail-safe --
     //   g_macro_gold_gate.hostile() returns false on disabled/missing/stale feed,

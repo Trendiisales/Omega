@@ -349,12 +349,21 @@ inline void register_position_persistence() {
     wire_multicell(g_xsbec_us500, "XsBeCascade_US500.F", "US500.F");
     wire_multicell(g_xsbec_dj30,  "XsBeCascade_DJ30.F",  "DJ30.F");
     wire_multicell(g_xau_brc,     "XauBracketCascade",   "XAUUSD");
+    wire_multicell(g_xau_brc_m5,  "XauBracketCascade_M5",  "XAUUSD");
+    wire_multicell(g_xau_brc_m10, "XauBracketCascade_M10", "XAUUSD");
+    wire_multicell(g_xau_brc_m15, "XauBracketCascade_M15", "XAUUSD");
     {
         struct BcCloser { const char* base; const char* sym; std::function<bool(double,double,const char*)> fc; };
         static const BcCloser bcs[] = {
             { "XsBeCascade_USTEC.F", "USTEC.F", [](double b,double a,const char* r){ return g_xsbec_ustec.force_close_all_at(b,a,r); } },
             { "XsBeCascade_US500.F", "US500.F", [](double b,double a,const char* r){ return g_xsbec_us500.force_close_all_at(b,a,r); } },
             { "XsBeCascade_DJ30.F",  "DJ30.F",  [](double b,double a,const char* r){ return g_xsbec_dj30.force_close_all_at(b,a,r); } },
+            // NOTE ordering: the closer matches by BASE PREFIX (rfind(base,0)==0), so the
+            // M5/M10/M15 entries MUST come before the bare "XauBracketCascade" or its prefix
+            // would swallow their snapshots ("XauBracketCascade_M5#0" starts with it).
+            { "XauBracketCascade_M5",  "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m5.force_close_all_at(b,a,r); } },
+            { "XauBracketCascade_M10", "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m10.force_close_all_at(b,a,r); } },
+            { "XauBracketCascade_M15", "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m15.force_close_all_at(b,a,r); } },
             { "XauBracketCascade",   "XAUUSD",  [](double b,double a,const char* r){ return g_xau_brc.force_close_all_at(b,a,r); } },
         };
         for (const auto& bc : bcs) {

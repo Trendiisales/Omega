@@ -4,8 +4,10 @@
 //  backtested S-2026-07-12b/c: indices backtest/XS_BECASCADE_GOLD_INDEX_FINDINGS.md (all 48
 //  cells PASS OOS-2023 gate, 2x-cost robust, random-entry control z 2.3-3.2); gold bracket
 //  backtest/xau_bracket_becascade_bt.cpp (bear years 2013/2015 +39/+29 vs long-only -18/-19;
-//  2022 chop ~flat). No cold-loss cut by design (crypto BE-cascade precedent: tiers arm from
-//  +0.2%, worst path = reversal flush; tightening lowers net per the 2026-06-17 sweep).
+//  2022 chop ~flat). Intraday instances (M5/M10/M15, S-2026-07-12d) ADD the gold_regime
+//  long_blocked entry gate (backtested: 2022 bear -12..-15% -> flat, bull PF 1.5, 2x+).
+//  No cold-loss cut by design (crypto BE-cascade precedent: tiers arm from +0.2%, worst
+//  path = reversal flush; tightening lowers net per the 2026-06-17 sweep).
 // =============================================================================
 // BeCascadeEngines.hpp -- the crypto up-jump BE-CASCADE mimic mechanism ported
 // to Omega instruments (S-2026-07-12b/c). Two engines:
@@ -261,10 +263,18 @@ struct XauBracketCascadeEngine {
     bool shadow_mode = true;
     bool enabled     = false;
 
-    int    W       = 240;     // H1 bars (~10 trading days)
+    int    tf_secs = 3600;    // bar size (3600=H1 flagship; 300/600/900 = the S-2026-07-12d
+                              // bull-gated intraday instances, W scaled to a ~12h window)
+    int    W       = 240;     // bars in the movement/reversal window
     double thr     = 0.02;    // movement + reversal threshold
     double boff    = 0.003;   // bracket offset from trigger close
-    int    ttl     = 48;      // bracket pending TTL, H1 bars
+    int    ttl     = 48;      // bracket pending TTL, bars
+    // Optional entry gate (S-2026-07-12d): when set and returning TRUE, NO new bracket is
+    // placed and a pending one will not fill. Wired to omega::gold_regime().long_blocked()
+    // on the intraday instances — backtested gate: 2022 bear bleed -12..-15% -> flat
+    // (-2.5..+0.6), bull keeps 75-92% of net, PF improves. The H1 flagship stays UNGATED
+    // (two-sided bracket IS its bear protection at the 10-day window).
+    std::function<bool()> entry_blocked;
     double be_bp   = 20.0;
     double gb      = 0.50;
     std::vector<double> arms = {0.2, 2, 3, 4, 6, 8};
@@ -289,7 +299,7 @@ struct XauBracketCascadeEngine {
     BeCascadeBook book_;
     bool has_open_position() const noexcept { return book_.active; }
 
-    static int64_t hour_of(int64_t ms) noexcept { return (ms / 1000LL) / 3600LL; }
+    int64_t bar_of(int64_t ms) const noexcept { return (ms / 1000LL) / (int64_t)tf_secs; }
 
     void _record(const BeCascadeBook::Leg& lg, double exit_px, const char* reason, int64_t now_ms) noexcept {
         const double pnl = book_.dir * (exit_px - lg.entry) * lot;
@@ -357,10 +367,18 @@ struct XauBracketCascadeEngine {
                         tag.c_str(), symbol.c_str(), k, mid);
             std::fflush(stdout);
         }
-        const int64_t hr = hour_of(now_ms);
+        const int64_t hr = bar_of(now_ms);
         if (cur_hour_ < 0) { cur_hour_ = hr; hour_close_ = mid; return; }
 
-        // tick-level bracket fill (real stop semantics)
+        // tick-level bracket fill (real stop semantics); regime-gated instances also
+        // refuse the FILL if the regime flipped bear while the bracket was pending
+        if (brk_pending_ && enabled && !book_.active) {
+            if (entry_blocked && entry_blocked()) {
+                brk_pending_ = false;
+                std::printf("[%s] BRACKET GATE-CANCEL %s (regime long_blocked)\n", tag.c_str(), symbol.c_str());
+                std::fflush(stdout);
+            }
+        }
         if (brk_pending_ && enabled && !book_.active) {
             int d = 0;
             if (mid >= brk_buy_) d = +1; else if (mid <= brk_sell_) d = -1;
@@ -389,8 +407,10 @@ struct XauBracketCascadeEngine {
                 std::printf("[%s] BRACKET TTL-CANCEL %s\n", tag.c_str(), symbol.c_str());
                 std::fflush(stdout);
             }
-            // movement trigger -> place OCO bracket
-            if (enabled && !book_.active && !brk_pending_ && (int)closes_.size() >= W + 1) {
+            // movement trigger -> place OCO bracket (regime-gated instances: no NEW
+            // bracket while long_blocked — the S-2026-07-12d backtested bull gate)
+            if (enabled && !book_.active && !brk_pending_ && (int)closes_.size() >= W + 1
+                && !(entry_blocked && entry_blocked())) {
                 const double j = closes_.back() / closes_.front() - 1.0;
                 if (std::fabs(j) >= thr) {
                     brk_pending_ = true; brk_ttl_left_ = ttl;

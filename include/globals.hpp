@@ -197,6 +197,9 @@ static omega::XsBeCascadeEngine g_xsbec_ustec;      // S-2026-07-12b crypto BE-c
 static omega::XsBeCascadeEngine g_xsbec_us500;      // S-2026-07-12b US500.F D1 W=10 thr=3% (OOS +329%/PF16.5 rand-z2.8), shadow
 static omega::XsBeCascadeEngine g_xsbec_dj30;       // S-2026-07-12b DJ30.F D1 W=10 thr=4% (OOS +220%/PF5.5 rand-z2.3), shadow
 static omega::XauBracketCascadeEngine g_xau_brc;    // S-2026-07-12c gold two-sided OCO bracket + BE-cascade, H1 W=240 thr=2% b=0.3% (bear 2013/2015 +39/+29 vs long-only bleed), shadow
+static omega::XauBracketCascadeEngine g_xau_brc_m5;  // S-2026-07-12d intraday M5 W=144(12h) thr=0.5% b=0.1%, gold_regime bull-gated (bull +203 PF1.56, bear22 gated -1.7), shadow
+static omega::XauBracketCascadeEngine g_xau_brc_m10; // S-2026-07-12d intraday M10 W=72 thr=0.5% b=0.1%, bull-gated (bull +173 PF1.50, bear22 gated -2.5), shadow
+static omega::XauBracketCascadeEngine g_xau_brc_m15; // S-2026-07-12d intraday M15 W=48 thr=0.5% b=0.1%, bull-gated (bull +164 PF1.50, bear22 gated -1.2), shadow (M30 tested PF1.24 2x+31 = too thin, operator dropped)
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

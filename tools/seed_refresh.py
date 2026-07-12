@@ -116,10 +116,10 @@ def phase_rebuild(logs, out, days):
 # PHASE 2 — refresh warmup seeds from IB Gateway (MGC gold + index futures). NON-FATAL.
 # ==================================================================================================
 _TF = {
-    "M5": ("5 mins","10 D"), "M15": ("15 mins","20 D"), "M30": ("30 mins","40 D"),
+    "M5": ("5 mins","10 D"), "M10": ("10 mins","15 D"), "M15": ("15 mins","20 D"), "M30": ("30 mins","40 D"),
     "H1": ("1 hour","90 D"), "M240": ("4 hours","300 D"), "H4": ("4 hours","300 D"), "D1": ("1 day","5 Y"),
 }
-_GOLD_TFS = ["M5", "M15", "M30", "H1", "H4", "D1"]
+_GOLD_TFS = ["M5", "M10", "M15", "M30", "H1", "H4", "D1"]   # M10 added S-2026-07-12d (XauBracketCascade_M10 seed)
 _INDEX = {
     "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5","D1"]),  # D1 added S-2026-07-12c (was aging, no generator)
     "USTEC":  (("CME","NQ"),      ["D1"]),                        # S-2026-07-12c: warmup_USTEC_D1 had NO refresh path (43d old, 8+ consumers)

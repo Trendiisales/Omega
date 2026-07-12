@@ -80,10 +80,41 @@ struct P {
     bool long_only = false; // control mode: prior methodology, no bracket/shorts
     bool dirstop = false;   // variant: movement DIRECTION picks the side; single
                             // stop at +-b in that direction confirms (no OCO)
+    bool bull_gate = false; // replicate omega::gold_regime().long_blocked() (PRICE core):
+                            // H1 EMA200/EMA50, bear = c<EMA200 && EMA200<EMA200[100 H1 ago]
+                            // && EMA50<EMA200 -> NO new bracket while bear (macro leg omitted:
+                            // fail-safe extra tightening only)
 };
 
 static Res run(const Bars& b, const P& p) {
     Res r; std::vector<double> arms = {0.2, 2, 3, 4, 6, 8};
+    // regime gate precompute (H1-aggregated EMA200/50 + persist-100 falling check)
+    std::vector<char> blocked(b.N, 0);
+    if (p.bull_gate) {
+        double emaS=0, emaF=0; bool have=false; int h1n=0;
+        std::deque<double> hist;
+        long long cur=-1; double hc=0;
+        const double kS=2.0/201.0, kF=2.0/51.0;
+        auto close_h1=[&](){
+            if (!have) { emaS=hc; emaF=hc; have=true; }
+            else { emaS+=kS*(hc-emaS); emaF+=kF*(hc-emaF); }
+            hist.push_back(emaS); while ((int)hist.size()>101) hist.pop_front();
+            h1n++;
+        };
+        bool bear=false;
+        for (int i=0;i<b.N;i++) {
+            long long hb=b.ts[i]/3600;
+            if (cur<0) { cur=hb; hc=b.c[i]; }
+            else if (hb!=cur) {
+                close_h1();
+                bear=false;
+                if (h1n>=300 && (int)hist.size()>=101)
+                    if (hc<emaS && emaS<hist.front() && emaF<emaS) bear=true;
+                cur=hb; hc=b.c[i];
+            } else hc=b.c[i];
+            blocked[i]=bear?1:0;
+        }
+    }
     double cum = 0, peak = 0;
     auto book = [&](double net_pct) {
         r.mim_net += net_pct;
@@ -95,6 +126,7 @@ static Res run(const Bars& b, const P& p) {
     while (i < b.N - 2) {
         double j = b.c[i] / b.c[i - p.W] - 1.0;
         int dir = 0; double epx = 0; int ei = -1;
+        if (p.bull_gate && blocked[i]) { i++; continue; }   // regime gate: no NEW bracket in bear
         if (p.long_only) {
             if (j >= p.thr) { dir = +1; ei = i + 1; epx = b.o[ei]; }
         } else if (p.dirstop && std::fabs(j) >= p.thr) {
@@ -205,10 +237,11 @@ int main(int argc, char** argv) {
         for (double thr : THRS) {
             for (double off : BS) {
                 P p; p.W = Wo; p.thr = thr; p.b = off; p.ttl = TTL;
+                p.bull_gate = getenv("XB_GATE") != nullptr;
                 Res r = run(b, p);
                 P p2 = p; p2.rt_bp = 10.0; Res r2 = run(b, p2);
                 std::printf("%-14s %-9s %5d %3.1f%% %3.1f %4d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %6d\n",
-                    d.name.c_str(), "bracket", Wo, thr * 100, off * 1000, r.nwin, r.namb,
+                    d.name.c_str(), getenv("XB_GATE")?"brkGATED":"bracket", Wo, thr * 100, off * 1000, r.nwin, r.namb,
                     r.par_net, r.par_long, r.par_short,
                     r.mim_net, r.mim_long, r.mim_short, r.pf(), r.maxdd, r2.mim_net, r.h1(), r.h2(), r.nlegs);
             }
