@@ -126,7 +126,7 @@ a{color:var(--blu);text-decoration:none}
 <div id="ticker" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:8px;overflow-x:auto;background:var(--pan)"></div>
 <!-- S-2026-07-12e: crypto strip moved to its OWN row — 18 legs overflowed off-screen right
      on the shared row (operator: "put the spillover symbols underneath, ensure all present") -->
-<div id="ticker2" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:4px;overflow-x:auto;background:var(--pan)"></div>
+<div id="ticker2" style="display:flex;flex-wrap:wrap;border:1px solid var(--bd);border-radius:6px;margin-top:4px;background:var(--pan)"></div><!-- flex-wrap: 27 tiles flow onto extra lines, nothing off-screen -->
 
 <!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
 <!-- S-2026-07-08c operator resize: the four top strips at HALF WIDTH, two columns:
@@ -183,13 +183,13 @@ a{color:var(--blu);text-decoration:none}
       <span id="ledgern" class="lbl" style="margin-left:auto"></span>
     </div>
     <div style="max-height:200px;overflow-y:auto">
-      <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
+)OMEGAD0"
+R"OMEGAD1(      <table id="ledger"><tr><td class="l d">loading…</td></tr></table>
     </div>
   </div>
 </div>
 
-)OMEGAD0"
-R"OMEGAD1(<!-- ═══ ENGINE HEAT ═══ -->
+<!-- ═══ ENGINE HEAT ═══ -->
 <div class="pan" style="margin-top:8px">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
     <span class="lbl">ENGINE HEAT — shadow paper PnL, window matches equity · tile = engine</span>
@@ -226,7 +226,7 @@ R"OMEGAD1(<!-- ═══ ENGINE HEAT ═══ -->
 <!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">CRYPTO COMPANIONS — up-jump 32-CELL THRESHOLD GRID · 8 coins × thr{2,3,4,5}% BE-cascade mimics · ★=canonical cell/coin, rest shadow experiments (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
+    <span class="lbl">CRYPTO COMPANIONS — up-jump 68-CELL THRESHOLD GRID · 8 coins × thr{0.5,2,3,4,5}% + 7 daily-cascade coins ×4 · BE-cascade mimics · ★=canonical, 0.5%=UJH low-thr family (S-2026-07-13) · shadow · additive · judged STANDALONE, never vs-WIDE · josgp1</span>
     <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:420px"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -389,9 +389,9 @@ async function pollHealth(){
   if(o==='OK'){ b.style.color='var(--grn)'; b.textContent='HEALTH OK'; }
   else if(o==='WARN'){ b.style.color='var(--ambB)'; b.textContent='HEALTH '+wc+'W'; }
   else if(o==='UNKNOWN'){ b.style.color='var(--dim,#888)'; b.textContent='HEALTH ?'; return; }
-  else { b.style.color='var(--red)'; b.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); }
 )OMEGAD1"
-R"OMEGAD2(  if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ __healthBeep(); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
+R"OMEGAD2(  else { b.style.color='var(--red)'; b.textContent='HEALTH '+fc+'F'+(wc?(' '+wc+'W'):''); }
+  if(o==='FAIL' && __lastHealth && __lastHealth!=='FAIL'){ __healthBeep(); __healthNotify('OMEGA HEALTH FAIL', fc+' failure(s)'); }
   __lastHealth=o;
 }
 setInterval(pollHealth,15000); pollHealth();
@@ -505,7 +505,11 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
  ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['XRP','XRPUSDT'],['XLM','XLMUSDT'],['NEAR','NEARUSDT'],
  ['AVAX','AVAXUSDT'],['LINK','LINKUSDT'],['BCH','BCHUSDT'],['UNI','UNIUSDT'],['GRT','GRTUSDT'],
- ['LDO','LDOUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
+ ['LDO','LDOUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT'],
+ /* S-2026-07-13: TSMOM/Donchian slot-engine coins — TRADED on josgp1 but had no tile
+    (TIA banked +7.65 invisible). Full traded set = 27 symbols, all displayed. */
+ ['TIA','TIAUSDT'],['SUI','SUIUSDT'],['APT','APTUSDT'],['ARB','ARBUSDT'],['FET','FETUSDT'],
+ ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
@@ -570,13 +574,13 @@ function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positio
 setInterval(pollReg,30000);pollReg();
 
 /* companion (stall-clip) sub-row for a live trade: the REAL amount CAUGHT (banked $ for this
-   engine) + the live open clip's MFE$/state. Rendered UNDER each open trade in BOTH the
+)OMEGAD2"
+R"OMEGAD3(   engine) + the live open clip's MFE$/state. Rendered UNDER each open trade in BOTH the
    live-feed and weekend-registry paths (operator 2026-07-04 — was previously only nested in the
    live path, so it went invisible on the weekend registry fallback). Additive standalone book —
    never compared vs riding WIDE ([[CompanionDominanceError]]). Fed by pollComp (window._comp =
    open_detail OMEGA book; window._gcPer = per_engine banked rollup). */
-)OMEGAD2"
-R"OMEGAD3(/* Companion books get GLOBALLY-UNIQUE display names (operator 2026-07-04j: "if they
+/* Companion books get GLOBALLY-UNIQUE display names (operator 2026-07-04j: "if they
    have 6 books each then show all 6, give them unique names"). Most books already carry a
    descriptive prefix (xau_tf4h_clip, gvb_m30_usd_a). The offender is the bare name 'main',
    which several engines emit (XauTrendFollow4h, LondonFixMomentum, QndxSqfTrend) — identical
@@ -744,7 +748,8 @@ function render(J){lastJ=J;
  var lts=J.live_trades||[];
  /* entry bell -- identity-based (engine|symbol|side|entry), NOT count-based.
     Count-based rang on restarts + source flicker (2026-06-11 phantom-bell bug).
-    Guards: first render baselines silently; uptime drop (restart) re-baselines
+)OMEGAD3"
+R"OMEGAD4(    Guards: first render baselines silently; uptime drop (restart) re-baselines
     silently; a key re-appearing within 90s does not re-ring. */
  (function(){var now=Date.now();
   if(window._seenTr===undefined){window._seenTr={};window._trBase=true;}
@@ -752,8 +757,7 @@ function render(J){lastJ=J;
   if(window._lastUp!==undefined&&up<window._lastUp-5)window._trBase=true;
   window._lastUp=up;
   var fresh=0;
-)OMEGAD3"
-R"OMEGAD4(  lts.forEach(function(t){var k=(t.engine||'')+'|'+(t.symbol||'')+'|'+(t.side||'')+'|'+fmt2(t.entry,4);
+  lts.forEach(function(t){var k=(t.engine||'')+'|'+(t.symbol||'')+'|'+(t.side||'')+'|'+fmt2(t.entry,4);
    if(!(k in window._seenTr)||(now-window._seenTr[k])>90000){if(!window._trBase)fresh++;}
    window._seenTr[k]=now;});
   for(var k in window._seenTr){if(now-window._seenTr[k]>600000)delete window._seenTr[k];}
@@ -927,13 +931,13 @@ setInterval(pollRdagent,5000);pollRdagent();
    shadow threshold EXPERIMENTS on the SAME event (never live-activate all 4 — multiplied
    exposure, zero diversification). Roster baked so the panel renders pre-push; live state
    overlaid PER-CELL by companion tag from /api/crypto_companion (crypto_companion_state.json,
-   josgp1 emit_companion_state — legs now carry tag/cell/det/canonical since the S-2026-07-12
+)OMEGAD4"
+R"OMEGAD5(   josgp1 emit_companion_state — legs now carry tag/cell/det/canonical since the S-2026-07-12
    grid-identity fix; the old emit collapsed all 4 cells to one sym key = the stale-roster
    bug). Reclip OFF + cap=#tiers (<=1 un-BE'd leg cascade guarantee). NO 200DMA anywhere.
    STANDALONE additive books — never vs-WIDE. */
 var CC_THRS=['H',2,3,4,5];/* 'H' = S-2026-07-13 UJH 0.5% low-threshold family (separate engine, monitor vs 2-5%) */
-)OMEGAD4"
-R"OMEGAD5(var CC_ROSTER=[   /* live truth = chimera main.cpp _gcoins grid (Jul-11 deploy) */
+var CC_ROSTER=[   /* live truth = chimera main.cpp _gcoins grid (Jul-11 deploy) */
  {sym:'ETH', w:1,thr:2,canon:2,arms:'BE-cascade N6'},
  {sym:'BTC', w:2,thr:4,canon:4,arms:'arm&ge;3 N6'},
  {sym:'BNB', w:1,thr:3,canon:3,arms:'arm&ge;3 N8'},
@@ -1116,13 +1120,13 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    forward book ($0 until the first live clip closes). Two runners/dir (banker r20 + runner r150).
    Schema: {ts,lot,dpp,bars,deploy_ts,desk_pts,desk_usd,open:[{flavor,dir,tier,entry,wm,cur,
    upnl_pts,upnl_usd,entry_ts}],trades:[{flavor,dir,tier,entry,exit,pts,usd,reason,entry_ts,
-   exit_ts}],flavors:[{name,dir,clips,wins,book_pts,book_usd,runners:[{tier,gb_bp,clips,wins,
+)OMEGAD5"
+R"OMEGAD6(   exit_ts}],flavors:[{name,dir,clips,wins,book_pts,book_usd,runners:[{tier,gb_bp,clips,wins,
    pts,usd}]}]}. RETIRED S-2026-07-07e (real-fill re-validation negative, registry §5) — panel folds the
    REAL columns (usd_real/pts_real) of the persisted forward history; no new arms. */
 function drawGold(){var j=window._gold||null;
  var h='<tr><td class="l lbl">book</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">gb bp</td>'
-)OMEGAD5"
-R"OMEGAD6(      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
+      +'<td class="lbl">clips</td><td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  if(1){/* S-2026-07-07u: RETIRED panel force-collapsed to banner (operator: GUI untidy); history archived .pre_reset_20260707c */el('gctab').innerHTML=h+'<tr><td class="l d" colspan="8">RETIRED S-2026-07-07 — real-fill re-validation negative (registry §5); history rows stand, no new arms</td></tr>';
   el('gcinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('gc',[],[],2);return;}
  (j.flavors||[]).forEach(function(fl){
@@ -1288,12 +1292,12 @@ function drawIndex(){var j=window._idx||null;
  var openTxt=allOpen.length?(' · <span style="color:var(--grn)">'+allOpen.length+' open now</span>'):'';
  el('icinfo').innerHTML='DESK <span style="color:'+dcol+';font-weight:600">'+fmt$(desk)+'</span> forward · '
    +allTrades.length+' closed trade'+(allTrades.length===1?'':'s')+openTxt+' · '+syms.length+' syms · shadow · additive';
- renderCompanionOpenTrades('ic',allOpen,allTrades,2);
+)OMEGAD6"
+R"OMEGAD7( renderCompanionOpenTrades('ic',allOpen,allTrades,2);
 }
 function pollIndex(){fetch('/api/index_companion').then(function(r){return r.json();}).then(function(j){
  if(j&&(j.syms||[]).length)window._idx=j;
-)OMEGAD6"
-R"OMEGAD7( window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- the index ladder's stacked no-floor legs mark red between reclips and dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. (model usd is a max(0,.) clamp, still never folds.) */
+ window._idxtot=(((window._idx||{}).syms)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- the index ladder's stacked no-floor legs mark red between reclips and dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. (model usd is a max(0,.) clamp, still never folds.) */
  drawIndex();
  if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawIndex();});}

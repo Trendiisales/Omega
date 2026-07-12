@@ -120,7 +120,7 @@ a{color:var(--blu);text-decoration:none}
 <div id="ticker" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:8px;overflow-x:auto;background:var(--pan)"></div>
 <!-- S-2026-07-12e: crypto strip moved to its OWN row — 18 legs overflowed off-screen right
      on the shared row (operator: "put the spillover symbols underneath, ensure all present") -->
-<div id="ticker2" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:4px;overflow-x:auto;background:var(--pan)"></div>
+<div id="ticker2" style="display:flex;flex-wrap:wrap;border:1px solid var(--bd);border-radius:6px;margin-top:4px;background:var(--pan)"></div><!-- flex-wrap: 27 tiles flow onto extra lines, nothing off-screen -->
 
 <!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
 <!-- S-2026-07-08c operator resize: the four top strips at HALF WIDTH, two columns:
@@ -219,7 +219,7 @@ a{color:var(--blu);text-decoration:none}
 <!-- ═══ CRYPTO COMPANIONS — up-jump stall-clip books (shadow, additive · josgp1) ═══ -->
 <div class="pan">
   <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-    <span class="lbl">CRYPTO COMPANIONS — up-jump 32-CELL THRESHOLD GRID · 8 coins × thr{2,3,4,5}% BE-cascade mimics · ★=canonical cell/coin, rest shadow experiments (shadow · additive · judged STANDALONE, never vs-WIDE) · josgp1</span>
+    <span class="lbl">CRYPTO COMPANIONS — up-jump 68-CELL THRESHOLD GRID · 8 coins × thr{0.5,2,3,4,5}% + 7 daily-cascade coins ×4 · BE-cascade mimics · ★=canonical, 0.5%=UJH low-thr family (S-2026-07-13) · shadow · additive · judged STANDALONE, never vs-WIDE · josgp1</span>
     <span id="ccinfo" class="lbl" style="margin-left:auto">…</span>
   </div>
   <div style="overflow:auto;max-height:420px"><table id="cctab"><tr><td class="l d">loading…</td></tr></table></div>
@@ -497,7 +497,11 @@ var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas',
 var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'],['DOGE','DOGEUSDT'],
  ['ADA','ADAUSDT'],['TRX','TRXUSDT'],['XRP','XRPUSDT'],['XLM','XLMUSDT'],['NEAR','NEARUSDT'],
  ['AVAX','AVAXUSDT'],['LINK','LINKUSDT'],['BCH','BCHUSDT'],['UNI','UNIUSDT'],['GRT','GRTUSDT'],
- ['LDO','LDOUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT']];
+ ['LDO','LDOUSDT'],['AAVE','AAVEUSDT'],['OP','OPUSDT'],
+ /* S-2026-07-13: TSMOM/Donchian slot-engine coins — TRADED on josgp1 but had no tile
+    (TIA banked +7.65 invisible). Full traded set = 27 symbols, all displayed. */
+ ['TIA','TIAUSDT'],['SUI','SUIUSDT'],['APT','APTUSDT'],['ARB','ARBUSDT'],['FET','FETUSDT'],
+ ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
