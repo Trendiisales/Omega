@@ -5626,13 +5626,18 @@ static void init_engines(const std::string& cfg_path)
                 struct UJ { omega::XauUpJumpIntradayEngine* e; const char* nm; const char* sym;
                             int tf; int W; int dir; double lc; const char* seed; };
                 const UJ ujs[] = {
-                    { &g_xuji_xau_m5l,  "XauUpJump_XAU_M5L",  "XAUUSD", 300,  24, +1,  50, "phase1/signal_discovery/warmup_XAUUSD_M5.csv"  },
-                    { &g_xuji_xau_m15l, "XauUpJump_XAU_M15L", "XAUUSD", 900,   8, +1,  70, "phase1/signal_discovery/warmup_XAUUSD_M15.csv" },
-                    { &g_xuji_xau_m30l, "XauUpJump_XAU_M30L", "XAUUSD", 1800,  4, +1,  70, "phase1/signal_discovery/warmup_XAUUSD_M30.csv" },
-                    { &g_xuji_xau_h1l,  "XauUpJump_XAU_H1L",  "XAUUSD", 3600,  6, +1, 100, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"  },
-                    { &g_xuji_xau_m30s, "XauUpJump_XAU_M30S", "XAUUSD", 1800,  2, -1,  50, "phase1/signal_discovery/warmup_XAUUSD_M30.csv" },
-                    { &g_xuji_xau_m5s,  "XauUpJump_XAU_M5S",  "XAUUSD", 300,  12, -1,  50, "phase1/signal_discovery/warmup_XAUUSD_M5.csv"  },
-                    { &g_xuji_ndx_h1s,  "XauUpJump_NDX_H1S",  "USTEC.F",3600,  2, -1,  50, "phase1/signal_discovery/warmup_NAS100_H1.csv"  },
+                    // S-2026-07-13b cut optimised: gold 30bp (knee; 20 whipsaws grindy gold),
+                    // indices 30bp (PF 2.3-2.85, worst -50bp; both regimes+ on CLEAN H1 data).
+                    { &g_xuji_xau_m5l,  "XauUpJump_XAU_M5L",  "XAUUSD", 300,  24, +1,  30, "phase1/signal_discovery/warmup_XAUUSD_M5.csv"  },
+                    { &g_xuji_xau_m15l, "XauUpJump_XAU_M15L", "XAUUSD", 900,   8, +1,  30, "phase1/signal_discovery/warmup_XAUUSD_M15.csv" },
+                    { &g_xuji_xau_m30l, "XauUpJump_XAU_M30L", "XAUUSD", 1800,  4, +1,  30, "phase1/signal_discovery/warmup_XAUUSD_M30.csv" },
+                    { &g_xuji_xau_h1l,  "XauUpJump_XAU_H1L",  "XAUUSD", 3600,  6, +1,  30, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"  },
+                    { &g_xuji_xau_m30s, "XauUpJump_XAU_M30S", "XAUUSD", 1800,  2, -1,  30, "phase1/signal_discovery/warmup_XAUUSD_M30.csv" },
+                    { &g_xuji_xau_m5s,  "XauUpJump_XAU_M5S",  "XAUUSD", 300,  12, -1,  30, "phase1/signal_discovery/warmup_XAUUSD_M5.csv"  },
+                    { &g_xuji_ndx_h1s,  "XauUpJump_NDX_H1S",  "USTEC.F",3600,  2, -1,  30, "phase1/signal_discovery/warmup_NAS100_H1.csv"  },
+                    // robust index H1 LONGS (CLEAN data), 30bp
+                    { &g_xuji_ndx_h1l,  "XauUpJump_NDX_H1L",  "USTEC.F",3600,  2, +1,  30, "phase1/signal_discovery/warmup_NAS100_H1.csv"  },
+                    { &g_xuji_spx_h1l,  "XauUpJump_SPX_H1L",  "US500.F", 3600,  2, +1,  30, "phase1/signal_discovery/warmup_US500_H1.csv"   },
                 };
                 for (const auto& u : ujs) {
                     u.e->symbol = u.sym; u.e->engine_name = u.nm; u.e->tag = u.nm;

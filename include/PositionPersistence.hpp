@@ -369,6 +369,8 @@ inline void register_position_persistence() {
     wire_multicell(g_xuji_xau_m30s, "XauUpJump_XAU_M30S", "XAUUSD");
     wire_multicell(g_xuji_xau_m5s,  "XauUpJump_XAU_M5S",  "XAUUSD");
     wire_multicell(g_xuji_ndx_h1s,  "XauUpJump_NDX_H1S",  "USTEC.F");
+    wire_multicell(g_xuji_ndx_h1l,  "XauUpJump_NDX_H1L",  "USTEC.F");
+    wire_multicell(g_xuji_spx_h1l,  "XauUpJump_SPX_H1L",  "US500.F");
     {
         struct BcCloser { const char* base; const char* sym; std::function<bool(double,double,const char*)> fc; };
         static const BcCloser bcs[] = {
@@ -398,6 +400,8 @@ inline void register_position_persistence() {
             { "XauUpJump_XAU_M30S", "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m30s.force_close_all_at(b,a,r); } },
             { "XauUpJump_XAU_M5S",  "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m5s.force_close_all_at(b,a,r); } },
             { "XauUpJump_NDX_H1S",  "USTEC.F", [](double b,double a,const char* r){ return g_xuji_ndx_h1s.force_close_all_at(b,a,r); } },
+            { "XauUpJump_NDX_H1L",  "USTEC.F", [](double b,double a,const char* r){ return g_xuji_ndx_h1l.force_close_all_at(b,a,r); } },
+            { "XauUpJump_SPX_H1L",  "US500.F", [](double b,double a,const char* r){ return g_xuji_spx_h1l.force_close_all_at(b,a,r); } },
         };
         for (const auto& bc : bcs) {
             g_open_positions.register_closer(

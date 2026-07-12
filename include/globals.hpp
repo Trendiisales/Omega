@@ -228,6 +228,9 @@ static omega::XauUpJumpIntradayEngine g_xuji_xau_h1l;   // gold LONG H1  W6  thr
 static omega::XauUpJumpIntradayEngine g_xuji_xau_m30s;  // gold SHORT M30 W2 thr0.5% lc50 (best short, shadow-caveated)
 static omega::XauUpJumpIntradayEngine g_xuji_xau_m5s;   // gold SHORT M5  W12 thr0.5% lc50
 static omega::XauUpJumpIntradayEngine g_xuji_ndx_h1s;   // NDX SHORT H1  W2 thr0.5% lc50
+// S-2026-07-13b robust index H1 longs (CLEAN data; intraday index blocked on 92d gap in tick file)
+static omega::XauUpJumpIntradayEngine g_xuji_ndx_h1l;   // NDX LONG H1  W2 thr0.5% lc30 (+659 PF2.19 both-regimes)
+static omega::XauUpJumpIntradayEngine g_xuji_spx_h1l;   // SPX LONG H1  W2 thr0.5% lc30 (+401 PF2.10 balanced)
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

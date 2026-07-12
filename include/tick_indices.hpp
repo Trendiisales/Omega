@@ -99,6 +99,7 @@ static void on_tick_us500(
         g_regime_spx.on_tick(bid, ask, bc_ms);
         g_brc_sp_h1.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_US500_H1");
         g_brc_sp_h4.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_US500_H4");
+        g_xuji_spx_h1l.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XauUpJump_SPX_H1L");
     }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every US500-driven engine.
     // S11 P3b: HybridSP pulse removed (engine culled in P3a + globals/init removed in P3b).
@@ -337,6 +338,7 @@ static void on_tick_ustec(
         g_brc_nq_h4.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_USTEC_H4");
         // S-2026-07-13 NDX SHORT down-jump (hard-stopped, shadow)
         g_xuji_ndx_h1s.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XauUpJump_NDX_H1S");
+        g_xuji_ndx_h1l.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XauUpJump_NDX_H1L");
     }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every USTEC-driven engine.
     // S11 P3b: HybridNQ pulse removed (engine culled in P3a + globals/init removed in P3b).
