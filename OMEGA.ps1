@@ -1692,6 +1692,16 @@ function Invoke-Deploy {
                 # (leaving the service stopped) once the reconfigure-removal made
                 # the header the canonical 7-char short hash.
                 $hashMatch = $guiHash.StartsWith($stamp.GIT_HASH_SHORT) -or $stamp.GIT_HASH_SHORT.StartsWith($guiHash)
+                # S-2026-07-12c: the header bakes `git rev-parse HEAD` while SOURCE_HASH deliberately
+                # skips log-only/seed-only commits. A deploy whose HEAD is a seed-only commit (e.g. a
+                # warmup CSV refresh) therefore ALWAYS mismatched here and bricked the service (today:
+                # header=14311b1 seed-only HEAD, stamp=f7ce84f0 code commit). The build is still
+                # exactly HEAD's tree, so accept a header that matches the stamp's HEAD_HASH too.
+                if (-not $hashMatch -and $stamp.PSObject.Properties['HEAD_HASH'] -and $stamp.HEAD_HASH) {
+                    $headShort = $stamp.HEAD_HASH.Substring(0, [Math]::Min(9, $stamp.HEAD_HASH.Length))
+                    $hashMatch = $guiHash.StartsWith($headShort) -or $headShort.StartsWith($guiHash)
+                    if ($hashMatch) { Write-Host "  [OK] GUI hash matches HEAD (seed-only commit above SOURCE_HASH): $guiHash ~ $headShort" -ForegroundColor Green }
+                }
                 if (-not $hashMatch) {
                     $errors += "GUI hash MISMATCH: version_generated.hpp=$guiHash  stamp_source=$($stamp.GIT_HASH_SHORT) -- run cmake configure again."
                 } else {

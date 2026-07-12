@@ -80,9 +80,19 @@ if echo "$ALIVE" | grep -q 'ALIVE=False'; then
   echo "  [note] PID exited but log has content -- treating as fast-finish; verifying hashes."
 fi
 
-echo "[deploy] polling for service Running + new binary (up to ~12 min)..."
-ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$d=(Get-Date).AddSeconds(700); while((Get-Date) -lt \$d){ \$svc=(Get-Service Omega -ErrorAction SilentlyContinue).Status; \$hash=(git -C C:\\Omega rev-parse --short HEAD); if(\$svc -eq 'Running' -and \$hash -eq '$WANT'){ break }; Start-Sleep 20 }\""
-
-echo "[deploy] verifying running binary hash..."
-ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Write-Output ('origin/main = '+(git -C C:\\Omega rev-parse --short origin/main)); Write-Output ('VPS HEAD   = '+(git -C C:\\Omega rev-parse --short HEAD)); Write-Output ('service    = '+(Get-Service Omega).Status); Get-Content C:\\Omega\\logs\\omega_service_stderr.log -Tail 40 | Select-String 'Git hash|version=' | Select-Object -Last 2 | ForEach-Object { \$_.Line }\""
-echo "[deploy] done. Confirm the three hashes above all == $WANT."
+# S-2026-07-12c REWRITE of the poll + verdict: the old poll matched on git HEAD (updated at
+# PULL time, minutes before the link finishes) + service Running (often the OLD binary during
+# hot-swap) -> it declared "done" instantly while the box was still building, and said "done"
+# even when stamp validation FAILED and left the service STOPPED (today's brick went unnoticed
+# until the 15-min health poll). The RUNNING BINARY's own 'Git hash:' boot line is the only
+# honest signal -> poll on that, and FAIL LOUDLY (popup + exit 1) on anything else.
+echo "[deploy] polling for RUNNING BINARY at $WANT (up to ~14 min; git-HEAD match is NOT enough)..."
+FINAL=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$d=(Get-Date).AddSeconds(840); \$ok=\$false; while((Get-Date) -lt \$d){ \$svc=(Get-Service Omega -ErrorAction SilentlyContinue).Status; \$bh=((Get-Content C:\\Omega\\logs\\omega_service_stderr.log -Tail 60 -ErrorAction SilentlyContinue | Select-String 'Git hash' | Select-Object -Last 1) -replace '.*Git hash:\\s*','').Trim(); if(\$svc -eq 'Running' -and \$bh -and ('$WANT'.StartsWith(\$bh) -or \$bh.StartsWith('$WANT'))){ \$ok=\$true; break }; Start-Sleep 20 }; Write-Output ('RESULT ok='+\$ok+' service='+\$svc+' running_binary='+\$bh+' head='+(git -C C:\\Omega rev-parse --short HEAD)+' origin='+(git -C C:\\Omega rev-parse --short origin/main))\"")
+echo "  $FINAL"
+if ! echo "$FINAL" | grep -q 'ok=True'; then
+  echo "[deploy][FATAL] deploy did NOT come up on $WANT -- see box deploy log below." >&2
+  ssh "$HOST" "powershell -NoProfile -Command \"\$dl=(Get-ChildItem C:\\Omega\\logs\\deploy_*.log | Sort LastWriteTime | Select -Last 1); Get-Content \$dl.FullName -Tail 20\"" >&2 || true
+  osascript -e "display notification \"deploy FAILED: box not Running at $WANT — service may be STOPPED. Check deploy log.\" with title \"🔴 OMEGA DEPLOY FAILED\" sound name \"Basso\"" 2>/dev/null || true
+  exit 1
+fi
+echo "[deploy] done. Running binary verified at $WANT."
