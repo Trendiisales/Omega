@@ -2119,7 +2119,12 @@ static void init_engines(const std::string& cfg_path)
                 bool is_elite = false, is_out = false;
                 for (const char* e : AGG_ELITE) if (c.sym == e) { is_elite = true; break; }
                 for (const char* o : AGG_OUT)   if (c.sym == o) { is_out   = true; break; }
-                c.cap = 6;   // S-2026-07-08c: +1 for the MIRROR base leg (ladder capacity unchanged)
+                // S-2026-07-13 operator "can we add more mimics?": ladder capacity 5->8 (+ mirror
+                // base leg = cap 9). Cap sweep on the validated harness (bigcap_upjump_ladder_bt,
+                // pooled 39-name all-6 gate): cap5 +6923%/PF1.56 -> cap8 +7418%/PF1.55 (2x PF1.51
+                // pass) -> cap12 +7850%/PF1.58. Worst clip UNCHANGED -33bp at every cap — spawns
+                // are self-funded from banked winners only, so added legs never add cold risk.
+                c.cap = 9;
                 if (is_out) { c.ranked_out = true; ++n_out; }
                 else if (is_elite) {
                     c.notional   *= 2.0;       // elite x2 clip notional
