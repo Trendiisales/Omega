@@ -87,6 +87,10 @@ static void on_tick_us500(
     {   // S-2026-07-12b BE-cascade port (shadow)
         const int64_t bc_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
         g_xsbec_us500.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XsBeCascade_US500.F");
+        // S-2026-07-12e: SPX regime brain + gated bracket-cascade H1/H4 (shadow)
+        g_regime_spx.on_tick(bid, ask, bc_ms);
+        g_brc_sp_h1.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_US500_H1");
+        g_brc_sp_h4.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_US500_H4");
     }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every US500-driven engine.
     // S11 P3b: HybridSP pulse removed (engine culled in P3a + globals/init removed in P3b).
@@ -319,6 +323,10 @@ static void on_tick_ustec(
     {   // S-2026-07-12b BE-cascade port (shadow)
         const int64_t bc_ms = static_cast<int64_t>(std::time(nullptr)) * 1000;
         g_xsbec_ustec.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XsBeCascade_USTEC.F");
+        // S-2026-07-12e: NQ regime brain + gated bracket-cascade H1/H4 (shadow)
+        g_regime_ndx.on_tick(bid, ask, bc_ms);
+        g_brc_nq_h1.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_USTEC_H1");
+        g_brc_nq_h4.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_USTEC_H4");
     }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every USTEC-driven engine.
     // S11 P3b: HybridNQ pulse removed (engine culled in P3a + globals/init removed in P3b).

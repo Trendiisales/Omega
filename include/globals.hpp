@@ -200,6 +200,15 @@ static omega::XauBracketCascadeEngine g_xau_brc;    // S-2026-07-12c gold two-si
 static omega::XauBracketCascadeEngine g_xau_brc_m5;  // S-2026-07-12d intraday M5 W=144(12h) thr=0.5% b=0.1%, gold_regime bull-gated (bull +203 PF1.56, bear22 gated -1.7), shadow
 static omega::XauBracketCascadeEngine g_xau_brc_m10; // S-2026-07-12d intraday M10 W=72 thr=0.5% b=0.1%, bull-gated (bull +173 PF1.50, bear22 gated -2.5), shadow
 static omega::XauBracketCascadeEngine g_xau_brc_m15; // S-2026-07-12d intraday M15 W=48 thr=0.5% b=0.1%, bull-gated (bull +164 PF1.50, bear22 gated -1.2), shadow (M30 tested PF1.24 2x+31 = too thin, operator dropped)
+// S-2026-07-12e extension wave (operator "wire in all that pass"): gated OCO bracket + cascade
+// on indices (own H1 regime brains below) + gold H4. All PASS net+/PF>=1.3/2x+/both-halves+ 22-26.
+static omega::XauBracketCascadeEngine g_brc_sp_h1;   // US500.F H1 W=480 thr=3% b=0.3% gated (+129 PF2.00 2x+123, halves +51/+78), shadow
+static omega::XauBracketCascadeEngine g_brc_nq_h1;   // USTEC.F H1 W=240 thr=3% (+149 PF1.54 2x+139, halves +44/+106), shadow
+static omega::XauBracketCascadeEngine g_brc_sp_h4;   // US500.F H4 W=120 thr=2% (+90 PF1.64 2x+84, halves +20/+70), shadow
+static omega::XauBracketCascadeEngine g_brc_nq_h4;   // USTEC.F H4 W=60 thr=3% (+119 PF1.53 2x+111, halves +9/+110), shadow
+static omega::XauBracketCascadeEngine g_xau_brc_h4;  // XAUUSD H4 W=120 thr=2% (+134 PF1.77 2x+127, halves +46/+88; gold_regime gate), shadow
+static omega::RegimeState g_regime_spx;              // US500 price-regime brain (EMA200/50 H1) for the SPX bracket gates
+static omega::RegimeState g_regime_ndx;              // USTEC price-regime brain for the NQ bracket gates
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

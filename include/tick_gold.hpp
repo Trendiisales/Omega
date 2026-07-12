@@ -32,6 +32,8 @@ static void on_tick_gold(
         g_xau_brc_m5.on_tick(bid, ask, omega::pg::_pg_now_ms());  g_engine_heartbeat.pulse("XauBracketCascade_M5");
         g_xau_brc_m10.on_tick(bid, ask, omega::pg::_pg_now_ms()); g_engine_heartbeat.pulse("XauBracketCascade_M10");
         g_xau_brc_m15.on_tick(bid, ask, omega::pg::_pg_now_ms()); g_engine_heartbeat.pulse("XauBracketCascade_M15");
+        // S-2026-07-12e gold H4 gated variant
+        g_xau_brc_h4.on_tick(bid, ask, omega::pg::_pg_now_ms());  g_engine_heartbeat.pulse("XauBracketCascade_H4");
     }
     // 2026-06-17: macro-hostile tightening ON TOP of the price core. Fail-safe --
     //   g_macro_gold_gate.hostile() returns false on disabled/missing/stale feed,

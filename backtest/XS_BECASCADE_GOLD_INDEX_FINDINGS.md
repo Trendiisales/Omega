@@ -152,3 +152,25 @@ Engine gains `tf_secs` + `entry_blocked` hook; H1 flagship stays ungated (its 10
 IS the protection). Seeds: auto-refreshed warmup_XAUUSD_M5/M10/M15 (M10 added to
 seed_refresh._GOLD_TFS). Persistence: multicell + closers (M-instances BEFORE the bare
 XauBracketCascade prefix in the closer table). All shadow.
+
+## UPDATE S-2026-07-12f — extension wave: short + longer TF sweep, 5 more engines WIRED
+
+Operator: "test the rest, short and longer timeframes, wire all that pass." Gated bracket
+(per-symbol EMA200/50-H1 regime brain, gold-regime rule) on 2022-26 H1/H4 data:
+
+| engine (WIRED, shadow) | TF | W | thr | net% | PF | 2× | halves |
+|---|---|---|---|---|---|---|---|
+| BrkCascade_US500_H1 | H1 | 480 | 3% | +129.0 | 2.00 | +123 | +51/+78 |
+| BrkCascade_USTEC_H1 | H1 | 240 | 3% | +149.0 | 1.54 | +139 | +44/+106 |
+| BrkCascade_US500_H4 | H4 | 120 | 2% | +90.0 | 1.64 | +84 | +20/+70 |
+| BrkCascade_USTEC_H4 | H4 | 60 | 3% | +119.4 | 1.53 | +111 | +9/+110 |
+| XauBracketCascade_H4 | H4 | 120 | 2% | +134.0 | 1.77 | +127 | +46/+88 |
+
+Tested + REJECTED: XAG bracket (PF 0.88, squeezes kill shorts) + XAG long-only gated (WF fail
+H1 −40); EURUSD (n=8 dead); SPX-H1 W=120 (WF fail); XAU-H4 W=120 thr3% (WF fail −17 H1);
+NDX-H4 W=30/120 (2×/WF fails). Index INTRADAY not wired — local index M1 covers 2022 only
+(bear-only sample; bull side untestable, and untested ≠ wire).
+
+Infra: g_regime_spx/g_regime_ndx brains (fed in tick_indices, seeded from auto-refreshed H1
+warmups); US500/NAS100 H4 added to seed_refresh map + placeholder warmups committed (deploy
+overwrites, fail-closed audit enforces). GUI: crypto ticker moved to own second row (18 tiles).

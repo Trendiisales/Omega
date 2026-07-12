@@ -352,6 +352,11 @@ inline void register_position_persistence() {
     wire_multicell(g_xau_brc_m5,  "XauBracketCascade_M5",  "XAUUSD");
     wire_multicell(g_xau_brc_m10, "XauBracketCascade_M10", "XAUUSD");
     wire_multicell(g_xau_brc_m15, "XauBracketCascade_M15", "XAUUSD");
+    wire_multicell(g_xau_brc_h4,  "XauBracketCascade_H4",  "XAUUSD");
+    wire_multicell(g_brc_sp_h1,   "BrkCascade_US500_H1",   "US500.F");
+    wire_multicell(g_brc_nq_h1,   "BrkCascade_USTEC_H1",   "USTEC.F");
+    wire_multicell(g_brc_sp_h4,   "BrkCascade_US500_H4",   "US500.F");
+    wire_multicell(g_brc_nq_h4,   "BrkCascade_USTEC_H4",   "USTEC.F");
     {
         struct BcCloser { const char* base; const char* sym; std::function<bool(double,double,const char*)> fc; };
         static const BcCloser bcs[] = {
@@ -364,7 +369,12 @@ inline void register_position_persistence() {
             { "XauBracketCascade_M5",  "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m5.force_close_all_at(b,a,r); } },
             { "XauBracketCascade_M10", "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m10.force_close_all_at(b,a,r); } },
             { "XauBracketCascade_M15", "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_m15.force_close_all_at(b,a,r); } },
+            { "XauBracketCascade_H4",  "XAUUSD", [](double b,double a,const char* r){ return g_xau_brc_h4.force_close_all_at(b,a,r); } },
             { "XauBracketCascade",   "XAUUSD",  [](double b,double a,const char* r){ return g_xau_brc.force_close_all_at(b,a,r); } },
+            { "BrkCascade_US500_H1", "US500.F", [](double b,double a,const char* r){ return g_brc_sp_h1.force_close_all_at(b,a,r); } },
+            { "BrkCascade_USTEC_H1", "USTEC.F", [](double b,double a,const char* r){ return g_brc_nq_h1.force_close_all_at(b,a,r); } },
+            { "BrkCascade_US500_H4", "US500.F", [](double b,double a,const char* r){ return g_brc_sp_h4.force_close_all_at(b,a,r); } },
+            { "BrkCascade_USTEC_H4", "USTEC.F", [](double b,double a,const char* r){ return g_brc_nq_h4.force_close_all_at(b,a,r); } },
         };
         for (const auto& bc : bcs) {
             g_open_positions.register_closer(

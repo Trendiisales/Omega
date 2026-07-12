@@ -5546,7 +5546,60 @@ static void init_engines(const std::string& cfg_path)
                     });
                 }
             }
-            printf("[OMEGA-INIT] BeCascade ports: USTEC/US500/DJ30 D1 long (thr 2/3/4%%) + XAUUSD H1 bracket (2%%/0.3%%) + M5/M10/M15 bull-gated brackets (0.5%%/0.1%%), all shadow\n");
+            // ── S-2026-07-12e extension wave (operator: "test the rest, wire in all that pass").
+            // Gated OCO bracket+cascade on indices (own EMA200/50-H1 regime brains, same rule
+            // as gold_regime price core) + gold H4. Every cell PASSED net+/PF>=1.3/2x+/both
+            // WF halves+ on 2022-26 incl. the bear. Intraday INDEX variants NOT wired — local
+            // M1 only covers 2022 (bear-only sample = untestable bull side = don't wire).
+            {
+                g_regime_spx.name = "REGIME-SPX";
+                g_regime_ndx.name = "REGIME-NDX";
+                g_regime_spx.seed_from_h1_csv("phase1/signal_discovery/warmup_US500_H1.csv");
+                g_regime_ndx.seed_from_h1_csv("phase1/signal_discovery/warmup_NAS100_H1.csv");
+                struct XCfg {
+                    omega::XauBracketCascadeEngine* e; const char* name; const char* sym;
+                    int tf; int W; double thr; const char* seed; int gate;   // gate: 0=gold 1=spx 2=ndx
+                };
+                const XCfg xts[] = {
+                    { &g_brc_sp_h1,  "BrkCascade_US500_H1", "US500.F",  3600, 480, 0.03, "phase1/signal_discovery/warmup_US500_H1.csv",  1 },
+                    { &g_brc_nq_h1,  "BrkCascade_USTEC_H1", "USTEC.F",  3600, 240, 0.03, "phase1/signal_discovery/warmup_NAS100_H1.csv", 2 },
+                    { &g_brc_sp_h4,  "BrkCascade_US500_H4", "US500.F", 14400, 120, 0.02, "phase1/signal_discovery/warmup_US500_H4.csv",  1 },
+                    { &g_brc_nq_h4,  "BrkCascade_USTEC_H4", "USTEC.F", 14400,  60, 0.03, "phase1/signal_discovery/warmup_NAS100_H4.csv", 2 },
+                    { &g_xau_brc_h4, "XauBracketCascade_H4", "XAUUSD", 14400, 120, 0.02, "phase1/signal_discovery/warmup_XAUUSD_H4.csv", 0 },
+                };
+                for (const auto& x : xts) {
+                    x.e->symbol      = x.sym;
+                    x.e->engine_name = x.name;
+                    x.e->tag         = x.name;
+                    x.e->tf_secs     = x.tf;
+                    x.e->W           = x.W;
+                    x.e->thr         = x.thr;
+                    x.e->boff        = 0.003;
+                    x.e->ttl         = (x.tf >= 14400) ? 12 : 48;   // same bars the BT used per TF
+                    x.e->shadow_mode = true;
+                    x.e->enabled     = true;
+                    x.e->lot         = 1.0;
+                    if (x.gate == 0)      x.e->entry_blocked = []() { return omega::gold_regime().long_blocked(); };
+                    else if (x.gate == 1) x.e->entry_blocked = []() { return g_regime_spx.long_blocked(); };
+                    else                  x.e->entry_blocked = []() { return g_regime_ndx.long_blocked(); };
+                    x.e->seed_from_csv(omega::resolve_seed_path(x.seed));
+                    auto* eng = x.e; const char* nm = x.name; const char* symc = x.sym;
+                    eng->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                    g_open_positions.register_source(nm, [eng, nm, symc]() {
+                        std::vector<omega::PositionSnapshot> v;
+                        if (eng->book_.active) for (const auto& lg : eng->book_.legs) if (lg.open) {
+                            omega::PositionSnapshot s;
+                            s.symbol = symc; s.engine = nm;
+                            s.side = eng->book_.dir > 0 ? "LONG" : "SHORT";
+                            s.size = eng->lot; s.entry = lg.entry;
+                            s.sl = 0.0; s.tp = 0.0; s.entry_ts = lg.entry_ts / 1000LL;
+                            v.push_back(s);
+                        }
+                        return v;
+                    });
+                }
+            }
+            printf("[OMEGA-INIT] BeCascade ports: idx D1 long x3 + XAU H1/M5/M10/M15 brackets + ext wave SPX/NQ H1+H4 + XAU H4 (all gated ex-H1-flagship), all shadow\n");
         }
 
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.

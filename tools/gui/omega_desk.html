@@ -118,6 +118,9 @@ a{color:var(--blu);text-decoration:none}
 
 <!-- ═══ TICKER ═══ -->
 <div id="ticker" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:8px;overflow-x:auto;background:var(--pan)"></div>
+<!-- S-2026-07-12e: crypto strip moved to its OWN row — 18 legs overflowed off-screen right
+     on the shared row (operator: "put the spillover symbols underneath, ensure all present") -->
+<div id="ticker2" style="display:flex;border:1px solid var(--bd);border-radius:6px;margin-top:4px;overflow-x:auto;background:var(--pan)"></div>
 
 <!-- ═══ LIVE OPEN TRADES (always visible) ═══ -->
 <!-- S-2026-07-08c operator resize: the four top strips at HALF WIDTH, two columns:
@@ -515,14 +518,16 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
   +'<div class="lbl num" id="tks_'+t[0]+'"></div>'
   +(t[2]?'<div class="bar" style="height:4px;margin-top:3px"><i id="tkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>':'')
   +'</div>';});
- h+='<div style="padding:6px 10px;border-right:1px solid var(--bd);display:flex;align-items:center;color:var(--amb);font-size:11px;font-weight:600;min-width:34px">₿</div>';
+ el('ticker').innerHTML=h;
+ /* crypto legs -> SECOND row (own strip; all 18 visible, no off-screen spillover) */
+ var h2='<div style="padding:6px 10px;border-right:1px solid var(--bd);display:flex;align-items:center;color:var(--amb);font-size:11px;font-weight:600;min-width:34px">₿</div>';
  CTKS.forEach(function(t){
- h+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
+ h2+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
   +'<div class="lbl">'+t[0]+'</div><div class="num" id="ctk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
   +'<div class="lbl num" id="ctkp_'+t[0]+'"></div>'
   +'<div class="bar" style="height:4px;margin-top:3px"><i id="ctkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>'
   +'</div>';});
- el('ticker').innerHTML=h;})();
+ el('ticker2').innerHTML=h2;})();
 /* crypto strip: LIVE via Binance combined WebSocket (S-2026-07-03). Operator: 1s REST polling still
    felt laggy. @ticker pushes the full 24hr ticker (c=last, P=change%, h/l=range) in REAL TIME per
    update -- no request latency, no polling gap. One socket for all legs. Falls back to REST polling

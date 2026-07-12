@@ -247,10 +247,11 @@ int main(int argc, char** argv) {
             }
             // long-only control at this W/thr
             P pl; pl.W = Wo; pl.thr = thr; pl.long_only = true; pl.ttl = TTL;
+            pl.bull_gate = getenv("XB_GATE") != nullptr;
             Res rl = run(b, pl);
             P pl2 = pl; pl2.rt_bp = 10.0; Res rl2 = run(b, pl2);
             std::printf("%-14s %-9s %5d %3.1f%%  -  %4d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %6d\n",
-                d.name.c_str(), "LONGONLY", Wo, thr * 100, rl.nwin, rl.namb,
+                d.name.c_str(), getenv("XB_GATE")?"LONGGATED":"LONGONLY", Wo, thr * 100, rl.nwin, rl.namb,
                 rl.par_net, rl.par_long, rl.par_short,
                 rl.mim_net, rl.mim_long, rl.mim_short, rl.pf(), rl.maxdd, rl2.mim_net, rl.h1(), rl.h2(), rl.nlegs);
         }}
