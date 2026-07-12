@@ -439,12 +439,10 @@ def main() -> int:
         if de >= 0 and de != chim_24h:
             rec("WARN", "TRADE-RECON", "chimera: journal [DESK_EXPORT]=%d vs inbound csv rows=%d in 24h "
                 "(export hook / csv divergence)" % (de, chim_24h))
-    mac_rows = csv_close_rows(read_file(MAC_CRYPTO_DAILY + "/crypto_inbound.csv")) + \
-        csv_close_rows(read_file(MAC_CRYPTO_INTRA + "/crypto_inbound.csv"))
-    vps_crypto = None
-    if "__err__" not in vps:
-        vps_crypto = (vps.get("crypto_inbound") or "") + "\n" + (vps.get("crypto_intraday_inbound") or "")
-    recon("ibkrcrypto", mac_rows, vps_crypto, GRACE_IBKRCRYPTO_S, "crypto", 2)
+    # S-2026-07-12 CONSOLIDATION: the Mac ibkrcrypto book was folded onto the ONE Chimera
+    # system (josgp1) and DROPPED from the desk (buildCryptoTradesJson serves chimera only).
+    # Reconciling it here FALSE-REDs ("desk starved") because old csv rows still exist but the
+    # endpoint intentionally serves none. Retired — only the live Chimera book is reconciled.
 
     # ═══ [3] SYMBOL COVERAGE (enabled universe -> desk surface) ═══════════════
     # 3a chimera coin grid -> companion legs
@@ -457,9 +455,9 @@ def main() -> int:
         else:
             rec("PASS", "SYMBOL-COV", "chimera grid: all %d coins on the desk panel" % len(want))
     # 3b ibkrcrypto slot keys -> pushed panel states on omega-new
-    for label, mac_path, vps_key in (
-            ("ibkrcrypto-daily", MAC_CRYPTO_DAILY + "/state.json", "gui_state_daily"),
-            ("ibkrcrypto-intraday", MAC_CRYPTO_INTRA + "/state.json", "gui_state_intraday")):
+    # S-2026-07-12 CONSOLIDATION: ibkrcrypto book RETIRED (folded onto Chimera/josgp1). Its
+    # pushed panel states are frozen and no longer displayed -> nothing to reconcile. Skipped.
+    for label, mac_path, vps_key in ():
         try:
             mac_slots = set(s.get("key", "") for s in json.loads(read_file(mac_path)).get("slots", []))
         except Exception as e:
