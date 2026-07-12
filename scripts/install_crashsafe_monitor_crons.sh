@@ -34,6 +34,7 @@ NEW_LINES=(
 "*/15 * * * * $WRAP -n omega_health_poll -l /tmp/omega_health_poll.log -k \"\" -- /bin/bash /Users/jo/Omega/tools/omega_health_poll.sh # [crashsafe-wrap S-2026-07-12: self-notifying; wrapper adds crash visibility]"
 "*/30 * * * * cd /Users/jo/Crypto/backtest && $WRAP -n crypto_staleness_alarm -l /tmp/crypto_staleness_alarm.log -k \"\" -- /usr/bin/python3 /Users/jo/Crypto/backtest/staleness_alarm.py # [crashsafe-wrap S-2026-07-12: self-notifying; wrapper adds crash visibility]"
 "0 */4 * * * $WRAP -n macro_gold_gate -l /tmp/macro_gold_gate.log -k \"\" -- /usr/bin/python3 /Users/jo/Omega/tools/macro_gold_gate.py # [macro-gold-gate refresher — install_macro_gold_gate_cron.sh] [crashsafe-wrap S-2026-07-12: crash visibility for the gate feeder]"
+"9,39 * * * * $WRAP -n display_truth_selftest -l /tmp/display_truth_selftest.log -k 2 -r 2 -q \"^RESULT:\" -t \"🖥️ DESK SHOWS WRONG DATA\" -m \"DISPLAY-TRUTH RED — what the desk displays diverges from reality (roster/trades/symbols); see /tmp/display_truth_selftest.log\" -- /usr/bin/python3 /Users/jo/Omega/tools/display_truth_selftest.py # content-parity guard S-2026-07-12 [crashsafe-wrap]"
 )
 TOKENS=(
   "protection_selftest.py"
@@ -46,6 +47,7 @@ TOKENS=(
   "omega_health_poll.sh"
   "staleness_alarm.py"
   "macro_gold_gate.py"
+  "display_truth_selftest.py"
 )
 
 CUR=$(crontab -l 2>/dev/null || true)

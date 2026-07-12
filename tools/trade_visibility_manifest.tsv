@@ -7,6 +7,14 @@
 # closed-world record of every producer; scripts/trade_visibility_gate.sh (wired into the
 # mac canary) enforces it.
 #
+# LAYERS: this manifest + gate are the STRUCTURAL layer (does a pipeline EXIST for every
+# producer). The CONTENT-parity layer above it is tools/display_truth_selftest.py
+# (Mac cron 9,39 * * * *, crash-safe wrapped, RESULT:/exit-2 pattern): does what the desk
+# actually DISPLAYS match authoritative reality — live chimera cell roster vs
+# /api/crypto_companion, 24h closed-trade counts producer->omega-new->/api/crypto_trades,
+# enabled symbol universes vs their panels, served config labels vs wired values. A row
+# can be WIRED here and still RED there (right pipe, wrong water).
+#
 # RULES:
 #   * Every NEW trade-producing book (engine family, companion, ladder, python/C++ book,
 #     any writer of closed trades) MUST get a row here IN THE SAME COMMIT that ships it.
