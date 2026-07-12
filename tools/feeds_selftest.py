@@ -27,6 +27,10 @@ RDA  = HOME / "Omega" / "data" / "rdagent"
 QLIB = HOME / ".qlib" / "qlib_data" / "omega_data"
 STALL = HOME / "stall-accountant"
 CRYPTO_BOOK = HOME / "Crypto" / "backtest" / "data" / "ibkrcrypto" / "state.json"
+# S-2026-07-12: the ibkrcrypto book is RETIRED (folded onto Chimera/josgp1). The ONE
+# crypto system's Mac-visible liveness = the chimera->desk relay staging file (rewritten
+# every 120s by refresh_crypto_companion.sh). Used by crypto_book_heartbeat().
+CHIMERA_RELAY = Path("/tmp/chimera_inbound.csv")
 
 # VPS operational-dump manifest + the C:\Omega\logs root the live binary writes to.
 LIVE_DUMP_MANIFEST = HOME / "Omega" / "tools" / "live_dump_manifest.tsv"
@@ -165,10 +169,16 @@ def json_field_date(path: Path, *keys) -> dt.date | None:
 
 
 def crypto_book_heartbeat() -> dt.date | None:
-    # Chimera/Crypto book refreshes every 5min; track the FRESHER of updated /
-    # live_mark_ts. NEVER file mtime — the file is rewritten by other writers while
-    # the heartbeat fields stay frozen (the exact silent-stale trap that let the book
-    # go 1.5d stale after the 07-01 IBKRCrypto->Crypto move with every banner green).
+    # S-2026-07-12 CONSOLIDATION: the Mac ibkrcrypto book was RETIRED (folded onto
+    # the ONE Chimera system on josgp1). Track the SURVIVING system's liveness =
+    # the chimera->desk relay staging file, which is rewritten every 120s by
+    # refresh_crypto_companion.sh (a genuine relay, so mtime IS a valid liveness
+    # signal here — unlike the old frozen-fields book state). If the relay stalls
+    # or josgp1 is unreachable, this goes stale = the honest RED.
+    d = mtime_date(CHIMERA_RELAY)
+    if d:
+        return d
+    # fallback: old ibkrcrypto book fields (only if it were ever revived)
     ds = [x for x in (json_field_date(CRYPTO_BOOK, "updated"),
                       json_field_date(CRYPTO_BOOK, "live_mark_ts")) if x]
     return max(ds) if ds else None
