@@ -518,7 +518,7 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
  var _sl=SEED_LAST[t[0]];
  var _si=(_sl>0)?_sl.toLocaleString(undefined,{maximumFractionDigits:_sl>100?1:4}):'—';
  h+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
-  +'<div class="lbl">'+t[1]+'</div><div class="num" id="tk_'+t[0]+'" style="font-size:13px;color:'+(_sl>0?'var(--t2)':'var(--w)')+'">'+_si+'</div>'
+  +'<div class="lbl" id="tkl_'+t[0]+'">'+t[1]+'</div><div class="num" id="tk_'+t[0]+'" style="font-size:13px;color:'+(_sl>0?'var(--t2)':'var(--w)')+'">'+_si+'</div>'
   +'<div class="lbl num" id="tks_'+t[0]+'"></div>'
   +(t[2]?'<div class="bar" style="height:4px;margin-top:3px"><i id="tkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>':'')
   +'</div>';});
@@ -526,7 +526,7 @@ var SEED_LAST={gold:4187.30,sp:7483.24,nq:29329.21,nas:29329.21,dj:52900.07,ger3
  var h2='<div style="padding:6px 10px;border-right:1px solid var(--bd);display:flex;align-items:center;color:var(--amb);font-size:11px;font-weight:600;min-width:34px">₿</div>';
  CTKS.forEach(function(t){
  h2+='<div style="padding:6px 12px;border-right:1px solid var(--bd);min-width:104px">'
-  +'<div class="lbl">'+t[0]+'</div><div class="num" id="ctk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
+  +'<div class="lbl" id="ctkl_'+t[0]+'">'+t[0]+'</div><div class="num" id="ctk_'+t[0]+'" style="font-size:13px;color:var(--w)">—</div>'
   +'<div class="lbl num" id="ctkp_'+t[0]+'"></div>'
   +'<div class="bar" style="height:4px;margin-top:3px"><i id="ctkr_'+t[0]+'" style="background:var(--blu);width:0"></i></div>'
   +'</div>';});
@@ -545,7 +545,7 @@ var _cwsOk=false,_cwsRest=null;
 function cxRestPoll(){if(_cwsOk)return;
  fetch('https://api.binance.com/api/v3/ticker/24hr?symbols='+_CSYMS).then(function(r){return r.json();})
   .then(function(arr){(arr||[]).forEach(function(d){cxApply(d.symbol,safe(d.lastPrice),safe(d.priceChangePercent),safe(d.highPrice),safe(d.lowPrice));});}).catch(function(){});}
-function cxFallback(){if(!_cwsRest){cxRestPoll();_cwsRest=setInterval(cxRestPoll,2000);}}
+function cxFallback(){if(!_cwsRest){cxRestPoll();_cwsRest=setInterval(cxRestPoll,1000);}}/* 1Hz REST fallback when WS down */
 function cxWsUp(){if(_cwsRest){clearInterval(_cwsRest);_cwsRest=null;}}
 (function cws(){var streams=CTKS.map(function(t){return t[1].toLowerCase()+'@ticker';}).join('/');
  try{var s=new WebSocket('wss://stream.binance.com:9443/stream?streams='+streams);
@@ -563,6 +563,20 @@ function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positio
  .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
  .catch(function(){});}
 setInterval(pollReg,30000);pollReg();
+/* S-2026-07-13 operator: tile symbol goes GREEN when TRIGGERED — classic tiles when any
+   engine holds an OPEN position on the symbol (live feed or weekend registry); crypto tiles
+   when any companion cell for the coin is ARMED / has open sublegs. Reverts when flat. */
+var TK_SYM2KEY={XAUUSD:'gold',US500:'sp','US500.F':'sp',USTEC:'nq','USTEC.F':'nq',NAS100:'nas','DJ30':'dj','DJ30.F':'dj',GER40:'ger30',UK100:'uk100',USOIL:'cl','USOIL.F':'cl',XAGUSD:'xag',EURUSD:'eurusd',GBPUSD:'gbpusd',USDJPY:'usdjpy',AUDUSD:'audusd',NZDUSD:'nzdusd',USDCAD:'usdcad'};
+function markTiles(){
+ var act={};
+ (window._lastLts||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
+ (REGPOS||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
+ TKS.forEach(function(t){var e=el('tkl_'+t[0]);if(e){e.style.color=act[t[0]]?'var(--grn)':'';e.style.fontWeight=act[t[0]]?'700':'';}});
+ var ca={},live=window._cc||{};
+ Object.keys(live).forEach(function(tag){var p=live[tag];if(p&&p.sym&&(p.armed||(p.sublegs&&p.sublegs.length>0)))ca[p.sym]=1;});
+ CTKS.forEach(function(t){var e=el('ctkl_'+t[0]);if(e){e.style.color=ca[t[0]]?'var(--grn)':'';e.style.fontWeight=ca[t[0]]?'700':'';}});
+}
+setInterval(markTiles,1000);
 
 /* companion (stall-clip) sub-row for a live trade: the REAL amount CAUGHT (banked $ for this
    engine) + the live open clip's MFE$/state. Rendered UNDER each open trade in BOTH the
@@ -735,7 +749,7 @@ function render(J){lastJ=J;
 
  /* MICROSTRUCTURE + BROKER + SIGNAL TAPE populators removed 2026-07-04 (panels deleted, operator: irrelevant). */
 
- var lts=J.live_trades||[];
+ var lts=J.live_trades||[];window._lastLts=lts;/* tile trigger-marker reads this */
  /* entry bell -- identity-based (engine|symbol|side|entry), NOT count-based.
     Count-based rang on restarts + source flicker (2026-06-11 phantom-bell bug).
     Guards: first render baselines silently; uptime drop (restart) re-baselines
@@ -1070,7 +1084,7 @@ function pollCC(){fetch('/api/crypto_companion').then(function(r){return r.json(
     was the "-141 disappears then reappears" flicker. Keep the last good frame until a real one lands. */
  if(Object.keys(m).length)window._cc=m;
  drawCC();}).catch(function(){drawCC();});}
-setInterval(pollCC,15000);pollCC();
+setInterval(pollCC,1000);pollCC();/* S-2026-07-13 operator: crypto updates >=1Hz (prices are WS-push already; this is the companion/mimic state) */
 
 /* ── shared: render a companion's OPEN-NOW legs + closed-TRADES log into the panel's sub-tables.
    REAL TRADES ONLY — there is no backtest/replay row anywhere in these panels anymore. An open leg
