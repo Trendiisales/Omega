@@ -5487,7 +5487,11 @@ static void init_engines(const std::string& cfg_path)
             g_xau_brc.shadow_mode = true;
             g_xau_brc.enabled     = true;
             g_xau_brc.lot         = 1.0;
-            g_xau_brc.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1_BRC.csv"));
+            // seed from the AUTO-REFRESHED gold H1 warmup (seed_refresh.py phase-2 rewrites it
+            // from MGC every deploy; MGC-vs-spot basis killed by the engine's rebase). A private
+            // "_BRC" CSV here would rot outside the refresh map -- the S-2026-07-12c stale-seed
+            // deploy abort was exactly that class.
+            g_xau_brc.seed_from_csv(omega::resolve_seed_path("phase1/signal_discovery/warmup_XAUUSD_H1.csv"));
             g_xau_brc.on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
             g_open_positions.register_source("XauBracketCascade", []() {
                 std::vector<omega::PositionSnapshot> v;

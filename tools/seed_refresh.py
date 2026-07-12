@@ -121,13 +121,20 @@ _TF = {
 }
 _GOLD_TFS = ["M5", "M15", "M30", "H1", "H4", "D1"]
 _INDEX = {
-    "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5"]),
+    "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5","D1"]),  # D1 added S-2026-07-12c (was aging, no generator)
+    "USTEC":  (("CME","NQ"),      ["D1"]),                        # S-2026-07-12c: warmup_USTEC_D1 had NO refresh path (43d old, 8+ consumers)
     "US500":  (("CME","ES"),      ["H1","D1"]),
     "GER40":  (("EUREX","DAX"),   ["H1","H4","M30","M15","D1"]),
     "UK100":  (("ICEEU","Z"),     ["M30","M240","D1"]),
     "DJ30":   (("CBOT","YM"),     ["H1","D1"]),
     "ESTX50": (("EUREX","ESTX50"),["D1","M5"]),
 }
+# consumer filenames that must MIRROR a refreshed CSV. A warmup whose exact filename is
+# outside this module never refreshes and rots until the deploy seed gate aborts (the
+# S-2026-07-12c XAUUSD_H1_BRC abort). Keep every alias here, not as a hand-copied file.
+_ALIASES = [
+    ("warmup_GER40_D1.csv", "warmup_GER40_D1_idx.csv"),   # IndexSeasonal/ToM GER40 variant (was 43d old)
+]
 
 def phase_ibkr(port, seed_dir):
     print("\n========== [2/3] REFRESH seeds from IB Gateway ==========")
@@ -238,6 +245,14 @@ def phase_ibkr(port, seed_dir):
     finally:
         try: ib.disconnect()
         except Exception: pass
+    # ---- alias mirrors (same-name-drift guard) ----
+    for src_name, dst_name in _ALIASES:
+        try:
+            src = f"{seed_dir}/{src_name}"
+            if os.path.exists(src):
+                import shutil; shutil.copyfile(src, f"{seed_dir}/{dst_name}"); ok.append(f"{dst_name}(<-{src_name})")
+        except Exception as e:
+            fail.append(f"{dst_name}({e})")
     print(f"  refreshed ({len(ok)}): " + ", ".join(ok))
     print(f"  skipped/failed ({len(fail)}): " + ", ".join(fail))
 
