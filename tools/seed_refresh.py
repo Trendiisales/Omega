@@ -124,6 +124,7 @@ _INDEX = {
     "NAS100": (("CME","NQ"),      ["H1","M30","M15","M5","D1","H4"]),  # D1 S-2026-07-12c; H4 S-2026-07-12e (BrkCascade_USTEC_H4 seed)
     "USTEC":  (("CME","NQ"),      ["D1"]),                        # S-2026-07-12c: warmup_USTEC_D1 had NO refresh path (43d old, 8+ consumers)
     "US500":  (("CME","ES"),      ["H1","D1","H4"]),              # H4 added S-2026-07-12e (BrkCascade_US500_H4 seed)
+    "M2K":    (("CME","M2K"),     ["H1"]),                        # S-2026-07-13: warmup_M2K_H1 had NO refresh path (manual Jul-9 pull, 5d gate, 4 M2K cascade cells + FxLadder seed from it)
     "GER40":  (("EUREX","DAX"),   ["H1","H4","M30","M15","D1"]),
     "UK100":  (("ICEEU","Z"),     ["M30","M240","D1"]),
     "DJ30":   (("CBOT","YM"),     ["H1","D1"]),
