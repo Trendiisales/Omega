@@ -1,4 +1,3 @@
-#pragma once  // OM-08 (audit 2026-07-13): TU-fragment guard — double-include would ODR-explode
 // tick_fx.hpp -- FX tick handlers (MACRO-CONTEXT ONLY)
 //
 // S-2026-06-29 FULL FX REMOVAL ("no FX", operator directive):

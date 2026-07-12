@@ -1,4 +1,3 @@
-#pragma once  // OM-08 (audit 2026-07-13): TU-fragment guard — double-include would ODR-explode
 // tick_gold.hpp -- per-symbol tick handlers
 // Extracted from on_tick(). Same translation unit -- all static functions visible.
 

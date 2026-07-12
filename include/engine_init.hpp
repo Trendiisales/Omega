@@ -2154,10 +2154,7 @@ static void init_engines(const std::string& cfg_path)
                     // survives 2x=16bp; single-name IBKR RT ~3-8bp). ExecutionCostGuard has NO
                     // single-name cost table -> unknown tickers default to CFD-scaled values that
                     // mis-price stocks (befloor lesson). TODO: real equity cost row before LIVE sizing.
-                    // OM-03 (audit 2026-07-13): FAIL CLOSED in LIVE — a mode flip must not
-                    // route single-name orders with no commission/spread/slippage model.
-                    // Shadow keeps trading (the book's own RT debit is the shadow cost).
-                    return g_cfg.mode != "LIVE";
+                    return true;
                 },
                 /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
                                 double entry_px, double exit_px, double lots,
@@ -2259,8 +2256,7 @@ static void init_engines(const std::string& cfg_path)
                     // ExecutionCostGuard has NO single-name cost table -> unknown tickers
                     // default to CFD-scaled values that mis-price stocks (befloor lesson).
                     // TODO: real equity cost row before LIVE sizing.
-                    // OM-03 (audit 2026-07-13): FAIL CLOSED in LIVE (see stock-ladder gate).
-                    return g_cfg.mode != "LIVE";
+                    return true;
                 },
                 /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
                                 double entry_px, double exit_px, double lots,
@@ -7628,14 +7624,10 @@ static void init_engines(const std::string& cfg_path)
     // OmegaApiServer's equity-walk default of 10000.0 matches the schema
     // default in include/omega_types.hpp; here we override it with the live
     // config so the absolute equity values track the user's account.
-    // OM-01 (audit 2026-07-13): OmegaApiServer.hpp (the only declarer) is excluded
-    // under OMEGA_BACKTEST, so this call broke the backtest define path at compile time.
-#ifndef OMEGA_BACKTEST
     omega::set_equity_anchor(g_cfg.account_equity);
     std::cout << "[OmegaApi] equity anchor set to "
               << g_cfg.account_equity << "\n";
     std::cout.flush();
-#endif
 
     // ── Step 4: GoldUltimateStrategy activation ─────────────────────────────
     // S90: v12 OOS-validated edge filters.

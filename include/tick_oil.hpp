@@ -1,4 +1,3 @@
-#pragma once  // OM-08 (audit 2026-07-13): TU-fragment guard — double-include would ODR-explode
 // tick_oil.hpp — per-symbol tick handlers
 // File-scope template functions. dispatch is passed as a template parameter
 // from on_tick() so the local lambda type is deduced at the call site.
