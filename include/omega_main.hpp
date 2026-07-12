@@ -1322,6 +1322,14 @@ int main(int argc, char* argv[])
     // processed before the engines write their persistent state below.
     engine_dispatch_stop();
 
+    // OM-02 (audit 2026-07-13): the detached IBKR-L2 and BigCap feed consumers had
+    // stop flags that were never set — they could touch sockets/globals after
+    // Winsock/state teardown. Signal them FIRST and give one grace beat; their
+    // loops poll these atomics each recv cycle.
+    g_ibkr_l2_stop = true;
+    g_bigcap_stop  = true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
     gui_server.stop();
     if (g_daily_trade_close_log) g_daily_trade_close_log->close();
     if (g_daily_gold_trade_close_log) g_daily_gold_trade_close_log->close();
