@@ -921,7 +921,7 @@ setInterval(pollRdagent,5000);pollRdagent();
    grid-identity fix; the old emit collapsed all 4 cells to one sym key = the stale-roster
    bug). Reclip OFF + cap=#tiers (<=1 un-BE'd leg cascade guarantee). NO 200DMA anywhere.
    STANDALONE additive books — never vs-WIDE. */
-var CC_THRS=[2,3,4,5];
+var CC_THRS=['H',2,3,4,5];/* 'H' = S-2026-07-13 UJH 0.5% low-threshold family (separate engine, monitor vs 2-5%) */
 var CC_ROSTER=[   /* live truth = chimera main.cpp _gcoins grid (Jul-11 deploy) */
  {sym:'ETH', w:1,thr:2,canon:2,arms:'BE-cascade N6'},
  {sym:'BTC', w:2,thr:4,canon:4,arms:'arm&ge;3 N6'},
@@ -1002,7 +1002,7 @@ function drawCC(){var live=window._cc||{};var hasLive=Object.keys(live).length>0
    var bk='<span style="color:'+(bkv>0?'var(--grn)':(bkv<0?'var(--red)':'var(--t2)'))+'">'+fmt2(bkv,1)+' bp <span class="d">$'+fmt2(bpUsd(bkv),2)+'</span></span>';
    var isCan=s.canonical!==undefined?!!s.canonical:(c.t===r.canon);
    var cm=isCan?' <span style="color:var(--grn);font-size:9px">&#9733;</span>':'';
-   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; Mimic '+c.mimic+' <span class="d" style="font-size:9px">(+'+c.t+'%)</span>'+cm+'</td>'
+   h+='<tr><td class="l d" style="border-left:2px solid var(--grn)">&#8627; Mimic '+c.mimic+' <span class="d" style="font-size:9px">(+'+(c.t==='H'?'0.5':c.t)+'%)</span>'+cm+'</td>'
      +'<td class="l"><span class="g">ARMED</span></td><td class="num">'+pk+'</td>'
      +'<td class="num d">'+det+'</td><td class="num">'+clp+'</td><td class="num">'+bk+'</td></tr>';
    (s.sublegs||[]).forEach(function(sl){
