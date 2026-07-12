@@ -454,6 +454,35 @@ def main() -> int:
             rec("FAIL", "SYMBOL-COV", "chimera grid coins missing from desk panel: %s" % ",".join(miss))
         else:
             rec("PASS", "SYMBOL-COV", "chimera grid: all %d coins on the desk panel" % len(want))
+    # 3a2 S-2026-07-13: TRADED-vs-TICKER parity — every symbol the chimera box has actually
+    # traded (companion CLIP-INIT roster + inbound-csv close history) must have a top-bar
+    # tile (ctk_<SYM>) in the SERVED desk HTML. Root cause class: TIA-TSMOM banked +7.65
+    # with NO tile — the ticker list was hand-grown per-book and never reconciled.
+    try:
+        traded = set()
+        if clip:
+            traded |= set(t.split("-")[0] for t in clip.keys())
+        if "__err__" not in chim:
+            for r_ in chim.get("inbound", []):
+                try:
+                    s_ = str(r_[1]).strip().upper()
+                    if s_ and s_.isalnum():
+                        traded.add(s_)
+                except Exception:
+                    pass
+        import urllib.request as _ur
+        with _ur.urlopen(DESK + "/", timeout=12) as _r:
+            _html = _r.read().decode("utf-8", "replace")
+        # tiles are JS-built at runtime — parse the CTKS ticker array from the served page
+        # (each entry ['SYM','SYMUSDT']), not literal DOM ids.
+        tiles = set(re.findall(r"\['([A-Z0-9]+)','[A-Z0-9]+USDT'\]", _html))
+        miss2 = sorted(t for t in traded if t and t not in tiles)
+        if miss2:
+            rec("FAIL", "SYMBOL-COV", "TRADED symbols with NO top-bar tile: %s" % ",".join(miss2))
+        else:
+            rec("PASS", "SYMBOL-COV", "ticker parity: all %d traded symbols have a top-bar tile" % len(traded))
+    except Exception as e:
+        rec("WARN", "SYMBOL-COV", "ticker-parity check unavailable: %s" % e)
     # 3b ibkrcrypto slot keys -> pushed panel states on omega-new
     # S-2026-07-12 CONSOLIDATION: ibkrcrypto book RETIRED (folded onto Chimera/josgp1). Its
     # pushed panel states are frozen and no longer displayed -> nothing to reconcile. Skipped.
