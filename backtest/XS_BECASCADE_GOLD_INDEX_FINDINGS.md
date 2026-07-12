@@ -174,3 +174,25 @@ NDX-H4 W=30/120 (2×/WF fails). Index INTRADAY not wired — local index M1 cove
 Infra: g_regime_spx/g_regime_ndx brains (fed in tick_indices, seeded from auto-refreshed H1
 warmups); US500/NAS100 H4 added to seed_refresh map + placeholder warmups committed (deploy
 overwrites, fail-closed audit enforces). GUI: crypto ticker moved to own second row (18 tiles).
+
+## UPDATE S-2026-07-12g — index INTRADAY + 2 gold methodologies: all tested-dead/parked
+
+**NDX M5/M10/M15 bracket-cascade (tick-derived bars 2022-26, regime-gated): DEAD.**
+All 24 cells negative (PF 0.78-0.96, net -27..-170; H2 2024-26 deeply negative everywhere;
+best cells: M5 W288/1% -29.4, M10 W144/1% -34.8, M15 W96/1% -26.6). Index microstructure
+(session gaps + intraday mean-reversion) defeats sub-day momentum windows — mechanism-fail,
+not parameter-fail. SPX intraday not built (weaker index, same microstructure). Do NOT
+re-mine without a session-aware/RTH or different-mechanism basis.
+
+**Gold bear-mirror SHORT cascade (j<=-thr only while regime-bear): FAIL.**
+Isolated bear years beautiful (2013 +60 PF2.3, 2015 +43-48, 2022 +14-20) but FULL 2022-26
+series -53..-118 — regime-bear flags during bull corrections fire shorts into squeezes.
+Consistent with the metals-short graveyard. Bear-file-only evidence is a trap here.
+
+**Gold vol-squeeze bracket (W-bar range < 1.2% -> OCO): PARKED (fragile).**
+Headline 22-26 +212.5 PF 3.10 2x+206 (W=48, b=0.2%), 2015 +22.7/2022 +23.2 positive — BUT
+b=0.3% collapses to +44.5, 2013 negative (-16.4), only 33 windows/4yr. Tuned cell, not a
+plateau. Re-open only with a b-robustness fix + more seasons.
+
+Data: NDX bars aggregated from /Users/jo/Tick/NSXUSD_2022_2026.csv raw tick (271M rows) —
+scratch files; rebuild via the one-pass streaming agg in this session's log.

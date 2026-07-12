@@ -80,6 +80,12 @@ struct P {
     bool long_only = false; // control mode: prior methodology, no bracket/shorts
     bool dirstop = false;   // variant: movement DIRECTION picks the side; single
                             // stop at +-b in that direction confirms (no OCO)
+    bool bear_short = false;// candidate (S-2026-07-12g): BEAR-MIRROR — SHORT parent+cascade on
+                            // j <= -thr, ONLY while the regime core is BEAR (requires bull_gate
+                            // machinery; entries need blocked[i]==1). Up-reversal exits all.
+    bool squeeze = false;   // candidate: VOL-COMPRESSION — trigger when the W-bar high-low range
+                            // pct is below sq_pct of close (quiet), then OCO bracket both sides.
+    double sq_pct = 0.01;   // compression threshold: range/close < this
     bool bull_gate = false; // replicate omega::gold_regime().long_blocked() (PRICE core):
                             // H1 EMA200/EMA50, bear = c<EMA200 && EMA200<EMA200[100 H1 ago]
                             // && EMA50<EMA200 -> NO new bracket while bear (macro leg omitted:
@@ -126,9 +132,31 @@ static Res run(const Bars& b, const P& p) {
     while (i < b.N - 2) {
         double j = b.c[i] / b.c[i - p.W] - 1.0;
         int dir = 0; double epx = 0; int ei = -1;
+        if (p.bear_short) {
+            if (!blocked[i]) { i++; continue; }              // bear-mirror: ONLY in regime-bear
+            if (j <= -p.thr) { dir = -1; ei = i + 1; epx = b.o[ei]; }
+            if (!dir) { i++; continue; }
+        } else if (p.squeeze) {
+            if (p.bull_gate && blocked[i]) { i++; continue; }
+            double hi = -1e18, lo = 1e18;
+            for (int k = i - p.W + 1; k <= i; k++) { if (b.h[k] > hi) hi = b.h[k]; if (b.l[k] < lo) lo = b.l[k]; }
+            if ((hi - lo) / b.c[i] >= p.sq_pct) { i++; continue; }   // not compressed
+            double bs = b.c[i] * (1.0 + p.b), ss = b.c[i] * (1.0 - p.b);
+            for (int k = i + 1; k <= std::min(i + p.ttl, b.N - 2); k++) {
+                if (b.o[k] >= bs)      { dir = +1; epx = b.o[k]; ei = k; }
+                else if (b.o[k] <= ss) { dir = -1; epx = b.o[k]; ei = k; }
+                else if (b.h[k] >= bs && b.l[k] <= ss) { r.namb++; break; }
+                else if (b.h[k] >= bs) { dir = +1; epx = bs; ei = k; }
+                else if (b.l[k] <= ss) { dir = -1; epx = ss; ei = k; }
+                if (dir) break;
+            }
+            if (!dir) { i++; continue; }
+        } else
         if (p.bull_gate && blocked[i]) { i++; continue; }   // regime gate: no NEW bracket in bear
         if (p.long_only) {
             if (j >= p.thr) { dir = +1; ei = i + 1; epx = b.o[ei]; }
+        } else if (p.bear_short || p.squeeze) {
+            /* dir already resolved above (or window skipped) — do not re-trigger */
         } else if (p.dirstop && std::fabs(j) >= p.thr) {
             int want = j > 0 ? +1 : -1;
             double st = b.c[i] * (1.0 + want * p.b);
@@ -238,10 +266,13 @@ int main(int argc, char** argv) {
             for (double off : BS) {
                 P p; p.W = Wo; p.thr = thr; p.b = off; p.ttl = TTL;
                 p.bull_gate = getenv("XB_GATE") != nullptr;
+                const char* md = getenv("XB_MODE");
+                if (md && std::string(md) == "bearshort") { p.bear_short = true; p.bull_gate = true; }
+                if (md && std::string(md) == "squeeze")   { p.squeeze = true; if (getenv("XB_SQ")) p.sq_pct = atof(getenv("XB_SQ")); }
                 Res r = run(b, p);
                 P p2 = p; p2.rt_bp = 10.0; Res r2 = run(b, p2);
                 std::printf("%-14s %-9s %5d %3.1f%% %3.1f %4d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %6d\n",
-                    d.name.c_str(), getenv("XB_GATE")?"brkGATED":"bracket", Wo, thr * 100, off * 1000, r.nwin, r.namb,
+                    d.name.c_str(), getenv("XB_MODE")?getenv("XB_MODE"):(getenv("XB_GATE")?"brkGATED":"bracket"), Wo, thr * 100, off * 1000, r.nwin, r.namb,
                     r.par_net, r.par_long, r.par_short,
                     r.mim_net, r.mim_long, r.mim_short, r.pf(), r.maxdd, r2.mim_net, r.h1(), r.h2(), r.nlegs);
             }
