@@ -218,6 +218,16 @@ static omega::XauBracketCascadeEngine g_brc_m2k_b;   // M2K H1 W=360 thr=3% (+73
 static omega::XauBracketCascadeEngine g_brc_m2k_c;   // M2K H1 W=480 thr=2% (+91 PF3.78 2x+89, halves +48/+43), gated shadow
 static omega::XauBracketCascadeEngine g_brc_m2k_d;   // M2K H1 W=480 thr=3% (+95 PF4.24 2x+93, halves +56/+40), gated shadow
 static omega::RegimeState g_regime_m2k;              // M2K price-regime brain (bear gate for all 4 cells)
+// S-2026-07-13 gold intraday up-jump + SHORT down-jump engines (tf_secs + dir + hard stop).
+// Backtested (Crypto coldcut, REAL column): gold long 30m/2h/70bp +489 PF2.67 worst-90; gold
+// short 30m/1h/50bp full +7480 PF11 but vol-concentrated (6mo honest PF1.4 +145%). Shadow.
+static omega::XauUpJumpIntradayEngine g_xuji_xau_m5l;   // gold LONG M5  W24 thr0.5% lc50
+static omega::XauUpJumpIntradayEngine g_xuji_xau_m15l;  // gold LONG M15 W8  thr0.5% lc70
+static omega::XauUpJumpIntradayEngine g_xuji_xau_m30l;  // gold LONG M30 W4  thr0.5% lc70 (best long)
+static omega::XauUpJumpIntradayEngine g_xuji_xau_h1l;   // gold LONG H1  W6  thr0.5% lc100
+static omega::XauUpJumpIntradayEngine g_xuji_xau_m30s;  // gold SHORT M30 W2 thr0.5% lc50 (best short, shadow-caveated)
+static omega::XauUpJumpIntradayEngine g_xuji_xau_m5s;   // gold SHORT M5  W12 thr0.5% lc50
+static omega::XauUpJumpIntradayEngine g_xuji_ndx_h1s;   // NDX SHORT H1  W2 thr0.5% lc50
 static omega::IndexSessionEngine g_idxsess_sp;     // US500.F  (S&P)
 static omega::IndexSessionEngine g_idxsess_nas;    // NAS100   (NASDAQ)
 static omega::IndexSessionEngine g_idxsess_ger40;  // GER40    (DAX)

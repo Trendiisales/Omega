@@ -335,6 +335,8 @@ static void on_tick_ustec(
         g_regime_ndx.on_tick(bid, ask, bc_ms);
         g_brc_nq_h1.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_USTEC_H1");
         g_brc_nq_h4.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("BrkCascade_USTEC_H4");
+        // S-2026-07-13 NDX SHORT down-jump (hard-stopped, shadow)
+        g_xuji_ndx_h1s.on_tick(bid, ask, bc_ms); g_engine_heartbeat.pulse("XauUpJump_NDX_H1S");
     }
     // 2026-05-05 (audit-fixes-40): heartbeat pulses for every USTEC-driven engine.
     // S11 P3b: HybridNQ pulse removed (engine culled in P3a + globals/init removed in P3b).

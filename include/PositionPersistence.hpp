@@ -361,6 +361,14 @@ inline void register_position_persistence() {
     wire_multicell(g_brc_m2k_b,   "BrkCascade_M2K_360_3",  "M2K");
     wire_multicell(g_brc_m2k_c,   "BrkCascade_M2K_480_2",  "M2K");
     wire_multicell(g_brc_m2k_d,   "BrkCascade_M2K_480_3",  "M2K");
+    // S-2026-07-13 gold intraday up-jump + short + NDX short
+    wire_multicell(g_xuji_xau_m5l,  "XauUpJump_XAU_M5L",  "XAUUSD");
+    wire_multicell(g_xuji_xau_m15l, "XauUpJump_XAU_M15L", "XAUUSD");
+    wire_multicell(g_xuji_xau_m30l, "XauUpJump_XAU_M30L", "XAUUSD");
+    wire_multicell(g_xuji_xau_h1l,  "XauUpJump_XAU_H1L",  "XAUUSD");
+    wire_multicell(g_xuji_xau_m30s, "XauUpJump_XAU_M30S", "XAUUSD");
+    wire_multicell(g_xuji_xau_m5s,  "XauUpJump_XAU_M5S",  "XAUUSD");
+    wire_multicell(g_xuji_ndx_h1s,  "XauUpJump_NDX_H1S",  "USTEC.F");
     {
         struct BcCloser { const char* base; const char* sym; std::function<bool(double,double,const char*)> fc; };
         static const BcCloser bcs[] = {
@@ -383,6 +391,13 @@ inline void register_position_persistence() {
             { "BrkCascade_M2K_360_3", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_b.force_close_all_at(b,a,r); } },
             { "BrkCascade_M2K_480_2", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_c.force_close_all_at(b,a,r); } },
             { "BrkCascade_M2K_480_3", "M2K", [](double b,double a,const char* r){ return g_brc_m2k_d.force_close_all_at(b,a,r); } },
+            { "XauUpJump_XAU_M5L",  "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m5l.force_close_all_at(b,a,r); } },
+            { "XauUpJump_XAU_M15L", "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m15l.force_close_all_at(b,a,r); } },
+            { "XauUpJump_XAU_M30L", "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m30l.force_close_all_at(b,a,r); } },
+            { "XauUpJump_XAU_H1L",  "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_h1l.force_close_all_at(b,a,r); } },
+            { "XauUpJump_XAU_M30S", "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m30s.force_close_all_at(b,a,r); } },
+            { "XauUpJump_XAU_M5S",  "XAUUSD",  [](double b,double a,const char* r){ return g_xuji_xau_m5s.force_close_all_at(b,a,r); } },
+            { "XauUpJump_NDX_H1S",  "USTEC.F", [](double b,double a,const char* r){ return g_xuji_ndx_h1s.force_close_all_at(b,a,r); } },
         };
         for (const auto& bc : bcs) {
             g_open_positions.register_closer(

@@ -278,6 +278,166 @@ struct XsBeCascadeEngine {
     }
 };
 
+// ── 1b. XauUpJumpIntradayEngine: tf_secs + LONG or SHORT up/down-jump cascade ──
+// S-2026-07-13 (operator): gold works on shorter timeframes (5m..1h) as a long-only up-jump
+// AND — the bigger edge — a SHORT down-jump, ONCE a hard reversal stop bounds the tail. Proven
+// (Crypto upjump_earlyarm_bt coldcut, REAL net_bp_real column): gold long 30m/2h/70bp +489 PF2.67
+// worst -90; gold short 30m/1h/50bp full-period +7480 PF11 BUT vol-concentrated (94% in the
+// 2024-25 parabolic phase; last-6mo honest PF ~1.4, +145% balanced) -> SHADOW at the honest rate.
+// The hard stop (loss_cut_bp, per-tick) is ESSENTIAL on the short (removes an -80%%-tail) and
+// NET-ACCRETIVE. dir=+1 long (enter j>=thr), dir=-1 short (enter j<=-thr, profit on decline).
+struct XauUpJumpIntradayEngine {
+    bool shadow_mode = true;
+    bool enabled     = false;
+
+    int    tf_secs = 1800;    // bar size (300/600/900/1800/3600)
+    int    W       = 4;       // bars in the up-jump / reversal window
+    double thr     = 0.005;   // jump / reversal threshold
+    int    dir     = +1;      // +1 long (up-jump), -1 short (down-jump)
+    double be_bp   = 20.0;
+    double gb      = 0.50;
+    double loss_cut_bp = 70.0;// HARD REVERSAL STOP (per-tick) — essential on the short
+    std::vector<double> arms = {0.2, 2, 3, 4, 6, 8};
+    double lot     = 1.0;
+
+    std::string symbol      = "XAUUSD";
+    std::string engine_name = "XauUpJumpIntraday";
+    std::string tag         = "XUJI";
+    using TradeRecordCallback = std::function<void(const omega::TradeRecord&)>;
+    TradeRecordCallback on_trade_record;
+
+    int64_t cur_bar_ = -1; double bar_close_ = 0.0;
+    std::deque<double> closes_;
+    bool rebased_ = false;
+    BeCascadeBook book_;
+    bool has_open_position() const noexcept { return book_.active; }
+    int64_t bar_of(int64_t ms) const noexcept { return (ms / 1000LL) / (int64_t)tf_secs; }
+
+    void _record(const BeCascadeBook::Leg& lg, double exit_px, const char* reason, int64_t now_ms) noexcept {
+        const double pnl = dir * (exit_px - lg.entry) * lot;
+        omega::TradeRecord tr{};
+        tr.symbol = symbol; tr.side = dir > 0 ? "LONG" : "SHORT"; tr.engine = engine_name; tr.exitReason = reason;
+        tr.entryPrice = lg.entry; tr.exitPrice = exit_px; tr.size = lot; tr.pnl = pnl;
+        tr.entryTs = lg.entry_ts / 1000LL; tr.exitTs = now_ms / 1000LL;
+        tr.mfe = lg.mfe_pct / 100.0 * lg.entry; tr.shadow = shadow_mode;
+        std::printf("[%s] CLOSE %s %s %s @ %.2f entry=%.2f pnl=%.2f %s%s\n", tag.c_str(), symbol.c_str(),
+                    lg.parent ? "PARENT" : "MIMIC", dir > 0 ? "LONG" : "SHORT",
+                    exit_px, lg.entry, pnl, reason, shadow_mode ? " [SHADOW]" : "");
+        std::fflush(stdout);
+        if (on_trade_record) on_trade_record(tr);
+    }
+    void _close_all(double px, const char* reason, int64_t now_ms) noexcept {
+        for (auto& lg : book_.legs) if (lg.open) { lg.open = false; _record(lg, px, reason, now_ms); }
+        book_.reset();
+    }
+    void _intrabar_stop(double mid, int64_t now_ms) noexcept {
+        if (!book_.active || loss_cut_bp <= 0.0 || mid <= 0.0) return;
+        for (const auto& lg : book_.legs) {
+            if (!lg.open || lg.entry <= 0.0) continue;
+            if (dir * (mid / lg.entry - 1.0) * 1e4 <= -loss_cut_bp) { _close_all(mid, "REVERSAL_CUT", now_ms); return; }
+        }
+    }
+    void _manage_on_close(double fin_close, double mid, int64_t now_ms) noexcept {
+        if (!book_.active) return;
+        double fav_par_bp = dir * (fin_close / book_.legs[0].entry - 1.0) * 1e4;
+        if (fav_par_bp > book_.par_mfe_bp) book_.par_mfe_bp = fav_par_bp;
+        bool spawn = false;
+        if (book_.next_arm == 0) spawn = (book_.par_mfe_bp >= be_bp);
+        else if (book_.next_arm < arms.size()) {
+            const auto& prev = book_.legs.back();
+            spawn = prev.open && dir * (fin_close / prev.entry - 1.0) * 1e4 >= be_bp;
+        }
+        if (spawn && book_.next_arm < arms.size()) {
+            BeCascadeBook::Leg lg; lg.entry = mid; lg.arm_pct = arms[book_.next_arm++]; lg.entry_ts = now_ms;
+            book_.legs.push_back(lg);
+        }
+        for (size_t k = 1; k < book_.legs.size(); k++) {
+            auto& lg = book_.legs[k];
+            if (!lg.open) continue;
+            const double fav = dir * (fin_close / lg.entry - 1.0) * 100.0;
+            if (fav > lg.mfe_pct) lg.mfe_pct = fav;
+            if (lg.mfe_pct >= lg.arm_pct && fav <= lg.mfe_pct * (1.0 - gb)) { lg.open = false; _record(lg, mid, "G50_CLIP", now_ms); }
+        }
+        if ((int)closes_.size() >= W + 1) {
+            const double j = closes_.back() / closes_.front() - 1.0;
+            if (dir > 0 ? (j <= -thr) : (j >= thr)) _close_all(mid, "REV_EXIT", now_ms);
+        }
+    }
+    void on_tick(double bid, double ask, int64_t now_ms) noexcept {
+        if (bid <= 0.0 || ask <= 0.0) return;
+        const double mid = (bid + ask) * 0.5;
+        if (!rebased_ && !closes_.empty()) {
+            const double k = mid / closes_.back();
+            for (auto& c : closes_) c *= k; rebased_ = true;
+            std::printf("[%s] REBASE %s x%.5f -> %.2f\n", tag.c_str(), symbol.c_str(), k, mid); std::fflush(stdout);
+        }
+        _intrabar_stop(mid, now_ms);
+        const int64_t bar = bar_of(now_ms);
+        if (cur_bar_ < 0) { cur_bar_ = bar; bar_close_ = mid; return; }
+        if (bar != cur_bar_) {
+            const double fin = bar_close_;
+            closes_.push_back(fin);
+            while ((int)closes_.size() > W + 1) closes_.pop_front();
+            cur_bar_ = bar; bar_close_ = mid;
+            _manage_on_close(fin, mid, now_ms);
+            if (enabled && !book_.active && (int)closes_.size() >= W + 1) {
+                const double j = closes_.back() / closes_.front() - 1.0;
+                const bool trig = dir > 0 ? (j >= thr) : (j <= -thr);
+                if (trig && ExecutionCostGuard::is_viable(symbol.c_str(), ask - bid, mid * 0.01, lot, 1.5)) {
+                    book_.active = true; book_.dir = dir;
+                    BeCascadeBook::Leg par; par.parent = true; par.entry = mid; par.entry_ts = now_ms;
+                    book_.legs.push_back(par);
+                    std::printf("[%s] ENTRY %s PARENT %s @ %.2f (j=%.2f%%)%s\n", tag.c_str(), symbol.c_str(),
+                                dir > 0 ? "LONG" : "SHORT", mid, j * 100.0, shadow_mode ? " [SHADOW]" : "");
+                    std::fflush(stdout);
+                }
+            }
+            return;
+        }
+        bar_close_ = mid;
+    }
+    int seed_from_csv(const std::string& path) noexcept {
+        std::ifstream f(path);
+        if (!f.is_open()) { std::printf("[%s] SEED FAIL '%s'\n", tag.c_str(), path.c_str()); return 0; }
+        std::string line; std::getline(f, line); int fed = 0; int64_t last_ts = 0;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == 't' || line[0] == 'b') continue;
+            std::stringstream ss(line); std::string a, o, h, l, c;
+            std::getline(ss, a, ','); std::getline(ss, o, ','); std::getline(ss, h, ',');
+            std::getline(ss, l, ','); std::getline(ss, c, ',');
+            if (c.empty()) continue; const double cl = std::strtod(c.c_str(), nullptr); if (cl <= 0) continue;
+            int64_t ms = std::strtoll(a.c_str(), nullptr, 10); if (ms < 100000000000LL) ms *= 1000LL;
+            closes_.push_back(cl); while ((int)closes_.size() > W + 1) closes_.pop_front(); last_ts = ms; ++fed;
+        }
+        std::printf("[SEED] [%s] %s fed=%d closes=%zu last_bar_ts=%lld\n", tag.c_str(), symbol.c_str(),
+                    fed, closes_.size(), (long long)(last_ts / 1000LL)); std::fflush(stdout);
+        return fed;
+    }
+    void persist_save_all(const char* base, const char* sym, std::vector<omega::PositionSnapshot>& out) const {
+        if (!book_.active) return;
+        for (size_t k = 0; k < book_.legs.size(); k++) {
+            const auto& lg = book_.legs[k]; if (!lg.open) continue;
+            omega::PositionSnapshot ps; ps.engine = std::string(base) + "#" + std::to_string(k);
+            ps.symbol = sym; ps.side = dir > 0 ? "LONG" : "SHORT"; ps.size = lot; ps.entry = lg.entry;
+            ps.sl = lg.parent ? book_.par_mfe_bp : lg.mfe_pct; ps.tp = lg.arm_pct; ps.entry_ts = lg.entry_ts / 1000LL;
+            out.push_back(ps);
+        }
+    }
+    bool persist_restore(const omega::PositionSnapshot& ps) {
+        const auto h = ps.engine.find('#'); if (h == std::string::npos) return false;
+        const size_t k = (size_t)std::strtoul(ps.engine.c_str() + h + 1, nullptr, 10);
+        BeCascadeBook::Leg lg; lg.parent = (k == 0); lg.entry = ps.entry; lg.arm_pct = ps.tp;
+        lg.mfe_pct = lg.parent ? 0.0 : ps.sl; lg.entry_ts = ps.entry_ts * 1000LL;
+        book_.active = true; book_.dir = dir; if (lg.parent) book_.par_mfe_bp = ps.sl;
+        book_.legs.push_back(lg); if (!lg.parent && k > book_.next_arm) book_.next_arm = k;
+        return true;
+    }
+    bool force_close_all_at(double bid, double ask, const char* reason) {
+        if (!book_.active || bid <= 0 || ask <= 0) return false;
+        _close_all((bid + ask) * 0.5, reason, (int64_t)std::time(nullptr) * 1000LL); return true;
+    }
+};
+
 // ── 2. XauBracketCascadeEngine: H1 two-sided OCO bracket (gold) ──────────────
 struct XauBracketCascadeEngine {
     bool shadow_mode = true;

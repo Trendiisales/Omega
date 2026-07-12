@@ -5618,6 +5618,41 @@ static void init_engines(const std::string& cfg_path)
                 }
             }
             printf("[OMEGA-INIT] BeCascade ports: idx D1 long x3 + XAU H1/M5/M10/M15 brackets + ext wave SPX/NQ H1+H4 + XAU H4 (all gated ex-H1-flagship), all shadow\n");
+
+            // ── S-2026-07-13 gold intraday up-jump LONG + SHORT down-jump engines (tf_secs+dir+
+            // hard stop). Backtested Crypto coldcut REAL column. Gold short shadow-caveated
+            // (full PF11 vol-concentrated -> 6mo honest PF1.4). NDX short viable (PF2.55). ──
+            {
+                struct UJ { omega::XauUpJumpIntradayEngine* e; const char* nm; const char* sym;
+                            int tf; int W; int dir; double lc; const char* seed; };
+                const UJ ujs[] = {
+                    { &g_xuji_xau_m5l,  "XauUpJump_XAU_M5L",  "XAUUSD", 300,  24, +1,  50, "phase1/signal_discovery/warmup_XAUUSD_M5.csv"  },
+                    { &g_xuji_xau_m15l, "XauUpJump_XAU_M15L", "XAUUSD", 900,   8, +1,  70, "phase1/signal_discovery/warmup_XAUUSD_M15.csv" },
+                    { &g_xuji_xau_m30l, "XauUpJump_XAU_M30L", "XAUUSD", 1800,  4, +1,  70, "phase1/signal_discovery/warmup_XAUUSD_M30.csv" },
+                    { &g_xuji_xau_h1l,  "XauUpJump_XAU_H1L",  "XAUUSD", 3600,  6, +1, 100, "phase1/signal_discovery/warmup_XAUUSD_H1.csv"  },
+                    { &g_xuji_xau_m30s, "XauUpJump_XAU_M30S", "XAUUSD", 1800,  2, -1,  50, "phase1/signal_discovery/warmup_XAUUSD_M30.csv" },
+                    { &g_xuji_xau_m5s,  "XauUpJump_XAU_M5S",  "XAUUSD", 300,  12, -1,  50, "phase1/signal_discovery/warmup_XAUUSD_M5.csv"  },
+                    { &g_xuji_ndx_h1s,  "XauUpJump_NDX_H1S",  "USTEC.F",3600,  2, -1,  50, "phase1/signal_discovery/warmup_NAS100_H1.csv"  },
+                };
+                for (const auto& u : ujs) {
+                    u.e->symbol = u.sym; u.e->engine_name = u.nm; u.e->tag = u.nm;
+                    u.e->tf_secs = u.tf; u.e->W = u.W; u.e->thr = 0.005; u.e->dir = u.dir;
+                    u.e->loss_cut_bp = u.lc; u.e->shadow_mode = true; u.e->enabled = true; u.e->lot = 1.0;
+                    u.e->seed_from_csv(omega::resolve_seed_path(u.seed));
+                    auto* eng = u.e; const char* nm = u.nm; const char* symc = u.sym;
+                    eng->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
+                    g_open_positions.register_source(nm, [eng, nm, symc]() {
+                        std::vector<omega::PositionSnapshot> v;
+                        if (eng->book_.active) for (const auto& lg : eng->book_.legs) if (lg.open) {
+                            omega::PositionSnapshot s; s.symbol = symc; s.engine = nm;
+                            s.side = eng->dir > 0 ? "LONG" : "SHORT"; s.size = eng->lot; s.entry = lg.entry;
+                            s.sl = 0.0; s.tp = 0.0; s.entry_ts = lg.entry_ts / 1000LL; v.push_back(s);
+                        }
+                        return v;
+                    });
+                }
+                printf("[OMEGA-INIT] gold intraday up-jump: 4 LONG (M5/M15/M30/H1) + 2 SHORT (M30/M5) + NDX SHORT H1, hard-stopped, all shadow\n");
+            }
         }
 
         // OvernightDrift — 2nd index edge (the "night effect"), trend-gated.

@@ -29,6 +29,14 @@ static void on_tick_gold(
     {   // S-2026-07-12c two-sided OCO bracket + BE-cascade (shadow)
         g_xau_brc.on_tick(bid, ask, omega::pg::_pg_now_ms());
         g_engine_heartbeat.pulse("XauBracketCascade");
+        // S-2026-07-13 gold intraday up-jump LONG + SHORT down-jump engines (hard-stopped)
+        { const int64_t nm = omega::pg::_pg_now_ms();
+          g_xuji_xau_m5l.on_tick(bid, ask, nm);  g_engine_heartbeat.pulse("XauUpJump_XAU_M5L");
+          g_xuji_xau_m15l.on_tick(bid, ask, nm); g_engine_heartbeat.pulse("XauUpJump_XAU_M15L");
+          g_xuji_xau_m30l.on_tick(bid, ask, nm); g_engine_heartbeat.pulse("XauUpJump_XAU_M30L");
+          g_xuji_xau_h1l.on_tick(bid, ask, nm);  g_engine_heartbeat.pulse("XauUpJump_XAU_H1L");
+          g_xuji_xau_m30s.on_tick(bid, ask, nm); g_engine_heartbeat.pulse("XauUpJump_XAU_M30S");
+          g_xuji_xau_m5s.on_tick(bid, ask, nm);  g_engine_heartbeat.pulse("XauUpJump_XAU_M5S"); }
         // S-2026-07-12d bull-gated intraday instances (M30 dropped by operator)
         g_xau_brc_m5.on_tick(bid, ask, omega::pg::_pg_now_ms());  g_engine_heartbeat.pulse("XauBracketCascade_M5");
         g_xau_brc_m10.on_tick(bid, ask, omega::pg::_pg_now_ms()); g_engine_heartbeat.pulse("XauBracketCascade_M10");
