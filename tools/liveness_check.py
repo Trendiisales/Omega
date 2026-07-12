@@ -17,15 +17,13 @@ def age_min(path):
 # --- THE REGISTRY: name, probe-path (heartbeat/output that must be fresh), max_age_min ---
 # Mac-side files/logs (each cron/agent writes one of these every run):
 MAC = [
-    # S-2026-07-02: ~/Crypto after the 2026-07-01 consolidation (old path kept as runtime fallback below)
-    ("crypto-book (refresh_shadow)",   os.path.expanduser("~/Crypto/backtest/data/ibkrcrypto/state.json")
-        if os.path.exists(os.path.expanduser("~/Crypto/backtest/data/ibkrcrypto/state.json"))
-        else os.path.expanduser("~/IBKRCrypto/backtest/data/ibkrcrypto/state.json"),               90),
-    ("live-mark cron (intraday px)",   "/tmp/live_mark.log",                                                    20),
+    # S-2026-07-12 CONSOLIDATION: the Mac ibkrcrypto book (refresh_shadow + live_mark crons)
+    # was folded onto the ONE Chimera system (josgp1) and RETIRED. Its state.json/live_mark.log
+    # freeze -> these probes went DARK (false alarm). Removed. Chimera liveness = the box's own
+    # selftests + the chimera->desk relay (feeds_selftest crypto heartbeat, repointed to it).
     # giveback-saver python cron RETIRED S-2026-07-06/07: stall_accountant.py ported to native C++
     # StallBook (25 books in Omega.exe, boot line "stall-companion zoo wired"). Its liveness is now
     # the VPS companion_state.json freshness probe below — do NOT resurrect the Mac cron probe.
-    ("crypto staleness-alarm cron",    "/tmp/crypto_staleness_alarm.log",                                       90),
     ("omega health-poll cron",         "/tmp/omega_health_poll.log",                                            45),
     ("omega data-health cron",         "/tmp/data_health.log",                                                  45),
 ]

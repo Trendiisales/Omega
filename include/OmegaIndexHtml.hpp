@@ -852,6 +852,11 @@ function pollTrades(){
     fetch('/api/crypto_trades').then(function(r){return r.json();}).catch(function(){return [];})
   ]).then(function(res){
     var all=(res[0]||[]).concat(res[1]||[]);
+    /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
+       crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
+       (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count. */
+    window._chimtot=(res[1]||[]).reduce(function(s,t){var e=(t.engine||'');return /CLIP/i.test(e)?s:s+safe(t.net_pnl!=null?t.net_pnl:t.pnl);},0);
+    if(typeof updDayPnl==='function')updDayPnl();
     all.forEach(function(t){ if(!t.exitTs && t.exit_ts_utc){ var d=Date.parse((t.exit_ts_utc||'').replace(' UTC','Z').replace(' ','T')); if(!isNaN(d))t.exitTs=d/1000; } });
     all.sort(function(a,b){return (b.exitTs||0)-(a.exitTs||0);});
     var top=all.slice(0,15);
@@ -933,14 +938,14 @@ var CC_NOCOMP=[   /* no live up-jump leg on josgp1 (grid finalize S-2026-07-11) 
  {sym:'AAVE',note:'companion DROPPED at finalize — no up-jump leg (slot engines only)'},
  {sym:'OP',  note:'companion DROPPED at finalize — no up-jump leg (slot engines only)'}
 ];
-/* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
+)OMEGAD4"
+R"OMEGAD5(/* bp→$ (operator 2026-07-04, pool-confirmed): bank_bp = basis points of the crypto strategy
    pool (POOL_USD, live=$10,000 per shadow_refresh_intraday.cpp). $ = bp × POOL/10000. At $10k
    pool this is 1:1 (1 bp = $1). Change CRYPTO_POOL_USD if the live pool ever moves. */
 var CRYPTO_POOL_USD=10000;
 function bpUsd(bp){return (safe(bp)||0)*CRYPTO_POOL_USD/10000.0;}
 /* Operator 2026-07-04b: "same as gold for crypto — companion engines under their respective lines."
-)OMEGAD4"
-R"OMEGAD5(   Each coin renders as a PARENT line (the tuned up-jump leg that rides WIDE to flip) with its
+   Each coin renders as a PARENT line (the tuned up-jump leg that rides WIDE to flip) with its
    4 grid CELLS nested as indented `↳` sub-rows (★ CANON = the one promoted cell; the rest are
    shadow threshold experiments) — mirroring the gold ENGINE LEDGER engine→companion nesting.
    Live cells keyed by companion tag ("ETH-UJ2-CLIP"); a coin's cells all fold. Companion books
@@ -1109,13 +1114,13 @@ function drawXag(){var j=window._xag||null;
   var runs=fl.runners||[];var rs=runs.length||1;var first=true;
   runs.forEach(function(r){var u=safe(r.usd_real!==undefined?r.usd_real:r.usd);/* REAL column (S-2026-07-07e): model usd is a max(0,.) clamp */
    h+='<tr>';
-   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
+)OMEGAD5"
+R"OMEGAD6(   if(first){h+='<td class="l" rowspan="'+rs+'" style="font-weight:600">'+esc(fl.name)+'</td>'
                +'<td class="l" rowspan="'+rs+'">'+esc(fl.dir)+'</td>';}
    h+='<td class="l">'+esc(r.tier)+'</td><td class="num">'+safe(r.gb_bp)+'</td>'
      +'<td class="num">'+safe(r.clips)+'</td><td class="num">'+safe(r.wins)+'</td>'
      +'<td class="num">'+fmt2(safe(r.pts_real!==undefined?r.pts_real:r.pts),2)+'</td>'
-)OMEGAD5"
-R"OMEGAD6(     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
+     +'<td class="num" style="font-weight:600;color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';
    first=false;
   });
  });
@@ -1281,11 +1286,11 @@ function drawStockMover(){var j=window._sm||null;
  renderCompanionOpenTrades('sm',allOpen,allTrades,2);
 }
 function pollStockMover(){fetch('/api/stockladder_companion').then(function(r){return r.json();}).then(function(j){
- if(j&&(j.names||[]).length)window._sm=j;
+)OMEGAD6"
+R"OMEGAD7( if(j&&(j.names||[]).length)window._sm=j;
  window._smtot=(((window._sm||{}).names)||[]).reduce(function(s,p){return s+safe(p.usd_real);},0);/* S-2026-07-10: ALL-TIME folds REALIZED forward clips ONLY (usd_real). Open-leg unrealized MTM removed from the header -- shadow bigcap-mover ladder legs marking red dragged ALL-TIME as a phantom drop; per-panel DESK still shows uPnL. */
  drawStockMover();
-)OMEGAD6"
-R"OMEGAD7( if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
+ if(typeof updDayPnl==='function')updDayPnl();if(typeof drawLedger==='function')drawLedger();
  }).catch(function(){drawStockMover();});}
 setInterval(pollStockMover,15000);pollStockMover();
 
@@ -1418,7 +1423,8 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  /* 1. central engine ledger rows — MIXED classes; classify each by engine tag (+ symbol) */
  ROWS.forEach(function(r){var c=classOf(r.eng,r.sym);if(cls[c]!==undefined)cls[c]+=r.pnl;});
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
- cls.crypto+=ccAll;                       /* crypto ladder companion */
+ cls.crypto+=ccAll;                       /* crypto ladder companion (32-cell grid banks) */
+ cls.crypto+=safe(window._chimtot);       /* + chimera EDGE realized (TIA-TSMOM etc.); additive, no CLIP overlap */
  cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) */
  cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
  cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
@@ -1449,7 +1455,8 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
    /api/companion per_engine by that parent's name (LondonFixMomentum / XauTrendFollow4h /
    QndxSqfTrend). The ledger keys are the shadow-ledger engine tags (e.g.
    XauTrendFollow4h_Donchian_N20_sl1.5tp3.0) -> match by base-name prefix. When a ledger engine
-   HAS a companion, render its book indented directly beneath the engine row. Separate additive
+)OMEGAD7"
+R"OMEGAD8(   HAS a companion, render its book indented directly beneath the engine row. Separate additive
    book -- NEVER compared to riding WIDE ([[CompanionDominanceError]]); shown STANDALONE. */
 function gcMatch(k){var per=window._gcPer||{};var kb=(k||'').replace(/Engine$/,'');
  if(per[k])return {key:k,e:per[k]};
@@ -1457,8 +1464,7 @@ function gcMatch(k){var per=window._gcPer||{};var kb=(k||'').replace(/Engine$/,'
   if(kb===cb||kb.indexOf(cb)===0||cb.indexOf(kb)===0)return {key:ck,e:per[ck]};}
  return null;}
 function ledgerCompRow(k,seen){var m=gcMatch(k);if(!m)return '';
-)OMEGAD7"
-R"OMEGAD8( /* one family companion book (per_engine keyed by FAMILY) can match MULTIPLE ledger variant
+ /* one family companion book (per_engine keyed by FAMILY) can match MULTIPLE ledger variant
     rows (XauTrendFollow4h_Donchian… + _Keltner… both strip to XauTrendFollow4h). Render the
     book ONCE — under the first (highest-pnl) matching variant — else phantom double-count. */
  if(seen){if(seen[m.key])return '';seen[m.key]=1;}
@@ -1609,7 +1615,8 @@ function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
  h+='<span></span>';for(var c=0;c<24;c++)h+='<span class="lbl" style="font-size:8px;text-align:center">'+(c%4===0?c:'')+'</span>';
  [1,2,3,4,5,0].forEach(function(d){h+='<span class="lbl" style="font-size:9px">'+DAYS[d]+'</span>';
   for(var c=0;c<24;c++){var g=grid[d+'_'+c],bg='#141a22',ti='';
-   if(g&&g.n>=2){var wr=g.w/g.n;
+)OMEGAD8"
+R"OMEGAD9(   if(g&&g.n>=2){var wr=g.w/g.n;
     bg=wr>0.58?'#0F6E56':wr>0.5?'#155446':wr>0.44?'#1d2733':wr>0.36?'#5c1f1f':'#A32D2D';
     ti=DAYS[d]+' '+c+':00 n='+g.n+' wr='+Math.round(wr*100)+'% pnl='+fmt$(g.pnl);}
    else if(g){bg='#1a212b';ti=DAYS[d]+' '+c+':00 n='+g.n;}
@@ -1617,8 +1624,7 @@ function drawTOD(){if(!el('tod'))return;var rs=ROWS;var grid={};
  h+='</div>';el('tod').innerHTML=h;}
 
 function drawPromo(){if(!el('promo'))return;/* PROMOTION TRACKER panel removed 2026-07-06 (operator: useless) */var by={};
-)OMEGAD8"
-R"OMEGAD9( ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0};by[k].n++;by[k].pnl+=r.pnl;if(r.pnl>0)by[k].w++;});
+ ROWS.forEach(function(r){var k=r.eng||'?';if(!by[k])by[k]={n:0,pnl:0,w:0};by[k].n++;by[k].pnl+=r.pnl;if(r.pnl>0)by[k].w++;});
  var ks=Object.keys(by).sort(function(a,b){return by[b].n-by[a].n;}).slice(0,14);
  if(!ks.length){el('promo').innerHTML='<span class="d">no shadow history yet</span>';return;}
  var GATE=30,h='';
@@ -1811,7 +1817,8 @@ function drawPR(){var cv=el("prc");
      ctx.fillStyle='rgba(11,15,20,0.85)';ctx.beginPath();
      if(ctx.roundRect)ctx.roundRect(bx2-4,by2,tw2+8,11,3);else ctx.rect(bx2-4,by2,tw2+8,11);
      ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=0.8;ctx.stroke();
-     ctx.fillStyle=c;ctx.fillText(txt,bx2,by2+8.5);ctx.globalAlpha=1;ctx.font='10px IBM Plex Mono';}
+)OMEGAD9"
+R"OMEGAD10(     ctx.fillStyle=c;ctx.fillText(txt,bx2,by2+8.5);ctx.globalAlpha=1;ctx.font='10px IBM Plex Mono';}
     PRMK.push({x:xx,y:yx,t:r});}
   });
  })();
@@ -1821,8 +1828,7 @@ function drawPR(){var cv=el("prc");
   var mb=bars[mi],mx2=X(mi);
   ctx.strokeStyle='rgba(230,237,243,0.22)';ctx.setLineDash([3,3]);ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(mx2,padT);ctx.lineTo(mx2,padT+ph);ctx.stroke();
-)OMEGAD9"
-R"OMEGAD10(  ctx.beginPath();ctx.moveTo(padL,PRMOUSE.y);ctx.lineTo(padL+pw,PRMOUSE.y);ctx.stroke();ctx.setLineDash([]);
+  ctx.beginPath();ctx.moveTo(padL,PRMOUSE.y);ctx.lineTo(padL+pw,PRMOUSE.y);ctx.stroke();ctx.setLineDash([]);
   var pv=hi-(PRMOUSE.y-padT)/ph*(hi-lo);
   ctx.fillStyle='#1F2937';ctx.fillRect(padL+pw+2,PRMOUSE.y-8,padR-6,15);
   ctx.fillStyle='#E6EDF3';ctx.fillText(pv.toFixed(dp),padL+pw+6,PRMOUSE.y+3);

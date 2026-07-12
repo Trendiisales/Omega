@@ -842,6 +842,11 @@ function pollTrades(){
     fetch('/api/crypto_trades').then(function(r){return r.json();}).catch(function(){return [];})
   ]).then(function(res){
     var all=(res[0]||[]).concat(res[1]||[]);
+    /* S-2026-07-12 operator: fold the CHIMERA EDGE realized (e.g. TIA-TSMOM +7.65) into the
+       crypto PnL — it was showing in LAST-15 but never in the total. EDGE trades only
+       (engine !~ CLIP) so it's additive to _cctot (the companion-clip book), no double-count. */
+    window._chimtot=(res[1]||[]).reduce(function(s,t){var e=(t.engine||'');return /CLIP/i.test(e)?s:s+safe(t.net_pnl!=null?t.net_pnl:t.pnl);},0);
+    if(typeof updDayPnl==='function')updDayPnl();
     all.forEach(function(t){ if(!t.exitTs && t.exit_ts_utc){ var d=Date.parse((t.exit_ts_utc||'').replace(' UTC','Z').replace(' ','T')); if(!isNaN(d))t.exitTs=d/1000; } });
     all.sort(function(a,b){return (b.exitTs||0)-(a.exitTs||0);});
     var top=all.slice(0,15);
@@ -1405,7 +1410,8 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  /* 1. central engine ledger rows — MIXED classes; classify each by engine tag (+ symbol) */
  ROWS.forEach(function(r){var c=classOf(r.eng,r.sym);if(cls[c]!==undefined)cls[c]+=r.pnl;});
  /* 2. class-pure forward/paper book globals (each already realized-only per the 07-10 fold rule) */
- cls.crypto+=ccAll;                       /* crypto ladder companion */
+ cls.crypto+=ccAll;                       /* crypto ladder companion (32-cell grid banks) */
+ cls.crypto+=safe(window._chimtot);       /* + chimera EDGE realized (TIA-TSMOM etc.); additive, no CLIP overlap */
  cls.stock +=smAll+rdaAll+bc2All+ilAll+ixAll; /* bigcap ladder + rdagent basket + bigcap2pct + index ladder + index befloor($0) */
  cls.fx    +=flAll+fxAll;                  /* fx ladder + fx befloor($0) */
  cls.gold  +=gbAll+xgAll+uoAll;            /* gold+xag+usoil befloor ($0) */
