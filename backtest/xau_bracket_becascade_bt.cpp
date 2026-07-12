@@ -166,49 +166,61 @@ static Res run(const Bars& b, const P& p) {
     return r;
 }
 
-int main() {
-    struct DS { const char* name; const char* path; };
+int main(int argc, char** argv) {
+    struct DS { std::string name; std::string path; };
     std::vector<DS> data = {
         {"2022-26(full)", "/Users/jo/Tick/XAUUSD_2022_2026.h1.csv"},
         {"2013(bear)",    "/Users/jo/Tick/XAU2013_bear_h1.csv"},
         {"2015(bear)",    "/Users/jo/Tick/XAU2015_bear_h1.csv"},
         {"2022(bear)",    "/Users/jo/Tick/XAU2022_bear_h1.csv"},
     };
-    std::printf("%-14s %-9s %4s %3s %3s %3s | %8s %8s %8s | %8s %8s %8s %6s %8s %8s | %7s %7s | %8s\n",
-        "dataset", "mode", "thr", "b", "nw", "amb", "parNet%", "parL%", "parS%",
+    // intraday/custom: ./bt <label:path> [...] with env sweeps
+    //   XB_WS="48,144,288" XB_THRS="0.005,0.01,0.02" XB_BS="0.001,0.003" XB_TTL=48
+    if (argc > 1) {
+        data.clear();
+        for (int i = 1; i < argc; i++) {
+            std::string a = argv[i]; auto p = a.find(':');
+            if (p == std::string::npos) data.push_back({a, a});
+            else data.push_back({a.substr(0, p), a.substr(p + 1)});
+        }
+    }
+    auto env_list = [](const char* name, std::vector<double> dflt) {
+        const char* e = getenv(name); if (!e) return dflt;
+        std::vector<double> v; std::stringstream ss(e); std::string t;
+        while (std::getline(ss, t, ',')) if (!t.empty()) v.push_back(atof(t.c_str()));
+        return v.empty() ? dflt : v;
+    };
+    std::vector<double> WS   = env_list("XB_WS",   {240});
+    std::vector<double> THRS = env_list("XB_THRS", {0.02, 0.03});
+    std::vector<double> BS   = env_list("XB_BS",   {0.003, 0.005});
+    int TTL = getenv("XB_TTL") ? atoi(getenv("XB_TTL")) : 48;
+
+    std::printf("%-14s %-9s %5s %4s %3s %4s %3s | %8s %8s %8s | %8s %8s %8s %6s %8s %8s | %7s %7s | %6s\n",
+        "dataset", "mode", "W", "thr", "b", "nw", "amb", "parNet%", "parL%", "parS%",
         "mimNet%", "mimL%", "mimS%", "PF", "maxDD%", "2xcost%", "H1", "H2", "legs");
     for (auto& d : data) {
         Bars b = load(d.path);
-        if (!b.N) { std::printf("%-14s LOAD FAIL\n", d.name); continue; }
-        const char* we=getenv("XBW"); int Wo=we?atoi(we):240;
-        for (double thr : {0.02, 0.03}) {
-            for (double off : {0.003, 0.005}) {
-                P p; p.W=Wo; p.thr = thr; p.b = off;
+        if (!b.N) { std::printf("%-14s LOAD FAIL %s\n", d.name.c_str(), d.path.c_str()); continue; }
+        for (double Wd : WS) { int Wo = (int)Wd;
+        for (double thr : THRS) {
+            for (double off : BS) {
+                P p; p.W = Wo; p.thr = thr; p.b = off; p.ttl = TTL;
                 Res r = run(b, p);
                 P p2 = p; p2.rt_bp = 10.0; Res r2 = run(b, p2);
-                std::printf("%-14s %-9s %3.0f%% %3.1f %3d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %5d\n",
-                    d.name, "bracket", thr * 100, off * 1000, r.nwin, r.namb,
+                std::printf("%-14s %-9s %5d %3.1f%% %3.1f %4d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %6d\n",
+                    d.name.c_str(), "bracket", Wo, thr * 100, off * 1000, r.nwin, r.namb,
                     r.par_net, r.par_long, r.par_short,
                     r.mim_net, r.mim_long, r.mim_short, r.pf(), r.maxdd, r2.mim_net, r.h1(), r.h2(), r.nlegs);
             }
-            for (double off : {0.003, 0.005}) {
-                P p; p.thr = thr; p.b = off; p.dirstop = true;
-                Res r = run(b, p);
-                P p2 = p; p2.rt_bp = 10.0; Res r2 = run(b, p2);
-                std::printf("%-14s %-9s %3.0f%% %3.1f %3d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %5d\n",
-                    d.name, "dirstop", thr * 100, off * 1000, r.nwin, r.namb,
-                    r.par_net, r.par_long, r.par_short,
-                    r.mim_net, r.mim_long, r.mim_short, r.pf(), r.maxdd, r2.mim_net, r.h1(), r.h2(), r.nlegs);
-            }
-            // long-only control (prior methodology) at this thr
-            P pl; pl.thr = thr; pl.long_only = true;
+            // long-only control at this W/thr
+            P pl; pl.W = Wo; pl.thr = thr; pl.long_only = true; pl.ttl = TTL;
             Res rl = run(b, pl);
             P pl2 = pl; pl2.rt_bp = 10.0; Res rl2 = run(b, pl2);
-            std::printf("%-14s %-9s %3.0f%%  -  %3d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %5d\n",
-                d.name, "LONGONLY", thr * 100, rl.nwin, rl.namb,
+            std::printf("%-14s %-9s %5d %3.1f%%  -  %4d %3d | %+8.1f %+8.1f %+8.1f | %+8.1f %+8.1f %+8.1f %6.2f %8.1f %+8.1f | %+7.1f %+7.1f | %6d\n",
+                d.name.c_str(), "LONGONLY", Wo, thr * 100, rl.nwin, rl.namb,
                 rl.par_net, rl.par_long, rl.par_short,
                 rl.mim_net, rl.mim_long, rl.mim_short, rl.pf(), rl.maxdd, rl2.mim_net, rl.h1(), rl.h2(), rl.nlegs);
-        }
+        }}
         std::printf("\n");
     }
     return 0;

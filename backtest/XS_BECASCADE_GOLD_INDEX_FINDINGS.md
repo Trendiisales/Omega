@@ -109,3 +109,27 @@ closer). Cost-gated. Judged on the shadow ledger forward record.
   the backtested envelope). maxDD 1.8–4.5k bp on the candidate cells.
 - Warm-seed mandate applies (D1 buffers, W=10 → tiny seed CSV need).
 - Shadow ledger first; judge on `omega_trade_closes.csv` forward record.
+
+## UPDATE S-2026-07-12d — INTRADAY XauBracket variants (M5/M10/M15) — TESTED, NOT VIABLE
+
+Operator asked for 5/10/15-min bracket-cascade engines. Data: M1 2024-26 (bull) + M1 2022
+bear leg, integrity-gated, aggregated. Same harness (`xau_bracket_becascade_bt` argv/env form),
+5bp RT/leg, 2x-cost re-sim, sweep W(4h/12h/24h-equivalent) × thr{0.5,1,2%} × b{0.1,0.3%}.
+
+Best cells (all at ~12h window, thr 0.5%, b 0.1%):
+| TF | bull 24-26 net% | PF | 2x | 2022 bear net% |
+|----|------|------|------|------|
+| M5  (W=144) | +221.5 | 1.46 | +152 | **−15.3** |
+| M10 (W=72)  | +222.1 | 1.50 | +159 | **−12.0** |
+| M15 (W=48)  | +229.8 | 1.58 | +172 | **−14.8** |
+
+- Bull plateau real (all 3 TFs, thr 0.5-1%, both halves +, 2x-robust).
+- **2022 bear: NEGATIVE at every tradeable cell** (PF 0.5-0.8; the few positive bear cells are
+  n≤9 noise). Intraday whipsaw defeats the bracket's short-side insurance — unlike the H1
+  W=240 (10-day) engine, which was the point of the bracket.
+- Long-only control beats the bracket in bull at every TF (shorts pure drag intraday).
+- Ambiguous both-touch bars grow at b=0.1% (up to 99/237 windows skipped conservatively).
+
+VERDICT: intraday bracket-cascade = bull-harvest only, fails the operator's bear-protection
+requirement → NOT wired. The deployed H1 W=240 XauBracketCascade remains the protected form.
+Re-open only with a regime gate (changes the thesis — operator decision).
