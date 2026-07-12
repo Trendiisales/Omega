@@ -1424,7 +1424,8 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
  var fxAll=safe(window._fxtot),gbAll=safe(window._goldtot),ixAll=safe(window._idxtot),xgAll=safe(window._xagtot),uoAll=safe(window._usoiltot),smAll=safe(window._smtot),flAll=safe(window._fxladtot),ilAll=safe(window._ixladtot);/* FX + gold + xag + usoil + stockmover/fx/index-ladder forward books, $ (additive, all-time; forward-only banks -> fold into ALL-TIME, not today) */
  var rdaAll=safe(window._rdatot);/* S-2026-07-11: rdagent stock basket paper P&L, $ (additive, all-time -- the META-type picks now fold into the desk headline like crypto) */
  var bc2All=safe(window._bc2tot);/* S-2026-07-11: BigCap2pct impulse companion REALIZED bank, $ (additive, all-time). Endpoint existed but was orphaned from the fold -> mimic_pnl_completeness_gate now enforces it. */
- var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All;
+ var chimAll=safe(window._chimtot);/* S-2026-07-12b: chimera EDGE realized, $ (additive, all-time; engine!~CLIP so no _cctot overlap). Was folded into cls.crypto + eqtot only -- pnl_completeness gate caught the missing updDayPnl term. */
+ var pT=p+cToday,totT=tot+cAll+ccAll+fxAll+gbAll+ixAll+xgAll+uoAll+smAll+flAll+ilAll+rdaAll+bc2All+chimAll;
  tweenNum('daypnl',pT,fmt$);el('daypnl').style.color=pT>=0?'var(--grn)':'var(--red)';
  el('daypnln').textContent=n+' closes today (UTC)'+(cToday?' · incl '+fmt$(cToday)+' paper':'');
  tweenNum('totpnl',totT,fmt$);el('totpnl').style.color=totT>=0?'var(--grn)':'var(--red)';
@@ -1454,11 +1455,11 @@ function updDayPnl(){var cut=Math.floor(Date.now()/86400000)*86400;var n=0,p=0,t
        unclassified ledger row ('other') or stall-clip reconciliation gap. Surface it, never hide it. */
  var cls4=cls.stock+cls.crypto+cls.fx+cls.gold,rem=totT-cls4;
  tweenNum('pnl_stk',cls.stock,fmt$);el('pnl_stk').style.color=cls.stock>=0?'var(--grn)':'var(--red)';
- tweenNum('pnl_cry',cls.crypto,fmt$);el('pnl_cry').style.color=cls.crypto>=0?'var(--grn)':'var(--red)';
+)OMEGAD7"
+R"OMEGAD8( tweenNum('pnl_cry',cls.crypto,fmt$);el('pnl_cry').style.color=cls.crypto>=0?'var(--grn)':'var(--red)';
  tweenNum('pnl_fx', cls.fx,   fmt$);el('pnl_fx').style.color=cls.fx>=0?'var(--grn)':'var(--red)';
  tweenNum('pnl_gld',cls.gold, fmt$);el('pnl_gld').style.color=cls.gold>=0?'var(--grn)':'var(--red)';
-)OMEGAD7"
-R"OMEGAD8( var remEl=el('pnl_rem');if(remEl){if(Math.abs(rem)>0.5){remEl.style.display='';remEl.textContent='±'+fmt$(rem)+' unclassified';
+ var remEl=el('pnl_rem');if(remEl){if(Math.abs(rem)>0.5){remEl.style.display='';remEl.textContent='±'+fmt$(rem)+' unclassified';
    console.warn('classPnl reconciliation: STOCK+CRYPTO+FX+GOLD='+fmt$(cls4)+' vs ALL-TIME='+fmt$(totT)+' -> remainder '+fmt$(rem));}
   else remEl.style.display='none';}}
 
@@ -1611,11 +1612,11 @@ function drawMM(){var cv=el('mmc');if(!cv)return;var H=190,ctx=prep(cv,H);
  var sym=el('mmsym').value;var rs=winRows().filter(function(r){return r.sym===sym;}).slice(-400);
  if(!rs.length){ctx.fillStyle='#6B7785';ctx.font='11px IBM Plex Mono';ctx.fillText('no trades for '+sym,10,20);return;}
  var xs=rs.map(function(r){return r.mae;}),ys=rs.map(function(r){return r.mfe;});
- function pct(a,p){var b=a.slice().sort(function(x,y){return x-y;});return b[Math.min(b.length-1,Math.floor(p*b.length))];}
+)OMEGAD8"
+R"OMEGAD9( function pct(a,p){var b=a.slice().sort(function(x,y){return x-y;});return b[Math.min(b.length-1,Math.floor(p*b.length))];}
  var mx=Math.max(pct(xs,0.97),0.1),my=Math.max(pct(ys,0.97),0.1);
  function X(v){return 26+(W-34)*Math.min(1,v/mx);}function Y(v){return H-18-(H-30)*Math.min(1,v/my);}
-)OMEGAD8"
-R"OMEGAD9( ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.strokeRect(26,12,W-34,H-30);
+ ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.strokeRect(26,12,W-34,H-30);
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText('MAE '+fmt2(mx,1),W-60,H-4);ctx.fillText('MFE',2,14);ctx.fillText(fmt2(my,1),2,24);
  rs.forEach(function(r){ctx.fillStyle=r.pnl>0?'rgba(46,189,133,0.75)':'rgba(226,72,77,0.75)';
@@ -1809,13 +1810,13 @@ function drawPR(){var cv=el("prc");
    if(r.ets>=t0){var s=hov?8:6;   /* entry: glow triangle, up=LONG / down=SHORT */
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();
-    if(r.side==='LONG'){ctx.moveTo(xe,ye-s);ctx.lineTo(xe-s*0.85,ye+s*0.6);ctx.lineTo(xe+s*0.85,ye+s*0.6);}
+)OMEGAD9"
+R"OMEGAD10(    if(r.side==='LONG'){ctx.moveTo(xe,ye-s);ctx.lineTo(xe-s*0.85,ye+s*0.6);ctx.lineTo(xe+s*0.85,ye+s*0.6);}
     else{ctx.moveTo(xe,ye+s);ctx.lineTo(xe-s*0.85,ye-s*0.6);ctx.lineTo(xe+s*0.85,ye-s*0.6);}
     ctx.closePath();ctx.fillStyle=c;ctx.fill();ctx.restore();
     ctx.strokeStyle='#0B0F14';ctx.lineWidth=1;ctx.stroke();
     PRMK.push({x:xe,y:ye,t:r});}
-)OMEGAD9"
-R"OMEGAD10(   if(r.ts<=t1){   /* exit: glow ring + core dot */
+   if(r.ts<=t1){   /* exit: glow ring + core dot */
     ctx.save();ctx.shadowColor=c;ctx.shadowBlur=hov?12:7;
     ctx.beginPath();ctx.arc(xx,yx,hov?5:4,0,6.3);
     ctx.fillStyle='#0B0F14';ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=1.8;ctx.stroke();ctx.restore();
