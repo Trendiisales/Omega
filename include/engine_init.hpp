@@ -2154,7 +2154,10 @@ static void init_engines(const std::string& cfg_path)
                     // survives 2x=16bp; single-name IBKR RT ~3-8bp). ExecutionCostGuard has NO
                     // single-name cost table -> unknown tickers default to CFD-scaled values that
                     // mis-price stocks (befloor lesson). TODO: real equity cost row before LIVE sizing.
-                    return true;
+                    // OM-03 (audit 2026-07-13): FAIL CLOSED in LIVE — no single-name order
+                    // without a real cost model. SHADOW is unaffected (send_live_order already
+                    // no-ops on mode!=LIVE), so zero behaviour change today.
+                    return g_cfg.mode != "LIVE";
                 },
                 /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
                                 double entry_px, double exit_px, double lots,
@@ -2256,7 +2259,8 @@ static void init_engines(const std::string& cfg_path)
                     // ExecutionCostGuard has NO single-name cost table -> unknown tickers
                     // default to CFD-scaled values that mis-price stocks (befloor lesson).
                     // TODO: real equity cost row before LIVE sizing.
-                    return true;
+                    // OM-03 (audit 2026-07-13): FAIL CLOSED in LIVE (see stock-ladder gate).
+                    return g_cfg.mode != "LIVE";
                 },
                 /* ledger */ [](const std::string& engine, const std::string& sym, bool is_long,
                                 double entry_px, double exit_px, double lots,

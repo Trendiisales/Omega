@@ -1,3 +1,4 @@
+#pragma once  // OM-08 (audit 2026-07-13): TU-fragment guard
 // omega_types.hpp -- extracted from main.cpp
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
 

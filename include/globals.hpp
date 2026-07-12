@@ -1,3 +1,4 @@
+#pragma once  // OM-08 (audit 2026-07-13): TU-fragment guard
 // globals.hpp -- extracted from main.cpp
 // Section: globals (original lines 435-964)
 // SINGLE-TRANSLATION-UNIT include -- only include from main.cpp
