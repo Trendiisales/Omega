@@ -2108,6 +2108,17 @@ static void init_engines(const std::string& cfg_path)
                 // -13.4% (operator accepts the protection cost; the stock ladder is where the real
                 // 12% "gave it all back" problem lives). LOSS_CUT 15% unchanged.
                 c.w_arm = 1.0; c.w_gb = 0.10;
+                // S-2026-07-13 PARENT + 4x BE-MIMIC redo (operator: "the bigcap engine should be
+                // a engine that trades on trigger with 4x mimic engines"; feedback-no-immediate-
+                // entry-upjump-mimic-only). be_entry_pct>0 switches the window to ONE immediate
+                // PARENT leg (w_arm1/gb10, LadW) + 4 PENDING mimic legs (T/MIRROR/Wm/W8) that
+                // open only at the first close >= trigger*(1+0.5%) and cancel after 3 closes;
+                // ladder respawns BE-gated the same way. VALIDATED bigcap_parent4mimic_bt.py
+                // (45 names, RT 8bp, lc15): parent +3,010% PF1.48 all-6+2x PASS; 4x-mimic
+                // standalone be0.5/pend3 +9,603% PF1.64 worst -24.1% all-6+2x+ex-best PASS;
+                // whole 12-cell be/pend sweep passes (plateau). Interior cell wired, not the
+                // corner-best (be0.3/pend5 +11,228%) — robustness over last drop of net.
+                c.be_entry_pct = 0.5; c.pend_closes = 3;   // w8 cell = struct default a8/gb50
                 // S-2026-07-11 operator "extra mimic x4": 4x the clip notional across the WHOLE
                 // stock book ($10k->$40k base). This is a MIMIC -> it never touches the real trade
                 // (CompanionDominanceError), so scaling it is purely additive and its own drawdown-

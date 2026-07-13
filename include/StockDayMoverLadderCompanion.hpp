@@ -19,6 +19,24 @@
 //            +59,789% PF 1.29 (not list survivorship). Evidence
 //            outputs/BIGCAP_UPJUMP_LADDER_2026-07-07.md · vault BigCapUpJumpLadder.
 //
+// S-2026-07-13 REDO (operator: "the bigcap engine should be a engine that trades
+//   on trigger with 4x mimic engines" — no immediate-entry legs beyond the ONE
+//   parent; feedback-no-immediate-entry-upjump-mimic-only). Structure now:
+//     PARENT (the engine, trades on trigger): ONE immediate leg at the window
+//       activation close — the WIDE-trail cell (w_arm/w_gb, tier LadW book).
+//     4x MIMIC legs (companion-at-BE): T (t_arm/t_stall, LadT), MIRROR
+//       (m_arm/m_gb, LadL), Wm (w_arm/w_gb, LadL), W8 (w8_arm/w8_gb, LadL) spawn
+//       PENDING and open ONLY at the first close >= trigger*(1+be_entry_pct%)
+//       (cost/BE covered); cancel after pend_closes closes if BE never made —
+//       no open-into-loss. Ladder respawns are BE-gated the same way off the
+//       clip close ("re-enter after BE").
+//   VALIDATED backtest/bigcap_parent4mimic_bt.py (ALL 45 wired names, RT 8bp,
+//   lc15): PARENT a1/gb10 n=3,348 net +3,010% PF 1.48 all-6+2x PASS; 4x-MIMIC
+//   standalone at wired cell be0.5/pend3 n=7,020 net +9,603% PF 1.64 worst
+//   -24.1% all-6+2x PASS, ex-best-name (WDC) still PASS (+8,144% PF 1.57);
+//   every be/pend cell in the 12-cell sweep passes (plateau, not a point);
+//   each of the 4 legs passes standalone. be_entry_pct=0 = legacy behavior.
+//
 // ADVERSE-PROTECTION: backtested verdict (mandate + feedback-engine-loss-
 //   protection-provision) — giveback trail after arm + LOSS_CUT 15% on the leg.
 //   LOSS_CUT 15 is FREE: net +7,057% (== baseline) with worst clip -32.6% -> -28.1%
@@ -122,6 +140,16 @@ public:
         bool   mirror_leg    = true;
         double m_arm         = 2.0;       // % MFE to arm the mirror
         double m_gb          = 0.75;      // giveback fraction of MFE
+        // S-2026-07-13 PARENT + 4x BE-MIMIC redo (operator; validated
+        // bigcap_parent4mimic_bt.py — see header). be_entry_pct > 0 switches the
+        // book to: ONE immediate PARENT leg (w_arm/w_gb) + 4 PENDING mimic legs
+        // (T, MIRROR, Wm, W8) that open only at the first close >= trigger*
+        // (1+be%) and cancel after pend_closes closes; ladder respawns BE-gated
+        // the same way. 0 = legacy all-immediate legs (backtest/parity default).
+        double be_entry_pct  = 0.0;       // % above trigger a mimic leg must see on a CLOSE to open
+        int    pend_closes   = 3;         // cancel a pending mimic leg after this many closes without BE
+        double w8_arm        = 8.0;       // 4th mimic cell: the old wide-runner (validated standalone)
+        double w8_gb         = 0.50;
         double reclip        = 0.05;      // re-enter when fav > peak*(1+reclip)
         int    cap           = 5;         // max legs spawned per parent window (incl 2 base)
         double loss_cut_pct  = 15.0;      // ADVERSE-PROTECTION / DRAWDOWN-CANCEL: cut an open leg at -15% fav.
@@ -474,6 +502,11 @@ private:
         double mfe = 0;           // best fav % since leg entry (from epx)
         int    ext = 0;           // bar index of last MFE extension
         int64_t entry_ts = 0;
+        // S-2026-07-13 BE-ENTRY mimic state: a pending leg has NO position (open=false);
+        // it opens at the first close >= trig*(1+be%) or dies after pend_closes closes.
+        bool   pending = false;
+        double trig = 0;          // window trigger px the BE gate measures from
+        int    pbars = 0;         // pending closes remaining before cancel
         std::string token;
     };
     std::vector<Leg> legs_;
@@ -533,13 +566,38 @@ private:
         return L;
     }
 
-    // Open the base legs of a fresh window at `entry_px` (factored out so BOTH the daily-close
+    // S-2026-07-13: a PENDING BE-mimic leg — no order, no book, until the BE gate opens it.
+    Leg make_pending_leg_(int ti, double arm, int sb, double gb, double trig_px, int64_t ts_sec) noexcept {
+        Leg L; L.ti = ti; L.epx = trig_px; L.le = trig_px;
+        L.arm = arm; L.sb = sb; L.gb = gb;
+        L.open = false; L.pending = true; L.trig = trig_px; L.pbars = cfg_.pend_closes;
+        L.mfe = 0.0; L.ext = bar_; L.entry_ts = ts_sec;
+        return L;
+    }
+
+    // Open the legs of a fresh window at `entry_px` (factored out so BOTH the daily-close
     // path (backtest/parity) and the live-confirmation path (on_live_tick) build an identical
-    // window). TIGHT banker + WIDE runner + optional MIRROR; spawned_ counts base legs.
+    // window).
+    //   be_entry_pct > 0 (S-2026-07-13 redo): ONE immediate PARENT leg (the engine, trades on
+    //     trigger — WIDE-trail cell, LadW book) + 4 PENDING BE-mimic legs (T/MIRROR/Wm/W8).
+    //   be_entry_pct == 0 (legacy/parity): TIGHT + WIDE + optional MIRROR, all immediate.
     void activate_window_(double entry_px, int64_t ts_sec, bool fwd) noexcept {
-        win_pend_ = false; win_ = true; bar_ = 0; spawned_ = 2;
+        win_pend_ = false; win_ = true; bar_ = 0;
         win_entry_ = entry_px; win_ets_ = ts_sec;
         legs_.clear();
+        if (cfg_.be_entry_pct > 0.0) {
+            spawned_ = 5;
+            legs_.push_back(make_leg_(1, entry_px, ts_sec, fwd));   // PARENT (immediate, LadW)
+            legs_.push_back(make_pending_leg_(0, cfg_.t_arm,  cfg_.t_stall, 0.0,       entry_px, ts_sec)); // T
+            legs_.push_back(make_pending_leg_(2, cfg_.m_arm,  0,            cfg_.m_gb, entry_px, ts_sec)); // MIRROR
+            legs_.push_back(make_pending_leg_(2, cfg_.w_arm,  0,            cfg_.w_gb, entry_px, ts_sec)); // Wm
+            legs_.push_back(make_pending_leg_(2, cfg_.w8_arm, 0,            cfg_.w8_gb, entry_px, ts_sec)); // W8
+            std::printf("[AULAD][MIMIC-PEND] %s parent OPEN + 4 mimic legs PENDING (be %.2f%%, %d closes)\n",
+                        cfg_.sym.c_str(), cfg_.be_entry_pct, cfg_.pend_closes);
+            std::fflush(stdout);
+            return;
+        }
+        spawned_ = 2;
         legs_.push_back(make_leg_(0, entry_px, ts_sec, fwd));   // TIGHT banker
         legs_.push_back(make_leg_(1, entry_px, ts_sec, fwd));   // WIDE runner
         if (cfg_.mirror_leg) {                                  // MIRROR tier -> ladder bucket
@@ -628,6 +686,28 @@ private:
             std::vector<Leg> born;
             for (Leg& L : legs_) {
                 if (L.dead) continue;
+                // S-2026-07-13 BE-ENTRY gate: a PENDING mimic leg opens ONLY at the first close
+                // that covers +be_entry_pct off the window trigger (cost/BE made). If BE is never
+                // made within pend_closes closes the leg dies unbooked — no open-into-loss
+                // (feedback-no-immediate-entry-upjump-mimic-only). Managed from the NEXT close.
+                if (L.pending) {
+                    if ((cur / L.trig - 1.0) * 100.0 >= cfg_.be_entry_pct) {
+                        L.pending = false; L.epx = cur; L.le = cur;
+                        L.open = true; L.mfe = 0.0; L.ext = bar_; L.entry_ts = ts_sec;
+                        if (fwd && open_fn_ && !g_aulad_catchup.load(std::memory_order_relaxed)) {
+                            const double tp_dist_pts = cur * (L.arm / 100.0);
+                            if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
+                                L.token = open_fn_(cfg_.live_sym, true, cfg_.lot, cur);
+                                std::printf("[AULAD][BE-ENTER] %s LONG @%.2f (trig %.2f +%.2f%%)\n",
+                                            leg_engine_(L.ti).c_str(), cur, L.trig, cfg_.be_entry_pct);
+                                std::fflush(stdout);
+                            }
+                        }
+                    } else if (--L.pbars <= 0) {
+                        L.dead = true;   // BE never made -> cancel, nothing booked
+                    }
+                    continue;
+                }
                 const double fav = (cur / L.epx - 1.0) * 100.0;
                 if (L.clipped) {   // reclip on trend resume
                     if (cfg_.reclip > 0 && L.pk > 0 && fav > L.pk * (1.0 + cfg_.reclip)) {
@@ -658,9 +738,14 @@ private:
                     L.pk = L.mfe; L.clipped = true; clipped_now = true;
                     net_bp = book_clip_(L, cur, ts_sec, fwd, "GIVEBACK_CLIP");
                 }
-                // self-funding ladder: a net-positive clip spawns a new WIDE leg at this close
+                // self-funding ladder: a net-positive clip spawns a new WIDE leg at this close.
+                // S-2026-07-13: BE-gated when the mimic redo is on — the respawn goes PENDING
+                // off the clip close ("re-enter after BE"), never an immediate open.
                 if (clipped_now && net_bp > 0 && spawned_ < cfg_.cap) {
-                    born.push_back(make_leg_(2, cur, ts_sec, fwd));
+                    if (cfg_.be_entry_pct > 0.0)
+                        born.push_back(make_pending_leg_(2, cfg_.w_arm, 0, cfg_.w_gb, cur, ts_sec));
+                    else
+                        born.push_back(make_leg_(2, cur, ts_sec, fwd));
                     spawned_ += 1;
                 }
             }
@@ -763,6 +848,15 @@ private:
                     L.entry_ts = (int64_t)ets; L.token = (tok == "-") ? std::string() : tok;
                     legs_.push_back(std::move(L));
                 }
+            } else if (kind == "leg2") {   // S-2026-07-13: adds pending/trig/pbars (BE-mimic)
+                Leg L; int op = 0, cl = 0, dd = 0, pend = 0; long long ets = 0; std::string tok;
+                f >> L.ti >> op >> cl >> dd >> L.epx >> L.le >> L.arm >> L.gb >> L.sb
+                  >> L.pk >> L.mfe >> L.ext >> ets >> pend >> L.trig >> L.pbars >> tok;
+                if (L.ti >= 0 && L.ti < NT_) {
+                    L.open = (op != 0); L.clipped = (cl != 0); L.dead = (dd != 0); L.pending = (pend != 0);
+                    L.entry_ts = (int64_t)ets; L.token = (tok == "-") ? std::string() : tok;
+                    legs_.push_back(std::move(L));
+                }
             } else { std::string rest; std::getline(f, rest); }
         }
     }
@@ -774,11 +868,12 @@ private:
           // S-2026-07-10: live-confirmation pending reference (own record line -> backward-compatible;
           // old state files simply lack it and pend_ref_ stays 0).
           f << "pend " << pend_ref_px_ << " " << (long long)pend_ref_ts_ << "\n";
-          for (const Leg& L : legs_)
-              f << "leg " << L.ti << " " << (L.open ? 1 : 0) << " " << (L.clipped ? 1 : 0) << " "
+          for (const Leg& L : legs_)   // leg2 (S-2026-07-13): pending/trig/pbars before token
+              f << "leg2 " << L.ti << " " << (L.open ? 1 : 0) << " " << (L.clipped ? 1 : 0) << " "
                 << (L.dead ? 1 : 0) << " " << L.epx << " " << L.le << " " << L.arm << " " << L.gb << " "
                 << L.sb << " " << L.pk << " " << L.mfe << " " << L.ext << " "
-                << (long long)L.entry_ts << " " << (L.token.empty() ? "-" : L.token) << "\n"; }
+                << (long long)L.entry_ts << " " << (L.pending ? 1 : 0) << " " << L.trig << " "
+                << L.pbars << " " << (L.token.empty() ? "-" : L.token) << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg_.live_path.c_str());
 #endif
