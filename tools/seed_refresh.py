@@ -261,6 +261,13 @@ def phase_ibkr(port, seed_dir):
 # PHASE 3 — freshness audit (sets the exit code)
 # ==================================================================================================
 _OVERRIDES = [
+    # GoldCampaignD1Anch M1 seed: monthly-histdata sourced (publishes prior month early-next-
+    # month, so 17-40d age is NORMAL); engine tolerates it by design -- baselines need only
+    # days_seen>=5 from the seed and slot windows re-warm from live ticks in 6-72h (see
+    # GoldCampaignD1AnchEngine.hpp header). Phase-2 reseed has NO M1 recipe (IBKR MGC spread
+    # scale != spot XAUUSD spread; a wrong-scale spread seed would misfire the 1.5x-slot-median
+    # gate), so a 14d default here fail-closes every deploy for weeks at a time.
+    (re.compile(r"warmup_XAUUSD_M1\.csv", re.I),                   45),
     (re.compile(r"tsmom_warmup_H1|regime|_H1\.csv|_h1\.csv", re.I), 5),
     (re.compile(r"_D1\.csv|daily|seasonal|warmup_.*_D1", re.I),    45),
     (re.compile(r"_H4\.csv|_h4\.csv|H4", re.I),                    14),
