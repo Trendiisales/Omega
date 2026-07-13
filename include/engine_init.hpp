@@ -5642,7 +5642,14 @@ static void init_engines(const std::string& cfg_path)
                 for (const auto& u : ujs) {
                     u.e->symbol = u.sym; u.e->engine_name = u.nm; u.e->tag = u.nm;
                     u.e->tf_secs = u.tf; u.e->W = u.W; u.e->thr = 0.005; u.e->dir = u.dir;
-                    u.e->loss_cut_bp = u.lc; u.e->shadow_mode = true; u.e->enabled = true; u.e->lot = 1.0;
+                    // S-2026-07-13 FIREFIGHT DISABLE: this immediate-jump-entry up-jump family
+                    // bought a gold spike top (cascading legs up 4078->4088) then every long leg
+                    // hit the 30bp reversal cut on the drop = a day-1 -$3,953 PAPER cluster. TWO
+                    // bugs: (a) lot=1.0 was a FULL 100oz gold lot (~$408k) -> -30bp = -$1,227/trade
+                    // (every sibling is 0.01); (b) it enters ON the jump, not AFTER BE is covered
+                    // (operator's actual spec). DISABLED pending the confirmed-entry variant test.
+                    // lot pre-fixed to 0.01 so any re-enable is correctly sized.
+                    u.e->loss_cut_bp = u.lc; u.e->shadow_mode = true; u.e->enabled = false; u.e->lot = 0.01;
                     u.e->seed_from_csv(omega::resolve_seed_path(u.seed));
                     auto* eng = u.e; const char* nm = u.nm; const char* symc = u.sym;
                     eng->on_trade_record = [](const omega::TradeRecord& tr) { handle_closed_trade(tr); };
