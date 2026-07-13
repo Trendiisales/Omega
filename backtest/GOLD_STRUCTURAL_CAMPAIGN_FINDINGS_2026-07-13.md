@@ -67,3 +67,71 @@ Repro (examples):
   EFF=0.15 ACT=1.2 PB_ACT=1.0 PB_TIMEOUT=1200 REM=24 ./backtest/gold_pullback_core_bt /Users/jo/Tick/xau_6mo_corrected.csv
   FAMILY=2 ACT=1.5 RNG_WIN=600 HMIN=8 REM=12 HOLDSEC=30 ./backtest/gold_pullback_core_bt <file>
   MODE=RANDOM SPEC=<dump> PADS=6 SEEDS=100 STRAT_NET=<net> ./backtest/gold_pullback_core_bt <file>
+
+---
+
+# PART 2 — H4/D1 RE-ANCHOR (session w→x, 2026-07-13): family 1 D1-ANCHOR **PASSES STAGE A**
+
+Operator decision post-Part-1: re-anchor CORE at H4/D1 structural events. Harness extended
+(same detectors/mechanics, tick-mode output byte-identical — parity-diffed): M1-bar input
+`ts,o,h,l,c,spr` auto-detected (fills = close∓spr/2, activity = bar-range bp vs same-slot
+baseline), scale knobs UPQ_WIN/EFF_STRIDE/GAPCLOSE, and STOPMODE=1 = stop at the impulse
+ANCHOR (full structural event = risk unit) instead of the pullback trough.
+
+Data (ALL integrity-gate CERTIFIED): /Users/jo/Tick/ xau_m1_2024_2026.csv + xau_m1_2022bear.csv
+(dukascopy-derived) + NEW histdata-built era files xau_h2013_m1.csv, xau_h2015_m1.csv,
+xau_h2022full_m1.csv, xau_h2023_24_m1.csv (EST→UTC shifted, mid-bars + mean spread;
+med spread 1.6-3.7bp by era). ~5.7yr / 5 regimes total. No era overlap in pooling.
+
+## What FAILED at H4/D1 (kill-scope additions)
+- Family 1 with TROUGH stops (spec default) at H4 (imp 100-250bp) and D1 (200-500bp): every
+  ALL cell negative at pad6 across 18 cells both files; entry lands near trough → stops stay
+  27-60bp → cost still 15-40% of risk; gross ≈ 0 vs mid. LOOSE-filter control (ACT off,
+  EFF 0.2, n=124-137) still gross-negative ⇒ the failure is the entry information at that
+  stop geometry, not filter strictness.
+- Family 1 ANCHOR stops at H4 scale (100-250bp impulses): ALL negative both files (only
+  2024-26 LONG-only positive = drift signature; 2022 longs PF 0.03).
+- Family 2 compression at H4 (4-8h ranges, HMIN 60-100bp) and D1 (24h, HMIN 150): m24_26
+  gross-negative every cell (PF 0.61-0.95 @pad0); D1 scale fires 0-3×/26mo (event-starved);
+  2022 n≤7. Family 2 now dead at FOUR scales (5-20min, 1h, 4-8h, 24h). CORE-FAIL final.
+
+## What PASSED: family 1, D1 scale + ANCHOR stop ("D1-ANCH" cell)
+Cell (all env, frozen after discovery on m24_26 only — eras are true OOS):
+  STOPMODE=1 IMP_LO=200 IMP_HI=500 DUR_LO=21600 DUR_HI=259200 EFF=0.35 ACT=1.3 SPR_MAX=1.5
+  RET_LO=0.20 RET_HI=0.45 PB_ACT=0.85 PB_TIMEOUT=86400 UPR=0.55 REM=150 ARM=250
+  TRAILSEC=86400 BREAKSEC=7200 STOPBUF=15 MAXHOLD=864000 VWTOL=30 UPQ_WIN=3600
+  EFF_STRIDE=3600 GAPCLOSE=260000
+Mechanic: 200-500bp impulse over 6-72h → 20-45% pullback → 2h-local-extreme break entry with
+imbalance+VWAP reclaim → stop BELOW THE IMPULSE ANCHOR (med stop 213-251bp) → trail (24h
+rolling extreme) armed at +250bp. Hold ~5-9 days. Symmetric L/S. RT cost 8-16bp = **3-8% of
+the risk unit** — the passing-crypto-parent geometry, achieved for the first time in gold.
+
+Per-era (frozen cell, ALL @pad6): 2013 n=12 +1122 PF2.03 | 2015 n=8 +1080 PF5.43 |
+2022 n=11 −68 PF0.94 (worst era = breakeven) | 2023-24 n=8 +465 PF2.59 |
+2024-26 n=21 +2301 PF2.59 (era z=+2.57). Direction adapts by regime (2013/15/22 short-heavy,
+bulls long-heavy) — the symmetric detector does this, no regime gate involved.
+
+POOLED (n=60): PF 2.18@pad6 / 2.14@8 / 2.10@10 / 2.06@12 / 2.02@14; win 63%; worst −352bp;
+maxDD 861bp @pad8.
+GATES: PF ladder ✓ (2.14 vs 1.35@8, 2.06 vs 1.10@12) | pooled matched-random (200 seeds/era,
+same hod/side/stop/mgmt, per-seed era-sum) mean −4 sd 1524 → **z=+3.22** ✓ (every era's own
+random ≈ 0 ⇒ not drift) | halves: 2013-22 PF2.06 / 2022-26 PF2.23 ✓ | L/S separate: LONG n=25
+PF1.39@8 (marginal pass), SHORT n=35 PF3.04 ✓ | month dominance: top month 20% of net,
+14/44 months negative ✓ | plateau: 13/13 one-knob neighbors pooled-positive (+1351..+6082
+around +4900; IMP_LO=150 is BETTER; no ridge) ✓.
+
+## Caveats / NOT yet cleared for wiring
+1. **n=60 over 13yr** — sparse by construction (~9 trades/yr). Sizing must respect −352bp
+   worst trade and 861bp trade-level DD.
+2. **ADDITIVITY vs live gold engines UNPROVEN** (operator precondition). Live shadow ledger
+   was reset 2026-07 (504B) → no forward record to overlap; must BT the incumbent gold
+   engines (XauTf4h etc, registry recipes) over 2024-26 and check entry/PnL-stream overlap.
+3. **Data ends 2026-04-24.** Histdata 202605/06 not yet published (fetch attempted, empty).
+   Re-validate the frozen cell on May-Jul 2026 once fetchable before wiring.
+4. LONG side PF1.39@8 is just above gate — monitor; SHORT carries most edge.
+5. Histdata era spread is feed-indicative (2-4bp); pad ladder covers this (PF2.42@pad14).
+
+Repro:
+  clang++ -O2 -std=c++17 -o backtest/gold_pullback_core_bt backtest/gold_pullback_core_bt.cpp
+  env <cell-envs-above> PADS=6,10 ./backtest/gold_pullback_core_bt /Users/jo/Tick/xau_h2013_m1.csv
+  env <cell-envs> DUMP=/tmp/e.csv ... ; env <cell-envs> MODE=RANDOM SPEC=/tmp/e.csv SEEDS=200 SEEDNETS=/tmp/r.txt ...

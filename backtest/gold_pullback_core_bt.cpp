@@ -24,7 +24,12 @@
 //   HOLDSEC (never first touch), velocity+imbalance up, height >= HMIN -> entry; STRUCTURAL
 //   stop = range midpoint; TP = boundary + 2x height (TPMODE=1) or structural trail.
 //
-// Usage: gold_pullback_core_bt <tick_csv> [MODE=STRAT|RANDOM] (params via env)
+// H4/D1 RE-ANCHOR (2026-07-13w operator decision): input may be a ts,o,h,l,c,spr M1 bar file
+// (auto-detected via "spr" in header). Then fills = close -/+ spr/2, slice activity = bar range
+// bp (no tick counts in bars), and the scale knobs UPQ_WIN / EFF_STRIDE / GAPCLOSE let the same
+// detectors run on 100-250bp hours-long structures. Defaults reproduce tick-scale behavior.
+//
+// Usage: gold_pullback_core_bt <tick_csv|m1_csv> [MODE=STRAT|RANDOM] (params via env)
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -43,6 +48,11 @@ static int    envi(const char* k, int d){ const char* v=getenv(k); return v? ato
 static double IMP_LO, IMP_HI, EFF, ACT, SPR_MAX, RET_LO, RET_HI, PB_ACT, UPR, REM, ARM, STOPBUF, VWTOL;
 static int DUR_LO, DUR_HI, PB_TIMEOUT, TRAILSEC, BREAKSEC, MAXHOLD, WARMUP_DAYS, SEEDS;
 static int FAMILY, RNG_WIN, HOLDSEC, ARM_TTL; static double RNG_Q, BRKBUF, EXT_MAX, HMIN;
+static int UPQ_WIN, EFF_STRIDE, GAPCLOSE;  // H4/D1 re-anchor knobs (defaults = tick-scale behavior)
+static int STOPMODE;                       // 0=pullback trough (spec default); 1=impulse anchor L0
+                                           //   (full structural event as risk unit — the crypto-parent
+                                           //    geometry: cost 3-8% of stop instead of 25-40%)
+static int M1MODE=0;                       // input is ts,o,h,l,c,spr M1 bars (auto-detected)
 static std::vector<double> PADS; // extra RT cost bp on top of real spread
 
 // ---------- 1s slice ----------
@@ -54,6 +64,13 @@ struct Sec {
     float sprsum;        // sum of spread
 };
 static std::vector<Sec> S;   // all active seconds, time-ordered
+
+// activity of one slice: tick count (tick mode) or range bp (M1 mode — no tick counts in bars).
+// Same-slot baselines + all activity ratios use this uniformly, so detector semantics are
+// unchanged: "activity >= ACT x same-slot baseline" etc.
+static inline double ACTV(const Sec& s){
+    return M1MODE? (double)(s.hi-s.lo)/(0.5*(double)(s.hi+s.lo))*1e4 : (double)s.n;
+}
 
 // ---------- time-of-day baseline (48 x 30-min slots, trailing 20 days) ----------
 struct SlotBase {
@@ -115,7 +132,7 @@ static void run_exit(int side, size_t i0, double entry_px, double stop_px, doubl
                 if(mid_lo<=TP_PX){ out_px=TP_PX; out_ts=s.ts; return; }
             }
             if(s.ts - t_in > MAXHOLD){ out_px = side>0? s.bidc : s.askc; out_ts=s.ts; return; }
-            if(i+1<S.size() && S[i+1].ts - s.ts > 43200){ out_px = side>0? s.bidc : s.askc; out_ts=s.ts; return; }
+            if(i+1<S.size() && S[i+1].ts - s.ts > GAPCLOSE){ out_px = side>0? s.bidc : s.askc; out_ts=s.ts; return; }
             continue;
         }
         if(side>0){
@@ -137,7 +154,7 @@ static void run_exit(int side, size_t i0, double entry_px, double stop_px, doubl
         }
         if(s.ts - t_in > MAXHOLD){ out_px = side>0? s.bidc : s.askc; out_ts=s.ts; return; }
         // weekend gap: if next second jumps > 12h, close at last quote
-        if(i+1<S.size() && S[i+1].ts - s.ts > 43200){ out_px = side>0? s.bidc : s.askc; out_ts=s.ts; return; }
+        if(i+1<S.size() && S[i+1].ts - s.ts > GAPCLOSE){ out_px = side>0? s.bidc : s.askc; out_ts=s.ts; return; }
     }
     out_px = side>0? S.back().bidc : S.back().askc; out_ts=S.back().ts;
 }
@@ -158,6 +175,8 @@ int main(int argc, char** argv){
     FAMILY=envi("FAMILY",1); RNG_WIN=envi("RNG_WIN",600); HOLDSEC=envi("HOLDSEC",45);
     ARM_TTL=envi("ARM_TTL",3600); RNG_Q=envd("RNG_Q",0.30); BRKBUF=envd("BRKBUF",3);
     EXT_MAX=envd("EXT_MAX",40); HMIN=envd("HMIN",16);
+    UPQ_WIN=envi("UPQ_WIN",60); EFF_STRIDE=envi("EFF_STRIDE",1); GAPCLOSE=envi("GAPCLOSE",43200);
+    STOPMODE=envi("STOPMODE",0);
     { const char* p=getenv("PADS")? getenv("PADS"):"6,8,10,14";
       char buf[256]; strncpy(buf,p,255); buf[255]=0;
       for(char* t=strtok(buf,","); t; t=strtok(nullptr,",")) PADS.push_back(atof(t)); }
@@ -166,8 +185,24 @@ int main(int argc, char** argv){
     FILE* f=fopen(argv[1],"r");
     if(!f){ fprintf(stderr,"cannot open %s\n", argv[1]); return 1; }
     char line[256]; if(!fgets(line,sizeof line,f)) return 1; // header
+    M1MODE = strstr(line,"spr")!=nullptr;   // ts,o,h,l,c,spr bar file vs timestamp,bid,ask ticks
     S.reserve(16u<<20);
     Sec cur{}; cur.ts=-1; double prevmid=0;
+    if(M1MODE){
+        while(fgets(line,sizeof line,f)){
+            long long ts; double o,h,l,c,spr;
+            if(sscanf(line,"%lld,%lf,%lf,%lf,%lf,%lf",&ts,&o,&h,&l,&c,&spr)!=6) continue;
+            if(c<=0 || spr<0 || h<l) continue;
+            Sec s{}; s.ts=(int32_t)ts;
+            s.bidc=(float)(c-0.5*spr); s.askc=(float)(c+0.5*spr);
+            s.lo=(float)l; s.hi=(float)h;
+            s.n=1; s.nup = c>o? 1:0; s.ndn = c<o? 1:0; s.sprsum=(float)spr;
+            S.push_back(s);
+        }
+        fclose(f);
+        fprintf(stderr,"[norm] M1 mode: %zu bars\n", S.size());
+        goto detect;
+    }
     while(fgets(line,sizeof line,f)){
         long long ms; double bid, ask;
         if(sscanf(line,"%lld,%lf,%lf",&ms,&bid,&ask)!=3) continue;
@@ -188,12 +223,15 @@ int main(int argc, char** argv){
     fclose(f);
     fprintf(stderr,"[norm] %zu active seconds, %s .. %s", S.size(), "", "\n");
 
+    detect:;
     // ---------- pass 2: baselines + detector ----------
     SlotBase base[48];
     // per-day accumulators per slot
-    double day_ticks[48]={0}, day_secs[48]={0}, day_spr[48]={0}, day_rng[48]={0}, day_rngn[48]={0};
+    double day_ticks[48]={0}, day_secs[48]={0}, day_spr[48]={0}, day_rng[48]={0}, day_rngn[48]={0}, day_sprn[48]={0};
     int cur_day=-1; int days_seen=0;
-    const int WINCOV = FAMILY==2? std::max(RNG_WIN,1800) : DUR_HI;
+    // family 2 ext window = 3x the range window (tick default 600*3=1800: unchanged) so the
+    // "no recent extension" check keeps meaning at hours-scale RNG_WIN instead of ext==height.
+    const int WINCOV = FAMILY==2? std::max(3*RNG_WIN,1800) : DUR_HI;
 
     // rolling ring of recent seconds (indices into S) covering the detector window
     std::deque<size_t> win;           // seconds within last WINCOV
@@ -220,19 +258,19 @@ int main(int argc, char** argv){
         int32_t dayn = s.ts/86400, slot=(s.ts%86400)/1800;
         if((int)dayn!=cur_day){
             if(cur_day>=0){ for(int k=0;k<48;k++) if(day_secs[k]>0)
-                base[k].push(day_ticks[k]/day_secs[k], day_spr[k]/day_ticks[k],
+                base[k].push(day_ticks[k]/day_secs[k], day_spr[k]/std::max(day_sprn[k],1.0),
                              day_rngn[k]>0? day_rng[k]/day_rngn[k] : 0, RNG_Q);
                 days_seen++; }
             memset(day_ticks,0,sizeof day_ticks); memset(day_secs,0,sizeof day_secs); memset(day_spr,0,sizeof day_spr);
-            memset(day_rng,0,sizeof day_rng); memset(day_rngn,0,sizeof day_rngn);
+            memset(day_rng,0,sizeof day_rng); memset(day_rngn,0,sizeof day_rngn); memset(day_sprn,0,sizeof day_sprn);
             cur_day=dayn;
         }
-        day_ticks[slot]+=s.n; day_secs[slot]+=1; day_spr[slot]+=s.sprsum;
+        day_ticks[slot]+=ACTV(s); day_secs[slot]+=1; day_spr[slot]+=s.sprsum; day_sprn[slot]+=s.n;
 
         // maintain windows
         win.push_back(i); while(!win.empty() && S[win.front()].ts < s.ts-WINCOV) win.pop_front();
         brk.push_back(i); while(!brk.empty() && S[brk.front()].ts < s.ts-BREAKSEC) brk.pop_front();
-        upq.push_back(i); while(!upq.empty() && S[upq.front()].ts < s.ts-60) upq.pop_front();
+        upq.push_back(i); while(!upq.empty() && S[upq.front()].ts < s.ts-UPQ_WIN) upq.pop_front();
 
         if(FAMILY==2 && s.ts%60==0 && !win.empty()){   // sample RNG_WIN range for slot baseline
             double h=-1e18,l=1e18;
@@ -283,11 +321,11 @@ int main(int argc, char** argv){
                 bool back_in = cvdir>0? (s.lo < cvRH-tol) : (s.hi > cvRL+tol);
                 if(back_in){ cvfails++; if(cvfails>1){ cvstate=0; cv_next_arm=s.ts+600; } else cvstate=10; continue; }
                 if(s.ts-cv_tbrk < HOLDSEC) continue;
-                if(s.ts-cv_tbrk > HOLDSEC+120){ cvstate=0; cv_next_arm=s.ts+600; continue; }
+                if(s.ts-cv_tbrk > HOLDSEC+std::max(120,HOLDSEC)){ cvstate=0; cv_next_arm=s.ts+600; continue; }
                 double height=(cvRH-cvRL), height_bp=height/mid*1e4;
                 if(height_bp < HMIN){ c2_g_hmin++; continue; }
                 double nt=0,ns=0,nup=0,ndn=0;
-                for(size_t k=0;k<upq.size();++k){ nt+=S[upq[k]].n; ns+=1; nup+=S[upq[k]].nup; ndn+=S[upq[k]].ndn; }
+                for(size_t k=0;k<upq.size();++k){ nt+=ACTV(S[upq[k]]); ns+=1; nup+=S[upq[k]].nup; ndn+=S[upq[k]].ndn; }
                 double vel = (ns>0 && base[slot].med_rate>0)? (nt/ns)/base[slot].med_rate : 0;
                 if(vel < ACT){ c2_g_vel++; continue; }
                 double upr=(nup+ndn)>0? (cvdir>0? nup/(nup+ndn) : ndn/(nup+ndn)) : 0;
@@ -332,10 +370,14 @@ int main(int argc, char** argv){
                 if(move_bp<IMP_LO || move_bp>IMP_HI) continue;
                 c_move++;
                 // efficiency + activity over [ta, now]
-                double path=0, nt=0, ns=0; double pm=-1;
+                // EFF_STRIDE>1: path sampled at stride boundaries so efficiency semantics stay
+                // resolution-comparable when the impulse spans hours (H4/D1 re-anchor) instead
+                // of seconds — per-slice path length grows with duration, net move doesn't.
+                double path=0, nt=0, ns=0, vwn=0; double pm=-1; int32_t pts=-2000000000;
                 for(size_t k=ia;k<win.size();++k){ const Sec& w=S[win[k]];
                     double c=0.5*(w.bidc+w.askc);
-                    if(pm>0) path+=fabs(c-pm); pm=c; nt+=w.n; ns+=1; }
+                    if(w.ts >= pts+EFF_STRIDE){ if(pm>0) path+=fabs(c-pm); pm=c; pts=w.ts; }
+                    nt+=ACTV(w); ns+=1; vwn+=w.n; }
                 double eff = path>0? fabs(mid - a)/ (path) : 0;
                 double rate = ns>0? nt/ns : 0;
                 double ratio = rate / base[slot].med_rate;
@@ -347,7 +389,7 @@ int main(int argc, char** argv){
                 c_spr++; c_imp++;
                 ev=Ev{}; ev.state=1; ev.side= dir==0? +1 : -1; ev.L0=a; ev.P= dir==0? s.hi : s.lo;
                 ev.t0=ta; ev.tpk=s.ts; ev.imp_rate=rate; ev.act_ratio=ratio;
-                ev.vwap_n=nt; ev.vwap_s=0; // vwap accumulates from here w/ existing window
+                ev.vwap_n=vwn; ev.vwap_s=0; // vwap accumulates from here w/ existing window
                 for(size_t k=ia;k<win.size();++k){ const Sec& w=S[win[k]]; ev.vwap_s += 0.5*(w.bidc+w.askc)*w.n; }
                 last_anchor_used=ta;
                 break;
@@ -359,14 +401,14 @@ int main(int argc, char** argv){
             if(ev.side>0){ if(s.hi>ev.P){ ev.P=s.hi; ev.tpk=s.ts; } }
             else         { if(s.lo<ev.P||ev.P==0){ ev.P=std::min((double)s.lo, ev.P); ev.tpk=s.ts; } }
             double ret = ev.side>0? (ev.P-s.lo)/std::max(Sz,1e-9) : (s.hi-ev.P)/std::max(Sz,1e-9);
-            if(ret >= RET_LO){ ev.state=2; c_pb++; ev.T= ev.side>0? s.lo : s.hi; ev.pb_ticks=s.n; ev.pb_secs=1;
-                               ev.pbdn_ticks=s.n; ev.pbdn_secs=1; }
+            if(ret >= RET_LO){ ev.state=2; c_pb++; ev.T= ev.side>0? s.lo : s.hi; ev.pb_ticks=ACTV(s); ev.pb_secs=1;
+                               ev.pbdn_ticks=ACTV(s); ev.pbdn_secs=1; }
             if(s.ts-ev.tpk > PB_TIMEOUT) ev.state=0;
             double sz_bp = Sz/ev.L0*1e4; if(sz_bp>IMP_HI*1.6) ev.state=0; // runaway, not our structure
         }
         else if(ev.state==2){ // pullback: track trough, wait for break entry
             ev.vwap_s += mid*s.n; ev.vwap_n += s.n;
-            ev.pb_ticks+=s.n; ev.pb_secs+=1;
+            ev.pb_ticks+=ACTV(s); ev.pb_secs+=1;
             double Sz = fabs(ev.P-ev.L0);
             bool newT=false;
             if(ev.side>0 && s.lo<ev.T){ ev.T=s.lo; newT=true; }
@@ -398,7 +440,8 @@ int main(int argc, char** argv){
             double target = ev.side>0? ev.T + Sz : ev.T - Sz;   // measured-move
             double rem_bp = ev.side>0? (target-entry_px)/entry_px*1e4 : (entry_px-target)/entry_px*1e4;
             if(rem_bp < REM){ c_g_rem++; continue; }
-            double stop_px = ev.side>0? ev.T*(1.0-STOPBUF*1e-4) : ev.T*(1.0+STOPBUF*1e-4);
+            double sref = STOPMODE? ev.L0 : ev.T;
+            double stop_px = ev.side>0? sref*(1.0-STOPBUF*1e-4) : sref*(1.0+STOPBUF*1e-4);
             double stop_bp = fabs(entry_px-stop_px)/entry_px*1e4;
             double opx, ots; in_pos=true;
             TP_PX = target;
@@ -460,8 +503,8 @@ int main(int argc, char** argv){
         report("ALL  ", trades);
         // dump entries for RANDOM matching
         if(getenv("DUMP")){ FILE* d=fopen(getenv("DUMP"),"w");
-            fprintf(d,"ts_in,side,stop_bp,hod\n");
-            for(auto&t:trades) fprintf(d,"%.0f,%d,%.2f,%d\n",t.ts_in,t.side,t.stop_bp,t.hod);
+            fprintf(d,"ts_in,side,stop_bp,hod,gross_bp,month\n");  // cols 5+ ignored by RANDOM reader
+            for(auto&t:trades) fprintf(d,"%.0f,%d,%.2f,%d,%.2f,%d\n",t.ts_in,t.side,t.stop_bp,t.hod,t.gross_bp,t.month);
             fclose(d); }
     } else {
         // RANDOM: read entry spec, sample matched entries per seed
@@ -493,6 +536,8 @@ int main(int argc, char** argv){
                 net += grossbp(side,entry,opx)-pad; busy_until=ots; }
             nets.push_back(net);
         }
+        if(getenv("SEEDNETS")){ FILE* d=fopen(getenv("SEEDNETS"),"w");
+            for(double x:nets) fprintf(d,"%.2f\n",x); fclose(d); }
         double m=0; for(double x:nets)m+=x; m/=nets.size();
         double v=0; for(double x:nets)v+=(x-m)*(x-m); v=sqrt(v/std::max<size_t>(1,nets.size()-1));
         double stratnet=envd("STRAT_NET",0);
