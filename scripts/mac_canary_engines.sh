@@ -207,4 +207,24 @@ echo ""
 echo "[mac-canary-engines] persistence audit (every display engine persists)..."
 bash "$(dirname "$0")/persistence_audit.sh" || exit 1
 
+# GOLD LOT-SIZE HARD GATE (added S-2026-07-13, SESSION_HANDOFF_2026-07-13b §5):
+# the −$3,953 up-jump incident shipped XAUUSD engines at lot=1.0 — 100x the 0.01
+# desk convention — and NO gate existed to catch it. Any gold-symbol engine
+# (line mentions xau/gold/xag/mgc, case-insensitive) assigning .lot > 0.05 in
+# engine_init.hpp is a hard FAIL. Index engines ($-normalized lot 0.3-3.0
+# convention) are exempt by symbol. Deliberate exceptions: annotate the line
+# with LOT-GATE-OK and the evidence.
+echo ""
+echo "[mac-canary-engines] gold lot-size gate (XAU/gold .lot <= 0.05)..."
+LOT_VIOLATIONS=$(grep -nE "\.lot *= *[0-9.]+" include/engine_init.hpp \
+  | grep -iE "xau|gold|xag|mgc" \
+  | grep -v "LOT-GATE-OK" \
+  | awk '{ if (match($0, /\.lot *= *[0-9.]+/)) { v=substr($0,RSTART,RLENGTH); sub(/.*= */,"",v); if (v+0 > 0.05) print } }')
+if [ -n "$LOT_VIOLATIONS" ]; then
+  echo "[mac-canary-engines] FAIL: gold-symbol engine with lot > 0.05 (the 100x-bug class):"
+  echo "$LOT_VIOLATIONS"
+  exit 1
+fi
+echo "[mac-canary-engines] gold lot-size gate PASS"
+
 exit 0

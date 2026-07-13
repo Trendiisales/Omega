@@ -501,7 +501,10 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
  /* S-2026-07-13: TSMOM/Donchian slot-engine coins — TRADED on josgp1 but had no tile
     (TIA banked +7.65 invisible). Full traded set = 27 symbols, all displayed. */
  ['TIA','TIAUSDT'],['SUI','SUIUSDT'],['APT','APTUSDT'],['ARB','ARBUSDT'],['FET','FETUSDT'],
- ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT']];
+ ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT'],
+ /* PHASE3 2026-07-13: REGIME_SWITCH core-basket coins (NEAR/ADA already tiled) —
+    DOT/THETA/SUSHI now TRADED on josgp1, display-truth [SYMBOL-COV] demands tiles. */
+ ['DOT','DOTUSDT'],['THETA','THETAUSDT'],['SUSHI','SUSHIUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a

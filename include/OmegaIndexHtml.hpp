@@ -509,7 +509,10 @@ var CTKS=[['BTC','BTCUSDT'],['ETH','ETHUSDT'],['SOL','SOLUSDT'],['BNB','BNBUSDT'
  /* S-2026-07-13: TSMOM/Donchian slot-engine coins — TRADED on josgp1 but had no tile
     (TIA banked +7.65 invisible). Full traded set = 27 symbols, all displayed. */
  ['TIA','TIAUSDT'],['SUI','SUIUSDT'],['APT','APTUSDT'],['ARB','ARBUSDT'],['FET','FETUSDT'],
- ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT']];
+ ['HBAR','HBARUSDT'],['INJ','INJUSDT'],['ONDO','ONDOUSDT'],['SEI','SEIUSDT'],
+ /* PHASE3 2026-07-13: REGIME_SWITCH core-basket coins (NEAR/ADA already tiled) —
+    DOT/THETA/SUSHI now TRADED on josgp1, display-truth [SYMBOL-COV] demands tiles. */
+ ['DOT','DOTUSDT'],['THETA','THETAUSDT'],['SUSHI','SUSHIUSDT']];
 /* last-close SEED — baked from the Tick daily files at desk build time (Fri 2026-07-03 closes).
    Floor UNDER the localStorage last-tick cache so a COLD browser over a weekend shows a dimmed
    last-close instead of '—' (operator 2026-07-04: 57cb0ed0 was localStorage-only and failed on a
@@ -568,12 +571,12 @@ cxRestPoll(); /* instant first paint while the socket connects */
 var REGPOS=[];
 function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
  .then(function(r){return r.json();})
- .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
+)OMEGAD2"
+R"OMEGAD3( .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
  .catch(function(){});}
 setInterval(pollReg,30000);pollReg();
 /* S-2026-07-13 operator: tile symbol goes GREEN when TRIGGERED — classic tiles when any
-)OMEGAD2"
-R"OMEGAD3(   engine holds an OPEN position on the symbol (live feed or weekend registry); crypto tiles
+   engine holds an OPEN position on the symbol (live feed or weekend registry); crypto tiles
    when any companion cell for the coin is ARMED / has open sublegs. Reverts when flat. */
 var TK_SYM2KEY={XAUUSD:'gold',US500:'sp','US500.F':'sp',USTEC:'nq','USTEC.F':'nq',NAS100:'nas','DJ30':'dj','DJ30.F':'dj',GER40:'ger30',UK100:'uk100',USOIL:'cl','USOIL.F':'cl',XAGUSD:'xag',EURUSD:'eurusd',GBPUSD:'gbpusd',USDJPY:'usdjpy',AUDUSD:'audusd',NZDUSD:'nzdusd',USDCAD:'usdcad'};
 function markTiles(){
@@ -745,10 +748,10 @@ function render(J){lastJ=J;
  var dh='<div style="display:grid;grid-template-columns:1fr 70px 1fr;gap:1px;font-size:11px">';
  for(var i=Math.min(4,asks.length-1);i>=0;i--){var l=asks[i];
   dh+='<span></span><span style="text-align:right;color:var(--redB);padding:0 4px">'+fmt2(l.p)+'</span>'
-   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
- var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
 )OMEGAD3"
-R"OMEGAD4( dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
+R"OMEGAD4(   +'<span style="position:relative"><i style="position:absolute;left:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(226,72,77,.25);border-radius:1px"></i><i style="position:relative;color:var(--redB);padding-left:4px;font-style:normal">'+fmt2(l.s,1)+'</i></span>';}
+ var spd=(asks[0]&&bids[0])?(asks[0].p-bids[0].p):0;
+ dh+='<span></span><span style="text-align:right;color:var(--t2);border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:1px 4px">'+fmt2(spd)+'</span><span style="border-top:1px solid var(--bd2);border-bottom:1px solid var(--bd2)"></span>';
  for(var i=0;i<Math.min(5,bids.length);i++){var l=bids[i];
   dh+='<span style="position:relative"><i style="position:absolute;right:0;top:2px;bottom:2px;width:'+(l.s/mx*100)+'%;background:rgba(46,189,133,.22);border-radius:1px"></i></span>'
    +'<span style="text-align:right;color:var(--grnB);padding:0 4px">'+fmt2(l.p)+'</span><span style="color:var(--grnB);padding-left:4px">'+fmt2(l.s,1)+'</span>';}
@@ -921,13 +924,13 @@ function pollRdagent(){
     var sig=rank.signal||{}, basket=sig.basket||[];
     var el2=el('rdatab'); if(!el2)return;
     if(!basket.length){ el2.innerHTML='<tr><td class="l d">no ranking yet</td></tr>'; return; }
-    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th>conf</th><th>5d</th><th>20d</th></tr>';
+)OMEGAD4"
+R"OMEGAD5(    var hdr='<tr><th>#</th><th class="l">name</th><th>action</th><th>price</th><th>conf</th><th>5d</th><th>20d</th></tr>';
     var rows=basket.slice(0,23).map(function(b){
       var buy=b.action==='BUY';
       var act=buy?'<span class="g">BUY</span>':'<span class="d">—</span>';
       var c5=safe(b.ret_5d)*100, c20=safe(b.ret_20d)*100;
-)OMEGAD4"
-R"OMEGAD5(      var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
+      var col5=c5>0?'var(--grn)':'var(--red)', col20=c20>0?'var(--grn)':'var(--red)';
       return '<tr'+(buy?' style="background:rgba(40,160,90,0.12)"':'')+'><td class="num">'+esc(b.rank)+'</td><td class="l">'+esc(b.instrument||'')+
         '</td><td>'+act+'</td><td class="num">'+fmt2(safe(b.price),2)+'</td><td class="num">'+esc(b.percentile)+
         '</td><td class="num" style="color:'+col5+'">'+(c5>=0?'+':'')+fmt2(c5,1)+'%</td><td class="num" style="color:'+col20+'">'+(c20>=0?'+':'')+fmt2(c20,1)+'%</td></tr>';
@@ -1109,14 +1112,14 @@ function renderCompanionOpenTrades(pfx, open, trades, pxPrec){
    h+='<tr><td class="l">'+esc(o.flavor)+'</td><td class="l">'+esc(o.dir)+'</td><td class="l">'+esc(o.tier)+'</td>'
      +'<td class="num">'+fmt2(safe(o.entry),pxPrec)+'</td><td class="num">'+fmt2(safe(o.cur),pxPrec)+'</td>'
      +'<td class="num">'+fmt2(safe(o.wm),pxPrec)+'</td>'
-     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';});
+)OMEGAD5"
+R"OMEGAD6(     +'<td class="num" style="color:'+(u>0?'var(--grn)':(u<0?'var(--red)':'var(--t2)'))+'">'+fmt$(u)+'</td></tr>';});
   ot.innerHTML=h; ow.style.display='';
  } else { ot.innerHTML=''; ow.style.display='none'; }
  var tw=el(pfx+'tradeswrap'), tt=el(pfx+'trades');
  if(trades&&trades.length){
   var th='<tr><td class="l lbl">leg</td><td class="l lbl">dir</td><td class="lbl">tier</td><td class="lbl">entry</td>'
-)OMEGAD5"
-R"OMEGAD6(        +'<td class="lbl">exit</td><td class="lbl">$</td><td class="l lbl">reason</td><td class="l lbl">closed</td></tr>';
+        +'<td class="lbl">exit</td><td class="lbl">$</td><td class="l lbl">reason</td><td class="l lbl">closed</td></tr>';
   trades.forEach(function(t){var u=safe(t.usd);
    var dt=t.exit_ts?new Date(t.exit_ts*1000).toISOString().slice(5,16).replace('T',' '):'';
    th+='<tr><td class="l">'+esc(t.flavor)+'</td><td class="l">'+esc(t.dir)+'</td><td class="l">'+esc(t.tier)+'</td>'
@@ -1275,14 +1278,14 @@ function drawIndex(){var j=window._idx||null;
       +'<td class="lbl">wins</td><td class="lbl">pts real</td><td class="lbl">forward($ real)</td></tr>';
  var syms=(j&&j.syms)||[];
  if(!syms.length){el('ictab').innerHTML=h+'<tr><td class="l d" colspan="9">no trades yet (deploy-forward · $0 until first forward clip closes)</td></tr>';
-  el('icinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
+)OMEGAD6"
+R"OMEGAD7(  el('icinfo').textContent='native C++ · shadow · real forward trades only';renderCompanionOpenTrades('ic',[],[],2);return;}
  var desk=0,allOpen=[],allTrades=[];
  syms.forEach(function(p){
   desk+=safe(p.usd_real);(p.open||[]).forEach(function(o){desk+=safe(o.upnl_usd_real!==undefined?o.upnl_usd_real:o.upnl_usd);});
   (p.open||[]).forEach(function(o){allOpen.push(o);});
   (p.trades||[]).forEach(function(t){allTrades.push(t);});
-)OMEGAD6"
-R"OMEGAD7(  var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
+  var fls=p.flavors||[];var prows=0;fls.forEach(function(fl){prows+=(fl.runners||[]).length||1;});
   var firstSym=true;
   fls.forEach(function(fl){
    var runs=fl.runners||[];var rs=runs.length||1;var first=true;
@@ -1457,13 +1460,13 @@ function parseShadow(txt){
 function winRows(){if(WIN>=9999)return ROWS;
  var cut=WIN===1?(Math.floor(Date.now()/86400000)*86400):(Date.now()/1000-WIN*86400);
  return ROWS.filter(function(r){return r.ts>=cut;});}
-/* ── per-asset-class PnL split (operator 2026-07-11) ──
+)OMEGAD7"
+R"OMEGAD8(/* ── per-asset-class PnL split (operator 2026-07-11) ──
    Assigns EVERY money source updDayPnl folds into ALL-TIME to exactly one of 4 classes
    (STOCK/CRYPTO/FX/GOLD) so the 4 chips reconcile to ALL-TIME. classOf() classifies a ledger
    row by its engine tag (+ symbol for single-name equities). The forward/paper book globals are
    routed by fixed class (see updDayPnl). STOCK = equities incl. equity indices (operator's 4
-)OMEGAD7"
-R"OMEGAD8(   buckets have no separate index); GOLD includes usoil/xag per the operator's class map. */
+   buckets have no separate index); GOLD includes usoil/xag per the operator's class map. */
 var BIGCAP_STK=/^(NVDA|AMD|AVGO|MU|MRVL|SMCI|ARM|PLTR|TSLA|META|NFLX|CRWD|SHOP|COIN|MSTR|SNOW|NOW|PANW|UBER|ABNB|DELL|ORCL|QCOM|INTC|AMZN|GOOGL|MSFT|AAPL|CRM|ADBE|IONQ|RGTI|QBTS|ASTS|RKLB|NBIS|CRWV|ALAB|CRDO|WDC|STX|DD|TPR|BMY|SWKS)$/i;
 function classOf(eng,sym){var s=(eng||'')+'|'+(sym||'');
  if(/btc|eth|sol|ada|doge|near|bnb|aave|xrp|trx|crypto/i.test(s))return 'crypto';
@@ -1602,14 +1605,14 @@ function drawEquity(){var cv=el("eqc");if(!cv)return;/* SHADOW EQUITY panel remo
   var chim0=(WIN!==1&&WIN!==7&&WIN!==30)?safe(window._chimtot):0;/* + chimera EDGE realized (all-time, $) into the grand total */
   var fg0=(WIN!==1&&WIN!==7&&WIN!==30)?(safe(window._fxtot)+safe(window._goldtot)+safe(window._idxtot)+safe(window._xagtot)+safe(window._usoiltot)+safe(window._smtot)+safe(window._fxladtot)+safe(window._ixladtot)):0;/* FX + gold + xag + usoil + stockmover-ladder forward banks are all-time -> only fold in 'all' window */
   var cwT=cw+cc0+chim0+fg0;tweenNum('eqtot',cwT,fmt$);el('eqtot').style.color=cwT>=0?'var(--grn)':'var(--red)';el('eqstats').innerHTML=cwT?'<span style="color:var(--t3)">paper only</span>':'';return;}
- var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
+)OMEGAD8"
+R"OMEGAD9( var cum=[],c=0,pk=0,mdd=0,wins=0,gp=0,gl=0;
  rs.forEach(function(r){c+=r.pnl;cum.push(c);pk=Math.max(pk,c);mdd=Math.min(mdd,c-pk);
   if(r.pnl>0){wins++;gp+=r.pnl;}else gl-=r.pnl;});
  var lo=Math.min(0,mdd,Math.min.apply(null,cum)),hi=Math.max.apply(null,cum.concat([1]));
  function X(i){return 4+(W-8)*i/Math.max(1,cum.length-1);}
  function Y(v){return 8+(H-26)*(1-(v-lo)/(hi-lo||1));}
-)OMEGAD8"
-R"OMEGAD9( ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.beginPath();
+ ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.beginPath();
  [lo,0,hi].forEach(function(g){ctx.moveTo(0,Y(g));ctx.lineTo(W,Y(g));});ctx.stroke();
  ctx.fillStyle='#6B7785';ctx.font='9px IBM Plex Mono';
  ctx.fillText(fmt$(hi),2,Y(hi)+9);ctx.fillText('$0',2,Y(0)-3);
@@ -1784,14 +1787,14 @@ function drawPR(){var cv=el("prc");
  for(var t=0;t<=4;t++){var ii=Math.round((n-1)*t/4),d=new Date(bars[ii][0]*1000);
   var lb=String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+' '
    +String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
-  ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.beginPath();ctx.moveTo(X(ii),padT);ctx.lineTo(X(ii),padT+ph);ctx.stroke();
+)OMEGAD9"
+R"OMEGAD10(  ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.beginPath();ctx.moveTo(X(ii),padT);ctx.lineTo(X(ii),padT+ph);ctx.stroke();
   ctx.fillText(lb,Math.min(X(ii),W-padR-62),H-4);}
  /* step points; emit null as a gap when a level is unwarmed (<=0) so the line
     never drops to Y(0)/off-chart (that was hiding resistance). */
  function spts(fi){var p=[];for(var i=0;i<n;i++){var v=bars[i][fi];
   if(v<=0){p.push(null);continue;}
-)OMEGAD9"
-R"OMEGAD10(  if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
+  if(i>0&&bars[i-1][fi]>0&&bars[i-1][fi]!==v)p.push([X(i),Y(bars[i-1][fi])]);
   p.push([X(i),Y(v)]);}return p;}
  function strokeSteps(p,col,wd,dash){ctx.beginPath();var pen=false;p.forEach(function(q){
    if(!q){pen=false;return;}if(pen)ctx.lineTo(q[0],q[1]);else ctx.moveTo(q[0],q[1]);pen=true;});
