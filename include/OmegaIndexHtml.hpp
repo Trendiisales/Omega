@@ -492,7 +492,7 @@ setInterval(pollCloseBells,5000);
  el('sessbar').innerHTML=h+'<div id="sessmk" style="position:absolute;top:0;bottom:0;width:2px;background:#E6EDF3"></div>';tickClk();})();
 
 /* ── ticker defs ── */
-var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],['nas','NAS100','nas'],['dj','DJ30','dj'],
+var TKS=[['gold','XAUUSD','xau'],['sp','US500','sp'],['nq','USTEC','nq'],/* NAS100 tile removed S-2026-07-14 (operator: USTEC+NAS100 = same index twice); NAS100 books highlight the USTEC tile via TK_SYM2KEY */['dj','DJ30','dj'],
  ['ger30','GER40','ger40'],['uk100','UK100','uk100'],['cl','USOIL','cl'],['xag','XAGUSD','xag'],['vix','VIX',null],
  /* FX — 5 pairs of the FxBeFloorCompanion book; live price via telemetry <pair>_bid/_ask.
     S-2026-07-08: t[2] wired — OmegaTelemetryServer DOES emit <pair>_curh/_curl (verified live
@@ -569,16 +569,16 @@ cxRestPoll(); /* instant first paint while the socket connects */
 
 /* ── position registry fallback (read-API :7781, CORS-open) ── */
 var REGPOS=[];
-function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
- .then(function(r){return r.json();})
 )OMEGAD2"
-R"OMEGAD3( .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
+R"OMEGAD3(function pollReg(){fetch('http://'+location.hostname+':7781/api/v1/omega/positions')
+ .then(function(r){return r.json();})
+ .then(function(j){REGPOS=Array.isArray(j)?j:[];if(lastJ)render(lastJ);})
  .catch(function(){});}
 setInterval(pollReg,30000);pollReg();
 /* S-2026-07-13 operator: tile symbol goes GREEN when TRIGGERED — classic tiles when any
    engine holds an OPEN position on the symbol (live feed or weekend registry); crypto tiles
    when any companion cell for the coin is ARMED / has open sublegs. Reverts when flat. */
-var TK_SYM2KEY={XAUUSD:'gold',US500:'sp','US500.F':'sp',USTEC:'nq','USTEC.F':'nq',NAS100:'nas','DJ30':'dj','DJ30.F':'dj',GER40:'ger30',UK100:'uk100',USOIL:'cl','USOIL.F':'cl',XAGUSD:'xag',EURUSD:'eurusd',GBPUSD:'gbpusd',USDJPY:'usdjpy',AUDUSD:'audusd',NZDUSD:'nzdusd',USDCAD:'usdcad'};
+var TK_SYM2KEY={XAUUSD:'gold',US500:'sp','US500.F':'sp',USTEC:'nq','USTEC.F':'nq',NAS100:'nq','DJ30':'dj','DJ30.F':'dj',GER40:'ger30',UK100:'uk100',USOIL:'cl','USOIL.F':'cl',XAGUSD:'xag',EURUSD:'eurusd',GBPUSD:'gbpusd',USDJPY:'usdjpy',AUDUSD:'audusd',NZDUSD:'nzdusd',USDCAD:'usdcad'};
 function markTiles(){
  var act={};
  (window._lastLts||[]).forEach(function(t){var k=TK_SYM2KEY[String(t.symbol||'').toUpperCase()];if(k)act[k]=1;});
