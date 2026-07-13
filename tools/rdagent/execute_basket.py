@@ -227,6 +227,37 @@ def main() -> int:
         w.writerow([now, asof, len(target), round(deployed, 0), "|".join(target),
                     round(cash, 0), round(equity, 0), round(cost_today, 2), round(cost_cum, 2)])
 
+    # S-2026-07-14f: per-name open-position P&L for the desk STOCK BASKET panel
+    # (operator "we need a pnl column in here"). Avg cost replayed from the full
+    # ORDERS history (cost-inclusive; sells reduce basis proportionally), marked
+    # at the freshness-gated close. Source of truth = the same csv the fills wrote.
+    positions = []
+    try:
+        basis: dict[str, list[float]] = {}   # sym -> [shares, cost_usd]
+        if ORDERS.exists():
+            with open(ORDERS) as fh:
+                for row in csv.DictReader(fh):
+                    s = row.get("instrument", "")
+                    try:
+                        sh = int(float(row["shares"])); px = float(row["price"]); c = float(row["cost"])
+                    except (KeyError, ValueError):
+                        continue
+                    b = basis.setdefault(s, [0.0, 0.0])
+                    if sh > 0:
+                        b[0] += sh; b[1] += sh * px + c
+                    elif sh < 0 and b[0] > 0:
+                        frac = min(1.0, -sh / b[0])
+                        b[0] += sh; b[1] *= (1.0 - frac)
+        for s, sh in target.items():
+            last = closes.get(s, 0.0)
+            b = basis.get(s)
+            avg = (b[1] / b[0]) if b and b[0] > 0 else 0.0
+            pnl = (last - avg) * sh if avg > 0 and last > 0 else 0.0
+            positions.append({"sym": s, "shares": sh, "avg_cost": round(avg, 2),
+                              "last": round(last, 2), "pnl_usd": round(pnl, 2)})
+    except Exception as e:                       # P&L detail must never break the book write
+        positions = [{"error": str(e)}]
+
     result = {
         "ts": now, "as_of": asof, "mode": "shadow", "flatten": a.flatten, "capital": a.capital,
         "n_names": len(target), "deployed_usd": round(deployed, 0),
@@ -235,7 +266,7 @@ def main() -> int:
         "cost_today_usd": round(cost_today, 2), "cost_cum_usd": round(cost_cum, 2),
         "orders": [{"sym": o[2], "side": o[3], "shares": o[4], "price": o[5],
                     "notional": o[6], "cost": o[7]} for o in orders],
-        "book": target, "skipped_no_price": skipped,
+        "book": target, "positions": positions, "skipped_no_price": skipped,
     }
     RESULT.write_text(json.dumps(result, indent=2))
     print(json.dumps(result))
