@@ -148,6 +148,17 @@ public:
         // the same way. 0 = legacy all-immediate legs (backtest/parity default).
         double be_entry_pct  = 0.0;       // % above trigger a mimic leg must see on a CLOSE to open
         int    pend_closes   = 3;         // cancel a pending mimic leg after this many closes without BE
+        // S-2026-07-13 RIDE-HARDER (operator: "trade it hard and for as long as we can until
+        // it reverses"): optional PARENT-ONLY trail override. p_arm > 0 replaces the parent
+        // leg's w_arm/w_gb cell (mimic Wm + ladder respawns UNAFFECTED — they keep w_arm/w_gb).
+        // p_arm = 1e9 = never arms -> NO trail: parent rides to the -thr% reversal flush;
+        // loss_cut_pct (pre-arm) remains the catastrophe floor. VALIDATED
+        // backtest/bigcap_ride_harder_bt.py A1 (45 names, RT 8bp): wired gb10 +3010%/PF1.48
+        // -> gb25 +3703%/1.62 -> gb50 +4251%/1.74 -> gb75 +4610%/1.81 -> RIDE-TO-REVERSAL
+        // +4658%/1.73 — monotone plateau, worst clip -28.1% UNCHANGED at every cell,
+        // ex-best(WDC) +4199%/1.69 PASS. 0 = legacy parent (w_arm/w_gb).
+        double p_arm         = 0.0;       // >0: parent-leg arm override (1e9 = ride to reversal)
+        double p_gb          = 0.0;       // parent-leg giveback override (used when p_arm > 0)
         double w8_arm        = 8.0;       // 4th mimic cell: the old wide-runner (validated standalone)
         double w8_gb         = 0.50;
         double reclip        = 0.05;      // re-enter when fav > peak*(1+reclip)
@@ -587,7 +598,12 @@ private:
         legs_.clear();
         if (cfg_.be_entry_pct > 0.0) {
             spawned_ = 5;
-            legs_.push_back(make_leg_(1, entry_px, ts_sec, fwd));   // PARENT (immediate, LadW)
+            {   // PARENT (immediate, LadW). p_arm>0 = ride-harder trail override (parent ONLY;
+                // 1e9 never arms -> rides to the -thr flush, loss_cut_pct still guards pre-arm).
+                Leg P = make_leg_(1, entry_px, ts_sec, fwd);
+                if (cfg_.p_arm > 0.0) { P.arm = cfg_.p_arm; P.gb = cfg_.p_gb; }
+                legs_.push_back(std::move(P));
+            }
             legs_.push_back(make_pending_leg_(0, cfg_.t_arm,  cfg_.t_stall, 0.0,       entry_px, ts_sec)); // T
             legs_.push_back(make_pending_leg_(2, cfg_.m_arm,  0,            cfg_.m_gb, entry_px, ts_sec)); // MIRROR
             legs_.push_back(make_pending_leg_(2, cfg_.w_arm,  0,            cfg_.w_gb, entry_px, ts_sec)); // Wm

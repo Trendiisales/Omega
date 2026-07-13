@@ -2119,6 +2119,17 @@ static void init_engines(const std::string& cfg_path)
                 // whole 12-cell be/pend sweep passes (plateau). Interior cell wired, not the
                 // corner-best (be0.3/pend5 +11,228%) — robustness over last drop of net.
                 c.be_entry_pct = 0.5; c.pend_closes = 3;   // w8 cell = struct default a8/gb50
+                // S-2026-07-13s RIDE-TO-REVERSAL parent (operator: "trade it hard and for as
+                // long as we can until it reverses"). KNOWING OVERRIDE of the S-2026-07-09
+                // gb10 protection choice above: back then the parent WAS the whole book; now
+                // the 4x BE-mimic ladder does the progressive banking (T banks fast, M/W8
+                // trail), so the ONE parent rides the full move to the -3% reversal flush.
+                // p_arm=1e9 never arms -> no trail; loss_cut 15% stays the pre-arm floor.
+                // VALIDATED backtest/bigcap_ride_harder_bt.py A1 (45 names, RT 8bp, lc15):
+                // parent gb10 +3010%/PF1.48 -> RIDE-TO-REV +4658%/PF1.73 (monotone plateau
+                // gb25/50/75 in between; worst clip -28.1% UNCHANGED; ex-WDC +4199%/1.69
+                // PASS; 2x-cost PASS). Mimic Wm cell + ladder respawns keep w_arm1/gb10.
+                c.p_arm = 1e9; c.p_gb = 0.0;
                 // S-2026-07-11 operator "extra mimic x4": 4x the clip notional across the WHOLE
                 // stock book ($10k->$40k base). This is a MIMIC -> it never touches the real trade
                 // (CompanionDominanceError), so scaling it is purely additive and its own drawdown-
@@ -2250,6 +2261,15 @@ static void init_engines(const std::string& cfg_path)
                 // -15% catastrophe / 20bp RT / $10k notional. UNGATED, LONG-only.
                 c.thr = 0.02; c.hi_window = 20; c.gb = 0.90; c.max_hold = 60;
                 c.catastrophe = 15.0; c.rt_cost_bp = 20.0; c.notional = 10000.0;
+                // S-2026-07-13s BE-MIMIC legs (operator "trade it hard... with mimic engines,
+                // same for the other bigcap engines"): 2 pending legs per impulse window —
+                // M a2/gb75 + W8 a8/gb50 — open ONLY at the first close >= entry*(1+0.5%),
+                // cancel after 5 closes; W8 self-funding respawns cap 5; lc = catastrophe 15
+                // pre-arm. 2-leg cell wired because T/W(a1/gb10) FAIL standalone on these
+                // longer gb90 windows. VALIDATED backtest/bigcap_ride_harder_bt.py 2LEG
+                // (45 names, RT 20bp): be0.5/pend5 +4022% PF1.95 worst -21.9% all-6 + 2x
+                // PASS; all 4 be/pend cells pass (plateau); ex-best(NVDA) +3619%/1.87 PASS.
+                c.mimic_be_pct = 0.5; c.mimic_pend = 5;
                 bi.add(std::move(c));
             }
             const std::string bc2_csv = "data/rdagent/sp500_long_close.csv";

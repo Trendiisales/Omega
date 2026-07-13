@@ -26,6 +26,21 @@
 //   not a tight stop. (Backtested C++: backtest/clip_path_bigcap_impulse.cpp over
 //   data/rdagent/sp500_long_close.csv 2019-06..2026-06 — verdict recorded from the
 //   faithful C++ harness numbers, not the prior python.)
+//   MIMIC legs (S-2026-07-13s): BE-ENTRY pending gate (open only past +be% — can
+//   never open underwater), -catastrophe% pre-arm DRAWDOWN-CANCEL (free cut,
+//   mimic never touches the parent), gb trails once armed, MTM flush at parent
+//   exit. Backtested backtest/bigcap_ride_harder_bt.py B2/2LEG (45 names, RT
+//   20bp): be0.5/pend5 +4022% PF1.95 worst -21.9%, all 4 cells + ex-best PASS.
+//
+// BE-MIMIC LEGS (S-2026-07-13s, operator "trade it hard... with mimic engines and
+//   the same for the other bigcap engines"): mimic_be_pct > 0 adds TWO pending
+//   BE-mimic legs per impulse window — M (arm2/gb75 mirror) + W8 (arm8/gb50
+//   runner) — that open ONLY at the first close >= entry*(1+be%) and cancel after
+//   mimic_pend closes; each cost-covered clip self-funds one more W8 respawn
+//   (cap mimic_cap); reclip re-enters after a new favorable extreme. The 2-leg
+//   cell is wired because T/W(a1/gb10) FAIL standalone on these longer gb90
+//   windows (H1 negative) — M+W8 pass standalone each and pooled. Judged
+//   STANDALONE (own mfwd_ book, ledger tag "BigCap2pctMimic").
 //
 // Books in RETURN units (equities have no fixed $/pt); USD = return * fixed
 // notional/clip (default $10k, shadow-illustrative; operator rescales at flip).
@@ -93,6 +108,11 @@ public:
         double rt_cost_bp     = 20.0;     // REAL round-trip cost (bp of entry) debited per clip
         double notional       = 10000.0;  // $ per clip; USD = return * notional
         double lot            = 1.0;      // order-path lot (shares/CFD units decided at flip)
+        // S-2026-07-13s BE-MIMIC legs (see header block). 0 = no mimic legs (legacy).
+        double mimic_be_pct   = 0.0;      // % above parent entry a mimic must see on a CLOSE to open
+        int    mimic_pend     = 5;        // closes to make BE before a pending leg cancels
+        int    mimic_cap      = 5;        // max mimic legs spawned per window (incl the 2 base)
+        double mimic_reclip   = 0.05;     // re-enter when fav > peak*(1+reclip)
         std::string deploy_path;          // per-name deploy-forward anchor
         std::string bars_path;            // per-name persisted LIVE forward daily bars
         std::string book_path;            // per-name persisted REAL forward book totals
@@ -181,6 +201,7 @@ public:
                     std::fflush(stdout);
                     rej_streak_ = 0;
                     in_pos_ = false; entry_pend_ = false; entry_px_ = 0; mfe_ = 0; held_ = 0; tok_.clear();
+                    mlegs_.clear(); mspawned_ = 0;   // S-2026-07-13s: level shift voids mimic legs too
                     ingest_(ts_sec, close); append_dump_(ts_sec, close); save_live_state_();
                     return;
                 }
@@ -234,6 +255,25 @@ public:
                                 << ",\"entry_ts\":" << (long long)entry_ts_ << "}";
             nopen = 1;
         }
+        // S-2026-07-13s: OPEN mimic legs (pending legs excluded — no position yet).
+        int mim_pend = 0;
+        for (const auto& L : mlegs_) {
+            if (L.dead) continue;
+            if (L.pending) { ++mim_pend; continue; }
+            if (!L.open || L.clipped || cur <= 0 || L.le <= 0) continue;
+            const double u  = cur / L.le - 1.0;
+            const double ur = u - cfg_.rt_cost_bp / 1e4;
+            if (nopen++) op << ",";
+            op.precision(2);
+            op << "{\"flavor\":\"" << cfg_.sym << "Imp2M" << (L.arm >= 8.0 ? "W8" : "M") << "\",\"dir\":\"long\","
+               << "\"entry\":" << L.le << ",\"cur\":" << cur << ",";
+            op.precision(3); op << "\"mfe_pct\":" << L.mfe
+                                << ",\"upnl_pct\":" << (u * 100.0)
+                                << ",\"upnl_pct_real\":" << (ur * 100.0) << ",";
+            op.precision(0); op << "\"upnl_usd\":" << (u * notl)
+                                << ",\"upnl_usd_real\":" << (ur * notl)
+                                << ",\"entry_ts\":" << (long long)L.ets << "}";
+        }
 
         // CLOSED forward clips log — most-recent first.
         std::ostringstream tr; int ntr = 0;
@@ -263,6 +303,13 @@ public:
                           << ",\"pct_real\":" << (fwd_.ret_real * 100.0) << ",";
         o.precision(0); o << "\"usd\":" << (fwd_.ret * notl)
                           << ",\"usd_real\":" << (fwd_.ret_real * notl) << ",";
+        // S-2026-07-13s: SEPARATE standalone mimic book totals.
+        o << "\"mimic\":{\"pending\":" << mim_pend
+          << ",\"clips\":" << mfwd_.clips << ",\"wins\":" << mfwd_.wins << ",";
+        o.precision(3); o << "\"pct\":" << (mfwd_.ret * 100.0)
+                          << ",\"pct_real\":" << (mfwd_.ret_real * 100.0) << ",";
+        o.precision(0); o << "\"usd\":" << (mfwd_.ret * notl)
+                          << ",\"usd_real\":" << (mfwd_.ret_real * notl) << "},";
         o << "\"open\":[" << op.str() << "],\"trades\":[" << tr.str() << "]}";
         return o.str();
     }
@@ -299,6 +346,26 @@ private:
     std::deque<Closed> closed_;
 
     static constexpr const char* ENGINE_TAG_ = "BigCap2pctImpulse";
+    static constexpr const char* MIMIC_TAG_  = "BigCap2pctMimic";
+
+    // ── S-2026-07-13s BE-MIMIC leg state (faithful to bigcap_ride_harder_bt.py 2LEG) ──
+    // A leg is PENDING until a close covers +mimic_be_pct off the parent entry (can
+    // never open underwater), then a pure gb-trail (M a2/gb75, W8 a8/gb50 — no stall
+    // cells here; T/W fail standalone on these longer gb90 windows). Pre-arm
+    // DRAWDOWN-CANCEL at -catastrophe%. Cost-covered clips self-fund W8 respawns
+    // (cap mimic_cap); reclip re-enters after a new favorable extreme.
+    struct MLeg {
+        double arm = 0, gbf = 0;          // trail cell
+        double trig = 0, epx = 0, le = 0; // BE trigger ref / entry / ledger entry
+        double pk = 0, mfe = 0;           // peak at clip (reclip ref) / best fav %
+        int    pbars = 0;                 // pending closes remaining
+        int64_t ets = 0;
+        bool pending = true, open = false, clipped = false, dead = false;
+        std::string tok;
+    };
+    std::vector<MLeg> mlegs_;
+    int     mspawned_ = 0;
+    FwdBook mfwd_;                        // SEPARATE standalone mimic book
 
     // Signal on close at index `at` (negative = from back). Needs prev close + a
     // full hi_window of prior closes. +thr close-to-close AND close >= max of the
@@ -356,6 +423,113 @@ private:
         }
     }
 
+    // ── S-2026-07-13s BE-MIMIC helpers ───────────────────────────────────
+    MLeg make_mleg_(double arm, double gbf, double trig_px, int64_t ts_sec) const noexcept {
+        MLeg L; L.arm = arm; L.gbf = gbf; L.trig = trig_px; L.epx = trig_px; L.le = trig_px;
+        L.pbars = cfg_.mimic_pend; L.ets = ts_sec;
+        return L;
+    }
+
+    void spawn_mimics_(double entry_px, int64_t ts_sec) noexcept {
+        if (cfg_.mimic_be_pct <= 0.0) return;
+        mlegs_.clear();
+        mlegs_.push_back(make_mleg_(2.0, 0.75, entry_px, ts_sec));   // M  mirror
+        mlegs_.push_back(make_mleg_(8.0, 0.50, entry_px, ts_sec));   // W8 runner
+        mspawned_ = 2;
+        std::printf("[BC2PCT][MIMIC-PEND] %s 2 mimic legs PENDING (be %.2f%%, %d closes)\n",
+                    cfg_.sym.c_str(), cfg_.mimic_be_pct, cfg_.mimic_pend);
+        std::fflush(stdout);
+    }
+
+    double book_mimic_clip_(MLeg& L, double fill, int64_t ts_sec, bool fwd, const char* reason) noexcept {
+        const double r      = (L.le > 0) ? (fill / L.le - 1.0) : 0.0;
+        const double r_real = r - cfg_.rt_cost_bp / 1e4;
+        if (fwd) {
+            if (!L.tok.empty() && close_fn_) close_fn_(cfg_.live_sym, true, cfg_.lot, fill, L.tok);
+            if (ledger_fn_ && !g_bc2_catchup.load(std::memory_order_relaxed))
+                ledger_fn_(MIMIC_TAG_, cfg_.live_sym, true, L.le, fill, cfg_.lot, L.ets, ts_sec, reason);
+            mfwd_.ret += r; mfwd_.ret_real += r_real;
+            mfwd_.clips += 1; mfwd_.wins += (r_real > 1e-9 ? 1 : 0);
+            save_fwd_book_();
+            Closed rec{L.le, fill, r, r * cfg_.notional, L.ets, ts_sec, reason,
+                       r_real, r_real * cfg_.notional};
+            closed_.push_back(rec);
+            while (closed_.size() > MAX_CLOSED_) closed_.pop_front();
+            append_closed_(rec);
+            std::printf("[BC2PCT][MIMIC-CLIP] %s entry=%.2f fill=%.2f ret=%.4f ret_real=%.4f (%s)\n",
+                        cfg_.sym.c_str(), L.le, fill, r, r_real, reason);
+            std::fflush(stdout);
+        }
+        L.tok.clear();
+        return r_real;
+    }
+
+    // One daily close through every mimic leg (faithful port of the validated
+    // 2LEG harness step): BE-pending gate -> reclip re-entry -> gb trail /
+    // pre-arm drawdown-cancel. A cost-covered clip self-funds one W8 respawn.
+    void step_mimics_(double cur, int64_t ts_sec, bool fwd) noexcept {
+        if (cfg_.mimic_be_pct <= 0.0 || mlegs_.empty()) return;
+        std::vector<MLeg> born;
+        for (auto& L : mlegs_) {
+            if (L.dead) continue;
+            if (L.pending) {
+                if ((cur / L.trig - 1.0) * 100.0 >= cfg_.mimic_be_pct) {
+                    L.pending = false; L.epx = cur; L.le = cur;
+                    L.open = true; L.mfe = 0.0; L.ets = ts_sec;
+                    if (fwd && open_fn_ && !g_bc2_catchup.load(std::memory_order_relaxed)) {
+                        const double tp_dist_pts = cur * (L.arm / 100.0);
+                        if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot)) {
+                            L.tok = open_fn_(cfg_.live_sym, true, cfg_.lot, cur);
+                            std::printf("[BC2PCT][MIMIC-OPEN] %s LONG @%.2f (BE %.2f%% covered) tok=%s\n",
+                                        cfg_.sym.c_str(), cur, cfg_.mimic_be_pct, L.tok.c_str());
+                            std::fflush(stdout);
+                        }
+                    }
+                    continue;
+                }
+                if (--L.pbars <= 0) L.dead = true;
+                continue;
+            }
+            const double fav = (cur - L.epx) / L.epx * 100.0;
+            if (L.clipped) {
+                if (cfg_.mimic_reclip > 0 && L.pk > 0 && fav > L.pk * (1.0 + cfg_.mimic_reclip)) {
+                    L.clipped = false; L.le = cur;
+                    if (fwd && open_fn_ && !g_bc2_catchup.load(std::memory_order_relaxed)) {
+                        const double tp_dist_pts = cur * (L.arm / 100.0);
+                        if (!gate_fn_ || gate_fn_(cfg_.live_sym, tp_dist_pts, cfg_.lot))
+                            L.tok = open_fn_(cfg_.live_sym, true, cfg_.lot, cur);
+                    }
+                } else continue;
+            }
+            if (!L.open) { L.open = true; L.mfe = fav; }
+            if (fav > L.mfe + 1e-9) L.mfe = fav;
+            const bool armed = (L.mfe >= L.arm);
+            if (!armed && fav <= -cfg_.catastrophe) {            // pre-arm DRAWDOWN-CANCEL
+                L.dead = true;
+                book_mimic_clip_(L, cur, ts_sec, fwd, "MIM_LC");
+                continue;
+            }
+            if (armed && L.gbf > 0 && fav <= L.mfe * (1.0 - L.gbf)) {
+                L.pk = L.mfe; L.clipped = true;
+                const double r_real = book_mimic_clip_(L, cur, ts_sec, fwd, "MIM_GB");
+                if (r_real > 0 && mspawned_ < cfg_.mimic_cap) {  // self-funding W8 respawn
+                    born.push_back(make_mleg_(8.0, 0.50, cur, ts_sec));
+                    ++mspawned_;
+                }
+            }
+        }
+        for (auto& b : born) mlegs_.push_back(std::move(b));
+    }
+
+    // Parent exited -> flush every still-open mimic leg MTM at the same close.
+    void flush_mimics_(double cur, int64_t ts_sec, bool fwd) noexcept {
+        for (auto& L : mlegs_) {
+            if (L.open && !L.clipped && !L.dead)
+                book_mimic_clip_(L, cur, ts_sec, fwd, "MIM_FLUSH");
+        }
+        mlegs_.clear(); mspawned_ = 0;
+    }
+
     // Incremental state machine on the NEWEST daily close.
     void live_step_(int64_t ts_sec) noexcept {
         const int N = (int)c_.size();
@@ -367,6 +541,10 @@ private:
         if (entry_pend_) {
             entry_pend_ = false;
             enter_(cur, ts_sec, fwd);
+            if (in_pos_) {                       // S-2026-07-13s: mimic legs ride the window
+                spawn_mimics_(cur, ts_sec);
+                step_mimics_(cur, ts_sec, fwd);  // pend clock starts ON the entry close (BT parity)
+            }
             save_live_state_();
             return;   // first managed close is the NEXT bar
         }
@@ -390,12 +568,19 @@ private:
             if (reason) {
                 book_clip_(cur, ts_sec, fwd, reason);
                 in_pos_ = false; entry_px_ = 0; mfe_ = 0; held_ = 0;
+                flush_mimics_(cur, ts_sec, fwd);   // window over -> MTM flush (no step this close; BT parity)
+            } else {
+                step_mimics_(cur, ts_sec, fwd);
             }
         }
 
         // 3) entry detector on THIS close (only when flat). LONG-only, ungated.
         if (!in_pos_ && signal_at_(N - 1)) {
             enter_(cur, ts_sec, fwd);
+            if (in_pos_) {                       // S-2026-07-13s: fresh window -> fresh mimic legs
+                spawn_mimics_(cur, ts_sec);
+                step_mimics_(cur, ts_sec, fwd);
+            }
         }
         save_live_state_();
     }
@@ -410,11 +595,18 @@ private:
                 fwd_.ret = ret; fwd_.clips = clips; fwd_.wins = wins; fwd_.ret_real = rreal;
             }
         }
+        // line 2 (S-2026-07-13s, optional = backward-compat): "M <ret> <clips> <wins> <ret_real>"
+        if (std::getline(f, line) && line.size() > 2 && line[0] == 'M') {
+            if (std::sscanf(line.c_str() + 2, "%lf %d %d %lf", &ret, &clips, &wins, &rreal) >= 4) {
+                mfwd_.ret = ret; mfwd_.clips = clips; mfwd_.wins = wins; mfwd_.ret_real = rreal;
+            }
+        }
     }
     void save_fwd_book_() const noexcept {
         const std::string tmp = cfg_.book_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
-          f << fwd_.ret << " " << fwd_.clips << " " << fwd_.wins << " " << fwd_.ret_real << "\n"; }
+          f << fwd_.ret << " " << fwd_.clips << " " << fwd_.wins << " " << fwd_.ret_real << "\n";
+          f << "M " << mfwd_.ret << " " << mfwd_.clips << " " << mfwd_.wins << " " << mfwd_.ret_real << "\n"; }
 #if defined(_WIN32)
         std::remove(cfg_.book_path.c_str());
 #endif
@@ -455,13 +647,38 @@ private:
             in_pos_ = (ip != 0); entry_pend_ = (ep != 0);
             entry_ts_ = (int64_t)ets; tok_ = (tok == "-") ? std::string() : tok;
         }
+        // S-2026-07-13s mimic-leg records (optional = backward-compat; the restart bug class
+        // that left ladder pendings eaten is exactly why these persist):
+        //   "MB <mspawned>"  then per leg
+        //   "ML <pend> <open> <clip> <dead> <arm> <gbf> <trig> <epx> <le> <pk> <mfe> <pbars> <ets> <tok|->"
+        std::string kind;
+        while (f >> kind) {
+            if (kind == "MB") { f >> mspawned_; }
+            else if (kind == "ML") {
+                MLeg L; int pe = 0, op = 0, cl = 0, dd = 0; long long lets = 0; std::string ltok;
+                if (f >> pe >> op >> cl >> dd >> L.arm >> L.gbf >> L.trig >> L.epx >> L.le
+                      >> L.pk >> L.mfe >> L.pbars >> lets >> ltok) {
+                    L.pending = (pe != 0); L.open = (op != 0); L.clipped = (cl != 0); L.dead = (dd != 0);
+                    L.ets = (int64_t)lets; L.tok = (ltok == "-") ? std::string() : ltok;
+                    mlegs_.push_back(std::move(L));
+                }
+            } else break;
+        }
     }
     void save_live_state_() const noexcept {
         const std::string tmp = cfg_.live_path + ".tmp";
         { std::ofstream f(tmp, std::ios::trunc); if (!f.is_open()) return;
           f << (in_pos_ ? 1 : 0) << " " << (entry_pend_ ? 1 : 0) << " " << entry_px_ << " "
             << mfe_ << " " << held_ << " " << (long long)entry_ts_ << " "
-            << (tok_.empty() ? "-" : tok_) << "\n"; }
+            << (tok_.empty() ? "-" : tok_) << "\n";
+          f << "MB " << mspawned_ << "\n";
+          for (const auto& L : mlegs_) {
+              if (L.dead) continue;
+              f << "ML " << (L.pending ? 1 : 0) << " " << (L.open ? 1 : 0) << " "
+                << (L.clipped ? 1 : 0) << " 0 " << L.arm << " " << L.gbf << " " << L.trig << " "
+                << L.epx << " " << L.le << " " << L.pk << " " << L.mfe << " " << L.pbars << " "
+                << (long long)L.ets << " " << (L.tok.empty() ? "-" : L.tok) << "\n";
+          } }
 #if defined(_WIN32)
         std::remove(cfg_.live_path.c_str());
 #endif
