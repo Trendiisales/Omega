@@ -249,10 +249,15 @@ static void dispatch_fix(const std::string& msg, SSL* ssl) {
                 || std::strcmp(s,"ESTX50")==0;
         };
         if (is_ibkr_hard(sym.c_str())) return;   // never BlackBull, no freshness dependency
-        // The rest (FX majors + the UNENTITLED index/energy set UK100/USOIL/VIX/DX/NGAS/BRENT)
-        // keep the freshness fallback so they aren't dark when IBKR has no data for them.
-        if (omega::ibkr::is_fx_major(sym.c_str())
-         || omega::ibkr::is_ibkr_primary_index(sym.c_str())) {
+        // S-2026-07-13 (operator: "no blackbull fallback we are not using it for now"):
+        // FX majors JOIN the hard-IBKR group -- NEVER take a BlackBull tick, no freshness
+        // fallback. If the IBKR IDEALPRO slot dies, FX goes QUIET (dark tile) rather than
+        // riding a ~30s-frozen BlackBull CFD snapshot. A dark FX tile is honest; a
+        // wrong-venue/stale price silently feeding the FX books is not.
+        if (omega::ibkr::is_fx_major(sym.c_str())) return;
+        // The remaining UNENTITLED index/energy set (UK100/USOIL/VIX/DX/NGAS/BRENT) keep
+        // the freshness fallback so they aren't dark when IBKR has no data for them at all.
+        if (omega::ibkr::is_ibkr_primary_index(sym.c_str())) {
             const int64_t ib_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             const omega::ibkr::L2Slot* ibslot = g_ibkr_l2.lookup(sym.c_str());
