@@ -258,3 +258,22 @@ instruments. Engines: `include/BeCascadeEngines.hpp` — `XsBeCascade_{USTEC.F,U
   (next-open convention); gold bracket fills are tick-level. Warm-seed REBASES to first live
   mid (cash-index seed vs .F feed; MGC seed vs spot) — without it the venue offset fakes a
   jump through the W-window. Gold seed lags (MGC to 2026-06-03): honest after 240 live H1.
+
+## HARD DATA GATE — no green on rejected data (added 2026-07-13, operator-mandated)
+
+**A REJECTED integrity verdict is TERMINAL. There is no override.** On 2026-07-13 a silver
+up-jump backtest reported +1645% "CERTIFIED z=5" on data the integrity gate REJECTED (111
+x1000-glitch ticks) — a subagent saw "REJECTED", called it a "false-positive squeeze", and
+ran anyway. The verdict was void; the operator called it shit data. Root cause: the gate was
+correct (exit 1) but nothing STOPPED a rejected file from being backtested.
+
+RULE (non-negotiable):
+1. NEVER `cp` raw Tick/histdata files directly into a harness data dir (`Crypto/backtest/data/`
+   or any `<SYM>USDT_<tf>.csv`). Stage them ONLY via:
+   `bash backtest/stage_certified_data.sh <src.csv> <dest.csv>`
+   It runs `data_integrity_gate.py` and copies ONLY on CERTIFIED CLEAN; a REJECT refuses the
+   copy (exit 2) and writes NO file. No `--force`, no override, no "false-positive precedent".
+2. If you believe a reject is a false positive, FIX THE DATA (de-glitch the x1000 ticks,
+   re-pull a clean month) until it passes the gate — do NOT bypass it.
+3. A staged file carries a `<dest>.certified` stamp (source + sha). No stamp = not certified =
+   its backtest result is VOID. Never present a green whose data lacks the stamp.
