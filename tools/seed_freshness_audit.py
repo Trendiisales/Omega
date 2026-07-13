@@ -18,6 +18,13 @@ REPO = "."
 MAX_AGE_DAYS = 14            # default; intraday/H1 seeds should be fresher than this
 # per-pattern overrides (a daily/seasonal seed can be older than an H1 regime seed)
 OVERRIDES = [
+    # GoldCampaignD1Anch M1 seed: monthly-histdata sourced (prior month publishes early-next-
+    # month -> 17-40d age is NORMAL) and the IBKR reseed has NO M1 recipe (MGC spread scale !=
+    # spot XAUUSD; a wrong-scale spread seed would misfire the engine's 1.5x-slot-median gate).
+    # Engine tolerates by design: days_seen>=5 + slot windows re-warm from live ticks in 6-72h
+    # (GoldCampaignD1AnchEngine.hpp header). 14d default here fail-closed EVERY deploy for
+    # weeks (2026-07-13 111840/112337/205120 aborts). KEEP IN SYNC with seed_refresh.py.
+    (re.compile(r"warmup_XAUUSD_M1\.csv", re.I),                   45),
     (re.compile(r"tsmom_warmup_H1|regime|_H1\.csv|_h1\.csv", re.I), 5),   # H1 trend/regime seeds: tight
     (re.compile(r"_D1\.csv|daily|seasonal|warmup_.*_D1", re.I),    45),   # D1 seasonal/turtle: loose
     (re.compile(r"_H4\.csv|_h4\.csv|H4", re.I),                    14),
