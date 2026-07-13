@@ -49,6 +49,7 @@
 
 #include "OmegaTradeLedger.hpp"
 #include "OpenPositionRegistry.hpp"   // S-2026-06-03: PositionSnapshot for adopt()
+#include "GoldTrendMimicLadder.hpp"   // S-2026-07-14h: one-way survivor-cell mimic hook
 
 namespace omega::survivor {
 
@@ -385,6 +386,13 @@ public:
             if (st.in_bar) {
                 // close previous bar
                 push_bar_internal(st.cur);
+                // SURVIVOR-CELL MIMIC feed (S-2026-07-14h): drive this cell's mimic book
+                // on its NATIVE bar close, BEFORE evaluate_signal can fire on_trend_open
+                // -- a leg spawned at this close first sees the NEXT bar, matching the
+                // validated mimic_ladder_overlay semantics (trigger bar seq0 skipped).
+                // Unregistered cell tags no-op inside the registry.
+                omega::gold_trend_mimic().on_bar(cfg.tag, st.cur.h, st.cur.l, st.cur.c,
+                                                 st.cur.ts_sec);
                 // bar-close evaluation gate
                 if (st.enabled) evaluate_signal(spx, mid, cb, side_taken);
             }
@@ -578,6 +586,12 @@ private:
                st.pos_entry, st.pos_sl, st.pos_tp, st.atr_val, st.bar_idx,
                st.shadow_mode ? " [SHADOW]" : "");
         fflush(stdout);
+        // SURVIVOR-CELL MIMIC (S-2026-07-14h): one-way fire-and-forget notify. Spawns
+        // an INDEPENDENT mimic leg book that never reads/moves/closes this position
+        // (feedback-companion-independent-engine). Only cell tags registered in
+        // engine_init spawn legs (XAU_4h_DonchN20, USTEC_4h_ZMR); others no-op, and
+        // the registry is disarmed until post-seed so historical replays can't fire.
+        omega::gold_trend_mimic().on_trend_open(cfg.tag, dir, st.pos_entry, st.pos_entry_ts);
         (void)cb;
     }
 

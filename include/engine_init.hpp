@@ -1647,6 +1647,29 @@ static void init_engines(const std::string& cfg_path)
                 c.arm_pct = 0.5; c.lc_pct = 3.0; c.cap_bars = 10; c.rt_cost_bp = 4.0; c.be_entry_pct = 0.10; c.pend_bars = 5;
                 gm.add(std::move(c));
             }
+            // SURVIVOR-CELL MIMICS (S-2026-07-14h, operator wire order after the S-14e study):
+            // BE-entry mimic on the two live SurvivorPortfolio cells. Trigger = one-way
+            // on_trend_open from Cell::evaluate_signal; feed = the cell's NATIVE H4 close
+            // (SurvivorPortfolio.hpp on_tick, fed BEFORE evaluate_signal so a fresh leg first
+            // sees the NEXT bar = mimic_ladder_overlay seq0-skip semantics). Validated
+            // backtest/clip_path_survivor.cpp (REAL Portfolio, live S-2026-07-08c config,
+            // parity n=445 == audited survivor_gated_bt) + mimic_ladder_overlay:
+            //   XAU_4h_DonchN20  PROFIT-CONFIRMED be1.0/arm0.25/lc2/cap30/gb10: +14.6%/leg
+            //     PF2.05 DD-3.2% n=60, all-6 PASS, 2x-cost PF1.81 PASS, plateau 21/27.
+            //     (Shipped be0.10 default FAILS 540/540 on this cell -- do NOT lower be.)
+            //   USTEC_4h_ZMR     be0.15/arm1.0/lc2/cap20/gb8: +27.2% PF3.61 DD-2.9% n=51,
+            //     all-6 PASS, 2x-cost PF3.42 PASS, plateau 189/540.
+            // DRAWDOWN-CANCEL verdict: lc=2 near-inert on BE-entry legs (leg opens already
+            // in profit; lc 1.5-10 identical) -- kept as the free backstop.
+            // rt_cost_bp = the per-symbol REAL cost the backtest debited (XAU 2*1.5bp comm
+            // + $0.30 spread ~= 4.2bp -> 5; USTEC 2*0.5bp + 2pt spread ~= 2.1bp -> 3).
+            // Close-grade H4; intrabar re-check owed before LIVE sizing. SHADOW.
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="XAU_4h_DonchN20"; c.live_sym="XAUUSD";
+                c.legs={{"T",0.10}};
+                c.arm_pct=0.25; c.lc_pct=2.0; c.cap_bars=30; c.rt_cost_bp=5.0; c.be_entry_pct=1.0; c.pend_bars=6; gm.add(std::move(c)); }
+            {   omega::GoldTrendMimicBook::Config c; c.trigger_tag="USTEC_4h_ZMR"; c.live_sym="USTEC.F";
+                c.legs={{"T",0.08}};
+                c.arm_pct=1.0; c.lc_pct=2.0; c.cap_bars=20; c.rt_cost_bp=3.0; c.be_entry_pct=0.15; c.pend_bars=6; gm.add(std::move(c)); }
             gm.set_exec(
                 [](const std::string& sym, bool is_long, double lots, double px)->std::string { return send_live_order(sym, is_long, lots, px); },
                 [](const std::string& sym, bool orig_is_long, double lots, double px, const std::string& token){ send_live_order(sym, !orig_is_long, lots, px, token); },
@@ -1655,7 +1678,7 @@ static void init_engines(const std::string& cfg_path)
                     omega::TradeRecord tr; tr.engine=engine; tr.symbol=sym; tr.side=is_long?"LONG":"SHORT";
                     tr.entryPrice=entry_px; tr.exitPrice=exit_px; tr.size=lots; tr.entryTs=entry_ts; tr.exitTs=exit_ts;
                     tr.exitReason=reason; tr.pnl=(is_long?(exit_px-entry_px):(entry_px-exit_px))*lots; handle_closed_trade(tr); });
-            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 7 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg), specific native feeds, SHADOW, deploy-forward\n");
+            printf("[OMEGA-INIT][SEED] GoldTrendMimicLadder wired: 9 trigger books (XauTf4h 4-leg, XauTf2h 2-leg, MgcFastDon 2-leg, XauTfD1 2-leg, NAS100/US500/DJ30 Turtle 2-leg, survivor XAU_4h_DonchN20 1-leg + USTEC_4h_ZMR 1-leg), specific native feeds, SHADOW, deploy-forward\n");
             fflush(stdout);
         }
 
